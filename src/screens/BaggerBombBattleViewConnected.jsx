@@ -96,26 +96,21 @@ export default function BaggerBombBattleViewConnected({
   // ClashCast AI commentary
   const clashCast = useClashCast(battleId, battle);
 
-  // Compute enriched battle stats for ClashCast context
+  // Compute enriched battle stats for ClashCast context (points-based counting)
   const battleStats = useMemo(() => {
-    const events = battle?.events || [];
+    const evts = battle?.events || [];
     const pName = player?.username || 'Player 1';
     const oName = opponent?.username || 'Player 2';
 
-    const isBagger = (e) => ['bagger', 'doublebagger', 'tenbagger', 'breakout', 'rally', 'moonshot']
-      .some(t => (e.type || '').toLowerCase().includes(t) || (e.thresholdName || '').toLowerCase().includes(t));
-    const isBust = (e) => ['bust', 'crash', 'meltdown']
-      .some(t => (e.type || '').toLowerCase().includes(t) || (e.thresholdName || '').toLowerCase().includes(t));
-
-    const allScoringEvents = events.filter(e => e.points != null && e.type !== 'swap' && e.type !== 'redzone');
+    const allScoringEvents = evts.filter(e => e.type !== 'swap' && e.type !== 'redzone');
     const biggestEvent = allScoringEvents.reduce((best, e) =>
       (Math.abs(e.points || 0) > Math.abs(best?.points || 0) ? e : best), null);
 
     return {
-      creatorBaggerBombs: events.filter(e => e.playerName === pName && isBagger(e)).length,
-      opponentBaggerBombs: events.filter(e => e.playerName === oName && isBagger(e)).length,
-      creatorBusts: events.filter(e => e.playerName === pName && isBust(e)).length,
-      opponentBusts: events.filter(e => e.playerName === oName && isBust(e)).length,
+      creatorBaggerBombs: evts.filter(e => e.playerName === pName && (e.points || 0) > 0).length,
+      opponentBaggerBombs: evts.filter(e => e.playerName === oName && (e.points || 0) > 0).length,
+      creatorBusts: evts.filter(e => e.playerName === pName && (e.points || 0) < 0).length,
+      opponentBusts: evts.filter(e => e.playerName === oName && (e.points || 0) < 0).length,
       totalEventCount: allScoringEvents.length,
       biggestEvent: biggestEvent ? {
         type: biggestEvent.thresholdName || biggestEvent.type,

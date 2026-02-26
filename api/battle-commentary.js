@@ -157,24 +157,24 @@ function buildUserMessage(event, battleState, recentCommentary) {
 
   // Enriched battle stats for narrative context
   if (battleState) {
-    lines.push('');
-    lines.push('=== BATTLE STATS ===');
     const cn = battleState.creatorName || 'Player 1';
     const on = battleState.opponentName || 'Player 2';
-    lines.push(`${cn} BaggerBombs: ${battleState.creatorBaggerBombs || 0} | Busts: ${battleState.creatorBusts || 0}`);
-    lines.push(`${on} BaggerBombs: ${battleState.opponentBaggerBombs || 0} | Busts: ${battleState.opponentBusts || 0}`);
-    lines.push(`Total Scoring Events: ${battleState.totalEventCount || 0}`);
+    lines.push('');
+    lines.push('BATTLE STATS:');
+    lines.push(`- ${cn} has ${battleState.creatorBaggerBombs || 0} BaggerBombs and ${battleState.creatorBusts || 0} Busts this battle`);
+    lines.push(`- ${on} has ${battleState.opponentBaggerBombs || 0} BaggerBombs and ${battleState.opponentBusts || 0} Busts this battle`);
+    lines.push(`- ${battleState.totalEventCount || 0} total scoring events so far`);
     if (battleState.biggestEvent) {
       const big = battleState.biggestEvent;
-      lines.push(`Biggest Moment: ${big.type} on $${big.asset} by ${big.playerName} (${big.points > 0 ? '+' : ''}${big.points} pts)`);
+      lines.push(`- Biggest play: ${big.playerName}'s $${big.asset} ${big.type} for ${big.points > 0 ? '+' : ''}${big.points} pts`);
     }
   }
 
   if (recentCommentary && recentCommentary.length > 0) {
     lines.push('');
-    lines.push('=== RECENT COMMENTARY (do NOT repeat these — vary your tone) ===');
+    lines.push('RECENT COMMENTARY (don\'t repeat these):');
     for (const entry of recentCommentary.slice(-3)) {
-      lines.push(`- [${entry.type}${entry.asset ? ` $${entry.asset}` : ''}] "${entry.commentary}"`);
+      lines.push(`- "${entry.commentary}"`);
     }
   }
 

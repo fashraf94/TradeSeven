@@ -50,6 +50,7 @@ export class CommentaryEngine {
     this.lastCommentaryTime = {};         // Per-tier throttle tracking
     this.onCommentary = onCommentary;     // Callback: (eventId, text, isLoading, synthetic) => void
     this.syntheticEvents = [];            // Standalone commentary events (lead changes, etc.)
+    this._retroactiveTimers = [];         // Timeout IDs for retroactive commentary (cleanup on destroy)
     this._destroyed = false;
 
     // Throttle settings (milliseconds)
@@ -80,6 +81,51 @@ export class CommentaryEngine {
         currentState,
         true // synthetic
       );
+
+      // === RETROACTIVE COMMENTARY ===
+      // On first load, generate commentary for recent breakout events
+      // so the feed isn't empty except for BATTLE_START
+      const allEvents = currentState.events || [];
+
+      // Mark ALL existing events as processed (prevent duplicates on subsequent updates)
+      allEvents.forEach(evt => {
+        if (evt.id) this.processedEventIds.add(evt.id);
+      });
+
+      // Filter to commentable breakout events (exclude swap, redzone)
+      const breakoutEvents = allEvents.filter(evt =>
+        evt.type !== 'swap' && evt.type !== 'redzone' && evt.id
+      );
+
+      // Take the last 3, stagger at 1.5s + (index * 2s)
+      const recentBreakouts = breakoutEvents.slice(-3);
+
+      console.log(`[ClashCast] Retroactive: generating commentary for ${recentBreakouts.length} recent events`);
+
+      recentBreakouts.forEach((evt, index) => {
+        const delay = 1500 + (index * 2000);
+        const timeoutId = setTimeout(() => {
+          if (this._destroyed) return;
+          const classifiedType = this._classifyBreakoutEvent(evt);
+          this._triggerCommentary(
+            evt.id,
+            {
+              eventId: evt.id,
+              type: classifiedType,
+              asset: evt.symbol,
+              player: evt.player,
+              playerName: evt.player === 'creator' ? currentState.creatorName : currentState.opponentName,
+              opponentName: evt.player === 'creator' ? currentState.opponentName : currentState.creatorName,
+              pointsAwarded: evt.points || 15,
+              fromFirebase: true,
+            },
+            currentState,
+            false // NOT synthetic — attaches to real event cards
+          );
+        }, delay);
+        this._retroactiveTimers.push(timeoutId);
+      });
+
       return;
     }
 
@@ -426,6 +472,8 @@ export class CommentaryEngine {
 
   destroy() {
     this._destroyed = true;
+    this._retroactiveTimers.forEach(id => clearTimeout(id));
+    this._retroactiveTimers = [];
     this.commentaryMap.clear();
     this.commentaryLog = [];
     this.pendingCommentary.clear();

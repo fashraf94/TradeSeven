@@ -1,13 +1,13 @@
-// EventFeed - Card-Based Live Event Stream
-// ESPN-quality broadcast feed with tiered visual intensity
-// Features: Card anatomy (header/body/commentary), tier-specific animations, ClashCast lower thirds
+// EventFeed V2 — Compact Card-Based Live Event Stream
+// Two-row layout with edge-lighting, tier-specific animations, inline commentary
+// ClashCast commentary appears as an indented italic row beneath the action row
 
 import React, { useMemo, useEffect } from 'react';
 import PropTypes from 'prop-types';
 import { motion, AnimatePresence } from 'framer-motion';
 import { HOLO_COLORS } from '../../constants/holoTheme';
 
-// Event type configuration (kept for export compatibility)
+// Event type configuration (kept for export compatibility — uses HOLO_COLORS)
 const EVENT_CONFIG = {
   bagger: {
     icon: '\u{1F4A3}',
@@ -96,441 +96,356 @@ const EVENT_CONFIG = {
   },
 };
 
-// ClashCast commentary accent colors by event type
-const COMMENTARY_COLORS = {
-  bagger: '#00d9ff',
-  doubleBagger: '#00d9ff',
-  tenBagger: '#00d9ff',
-  bust: '#ff3366',
-  crash: '#ff3366',
-  meltdown: '#ff3366',
-  BREAKOUT: '#00d9ff',
-  RALLY: '#00d9ff',
-  MOONSHOT: '#00d9ff',
-  BUST: '#ff3366',
-  CRASH: '#ff3366',
-  MELTDOWN: '#ff3366',
-  LEAD_CHANGE: '#f59e0b',
-  SESSION_TRANSITION: '#a78bfa',
-  COMEBACK: '#00ff88',
-  SUBSTITUTION: '#94a3b8',
-  BATTLE_START: '#00d9ff',
-  BATTLE_END: '#f59e0b',
-  swap: '#94a3b8',
+// ── V2 Color Tokens (self-contained, decoupled from holoTheme for rendering) ──
+const COLORS = {
+  bgDeep: '#0a0e1a',
+  bgCard: 'rgba(20, 26, 38, 0.6)',
+  cardBorder: 'rgba(255, 255, 255, 0.04)',
+  cyan: '#00d9ff',
+  green: '#00ff88',
+  red: '#ff3366',
+  crimsonBright: '#ff1a4a',
+  amber: '#f59e0b',
+  gold: '#ffd700',
+  purple: '#a78bfa',
+  textMain: '#e2e8f0',
+  textMuted: '#64748b',
+  redLive: '#ef4444',
 };
 
-// === EVENT TIER CONFIG — Visual intensity scaling ===
-const EVENT_TIER_CONFIG = {
-  // === POSITIVE EVENTS ===
-  bagger: {
-    tier: 'standard',
-    label: 'BaggerBomb',
-    eventColor: '#00d9ff',
-    pointsColor: '#00ff88',
-    border: '3px solid rgba(0, 217, 255, 0.4)',
-    boxShadow: 'none',
-    backgroundGradient: 'none',
-    bodyGradient: 'none',
-    shake: false,
-    commentaryDelay: 0.3,
-    entryAnimation: { y: -20 },
-    pointsSize: '18px',
-    pointsGlow: 'none',
-    stockSize: '16px',
-  },
-  doubleBagger: {
-    tier: 'big',
-    label: 'Double Bagger',
-    eventColor: '#00d9ff',
-    pointsColor: '#00ff88',
-    border: '1px solid rgba(0, 217, 255, 0.5)',
-    boxShadow: '0 0 10px rgba(0, 217, 255, 0.2)',
-    backgroundGradient: 'none',
-    bodyGradient: 'radial-gradient(circle at top right, rgba(0, 217, 255, 0.1), transparent 70%)',
-    shake: false,
-    commentaryDelay: 0.4,
-    entryAnimation: { y: -25 },
-    pointsSize: '20px',
-    pointsGlow: '0 0 8px rgba(0, 255, 136, 0.4)',
-    stockSize: '18px',
-  },
-  tenBagger: {
-    tier: 'explosive',
-    label: 'TenBagger!',
-    eventColor: '#ffd700',
-    pointsColor: '#00ff88',
-    border: '2px solid #ffd700',
-    boxShadow: '0 0 15px rgba(255, 215, 0, 0.3)',
-    backgroundGradient: 'rgba(255, 215, 0, 0.03)',
-    bodyGradient: 'radial-gradient(circle at top right, rgba(255, 215, 0, 0.15), transparent 70%)',
-    shake: true,
-    commentaryDelay: 0.8,
-    entryAnimation: { y: -30 },
-    pointsSize: '22px',
-    pointsGlow: '0 0 10px rgba(0, 255, 136, 0.5)',
-    stockSize: '20px',
-    viewChartGold: true,
-  },
-
-  // === NEGATIVE EVENTS ===
-  bust: {
-    tier: 'standard',
-    label: 'Bust',
-    eventColor: '#ff3366',
-    pointsColor: '#ff3366',
-    border: '3px solid rgba(255, 51, 102, 0.4)',
-    boxShadow: 'none',
-    backgroundGradient: 'none',
-    bodyGradient: 'none',
-    shake: false,
-    commentaryDelay: 0.3,
-    entryAnimation: { y: -20 },
-    pointsSize: '18px',
-    pointsGlow: 'none',
-    stockSize: '16px',
-    isNegative: true,
-  },
-  crash: {
-    tier: 'big',
-    label: 'Crash!',
-    eventColor: '#ff3366',
-    pointsColor: '#ff3366',
-    border: '1px solid rgba(255, 51, 102, 0.5)',
-    boxShadow: '0 0 10px rgba(255, 51, 102, 0.2)',
-    backgroundGradient: 'none',
-    bodyGradient: 'radial-gradient(circle at top right, rgba(255, 51, 102, 0.1), transparent 70%)',
-    shake: false,
-    commentaryDelay: 0.4,
-    entryAnimation: { y: -25 },
-    pointsSize: '20px',
-    pointsGlow: '0 0 8px rgba(255, 51, 102, 0.4)',
-    stockSize: '18px',
-    isNegative: true,
-  },
-  meltdown: {
-    tier: 'explosive',
-    label: 'MELTDOWN',
-    eventColor: '#ff3366',
-    pointsColor: '#ff3366',
-    border: '2px solid #ff3366',
-    boxShadow: '0 0 15px rgba(255, 51, 102, 0.3)',
-    backgroundGradient: 'rgba(255, 51, 102, 0.03)',
-    bodyGradient: 'radial-gradient(circle at top right, rgba(255, 51, 102, 0.15), transparent 70%)',
-    shake: true,
-    commentaryDelay: 0.8,
-    entryAnimation: { y: -30 },
-    pointsSize: '22px',
-    pointsGlow: '0 0 10px rgba(255, 51, 102, 0.5)',
-    stockSize: '20px',
-    isNegative: true,
-  },
-};
-
-// Lookup helper — handles various event type string formats + legacy types
-const getEventTierConfig = (eventType) => {
-  if (!eventType) return EVENT_TIER_CONFIG.bagger;
+// ── Tier system — returns visual config for each event tier ──
+const getEventTier = (eventType) => {
+  if (!eventType) return TIERS.BAGGERBOMB;
   const type = eventType.toLowerCase().replace(/[_\s-]/g, '');
-  if (type.includes('tenbagger') || type.includes('moonshot')) return EVENT_TIER_CONFIG.tenBagger;
-  if (type.includes('doublebagger') || type.includes('rally')) return EVENT_TIER_CONFIG.doubleBagger;
-  if (type.includes('bagger') || type.includes('breakout')) return EVENT_TIER_CONFIG.bagger;
-  if (type.includes('meltdown')) return EVENT_TIER_CONFIG.meltdown;
-  if (type.includes('crash')) return EVENT_TIER_CONFIG.crash;
-  if (type.includes('bust')) return EVENT_TIER_CONFIG.bust;
-  return EVENT_TIER_CONFIG.bagger;
+  if (type.includes('tenbagger') || type.includes('moonshot')) return TIERS.TENBAGGER;
+  if (type.includes('doublebagger') || type.includes('rally')) return TIERS.DOUBLE_BAGGER;
+  if (type.includes('bagger') || type.includes('breakout')) return TIERS.BAGGERBOMB;
+  if (type.includes('meltdown')) return TIERS.MELTDOWN;
+  if (type.includes('crash')) return TIERS.CRASH;
+  if (type.includes('bust')) return TIERS.BUST;
+  return TIERS.BAGGERBOMB;
 };
 
-// Time threshold for "NEW" badge (60 seconds)
-const NEW_THRESHOLD_MS = 60000;
-
-/**
- * Format timestamp to readable time
- */
-const formatTime = (timestamp) => {
-  if (!timestamp) return '--:--';
-  const date = new Date(timestamp);
-  return date.toLocaleTimeString('en-US', {
-    hour: 'numeric',
-    minute: '2-digit',
-  });
-};
-
-/**
- * Check if event is recent (within NEW_THRESHOLD_MS)
- */
-const isRecent = (timestamp) => {
-  if (!timestamp) return false;
-  const eventTime = new Date(timestamp).getTime();
-  return Date.now() - eventTime < NEW_THRESHOLD_MS;
-};
-
-// Get entry animation props based on tier and negative status
-const getEntryAnimationProps = (tierConfig) => {
-  const isNeg = tierConfig.isNegative;
-
-  if (tierConfig.tier === 'explosive') {
-    return {
-      initial: { opacity: 0, y: tierConfig.entryAnimation.y },
-      animate: {
-        opacity: 1,
-        y: 0,
-        ...(tierConfig.shake ? { x: [0, -2, 2, -2, 2, 0] } : {}),
-      },
-      transition: isNeg
-        ? { duration: 0.3, type: 'tween', ease: [0.22, 1.2, 0.36, 1], x: { duration: 0.3, delay: 0.1 } }
-        : { duration: 0.5, type: 'spring', bounce: 0.4, x: { duration: 0.3, delay: 0.1 } },
-    };
-  }
-
-  if (tierConfig.tier === 'big') {
-    return {
-      initial: { opacity: 0, y: tierConfig.entryAnimation.y },
+const TIERS = {
+  BAGGERBOMB: {
+    key: 'BAGGERBOMB',
+    label: 'BAGGER',
+    labelColor: COLORS.cyan,
+    pointsColor: COLORS.green,
+    borderStyle: { borderLeft: `3px solid ${COLORS.cyan}` },
+    bgGradient: 'none',
+    isPill: false,
+    pillBg: null,
+    pillTextColor: null,
+    pointsShadow: null,
+    pointsSize: null,
+    chartButtonColor: COLORS.cyan,
+    commentaryColor: null,
+    strikethrough: false,
+    shake: null,
+    entryAnimation: {
+      initial: { opacity: 0, y: -15 },
       animate: { opacity: 1, y: 0 },
-      transition: isNeg
-        ? { duration: 0.3, type: 'tween', ease: [0.22, 1.2, 0.36, 1] }
-        : { duration: 0.45, type: 'spring', bounce: 0.35 },
-    };
-  }
-
-  // Standard tier
-  return {
-    initial: { opacity: 0, y: tierConfig.entryAnimation.y },
-    animate: { opacity: 1, y: 0 },
-    transition: isNeg
-      ? { duration: 0.3, type: 'tween', ease: [0.22, 1.2, 0.36, 1] }
-      : { duration: 0.4, type: 'spring', bounce: 0.3 },
-  };
+      transition: { duration: 0.4, type: 'spring', bounce: 0.3 },
+    },
+  },
+  DOUBLE_BAGGER: {
+    key: 'DOUBLE_BAGGER',
+    label: 'DOUBLE BAGGER',
+    labelColor: COLORS.cyan,
+    pointsColor: COLORS.green,
+    borderStyle: { borderLeft: `3px solid ${COLORS.cyan}` },
+    bgGradient: 'linear-gradient(90deg, rgba(0, 217, 255, 0.1), transparent 60%)',
+    isPill: false,
+    pillBg: null,
+    pillTextColor: null,
+    pointsShadow: null,
+    pointsSize: null,
+    chartButtonColor: COLORS.cyan,
+    commentaryColor: null,
+    strikethrough: false,
+    shake: null,
+    entryAnimation: {
+      initial: { opacity: 0, y: -15 },
+      animate: { opacity: 1, y: 0 },
+      transition: { duration: 0.45, type: 'spring', bounce: 0.35 },
+    },
+  },
+  TENBAGGER: {
+    key: 'TENBAGGER',
+    label: 'TENBAGGER',
+    labelColor: '#000',
+    pointsColor: COLORS.gold,
+    borderStyle: { borderLeft: `3px solid ${COLORS.gold}` },
+    bgGradient: 'linear-gradient(90deg, rgba(255, 215, 0, 0.12), transparent 60%)',
+    isPill: true,
+    pillBg: COLORS.gold,
+    pillTextColor: '#000',
+    pointsShadow: `0 0 10px rgba(255, 215, 0, 0.5)`,
+    pointsSize: null,
+    chartButtonColor: COLORS.gold,
+    commentaryColor: null,
+    strikethrough: false,
+    shake: null,
+    entryAnimation: {
+      initial: { opacity: 0, y: -15 },
+      animate: { opacity: 1, y: 0 },
+      transition: { duration: 0.5, type: 'spring', bounce: 0.4 },
+    },
+  },
+  BUST: {
+    key: 'BUST',
+    label: 'BUST',
+    labelColor: COLORS.red,
+    pointsColor: COLORS.red,
+    borderStyle: { borderLeft: `2px solid ${COLORS.red}` },
+    bgGradient: 'linear-gradient(90deg, rgba(255, 51, 102, 0.05), transparent 60%)',
+    isPill: false,
+    pillBg: null,
+    pillTextColor: null,
+    pointsShadow: null,
+    pointsSize: null,
+    chartButtonColor: COLORS.cyan,
+    commentaryColor: null,
+    strikethrough: false,
+    shake: null,
+    entryAnimation: {
+      initial: { opacity: 0, x: -10 },
+      animate: { opacity: 1, x: 0 },
+      transition: { duration: 0.3, type: 'tween', ease: [0.22, 1.2, 0.36, 1] },
+    },
+  },
+  CRASH: {
+    key: 'CRASH',
+    label: 'CRASH',
+    labelColor: '#fff',
+    pointsColor: COLORS.crimsonBright,
+    borderStyle: { borderLeft: `3px solid ${COLORS.crimsonBright}` },
+    bgGradient: 'linear-gradient(90deg, rgba(255, 26, 74, 0.1), transparent 60%)',
+    isPill: true,
+    pillBg: COLORS.crimsonBright,
+    pillTextColor: '#fff',
+    pointsShadow: null,
+    pointsSize: null,
+    chartButtonColor: COLORS.cyan,
+    commentaryColor: null,
+    strikethrough: false,
+    shake: null,
+    entryAnimation: {
+      initial: { opacity: 0, x: -10 },
+      animate: { opacity: 1, x: 0 },
+      transition: { duration: 0.3, type: 'tween', ease: [0.22, 1.2, 0.36, 1] },
+    },
+  },
+  MELTDOWN: {
+    key: 'MELTDOWN',
+    label: 'MELTDOWN',
+    labelColor: '#fff',
+    pointsColor: COLORS.crimsonBright,
+    borderStyle: { borderRight: `4px solid ${COLORS.crimsonBright}` },
+    bgGradient: 'linear-gradient(270deg, rgba(255, 26, 74, 0.12), transparent 60%)',
+    isPill: true,
+    pillBg: COLORS.crimsonBright,
+    pillTextColor: '#fff',
+    pointsShadow: `0 0 10px rgba(255, 26, 74, 0.5)`,
+    pointsSize: '18px',
+    chartButtonColor: COLORS.cyan,
+    commentaryColor: '#ffb3c1',
+    strikethrough: true,
+    shake: [0, -5, 5, -4, 4, -2, 2, 0],
+    entryAnimation: {
+      initial: { opacity: 0, y: -15 },
+      animate: { opacity: 1, y: 0 },
+      transition: { duration: 0.3, type: 'tween', ease: [0.22, 1.2, 0.36, 1] },
+    },
+  },
 };
 
-/**
- * Commentary Lower Third — shared between breakout cards and special events
- */
-function CommentaryLowerThird({ commentary, commentaryLoading, delay = 0.3 }) {
-  if (!commentary && !commentaryLoading) return null;
+// Avatar colors — deterministic color from username
+const AVATAR_COLORS = ['#3b82f6', '#8b5cf6', '#06b6d4', '#10b981', '#f59e0b', '#ef4444', '#ec4899'];
+const getAvatarColor = (name) => {
+  if (!name) return AVATAR_COLORS[0];
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
+  return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
+};
 
-  return (
-    <motion.div
-      style={{
-        backgroundColor: '#050812',
-        borderTop: '1px solid rgba(255, 255, 255, 0.05)',
-        overflow: 'hidden',
-      }}
-      initial={{ height: 0, opacity: 0 }}
-      animate={{ height: 'auto', opacity: 1 }}
-      transition={{ delay, duration: 0.4, ease: 'easeOut' }}
-    >
-      <div style={{ paddingTop: '12px', paddingLeft: '16px', paddingRight: '16px' }}>
-        <div style={{
-          color: '#64748b',
-          fontSize: '10px',
-          fontWeight: 800,
-          letterSpacing: '1.5px',
-          textTransform: 'uppercase',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '6px',
-          marginBottom: '6px',
-        }}>
-          <span>{'\u{1F399}\uFE0F'}</span> ClashCast Live
-        </div>
-        {commentaryLoading ? (
-          <motion.p
-            animate={{ opacity: [0.3, 1, 0.3] }}
-            transition={{ duration: 1.2, repeat: Infinity }}
-            style={{
-              color: '#94a3b8',
-              fontSize: '14px',
-              fontStyle: 'italic',
-              lineHeight: '1.5',
-              margin: '0 0 16px 0',
-            }}
-          >
-            {'\u00B7\u00B7\u00B7'}
-          </motion.p>
-        ) : (
-          <motion.p
-            style={{
-              color: '#94a3b8',
-              fontSize: '14px',
-              fontStyle: 'italic',
-              lineHeight: '1.5',
-              margin: '0 0 16px 0',
-            }}
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: delay + 0.3, duration: 0.3 }}
-          >
-            &ldquo;{commentary}&rdquo;
-          </motion.p>
-        )}
-      </div>
-    </motion.div>
-  );
-}
+// ── Sub-Components ──────────────────────────────────────────
 
 /**
- * Breakout Event Card — BaggerBomb, DoubleBagger, TenBagger, Bust, Crash, Meltdown
- * 3-section anatomy: Header → Body → Commentary Lower Third
+ * EventRow — compact 2-row breakout event card
+ * Row 1: [Avatar] Name · SYMBOL [Badge] ... [ChartIcon] +Points
+ * Row 2: (optional) indented mic + commentary
  */
-function BreakoutEventCard({ event, tierConfig, onRedZoneTap, commentary, commentaryLoading }) {
-  const animProps = getEntryAnimationProps(tierConfig);
-  const isPositive = !tierConfig.isNegative;
+function EventRow({ event, tier, onRedZoneTap, commentary, commentaryLoading }) {
+  const playerName = event.player || event.username || 'Player';
   const pointsValue = event.points || (EVENT_CONFIG[event.type] || EVENT_CONFIG.bagger).points;
+  const isPositive = pointsValue > 0;
   const pointsDisplay = `${isPositive ? '+' : ''}${pointsValue}`;
 
-  const viewChartColor = tierConfig.viewChartGold ? '#ffd700' : '#00d9ff';
-  const viewChartBorder = tierConfig.viewChartGold
-    ? '1px solid rgba(255, 215, 0, 0.3)'
-    : '1px solid rgba(0, 217, 255, 0.3)';
-  const viewChartBg = tierConfig.viewChartGold
-    ? 'rgba(255, 215, 0, 0.1)'
-    : 'rgba(0, 217, 255, 0.1)';
+  const shakeAnimate = tier.shake
+    ? { ...tier.entryAnimation.animate, x: tier.shake }
+    : tier.entryAnimation.animate;
+
+  const shakeTransition = tier.shake
+    ? { ...tier.entryAnimation.transition, x: { duration: 0.3, delay: 0.1 } }
+    : tier.entryAnimation.transition;
 
   return (
     <motion.div
       style={{
-        backgroundColor: tierConfig.backgroundGradient !== 'none'
-          ? tierConfig.backgroundGradient
-          : 'rgba(15, 23, 42, 0.8)',
-        border: tierConfig.border,
-        boxShadow: tierConfig.boxShadow !== 'none' ? tierConfig.boxShadow : undefined,
-        borderRadius: '12px',
-        margin: '0 0 12px 0',
+        backgroundColor: COLORS.bgCard,
+        border: `1px solid ${COLORS.cardBorder}`,
+        borderRadius: '8px',
+        padding: '8px 12px',
+        margin: '0 0 6px 0',
         overflow: 'hidden',
-        display: 'flex',
-        flexDirection: 'column',
         fontFamily: 'system-ui, sans-serif',
+        ...(tier.bgGradient !== 'none' ? { background: `${tier.bgGradient}, ${COLORS.bgCard}` } : {}),
+        ...tier.borderStyle,
       }}
-      initial={animProps.initial}
-      animate={animProps.animate}
-      exit={{ opacity: 0, y: 20, transition: { duration: 0.2 } }}
-      transition={animProps.transition}
+      initial={tier.entryAnimation.initial}
+      animate={shakeAnimate}
+      exit={{ opacity: 0, y: 10, transition: { duration: 0.15 } }}
+      transition={shakeTransition}
     >
-      {/* Section 1: Header Row */}
+      {/* Action Row */}
       <div style={{
         display: 'flex',
-        justifyContent: 'space-between',
         alignItems: 'center',
-        padding: '12px 16px',
-        borderBottom: `1px solid ${tierConfig.eventColor}1a`,
+        gap: '8px',
+        minHeight: '28px',
       }}>
+        {/* Avatar */}
         <div style={{
+          width: '20px',
+          height: '20px',
+          borderRadius: '50%',
+          backgroundColor: getAvatarColor(playerName),
           display: 'flex',
           alignItems: 'center',
-          gap: '8px',
-          color: '#e2e8f0',
-          fontSize: '14px',
-          fontWeight: 600,
+          justifyContent: 'center',
+          fontSize: '10px',
+          fontWeight: 700,
+          color: '#fff',
+          flexShrink: 0,
         }}>
-          <span style={{ color: '#64748b', fontSize: '12px', fontWeight: 'normal' }}>
-            {formatTime(event.timestamp)}
-          </span>
-          <span>{event.player || event.username || 'Player'}</span>
+          {(playerName[0] || '?').toUpperCase()}
         </div>
-        <div style={{
-          color: tierConfig.pointsColor,
-          fontSize: tierConfig.pointsSize,
-          fontWeight: 900,
-          textShadow: tierConfig.pointsGlow !== 'none' ? tierConfig.pointsGlow : undefined,
-        }}>
-          {pointsDisplay}
-        </div>
-      </div>
 
-      {/* Section 2: Body Row */}
-      <div style={{
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        padding: '16px',
-        background: tierConfig.bodyGradient !== 'none' ? tierConfig.bodyGradient : undefined,
-      }}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+        {/* Player name */}
+        <span style={{ color: COLORS.textMain, fontSize: '13px', fontWeight: 600, flexShrink: 0 }}>
+          {playerName}
+        </span>
+
+        {/* Dot separator */}
+        <span style={{ color: COLORS.textMuted, fontSize: '10px', flexShrink: 0 }}>{'\u00B7'}</span>
+
+        {/* Stock symbol */}
+        <span style={{
+          color: COLORS.textMain,
+          fontSize: '13px',
+          fontWeight: 700,
+          flexShrink: 0,
+          ...(tier.strikethrough ? { textDecoration: 'line-through', textDecorationColor: COLORS.crimsonBright } : {}),
+        }}>
+          {event.symbol}
+        </span>
+
+        {/* Event badge */}
+        {tier.isPill ? (
           <span style={{
-            color: '#ffffff',
-            fontSize: tierConfig.stockSize,
+            backgroundColor: tier.pillBg,
+            color: tier.pillTextColor,
+            fontSize: '10px',
             fontWeight: 800,
-            letterSpacing: '0.5px',
-          }}>
-            {event.symbol}
-          </span>
-          <span style={{
-            color: tierConfig.eventColor,
-            fontSize: '14px',
-            fontWeight: 800,
+            padding: '2px 8px',
+            borderRadius: '10px',
             textTransform: 'uppercase',
-            letterSpacing: '1px',
+            letterSpacing: '0.5px',
+            flexShrink: 0,
           }}>
-            {tierConfig.label}
+            {tier.label}
           </span>
-        </div>
+        ) : (
+          <span style={{
+            color: tier.labelColor,
+            fontSize: '11px',
+            fontWeight: 700,
+            textTransform: 'uppercase',
+            letterSpacing: '0.5px',
+            flexShrink: 0,
+          }}>
+            {tier.label}
+          </span>
+        )}
+
+        {/* Spacer */}
+        <div style={{ flex: 1 }} />
+
+        {/* Chart button — invisible 44x44 tap target */}
         {onRedZoneTap && (
           <button
             onClick={(e) => { e.stopPropagation(); onRedZoneTap(event); }}
             style={{
-              backgroundColor: viewChartBg,
-              color: viewChartColor,
-              border: viewChartBorder,
-              borderRadius: '20px',
-              padding: '10px 16px',
-              fontSize: '14px',
-              fontWeight: 700,
+              background: 'transparent',
+              border: 'none',
               cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
               minHeight: '44px',
-              minWidth: '100px',
+              minWidth: '44px',
+              padding: 0,
+              margin: '-10px 0',
+              flexShrink: 0,
             }}
           >
-            View Chart
+            <span style={{ color: tier.chartButtonColor, fontSize: '16px', opacity: 0.7 }}>
+              {'\u{1F4C8}'}
+            </span>
           </button>
         )}
+
+        {/* Points */}
+        <span style={{
+          color: tier.pointsColor,
+          fontSize: tier.pointsSize || '14px',
+          fontWeight: 900,
+          flexShrink: 0,
+          ...(tier.pointsShadow ? { textShadow: tier.pointsShadow } : {}),
+        }}>
+          {pointsDisplay}
+        </span>
       </div>
 
-      {/* Section 3: Commentary Lower Third */}
-      <CommentaryLowerThird
-        commentary={commentary}
-        commentaryLoading={commentaryLoading}
-        delay={tierConfig.commentaryDelay}
-      />
-    </motion.div>
-  );
-}
-
-/**
- * Lead Change Banner — full-width amber banner breaking card flow
- */
-function LeadChangeBanner({ event, commentary, commentaryLoading }) {
-  const playerName = event.player || event.username || 'Player';
-
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: -10 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: 10 }}
-      transition={{ duration: 0.4, ease: 'easeOut' }}
-      style={{
-        backgroundColor: 'rgba(245, 158, 11, 0.12)',
-        borderTop: '1px solid rgba(245, 158, 11, 0.4)',
-        borderBottom: '1px solid rgba(245, 158, 11, 0.4)',
-        padding: '12px 16px',
-        textAlign: 'center',
-        margin: '8px 0',
-      }}
-    >
-      <div style={{
-        color: '#f59e0b',
-        fontSize: '14px',
-        fontWeight: 800,
-        textTransform: 'uppercase',
-        letterSpacing: '1px',
-      }}>
-        {'\u2694\uFE0F'} LEAD CHANGE &mdash; {playerName} TAKES THE LEAD
-      </div>
+      {/* Commentary Row (conditional) */}
       {(commentary || commentaryLoading) && (
-        <div style={{ marginTop: '10px' }}>
-          <CommentaryLowerThird
-            commentary={commentary}
-            commentaryLoading={commentaryLoading}
-            delay={0.4}
-          />
+        <div style={{ paddingLeft: '32px', paddingTop: '4px' }}>
+          {commentaryLoading ? (
+            <motion.span
+              animate={{ opacity: [0.3, 1, 0.3] }}
+              transition={{ duration: 1.2, repeat: Infinity }}
+              style={{ fontSize: '12px', color: COLORS.textMuted, fontStyle: 'italic' }}
+            >
+              {'\u{1F399}\uFE0F'} {'\u00B7\u00B7\u00B7'}
+            </motion.span>
+          ) : (
+            <motion.p
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ delay: 0.3, duration: 0.3 }}
+              style={{
+                fontSize: '12px',
+                fontStyle: 'italic',
+                color: tier.commentaryColor || COLORS.textMuted,
+                lineHeight: '1.4',
+                margin: 0,
+              }}
+            >
+              {'\u{1F399}\uFE0F'} {commentary}
+            </motion.p>
+          )}
         </div>
       )}
     </motion.div>
@@ -538,9 +453,58 @@ function LeadChangeBanner({ event, commentary, commentaryLoading }) {
 }
 
 /**
- * Session Transition Pill — center-aligned pill between cards
+ * LeadChangeDivider — horizontal line with centered text, NOT a card
  */
-function SessionTransitionPill({ event, commentary, commentaryLoading }) {
+function LeadChangeDivider({ event }) {
+  const playerName = event.player || event.username || 'Player';
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.4, ease: 'easeOut' }}
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: '10px',
+        margin: '8px 0',
+        padding: '0 4px',
+      }}
+    >
+      {/* Left gradient line */}
+      <div style={{
+        flex: 1,
+        height: '1px',
+        background: `linear-gradient(90deg, transparent, ${COLORS.amber}60)`,
+      }} />
+
+      {/* Center text */}
+      <span style={{
+        color: COLORS.amber,
+        fontSize: '11px',
+        fontWeight: 700,
+        textTransform: 'uppercase',
+        letterSpacing: '1px',
+        whiteSpace: 'nowrap',
+      }}>
+        {'\u2726'} {playerName.toUpperCase()} TAKES THE LEAD {'\u2726'}
+      </span>
+
+      {/* Right gradient line */}
+      <div style={{
+        flex: 1,
+        height: '1px',
+        background: `linear-gradient(270deg, transparent, ${COLORS.amber}60)`,
+      }} />
+    </motion.div>
+  );
+}
+
+/**
+ * SessionTransitionPill — centered pill between cards (no commentary)
+ */
+function SessionTransitionPill({ event }) {
   const label = event.label || event.commentary || 'Session Change';
 
   return (
@@ -551,9 +515,8 @@ function SessionTransitionPill({ event, commentary, commentaryLoading }) {
       transition={{ duration: 0.3, ease: 'easeOut' }}
       style={{
         display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        padding: '8px 0',
+        justifyContent: 'center',
+        padding: '6px 0',
         margin: '4px 0',
       }}
     >
@@ -561,8 +524,8 @@ function SessionTransitionPill({ event, commentary, commentaryLoading }) {
         backgroundColor: 'rgba(167, 139, 250, 0.15)',
         border: '1px solid rgba(167, 139, 250, 0.3)',
         borderRadius: '20px',
-        padding: '6px 16px',
-        color: '#a78bfa',
+        padding: '5px 14px',
+        color: COLORS.purple,
         fontSize: '11px',
         fontWeight: 700,
         textTransform: 'uppercase',
@@ -570,32 +533,25 @@ function SessionTransitionPill({ event, commentary, commentaryLoading }) {
       }}>
         {label}
       </div>
-      {(commentary || commentaryLoading) && (
-        <div style={{ marginTop: '8px', width: '100%' }}>
-          <CommentaryLowerThird
-            commentary={commentary}
-            commentaryLoading={commentaryLoading}
-            delay={0.3}
-          />
-        </div>
-      )}
     </motion.div>
   );
 }
 
 /**
- * Battle Start/End Banner — full-width gradient banner
+ * BattleBanner — gradient banner for BATTLE_START / BATTLE_END
  */
 function BattleBanner({ event, commentary, commentaryLoading }) {
   const isBattleEnd = event.type === 'BATTLE_END';
   const bannerText = isBattleEnd ? '\u{1F3C6} FINAL BELL' : '\u{1F514} BATTLE IS LIVE';
-  const textColor = isBattleEnd ? '#ffd700' : '#00d9ff';
+  const textColor = isBattleEnd ? COLORS.gold : COLORS.cyan;
   const borderColor = isBattleEnd
-    ? '1px solid rgba(255, 215, 0, 0.3)'
-    : '1px solid rgba(0, 217, 255, 0.3)';
+    ? `1px solid rgba(255, 215, 0, 0.3)`
+    : `1px solid rgba(0, 217, 255, 0.3)`;
   const bgGradient = isBattleEnd
     ? 'linear-gradient(135deg, rgba(255, 215, 0, 0.15), rgba(139, 92, 246, 0.15))'
     : 'linear-gradient(135deg, rgba(0, 217, 255, 0.15), rgba(139, 92, 246, 0.15))';
+
+  const synthCommentary = event.commentary || commentary;
 
   return (
     <motion.div
@@ -606,37 +562,53 @@ function BattleBanner({ event, commentary, commentaryLoading }) {
       style={{
         background: bgGradient,
         border: borderColor,
-        borderRadius: '12px',
-        padding: '16px',
+        borderRadius: '8px',
+        padding: '12px 16px',
         textAlign: 'center',
-        margin: '0 0 12px 0',
+        margin: '0 0 6px 0',
         overflow: 'hidden',
       }}
     >
       <div style={{
         color: textColor,
-        fontSize: '16px',
+        fontSize: '14px',
         fontWeight: 800,
         textTransform: 'uppercase',
         letterSpacing: '1.5px',
       }}>
         {bannerText}
       </div>
-      {/* Battle events always render commentary */}
-      <CommentaryLowerThird
-        commentary={commentary || event.commentary}
-        commentaryLoading={commentaryLoading}
-        delay={0.5}
-      />
+      {(synthCommentary || commentaryLoading) && (
+        <div style={{ marginTop: '8px' }}>
+          {commentaryLoading ? (
+            <motion.p
+              animate={{ opacity: [0.3, 1, 0.3] }}
+              transition={{ duration: 1.2, repeat: Infinity }}
+              style={{ fontSize: '12px', color: COLORS.textMuted, fontStyle: 'italic', margin: 0 }}
+            >
+              {'\u00B7\u00B7\u00B7'}
+            </motion.p>
+          ) : (
+            <motion.p
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ delay: 0.5, duration: 0.3 }}
+              style={{ fontSize: '12px', color: COLORS.textMuted, fontStyle: 'italic', margin: 0, lineHeight: '1.4' }}
+            >
+              {'\u{1F399}\uFE0F'} {synthCommentary}
+            </motion.p>
+          )}
+        </div>
+      )}
     </motion.div>
   );
 }
 
 /**
- * Approaching Alert Card (Red Zone) — enhanced with amber sweep progress bar
+ * ApproachingAlertCard — compact red zone card with progress bar
  */
 function ApproachingAlertCard({ event, onRedZoneTap }) {
-  const rzColor = event.direction === 'negative' ? HOLO_COLORS.red : HOLO_COLORS.amber;
+  const rzColor = event.direction === 'negative' ? COLORS.red : COLORS.amber;
   const percentage = event.progress || 0;
 
   return (
@@ -646,88 +618,79 @@ function ApproachingAlertCard({ event, onRedZoneTap }) {
       exit={{ opacity: 0, y: 15 }}
       transition={{ duration: 0.35, type: 'spring', bounce: 0.25 }}
       style={{
-        backgroundColor: 'rgba(15, 23, 42, 0.6)',
-        border: '1px solid rgba(245, 158, 11, 0.3)',
-        borderRadius: '12px',
-        padding: '12px 16px',
-        margin: '0 0 12px 0',
+        backgroundColor: COLORS.bgCard,
+        border: `1px solid ${rzColor}40`,
+        borderLeft: `3px solid ${rzColor}`,
+        borderRadius: '8px',
+        padding: '8px 12px',
+        margin: '0 0 6px 0',
         overflow: 'hidden',
-        position: 'relative',
       }}
     >
       <div style={{
         display: 'flex',
         alignItems: 'center',
-        justifyContent: 'space-between',
-        gap: '12px',
+        gap: '8px',
+        marginBottom: '6px',
       }}>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            flexWrap: 'wrap',
-            gap: '4px',
-            marginBottom: '8px',
-          }}>
-            <span style={{ color: HOLO_COLORS.textPrimary, fontWeight: 600, fontSize: '13px' }}>
-              {event.player || 'Player'}
-            </span>
-            <span style={{ color: HOLO_COLORS.textMuted, fontSize: '13px' }}>{': '}</span>
-            <span style={{ color: HOLO_COLORS.textSecondary, fontWeight: 600, fontSize: '13px' }}>
-              {event.symbol}
-            </span>
-            <span style={{ color: rzColor, fontWeight: 600, fontSize: '12px' }}>
-              approaching {EVENT_CONFIG[event.targetThreshold]?.label || event.targetThreshold}!
-            </span>
-            <span style={{ fontSize: '11px', color: rzColor, fontWeight: 700, marginLeft: '4px' }}>
-              {percentage}%
-            </span>
-          </div>
-          {/* Amber sweep progress bar */}
-          <div style={{
-            width: '100%',
-            height: '4px',
-            borderRadius: '2px',
-            backgroundColor: `${rzColor}30`,
-            overflow: 'hidden',
-          }}>
-            <div style={{
-              height: '100%',
-              borderRadius: '2px',
-              background: `linear-gradient(90deg, transparent 0%, ${rzColor}cc 50%, transparent 100%)`,
-              backgroundSize: '200% 100%',
-              animation: 'amberSweep 2s ease-in-out infinite',
-              width: `${percentage}%`,
-            }} />
-          </div>
-        </div>
+        <span style={{ color: COLORS.textMain, fontWeight: 600, fontSize: '13px' }}>
+          {event.player || 'Player'}
+        </span>
+        <span style={{ color: COLORS.textMuted, fontSize: '10px' }}>{'\u00B7'}</span>
+        <span style={{ color: COLORS.textMain, fontWeight: 700, fontSize: '13px' }}>
+          {event.symbol}
+        </span>
+        <span style={{ color: rzColor, fontWeight: 600, fontSize: '12px' }}>
+          approaching {EVENT_CONFIG[event.targetThreshold]?.label || event.targetThreshold}!
+        </span>
+        <span style={{ fontSize: '11px', color: rzColor, fontWeight: 700 }}>
+          {percentage}%
+        </span>
+        <div style={{ flex: 1 }} />
         {onRedZoneTap && (
           <button
             onClick={(e) => { e.stopPropagation(); onRedZoneTap(event); }}
             style={{
-              backgroundColor: `${rzColor}15`,
-              color: rzColor,
-              border: `1px solid ${rzColor}40`,
-              borderRadius: '20px',
-              padding: '8px 14px',
-              fontSize: '12px',
-              fontWeight: 700,
+              background: 'transparent',
+              border: 'none',
               cursor: 'pointer',
-              whiteSpace: 'nowrap',
-              minHeight: '38px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              minHeight: '44px',
+              minWidth: '44px',
+              padding: 0,
+              margin: '-10px 0',
               flexShrink: 0,
             }}
           >
-            View Chart
+            <span style={{ color: rzColor, fontSize: '16px', opacity: 0.7 }}>{'\u{1F4C8}'}</span>
           </button>
         )}
+      </div>
+      {/* Progress bar */}
+      <div style={{
+        width: '100%',
+        height: '3px',
+        borderRadius: '2px',
+        backgroundColor: `${rzColor}30`,
+        overflow: 'hidden',
+      }}>
+        <div style={{
+          height: '100%',
+          borderRadius: '2px',
+          background: `linear-gradient(90deg, transparent 0%, ${rzColor}cc 50%, transparent 100%)`,
+          backgroundSize: '200% 100%',
+          animation: 'amberSweep 2s ease-in-out infinite',
+          width: `${percentage}%`,
+        }} />
       </div>
     </motion.div>
   );
 }
 
 /**
- * Swap Event Card — minimal card treatment
+ * SwapEventCard — minimal gray card, no chart button
  */
 function SwapEventCard({ event }) {
   return (
@@ -737,32 +700,28 @@ function SwapEventCard({ event }) {
       exit={{ opacity: 0, y: 10 }}
       transition={{ duration: 0.3, ease: 'easeOut' }}
       style={{
-        backgroundColor: 'rgba(15, 23, 42, 0.5)',
-        border: `1px solid ${HOLO_COLORS.borderSubtle}`,
-        borderRadius: '12px',
-        padding: '12px 16px',
-        margin: '0 0 12px 0',
+        backgroundColor: COLORS.bgCard,
+        border: `1px solid ${COLORS.cardBorder}`,
+        borderRadius: '8px',
+        padding: '8px 12px',
+        margin: '0 0 6px 0',
       }}
     >
       <div style={{
         display: 'flex',
         alignItems: 'center',
         gap: '8px',
-        flexWrap: 'wrap',
       }}>
-        <span style={{ fontSize: '16px' }}>{'\u{1F504}'}</span>
-        <span style={{ color: '#64748b', fontSize: '12px', fontWeight: 'normal' }}>
-          {formatTime(event.timestamp)}
-        </span>
-        <span style={{ color: HOLO_COLORS.textPrimary, fontWeight: 600, fontSize: '13px' }}>
+        <span style={{ fontSize: '14px' }}>{'\u{1F504}'}</span>
+        <span style={{ color: COLORS.textMain, fontWeight: 600, fontSize: '13px' }}>
           {event.player || 'Player'}
         </span>
-        <span style={{ color: HOLO_COLORS.textMuted, fontSize: '13px' }}>swapped</span>
-        <span style={{ color: HOLO_COLORS.red, fontWeight: 600, fontSize: '13px' }}>
+        <span style={{ color: COLORS.textMuted, fontSize: '13px' }}>swapped</span>
+        <span style={{ color: COLORS.red, fontWeight: 600, fontSize: '13px' }}>
           {event.removedSymbol}
         </span>
-        <span style={{ color: HOLO_COLORS.textMuted, fontSize: '13px' }}>{'\u2192'}</span>
-        <span style={{ color: HOLO_COLORS.green, fontWeight: 600, fontSize: '13px' }}>
+        <span style={{ color: COLORS.textMuted, fontSize: '13px' }}>{'\u2192'}</span>
+        <span style={{ color: COLORS.green, fontWeight: 600, fontSize: '13px' }}>
           {event.addedSymbol}
         </span>
       </div>
@@ -771,36 +730,70 @@ function SwapEventCard({ event }) {
 }
 
 /**
- * EventItem — routes events to the appropriate card/banner component
+ * SyntheticFallbackCard — for COMEBACK, SUBSTITUTION, and other synthetic events
+ */
+function SyntheticFallbackCard({ event, commentary, commentaryLoading }) {
+  const synthCommentary = event.commentary || commentary;
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: -8 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: 8 }}
+      transition={{ duration: 0.4, ease: 'easeOut' }}
+      style={{
+        backgroundColor: COLORS.bgCard,
+        border: `1px solid ${COLORS.cardBorder}`,
+        borderRadius: '8px',
+        padding: '8px 12px',
+        margin: '0 0 6px 0',
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+        <span style={{ fontSize: '14px', flexShrink: 0 }}>{'\u{1F399}\uFE0F'}</span>
+        {commentaryLoading && !synthCommentary ? (
+          <motion.span
+            animate={{ opacity: [0.3, 1, 0.3] }}
+            transition={{ duration: 1.2, repeat: Infinity }}
+            style={{ fontSize: '12px', color: COLORS.textMuted, fontStyle: 'italic' }}
+          >
+            {'\u00B7\u00B7\u00B7'}
+          </motion.span>
+        ) : (
+          <p style={{
+            fontSize: '12px',
+            color: COLORS.textMuted,
+            fontStyle: 'italic',
+            lineHeight: '1.4',
+            margin: 0,
+          }}>
+            {synthCommentary}
+          </p>
+        )}
+      </div>
+    </motion.div>
+  );
+}
+
+/**
+ * EventItem — routes events to the appropriate component
  */
 function EventItem({ event, onRedZoneTap, commentary = null, commentaryLoading = false }) {
   const isSynthetic = event.isSynthetic;
   const isRedZone = event.type === 'redzone';
   const isSwap = event.type === 'swap';
 
-  // Synthetic events: route to specific banner/pill components
+  // Synthetic events
   if (isSynthetic) {
     const synthCommentary = event.commentary || commentary;
     const synthType = event.type;
 
     if (synthType === 'LEAD_CHANGE') {
-      return (
-        <LeadChangeBanner
-          event={event}
-          commentary={synthCommentary}
-          commentaryLoading={commentaryLoading}
-        />
-      );
+      return <LeadChangeDivider event={event} />;
     }
 
     if (synthType === 'SESSION_TRANSITION') {
-      return (
-        <SessionTransitionPill
-          event={event}
-          commentary={synthCommentary}
-          commentaryLoading={commentaryLoading}
-        />
-      );
+      return <SessionTransitionPill event={event} />;
     }
 
     if (synthType === 'BATTLE_START' || synthType === 'BATTLE_END') {
@@ -813,67 +806,31 @@ function EventItem({ event, onRedZoneTap, commentary = null, commentaryLoading =
       );
     }
 
-    // Fallback for other synthetic types (COMEBACK, SUBSTITUTION, etc.)
     return (
-      <motion.div
-        initial={{ opacity: 0, y: -8 }}
-        animate={{ opacity: 1, y: 0 }}
-        exit={{ opacity: 0, y: 8 }}
-        transition={{ duration: 0.4, ease: 'easeOut' }}
-        style={{
-          backgroundColor: 'rgba(15, 23, 42, 0.5)',
-          border: `1px solid ${COMMENTARY_COLORS[synthType] || HOLO_COLORS.cyan}40`,
-          borderRadius: '12px',
-          padding: '12px 16px',
-          margin: '0 0 12px 0',
-        }}
-      >
-        <div style={{
-          display: 'flex',
-          alignItems: 'flex-start',
-          gap: '8px',
-        }}>
-          <span style={{ fontSize: '14px', flexShrink: 0 }}>{'\u{1F399}\uFE0F'}</span>
-          {!synthCommentary ? (
-            <motion.span
-              animate={{ opacity: [0.3, 1, 0.3] }}
-              transition={{ duration: 1.2, repeat: Infinity }}
-              style={{ fontSize: '13px', color: HOLO_COLORS.textMuted, fontStyle: 'italic' }}
-            >
-              {'\u00B7\u00B7\u00B7'}
-            </motion.span>
-          ) : (
-            <p style={{
-              fontSize: '13px',
-              color: HOLO_COLORS.textMuted,
-              fontStyle: 'italic',
-              lineHeight: '1.5',
-              margin: 0,
-            }}>
-              {synthCommentary}
-            </p>
-          )}
-        </div>
-      </motion.div>
+      <SyntheticFallbackCard
+        event={event}
+        commentary={synthCommentary}
+        commentaryLoading={commentaryLoading}
+      />
     );
   }
 
-  // Red Zone (approaching alerts)
+  // Red Zone
   if (isRedZone) {
     return <ApproachingAlertCard event={event} onRedZoneTap={onRedZoneTap} />;
   }
 
-  // Swap events
+  // Swap
   if (isSwap) {
     return <SwapEventCard event={event} />;
   }
 
-  // Breakout events — the main card-based rendering
-  const tierConfig = getEventTierConfig(event.type);
+  // Breakout events — main event row
+  const tier = getEventTier(event.type);
   return (
-    <BreakoutEventCard
+    <EventRow
       event={event}
-      tierConfig={tierConfig}
+      tier={tier}
       onRedZoneTap={onRedZoneTap}
       commentary={commentary}
       commentaryLoading={commentaryLoading}
@@ -897,7 +854,7 @@ EventItem.propTypes = {
 };
 
 /**
- * EventFeed - Card-based live event stream with ClashCast commentary
+ * EventFeed — compact card-based live event stream with ClashCast commentary
  */
 export default function EventFeed({
   events = [],
@@ -928,12 +885,11 @@ export default function EventFeed({
   // Merge real events with synthetic commentary events, sort by timestamp (newest first)
   const sortedEvents = useMemo(() => {
     const allEvents = [...events, ...syntheticEvents];
-    const sorted = allEvents
-      .sort((a, b) => {
-        const timeA = new Date(a.timestamp).getTime();
-        const timeB = new Date(b.timestamp).getTime();
-        return timeB - timeA;
-      });
+    const sorted = allEvents.sort((a, b) => {
+      const timeA = new Date(a.timestamp).getTime();
+      const timeB = new Date(b.timestamp).getTime();
+      return timeB - timeA;
+    });
 
     // Dedup redzone events: keep only the most recent per symbol+target+direction
     const seenRedZone = new Set();
@@ -946,80 +902,73 @@ export default function EventFeed({
       return true;
     });
 
-    return deduped
-      .slice(0, maxDisplay)
-      .map((event) => ({
-        ...event,
-        isNewEvent: isRecent(event.timestamp),
-      }));
+    return deduped.slice(0, maxDisplay);
   }, [events, syntheticEvents, maxDisplay]);
 
   return (
-    <div
-      style={{
-        margin: '0 16px',
-        backgroundColor: HOLO_COLORS.bgElevated,
-        borderRadius: '12px',
-        overflow: 'hidden',
-      }}
-    >
-      {/* Header */}
+    <div style={{
+      backgroundColor: COLORS.bgDeep,
+      border: `1px solid ${COLORS.cardBorder}`,
+      borderRadius: '12px',
+      overflow: 'hidden',
+      width: '100%',
+      maxWidth: '400px',
+    }}>
+      {/* Sticky Header */}
       <div style={{
+        position: 'sticky',
+        top: 0,
+        zIndex: 10,
+        backgroundColor: `${COLORS.bgDeep}f2`,
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
-        padding: '8px 16px',
+        padding: '8px 12px',
+        backdropFilter: 'blur(8px)',
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <span style={{ fontSize: '14px' }}>{'\u{1F525}'}</span>
-          <span style={{
-            fontSize: '13px',
-            fontWeight: 700,
-            color: '#94a3b8',
-            textTransform: 'uppercase',
-            letterSpacing: '1px',
-          }}>
-            Live Feed
-          </span>
-          {clashCastActive && (
-            <span style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '4px',
-              padding: '2px 8px',
-              borderRadius: '10px',
-              backgroundColor: 'rgba(239, 68, 68, 0.15)',
-              border: '1px solid rgba(239, 68, 68, 0.3)',
-            }}>
-              <motion.span
-                style={{
-                  width: '6px',
-                  height: '6px',
-                  borderRadius: '50%',
-                  backgroundColor: '#ef4444',
-                }}
-                animate={{ opacity: [1, 0.4, 1] }}
-                transition={{ duration: 1.5, repeat: Infinity }}
-              />
-              <span style={{ fontSize: '10px', color: '#ef4444', fontWeight: 700 }}>
-                {'\u{1F399}\uFE0F'} LIVE
-              </span>
-            </span>
-          )}
-        </div>
-        <span style={{ fontSize: '12px', color: '#64748b' }}>
-          {sortedEvents.length} event{sortedEvents.length !== 1 ? 's' : ''}
+        <span style={{
+          color: COLORS.textMain,
+          fontSize: '14px',
+          fontWeight: 700,
+        }}>
+          ClashCast
         </span>
+
+        {clashCastActive && (
+          <span style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '4px',
+            padding: '2px 8px',
+            borderRadius: '10px',
+            backgroundColor: 'rgba(239, 68, 68, 0.15)',
+            border: '1px solid rgba(239, 68, 68, 0.3)',
+          }}>
+            <motion.span
+              style={{
+                width: '6px',
+                height: '6px',
+                borderRadius: '50%',
+                backgroundColor: COLORS.redLive,
+              }}
+              animate={{ opacity: [1, 0.4, 1] }}
+              transition={{ duration: 1.5, repeat: Infinity }}
+            />
+            <span style={{ fontSize: '10px', color: COLORS.redLive, fontWeight: 700 }}>
+              LIVE
+            </span>
+          </span>
+        )}
       </div>
 
-      {/* Event List */}
-      <div
-        style={{
-          maxHeight: '400px',
-          overflowY: 'auto',
-          padding: '8px 12px',
-        }}
-      >
+      {/* Scroll Container with mask */}
+      <div style={{
+        maxHeight: '400px',
+        overflowY: 'auto',
+        padding: '8px',
+        WebkitMaskImage: 'linear-gradient(to bottom, transparent, black 3%, black 97%, transparent)',
+        maskImage: 'linear-gradient(to bottom, transparent, black 3%, black 97%, transparent)',
+      }}>
         {sortedEvents.length === 0 ? (
           <motion.div
             initial={{ opacity: 0 }}
@@ -1027,7 +976,7 @@ export default function EventFeed({
             style={{
               padding: '32px 16px',
               textAlign: 'center',
-              color: HOLO_COLORS.textMuted,
+              color: COLORS.textMuted,
               fontSize: '13px',
             }}
           >
@@ -1062,7 +1011,6 @@ export default function EventFeed({
 }
 
 EventFeed.propTypes = {
-  /** Array of event objects */
   events: PropTypes.arrayOf(
     PropTypes.shape({
       id: PropTypes.string,
@@ -1074,19 +1022,12 @@ EventFeed.propTypes = {
       points: PropTypes.number,
     })
   ),
-  /** Maximum events to display */
   maxDisplay: PropTypes.number,
-  /** Message to show when no events */
   emptyMessage: PropTypes.string,
-  /** Current user's username — used to distinguish opponent events */
   currentUser: PropTypes.string,
-  /** Callback when user taps a Red Zone event's "View Chart" button */
   onRedZoneTap: PropTypes.func,
-  /** ClashCast: function(eventId) => { text, isLoading } | null */
   getEventCommentary: PropTypes.func,
-  /** ClashCast: whether commentary engine is running */
   clashCastActive: PropTypes.bool,
-  /** ClashCast: synthetic commentary events (lead changes, session transitions) */
   syntheticEvents: PropTypes.array,
 };
 
