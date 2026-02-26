@@ -212,6 +212,21 @@ export default function PortfolioSlot({
           {isCrypto && (
             <span style={{ fontSize: '12px' }}>🔮</span>
           )}
+          {asset.isCrypto && asset.direction && (
+            <span style={{
+              fontSize: '9px',
+              fontWeight: 700,
+              color: asset.direction === 'short' ? HOLO_COLORS.red : HOLO_COLORS.green,
+              backgroundColor: asset.direction === 'short'
+                ? `${HOLO_COLORS.red}15`
+                : `${HOLO_COLORS.green}15`,
+              padding: '1px 5px',
+              borderRadius: '4px',
+              marginLeft: '2px',
+            }}>
+              {asset.direction === 'short' ? 'SHORT ↓' : 'LONG ↑'}
+            </span>
+          )}
         </div>
         <div
           style={{
@@ -251,6 +266,7 @@ PortfolioSlot.propTypes = {
     name: PropTypes.string,
     baseATR: PropTypes.number,
     isCrypto: PropTypes.bool,
+    direction: PropTypes.oneOf(['long', 'short']),
   }),
   /** Tier this slot belongs to */
   tier: PropTypes.oneOf(['star', 'core', 'support', 'bench']),

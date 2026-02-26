@@ -70,46 +70,60 @@ SectorTab.propTypes = {
 
 /**
  * AssetRow - Single asset in the picker list
+ * For crypto (cryptoOnly mode): shows inline LONG/SHORT direction buttons
+ * For stocks: standard single-click selection
  */
-function AssetRow({ asset, isSelected, isDisabled, onSelect, onShowResearch }) {
+function AssetRow({ asset, isSelected, isDisabled, onSelect, onShowResearch, cryptoOnly }) {
   const accentColor = asset.isCrypto ? HOLO_COLORS.purple : HOLO_COLORS.cyan;
+  const isCryptoRow = cryptoOnly && asset.isCrypto;
+
+  // For crypto rows: use a div (not clickable as a whole), with inline direction buttons
+  const Wrapper = isCryptoRow ? motion.div : motion.button;
+  const wrapperProps = isCryptoRow
+    ? {}
+    : {
+        whileHover: !isDisabled ? { backgroundColor: HOLO_COLORS.bgElevated } : {},
+        whileTap: !isDisabled ? { scale: 0.99 } : {},
+        onClick: () => !isDisabled && onSelect(asset),
+        disabled: isDisabled,
+      };
 
   return (
-    <motion.button
-      whileHover={!isDisabled ? { backgroundColor: HOLO_COLORS.bgElevated } : {}}
-      whileTap={!isDisabled ? { scale: 0.99 } : {}}
-      onClick={() => !isDisabled && onSelect(asset)}
-      disabled={isDisabled}
+    <Wrapper
+      {...wrapperProps}
       style={{
         width: '100%',
         display: 'flex',
-        alignItems: 'center',
+        alignItems: isCryptoRow ? 'flex-start' : 'center',
         gap: '12px',
         padding: '12px 16px',
         backgroundColor: isSelected ? `${accentColor}15` : 'transparent',
         border: 'none',
         borderBottom: `1px solid ${HOLO_COLORS.borderSubtle}50`,
-        cursor: isDisabled ? 'not-allowed' : 'pointer',
+        cursor: isCryptoRow ? 'default' : isDisabled ? 'not-allowed' : 'pointer',
         opacity: isDisabled ? 0.4 : 1,
         textAlign: 'left',
+        flexWrap: isCryptoRow ? 'wrap' : 'nowrap',
       }}
     >
-      {/* Selection Indicator */}
-      <div
-        style={{
-          width: '20px',
-          height: '20px',
-          borderRadius: '50%',
-          border: `2px solid ${isSelected ? accentColor : HOLO_COLORS.borderSubtle}`,
-          backgroundColor: isSelected ? accentColor : 'transparent',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          flexShrink: 0,
-        }}
-      >
-        {isSelected && <Check size={12} color={HOLO_COLORS.bgDeep} strokeWidth={3} />}
-      </div>
+      {/* Selection Indicator (stocks only) */}
+      {!isCryptoRow && (
+        <div
+          style={{
+            width: '20px',
+            height: '20px',
+            borderRadius: '50%',
+            border: `2px solid ${isSelected ? accentColor : HOLO_COLORS.borderSubtle}`,
+            backgroundColor: isSelected ? accentColor : 'transparent',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            flexShrink: 0,
+          }}
+        >
+          {isSelected && <Check size={12} color={HOLO_COLORS.bgDeep} strokeWidth={3} />}
+        </div>
+      )}
 
       {/* Asset Info */}
       <div style={{ flex: 1, minWidth: 0 }}>
@@ -212,7 +226,71 @@ function AssetRow({ asset, isSelected, isDisabled, onSelect, onShowResearch }) {
           💣 {(asset.baseATR * 1.0).toFixed(1)}% | 🚀 {(asset.baseATR * 2.0).toFixed(1)}%
         </div>
       </div>
-    </motion.button>
+
+      {/* LONG/SHORT Direction Buttons (crypto only) */}
+      {isCryptoRow && !isDisabled && (
+        <div
+          style={{
+            width: '100%',
+            display: 'flex',
+            gap: '8px',
+            marginTop: '8px',
+            paddingLeft: '0',
+          }}
+        >
+          <button
+            onClick={() => onSelect({ ...asset, direction: 'long' })}
+            style={{
+              flex: 1,
+              padding: '6px 14px',
+              borderRadius: '6px',
+              fontSize: '12px',
+              fontWeight: 700,
+              border: `1px solid ${HOLO_COLORS.green}`,
+              backgroundColor: `${HOLO_COLORS.green}15`,
+              color: HOLO_COLORS.green,
+              cursor: 'pointer',
+              transition: 'all 0.2s ease',
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.backgroundColor = `${HOLO_COLORS.green}30`;
+              e.currentTarget.style.boxShadow = `0 0 8px ${HOLO_COLORS.green}30`;
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.backgroundColor = `${HOLO_COLORS.green}15`;
+              e.currentTarget.style.boxShadow = 'none';
+            }}
+          >
+            LONG ↑
+          </button>
+          <button
+            onClick={() => onSelect({ ...asset, direction: 'short' })}
+            style={{
+              flex: 1,
+              padding: '6px 14px',
+              borderRadius: '6px',
+              fontSize: '12px',
+              fontWeight: 700,
+              border: `1px solid ${HOLO_COLORS.red}`,
+              backgroundColor: `${HOLO_COLORS.red}15`,
+              color: HOLO_COLORS.red,
+              cursor: 'pointer',
+              transition: 'all 0.2s ease',
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.backgroundColor = `${HOLO_COLORS.red}30`;
+              e.currentTarget.style.boxShadow = `0 0 8px ${HOLO_COLORS.red}30`;
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.backgroundColor = `${HOLO_COLORS.red}15`;
+              e.currentTarget.style.boxShadow = 'none';
+            }}
+          >
+            SHORT ↓
+          </button>
+        </div>
+      )}
+    </Wrapper>
   );
 }
 
@@ -228,6 +306,7 @@ AssetRow.propTypes = {
   isDisabled: PropTypes.bool,
   onSelect: PropTypes.func.isRequired,
   onShowResearch: PropTypes.func,
+  cryptoOnly: PropTypes.bool,
 };
 
 /**
@@ -408,7 +487,8 @@ export default function AssetPickerModal({
                 borderBottom: `1px solid ${HOLO_COLORS.borderSubtle}`,
               }}
             >
-              {/* Search Bar */}
+              {/* Search Bar (hidden for crypto — only 7 items) */}
+              {!cryptoOnly && (
               <div style={{ padding: '12px 16px' }}>
                 <div
                   style={{
@@ -426,7 +506,7 @@ export default function AssetPickerModal({
                     type="text"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder={cryptoOnly ? 'Search crypto...' : stockOnly ? 'Search stocks...' : 'Search assets...'}
+                    placeholder={stockOnly ? 'Search stocks...' : 'Search assets...'}
                     style={{
                       flex: 1,
                       backgroundColor: 'transparent',
@@ -453,6 +533,7 @@ export default function AssetPickerModal({
                   )}
                 </div>
               </div>
+              )}
 
               {/* Sector Tabs (only for stocks) */}
               {stockOnly && stocks.length > 0 && (
@@ -540,6 +621,7 @@ export default function AssetPickerModal({
                     isDisabled={isAssetSelected(asset)}
                     onSelect={handleSelect}
                     onShowResearch={(a) => setResearchAsset(a)}
+                    cryptoOnly={cryptoOnly}
                   />
                 ))
               )}
