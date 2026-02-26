@@ -12,6 +12,8 @@ import useBaggerBombBattleV4 from '../hooks/useBaggerBombBattleV4';
 import useClashCast from '../hooks/useClashCast';
 import { useWebSocketPrices } from '../hooks/useWebSocketPrices';
 import { stockAPI } from '../services/eodhdAPI';
+import { CASH_POSITION } from '../constants/cryptoPool';
+import { flattenPortfolio } from '../utils/baggerBombUtils';
 
 /**
  * BaggerBombBattleViewConnectedV4 - Connected wrapper for V4 battles
@@ -76,35 +78,71 @@ export default function BaggerBombBattleViewConnectedV4({
     });
   }, [player?.portfolio, opponent?.portfolio]);
 
-  // Multi-step swap mode state (matches training view pattern)
+  // V5: Swap Market modal state
+  const [showSwapMarket, setShowSwapMarket] = useState(false);
+
+  // Multi-step swap mode state (V5: modal selects agent, then user taps roster target)
   const [swapMode, setSwapMode] = useState({
-    active: false,
-    selectedFreeAgent: null,
-    step: 'idle',
-    targetAsset: null,
+    active: false, selectedFreeAgent: null, step: 'idle',
+    targetAsset: null, swapType: null, direction: null,
   });
 
-  const enterSwapMode = useCallback(() => {
+  // V5: Open SwapMarketModal (replaces old V4 inline enterSwapMode)
+  const handleSwapMarketOpen = useCallback(() => {
     if (swapsRemaining <= 0) return;
-    setSwapMode({ active: true, selectedFreeAgent: null, step: 'selectAgent', targetAsset: null });
+    setShowSwapMarket(true);
   }, [swapsRemaining]);
 
-  const selectFreeAgent = useCallback((agent) => {
-    setSwapMode(prev => ({ ...prev, selectedFreeAgent: agent, step: 'selectTarget' }));
+  // V5 Swap Market handlers — close modal and enter selectTarget step
+  const handleSwapStock = useCallback((stockAgent) => {
+    setShowSwapMarket(false);
+    setSwapMode({
+      active: true, selectedFreeAgent: stockAgent,
+      step: 'selectTarget', targetAsset: null, swapType: 'stock', direction: null,
+    });
+  }, []);
+
+  const handleSwapCryptoLong = useCallback((crypto) => {
+    setShowSwapMarket(false);
+    setSwapMode({
+      active: true, selectedFreeAgent: crypto,
+      step: 'selectTarget', targetAsset: null, swapType: 'crypto', direction: 'long',
+    });
+  }, []);
+
+  const handleSwapCryptoShort = useCallback((crypto) => {
+    setShowSwapMarket(false);
+    setSwapMode({
+      active: true, selectedFreeAgent: crypto,
+      step: 'selectTarget', targetAsset: null, swapType: 'crypto', direction: 'short',
+    });
+  }, []);
+
+  const handleGoToCash = useCallback(() => {
+    setShowSwapMarket(false);
+    setSwapMode({
+      active: true, selectedFreeAgent: CASH_POSITION,
+      step: 'selectTarget', targetAsset: null, swapType: 'cash', direction: null,
+    });
   }, []);
 
   const selectSwapTarget = useCallback((asset, tier, slotIndex) => {
-    if (swapMode.selectedFreeAgent?.isCrypto && !asset.isCrypto) return;
-    if (!swapMode.selectedFreeAgent?.isCrypto && asset.isCrypto) return;
+    if (!swapMode.active || swapMode.step !== 'selectTarget') return;
+    const { swapType } = swapMode;
+    // Type restrictions: stock → stock slots, crypto → crypto slot, cash → any non-cash
+    if (swapType === 'stock' && asset.isCrypto) return;
+    if (swapType === 'crypto' && !asset.isCrypto && !asset.isCash) return;
+    if (swapType === 'cash' && asset.isCash) return;
     setSwapMode(prev => ({
       ...prev,
-      targetAsset: { symbol: asset.symbol, name: asset.name, tier, slotIndex, isCrypto: asset.isCrypto },
+      targetAsset: { symbol: asset.symbol, name: asset.name, tier, slotIndex, isCrypto: asset.isCrypto, isCash: asset.isCash },
       step: 'confirming',
     }));
-  }, [swapMode.selectedFreeAgent]);
+  }, [swapMode]);
 
   const cancelSwapMode = useCallback(() => {
-    setSwapMode({ active: false, selectedFreeAgent: null, step: 'idle', targetAsset: null });
+    setSwapMode({ active: false, selectedFreeAgent: null, step: 'idle',
+      targetAsset: null, swapType: null, direction: null });
   }, []);
 
   const confirmSwap = useCallback(async () => {
@@ -113,11 +151,13 @@ export default function BaggerBombBattleViewConnectedV4({
       await executeSwap({
         outTier: swapMode.targetAsset.tier,
         outSlotIndex: swapMode.targetAsset.slotIndex,
-        inSymbol: swapMode.selectedFreeAgent.symbol,
+        inAgent: swapMode.selectedFreeAgent,
+        swapType: swapMode.swapType || 'stock',
+        direction: swapMode.direction || null,
       });
       cancelSwapMode();
     } catch (err) {
-      console.error('[V4 PvP] Swap confirm error:', err);
+      console.error('[V5 PvP] Swap confirm error:', err);
     }
   }, [swapMode, executeSwap, cancelSwapMode]);
 
@@ -297,7 +337,7 @@ export default function BaggerBombBattleViewConnectedV4({
         currentPrices={currentPrices}
         openPrices={openPrices}
         wsStatus={wsStatus}
-        battleVersion={4}
+        battleVersion={5}
         getEventCommentary={clashCast.getEventCommentary}
         clashCastActive={clashCast.isActive}
         syntheticEvents={clashCast.syntheticEvents}
@@ -310,14 +350,20 @@ export default function BaggerBombBattleViewConnectedV4({
           totalDays: totalTradingDays,
           rotationCountdown,
           swapMode,
-          onEnterSwapMode: enterSwapMode,
-          onSelectFreeAgent: selectFreeAgent,
+          onEnterSwapMode: handleSwapMarketOpen,
           onCancelSwapMode: cancelSwapMode,
         }}
         closedTrades={closedTrades}
         onSelectSwapTarget={selectSwapTarget}
         onConfirmSwap={confirmSwap}
         isSwapExecuting={isSwapExecuting}
+        showSwapMarket={showSwapMarket}
+        onCloseSwapMarket={() => setShowSwapMarket(false)}
+        onSwapStock={handleSwapStock}
+        onSwapCryptoLong={handleSwapCryptoLong}
+        onSwapCryptoShort={handleSwapCryptoShort}
+        onGoToCash={handleGoToCash}
+        rosterAssets={flattenPortfolio(player?.portfolio)}
       />
 
       {/* Threshold Trigger Celebration Overlay with Chain Support */}
