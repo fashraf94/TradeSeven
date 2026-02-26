@@ -2,13 +2,14 @@
 // Adds history tracking, threshold crossing detection, and event logging
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { doc, onSnapshot } from 'firebase/firestore';
+import { doc, onSnapshot, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import { stockAPI, POPULAR_CRYPTO } from '../services/eodhdAPI';
 import {
   addBaggerBombEvent,
   updateAssetHistoryInBattle,
 } from '../firebase/firebaseService';
+import { getVolatilityThresholds } from '../services/volatilityService';
 import {
   updateAssetHistory,
   detectThresholdCross,
@@ -195,6 +196,49 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
   // My scores — pass battle.thresholds explicitly so both players use the same
   // authoritative threshold per symbol (fixes BaggerBomb count mismatch)
   const battleThresholds = battle?.thresholds || {};
+
+  // One-time migration: backfill thresholds for old battles that lack them.
+  // Without this, both players fall through to asset.baseATR (stale per-player value).
+  useEffect(() => {
+    if (!battle?.id || battle.status !== 'active') return;
+    const thresholds = battle.thresholds || {};
+    const allSymbols = [...myPortfolioFlat, ...oppPortfolioFlat]
+      .filter(Boolean)
+      .map(a => a.symbol);
+    const uniqueSymbols = [...new Set(allSymbols)];
+    const missing = uniqueSymbols.filter(s => !thresholds[s]);
+    if (missing.length === 0) return;
+
+    (async () => {
+      try {
+        const stockSyms = missing.filter(s => !isCrypto(s));
+        const cryptoSyms = missing.filter(s => isCrypto(s));
+        const [stockResults, cryptoResults] = await Promise.all([
+          stockSyms.length > 0 ? getVolatilityThresholds(stockSyms, 'stock') : {},
+          cryptoSyms.length > 0 ? getVolatilityThresholds(cryptoSyms, 'crypto') : {},
+        ]);
+        const fetched = { ...stockResults, ...cryptoResults };
+        if (!fetched || Object.keys(fetched).length === 0) return;
+
+        const merged = { ...thresholds };
+        for (const [sym, data] of Object.entries(fetched)) {
+          merged[sym] = {
+            threshold: Number(data.threshold) || 2.5,
+            rallyThreshold: Number(data.rallyThreshold) || 3.75,
+            moonshotThreshold: Number(data.moonshotThreshold) || 5.0,
+          };
+        }
+
+        const battleRef = doc(db, 'battles', battle.id);
+        await updateDoc(battleRef, { thresholds: merged });
+        console.log(`[V3] Backfilled thresholds for ${missing.length} symbols in battle ${battle.id}`);
+      } catch (err) {
+        console.warn('⚠️ Threshold backfill failed:', err.message);
+      }
+    })();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [battle?.id, battle?.status]);
+
   const myScores = useMemo(() => {
     return calculateScores(myPortfolioFlat, effectivePrices, openPrices, combinedHistory, dailyExtremes, battleThresholds);
   }, [myPortfolioFlat, effectivePrices, openPrices, combinedHistory, dailyExtremes, calculateScores, battleThresholds]);
