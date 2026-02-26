@@ -106,9 +106,8 @@ function StockCard({ agent, currentPrice, dailyChange, onSelect, disabled }) {
       onClick={() => !disabled && onSelect(agent)}
       disabled={disabled}
       style={{
-        flex: '1 1 0',
-        minWidth: '70px',
-        maxWidth: '100px',
+        width: '80px',
+        flexShrink: 0,
         padding: '10px 6px 8px',
         borderRadius: '10px',
         background: `linear-gradient(145deg, ${HOLO_COLORS.bgElevated} 0%, ${HOLO_COLORS.bgCard} 50%, #1a1025 100%)`,
@@ -488,6 +487,7 @@ export default function SwapMarketModal({
                 gap: '8px',
                 overflowX: 'auto',
                 paddingBottom: '4px',
+                minHeight: '80px',
                 WebkitOverflowScrolling: 'touch',
               }}>
                 {(stockFreeAgents || []).map(agent => (

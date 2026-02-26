@@ -129,6 +129,21 @@ export default function BaggerBombTrainingBattleViewV4({
     setLocalPortfolio(null);
   }, [battle?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Re-sync free agents when battle data loads asynchronously (handles Firebase load after mount)
+  useEffect(() => {
+    const battleAgents = battle?.freeAgents?.current || [];
+    if (battleAgents.length > 0 && freeAgents.length === 0) {
+      setFreeAgents(battleAgents);
+      rotationCountRef.current = battle?.freeAgents?.rotationCount || 0;
+
+      const nextRotationAt = battle?.freeAgents?.nextRotationAt;
+      if (nextRotationAt) {
+        nextRotationRef.current = new Date(nextRotationAt).getTime();
+        setRotationCountdown(Math.max(0, Math.floor((nextRotationRef.current - Date.now()) / 1000)));
+      }
+    }
+  }, [battle?.freeAgents?.current]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Training events for Live Feed
   const [trainingEvents, setTrainingEvents] = useState([]);
   const prevPlayerMultRef = useRef({});

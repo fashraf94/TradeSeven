@@ -77,53 +77,142 @@ function AssetRow({ asset, isSelected, isDisabled, onSelect, onShowResearch, cry
   const accentColor = asset.isCrypto ? HOLO_COLORS.purple : HOLO_COLORS.cyan;
   const isCryptoRow = cryptoOnly && asset.isCrypto;
 
-  // For crypto rows: use a div (not clickable as a whole), with inline direction buttons
-  const Wrapper = isCryptoRow ? motion.div : motion.button;
-  const wrapperProps = isCryptoRow
-    ? {}
-    : {
-        whileHover: !isDisabled ? { backgroundColor: HOLO_COLORS.bgElevated } : {},
-        whileTap: !isDisabled ? { scale: 0.99 } : {},
-        onClick: () => !isDisabled && onSelect(asset),
-        disabled: isDisabled,
-      };
+  // Crypto rows: vertical stacked layout (no overflow issues)
+  if (isCryptoRow) {
+    return (
+      <div
+        style={{
+          width: '100%',
+          padding: '12px 16px',
+          borderBottom: `1px solid ${HOLO_COLORS.borderSubtle}50`,
+          opacity: isDisabled ? 0.4 : 1,
+          textAlign: 'left',
+        }}
+      >
+        {/* Row 1: Symbol + Name + Info button + ATR */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span style={{ fontSize: '14px', fontWeight: 600, color: HOLO_COLORS.textPrimary }}>
+                {asset.symbol}
+              </span>
+              <span style={{ fontSize: '12px' }}>🔮</span>
+              <span style={{ fontSize: '12px', color: HOLO_COLORS.textMuted }}>
+                {asset.name}
+              </span>
+              {isDisabled && (
+                <span style={{
+                  fontSize: '10px', color: HOLO_COLORS.amber,
+                  padding: '2px 6px', backgroundColor: `${HOLO_COLORS.amber}20`, borderRadius: '4px',
+                }}>
+                  Already selected
+                </span>
+              )}
+            </div>
+          </div>
+          {onShowResearch && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onShowResearch(asset); }}
+              style={{
+                width: '28px', height: '28px', borderRadius: '50%',
+                background: 'rgba(255,255,255,0.08)', border: `1px solid ${HOLO_COLORS.borderSubtle}`,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                cursor: 'pointer', flexShrink: 0, transition: 'all 0.2s ease',
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.15)'; e.currentTarget.style.borderColor = accentColor; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.08)'; e.currentTarget.style.borderColor = HOLO_COLORS.borderSubtle; }}
+            >
+              <Info size={14} color={HOLO_COLORS.textMuted} />
+            </button>
+          )}
+          <div style={{ textAlign: 'right', flexShrink: 0 }}>
+            <div style={{ fontSize: '13px', fontWeight: 600, color: accentColor }}>
+              {asset.baseATR?.toFixed(1)}% ATR
+            </div>
+          </div>
+        </div>
 
+        {/* Row 2: Threshold info */}
+        <div style={{ fontSize: '10px', color: HOLO_COLORS.textMuted, marginBottom: '8px' }}>
+          💣 {(asset.baseATR * 1.0).toFixed(1)}% | 🚀 {(asset.baseATR * 2.0).toFixed(1)}%
+        </div>
+
+        {/* Row 3: LONG / SHORT buttons (full width) */}
+        {!isDisabled && (
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <button
+              onClick={() => onSelect({ ...asset, direction: 'long' })}
+              style={{
+                flex: 1, padding: '8px 14px', borderRadius: '6px',
+                fontSize: '13px', fontWeight: 700,
+                border: `1px solid ${HOLO_COLORS.green}`,
+                backgroundColor: `${HOLO_COLORS.green}15`,
+                color: HOLO_COLORS.green, cursor: 'pointer',
+                transition: 'all 0.2s ease',
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = `${HOLO_COLORS.green}30`; e.currentTarget.style.boxShadow = `0 0 8px ${HOLO_COLORS.green}30`; }}
+              onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = `${HOLO_COLORS.green}15`; e.currentTarget.style.boxShadow = 'none'; }}
+            >
+              LONG ↑
+            </button>
+            <button
+              onClick={() => onSelect({ ...asset, direction: 'short' })}
+              style={{
+                flex: 1, padding: '8px 14px', borderRadius: '6px',
+                fontSize: '13px', fontWeight: 700,
+                border: `1px solid ${HOLO_COLORS.red}`,
+                backgroundColor: `${HOLO_COLORS.red}15`,
+                color: HOLO_COLORS.red, cursor: 'pointer',
+                transition: 'all 0.2s ease',
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = `${HOLO_COLORS.red}30`; e.currentTarget.style.boxShadow = `0 0 8px ${HOLO_COLORS.red}30`; }}
+              onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = `${HOLO_COLORS.red}15`; e.currentTarget.style.boxShadow = 'none'; }}
+            >
+              SHORT ↓
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // Stock rows: standard single-click selection (unchanged)
   return (
-    <Wrapper
-      {...wrapperProps}
+    <motion.button
+      whileHover={!isDisabled ? { backgroundColor: HOLO_COLORS.bgElevated } : {}}
+      whileTap={!isDisabled ? { scale: 0.99 } : {}}
+      onClick={() => !isDisabled && onSelect(asset)}
+      disabled={isDisabled}
       style={{
         width: '100%',
         display: 'flex',
-        alignItems: isCryptoRow ? 'flex-start' : 'center',
+        alignItems: 'center',
         gap: '12px',
         padding: '12px 16px',
         backgroundColor: isSelected ? `${accentColor}15` : 'transparent',
         border: 'none',
         borderBottom: `1px solid ${HOLO_COLORS.borderSubtle}50`,
-        cursor: isCryptoRow ? 'default' : isDisabled ? 'not-allowed' : 'pointer',
+        cursor: isDisabled ? 'not-allowed' : 'pointer',
         opacity: isDisabled ? 0.4 : 1,
         textAlign: 'left',
-        flexWrap: isCryptoRow ? 'wrap' : 'nowrap',
       }}
     >
-      {/* Selection Indicator (stocks only) */}
-      {!isCryptoRow && (
-        <div
-          style={{
-            width: '20px',
-            height: '20px',
-            borderRadius: '50%',
-            border: `2px solid ${isSelected ? accentColor : HOLO_COLORS.borderSubtle}`,
-            backgroundColor: isSelected ? accentColor : 'transparent',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            flexShrink: 0,
-          }}
-        >
-          {isSelected && <Check size={12} color={HOLO_COLORS.bgDeep} strokeWidth={3} />}
-        </div>
-      )}
+      {/* Selection Indicator */}
+      <div
+        style={{
+          width: '20px',
+          height: '20px',
+          borderRadius: '50%',
+          border: `2px solid ${isSelected ? accentColor : HOLO_COLORS.borderSubtle}`,
+          backgroundColor: isSelected ? accentColor : 'transparent',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          flexShrink: 0,
+        }}
+      >
+        {isSelected && <Check size={12} color={HOLO_COLORS.bgDeep} strokeWidth={3} />}
+      </div>
 
       {/* Asset Info */}
       <div style={{ flex: 1, minWidth: 0 }}>
@@ -226,71 +315,7 @@ function AssetRow({ asset, isSelected, isDisabled, onSelect, onShowResearch, cry
           💣 {(asset.baseATR * 1.0).toFixed(1)}% | 🚀 {(asset.baseATR * 2.0).toFixed(1)}%
         </div>
       </div>
-
-      {/* LONG/SHORT Direction Buttons (crypto only) */}
-      {isCryptoRow && !isDisabled && (
-        <div
-          style={{
-            width: '100%',
-            display: 'flex',
-            gap: '8px',
-            marginTop: '8px',
-            paddingLeft: '0',
-          }}
-        >
-          <button
-            onClick={() => onSelect({ ...asset, direction: 'long' })}
-            style={{
-              flex: 1,
-              padding: '6px 14px',
-              borderRadius: '6px',
-              fontSize: '12px',
-              fontWeight: 700,
-              border: `1px solid ${HOLO_COLORS.green}`,
-              backgroundColor: `${HOLO_COLORS.green}15`,
-              color: HOLO_COLORS.green,
-              cursor: 'pointer',
-              transition: 'all 0.2s ease',
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.backgroundColor = `${HOLO_COLORS.green}30`;
-              e.currentTarget.style.boxShadow = `0 0 8px ${HOLO_COLORS.green}30`;
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.backgroundColor = `${HOLO_COLORS.green}15`;
-              e.currentTarget.style.boxShadow = 'none';
-            }}
-          >
-            LONG ↑
-          </button>
-          <button
-            onClick={() => onSelect({ ...asset, direction: 'short' })}
-            style={{
-              flex: 1,
-              padding: '6px 14px',
-              borderRadius: '6px',
-              fontSize: '12px',
-              fontWeight: 700,
-              border: `1px solid ${HOLO_COLORS.red}`,
-              backgroundColor: `${HOLO_COLORS.red}15`,
-              color: HOLO_COLORS.red,
-              cursor: 'pointer',
-              transition: 'all 0.2s ease',
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.backgroundColor = `${HOLO_COLORS.red}30`;
-              e.currentTarget.style.boxShadow = `0 0 8px ${HOLO_COLORS.red}30`;
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.backgroundColor = `${HOLO_COLORS.red}15`;
-              e.currentTarget.style.boxShadow = 'none';
-            }}
-          >
-            SHORT ↓
-          </button>
-        </div>
-      )}
-    </Wrapper>
+    </motion.button>
   );
 }
 
@@ -597,6 +622,7 @@ export default function AssetPickerModal({
               style={{
                 flex: 1,
                 overflowY: 'auto',
+                overflowX: 'hidden',
                 minHeight: 0, // Important for flex child to scroll properly
               }}
             >

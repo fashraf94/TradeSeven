@@ -425,9 +425,8 @@ export default function BattleHeader({
         </div>
       )}
 
-      {/* V5: No inline FreeAgentBar — replaced by SwapMarketModal */}
-      {/* V4: Show inline FreeAgentBar / V3: Session HUD */}
-      {battleVersion >= 5 ? null : battleVersion >= 4 ? (
+      {/* V5+V4: Show inline FreeAgentBar (research-only for V5) / V3: Session HUD */}
+      {battleVersion >= 4 ? (
         <FreeAgentBar
           {...freeAgentConfig}
           hideSwapButton
