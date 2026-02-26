@@ -109,17 +109,18 @@ const StockChart = ({
     return prepareChartData(ohlcvData);
   }, [ohlcvData]);
 
-  // Bomb view: compute today's daily aggregate OHLC from hourly candles + WS daily H/L
+  // Bomb view: compute today's daily aggregate OHLC from intraday candles + WS daily H/L
   const bombDailyOhlc = useMemo(() => {
     if (!isBombView || !chartData || chartData.length === 0) return null;
 
-    // Find today's candles by filtering to those from local midnight onward
-    const now = new Date();
-    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const todayStartSec = Math.floor(todayStart.getTime() / 1000);
+    // Determine "today" in ET (handles DST, works regardless of user timezone)
+    const etDateFmt = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York' });
+    const todayET = etDateFmt.format(new Date());
 
-    const todayCandles = chartData.filter(c => c.time >= todayStartSec);
-    // Fall back to the last candle if no today candles found
+    const todayCandles = chartData.filter(c =>
+      etDateFmt.format(new Date(c.time * 1000)) === todayET
+    );
+    // Fall back to the last candle if no today candles found (e.g. after hours, weekend)
     const candles = todayCandles.length > 0 ? todayCandles : [chartData[chartData.length - 1]];
 
     let aggHigh = Math.max(...candles.map(c => c.high));
@@ -189,7 +190,19 @@ const StockChart = ({
         timeVisible: timeframe === '1D' || isBombView,
         secondsVisible: false,
         ...(useETTimezone ? {
-          tickMarkFormatter: (time) => etTimeFormatter(time),
+          tickMarkFormatter: (time, tickMarkType) => {
+            // Day boundaries (Year=0, Month=1, DayOfMonth=2): show date
+            if (tickMarkType <= 2) {
+              return new Date(time * 1000).toLocaleDateString('en-US', {
+                timeZone: 'America/New_York',
+                weekday: 'short',
+                month: 'numeric',
+                day: 'numeric',
+              });
+            }
+            // Time within day: show time only
+            return etTimeFormatter(time);
+          },
         } : {}),
       },
       rightPriceScale: {

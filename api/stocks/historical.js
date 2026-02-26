@@ -1,6 +1,6 @@
 // Vercel Serverless Function - Historical OHLCV Data
 // Endpoint: /api/stocks/historical?symbol=AAPL&timeframe=1d
-// Timeframes: 1h (hourly), 1d (daily), 1w (weekly)
+// Timeframes: 30m (30-minute), 1h (hourly), 1d (daily), 1w (weekly)
 
 import { applySecurityMiddleware } from '../_utils/security.js';
 import { getFromCache, setInCache, setCacheHeaders, CACHE_TIERS } from '../_utils/serverCache.js';
@@ -12,6 +12,12 @@ const TIMEFRAME_CONFIG = {
     interval: '1m',
     days: 1,          // Full day of 1-minute data; frontend slices to last 60 candles
     description: '1-minute intraday'
+  },
+  '30m': {
+    endpoint: 'intraday',
+    interval: '30m',
+    days: 10,        // 10 days of 30-min data (~130 candles)
+    description: '10-day 30-minute'
   },
   '1h': {
     endpoint: 'intraday',

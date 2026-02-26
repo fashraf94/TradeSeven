@@ -28,15 +28,15 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
   // Map UI timeframe to API timeframe
   const isBomb = timeframe === 'bomb';
   const isSpectate = timeframe === 'spectate';
-  const apiTimeframe = isSpectate ? '1m' : isBomb ? '1h' : (timeframe === '1D' ? '1d' : '1w');
-  const bombDays = 20; // 20 trading days of hourly data (~140 candles)
+  const apiTimeframe = isSpectate ? '1m' : isBomb ? '30m' : (timeframe === '1D' ? '1d' : '1w');
+  const bombDays = 20; // 20 trading days of 30-min data (~260 candles)
   const spectateRefreshRef = useRef(null);
 
   // Fetch data when symbol or API timeframe changes
   useEffect(() => {
     if (!symbol) return;
 
-    const cacheKey = isBomb ? `${symbol}_1h_bomb` : `${symbol}_${apiTimeframe}`;
+    const cacheKey = isBomb ? `${symbol}_30m_bomb` : `${symbol}_${apiTimeframe}`;
 
     // Check in-memory cache (skip cache for spectate — always fetch fresh)
     if (!isSpectate && cacheRef.current[cacheKey]) {
@@ -62,11 +62,11 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
         if (thisRequest.aborted) return;
         if (!data || data.length === 0) {
           if (isSpectate) {
-            // Spectate fallback: use cached 1h bomb data if available
-            const bombCacheKey = `${symbol}_1h_bomb`;
+            // Spectate fallback: use cached 30m bomb data if available
+            const bombCacheKey = `${symbol}_30m_bomb`;
             const cachedBomb = cacheRef.current[bombCacheKey];
             if (cachedBomb && cachedBomb.length > 0) {
-              console.log('[useResearchData] Spectate 1m empty, falling back to cached 1h bomb data');
+              console.log('[useResearchData] Spectate 1m empty, falling back to cached 30m bomb data');
               setRawData(cachedBomb);
               setError(null);
             } else {
@@ -275,18 +275,18 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
       const lastDateStr = lastCandle.date || lastCandle.datetime || '';
 
       if (timeframe === 'bomb' || timeframe === 'spectate') {
-        // Hourly (bomb or spectate fallback): append if last candle is >1 hour old
+        // 30-min (bomb or spectate fallback): append if last candle is >30 min old
         const lastTime = lastCandle.timestamp
           ? lastCandle.timestamp * 1000
           : new Date(lastDateStr).getTime();
-        const hourMs = 60 * 60 * 1000;
-        if (lastTime && (Date.now() - lastTime) > hourMs) {
-          const nowHour = new Date();
-          nowHour.setMinutes(0, 0, 0);
+        const halfHourMs = 30 * 60 * 1000;
+        if (lastTime && (Date.now() - lastTime) > halfHourMs) {
+          const nowHalf = new Date();
+          nowHalf.setMinutes(nowHalf.getMinutes() >= 30 ? 30 : 0, 0, 0);
           result = [...result, {
-            date: nowHour.toISOString(),
-            datetime: nowHour.toISOString(),
-            timestamp: Math.floor(nowHour.getTime() / 1000),
+            date: nowHalf.toISOString(),
+            datetime: nowHalf.toISOString(),
+            timestamp: Math.floor(nowHalf.getTime() / 1000),
             open: lastCandle.close,
             high: wsHL ? Math.max(wsHL.high, currentPrice, lastCandle.close) : Math.max(currentPrice, lastCandle.close),
             low: wsHL ? Math.min(wsHL.low, currentPrice, lastCandle.close) : Math.min(currentPrice, lastCandle.close),
@@ -294,7 +294,7 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
             volume: 0,
           }];
         } else if (lastTime) {
-          // Latest candle is within the current hour — patch H/L/C with live price
+          // Latest candle is within the current 30-min period — patch H/L/C with live price
           const patched = { ...lastCandle };
           patched.high = wsHL ? Math.max(Number(patched.high), wsHL.high, currentPrice) : Math.max(Number(patched.high), currentPrice);
           patched.low = wsHL ? Math.min(Number(patched.low), wsHL.low, currentPrice) : Math.min(Number(patched.low), currentPrice);
@@ -409,7 +409,7 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
 
   // Retry function
   const retry = useCallback(() => {
-    const cacheKey = isBomb ? `${symbol}_1h_bomb` : `${symbol}_${apiTimeframe}`;
+    const cacheKey = isBomb ? `${symbol}_30m_bomb` : `${symbol}_${apiTimeframe}`;
     delete cacheRef.current[cacheKey];
     setRawData(null);
     setError(null);
