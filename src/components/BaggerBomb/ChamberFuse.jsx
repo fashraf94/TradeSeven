@@ -1,7 +1,7 @@
 // ChamberFuse - Bidirectional threshold gauge for BaggerBomb
 // Shows proximity to 6 thresholds (3 positive, 3 negative)
 // Segments stay lit once crossed (via history tracking)
-// Visual overhaul: Glassmorphic bomb indicator + tiered glow system
+// Visual overhaul: Tiered glow needle + segment shimmer system
 
 import React, { useMemo, useEffect, useRef, useState } from 'react';
 import PropTypes from 'prop-types';
@@ -40,61 +40,47 @@ const SEGMENT_COLORS = {
   meltdown: '#991b1b',
 };
 
-// BombIndicator visual state config
-const BOMB_STYLES = {
+// Tiered needle indicator visual state config
+const NEEDLE_STYLES = {
   neutral: {
-    bg: 'radial-gradient(circle, rgba(0,255,255,0.15) 0%, rgba(0,217,255,0.08) 100%)',
-    border: 'rgba(0,255,255,0.3)',
-    boxShadow: '0 0 8px rgba(0,255,255,0.3)',
-    emoji: '💣',
+    color: HOLO_COLORS.cyan,
+    boxShadow: GLOW_EFFECTS.cyan,
     pulse: null,
   },
   bagger: {
-    bg: 'radial-gradient(circle, rgba(255,215,0,0.25) 0%, rgba(255,165,0,0.15) 100%)',
-    border: 'rgba(255,215,0,0.4)',
+    color: HOLO_COLORS.amber,
     boxShadow: '0 0 12px rgba(255,215,0,0.5), 0 0 24px rgba(255,165,0,0.2)',
     boxShadowPeak: '0 0 20px rgba(255,215,0,0.7), 0 0 35px rgba(255,165,0,0.35)',
-    emoji: '💣',
     pulse: { duration: 2 },
   },
   doubleBagger: {
-    bg: 'radial-gradient(circle, rgba(255,215,0,0.3) 0%, rgba(255,200,0,0.2) 100%)',
-    border: 'rgba(255,215,0,0.5)',
+    color: HOLO_COLORS.gold,
     boxShadow: '0 0 16px rgba(255,215,0,0.6), 0 0 30px rgba(255,165,0,0.3)',
     boxShadowPeak: '0 0 24px rgba(255,215,0,0.8), 0 0 40px rgba(255,165,0,0.4)',
-    emoji: '💣',
     pulse: { duration: 1.8 },
   },
   tenBagger: {
-    bg: 'radial-gradient(circle, rgba(255,255,255,0.25) 0%, rgba(255,215,0,0.2) 100%)',
-    border: 'rgba(255,255,255,0.4)',
+    color: '#ffffff',
     boxShadow: '0 0 20px rgba(255,215,0,0.6), 0 0 35px rgba(255,255,255,0.3)',
     boxShadowPeak: '0 0 28px rgba(255,215,0,0.8), 0 0 45px rgba(255,255,255,0.45)',
-    emoji: '🚀',
     pulse: { duration: 1.5 },
   },
   bust: {
-    bg: 'radial-gradient(circle, rgba(255,51,102,0.25) 0%, rgba(200,0,50,0.15) 100%)',
-    border: 'rgba(255,51,102,0.3)',
+    color: HOLO_COLORS.red,
     boxShadow: '0 0 10px rgba(255,51,102,0.4), 0 0 20px rgba(255,0,0,0.15)',
     boxShadowPeak: '0 0 16px rgba(255,51,102,0.6), 0 0 28px rgba(255,0,0,0.25)',
-    emoji: '💣',
     pulse: { duration: 2.5 },
   },
   crash: {
-    bg: 'radial-gradient(circle, rgba(200,0,50,0.3) 0%, rgba(153,27,27,0.2) 100%)',
-    border: 'rgba(200,0,50,0.4)',
+    color: '#cc0032',
     boxShadow: '0 0 12px rgba(255,51,102,0.5), 0 0 24px rgba(255,0,0,0.2)',
     boxShadowPeak: '0 0 18px rgba(255,51,102,0.7), 0 0 32px rgba(255,0,0,0.3)',
-    emoji: '💥',
     pulse: { duration: 2 },
   },
   meltdown: {
-    bg: 'radial-gradient(circle, rgba(153,27,27,0.35) 0%, rgba(127,29,29,0.25) 100%)',
-    border: 'rgba(200,0,50,0.4)',
+    color: '#991b1b',
     boxShadow: '0 0 14px rgba(200,0,50,0.5), 0 0 28px rgba(153,27,27,0.3)',
     boxShadowPeak: '0 0 20px rgba(200,0,50,0.7), 0 0 35px rgba(153,27,27,0.4)',
-    emoji: '💥',
     pulse: { duration: 1.8 },
   },
 };
@@ -261,8 +247,8 @@ export default function ChamberFuse({
     return { highestPositive, highestNegative, overall };
   }, [litSegments, currentMultiplier]);
 
-  // BombIndicator visual style
-  const bombStyle = BOMB_STYLES[activeState.overall] || BOMB_STYLES.neutral;
+  // Needle indicator visual style (tiered by threshold state)
+  const needleStyle = NEEDLE_STYLES[activeState.overall] || NEEDLE_STYLES.neutral;
 
   // Check if primed and calculate intensity (0-1, where 1 is closest to threshold)
   const primedState = useMemo(() => {
@@ -366,7 +352,7 @@ export default function ChamberFuse({
 
   // Sizes based on compact mode
   const trackHeight = compact ? 16 : 24;
-  const indicatorSize = compact ? 20 : 28;
+  const needleSize = compact ? 12 : 16;
   const labelSize = compact ? 9 : 11;
 
   // Segment order (left to right): meltdown, crash, bust, [center], bagger, doubleBagger, tenBagger
@@ -379,16 +365,16 @@ export default function ChamberFuse({
     { name: 'tenBagger', position: 'last' },
   ];
 
-  // Build boxShadow pulse animation for BombIndicator (framer-motion)
-  const bombPulseAnimate = bombStyle.pulse ? {
+  // Build boxShadow pulse animation for needle (framer-motion)
+  const needlePulseAnimate = needleStyle.pulse ? {
     boxShadow: [
-      bombStyle.boxShadow,
-      bombStyle.boxShadowPeak || bombStyle.boxShadow,
-      bombStyle.boxShadow,
+      needleStyle.boxShadow,
+      needleStyle.boxShadowPeak || needleStyle.boxShadow,
+      needleStyle.boxShadow,
     ],
   } : {};
-  const bombPulseTransition = bombStyle.pulse ? {
-    duration: bombStyle.pulse.duration,
+  const needlePulseTransition = needleStyle.pulse ? {
+    duration: needleStyle.pulse.duration,
     repeat: Infinity,
     ease: 'easeInOut',
   } : {};
@@ -444,44 +430,34 @@ export default function ChamberFuse({
         }}
       />
 
-      {/* BombIndicator — Glassmorphic bomb replacing the old cyan circle needle */}
+      {/* Animated Needle — solid glowing circle with tiered color */}
       <motion.div
         animate={{
           left: `${needlePosition}%`,
           x: animate && isPrimed ? [-3 * primedIntensity, 3 * primedIntensity, -2 * primedIntensity, 2 * primedIntensity, 0] : 0,
-          scale: isPrimed ? 1 + (0.1 * primedIntensity) : 1,
-          ...bombPulseAnimate,
+          scale: isPrimed ? 1 + (0.15 * primedIntensity) : 1,
+          ...needlePulseAnimate,
         }}
         transition={{
           left: { type: 'spring', stiffness: 80, damping: 15 },
           x: isPrimed ? { duration: 0.2 + (0.15 * (1 - primedIntensity)), repeat: Infinity, ease: 'easeInOut' } : { duration: 0 },
           scale: { duration: 0.2 },
-          boxShadow: bombPulseTransition,
+          boxShadow: needlePulseTransition,
         }}
         style={{
           position: 'absolute',
           top: trackHeight / 2,
-          width: indicatorSize,
-          height: indicatorSize,
-          marginLeft: -indicatorSize / 2,
-          marginTop: -indicatorSize / 2,
+          width: needleSize,
+          height: needleSize,
+          marginLeft: -needleSize / 2,
+          marginTop: -needleSize / 2,
           borderRadius: '50%',
-          // Glassmorphic effect
-          background: bombStyle.bg,
-          backdropFilter: 'blur(8px)',
-          WebkitBackdropFilter: 'blur(8px)',
-          border: `1.5px solid ${bombStyle.border}`,
-          boxShadow: bombStyle.boxShadow,
-          // Layout
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          fontSize: compact ? 10 : 14,
+          backgroundColor: needleStyle.color,
+          border: `2px solid ${HOLO_COLORS.textPrimary}`,
+          boxShadow: needleStyle.boxShadow,
           zIndex: 10,
         }}
-      >
-        {bombStyle.emoji}
-      </motion.div>
+      />
 
       {/* Threshold Labels */}
       {showLabels && (
