@@ -671,7 +671,7 @@ const CommandConsole = ({
       {selectedAssetForResearch && (() => {
         const prevClose = selectedAssetForResearch.previousClose;
         const curPrice = selectedAssetForResearch.currentPrice;
-        const dailyChange = (prevClose && curPrice)
+        const dailyChange = (prevClose && prevClose > 0 && curPrice)
           ? ((curPrice - prevClose) / prevClose) * 100
           : undefined;
         return (
