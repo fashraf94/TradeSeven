@@ -383,27 +383,24 @@ function EventRow({ event, tier, onRedZoneTap, commentary, commentaryLoading }) 
         {/* Spacer */}
         <div style={{ flex: 1 }} />
 
-        {/* Chart button — invisible 44x44 tap target */}
+        {/* Chart button */}
         {onRedZoneTap && (
           <button
             onClick={(e) => { e.stopPropagation(); onRedZoneTap(event); }}
             style={{
-              background: 'transparent',
-              border: 'none',
+              backgroundColor: 'rgba(255, 255, 255, 0.06)',
+              border: '1px solid rgba(255, 255, 255, 0.1)',
+              borderRadius: '6px',
+              padding: '4px 10px',
+              color: COLORS.textMuted,
+              fontSize: '11px',
+              fontWeight: 600,
               cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              minHeight: '44px',
-              minWidth: '44px',
-              padding: 0,
-              margin: '-10px 0',
+              minHeight: '28px',
               flexShrink: 0,
             }}
           >
-            <span style={{ color: tier.chartButtonColor, fontSize: '16px', opacity: 0.7 }}>
-              {'\u{1F4C8}'}
-            </span>
+            Chart
           </button>
         )}
 
@@ -651,20 +648,19 @@ function ApproachingAlertCard({ event, onRedZoneTap }) {
           <button
             onClick={(e) => { e.stopPropagation(); onRedZoneTap(event); }}
             style={{
-              background: 'transparent',
-              border: 'none',
+              backgroundColor: 'rgba(255, 255, 255, 0.06)',
+              border: '1px solid rgba(255, 255, 255, 0.1)',
+              borderRadius: '6px',
+              padding: '4px 10px',
+              color: COLORS.textMuted,
+              fontSize: '11px',
+              fontWeight: 600,
               cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              minHeight: '44px',
-              minWidth: '44px',
-              padding: 0,
-              margin: '-10px 0',
+              minHeight: '28px',
               flexShrink: 0,
             }}
           >
-            <span style={{ color: rzColor, fontSize: '16px', opacity: 0.7 }}>{'\u{1F4C8}'}</span>
+            Chart
           </button>
         )}
       </div>
@@ -912,7 +908,6 @@ export default function EventFeed({
       borderRadius: '12px',
       overflow: 'hidden',
       width: '100%',
-      maxWidth: '400px',
     }}>
       {/* Sticky Header */}
       <div style={{
