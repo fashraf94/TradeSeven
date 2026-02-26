@@ -334,9 +334,6 @@ function SwapMarketButton({ swapsRemaining = 0, onClick, disabled = false }) {
         />
       )}
 
-      {/* Icon */}
-      <span style={{ fontSize: '18px', lineHeight: 1 }}>🔄</span>
-
       {/* Label */}
       <span
         style={{
@@ -347,26 +344,28 @@ function SwapMarketButton({ swapsRemaining = 0, onClick, disabled = false }) {
           letterSpacing: '1px',
         }}
       >
-        Swap Market
+        Swap Picks
       </span>
 
       {/* Counter Badge */}
       <span
         style={{
-          minWidth: '24px',
-          height: '24px',
-          borderRadius: '12px',
-          display: 'flex',
+          display: 'inline-flex',
           alignItems: 'center',
           justifyContent: 'center',
-          fontSize: '12px',
-          fontWeight: 700,
-          color: '#fff',
-          backgroundColor: hasSwaps ? HOLO_COLORS.cyan : HOLO_COLORS.red,
-          boxShadow: hasSwaps
-            ? `0 0 8px ${HOLO_COLORS.cyan}60`
-            : `0 0 8px ${HOLO_COLORS.red}40`,
-          padding: '0 6px',
+          minWidth: '32px',
+          height: '32px',
+          borderRadius: '16px',
+          backgroundColor: hasSwaps
+            ? 'rgba(0, 217, 255, 0.3)'
+            : 'rgba(239, 68, 68, 0.3)',
+          border: hasSwaps
+            ? '1px solid rgba(0, 217, 255, 0.6)'
+            : '1px solid rgba(239, 68, 68, 0.5)',
+          color: hasSwaps ? '#00d9ff' : '#ef4444',
+          fontSize: '16px',
+          fontWeight: 900,
+          padding: '0 10px',
         }}
       >
         {swapsRemaining}
