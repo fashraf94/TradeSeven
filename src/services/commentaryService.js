@@ -227,7 +227,7 @@ export class CommentaryEngine {
     const currentLeader = (current.creatorScore || 0) > (current.opponentScore || 0) ? 'creator'
       : (current.opponentScore || 0) > (current.creatorScore || 0) ? 'opponent' : 'tied';
 
-    if (prevLeader !== currentLeader && currentLeader !== 'tied' && prevLeader !== 'tied') {
+    if (prevLeader !== currentLeader && currentLeader !== 'tied') {
       const diff = Math.abs((current.creatorScore || 0) - (current.opponentScore || 0));
       events.push({
         eventId: `lead_change_${Date.now()}`,

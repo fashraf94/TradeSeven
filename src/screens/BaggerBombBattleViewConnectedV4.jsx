@@ -203,7 +203,7 @@ export default function BaggerBombBattleViewConnectedV4({
       events: battle?.events || [],
       ...battleStats,
     });
-  }, [player?.totalPoints, opponent?.totalPoints, battle?.events?.length]);
+  }, [player?.totalPoints, opponent?.totalPoints, battle?.events?.length, battleStats, clashCast]);
 
   // Build trigger object for TriggerCelebration
   const triggerForCelebration = useMemo(() => {
