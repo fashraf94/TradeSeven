@@ -96,6 +96,36 @@ export default function BaggerBombBattleViewConnected({
   // ClashCast AI commentary
   const clashCast = useClashCast(battleId, battle);
 
+  // Compute enriched battle stats for ClashCast context
+  const battleStats = useMemo(() => {
+    const events = battle?.events || [];
+    const pName = player?.username || 'Player 1';
+    const oName = opponent?.username || 'Player 2';
+
+    const isBagger = (e) => ['bagger', 'doublebagger', 'tenbagger', 'breakout', 'rally', 'moonshot']
+      .some(t => (e.type || '').toLowerCase().includes(t) || (e.thresholdName || '').toLowerCase().includes(t));
+    const isBust = (e) => ['bust', 'crash', 'meltdown']
+      .some(t => (e.type || '').toLowerCase().includes(t) || (e.thresholdName || '').toLowerCase().includes(t));
+
+    const allScoringEvents = events.filter(e => e.points != null && e.type !== 'swap' && e.type !== 'redzone');
+    const biggestEvent = allScoringEvents.reduce((best, e) =>
+      (Math.abs(e.points || 0) > Math.abs(best?.points || 0) ? e : best), null);
+
+    return {
+      creatorBaggerBombs: events.filter(e => e.playerName === pName && isBagger(e)).length,
+      opponentBaggerBombs: events.filter(e => e.playerName === oName && isBagger(e)).length,
+      creatorBusts: events.filter(e => e.playerName === pName && isBust(e)).length,
+      opponentBusts: events.filter(e => e.playerName === oName && isBust(e)).length,
+      totalEventCount: allScoringEvents.length,
+      biggestEvent: biggestEvent ? {
+        type: biggestEvent.thresholdName || biggestEvent.type,
+        asset: biggestEvent.symbol,
+        playerName: biggestEvent.playerName,
+        points: biggestEvent.points,
+      } : null,
+    };
+  }, [battle?.events, player?.username, opponent?.username]);
+
   // Feed ClashCast with battle state updates
   useEffect(() => {
     if (!battle || (battle.state?.status !== 'active' && battle.status !== 'active')) return;
@@ -108,6 +138,7 @@ export default function BaggerBombBattleViewConnected({
       sessionTimeRemaining: sessionTimeRemaining || null,
       sessionsCompleted: completedSessions || [],
       events: battle?.events || [],
+      ...battleStats,
     });
   }, [player?.totalPoints, opponent?.totalPoints, battle?.events?.length, currentSessionId]);
 
