@@ -46,6 +46,7 @@ export class CommentaryEngine {
     this.commentaryMap = new Map();       // eventId → commentary string
     this.commentaryLog = [];              // Ordered list for narrative context
     this.pendingCommentary = new Set();   // Event IDs currently being generated
+    this.processedEventIds = new Set();  // Firebase event IDs already detected (dedup)
     this.lastCommentaryTime = {};         // Per-tier throttle tracking
     this.onCommentary = onCommentary;     // Callback: (eventId, text, isLoading, synthetic) => void
     this.syntheticEvents = [];            // Standalone commentary events (lead changes, etc.)
@@ -64,6 +65,13 @@ export class CommentaryEngine {
   processStateUpdate(currentState) {
     if (this._destroyed) return;
 
+    console.log('[ClashCast] processStateUpdate called', {
+      hasEvents: !!currentState.events,
+      eventCount: currentState.events?.length || 0,
+      hasPreviousState: !!this.previousState,
+      prevEventCount: this.previousState?.events?.length || 0,
+    });
+
     if (!this.previousState) {
       this.previousState = { ...currentState };
       this._triggerCommentary(
@@ -76,6 +84,8 @@ export class CommentaryEngine {
     }
 
     const events = this._detectEvents(this.previousState, currentState);
+
+    console.log('[ClashCast] Detected events:', events.length, events.map(e => ({ type: e.type, asset: e.asset, eventId: e.eventId })));
 
     for (const event of events) {
       if (this._shouldGenerateCommentary(event)) {
@@ -112,31 +122,57 @@ export class CommentaryEngine {
   _detectEvents(prev, current) {
     const events = [];
 
-    // --- BREAKOUT DETECTION ---
-    const prevEvents = prev.events || [];
+    // --- BREAKOUT DETECTION (Set-based — robust against reordering/duplicates) ---
     const currentEvents = current.events || [];
 
-    if (currentEvents.length > prevEvents.length) {
-      const newEvents = currentEvents.slice(prevEvents.length);
-      for (const evt of newEvents) {
-        // Skip redzone/approaching events — they don't get commentary
-        if (evt.type === 'redzone') continue;
+    console.log('[ClashCast] _detectEvents scanning:', {
+      currentEventsLength: currentEvents.length,
+      processedIds: this.processedEventIds.size,
+    });
 
-        const classifiedType = this._classifyBreakoutEvent(evt);
-        events.push({
-          eventId: evt.id || `breakout_${evt.symbol}_${Date.now()}`,
-          type: classifiedType,
-          asset: evt.symbol,
-          player: evt.player,
-          playerName: evt.player === 'creator' ? current.creatorName : current.opponentName,
-          opponentName: evt.player === 'creator' ? current.opponentName : current.creatorName,
-          pointsAwarded: evt.points || 15,
-          assetMove: evt.movePercent ? `${evt.movePercent > 0 ? '+' : ''}${evt.movePercent.toFixed(1)}%` : null,
-          threshold: evt.threshold ? `${evt.threshold}%` : null,
-          tier: evt.portfolioTier || null,
-          fromFirebase: true,
-        });
+    for (const evt of currentEvents) {
+      const eventId = evt.id;
+
+      // Skip events without an ID (can't track them)
+      if (!eventId) {
+        console.warn('[ClashCast] Event missing id:', { symbol: evt.symbol, type: evt.type });
+        continue;
       }
+
+      // Already processed — skip
+      if (this.processedEventIds.has(eventId)) continue;
+
+      // Skip redzone/approaching events — they don't get commentary
+      if (evt.type === 'redzone' || evt.type === 'approaching') continue;
+
+      // Skip swap events — handled separately by SUBSTITUTION detection below
+      if (evt.type === 'swap') continue;
+
+      this.processedEventIds.add(eventId);
+
+      const classifiedType = this._classifyBreakoutEvent(evt);
+
+      console.log('[ClashCast] New breakout event detected:', {
+        eventId,
+        symbol: evt.symbol,
+        type: classifiedType,
+        originalType: evt.thresholdName || evt.type,
+        points: evt.points,
+      });
+
+      events.push({
+        eventId: eventId,
+        type: classifiedType,
+        asset: evt.symbol,
+        player: evt.player,
+        playerName: evt.player === 'creator' ? current.creatorName : current.opponentName,
+        opponentName: evt.player === 'creator' ? current.opponentName : current.creatorName,
+        pointsAwarded: evt.points || 15,
+        assetMove: evt.movePercent ? `${evt.movePercent > 0 ? '+' : ''}${evt.movePercent.toFixed(1)}%` : null,
+        threshold: evt.threshold ? `${evt.threshold}%` : null,
+        tier: evt.portfolioTier || null,
+        fromFirebase: true,
+      });
     }
 
     // --- LEAD CHANGE DETECTION ---
@@ -207,18 +243,28 @@ export class CommentaryEngine {
   }
 
   _classifyBreakoutEvent(evt) {
-    // First try direct mapping from existing type names
-    if (TYPE_MAP[evt.type]) return TYPE_MAP[evt.type];
+    // Direct mapping from known type names
+    const mapped = TYPE_MAP[evt.type] || TYPE_MAP[evt.thresholdName];
+    if (mapped) return mapped;
 
-    // Fallback: classify by multiplier/badge
-    const isPositive = evt.points > 0 || evt.type === 'positive';
+    // Normalized string matching for legacy/variant names
+    const raw = (evt.thresholdName || evt.type || '').toLowerCase().replace(/[_\s-]/g, '');
+    if (raw.includes('tenbagger') || raw.includes('moonshot')) return 'TENBAGGER';
+    if (raw.includes('doublebagger') || raw.includes('rally')) return 'DOUBLE_BAGGER';
+    if (raw.includes('bagger') || raw.includes('breakout')) return 'BAGGERBOMB';
+    if (raw.includes('meltdown')) return 'MELTDOWN';
+    if (raw.includes('crash')) return 'CRASH';
+    if (raw.includes('bust')) return 'BUST';
+
+    // Fallback: classify by multiplier/badge/points
+    const isPositive = (evt.points || 0) > 0 || evt.multiplier > 0;
     if (isPositive) {
-      if (evt.multiplier >= 2.0 || evt.badge === 'TENBAGGER' || evt.type === 'tenBagger') return 'TENBAGGER';
-      if (evt.multiplier >= 1.5 || evt.badge === 'DOUBLE_BAGGER' || evt.type === 'doubleBagger') return 'DOUBLE_BAGGER';
+      if (evt.multiplier >= 2.0 || evt.badge === 'TENBAGGER') return 'TENBAGGER';
+      if (evt.multiplier >= 1.5 || evt.badge === 'DOUBLE_BAGGER') return 'DOUBLE_BAGGER';
       return 'BAGGERBOMB';
     } else {
-      if (evt.multiplier >= 2.0 || evt.badge === 'MELTDOWN' || evt.type === 'meltdown') return 'MELTDOWN';
-      if (evt.multiplier >= 1.5 || evt.badge === 'CRASH' || evt.type === 'crash') return 'CRASH';
+      if (evt.multiplier >= 2.0 || evt.badge === 'MELTDOWN') return 'MELTDOWN';
+      if (evt.multiplier >= 1.5 || evt.badge === 'CRASH') return 'CRASH';
       return 'BUST';
     }
   }
@@ -226,18 +272,28 @@ export class CommentaryEngine {
   // ── Throttle Logic ───────────────────────────────────────────
 
   _shouldGenerateCommentary(event) {
-    if (this.commentaryLog.length >= this.MAX_COMMENTARY) return false;
+    if (this.commentaryLog.length >= this.MAX_COMMENTARY) {
+      console.log('[ClashCast] _shouldGenerateCommentary: MAX reached', { type: event.type, logLength: this.commentaryLog.length });
+      return false;
+    }
 
     // Bypass throttle for critical events
-    if (BYPASS_THROTTLE.includes(event.type)) return true;
+    if (BYPASS_THROTTLE.includes(event.type)) {
+      console.log('[ClashCast] _shouldGenerateCommentary: BYPASS', { type: event.type });
+      return true;
+    }
 
     const now = Date.now();
     const tier = this._getEventTier(event.type);
     const cooldown = tier === 1 ? this.TIER1_COOLDOWN : tier === 2 ? this.TIER2_COOLDOWN : 0;
     const lastTime = this.lastCommentaryTime[tier] || 0;
 
-    if (now - lastTime < cooldown) return false;
+    if (now - lastTime < cooldown) {
+      console.log('[ClashCast] _shouldGenerateCommentary: THROTTLED', { type: event.type, tier, cooldownRemaining: cooldown - (now - lastTime) });
+      return false;
+    }
 
+    console.log('[ClashCast] _shouldGenerateCommentary: APPROVED', { type: event.type, tier });
     return true;
   }
 
@@ -251,6 +307,8 @@ export class CommentaryEngine {
 
   async _triggerCommentary(eventId, event, battleState, isSynthetic = false) {
     if (this._destroyed) return;
+
+    console.log('[ClashCast] TRIGGERING commentary:', { eventId, type: event.type, asset: event.asset, isSynthetic });
 
     const tier = this._getEventTier(event.type);
     this.lastCommentaryTime[tier] = Date.now();
@@ -310,6 +368,7 @@ export class CommentaryEngine {
   }
 
   _deliverCommentary(eventId, event, commentaryText, isSynthetic) {
+    console.log('[ClashCast] DELIVERED commentary:', { eventId, type: event.type, textLength: commentaryText?.length, isSynthetic });
     this.commentaryMap.set(eventId, commentaryText);
     this.commentaryLog.push({
       type: event.type,
@@ -364,6 +423,7 @@ export class CommentaryEngine {
     this.commentaryMap.clear();
     this.commentaryLog = [];
     this.pendingCommentary.clear();
+    this.processedEventIds.clear();
     this.syntheticEvents = [];
     this.previousState = null;
   }
