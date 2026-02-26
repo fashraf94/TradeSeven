@@ -1,8 +1,9 @@
 // ChamberFuse - Bidirectional threshold gauge for BaggerBomb
 // Shows proximity to 6 thresholds (3 positive, 3 negative)
 // Segments stay lit once crossed (via history tracking)
+// Visual overhaul: Tiered glow needle + segment shimmer system
 
-import React, { useMemo, useEffect, useRef } from 'react';
+import React, { useMemo, useEffect, useRef, useState } from 'react';
 import PropTypes from 'prop-types';
 import { motion } from 'framer-motion';
 import { HOLO_COLORS, GLOW_EFFECTS } from '../../constants/holoTheme';
@@ -19,28 +20,6 @@ const MULTIPLIERS = {
   meltdown: -2.0,
 };
 
-// Segment colors when lit
-const SEGMENT_COLORS = {
-  // Positive (left to right after center)
-  bagger: HOLO_COLORS.green,       // #00ff88
-  doubleBagger: HOLO_COLORS.amber, // #f59e0b
-  tenBagger: HOLO_COLORS.purple,   // #8b5cf6
-  // Negative (right to left before center)
-  bust: HOLO_COLORS.amber,         // #f59e0b
-  crash: HOLO_COLORS.red,          // #ff3366
-  meltdown: '#991b1b',             // Deep red
-};
-
-// Segment glows when lit
-const SEGMENT_GLOWS = {
-  bagger: `0 0 12px ${HOLO_COLORS.green}80`,
-  doubleBagger: `0 0 12px ${HOLO_COLORS.amber}80`,
-  tenBagger: `0 0 12px ${HOLO_COLORS.purple}80`,
-  bust: `0 0 12px ${HOLO_COLORS.amber}80`,
-  crash: `0 0 12px ${HOLO_COLORS.red}80`,
-  meltdown: '0 0 12px #991b1b80',
-};
-
 // Segment emoji labels
 const SEGMENT_LABELS = {
   meltdown: '🔥',
@@ -49,6 +28,61 @@ const SEGMENT_LABELS = {
   bagger: '💣',
   doubleBagger: '💣💣',
   tenBagger: '🚀',
+};
+
+// Segment colors when lit (used for labels)
+const SEGMENT_COLORS = {
+  bagger: HOLO_COLORS.green,
+  doubleBagger: HOLO_COLORS.amber,
+  tenBagger: HOLO_COLORS.purple,
+  bust: HOLO_COLORS.amber,
+  crash: HOLO_COLORS.red,
+  meltdown: '#991b1b',
+};
+
+// Tiered needle indicator visual state config
+const NEEDLE_STYLES = {
+  neutral: {
+    color: HOLO_COLORS.cyan,
+    boxShadow: GLOW_EFFECTS.cyan,
+    pulse: null,
+  },
+  bagger: {
+    color: HOLO_COLORS.amber,
+    boxShadow: '0 0 12px rgba(255,215,0,0.5), 0 0 24px rgba(255,165,0,0.2)',
+    boxShadowPeak: '0 0 20px rgba(255,215,0,0.7), 0 0 35px rgba(255,165,0,0.35)',
+    pulse: { duration: 2 },
+  },
+  doubleBagger: {
+    color: HOLO_COLORS.gold,
+    boxShadow: '0 0 16px rgba(255,215,0,0.6), 0 0 30px rgba(255,165,0,0.3)',
+    boxShadowPeak: '0 0 24px rgba(255,215,0,0.8), 0 0 40px rgba(255,165,0,0.4)',
+    pulse: { duration: 1.8 },
+  },
+  tenBagger: {
+    color: '#ffffff',
+    boxShadow: '0 0 20px rgba(255,215,0,0.6), 0 0 35px rgba(255,255,255,0.3)',
+    boxShadowPeak: '0 0 28px rgba(255,215,0,0.8), 0 0 45px rgba(255,255,255,0.45)',
+    pulse: { duration: 1.5 },
+  },
+  bust: {
+    color: HOLO_COLORS.red,
+    boxShadow: '0 0 10px rgba(255,51,102,0.4), 0 0 20px rgba(255,0,0,0.15)',
+    boxShadowPeak: '0 0 16px rgba(255,51,102,0.6), 0 0 28px rgba(255,0,0,0.25)',
+    pulse: { duration: 2.5 },
+  },
+  crash: {
+    color: '#cc0032',
+    boxShadow: '0 0 12px rgba(255,51,102,0.5), 0 0 24px rgba(255,0,0,0.2)',
+    boxShadowPeak: '0 0 18px rgba(255,51,102,0.7), 0 0 32px rgba(255,0,0,0.3)',
+    pulse: { duration: 2 },
+  },
+  meltdown: {
+    color: '#991b1b',
+    boxShadow: '0 0 14px rgba(200,0,50,0.5), 0 0 28px rgba(153,27,27,0.3)',
+    boxShadowPeak: '0 0 20px rgba(200,0,50,0.7), 0 0 35px rgba(153,27,27,0.4)',
+    pulse: { duration: 1.8 },
+  },
 };
 
 /**
@@ -61,22 +95,98 @@ const valueToPercent = (multiplier, rangeMax = 2.5) => {
 };
 
 /**
- * FuseSegment - Individual segment of the fuse track
+ * Get tiered segment style based on segment name and lit state
+ * Uses CSS animations (compositor-friendly) instead of framer-motion for loops
  */
-function FuseSegment({ name, lit, color, glow, width, position }) {
+function getSegmentStyle(name, lit) {
+  if (!lit) {
+    return {
+      background: `rgba(22, 27, 34, 0.8)`,
+      opacity: 0.3,
+      boxShadow: 'none',
+    };
+  }
+
+  switch (name) {
+    case 'bagger':
+      return {
+        background: 'linear-gradient(90deg, rgba(245,158,11,0.3) 0%, rgba(255,165,0,0.2) 100%)',
+        backgroundSize: '200% 100%',
+        animation: 'chamberShimmer 3s ease-in-out infinite',
+        borderColor: 'rgba(245,158,11,0.4)',
+        boxShadow: '0 0 8px rgba(245,158,11,0.3)',
+        opacity: 1,
+      };
+    case 'doubleBagger':
+      return {
+        background: 'linear-gradient(90deg, rgba(0,255,255,0.3) 0%, rgba(0,217,255,0.2) 100%)',
+        backgroundSize: '200% 100%',
+        animation: 'chamberShimmer 2.5s ease-in-out infinite',
+        borderColor: 'rgba(0,255,255,0.5)',
+        boxShadow: '0 0 12px rgba(0,255,255,0.4)',
+        opacity: 1,
+      };
+    case 'tenBagger':
+      return {
+        background: 'linear-gradient(90deg, rgba(255,215,0,0.4) 0%, rgba(255,255,255,0.2) 50%, rgba(255,215,0,0.4) 100%)',
+        backgroundSize: '200% 100%',
+        animation: 'chamberShimmer 2s ease-in-out infinite',
+        borderColor: 'rgba(255,215,0,0.6)',
+        boxShadow: '0 0 16px rgba(255,215,0,0.5), 0 0 30px rgba(255,215,0,0.2)',
+        opacity: 1,
+      };
+    case 'bust':
+      return {
+        background: 'linear-gradient(90deg, rgba(255,51,102,0.2) 0%, rgba(200,0,50,0.15) 100%)',
+        backgroundSize: '200% 100%',
+        animation: 'chamberPulseRed 3s ease-in-out infinite',
+        borderColor: 'rgba(255,51,102,0.3)',
+        boxShadow: '0 0 6px rgba(255,51,102,0.25)',
+        opacity: 1,
+      };
+    case 'crash':
+      return {
+        background: 'linear-gradient(90deg, rgba(200,0,50,0.3) 0%, rgba(255,0,0,0.2) 100%)',
+        backgroundSize: '200% 100%',
+        animation: 'chamberPulseRed 2.5s ease-in-out infinite',
+        borderColor: 'rgba(255,0,0,0.4)',
+        boxShadow: '0 0 10px rgba(255,0,0,0.35)',
+        opacity: 1,
+      };
+    case 'meltdown':
+      return {
+        background: 'linear-gradient(90deg, rgba(153,27,27,0.35) 0%, rgba(127,29,29,0.25) 100%)',
+        backgroundSize: '200% 100%',
+        animation: 'chamberPulseRed 2s ease-in-out infinite',
+        borderColor: 'rgba(153,27,27,0.4)',
+        boxShadow: '0 0 10px rgba(153,27,27,0.35)',
+        opacity: 1,
+      };
+    default:
+      return {
+        background: HOLO_COLORS.bgElevated,
+        opacity: 1,
+        boxShadow: 'none',
+      };
+  }
+}
+
+/**
+ * FuseSegment - Individual segment of the fuse track
+ * Uses CSS transitions + CSS animations for performance
+ */
+function FuseSegment({ name, lit, width, position }) {
+  const segmentStyle = getSegmentStyle(name, lit);
+
   return (
-    <motion.div
-      animate={{
-        backgroundColor: lit ? color : HOLO_COLORS.bgElevated,
-        opacity: lit ? 1 : 0.3,
-        boxShadow: lit ? glow : 'none',
-      }}
-      transition={{ duration: 0.3, ease: 'easeOut' }}
+    <div
       style={{
         width,
         height: '100%',
         borderRight: position !== 'last' ? `1px solid ${HOLO_COLORS.borderSubtle}` : 'none',
         borderLeft: position === 'first' ? 'none' : undefined,
+        transition: 'opacity 0.3s ease-out, background 0.3s ease-out, box-shadow 0.3s ease-out',
+        ...segmentStyle,
       }}
     />
   );
@@ -85,8 +195,6 @@ function FuseSegment({ name, lit, color, glow, width, position }) {
 FuseSegment.propTypes = {
   name: PropTypes.string.isRequired,
   lit: PropTypes.bool.isRequired,
-  color: PropTypes.string.isRequired,
-  glow: PropTypes.string.isRequired,
   width: PropTypes.string.isRequired,
   position: PropTypes.oneOf(['first', 'middle', 'last']),
 };
@@ -123,6 +231,24 @@ export default function ChamberFuse({
     crash: currentMultiplier <= MULTIPLIERS.crash || history.minMultiplier <= MULTIPLIERS.crash,
     meltdown: currentMultiplier <= MULTIPLIERS.meltdown || history.minMultiplier <= MULTIPLIERS.meltdown,
   }), [currentMultiplier, history.maxMultiplier, history.minMultiplier]);
+
+  // Derive highest active state from litSegments
+  const activeState = useMemo(() => {
+    const highestPositive = litSegments.tenBagger ? 'tenBagger'
+      : litSegments.doubleBagger ? 'doubleBagger'
+      : litSegments.bagger ? 'bagger' : null;
+    const highestNegative = litSegments.meltdown ? 'meltdown'
+      : litSegments.crash ? 'crash'
+      : litSegments.bust ? 'bust' : null;
+    // Use the side matching current direction for the bomb indicator
+    const overall = currentMultiplier >= 0
+      ? (highestPositive || highestNegative)
+      : (highestNegative || highestPositive);
+    return { highestPositive, highestNegative, overall };
+  }, [litSegments, currentMultiplier]);
+
+  // Needle indicator visual style (tiered by threshold state)
+  const needleStyle = NEEDLE_STYLES[activeState.overall] || NEEDLE_STYLES.neutral;
 
   // Check if primed and calculate intensity (0-1, where 1 is closest to threshold)
   const primedState = useMemo(() => {
@@ -203,6 +329,24 @@ export default function ChamberFuse({
     prevMultiplierRef.current = curr;
   }, [currentMultiplier, onThresholdCross]);
 
+  // Ignite transition — brightness flash on new threshold crossing
+  const [igniting, setIgniting] = useState(false);
+  const prevLitRef = useRef(litSegments);
+
+  useEffect(() => {
+    const prev = prevLitRef.current;
+    const newlyLit = Object.keys(litSegments).some(
+      key => litSegments[key] && !prev[key]
+    );
+    if (newlyLit) {
+      setIgniting(true);
+      const timer = setTimeout(() => setIgniting(false), 400);
+      prevLitRef.current = litSegments;
+      return () => clearTimeout(timer);
+    }
+    prevLitRef.current = litSegments;
+  }, [litSegments]);
+
   // Calculate needle position as percentage
   const needlePosition = useMemo(() => valueToPercent(currentMultiplier), [currentMultiplier]);
 
@@ -221,6 +365,20 @@ export default function ChamberFuse({
     { name: 'tenBagger', position: 'last' },
   ];
 
+  // Build boxShadow pulse animation for needle (framer-motion)
+  const needlePulseAnimate = needleStyle.pulse ? {
+    boxShadow: [
+      needleStyle.boxShadow,
+      needleStyle.boxShadowPeak || needleStyle.boxShadow,
+      needleStyle.boxShadow,
+    ],
+  } : {};
+  const needlePulseTransition = needleStyle.pulse ? {
+    duration: needleStyle.pulse.duration,
+    repeat: Infinity,
+    ease: 'easeInOut',
+  } : {};
+
   return (
     <div
       style={{
@@ -228,6 +386,7 @@ export default function ChamberFuse({
         width: '100%',
         height: trackHeight + (showLabels ? 20 : 0),
         userSelect: 'none',
+        animation: igniting ? 'chamberIgnite 0.4s ease-out forwards' : 'none',
       }}
     >
       {/* Track Background with Segments */}
@@ -250,8 +409,6 @@ export default function ChamberFuse({
             key={seg.name}
             name={seg.name}
             lit={litSegments[seg.name]}
-            color={SEGMENT_COLORS[seg.name]}
-            glow={SEGMENT_GLOWS[seg.name]}
             width="16.67%"
             position={seg.position}
           />
@@ -273,18 +430,19 @@ export default function ChamberFuse({
         }}
       />
 
-      {/* Animated Needle - intensity-based vibration */}
+      {/* Animated Needle — solid glowing circle with tiered color */}
       <motion.div
         animate={{
           left: `${needlePosition}%`,
-          // Vibration amplitude scales with intensity (0.3 = subtle, 1.0 = strong)
           x: animate && isPrimed ? [-3 * primedIntensity, 3 * primedIntensity, -2 * primedIntensity, 2 * primedIntensity, 0] : 0,
           scale: isPrimed ? 1 + (0.15 * primedIntensity) : 1,
+          ...needlePulseAnimate,
         }}
         transition={{
           left: { type: 'spring', stiffness: 80, damping: 15 },
           x: isPrimed ? { duration: 0.2 + (0.15 * (1 - primedIntensity)), repeat: Infinity, ease: 'easeInOut' } : { duration: 0 },
           scale: { duration: 0.2 },
+          boxShadow: needlePulseTransition,
         }}
         style={{
           position: 'absolute',
@@ -294,12 +452,9 @@ export default function ChamberFuse({
           marginLeft: -needleSize / 2,
           marginTop: -needleSize / 2,
           borderRadius: '50%',
-          backgroundColor: isPrimed ? HOLO_COLORS.amber : HOLO_COLORS.cyan,
+          backgroundColor: needleStyle.color,
           border: `2px solid ${HOLO_COLORS.textPrimary}`,
-          // Glow intensity scales with proximity
-          boxShadow: isPrimed
-            ? `0 0 ${12 + (8 * primedIntensity)}px ${HOLO_COLORS.amber}, 0 0 ${20 + (15 * primedIntensity)}px ${HOLO_COLORS.amber}40`
-            : GLOW_EFFECTS.cyan,
+          boxShadow: needleStyle.boxShadow,
           zIndex: 10,
         }}
       />

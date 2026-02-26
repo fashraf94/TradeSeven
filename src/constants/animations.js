@@ -282,6 +282,30 @@ export const KEYFRAMES = {
     }
   `,
 
+  // ChamberFuse shimmer sweep for lit segments
+  chamberShimmer: `
+    @keyframes chamberShimmer {
+      0% { background-position: -200% center; }
+      100% { background-position: 200% center; }
+    }
+  `,
+
+  // ChamberFuse red pulse for negative threshold segments
+  chamberPulseRed: `
+    @keyframes chamberPulseRed {
+      0%, 100% { opacity: 0.7; }
+      50% { opacity: 1; }
+    }
+  `,
+
+  // ChamberFuse ignite brightness flash on threshold crossing
+  chamberIgnite: `
+    @keyframes chamberIgnite {
+      0% { filter: brightness(1.4); }
+      100% { filter: brightness(1); }
+    }
+  `,
+
   // Training button glow
   pulseGlowTraining: `
     @keyframes pulse-glow-training {
@@ -733,6 +757,11 @@ export const ANIMATION_PRESETS = {
   gaugeFlash: 'gauge-flash 0.6s ease-out',
   gaugeCelebrate: 'gauge-celebrate 1s ease-out',
 
+  // ChamberFuse
+  chamberShimmer: 'chamberShimmer 3s linear infinite',
+  chamberPulseRed: 'chamberPulseRed 3s ease-in-out infinite',
+  chamberIgnite: 'chamberIgnite 0.4s ease-out forwards',
+
   // Confirm button
   confirmPulse: 'confirm-pulse 2s ease-in-out infinite',
 
@@ -813,4 +842,7 @@ export const HOLO_ANIMATIONS = `
   ${KEYFRAMES.holoGlow}
   ${KEYFRAMES.holoFloat}
   ${KEYFRAMES.scanDown}
+  ${KEYFRAMES.chamberShimmer}
+  ${KEYFRAMES.chamberPulseRed}
+  ${KEYFRAMES.chamberIgnite}
 `;

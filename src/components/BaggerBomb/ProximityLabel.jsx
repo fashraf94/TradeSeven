@@ -1,5 +1,6 @@
 // ProximityLabel - Shows distance to next threshold
 // Displays "0.4% to 🚀" style helper text
+// Shows achievement text when thresholds are crossed
 
 import React, { useMemo } from 'react';
 import PropTypes from 'prop-types';
@@ -18,16 +19,38 @@ const THRESHOLDS = {
   meltdown: { multiplier: -2.0, icon: '🔥', label: 'Meltdown' },
 };
 
+// Achievement display config for crossed thresholds
+const ACHIEVEMENT_CONFIG = {
+  bagger:       { text: '💣 BaggerBomb!', color: HOLO_COLORS.amber, fontWeight: 700, textShadow: 'none' },
+  doubleBagger: { text: '💣💣 Double Bagger!', color: HOLO_COLORS.cyan, fontWeight: 700, textShadow: 'none' },
+  tenBagger:    { text: '🚀 TenBagger!', color: HOLO_COLORS.gold, fontWeight: 700, textShadow: '0 0 8px rgba(255,215,0,0.6)' },
+  bust:         { text: '📉 Bust', color: HOLO_COLORS.red, fontWeight: 500, textShadow: 'none' },
+  crash:        { text: '💥 Crash', color: HOLO_COLORS.red, fontWeight: 700, textShadow: 'none' },
+  meltdown:     { text: '🔥 Meltdown', color: '#991b1b', fontWeight: 700, textShadow: 'none' },
+};
+
 /**
  * Calculate the next threshold and distance to it
+ * Also returns highestCrossed for achievement text display
  */
 function calculateNextThreshold(priceChange, baseATR, history) {
   if (!baseATR || baseATR === 0) {
-    return { distance: 0, label: '—', icon: '', direction: 'neutral', isPrimed: false };
+    return { distance: 0, label: '—', icon: '', direction: 'neutral', isPrimed: false, highestCrossed: null };
   }
 
   const maxReached = history?.maxMultiplier || 0;
   const minReached = history?.minMultiplier || 0;
+
+  // Compute highest crossed threshold on each side
+  let highestCrossedPositive = null;
+  if (maxReached >= THRESHOLDS.tenBagger.multiplier) highestCrossedPositive = 'tenBagger';
+  else if (maxReached >= THRESHOLDS.doubleBagger.multiplier) highestCrossedPositive = 'doubleBagger';
+  else if (maxReached >= THRESHOLDS.bagger.multiplier) highestCrossedPositive = 'bagger';
+
+  let highestCrossedNegative = null;
+  if (minReached <= THRESHOLDS.meltdown.multiplier) highestCrossedNegative = 'meltdown';
+  else if (minReached <= THRESHOLDS.crash.multiplier) highestCrossedNegative = 'crash';
+  else if (minReached <= THRESHOLDS.bust.multiplier) highestCrossedNegative = 'bust';
 
   // Determine direction based on current movement
   const isPositive = priceChange >= 0;
@@ -37,7 +60,6 @@ function calculateNextThreshold(priceChange, baseATR, history) {
     if (maxReached < THRESHOLDS.bagger.multiplier) {
       const targetPercent = baseATR * THRESHOLDS.bagger.multiplier;
       const distance = targetPercent - priceChange;
-      // isPrimed when within 50% of threshold
       const isPrimed = distance <= targetPercent * 0.5;
       return {
         distance: Math.max(0, distance),
@@ -45,6 +67,7 @@ function calculateNextThreshold(priceChange, baseATR, history) {
         icon: THRESHOLDS.bagger.icon,
         direction: 'positive',
         isPrimed,
+        highestCrossed: highestCrossedPositive,
       };
     }
     if (maxReached < THRESHOLDS.doubleBagger.multiplier) {
@@ -57,6 +80,7 @@ function calculateNextThreshold(priceChange, baseATR, history) {
         icon: THRESHOLDS.doubleBagger.icon,
         direction: 'positive',
         isPrimed,
+        highestCrossed: highestCrossedPositive,
       };
     }
     if (maxReached < THRESHOLDS.tenBagger.multiplier) {
@@ -69,6 +93,7 @@ function calculateNextThreshold(priceChange, baseATR, history) {
         icon: THRESHOLDS.tenBagger.icon,
         direction: 'positive',
         isPrimed,
+        highestCrossed: highestCrossedPositive,
       };
     }
     // All positive thresholds reached
@@ -78,13 +103,13 @@ function calculateNextThreshold(priceChange, baseATR, history) {
       icon: '🚀',
       direction: 'maxed',
       isPrimed: false,
+      highestCrossed: highestCrossedPositive,
     };
   } else {
     // Moving negative - find next downward threshold
     if (minReached > THRESHOLDS.bust.multiplier) {
       const targetPercent = Math.abs(baseATR * THRESHOLDS.bust.multiplier);
       const distance = priceChange - (baseATR * THRESHOLDS.bust.multiplier);
-      // isPrimed when within 50% of threshold
       const isPrimed = distance <= targetPercent * 0.5;
       return {
         distance: Math.max(0, distance),
@@ -92,6 +117,7 @@ function calculateNextThreshold(priceChange, baseATR, history) {
         icon: THRESHOLDS.bust.icon,
         direction: 'negative',
         isPrimed,
+        highestCrossed: highestCrossedNegative,
       };
     }
     if (minReached > THRESHOLDS.crash.multiplier) {
@@ -104,6 +130,7 @@ function calculateNextThreshold(priceChange, baseATR, history) {
         icon: THRESHOLDS.crash.icon,
         direction: 'negative',
         isPrimed,
+        highestCrossed: highestCrossedNegative,
       };
     }
     if (minReached > THRESHOLDS.meltdown.multiplier) {
@@ -116,6 +143,7 @@ function calculateNextThreshold(priceChange, baseATR, history) {
         icon: THRESHOLDS.meltdown.icon,
         direction: 'negative',
         isPrimed,
+        highestCrossed: highestCrossedNegative,
       };
     }
     // All negative thresholds reached
@@ -125,6 +153,7 @@ function calculateNextThreshold(priceChange, baseATR, history) {
       icon: '🔥',
       direction: 'maxed',
       isPrimed: false,
+      highestCrossed: highestCrossedNegative,
     };
   }
 }
@@ -139,7 +168,7 @@ export default function ProximityLabel({
   size = 'default',
   align = 'left',
 }) {
-  const { distance, label, icon, direction, isPrimed } = useMemo(
+  const { distance, label, icon, direction, isPrimed, highestCrossed } = useMemo(
     () => calculateNextThreshold(priceChange, baseATR, history),
     [priceChange, baseATR, history]
   );
@@ -147,8 +176,14 @@ export default function ProximityLabel({
   const isSmall = size === 'small';
   const fontSize = isSmall ? '10px' : '12px';
 
+  // Check if we should show achievement text
+  const achievement = highestCrossed && (direction === 'maxed' || distance === 0)
+    ? ACHIEVEMENT_CONFIG[highestCrossed]
+    : null;
+
   // Determine text color based on direction
   const getTextColor = () => {
+    if (achievement) return achievement.color;
     if (direction === 'maxed') {
       return direction === 'positive' ? HOLO_COLORS.green : HOLO_COLORS.red;
     }
@@ -158,6 +193,7 @@ export default function ProximityLabel({
 
   // Format the display text - "💣 X.X% to BaggerBomb" format
   const formatText = () => {
+    if (achievement) return achievement.text;
     if (direction === 'maxed') {
       return `${icon} MAX`;
     }
@@ -181,7 +217,8 @@ export default function ProximityLabel({
       style={{
         fontSize,
         color: getTextColor(),
-        fontWeight: 500,
+        fontWeight: achievement ? achievement.fontWeight : 500,
+        textShadow: achievement ? achievement.textShadow : undefined,
         textAlign: align,
         display: 'block',
         whiteSpace: 'nowrap',

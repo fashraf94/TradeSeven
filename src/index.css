@@ -240,6 +240,24 @@ img, video, canvas, svg {
   100% { left: 100%; }
 }
 
+/* ChamberFuse segment shimmer - sweeps gradient left to right */
+@keyframes chamberShimmer {
+  0% { background-position: -200% center; }
+  100% { background-position: 200% center; }
+}
+
+/* ChamberFuse red pulse for bust/crash/meltdown segments */
+@keyframes chamberPulseRed {
+  0%, 100% { opacity: 0.7; }
+  50% { opacity: 1; }
+}
+
+/* ChamberFuse ignite flash when threshold is newly crossed */
+@keyframes chamberIgnite {
+  0% { filter: brightness(1.4); }
+  100% { filter: brightness(1); }
+}
+
 @keyframes scan-down {
   0% { top: 0; opacity: 1; }
   100% { top: 100%; opacity: 0; }
