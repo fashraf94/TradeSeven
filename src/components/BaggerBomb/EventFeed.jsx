@@ -274,10 +274,10 @@ const getAvatarColor = (name) => {
 
 /**
  * EventRow — compact 2-row breakout event card
- * Row 1: [Avatar] Name · SYMBOL [Badge] ... [ChartIcon] +Points
+ * Row 1: [Avatar] Name · SYMBOL [Badge] ... +Points
  * Row 2: (optional) indented mic + commentary
  */
-function EventRow({ event, tier, onRedZoneTap, commentary, commentaryLoading }) {
+function EventRow({ event, tier, commentary, commentaryLoading }) {
   const playerName = event.player || event.username || 'Player';
   const pointsValue = event.points || (EVENT_CONFIG[event.type] || EVENT_CONFIG.bagger).points;
   const isPositive = pointsValue > 0;
@@ -382,27 +382,6 @@ function EventRow({ event, tier, onRedZoneTap, commentary, commentaryLoading }) 
 
         {/* Spacer */}
         <div style={{ flex: 1 }} />
-
-        {/* Chart button */}
-        {onRedZoneTap && (
-          <button
-            onClick={(e) => { e.stopPropagation(); onRedZoneTap(event); }}
-            style={{
-              backgroundColor: 'rgba(255, 255, 255, 0.06)',
-              border: '1px solid rgba(255, 255, 255, 0.1)',
-              borderRadius: '6px',
-              padding: '4px 10px',
-              color: COLORS.textMuted,
-              fontSize: '11px',
-              fontWeight: 600,
-              cursor: 'pointer',
-              minHeight: '28px',
-              flexShrink: 0,
-            }}
-          >
-            Chart
-          </button>
-        )}
 
         {/* Points */}
         <span style={{
@@ -604,9 +583,16 @@ function BattleBanner({ event, commentary, commentaryLoading }) {
 /**
  * ApproachingAlertCard — compact red zone card with progress bar
  */
-function ApproachingAlertCard({ event, onRedZoneTap }) {
+function ApproachingAlertCard({ event, onRedZoneTap, currentUser }) {
   const rzColor = event.direction === 'negative' ? COLORS.red : COLORS.amber;
   const percentage = event.progress || 0;
+
+  // Chart button color: green if good for user, red if bad
+  const isPositiveThreshold = event.direction === 'positive';
+  const isCurrentUserEvent = event.player === currentUser;
+  const isGoodForUser = (isCurrentUserEvent && isPositiveThreshold) ||
+                        (!isCurrentUserEvent && !isPositiveThreshold);
+  const chartColor = isGoodForUser ? COLORS.green : COLORS.red;
 
   return (
     <motion.div
@@ -648,11 +634,11 @@ function ApproachingAlertCard({ event, onRedZoneTap }) {
           <button
             onClick={(e) => { e.stopPropagation(); onRedZoneTap(event); }}
             style={{
-              backgroundColor: 'rgba(255, 255, 255, 0.06)',
-              border: '1px solid rgba(255, 255, 255, 0.1)',
+              backgroundColor: `${chartColor}15`,
+              border: `1px solid ${chartColor}40`,
               borderRadius: '6px',
               padding: '4px 10px',
-              color: COLORS.textMuted,
+              color: chartColor,
               fontSize: '11px',
               fontWeight: 600,
               cursor: 'pointer',
@@ -774,7 +760,7 @@ function SyntheticFallbackCard({ event, commentary, commentaryLoading }) {
 /**
  * EventItem — routes events to the appropriate component
  */
-function EventItem({ event, onRedZoneTap, commentary = null, commentaryLoading = false }) {
+function EventItem({ event, onRedZoneTap, currentUser, commentary = null, commentaryLoading = false }) {
   const isSynthetic = event.isSynthetic;
   const isRedZone = event.type === 'redzone';
   const isSwap = event.type === 'swap';
@@ -813,7 +799,7 @@ function EventItem({ event, onRedZoneTap, commentary = null, commentaryLoading =
 
   // Red Zone
   if (isRedZone) {
-    return <ApproachingAlertCard event={event} onRedZoneTap={onRedZoneTap} />;
+    return <ApproachingAlertCard event={event} onRedZoneTap={onRedZoneTap} currentUser={currentUser} />;
   }
 
   // Swap
@@ -827,7 +813,6 @@ function EventItem({ event, onRedZoneTap, commentary = null, commentaryLoading =
     <EventRow
       event={event}
       tier={tier}
-      onRedZoneTap={onRedZoneTap}
       commentary={commentary}
       commentaryLoading={commentaryLoading}
     />
@@ -845,6 +830,7 @@ EventItem.propTypes = {
     points: PropTypes.number,
   }).isRequired,
   onRedZoneTap: PropTypes.func,
+  currentUser: PropTypes.string,
   commentary: PropTypes.string,
   commentaryLoading: PropTypes.bool,
 };
@@ -992,7 +978,8 @@ export default function EventFeed({
                 <EventItem
                   key={event.id || `${event.timestamp}-${event.symbol}-${index}`}
                   event={event}
-                  onRedZoneTap={event.type !== 'swap' && !event.isSynthetic ? onRedZoneTap : undefined}
+                  onRedZoneTap={event.type === 'redzone' ? onRedZoneTap : undefined}
+                  currentUser={currentUser}
                   commentary={commentaryData?.text || null}
                   commentaryLoading={commentaryData?.isLoading || false}
                 />
