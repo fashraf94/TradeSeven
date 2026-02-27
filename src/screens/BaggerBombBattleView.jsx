@@ -590,7 +590,7 @@ export default function BaggerBombBattleView({
               return sum;
             }, 0) || 0,
             totalScore: breakdownAsset.points || 0,
-            startingPrice: breakdownAsset.swapPrice || battle?.state?.startingPrices?.[breakdownAsset.symbol] || 0,
+            startingPrice: openPrices[breakdownAsset.symbol] || breakdownAsset.swapPrice || battle?.state?.startingPrices?.[breakdownAsset.symbol] || 0,
             currentPrice: currentPrices[breakdownAsset.symbol] || 0,
           }}
           events={events || []}

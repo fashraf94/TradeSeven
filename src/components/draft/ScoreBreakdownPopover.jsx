@@ -41,9 +41,10 @@ const ScoreBreakdownPopover = ({ asset, events: battleEvents = [], onClose }) =>
     startingPrice = 0,
     currentPrice = 0,
     lockedPrice = 0,
+    baselinePrice = 0,
   } = asset;
 
-  const entryPrice = startingPrice || lockedPrice;
+  const entryPrice = baselinePrice || startingPrice || lockedPrice;
   const hasEntryPrice = entryPrice > 0 && currentPrice > 0;
 
   // Build timeline from real persisted events (filtered to this symbol).
@@ -188,7 +189,7 @@ const ScoreBreakdownPopover = ({ asset, events: battleEvents = [], onClose }) =>
             }}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
                 <span style={{ fontSize: '11px', color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                  Entry Price
+                  Day Baseline
                 </span>
                 <span style={{ fontSize: '16px', fontWeight: 700, color: '#ffffff' }}>
                   ${entryPrice.toFixed(2)}
