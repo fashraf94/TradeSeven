@@ -537,7 +537,7 @@ export default function BaggerBombBattleView({
 
       {/* Research Modal - opens when stock symbol is tapped */}
       {researchAsset && (() => {
-        const dailyOpen = freeAgentDailyOpens?.[researchAsset.symbol];
+        const dailyOpen = openPrices[researchAsset.symbol] || freeAgentDailyOpens?.[researchAsset.symbol];
         const livePrice = currentPrices[researchAsset.symbol];
         const dailyChange = (dailyOpen && dailyOpen > 0 && livePrice)
           ? ((livePrice - dailyOpen) / dailyOpen) * 100

@@ -134,17 +134,27 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
 
   // Get open prices for current trading day
   const openPrices = useMemo(() => {
-    // For V4: use dailyOpenPrices for current day
-    const dayKey = `day${currentTradingDay}`;
-    const dailyOpen = battle?.state?.dailyOpenPrices?.[dayKey];
     const startingPrices = battle?.state?.startingPrices;
-
-    // Use daily open prices if available, otherwise fall back to starting prices
-    const hasDailyOpen = dailyOpen && Object.keys(dailyOpen).length > 0;
     const hasStarting = startingPrices && Object.keys(startingPrices).length > 0;
 
+    // Day 1: Always use starting prices (battle creation prices per product requirement)
+    if (currentTradingDay === 1) {
+      return hasStarting ? startingPrices : effectivePrices || {};
+    }
+
+    // Day 2+: Prefer live previousClose from API (resets daily, most accurate).
+    // marketOpenPrices now contains previousClose values (from Issue #3 fix).
+    // This overrides stale Firebase dailyOpenPrices that may have been captured
+    // with market-open prices before the fix.
+    if (Object.keys(marketOpenPrices).length > 0) return marketOpenPrices;
+
+    // Fallback to Firebase-stored daily opens (before API data loads)
+    const dayKey = `day${currentTradingDay}`;
+    const dailyOpen = battle?.state?.dailyOpenPrices?.[dayKey];
+    const hasDailyOpen = dailyOpen && Object.keys(dailyOpen).length > 0;
+
     return hasDailyOpen ? dailyOpen : hasStarting ? startingPrices : effectivePrices || {};
-  }, [battle, currentTradingDay, effectivePrices]);
+  }, [marketOpenPrices, battle, currentTradingDay, effectivePrices]);
 
   // Free agents data
   const freeAgents = useMemo(() => {

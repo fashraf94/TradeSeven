@@ -21,6 +21,7 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [dailyChange, setDailyChange] = useState(null); // Daily % change computed from OHLCV
+  const [previousClose, setPreviousClose] = useState(null); // Yesterday's close from daily OHLCV
 
   const abortRef = useRef(null);
   const cacheRef = useRef({});  // In-memory cache keyed by `${symbol}_${apiTimeframe}`
@@ -102,7 +103,9 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
 
           // Compute daily change from daily data (rawData is newest-first)
           if (apiTimeframe === '1d' && data.length >= 2) {
+            cacheRef.current[`${symbol}_1d`] = data;
             const prevClose = Number(data[1].close);
+            setPreviousClose(prevClose);
             const currClose = currentPrice > 0 ? currentPrice : Number(data[0].close);
             if (prevClose > 0 && currClose > 0) {
               setDailyChange(((currClose - prevClose) / prevClose) * 100);
@@ -124,6 +127,37 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
       thisRequest.aborted = true;
     };
   }, [symbol, apiTimeframe, isBomb, isSpectate]);
+
+  // Always compute dailyChange on mount, regardless of chart timeframe.
+  // The main fetch only sets dailyChange when apiTimeframe === '1d' (i.e. the 1D tab).
+  // For bomb/spectate/weekly views, this separate fetch ensures dailyChange is available
+  // so the modal header always shows today's daily % change.
+  useEffect(() => {
+    if (!symbol) return;
+    if (apiTimeframe === '1d') return; // Main fetch handles this case
+
+    const dailyCacheKey = `${symbol}_1d`;
+    const cached = cacheRef.current[dailyCacheKey];
+    if (cached && cached.length >= 2) {
+      const pc = Number(cached[1].close);
+      setPreviousClose(pc);
+      const curr = currentPrice > 0 ? currentPrice : Number(cached[0].close);
+      if (pc > 0 && curr > 0) setDailyChange(((curr - pc) / pc) * 100);
+      return;
+    }
+
+    fetchHistoricalOHLCV(symbol, '1d', { days: 5, ...(isCrypto ? { type: 'crypto' } : {}) })
+      .then(data => {
+        if (data && data.length >= 2) {
+          cacheRef.current[dailyCacheKey] = data;
+          const pc = Number(data[1].close);
+          setPreviousClose(pc);
+          const curr = currentPrice > 0 ? currentPrice : Number(data[0].close);
+          if (pc > 0 && curr > 0) setDailyChange(((curr - pc) / pc) * 100);
+        }
+      })
+      .catch(() => {}); // Silent — dailyChange stays null, enrichedAsset falls through
+  }, [symbol, isCrypto]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auto-refresh spectate mode every 15 seconds
   // Guard: stop polling after 3 consecutive empty responses (EODHD has no 1m data)
@@ -176,6 +210,7 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
     if (!dailyData || dailyData.length < 2) return;
     const prevClose = Number(dailyData[1].close);
     if (prevClose > 0) {
+      setPreviousClose(prevClose);
       setDailyChange(((currentPrice - prevClose) / prevClose) * 100);
     }
   }, [currentPrice, symbol]);
@@ -469,5 +504,6 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
     error,
     retry,
     dailyChange,     // Daily % change computed from OHLCV (null until data loads)
+    previousClose,   // Yesterday's closing price from daily OHLCV (null until data loads)
   };
 }
