@@ -34,6 +34,7 @@ const StockChart = ({
   const highlightLineRef = useRef(null);
   const bombPriceLinesRef = useRef([]);
   const volumeSeriesRef = useRef(null);
+  const lastCrosshairUpdateRef = useRef(0);
 
   const [ohlcData, setOhlcData] = useState(null);
   const [showSMA, setShowSMA] = useState(false);
@@ -445,8 +446,12 @@ const StockChart = ({
       });
     }
 
-    // OHLC: update on crosshair move
+    // OHLC: update on crosshair move (throttled to ~20fps)
     chart.subscribeCrosshairMove((param) => {
+      const now = Date.now();
+      if (now - lastCrosshairUpdateRef.current < 50) return;
+      lastCrosshairUpdateRef.current = now;
+
       if (param.time && candleSeriesRef.current) {
         const candle = param.seriesData.get(candleSeriesRef.current);
         if (candle) {
