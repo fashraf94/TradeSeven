@@ -6,7 +6,8 @@ import PropTypes from 'prop-types';
 import { motion } from 'framer-motion';
 import { ChevronLeft } from 'lucide-react';
 import { HOLO_COLORS } from '../../constants/holoTheme';
-import { STOCKS as STATIC_STOCKS, CRYPTO as STATIC_CRYPTO } from '../../data/assets';
+import { STOCKS as STATIC_STOCKS } from '../../data/assets';
+import { BAGGERBOMB_CRYPTO_POOL } from '../../constants/cryptoPool';
 import PortfolioSlot from './PortfolioSlot';
 import AssetPickerModal from './AssetPickerModal';
 
@@ -204,16 +205,14 @@ export default function SlotBasedBuilder({
   }, [stockPrices]);
 
   const formattedCrypto = useMemo(() => {
-    return STATIC_CRYPTO
-      .filter(c => c.category !== 'Stablecoin') // Exclude stablecoins
-      .map(coin => ({
-        symbol: coin.symbol,
-        name: coin.name,
-        sector: 'Crypto',
-        price: cryptoPrices[coin.symbol] || 0,
-        baseATR: coin.baseATR || SECTOR_DEFAULT_ATR['Crypto'] || 5.0,
-        isCrypto: true,
-      }));
+    return BAGGERBOMB_CRYPTO_POOL.map(coin => ({
+      symbol: coin.symbol,
+      name: coin.name,
+      sector: 'Crypto',
+      price: cryptoPrices[coin.symbol] || 0,
+      baseATR: coin.baseATR || SECTOR_DEFAULT_ATR['Crypto'] || 5.0,
+      isCrypto: true,
+    }));
   }, [cryptoPrices]);
 
   // Modal state

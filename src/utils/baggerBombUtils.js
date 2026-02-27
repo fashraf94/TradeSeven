@@ -505,8 +505,8 @@ export function organizeIntoTiers(flatPortfolio) {
  * @param {number} points - Points for this threshold
  * @returns {Object} Event object
  */
-export function createThresholdEvent(player, symbol, thresholdName, multiplier, points) {
-  return {
+export function createThresholdEvent(player, symbol, thresholdName, multiplier, points, direction) {
+  const event = {
     id: `${Date.now()}-${symbol}-${thresholdName}`,
     timestamp: new Date().toISOString(),
     type: thresholdName,
@@ -515,6 +515,8 @@ export function createThresholdEvent(player, symbol, thresholdName, multiplier, 
     multiplier,
     points,
   };
+  if (direction) event.direction = direction;
+  return event;
 }
 
 // ==================== SCORING ====================
@@ -591,6 +593,7 @@ export function calculateAssetScoreV3(asset, priceChange, history = {}, extremes
 export function getBattleVersion(battle) {
   if (!battle) return 3;
   if (battle._v) return battle._v;
+  if (battle.type === 'baggerbomb_v5') return 5;
   if (battle.type === 'baggerbomb_v4') return 4;
   return 3;
 }
@@ -620,4 +623,16 @@ export function getPortfolioAssets(battle, isCreator = true) {
     ...(player.portfolio.core || []),
     ...(player.portfolio.support || []),
   ].filter(Boolean);
+}
+
+/**
+ * Calculate percentage change between current and open price.
+ * Safe against zero/missing values.
+ * @param {number} current - Current price
+ * @param {number} open - Open/reference price
+ * @returns {number|null} Percentage change or null if inputs invalid
+ */
+export function calcPctChange(current, open) {
+  if (!current || !open || open === 0) return null;
+  return ((current - open) / open) * 100;
 }

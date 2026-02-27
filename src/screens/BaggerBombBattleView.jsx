@@ -25,6 +25,7 @@ import TacticalRow from '../components/BaggerBomb/TacticalRow';
 import BenchSection from '../components/BaggerBomb/BenchSection';
 import ClosedTradesSection from '../components/BaggerBomb/ClosedTradesSection';
 import EventFeed from '../components/BaggerBomb/EventFeed';
+import SwapMarketModal from '../components/BaggerBomb/SwapMarketModal';
 
 // Import modals for research and score breakdown
 import AssetResearchModal from '../components/draft/AssetResearchModal';
@@ -220,12 +221,21 @@ export default function BaggerBombBattleView({
   onSelectSwapTarget,
   onConfirmSwap,
   isSwapExecuting,
+  // V5 Swap Market props
+  showSwapMarket = false,
+  onCloseSwapMarket,
+  onSwapStock,
+  onSwapCryptoLong,
+  onSwapCryptoShort,
+  onGoToCash,
+  rosterAssets = [],
   // ClashCast props
   getEventCommentary,
   clashCastActive = false,
   syntheticEvents = [],
 }) {
   const isV4 = battleVersion >= 4;
+  const isV5 = battleVersion >= 5;
 
   // Destructure freeAgentConfig for local use
   const {
@@ -526,7 +536,13 @@ export default function BaggerBombBattleView({
       </div>
 
       {/* Research Modal - opens when stock symbol is tapped */}
-      {researchAsset && (
+      {researchAsset && (() => {
+        const dailyOpen = freeAgentDailyOpens?.[researchAsset.symbol];
+        const livePrice = currentPrices[researchAsset.symbol];
+        const dailyChange = (dailyOpen && dailyOpen > 0 && livePrice)
+          ? ((livePrice - dailyOpen) / dailyOpen) * 100
+          : undefined;
+        return (
         <AssetResearchModal
           asset={buildResearchAsset(researchAsset, {
             livePrices: currentPrices,
@@ -534,6 +550,7 @@ export default function BaggerBombBattleView({
             openPrices,
             startingPrices: battle?.state?.startingPrices,
             useDefaultThreshold: true,
+            percentChange: dailyChange,
           })}
           onClose={() => { setResearchAsset(null); setResearchDefaultTab(null); }}
           showActionButton={false}
@@ -542,7 +559,8 @@ export default function BaggerBombBattleView({
           defaultTab={researchDefaultTab}
           defaultTimeframe="bomb"
         />
-      )}
+        );
+      })()}
 
       {/* Score Breakdown Modal - opens when points are tapped */}
       {breakdownAsset && (
@@ -572,6 +590,8 @@ export default function BaggerBombBattleView({
               return sum;
             }, 0) || 0,
             totalScore: breakdownAsset.points || 0,
+            startingPrice: breakdownAsset.swapPrice || battle?.state?.startingPrices?.[breakdownAsset.symbol] || 0,
+            currentPrice: currentPrices[breakdownAsset.symbol] || 0,
           }}
           events={events || []}
           onClose={() => setBreakdownAsset(null)}
@@ -630,10 +650,22 @@ export default function BaggerBombBattleView({
             }}>
               <div>
                 <span style={{ fontSize: '10px', color: HOLO_COLORS.textMuted, fontWeight: 600 }}>
-                  REMOVING
+                  {swapMode.swapType === 'cash' ? 'CLOSING' : 'REMOVING'}
                 </span>
                 <div style={{ fontSize: '16px', fontWeight: 700, color: HOLO_COLORS.textPrimary }}>
-                  {swapMode.targetAsset?.symbol}
+                  {swapMode.targetAsset?.isCash
+                    ? `CASH (was: ${swapMode.targetAsset?.previousAsset || '?'})`
+                    : swapMode.targetAsset?.symbol}
+                  {swapMode.targetAsset?.direction && (
+                    <span style={{
+                      fontSize: '11px',
+                      fontWeight: 600,
+                      color: swapMode.targetAsset.direction === 'short' ? HOLO_COLORS.red : HOLO_COLORS.green,
+                      marginLeft: '6px',
+                    }}>
+                      ({swapMode.targetAsset.direction === 'short' ? 'SHORT' : 'LONG'})
+                    </span>
+                  )}
                 </div>
                 <span style={{ fontSize: '11px', color: HOLO_COLORS.textMuted }}>
                   {swapMode.targetAsset?.tier} tier
@@ -648,23 +680,42 @@ export default function BaggerBombBattleView({
               alignItems: 'center',
               justifyContent: 'space-between',
               padding: '12px',
-              backgroundColor: `${HOLO_COLORS.green}10`,
+              backgroundColor: swapMode.swapType === 'cash'
+                ? `${HOLO_COLORS.textMuted}10`
+                : `${HOLO_COLORS.green}10`,
               borderRadius: '8px',
-              border: `1px solid ${HOLO_COLORS.green}30`,
+              border: `1px solid ${swapMode.swapType === 'cash' ? HOLO_COLORS.textMuted : HOLO_COLORS.green}30`,
               marginBottom: '20px',
             }}>
               <div>
                 <span style={{ fontSize: '10px', color: HOLO_COLORS.textMuted, fontWeight: 600 }}>
-                  ADDING
+                  {swapMode.swapType === 'cash' ? 'CASH POSITION' : 'ADDING'}
                 </span>
                 <div style={{ fontSize: '16px', fontWeight: 700, color: HOLO_COLORS.textPrimary }}>
-                  {swapMode.selectedFreeAgent?.symbol}
+                  {swapMode.swapType === 'cash' ? '💵 CASH' : swapMode.selectedFreeAgent?.symbol}
+                  {swapMode.direction && (
+                    <span style={{
+                      fontSize: '11px',
+                      fontWeight: 600,
+                      color: swapMode.direction === 'short' ? HOLO_COLORS.red : HOLO_COLORS.green,
+                      marginLeft: '6px',
+                    }}>
+                      ({swapMode.direction === 'short' ? 'SHORT ↓' : 'LONG ↑'})
+                    </span>
+                  )}
                 </div>
                 <span style={{ fontSize: '11px', color: HOLO_COLORS.textMuted }}>
-                  {swapMode.selectedFreeAgent?.name}
+                  {swapMode.swapType === 'cash'
+                    ? 'Earns 0 pts until filled'
+                    : swapMode.selectedFreeAgent?.name}
                 </span>
               </div>
-              <span style={{ fontSize: '24px', color: HOLO_COLORS.green }}>→</span>
+              <span style={{
+                fontSize: '24px',
+                color: swapMode.swapType === 'cash' ? HOLO_COLORS.textMuted : HOLO_COLORS.green,
+              }}>
+                {swapMode.swapType === 'cash' ? '💵' : '→'}
+              </span>
             </div>
 
             {/* Buttons */}
@@ -706,6 +757,24 @@ export default function BaggerBombBattleView({
             </div>
           </motion.div>
         </div>
+      )}
+
+      {/* V5: Swap Market Modal */}
+      {isV5 && (
+        <SwapMarketModal
+          isOpen={showSwapMarket}
+          onClose={onCloseSwapMarket || (() => {})}
+          stockFreeAgents={freeAgents || []}
+          currentPrices={currentPrices}
+          dailyOpens={freeAgentDailyOpens || {}}
+          swapsRemaining={swapsRemaining || 0}
+          onSwapStock={onSwapStock || (() => {})}
+          onSwapCryptoLong={onSwapCryptoLong || (() => {})}
+          onSwapCryptoShort={onSwapCryptoShort || (() => {})}
+          onGoToCash={onGoToCash || (() => {})}
+          rotationTimer={freeAgentConfig?.rotationCountdown || 0}
+          rosterAssets={rosterAssets}
+        />
       )}
 
       {/* Orange Zone Swap Blocked Toast */}

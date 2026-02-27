@@ -70,10 +70,114 @@ SectorTab.propTypes = {
 
 /**
  * AssetRow - Single asset in the picker list
+ * For crypto (cryptoOnly mode): shows inline LONG/SHORT direction buttons
+ * For stocks: standard single-click selection
  */
-function AssetRow({ asset, isSelected, isDisabled, onSelect, onShowResearch }) {
+function AssetRow({ asset, isSelected, isDisabled, onSelect, onShowResearch, cryptoOnly }) {
   const accentColor = asset.isCrypto ? HOLO_COLORS.purple : HOLO_COLORS.cyan;
+  const isCryptoRow = cryptoOnly && asset.isCrypto;
 
+  // Crypto rows: vertical stacked layout (no overflow issues)
+  if (isCryptoRow) {
+    return (
+      <div
+        style={{
+          width: '100%',
+          boxSizing: 'border-box',
+          padding: '12px 0',
+          borderBottom: `1px solid ${HOLO_COLORS.borderSubtle}50`,
+          opacity: isDisabled ? 0.4 : 1,
+          textAlign: 'left',
+        }}
+      >
+        {/* Row 1: Symbol + Name + Info button + ATR */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px', overflow: 'hidden' }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span style={{ fontSize: '14px', fontWeight: 600, color: HOLO_COLORS.textPrimary }}>
+                {asset.symbol}
+              </span>
+              <span style={{ fontSize: '12px' }}>🔮</span>
+              <span style={{ fontSize: '12px', color: HOLO_COLORS.textMuted }}>
+                {asset.name}
+              </span>
+              {isDisabled && (
+                <span style={{
+                  fontSize: '10px', color: HOLO_COLORS.amber,
+                  padding: '2px 6px', backgroundColor: `${HOLO_COLORS.amber}20`, borderRadius: '4px',
+                }}>
+                  Already selected
+                </span>
+              )}
+            </div>
+          </div>
+          {onShowResearch && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onShowResearch(asset); }}
+              style={{
+                width: '28px', height: '28px', borderRadius: '50%',
+                background: 'rgba(255,255,255,0.08)', border: `1px solid ${HOLO_COLORS.borderSubtle}`,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                cursor: 'pointer', flexShrink: 0, transition: 'all 0.2s ease',
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.15)'; e.currentTarget.style.borderColor = accentColor; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.08)'; e.currentTarget.style.borderColor = HOLO_COLORS.borderSubtle; }}
+            >
+              <Info size={14} color={HOLO_COLORS.textMuted} />
+            </button>
+          )}
+          <div style={{ textAlign: 'right', flexShrink: 1, minWidth: 0 }}>
+            <div style={{ fontSize: '13px', fontWeight: 600, color: accentColor, whiteSpace: 'nowrap' }}>
+              {asset.baseATR?.toFixed(1)}% ATR
+            </div>
+          </div>
+        </div>
+
+        {/* Row 2: Threshold info */}
+        <div style={{ fontSize: '10px', color: HOLO_COLORS.textMuted, marginBottom: '8px' }}>
+          💣 {(asset.baseATR * 1.0).toFixed(1)}% | 🚀 {(asset.baseATR * 2.0).toFixed(1)}%
+        </div>
+
+        {/* Row 3: LONG / SHORT buttons (full width) */}
+        {!isDisabled && (
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <button
+              onClick={() => onSelect({ ...asset, direction: 'long' })}
+              style={{
+                flex: 1, padding: '8px 14px', borderRadius: '6px',
+                fontSize: '13px', fontWeight: 700,
+                border: `1px solid ${HOLO_COLORS.green}`,
+                backgroundColor: `${HOLO_COLORS.green}15`,
+                color: HOLO_COLORS.green, cursor: 'pointer',
+                transition: 'all 0.2s ease',
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = `${HOLO_COLORS.green}30`; e.currentTarget.style.boxShadow = `0 0 8px ${HOLO_COLORS.green}30`; }}
+              onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = `${HOLO_COLORS.green}15`; e.currentTarget.style.boxShadow = 'none'; }}
+            >
+              LONG ↑
+            </button>
+            <button
+              onClick={() => onSelect({ ...asset, direction: 'short' })}
+              style={{
+                flex: 1, padding: '8px 14px', borderRadius: '6px',
+                fontSize: '13px', fontWeight: 700,
+                border: `1px solid ${HOLO_COLORS.red}`,
+                backgroundColor: `${HOLO_COLORS.red}15`,
+                color: HOLO_COLORS.red, cursor: 'pointer',
+                transition: 'all 0.2s ease',
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = `${HOLO_COLORS.red}30`; e.currentTarget.style.boxShadow = `0 0 8px ${HOLO_COLORS.red}30`; }}
+              onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = `${HOLO_COLORS.red}15`; e.currentTarget.style.boxShadow = 'none'; }}
+            >
+              SHORT ↓
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // Stock rows: standard single-click selection (unchanged)
   return (
     <motion.button
       whileHover={!isDisabled ? { backgroundColor: HOLO_COLORS.bgElevated } : {}}
@@ -85,7 +189,7 @@ function AssetRow({ asset, isSelected, isDisabled, onSelect, onShowResearch }) {
         display: 'flex',
         alignItems: 'center',
         gap: '12px',
-        padding: '12px 16px',
+        padding: '12px 0',
         backgroundColor: isSelected ? `${accentColor}15` : 'transparent',
         border: 'none',
         borderBottom: `1px solid ${HOLO_COLORS.borderSubtle}50`,
@@ -228,6 +332,7 @@ AssetRow.propTypes = {
   isDisabled: PropTypes.bool,
   onSelect: PropTypes.func.isRequired,
   onShowResearch: PropTypes.func,
+  cryptoOnly: PropTypes.bool,
 };
 
 /**
@@ -408,7 +513,8 @@ export default function AssetPickerModal({
                 borderBottom: `1px solid ${HOLO_COLORS.borderSubtle}`,
               }}
             >
-              {/* Search Bar */}
+              {/* Search Bar (hidden for crypto — only 7 items) */}
+              {!cryptoOnly && (
               <div style={{ padding: '12px 16px' }}>
                 <div
                   style={{
@@ -426,7 +532,7 @@ export default function AssetPickerModal({
                     type="text"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder={cryptoOnly ? 'Search crypto...' : stockOnly ? 'Search stocks...' : 'Search assets...'}
+                    placeholder={stockOnly ? 'Search stocks...' : 'Search assets...'}
                     style={{
                       flex: 1,
                       backgroundColor: 'transparent',
@@ -453,6 +559,7 @@ export default function AssetPickerModal({
                   )}
                 </div>
               </div>
+              )}
 
               {/* Sector Tabs (only for stocks) */}
               {stockOnly && stocks.length > 0 && (
@@ -516,6 +623,10 @@ export default function AssetPickerModal({
               style={{
                 flex: 1,
                 overflowY: 'auto',
+                overflowX: 'hidden',
+                paddingLeft: '16px',
+                paddingRight: '16px',
+                boxSizing: 'border-box',
                 minHeight: 0, // Important for flex child to scroll properly
               }}
             >
@@ -540,6 +651,7 @@ export default function AssetPickerModal({
                     isDisabled={isAssetSelected(asset)}
                     onSelect={handleSelect}
                     onShowResearch={(a) => setResearchAsset(a)}
+                    cryptoOnly={cryptoOnly}
                   />
                 ))
               )}

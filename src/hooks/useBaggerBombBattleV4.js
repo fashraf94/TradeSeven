@@ -191,6 +191,23 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
     portfolio.forEach((asset) => {
       if (!asset) return;
 
+      // V5: Cash positions earn 0 points — skip scoring entirely
+      if (asset.isCash) {
+        assetScores.push({
+          symbol: 'CASH',
+          priceChange: 0,
+          multiplier: 0,
+          baseATR: 0,
+          basePoints: 0,
+          bonusPoints: 0,
+          totalPoints: 0,
+          badges: [],
+          history: { maxMultiplier: 0, minMultiplier: 0 },
+          isCash: true,
+        });
+        return;
+      }
+
       // For swapped-in assets, use swapPrice as the open price
       const assetOpenPrice = asset.swapPrice || openPriceMap[asset.symbol] || asset.price || 0;
       const currentPrice = prices[asset.symbol] || assetOpenPrice;
@@ -216,7 +233,11 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
         return;
       }
 
-      const priceChange = ((currentPrice - assetOpenPrice) / assetOpenPrice) * 100;
+      let priceChange = ((currentPrice - assetOpenPrice) / assetOpenPrice) * 100;
+      // V5: Invert for short positions
+      if (asset.direction === 'short') {
+        priceChange = -priceChange;
+      }
       const assetHistory = history[asset.symbol] || { maxMultiplier: 0, minMultiplier: 0 };
 
       const score = calculateAssetScoreV3({ ...asset, baseATR: resolvedBaseATR }, priceChange, assetHistory);
@@ -327,6 +348,25 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
 
   const buildTacticalAsset = useCallback((asset, scores, history, bThresholds = {}) => {
     if (!asset) return null;
+
+    // V5: Cash positions earn 0 points, no scoring
+    if (asset.isCash) {
+      return {
+        symbol: 'CASH',
+        name: 'Cash',
+        priceChange: 0,
+        baseATR: 0,
+        history: { maxMultiplier: 0, minMultiplier: 0 },
+        points: 0,
+        badges: [],
+        isCrypto: false,
+        isCash: true,
+        previousAsset: asset.previousAsset,
+        cashedAt: asset.cashedAt,
+        tierMultiplier: 1.0,
+      };
+    }
+
     const scoreData = scores.assetScores.find((s) => s.symbol === asset.symbol);
     const assetHistory = history[asset.symbol] || { maxMultiplier: 0, minMultiplier: 0 };
 
@@ -339,6 +379,7 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
       points: scoreData?.totalPoints || 0,
       badges: scoreData?.badges || getBadgesFromHistory(assetHistory),
       isCrypto: asset.isCrypto,
+      direction: asset.direction || null,
       tierMultiplier: scoreData?.tierMultiplier || 1.0,
     };
   }, []);
@@ -457,13 +498,19 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
 
     myPortfolioFlat.forEach((asset) => {
       if (!asset) return;
+      // V5: Skip cash positions entirely — no thresholds, no events
+      if (asset.isCash) return;
 
       // For swapped-in assets, use swapPrice
       const assetOpenPrice = asset.swapPrice || openPrices[asset.symbol];
       const currentPrice = effectivePrices[asset.symbol];
       if (!assetOpenPrice || !currentPrice) return;
 
-      const priceChange = ((currentPrice - assetOpenPrice) / assetOpenPrice) * 100;
+      let priceChange = ((currentPrice - assetOpenPrice) / assetOpenPrice) * 100;
+      // V5: Invert for short positions
+      if (asset.direction === 'short') {
+        priceChange = -priceChange;
+      }
       const baseATR = battle?.thresholds?.[asset.symbol]?.threshold || asset.baseATR || 2.5;
       const currentMultiplier = priceChange / baseATR;
 
@@ -486,7 +533,8 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
               asset.symbol,
               threshold.name,
               currentMultiplier,
-              threshold.points
+              threshold.points,
+              asset.direction
             );
 
             pushLocalEvent(event);
@@ -560,12 +608,18 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
 
     oppPortfolioFlat.forEach((asset) => {
       if (!asset) return;
+      // V5: Skip cash positions entirely
+      if (asset.isCash) return;
 
       const assetOpenPrice = asset.swapPrice || openPrices[asset.symbol];
       const currentPrice = effectivePrices[asset.symbol];
       if (!assetOpenPrice || !currentPrice) return;
 
-      const priceChange = ((currentPrice - assetOpenPrice) / assetOpenPrice) * 100;
+      let priceChange = ((currentPrice - assetOpenPrice) / assetOpenPrice) * 100;
+      // V5: Invert for short positions
+      if (asset.direction === 'short') {
+        priceChange = -priceChange;
+      }
       const baseATR = battle?.thresholds?.[asset.symbol]?.threshold || asset.baseATR || 2.5;
       const currentMultiplier = priceChange / baseATR;
 
@@ -589,7 +643,8 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
               asset.symbol,
               threshold.name,
               currentMultiplier,
-              threshold.points
+              threshold.points,
+              asset.direction
             );
 
             pushLocalEvent(event);
@@ -839,8 +894,14 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
     });
   }, []);
 
-  const executeSwap = useCallback(async ({ outTier, outSlotIndex, inSymbol }) => {
+  const executeSwap = useCallback(async ({ outTier, outSlotIndex, inAgent, swapType = 'stock', direction = null }) => {
     if (!battleId || !battle || isSwapExecuting) return;
+
+    // V5: inAgent should be an object { symbol, name, isCrypto, ... }
+    // For backward compat, accept string and wrap it
+    const agentObj = typeof inAgent === 'string'
+      ? { symbol: inAgent, name: inAgent, isCrypto: false }
+      : inAgent;
 
     setIsSwapExecuting(true);
     try {
@@ -850,9 +911,10 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
         playerId,
         outTier,
         outSlotIndex,
-        inSymbol,
+        agentObj,
         currentTradingDay,
-        effectivePrices
+        effectivePrices,
+        { swapType, direction }
       );
 
       closeSwapModal();

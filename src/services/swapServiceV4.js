@@ -1,34 +1,41 @@
-// swapServiceV4.js — V4 Swap validation and execution
-// Replaces the V3 substitution system with free-agent-based swaps
+// swapServiceV4.js — V4/V5 Swap validation and execution
+// V4: Free-agent-based swaps (stocks ↔ stocks, crypto ↔ crypto)
+// V5: Swap Market with Cash positions, Crypto Pool (long/short), stock free agents
 //
 // Rules:
 // - PvP: 3 swaps per day, 3 days = 9 total
-// - Training: 1 swap total
-// - Stocks can only replace stock slots, crypto can only replace crypto slot (support[2])
-// - New stock gains start fresh from swap price (not day's open)
-// - Old stock points are locked into closedTrades
+// - Training: 3 swaps total (V5)
+// - Type restriction: crypto slot (support[2]) can only hold crypto, stock slots hold stocks
+// - Cash can occupy any slot; filling a cash slot must match the original slot type
+// - New asset gains start fresh from swap price (not day's open)
+// - Old asset points are locked into closedTrades
+// - Crypto positions support direction: 'long' or 'short'
+// - Short positions invert P&L: price drop = positive gain
 
 import { doc, runTransaction } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import { getDailySwapsRemaining, getCurrentTradingDay } from '../constants/battleTimingV4';
 import { calculateAssetScoreV3, isSwapLocked } from '../utils/baggerBombUtils';
+import { CRYPTO_POOL_SYMBOLS, CASH_POSITION } from '../constants/cryptoPool';
 
 // ============================================
 // VALIDATION
 // ============================================
 
 /**
- * Validate whether a swap is allowed
+ * Validate whether a swap is allowed (V5 — supports cash, crypto pool, stock free agents)
  *
  * @param {Object} battle - Full battle object
  * @param {string} playerId - 'creator' or 'opponent'
  * @param {string} outTier - Tier of outgoing asset ('star', 'core', 'support')
  * @param {number} outSlotIndex - Slot index within the tier
- * @param {string} inSymbol - Symbol of incoming free agent
+ * @param {Object} inAgent - Incoming asset object (from free agents or crypto pool)
  * @param {number} currentDay - Current trading day (1-indexed)
+ * @param {Object} currentPrices - Current prices keyed by symbol
+ * @param {Object} options - { swapType: 'stock'|'crypto'|'cash'|'fillCash', direction: 'long'|'short' }
  * @returns {{ valid: boolean, error?: string }}
  */
-export function validateSwap(battle, playerId, outTier, outSlotIndex, inSymbol, currentDay, currentPrices = {}) {
+export function validateSwap(battle, playerId, outTier, outSlotIndex, inAgent, currentDay, currentPrices = {}, options = {}) {
   const player = battle[playerId];
   if (!player) {
     return { valid: false, error: 'Player not found' };
@@ -46,33 +53,71 @@ export function validateSwap(battle, playerId, outTier, outSlotIndex, inSymbol, 
     return { valid: false, error: 'No asset in the selected slot' };
   }
 
-  // Verify incoming symbol is in free agents
-  const freeAgents = battle.freeAgents?.current || [];
-  const inAgent = freeAgents.find(a => a.symbol === inSymbol);
-  if (!inAgent) {
-    return { valid: false, error: 'Asset is not available as a free agent' };
+  const { swapType } = options;
+
+  // Cash swap — going TO cash (any slot allowed)
+  if (swapType === 'cash') {
+    if (outAsset.isCash) {
+      return { valid: false, error: 'Slot is already cash' };
+    }
+    // No further type checking needed — any slot can go to cash
   }
-
-  // Type restriction: stocks can only replace stock slots, crypto only crypto slot
-  const outIsCrypto = Boolean(outAsset.isCrypto);
-  const inIsCrypto = Boolean(inAgent.isCrypto);
-
-  if (outIsCrypto !== inIsCrypto) {
-    if (inIsCrypto) {
-      return { valid: false, error: 'Crypto can only replace the crypto slot (Support slot 3)' };
+  // Crypto pool swap
+  else if (swapType === 'crypto') {
+    if (!inAgent?.isCrypto) {
+      return { valid: false, error: 'Expected a crypto asset' };
+    }
+    // Crypto can only go into the crypto slot (support[2]) or a cash slot that was formerly crypto
+    if (outAsset.isCash) {
+      // Filling a cash slot — check the original slot type
+      const isCryptoSlot = outTier === 'support' && outSlotIndex === 2;
+      if (!isCryptoSlot) {
+        return { valid: false, error: 'Crypto can only fill a cash slot that was originally the crypto slot (Support slot 3)' };
+      }
     } else {
+      // Direct swap — must be crypto slot
+      const isCryptoSlot = outTier === 'support' && outSlotIndex === 2;
+      if (!isCryptoSlot && !outAsset.isCrypto) {
+        return { valid: false, error: 'Crypto can only replace the crypto slot (Support slot 3)' };
+      }
+    }
+  }
+  // Stock free agent swap
+  else if (swapType === 'stock') {
+    if (inAgent?.isCrypto) {
+      return { valid: false, error: 'Expected a stock asset' };
+    }
+    // Stock can only go into stock slots or cash slots that were formerly stock
+    if (outAsset.isCash) {
+      const isCryptoSlot = outTier === 'support' && outSlotIndex === 2;
+      if (isCryptoSlot) {
+        return { valid: false, error: 'Stocks cannot fill the crypto slot (Support slot 3)' };
+      }
+    } else if (outAsset.isCrypto) {
       return { valid: false, error: 'Stocks can only replace stock slots' };
+    }
+
+    // Verify incoming symbol is in free agents
+    const freeAgents = battle.freeAgents?.current || [];
+    const found = freeAgents.find(a => a.symbol === inAgent?.symbol);
+    if (!found) {
+      return { valid: false, error: 'Asset is not available as a free agent' };
     }
   }
 
-  // Orange Zone swap lock — block swaps when stock is near a threshold
-  if (currentPrices && Object.keys(currentPrices).length > 0) {
+  // Orange Zone swap lock — block swaps when asset is near a threshold
+  // Skip for cash slots (no price to check)
+  if (!outAsset.isCash && currentPrices && Object.keys(currentPrices).length > 0) {
     const openPrice = outAsset.swapPrice || battle?.state?.startingPrices?.[outAsset.symbol] || 0;
     const curPrice = currentPrices[outAsset.symbol] || openPrice;
     const baseATR = battle?.thresholds?.[outAsset.symbol]?.threshold || 2.5;
     if (openPrice > 0 && baseATR > 0) {
-      const multiplier = ((curPrice - openPrice) / openPrice) * 100 / baseATR;
-      const lockStatus = isSwapLocked(multiplier, baseATR);
+      let rawMultiplier = ((curPrice - openPrice) / openPrice) * 100 / baseATR;
+      // Invert for short positions
+      if (outAsset.direction === 'short') {
+        rawMultiplier = -rawMultiplier;
+      }
+      const lockStatus = isSwapLocked(rawMultiplier, baseATR);
       if (lockStatus.locked) {
         return { valid: false, error: `${outAsset.symbol} is in the danger zone — too close to a threshold to swap` };
       }
@@ -83,11 +128,49 @@ export function validateSwap(battle, playerId, outTier, outSlotIndex, inSymbol, 
 }
 
 // ============================================
-// EXECUTION
+// LOCKED POINTS CALCULATION
 // ============================================
 
 /**
- * Execute a swap: remove an active asset and replace with a free agent
+ * Calculate locked points for an outgoing asset, respecting direction for shorts
+ */
+function calculateLockedPoints(outAsset, outTier, entryPrice, exitPrice, thresholds, playerHistory) {
+  if (outAsset.isCash) {
+    return { lockedPoints: 0, lockedGainPct: 0 };
+  }
+
+  if (entryPrice <= 0) {
+    return { lockedPoints: 0, lockedGainPct: 0 };
+  }
+
+  let rawPctChange = ((exitPrice - entryPrice) / entryPrice) * 100;
+
+  // Invert for short positions: price drop = positive gain
+  if (outAsset.direction === 'short') {
+    rawPctChange = -rawPctChange;
+  }
+
+  const threshold = thresholds?.[outAsset.symbol] || {};
+  const assetObj = {
+    symbol: outAsset.symbol,
+    baseATR: threshold.threshold || outAsset.baseATR || 2.5,
+    tier: outTier,
+  };
+  const assetHistory = playerHistory?.[outAsset.symbol] || { maxMultiplier: 0, minMultiplier: 0 };
+  const scoreResult = calculateAssetScoreV3(assetObj, rawPctChange, assetHistory);
+
+  return {
+    lockedPoints: scoreResult.totalPoints,
+    lockedGainPct: rawPctChange,
+  };
+}
+
+// ============================================
+// EXECUTION — PvP (Firestore transaction)
+// ============================================
+
+/**
+ * Execute a swap (V5): Supports stock↔stock, crypto pool, cash, fill-cash
  * Uses Firestore transaction for atomicity
  *
  * @param {string} battleId - Battle document ID
@@ -95,9 +178,10 @@ export function validateSwap(battle, playerId, outTier, outSlotIndex, inSymbol, 
  * @param {string} playerId - 'creator' or 'opponent'
  * @param {string} outTier - Tier of outgoing asset
  * @param {number} outSlotIndex - Slot index within the tier
- * @param {string} inSymbol - Symbol of incoming free agent
+ * @param {Object} pickedAgent - Incoming asset { symbol, name, isCrypto, baseATR }
  * @param {number} currentDay - Current trading day (1-indexed)
  * @param {Object} currentPrices - Current prices keyed by symbol
+ * @param {Object} options - { swapType: 'stock'|'crypto'|'cash', direction: 'long'|'short'|null }
  * @returns {Promise<Object>} Updated battle data
  */
 export async function executeSwap(
@@ -106,12 +190,16 @@ export async function executeSwap(
   playerId,
   outTier,
   outSlotIndex,
-  inSymbol,
+  pickedAgent,
   currentDay,
-  currentPrices
+  currentPrices,
+  options = {}
 ) {
+  const { swapType = 'stock', direction = null } = options;
+  const inSymbol = pickedAgent?.symbol;
+
   // Validate first
-  const validation = validateSwap(battle, playerId, outTier, outSlotIndex, inSymbol, currentDay);
+  const validation = validateSwap(battle, playerId, outTier, outSlotIndex, pickedAgent, currentDay, currentPrices, options);
   if (!validation.valid) {
     throw new Error(validation.error);
   }
@@ -127,10 +215,9 @@ export async function executeSwap(
     const liveData = battleSnap.data();
     const player = liveData[playerId];
     const outAsset = player.portfolio[outTier][outSlotIndex];
-    const freeAgent = liveData.freeAgents.current.find(a => a.symbol === inSymbol);
 
-    if (!outAsset || !freeAgent) {
-      throw new Error('Asset or free agent no longer available');
+    if (!outAsset) {
+      throw new Error('Asset no longer available in slot');
     }
 
     // Re-check swaps remaining against live data
@@ -139,70 +226,89 @@ export async function executeSwap(
       throw new Error('No swaps remaining (race condition)');
     }
 
-    // ---- Calculate locked points for outgoing asset ----
-    const outSymbol = outAsset.symbol;
-    const entryPrice = outAsset.swapPrice || // If this was previously swapped in
-      liveData.state?.dailyOpenPrices?.[`day${currentDay}`]?.[outSymbol] ||
-      liveData.state?.startingPrices?.[outSymbol] ||
-      0;
-    const exitPrice = currentPrices[outSymbol] || entryPrice;
+    const now = new Date().toISOString();
 
-    let lockedGainPct = 0;
+    // ---- Calculate locked points for outgoing asset ----
     let lockedPoints = 0;
-    if (entryPrice > 0) {
-      lockedGainPct = ((exitPrice - entryPrice) / entryPrice) * 100;
-      const threshold = liveData.thresholds?.[outSymbol] || {};
-      // Build an asset-like object matching calculateAssetScoreV3 signature:
-      // calculateAssetScoreV3(asset, priceChange, history, extremes)
-      const assetObj = {
+    let lockedGainPct = 0;
+    let closedTrade = null;
+
+    if (!outAsset.isCash) {
+      const outSymbol = outAsset.symbol;
+      const entryPrice = outAsset.swapPrice ||
+        liveData.state?.dailyOpenPrices?.[`day${currentDay}`]?.[outSymbol] ||
+        liveData.state?.startingPrices?.[outSymbol] ||
+        0;
+      const exitPrice = currentPrices[outSymbol] || entryPrice;
+
+      const locked = calculateLockedPoints(outAsset, outTier, entryPrice, exitPrice, liveData.thresholds, player.history);
+      lockedPoints = locked.lockedPoints;
+      lockedGainPct = locked.lockedGainPct;
+
+      closedTrade = {
         symbol: outSymbol,
-        baseATR: threshold.threshold || outAsset.baseATR || 2.5,
+        name: outAsset.name || outSymbol,
         tier: outTier,
+        slotIndex: outSlotIndex,
+        entryPrice,
+        exitPrice,
+        lockedPoints: Math.round(lockedPoints * 100) / 100,
+        lockedGainPct: Math.round(lockedGainPct * 1000) / 1000,
+        swappedOutAt: now,
+        swapDay: currentDay,
+        isCrypto: outAsset.isCrypto || false,
+        direction: outAsset.direction || null,
+        closedToCash: swapType === 'cash',
       };
-      const assetHistory = player.history?.[outSymbol] || { maxMultiplier: 0, minMultiplier: 0 };
-      const scoreResult = calculateAssetScoreV3(assetObj, lockedGainPct, assetHistory);
-      lockedPoints = scoreResult.totalPoints;
     }
 
-    // ---- Build closed trade record ----
-    const closedTrade = {
-      symbol: outSymbol,
-      name: outAsset.name || outSymbol,
-      tier: outTier,
-      slotIndex: outSlotIndex,
-      entryPrice,
-      exitPrice,
-      lockedPoints: Math.round(lockedPoints * 100) / 100,
-      lockedGainPct: Math.round(lockedGainPct * 1000) / 1000,
-      swappedOutAt: new Date().toISOString(),
-      swapDay: currentDay,
-    };
+    // ---- Build incoming asset object ----
+    let incomingAsset;
+    if (swapType === 'cash') {
+      incomingAsset = {
+        symbol: 'CASH',
+        name: 'Cash',
+        baseATR: 0,
+        isCrypto: false,
+        isCash: true,
+        cashedAt: now,
+        previousAsset: outAsset.symbol,
+      };
+    } else {
+      incomingAsset = {
+        symbol: pickedAgent.symbol,
+        name: pickedAgent.name,
+        isCrypto: pickedAgent.isCrypto || false,
+        baseATR: liveData.thresholds?.[inSymbol]?.threshold || pickedAgent.baseATR || (pickedAgent.isCrypto ? 5.0 : 2.5),
+        swapPrice: currentPrices[inSymbol] || 0,
+        swappedInAt: now,
+        swappedInDay: currentDay,
+      };
+      // Add direction for crypto
+      if (pickedAgent.isCrypto && direction) {
+        incomingAsset.direction = direction;
+      }
+    }
 
     // ---- Build swap history record ----
     const swapRecord = {
-      timestamp: new Date().toISOString(),
+      timestamp: now,
       day: currentDay,
-      removedSymbol: outSymbol,
+      removedSymbol: outAsset.isCash ? 'CASH' : outAsset.symbol,
       removedTier: outTier,
       removedSlotIndex: outSlotIndex,
-      addedSymbol: inSymbol,
-      addedFromFreeAgent: true,
-      swapPrice: currentPrices[inSymbol] || 0,
-    };
-
-    // ---- Build incoming asset object ----
-    const incomingAsset = {
-      symbol: freeAgent.symbol,
-      name: freeAgent.name,
-      isCrypto: freeAgent.isCrypto,
-      baseATR: liveData.thresholds?.[inSymbol]?.threshold || (freeAgent.isCrypto ? 5.0 : 2.5),
-      swapPrice: currentPrices[inSymbol] || 0, // Gains start from this price
-      swappedInAt: new Date().toISOString(),
-      swappedInDay: currentDay,
+      addedSymbol: swapType === 'cash' ? 'CASH' : inSymbol,
+      addedFromFreeAgent: swapType === 'stock',
+      addedFromCryptoPool: swapType === 'crypto',
+      swapType,
+      direction: direction || null,
+      swapPrice: swapType === 'cash' ? 0 : (currentPrices[inSymbol] || 0),
     };
 
     // ---- Build update paths ----
-    const closedTrades = [...(player.closedTrades || []), closedTrade];
+    const closedTrades = closedTrade
+      ? [...(player.closedTrades || []), closedTrade]
+      : [...(player.closedTrades || [])];
     const swapHistory = [...(player.swaps?.history || []), swapRecord];
     const newRemaining = { ...(player.swaps?.remaining || {}) };
     newRemaining[`day${currentDay}`] = Math.max(0, (newRemaining[`day${currentDay}`] || 0) - 1);
@@ -211,14 +317,16 @@ export async function executeSwap(
     const newTier = [...(player.portfolio[outTier] || [])];
     newTier[outSlotIndex] = incomingAsset;
 
-    // Update history for new asset
+    // Update history for new asset (skip for cash)
     const newHistory = { ...(player.history || {}) };
-    newHistory[inSymbol] = {
-      maxMultiplier: 0,
-      minMultiplier: 0,
-      badges: [],
-      dailyThresholds: {},
-    };
+    if (swapType !== 'cash' && inSymbol) {
+      newHistory[inSymbol] = {
+        maxMultiplier: 0,
+        minMultiplier: 0,
+        badges: [],
+        dailyThresholds: {},
+      };
+    }
 
     // Build Firebase update object
     const updates = {
@@ -227,19 +335,63 @@ export async function executeSwap(
       [`${playerId}.swaps.remaining`]: newRemaining,
       [`${playerId}.swaps.history`]: swapHistory,
       [`${playerId}.history`]: newHistory,
-      updatedAt: new Date().toISOString(),
+      updatedAt: now,
     };
+
+    // ---- Free agent bar updates ----
+    if (swapType === 'stock') {
+      const currentFreeAgents = liveData.freeAgents?.current || [];
+      let updatedFreeAgents;
+
+      if (outAsset.isCash || outAsset.isCrypto) {
+        // Filling a cash slot from stock FA or replacing crypto with stock (shouldn't happen with type restriction)
+        // → picked stock is simply removed from bar (no replacement)
+        updatedFreeAgents = currentFreeAgents.filter(fa => fa.symbol !== inSymbol);
+      } else {
+        // Stock → Stock swap: dropped stock replaces picked stock's position in bar
+        updatedFreeAgents = currentFreeAgents.map(fa => {
+          if (fa.symbol === inSymbol) {
+            return {
+              symbol: outAsset.symbol,
+              name: outAsset.name || outAsset.symbol,
+              isCrypto: false,
+              appearedAt: now,
+            };
+          }
+          return fa;
+        });
+      }
+      updates['freeAgents.current'] = updatedFreeAgents;
+    }
+
+    // ---- Crypto pool state updates ----
+    if (liveData.cryptoPool) {
+      const cryptoPoolUpdates = { ...liveData.cryptoPool };
+
+      // If dropping a crypto, mark it as out of roster
+      if (!outAsset.isCash && outAsset.isCrypto && CRYPTO_POOL_SYMBOLS.has(outAsset.symbol)) {
+        cryptoPoolUpdates[outAsset.symbol] = { inRoster: false };
+      }
+      // If picking a crypto, mark it as in roster
+      if (swapType === 'crypto' && CRYPTO_POOL_SYMBOLS.has(inSymbol)) {
+        cryptoPoolUpdates[inSymbol] = { inRoster: true };
+      }
+
+      updates.cryptoPool = cryptoPoolUpdates;
+    }
 
     // Add swap event to events array
     const swapEvent = {
       type: 'swap',
       playerId,
-      removedSymbol: outSymbol,
-      addedSymbol: inSymbol,
-      lockedPoints: closedTrade.lockedPoints,
+      removedSymbol: outAsset.isCash ? `CASH (was: ${outAsset.previousAsset})` : outAsset.symbol,
+      addedSymbol: swapType === 'cash' ? 'CASH' : inSymbol,
+      lockedPoints: closedTrade ? closedTrade.lockedPoints : 0,
       tier: outTier,
-      timestamp: new Date().toISOString(),
+      timestamp: now,
       day: currentDay,
+      swapType,
+      direction: direction || (outAsset.direction) || null,
     };
 
     const events = [...(liveData.events || []), swapEvent];
@@ -293,10 +445,7 @@ export function getSwapStatus(battle, playerId, currentDay) {
  */
 export function getSwapStatusLabel(remaining, isTraining = false) {
   if (remaining <= 0) {
-    return isTraining ? 'Swap used' : 'No swaps today';
+    return isTraining ? 'No swaps left' : 'No swaps today';
   }
-  if (isTraining) {
-    return '1 swap available';
-  }
-  return `${remaining} swap${remaining !== 1 ? 's' : ''} left today`;
+  return `${remaining} swap${remaining !== 1 ? 's' : ''} left`;
 }

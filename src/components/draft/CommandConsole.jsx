@@ -668,9 +668,17 @@ const CommandConsole = ({
       `}</style>
 
       {/* Asset Research Modal */}
-      {selectedAssetForResearch && (
+      {selectedAssetForResearch && (() => {
+        const prevClose = selectedAssetForResearch.previousClose;
+        const curPrice = selectedAssetForResearch.currentPrice;
+        const dailyChange = (prevClose && prevClose > 0 && curPrice)
+          ? ((curPrice - prevClose) / prevClose) * 100
+          : undefined;
+        return (
         <AssetResearchModal
-          asset={buildResearchAsset(selectedAssetForResearch)}
+          asset={buildResearchAsset(selectedAssetForResearch, {
+            percentChange: dailyChange,
+          })}
           sector={selectedAssetForResearch.sector}
           category={selectedAssetForResearch.category}
           onClose={() => setSelectedAssetForResearch(null)}
@@ -678,7 +686,8 @@ const CommandConsole = ({
           actionConfig={null}
           version={2}
         />
-      )}
+        );
+      })()}
     </div>
   );
 };

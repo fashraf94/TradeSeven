@@ -75,7 +75,32 @@ function ClosedTradeRow({ trade }) {
             }}
           >
             {symbol}
+            {/* V5: Direction label for crypto trades */}
+            {trade.direction === 'short' && (
+              <span style={{ fontSize: '10px', color: HOLO_COLORS.red, marginLeft: '4px', fontWeight: 700 }}>
+                (SHORT)
+              </span>
+            )}
+            {trade.isCrypto && trade.direction !== 'short' && (
+              <span style={{ fontSize: '10px', color: HOLO_COLORS.green, marginLeft: '4px', fontWeight: 700 }}>
+                (LONG)
+              </span>
+            )}
           </span>
+          {/* V5: Cash badge */}
+          {trade.closedToCash && (
+            <span style={{
+              fontSize: '9px',
+              fontWeight: 700,
+              color: HOLO_COLORS.textMuted,
+              backgroundColor: `${HOLO_COLORS.textMuted}15`,
+              padding: '1px 5px',
+              borderRadius: '4px',
+              letterSpacing: '0.5px',
+            }}>
+              → CASH
+            </span>
+          )}
           <span
             style={{
               fontSize: '10px',

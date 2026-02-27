@@ -38,7 +38,13 @@ const ScoreBreakdownPopover = ({ asset, events: battleEvents = [], onClose }) =>
     baggerBombPoints = 0,
     bustPoints = 0,
     totalScore = 0,
+    startingPrice = 0,
+    currentPrice = 0,
+    lockedPrice = 0,
   } = asset;
+
+  const entryPrice = startingPrice || lockedPrice;
+  const hasEntryPrice = entryPrice > 0 && currentPrice > 0;
 
   // Build timeline from real persisted events (filtered to this symbol).
   // Falls back to a badge-only summary for legacy battles without events.
@@ -168,6 +174,51 @@ const ScoreBreakdownPopover = ({ asset, events: battleEvents = [], onClose }) =>
 
         {/* Content */}
         <div style={{ padding: '16px' }}>
+          {/* Entry Price Context */}
+          {hasEntryPrice && (
+            <div style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              padding: '10px 14px',
+              marginBottom: '12px',
+              borderRadius: '8px',
+              backgroundColor: 'rgba(0, 217, 255, 0.06)',
+              border: '1px solid rgba(0, 217, 255, 0.15)',
+            }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                <span style={{ fontSize: '11px', color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                  Entry Price
+                </span>
+                <span style={{ fontSize: '16px', fontWeight: 700, color: '#ffffff' }}>
+                  ${entryPrice.toFixed(2)}
+                </span>
+              </div>
+              <div style={{ width: '1px', height: '30px', backgroundColor: 'rgba(255,255,255,0.1)' }} />
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', alignItems: 'center' }}>
+                <span style={{ fontSize: '11px', color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                  Current
+                </span>
+                <span style={{ fontSize: '16px', fontWeight: 700, color: '#ffffff' }}>
+                  ${currentPrice.toFixed(2)}
+                </span>
+              </div>
+              <div style={{ width: '1px', height: '30px', backgroundColor: 'rgba(255,255,255,0.1)' }} />
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', alignItems: 'flex-end' }}>
+                <span style={{ fontSize: '11px', color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                  Change
+                </span>
+                <span style={{
+                  fontSize: '16px',
+                  fontWeight: 700,
+                  color: gain >= 0 ? '#10b981' : '#ef4444',
+                }}>
+                  {gain >= 0 ? '+' : ''}{gain.toFixed(2)}%
+                </span>
+              </div>
+            </div>
+          )}
+
           {/* Score Rows */}
           <div style={{
             display: 'flex',

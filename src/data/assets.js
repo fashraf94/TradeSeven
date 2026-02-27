@@ -115,8 +115,9 @@ export const CRYPTO = [
   { id: 'aave', symbol: 'AAVE', name: 'Aave', category: 'DeFi' },
   { id: 'injective-protocol', symbol: 'INJ', name: 'Injective', category: 'DeFi' },
 
-  // ===== PAYMENT / UTILITY (4) =====
+  // ===== PAYMENT / UTILITY (5) =====
   { id: 'ripple', symbol: 'XRP', name: 'XRP', category: 'Payment' },
+  { id: 'binancecoin', symbol: 'BNB', name: 'BNB', category: 'Payment' },
   { id: 'stellar', symbol: 'XLM', name: 'Stellar', category: 'Payment' },
   { id: 'hedera-hashgraph', symbol: 'HBAR', name: 'Hedera', category: 'Payment' },
   { id: 'tron', symbol: 'TRX', name: 'TRON', category: 'Payment' },

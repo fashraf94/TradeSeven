@@ -12,6 +12,8 @@ import useBaggerBombBattleV4 from '../hooks/useBaggerBombBattleV4';
 import useClashCast from '../hooks/useClashCast';
 import { useWebSocketPrices } from '../hooks/useWebSocketPrices';
 import { stockAPI } from '../services/eodhdAPI';
+import { CASH_POSITION } from '../constants/cryptoPool';
+import { flattenPortfolio } from '../utils/baggerBombUtils';
 
 /**
  * BaggerBombBattleViewConnectedV4 - Connected wrapper for V4 battles
@@ -58,12 +60,6 @@ export default function BaggerBombBattleViewConnectedV4({
   useEffect(() => {
     if (!player?.portfolio && !opponent?.portfolio) return;
 
-    const flattenPortfolio = (p) => [
-      ...(p?.star || []),
-      ...(p?.core || []),
-      ...(p?.support || []),
-    ];
-
     const allAssets = [
       ...flattenPortfolio(player?.portfolio),
       ...flattenPortfolio(opponent?.portfolio),
@@ -76,35 +72,52 @@ export default function BaggerBombBattleViewConnectedV4({
     });
   }, [player?.portfolio, opponent?.portfolio]);
 
-  // Multi-step swap mode state (matches training view pattern)
+  // V5: Swap Market modal state
+  const [showSwapMarket, setShowSwapMarket] = useState(false);
+
+  // Multi-step swap mode state (V5: modal selects agent, then user taps roster target)
   const [swapMode, setSwapMode] = useState({
-    active: false,
-    selectedFreeAgent: null,
-    step: 'idle',
-    targetAsset: null,
+    active: false, selectedFreeAgent: null, step: 'idle',
+    targetAsset: null, swapType: null, direction: null,
   });
 
-  const enterSwapMode = useCallback(() => {
+  // V5: Open SwapMarketModal (replaces old V4 inline enterSwapMode)
+  const handleSwapMarketOpen = useCallback(() => {
     if (swapsRemaining <= 0) return;
-    setSwapMode({ active: true, selectedFreeAgent: null, step: 'selectAgent', targetAsset: null });
+    setShowSwapMarket(true);
   }, [swapsRemaining]);
 
-  const selectFreeAgent = useCallback((agent) => {
-    setSwapMode(prev => ({ ...prev, selectedFreeAgent: agent, step: 'selectTarget' }));
+  // V5 Swap Market handlers — close modal and enter selectTarget step
+  const createSwapHandler = useCallback((swapType, direction = null) => (agent) => {
+    setShowSwapMarket(false);
+    setSwapMode({
+      active: true, selectedFreeAgent: agent ?? CASH_POSITION,
+      step: 'selectTarget', targetAsset: null, swapType, direction,
+    });
   }, []);
 
+  const handleSwapStock = useMemo(() => createSwapHandler('stock'), [createSwapHandler]);
+  const handleSwapCryptoLong = useMemo(() => createSwapHandler('crypto', 'long'), [createSwapHandler]);
+  const handleSwapCryptoShort = useMemo(() => createSwapHandler('crypto', 'short'), [createSwapHandler]);
+  const handleGoToCash = useMemo(() => createSwapHandler('cash'), [createSwapHandler]);
+
   const selectSwapTarget = useCallback((asset, tier, slotIndex) => {
-    if (swapMode.selectedFreeAgent?.isCrypto && !asset.isCrypto) return;
-    if (!swapMode.selectedFreeAgent?.isCrypto && asset.isCrypto) return;
+    if (!swapMode.active || swapMode.step !== 'selectTarget') return;
+    const { swapType } = swapMode;
+    // Type restrictions: stock → stock slots, crypto → crypto slot, cash → any non-cash
+    if (swapType === 'stock' && asset.isCrypto) return;
+    if (swapType === 'crypto' && !asset.isCrypto && !asset.isCash) return;
+    if (swapType === 'cash' && asset.isCash) return;
     setSwapMode(prev => ({
       ...prev,
-      targetAsset: { symbol: asset.symbol, name: asset.name, tier, slotIndex, isCrypto: asset.isCrypto },
+      targetAsset: { symbol: asset.symbol, name: asset.name, tier, slotIndex, isCrypto: asset.isCrypto, isCash: asset.isCash },
       step: 'confirming',
     }));
-  }, [swapMode.selectedFreeAgent]);
+  }, [swapMode.active, swapMode.step, swapMode.swapType]);
 
   const cancelSwapMode = useCallback(() => {
-    setSwapMode({ active: false, selectedFreeAgent: null, step: 'idle', targetAsset: null });
+    setSwapMode({ active: false, selectedFreeAgent: null, step: 'idle',
+      targetAsset: null, swapType: null, direction: null });
   }, []);
 
   const confirmSwap = useCallback(async () => {
@@ -113,11 +126,13 @@ export default function BaggerBombBattleViewConnectedV4({
       await executeSwap({
         outTier: swapMode.targetAsset.tier,
         outSlotIndex: swapMode.targetAsset.slotIndex,
-        inSymbol: swapMode.selectedFreeAgent.symbol,
+        inAgent: swapMode.selectedFreeAgent,
+        swapType: swapMode.swapType || 'stock',
+        direction: swapMode.direction || null,
       });
       cancelSwapMode();
     } catch (err) {
-      console.error('[V4 PvP] Swap confirm error:', err);
+      console.error('[V5 PvP] Swap confirm error:', err);
     }
   }, [swapMode, executeSwap, cancelSwapMode]);
 
@@ -163,7 +178,7 @@ export default function BaggerBombBattleViewConnectedV4({
       events: battle?.events || [],
       ...battleStats,
     });
-  }, [player?.totalPoints, opponent?.totalPoints, battle?.events?.length]);
+  }, [player?.totalPoints, opponent?.totalPoints, battle?.events?.length, battleStats, clashCast]);
 
   // Build trigger object for TriggerCelebration
   const triggerForCelebration = useMemo(() => {
@@ -297,7 +312,7 @@ export default function BaggerBombBattleViewConnectedV4({
         currentPrices={currentPrices}
         openPrices={openPrices}
         wsStatus={wsStatus}
-        battleVersion={4}
+        battleVersion={5}
         getEventCommentary={clashCast.getEventCommentary}
         clashCastActive={clashCast.isActive}
         syntheticEvents={clashCast.syntheticEvents}
@@ -310,14 +325,20 @@ export default function BaggerBombBattleViewConnectedV4({
           totalDays: totalTradingDays,
           rotationCountdown,
           swapMode,
-          onEnterSwapMode: enterSwapMode,
-          onSelectFreeAgent: selectFreeAgent,
+          onEnterSwapMode: handleSwapMarketOpen,
           onCancelSwapMode: cancelSwapMode,
         }}
         closedTrades={closedTrades}
         onSelectSwapTarget={selectSwapTarget}
         onConfirmSwap={confirmSwap}
         isSwapExecuting={isSwapExecuting}
+        showSwapMarket={showSwapMarket}
+        onCloseSwapMarket={() => setShowSwapMarket(false)}
+        onSwapStock={handleSwapStock}
+        onSwapCryptoLong={handleSwapCryptoLong}
+        onSwapCryptoShort={handleSwapCryptoShort}
+        onGoToCash={handleGoToCash}
+        rosterAssets={flattenPortfolio(player?.portfolio)}
       />
 
       {/* Threshold Trigger Celebration Overlay with Chain Support */}
