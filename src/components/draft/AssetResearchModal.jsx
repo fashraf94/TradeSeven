@@ -121,10 +121,10 @@ const AssetResearchModal = ({
     initialTimeframe: defaultTimeframe,
   });
 
-  // Enrich asset with daily change computed from OHLCV data when the parent
-  // doesn't provide a real percentChange (e.g., BaggerBomb portfolio builder).
+  // Always prefer daily change from OHLCV data over parent-provided percentChange.
+  // Parent components (BaggerBomb, Snake Draft) pass entry-based cumulative % change
+  // for scoring context, but the research modal should show today's daily change.
   const enrichedAsset = useMemo(() => {
-    if (asset?.percentChange || asset?.change) return asset;
     if (researchData.dailyChange != null) {
       return { ...asset, percentChange: researchData.dailyChange };
     }
