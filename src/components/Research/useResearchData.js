@@ -6,6 +6,24 @@ import { aggregateToMonthly } from './chartUtils';
 import { getDailyHL } from '../../services/websocketService';
 
 /**
+ * Find yesterday's closing price from daily OHLCV data (newest-first).
+ * EODHD's daily endpoint only includes completed trading days:
+ *   - During market hours: data[0] = yesterday (today not yet included)
+ *   - After market close: data[0] = today (just completed)
+ * This function skips today's candle (if present) to always return the
+ * previous trading day's close — the correct daily baseline.
+ */
+function getPreviousClose(dailyData) {
+  if (!dailyData || dailyData.length === 0) return null;
+  const todayET = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+  const prevCandle = dailyData.find(d => {
+    const candleDate = (d.date || d.datetime || '').substring(0, 10);
+    return candleDate && candleDate !== todayET;
+  });
+  return prevCandle ? Number(prevCandle.close) : Number(dailyData[0].close);
+}
+
+/**
  * Central data hook for the redesigned Research modal.
  * Manages OHLCV data, technical indicators, and S/R levels.
  *
@@ -102,13 +120,15 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
           setRawData(filtered);
 
           // Compute daily change from daily data (rawData is newest-first)
-          if (apiTimeframe === '1d' && data.length >= 2) {
+          if (apiTimeframe === '1d' && data.length >= 1) {
             cacheRef.current[`${symbol}_1d`] = data;
-            const prevClose = Number(data[1].close);
-            setPreviousClose(prevClose);
-            const currClose = currentPrice > 0 ? currentPrice : Number(data[0].close);
-            if (prevClose > 0 && currClose > 0) {
-              setDailyChange(((currClose - prevClose) / prevClose) * 100);
+            const prevClose = getPreviousClose(data);
+            if (prevClose) {
+              setPreviousClose(prevClose);
+              const currClose = currentPrice > 0 ? currentPrice : 0;
+              if (prevClose > 0 && currClose > 0) {
+                setDailyChange(((currClose - prevClose) / prevClose) * 100);
+              }
             }
           }
         }
@@ -138,22 +158,26 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
 
     const dailyCacheKey = `${symbol}_1d`;
     const cached = cacheRef.current[dailyCacheKey];
-    if (cached && cached.length >= 2) {
-      const pc = Number(cached[1].close);
-      setPreviousClose(pc);
-      const curr = currentPrice > 0 ? currentPrice : Number(cached[0].close);
-      if (pc > 0 && curr > 0) setDailyChange(((curr - pc) / pc) * 100);
+    if (cached && cached.length >= 1) {
+      const pc = getPreviousClose(cached);
+      if (pc) {
+        setPreviousClose(pc);
+        const curr = currentPrice > 0 ? currentPrice : 0;
+        if (pc > 0 && curr > 0) setDailyChange(((curr - pc) / pc) * 100);
+      }
       return;
     }
 
     fetchHistoricalOHLCV(symbol, '1d', { days: 5, ...(isCrypto ? { type: 'crypto' } : {}) })
       .then(data => {
-        if (data && data.length >= 2) {
+        if (data && data.length >= 1) {
           cacheRef.current[dailyCacheKey] = data;
-          const pc = Number(data[1].close);
-          setPreviousClose(pc);
-          const curr = currentPrice > 0 ? currentPrice : Number(data[0].close);
-          if (pc > 0 && curr > 0) setDailyChange(((curr - pc) / pc) * 100);
+          const pc = getPreviousClose(data);
+          if (pc) {
+            setPreviousClose(pc);
+            const curr = currentPrice > 0 ? currentPrice : 0;
+            if (pc > 0 && curr > 0) setDailyChange(((curr - pc) / pc) * 100);
+          }
         }
       })
       .catch(() => {}); // Silent — dailyChange stays null, enrichedAsset falls through
@@ -207,8 +231,8 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
     if (!currentPrice || currentPrice <= 0) return;
     const dailyCacheKey = `${symbol}_1d`;
     const dailyData = cacheRef.current[dailyCacheKey];
-    if (!dailyData || dailyData.length < 2) return;
-    const prevClose = Number(dailyData[1].close);
+    if (!dailyData || dailyData.length < 1) return;
+    const prevClose = getPreviousClose(dailyData);
     if (prevClose > 0) {
       setPreviousClose(prevClose);
       setDailyChange(((currentPrice - prevClose) / prevClose) * 100);
