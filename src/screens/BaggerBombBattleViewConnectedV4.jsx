@@ -60,12 +60,6 @@ export default function BaggerBombBattleViewConnectedV4({
   useEffect(() => {
     if (!player?.portfolio && !opponent?.portfolio) return;
 
-    const flattenPortfolio = (p) => [
-      ...(p?.star || []),
-      ...(p?.core || []),
-      ...(p?.support || []),
-    ];
-
     const allAssets = [
       ...flattenPortfolio(player?.portfolio),
       ...flattenPortfolio(opponent?.portfolio),
@@ -94,37 +88,18 @@ export default function BaggerBombBattleViewConnectedV4({
   }, [swapsRemaining]);
 
   // V5 Swap Market handlers — close modal and enter selectTarget step
-  const handleSwapStock = useCallback((stockAgent) => {
+  const createSwapHandler = useCallback((swapType, direction = null) => (agent) => {
     setShowSwapMarket(false);
     setSwapMode({
-      active: true, selectedFreeAgent: stockAgent,
-      step: 'selectTarget', targetAsset: null, swapType: 'stock', direction: null,
+      active: true, selectedFreeAgent: agent ?? CASH_POSITION,
+      step: 'selectTarget', targetAsset: null, swapType, direction,
     });
   }, []);
 
-  const handleSwapCryptoLong = useCallback((crypto) => {
-    setShowSwapMarket(false);
-    setSwapMode({
-      active: true, selectedFreeAgent: crypto,
-      step: 'selectTarget', targetAsset: null, swapType: 'crypto', direction: 'long',
-    });
-  }, []);
-
-  const handleSwapCryptoShort = useCallback((crypto) => {
-    setShowSwapMarket(false);
-    setSwapMode({
-      active: true, selectedFreeAgent: crypto,
-      step: 'selectTarget', targetAsset: null, swapType: 'crypto', direction: 'short',
-    });
-  }, []);
-
-  const handleGoToCash = useCallback(() => {
-    setShowSwapMarket(false);
-    setSwapMode({
-      active: true, selectedFreeAgent: CASH_POSITION,
-      step: 'selectTarget', targetAsset: null, swapType: 'cash', direction: null,
-    });
-  }, []);
+  const handleSwapStock = useMemo(() => createSwapHandler('stock'), [createSwapHandler]);
+  const handleSwapCryptoLong = useMemo(() => createSwapHandler('crypto', 'long'), [createSwapHandler]);
+  const handleSwapCryptoShort = useMemo(() => createSwapHandler('crypto', 'short'), [createSwapHandler]);
+  const handleGoToCash = useMemo(() => createSwapHandler('cash'), [createSwapHandler]);
 
   const selectSwapTarget = useCallback((asset, tier, slotIndex) => {
     if (!swapMode.active || swapMode.step !== 'selectTarget') return;
@@ -138,7 +113,7 @@ export default function BaggerBombBattleViewConnectedV4({
       targetAsset: { symbol: asset.symbol, name: asset.name, tier, slotIndex, isCrypto: asset.isCrypto, isCash: asset.isCash },
       step: 'confirming',
     }));
-  }, [swapMode]);
+  }, [swapMode.active, swapMode.step, swapMode.swapType]);
 
   const cancelSwapMode = useCallback(() => {
     setSwapMode({ active: false, selectedFreeAgent: null, step: 'idle',

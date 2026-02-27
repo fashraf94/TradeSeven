@@ -7,6 +7,7 @@ import PropTypes from 'prop-types';
 import { motion, AnimatePresence } from 'framer-motion';
 import { HOLO_COLORS } from '../../constants/holoTheme';
 import { BAGGERBOMB_CRYPTO_POOL } from '../../constants/cryptoPool';
+import { calcPctChange } from '../../utils/baggerBombUtils';
 
 // ============================================
 // HELPERS
@@ -31,6 +32,16 @@ const formatPctChange = (pct) => {
   if (pct === null || pct === undefined || isNaN(pct)) return null;
   const sign = pct >= 0 ? '+' : '';
   return `${sign}${pct.toFixed(2)}%`;
+};
+
+/** Shared color/text for daily price change display */
+const getChangeColorAndText = (dailyChange) => {
+  const pctText = formatPctChange(dailyChange);
+  const isPositive = dailyChange > 0;
+  const changeColor = pctText
+    ? (isPositive ? HOLO_COLORS.green : dailyChange < 0 ? HOLO_COLORS.red : HOLO_COLORS.textMuted)
+    : HOLO_COLORS.textSecondary;
+  return { pctText, changeColor };
 };
 
 // ============================================
@@ -93,11 +104,7 @@ function CashSection({ onGoToCash, disabled }) {
 // ============================================
 
 function StockCard({ agent, currentPrice, dailyChange, onSelect, disabled }) {
-  const pctText = formatPctChange(dailyChange);
-  const isPositive = dailyChange > 0;
-  const changeColor = pctText
-    ? (isPositive ? HOLO_COLORS.green : dailyChange < 0 ? HOLO_COLORS.red : HOLO_COLORS.textMuted)
-    : HOLO_COLORS.textSecondary;
+  const { pctText, changeColor } = getChangeColorAndText(dailyChange);
 
   return (
     <motion.button
@@ -164,11 +171,7 @@ function StockCard({ agent, currentPrice, dailyChange, onSelect, disabled }) {
 // ============================================
 
 function CryptoCard({ crypto, currentPrice, dailyChange, onSelectLong, onSelectShort, inRoster, rosterDirection, disabled }) {
-  const pctText = formatPctChange(dailyChange);
-  const isPositive = dailyChange > 0;
-  const changeColor = pctText
-    ? (isPositive ? HOLO_COLORS.green : dailyChange < 0 ? HOLO_COLORS.red : HOLO_COLORS.textMuted)
-    : HOLO_COLORS.textSecondary;
+  const { pctText, changeColor } = getChangeColorAndText(dailyChange);
 
   return (
     <div
@@ -345,11 +348,8 @@ export default function SwapMarketModal({
   const stockChanges = useMemo(() => {
     const changes = {};
     (stockFreeAgents || []).forEach(agent => {
-      const current = currentPrices?.[agent.symbol];
-      const open = dailyOpens?.[agent.symbol];
-      if (current && open && open > 0) {
-        changes[agent.symbol] = ((current - open) / open) * 100;
-      }
+      const pct = calcPctChange(currentPrices?.[agent.symbol], dailyOpens?.[agent.symbol]);
+      if (pct !== null) changes[agent.symbol] = pct;
     });
     return changes;
   }, [stockFreeAgents, currentPrices, dailyOpens]);
@@ -358,11 +358,8 @@ export default function SwapMarketModal({
   const cryptoChanges = useMemo(() => {
     const changes = {};
     BAGGERBOMB_CRYPTO_POOL.forEach(crypto => {
-      const current = currentPrices?.[crypto.symbol];
-      const open = dailyOpens?.[crypto.symbol];
-      if (current && open && open > 0) {
-        changes[crypto.symbol] = ((current - open) / open) * 100;
-      }
+      const pct = calcPctChange(currentPrices?.[crypto.symbol], dailyOpens?.[crypto.symbol]);
+      if (pct !== null) changes[crypto.symbol] = pct;
     });
     return changes;
   }, [currentPrices, dailyOpens]);

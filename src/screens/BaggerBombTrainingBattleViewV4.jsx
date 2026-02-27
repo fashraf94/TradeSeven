@@ -127,7 +127,7 @@ export default function BaggerBombTrainingBattleViewV4({
     setSwapsRemaining(remaining);
     setClosedTrades(myData?.closedTrades || []);
     setLocalPortfolio(null);
-  }, [battle?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [battle?.id, myData?.swaps?.remaining?.day1, myData?.closedTrades]);
 
   // Re-sync free agents when battle data loads asynchronously (handles Firebase load after mount)
   useEffect(() => {
@@ -142,7 +142,7 @@ export default function BaggerBombTrainingBattleViewV4({
         setRotationCountdown(Math.max(0, Math.floor((nextRotationRef.current - Date.now()) / 1000)));
       }
     }
-  }, [battle?.freeAgents?.current]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [battle?.freeAgents?.current, battle?.freeAgents?.rotationCount, battle?.freeAgents?.nextRotationAt, freeAgents.length]);
 
   // Training events for Live Feed
   const [trainingEvents, setTrainingEvents] = useState([]);

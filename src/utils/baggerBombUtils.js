@@ -624,3 +624,15 @@ export function getPortfolioAssets(battle, isCreator = true) {
     ...(player.portfolio.support || []),
   ].filter(Boolean);
 }
+
+/**
+ * Calculate percentage change between current and open price.
+ * Safe against zero/missing values.
+ * @param {number} current - Current price
+ * @param {number} open - Open/reference price
+ * @returns {number|null} Percentage change or null if inputs invalid
+ */
+export function calcPctChange(current, open) {
+  if (!current || !open || open === 0) return null;
+  return ((current - open) / open) * 100;
+}
