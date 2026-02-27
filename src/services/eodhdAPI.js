@@ -311,6 +311,7 @@ export async function getMultipleCryptoPrices(symbols) {
         if (price > 0) {
           const normalized = {
             price: price,
+            previousClose: parseFloat(priceData.previousClose) || 0,
             change24h: parseFloat(priceData.changePercent) || 0,
             high: parseFloat(priceData.high) || 0,
             low: parseFloat(priceData.low) || 0,

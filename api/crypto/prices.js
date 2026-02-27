@@ -59,6 +59,8 @@ export default async function handler(req, res) {
         const symbol = item.code.split('-')[0]; // "BTC-USD.CC" -> "BTC"
         prices[symbol] = {
           price: item.close || item.previousClose || 0,
+          previousClose: item.previousClose || 0,
+          open: item.open || 0,
           change: item.change || 0,
           changePercent: item.change_p || 0,
           high: item.high,

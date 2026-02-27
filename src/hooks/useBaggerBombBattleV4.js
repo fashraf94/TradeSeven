@@ -776,13 +776,17 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
         setCurrentPrices((prev) => ({ ...prev, ...newPrices }));
       }
 
-      // Also extract today's market open prices (for daily open capture on Day 2+)
+      // Extract previousClose as daily baseline (for daily open capture on Day 2+)
+      // previousClose = yesterday's 4:00 PM ET close — more accurate than market open
+      // because overnight gaps (earnings, news) should count toward daily scoring
       const newOpenPrices = {};
       Object.entries(stockData).forEach(([symbol, data]) => {
-        if (data?.open) newOpenPrices[symbol] = data.open;
+        if (data?.previousClose) newOpenPrices[symbol] = data.previousClose;
+        else if (data?.open) newOpenPrices[symbol] = data.open;
       });
       Object.entries(cryptoData).forEach(([symbol, data]) => {
-        if (data?.open) newOpenPrices[symbol] = data.open;
+        if (data?.previousClose) newOpenPrices[symbol] = data.previousClose;
+        else if (data?.open) newOpenPrices[symbol] = data.open;
       });
       if (Object.keys(newOpenPrices).length > 0) {
         setMarketOpenPrices((prev) => ({ ...prev, ...newOpenPrices }));
