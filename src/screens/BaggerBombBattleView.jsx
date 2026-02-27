@@ -537,7 +537,7 @@ export default function BaggerBombBattleView({
 
       {/* Research Modal - opens when stock symbol is tapped */}
       {researchAsset && (() => {
-        const dailyOpen = freeAgentDailyOpens?.[researchAsset.symbol];
+        const dailyOpen = openPrices[researchAsset.symbol] || freeAgentDailyOpens?.[researchAsset.symbol];
         const livePrice = currentPrices[researchAsset.symbol];
         const dailyChange = (dailyOpen && dailyOpen > 0 && livePrice)
           ? ((livePrice - dailyOpen) / dailyOpen) * 100
@@ -590,7 +590,7 @@ export default function BaggerBombBattleView({
               return sum;
             }, 0) || 0,
             totalScore: breakdownAsset.points || 0,
-            startingPrice: breakdownAsset.swapPrice || battle?.state?.startingPrices?.[breakdownAsset.symbol] || 0,
+            startingPrice: openPrices[breakdownAsset.symbol] || breakdownAsset.swapPrice || battle?.state?.startingPrices?.[breakdownAsset.symbol] || 0,
             currentPrice: currentPrices[breakdownAsset.symbol] || 0,
           }}
           events={events || []}

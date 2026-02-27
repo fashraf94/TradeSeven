@@ -46,6 +46,7 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
   // State
   const [battle, setBattle] = useState(null);
   const [currentPrices, setCurrentPrices] = useState({});
+  const [previousClosePrices, setPreviousClosePrices] = useState({}); // Yesterday's close from EODHD
   const [dailyExtremes, setDailyExtremes] = useState({}); // { AAPL: { high, low }, ... }
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -88,10 +89,15 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
   const myPortfolioFlat = useMemo(() => flattenPortfolio(myData?.portfolio), [myData?.portfolio]);
   const oppPortfolioFlat = useMemo(() => flattenPortfolio(oppData?.portfolio), [oppData?.portfolio]);
 
-  // Get open prices for current session
+  // Get open prices for current session — prefer previousClose as daily baseline
   const currentSessionId = getCurrentSessionId();
   const openPrices = useMemo(() => {
-    // Get all potential price sources
+    // Prefer previousClose as daily baseline (resets daily per product requirement)
+    // previousClose = yesterday's 4:00 PM ET close from EODHD, most accurate baseline
+    const hasPreviousClose = previousClosePrices && Object.keys(previousClosePrices).length > 0;
+    if (hasPreviousClose) return previousClosePrices;
+
+    // Fallback chain (before API data loads or for training battles)
     const currentSessionPrices = currentSessionId
       ? battle?.sessionPrices?.[currentSessionId]?.open
       : null;
@@ -109,7 +115,7 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
       : effectivePrices || {};
 
     return prices;
-  }, [battle, currentSessionId, effectivePrices]);
+  }, [previousClosePrices, battle, currentSessionId, effectivePrices]);
 
   // Combine battle history with local updates
   const combinedHistory = useMemo(() => {
@@ -597,6 +603,8 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
         cryptoSymbols.length > 0 ? stockAPI.getMultipleCryptoPrices(cryptoSymbols) : {},
       ]);
 
+      const newPreviousCloses = {};
+
       Object.entries(stockData).forEach(([symbol, data]) => {
         if (data?.price) {
           newPrices[symbol] = data.price;
@@ -604,6 +612,7 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
             newExtremes[symbol] = { high: data.high || data.price, low: data.low || data.price };
           }
         }
+        if (data?.previousClose) newPreviousCloses[symbol] = data.previousClose;
       });
       Object.entries(cryptoData).forEach(([symbol, data]) => {
         if (data?.price) {
@@ -612,6 +621,7 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
             newExtremes[symbol] = { high: data.high || data.price, low: data.low || data.price };
           }
         }
+        if (data?.previousClose) newPreviousCloses[symbol] = data.previousClose;
       });
 
       if (Object.keys(newPrices).length > 0) {
@@ -619,6 +629,9 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
       }
       if (Object.keys(newExtremes).length > 0) {
         setDailyExtremes((prev) => ({ ...prev, ...newExtremes }));
+      }
+      if (Object.keys(newPreviousCloses).length > 0) {
+        setPreviousClosePrices((prev) => ({ ...prev, ...newPreviousCloses }));
       }
     } catch (err) {
       console.error('Error fetching prices:', err);

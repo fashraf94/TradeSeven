@@ -66,13 +66,6 @@ export class CommentaryEngine {
   processStateUpdate(currentState) {
     if (this._destroyed) return;
 
-    console.log('[ClashCast] processStateUpdate called', {
-      hasEvents: !!currentState.events,
-      eventCount: currentState.events?.length || 0,
-      hasPreviousState: !!this.previousState,
-      prevEventCount: this.previousState?.events?.length || 0,
-    });
-
     if (!this.previousState) {
       this.previousState = { ...currentState };
       this._triggerCommentary(
@@ -131,7 +124,9 @@ export class CommentaryEngine {
 
     const events = this._detectEvents(this.previousState, currentState);
 
-    console.log('[ClashCast] Detected events:', events.length, events.map(e => ({ type: e.type, asset: e.asset, eventId: e.eventId })));
+    if (events.length > 0) {
+      console.log('[ClashCast] Detected events:', events.length, events.map(e => ({ type: e.type, asset: e.asset, eventId: e.eventId })));
+    }
 
     for (const event of events) {
       if (this._shouldGenerateCommentary(event)) {
@@ -171,19 +166,11 @@ export class CommentaryEngine {
     // --- BREAKOUT DETECTION (Set-based — robust against reordering/duplicates) ---
     const currentEvents = current.events || [];
 
-    console.log('[ClashCast] _detectEvents scanning:', {
-      currentEventsLength: currentEvents.length,
-      processedIds: this.processedEventIds.size,
-    });
-
     for (const evt of currentEvents) {
       const eventId = evt.id;
 
       // Skip events without an ID (can't track them)
-      if (!eventId) {
-        console.warn('[ClashCast] Event missing id:', { symbol: evt.symbol, type: evt.type });
-        continue;
-      }
+      if (!eventId) continue;
 
       // Already processed — skip
       if (this.processedEventIds.has(eventId)) continue;
@@ -197,14 +184,6 @@ export class CommentaryEngine {
       this.processedEventIds.add(eventId);
 
       const classifiedType = this._classifyBreakoutEvent(evt);
-
-      console.log('[ClashCast] New breakout event detected:', {
-        eventId,
-        symbol: evt.symbol,
-        type: classifiedType,
-        originalType: evt.thresholdName || evt.type,
-        points: evt.points,
-      });
 
       events.push({
         eventId: eventId,
@@ -318,29 +297,17 @@ export class CommentaryEngine {
   // ── Throttle Logic ───────────────────────────────────────────
 
   _shouldGenerateCommentary(event) {
-    if (this.commentaryLog.length >= this.MAX_COMMENTARY) {
-      console.log('[ClashCast] _shouldGenerateCommentary: MAX reached', { type: event.type, logLength: this.commentaryLog.length });
-      return false;
-    }
+    if (this.commentaryLog.length >= this.MAX_COMMENTARY) return false;
 
     // Bypass throttle for critical events
-    if (BYPASS_THROTTLE.includes(event.type)) {
-      console.log('[ClashCast] _shouldGenerateCommentary: BYPASS', { type: event.type });
-      return true;
-    }
+    if (BYPASS_THROTTLE.includes(event.type)) return true;
 
     const now = Date.now();
     const tier = this._getEventTier(event.type);
     const cooldown = tier === 1 ? this.TIER1_COOLDOWN : tier === 2 ? this.TIER2_COOLDOWN : 0;
     const lastTime = this.lastCommentaryTime[tier] || 0;
 
-    if (now - lastTime < cooldown) {
-      console.log('[ClashCast] _shouldGenerateCommentary: THROTTLED', { type: event.type, tier, cooldownRemaining: cooldown - (now - lastTime) });
-      return false;
-    }
-
-    console.log('[ClashCast] _shouldGenerateCommentary: APPROVED', { type: event.type, tier });
-    return true;
+    return (now - lastTime) >= cooldown;
   }
 
   _getEventTier(type) {
@@ -353,8 +320,6 @@ export class CommentaryEngine {
 
   async _triggerCommentary(eventId, event, battleState, isSynthetic = false) {
     if (this._destroyed) return;
-
-    console.log('[ClashCast] TRIGGERING commentary:', { eventId, type: event.type, asset: event.asset, isSynthetic });
 
     const tier = this._getEventTier(event.type);
     this.lastCommentaryTime[tier] = Date.now();
@@ -420,7 +385,6 @@ export class CommentaryEngine {
   }
 
   _deliverCommentary(eventId, event, commentaryText, isSynthetic) {
-    console.log('[ClashCast] DELIVERED commentary:', { eventId, type: event.type, textLength: commentaryText?.length, isSynthetic });
     this.commentaryMap.set(eventId, commentaryText);
     this.commentaryLog.push({
       type: event.type,

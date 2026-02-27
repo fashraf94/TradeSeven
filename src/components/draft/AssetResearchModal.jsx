@@ -121,10 +121,10 @@ const AssetResearchModal = ({
     initialTimeframe: defaultTimeframe,
   });
 
-  // Enrich asset with daily change computed from OHLCV data when the parent
-  // doesn't provide a real percentChange (e.g., BaggerBomb portfolio builder).
+  // Always prefer daily change from OHLCV data over parent-provided percentChange.
+  // Parent components (BaggerBomb, Snake Draft) pass entry-based cumulative % change
+  // for scoring context, but the research modal should show today's daily change.
   const enrichedAsset = useMemo(() => {
-    if (asset?.percentChange || asset?.change) return asset;
     if (researchData.dailyChange != null) {
       return { ...asset, percentChange: researchData.dailyChange };
     }
@@ -132,12 +132,13 @@ const AssetResearchModal = ({
   }, [asset, researchData.dailyChange]);
 
   // v2: Bomb chart data — only available when asset has battle context (threshold + baseline price)
-  // Prefer baselinePrice (the actual scoring baseline, e.g. previousClose on day 2+)
-  // over lockedPrice (draft-time price). This ensures chart threshold lines match scoring:
-  // the chart shows "HIT!" only when the scoring system also counts a BaggerBomb.
+  // Prefer previousClose from OHLCV daily data (most accurate daily baseline) over
+  // asset properties. This ensures the bomb chart and BaggerBombTab use yesterday's close
+  // as the starting point, matching the scoring engine's daily reset behavior.
   const bombData = useMemo(() => {
     const threshold = asset?.threshold;
     const baselinePrice =
+      researchData.previousClose || // OHLCV-derived yesterday's close (most accurate)
       asset?.baselinePrice ||
       asset?.lockedPrice ||
       asset?.startPrice ||
@@ -149,8 +150,8 @@ const AssetResearchModal = ({
       null;
     if (!threshold || threshold <= 0 || !baselinePrice || baselinePrice <= 0) return null;
     return { threshold, baselinePrice };
-  }, [asset?.threshold, asset?.lockedPrice, asset?.baselinePrice, asset?.startPrice,
-      asset?.startingPrice, asset?.basePrice, asset?.draftPrice,
+  }, [researchData.previousClose, asset?.threshold, asset?.lockedPrice, asset?.baselinePrice,
+      asset?.startPrice, asset?.startingPrice, asset?.basePrice, asset?.draftPrice,
       asset?.price, asset?.currentPrice]);
 
   // v2: Measure container height for drawer snap points
