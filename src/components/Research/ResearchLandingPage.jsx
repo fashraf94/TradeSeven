@@ -3540,6 +3540,15 @@ const ResearchLandingPage = ({
             showActionButton={false}
           />
         )}
+        {/* Why Is It Moving? Popup (mobile) */}
+        <WhyMovingPopup
+          symbol={whyMovingTarget?.symbol}
+          name={whyMovingTarget?.name}
+          change={whyMovingTarget?.change}
+          price={whyMovingTarget?.price}
+          isOpen={!!whyMovingTarget}
+          onClose={() => setWhyMovingTarget(null)}
+        />
       </>
     );
   }
