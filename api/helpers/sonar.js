@@ -52,6 +52,7 @@ const PERPLEXITY_API_URL = 'https://api.perplexity.ai/chat/completions';
  */
 export async function querySonar(systemPrompt, userPrompt, options = {}) {
   const apiKey = process.env.PERPLEXITY_API_KEY;
+  console.log(`[Sonar] API key check: exists=${!!apiKey}, length=${apiKey ? apiKey.length : 0}`);
   if (!apiKey) {
     throw new Error('PERPLEXITY_API_KEY not configured');
   }
@@ -87,6 +88,7 @@ export async function querySonar(systemPrompt, userPrompt, options = {}) {
   }
 
   console.log(`[Sonar] Querying model=${model}, recency=${searchRecencyFilter || 'none'}, tokens=${maxTokens}`);
+  console.log(`[Sonar] User prompt: "${userPrompt}"`);
 
   const response = await fetch(PERPLEXITY_API_URL, {
     method: 'POST',
@@ -104,6 +106,9 @@ export async function querySonar(systemPrompt, userPrompt, options = {}) {
   }
 
   const data = await response.json();
+
+  console.log(`[Sonar] Raw response keys:`, Object.keys(data));
+  console.log(`[Sonar] choices count:`, data.choices?.length, 'citations count:', data.citations?.length);
 
   const text = data.choices?.[0]?.message?.content || '';
   const citations = data.citations || [];

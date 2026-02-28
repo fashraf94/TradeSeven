@@ -46,6 +46,8 @@ Rules:
 // =============================================================================
 
 export default async function handler(req, res) {
+  console.log('[WhyMoving] Handler called with:', { symbol: req.body?.symbol, change: req.body?.change });
+
   // Security middleware (CORS, rate limiting, headers)
   if (applySecurityMiddleware(req, res, { rateLimit: { limit: 20, windowMs: 60000 } })) {
     return;
@@ -97,7 +99,7 @@ export default async function handler(req, res) {
       parsed = JSON.parse(jsonStr);
     } catch {
       // If JSON parsing fails, use raw text as explanation
-      console.warn(`[WhyMoving] JSON parse failed for ${cleanSymbol}, using raw text`);
+      console.warn(`[WhyMoving] JSON parse failed for ${cleanSymbol}, raw text:`, text.slice(0, 200));
       parsed = {
         explanation: text.slice(0, 500),
         factors: [],
@@ -124,7 +126,7 @@ export default async function handler(req, res) {
 
     return res.status(200).json(responseData);
   } catch (error) {
-    console.error(`[WhyMoving] Error for ${cleanSymbol}:`, error.message);
+    console.error(`[WhyMoving] Error for ${cleanSymbol}:`, error.message, error.stack);
 
     // Graceful fallback — return basic price statement instead of failing
     const fallbackExplanation = name

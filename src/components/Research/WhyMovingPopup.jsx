@@ -179,7 +179,7 @@ const WhyMovingPopup = ({ symbol, name, change, price, isOpen, onClose }) => {
                 position: 'fixed',
                 inset: 0,
                 background: 'rgba(0, 0, 0, 0.5)',
-                zIndex: 1000,
+                zIndex: 9998,
               }}
             />
 
@@ -201,7 +201,7 @@ const WhyMovingPopup = ({ symbol, name, change, price, isOpen, onClose }) => {
                 background: '#1c2128',
                 borderRadius: '16px 16px 0 0',
                 padding: '20px',
-                zIndex: 1001,
+                zIndex: 9999,
                 maxHeight: '70vh',
                 overflowY: 'auto',
               }}
