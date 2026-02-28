@@ -8,6 +8,7 @@ import { useAssetResearch } from '../../hooks/useAssetResearch';
 import AssetResearchModal from '../draft/AssetResearchModal';
 import WhyMovingPopup from './WhyMovingPopup';
 import MarketPulseCard from './MarketPulseCard';
+import UpcomingEventsPanel from './UpcomingEventsPanel';
 
 // ─── Utilities ───────────────────────────────────────────────
 const safeNumber = (val, fallback = 0) => {
@@ -2219,7 +2220,7 @@ const WeeklyReport = ({ visible, onClose, reportData, reportLoading }) => {
 };
 
 // ─── BriefingTab (V2) ───────────────────────────────────────
-const BriefingTab = ({ briefer, loading, watchlistStocks, expandedTracker, onToggleTracker, trackerCache, trackerLoading, onShowWeeklyReport, buildMarketContextString, onRemoveStock, onAddStock, allAssets, onWhyMoving, marketPulse, marketPulseLoading, marketPulseError, onRetryMarketPulse, onStockTap }) => {
+const BriefingTab = ({ briefer, loading, watchlistStocks, expandedTracker, onToggleTracker, trackerCache, trackerLoading, onShowWeeklyReport, buildMarketContextString, onRemoveStock, onAddStock, allAssets, onWhyMoving, marketPulse, marketPulseLoading, marketPulseError, onRetryMarketPulse, onStockTap, upcomingEconomic, upcomingEarnings, upcomingEconomicLoading, upcomingEarningsLoading, upcomingEconomicError, upcomingEarningsError, onRetryEconomic, onRetryEarnings }) => {
   if (loading) {
     return (
       <div style={{
@@ -2302,6 +2303,19 @@ const BriefingTab = ({ briefer, loading, watchlistStocks, expandedTracker, onTog
         onRetry={onRetryMarketPulse}
         onStockTap={onStockTap}
         cachedAt={marketPulse?.cachedAt}
+      />
+
+      {/* Upcoming Events */}
+      <UpcomingEventsPanel
+        economicEvents={upcomingEconomic}
+        earningsCalendar={upcomingEarnings}
+        economicLoading={upcomingEconomicLoading}
+        earningsLoading={upcomingEarningsLoading}
+        economicError={upcomingEconomicError}
+        earningsError={upcomingEarningsError}
+        onRetryEconomic={onRetryEconomic}
+        onRetryEarnings={onRetryEarnings}
+        onStockTap={onStockTap}
       />
 
       {/* Ask the Briefer — Question Cards */}
@@ -2441,6 +2455,14 @@ const MobileIntelligenceHub = ({
   marketPulseLoading,
   marketPulseError,
   onRetryMarketPulse,
+  upcomingEconomic,
+  upcomingEarnings,
+  upcomingEconomicLoading,
+  upcomingEarningsLoading,
+  upcomingEconomicError,
+  upcomingEarningsError,
+  onRetryEconomic,
+  onRetryEarnings,
 }) => {
   const [activeTab, setActiveTab] = useState('briefing');
   const [expandedSymbol, setExpandedSymbol] = useState(null);
@@ -2599,6 +2621,14 @@ const MobileIntelligenceHub = ({
               const asset = allAssets.find(a => a.symbol?.toUpperCase() === symbol.toUpperCase());
               if (asset) handleOpenResearch(asset);
             }}
+            upcomingEconomic={upcomingEconomic}
+            upcomingEarnings={upcomingEarnings}
+            upcomingEconomicLoading={upcomingEconomicLoading}
+            upcomingEarningsLoading={upcomingEarningsLoading}
+            upcomingEconomicError={upcomingEconomicError}
+            upcomingEarningsError={upcomingEarningsError}
+            onRetryEconomic={onRetryEconomic}
+            onRetryEarnings={onRetryEarnings}
           />
         ) : (
           <DiscoverTab
@@ -2820,6 +2850,14 @@ const ResearchLandingPage = ({
   const [marketPulseLoading, setMarketPulseLoading] = useState(true);
   const [marketPulseError, setMarketPulseError] = useState(false);
 
+  // ─── Upcoming Events (Sonar) ────────────────────────────
+  const [upcomingEconomic, setUpcomingEconomic] = useState(null);
+  const [upcomingEarnings, setUpcomingEarnings] = useState(null);
+  const [upcomingEconomicLoading, setUpcomingEconomicLoading] = useState(true);
+  const [upcomingEarningsLoading, setUpcomingEarningsLoading] = useState(true);
+  const [upcomingEconomicError, setUpcomingEconomicError] = useState(false);
+  const [upcomingEarningsError, setUpcomingEarningsError] = useState(false);
+
   // ─── All assets for search ───────────────────────────────
   const allAssets = useMemo(() => [...stocksData, ...cryptoData], [stocksData, cryptoData]);
 
@@ -2991,6 +3029,49 @@ const ResearchLandingPage = ({
   useEffect(() => {
     fetchMarketPulse();
   }, [fetchMarketPulse]);
+
+  // ─── Upcoming Economic Events fetch ──────────────────────
+  const fetchUpcomingEconomic = useCallback(async () => {
+    setUpcomingEconomicLoading(true);
+    setUpcomingEconomicError(false);
+    try {
+      const res = await fetch('/api/economic-events-sonar');
+      const data = await res.json();
+      if (data.success) {
+        setUpcomingEconomic(data.data);
+      } else {
+        setUpcomingEconomicError(true);
+      }
+    } catch {
+      setUpcomingEconomicError(true);
+    } finally {
+      setUpcomingEconomicLoading(false);
+    }
+  }, []);
+
+  // ─── Upcoming Earnings fetch ─────────────────────────────
+  const fetchUpcomingEarnings = useCallback(async () => {
+    setUpcomingEarningsLoading(true);
+    setUpcomingEarningsError(false);
+    try {
+      const res = await fetch('/api/earnings-calendar-sonar');
+      const data = await res.json();
+      if (data.success) {
+        setUpcomingEarnings(data.data);
+      } else {
+        setUpcomingEarningsError(true);
+      }
+    } catch {
+      setUpcomingEarningsError(true);
+    } finally {
+      setUpcomingEarningsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchUpcomingEconomic();
+    fetchUpcomingEarnings();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ─── AI Summary (desktop) ─────────────────────────────────
   useEffect(() => {
@@ -3583,6 +3664,14 @@ const ResearchLandingPage = ({
           marketPulseLoading={marketPulseLoading}
           marketPulseError={marketPulseError}
           onRetryMarketPulse={fetchMarketPulse}
+          upcomingEconomic={upcomingEconomic}
+          upcomingEarnings={upcomingEarnings}
+          upcomingEconomicLoading={upcomingEconomicLoading}
+          upcomingEarningsLoading={upcomingEarningsLoading}
+          upcomingEconomicError={upcomingEconomicError}
+          upcomingEarningsError={upcomingEarningsError}
+          onRetryEconomic={fetchUpcomingEconomic}
+          onRetryEarnings={fetchUpcomingEarnings}
         />
         <WeeklyReport
           visible={showWeeklyReport}
@@ -3750,17 +3839,32 @@ const ResearchLandingPage = ({
         </div>
       </motion.div>
 
-      {/* ═══ Market Pulse ═══ */}
-      <div style={{ margin: '16px 0' }}>
-        <MarketPulseCard
-          headlines={marketPulse?.headlines || []}
-          citations={marketPulse?.citations || []}
-          loading={marketPulseLoading}
-          error={marketPulseError}
-          onRetry={fetchMarketPulse}
-          onStockTap={(symbol) => handleOpenResearch({ symbol, type: 'stock' })}
-          cachedAt={marketPulse?.cachedAt}
-        />
+      {/* ═══ Market Intelligence Row ═══ */}
+      <div style={{ display: 'flex', gap: '16px', margin: '16px 0' }}>
+        <div style={{ flex: '0 0 60%' }}>
+          <MarketPulseCard
+            headlines={marketPulse?.headlines || []}
+            citations={marketPulse?.citations || []}
+            loading={marketPulseLoading}
+            error={marketPulseError}
+            onRetry={fetchMarketPulse}
+            onStockTap={(symbol) => handleOpenResearch({ symbol, type: 'stock' })}
+            cachedAt={marketPulse?.cachedAt}
+          />
+        </div>
+        <div style={{ flex: '0 0 38%' }}>
+          <UpcomingEventsPanel
+            economicEvents={upcomingEconomic}
+            earningsCalendar={upcomingEarnings}
+            economicLoading={upcomingEconomicLoading}
+            earningsLoading={upcomingEarningsLoading}
+            economicError={upcomingEconomicError}
+            earningsError={upcomingEarningsError}
+            onRetryEconomic={fetchUpcomingEconomic}
+            onRetryEarnings={fetchUpcomingEarnings}
+            onStockTap={(symbol) => handleOpenResearch({ symbol, type: 'stock' })}
+          />
+        </div>
       </div>
 
       {/* ═══ ZONE 2: Research Tools ═══ */}
