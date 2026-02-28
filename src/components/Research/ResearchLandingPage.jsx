@@ -7,6 +7,7 @@ import { getTopMoversWithNews, getMarketNews } from '../../services/eodhdAPI';
 import { useAssetResearch } from '../../hooks/useAssetResearch';
 import AssetResearchModal from '../draft/AssetResearchModal';
 import WhyMovingPopup from './WhyMovingPopup';
+import MarketPulseCard from './MarketPulseCard';
 
 // ─── Utilities ───────────────────────────────────────────────
 const safeNumber = (val, fallback = 0) => {
@@ -2218,7 +2219,7 @@ const WeeklyReport = ({ visible, onClose, reportData, reportLoading }) => {
 };
 
 // ─── BriefingTab (V2) ───────────────────────────────────────
-const BriefingTab = ({ briefer, loading, watchlistStocks, expandedTracker, onToggleTracker, trackerCache, trackerLoading, onShowWeeklyReport, buildMarketContextString, onRemoveStock, onAddStock, allAssets, onWhyMoving }) => {
+const BriefingTab = ({ briefer, loading, watchlistStocks, expandedTracker, onToggleTracker, trackerCache, trackerLoading, onShowWeeklyReport, buildMarketContextString, onRemoveStock, onAddStock, allAssets, onWhyMoving, marketPulse, marketPulseLoading, marketPulseError, onRetryMarketPulse, onStockTap }) => {
   if (loading) {
     return (
       <div style={{
@@ -2291,6 +2292,17 @@ const BriefingTab = ({ briefer, loading, watchlistStocks, expandedTracker, onTog
           {briefer.headline}
         </div>
       </div>
+
+      {/* Market Pulse */}
+      <MarketPulseCard
+        headlines={marketPulse?.headlines || []}
+        citations={marketPulse?.citations || []}
+        loading={marketPulseLoading}
+        error={marketPulseError}
+        onRetry={onRetryMarketPulse}
+        onStockTap={onStockTap}
+        cachedAt={marketPulse?.cachedAt}
+      />
 
       {/* Ask the Briefer — Question Cards */}
       {briefer.questions?.length > 0 && (
@@ -2425,6 +2437,10 @@ const MobileIntelligenceHub = ({
   onRemoveStock,
   onAddStock,
   onWhyMoving,
+  marketPulse,
+  marketPulseLoading,
+  marketPulseError,
+  onRetryMarketPulse,
 }) => {
   const [activeTab, setActiveTab] = useState('briefing');
   const [expandedSymbol, setExpandedSymbol] = useState(null);
@@ -2575,6 +2591,14 @@ const MobileIntelligenceHub = ({
             onAddStock={onAddStock}
             allAssets={allAssets}
             onWhyMoving={onWhyMoving}
+            marketPulse={marketPulse}
+            marketPulseLoading={marketPulseLoading}
+            marketPulseError={marketPulseError}
+            onRetryMarketPulse={onRetryMarketPulse}
+            onStockTap={(symbol) => {
+              const asset = allAssets.find(a => a.symbol?.toUpperCase() === symbol.toUpperCase());
+              if (asset) handleOpenResearch(asset);
+            }}
           />
         ) : (
           <DiscoverTab
@@ -2791,6 +2815,11 @@ const ResearchLandingPage = ({
   // ─── Why Is It Moving? popup ───────────────────────────
   const [whyMovingTarget, setWhyMovingTarget] = useState(null);
 
+  // ─── Market Pulse ─────────────────────────────────────
+  const [marketPulse, setMarketPulse] = useState(null);
+  const [marketPulseLoading, setMarketPulseLoading] = useState(true);
+  const [marketPulseError, setMarketPulseError] = useState(false);
+
   // ─── All assets for search ───────────────────────────────
   const allAssets = useMemo(() => [...stocksData, ...cryptoData], [stocksData, cryptoData]);
 
@@ -2939,6 +2968,29 @@ const ResearchLandingPage = ({
   useEffect(() => {
     fetchEconomicEvents();
   }, [fetchEconomicEvents]);
+
+  // ─── Market Pulse fetch ────────────────────────────────────
+  const fetchMarketPulse = useCallback(async () => {
+    setMarketPulseLoading(true);
+    setMarketPulseError(false);
+    try {
+      const res = await fetch('/api/market-pulse');
+      const data = await res.json();
+      if (data.success) {
+        setMarketPulse(data.data);
+      } else {
+        setMarketPulseError(true);
+      }
+    } catch {
+      setMarketPulseError(true);
+    } finally {
+      setMarketPulseLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchMarketPulse();
+  }, [fetchMarketPulse]);
 
   // ─── AI Summary (desktop) ─────────────────────────────────
   useEffect(() => {
@@ -3527,6 +3579,10 @@ const ResearchLandingPage = ({
           onRemoveStock={handleRemoveFromWatchlist}
           onAddStock={handleAddToWatchlist}
           onWhyMoving={(target) => setWhyMovingTarget(target)}
+          marketPulse={marketPulse}
+          marketPulseLoading={marketPulseLoading}
+          marketPulseError={marketPulseError}
+          onRetryMarketPulse={fetchMarketPulse}
         />
         <WeeklyReport
           visible={showWeeklyReport}
@@ -3693,6 +3749,19 @@ const ResearchLandingPage = ({
           </div>
         </div>
       </motion.div>
+
+      {/* ═══ Market Pulse ═══ */}
+      <div style={{ margin: '16px 0' }}>
+        <MarketPulseCard
+          headlines={marketPulse?.headlines || []}
+          citations={marketPulse?.citations || []}
+          loading={marketPulseLoading}
+          error={marketPulseError}
+          onRetry={fetchMarketPulse}
+          onStockTap={(symbol) => handleOpenResearch({ symbol, type: 'stock' })}
+          cachedAt={marketPulse?.cachedAt}
+        />
+      </div>
 
       {/* ═══ ZONE 2: Research Tools ═══ */}
       <SectionDivider label="RESEARCH TOOLS" />
