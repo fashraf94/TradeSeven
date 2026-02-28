@@ -6,6 +6,7 @@ import { getTopMoversWithNews, getMarketNews } from '../../services/eodhdAPI';
 
 import { useAssetResearch } from '../../hooks/useAssetResearch';
 import AssetResearchModal from '../draft/AssetResearchModal';
+import WhyMovingPopup from './WhyMovingPopup';
 
 // ─── Utilities ───────────────────────────────────────────────
 const safeNumber = (val, fallback = 0) => {
@@ -225,7 +226,7 @@ const SentimentPulse = ({ sentiment }) => {
 };
 
 // ─── MoverRow ────────────────────────────────────────────────
-const MoverRow = ({ symbol, name, change, isGainer }) => {
+const MoverRow = ({ symbol, name, change, isGainer, onWhyMoving }) => {
   const accentColor = isGainer ? C.green : C.red;
   const sign = isGainer ? '+' : '';
   return (
@@ -269,6 +270,24 @@ const MoverRow = ({ symbol, name, change, isGainer }) => {
       }}>
         {sign}{safeNumber(change, 0).toFixed(1)}%
       </span>
+      {onWhyMoving && (
+        <button
+          onClick={(e) => { e.stopPropagation(); onWhyMoving(); }}
+          style={{
+            background: 'rgba(0, 217, 255, 0.08)',
+            border: '1px solid rgba(0, 217, 255, 0.15)',
+            borderRadius: '8px',
+            color: C.cyan,
+            fontSize: '10px',
+            fontWeight: 600,
+            padding: '2px 6px',
+            cursor: 'pointer',
+            flexShrink: 0,
+          }}
+        >
+          Why?
+        </button>
+      )}
     </div>
   );
 };
@@ -1359,7 +1378,7 @@ const QuestionCard = ({ question, index, buildMarketContextString }) => {
 };
 
 // ─── TrackerStockCard (V2) ──────────────────────────────────
-const TrackerStockCard = ({ stock, expanded, onToggle, trackerData, trackerLoading, onRemove }) => {
+const TrackerStockCard = ({ stock, expanded, onToggle, trackerData, trackerLoading, onRemove, onWhyMoving }) => {
   const pct = safeNumber(stock.percentChange, 0);
   const isPositive = pct >= 0;
 
@@ -1424,6 +1443,25 @@ const TrackerStockCard = ({ stock, expanded, onToggle, trackerData, trackerLoadi
           }}>
             {statusLabel}
           </span>
+          {onWhyMoving && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onWhyMoving(); }}
+              style={{
+                background: 'rgba(0, 217, 255, 0.08)',
+                border: '1px solid rgba(0, 217, 255, 0.15)',
+                borderRadius: '6px',
+                color: C.cyan,
+                fontSize: '8px',
+                fontWeight: 700,
+                letterSpacing: '0.05em',
+                padding: '2px 6px',
+                cursor: 'pointer',
+                flexShrink: 0,
+              }}
+            >
+              WHY?
+            </button>
+          )}
           {onRemove && (
             <button
               onClick={(e) => { e.stopPropagation(); onRemove(stock.symbol); }}
@@ -1526,6 +1564,7 @@ const TrackerSection = ({ watchlistStocks, expandedTracker, onToggleTracker, tra
             trackerData={trackerCache[stock.symbol]}
             trackerLoading={trackerLoading}
             onRemove={onRemoveStock}
+            onWhyMoving={() => setWhyMovingTarget({ symbol: stock.symbol, name: stock.name, change: safeNumber(stock.percentChange, 0), price: stock.price })}
           />
         ))}
       </div>
@@ -1700,6 +1739,7 @@ const DesktopTrackerSection = ({
             trackerData={trackerCache[stock.symbol]}
             trackerLoading={trackerLoading === stock.symbol}
             onRemove={onRemoveStock}
+            onWhyMoving={() => setWhyMovingTarget({ symbol: stock.symbol, name: stock.name, change: safeNumber(stock.percentChange, 0), price: stock.price })}
           />
         ))}
       </div>
@@ -2744,6 +2784,9 @@ const ResearchLandingPage = ({
   // ─── Asset Research Modal ────────────────────────────────
   const { researchAsset, isOpen, showResearch, hideResearch, getModalProps } = useAssetResearch();
 
+  // ─── Why Is It Moving? popup ───────────────────────────
+  const [whyMovingTarget, setWhyMovingTarget] = useState(null);
+
   // ─── All assets for search ───────────────────────────────
   const allAssets = useMemo(() => [...stocksData, ...cryptoData], [stocksData, cryptoData]);
 
@@ -3609,6 +3652,7 @@ const ResearchLandingPage = ({
                   name={stock.name}
                   change={safeNumber(stock.percentChange || stock.change24h, 0)}
                   isGainer={true}
+                  onWhyMoving={() => setWhyMovingTarget({ symbol: stock.symbol, name: stock.name, change: safeNumber(stock.percentChange || stock.change24h, 0), price: stock.price })}
                 />
               ))}
             </div>
@@ -3628,6 +3672,7 @@ const ResearchLandingPage = ({
                   name={stock.name}
                   change={safeNumber(stock.percentChange || stock.change24h, 0)}
                   isGainer={false}
+                  onWhyMoving={() => setWhyMovingTarget({ symbol: stock.symbol, name: stock.name, change: safeNumber(stock.percentChange || stock.change24h, 0), price: stock.price })}
                 />
               ))}
             </div>
@@ -3776,6 +3821,16 @@ const ResearchLandingPage = ({
           showActionButton={false}
         />
       )}
+
+      {/* ═══ Why Is It Moving? Popup ═══ */}
+      <WhyMovingPopup
+        symbol={whyMovingTarget?.symbol}
+        name={whyMovingTarget?.name}
+        change={whyMovingTarget?.change}
+        price={whyMovingTarget?.price}
+        isOpen={!!whyMovingTarget}
+        onClose={() => setWhyMovingTarget(null)}
+      />
     </div>
   );
 };
