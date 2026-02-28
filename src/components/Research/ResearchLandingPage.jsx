@@ -1532,7 +1532,7 @@ const TrackerStockCard = ({ stock, expanded, onToggle, trackerData, trackerLoadi
 };
 
 // ─── TrackerSection (V2) ────────────────────────────────────
-const TrackerSection = ({ watchlistStocks, expandedTracker, onToggleTracker, trackerCache, trackerLoading, onRemoveStock, onAddStock, allAssets }) => {
+const TrackerSection = ({ watchlistStocks, expandedTracker, onToggleTracker, trackerCache, trackerLoading, onRemoveStock, onAddStock, allAssets, onWhyMoving }) => {
   const [showAddStock, setShowAddStock] = useState(false);
   const [addStockSearch, setAddStockSearch] = useState('');
 
@@ -1564,7 +1564,7 @@ const TrackerSection = ({ watchlistStocks, expandedTracker, onToggleTracker, tra
             trackerData={trackerCache[stock.symbol]}
             trackerLoading={trackerLoading}
             onRemove={onRemoveStock}
-            onWhyMoving={() => setWhyMovingTarget({ symbol: stock.symbol, name: stock.name, change: safeNumber(stock.percentChange, 0), price: stock.price })}
+            onWhyMoving={() => onWhyMoving?.({ symbol: stock.symbol, name: stock.name, change: safeNumber(stock.percentChange, 0), price: stock.price })}
           />
         ))}
       </div>
@@ -1704,6 +1704,7 @@ const DesktopTrackerSection = ({
   onRemoveStock,
   onAddStock,
   allAssets,
+  onWhyMoving,
 }) => {
   const [showAddStock, setShowAddStock] = useState(false);
   const [addStockSearch, setAddStockSearch] = useState('');
@@ -1739,7 +1740,7 @@ const DesktopTrackerSection = ({
             trackerData={trackerCache[stock.symbol]}
             trackerLoading={trackerLoading === stock.symbol}
             onRemove={onRemoveStock}
-            onWhyMoving={() => setWhyMovingTarget({ symbol: stock.symbol, name: stock.name, change: safeNumber(stock.percentChange, 0), price: stock.price })}
+            onWhyMoving={() => onWhyMoving?.({ symbol: stock.symbol, name: stock.name, change: safeNumber(stock.percentChange, 0), price: stock.price })}
           />
         ))}
       </div>
@@ -2217,7 +2218,7 @@ const WeeklyReport = ({ visible, onClose, reportData, reportLoading }) => {
 };
 
 // ─── BriefingTab (V2) ───────────────────────────────────────
-const BriefingTab = ({ briefer, loading, watchlistStocks, expandedTracker, onToggleTracker, trackerCache, trackerLoading, onShowWeeklyReport, buildMarketContextString, onRemoveStock, onAddStock, allAssets }) => {
+const BriefingTab = ({ briefer, loading, watchlistStocks, expandedTracker, onToggleTracker, trackerCache, trackerLoading, onShowWeeklyReport, buildMarketContextString, onRemoveStock, onAddStock, allAssets, onWhyMoving }) => {
   if (loading) {
     return (
       <div style={{
@@ -2324,6 +2325,7 @@ const BriefingTab = ({ briefer, loading, watchlistStocks, expandedTracker, onTog
         onRemoveStock={onRemoveStock}
         onAddStock={onAddStock}
         allAssets={allAssets}
+        onWhyMoving={onWhyMoving}
       />
 
       {/* Weekly Report trigger */}
@@ -2571,6 +2573,7 @@ const MobileIntelligenceHub = ({
             onRemoveStock={onRemoveStock}
             onAddStock={onAddStock}
             allAssets={allAssets}
+            onWhyMoving={(target) => setWhyMovingTarget(target)}
           />
         ) : (
           <DiscoverTab
@@ -3802,6 +3805,7 @@ const ResearchLandingPage = ({
           onRemoveStock={handleRemoveFromWatchlist}
           onAddStock={handleAddToWatchlist}
           allAssets={allAssets}
+          onWhyMoving={(target) => setWhyMovingTarget(target)}
         />
         <EconomicEventsBotCard buildMarketContextString={buildMarketContextString} />
       </div>
