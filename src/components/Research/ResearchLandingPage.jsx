@@ -2424,6 +2424,7 @@ const MobileIntelligenceHub = ({
   setShowWeeklyReport,
   onRemoveStock,
   onAddStock,
+  onWhyMoving,
 }) => {
   const [activeTab, setActiveTab] = useState('briefing');
   const [expandedSymbol, setExpandedSymbol] = useState(null);
@@ -2573,7 +2574,7 @@ const MobileIntelligenceHub = ({
             onRemoveStock={onRemoveStock}
             onAddStock={onAddStock}
             allAssets={allAssets}
-            onWhyMoving={(target) => setWhyMovingTarget(target)}
+            onWhyMoving={onWhyMoving}
           />
         ) : (
           <DiscoverTab
@@ -3525,6 +3526,7 @@ const ResearchLandingPage = ({
           setShowWeeklyReport={setShowWeeklyReport}
           onRemoveStock={handleRemoveFromWatchlist}
           onAddStock={handleAddToWatchlist}
+          onWhyMoving={(target) => setWhyMovingTarget(target)}
         />
         <WeeklyReport
           visible={showWeeklyReport}
