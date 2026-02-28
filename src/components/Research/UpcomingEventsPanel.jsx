@@ -63,6 +63,7 @@ const UpcomingEventsPanel = ({
 }) => {
   const [activeTab, setActiveTab] = useState('economic');
   const [nextWeekOpen, setNextWeekOpen] = useState(false);
+  const [expandedEventId, setExpandedEventId] = useState(null);
 
   const isEconomic = activeTab === 'economic';
   const loading = isEconomic ? economicLoading : earningsLoading;
@@ -110,59 +111,146 @@ const UpcomingEventsPanel = ({
     </div>
   );
 
-  // ─── Economic event row ──────────────────────────────────
+  // ─── Economic event row (expandable) ─────────────────────
   const renderEconomicEvent = (ev, i) => {
     const dotColor = IMPACT_COLORS[ev.impact] || C.textMuted;
+    const eventId = `${ev.date}-${ev.event}`;
+    const isExpanded = expandedEventId === eventId;
+
     return (
-      <div key={i} style={{
-        display: 'flex',
-        alignItems: 'flex-start',
-        gap: '8px',
-        padding: '6px 0',
+      <div key={eventId} style={{
         borderBottom: `1px solid ${C.border}`,
       }}>
-        {/* Impact dot */}
-        <div style={{
-          width: '6px',
-          height: '6px',
-          borderRadius: '50%',
-          background: dotColor,
-          flexShrink: 0,
-          marginTop: '5px',
-        }} />
-
-        {/* Day abbreviation */}
-        <span style={{
-          fontSize: '9px',
-          fontWeight: 700,
-          color: C.textMuted,
-          width: '28px',
-          flexShrink: 0,
-          marginTop: '2px',
-          letterSpacing: '0.5px',
-        }}>
-          {shortDay(ev.day)}
-        </span>
-
-        {/* Event name + time */}
-        <div style={{ flex: 1, minWidth: 0 }}>
+        {/* Collapsed row — tappable */}
+        <div
+          onClick={() => setExpandedEventId(isExpanded ? null : eventId)}
+          style={{
+            display: 'flex',
+            alignItems: 'flex-start',
+            gap: '8px',
+            padding: '6px 0',
+            cursor: 'pointer',
+          }}
+        >
+          {/* Impact dot */}
           <div style={{
-            fontSize: '12px',
-            fontWeight: 600,
-            color: C.white,
-            lineHeight: 1.3,
+            width: '6px',
+            height: '6px',
+            borderRadius: '50%',
+            background: dotColor,
+            flexShrink: 0,
+            marginTop: '5px',
+          }} />
+
+          {/* Day abbreviation */}
+          <span style={{
+            fontSize: '9px',
+            fontWeight: 700,
+            color: C.textMuted,
+            width: '28px',
+            flexShrink: 0,
+            marginTop: '2px',
+            letterSpacing: '0.5px',
           }}>
-            {ev.event}
-          </div>
-          {ev.time && (
-            <span style={{
-              fontSize: '10px',
-              color: C.textMuted,
+            {shortDay(ev.day)}
+          </span>
+
+          {/* Event name + time */}
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{
+              fontSize: '12px',
+              fontWeight: 600,
+              color: isExpanded ? C.cyan : C.white,
+              lineHeight: 1.3,
+              transition: 'color 0.15s ease',
             }}>
-              {ev.time}
-            </span>
-          )}
+              {ev.event}
+            </div>
+            {ev.time && (
+              <span style={{
+                fontSize: '10px',
+                color: C.textMuted,
+              }}>
+                {ev.time}
+              </span>
+            )}
+          </div>
+
+          {/* Expand chevron */}
+          <span style={{
+            fontSize: '8px',
+            color: C.textMuted,
+            transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)',
+            transition: 'transform 0.2s ease',
+            flexShrink: 0,
+            marginTop: '4px',
+          }}>
+            {'\u25BC'}
+          </span>
         </div>
+
+        {/* Expanded detail — AnimatePresence */}
+        <AnimatePresence initial={false}>
+          {isExpanded && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.25, ease: 'easeInOut' }}
+              style={{ overflow: 'hidden' }}
+            >
+              <div style={{ padding: '4px 0 8px 14px' }}>
+                {/* Stat boxes row */}
+                <div style={{ display: 'flex', gap: '8px', marginBottom: '6px' }}>
+                  {[
+                    { label: 'Previous', value: ev.previous },
+                    { label: 'Estimate', value: ev.estimate },
+                    { label: 'Actual', value: ev.actual },
+                  ].map(({ label, value }) => (
+                    <div key={label} style={{
+                      flex: 1,
+                      background: 'rgba(255,255,255,0.03)',
+                      borderRadius: '6px',
+                      padding: '5px 6px',
+                      textAlign: 'center',
+                    }}>
+                      <div style={{
+                        fontSize: '8px',
+                        fontWeight: 600,
+                        color: C.textMuted,
+                        letterSpacing: '0.5px',
+                        marginBottom: '2px',
+                        textTransform: 'uppercase',
+                      }}>
+                        {label}
+                      </div>
+                      <div style={{
+                        fontSize: '12px',
+                        fontWeight: 700,
+                        fontFamily: 'monospace',
+                        color: value == null ? C.textMuted : (label === 'Actual' ? C.cyan : C.white),
+                        fontStyle: value == null ? 'italic' : 'normal',
+                      }}>
+                        {value == null ? 'Pending' : value}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Brief text */}
+                {ev.brief && (
+                  <div style={{
+                    fontSize: '10px',
+                    color: C.textSecondary,
+                    lineHeight: 1.5,
+                  }}>
+                    {ev.brief}
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
     );
   };

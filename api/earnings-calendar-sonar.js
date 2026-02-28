@@ -10,7 +10,7 @@ import { getFromCache, setInCache } from './_utils/serverCache.js';
 // System prompt for Sonar — structured earnings calendar
 // =============================================================================
 
-const SYSTEM_PROMPT = `You are an earnings calendar analyst for MarketClash, an educational stock analysis platform. Generate a structured earnings calendar as JSON.
+const SYSTEM_PROMPT = `You are an earnings calendar analyst for MarketClash. Generate a structured earnings calendar for the most important upcoming reports as JSON.
 
 Respond ONLY with valid JSON, no markdown fences, no preamble.
 
@@ -18,34 +18,35 @@ Schema:
 {
   "thisWeek": [
     {
-      "date": "2026-03-02",
+      "date": "2026-03-03",
       "day": "Monday",
-      "timing": "BMO",
-      "symbol": "AAPL",
-      "name": "Apple Inc.",
-      "significance": "high" | "medium" | "low",
-      "watchFor": "One sentence on the key metric or theme investors are watching",
-      "sectorImpact": "One sentence on broader sector implications"
+      "timing": "AMC" or "BMO",
+      "symbol": "CRM",
+      "name": "Salesforce",
+      "significance": "high" or "medium" or "low",
+      "watchFor": "One sentence on the key metric or narrative investors are watching",
+      "sectorImpact": "One sentence on how this report could affect the broader sector"
     }
   ],
-  "nextWeek": [],
-  "spotlight": "One sentence summary of the single most important earnings report and why it matters"
+  "nextWeek": [...same schema...],
+  "spotlight": "2-3 sentences on the single most important earnings report in the thisWeek array and why it matters"
 }
 
-Rules:
-- Include notable US earnings reports for this week and next week
-- Focus on large-cap, widely-followed companies and any mid-cap names with outsized market impact
-- "timing": "BMO" = before market open, "AMC" = after market close
-- "significance": high = mega-cap or sector bellwether (AAPL, NVDA, JPM, etc.), medium = large-cap with sector relevance, low = notable but narrower impact
-- Order events chronologically within each week
-- "watchFor" should highlight the specific metric or narrative investors care about (e.g., AI revenue growth, credit quality, same-store sales), not generic descriptions
-- Do NOT include very small companies unless they have outsized market relevance
-- Aim for 8-15 companies per week during earnings season, fewer during off-season`;
+CRITICAL RULES FOR STOCK SELECTION:
+- ONLY include S&P 500 companies or widely-followed large-cap growth stocks
+- Prioritize: mega-caps (AAPL, MSFT, NVDA, AMZN, META, GOOGL, TSLA, AVGO), major retailers (TGT, COST, WMT), major financials (JPM, GS, MS), and sector bellwethers
+- If a company has less than $10B market cap, do NOT include it unless it is exceptionally notable
+- Include 8-15 companies per week — quality and relevance over quantity
+- significance = "high" ONLY for mega-caps, major retailers, or companies whose reports historically move entire sectors
+- The "spotlight" field MUST reference a company that appears in the "thisWeek" array — never spotlight a company from a different week or one not in the results
+- "watchFor" must be specific to THIS earnings report — reference analyst consensus, recent guidance, or specific business metrics. NOT generic statements like "revenue growth"
+- Order by date, then by significance (high first) within each day
+- Double-check that every symbol you include is actually reporting earnings in the specified week`;
 
 // Module-level stale fallback
 let lastSuccessfulResponse = null;
 
-const CACHE_KEY = 'earnings_calendar_sonar';
+const CACHE_KEY = 'earnings_calendar_sonar_v2';
 const CACHE_TTL = 14400; // 4 hours
 
 // =============================================================================
@@ -71,7 +72,7 @@ export default async function handler(req, res) {
     weekday: 'long', month: 'long', day: 'numeric', year: 'numeric',
   });
 
-  const userPrompt = `What are the most notable US earnings reports scheduled for this week and next week? Today is ${dateStr}. Focus on large-cap and market-moving companies. Include the reporting date, before/after market timing, and what investors are watching for each report.`;
+  const userPrompt = `What are the most important earnings reports from S&P 500 and major large-cap companies scheduled for this week and next week? Today is ${dateStr}. Focus ONLY on well-known, widely-followed companies. Do NOT include small-cap or obscure names. Include the exact reporting date and whether it's before market open (BMO) or after market close (AMC).`;
 
   try {
     console.log('[EarningsCalendar] Fetching calendar via Sonar');
