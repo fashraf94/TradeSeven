@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { STOCKS, CRYPTO } from '../../../data/assets';
 import { useIsMobile } from '../../../hooks/useIsMobile';
@@ -31,7 +32,7 @@ export default function AddToWatchlistModal({
 
   if (!isOpen) return null;
 
-  return (
+  return createPortal(
     <AnimatePresence>
       <motion.div
         initial={{ opacity: 0 }}
@@ -278,6 +279,7 @@ export default function AddToWatchlistModal({
           </div>
         </motion.div>
       </motion.div>
-    </AnimatePresence>
+    </AnimatePresence>,
+    document.body
   );
 }
