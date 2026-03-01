@@ -1128,7 +1128,7 @@ export const PRODUCT_TEARDOWNS = {
       { name: 'Paper Cups', category: 'materials', supplierTicker: 'IP', supplierName: 'International Paper', importance: 'high', description: 'Billions of cups annually. International Paper and Georgia-Pacific are major suppliers.' },
       { name: 'Plastic Lids & Straws', category: 'materials', supplierTicker: 'BERY', supplierName: 'Berry Global', importance: 'medium', description: 'Transitioning to recyclable materials.' },
       { name: 'Espresso Machines', category: 'manufacturing', supplierTicker: null, supplierName: 'Thermoplan', importance: 'critical', description: 'Custom Mastrena machines. Equipment standardization ensures consistent quality globally.' },
-      { name: 'POS & Mobile Systems', category: 'software', supplierTicker: 'SQ', supplierName: 'Block / Oracle', importance: 'high', description: 'Square/Block processes many payments. Starbucks app is one of the most-used mobile payment platforms.' },
+      { name: 'POS & Mobile Systems', category: 'software', supplierTicker: 'XYZ', supplierName: 'Block / Oracle', importance: 'high', description: 'Square/Block processes many payments. Starbucks app is one of the most-used mobile payment platforms.' },
     ],
     investmentAngles: [
       'Coffee commodity prices directly impact Starbucks margins - watch ICE coffee futures',

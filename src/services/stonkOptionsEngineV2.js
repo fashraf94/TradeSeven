@@ -24,7 +24,7 @@ export const STONK_OPTIONS_CONFIG = {
       description: 'Blue chips - steady movers'
     },
     growth: {
-      stocks: ['NVDA', 'AMD', 'META', 'AMZN', 'NFLX', 'CRM', 'ADBE', 'SHOP', 'SQ', 'PYPL'],
+      stocks: ['NVDA', 'AMD', 'META', 'AMZN', 'NFLX', 'CRM', 'ADBE', 'SHOP', 'XYZ', 'PYPL'],
       multiplier: 1.0,
       strikeIncrements: [0.02, 0.05, 0.08, 0.12, 0.18], // 2% to 18%
       label: 'Growth',

@@ -8,6 +8,7 @@ import { getStockAnalysisData } from './_utils/marketDataCache.js';
 import { buildIntelligencePrompt, detectComparisonSymbols } from './_utils/intelligencePrompt.js';
 import { getSupplyChainCoverage } from './_utils/supplyChainLookup.js';
 import { getStockContext, TICKERS } from './_utils/stockIntelligenceData.js';
+import { querySonar } from './helpers/sonar.js';
 
 const LOG_PREFIX = '[StockIntelligence]';
 
@@ -209,6 +210,39 @@ export default async function handler(req, res) {
       comparisonData
     );
 
+    // 7b. Sonar enrichment for unsupported stocks
+    let sonarContext = '';
+    let sonarCitations = [];
+    if (!isSupported && !isComparison) {
+      try {
+        const dateStr = new Date().toLocaleDateString('en-US', {
+          weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
+        });
+        const { text, citations } = await querySonar(
+          'You are a financial research assistant. Provide factual, data-rich context.',
+          `Provide a comprehensive financial snapshot for ${cleanSymbol}:
+1. RECENT EARNINGS: Latest quarterly results — revenue, EPS (beat/miss), YoY growth
+2. KEY METRICS: Current P/E, market cap, revenue growth rate, margins, forward guidance
+3. COMPETITIVE POSITION: Main competitors, market share, advantages or threats
+4. RECENT NEWS: Most significant developments in the last 30 days
+5. MANAGEMENT SIGNALS: Recent guidance changes, strategic pivots, executive commentary
+Focus on specific numbers. Today is ${dateStr}.`,
+          { searchRecencyFilter: 'month', maxTokens: 1200, temperature: 0.2 }
+        );
+        if (text) {
+          sonarContext = `\n\n## RECENT FINANCIAL INTELLIGENCE (web research)\n${text}`;
+          sonarCitations = (citations || []).slice(0, 5);
+          if (sonarCitations.length > 0) {
+            sonarContext += `\n\nSources: ${sonarCitations.join(', ')}`;
+          }
+        }
+        console.log(`${LOG_PREFIX} Sonar enrichment for ${cleanSymbol}: ${text?.length || 0} chars`);
+      } catch (sonarErr) {
+        console.warn(`${LOG_PREFIX} Sonar enrichment failed for ${cleanSymbol}:`, sonarErr.message);
+        // Continue without Sonar — falls back to EODHD-only (same as current behavior)
+      }
+    }
+
     // 8. Call Claude API
     const maxTokens = isComparison ? MAX_TOKENS_COMPARISON : MAX_TOKENS_BASE;
 
@@ -223,7 +257,7 @@ export default async function handler(req, res) {
         model: CLAUDE_MODEL,
         max_tokens: maxTokens,
         system: systemPrompt,
-        messages: [{ role: 'user', content: userPrompt }],
+        messages: [{ role: 'user', content: userPrompt + sonarContext }],
       }),
     });
 
@@ -319,7 +353,12 @@ export default async function handler(req, res) {
     // 11. Supply chain coverage check
     const scCoverage = getSupplyChainCoverage(cleanSymbol);
 
-    // 12. Return structured response
+    // 12. Tag intelligence mode for unsupported stocks
+    if (!isSupported) {
+      analysis.intelligenceMode = sonarContext ? 'sonar-enhanced' : 'basic';
+    }
+
+    // 13. Return structured response
     return res.status(200).json({
       success: true,
       analysis,
@@ -340,6 +379,7 @@ export default async function handler(req, res) {
         ],
         model: CLAUDE_MODEL,
         usage,
+        sonarCitations,
       },
     });
   } catch (error) {

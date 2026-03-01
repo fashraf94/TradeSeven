@@ -27,10 +27,12 @@ const HeatmapView = ({ sectors, global, onSectorTap, onStockTap, compact }) => {
   const [hoveredTile, setHoveredTile] = useState(null);
   const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
 
-  // Count total stock tiles for dynamic height
+  const TILES_PER_SECTOR = 4;
+
+  // Count total stock tiles for dynamic height (capped at TILES_PER_SECTOR per sector)
   const totalTiles = useMemo(() => {
     return Object.values(sectors || {}).reduce(
-      (sum, s) => sum + (s.leaders?.length || 0), 0
+      (sum, s) => sum + Math.min(s.leaders?.length || 0, TILES_PER_SECTOR), 0
     );
   }, [sectors]);
 
@@ -48,8 +50,8 @@ const HeatmapView = ({ sectors, global, onSectorTap, onStockTap, compact }) => {
       const headerArea = sectorCount * 20 * w;
       const rawHeight = (tileArea + headerArea) / Math.max(w, 1);
       // Clamp between reasonable bounds
-      const minH = compact ? 280 : 350;
-      const maxH = compact ? 500 : 650;
+      const minH = compact ? 340 : 420;
+      const maxH = compact ? 520 : 680;
       const h = Math.round(Math.max(minH, Math.min(maxH, rawHeight)));
       setDimensions({ width: w, height: h });
     };
@@ -61,6 +63,8 @@ const HeatmapView = ({ sectors, global, onSectorTap, onStockTap, compact }) => {
   }, [compact, totalTiles, sectors]);
 
   // Build hierarchy data from sectors object
+  // Each sector is capped at TILES_PER_SECTOR leaders and padded with invisible
+  // placeholders so every sector gets roughly equal treemap area.
   const treeData = useMemo(() => {
     const sectorArray = Object.entries(sectors || {}).map(([id, s]) => ({
       ...s,
@@ -70,22 +74,37 @@ const HeatmapView = ({ sectors, global, onSectorTap, onStockTap, compact }) => {
     return {
       name: 'market',
       children: sectorArray
-        .map(sector => ({
-          name: sector.name,
-          sectorId: sector.sectorId,
-          sectorColor: sector.sectorColor,
-          quadrant: sector.quadrant?.quadrant,
-          gildedCage: sector.gildedCage?.detected,
-          children: (sector.leaders || []).map(leader => ({
+        .map(sector => {
+          const realChildren = (sector.leaders || []).slice(0, TILES_PER_SECTOR).map(leader => ({
             name: leader.symbol,
             symbol: leader.symbol,
             sectorId: sector.sectorId,
             sectorName: sector.name,
-            value: 1, // Equal weight
-            // Use sector-level 1W performance for color (MVP)
-            change: sector.performance?.week1 || 0,
-          })),
-        }))
+            value: 1,
+            change: leader.relativePerformance ?? sector.performance?.week1 ?? 0,
+          }));
+
+          // Pad with invisible placeholders so every sector has TILES_PER_SECTOR children
+          const padCount = TILES_PER_SECTOR - realChildren.length;
+          for (let i = 0; i < padCount; i++) {
+            realChildren.push({
+              name: `_pad_${sector.sectorId}_${i}`,
+              value: 1,
+              isPlaceholder: true,
+              sectorId: sector.sectorId,
+              change: sector.performance?.week1 || 0,
+            });
+          }
+
+          return {
+            name: sector.name,
+            sectorId: sector.sectorId,
+            sectorColor: sector.sectorColor,
+            quadrant: sector.quadrant?.quadrant,
+            gildedCage: sector.gildedCage?.detected,
+            children: realChildren,
+          };
+        })
         .filter(s => s.children.length > 0),
     };
   }, [sectors]);
@@ -102,9 +121,9 @@ const HeatmapView = ({ sectors, global, onSectorTap, onStockTap, compact }) => {
     treemap()
       .size([width, height])
       .tile(treemapSquarify)
-      .paddingOuter(3)
-      .paddingInner(2)
-      .paddingTop(20)(root);
+      .paddingOuter(2)
+      .paddingInner(1)
+      .paddingTop(18)(root);
 
     return root;
   }, [treeData, dimensions]);
@@ -140,7 +159,7 @@ const HeatmapView = ({ sectors, global, onSectorTap, onStockTap, compact }) => {
 
   if (!dimensions.width) {
     return (
-      <div ref={containerRef} style={{ width: '100%', minHeight: compact ? 280 : 350 }} />
+      <div ref={containerRef} style={{ width: '100%', minHeight: compact ? 340 : 420 }} />
     );
   }
 
@@ -148,7 +167,7 @@ const HeatmapView = ({ sectors, global, onSectorTap, onStockTap, compact }) => {
     return (
       <div ref={containerRef} style={{
         width: '100%',
-        height: compact ? 280 : 350,
+        height: compact ? 340 : 420,
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
@@ -224,6 +243,19 @@ const HeatmapView = ({ sectors, global, onSectorTap, onStockTap, compact }) => {
                 const y = stockNode.y0;
                 const w = stockNode.x1 - stockNode.x0;
                 const h = stockNode.y1 - stockNode.y0;
+
+                // Skip rendering for invisible padding tiles
+                if (stockNode.data.isPlaceholder) {
+                  return (
+                    <rect
+                      key={stockNode.data.name}
+                      x={x} y={y} width={w} height={h}
+                      fill="transparent"
+                      style={{ pointerEvents: 'none' }}
+                    />
+                  );
+                }
+
                 const change = stockNode.data.change || 0;
                 const color = colorScale(change);
                 const showLabel = w > 35 && h > 20;

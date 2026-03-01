@@ -97,6 +97,7 @@ function enrichSectors(engineSectors, rawSectors) {
         above50: l.above50 !== undefined ? l.above50 : true,
         isBellwether: !!BELLWETHER_MAP[l.symbol]?.isBellwether,
         outperforming: l.outperforming !== undefined ? l.outperforming : true,
+        relativePerformance: l.relativePerformance,
       })),
       insight: raw?.insight || '',
       sectorColor: sectorDef?.color || '#8b949e',
@@ -200,7 +201,7 @@ const SHIMMER_STYLE = `
  * @param {Object}   props
  * @param {function} props.onBack - Navigate back to Research landing page
  */
-const MoneyMapScreen = ({ onBack }) => {
+const MoneyMapScreen = ({ onBack, stocksData }) => {
   const [data, setData] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -350,6 +351,22 @@ const MoneyMapScreen = ({ onBack }) => {
   useEffect(() => {
     if (expandedSectorId) fetchSectorInsight(expandedSectorId);
   }, [expandedSectorId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Look up full stock data from stocksData before opening the research modal
+  const handleStockTap = useCallback((symbol) => {
+    const stockInfo = stocksData?.find(s => s.symbol === symbol);
+    const sector = Object.values(data?.sectors || {}).find(s =>
+      s.leaders?.some(l => l.symbol === symbol)
+    );
+    showResearch({
+      symbol,
+      name: stockInfo?.name || symbol,
+      price: stockInfo?.price || 0,
+      percentChange: stockInfo?.percentChange || 0,
+      sector: sector?.name,
+      type: 'stock',
+    });
+  }, [data, stocksData, showResearch]);
 
   const handleTooltip = (metric) => setTooltipMetric(metric);
   const handleCloseTooltip = () => setTooltipMetric(null);
@@ -568,7 +585,7 @@ const MoneyMapScreen = ({ onBack }) => {
               sectors={data.sectors}
               global={data.global}
               onSectorTap={(sectorId) => handleToggleSector(sectorId)}
-              onStockTap={(symbol) => showResearch({ symbol, type: 'stock' })}
+              onStockTap={handleStockTap}
               compact={isMobile}
             />
           )}
@@ -580,7 +597,7 @@ const MoneyMapScreen = ({ onBack }) => {
             onToggleSector={handleToggleSector}
             onTooltip={handleTooltip}
             sectorInsights={sectorInsights}
-            onStockTap={(symbol) => showResearch({ symbol, type: 'stock' })}
+            onStockTap={handleStockTap}
             hideCollapsed={viewMode === 'heatmap'}
           />
         </div>

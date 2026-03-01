@@ -162,7 +162,7 @@ const SYMBOL_SECTORS = {
   'META': 'tech', 'AMZN': 'tech', 'AMD': 'tech', 'INTC': 'tech', 'TSM': 'tech',
   'NFLX': 'tech', 'CRM': 'tech', 'ADBE': 'tech', 'ORCL': 'tech', 'CSCO': 'tech',
   'AVGO': 'tech', 'QCOM': 'tech', 'TXN': 'tech', 'NOW': 'tech', 'IBM': 'tech',
-  'UBER': 'tech', 'ABNB': 'tech', 'SNAP': 'tech', 'PINS': 'tech', 'SQ': 'tech',
+  'UBER': 'tech', 'ABNB': 'tech', 'SNAP': 'tech', 'PINS': 'tech', 'XYZ': 'tech',
   'SHOP': 'tech', 'PLTR': 'tech', 'SNOW': 'tech', 'DDOG': 'tech', 'ZS': 'tech',
 
   // Financials

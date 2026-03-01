@@ -27,7 +27,7 @@ const STEADY_SYMBOLS = new Set([
 
 const RISKY_SYMBOLS = new Set([
   // High-Growth Tech
-  'NVDA', 'TSLA', 'META', 'AMD', 'CRM', 'NFLX', 'SHOP', 'SQ', 'SNOW', 'PLTR',
+  'NVDA', 'TSLA', 'META', 'AMD', 'CRM', 'NFLX', 'SHOP', 'XYZ', 'SNOW', 'PLTR',
   // Biotech/Pharma
   'MRNA', 'BNTX', 'CRSP',
   // EV/Clean Energy

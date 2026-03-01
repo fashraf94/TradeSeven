@@ -73,7 +73,7 @@ export const PRIORITY_STOCKS = new Set([
   'CSX', 'NSC', 'UNP', 'JBHT', 'XPO', 'ODFL',
 
   // === OTHER NOTABLE ===
-  'V', 'MA', 'PYPL', 'SQ', 'COIN', 'SHOP', 'SNOW', 'PLTR', 'NET',
+  'V', 'MA', 'PYPL', 'XYZ', 'COIN', 'SHOP', 'SNOW', 'PLTR', 'NET',
   'DDOG', 'ZS', 'CRWD', 'PANW', 'NOW', 'WDAY'
 ]);
 
@@ -95,7 +95,7 @@ export const COMPANY_NAMES = {
   'NFLX': 'Netflix', 'AMD': 'AMD', 'INTC': 'Intel', 'CRM': 'Salesforce',
   'ORCL': 'Oracle', 'ADBE': 'Adobe', 'IBM': 'IBM', 'CSCO': 'Cisco',
   // Payments & Fintech
-  'V': 'Visa', 'MA': 'Mastercard', 'PYPL': 'PayPal', 'SQ': 'Block',
+  'V': 'Visa', 'MA': 'Mastercard', 'PYPL': 'PayPal', 'XYZ': 'Block',
   'COIN': 'Coinbase', 'HOOD': 'Robinhood', 'SOFI': 'SoFi', 'AFRM': 'Affirm',
   // Healthcare
   'JNJ': 'Johnson & Johnson', 'UNH': 'UnitedHealth', 'PFE': 'Pfizer',
@@ -154,7 +154,7 @@ export const COMPANY_SECTORS = {
   'MS': 'financial', 'C': 'financial', 'USB': 'financial', 'PNC': 'financial',
   'BLK': 'financial', 'SCHW': 'financial', 'TFC': 'financial', 'STT': 'financial',
   'IBKR': 'financial', 'COF': 'financial', 'AXP': 'financial', 'V': 'financial',
-  'MA': 'financial', 'PYPL': 'financial', 'SQ': 'financial', 'COIN': 'financial',
+  'MA': 'financial', 'PYPL': 'financial', 'XYZ': 'financial', 'COIN': 'financial',
   'HOOD': 'financial', 'SOFI': 'financial', 'AFRM': 'financial',
   // Big Tech & Software
   'AAPL': 'technology', 'MSFT': 'technology', 'GOOGL': 'technology', 'GOOG': 'technology',
