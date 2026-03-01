@@ -342,22 +342,65 @@ export default function PvpCommandCenter({
 
   // --- Enrich positions with live prices and P&L ---
   const positions = useMemo(() => {
-    return rawPositions
-      .map(pos => {
-        const currentPrice = wsPrices[pos.symbol] || restPriceMap[pos.symbol] || null;
-        const pnlPercent = (pos.entryPrice > 0 && currentPrice != null)
-          ? ((currentPrice - pos.entryPrice) / pos.entryPrice) * 100
-          : null;
+    return rawPositions.map(pos => {
+      const currentPrice = wsPrices[pos.symbol] || restPriceMap[pos.symbol] || null;
+      const pnlPercent = (pos.entryPrice > 0 && currentPrice != null)
+        ? ((currentPrice - pos.entryPrice) / pos.entryPrice) * 100
+        : null;
 
-        let progressPercent = null;
-        if (pos.gameType === 'BB' && pos.threshold && pnlPercent != null) {
-          progressPercent = (Math.abs(pnlPercent) / pos.threshold) * 100;
-        }
+      let progressPercent = null;
+      if (pos.gameType === 'BB' && pos.threshold && pnlPercent != null) {
+        progressPercent = (Math.abs(pnlPercent) / pos.threshold) * 100;
+      }
 
-        return { ...pos, currentPrice, pnlPercent, progressPercent };
-      })
-      .sort((a, b) => Math.abs(b.pnlPercent || 0) - Math.abs(a.pnlPercent || 0));
+      return { ...pos, currentPrice, pnlPercent, progressPercent };
+    });
   }, [rawPositions, wsPrices, restPriceMap]);
+
+  // --- Group positions by game, sort within and across groups ---
+  const groupedPositions = useMemo(() => {
+    const groups = new Map();
+
+    positions.forEach(pos => {
+      if (!groups.has(pos.gameId)) {
+        groups.set(pos.gameId, {
+          gameId: pos.gameId,
+          gameType: pos.gameType,
+          battle: pos.battle,
+          battleType: pos.battleType,
+          positions: [],
+          bestPnl: 0,
+        });
+      }
+      const group = groups.get(pos.gameId);
+      group.positions.push(pos);
+      if (Math.abs(pos.pnlPercent || 0) > Math.abs(group.bestPnl)) {
+        group.bestPnl = pos.pnlPercent || 0;
+      }
+    });
+
+    // Sort positions within each group by |P&L| descending
+    groups.forEach(group => {
+      group.positions.sort((a, b) => Math.abs(b.pnlPercent || 0) - Math.abs(a.pnlPercent || 0));
+    });
+
+    // Sort groups by most extreme |P&L| (most action first)
+    return Array.from(groups.values())
+      .sort((a, b) => Math.abs(b.bestPnl) - Math.abs(a.bestPnl));
+  }, [positions]);
+
+  // --- Helper: get opponent name for group header ---
+  const getOpponentName = (battle) => {
+    const isCreator = battle.creatorId === uid ||
+                      battle.creator?.uid === uid ||
+                      battle.creator?.odUserId === uid;
+    if (battle.isSnakeDraft || battle.battleType === 'snake-draft') {
+      return `${battle.players?.length || 0} players`;
+    }
+    return isCreator
+      ? (battle.opponent?.odUsername || battle.opponent?.username || 'Opponent')
+      : (battle.creator?.odUsername || battle.creator?.username || 'Opponent');
+  };
 
   // --- Position tap → navigate to battle ---
   const handlePositionTap = (position) => {
@@ -473,18 +516,56 @@ export default function PvpCommandCenter({
         overflow: 'hidden',
       }}>
         {activeView === 'positions' ? (
-          /* ─── Positions View ─── */
-          positions.length > 0 ? (
+          /* ─── Positions View (grouped by game) ─── */
+          groupedPositions.length > 0 ? (
             <div style={{ maxHeight: '50vh', overflowY: 'auto' }}>
-              {positions.map((pos, idx) => (
-                <PositionRow
-                  key={`${pos.gameId}-${pos.symbol}`}
-                  position={pos}
-                  index={idx}
-                  onTap={handlePositionTap}
-                  isMobile={isMobile}
-                />
-              ))}
+              {groupedPositions.map((group, groupIdx) => {
+                const groupColor = SOURCE_BORDER_COLORS[group.gameType] || '#00d9ff';
+                const groupLabel = group.gameType === 'BB' ? '💣 BaggerBomb'
+                  : group.gameType === 'SD' ? '🏟️ Snake Draft'
+                  : '⚔️ Classic 1v1';
+                const opponentLabel = getOpponentName(group.battle);
+
+                return (
+                  <div key={group.gameId}>
+                    {/* Group Header */}
+                    <div style={{
+                      padding: '8px 12px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      borderBottom: '1px solid rgba(255,255,255,0.06)',
+                      borderLeft: `3px solid ${groupColor}`,
+                      background: 'rgba(255,255,255,0.02)',
+                      marginTop: groupIdx > 0 ? '2px' : 0,
+                    }}>
+                      <span style={{
+                        fontSize: '11px', fontWeight: 600, color: groupColor,
+                        textTransform: 'uppercase', letterSpacing: '0.05em',
+                      }}>
+                        {groupLabel}
+                      </span>
+                      <span style={{ fontSize: '10px', color: '#6e7681' }}>
+                        vs {opponentLabel}
+                      </span>
+                      <span style={{ fontSize: '10px', color: '#6e7681', marginLeft: 'auto' }}>
+                        {group.positions.length} position{group.positions.length !== 1 ? 's' : ''}
+                      </span>
+                    </div>
+
+                    {/* Position rows within group */}
+                    {group.positions.map((pos, idx) => (
+                      <PositionRow
+                        key={`${pos.gameId}-${pos.symbol}-${idx}`}
+                        position={pos}
+                        index={idx}
+                        onTap={handlePositionTap}
+                        isMobile={isMobile}
+                      />
+                    ))}
+                  </div>
+                );
+              })}
             </div>
           ) : (
             <div style={{

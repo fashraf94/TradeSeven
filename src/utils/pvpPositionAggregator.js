@@ -1,4 +1,5 @@
 import { flattenPortfolio } from './baggerBombUtils';
+import { isTrainingBattle } from './battleHelpers';
 
 /**
  * Aggregates positions from active PVP battles with entry prices,
@@ -23,8 +24,14 @@ export function aggregatePvpPositions({ uid, activeBattles = [], activeDraftBatt
   const positions = [];
 
   // 1. BaggerBomb V3/V4 — PVP only (filter out training)
+  // Require startingPrices to be populated (battle has actually begun)
   activeBattles
-    .filter(b => (b._v === 3 || b._v === 4) && b.state?.status === 'active' && !b.isTraining && !b.isTrainingBattle)
+    .filter(b =>
+      (b._v === 3 || b._v === 4) &&
+      b.state?.status === 'active' &&
+      !isTrainingBattle(b) &&
+      b.startingPrices && Object.keys(b.startingPrices).length > 0
+    )
     .forEach(battle => {
       const isCreator = battle.creatorId === uid ||
                         battle.creator?.uid === uid ||
@@ -38,7 +45,7 @@ export function aggregatePvpPositions({ uid, activeBattles = [], activeDraftBatt
         positions.push({
           symbol: asset.symbol,
           name: asset.name || asset.symbol,
-          entryPrice: battle.startingPrices?.[asset.symbol] || battle.state?.startingPrices?.[asset.symbol] || 0,
+          entryPrice: battle.startingPrices[asset.symbol] || battle.state?.startingPrices?.[asset.symbol] || 0,
           gameType: 'BB',
           gameId: battle.id,
           tier: asset.tier || null,
@@ -51,7 +58,11 @@ export function aggregatePvpPositions({ uid, activeBattles = [], activeDraftBatt
 
   // 2. Classic 1v1 — PVP only
   activeBattles
-    .filter(b => (!b._v || b._v < 3) && b.state?.status === 'active' && !b.isTraining && !b.isTrainingBattle)
+    .filter(b =>
+      (!b._v || b._v < 3) &&
+      b.state?.status === 'active' &&
+      !isTrainingBattle(b)
+    )
     .forEach(battle => {
       const isCreator = battle.creatorId === uid ||
                         battle.creator === uid ||
@@ -77,7 +88,10 @@ export function aggregatePvpPositions({ uid, activeBattles = [], activeDraftBatt
 
   // 3. Snake Draft — PVP only
   (activeDraftBattles || [])
-    .filter(d => (d.status === 'active' || d.status === 'in_progress') && !d.isTraining && !d.isTrainingBattle)
+    .filter(d =>
+      (d.status === 'active' || d.status === 'in_progress') &&
+      !isTrainingBattle(d)
+    )
     .forEach(draft => {
       const players = Array.isArray(draft.players) ? draft.players : [];
       const playerData = players.find(p => p.odUserId === uid);
@@ -100,5 +114,14 @@ export function aggregatePvpPositions({ uid, activeBattles = [], activeDraftBatt
       });
     });
 
-  return positions;
+  // Defensive filter: remove any positions without a valid entry price
+  const validPositions = positions.filter(p => {
+    if (!p.entryPrice || p.entryPrice <= 0) {
+      console.warn(`[PVP Positions] Filtered phantom: ${p.symbol} from ${p.gameType} (battle: ${p.gameId}) — no entry price`);
+      return false;
+    }
+    return true;
+  });
+
+  return validPositions;
 }
