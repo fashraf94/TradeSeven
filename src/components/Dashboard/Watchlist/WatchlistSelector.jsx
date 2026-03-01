@@ -4,11 +4,10 @@ import { motion } from 'framer-motion';
 const GROUP_LABELS = {
   my: 'MY LISTS',
   sector: 'SECTORS',
-  crypto: 'CRYPTO',
   performance: 'PERFORMANCE',
 };
 
-const GROUP_ORDER = ['my', 'sector', 'crypto', 'performance'];
+const GROUP_ORDER = ['my', 'sector', 'performance'];
 
 export default function WatchlistSelector({
   categories,
@@ -126,7 +125,6 @@ export default function WatchlistSelector({
                     outline: 'none',
                   }}
                 >
-                  <span style={{ fontSize: '13px' }}>{cat.icon}</span>
                   <span>{cat.label}{getCountBadge(cat)}</span>
                 </motion.button>
               );

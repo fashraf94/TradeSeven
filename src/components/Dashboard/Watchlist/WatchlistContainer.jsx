@@ -5,7 +5,6 @@ import {
   STOCKS,
   CRYPTO,
   getStocksBySector,
-  getCryptoSymbols,
   findStock,
   findCrypto,
 } from '../../../data/assets';
@@ -27,28 +26,24 @@ const WATCHLIST_CATEGORIES = [
   {
     id: 'custom',
     label: 'My Watchlist',
-    icon: '\u2B50',
     category: 'my',
     description: 'Your personal watchlist',
   },
 
   // === SECTORS (from STOCK_SECTORS) ===
-  { id: 'sector-technology', label: 'Technology', icon: '\uD83D\uDCBB', category: 'sector', sectorId: 'Technology' },
-  { id: 'sector-finance', label: 'Finance', icon: '\uD83C\uDFE6', category: 'sector', sectorId: 'Finance' },
-  { id: 'sector-healthcare', label: 'Healthcare', icon: '\uD83C\uDFE5', category: 'sector', sectorId: 'Healthcare' },
-  { id: 'sector-energy', label: 'Energy', icon: '\u26A1', category: 'sector', sectorId: 'Energy' },
-  { id: 'sector-consumer-disc', label: 'Cons. Disc.', icon: '\uD83D\uDECD\uFE0F', category: 'sector', sectorId: 'Consumer Discretionary' },
-  { id: 'sector-consumer-staples', label: 'Staples', icon: '\uD83D\uDED2', category: 'sector', sectorId: 'Consumer Staples' },
-  { id: 'sector-industrials', label: 'Industrials', icon: '\uD83C\uDFED', category: 'sector', sectorId: 'Industrials' },
-  { id: 'sector-utilities', label: 'Utilities', icon: '\uD83D\uDCA1', category: 'sector', sectorId: 'Utilities' },
-  { id: 'sector-real-estate', label: 'Real Estate', icon: '\uD83C\uDFE2', category: 'sector', sectorId: 'Real Estate' },
-  { id: 'sector-telecom', label: 'Telecom', icon: '\uD83D\uDCE1', category: 'sector', sectorId: 'Telecom' },
-
-  // === CRYPTO ===
-  { id: 'crypto-all', label: 'All Crypto', icon: '\uD83E\uDE99', category: 'crypto' },
+  { id: 'sector-technology', label: 'Technology', category: 'sector', sectorId: 'Technology' },
+  { id: 'sector-finance', label: 'Finance', category: 'sector', sectorId: 'Finance' },
+  { id: 'sector-healthcare', label: 'Healthcare', category: 'sector', sectorId: 'Healthcare' },
+  { id: 'sector-energy', label: 'Energy', category: 'sector', sectorId: 'Energy' },
+  { id: 'sector-consumer-disc', label: 'Cons. Disc.', category: 'sector', sectorId: 'Consumer Discretionary' },
+  { id: 'sector-consumer-staples', label: 'Staples', category: 'sector', sectorId: 'Consumer Staples' },
+  { id: 'sector-industrials', label: 'Industrials', category: 'sector', sectorId: 'Industrials' },
+  { id: 'sector-utilities', label: 'Utilities', category: 'sector', sectorId: 'Utilities' },
+  { id: 'sector-real-estate', label: 'Real Estate', category: 'sector', sectorId: 'Real Estate' },
+  { id: 'sector-telecom', label: 'Telecom', category: 'sector', sectorId: 'Telecom' },
 
   // === PERFORMANCE (derived) ===
-  { id: 'top-movers', label: 'Top Movers', icon: '\uD83D\uDD25', category: 'performance', description: 'Biggest % movers today' },
+  { id: 'top-movers', label: 'Top Movers', category: 'performance', description: 'Biggest % movers today' },
 ];
 
 // ============================================
@@ -126,9 +121,6 @@ export default function WatchlistContainer({
     switch (list.id) {
       case 'custom':
         return customWatchlist;
-
-      case 'crypto-all':
-        return getCryptoSymbols();
 
       case 'top-movers': {
         // Derive from REST data — sort by |percentChange| desc, take top 15

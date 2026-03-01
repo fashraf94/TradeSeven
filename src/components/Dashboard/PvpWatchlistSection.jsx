@@ -12,10 +12,10 @@ import { useIsMobile } from '../../hooks';
 // Lobby helpers (carried from PvpCommandCenter)
 // ============================================
 function getBattleTypeInfo(battle) {
-  if (!battle) return { icon: '⚔️', label: 'Builder 1v1' };
-  if (isBaggerBombBattle(battle)) return { icon: '💣', label: 'BaggerBomb' };
-  if (battle.isSnakeDraft || battle.battleType === 'snake-draft') return { icon: '🐍', label: 'Snake Draft' };
-  return { icon: '⚔️', label: 'Builder 1v1' };
+  if (!battle) return { label: 'Builder 1v1' };
+  if (isBaggerBombBattle(battle)) return { label: 'BaggerBomb' };
+  if (battle.isSnakeDraft || battle.battleType === 'snake-draft') return { label: 'Snake Draft' };
+  return { label: 'Builder 1v1' };
 }
 
 function getPlayerCountDisplay(battle) {
@@ -74,9 +74,6 @@ function LobbyItem({ lobby, onAction, isMobile }) {
       width: '100%',
       boxSizing: 'border-box',
     }}>
-      <span style={{ fontSize: isMobile ? '16px' : '18px', flexShrink: 0, lineHeight: isMobile ? '20px' : '24px' }}>
-        {typeInfo.icon}
-      </span>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{
           fontSize: isMobile ? '12px' : '13px', color: '#e6edf3', lineHeight: 1.4,
@@ -214,22 +211,15 @@ export default function PvpWatchlistSection({
         marginBottom: '12px',
         padding: '0 4px',
       }}>
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '8px',
+        <span style={{
+          fontSize: '11px',
+          fontWeight: 700,
+          color: '#8b949e',
+          letterSpacing: '0.08em',
+          textTransform: 'uppercase',
         }}>
-          <span style={{ fontSize: '14px' }}>📊</span>
-          <span style={{
-            fontSize: '11px',
-            fontWeight: 700,
-            color: '#8b949e',
-            letterSpacing: '0.08em',
-            textTransform: 'uppercase',
-          }}>
-            Market Watch
-          </span>
-        </div>
+          Market Watch
+        </span>
 
         {/* Segmented Control */}
         <div style={{
@@ -240,8 +230,8 @@ export default function PvpWatchlistSection({
           padding: '3px',
         }}>
           {[
-            { id: 'watchlist', label: '📊 Watchlist' },
-            { id: 'lobbies', label: `🏟️ Lobbies${lobbyItems.length > 0 ? ` (${lobbyItems.length})` : ''}` },
+            { id: 'watchlist', label: 'Watchlist' },
+            { id: 'lobbies', label: `Lobbies${lobbyItems.length > 0 ? ` (${lobbyItems.length})` : ''}` },
           ].map(tab => {
             const isActive = activeView === tab.id;
             return (
@@ -307,7 +297,6 @@ export default function PvpWatchlistSection({
               padding: '32px 16px',
               textAlign: 'center',
             }}>
-              <div style={{ fontSize: '28px', marginBottom: '8px' }}>🏟️</div>
               <div style={{ fontSize: '13px', color: '#8b949e' }}>
                 No open lobbies right now
               </div>

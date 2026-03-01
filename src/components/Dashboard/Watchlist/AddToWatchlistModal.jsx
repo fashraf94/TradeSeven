@@ -46,6 +46,7 @@ export default function AddToWatchlistModal({
           display: 'flex',
           alignItems: isMobile ? 'flex-end' : 'center',
           justifyContent: 'center',
+          padding: isMobile ? 0 : '16px',
         }}
       >
         <motion.div
@@ -58,7 +59,8 @@ export default function AddToWatchlistModal({
             background: '#0d1117',
             border: '1px solid #21262d',
             borderRadius: isMobile ? '16px 16px 0 0' : '12px',
-            width: isMobile ? '100%' : '440px',
+            width: isMobile ? '100%' : '100%',
+            maxWidth: isMobile ? '100%' : '480px',
             maxHeight: isMobile ? '85vh' : '70vh',
             display: 'flex',
             flexDirection: 'column',
