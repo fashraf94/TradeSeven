@@ -24,3 +24,4 @@ export { default as InfiniteCarousel } from './InfiniteCarousel';
 export { default as SeasonalBanner } from './SeasonalBanner';
 export { default as TrainingLiveFeed } from './TrainingLiveFeed';
 export { default as PendingLobbiesSection } from './PendingLobbiesSection';
+export { WatchlistContainer } from './Watchlist';
