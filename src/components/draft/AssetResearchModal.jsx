@@ -6,6 +6,7 @@ import { HOLO_COLORS, CATEGORY_CONFIG, getSectorColor, getRatingColor } from '..
 import { getCompanyProfile } from '../../services/fundamentalsService';
 import { formatLargeNumber } from '../../utils/formatters';
 import ChartHeader from '../Research/ChartHeader';
+import WhyMovingPopup from '../Research/WhyMovingPopup';
 import StockChart from '../Research/StockChart';
 import useResearchData from '../Research/useResearchData';
 import AnalysisDrawer from '../Research/AnalysisDrawer';
@@ -94,6 +95,7 @@ const AssetResearchModal = ({
     ? isGameContextProp
     : (onAcquire !== null || showActionButton);
   const [activeTab, setActiveTab] = useState(defaultTab || (isCrypto ? 'health' : 'fundamental'));
+  const [whyMovingOpen, setWhyMovingOpen] = useState(false);
   const [profile, setProfile] = useState(null);
   const [profileLoading, setProfileLoading] = useState(false);
   const [descExpanded, setDescExpanded] = useState(false);
@@ -365,7 +367,7 @@ const AssetResearchModal = ({
 
         {/* Header: v2 compact header vs v1 original header */}
         {version >= 2 ? (
-          <ChartHeader asset={enrichedAsset} sector={sector} category={category} onClose={onClose} />
+          <ChartHeader asset={enrichedAsset} sector={sector} category={category} onClose={onClose} onWhyMoving={() => setWhyMovingOpen(true)} />
         ) : (
           <div
             style={{
@@ -1386,6 +1388,16 @@ const AssetResearchModal = ({
           }
         `}</style>
       </div>
+
+      {/* Why is it moving? bottom sheet */}
+      <WhyMovingPopup
+        symbol={asset?.symbol}
+        name={asset?.name}
+        change={asset?.percentChange || asset?.change}
+        price={asset?.price}
+        isOpen={whyMovingOpen}
+        onClose={() => setWhyMovingOpen(false)}
+      />
     </>,
     document.body
   );

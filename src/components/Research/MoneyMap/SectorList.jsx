@@ -26,7 +26,7 @@ const GROUP_HEADERS = {
  * @param {string|null} props.expandedSectorId  - Currently expanded sector, or null
  * @param {function}    props.onToggleSector     - (sectorId) => void
  */
-const SectorList = ({ sectors, expandedSectorId, onToggleSector, onTooltip }) => {
+const SectorList = ({ sectors, expandedSectorId, onToggleSector, onTooltip, sectorInsights, onStockTap, hideCollapsed }) => {
   // Group sectors by quadrant, sort within each group by momentumScore desc
   const groups = useMemo(() => {
     const sectorArray = Object.values(sectors || {});
@@ -46,7 +46,22 @@ const SectorList = ({ sectors, expandedSectorId, onToggleSector, onTooltip }) =>
       .filter(g => g.sectors.length > 0);
   }, [sectors]);
 
-  if (groups.length === 0) {
+  // In heatmap mode (hideCollapsed), only show the expanded sector's group
+  if (hideCollapsed && !expandedSectorId) {
+    return null;
+  }
+
+  // Filter groups when hideCollapsed is active
+  const visibleGroups = hideCollapsed
+    ? groups
+        .map(g => ({
+          ...g,
+          sectors: g.sectors.filter(s => s.sectorId === expandedSectorId),
+        }))
+        .filter(g => g.sectors.length > 0)
+    : groups;
+
+  if (visibleGroups.length === 0 && !hideCollapsed) {
     return (
       <div style={{
         background: '#161b22',
@@ -68,38 +83,40 @@ const SectorList = ({ sectors, expandedSectorId, onToggleSector, onTooltip }) =>
       flexDirection: 'column',
       gap: '24px',
     }}>
-      {groups.map(group => (
+      {visibleGroups.map(group => (
         <div key={group.quadrantId}>
-          {/* Group Header */}
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px',
-            marginBottom: '12px',
-          }}>
-            <span style={{
-              width: '10px',
-              height: '10px',
-              borderRadius: '50%',
-              background: group.header.color,
-              flexShrink: 0,
-            }} />
-            <span style={{
-              color: group.header.color,
-              fontSize: '13px',
-              fontWeight: '700',
-              textTransform: 'uppercase',
-              letterSpacing: '0.5px',
+          {/* Group Header — hide in heatmap mode since only one card shows */}
+          {!hideCollapsed && (
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              marginBottom: '12px',
             }}>
-              {group.header.label}
-            </span>
-            <span style={{
-              color: '#8b949e',
-              fontSize: '12px',
-            }}>
-              ({group.sectors.length})
-            </span>
-          </div>
+              <span style={{
+                width: '10px',
+                height: '10px',
+                borderRadius: '50%',
+                background: group.header.color,
+                flexShrink: 0,
+              }} />
+              <span style={{
+                color: group.header.color,
+                fontSize: '13px',
+                fontWeight: '700',
+                textTransform: 'uppercase',
+                letterSpacing: '0.5px',
+              }}>
+                {group.header.label}
+              </span>
+              <span style={{
+                color: '#8b949e',
+                fontSize: '12px',
+              }}>
+                ({group.sectors.length})
+              </span>
+            </div>
+          )}
 
           {/* Cards within group */}
           <div style={{
@@ -114,6 +131,8 @@ const SectorList = ({ sectors, expandedSectorId, onToggleSector, onTooltip }) =>
                 isExpanded={expandedSectorId === sector.sectorId}
                 onToggle={() => onToggleSector(sector.sectorId)}
                 onTooltip={onTooltip}
+                insight={sectorInsights?.[sector.sectorId]}
+                onStockTap={onStockTap}
               />
             ))}
           </div>

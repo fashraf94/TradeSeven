@@ -6,6 +6,9 @@ import { getTopMoversWithNews, getMarketNews } from '../../services/eodhdAPI';
 
 import { useAssetResearch } from '../../hooks/useAssetResearch';
 import AssetResearchModal from '../draft/AssetResearchModal';
+import WhyMovingPopup from './WhyMovingPopup';
+import MarketPulseCard from './MarketPulseCard';
+import UpcomingEventsPanel from './UpcomingEventsPanel';
 
 // ─── Utilities ───────────────────────────────────────────────
 const safeNumber = (val, fallback = 0) => {
@@ -225,7 +228,7 @@ const SentimentPulse = ({ sentiment }) => {
 };
 
 // ─── MoverRow ────────────────────────────────────────────────
-const MoverRow = ({ symbol, name, change, isGainer }) => {
+const MoverRow = ({ symbol, name, change, isGainer, onWhyMoving }) => {
   const accentColor = isGainer ? C.green : C.red;
   const sign = isGainer ? '+' : '';
   return (
@@ -269,6 +272,24 @@ const MoverRow = ({ symbol, name, change, isGainer }) => {
       }}>
         {sign}{safeNumber(change, 0).toFixed(1)}%
       </span>
+      {onWhyMoving && (
+        <button
+          onClick={(e) => { e.stopPropagation(); onWhyMoving(); }}
+          style={{
+            background: 'rgba(0, 217, 255, 0.08)',
+            border: '1px solid rgba(0, 217, 255, 0.15)',
+            borderRadius: '8px',
+            color: C.cyan,
+            fontSize: '10px',
+            fontWeight: 600,
+            padding: '2px 6px',
+            cursor: 'pointer',
+            flexShrink: 0,
+          }}
+        >
+          Why?
+        </button>
+      )}
     </div>
   );
 };
@@ -1359,7 +1380,7 @@ const QuestionCard = ({ question, index, buildMarketContextString }) => {
 };
 
 // ─── TrackerStockCard (V2) ──────────────────────────────────
-const TrackerStockCard = ({ stock, expanded, onToggle, trackerData, trackerLoading, onRemove }) => {
+const TrackerStockCard = ({ stock, expanded, onToggle, trackerData, trackerLoading, onRemove, onWhyMoving }) => {
   const pct = safeNumber(stock.percentChange, 0);
   const isPositive = pct >= 0;
 
@@ -1424,6 +1445,25 @@ const TrackerStockCard = ({ stock, expanded, onToggle, trackerData, trackerLoadi
           }}>
             {statusLabel}
           </span>
+          {onWhyMoving && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onWhyMoving(); }}
+              style={{
+                background: 'rgba(0, 217, 255, 0.08)',
+                border: '1px solid rgba(0, 217, 255, 0.15)',
+                borderRadius: '6px',
+                color: C.cyan,
+                fontSize: '8px',
+                fontWeight: 700,
+                letterSpacing: '0.05em',
+                padding: '2px 6px',
+                cursor: 'pointer',
+                flexShrink: 0,
+              }}
+            >
+              WHY?
+            </button>
+          )}
           {onRemove && (
             <button
               onClick={(e) => { e.stopPropagation(); onRemove(stock.symbol); }}
@@ -1494,7 +1534,7 @@ const TrackerStockCard = ({ stock, expanded, onToggle, trackerData, trackerLoadi
 };
 
 // ─── TrackerSection (V2) ────────────────────────────────────
-const TrackerSection = ({ watchlistStocks, expandedTracker, onToggleTracker, trackerCache, trackerLoading, onRemoveStock, onAddStock, allAssets }) => {
+const TrackerSection = ({ watchlistStocks, expandedTracker, onToggleTracker, trackerCache, trackerLoading, onRemoveStock, onAddStock, allAssets, onWhyMoving }) => {
   const [showAddStock, setShowAddStock] = useState(false);
   const [addStockSearch, setAddStockSearch] = useState('');
 
@@ -1526,6 +1566,7 @@ const TrackerSection = ({ watchlistStocks, expandedTracker, onToggleTracker, tra
             trackerData={trackerCache[stock.symbol]}
             trackerLoading={trackerLoading}
             onRemove={onRemoveStock}
+            onWhyMoving={() => onWhyMoving?.({ symbol: stock.symbol, name: stock.name, change: safeNumber(stock.percentChange, 0), price: stock.price })}
           />
         ))}
       </div>
@@ -1665,6 +1706,7 @@ const DesktopTrackerSection = ({
   onRemoveStock,
   onAddStock,
   allAssets,
+  onWhyMoving,
 }) => {
   const [showAddStock, setShowAddStock] = useState(false);
   const [addStockSearch, setAddStockSearch] = useState('');
@@ -1700,6 +1742,7 @@ const DesktopTrackerSection = ({
             trackerData={trackerCache[stock.symbol]}
             trackerLoading={trackerLoading === stock.symbol}
             onRemove={onRemoveStock}
+            onWhyMoving={() => onWhyMoving?.({ symbol: stock.symbol, name: stock.name, change: safeNumber(stock.percentChange, 0), price: stock.price })}
           />
         ))}
       </div>
@@ -2177,7 +2220,7 @@ const WeeklyReport = ({ visible, onClose, reportData, reportLoading }) => {
 };
 
 // ─── BriefingTab (V2) ───────────────────────────────────────
-const BriefingTab = ({ briefer, loading, watchlistStocks, expandedTracker, onToggleTracker, trackerCache, trackerLoading, onShowWeeklyReport, buildMarketContextString, onRemoveStock, onAddStock, allAssets }) => {
+const BriefingTab = ({ briefer, loading, watchlistStocks, expandedTracker, onToggleTracker, trackerCache, trackerLoading, onShowWeeklyReport, buildMarketContextString, onRemoveStock, onAddStock, allAssets, onWhyMoving, marketPulse, marketPulseLoading, marketPulseError, onRetryMarketPulse, onStockTap, upcomingEconomic, upcomingEarnings, upcomingEconomicLoading, upcomingEarningsLoading, upcomingEconomicError, upcomingEarningsError, onRetryEconomic, onRetryEarnings }) => {
   if (loading) {
     return (
       <div style={{
@@ -2251,6 +2294,30 @@ const BriefingTab = ({ briefer, loading, watchlistStocks, expandedTracker, onTog
         </div>
       </div>
 
+      {/* Market Pulse */}
+      <MarketPulseCard
+        headlines={marketPulse?.headlines || []}
+        citations={marketPulse?.citations || []}
+        loading={marketPulseLoading}
+        error={marketPulseError}
+        onRetry={onRetryMarketPulse}
+        onStockTap={onStockTap}
+        cachedAt={marketPulse?.cachedAt}
+      />
+
+      {/* Upcoming Events */}
+      <UpcomingEventsPanel
+        economicEvents={upcomingEconomic}
+        earningsCalendar={upcomingEarnings}
+        economicLoading={upcomingEconomicLoading}
+        earningsLoading={upcomingEarningsLoading}
+        economicError={upcomingEconomicError}
+        earningsError={upcomingEarningsError}
+        onRetryEconomic={onRetryEconomic}
+        onRetryEarnings={onRetryEarnings}
+        onStockTap={onStockTap}
+      />
+
       {/* Ask the Briefer — Question Cards */}
       {briefer.questions?.length > 0 && (
         <div>
@@ -2284,6 +2351,7 @@ const BriefingTab = ({ briefer, loading, watchlistStocks, expandedTracker, onTog
         onRemoveStock={onRemoveStock}
         onAddStock={onAddStock}
         allAssets={allAssets}
+        onWhyMoving={onWhyMoving}
       />
 
       {/* Weekly Report trigger */}
@@ -2382,6 +2450,19 @@ const MobileIntelligenceHub = ({
   setShowWeeklyReport,
   onRemoveStock,
   onAddStock,
+  onWhyMoving,
+  marketPulse,
+  marketPulseLoading,
+  marketPulseError,
+  onRetryMarketPulse,
+  upcomingEconomic,
+  upcomingEarnings,
+  upcomingEconomicLoading,
+  upcomingEarningsLoading,
+  upcomingEconomicError,
+  upcomingEarningsError,
+  onRetryEconomic,
+  onRetryEarnings,
 }) => {
   const [activeTab, setActiveTab] = useState('briefing');
   const [expandedSymbol, setExpandedSymbol] = useState(null);
@@ -2531,6 +2612,23 @@ const MobileIntelligenceHub = ({
             onRemoveStock={onRemoveStock}
             onAddStock={onAddStock}
             allAssets={allAssets}
+            onWhyMoving={onWhyMoving}
+            marketPulse={marketPulse}
+            marketPulseLoading={marketPulseLoading}
+            marketPulseError={marketPulseError}
+            onRetryMarketPulse={onRetryMarketPulse}
+            onStockTap={(symbol) => {
+              const asset = allAssets.find(a => a.symbol?.toUpperCase() === symbol.toUpperCase());
+              if (asset) handleOpenResearch(asset);
+            }}
+            upcomingEconomic={upcomingEconomic}
+            upcomingEarnings={upcomingEarnings}
+            upcomingEconomicLoading={upcomingEconomicLoading}
+            upcomingEarningsLoading={upcomingEarningsLoading}
+            upcomingEconomicError={upcomingEconomicError}
+            upcomingEarningsError={upcomingEarningsError}
+            onRetryEconomic={onRetryEconomic}
+            onRetryEarnings={onRetryEarnings}
           />
         ) : (
           <DiscoverTab
@@ -2744,6 +2842,22 @@ const ResearchLandingPage = ({
   // ─── Asset Research Modal ────────────────────────────────
   const { researchAsset, isOpen, showResearch, hideResearch, getModalProps } = useAssetResearch();
 
+  // ─── Why Is It Moving? popup ───────────────────────────
+  const [whyMovingTarget, setWhyMovingTarget] = useState(null);
+
+  // ─── Market Pulse ─────────────────────────────────────
+  const [marketPulse, setMarketPulse] = useState(null);
+  const [marketPulseLoading, setMarketPulseLoading] = useState(true);
+  const [marketPulseError, setMarketPulseError] = useState(false);
+
+  // ─── Upcoming Events (Sonar) ────────────────────────────
+  const [upcomingEconomic, setUpcomingEconomic] = useState(null);
+  const [upcomingEarnings, setUpcomingEarnings] = useState(null);
+  const [upcomingEconomicLoading, setUpcomingEconomicLoading] = useState(true);
+  const [upcomingEarningsLoading, setUpcomingEarningsLoading] = useState(true);
+  const [upcomingEconomicError, setUpcomingEconomicError] = useState(false);
+  const [upcomingEarningsError, setUpcomingEarningsError] = useState(false);
+
   // ─── All assets for search ───────────────────────────────
   const allAssets = useMemo(() => [...stocksData, ...cryptoData], [stocksData, cryptoData]);
 
@@ -2892,6 +3006,72 @@ const ResearchLandingPage = ({
   useEffect(() => {
     fetchEconomicEvents();
   }, [fetchEconomicEvents]);
+
+  // ─── Market Pulse fetch ────────────────────────────────────
+  const fetchMarketPulse = useCallback(async () => {
+    setMarketPulseLoading(true);
+    setMarketPulseError(false);
+    try {
+      const res = await fetch('/api/market-pulse');
+      const data = await res.json();
+      if (data.success) {
+        setMarketPulse(data.data);
+      } else {
+        setMarketPulseError(true);
+      }
+    } catch {
+      setMarketPulseError(true);
+    } finally {
+      setMarketPulseLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchMarketPulse();
+  }, [fetchMarketPulse]);
+
+  // ─── Upcoming Economic Events fetch ──────────────────────
+  const fetchUpcomingEconomic = useCallback(async () => {
+    setUpcomingEconomicLoading(true);
+    setUpcomingEconomicError(false);
+    try {
+      const res = await fetch('/api/economic-events-sonar');
+      const data = await res.json();
+      if (data.success) {
+        setUpcomingEconomic(data.data);
+      } else {
+        setUpcomingEconomicError(true);
+      }
+    } catch {
+      setUpcomingEconomicError(true);
+    } finally {
+      setUpcomingEconomicLoading(false);
+    }
+  }, []);
+
+  // ─── Upcoming Earnings fetch ─────────────────────────────
+  const fetchUpcomingEarnings = useCallback(async () => {
+    setUpcomingEarningsLoading(true);
+    setUpcomingEarningsError(false);
+    try {
+      const res = await fetch('/api/earnings-calendar-sonar');
+      const data = await res.json();
+      if (data.success) {
+        setUpcomingEarnings(data.data);
+      } else {
+        setUpcomingEarningsError(true);
+      }
+    } catch {
+      setUpcomingEarningsError(true);
+    } finally {
+      setUpcomingEarningsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchUpcomingEconomic();
+    fetchUpcomingEarnings();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ─── AI Summary (desktop) ─────────────────────────────────
   useEffect(() => {
@@ -3479,6 +3659,19 @@ const ResearchLandingPage = ({
           setShowWeeklyReport={setShowWeeklyReport}
           onRemoveStock={handleRemoveFromWatchlist}
           onAddStock={handleAddToWatchlist}
+          onWhyMoving={(target) => setWhyMovingTarget(target)}
+          marketPulse={marketPulse}
+          marketPulseLoading={marketPulseLoading}
+          marketPulseError={marketPulseError}
+          onRetryMarketPulse={fetchMarketPulse}
+          upcomingEconomic={upcomingEconomic}
+          upcomingEarnings={upcomingEarnings}
+          upcomingEconomicLoading={upcomingEconomicLoading}
+          upcomingEarningsLoading={upcomingEarningsLoading}
+          upcomingEconomicError={upcomingEconomicError}
+          upcomingEarningsError={upcomingEarningsError}
+          onRetryEconomic={fetchUpcomingEconomic}
+          onRetryEarnings={fetchUpcomingEarnings}
         />
         <WeeklyReport
           visible={showWeeklyReport}
@@ -3492,6 +3685,15 @@ const ResearchLandingPage = ({
             showActionButton={false}
           />
         )}
+        {/* Why Is It Moving? Popup (mobile) */}
+        <WhyMovingPopup
+          symbol={whyMovingTarget?.symbol}
+          name={whyMovingTarget?.name}
+          change={whyMovingTarget?.change}
+          price={whyMovingTarget?.price}
+          isOpen={!!whyMovingTarget}
+          onClose={() => setWhyMovingTarget(null)}
+        />
       </>
     );
   }
@@ -3609,6 +3811,7 @@ const ResearchLandingPage = ({
                   name={stock.name}
                   change={safeNumber(stock.percentChange || stock.change24h, 0)}
                   isGainer={true}
+                  onWhyMoving={() => setWhyMovingTarget({ symbol: stock.symbol, name: stock.name, change: safeNumber(stock.percentChange || stock.change24h, 0), price: stock.price })}
                 />
               ))}
             </div>
@@ -3628,12 +3831,41 @@ const ResearchLandingPage = ({
                   name={stock.name}
                   change={safeNumber(stock.percentChange || stock.change24h, 0)}
                   isGainer={false}
+                  onWhyMoving={() => setWhyMovingTarget({ symbol: stock.symbol, name: stock.name, change: safeNumber(stock.percentChange || stock.change24h, 0), price: stock.price })}
                 />
               ))}
             </div>
           </div>
         </div>
       </motion.div>
+
+      {/* ═══ Market Intelligence Row ═══ */}
+      <div style={{ display: 'flex', gap: '16px', margin: '16px 0' }}>
+        <div style={{ flex: '0 0 60%' }}>
+          <MarketPulseCard
+            headlines={marketPulse?.headlines || []}
+            citations={marketPulse?.citations || []}
+            loading={marketPulseLoading}
+            error={marketPulseError}
+            onRetry={fetchMarketPulse}
+            onStockTap={(symbol) => handleOpenResearch({ symbol, type: 'stock' })}
+            cachedAt={marketPulse?.cachedAt}
+          />
+        </div>
+        <div style={{ flex: '0 0 38%' }}>
+          <UpcomingEventsPanel
+            economicEvents={upcomingEconomic}
+            earningsCalendar={upcomingEarnings}
+            economicLoading={upcomingEconomicLoading}
+            earningsLoading={upcomingEarningsLoading}
+            economicError={upcomingEconomicError}
+            earningsError={upcomingEarningsError}
+            onRetryEconomic={fetchUpcomingEconomic}
+            onRetryEarnings={fetchUpcomingEarnings}
+            onStockTap={(symbol) => handleOpenResearch({ symbol, type: 'stock' })}
+          />
+        </div>
+      </div>
 
       {/* ═══ ZONE 2: Research Tools ═══ */}
       <SectionDivider label="RESEARCH TOOLS" />
@@ -3757,6 +3989,7 @@ const ResearchLandingPage = ({
           onRemoveStock={handleRemoveFromWatchlist}
           onAddStock={handleAddToWatchlist}
           allAssets={allAssets}
+          onWhyMoving={(target) => setWhyMovingTarget(target)}
         />
         <EconomicEventsBotCard buildMarketContextString={buildMarketContextString} />
       </div>
@@ -3776,6 +4009,16 @@ const ResearchLandingPage = ({
           showActionButton={false}
         />
       )}
+
+      {/* ═══ Why Is It Moving? Popup ═══ */}
+      <WhyMovingPopup
+        symbol={whyMovingTarget?.symbol}
+        name={whyMovingTarget?.name}
+        change={whyMovingTarget?.change}
+        price={whyMovingTarget?.price}
+        isOpen={!!whyMovingTarget}
+        onClose={() => setWhyMovingTarget(null)}
+      />
     </div>
   );
 };

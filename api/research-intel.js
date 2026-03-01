@@ -86,7 +86,7 @@ RESPONSE FORMAT — Return ONLY this JSON structure, no other text:
 
 Each question must have 2-4 insights and 2-3 followUps (short contextual follow-up questions under 40 chars each). Provide 3-4 discoveries (NONE from watchlist/battles) and 1 hotSector.`;
 
-function buildUserPrompt(ctx) {
+function buildUserPrompt(ctx, newsContext = '') {
   return `TODAY'S MARKET DATA:
 
 BREADTH:
@@ -99,7 +99,7 @@ TOP MOVERS:
 
 RECENT NEWS:
 ${ctx.news?.slice(0, 5).map(n => `- ${n.title}`).join('\n') || 'No recent news'}
-
+${newsContext}
 USER'S WATCHLIST: ${JSON.stringify(ctx.watchlist || [])}
 USER'S ACTIVE BATTLE STOCKS: ${JSON.stringify(ctx.battleStocks || [])}
 
@@ -139,6 +139,21 @@ export default async function handler(req, res) {
       return res.status(400).json({ success: false, error: 'Missing context' });
     }
 
+    // Read Market Pulse cache for news enrichment (best-effort, non-blocking)
+    let newsContext = '';
+    try {
+      const cachedPulse = getFromCache('market_pulse_latest');
+      if (cachedPulse?.data?.headlines?.length > 0) {
+        const top3 = cachedPulse.data.headlines.slice(0, 3);
+        newsContext = '\nTODAY\'S TOP MARKET NEWS (from real-time search):\n' + top3.map((h, i) =>
+          `${i + 1}. ${h.headline}: ${h.summary}`
+        ).join('\n');
+        console.log('[ResearchIntel] Enriching Briefer with', top3.length, 'market pulse headlines');
+      }
+    } catch (e) {
+      console.warn('[ResearchIntel] Market Pulse cache read failed:', e.message);
+    }
+
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
@@ -150,7 +165,7 @@ export default async function handler(req, res) {
         model: 'claude-haiku-4-5-20251001',
         max_tokens: 2500,
         system: SYSTEM_PROMPT,
-        messages: [{ role: 'user', content: buildUserPrompt(context) }],
+        messages: [{ role: 'user', content: buildUserPrompt(context, newsContext) }],
       }),
     });
 

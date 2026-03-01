@@ -7,7 +7,10 @@ import { SECTORS } from '../../../constants/sectors';
 import RegimeBanner from './RegimeBanner';
 import ConfidenceGauge from './ConfidenceGauge';
 import SectorList from './SectorList';
+import HeatmapView from './HeatmapView';
 import MetricTooltip from './MetricTooltip';
+import { useAssetResearch } from '../../../hooks/useAssetResearch';
+import AssetResearchModal from '../../draft/AssetResearchModal';
 
 // ===========================================
 // SESSION STORAGE CACHE
@@ -204,7 +207,15 @@ const MoneyMapScreen = ({ onBack }) => {
   const [error, setError] = useState(null);
   const [expandedSectorId, setExpandedSectorId] = useState(null);
   const [tooltipMetric, setTooltipMetric] = useState(null);
+  const [viewMode, setViewMode] = useState('heatmap');
+  const [sectorInsights, setSectorInsights] = useState({});
   const mountedRef = useRef(true);
+
+  // Asset research modal
+  const { researchAsset, isOpen: isResearchOpen, showResearch, hideResearch, getModalProps } = useAssetResearch();
+
+  // Mobile detection
+  const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
 
   // Core fetch + compute pipeline
   const fetchFreshData = useCallback(async () => {
@@ -305,9 +316,40 @@ const MoneyMapScreen = ({ onBack }) => {
     }
   }, [fetchFreshData, isRefreshing, data]);
 
+  // Fetch Sonar sector insight on demand
+  const fetchSectorInsight = useCallback(async (sectorId) => {
+    if (sectorInsights[sectorId]) return;
+    const sector = data?.sectors?.[sectorId];
+    if (!sector) return;
+    try {
+      const res = await fetch('/api/sector-insight', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sectorName: sector.name,
+          etfSymbol: sectorId,
+          change1M: sector.performance?.month1 || 0,
+          breadthPct: sector.breadth?.percent || sector.breadthTier?.percent || 50,
+          quadrant: sector.quadrant?.quadrant || 'NEUTRAL',
+        }),
+      });
+      const result = await res.json();
+      if (result.success) {
+        setSectorInsights(prev => ({ ...prev, [sectorId]: result.data }));
+      }
+    } catch (err) {
+      console.warn('[SectorInsight] Failed for', sectorId, err);
+    }
+  }, [data, sectorInsights]);
+
   const handleToggleSector = (sectorId) => {
     setExpandedSectorId(prev => prev === sectorId ? null : sectorId);
   };
+
+  // Fetch insight when a sector is expanded
+  useEffect(() => {
+    if (expandedSectorId) fetchSectorInsight(expandedSectorId);
+  }, [expandedSectorId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleTooltip = (metric) => setTooltipMetric(metric);
   const handleCloseTooltip = () => setTooltipMetric(null);
@@ -483,12 +525,63 @@ const MoneyMapScreen = ({ onBack }) => {
             onTooltip={handleTooltip}
           />
 
-          {/* Layer 3: Sector Cards */}
+          {/* View Toggle: Heatmap / List */}
+          <div style={{
+            display: 'flex',
+            justifyContent: 'center',
+          }}>
+            <div style={{
+              display: 'inline-flex',
+              background: '#161b22',
+              borderRadius: '8px',
+              border: '1px solid #21262d',
+              padding: '2px',
+            }}>
+              {[
+                { key: 'heatmap', label: 'Heatmap' },
+                { key: 'list', label: 'List' },
+              ].map(({ key, label }) => (
+                <button
+                  key={key}
+                  onClick={() => setViewMode(key)}
+                  style={{
+                    padding: '6px 16px',
+                    borderRadius: '6px',
+                    border: 'none',
+                    fontSize: '12px',
+                    fontWeight: '600',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease',
+                    background: viewMode === key ? 'rgba(0,217,255,0.15)' : 'transparent',
+                    color: viewMode === key ? '#00d9ff' : '#8b949e',
+                  }}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Layer 3a: Heatmap View */}
+          {viewMode === 'heatmap' && (
+            <HeatmapView
+              sectors={data.sectors}
+              global={data.global}
+              onSectorTap={(sectorId) => handleToggleSector(sectorId)}
+              onStockTap={(symbol) => showResearch({ symbol, type: 'stock' })}
+              compact={isMobile}
+            />
+          )}
+
+          {/* Layer 3b: Sector Cards (always renders; hides collapsed cards in heatmap mode) */}
           <SectorList
             sectors={data.sectors}
             expandedSectorId={expandedSectorId}
             onToggleSector={handleToggleSector}
             onTooltip={handleTooltip}
+            sectorInsights={sectorInsights}
+            onStockTap={(symbol) => showResearch({ symbol, type: 'stock' })}
+            hideCollapsed={viewMode === 'heatmap'}
           />
         </div>
       )}
@@ -499,6 +592,11 @@ const MoneyMapScreen = ({ onBack }) => {
         isOpen={!!tooltipMetric}
         onClose={handleCloseTooltip}
       />
+
+      {/* Asset Research Modal */}
+      {isResearchOpen && researchAsset && (
+        <AssetResearchModal {...getModalProps()} showActionButton={false} />
+      )}
     </div>
   );
 };
