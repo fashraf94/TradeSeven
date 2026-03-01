@@ -7,6 +7,23 @@
 import cacheService from '../services/cacheService';
 import { apiMonitor } from '../services/apiMonitor';
 import { getMarketState, getEffectiveTTL, isPreMarketWindow, getNextMarketOpen } from '../utils/marketSchedule';
+import wsManager from '../services/websocketService';
+
+function timeSince(date) {
+  if (!date) return 'Never';
+  const seconds = Math.floor((Date.now() - date.getTime()) / 1000);
+  if (seconds < 60) return `${seconds}s ago`;
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+  return `${Math.floor(seconds / 3600)}h ago`;
+}
+
+function formatDuration(ms) {
+  if (!ms) return 'N/A';
+  const minutes = Math.floor(ms / 60000);
+  const hours = Math.floor(minutes / 60);
+  if (hours > 0) return `${hours}h ${minutes % 60}m`;
+  return `${minutes}m`;
+}
 
 export const mcDebug = {
   /**
@@ -216,7 +233,61 @@ export const mcDebug = {
     console.log(`  Extended entries: ${stats.extendedCount}`);
     console.log(`  Estimated API calls saved: ${stats.estimatedCallsSaved}`);
 
+    const wsDiag = wsManager.getDiagnostics();
+    console.log('\n--- WEBSOCKET ---');
+    console.log(`  Connections: ${wsDiag.stocks.connected ? '🟢' : '🔴'} Stocks (${wsDiag.stocks.subscribedSymbols} syms) | ${wsDiag.crypto.connected ? '🟢' : '🔴'} Crypto (${wsDiag.crypto.subscribedSymbols} syms)`);
+    console.log(`  Messages: ${wsDiag.messagesReceived.toLocaleString()} | Uptime: ${formatDuration(wsDiag.connectionUptime)}`);
+
     return { state, stats };
+  },
+
+  /**
+   * Show detailed WebSocket connection diagnostics
+   */
+  websocket() {
+    const diagnostics = wsManager.getDiagnostics();
+    const marketState = getMarketState();
+    const RS_LABELS = ['CONNECTING', 'OPEN', 'CLOSING', 'CLOSED'];
+
+    console.log('%c--- WEBSOCKET DIAGNOSTICS ---', 'color: #00d9ff; font-weight: bold');
+
+    console.log('\n📡 Stock Connection:');
+    console.log(`  Status: ${diagnostics.stocks.connected ? '🟢 Connected' : '🔴 Disconnected'}`);
+    console.log(`  ReadyState: ${RS_LABELS[diagnostics.stocks.readyState] || 'N/A'}`);
+    console.log(`  Symbols: ${diagnostics.stocks.subscribedSymbols}`);
+    if (diagnostics.stocks.symbolList.length > 0) {
+      console.log(`  Symbol list: ${diagnostics.stocks.symbolList.join(', ')}`);
+    }
+    console.log(`  Reconnect attempts: ${diagnostics.stocks.reconnectAttempts}`);
+    console.log(`  Last message: ${timeSince(diagnostics.stocks.lastMessageTime)}`);
+
+    console.log('\n🪙 Crypto Connection:');
+    console.log(`  Status: ${diagnostics.crypto.connected ? '🟢 Connected' : '🔴 Disconnected'}`);
+    console.log(`  ReadyState: ${RS_LABELS[diagnostics.crypto.readyState] || 'N/A'}`);
+    console.log(`  Symbols: ${diagnostics.crypto.subscribedSymbols}`);
+    if (diagnostics.crypto.symbolList.length > 0) {
+      console.log(`  Symbol list: ${diagnostics.crypto.symbolList.join(', ')}`);
+    }
+    console.log(`  Reconnect attempts: ${diagnostics.crypto.reconnectAttempts}`);
+    console.log(`  Last message: ${timeSince(diagnostics.crypto.lastMessageTime)}`);
+
+    console.log('\n📊 Summary:');
+    console.log(`  Total subscriptions: ${diagnostics.totalSubscriptions}`);
+    console.log(`  Messages received: ${diagnostics.messagesReceived.toLocaleString()}`);
+    console.log(`  Session uptime: ${formatDuration(diagnostics.connectionUptime)}`);
+    console.log(`  Market state: ${marketState.state}`);
+
+    if (diagnostics.lastError) {
+      console.log(`\n⚠️ Last error: ${diagnostics.lastError}`);
+    }
+
+    console.log('\n📐 EODHD Limit Check:');
+    const activeConns = (diagnostics.stocks.connected ? 1 : 0) + (diagnostics.crypto.connected ? 1 : 0);
+    console.log(`  Active connections: ${activeConns} / 2 possible per user`);
+    console.log(`  Plan limit: 50 concurrent connections across all users`);
+    console.log(`  Estimated headroom: ${50 - 2} connections for other users (assuming 2 per user)`);
+
+    return diagnostics;
   },
 
   /**
