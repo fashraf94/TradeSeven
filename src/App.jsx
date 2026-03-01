@@ -113,7 +113,7 @@ import { StockIntelligenceScreen } from './components/StockIntelligence';
 // Research Landing Page (redesigned)
 import ResearchLandingPage from './components/Research/ResearchLandingPage';
 // Dashboard Components
-import { GameModeToggle, ResearchModeButton, WeeklyChallengesPanel, GameModeCarousels, DashboardTabs, LiveClashesSection, PvpCommandCenter, YourActivity, SeasonalBanner, TrainingLiveFeed, PendingLobbiesSection, WatchlistContainer } from './components/Dashboard';
+import { GameModeToggle, ResearchModeButton, WeeklyChallengesPanel, GameModeCarousels, DashboardTabs, LiveClashesSection, PvpWatchlistSection, YourActivity, SeasonalBanner, TrainingLiveFeed, PendingLobbiesSection } from './components/Dashboard';
 
 // ============================================
 // LAZY LOADING FALLBACK
@@ -20249,20 +20249,15 @@ export default function PortfolioDuel() {
                   colors={colors}
                 />
 
-                {/* PVP Command Center - positions + lobbies */}
-                <PvpCommandCenter
+                {/* Market Watch — Watchlist + Lobbies */}
+                <PvpWatchlistSection
                   user={user}
                   colors={colors}
-                  activeBattles={activeBattles}
-                  activeDraftBattles={activeDraftBattles}
                   stocksData={stocksData}
                   cryptoData={cryptoData}
                   lobbyBattles={lobbyBattles}
-                  setCurrentBattle={setCurrentBattle}
                   setCurrentDraft={setCurrentDraft}
                   setScreen={setScreen}
-                  setActiveBattleId={setActiveBattleId}
-                  setBattleToJoin={setBattleToJoin}
                   setJoinCode={setJoinCode}
                   setJoinBattleType={setJoinBattleType}
                   setDraftState={setDraftState}
@@ -20359,13 +20354,6 @@ export default function PortfolioDuel() {
                   colors={colors}
                 />
 
-                {/* Watchlist - Live price monitoring replacing Battle Feed */}
-                <WatchlistContainer
-                  user={user}
-                  colors={colors}
-                  stocksData={stocksData}
-                  cryptoData={cryptoData}
-                />
               </>
             )}
           </div>
