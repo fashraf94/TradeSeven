@@ -7,8 +7,17 @@
  * - LIGHT (2min): Frequently changing data like prices during market hours
  * - NONE (0): Real-time data that should never be cached
  *
+ * Market-Aware Caching:
+ * When the stock market is closed (evenings, weekends, holidays), stock price
+ * caches are frozen until the next market open — prices don't change off-hours.
+ * Crypto caches are unaffected (crypto trades 24/7).
+ * During the pre-market window (9:20-9:30 AM ET), frozen stock caches are
+ * invalidated so fresh prices are fetched before the opening bell.
+ *
  * Uses a hybrid localStorage + memory cache approach for persistence and speed.
  */
+
+import { getEffectiveTTL, getMarketState, isPreMarketWindow } from '../utils/marketSchedule';
 
 // ============================================
 // CACHE TIER CONFIGURATION
@@ -115,8 +124,12 @@ class CacheService {
 
           const cached = JSON.parse(raw);
 
-          // Check if expired
-          if (cached.expiresAt && cached.expiresAt < now) {
+          // Use dynamic TTL for expiration check (market-aware)
+          const dataType = cached.dataType || storageKey.replace(this.storagePrefix, '').split(':')[0];
+          const age = now - (cached.cachedAt || 0);
+          const effectiveTTL = getEffectiveTTL(dataType);
+
+          if (effectiveTTL > 0 && age > effectiveTTL) {
             localStorage.removeItem(storageKey);
             this.stats.evictions++;
             continue;
@@ -154,12 +167,26 @@ class CacheService {
 
     const key = this._generateKey(dataType, identifier);
     const now = Date.now();
+    const effectiveTTL = getEffectiveTTL(dataType);
 
     // Check memory cache first (fastest)
     if (this.memoryCache.has(key)) {
       const cached = this.memoryCache.get(key);
+      const age = now - (cached.cachedAt || 0);
 
-      if (cached.expiresAt && cached.expiresAt > now) {
+      // Pre-market invalidation: if we're in the pre-market window and this is
+      // a stock price cached during closed hours, force a refresh
+      if (isPreMarketWindow() &&
+          (dataType === 'prices' || dataType === 'quotes') &&
+          cached.marketState && cached.marketState !== 'OPEN') {
+        this.memoryCache.delete(key);
+        this._removeFromStorage(key);
+        this.stats.evictions++;
+        this.stats.misses++;
+        return null;
+      }
+
+      if (age < effectiveTTL) {
         this.stats.hits++;
         return cached.value;
       } else {
@@ -171,17 +198,27 @@ class CacheService {
     }
 
     // Check localStorage (slower but persistent)
-    const storageValue = this._getFromStorage(key);
-    if (storageValue !== null) {
-      // Promote to memory cache
-      this.memoryCache.set(key, {
-        value: storageValue,
-        expiresAt: Date.now() + tier.ttlMs,
-        dataType,
-        identifier
-      });
-      this.stats.hits++;
-      return storageValue;
+    const storageEntry = this._getFromStorageFull(key);
+    if (storageEntry !== null) {
+      const age = now - (storageEntry.cachedAt || 0);
+
+      // Pre-market invalidation for localStorage entries
+      if (isPreMarketWindow() &&
+          (dataType === 'prices' || dataType === 'quotes') &&
+          storageEntry.marketState && storageEntry.marketState !== 'OPEN') {
+        this._removeFromStorage(key);
+        this.stats.misses++;
+        return null;
+      }
+
+      if (age < effectiveTTL) {
+        // Promote to memory cache with original metadata
+        this.memoryCache.set(key, storageEntry);
+        this.stats.hits++;
+        return storageEntry.value;
+      } else {
+        this._removeFromStorage(key);
+      }
     }
 
     this.stats.misses++;
@@ -205,22 +242,28 @@ class CacheService {
 
     const ttlMs = options.customTtlMs || tier.ttlMs;
     const key = this._generateKey(dataType, identifier);
-    const expiresAt = Date.now() + ttlMs;
+    const now = Date.now();
 
     const cacheEntry = {
       value,
-      expiresAt,
+      expiresAt: now + ttlMs, // Static fallback for localStorage init
       dataType,
       identifier,
-      cachedAt: Date.now()
+      cachedAt: now,
+      marketState: getMarketState().state, // Market state when cached
     };
 
     // Store in memory cache
     this._enforceMemoryLimit();
     this.memoryCache.set(key, cacheEntry);
 
-    // Persist to localStorage for data that should survive page refresh
-    if (tier === CACHE_TIERS.AGGRESSIVE || tier === CACHE_TIERS.MODERATE) {
+    // Persist to localStorage for data that should survive page refresh.
+    // Also persist LIGHT-tier stock data when market is closed (frozen caches
+    // should survive page refreshes over weekends/holidays).
+    const marketClosed = cacheEntry.marketState !== 'OPEN' && cacheEntry.marketState !== 'PRE_MARKET';
+    const isStockPrice = dataType === 'prices' || dataType === 'quotes';
+    if (tier === CACHE_TIERS.AGGRESSIVE || tier === CACHE_TIERS.MODERATE ||
+        (marketClosed && isStockPrice)) {
       this._saveToStorage(key, cacheEntry);
     }
 
@@ -295,6 +338,49 @@ class CacheService {
   }
 
   /**
+   * Get market-aware cache statistics.
+   * Reports how many entries are "frozen" (cached during closed market, still valid
+   * under dynamic TTL) and estimates API calls saved.
+   */
+  getMarketAwareStats() {
+    const now = Date.now();
+    let frozenCount = 0;
+    let extendedCount = 0;
+    let estimatedCallsSaved = 0;
+
+    for (const [key, entry] of this.memoryCache) {
+      const dataType = entry.dataType || key.split(':')[0];
+      if (dataType === 'crypto') continue; // Crypto is never frozen
+
+      const age = now - (entry.cachedAt || 0);
+      const tier = DATA_TYPE_TIERS[dataType] || CACHE_TIERS.LIGHT;
+      const staticTTL = tier.ttlMs;
+      const effectiveTTL = getEffectiveTTL(dataType);
+
+      // Entry is "frozen" if it was cached during closed market
+      if (entry.marketState && entry.marketState !== 'OPEN' && entry.marketState !== 'PRE_MARKET') {
+        frozenCount++;
+      }
+
+      // Entry would have expired under old static TTL but is still valid
+      if (age > staticTTL && age < effectiveTTL) {
+        extendedCount++;
+        // Estimate calls saved: how many times this would have been re-fetched
+        if (staticTTL > 0) {
+          estimatedCallsSaved += Math.floor(age / staticTTL) - 1;
+        }
+      }
+    }
+
+    return {
+      frozenCount,
+      extendedCount,
+      estimatedCallsSaved,
+      marketState: getMarketState(),
+    };
+  }
+
+  /**
    * Debug: Print cache report
    */
   report() {
@@ -320,6 +406,15 @@ class CacheService {
   // ============================================
 
   _getFromStorage(key) {
+    const entry = this._getFromStorageFull(key);
+    return entry ? entry.value : null;
+  }
+
+  /**
+   * Get full cache entry from localStorage (including metadata).
+   * Uses dynamic TTL for expiration check.
+   */
+  _getFromStorageFull(key) {
     if (typeof window === 'undefined' || !window.localStorage) {
       return null;
     }
@@ -330,13 +425,17 @@ class CacheService {
 
       const cached = JSON.parse(raw);
 
-      // Check expiration
-      if (cached.expiresAt && cached.expiresAt < Date.now()) {
+      // Use dynamic TTL for expiration check
+      const dataType = cached.dataType || key.split(':')[0];
+      const age = Date.now() - (cached.cachedAt || 0);
+      const effectiveTTL = getEffectiveTTL(dataType);
+
+      if (effectiveTTL > 0 && age > effectiveTTL) {
         localStorage.removeItem(this.storagePrefix + key);
         return null;
       }
 
-      return cached.value;
+      return cached;
     } catch (e) {
       return null;
     }

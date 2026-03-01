@@ -1,8 +1,12 @@
 // WebSocket Manager for EODHD Real-Time Price Streaming
 // Singleton service managing stock + crypto WebSocket connections
 // with reference counting, auto-reconnect, and symbol mapping.
+//
+// Market-aware: Exposes getMarketStatus() for UI indicators showing
+// LIVE / CLOSED / WARMING UP / WEEKEND / HOLIDAY states.
 
 import { isCrypto } from '../utils/stockHelpers';
+import { getMarketState } from '../utils/marketSchedule';
 
 // ==================== SYMBOL MAPPING ====================
 
@@ -92,6 +96,8 @@ class WebSocketManager {
     } else if (this._stockStatus === 'connecting' || this._cryptoStatus === 'connecting') {
       status = 'connecting';
     }
+    // Emit as string for backward compatibility with useWebSocketPrices hook.
+    // For market state info, consumers should call getMarketStatus() directly.
     this._emit('status', status);
   }
 
@@ -414,6 +420,21 @@ class WebSocketManager {
       return { high: data.high, low: data.low, open: data.open };
     }
     return null;
+  }
+
+  // ==================== MARKET STATUS ====================
+
+  /**
+   * Get combined connection + market status for UI indicators.
+   * @returns {{ stockStatus: string, cryptoStatus: string, marketState: string }}
+   */
+  getMarketStatus() {
+    const { state } = getMarketState();
+    return {
+      stockStatus: this._stockStatus,
+      cryptoStatus: this._cryptoStatus,
+      marketState: state,
+    };
   }
 
   // ==================== RECONNECT ====================

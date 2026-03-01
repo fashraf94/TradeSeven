@@ -17,6 +17,7 @@ import { initializeApp, getApps, cert } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 import { getFromCache, setInCache } from './serverCache.js';
 import { calculateAllIndicators } from './technicalCalculations.js';
+import { isMarketOpen, isPreMarketWindow, getEffectiveTTLMs, getMarketState } from './marketSchedule.js';
 
 // ============================================
 // CONSTANTS
@@ -114,11 +115,20 @@ function logCacheAccess(action, key, details = '') {
 /**
  * Read from cache: L1 (memory) first, then L2 (Firestore).
  * Returns { data, source, isStale } — stale data is returned for fallback use.
+ *
+ * Market-aware: When the market is closed, stock data TTLs are extended to next
+ * market open (prices don't change off-hours). Crypto data keeps normal TTLs.
  */
-async function getCachedData(db, docKey, ttlMs) {
+async function getCachedData(db, docKey, ttlMs, options = {}) {
+  const { isCrypto: cryptoFlag = false } = options;
+
+  // Determine market-aware effective TTL
+  const ttlType = docKey.split('_').pop();
+  const effectiveTTL = getEffectiveTTLMs(ttlType, ttlMs, { isCrypto: cryptoFlag });
+
   // L1: Check in-memory cache first
   const memoryKey = `mdc_${docKey}`;
-  const memoryCached = getFromCache(memoryKey);
+  const memoryCached = getFromCache(memoryKey, ttlType);
   if (memoryCached) {
     logCacheAccess('HIT', docKey, '(L1 memory)');
     return { data: memoryCached, source: 'memory', isStale: false };
@@ -136,19 +146,26 @@ async function getCachedData(db, docKey, ttlMs) {
     const cached = doc.data();
     const cachedAt = cached.cachedAt?.toDate ? cached.cachedAt.toDate() : new Date(cached.cachedAt);
     const age = Date.now() - cachedAt.getTime();
-    const isStale = age > ttlMs;
+    const isStale = age > effectiveTTL;
 
     if (isStale) {
-      logCacheAccess('MISS', docKey, `(stale: ${Math.round(age / 1000)}s old, TTL: ${ttlMs / 1000}s)`);
+      logCacheAccess('MISS', docKey, `(stale: ${Math.round(age / 1000)}s old, TTL: ${effectiveTTL / 1000}s)`);
       return { data: cached.data, source: 'firestore_stale', isStale: true };
     }
 
-    logCacheAccess('HIT', docKey, `(L2 Firestore, ${Math.round(age / 1000)}s old)`);
+    // Log when serving frozen cache during closed market
+    if (!cryptoFlag && !isMarketOpen() && age > ttlMs) {
+      logCacheAccess('HIT', docKey, `(L2 Firestore, FROZEN — market closed, ${Math.round(age / 1000)}s old)`);
+    } else {
+      logCacheAccess('HIT', docKey, `(L2 Firestore, ${Math.round(age / 1000)}s old)`);
+    }
 
-    // Promote to L1 cache
-    const ttlType = docKey.split('_').pop();
+    // Promote to L1 cache with market-aware metadata
     const memoryTtl = MEMORY_TTL[ttlType] || 300;
-    setInCache(memoryKey, cached.data, memoryTtl);
+    setInCache(memoryKey, cached.data, memoryTtl, {
+      dataType: ttlType,
+      isCrypto: cryptoFlag,
+    });
 
     return { data: cached.data, source: 'firestore', isStale: false };
   } catch (err) {
@@ -409,7 +426,7 @@ export async function getStockAnalysisData(symbol, options = {}) {
 
     // Check cache unless force refresh
     if (!forceRefresh) {
-      const cached = await getCachedData(db, docKey, ttlMs);
+      const cached = await getCachedData(db, docKey, ttlMs, { isCrypto });
       if (cached.data && !cached.isStale) {
         result[fieldType] = cached.data;
         result.cacheStatus[fieldType] = 'hit';
@@ -466,7 +483,7 @@ export async function getStockAnalysisData(symbol, options = {}) {
 
   // Compute technicals from OHLCV data if requested
   if (requestedFields.includes('technicals')) {
-    await fetchTechnicals(db, clean, result, staleBackup, forceRefresh);
+    await fetchTechnicals(db, clean, result, staleBackup, forceRefresh, isCrypto);
   }
 
   // Get real-time price if requested
@@ -480,13 +497,13 @@ export async function getStockAnalysisData(symbol, options = {}) {
 /**
  * Fetch or compute technicals, with cache and stale-fallback support.
  */
-async function fetchTechnicals(db, clean, result, staleBackup, forceRefresh) {
+async function fetchTechnicals(db, clean, result, staleBackup, forceRefresh, isCrypto = false) {
   const docKey = `${clean}_technicals`;
   const ttlMs = CACHE_TTL.technicals;
 
   // Check cache first
   if (!forceRefresh) {
-    const cached = await getCachedData(db, docKey, ttlMs);
+    const cached = await getCachedData(db, docKey, ttlMs, { isCrypto });
     if (cached.data && !cached.isStale) {
       result.technicals = cached.data;
       result.cacheStatus.technicals = 'hit';
@@ -575,6 +592,12 @@ async function fetchRealTimePrice(eohdSymbol, apiKey, result) {
  */
 export async function prefetchBatch(symbols) {
   if (!Array.isArray(symbols) || symbols.length === 0) return { succeeded: 0, failed: 0, duration: 0 };
+
+  // No point prefetching stock data when market is closed — prices haven't changed
+  if (!isMarketOpen() && !isPreMarketWindow()) {
+    console.log('[MarketDataCache] Skipping prefetch — market closed');
+    return { skipped: true, reason: 'market_closed' };
+  }
 
   console.log(`[MarketDataCache] Prefetching batch of ${symbols.length} symbols`);
   const startTime = Date.now();
