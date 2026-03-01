@@ -27,24 +27,38 @@ const HeatmapView = ({ sectors, global, onSectorTap, onStockTap, compact }) => {
   const [hoveredTile, setHoveredTile] = useState(null);
   const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
 
-  // Measure container width
+  // Count total stock tiles for dynamic height
+  const totalTiles = useMemo(() => {
+    return Object.values(sectors || {}).reduce(
+      (sum, s) => sum + (s.leaders?.length || 0), 0
+    );
+  }, [sectors]);
+
+  // Measure container width, compute height dynamically
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
 
     const measure = () => {
       const rect = el.getBoundingClientRect();
-      setDimensions({
-        width: Math.floor(rect.width),
-        height: compact ? 300 : 400,
-      });
+      const w = Math.floor(rect.width);
+      // Each tile needs ~40x40px minimum area (1600px²) plus ~20px header per sector
+      const sectorCount = Object.values(sectors || {}).filter(s => s.leaders?.length > 0).length;
+      const tileArea = totalTiles * 1600;
+      const headerArea = sectorCount * 20 * w;
+      const rawHeight = (tileArea + headerArea) / Math.max(w, 1);
+      // Clamp between reasonable bounds
+      const minH = compact ? 280 : 350;
+      const maxH = compact ? 500 : 650;
+      const h = Math.round(Math.max(minH, Math.min(maxH, rawHeight)));
+      setDimensions({ width: w, height: h });
     };
 
     measure();
     const observer = new ResizeObserver(measure);
     observer.observe(el);
     return () => observer.disconnect();
-  }, [compact]);
+  }, [compact, totalTiles, sectors]);
 
   // Build hierarchy data from sectors object
   const treeData = useMemo(() => {
@@ -126,7 +140,7 @@ const HeatmapView = ({ sectors, global, onSectorTap, onStockTap, compact }) => {
 
   if (!dimensions.width) {
     return (
-      <div ref={containerRef} style={{ width: '100%', minHeight: compact ? 300 : 400 }} />
+      <div ref={containerRef} style={{ width: '100%', minHeight: compact ? 280 : 350 }} />
     );
   }
 
@@ -134,7 +148,7 @@ const HeatmapView = ({ sectors, global, onSectorTap, onStockTap, compact }) => {
     return (
       <div ref={containerRef} style={{
         width: '100%',
-        height: compact ? 300 : 400,
+        height: compact ? 280 : 350,
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
@@ -311,27 +325,6 @@ const HeatmapView = ({ sectors, global, onSectorTap, onStockTap, compact }) => {
         </div>
       )}
 
-      {/* Legend */}
-      <div style={{
-        position: 'absolute',
-        bottom: '6px',
-        right: '8px',
-        display: 'flex',
-        alignItems: 'center',
-        gap: '4px',
-        background: 'rgba(10, 14, 20, 0.8)',
-        borderRadius: '4px',
-        padding: '3px 6px',
-      }}>
-        <span style={{ color: '#ff5252', fontSize: '9px' }}>-5%</span>
-        <div style={{
-          width: '60px',
-          height: '6px',
-          borderRadius: '3px',
-          background: 'linear-gradient(to right, #ff1744, #ff5252, #1a2332, #4caf50, #00e676)',
-        }} />
-        <span style={{ color: '#00e676', fontSize: '9px' }}>+5%</span>
-      </div>
     </div>
   );
 };
