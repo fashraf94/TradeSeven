@@ -214,8 +214,9 @@ export function getEffectiveTTL(dataType, options = {}) {
   if (isMarketOpen()) return normalTTL;
 
   // Market is closed — decide which types to extend
-  // News publishes off-hours, keep normal TTL
-  if (dataType === 'news') return normalTTL;
+  // These types publish/update off-hours, keep normal TTL
+  const NON_EXTENDABLE = ['news', 'analyst', 'weekAhead', 'metrics', 'ai', 'realtime'];
+  if (NON_EXTENDABLE.includes(dataType)) return normalTTL;
 
   // For price-sensitive stock data, extend TTL to next market open
   const timeUntilOpenSec = Math.ceil(getTimeUntilNextOpen() / 1000);

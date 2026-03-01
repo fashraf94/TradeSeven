@@ -405,11 +405,6 @@ class CacheService {
   // PRIVATE HELPERS
   // ============================================
 
-  _getFromStorage(key) {
-    const entry = this._getFromStorageFull(key);
-    return entry ? entry.value : null;
-  }
-
   /**
    * Get full cache entry from localStorage (including metadata).
    * Uses dynamic TTL for expiration check.

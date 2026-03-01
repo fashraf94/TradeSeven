@@ -12,7 +12,7 @@
  * TODO: Update NYSE_EARLY_CLOSE and holidays for 2027 by December 2026
  */
 
-import { US_MARKET_HOLIDAYS_2026, isMarketHoliday, formatDateString, getNextTradingDay } from './marketHolidays';
+import { isMarketHoliday, formatDateString, getNextTradingDay } from './marketHolidays';
 
 // Normal TTLs by data type (mirroring CACHE_TIERS in cacheService.js — defined here
 // to avoid circular dependency since cacheService imports from this module)
@@ -73,15 +73,6 @@ const POLL_INTERVAL_WEEKEND = 600_000;  // 10min on weekends (crypto only)
  */
 function getETDate() {
   return new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
-}
-
-/**
- * Convert a specific Date to ET.
- * @param {Date} date
- * @returns {Date} Date object representing the given time in ET
- */
-function toET(date) {
-  return new Date(date.toLocaleString('en-US', { timeZone: 'America/New_York' }));
 }
 
 // ============================================
