@@ -113,7 +113,7 @@ import { StockIntelligenceScreen } from './components/StockIntelligence';
 // Research Landing Page (redesigned)
 import ResearchLandingPage from './components/Research/ResearchLandingPage';
 // Dashboard Components
-import { GameModeToggle, ResearchModeButton, WeeklyChallengesPanel, GameModeCarousels, DashboardTabs, LiveClashesSection, LiveFeed, YourActivity, SeasonalBanner, TrainingLiveFeed, PendingLobbiesSection, WatchlistContainer } from './components/Dashboard';
+import { GameModeToggle, ResearchModeButton, WeeklyChallengesPanel, GameModeCarousels, DashboardTabs, LiveClashesSection, PvpCommandCenter, YourActivity, SeasonalBanner, TrainingLiveFeed, PendingLobbiesSection, WatchlistContainer } from './components/Dashboard';
 
 // ============================================
 // LAZY LOADING FALLBACK
@@ -20249,20 +20249,24 @@ export default function PortfolioDuel() {
                   colors={colors}
                 />
 
-                {/* Live Feed - community activity */}
-                <LiveFeed
-                  waitingBattles={waitingBattles}
-                  completedBattles={completedBattles}
-                  stocksData={stocksData}
-                  lobbyBattles={lobbyBattles}
+                {/* PVP Command Center - positions + lobbies */}
+                <PvpCommandCenter
                   user={user}
                   colors={colors}
+                  activeBattles={activeBattles}
+                  activeDraftBattles={activeDraftBattles}
+                  stocksData={stocksData}
+                  cryptoData={cryptoData}
+                  lobbyBattles={lobbyBattles}
                   setCurrentBattle={setCurrentBattle}
+                  setCurrentDraft={setCurrentDraft}
                   setScreen={setScreen}
-                  copyToClipboard={copyToClipboard}
+                  setActiveBattleId={setActiveBattleId}
+                  setBattleToJoin={setBattleToJoin}
                   setJoinCode={setJoinCode}
                   setJoinBattleType={setJoinBattleType}
-                  setCurrentDraft={setCurrentDraft}
+                  setDraftState={setDraftState}
+                  copyToClipboard={copyToClipboard}
                   onJoinLobby={async (lobby) => {
                     // Handle BaggerBomb V3/V4 lobbies
                     if (lobby._v === 3 || lobby._v === 4) {
@@ -20361,9 +20365,6 @@ export default function PortfolioDuel() {
                   colors={colors}
                   stocksData={stocksData}
                   cryptoData={cryptoData}
-                  activeBattles={activeBattles}
-                  activeTrainingBattles={activeTrainingBattles}
-                  activeDraftBattles={activeDraftBattles}
                 />
               </>
             )}

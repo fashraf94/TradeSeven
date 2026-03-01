@@ -14,7 +14,6 @@ export default function WatchlistSelector({
   categories,
   activeListId,
   onSelectList,
-  pickCount = 0,
   customCount = 0,
 }) {
   const scrollRef = useRef(null);
@@ -50,7 +49,6 @@ export default function WatchlistSelector({
   });
 
   function getCountBadge(cat) {
-    if (cat.id === 'my-picks' && pickCount > 0) return ` (${pickCount})`;
     if (cat.id === 'custom' && customCount > 0) return ` (${customCount})`;
     return '';
   }

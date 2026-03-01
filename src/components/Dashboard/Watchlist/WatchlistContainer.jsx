@@ -9,7 +9,7 @@ import {
   findStock,
   findCrypto,
 } from '../../../data/assets';
-import { aggregateActivePicks } from '../../../utils/activePicksAggregator';
+
 import { getCustomWatchlist, addToWatchlist, removeFromWatchlist } from '../../../services/watchlistService';
 import { HoloCard } from '../../shared';
 import AssetResearchModal from '../../draft/AssetResearchModal';
@@ -23,14 +23,7 @@ import AddToWatchlistModal from './AddToWatchlistModal';
 // ============================================
 
 const WATCHLIST_CATEGORIES = [
-  // === MY LISTS (personal/game-derived) ===
-  {
-    id: 'my-picks',
-    label: 'My Picks',
-    icon: '\u2694\uFE0F',
-    category: 'my',
-    description: 'All stocks across your active games',
-  },
+  // === MY LISTS (personal) ===
   {
     id: 'custom',
     label: 'My Watchlist',
@@ -79,9 +72,6 @@ export default function WatchlistContainer({
   colors,
   stocksData = [],
   cryptoData = [],
-  activeBattles = [],
-  activeTrainingBattles = [],
-  activeDraftBattles = [],
 }) {
   // --- State ---
   const [activeListId, setActiveListId] = useState(null); // set in useEffect after computing defaults
@@ -112,19 +102,6 @@ export default function WatchlistContainer({
     return map;
   }, [cryptoData]);
 
-  // --- My Picks aggregation ---
-  const myPicks = useMemo(() => {
-    if (!user) return [];
-    const uid = user.odUserId || user.uid;
-    if (!uid) return [];
-    return aggregateActivePicks({
-      uid,
-      activeBattles,
-      activeTrainingBattles,
-      activeDraftBattles,
-    });
-  }, [user, activeBattles, activeTrainingBattles, activeDraftBattles]);
-
   // --- Load custom watchlist from Firebase ---
   useEffect(() => {
     if (!user) return;
@@ -136,9 +113,8 @@ export default function WatchlistContainer({
   // --- Default list selection ---
   useEffect(() => {
     if (activeListId !== null) return;
-    const hasActivePicks = myPicks.length > 0;
-    setActiveListId(hasActivePicks ? 'my-picks' : 'sector-technology');
-  }, [myPicks, activeListId]);
+    setActiveListId(customWatchlist.length > 0 ? 'custom' : 'sector-technology');
+  }, [customWatchlist, activeListId]);
 
   // --- Derive symbols for active list ---
   const symbols = useMemo(() => {
@@ -148,9 +124,6 @@ export default function WatchlistContainer({
     if (!list) return [];
 
     switch (list.id) {
-      case 'my-picks':
-        return myPicks.map(p => p.symbol);
-
       case 'custom':
         return customWatchlist;
 
@@ -176,7 +149,7 @@ export default function WatchlistContainer({
         }
         return [];
     }
-  }, [activeListId, myPicks, customWatchlist, stocksData, cryptoData]);
+  }, [activeListId, customWatchlist, stocksData, cryptoData]);
 
   // --- WebSocket subscription (only subscribe to visible list symbols) ---
   // For top-movers, skip WS (too many symbols) — use REST only
@@ -213,11 +186,9 @@ export default function WatchlistContainer({
   const rows = useMemo(() => {
     const rowArray = symbols.map(sym => {
       const price = effectivePrices[sym] || { symbol: sym, price: null, change: 0, changePercent: 0, isLive: false, name: sym };
-      // Attach source data for my-picks
-      const pickData = activeListId === 'my-picks' ? myPicks.find(p => p.symbol === sym) : null;
       return {
         ...price,
-        sources: pickData?.sources || [],
+        sources: [],
       };
     });
 
@@ -246,7 +217,7 @@ export default function WatchlistContainer({
     });
 
     return rowArray;
-  }, [symbols, effectivePrices, sortColumn, sortDirection, activeListId, myPicks]);
+  }, [symbols, effectivePrices, sortColumn, sortDirection, activeListId]);
 
   // --- Sort handler ---
   const handleSort = useCallback((column) => {
@@ -352,7 +323,6 @@ export default function WatchlistContainer({
           categories={WATCHLIST_CATEGORIES}
           activeListId={activeListId}
           onSelectList={setActiveListId}
-          pickCount={myPicks.length}
           customCount={customWatchlist.length}
         />
       </div>
