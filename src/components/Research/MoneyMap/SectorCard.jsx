@@ -111,7 +111,7 @@ const TappableLabel = ({ metricKey, onTooltip, children, style }) => (
   </span>
 );
 
-const SectorCard = React.memo(({ sector, isExpanded, onToggle, onTooltip }) => {
+const SectorCard = React.memo(({ sector, isExpanded, onToggle, onTooltip, insight, onStockTap }) => {
   const perf = sector.performance || {};
   const techs = sector.etfTechnicals || {};
   const bb = sector.baggerBombStats || {};
@@ -350,6 +350,7 @@ const SectorCard = React.memo(({ sector, isExpanded, onToggle, onTooltip }) => {
                       leaders={sector.leaders || []}
                       hasGildedCage={sector.gildedCage?.detected}
                       isExpanded={false}
+                      onStockTap={onStockTap}
                     />
                   </div>
                 </div>
@@ -461,12 +462,13 @@ const SectorCard = React.memo(({ sector, isExpanded, onToggle, onTooltip }) => {
                     leaders={sector.leaders}
                     hasGildedCage={sector.gildedCage?.detected}
                     isExpanded={true}
+                    onStockTap={onStockTap}
                   />
                 </div>
               )}
 
-              {/* SECTION 6: AI Insight */}
-              {sector.insight && (
+              {/* SECTION 6: AI Insight (Sonar narrative or template fallback) */}
+              {(insight?.narrative || sector.insight) && (
                 <div style={{
                   padding: '12px',
                   background: `${sector.sectorColor || '#8b949e'}10`,
@@ -479,16 +481,72 @@ const SectorCard = React.memo(({ sector, isExpanded, onToggle, onTooltip }) => {
                     alignItems: 'flex-start',
                     gap: '8px',
                   }}>
-                    <span style={{ fontSize: '14px' }}>{'\uD83D\uDCA1'}</span>
-                    <p style={{
-                      margin: 0,
-                      color: '#e6edf3',
-                      fontSize: '12px',
-                      lineHeight: '1.5',
-                      fontStyle: 'italic',
-                    }}>
-                      {sector.insight}
-                    </p>
+                    <span style={{ fontSize: '14px' }}>{insight?.narrative ? '\uD83D\uDD0D' : '\uD83D\uDCA1'}</span>
+                    <div style={{ flex: 1 }}>
+                      <p style={{
+                        margin: 0,
+                        color: '#e6edf3',
+                        fontSize: '12px',
+                        lineHeight: '1.5',
+                        fontStyle: insight?.narrative ? 'normal' : 'italic',
+                      }}>
+                        {insight?.narrative || sector.insight}
+                      </p>
+                      {/* Sonar driver badges */}
+                      {insight?.drivers?.length > 0 && (
+                        <div style={{
+                          display: 'flex',
+                          flexWrap: 'wrap',
+                          gap: '4px',
+                          marginTop: '8px',
+                        }}>
+                          {insight.drivers.map((driver, i) => (
+                            <span key={i} style={{
+                              padding: '2px 8px',
+                              borderRadius: '10px',
+                              fontSize: '10px',
+                              fontWeight: '600',
+                              background: 'rgba(0,217,255,0.1)',
+                              color: '#00d9ff',
+                              border: '1px solid rgba(0,217,255,0.2)',
+                            }}>
+                              {driver}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                      {/* Citation links */}
+                      {insight?.citations?.length > 0 && (
+                        <div style={{
+                          display: 'flex',
+                          gap: '8px',
+                          marginTop: '6px',
+                          flexWrap: 'wrap',
+                        }}>
+                          {insight.citations.slice(0, 3).map((url, i) => {
+                            let hostname;
+                            try { hostname = new URL(url).hostname.replace('www.', ''); } catch { hostname = 'source'; }
+                            return (
+                              <a
+                                key={i}
+                                href={url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                onClick={(e) => e.stopPropagation()}
+                                style={{
+                                  fontSize: '10px',
+                                  color: '#8b949e',
+                                  textDecoration: 'none',
+                                  borderBottom: '1px dashed #484f58',
+                                }}
+                              >
+                                {hostname}
+                              </a>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
               )}
