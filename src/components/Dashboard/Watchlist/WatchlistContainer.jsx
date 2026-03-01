@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback, useEffect } from 'react';
+import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { useWebSocketPrices } from '../../../hooks/useWebSocketPrices';
 import { getMarketState } from '../../../utils/marketSchedule';
 import {
@@ -97,12 +97,13 @@ export default function WatchlistContainer({
     return map;
   }, [cryptoData]);
 
-  // --- Load custom watchlist from Firebase ---
+  // --- Load custom watchlist from Firebase (once on mount) ---
+  const initialLoadDone = useRef(false);
   useEffect(() => {
+    if (initialLoadDone.current) return;
     if (!user) return;
-    const uid = user.odUserId || user.uid;
-    if (!uid) return;
-    getCustomWatchlist(uid).then(setCustomWatchlist).catch(() => {});
+    initialLoadDone.current = true;
+    getCustomWatchlist().then(setCustomWatchlist).catch(() => {});
   }, [user]);
 
   // --- Default list selection ---
@@ -243,31 +244,25 @@ export default function WatchlistContainer({
     // Optimistic update
     setCustomWatchlist(prev => [...prev, symbol]);
 
-    const uid = user?.odUserId || user?.uid;
-    if (uid) {
-      try {
-        await addToWatchlist(uid, symbol);
-      } catch {
-        // Revert on failure
-        setCustomWatchlist(prev => prev.filter(s => s !== symbol));
-      }
+    try {
+      await addToWatchlist(symbol);
+    } catch {
+      // Revert on failure
+      setCustomWatchlist(prev => prev.filter(s => s !== symbol));
     }
-  }, [customWatchlist, user]);
+  }, [customWatchlist]);
 
   const handleRemoveFromWatchlist = useCallback(async (symbol) => {
     // Optimistic update
     setCustomWatchlist(prev => prev.filter(s => s !== symbol));
 
-    const uid = user?.odUserId || user?.uid;
-    if (uid) {
-      try {
-        await removeFromWatchlist(uid, symbol);
-      } catch {
-        // Revert on failure
-        setCustomWatchlist(prev => [...prev, symbol]);
-      }
+    try {
+      await removeFromWatchlist(symbol);
+    } catch {
+      // Revert on failure
+      setCustomWatchlist(prev => [...prev, symbol]);
     }
-  }, [user]);
+  }, []);
 
   if (!activeListId) return null;
 
