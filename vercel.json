@@ -58,18 +58,6 @@
       "schedule": "* * * * *"
     },
     {
-      "path": "/api/economic-calendar-refresh?mode=weekly",
-      "schedule": "0 4 * * 1"
-    },
-    {
-      "path": "/api/economic-calendar-refresh?mode=update",
-      "schedule": "0 15 * * 3"
-    },
-    {
-      "path": "/api/economic-calendar-refresh?mode=update",
-      "schedule": "0 15 * * 5"
-    },
-    {
       "path": "/api/cron/baggerbomb-v4-daily-scores",
       "schedule": "15 1 * * 2-6"
     },

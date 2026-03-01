@@ -216,6 +216,8 @@ const AnalysisCard = ({ analysis, meta }) => {
             const displayValue = isObj ? (val.value ?? val.signal ?? JSON.stringify(val)) : String(val ?? '—');
             const context = isObj ? (val.context || val.explanation) : null;
             const accentColor = analysis.intelligenceMode === 'deep' ? '#8b5cf6'
+              : analysis.intelligenceMode === 'sonar-enhanced' ? '#f59e0b'
+              : analysis.intelligenceMode === 'basic' ? '#6b7280'
               : analysis.intelligenceMode === 'quick' ? '#22d3ee'
               : '#22d3ee';
 
@@ -896,10 +898,16 @@ const StockIntelligenceScreen = ({ onBack, stocksData, cryptoData, colors, user 
                       fontWeight: 600,
                       textTransform: 'uppercase',
                       letterSpacing: '0.08em',
-                      color: msg.intelligenceMode === 'quick' ? '#67e8f9' : '#a78bfa',
+                      color: msg.intelligenceMode === 'quick' ? '#67e8f9'
+                        : msg.intelligenceMode === 'sonar-enhanced' ? '#f59e0b'
+                        : msg.intelligenceMode === 'basic' ? '#9ca3af'
+                        : '#a78bfa',
                       marginBottom: '8px',
                     }}>
-                      {msg.intelligenceMode === 'quick' ? '\u26A1 QUICK INSIGHT' : '\uD83D\uDD2C DEEP ANALYSIS'}
+                      {msg.intelligenceMode === 'quick' ? '\u26A1 QUICK INSIGHT'
+                        : msg.intelligenceMode === 'sonar-enhanced' ? '\uD83C\uDF10 SONAR ENHANCED'
+                        : msg.intelligenceMode === 'basic' ? '\uD83D\uDCCA BASIC ANALYSIS'
+                        : '\uD83D\uDD2C DEEP ANALYSIS'}
                     </div>
                   )}
                   <AnalysisCard analysis={msg.analysis} meta={msg.meta} />

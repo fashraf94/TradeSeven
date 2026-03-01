@@ -24,7 +24,7 @@ const stockRiskProfile = {
   // Medium Risk (+1) - Growth stocks with some volatility
   medium: [
     'NVDA', 'META', 'GOOGL', 'AMZN', 'NFLX', 'AVGO', 'CRM', 'ADBE',
-    'NOW', 'PANW', 'ZS', 'FTNT', 'SHOP', 'SQ', 'PYPL', 'UBER',
+    'NOW', 'PANW', 'ZS', 'FTNT', 'SHOP', 'XYZ', 'PYPL', 'UBER',
     'ABNB', 'DASH', 'RBLX', 'SNAP', 'PINS', 'TTD', 'ROKU'
   ],
 

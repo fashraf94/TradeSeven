@@ -54,7 +54,7 @@ export const RISKY_STOCKS = [
   { symbol: 'CRM', name: 'Salesforce', sector: 'Technology' },
   { symbol: 'NFLX', name: 'Netflix', sector: 'Entertainment' },
   { symbol: 'SHOP', name: 'Shopify', sector: 'Technology' },
-  { symbol: 'SQ', name: 'Block (Square)', sector: 'Fintech' },
+  { symbol: 'XYZ', name: 'Block', sector: 'Fintech' },
   { symbol: 'SNOW', name: 'Snowflake', sector: 'Technology' },
   { symbol: 'PLTR', name: 'Palantir', sector: 'Technology' },
 

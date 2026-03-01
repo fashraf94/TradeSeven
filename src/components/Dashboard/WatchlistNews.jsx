@@ -26,7 +26,7 @@ const SEARCHABLE_STOCKS = [
   { symbol: 'NOW', name: 'ServiceNow Inc.', sector: 'Tech' },
   { symbol: 'UBER', name: 'Uber Technologies', sector: 'Tech' },
   { symbol: 'SNAP', name: 'Snap Inc.', sector: 'Tech' },
-  { symbol: 'SQ', name: 'Block Inc.', sector: 'Tech' },
+  { symbol: 'XYZ', name: 'Block Inc.', sector: 'Tech' },
   { symbol: 'SHOP', name: 'Shopify Inc.', sector: 'Tech' },
   { symbol: 'PLTR', name: 'Palantir Technologies', sector: 'Tech' },
   // Finance

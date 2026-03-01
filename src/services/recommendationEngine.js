@@ -5,7 +5,7 @@
 // STOCK SECTOR MAPPINGS
 // ============================================
 const STOCK_SECTORS = {
-  Technology: ['AAPL', 'MSFT', 'GOOGL', 'GOOG', 'META', 'NVDA', 'AMD', 'INTC', 'CRM', 'ADBE', 'ORCL', 'IBM', 'NOW', 'SNOW', 'PLTR', 'UBER', 'LYFT', 'SHOP', 'SQ', 'TWLO', 'NET', 'DDOG', 'ZS', 'CRWD', 'MDB', 'TEAM', 'DOCU', 'OKTA', 'ZM', 'WDAY'],
+  Technology: ['AAPL', 'MSFT', 'GOOGL', 'GOOG', 'META', 'NVDA', 'AMD', 'INTC', 'CRM', 'ADBE', 'ORCL', 'IBM', 'NOW', 'SNOW', 'PLTR', 'UBER', 'LYFT', 'SHOP', 'XYZ', 'TWLO', 'NET', 'DDOG', 'ZS', 'CRWD', 'MDB', 'TEAM', 'DOCU', 'OKTA', 'ZM', 'WDAY'],
   Financials: ['JPM', 'BAC', 'WFC', 'GS', 'MS', 'C', 'BLK', 'SCHW', 'AXP', 'V', 'MA', 'PYPL', 'COIN', 'USB', 'PNC', 'TFC', 'COF', 'DFS', 'AIG', 'MET', 'PRU', 'ALL', 'TRV', 'CB', 'MMC', 'AON', 'ICE', 'CME', 'SPGI', 'MCO'],
   Healthcare: ['JNJ', 'UNH', 'PFE', 'ABBV', 'MRK', 'LLY', 'TMO', 'ABT', 'BMY', 'AMGN', 'GILD', 'CVS', 'CI', 'HUM', 'ISRG', 'MDT', 'DHR', 'SYK', 'BDX', 'ZBH', 'EW', 'BSX', 'REGN', 'VRTX', 'BIIB', 'MRNA', 'ILMN', 'DXCM', 'ALGN', 'IDXX'],
   Consumer: ['AMZN', 'TSLA', 'HD', 'NKE', 'MCD', 'SBUX', 'TGT', 'COST', 'WMT', 'LOW', 'TJX', 'ROST', 'DG', 'DLTR', 'LULU', 'GPS', 'ANF', 'BBWI', 'ULTA', 'EL', 'PG', 'KO', 'PEP', 'CL', 'KMB', 'GIS', 'K', 'CPB', 'SJM', 'HRL'],

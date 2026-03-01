@@ -19,7 +19,7 @@ const PRIORITY_STOCKS = [
   'BA', 'CAT', 'HON', 'GE', 'MMM', 'UPS', 'FDX', 'LMT', 'RTX', 'DE',
   'UAL', 'DAL', 'AAL', 'LUV',
   'F', 'GM', 'RIVN', 'LCID',
-  'SQ', 'SHOP', 'COIN', 'HOOD', 'SOFI', 'AFRM', 'UPST',
+  'XYZ', 'SHOP', 'COIN', 'HOOD', 'SOFI', 'AFRM', 'UPST',
   'SNOW', 'PLTR', 'DDOG', 'NET', 'ZS', 'CRWD', 'PANW', 'OKTA', 'MDB', 'TEAM',
   'UBER', 'LYFT', 'ABNB', 'DASH', 'RBLX', 'U', 'SNAP', 'PINS', 'TWLO', 'ZM',
   'NOW', 'WDAY', 'VEEV', 'SPLK', 'FTNT', 'ANSS', 'CDNS', 'SNPS', 'KLAC', 'LRCX',
@@ -46,7 +46,7 @@ const COMPANY_NAMES = {
   'ABNB': 'Airbnb', 'COIN': 'Coinbase', 'SNOW': 'Snowflake', 'PLTR': 'Palantir',
   'HD': 'Home Depot', 'LOW': "Lowe's", 'COST': 'Costco', 'TGT': 'Target',
   'MCD': "McDonald's", 'SBUX': 'Starbucks', 'NKE': 'Nike', 'LLY': 'Eli Lilly',
-  'V': 'Visa', 'MA': 'Mastercard', 'PYPL': 'PayPal', 'SQ': 'Block (Square)'
+  'V': 'Visa', 'MA': 'Mastercard', 'PYPL': 'PayPal', 'XYZ': 'Block'
 };
 
 // Sector assignments for odds calculation

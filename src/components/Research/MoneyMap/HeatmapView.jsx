@@ -81,7 +81,7 @@ const HeatmapView = ({ sectors, global, onSectorTap, onStockTap, compact }) => {
             sectorId: sector.sectorId,
             sectorName: sector.name,
             value: 1,
-            change: sector.performance?.week1 || 0,
+            change: leader.relativePerformance ?? sector.performance?.week1 ?? 0,
           }));
 
           // Pad with invisible placeholders so every sector has TILES_PER_SECTOR children

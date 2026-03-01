@@ -25,3 +25,6 @@ export { useChallenges } from './useChallenges';
 
 // Responsive hooks
 export { useIsMobile } from './useIsMobile';
+
+// Research Intelligence
+export { useResearchIntelligence } from './useResearchIntelligence';

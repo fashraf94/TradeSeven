@@ -294,7 +294,7 @@ const STOCK_SECTORS = {
   'JPM': 'Financials', 'BAC': 'Financials', 'GS': 'Financials', 'MS': 'Financials',
   'V': 'Financials', 'MA': 'Financials', 'AXP': 'Financials', 'WFC': 'Financials',
   'C': 'Financials', 'SCHW': 'Financials', 'BLK': 'Financials', 'SPGI': 'Financials',
-  'SQ': 'Financials', 'PYPL': 'Financials', 'COF': 'Financials', 'USB': 'Financials',
+  'XYZ': 'Financials', 'PYPL': 'Financials', 'COF': 'Financials', 'USB': 'Financials',
   'PNC': 'Financials', 'TFC': 'Financials', 'BK': 'Financials', 'STT': 'Financials',
   'COIN': 'Financials', 'HOOD': 'Financials', 'SOFI': 'Financials',
   // Healthcare
@@ -652,7 +652,7 @@ const DIVERSIFICATION_POOLS = {
     { symbol: 'ADBE', name: 'Adobe', sector: 'Technology', risk: 'medium' },
     { symbol: 'NOW', name: 'ServiceNow', sector: 'Technology', risk: 'medium' },
     { symbol: 'SHOP', name: 'Shopify', sector: 'Technology', risk: 'high' },
-    { symbol: 'SQ', name: 'Block', sector: 'Financials', risk: 'high' },
+    { symbol: 'XYZ', name: 'Block', sector: 'Financials', risk: 'high' },
     { symbol: 'UBER', name: 'Uber', sector: 'Technology', risk: 'medium' },
     { symbol: 'ABNB', name: 'Airbnb', sector: 'Consumer Discretionary', risk: 'medium' }
   ],
@@ -684,7 +684,7 @@ const COMPANY_NAMES = {
   'XOM': 'Exxon Mobil', 'CVX': 'Chevron', 'COP': 'ConocoPhillips',
   'WMT': 'Walmart', 'PG': 'Procter & Gamble', 'KO': 'Coca-Cola', 'PEP': 'PepsiCo',
   'HD': 'Home Depot', 'MCD': "McDonald's", 'DIS': 'Disney', 'VZ': 'Verizon',
-  'NOW': 'ServiceNow', 'SHOP': 'Shopify', 'SQ': 'Block', 'UBER': 'Uber', 'ABNB': 'Airbnb',
+  'NOW': 'ServiceNow', 'SHOP': 'Shopify', 'XYZ': 'Block', 'UBER': 'Uber', 'ABNB': 'Airbnb',
   'BTC': 'Bitcoin', 'ETH': 'Ethereum', 'SOL': 'Solana', 'XRP': 'Ripple'
 };
 
@@ -700,7 +700,7 @@ const shuffleArray = (array) => {
 
 // Calculate user risk score based on stock selections
 const calculateUserRiskScore = (stocks) => {
-  const highRiskStocks = ['TSLA', 'AMD', 'PLTR', 'COIN', 'HOOD', 'MSTR', 'RIVN', 'SMCI', 'SOFI', 'SHOP', 'SQ'];
+  const highRiskStocks = ['TSLA', 'AMD', 'PLTR', 'COIN', 'HOOD', 'MSTR', 'RIVN', 'SMCI', 'SOFI', 'SHOP', 'XYZ'];
   const mediumRiskStocks = ['NVDA', 'META', 'GOOGL', 'AMZN', 'NFLX', 'AVGO', 'CRM', 'UBER', 'ABNB'];
 
   let score = 0;
@@ -5131,7 +5131,7 @@ const SEARCHABLE_STOCKS = [
   { symbol: 'NOW', name: 'ServiceNow Inc.', sector: 'Tech' },
   { symbol: 'UBER', name: 'Uber Technologies', sector: 'Tech' },
   { symbol: 'SNAP', name: 'Snap Inc.', sector: 'Tech' },
-  { symbol: 'SQ', name: 'Block Inc.', sector: 'Tech' },
+  { symbol: 'XYZ', name: 'Block Inc.', sector: 'Tech' },
   { symbol: 'SHOP', name: 'Shopify Inc.', sector: 'Tech' },
   { symbol: 'PLTR', name: 'Palantir Technologies', sector: 'Tech' },
   // Finance
@@ -14718,7 +14718,7 @@ export default function PortfolioDuel() {
   const generateCPUPortfolio = (type, stocksDataArr, cryptoDataArr) => {
     // Stock categories for CPU selection
     const LEADERSHIP = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'NVDA', 'META', 'BRK.B', 'JPM', 'V', 'MA', 'UNH', 'JNJ', 'WMT', 'PG', 'HD', 'XOM'];
-    const MOMENTUM = ['TSLA', 'AMD', 'CRM', 'NFLX', 'ADBE', 'PYPL', 'SQ', 'SHOP', 'UBER', 'ABNB', 'DKNG', 'ROKU', 'ZM', 'SNOW', 'PLTR', 'COIN'];
+    const MOMENTUM = ['TSLA', 'AMD', 'CRM', 'NFLX', 'ADBE', 'PYPL', 'XYZ', 'SHOP', 'UBER', 'ABNB', 'DKNG', 'ROKU', 'ZM', 'SNOW', 'PLTR', 'COIN'];
     const STABLE = ['KO', 'PEP', 'MCD', 'COST', 'VZ', 'T', 'PFE', 'MRK', 'ABBV', 'LLY', 'NEE', 'DUK', 'SO', 'D', 'CVX', 'COP'];
     const SHORT_OPTIONS = ['TSLA', 'RIVN', 'LCID', 'SNAP', 'HOOD', 'GME', 'AMC', 'PLTR', 'SMCI', 'SPY', 'QQQ'];
     const CRYPTO_OPTIONS = ['BTC', 'ETH', 'SOL', 'XRP', 'ADA', 'DOGE'];

@@ -97,6 +97,7 @@ function enrichSectors(engineSectors, rawSectors) {
         above50: l.above50 !== undefined ? l.above50 : true,
         isBellwether: !!BELLWETHER_MAP[l.symbol]?.isBellwether,
         outperforming: l.outperforming !== undefined ? l.outperforming : true,
+        relativePerformance: l.relativePerformance,
       })),
       insight: raw?.insight || '',
       sectorColor: sectorDef?.color || '#8b949e',

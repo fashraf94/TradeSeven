@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { HOLO_COLORS } from '../../constants/holoTheme';
-import { SECTORS } from '../../constants/sectors';
 import { getTopMoversWithNews, getMarketNews } from '../../services/eodhdAPI';
 
 import { useAssetResearch } from '../../hooks/useAssetResearch';
+import { useResearchIntelligence } from '../../hooks/useResearchIntelligence';
+import { IntelligenceProvider, useIntelligence } from '../../contexts/IntelligenceContext';
 import AssetResearchModal from '../draft/AssetResearchModal';
 import WhyMovingPopup from './WhyMovingPopup';
 import MarketPulseCard from './MarketPulseCard';
@@ -56,7 +57,6 @@ const SENTIMENT_MAP = {
   neutral:  { color: C.textSecondary, label: 'NEUTRAL' },
 };
 
-const DEFAULT_WATCHLIST = ['AAPL', 'NVDA', 'TSLA', 'GOOGL', 'MSFT', 'AMZN'];
 const TRENDING_TICKERS = ['NVDA', 'TSLA', 'AAPL', 'META', 'AMZN', 'GOOGL', 'MSFT', 'AMD', 'NFLX', 'JPM', 'V', 'BRK.B'];
 
 // ─── Mobile Config Constants ─────────────────────────────────
@@ -66,9 +66,6 @@ const TAG_CONFIG = {
   breakout: { color: C.green, label: 'BREAKOUT', icon: '\uD83D\uDE80' },
   earnings_play: { color: C.purple, label: 'EARNINGS', icon: '\uD83D\uDCCA' },
 };
-
-const INTEL_CACHE_KEY = 'research_intel_cache_v2';
-const INTEL_CACHE_DURATION = 15 * 60 * 1000; // 15 minutes
 
 // ─── Keyframe Styles (injected once) ────────────────────────
 const KEYFRAMES = `
@@ -2425,49 +2422,28 @@ const DiscoverTab = ({ scout, expandedSymbol, onToggleCard, threadCache, threadL
 
 // ─── MobileIntelligenceHub ───────────────────────────────────
 const MobileIntelligenceHub = ({
-  intelData,
-  intelLoading,
-  intelCacheTime,
-  onRefresh,
   onBuildThesis,
   onStockIntelligence,
   onOpenMoneyMap,
   onAnalyzeStock,
   allAssets,
   handleOpenResearch,
-  fetchThread,
-  threadCache,
-  watchlistStocks,
-  fetchTracker,
-  trackerCache,
-  weeklyReportData,
-  weeklyReportLoading,
-  onFetchWeeklyReport,
-  buildMarketContextString,
-  expandedTracker,
-  trackerLoading,
-  handleToggleTracker,
-  showWeeklyReport,
-  setShowWeeklyReport,
-  onRemoveStock,
-  onAddStock,
-  onWhyMoving,
-  marketPulse,
-  marketPulseLoading,
-  marketPulseError,
-  onRetryMarketPulse,
-  upcomingEconomic,
-  upcomingEarnings,
-  upcomingEconomicLoading,
-  upcomingEarningsLoading,
-  upcomingEconomicError,
-  upcomingEarningsError,
-  onRetryEconomic,
-  onRetryEarnings,
-  readAcrossAlerts,
-  onDismissAlert,
-  onAlertTickerTap,
 }) => {
+  const {
+    intelData, intelLoading, intelCacheTime, fetchIntelligence,
+    threadCache, fetchThread,
+    trackerCache, fetchTracker, expandedTracker, trackerLoading, handleToggleTracker,
+    marketPulse, marketPulseLoading, marketPulseError, fetchMarketPulse,
+    upcomingEconomic, upcomingEarnings,
+    upcomingEconomicLoading, upcomingEarningsLoading,
+    upcomingEconomicError, upcomingEarningsError,
+    fetchUpcomingEconomic, fetchUpcomingEarnings,
+    visibleAlerts, handleDismissAlert,
+    weeklyReportData, weeklyReportLoading, showWeeklyReport, setShowWeeklyReport, fetchWeeklyReport,
+    watchlistStocks, handleAddToWatchlist, handleRemoveFromWatchlist,
+    setWhyMovingTarget,
+    buildMarketContextString,
+  } = useIntelligence();
   const [activeTab, setActiveTab] = useState('briefing');
   const [expandedSymbol, setExpandedSymbol] = useState(null);
   const [threadLoading, setThreadLoading] = useState(null);
@@ -2574,7 +2550,7 @@ const MobileIntelligenceHub = ({
             </span>
           )}
           <button
-            onClick={onRefresh}
+            onClick={() => fetchIntelligence(true)}
             disabled={intelLoading}
             style={{
               background: 'none',
@@ -2596,12 +2572,12 @@ const MobileIntelligenceHub = ({
       </div>
 
       {/* Read-Across Alerts (above scrollable content) */}
-      {readAcrossAlerts?.length > 0 && (
+      {visibleAlerts?.length > 0 && (
         <div style={{ padding: '8px 16px 0' }}>
           <ReadAcrossAlert
-            alerts={readAcrossAlerts}
-            onDismiss={onDismissAlert}
-            onTickerTap={onAlertTickerTap}
+            alerts={visibleAlerts}
+            onDismiss={handleDismissAlert}
+            onTickerTap={(symbol) => handleOpenResearch({ symbol, type: 'stock' })}
           />
         </div>
       )}
@@ -2622,16 +2598,16 @@ const MobileIntelligenceHub = ({
             onToggleTracker={handleToggleTracker}
             trackerCache={trackerCache}
             trackerLoading={trackerLoading}
-            onShowWeeklyReport={() => { onFetchWeeklyReport(); setShowWeeklyReport(true); }}
+            onShowWeeklyReport={() => { fetchWeeklyReport(); setShowWeeklyReport(true); }}
             buildMarketContextString={buildMarketContextString}
-            onRemoveStock={onRemoveStock}
-            onAddStock={onAddStock}
+            onRemoveStock={handleRemoveFromWatchlist}
+            onAddStock={handleAddToWatchlist}
             allAssets={allAssets}
-            onWhyMoving={onWhyMoving}
+            onWhyMoving={(target) => setWhyMovingTarget(target)}
             marketPulse={marketPulse}
             marketPulseLoading={marketPulseLoading}
             marketPulseError={marketPulseError}
-            onRetryMarketPulse={onRetryMarketPulse}
+            onRetryMarketPulse={fetchMarketPulse}
             onStockTap={(symbol) => {
               const asset = allAssets.find(a => a.symbol?.toUpperCase() === symbol.toUpperCase());
               if (asset) handleOpenResearch(asset);
@@ -2642,8 +2618,8 @@ const MobileIntelligenceHub = ({
             upcomingEarningsLoading={upcomingEarningsLoading}
             upcomingEconomicError={upcomingEconomicError}
             upcomingEarningsError={upcomingEarningsError}
-            onRetryEconomic={onRetryEconomic}
-            onRetryEarnings={onRetryEarnings}
+            onRetryEconomic={fetchUpcomingEconomic}
+            onRetryEarnings={fetchUpcomingEarnings}
           />
         ) : (
           <DiscoverTab
@@ -2836,74 +2812,19 @@ const ResearchLandingPage = ({
   // ─── Data State ──────────────────────────────────────────
   const [moversData, setMoversData] = useState({ gainers: [], losers: [] });
   const [marketNews, setMarketNews] = useState([]);
-  const [aiSummary, setAiSummary] = useState(null);
-  const [isLoadingSummary, setIsLoadingSummary] = useState(true);
   const [heroSize, setHeroSize] = useState({ w: 800, h: 320 });
   const heroRef = useRef(null);
 
   // ─── Mobile State ──────────────────────────────────────
   const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' && window.innerWidth < 768);
-  const [intelData, setIntelData] = useState(null);
-  const [intelLoading, setIntelLoading] = useState(false);
-  const [intelCacheTime, setIntelCacheTime] = useState(null);
-  const [threadCache, setThreadCache] = useState({});
-  const [trackerCache, setTrackerCache] = useState({});
-  const [weeklyReportData, setWeeklyReportData] = useState(null);
-  const [weeklyReportLoading, setWeeklyReportLoading] = useState(false);
-  const [expandedTracker, setExpandedTracker] = useState(null);
-  const [trackerLoading, setTrackerLoading] = useState(null);
-  const [showWeeklyReport, setShowWeeklyReport] = useState(false);
 
   // ─── Asset Research Modal ────────────────────────────────
   const { researchAsset, isOpen, showResearch, hideResearch, getModalProps } = useAssetResearch();
 
-  // ─── Why Is It Moving? popup ───────────────────────────
-  const [whyMovingTarget, setWhyMovingTarget] = useState(null);
-
-  // ─── Market Pulse ─────────────────────────────────────
-  const [marketPulse, setMarketPulse] = useState(null);
-  const [marketPulseLoading, setMarketPulseLoading] = useState(true);
-  const [marketPulseError, setMarketPulseError] = useState(false);
-
-  // ─── Upcoming Events (Sonar) ────────────────────────────
-  const [upcomingEconomic, setUpcomingEconomic] = useState(null);
-  const [upcomingEarnings, setUpcomingEarnings] = useState(null);
-  const [upcomingEconomicLoading, setUpcomingEconomicLoading] = useState(true);
-  const [upcomingEarningsLoading, setUpcomingEarningsLoading] = useState(true);
-  const [upcomingEconomicError, setUpcomingEconomicError] = useState(false);
-  const [upcomingEarningsError, setUpcomingEarningsError] = useState(false);
-
-  // ─── Read-Across Alerts ──────────────────────────────────
-  const [readAcrossAlerts, setReadAcrossAlerts] = useState([]);
-  const [dismissedAlertIds, setDismissedAlertIds] = useState(() => {
-    try {
-      return new Set(JSON.parse(localStorage.getItem('mc_dismissed_alerts') || '[]'));
-    } catch { return new Set(); }
-  });
-
   // ─── All assets for search ───────────────────────────────
   const allAssets = useMemo(() => [...stocksData, ...cryptoData], [stocksData, cryptoData]);
 
-  const visibleAlerts = readAcrossAlerts.filter(a => !dismissedAlertIds.has(a.id));
-
-  // ─── Watchlist stocks for Tracker Bot ─────────────────────
-  const [watchlistVersion, setWatchlistVersion] = useState(0);
-
-  const watchlistStocks = useMemo(() => {
-    let watchlist;
-    try { watchlist = JSON.parse(localStorage.getItem('user_watchlist')); } catch (e) { /* ignore */ }
-    if (!watchlist?.length) watchlist = DEFAULT_WATCHLIST;
-    return watchlist.map(sym => {
-      const asset = allAssets.find(a => a.symbol?.toUpperCase() === sym.toUpperCase());
-      return {
-        symbol: sym,
-        price: asset?.price || 0,
-        percentChange: safeNumber(asset?.percentChange, 0),
-      };
-    });
-  }, [allAssets, watchlistVersion]);
-
-  // ─── Market breadth & sentiment ──────────────────────────
+  // ─── Market breadth & sentiment (computed before hook) ────
   const marketBreadth = useMemo(() => {
     const stocksUp = stocksData.filter(s => safeNumber(s.percentChange, 0) > 0).length;
     const stocksDown = stocksData.filter(s => safeNumber(s.percentChange, 0) < 0).length;
@@ -2939,9 +2860,22 @@ const ResearchLandingPage = ({
       .slice(0, 3);
   }, [moversData, allAssets]);
 
-  // ─── Economic events (Firebase-cached calendar) ────────────
-  const [economicEvents, setEconomicEvents] = useState([]);
-  const [economicEventsLoading, setEconomicEventsLoading] = useState(false);
+  // ─── Intelligence Hook ─────────────────────────────────
+  const {
+    intelData, intelLoading, intelCacheTime, fetchIntelligence,
+    threadCache, fetchThread,
+    trackerCache, fetchTracker, expandedTracker, trackerLoading, handleToggleTracker,
+    marketPulse, marketPulseLoading, marketPulseError, fetchMarketPulse,
+    upcomingEconomic, upcomingEarnings,
+    upcomingEconomicLoading, upcomingEarningsLoading,
+    upcomingEconomicError, upcomingEarningsError,
+    fetchUpcomingEconomic, fetchUpcomingEarnings,
+    visibleAlerts, handleDismissAlert,
+    weeklyReportData, weeklyReportLoading, showWeeklyReport, setShowWeeklyReport, fetchWeeklyReport,
+    watchlistStocks, handleAddToWatchlist, handleRemoveFromWatchlist,
+    whyMovingTarget, setWhyMovingTarget,
+    buildMarketContextString,
+  } = useResearchIntelligence({ stocksData, allAssets, marketBreadth, moversData, marketNews });
 
   // ─── Data fetching ───────────────────────────────────────
   useEffect(() => {
@@ -2967,210 +2901,6 @@ const ResearchLandingPage = ({
 
   }, []);
 
-  // ─── Economic events fetch (Firebase-cached calendar) ──────
-  const fetchEconomicEvents = useCallback(async (force = false) => {
-    const CACHE_KEY = 'research_economic_calendar_cache';
-    const CACHE_DURATION = 2 * 60 * 60 * 1000; // 2 hours
-
-    if (!force) {
-      try {
-        const cached = localStorage.getItem(CACHE_KEY);
-        if (cached) {
-          const { data, timestamp } = JSON.parse(cached);
-          if (Date.now() - timestamp < CACHE_DURATION) {
-            setEconomicEvents(data);
-            return;
-          }
-        }
-      } catch (e) { /* ignore cache errors */ }
-    }
-
-    setEconomicEventsLoading(true);
-    try {
-      const response = await fetch('/api/economic-calendar');
-      const result = await response.json();
-
-      if (result.success && result.data?.events?.length) {
-        setEconomicEvents(result.data.events);
-        try {
-          localStorage.setItem(CACHE_KEY, JSON.stringify({
-            data: result.data.events,
-            timestamp: Date.now(),
-          }));
-        } catch (e) { /* ignore storage errors */ }
-      } else {
-        // Fallback to static data if Firebase empty
-        const { WEEK_AHEAD_EVENTS } = await import('../../data/weekAheadEvents');
-        const today = new Date();
-        const endDate = new Date(today);
-        endDate.setDate(endDate.getDate() + 7);
-        const fmt = d => d.toISOString().split('T')[0];
-        setEconomicEvents(WEEK_AHEAD_EVENTS
-          .filter(e => e.date >= fmt(today) && e.date <= fmt(endDate))
-          .sort((a, b) => a.date.localeCompare(b.date)));
-      }
-    } catch (err) {
-      console.warn('[ResearchLanding] Economic events fetch failed:', err);
-      try {
-        const { WEEK_AHEAD_EVENTS } = await import('../../data/weekAheadEvents');
-        const today = new Date();
-        const endDate = new Date(today);
-        endDate.setDate(endDate.getDate() + 7);
-        const fmt = d => d.toISOString().split('T')[0];
-        setEconomicEvents(WEEK_AHEAD_EVENTS
-          .filter(e => e.date >= fmt(today) && e.date <= fmt(endDate))
-          .sort((a, b) => a.date.localeCompare(b.date)));
-      } catch (fallbackErr) {
-        console.warn('[ResearchLanding] Fallback also failed:', fallbackErr);
-      }
-    } finally {
-      setEconomicEventsLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    fetchEconomicEvents();
-  }, [fetchEconomicEvents]);
-
-  // ─── Market Pulse fetch ────────────────────────────────────
-  const fetchMarketPulse = useCallback(async () => {
-    setMarketPulseLoading(true);
-    setMarketPulseError(false);
-    try {
-      const res = await fetch('/api/market-pulse');
-      const data = await res.json();
-      if (data.success) {
-        setMarketPulse(data.data);
-      } else {
-        setMarketPulseError(true);
-      }
-    } catch {
-      setMarketPulseError(true);
-    } finally {
-      setMarketPulseLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    fetchMarketPulse();
-  }, [fetchMarketPulse]);
-
-  // ─── Read-Across Alerts fetch + 5-min refresh ─────────────
-  const handleDismissAlert = useCallback((alertId) => {
-    setDismissedAlertIds(prev => {
-      const next = new Set(prev);
-      next.add(alertId);
-      try { localStorage.setItem('mc_dismissed_alerts', JSON.stringify([...next])); } catch {}
-      return next;
-    });
-  }, []);
-
-  useEffect(() => {
-    const fetchAlerts = async () => {
-      try {
-        const res = await fetch('/api/read-across-alerts');
-        const data = await res.json();
-        if (data.success) setReadAcrossAlerts(data.alerts || []);
-      } catch (err) {
-        console.warn('[ReadAcross] Fetch failed:', err);
-      }
-    };
-    fetchAlerts();
-    const interval = setInterval(fetchAlerts, 5 * 60 * 1000);
-    return () => clearInterval(interval);
-  }, []);
-
-  // ─── Upcoming Economic Events fetch ──────────────────────
-  const fetchUpcomingEconomic = useCallback(async () => {
-    setUpcomingEconomicLoading(true);
-    setUpcomingEconomicError(false);
-    try {
-      const res = await fetch('/api/economic-events-sonar');
-      const data = await res.json();
-      if (data.success) {
-        setUpcomingEconomic(data.data);
-      } else {
-        setUpcomingEconomicError(true);
-      }
-    } catch {
-      setUpcomingEconomicError(true);
-    } finally {
-      setUpcomingEconomicLoading(false);
-    }
-  }, []);
-
-  // ─── Upcoming Earnings fetch ─────────────────────────────
-  const fetchUpcomingEarnings = useCallback(async () => {
-    setUpcomingEarningsLoading(true);
-    setUpcomingEarningsError(false);
-    try {
-      const res = await fetch('/api/earnings-calendar-sonar');
-      const data = await res.json();
-      if (data.success) {
-        setUpcomingEarnings(data.data);
-      } else {
-        setUpcomingEarningsError(true);
-      }
-    } catch {
-      setUpcomingEarningsError(true);
-    } finally {
-      setUpcomingEarningsLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    fetchUpcomingEconomic();
-    fetchUpcomingEarnings();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // ─── AI Summary (desktop) ─────────────────────────────────
-  useEffect(() => {
-    if (!stocksData.length && !cryptoData.length) return;
-    const timer = setTimeout(async () => {
-      try {
-        const response = await fetch('/api/ai-advisor', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            type: 'market_summary',
-            context: {
-              stocksUp: marketBreadth.stocksUp,
-              stocksDown: marketBreadth.stocksDown,
-              cryptoUp: marketBreadth.cryptoUp,
-              cryptoDown: marketBreadth.cryptoDown,
-              topGainers: moversData?.gainers?.slice(0, 3).map(s => ({ symbol: s.symbol, change: s.percentChange })) || [],
-              topLosers: moversData?.losers?.slice(0, 3).map(s => ({ symbol: s.symbol, change: s.percentChange })) || [],
-              recentNews: marketNews?.slice(0, 3).map(n => n.title) || [],
-            },
-          }),
-        });
-        if (!response.ok) throw new Error('AI summary unavailable');
-        const data = await response.json();
-        if (data.success && data.advice) {
-          setAiSummary(data.advice);
-        } else {
-          setAiSummary(generateFallback());
-        }
-      } catch (err) {
-        console.warn('[ResearchLanding] AI summary fetch failed:', err);
-        setAiSummary(generateFallback());
-      } finally {
-        setIsLoadingSummary(false);
-      }
-    }, 500);
-    return () => clearTimeout(timer);
-  }, [stocksData, cryptoData, marketBreadth, moversData, marketNews]);
-
-  const generateFallback = useCallback(() => {
-    const { stocksUp, stocksDown, sentiment } = marketBreadth;
-    if (sentiment === 'bullish') {
-      return `Markets are showing strength today with ${stocksUp} stocks advancing. Consider momentum plays but watch for overextended names.`;
-    } else if (sentiment === 'bearish') {
-      return `Caution advised as ${stocksDown} stocks are declining today. Look for quality names at support levels or consider defensive positions.`;
-    }
-    return `Markets are trading mixed with ${stocksUp} gainers and ${stocksDown} decliners. A balanced approach may work best in this environment.`;
-  }, [marketBreadth]);
-
   // ─── Hero resize observer ────────────────────────────────
   useEffect(() => {
     const el = heroRef.current;
@@ -3193,477 +2923,6 @@ const ResearchLandingPage = ({
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // ─── Mobile Intelligence Fetching ────────────────────────
-  const buildIntelContext = useCallback(() => {
-    // Watchlist from localStorage
-    let watchlist;
-    try {
-      const saved = localStorage.getItem('user_watchlist');
-      if (saved) watchlist = JSON.parse(saved);
-    } catch (e) { /* ignore */ }
-    if (!watchlist?.length) watchlist = DEFAULT_WATCHLIST;
-
-    // Battle stocks from localStorage
-    let battleStocks = [];
-    try {
-      const battles = JSON.parse(localStorage.getItem('portfolioDuelBattles') || '[]');
-      const symbolSet = new Set();
-      battles.forEach(battle => {
-        const portfolio = battle?.player1?.portfolio;
-        if (Array.isArray(portfolio)) {
-          // Flat array format
-          portfolio.forEach(item => {
-            if (typeof item === 'string') symbolSet.add(item);
-            else if (item?.symbol) symbolSet.add(item.symbol);
-          });
-        } else if (portfolio && typeof portfolio === 'object') {
-          // V3 tiered format: { star: [...], core: [...], support: [...] }
-          ['star', 'core', 'support'].forEach(tier => {
-            (portfolio[tier] || []).forEach(item => {
-              if (typeof item === 'string') symbolSet.add(item);
-              else if (item?.symbol) symbolSet.add(item.symbol);
-            });
-          });
-        }
-      });
-      battleStocks = [...symbolSet];
-    } catch (e) { /* ignore */ }
-
-    return {
-      stocksUp: marketBreadth.stocksUp,
-      stocksDown: marketBreadth.stocksDown,
-      breadthRatio: marketBreadth.ratio,
-      gainers: (moversData.gainers || []).slice(0, 5).map(s => ({
-        symbol: s.symbol,
-        name: s.name,
-        change: safeNumber(s.percentChange, 0),
-      })),
-      losers: (moversData.losers || []).slice(0, 5).map(s => ({
-        symbol: s.symbol,
-        name: s.name,
-        change: safeNumber(s.percentChange, 0),
-      })),
-      news: (marketNews || []).slice(0, 5).map(n => ({ title: n.title })),
-      watchlist,
-      battleStocks,
-      economicEvents: economicEvents.slice(0, 5).map(e => ({
-        date: e.date,
-        name: e.shortName || e.name,
-        tier: e.tier,
-        impact: e.tier === 1 ? 'high' : e.tier === 2 ? 'medium' : 'low',
-      })),
-    };
-  }, [marketBreadth, moversData, marketNews, economicEvents]);
-
-  const buildMarketContextString = useCallback(() => {
-    // If no stock data loaded yet, return minimal context with grounding guard
-    if (!stocksData?.length && !allAssets?.length) {
-      return 'Market data is currently loading. Provide general educational analysis only. Do not cite specific stock prices.';
-    }
-
-    const parts = [];
-    const today = new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-    parts.push(`Market data as of ${today}:`);
-
-    // 1. Overall breadth
-    const { stocksUp, stocksDown, ratio } = marketBreadth;
-    parts.push(`\nMARKET BREADTH: ${stocksUp} stocks advancing, ${stocksDown} declining (${((ratio) * 100).toFixed(0)}% positive)`);
-
-    // 2. All stocks grouped by sector with real prices
-    const stocks = stocksData?.length ? stocksData : allAssets;
-    // Build reverse lookup: symbol → sector name from SECTORS constant
-    const sectorLookup = {};
-    Object.values(SECTORS).forEach(sec => {
-      (sec.topHoldings || []).forEach(sym => { sectorLookup[sym] = sec.name; });
-    });
-
-    const sectorMap = {};
-    stocks.forEach(stock => {
-      const symbol = stock.symbol || stock.ticker;
-      if (!symbol) return;
-      const change = safeNumber(stock.percentChange || stock.change24h, 0);
-      const price = safeNumber(stock.price, 0);
-      const sector = sectorLookup[symbol.toUpperCase()] || stock.sector || 'Other';
-      if (!sectorMap[sector]) sectorMap[sector] = [];
-      sectorMap[sector].push({ symbol, change, price });
-    });
-
-    // Sort sectors by average change (best first), format each
-    parts.push('\nSTOCKS BY SECTOR (sorted by daily change):');
-    Object.entries(sectorMap)
-      .sort(([, a], [, b]) => {
-        const avgA = a.reduce((sum, s) => sum + s.change, 0) / a.length;
-        const avgB = b.reduce((sum, s) => sum + s.change, 0) / b.length;
-        return avgB - avgA;
-      })
-      .forEach(([sector, sectorStocks]) => {
-        const sorted = [...sectorStocks].sort((a, b) => b.change - a.change);
-        const stockList = sorted
-          .map(s => `${s.symbol} ${s.change >= 0 ? '+' : ''}${s.change.toFixed(1)}%${s.price ? ` ($${s.price.toFixed(2)})` : ''}`)
-          .join(', ');
-        const avgChange = (sorted.reduce((sum, s) => sum + s.change, 0) / sorted.length).toFixed(1);
-        parts.push(`\n${sector.toUpperCase()} (avg ${avgChange >= 0 ? '+' : ''}${avgChange}%): ${stockList}`);
-      });
-
-    // 3. Top gainers/losers from moversData (may include stocks not in stocksData)
-    const gainers = (moversData.gainers || []).slice(0, 5);
-    const losers = (moversData.losers || []).slice(0, 5);
-    if (gainers.length > 0) {
-      parts.push(`\nTOP GAINERS: ${gainers.map(g => `${g.symbol} ${safeNumber(g.percentChange, 0) >= 0 ? '+' : ''}${safeNumber(g.percentChange, 0).toFixed(1)}%`).join(', ')}`);
-    }
-    if (losers.length > 0) {
-      parts.push(`\nTOP DECLINERS: ${losers.map(l => `${l.symbol} ${safeNumber(l.percentChange, 0) >= 0 ? '+' : ''}${safeNumber(l.percentChange, 0).toFixed(1)}%`).join(', ')}`);
-    }
-
-    // 4. Hot sector from cached intel
-    if (intelData?.scout?.hotSector) {
-      parts.push(`\nHOT SECTOR: ${intelData.scout.hotSector.name} — ${intelData.scout.hotSector.why || ''}`);
-    }
-
-    // 5. Scout discoveries (unusual movers)
-    if (intelData?.scout?.discoveries?.length) {
-      const disc = intelData.scout.discoveries.map(d => `${d.symbol} ${safeNumber(d.change, 0) > 0 ? '+' : ''}${safeNumber(d.change, 0)}% (${d.reason})`).join('; ');
-      parts.push(`\nUNUSUAL MOVERS: ${disc}`);
-    }
-
-    // 6. Upcoming economic events (enriched with tier/volatility/context)
-    if (economicEvents?.length) {
-      const todayStr = new Date().toISOString().split('T')[0];
-      const upcoming = economicEvents
-        .filter(e => e.date >= todayStr)
-        .sort((a, b) => (a.tier || 3) - (b.tier || 3) || a.date.localeCompare(b.date))
-        .slice(0, 10);
-
-      if (upcoming.length) {
-        parts.push('\nUPCOMING ECONOMIC EVENTS:');
-        upcoming.forEach(e => {
-          const dateStr = new Date(e.date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-          let detail = `${dateStr}: ${e.shortName || e.name}`;
-          if (e.estimate != null) detail += ` (Estimate: ${e.estimate})`;
-          if (e.previous != null) detail += ` (Previous: ${e.previous})`;
-          if (e.tier === 1) detail += ' [TIER 1 - HIGH IMPACT]';
-          else if (e.tier === 2) detail += ' [TIER 2]';
-          if (e.volatilityGrade) detail += ` [Vol: ${e.volatilityGrade}]`;
-          if (e.context) detail += ` — ${e.context}`;
-          parts.push(detail);
-        });
-      }
-
-      // Recent releases that have actual values
-      const threeDaysAgo = new Date();
-      threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
-      const threeDaysAgoStr = threeDaysAgo.toISOString().split('T')[0];
-      const recent = economicEvents
-        .filter(e => e.date >= threeDaysAgoStr && e.date < todayStr && e.actual != null)
-        .sort((a, b) => (a.tier || 3) - (b.tier || 3))
-        .slice(0, 5);
-
-      if (recent.length) {
-        parts.push('\nRECENT ECONOMIC RELEASES:');
-        recent.forEach(e => {
-          const dateStr = new Date(e.date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-          let detail = `${dateStr}: ${e.shortName || e.name} — Actual: ${e.actual}`;
-          if (e.estimate != null) detail += `, Estimate was: ${e.estimate}`;
-          if (e.previous != null) detail += `, Previous: ${e.previous}`;
-          if (e.beatMiss) {
-            detail += e.beatMiss === 'beat' ? ' [BEAT]' : e.beatMiss === 'miss' ? ' [MISS]' : ' [IN LINE]';
-          }
-          if (e.marketReaction) detail += ` — Reaction: ${e.marketReaction}`;
-          parts.push(detail);
-        });
-      }
-    }
-
-    return parts.join('\n');
-  }, [stocksData, allAssets, marketBreadth, moversData, intelData, economicEvents]);
-
-  const buildFallbackIntel = useCallback(() => {
-    const gainers = (moversData.gainers || []).slice(0, 3);
-    const { sentiment, stocksUp, stocksDown } = marketBreadth;
-
-    // Watchlist from localStorage for exclusion
-    let watchlist;
-    try {
-      const saved = localStorage.getItem('user_watchlist');
-      if (saved) watchlist = JSON.parse(saved);
-    } catch (e) { /* ignore */ }
-    if (!watchlist?.length) watchlist = DEFAULT_WATCHLIST;
-    const watchSet = new Set(watchlist.map(s => s.toUpperCase()));
-
-    // Build discoveries from top movers NOT in watchlist
-    const allMovers = [...(moversData.gainers || []), ...(moversData.losers || [])];
-    const discoveries = allMovers
-      .filter(m => !watchSet.has(m.symbol?.toUpperCase()))
-      .slice(0, 3)
-      .map(m => ({
-        symbol: m.symbol,
-        name: m.name || m.symbol,
-        change: safeNumber(m.percentChange, 0),
-        reason: `Moving ${safeNumber(m.percentChange, 0) > 0 ? 'up' : 'down'} ${Math.abs(safeNumber(m.percentChange, 0)).toFixed(1)}% today with notable volume activity.`,
-        actionTag: safeNumber(m.percentChange, 0) > 3 ? 'momentum' : 'early_signal',
-        sector: m.sector || 'Unknown',
-      }));
-
-    const breadthType = sentiment === 'bullish' ? 'positive' : sentiment === 'bearish' ? 'negative' : 'signal';
-
-    return {
-      briefer: {
-        headline: sentiment === 'bullish'
-          ? `Markets up: ${stocksUp} stocks advancing`
-          : sentiment === 'bearish'
-            ? `Markets pressured: ${stocksDown} stocks declining`
-            : `Mixed session: ${stocksUp} up, ${stocksDown} down`,
-        sentiment,
-        questions: [
-          {
-            id: 'market_pulse',
-            icon: '\uD83D\uDCCA',
-            label: 'What\'s driving the market today?',
-            answer: {
-              insights: [
-                { text: `Market breadth: ${stocksUp} stocks advancing vs ${stocksDown} declining.`, type: breadthType },
-                ...(gainers.length > 0 ? [{ text: `${gainers[0]?.symbol} leading gainers at +${safeNumber(gainers[0]?.percentChange, 0).toFixed(1)}%.`, type: 'positive' }] : []),
-              ],
-            },
-            followUps: ['Which sectors are strongest?', 'Any volume anomalies?'],
-          },
-          {
-            id: 'sector_watch',
-            icon: '\uD83C\uDFED',
-            label: 'Which sectors are leading or lagging?',
-            answer: {
-              insights: [
-                { text: 'Sector data requires live intelligence. Tap refresh for AI analysis.', type: 'signal' },
-              ],
-            },
-            followUps: ['Which sector has most momentum?', 'Any sectors showing weakness?'],
-          },
-          {
-            id: 'risk_radar',
-            icon: '\uD83D\uDEE1\uFE0F',
-            label: 'Any risks I should watch for?',
-            answer: {
-              insights: [
-                { text: sentiment === 'bearish' ? `Broad weakness with ${stocksDown} stocks declining — monitor positions.` : 'No major risk signals detected in current session.', type: sentiment === 'bearish' ? 'negative' : 'signal' },
-              ],
-            },
-            followUps: ['What are biggest macro risks?', 'How should I think about sizing?'],
-          },
-          {
-            id: 'earnings_events',
-            icon: '\uD83D\uDCC5',
-            label: 'Key earnings & events this week?',
-            answer: {
-              insights: [
-                { text: economicEvents.length > 0 ? `${economicEvents[0].shortName || economicEvents[0].name} scheduled for ${economicEvents[0].date}${economicEvents[0].tier === 1 ? ' (Tier 1 - high impact)' : economicEvents[0].tier === 2 ? ' (Tier 2)' : ''}.` : 'No major economic events this week.', type: 'signal' },
-              ],
-            },
-            followUps: ['Which earnings could move markets?', 'Any surprises expected?'],
-          },
-          {
-            id: 'trade_setup',
-            icon: '\uD83C\uDFAF',
-            label: 'Any interesting setups forming?',
-            answer: {
-              insights: [
-                ...(gainers.length > 1 ? [{ text: `${gainers[1]?.symbol} showing strength at +${safeNumber(gainers[1]?.percentChange, 0).toFixed(1)}% — worth monitoring.`, type: 'positive' }] : []),
-                { text: 'Full setup analysis requires live intelligence. Tap refresh for AI analysis.', type: 'signal' },
-              ],
-            },
-            followUps: ['What timeframe for these setups?', 'Any contrarian plays?'],
-          },
-        ],
-      },
-      scout: {
-        discoveries,
-        hotSector: null,
-      },
-    };
-  }, [moversData, marketBreadth, economicEvents]);
-
-  const fetchIntelligence = useCallback(async (force = false) => {
-    // Check cache first (unless forced)
-    if (!force) {
-      try {
-        const cached = localStorage.getItem(INTEL_CACHE_KEY);
-        if (cached) {
-          const { data, timestamp } = JSON.parse(cached);
-          if (Date.now() - timestamp < INTEL_CACHE_DURATION) {
-            setIntelData(data);
-            setIntelCacheTime(timestamp);
-            return;
-          }
-        }
-      } catch (e) { /* ignore */ }
-    }
-
-    setIntelLoading(true);
-    try {
-      const context = buildIntelContext();
-      const response = await fetch('/api/research-intel', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ context }),
-      });
-
-      const result = await response.json();
-      if (result.success && result.data) {
-        const now = Date.now();
-        setIntelData(result.data);
-        setIntelCacheTime(now);
-        try {
-          localStorage.setItem(INTEL_CACHE_KEY, JSON.stringify({ data: result.data, timestamp: now }));
-        } catch (e) { /* ignore storage errors */ }
-      } else {
-        // Use fallback
-        const fallback = buildFallbackIntel();
-        setIntelData(fallback);
-        setIntelCacheTime(Date.now());
-      }
-    } catch (err) {
-      console.warn('[ResearchLanding] Intel fetch failed:', err);
-      const fallback = buildFallbackIntel();
-      setIntelData(fallback);
-      setIntelCacheTime(Date.now());
-    } finally {
-      setIntelLoading(false);
-    }
-  }, [buildIntelContext, buildFallbackIntel]);
-
-  const fetchThread = useCallback(async (symbol, discoveryContext, sectorContext) => {
-    if (threadCache[symbol]) return;
-
-    try {
-      const response = await fetch('/api/research-thread', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ symbol, discoveryContext, sectorContext }),
-      });
-      const result = await response.json();
-      if (result.success && result.data) {
-        setThreadCache(prev => ({ ...prev, [symbol]: result.data }));
-      }
-    } catch (err) {
-      console.warn('[ResearchLanding] Thread fetch failed:', err);
-      setThreadCache(prev => ({ ...prev, [symbol]: {
-        bullets: ['Unable to load analysis. Try again in a moment.'],
-        verdict: null, risk: null
-      } }));
-    }
-  }, [threadCache]);
-
-  const fetchTracker = useCallback(async (symbol, price, percentChange) => {
-    if (trackerCache[symbol]) return;
-    try {
-      const response = await fetch('/api/research-tracker', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ symbol, price, percentChange }),
-      });
-      const result = await response.json();
-      if (result.success && result.data) {
-        setTrackerCache(prev => ({ ...prev, [symbol]: result.data }));
-      }
-    } catch (err) {
-      console.warn('[ResearchLanding] Tracker fetch failed:', err);
-      setTrackerCache(prev => ({ ...prev, [symbol]: {
-        priceAction: 'Unable to load analysis. Try again later.',
-        technicalLevel: null, news: null, baggerBomb: null
-      } }));
-    }
-  }, [trackerCache]);
-
-  const handleToggleTracker = useCallback(async (symbol) => {
-    if (expandedTracker === symbol) {
-      setExpandedTracker(null);
-      return;
-    }
-    setExpandedTracker(symbol);
-    if (!trackerCache[symbol]) {
-      setTrackerLoading(symbol);
-      const stock = watchlistStocks.find(s => s.symbol === symbol);
-      await fetchTracker(symbol, stock?.price, stock?.percentChange);
-      setTrackerLoading(null);
-    }
-  }, [expandedTracker, trackerCache, watchlistStocks, fetchTracker]);
-
-  // Watchlist management
-  const handleAddToWatchlist = useCallback((symbol) => {
-    try {
-      let currentWatchlist;
-      try { currentWatchlist = JSON.parse(localStorage.getItem('user_watchlist')); } catch (e) { /* ignore */ }
-      if (!currentWatchlist?.length) currentWatchlist = [...DEFAULT_WATCHLIST];
-      if (currentWatchlist.map(s => s.toUpperCase()).includes(symbol.toUpperCase())) return;
-      const updated = [...currentWatchlist, symbol];
-      localStorage.setItem('user_watchlist', JSON.stringify(updated));
-      setWatchlistVersion(prev => prev + 1);
-    } catch (e) {
-      console.warn('[ResearchLanding] Failed to add to watchlist:', e);
-    }
-  }, []);
-
-  const handleRemoveFromWatchlist = useCallback((symbol) => {
-    try {
-      let currentWatchlist;
-      try { currentWatchlist = JSON.parse(localStorage.getItem('user_watchlist')); } catch (e) { /* ignore */ }
-      if (!currentWatchlist?.length) currentWatchlist = [...DEFAULT_WATCHLIST];
-      const updated = currentWatchlist.filter(s => s.toUpperCase() !== symbol.toUpperCase());
-      localStorage.setItem('user_watchlist', JSON.stringify(updated));
-      if (expandedTracker === symbol) setExpandedTracker(null);
-      setWatchlistVersion(prev => prev + 1);
-    } catch (e) {
-      console.warn('[ResearchLanding] Failed to remove from watchlist:', e);
-    }
-  }, [expandedTracker]);
-
-  const fetchWeeklyReport = useCallback(async () => {
-    // Check 24h cache
-    try {
-      const cached = localStorage.getItem('research_weekly_report_cache');
-      if (cached) {
-        const { data, timestamp } = JSON.parse(cached);
-        if (Date.now() - timestamp < 24 * 60 * 60 * 1000) {
-          setWeeklyReportData(data);
-          return;
-        }
-      }
-    } catch (e) { /* ignore */ }
-
-    setWeeklyReportLoading(true);
-    try {
-      const response = await fetch('/api/research-weekly-report', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          watchlist: watchlistStocks.map(s => s.symbol),
-          stockData: watchlistStocks,
-        }),
-      });
-      const result = await response.json();
-      if (result.success && result.data) {
-        setWeeklyReportData(result.data);
-        try {
-          localStorage.setItem('research_weekly_report_cache', JSON.stringify({
-            data: result.data,
-            timestamp: Date.now(),
-          }));
-        } catch (e) { /* ignore storage errors */ }
-      }
-    } catch (err) {
-      console.warn('[ResearchLanding] Weekly report fetch failed:', err);
-      setWeeklyReportData({ summary: 'Weekly report unavailable. Try again later.', stocks: [], outlook: null });
-    } finally {
-      setWeeklyReportLoading(false);
-    }
-  }, [watchlistStocks]);
-
-  // ─── Trigger mobile intelligence fetch ───────────────────
-  useEffect(() => {
-    if (isMobile && stocksData.length > 0) {
-      fetchIntelligence();
-    }
-  }, [isMobile, stocksData.length]); // eslint-disable-line react-hooks/exhaustive-deps
-
   // ─── Handle opening research modal from various sources ──
   const handleOpenResearch = useCallback((asset) => {
     showResearch(asset);
@@ -3672,6 +2931,37 @@ const ResearchLandingPage = ({
   const dateStr = new Date().toLocaleDateString('en-US', {
     weekday: 'long', month: 'long', day: 'numeric',
   });
+
+  // ─── Intelligence Context value ────────────────────────────
+  const intelContext = useMemo(() => ({
+    intelData, intelLoading, intelCacheTime, fetchIntelligence,
+    threadCache, fetchThread,
+    trackerCache, fetchTracker, expandedTracker, trackerLoading, handleToggleTracker,
+    marketPulse, marketPulseLoading, marketPulseError, fetchMarketPulse,
+    upcomingEconomic, upcomingEarnings,
+    upcomingEconomicLoading, upcomingEarningsLoading,
+    upcomingEconomicError, upcomingEarningsError,
+    fetchUpcomingEconomic, fetchUpcomingEarnings,
+    visibleAlerts, handleDismissAlert,
+    weeklyReportData, weeklyReportLoading, showWeeklyReport, setShowWeeklyReport, fetchWeeklyReport,
+    watchlistStocks, handleAddToWatchlist, handleRemoveFromWatchlist,
+    whyMovingTarget, setWhyMovingTarget,
+    buildMarketContextString,
+  }), [
+    intelData, intelLoading, intelCacheTime, fetchIntelligence,
+    threadCache, fetchThread,
+    trackerCache, fetchTracker, expandedTracker, trackerLoading, handleToggleTracker,
+    marketPulse, marketPulseLoading, marketPulseError, fetchMarketPulse,
+    upcomingEconomic, upcomingEarnings,
+    upcomingEconomicLoading, upcomingEarningsLoading,
+    upcomingEconomicError, upcomingEarningsError,
+    fetchUpcomingEconomic, fetchUpcomingEarnings,
+    visibleAlerts, handleDismissAlert,
+    weeklyReportData, weeklyReportLoading, showWeeklyReport, setShowWeeklyReport, fetchWeeklyReport,
+    watchlistStocks, handleAddToWatchlist, handleRemoveFromWatchlist,
+    whyMovingTarget, setWhyMovingTarget,
+    buildMarketContextString,
+  ]);
 
   // ═══════════════════════════════════════════════════════════
   // RENDER
@@ -3682,50 +2972,16 @@ const ResearchLandingPage = ({
     return (
       <>
         <style>{KEYFRAMES}</style>
-        <MobileIntelligenceHub
-          intelData={intelData}
-          intelLoading={intelLoading}
-          intelCacheTime={intelCacheTime}
-          onRefresh={() => fetchIntelligence(true)}
-          onBuildThesis={onBuildThesis}
-          onStockIntelligence={onStockIntelligence}
-          onOpenMoneyMap={onOpenMoneyMap}
-          onAnalyzeStock={onAnalyzeStock}
-          allAssets={allAssets}
-          handleOpenResearch={handleOpenResearch}
-          fetchThread={fetchThread}
-          threadCache={threadCache}
-          watchlistStocks={watchlistStocks}
-          fetchTracker={fetchTracker}
-          trackerCache={trackerCache}
-          weeklyReportData={weeklyReportData}
-          weeklyReportLoading={weeklyReportLoading}
-          onFetchWeeklyReport={fetchWeeklyReport}
-          buildMarketContextString={buildMarketContextString}
-          expandedTracker={expandedTracker}
-          trackerLoading={trackerLoading}
-          handleToggleTracker={handleToggleTracker}
-          showWeeklyReport={showWeeklyReport}
-          setShowWeeklyReport={setShowWeeklyReport}
-          onRemoveStock={handleRemoveFromWatchlist}
-          onAddStock={handleAddToWatchlist}
-          onWhyMoving={(target) => setWhyMovingTarget(target)}
-          marketPulse={marketPulse}
-          marketPulseLoading={marketPulseLoading}
-          marketPulseError={marketPulseError}
-          onRetryMarketPulse={fetchMarketPulse}
-          upcomingEconomic={upcomingEconomic}
-          upcomingEarnings={upcomingEarnings}
-          upcomingEconomicLoading={upcomingEconomicLoading}
-          upcomingEarningsLoading={upcomingEarningsLoading}
-          upcomingEconomicError={upcomingEconomicError}
-          upcomingEarningsError={upcomingEarningsError}
-          onRetryEconomic={fetchUpcomingEconomic}
-          onRetryEarnings={fetchUpcomingEarnings}
-          readAcrossAlerts={visibleAlerts}
-          onDismissAlert={handleDismissAlert}
-          onAlertTickerTap={(symbol) => handleOpenResearch({ symbol, type: 'stock' })}
-        />
+        <IntelligenceProvider value={intelContext}>
+          <MobileIntelligenceHub
+            onBuildThesis={onBuildThesis}
+            onStockIntelligence={onStockIntelligence}
+            onOpenMoneyMap={onOpenMoneyMap}
+            onAnalyzeStock={onAnalyzeStock}
+            allAssets={allAssets}
+            handleOpenResearch={handleOpenResearch}
+          />
+        </IntelligenceProvider>
         <WeeklyReport
           visible={showWeeklyReport}
           onClose={() => setShowWeeklyReport(false)}
@@ -3825,7 +3081,7 @@ const ResearchLandingPage = ({
             {dateStr}
           </div>
 
-          {/* AI Summary */}
+          {/* Market headline from intelligence data */}
           <div style={{
             fontSize: '14px',
             color: C.textPrimary,
@@ -3833,7 +3089,7 @@ const ResearchLandingPage = ({
             marginBottom: '20px',
             minHeight: '40px',
           }}>
-            {isLoadingSummary ? (
+            {intelLoading ? (
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <div style={{
                   width: '12px', height: '12px',
@@ -3847,7 +3103,8 @@ const ResearchLandingPage = ({
                 </span>
               </div>
             ) : (
-              aiSummary
+              intelData?.briefer?.narratives?.[0]?.answer?.insights?.[0]?.text
+              || `${marketBreadth.stocksUp} stocks advancing, ${marketBreadth.stocksDown} declining`
             )}
           </div>
 
