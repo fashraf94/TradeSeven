@@ -9,6 +9,7 @@ import AssetResearchModal from '../draft/AssetResearchModal';
 import WhyMovingPopup from './WhyMovingPopup';
 import MarketPulseCard from './MarketPulseCard';
 import UpcomingEventsPanel from './UpcomingEventsPanel';
+import ReadAcrossAlert from './ReadAcrossAlert';
 
 // ─── Utilities ───────────────────────────────────────────────
 const safeNumber = (val, fallback = 0) => {
@@ -2463,6 +2464,9 @@ const MobileIntelligenceHub = ({
   upcomingEarningsError,
   onRetryEconomic,
   onRetryEarnings,
+  readAcrossAlerts,
+  onDismissAlert,
+  onAlertTickerTap,
 }) => {
   const [activeTab, setActiveTab] = useState('briefing');
   const [expandedSymbol, setExpandedSymbol] = useState(null);
@@ -2590,6 +2594,17 @@ const MobileIntelligenceHub = ({
           </button>
         </div>
       </div>
+
+      {/* Read-Across Alerts (above scrollable content) */}
+      {readAcrossAlerts?.length > 0 && (
+        <div style={{ padding: '8px 16px 0' }}>
+          <ReadAcrossAlert
+            alerts={readAcrossAlerts}
+            onDismiss={onDismissAlert}
+            onTickerTap={onAlertTickerTap}
+          />
+        </div>
+      )}
 
       {/* Scrollable Content */}
       <div style={{
@@ -2858,8 +2873,18 @@ const ResearchLandingPage = ({
   const [upcomingEconomicError, setUpcomingEconomicError] = useState(false);
   const [upcomingEarningsError, setUpcomingEarningsError] = useState(false);
 
+  // ─── Read-Across Alerts ──────────────────────────────────
+  const [readAcrossAlerts, setReadAcrossAlerts] = useState([]);
+  const [dismissedAlertIds, setDismissedAlertIds] = useState(() => {
+    try {
+      return new Set(JSON.parse(localStorage.getItem('mc_dismissed_alerts') || '[]'));
+    } catch { return new Set(); }
+  });
+
   // ─── All assets for search ───────────────────────────────
   const allAssets = useMemo(() => [...stocksData, ...cryptoData], [stocksData, cryptoData]);
+
+  const visibleAlerts = readAcrossAlerts.filter(a => !dismissedAlertIds.has(a.id));
 
   // ─── Watchlist stocks for Tracker Bot ─────────────────────
   const [watchlistVersion, setWatchlistVersion] = useState(0);
@@ -3029,6 +3054,31 @@ const ResearchLandingPage = ({
   useEffect(() => {
     fetchMarketPulse();
   }, [fetchMarketPulse]);
+
+  // ─── Read-Across Alerts fetch + 5-min refresh ─────────────
+  const handleDismissAlert = useCallback((alertId) => {
+    setDismissedAlertIds(prev => {
+      const next = new Set(prev);
+      next.add(alertId);
+      try { localStorage.setItem('mc_dismissed_alerts', JSON.stringify([...next])); } catch {}
+      return next;
+    });
+  }, []);
+
+  useEffect(() => {
+    const fetchAlerts = async () => {
+      try {
+        const res = await fetch('/api/read-across-alerts');
+        const data = await res.json();
+        if (data.success) setReadAcrossAlerts(data.alerts || []);
+      } catch (err) {
+        console.warn('[ReadAcross] Fetch failed:', err);
+      }
+    };
+    fetchAlerts();
+    const interval = setInterval(fetchAlerts, 5 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, []);
 
   // ─── Upcoming Economic Events fetch ──────────────────────
   const fetchUpcomingEconomic = useCallback(async () => {
@@ -3672,6 +3722,9 @@ const ResearchLandingPage = ({
           upcomingEarningsError={upcomingEarningsError}
           onRetryEconomic={fetchUpcomingEconomic}
           onRetryEarnings={fetchUpcomingEarnings}
+          readAcrossAlerts={visibleAlerts}
+          onDismissAlert={handleDismissAlert}
+          onAlertTickerTap={(symbol) => handleOpenResearch({ symbol, type: 'stock' })}
         />
         <WeeklyReport
           visible={showWeeklyReport}
@@ -3703,6 +3756,15 @@ const ResearchLandingPage = ({
     <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '24px' }}>
       {/* Inject keyframes */}
       <style>{KEYFRAMES}</style>
+
+      {/* Read-Across Alerts (above Zone 1) */}
+      {visibleAlerts.length > 0 && (
+        <ReadAcrossAlert
+          alerts={visibleAlerts}
+          onDismiss={handleDismissAlert}
+          onTickerTap={(symbol) => handleOpenResearch({ symbol, type: 'stock' })}
+        />
+      )}
 
       {/* ═══ ZONE 1: Hero — Market Intelligence Briefing ═══ */}
       <motion.div
