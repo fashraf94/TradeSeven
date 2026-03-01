@@ -19,18 +19,21 @@ export default function WatchlistSelector({
 }) {
   const scrollRef = useRef(null);
   const activeRef = useRef(null);
+  const hasMountedRef = useRef(false);
 
-  // Scroll active pill into view on mount / list change
+  // Only scroll to active pill on initial mount so the default selection is visible.
+  // On subsequent taps, the user's manual scroll position is preserved naturally.
   useEffect(() => {
+    if (hasMountedRef.current) return;
     if (activeRef.current && scrollRef.current) {
+      hasMountedRef.current = true;
       const container = scrollRef.current;
       const pill = activeRef.current;
       const pillLeft = pill.offsetLeft;
       const pillWidth = pill.offsetWidth;
       const containerWidth = container.offsetWidth;
-      const scrollLeft = container.scrollLeft;
 
-      if (pillLeft < scrollLeft || pillLeft + pillWidth > scrollLeft + containerWidth) {
+      if (pillLeft + pillWidth > containerWidth) {
         container.scrollTo({
           left: pillLeft - containerWidth / 2 + pillWidth / 2,
           behavior: 'smooth',
