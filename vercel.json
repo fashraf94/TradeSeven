@@ -64,6 +64,10 @@
     {
       "path": "/api/read-across-check",
       "schedule": "*/30 14-21 * * 1-5"
+    },
+    {
+      "path": "/api/cron/pre-market-warmup",
+      "schedule": "25 13,14 * * 1-5"
     }
   ]
 }

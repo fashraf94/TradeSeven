@@ -58,6 +58,17 @@ export default function GameModeCarousels({
   // ═══════════════════════════════════════════════════════════════
   const earnCoinsCards = [
     {
+      id: 'baggerbomb-training',
+      theme: 'baggerBomb',
+      title: 'BaggerBomb',
+      description: '1v1 battle — Practice scoring points with breakout bonuses against CPU',
+      duration: '24 hours',
+      isTraining: true,
+      onClick: () => {
+        setShowBaggerBombTrainingConfirm(true);
+      },
+    },
+    {
       id: 'snake-training',
       theme: 'snakeDraft',
       title: 'Snake Draft',
@@ -70,26 +81,14 @@ export default function GameModeCarousels({
       },
     },
     {
-      id: 'baggerbomb-training',
-      theme: 'baggerBomb',
-      title: 'BaggerBomb',
-      description: '1v1 battle — Practice scoring points with breakout bonuses against CPU',
-      duration: '24 hours',
-      isTraining: true,
-      onClick: () => {
-        setShowBaggerBombTrainingConfirm(true);
-      },
-    },
-    {
       id: 'options-training',
       theme: 'optionsArena',
       title: 'Options Arena',
       description: 'Practice picking strike prices and predicting market moves',
       duration: null,
       isTraining: true,
-      onClick: () => {
-        setScreen('stonkOptionsArena');
-      },
+      disabled: true,
+      onClick: null,
     },
   ];
 
@@ -97,17 +96,6 @@ export default function GameModeCarousels({
   // COMPETE / ENTER THE ARENA CARDS (Real Games)
   // ═══════════════════════════════════════════════════════════════
   const competeCards = [
-    {
-      id: 'snake-draft',
-      theme: 'snakeDraft',
-      title: 'Snake Draft',
-      description: 'Start a 4-player snake draft lobby and compete for rewards',
-      duration: null,
-      isTraining: false,
-      onClick: () => {
-        setShowSnakeDraftModal(true);
-      },
-    },
     {
       id: 'bagger-bomb',
       theme: 'baggerBomb',
@@ -117,6 +105,17 @@ export default function GameModeCarousels({
       isTraining: false,
       onClick: () => {
         setShowBaggerBombModal(true);
+      },
+    },
+    {
+      id: 'snake-draft',
+      theme: 'snakeDraft',
+      title: 'Snake Draft',
+      description: 'Start a 4-player snake draft lobby and compete for rewards',
+      duration: null,
+      isTraining: false,
+      onClick: () => {
+        setShowSnakeDraftModal(true);
       },
     },
     {
@@ -167,16 +166,42 @@ export default function GameModeCarousels({
           <InfiniteCarousel
             items={earnCoinsCards}
             renderCard={(card, index) => (
-              <ThemedGameCard
+              <div
                 key={`${card.id}-${index}`}
-                theme={card.theme}
-                title={card.title}
-                description={card.description}
-                duration={card.duration}
-                onClick={card.onClick}
-                index={index % earnCoinsCards.length}
-                isTraining={card.isTraining}
-              />
+                style={{
+                  position: 'relative',
+                  ...(card.disabled ? { opacity: 0.4, pointerEvents: 'none' } : {}),
+                }}
+              >
+                <ThemedGameCard
+                  theme={card.theme}
+                  title={card.title}
+                  description={card.description}
+                  duration={card.duration}
+                  onClick={card.disabled ? undefined : card.onClick}
+                  index={index % earnCoinsCards.length}
+                  isTraining={card.isTraining}
+                />
+                {card.disabled && (
+                  <span style={{
+                    position: 'absolute',
+                    top: '20px',
+                    right: '20px',
+                    background: 'linear-gradient(135deg, #f59e0b, #d97706)',
+                    color: '#000',
+                    fontSize: '10px',
+                    fontWeight: '700',
+                    padding: '2px 8px',
+                    borderRadius: '4px',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.5px',
+                    zIndex: 2,
+                    pointerEvents: 'none',
+                  }}>
+                    Coming Soon
+                  </span>
+                )}
+              </div>
             )}
           />
         </div>

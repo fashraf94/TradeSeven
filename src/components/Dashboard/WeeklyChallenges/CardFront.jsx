@@ -8,6 +8,7 @@ import SnakeSilhouette from './Silhouettes/SnakeSilhouette';
 import JesterSilhouette from './Silhouettes/JesterSilhouette';
 import ChampionSilhouette from './Silhouettes/ChampionSilhouette';
 import { getDifficultyColor, getTimeUntilMidnight } from './challengeDefinitions';
+import { useIsMobile } from '../../../hooks/useIsMobile';
 
 const SILHOUETTE_MAP = {
   classic: WarriorSilhouette,
@@ -22,6 +23,7 @@ export default function CardFront({ challenge, state, progress, accentColor, car
   const SilhouetteComponent = SILHOUETTE_MAP[challenge.slot] || SILHOUETTE_MAP[challenge.gameMode] || WarriorSilhouette;
   const isLocked = state === 'locked';
   const isCompleted = state === 'completed';
+  const { isMobile } = useIsMobile();
 
   // Scale silhouette based on card height (base is 320px)
   const silhouetteScale = Math.min(1, cardHeight / 320);
@@ -50,11 +52,12 @@ export default function CardFront({ challenge, state, progress, accentColor, car
         width: '100%',
         minHeight: 0,
         height: isMobileCard ? '90px' : '110px',
+        marginBottom: isMobile ? '8px' : '0px',
       }}>
         {/* Silhouette with glow - scaled for card size */}
         <div style={{
           filter: isCompleted ? 'brightness(0.6) saturate(0.3)' : 'none',
-          transform: `scale(${silhouetteScale})`,
+          transform: isMobile ? `scale(${silhouetteScale * 0.85}) translateY(-6px)` : `scale(${silhouetteScale})`,
           transformOrigin: 'center center',
         }}>
           <SilhouetteComponent color={accentColor} />

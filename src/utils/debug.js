@@ -6,6 +6,7 @@
 
 import cacheService from '../services/cacheService';
 import { apiMonitor } from '../services/apiMonitor';
+import { getMarketState, getEffectiveTTL, isPreMarketWindow, getNextMarketOpen } from '../utils/marketSchedule';
 
 export const mcDebug = {
   /**
@@ -185,6 +186,37 @@ export const mcDebug = {
 
     URL.revokeObjectURL(url);
     console.log('Debug data exported');
+  },
+
+  /**
+   * Show current market state and cache savings from market-aware caching
+   */
+  marketState() {
+    const state = getMarketState();
+    const stats = cacheService.getMarketAwareStats();
+
+    console.log('\n--- MARKET STATE ---');
+    console.log(`  State: ${state.state}`);
+    console.log(`  Market Open: ${state.isOpen}`);
+    console.log(`  Pre-Market Window: ${isPreMarketWindow()}`);
+    console.log(`  Early Close Today: ${state.isEarlyClose}`);
+    console.log(`  Next Open: ${state.nextOpenTime.toLocaleString('en-US', { timeZone: 'America/New_York' })} ET`);
+    console.log(`  Next Close: ${state.nextCloseTime.toLocaleString('en-US', { timeZone: 'America/New_York' })} ET`);
+
+    console.log('\n--- EFFECTIVE TTLs ---');
+    ['prices', 'crypto', 'news', 'technicals', 'fundamentals'].forEach(type => {
+      const ttl = getEffectiveTTL(type);
+      const hours = (ttl / 3600_000).toFixed(1);
+      const minutes = (ttl / 60_000).toFixed(0);
+      console.log(`  ${type}: ${ttl > 3600_000 ? hours + 'h' : minutes + 'min'}`);
+    });
+
+    console.log('\n--- CACHE SAVINGS ---');
+    console.log(`  Frozen entries: ${stats.frozenCount}`);
+    console.log(`  Extended entries: ${stats.extendedCount}`);
+    console.log(`  Estimated API calls saved: ${stats.estimatedCallsSaved}`);
+
+    return { state, stats };
   },
 
   /**

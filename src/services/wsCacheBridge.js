@@ -9,12 +9,14 @@
 import { wsManager } from './websocketService';
 import cacheService from './cacheService';
 import { isCrypto } from '../utils/stockHelpers';
+import { isMarketOpen } from '../utils/marketSchedule';
 
 const FLUSH_INTERVAL = 60000; // Flush every 60 seconds
 let flushTimer = null;
 
 function flushWsPricesToCache() {
   const wsPrices = wsManager.getAllCachedPrices();
+  const marketOpen = isMarketOpen();
 
   let count = 0;
   for (const [symbol, data] of Object.entries(wsPrices)) {
@@ -23,6 +25,12 @@ function flushWsPricesToCache() {
       //   stocks → cacheService.get('prices', symbol)
       //   crypto → cacheService.get('crypto', symbol)
       const cacheType = isCrypto(symbol) ? 'crypto' : 'prices';
+
+      // CRITICAL: Skip flushing stale stock prices when market is closed.
+      // The WS _priceCache holds the last prices from market hours even after close.
+      // Flushing them would reset cachedAt timestamps and defeat market-aware
+      // dynamic TTL — frozen cache entries would never appear "old enough" to extend.
+      if (cacheType === 'prices' && !marketOpen) continue;
 
       // Merge WS price into existing cached data to preserve previousClose,
       // high, low, etc. from the last REST fetch
@@ -45,7 +53,7 @@ function flushWsPricesToCache() {
   }
 
   if (count > 0) {
-    console.log(`[WS→Cache] Flushed ${count} WebSocket prices to cache`);
+    console.log(`[WS→Cache] Flushed ${count} WebSocket prices to cache${!marketOpen ? ' (crypto only — market closed)' : ''}`);
   }
 }
 
