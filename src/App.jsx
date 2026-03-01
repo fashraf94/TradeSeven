@@ -9680,6 +9680,7 @@ const ResearchFlow = ({ stocksData, cryptoData, onUsePortfolio, onClose, colors,
         >
           <MoneyMapScreen
             onBack={() => setShowMoneyMap(false)}
+            stocksData={stocksData}
           />
         </ErrorBoundary>
       );
