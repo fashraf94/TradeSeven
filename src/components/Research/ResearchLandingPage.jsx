@@ -3293,11 +3293,7 @@ const ResearchLandingPage = ({
       {/* ═══ ZONE 3: Bottom Row ═══ */}
       <SectionDivider label="INTELLIGENCE FEED" />
 
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: '1fr 1fr',
-        gap: '12px',
-      }}>
+      <div>
         <DesktopTrackerSection
           watchlistStocks={watchlistStocks}
           expandedTracker={expandedTracker}
@@ -3310,7 +3306,6 @@ const ResearchLandingPage = ({
           allAssets={allAssets}
           onWhyMoving={(target) => setWhyMovingTarget(target)}
         />
-        <EconomicEventsBotCard buildMarketContextString={buildMarketContextString} />
       </div>
 
       {/* ═══ Weekly Report Modal (Desktop) ═══ */}
