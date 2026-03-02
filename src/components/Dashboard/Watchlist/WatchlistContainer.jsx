@@ -97,13 +97,23 @@ export default function WatchlistContainer({
     return map;
   }, [cryptoData]);
 
+  // --- Refs for stable callbacks & write-guard ---
+  const customWatchlistRef = useRef(customWatchlist);
+  customWatchlistRef.current = customWatchlist;
+  const pendingWritesRef = useRef(0);
+
   // --- Load custom watchlist from Firebase (once on mount) ---
   const initialLoadDone = useRef(false);
   useEffect(() => {
     if (initialLoadDone.current) return;
     if (!user) return;
     initialLoadDone.current = true;
-    getCustomWatchlist().then(setCustomWatchlist).catch(() => {});
+    getCustomWatchlist().then(data => {
+      // Don't overwrite optimistic updates from in-flight writes
+      if (pendingWritesRef.current === 0) {
+        setCustomWatchlist(data);
+      }
+    }).catch(() => {});
   }, [user]);
 
   // --- Default list selection ---
@@ -238,29 +248,35 @@ export default function WatchlistContainer({
 
   // --- Custom watchlist handlers ---
   const handleAddToWatchlist = useCallback(async (symbol) => {
-    if (customWatchlist.includes(symbol)) return;
-    if (customWatchlist.length >= 30) return;
+    if (customWatchlistRef.current.includes(symbol)) return;
+    if (customWatchlistRef.current.length >= 30) return;
 
     // Optimistic update
     setCustomWatchlist(prev => [...prev, symbol]);
+    pendingWritesRef.current++;
 
     try {
       await addToWatchlist(symbol);
     } catch {
       // Revert on failure
       setCustomWatchlist(prev => prev.filter(s => s !== symbol));
+    } finally {
+      pendingWritesRef.current--;
     }
-  }, [customWatchlist]);
+  }, []);
 
   const handleRemoveFromWatchlist = useCallback(async (symbol) => {
     // Optimistic update
     setCustomWatchlist(prev => prev.filter(s => s !== symbol));
+    pendingWritesRef.current++;
 
     try {
       await removeFromWatchlist(symbol);
     } catch {
       // Revert on failure
       setCustomWatchlist(prev => [...prev, symbol]);
+    } finally {
+      pendingWritesRef.current--;
     }
   }, []);
 
