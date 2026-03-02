@@ -44,6 +44,8 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
 
   const abortRef = useRef(null);
   const cacheRef = useRef({});  // In-memory cache keyed by `${symbol}_${apiTimeframe}`
+  const lastFetchKeyRef = useRef(null); // Guard: skip duplicate fetches for the same symbol/timeframe
+  const liveCandleThrottleRef = useRef({ price: 0, ts: 0 }); // Throttle live candle synthesis
 
   // Map UI timeframe to API timeframe
   const isBomb = timeframe === 'bomb';
@@ -58,6 +60,10 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
     if (!symbol) return;
 
     const cacheKey = isBomb ? `${symbol}_30m_bomb` : `${symbol}_${apiTimeframe}`;
+
+    // Guard: skip if we already fetched this exact key (prevents edge-case duplicate fetches)
+    if (lastFetchKeyRef.current === cacheKey && rawData) return;
+    lastFetchKeyRef.current = cacheKey;
 
     // Filter intraday candles to regular market hours (9:30 AM - 4:00 PM ET).
     // Extended-hours data is sparse and volatile — omit it from the bomb chart.
@@ -372,12 +378,28 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
     }
   }, [rawData, timeframe]);
 
+  // Throttle currentPrice updates so ohlcvData doesn't create a new array on every
+  // WebSocket tick (~1s). Only update when price moves >0.05% or >3 seconds elapsed.
+  // This reduces chart re-renders from ~60/min to ~20/min while keeping the live candle responsive.
+  const throttledPrice = useMemo(() => {
+    if (!currentPrice || currentPrice <= 0) return 0;
+    const now = Date.now();
+    const prev = liveCandleThrottleRef.current;
+    const priceDelta = prev.price > 0 ? Math.abs(currentPrice - prev.price) / prev.price : 1;
+    const timeDelta = now - prev.ts;
+    if (priceDelta > 0.0005 || timeDelta > 3000 || prev.price === 0) {
+      liveCandleThrottleRef.current = { price: currentPrice, ts: now };
+      return currentPrice;
+    }
+    return prev.price;
+  }, [currentPrice]);
+
   // Append synthetic "live" candle if the last candle is stale and we have a live price.
   // This bridges the gap between EODHD historical data (which only includes completed
   // periods) and the live price shown in the header.
   const ohlcvData = useMemo(() => {
     if (!processedCandles || processedCandles.length === 0) return processedCandles;
-    if (!currentPrice || currentPrice <= 0) return processedCandles;
+    if (!throttledPrice || throttledPrice <= 0) return processedCandles;
 
     let result = processedCandles;
     const wsHL = getDailyHL(symbol);
@@ -406,17 +428,17 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
             datetime: nowHalf.toISOString(),
             timestamp: Math.floor(nowHalf.getTime() / 1000),
             open: lastCandle.close,
-            high: wsHL ? Math.max(wsHL.high, currentPrice, lastCandle.close) : Math.max(currentPrice, lastCandle.close),
-            low: wsHL ? Math.min(wsHL.low, currentPrice, lastCandle.close) : Math.min(currentPrice, lastCandle.close),
-            close: currentPrice,
+            high: wsHL ? Math.max(wsHL.high, throttledPrice, lastCandle.close) : Math.max(throttledPrice, lastCandle.close),
+            low: wsHL ? Math.min(wsHL.low, throttledPrice, lastCandle.close) : Math.min(throttledPrice, lastCandle.close),
+            close: throttledPrice,
             volume: 0,
           }];
         } else if (lastTime) {
           // Latest candle is within the current 30-min period — patch H/L/C with live price
           const patched = { ...lastCandle };
-          patched.high = wsHL ? Math.max(Number(patched.high), wsHL.high, currentPrice) : Math.max(Number(patched.high), currentPrice);
-          patched.low = wsHL ? Math.min(Number(patched.low), wsHL.low, currentPrice) : Math.min(Number(patched.low), currentPrice);
-          patched.close = currentPrice;
+          patched.high = wsHL ? Math.max(Number(patched.high), wsHL.high, throttledPrice) : Math.max(Number(patched.high), throttledPrice);
+          patched.low = wsHL ? Math.min(Number(patched.low), wsHL.low, throttledPrice) : Math.min(Number(patched.low), throttledPrice);
+          patched.close = throttledPrice;
           result = [...result.slice(0, -1), patched];
         }
       }
@@ -433,17 +455,17 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
         result = [...result, {
           date: mondayStr,
           open: lastCandle.close,
-          high: wsHL ? Math.max(wsHL.high, currentPrice, lastCandle.close) : Math.max(currentPrice, lastCandle.close),
-          low: wsHL ? Math.min(wsHL.low, currentPrice, lastCandle.close) : Math.min(currentPrice, lastCandle.close),
-          close: currentPrice,
+          high: wsHL ? Math.max(wsHL.high, throttledPrice, lastCandle.close) : Math.max(throttledPrice, lastCandle.close),
+          low: wsHL ? Math.min(wsHL.low, throttledPrice, lastCandle.close) : Math.min(throttledPrice, lastCandle.close),
+          close: throttledPrice,
           volume: 0,
         }];
       } else {
         // Current week's candle exists — patch H/L/C with live price
         const patched = { ...lastCandle };
-        patched.high = wsHL ? Math.max(Number(patched.high), wsHL.high, currentPrice) : Math.max(Number(patched.high), currentPrice);
-        patched.low = wsHL ? Math.min(Number(patched.low), wsHL.low, currentPrice) : Math.min(Number(patched.low), currentPrice);
-        patched.close = currentPrice;
+        patched.high = wsHL ? Math.max(Number(patched.high), wsHL.high, throttledPrice) : Math.max(Number(patched.high), throttledPrice);
+        patched.low = wsHL ? Math.min(Number(patched.low), wsHL.low, throttledPrice) : Math.min(Number(patched.low), throttledPrice);
+        patched.close = throttledPrice;
         result = [...result.slice(0, -1), patched];
       }
     } else if (timeframe === '1D') {
@@ -465,23 +487,23 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
         result = [...result, {
           date: todayStr,
           open: lastCandle.close,
-          high: wsHL ? Math.max(wsHL.high, currentPrice, lastCandle.close) : Math.max(currentPrice, lastCandle.close),
-          low: wsHL ? Math.min(wsHL.low, currentPrice, lastCandle.close) : Math.min(currentPrice, lastCandle.close),
-          close: currentPrice,
+          high: wsHL ? Math.max(wsHL.high, throttledPrice, lastCandle.close) : Math.max(throttledPrice, lastCandle.close),
+          low: wsHL ? Math.min(wsHL.low, throttledPrice, lastCandle.close) : Math.min(throttledPrice, lastCandle.close),
+          close: throttledPrice,
           volume: 0,
         }];
       } else if (lastDate.getTime() === today.getTime()) {
         // Today's candle exists but may have stale H/L/C — patch with live price
         const patched = { ...lastCandle };
-        patched.high = wsHL ? Math.max(Number(patched.high), wsHL.high, currentPrice) : Math.max(Number(patched.high), currentPrice);
-        patched.low = wsHL ? Math.min(Number(patched.low), wsHL.low, currentPrice) : Math.min(Number(patched.low), currentPrice);
-        patched.close = currentPrice;
+        patched.high = wsHL ? Math.max(Number(patched.high), wsHL.high, throttledPrice) : Math.max(Number(patched.high), throttledPrice);
+        patched.low = wsHL ? Math.min(Number(patched.low), wsHL.low, throttledPrice) : Math.min(Number(patched.low), throttledPrice);
+        patched.close = throttledPrice;
         result = [...result.slice(0, -1), patched];
       }
     }
 
     return result;
-  }, [processedCandles, currentPrice, timeframe, isCrypto]);
+  }, [processedCandles, throttledPrice, timeframe, isCrypto]);
 
   // Compute closing prices (newest-first, as expected by indicator functions)
   const closingPrices = useMemo(() => {
