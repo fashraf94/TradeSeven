@@ -94,7 +94,7 @@ export default async function handler(req, res) {
   }
 
   const upperSymbol = symbol.toUpperCase();
-  const tickerWithExchange = `${upperSymbol}.US`;
+  const tickerWithExchange = `${upperSymbol.replace(/\./g, '-')}.US`;
 
   console.log(`[Odds] Calculating for ${upperSymbol}, sector=${sector || 'default'}`);
 

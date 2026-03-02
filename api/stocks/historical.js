@@ -4,6 +4,7 @@
 
 import { applySecurityMiddleware } from '../_utils/security.js';
 import { getFromCache, setInCache, setCacheHeaders, CACHE_TIERS } from '../_utils/serverCache.js';
+import { normalizeSymbolForEODHD } from '../_utils/symbolNormalize.js';
 
 // Timeframe configuration
 const TIMEFRAME_CONFIG = {
@@ -161,7 +162,8 @@ export default async function handler(req, res) {
 
     // Determine EODHD symbol suffix based on asset type
     const isCrypto = type === 'crypto';
-    const eohdSymbol = isCrypto ? `${upperSymbol}-USD.CC` : `${upperSymbol}.US`;
+    const normalizedSymbol = isCrypto ? upperSymbol : normalizeSymbolForEODHD(upperSymbol);
+    const eohdSymbol = isCrypto ? `${upperSymbol}-USD.CC` : `${normalizedSymbol}.US`;
 
     // Use custom days if provided, otherwise use config default
     const numDays = days ? Math.min(parseInt(days, 10), 1095) : config.days;

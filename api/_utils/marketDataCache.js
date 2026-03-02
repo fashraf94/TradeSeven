@@ -81,7 +81,9 @@ function getCleanSymbol(symbol) {
 }
 
 function formatEODHDSymbol(cleanSymbol, isCrypto) {
-  return isCrypto ? `${cleanSymbol}-USD.CC` : `${cleanSymbol}.US`;
+  // Normalize dots to hyphens for EODHD (BRK.B → BRK-B)
+  const normalized = isCrypto ? cleanSymbol : cleanSymbol.replace(/\./g, '-');
+  return isCrypto ? `${normalized}-USD.CC` : `${normalized}.US`;
 }
 
 function getDateDaysAgo(days) {

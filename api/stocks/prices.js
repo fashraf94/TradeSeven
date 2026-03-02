@@ -8,6 +8,7 @@
 
 import { applySecurityMiddleware } from '../_utils/security.js';
 import { getFromCache, setInCache, setCacheHeaders, CACHE_TIERS } from '../_utils/serverCache.js';
+import { normalizeSymbolForEODHD, denormalizeSymbolFromEODHD } from '../_utils/symbolNormalize.js';
 
 /** Safely convert a Unix epoch timestamp (seconds) to a Date. Returns null if invalid. */
 function safeDateFromEpoch(timestamp) {
@@ -70,7 +71,7 @@ async function handleCurrentPrices(req, res, symbols, API_KEY, noCache) {
   }
 
   try {
-    const symbolList = symbols.split(',').map(s => `${s.trim().replace(/\.US$/i, '')}.US`).join(',');
+    const symbolList = symbols.split(',').map(s => `${normalizeSymbolForEODHD(s.trim().replace(/\.US$/i, ''))}.US`).join(',');
     const url = `https://eodhd.com/api/real-time/${symbolList}?api_token=${API_KEY}&fmt=json`;
 
     console.log('[API] Fetching stock prices:', symbolList);
@@ -104,7 +105,7 @@ async function handleCurrentPrices(req, res, symbols, API_KEY, noCache) {
     let oldestTimestamp = null;
     dataArray.forEach(item => {
       if (item && item.code) {
-        const symbol = item.code.replace('.US', '');
+        const symbol = denormalizeSymbolFromEODHD(item.code.replace('.US', ''));
         prices[symbol] = {
           price: item.close || item.previousClose || 0,
           previousClose: item.previousClose || 0,
@@ -169,7 +170,7 @@ async function handleHistoricalRequest(req, res, symbols, days, API_KEY, noCache
     const endDate = new Date().toISOString().split('T')[0];
     const startDate = new Date(Date.now() - daysNum * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
 
-    const url = `https://eodhd.com/api/eod/${symbol}.US?api_token=${API_KEY}&from=${startDate}&to=${endDate}&fmt=json`;
+    const url = `https://eodhd.com/api/eod/${normalizeSymbolForEODHD(symbol)}.US?api_token=${API_KEY}&from=${startDate}&to=${endDate}&fmt=json`;
 
     console.log(`[API] Fetching historical data for ${symbol} (${daysNum} days)`);
 
@@ -233,6 +234,7 @@ async function handleTechnicalRequest(req, res, API_KEY, legacyFunction = null, 
 
   const tier = CACHE_TIERS.TECHNICAL;
   const symbol = symbols.split(',')[0].trim().toUpperCase();
+  const eohdSymbol = normalizeSymbolForEODHD(symbol);
   const periodNum = parseInt(period, 10) || 14;
   const cacheKey = `stock_technical_${symbol}_${fn.toLowerCase()}_${periodNum}`;
 
@@ -251,19 +253,19 @@ async function handleTechnicalRequest(req, res, API_KEY, legacyFunction = null, 
 
     switch (fn.toLowerCase()) {
       case 'rsi':
-        url = `https://eodhd.com/api/technical/${symbol}.US?api_token=${API_KEY}&function=rsi&period=${periodNum}&fmt=json`;
+        url = `https://eodhd.com/api/technical/${eohdSymbol}.US?api_token=${API_KEY}&function=rsi&period=${periodNum}&fmt=json`;
         break;
       case 'macd':
-        url = `https://eodhd.com/api/technical/${symbol}.US?api_token=${API_KEY}&function=macd&fast_period=12&slow_period=26&signal_period=9&fmt=json`;
+        url = `https://eodhd.com/api/technical/${eohdSymbol}.US?api_token=${API_KEY}&function=macd&fast_period=12&slow_period=26&signal_period=9&fmt=json`;
         break;
       case 'sma':
-        url = `https://eodhd.com/api/technical/${symbol}.US?api_token=${API_KEY}&function=sma&period=${periodNum}&fmt=json`;
+        url = `https://eodhd.com/api/technical/${eohdSymbol}.US?api_token=${API_KEY}&function=sma&period=${periodNum}&fmt=json`;
         break;
       case 'ema':
-        url = `https://eodhd.com/api/technical/${symbol}.US?api_token=${API_KEY}&function=ema&period=${periodNum}&fmt=json`;
+        url = `https://eodhd.com/api/technical/${eohdSymbol}.US?api_token=${API_KEY}&function=ema&period=${periodNum}&fmt=json`;
         break;
       case 'atr':
-        url = `https://eodhd.com/api/technical/${symbol}.US?api_token=${API_KEY}&function=atr&period=${periodNum}&fmt=json`;
+        url = `https://eodhd.com/api/technical/${eohdSymbol}.US?api_token=${API_KEY}&function=atr&period=${periodNum}&fmt=json`;
         break;
       default:
         return res.status(400).json({ error: `Unknown function: ${fn}` });

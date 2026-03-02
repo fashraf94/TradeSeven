@@ -89,32 +89,31 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
   const myPortfolioFlat = useMemo(() => flattenPortfolio(myData?.portfolio), [myData?.portfolio]);
   const oppPortfolioFlat = useMemo(() => flattenPortfolio(oppData?.portfolio), [oppData?.portfolio]);
 
-  // Get open prices for current session — prefer previousClose as daily baseline
+  // Get open prices for current session — prefer startingPrices (locked at battle activation)
   const currentSessionId = getCurrentSessionId();
   const openPrices = useMemo(() => {
-    // Prefer previousClose as daily baseline (resets daily per product requirement)
-    // previousClose = yesterday's 4:00 PM ET close from EODHD, most accurate baseline
+    // Prefer startingPrices — captured at battle activation with correct market context
+    // During market hours these are live prices; outside hours they are previous close
+    const startingPrices = battle?.state?.startingPrices;
+    const hasStartingPrices = startingPrices && Object.keys(startingPrices).length > 0;
+    if (hasStartingPrices) return startingPrices;
+
+    // Fallback: previousClose (before startingPrices load from Firebase)
     const hasPreviousClose = previousClosePrices && Object.keys(previousClosePrices).length > 0;
     if (hasPreviousClose) return previousClosePrices;
 
-    // Fallback chain (before API data loads or for training battles)
+    // Remaining fallback chain (before API data loads or for training battles)
     const currentSessionPrices = currentSessionId
       ? battle?.sessionPrices?.[currentSessionId]?.open
       : null;
-    const startingPrices = battle?.state?.startingPrices;
     const morningBellPrices = battle?.sessionPrices?.MORNING_BELL?.open;
 
-    // Check if objects actually have data (not just exist but are empty)
     const hasCurrentSessionPrices = currentSessionPrices && Object.keys(currentSessionPrices).length > 0;
-    const hasStartingPrices = startingPrices && Object.keys(startingPrices).length > 0;
     const hasMorningBellPrices = morningBellPrices && Object.keys(morningBellPrices).length > 0;
 
-    const prices = hasCurrentSessionPrices ? currentSessionPrices
-      : hasStartingPrices ? startingPrices
+    return hasCurrentSessionPrices ? currentSessionPrices
       : hasMorningBellPrices ? morningBellPrices
       : effectivePrices || {};
-
-    return prices;
   }, [previousClosePrices, battle, currentSessionId, effectivePrices]);
 
   // Combine battle history with local updates

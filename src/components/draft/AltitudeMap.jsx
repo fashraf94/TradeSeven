@@ -21,6 +21,8 @@ const AltitudeMap = ({
   onScoutPlayer,      // Callback when opponent pod is tapped
   scoutedPlayerId = null, // ID of player currently being scouted (for highlighting)
   containerHeight = 500, // Height of the map area in pixels
+  podRefsMap = null,  // Ref object (.current = Map<odUserId, HTMLElement>) for shockwave origin
+  flashingPods = null, // Set of player IDs currently flashing from shockwave
 }) => {
   // Mobile detection for responsive layout
   const [isMobile, setIsMobile] = useState(
@@ -544,19 +546,31 @@ const AltitudeMap = ({
         const xPos = getXPosition(player);
 
         return (
-          <TacticalPod
+          <div
             key={player.odUserId}
-            player={player}
-            rank={rank}
-            isUser={isUser}
-            onScout={onScoutPlayer}
-            isBeingScouted={isBeingScouted}
+            ref={(el) => {
+              if (podRefsMap?.current) {
+                if (el) podRefsMap.current.set(player.odUserId, el);
+                else podRefsMap.current.delete(player.odUserId);
+              }
+            }}
             style={{
+              position: 'absolute',
               left: `${xPos}%`,
               top: `${getAdjustedYPosition(player)}px`,
               transform: 'translate(-50%, -50%)',
+              zIndex: isUser ? 10 : 5,
             }}
-          />
+          >
+            <TacticalPod
+              player={player}
+              rank={rank}
+              isUser={isUser}
+              onScout={onScoutPlayer}
+              isBeingScouted={isBeingScouted}
+              isFlashing={flashingPods?.has(player.odUserId)}
+            />
+          </div>
         );
       })}
 

@@ -902,6 +902,43 @@ export function clearCache() {
 export const clearBatchPriceCache = clearCache;
 
 /**
+ * Get fresh live prices with cache bypass for critical operations (e.g. battle activation).
+ * During market hours: busts per-symbol cache, then fetches from real-time API.
+ * Off hours: uses standard cached fetch (previous close is correct baseline).
+ *
+ * @param {string[]} symbols - Array of ticker symbols
+ * @param {{ isCrypto?: boolean }} options - If true, treat all symbols as crypto
+ * @returns {Promise<{ prices: Record<string, number>, source: 'LIVE' | 'EOD' }>}
+ */
+export async function getLivePrices(symbols, { isCrypto: allCrypto = false } = {}) {
+  const { getMarketState } = await import('../utils/marketSchedule.js');
+  const { isOpen } = getMarketState();
+
+  const cryptoSymbols = allCrypto ? symbols : symbols.filter(s => CRYPTO_SYMBOLS.has(s.toUpperCase()));
+  const stockSymbols = allCrypto ? [] : symbols.filter(s => !CRYPTO_SYMBOLS.has(s.toUpperCase()));
+
+  // Bust per-symbol cache for fresh data during market hours
+  if (isOpen) {
+    stockSymbols.forEach(s => cacheService.delete('prices', s.toUpperCase()));
+  }
+  // Crypto is 24/7 — always bust cache for critical operations
+  cryptoSymbols.forEach(s => cacheService.delete('crypto', s.toUpperCase()));
+
+  const [stockPrices, cryptoPrices] = await Promise.all([
+    stockSymbols.length > 0 ? getMultipleStockPrices(stockSymbols) : {},
+    cryptoSymbols.length > 0 ? getMultipleCryptoPrices(cryptoSymbols) : {},
+  ]);
+
+  const prices = {};
+  for (const sym of symbols) {
+    const upper = sym.toUpperCase();
+    prices[upper] = stockPrices[upper]?.price || cryptoPrices[upper]?.price || 0;
+  }
+
+  return { prices, source: isOpen ? 'LIVE' : 'EOD' };
+}
+
+/**
  * Test API connection via proxy
  */
 export async function testConnection() {
@@ -1031,6 +1068,8 @@ export const stockAPI = {
   clearEarningsCache,
   // Historical OHLCV data
   fetchHistoricalOHLCV,
+  // Live prices (cache-busting for battle activation)
+  getLivePrices,
   // Cache utilities
   getCacheStats,
   printCacheReport,

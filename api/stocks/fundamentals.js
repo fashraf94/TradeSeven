@@ -3,6 +3,7 @@
 
 import { applySecurityMiddleware } from '../_utils/security.js';
 import { getFromCache, setInCache, setCacheHeaders, CACHE_TIERS } from '../_utils/serverCache.js';
+import { normalizeSymbolForEODHD } from '../_utils/symbolNormalize.js';
 
 export default async function handler(req, res) {
   // Apply security middleware (CORS, security headers, rate limiting, preflight)
@@ -37,12 +38,13 @@ export default async function handler(req, res) {
 
   try {
     const upperSymbol = symbol.toUpperCase();
+    const eohdSymbol = normalizeSymbolForEODHD(upperSymbol);
     console.log(`[API] Fetching fundamentals for: ${upperSymbol}`);
 
     // Fetch all fundamental data in parallel
     const [fundamentalsRes, historicalRes] = await Promise.all([
-      fetch(`https://eodhd.com/api/fundamentals/${upperSymbol}.US?api_token=${API_KEY}&fmt=json`),
-      fetch(`https://eodhd.com/api/eod/${upperSymbol}.US?api_token=${API_KEY}&fmt=json&period=d&order=d&from=${getDateDaysAgo(365)}`)
+      fetch(`https://eodhd.com/api/fundamentals/${eohdSymbol}.US?api_token=${API_KEY}&fmt=json`),
+      fetch(`https://eodhd.com/api/eod/${eohdSymbol}.US?api_token=${API_KEY}&fmt=json&period=d&order=d&from=${getDateDaysAgo(365)}`)
     ]);
 
     if (!fundamentalsRes.ok) {

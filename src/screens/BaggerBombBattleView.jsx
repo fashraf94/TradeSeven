@@ -259,6 +259,38 @@ export default function BaggerBombBattleView({
     setResearchDefaultTab('baggerbomb');
   }, []);
 
+  // Memoize research modal props to prevent re-renders on every WS price tick.
+  // Without this, every tick creates a new asset object via buildResearchAsset
+  // (because currentPrices changes), causing AssetResearchModal + chart to fully re-render.
+  const stableResearchAsset = useMemo(() => {
+    if (!researchAsset) return null;
+    const sym = researchAsset.symbol;
+    const dailyOpen = openPrices[sym] || freeAgentDailyOpens?.[sym];
+    const livePrice = currentPrices[sym];
+    const dailyChange = (dailyOpen && dailyOpen > 0 && livePrice)
+      ? ((livePrice - dailyOpen) / dailyOpen) * 100
+      : undefined;
+    return buildResearchAsset(researchAsset, {
+      livePrices: currentPrices,
+      thresholds,
+      openPrices,
+      startingPrices: battle?.state?.startingPrices,
+      useDefaultThreshold: true,
+      percentChange: dailyChange,
+    });
+  }, [
+    researchAsset?.symbol, researchAsset?.name,
+    // Only re-compute when THIS symbol's live price changes (not all symbols)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    currentPrices[researchAsset?.symbol],
+    thresholds, openPrices, battle?.state?.startingPrices, freeAgentDailyOpens,
+  ]);
+
+  const handleResearchClose = useCallback(() => {
+    setResearchAsset(null);
+    setResearchDefaultTab(null);
+  }, []);
+
   // Orange Zone swap lock toast
   const [swapBlockedToast, setSwapBlockedToast] = useState(null);
   useEffect(() => {
@@ -600,31 +632,17 @@ export default function BaggerBombBattleView({
       </div>
 
       {/* Research Modal - opens when stock symbol is tapped */}
-      {researchAsset && (() => {
-        const dailyOpen = openPrices[researchAsset.symbol] || freeAgentDailyOpens?.[researchAsset.symbol];
-        const livePrice = currentPrices[researchAsset.symbol];
-        const dailyChange = (dailyOpen && dailyOpen > 0 && livePrice)
-          ? ((livePrice - dailyOpen) / dailyOpen) * 100
-          : undefined;
-        return (
+      {stableResearchAsset && (
         <AssetResearchModal
-          asset={buildResearchAsset(researchAsset, {
-            livePrices: currentPrices,
-            thresholds,
-            openPrices,
-            startingPrices: battle?.state?.startingPrices,
-            useDefaultThreshold: true,
-            percentChange: dailyChange,
-          })}
-          onClose={() => { setResearchAsset(null); setResearchDefaultTab(null); }}
+          asset={stableResearchAsset}
+          onClose={handleResearchClose}
           showActionButton={false}
           isGameContext={true}
           version={2}
           defaultTab={researchDefaultTab}
           defaultTimeframe="bomb"
         />
-        );
-      })()}
+      )}
 
       {/* Score Breakdown Modal - opens when points are tapped */}
       {breakdownAsset && (

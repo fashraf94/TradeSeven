@@ -53,7 +53,7 @@ export function getMagnitudeBand(priceMove) {
  */
 export async function getEarningsDayMove(symbol, reportDate, timing, apiKey) {
   try {
-    const tickerWithExchange = `${symbol}.US`;
+    const tickerWithExchange = `${symbol.replace(/\./g, '-')}.US`;
     const reportDateObj = safeParseDate(reportDate);
 
     if (!reportDateObj) {
@@ -181,7 +181,7 @@ export async function getEarningsResult(symbol, targetDate = null) {
   }
 
   const upperSymbol = symbol.toUpperCase();
-  const tickerWithExchange = `${upperSymbol}.US`;
+  const tickerWithExchange = `${upperSymbol.replace(/\./g, '-')}.US`;
 
   logInfo(`${upperSymbol}: Starting earnings result fetch`, { targetDate: targetDate || 'latest' });
 

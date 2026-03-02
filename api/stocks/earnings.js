@@ -37,7 +37,8 @@ export default async function handler(req, res) {
 
   try {
     const upperSymbol = symbol.toUpperCase();
-    const tickerWithExchange = upperSymbol.includes('.') ? upperSymbol : `${upperSymbol}.US`;
+    // Normalize dots to hyphens for EODHD (BRK.B → BRK-B.US)
+    const tickerWithExchange = `${upperSymbol.replace(/\./g, '-')}.US`;
 
     console.log(`[API] Fetching earnings for: ${tickerWithExchange}`);
 

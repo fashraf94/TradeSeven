@@ -28,6 +28,9 @@ import {
 import { isMarketOpen, getNextTradingDay } from '../utils/marketHolidays';
 import { getHistoryUpdateIfChanged } from '../utils/baggerBombUtils';
 import { updateDraftHistory } from '../firebase/firebaseService';
+import { AnimatePresence, motion } from 'framer-motion';
+import { useBaggerShockwave } from '../hooks/useBaggerShockwave';
+import { BAGGER_SHOCKWAVE_CONFIG } from '../utils/shockwaveUtils';
 
 /**
  * Utility to refresh draft data from Firebase
@@ -105,6 +108,12 @@ const DraftBattleScreenV2 = ({
   const refreshIntervalRef = useRef(null);
   const timerIntervalRef = useRef(null);
   const hasInitialLoadRef = useRef(false);
+
+  // Shockwave: track previous baggerBomb/bust counts to detect new crossings
+  const prevThresholdCountsRef = useRef({});
+  const podRefsMap = useRef(new Map());
+  const [flashingPods, setFlashingPods] = useState(new Set());
+  const { activeShockwaves, triggerShockwave } = useBaggerShockwave();
 
   // WebSocket real-time prices for snake draft
   const draftWsSymbols = useMemo(() => {
@@ -780,6 +789,62 @@ const DraftBattleScreenV2 = ({
   }, [calculateStandings]);
 
   // ============================================
+  // SHOCKWAVE: Detect new BaggerBomb/Bust threshold crossings
+  // ============================================
+  const triggerPodShockwave = useCallback((playerId, isPositive, count) => {
+    const podEl = podRefsMap.current.get(playerId);
+    if (!podEl) return;
+
+    const rect = podEl.getBoundingClientRect();
+    const originX = rect.left + rect.width / 2;
+    const originY = rect.top + rect.height / 2;
+
+    // Fire one shockwave per new crossing, staggered 200ms, max 3
+    for (let i = 0; i < Math.min(count, 3); i++) {
+      setTimeout(() => {
+        triggerShockwave({
+          x: originX, y: originY,
+          type: isPositive ? 'bagger' : 'bust',
+          isPositive,
+          tier: isPositive ? 'bagger' : 'bust',
+        });
+      }, i * 200);
+    }
+
+    // Pod glow flash
+    setFlashingPods(prev => new Set([...prev, playerId]));
+    setTimeout(() => {
+      setFlashingPods(prev => {
+        const next = new Set(prev);
+        next.delete(playerId);
+        return next;
+      });
+    }, 400);
+  }, [triggerShockwave]);
+
+  useEffect(() => {
+    if (!standings || standings.length === 0) return;
+    const prevCounts = prevThresholdCountsRef.current;
+
+    standings.forEach(player => {
+      const playerId = player.odUserId;
+      const prev = prevCounts[playerId];
+      const currentBaggers = player.totalBaggerBombs || 0;
+      const currentBusts = player.totalBusts || 0;
+
+      if (prev) {
+        const newBaggers = currentBaggers - (prev.totalBaggerBombs || 0);
+        if (newBaggers > 0) triggerPodShockwave(playerId, true, newBaggers);
+
+        const newBusts = currentBusts - (prev.totalBusts || 0);
+        if (newBusts > 0) triggerPodShockwave(playerId, false, newBusts);
+      }
+
+      prevCounts[playerId] = { totalBaggerBombs: currentBaggers, totalBusts: currentBusts };
+    });
+  }, [standings, triggerPodShockwave]);
+
+  // ============================================
   // TIMER UPDATE - Copied exactly from original (lines 338-368)
   // ============================================
   useEffect(() => {
@@ -1169,7 +1234,48 @@ const DraftBattleScreenV2 = ({
               onScoutPlayer={handleScoutPlayer}
               scoutedPlayerId={scoutedPlayer?.odUserId}
               containerHeight={Math.max(450, standings.length * 140)}
+              podRefsMap={podRefsMap}
+              flashingPods={flashingPods}
             />
+
+            {/* Shockwave overlays — fixed position above everything */}
+            <AnimatePresence>
+              {activeShockwaves.map(wave => {
+                const colorConfig = wave.isPositive
+                  ? BAGGER_SHOCKWAVE_CONFIG.positiveColor
+                  : BAGGER_SHOCKWAVE_CONFIG.negativeColor;
+                const tierMultiplier = BAGGER_SHOCKWAVE_CONFIG.tierScale[wave.tier] || 1.0;
+
+                return (
+                  <motion.div
+                    key={wave.id}
+                    initial={{ scale: 0, opacity: 0.9 }}
+                    animate={{
+                      scale: BAGGER_SHOCKWAVE_CONFIG.waveMaxScale * tierMultiplier,
+                      opacity: 0,
+                    }}
+                    exit={{ opacity: 0 }}
+                    transition={{
+                      duration: BAGGER_SHOCKWAVE_CONFIG.waveDuration,
+                      ease: BAGGER_SHOCKWAVE_CONFIG.waveEasing,
+                    }}
+                    style={{
+                      position: 'fixed',
+                      left: wave.x - 20,
+                      top: wave.y - 20,
+                      width: 40,
+                      height: 40,
+                      borderRadius: '50%',
+                      pointerEvents: 'none',
+                      zIndex: 9999,
+                      background: colorConfig.gradient,
+                      boxShadow: colorConfig.glow,
+                      border: colorConfig.border,
+                    }}
+                  />
+                );
+              })}
+            </AnimatePresence>
 
             {/* Refresh indicator */}
             <div style={{

@@ -43,7 +43,7 @@ export default async function handler(req, res) {
 
   try {
     const upperSymbol = symbol.toUpperCase();
-    const tickerWithExchange = `${upperSymbol}.US`;
+    const tickerWithExchange = `${upperSymbol.replace(/\./g, '-')}.US`;
 
     console.log(`[earnings-history] Fetching history for ${upperSymbol}`);
 

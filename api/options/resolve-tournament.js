@@ -49,7 +49,7 @@ async function fetchCurrentPrices(symbols) {
   // Fetch prices for all symbols
   for (const symbol of symbols) {
     try {
-      const url = `https://eodhd.com/api/real-time/${symbol}.US?api_token=${apiKey}&fmt=json`;
+      const url = `https://eodhd.com/api/real-time/${symbol.replace(/\./g, '-')}.US?api_token=${apiKey}&fmt=json`;
       const response = await fetch(url);
 
       if (!response.ok) {

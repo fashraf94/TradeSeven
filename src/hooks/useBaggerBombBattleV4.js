@@ -80,8 +80,14 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
   const prevOppMultipliersRef = useRef({});
   const redZoneActiveRef = useRef(new Set());
 
-  // Local events for EventFeed (both player + opponent)
-  const [localEvents, setLocalEvents] = useState([]);
+  // Local events for EventFeed (both player + opponent).
+  // Stored in a ref to avoid re-rendering the entire component tree (including any
+  // open Bomb chart) on every event.  A version counter triggers re-render only when
+  // the EventFeed actually needs to update, and a microtask flush batches multiple
+  // events from the same price tick into a single re-render.
+  const localEventsRef = useRef([]);
+  const [localEventsVersion, setLocalEventsVersion] = useState(0);
+  const pendingFlushRef = useRef(null);
 
   // Chain trigger system for staggered celebrations
   const [triggerQueue, setTriggerQueue] = useState([]);
@@ -481,22 +487,32 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
   }, []);
 
   const pushLocalEvent = useCallback((event) => {
-    setLocalEvents(prev => {
-      // Dedup: skip if an identical redzone event exists within 10 minutes
-      if (event.type === 'redzone') {
-        const DEDUP_WINDOW = 10 * 60 * 1000;
-        const now = Date.now();
-        const isDuplicate = prev.some(e =>
-          e.type === 'redzone' &&
-          e.symbol === event.symbol &&
-          e.targetThreshold === event.targetThreshold &&
-          e.direction === event.direction &&
-          (now - new Date(e.timestamp).getTime()) < DEDUP_WINDOW
-        );
-        if (isDuplicate) return prev; // Don't add duplicate
-      }
-      return [event, ...prev].slice(0, 50);
-    });
+    // Dedup: skip if an identical redzone event exists within 10 minutes
+    if (event.type === 'redzone') {
+      const DEDUP_WINDOW = 10 * 60 * 1000;
+      const now = Date.now();
+      const isDuplicate = localEventsRef.current.some(e =>
+        e.type === 'redzone' &&
+        e.symbol === event.symbol &&
+        e.targetThreshold === event.targetThreshold &&
+        e.direction === event.direction &&
+        (now - new Date(e.timestamp).getTime()) < DEDUP_WINDOW
+      );
+      if (isDuplicate) return;
+    }
+
+    // Update ref synchronously (available immediately for same-tick dedup checks)
+    localEventsRef.current = [event, ...localEventsRef.current].slice(0, 50);
+
+    // Batch: defer the state update to a microtask so all events from the same
+    // price tick (player + opponent effects) coalesce into one re-render.
+    if (!pendingFlushRef.current) {
+      pendingFlushRef.current = true;
+      queueMicrotask(() => {
+        pendingFlushRef.current = false;
+        setLocalEventsVersion(v => v + 1);
+      });
+    }
   }, []);
 
   // ==================== THRESHOLD DETECTION ====================
@@ -601,9 +617,11 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
       }
       // Only clear stale red zone keys when transitioning to a DIFFERENT target.
       // When rz is null (left zone), preserve keys to prevent re-trigger on oscillation.
+      // IMPORTANT: exclude opponent keys (contain '_opp_') — player cleanup must not
+      // delete opponent keys or the opponent effect will regenerate events every tick.
       if (rzKey) {
         redZoneActiveRef.current.forEach(key => {
-          if (key.startsWith(`${asset.symbol}_`) && key !== rzKey) {
+          if (key.startsWith(`${asset.symbol}_`) && !key.startsWith(`${asset.symbol}_opp_`) && key !== rzKey) {
             redZoneActiveRef.current.delete(key);
           }
         });
@@ -1052,6 +1070,8 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
       prevMultipliersRef.current = {};
       prevOppMultipliersRef.current = {};
       redZoneActiveRef.current = new Set();
+      localEventsRef.current = [];
+      setLocalEventsVersion(v => v + 1);
     }
     prevTradingDayRef.current = currentTradingDay;
   }, [currentTradingDay]);
@@ -1081,6 +1101,9 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
   // Merge them so the feed shows historical events even after a page reload.
 
   const mergedEvents = useMemo(() => {
+    // Read local events from ref (triggered by localEventsVersion counter)
+    const localEvents = localEventsRef.current;
+
     const firebaseEvents = (battle?.events || []).map(e => {
       // Normalize swap events to match EventFeed format
       if (e.type === 'swap') {
@@ -1105,7 +1128,7 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
     });
 
     return [...localEvents, ...uniqueFirebase];
-  }, [localEvents, battle?.events, battle?.creator?.username, battle?.opponent?.username]);
+  }, [localEventsVersion, battle?.events, battle?.creator?.username, battle?.opponent?.username]);
 
   // ==================== RETURN ====================
 
