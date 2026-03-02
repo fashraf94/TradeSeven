@@ -2,7 +2,7 @@
 // Sleeper-style side-by-side matchup view with tiers
 // Features: Night mode theme for NIGHT_GAME session (4-8 PM ET)
 
-import React, { useState, useMemo, useCallback, useEffect } from 'react';
+import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import PropTypes from 'prop-types';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronLeft, Moon } from 'lucide-react';
@@ -32,6 +32,8 @@ import AssetResearchModal from '../components/draft/AssetResearchModal';
 import ScoreBreakdownPopover from '../components/draft/ScoreBreakdownPopover';
 import { buildResearchAsset } from '../utils/researchAssetBuilder';
 import { isSwapLocked } from '../utils/baggerBombUtils';
+import { useBaggerShockwave } from '../hooks/useBaggerShockwave';
+import { BAGGER_SHOCKWAVE_CONFIG, THRESHOLD_EVENT_TYPES, POSITIVE_THRESHOLD_TYPES } from '../utils/shockwaveUtils';
 
 // Tier configuration
 const TIERS = [
@@ -265,6 +267,50 @@ export default function BaggerBombBattleView({
     return () => clearTimeout(timer);
   }, [swapBlockedToast]);
 
+  // ── Shockwave state for threshold crossings ────────────────
+  const { activeShockwaves, triggerShockwave } = useBaggerShockwave();
+  const matchupRefsMap = useRef(new Map());
+  const lastEventCountRef = useRef(events?.length || 0);
+  const [flinchSymbols, setFlinchSymbols] = useState(new Set());
+
+  // Watch events array for new threshold crossings → trigger shockwaves
+  useEffect(() => {
+    if (!events || events.length <= lastEventCountRef.current) {
+      // If events shrank (reset), sync the counter
+      if (events && events.length < lastEventCountRef.current) {
+        lastEventCountRef.current = events.length;
+      }
+      return;
+    }
+    const newEvents = events.slice(lastEventCountRef.current);
+    lastEventCountRef.current = events.length;
+
+    newEvents.forEach((event) => {
+      if (!THRESHOLD_EVENT_TYPES.has(event.type)) return;
+
+      const isPositive = POSITIVE_THRESHOLD_TYPES.has(event.type);
+      const el = matchupRefsMap.current.get(event.symbol);
+      if (!el) return;
+
+      const rect = el.getBoundingClientRect();
+      const isUserEvent = event.player === player?.username;
+      const originX = isUserEvent ? rect.left + rect.width * 0.15 : rect.right - rect.width * 0.15;
+      const originY = rect.top + rect.height / 2;
+
+      triggerShockwave({ x: originX, y: originY, type: event.type, isPositive, tier: event.type });
+
+      // Row flinch
+      setFlinchSymbols((prev) => new Set([...prev, event.symbol]));
+      setTimeout(() => {
+        setFlinchSymbols((prev) => {
+          const next = new Set(prev);
+          next.delete(event.symbol);
+          return next;
+        });
+      }, BAGGER_SHOCKWAVE_CONFIG.flinchDuration);
+    });
+  }, [events, player?.username, triggerShockwave]);
+
   // Apply night mode color scheme when active
   const colors = useMemo(() => {
     if (nightMode) {
@@ -479,39 +525,57 @@ export default function BaggerBombBattleView({
                       orangeLocked = isSwapLocked(mult, bATR).locked;
                     }
 
+                    const hasFlinch = flinchSymbols.has(playerAsset?.symbol) || flinchSymbols.has(opponentAsset?.symbol);
                     return (
-                      <TacticalRow
+                      <div
                         key={`${tier.key}-${index}`}
-                        leftAsset={playerAsset}
-                        rightAsset={opponentAsset}
-                        tier={tier.key}
-                        allocationLabel={tier.allocation}
-                        isCryptoSlot={isCryptoSlot}
-                        onLeftThresholdCross={
-                          onThresholdCross
-                            ? (name, mult, threshold) =>
-                                onThresholdCross('player', playerAsset?.symbol, name, mult)
-                            : undefined
-                        }
-                        onRightThresholdCross={
-                          onThresholdCross
-                            ? (name, mult, threshold) =>
-                                onThresholdCross('opponent', opponentAsset?.symbol, name, mult)
-                            : undefined
-                        }
-                        onSymbolClick={(asset) => { setResearchAsset(asset); setResearchDefaultTab('baggerbomb'); }}
-                        onPointsClick={(asset) => setBreakdownAsset(asset)}
-                        swapTargetMode={isSwapTarget}
-                        onLeftAssetSelect={isSwapTarget ? (asset) => {
-                          if (orangeLocked) {
-                            setSwapBlockedToast(playerAsset.symbol);
-                            return;
+                        ref={(el) => {
+                          if (playerAsset?.symbol) {
+                            if (el) matchupRefsMap.current.set(playerAsset.symbol, el);
+                            else matchupRefsMap.current.delete(playerAsset.symbol);
                           }
-                          onSelectSwapTarget(asset, tier.key, index);
-                        } : undefined}
-                        opponentDimmed={swapMode?.active}
-                        leftDisabled={typeMismatch || orangeLocked}
-                      />
+                          if (opponentAsset?.symbol) {
+                            if (el) matchupRefsMap.current.set(opponentAsset.symbol, el);
+                            else matchupRefsMap.current.delete(opponentAsset.symbol);
+                          }
+                        }}
+                        style={{
+                          transform: hasFlinch ? `scale(${BAGGER_SHOCKWAVE_CONFIG.flinchScale})` : 'scale(1)',
+                          transition: 'transform 0.1s ease-in-out',
+                        }}
+                      >
+                        <TacticalRow
+                          leftAsset={playerAsset}
+                          rightAsset={opponentAsset}
+                          tier={tier.key}
+                          allocationLabel={tier.allocation}
+                          isCryptoSlot={isCryptoSlot}
+                          onLeftThresholdCross={
+                            onThresholdCross
+                              ? (name, mult, threshold) =>
+                                  onThresholdCross('player', playerAsset?.symbol, name, mult)
+                              : undefined
+                          }
+                          onRightThresholdCross={
+                            onThresholdCross
+                              ? (name, mult, threshold) =>
+                                  onThresholdCross('opponent', opponentAsset?.symbol, name, mult)
+                              : undefined
+                          }
+                          onSymbolClick={(asset) => { setResearchAsset(asset); setResearchDefaultTab('baggerbomb'); }}
+                          onPointsClick={(asset) => setBreakdownAsset(asset)}
+                          swapTargetMode={isSwapTarget}
+                          onLeftAssetSelect={isSwapTarget ? (asset) => {
+                            if (orangeLocked) {
+                              setSwapBlockedToast(playerAsset.symbol);
+                              return;
+                            }
+                            onSelectSwapTarget(asset, tier.key, index);
+                          } : undefined}
+                          opponentDimmed={swapMode?.active}
+                          leftDisabled={typeMismatch || orangeLocked}
+                        />
+                      </div>
                     );
                   })}
                 </div>
@@ -805,6 +869,47 @@ export default function BaggerBombBattleView({
             {`\uD83D\uDD12 ${swapBlockedToast} is in the danger zone \u2014 too close to a threshold to swap!`}
           </motion.div>
         )}
+      </AnimatePresence>
+
+      {/* BaggerBomb threshold shockwave overlays */}
+      <AnimatePresence>
+        {activeShockwaves.map((wave) => {
+          const colorConfig = wave.isPositive
+            ? BAGGER_SHOCKWAVE_CONFIG.positiveColor
+            : BAGGER_SHOCKWAVE_CONFIG.negativeColor;
+          const tierMultiplier = BAGGER_SHOCKWAVE_CONFIG.tierScale[wave.tier] || 1.0;
+
+          return (
+            <motion.div
+              key={wave.id}
+              initial={{ scaleX: 0, scaleY: 0, opacity: 0.9 }}
+              animate={{
+                scaleX: BAGGER_SHOCKWAVE_CONFIG.waveMaxScale * tierMultiplier * 1.5,
+                scaleY: BAGGER_SHOCKWAVE_CONFIG.waveMaxScale * tierMultiplier * 0.8,
+                opacity: 0,
+              }}
+              exit={{ opacity: 0 }}
+              transition={{
+                duration: BAGGER_SHOCKWAVE_CONFIG.waveDuration,
+                ease: BAGGER_SHOCKWAVE_CONFIG.waveEasing,
+              }}
+              style={{
+                position: 'fixed',
+                left: wave.x - 20,
+                top: wave.y - 20,
+                width: 40,
+                height: 40,
+                borderRadius: '50%',
+                pointerEvents: 'none',
+                zIndex: 9999,
+                background: colorConfig.gradient,
+                boxShadow: colorConfig.glow,
+                border: colorConfig.border,
+                // backdrop-filter: blur(3px) brightness(1.2) ← enable if perf allows
+              }}
+            />
+          );
+        })}
       </AnimatePresence>
     </div>
   );

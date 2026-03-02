@@ -76,3 +76,58 @@ export function getMaxDelay(delays) {
   delays.forEach((d) => { if (d > max) max = d; });
   return max;
 }
+
+// ── BaggerBomb Threshold Shockwave Config ─────────────────────
+// Smaller, more frequent, directional shockwaves for live battle events.
+
+export const BAGGER_SHOCKWAVE_CONFIG = {
+  // Wave properties
+  waveDuration: 0.6,                    // shorter than draft — these happen often
+  waveMaxScale: 8,                      // doesn't need to cover full viewport
+  waveEasing: [0.1, 0.9, 0.2, 1],
+  maxConcurrent: 3,                     // drop oldest if exceeded
+
+  // Colors
+  positiveColor: {
+    gradient: 'radial-gradient(circle, rgba(16,185,129,0.2) 0%, rgba(16,185,129,0.08) 40%, transparent 70%)',
+    glow: '0 0 40px 20px rgba(16,185,129,0.3), 0 0 80px 40px rgba(16,185,129,0.15)',
+    border: '1px solid rgba(16,185,129,0.3)',
+  },
+  negativeColor: {
+    gradient: 'radial-gradient(circle, rgba(255,51,102,0.2) 0%, rgba(255,51,102,0.08) 40%, transparent 70%)',
+    glow: '0 0 40px 20px rgba(255,51,102,0.3), 0 0 80px 40px rgba(255,51,102,0.15)',
+    border: '1px solid rgba(255,51,102,0.3)',
+  },
+
+  // Tier intensity multipliers (bigger shockwave for bigger events)
+  tierScale: {
+    bagger: 1.0,
+    doubleBagger: 1.3,
+    tenBagger: 1.6,
+    bust: 1.0,
+    crash: 1.3,
+    meltdown: 1.6,
+  },
+
+  // Audio
+  positiveAudioPath: '/sounds/bagger-hit.mp3',
+  negativeAudioPath: '/sounds/bust-hit.mp3',
+  audioVolume: 0.5,                     // quieter than draft — these are ambient
+
+  // Haptic
+  positiveHaptic: [10, 20, 15],
+  negativeHaptic: [20, 10, 30, 10, 20], // more jarring pattern for busts
+
+  // Matchup row flinch
+  flinchScale: 0.97,
+  flinchDuration: 250,                  // ms
+};
+
+// Threshold event type sets for quick membership checks
+export const THRESHOLD_EVENT_TYPES = new Set([
+  'bagger', 'doubleBagger', 'tenBagger', 'bust', 'crash', 'meltdown',
+]);
+
+export const POSITIVE_THRESHOLD_TYPES = new Set([
+  'bagger', 'doubleBagger', 'tenBagger',
+]);
