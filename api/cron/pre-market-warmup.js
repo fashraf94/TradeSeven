@@ -176,7 +176,7 @@ export default async function handler(req, res) {
 
     for (let i = 0; i < stockSymbols.length; i += BATCH_SIZE) {
       const batch = stockSymbols.slice(i, i + BATCH_SIZE);
-      const symbolList = batch.map(s => `${s}.US`).join(',');
+      const symbolList = batch.map(s => `${s.replace(/\./g, '-')}.US`).join(',');
 
       try {
         const url = `https://eodhd.com/api/real-time/${symbolList}?api_token=${API_KEY}&fmt=json`;

@@ -119,7 +119,7 @@ export default async function handler(req, res) {
 
     const batchResults = await Promise.all(batch.map(async (symbol) => {
       try {
-        const url = `https://eodhd.com/api/fundamentals/${symbol}.US?api_token=${API_KEY}&fmt=json`;
+        const url = `https://eodhd.com/api/fundamentals/${symbol.replace(/\./g, '-')}.US?api_token=${API_KEY}&fmt=json`;
         const response = await fetch(url);
 
         if (!response.ok) {

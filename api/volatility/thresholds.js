@@ -7,6 +7,7 @@
 
 import { applySecurityMiddleware } from '../_utils/security.js';
 import { getFromCache, setInCache, setCacheHeaders, CACHE_TIERS } from '../_utils/serverCache.js';
+import { normalizeSymbolForEODHD } from '../_utils/symbolNormalize.js';
 
 // ============================================
 // DEFAULT THRESHOLDS (fallback when API fails)
@@ -216,8 +217,8 @@ async function fetchHistoricalData(symbol, type, apiKey) {
     // Crypto format: BTC-USD.CC
     url = `https://eodhd.com/api/eod/${symbol.toUpperCase()}-USD.CC?from=${formatDate(startDate)}&to=${formatDate(endDate)}&api_token=${apiKey}&fmt=json`;
   } else {
-    // Stock format: AAPL.US
-    url = `https://eodhd.com/api/eod/${symbol.toUpperCase()}.US?from=${formatDate(startDate)}&to=${formatDate(endDate)}&api_token=${apiKey}&fmt=json`;
+    // Stock format: AAPL.US (normalize BRK.B → BRK-B for EODHD)
+    url = `https://eodhd.com/api/eod/${normalizeSymbolForEODHD(symbol.toUpperCase())}.US?from=${formatDate(startDate)}&to=${formatDate(endDate)}&api_token=${apiKey}&fmt=json`;
   }
 
   console.log(`[Volatility] Fetching data for ${symbol} (${type})`);

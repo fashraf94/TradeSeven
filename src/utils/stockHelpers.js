@@ -18,7 +18,7 @@ export const STOCK_SECTORS = {
   // Finance
   JPM: 'Finance', BAC: 'Finance', WFC: 'Finance', GS: 'Finance',
   MS: 'Finance', V: 'Finance', MA: 'Finance', AXP: 'Finance',
-  BRK: 'Finance', COIN: 'Finance', PYPL: 'Finance', SQ: 'Finance',
+  BRK: 'Finance', COIN: 'Finance', PYPL: 'Finance', XYZ: 'Finance',
 
   // Healthcare
   JNJ: 'Healthcare', UNH: 'Healthcare', PFE: 'Healthcare', MRK: 'Healthcare',

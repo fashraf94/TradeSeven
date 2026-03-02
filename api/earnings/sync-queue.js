@@ -34,7 +34,7 @@ async function hasIVData(symbol) {
   }
 
   try {
-    const tickerWithExchange = `${upperSymbol}.US`;
+    const tickerWithExchange = `${upperSymbol.replace(/\./g, '-')}.US`;
     const optionsUrl = `https://eodhd.com/api/options/${tickerWithExchange}?api_token=${apiKey}`;
     const optionsRes = await fetch(optionsUrl);
 

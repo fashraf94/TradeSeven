@@ -37,9 +37,10 @@ export default async function handler(req, res) {
 
   try {
     // Handle single symbol or multiple symbols
+    // Normalize dots to hyphens for EODHD (BRK.B → BRK-B.US)
     const symbolParam = symbol
-      ? `${symbol.trim().toUpperCase()}.US`
-      : symbols.split(',').map(s => `${s.trim().toUpperCase()}.US`).join(',');
+      ? `${symbol.trim().toUpperCase().replace(/\./g, '-')}.US`
+      : symbols.split(',').map(s => `${s.trim().toUpperCase().replace(/\./g, '-')}.US`).join(',');
 
     // EODHD News API with symbol filter
     const url = `https://eodhd.com/api/news?s=${symbolParam}&api_token=${API_KEY}&limit=${Math.min(parseInt(limit), 50)}&offset=${offset}&fmt=json`;
