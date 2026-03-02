@@ -25,6 +25,7 @@ const TacticalPod = ({
   isUser,           // Boolean - is this the current user?
   onScout,          // Callback when tapped (for scouting opponents)
   isBeingScouted = false,  // Boolean - is this pod currently being scouted?
+  isFlashing = false,      // Boolean - briefly true when shockwave fires from this pod
   style = {},       // Position styles from parent
 }) => {
   // Mobile detection for responsive sizing
@@ -129,23 +130,26 @@ const TacticalPod = ({
     <div
       onClick={handleClick}
       style={{
-        position: 'absolute',
+        position: 'relative',
         cursor: isUser ? 'default' : 'pointer',
         transition: 'transform 0.3s ease, filter 0.3s ease',
-        zIndex: isUser ? 10 : 5,
         ...style,
       }}
     >
       {/* Outer glow container */}
       <div style={{
         position: 'relative',
-        filter: isBeingScouted
-          ? `drop-shadow(0 0 15px ${HOLO_COLORS.amber}) drop-shadow(0 0 30px ${HOLO_COLORS.amber}66)`
-          : colors.glow !== 'none' ? `drop-shadow(${colors.glow})` : 'none',
+        filter: [
+          isBeingScouted
+            ? `drop-shadow(0 0 15px ${HOLO_COLORS.amber}) drop-shadow(0 0 30px ${HOLO_COLORS.amber}66)`
+            : colors.glow !== 'none' ? `drop-shadow(${colors.glow})` : '',
+          isFlashing ? 'brightness(1.3)' : '',
+        ].filter(Boolean).join(' ') || 'none',
         boxShadow: isUser ? RANK_GLOWS[2] : (RANK_GLOWS[rank] || 'none'),
         animation: isBeingScouted
           ? 'scoutedPulse 1.5s ease-in-out infinite'
           : isUser || rank === 1 ? 'holoPulse 3s ease-in-out infinite' : 'none',
+        transition: isFlashing ? 'filter 0.15s ease-in' : 'filter 0.3s ease-out',
       }}>
         {/* Hexagon Pod */}
         <div style={{
