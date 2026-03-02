@@ -16,6 +16,7 @@ import TechnicalAnalysisTab from './ResearchTabs/TechnicalAnalysisTab';
 import BaggerBombTab from './ResearchTabs/BaggerBombTab';
 import HealthTab from '../Research/HealthTab';
 import { CRYPTO_SYMBOLS } from '../../services/sessionScoringService';
+import AnalysisVisualDashboard from './AnalysisVisualDashboard';
 
 /**
  * AssetResearchModal - Detailed asset research view (reusable across screens)
@@ -658,42 +659,12 @@ const AssetResearchModal = ({
                       )}
                     </div>
                   )}
-                  {/* Key metrics grid — real API data, "—" when unavailable */}
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '12px' }}>
-                    {[
-                      { label: 'Market Cap', value: profile?.marketCap ? formatLargeNumber(profile.marketCap, 1) : '\u2014' },
-                      { label: 'P/E Ratio', value: profile?.peRatio != null ? `${Number(profile.peRatio).toFixed(1)}x` : '\u2014' },
-                      { label: 'Rev Growth', value: profile?.revenueGrowthYOY != null ? `${(profile.revenueGrowthYOY * 100) >= 0 ? '+' : ''}${(profile.revenueGrowthYOY * 100).toFixed(0)}%` : '\u2014' },
-                      { label: 'Margin', value: profile?.profitMargin != null ? `${(profile.profitMargin * 100).toFixed(0)}%` : '\u2014' },
-                    ].map(m => (
-                      <div key={m.label} style={{
-                        padding: '8px', borderRadius: '8px',
-                        background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)',
-                      }}>
-                        <div style={{ fontSize: '10px', color: 'rgba(255,255,255,0.4)', marginBottom: '2px' }}>{m.label}</div>
-                        <div style={{ fontSize: '13px', fontWeight: '600', color: m.value === '\u2014' ? 'rgba(255,255,255,0.25)' : '#e6edf3' }}>{m.value}</div>
-                      </div>
-                    ))}
-                  </div>
-                  {/* Strengths & Weaknesses — curated qualitative data */}
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-                    <div>
-                      <div style={{ fontSize: '11px', fontWeight: '600', color: '#00ff88', marginBottom: '4px' }}>Strengths</div>
-                      {fundamentals.strengths?.map((s, i) => (
-                        <div key={i} style={{ fontSize: '11px', color: 'rgba(255,255,255,0.6)', marginBottom: '2px' }}>
-                          {'\u2022'} {s}
-                        </div>
-                      ))}
-                    </div>
-                    <div>
-                      <div style={{ fontSize: '11px', fontWeight: '600', color: '#ff4757', marginBottom: '4px' }}>Weaknesses</div>
-                      {fundamentals.weaknesses?.map((w, i) => (
-                        <div key={i} style={{ fontSize: '11px', color: 'rgba(255,255,255,0.6)', marginBottom: '2px' }}>
-                          {'\u2022'} {w}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
+                  {/* Visual Intelligence Dashboard */}
+                  <AnalysisVisualDashboard
+                    symbol={asset?.symbol}
+                    stockData={profile}
+                    isMobile={isMobile}
+                  />
                 </div>
               )}
 
@@ -1024,227 +995,12 @@ const AssetResearchModal = ({
                   </div>
                 )}
 
-                {/* Metrics Grid */}
-                <div
-                  style={{
-                    display: 'grid',
-                    gridTemplateColumns: 'repeat(2, 1fr)',
-                    gap: '12px',
-                    marginBottom: '16px',
-                  }}
-                >
-                  {/* Market Cap */}
-                  <div
-                    style={{
-                      background: 'rgba(255, 255, 255, 0.03)',
-                      borderRadius: '12px',
-                      padding: '16px',
-                      textAlign: 'center',
-                    }}
-                  >
-                    <div
-                      style={{
-                        width: '40px',
-                        height: '40px',
-                        borderRadius: '10px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        background: 'rgba(59, 130, 246, 0.2)',
-                        margin: '0 auto 8px',
-                      }}
-                    >
-                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" strokeWidth="2">
-                        <rect x="3" y="3" width="18" height="18" rx="2" />
-                        <path d="M9 9h6v6H9z" />
-                      </svg>
-                    </div>
-                    <div style={{ fontSize: '20px', fontWeight: '700', color: '#ffffff' }}>
-                      {profile?.marketCap ? formatLargeNumber(profile.marketCap, 1) : fundamentals.marketCap}
-                    </div>
-                    <div style={{ fontSize: '11px', color: 'rgba(255, 255, 255, 0.4)', marginTop: '4px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                      Market Cap
-                    </div>
-                  </div>
-
-                  {/* P/E Ratio */}
-                  <div
-                    style={{
-                      background: 'rgba(255, 255, 255, 0.03)',
-                      borderRadius: '12px',
-                      padding: '16px',
-                      textAlign: 'center',
-                    }}
-                  >
-                    <div
-                      style={{
-                        width: '40px',
-                        height: '40px',
-                        borderRadius: '10px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        background: 'rgba(139, 92, 246, 0.2)',
-                        margin: '0 auto 8px',
-                      }}
-                    >
-                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#8b5cf6" strokeWidth="2">
-                        <path d="M3 3v18h18" />
-                        <path d="M18 17V9" />
-                        <path d="M13 17V5" />
-                        <path d="M8 17v-3" />
-                      </svg>
-                    </div>
-                    <div style={{ fontSize: '20px', fontWeight: '700', color: '#ffffff' }}>
-                      {profile?.peRatio != null ? `${Number(profile.peRatio).toFixed(1)}x` : fundamentals.peRatio}
-                    </div>
-                    <div style={{ fontSize: '11px', color: 'rgba(255, 255, 255, 0.4)', marginTop: '4px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                      P/E Ratio
-                    </div>
-                  </div>
-
-                  {/* Revenue Growth */}
-                  <div
-                    style={{
-                      background: 'rgba(255, 255, 255, 0.03)',
-                      borderRadius: '12px',
-                      padding: '16px',
-                      textAlign: 'center',
-                    }}
-                  >
-                    <div
-                      style={{
-                        width: '40px',
-                        height: '40px',
-                        borderRadius: '10px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        background: 'rgba(16, 185, 129, 0.2)',
-                        margin: '0 auto 8px',
-                      }}
-                    >
-                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2">
-                        <line x1="12" y1="1" x2="12" y2="23" />
-                        <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
-                      </svg>
-                    </div>
-                    <div style={{ fontSize: '20px', fontWeight: '700', color: '#10b981' }}>
-                      {profile?.revenueGrowthYOY != null ? `${(profile.revenueGrowthYOY * 100) >= 0 ? '+' : ''}${(profile.revenueGrowthYOY * 100).toFixed(0)}%` : fundamentals.revenueGrowth}
-                    </div>
-                    <div style={{ fontSize: '11px', color: 'rgba(255, 255, 255, 0.4)', marginTop: '4px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                      Revenue Growth
-                    </div>
-                  </div>
-
-                  {/* Profit Margin */}
-                  <div
-                    style={{
-                      background: 'rgba(255, 255, 255, 0.03)',
-                      borderRadius: '12px',
-                      padding: '16px',
-                      textAlign: 'center',
-                    }}
-                  >
-                    <div
-                      style={{
-                        width: '40px',
-                        height: '40px',
-                        borderRadius: '10px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        background: 'rgba(245, 158, 11, 0.2)',
-                        margin: '0 auto 8px',
-                      }}
-                    >
-                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2">
-                        <line x1="19" y1="5" x2="5" y2="19" />
-                        <circle cx="6.5" cy="6.5" r="2.5" />
-                        <circle cx="17.5" cy="17.5" r="2.5" />
-                      </svg>
-                    </div>
-                    <div style={{ fontSize: '20px', fontWeight: '700', color: '#f59e0b' }}>
-                      {profile?.profitMargin != null ? `${(profile.profitMargin * 100).toFixed(0)}%` : fundamentals.profitMargin}
-                    </div>
-                    <div style={{ fontSize: '11px', color: 'rgba(255, 255, 255, 0.4)', marginTop: '4px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                      Profit Margin
-                    </div>
-                  </div>
-                </div>
-
-                {/* Strengths & Weaknesses */}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-                  <div>
-                    <div
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '8px',
-                        fontWeight: '600',
-                        fontSize: '13px',
-                        marginBottom: '12px',
-                        color: '#10b981',
-                      }}
-                    >
-                      <span>✓</span>
-                      STRENGTHS
-                    </div>
-                    <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
-                      {fundamentals.strengths.map((s, i) => (
-                        <li
-                          key={i}
-                          style={{
-                            padding: '8px 12px',
-                            marginBottom: '8px',
-                            borderRadius: '8px',
-                            fontSize: '12px',
-                            color: 'rgba(255, 255, 255, 0.8)',
-                            background: 'rgba(16, 185, 129, 0.1)',
-                            borderLeft: '3px solid #10b981',
-                          }}
-                        >
-                          {s}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-
-                  <div>
-                    <div
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '8px',
-                        fontWeight: '600',
-                        fontSize: '13px',
-                        marginBottom: '12px',
-                        color: '#ef4444',
-                      }}
-                    >
-                      <span>✗</span>
-                      WEAKNESSES
-                    </div>
-                    <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
-                      {fundamentals.weaknesses.map((w, i) => (
-                        <li
-                          key={i}
-                          style={{
-                            padding: '8px 12px',
-                            marginBottom: '8px',
-                            borderRadius: '8px',
-                            fontSize: '12px',
-                            color: 'rgba(255, 255, 255, 0.8)',
-                            background: 'rgba(239, 68, 68, 0.1)',
-                            borderLeft: '3px solid #ef4444',
-                          }}
-                        >
-                          {w}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                </div>
+                {/* Visual Intelligence Dashboard */}
+                <AnalysisVisualDashboard
+                  symbol={asset?.symbol}
+                  stockData={profile}
+                  isMobile={isMobile}
+                />
               </div>
             )}
 
