@@ -113,7 +113,7 @@ import { StockIntelligenceScreen } from './components/StockIntelligence';
 // Research Landing Page (redesigned)
 import ResearchLandingPage from './components/Research/ResearchLandingPage';
 // Dashboard Components
-import { GameModeToggle, ResearchModeButton, WeeklyChallengesPanel, GameModeCarousels, DashboardTabs, LiveClashesSection, LiveFeed, YourActivity, SeasonalBanner, TrainingLiveFeed, PendingLobbiesSection } from './components/Dashboard';
+import { GameModeToggle, ResearchModeButton, WeeklyChallengesPanel, GameModeCarousels, DashboardTabs, LiveClashesSection, PvpWatchlistSection, YourActivity, SeasonalBanner, TrainingLiveFeed, PendingLobbiesSection } from './components/Dashboard';
 
 // ============================================
 // LAZY LOADING FALLBACK
@@ -20249,20 +20249,19 @@ export default function PortfolioDuel() {
                   colors={colors}
                 />
 
-                {/* Live Feed - community activity */}
-                <LiveFeed
-                  waitingBattles={waitingBattles}
-                  completedBattles={completedBattles}
-                  stocksData={stocksData}
-                  lobbyBattles={lobbyBattles}
+                {/* Market Watch — Watchlist + Lobbies */}
+                <PvpWatchlistSection
                   user={user}
                   colors={colors}
-                  setCurrentBattle={setCurrentBattle}
+                  stocksData={stocksData}
+                  cryptoData={cryptoData}
+                  lobbyBattles={lobbyBattles}
+                  setCurrentDraft={setCurrentDraft}
                   setScreen={setScreen}
-                  copyToClipboard={copyToClipboard}
                   setJoinCode={setJoinCode}
                   setJoinBattleType={setJoinBattleType}
-                  setCurrentDraft={setCurrentDraft}
+                  setDraftState={setDraftState}
+                  copyToClipboard={copyToClipboard}
                   onJoinLobby={async (lobby) => {
                     // Handle BaggerBomb V3/V4 lobbies
                     if (lobby._v === 3 || lobby._v === 4) {
@@ -20355,15 +20354,6 @@ export default function PortfolioDuel() {
                   colors={colors}
                 />
 
-                {/* Training Live Feed - BaggerBomb events & lead changes (bottom for endless scroll feel) */}
-                <TrainingLiveFeed
-                  activeTrainingBattles={activeTrainingBattles}
-                  battlePrices={battlePrices}
-                  user={user}
-                  setCurrentBattle={setCurrentBattle}
-                  setScreen={setScreen}
-                  setActiveBattleId={setActiveBattleId}
-                />
               </>
             )}
           </div>

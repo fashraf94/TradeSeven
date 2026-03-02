@@ -64,6 +64,15 @@ class WebSocketManager {
 
     // Extended-hours filter: log once per after-hours session
     this._extendedHoursWarned = false;
+
+    // --- Diagnostics tracking ---
+    this._messagesReceived = 0;
+    this._stockLastMessageTime = null;
+    this._cryptoLastMessageTime = null;
+    this._connectedSince = null;
+    this._lastError = null;
+    this._stockReconnectAttempts = 0;
+    this._cryptoReconnectAttempts = 0;
   }
 
   // ==================== EVENT SYSTEM ====================
@@ -235,6 +244,8 @@ class WebSocketManager {
         console.log('[WebSocket] Connected to stocks');
         this._stockStatus = 'connected';
         this._stockReconnectDelay = 2000; // Reset backoff
+        this._stockReconnectAttempts = 0;
+        if (!this._connectedSince) this._connectedSince = Date.now();
         this._emitStatus();
 
         // Subscribe ALL tracked symbols (not just new ones)
@@ -249,6 +260,8 @@ class WebSocketManager {
       };
 
       this._stockWs.onmessage = (event) => {
+        this._messagesReceived++;
+        this._stockLastMessageTime = new Date();
         this._handleMessage(event.data, 'stock');
       };
 
@@ -260,11 +273,20 @@ class WebSocketManager {
 
         // Reconnect if we still have subscriptions
         if (Object.keys(this._stockSubscriptions).length > 0) {
+          this._stockReconnectAttempts++;
+          if (this._stockReconnectAttempts >= 3) {
+            console.warn(
+              `[WebSocket] stock connection failed ${this._stockReconnectAttempts} times — ` +
+              `may be approaching EODHD concurrent connection limit (50 max). ` +
+              `Subscribed to ${Object.keys(this._stockSubscriptions).length} symbols.`
+            );
+          }
           this._scheduleReconnect('stock');
         }
       };
 
       this._stockWs.onerror = (err) => {
+        this._lastError = `stock: ${err.message || 'Connection error'} at ${new Date().toISOString()}`;
         console.error('[WebSocket] Stock connection error:', err);
       };
     } catch (err) {
@@ -305,6 +327,8 @@ class WebSocketManager {
         console.log('[WebSocket] Connected to crypto');
         this._cryptoStatus = 'connected';
         this._cryptoReconnectDelay = 2000;
+        this._cryptoReconnectAttempts = 0;
+        if (!this._connectedSince) this._connectedSince = Date.now();
         this._emitStatus();
 
         const allSymbols = Object.keys(this._cryptoSubscriptions);
@@ -317,6 +341,8 @@ class WebSocketManager {
       };
 
       this._cryptoWs.onmessage = (event) => {
+        this._messagesReceived++;
+        this._cryptoLastMessageTime = new Date();
         this._handleMessage(event.data, 'crypto');
       };
 
@@ -327,11 +353,20 @@ class WebSocketManager {
         this._emitStatus();
 
         if (Object.keys(this._cryptoSubscriptions).length > 0) {
+          this._cryptoReconnectAttempts++;
+          if (this._cryptoReconnectAttempts >= 3) {
+            console.warn(
+              `[WebSocket] crypto connection failed ${this._cryptoReconnectAttempts} times — ` +
+              `may be approaching EODHD concurrent connection limit (50 max). ` +
+              `Subscribed to ${Object.keys(this._cryptoSubscriptions).length} symbols.`
+            );
+          }
           this._scheduleReconnect('crypto');
         }
       };
 
       this._cryptoWs.onerror = (err) => {
+        this._lastError = `crypto: ${err.message || 'Connection error'} at ${new Date().toISOString()}`;
         console.error('[WebSocket] Crypto connection error:', err);
       };
     } catch (err) {
@@ -434,6 +469,35 @@ class WebSocketManager {
       stockStatus: this._stockStatus,
       cryptoStatus: this._cryptoStatus,
       marketState: state,
+    };
+  }
+
+  // ==================== DIAGNOSTICS ====================
+
+  getDiagnostics() {
+    return {
+      stocks: {
+        connected: this._stockStatus === 'connected',
+        readyState: this._stockWs?.readyState ?? null,
+        subscribedSymbols: Object.keys(this._stockSubscriptions).length,
+        symbolList: Object.keys(this._stockSubscriptions),
+        reconnectAttempts: this._stockReconnectAttempts,
+        lastMessageTime: this._stockLastMessageTime,
+      },
+      crypto: {
+        connected: this._cryptoStatus === 'connected',
+        readyState: this._cryptoWs?.readyState ?? null,
+        subscribedSymbols: Object.keys(this._cryptoSubscriptions).length,
+        symbolList: Object.keys(this._cryptoSubscriptions),
+        reconnectAttempts: this._cryptoReconnectAttempts,
+        lastMessageTime: this._cryptoLastMessageTime,
+      },
+      totalSubscriptions:
+        Object.keys(this._stockSubscriptions).length +
+        Object.keys(this._cryptoSubscriptions).length,
+      messagesReceived: this._messagesReceived,
+      connectionUptime: this._connectedSince ? Date.now() - this._connectedSince : 0,
+      lastError: this._lastError,
     };
   }
 
