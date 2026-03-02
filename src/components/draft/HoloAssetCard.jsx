@@ -1,5 +1,6 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { motion } from 'framer-motion';
+import { SHOCKWAVE_CONFIG } from '../../utils/shockwaveUtils';
 
 /**
  * HoloAssetCard - Holographic Asset Module Card
@@ -57,7 +58,7 @@ const SECTOR_COLORS = {
   'default': { primary: '#00d9ff', glow: 'rgba(0, 217, 255, 0.4)' }
 };
 
-const HoloAssetCard = ({
+const HoloAssetCard = React.forwardRef(({
   symbol,
   name,
   price,
@@ -74,11 +75,44 @@ const HoloAssetCard = ({
   category = 'steady',
   disabled = false,
   compact = false,           // Phone-optimized compact mode
-}) => {
+  shockwaveDelay = null,     // Shockwave ripple delay in seconds (null = inactive)
+}, ref) => {
   const [isHovered, setIsHovered] = useState(false);
   const [isPressed, setIsPressed] = useState(false);
   const [isPicking, setIsPicking] = useState(false);
   const [showParticles, setShowParticles] = useState(false);
+  const [flinchActive, setFlinchActive] = useState(false);
+
+  // Shockwave card flinch — delayed trigger based on distance from epicenter
+  useEffect(() => {
+    if (shockwaveDelay == null) {
+      setFlinchActive(false);
+      return;
+    }
+    let resetTimer;
+    const delayTimer = setTimeout(() => {
+      setFlinchActive(true);
+      resetTimer = setTimeout(() => setFlinchActive(false), 350);
+    }, shockwaveDelay * 1000);
+    return () => {
+      clearTimeout(delayTimer);
+      clearTimeout(resetTimer);
+    };
+  }, [shockwaveDelay]);
+
+  // Flinch style — applied to root div in both compact and full-size modes
+  const flinchStyle = flinchActive ? {
+    transform: `scale(${SHOCKWAVE_CONFIG.flinchScale}) translateY(${SHOCKWAVE_CONFIG.flinchTranslateY}px)`,
+    transition: 'transform 0.1s ease-in',
+  } : {
+    transform: 'scale(1) translateY(0)',
+    transition: 'transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1)',
+  };
+
+  // Flinch glow — brief cyan edge glow during flinch
+  const flinchGlow = flinchActive
+    ? '0 0 12px rgba(0, 217, 255, 0.4), inset 0 0 8px rgba(0, 217, 255, 0.1)'
+    : undefined;
 
   // Get sector colors
   const sectorColor = SECTOR_COLORS[sector] || SECTOR_COLORS.default;
@@ -162,6 +196,7 @@ const HoloAssetCard = ({
 
     return (
       <div
+        ref={ref}
         className={`holo-asset-card-compact ${isSelected ? 'selected' : ''}`}
         onClick={handleCardClick}
         style={{
@@ -179,9 +214,9 @@ const HoloAssetCard = ({
           padding: '8px',
           opacity: isLocked ? 0.7 : 1,
           filter: isLocked ? 'saturate(0.5)' : 'none',
-          boxShadow: compactShadow,
+          boxShadow: flinchGlow ? `${compactShadow}, ${flinchGlow}` : compactShadow,
           cursor: isLocked || disabled ? 'not-allowed' : 'pointer',
-          transition: 'all 0.15s ease',
+          ...flinchStyle,
         }}
       >
         {/* Top Row: Category Badge + Status */}
@@ -340,8 +375,21 @@ const HoloAssetCard = ({
     return `0 0 10px ${accentGlow}`;
   };
 
+  // Merge flinch transform with existing hover/pick transforms
+  const baseTransform = isPicking ? 'scale(1.05)' : isHovered && isAvailable ? 'translateY(-2px)' : 'none';
+  const fullTransform = flinchActive
+    ? `scale(${SHOCKWAVE_CONFIG.flinchScale}) translateY(${SHOCKWAVE_CONFIG.flinchTranslateY}px)`
+    : baseTransform;
+  const fullTransition = flinchActive
+    ? 'transform 0.1s ease-in, box-shadow 0.1s ease-in'
+    : shockwaveDelay != null
+      ? 'transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.25s ease-out'
+      : 'all 0.15s ease';
+  const fullBoxShadow = flinchGlow ? `${getBoxShadow()}, ${flinchGlow}` : getBoxShadow();
+
   return (
     <div
+      ref={ref}
       className={`holo-asset-card ${isAvailable ? 'holo-card-hover' : ''} ${isPicking ? 'pick-confirming' : ''} ${isSelected ? 'card-selected' : ''}`}
       onClick={handleCardClick}
       onMouseEnter={() => setIsHovered(true)}
@@ -368,9 +416,9 @@ const HoloAssetCard = ({
         overflow: 'hidden',
         opacity: isLocked ? 0.85 : 1,
         filter: isLocked ? 'saturate(0.6)' : isPicking ? 'brightness(1.3)' : 'none',
-        boxShadow: getBoxShadow(),
-        transition: 'all 0.15s ease',
-        transform: isPicking ? 'scale(1.05)' : isHovered && isAvailable ? 'translateY(-2px)' : 'none',
+        boxShadow: fullBoxShadow,
+        transition: fullTransition,
+        transform: fullTransform,
         cursor: isLocked || disabled || isPicking ? 'not-allowed' : 'pointer',
       }}
     >
@@ -774,6 +822,8 @@ const HoloAssetCard = ({
       `}</style>
     </div>
   );
-};
+});
+
+HoloAssetCard.displayName = 'HoloAssetCard';
 
 export default HoloAssetCard;

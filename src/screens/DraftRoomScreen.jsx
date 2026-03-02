@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 
 /**
  * DraftRoomScreen - Holographic War Room Redesign
@@ -32,6 +33,8 @@ import {
   SnakeConnectorVertical,
   AssetResearchModal
 } from '../components/draft';
+import { useShockwave } from '../hooks/useShockwave';
+import { SHOCKWAVE_CONFIG } from '../utils/shockwaveUtils';
 
 const DraftRoomScreen = ({
   containerStyle,
@@ -71,6 +74,10 @@ const DraftRoomScreen = ({
   const prevPickerRef = useRef(null);
   const prevLastPickIdRef = useRef(null);
   const prevCategoryRef = useRef(selectedDraftCategory);
+
+  // Shockwave "Lock-In" effect state
+  const { shockwaveOrigin, cardDelays, triggerShockwave } = useShockwave();
+  const cardRefsMap = useRef(new Map());
 
   // Roster drawer state (slide-up panel showing user's picks)
   const [rosterDrawerOpen, setRosterDrawerOpen] = useState(false);
@@ -875,6 +882,10 @@ const DraftRoomScreen = ({
                 return (
                   <HoloAssetCard
                     key={asset.symbol}
+                    ref={(el) => {
+                      if (el) cardRefsMap.current.set(asset.symbol, el);
+                      else cardRefsMap.current.delete(asset.symbol);
+                    }}
                     symbol={asset.symbol}
                     name={asset.name}
                     price={displayPrice}
@@ -896,6 +907,7 @@ const DraftRoomScreen = ({
                       isCrypto: roomDraft?.type === 'crypto',
                     })}
                     compact={isPhone}
+                    shockwaveDelay={cardDelays?.get(asset.symbol) ?? null}
                   />
                 );
               })}
@@ -1086,6 +1098,7 @@ const DraftRoomScreen = ({
             <CommandDeckConfirmButton
               selectedAsset={selectedAsset}
               onConfirm={handleConfirmPick}
+              onShockwave={({ x, y }) => triggerShockwave(x, y, cardRefsMap.current)}
               isYourTurn={isMyTurn}
               isLoading={isConfirming}
               currentPickerName={
@@ -1640,6 +1653,37 @@ const DraftRoomScreen = ({
           </>
         )}
 
+        {/* Shockwave Overlay — expanding cyan ring from button epicenter */}
+        <AnimatePresence>
+          {shockwaveOrigin && (
+            <motion.div
+              key="shockwave-overlay"
+              className="shockwave-overlay"
+              initial={{ scale: 0, opacity: 1 }}
+              animate={{ scale: SHOCKWAVE_CONFIG.waveMaxScale, opacity: 0 }}
+              exit={{ opacity: 0 }}
+              transition={{
+                duration: SHOCKWAVE_CONFIG.waveDuration,
+                ease: SHOCKWAVE_CONFIG.waveEasing,
+              }}
+              style={{
+                position: 'fixed',
+                left: shockwaveOrigin.x - 25,
+                top: shockwaveOrigin.y - 25,
+                width: 50,
+                height: 50,
+                borderRadius: '50%',
+                pointerEvents: 'none',
+                zIndex: 9999,
+                background: 'radial-gradient(circle, rgba(0,217,255,0.15) 0%, rgba(0,217,255,0.05) 40%, transparent 70%)',
+                boxShadow: '0 0 60px 30px rgba(0,217,255,0.3), 0 0 120px 60px rgba(0,217,255,0.15)',
+                border: '1px solid rgba(0,217,255,0.2)',
+                // backdrop-filter: blur(4px) brightness(1.3) ← enable if perf allows
+              }}
+            />
+          )}
+        </AnimatePresence>
+
         {/* Responsive Styles & Animations */}
         <style>{`
           /* Desktop: Show horizontal arc, hide vertical */
@@ -1818,7 +1862,8 @@ const DraftRoomScreen = ({
             .your-turn-flash,
             .last-pick-banner-animate,
             .category-transition,
-            .roster-drawer {
+            .roster-drawer,
+            .shockwave-overlay {
               animation: none !important;
               transition: none !important;
             }

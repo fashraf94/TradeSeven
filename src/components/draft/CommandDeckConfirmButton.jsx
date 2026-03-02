@@ -1,5 +1,6 @@
 import React, { useState, useCallback, useRef } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, useAnimationControls } from 'framer-motion';
+import { SHOCKWAVE_CONFIG } from '../../utils/shockwaveUtils';
 
 /**
  * CommandDeckConfirmButton - "DRAFT NOW" Confirm Button for Command Deck
@@ -17,12 +18,14 @@ import { motion, AnimatePresence } from 'framer-motion';
 const CommandDeckConfirmButton = ({
   selectedAsset,
   onConfirm,
+  onShockwave,
   isYourTurn,
   isLoading = false,
   currentPickerName = 'opponent',
 }) => {
   const [particles, setParticles] = useState([]);
   const buttonRef = useRef(null);
+  const recoilControls = useAnimationControls();
 
   const isDisabled = !selectedAsset || !isYourTurn || isLoading;
   const hasSelection = !!selectedAsset && isYourTurn;
@@ -31,8 +34,18 @@ const CommandDeckConfirmButton = ({
   const handleDraft = useCallback(() => {
     if (!selectedAsset || !isYourTurn || isLoading) return;
 
-    // Haptic feedback — single short thud, fails silently on desktop
-    try { navigator.vibrate?.(15); } catch {}
+    // Enhanced haptic feedback — burst pattern, fails silently on desktop
+    try { navigator.vibrate?.(SHOCKWAVE_CONFIG.hapticPattern); } catch {}
+
+    // Button recoil: compress → spring back
+    recoilControls.start({ scale: SHOCKWAVE_CONFIG.recoilScale, transition: { duration: SHOCKWAVE_CONFIG.recoilDuration, ease: 'easeIn' } })
+      .then(() => recoilControls.start({ scale: 1, transition: { type: 'spring', ...SHOCKWAVE_CONFIG.recoilSpring } }));
+
+    // Fire shockwave callback with button center coordinates
+    if (onShockwave && buttonRef.current) {
+      const rect = buttonRef.current.getBoundingClientRect();
+      onShockwave({ x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 });
+    }
 
     // Fire-and-forget particle burst
     const newParticles = Array.from({ length: 6 }, (_, i) => ({
@@ -45,7 +58,7 @@ const CommandDeckConfirmButton = ({
 
     // Confirm immediately — no delay
     onConfirm?.(selectedAsset);
-  }, [selectedAsset, isYourTurn, isLoading, onConfirm]);
+  }, [selectedAsset, isYourTurn, isLoading, onConfirm, onShockwave, recoilControls]);
 
   return (
     <div style={{ position: 'relative' }}>
@@ -87,18 +100,7 @@ const CommandDeckConfirmButton = ({
         className={isReady ? 'confirm-btn-ready' : ''}
         whileHover={isReady ? { scale: 1.03 } : {}}
         whileTap={isReady ? { scale: 0.96 } : {}}
-        animate={
-          isReady
-            ? {
-                boxShadow: [
-                  '0 0 15px rgba(16, 185, 129, 0.3)',
-                  '0 0 25px rgba(16, 185, 129, 0.5)',
-                  '0 0 15px rgba(16, 185, 129, 0.3)',
-                ],
-              }
-            : {}
-        }
-        transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
+        animate={recoilControls}
         style={{
           // Slanted shape like the old YOU panel
           clipPath: 'polygon(20px 0, calc(100% - 20px) 0, 100% 100%, 0 100%)',
@@ -132,6 +134,7 @@ const CommandDeckConfirmButton = ({
           position: 'relative',
           overflow: 'hidden',
           width: '100%',
+          animation: isReady ? 'confirmGlowPulse 2s ease-in-out infinite' : 'none',
         }}
       >
         {/* Scanline overlay for depth */}
@@ -200,11 +203,15 @@ const CommandDeckConfirmButton = ({
         {/* Animations */}
       </motion.button>
 
-      {/* CSS for shimmer animation */}
+      {/* CSS for shimmer + glow pulse animations */}
       <style>{`
         @keyframes commandDeckShimmer {
           0% { transform: translateX(0); }
           100% { transform: translateX(100%); }
+        }
+        @keyframes confirmGlowPulse {
+          0%, 100% { box-shadow: 0 0 15px rgba(16, 185, 129, 0.3); }
+          50% { box-shadow: 0 0 25px rgba(16, 185, 129, 0.5); }
         }
       `}</style>
     </div>
