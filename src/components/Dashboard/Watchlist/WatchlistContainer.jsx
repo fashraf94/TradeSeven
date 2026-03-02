@@ -97,14 +97,18 @@ export default function WatchlistContainer({
     return map;
   }, [cryptoData]);
 
-  // --- Load custom watchlist from Firebase (once on mount) ---
-  const initialLoadDone = useRef(false);
+  // --- Derive userId for watchlist persistence ---
+  const userId = user?.odUserId || user?.uid;
+
+  // --- Ref for stable guard checks in callbacks ---
+  const customWatchlistRef = useRef(customWatchlist);
+  customWatchlistRef.current = customWatchlist;
+
+  // --- Load custom watchlist from localStorage ---
   useEffect(() => {
-    if (initialLoadDone.current) return;
-    if (!user) return;
-    initialLoadDone.current = true;
-    getCustomWatchlist().then(setCustomWatchlist).catch(() => {});
-  }, [user]);
+    if (!userId) return;
+    setCustomWatchlist(getCustomWatchlist(userId));
+  }, [userId]);
 
   // --- Default list selection ---
   useEffect(() => {
@@ -237,32 +241,18 @@ export default function WatchlistContainer({
   }, []);
 
   // --- Custom watchlist handlers ---
-  const handleAddToWatchlist = useCallback(async (symbol) => {
-    if (customWatchlist.includes(symbol)) return;
-    if (customWatchlist.length >= 30) return;
+  const handleAddToWatchlist = useCallback((symbol) => {
+    if (customWatchlistRef.current.includes(symbol)) return;
+    if (customWatchlistRef.current.length >= 30) return;
 
-    // Optimistic update
+    addToWatchlist(userId, symbol);
     setCustomWatchlist(prev => [...prev, symbol]);
+  }, [userId]);
 
-    try {
-      await addToWatchlist(symbol);
-    } catch {
-      // Revert on failure
-      setCustomWatchlist(prev => prev.filter(s => s !== symbol));
-    }
-  }, [customWatchlist]);
-
-  const handleRemoveFromWatchlist = useCallback(async (symbol) => {
-    // Optimistic update
+  const handleRemoveFromWatchlist = useCallback((symbol) => {
+    removeFromWatchlist(userId, symbol);
     setCustomWatchlist(prev => prev.filter(s => s !== symbol));
-
-    try {
-      await removeFromWatchlist(symbol);
-    } catch {
-      // Revert on failure
-      setCustomWatchlist(prev => [...prev, symbol]);
-    }
-  }, []);
+  }, [userId]);
 
   if (!activeListId) return null;
 

@@ -263,17 +263,17 @@ export default function PvpWatchlistSection({
         </div>
       </div>
 
-      {/* Content */}
-      {activeView === 'watchlist' ? (
+      {/* Content — both views always mounted to preserve WatchlistContainer state */}
+      <div style={{ display: activeView === 'watchlist' ? 'block' : 'none' }}>
         <WatchlistContainer
           user={user}
           colors={colors}
           stocksData={stocksData}
           cryptoData={cryptoData}
         />
-      ) : (
-        /* ─── Lobbies View ─── */
-        lobbyItems.length > 0 ? (
+      </div>
+      <div style={{ display: activeView === 'lobbies' ? 'block' : 'none' }}>
+        {lobbyItems.length > 0 ? (
           <HoloCard accentColor="purple">
             <div style={{
               display: 'flex',
@@ -305,8 +305,8 @@ export default function PvpWatchlistSection({
               </div>
             </div>
           </HoloCard>
-        )
-      )}
+        )}
+      </div>
     </motion.div>
   );
 }
