@@ -4,6 +4,7 @@ import { calculateRollingSMA, calculateRSI, calculateMACD, calculateSMA } from '
 import { detectLevels } from '../../services/levelDetection';
 import { aggregateToMonthly } from './chartUtils';
 import { getDailyHL } from '../../services/websocketService';
+import { getMarketState } from '../../utils/marketSchedule';
 
 /**
  * Find yesterday's closing price from daily OHLCV data (newest-first).
@@ -50,6 +51,7 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
   const apiTimeframe = isSpectate ? '1m' : isBomb ? '30m' : (timeframe === '1D' ? '1d' : '1w');
   const bombDays = 20; // 20 trading days of 30-min data (~260 candles)
   const spectateRefreshRef = useRef(null);
+  const spectateSettledRef = useRef(false);
 
   // Fetch data when symbol or API timeframe changes
   useEffect(() => {
@@ -91,6 +93,7 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
 
     setLoading(true);
     setError(null);
+    if (isSpectate) spectateSettledRef.current = false;
 
     const cryptoOpt = isCrypto ? { type: 'crypto' } : {};
     const fetchOpts = isSpectate ? { days: 1, ...cryptoOpt } : isBomb ? { days: bombDays, ...cryptoOpt } : isCrypto ? cryptoOpt : undefined;
@@ -110,6 +113,7 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
               setError('1-minute data not available — try during market hours (9:30 AM – 4:00 PM ET)');
               setRawData(null);
             }
+            spectateSettledRef.current = true;
           } else {
             setError('No historical data available');
             setRawData(null);
@@ -118,6 +122,7 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
           const filtered = isBomb ? filterToRegularHours(data) : data;
           if (!isSpectate) cacheRef.current[cacheKey] = filtered;
           setRawData(filtered);
+          if (isSpectate) spectateSettledRef.current = true;
 
           // Compute daily change from daily data (rawData is newest-first)
           if (apiTimeframe === '1d' && data.length >= 1) {
@@ -184,7 +189,9 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
   }, [symbol, isCrypto]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auto-refresh spectate mode every 15 seconds
-  // Guard: stop polling after 3 consecutive empty responses (EODHD has no 1m data)
+  // Guards:
+  //   - Stop polling after 3 consecutive empty/stale responses
+  //   - Skip polling entirely when market is closed (stocks only; crypto trades 24/7)
   const emptyCountRef = useRef(0);
   useEffect(() => {
     if (spectateRefreshRef.current) {
@@ -196,10 +203,24 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
       return;
     }
 
+    // Don't poll when market is closed — stale data causes infinite re-render loops.
+    // Note: if market opens while component is mounted, user must re-enter spectate mode.
+    if (!isCrypto) {
+      const { isOpen } = getMarketState();
+      if (!isOpen) {
+        console.log('[useResearchData] Spectate: market closed, skipping auto-refresh');
+        return;
+      }
+    }
+
     emptyCountRef.current = 0; // Reset on fresh spectate entry
+
+    // Helper: get today's ET date string for freshness check
+    const getTodayET = () => new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+
     spectateRefreshRef.current = setInterval(() => {
       if (emptyCountRef.current >= 3) {
-        console.log('[useResearchData] Spectate: stopped polling after 3 empty responses');
+        console.log('[useResearchData] Spectate: stopped polling after 3 empty/stale responses');
         clearInterval(spectateRefreshRef.current);
         spectateRefreshRef.current = null;
         return;
@@ -207,8 +228,20 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
       fetchHistoricalOHLCV(symbol, '1m', { days: 1, ...(isCrypto ? { type: 'crypto' } : {}) })
         .then(data => {
           if (data && data.length > 0) {
-            emptyCountRef.current = 0;
-            setRawData(data);
+            // Check if data is actually fresh (from today) before accepting it.
+            // Stale previous-day data resets emptyCountRef → polling never stops.
+            const lastCandle = data[0]; // newest-first from API
+            const lastTs = lastCandle?.timestamp || Math.floor(new Date(lastCandle?.date || lastCandle?.datetime || 0).getTime() / 1000);
+            const candleDateET = new Date(lastTs * 1000).toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+            const todayET = getTodayET();
+
+            if (isCrypto || candleDateET === todayET) {
+              emptyCountRef.current = 0;
+              setRawData(data);
+            } else {
+              // Data is from a previous trading day — treat as stale
+              emptyCountRef.current++;
+            }
           } else {
             emptyCountRef.current++;
           }
@@ -224,7 +257,7 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
         spectateRefreshRef.current = null;
       }
     };
-  }, [isSpectate, symbol]);
+  }, [isSpectate, symbol, isCrypto]);
 
   // Update daily change when live price changes (uses cached daily data)
   useEffect(() => {
@@ -238,19 +271,18 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
     }
   }, [currentPrice, symbol]);
 
-  // Process data based on UI timeframe
-  const ohlcvData = useMemo(() => {
+  // Process raw data into candles for the current timeframe (no live price synthesis).
+  // Separated from live-candle memo so spectate hourly-fallback detection doesn't
+  // re-run on every WebSocket price tick — that was causing the infinite loop.
+  const processedCandles = useMemo(() => {
     if (!rawData) return null;
 
     // Data from API is newest-first, reverse to oldest-first for processing
     const reversed = [...rawData].reverse();
 
-    let result;
     if (timeframe === 'spectate') {
       // Detect if data is 1-minute (real) or 1-hour (fallback from bomb cache)
       // 1m data has >20 candles in a single day; 1h has ~7
-      const sample = reversed[0];
-      const sampleDate = sample?.date || sample?.datetime || '';
       const isHourlyFallback = reversed.length > 10 && (() => {
         // If two adjacent candles are ~1 hour apart, it's hourly data
         if (reversed.length < 2) return false;
@@ -318,138 +350,138 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
         }
 
         console.log('[Spectate] Hourly fallback — target ET date:', etDateStr,
-          'candles found:', todayCandles.length,
-          todayCandles.map(c => {
-            const t = c.timestamp || Math.floor(new Date(c.date || c.datetime || 0).getTime() / 1000);
-            return new Date(t * 1000).toLocaleString('en-US', { timeZone: 'America/New_York' });
-          }));
+          'candles found:', todayCandles.length);
 
-        result = todayCandles;
+        return todayCandles;
       } else {
         // Real 1m data: last ~60 candles
-        result = reversed.slice(-60);
+        return reversed.slice(-60);
       }
     } else if (timeframe === 'bomb') {
       // Bomb view: all hourly candles (~140 for 20 trading days)
-      result = reversed;
+      return reversed;
     } else if (timeframe === '1W') {
       // Weekly data, slice to ~52 most recent weeks (1 year)
-      result = reversed.slice(-52);
+      return reversed.slice(-52);
     } else if (timeframe === '1M') {
       // Aggregate weekly data into monthly
-      result = aggregateToMonthly(reversed);
+      return aggregateToMonthly(reversed);
     } else {
       // 1D: daily data as-is
-      result = reversed;
+      return reversed;
     }
+  }, [rawData, timeframe]);
 
-    // Append synthetic "live" candle if the last candle is stale and we have a live price.
-    // This bridges the gap between EODHD historical data (which only includes completed
-    // periods) and the live price shown in the header.
-    if (currentPrice && currentPrice > 0 && result && result.length > 0) {
-      const wsHL = getDailyHL(symbol);
-      const lastCandle = result[result.length - 1];
-      const lastDateStr = lastCandle.date || lastCandle.datetime || '';
+  // Append synthetic "live" candle if the last candle is stale and we have a live price.
+  // This bridges the gap between EODHD historical data (which only includes completed
+  // periods) and the live price shown in the header.
+  const ohlcvData = useMemo(() => {
+    if (!processedCandles || processedCandles.length === 0) return processedCandles;
+    if (!currentPrice || currentPrice <= 0) return processedCandles;
 
-      if (timeframe === 'bomb' || timeframe === 'spectate') {
-        // Guard: skip live-candle synthesis outside regular market hours (crypto trades 24/7)
-        const etNow = new Date().toLocaleString('en-US', {
-          timeZone: 'America/New_York', hour: 'numeric', minute: 'numeric', hour12: false,
-        });
-        const [nH, nM] = etNow.split(':').map(Number);
-        const inMarketHours = isCrypto || (nH * 60 + nM >= 570 && nH * 60 + nM < 960);
+    let result = processedCandles;
+    const wsHL = getDailyHL(symbol);
+    const lastCandle = result[result.length - 1];
+    const lastDateStr = lastCandle.date || lastCandle.datetime || '';
 
-        if (inMarketHours) {
-          // 30-min (bomb or spectate fallback): append if last candle is >30 min old
-          const lastTime = lastCandle.timestamp
-            ? lastCandle.timestamp * 1000
-            : new Date(lastDateStr).getTime();
-          const halfHourMs = 30 * 60 * 1000;
-          if (lastTime && (Date.now() - lastTime) > halfHourMs) {
-            const nowHalf = new Date();
-            nowHalf.setMinutes(nowHalf.getMinutes() >= 30 ? 30 : 0, 0, 0);
-            result = [...result, {
-              date: nowHalf.toISOString(),
-              datetime: nowHalf.toISOString(),
-              timestamp: Math.floor(nowHalf.getTime() / 1000),
-              open: lastCandle.close,
-              high: wsHL ? Math.max(wsHL.high, currentPrice, lastCandle.close) : Math.max(currentPrice, lastCandle.close),
-              low: wsHL ? Math.min(wsHL.low, currentPrice, lastCandle.close) : Math.min(currentPrice, lastCandle.close),
-              close: currentPrice,
-              volume: 0,
-            }];
-          } else if (lastTime) {
-            // Latest candle is within the current 30-min period — patch H/L/C with live price
-            const patched = { ...lastCandle };
-            patched.high = wsHL ? Math.max(Number(patched.high), wsHL.high, currentPrice) : Math.max(Number(patched.high), currentPrice);
-            patched.low = wsHL ? Math.min(Number(patched.low), wsHL.low, currentPrice) : Math.min(Number(patched.low), currentPrice);
-            patched.close = currentPrice;
-            result = [...result.slice(0, -1), patched];
-          }
-        }
-      } else if (timeframe === '1W') {
-        // Weekly: append if last candle is from a previous week
-        // Parse as local date to avoid UTC-midnight shift (same fix as 1D)
-        const [wy, wm, wd] = lastDateStr.substring(0, 10).split('-').map(Number);
-        const lastDate = new Date(wy, wm - 1, wd);
-        const monday = new Date();
-        monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7)); // This Monday
-        monday.setHours(0, 0, 0, 0);
-        if (lastDate < monday) {
-          const mondayStr = monday.toISOString().split('T')[0];
+    if (timeframe === 'bomb' || timeframe === 'spectate') {
+      // Guard: skip live-candle synthesis outside regular market hours (crypto trades 24/7)
+      const etNow = new Date().toLocaleString('en-US', {
+        timeZone: 'America/New_York', hour: 'numeric', minute: 'numeric', hour12: false,
+      });
+      const [nH, nM] = etNow.split(':').map(Number);
+      const inMarketHours = isCrypto || (nH * 60 + nM >= 570 && nH * 60 + nM < 960);
+
+      if (inMarketHours) {
+        // 30-min (bomb or spectate fallback): append if last candle is >30 min old
+        const lastTime = lastCandle.timestamp
+          ? lastCandle.timestamp * 1000
+          : new Date(lastDateStr).getTime();
+        const halfHourMs = 30 * 60 * 1000;
+        if (lastTime && (Date.now() - lastTime) > halfHourMs) {
+          const nowHalf = new Date();
+          nowHalf.setMinutes(nowHalf.getMinutes() >= 30 ? 30 : 0, 0, 0);
           result = [...result, {
-            date: mondayStr,
+            date: nowHalf.toISOString(),
+            datetime: nowHalf.toISOString(),
+            timestamp: Math.floor(nowHalf.getTime() / 1000),
             open: lastCandle.close,
             high: wsHL ? Math.max(wsHL.high, currentPrice, lastCandle.close) : Math.max(currentPrice, lastCandle.close),
             low: wsHL ? Math.min(wsHL.low, currentPrice, lastCandle.close) : Math.min(currentPrice, lastCandle.close),
             close: currentPrice,
             volume: 0,
           }];
-        } else {
-          // Current week's candle exists — patch H/L/C with live price
+        } else if (lastTime) {
+          // Latest candle is within the current 30-min period — patch H/L/C with live price
           const patched = { ...lastCandle };
           patched.high = wsHL ? Math.max(Number(patched.high), wsHL.high, currentPrice) : Math.max(Number(patched.high), currentPrice);
           patched.low = wsHL ? Math.min(Number(patched.low), wsHL.low, currentPrice) : Math.min(Number(patched.low), currentPrice);
           patched.close = currentPrice;
           result = [...result.slice(0, -1), patched];
         }
-      } else if (timeframe === '1D') {
-        // Daily: append if last candle is from a previous day
-        // Parse as local date to avoid UTC-midnight shift
-        // new Date("YYYY-MM-DD") parses as UTC → setHours(0,0,0,0) shifts back a day in US timezones
-        const [ly, lm, ld] = lastDateStr.substring(0, 10).split('-').map(Number);
-        const lastDate = new Date(ly, lm - 1, ld);
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
+      }
+    } else if (timeframe === '1W') {
+      // Weekly: append if last candle is from a previous week
+      // Parse as local date to avoid UTC-midnight shift (same fix as 1D)
+      const [wy, wm, wd] = lastDateStr.substring(0, 10).split('-').map(Number);
+      const lastDate = new Date(wy, wm - 1, wd);
+      const monday = new Date();
+      monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7)); // This Monday
+      monday.setHours(0, 0, 0, 0);
+      if (lastDate < monday) {
+        const mondayStr = monday.toISOString().split('T')[0];
+        result = [...result, {
+          date: mondayStr,
+          open: lastCandle.close,
+          high: wsHL ? Math.max(wsHL.high, currentPrice, lastCandle.close) : Math.max(currentPrice, lastCandle.close),
+          low: wsHL ? Math.min(wsHL.low, currentPrice, lastCandle.close) : Math.min(currentPrice, lastCandle.close),
+          close: currentPrice,
+          volume: 0,
+        }];
+      } else {
+        // Current week's candle exists — patch H/L/C with live price
+        const patched = { ...lastCandle };
+        patched.high = wsHL ? Math.max(Number(patched.high), wsHL.high, currentPrice) : Math.max(Number(patched.high), currentPrice);
+        patched.low = wsHL ? Math.min(Number(patched.low), wsHL.low, currentPrice) : Math.min(Number(patched.low), currentPrice);
+        patched.close = currentPrice;
+        result = [...result.slice(0, -1), patched];
+      }
+    } else if (timeframe === '1D') {
+      // Daily: append if last candle is from a previous day
+      // Parse as local date to avoid UTC-midnight shift
+      // new Date("YYYY-MM-DD") parses as UTC → setHours(0,0,0,0) shifts back a day in US timezones
+      const [ly, lm, ld] = lastDateStr.substring(0, 10).split('-').map(Number);
+      const lastDate = new Date(ly, lm - 1, ld);
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
 
-        // For stocks, skip weekends (Sat=6, Sun=0); crypto trades 24/7
-        const dayOfWeek = today.getDay();
-        const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
-        const shouldAppend = isCrypto ? true : !isWeekend;
+      // For stocks, skip weekends (Sat=6, Sun=0); crypto trades 24/7
+      const dayOfWeek = today.getDay();
+      const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+      const shouldAppend = isCrypto ? true : !isWeekend;
 
-        if (lastDate < today && shouldAppend) {
-          const todayStr = today.toISOString().split('T')[0];
-          result = [...result, {
-            date: todayStr,
-            open: lastCandle.close,
-            high: wsHL ? Math.max(wsHL.high, currentPrice, lastCandle.close) : Math.max(currentPrice, lastCandle.close),
-            low: wsHL ? Math.min(wsHL.low, currentPrice, lastCandle.close) : Math.min(currentPrice, lastCandle.close),
-            close: currentPrice,
-            volume: 0,
-          }];
-        } else if (lastDate.getTime() === today.getTime()) {
-          // Today's candle exists but may have stale H/L/C — patch with live price
-          const patched = { ...lastCandle };
-          patched.high = wsHL ? Math.max(Number(patched.high), wsHL.high, currentPrice) : Math.max(Number(patched.high), currentPrice);
-          patched.low = wsHL ? Math.min(Number(patched.low), wsHL.low, currentPrice) : Math.min(Number(patched.low), currentPrice);
-          patched.close = currentPrice;
-          result = [...result.slice(0, -1), patched];
-        }
+      if (lastDate < today && shouldAppend) {
+        const todayStr = today.toISOString().split('T')[0];
+        result = [...result, {
+          date: todayStr,
+          open: lastCandle.close,
+          high: wsHL ? Math.max(wsHL.high, currentPrice, lastCandle.close) : Math.max(currentPrice, lastCandle.close),
+          low: wsHL ? Math.min(wsHL.low, currentPrice, lastCandle.close) : Math.min(currentPrice, lastCandle.close),
+          close: currentPrice,
+          volume: 0,
+        }];
+      } else if (lastDate.getTime() === today.getTime()) {
+        // Today's candle exists but may have stale H/L/C — patch with live price
+        const patched = { ...lastCandle };
+        patched.high = wsHL ? Math.max(Number(patched.high), wsHL.high, currentPrice) : Math.max(Number(patched.high), currentPrice);
+        patched.low = wsHL ? Math.min(Number(patched.low), wsHL.low, currentPrice) : Math.min(Number(patched.low), currentPrice);
+        patched.close = currentPrice;
+        result = [...result.slice(0, -1), patched];
       }
     }
 
     return result;
-  }, [rawData, timeframe, currentPrice, isCrypto]);
+  }, [processedCandles, currentPrice, timeframe, isCrypto]);
 
   // Compute closing prices (newest-first, as expected by indicator functions)
   const closingPrices = useMemo(() => {
