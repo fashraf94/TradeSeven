@@ -97,24 +97,18 @@ export default function WatchlistContainer({
     return map;
   }, [cryptoData]);
 
-  // --- Refs for stable callbacks & write-guard ---
+  // --- Derive userId for watchlist persistence ---
+  const userId = user?.odUserId || user?.uid;
+
+  // --- Ref for stable guard checks in callbacks ---
   const customWatchlistRef = useRef(customWatchlist);
   customWatchlistRef.current = customWatchlist;
-  const pendingWritesRef = useRef(0);
 
-  // --- Load custom watchlist from Firebase (once on mount) ---
-  const initialLoadDone = useRef(false);
+  // --- Load custom watchlist from localStorage ---
   useEffect(() => {
-    if (initialLoadDone.current) return;
-    if (!user) return;
-    initialLoadDone.current = true;
-    getCustomWatchlist().then(data => {
-      // Don't overwrite optimistic updates from in-flight writes
-      if (pendingWritesRef.current === 0) {
-        setCustomWatchlist(data);
-      }
-    }).catch(() => {});
-  }, [user]);
+    if (!userId) return;
+    setCustomWatchlist(getCustomWatchlist(userId));
+  }, [userId]);
 
   // --- Default list selection ---
   useEffect(() => {
@@ -247,38 +241,18 @@ export default function WatchlistContainer({
   }, []);
 
   // --- Custom watchlist handlers ---
-  const handleAddToWatchlist = useCallback(async (symbol) => {
+  const handleAddToWatchlist = useCallback((symbol) => {
     if (customWatchlistRef.current.includes(symbol)) return;
     if (customWatchlistRef.current.length >= 30) return;
 
-    // Optimistic update
+    addToWatchlist(userId, symbol);
     setCustomWatchlist(prev => [...prev, symbol]);
-    pendingWritesRef.current++;
+  }, [userId]);
 
-    try {
-      await addToWatchlist(symbol);
-    } catch {
-      // Revert on failure
-      setCustomWatchlist(prev => prev.filter(s => s !== symbol));
-    } finally {
-      pendingWritesRef.current--;
-    }
-  }, []);
-
-  const handleRemoveFromWatchlist = useCallback(async (symbol) => {
-    // Optimistic update
+  const handleRemoveFromWatchlist = useCallback((symbol) => {
+    removeFromWatchlist(userId, symbol);
     setCustomWatchlist(prev => prev.filter(s => s !== symbol));
-    pendingWritesRef.current++;
-
-    try {
-      await removeFromWatchlist(symbol);
-    } catch {
-      // Revert on failure
-      setCustomWatchlist(prev => [...prev, symbol]);
-    } finally {
-      pendingWritesRef.current--;
-    }
-  }, []);
+  }, [userId]);
 
   if (!activeListId) return null;
 

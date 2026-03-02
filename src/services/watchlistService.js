@@ -1,35 +1,37 @@
-import { doc, updateDoc, arrayUnion, arrayRemove, getDoc } from 'firebase/firestore';
-import { db, auth } from '../firebase/config';
+// src/services/watchlistService.js
+// Watchlist persistence — uses localStorage (consistent with localStorage auth)
 
-function getAuthUid() {
-  const uid = auth.currentUser?.uid;
-  if (!uid) throw new Error('Not authenticated');
-  return uid;
+const STORAGE_PREFIX = 'mc_watchlist_';
+
+function getStorageKey(userId) {
+  return `${STORAGE_PREFIX}${userId}`;
 }
 
-export async function getCustomWatchlist() {
-  const uid = getAuthUid();
-  const userDoc = await getDoc(doc(db, 'users', uid));
-  return userDoc.data()?.customWatchlist || [];
+export function getCustomWatchlist(userId) {
+  if (!userId) return [];
+  try {
+    const data = localStorage.getItem(getStorageKey(userId));
+    return data ? JSON.parse(data) : [];
+  } catch {
+    return [];
+  }
 }
 
-export async function addToWatchlist(symbol) {
-  const uid = getAuthUid();
-  await updateDoc(doc(db, 'users', uid), {
-    customWatchlist: arrayUnion(symbol),
-  });
+export function addToWatchlist(userId, symbol) {
+  if (!userId) return;
+  const list = getCustomWatchlist(userId);
+  if (list.includes(symbol)) return;
+  list.push(symbol);
+  localStorage.setItem(getStorageKey(userId), JSON.stringify(list.slice(0, 30)));
 }
 
-export async function removeFromWatchlist(symbol) {
-  const uid = getAuthUid();
-  await updateDoc(doc(db, 'users', uid), {
-    customWatchlist: arrayRemove(symbol),
-  });
+export function removeFromWatchlist(userId, symbol) {
+  if (!userId) return;
+  const list = getCustomWatchlist(userId).filter(s => s !== symbol);
+  localStorage.setItem(getStorageKey(userId), JSON.stringify(list));
 }
 
-export async function setWatchlist(symbols) {
-  const uid = getAuthUid();
-  await updateDoc(doc(db, 'users', uid), {
-    customWatchlist: symbols.slice(0, 30),
-  });
+export function setWatchlist(userId, symbols) {
+  if (!userId) return;
+  localStorage.setItem(getStorageKey(userId), JSON.stringify(symbols.slice(0, 30)));
 }
