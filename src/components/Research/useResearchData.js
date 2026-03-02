@@ -156,8 +156,8 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
     if (!symbol) return;
     if (apiTimeframe === '1d') return; // Main fetch handles this case
 
-    const dailyCacheKey = `${symbol}_1d`;
-    const cached = cacheRef.current[dailyCacheKey];
+    const dailyCacheKey = `${symbol}_1d_dailychange`;
+    const cached = cacheRef.current[`${symbol}_1d`] || cacheRef.current[dailyCacheKey];
     if (cached && cached.length >= 1) {
       const pc = getPreviousClose(cached);
       if (pc) {
@@ -229,8 +229,7 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
   // Update daily change when live price changes (uses cached daily data)
   useEffect(() => {
     if (!currentPrice || currentPrice <= 0) return;
-    const dailyCacheKey = `${symbol}_1d`;
-    const dailyData = cacheRef.current[dailyCacheKey];
+    const dailyData = cacheRef.current[`${symbol}_1d`] || cacheRef.current[`${symbol}_1d_dailychange`];
     if (!dailyData || dailyData.length < 1) return;
     const prevClose = getPreviousClose(dailyData);
     if (prevClose > 0) {
