@@ -220,9 +220,9 @@ export async function getStockPrice(symbol) {
     price,
     change: p?.change || 0,
     percentChange: p?.percentChange || 0,
-    high: p?.high || price,
-    low: p?.low || price,
-    open: p?.open || price,
+    high: p?.high > 0 ? p.high : price,
+    low: p?.low > 0 ? p.low : price,
+    open: p?.open > 0 ? p.open : price,
     previousClose: p?.previousClose || price,
     week52High: price * 1.25,
     week52Low: price * 0.75

@@ -154,6 +154,8 @@ const StockChart = ({
       if (realtimeExtremes.low > 0) aggLow = Math.min(aggLow, realtimeExtremes.low);
     }
 
+    console.log(`[BOMB OHLC] ${symbol}: todayDailyCandle=`, todayDailyCandle, 'realtimeExtremes=', realtimeExtremes, `final H=${aggHigh} L=${aggLow}`);
+
     return {
       open: aggOpen,
       high: aggHigh,

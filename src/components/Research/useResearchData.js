@@ -424,13 +424,14 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
         if (lastTime && (Date.now() - lastTime) > halfHourMs) {
           const nowHalf = new Date();
           nowHalf.setMinutes(nowHalf.getMinutes() >= 30 ? 30 : 0, 0, 0);
+          const synthOpen = realtimeExtremes?.open > 0 ? realtimeExtremes.open : lastCandle.close;
           result = [...result, {
             date: nowHalf.toISOString(),
             datetime: nowHalf.toISOString(),
             timestamp: Math.floor(nowHalf.getTime() / 1000),
-            open: lastCandle.close,
-            high: wsHL ? Math.max(wsHL.high, throttledPrice, lastCandle.close) : Math.max(throttledPrice, lastCandle.close),
-            low: wsHL ? Math.min(wsHL.low, throttledPrice, lastCandle.close) : Math.min(throttledPrice, lastCandle.close),
+            open: synthOpen,
+            high: wsHL ? Math.max(wsHL.high, throttledPrice, synthOpen) : Math.max(throttledPrice, synthOpen),
+            low: wsHL ? Math.min(wsHL.low, throttledPrice, synthOpen) : Math.min(throttledPrice, synthOpen),
             close: throttledPrice,
             volume: 0,
           }];
@@ -485,11 +486,12 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
 
       if (lastDate < today && shouldAppend) {
         const todayStr = today.toISOString().split('T')[0];
+        const dailySynthOpen = realtimeExtremes?.open > 0 ? realtimeExtremes.open : lastCandle.close;
         result = [...result, {
           date: todayStr,
-          open: lastCandle.close,
-          high: wsHL ? Math.max(wsHL.high, throttledPrice, lastCandle.close) : Math.max(throttledPrice, lastCandle.close),
-          low: wsHL ? Math.min(wsHL.low, throttledPrice, lastCandle.close) : Math.min(throttledPrice, lastCandle.close),
+          open: dailySynthOpen,
+          high: wsHL ? Math.max(wsHL.high, throttledPrice, dailySynthOpen) : Math.max(throttledPrice, dailySynthOpen),
+          low: wsHL ? Math.min(wsHL.low, throttledPrice, dailySynthOpen) : Math.min(throttledPrice, dailySynthOpen),
           close: throttledPrice,
           volume: 0,
         }];
@@ -504,7 +506,7 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
     }
 
     return result;
-  }, [processedCandles, throttledPrice, timeframe, isCrypto]);
+  }, [processedCandles, throttledPrice, timeframe, isCrypto, realtimeExtremes]);
 
   // Compute closing prices (newest-first, as expected by indicator functions)
   const closingPrices = useMemo(() => {
@@ -580,6 +582,7 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
     const fetchRealtimeExtremes = async () => {
       try {
         const data = await getStockPrice(currentSymbol);
+        console.log(`[RT DEBUG] ${currentSymbol} raw:`, JSON.stringify({ high: data?.high, low: data?.low, open: data?.open, price: data?.price }));
         // Guard: if symbol changed while fetch was in-flight, discard result
         if (currentSymbol !== symbol) return;
         if (data && (data.high > 0 || data.low > 0)) {
@@ -601,8 +604,11 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
   // Priority 1: Real-time API (live during market hours)
   // Priority 2: Daily OHLCV cache (works after market close)
   const todayDailyCandle = useMemo(() => {
+    console.log(`[TDC DEBUG] ${symbol} realtimeExtremes:`, realtimeExtremes);
     if (realtimeExtremes && (realtimeExtremes.high > 0 || realtimeExtremes.low > 0)) {
-      return { high: realtimeExtremes.high, low: realtimeExtremes.low, open: realtimeExtremes.open || 0, close: 0, _source: 'realtime' };
+      const result = { high: realtimeExtremes.high, low: realtimeExtremes.low, open: realtimeExtremes.open || 0, close: 0, _source: 'realtime' };
+      console.log(`[TDC DEBUG] ${symbol} result (realtime):`, result);
+      return result;
     }
     const dailyData = cacheRef.current[`${symbol}_1d`] || cacheRef.current[`${symbol}_1d_dailychange`];
     if (!dailyData || dailyData.length === 0) return null;
@@ -611,6 +617,7 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
       const candleDate = (d.date || d.datetime || '').substring(0, 10);
       return candleDate === todayET;
     });
+    console.log(`[TDC DEBUG] ${symbol} result (daily cache):`, todayCandle || null);
     return todayCandle || null;
   }, [symbol, rawData, previousClose, realtimeExtremes]);
 
