@@ -5,7 +5,7 @@ import { HOLO_COLORS, CATEGORY_CONFIG, getSectorColor } from '../../constants/ho
  * ChartHeader - Compact 56px header bar for the redesigned research modal.
  * Replaces the giant hero block with a space-efficient layout.
  */
-const ChartHeader = ({ asset, sector, category, onClose, onWhyMoving }) => {
+const ChartHeader = ({ asset, sector, category, onClose, onWhyMoving, onBack }) => {
   if (!asset) return null;
 
   const sectorColor = getSectorColor(sector);
@@ -24,8 +24,20 @@ const ChartHeader = ({ asset, sector, category, onClose, onWhyMoving }) => {
       borderBottom: '1px solid rgba(0, 217, 255, 0.1)',
       flexShrink: 0,
     }}>
-      {/* Left: Symbol + Name */}
+      {/* Left: Back + Symbol + Name */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0, flex: 1 }}>
+        {onBack && (
+          <button
+            onClick={onBack}
+            style={{
+              background: 'none', border: 'none', cursor: 'pointer',
+              color: '#00d9ff', fontSize: '18px', padding: '2px 4px',
+              display: 'flex', alignItems: 'center', flexShrink: 0,
+            }}
+          >
+            {'\u2190'}
+          </button>
+        )}
         <span style={{
           fontSize: '16px',
           fontWeight: '800',

@@ -68,6 +68,10 @@
     {
       "path": "/api/cron/pre-market-warmup",
       "schedule": "25 13,14 * * 1-5"
+    },
+    {
+      "path": "/api/cron/compute-rankings",
+      "schedule": "0 11 * * 1-5"
     }
   ]
 }
