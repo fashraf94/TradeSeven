@@ -220,14 +220,20 @@ function extractMetrics(ticker, fundamentals) {
   const forwardPE = v.ForwardPE ?? null;
 
   // 5. FCF Yield = TTM FCF / Market Cap
+  //    FCF = Operating Cash Flow + CapEx (CapEx is negative in EODHD)
   const marketCap = h.MarketCapitalization ?? null;
-  const fcfTTM = getQuarterlyTTM(fundamentals.cashFlowQ, 'freeCashFlow');
+  const ocfTTM = getQuarterlyTTM(fundamentals.cashFlowQ, 'totalCashFromOperatingActivities');
+  const capexTTM = getQuarterlyTTM(fundamentals.cashFlowQ, 'capitalExpenditures');
+  const fcfTTM = (ocfTTM != null && capexTTM != null)
+    ? ocfTTM + capexTTM  // CapEx is negative, so OCF + CapEx = OCF - |CapEx|
+    : null;
   const fcfYield = (fcfTTM != null && marketCap > 0)
     ? (fcfTTM / marketCap) * 100
     : null;
 
-  // 6. Interest Coverage = TTM EBIT / TTM Interest Expense
-  const ebitTTM = getQuarterlyTTM(fundamentals.incomeQ, 'ebit');
+  // 6. Interest Coverage = TTM Operating Income / |TTM Interest Expense|
+  //    Use operatingIncome (more reliably reported than ebit)
+  const ebitTTM = getQuarterlyTTM(fundamentals.incomeQ, 'operatingIncome');
   const intExpTTM = getQuarterlyTTM(fundamentals.incomeQ, 'interestExpense');
   let interestCoverage = null;
   if (ebitTTM != null && intExpTTM != null && Math.abs(intExpTTM) > 0) {
@@ -258,8 +264,7 @@ function extractMetrics(ticker, fundamentals) {
 
   // 9. Profitability Margin Trend (Current TTM margin vs Prior TTM margin)
   let marginTrend = null;
-  const incomeEntries = Object.values(fundamentals.incomeQ);
-  const sortedQuarters = incomeEntries
+  const sortedQuarters = Object.values(fundamentals.incomeQ)
     .filter(q => q.date)
     .sort((a, b) => b.date.localeCompare(a.date));
 

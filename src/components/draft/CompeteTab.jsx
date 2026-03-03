@@ -18,13 +18,23 @@ const PILLAR_CONFIG = [
 const DIM_META = {
   growth:             { label: 'Revenue Growth YoY',       unit: '%',    format: v => `${(v * 100).toFixed(1)}%` },
   profitability:      { label: 'Operating Margin TTM',     unit: '%',    format: v => `${(v * 100).toFixed(1)}%` },
-  profitabilityTrend: { label: 'Margin Trend (TTM vs Prior)', unit: 'pp', format: v => `${v >= 0 ? '+' : ''}${v.toFixed(1)}pp` },
+  profitabilityTrend: { label: 'Margin Trend (YoY)',       unit: 'pp',   format: v => {
+    if (v == null) return '–';
+    const arrow = v >= 0 ? '▲' : '▼';
+    const word = v >= 0 ? 'Expanding' : 'Compressing';
+    return `${arrow} ${word} (${v >= 0 ? '+' : ''}${v.toFixed(1)}pp)`;
+  }},
   efficiency:         { label: 'Return on Assets TTM',     unit: '%',    format: v => `${(v * 100).toFixed(1)}%` },
   valuation:          { label: 'Forward P/E',              unit: 'x',    format: v => v > 0 ? `${v.toFixed(1)}x` : 'N/A' },
-  healthCash:         { label: 'FCF Yield',                unit: '%',    format: v => `${(v * 100).toFixed(1)}%` },
+  healthCash:         { label: 'FCF Yield',                unit: '%',    format: v => `${v.toFixed(1)}%` },
   healthDebt:         { label: 'Interest Coverage',        unit: 'x',    format: v => `${v.toFixed(1)}x` },
   sentimentPrice:     { label: '52-Week Range Position',   unit: '%',    format: v => `${v.toFixed(0)}%` },
-  sentimentRevisions: { label: 'Earnings Revision Trend',  unit: 'score', format: v => v.toFixed(2) },
+  sentimentRevisions: { label: 'Earnings Revisions',       unit: '%',    format: v => {
+    if (v == null) return '–';
+    const arrow = v >= 0 ? '▲' : '▼';
+    const word = v >= 0 ? 'Positive' : 'Negative';
+    return `${arrow} ${word} (${v >= 0 ? '+' : ''}${v.toFixed(1)}%)`;
+  }},
 };
 
 function getTierColor(percentile) {
@@ -221,7 +231,7 @@ function PillarRow({ pillar, percentile, dimensions, isExpanded, onToggle }) {
                 </span>
                 <span style={{
                   fontSize: '10px', fontFamily: MONO_FONT, color: '#e6edf3',
-                  flex: '0 0 55px', textAlign: 'right',
+                  flexShrink: 0, textAlign: 'right', whiteSpace: 'nowrap',
                 }}>
                   {meta.format(dim.value)}
                 </span>
