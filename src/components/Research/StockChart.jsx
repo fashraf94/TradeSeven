@@ -154,8 +154,6 @@ const StockChart = ({
       if (realtimeExtremes.low > 0) aggLow = Math.min(aggLow, realtimeExtremes.low);
     }
 
-    console.log(`[BOMB OHLC] ${symbol}: todayDailyCandle=`, todayDailyCandle, 'realtimeExtremes=', realtimeExtremes, `final H=${aggHigh} L=${aggLow}`);
-
     return {
       open: aggOpen,
       high: aggHigh,
@@ -164,6 +162,27 @@ const StockChart = ({
       volume: candles.reduce((sum, c) => sum + (c.volume || 0), 0),
     };
   }, [isBombView, chartData, symbol, todayDailyCandle, realtimeExtremes]);
+
+  // In bomb view, ensure the OHLC header always reflects the corrected daily
+  // aggregate (from todayDailyCandle + realtimeExtremes), not just whichever
+  // individual candle the crosshair happens to rest on.  The lightweight-charts
+  // crosshair rests on the last candle by default and fires an event that
+  // overwrites ohlcData with that candle's individual OHLCV.  Math.max/Math.min
+  // guarantees the header never shows a lower high or higher low than the true
+  // daily extremes.
+  const displayOhlc = useMemo(() => {
+    if (!ohlcData) return null;
+    if (!isBombView || !bombDailyOhlc) return ohlcData;
+    return {
+      open: bombDailyOhlc.open > 0 ? bombDailyOhlc.open : ohlcData.open,
+      high: Math.max(ohlcData.high || 0, bombDailyOhlc.high || 0),
+      low: (ohlcData.low > 0 && bombDailyOhlc.low > 0)
+        ? Math.min(ohlcData.low, bombDailyOhlc.low)
+        : (bombDailyOhlc.low > 0 ? bombDailyOhlc.low : ohlcData.low),
+      close: ohlcData.close,
+      volume: ohlcData.volume,
+    };
+  }, [ohlcData, isBombView, bombDailyOhlc]);
 
   // Main chart setup
   useEffect(() => {
@@ -734,7 +753,7 @@ const StockChart = ({
         />
 
         {/* OHLC overlay — hidden in spectate view (back button uses same position) */}
-        {!isSpectateView && <OHLCDisplay data={ohlcData} />}
+        {!isSpectateView && <OHLCDisplay data={displayOhlc} />}
 
         {/* Spectate mode: Back button */}
         {isSpectateView && (

@@ -582,7 +582,6 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
     const fetchRealtimeExtremes = async () => {
       try {
         const data = await getStockPrice(currentSymbol);
-        console.log(`[RT DEBUG] ${currentSymbol} raw:`, JSON.stringify({ high: data?.high, low: data?.low, open: data?.open, price: data?.price }));
         // Guard: if symbol changed while fetch was in-flight, discard result
         if (currentSymbol !== symbol) return;
         if (data && (data.high > 0 || data.low > 0)) {
@@ -604,11 +603,8 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
   // Priority 1: Real-time API (live during market hours)
   // Priority 2: Daily OHLCV cache (works after market close)
   const todayDailyCandle = useMemo(() => {
-    console.log(`[TDC DEBUG] ${symbol} realtimeExtremes:`, realtimeExtremes);
     if (realtimeExtremes && (realtimeExtremes.high > 0 || realtimeExtremes.low > 0)) {
-      const result = { high: realtimeExtremes.high, low: realtimeExtremes.low, open: realtimeExtremes.open || 0, close: 0, _source: 'realtime' };
-      console.log(`[TDC DEBUG] ${symbol} result (realtime):`, result);
-      return result;
+      return { high: realtimeExtremes.high, low: realtimeExtremes.low, open: realtimeExtremes.open || 0, close: 0, _source: 'realtime' };
     }
     const dailyData = cacheRef.current[`${symbol}_1d`] || cacheRef.current[`${symbol}_1d_dailychange`];
     if (!dailyData || dailyData.length === 0) return null;
@@ -617,7 +613,6 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
       const candleDate = (d.date || d.datetime || '').substring(0, 10);
       return candleDate === todayET;
     });
-    console.log(`[TDC DEBUG] ${symbol} result (daily cache):`, todayCandle || null);
     return todayCandle || null;
   }, [symbol, rawData, previousClose, realtimeExtremes]);
 
