@@ -25,6 +25,7 @@ const StockChart = ({
   height = 300,
   bombData,          // { threshold: number, baselinePrice: number } | null
   symbol,            // Stock/crypto ticker for getDailyHL lookup
+  todayDailyCandle,  // Today's daily OHLCV candle with authoritative high/low
 }) => {
   const chartContainerRef = useRef(null);
   const chartRef = useRef(null);
@@ -138,6 +139,13 @@ const StockChart = ({
       }
     }
 
+    // Use daily OHLCV endpoint's authoritative high/low — intraday candles
+    // can miss fast spikes between intervals, but the daily endpoint captures them
+    if (todayDailyCandle) {
+      if (todayDailyCandle.high > 0) aggHigh = Math.max(aggHigh, todayDailyCandle.high);
+      if (todayDailyCandle.low > 0) aggLow = Math.min(aggLow, todayDailyCandle.low);
+    }
+
     return {
       open: aggOpen,
       high: aggHigh,
@@ -145,7 +153,7 @@ const StockChart = ({
       close: aggClose,
       volume: candles.reduce((sum, c) => sum + (c.volume || 0), 0),
     };
-  }, [isBombView, chartData, symbol]);
+  }, [isBombView, chartData, symbol, todayDailyCandle]);
 
   // Main chart setup
   useEffect(() => {

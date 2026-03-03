@@ -569,6 +569,20 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
       .finally(() => setLoading(false));
   }, [symbol, apiTimeframe, isBomb, isCrypto]);
 
+  // Extract today's daily candle (authoritative H/L from daily OHLCV endpoint).
+  // Used by StockChart's bomb view to correct the OHLCV header — intraday candles
+  // can miss fast spikes between intervals, but the daily endpoint captures them.
+  const todayDailyCandle = useMemo(() => {
+    const dailyData = cacheRef.current[`${symbol}_1d`] || cacheRef.current[`${symbol}_1d_dailychange`];
+    if (!dailyData || dailyData.length === 0) return null;
+    const todayET = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+    const todayCandle = dailyData.find(d => {
+      const candleDate = (d.date || d.datetime || '').substring(0, 10);
+      return candleDate === todayET;
+    });
+    return todayCandle || null;
+  }, [symbol, rawData, previousClose]); // rawData/previousClose changes signal fresh daily data
+
   return {
     ohlcvData,       // Oldest-first, processed for current timeframe
     rawData,         // Newest-first, raw from API (for indicators/levels)
@@ -582,5 +596,6 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
     retry,
     dailyChange,     // Daily % change computed from OHLCV (null until data loads)
     previousClose,   // Yesterday's closing price from daily OHLCV (null until data loads)
+    todayDailyCandle, // Today's daily candle with authoritative high/low (null until data loads)
   };
 }

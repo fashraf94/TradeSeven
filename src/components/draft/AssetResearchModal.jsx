@@ -628,6 +628,7 @@ const AssetResearchModal = ({
                   height={chartHeight}
                   bombData={bombData}
                   symbol={currentAsset?.symbol}
+                  todayDailyCandle={researchData.todayDailyCandle}
                 />
               )}
             </div>
