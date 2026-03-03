@@ -1,19 +1,18 @@
 import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import {
   BarChart, Bar, AreaChart, Area, XAxis, YAxis, Tooltip,
-  ResponsiveContainer, CartesianGrid, Cell, Legend, ReferenceLine,
+  ResponsiveContainer, CartesianGrid, Cell, ReferenceLine,
 } from 'recharts';
-import { HOLO_COLORS } from '../../constants/holoTheme';
 import { STOCK_DATA, TICKERS } from '../../data/stockIntelligenceData';
 import { formatLargeNumber } from '../../utils/formatters';
 import {
   parseQuarterlyData,
   parseRevenueSegments,
-  parseCompetitivePosition,
-  markSubjectCompany,
   parseRisks,
   parseFinancialHealth,
 } from '../../utils/knowledgePackageParser';
+import CompeteTab from './CompeteTab';
+import SectorTab from './SectorTab';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -24,6 +23,7 @@ const SUB_TABS = [
   { key: 'risks', label: 'Risks', color: '#f85149' },
   { key: 'health', label: 'Health', color: '#10b981' },
   { key: 'compete', label: 'Compete', color: '#a78bfa' },
+  { key: 'sector', label: 'Sector', color: '#f59e0b' },
 ];
 
 const CHART_COLORS = ['#00d9ff', '#10b981', '#a78bfa', '#f59e0b', '#f85149'];
@@ -654,100 +654,6 @@ function HealthTabUnsupported({ stockData, isMobile }) {
 }
 
 // ---------------------------------------------------------------------------
-// COMPETE TAB
-// ---------------------------------------------------------------------------
-
-function CompeteTabSupported({ parsedData, symbol, isMobile }) {
-  const { competitive } = parsedData;
-  const arenas = competitive?.arenas || [];
-
-  if (arenas.length === 0) {
-    return (
-      <div style={{ padding: '16px 0' }}>
-        <div style={{ color: '#6e7681', fontSize: '12px' }}>
-          Competitive data not available in structured format for this stock.
-        </div>
-        <InsightLine label="Tip" text="Try viewing AMZN, META, or MSFT for rich competitive data."
-          color="#a78bfa" />
-      </div>
-    );
-  }
-
-  return (
-    <div>
-      {arenas.map((arena, aIdx) => (
-        <div key={aIdx} style={{ marginBottom: '16px' }}>
-          <div style={{ fontSize: '10px', color: '#8b949e', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-            {arena.name}
-          </div>
-          {arena.players.map((player, pIdx) => {
-            const color = CHART_COLORS[pIdx % CHART_COLORS.length];
-            const isSubject = player.isCompany;
-            return (
-              <div key={pIdx} style={{ marginBottom: '6px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '2px' }}>
-                  <span style={{
-                    fontSize: '11px',
-                    color: isSubject ? color : '#e6edf3',
-                    fontWeight: isSubject ? '700' : '400',
-                  }}>
-                    {player.name}
-                    {isSubject && <span style={{ fontSize: '9px', marginLeft: '4px', opacity: 0.7 }}>(This stock)</span>}
-                  </span>
-                  <span style={{
-                    fontSize: '11px', fontWeight: '600', color,
-                    fontFamily: "'JetBrains Mono', 'SF Mono', monospace",
-                  }}>
-                    {player.share}%
-                  </span>
-                </div>
-                <div style={{
-                  height: '5px', borderRadius: '3px',
-                  background: 'rgba(255,255,255,0.05)', overflow: 'hidden',
-                }}>
-                  <div style={{
-                    height: '100%', width: `${Math.min(player.share, 100)}%`,
-                    borderRadius: '3px', background: color,
-                    transition: 'width 0.6s ease',
-                    boxShadow: isSubject ? `0 0 8px ${color}50` : 'none',
-                  }} />
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function CompeteTabUnsupported({ isMobile }) {
-  return (
-    <div style={{
-      padding: '24px 16px', textAlign: 'center',
-      background: '#1c2333', borderRadius: '10px',
-      border: '1px solid rgba(255,255,255,0.06)',
-    }}>
-      <div style={{ fontSize: '24px', marginBottom: '8px', opacity: 0.4 }}>
-        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#6e7681" strokeWidth="1.5" style={{ display: 'inline-block' }}>
-          <rect x="3" y="11" width="18" height="11" rx="2" />
-          <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-        </svg>
-      </div>
-      <div style={{ fontSize: '12px', fontWeight: '600', color: '#8b949e', marginBottom: '4px' }}>
-        Competitive Intelligence
-      </div>
-      <div style={{ fontSize: '11px', color: '#6e7681', marginBottom: '12px', lineHeight: '1.4' }}>
-        Competitive analysis requires curated intelligence data.
-      </div>
-      <div style={{ fontSize: '10px', color: '#6e7681' }}>
-        Available for: {TICKERS.join(', ')}
-      </div>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
 // Main Component
 // ---------------------------------------------------------------------------
 
@@ -760,19 +666,12 @@ const AnalysisVisualDashboard = ({ symbol, stockData, isMobile }) => {
     const kp = STOCK_DATA[symbol]?.knowledgePackage;
     if (!kp) return null;
 
-    const data = {
+    return {
       quarterly: parseQuarterlyData(kp),
       revenue: parseRevenueSegments(kp),
-      competitive: parseCompetitivePosition(kp),
       risks: parseRisks(kp),
       health: parseFinancialHealth(kp),
     };
-
-    // Mark subject company in competitive data
-    const shortName = STOCK_DATA[symbol]?.shortName || symbol;
-    markSubjectCompany(data.competitive, shortName);
-
-    return data;
   }, [symbol, isSupported]);
 
   return (
@@ -798,9 +697,11 @@ const AnalysisVisualDashboard = ({ symbol, stockData, isMobile }) => {
       )}
 
       {activeSubTab === 'compete' && (
-        isSupported && parsedData
-          ? <CompeteTabSupported parsedData={parsedData} symbol={symbol} isMobile={isMobile} />
-          : <CompeteTabUnsupported isMobile={isMobile} />
+        <CompeteTab symbol={symbol} isMobile={isMobile} />
+      )}
+
+      {activeSubTab === 'sector' && (
+        <SectorTab symbol={symbol} isMobile={isMobile} />
       )}
     </div>
   );
