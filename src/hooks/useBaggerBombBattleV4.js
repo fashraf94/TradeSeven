@@ -1313,6 +1313,7 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
     // Prices (effectivePrices = polled + real-time WebSocket overlay)
     currentPrices: effectivePrices,
     openPrices,
+    dailyExtremes, // Real-time intraday high/low per symbol
     thresholds: battle?.thresholds || {},
 
     // Scores

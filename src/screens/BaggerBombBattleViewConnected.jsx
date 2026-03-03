@@ -52,6 +52,7 @@ export default function BaggerBombBattleViewConnected({
     currentPrices,
     openPrices,
     thresholds,
+    dailyExtremes,
     // New: Hook-managed trigger state for chain animations
     activeTrigger,
     chainCount,
@@ -241,6 +242,7 @@ export default function BaggerBombBattleViewConnected({
         thresholds={thresholds}
         currentPrices={currentPrices}
         openPrices={openPrices}
+        dailyExtremes={dailyExtremes}
         wsStatus={wsStatus}
         getEventCommentary={clashCast.getEventCommentary}
         clashCastActive={clashCast.isActive}

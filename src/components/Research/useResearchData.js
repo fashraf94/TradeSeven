@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { fetchHistoricalOHLCV } from '../../services/eodhdAPI';
+import { fetchHistoricalOHLCV, getStockPrice } from '../../services/eodhdAPI';
 import { calculateRollingSMA, calculateRSI, calculateMACD, calculateSMA } from '../../services/technicalIndicators';
 import { detectLevels } from '../../services/levelDetection';
 import { aggregateToMonthly } from './chartUtils';
@@ -41,6 +41,7 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
   const [error, setError] = useState(null);
   const [dailyChange, setDailyChange] = useState(null); // Daily % change computed from OHLCV
   const [previousClose, setPreviousClose] = useState(null); // Yesterday's close from daily OHLCV
+  const [realtimeExtremes, setRealtimeExtremes] = useState(null); // Live intraday high/low from real-time API
 
   const abortRef = useRef(null);
   const cacheRef = useRef({});  // In-memory cache keyed by `${symbol}_${apiTimeframe}`
@@ -569,10 +570,40 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
       .finally(() => setLoading(false));
   }, [symbol, apiTimeframe, isBomb, isCrypto]);
 
-  // Extract today's daily candle (authoritative H/L from daily OHLCV endpoint).
-  // Used by StockChart's bomb view to correct the OHLCV header — intraday candles
-  // can miss fast spikes between intervals, but the daily endpoint captures them.
+  // Fetch real-time intraday high/low from EODHD real-time API.
+  // The daily OHLCV endpoint only finalizes after market close — during market hours
+  // it returns stale/null data. The real-time API has live intraday extremes.
+  useEffect(() => {
+    if (!symbol) return;
+    let currentSymbol = symbol;
+
+    const fetchRealtimeExtremes = async () => {
+      try {
+        const data = await getStockPrice(currentSymbol);
+        // Guard: if symbol changed while fetch was in-flight, discard result
+        if (currentSymbol !== symbol) return;
+        if (data && (data.high > 0 || data.low > 0)) {
+          setRealtimeExtremes({ high: data.high || 0, low: data.low || 0, open: data.open || 0 });
+        }
+      } catch (err) {
+        console.warn('[useResearchData] Failed to fetch realtime extremes:', err.message);
+      }
+    };
+
+    // Clear stale data immediately on symbol change so chart doesn't flash old symbol's H/L
+    setRealtimeExtremes(null);
+    fetchRealtimeExtremes();
+    const interval = setInterval(fetchRealtimeExtremes, 60000);
+    return () => { currentSymbol = null; clearInterval(interval); };
+  }, [symbol]);
+
+  // Today's authoritative high/low for chart header.
+  // Priority 1: Real-time API (live during market hours)
+  // Priority 2: Daily OHLCV cache (works after market close)
   const todayDailyCandle = useMemo(() => {
+    if (realtimeExtremes && (realtimeExtremes.high > 0 || realtimeExtremes.low > 0)) {
+      return { high: realtimeExtremes.high, low: realtimeExtremes.low, open: realtimeExtremes.open || 0, close: 0, _source: 'realtime' };
+    }
     const dailyData = cacheRef.current[`${symbol}_1d`] || cacheRef.current[`${symbol}_1d_dailychange`];
     if (!dailyData || dailyData.length === 0) return null;
     const todayET = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
@@ -581,7 +612,7 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
       return candleDate === todayET;
     });
     return todayCandle || null;
-  }, [symbol, rawData, previousClose]); // rawData/previousClose changes signal fresh daily data
+  }, [symbol, rawData, previousClose, realtimeExtremes]);
 
   return {
     ohlcvData,       // Oldest-first, processed for current timeframe
@@ -597,5 +628,6 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
     dailyChange,     // Daily % change computed from OHLCV (null until data loads)
     previousClose,   // Yesterday's closing price from daily OHLCV (null until data loads)
     todayDailyCandle, // Today's daily candle with authoritative high/low (null until data loads)
+    realtimeExtremes, // Live intraday high/low from real-time API (null until fetched)
   };
 }

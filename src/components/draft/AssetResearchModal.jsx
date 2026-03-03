@@ -90,6 +90,7 @@ const AssetResearchModal = ({
   version = 2,
   defaultTab = null,
   defaultTimeframe = null,
+  realtimeExtremes = null,
 }) => {
   // Stock navigation — allows swapping to a different stock via leaderboard
   const [currentAsset, setCurrentAsset] = useState(asset);
@@ -629,6 +630,7 @@ const AssetResearchModal = ({
                   bombData={bombData}
                   symbol={currentAsset?.symbol}
                   todayDailyCandle={researchData.todayDailyCandle}
+                  realtimeExtremes={realtimeExtremes}
                 />
               )}
             </div>
