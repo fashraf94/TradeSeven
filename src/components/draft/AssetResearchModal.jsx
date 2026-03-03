@@ -91,6 +91,7 @@ const AssetResearchModal = ({
   defaultTab = null,
   defaultTimeframe = null,
   realtimeExtremes = null,
+  wsPrice = null,
 }) => {
   // Stock navigation — allows swapping to a different stock via leaderboard
   const [currentAsset, setCurrentAsset] = useState(asset);
@@ -152,7 +153,7 @@ const AssetResearchModal = ({
 
   // v2: Research data hook for chart + enhanced technical tab
   const researchData = useResearchData(version >= 2 ? currentAsset?.symbol : null, {
-    currentPrice: currentAsset?.price || currentAsset?.currentPrice || 0,
+    currentPrice: wsPrice || currentAsset?.price || currentAsset?.currentPrice || 0,
     isCrypto: isCrypto,
     initialTimeframe: defaultTimeframe,
   });

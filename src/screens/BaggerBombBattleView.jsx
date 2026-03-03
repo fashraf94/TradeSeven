@@ -643,6 +643,7 @@ export default function BaggerBombBattleView({
           defaultTab={researchDefaultTab}
           defaultTimeframe="bomb"
           realtimeExtremes={dailyExtremes?.[stableResearchAsset?.symbol]}
+          wsPrice={currentPrices?.[stableResearchAsset?.symbol]}
         />
       )}
 
