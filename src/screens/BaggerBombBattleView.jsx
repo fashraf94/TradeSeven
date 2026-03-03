@@ -677,6 +677,8 @@ export default function BaggerBombBattleView({
           }}
           events={events || []}
           onClose={() => setBreakdownAsset(null)}
+          entryPrice={battle?.state?.startingPrices?.[breakdownAsset.symbol] || 0}
+          battleCreatedAt={battle?.timing?.createdAt || battle?.createdAt || null}
         />
       )}
 
