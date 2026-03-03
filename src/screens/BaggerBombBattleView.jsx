@@ -216,6 +216,7 @@ export default function BaggerBombBattleView({
   thresholds = {},
   currentPrices = {},
   openPrices = {},
+  dailyExtremes = {},
   // V4 props
   battleVersion = 3,
   freeAgentConfig = {},
@@ -641,6 +642,8 @@ export default function BaggerBombBattleView({
           version={2}
           defaultTab={researchDefaultTab}
           defaultTimeframe="bomb"
+          realtimeExtremes={dailyExtremes?.[stableResearchAsset?.symbol]}
+          wsPrice={currentPrices?.[stableResearchAsset?.symbol]}
         />
       )}
 
@@ -677,6 +680,8 @@ export default function BaggerBombBattleView({
           }}
           events={events || []}
           onClose={() => setBreakdownAsset(null)}
+          entryPrice={battle?.state?.startingPrices?.[breakdownAsset.symbol] || 0}
+          battleCreatedAt={battle?.timing?.createdAt || battle?.createdAt || null}
         />
       )}
 
@@ -997,6 +1002,8 @@ BaggerBombBattleView.propTypes = {
   onConfirmSwap: PropTypes.func,
   /** V4: Whether swap is being executed */
   isSwapExecuting: PropTypes.bool,
+  /** Real-time intraday high/low per symbol from scoring hook */
+  dailyExtremes: PropTypes.object,
 };
 
 BaggerBombBattleView.defaultProps = {

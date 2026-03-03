@@ -25,6 +25,8 @@ const StockChart = ({
   height = 300,
   bombData,          // { threshold: number, baselinePrice: number } | null
   symbol,            // Stock/crypto ticker for getDailyHL lookup
+  todayDailyCandle,  // Today's daily OHLCV candle with authoritative high/low
+  realtimeExtremes,  // Battle hook's real-time intraday high/low { high, low } (optional backup)
 }) => {
   const chartContainerRef = useRef(null);
   const chartRef = useRef(null);
@@ -138,6 +140,20 @@ const StockChart = ({
       }
     }
 
+    // Use daily OHLCV endpoint's authoritative high/low — intraday candles
+    // can miss fast spikes between intervals, but the daily endpoint captures them.
+    // todayDailyCandle now prefers real-time API data (live during market hours).
+    if (todayDailyCandle) {
+      if (todayDailyCandle.high > 0) aggHigh = Math.max(aggHigh, todayDailyCandle.high);
+      if (todayDailyCandle.low > 0) aggLow = Math.min(aggLow, todayDailyCandle.low);
+    }
+
+    // Battle hook's real-time extremes as additional backup source
+    if (realtimeExtremes) {
+      if (realtimeExtremes.high > 0) aggHigh = Math.max(aggHigh, realtimeExtremes.high);
+      if (realtimeExtremes.low > 0) aggLow = Math.min(aggLow, realtimeExtremes.low);
+    }
+
     return {
       open: aggOpen,
       high: aggHigh,
@@ -145,7 +161,43 @@ const StockChart = ({
       close: aggClose,
       volume: candles.reduce((sum, c) => sum + (c.volume || 0), 0),
     };
-  }, [isBombView, chartData, symbol]);
+  }, [isBombView, chartData, symbol, todayDailyCandle, realtimeExtremes]);
+
+  // Ensure the OHLC header always reflects the best-known daily high/low,
+  // not just whichever individual candle the crosshair happens to rest on.
+  // - Bomb view: use bombDailyOhlc (aggregates intraday candles + WS + realtime)
+  // - Non-bomb views (1D, 1W): use todayDailyCandle (real-time API data)
+  const displayOhlc = useMemo(() => {
+    if (!ohlcData) return null;
+
+    // Bomb view: merge with full bombDailyOhlc aggregate
+    if (isBombView && bombDailyOhlc) {
+      return {
+        open: bombDailyOhlc.open > 0 ? bombDailyOhlc.open : ohlcData.open,
+        high: Math.max(ohlcData.high || 0, bombDailyOhlc.high || 0),
+        low: (ohlcData.low > 0 && bombDailyOhlc.low > 0)
+          ? Math.min(ohlcData.low, bombDailyOhlc.low)
+          : (bombDailyOhlc.low > 0 ? bombDailyOhlc.low : ohlcData.low),
+        close: ohlcData.close,
+        volume: ohlcData.volume,
+      };
+    }
+
+    // Non-bomb views (1D, 1W): correct with todayDailyCandle real-time data
+    if (todayDailyCandle) {
+      return {
+        open: todayDailyCandle.open > 0 ? todayDailyCandle.open : ohlcData.open,
+        high: Math.max(ohlcData.high || 0, todayDailyCandle.high || 0),
+        low: (ohlcData.low > 0 && todayDailyCandle.low > 0)
+          ? Math.min(ohlcData.low, todayDailyCandle.low)
+          : (todayDailyCandle.low > 0 ? todayDailyCandle.low : ohlcData.low),
+        close: ohlcData.close,
+        volume: ohlcData.volume,
+      };
+    }
+
+    return ohlcData;
+  }, [ohlcData, isBombView, bombDailyOhlc, todayDailyCandle]);
 
   // Main chart setup
   useEffect(() => {
@@ -716,7 +768,7 @@ const StockChart = ({
         />
 
         {/* OHLC overlay — hidden in spectate view (back button uses same position) */}
-        {!isSpectateView && <OHLCDisplay data={ohlcData} />}
+        {!isSpectateView && <OHLCDisplay data={displayOhlc} />}
 
         {/* Spectate mode: Back button */}
         {isSpectateView && (

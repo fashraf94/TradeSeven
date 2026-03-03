@@ -53,6 +53,7 @@ export default function BaggerBombBattleViewConnectedV4({
     chainCount,
     cumulativePoints,
     clearTrigger,
+    dailyExtremes,
   } = useBaggerBombBattleV4(battleId, userId, { realtimePrices: wsPrices });
 
   // Extract symbols from battle data for WebSocket subscription
@@ -311,6 +312,7 @@ export default function BaggerBombBattleViewConnectedV4({
         thresholds={thresholds}
         currentPrices={currentPrices}
         openPrices={openPrices}
+        dailyExtremes={dailyExtremes}
         wsStatus={wsStatus}
         battleVersion={5}
         getEventCommentary={clashCast.getEventCommentary}

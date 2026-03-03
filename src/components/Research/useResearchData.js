@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { fetchHistoricalOHLCV } from '../../services/eodhdAPI';
+import { fetchHistoricalOHLCV, getStockPrice } from '../../services/eodhdAPI';
 import { calculateRollingSMA, calculateRSI, calculateMACD, calculateSMA } from '../../services/technicalIndicators';
 import { detectLevels } from '../../services/levelDetection';
 import { aggregateToMonthly } from './chartUtils';
@@ -41,6 +41,7 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
   const [error, setError] = useState(null);
   const [dailyChange, setDailyChange] = useState(null); // Daily % change computed from OHLCV
   const [previousClose, setPreviousClose] = useState(null); // Yesterday's close from daily OHLCV
+  const [realtimeExtremes, setRealtimeExtremes] = useState(null); // Live intraday high/low from real-time API
 
   const abortRef = useRef(null);
   const cacheRef = useRef({});  // In-memory cache keyed by `${symbol}_${apiTimeframe}`
@@ -403,6 +404,8 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
 
     let result = processedCandles;
     const wsHL = getDailyHL(symbol);
+    const rtHigh = realtimeExtremes?.high > 0 ? realtimeExtremes.high : 0;
+    const rtLow = realtimeExtremes?.low > 0 ? realtimeExtremes.low : Infinity;
     const lastCandle = result[result.length - 1];
     const lastDateStr = lastCandle.date || lastCandle.datetime || '';
 
@@ -421,23 +424,33 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
           : new Date(lastDateStr).getTime();
         const halfHourMs = 30 * 60 * 1000;
         if (lastTime && (Date.now() - lastTime) > halfHourMs) {
+          // Patch the last real candle with real-time extremes — the spike may have
+          // occurred during that candle's interval but wasn't captured by EODHD.
+          if (rtHigh > 0 || rtLow < Infinity) {
+            const lastReal = { ...result[result.length - 1] };
+            let patchedReal = false;
+            if (rtHigh > 0 && rtHigh > Number(lastReal.high)) { lastReal.high = rtHigh; patchedReal = true; }
+            if (rtLow < Infinity && rtLow < Number(lastReal.low)) { lastReal.low = rtLow; patchedReal = true; }
+            if (patchedReal) result = [...result.slice(0, -1), lastReal];
+          }
           const nowHalf = new Date();
           nowHalf.setMinutes(nowHalf.getMinutes() >= 30 ? 30 : 0, 0, 0);
+          const synthOpen = realtimeExtremes?.open > 0 ? realtimeExtremes.open : lastCandle.close;
           result = [...result, {
             date: nowHalf.toISOString(),
             datetime: nowHalf.toISOString(),
             timestamp: Math.floor(nowHalf.getTime() / 1000),
-            open: lastCandle.close,
-            high: wsHL ? Math.max(wsHL.high, throttledPrice, lastCandle.close) : Math.max(throttledPrice, lastCandle.close),
-            low: wsHL ? Math.min(wsHL.low, throttledPrice, lastCandle.close) : Math.min(throttledPrice, lastCandle.close),
+            open: synthOpen,
+            high: Math.max(wsHL?.high || 0, throttledPrice, synthOpen, rtHigh),
+            low: Math.min(wsHL?.low ?? Infinity, throttledPrice, synthOpen, rtLow),
             close: throttledPrice,
             volume: 0,
           }];
         } else if (lastTime) {
           // Latest candle is within the current 30-min period — patch H/L/C with live price
           const patched = { ...lastCandle };
-          patched.high = wsHL ? Math.max(Number(patched.high), wsHL.high, throttledPrice) : Math.max(Number(patched.high), throttledPrice);
-          patched.low = wsHL ? Math.min(Number(patched.low), wsHL.low, throttledPrice) : Math.min(Number(patched.low), throttledPrice);
+          patched.high = Math.max(Number(patched.high), wsHL?.high || 0, throttledPrice, rtHigh);
+          patched.low = Math.min(Number(patched.low), wsHL?.low ?? Infinity, throttledPrice, rtLow);
           patched.close = throttledPrice;
           result = [...result.slice(0, -1), patched];
         }
@@ -455,16 +468,16 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
         result = [...result, {
           date: mondayStr,
           open: lastCandle.close,
-          high: wsHL ? Math.max(wsHL.high, throttledPrice, lastCandle.close) : Math.max(throttledPrice, lastCandle.close),
-          low: wsHL ? Math.min(wsHL.low, throttledPrice, lastCandle.close) : Math.min(throttledPrice, lastCandle.close),
+          high: Math.max(wsHL?.high || 0, throttledPrice, lastCandle.close, rtHigh),
+          low: Math.min(wsHL?.low ?? Infinity, throttledPrice, lastCandle.close, rtLow),
           close: throttledPrice,
           volume: 0,
         }];
       } else {
         // Current week's candle exists — patch H/L/C with live price
         const patched = { ...lastCandle };
-        patched.high = wsHL ? Math.max(Number(patched.high), wsHL.high, throttledPrice) : Math.max(Number(patched.high), throttledPrice);
-        patched.low = wsHL ? Math.min(Number(patched.low), wsHL.low, throttledPrice) : Math.min(Number(patched.low), throttledPrice);
+        patched.high = Math.max(Number(patched.high), wsHL?.high || 0, throttledPrice, rtHigh);
+        patched.low = Math.min(Number(patched.low), wsHL?.low ?? Infinity, throttledPrice, rtLow);
         patched.close = throttledPrice;
         result = [...result.slice(0, -1), patched];
       }
@@ -484,26 +497,27 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
 
       if (lastDate < today && shouldAppend) {
         const todayStr = today.toISOString().split('T')[0];
+        const dailySynthOpen = realtimeExtremes?.open > 0 ? realtimeExtremes.open : lastCandle.close;
         result = [...result, {
           date: todayStr,
-          open: lastCandle.close,
-          high: wsHL ? Math.max(wsHL.high, throttledPrice, lastCandle.close) : Math.max(throttledPrice, lastCandle.close),
-          low: wsHL ? Math.min(wsHL.low, throttledPrice, lastCandle.close) : Math.min(throttledPrice, lastCandle.close),
+          open: dailySynthOpen,
+          high: Math.max(wsHL?.high || 0, throttledPrice, dailySynthOpen, rtHigh),
+          low: Math.min(wsHL?.low ?? Infinity, throttledPrice, dailySynthOpen, rtLow),
           close: throttledPrice,
           volume: 0,
         }];
       } else if (lastDate.getTime() === today.getTime()) {
         // Today's candle exists but may have stale H/L/C — patch with live price
         const patched = { ...lastCandle };
-        patched.high = wsHL ? Math.max(Number(patched.high), wsHL.high, throttledPrice) : Math.max(Number(patched.high), throttledPrice);
-        patched.low = wsHL ? Math.min(Number(patched.low), wsHL.low, throttledPrice) : Math.min(Number(patched.low), throttledPrice);
+        patched.high = Math.max(Number(patched.high), wsHL?.high || 0, throttledPrice, rtHigh);
+        patched.low = Math.min(Number(patched.low), wsHL?.low ?? Infinity, throttledPrice, rtLow);
         patched.close = throttledPrice;
         result = [...result.slice(0, -1), patched];
       }
     }
 
     return result;
-  }, [processedCandles, throttledPrice, timeframe, isCrypto]);
+  }, [processedCandles, throttledPrice, timeframe, isCrypto, realtimeExtremes]);
 
   // Compute closing prices (newest-first, as expected by indicator functions)
   const closingPrices = useMemo(() => {
@@ -569,6 +583,50 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
       .finally(() => setLoading(false));
   }, [symbol, apiTimeframe, isBomb, isCrypto]);
 
+  // Fetch real-time intraday high/low from EODHD real-time API.
+  // The daily OHLCV endpoint only finalizes after market close — during market hours
+  // it returns stale/null data. The real-time API has live intraday extremes.
+  useEffect(() => {
+    if (!symbol) return;
+    let currentSymbol = symbol;
+
+    const fetchRealtimeExtremes = async () => {
+      try {
+        const data = await getStockPrice(currentSymbol);
+        // Guard: if symbol changed while fetch was in-flight, discard result
+        if (currentSymbol !== symbol) return;
+        if (data && (data.high > 0 || data.low > 0)) {
+          setRealtimeExtremes({ high: data.high || 0, low: data.low || 0, open: data.open || 0 });
+        }
+      } catch (err) {
+        console.warn('[useResearchData] Failed to fetch realtime extremes:', err.message);
+      }
+    };
+
+    // Clear stale data immediately on symbol change so chart doesn't flash old symbol's H/L
+    setRealtimeExtremes(null);
+    fetchRealtimeExtremes();
+    const interval = setInterval(fetchRealtimeExtremes, 60000);
+    return () => { currentSymbol = null; clearInterval(interval); };
+  }, [symbol]);
+
+  // Today's authoritative high/low for chart header.
+  // Priority 1: Real-time API (live during market hours)
+  // Priority 2: Daily OHLCV cache (works after market close)
+  const todayDailyCandle = useMemo(() => {
+    if (realtimeExtremes && (realtimeExtremes.high > 0 || realtimeExtremes.low > 0)) {
+      return { high: realtimeExtremes.high, low: realtimeExtremes.low, open: realtimeExtremes.open || 0, close: 0, _source: 'realtime' };
+    }
+    const dailyData = cacheRef.current[`${symbol}_1d`] || cacheRef.current[`${symbol}_1d_dailychange`];
+    if (!dailyData || dailyData.length === 0) return null;
+    const todayET = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+    const todayCandle = dailyData.find(d => {
+      const candleDate = (d.date || d.datetime || '').substring(0, 10);
+      return candleDate === todayET;
+    });
+    return todayCandle || null;
+  }, [symbol, rawData, previousClose, realtimeExtremes]);
+
   return {
     ohlcvData,       // Oldest-first, processed for current timeframe
     rawData,         // Newest-first, raw from API (for indicators/levels)
@@ -582,5 +640,7 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
     retry,
     dailyChange,     // Daily % change computed from OHLCV (null until data loads)
     previousClose,   // Yesterday's closing price from daily OHLCV (null until data loads)
+    todayDailyCandle, // Today's daily candle with authoritative high/low (null until data loads)
+    realtimeExtremes, // Live intraday high/low from real-time API (null until fetched)
   };
 }

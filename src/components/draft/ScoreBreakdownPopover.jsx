@@ -1,8 +1,6 @@
-import React, { useMemo } from 'react';
+import React from 'react';
 import ReactDOM from 'react-dom';
 import { HOLO_COLORS } from '../../constants/holoTheme';
-
-const NEGATIVE_TYPES = ['bust', 'crash', 'meltdown'];
 
 /**
  * ScoreBreakdownPopover - Shows detailed score breakdown when user taps points
@@ -11,6 +9,8 @@ const NEGATIVE_TYPES = ['bust', 'crash', 'meltdown'];
  * ┌─────────────────────────────────────┐
  * │  CAT Score Breakdown           ✕   │
  * ├─────────────────────────────────────┤
+ * │  ENTRY PRICE | CURRENT | TOTAL     │  ← from battle startingPrices
+ * │  DAY BASELINE| CURRENT | TODAY     │  ← daily open for scoring context
  * │                                     │
  * │  Base (3.5% × 10)       +35.0 pts  │
  * │  💣 BaggerBomb ×2        +30.0 pts  │
@@ -18,13 +18,14 @@ const NEGATIVE_TYPES = ['bust', 'crash', 'meltdown'];
  * │  ───────────────────────────────── │
  * │  TOTAL                  +60.0 pts  │
  * │                                     │
- * │  TIMELINE                          │
- * │  💣 Hit at 10:42 AM (+2.4%)        │
- * │  💣 Hit at 11:15 AM (+3.5%)        │
+ * │  POSITION SUMMARY                  │
+ * │  Entry Price        $112.50        │
+ * │  Days Held          3 days         │
+ * │  Total P&L         +$7.01          │
  * │                                     │
  * └─────────────────────────────────────┘
  */
-const ScoreBreakdownPopover = ({ asset, events: battleEvents = [], onClose }) => {
+const ScoreBreakdownPopover = ({ asset, events: battleEvents = [], onClose, entryPrice: entryPriceProp = 0, battleCreatedAt = null }) => {
   if (!asset) return null;
 
   const {
@@ -44,64 +45,13 @@ const ScoreBreakdownPopover = ({ asset, events: battleEvents = [], onClose }) =>
     baselinePrice = 0,
   } = asset;
 
-  const entryPrice = baselinePrice || startingPrice || lockedPrice;
-  const hasEntryPrice = entryPrice > 0 && currentPrice > 0;
+  // Day baseline: the daily open price used for today's scoring
+  const dayBaseline = baselinePrice || startingPrice || lockedPrice;
+  const hasDayBaseline = dayBaseline > 0 && currentPrice > 0;
 
-  // Build timeline from real persisted events (filtered to this symbol).
-  // Falls back to a badge-only summary for legacy battles without events.
-  const timeline = useMemo(() => {
-    const symbolEvents = (battleEvents || [])
-      .filter(e => e.symbol === symbol)
-      .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
-
-    // Deduplicate: keep only the first (earliest) event per threshold type.
-    // Duplicates arise from multiple clients detecting the same crossing,
-    // page refreshes, or React re-renders — each writes a new event with
-    // a unique id, so Firestore's arrayUnion never deduplicates them.
-    const seen = new Set();
-    const uniqueEvents = symbolEvents.filter(e => {
-      if (seen.has(e.type)) return false;
-      seen.add(e.type);
-      return true;
-    });
-
-    const mapped = uniqueEvents.map(e => {
-      const isNeg = NEGATIVE_TYPES.includes(e.type);
-      return {
-        type: isNeg ? 'bust' : 'baggerbomb',
-        time: new Date(e.timestamp).toLocaleTimeString('en-US', {
-          hour: 'numeric',
-          minute: '2-digit',
-          hour12: true,
-          timeZone: 'America/New_York',
-        }),
-        percent: e.multiplier != null ? e.multiplier * threshold : 0,
-        hasRealTime: true,
-      };
-    });
-
-    // If no persisted events but badges exist, show badge summary without timestamps
-    if (mapped.length === 0 && (baggerBombs > 0 || busts > 0)) {
-      for (let i = 0; i < baggerBombs; i++) {
-        mapped.push({
-          type: 'baggerbomb',
-          time: null,
-          percent: threshold * (i + 1),
-          hasRealTime: false,
-        });
-      }
-      for (let i = 0; i < busts; i++) {
-        mapped.push({
-          type: 'bust',
-          time: null,
-          percent: -(threshold * (i + 1)),
-          hasRealTime: false,
-        });
-      }
-    }
-
-    return mapped;
-  }, [battleEvents, symbol, threshold, baggerBombs, busts]);
+  // Entry price: the original price when the battle was activated
+  const hasEntryPrice = entryPriceProp > 0 && currentPrice > 0;
+  const totalChangeFromEntry = hasEntryPrice ? ((currentPrice - entryPriceProp) / entryPriceProp) * 100 : 0;
 
   return ReactDOM.createPortal(
     <>
@@ -175,8 +125,53 @@ const ScoreBreakdownPopover = ({ asset, events: battleEvents = [], onClose }) =>
 
         {/* Content */}
         <div style={{ padding: '16px' }}>
-          {/* Entry Price Context */}
+          {/* Entry Price Row — original battle entry price */}
           {hasEntryPrice && (
+            <div style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              padding: '10px 14px',
+              marginBottom: '8px',
+              borderRadius: '8px',
+              backgroundColor: 'rgba(0, 217, 255, 0.05)',
+              border: '1px solid rgba(0, 217, 255, 0.15)',
+            }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                <span style={{ fontSize: '10px', color: '#6e7681', textTransform: 'uppercase', letterSpacing: '0.5px', fontWeight: 600 }}>
+                  Entry Price
+                </span>
+                <span style={{ fontSize: '16px', fontWeight: 700, color: '#e6edf3' }}>
+                  ${entryPriceProp.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </span>
+              </div>
+              <div style={{ width: '1px', height: '30px', backgroundColor: 'rgba(255,255,255,0.1)' }} />
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', alignItems: 'center' }}>
+                <span style={{ fontSize: '10px', color: '#6e7681', textTransform: 'uppercase', letterSpacing: '0.5px', fontWeight: 600 }}>
+                  Current
+                </span>
+                <span style={{ fontSize: '16px', fontWeight: 700, color: '#e6edf3' }}>
+                  ${currentPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </span>
+              </div>
+              <div style={{ width: '1px', height: '30px', backgroundColor: 'rgba(255,255,255,0.1)' }} />
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', alignItems: 'flex-end' }}>
+                <span style={{ fontSize: '10px', color: '#6e7681', textTransform: 'uppercase', letterSpacing: '0.5px', fontWeight: 600 }}>
+                  Total
+                </span>
+                <span style={{
+                  fontSize: '16px',
+                  fontWeight: 700,
+                  color: totalChangeFromEntry >= 0 ? '#10b981' : '#ef4444',
+                }}>
+                  {totalChangeFromEntry >= 0 ? '+' : ''}{totalChangeFromEntry.toFixed(2)}%
+                </span>
+              </div>
+            </div>
+          )}
+
+          {/* Day Baseline Row — daily open price for scoring context */}
+          {hasDayBaseline && (
             <div style={{
               display: 'flex',
               justifyContent: 'space-between',
@@ -192,7 +187,7 @@ const ScoreBreakdownPopover = ({ asset, events: battleEvents = [], onClose }) =>
                   Day Baseline
                 </span>
                 <span style={{ fontSize: '16px', fontWeight: 700, color: '#ffffff' }}>
-                  ${entryPrice.toFixed(2)}
+                  ${dayBaseline.toFixed(2)}
                 </span>
               </div>
               <div style={{ width: '1px', height: '30px', backgroundColor: 'rgba(255,255,255,0.1)' }} />
@@ -207,7 +202,7 @@ const ScoreBreakdownPopover = ({ asset, events: battleEvents = [], onClose }) =>
               <div style={{ width: '1px', height: '30px', backgroundColor: 'rgba(255,255,255,0.1)' }} />
               <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', alignItems: 'flex-end' }}>
                 <span style={{ fontSize: '11px', color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                  Change
+                  Today
                 </span>
                 <span style={{
                   fontSize: '16px',
@@ -356,75 +351,59 @@ const ScoreBreakdownPopover = ({ asset, events: battleEvents = [], onClose }) =>
             </div>
           </div>
 
-          {/* Timeline Section */}
-          {timeline.length > 0 && (
-            <div>
-              <div style={{
-                fontSize: '10px',
-                fontWeight: 700,
-                color: HOLO_COLORS.textMuted,
-                textTransform: 'uppercase',
-                letterSpacing: '1px',
-                marginBottom: '10px',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
-              }}>
-                <span style={{ color: HOLO_COLORS.cyan }}>⏱</span>
-                TIMELINE
-              </div>
-
-              <div style={{
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '6px',
-                maxHeight: '120px',
-                overflowY: 'auto',
-              }}>
-                {timeline.map((event, idx) => (
-                  <div
-                    key={idx}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '8px',
-                      padding: '8px 10px',
-                      background: 'rgba(255, 255, 255, 0.02)',
-                      borderRadius: '6px',
-                      fontSize: '11px',
-                    }}
-                  >
-                    <span style={{
-                      textShadow: event.type === 'baggerbomb'
-                        ? '0 0 8px rgba(0, 255, 170, 0.8), 0 0 16px rgba(0, 255, 170, 0.4)'
-                        : '0 0 8px rgba(255, 100, 100, 0.8), 0 0 16px rgba(255, 100, 100, 0.4)',
-                    }}>{event.type === 'baggerbomb' ? '💣' : '📉'}</span>
-                    <span style={{ color: HOLO_COLORS.textMuted }}>
-                      {event.hasRealTime ? `Hit at ${event.time}` : (event.type === 'baggerbomb' ? 'BaggerBomb' : 'Bust')}
-                    </span>
-                    <span style={{
-                      marginLeft: 'auto',
-                      fontFamily: 'monospace',
-                      color: event.type === 'baggerbomb' ? HOLO_COLORS.green : HOLO_COLORS.red,
-                      fontWeight: 600,
-                    }}>
-                      ({event.percent >= 0 ? '+' : ''}{event.percent.toFixed(1)}%)
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* No Events Message */}
-          {timeline.length === 0 && (
+          {/* Position Summary — replaces Timeline */}
+          {hasEntryPrice && (
             <div style={{
-              textAlign: 'center',
-              padding: '16px',
-              color: HOLO_COLORS.textMuted,
-              fontSize: '12px',
+              padding: '12px 16px',
+              background: 'rgba(255, 255, 255, 0.03)',
+              borderRadius: '10px',
+              border: '1px solid rgba(255, 255, 255, 0.06)',
             }}>
-              No BaggerBombs or Busts triggered yet
+              <div style={{
+                fontSize: '11px',
+                color: '#6e7681',
+                letterSpacing: '1px',
+                fontWeight: 700,
+                marginBottom: '10px',
+                textTransform: 'uppercase',
+              }}>
+                Position Summary
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                <span style={{ fontSize: '13px', color: '#8b949e' }}>Entry Price</span>
+                <span style={{ fontSize: '13px', color: '#e6edf3', fontWeight: 600 }}>
+                  ${entryPriceProp.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </span>
+              </div>
+              {battleCreatedAt && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                  <span style={{ fontSize: '13px', color: '#8b949e' }}>Days Held</span>
+                  <span style={{ fontSize: '13px', color: '#e6edf3', fontWeight: 600 }}>
+                    {(() => {
+                      const start = battleCreatedAt?.toDate ? battleCreatedAt.toDate() : new Date(battleCreatedAt);
+                      const now = new Date();
+                      const days = Math.max(1, Math.ceil((now - start) / (1000 * 60 * 60 * 24)));
+                      return `${days} day${days !== 1 ? 's' : ''}`;
+                    })()}
+                  </span>
+                </div>
+              )}
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ fontSize: '13px', color: '#8b949e' }}>Total P&L</span>
+                {(() => {
+                  const pnl = currentPrice - entryPriceProp;
+                  const isPositive = pnl >= 0;
+                  return (
+                    <span style={{
+                      fontSize: '13px',
+                      fontWeight: 600,
+                      color: isPositive ? '#10b981' : '#ef4444',
+                    }}>
+                      {isPositive ? '+' : ''}${pnl.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
+                  );
+                })()}
+              </div>
             </div>
           )}
 

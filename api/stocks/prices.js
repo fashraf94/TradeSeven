@@ -112,8 +112,8 @@ async function handleCurrentPrices(req, res, symbols, API_KEY, noCache) {
           open: item.open || 0,
           change: item.change || 0,
           changePercent: item.change_p || 0,
-          high: item.high,
-          low: item.low,
+          high: item.high || 0,
+          low: item.low || 0,
           volume: item.volume,
           timestamp: item.timestamp || null
         };
