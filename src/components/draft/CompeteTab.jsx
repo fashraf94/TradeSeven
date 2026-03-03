@@ -8,7 +8,7 @@ const MONO_FONT = "'JetBrains Mono', 'SF Mono', monospace";
 
 const PILLAR_CONFIG = [
   { key: 'growth',        label: 'Growth',        dims: ['growth'] },
-  { key: 'profitability', label: 'Profitability',  dims: ['profitability'] },
+  { key: 'profitability', label: 'Profitability',  dims: ['profitability', 'profitabilityTrend'] },
   { key: 'efficiency',    label: 'Efficiency',     dims: ['efficiency'] },
   { key: 'valuation',     label: 'Valuation',      dims: ['valuation'] },
   { key: 'health',        label: 'Health',          dims: ['healthCash', 'healthDebt'] },
@@ -18,6 +18,7 @@ const PILLAR_CONFIG = [
 const DIM_META = {
   growth:             { label: 'Revenue Growth YoY',       unit: '%',    format: v => `${(v * 100).toFixed(1)}%` },
   profitability:      { label: 'Operating Margin TTM',     unit: '%',    format: v => `${(v * 100).toFixed(1)}%` },
+  profitabilityTrend: { label: 'Margin Trend (TTM vs Prior)', unit: 'pp', format: v => `${v >= 0 ? '+' : ''}${v.toFixed(1)}pp` },
   efficiency:         { label: 'Return on Assets TTM',     unit: '%',    format: v => `${(v * 100).toFixed(1)}%` },
   valuation:          { label: 'Forward P/E',              unit: 'x',    format: v => v > 0 ? `${v.toFixed(1)}x` : 'N/A' },
   healthCash:         { label: 'FCF Yield',                unit: '%',    format: v => `${(v * 100).toFixed(1)}%` },

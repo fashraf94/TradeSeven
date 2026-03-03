@@ -35,7 +35,7 @@ export const STOCK_UNIVERSE = {
     name: 'Energy',
     etf: 'XLE',
     color: '#ef4444',
-    stocks: ['XOM','CVX','COP','SLB','EOG','MPC','PXD','PSX','VLO','OXY','WMB','KMI','HES','HAL','DVN','BKR','FANG','TRGP','OKE','CTRA'],
+    stocks: ['XOM','CVX','COP','SLB','EOG','MPC','PSX','VLO','OXY','WMB','KMI','HES','HAL','DVN','BKR','FANG','TRGP','OKE','CTRA'],
   },
   XLY: {
     name: 'Consumer Discretionary',
@@ -116,6 +116,14 @@ export const DIMENSIONS = {
     unit: '%',
     source: 'Highlights.OperatingMarginTTM',
   },
+  profitabilityTrend: {
+    label: 'Margin Trend (TTM vs Prior TTM)',
+    pillar: 'profitability',
+    field: 'marginTrend',
+    inverted: false,
+    unit: 'pp',
+    computed: true,
+  },
   efficiency: {
     label: 'Return on Assets TTM',
     pillar: 'efficiency',
@@ -172,7 +180,7 @@ export const DIMENSIONS = {
 
 export const PILLARS = {
   growth:        { label: 'Growth',        dimensions: ['growth'] },
-  profitability: { label: 'Profitability', dimensions: ['profitability'] },
+  profitability: { label: 'Profitability', dimensions: ['profitability', 'profitabilityTrend'], weights: [0.65, 0.35] },
   efficiency:    { label: 'Efficiency',    dimensions: ['efficiency'] },
   valuation:     { label: 'Valuation',     dimensions: ['valuation'] },
   health:        { label: 'Health',        dimensions: ['healthCash', 'healthDebt'] },
@@ -204,11 +212,11 @@ export function getTierLabel(percentile) {
 // ---------------------------------------------------------------------------
 
 export const SECTOR_COMPOSITE_WEIGHTS = {
-  breadth:            0.25,
-  momentum3M:         0.25,
+  breadth:            0.30,
+  momentum3M:         0.30,
   earningsRevisions:  0.20,
-  medianGrowth:       0.15,
-  valuationDiscount:  0.15,
+  medianGrowth:       0.10,
+  valuationDiscount:  0.10,
 };
 
 // ---------------------------------------------------------------------------

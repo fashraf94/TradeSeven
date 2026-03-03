@@ -256,6 +256,26 @@ function extractMetrics(ticker, fundamentals) {
   // 8. EPS Revision Score
   const epsRevisionScore = computeEpsRevisionScore(fundamentals.earnings);
 
+  // 9. Profitability Margin Trend (Current TTM margin vs Prior TTM margin)
+  let marginTrend = null;
+  const incomeEntries = Object.values(fundamentals.incomeQ);
+  const sortedQuarters = incomeEntries
+    .filter(q => q.date)
+    .sort((a, b) => b.date.localeCompare(a.date));
+
+  if (sortedQuarters.length >= 8) {
+    const currentRev = sortedQuarters.slice(0, 4).reduce((s, q) => s + (parseFloat(q.totalRevenue) || 0), 0);
+    const currentOp  = sortedQuarters.slice(0, 4).reduce((s, q) => s + (parseFloat(q.operatingIncome) || 0), 0);
+    const priorRev   = sortedQuarters.slice(4, 8).reduce((s, q) => s + (parseFloat(q.totalRevenue) || 0), 0);
+    const priorOp    = sortedQuarters.slice(4, 8).reduce((s, q) => s + (parseFloat(q.operatingIncome) || 0), 0);
+
+    if (currentRev > 0 && priorRev > 0) {
+      const currentMargin = currentOp / currentRev;
+      const priorMargin = priorOp / priorRev;
+      marginTrend = (currentMargin - priorMargin) * 100; // percentage points
+    }
+  }
+
   return {
     revenueGrowthYOY,
     opMarginTTM,
@@ -265,6 +285,7 @@ function extractMetrics(ticker, fundamentals) {
     interestCoverage,
     range52wPosition,
     epsRevisionScore,
+    marginTrend,
     marketCap,
     high52,
     low52,
@@ -347,15 +368,25 @@ function rankSectorStocks(sectorId, sectorStocks, allMetrics) {
     });
   }
 
-  // Compute pillar scores (average percentile of constituent dimensions)
+  // Compute pillar scores (weighted average of constituent dimension percentiles)
   for (const stock of stocks) {
     stock.pillars = {};
     for (const [pillarKey, pillarDef] of Object.entries(PILLARS)) {
-      const pctValues = pillarDef.dimensions
-        .map(d => stock.ranks[d]?.percentile)
-        .filter(p => p != null);
-      stock.pillars[pillarKey] = pctValues.length > 0
-        ? Math.round(pctValues.reduce((s, v) => s + v, 0) / pctValues.length)
+      const defaultWeight = 1 / pillarDef.dimensions.length;
+      let totalWeight = 0;
+      let weightedSum = 0;
+
+      pillarDef.dimensions.forEach((d, i) => {
+        const pct = stock.ranks[d]?.percentile;
+        if (pct != null) {
+          const w = pillarDef.weights?.[i] ?? defaultWeight;
+          totalWeight += w;
+          weightedSum += pct * w;
+        }
+      });
+
+      stock.pillars[pillarKey] = totalWeight > 0
+        ? Math.round(weightedSum / totalWeight)
         : null;
     }
   }
@@ -539,6 +570,7 @@ async function persistResults(db, allRanked, sectorAggregates) {
         interestCoverage: stock.metrics?.interestCoverage,
         range52wPosition: stock.metrics?.range52wPosition,
         epsRevisionScore: stock.metrics?.epsRevisionScore,
+        marginTrend: stock.metrics?.marginTrend,
         marketCap: stock.metrics?.marketCap,
       },
       leaderboard: stock.leaderboard,
