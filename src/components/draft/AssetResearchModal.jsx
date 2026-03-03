@@ -1,7 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import ReactDOM from 'react-dom';
-import FundamentalNews from '../Research/FundamentalNews';
-import LatestEarningsReport from '../Research/LatestEarningsReport';
 import { HOLO_COLORS, CATEGORY_CONFIG, getSectorColor, getRatingColor } from '../../constants/holoTheme';
 import { getCompanyProfile } from '../../services/fundamentalsService';
 import { formatLargeNumber } from '../../utils/formatters';
@@ -17,6 +15,8 @@ import BaggerBombTab from './ResearchTabs/BaggerBombTab';
 import HealthTab from '../Research/HealthTab';
 import { CRYPTO_SYMBOLS } from '../../services/sessionScoringService';
 import AnalysisVisualDashboard from './AnalysisVisualDashboard';
+import CompeteTab from './CompeteTab';
+import SectorTab from './SectorTab';
 
 /**
  * AssetResearchModal - Detailed asset research view (reusable across screens)
@@ -91,7 +91,20 @@ const AssetResearchModal = ({
   defaultTab = null,
   defaultTimeframe = null,
 }) => {
-  const isCrypto = asset?.isCrypto || asset?.category === 'crypto' || CRYPTO_SYMBOLS.has(asset?.symbol);
+  // Stock navigation — allows swapping to a different stock via leaderboard
+  const [currentAsset, setCurrentAsset] = useState(asset);
+  const [stockHistory, setStockHistory] = useState([]);
+
+  // Sync when the external prop changes (modal opened for a different stock)
+  useEffect(() => {
+    setCurrentAsset(asset);
+    setStockHistory([]);
+  }, [asset?.symbol]);
+
+  const isCrypto = useMemo(() => (
+    currentAsset?.isCrypto || currentAsset?.category === 'crypto' || CRYPTO_SYMBOLS.has(currentAsset?.symbol)
+  ), [currentAsset?.symbol, currentAsset?.isCrypto, currentAsset?.category]);
+
   const isGameContext = isGameContextProp !== undefined
     ? isGameContextProp
     : (onAcquire !== null || showActionButton);
@@ -106,6 +119,25 @@ const AssetResearchModal = ({
   const v2ContainerRef = useRef(null);
   const { isMobile, isTablet } = useIsMobile();
 
+  const handleNavigateToStock = useCallback((ticker, name) => {
+    setStockHistory(prev => [...prev, currentAsset]);
+    setCurrentAsset({ symbol: ticker, name: name || ticker });
+  }, [currentAsset]);
+
+  const handleNavigateBack = useCallback(() => {
+    if (stockHistory.length === 0) return;
+    const prev = stockHistory[stockHistory.length - 1];
+    setStockHistory(h => h.slice(0, -1));
+    setCurrentAsset(prev);
+  }, [stockHistory]);
+
+  const canGoBack = stockHistory.length > 0;
+
+  const handleClose = useCallback(() => {
+    setStockHistory([]);
+    onClose();
+  }, [onClose]);
+
   // v2: Responsive chart height — scale to container so date axis clears drawer at mid snap.
   // Drawer mid-top sits at 50% (desktop/tablet) or 60% (mobile) of container.
   // Mobile: 50% of container (min 280) — ample gap to the 60% drawer line.
@@ -118,8 +150,8 @@ const AssetResearchModal = ({
     : isMobile ? 200 : isTablet ? 260 : 300;
 
   // v2: Research data hook for chart + enhanced technical tab
-  const researchData = useResearchData(version >= 2 ? asset?.symbol : null, {
-    currentPrice: asset?.price || asset?.currentPrice || 0,
+  const researchData = useResearchData(version >= 2 ? currentAsset?.symbol : null, {
+    currentPrice: currentAsset?.price || currentAsset?.currentPrice || 0,
     isCrypto: isCrypto,
     initialTimeframe: defaultTimeframe,
   });
@@ -129,33 +161,33 @@ const AssetResearchModal = ({
   // for scoring context, but the research modal should show today's daily change.
   const enrichedAsset = useMemo(() => {
     if (researchData.dailyChange != null) {
-      return { ...asset, percentChange: researchData.dailyChange };
+      return { ...currentAsset, percentChange: researchData.dailyChange };
     }
-    return asset;
-  }, [asset, researchData.dailyChange]);
+    return currentAsset;
+  }, [currentAsset, researchData.dailyChange]);
 
   // v2: Bomb chart data — only available when asset has battle context (threshold + baseline price)
   // Prefer previousClose from OHLCV daily data (most accurate daily baseline) over
   // asset properties. This ensures the bomb chart and BaggerBombTab use yesterday's close
   // as the starting point, matching the scoring engine's daily reset behavior.
   const bombData = useMemo(() => {
-    const threshold = asset?.threshold;
+    const threshold = currentAsset?.threshold;
     const baselinePrice =
       researchData.previousClose || // OHLCV-derived yesterday's close (most accurate)
-      asset?.baselinePrice ||
-      asset?.lockedPrice ||
-      asset?.startPrice ||
-      asset?.startingPrice ||
-      asset?.basePrice ||
-      asset?.draftPrice ||
-      asset?.price ||          // Fallback to current price (aligns with BaggerBombTab)
-      asset?.currentPrice ||
+      currentAsset?.baselinePrice ||
+      currentAsset?.lockedPrice ||
+      currentAsset?.startPrice ||
+      currentAsset?.startingPrice ||
+      currentAsset?.basePrice ||
+      currentAsset?.draftPrice ||
+      currentAsset?.price ||          // Fallback to current price (aligns with BaggerBombTab)
+      currentAsset?.currentPrice ||
       null;
     if (!threshold || threshold <= 0 || !baselinePrice || baselinePrice <= 0) return null;
     return { threshold, baselinePrice };
-  }, [researchData.previousClose, asset?.threshold, asset?.lockedPrice, asset?.baselinePrice,
-      asset?.startPrice, asset?.startingPrice, asset?.basePrice, asset?.draftPrice,
-      asset?.price, asset?.currentPrice]);
+  }, [researchData.previousClose, currentAsset?.threshold, currentAsset?.lockedPrice, currentAsset?.baselinePrice,
+      currentAsset?.startPrice, currentAsset?.startingPrice, currentAsset?.basePrice, currentAsset?.draftPrice,
+      currentAsset?.price, currentAsset?.currentPrice]);
 
   // v2: Measure container height for drawer snap points
   useEffect(() => {
@@ -178,24 +210,24 @@ const AssetResearchModal = ({
   // Reset tab default when asset or defaultTab changes (e.g. "View Chart" click while modal is open)
   useEffect(() => {
     setActiveTab(defaultTab || (isCrypto ? 'health' : 'fundamental'));
-  }, [asset?.symbol, defaultTab]);
+  }, [currentAsset?.symbol, defaultTab]);
 
   useEffect(() => {
-    if (asset?.symbol && !isCrypto) {
+    if (currentAsset?.symbol && !isCrypto) {
       setProfileLoading(true);
       setDescExpanded(false);
-      getCompanyProfile(asset.symbol)
+      getCompanyProfile(currentAsset.symbol)
         .then(data => setProfile(data))
         .finally(() => setProfileLoading(false));
     } else {
       setProfile(null);
     }
-  }, [asset?.symbol]);
+  }, [currentAsset?.symbol]);
 
   if (!asset) return null;
 
   const sectorColor = getSectorColor(sector);
-  const fundamentals = getMockFundamentals(asset.symbol);
+  const fundamentals = getMockFundamentals(currentAsset.symbol);
   const priceChange = enrichedAsset.percentChange || enrichedAsset.change || 0;
 
   // Use real rating from API if available, fall back to mock
@@ -245,7 +277,7 @@ const AssetResearchModal = ({
     <>
       {/* Backdrop - matches TopPerformersModal pattern */}
       <div
-        onClick={onClose}
+        onClick={handleClose}
         style={{
           position: 'fixed',
           inset: 0,
@@ -368,7 +400,7 @@ const AssetResearchModal = ({
 
         {/* Header: v2 compact header vs v1 original header */}
         {version >= 2 ? (
-          <ChartHeader asset={enrichedAsset} sector={sector} category={category} onClose={onClose} onWhyMoving={() => setWhyMovingOpen(true)} />
+          <ChartHeader asset={enrichedAsset} sector={sector} category={category} onClose={handleClose} onWhyMoving={() => setWhyMovingOpen(true)} onBack={canGoBack ? handleNavigateBack : undefined} />
         ) : (
           <div
             style={{
@@ -380,8 +412,21 @@ const AssetResearchModal = ({
               flexShrink: 0,
             }}
           >
+            {canGoBack && (
+              <button
+                onClick={handleNavigateBack}
+                style={{
+                  background: 'rgba(0, 217, 255, 0.1)', border: '1px solid rgba(0, 217, 255, 0.2)',
+                  borderRadius: '6px', color: '#00d9ff', fontSize: '11px', fontWeight: '600',
+                  padding: '4px 10px', cursor: 'pointer', marginRight: '8px',
+                  display: 'flex', alignItems: 'center', gap: '4px',
+                }}
+              >
+                {'\u2190'} Back
+              </button>
+            )}
             <button
-              onClick={onClose}
+              onClick={handleClose}
               style={{
                 background: 'none',
                 border: 'none',
@@ -396,10 +441,10 @@ const AssetResearchModal = ({
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <path d="M15 18l-6-6 6-6" />
               </svg>
-              Back
+              Close
             </button>
             <button
-              onClick={onClose}
+              onClick={handleClose}
               style={{
                 background: 'none',
                 border: 'none',
@@ -444,7 +489,7 @@ const AssetResearchModal = ({
                   textShadow: `0 0 20px ${sectorColor}40`,
                 }}
               >
-                {asset.symbol}
+                {currentAsset.symbol}
               </h1>
               <p
                 style={{
@@ -453,7 +498,7 @@ const AssetResearchModal = ({
                   fontSize: '14px',
                 }}
               >
-                {asset.name}
+                {currentAsset.name}
               </p>
 
               {/* Sector Badge */}
@@ -484,7 +529,7 @@ const AssetResearchModal = ({
                   fontFamily: 'monospace',
                 }}
               >
-                ${asset.price?.toFixed(2) || '\u2014'}
+                ${currentAsset.price?.toFixed(2) || '\u2014'}
               </div>
               <div
                 style={{
@@ -582,7 +627,7 @@ const AssetResearchModal = ({
                   activeHighlight={highlightedLevel}
                   height={chartHeight}
                   bombData={bombData}
-                  symbol={asset?.symbol}
+                  symbol={currentAsset?.symbol}
                 />
               )}
             </div>
@@ -661,7 +706,7 @@ const AssetResearchModal = ({
                   )}
                   {/* Visual Intelligence Dashboard */}
                   <AnalysisVisualDashboard
-                    symbol={asset?.symbol}
+                    symbol={currentAsset?.symbol}
                     stockData={profile}
                     isMobile={isMobile}
                   />
@@ -669,12 +714,12 @@ const AssetResearchModal = ({
               )}
 
               {activeTab === 'health' && (
-                <HealthTab asset={asset} symbol={asset?.symbol} />
+                <HealthTab asset={currentAsset} symbol={currentAsset?.symbol} />
               )}
 
               {activeTab === 'technical' && (
                 <TechnicalTabV2
-                  asset={asset}
+                  asset={currentAsset}
                   ohlcvData={researchData.ohlcvData}
                   indicators={researchData.indicators}
                   levels={researchData.levels}
@@ -683,19 +728,23 @@ const AssetResearchModal = ({
               )}
 
               {activeTab === 'baggerbomb' && (
-                <BaggerBombTab asset={asset} />
+                <BaggerBombTab asset={currentAsset} />
               )}
 
-              {activeTab === 'earnings' && (
-                <div style={{ marginTop: '-10px' }}>
-                  <LatestEarningsReport symbol={asset.symbol} />
-                </div>
+              {activeTab === 'compete' && (
+                <CompeteTab
+                  symbol={currentAsset?.symbol}
+                  isMobile={isMobile}
+                  onNavigateToStock={handleNavigateToStock}
+                />
               )}
 
-              {activeTab === 'news' && (
-                <div style={{ marginTop: '-10px' }}>
-                  <FundamentalNews symbol={asset.symbol} />
-                </div>
+              {activeTab === 'sector' && (
+                <SectorTab
+                  symbol={currentAsset?.symbol}
+                  isMobile={isMobile}
+                  onNavigateToStock={handleNavigateToStock}
+                />
               )}
             </AnalysisDrawer>
           )}
@@ -798,13 +847,13 @@ const AssetResearchModal = ({
               )}
               {!isCrypto && (
               <button
-                onClick={() => setActiveTab('earnings')}
+                onClick={() => setActiveTab('compete')}
                 style={{
                   padding: '8px 12px',
                   borderRadius: '6px',
-                  border: activeTab === 'earnings' ? '1px solid #8b5cf6' : '1px solid rgba(255, 255, 255, 0.1)',
-                  background: activeTab === 'earnings' ? 'rgba(139, 92, 246, 0.2)' : 'rgba(255, 255, 255, 0.05)',
-                  color: activeTab === 'earnings' ? '#8b5cf6' : 'rgba(255, 255, 255, 0.6)',
+                  border: activeTab === 'compete' ? '1px solid #a78bfa' : '1px solid rgba(255, 255, 255, 0.1)',
+                  background: activeTab === 'compete' ? 'rgba(167, 139, 250, 0.2)' : 'rgba(255, 255, 255, 0.05)',
+                  color: activeTab === 'compete' ? '#a78bfa' : 'rgba(255, 255, 255, 0.6)',
                   fontWeight: '600',
                   fontSize: '11px',
                   cursor: 'pointer',
@@ -814,7 +863,28 @@ const AssetResearchModal = ({
                   whiteSpace: 'nowrap',
                 }}
               >
-                Earnings
+                Compete
+              </button>
+              )}
+              {!isCrypto && (
+              <button
+                onClick={() => setActiveTab('sector')}
+                style={{
+                  padding: '8px 12px',
+                  borderRadius: '6px',
+                  border: activeTab === 'sector' ? '1px solid #f59e0b' : '1px solid rgba(255, 255, 255, 0.1)',
+                  background: activeTab === 'sector' ? 'rgba(245, 158, 11, 0.2)' : 'rgba(255, 255, 255, 0.05)',
+                  color: activeTab === 'sector' ? '#f59e0b' : 'rgba(255, 255, 255, 0.6)',
+                  fontWeight: '600',
+                  fontSize: '11px',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s',
+                  textAlign: 'center',
+                  flexShrink: 0,
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                Sector
               </button>
               )}
               <button
@@ -857,25 +927,6 @@ const AssetResearchModal = ({
                   💣 Bomb
                 </button>
               )}
-              <button
-                onClick={() => setActiveTab('news')}
-                style={{
-                  padding: '8px 12px',
-                  borderRadius: '6px',
-                  border: activeTab === 'news' ? '1px solid #00d9ff' : '1px solid rgba(255, 255, 255, 0.1)',
-                  background: activeTab === 'news' ? 'rgba(0, 217, 255, 0.2)' : 'rgba(255, 255, 255, 0.05)',
-                  color: activeTab === 'news' ? '#00d9ff' : 'rgba(255, 255, 255, 0.6)',
-                  fontWeight: '600',
-                  fontSize: '11px',
-                  cursor: 'pointer',
-                  transition: 'all 0.2s',
-                  textAlign: 'center',
-                  flexShrink: 0,
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                News
-              </button>
             </div>
 
             {activeTab === 'fundamental' && (
@@ -997,7 +1048,7 @@ const AssetResearchModal = ({
 
                 {/* Visual Intelligence Dashboard */}
                 <AnalysisVisualDashboard
-                  symbol={asset?.symbol}
+                  symbol={currentAsset?.symbol}
                   stockData={profile}
                   isMobile={isMobile}
                 />
@@ -1005,27 +1056,31 @@ const AssetResearchModal = ({
             )}
 
             {activeTab === 'health' && (
-              <HealthTab asset={asset} symbol={asset?.symbol} />
+              <HealthTab asset={currentAsset} symbol={currentAsset?.symbol} />
             )}
 
             {activeTab === 'technical' && (
-              <TechnicalAnalysisTab asset={asset} fundamentals={fundamentals} />
+              <TechnicalAnalysisTab asset={currentAsset} fundamentals={fundamentals} />
             )}
 
             {activeTab === 'baggerbomb' && (
-              <BaggerBombTab asset={asset} />
+              <BaggerBombTab asset={currentAsset} />
             )}
 
-            {activeTab === 'earnings' && (
-              <div style={{ marginTop: '-10px' }}>
-                <LatestEarningsReport symbol={asset.symbol} />
-              </div>
+            {activeTab === 'compete' && (
+              <CompeteTab
+                symbol={currentAsset?.symbol}
+                isMobile={isMobile}
+                onNavigateToStock={handleNavigateToStock}
+              />
             )}
 
-            {activeTab === 'news' && (
-              <div style={{ marginTop: '-10px' }}>
-                <FundamentalNews symbol={asset.symbol} />
-              </div>
+            {activeTab === 'sector' && (
+              <SectorTab
+                symbol={currentAsset?.symbol}
+                isMobile={isMobile}
+                onNavigateToStock={handleNavigateToStock}
+              />
             )}
           </div>
           )}
@@ -1045,8 +1100,8 @@ const AssetResearchModal = ({
             {isMyTurn && canPick && onAcquire && (
               <button
                 onClick={() => {
-                  onAcquire(asset);
-                  onClose();
+                  onAcquire(currentAsset);
+                  handleClose();
                 }}
                 style={{
                   width: '100%',
@@ -1062,7 +1117,7 @@ const AssetResearchModal = ({
                   letterSpacing: '1px',
                 }}
               >
-                Acquire {asset.symbol}
+                Acquire {currentAsset.symbol}
               </button>
             )}
 
@@ -1106,7 +1161,7 @@ const AssetResearchModal = ({
             {/* Research Only Mode - Just close button */}
             {!isMyTurn && !actionConfig && (
               <button
-                onClick={onClose}
+                onClick={handleClose}
                 style={{
                   width: '100%',
                   padding: '14px',
@@ -1147,10 +1202,10 @@ const AssetResearchModal = ({
 
       {/* Why is it moving? bottom sheet */}
       <WhyMovingPopup
-        symbol={asset?.symbol}
-        name={asset?.name}
-        change={asset?.percentChange || asset?.change}
-        price={asset?.price}
+        symbol={currentAsset?.symbol}
+        name={currentAsset?.name}
+        change={currentAsset?.percentChange || currentAsset?.change}
+        price={currentAsset?.price}
         isOpen={whyMovingOpen}
         onClose={() => setWhyMovingOpen(false)}
       />

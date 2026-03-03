@@ -11,8 +11,8 @@ import {
   parseRisks,
   parseFinancialHealth,
 } from '../../utils/knowledgePackageParser';
-import CompeteTab from './CompeteTab';
-import SectorTab from './SectorTab';
+import LatestEarningsReport from '../Research/LatestEarningsReport';
+import FundamentalNews from '../Research/FundamentalNews';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -22,8 +22,8 @@ const SUB_TABS = [
   { key: 'growth', label: 'Growth', color: '#00d9ff' },
   { key: 'risks', label: 'Risks', color: '#f85149' },
   { key: 'health', label: 'Health', color: '#10b981' },
-  { key: 'compete', label: 'Compete', color: '#a78bfa' },
-  { key: 'sector', label: 'Sector', color: '#f59e0b' },
+  { key: 'earnings', label: 'Earnings', color: '#8b5cf6' },
+  { key: 'news', label: 'News', color: '#10b981' },
 ];
 
 const CHART_COLORS = ['#00d9ff', '#10b981', '#a78bfa', '#f59e0b', '#f85149'];
@@ -696,12 +696,12 @@ const AnalysisVisualDashboard = ({ symbol, stockData, isMobile }) => {
           : <HealthTabUnsupported stockData={stockData} isMobile={isMobile} />
       )}
 
-      {activeSubTab === 'compete' && (
-        <CompeteTab symbol={symbol} isMobile={isMobile} />
+      {activeSubTab === 'earnings' && (
+        <LatestEarningsReport symbol={symbol} />
       )}
 
-      {activeSubTab === 'sector' && (
-        <SectorTab symbol={symbol} isMobile={isMobile} />
+      {activeSubTab === 'news' && (
+        <FundamentalNews symbol={symbol} />
       )}
     </div>
   );

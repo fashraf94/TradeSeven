@@ -253,7 +253,7 @@ function PillarRow({ pillar, percentile, dimensions, isExpanded, onToggle }) {
 // Sector Leaderboard
 // ---------------------------------------------------------------------------
 
-function SectorLeaderboard({ leaderboard, currentSymbol }) {
+function SectorLeaderboard({ leaderboard, currentSymbol, onNavigateToStock }) {
   if (!leaderboard?.length) return null;
 
   const upperSymbol = currentSymbol?.toUpperCase();
@@ -273,14 +273,23 @@ function SectorLeaderboard({ leaderboard, currentSymbol }) {
       }}>
         {leaderboard.map(entry => {
           const isMe = entry.ticker === upperSymbol;
+          const isClickable = !isMe && !!onNavigateToStock;
           return (
-            <div key={entry.ticker} style={{
-              display: 'flex', alignItems: 'center', gap: '8px',
-              padding: '6px 10px',
-              background: isMe ? 'rgba(0,217,255,0.08)' : 'transparent',
-              borderLeft: isMe ? '2px solid #00d9ff' : '2px solid transparent',
-              borderBottom: '1px solid rgba(255,255,255,0.04)',
-            }}>
+            <div
+              key={entry.ticker}
+              onClick={() => isClickable && onNavigateToStock(entry.ticker, entry.name)}
+              onMouseEnter={(e) => { if (isClickable) e.currentTarget.style.background = 'rgba(0, 217, 255, 0.04)'; }}
+              onMouseLeave={(e) => { if (isClickable) e.currentTarget.style.background = isMe ? 'rgba(0,217,255,0.08)' : 'transparent'; }}
+              style={{
+                display: 'flex', alignItems: 'center', gap: '8px',
+                padding: '6px 10px',
+                background: isMe ? 'rgba(0,217,255,0.08)' : 'transparent',
+                borderLeft: isMe ? '2px solid #00d9ff' : '2px solid transparent',
+                borderBottom: '1px solid rgba(255,255,255,0.04)',
+                cursor: isClickable ? 'pointer' : 'default',
+                transition: 'background 0.15s',
+              }}
+            >
               <span style={{
                 fontSize: '10px', fontFamily: MONO_FONT, color: '#6e7681',
                 flex: '0 0 20px', textAlign: 'right',
@@ -323,7 +332,7 @@ function SectorLeaderboard({ leaderboard, currentSymbol }) {
 // Main Component
 // ---------------------------------------------------------------------------
 
-const CompeteTab = ({ symbol, isMobile }) => {
+const CompeteTab = ({ symbol, isMobile, onNavigateToStock }) => {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -385,7 +394,7 @@ const CompeteTab = ({ symbol, isMobile }) => {
         />
       ))}
 
-      <SectorLeaderboard leaderboard={data.leaderboard} currentSymbol={symbol} />
+      <SectorLeaderboard leaderboard={data.leaderboard} currentSymbol={symbol} onNavigateToStock={onNavigateToStock} />
     </div>
   );
 };

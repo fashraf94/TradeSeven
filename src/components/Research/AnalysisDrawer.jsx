@@ -7,10 +7,10 @@ import { useIsMobile } from '../../hooks/useIsMobile';
 const TAB_CONFIGS = [
   { key: 'health', label: '\u26D3\uFE0F Health', activeColor: HOLO_COLORS.amber },
   { key: 'fundamental', label: 'Analysis', activeColor: HOLO_COLORS.primary },
-  { key: 'earnings', label: 'Earnings', activeColor: HOLO_COLORS.purple },
+  { key: 'compete', label: 'Compete', activeColor: '#a78bfa' },
+  { key: 'sector', label: 'Sector', activeColor: HOLO_COLORS.amber },
   { key: 'technical', label: 'Technical', activeColor: HOLO_COLORS.primary },
   { key: 'baggerbomb', label: '\uD83D\uDCA3 Bomb', activeColor: HOLO_COLORS.green },
-  { key: 'news', label: 'News', activeColor: HOLO_COLORS.primary },
 ];
 
 /**
@@ -152,7 +152,7 @@ const AnalysisDrawer = ({
         >
           <style>{`.drawer-tabs-scroll::-webkit-scrollbar { display: none; }`}</style>
           {TAB_CONFIGS.filter(t => {
-            if (isCrypto && ['fundamental', 'earnings'].includes(t.key)) return false;
+            if (isCrypto && ['fundamental', 'compete', 'sector'].includes(t.key)) return false;
             if (!isCrypto && t.key === 'health') return false;
             if (t.key === 'baggerbomb' && !hasBombData && !isGameContext) return false;
             return true;

@@ -327,7 +327,7 @@ function SectorList({ sectors, highlightSectorId }) {
 // Main Component
 // ---------------------------------------------------------------------------
 
-const SectorTab = ({ symbol, isMobile }) => {
+const SectorTab = ({ symbol, isMobile, onNavigateToStock }) => {
   const [sectorData, setSectorData] = useState(null);
   const [peerData, setPeerData] = useState(null);
   const [loading, setLoading] = useState(true);
