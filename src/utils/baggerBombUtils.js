@@ -531,6 +531,24 @@ export function createThresholdEvent(player, symbol, thresholdName, multiplier, 
  */
 export function calculateAssetScoreV3(asset, priceChange, history = {}, extremes = {}) {
   const baseATR = asset.baseATR || 2.5;
+
+  // Guard: skip threshold detection if priceChange is invalid (NaN, Infinity, null)
+  // to prevent false BaggerBomb/Bust triggers from upstream computation errors
+  if (priceChange == null || !isFinite(priceChange)) {
+    return {
+      symbol: asset.symbol,
+      priceChange: 0,
+      multiplier: 0,
+      baseATR,
+      tierMultiplier: CONVICTION_MULTIPLIERS[asset.tier] || CONVICTION_MULTIPLIERS.support,
+      basePoints: 0,
+      bonusPoints: 0,
+      totalPoints: 0,
+      badges: [],
+      history: { maxMultiplier: history.maxMultiplier || 0, minMultiplier: history.minMultiplier || 0 },
+    };
+  }
+
   const multiplier = priceChange / baseATR;
 
   // Conviction multiplier: Star 2x, Core 1.5x, Support 1x

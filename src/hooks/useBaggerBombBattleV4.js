@@ -874,6 +874,11 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
         const updatedFromLow = getHistoryUpdateIfChanged(lowMultiplier, historyAfterHigh);
         updatedHistory = updatedFromLow || updatedHistory;
 
+        // Diagnostic logging for threshold verification
+        const finalHistory = updatedHistory || assetHistory;
+        const badge = finalHistory.maxMultiplier >= 1 ? 'baggerBomb' : finalHistory.minMultiplier <= -1 ? 'bust' : 'none';
+        console.log(`[Scoring] ${asset.symbol}: baseline=$${assetOpenPrice?.toFixed(2)}, current=$${currentPrice?.toFixed(2)}, high=$${assetExtremes?.high?.toFixed(2) || 'N/A'}, low=$${assetExtremes?.low?.toFixed(2) || 'N/A'}, multiplier=${currentMultiplier?.toFixed(3)}, highMult=${highMultiplier?.toFixed(3)}, lowMult=${lowMultiplier?.toFixed(3)}, threshold=${baseATR}, badge=${badge}`);
+
         if (updatedHistory) {
           setHistoryFn((prev) => ({
             ...prev,
@@ -915,10 +920,24 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
         cryptoSymbols.length > 0 ? stockAPI.getMultipleCryptoPrices(cryptoSymbols) : {},
       ]);
 
+      // Staleness check: compare EODHD data timestamp against today's ET date.
+      // If the data is from yesterday (or older), skip the high/low entirely —
+      // a missing H/L is safer than a wrong one that triggers false BaggerBomb/Bust badges.
+      const etNow = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
+      const etToday = `${etNow.getFullYear()}-${String(etNow.getMonth() + 1).padStart(2, '0')}-${String(etNow.getDate()).padStart(2, '0')}`;
+
+      const isDataFresh = (timestamp) => {
+        if (!timestamp) return true; // No timestamp = trust the data (backward compat)
+        const tsMs = timestamp > 1e12 ? timestamp : timestamp * 1000;
+        const dataET = new Date(new Date(tsMs).toLocaleString('en-US', { timeZone: 'America/New_York' }));
+        const dataDateStr = `${dataET.getFullYear()}-${String(dataET.getMonth() + 1).padStart(2, '0')}-${String(dataET.getDate()).padStart(2, '0')}`;
+        return dataDateStr === etToday;
+      };
+
       Object.entries(stockData).forEach(([symbol, data]) => {
         if (data?.price) {
           newPrices[symbol] = data.price;
-          if (data.high > 0 || data.low > 0) {
+          if ((data.high > 0 || data.low > 0) && isDataFresh(data.timestamp)) {
             newExtremes[symbol] = { high: data.high || data.price, low: data.low || data.price };
           }
         }
@@ -926,7 +945,7 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
       Object.entries(cryptoData).forEach(([symbol, data]) => {
         if (data?.price) {
           newPrices[symbol] = data.price;
-          if (data.high > 0 || data.low > 0) {
+          if ((data.high > 0 || data.low > 0) && isDataFresh(data.timestamp)) {
             newExtremes[symbol] = { high: data.high || data.price, low: data.low || data.price };
           }
         }

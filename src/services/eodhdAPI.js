@@ -159,6 +159,7 @@ export async function getMultipleStockPrices(symbols) {
           percentChange: parseFloat(priceData.changePercent) || 0,
           high: parseFloat(priceData.high) || 0,
           low: parseFloat(priceData.low) || 0,
+          timestamp: priceData.timestamp || null,
         };
 
         // Cache with LIGHT tier (2-minute TTL)
@@ -315,6 +316,7 @@ export async function getMultipleCryptoPrices(symbols) {
             change24h: parseFloat(priceData.changePercent) || 0,
             high: parseFloat(priceData.high) || 0,
             low: parseFloat(priceData.low) || 0,
+            timestamp: priceData.timestamp || null,
           };
 
           // Cache with LIGHT tier (5-minute TTL)
