@@ -97,6 +97,36 @@ async function fetchSingleFundamental(ticker, apiKey) {
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const data = await res.json();
 
+  // DEBUG: Temporary logging to verify EODHD data paths (remove after confirming fix)
+  if (ticker === 'NVDA') {
+    console.log('[DEBUG NVDA] Top-level keys:', Object.keys(data));
+    console.log('[DEBUG NVDA] Financials keys:', Object.keys(data.Financials || {}));
+    console.log('[DEBUG NVDA] Income_Statement keys:', Object.keys(data.Financials?.Income_Statement || {}));
+    const quarters = data.Financials?.Income_Statement?.quarterly;
+    if (quarters) {
+      const keys = Object.keys(quarters);
+      console.log('[DEBUG NVDA] Quarterly dates:', keys.slice(0, 3));
+      console.log('[DEBUG NVDA] First quarter fields:', Object.keys(quarters[keys[0]] || {}));
+      console.log('[DEBUG NVDA] First quarter totalRevenue:', quarters[keys[0]]?.totalRevenue);
+      console.log('[DEBUG NVDA] First quarter operatingIncome:', quarters[keys[0]]?.operatingIncome);
+    } else {
+      console.log('[DEBUG NVDA] Income_Statement.quarterly is MISSING');
+    }
+    const cashFlow = data.Financials?.Cash_Flow?.quarterly;
+    if (cashFlow) {
+      const cfKeys = Object.keys(cashFlow);
+      console.log('[DEBUG NVDA] CashFlow first quarter fields:', Object.keys(cashFlow[cfKeys[0]] || {}));
+      console.log('[DEBUG NVDA] totalCashFromOperatingActivities:', cashFlow[cfKeys[0]]?.totalCashFromOperatingActivities);
+      console.log('[DEBUG NVDA] capitalExpenditures:', cashFlow[cfKeys[0]]?.capitalExpenditures);
+    } else {
+      console.log('[DEBUG NVDA] Cash_Flow.quarterly is MISSING');
+    }
+    console.log('[DEBUG NVDA] Earnings keys:', Object.keys(data.Earnings || {}));
+    if (data.Earnings?.Trend) {
+      console.log('[DEBUG NVDA] Earnings.Trend:', JSON.stringify(data.Earnings.Trend, null, 2).slice(0, 500));
+    }
+  }
+
   return {
     highlights: data.Highlights || {},
     valuation: data.Valuation || {},
@@ -262,7 +292,20 @@ function extractMetrics(ticker, fundamentals) {
   // 8. EPS Revision Score
   const epsRevisionScore = computeEpsRevisionScore(fundamentals.earnings);
 
-  // 9. Profitability Margin Trend (Current TTM margin vs Prior TTM margin)
+  // 9. EPS Growth Forward = (next-year EPS estimate / current-year) - 1
+  let epsGrowthForward = null;
+  if (fundamentals.earnings?.Trend) {
+    const trendEntries = Object.values(fundamentals.earnings.Trend);
+    const current0y = trendEntries.find(t => t.period === '0y');
+    const next1y = trendEntries.find(t => t.period === '+1y');
+    const epsNow = parseFloat(current0y?.earningsEstimateAvg);
+    const epsNext = parseFloat(next1y?.earningsEstimateAvg);
+    if (!isNaN(epsNow) && !isNaN(epsNext) && Math.abs(epsNow) > 0) {
+      epsGrowthForward = ((epsNext - epsNow) / Math.abs(epsNow)) * 100;
+    }
+  }
+
+  // 10. Profitability Margin Trend (Current TTM margin vs Prior TTM margin)
   let marginTrend = null;
   const sortedQuarters = Object.values(fundamentals.incomeQ)
     .filter(q => q.date)
@@ -290,6 +333,7 @@ function extractMetrics(ticker, fundamentals) {
     interestCoverage,
     range52wPosition,
     epsRevisionScore,
+    epsGrowthForward,
     marginTrend,
     marketCap,
     high52,
@@ -575,6 +619,7 @@ async function persistResults(db, allRanked, sectorAggregates) {
         interestCoverage: stock.metrics?.interestCoverage,
         range52wPosition: stock.metrics?.range52wPosition,
         epsRevisionScore: stock.metrics?.epsRevisionScore,
+        epsGrowthForward: stock.metrics?.epsGrowthForward,
         marginTrend: stock.metrics?.marginTrend,
         marketCap: stock.metrics?.marketCap,
       },

@@ -7,7 +7,7 @@ import React, { useState, useEffect } from 'react';
 const MONO_FONT = "'JetBrains Mono', 'SF Mono', monospace";
 
 const PILLAR_CONFIG = [
-  { key: 'growth',        label: 'Growth',        dims: ['growth'] },
+  { key: 'growth',        label: 'Growth',        dims: ['growth', 'growthEPS'] },
   { key: 'profitability', label: 'Profitability',  dims: ['profitability', 'profitabilityTrend'] },
   { key: 'efficiency',    label: 'Efficiency',     dims: ['efficiency'] },
   { key: 'valuation',     label: 'Valuation',      dims: ['valuation'] },
@@ -17,24 +17,34 @@ const PILLAR_CONFIG = [
 
 const DIM_META = {
   growth:             { label: 'Revenue Growth YoY',       unit: '%',    format: v => `${(v * 100).toFixed(1)}%` },
+  growthEPS:          { label: 'EPS Growth (Forward)',     unit: '%',
+    format: v => v == null ? '–' : `${v >= 0 ? '+' : ''}${v.toFixed(1)}%`,
+    color: v => v == null ? '#6e7681' : v >= 0 ? '#10b981' : '#f85149',
+  },
   profitability:      { label: 'Operating Margin TTM',     unit: '%',    format: v => `${(v * 100).toFixed(1)}%` },
-  profitabilityTrend: { label: 'Margin Trend (YoY)',       unit: 'pp',   format: v => {
-    if (v == null) return '–';
-    const arrow = v >= 0 ? '▲' : '▼';
-    const word = v >= 0 ? 'Expanding' : 'Compressing';
-    return `${arrow} ${word} (${v >= 0 ? '+' : ''}${v.toFixed(1)}pp)`;
-  }},
+  profitabilityTrend: { label: 'Margin Trend (YoY)',       unit: 'pp',
+    format: v => {
+      if (v == null) return '–';
+      const arrow = v >= 0 ? '▲' : '▼';
+      const word = v >= 0 ? 'Expanding' : 'Compressing';
+      return `${arrow} ${word} (${v >= 0 ? '+' : ''}${v.toFixed(1)}pp)`;
+    },
+    color: v => v == null ? '#6e7681' : v >= 0 ? '#10b981' : '#f85149',
+  },
   efficiency:         { label: 'Return on Assets TTM',     unit: '%',    format: v => `${(v * 100).toFixed(1)}%` },
   valuation:          { label: 'Forward P/E',              unit: 'x',    format: v => v > 0 ? `${v.toFixed(1)}x` : 'N/A' },
   healthCash:         { label: 'FCF Yield',                unit: '%',    format: v => `${v.toFixed(1)}%` },
   healthDebt:         { label: 'Interest Coverage',        unit: 'x',    format: v => `${v.toFixed(1)}x` },
   sentimentPrice:     { label: '52-Week Range Position',   unit: '%',    format: v => `${v.toFixed(0)}%` },
-  sentimentRevisions: { label: 'Earnings Revisions',       unit: '%',    format: v => {
-    if (v == null) return '–';
-    const arrow = v >= 0 ? '▲' : '▼';
-    const word = v >= 0 ? 'Positive' : 'Negative';
-    return `${arrow} ${word} (${v >= 0 ? '+' : ''}${v.toFixed(1)}%)`;
-  }},
+  sentimentRevisions: { label: 'Earnings Revisions',       unit: '%',
+    format: v => {
+      if (v == null) return '–';
+      const arrow = v >= 0 ? '▲' : '▼';
+      const word = v >= 0 ? 'Positive' : 'Negative';
+      return `${arrow} ${word} (${v >= 0 ? '+' : ''}${v.toFixed(1)}%)`;
+    },
+    color: v => v == null ? '#6e7681' : v >= 0 ? '#10b981' : '#f85149',
+  },
 };
 
 function getTierColor(percentile) {
@@ -230,7 +240,8 @@ function PillarRow({ pillar, percentile, dimensions, isExpanded, onToggle }) {
                   {meta.label}
                 </span>
                 <span style={{
-                  fontSize: '10px', fontFamily: MONO_FONT, color: '#e6edf3',
+                  fontSize: '10px', fontFamily: MONO_FONT,
+                  color: meta.color ? meta.color(dim.value) : '#e6edf3',
                   flexShrink: 0, textAlign: 'right', whiteSpace: 'nowrap',
                 }}>
                   {meta.format(dim.value)}
