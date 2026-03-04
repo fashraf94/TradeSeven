@@ -5,6 +5,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { doc, onSnapshot, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import { stockAPI, POPULAR_CRYPTO } from '../services/eodhdAPI';
+import { getDailyHL } from '../services/websocketService';
 import {
   addBaggerBombEvent,
   updateAssetHistoryInBattle,
@@ -61,6 +62,7 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
   const [localHistory, setLocalHistory] = useState({});
   const [localOppHistory, setLocalOppHistory] = useState({});
   const prevMultipliersRef = useRef({});
+  const hasInitializedExtremesRef = useRef(false);
 
   // Chain trigger system for staggered celebrations
   const [triggerQueue, setTriggerQueue] = useState([]);
@@ -599,7 +601,6 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
       const cryptoSymbols = allSymbols.filter((s) => isCrypto(s));
 
       const newPrices = {};
-      const newExtremes = {};
 
       // Batch fetch: 2 HTTP requests total instead of N individual calls
       const [stockData, cryptoData] = await Promise.all([
@@ -609,48 +610,45 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
 
       const newPreviousCloses = {};
 
-      // Staleness check: compare EODHD data timestamp against today's ET date.
-      // If the data is from yesterday (or older), skip the high/low entirely —
-      // a missing H/L is safer than a wrong one that triggers false BaggerBomb/Bust badges.
-      const etNow = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
-      const etToday = `${etNow.getFullYear()}-${String(etNow.getMonth() + 1).padStart(2, '0')}-${String(etNow.getDate()).padStart(2, '0')}`;
-
-      const isDataFresh = (timestamp) => {
-        if (!timestamp) return true; // No timestamp = trust the data (backward compat)
-        // EODHD returns epoch seconds; defensive: if > 1e12, it's already ms
-        const tsMs = timestamp > 1e12 ? timestamp : timestamp * 1000;
-        const dataET = new Date(new Date(tsMs).toLocaleString('en-US', { timeZone: 'America/New_York' }));
-        const dataDateStr = `${dataET.getFullYear()}-${String(dataET.getMonth() + 1).padStart(2, '0')}-${String(dataET.getDate()).padStart(2, '0')}`;
-        return dataDateStr === etToday;
-      };
-
+      // Collect prices and previousClose from EODHD — but NOT high/low.
+      // EODHD data.high/data.low reflect the full trading day including
+      // pre-activation movement, which causes false BaggerBomb/Bust triggers.
       Object.entries(stockData).forEach(([symbol, data]) => {
-        if (data?.price) {
-          newPrices[symbol] = data.price;
-          if ((data.high > 0 || data.low > 0) && isDataFresh(data.timestamp)) {
-            newExtremes[symbol] = { high: data.high || data.price, low: data.low || data.price };
-          }
-        }
+        if (data?.price) newPrices[symbol] = data.price;
         if (data?.previousClose) newPreviousCloses[symbol] = data.previousClose;
       });
       Object.entries(cryptoData).forEach(([symbol, data]) => {
-        if (data?.price) {
-          newPrices[symbol] = data.price;
-          if ((data.high > 0 || data.low > 0) && isDataFresh(data.timestamp)) {
-            newExtremes[symbol] = { high: data.high || data.price, low: data.low || data.price };
-          }
-        }
+        if (data?.price) newPrices[symbol] = data.price;
         if (data?.previousClose) newPreviousCloses[symbol] = data.previousClose;
       });
 
       if (Object.keys(newPrices).length > 0) {
         setCurrentPrices((prev) => ({ ...prev, ...newPrices }));
       }
-      if (Object.keys(newExtremes).length > 0) {
-        setDailyExtremes((prev) => ({ ...prev, ...newExtremes }));
-      }
       if (Object.keys(newPreviousCloses).length > 0) {
         setPreviousClosePrices((prev) => ({ ...prev, ...newPreviousCloses }));
+      }
+
+      // Build extremes from WebSocket daily H/L instead of EODHD.
+      // Guard: on the first tick after activation, clear any stale extremes.
+      // WebSocket H/L tracks from 9:30 AM ET (market open), so for mid-session
+      // battles it may include pre-activation prices. By clearing on first tick
+      // and only using WS data from the second tick onward, we ensure extremes
+      // only reflect prices observed during the battle.
+      if (!hasInitializedExtremesRef.current) {
+        setDailyExtremes({});
+        hasInitializedExtremesRef.current = true;
+      } else {
+        const wsExtremes = {};
+        allSymbols.forEach((symbol) => {
+          const wsHL = getDailyHL(symbol);
+          if (wsHL) {
+            wsExtremes[symbol] = { high: wsHL.high, low: wsHL.low };
+          }
+        });
+        if (Object.keys(wsExtremes).length > 0) {
+          setDailyExtremes(wsExtremes);
+        }
       }
     } catch (err) {
       console.error('Error fetching prices:', err);
@@ -739,22 +737,36 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
   }, []);
 
   // Build asset data for TacticalRow
-  const buildTacticalAsset = useCallback((asset, scores, history, bThresholds = {}) => {
+  const buildTacticalAsset = useCallback((asset, scores, history, bThresholds = {}, prices = {}, baselines = {}) => {
     if (!asset) return null;
 
     const scoreData = scores.assetScores.find((s) => s.symbol === asset.symbol);
     const assetHistory = history[asset.symbol] || { maxMultiplier: 0, minMultiplier: 0 };
+    const resolvedATR = bThresholds[asset.symbol]?.threshold || scoreData?.baseATR || asset.baseATR || 2.5;
 
     return {
       symbol: asset.symbol,
       name: asset.name,
       priceChange: scoreData?.priceChange || 0,
-      baseATR: bThresholds[asset.symbol]?.threshold || scoreData?.baseATR || asset.baseATR || 2.5,
+      baseATR: resolvedATR,
       history: assetHistory,
       points: scoreData?.totalPoints || 0,
       badges: scoreData?.badges || getBadgesFromHistory(assetHistory),
       isCrypto: asset.isCrypto,
       tierMultiplier: scoreData?.tierMultiplier || 1.0,
+      // Price data for ScoreBreakdownPopover
+      currentPrice: prices[asset.symbol] || 0,
+      startingPrice: baselines[asset.symbol] || 0,
+      baselinePrice: baselines[asset.symbol] || 0,
+      lockedPrice: baselines[asset.symbol] || 0,
+      threshold: resolvedATR,
+      gain: scoreData?.priceChange || 0,
+      totalScore: scoreData?.totalPoints || 0,
+      basePoints: scoreData?.basePoints || 0,
+      baggerBombPoints: (scoreData?.bonusPoints || 0) > 0 ? scoreData.bonusPoints : 0,
+      bustPoints: (scoreData?.bonusPoints || 0) < 0 ? scoreData.bonusPoints : 0,
+      baggerBombs: (scoreData?.badges || []).filter(b => ['bagger', 'doubleBagger', 'tenBagger'].includes(b)).length,
+      busts: (scoreData?.badges || []).filter(b => ['bust', 'crash', 'meltdown'].includes(b)).length,
     };
   }, []);
 
@@ -764,22 +776,22 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
     if (!portfolio) return { star: [], core: [], support: [] };
 
     return {
-      star: (portfolio.star || []).map((a) => buildTacticalAsset(a, myScores, combinedHistory, battleThresholds)),
-      core: (portfolio.core || []).map((a) => buildTacticalAsset(a, myScores, combinedHistory, battleThresholds)),
-      support: (portfolio.support || []).map((a) => buildTacticalAsset(a, myScores, combinedHistory, battleThresholds)),
+      star: (portfolio.star || []).map((a) => buildTacticalAsset(a, myScores, combinedHistory, battleThresholds, effectivePrices, openPrices)),
+      core: (portfolio.core || []).map((a) => buildTacticalAsset(a, myScores, combinedHistory, battleThresholds, effectivePrices, openPrices)),
+      support: (portfolio.support || []).map((a) => buildTacticalAsset(a, myScores, combinedHistory, battleThresholds, effectivePrices, openPrices)),
     };
-  }, [myData?.portfolio, myScores, combinedHistory, buildTacticalAsset, battleThresholds]);
+  }, [myData?.portfolio, myScores, combinedHistory, buildTacticalAsset, battleThresholds, effectivePrices, openPrices]);
 
   const opponentPortfolio = useMemo(() => {
     const portfolio = oppData?.portfolio;
     if (!portfolio) return { star: [], core: [], support: [] };
 
     return {
-      star: (portfolio.star || []).map((a) => buildTacticalAsset(a, oppScores, oppHistory || {}, battleThresholds)),
-      core: (portfolio.core || []).map((a) => buildTacticalAsset(a, oppScores, oppHistory || {}, battleThresholds)),
-      support: (portfolio.support || []).map((a) => buildTacticalAsset(a, oppScores, oppHistory || {}, battleThresholds)),
+      star: (portfolio.star || []).map((a) => buildTacticalAsset(a, oppScores, oppHistory || {}, battleThresholds, effectivePrices, openPrices)),
+      core: (portfolio.core || []).map((a) => buildTacticalAsset(a, oppScores, oppHistory || {}, battleThresholds, effectivePrices, openPrices)),
+      support: (portfolio.support || []).map((a) => buildTacticalAsset(a, oppScores, oppHistory || {}, battleThresholds, effectivePrices, openPrices)),
     };
-  }, [oppData?.portfolio, oppScores, oppHistory, buildTacticalAsset, battleThresholds]);
+  }, [oppData?.portfolio, oppScores, oppHistory, buildTacticalAsset, battleThresholds, effectivePrices, openPrices]);
 
   // Build bench data
   const playerBench = useMemo(() => {
@@ -787,20 +799,20 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
     if (!bench) return { stocks: [], crypto: null };
 
     return {
-      stocks: (bench.stocks || []).map((a) => buildTacticalAsset(a, myScores, combinedHistory, battleThresholds)),
-      crypto: bench.crypto ? buildTacticalAsset(bench.crypto, myScores, combinedHistory, battleThresholds) : null,
+      stocks: (bench.stocks || []).map((a) => buildTacticalAsset(a, myScores, combinedHistory, battleThresholds, effectivePrices, openPrices)),
+      crypto: bench.crypto ? buildTacticalAsset(bench.crypto, myScores, combinedHistory, battleThresholds, effectivePrices, openPrices) : null,
     };
-  }, [myData?.bench, myScores, combinedHistory, buildTacticalAsset, battleThresholds]);
+  }, [myData?.bench, myScores, combinedHistory, buildTacticalAsset, battleThresholds, effectivePrices, openPrices]);
 
   const opponentBench = useMemo(() => {
     const bench = oppData?.bench;
     if (!bench) return { stocks: [], crypto: null };
 
     return {
-      stocks: (bench.stocks || []).map((a) => buildTacticalAsset(a, oppScores, oppHistory || {}, battleThresholds)),
-      crypto: bench.crypto ? buildTacticalAsset(bench.crypto, oppScores, oppHistory || {}, battleThresholds) : null,
+      stocks: (bench.stocks || []).map((a) => buildTacticalAsset(a, oppScores, oppHistory || {}, battleThresholds, effectivePrices, openPrices)),
+      crypto: bench.crypto ? buildTacticalAsset(bench.crypto, oppScores, oppHistory || {}, battleThresholds, effectivePrices, openPrices) : null,
     };
-  }, [oppData?.bench, oppScores, oppHistory, buildTacticalAsset, battleThresholds]);
+  }, [oppData?.bench, oppScores, oppHistory, buildTacticalAsset, battleThresholds, effectivePrices, openPrices]);
 
   return {
     // Battle data

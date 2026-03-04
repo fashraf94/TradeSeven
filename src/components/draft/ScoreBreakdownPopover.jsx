@@ -45,13 +45,11 @@ const ScoreBreakdownPopover = ({ asset, events: battleEvents = [], onClose, entr
     baselinePrice = 0,
   } = asset;
 
-  // Day baseline: the daily open price used for today's scoring
-  const dayBaseline = baselinePrice || startingPrice || lockedPrice;
-  const hasDayBaseline = dayBaseline > 0 && currentPrice > 0;
-
-  // Entry price: the original price when the battle was activated
-  const hasEntryPrice = entryPriceProp > 0 && currentPrice > 0;
-  const totalChangeFromEntry = hasEntryPrice ? ((currentPrice - entryPriceProp) / entryPriceProp) * 100 : 0;
+  // Battle entry price: the price when the battle became active (activation price)
+  // This is now sourced from battle.state.startingPrices via the enriched asset
+  const battleEntry = baselinePrice || startingPrice || lockedPrice || (entryPriceProp > 0 ? entryPriceProp : 0);
+  const hasBattleEntry = battleEntry > 0 && currentPrice > 0;
+  const changeFromEntry = hasBattleEntry ? ((currentPrice - battleEntry) / battleEntry) * 100 : 0;
 
   return ReactDOM.createPortal(
     <>
@@ -125,53 +123,8 @@ const ScoreBreakdownPopover = ({ asset, events: battleEvents = [], onClose, entr
 
         {/* Content */}
         <div style={{ padding: '16px' }}>
-          {/* Entry Price Row — original battle entry price */}
-          {hasEntryPrice && (
-            <div style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              padding: '10px 14px',
-              marginBottom: '8px',
-              borderRadius: '8px',
-              backgroundColor: 'rgba(0, 217, 255, 0.05)',
-              border: '1px solid rgba(0, 217, 255, 0.15)',
-            }}>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                <span style={{ fontSize: '10px', color: '#6e7681', textTransform: 'uppercase', letterSpacing: '0.5px', fontWeight: 600 }}>
-                  Entry Price
-                </span>
-                <span style={{ fontSize: '16px', fontWeight: 700, color: '#e6edf3' }}>
-                  ${entryPriceProp.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                </span>
-              </div>
-              <div style={{ width: '1px', height: '30px', backgroundColor: 'rgba(255,255,255,0.1)' }} />
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', alignItems: 'center' }}>
-                <span style={{ fontSize: '10px', color: '#6e7681', textTransform: 'uppercase', letterSpacing: '0.5px', fontWeight: 600 }}>
-                  Current
-                </span>
-                <span style={{ fontSize: '16px', fontWeight: 700, color: '#e6edf3' }}>
-                  ${currentPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                </span>
-              </div>
-              <div style={{ width: '1px', height: '30px', backgroundColor: 'rgba(255,255,255,0.1)' }} />
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', alignItems: 'flex-end' }}>
-                <span style={{ fontSize: '10px', color: '#6e7681', textTransform: 'uppercase', letterSpacing: '0.5px', fontWeight: 600 }}>
-                  Total
-                </span>
-                <span style={{
-                  fontSize: '16px',
-                  fontWeight: 700,
-                  color: totalChangeFromEntry >= 0 ? '#10b981' : '#ef4444',
-                }}>
-                  {totalChangeFromEntry >= 0 ? '+' : ''}{totalChangeFromEntry.toFixed(2)}%
-                </span>
-              </div>
-            </div>
-          )}
-
-          {/* Day Baseline Row — daily open price for scoring context */}
-          {hasDayBaseline && (
+          {/* Battle Entry Row — activation price when the battle went active */}
+          {hasBattleEntry && (
             <div style={{
               display: 'flex',
               justifyContent: 'space-between',
@@ -184,10 +137,10 @@ const ScoreBreakdownPopover = ({ asset, events: battleEvents = [], onClose, entr
             }}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
                 <span style={{ fontSize: '11px', color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                  Day Baseline
+                  Battle Entry
                 </span>
                 <span style={{ fontSize: '16px', fontWeight: 700, color: '#ffffff' }}>
-                  ${dayBaseline.toFixed(2)}
+                  ${battleEntry.toFixed(2)}
                 </span>
               </div>
               <div style={{ width: '1px', height: '30px', backgroundColor: 'rgba(255,255,255,0.1)' }} />
@@ -207,9 +160,9 @@ const ScoreBreakdownPopover = ({ asset, events: battleEvents = [], onClose, entr
                 <span style={{
                   fontSize: '16px',
                   fontWeight: 700,
-                  color: gain >= 0 ? '#10b981' : '#ef4444',
+                  color: changeFromEntry >= 0 ? '#10b981' : '#ef4444',
                 }}>
-                  {gain >= 0 ? '+' : ''}{gain.toFixed(2)}%
+                  {changeFromEntry >= 0 ? '+' : ''}{changeFromEntry.toFixed(2)}%
                 </span>
               </div>
             </div>
