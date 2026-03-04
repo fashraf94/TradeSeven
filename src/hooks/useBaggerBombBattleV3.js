@@ -118,6 +118,11 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
       : effectivePrices || {};
   }, [previousClosePrices, battle, currentSessionId, effectivePrices]);
 
+  // Activation prices: the exact prices when the battle went active (second player joined)
+  // Used for display in ScoreBreakdownPopover — distinct from openPrices which may be
+  // a scoring baseline (previousClose) that differs from the activation-moment price.
+  const activationPrices = useMemo(() => battle?.state?.startingPrices || {}, [battle]);
+
   // Combine battle history with local updates
   const combinedHistory = useMemo(() => {
     const battleHistory = isCreator ? battle?.creator?.history : battle?.opponent?.history;
@@ -737,7 +742,7 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
   }, []);
 
   // Build asset data for TacticalRow
-  const buildTacticalAsset = useCallback((asset, scores, history, bThresholds = {}, prices = {}, baselines = {}) => {
+  const buildTacticalAsset = useCallback((asset, scores, history, bThresholds = {}, prices = {}, baselines = {}, actPrices = {}) => {
     if (!asset) return null;
 
     const scoreData = scores.assetScores.find((s) => s.symbol === asset.symbol);
@@ -754,11 +759,12 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
       badges: scoreData?.badges || getBadgesFromHistory(assetHistory),
       isCrypto: asset.isCrypto,
       tierMultiplier: scoreData?.tierMultiplier || 1.0,
-      // Price data for ScoreBreakdownPopover
+      // Price data for ScoreBreakdownPopover — prefer activation price (battle start)
+      // over scoring baseline (which may be previousClose on load)
       currentPrice: prices[asset.symbol] || 0,
-      startingPrice: baselines[asset.symbol] || 0,
-      baselinePrice: baselines[asset.symbol] || 0,
-      lockedPrice: baselines[asset.symbol] || 0,
+      startingPrice: actPrices[asset.symbol] || baselines[asset.symbol] || 0,
+      baselinePrice: actPrices[asset.symbol] || baselines[asset.symbol] || 0,
+      lockedPrice: actPrices[asset.symbol] || baselines[asset.symbol] || 0,
       threshold: resolvedATR,
       gain: scoreData?.priceChange || 0,
       totalScore: scoreData?.totalPoints || 0,
@@ -776,22 +782,22 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
     if (!portfolio) return { star: [], core: [], support: [] };
 
     return {
-      star: (portfolio.star || []).map((a) => buildTacticalAsset(a, myScores, combinedHistory, battleThresholds, effectivePrices, openPrices)),
-      core: (portfolio.core || []).map((a) => buildTacticalAsset(a, myScores, combinedHistory, battleThresholds, effectivePrices, openPrices)),
-      support: (portfolio.support || []).map((a) => buildTacticalAsset(a, myScores, combinedHistory, battleThresholds, effectivePrices, openPrices)),
+      star: (portfolio.star || []).map((a) => buildTacticalAsset(a, myScores, combinedHistory, battleThresholds, effectivePrices, openPrices, activationPrices)),
+      core: (portfolio.core || []).map((a) => buildTacticalAsset(a, myScores, combinedHistory, battleThresholds, effectivePrices, openPrices, activationPrices)),
+      support: (portfolio.support || []).map((a) => buildTacticalAsset(a, myScores, combinedHistory, battleThresholds, effectivePrices, openPrices, activationPrices)),
     };
-  }, [myData?.portfolio, myScores, combinedHistory, buildTacticalAsset, battleThresholds, effectivePrices, openPrices]);
+  }, [myData?.portfolio, myScores, combinedHistory, buildTacticalAsset, battleThresholds, effectivePrices, openPrices, activationPrices]);
 
   const opponentPortfolio = useMemo(() => {
     const portfolio = oppData?.portfolio;
     if (!portfolio) return { star: [], core: [], support: [] };
 
     return {
-      star: (portfolio.star || []).map((a) => buildTacticalAsset(a, oppScores, oppHistory || {}, battleThresholds, effectivePrices, openPrices)),
-      core: (portfolio.core || []).map((a) => buildTacticalAsset(a, oppScores, oppHistory || {}, battleThresholds, effectivePrices, openPrices)),
-      support: (portfolio.support || []).map((a) => buildTacticalAsset(a, oppScores, oppHistory || {}, battleThresholds, effectivePrices, openPrices)),
+      star: (portfolio.star || []).map((a) => buildTacticalAsset(a, oppScores, oppHistory || {}, battleThresholds, effectivePrices, openPrices, activationPrices)),
+      core: (portfolio.core || []).map((a) => buildTacticalAsset(a, oppScores, oppHistory || {}, battleThresholds, effectivePrices, openPrices, activationPrices)),
+      support: (portfolio.support || []).map((a) => buildTacticalAsset(a, oppScores, oppHistory || {}, battleThresholds, effectivePrices, openPrices, activationPrices)),
     };
-  }, [oppData?.portfolio, oppScores, oppHistory, buildTacticalAsset, battleThresholds, effectivePrices, openPrices]);
+  }, [oppData?.portfolio, oppScores, oppHistory, buildTacticalAsset, battleThresholds, effectivePrices, openPrices, activationPrices]);
 
   // Build bench data
   const playerBench = useMemo(() => {
@@ -799,20 +805,20 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
     if (!bench) return { stocks: [], crypto: null };
 
     return {
-      stocks: (bench.stocks || []).map((a) => buildTacticalAsset(a, myScores, combinedHistory, battleThresholds, effectivePrices, openPrices)),
-      crypto: bench.crypto ? buildTacticalAsset(bench.crypto, myScores, combinedHistory, battleThresholds, effectivePrices, openPrices) : null,
+      stocks: (bench.stocks || []).map((a) => buildTacticalAsset(a, myScores, combinedHistory, battleThresholds, effectivePrices, openPrices, activationPrices)),
+      crypto: bench.crypto ? buildTacticalAsset(bench.crypto, myScores, combinedHistory, battleThresholds, effectivePrices, openPrices, activationPrices) : null,
     };
-  }, [myData?.bench, myScores, combinedHistory, buildTacticalAsset, battleThresholds, effectivePrices, openPrices]);
+  }, [myData?.bench, myScores, combinedHistory, buildTacticalAsset, battleThresholds, effectivePrices, openPrices, activationPrices]);
 
   const opponentBench = useMemo(() => {
     const bench = oppData?.bench;
     if (!bench) return { stocks: [], crypto: null };
 
     return {
-      stocks: (bench.stocks || []).map((a) => buildTacticalAsset(a, oppScores, oppHistory || {}, battleThresholds, effectivePrices, openPrices)),
-      crypto: bench.crypto ? buildTacticalAsset(bench.crypto, oppScores, oppHistory || {}, battleThresholds, effectivePrices, openPrices) : null,
+      stocks: (bench.stocks || []).map((a) => buildTacticalAsset(a, oppScores, oppHistory || {}, battleThresholds, effectivePrices, openPrices, activationPrices)),
+      crypto: bench.crypto ? buildTacticalAsset(bench.crypto, oppScores, oppHistory || {}, battleThresholds, effectivePrices, openPrices, activationPrices) : null,
     };
-  }, [oppData?.bench, oppScores, oppHistory, buildTacticalAsset, battleThresholds, effectivePrices, openPrices]);
+  }, [oppData?.bench, oppScores, oppHistory, buildTacticalAsset, battleThresholds, effectivePrices, openPrices, activationPrices]);
 
   return {
     // Battle data

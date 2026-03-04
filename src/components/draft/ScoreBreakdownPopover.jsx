@@ -325,7 +325,7 @@ const ScoreBreakdownPopover = ({ asset, events: battleEvents = [], onClose, entr
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
                 <span style={{ fontSize: '13px', color: '#8b949e' }}>Entry Price</span>
                 <span style={{ fontSize: '13px', color: '#e6edf3', fontWeight: 600 }}>
-                  ${entryPriceProp.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  ${battleEntry.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </span>
               </div>
               {battleCreatedAt && (
@@ -344,7 +344,7 @@ const ScoreBreakdownPopover = ({ asset, events: battleEvents = [], onClose, entr
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                 <span style={{ fontSize: '13px', color: '#8b949e' }}>Total P&L</span>
                 {(() => {
-                  const pnl = currentPrice - entryPriceProp;
+                  const pnl = currentPrice - battleEntry;
                   const isPositive = pnl >= 0;
                   return (
                     <span style={{
