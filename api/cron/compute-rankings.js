@@ -262,7 +262,20 @@ function extractMetrics(ticker, fundamentals) {
   // 8. EPS Revision Score
   const epsRevisionScore = computeEpsRevisionScore(fundamentals.earnings);
 
-  // 9. Profitability Margin Trend (Current TTM margin vs Prior TTM margin)
+  // 9. EPS Growth Forward = (next-year EPS estimate / current-year) - 1
+  let epsGrowthForward = null;
+  if (fundamentals.earnings?.Trend) {
+    const trendEntries = Object.values(fundamentals.earnings.Trend);
+    const current0y = trendEntries.find(t => t.period === '0y');
+    const next1y = trendEntries.find(t => t.period === '+1y');
+    const epsNow = parseFloat(current0y?.earningsEstimateAvg);
+    const epsNext = parseFloat(next1y?.earningsEstimateAvg);
+    if (!isNaN(epsNow) && !isNaN(epsNext) && Math.abs(epsNow) > 0) {
+      epsGrowthForward = ((epsNext - epsNow) / Math.abs(epsNow)) * 100;
+    }
+  }
+
+  // 10. Profitability Margin Trend (Current TTM margin vs Prior TTM margin)
   let marginTrend = null;
   const sortedQuarters = Object.values(fundamentals.incomeQ)
     .filter(q => q.date)
@@ -290,6 +303,7 @@ function extractMetrics(ticker, fundamentals) {
     interestCoverage,
     range52wPosition,
     epsRevisionScore,
+    epsGrowthForward,
     marginTrend,
     marketCap,
     high52,
@@ -575,6 +589,7 @@ async function persistResults(db, allRanked, sectorAggregates) {
         interestCoverage: stock.metrics?.interestCoverage,
         range52wPosition: stock.metrics?.range52wPosition,
         epsRevisionScore: stock.metrics?.epsRevisionScore,
+        epsGrowthForward: stock.metrics?.epsGrowthForward,
         marginTrend: stock.metrics?.marginTrend,
         marketCap: stock.metrics?.marketCap,
       },

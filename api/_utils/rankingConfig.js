@@ -172,6 +172,14 @@ export const DIMENSIONS = {
     unit: 'score',
     computed: true,
   },
+  growthEPS: {
+    label: 'EPS Growth (Forward)',
+    pillar: 'growth',
+    field: 'epsGrowthForward',
+    inverted: false,
+    unit: '%',
+    computed: true,
+  },
 };
 
 // ---------------------------------------------------------------------------
@@ -179,7 +187,7 @@ export const DIMENSIONS = {
 // ---------------------------------------------------------------------------
 
 export const PILLARS = {
-  growth:        { label: 'Growth',        dimensions: ['growth'] },
+  growth:        { label: 'Growth',        dimensions: ['growth', 'growthEPS'], weights: [0.60, 0.40] },
   profitability: { label: 'Profitability', dimensions: ['profitability', 'profitabilityTrend'], weights: [0.65, 0.35] },
   efficiency:    { label: 'Efficiency',    dimensions: ['efficiency'] },
   valuation:     { label: 'Valuation',     dimensions: ['valuation'] },
@@ -251,4 +259,4 @@ export function computeReturn(prices, days) {
  * EODHD filter string for fundamentals — only fetch needed sections.
  */
 export const EODHD_FUNDAMENTALS_FILTER =
-  'Highlights,Valuation,Technicals,Earnings,Financials::Income_Statement::quarterly,Financials::Cash_Flow::quarterly,General::Name';
+  'Highlights,Valuation,Technicals,Earnings,Financials,General::Name';
