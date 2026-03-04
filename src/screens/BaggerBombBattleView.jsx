@@ -395,7 +395,6 @@ export default function BaggerBombBattleView({
   const opponentHeaderData = useMemo(() => {
     const hookTotal = opponent?.totalPoints;
     const safeTotal = isFinite(hookTotal) ? hookTotal : 0;
-    console.log(`[Scoring] Scoreboard — Player total: ${player?.totalPoints} (hook) | Opponent total: ${hookTotal} (hook) | Firebase creator.totalScore: ${battle?.creator?.totalScore} | Firebase opponent.totalScore: ${battle?.opponent?.totalScore}`);
     return {
       id: opponent?.id,
       username: opponent?.username || 'Opponent',

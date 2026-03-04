@@ -271,7 +271,6 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
       if (asset.direction === 'short') {
         priceChange = -priceChange;
       }
-      console.log(`[Scoring] ${asset.symbol}: baseline=$${assetOpenPrice.toFixed(2)}, current=$${currentPrice.toFixed(2)}, priceChange=${priceChange.toFixed(4)}%`);
       const assetHistory = history[asset.symbol] || { maxMultiplier: 0, minMultiplier: 0 };
 
       // Compute high/low percent changes for intraday threshold detection
@@ -920,7 +919,6 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
         // Diagnostic logging for threshold verification
         const finalHistory = updatedHistory || assetHistory;
         const badge = finalHistory.maxMultiplier >= 1 ? 'baggerBomb' : finalHistory.minMultiplier <= -1 ? 'bust' : 'none';
-        console.log(`[Scoring] ${asset.symbol}: baseline=$${assetOpenPrice?.toFixed(2)}, current=$${currentPrice?.toFixed(2)}, high=$${assetExtremes?.high?.toFixed(2) || 'N/A'}, low=$${assetExtremes?.low?.toFixed(2) || 'N/A'}, multiplier=${currentMultiplier?.toFixed(3)}, highMult=${highMultiplier?.toFixed(3)}, lowMult=${lowMultiplier?.toFixed(3)}, threshold=${baseATR}, badge=${badge}`);
 
         if (updatedHistory) {
           setHistoryFn((prev) => ({
