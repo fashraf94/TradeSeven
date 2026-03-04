@@ -532,9 +532,11 @@ export function createThresholdEvent(player, symbol, thresholdName, multiplier, 
 export function calculateAssetScoreV3(asset, priceChange, history = {}, extremes = {}) {
   const baseATR = asset.baseATR || 2.5;
 
-  // Guard: skip threshold detection if priceChange is invalid (NaN, Infinity, null)
-  // to prevent false BaggerBomb/Bust triggers from upstream computation errors
+  // Guard: skip scoring if priceChange is invalid (NaN, Infinity, null)
+  // This catches NaN from division-by-zero when baseline price is 0 (e.g., EODHD API failure at activation)
   if (priceChange == null || !isFinite(priceChange)) {
+    console.log(`[Scoring] ${asset.symbol}: SKIPPING (invalid priceChange=${priceChange})`);
+
     return {
       symbol: asset.symbol,
       priceChange: 0,

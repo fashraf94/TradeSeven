@@ -385,22 +385,27 @@ export default function BaggerBombBattleView({
     id: player?.id,
     username: player?.username || 'You',
     avatar: player?.avatar,
-    totalPoints: player?.totalPoints || 0,
-    sessionPoints: player?.sessionPoints || 0,
+    totalPoints: isFinite(player?.totalPoints) ? player.totalPoints : 0,
+    sessionPoints: isFinite(player?.sessionPoints) ? player.sessionPoints : 0,
     baggerBombs: player?.baggerBombs || 0,
     busts: player?.busts || 0,
   }), [player]);
 
   // Build opponent data for header
-  const opponentHeaderData = useMemo(() => ({
-    id: opponent?.id,
-    username: opponent?.username || 'Opponent',
-    avatar: opponent?.avatar,
-    totalPoints: opponent?.totalPoints || 0,
-    sessionPoints: opponent?.sessionPoints || 0,
-    baggerBombs: opponent?.baggerBombs || 0,
-    busts: opponent?.busts || 0,
-  }), [opponent]);
+  const opponentHeaderData = useMemo(() => {
+    const hookTotal = opponent?.totalPoints;
+    const safeTotal = isFinite(hookTotal) ? hookTotal : 0;
+    console.log(`[Scoring] Scoreboard — Player total: ${player?.totalPoints} (hook) | Opponent total: ${hookTotal} (hook) | Firebase creator.totalScore: ${battle?.creator?.totalScore} | Firebase opponent.totalScore: ${battle?.opponent?.totalScore}`);
+    return {
+      id: opponent?.id,
+      username: opponent?.username || 'Opponent',
+      avatar: opponent?.avatar,
+      totalPoints: safeTotal,
+      sessionPoints: isFinite(opponent?.sessionPoints) ? opponent.sessionPoints : 0,
+      baggerBombs: opponent?.baggerBombs || 0,
+      busts: opponent?.busts || 0,
+    };
+  }, [opponent, battle?.creator?.totalScore, battle?.opponent?.totalScore, player?.totalPoints]);
 
   return (
     <div
