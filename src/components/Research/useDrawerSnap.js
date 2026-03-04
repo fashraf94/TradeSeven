@@ -23,7 +23,7 @@ export default function useDrawerSnap(containerHeight, isMobile = false) {
   const prevContainer = useRef(containerHeight);
 
   const FULL_Y = 0;
-  const MID_Y = Math.round(containerHeight * 0.9 - containerHeight * (isMobile ? 0.35 : 0.45));
+  const MID_Y = Math.round(containerHeight * 0.9 - containerHeight * (isMobile ? 0.50 : 0.45));
 
   // Start at mid position
   const y = useMotionValue(MID_Y);

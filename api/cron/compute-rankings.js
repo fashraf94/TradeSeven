@@ -97,36 +97,6 @@ async function fetchSingleFundamental(ticker, apiKey) {
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const data = await res.json();
 
-  // DEBUG: Temporary logging to verify EODHD data paths (remove after confirming fix)
-  if (ticker === 'NVDA') {
-    console.log('[DEBUG NVDA] Top-level keys:', Object.keys(data));
-    console.log('[DEBUG NVDA] Financials keys:', Object.keys(data.Financials || {}));
-    console.log('[DEBUG NVDA] Income_Statement keys:', Object.keys(data.Financials?.Income_Statement || {}));
-    const quarters = data.Financials?.Income_Statement?.quarterly;
-    if (quarters) {
-      const keys = Object.keys(quarters);
-      console.log('[DEBUG NVDA] Quarterly dates:', keys.slice(0, 3));
-      console.log('[DEBUG NVDA] First quarter fields:', Object.keys(quarters[keys[0]] || {}));
-      console.log('[DEBUG NVDA] First quarter totalRevenue:', quarters[keys[0]]?.totalRevenue);
-      console.log('[DEBUG NVDA] First quarter operatingIncome:', quarters[keys[0]]?.operatingIncome);
-    } else {
-      console.log('[DEBUG NVDA] Income_Statement.quarterly is MISSING');
-    }
-    const cashFlow = data.Financials?.Cash_Flow?.quarterly;
-    if (cashFlow) {
-      const cfKeys = Object.keys(cashFlow);
-      console.log('[DEBUG NVDA] CashFlow first quarter fields:', Object.keys(cashFlow[cfKeys[0]] || {}));
-      console.log('[DEBUG NVDA] totalCashFromOperatingActivities:', cashFlow[cfKeys[0]]?.totalCashFromOperatingActivities);
-      console.log('[DEBUG NVDA] capitalExpenditures:', cashFlow[cfKeys[0]]?.capitalExpenditures);
-    } else {
-      console.log('[DEBUG NVDA] Cash_Flow.quarterly is MISSING');
-    }
-    console.log('[DEBUG NVDA] Earnings keys:', Object.keys(data.Earnings || {}));
-    if (data.Earnings?.Trend) {
-      console.log('[DEBUG NVDA] Earnings.Trend:', JSON.stringify(data.Earnings.Trend, null, 2).slice(0, 500));
-    }
-  }
-
   return {
     highlights: data.Highlights || {},
     valuation: data.Valuation || {},
