@@ -385,22 +385,26 @@ export default function BaggerBombBattleView({
     id: player?.id,
     username: player?.username || 'You',
     avatar: player?.avatar,
-    totalPoints: player?.totalPoints || 0,
-    sessionPoints: player?.sessionPoints || 0,
+    totalPoints: isFinite(player?.totalPoints) ? player.totalPoints : 0,
+    sessionPoints: isFinite(player?.sessionPoints) ? player.sessionPoints : 0,
     baggerBombs: player?.baggerBombs || 0,
     busts: player?.busts || 0,
   }), [player]);
 
   // Build opponent data for header
-  const opponentHeaderData = useMemo(() => ({
-    id: opponent?.id,
-    username: opponent?.username || 'Opponent',
-    avatar: opponent?.avatar,
-    totalPoints: opponent?.totalPoints || 0,
-    sessionPoints: opponent?.sessionPoints || 0,
-    baggerBombs: opponent?.baggerBombs || 0,
-    busts: opponent?.busts || 0,
-  }), [opponent]);
+  const opponentHeaderData = useMemo(() => {
+    const hookTotal = opponent?.totalPoints;
+    const safeTotal = isFinite(hookTotal) ? hookTotal : 0;
+    return {
+      id: opponent?.id,
+      username: opponent?.username || 'Opponent',
+      avatar: opponent?.avatar,
+      totalPoints: safeTotal,
+      sessionPoints: isFinite(opponent?.sessionPoints) ? opponent.sessionPoints : 0,
+      baggerBombs: opponent?.baggerBombs || 0,
+      busts: opponent?.busts || 0,
+    };
+  }, [opponent, battle?.creator?.totalScore, battle?.opponent?.totalScore, player?.totalPoints]);
 
   return (
     <div
@@ -675,7 +679,7 @@ export default function BaggerBombBattleView({
               return sum;
             }, 0) || 0,
             totalScore: breakdownAsset.points || 0,
-            startingPrice: openPrices[breakdownAsset.symbol] || breakdownAsset.swapPrice || battle?.state?.startingPrices?.[breakdownAsset.symbol] || 0,
+            startingPrice: battle?.state?.startingPrices?.[breakdownAsset.symbol] || breakdownAsset.swapPrice || openPrices[breakdownAsset.symbol] || 0,
             currentPrice: currentPrices[breakdownAsset.symbol] || 0,
           }}
           events={events || []}

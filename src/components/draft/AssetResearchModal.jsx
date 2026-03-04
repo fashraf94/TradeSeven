@@ -867,7 +867,7 @@ const AssetResearchModal = ({
                   whiteSpace: 'nowrap',
                 }}
               >
-                Compete
+                Ranks
               </button>
               )}
               {!isCrypto && (

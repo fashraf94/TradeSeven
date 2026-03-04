@@ -531,6 +531,26 @@ export function createThresholdEvent(player, symbol, thresholdName, multiplier, 
  */
 export function calculateAssetScoreV3(asset, priceChange, history = {}, extremes = {}) {
   const baseATR = asset.baseATR || 2.5;
+
+  // Guard: skip scoring if priceChange is invalid (NaN, Infinity, null)
+  // This catches NaN from division-by-zero when baseline price is 0 (e.g., EODHD API failure at activation)
+  if (priceChange == null || !isFinite(priceChange)) {
+    console.log(`[Scoring] ${asset.symbol}: SKIPPING (invalid priceChange=${priceChange})`);
+
+    return {
+      symbol: asset.symbol,
+      priceChange: 0,
+      multiplier: 0,
+      baseATR,
+      tierMultiplier: CONVICTION_MULTIPLIERS[asset.tier] || CONVICTION_MULTIPLIERS.support,
+      basePoints: 0,
+      bonusPoints: 0,
+      totalPoints: 0,
+      badges: [],
+      history: { maxMultiplier: history.maxMultiplier || 0, minMultiplier: history.minMultiplier || 0 },
+    };
+  }
+
   const multiplier = priceChange / baseATR;
 
   // Conviction multiplier: Star 2x, Core 1.5x, Support 1x

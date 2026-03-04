@@ -19676,8 +19676,12 @@ export default function PortfolioDuel() {
         const opponent = isCreator
           ? (battle.opponent?.username || 'Opponent')
           : (battle.creator?.username || 'Creator');
-        const myScore = isCreator ? (battle.creator?.totalScore || 0) : (battle.opponent?.totalScore || 0);
-        const theirScore = isCreator ? (battle.opponent?.totalScore || 0) : (battle.creator?.totalScore || 0);
+        const myScore = isCreator
+          ? (battle.creator?.totalPoints ?? battle.creator?.totalScore ?? 0)
+          : (battle.opponent?.totalPoints ?? battle.opponent?.totalScore ?? 0);
+        const theirScore = isCreator
+          ? (battle.opponent?.totalPoints ?? battle.opponent?.totalScore ?? 0)
+          : (battle.creator?.totalPoints ?? battle.creator?.totalScore ?? 0);
 
         return {
           opponent,

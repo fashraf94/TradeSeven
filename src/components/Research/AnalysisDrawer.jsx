@@ -7,7 +7,7 @@ import { useIsMobile } from '../../hooks/useIsMobile';
 const TAB_CONFIGS = [
   { key: 'health', label: '\u26D3\uFE0F Health', activeColor: HOLO_COLORS.amber },
   { key: 'fundamental', label: 'Analysis', activeColor: HOLO_COLORS.primary },
-  { key: 'compete', label: 'Compete', activeColor: '#a78bfa' },
+  { key: 'compete', label: 'Ranks', activeColor: '#a78bfa' },
   { key: 'sector', label: 'Sector', activeColor: HOLO_COLORS.amber },
   { key: 'technical', label: 'Technical', activeColor: HOLO_COLORS.primary },
   { key: 'baggerbomb', label: '\uD83D\uDCA3 Bomb', activeColor: HOLO_COLORS.green },

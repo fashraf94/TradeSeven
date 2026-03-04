@@ -6,6 +6,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { doc, onSnapshot, runTransaction, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import { stockAPI, POPULAR_CRYPTO } from '../services/eodhdAPI';
+import { getDailyHL } from '../services/websocketService';
 import {
   addBaggerBombEvent,
   updateAssetHistoryInBattle,
@@ -78,6 +79,7 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
   const [localHistory, setLocalHistory] = useState({});
   const [localOppHistory, setLocalOppHistory] = useState({});
   const prevMultipliersRef = useRef({});
+  const hasInitializedExtremesRef = useRef(false);
   const prevOppMultipliersRef = useRef({});
   const redZoneActiveRef = useRef(new Set());
 
@@ -139,20 +141,26 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
   const myPortfolioFlat = useMemo(() => flattenPortfolio(myData?.portfolio), [myData?.portfolio]);
   const oppPortfolioFlat = useMemo(() => flattenPortfolio(oppData?.portfolio), [oppData?.portfolio]);
 
-  // Get open prices for current trading day
-  const openPrices = useMemo(() => {
-    const startingPrices = battle?.state?.startingPrices;
-    const hasStarting = startingPrices && Object.keys(startingPrices).length > 0;
+  // Activation prices: the exact prices when the battle went active (second player joined).
+  // Returns null when startingPrices hasn't loaded from Firebase yet — this signals
+  // Day 1 scoring to produce zero scores rather than using wrong baselines.
+  const activationPrices = useMemo(() => {
+    const sp = battle?.state?.startingPrices;
+    if (!sp || typeof sp !== 'object' || Object.keys(sp).length === 0) return null;
+    return sp;
+  }, [battle?.state?.startingPrices]);
 
-    // Day 1: Always use starting prices (battle creation prices per product requirement)
-    if (currentTradingDay === 1) {
-      return hasStarting ? startingPrices : effectivePrices || {};
+  // Get open prices for current trading day.
+  // Day 1: derives from activationPrices. Day 2+: uses marketOpenPrices (daily reset).
+  // No fallback to effectivePrices — those are live market prices that cause inflated scoring.
+  const openPrices = useMemo(() => {
+    // Day 1 (or day 0 before first trading day starts): use activation prices
+    if (currentTradingDay <= 1) {
+      return activationPrices || {};
     }
 
     // Day 2+: Prefer live previousClose from API (resets daily, most accurate).
     // marketOpenPrices now contains previousClose values (from Issue #3 fix).
-    // This overrides stale Firebase dailyOpenPrices that may have been captured
-    // with market-open prices before the fix.
     if (Object.keys(marketOpenPrices).length > 0) return marketOpenPrices;
 
     // Fallback to Firebase-stored daily opens (before API data loads)
@@ -160,8 +168,16 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
     const dailyOpen = battle?.state?.dailyOpenPrices?.[dayKey];
     const hasDailyOpen = dailyOpen && Object.keys(dailyOpen).length > 0;
 
-    return hasDailyOpen ? dailyOpen : hasStarting ? startingPrices : effectivePrices || {};
-  }, [marketOpenPrices, battle, currentTradingDay, effectivePrices]);
+    // Ultimate Day 2+ fallback: startingPrices (better than nothing)
+    return hasDailyOpen ? dailyOpen : activationPrices || {};
+  }, [activationPrices, marketOpenPrices, battle, currentTradingDay]);
+
+  // hasValidBaseline: true when we have a valid scoring baseline for the current day.
+  // Day 0-1: requires startingPrices. Day 2+: any non-empty openPrices source suffices.
+  const hasValidBaseline = useMemo(() => {
+    if (currentTradingDay <= 1) return !!activationPrices;
+    return Object.keys(openPrices).length > 0;
+  }, [currentTradingDay, activationPrices, openPrices]);
 
   // Free agents data
   const freeAgents = useMemo(() => {
@@ -226,7 +242,7 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
       }
 
       // For swapped-in assets, use swapPrice as the open price
-      const assetOpenPrice = asset.swapPrice || openPriceMap[asset.symbol] || asset.price || 0;
+      const assetOpenPrice = asset.swapPrice || openPriceMap[asset.symbol] || 0;
       const currentPrice = prices[asset.symbol] || assetOpenPrice;
 
       // Resolve baseATR: prefer API-computed battle threshold over asset's stored value
@@ -342,12 +358,20 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
   }, [battle?.id, battle?.status]);
 
   const myScores = useMemo(() => {
+    if (!hasValidBaseline) {
+      console.log(`[Scoring] BASELINE SOURCE: WAITING (no scoring — day ${currentTradingDay} baseline not loaded)`);
+      return { totalScore: 0, assetScores: [], baggerBombs: 0, busts: 0 };
+    }
+    console.log(`[Scoring] BASELINE SOURCE: ${currentTradingDay <= 1 ? 'startingPrices' : 'marketOpenPrices'} (day ${currentTradingDay})`);
     return calculateScores(myPortfolioFlat, effectivePrices, openPrices, combinedHistory, dailyExtremes, battleThresholds);
-  }, [myPortfolioFlat, effectivePrices, openPrices, combinedHistory, dailyExtremes, calculateScores, battleThresholds]);
+  }, [hasValidBaseline, currentTradingDay, myPortfolioFlat, effectivePrices, openPrices, combinedHistory, dailyExtremes, calculateScores, battleThresholds]);
 
   const oppScores = useMemo(() => {
+    if (!hasValidBaseline) {
+      return { totalScore: 0, assetScores: [], baggerBombs: 0, busts: 0 };
+    }
     return calculateScores(oppPortfolioFlat, effectivePrices, openPrices, oppHistory || {}, dailyExtremes, battleThresholds);
-  }, [oppPortfolioFlat, effectivePrices, openPrices, oppHistory, dailyExtremes, calculateScores, battleThresholds]);
+  }, [hasValidBaseline, oppPortfolioFlat, effectivePrices, openPrices, oppHistory, dailyExtremes, calculateScores, battleThresholds]);
 
   // V4: Total score = banked previous days + current active score + locked closed trade points
   const closedTradePoints = useMemo(() => {
@@ -379,7 +403,7 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
 
   // ==================== BUILD PLAYER/OPPONENT OBJECTS ====================
 
-  const buildTacticalAsset = useCallback((asset, scores, history, bThresholds = {}) => {
+  const buildTacticalAsset = useCallback((asset, scores, history, bThresholds = {}, prices = {}, baselines = {}, actPrices = {}) => {
     if (!asset) return null;
 
     // V5: Cash positions earn 0 points, no scoring
@@ -402,18 +426,33 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
 
     const scoreData = scores.assetScores.find((s) => s.symbol === asset.symbol);
     const assetHistory = history[asset.symbol] || { maxMultiplier: 0, minMultiplier: 0 };
+    const resolvedATR = bThresholds[asset.symbol]?.threshold || scoreData?.baseATR || asset.baseATR || 2.5;
 
     return {
       symbol: asset.symbol,
       name: asset.name,
       priceChange: scoreData?.priceChange || 0,
-      baseATR: bThresholds[asset.symbol]?.threshold || scoreData?.baseATR || asset.baseATR || 2.5,
+      baseATR: resolvedATR,
       history: assetHistory,
       points: scoreData?.totalPoints || 0,
       badges: scoreData?.badges || getBadgesFromHistory(assetHistory),
       isCrypto: asset.isCrypto,
       direction: asset.direction || null,
       tierMultiplier: scoreData?.tierMultiplier || 1.0,
+      // Price data for ScoreBreakdownPopover — prefer activation price (battle start)
+      // over scoring baseline (which may be previousClose on load)
+      currentPrice: prices[asset.symbol] || 0,
+      startingPrice: actPrices[asset.symbol] || baselines[asset.symbol] || 0,
+      baselinePrice: actPrices[asset.symbol] || baselines[asset.symbol] || 0,
+      lockedPrice: actPrices[asset.symbol] || baselines[asset.symbol] || 0,
+      threshold: resolvedATR,
+      gain: scoreData?.priceChange || 0,
+      totalScore: scoreData?.totalPoints || 0,
+      basePoints: scoreData?.basePoints || 0,
+      baggerBombPoints: (scoreData?.bonusPoints || 0) > 0 ? scoreData.bonusPoints : 0,
+      bustPoints: (scoreData?.bonusPoints || 0) < 0 ? scoreData.bonusPoints : 0,
+      baggerBombs: (scoreData?.badges || []).filter(b => ['bagger', 'doubleBagger', 'tenBagger'].includes(b)).length,
+      busts: (scoreData?.badges || []).filter(b => ['bust', 'crash', 'meltdown'].includes(b)).length,
     };
   }, []);
 
@@ -421,21 +460,21 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
     const portfolio = myData?.portfolio;
     if (!portfolio) return { star: [], core: [], support: [] };
     return {
-      star: (portfolio.star || []).map((a) => buildTacticalAsset(a, myScores, combinedHistory, battleThresholds)),
-      core: (portfolio.core || []).map((a) => buildTacticalAsset(a, myScores, combinedHistory, battleThresholds)),
-      support: (portfolio.support || []).map((a) => buildTacticalAsset(a, myScores, combinedHistory, battleThresholds)),
+      star: (portfolio.star || []).map((a) => buildTacticalAsset(a, myScores, combinedHistory, battleThresholds, effectivePrices, openPrices, activationPrices || {})),
+      core: (portfolio.core || []).map((a) => buildTacticalAsset(a, myScores, combinedHistory, battleThresholds, effectivePrices, openPrices, activationPrices || {})),
+      support: (portfolio.support || []).map((a) => buildTacticalAsset(a, myScores, combinedHistory, battleThresholds, effectivePrices, openPrices, activationPrices || {})),
     };
-  }, [myData?.portfolio, myScores, combinedHistory, buildTacticalAsset, battleThresholds]);
+  }, [myData?.portfolio, myScores, combinedHistory, buildTacticalAsset, battleThresholds, effectivePrices, openPrices, activationPrices]);
 
   const opponentPortfolio = useMemo(() => {
     const portfolio = oppData?.portfolio;
     if (!portfolio) return { star: [], core: [], support: [] };
     return {
-      star: (portfolio.star || []).map((a) => buildTacticalAsset(a, oppScores, oppHistory || {}, battleThresholds)),
-      core: (portfolio.core || []).map((a) => buildTacticalAsset(a, oppScores, oppHistory || {}, battleThresholds)),
-      support: (portfolio.support || []).map((a) => buildTacticalAsset(a, oppScores, oppHistory || {}, battleThresholds)),
+      star: (portfolio.star || []).map((a) => buildTacticalAsset(a, oppScores, oppHistory || {}, battleThresholds, effectivePrices, openPrices, activationPrices || {})),
+      core: (portfolio.core || []).map((a) => buildTacticalAsset(a, oppScores, oppHistory || {}, battleThresholds, effectivePrices, openPrices, activationPrices || {})),
+      support: (portfolio.support || []).map((a) => buildTacticalAsset(a, oppScores, oppHistory || {}, battleThresholds, effectivePrices, openPrices, activationPrices || {})),
     };
-  }, [oppData?.portfolio, oppScores, oppHistory, buildTacticalAsset, battleThresholds]);
+  }, [oppData?.portfolio, oppScores, oppHistory, buildTacticalAsset, battleThresholds, effectivePrices, openPrices, activationPrices]);
 
   const player = useMemo(() => ({
     id: myData?.uid,
@@ -536,6 +575,7 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
 
   // Player threshold detection
   useEffect(() => {
+    if (!hasValidBaseline) return; // No valid baseline — skip threshold detection
     if (!effectivePrices || Object.keys(effectivePrices).length === 0) return;
     if (!battle || !battleId) return;
 
@@ -688,10 +728,11 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
         });
       }
     });
-  }, [effectivePrices, openPrices, dailyExtremes, myPortfolioFlat, battle, battleId, isCreator, combinedHistory, queueTrigger, myData?.username, pushLocalEvent]);
+  }, [hasValidBaseline, effectivePrices, openPrices, dailyExtremes, myPortfolioFlat, battle, battleId, isCreator, combinedHistory, queueTrigger, myData?.username, pushLocalEvent]);
 
   // Opponent threshold detection (display-only — no Firestore writes, no celebration)
   useEffect(() => {
+    if (!hasValidBaseline) return; // No valid baseline — skip threshold detection
     if (!effectivePrices || Object.keys(effectivePrices).length === 0) return;
     if (!battle || !battleId) return;
 
@@ -829,11 +870,12 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
         });
       }
     });
-  }, [effectivePrices, openPrices, dailyExtremes, oppPortfolioFlat, battle, battleId, isCreator, oppHistory, oppData?.username, pushLocalEvent]);
+  }, [hasValidBaseline, effectivePrices, openPrices, dailyExtremes, oppPortfolioFlat, battle, battleId, isCreator, oppHistory, oppData?.username, pushLocalEvent]);
 
   // ==================== CONTINUOUS HISTORY TRACKING ====================
 
   useEffect(() => {
+    if (!hasValidBaseline) return; // No valid baseline — skip history tracking
     if (!effectivePrices || Object.keys(effectivePrices).length === 0) return;
     if (!battle || !battleId || battleId.startsWith('training_')) return;
 
@@ -874,6 +916,10 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
         const updatedFromLow = getHistoryUpdateIfChanged(lowMultiplier, historyAfterHigh);
         updatedHistory = updatedFromLow || updatedHistory;
 
+        // Diagnostic logging for threshold verification
+        const finalHistory = updatedHistory || assetHistory;
+        const badge = finalHistory.maxMultiplier >= 1 ? 'baggerBomb' : finalHistory.minMultiplier <= -1 ? 'bust' : 'none';
+
         if (updatedHistory) {
           setHistoryFn((prev) => ({
             ...prev,
@@ -889,7 +935,7 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
 
     processPortfolio(myPortfolioFlat, combinedHistory, setLocalHistory, true);
     processPortfolio(oppPortfolioFlat, oppHistory, setLocalOppHistory, false);
-  }, [effectivePrices, openPrices, dailyExtremes, myPortfolioFlat, oppPortfolioFlat, battle, battleId, isCreator, combinedHistory, oppHistory]);
+  }, [hasValidBaseline, effectivePrices, openPrices, dailyExtremes, myPortfolioFlat, oppPortfolioFlat, battle, battleId, isCreator, combinedHistory, oppHistory]);
 
   // ==================== PRICE FETCHING ====================
 
@@ -907,7 +953,6 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
       const cryptoSymbols = allSymbols.filter((s) => isCrypto(s));
 
       const newPrices = {};
-      const newExtremes = {};
 
       // Batch fetch: 2 HTTP requests total instead of N individual calls
       const [stockData, cryptoData] = await Promise.all([
@@ -915,28 +960,40 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
         cryptoSymbols.length > 0 ? stockAPI.getMultipleCryptoPrices(cryptoSymbols) : {},
       ]);
 
+      // Collect prices from EODHD — but NOT high/low.
+      // EODHD data.high/data.low reflect the full trading day including
+      // pre-activation movement, which causes false BaggerBomb/Bust triggers.
       Object.entries(stockData).forEach(([symbol, data]) => {
-        if (data?.price) {
-          newPrices[symbol] = data.price;
-          if (data.high > 0 || data.low > 0) {
-            newExtremes[symbol] = { high: data.high || data.price, low: data.low || data.price };
-          }
-        }
+        if (data?.price) newPrices[symbol] = data.price;
       });
       Object.entries(cryptoData).forEach(([symbol, data]) => {
-        if (data?.price) {
-          newPrices[symbol] = data.price;
-          if (data.high > 0 || data.low > 0) {
-            newExtremes[symbol] = { high: data.high || data.price, low: data.low || data.price };
-          }
-        }
+        if (data?.price) newPrices[symbol] = data.price;
       });
 
       if (Object.keys(newPrices).length > 0) {
         setCurrentPrices((prev) => ({ ...prev, ...newPrices }));
       }
-      if (Object.keys(newExtremes).length > 0) {
-        setDailyExtremes((prev) => ({ ...prev, ...newExtremes }));
+
+      // Build extremes from WebSocket daily H/L instead of EODHD.
+      // Guard: on the first tick after activation, clear any stale extremes.
+      // WebSocket H/L tracks from 9:30 AM ET, so for mid-session battles it
+      // may include pre-activation prices. By clearing on first tick and only
+      // using WS data from the second tick onward, we ensure extremes only
+      // reflect prices observed during the battle.
+      if (!hasInitializedExtremesRef.current) {
+        setDailyExtremes({});
+        hasInitializedExtremesRef.current = true;
+      } else {
+        const wsExtremes = {};
+        allSymbols.forEach((symbol) => {
+          const wsHL = getDailyHL(symbol);
+          if (wsHL) {
+            wsExtremes[symbol] = { high: wsHL.high, low: wsHL.low };
+          }
+        });
+        if (Object.keys(wsExtremes).length > 0) {
+          setDailyExtremes(wsExtremes);
+        }
       }
 
       // Extract previousClose as daily baseline (for daily open capture on Day 2+)

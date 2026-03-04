@@ -57,7 +57,12 @@ export function getBankedScoreTotal(dailyScores, playerId) {
   for (const dayKey of Object.keys(dailyScores)) {
     const day = dailyScores[dayKey];
     if (day?.recorded && day[playerId]?.activeScore != null) {
-      total += day[playerId].activeScore;
+      const score = day[playerId].activeScore;
+      if (!isFinite(score)) {
+        console.warn(`[Scoring] NaN/Infinity activeScore in ${dayKey}.${playerId} — skipping`);
+        continue;
+      }
+      total += score;
     }
   }
   return total;

@@ -6,7 +6,7 @@
 // LIVE / CLOSED / WARMING UP / WEEKEND / HOLIDAY states.
 
 import { isCrypto } from '../utils/stockHelpers';
-import { getMarketState } from '../utils/marketSchedule';
+import { getMarketState, isMarketOpen } from '../utils/marketSchedule';
 
 // ==================== SYMBOL MAPPING ====================
 
@@ -420,24 +420,32 @@ class WebSocketManager {
           this._priceCache.set(symbol, { price, timestamp: Date.now() });
 
           // --- Daily H/L Tracker ---
-          const today = new Date().toISOString().split('T')[0];
-          if (this._dailyHLDate !== today) {
+          // Use ET date (not UTC) for day boundary to prevent reset at 7 PM ET
+          const etNow = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
+          const etToday = `${etNow.getFullYear()}-${String(etNow.getMonth() + 1).padStart(2, '0')}-${String(etNow.getDate()).padStart(2, '0')}`;
+          if (this._dailyHLDate !== etToday) {
             this._dailyHL.clear();
-            this._dailyHLDate = today;
+            this._dailyHLDate = etToday;
           }
-          const existing = this._dailyHL.get(symbol);
-          if (existing) {
-            existing.high = Math.max(existing.high, price);
-            existing.low = Math.min(existing.low, price);
-            existing.lastUpdate = Date.now();
-          } else {
-            this._dailyHL.set(symbol, {
-              high: price,
-              low: price,
-              open: price,
-              date: today,
-              lastUpdate: Date.now(),
-            });
+
+          // Only track regular-session prices for stocks (skip pre/post-market)
+          // to prevent extended-hours spikes from triggering false BaggerBomb/Bust badges.
+          // Crypto tracks 24/7.
+          if (type !== 'stock' || isMarketOpen()) {
+            const existing = this._dailyHL.get(symbol);
+            if (existing) {
+              existing.high = Math.max(existing.high, price);
+              existing.low = Math.min(existing.low, price);
+              existing.lastUpdate = Date.now();
+            } else {
+              this._dailyHL.set(symbol, {
+                high: price,
+                low: price,
+                open: price,
+                date: etToday,
+                lastUpdate: Date.now(),
+              });
+            }
           }
         }
       }
@@ -449,9 +457,10 @@ class WebSocketManager {
   // ==================== DAILY H/L GETTER ====================
 
   getDailyHL(symbol) {
-    const today = new Date().toISOString().split('T')[0];
+    const etNow = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
+    const etToday = `${etNow.getFullYear()}-${String(etNow.getMonth() + 1).padStart(2, '0')}-${String(etNow.getDate()).padStart(2, '0')}`;
     const data = this._dailyHL.get(symbol);
-    if (data && data.date === today) {
+    if (data && data.date === etToday) {
       return { high: data.high, low: data.low, open: data.open };
     }
     return null;

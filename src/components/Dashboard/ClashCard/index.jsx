@@ -21,9 +21,13 @@ function calculate1v1PreviewData(battle, username) {
     const isCreator = battle.creator?.username === username;
     const opponent = isCreator ? battle.opponent?.username : battle.creator?.username;
 
-    // V3 uses totalScore for BaggerBomb scoring
-    const myScore = isCreator ? (battle.creator?.totalScore || 0) : (battle.opponent?.totalScore || 0);
-    const theirScore = isCreator ? (battle.opponent?.totalScore || 0) : (battle.creator?.totalScore || 0);
+    // Prefer live totalPoints (hook-computed), fall back to static totalScore (Firebase)
+    const myScore = isCreator
+      ? (battle.creator?.totalPoints ?? battle.creator?.totalScore ?? 0)
+      : (battle.opponent?.totalPoints ?? battle.opponent?.totalScore ?? 0);
+    const theirScore = isCreator
+      ? (battle.opponent?.totalPoints ?? battle.opponent?.totalScore ?? 0)
+      : (battle.creator?.totalPoints ?? battle.creator?.totalScore ?? 0);
     const isWinning = myScore > theirScore;
 
     return {
