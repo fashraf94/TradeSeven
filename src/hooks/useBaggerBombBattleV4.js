@@ -154,8 +154,8 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
   // Day 1: derives from activationPrices. Day 2+: uses marketOpenPrices (daily reset).
   // No fallback to effectivePrices — those are live market prices that cause inflated scoring.
   const openPrices = useMemo(() => {
-    // Day 1: Always use starting prices (battle activation prices)
-    if (currentTradingDay === 1) {
+    // Day 1 (or day 0 before first trading day starts): use activation prices
+    if (currentTradingDay <= 1) {
       return activationPrices || {};
     }
 
@@ -173,9 +173,9 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
   }, [activationPrices, marketOpenPrices, battle, currentTradingDay]);
 
   // hasValidBaseline: true when we have a valid scoring baseline for the current day.
-  // Day 1: requires startingPrices. Day 2+: any non-empty openPrices source suffices.
+  // Day 0-1: requires startingPrices. Day 2+: any non-empty openPrices source suffices.
   const hasValidBaseline = useMemo(() => {
-    if (currentTradingDay === 1) return !!activationPrices;
+    if (currentTradingDay <= 1) return !!activationPrices;
     return Object.keys(openPrices).length > 0;
   }, [currentTradingDay, activationPrices, openPrices]);
 
@@ -363,7 +363,7 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
       console.log(`[Scoring] BASELINE SOURCE: WAITING (no scoring — day ${currentTradingDay} baseline not loaded)`);
       return { totalScore: 0, assetScores: [], baggerBombs: 0, busts: 0 };
     }
-    console.log(`[Scoring] BASELINE SOURCE: ${currentTradingDay === 1 ? 'startingPrices' : 'marketOpenPrices'} (day ${currentTradingDay})`);
+    console.log(`[Scoring] BASELINE SOURCE: ${currentTradingDay <= 1 ? 'startingPrices' : 'marketOpenPrices'} (day ${currentTradingDay})`);
     return calculateScores(myPortfolioFlat, effectivePrices, openPrices, combinedHistory, dailyExtremes, battleThresholds);
   }, [hasValidBaseline, currentTradingDay, myPortfolioFlat, effectivePrices, openPrices, combinedHistory, dailyExtremes, calculateScores, battleThresholds]);
 

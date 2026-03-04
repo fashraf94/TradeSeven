@@ -137,7 +137,7 @@ const ScoreBreakdownPopover = ({ asset, events: battleEvents = [], onClose, entr
             }}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
                 <span style={{ fontSize: '11px', color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                  Battle Entry
+                  Daily Baseline
                 </span>
                 <span style={{ fontSize: '16px', fontWeight: 700, color: '#ffffff' }}>
                   ${battleEntry.toFixed(2)}
