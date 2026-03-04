@@ -12,7 +12,7 @@ export { default as ResearchModeButton } from './ResearchModeButton';
 export { default as BattleActionCards } from './BattleActionCards';
 export { default as TrainingModePanel } from './TrainingModePanel';
 export { default as WeeklyChallengesPanel } from './WeeklyChallenges';
-export { default as GameModeCarousels } from './GameModeCarousels';
+export { default as GameModeCarousel } from './GameModeCards';
 export { default as ThemedGameCard, GAME_THEMES } from './ThemedGameCard';
 // New dashboard redesign components
 export { default as DashboardTabs } from './DashboardTabs';

@@ -113,7 +113,8 @@ import { StockIntelligenceScreen } from './components/StockIntelligence';
 // Research Landing Page (redesigned)
 import ResearchLandingPage from './components/Research/ResearchLandingPage';
 // Dashboard Components
-import { GameModeToggle, ResearchModeButton, WeeklyChallengesPanel, GameModeCarousels, DashboardTabs, LiveClashesSection, PvpWatchlistSection, YourActivity, SeasonalBanner, TrainingLiveFeed, PendingLobbiesSection } from './components/Dashboard';
+import { GameModeToggle, ResearchModeButton, WeeklyChallengesPanel, GameModeCarousel, DashboardTabs, LiveClashesSection, PvpWatchlistSection, YourActivity, SeasonalBanner, TrainingLiveFeed, PendingLobbiesSection } from './components/Dashboard';
+import { useIsMobile } from './hooks/useIsMobile';
 
 // ============================================
 // LAZY LOADING FALLBACK
@@ -11684,6 +11685,7 @@ export default function PortfolioDuel() {
 
   // User state from context (single source of truth)
   const { user, login, logout, updateUser, loading: userLoading } = useUser();
+  const { isMobile } = useIsMobile();
 
   const [screen, setScreen] = useState('home');
   const [dashboardTab, setDashboardTab] = useState('pvp'); // 'pvp' | 'train' - dashboard tab state
@@ -20228,15 +20230,14 @@ export default function PortfolioDuel() {
                 />
 
                 {/* Enter the Arena - PVP game cards (COMPETE) */}
-                <GameModeCarousels
+                <GameModeCarousel
                   mode="pvp"
-                  setTrainingConfirmType={setTrainingConfirmType}
-                  setShowTrainingConfirmModal={setShowTrainingConfirmModal}
-                  setShowBaggerBombTrainingConfirm={setShowBaggerBombTrainingConfirm}
-                  setScreen={setScreen}
-                  setShowSnakeDraftModal={setShowSnakeDraftModal}
-                  setShowBaggerBombModal={setShowBaggerBombModal}
-                  setShowOptionsArenaModal={setShowOptionsArenaModal}
+                  onSelect={(modeId) => {
+                    if (modeId === 'baggerbomb') setShowBaggerBombModal(true);
+                    else if (modeId === 'snakeDraft') setShowSnakeDraftModal(true);
+                  }}
+                  isMobile={isMobile}
+                  colors={colors}
                 />
 
                 {/* Weekly Challenges */}
@@ -20326,15 +20327,17 @@ export default function PortfolioDuel() {
                 />
 
                 {/* Quick Play - Training game cards (EARN COINS) */}
-                <GameModeCarousels
+                <GameModeCarousel
                   mode="train"
-                  setTrainingConfirmType={setTrainingConfirmType}
-                  setShowTrainingConfirmModal={setShowTrainingConfirmModal}
-                  setShowBaggerBombTrainingConfirm={setShowBaggerBombTrainingConfirm}
-                  setScreen={setScreen}
-                  setShowSnakeDraftModal={setShowSnakeDraftModal}
-                  setShowBaggerBombModal={setShowBaggerBombModal}
-                  setShowOptionsArenaModal={setShowOptionsArenaModal}
+                  onSelect={(modeId) => {
+                    if (modeId === 'baggerbomb') setShowBaggerBombTrainingConfirm(true);
+                    else if (modeId === 'snakeDraft') {
+                      setTrainingConfirmType('stocks');
+                      setShowTrainingConfirmModal(true);
+                    }
+                  }}
+                  isMobile={isMobile}
+                  colors={colors}
                 />
 
                 {/* Weekly Challenges */}
