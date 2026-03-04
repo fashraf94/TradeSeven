@@ -305,7 +305,7 @@ const ScoreBreakdownPopover = ({ asset, events: battleEvents = [], onClose, entr
           </div>
 
           {/* Position Summary — replaces Timeline */}
-          {hasEntryPrice && (
+          {hasBattleEntry && (
             <div style={{
               padding: '12px 16px',
               background: 'rgba(255, 255, 255, 0.03)',
