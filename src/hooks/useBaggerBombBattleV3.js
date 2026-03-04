@@ -91,32 +91,14 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
   const myPortfolioFlat = useMemo(() => flattenPortfolio(myData?.portfolio), [myData?.portfolio]);
   const oppPortfolioFlat = useMemo(() => flattenPortfolio(oppData?.portfolio), [oppData?.portfolio]);
 
-  // Get open prices for current session — prefer startingPrices (locked at battle activation)
-  const currentSessionId = getCurrentSessionId();
+  // Scoring baseline: ONLY use battle activation prices (startingPrices).
+  // No fallback to previousClosePrices or effectivePrices — those are day-open values
+  // that differ from the activation price and cause inflated priceChange calculations.
+  // If startingPrices hasn't loaded from Firebase yet, openPrices is {} and priceChange
+  // will be 0 (the guard on line 156 handles this safely).
   const openPrices = useMemo(() => {
-    // Prefer startingPrices — captured at battle activation with correct market context
-    // During market hours these are live prices; outside hours they are previous close
-    const startingPrices = battle?.state?.startingPrices;
-    const hasStartingPrices = startingPrices && Object.keys(startingPrices).length > 0;
-    if (hasStartingPrices) return startingPrices;
-
-    // Fallback: previousClose (before startingPrices load from Firebase)
-    const hasPreviousClose = previousClosePrices && Object.keys(previousClosePrices).length > 0;
-    if (hasPreviousClose) return previousClosePrices;
-
-    // Remaining fallback chain (before API data loads or for training battles)
-    const currentSessionPrices = currentSessionId
-      ? battle?.sessionPrices?.[currentSessionId]?.open
-      : null;
-    const morningBellPrices = battle?.sessionPrices?.MORNING_BELL?.open;
-
-    const hasCurrentSessionPrices = currentSessionPrices && Object.keys(currentSessionPrices).length > 0;
-    const hasMorningBellPrices = morningBellPrices && Object.keys(morningBellPrices).length > 0;
-
-    return hasCurrentSessionPrices ? currentSessionPrices
-      : hasMorningBellPrices ? morningBellPrices
-      : effectivePrices || {};
-  }, [previousClosePrices, battle, currentSessionId, effectivePrices]);
+    return battle?.state?.startingPrices || {};
+  }, [battle]);
 
   // Activation prices: the exact prices when the battle went active (second player joined)
   // Used for display in ScoreBreakdownPopover — distinct from openPrices which may be
