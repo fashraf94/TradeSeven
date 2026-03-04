@@ -20229,7 +20229,20 @@ export default function PortfolioDuel() {
                   copyToClipboard={copyToClipboard}
                 />
 
-                {/* Enter the Arena - PVP game cards (COMPETE) */}
+                {/* Enter the Arena - Section Header */}
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: '12px', padding: '0 16px', marginBottom: '16px', marginTop: '24px' }}>
+                  <Swords size={18} color="#10b981" />
+                  <span style={{
+                    fontSize: '18px', fontWeight: '700', letterSpacing: '2px', textTransform: 'uppercase', fontStyle: 'italic',
+                    background: 'linear-gradient(90deg, #10b981 0%, #34d399 100%)',
+                    WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text',
+                  }}>
+                    ENTER THE ARENA
+                  </span>
+                  <span style={{ fontSize: '13px', color: '#6e7681', fontWeight: '400', fontStyle: 'normal' }}>
+                    — Challenge friends or rivals
+                  </span>
+                </div>
                 <GameModeCarousel
                   mode="pvp"
                   onSelect={(modeId) => {
@@ -20326,7 +20339,20 @@ export default function PortfolioDuel() {
                   setActiveBattleId={setActiveBattleId}
                 />
 
-                {/* Quick Play - Training game cards (EARN COINS) */}
+                {/* Quick Play - Section Header */}
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: '12px', padding: '0 16px', marginBottom: '16px', marginTop: '24px' }}>
+                  <Zap size={18} color="#8b5cf6" />
+                  <span style={{
+                    fontSize: '18px', fontWeight: '700', letterSpacing: '2px', textTransform: 'uppercase', fontStyle: 'italic',
+                    background: 'linear-gradient(90deg, #8b5cf6 0%, #a78bfa 100%)',
+                    WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text',
+                  }}>
+                    QUICK PLAY
+                  </span>
+                  <span style={{ fontSize: '13px', color: '#6e7681', fontWeight: '400', fontStyle: 'normal' }}>
+                    — Practice against AI
+                  </span>
+                </div>
                 <GameModeCarousel
                   mode="train"
                   onSelect={(modeId) => {
