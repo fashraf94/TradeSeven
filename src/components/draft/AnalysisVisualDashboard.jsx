@@ -23,7 +23,7 @@ const SUB_TABS = [
   { key: 'risks', label: 'Risks', color: '#f85149' },
   { key: 'health', label: 'Health', color: '#10b981' },
   { key: 'earnings', label: 'Earnings', color: '#8b5cf6' },
-  { key: 'news', label: 'News', color: '#10b981' },
+  { key: 'news', label: 'News', color: '#3b82f6' },
 ];
 
 const CHART_COLORS = ['#00d9ff', '#10b981', '#a78bfa', '#f59e0b', '#f85149'];
@@ -56,29 +56,32 @@ function SubTabSelector({ activeTab, onTabChange }) {
       display: 'flex', gap: '6px', marginBottom: '12px',
       overflowX: 'auto', WebkitOverflowScrolling: 'touch',
       scrollbarWidth: 'none', msOverflowStyle: 'none',
+      paddingBottom: '2px',
     }}>
-      {SUB_TABS.map(tab => (
-        <button
-          key={tab.key}
-          onClick={() => onTabChange(tab.key)}
-          style={{
-            padding: '6px 12px', borderRadius: '6px',
-            border: activeTab === tab.key
-              ? `1px solid ${tab.color}`
-              : '1px solid rgba(255,255,255,0.1)',
-            background: activeTab === tab.key
-              ? `${tab.color}20`
-              : 'rgba(255,255,255,0.05)',
-            color: activeTab === tab.key
-              ? tab.color
-              : 'rgba(255,255,255,0.6)',
-            fontWeight: '600', fontSize: '11px', cursor: 'pointer',
-            transition: 'all 0.2s', flexShrink: 0, whiteSpace: 'nowrap',
-          }}
-        >
-          {tab.label}
-        </button>
-      ))}
+      {SUB_TABS.map(tab => {
+        const isActive = activeTab === tab.key;
+        return (
+          <button
+            key={tab.key}
+            onClick={() => onTabChange(tab.key)}
+            style={{
+              padding: '5px 14px',
+              borderRadius: '999px',
+              fontSize: '11px',
+              fontWeight: isActive ? '700' : '600',
+              cursor: 'pointer',
+              transition: 'all 0.2s ease',
+              border: isActive ? `1.5px solid ${tab.color}` : '1.5px solid transparent',
+              background: isActive ? `${tab.color}20` : 'rgba(255, 255, 255, 0.04)',
+              color: isActive ? tab.color : 'rgba(255, 255, 255, 0.5)',
+              whiteSpace: 'nowrap',
+              flexShrink: 0,
+            }}
+          >
+            {tab.label}
+          </button>
+        );
+      })}
     </div>
   );
 }
