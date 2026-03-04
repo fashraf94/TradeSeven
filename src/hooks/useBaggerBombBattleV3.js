@@ -91,19 +91,18 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
   const myPortfolioFlat = useMemo(() => flattenPortfolio(myData?.portfolio), [myData?.portfolio]);
   const oppPortfolioFlat = useMemo(() => flattenPortfolio(oppData?.portfolio), [oppData?.portfolio]);
 
-  // Scoring baseline: ONLY use battle activation prices (startingPrices).
-  // No fallback to previousClosePrices or effectivePrices — those are day-open values
-  // that differ from the activation price and cause inflated priceChange calculations.
-  // If startingPrices hasn't loaded from Firebase yet, openPrices is {} and priceChange
-  // will be 0 (the guard on line 156 handles this safely).
-  const openPrices = useMemo(() => {
-    return battle?.state?.startingPrices || {};
-  }, [battle]);
+  // Activation prices: the exact prices when the battle went active (second player joined).
+  // Returns null when startingPrices hasn't loaded from Firebase yet — this signals
+  // all scoring paths to produce zero scores rather than using wrong baselines.
+  const activationPrices = useMemo(() => {
+    const sp = battle?.state?.startingPrices;
+    if (!sp || typeof sp !== 'object' || Object.keys(sp).length === 0) return null;
+    return sp;
+  }, [battle?.state?.startingPrices]);
 
-  // Activation prices: the exact prices when the battle went active (second player joined)
-  // Used for display in ScoreBreakdownPopover — distinct from openPrices which may be
-  // a scoring baseline (previousClose) that differs from the activation-moment price.
-  const activationPrices = useMemo(() => battle?.state?.startingPrices || {}, [battle]);
+  // Scoring baseline: derives from activationPrices. When null (not loaded),
+  // openPrices is {} — scoring memos guard against this and return zeros.
+  const openPrices = useMemo(() => activationPrices || {}, [activationPrices]);
 
   // Combine battle history with local updates
   const combinedHistory = useMemo(() => {
@@ -126,7 +125,7 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
     portfolio.forEach((asset) => {
       if (!asset) return;
 
-      const openPrice = openPrices[asset.symbol] || asset.price || 0;
+      const openPrice = openPrices[asset.symbol] || 0;
       const currentPrice = prices[asset.symbol] || openPrice;
 
       // Resolve baseATR: prefer API-computed battle threshold over asset's stored value
@@ -151,6 +150,7 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
       }
 
       const priceChange = ((currentPrice - openPrice) / openPrice) * 100;
+      console.log(`[Scoring] ${asset.symbol}: baseline=$${openPrice.toFixed(2)}, current=$${currentPrice.toFixed(2)}, priceChange=${priceChange.toFixed(4)}%`);
       const assetHistory = history[asset.symbol] || { maxMultiplier: 0, minMultiplier: 0 };
 
       // Compute high/low percent changes for intraday threshold detection
@@ -234,8 +234,13 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
   }, [battle?.id, battle?.status]);
 
   const myScores = useMemo(() => {
+    if (!activationPrices) {
+      console.log('[Scoring] BASELINE SOURCE: WAITING (no scoring — startingPrices not loaded)');
+      return { totalScore: 0, sessionScore: 0, assetScores: [], baggerBombs: 0, busts: 0 };
+    }
+    console.log('[Scoring] BASELINE SOURCE: startingPrices');
     return calculateScores(myPortfolioFlat, effectivePrices, openPrices, combinedHistory, dailyExtremes, battleThresholds);
-  }, [myPortfolioFlat, effectivePrices, openPrices, combinedHistory, dailyExtremes, calculateScores, battleThresholds]);
+  }, [activationPrices, myPortfolioFlat, effectivePrices, openPrices, combinedHistory, dailyExtremes, calculateScores, battleThresholds]);
 
   // Opponent scores — combine Firebase history with local opponent history
   // (mirrors combinedHistory pattern for own data, ensuring opponent badges
@@ -246,8 +251,11 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
   }, [battle, isCreator, localOppHistory]);
 
   const oppScores = useMemo(() => {
+    if (!activationPrices) {
+      return { totalScore: 0, sessionScore: 0, assetScores: [], baggerBombs: 0, busts: 0 };
+    }
     return calculateScores(oppPortfolioFlat, effectivePrices, openPrices, oppHistory || {}, dailyExtremes, battleThresholds);
-  }, [oppPortfolioFlat, effectivePrices, openPrices, oppHistory, dailyExtremes, calculateScores, battleThresholds]);
+  }, [activationPrices, oppPortfolioFlat, effectivePrices, openPrices, oppHistory, dailyExtremes, calculateScores, battleThresholds]);
 
   // Add completed session scores
   const myTotalScore = useMemo(() => {
@@ -364,6 +372,7 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
 
   // Detect threshold crossings when prices update
   useEffect(() => {
+    if (!activationPrices) return; // No valid baseline — skip threshold detection
     if (!effectivePrices || Object.keys(effectivePrices).length === 0) return;
     if (!battle || !battleId) return;
 
@@ -471,7 +480,7 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
       // Update prev multiplier ref
       prevMultipliersRef.current[asset.symbol] = currentMultiplier;
     });
-  }, [effectivePrices, openPrices, dailyExtremes, myPortfolioFlat, battle, battleId, isCreator, combinedHistory, queueTrigger]);
+  }, [activationPrices, effectivePrices, openPrices, dailyExtremes, myPortfolioFlat, battle, battleId, isCreator, combinedHistory, queueTrigger]);
 
   // Continuous history tracking — ensures maxMultiplier/minMultiplier are always
   // recorded for BOTH player and opponent portfolios on every price poll.
@@ -480,6 +489,7 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
   // Writes to Firebase only when values actually change (getHistoryUpdateIfChanged
   // returns null when no update is needed), minimizing write costs.
   useEffect(() => {
+    if (!activationPrices) return; // No valid baseline — skip history tracking
     if (!effectivePrices || Object.keys(effectivePrices).length === 0) return;
     if (!battle || !battleId || battleId.startsWith('training_')) return;
 
@@ -542,7 +552,7 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
     // Track opponent portfolio history (redundant recording — if opponent's client
     // is offline, this client still records their peaks)
     processPortfolio(oppPortfolioFlat, oppHistory, setLocalOppHistory, false);
-  }, [effectivePrices, openPrices, dailyExtremes, myPortfolioFlat, oppPortfolioFlat, battle, battleId, isCreator, combinedHistory, oppHistory]);
+  }, [activationPrices, effectivePrices, openPrices, dailyExtremes, myPortfolioFlat, oppPortfolioFlat, battle, battleId, isCreator, combinedHistory, oppHistory]);
 
   // Fetch prices — uses frozen close prices from Firebase when a session has ended,
   // ensuring both players see identical scores for completed sessions
@@ -764,9 +774,9 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
     if (!portfolio) return { star: [], core: [], support: [] };
 
     return {
-      star: (portfolio.star || []).map((a) => buildTacticalAsset(a, myScores, combinedHistory, battleThresholds, effectivePrices, openPrices, activationPrices)),
-      core: (portfolio.core || []).map((a) => buildTacticalAsset(a, myScores, combinedHistory, battleThresholds, effectivePrices, openPrices, activationPrices)),
-      support: (portfolio.support || []).map((a) => buildTacticalAsset(a, myScores, combinedHistory, battleThresholds, effectivePrices, openPrices, activationPrices)),
+      star: (portfolio.star || []).map((a) => buildTacticalAsset(a, myScores, combinedHistory, battleThresholds, effectivePrices, openPrices, activationPrices || {})),
+      core: (portfolio.core || []).map((a) => buildTacticalAsset(a, myScores, combinedHistory, battleThresholds, effectivePrices, openPrices, activationPrices || {})),
+      support: (portfolio.support || []).map((a) => buildTacticalAsset(a, myScores, combinedHistory, battleThresholds, effectivePrices, openPrices, activationPrices || {})),
     };
   }, [myData?.portfolio, myScores, combinedHistory, buildTacticalAsset, battleThresholds, effectivePrices, openPrices, activationPrices]);
 
@@ -775,9 +785,9 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
     if (!portfolio) return { star: [], core: [], support: [] };
 
     return {
-      star: (portfolio.star || []).map((a) => buildTacticalAsset(a, oppScores, oppHistory || {}, battleThresholds, effectivePrices, openPrices, activationPrices)),
-      core: (portfolio.core || []).map((a) => buildTacticalAsset(a, oppScores, oppHistory || {}, battleThresholds, effectivePrices, openPrices, activationPrices)),
-      support: (portfolio.support || []).map((a) => buildTacticalAsset(a, oppScores, oppHistory || {}, battleThresholds, effectivePrices, openPrices, activationPrices)),
+      star: (portfolio.star || []).map((a) => buildTacticalAsset(a, oppScores, oppHistory || {}, battleThresholds, effectivePrices, openPrices, activationPrices || {})),
+      core: (portfolio.core || []).map((a) => buildTacticalAsset(a, oppScores, oppHistory || {}, battleThresholds, effectivePrices, openPrices, activationPrices || {})),
+      support: (portfolio.support || []).map((a) => buildTacticalAsset(a, oppScores, oppHistory || {}, battleThresholds, effectivePrices, openPrices, activationPrices || {})),
     };
   }, [oppData?.portfolio, oppScores, oppHistory, buildTacticalAsset, battleThresholds, effectivePrices, openPrices, activationPrices]);
 
@@ -787,7 +797,7 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
     if (!bench) return { stocks: [], crypto: null };
 
     return {
-      stocks: (bench.stocks || []).map((a) => buildTacticalAsset(a, myScores, combinedHistory, battleThresholds, effectivePrices, openPrices, activationPrices)),
+      stocks: (bench.stocks || []).map((a) => buildTacticalAsset(a, myScores, combinedHistory, battleThresholds, effectivePrices, openPrices, activationPrices || {})),
       crypto: bench.crypto ? buildTacticalAsset(bench.crypto, myScores, combinedHistory, battleThresholds, effectivePrices, openPrices, activationPrices) : null,
     };
   }, [myData?.bench, myScores, combinedHistory, buildTacticalAsset, battleThresholds, effectivePrices, openPrices, activationPrices]);
@@ -797,7 +807,7 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
     if (!bench) return { stocks: [], crypto: null };
 
     return {
-      stocks: (bench.stocks || []).map((a) => buildTacticalAsset(a, oppScores, oppHistory || {}, battleThresholds, effectivePrices, openPrices, activationPrices)),
+      stocks: (bench.stocks || []).map((a) => buildTacticalAsset(a, oppScores, oppHistory || {}, battleThresholds, effectivePrices, openPrices, activationPrices || {})),
       crypto: bench.crypto ? buildTacticalAsset(bench.crypto, oppScores, oppHistory || {}, battleThresholds, effectivePrices, openPrices, activationPrices) : null,
     };
   }, [oppData?.bench, oppScores, oppHistory, buildTacticalAsset, battleThresholds, effectivePrices, openPrices, activationPrices]);
