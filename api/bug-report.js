@@ -6,6 +6,7 @@ import { initializeApp, getApps, cert } from 'firebase-admin/app';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { applySecurityMiddleware } from './_utils/security.js';
 import { classifyBugReport } from './_utils/bugReportClassifier.js';
+import { sanitizeInput, sanitizeDocumentId } from './_utils/sanitizeInput.js';
 
 // =============================================================================
 // FIREBASE ADMIN INITIALIZATION
@@ -69,20 +70,14 @@ export default async function handler(req, res) {
 
 async function handleSubmit(req, res) {
   try {
-    const { userDescription, metadata } = req.body;
+    const { userDescription: rawDescription, metadata } = req.body;
 
-    // Validate required fields
-    if (!userDescription || typeof userDescription !== 'string' || userDescription.trim().length === 0) {
+    // Validate and sanitize required fields
+    const userDescription = sanitizeInput(rawDescription, 5000);
+    if (!userDescription) {
       return res.status(400).json({
         success: false,
-        error: 'userDescription is required and must be a non-empty string',
-      });
-    }
-
-    if (userDescription.length > 5000) {
-      return res.status(400).json({
-        success: false,
-        error: 'userDescription must be 5000 characters or fewer',
+        error: 'userDescription is required and must be a non-empty string (max 5000 chars)',
       });
     }
 
@@ -186,12 +181,12 @@ async function handleSubmit(req, res) {
 
 async function handleClassify(req, res) {
   try {
-    const { reportId } = req.body;
+    const reportId = sanitizeDocumentId(req.body?.reportId);
 
-    if (!reportId || typeof reportId !== 'string') {
+    if (!reportId) {
       return res.status(400).json({
         success: false,
-        error: 'reportId is required',
+        error: 'reportId is required and must be a valid ID',
       });
     }
 
@@ -291,12 +286,13 @@ async function handleList(req, res) {
 
 async function handleUpdate(req, res) {
   try {
-    const { reportId, status, resolution, resolvedBy, duplicateOf } = req.body;
+    const { status, resolution, resolvedBy, duplicateOf } = req.body;
+    const reportId = sanitizeDocumentId(req.body?.reportId);
 
-    if (!reportId || typeof reportId !== 'string') {
+    if (!reportId) {
       return res.status(400).json({
         success: false,
-        error: 'reportId is required',
+        error: 'reportId is required and must be a valid ID',
       });
     }
 

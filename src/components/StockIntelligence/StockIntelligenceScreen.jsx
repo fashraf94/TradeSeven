@@ -6,6 +6,7 @@ import React, { useState, useMemo, useRef, useCallback, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion';
 import { HOLO_COLORS } from '../../constants/holoTheme';
 import { TICKERS } from '@/data/stockIntelligenceData';
+import { useCooldown } from '../../hooks/useCooldown';
 
 // ─── Color Tokens (matches ResearchLandingPage.jsx) ─────────
 const C = {
@@ -378,6 +379,7 @@ const StockIntelligenceScreen = ({ onBack, stocksData, cryptoData, colors, user 
 
   const conversationEndRef = useRef(null);
   const inputRef = useRef(null);
+  const { isOnCooldown, trigger: triggerCooldown, remainingSeconds } = useCooldown(10000);
 
   // ─── Derived Data ─────────────────────────────────────────
   const allAssets = useMemo(() => [
@@ -447,7 +449,7 @@ const StockIntelligenceScreen = ({ onBack, stocksData, cryptoData, colors, user 
   }, []);
 
   const handleAsk = useCallback(async (questionText) => {
-    if (!selectedSymbol || !questionText.trim() || isLoading) return;
+    if (!selectedSymbol || !questionText.trim() || isLoading || isOnCooldown) return;
 
     const userMsg = { role: 'user', content: questionText };
     setConversation(prev => [...prev.slice(-4), userMsg]);
@@ -456,17 +458,19 @@ const StockIntelligenceScreen = ({ onBack, stocksData, cryptoData, colors, user 
     setError(null);
 
     try {
-      const res = await fetch('/api/stock-intelligence', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          symbol: selectedSymbol.symbol,
-          question: questionText,
-          context: { currentScreen: 'stockIntelligence' },
-          ...(isSupported ? { mode } : {}),
-        }),
+      const data = await triggerCooldown(async () => {
+        const res = await fetch('/api/stock-intelligence', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            symbol: selectedSymbol.symbol,
+            question: questionText,
+            context: { currentScreen: 'stockIntelligence' },
+            ...(isSupported ? { mode } : {}),
+          }),
+        });
+        return res.json();
       });
-      const data = await res.json();
 
       // Safety nets only for non-intelligence mode (JSON responses)
       if (!data.analysis?.intelligenceMode) {
@@ -536,7 +540,7 @@ const StockIntelligenceScreen = ({ onBack, stocksData, cryptoData, colors, user 
     } finally {
       setIsLoading(false);
     }
-  }, [selectedSymbol, isLoading, isSupported, mode]);
+  }, [selectedSymbol, isLoading, isSupported, mode, isOnCooldown, triggerCooldown]);
 
   const handleSubmit = useCallback((e) => {
     e?.preventDefault();
@@ -1080,21 +1084,27 @@ const StockIntelligenceScreen = ({ onBack, stocksData, cryptoData, colors, user 
             />
             <button
               type="submit"
-              disabled={!question.trim() || isLoading}
+              disabled={!question.trim() || isLoading || isOnCooldown}
               style={{
-                width: '38px',
+                width: isOnCooldown ? 'auto' : '38px',
                 height: '38px',
                 borderRadius: '12px',
-                background: question.trim() && !isLoading ? C.cyan : C.bgElevated,
+                background: question.trim() && !isLoading && !isOnCooldown ? C.cyan : C.bgElevated,
                 border: 'none',
-                cursor: question.trim() && !isLoading ? 'pointer' : 'default',
+                cursor: question.trim() && !isLoading && !isOnCooldown ? 'pointer' : 'default',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 transition: 'all 0.2s',
                 flexShrink: 0,
+                padding: isOnCooldown ? '0 10px' : 0,
+                fontSize: '11px',
+                color: C.textMuted,
               }}
             >
+              {isOnCooldown ? (
+                `${remainingSeconds}s`
+              ) : (
               <svg
                 width="16" height="16" viewBox="0 0 24 24" fill="none"
                 stroke={question.trim() && !isLoading ? C.bgPrimary : C.textMuted}
@@ -1102,6 +1112,7 @@ const StockIntelligenceScreen = ({ onBack, stocksData, cryptoData, colors, user 
               >
                 <path d="M12 19V5" /><path d="M5 12l7-7 7 7" />
               </svg>
+              )}
             </button>
           </form>
         </div>

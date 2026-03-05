@@ -10,6 +10,7 @@
  */
 
 import { applySecurityMiddleware } from '../_utils/security.js';
+import { sanitizeDocumentId } from '../_utils/sanitizeInput.js';
 
 export default async function handler(req, res) {
   // Security middleware
@@ -21,17 +22,18 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { symbol, dashboard } = req.query;
+  const { symbol: rawSymbol, dashboard } = req.query;
 
   if (dashboard === 'true') {
     return handleDashboard(req, res);
   }
 
+  const symbol = rawSymbol ? sanitizeDocumentId(rawSymbol.toUpperCase(), /^[A-Z0-9.-]+$/) : null;
   if (!symbol) {
-    return res.status(400).json({ error: 'Symbol required (or use dashboard=true for stats)' });
+    return res.status(400).json({ error: 'Valid symbol required (or use dashboard=true for stats)' });
   }
 
-  return handleSymbolStatus(req, res, symbol.toUpperCase());
+  return handleSymbolStatus(req, res, symbol);
 }
 
 /**

@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Bug, X, Send, CheckCircle, AlertTriangle, Loader2 } from 'lucide-react';
 import useErrorCapture from './useErrorCapture';
+import { useCooldown } from '../../hooks/useCooldown';
 
 // =============================================================================
 // CONSTANTS
@@ -84,6 +85,9 @@ export default function ClashBotWidget({
 
   // Error capture hook
   const { getRecentErrors, clearErrors } = useErrorCapture();
+
+  // Cooldown to prevent rapid-fire submissions
+  const { isOnCooldown, trigger: triggerCooldown, remainingSeconds } = useCooldown(30000);
 
   // ─── HELPERS ───────────────────────────────────────────────────
 
@@ -203,6 +207,7 @@ export default function ClashBotWidget({
   // ─── API SUBMISSION ───────────────────────────────────────────
 
   const submitReport = async () => {
+    if (isOnCooldown) return;
     setPhase(STATES.SUBMITTING);
     setSubmitError(false);
 
@@ -226,15 +231,16 @@ export default function ClashBotWidget({
     };
 
     try {
-      const response = await fetch('/api/bug-report', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userDescription, metadata }),
+      const data = await triggerCooldown(async () => {
+        const response = await fetch('/api/bug-report', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userDescription, metadata }),
+        });
+        return response.json();
       });
 
-      const data = await response.json();
-
-      if (data.success && data.ticketNumber) {
+      if (data && data.success && data.ticketNumber) {
         setTicketNumber(data.ticketNumber);
         setPhase(STATES.CONFIRMED);
         setTimeout(() => {
@@ -495,29 +501,34 @@ export default function ClashBotWidget({
                 />
                 <button
                   onClick={handleSend}
-                  disabled={!inputValue.trim()}
+                  disabled={!inputValue.trim() || isOnCooldown}
                   style={{
-                    width: 36,
+                    width: isOnCooldown ? 'auto' : 36,
                     height: 36,
                     borderRadius: 8,
-                    backgroundColor: inputValue.trim()
+                    backgroundColor: inputValue.trim() && !isOnCooldown
                       ? (colors.cyan || '#00d9ff')
                       : (colors.elevated || '#21262d'),
                     border: 'none',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    cursor: inputValue.trim() ? 'pointer' : 'default',
+                    cursor: inputValue.trim() && !isOnCooldown ? 'pointer' : 'default',
                     transition: 'background-color 0.15s',
                     outline: 'none',
                     flexShrink: 0,
+                    padding: isOnCooldown ? '0 8px' : 0,
+                    fontSize: 11,
+                    color: colors.textMuted || '#484f58',
                   }}
                   aria-label="Send message"
                 >
-                  <Send
-                    size={16}
-                    color={inputValue.trim() ? '#000' : (colors.textMuted || '#6e7681')}
-                  />
+                  {isOnCooldown ? `${remainingSeconds}s` : (
+                    <Send
+                      size={16}
+                      color={inputValue.trim() ? '#000' : (colors.textMuted || '#6e7681')}
+                    />
+                  )}
                 </button>
               </div>
             )}

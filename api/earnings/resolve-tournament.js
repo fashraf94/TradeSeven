@@ -14,6 +14,7 @@ import { initializeApp, getApps, cert } from 'firebase-admin/app';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { getEarningsResult } from './_helpers/getEarningsResult.js';
 import { safeParseDate, toYYYYMMDD } from '../../src/utils/dateUtils.js';
+import { sanitizeDocumentId } from '../_utils/sanitizeInput.js';
 
 // Structured logging helper with timestamps and consistent prefixes
 const LOG_PREFIX = '[EarningsResolution]';
@@ -196,7 +197,11 @@ export default async function handler(req, res) {
 
   try {
     const db = getFirebaseAdmin();
-    const { tournamentId, dryRun, force } = req.query;
+    const { tournamentId: rawTournamentId, dryRun, force } = req.query;
+    const tournamentId = rawTournamentId ? sanitizeDocumentId(rawTournamentId) : null;
+    if (rawTournamentId && !tournamentId) {
+      return res.status(400).json({ error: 'Invalid tournament ID format' });
+    }
     const isDryRun = dryRun === 'true';
     const forceResolve = force === 'true';
 

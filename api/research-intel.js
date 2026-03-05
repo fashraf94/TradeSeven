@@ -135,8 +135,8 @@ export default async function handler(req, res) {
 
   try {
     const { context } = req.body;
-    if (!context) {
-      return res.status(400).json({ success: false, error: 'Missing context' });
+    if (!context || typeof context !== 'object') {
+      return res.status(400).json({ success: false, error: 'Missing or invalid context' });
     }
 
     // Read Market Pulse cache for news enrichment (best-effort, non-blocking)

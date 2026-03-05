@@ -43,15 +43,12 @@ const DEV_ORIGINS = [
 // =============================================================================
 
 /**
- * Check if we're in a development/preview environment
+ * Check if we're in a development/preview environment.
+ * Defaults to PRODUCTION (restrictive) when VERCEL_ENV is unset.
  */
 export function isDevelopment() {
-  return (
-    process.env.VERCEL_ENV === 'development' ||
-    process.env.VERCEL_ENV === 'preview' ||
-    process.env.NODE_ENV === 'development' ||
-    !process.env.VERCEL_ENV  // Local development without Vercel CLI
-  );
+  const env = process.env.VERCEL_ENV;
+  return env === 'development' || env === 'preview' || process.env.NODE_ENV === 'development';
 }
 
 /**
@@ -71,18 +68,23 @@ export function isOriginAllowed(origin) {
 
   const allowed = getAllowedOrigins();
 
-  // Check exact match or prefix match (for Vercel preview URLs)
-  return allowed.some(allowedOrigin => {
-    if (origin === allowedOrigin) return true;
-    // Allow Vercel preview URLs like project-name-abc123.vercel.app
-    if (allowedOrigin.includes('vercel.app')) {
-      const baseDomain = allowedOrigin.replace('https://', '').replace('.vercel.app', '');
-      const originDomain = origin.replace('https://', '').replace('.vercel.app', '');
-      // Match if origin starts with same base name (handles preview URLs)
-      return originDomain.startsWith(baseDomain.split('-')[0]);
+  // Check exact match first
+  if (allowed.includes(origin)) return true;
+
+  // Check Vercel preview URLs (pattern: {project}-{hash}-{scope}.vercel.app)
+  // Match against full project name prefix to prevent subdomain spoofing
+  const PREVIEW_PREFIXES = ['trade-seven-cyan', 'trade-seven', 'portfolio-duel', 'marketclash'];
+  try {
+    const url = new URL(origin);
+    if (url.hostname.endsWith('.vercel.app') && url.protocol === 'https:') {
+      const subdomain = url.hostname.replace('.vercel.app', '');
+      return PREVIEW_PREFIXES.some(prefix => subdomain === prefix || subdomain.startsWith(prefix + '-'));
     }
-    return false;
-  });
+  } catch {
+    // Invalid URL
+  }
+
+  return false;
 }
 
 // =============================================================================
@@ -118,7 +120,8 @@ export function applyCORS(req, res, { strictOrigin = false } = {}) {
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
   res.setHeader('Access-Control-Max-Age', '86400'); // 24 hours preflight cache
-  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  // Access-Control-Allow-Credentials removed — not needed (Firebase auth is client-side).
+  // Including it amplifies the impact of any CORS origin misconfiguration.
 }
 
 // =============================================================================

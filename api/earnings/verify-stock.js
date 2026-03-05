@@ -10,6 +10,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { applySecurityMiddleware } from '../_utils/security.js';
 import { CACHE_TTLS } from '../../src/config/earningsConfig.js';
+import { sanitizeDocumentId } from '../_utils/sanitizeInput.js';
 
 // Initialize Anthropic client lazily
 let anthropicClient = null;
@@ -32,18 +33,17 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { symbol, quarters = 12, forceRefresh = false } = req.query;
+  const { symbol: rawSymbol, quarters = 12, forceRefresh = false } = req.query;
 
-  if (!symbol) {
-    return res.status(400).json({ error: 'Symbol required' });
+  const upperSymbol = rawSymbol ? sanitizeDocumentId(rawSymbol.toUpperCase(), /^[A-Z0-9.-]+$/) : null;
+  if (!upperSymbol) {
+    return res.status(400).json({ error: 'Valid stock symbol required' });
   }
 
   if (!process.env.CLAUDE_API_KEY) {
     console.error('[verify-stock] CLAUDE_API_KEY not configured');
     return res.status(500).json({ error: 'Claude API key not configured' });
   }
-
-  const upperSymbol = symbol.toUpperCase();
 
   try {
     console.log(`[verify-stock] Starting verification for ${upperSymbol}, ${quarters} quarters`);
