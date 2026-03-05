@@ -41,8 +41,11 @@ export default async function handler(req, res) {
 
   try {
     const { watchlist, stockData } = req.body;
-    if (!watchlist?.length) {
-      return res.status(400).json({ success: false, error: 'Missing watchlist' });
+    if (!Array.isArray(watchlist) || !watchlist.length) {
+      return res.status(400).json({ success: false, error: 'Missing or invalid watchlist' });
+    }
+    if (stockData && !Array.isArray(stockData)) {
+      return res.status(400).json({ success: false, error: 'stockData must be an array' });
     }
 
     // Check memory cache

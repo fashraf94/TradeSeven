@@ -2,6 +2,8 @@
 // AI Advisor endpoint using Claude API for Research and Draft advisors
 
 import { applySecurityMiddleware } from './_utils/security.js';
+import { sanitizeInput } from './_utils/sanitizeInput.js';
+import { getSystemPromptForMode } from './_utils/technicalAnalysisPrompts.js';
 
 // Dynamic system prompt with current date
 const getResearchSystemPrompt = () => {
@@ -978,13 +980,19 @@ export default async function handler(req, res) {
 
     // Handle technical-analysis advisorType for AI-powered technical analysis
     if (advisorType === 'technical-analysis') {
-      const { systemPrompt, prompt: techPrompt, maxTokens: techMaxTokens, mode } = req.body;
+      const { prompt: techPrompt, maxTokens: techMaxTokens, mode } = req.body;
+      // systemPrompt from req.body is intentionally ignored — server selects prompt based on mode
 
       if (!techPrompt) {
         return res.status(400).json({ error: 'Missing prompt for technical analysis' });
       }
 
-      console.log(`[AI Advisor] Technical analysis request (${mode || 'quick'} mode), prompt length:`, techPrompt.length);
+      const sanitizedPrompt = sanitizeInput(techPrompt, 5000);
+      if (!sanitizedPrompt) {
+        return res.status(400).json({ error: 'Invalid prompt for technical analysis' });
+      }
+
+      console.log(`[AI Advisor] Technical analysis request (${mode || 'quick'} mode), prompt length:`, sanitizedPrompt.length);
 
       const response = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
@@ -996,9 +1004,9 @@ export default async function handler(req, res) {
         body: JSON.stringify({
           model: mode === 'deep' ? 'claude-sonnet-4-20250514' : 'claude-haiku-4-5-20251001',
           max_tokens: techMaxTokens || (mode === 'deep' ? 3000 : 800),
-          system: systemPrompt,
+          system: getSystemPromptForMode(mode),
           messages: [
-            { role: 'user', content: techPrompt }
+            { role: 'user', content: sanitizedPrompt }
           ],
         }),
       });
@@ -1021,8 +1029,9 @@ export default async function handler(req, res) {
       });
     }
 
-    // Use message or prompt, whichever is provided
-    const userInput = message || prompt;
+    // Use message or prompt, whichever is provided — sanitize for prompt injection
+    const rawInput = message || prompt;
+    const userInput = rawInput ? sanitizeInput(rawInput, 3000) : null;
 
     if (!advisorType || (!userInput && !action)) {
       console.error('[AI Advisor] Missing required fields:', { advisorType, hasMessage: !!message, hasPrompt: !!prompt, action });

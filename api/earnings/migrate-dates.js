@@ -28,6 +28,7 @@
 import { initializeApp, getApps, cert } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 import { isEmptyDate, toYYYYMMDD } from '../../src/utils/dateUtils.js';
+import { sanitizeDocumentId } from '../_utils/sanitizeInput.js';
 
 // Initialize Firebase Admin
 function getFirebaseAdmin() {
@@ -111,7 +112,11 @@ export default async function handler(req, res) {
   }
 
   const isDryRun = req.query.dryRun === 'true';
-  const tournamentId = req.query.tournamentId; // Optional: specific tournament
+  const rawTournamentId = req.query.tournamentId;
+  const tournamentId = rawTournamentId ? sanitizeDocumentId(rawTournamentId) : null;
+  if (rawTournamentId && !tournamentId) {
+    return res.status(400).json({ error: 'Invalid tournament ID format' });
+  }
 
   console.log('');
   console.log('========================================');

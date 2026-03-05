@@ -3,6 +3,7 @@
 // Called when user taps a DiscoveryCard in the mobile Research Intelligence Hub
 
 import { applySecurityMiddleware } from './_utils/security.js';
+import { sanitizeInput } from './_utils/sanitizeInput.js';
 
 const SYSTEM_PROMPT = `You are performing a focused deep-dive analysis of a single stock for the MarketClash educational platform.
 
@@ -39,10 +40,11 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { symbol, discoveryContext, sectorContext } = req.body;
+    const { symbol, discoveryContext: rawDiscovery, sectorContext } = req.body;
     if (!symbol) {
       return res.status(400).json({ success: false, error: 'Missing symbol' });
     }
+    const discoveryContext = rawDiscovery ? sanitizeInput(rawDiscovery, 2000) : null;
 
     const userPrompt = `Analyze ${symbol} for educational pattern detection.
 

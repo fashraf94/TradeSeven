@@ -3,6 +3,7 @@
 // Powers the mobile Research Intelligence Hub
 
 import { applySecurityMiddleware } from './_utils/security.js';
+import { sanitizeInput } from './_utils/sanitizeInput.js';
 import { getFromCache, setInCache, CACHE_TIERS } from './_utils/serverCache.js';
 
 const SYSTEM_PROMPT = `You are the MarketClash Research Intelligence system. You produce STRUCTURED JSON intelligence for a competitive trading game app. Your output powers two views:
@@ -135,8 +136,8 @@ export default async function handler(req, res) {
 
   try {
     const { context } = req.body;
-    if (!context) {
-      return res.status(400).json({ success: false, error: 'Missing context' });
+    if (!context || typeof context !== 'object') {
+      return res.status(400).json({ success: false, error: 'Missing or invalid context' });
     }
 
     // Read Market Pulse cache for news enrichment (best-effort, non-blocking)

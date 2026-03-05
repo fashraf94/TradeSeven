@@ -3,6 +3,7 @@
 // Generates 1-2 sentence sports-broadcaster narration for scoring events.
 
 import { applySecurityMiddleware } from './_utils/security.js';
+import { sanitizeInput } from './_utils/sanitizeInput.js';
 
 const LOG_PREFIX = '[ClashCast]';
 
@@ -210,6 +211,20 @@ export default async function handler(req, res) {
 
   if (!event || !event.type) {
     return res.status(400).json({ success: false, error: 'Missing required field: event.type' });
+  }
+
+  // Sanitize user-controllable string fields in event and battleState
+  if (event.playerName) event.playerName = sanitizeInput(event.playerName, 100) || 'Player';
+  if (event.opponentName) event.opponentName = sanitizeInput(event.opponentName, 100) || 'Opponent';
+  if (event.asset) event.asset = sanitizeInput(event.asset, 20) || 'UNKNOWN';
+  if (battleState?.creatorName) battleState.creatorName = sanitizeInput(battleState.creatorName, 100) || 'Player 1';
+  if (battleState?.opponentName) battleState.opponentName = sanitizeInput(battleState.opponentName, 100) || 'Player 2';
+
+  // Sanitize recent commentary entries
+  if (Array.isArray(recentCommentary)) {
+    for (const entry of recentCommentary) {
+      if (entry?.commentary) entry.commentary = sanitizeInput(entry.commentary, 500) || '';
+    }
   }
 
   try {

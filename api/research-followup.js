@@ -3,6 +3,7 @@
 // Used by both mobile QuestionCard follow-ups and desktop DesktopIntelChat
 
 import { applySecurityMiddleware } from './_utils/security.js';
+import { sanitizeInput } from './_utils/sanitizeInput.js';
 
 const SYSTEM_PROMPT = `You are a market intelligence analyst for the MarketClash educational trading platform. A user is asking a follow-up question about today's market.
 
@@ -40,10 +41,12 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { question, parentContext, marketContext } = req.body;
+    const { question: rawQuestion, parentContext: rawParent, marketContext } = req.body;
+    const question = sanitizeInput(rawQuestion, 2000);
     if (!question) {
-      return res.status(400).json({ success: false, error: 'Missing question' });
+      return res.status(400).json({ success: false, error: 'Missing or invalid question' });
     }
+    const parentContext = rawParent ? sanitizeInput(rawParent, 2000) : null;
 
     const userPrompt = `PRIOR CONTEXT (what was already discussed):
 ${parentContext || 'No prior context'}

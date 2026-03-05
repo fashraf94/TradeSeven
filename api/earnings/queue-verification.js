@@ -10,6 +10,7 @@
  */
 
 import { applySecurityMiddleware } from '../_utils/security.js';
+import { sanitizeDocumentId } from '../_utils/sanitizeInput.js';
 
 // Priority stocks from earningsCalendarService - high-interest stocks for retail investors
 const PRIORITY_STOCKS = new Set([
@@ -60,13 +61,12 @@ export default async function handler(req, res) {
  * Add a stock to the verification queue
  */
 async function handleAddToQueue(req, res) {
-  const { symbol, reportDate, priority, marketCap, previousMismatches } = req.body;
+  const { symbol: rawSymbol, reportDate, priority, marketCap, previousMismatches } = req.body;
 
-  if (!symbol) {
-    return res.status(400).json({ error: 'Symbol required' });
+  const upperSymbol = rawSymbol ? sanitizeDocumentId(rawSymbol.toUpperCase(), /^[A-Z0-9.-]+$/) : null;
+  if (!upperSymbol) {
+    return res.status(400).json({ error: 'Valid stock symbol required' });
   }
-
-  const upperSymbol = symbol.toUpperCase();
 
   try {
     const db = await getFirestore();
@@ -165,13 +165,12 @@ async function handleAddToQueue(req, res) {
  * Get queue status for a symbol
  */
 async function handleGetQueueStatus(req, res) {
-  const { symbol } = req.query;
+  const { symbol: rawSymbol } = req.query;
 
-  if (!symbol) {
-    return res.status(400).json({ error: 'Symbol required' });
+  const upperSymbol = rawSymbol ? sanitizeDocumentId(rawSymbol.toUpperCase(), /^[A-Z0-9.-]+$/) : null;
+  if (!upperSymbol) {
+    return res.status(400).json({ error: 'Valid stock symbol required' });
   }
-
-  const upperSymbol = symbol.toUpperCase();
 
   try {
     const db = await getFirestore();

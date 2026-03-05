@@ -8,6 +8,7 @@
 
 import { initializeApp, getApps, cert } from 'firebase-admin/app';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
+import { sanitizeDocumentId } from '../_utils/sanitizeInput.js';
 
 const LOG_PREFIX = '[OptionsResolution]';
 
@@ -213,7 +214,11 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { dryRun, testMode, tournamentId: specificTournamentId } = req.query;
+  const { dryRun, testMode, tournamentId: rawTournamentId } = req.query;
+  const specificTournamentId = rawTournamentId ? sanitizeDocumentId(rawTournamentId) : null;
+  if (rawTournamentId && !specificTournamentId) {
+    return res.status(400).json({ error: 'Invalid tournament ID format' });
+  }
 
   logInfo('START', `Options tournament resolution started`, { dryRun, testMode, specificTournamentId });
 

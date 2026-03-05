@@ -5,6 +5,7 @@ import { getTopMoversWithNews, getMarketNews } from '../../services/eodhdAPI';
 
 import { useAssetResearch } from '../../hooks/useAssetResearch';
 import { useResearchIntelligence } from '../../hooks/useResearchIntelligence';
+import { useCooldown } from '../../hooks/useCooldown';
 import { IntelligenceProvider, useIntelligence } from '../../contexts/IntelligenceContext';
 import AssetResearchModal from '../draft/AssetResearchModal';
 import WhyMovingPopup from './WhyMovingPopup';
@@ -568,12 +569,14 @@ const DesktopIntelChat = ({ buildMarketContextString }) => {
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(false);
   const messagesEndRef = useRef(null);
+  const { isOnCooldown, trigger: triggerCooldown, remainingSeconds } = useCooldown(8000);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }, [messages.length]);
 
   const handleSend = useCallback(async (text) => {
+    if (isOnCooldown) return;
     setMessages(prev => [...prev, { role: 'user', text }]);
     setLoading(true);
 
@@ -585,12 +588,14 @@ const DesktopIntelChat = ({ buildMarketContextString }) => {
     const marketContext = buildMarketContextString ? buildMarketContextString() : '';
 
     try {
-      const res = await fetch('/api/research-followup', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question: text, parentContext, marketContext }),
+      const result = await triggerCooldown(async () => {
+        const res = await fetch('/api/research-followup', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ question: text, parentContext, marketContext }),
+        });
+        return res.json();
       });
-      const result = await res.json();
       if (result.success && result.data?.insights) {
         setMessages(prev => [...prev, { role: 'assistant', insights: result.data.insights }]);
       } else {
@@ -692,7 +697,7 @@ const DesktopIntelChat = ({ buildMarketContextString }) => {
       </div>
 
       {/* Input */}
-      <ChatInput placeholder="Ask about today's market..." onSend={handleSend} />
+      <ChatInput placeholder="Ask about today's market..." onSend={handleSend} isOnCooldown={isOnCooldown} remainingSeconds={remainingSeconds} />
     </motion.div>
   );
 };
@@ -817,16 +822,16 @@ const FollowUpPill = ({ text, onClick }) => (
 );
 
 // ─── ChatInput ─────────────────────────────────────────────
-const ChatInput = ({ placeholder, onSend, compact }) => {
+const ChatInput = ({ placeholder, onSend, compact, isOnCooldown, remainingSeconds }) => {
   const [value, setValue] = useState('');
   const [focused, setFocused] = useState(false);
 
   const handleSend = useCallback(() => {
     const trimmed = value.trim();
-    if (!trimmed) return;
+    if (!trimmed || isOnCooldown) return;
     onSend(trimmed);
     setValue('');
-  }, [value, onSend]);
+  }, [value, onSend, isOnCooldown]);
 
   return (
     <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
@@ -854,23 +859,25 @@ const ChatInput = ({ placeholder, onSend, compact }) => {
       />
       <button
         onClick={e => { e.stopPropagation(); handleSend(); }}
+        disabled={isOnCooldown}
         style={{
-          width: compact ? 32 : 36,
+          width: isOnCooldown ? 'auto' : (compact ? 32 : 36),
           height: compact ? 32 : 36,
           borderRadius: 10,
-          background: value.trim() ? `${C.cyan}20` : C.bgElevated,
-          border: `1px solid ${value.trim() ? C.cyan + '30' : C.border}`,
-          color: value.trim() ? C.cyan : C.textMuted,
-          fontSize: compact ? 14 : 16,
-          cursor: value.trim() ? 'pointer' : 'default',
+          background: value.trim() && !isOnCooldown ? `${C.cyan}20` : C.bgElevated,
+          border: `1px solid ${value.trim() && !isOnCooldown ? C.cyan + '30' : C.border}`,
+          color: value.trim() && !isOnCooldown ? C.cyan : C.textMuted,
+          fontSize: isOnCooldown ? 11 : (compact ? 14 : 16),
+          cursor: value.trim() && !isOnCooldown ? 'pointer' : 'default',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
           transition: 'all 0.2s',
           flexShrink: 0,
+          padding: isOnCooldown ? '0 8px' : 0,
         }}
       >
-        {'\u2191'}
+        {isOnCooldown ? `${remainingSeconds}s` : '\u2191'}
       </button>
     </div>
   );
