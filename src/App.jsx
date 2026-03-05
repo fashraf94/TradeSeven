@@ -582,6 +582,48 @@ const generateAIOpponentPortfolio = (userPortfolio) => {
 const getUsername = getPlayerUsername;
 
 /**
+ * Subscribe WebSocket to symbols and wait for prices to arrive.
+ * Returns cached prices after a brief wait for live data.
+ */
+async function getWsPricesForSymbols(symbols) {
+  const prices = {};
+  if (!wsManager || !symbols?.length) return prices;
+
+  // Subscribe to these symbols (wsManager.subscribe auto-routes stock vs crypto)
+  try {
+    wsManager.subscribe(symbols);
+  } catch (e) {
+    console.warn('[Price Capture] WS subscribe failed:', e.message);
+  }
+
+  // Wait up to 2 seconds for prices to arrive
+  const maxWait = 2000;
+  const checkInterval = 200;
+  const startTime = Date.now();
+
+  while (Date.now() - startTime < maxWait) {
+    const cached = wsManager.getAllCachedPrices();
+    let found = 0;
+    for (const sym of symbols) {
+      if (cached[sym]?.price > 0) found++;
+    }
+    if (found >= symbols.length * 0.7) break;
+    await new Promise(r => setTimeout(r, checkInterval));
+  }
+
+  const elapsed = Date.now() - startTime;
+  const cached = wsManager.getAllCachedPrices();
+  for (const sym of symbols) {
+    if (cached[sym]?.price > 0) {
+      prices[sym] = cached[sym].price;
+    }
+  }
+  console.log(`[Price Capture] WS subscribe + wait took ${elapsed}ms, got ${Object.keys(prices).length}/${symbols.length} symbols`);
+
+  return prices;
+}
+
+/**
  * Fetch live prices for battle activation with WebSocket override.
  * Uses getLivePrices (cache-busting during market hours) + WS prices as primary source.
  */
@@ -598,23 +640,18 @@ async function fetchBattlePrices(symbols) {
     console.warn('[Price Capture] getLivePrices failed:', e.message);
   }
 
-  // Step 2: Override with WebSocket live prices (most fresh)
-  const wsCached = wsManager.getAllCachedPrices();
+  // Step 2: Subscribe to WS and wait for live prices
+  const wsPrices = await getWsPricesForSymbols(symbols);
   let wsOverrides = 0;
   for (const sym of symbols) {
-    if (wsCached[sym]?.price > 0) {
-      startingPrices[sym] = wsCached[sym].price;
+    if (wsPrices[sym] > 0) {
+      startingPrices[sym] = wsPrices[sym];
       wsOverrides++;
     }
   }
-  if (wsOverrides > 0) priceSource = 'WS+API';
+  if (wsOverrides > 0) priceSource = `WS(${wsOverrides})+API`;
 
-  console.log('[Price Capture] livePrices received:',
-    wsOverrides > 0 ? wsOverrides + ' WS symbols' : 'no WS prices');
-  console.log('[Price Capture] Final startingPrices:',
-    Object.entries(startingPrices).slice(0, 5).map(([s, p]) =>
-      `${s}=$${typeof p === 'number' ? p.toFixed(2) : p}`).join(', '));
-  console.log('[Price Capture] Source:', priceSource);
+  console.log(`[Price Capture] Source: ${priceSource}, WS overrides: ${wsOverrides}/${symbols.length}`);
 
   return { startingPrices, priceSource };
 }
@@ -22882,12 +22919,12 @@ export default function PortfolioDuel() {
               username: user.displayName || user.username,
               avatar: user.avatar || '',
             };
-            // Collect live WebSocket prices for all portfolio symbols
-            const wsCached = wsManager.getAllCachedPrices();
-            const livePrices = {};
-            [...(portfolio.star || []), ...(portfolio.core || []), ...(portfolio.support || []), ...(portfolio.bench?.stocks || [])]
-              .filter(Boolean).map(a => a.symbol).filter(Boolean)
-              .forEach(sym => { if (wsCached[sym]?.price > 0) livePrices[sym] = wsCached[sym].price; });
+            // Subscribe WS to battle symbols and wait for live prices
+            const allJoinSymbols = [
+              ...(portfolio.star || []), ...(portfolio.core || []),
+              ...(portfolio.support || []), ...(portfolio.bench?.stocks || []),
+            ].filter(Boolean).map(a => a.symbol).filter(Boolean);
+            const livePrices = await getWsPricesForSymbols([...new Set(allJoinSymbols)]);
 
             // Use the correct join function based on version
             const joinFn = joinBattleVersion >= 4 ? joinBaggerBombBattleV4 : joinBaggerBombBattleV3;
@@ -22936,12 +22973,12 @@ export default function PortfolioDuel() {
               username: user.displayName || user.username,
               avatar: user.avatar || '',
             };
-            // Collect live WebSocket prices for all portfolio symbols
-            const wsCached = wsManager.getAllCachedPrices();
-            const livePrices = {};
-            [...(portfolio.star || []), ...(portfolio.core || []), ...(portfolio.support || []), ...(portfolio.bench?.stocks || [])]
-              .filter(Boolean).map(a => a.symbol).filter(Boolean)
-              .forEach(sym => { if (wsCached[sym]?.price > 0) livePrices[sym] = wsCached[sym].price; });
+            // Subscribe WS to battle symbols and wait for live prices
+            const allJoinSymbols = [
+              ...(portfolio.star || []), ...(portfolio.core || []),
+              ...(portfolio.support || []), ...(portfolio.bench?.stocks || []),
+            ].filter(Boolean).map(a => a.symbol).filter(Boolean);
+            const livePrices = await getWsPricesForSymbols([...new Set(allJoinSymbols)]);
 
             let result;
             try {
