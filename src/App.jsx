@@ -9,12 +9,11 @@ import { calculateV4FinalScores } from './services/dailyScoringV4Service';
 // Firebase battle service for PvP battles
 import { createBattle as createFirestoreBattle, joinBattle as joinFirestoreBattle, subscribeToBattles, createBaggerBombBattle, createBaggerBombBattleV3, createBaggerBombBattleV4, joinBaggerBombBattle, joinBaggerBombBattleV3, joinBaggerBombBattleV4, subscribeToLobby, subscribeToAllLobbies, getOpenBaggerBombBattles, saveTrackedPattern, getUserTrackedPatterns, getUserPatternStats, cancelTrackedPattern, checkPatternResolution, completeBattle } from './firebase/firebaseService';
 // EODHD API - All-in-one provider for stocks and crypto (replaces Finnhub + CoinGecko)
-import { stockAPI, POPULAR_STOCKS, POPULAR_CRYPTO, FALLBACK_CRYPTO_PRICES, getMarketNews, getTopMoversWithNews, getMultipleStockNews, getStockNews, fetchLatestEarnings, fetchHistoricalOHLCV, getLivePrices } from './services/eodhdAPI';
+import { stockAPI, POPULAR_STOCKS, POPULAR_CRYPTO, FALLBACK_CRYPTO_PRICES, getMarketNews, getTopMoversWithNews, getMultipleStockNews, getStockNews, fetchLatestEarnings, fetchHistoricalOHLCV, fetchFreshPrices } from './services/eodhdAPI';
 // Technical Analysis AI Service
 import { analyzeStockWithAI, generateFallbackAnalysis } from './services/technicalAnalysisAI';
 // WebSocket → Cache bridge (flushes WS prices to cacheService so REST calls are skipped)
 import { startWsCacheBridge } from './services/wsCacheBridge';
-import { wsManager } from './services/websocketService';
 import './firebase/config';
 import { motion } from 'framer-motion';
 // Event watchlist configuration for Week Ahead calendar
@@ -582,78 +581,21 @@ const generateAIOpponentPortfolio = (userPortfolio) => {
 const getUsername = getPlayerUsername;
 
 /**
- * Subscribe WebSocket to symbols and wait for prices to arrive.
- * Returns cached prices after a brief wait for live data.
- */
-async function getWsPricesForSymbols(symbols) {
-  const prices = {};
-  if (!wsManager || !symbols?.length) return prices;
-
-  // Subscribe to these symbols (wsManager.subscribe auto-routes stock vs crypto)
-  try {
-    wsManager.subscribe(symbols);
-  } catch (e) {
-    console.warn('[Price Capture] WS subscribe failed:', e.message);
-  }
-
-  // Wait up to 2 seconds for prices to arrive
-  const maxWait = 2000;
-  const checkInterval = 200;
-  const startTime = Date.now();
-
-  while (Date.now() - startTime < maxWait) {
-    const cached = wsManager.getAllCachedPrices();
-    let found = 0;
-    for (const sym of symbols) {
-      if (cached[sym]?.price > 0) found++;
-    }
-    if (found >= symbols.length * 0.7) break;
-    await new Promise(r => setTimeout(r, checkInterval));
-  }
-
-  const elapsed = Date.now() - startTime;
-  const cached = wsManager.getAllCachedPrices();
-  for (const sym of symbols) {
-    if (cached[sym]?.price > 0) {
-      prices[sym] = cached[sym].price;
-    }
-  }
-  console.log(`[Price Capture] WS subscribe + wait took ${elapsed}ms, got ${Object.keys(prices).length}/${symbols.length} symbols`);
-
-  return prices;
-}
-
-/**
- * Fetch live prices for battle activation with WebSocket override.
- * Uses getLivePrices (cache-busting during market hours) + WS prices as primary source.
+ * Fetch fresh uncached prices from EODHD for battle activation.
+ * No WebSocket, no client cache, no server cache — direct API call.
  */
 async function fetchBattlePrices(symbols) {
-  let startingPrices = {};
-  let priceSource = 'EOD';
+  console.log(`[Price Capture] Fetching fresh prices for ${symbols.length} symbols...`);
+  const startTime = Date.now();
 
-  // Step 1: Fetch from API with cache busting
-  try {
-    const { prices, source } = await getLivePrices(symbols);
-    startingPrices = { ...prices };
-    priceSource = source || 'EOD';
-  } catch (e) {
-    console.warn('[Price Capture] getLivePrices failed:', e.message);
-  }
+  const startingPrices = await fetchFreshPrices(symbols);
 
-  // Step 2: Subscribe to WS and wait for live prices
-  const wsPrices = await getWsPricesForSymbols(symbols);
-  let wsOverrides = 0;
-  for (const sym of symbols) {
-    if (wsPrices[sym] > 0) {
-      startingPrices[sym] = wsPrices[sym];
-      wsOverrides++;
-    }
-  }
-  if (wsOverrides > 0) priceSource = `WS(${wsOverrides})+API`;
+  const elapsed = Date.now() - startTime;
+  console.log(`[Price Capture] Fresh fetch took ${elapsed}ms, got ${Object.keys(startingPrices).length}/${symbols.length} symbols`);
+  console.log('[Price Capture] Prices:',
+    Object.entries(startingPrices).slice(0, 5).map(([s, p]) => `${s}=$${p?.toFixed?.(2) || p}`).join(', '));
 
-  console.log(`[Price Capture] Source: ${priceSource}, WS overrides: ${wsOverrides}/${symbols.length}`);
-
-  return { startingPrices, priceSource };
+  return { startingPrices, priceSource: 'FRESH' };
 }
 
 // Create Training Battle - 100% Client-Side (No API)
@@ -22919,12 +22861,12 @@ export default function PortfolioDuel() {
               username: user.displayName || user.username,
               avatar: user.avatar || '',
             };
-            // Subscribe WS to battle symbols and wait for live prices
+            // Fetch fresh uncached prices for battle activation
             const allJoinSymbols = [
               ...(portfolio.star || []), ...(portfolio.core || []),
               ...(portfolio.support || []), ...(portfolio.bench?.stocks || []),
             ].filter(Boolean).map(a => a.symbol).filter(Boolean);
-            const livePrices = await getWsPricesForSymbols([...new Set(allJoinSymbols)]);
+            const livePrices = await fetchFreshPrices([...new Set(allJoinSymbols)]);
 
             // Use the correct join function based on version
             const joinFn = joinBattleVersion >= 4 ? joinBaggerBombBattleV4 : joinBaggerBombBattleV3;
@@ -22973,12 +22915,12 @@ export default function PortfolioDuel() {
               username: user.displayName || user.username,
               avatar: user.avatar || '',
             };
-            // Subscribe WS to battle symbols and wait for live prices
+            // Fetch fresh uncached prices for battle activation
             const allJoinSymbols = [
               ...(portfolio.star || []), ...(portfolio.core || []),
               ...(portfolio.support || []), ...(portfolio.bench?.stocks || []),
             ].filter(Boolean).map(a => a.symbol).filter(Boolean);
-            const livePrices = await getWsPricesForSymbols([...new Set(allJoinSymbols)]);
+            const livePrices = await fetchFreshPrices([...new Set(allJoinSymbols)]);
 
             let result;
             try {
