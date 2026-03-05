@@ -9,7 +9,8 @@ import { calculateV4FinalScores } from './services/dailyScoringV4Service';
 // Firebase battle service for PvP battles
 import { createBattle as createFirestoreBattle, joinBattle as joinFirestoreBattle, subscribeToBattles, createBaggerBombBattle, createBaggerBombBattleV3, createBaggerBombBattleV4, joinBaggerBombBattle, joinBaggerBombBattleV3, joinBaggerBombBattleV4, subscribeToLobby, subscribeToAllLobbies, getOpenBaggerBombBattles, saveTrackedPattern, getUserTrackedPatterns, getUserPatternStats, cancelTrackedPattern, checkPatternResolution, completeBattle } from './firebase/firebaseService';
 // EODHD API - All-in-one provider for stocks and crypto (replaces Finnhub + CoinGecko)
-import { stockAPI, POPULAR_STOCKS, POPULAR_CRYPTO, FALLBACK_CRYPTO_PRICES, getMarketNews, getTopMoversWithNews, getMultipleStockNews, getStockNews, fetchLatestEarnings, fetchHistoricalOHLCV, fetchFreshPrices } from './services/eodhdAPI';
+import { stockAPI, POPULAR_STOCKS, POPULAR_CRYPTO, FALLBACK_CRYPTO_PRICES, getMarketNews, getTopMoversWithNews, getMultipleStockNews, getStockNews, fetchLatestEarnings, fetchHistoricalOHLCV } from './services/eodhdAPI';
+import { captureBattlePrices } from './utils/priceCapture';
 // Technical Analysis AI Service
 import { analyzeStockWithAI, generateFallbackAnalysis } from './services/technicalAnalysisAI';
 // WebSocket → Cache bridge (flushes WS prices to cacheService so REST calls are skipped)
@@ -581,21 +582,20 @@ const generateAIOpponentPortfolio = (userPortfolio) => {
 const getUsername = getPlayerUsername;
 
 /**
- * Fetch fresh uncached prices from EODHD for battle activation.
- * No WebSocket, no client cache, no server cache — direct API call.
+ * Capture real-time prices for battle activation.
+ * Phase 1: WebSocket (real-time, 5s timeout)
+ * Phase 2: REST fallback for any symbols WebSocket missed
  */
 async function fetchBattlePrices(symbols) {
-  console.log(`[Price Capture] Fetching fresh prices for ${symbols.length} symbols...`);
+  console.log(`[Price Capture] Fetching prices for ${symbols.length} symbols...`);
   const startTime = Date.now();
 
-  const startingPrices = await fetchFreshPrices(symbols);
+  const startingPrices = await captureBattlePrices(symbols);
 
   const elapsed = Date.now() - startTime;
-  console.log(`[Price Capture] Fresh fetch took ${elapsed}ms, got ${Object.keys(startingPrices).length}/${symbols.length} symbols`);
-  console.log('[Price Capture] Prices:',
-    Object.entries(startingPrices).slice(0, 5).map(([s, p]) => `${s}=$${p?.toFixed?.(2) || p}`).join(', '));
+  console.log(`[Price Capture] Total: ${elapsed}ms, got ${Object.keys(startingPrices).length}/${symbols.length}`);
 
-  return { startingPrices, priceSource: 'FRESH' };
+  return { startingPrices, priceSource: 'WS+REST' };
 }
 
 // Create Training Battle - 100% Client-Side (No API)
@@ -22863,7 +22863,7 @@ export default function PortfolioDuel() {
             };
 
             // Use the correct join function based on version
-            // Join functions fetch fresh prices internally via fetchFreshPrices
+            // Join functions fetch real-time prices internally via captureBattlePrices
             const joinFn = joinBattleVersion >= 4 ? joinBaggerBombBattleV4 : joinBaggerBombBattleV3;
             const result = await joinFn(battleToJoin.id, joinData, { joinByBattleId: true });
             if (result?.success) {
@@ -22911,7 +22911,7 @@ export default function PortfolioDuel() {
               avatar: user.avatar || '',
             };
 
-            // Join functions fetch fresh prices internally via fetchFreshPrices
+            // Join functions fetch real-time prices internally via captureBattlePrices
             let result;
             try {
               result = await joinBaggerBombBattleV4(joinCode, joinData);

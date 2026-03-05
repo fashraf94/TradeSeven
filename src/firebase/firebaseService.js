@@ -1612,19 +1612,19 @@ export async function joinBaggerBombBattleV3(battleIdOrCode, opponentData, optio
 
     const allSymbols = [...new Set([...creatorSymbols, ...opponentSymbols, ...benchSymbols])];
 
-    // Fetch fresh, uncached prices for all symbols
-    const { fetchFreshPrices } = await import('../services/eodhdAPI.js');
+    // Capture real-time prices: WebSocket first, REST fallback
+    const { captureBattlePrices } = await import('../utils/priceCapture.js');
 
     let startingPrices = {};
-    const priceSource = 'FRESH';
+    const priceSource = 'WS+REST';
 
     try {
-      startingPrices = await fetchFreshPrices(allSymbols);
+      startingPrices = await captureBattlePrices(allSymbols);
     } catch (priceError) {
       console.warn('⚠️ Error fetching prices for V3 battle:', priceError.message);
     }
 
-    console.log(`[Price Capture V3] startingPrices (source: FRESH):`,
+    console.log(`[Price Capture V3] startingPrices (source: ${priceSource}):`,
       Object.entries(startingPrices).map(([s, p]) => `${s}=$${(p || 0).toFixed(2)}`).join(', '));
 
     // Initialize session prices with MORNING_BELL open
@@ -2021,19 +2021,19 @@ export async function joinBaggerBombBattleV4(battleIdOrCode, opponentData, optio
     const opponentSymbols = collectSymbols(sanitizedPortfolio);
     const allSymbols = [...new Set([...creatorSymbols, ...opponentSymbols])];
 
-    // Fetch fresh, uncached prices for all symbols
-    const { fetchFreshPrices } = await import('../services/eodhdAPI.js');
+    // Capture real-time prices: WebSocket first, REST fallback
+    const { captureBattlePrices } = await import('../utils/priceCapture.js');
 
     let startingPrices = {};
-    const priceSource = 'FRESH';
+    const priceSource = 'WS+REST';
 
     try {
-      startingPrices = await fetchFreshPrices(allSymbols);
+      startingPrices = await captureBattlePrices(allSymbols);
     } catch (priceError) {
       console.warn('⚠️ Error fetching prices for V4 battle:', priceError.message);
     }
 
-    console.log(`[Price Capture V4] startingPrices (source: FRESH):`,
+    console.log(`[Price Capture V4] startingPrices (source: ${priceSource}):`,
       Object.entries(startingPrices).map(([s, p]) => `${s}=$${(p || 0).toFixed(2)}`).join(', '));
 
     // Set day1 open prices = starting prices
