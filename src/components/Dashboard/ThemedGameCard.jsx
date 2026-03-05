@@ -11,6 +11,7 @@ const GAME_THEMES = {
   snakeDraft: {
     primary: HOLO_COLORS.defensive,
     secondary: '#059669',
+    descriptionColor: '#10b981',
     gradient: `linear-gradient(135deg, ${HOLO_COLORS.defensive} 0%, #059669 100%)`,
     glowColor: 'rgba(16, 185, 129, 0.4)',
     icon: TrendingUp,
@@ -20,6 +21,7 @@ const GAME_THEMES = {
   builder: {
     primary: HOLO_COLORS.cyan,
     secondary: HOLO_COLORS.sectorCommunication,
+    descriptionColor: '#00d9ff',
     gradient: `linear-gradient(135deg, ${HOLO_COLORS.cyan} 0%, ${HOLO_COLORS.sectorCommunication} 100%)`,
     glowColor: 'rgba(0, 255, 255, 0.4)',
     icon: Hammer,
@@ -29,6 +31,7 @@ const GAME_THEMES = {
   baggerBomb: {
     primary: '#dc2626',
     secondary: HOLO_COLORS.sectorMaterials,
+    descriptionColor: '#f59e0b',
     gradient: 'linear-gradient(135deg, #dc2626 0%, #f97316 100%)',
     glowColor: 'rgba(220, 38, 38, 0.4)',
     icon: Bomb,
@@ -38,6 +41,7 @@ const GAME_THEMES = {
   optionsArena: {
     primary: HOLO_COLORS.defensive,
     secondary: HOLO_COLORS.sectorCommunication,
+    descriptionColor: '#8b5cf6',
     gradient: `linear-gradient(135deg, ${HOLO_COLORS.defensive} 0%, ${HOLO_COLORS.sectorCommunication} 100%)`,
     glowColor: 'rgba(16, 185, 129, 0.4)',
     icon: Target,
@@ -47,6 +51,7 @@ const GAME_THEMES = {
   training: {
     primary: HOLO_COLORS.purple,
     secondary: '#6d28d9',
+    descriptionColor: '#8b5cf6',
     gradient: `linear-gradient(135deg, ${HOLO_COLORS.purple} 0%, #6d28d9 100%)`,
     glowColor: 'rgba(139, 92, 246, 0.4)',
     icon: Trophy,
@@ -306,7 +311,8 @@ export default function ThemedGameCard({
         {/* Description */}
         <div style={{
           fontSize: '13px',
-          color: HOLO_COLORS.textSecondary,
+          fontWeight: '500',
+          color: themeConfig.descriptionColor || HOLO_COLORS.textSecondary,
           marginBottom: duration ? '12px' : '0',
           lineHeight: '1.4',
           position: 'relative',
