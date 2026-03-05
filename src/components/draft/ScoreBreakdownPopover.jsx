@@ -49,7 +49,10 @@ const ScoreBreakdownPopover = ({ asset, events: battleEvents = [], onClose, entr
   // This is now sourced from battle.state.startingPrices via the enriched asset
   const battleEntry = baselinePrice || startingPrice || lockedPrice || (entryPriceProp > 0 ? entryPriceProp : 0);
   const hasBattleEntry = battleEntry > 0 && currentPrice > 0;
-  const changeFromEntry = hasBattleEntry ? ((currentPrice - battleEntry) / battleEntry) * 100 : 0;
+  const rawChangeFromEntry = hasBattleEntry ? ((currentPrice - battleEntry) / battleEntry) * 100 : 0;
+  // Negate for short positions — price going up is bad for shorts
+  const isShort = asset.direction === 'short';
+  const changeFromEntry = isShort ? -rawChangeFromEntry : rawChangeFromEntry;
 
   return ReactDOM.createPortal(
     <>
@@ -103,7 +106,7 @@ const ScoreBreakdownPopover = ({ asset, events: battleEvents = [], onClose, entr
             gap: '8px',
           }}>
             <span style={{ color: HOLO_COLORS.cyan }}>📊</span>
-            {symbol} Score Breakdown
+            {symbol}{isShort && <span style={{ fontSize: '10px', fontWeight: 600, color: '#ff6b6b', background: 'rgba(255, 107, 107, 0.15)', padding: '1px 5px', borderRadius: '3px', marginLeft: '4px' }}>SHORT ↓</span>} Score Breakdown
           </span>
           <button
             onClick={onClose}

@@ -246,11 +246,8 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
         return;
       }
 
-      let priceChange = ((currentPrice - assetOpenPrice) / assetOpenPrice) * 100;
-      // V5: Invert for short positions
-      if (asset.direction === 'short') {
-        priceChange = -priceChange;
-      }
+      const priceChange = ((currentPrice - assetOpenPrice) / assetOpenPrice) * 100;
+      // Short position inversion now handled inside calculateAssetScoreV3()
       const assetHistory = history[asset.symbol] || { maxMultiplier: 0, minMultiplier: 0 };
 
       // Compute high/low percent changes for intraday threshold detection
@@ -258,14 +255,10 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
       const extremeChanges = {};
       if (assetExtremes && assetOpenPrice > 0) {
         if (assetExtremes.high > 0) {
-          let highChange = ((assetExtremes.high - assetOpenPrice) / assetOpenPrice) * 100;
-          if (asset.direction === 'short') highChange = -highChange;
-          extremeChanges.highChange = highChange;
+          extremeChanges.highChange = ((assetExtremes.high - assetOpenPrice) / assetOpenPrice) * 100;
         }
         if (assetExtremes.low > 0) {
-          let lowChange = ((assetExtremes.low - assetOpenPrice) / assetOpenPrice) * 100;
-          if (asset.direction === 'short') lowChange = -lowChange;
-          extremeChanges.lowChange = lowChange;
+          extremeChanges.lowChange = ((assetExtremes.low - assetOpenPrice) / assetOpenPrice) * 100;
         }
       }
 

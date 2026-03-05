@@ -532,6 +532,19 @@ export function createThresholdEvent(player, symbol, thresholdName, multiplier, 
 export function calculateAssetScoreV3(asset, priceChange, history = {}, extremes = {}) {
   const baseATR = asset.baseATR || 2.5;
 
+  // Negate priceChange for short positions — shorts profit when price goes DOWN
+  const isShort = asset.direction === 'short';
+  if (isShort) {
+    priceChange = -priceChange;
+    // Also negate extremes so threshold detection (bombs/busts) works correctly for shorts
+    if (extremes.highChange != null || extremes.lowChange != null) {
+      extremes = {
+        highChange: extremes.highChange != null ? -extremes.highChange : undefined,
+        lowChange: extremes.lowChange != null ? -extremes.lowChange : undefined,
+      };
+    }
+  }
+
   // Guard: skip scoring if priceChange is invalid (NaN, Infinity, null)
   // This catches NaN from division-by-zero when baseline price is 0 (e.g., EODHD API failure at activation)
   if (priceChange == null || !isFinite(priceChange)) {
