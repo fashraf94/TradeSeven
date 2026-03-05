@@ -5,6 +5,7 @@
 import React from 'react';
 import { motion } from 'framer-motion';
 import { formatClashTimer } from '../../../utils/timerFormatters';
+import TugOfWarBar from './TugOfWarBar';
 
 // Score font stack
 const SCORE_FONT = "'Inter', 'SF Pro Display', system-ui, -apple-system, sans-serif";
@@ -38,8 +39,8 @@ export default function ClashCard1v1({
 
   // Winner-based score colors (green for winner, red for loser, tied = both green)
   const isPlayerWinning = myGain >= theirGain;
-  const playerScoreColor = isPlayerWinning ? '#00FF00' : '#FF0000';
-  const opponentScoreColor = isPlayerWinning ? '#FF0000' : '#00FF00';
+  const playerScoreColor = isPlayerWinning ? '#10b981' : '#ef4444';
+  const opponentScoreColor = isPlayerWinning ? '#ef4444' : '#10b981';
 
   // Border color logic
   const isUrgent = timer.urgent || timer.pulse;
@@ -334,6 +335,9 @@ export default function ClashCard1v1({
           </div>
         </div>
       </div>
+
+      {/* Tug-of-War Bar */}
+      <TugOfWarBar myScore={myGain} opponentScore={theirGain} />
     </motion.div>
   );
 }
