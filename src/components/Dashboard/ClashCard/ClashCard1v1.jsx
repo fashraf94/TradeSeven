@@ -1,19 +1,20 @@
 // /src/components/Dashboard/ClashCard/ClashCard1v1.jsx
 // 1v1 Clash Card for Builder and BaggerBomb battles
-// Features: VS layout, avatars with colored rings, tug-of-war bar, winner badges, timer
+// Features: VS layout, avatars with fixed gradients, winner-based score colors, crown badges, timer
 
 import React from 'react';
 import { motion } from 'framer-motion';
-import { Swords, Hammer, Bomb, Crown, Timer } from 'lucide-react';
-import TugOfWarBar from './TugOfWarBar';
 import { formatClashTimer } from '../../../utils/timerFormatters';
+
+// Score font stack
+const SCORE_FONT = "'Inter', 'SF Pro Display', system-ui, -apple-system, sans-serif";
 
 // Get battle type label and icon
 function getBattleTypeInfo(battle) {
   if (battle._v === 3 || battle._v === 2 || battle.type === 'baggerbomb') {
-    return { label: 'BAGGERBOMB', icon: Bomb, emoji: '💣', isBaggerBomb: true };
+    return { label: 'BAGGERBOMB', emoji: '💣', isBaggerBomb: true };
   }
-  return { label: 'BUILDER 1v1', icon: Hammer, emoji: '🏗️', isBaggerBomb: false };
+  return { label: 'BUILDER 1v1', emoji: '🏗️', isBaggerBomb: false };
 }
 
 // Truncate username
@@ -35,14 +36,20 @@ export default function ClashCard1v1({
   const isTraining = battle.isTrainingBattle;
   const isBaggerBombPoints = isV3 || typeInfo.isBaggerBomb;
 
-  // Border color logic
-  const borderColor = isTraining
-    ? '#9333ea'
-    : (timer.urgent || timer.pulse) ? '#ef4444' : '#00d9ff';
+  // Winner-based score colors (green for winner, red for loser, tied = both green)
+  const isPlayerWinning = myGain >= theirGain;
+  const playerScoreColor = isPlayerWinning ? '#00FF00' : '#FF0000';
+  const opponentScoreColor = isPlayerWinning ? '#FF0000' : '#00FF00';
 
-  const borderGlow = isMostUrgent && timer.pulse
-    ? `0 0 12px ${borderColor}60, 0 0 24px ${borderColor}30`
-    : `0 0 8px ${borderColor}20`;
+  // Border color logic
+  const isUrgent = timer.urgent || timer.pulse;
+  const borderColor = isTraining
+    ? 'rgba(147, 51, 234, 0.5)'
+    : isUrgent ? 'rgba(239, 68, 68, 0.5)' : 'rgba(0, 255, 255, 0.3)';
+
+  const cardGlow = isMostUrgent && timer.pulse
+    ? '0 0 12px rgba(239, 68, 68, 0.3), 0 0 24px rgba(239, 68, 68, 0.15)'
+    : '0 0 15px rgba(0, 255, 255, 0.08), inset 0 1px 0 rgba(0, 255, 255, 0.1)';
 
   return (
     <motion.div
@@ -56,14 +63,14 @@ export default function ClashCard1v1({
         maxWidth: '340px',
         minWidth: '280px',
         scrollSnapAlign: 'start',
-        background: '#161b22',
-        borderRadius: '16px',
-        border: `2px solid ${borderColor}`,
+        background: '#0d1117',
+        borderRadius: '12px',
+        border: `1px solid ${borderColor}`,
         padding: '16px',
         cursor: 'pointer',
         position: 'relative',
         overflow: 'hidden',
-        boxShadow: borderGlow,
+        boxShadow: cardGlow,
         transition: 'box-shadow 0.3s ease',
       }}
     >
@@ -71,9 +78,9 @@ export default function ClashCard1v1({
       {isMostUrgent && timer.pulse && (
         <div style={{
           position: 'absolute',
-          inset: -2,
-          borderRadius: '18px',
-          border: `2px solid ${borderColor}`,
+          inset: -1,
+          borderRadius: '13px',
+          border: '1px solid #ef4444',
           opacity: 0.5,
           animation: 'clash-pulse 1.5s ease-in-out infinite',
           pointerEvents: 'none',
@@ -90,7 +97,7 @@ export default function ClashCard1v1({
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <span style={{ fontSize: '16px' }}>{typeInfo.emoji}</span>
           <span style={{
-            fontSize: '12px',
+            fontSize: '13px',
             fontWeight: '700',
             color: '#e6edf3',
             textTransform: 'uppercase',
@@ -112,53 +119,48 @@ export default function ClashCard1v1({
           )}
         </div>
 
-        {/* Timer Badge */}
+        {/* Timer Pill */}
         <div style={{
           display: 'flex',
           alignItems: 'center',
           gap: '4px',
           padding: '4px 10px',
-          background: `${timer.color}15`,
-          borderRadius: '8px',
-          border: `1px solid ${timer.color}40`,
+          background: 'rgba(255, 255, 255, 0.06)',
+          borderRadius: '12px',
+          border: '1px solid rgba(255, 255, 255, 0.1)',
           animation: timer.pulse ? 'timer-pulse 1s ease-in-out infinite' : 'none',
         }}>
-          <Timer size={12} style={{ color: timer.color }} />
+          <span style={{ fontSize: '12px', color: '#8b949e' }}>⏱</span>
           <span style={{
             fontSize: '12px',
-            fontWeight: '700',
-            color: timer.color,
-            fontFamily: "'SF Mono', 'Monaco', monospace",
+            fontWeight: '400',
+            color: '#8b949e',
           }}>
             {timer.text}
           </span>
         </div>
       </div>
 
-      {/* VS Zone: Two avatars with returns */}
+      {/* VS Zone: Two avatars with scores */}
       <div style={{
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
-        marginBottom: '12px',
         gap: '8px',
       }}>
         {/* Your Side */}
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flex: 1 }}>
           <div style={{ position: 'relative', marginBottom: '8px' }}>
-            {/* Avatar Circle */}
+            {/* Avatar Circle — fixed cyan gradient for player */}
             <div style={{
               width: '48px',
               height: '48px',
               borderRadius: '50%',
-              background: isWinning
-                ? 'linear-gradient(135deg, rgba(16, 185, 129, 0.2) 0%, rgba(0, 217, 255, 0.2) 100%)'
-                : 'linear-gradient(135deg, rgba(239, 68, 68, 0.2) 0%, rgba(239, 68, 68, 0.1) 100%)',
-              border: `2px solid ${isWinning ? '#10b981' : '#ef4444'}`,
+              background: 'linear-gradient(135deg, #00d9ff 0%, #0099cc 100%)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              fontSize: '18px',
+              fontSize: '20px',
               fontWeight: '700',
               color: '#ffffff',
             }}>
@@ -168,8 +170,8 @@ export default function ClashCard1v1({
             {isWinning && (
               <div style={{
                 position: 'absolute',
-                top: '-10px',
-                right: '-6px',
+                top: '-8px',
+                right: '-8px',
                 fontSize: '14px',
               }}>
                 👑
@@ -180,21 +182,43 @@ export default function ClashCard1v1({
             fontSize: '11px',
             color: '#8b949e',
             fontWeight: '500',
+            textTransform: 'uppercase',
             marginBottom: '4px',
           }}>
             YOU
           </span>
-          <span style={{
-            fontSize: '18px',
-            fontWeight: '800',
-            color: myGain >= 0 ? '#10b981' : '#ef4444',
-            fontFamily: "'SF Mono', 'Monaco', monospace",
-          }}>
-            {isBaggerBombPoints
-              ? `${myGain >= 0 ? '+' : ''}${Math.round(myGain)} pts`
-              : `${myGain >= 0 ? '+' : ''}${myGain.toFixed(1)}%`
-            }
-          </span>
+          {/* Score */}
+          <div style={{ textAlign: 'center' }}>
+            {isBaggerBombPoints ? (
+              <>
+                <span style={{
+                  fontSize: '28px',
+                  fontWeight: '800',
+                  color: playerScoreColor,
+                  fontFamily: SCORE_FONT,
+                }}>
+                  {myGain >= 0 ? '+' : ''}{Math.round(myGain)}
+                </span>
+                <span style={{
+                  fontSize: '16px',
+                  fontWeight: '600',
+                  color: playerScoreColor,
+                  fontFamily: SCORE_FONT,
+                }}>
+                  {' pts'}
+                </span>
+              </>
+            ) : (
+              <span style={{
+                fontSize: '28px',
+                fontWeight: '800',
+                color: playerScoreColor,
+                fontFamily: SCORE_FONT,
+              }}>
+                {myGain >= 0 ? '+' : ''}{myGain.toFixed(1)}%
+              </span>
+            )}
+          </div>
         </div>
 
         {/* VS Divider + Status Badge */}
@@ -206,48 +230,45 @@ export default function ClashCard1v1({
           flexShrink: 0,
         }}>
           <span style={{
-            fontSize: '16px',
-            fontWeight: '800',
+            fontSize: '14px',
+            fontWeight: '600',
             color: '#6e7681',
-            letterSpacing: '2px',
           }}>
             VS
           </span>
-          {/* Status badge */}
-          <div style={{
-            padding: '3px 10px',
-            borderRadius: '10px',
-            background: isWinning ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
-            border: `1px solid ${isWinning ? '#10b98140' : '#ef444440'}`,
-          }}>
-            <span style={{
-              fontSize: '9px',
-              fontWeight: '700',
-              color: isWinning ? '#10b981' : '#ef4444',
-              textTransform: 'uppercase',
-              letterSpacing: '1px',
+          {/* WINNING badge — only shown when there IS a leader */}
+          {myGain !== theirGain && (
+            <div style={{
+              padding: '3px 8px',
+              borderRadius: '4px',
+              background: 'rgba(0, 255, 255, 0.15)',
             }}>
-              {isWinning ? 'WINNING' : 'LOSING'}
-            </span>
-          </div>
+              <span style={{
+                fontSize: '10px',
+                fontWeight: '700',
+                color: '#00FFFF',
+                textTransform: 'uppercase',
+                letterSpacing: '0.5px',
+              }}>
+                WINNING
+              </span>
+            </div>
+          )}
         </div>
 
         {/* Opponent Side */}
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flex: 1 }}>
           <div style={{ position: 'relative', marginBottom: '8px' }}>
-            {/* Avatar Circle */}
+            {/* Avatar Circle — fixed red gradient for opponent */}
             <div style={{
               width: '48px',
               height: '48px',
               borderRadius: '50%',
-              background: !isWinning
-                ? 'linear-gradient(135deg, rgba(16, 185, 129, 0.2) 0%, rgba(0, 217, 255, 0.2) 100%)'
-                : 'linear-gradient(135deg, rgba(239, 68, 68, 0.2) 0%, rgba(239, 68, 68, 0.1) 100%)',
-              border: `2px solid ${!isWinning ? '#10b981' : '#ef4444'}`,
+              background: 'linear-gradient(135deg, #ef4444 0%, #b91c1c 100%)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              fontSize: '18px',
+              fontSize: '20px',
               fontWeight: '700',
               color: '#ffffff',
             }}>
@@ -257,8 +278,8 @@ export default function ClashCard1v1({
             {!isWinning && (
               <div style={{
                 position: 'absolute',
-                top: '-10px',
-                right: '-6px',
+                top: '-8px',
+                right: '-8px',
                 fontSize: '14px',
               }}>
                 👑
@@ -269,6 +290,7 @@ export default function ClashCard1v1({
             fontSize: '11px',
             color: '#8b949e',
             fontWeight: '500',
+            textTransform: 'uppercase',
             marginBottom: '4px',
             maxWidth: '80px',
             overflow: 'hidden',
@@ -278,28 +300,40 @@ export default function ClashCard1v1({
           }}>
             {truncateName(opponent)}
           </span>
-          <span style={{
-            fontSize: '18px',
-            fontWeight: '800',
-            color: theirGain >= 0 ? '#10b981' : '#ef4444',
-            fontFamily: "'SF Mono', 'Monaco', monospace",
-          }}>
-            {isBaggerBombPoints
-              ? `${theirGain >= 0 ? '+' : ''}${Math.round(theirGain)} pts`
-              : `${theirGain >= 0 ? '+' : ''}${theirGain.toFixed(1)}%`
-            }
-          </span>
+          {/* Score */}
+          <div style={{ textAlign: 'center' }}>
+            {isBaggerBombPoints ? (
+              <>
+                <span style={{
+                  fontSize: '28px',
+                  fontWeight: '800',
+                  color: opponentScoreColor,
+                  fontFamily: SCORE_FONT,
+                }}>
+                  {theirGain >= 0 ? '+' : ''}{Math.round(theirGain)}
+                </span>
+                <span style={{
+                  fontSize: '16px',
+                  fontWeight: '600',
+                  color: opponentScoreColor,
+                  fontFamily: SCORE_FONT,
+                }}>
+                  {' pts'}
+                </span>
+              </>
+            ) : (
+              <span style={{
+                fontSize: '28px',
+                fontWeight: '800',
+                color: opponentScoreColor,
+                fontFamily: SCORE_FONT,
+              }}>
+                {theirGain >= 0 ? '+' : ''}{theirGain.toFixed(1)}%
+              </span>
+            )}
+          </div>
         </div>
       </div>
-
-      {/* Tug of War Bar */}
-      <TugOfWarBar
-        myGain={myGain}
-        theirGain={theirGain}
-        isWinning={isWinning}
-        isTraining={isTraining}
-        height={5}
-      />
     </motion.div>
   );
 }
