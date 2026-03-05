@@ -38,6 +38,7 @@ const AnalysisDrawer = ({
   const {
     y,
     snapState,
+    MID_Y,
     onDragStart,
     onDragEnd,
     toggleDrawer,
@@ -54,11 +55,13 @@ const AnalysisDrawer = ({
   }, [snapState, onSnapStateChange]);
 
   // Measure actual header height and compute scroll container height
+  // Recalculates when snap state changes so scroll area matches visible drawer portion
   useEffect(() => {
-    const drawerH = containerHeight * 0.9;
     const headerH = headerRef.current?.getBoundingClientRect().height || 110;
-    setScrollHeight(drawerH - headerH);
-  }, [containerHeight]);
+    const currentY = snapState === 'full' ? 0 : MID_Y;
+    const visibleDrawerH = containerHeight - currentY;
+    setScrollHeight(visibleDrawerH - headerH);
+  }, [containerHeight, snapState, MID_Y]);
 
   return (
     <motion.div
@@ -76,7 +79,7 @@ const AnalysisDrawer = ({
         bottom: 0,
         left: 0,
         right: 0,
-        height: containerHeight * 0.9,
+        height: containerHeight,
         display: 'flex',
         flexDirection: 'column',
         y,
