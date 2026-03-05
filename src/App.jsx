@@ -9,7 +9,7 @@ import { calculateV4FinalScores } from './services/dailyScoringV4Service';
 // Firebase battle service for PvP battles
 import { createBattle as createFirestoreBattle, joinBattle as joinFirestoreBattle, subscribeToBattles, createBaggerBombBattle, createBaggerBombBattleV3, createBaggerBombBattleV4, joinBaggerBombBattle, joinBaggerBombBattleV3, joinBaggerBombBattleV4, subscribeToLobby, subscribeToAllLobbies, getOpenBaggerBombBattles, saveTrackedPattern, getUserTrackedPatterns, getUserPatternStats, cancelTrackedPattern, checkPatternResolution, completeBattle } from './firebase/firebaseService';
 // EODHD API - All-in-one provider for stocks and crypto (replaces Finnhub + CoinGecko)
-import { stockAPI, POPULAR_STOCKS, POPULAR_CRYPTO, FALLBACK_CRYPTO_PRICES, getMarketNews, getTopMoversWithNews, getMultipleStockNews, getStockNews, fetchLatestEarnings, fetchHistoricalOHLCV } from './services/eodhdAPI';
+import { stockAPI, POPULAR_STOCKS, POPULAR_CRYPTO, FALLBACK_CRYPTO_PRICES, getMarketNews, getTopMoversWithNews, getMultipleStockNews, getStockNews, fetchLatestEarnings, fetchHistoricalOHLCV, getLivePrices } from './services/eodhdAPI';
 // Technical Analysis AI Service
 import { analyzeStockWithAI, generateFallbackAnalysis } from './services/technicalAnalysisAI';
 // WebSocket → Cache bridge (flushes WS prices to cacheService so REST calls are skipped)
@@ -580,6 +580,44 @@ const generateAIOpponentPortfolio = (userPortfolio) => {
 // V1 (string) and V2 (object with odUsername/username) formats
 // ============================================
 const getUsername = getPlayerUsername;
+
+/**
+ * Fetch live prices for battle activation with WebSocket override.
+ * Uses getLivePrices (cache-busting during market hours) + WS prices as primary source.
+ */
+async function fetchBattlePrices(symbols) {
+  let startingPrices = {};
+  let priceSource = 'EOD';
+
+  // Step 1: Fetch from API with cache busting
+  try {
+    const { prices, source } = await getLivePrices(symbols);
+    startingPrices = { ...prices };
+    priceSource = source || 'EOD';
+  } catch (e) {
+    console.warn('[Price Capture] getLivePrices failed:', e.message);
+  }
+
+  // Step 2: Override with WebSocket live prices (most fresh)
+  const wsCached = wsManager.getAllCachedPrices();
+  let wsOverrides = 0;
+  for (const sym of symbols) {
+    if (wsCached[sym]?.price > 0) {
+      startingPrices[sym] = wsCached[sym].price;
+      wsOverrides++;
+    }
+  }
+  if (wsOverrides > 0) priceSource = 'WS+API';
+
+  console.log('[Price Capture] livePrices received:',
+    wsOverrides > 0 ? wsOverrides + ' WS symbols' : 'no WS prices');
+  console.log('[Price Capture] Final startingPrices:',
+    Object.entries(startingPrices).slice(0, 5).map(([s, p]) =>
+      `${s}=$${typeof p === 'number' ? p.toFixed(2) : p}`).join(', '));
+  console.log('[Price Capture] Source:', priceSource);
+
+  return { startingPrices, priceSource };
+}
 
 // Create Training Battle - 100% Client-Side (No API)
 const createTrainingBattle = (userPortfolio, battleType = 'head-to-head') => {
@@ -15136,31 +15174,10 @@ export default function PortfolioDuel() {
     const TRAINING_DURATION = 60 * 60 * 1000; // 1 hour in milliseconds
     const endDate = new Date(startDate.getTime() + TRAINING_DURATION);
 
-    // Fetch starting prices for all assets
-    const startingPrices = {};
-    
+    // Fetch starting prices with cache busting + WebSocket override
     const allAssets = [...userPortfolioAssets, ...cpuPortfolio];
     const uniqueSymbols = [...new Set(allAssets.map(a => a.symbol))];
-    
-    for (const symbol of uniqueSymbols) {
-      const asset = allAssets.find(a => a.symbol === symbol);
-      try {
-        const isCrypto = POPULAR_CRYPTO.some(c => c.symbol === symbol);
-        
-        if (isCrypto) {
-          const cryptoData = POPULAR_CRYPTO.find(c => c.symbol === symbol);
-          // Use symbol (ETH) not id (ethereum) - EODHD expects symbol format
-          const data = await stockAPI.getCryptoPrice(cryptoData.symbol);
-          startingPrices[symbol] = data.price;
-        } else {
-          const data = await stockAPI.getStockPrice(symbol);
-          startingPrices[symbol] = data.price;
-        }
-      } catch (error) {
-        console.error(`Error fetching price for ${symbol}:`, error);
-        startingPrices[symbol] = asset.price;
-      }
-    }
+    const { startingPrices } = await fetchBattlePrices(uniqueSymbols);
 
     // Update both portfolios with locked starting prices
     const updatedUserPortfolio = userPortfolioAssets.map(asset => ({
@@ -15332,29 +15349,10 @@ export default function PortfolioDuel() {
     const TRAINING_DURATION = 60 * 60 * 1000; // 1 hour in milliseconds
     const endDate = new Date(startDate.getTime() + TRAINING_DURATION);
 
-    // Fetch starting prices for all assets
-    const startingPrices = {};
+    // Fetch starting prices with cache busting + WebSocket override
     const allAssets = [...userPortfolioAssets, ...cpuPortfolioData.portfolio];
     const uniqueSymbols = [...new Set(allAssets.map(a => a.symbol))];
-
-    for (const symbol of uniqueSymbols) {
-      const asset = allAssets.find(a => a.symbol === symbol);
-      try {
-        const isCrypto = POPULAR_CRYPTO.some(c => c.symbol === symbol);
-
-        if (isCrypto) {
-          const cryptoInfo = POPULAR_CRYPTO.find(c => c.symbol === symbol);
-          const data = await stockAPI.getCryptoPrice(cryptoInfo?.symbol || symbol);
-          startingPrices[symbol] = data.price;
-        } else {
-          const data = await stockAPI.getStockPrice(symbol);
-          startingPrices[symbol] = data.price;
-        }
-      } catch (error) {
-        console.error(`Error fetching price for ${symbol}:`, error);
-        startingPrices[symbol] = asset?.price || 0;
-      }
-    }
+    const { startingPrices } = await fetchBattlePrices(uniqueSymbols);
 
     // Update portfolios with locked starting prices
     const updatedUserPortfolio = userPortfolioAssets.map(asset => ({
@@ -15585,26 +15583,8 @@ export default function PortfolioDuel() {
     const allAssets = [...userAssets, ...cpuAssets, ...userBenchAssets, ...cpuBenchAssets];
     const uniqueSymbols = [...new Set(allAssets.map(a => a?.symbol).filter(Boolean))];
 
-    // Fetch starting prices for all assets
-    const startingPrices = {};
-    for (const symbol of uniqueSymbols) {
-      const asset = allAssets.find(a => a?.symbol === symbol);
-      try {
-        const isCrypto = asset?.isCrypto || POPULAR_CRYPTO.some(c => c.symbol === symbol);
-
-        if (isCrypto) {
-          const cryptoInfo = POPULAR_CRYPTO.find(c => c.symbol === symbol);
-          const data = await stockAPI.getCryptoPrice(cryptoInfo?.symbol || symbol);
-          startingPrices[symbol] = data.price;
-        } else {
-          const data = await stockAPI.getStockPrice(symbol);
-          startingPrices[symbol] = data.price;
-        }
-      } catch (error) {
-        console.error(`Error fetching price for ${symbol}:`, error);
-        startingPrices[symbol] = asset?.price || 0;
-      }
-    }
+    // Fetch starting prices with cache busting + WebSocket override
+    const { startingPrices } = await fetchBattlePrices(uniqueSymbols);
 
     // Helper to update prices in V3 portfolio
     const updateV3PortfolioPrices = (portfolio) => ({
@@ -15780,23 +15760,8 @@ export default function PortfolioDuel() {
     const allAssets = [...userAssets, ...cpuAssets];
     const uniqueSymbols = [...new Set(allAssets.map(a => a?.symbol).filter(Boolean))];
 
-    // Fetch starting prices
-    const startingPrices = {};
-    for (const symbol of uniqueSymbols) {
-      const asset = allAssets.find(a => a?.symbol === symbol);
-      try {
-        const isCrypto = asset?.isCrypto || POPULAR_CRYPTO.some(c => c.symbol === symbol);
-        if (isCrypto) {
-          const data = await stockAPI.getCryptoPrice(symbol);
-          startingPrices[symbol] = data.price;
-        } else {
-          const data = await stockAPI.getStockPrice(symbol);
-          startingPrices[symbol] = data.price;
-        }
-      } catch (error) {
-        startingPrices[symbol] = asset?.price || 0;
-      }
-    }
+    // Fetch starting prices with cache busting + WebSocket override
+    const { startingPrices } = await fetchBattlePrices(uniqueSymbols);
 
     const updatePrices = (portfolio) => ({
       star: (portfolio.star || []).map(a => a ? { ...a, price: startingPrices[a.symbol] || a.price } : null),

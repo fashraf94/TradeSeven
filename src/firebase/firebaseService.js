@@ -1633,6 +1633,10 @@ export async function joinBaggerBombBattleV3(battleIdOrCode, opponentData, optio
     }
 
     // Override with WebSocket live prices where available (most fresh, sub-second)
+    console.log('[Price Capture V3] livePrices received:',
+      livePrices ? Object.keys(livePrices).length + ' symbols' : 'null/undefined');
+    console.log('[Price Capture V3] livePrices sample:',
+      livePrices ? Object.entries(livePrices).slice(0, 3).map(([s, p]) => `${s}=$${p}`) : 'none');
     if (livePrices && typeof livePrices === 'object') {
       let wsOverrides = 0;
       for (const symbol of allSymbols) {
@@ -2063,6 +2067,10 @@ export async function joinBaggerBombBattleV4(battleIdOrCode, opponentData, optio
     }
 
     // Override with WebSocket live prices where available (most fresh, sub-second)
+    console.log('[Price Capture V4] livePrices received:',
+      livePrices ? Object.keys(livePrices).length + ' symbols' : 'null/undefined');
+    console.log('[Price Capture V4] livePrices sample:',
+      livePrices ? Object.entries(livePrices).slice(0, 3).map(([s, p]) => `${s}=$${p}`) : 'none');
     if (livePrices && typeof livePrices === 'object') {
       let wsOverrides = 0;
       for (const symbol of allSymbols) {
