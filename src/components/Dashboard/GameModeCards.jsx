@@ -262,7 +262,7 @@ const GameModeCard = ({ mode, onSelect, isTraining = false, isMobile = false }) 
         {/* Description */}
         <p style={{
           fontSize: isMobile ? 12 : 13,
-          color: '#8b949e',
+          color: mode.accentColor,
           margin: 0,
           lineHeight: 1.5,
           fontWeight: 500,
