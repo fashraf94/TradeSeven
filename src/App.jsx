@@ -22861,16 +22861,11 @@ export default function PortfolioDuel() {
               username: user.displayName || user.username,
               avatar: user.avatar || '',
             };
-            // Fetch fresh uncached prices for battle activation
-            const allJoinSymbols = [
-              ...(portfolio.star || []), ...(portfolio.core || []),
-              ...(portfolio.support || []), ...(portfolio.bench?.stocks || []),
-            ].filter(Boolean).map(a => a.symbol).filter(Boolean);
-            const livePrices = await fetchFreshPrices([...new Set(allJoinSymbols)]);
 
             // Use the correct join function based on version
+            // Join functions fetch fresh prices internally via fetchFreshPrices
             const joinFn = joinBattleVersion >= 4 ? joinBaggerBombBattleV4 : joinBaggerBombBattleV3;
-            const result = await joinFn(battleToJoin.id, joinData, { joinByBattleId: true, livePrices });
+            const result = await joinFn(battleToJoin.id, joinData, { joinByBattleId: true });
             if (result?.success) {
               showToast(`Joined battle!`);
               setCurrentBattle(result.battle);
@@ -22915,23 +22910,18 @@ export default function PortfolioDuel() {
               username: user.displayName || user.username,
               avatar: user.avatar || '',
             };
-            // Fetch fresh uncached prices for battle activation
-            const allJoinSymbols = [
-              ...(portfolio.star || []), ...(portfolio.core || []),
-              ...(portfolio.support || []), ...(portfolio.bench?.stocks || []),
-            ].filter(Boolean).map(a => a.symbol).filter(Boolean);
-            const livePrices = await fetchFreshPrices([...new Set(allJoinSymbols)]);
 
+            // Join functions fetch fresh prices internally via fetchFreshPrices
             let result;
             try {
-              result = await joinBaggerBombBattleV4(joinCode, joinData, { livePrices });
+              result = await joinBaggerBombBattleV4(joinCode, joinData);
             } catch (v4Error) {
               // Fall back to V3 join (battle may be V3)
               console.log('[BaggerBomb] V4 join failed, trying V3:', v4Error.message);
               result = await joinBaggerBombBattleV3(joinCode, {
                 ...joinData,
                 bench: portfolio.bench,
-              }, { livePrices });
+              });
             }
             if (result?.success) {
               showToast(`Joined BaggerBomb battle!`);

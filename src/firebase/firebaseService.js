@@ -1443,8 +1443,7 @@ export async function joinBaggerBombBattle(challengeCode, opponentData) {
  */
 export async function joinBaggerBombBattleV3(battleIdOrCode, opponentData, options = {}) {
   try {
-    const { joinByBattleId = false, livePrices = null } = options;
-    console.log('🔥 joinBaggerBombBattleV3 called with:', { battleIdOrCode, opponentData, joinByBattleId });
+    const { joinByBattleId = false } = options;    console.log('🔥 joinBaggerBombBattleV3 called with:', { battleIdOrCode, opponentData, joinByBattleId });
 
     // Validate input
     if (!battleIdOrCode || typeof battleIdOrCode !== 'string') {
@@ -1613,45 +1612,18 @@ export async function joinBaggerBombBattleV3(battleIdOrCode, opponentData, optio
 
     const allSymbols = [...new Set([...creatorSymbols, ...opponentSymbols, ...benchSymbols])];
 
-    // Fetch current prices — uses cache-busting live fetch during market hours
-    const { getLivePrices } = await import('../services/eodhdAPI.js');
+    // Fetch fresh, uncached prices for all symbols
+    const { fetchFreshPrices } = await import('../services/eodhdAPI.js');
 
     let startingPrices = {};
-    let priceSource = 'EOD';
 
     try {
-      const cryptoSymbols = allSymbols.filter(s => isCrypto(s));
-      const stockSymbols = allSymbols.filter(s => !isCrypto(s));
-
-      const [stockResult, cryptoResult] = await Promise.all([
-        stockSymbols.length > 0 ? getLivePrices(stockSymbols) : { prices: {}, source: 'EOD' },
-        cryptoSymbols.length > 0 ? getLivePrices(cryptoSymbols, { isCrypto: true }) : { prices: {}, source: 'EOD' },
-      ]);
-
-      startingPrices = { ...stockResult.prices, ...cryptoResult.prices };
-      priceSource = stockResult.source || cryptoResult.source || 'EOD';
+      startingPrices = await fetchFreshPrices(allSymbols);
     } catch (priceError) {
       console.warn('⚠️ Error fetching prices for V3 battle:', priceError.message);
     }
 
-    // Override with WebSocket live prices where available (most fresh, sub-second)
-    console.log('[Price Capture V3] livePrices received:',
-      livePrices ? Object.keys(livePrices).length + ' symbols' : 'null/undefined');
-    console.log('[Price Capture V3] livePrices sample:',
-      livePrices ? Object.entries(livePrices).slice(0, 3).map(([s, p]) => `${s}=$${p}`) : 'none');
-    if (livePrices && typeof livePrices === 'object') {
-      let wsOverrides = 0;
-      for (const symbol of allSymbols) {
-        const wsPrice = livePrices[symbol];
-        if (wsPrice && wsPrice > 0) {
-          startingPrices[symbol] = wsPrice;
-          wsOverrides++;
-        }
-      }
-      if (wsOverrides > 0) priceSource = 'WS+API';
-    }
-
-    console.log(`[Price Capture V3] startingPrices (source: ${priceSource}):`,
+    console.log(`[Price Capture V3] startingPrices (source: FRESH):`,
       Object.entries(startingPrices).map(([s, p]) => `${s}=$${(p || 0).toFixed(2)}`).join(', '));
 
     // Initialize session prices with MORNING_BELL open
@@ -1913,8 +1885,7 @@ export async function createBaggerBombBattleV4(battleData, lobbyTimeMinutes = 30
  */
 export async function joinBaggerBombBattleV4(battleIdOrCode, opponentData, options = {}) {
   try {
-    const { joinByBattleId = false, livePrices = null } = options;
-    console.log('🔥 joinBaggerBombBattleV4 called with:', { battleIdOrCode, opponentData, joinByBattleId });
+    const { joinByBattleId = false } = options;    console.log('🔥 joinBaggerBombBattleV4 called with:', { battleIdOrCode, opponentData, joinByBattleId });
 
     if (!battleIdOrCode || typeof battleIdOrCode !== 'string') {
       throw new Error('Battle ID or challenge code is required');
@@ -2049,45 +2020,18 @@ export async function joinBaggerBombBattleV4(battleIdOrCode, opponentData, optio
     const opponentSymbols = collectSymbols(sanitizedPortfolio);
     const allSymbols = [...new Set([...creatorSymbols, ...opponentSymbols])];
 
-    // Fetch current prices — uses cache-busting live fetch during market hours
-    const { getLivePrices } = await import('../services/eodhdAPI.js');
+    // Fetch fresh, uncached prices for all symbols
+    const { fetchFreshPrices } = await import('../services/eodhdAPI.js');
 
     let startingPrices = {};
-    let priceSource = 'EOD';
 
     try {
-      const cryptoSymbols = allSymbols.filter(s => isCrypto(s));
-      const stockSymbols = allSymbols.filter(s => !isCrypto(s));
-
-      const [stockResult, cryptoResult] = await Promise.all([
-        stockSymbols.length > 0 ? getLivePrices(stockSymbols) : { prices: {}, source: 'EOD' },
-        cryptoSymbols.length > 0 ? getLivePrices(cryptoSymbols, { isCrypto: true }) : { prices: {}, source: 'EOD' },
-      ]);
-
-      startingPrices = { ...stockResult.prices, ...cryptoResult.prices };
-      priceSource = stockResult.source || cryptoResult.source || 'EOD';
+      startingPrices = await fetchFreshPrices(allSymbols);
     } catch (priceError) {
       console.warn('⚠️ Error fetching prices for V4 battle:', priceError.message);
     }
 
-    // Override with WebSocket live prices where available (most fresh, sub-second)
-    console.log('[Price Capture V4] livePrices received:',
-      livePrices ? Object.keys(livePrices).length + ' symbols' : 'null/undefined');
-    console.log('[Price Capture V4] livePrices sample:',
-      livePrices ? Object.entries(livePrices).slice(0, 3).map(([s, p]) => `${s}=$${p}`) : 'none');
-    if (livePrices && typeof livePrices === 'object') {
-      let wsOverrides = 0;
-      for (const symbol of allSymbols) {
-        const wsPrice = livePrices[symbol];
-        if (wsPrice && wsPrice > 0) {
-          startingPrices[symbol] = wsPrice;
-          wsOverrides++;
-        }
-      }
-      if (wsOverrides > 0) priceSource = 'WS+API';
-    }
-
-    console.log(`[Price Capture V4] startingPrices (source: ${priceSource}):`,
+    console.log(`[Price Capture V4] startingPrices (source: FRESH):`,
       Object.entries(startingPrices).map(([s, p]) => `${s}=$${(p || 0).toFixed(2)}`).join(', '));
 
     // Set day1 open prices = starting prices
