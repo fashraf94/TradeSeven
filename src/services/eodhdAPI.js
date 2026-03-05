@@ -1001,6 +1001,38 @@ export async function fetchFreshPrices(symbols) {
 }
 
 /**
+ * Fetch official EOD close prices for stock symbols.
+ * Uses EODHD End-of-Day endpoint — returns settlement close, not 15-min-delayed real-time.
+ * Only for stocks — crypto should use fetchFreshPrices (trades 24/7).
+ *
+ * @param {string[]} symbols - Stock symbols like ['AAPL', 'AMZN', 'AVGO']
+ * @returns {Promise<Record<string, number>>} Map of symbol to close price
+ */
+export async function fetchEODClosePrices(symbols) {
+  if (!symbols?.length) return {};
+  const prices = {};
+
+  await Promise.allSettled(
+    symbols.map(async (symbol) => {
+      try {
+        const response = await fetchWithTimeout(
+          `${API_BASE}/stocks/eod-close?symbol=${encodeURIComponent(symbol.toUpperCase())}`
+        );
+        if (response.ok) {
+          const data = await response.json();
+          if (data.close > 0) prices[symbol.toUpperCase()] = data.close;
+        }
+      } catch (err) {
+        console.warn(`[EOD] Failed for ${symbol}:`, err.message);
+      }
+    })
+  );
+
+  console.log(`[EOD] Got close prices for ${Object.keys(prices).length}/${symbols.length} symbols`);
+  return prices;
+}
+
+/**
  * Test API connection via proxy
  */
 export async function testConnection() {
