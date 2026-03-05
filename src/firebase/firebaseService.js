@@ -1616,6 +1616,7 @@ export async function joinBaggerBombBattleV3(battleIdOrCode, opponentData, optio
     const { fetchFreshPrices } = await import('../services/eodhdAPI.js');
 
     let startingPrices = {};
+    const priceSource = 'FRESH';
 
     try {
       startingPrices = await fetchFreshPrices(allSymbols);
@@ -2024,6 +2025,7 @@ export async function joinBaggerBombBattleV4(battleIdOrCode, opponentData, optio
     const { fetchFreshPrices } = await import('../services/eodhdAPI.js');
 
     let startingPrices = {};
+    const priceSource = 'FRESH';
 
     try {
       startingPrices = await fetchFreshPrices(allSymbols);
