@@ -7,7 +7,9 @@ import {
   signOut as firebaseSignOut,
   onAuthStateChanged,
   sendPasswordResetEmail,
-  updateProfile
+  updateProfile,
+  GoogleAuthProvider,
+  signInWithPopup
 } from 'firebase/auth';
 import { doc, setDoc, getDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { auth, db } from './config';
@@ -271,6 +273,71 @@ export function onAuthChange(callback) {
 }
 
 /**
+ * Sign in with Google
+ *
+ * @returns {Promise<{user, userData}>} - Firebase user and Firestore user data
+ */
+export async function signInWithGoogle() {
+  try {
+    const provider = new GoogleAuthProvider();
+    const credential = await signInWithPopup(auth, provider);
+    const user = credential.user;
+
+    // Check if user doc exists
+    const userRef = doc(db, 'users', user.uid);
+    const userDoc = await getDoc(userRef);
+
+    if (!userDoc.exists()) {
+      // First-time Google user — create profile doc
+      const username = user.displayName || user.email.split('@')[0];
+      const userData = {
+        _v: 1,
+        auth: {
+          uid: user.uid,
+          email: user.email,
+          createdAt: new Date().toISOString(),
+          lastLoginAt: new Date().toISOString(),
+        },
+        profile: {
+          username,
+          displayName: user.displayName || username,
+          avatarUrl: user.photoURL || null,
+          bio: null,
+        },
+        stats: {
+          xp: 0, level: 1, rank: 'Beginner',
+          wins: 0, losses: 0, totalBattles: 0,
+          winStreak: 0, longestWinStreak: 0, totalXPEarned: 0,
+        },
+        settings: {
+          notifications: { battleStart: true, battleEnd: true, challengeAvailable: true },
+          privacy: { showStats: true, allowChallenges: true },
+        },
+        achievements: [],
+        metadata: { referralCode: null, premiumTier: null, flags: {} },
+        archived: false,
+        updatedAt: new Date().toISOString(),
+      };
+
+      await setDoc(userRef, userData);
+      return { user, userData };
+    }
+
+    // Existing Google user — update last login
+    await updateDoc(userRef, {
+      'auth.lastLoginAt': new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
+
+    return { user, userData: userDoc.data() };
+  } catch (error) {
+    console.error('Google sign-in error:', error);
+    const errorMessage = parseAuthError(error);
+    throw new Error(errorMessage);
+  }
+}
+
+/**
  * Get current authenticated user
  *
  * @returns {Object|null} - Current Firebase Auth user
@@ -323,6 +390,9 @@ function parseAuthError(error) {
     case 'auth/network-request-failed':
       return 'Network error. Please check your internet connection.';
 
+    case 'auth/popup-closed-by-user':
+      return 'Sign-in was cancelled.';
+
     default:
       return error.message || 'Authentication failed. Please try again.';
   }
@@ -335,6 +405,7 @@ export default {
   signUp,
   signIn,
   signOut,
+  signInWithGoogle,
   resetPassword,
   getUserData,
   updateUserStats,

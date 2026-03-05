@@ -1,127 +1,176 @@
 // src/contexts/UserContext.jsx
 // Global user state management using React Context
-// Uses authService abstraction for easy OAuth migration
+// Backed by Firebase Auth — uses onAuthChange to restore sessions
 
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import {
-  getCurrentUser,
-  login as authLogin,
-  logout as authLogout,
-  updateUserProfile,
-  onAuthStateChange,
-} from '../services/auth';
+  onAuthChange,
+  signIn,
+  signUp,
+  signOut,
+  signInWithGoogle,
+  resetPassword,
+  updateUserStats,
+  getUserData,
+} from '../firebase/authService';
 
 const UserContext = createContext(null);
 
 /**
+ * Maps the Firebase user doc (nested schema) to the flat shape
+ * the rest of the app expects (user.odUserId, user.username, etc.)
+ */
+const mapFirebaseUserToAppUser = (firebaseUserDoc) => {
+  if (!firebaseUserDoc) return null;
+  return {
+    // Identity — the key bridge
+    // By setting odUserId to the Firebase UID, all 30+ locations
+    // that read user.odUserId will get the correct value
+    odUserId: firebaseUserDoc.auth?.uid || firebaseUserDoc.uid,
+    uid: firebaseUserDoc.auth?.uid || firebaseUserDoc.uid,
+    username: firebaseUserDoc.profile?.username || firebaseUserDoc.profile?.displayName || 'Player',
+    displayName: firebaseUserDoc.profile?.displayName || firebaseUserDoc.profile?.username || 'Player',
+    email: firebaseUserDoc.auth?.email || null,
+    photoURL: firebaseUserDoc.profile?.avatarUrl || null,
+
+    // Stats — flattened for compatibility
+    wins: firebaseUserDoc.stats?.wins || 0,
+    losses: firebaseUserDoc.stats?.losses || 0,
+    xp: firebaseUserDoc.stats?.xp || 0,
+    rank: firebaseUserDoc.stats?.rank || 'Beginner',
+    level: firebaseUserDoc.stats?.level || 1,
+    winStreak: firebaseUserDoc.stats?.winStreak || 0,
+    totalBattles: firebaseUserDoc.stats?.totalBattles || 0,
+
+    // Auth metadata
+    authProvider: 'firebase',
+    joinedAt: firebaseUserDoc.auth?.createdAt || null,
+    lastLoginAt: firebaseUserDoc.auth?.lastLoginAt || null,
+
+    // Preserve the raw doc for anything that needs the full structure
+    _raw: firebaseUserDoc,
+  };
+};
+
+/**
  * UserProvider - Wraps the app and provides user state globally
- *
- * OAuth Migration: When switching to OAuth, the authService handles
- * the provider-specific logic while this context manages React state.
+ * Firebase Auth handles session persistence automatically.
  */
 export const UserProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [authLoading, setAuthLoading] = useState(true);
 
-  // Load user from auth service on mount
+  // Subscribe to Firebase Auth state changes on mount
   useEffect(() => {
-    // Subscribe to auth state changes (prepares for OAuth's onAuthStateChanged)
-    const unsubscribe = onAuthStateChange((authUser) => {
-      setUser(authUser);
+    const unsubscribe = onAuthChange((authResult) => {
+      if (authResult && authResult.userData) {
+        const mapped = mapFirebaseUserToAppUser(authResult.userData);
+        setUser(mapped);
+      } else {
+        setUser(null);
+      }
       setLoading(false);
+      setAuthLoading(false);
     });
 
     return () => unsubscribe();
   }, []);
 
   /**
-   * Login - Delegates to auth service
-   * OAuth Migration: This will automatically work with OAuth once authService is updated
+   * Login with email and password
    */
-  const login = useCallback(async (userData) => {
-    try {
-      // If userData is just a username string, use authService.login
-      if (typeof userData === 'string') {
-        const user = await authLogin(userData);
-        setUser(user);
-        return user;
-      }
-
-      // If full userData object provided (backwards compatibility)
-      // First get any existing user data from auth service
-      const user = await authLogin(userData.username);
-
-      // Merge: existing user data takes precedence for stats,
-      // but passed userData can override specific fields
-      const mergedUser = {
-        // Base defaults
-        authProvider: 'local',
-        // Existing persisted data (preserves stats)
-        ...user,
-        // Explicitly passed data (can override non-stat fields)
-        ...userData,
-        // Always use persisted stats if they exist (don't let defaults overwrite)
-        wins: user?.wins ?? userData?.wins ?? 0,
-        losses: user?.losses ?? userData?.losses ?? 0,
-        xp: user?.xp ?? userData?.xp ?? 0,
-        rank: user?.rank ?? userData?.rank ?? 'Beginner',
-        level: user?.level ?? userData?.level ?? 1,
-      };
-      setUser(mergedUser);
-      return mergedUser;
-    } catch (error) {
-      console.error('Login error:', error);
-      throw error;
-    }
+  const login = useCallback(async (email, password) => {
+    const { userData } = await signIn(email, password);
+    const mapped = mapFirebaseUserToAppUser(userData);
+    setUser(mapped);
+    return mapped;
   }, []);
 
   /**
-   * Logout - Delegates to auth service
-   * OAuth Migration: This will handle token revocation automatically
+   * Register new account with email, password, and username
+   */
+  const register = useCallback(async (email, password, username) => {
+    const { userData } = await signUp(email, password, username);
+    const mapped = mapFirebaseUserToAppUser(userData);
+    setUser(mapped);
+    return mapped;
+  }, []);
+
+  /**
+   * Sign in with Google
+   */
+  const loginWithGoogle = useCallback(async () => {
+    const { userData } = await signInWithGoogle();
+    const mapped = mapFirebaseUserToAppUser(userData);
+    setUser(mapped);
+    return mapped;
+  }, []);
+
+  /**
+   * Logout — delegates to Firebase signOut
    */
   const logout = useCallback(async () => {
     try {
-      await authLogout();
+      await signOut();
       setUser(null);
     } catch (error) {
       console.error('Logout error:', error);
-      // Still clear local state even if logout fails
       setUser(null);
     }
   }, []);
 
   /**
-   * Update user - Merges updates and persists via auth service
-   * OAuth Migration: May need to split local vs OAuth profile data
+   * Update user — merges updates locally AND persists stat changes to Firestore
    */
   const updateUser = useCallback((updates) => {
     setUser(prev => {
       if (!prev) return prev;
-      try {
-        const updated = updateUserProfile(updates);
-        return updated;
-      } catch (error) {
-        console.error('Update user error:', error);
-        // Fallback to local update only
-        return { ...prev, ...updates };
+      const updated = { ...prev, ...updates };
+
+      // Persist stat changes to Firestore in background
+      const statKeys = ['xp', 'level', 'rank', 'wins', 'losses', 'winStreak', 'totalBattles'];
+      const statUpdates = {};
+      for (const key of statKeys) {
+        if (key in updates) {
+          statUpdates[key] = updates[key];
+        }
       }
+      if (Object.keys(statUpdates).length > 0 && prev.uid) {
+        updateUserStats(prev.uid, statUpdates).catch(err => {
+          console.error('Failed to persist stats to Firestore:', err);
+        });
+      }
+
+      return updated;
     });
   }, []);
 
   /**
-   * Get user ID - Returns the best available identifier
+   * Get user ID — returns the best available identifier
    */
   const getUserId = useCallback(() => {
     return user?.odUserId || user?.uid || user?.username || null;
   }, [user]);
 
+  /**
+   * Forgot password
+   */
+  const forgotPassword = useCallback(async (email) => {
+    await resetPassword(email);
+  }, []);
+
   const value = {
     user,
     loading,
+    authLoading,
     login,
+    register,
+    loginWithGoogle,
     logout,
     updateUser,
     getUserId,
+    forgotPassword,
     isLoggedIn: !!user
   };
 
