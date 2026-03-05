@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState, useMemo } from 'react';
 import { createChart, CandlestickSeries, HistogramSeries, LineSeries, AreaSeries } from 'lightweight-charts';
 import { HOLO_COLORS } from '../../constants/holoTheme';
 import { prepareChartData, formatTime, calculateBombLevels, detectBombCrossings, calculateNearestLevel } from './chartUtils';
+import { detectTrendlines } from './trendlineDetection';
 import OHLCDisplay from '../shared/OHLCDisplay';
 import { getDailyHL } from '../../services/websocketService';
 
@@ -36,6 +37,7 @@ const StockChart = ({
   const highlightLineRef = useRef(null);
   const bombPriceLinesRef = useRef([]);
   const volumeSeriesRef = useRef(null);
+  const trendlineSeriesRef = useRef([]);
   const lastCrosshairUpdateRef = useRef(0);
 
   const [ohlcData, setOhlcData] = useState(null);
@@ -111,6 +113,14 @@ const StockChart = ({
     if (!ohlcvData || ohlcvData.length === 0) return [];
     return prepareChartData(ohlcvData);
   }, [ohlcvData]);
+
+  // Auto-trendlines (1D and 1W only)
+  const trendlines = useMemo(() => {
+    if (!chartData || chartData.length < 15) return [];
+    if (timeframe !== '1D' && timeframe !== '1W') return [];
+    const lookback = timeframe === '1W' ? 3 : 5;
+    return detectTrendlines(chartData, { lookback });
+  }, [chartData, timeframe]);
 
   // Bomb view: compute today's daily aggregate OHLC from intraday candles + WS daily H/L
   const bombDailyOhlc = useMemo(() => {
@@ -542,6 +552,7 @@ const StockChart = ({
     return () => {
       resizeObserver.disconnect();
       smaSeriesRefs.current = [];
+      trendlineSeriesRef.current = [];
       levelLinesRef.current = [];
       highlightLineRef.current = null;
       bombPriceLinesRef.current = [];
@@ -668,6 +679,39 @@ const StockChart = ({
       }
     });
   }, [showSR, levels, chartData, isBombView]);
+
+  // Trendline overlay (auto-drawn, 1D and 1W only)
+  useEffect(() => {
+    if (!chartRef.current) return;
+
+    // Remove existing trendline series
+    trendlineSeriesRef.current.forEach(s => {
+      try { chartRef.current.removeSeries(s); } catch { /* already removed */ }
+    });
+    trendlineSeriesRef.current = [];
+
+    if (!trendlines || trendlines.length === 0) return;
+
+    trendlines.forEach(tl => {
+      try {
+        const series = chartRef.current.addSeries(LineSeries, {
+          color: tl.type === 'support'
+            ? 'rgba(100, 180, 255, 0.6)'   // Soft blue (Finviz support)
+            : 'rgba(180, 120, 255, 0.6)',   // Soft purple (Finviz resistance)
+          lineWidth: 2,
+          lineStyle: 0, // Solid
+          priceLineVisible: false,
+          lastValueVisible: false,
+          crosshairMarkerVisible: false,
+        });
+
+        series.setData([tl.startPoint, tl.endPoint]);
+        trendlineSeriesRef.current.push(series);
+      } catch (e) {
+        console.warn('[StockChart] Trendline error:', e);
+      }
+    });
+  }, [trendlines, chartData]);
 
   // Active highlight line (from TechnicalTabV2 tap)
   useEffect(() => {

@@ -613,3 +613,76 @@ class WebSocketManager {
 export const wsManager = new WebSocketManager();
 export function getDailyHL(symbol) { return wsManager.getDailyHL(symbol); }
 export default wsManager;
+
+// ==================== PRICE CAPTURE FOR BATTLE ENTRY ====================
+
+/**
+ * Subscribe to symbols via WebSocket and capture one real-time tick per symbol.
+ * Checks WS price cache first for symbols already streaming.
+ * Falls back gracefully — if WS is disconnected, all symbols end up in `missing`.
+ *
+ * @param {string[]} symbols - Raw symbols like ['AAPL', 'NVDA', 'BTC']
+ * @param {number} timeoutMs - Max wait time (default 5000ms)
+ * @returns {Promise<{ prices: Object, missing: string[], source: Object }>}
+ */
+export async function captureRealtimePrices(symbols, timeoutMs = 5000) {
+  const prices = {};
+  const source = {};
+  const symbolSet = new Set(symbols.map(s => s.toUpperCase()));
+  let remaining = symbolSet.size;
+
+  // Check cache first — WS may already have recent prices from active streams
+  const cached = wsManager.getAllCachedPrices();
+  for (const sym of symbolSet) {
+    if (cached[sym]?.price > 0) {
+      prices[sym] = cached[sym].price;
+      source[sym] = 'websocket-cached';
+      remaining--;
+    }
+  }
+
+  // If all symbols already cached, return immediately
+  if (remaining <= 0) {
+    return { prices, missing: [], source };
+  }
+
+  // Subscribe to get ticks for uncached symbols
+  const uncachedSymbols = [...symbolSet].filter(s => !(s in prices));
+  wsManager.subscribe(uncachedSymbols);
+
+  return new Promise((resolve) => {
+    let resolved = false;
+
+    const handler = ({ symbol, price }) => {
+      if (resolved) return;
+      const upper = symbol.toUpperCase();
+      if (symbolSet.has(upper) && !(upper in prices) && price > 0) {
+        prices[upper] = price;
+        source[upper] = 'websocket';
+        remaining--;
+        if (remaining <= 0) {
+          resolved = true;
+          cleanup();
+          resolve({ prices, missing: [], source });
+        }
+      }
+    };
+
+    const timer = setTimeout(() => {
+      if (resolved) return;
+      resolved = true;
+      cleanup();
+      const missing = [...symbolSet].filter(s => !(s in prices));
+      for (const sym of missing) source[sym] = 'timeout';
+      resolve({ prices, missing, source });
+    }, timeoutMs);
+
+    function cleanup() {
+      clearTimeout(timer);
+      wsManager.off('price', handler);
+      wsManager.unsubscribe(uncachedSymbols);
+    }
+
+    wsManager.on('price', handler);
+  });
+}

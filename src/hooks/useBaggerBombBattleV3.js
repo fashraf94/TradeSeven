@@ -382,7 +382,9 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
       const currentPrice = effectivePrices[asset.symbol];
       if (!openPrice || !currentPrice) return;
 
-      const priceChange = ((currentPrice - openPrice) / openPrice) * 100;
+      let priceChange = ((currentPrice - openPrice) / openPrice) * 100;
+      // Negate for short positions — shorts profit when price goes DOWN
+      if (asset.direction === 'short') priceChange = -priceChange;
       const baseATR = battle?.thresholds?.[asset.symbol]?.threshold || asset.baseATR || 2.5;
       const currentMultiplier = priceChange / baseATR;
 
@@ -392,10 +394,14 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
       let effectiveLowMultiplier = currentMultiplier;
       if (assetExtremes && openPrice > 0) {
         if (assetExtremes.high > 0) {
-          effectiveHighMultiplier = Math.max(currentMultiplier, ((assetExtremes.high - openPrice) / openPrice) * 100 / baseATR);
+          let highPct = ((assetExtremes.high - openPrice) / openPrice) * 100;
+          if (asset.direction === 'short') highPct = -highPct;
+          effectiveHighMultiplier = Math.max(currentMultiplier, highPct / baseATR);
         }
         if (assetExtremes.low > 0) {
-          effectiveLowMultiplier = Math.min(currentMultiplier, ((assetExtremes.low - openPrice) / openPrice) * 100 / baseATR);
+          let lowPct = ((assetExtremes.low - openPrice) / openPrice) * 100;
+          if (asset.direction === 'short') lowPct = -lowPct;
+          effectiveLowMultiplier = Math.min(currentMultiplier, lowPct / baseATR);
         }
       }
 
@@ -742,6 +748,7 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
     return {
       symbol: asset.symbol,
       name: asset.name,
+      direction: asset.direction || null,
       priceChange: scoreData?.priceChange || 0,
       baseATR: resolvedATR,
       history: assetHistory,

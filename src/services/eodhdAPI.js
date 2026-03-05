@@ -941,6 +941,98 @@ export async function getLivePrices(symbols, { isCrypto: allCrypto = false } = {
 }
 
 /**
+ * Fetch completely fresh prices from EODHD — no client cache, no server cache.
+ * Used exclusively for battle activation where stale prices are unacceptable.
+ *
+ * @param {string[]} symbols - Array of ticker symbols
+ * @returns {Promise<Record<string, number>>} Map of symbol to price
+ */
+export async function fetchFreshPrices(symbols) {
+  if (!symbols?.length) return {};
+
+  const cryptoSymbols = symbols.filter(s => CRYPTO_SYMBOLS.has(s.toUpperCase()));
+  const stockSymbols = symbols.filter(s => !CRYPTO_SYMBOLS.has(s.toUpperCase()));
+
+  const prices = {};
+
+  // Fetch stocks — nocache=1 bypasses server-side cache, _t busts CDN
+  if (stockSymbols.length > 0) {
+    try {
+      const syms = stockSymbols.map(s => s.toUpperCase()).join(',');
+      const response = await fetchWithTimeout(
+        `${API_BASE}/stocks/prices?symbols=${syms}&nocache=1&_t=${Date.now()}`
+      );
+      if (response.ok) {
+        const data = await response.json();
+        if (data?.prices) {
+          for (const [sym, info] of Object.entries(data.prices)) {
+            const p = typeof info === 'number' ? info : info?.price || info?.close;
+            if (p > 0) prices[sym.toUpperCase()] = p;
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('[fetchFreshPrices] Stock fetch failed:', e.message);
+    }
+  }
+
+  // Fetch crypto — same nocache approach
+  if (cryptoSymbols.length > 0) {
+    try {
+      const syms = cryptoSymbols.map(s => s.toUpperCase()).join(',');
+      const response = await fetchWithTimeout(
+        `${API_BASE}/crypto/prices?symbols=${syms}&nocache=1&_t=${Date.now()}`
+      );
+      if (response.ok) {
+        const data = await response.json();
+        if (data?.prices) {
+          for (const [sym, info] of Object.entries(data.prices)) {
+            const p = typeof info === 'number' ? info : info?.price || info?.close;
+            if (p > 0) prices[sym.toUpperCase()] = p;
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('[fetchFreshPrices] Crypto fetch failed:', e.message);
+    }
+  }
+
+  return prices;
+}
+
+/**
+ * Fetch official EOD close prices for stock symbols.
+ * Uses EODHD End-of-Day endpoint — returns settlement close, not 15-min-delayed real-time.
+ * Only for stocks — crypto should use fetchFreshPrices (trades 24/7).
+ *
+ * @param {string[]} symbols - Stock symbols like ['AAPL', 'AMZN', 'AVGO']
+ * @returns {Promise<Record<string, number>>} Map of symbol to close price
+ */
+export async function fetchEODClosePrices(symbols) {
+  if (!symbols?.length) return {};
+  const prices = {};
+
+  await Promise.allSettled(
+    symbols.map(async (symbol) => {
+      try {
+        const response = await fetchWithTimeout(
+          `${API_BASE}/stocks/eod-close?symbol=${encodeURIComponent(symbol.toUpperCase())}`
+        );
+        if (response.ok) {
+          const data = await response.json();
+          if (data.close > 0) prices[symbol.toUpperCase()] = data.close;
+        }
+      } catch (err) {
+        console.warn(`[EOD] Failed for ${symbol}:`, err.message);
+      }
+    })
+  );
+
+  console.log(`[EOD] Got close prices for ${Object.keys(prices).length}/${symbols.length} symbols`);
+  return prices;
+}
+
+/**
  * Test API connection via proxy
  */
 export async function testConnection() {
