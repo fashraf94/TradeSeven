@@ -113,7 +113,8 @@ import { StockIntelligenceScreen } from './components/StockIntelligence';
 // Research Landing Page (redesigned)
 import ResearchLandingPage from './components/Research/ResearchLandingPage';
 // Dashboard Components
-import { GameModeToggle, ResearchModeButton, WeeklyChallengesPanel, GameModeCarousels, DashboardTabs, LiveClashesSection, PvpWatchlistSection, YourActivity, SeasonalBanner, TrainingLiveFeed, PendingLobbiesSection } from './components/Dashboard';
+import { GameModeToggle, ResearchModeButton, WeeklyChallengesPanel, GameModeCarousel, DashboardTabs, LiveClashesSection, PvpLobbiesSection, YourActivity, SeasonalBanner, TrainingLiveFeed, PendingLobbiesSection } from './components/Dashboard';
+import { useIsMobile } from './hooks/useIsMobile';
 
 // ============================================
 // LAZY LOADING FALLBACK
@@ -11684,6 +11685,7 @@ export default function PortfolioDuel() {
 
   // User state from context (single source of truth)
   const { user, login, logout, updateUser, loading: userLoading } = useUser();
+  const { isMobile } = useIsMobile();
 
   const [screen, setScreen] = useState('home');
   const [dashboardTab, setDashboardTab] = useState('pvp'); // 'pvp' | 'train' - dashboard tab state
@@ -20227,16 +20229,28 @@ export default function PortfolioDuel() {
                   copyToClipboard={copyToClipboard}
                 />
 
-                {/* Enter the Arena - PVP game cards (COMPETE) */}
-                <GameModeCarousels
+                {/* Enter the Arena - Section Header */}
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: '12px', padding: '0 16px', marginBottom: '16px', marginTop: '24px' }}>
+                  <Swords size={18} color="#10b981" />
+                  <span style={{
+                    fontSize: '18px', fontWeight: '700', letterSpacing: '2px', textTransform: 'uppercase', fontStyle: 'italic',
+                    background: 'linear-gradient(90deg, #10b981 0%, #34d399 100%)',
+                    WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text',
+                  }}>
+                    ENTER THE ARENA
+                  </span>
+                  <span style={{ fontSize: '13px', color: '#6e7681', fontWeight: '400', fontStyle: 'normal' }}>
+                    — Challenge friends or rivals
+                  </span>
+                </div>
+                <GameModeCarousel
                   mode="pvp"
-                  setTrainingConfirmType={setTrainingConfirmType}
-                  setShowTrainingConfirmModal={setShowTrainingConfirmModal}
-                  setShowBaggerBombTrainingConfirm={setShowBaggerBombTrainingConfirm}
-                  setScreen={setScreen}
-                  setShowSnakeDraftModal={setShowSnakeDraftModal}
-                  setShowBaggerBombModal={setShowBaggerBombModal}
-                  setShowOptionsArenaModal={setShowOptionsArenaModal}
+                  onSelect={(modeId) => {
+                    if (modeId === 'baggerbomb') setShowBaggerBombModal(true);
+                    else if (modeId === 'snakeDraft') setShowSnakeDraftModal(true);
+                  }}
+                  isMobile={isMobile}
+                  colors={colors}
                 />
 
                 {/* Weekly Challenges */}
@@ -20253,12 +20267,10 @@ export default function PortfolioDuel() {
                   colors={colors}
                 />
 
-                {/* Market Watch — Watchlist + Lobbies */}
-                <PvpWatchlistSection
+                {/* Open Lobbies */}
+                <PvpLobbiesSection
                   user={user}
                   colors={colors}
-                  stocksData={stocksData}
-                  cryptoData={cryptoData}
                   lobbyBattles={lobbyBattles}
                   setCurrentDraft={setCurrentDraft}
                   setScreen={setScreen}
@@ -20325,16 +20337,31 @@ export default function PortfolioDuel() {
                   setActiveBattleId={setActiveBattleId}
                 />
 
-                {/* Quick Play - Training game cards (EARN COINS) */}
-                <GameModeCarousels
+                {/* Quick Play - Section Header */}
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: '12px', padding: '0 16px', marginBottom: '16px', marginTop: '24px' }}>
+                  <Zap size={18} color="#8b5cf6" />
+                  <span style={{
+                    fontSize: '18px', fontWeight: '700', letterSpacing: '2px', textTransform: 'uppercase', fontStyle: 'italic',
+                    background: 'linear-gradient(90deg, #8b5cf6 0%, #a78bfa 100%)',
+                    WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text',
+                  }}>
+                    QUICK PLAY
+                  </span>
+                  <span style={{ fontSize: '13px', color: '#6e7681', fontWeight: '400', fontStyle: 'normal' }}>
+                    — Practice against AI
+                  </span>
+                </div>
+                <GameModeCarousel
                   mode="train"
-                  setTrainingConfirmType={setTrainingConfirmType}
-                  setShowTrainingConfirmModal={setShowTrainingConfirmModal}
-                  setShowBaggerBombTrainingConfirm={setShowBaggerBombTrainingConfirm}
-                  setScreen={setScreen}
-                  setShowSnakeDraftModal={setShowSnakeDraftModal}
-                  setShowBaggerBombModal={setShowBaggerBombModal}
-                  setShowOptionsArenaModal={setShowOptionsArenaModal}
+                  onSelect={(modeId) => {
+                    if (modeId === 'baggerbomb') setShowBaggerBombTrainingConfirm(true);
+                    else if (modeId === 'snakeDraft') {
+                      setTrainingConfirmType('stocks');
+                      setShowTrainingConfirmModal(true);
+                    }
+                  }}
+                  isMobile={isMobile}
+                  colors={colors}
                 />
 
                 {/* Weekly Challenges */}
