@@ -1,9 +1,8 @@
 // /src/components/Dashboard/PvpWatchlistSection.jsx
-// PVP tab — Watchlist + Lobbies behind a segmented control
+// PVP tab — Open Lobbies section (lobbies only, watchlist removed)
 
-import React, { useState, useMemo } from 'react';
+import React, { useMemo } from 'react';
 import { motion } from 'framer-motion';
-import { WatchlistContainer } from './Watchlist';
 import { HoloCard } from '../shared';
 import { getUsername, isBaggerBombBattle } from '../../utils/battleHelpers';
 import { useIsMobile } from '../../hooks';
@@ -115,13 +114,11 @@ function LobbyItem({ lobby, onAction, isMobile }) {
 }
 
 // ============================================
-// Main PvpWatchlistSection
+// PvpLobbiesSection — Open Lobbies list
 // ============================================
-export default function PvpWatchlistSection({
+export default function PvpLobbiesSection({
   user,
   colors,
-  stocksData = [],
-  cryptoData = [],
   lobbyBattles = [],
   // Lobby join
   onJoinLobby,
@@ -133,7 +130,6 @@ export default function PvpWatchlistSection({
   copyToClipboard,
 }) {
   const { isMobile } = useIsMobile();
-  const [activeView, setActiveView] = useState('watchlist');
 
   // --- Lobby items (filter out own lobbies, dedup, sort) ---
   const lobbyItems = useMemo(() => {
@@ -203,11 +199,10 @@ export default function PvpWatchlistSection({
         overflow: 'hidden',
       }}
     >
-      {/* Section Header + Segmented Control */}
+      {/* Section Header */}
       <div style={{
         display: 'flex',
         alignItems: 'center',
-        justifyContent: 'space-between',
         marginBottom: '12px',
         padding: '0 4px',
       }}>
@@ -218,95 +213,44 @@ export default function PvpWatchlistSection({
           letterSpacing: '0.08em',
           textTransform: 'uppercase',
         }}>
-          Market Watch
+          Open Lobbies{lobbyItems.length > 0 ? ` (${lobbyItems.length})` : ''}
         </span>
-
-        {/* Segmented Control */}
-        <div style={{
-          display: 'inline-flex',
-          background: '#0d1117',
-          border: '1px solid #21262d',
-          borderRadius: '10px',
-          padding: '3px',
-        }}>
-          {[
-            { id: 'watchlist', label: 'Watchlist' },
-            { id: 'lobbies', label: `Lobbies${lobbyItems.length > 0 ? ` (${lobbyItems.length})` : ''}` },
-          ].map(tab => {
-            const isActive = activeView === tab.id;
-            return (
-              <motion.button
-                key={tab.id}
-                whileTap={{ scale: 0.95 }}
-                onClick={() => setActiveView(tab.id)}
-                style={{
-                  padding: '6px 14px',
-                  borderRadius: '8px',
-                  border: isActive
-                    ? '1px solid rgba(147, 51, 234, 0.4)'
-                    : '1px solid transparent',
-                  background: isActive
-                    ? 'rgba(147, 51, 234, 0.15)'
-                    : 'transparent',
-                  color: isActive ? '#c084fc' : '#6e7681',
-                  fontSize: '13px',
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                  transition: 'all 0.15s ease',
-                  outline: 'none',
-                }}
-              >
-                {tab.label}
-              </motion.button>
-            );
-          })}
-        </div>
       </div>
 
-      {/* Content — both views always mounted to preserve WatchlistContainer state */}
-      <div style={{ display: activeView === 'watchlist' ? 'block' : 'none' }}>
-        <WatchlistContainer
-          user={user}
-          colors={colors}
-          stocksData={stocksData}
-          cryptoData={cryptoData}
-        />
-      </div>
-      <div style={{ display: activeView === 'lobbies' ? 'block' : 'none' }}>
-        {lobbyItems.length > 0 ? (
-          <HoloCard accentColor="purple">
-            <div style={{
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '1px',
-              background: '#21262d',
-            }}>
-              {lobbyItems.map(lobby => (
-                <LobbyItem
-                  key={lobby._lobbyId || lobby.id}
-                  lobby={lobby}
-                  onAction={handleJoinLobby}
-                  isMobile={isMobile}
-                />
-              ))}
+      {/* Lobby List */}
+      {lobbyItems.length > 0 ? (
+        <HoloCard accentColor="purple">
+          <div style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '1px',
+            background: '#21262d',
+          }}>
+            {lobbyItems.map(lobby => (
+              <LobbyItem
+                key={lobby._lobbyId || lobby.id}
+                lobby={lobby}
+                onAction={handleJoinLobby}
+                isMobile={isMobile}
+              />
+            ))}
+          </div>
+        </HoloCard>
+      ) : (
+        <HoloCard accentColor="purple">
+          <div style={{
+            padding: '32px 16px',
+            textAlign: 'center',
+          }}>
+            <div style={{ fontSize: '13px', color: '#8b949e' }}>
+              No open lobbies right now
             </div>
-          </HoloCard>
-        ) : (
-          <HoloCard accentColor="purple">
-            <div style={{
-              padding: '32px 16px',
-              textAlign: 'center',
-            }}>
-              <div style={{ fontSize: '13px', color: '#8b949e' }}>
-                No open lobbies right now
-              </div>
-              <div style={{ fontSize: '12px', color: '#6e7681', marginTop: '4px' }}>
-                Create a game to get started!
-              </div>
+            <div style={{ fontSize: '12px', color: '#6e7681', marginTop: '4px' }}>
+              Create a game to get started!
             </div>
-          </HoloCard>
-        )}
-      </div>
+          </div>
+        </HoloCard>
+      )}
     </motion.div>
   );
 }

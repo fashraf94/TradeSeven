@@ -113,7 +113,7 @@ import { StockIntelligenceScreen } from './components/StockIntelligence';
 // Research Landing Page (redesigned)
 import ResearchLandingPage from './components/Research/ResearchLandingPage';
 // Dashboard Components
-import { GameModeToggle, ResearchModeButton, WeeklyChallengesPanel, GameModeCarousel, DashboardTabs, LiveClashesSection, PvpWatchlistSection, YourActivity, SeasonalBanner, TrainingLiveFeed, PendingLobbiesSection } from './components/Dashboard';
+import { GameModeToggle, ResearchModeButton, WeeklyChallengesPanel, GameModeCarousel, DashboardTabs, LiveClashesSection, PvpLobbiesSection, YourActivity, SeasonalBanner, TrainingLiveFeed, PendingLobbiesSection } from './components/Dashboard';
 import { useIsMobile } from './hooks/useIsMobile';
 
 // ============================================
@@ -20267,12 +20267,10 @@ export default function PortfolioDuel() {
                   colors={colors}
                 />
 
-                {/* Market Watch — Watchlist + Lobbies */}
-                <PvpWatchlistSection
+                {/* Open Lobbies */}
+                <PvpLobbiesSection
                   user={user}
                   colors={colors}
-                  stocksData={stocksData}
-                  cryptoData={cryptoData}
                   lobbyBattles={lobbyBattles}
                   setCurrentDraft={setCurrentDraft}
                   setScreen={setScreen}
