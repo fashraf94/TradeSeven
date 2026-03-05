@@ -14,6 +14,7 @@ import { stockAPI, POPULAR_STOCKS, POPULAR_CRYPTO, FALLBACK_CRYPTO_PRICES, getMa
 import { analyzeStockWithAI, generateFallbackAnalysis } from './services/technicalAnalysisAI';
 // WebSocket → Cache bridge (flushes WS prices to cacheService so REST calls are skipped)
 import { startWsCacheBridge } from './services/wsCacheBridge';
+import { wsManager } from './services/websocketService';
 import './firebase/config';
 import { motion } from 'framer-motion';
 // Event watchlist configuration for Week Ahead calendar
@@ -22916,9 +22917,16 @@ export default function PortfolioDuel() {
               username: user.displayName || user.username,
               avatar: user.avatar || '',
             };
+            // Collect live WebSocket prices for all portfolio symbols
+            const wsCached = wsManager.getAllCachedPrices();
+            const livePrices = {};
+            [...(portfolio.star || []), ...(portfolio.core || []), ...(portfolio.support || []), ...(portfolio.bench?.stocks || [])]
+              .filter(Boolean).map(a => a.symbol).filter(Boolean)
+              .forEach(sym => { if (wsCached[sym]?.price > 0) livePrices[sym] = wsCached[sym].price; });
+
             // Use the correct join function based on version
             const joinFn = joinBattleVersion >= 4 ? joinBaggerBombBattleV4 : joinBaggerBombBattleV3;
-            const result = await joinFn(battleToJoin.id, joinData, { joinByBattleId: true });
+            const result = await joinFn(battleToJoin.id, joinData, { joinByBattleId: true, livePrices });
             if (result?.success) {
               showToast(`Joined battle!`);
               setCurrentBattle(result.battle);
@@ -22963,16 +22971,23 @@ export default function PortfolioDuel() {
               username: user.displayName || user.username,
               avatar: user.avatar || '',
             };
+            // Collect live WebSocket prices for all portfolio symbols
+            const wsCached = wsManager.getAllCachedPrices();
+            const livePrices = {};
+            [...(portfolio.star || []), ...(portfolio.core || []), ...(portfolio.support || []), ...(portfolio.bench?.stocks || [])]
+              .filter(Boolean).map(a => a.symbol).filter(Boolean)
+              .forEach(sym => { if (wsCached[sym]?.price > 0) livePrices[sym] = wsCached[sym].price; });
+
             let result;
             try {
-              result = await joinBaggerBombBattleV4(joinCode, joinData);
+              result = await joinBaggerBombBattleV4(joinCode, joinData, { livePrices });
             } catch (v4Error) {
               // Fall back to V3 join (battle may be V3)
               console.log('[BaggerBomb] V4 join failed, trying V3:', v4Error.message);
               result = await joinBaggerBombBattleV3(joinCode, {
                 ...joinData,
                 bench: portfolio.bench,
-              });
+              }, { livePrices });
             }
             if (result?.success) {
               showToast(`Joined BaggerBomb battle!`);

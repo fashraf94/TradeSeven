@@ -64,7 +64,6 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
   // State
   const [battle, setBattle] = useState(null);
   const [currentPrices, setCurrentPrices] = useState({});
-  const [marketOpenPrices, setMarketOpenPrices] = useState({}); // API-reported market open prices for daily open capture
   const [dailyExtremes, setDailyExtremes] = useState({}); // { AAPL: { high, low }, ... } from real-time API
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -151,33 +150,14 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
   }, [battle?.state?.startingPrices]);
 
   // Get open prices for current trading day.
-  // Day 1: derives from activationPrices. Day 2+: uses marketOpenPrices (daily reset).
-  // No fallback to effectivePrices — those are live market prices that cause inflated scoring.
+  // All days use activation prices (entry price). No daily reset — scoring is cumulative.
   const openPrices = useMemo(() => {
-    // Day 1 (or day 0 before first trading day starts): use activation prices
-    if (currentTradingDay <= 1) {
-      return activationPrices || {};
-    }
+    return activationPrices || {};
+  }, [activationPrices]);
 
-    // Day 2+: Prefer live previousClose from API (resets daily, most accurate).
-    // marketOpenPrices now contains previousClose values (from Issue #3 fix).
-    if (Object.keys(marketOpenPrices).length > 0) return marketOpenPrices;
-
-    // Fallback to Firebase-stored daily opens (before API data loads)
-    const dayKey = `day${currentTradingDay}`;
-    const dailyOpen = battle?.state?.dailyOpenPrices?.[dayKey];
-    const hasDailyOpen = dailyOpen && Object.keys(dailyOpen).length > 0;
-
-    // Ultimate Day 2+ fallback: startingPrices (better than nothing)
-    return hasDailyOpen ? dailyOpen : activationPrices || {};
-  }, [activationPrices, marketOpenPrices, battle, currentTradingDay]);
-
-  // hasValidBaseline: true when we have a valid scoring baseline for the current day.
-  // Day 0-1: requires startingPrices. Day 2+: any non-empty openPrices source suffices.
   const hasValidBaseline = useMemo(() => {
-    if (currentTradingDay <= 1) return !!activationPrices;
-    return Object.keys(openPrices).length > 0;
-  }, [currentTradingDay, activationPrices, openPrices]);
+    return !!activationPrices;
+  }, [activationPrices]);
 
   // Free agents data
   const freeAgents = useMemo(() => {
@@ -362,7 +342,7 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
       console.log(`[Scoring] BASELINE SOURCE: WAITING (no scoring — day ${currentTradingDay} baseline not loaded)`);
       return { totalScore: 0, assetScores: [], baggerBombs: 0, busts: 0 };
     }
-    console.log(`[Scoring] BASELINE SOURCE: ${currentTradingDay <= 1 ? 'startingPrices' : 'marketOpenPrices'} (day ${currentTradingDay})`);
+    console.log(`[Scoring] BASELINE SOURCE: entryPrices (day ${currentTradingDay})`);
     return calculateScores(myPortfolioFlat, effectivePrices, openPrices, combinedHistory, dailyExtremes, battleThresholds);
   }, [hasValidBaseline, currentTradingDay, myPortfolioFlat, effectivePrices, openPrices, combinedHistory, dailyExtremes, calculateScores, battleThresholds]);
 
@@ -996,21 +976,6 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
         }
       }
 
-      // Extract previousClose as daily baseline (for daily open capture on Day 2+)
-      // previousClose = yesterday's 4:00 PM ET close — more accurate than market open
-      // because overnight gaps (earnings, news) should count toward daily scoring
-      const newOpenPrices = {};
-      Object.entries(stockData).forEach(([symbol, data]) => {
-        if (data?.previousClose) newOpenPrices[symbol] = data.previousClose;
-        else if (data?.open) newOpenPrices[symbol] = data.open;
-      });
-      Object.entries(cryptoData).forEach(([symbol, data]) => {
-        if (data?.previousClose) newOpenPrices[symbol] = data.previousClose;
-        else if (data?.open) newOpenPrices[symbol] = data.open;
-      });
-      if (Object.keys(newOpenPrices).length > 0) {
-        setMarketOpenPrices((prev) => ({ ...prev, ...newOpenPrices }));
-      }
     } catch (err) {
       console.error('Error fetching prices:', err);
       if (battle?.state?.startingPrices) {
@@ -1018,66 +983,6 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
       }
     }
   }, [myPortfolioFlat, oppPortfolioFlat, freeAgents, battle]);
-
-  // ==================== DAILY OPEN PRICE CAPTURE ====================
-
-  const captureDailyOpenPrices = useCallback(async () => {
-    if (!battleId || !battle || battleId.startsWith('training_')) return;
-
-    const dayKey = `day${currentTradingDay}`;
-    const existingPrices = battle?.state?.dailyOpenPrices?.[dayKey];
-
-    // Only capture if not already set
-    if (existingPrices && Object.keys(existingPrices).length > 0) return;
-    if (currentTradingDay <= 0 || currentTradingDay > totalTradingDays) return;
-
-    // For Day 1, starting prices serve as open prices
-    if (currentTradingDay === 1) {
-      const startingPrices = battle?.state?.startingPrices;
-      if (startingPrices && Object.keys(startingPrices).length > 0) return;
-    }
-
-    // Need current prices or market open prices to capture
-    if (Object.keys(effectivePrices).length === 0 && Object.keys(marketOpenPrices).length === 0) return;
-
-    try {
-      const battleRef = doc(db, 'battles', battleId);
-
-      await runTransaction(db, async (transaction) => {
-        const snap = await transaction.get(battleRef);
-        if (!snap.exists()) return;
-
-        const data = snap.data();
-        const existing = data.state?.dailyOpenPrices?.[dayKey];
-
-        // Double-check inside transaction
-        if (existing && Object.keys(existing).length > 0) return;
-
-        const allAssets = [
-          ...(flattenPortfolio(data.creator?.portfolio) || []),
-          ...(flattenPortfolio(data.opponent?.portfolio) || []),
-        ].filter(Boolean);
-
-        const openPriceCapture = {};
-        const symbols = [...new Set(allAssets.map((a) => a.symbol))];
-        symbols.forEach((symbol) => {
-          // Prefer API's actual market open price over current intraday price
-          const openPrice = marketOpenPrices[symbol] || effectivePrices[symbol];
-          if (openPrice) {
-            openPriceCapture[symbol] = openPrice;
-          }
-        });
-
-        if (Object.keys(openPriceCapture).length > 0) {
-          transaction.update(battleRef, {
-            [`state.dailyOpenPrices.${dayKey}`]: openPriceCapture,
-          });
-        }
-      });
-    } catch (err) {
-      console.error(`Error capturing daily open prices for ${dayKey}:`, err);
-    }
-  }, [battleId, battle, currentTradingDay, totalTradingDays, effectivePrices, marketOpenPrices]);
 
   // ==================== FREE AGENT ROTATION ====================
 
@@ -1214,15 +1119,6 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
     const interval = setInterval(fetchPrices, PRICE_POLL_INTERVAL);
     return () => clearInterval(interval);
   }, [fetchPrices, myPortfolioFlat.length, oppPortfolioFlat.length]);
-
-  // Capture daily open prices when prices arrive for a new day
-  useEffect(() => {
-    const hasCurrentPrices = Object.keys(effectivePrices).length > 0;
-    const hasMarketOpens = Object.keys(marketOpenPrices).length > 0;
-    if ((hasCurrentPrices || hasMarketOpens) && currentTradingDay > 0) {
-      captureDailyOpenPrices();
-    }
-  }, [effectivePrices, marketOpenPrices, currentTradingDay, captureDailyOpenPrices]);
 
   // Bank daily scores at end of day (client-side primary) + day-transition fallback
   const bankingInProgressRef = useRef(false);

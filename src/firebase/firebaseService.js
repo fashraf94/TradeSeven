@@ -1442,7 +1442,7 @@ export async function joinBaggerBombBattle(challengeCode, opponentData) {
  */
 export async function joinBaggerBombBattleV3(battleIdOrCode, opponentData, options = {}) {
   try {
-    const { joinByBattleId = false } = options;
+    const { joinByBattleId = false, livePrices = null } = options;
     console.log('🔥 joinBaggerBombBattleV3 called with:', { battleIdOrCode, opponentData, joinByBattleId });
 
     // Validate input
@@ -1632,7 +1632,21 @@ export async function joinBaggerBombBattleV3(battleIdOrCode, opponentData, optio
       console.warn('⚠️ Error fetching prices for V3 battle:', priceError.message);
     }
 
-    console.log(`[BaggerBomb V3] Captured starting prices (source: ${priceSource}) for ${Object.keys(startingPrices).length} symbols`);
+    // Override with WebSocket live prices where available (most fresh, sub-second)
+    if (livePrices && typeof livePrices === 'object') {
+      let wsOverrides = 0;
+      for (const symbol of allSymbols) {
+        const wsPrice = livePrices[symbol];
+        if (wsPrice && wsPrice > 0) {
+          startingPrices[symbol] = wsPrice;
+          wsOverrides++;
+        }
+      }
+      if (wsOverrides > 0) priceSource = 'WS+API';
+    }
+
+    console.log(`[Price Capture V3] startingPrices (source: ${priceSource}):`,
+      Object.entries(startingPrices).map(([s, p]) => `${s}=$${(p || 0).toFixed(2)}`).join(', '));
 
     // Initialize session prices with MORNING_BELL open
     const sessionPrices = initializeSessionPrices();
@@ -1892,7 +1906,7 @@ export async function createBaggerBombBattleV4(battleData, lobbyTimeMinutes = 30
  */
 export async function joinBaggerBombBattleV4(battleIdOrCode, opponentData, options = {}) {
   try {
-    const { joinByBattleId = false } = options;
+    const { joinByBattleId = false, livePrices = null } = options;
     console.log('🔥 joinBaggerBombBattleV4 called with:', { battleIdOrCode, opponentData, joinByBattleId });
 
     if (!battleIdOrCode || typeof battleIdOrCode !== 'string') {
@@ -2048,7 +2062,21 @@ export async function joinBaggerBombBattleV4(battleIdOrCode, opponentData, optio
       console.warn('⚠️ Error fetching prices for V4 battle:', priceError.message);
     }
 
-    console.log(`[BaggerBomb V4] Captured starting prices (source: ${priceSource}) for ${Object.keys(startingPrices).length} symbols`);
+    // Override with WebSocket live prices where available (most fresh, sub-second)
+    if (livePrices && typeof livePrices === 'object') {
+      let wsOverrides = 0;
+      for (const symbol of allSymbols) {
+        const wsPrice = livePrices[symbol];
+        if (wsPrice && wsPrice > 0) {
+          startingPrices[symbol] = wsPrice;
+          wsOverrides++;
+        }
+      }
+      if (wsOverrides > 0) priceSource = 'WS+API';
+    }
+
+    console.log(`[Price Capture V4] startingPrices (source: ${priceSource}):`,
+      Object.entries(startingPrices).map(([s, p]) => `${s}=$${(p || 0).toFixed(2)}`).join(', '));
 
     // Set day1 open prices = starting prices
     const tradingDays = battleData.timing?.tradingDays || 3;
