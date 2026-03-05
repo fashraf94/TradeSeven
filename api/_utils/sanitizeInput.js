@@ -20,7 +20,7 @@ export function sanitizeInput(input, maxLength = 2000) {
     .replace(/ignore\s*(previous|above|all|prior|every)\s*(instructions?|rules?|prompts?|guidelines?)/gi, '')
     .replace(/you\s*are\s*now/gi, '')
     .replace(/pretend\s*(you|to\s*be|you're)/gi, '')
-    .replace(/act\s*as\s*(if|though)?\s*(you|a)/gi, '')
+    .replace(/(?:^|\.\s*)act\s+as\s+(?:a\s+)?(?:different|new|evil|unfiltered|helpful|my|an?\s+ai|an?\s+assistant|chatgpt|gpt|claude)/gi, '')
     .replace(/new\s*instructions?:/gi, '')
     .replace(/override\s*(all|previous|prior)/gi, '')
     .replace(/disregard\s*(all|previous|prior|above)/gi, '')

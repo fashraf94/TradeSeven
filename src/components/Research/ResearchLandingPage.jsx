@@ -607,7 +607,7 @@ const DesktopIntelChat = ({ buildMarketContextString }) => {
     } finally {
       setLoading(false);
     }
-  }, [messages, buildMarketContextString]);
+  }, [messages, buildMarketContextString, isOnCooldown, triggerCooldown]);
 
   const handleClear = useCallback(() => { setMessages([]); }, []);
 

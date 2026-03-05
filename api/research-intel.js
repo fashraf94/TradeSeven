@@ -3,7 +3,6 @@
 // Powers the mobile Research Intelligence Hub
 
 import { applySecurityMiddleware } from './_utils/security.js';
-import { sanitizeInput } from './_utils/sanitizeInput.js';
 import { getFromCache, setInCache, CACHE_TIERS } from './_utils/serverCache.js';
 
 const SYSTEM_PROMPT = `You are the MarketClash Research Intelligence system. You produce STRUCTURED JSON intelligence for a competitive trading game app. Your output powers two views:

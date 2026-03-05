@@ -540,7 +540,7 @@ const StockIntelligenceScreen = ({ onBack, stocksData, cryptoData, colors, user 
     } finally {
       setIsLoading(false);
     }
-  }, [selectedSymbol, isLoading, isSupported, mode]);
+  }, [selectedSymbol, isLoading, isSupported, mode, isOnCooldown, triggerCooldown]);
 
   const handleSubmit = useCallback((e) => {
     e?.preventDefault();
