@@ -1036,6 +1036,7 @@ export async function createBaggerBombBattleV3(battleData, lobbyTimeMinutes = 30
               name: String(asset.name || asset.symbol || ''),
               baseATR: Number(thresholds[asset.symbol]?.threshold || asset.baseATR || 2.5),
               isCrypto: Boolean(asset.isCrypto),
+              direction: asset.direction || 'long',
             }
           : null
       );
@@ -1545,6 +1546,7 @@ export async function joinBaggerBombBattleV3(battleIdOrCode, opponentData, optio
               name: String(asset.name || asset.symbol || ''),
               baseATR: Number(asset.baseATR || opponentThresholds[asset.symbol]?.threshold || 2.5),
               isCrypto: Boolean(asset.isCrypto),
+              direction: asset.direction || 'long',
             }
           : null
       );
@@ -1753,6 +1755,7 @@ export async function createBaggerBombBattleV4(battleData, lobbyTimeMinutes = 30
               name: String(asset.name || asset.symbol || ''),
               baseATR: Number(thresholds[asset.symbol]?.threshold || asset.baseATR || 2.5),
               isCrypto: Boolean(asset.isCrypto),
+              direction: asset.direction || 'long',
             }
           : null
       );
@@ -2003,6 +2006,7 @@ export async function joinBaggerBombBattleV4(battleIdOrCode, opponentData, optio
               name: String(asset.name || asset.symbol || ''),
               baseATR: Number(asset.baseATR || opponentThresholds[asset.symbol]?.threshold || 2.5),
               isCrypto: Boolean(asset.isCrypto),
+              direction: asset.direction || 'long',
             }
           : null
       );
