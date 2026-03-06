@@ -1,4 +1,4 @@
-// MarketClash - Battle Timing Constants and Utilities
+// FantasyTrades - Battle Timing Constants and Utilities
 // Defines timing rules for PvP 1v1, Training, and Snake Draft battles
 //
 // All times are in Eastern Time (ET)

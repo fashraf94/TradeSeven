@@ -1,4 +1,4 @@
-# MarketClash Architecture Notes
+# FantasyTrades Architecture Notes
 
 ## State Management
 

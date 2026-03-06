@@ -1,5 +1,5 @@
 /**
- * Multi-Tier Cache Service for MarketClash
+ * Multi-Tier Cache Service for FantasyTrades
  *
  * Provides intelligent caching with different TTLs based on data volatility:
  * - AGGRESSIVE (24h): Static data like fundamentals, historical prices

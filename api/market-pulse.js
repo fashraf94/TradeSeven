@@ -10,7 +10,7 @@ import { getFromCache, setInCache } from './_utils/serverCache.js';
 // System prompt for Sonar — structured headline generation
 // =============================================================================
 
-const SYSTEM_PROMPT = `You are a financial news synthesizer for MarketClash, an educational stock analysis platform. Generate a market briefing as a JSON array of 8-10 headlines covering today's most significant market-moving events.
+const SYSTEM_PROMPT = `You are a financial news synthesizer for FantasyTrades, an educational stock analysis platform. Generate a market briefing as a JSON array of 8-10 headlines covering today's most significant market-moving events.
 
 Respond ONLY with valid JSON, no markdown fences, no preamble.
 

@@ -1,5 +1,5 @@
 /**
- * EODHD API Service for MarketClash
+ * EODHD API Service for FantasyTrades
  *
  * This service handles all communication with the EODHD market data API
  * through Vercel serverless proxy functions to avoid CORS issues.
@@ -873,7 +873,7 @@ function generateCommunityData(symbol, price, percentChange) {
 /**
  * Symbol conversion helpers (legacy compatibility stubs)
  *
- * These functions originally converted between MarketClash symbols (BTC)
+ * These functions originally converted between FantasyTrades symbols (BTC)
  * and CoinGecko IDs (bitcoin). Since EODHD uses symbols directly,
  * these are now identity functions that just return the uppercase symbol.
  *

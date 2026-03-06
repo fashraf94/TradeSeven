@@ -14,7 +14,7 @@ const getResearchSystemPrompt = () => {
     day: 'numeric'
   });
 
-  return `You are a research advisor for MarketClash, a competitive portfolio battle game.
+  return `You are a research advisor for FantasyTrades, a competitive portfolio battle game.
 
 Today's date: ${today}
 
@@ -49,7 +49,7 @@ RULES:
 - Keep responses concise with bullet points`;
 };
 
-const GAMEPLAN_SYSTEM_PROMPT = `You are the BaggerBomb Strategy Advisor for MarketClash, a competitive stock trading game.
+const GAMEPLAN_SYSTEM_PROMPT = `You are the BaggerBomb Strategy Advisor for FantasyTrades, a competitive stock trading game.
 
 Your role is to provide brief, actionable game plan strategies for players. Keep responses:
 - Concise (3-4 sentences max)
@@ -65,14 +65,14 @@ SCORING RULES TO REFERENCE:
 
 Always mention specific stock symbols when relevant. Make it feel like a game!`;
 
-const DRAFT_SYSTEM_PROMPT = `You are a tactical draft advisor for MarketClash snake drafts.
+const DRAFT_SYSTEM_PROMPT = `You are a tactical draft advisor for FantasyTrades snake drafts.
 
-CRITICAL RULES FOR MARKETCLASH DRAFTS:
+CRITICAL RULES FOR FANTASYTRADES DRAFTS:
 1. Users have 60 seconds per pick - be EXTREMELY concise (under 100 words)
-2. MarketClash uses THREE GAME CATEGORIES: Steady, Risky, Defensive
+2. FantasyTrades uses THREE GAME CATEGORIES: Steady, Risky, Defensive
 3. ONLY suggest assets from the AVAILABLE lists provided - never suggest already-drafted assets
 4. Pay attention to CATEGORY requirements - if user needs a Defensive pick, ONLY suggest from Defensive
-5. The categories are GAME CATEGORIES assigned by MarketClash, NOT real-world financial classifications
+5. The categories are GAME CATEGORIES assigned by FantasyTrades, NOT real-world financial classifications
 6. An asset's game category may differ from its real-world classification (e.g., TSLA might be "Risky" in-game)
 
 RESPONSE FORMAT:
@@ -92,7 +92,7 @@ const buildDraftContext = (context) => {
 
   // Header
   parts.push(`
-MARKETCLASH SNAKE DRAFT - CURRENT STATE
+FANTASYTRADES SNAKE DRAFT - CURRENT STATE
 ════════════════════════════════════════`);
 
   // Draft status
@@ -390,7 +390,7 @@ const buildGamePlanPrompt = (userNotes) => {
     `${i + 1}. [${note.asset || note.symbol || 'General'}] ${note.content || note.text} (saved: ${note.timestamp || 'recently'})`
   ).join('\n');
 
-  return `You are helping a MarketClash player build their battle strategy.
+  return `You are helping a FantasyTrades player build their battle strategy.
 
 They have saved these research notes:
 
@@ -499,7 +499,7 @@ Provide a brief, insightful 2-3 sentence market summary suitable for a trading g
 
 Be concise, engaging, and actionable. No bullet points - flowing prose only.`;
 
-  const systemPrompt = `You are a market analyst providing brief daily market summaries for MarketClash, a competitive portfolio battle game. Keep responses under 100 words. Be insightful but concise. Focus on actionable insights for short-term trading battles.`;
+  const systemPrompt = `You are a market analyst providing brief daily market summaries for FantasyTrades, a competitive portfolio battle game. Keep responses under 100 words. Be insightful but concise. Focus on actionable insights for short-term trading battles.`;
 
   try {
     const response = await fetch('https://api.anthropic.com/v1/messages', {
@@ -852,7 +852,7 @@ async function handleCryptoHealth(req, res, API_KEY) {
     return res.status(200).json({ success: false, error: 'No on-chain data provided' });
   }
 
-  const systemPrompt = `You are a Bitcoin on-chain analyst helping a stock trader understand crypto fundamentals through a gaming app called MarketClash. The user plays "BaggerBomb" — a game where assets that cross volatility thresholds score points (BaggerBombs for upside, Busts for downside).
+  const systemPrompt = `You are a Bitcoin on-chain analyst helping a stock trader understand crypto fundamentals through a gaming app called FantasyTrades. The user plays "BaggerBomb" — a game where assets that cross volatility thresholds score points (BaggerBombs for upside, Busts for downside).
 
 Your job is to explain what Bitcoin's on-chain data means in plain English, using stock market analogies wherever possible. The user has 13 years of stock trading experience but is new to crypto.
 

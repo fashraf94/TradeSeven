@@ -1,6 +1,6 @@
 // src/services/challengeService.js
 // =====================================================
-// Challenge system for MarketClash v2
+// Challenge system for FantasyTrades v2
 // Includes: Double Down & Market Close challenges
 // =====================================================
 

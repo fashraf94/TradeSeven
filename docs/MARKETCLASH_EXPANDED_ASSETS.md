@@ -1,4 +1,4 @@
-# MarketClash Expanded Asset Database
+# FantasyTrades Expanded Asset Database
 
 ## Overview
 
@@ -299,4 +299,4 @@ const CRYPTO_CATEGORIES = [
 ---
 
 *Document created: December 15, 2025*
-*For: MarketClash Research Flow v2*
+*For: FantasyTrades Research Flow v2*

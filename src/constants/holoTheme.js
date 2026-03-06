@@ -1,4 +1,4 @@
-// MarketClash Holographic War Room Theme
+// FantasyTrades Holographic War Room Theme
 // Used across all Snake Draft screens
 // Created for UI Redesign - Phase 1
 

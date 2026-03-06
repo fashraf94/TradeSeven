@@ -5,7 +5,7 @@
 import { applySecurityMiddleware } from './_utils/security.js';
 import { sanitizeInput } from './_utils/sanitizeInput.js';
 
-const SYSTEM_PROMPT = `You are a market intelligence analyst for the MarketClash educational trading platform. A user is asking a follow-up question about today's market.
+const SYSTEM_PROMPT = `You are a market intelligence analyst for the FantasyTrades educational trading platform. A user is asking a follow-up question about today's market.
 
 RULES:
 - NEVER give financial advice. Use educational language: "historically", "pattern suggests", "worth monitoring"

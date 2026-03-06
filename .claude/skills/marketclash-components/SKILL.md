@@ -1,6 +1,6 @@
-# MarketClash Components Skill
+# FantasyTrades Components Skill
 
-A comprehensive design system and component library for MarketClash - a holographic war-room themed stock trading game.
+A comprehensive design system and component library for FantasyTrades - a holographic war-room themed stock trading game.
 
 ## Quick Reference
 

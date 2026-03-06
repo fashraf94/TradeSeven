@@ -1,4 +1,4 @@
-// MarketClash TD Scoring - Breakout Detection Service
+// FantasyTrades TD Scoring - Breakout Detection Service
 // Real-time detection of threshold breach events during battles
 //
 // NEW LINEAR SCORING SYSTEM:

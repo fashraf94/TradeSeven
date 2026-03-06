@@ -229,7 +229,7 @@ function buildEnhancementPrompt(recommendations, thesis) {
   ).join('\n');
 
   return `
-You are a MarketClash research advisor helping a user build their battle portfolio.
+You are a FantasyTrades research advisor helping a user build their battle portfolio.
 
 USER'S THESIS:
 - Battle Type: ${thesis.battleType} (${thesis.battleType === 'head-to-head' ? '24-hour' : 'week-long'})
@@ -337,7 +337,7 @@ function buildDeepDivePrompt(asset, thesis) {
   const isCrypto = asset.category !== undefined;
 
   return `
-Analyze ${asset.symbol} (${asset.name}) for a MarketClash battle.
+Analyze ${asset.symbol} (${asset.name}) for a FantasyTrades battle.
 
 ASSET DATA:
 - Current Price: $${safeToFixed(asset.price, 2)}
@@ -460,7 +460,7 @@ function buildGamePlanPrompt(thesis, convictionData, pinnedInsights, recommendat
     : '';
 
   return `
-You are a MarketClash strategy advisor. Generate a personalized Game Plan.
+You are a FantasyTrades strategy advisor. Generate a personalized Game Plan.
 
 USER'S THESIS:
 - Battle Type: ${thesis.battleType} (${thesis.battleType === 'head-to-head' ? '24-hour' : 'week-long'})

@@ -5,7 +5,7 @@ import { HOLO_COLORS, GLOW_EFFECTS } from '../../constants/holoTheme';
  * HoloCard - Reusable card component with holographic theme variants
  *
  * A flexible card container that supports multiple visual styles consistent
- * with the MarketClash holographic design system.
+ * with the FantasyTrades holographic design system.
  *
  * @param {string|Component} as - Element type to render ('div', 'button', etc.)
  * @param {string} variant - 'default' | 'elevated' | 'highlighted' | 'interactive'

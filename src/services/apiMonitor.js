@@ -1,5 +1,5 @@
 /**
- * API Usage Monitor for MarketClash
+ * API Usage Monitor for FantasyTrades
  *
  * Tracks all API calls to help identify:
  * - Excessive API usage
@@ -142,7 +142,7 @@ class APIMonitor {
     const stats = this.getStats();
 
     console.log('\n========================================');
-    console.log('   MarketClash API Usage Report');
+    console.log('   FantasyTrades API Usage Report');
     console.log('========================================\n');
 
     console.log(`Session Duration: ${stats.sessionDuration}`);

@@ -1,5 +1,5 @@
 /**
- * Technical Indicators Service for MarketClash
+ * Technical Indicators Service for FantasyTrades
  *
  * Calculates and caches technical indicators with AGGRESSIVE (24h) caching.
  * Uses historical price data to derive:

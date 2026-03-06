@@ -9,7 +9,7 @@
 const CLASSIFICATION_MODEL = 'claude-haiku-4-5-20251001';
 const MAX_TOKENS = 500;
 
-const SYSTEM_PROMPT = `You are ClashBot, a bug report classifier for MarketClash — a competitive portfolio battle game built with React 18, Firebase, and deployed on Vercel.
+const SYSTEM_PROMPT = `You are ClashBot, a bug report classifier for FantasyTrades — a competitive portfolio battle game built with React 18, Firebase, and deployed on Vercel.
 
 SCREENS (route names):
 dashboard, builder, battle (classic), draftSetup, draftLobby, draftRoom, draftBattle, baggerBomb, baggerBombTraining, optionsArena, optionsArenaTraining, earningsGame, research, technicalResearch, moneyMap, thesis, profile, settings, tutorial

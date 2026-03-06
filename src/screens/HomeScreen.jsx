@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { ArrowRight, Eye, EyeOff, Mail, Lock, User } from 'lucide-react';
 import DesktopBackground from '../components/DesktopBackground';
-import MarketClashLogo from '../components/MarketClashLogo';
+import FantasyTradesLogo from '../components/FantasyTradesLogo';
 import { useCooldown } from '../hooks/useCooldown';
 
 /**
@@ -170,7 +170,7 @@ const HomeScreen = ({
 
         {/* LOGO */}
         <div style={{ marginBottom: '40px', textAlign: 'center' }}>
-          <MarketClashLogo size="large" />
+          <FantasyTradesLogo size="large" />
         </div>
 
         {/* AUTH FORM CARD */}

@@ -20,7 +20,7 @@ console.log('Debug utilities loaded');
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>
-    <ErrorBoundary name="MarketClash App">
+    <ErrorBoundary name="FantasyTrades App">
       <UserProvider>
         <App />
       </UserProvider>

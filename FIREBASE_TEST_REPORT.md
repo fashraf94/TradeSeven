@@ -1,7 +1,7 @@
 # Firebase Connection Test Report
 
 **Date:** November 24, 2025
-**Project:** MarketClash (TradeTradeseven)
+**Project:** FantasyTrades (TradeTradeseven)
 **Status:** ✅ READY FOR TESTING
 
 ---

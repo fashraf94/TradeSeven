@@ -1,4 +1,4 @@
-// MarketClash TD Scoring - Volatility Threshold Service
+// FantasyTrades TD Scoring - Volatility Threshold Service
 // Client-side service to fetch and cache volatility thresholds
 //
 // Thresholds determine how much an asset needs to move to score "breakout" points

@@ -5,7 +5,7 @@
 import { applySecurityMiddleware } from './_utils/security.js';
 import { sanitizeInput } from './_utils/sanitizeInput.js';
 
-const SYSTEM_PROMPT = `You are performing a focused deep-dive analysis of a single stock for the MarketClash educational platform.
+const SYSTEM_PROMPT = `You are performing a focused deep-dive analysis of a single stock for the FantasyTrades educational platform.
 
 RULES:
 - NEVER give trading advice. Use: "pattern suggests", "historically", "worth monitoring"

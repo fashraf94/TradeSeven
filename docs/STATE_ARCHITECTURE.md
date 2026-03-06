@@ -1,8 +1,8 @@
-# MarketClash State Architecture
+# FantasyTrades State Architecture
 
 **Last Updated:** 2025-12-12
 
-This document describes the complete state management system, data flow patterns, and persistence layer of the MarketClash app.
+This document describes the complete state management system, data flow patterns, and persistence layer of the FantasyTrades app.
 
 ---
 
@@ -926,7 +926,7 @@ const isNewWeek = (lastWeekStart) => {
 
 ## Summary
 
-The MarketClash app uses a **single-component architecture** with:
+The FantasyTrades app uses a **single-component architecture** with:
 
 - **65+ useState hooks** organized by feature area
 - **String-based screen routing** via `screen` state

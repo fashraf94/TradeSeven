@@ -1,4 +1,4 @@
-// MarketClash TD Scoring - Price Snapshot Service
+// FantasyTrades TD Scoring - Price Snapshot Service
 // Captures prices at session boundaries for accurate scoring
 //
 // Session boundaries:

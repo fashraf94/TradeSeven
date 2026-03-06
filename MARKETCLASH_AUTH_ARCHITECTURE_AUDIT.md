@@ -1,7 +1,7 @@
-# MarketClash Authentication & Data Flow Architecture Audit
+# FantasyTrades Authentication & Data Flow Architecture Audit
 
 **Generated:** January 5, 2026
-**Codebase:** TradeSeven (MarketClash)
+**Codebase:** TradeSeven (FantasyTrades)
 
 ---
 
@@ -22,7 +22,7 @@
 
 ## Architecture Overview
 
-The MarketClash codebase uses a **hybrid data flow architecture** combining:
+The FantasyTrades codebase uses a **hybrid data flow architecture** combining:
 
 1. **React Context** (`UserContext`) for global user state
 2. **Props drilling** for component-specific user data

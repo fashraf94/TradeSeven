@@ -1,5 +1,5 @@
 // src/firebase/firebaseService.js
-// Firestore database operations for MarketClash battles and challenges
+// Firestore database operations for FantasyTrades battles and challenges
 
 import {
   collection,

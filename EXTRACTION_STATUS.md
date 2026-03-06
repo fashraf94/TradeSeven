@@ -54,7 +54,7 @@
 | Component | File | Used By |
 |-----------|------|---------|
 | DesktopBackground | `components/DesktopBackground.jsx` | Multiple screens |
-| MarketClashLogo | `components/MarketClashLogo.jsx` | HomeScreen |
+| FantasyTradesLogo | `components/FantasyTradesLogo.jsx` | HomeScreen |
 
 ## Pending Extraction
 
@@ -77,7 +77,7 @@ The successful extraction used this approach:
 
 ```
 8c8894d chore: Remove disabled code blocks from App.jsx
-07af5e6 feat: Batch 5 partial - Extract HomeScreen and MarketClashLogo
+07af5e6 feat: Batch 5 partial - Extract HomeScreen and FantasyTradesLogo
 565c702 feat: Batch 4 partial - Extract DraftBattleScreen and DraftRoomScreen
 ed373f4 feat: Batch 3 - Extract 5 medium screens with exact code
 dc9a6d8 feat: Batch 2 - Extract 5 simple screens with exact code

@@ -1,8 +1,8 @@
-# MarketClash Component Registry
+# FantasyTrades Component Registry
 
 **Last Updated:** 2025-12-12
 
-This document catalogs every screen and reusable component in the MarketClash app.
+This document catalogs every screen and reusable component in the FantasyTrades app.
 
 ---
 
@@ -38,7 +38,7 @@ Total Screens Found: **21**
 **Purpose:** Landing page for new/returning users to enter username and start playing.
 
 **Key UI Elements:**
-- MarketClash logo (bull vs bear animation)
+- FantasyTrades logo (bull vs bear animation)
 - Username input field
 - "Enter Arena" button (primary cyan CTA)
 - Dark themed card container
@@ -510,7 +510,7 @@ Total Screens Found: **21**
   - Things to Consider warnings
   - 30-day range visualization
   - Category rank
-  - MarketClash community stats
+  - FantasyTrades community stats
 - Compare panel (up to 3 assets)
 - Add to Portfolio button
 
@@ -545,7 +545,7 @@ Total Screens Found: **21**
 
 ## Reusable Inline Components
 
-### MarketClashLogo
+### FantasyTradesLogo
 **Line:** ~8-197
 
 **Purpose:** SVG logo with bull vs bear animation.

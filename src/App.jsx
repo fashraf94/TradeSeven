@@ -371,7 +371,7 @@ const TOUR_STEPS = [
   {
     id: 'welcome',
     target: null,
-    title: "Welcome to MarketClash! 🎯",
+    title: "Welcome to FantasyTrades! 🎯",
     description: "Let's take a quick tour of your battle station. You'll be ready to compete in under a minute!",
     position: 'center'
   },
@@ -788,8 +788,8 @@ const selectDiversificationStocks = (count, existingPicks, strategy) => {
   return selected.slice(0, count);
 };
 
-// MarketClash Bull & Bear Logo Component
-const MarketClashLogo = ({ size = 'large' }) => {
+// FantasyTrades Bull & Bear Logo Component
+const FantasyTradesLogo = ({ size = 'large' }) => {
   const dimensions = {
     large: { width: 450, height: 350 },
     medium: { width: 225, height: 175 },
@@ -863,6 +863,11 @@ const MarketClashLogo = ({ size = 'large' }) => {
           <stop offset="0%" style={{stopColor: '#fafaf9'}}/>
           <stop offset="70%" style={{stopColor: '#e7e5e4'}}/>
           <stop offset="100%" style={{stopColor: '#a8a29e'}}/>
+        </linearGradient>
+
+        <linearGradient id="brandGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+          <stop offset="0%" style={{stopColor: '#FF8C00'}}/>
+          <stop offset="100%" style={{stopColor: '#468CFF'}}/>
         </linearGradient>
       </defs>
 
@@ -968,7 +973,7 @@ const MarketClashLogo = ({ size = 'large' }) => {
       </g>
 
       <text x="225" y="295" textAnchor="middle" fontFamily="'Segoe UI', system-ui, sans-serif" fontSize="28" fontWeight="700" letterSpacing="6" filter="url(#subtleGlow)">
-        <tspan fill="#00d9ff">MARKET</tspan><tspan fill="#e6edf3">CLASH</tspan>
+        <tspan fill="url(#brandGradient)">FANTASY</tspan><tspan fill="url(#brandGradient)">TRADES</tspan>
       </text>
 
       <text x="225" y="323" textAnchor="middle" fontFamily="'Segoe UI', system-ui, sans-serif" fontSize="10" fontWeight="400" letterSpacing="3" fill="#8b949e">
@@ -10106,9 +10111,9 @@ function generateResearchInsights(asset) {
     considerations.push({ icon: '😴', text: 'Unusually quiet - could break out either direction' });
   }
 
-  // MarketClash stats
+  // FantasyTrades stats
   if (asset.communityData?.winRate >= 60) {
-    reasons.push({ icon: '🎯', text: `High win rate in MarketClash (${asset.communityData.winRate}%)` });
+    reasons.push({ icon: '🎯', text: `High win rate in FantasyTrades (${asset.communityData.winRate}%)` });
   }
   if (asset.communityData?.championPick) {
     reasons.push({ icon: '👑', text: `Champion's choice - ${asset.communityData.championPercentage}% of top players pick this` });
@@ -10493,7 +10498,7 @@ For a 24-hour battle, high beta stocks can make or break your portfolio. If you'
     intermediate: (value, upDays) => `${value >= 0 ? 'Up' : 'Down'} ${Math.abs(value || 0).toFixed(1)}% over the past week. ${upDays || 0}/7 trading days were positive. ${Math.abs(value || 0) > 3 ? 'Strong' : Math.abs(value || 0) > 1 ? 'Moderate' : 'Weak'} short-term momentum.`,
     moreDepth: `Momentum shows which direction a stock has been trending recently. Stocks in motion tend to stay in motion (at least in the short term).
 
-For MarketClash battles:
+For FantasyTrades battles:
 • Strong upward momentum: Stock has tailwind, may continue
 • Downward momentum: Could be a dip-buy opportunity OR a falling knife
 • Flat momentum: Stable but may not give you the edge you need`
@@ -10518,7 +10523,7 @@ A high consensus (4.0+) means most experts are optimistic. But remember: analyst
     },
     moreDepth: `Analysts set price targets - where they think the stock will be in 6-12 months.
 
-For MarketClash:
+For FantasyTrades:
 • Stock well below target: Room to run, analysts see upside
 • Stock at or above target: May be "priced in," limited near-term catalyst
 
@@ -10618,7 +10623,7 @@ For 24-hour battles:
 • 1-2x BTC volatility: Typical for major altcoins. Moderately more volatile.
 • <1x BTC volatility: Rare for altcoins. Often stablecoins or very established tokens.
 
-For MarketClash: If you want to play it "safe" in crypto battles, lower volatility vs BTC is better. If you need a comeback, higher volatility gives more upside (and downside).`
+For FantasyTrades: If you want to play it "safe" in crypto battles, lower volatility vs BTC is better. If you need a comeback, higher volatility gives more upside (and downside).`
   },
   volume24h: {
     intermediate: (value) => {
@@ -17126,8 +17131,8 @@ export default function PortfolioDuel() {
         fontFamily: 'Inter, system-ui, sans-serif',
       }}>
         <div style={{ textAlign: 'center' }}>
-          <div style={{ fontSize: '24px', fontWeight: 700, marginBottom: '12px' }}>
-            MarketClash
+          <div style={{ fontSize: '24px', fontWeight: 700, marginBottom: '12px', background: 'linear-gradient(90deg, #FF8C00, #468CFF)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>
+            FantasyTrades
           </div>
           <div style={{ fontSize: '14px', color: 'rgba(255,255,255,0.5)' }}>
             Loading...
@@ -19911,11 +19916,11 @@ export default function PortfolioDuel() {
                 <div className="flex items-center gap-2.5">
                   <Flame className="w-6 h-6" style={{ color: colors.cyan }} />
                   <span className="text-xl font-bold" style={{
-                    background: `linear-gradient(135deg, ${colors.cyan} 0%, ${colors.greenBright} 100%)`,
+                    background: 'linear-gradient(90deg, #FF8C00, #468CFF)',
                     WebkitBackgroundClip: 'text',
                     WebkitTextFillColor: 'transparent',
                     backgroundClip: 'text'
-                  }}>MarketClash</span>
+                  }}>FantasyTrades</span>
                 </div>
 
                 {/* User & Logout */}
@@ -20071,7 +20076,7 @@ export default function PortfolioDuel() {
                 </button>
 
                 {/* Logo - Left aligned after hamburger */}
-                <MarketClashLogo size="small" />
+                <FantasyTradesLogo size="small" />
               </div>
 
               {/* Right Side - Token Balance + User Info */}
@@ -20983,7 +20988,7 @@ export default function PortfolioDuel() {
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                   <span style={{ fontSize: '20px' }}>📋</span>
                   <h2 style={{ color: '#ffffff', fontSize: '20px', fontWeight: '700', margin: 0 }}>
-                    MarketClash Rules
+                    FantasyTrades Rules
                   </h2>
                 </div>
                 <button

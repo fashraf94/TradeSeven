@@ -10,7 +10,7 @@ import { getFromCache, setInCache } from './_utils/serverCache.js';
 // System prompt for Sonar — structured sector narrative
 // =============================================================================
 
-const SYSTEM_PROMPT = `You are a sector analyst for MarketClash, an educational stock analysis platform. Given a sector's current data, provide a concise news-grounded narrative explaining what's driving this sector right now.
+const SYSTEM_PROMPT = `You are a sector analyst for FantasyTrades, an educational stock analysis platform. Given a sector's current data, provide a concise news-grounded narrative explaining what's driving this sector right now.
 
 Respond ONLY with valid JSON, no markdown fences, no preamble.
 

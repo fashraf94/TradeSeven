@@ -1,5 +1,5 @@
 // Free Agency Components - Phase F4 Complete (Polish & Production)
-// MarketClash UI Redesign - Holographic War Room Theme
+// FantasyTrades UI Redesign - Holographic War Room Theme
 
 // Shared logic hook
 export { default as useSwapLogic } from './shared/useSwapLogic';
