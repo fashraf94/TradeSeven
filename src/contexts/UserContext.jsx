@@ -67,7 +67,11 @@ export const UserProvider = ({ children }) => {
       if (authResult && authResult.userData) {
         const mapped = mapFirebaseUserToAppUser(authResult.userData);
         setUser(mapped);
-      } else {
+      } else if (!authResult) {
+        // Only clear user on true sign-out (authResult is null).
+        // If authResult exists but userData is missing (race condition
+        // where getUserData fires before Firestore doc is replicated),
+        // don't wipe the user that register()/login() already set.
         setUser(null);
       }
       setLoading(false);

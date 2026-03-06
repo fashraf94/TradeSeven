@@ -53,6 +53,16 @@ username: firebaseUserDoc.profile?.username  // Display name
 - All missing collections added with appropriate rules
 - `users/{userId}` collection: create/update only by owner
 
+## Post-Verification Fixes (Commit 2)
+
+Three issues were found during the verification audit and fixed:
+
+1. **onAuthChange race condition** — If `getUserData()` failed during signup (Firestore replication lag), `onAuthChange` would call `setUser(null)`, wiping the user that `register()` had just set. Fixed: only clear user on true sign-out (`authResult` is null), not on `getUserData` failure.
+
+2. **ErrorBoundary pre-auth logging** — `errorLogs` collection required `request.auth != null`, but `ErrorBoundary` can fire before authentication (e.g., login screen crashes). Fixed: removed auth requirement from `errorLogs` creates — abuse protection (field count <= 10, message size <= 5000) is sufficient.
+
+3. **Bot entries in optionsEntries** — `optionsBotService.js` creates entries with `odUserId: "bot_..."` from the admin panel (client-side). Rules rejected these because `odUserId != request.auth.uid`. Fixed: allow creates where `odUserId` matches `bot_.*` regex.
+
 ## Recommended Next Steps
 
 1. **Deploy Firestore rules** — after confirming login/register works and documents contain correct Firebase UIDs as owner fields
