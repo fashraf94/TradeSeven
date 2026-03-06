@@ -11702,7 +11702,7 @@ export default function PortfolioDuel() {
   // ============================================
 
   // User state from context (single source of truth)
-  const { user, login, logout, updateUser, loading: userLoading } = useUser();
+  const { user, login, register, loginWithGoogle, logout, updateUser, loading: userLoading, authLoading, forgotPassword } = useUser();
   const { isMobile } = useIsMobile();
 
   const [screen, setScreen] = useState('home');
@@ -14686,12 +14686,6 @@ export default function PortfolioDuel() {
   // 4. SCREEN HANDLERS
   // ============================================
 
-  const handleLogin = async () => {
-    if (!username.trim()) return;
-    await login(username.trim());
-    setScreen('dashboard');
-  };
-
   const handleAddAsset = (asset) => {
     if (portfolio.some(p => p.symbol === asset.symbol)) return;
     if (portfolio.length >= 13) return;
@@ -17119,6 +17113,30 @@ export default function PortfolioDuel() {
   // ============================================
   const getScreenContent = () => {
 
+  // AUTH LOADING - Show loading screen while Firebase Auth checks session
+  if (authLoading) {
+    return (
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        height: '100vh',
+        backgroundColor: '#0a0a0f',
+        color: '#00d9ff',
+        fontFamily: 'Inter, system-ui, sans-serif',
+      }}>
+        <div style={{ textAlign: 'center' }}>
+          <div style={{ fontSize: '24px', fontWeight: 700, marginBottom: '12px' }}>
+            MarketClash
+          </div>
+          <div style={{ fontSize: '14px', color: 'rgba(255,255,255,0.5)' }}>
+            Loading...
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   // LOGIN SCREEN - Extracted to HomeScreen component
   if (screen === 'home') {
     return (
@@ -17126,6 +17144,9 @@ export default function PortfolioDuel() {
         containerStyle={containerStyle}
         isDesktop={isDesktop}
         login={login}
+        register={register}
+        loginWithGoogle={loginWithGoogle}
+        forgotPassword={forgotPassword}
         setScreen={setScreen}
       />
     );

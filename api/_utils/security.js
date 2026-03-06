@@ -24,6 +24,9 @@ const ALLOWED_ORIGINS = [
   // Custom domains (add if configured)
   'https://www.marketclash.app',
   'https://marketclash.app',
+  // Production domain
+  'https://www.fantasytrades.io',
+  'https://fantasytrades.io',
 ];
 
 /**

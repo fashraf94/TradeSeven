@@ -4,40 +4,40 @@ service cloud.firestore {
 
     // ═══════════════════════════════════════════
     // TIER 1 — System Collections
-    // Read: Anyone | Write: Server only (unless noted)
+    // Read: Authenticated users | Write: Server only (Admin SDK)
     // Managed by Vercel cron jobs and API endpoints
     // ═══════════════════════════════════════════
 
     // Economic calendar — populated by Claude-powered cron
     match /economicCalendar/{doc} {
-      allow read: if true;
+      allow read: if request.auth != null;
       allow write: if false;
     }
 
     // Tournament collections: need client-side create for getOrCreate pattern
     // Cron handles resolution/status updates via Admin SDK (bypasses rules)
     match /earningsTournaments/{doc} {
-      allow read: if true;
-      allow create: if true;  // Client creates tournament if none exists
-      allow update: if true;  // Beta: allow status updates from client
+      allow read: if request.auth != null;
+      allow create: if request.auth != null;
+      allow update: if request.auth != null;
       allow delete: if false;
     }
     match /optionsTournaments/{doc} {
-      allow read: if true;
-      allow create: if true;  // Same getOrCreate pattern
-      allow update: if true;  // Beta: allow status updates
+      allow read: if request.auth != null;
+      allow create: if request.auth != null;
+      allow update: if request.auth != null;
       allow delete: if false;
     }
 
     // Earnings verification cache — cron-populated
     match /earningsVerification/{doc} {
-      allow read: if true;
+      allow read: if request.auth != null;
       allow write: if false;
     }
 
     // Market data cache — server-side API cache, populated by Admin SDK
     match /marketDataCache/{docId} {
-      allow read: if true;
+      allow read: if request.auth != null;
       allow write: if false;
     }
 
@@ -48,129 +48,195 @@ service cloud.firestore {
 
     // Draft aggregates — system-generated global stats
     match /draftAggregates/{doc} {
-      allow read: if true;
+      allow read: if request.auth != null;
       allow write: if false;
     }
 
     // ═══════════════════════════════════════════
+    // User Profiles
+    // ═══════════════════════════════════════════
+
+    match /users/{userId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null
+                    && request.auth.uid == userId;
+      allow update: if request.auth != null
+                    && request.auth.uid == userId;
+      allow delete: if false;
+    }
+
+    // ═══════════════════════════════════════════
     // TIER 2 — User-Owned Collections
-    // Read: Anyone (needed for gameplay visibility)
-    // Write: Only if document has valid user identifier
+    // Read: Authenticated users (needed for gameplay visibility)
+    // Write: Owner verified via request.auth.uid
     // ═══════════════════════════════════════════
 
     // Training battles — single user ownership
     match /trainingBattles/{battleId} {
-      allow read: if true;
-      // FIX: Accept EITHER top-level userId (string) OR creator object
-      allow create: if (request.resource.data.userId is string)
-                    || (request.resource.data.creator is map
-                         && request.resource.data.creator.odUserId is string);
-      allow update: if true;  // Beta: open updates for real-time battle state
+      allow read: if request.auth != null;
+      // Accept EITHER top-level userId (string) OR creator object
+      allow create: if request.auth != null
+                    && (
+                      (request.resource.data.userId is string
+                       && request.resource.data.userId == request.auth.uid)
+                      || (request.resource.data.creator is map
+                           && request.resource.data.creator.odUserId == request.auth.uid)
+                    );
+      allow update: if request.auth != null;  // Beta: open updates for real-time battle state
       allow delete: if false;
     }
 
     // Game plan notes — single user ownership
     match /gamePlanNotes/{noteId} {
-      allow read: if true;
-      allow create: if request.resource.data.userId is string;
-      allow update: if resource.data.userId is string;
-      allow delete: if false;
+      allow read: if request.auth != null;
+      allow create: if request.auth != null
+                    && request.resource.data.userId == request.auth.uid;
+      allow update: if request.auth != null
+                    && resource.data.userId == request.auth.uid;
+      allow delete: if request.auth != null
+                    && resource.data.userId == request.auth.uid;
+    }
+
+    // Game plan templates — single user ownership
+    match /gamePlanTemplates/{templateId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null
+                    && request.resource.data.userId == request.auth.uid;
+      allow update: if request.auth != null
+                    && resource.data.userId == request.auth.uid;
+      allow delete: if request.auth != null
+                    && resource.data.userId == request.auth.uid;
     }
 
     // Tracked patterns — single user ownership
     match /trackedPatterns/{patternId} {
-      allow read: if true;
-      allow create: if request.resource.data.userId is string;
-      allow update: if resource.data.userId is string;
+      allow read: if request.auth != null;
+      allow create: if request.auth != null
+                    && request.resource.data.userId == request.auth.uid;
+      allow update: if request.auth != null
+                    && resource.data.userId == request.auth.uid;
       allow delete: if false;
     }
 
     // Draft user stats — document ID is the userId
     match /draftUserStats/{userId} {
-      allow read: if true;
-      allow create, update, delete: if true;  // Doc ID = userId, beta open
+      allow read: if request.auth != null;
+      allow write: if request.auth != null
+                   && request.auth.uid == userId;
     }
 
     // Earnings portfolios — has odUserId field
     match /earningsPortfolios/{docId} {
-      allow read: if true;
-      allow create: if request.resource.data.odUserId is string;
-      allow update: if resource.data.odUserId is string;
+      allow read: if request.auth != null;
+      allow create: if request.auth != null
+                    && request.resource.data.odUserId == request.auth.uid;
+      allow update: if request.auth != null
+                    && resource.data.odUserId == request.auth.uid;
       allow delete: if false;
     }
 
     // Earnings entries — has odUserId field
     match /earningsEntries/{docId} {
-      allow read: if true;
-      allow create: if request.resource.data.odUserId is string;
-      allow update: if resource.data.odUserId is string;
+      allow read: if request.auth != null;
+      allow create: if request.auth != null
+                    && request.resource.data.odUserId == request.auth.uid;
+      allow update: if request.auth != null
+                    && resource.data.odUserId == request.auth.uid;
       allow delete: if false;
     }
 
     // Options entries — has odUserId field
+    // Create allows bot entries (odUserId starts with "bot_") from admin panel
     match /optionsEntries/{docId} {
-      allow read: if true;
-      allow create: if request.resource.data.odUserId is string;
-      allow update: if resource.data.odUserId is string;
+      allow read: if request.auth != null;
+      allow create: if request.auth != null
+                    && (request.resource.data.odUserId == request.auth.uid
+                        || request.resource.data.odUserId.matches('bot_.*'));
+      allow update: if request.auth != null
+                    && resource.data.odUserId == request.auth.uid;
       allow delete: if false;
     }
 
     // ═══════════════════════════════════════════
     // TIER 3 — Gameplay Collections
-    // Read: Anyone | Write: Participants
+    // Read: Authenticated users | Write: Authenticated (multiplayer)
     // Multiple users interact with the same documents
     // ═══════════════════════════════════════════
 
     // Battles (Classic 1v1, BaggerBomb V2/V3/V4)
     match /battles/{battleId} {
-      allow read: if true;
-      // FIX: Accept creator as string (classic) OR as object (BaggerBomb V3/V4)
-      allow create: if (request.resource.data.creator is string)
-                    || (request.resource.data.creator is map
-                         && request.resource.data.creator.odUserId is string);
-      allow update: if true;  // Open for battle joins, status updates
+      allow read: if request.auth != null;
+      allow create: if request.auth != null;
+      allow update: if request.auth != null;
+      allow delete: if false;
+    }
+
+    // Challenges (battle challenges between users)
+    match /challenges/{challengeId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null;
+      allow update: if request.auth != null;
       allow delete: if false;
     }
 
     // Drafts (Snake Draft) — multiple players interact
     match /drafts/{draftId} {
-      allow read: if true;
-      allow create: if request.resource.data.hostId is string;
-      allow update: if true;  // Open for draft picks, status updates
+      allow read: if request.auth != null;
+      allow create: if request.auth != null;
+      allow update: if request.auth != null;
+      allow delete: if false;
+    }
+
+    // Snake Draft battles
+    match /snakeDraftBattles/{battleId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null;
+      allow update: if request.auth != null;
+      allow delete: if false;
+    }
+
+    // Snake Draft lobbies
+    match /snakeDraftLobbies/{lobbyId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null;
+      allow update: if request.auth != null;
       allow delete: if false;
     }
 
     // Draft analytics — written by the app during/after drafts
     match /draftAnalytics/{docId} {
-      allow read: if true;
-      allow create: if request.resource.data.hostId is string;
-      allow update: if true;
+      allow read: if request.auth != null;
+      allow create: if request.auth != null;
+      allow update: if request.auth != null;
       allow delete: if false;
     }
 
     // ═══════════════════════════════════════════
-    // Observability
+    // Observability & Bug Reports
     // ═══════════════════════════════════════════
 
     // Error logs — written by ErrorBoundary on render crashes
-    match /errorLogs/{docId} {
+    // Allow unauthenticated creates so pre-auth errors are captured.
+    // Abuse protection: field count and message size limits.
+    match /errorLogs/{logId} {
       allow read: if false;
-      allow create: if true;
+      allow create: if request.resource.data.keys().size() <= 10
+                    && request.resource.data.message is string
+                    && request.resource.data.message.size() <= 5000;
       allow update, delete: if false;
     }
 
-    // ═══════════════════════════════════════════
     // Bug Reports (ClashBot)
-    // ═══════════════════════════════════════════
     match /bugReports/{reportId} {
-      allow create: if request.resource.data.userId is string
+      allow read: if false;
+      allow create: if request.auth != null
+                    && request.resource.data.userId is string
                     && request.resource.data.userId.size() > 0;
-      allow read: if true;
-      allow update: if true;
+      allow update: if request.auth != null;
       allow delete: if false;
     }
     match /bugReports/_counter {
-      allow read, write: if true;
+      allow read, write: if request.auth != null;
     }
 
     // ═══════════════════════════════════════════
