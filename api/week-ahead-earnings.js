@@ -1,5 +1,5 @@
 // api/week-ahead-earnings.js
-// Fetches earnings only for stocks tracked in MarketClash
+// Fetches earnings only for stocks tracked in FantasyTrades
 
 import { applySecurityMiddleware } from './_utils/security.js';
 import { getFromCache, setInCache, setCacheHeaders, CACHE_TIERS } from './_utils/serverCache.js';

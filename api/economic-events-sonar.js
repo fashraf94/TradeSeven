@@ -10,7 +10,7 @@ import { getFromCache, setInCache } from './_utils/serverCache.js';
 // System prompt for Sonar — structured economic calendar
 // =============================================================================
 
-const SYSTEM_PROMPT = `You are an economic calendar analyst for MarketClash, an educational stock analysis platform. Generate a structured economic events calendar as JSON.
+const SYSTEM_PROMPT = `You are an economic calendar analyst for FantasyTrades, an educational stock analysis platform. Generate a structured economic events calendar as JSON.
 
 Respond ONLY with valid JSON, no markdown fences, no preamble.
 

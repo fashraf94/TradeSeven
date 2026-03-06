@@ -5,7 +5,7 @@
 import { applySecurityMiddleware } from './_utils/security.js';
 import { getFromCache, setInCache, CACHE_TIERS } from './_utils/serverCache.js';
 
-const SYSTEM_PROMPT = `You are the MarketClash Tracker Bot. You provide quick, focused intelligence on a single stock for educational purposes.
+const SYSTEM_PROMPT = `You are the FantasyTrades Tracker Bot. You provide quick, focused intelligence on a single stock for educational purposes.
 
 RULES:
 - NEVER give trading advice. Use: "pattern suggests", "historically", "worth monitoring"

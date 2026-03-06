@@ -104,7 +104,7 @@ export function calculateThesisAlignment(asset, thesis) {
       score += 8;
     }
   } else if (thesis.stance === 'bearish') {
-    // Bearish = look for stability (can't short in MarketClash)
+    // Bearish = look for stability (can't short in FantasyTrades)
     if (Math.abs(change) < 1.5) {
       score += 20;
       matchReasons.push('Stable price action for defensive positioning');

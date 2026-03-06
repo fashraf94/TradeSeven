@@ -1,8 +1,8 @@
-# MarketClash Project Structure
+# FantasyTrades Project Structure
 
 ## Overview
 
-MarketClash is a competitive financial gaming app built with React 18, Vite, Firebase, and Tailwind CSS. The app allows users to build virtual $1M portfolios and compete head-to-head.
+FantasyTrades is a competitive financial gaming app built with React 18, Vite, Firebase, and Tailwind CSS. The app allows users to build virtual $1M portfolios and compete head-to-head.
 
 ## Directory Structure
 
@@ -40,7 +40,7 @@ src/
 │   ├── shared/           # Shared/common components
 │   ├── ui/               # Base UI components
 │   ├── DesktopBackground.jsx  # Animated background
-│   ├── MarketClashLogo.jsx    # App logo SVG
+│   ├── FantasyTradesLogo.jsx    # App logo SVG
 │   ├── ResearchAdvisor.jsx
 │   └── DraftAdvisor.jsx
 │
@@ -92,7 +92,7 @@ The main application file containing:
 
 ### Shared Components
 - `DesktopBackground.jsx` - Animated particle background with bull/bear silhouettes
-- `MarketClashLogo.jsx` - SVG logo with bull, bear, and honey pot
+- `FantasyTradesLogo.jsx` - SVG logo with bull, bear, and honey pot
 
 ### Custom Hooks
 - `useBaggerBombBattle.js` - BaggerBomb game state

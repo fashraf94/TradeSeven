@@ -1,4 +1,4 @@
-// MarketClash TD Scoring - Notification Service
+// FantasyTrades TD Scoring - Notification Service
 // Generates and manages TD Scoring event notifications
 //
 // Provides helpers for creating notifications for:

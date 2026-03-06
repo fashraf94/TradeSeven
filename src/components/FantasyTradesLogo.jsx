@@ -1,7 +1,7 @@
 import React from 'react';
 
-// MarketClash Bull & Bear Logo Component
-const MarketClashLogo = ({ size = 'large' }) => {
+// FantasyTrades Bull & Bear Logo Component
+const FantasyTradesLogo = ({ size = 'large' }) => {
   const dimensions = {
     large: { width: 450, height: 350 },
     medium: { width: 225, height: 175 },
@@ -75,6 +75,11 @@ const MarketClashLogo = ({ size = 'large' }) => {
           <stop offset="0%" style={{stopColor: '#fafaf9'}}/>
           <stop offset="70%" style={{stopColor: '#e7e5e4'}}/>
           <stop offset="100%" style={{stopColor: '#a8a29e'}}/>
+        </linearGradient>
+
+        <linearGradient id="brandGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+          <stop offset="0%" style={{stopColor: '#FF8C00'}}/>
+          <stop offset="100%" style={{stopColor: '#468CFF'}}/>
         </linearGradient>
       </defs>
 
@@ -180,7 +185,7 @@ const MarketClashLogo = ({ size = 'large' }) => {
       </g>
 
       <text x="225" y="295" textAnchor="middle" fontFamily="'Segoe UI', system-ui, sans-serif" fontSize="28" fontWeight="700" letterSpacing="6" filter="url(#subtleGlow)">
-        <tspan fill="#00d9ff">MARKET</tspan><tspan fill="#e6edf3">CLASH</tspan>
+        <tspan fill="url(#brandGradient)">FANTASY</tspan><tspan fill="url(#brandGradient)">TRADES</tspan>
       </text>
 
       <text x="225" y="323" textAnchor="middle" fontFamily="'Segoe UI', system-ui, sans-serif" fontSize="10" fontWeight="400" letterSpacing="3" fill="#8b949e">
@@ -190,4 +195,4 @@ const MarketClashLogo = ({ size = 'large' }) => {
   );
 };
 
-export default MarketClashLogo;
+export default FantasyTradesLogo;

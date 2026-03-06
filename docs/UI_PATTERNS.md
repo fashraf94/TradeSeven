@@ -1,8 +1,8 @@
-# MarketClash UI Patterns
+# FantasyTrades UI Patterns
 
 **Last Updated:** 2025-12-12
 
-This document contains actual code snippets from App.jsx for common UI patterns used throughout the MarketClash app.
+This document contains actual code snippets from App.jsx for common UI patterns used throughout the FantasyTrades app.
 
 ---
 

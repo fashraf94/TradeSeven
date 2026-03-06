@@ -1,4 +1,4 @@
-# MarketClash Firebase Architecture
+# FantasyTrades Firebase Architecture
 
 **Version:** 1.0
 **Last Updated:** November 24, 2025
@@ -1180,7 +1180,7 @@ function SignUp() {
 - [Security Rules Guide](https://firebase.google.com/docs/firestore/security/get-started)
 - [Real-time Updates](https://firebase.google.com/docs/firestore/query-data/listen)
 
-### MarketClash Specific
+### FantasyTrades Specific
 - Current localStorage keys: `portfolioDuelUser`, `portfolioDuelBattles`, `marketclash_challenges`
 - Battle duration: 24 hours (test mode) → 5 days (production)
 - Challenge windows: 12pm EST (Double Down), 3pm EST (Market Close)

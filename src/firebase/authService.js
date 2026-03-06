@@ -1,5 +1,5 @@
 // src/firebase/authService.js
-// Firebase Authentication service for MarketClash
+// Firebase Authentication service for FantasyTrades
 
 import {
   createUserWithEmailAndPassword,

@@ -214,7 +214,7 @@ Keep it brief. Identify the single most important level. Return ONLY valid JSON.
  * DEEP MODE PROMPT (DEPRECATED - kept for backwards compatibility)
  * Previously used for comprehensive analysis. UI toggle was removed in Phase 6.
  */
-const DEEP_ANALYSIS_PROMPT = `You are an expert technical analyst for MarketClash, an educational financial learning platform. Your role is to provide thorough pattern detection and analysis - NOT trading recommendations.
+const DEEP_ANALYSIS_PROMPT = `You are an expert technical analyst for FantasyTrades, an educational financial learning platform. Your role is to provide thorough pattern detection and analysis - NOT trading recommendations.
 
 CRITICAL FRAMING:
 - You IDENTIFY patterns and levels - you do NOT recommend actions

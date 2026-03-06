@@ -1,8 +1,8 @@
-# MarketClash Dashboard Redesign - Final Implementation Spec
+# FantasyTrades Dashboard Redesign - Final Implementation Spec
 
 ## Overview
 
-This document is the complete design specification for the MarketClash dashboard redesign. It covers all components, states, visual treatments, and interaction logic needed for implementation.
+This document is the complete design specification for the FantasyTrades dashboard redesign. It covers all components, states, visual treatments, and interaction logic needed for implementation.
 
 ---
 
@@ -11,14 +11,14 @@ This document is the complete design specification for the MarketClash dashboard
 ### Header Bar
 ```
 ┌─────────────────────────────────────────┐
-│  ☰   [MarketClash Logo]   🪙 2,450  [F] │
+│  ☰   [FantasyTrades Logo]   🪙 2,450  [F] │
 └─────────────────────────────────────────┘
 ```
 
 | Element | Position | Description |
 |---------|----------|-------------|
 | Hamburger Menu | Left | Opens sidebar navigation |
-| Logo | Center | MarketClash bull/bear logo |
+| Logo | Center | FantasyTrades bull/bear logo |
 | Token Balance | Right of center | `🪙 2,450` - User's token count |
 | Avatar | Far right | User initial in circle, shows rank color |
 

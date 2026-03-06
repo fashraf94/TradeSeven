@@ -1,4 +1,4 @@
-// MarketClash TD Scoring - Session-Based Scoring Engine
+// FantasyTrades TD Scoring - Session-Based Scoring Engine
 // Calculates points for each trading session with breakout bonuses
 //
 // Sessions run throughout the trading day (Eastern Time):

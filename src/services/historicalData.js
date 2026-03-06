@@ -1,5 +1,5 @@
 /**
- * Historical Data Service for MarketClash
+ * Historical Data Service for FantasyTrades
  *
  * Fetches and caches historical price data with AGGRESSIVE (24h) caching.
  * Provides:

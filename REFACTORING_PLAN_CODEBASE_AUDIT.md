@@ -1,4 +1,4 @@
-# MarketClash Codebase Refactoring Plan
+# FantasyTrades Codebase Refactoring Plan
 
 **Created:** January 31, 2026
 **Context:** Post V3 BaggerBomb schema crash debugging session

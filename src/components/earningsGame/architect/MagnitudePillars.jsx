@@ -134,7 +134,7 @@ export default function MagnitudePillars({
                 filter: canSelect ? 'none' : 'grayscale(80%)',
               }}
             >
-              {/* Icon Container - MarketClash Standard Style */}
+              {/* Icon Container - FantasyTrades Standard Style */}
               <div style={{
                 width: '48px',
                 height: '48px',

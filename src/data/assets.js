@@ -1,5 +1,5 @@
 // /src/data/assets.js
-// MarketClash Asset Database - Centralized definitions
+// FantasyTrades Asset Database - Centralized definitions
 
 // ============================================
 // STOCKS (50 total)

@@ -1,5 +1,5 @@
 // BaggerBomb Components
-// UI components for the MarketClash BaggerBomb Scoring system
+// UI components for the FantasyTrades BaggerBomb Scoring system
 
 // Battle UI Components
 export { default as ChamberFuse } from './ChamberFuse';

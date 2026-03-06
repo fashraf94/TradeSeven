@@ -126,7 +126,7 @@ portfolio-duel/
 ### Step 1: Add Firebase Credentials to `.env`
 
 You mentioned you've already:
-- ✅ Created Firebase project "MarketClash"
+- ✅ Created Firebase project "FantasyTrades"
 - ✅ Enabled Authentication (Email/Password)
 - ✅ Created Firestore Database (test mode)
 

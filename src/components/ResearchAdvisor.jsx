@@ -1,5 +1,5 @@
 // src/components/ResearchAdvisor.jsx
-// AI-powered research assistant for MarketClash
+// AI-powered research assistant for FantasyTrades
 
 import React, { useState, useRef, useEffect } from 'react';
 

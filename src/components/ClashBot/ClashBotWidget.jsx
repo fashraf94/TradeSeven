@@ -245,7 +245,7 @@ export default function ClashBotWidget({
         setPhase(STATES.CONFIRMED);
         setTimeout(() => {
           addBotMessage(
-            `Got it! Filed as ${data.ticketNumber}. The team will look into it. Thanks for helping make MarketClash better! 🎮`
+            `Got it! Filed as ${data.ticketNumber}. The team will look into it. Thanks for helping make FantasyTrades better! 🎮`
           );
         }, 200);
       } else {

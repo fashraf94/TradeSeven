@@ -1,5 +1,5 @@
 /**
- * Debug utilities for MarketClash
+ * Debug utilities for FantasyTrades
  *
  * Access in browser console via window.mcDebug
  */
@@ -30,7 +30,7 @@ export const mcDebug = {
    * Run a full system audit
    */
   audit() {
-    console.log('\n Running MarketClash System Audit...\n');
+    console.log('\n Running FantasyTrades System Audit...\n');
 
     // Cache report
     console.log('--- CACHE STATUS ---');
@@ -50,19 +50,19 @@ export const mcDebug = {
     const mcKeys = lsKeys.filter(k => k.startsWith('mc_'));
     console.log(`\n--- STORAGE ---`);
     console.log(`Total localStorage keys: ${lsKeys.length}`);
-    console.log(`MarketClash keys: ${mcKeys.length}`);
+    console.log(`FantasyTrades keys: ${mcKeys.length}`);
 
     let totalSize = 0;
     mcKeys.forEach(key => {
       totalSize += localStorage.getItem(key)?.length || 0;
     });
-    console.log(`MarketClash storage: ~${(totalSize / 1024).toFixed(1)} KB`);
+    console.log(`FantasyTrades storage: ~${(totalSize / 1024).toFixed(1)} KB`);
 
     console.log('\nAudit complete\n');
   },
 
   /**
-   * Clear all MarketClash data
+   * Clear all FantasyTrades data
    */
   clearAll() {
     cacheService.clearAll();
@@ -73,7 +73,7 @@ export const mcDebug = {
       .filter(k => k.startsWith('mc_'))
       .forEach(k => localStorage.removeItem(k));
 
-    console.log('All MarketClash data cleared');
+    console.log('All FantasyTrades data cleared');
   },
 
   /**
@@ -198,7 +198,7 @@ export const mcDebug = {
 
     const a = document.createElement('a');
     a.href = url;
-    a.download = `marketclash-debug-${Date.now()}.json`;
+    a.download = `fantasytrades-debug-${Date.now()}.json`;
     a.click();
 
     URL.revokeObjectURL(url);

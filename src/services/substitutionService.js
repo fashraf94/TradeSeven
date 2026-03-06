@@ -1,4 +1,4 @@
-// MarketClash TD Scoring - Bench & Substitution Service
+// FantasyTrades TD Scoring - Bench & Substitution Service
 // Handles bench roster management and mid-battle substitutions
 //
 // Substitution Windows (Eastern Time):

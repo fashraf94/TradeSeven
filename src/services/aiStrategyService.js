@@ -87,7 +87,7 @@ export const generateAIStrategy = async ({
 
     const mustHaveList = mustHavePicks?.map(p => p.symbol).join(', ') || 'None';
 
-    const prompt = `You are the BaggerBomb Strategy Advisor for MarketClash, a competitive stock trading game.
+    const prompt = `You are the BaggerBomb Strategy Advisor for FantasyTrades, a competitive stock trading game.
 
 CONTEXT:
 - Game Mode: BaggerBomb (session-based scoring with breakout bonuses)

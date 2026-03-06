@@ -2,7 +2,7 @@
 
 ## Project Context
 
-You are working on **MarketClash**, a competitive stock/crypto portfolio battle game built with React 18 + Vite. The app uses a single `App.jsx` file structure (7,000+ lines). The codebase is connected to Firebase for backend and Vercel for deployment. The app recently integrated EODHD API for market data (100,000 calls/day available).
+You are working on **FantasyTrades**, a competitive stock/crypto portfolio battle game built with React 18 + Vite. The app uses a single `App.jsx` file structure (7,000+ lines). The codebase is connected to Firebase for backend and Vercel for deployment. The app recently integrated EODHD API for market data (100,000 calls/day available).
 
 **Key files to reference:**
 - `App.jsx` - Main application (Research Mode currently around lines 3400-3700)
@@ -231,7 +231,7 @@ For a 24-hour battle, high beta stocks can make or break your portfolio. If you'
     
     moreDepth: `Momentum shows which direction a stock has been trending recently. Stocks in motion tend to stay in motion (at least in the short term).
 
-For MarketClash battles:
+For FantasyTrades battles:
 • Strong upward momentum: Stock has tailwind, may continue
 • Downward momentum: Could be a dip-buy opportunity OR a falling knife
 • Flat momentum: Stable but may not give you the edge you need`
@@ -259,7 +259,7 @@ A high consensus (4.0+) means most experts are optimistic. But remember: analyst
     
     moreDepth: `Analysts set price targets - where they think the stock will be in 6-12 months.
 
-For MarketClash:
+For FantasyTrades:
 • Stock well below target: Room to run, analysts see upside
 • Stock at or above target: May be "priced in," limited near-term catalyst
 
@@ -452,7 +452,7 @@ For 24-hour battles:
 • 1-2x BTC volatility: Typical for major altcoins. Moderately more volatile.
 • <1x BTC volatility: Rare for altcoins. Often stablecoins or very established tokens.
 
-For MarketClash: If you want to play it "safe" in crypto battles, lower volatility vs BTC is better. If you need a comeback, higher volatility gives more upside (and downside).`
+For FantasyTrades: If you want to play it "safe" in crypto battles, lower volatility vs BTC is better. If you need a comeback, higher volatility gives more upside (and downside).`
   },
   
   volume24h: {
@@ -922,5 +922,5 @@ Follow the existing dark theme from DESIGN_TOKENS.md:
 ## Reference Files
 
 - Full UI specification: See `RESEARCH_MODE_UI_SPEC.md` in project docs
-- EODHD API documentation: See `EODHD_MarketClash_Feature_Roadmap.md`
+- EODHD API documentation: See `EODHD_FantasyTrades_Feature_Roadmap.md`
 - Design tokens: See `DESIGN_TOKENS.md`

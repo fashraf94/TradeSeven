@@ -1,4 +1,4 @@
-// Vercel Serverless Function - Volatility Thresholds for MarketClash TD Scoring
+// Vercel Serverless Function - Volatility Thresholds for FantasyTrades TD Scoring
 // Endpoint: GET /api/volatility/thresholds?symbols=AAPL,MSFT,NVDA&type=stock
 //
 // Calculates personalized breakout thresholds for each asset based on ATR

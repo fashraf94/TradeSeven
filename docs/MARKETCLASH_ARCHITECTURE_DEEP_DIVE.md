@@ -1368,4 +1368,4 @@ draftService.subscribeToDraft(draftId, callback);
 
 ---
 
-*Document generated for MarketClash UI Redesign project. Reference this during implementation to ensure no functionality is lost.*
+*Document generated for FantasyTrades UI Redesign project. Reference this during implementation to ensure no functionality is lost.*

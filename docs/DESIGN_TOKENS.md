@@ -1,8 +1,8 @@
-# MarketClash Design Tokens
+# FantasyTrades Design Tokens
 
 **Last Updated:** 2025-12-12
 
-This document contains all design tokens used in the MarketClash app including colors, gradients, spacing, and styling patterns.
+This document contains all design tokens used in the FantasyTrades app including colors, gradients, spacing, and styling patterns.
 
 ---
 

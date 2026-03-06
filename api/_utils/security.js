@@ -76,7 +76,7 @@ export function isOriginAllowed(origin) {
 
   // Check Vercel preview URLs (pattern: {project}-{hash}-{scope}.vercel.app)
   // Match against full project name prefix to prevent subdomain spoofing
-  const PREVIEW_PREFIXES = ['trade-seven-cyan', 'trade-seven', 'portfolio-duel', 'marketclash'];
+  const PREVIEW_PREFIXES = ['trade-seven-cyan', 'trade-seven', 'portfolio-duel', 'marketclash', 'fantasytrades'];
   try {
     const url = new URL(origin);
     if (url.hostname.endsWith('.vercel.app') && url.protocol === 'https:') {
