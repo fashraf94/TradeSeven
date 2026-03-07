@@ -11731,6 +11731,7 @@ export default function PortfolioDuel() {
   const [activeTrainingBattles, setActiveTrainingBattles] = useState([]); // Firebase-persisted training battles
   const [completedTrainingBattles, setCompletedTrainingBattles] = useState([]); // For Battle History training tab
   const [loadingTrainingBattles, setLoadingTrainingBattles] = useState(false);
+  const [completedBaggerBombBattles, setCompletedBaggerBombBattles] = useState([]); // For Battle History BaggerBomb tab (Firestore)
 
   // Portfolio builder state
   const [assetType, setAssetType] = useState('stocks');
@@ -13881,28 +13882,43 @@ export default function PortfolioDuel() {
           return;
         }
 
-        // Query training battles where user is the creator and battle is completed
-        const q = query(
+        // Dual-field query: creatorId (V1 classic) + creator.odUserId (V3/V4/V5)
+        const q1 = query(
           collection(db, 'trainingBattles'),
           where('creatorId', '==', currentUserId),
           where('state.status', '==', 'completed'),
           limit(20)
         );
+        const q2 = query(
+          collection(db, 'trainingBattles'),
+          where('creator.odUserId', '==', currentUserId),
+          where('state.status', '==', 'completed'),
+          limit(20)
+        );
 
-        const snapshot = await getDocs(q);
-        const battles = snapshot.docs.map(doc => {
-          const data = doc.data();
-          return {
-            id: doc.id,
-            ...data,
-            isTrainingBattle: true,
-            completedAt: (() => {
-              const ts = data.timeline?.completedAt || data.completedAt;
-              if (!ts) return null;
-              return ts?.toDate?.() || ts;
-            })()
-          };
-        });
+        const [snapshot1, snapshot2] = await Promise.all([getDocs(q1), getDocs(q2)]);
+
+        // Merge and deduplicate by doc ID
+        const seen = new Set();
+        const battles = [];
+        for (const snap of [snapshot1, snapshot2]) {
+          for (const d of snap.docs) {
+            if (!seen.has(d.id)) {
+              seen.add(d.id);
+              const data = d.data();
+              battles.push({
+                id: d.id,
+                ...data,
+                isTrainingBattle: true,
+                completedAt: (() => {
+                  const ts = data.timeline?.completedAt || data.completedAt;
+                  if (!ts) return null;
+                  return ts?.toDate?.() || ts;
+                })()
+              });
+            }
+          }
+        }
 
         // Sort client-side to avoid composite index requirement
         battles.sort((a, b) => {
@@ -13925,6 +13941,87 @@ export default function PortfolioDuel() {
     };
 
     fetchTrainingBattles();
+  }, [screen, historyTab, user]);
+
+  // Fetch completed BaggerBomb battles from Firestore for history
+  useEffect(() => {
+    if (screen !== 'battleHistory' || historyTab !== 'classic' || !user) return;
+
+    const fetchCompletedBaggerBombBattles = async () => {
+      try {
+        const { collection, query, where, getDocs } = await import('firebase/firestore');
+        const { db } = await import('./firebase/config');
+
+        const currentUserId = user?.odUserId || user?.username;
+        if (!currentUserId) {
+          setCompletedBaggerBombBattles([]);
+          return;
+        }
+
+        // 4 parallel queries covering uid/odUserId for both creator and opponent
+        const q1 = query(
+          collection(db, 'battles'),
+          where('creator.uid', '==', currentUserId),
+          where('state.status', '==', 'completed')
+        );
+        const q2 = query(
+          collection(db, 'battles'),
+          where('opponent.uid', '==', currentUserId),
+          where('state.status', '==', 'completed')
+        );
+        const q3 = query(
+          collection(db, 'battles'),
+          where('creator.odUserId', '==', currentUserId),
+          where('state.status', '==', 'completed')
+        );
+        const q4 = query(
+          collection(db, 'battles'),
+          where('opponent.odUserId', '==', currentUserId),
+          where('state.status', '==', 'completed')
+        );
+
+        const [s1, s2, s3, s4] = await Promise.all([
+          getDocs(q1), getDocs(q2), getDocs(q3), getDocs(q4)
+        ]);
+
+        const seen = new Set();
+        const allBattles = [];
+        for (const snap of [s1, s2, s3, s4]) {
+          for (const d of snap.docs) {
+            if (!seen.has(d.id)) {
+              seen.add(d.id);
+              const data = d.data();
+              allBattles.push({
+                id: d.id,
+                ...data,
+                completedAt: (() => {
+                  const ts = data.timeline?.completedAt || data.completedAt;
+                  if (!ts) return null;
+                  return ts?.toDate?.() || ts;
+                })()
+              });
+            }
+          }
+        }
+
+        // Sort newest first
+        allBattles.sort((a, b) => {
+          const dateA = new Date(a.completedAt || a.timing?.createdAt || 0);
+          const dateB = new Date(b.completedAt || b.timing?.createdAt || 0);
+          return dateB - dateA;
+        });
+
+        setCompletedBaggerBombBattles(allBattles);
+      } catch (error) {
+        console.error('Error fetching completed BaggerBomb battles:', error);
+        if (error.code === 'failed-precondition') {
+          console.error('Firebase index required. Check console for index creation link.');
+        }
+        setCompletedBaggerBombBattles([]);
+      }
+    };
+
+    fetchCompletedBaggerBombBattles();
   }, [screen, historyTab, user]);
 
   // Listen for localStorage changes from other tabs
@@ -23312,6 +23409,7 @@ export default function PortfolioDuel() {
         sendRematchRequest={sendRematchRequest}
         BattleHistoryCard={BattleHistoryCard}
         completedV4Battles={completedV4Battles}
+        completedBaggerBombBattles={completedBaggerBombBattles}
       />
       </ErrorBoundary>
     );

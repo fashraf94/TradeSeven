@@ -1,4 +1,5 @@
 import React from 'react';
+import { HOLO_COLORS } from '../constants/holoTheme';
 
 const BattleHistoryScreen = ({
   containerStyle,
@@ -7,6 +8,7 @@ const BattleHistoryScreen = ({
   completedDraftBattles,
   completedTrainingBattles,
   completedV4Battles = [],
+  completedBaggerBombBattles = [],
   historyTab,
   setHistoryTab,
   loadingTrainingBattles,
@@ -21,12 +23,23 @@ const BattleHistoryScreen = ({
   const allCompletedClassicBattles = previousBattles || [];
   const classicBattles = allCompletedClassicBattles.filter(b => b.isDraft !== true && b.battleType !== 'baggerbomb_training');
 
-  // Merge V4 Firestore battles with localStorage classic battles, deduplicate by ID
+  // Merge localStorage archive + localStorage active V4 + Firestore completed, deduplicate by ID
   const mergedBaggerBombBattles = (() => {
-    const seen = new Set(classicBattles.map(b => b.id || b.battleId));
-    const v4New = completedV4Battles.filter(b => !seen.has(b.id));
-    return [...classicBattles, ...v4New].sort((a, b) =>
-      new Date(b.completedAt || b.archivedAt || 0) - new Date(a.completedAt || a.archivedAt || 0)
+    const seen = new Set();
+    const all = [];
+    for (const b of classicBattles) {
+      const key = b.id || b.battleId;
+      if (key && !seen.has(key)) { seen.add(key); all.push(b); }
+    }
+    for (const b of completedV4Battles) {
+      if (b.id && !seen.has(b.id)) { seen.add(b.id); all.push(b); }
+    }
+    for (const b of completedBaggerBombBattles) {
+      if (b.id && !seen.has(b.id)) { seen.add(b.id); all.push(b); }
+    }
+    return all.sort((a, b) =>
+      new Date(b.completedAt || b.timeline?.completedAt || b.archivedAt || 0) -
+      new Date(a.completedAt || a.timeline?.completedAt || a.archivedAt || 0)
     );
   })();
 
@@ -340,7 +353,7 @@ const BattleHistoryScreen = ({
                         marginBottom: '12px'
                       }}>
                         <div>
-                          <div style={{ color: '#8b949e', fontSize: '11px' }}>YOUR GAIN</div>
+                          <div style={{ color: '#8b949e', fontSize: '11px' }}>YOUR SCORE</div>
                           <div style={{
                             fontSize: '24px',
                             fontWeight: 'bold',
@@ -425,13 +438,14 @@ const BattleHistoryScreen = ({
                 if (historyTab === 'training' && battle.isTrainingBattle) {
                   const isCreator = battle.creator?.odUserId === (user?.odUserId || user?.username)
                     || battle.creator?.username === user?.username;
-                  const myScore = isCreator ? (battle.result?.creatorScore ?? 0) : (battle.result?.opponentScore ?? 0);
-                  const oppScore = isCreator ? (battle.result?.opponentScore ?? 0) : (battle.result?.creatorScore ?? 0);
+                  const myScore = isCreator ? battle.result?.creatorScore : battle.result?.opponentScore;
+                  const oppScore = isCreator ? battle.result?.opponentScore : battle.result?.creatorScore;
                   const oppName = isCreator ? (battle.opponent?.username || 'CPU Opponent') : (battle.creator?.username || 'Player');
                   const won = battle.result?.winner
                     ? didUserWin(battle)
-                    : myScore > oppScore;
+                    : (myScore != null && oppScore != null && myScore > oppScore);
                   const completedDate = battle.completedAt || battle.timeline?.completedAt;
+                  const isBaggerBombTraining = battle.type === 'baggerbomb' || battle.type === 'baggerbomb_training' || battle.type === 'baggerbomb_v4' || battle.type === 'baggerbomb_v5' || battle._v >= 3;
 
                   return (
                     <div
@@ -483,11 +497,11 @@ const BattleHistoryScreen = ({
                         <div style={{ flex: 1, textAlign: 'center' }}>
                           <div style={{ color: '#00d9ff', fontWeight: 'bold', fontSize: '14px' }}>You</div>
                           <div style={{
-                            color: myScore >= oppScore ? '#10b981' : '#ef4444',
+                            color: myScore != null ? ((myScore >= (oppScore || 0)) ? '#10b981' : '#ef4444') : '#6e7681',
                             fontSize: '20px',
                             fontWeight: 'bold'
                           }}>
-                            {myScore} pts
+                            {myScore != null ? `${myScore} pts` : '—'}
                           </div>
                         </div>
 
@@ -499,11 +513,11 @@ const BattleHistoryScreen = ({
                             {oppName}
                           </div>
                           <div style={{
-                            color: oppScore >= myScore ? '#10b981' : '#ef4444',
+                            color: oppScore != null ? ((oppScore >= (myScore || 0)) ? '#10b981' : '#ef4444') : '#6e7681',
                             fontSize: '20px',
                             fontWeight: 'bold'
                           }}>
-                            {oppScore} pts
+                            {oppScore != null ? `${oppScore} pts` : '—'}
                           </div>
                         </div>
                       </div>
@@ -518,7 +532,9 @@ const BattleHistoryScreen = ({
                         color: '#6e7681',
                         fontSize: '11px'
                       }}>
-                        <span>Training Battle</span>
+                        <span style={{ color: isBaggerBombTraining ? HOLO_COLORS.amber : HOLO_COLORS.purple }}>
+                          {isBaggerBombTraining ? '💣 BaggerBomb Training' : 'Classic Training'}
+                        </span>
                         <span>{battle.type === 'stocks' ? '📈 Stocks' : '🪙 Crypto'}</span>
                         <span>vs AI</span>
                       </div>
@@ -526,14 +542,14 @@ const BattleHistoryScreen = ({
                   );
                 }
 
-                // V4 BaggerBomb card (points-based)
-                if ((battle._v === 3 || battle._v === 4) && battle.result) {
-                  const won = battle.result.winner === user?.username;
+                // V3/V4/V5 BaggerBomb card (points-based)
+                if (battle._v === 3 || battle._v === 4 || battle._v === 5) {
                   const isCreator = battle.creator?.username === user?.username ||
                     battle.creator?.odUserId === (user?.odUserId || user?.username);
-                  const myScore = isCreator ? battle.result.creatorScore : battle.result.opponentScore;
-                  const oppScore = isCreator ? battle.result.opponentScore : battle.result.creatorScore;
-                  const oppName = isCreator ? battle.opponent?.username : battle.creator?.username;
+                  const won = battle.result ? (battle.result.winner === user?.username) : false;
+                  const myScore = battle.result ? (isCreator ? battle.result.creatorScore : battle.result.opponentScore) : null;
+                  const oppScore = battle.result ? (isCreator ? battle.result.opponentScore : battle.result.creatorScore) : null;
+                  const oppName = isCreator ? (battle.opponent?.username || 'Opponent') : (battle.creator?.username || 'Opponent');
                   const completedDate = battle.completedAt || battle.timeline?.completedAt;
 
                   return (
@@ -585,11 +601,11 @@ const BattleHistoryScreen = ({
                         <div style={{ flex: 1, textAlign: 'center' }}>
                           <div style={{ color: '#00d9ff', fontWeight: 'bold', fontSize: '14px' }}>You</div>
                           <div style={{
-                            color: (myScore || 0) >= (oppScore || 0) ? '#10b981' : '#ef4444',
+                            color: myScore != null ? ((myScore >= (oppScore || 0)) ? '#10b981' : '#ef4444') : '#6e7681',
                             fontSize: '20px',
                             fontWeight: 'bold'
                           }}>
-                            {myScore || 0} pts
+                            {myScore != null ? `${myScore} pts` : '—'}
                           </div>
                         </div>
 
@@ -597,14 +613,14 @@ const BattleHistoryScreen = ({
 
                         <div style={{ flex: 1, textAlign: 'center' }}>
                           <div style={{ color: '#f59e0b', fontWeight: 'bold', fontSize: '14px' }}>
-                            {oppName || 'Opponent'}
+                            {oppName}
                           </div>
                           <div style={{
-                            color: (oppScore || 0) >= (myScore || 0) ? '#10b981' : '#ef4444',
+                            color: oppScore != null ? ((oppScore >= (myScore || 0)) ? '#10b981' : '#ef4444') : '#6e7681',
                             fontSize: '20px',
                             fontWeight: 'bold'
                           }}>
-                            {oppScore || 0} pts
+                            {oppScore != null ? `${oppScore} pts` : '—'}
                           </div>
                         </div>
                       </div>
@@ -621,7 +637,7 @@ const BattleHistoryScreen = ({
                       }}>
                         <span>BaggerBomb</span>
                         <span>{battle.timing?.tradingDays || 3} day battle</span>
-                        <span>Margin: {battle.result.margin || 0} pts</span>
+                        <span>{battle.result?.margin != null ? `Margin: ${battle.result.margin} pts` : ''}</span>
                       </div>
                     </div>
                   );
