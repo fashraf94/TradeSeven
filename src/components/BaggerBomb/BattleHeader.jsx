@@ -409,8 +409,7 @@ export default function BattleHeader({
   return (
     <div
       style={{
-        backgroundColor: HOLO_COLORS.bgElevated,
-        borderRadius: '16px',
+        backgroundColor: 'transparent',
         padding: '16px',
         margin: '0 16px',
         display: 'flex',
@@ -418,20 +417,6 @@ export default function BattleHeader({
         gap: '12px',
       }}
     >
-      {/* Title */}
-      <div
-        style={{
-          textAlign: 'center',
-          fontSize: '11px',
-          fontWeight: 600,
-          color: HOLO_COLORS.textMuted,
-          textTransform: 'uppercase',
-          letterSpacing: '1px',
-        }}
-      >
-        BaggerBomb Battle
-      </div>
-
       {/* Score Row */}
       <div
         style={{

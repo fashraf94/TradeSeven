@@ -161,15 +161,28 @@ function TierHeader({ tier, nightMode }) {
       >
         <span
           style={{
-            fontSize: '15px',
-            fontWeight: 800,
-            color: mutedColor,
-            textTransform: 'uppercase',
-            letterSpacing: '1.5px',
-            textShadow: '0 0 8px rgba(0, 217, 255, 0.4)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
           }}
         >
-          {tier.label}
+          <span style={{ fontSize: '15px' }}>
+            {tier.label.split(' ')[0]}
+          </span>
+          <span
+            style={{
+              background: 'linear-gradient(90deg, #f59e0b, #00d9ff)',
+              WebkitBackgroundClip: 'text',
+              WebkitTextFillColor: 'transparent',
+              backgroundClip: 'text',
+              fontSize: '15px',
+              fontWeight: 800,
+              letterSpacing: '1.5px',
+              textTransform: 'uppercase',
+            }}
+          >
+            {tier.label.split(' ').slice(1).join(' ')}
+          </span>
         </span>
         <span
           style={{
