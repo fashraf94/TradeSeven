@@ -73,7 +73,7 @@ const TIER_HEADER_COLORS = {
  * Tab Toggle Component
  */
 function TabToggle({ activeTab, onTabChange, nightMode }) {
-  const bgColor = nightMode ? NIGHT_COLORS.bgElevated : HOLO_COLORS.bgElevated;
+  const bgColor = nightMode ? 'rgba(18, 18, 26, 0.7)' : 'rgba(22, 27, 34, 0.7)';
   const accentColor = nightMode ? NIGHT_COLORS.accent : HOLO_COLORS.cyan;
   const mutedColor = nightMode ? NIGHT_COLORS.textMuted : HOLO_COLORS.textMuted;
   const darkBg = nightMode ? NIGHT_COLORS.bgDeep : HOLO_COLORS.bgDeep;
@@ -138,7 +138,7 @@ TabToggle.propTypes = {
  * Tier Section Header
  */
 function TierHeader({ tier, nightMode }) {
-  const bgColor = nightMode ? NIGHT_COLORS.bgDeep : HOLO_COLORS.bgDeep;
+  const bgColor = nightMode ? 'rgba(5, 5, 8, 0.85)' : 'rgba(10, 14, 20, 0.85)';
   const mutedColor = nightMode ? NIGHT_COLORS.textMuted : HOLO_COLORS.textMuted;
   const elevatedBg = nightMode ? NIGHT_COLORS.bgElevated : HOLO_COLORS.bgElevated;
 
