@@ -49,14 +49,20 @@ const BaggerBombBackground = () => {
   const rafRef = useRef(null);
   const particlesRef = useRef([]);
   const resizeTimerRef = useRef(null);
+  const sizeRef = useRef({ w: 0, h: 0 });
 
-  const setupCanvas = useCallback(() => {
+  const applyCanvasSize = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    const dpr = Math.min(window.devicePixelRatio || 1, MAX_DPR);
     const width = window.innerWidth;
     const height = window.innerHeight;
+
+    // Skip if dimensions haven't actually changed (mobile scroll address bar)
+    if (width === sizeRef.current.w && height === sizeRef.current.h) return;
+    sizeRef.current = { w: width, h: height };
+
+    const dpr = Math.min(window.devicePixelRatio || 1, MAX_DPR);
 
     canvas.width = width * dpr;
     canvas.height = height * dpr;
@@ -64,9 +70,8 @@ const BaggerBombBackground = () => {
     canvas.style.height = `${height}px`;
 
     const ctx = canvas.getContext('2d');
-    ctx.scale(dpr, dpr);
-
-    particlesRef.current = createParticles(width, height);
+    // Reset transform before applying scale (prevents compounding)
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   }, []);
 
   const animate = useCallback(() => {
@@ -74,8 +79,7 @@ const BaggerBombBackground = () => {
     if (!canvas) return;
 
     const ctx = canvas.getContext('2d');
-    const width = window.innerWidth;
-    const height = window.innerHeight;
+    const { w: width, h: height } = sizeRef.current;
     const particles = particlesRef.current;
 
     ctx.clearRect(0, 0, width, height);
@@ -124,13 +128,31 @@ const BaggerBombBackground = () => {
   }, []);
 
   useEffect(() => {
-    setupCanvas();
+    const width = window.innerWidth;
+    const height = window.innerHeight;
+    sizeRef.current = { w: width, h: height };
 
+    // Init canvas dimensions + DPR scale
+    const canvas = canvasRef.current;
+    if (canvas) {
+      const dpr = Math.min(window.devicePixelRatio || 1, MAX_DPR);
+      canvas.width = width * dpr;
+      canvas.height = height * dpr;
+      canvas.style.width = `${width}px`;
+      canvas.style.height = `${height}px`;
+      canvas.getContext('2d').setTransform(dpr, 0, 0, dpr, 0, 0);
+    }
+
+    // Create particles once
+    particlesRef.current = createParticles(width, height);
+
+    // Start animation loop — runs continuously until unmount
     rafRef.current = requestAnimationFrame(animate);
 
+    // Resize only updates canvas dimensions, never recreates particles
     const handleResize = () => {
       clearTimeout(resizeTimerRef.current);
-      resizeTimerRef.current = setTimeout(setupCanvas, RESIZE_DEBOUNCE_MS);
+      resizeTimerRef.current = setTimeout(applyCanvasSize, RESIZE_DEBOUNCE_MS);
     };
 
     window.addEventListener('resize', handleResize);
@@ -140,7 +162,7 @@ const BaggerBombBackground = () => {
       clearTimeout(resizeTimerRef.current);
       window.removeEventListener('resize', handleResize);
     };
-  }, [setupCanvas, animate]);
+  }, [animate, applyCanvasSize]);
 
   return (
     <>
