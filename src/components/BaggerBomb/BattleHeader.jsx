@@ -475,49 +475,65 @@ export default function BattleHeader({
       {/* Bomb/Bust Counts */}
       <BombBustCounts player={player} opponent={opponent} />
 
-      {/* Swap Market Button (V4+) */}
+      {/* Unified Swap + Free Agent Card (V4+) */}
       {battleVersion >= 4 && (
-        <div style={{ display: 'flex', justifyContent: 'center' }}>
-          {swapMode?.active ? (
-            <motion.button
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              onClick={onCancelSwapMode}
-              style={{
-                padding: '8px 20px',
-                borderRadius: '20px',
-                border: 'none',
-                background: 'linear-gradient(135deg, rgba(239, 68, 68, 0.25), rgba(220, 38, 38, 0.15))',
-                color: HOLO_COLORS.red,
-                fontSize: '13px',
-                fontWeight: 700,
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
-                boxShadow: `0 0 15px rgba(239, 68, 68, 0.2), 0 2px 8px rgba(0, 0, 0, 0.3)`,
-                letterSpacing: '0.5px',
-              }}
-            >
-              Cancel Swap
-            </motion.button>
-          ) : (
-            <SwapMarketButton
-              swapsRemaining={swapsRemaining}
-              onClick={onEnterSwapMode}
-              disabled={swapsRemaining <= 0}
-            />
-          )}
+        <div
+          style={{
+            backgroundColor: 'rgba(13, 17, 23, 0.55)',
+            backdropFilter: 'blur(8px)',
+            WebkitBackdropFilter: 'blur(8px)',
+            border: '1px solid rgba(0, 217, 255, 0.12)',
+            borderRadius: '12px',
+            padding: '16px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '12px',
+          }}
+        >
+          {/* Swap Picks Button */}
+          <div style={{ display: 'flex', justifyContent: 'center' }}>
+            {swapMode?.active ? (
+              <motion.button
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                onClick={onCancelSwapMode}
+                style={{
+                  padding: '8px 20px',
+                  borderRadius: '20px',
+                  border: 'none',
+                  background: 'linear-gradient(135deg, rgba(239, 68, 68, 0.25), rgba(220, 38, 38, 0.15))',
+                  color: HOLO_COLORS.red,
+                  fontSize: '13px',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  boxShadow: `0 0 15px rgba(239, 68, 68, 0.2), 0 2px 8px rgba(0, 0, 0, 0.3)`,
+                  letterSpacing: '0.5px',
+                }}
+              >
+                Cancel Swap
+              </motion.button>
+            ) : (
+              <SwapMarketButton
+                swapsRemaining={swapsRemaining}
+                onClick={onEnterSwapMode}
+                disabled={swapsRemaining <= 0}
+              />
+            )}
+          </div>
+
+          {/* Free Agent Bar */}
+          <FreeAgentBar
+            {...freeAgentConfig}
+            hideSwapButton
+          />
         </div>
       )}
 
-      {/* V5+V4: Show inline FreeAgentBar (research-only for V5) / V3: Session HUD */}
-      {battleVersion >= 4 ? (
-        <FreeAgentBar
-          {...freeAgentConfig}
-          hideSwapButton
-        />
-      ) : (
+      {/* V3: Session HUD */}
+      {battleVersion < 4 && (
         <SessionHUD
           currentSession={currentSession}
           timeRemaining={sessionTimeRemaining}

@@ -252,12 +252,12 @@ export default function FreeAgentBar({
   return (
     <div
       style={{
-        padding: '8px 4px',
-        backgroundColor: HOLO_COLORS.bgCard,
-        borderRadius: '8px',
+        padding: 0,
+        backgroundColor: 'transparent',
+        borderRadius: 0,
         border: isSelectingAgent
           ? '1px solid rgba(0, 217, 255, 0.6)'
-          : `1px solid ${HOLO_COLORS.borderSubtle}`,
+          : 'none',
         ...(isSelectingAgent ? {
           animation: 'pulseGlow 2s ease-in-out infinite',
           transition: 'border-color 0.3s ease, box-shadow 0.3s ease',
