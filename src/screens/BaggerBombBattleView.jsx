@@ -161,11 +161,12 @@ function TierHeader({ tier, nightMode }) {
       >
         <span
           style={{
-            fontSize: '12px',
-            fontWeight: 700,
+            fontSize: '15px',
+            fontWeight: 800,
             color: mutedColor,
             textTransform: 'uppercase',
-            letterSpacing: '0.5px',
+            letterSpacing: '1.5px',
+            textShadow: '0 0 8px rgba(0, 217, 255, 0.4)',
           }}
         >
           {tier.label}
@@ -466,10 +467,13 @@ export default function BaggerBombBattleView({
           {nightMode && <Moon size={16} color={colors.accent} />}
           <h1
             style={{
-              fontSize: '16px',
-              fontWeight: 700,
-              color: colors.textPrimary,
+              fontSize: 'clamp(22px, 4vw, 26px)',
+              fontWeight: 800,
+              color: '#ffffff',
               margin: 0,
+              textShadow: '0 0 12px rgba(0, 217, 255, 0.5), 0 0 24px rgba(0, 217, 255, 0.2)',
+              letterSpacing: '1.5px',
+              textTransform: 'uppercase',
             }}
           >
             BaggerBomb Battle

@@ -56,11 +56,12 @@ export default function BenchSection({
           <span style={{ fontSize: '14px' }}>📦</span>
           <span
             style={{
-              fontSize: '13px',
-              fontWeight: 600,
+              fontSize: '15px',
+              fontWeight: 800,
               color: HOLO_COLORS.textMuted,
               textTransform: 'uppercase',
-              letterSpacing: '0.5px',
+              letterSpacing: '1.5px',
+              textShadow: '0 0 8px rgba(0, 217, 255, 0.4)',
             }}
           >
             Bench
