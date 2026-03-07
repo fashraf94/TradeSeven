@@ -393,6 +393,7 @@ export default function BattleHeader({
   // V4 props (grouped)
   battleVersion = 3,
   freeAgentConfig = {},
+  isTraining = false,
 }) {
   // Destructure V4 swap props used locally (rest is spread to FreeAgentBar)
   const { swapMode, onCancelSwapMode, onEnterSwapMode, swapsRemaining } = freeAgentConfig;
@@ -417,6 +418,47 @@ export default function BattleHeader({
         gap: '12px',
       }}
     >
+      {/* Title */}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: '8px',
+          marginBottom: '8px',
+        }}
+      >
+        <span
+          style={{
+            fontSize: typeof window !== 'undefined' && window.innerWidth >= 768 ? '20px' : '16px',
+            fontWeight: 800,
+            color: '#ffffff',
+            textAlign: 'center',
+            textShadow: '0 0 12px rgba(0, 217, 255, 0.5), 0 0 24px rgba(0, 217, 255, 0.2)',
+            letterSpacing: '1.5px',
+            textTransform: 'uppercase',
+          }}
+        >
+          BaggerBomb Battle
+        </span>
+        {isTraining && (
+          <span
+            style={{
+              backgroundColor: HOLO_COLORS.purple,
+              color: '#ffffff',
+              padding: '4px 8px',
+              borderRadius: '6px',
+              fontSize: '11px',
+              fontWeight: 700,
+              textTransform: 'uppercase',
+              letterSpacing: '0.5px',
+            }}
+          >
+            Training
+          </span>
+        )}
+      </div>
+
       {/* Score Row */}
       <div
         style={{
@@ -563,6 +605,8 @@ BattleHeader.propTypes = {
   battleVersion: PropTypes.number,
   /** V4: Grouped free agent config (spread to FreeAgentBar) */
   freeAgentConfig: PropTypes.object,
+  /** Whether this is a training battle */
+  isTraining: PropTypes.bool,
 };
 
 BattleHeader.defaultProps = {
@@ -572,4 +616,5 @@ BattleHeader.defaultProps = {
   completedSessions: [],
   battleVersion: 3,
   freeAgentConfig: {},
+  isTraining: false,
 };

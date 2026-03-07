@@ -171,7 +171,7 @@ function TierHeader({ tier, nightMode }) {
           </span>
           <span
             style={{
-              background: 'linear-gradient(90deg, #f59e0b, #00d9ff)',
+              background: 'linear-gradient(90deg, #22c55e, #ef4444)',
               WebkitBackgroundClip: 'text',
               WebkitTextFillColor: 'transparent',
               backgroundClip: 'text',
@@ -476,38 +476,7 @@ export default function BaggerBombBattleView({
         >
           <ChevronLeft size={24} />
         </button>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          {nightMode && <Moon size={16} color={colors.accent} />}
-          <h1
-            style={{
-              fontSize: 'clamp(22px, 4vw, 26px)',
-              fontWeight: 800,
-              color: '#ffffff',
-              margin: 0,
-              textShadow: '0 0 12px rgba(0, 217, 255, 0.5), 0 0 24px rgba(0, 217, 255, 0.2)',
-              letterSpacing: '1.5px',
-              textTransform: 'uppercase',
-            }}
-          >
-            BaggerBomb Battle
-          </h1>
-          {isTraining && (
-            <span
-              style={{
-                backgroundColor: HOLO_COLORS.purple,
-                color: '#ffffff',
-                padding: '4px 8px',
-                borderRadius: '6px',
-                fontSize: '11px',
-                fontWeight: 700,
-                textTransform: 'uppercase',
-                letterSpacing: '0.5px',
-              }}
-            >
-              Training
-            </span>
-          )}
-        </div>
+        {nightMode && <Moon size={16} color={colors.accent} />}
         <div style={{ width: '40px' }} /> {/* Spacer for centering */}
       </div>
 
@@ -532,6 +501,7 @@ export default function BaggerBombBattleView({
           completedSessions={completedSessions}
           battleVersion={battleVersion}
           freeAgentConfig={{ ...freeAgentConfig, currentPrices, thresholds }}
+          isTraining={isTraining}
         />
       </div>
 

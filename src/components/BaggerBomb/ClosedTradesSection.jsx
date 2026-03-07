@@ -216,7 +216,7 @@ export default function ClosedTradesSection({
           <span style={{ fontSize: '14px' }}>{'📋'}</span>
           <span
             style={{
-              background: 'linear-gradient(90deg, #f59e0b, #00d9ff)',
+              background: 'linear-gradient(90deg, #22c55e, #ef4444)',
               WebkitBackgroundClip: 'text',
               WebkitTextFillColor: 'transparent',
               backgroundClip: 'text',
