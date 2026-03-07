@@ -495,7 +495,17 @@ export default function BaggerBombBattleView({
       </div>
 
       {/* Battle Header Card */}
-      <div style={{ paddingTop: '8px' }}>
+      <div style={{
+        paddingTop: '8px',
+        position: 'relative',
+        zIndex: 2,
+        backgroundColor: 'rgba(13, 17, 23, 0.55)',
+        backdropFilter: 'blur(8px)',
+        WebkitBackdropFilter: 'blur(8px)',
+        border: '1px solid rgba(0, 217, 255, 0.1)',
+        borderRadius: '12px',
+        margin: '0 8px',
+      }}>
         <BattleHeader
           player={playerHeaderData}
           opponent={opponentHeaderData}

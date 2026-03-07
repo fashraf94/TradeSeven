@@ -3,23 +3,30 @@
 
 import React, { useRef, useEffect, useCallback } from 'react';
 
-const CONNECTION_DISTANCE = 120;
-const CONNECTION_MAX_OPACITY = 0.08;
-const CONNECTION_LINE_WIDTH = 0.5;
+const CONNECTION_DISTANCE = 150;
+const CONNECTION_MAX_OPACITY = 0.2;
+const CONNECTION_LINE_WIDTH = 0.75;
 const RESIZE_DEBOUNCE_MS = 200;
 const MAX_DPR = 2;
+const HUB_CHANCE = 0.15;
 
 const CYAN = { r: 0, g: 217, b: 255 };
 const PURPLE = { r: 147, g: 51, b: 234 };
 
 function createParticles(width, height) {
-  const count = width >= 768 ? 40 : 18;
+  const count = width >= 768 ? 55 : 25;
   const particles = [];
 
   for (let i = 0; i < count; i++) {
     const isCyan = Math.random() < 0.6;
     const color = isCyan ? CYAN : PURPLE;
-    const opacity = 0.12 + Math.random() * 0.10; // 0.12 - 0.22
+    const isHub = Math.random() < HUB_CHANCE;
+    const opacity = isHub
+      ? 0.6 + Math.random() * 0.2   // hub: 0.6 - 0.8
+      : 0.35 + Math.random() * 0.30; // normal: 0.35 - 0.65
+    const radius = isHub
+      ? 5 + Math.random() * 2        // hub: 5 - 7px
+      : 1.5 + Math.random() * 2.5;   // normal: 1.5 - 4px
     const speed = 0.15 + Math.random() * 0.20; // 0.15 - 0.35
     const angle = Math.random() * Math.PI * 2;
 
@@ -28,7 +35,7 @@ function createParticles(width, height) {
       y: Math.random() * height,
       vx: Math.cos(angle) * speed,
       vy: Math.sin(angle) * speed,
-      radius: 1.5 + Math.random() * 1.0, // 1.5 - 2.5
+      radius,
       color,
       opacity,
     });
@@ -144,8 +151,8 @@ const BaggerBombBackground = () => {
         pointerEvents: 'none',
         zIndex: 0,
         backgroundImage: [
-          'radial-gradient(ellipse 600px 600px at 25% 20%, rgba(0, 217, 255, 0.07), transparent 70%)',
-          'radial-gradient(ellipse 500px 500px at 75% 15%, rgba(147, 51, 234, 0.06), transparent 70%)',
+          'radial-gradient(ellipse 800px 800px at 25% 20%, rgba(0, 217, 255, 0.18), transparent 70%)',
+          'radial-gradient(ellipse 700px 700px at 75% 15%, rgba(147, 51, 234, 0.14), transparent 70%)',
         ].join(', '),
       }} />
 
