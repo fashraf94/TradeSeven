@@ -7,6 +7,7 @@ import PropTypes from 'prop-types';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronLeft, Moon } from 'lucide-react';
 import { HOLO_COLORS } from '../constants/holoTheme';
+import BaggerBombBackground from '../components/BaggerBomb/BaggerBombBackground';
 
 // Night mode color overrides
 const NIGHT_COLORS = {
@@ -410,12 +411,15 @@ export default function BaggerBombBattleView({
     <div
       style={{
         minHeight: '100vh',
-        backgroundColor: colors.bgDeep,
+        backgroundColor: '#070913',
         display: 'flex',
         flexDirection: 'column',
         transition: 'background-color 0.5s ease',
       }}
     >
+      {/* Command Center Background (particles + glow orbs) */}
+      <BaggerBombBackground />
+
       {/* Night Mode Ambient Glow */}
       {nightMode && (
         <motion.div
@@ -426,7 +430,7 @@ export default function BaggerBombBattleView({
             inset: 0,
             pointerEvents: 'none',
             background: `radial-gradient(ellipse at 50% 0%, ${NIGHT_COLORS.glow} 0%, transparent 60%)`,
-            zIndex: 0,
+            zIndex: 2,
           }}
         />
       )}
@@ -440,7 +444,7 @@ export default function BaggerBombBattleView({
           padding: '12px 16px',
           paddingTop: 'max(12px, env(safe-area-inset-top))',
           position: 'relative',
-          zIndex: 1,
+          zIndex: 2,
         }}
       >
         <button
@@ -508,7 +512,7 @@ export default function BaggerBombBattleView({
       <TabToggle activeTab={activeTab} onTabChange={setActiveTab} nightMode={nightMode} />
 
       {/* Main Content */}
-      <div style={{ flex: 1, overflowY: 'auto', paddingBottom: '100px', position: 'relative', zIndex: 1 }}>
+      <div style={{ flex: 1, overflowY: 'auto', paddingBottom: '100px', position: 'relative', zIndex: 2 }}>
         <AnimatePresence mode="wait">
           {activeTab === 'feed' ? (
             <motion.div
