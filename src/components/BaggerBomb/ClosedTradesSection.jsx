@@ -216,11 +216,14 @@ export default function ClosedTradesSection({
           <span style={{ fontSize: '14px' }}>{'📋'}</span>
           <span
             style={{
-              fontSize: '13px',
-              fontWeight: 600,
-              color: HOLO_COLORS.textMuted,
+              background: 'linear-gradient(90deg, #22c55e, #ef4444)',
+              WebkitBackgroundClip: 'text',
+              WebkitTextFillColor: 'transparent',
+              backgroundClip: 'text',
+              fontSize: '15px',
+              fontWeight: 800,
+              letterSpacing: '1.5px',
               textTransform: 'uppercase',
-              letterSpacing: '0.5px',
             }}
           >
             Closed Trades

@@ -373,7 +373,7 @@ export default function TacticalRow({
       style={{
         display: 'flex',
         alignItems: 'stretch',
-        backgroundColor: HOLO_COLORS.bgElevated,
+        backgroundColor: 'rgba(22, 27, 34, 0.25)',
         borderBottom: `1px solid ${HOLO_COLORS.borderSubtle}`,
         minHeight: '120px',
       }}

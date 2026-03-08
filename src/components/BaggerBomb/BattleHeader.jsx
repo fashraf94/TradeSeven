@@ -393,6 +393,7 @@ export default function BattleHeader({
   // V4 props (grouped)
   battleVersion = 3,
   freeAgentConfig = {},
+  isTraining = false,
 }) {
   // Destructure V4 swap props used locally (rest is spread to FreeAgentBar)
   const { swapMode, onCancelSwapMode, onEnterSwapMode, swapsRemaining } = freeAgentConfig;
@@ -409,8 +410,7 @@ export default function BattleHeader({
   return (
     <div
       style={{
-        backgroundColor: HOLO_COLORS.bgElevated,
-        borderRadius: '16px',
+        backgroundColor: 'transparent',
         padding: '16px',
         margin: '0 16px',
         display: 'flex',
@@ -421,15 +421,42 @@ export default function BattleHeader({
       {/* Title */}
       <div
         style={{
-          textAlign: 'center',
-          fontSize: '11px',
-          fontWeight: 600,
-          color: HOLO_COLORS.textMuted,
-          textTransform: 'uppercase',
-          letterSpacing: '1px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: '8px',
+          marginBottom: '8px',
         }}
       >
-        BaggerBomb Battle
+        <span
+          style={{
+            fontSize: typeof window !== 'undefined' && window.innerWidth >= 768 ? '20px' : '16px',
+            fontWeight: 800,
+            color: '#ffffff',
+            textAlign: 'center',
+            textShadow: '0 0 12px rgba(0, 217, 255, 0.5), 0 0 24px rgba(0, 217, 255, 0.2)',
+            letterSpacing: '1.5px',
+            textTransform: 'uppercase',
+          }}
+        >
+          BaggerBomb Battle
+        </span>
+        {isTraining && (
+          <span
+            style={{
+              backgroundColor: HOLO_COLORS.purple,
+              color: '#ffffff',
+              padding: '4px 8px',
+              borderRadius: '6px',
+              fontSize: '11px',
+              fontWeight: 700,
+              textTransform: 'uppercase',
+              letterSpacing: '0.5px',
+            }}
+          >
+            Training
+          </span>
+        )}
       </div>
 
       {/* Score Row */}
@@ -475,49 +502,65 @@ export default function BattleHeader({
       {/* Bomb/Bust Counts */}
       <BombBustCounts player={player} opponent={opponent} />
 
-      {/* Swap Market Button (V4+) */}
+      {/* Unified Swap + Free Agent Card (V4+) */}
       {battleVersion >= 4 && (
-        <div style={{ display: 'flex', justifyContent: 'center' }}>
-          {swapMode?.active ? (
-            <motion.button
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              onClick={onCancelSwapMode}
-              style={{
-                padding: '8px 20px',
-                borderRadius: '20px',
-                border: 'none',
-                background: 'linear-gradient(135deg, rgba(239, 68, 68, 0.25), rgba(220, 38, 38, 0.15))',
-                color: HOLO_COLORS.red,
-                fontSize: '13px',
-                fontWeight: 700,
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
-                boxShadow: `0 0 15px rgba(239, 68, 68, 0.2), 0 2px 8px rgba(0, 0, 0, 0.3)`,
-                letterSpacing: '0.5px',
-              }}
-            >
-              Cancel Swap
-            </motion.button>
-          ) : (
-            <SwapMarketButton
-              swapsRemaining={swapsRemaining}
-              onClick={onEnterSwapMode}
-              disabled={swapsRemaining <= 0}
-            />
-          )}
+        <div
+          style={{
+            backgroundColor: 'rgba(13, 17, 23, 0.55)',
+            backdropFilter: 'blur(8px)',
+            WebkitBackdropFilter: 'blur(8px)',
+            border: '1px solid rgba(0, 217, 255, 0.12)',
+            borderRadius: '12px',
+            padding: '16px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '12px',
+          }}
+        >
+          {/* Swap Picks Button */}
+          <div style={{ display: 'flex', justifyContent: 'center' }}>
+            {swapMode?.active ? (
+              <motion.button
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                onClick={onCancelSwapMode}
+                style={{
+                  padding: '8px 20px',
+                  borderRadius: '20px',
+                  border: 'none',
+                  background: 'linear-gradient(135deg, rgba(239, 68, 68, 0.25), rgba(220, 38, 38, 0.15))',
+                  color: HOLO_COLORS.red,
+                  fontSize: '13px',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  boxShadow: `0 0 15px rgba(239, 68, 68, 0.2), 0 2px 8px rgba(0, 0, 0, 0.3)`,
+                  letterSpacing: '0.5px',
+                }}
+              >
+                Cancel Swap
+              </motion.button>
+            ) : (
+              <SwapMarketButton
+                swapsRemaining={swapsRemaining}
+                onClick={onEnterSwapMode}
+                disabled={swapsRemaining <= 0}
+              />
+            )}
+          </div>
+
+          {/* Free Agent Bar */}
+          <FreeAgentBar
+            {...freeAgentConfig}
+            hideSwapButton
+          />
         </div>
       )}
 
-      {/* V5+V4: Show inline FreeAgentBar (research-only for V5) / V3: Session HUD */}
-      {battleVersion >= 4 ? (
-        <FreeAgentBar
-          {...freeAgentConfig}
-          hideSwapButton
-        />
-      ) : (
+      {/* V3: Session HUD */}
+      {battleVersion < 4 && (
         <SessionHUD
           currentSession={currentSession}
           timeRemaining={sessionTimeRemaining}
@@ -562,6 +605,8 @@ BattleHeader.propTypes = {
   battleVersion: PropTypes.number,
   /** V4: Grouped free agent config (spread to FreeAgentBar) */
   freeAgentConfig: PropTypes.object,
+  /** Whether this is a training battle */
+  isTraining: PropTypes.bool,
 };
 
 BattleHeader.defaultProps = {
@@ -571,4 +616,5 @@ BattleHeader.defaultProps = {
   completedSessions: [],
   battleVersion: 3,
   freeAgentConfig: {},
+  isTraining: false,
 };

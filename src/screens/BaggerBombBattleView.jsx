@@ -7,6 +7,7 @@ import PropTypes from 'prop-types';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronLeft, Moon } from 'lucide-react';
 import { HOLO_COLORS } from '../constants/holoTheme';
+import BaggerBombBackground from '../components/BaggerBomb/BaggerBombBackground';
 
 // Night mode color overrides
 const NIGHT_COLORS = {
@@ -72,7 +73,7 @@ const TIER_HEADER_COLORS = {
  * Tab Toggle Component
  */
 function TabToggle({ activeTab, onTabChange, nightMode }) {
-  const bgColor = nightMode ? NIGHT_COLORS.bgElevated : HOLO_COLORS.bgElevated;
+  const bgColor = nightMode ? 'rgba(18, 18, 26, 0.7)' : 'rgba(22, 27, 34, 0.7)';
   const accentColor = nightMode ? NIGHT_COLORS.accent : HOLO_COLORS.cyan;
   const mutedColor = nightMode ? NIGHT_COLORS.textMuted : HOLO_COLORS.textMuted;
   const darkBg = nightMode ? NIGHT_COLORS.bgDeep : HOLO_COLORS.bgDeep;
@@ -137,7 +138,7 @@ TabToggle.propTypes = {
  * Tier Section Header
  */
 function TierHeader({ tier, nightMode }) {
-  const bgColor = nightMode ? NIGHT_COLORS.bgDeep : HOLO_COLORS.bgDeep;
+  const bgColor = nightMode ? 'rgba(5, 5, 8, 0.85)' : 'rgba(10, 14, 20, 0.85)';
   const mutedColor = nightMode ? NIGHT_COLORS.textMuted : HOLO_COLORS.textMuted;
   const elevatedBg = nightMode ? NIGHT_COLORS.bgElevated : HOLO_COLORS.bgElevated;
 
@@ -160,14 +161,28 @@ function TierHeader({ tier, nightMode }) {
       >
         <span
           style={{
-            fontSize: '12px',
-            fontWeight: 700,
-            color: mutedColor,
-            textTransform: 'uppercase',
-            letterSpacing: '0.5px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
           }}
         >
-          {tier.label}
+          <span style={{ fontSize: '15px' }}>
+            {tier.label.split(' ')[0]}
+          </span>
+          <span
+            style={{
+              background: 'linear-gradient(90deg, #22c55e, #ef4444)',
+              WebkitBackgroundClip: 'text',
+              WebkitTextFillColor: 'transparent',
+              backgroundClip: 'text',
+              fontSize: '15px',
+              fontWeight: 800,
+              letterSpacing: '1.5px',
+              textTransform: 'uppercase',
+            }}
+          >
+            {tier.label.split(' ').slice(1).join(' ')}
+          </span>
         </span>
         <span
           style={{
@@ -410,12 +425,15 @@ export default function BaggerBombBattleView({
     <div
       style={{
         minHeight: '100vh',
-        backgroundColor: colors.bgDeep,
+        backgroundColor: '#070913',
         display: 'flex',
         flexDirection: 'column',
         transition: 'background-color 0.5s ease',
       }}
     >
+      {/* Command Center Background (particles + glow orbs) */}
+      <BaggerBombBackground />
+
       {/* Night Mode Ambient Glow */}
       {nightMode && (
         <motion.div
@@ -426,7 +444,7 @@ export default function BaggerBombBattleView({
             inset: 0,
             pointerEvents: 'none',
             background: `radial-gradient(ellipse at 50% 0%, ${NIGHT_COLORS.glow} 0%, transparent 60%)`,
-            zIndex: 0,
+            zIndex: 2,
           }}
         />
       )}
@@ -440,7 +458,7 @@ export default function BaggerBombBattleView({
           padding: '12px 16px',
           paddingTop: 'max(12px, env(safe-area-inset-top))',
           position: 'relative',
-          zIndex: 1,
+          zIndex: 2,
         }}
       >
         <button
@@ -458,40 +476,22 @@ export default function BaggerBombBattleView({
         >
           <ChevronLeft size={24} />
         </button>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          {nightMode && <Moon size={16} color={colors.accent} />}
-          <h1
-            style={{
-              fontSize: '16px',
-              fontWeight: 700,
-              color: colors.textPrimary,
-              margin: 0,
-            }}
-          >
-            BaggerBomb Battle
-          </h1>
-          {isTraining && (
-            <span
-              style={{
-                backgroundColor: HOLO_COLORS.purple,
-                color: '#ffffff',
-                padding: '4px 8px',
-                borderRadius: '6px',
-                fontSize: '11px',
-                fontWeight: 700,
-                textTransform: 'uppercase',
-                letterSpacing: '0.5px',
-              }}
-            >
-              Training
-            </span>
-          )}
-        </div>
+        {nightMode && <Moon size={16} color={colors.accent} />}
         <div style={{ width: '40px' }} /> {/* Spacer for centering */}
       </div>
 
       {/* Battle Header Card */}
-      <div style={{ paddingTop: '8px' }}>
+      <div style={{
+        paddingTop: '8px',
+        position: 'relative',
+        zIndex: 2,
+        backgroundColor: 'rgba(13, 17, 23, 0.55)',
+        backdropFilter: 'blur(8px)',
+        WebkitBackdropFilter: 'blur(8px)',
+        border: '1px solid rgba(0, 217, 255, 0.1)',
+        borderRadius: '12px',
+        margin: '0 8px',
+      }}>
         <BattleHeader
           player={playerHeaderData}
           opponent={opponentHeaderData}
@@ -501,6 +501,7 @@ export default function BaggerBombBattleView({
           completedSessions={completedSessions}
           battleVersion={battleVersion}
           freeAgentConfig={{ ...freeAgentConfig, currentPrices, thresholds }}
+          isTraining={isTraining}
         />
       </div>
 
@@ -508,7 +509,7 @@ export default function BaggerBombBattleView({
       <TabToggle activeTab={activeTab} onTabChange={setActiveTab} nightMode={nightMode} />
 
       {/* Main Content */}
-      <div style={{ flex: 1, overflowY: 'auto', paddingBottom: '100px', position: 'relative', zIndex: 1 }}>
+      <div style={{ flex: 1, overflowY: 'auto', paddingBottom: '100px', position: 'relative', zIndex: 2 }}>
         <AnimatePresence mode="wait">
           {activeTab === 'feed' ? (
             <motion.div
