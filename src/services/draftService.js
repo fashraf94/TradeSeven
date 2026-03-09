@@ -490,6 +490,11 @@ export async function makePick(draftId, userId, asset, isAutopick = false) {
     updateData.swapHistory = [];
     updateData.dailySwaps = {};
     updateData.thresholds = draftThresholds;
+    updateData.claimSystem = {
+      enabled: true,
+      currentWaiverPriority: [],
+      processingLog: [],
+    };
 
     console.log(`[DRAFT] Draft ${draftId} complete after 36 picks`);
   }
