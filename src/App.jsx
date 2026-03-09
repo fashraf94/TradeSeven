@@ -20512,7 +20512,7 @@ export default function PortfolioDuel() {
             >
 
               {/* Sidebar Header */}
-              <div className="bg-[#0d1117] border-b border-gray-800 p-4" style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <div className="bg-[#0d1117] border-b border-gray-800" style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px 16px', minHeight: 56 }}>
                 <span style={{
                   background: 'linear-gradient(135deg, #FF8C00, #468CFF)',
                   WebkitBackgroundClip: 'text',
@@ -20526,8 +20526,8 @@ export default function PortfolioDuel() {
                 </span>
                 <button
                   onClick={() => setSidebarOpen(false)}
-                  style={{ position: 'absolute', right: 16, top: '50%', transform: 'translateY(-50%)' }}
-                  className="text-gray-400 hover:text-white p-2 hover:bg-white/10 rounded-lg transition-colors"
+                  style={{ position: 'absolute', right: 16, top: '50%', transform: 'translateY(-50%)', background: 'transparent', border: 'none', cursor: 'pointer', color: '#8b949e' }}
+                  className="hover:text-white p-2 hover:bg-white/10 rounded-lg transition-colors"
                   aria-label="Close menu"
                 >
                   <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
