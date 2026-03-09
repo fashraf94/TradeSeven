@@ -103,6 +103,8 @@ import {
 import { ProfileScreen, WinsScreen, LossesScreen, DraftHistoryScreen, JoinScreen, DraftSetupScreen, DraftJoinScreen, DraftTrainingScreen, DraftLobbyScreen, PreviousBattlesScreen, BattleHistoryScreen, FreeAgencyScreen, FreeAgencyScreenV2, DraftResultsScreen, BattleViewScreen, DraftBattleScreen, DraftBattleScreenV2, DraftRoomScreen, HomeScreen, EarningsGameScreen, BuilderScreen } from './screens';
 // Snake Draft Components
 import DraftCompleteScreen from './screens/SnakeDraft/DraftCompleteScreen';
+// Claim-based Free Agency
+import ClaimsFreeAgencyScreen from './components/claims/ClaimsFreeAgencyScreen';
 // Shared Components
 import DesktopBackground from './components/DesktopBackground';
 import { ConfirmationPopup } from './components/shared';
@@ -22902,8 +22904,21 @@ export default function PortfolioDuel() {
 
   // DRAFT BATTLE VIEW OLD CODE REMOVED - See src/screens/DraftBattleScreen.jsx
 
-  // FREE AGENCY SCREEN - V2 with Holographic War Room theme (Mobile + Desktop)
+  // FREE AGENCY SCREEN - Claims-based (waiver wire) or V2 (FCFS)
   if (screen === 'freeAgency') {
+    if (currentDraft?.claimSystem?.enabled) {
+      return (
+        <ErrorBoundary name="Waiver Claims" onNavigateDashboard={() => setScreen('dashboard')}>
+          <ClaimsFreeAgencyScreen
+            containerStyle={containerStyle}
+            currentDraft={currentDraft}
+            user={user}
+            setScreen={setScreen}
+            logger={logger}
+          />
+        </ErrorBoundary>
+      );
+    }
     return (
       <ErrorBoundary name="Free Agency" onNavigateDashboard={() => setScreen('dashboard')}>
       <FreeAgencyScreenV2

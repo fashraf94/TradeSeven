@@ -1320,6 +1320,7 @@ const DraftBattleScreenV2 = ({
           onExitScout={handleExitScout}
           onFreeAgency={handleFreeAgency}
           onTopPerformers={handleTopPerformers}
+          draft={currentDraft}
         />
       )}
 
