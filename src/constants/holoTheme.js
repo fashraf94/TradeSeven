@@ -26,6 +26,7 @@ export const HOLO_COLORS = {
 
   // Rank Colors
   gold: '#ffd700',
+  goldAccent: '#fbbf24',
   silver: '#c0c0c0',
   bronze: '#cd7f32',
 

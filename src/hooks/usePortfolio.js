@@ -29,7 +29,6 @@ export const usePortfolio = () => {
 
   // Rules modal state
   const [showRulesModal, setShowRulesModal] = useState(false);
-  const [rulesActiveTab, setRulesActiveTab] = useState('classic'); // 'classic' | 'draft' | etc.
 
   // Track which assets are expanded in portfolio builder
   const [expandedAssets, setExpandedAssets] = useState(new Set());
@@ -250,8 +249,6 @@ export const usePortfolio = () => {
     // Rules modal
     showRulesModal,
     setShowRulesModal,
-    rulesActiveTab,
-    setRulesActiveTab,
 
     // Expanded assets
     expandedAssets,
