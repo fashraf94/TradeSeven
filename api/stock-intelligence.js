@@ -9,6 +9,7 @@ import { buildIntelligencePrompt, detectComparisonSymbols } from './_utils/intel
 import { getSupplyChainCoverage } from './_utils/supplyChainLookup.js';
 import { getStockContext, TICKERS } from './_utils/stockIntelligenceData.js';
 import { querySonar } from './helpers/sonar.js';
+import { extractJSON } from './_utils/extractJSON.js';
 
 const LOG_PREFIX = '[StockIntelligence]';
 
@@ -389,28 +390,6 @@ Focus on specific numbers. Today is ${dateStr}.`,
       error: error.message,
     });
   }
-}
-
-// ── Helper: extract JSON from Claude response (fence-agnostic) ─
-function extractJSON(raw) {
-  if (!raw || typeof raw !== 'string') return null;
-
-  // Strategy 1: Try parsing the raw string directly (ideal case — no fences)
-  try {
-    return JSON.parse(raw.trim());
-  } catch (e) { /* continue */ }
-
-  // Strategy 2: Find the first { and last } and try parsing that substring
-  const firstBrace = raw.indexOf('{');
-  const lastBrace = raw.lastIndexOf('}');
-  if (firstBrace !== -1 && lastBrace > firstBrace) {
-    try {
-      return JSON.parse(raw.slice(firstBrace, lastBrace + 1));
-    } catch (e) { /* continue */ }
-  }
-
-  // Strategy 3: Failed to parse
-  return null;
 }
 
 // ── Helper: format market cap for display ────────────────────
