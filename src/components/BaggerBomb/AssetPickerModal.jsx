@@ -90,7 +90,7 @@ function AssetRow({ asset, isSelected, isDisabled, onSelect, onShowResearch, cry
           textAlign: 'left',
         }}
       >
-        {/* Row 1: Symbol + Name + Info button + ATR */}
+        {/* Row 1: Symbol + Name + Info button + Thresholds */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px', overflow: 'hidden' }}>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -127,18 +127,13 @@ function AssetRow({ asset, isSelected, isDisabled, onSelect, onShowResearch, cry
             </button>
           )}
           <div style={{ textAlign: 'right', flexShrink: 1, minWidth: 0 }}>
-            <div style={{ fontSize: '13px', fontWeight: 600, color: accentColor, whiteSpace: 'nowrap' }}>
-              {asset.baseATR?.toFixed(1)}% ATR
+            <div style={{ fontSize: '11px', color: HOLO_COLORS.textMuted, whiteSpace: 'nowrap' }}>
+              💣 {(asset.baseATR * 1.0).toFixed(1)}% | 💣💣 {(asset.baseATR * 1.5).toFixed(1)}% | 🚀 {(asset.baseATR * 2.0).toFixed(1)}%
             </div>
           </div>
         </div>
 
-        {/* Row 2: Threshold info */}
-        <div style={{ fontSize: '10px', color: HOLO_COLORS.textMuted, marginBottom: '8px' }}>
-          💣 {(asset.baseATR * 1.0).toFixed(1)}% | 🚀 {(asset.baseATR * 2.0).toFixed(1)}%
-        </div>
-
-        {/* Row 3: LONG / SHORT buttons (full width) */}
+        {/* Row 2: LONG / SHORT buttons (full width) */}
         {!isDisabled && (
           <div style={{ display: 'flex', gap: '8px' }}>
             <button
@@ -300,20 +295,12 @@ function AssetRow({ asset, isSelected, isDisabled, onSelect, onShowResearch, cry
       >
         <div
           style={{
-            fontSize: '13px',
-            fontWeight: 600,
-            color: accentColor,
-          }}
-        >
-          {asset.baseATR?.toFixed(1)}% ATR
-        </div>
-        <div
-          style={{
-            fontSize: '10px',
+            fontSize: '11px',
             color: HOLO_COLORS.textMuted,
+            whiteSpace: 'nowrap',
           }}
         >
-          💣 {(asset.baseATR * 1.0).toFixed(1)}% | 🚀 {(asset.baseATR * 2.0).toFixed(1)}%
+          💣 {(asset.baseATR * 1.0).toFixed(1)}% | 💣💣 {(asset.baseATR * 1.5).toFixed(1)}% | 🚀 {(asset.baseATR * 2.0).toFixed(1)}%
         </div>
       </div>
     </motion.button>

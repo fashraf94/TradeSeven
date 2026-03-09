@@ -79,9 +79,10 @@ export function getBankedScoreTotal(dailyScores, playerId) {
  * @param {Object} openPrices - Day's open prices keyed by symbol
  * @param {Object} history - Player's history keyed by symbol
  * @param {Object} thresholds - Battle thresholds keyed by symbol
+ * @param {Object} previousClosePrices - Previous close prices for threshold baseline (optional)
  * @returns {{ activeScore: number, assetScores: Array }}
  */
-function calculatePlayerActiveScore(portfolio, closingPrices, openPrices, history, thresholds) {
+function calculatePlayerActiveScore(portfolio, closingPrices, openPrices, history, thresholds, previousClosePrices = {}) {
   const flat = flattenPortfolio(portfolio);
   let totalActive = 0;
   const assetScores = [];
@@ -97,10 +98,18 @@ function calculatePlayerActiveScore(portfolio, closingPrices, openPrices, histor
       const assetHistory = history[asset.symbol] || { maxMultiplier: 0, minMultiplier: 0 };
       const baseATR = thresholds[asset.symbol]?.threshold || asset.baseATR || 2.5;
 
+      // Threshold detection from previous close (shared daily baseline)
+      const prevClose = previousClosePrices[asset.symbol] || entryPrice;
+      const thresholdPriceChange = prevClose > 0
+        ? ((closePrice - prevClose) / prevClose) * 100
+        : null;
+
       const score = calculateAssetScoreV3(
         { ...asset, baseATR },
         priceChange,
-        assetHistory
+        assetHistory,
+        {}, // no extremes in daily scoring
+        thresholdPriceChange
       );
 
       totalActive += score.totalPoints;
@@ -166,8 +175,9 @@ export async function bankDailyScores(battleId, dayNumber, closingPrices, source
       const history = player.history || {};
 
       // Calculate active portfolio score
+      const previousClosePrices = data.state?.previousClosePrices || {};
       const { activeScore, assetScores } = calculatePlayerActiveScore(
-        player.portfolio, closingPrices, openPrices, history, thresholds
+        player.portfolio, closingPrices, openPrices, history, thresholds, previousClosePrices
       );
 
       // Capture closing prices for portfolio symbols
@@ -300,12 +310,13 @@ export function calculateV4FinalScores(battle, endingPrices) {
   const creatorHistory = battle.creator?.history || {};
   const opponentHistory = battle.opponent?.history || {};
   const thresholds = battle.thresholds || {};
+  const previousClosePrices = battle.state?.previousClosePrices || {};
 
   const creatorActive = calculatePlayerActiveScore(
-    battle.creator?.portfolio, endingPrices, openPrices, creatorHistory, thresholds
+    battle.creator?.portfolio, endingPrices, openPrices, creatorHistory, thresholds, previousClosePrices
   );
   const opponentActive = calculatePlayerActiveScore(
-    battle.opponent?.portfolio, endingPrices, openPrices, opponentHistory, thresholds
+    battle.opponent?.portfolio, endingPrices, openPrices, opponentHistory, thresholds, previousClosePrices
   );
 
   // 3. Banked previous days

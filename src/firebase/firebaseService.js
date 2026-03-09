@@ -1372,6 +1372,15 @@ export async function joinBaggerBombBattle(challengeCode, opponentData) {
       }
     }
 
+    // Capture previous close prices for threshold baseline
+    let previousClosePrices = {};
+    try {
+      const { capturePreviousClosePrices } = await import('../utils/priceCapture.js');
+      previousClosePrices = await capturePreviousClosePrices(Object.keys(startingPrices));
+    } catch (pcError) {
+      console.warn('⚠️ Error fetching previousClose for BB battle:', pcError.message);
+    }
+
     // Initialize MORNING_BELL open prices
     const sessionPrices = initializeSessionPrices();
     sessionPrices.MORNING_BELL.open = { ...startingPrices };
@@ -1414,6 +1423,7 @@ export async function joinBaggerBombBattle(challengeCode, opponentData) {
       'state.status': 'active',
       'state.currentSession': 'MORNING_BELL',
       'state.startingPrices': startingPrices,
+      'state.previousClosePrices': previousClosePrices,
 
       sessionPrices: sessionPrices,
       thresholds: mergedThresholds,
@@ -1613,15 +1623,23 @@ export async function joinBaggerBombBattleV3(battleIdOrCode, opponentData, optio
     const allSymbols = [...new Set([...creatorSymbols, ...opponentSymbols, ...benchSymbols])];
 
     // Capture real-time prices: WebSocket first, REST fallback
-    const { captureBattlePrices } = await import('../utils/priceCapture.js');
+    const { captureBattlePrices, capturePreviousClosePrices } = await import('../utils/priceCapture.js');
 
     let startingPrices = {};
+    let previousClosePrices = {};
     const priceSource = 'WS+REST';
 
     try {
       startingPrices = await captureBattlePrices(allSymbols);
     } catch (priceError) {
       console.warn('⚠️ Error fetching prices for V3 battle:', priceError.message);
+    }
+
+    // Capture previous close prices for threshold baseline (uses cached EODHD data)
+    try {
+      previousClosePrices = await capturePreviousClosePrices(allSymbols);
+    } catch (pcError) {
+      console.warn('⚠️ Error fetching previousClose for V3 battle:', pcError.message);
     }
 
     console.log(`[Price Capture V3] startingPrices (source: ${priceSource}):`,
@@ -1658,6 +1676,7 @@ export async function joinBaggerBombBattleV3(battleIdOrCode, opponentData, optio
       'state.currentSession': 'MORNING_BELL',
       'state.startingPrices': startingPrices,
       'state.startingPriceSource': priceSource,
+      'state.previousClosePrices': previousClosePrices,
 
       sessionPrices: sessionPrices,
       thresholds: mergedThresholds,
@@ -2022,15 +2041,23 @@ export async function joinBaggerBombBattleV4(battleIdOrCode, opponentData, optio
     const allSymbols = [...new Set([...creatorSymbols, ...opponentSymbols])];
 
     // Capture real-time prices: WebSocket first, REST fallback
-    const { captureBattlePrices } = await import('../utils/priceCapture.js');
+    const { captureBattlePrices, capturePreviousClosePrices } = await import('../utils/priceCapture.js');
 
     let startingPrices = {};
+    let previousClosePrices = {};
     const priceSource = 'WS+REST';
 
     try {
       startingPrices = await captureBattlePrices(allSymbols);
     } catch (priceError) {
       console.warn('⚠️ Error fetching prices for V4 battle:', priceError.message);
+    }
+
+    // Capture previous close prices for threshold baseline (uses cached EODHD data)
+    try {
+      previousClosePrices = await capturePreviousClosePrices(allSymbols);
+    } catch (pcError) {
+      console.warn('⚠️ Error fetching previousClose for V4 battle:', pcError.message);
     }
 
     console.log(`[Price Capture V4] startingPrices (source: ${priceSource}):`,
@@ -2064,6 +2091,7 @@ export async function joinBaggerBombBattleV4(battleIdOrCode, opponentData, optio
       'state.status': 'active',
       'state.startingPrices': startingPrices,
       'state.startingPriceSource': priceSource,
+      'state.previousClosePrices': previousClosePrices,
       'state.dailyOpenPrices': dailyOpenPrices,
       'state.isActive': true,
 
