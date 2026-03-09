@@ -524,18 +524,24 @@ export function createThresholdEvent(player, symbol, thresholdName, multiplier, 
 /**
  * Calculate asset score with new threshold system
  * @param {Object} asset - Asset with symbol, baseATR
- * @param {number} priceChange - Percent change from open (current price)
+ * @param {number} priceChange - Percent change from entry price (for base scoring)
  * @param {Object} history - Asset history with maxMultiplier, minMultiplier
- * @param {Object} extremes - Optional { highChange, lowChange } percent changes from open at daily high/low
+ * @param {Object} extremes - Optional { highChange, lowChange } percent changes at daily high/low
+ *   When thresholdPriceChange is provided, these should be rebased against previousClose.
+ * @param {number|null} thresholdPriceChange - Optional percent change from previousClose (for threshold detection).
+ *   When null/undefined, falls back to priceChange (backward-compatible for old battles).
  * @returns {Object} Score breakdown
  */
-export function calculateAssetScoreV3(asset, priceChange, history = {}, extremes = {}) {
+export function calculateAssetScoreV3(asset, priceChange, history = {}, extremes = {}, thresholdPriceChange = null) {
   const baseATR = asset.baseATR || 2.5;
 
   // Negate priceChange for short positions — shorts profit when price goes DOWN
   const isShort = asset.direction === 'short';
   if (isShort) {
     priceChange = -priceChange;
+    if (thresholdPriceChange != null) {
+      thresholdPriceChange = -thresholdPriceChange;
+    }
     // Also negate extremes so threshold detection (bombs/busts) works correctly for shorts
     if (extremes.highChange != null || extremes.lowChange != null) {
       extremes = {
@@ -564,18 +570,24 @@ export function calculateAssetScoreV3(asset, priceChange, history = {}, extremes
     };
   }
 
-  const multiplier = priceChange / baseATR;
+  // Threshold multiplier: from previousClose when available, entry price as fallback.
+  // This ensures two battles on the same stock see the same threshold dollar targets.
+  const effectiveThresholdChange = (thresholdPriceChange != null && isFinite(thresholdPriceChange))
+    ? thresholdPriceChange
+    : priceChange;
+  const multiplier = effectiveThresholdChange / baseATR;
 
   // Conviction multiplier: Star 2x, Core 1.5x, Support 1x
   const tierMultiplier = CONVICTION_MULTIPLIERS[asset.tier] || CONVICTION_MULTIPLIERS.support;
 
-  // Base points: 10 per 1% change, scaled by conviction tier (uses CURRENT price, not extremes)
+  // Base points: 10 per 1% change, scaled by conviction tier (uses entry price, not previousClose)
   const basePoints = priceChange * 10 * tierMultiplier;
 
   // For badge/threshold detection, use intraday high/low extremes when available.
   // A threshold is "cemented" once the price touches it at ANY point during the day:
   // - Positive bombs (bagger/doubleBagger/tenBagger): triggered by intraday HIGH
   // - Negative busts (bust/crash/meltdown): triggered by intraday LOW
+  // When thresholdPriceChange is provided, extremes should already be rebased against previousClose by the caller.
   const highMultiplier = extremes.highChange != null ? extremes.highChange / baseATR : multiplier;
   const lowMultiplier = extremes.lowChange != null ? extremes.lowChange / baseATR : multiplier;
 

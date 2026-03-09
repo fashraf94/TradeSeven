@@ -30,6 +30,7 @@ const BaggerBombTab = ({ asset }) => {
 
   const baseThreshold = asset?.threshold || fetchedThreshold || DEFAULT_THRESHOLD;
 
+  // Entry price (for display)
   const baselinePrice =
     asset?.lockedPrice ||
     asset?.baselinePrice ||
@@ -39,6 +40,11 @@ const BaggerBombTab = ({ asset }) => {
     asset?.price ||         // Fallback to current price for free agents
     asset?.currentPrice ||
     null;
+
+  // Threshold baseline: use previousClosePrice for threshold dollar targets.
+  // This ensures two battles on the same stock show identical threshold targets.
+  // Falls back to baselinePrice for old battles or research modal context.
+  const thresholdBaseline = asset?.previousClosePrice || baselinePrice;
 
   const formatTargetPrice = (price) => {
     if (!price || price <= 0) return null;
@@ -110,7 +116,7 @@ const BaggerBombTab = ({ asset }) => {
       </div>
 
       {/* Day Baseline */}
-      {baselinePrice && baselinePrice > 0 && (
+      {thresholdBaseline && thresholdBaseline > 0 && (
         <div style={{
           color: '#a0a0a0',
           fontSize: '13px',
@@ -118,10 +124,10 @@ const BaggerBombTab = ({ asset }) => {
           marginBottom: '12px',
         }}>
           Day Baseline: <span style={{ color: '#e0e0e0', fontWeight: 600 }}>
-            ${baselinePrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            ${thresholdBaseline.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
           </span>
           <span style={{ color: '#6e7681', marginLeft: '8px' }}>
-            (resets daily from previous close)
+            (previous close)
           </span>
         </div>
       )}
@@ -148,7 +154,7 @@ const BaggerBombTab = ({ asset }) => {
         }}>
           {BAGGER_TIERS.map((tier, i) => {
             const pct = baseThreshold * tier.multiplier;
-            const targetPrice = baselinePrice ? baselinePrice * (1 + pct / 100) : null;
+            const targetPrice = thresholdBaseline ? thresholdBaseline * (1 + pct / 100) : null;
             return (
               <div key={tier.key} style={{
                 display: 'flex',
@@ -187,7 +193,7 @@ const BaggerBombTab = ({ asset }) => {
         }}>
           {BUST_TIERS.map((tier, i) => {
             const pct = baseThreshold * tier.multiplier;
-            const targetPrice = baselinePrice ? baselinePrice * (1 - pct / 100) : null;
+            const targetPrice = thresholdBaseline ? thresholdBaseline * (1 - pct / 100) : null;
             return (
               <div key={tier.key} style={{
                 display: 'flex',
@@ -382,8 +388,8 @@ const BaggerBombTab = ({ asset }) => {
           color: 'rgba(255, 255, 255, 0.7)',
         }}>
           <strong style={{ color: '#f59e0b' }}>Note:</strong> Threshold tiers are 1.0x, 1.5x, and 2.0x of the base threshold ({baseThreshold.toFixed(1)}%).
-          {baselinePrice > 0 && (
-            <span> Baseline: {formatTargetPrice(baselinePrice)}.</span>
+          {thresholdBaseline > 0 && (
+            <span> Baseline: {formatTargetPrice(thresholdBaseline)}.</span>
           )}
         </div>
       </div>

@@ -1,5 +1,5 @@
 import { captureRealtimePrices } from '../services/websocketService';
-import { fetchFreshPrices, fetchEODClosePrices } from '../services/eodhdAPI';
+import { fetchFreshPrices, fetchEODClosePrices, getMultipleStockPrices, getMultipleCryptoPrices } from '../services/eodhdAPI';
 import { getMarketState } from './marketSchedule';
 import { CRYPTO_SYMBOLS } from '../services/sessionScoringService';
 
@@ -81,4 +81,46 @@ export async function captureBattlePrices(symbols) {
   ).join(' | '));
 
   return finalPrices;
+}
+
+/**
+ * Capture previous close prices for all battle symbols.
+ * Uses the cached getMultipleStockPrices / getMultipleCryptoPrices endpoints
+ * which return previousClose in the normalized response. Since previousClose
+ * is static for the day, caching is ideal — no extra API calls needed if
+ * the data was recently fetched by captureBattlePrices.
+ *
+ * @param {string[]} symbols - All unique symbols in the battle
+ * @returns {Promise<Record<string, number>>} - { AAPL: 188.50, BTC: 97000, ... }
+ */
+export async function capturePreviousClosePrices(symbols) {
+  if (!symbols?.length) return {};
+
+  const stockSymbols = symbols.filter(s => !CRYPTO_SYMBOLS.has(s.toUpperCase()));
+  const cryptoSymbols = symbols.filter(s => CRYPTO_SYMBOLS.has(s.toUpperCase()));
+
+  const previousCloses = {};
+
+  try {
+    const [stockData, cryptoData] = await Promise.all([
+      stockSymbols.length > 0 ? getMultipleStockPrices(stockSymbols) : {},
+      cryptoSymbols.length > 0 ? getMultipleCryptoPrices(cryptoSymbols) : {},
+    ]);
+
+    for (const [sym, data] of Object.entries(stockData)) {
+      const pc = data?.previousClose;
+      if (pc > 0) previousCloses[sym.toUpperCase()] = pc;
+    }
+
+    for (const [sym, data] of Object.entries(cryptoData)) {
+      const pc = data?.previousClose;
+      if (pc > 0) previousCloses[sym.toUpperCase()] = pc;
+    }
+  } catch (err) {
+    console.warn('[PriceCapture] Failed to capture previousClose prices:', err.message);
+  }
+
+  const count = Object.keys(previousCloses).length;
+  console.log(`[PriceCapture] Captured ${count}/${symbols.length} previousClose prices`);
+  return previousCloses;
 }
