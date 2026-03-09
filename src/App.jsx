@@ -20512,13 +20512,21 @@ export default function PortfolioDuel() {
             >
 
               {/* Sidebar Header */}
-              <div className="bg-[#0d1117] border-b border-gray-800 p-4 flex items-center justify-between">
-                <h2 className="text-lg font-bold">
-                  <span className="text-cyan-500">Market</span>
-                  <span className="text-white">Clash</span>
-                </h2>
+              <div className="bg-[#0d1117] border-b border-gray-800 p-4" style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <span style={{
+                  background: 'linear-gradient(135deg, #FF8C00, #468CFF)',
+                  WebkitBackgroundClip: 'text',
+                  WebkitTextFillColor: 'transparent',
+                  backgroundClip: 'text',
+                  fontSize: 22,
+                  fontWeight: 800,
+                  letterSpacing: -0.5,
+                }}>
+                  FantasyTrades
+                </span>
                 <button
                   onClick={() => setSidebarOpen(false)}
+                  style={{ position: 'absolute', right: 16, top: '50%', transform: 'translateY(-50%)' }}
                   className="text-gray-400 hover:text-white p-2 hover:bg-white/10 rounded-lg transition-colors"
                   aria-label="Close menu"
                 >
@@ -20719,41 +20727,6 @@ export default function PortfolioDuel() {
                       {unreadCount > 9 ? '9+' : unreadCount}
                     </span>
                   )}
-                </button>
-
-                {/* WEEK AHEAD CALENDAR */}
-                <button
-                  onClick={() => {
-                    setShowWeekAhead(true);
-                    setSidebarOpen(false);
-                    loadWeekAheadData();
-                  }}
-                  style={{
-                    width: '100%',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '12px',
-                    padding: '12px 16px',
-                    borderRadius: '8px',
-                    backgroundColor: 'transparent',
-                    color: '#d1d5db',
-                    border: 'none',
-                    marginBottom: '8px',
-                    cursor: 'pointer',
-                    transition: 'all 0.2s'
-                  }}
-                >
-                  <svg style={{ width: '20px', height: '20px', flexShrink: 0 }} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                  </svg>
-                  <div style={{ flex: 1, textAlign: 'left' }}>
-                    <div style={{ fontWeight: '600', fontSize: '14px' }}>Week Ahead</div>
-                    {upcomingHighImpactEvents.length > 0 && (
-                      <div style={{ fontSize: '11px', color: '#ef4444' }}>
-                        {upcomingHighImpactEvents.length} high-impact event{upcomingHighImpactEvents.length > 1 ? 's' : ''} soon
-                      </div>
-                    )}
-                  </div>
                 </button>
 
                 {/* RULES & HOW TO PLAY */}
