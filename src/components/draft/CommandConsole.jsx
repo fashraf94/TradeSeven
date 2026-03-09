@@ -29,6 +29,7 @@ const CommandConsole = ({
   onExitScout,
   onFreeAgency,
   onTopPerformers,    // NEW - replaces onViewAll
+  draft,              // Draft object — for claim system button text
 }) => {
   // Mobile detection for responsive grid
   const [isMobile, setIsMobile] = useState(
@@ -618,7 +619,7 @@ const CommandConsole = ({
                 }}
               >
                 <SwapIcon size={16} />
-                <span>Free Agency</span>
+                <span>{draft?.claimSystem?.enabled ? 'Waiver Claims' : 'Free Agency'}</span>
               </button>
               {/* Top Performers Button - Gold/amber holographic theme */}
               <button

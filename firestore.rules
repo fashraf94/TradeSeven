@@ -185,6 +185,17 @@ service cloud.firestore {
       allow create: if request.auth != null;
       allow update: if request.auth != null;
       allow delete: if false;
+
+      // Claims subcollection — waiver wire claim-based free agency
+      match /claims/{claimId} {
+        allow read: if request.auth != null;
+        allow create: if request.auth != null
+                      && request.resource.data.odUserId == request.auth.uid;
+        allow update: if request.auth != null
+                      && resource.data.odUserId == request.auth.uid
+                      && request.resource.data.status == "cancelled";
+        allow delete: if false;
+      }
     }
 
     // Snake Draft battles

@@ -314,13 +314,76 @@ async function recordBattleScores(db, battle, currentPrices) {
     recordedBy: 'cron',
   };
 
-  const battleRef = db.collection('drafts').doc(battleId);
-  await battleRef.update({
+  // Calculate waiver priority from today's scores (lowest scorer = first pick)
+  const waiverPriority = Object.entries(closeScores)
+    .sort((a, b) => a[1].totalPoints - b[1].totalPoints)
+    .map(([odUserId]) => odUserId);
+
+  const updatePayload = {
     dailyData: updatedDailyData,
     currentTradingDay: currentDay,
-  });
+  };
+
+  if (battle.claimSystem?.enabled) {
+    updatePayload['claimSystem.currentWaiverPriority'] = waiverPriority;
+  }
+
+  const battleRef = db.collection('drafts').doc(battleId);
+  await battleRef.update(updatePayload);
 
   logInfo(`Battle ${battleId}: Recorded day ${currentDay} scores`);
+
+  // CPU claim logic for training drafts
+  if (battle.isTraining && battle.claimSystem?.enabled && currentDay < 5) {
+    const cpuPlayers = (battle.players || []).filter(p => p.isCPU);
+    const freeAgents = battle.freeAgents || { steady: [], risky: [], defensive: [] };
+
+    for (const cpu of cpuPlayers) {
+      // 40% chance to submit a claim
+      if (Math.random() > 0.40) continue;
+
+      const cpuScoreData = closeScores[cpu.odUserId];
+      if (!cpuScoreData?.assets?.length) continue;
+
+      // Sort by points ascending — drop worst performer
+      const sortedAssets = [...cpuScoreData.assets].sort((a, b) => a.points - b.points);
+      const worstAsset = sortedAssets[0];
+      if (!worstAsset) continue;
+
+      // Determine category of the drop asset
+      const dropSymbol = worstAsset.symbol;
+      const pickIndex = (cpu.picks || []).findIndex(s => s.toUpperCase() === dropSymbol.toUpperCase());
+      if (pickIndex < 0) continue;
+      const dropCategory = cpu.pickCategories?.[pickIndex];
+      if (!dropCategory) continue;
+
+      // Pick random free agent from same category
+      const categoryPool = freeAgents[dropCategory] || [];
+      if (categoryPool.length === 0) continue;
+
+      const addAsset = categoryPool[Math.floor(Math.random() * categoryPool.length)];
+      const addSymbol = typeof addAsset === 'string' ? addAsset : addAsset.symbol;
+      if (!addSymbol) continue;
+
+      // Submit claim to Firestore
+      const claimRef = db.collection('drafts').doc(battleId).collection('claims').doc();
+      await claimRef.set({
+        id: claimRef.id,
+        draftId: battleId,
+        odUserId: cpu.odUserId,
+        odUsername: cpu.displayName || cpu.odUsername,
+        dropSymbol: dropSymbol.toUpperCase(),
+        addSymbol: addSymbol.toUpperCase(),
+        category: dropCategory,
+        rank: 1,
+        status: 'pending',
+        forDay: Math.min(currentDay + 1, 5),
+        createdAt: new Date().toISOString(),
+      });
+
+      logInfo(`Battle ${battleId}: CPU ${cpu.displayName} claimed ${addSymbol} (drop ${dropSymbol})`);
+    }
+  }
 
   // Check if battle should auto-complete (after day 5)
   if (currentDay === 5) {
