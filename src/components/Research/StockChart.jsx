@@ -39,6 +39,7 @@ const StockChart = ({
   const volumeSeriesRef = useRef(null);
   const trendlineSeriesRef = useRef([]);
   const lastCrosshairUpdateRef = useRef(0);
+  const isHoveringCandleRef = useRef(false);
 
   const [ohlcData, setOhlcData] = useState(null);
   const [showSMA, setShowSMA] = useState(false);
@@ -63,10 +64,10 @@ const StockChart = ({
     const baseline = bombData?.baselinePrice;
     if (!baseline || baseline <= 0) return [];
 
-    // Only consider candles from today's trading session
-    const now = new Date();
-    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const todayStartUnix = Math.floor(todayStart.getTime() / 1000);
+    // Only consider candles from today's trading session (ET boundary)
+    const nowET = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
+    const todayStartET = new Date(nowET.getFullYear(), nowET.getMonth(), nowET.getDate());
+    const todayStartUnix = Math.floor(todayStartET.getTime() / 1000);
 
     const todayCandles = ohlcvData.filter(candle => {
       // Handle both unix timestamp and date string formats
@@ -75,7 +76,7 @@ const StockChart = ({
       const dateStr = candle.date || candle.datetime || '';
       if (!dateStr) return false;
       const candleDate = new Date(dateStr);
-      return candleDate >= todayStart;
+      return candleDate >= todayStartET;
     });
 
     // Check if any of today's candles crossed each level
@@ -173,14 +174,19 @@ const StockChart = ({
     };
   }, [isBombView, chartData, symbol, todayDailyCandle, realtimeExtremes]);
 
-  // Ensure the OHLC header always reflects the best-known daily high/low,
-  // not just whichever individual candle the crosshair happens to rest on.
-  // - Bomb view: use bombDailyOhlc (aggregates intraday candles + WS + realtime)
-  // - Non-bomb views (1D, 1W): use todayDailyCandle (real-time API data)
+  // OHLC header display logic:
+  // - When hovering a specific candle: show that candle's exact OHLC (no daily merge)
+  // - When resting (no hover): merge with daily aggregate for best-known H/L
   const displayOhlc = useMemo(() => {
     if (!ohlcData) return null;
 
-    // Bomb view: merge with full bombDailyOhlc aggregate
+    // When hovering a specific candle, show that candle's exact OHLC
+    if (isHoveringCandleRef.current) {
+      return ohlcData;
+    }
+
+    // Resting state: merge with daily aggregate for best-known H/L
+    // Bomb view: use bombDailyOhlc (aggregates intraday candles + WS + realtime)
     if (isBombView && bombDailyOhlc) {
       return {
         open: bombDailyOhlc.open > 0 ? bombDailyOhlc.open : ohlcData.open,
@@ -520,6 +526,7 @@ const StockChart = ({
           const vol = volumeSeriesRef.current
             ? param.seriesData.get(volumeSeriesRef.current)
             : null;
+          isHoveringCandleRef.current = true;
           setOhlcData({
             open: candle.open,
             high: candle.high,
@@ -528,16 +535,19 @@ const StockChart = ({
             volume: vol?.value || 0,
           });
         }
-      } else if (isBombView && bombDailyOhlc) {
-        setOhlcData(bombDailyOhlc);
-      } else if (lastCandle) {
-        setOhlcData({
-          open: lastCandle.open,
-          high: lastCandle.high,
-          low: lastCandle.low,
-          close: lastCandle.close,
-          volume: lastCandle.volume || 0,
-        });
+      } else {
+        isHoveringCandleRef.current = false;
+        if (isBombView && bombDailyOhlc) {
+          setOhlcData(bombDailyOhlc);
+        } else if (lastCandle) {
+          setOhlcData({
+            open: lastCandle.open,
+            high: lastCandle.high,
+            low: lastCandle.low,
+            close: lastCandle.close,
+            volume: lastCandle.volume || 0,
+          });
+        }
       }
     });
 

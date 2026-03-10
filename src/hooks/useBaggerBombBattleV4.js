@@ -90,6 +90,7 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
   const localEventsRef = useRef([]);
   const [localEventsVersion, setLocalEventsVersion] = useState(0);
   const pendingFlushRef = useRef(null);
+  const priceHistoryRef = useRef({}); // { AAPL: [{time, price}, ...] } for sparkline charts
 
   // Chain trigger system for staggered celebrations
   const [triggerQueue, setTriggerQueue] = useState([]);
@@ -354,15 +355,17 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
       return { totalScore: 0, assetScores: [], baggerBombs: 0, busts: 0 };
     }
     console.log(`[Scoring] BASELINE SOURCE: entryPrices (day ${currentTradingDay})`);
-    return calculateScores(myPortfolioFlat, effectivePrices, openPrices, combinedHistory, dailyExtremes, battleThresholds, previousClosePriceMap);
-  }, [hasValidBaseline, currentTradingDay, myPortfolioFlat, effectivePrices, openPrices, combinedHistory, dailyExtremes, calculateScores, battleThresholds, previousClosePriceMap]);
+    // V4 is cumulative — threshold baseline = entry price (openPrices), not previousClose
+    return calculateScores(myPortfolioFlat, effectivePrices, openPrices, combinedHistory, dailyExtremes, battleThresholds, openPrices);
+  }, [hasValidBaseline, currentTradingDay, myPortfolioFlat, effectivePrices, openPrices, combinedHistory, dailyExtremes, calculateScores, battleThresholds]);
 
   const oppScores = useMemo(() => {
     if (!hasValidBaseline) {
       return { totalScore: 0, assetScores: [], baggerBombs: 0, busts: 0 };
     }
-    return calculateScores(oppPortfolioFlat, effectivePrices, openPrices, oppHistory || {}, dailyExtremes, battleThresholds, previousClosePriceMap);
-  }, [hasValidBaseline, oppPortfolioFlat, effectivePrices, openPrices, oppHistory, dailyExtremes, calculateScores, battleThresholds, previousClosePriceMap]);
+    // V4 is cumulative — threshold baseline = entry price (openPrices), not previousClose
+    return calculateScores(oppPortfolioFlat, effectivePrices, openPrices, oppHistory || {}, dailyExtremes, battleThresholds, openPrices);
+  }, [hasValidBaseline, oppPortfolioFlat, effectivePrices, openPrices, oppHistory, dailyExtremes, calculateScores, battleThresholds]);
 
   // V4: Total score = banked previous days + current active score + locked closed trade points
   const closedTradePoints = useMemo(() => {
@@ -433,9 +436,10 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
       // Price data for ScoreBreakdownPopover — prefer activation price (battle start)
       // over scoring baseline (which may be previousClose on load)
       currentPrice: prices[asset.symbol] || 0,
-      startingPrice: actPrices[asset.symbol] || baselines[asset.symbol] || 0,
-      baselinePrice: actPrices[asset.symbol] || baselines[asset.symbol] || 0,
-      lockedPrice: actPrices[asset.symbol] || baselines[asset.symbol] || 0,
+      startingPrice: actPrices[asset.symbol] || asset.swapPrice || baselines[asset.symbol] || 0,
+      baselinePrice: actPrices[asset.symbol] || asset.swapPrice || baselines[asset.symbol] || 0,
+      lockedPrice: actPrices[asset.symbol] || asset.swapPrice || baselines[asset.symbol] || 0,
+      swapPrice: asset.swapPrice || 0,
       // Previous close for threshold target display (BaggerBombTab)
       previousClosePrice: prevClosePrices[asset.symbol] || actPrices[asset.symbol] || baselines[asset.symbol] || 0,
       threshold: resolvedATR,
@@ -453,21 +457,21 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
     const portfolio = myData?.portfolio;
     if (!portfolio) return { star: [], core: [], support: [] };
     return {
-      star: (portfolio.star || []).map((a) => buildTacticalAsset(a, myScores, combinedHistory, battleThresholds, effectivePrices, openPrices, activationPrices || {}, previousClosePriceMap)),
-      core: (portfolio.core || []).map((a) => buildTacticalAsset(a, myScores, combinedHistory, battleThresholds, effectivePrices, openPrices, activationPrices || {}, previousClosePriceMap)),
-      support: (portfolio.support || []).map((a) => buildTacticalAsset(a, myScores, combinedHistory, battleThresholds, effectivePrices, openPrices, activationPrices || {}, previousClosePriceMap)),
+      star: (portfolio.star || []).map((a) => buildTacticalAsset(a, myScores, combinedHistory, battleThresholds, effectivePrices, openPrices, activationPrices || {}, activationPrices || {})),
+      core: (portfolio.core || []).map((a) => buildTacticalAsset(a, myScores, combinedHistory, battleThresholds, effectivePrices, openPrices, activationPrices || {}, activationPrices || {})),
+      support: (portfolio.support || []).map((a) => buildTacticalAsset(a, myScores, combinedHistory, battleThresholds, effectivePrices, openPrices, activationPrices || {}, activationPrices || {})),
     };
-  }, [myData?.portfolio, myScores, combinedHistory, buildTacticalAsset, battleThresholds, effectivePrices, openPrices, activationPrices, previousClosePriceMap]);
+  }, [myData?.portfolio, myScores, combinedHistory, buildTacticalAsset, battleThresholds, effectivePrices, openPrices, activationPrices]);
 
   const opponentPortfolio = useMemo(() => {
     const portfolio = oppData?.portfolio;
     if (!portfolio) return { star: [], core: [], support: [] };
     return {
-      star: (portfolio.star || []).map((a) => buildTacticalAsset(a, oppScores, oppHistory || {}, battleThresholds, effectivePrices, openPrices, activationPrices || {}, previousClosePriceMap)),
-      core: (portfolio.core || []).map((a) => buildTacticalAsset(a, oppScores, oppHistory || {}, battleThresholds, effectivePrices, openPrices, activationPrices || {}, previousClosePriceMap)),
-      support: (portfolio.support || []).map((a) => buildTacticalAsset(a, oppScores, oppHistory || {}, battleThresholds, effectivePrices, openPrices, activationPrices || {}, previousClosePriceMap)),
+      star: (portfolio.star || []).map((a) => buildTacticalAsset(a, oppScores, oppHistory || {}, battleThresholds, effectivePrices, openPrices, activationPrices || {}, activationPrices || {})),
+      core: (portfolio.core || []).map((a) => buildTacticalAsset(a, oppScores, oppHistory || {}, battleThresholds, effectivePrices, openPrices, activationPrices || {}, activationPrices || {})),
+      support: (portfolio.support || []).map((a) => buildTacticalAsset(a, oppScores, oppHistory || {}, battleThresholds, effectivePrices, openPrices, activationPrices || {}, activationPrices || {})),
     };
-  }, [oppData?.portfolio, oppScores, oppHistory, buildTacticalAsset, battleThresholds, effectivePrices, openPrices, activationPrices, previousClosePriceMap]);
+  }, [oppData?.portfolio, oppScores, oppHistory, buildTacticalAsset, battleThresholds, effectivePrices, openPrices, activationPrices]);
 
   const player = useMemo(() => ({
     id: myData?.uid,
@@ -965,6 +969,16 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
 
       if (Object.keys(newPrices).length > 0) {
         setCurrentPrices((prev) => ({ ...prev, ...newPrices }));
+
+        // Accumulate price history for sparkline charts
+        const now = Date.now();
+        Object.entries(newPrices).forEach(([symbol, price]) => {
+          if (!priceHistoryRef.current[symbol]) priceHistoryRef.current[symbol] = [];
+          priceHistoryRef.current[symbol].push({ time: now, price });
+          if (priceHistoryRef.current[symbol].length > 500) {
+            priceHistoryRef.current[symbol] = priceHistoryRef.current[symbol].slice(-500);
+          }
+        });
       }
 
       // Build extremes from WebSocket daily H/L instead of EODHD.
@@ -1116,19 +1130,8 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
 
     fetchPrices();
 
-    // V4: Poll during all hours (crypto trades 24/7), but with different logic
-    // during market hours vs after hours
-    const nowETString = new Date().toLocaleString('en-US', { timeZone: 'America/New_York' });
-    const nowET = new Date(nowETString);
-    const timeDecimal = nowET.getHours() + nowET.getMinutes() / 60;
-
-    // Active between 9:30 AM and 8 PM ET on any day (crypto always active)
-    const isInsideActiveHours = timeDecimal >= 9.5 && timeDecimal < 20;
-
-    if (!isInsideActiveHours) {
-      return;
-    }
-
+    // Always poll — crypto trades 24/7. Stock prices will be stale outside
+    // market hours but that's harmless (scoring uses entry price baseline).
     const interval = setInterval(fetchPrices, PRICE_POLL_INTERVAL);
     return () => clearInterval(interval);
   }, [fetchPrices, myPortfolioFlat.length, oppPortfolioFlat.length]);
@@ -1281,6 +1284,7 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
     openPrices,
     previousClosePrices: previousClosePriceMap, // Previous close baseline for threshold detection
     dailyExtremes, // Real-time intraday high/low per symbol
+    priceHistory: priceHistoryRef.current, // Rolling price ticks for sparkline charts
     thresholds: battle?.thresholds || {},
 
     // Scores

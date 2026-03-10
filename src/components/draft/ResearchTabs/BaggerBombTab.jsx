@@ -123,11 +123,11 @@ const BaggerBombTab = ({ asset }) => {
           marginTop: '-12px',
           marginBottom: '12px',
         }}>
-          Day Baseline: <span style={{ color: '#e0e0e0', fontWeight: 600 }}>
+          Entry Price: <span style={{ color: '#e0e0e0', fontWeight: 600 }}>
             ${thresholdBaseline.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
           </span>
           <span style={{ color: '#6e7681', marginLeft: '8px' }}>
-            (previous close)
+            (scoring baseline)
           </span>
         </div>
       )}

@@ -21,9 +21,40 @@ export async function captureBattlePrices(symbols) {
 
   let finalPrices = { ...wsPrices };
 
+  // Phase 1.5: Market-closed stock override
+  // When market is closed, WebSocket cache may contain stale prices from the last
+  // trading session. These stale prices cause false BaggerBombs/Busts when scoring
+  // starts and compares against actual current/opening prices. Override all stock
+  // WS prices with the official EOD close — the correct baseline for off-market battles.
+  // Crypto is excluded (trades 24/7, WS prices are always current).
+  const marketState = getMarketState();
+  if (!marketState.isOpen) {
+    const allStocks = symbols.filter(s => !CRYPTO_SYMBOLS.has(s.toUpperCase()));
+    if (allStocks.length > 0) {
+      try {
+        console.log(`[PriceCapture] Market ${marketState.state} — overriding ${allStocks.length} stock WS prices with EOD close`);
+        const eodPrices = await fetchEODClosePrices(allStocks);
+        let overrideCount = 0;
+        for (const sym of allStocks) {
+          if (eodPrices[sym] > 0) {
+            if (finalPrices[sym] > 0) {
+              console.log(`[PriceCapture] ${sym}: WS $${finalPrices[sym]?.toFixed(2)} → EOD $${eodPrices[sym].toFixed(2)}`);
+            }
+            finalPrices[sym] = eodPrices[sym];
+            source[sym] = 'eod-close';
+            overrideCount++;
+          }
+        }
+        console.log(`[PriceCapture] Overrode ${overrideCount}/${allStocks.length} stocks with EOD close`);
+      } catch (err) {
+        console.warn('[PriceCapture] EOD override failed, keeping WS prices:', err.message);
+      }
+    }
+  }
+
   // Phase 2: Market-aware fallback for missing symbols
   if (missing.length > 0) {
-    const { isOpen } = getMarketState();
+    const { isOpen } = marketState;
     const missingStocks = missing.filter(s => !CRYPTO_SYMBOLS.has(s.toUpperCase()));
     const missingCrypto = missing.filter(s => CRYPTO_SYMBOLS.has(s.toUpperCase()));
 
