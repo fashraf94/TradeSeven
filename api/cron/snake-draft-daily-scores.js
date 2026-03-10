@@ -14,6 +14,7 @@
 
 import { initializeApp, getApps, cert } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
+import { calculateSnakeDraftAssetScore } from '../../src/services/scoring/baggerBombCalculator.js';
 
 // Structured logging helper
 const LOG_PREFIX = '[SnakeDraftCron]';
@@ -161,28 +162,6 @@ function getCurrentTradingDay(battleStartTime, battleStartDate) {
   return Math.min(tradingDays, 5);
 }
 
-// Calculate BaggerBomb score for an asset
-function calculateAssetScore(percentChange, threshold) {
-  // Base points: % return * 10
-  const basePoints = percentChange * 10;
-
-  // BaggerBombs: count how many times we crossed the threshold (positive)
-  const baggerBombs = percentChange > 0 ? Math.floor(percentChange / threshold) : 0;
-  const baggerBombPoints = baggerBombs * 15;
-
-  // Busts: count how many times we crossed the threshold (negative)
-  const busts = percentChange < 0 ? Math.floor(Math.abs(percentChange) / threshold) : 0;
-  const bustPoints = busts * -7.5;
-
-  return {
-    basePoints: Math.round(basePoints * 100) / 100,
-    baggerBombs,
-    busts,
-    baggerBombPoints,
-    bustPoints,
-    totalScore: Math.round((basePoints + baggerBombPoints + bustPoints) * 100) / 100,
-  };
-}
 
 // Fetch stock prices from EODHD API
 async function fetchStockPrices(symbols) {
@@ -280,7 +259,7 @@ async function recordBattleScores(db, battle, currentPrices) {
       const threshold = 3.0; // Could be fetched from volatility service
 
       // Calculate BaggerBomb score
-      const assetScore = calculateAssetScore(dailyGain, threshold);
+      const assetScore = calculateSnakeDraftAssetScore(dailyGain, threshold);
 
       playerAssets.push({
         symbol,
