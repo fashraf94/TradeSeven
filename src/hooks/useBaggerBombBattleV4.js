@@ -1118,19 +1118,8 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
 
     fetchPrices();
 
-    // V4: Poll during all hours (crypto trades 24/7), but with different logic
-    // during market hours vs after hours
-    const nowETString = new Date().toLocaleString('en-US', { timeZone: 'America/New_York' });
-    const nowET = new Date(nowETString);
-    const timeDecimal = nowET.getHours() + nowET.getMinutes() / 60;
-
-    // Active between 9:30 AM and 8 PM ET on any day (crypto always active)
-    const isInsideActiveHours = timeDecimal >= 9.5 && timeDecimal < 20;
-
-    if (!isInsideActiveHours) {
-      return;
-    }
-
+    // Always poll — crypto trades 24/7. Stock prices will be stale outside
+    // market hours but that's harmless (scoring uses entry price baseline).
     const interval = setInterval(fetchPrices, PRICE_POLL_INTERVAL);
     return () => clearInterval(interval);
   }, [fetchPrices, myPortfolioFlat.length, oppPortfolioFlat.length]);

@@ -64,10 +64,10 @@ const StockChart = ({
     const baseline = bombData?.baselinePrice;
     if (!baseline || baseline <= 0) return [];
 
-    // Only consider candles from today's trading session
-    const now = new Date();
-    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const todayStartUnix = Math.floor(todayStart.getTime() / 1000);
+    // Only consider candles from today's trading session (ET boundary)
+    const nowET = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
+    const todayStartET = new Date(nowET.getFullYear(), nowET.getMonth(), nowET.getDate());
+    const todayStartUnix = Math.floor(todayStartET.getTime() / 1000);
 
     const todayCandles = ohlcvData.filter(candle => {
       // Handle both unix timestamp and date string formats
@@ -76,7 +76,7 @@ const StockChart = ({
       const dateStr = candle.date || candle.datetime || '';
       if (!dateStr) return false;
       const candleDate = new Date(dateStr);
-      return candleDate >= todayStart;
+      return candleDate >= todayStartET;
     });
 
     // Check if any of today's candles crossed each level
