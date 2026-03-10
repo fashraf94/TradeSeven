@@ -93,6 +93,26 @@
     {
       "path": "/api/cron/process-draft-claims",
       "schedule": "25 14 * * 1-5"
+    },
+    {
+      "path": "/api/cron/curtain-generate-chapter",
+      "schedule": "0 13 * * 1-5"
+    },
+    {
+      "path": "/api/cron/curtain-generate-chapter",
+      "schedule": "0 15 * * 1-5"
+    },
+    {
+      "path": "/api/cron/curtain-generate-chapter",
+      "schedule": "0 18 * * 1-5"
+    },
+    {
+      "path": "/api/cron/curtain-generate-chapter",
+      "schedule": "15 21 * * 1-5"
+    },
+    {
+      "path": "/api/cron/curtain-generate-chapter",
+      "schedule": "30 23 * * 1-5"
     }
   ]
 }
