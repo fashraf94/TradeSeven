@@ -32,6 +32,7 @@ const CLAUDE_MODEL = 'claude-sonnet-4-5-20250929';
 const MAX_TOKENS = 800;
 
 const CHAPTER_ORDER = ['premarket', 'open', 'midday', 'closing', 'afterhours'];
+const INDEX_ETFS = ['SPY', 'DIA', 'IWM', 'RSP'];
 
 const CHAPTER_LABELS = {
   premarket:  'Pre-Market Preview',
@@ -328,6 +329,39 @@ async function fetchSectorData(apiKey) {
 }
 
 /**
+ * Fetch real-time prices for index ETFs (SPY, DIA, IWM, RSP).
+ * Returns an object keyed by ticker with price, change, and percentChange.
+ */
+async function fetchIndexPrices(apiKey) {
+  try {
+    const symbolList = INDEX_ETFS.join(',');
+    const url = `${EODHD_BASE}/real-time/${symbolList}?api_token=${apiKey}&fmt=json`;
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const data = await response.json();
+    const priceArray = Array.isArray(data) ? data : [data];
+
+    const indexes = {};
+    for (const item of priceArray) {
+      if (item.code) {
+        const ticker = item.code.toUpperCase();
+        if (INDEX_ETFS.includes(ticker)) {
+          indexes[ticker] = {
+            price: item.close || 0,
+            change: item.change || 0,
+            percentChange: item.change_p || 0,
+          };
+        }
+      }
+    }
+    return indexes;
+  } catch (err) {
+    console.warn(`${LOG_PREFIX} Index prices fetch failed: ${err.message}`);
+    return null;
+  }
+}
+
+/**
  * Fetch market-pulse headlines via internal HTTP call.
  * Returns formatted string of top 5 headlines, or empty string on failure.
  */
@@ -450,9 +484,10 @@ export default async function handler(req, res) {
 
   try {
     // e. Fetch market data (parallel)
-    const [stocksData, sectorData] = await Promise.all([
+    const [stocksData, sectorData, indexPrices] = await Promise.all([
       fetchStockPrices(EODHD_KEY),
       fetchSectorData(EODHD_KEY),
+      fetchIndexPrices(EODHD_KEY),
     ]);
 
     console.log(`${LOG_PREFIX} Fetched ${stocksData.length} stocks, ${sectorData.length} sectors`);
@@ -556,6 +591,7 @@ export default async function handler(req, res) {
       brief: chapterBrief,
       paragraphs: chapterParagraphs,
       signals: signalTypes,
+      indexes: indexPrices || null,
     };
 
     await db.collection('dailyStory').doc(todayStr).set(

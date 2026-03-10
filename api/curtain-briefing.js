@@ -182,6 +182,7 @@ export default async function handler(req, res) {
           generatedAt: personalizedLatest.generatedAt,
           brief: personalizedLatest.brief,
           paragraphs: personalizedLatest.paragraphs || null,
+          indexes: latestChapter.indexes || null,
         },
         today: todayStr,
         currentChapter,
@@ -200,6 +201,7 @@ export default async function handler(req, res) {
             generatedAt: personalized.generatedAt,
             brief: personalized.brief,
             paragraphs: personalized.paragraphs || null,
+            indexes: chapters[chId].indexes || null,
           };
         });
     }
