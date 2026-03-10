@@ -28,7 +28,7 @@ const LOG_PREFIX = '[CurtainCron]';
 const EODHD_BASE = 'https://eodhd.com/api';
 const ANTHROPIC_API_URL = 'https://api.anthropic.com/v1/messages';
 const ANTHROPIC_API_VERSION = '2023-06-01';
-const CLAUDE_MODEL = 'claude-sonnet-4-5-20241022';
+const CLAUDE_MODEL = 'claude-sonnet-4-5-20250929';
 const MAX_TOKENS = 800;
 
 const CHAPTER_ORDER = ['premarket', 'open', 'midday', 'closing', 'afterhours'];
