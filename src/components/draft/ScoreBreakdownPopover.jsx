@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import ReactDOM from 'react-dom';
 import { HOLO_COLORS } from '../../constants/holoTheme';
+import { fetchHistoricalOHLCV } from '../../services/eodhdAPI';
 
 /**
  * ScoreBreakdownPopover - Shows detailed score breakdown when user taps points
@@ -26,8 +27,6 @@ import { HOLO_COLORS } from '../../constants/holoTheme';
  * └─────────────────────────────────────┘
  */
 const ScoreBreakdownPopover = ({ asset, events: battleEvents = [], onClose, entryPrice: entryPriceProp = 0, battleCreatedAt = null, priceHistory = [] }) => {
-  if (!asset) return null;
-
   const {
     symbol,
     gain = 0,
@@ -43,7 +42,27 @@ const ScoreBreakdownPopover = ({ asset, events: battleEvents = [], onClose, entr
     currentPrice = 0,
     lockedPrice = 0,
     baselinePrice = 0,
-  } = asset;
+  } = asset || {};
+
+  // Fetch historical daily OHLCV for multi-day sparkline
+  const [historicalCandles, setHistoricalCandles] = useState(null);
+
+  useEffect(() => {
+    if (!symbol || !battleCreatedAt) return;
+    const start = battleCreatedAt?.toDate ? battleCreatedAt.toDate() : new Date(battleCreatedAt);
+    const fromDate = start.toISOString().split('T')[0];
+    const toDate = new Date().toISOString().split('T')[0];
+    if (fromDate === toDate) return; // same-day battle — no daily candles yet
+
+    let cancelled = false;
+    fetchHistoricalOHLCV(symbol, '1d', { from: fromDate, to: toDate })
+      .then(data => {
+        if (!cancelled && data && data.length > 0) setHistoricalCandles(data);
+      });
+    return () => { cancelled = true; };
+  }, [symbol, battleCreatedAt]);
+
+  if (!asset) return null;
 
   // Battle entry price: the price when the battle became active (activation price)
   // This is now sourced from battle.state.startingPrices via the enriched asset
@@ -307,7 +326,7 @@ const ScoreBreakdownPopover = ({ asset, events: battleEvents = [], onClose, entr
             </div>
           </div>
 
-          {/* Sparkline Chart — entry to current price */}
+          {/* Sparkline Chart — entry to current price (historical OHLCV + intraday) */}
           {hasBattleEntry && (() => {
             const pnl = currentPrice - battleEntry;
             const isPositive = pnl >= 0;
@@ -321,19 +340,38 @@ const ScoreBreakdownPopover = ({ asset, events: battleEvents = [], onClose, entr
               daysText = `${days} day${days !== 1 ? 's' : ''}`;
             }
 
-            // Build data points: entry + accumulated history + current
+            // Entry timestamp
             const entryTime = battleCreatedAt
               ? (battleCreatedAt?.toDate ? battleCreatedAt.toDate().getTime() : new Date(battleCreatedAt).getTime())
               : Date.now() - 86400000;
-            const points = [
+
+            // Historical daily closes (coarse, multi-day shape)
+            const histPoints = (historicalCandles || []).map(c => ({
+              time: new Date(c.date).getTime() + 43200000, // noon offset to center on day
+              price: c.close,
+            }));
+
+            // Intraday polling ticks — only those AFTER last historical candle
+            const lastHistTime = histPoints.length > 0 ? histPoints[histPoints.length - 1].time : 0;
+            const intradayPoints = priceHistory.filter(p => p.time > lastHistTime);
+
+            // Merge: entry anchor + historical closes + intraday ticks + current anchor
+            const rawPoints = [
               { time: entryTime, price: battleEntry },
-              ...priceHistory,
+              ...histPoints,
+              ...intradayPoints,
               { time: Date.now(), price: currentPrice },
             ];
 
-            // SVG layout
-            const W = 260, H = 64;
-            const pad = { top: 10, bottom: 10, left: 10, right: 10 };
+            // Deduplicate points too close in time (< 1 min)
+            const points = rawPoints.reduce((acc, p) => {
+              if (acc.length === 0 || p.time - acc[acc.length - 1].time > 60000) acc.push(p);
+              return acc;
+            }, []);
+
+            // SVG layout — taller for axis labels
+            const W = 280, H = 88;
+            const pad = { top: 8, bottom: 20, left: 8, right: 42 };
             const plotW = W - pad.left - pad.right;
             const plotH = H - pad.top - pad.bottom;
 
@@ -354,6 +392,18 @@ const ScoreBreakdownPopover = ({ asset, events: battleEvents = [], onClose, entr
             const lastY = toY(currentPrice);
             const firstX = toX(points[0].time);
 
+            // Date labels: first, middle, last
+            const dateLabelIndices = points.length >= 3
+              ? [0, Math.floor(points.length / 2), points.length - 1]
+              : points.length === 2 ? [0, 1] : [0];
+            const dateLabels = dateLabelIndices.map(i => {
+              const d = new Date(points[i].time);
+              return { x: toX(points[i].time), label: `${d.getMonth() + 1}/${d.getDate()}` };
+            });
+
+            // Price label formatting
+            const fmtPrice = (p) => p >= 1000 ? `$${Math.round(p)}` : p >= 100 ? `$${p.toFixed(0)}` : `$${p.toFixed(2)}`;
+
             return (
               <div style={{
                 padding: '12px 16px',
@@ -362,6 +412,18 @@ const ScoreBreakdownPopover = ({ asset, events: battleEvents = [], onClose, entr
                 border: '1px solid rgba(255, 255, 255, 0.06)',
               }}>
                 <svg width="100%" viewBox={`0 0 ${W} ${H}`} style={{ display: 'block' }}>
+                  {/* Gradient fill definition */}
+                  <defs>
+                    <linearGradient id={`sparkFill-${symbol}`} x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor={color} stopOpacity="0.25" />
+                      <stop offset="100%" stopColor={color} stopOpacity="0.02" />
+                    </linearGradient>
+                  </defs>
+                  {/* Area fill under curve */}
+                  <polygon
+                    points={`${polyPoints} ${lastX},${pad.top + plotH} ${firstX},${pad.top + plotH}`}
+                    fill={`url(#sparkFill-${symbol})`}
+                  />
                   {/* Entry price baseline — dashed */}
                   <line x1={pad.left} y1={entryY} x2={W - pad.right} y2={entryY}
                     stroke="rgba(255,255,255,0.15)" strokeWidth="1" strokeDasharray="4 3" />
@@ -369,6 +431,45 @@ const ScoreBreakdownPopover = ({ asset, events: battleEvents = [], onClose, entr
                   <polyline points={polyPoints}
                     fill="none" stroke={color} strokeWidth="2"
                     strokeLinecap="round" strokeLinejoin="round" />
+                  {/* X-axis date labels */}
+                  {dateLabels.map((dl, i) => (
+                    <text
+                      key={i}
+                      x={dl.x}
+                      y={H - 4}
+                      fill="rgba(255,255,255,0.35)"
+                      fontSize="8"
+                      fontFamily="monospace"
+                      textAnchor={i === 0 ? 'start' : i === dateLabels.length - 1 ? 'end' : 'middle'}
+                    >
+                      {dl.label}
+                    </text>
+                  ))}
+                  {/* Y-axis: entry price label */}
+                  <text
+                    x={W - 2}
+                    y={Math.max(pad.top + 6, Math.min(entryY + 3, pad.top + plotH))}
+                    fill="rgba(255,255,255,0.4)"
+                    fontSize="8"
+                    fontFamily="monospace"
+                    textAnchor="end"
+                  >
+                    {fmtPrice(battleEntry)}
+                  </text>
+                  {/* Y-axis: current price label (only if visually separated from entry) */}
+                  {Math.abs(lastY - entryY) > 10 && (
+                    <text
+                      x={W - 2}
+                      y={Math.max(pad.top + 6, Math.min(lastY + 3, pad.top + plotH))}
+                      fill={color}
+                      fontSize="8"
+                      fontFamily="monospace"
+                      textAnchor="end"
+                      fontWeight="600"
+                    >
+                      {fmtPrice(currentPrice)}
+                    </text>
+                  )}
                   {/* Entry dot */}
                   <circle cx={firstX} cy={toY(battleEntry)} r="3" fill={color} />
                   {/* Current price dot with glow ring */}
