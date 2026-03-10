@@ -116,6 +116,7 @@ RULES FOR TICKERS ARRAY:
 - Empty array if the paragraph discusses broad market themes without naming specific stocks
 - Order tickers by relevance to the paragraph (most central stock first)
 - Do NOT include tickers that are merely implied — only stocks explicitly referenced
+- When a paragraph discusses a SECTOR by name (e.g., "Utilities have pulled back" or "consumer discretionary is holding up"), include the sector's SPDR ETF ticker in the tickers array. The mappings are: Technology=XLK, Healthcare=XLV, Financials=XLF, Energy=XLE, Consumer Discretionary=XLY, Consumer Staples=XLP, Industrials=XLI, Materials=XLB, Utilities=XLU, Real Estate=XLRE, Communication Services=XLC. This lets users tap through to the sector view.
 
 CHAPTER-SPECIFIC GUIDANCE:
 {chapterGuidance}
