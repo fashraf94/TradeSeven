@@ -247,6 +247,7 @@ export default function BaggerBombBattleView({
   onSwapCryptoShort,
   onGoToCash,
   rosterAssets = [],
+  priceHistory = {},
   // ClashCast props
   getEventCommentary,
   clashCastActive = false,
@@ -685,8 +686,9 @@ export default function BaggerBombBattleView({
           }}
           events={events || []}
           onClose={() => setBreakdownAsset(null)}
-          entryPrice={battle?.state?.startingPrices?.[breakdownAsset.symbol] || 0}
+          entryPrice={battle?.state?.startingPrices?.[breakdownAsset.symbol] || breakdownAsset.swapPrice || openPrices[breakdownAsset.symbol] || 0}
           battleCreatedAt={battle?.timing?.createdAt || battle?.createdAt || null}
+          priceHistory={priceHistory?.[breakdownAsset.symbol] || []}
         />
       )}
 

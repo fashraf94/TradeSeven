@@ -25,7 +25,7 @@ import { HOLO_COLORS } from '../../constants/holoTheme';
  * │                                     │
  * └─────────────────────────────────────┘
  */
-const ScoreBreakdownPopover = ({ asset, events: battleEvents = [], onClose, entryPrice: entryPriceProp = 0, battleCreatedAt = null }) => {
+const ScoreBreakdownPopover = ({ asset, events: battleEvents = [], onClose, entryPrice: entryPriceProp = 0, battleCreatedAt = null, priceHistory = [] }) => {
   if (!asset) return null;
 
   const {
@@ -307,61 +307,88 @@ const ScoreBreakdownPopover = ({ asset, events: battleEvents = [], onClose, entr
             </div>
           </div>
 
-          {/* Position Summary — replaces Timeline */}
-          {hasBattleEntry && (
-            <div style={{
-              padding: '12px 16px',
-              background: 'rgba(255, 255, 255, 0.03)',
-              borderRadius: '10px',
-              border: '1px solid rgba(255, 255, 255, 0.06)',
-            }}>
+          {/* Sparkline Chart — entry to current price */}
+          {hasBattleEntry && (() => {
+            const pnl = currentPrice - battleEntry;
+            const isPositive = pnl >= 0;
+            const color = isPositive ? '#10b981' : '#ef4444';
+
+            // Days held
+            let daysText = '';
+            if (battleCreatedAt) {
+              const start = battleCreatedAt?.toDate ? battleCreatedAt.toDate() : new Date(battleCreatedAt);
+              const days = Math.max(1, Math.ceil((new Date() - start) / (1000 * 60 * 60 * 24)));
+              daysText = `${days} day${days !== 1 ? 's' : ''}`;
+            }
+
+            // Build data points: entry + accumulated history + current
+            const entryTime = battleCreatedAt
+              ? (battleCreatedAt?.toDate ? battleCreatedAt.toDate().getTime() : new Date(battleCreatedAt).getTime())
+              : Date.now() - 86400000;
+            const points = [
+              { time: entryTime, price: battleEntry },
+              ...priceHistory,
+              { time: Date.now(), price: currentPrice },
+            ];
+
+            // SVG layout
+            const W = 260, H = 64;
+            const pad = { top: 10, bottom: 10, left: 10, right: 10 };
+            const plotW = W - pad.left - pad.right;
+            const plotH = H - pad.top - pad.bottom;
+
+            const prices = points.map(p => p.price);
+            const minP = Math.min(...prices);
+            const maxP = Math.max(...prices);
+            const range = maxP - minP || battleEntry * 0.01 || 1;
+            const timeMin = points[0].time;
+            const timeMax = points[points.length - 1].time;
+            const timeRange = timeMax - timeMin || 1;
+
+            const toX = (t) => pad.left + ((t - timeMin) / timeRange) * plotW;
+            const toY = (p) => pad.top + plotH * (1 - (p - minP) / range);
+
+            const polyPoints = points.map(p => `${toX(p.time)},${toY(p.price)}`).join(' ');
+            const entryY = toY(battleEntry);
+            const lastX = toX(points[points.length - 1].time);
+            const lastY = toY(currentPrice);
+            const firstX = toX(points[0].time);
+
+            return (
               <div style={{
-                fontSize: '11px',
-                color: '#6e7681',
-                letterSpacing: '1px',
-                fontWeight: 700,
-                marginBottom: '10px',
-                textTransform: 'uppercase',
+                padding: '12px 16px',
+                background: 'rgba(255, 255, 255, 0.03)',
+                borderRadius: '10px',
+                border: '1px solid rgba(255, 255, 255, 0.06)',
               }}>
-                Position Summary
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
-                <span style={{ fontSize: '13px', color: '#8b949e' }}>Entry Price</span>
-                <span style={{ fontSize: '13px', color: '#e6edf3', fontWeight: 600 }}>
-                  ${battleEntry.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                </span>
-              </div>
-              {battleCreatedAt && (
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
-                  <span style={{ fontSize: '13px', color: '#8b949e' }}>Days Held</span>
-                  <span style={{ fontSize: '13px', color: '#e6edf3', fontWeight: 600 }}>
-                    {(() => {
-                      const start = battleCreatedAt?.toDate ? battleCreatedAt.toDate() : new Date(battleCreatedAt);
-                      const now = new Date();
-                      const days = Math.max(1, Math.ceil((now - start) / (1000 * 60 * 60 * 24)));
-                      return `${days} day${days !== 1 ? 's' : ''}`;
-                    })()}
+                <svg width="100%" viewBox={`0 0 ${W} ${H}`} style={{ display: 'block' }}>
+                  {/* Entry price baseline — dashed */}
+                  <line x1={pad.left} y1={entryY} x2={W - pad.right} y2={entryY}
+                    stroke="rgba(255,255,255,0.15)" strokeWidth="1" strokeDasharray="4 3" />
+                  {/* Price path */}
+                  <polyline points={polyPoints}
+                    fill="none" stroke={color} strokeWidth="2"
+                    strokeLinecap="round" strokeLinejoin="round" />
+                  {/* Entry dot */}
+                  <circle cx={firstX} cy={toY(battleEntry)} r="3" fill={color} />
+                  {/* Current price dot with glow ring */}
+                  <circle cx={lastX} cy={lastY} r="4" fill={color} opacity="0.2" />
+                  <circle cx={lastX} cy={lastY} r="3" fill={color} />
+                </svg>
+                {/* Summary: days held + P&L */}
+                <div style={{
+                  display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '6px',
+                  fontSize: '11px', color: '#8b949e', marginTop: '4px',
+                }}>
+                  {daysText && <span>{daysText}</span>}
+                  {daysText && <span style={{ opacity: 0.4 }}>&middot;</span>}
+                  <span style={{ color, fontWeight: 600 }}>
+                    {isPositive ? '+' : ''}{pnl < 0 ? '-' : ''}${Math.abs(pnl).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </span>
                 </div>
-              )}
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ fontSize: '13px', color: '#8b949e' }}>Total P&L</span>
-                {(() => {
-                  const pnl = currentPrice - battleEntry;
-                  const isPositive = pnl >= 0;
-                  return (
-                    <span style={{
-                      fontSize: '13px',
-                      fontWeight: 600,
-                      color: isPositive ? '#10b981' : '#ef4444',
-                    }}>
-                      {isPositive ? '+' : ''}${pnl.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    </span>
-                  );
-                })()}
               </div>
-            </div>
-          )}
+            );
+          })()}
 
           {/* Threshold Info */}
           <div style={{

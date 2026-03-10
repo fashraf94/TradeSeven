@@ -90,6 +90,7 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
   const localEventsRef = useRef([]);
   const [localEventsVersion, setLocalEventsVersion] = useState(0);
   const pendingFlushRef = useRef(null);
+  const priceHistoryRef = useRef({}); // { AAPL: [{time, price}, ...] } for sparkline charts
 
   // Chain trigger system for staggered celebrations
   const [triggerQueue, setTriggerQueue] = useState([]);
@@ -435,9 +436,10 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
       // Price data for ScoreBreakdownPopover — prefer activation price (battle start)
       // over scoring baseline (which may be previousClose on load)
       currentPrice: prices[asset.symbol] || 0,
-      startingPrice: actPrices[asset.symbol] || baselines[asset.symbol] || 0,
-      baselinePrice: actPrices[asset.symbol] || baselines[asset.symbol] || 0,
-      lockedPrice: actPrices[asset.symbol] || baselines[asset.symbol] || 0,
+      startingPrice: actPrices[asset.symbol] || asset.swapPrice || baselines[asset.symbol] || 0,
+      baselinePrice: actPrices[asset.symbol] || asset.swapPrice || baselines[asset.symbol] || 0,
+      lockedPrice: actPrices[asset.symbol] || asset.swapPrice || baselines[asset.symbol] || 0,
+      swapPrice: asset.swapPrice || 0,
       // Previous close for threshold target display (BaggerBombTab)
       previousClosePrice: prevClosePrices[asset.symbol] || actPrices[asset.symbol] || baselines[asset.symbol] || 0,
       threshold: resolvedATR,
@@ -967,6 +969,16 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
 
       if (Object.keys(newPrices).length > 0) {
         setCurrentPrices((prev) => ({ ...prev, ...newPrices }));
+
+        // Accumulate price history for sparkline charts
+        const now = Date.now();
+        Object.entries(newPrices).forEach(([symbol, price]) => {
+          if (!priceHistoryRef.current[symbol]) priceHistoryRef.current[symbol] = [];
+          priceHistoryRef.current[symbol].push({ time: now, price });
+          if (priceHistoryRef.current[symbol].length > 500) {
+            priceHistoryRef.current[symbol] = priceHistoryRef.current[symbol].slice(-500);
+          }
+        });
       }
 
       // Build extremes from WebSocket daily H/L instead of EODHD.
@@ -1272,6 +1284,7 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
     openPrices,
     previousClosePrices: previousClosePriceMap, // Previous close baseline for threshold detection
     dailyExtremes, // Real-time intraday high/low per symbol
+    priceHistory: priceHistoryRef.current, // Rolling price ticks for sparkline charts
     thresholds: battle?.thresholds || {},
 
     // Scores
