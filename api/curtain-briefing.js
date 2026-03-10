@@ -63,24 +63,38 @@ function personalizeChapter(chapter, userContext) {
   const username = userContext?.username || 'there';
   let brief = chapter.brief.replace(/\{username\}/g, username);
 
+  // Personalize paragraphs array if present
+  let paragraphs = chapter.paragraphs || null;
+  if (paragraphs && Array.isArray(paragraphs)) {
+    paragraphs = paragraphs.map(p => ({
+      ...p,
+      text: p.text.replace(/\{username\}/g, username),
+    }));
+  }
+
   // Append battle context if relevant
   const battleInfo = userContext?.battleInfo || [];
   if (battleInfo.length > 0) {
-    // Check if any battle stocks are mentioned in the brief
     const battleStocks = userContext?.battleStocks || [];
     const hasOverlap = battleStocks.some(ticker =>
       brief.includes(ticker)
     );
 
     if (hasOverlap) {
-      brief += `\n\nYou've got ${battleInfo.length} active ${battleInfo.length === 1 ? 'battle' : 'battles'} running — keep an eye on how today's moves affect your matchup.`;
+      const battleLine = `You've got ${battleInfo.length} active ${battleInfo.length === 1 ? 'battle' : 'battles'} running — keep an eye on how today's moves affect your matchup.`;
+      brief += `\n\n${battleLine}`;
+
+      // Append to paragraphs too
+      if (paragraphs && Array.isArray(paragraphs)) {
+        paragraphs = [...paragraphs, { text: battleLine, tickers: battleStocks }];
+      }
     }
   }
 
   // Normalize whitespace
   brief = brief.replace(/\n{3,}/g, '\n\n').trim();
 
-  return { ...chapter, brief };
+  return { ...chapter, brief, paragraphs };
 }
 
 /**
@@ -167,6 +181,7 @@ export default async function handler(req, res) {
           label: personalizedLatest.label || CHAPTER_LABELS[personalizedLatest.id] || 'Market Update',
           generatedAt: personalizedLatest.generatedAt,
           brief: personalizedLatest.brief,
+          paragraphs: personalizedLatest.paragraphs || null,
         },
         today: todayStr,
         currentChapter,
@@ -184,6 +199,7 @@ export default async function handler(req, res) {
             label: personalized.label || CHAPTER_LABELS[personalized.id] || 'Market Update',
             generatedAt: personalized.generatedAt,
             brief: personalized.brief,
+            paragraphs: personalized.paragraphs || null,
           };
         });
     }

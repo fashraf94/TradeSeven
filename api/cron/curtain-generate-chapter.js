@@ -88,8 +88,32 @@ TARGET LENGTH: 150-250 words. Every sentence should earn its place. If a sentenc
 RESPONSE FORMAT — return ONLY valid JSON, no markdown fences, no preamble:
 
 {
-  "brief": "The entire narrative as one continuous string. Use \\n\\n between paragraphs. No headers or labels."
+  "paragraphs": [
+    {
+      "text": "First paragraph of the narrative...",
+      "tickers": ["KLAC", "LRCX", "AMD", "MU", "INTC"]
+    },
+    {
+      "text": "Second paragraph continuing the story...",
+      "tickers": ["KLAC"]
+    },
+    {
+      "text": "Third paragraph about sector rotation...",
+      "tickers": []
+    },
+    {
+      "text": "Closing thought paragraph...",
+      "tickers": []
+    }
+  ]
 }
+
+RULES FOR TICKERS ARRAY:
+- Include only tickers that are specifically mentioned or directly discussed in that paragraph
+- Use ticker symbols, not company names (KLAC not "KLA Corporation")
+- Empty array if the paragraph discusses broad market themes without naming specific stocks
+- Order tickers by relevance to the paragraph (most central stock first)
+- Do NOT include tickers that are merely implied — only stocks explicitly referenced
 
 CHAPTER-SPECIFIC GUIDANCE:
 {chapterGuidance}
@@ -97,15 +121,45 @@ CHAPTER-SPECIFIC GUIDANCE:
 CRITICAL: Return ONLY the JSON object. No preamble, no markdown backticks, no explanation outside the JSON.`;
 
 const CHAPTER_GUIDANCE = {
-  premarket: `This is the PRE-MARKET chapter. The market hasn't opened yet — you're setting the scene. What happened overnight? What are futures telling us? What's the one thing that could define today's session? The tone is anticipatory — you're building tension for what's about to unfold. If there's a major earnings report or economic release today, that's your hook.`,
+  premarket: `This is the PRE-MARKET chapter (before 9:30 AM ET). You're writing this before the market opens.
 
-  open: `This is the MARKET OPEN chapter. The bell has rung and the market has shown its hand. What's the opening move telling us? Did the overnight setup play out or did something surprise? Focus on first reactions — which stocks are moving and what the early patterns suggest. The tone is observational — you're narrating what's unfolding in real time.`,
+MANDATORY TONE: Anticipation and preparation. This is the "what's brewing" chapter.
+OPENING PATTERN: Start with a time reference — "Before the bell..." or "Futures are pointing..." or reference overnight/overseas action.
+FOCUS ON: Overnight developments, pre-market movers, futures direction, Asian/European market moves, economic data releases scheduled for today, any earnings that reported before the open.
+DO NOT: Summarize what already happened during a trading session — the market hasn't opened yet.
+THE FEEL: Like reading a morning briefing over coffee before the day starts. You're setting up the chess board, not reporting the game.`,
 
-  midday: `This is the MIDDAY chapter. We're in the middle of the session. Has the morning's story held up or has something shifted? This is where you connect dots — early moves that are gaining momentum, reversals that tell a different story than the open suggested, sectors that are quietly diverging. The tone is analytical — you're finding the deeper pattern.`,
+  open: `This is the MARKET OPEN chapter (9:30 AM - 12:30 PM ET). The market has been open for a couple hours.
 
-  closing: `This is the CLOSING BELL chapter. The day is wrapping up and you're writing the definitive version of today's market story. Winners, losers, and what drove the session. Don't just recap — synthesize. What was today actually about when you strip away the noise? The tone is authoritative — this is the version of events that sticks.`,
+MANDATORY TONE: First reactions and early reads. This is the "here's what actually happened" chapter.
+OPENING PATTERN: Reference the open — "The first couple hours are in the books..." or "The market tipped its hand early today..." or compare reality to pre-market expectations.
+FOCUS ON: What actually happened vs what was expected. Which stocks are moving and why. Early sector patterns emerging. Surprises — things that are doing the opposite of what people expected.
+DO NOT: Talk about what's coming later this week as the main story — that's for pre-market. Focus on what's happening RIGHT NOW.
+THE FEEL: Like checking in with a friend who's been watching the screens all morning. "Here's what you missed in the first couple hours."`,
 
-  afterhours: `This is the AFTER HOURS chapter. The bell has rung but the story isn't over. Any post-close earnings or news that changes tomorrow's setup? What's the market thinking about heading into the next session? If it's Friday, what's the big picture for the week ahead? The tone is forward-looking — you're already thinking about what comes next.`,
+  midday: `This is the MIDDAY chapter (12:30 PM - 3:00 PM ET). We're in the thick of the trading session.
+
+MANDATORY TONE: Analytical and developing. This is the "here's what's really going on" chapter.
+OPENING PATTERN: Reference the time — "Halfway through the session..." or "The morning's story is evolving..." or note what's changed since the open.
+FOCUS ON: What's changed since the morning. Are early moves holding or fading? Has the narrative shifted? New developments that emerged mid-session. Sector rotations that are becoming clearer. Patterns forming that weren't obvious at the open.
+DO NOT: Write a generic market overview — you MUST reference how things have developed over the course of today's session specifically.
+THE FEEL: Like a halftime report. The game isn't over but the shape of it is becoming clear.`,
+
+  closing: `This is the CLOSING BELL chapter (3:00 PM - 6:00 PM ET). The trading day is ending or just ended.
+
+MANDATORY TONE: Definitive and conclusive. This is the "here's what today meant" chapter.
+OPENING PATTERN: Reference the close — "The dust is settling on today's session..." or "When the closing bell rang today..." or lead with the day's defining move.
+FOCUS ON: The final scorecard. What won, what lost, and what drove the session. The definitive narrative of the day — strip away the noise and name what actually mattered. How today's action sets up tomorrow.
+DO NOT: Be tentative or speculative — the data is in. Tell the story with confidence. This is the evening news, not the morning preview.
+THE FEEL: Like a friend texting you after close: "Here's what you need to know about today."`,
+
+  afterhours: `This is the AFTER HOURS chapter (6:00 PM+). Markets are closed and you're looking ahead.
+
+MANDATORY TONE: Reflective and forward-looking. This is the "what's next" chapter.
+OPENING PATTERN: Reference that markets are closed — "The screens are dark but the story isn't over..." or "After hours are quiet but..." or lead with any post-close earnings/news.
+FOCUS ON: Post-close earnings reactions. News breaking after hours. What tomorrow's setup looks like. If it's Friday, the bigger picture for the week ahead. Connect today's action to the larger trend.
+DO NOT: Re-summarize the day in detail — the closing chapter already did that. Look FORWARD, not backward.
+THE FEEL: Like the post-game analysis. The game is over; now you're thinking about the next one.`,
 };
 
 function buildChapterSystemPrompt(chapterId) {
@@ -465,15 +519,24 @@ export default async function handler(req, res) {
 
     // l. Parse response
     const parsed = extractJSON(rawText);
-    let brief;
-    if (parsed?.brief) {
-      brief = parsed.brief;
+    let chapterBrief;
+    let chapterParagraphs;
+
+    if (parsed?.paragraphs && Array.isArray(parsed.paragraphs)) {
+      // New format: array of { text, tickers }
+      chapterParagraphs = parsed.paragraphs;
+      chapterBrief = parsed.paragraphs.map(p => p.text).join('\n\n');
+    } else if (parsed?.brief) {
+      // Fallback: old format (single string)
+      chapterBrief = parsed.brief;
+      chapterParagraphs = null;
     } else {
       console.warn(`${LOG_PREFIX} JSON parse failed, using cleanBriefText fallback`);
-      brief = cleanBriefText(rawText);
+      chapterBrief = cleanBriefText(rawText);
+      chapterParagraphs = null;
     }
 
-    if (!brief) {
+    if (!chapterBrief) {
       return res.status(500).json({ error: 'Chapter generation produced empty brief' });
     }
 
@@ -489,7 +552,8 @@ export default async function handler(req, res) {
       id: chapterId,
       label: CHAPTER_LABELS[chapterId],
       generatedAt: new Date().toISOString(),
-      brief,
+      brief: chapterBrief,
+      paragraphs: chapterParagraphs,
       signals: signalTypes,
     };
 
