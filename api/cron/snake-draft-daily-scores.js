@@ -237,6 +237,7 @@ async function recordBattleScores(db, battle, currentPrices) {
 
   // Calculate scores for each player
   const closeScores = {};
+  const battleThresholds = battle.thresholds || {};
 
   for (const player of (battle.players || [])) {
     const playerAssets = [];
@@ -255,8 +256,8 @@ async function recordBattleScores(db, battle, currentPrices) {
         dailyGain = ((currentPrice - openPrice) / openPrice) * 100;
       }
 
-      // Get threshold (default to 3%)
-      const threshold = 3.0; // Could be fetched from volatility service
+      // Get threshold from draft's per-asset thresholds, fall back to 3%
+      const threshold = battleThresholds[upperSymbol]?.threshold || battleThresholds[symbol]?.threshold || 3.0;
 
       // Calculate BaggerBomb score
       const assetScore = calculateSnakeDraftAssetScore(dailyGain, threshold);
