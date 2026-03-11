@@ -279,6 +279,7 @@ const FreeAgencyMobile = ({
           onSelectAdd={handleSelectAdd}
           onMoreInfo={(asset) => setAssetForResearch(asset)}
           canSwap={canSwap}
+          livePrices={livePrices}
         />
 
         {/* Swap History */}

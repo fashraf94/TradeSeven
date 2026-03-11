@@ -20,8 +20,14 @@ const FreeAgentCard = ({
   onSelect,
   onMoreInfo,
   disabled = false,
+  livePrices = {},
 }) => {
   const categoryConfig = CATEGORY_CONFIG[asset.category] || CATEGORY_CONFIG.steady;
+
+  // Compute daily points from live price data (percentChange × 10 base scoring)
+  const priceData = livePrices[asset.symbol] || livePrices[asset.symbol?.toUpperCase()] || {};
+  const percentChange = priceData.percentChange ?? priceData.change24h ?? null;
+  const dailyPoints = percentChange !== null ? percentChange * 10 : null;
 
   return (
     <HoloCard
@@ -97,6 +103,20 @@ const FreeAgentCard = ({
             {asset.name || asset.symbol}
           </div>
         </div>
+
+        {/* Daily Points Badge */}
+        {dailyPoints !== null && (
+          <div style={{
+            flexShrink: 0,
+            fontSize: '13px',
+            fontWeight: 700,
+            color: dailyPoints >= 0 ? '#10b981' : '#ef4444',
+            textAlign: 'right',
+            minWidth: '50px',
+          }}>
+            {dailyPoints >= 0 ? '+' : ''}{dailyPoints.toFixed(0)} pts
+          </div>
+        )}
 
         {/* Buttons Container - Fixed, no shrink */}
         <div style={{

@@ -330,6 +330,7 @@ const FreeAgencyDesktop = ({
               onSelectAdd={handleSelectAdd}
               onMoreInfo={(asset) => setAssetForResearch(asset)}
               canSwap={canSwap}
+              livePrices={livePrices}
             />
           </div>
         </div>

@@ -24,6 +24,7 @@ const FreeAgentGrid = ({
   onSelectAdd,
   onMoreInfo,
   canSwap,
+  livePrices = {},
 }) => {
   // Get agents for current category (use activeCategory if set, otherwise selectedCategory)
   const effectiveCategory = activeCategory || selectedCategory;
@@ -128,6 +129,7 @@ const FreeAgentGrid = ({
               onSelect={onSelectAdd}
               onMoreInfo={onMoreInfo}
               disabled={!canSwap}
+              livePrices={livePrices}
             />
           ))
         )}

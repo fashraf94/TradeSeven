@@ -21,6 +21,7 @@ const FreeAgentGridDesktop = ({
   onSelectAdd,
   onMoreInfo,
   canSwap,
+  livePrices = {},
 }) => {
   const displayedAgents = freeAgents[selectedCategory] || [];
 
@@ -111,6 +112,7 @@ const FreeAgentGridDesktop = ({
               onSelect={onSelectAdd}
               onMoreInfo={onMoreInfo}
               disabled={!canSwap}
+              livePrices={livePrices}
             />
           ))
         )}
