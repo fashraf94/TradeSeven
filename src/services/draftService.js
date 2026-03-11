@@ -14,7 +14,8 @@ import {
   onSnapshot,
   arrayUnion,
   serverTimestamp,
-  Timestamp
+  Timestamp,
+  runTransaction
 } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import { getAssetPool, generateSnakeOrder, generateDraftCode, shuffleArray } from './draftAssets';
@@ -333,188 +334,237 @@ export async function cancelDraft(draftId) {
 // ============================================
 
 /**
- * Make a pick
+ * Make a pick — uses Firestore transaction to prevent race conditions.
+ * Multiple clients can fire autopick simultaneously for the same absent player.
+ * Without a transaction, the read-then-write pattern allows currentPickIndex to
+ * double-increment, skipping pick slots and causing early draft termination.
  */
 export async function makePick(draftId, userId, asset, isAutopick = false) {
-  const draft = await getDraft(draftId);
+  const draftRef = doc(db, 'drafts', draftId);
 
-  if (!draft) throw new Error('Draft not found');
-  if (draft.status !== 'active') throw new Error('Draft not active');
+  const result = await runTransaction(db, async (transaction) => {
+    // 1. READ inside transaction — ensures consistent state
+    const draftSnap = await transaction.get(draftRef);
+    if (!draftSnap.exists()) throw new Error('Draft not found');
+    const draft = { id: draftSnap.id, ...draftSnap.data() };
 
-  // Find player
-  const playerIndex = draft.players.findIndex(p => p.odUserId === userId);
-  if (playerIndex === -1) throw new Error('Player not in draft');
+    if (draft.status !== 'active') throw new Error('Draft not active');
 
-  const player = draft.players[playerIndex];
+    // Find player
+    const playerIndex = draft.players.findIndex(p => p.odUserId === userId);
+    if (playerIndex === -1) throw new Error('Player not in draft');
 
-  // Validate it's their turn — always enforced, even for autopick.
-  // This prevents the race condition where multiple clients fire autopick
-  // simultaneously and a stale userId bypasses the turn check.
-  if (draft.currentPlayerId !== userId) {
-    console.log(`[DRAFT] Pick rejected: not ${userId}'s turn (current: ${draft.currentPlayerId}), isAutopick=${isAutopick}`);
-    throw new Error('Not your turn');
-  }
+    const player = draft.players[playerIndex];
 
-  // Validate pick deadline hasn't passed (skip for autopick - autopick IS the timeout handler)
-  if (!isAutopick && draft.pickDeadline) {
-    const deadline = draft.pickDeadline.toDate
-      ? draft.pickDeadline.toDate()
-      : new Date(draft.pickDeadline);
-    if (Date.now() > deadline.getTime()) {
-      throw new Error('Pick deadline expired');
+    // Validate it's their turn — inside transaction, so state is guaranteed fresh.
+    // This is the primary guard against race conditions: if another client already
+    // advanced the turn, this transaction will see the updated currentPlayerId.
+    if (draft.currentPlayerId !== userId) {
+      console.log(`[DRAFT] Pick rejected: not ${userId}'s turn (current: ${draft.currentPlayerId}), isAutopick=${isAutopick}`);
+      throw new Error('Not your turn');
     }
-  }
 
-  // Validate category limit
-  if (player.categories[asset.category] >= 3) {
-    throw new Error(`Already have 3 ${asset.category} picks`);
-  }
-
-  // Create pick record - use ISO string for timestamp since this goes into arrayUnion
-  const pick = {
-    pickNumber: draft.currentPickIndex + 1,
-    round: Math.floor(draft.currentPickIndex / 4) + 1,
-    playerId: userId,
-    playerIndex,
-    asset: {
-      symbol: asset.symbol,
-      name: asset.name,
-      category: asset.category
-    },
-    timestamp: new Date().toISOString(),
-    isAutopick
-  };
-
-  // Update player with pickCategories for roster display
-  const updatedPlayers = [...draft.players];
-  updatedPlayers[playerIndex] = {
-    ...player,
-    picks: [...(player.picks || []), asset.symbol],
-    pickCategories: [...(player.pickCategories || []), asset.category],
-    categories: {
-      ...player.categories,
-      [asset.category]: (player.categories?.[asset.category] || 0) + 1
+    // Pick-slot idempotency guard — verify no one already made this pick
+    const existingPickAtSlot = (draft.picks || []).find(
+      p => p.pickNumber === draft.currentPickIndex + 1
+    );
+    if (existingPickAtSlot) {
+      console.warn(`[DRAFT] Pick slot ${draft.currentPickIndex + 1} already filled by ${existingPickAtSlot.playerId}`);
+      throw new Error('Pick slot already filled');
     }
-  };
 
-  // Remove from available
-  const updatedAvailable = { ...draft.availableAssets };
-  updatedAvailable[asset.category] = updatedAvailable[asset.category]
-    .filter(a => a.symbol !== asset.symbol);
+    // Validate pick deadline hasn't passed (skip for autopick - autopick IS the timeout handler)
+    if (!isAutopick && draft.pickDeadline) {
+      const deadline = draft.pickDeadline.toDate
+        ? draft.pickDeadline.toDate()
+        : new Date(draft.pickDeadline);
+      if (Date.now() > deadline.getTime()) {
+        throw new Error('Pick deadline expired');
+      }
+    }
 
-  // Next pick
-  const nextPickIndex = draft.currentPickIndex + 1;
-  const isComplete = nextPickIndex >= 36;
+    // Validate category limit
+    if (player.categories[asset.category] >= 3) {
+      throw new Error(`Already have 3 ${asset.category} picks`);
+    }
 
-  let nextPlayerId = null;
-  let nextDeadline = null;
+    // Validate asset is still available
+    const categoryAssets = draft.availableAssets[asset.category] || [];
+    if (!categoryAssets.some(a => a.symbol === asset.symbol)) {
+      throw new Error(`Asset ${asset.symbol} is no longer available`);
+    }
 
-  if (!isComplete) {
-    const nextPlayerIndex = draft.draftOrder[nextPickIndex];
-    nextPlayerId = updatedPlayers[nextPlayerIndex].odUserId;
-    nextDeadline = Timestamp.fromDate(new Date(Date.now() + 2 * 60 * 1000));
-  }
+    // Create pick record
+    const pick = {
+      pickNumber: draft.currentPickIndex + 1,
+      round: Math.floor(draft.currentPickIndex / 4) + 1,
+      playerId: userId,
+      playerIndex,
+      asset: {
+        symbol: asset.symbol,
+        name: asset.name,
+        category: asset.category
+      },
+      timestamp: new Date().toISOString(),
+      isAutopick
+    };
 
-  console.log(`[DRAFT] Pick #${draft.currentPickIndex + 1}: ${player.displayName} (${userId}) picked ${asset.symbol}${isAutopick ? ' [autopick]' : ''}. Next: ${nextPlayerId || 'COMPLETE'} (pickIndex=${nextPickIndex})`);
-
-  // Build update object
-  // Create lastPick data for display in draft room
-  const lastPickData = {
-    odUserId: userId,
-    displayName: player.displayName,
-    symbol: asset.symbol,
-    category: asset.category,
-    timestamp: new Date().toISOString(),
-    isCPU: player.isCPU || false,
-    pickNumber: draft.currentPickIndex + 1
-  };
-
-  const updateData = {
-    players: updatedPlayers,
-    picks: arrayUnion(pick),
-    availableAssets: updatedAvailable,
-    currentPickIndex: nextPickIndex,
-    currentPlayerId: nextPlayerId,
-    pickDeadline: nextDeadline,
-    lastPick: lastPickData,
-    currentRound: Math.floor(nextPickIndex / 4) + 1
-  };
-
-  // If draft is complete, initialize battle
-  if (isComplete) {
-    const now = new Date().toISOString();
-
-    // Initialize free agents (undrafted assets)
-    const freeAgents = initializeFreeAgents({
-      ...draft,
-      players: updatedPlayers
-    });
-
-    // Calculate battle end time
-    const battleEndTime = calculateBattleEndTime(draft.type, now);
-
-    // Compute the correct battle start date
-    // If draft completes during/after market hours, battle starts next trading day
-    // If draft completes before market open, battle starts today
-    const battleStartDate = getBattleStartDate(now);
-    const battleEndDate = calculateBattleEndDate(battleStartDate);
-
-    // Store original picks for each player (before any swaps)
-    const playersWithOriginalPicks = updatedPlayers.map(player => ({
+    // Update player with pickCategories for roster display
+    const updatedPlayers = [...draft.players];
+    updatedPlayers[playerIndex] = {
       ...player,
-      originalPicks: [...player.picks]
-    }));
+      picks: [...(player.picks || []), asset.symbol],
+      pickCategories: [...(player.pickCategories || []), asset.category],
+      categories: {
+        ...player.categories,
+        [asset.category]: (player.categories?.[asset.category] || 0) + 1
+      }
+    };
 
-    // Fetch and store volatility thresholds so both game modes use the same values
-    let draftThresholds = {};
+    // Remove from available
+    const updatedAvailable = { ...draft.availableAssets };
+    updatedAvailable[asset.category] = (updatedAvailable[asset.category] || [])
+      .filter(a => a.symbol !== asset.symbol);
+
+    // Next pick
+    const nextPickIndex = draft.currentPickIndex + 1;
+    const isComplete = nextPickIndex >= 36;
+
+    // Completion validation — verify actual pick counts before completing
+    if (isComplete) {
+      const totalActualPicks = updatedPlayers.reduce(
+        (sum, p) => sum + (p.picks || []).length, 0
+      );
+      const allPlayersHave9 = updatedPlayers.every(
+        p => (p.picks || []).length >= 9
+      );
+
+      if (totalActualPicks < 36 || !allPlayersHave9) {
+        console.error(
+          `[DRAFT] Completion blocked: totalPicks=${totalActualPicks}, ` +
+          `allPlayersHave9=${allPlayersHave9}, ` +
+          `perPlayer=[${updatedPlayers.map(p => (p.picks || []).length).join(',')}]`
+        );
+        // Don't complete — something went wrong with pick tracking.
+        // Allow the draft to continue so remaining picks can be made.
+      }
+    }
+
+    // Re-evaluate completion based on actual player pick counts
+    const actuallyComplete = isComplete &&
+      updatedPlayers.reduce((sum, p) => sum + (p.picks || []).length, 0) >= 36 &&
+      updatedPlayers.every(p => (p.picks || []).length >= 9);
+
+    let nextPlayerId = null;
+    let nextDeadline = null;
+
+    if (!actuallyComplete) {
+      if (nextPickIndex < 36) {
+        const nextPlayerIndex = draft.draftOrder[nextPickIndex];
+        nextPlayerId = updatedPlayers[nextPlayerIndex].odUserId;
+        nextDeadline = Timestamp.fromDate(new Date(Date.now() + 2 * 60 * 1000));
+      }
+    }
+
+    console.log(`[DRAFT] Pick #${draft.currentPickIndex + 1}: ${player.displayName} (${userId}) picked ${asset.symbol}${isAutopick ? ' [autopick]' : ''}. Next: ${nextPlayerId || 'COMPLETE'} (pickIndex=${nextPickIndex})`);
+
+    // Build update object
+    const lastPickData = {
+      odUserId: userId,
+      displayName: player.displayName,
+      symbol: asset.symbol,
+      category: asset.category,
+      timestamp: new Date().toISOString(),
+      isCPU: player.isCPU || false,
+      pickNumber: draft.currentPickIndex + 1
+    };
+
+    const updateData = {
+      players: updatedPlayers,
+      picks: arrayUnion(pick),
+      availableAssets: updatedAvailable,
+      currentPickIndex: nextPickIndex,
+      currentPlayerId: nextPlayerId,
+      pickDeadline: nextDeadline,
+      lastPick: lastPickData,
+      currentRound: Math.floor(nextPickIndex / 4) + 1
+    };
+
+    // If draft is actually complete (counter AND pick counts verified), initialize battle
+    if (actuallyComplete) {
+      const now = new Date().toISOString();
+
+      // Initialize free agents (undrafted assets) — pure function, safe in transaction
+      const freeAgents = initializeFreeAgents({
+        ...draft,
+        players: updatedPlayers
+      });
+
+      // Calculate battle timing — pure functions, safe in transaction
+      const battleEndTime = calculateBattleEndTime(draft.type, now);
+      const battleStartDate = getBattleStartDate(now);
+      const battleEndDate = calculateBattleEndDate(battleStartDate);
+
+      // Store original picks for each player (before any swaps)
+      const playersWithOriginalPicks = updatedPlayers.map(p => ({
+        ...p,
+        originalPicks: [...p.picks]
+      }));
+
+      updateData.players = playersWithOriginalPicks;
+      updateData.status = 'battle';
+      updateData.completedAt = serverTimestamp();
+      updateData.battleStartTime = now;
+      updateData.battleStartDate = battleStartDate;
+      updateData.battleEndDate = battleEndDate;
+      updateData.battleEndTime = battleEndTime;
+      updateData.freeAgents = freeAgents;
+      updateData.swapHistory = [];
+      updateData.dailySwaps = {};
+      updateData.claimSystem = {
+        enabled: true,
+        currentWaiverPriority: [],
+        processingLog: [],
+      };
+
+      console.log(`[DRAFT] Draft ${draftId} complete after 36 picks`);
+    }
+
+    // 4. WRITE atomically via transaction
+    transaction.update(draftRef, removeUndefined(updateData));
+
+    return { pick, isComplete: actuallyComplete, draft, updateData };
+  });
+
+  // Post-transaction: fetch volatility thresholds (async external API call, can't be inside transaction)
+  if (result.isComplete) {
     try {
-      const allSymbols = playersWithOriginalPicks.flatMap(p =>
+      const completedPlayers = result.updateData.players || [];
+      const allSymbols = completedPlayers.flatMap(p =>
         (p.picks || []).map(pick => String(pick.symbol || pick).toUpperCase())
       );
       const uniqueSymbols = [...new Set(allSymbols)];
       if (uniqueSymbols.length > 0) {
-        draftThresholds = await getVolatilityThresholds(uniqueSymbols, 'stock');
+        const draftThresholds = await getVolatilityThresholds(uniqueSymbols, 'stock');
+        // Update thresholds in a separate write (non-critical)
+        await updateDoc(draftRef, { thresholds: draftThresholds });
       }
     } catch (err) {
       console.warn('[DraftService] Could not fetch thresholds at draft completion:', err.message);
     }
 
-    updateData.players = playersWithOriginalPicks;
-    updateData.status = 'battle';
-    updateData.completedAt = serverTimestamp();
-    updateData.battleStartTime = now;
-    updateData.battleStartDate = battleStartDate;
-    updateData.battleEndDate = battleEndDate;
-    updateData.battleEndTime = battleEndTime;
-    updateData.freeAgents = freeAgents;
-    updateData.swapHistory = [];
-    updateData.dailySwaps = {};
-    updateData.thresholds = draftThresholds;
-    updateData.claimSystem = {
-      enabled: true,
-      currentWaiverPriority: [],
-      processingLog: [],
-    };
-
-    console.log(`[DRAFT] Draft ${draftId} complete after 36 picks`);
-  }
-
-  await updateDoc(doc(db, 'drafts', draftId), removeUndefined(updateData));
-
-  // Log analytics when draft completes (non-blocking)
-  if (isComplete) {
+    // Log analytics (non-blocking)
     const completedDraft = {
-      ...draft,
-      ...updateData,
+      ...result.draft,
+      ...result.updateData,
       id: draftId
     };
-
     logDraftToAnalytics(completedDraft).catch(err => {
       console.error('[DraftService] Analytics logging failed (non-blocking):', err);
     });
   }
 
-  return { pick, isComplete };
+  return { pick: result.pick, isComplete: result.isComplete };
 }
 
 /**
@@ -553,20 +603,30 @@ export async function handleAutopick(draftId, userId) {
     return;
   }
 
-  const category = neededCategories[Math.floor(Math.random() * neededCategories.length)];
-  const available = draft.availableAssets[category];
+  // Try all needed categories (shuffled for randomness) before giving up
+  let pickedCategory = null;
+  let availableInCategory = null;
+  const shuffled = [...neededCategories].sort(() => Math.random() - 0.5);
+  for (const cat of shuffled) {
+    const assets = draft.availableAssets[cat];
+    if (assets && assets.length > 0) {
+      pickedCategory = cat;
+      availableInCategory = assets;
+      break;
+    }
+  }
 
-  if (!available || available.length === 0) {
-    console.log(`[AUTOPICK] Skipped - no available ${category} assets`);
+  if (!pickedCategory || !availableInCategory) {
+    console.error(`[AUTOPICK] No available assets in any needed category for ${userId} (needed: ${neededCategories.join(', ')})`);
     return;
   }
 
   const asset = {
-    ...available[Math.floor(Math.random() * available.length)],
-    category
+    ...availableInCategory[Math.floor(Math.random() * availableInCategory.length)],
+    category: pickedCategory
   };
 
-  console.log(`[AUTOPICK] ${player.displayName} needs ${category} → picking ${asset.symbol}`);
+  console.log(`[AUTOPICK] ${player.displayName} needs ${pickedCategory} → picking ${asset.symbol}`);
 
   return makePick(draftId, userId, asset, true);
 }
