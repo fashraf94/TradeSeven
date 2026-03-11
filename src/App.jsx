@@ -12749,6 +12749,7 @@ export default function PortfolioDuel() {
 
   // Curtain — fetch daily briefing on cold launch (new tab)
   useEffect(() => {
+    return; // TEMPORARILY DISABLED — curtain brief
     if (!user || authLoading) return;
     const CURTAIN_SESSION_KEY = 'curtain_dismissed';
     if (sessionStorage.getItem(CURTAIN_SESSION_KEY)) return;
@@ -12825,6 +12826,7 @@ export default function PortfolioDuel() {
 
   // Load weekly challenges when user logs in - RUNS ONCE PER SESSION
   useEffect(() => {
+    return; // TEMPORARILY DISABLED — weekly challenges + slot machine
     // Use stable string values instead of object reference
     const userId = user?.odM || user?.username;
 
@@ -13280,6 +13282,7 @@ export default function PortfolioDuel() {
   // ⭐ MID-GAME CHALLENGE CHECKING SYSTEM
   // Check for mid-game challenges periodically during active battles
   useEffect(() => {
+    return; // TEMPORARILY DISABLED — mid-game challenge popup
     if (screen !== 'battle' || !currentBattle) return;
 
     const battleStatus = battleTimer.getBattleStatus(currentBattle);
@@ -19858,7 +19861,7 @@ export default function PortfolioDuel() {
 
           {/* Global Overlays */}
           <ChallengeToast />
-          <MidGameChallengePopup />
+          {false && <MidGameChallengePopup />}
           {false && <RiskChallengePopup />}
           {false && <RiskChallengeResultPopup />}
           {showSlotMachine && weeklyChallenges.length >= 4 && (
@@ -20353,8 +20356,8 @@ export default function PortfolioDuel() {
                   colors={colors}
                 />
 
-                {/* Weekly Challenges */}
-                <WeeklyChallengesPanel
+                {/* Weekly Challenges — TEMPORARILY DISABLED */}
+                {false && <WeeklyChallengesPanel
                   showWeeklyChallenges={showWeeklyChallenges}
                   setShowWeeklyChallenges={setShowWeeklyChallenges}
                   weeklyChallenges={weeklyChallenges}
@@ -20365,7 +20368,7 @@ export default function PortfolioDuel() {
                   setExpandedChallengeId={setExpandedChallengeId}
                   acceptChallenge={acceptChallenge}
                   colors={colors}
-                />
+                />}
 
                 {/* Open Lobbies */}
                 <PvpLobbiesSection
@@ -20464,8 +20467,8 @@ export default function PortfolioDuel() {
                   colors={colors}
                 />
 
-                {/* Weekly Challenges */}
-                <WeeklyChallengesPanel
+                {/* Weekly Challenges — TEMPORARILY DISABLED */}
+                {false && <WeeklyChallengesPanel
                   showWeeklyChallenges={showWeeklyChallenges}
                   setShowWeeklyChallenges={setShowWeeklyChallenges}
                   weeklyChallenges={weeklyChallenges}
@@ -20476,7 +20479,7 @@ export default function PortfolioDuel() {
                   setExpandedChallengeId={setExpandedChallengeId}
                   acceptChallenge={acceptChallenge}
                   colors={colors}
-                />
+                />}
 
                 {/* Your Activity - personal timeline */}
                 <YourActivity
