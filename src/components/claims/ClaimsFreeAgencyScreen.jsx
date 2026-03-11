@@ -7,6 +7,7 @@ import CategoryTabs from '../freeAgency/shared/CategoryTabs';
 import RosterAssetCard from '../freeAgency/shared/RosterAssetCard';
 import FreeAgentCard from '../freeAgency/shared/FreeAgentCard';
 import SwapConfirmModal from '../freeAgency/shared/SwapConfirmModal';
+import FreeAgencyResearchModal from '../freeAgency/shared/FreeAgencyResearchModal';
 
 /**
  * ClaimsFreeAgencyScreen - Claim-based free agency (replaces FCFS when claimSystem.enabled)
@@ -17,6 +18,7 @@ import SwapConfirmModal from '../freeAgency/shared/SwapConfirmModal';
 const ClaimsFreeAgencyScreen = ({ containerStyle, currentDraft, user, setScreen, logger }) => {
   const cl = useClaimsFreeAgency(currentDraft, user, setScreen, logger);
   const [showResults, setShowResults] = useState(false);
+  const [assetForResearch, setAssetForResearch] = useState(null);
 
   // ============ LOADING ============
   if (cl.loading) {
@@ -466,6 +468,7 @@ const ClaimsFreeAgencyScreen = ({ containerStyle, currentDraft, user, setScreen,
                     asset={asset}
                     isSelected={cl.selectedDrop?.symbol === asset.symbol}
                     onSelect={cl.handleSelectDrop}
+                    onMoreInfo={(asset) => setAssetForResearch(asset)}
                     disabled={!cl.canSubmit}
                     compact
                   />
@@ -515,7 +518,9 @@ const ClaimsFreeAgencyScreen = ({ containerStyle, currentDraft, user, setScreen,
                     asset={asset}
                     isSelected={cl.selectedAdd?.symbol === asset.symbol}
                     onSelect={cl.handleSelectAdd}
+                    onMoreInfo={(asset) => setAssetForResearch(asset)}
                     disabled={!cl.canSubmit}
+                    livePrices={cl.livePrices}
                   />
                 ))}
                 {cl.filteredFreeAgents.length === 0 && (
@@ -646,6 +651,16 @@ const ClaimsFreeAgencyScreen = ({ containerStyle, currentDraft, user, setScreen,
           </div>
         )}
       </main>
+
+      <FreeAgencyResearchModal
+        asset={assetForResearch}
+        currentDraft={currentDraft}
+        livePrices={cl.livePrices}
+        canSwap={cl.canSubmit}
+        selectedAdd={cl.selectedAdd}
+        onSelectAdd={cl.handleSelectAdd}
+        onClose={() => setAssetForResearch(null)}
+      />
     </div>
   );
 };
