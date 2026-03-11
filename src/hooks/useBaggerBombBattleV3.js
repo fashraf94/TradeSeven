@@ -110,19 +110,24 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
     return { ...battleHistory, ...localHistory };
   }, [battle, isCreator, localHistory]);
 
-  // Previous close prices for threshold baseline — stored in Firebase at battle activation.
-  // Falls back to EODHD-fetched previousClosePrices (local state), then to activationPrices (old battles).
+  // Previous close prices for threshold baseline — layered per-symbol merge:
+  // Layer 1 (base): activationPrices (entry fallback for day 1 / old battles)
+  // Layer 2: Firebase battle.state.previousClosePrices (may be stale after day 1)
+  // Layer 3 (wins): EODHD-polled previousClosePrices (freshest daily data)
   const previousClosePriceMap = useMemo(() => {
+    const map = { ...(activationPrices || {}) };
     const fbPrevClose = battle?.state?.previousClosePrices;
-    if (fbPrevClose && typeof fbPrevClose === 'object' && Object.keys(fbPrevClose).length > 0) {
-      return fbPrevClose;
+    if (fbPrevClose && typeof fbPrevClose === 'object') {
+      Object.entries(fbPrevClose).forEach(([sym, price]) => {
+        if (price > 0) map[sym] = price;
+      });
     }
-    // Fallback: local EODHD-fetched previousClosePrices (populated in price polling)
-    if (previousClosePrices && Object.keys(previousClosePrices).length > 0) {
-      return previousClosePrices;
+    if (previousClosePrices && typeof previousClosePrices === 'object') {
+      Object.entries(previousClosePrices).forEach(([sym, price]) => {
+        if (price > 0) map[sym] = price;
+      });
     }
-    // Final fallback: use entry prices (old battles without previousClosePrices)
-    return activationPrices || {};
+    return map;
   }, [battle?.state?.previousClosePrices, previousClosePrices, activationPrices]);
 
   // Calculate scores with history
@@ -401,28 +406,29 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
     myPortfolioFlat.forEach((asset) => {
       if (!asset) return;
 
-      const openPrice = openPrices[asset.symbol];
+      // Daily baseline for threshold detection (previousClose resets each day)
+      const dailyBaseline = previousClosePriceMap[asset.symbol] || openPrices[asset.symbol];
       const currentPrice = effectivePrices[asset.symbol];
-      if (!openPrice || !currentPrice) return;
+      if (!dailyBaseline || !currentPrice) return;
 
-      let priceChange = ((currentPrice - openPrice) / openPrice) * 100;
+      let thresholdChange = ((currentPrice - dailyBaseline) / dailyBaseline) * 100;
       // Negate for short positions — shorts profit when price goes DOWN
-      if (asset.direction === 'short') priceChange = -priceChange;
+      if (asset.direction === 'short') thresholdChange = -thresholdChange;
       const baseATR = battle?.thresholds?.[asset.symbol]?.threshold || asset.baseATR || 2.5;
-      const currentMultiplier = priceChange / baseATR;
+      const currentMultiplier = thresholdChange / baseATR;
 
-      // Also check intraday high/low for threshold crossings
+      // Also check intraday high/low for threshold crossings (rebased against daily baseline)
       const assetExtremes = dailyExtremes[asset.symbol];
       let effectiveHighMultiplier = currentMultiplier;
       let effectiveLowMultiplier = currentMultiplier;
-      if (assetExtremes && openPrice > 0) {
+      if (assetExtremes && dailyBaseline > 0) {
         if (assetExtremes.high > 0) {
-          let highPct = ((assetExtremes.high - openPrice) / openPrice) * 100;
+          let highPct = ((assetExtremes.high - dailyBaseline) / dailyBaseline) * 100;
           if (asset.direction === 'short') highPct = -highPct;
           effectiveHighMultiplier = Math.max(currentMultiplier, highPct / baseATR);
         }
         if (assetExtremes.low > 0) {
-          let lowPct = ((assetExtremes.low - openPrice) / openPrice) * 100;
+          let lowPct = ((assetExtremes.low - dailyBaseline) / dailyBaseline) * 100;
           if (asset.direction === 'short') lowPct = -lowPct;
           effectiveLowMultiplier = Math.min(currentMultiplier, lowPct / baseATR);
         }
@@ -508,7 +514,7 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
       // Update prev multiplier ref
       prevMultipliersRef.current[asset.symbol] = currentMultiplier;
     });
-  }, [activationPrices, effectivePrices, openPrices, dailyExtremes, myPortfolioFlat, battle, battleId, isCreator, combinedHistory, queueTrigger]);
+  }, [activationPrices, effectivePrices, openPrices, previousClosePriceMap, dailyExtremes, myPortfolioFlat, battle, battleId, isCreator, combinedHistory, queueTrigger]);
 
   // Continuous history tracking — ensures maxMultiplier/minMultiplier are always
   // recorded for BOTH player and opponent portfolios on every price poll.
@@ -525,25 +531,31 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
       portfolioFlat.forEach((asset) => {
         if (!asset) return;
 
-        const openPrice = openPrices[asset.symbol];
+        // Daily baseline for threshold/history tracking (previousClose resets each day)
+        const dailyBaseline = previousClosePriceMap[asset.symbol] || openPrices[asset.symbol];
         const currentPrice = effectivePrices[asset.symbol];
-        if (!openPrice || !currentPrice) return;
+        if (!dailyBaseline || !currentPrice) return;
 
-        const priceChange = ((currentPrice - openPrice) / openPrice) * 100;
+        let thresholdChange = ((currentPrice - dailyBaseline) / dailyBaseline) * 100;
+        if (asset.direction === 'short') thresholdChange = -thresholdChange;
         const baseATR = battle?.thresholds?.[asset.symbol]?.threshold || asset.baseATR || 2.5;
-        const currentMultiplier = priceChange / baseATR;
+        const currentMultiplier = thresholdChange / baseATR;
 
         // Use intraday high/low for peak tracking — if the high crossed a threshold,
         // maxMultiplier should reflect that even if the price later reversed
         const assetExtremes = dailyExtremes[asset.symbol];
         let highMultiplier = currentMultiplier;
         let lowMultiplier = currentMultiplier;
-        if (assetExtremes && openPrice > 0) {
+        if (assetExtremes && dailyBaseline > 0) {
           if (assetExtremes.high > 0) {
-            highMultiplier = Math.max(currentMultiplier, ((assetExtremes.high - openPrice) / openPrice) * 100 / baseATR);
+            let highPct = ((assetExtremes.high - dailyBaseline) / dailyBaseline) * 100;
+            if (asset.direction === 'short') highPct = -highPct;
+            highMultiplier = Math.max(currentMultiplier, highPct / baseATR);
           }
           if (assetExtremes.low > 0) {
-            lowMultiplier = Math.min(currentMultiplier, ((assetExtremes.low - openPrice) / openPrice) * 100 / baseATR);
+            let lowPct = ((assetExtremes.low - dailyBaseline) / dailyBaseline) * 100;
+            if (asset.direction === 'short') lowPct = -lowPct;
+            lowMultiplier = Math.min(currentMultiplier, lowPct / baseATR);
           }
         }
 
@@ -579,7 +591,7 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
     // Track opponent portfolio history (redundant recording — if opponent's client
     // is offline, this client still records their peaks)
     processPortfolio(oppPortfolioFlat, oppHistory, setLocalOppHistory, false);
-  }, [activationPrices, effectivePrices, openPrices, dailyExtremes, myPortfolioFlat, oppPortfolioFlat, battle, battleId, isCreator, combinedHistory, oppHistory]);
+  }, [activationPrices, effectivePrices, openPrices, previousClosePriceMap, dailyExtremes, myPortfolioFlat, oppPortfolioFlat, battle, battleId, isCreator, combinedHistory, oppHistory]);
 
   // Fetch prices — uses frozen close prices from Firebase when a session has ended,
   // ensuring both players see identical scores for completed sessions
@@ -768,11 +780,21 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
     const assetHistory = history[asset.symbol] || { maxMultiplier: 0, minMultiplier: 0 };
     const resolvedATR = bThresholds[asset.symbol]?.threshold || scoreData?.baseATR || asset.baseATR || 2.5;
 
+    // Compute daily-relative threshold price change for ChamberFuse/ProximityLabel
+    const currentPrice = prices[asset.symbol] || 0;
+    const prevClose = prevClosePrices[asset.symbol] || actPrices[asset.symbol] || 0;
+    let thresholdPriceChange = prevClose > 0
+      ? ((currentPrice - prevClose) / prevClose) * 100
+      : (scoreData?.priceChange || 0); // fallback to entry-relative if no prevClose
+    // Short position inversion
+    if (asset.direction === 'short') thresholdPriceChange = -thresholdPriceChange;
+
     return {
       symbol: asset.symbol,
       name: asset.name,
       direction: asset.direction || null,
       priceChange: scoreData?.priceChange || 0,
+      thresholdPriceChange,
       baseATR: resolvedATR,
       history: assetHistory,
       points: scoreData?.totalPoints || 0,
@@ -781,7 +803,7 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
       tierMultiplier: scoreData?.tierMultiplier || 1.0,
       // Price data for ScoreBreakdownPopover — prefer activation price (battle start)
       // over scoring baseline (which may be previousClose on load)
-      currentPrice: prices[asset.symbol] || 0,
+      currentPrice,
       startingPrice: actPrices[asset.symbol] || baselines[asset.symbol] || 0,
       baselinePrice: actPrices[asset.symbol] || baselines[asset.symbol] || 0,
       lockedPrice: actPrices[asset.symbol] || baselines[asset.symbol] || 0,
