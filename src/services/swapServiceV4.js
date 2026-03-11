@@ -17,6 +17,7 @@ import { db } from '../firebase/config';
 import { getDailySwapsRemaining, getCurrentTradingDay } from '../constants/battleTimingV4';
 import { calculateAssetScoreV3, isSwapLocked } from '../utils/baggerBombUtils';
 import { CRYPTO_POOL_SYMBOLS, CASH_POSITION } from '../constants/cryptoPool';
+import { getMultipleStockPrices, getMultipleCryptoPrices } from './eodhdAPI';
 
 // ============================================
 // VALIDATION
@@ -262,6 +263,27 @@ export async function executeSwap(
       };
     }
 
+    // ---- Resolve a valid swap price for the incoming asset ----
+    let resolvedSwapPrice = currentPrices[inSymbol] || 0;
+    if (swapType !== 'cash' && (!resolvedSwapPrice || resolvedSwapPrice <= 0)) {
+      // Caller's price map was missing this symbol — attempt a direct fetch
+      try {
+        const isCryptoAsset = pickedAgent.isCrypto || false;
+        const freshData = isCryptoAsset
+          ? await getMultipleCryptoPrices([inSymbol])
+          : await getMultipleStockPrices([inSymbol]);
+        resolvedSwapPrice = freshData[inSymbol]?.price || 0;
+        if (resolvedSwapPrice > 0) {
+          console.log(`[SwapService] Fallback price fetch for ${inSymbol}: $${resolvedSwapPrice}`);
+        }
+      } catch (e) {
+        console.error(`[SwapService] Fallback price fetch failed for ${inSymbol}:`, e);
+      }
+    }
+    if (swapType !== 'cash' && (!resolvedSwapPrice || resolvedSwapPrice <= 0)) {
+      throw new Error(`Cannot complete swap: no valid price available for ${inSymbol}. Please try again.`);
+    }
+
     // ---- Build incoming asset object ----
     let incomingAsset;
     if (swapType === 'cash') {
@@ -280,7 +302,7 @@ export async function executeSwap(
         name: pickedAgent.name,
         isCrypto: pickedAgent.isCrypto || false,
         baseATR: liveData.thresholds?.[inSymbol]?.threshold || pickedAgent.baseATR || (pickedAgent.isCrypto ? 5.0 : 2.5),
-        swapPrice: currentPrices[inSymbol] || 0,
+        swapPrice: resolvedSwapPrice,
         swappedInAt: now,
         swappedInDay: currentDay,
       };
@@ -302,7 +324,7 @@ export async function executeSwap(
       addedFromCryptoPool: swapType === 'crypto',
       swapType,
       direction: direction || null,
-      swapPrice: swapType === 'cash' ? 0 : (currentPrices[inSymbol] || 0),
+      swapPrice: swapType === 'cash' ? 0 : resolvedSwapPrice,
     };
 
     // ---- Build update paths ----

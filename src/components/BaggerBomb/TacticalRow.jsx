@@ -102,6 +102,7 @@ function AssetSide({
   const {
     symbol,
     priceChange = 0,
+    thresholdPriceChange,
     baseATR = 2.5,
     history = { maxMultiplier: 0, minMultiplier: 0 },
     points = 0,
@@ -255,7 +256,7 @@ function AssetSide({
 
       {/* ChamberFuse */}
       <ChamberFuse
-        priceChange={priceChange}
+        priceChange={thresholdPriceChange ?? priceChange}
         baseATR={baseATR}
         history={history}
         compact
@@ -263,9 +264,9 @@ function AssetSide({
         onThresholdCross={onThresholdCross}
       />
 
-      {/* Proximity Label */}
+      {/* Proximity Label — uses daily-relative threshold progress */}
       <ProximityLabel
-        priceChange={priceChange}
+        priceChange={thresholdPriceChange ?? priceChange}
         baseATR={baseATR}
         history={history}
         size="small"
