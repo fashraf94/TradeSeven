@@ -232,8 +232,10 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
         return;
       }
 
-      // For swapped-in assets, use swapPrice as the open price
-      const assetOpenPrice = asset.swapPrice || openPriceMap[asset.symbol] || 0;
+      // For swapped-in assets, use swapPrice as the open price.
+      // Recovery: if swapPrice was stored as 0 and symbol isn't in startingPrices,
+      // fall back to current price (shows 0% change — better than broken zero-display).
+      const assetOpenPrice = asset.swapPrice || openPriceMap[asset.symbol] || prices[asset.symbol] || 0;
       const currentPrice = prices[asset.symbol] || assetOpenPrice;
 
       // Resolve baseATR: prefer API-computed battle threshold over asset's stored value
@@ -436,9 +438,9 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
       // Price data for ScoreBreakdownPopover — prefer activation price (battle start)
       // over scoring baseline (which may be previousClose on load)
       currentPrice: prices[asset.symbol] || 0,
-      startingPrice: actPrices[asset.symbol] || asset.swapPrice || baselines[asset.symbol] || 0,
-      baselinePrice: actPrices[asset.symbol] || asset.swapPrice || baselines[asset.symbol] || 0,
-      lockedPrice: actPrices[asset.symbol] || asset.swapPrice || baselines[asset.symbol] || 0,
+      startingPrice: actPrices[asset.symbol] || asset.swapPrice || baselines[asset.symbol] || prices[asset.symbol] || 0,
+      baselinePrice: actPrices[asset.symbol] || asset.swapPrice || baselines[asset.symbol] || prices[asset.symbol] || 0,
+      lockedPrice: actPrices[asset.symbol] || asset.swapPrice || baselines[asset.symbol] || prices[asset.symbol] || 0,
       swapPrice: asset.swapPrice || 0,
       // Previous close for threshold target display (BaggerBombTab)
       previousClosePrice: prevClosePrices[asset.symbol] || actPrices[asset.symbol] || baselines[asset.symbol] || 0,
