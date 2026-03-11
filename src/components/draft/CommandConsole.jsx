@@ -1,9 +1,13 @@
-import React, { useMemo, useState, useEffect, useCallback } from 'react';
+import React, { useMemo, useState, useEffect, useCallback, useRef } from 'react';
+import { useMotionValue, motion, animate } from 'framer-motion';
+import { ChevronUp, ChevronDown } from 'lucide-react';
 import { HOLO_COLORS, GLOW_EFFECTS } from '../../constants/holoTheme';
 import AssetTile from './AssetTile';
 import AssetResearchModal from './AssetResearchModal';
 import { buildResearchAsset } from '../../utils/researchAssetBuilder';
 import { UserIcon, TrophyIcon, SwapIcon, ScoutIcon, FireIcon, SnowflakeIcon, HoloIconAnimations } from './HoloIcons';
+
+const SPRING_CONFIG = { type: 'spring', stiffness: 300, damping: 30 };
 
 // Panel state constants for draggable bottom sheet
 const PANEL_STATES = {
@@ -45,8 +49,6 @@ const CommandConsole = ({
   // Draggable panel state
   const [panelState, setPanelState] = useState(PANEL_STATES.PARTIAL);
   const [isDragging, setIsDragging] = useState(false);
-  const [dragStartY, setDragStartY] = useState(null);
-  const [dragDeltaY, setDragDeltaY] = useState(0);
 
   // Height configuration for each panel state
   const getHeightConfig = useCallback(() => {
@@ -57,6 +59,18 @@ const CommandConsole = ({
       expanded: vh * 0.85,
     };
   }, [isMobile]);
+
+  // Framer-motion height value — updated directly during drag for 60fps smoothness
+  const heightValue = useMotionValue(getHeightConfig().partial);
+
+  // Drag tracking via ref (avoids stale closures in touch handlers)
+  const dragRef = useRef({ startY: 0, startHeight: 0, lastY: 0, lastTime: 0 });
+
+  // Re-snap when window resizes (e.g., orientation change)
+  useEffect(() => {
+    const config = getHeightConfig();
+    heightValue.set(config[panelState]);
+  }, [isMobile]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Get clientY from touch or mouse event
   const getClientY = (e) => {
@@ -71,64 +85,76 @@ const CommandConsole = ({
     if (e.type === 'mousedown') {
       e.preventDefault();
     }
+    const clientY = getClientY(e);
+    dragRef.current = {
+      startY: clientY,
+      startHeight: heightValue.get(),
+      lastY: clientY,
+      lastTime: Date.now(),
+    };
     setIsDragging(true);
-    setDragStartY(getClientY(e));
-    setDragDeltaY(0);
-  }, []);
+  }, [heightValue]);
 
-  // Handle drag move
+  // Handle drag move — updates motion value directly, no React re-render
   const handleDragMove = useCallback((e) => {
-    if (!isDragging || dragStartY === null) return;
+    if (!isDragging) return;
 
-    const currentY = getClientY(e);
-    const delta = dragStartY - currentY; // Positive = dragging up
-
+    const clientY = getClientY(e);
+    const delta = dragRef.current.startY - clientY; // Positive = dragging up = increasing height
     const heightConfig = getHeightConfig();
-    const currentHeight = heightConfig[panelState];
-    const maxUpDelta = heightConfig.expanded - currentHeight;
-    const maxDownDelta = currentHeight - heightConfig.collapsed;
 
-    const clampedDelta = Math.max(-maxDownDelta, Math.min(delta, maxUpDelta));
-    setDragDeltaY(clampedDelta);
-  }, [isDragging, dragStartY, panelState, getHeightConfig]);
+    const newHeight = Math.max(
+      heightConfig.collapsed,
+      Math.min(dragRef.current.startHeight + delta, heightConfig.expanded)
+    );
 
-  // Handle drag end - determine snap target
+    heightValue.set(newHeight);
+
+    // Track for velocity calculation
+    dragRef.current.lastY = clientY;
+    dragRef.current.lastTime = Date.now();
+  }, [isDragging, heightValue, getHeightConfig]);
+
+  // Handle drag end - determine snap target with velocity
   const handleDragEnd = useCallback(() => {
     if (!isDragging) return;
 
     const heightConfig = getHeightConfig();
-    const currentHeight = heightConfig[panelState];
-    const newHeight = currentHeight + dragDeltaY;
+    const currentHeight = heightValue.get();
 
-    // Calculate 30% thresholds
-    const collapsedThreshold = heightConfig.collapsed +
-      (heightConfig.partial - heightConfig.collapsed) * 0.3;
-    const expandedThreshold = heightConfig.partial +
-      (heightConfig.expanded - heightConfig.partial) * 0.3;
+    // Compute velocity from last movement (px/ms → px/s)
+    const dt = Date.now() - dragRef.current.lastTime;
+    const dy = dragRef.current.lastY - dragRef.current.startY; // Negative = dragged up
+    const velocity = dt > 0 ? (dy / dt) * 1000 : 0;
 
-    let newState = panelState;
+    // Fast flick detection (velocity in screen coords: negative = up, positive = down)
+    let newState;
+    if (velocity < -500) {
+      // Fast flick up → expand
+      newState = PANEL_STATES.EXPANDED;
+    } else if (velocity > 500) {
+      // Fast flick down → collapse
+      newState = PANEL_STATES.COLLAPSED;
+    } else {
+      // Position-based snap (30% thresholds)
+      const collapsedThreshold = heightConfig.collapsed +
+        (heightConfig.partial - heightConfig.collapsed) * 0.3;
+      const expandedThreshold = heightConfig.partial +
+        (heightConfig.expanded - heightConfig.partial) * 0.3;
 
-    if (panelState === PANEL_STATES.PARTIAL) {
-      if (newHeight < collapsedThreshold) {
+      if (currentHeight < collapsedThreshold) {
         newState = PANEL_STATES.COLLAPSED;
-      } else if (newHeight > expandedThreshold) {
+      } else if (currentHeight > expandedThreshold) {
         newState = PANEL_STATES.EXPANDED;
-      }
-    } else if (panelState === PANEL_STATES.COLLAPSED) {
-      if (newHeight > collapsedThreshold) {
-        newState = newHeight > expandedThreshold ? PANEL_STATES.EXPANDED : PANEL_STATES.PARTIAL;
-      }
-    } else if (panelState === PANEL_STATES.EXPANDED) {
-      if (newHeight < expandedThreshold) {
-        newState = newHeight < collapsedThreshold ? PANEL_STATES.COLLAPSED : PANEL_STATES.PARTIAL;
+      } else {
+        newState = PANEL_STATES.PARTIAL;
       }
     }
 
+    animate(heightValue, heightConfig[newState], SPRING_CONFIG);
     setPanelState(newState);
     setIsDragging(false);
-    setDragStartY(null);
-    setDragDeltaY(0);
-  }, [isDragging, dragDeltaY, panelState, getHeightConfig]);
+  }, [isDragging, heightValue, getHeightConfig]);
 
   // Global mouse event listeners for desktop drag
   useEffect(() => {
@@ -146,18 +172,15 @@ const CommandConsole = ({
     }
   }, [isDragging, handleDragMove, handleDragEnd]);
 
-  // Calculate current height including drag offset
-  const getCurrentHeight = useMemo(() => {
+  // Toggle between collapsed and expanded with spring animation
+  const handleToggle = useCallback(() => {
     const heightConfig = getHeightConfig();
-    const baseHeight = heightConfig[panelState];
-
-    if (isDragging) {
-      return Math.max(heightConfig.collapsed,
-                      Math.min(baseHeight + dragDeltaY, heightConfig.expanded));
-    }
-
-    return baseHeight;
-  }, [panelState, isDragging, dragDeltaY, getHeightConfig]);
+    const target = panelState === PANEL_STATES.EXPANDED
+      ? PANEL_STATES.COLLAPSED
+      : PANEL_STATES.EXPANDED;
+    animate(heightValue, heightConfig[target], SPRING_CONFIG);
+    setPanelState(target);
+  }, [panelState, heightValue, getHeightConfig]);
 
   // State for grid flip animation
   const [isFlipping, setIsFlipping] = useState(false);
@@ -254,12 +277,12 @@ const CommandConsole = ({
   const isExpanded = panelState === PANEL_STATES.EXPANDED;
 
   return (
-    <div style={{
+    <motion.div style={{
       position: 'fixed',
       bottom: 0,
       left: 0,
       right: 0,
-      height: getCurrentHeight,
+      height: heightValue,
       display: 'flex',
       flexDirection: 'column',
       background: isScoutMode
@@ -272,7 +295,6 @@ const CommandConsole = ({
         : '0 -4px 30px rgba(0, 255, 255, 0.15)',
       borderTopLeftRadius: '16px',
       borderTopRightRadius: '16px',
-      transition: isDragging ? 'none' : 'height 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
       zIndex: 50,
       userSelect: isDragging ? 'none' : 'auto',
       overflow: 'hidden',
@@ -294,18 +316,41 @@ const CommandConsole = ({
         onTouchEnd={handleDragEnd}
         onMouseDown={handleDragStart}
       >
-        <div style={{
-          width: '40px',
-          height: '4px',
-          borderRadius: '2px',
-          background: isScoutMode
-            ? `${HOLO_COLORS.amber}80`
-            : `${HOLO_COLORS.cyan}80`,
-          transition: 'all 0.2s ease',
-          boxShadow: isDragging
-            ? (isScoutMode ? `0 0 8px ${HOLO_COLORS.amber}` : `0 0 8px ${HOLO_COLORS.cyan}`)
-            : 'none',
-        }} />
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <div style={{
+            width: '40px',
+            height: '4px',
+            borderRadius: '2px',
+            background: isScoutMode
+              ? `${HOLO_COLORS.amber}80`
+              : `${HOLO_COLORS.cyan}80`,
+            transition: 'all 0.2s ease',
+            boxShadow: isDragging
+              ? (isScoutMode ? `0 0 8px ${HOLO_COLORS.amber}` : `0 0 8px ${HOLO_COLORS.cyan}`)
+              : 'none',
+          }} />
+          {/* Chevron toggle button */}
+          <button
+            onClick={(e) => { e.stopPropagation(); handleToggle(); }}
+            onTouchEnd={(e) => { e.stopPropagation(); }}
+            style={{
+              background: 'none',
+              border: 'none',
+              padding: '4px',
+              cursor: 'pointer',
+              color: isScoutMode ? HOLO_COLORS.amber : HOLO_COLORS.cyan,
+              opacity: 0.7,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              minWidth: '44px',
+              minHeight: '44px',
+              margin: '-10px 0',
+            }}
+          >
+            {isExpanded ? <ChevronDown size={18} /> : <ChevronUp size={18} />}
+          </button>
+        </div>
       </div>
 
       {/* COMPACT HEADER with inline Best/Worst */}
@@ -408,17 +453,7 @@ const CommandConsole = ({
                   </span>
                 </span>
               )}
-              {/* Expand hint when collapsed */}
-              {isCollapsed && (
-                <span style={{
-                  color: isScoutMode ? HOLO_COLORS.amber : HOLO_COLORS.cyan,
-                  opacity: 0.6,
-                  marginLeft: 'auto',
-                  fontSize: '9px',
-                }}>
-                  ↑ Expand
-                </span>
-              )}
+              {/* Chevron toggle button replaces the old "↑ Expand" text hint */}
             </div>
           )}
         </div>
@@ -689,7 +724,7 @@ const CommandConsole = ({
         />
         );
       })()}
-    </div>
+    </motion.div>
   );
 };
 

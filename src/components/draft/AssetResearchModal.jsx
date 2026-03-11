@@ -141,8 +141,8 @@ const AssetResearchModal = ({
   }, [onClose]);
 
   // v2: Responsive chart height — scale to container so date axis clears drawer at mid snap.
-  // Drawer mid-top sits at 50% (desktop/tablet) or 60% (mobile) of container.
-  // Mobile: 50% of container (min 280) — ample gap to the 60% drawer line.
+  // Drawer mid-top sits at 55% (desktop/tablet) or 62% (mobile) of container.
+  // Mobile: 50% of container (min 280) + 40px padding — clears the 62% drawer line.
   // Desktop/tablet: capped at old fixed max but shrinks to 45% when container is small,
   // guaranteeing ≥5% gap (~30px) between chart bottom and drawer top.
   const chartHeight = version >= 2
@@ -583,7 +583,7 @@ const AssetResearchModal = ({
 
           {/* v2: Chart Section */}
           {version >= 2 && (
-            <div style={{ flexShrink: 0, position: 'relative', zIndex: 1, paddingBottom: '28px' }}>
+            <div style={{ flexShrink: 0, position: 'relative', zIndex: 1, paddingBottom: '40px' }}>
               {researchData.loading && !researchData.ohlcvData && (
                 <div style={{
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
