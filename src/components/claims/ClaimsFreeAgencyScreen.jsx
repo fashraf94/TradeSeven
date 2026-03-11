@@ -19,6 +19,7 @@ const ClaimsFreeAgencyScreen = ({ containerStyle, currentDraft, user, setScreen,
   const cl = useClaimsFreeAgency(currentDraft, user, setScreen, logger);
   const [showResults, setShowResults] = useState(false);
   const [assetForResearch, setAssetForResearch] = useState(null);
+  const [sortByPoints, setSortByPoints] = useState(false);
 
   // ============ LOADING ============
   if (cl.loading) {
@@ -115,6 +116,16 @@ const ClaimsFreeAgencyScreen = ({ containerStyle, currentDraft, user, setScreen,
 
   const rosterForCategory = cl.activeCategory || cl.selectedCategory;
   const rosterAssets = cl.playerRoster[rosterForCategory] || [];
+
+  const displayAgents = sortByPoints
+    ? [...cl.filteredFreeAgents].sort((a, b) => {
+        const aPrice = cl.livePrices?.[a.symbol] || cl.livePrices?.[a.symbol?.toUpperCase()] || {};
+        const bPrice = cl.livePrices?.[b.symbol] || cl.livePrices?.[b.symbol?.toUpperCase()] || {};
+        const aChange = aPrice.percentChange ?? aPrice.change24h ?? 0;
+        const bChange = bPrice.percentChange ?? bPrice.change24h ?? 0;
+        return (bChange * 10) - (aChange * 10);
+      })
+    : cl.filteredFreeAgents;
 
   // ============ RENDER ============
   return (
@@ -495,14 +506,36 @@ const ClaimsFreeAgencyScreen = ({ containerStyle, currentDraft, user, setScreen,
             {/* Step 2: Select Free Agent (ADD) */}
             <div>
               <div style={{
-                fontSize: '11px',
-                fontWeight: 700,
-                color: HOLO_COLORS.textMuted,
-                textTransform: 'uppercase',
-                letterSpacing: '0.5px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
                 marginBottom: '6px',
               }}>
-                {cl.selectedDrop ? 'Step 2: Select free agent to add' : 'Or start here: Select free agent to add'}
+                <div style={{
+                  fontSize: '11px',
+                  fontWeight: 700,
+                  color: HOLO_COLORS.textMuted,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.5px',
+                }}>
+                  {cl.selectedDrop ? 'Step 2: Select free agent to add' : 'Or start here: Select free agent to add'}
+                </div>
+                <button
+                  onClick={() => setSortByPoints(!sortByPoints)}
+                  style={{
+                    background: sortByPoints ? 'rgba(0, 217, 255, 0.15)' : 'rgba(255, 255, 255, 0.05)',
+                    border: `1px solid ${sortByPoints ? '#00d9ff' : 'rgba(255, 255, 255, 0.1)'}`,
+                    borderRadius: '6px',
+                    padding: '6px 12px',
+                    color: sortByPoints ? '#00d9ff' : '#8b949e',
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    transition: 'all 0.2s ease',
+                  }}
+                >
+                  {sortByPoints ? '✓ Sorted by Points' : 'Sort by Points'}
+                </button>
               </div>
 
               <div style={{
@@ -512,7 +545,7 @@ const ClaimsFreeAgencyScreen = ({ containerStyle, currentDraft, user, setScreen,
                 flexDirection: 'column',
                 gap: '6px',
               }}>
-                {cl.filteredFreeAgents.map(asset => (
+                {displayAgents.map(asset => (
                   <FreeAgentCard
                     key={asset.symbol}
                     asset={asset}
@@ -523,7 +556,7 @@ const ClaimsFreeAgencyScreen = ({ containerStyle, currentDraft, user, setScreen,
                     livePrices={cl.livePrices}
                   />
                 ))}
-                {cl.filteredFreeAgents.length === 0 && (
+                {displayAgents.length === 0 && (
                   <div style={{
                     color: HOLO_COLORS.textMuted,
                     fontSize: '12px',
