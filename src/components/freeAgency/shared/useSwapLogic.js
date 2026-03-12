@@ -10,7 +10,7 @@ import { isSwapLocked } from '../../../utils/baggerBombUtils';
  * Features:
  * - Window status tracking (stocks: 3PM-11:59PM CT, crypto: 6PM-11:59PM CT)
  * - Swap limit tracking (2 per day per player)
- * - Category-locked swaps (steady ↔ steady, risky ↔ risky, etc.)
+ * - Category-locked swaps (neutral ↔ neutral, aggressive ↔ aggressive, etc.)
  * - Selection state management
  * - Swap execution with price locking
  */
@@ -18,8 +18,8 @@ const useSwapLogic = ({ currentDraft, user, onBack, logger = console }) => {
   // ===========================================
   // STATE
   // ===========================================
-  const [freeAgents, setFreeAgents] = useState({ steady: [], risky: [], defensive: [] });
-  const [playerRoster, setPlayerRoster] = useState({ steady: [], risky: [], defensive: [] });
+  const [freeAgents, setFreeAgents] = useState({ neutral: [], aggressive: [], defensive: [] });
+  const [playerRoster, setPlayerRoster] = useState({ neutral: [], aggressive: [], defensive: [] });
   const [swapHistory, setSwapHistory] = useState([]);
   const [swapsRemaining, setSwapsRemaining] = useState(2);
   const [isWindowOpen, setIsWindowOpen] = useState(false);
@@ -30,7 +30,7 @@ const useSwapLogic = ({ currentDraft, user, onBack, logger = console }) => {
   // Selection state
   const [selectedDrop, setSelectedDrop] = useState(null);
   const [selectedAdd, setSelectedAdd] = useState(null);
-  const [selectedCategory, setSelectedCategory] = useState('steady');
+  const [selectedCategory, setSelectedCategory] = useState('neutral');
   const [selectionOrder, setSelectionOrder] = useState(null); // 'add-first' | 'drop-first' | null
 
   // Price data
@@ -52,8 +52,8 @@ const useSwapLogic = ({ currentDraft, user, onBack, logger = console }) => {
   // Flatten roster for easy access
   const allRosterAssets = useMemo(() => {
     return [
-      ...playerRoster.steady,
-      ...playerRoster.risky,
+      ...playerRoster.neutral,
+      ...playerRoster.aggressive,
       ...playerRoster.defensive
     ];
   }, [playerRoster]);
@@ -97,8 +97,8 @@ const useSwapLogic = ({ currentDraft, user, onBack, logger = console }) => {
       return { ...asset, gain, price: livePrice || 0 };
     });
     return {
-      steady: enrichCategory(playerRoster.steady || []),
-      risky: enrichCategory(playerRoster.risky || []),
+      neutral: enrichCategory(playerRoster.neutral || []),
+      aggressive: enrichCategory(playerRoster.aggressive || []),
       defensive: enrichCategory(playerRoster.defensive || []),
     };
   }, [playerRoster, livePrices, currentDraft?.lockedPrices]);
@@ -157,14 +157,14 @@ const useSwapLogic = ({ currentDraft, user, onBack, logger = console }) => {
 
       // Get free agents
       const agents = await freeAgencyService.getFreeAgents(currentDraft.id);
-      setFreeAgents(agents || { steady: [], risky: [], defensive: [] });
+      setFreeAgents(agents || { neutral: [], aggressive: [], defensive: [] });
 
       // Get player roster
       const roster = await freeAgencyService.getPlayerRoster(
         currentDraft.id,
         currentUserId
       );
-      setPlayerRoster(roster || { steady: [], risky: [], defensive: [] });
+      setPlayerRoster(roster || { neutral: [], aggressive: [], defensive: [] });
 
       // Get swap history (all players)
       const history = await freeAgencyService.getSwapHistory(currentDraft.id);
@@ -193,7 +193,7 @@ const useSwapLogic = ({ currentDraft, user, onBack, logger = console }) => {
   // Fetch live prices for all assets (free agents + roster)
   useEffect(() => {
     const allSymbols = new Set();
-    ['steady', 'risky', 'defensive'].forEach(cat => {
+    ['neutral', 'aggressive', 'defensive'].forEach(cat => {
       (freeAgents[cat] || []).forEach(a => { if (a.symbol) allSymbols.add(a.symbol.toUpperCase()); });
       (playerRoster[cat] || []).forEach(a => { if (a.symbol) allSymbols.add(a.symbol.toUpperCase()); });
     });

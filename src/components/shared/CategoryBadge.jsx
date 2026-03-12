@@ -7,7 +7,7 @@ import { HOLO_COLORS, CATEGORY_CONFIG } from '../../constants/holoTheme';
  * Displays asset category (steady/risky/defensive) in various visual styles.
  * Uses centralized CATEGORY_CONFIG from holoTheme.js for consistent colors.
  *
- * @param {string} category - 'steady' | 'risky' | 'defensive'
+ * @param {string} category - 'neutral' | 'aggressive' | 'defensive'
  * @param {string} variant - 'dot' | 'letter' | 'full' | 'pill' (default: 'letter')
  * @param {string} size - 'sm' | 'md' | 'lg' (default: 'md')
  * @param {boolean} glow - Add glow effect to dot (default: false)

@@ -3,8 +3,8 @@ import { HOLO_COLORS, GLOW_EFFECTS } from '../../constants/holoTheme';
 import { UserIcon, BotIcon } from '../../components/draft/HoloIcons';
 import HoldToLaunchButton from '../../components/draft/HoldToLaunchButton';
 import {
-  STEADY_STOCKS,
-  RISKY_STOCKS,
+  NEUTRAL_STOCKS,
+  AGGRESSIVE_STOCKS,
   DEFENSIVE_STOCKS,
   STEADY_CRYPTO,
   RISKY_CRYPTO,
@@ -86,7 +86,7 @@ const GRID_SECTOR_COLORS = {
 // Build asset lookup from all draft assets
 const buildAssetLookup = () => {
   const lookup = {};
-  const allStocks = [...STEADY_STOCKS, ...RISKY_STOCKS, ...DEFENSIVE_STOCKS];
+  const allStocks = [...NEUTRAL_STOCKS, ...AGGRESSIVE_STOCKS, ...DEFENSIVE_STOCKS];
   const allCrypto = [...STEADY_CRYPTO, ...RISKY_CRYPTO, ...DEFENSIVE_CRYPTO];
 
   allStocks.forEach(asset => {
@@ -114,8 +114,8 @@ const getSectorForSymbol = (symbol, draft) => {
   // 2. Check availableAssets (may have been removed but still has data)
   if (draft?.availableAssets) {
     const allAvailable = [
-      ...(draft.availableAssets.steady || []),
-      ...(draft.availableAssets.risky || []),
+      ...(draft.availableAssets.neutral || []),
+      ...(draft.availableAssets.aggressive || []),
       ...(draft.availableAssets.defensive || [])
     ];
     const asset = allAvailable.find(a => a.symbol === symbol);

@@ -643,8 +643,8 @@ const DraftRoomScreen = ({
                     isYou={isYou}
                     isCPU={player.isCPU || false}
                     stats={{
-                      steadyPicked: player.categories?.steady || 0,
-                      riskyPicked: player.categories?.risky || 0,
+                      neutralPicked: player.categories?.neutral || 0,
+                      aggressivePicked: player.categories?.aggressive || 0,
                       defensivePicked: player.categories?.defensive || 0,
                     }}
                     lastPick={stableLastPick?.playerId === player.odUserId ? stableLastPick?.symbol : null}
@@ -683,8 +683,8 @@ const DraftRoomScreen = ({
                     isYou={isYou}
                     isCPU={player.isCPU || false}
                     stats={{
-                      steadyPicked: player.categories?.steady || 0,
-                      riskyPicked: player.categories?.risky || 0,
+                      neutralPicked: player.categories?.neutral || 0,
+                      aggressivePicked: player.categories?.aggressive || 0,
                       defensivePicked: player.categories?.defensive || 0,
                     }}
                     compact={true}
@@ -763,11 +763,11 @@ const DraftRoomScreen = ({
               Last Pick: <span style={{ color: '#e6edf3', fontWeight: '600' }}>{stableLastPick.displayName}</span>
               {' picked '}
               <span style={{
-                color: stableLastPick.category === 'steady' ? '#10b981'
-                     : stableLastPick.category === 'risky' ? '#f59e0b'
+                color: stableLastPick.category === 'neutral' ? '#10b981'
+                     : stableLastPick.category === 'aggressive' ? '#f59e0b'
                      : '#3b82f6',
                 fontWeight: '700',
-                textShadow: showLastPickBanner ? `0 0 10px ${stableLastPick.category === 'steady' ? '#10b981' : stableLastPick.category === 'risky' ? '#f59e0b' : '#3b82f6'}` : 'none',
+                textShadow: showLastPickBanner ? `0 0 10px ${stableLastPick.category === 'neutral' ? '#10b981' : stableLastPick.category === 'aggressive' ? '#f59e0b' : '#3b82f6'}` : 'none',
               }}>
                 {stableLastPick.symbol}
               </span>
@@ -798,12 +798,12 @@ const DraftRoomScreen = ({
             background: 'rgba(10, 14, 20, 0.7)',
             borderBottom: '1px solid var(--holo-border)',
           }}>
-            {['steady', 'risky', 'defensive'].map(cat => {
+            {['neutral', 'aggressive', 'defensive'].map(cat => {
               const isActive = selectedDraftCategory === cat;
               const count = getCategoryCount(cat);
               const catColors = {
-                steady: { color: '#10b981', label: 'Steady' },
-                risky: { color: '#f59e0b', label: 'Risky' },
+                neutral: { color: '#10b981', label: 'Neutral' },
+                aggressive: { color: '#f59e0b', label: 'Aggressive' },
                 defensive: { color: '#3b82f6', label: 'Defensive' },
               };
               const { color, label } = catColors[cat];
@@ -996,7 +996,7 @@ const DraftRoomScreen = ({
                 <path d="M12 11h4" /><path d="M12 16h4" />
                 <path d="M8 11h.01" /><path d="M8 16h.01" />
               </svg>
-              {(myPlayer?.categories?.steady || 0) + (myPlayer?.categories?.risky || 0) + (myPlayer?.categories?.defensive || 0)}/9
+              {(myPlayer?.categories?.neutral || 0) + (myPlayer?.categories?.aggressive || 0) + (myPlayer?.categories?.defensive || 0)}/9
             </button>
           ) : (
             /* Desktop: Full roster gauges */
@@ -1006,12 +1006,12 @@ const DraftRoomScreen = ({
               title="View your roster"
             >
               <RosterGauges
-                steady={{
-                  picked: myPlayer?.categories?.steady || 0,
+                neutral={{
+                  picked: myPlayer?.categories?.neutral || 0,
                   required: 3,
                 }}
-                risky={{
-                  picked: myPlayer?.categories?.risky || 0,
+                aggressive={{
+                  picked: myPlayer?.categories?.aggressive || 0,
                   required: 3,
                 }}
                 defensive={{
@@ -1207,12 +1207,12 @@ const DraftRoomScreen = ({
 
         {/* Mobile Search Modal - Slide-up overlay for stock search */}
         {showMobileSearch && (() => {
-          const catColors = { steady: '#00ffff', risky: '#f59e0b', defensive: '#10b981' };
-          const catLabels = { steady: 'S', risky: 'R', defensive: 'D' };
+          const catColors = { neutral: '#00ffff', aggressive: '#f59e0b', defensive: '#10b981' };
+          const catLabels = { neutral: 'N', aggressive: 'A', defensive: 'D' };
           const q = mobileSearchQuery.toLowerCase();
           const allResults = [
-            ...(roomDraft?.availableAssets?.steady || []).map(a => ({ ...a, category: 'steady' })),
-            ...(roomDraft?.availableAssets?.risky || []).map(a => ({ ...a, category: 'risky' })),
+            ...(roomDraft?.availableAssets?.neutral || []).map(a => ({ ...a, category: 'neutral' })),
+            ...(roomDraft?.availableAssets?.aggressive || []).map(a => ({ ...a, category: 'aggressive' })),
             ...(roomDraft?.availableAssets?.defensive || []).map(a => ({ ...a, category: 'defensive' })),
           ].filter(a => !q ||
             a.symbol?.toLowerCase().includes(q) ||
@@ -1519,10 +1519,10 @@ const DraftRoomScreen = ({
                 padding: '16px 20px',
               }}>
                 {/* Render each category */}
-                {['steady', 'risky', 'defensive'].map(category => {
+                {['neutral', 'aggressive', 'defensive'].map(category => {
                   const categoryColors = {
-                    steady: { color: '#10b981', label: 'STEADY' },
-                    risky: { color: '#f59e0b', label: 'RISKY' },
+                    neutral: { color: '#10b981', label: 'NEUTRAL' },
+                    aggressive: { color: '#f59e0b', label: 'AGGRESSIVE' },
                     defensive: { color: '#3b82f6', label: 'DEFENSIVE' },
                   };
                   const { color, label } = categoryColors[category];
@@ -1576,7 +1576,7 @@ const DraftRoomScreen = ({
                           let sector = null;
                           if (hasAsset && roomDraft?.availableAssets) {
                             // Check all categories in availableAssets
-                            for (const cat of ['steady', 'risky', 'defensive']) {
+                            for (const cat of ['neutral', 'aggressive', 'defensive']) {
                               const assets = roomDraft.availableAssets[cat] || [];
                               const found = assets.find(a => a.symbol === symbol);
                               if (found?.sector) {

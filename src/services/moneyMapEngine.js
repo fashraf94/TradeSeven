@@ -15,7 +15,7 @@
 export const SECTOR_CLASSIFICATION = {
   XLK:  { riskPosture: 'Offensive',  bellwethers: ['AAPL', 'MSFT', 'NVDA'] },
   XLV:  { riskPosture: 'Defensive',  bellwethers: ['LLY', 'UNH', 'JNJ'] },
-  XLF:  { riskPosture: 'Offensive',  bellwethers: ['BRK.B', 'JPM', 'V'] },
+  XLF:  { riskPosture: 'Offensive',  bellwethers: ['BRK-B', 'JPM', 'V'] },
   XLE:  { riskPosture: 'Offensive',  bellwethers: ['XOM', 'CVX', 'COP'] },
   XLY:  { riskPosture: 'Offensive',  bellwethers: ['AMZN', 'TSLA', 'HD'] },
   XLP:  { riskPosture: 'Defensive',  bellwethers: ['PG', 'COST', 'WMT'] },
@@ -41,7 +41,7 @@ export const BELLWETHER_MAP = {
   UNH:  { sector: 'XLV', name: 'UnitedHealth',   weight_approx: 0.10, isBellwether: true },
   JNJ:  { sector: 'XLV', name: 'Johnson & Johnson', weight_approx: 0.08, isBellwether: true },
   // Financials (XLF)
-  'BRK.B': { sector: 'XLF', name: 'Berkshire Hathaway', weight_approx: 0.14, isBellwether: true },
+  'BRK-B': { sector: 'XLF', name: 'Berkshire Hathaway', weight_approx: 0.14, isBellwether: true },
   JPM:  { sector: 'XLF', name: 'JPMorgan Chase', weight_approx: 0.11, isBellwether: true },
   V:    { sector: 'XLF', name: 'Visa',           weight_approx: 0.08, isBellwether: true },
   // Energy (XLE)

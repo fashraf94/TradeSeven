@@ -68,7 +68,7 @@ export const useResearch = () => {
   const [assetPickerType, setAssetPickerType] = useState(null); // 'mustHave' | 'mustAvoid'
 
   // Snake Draft Priority Ranker state
-  const [draftStrategy, setDraftStrategy] = useState(null); // 'steady-first' | 'risky-first' | 'balanced'
+  const [draftStrategy, setDraftStrategy] = useState(null); // 'neutral-first' | 'aggressive-first' | 'balanced'
   const [tier1Picks, setTier1Picks] = useState({ steady: [], risky: [], defensive: [] });
   const [tier2Picks, setTier2Picks] = useState({ steady: [], risky: [], defensive: [] });
   const [draftRankerPhase, setDraftRankerPhase] = useState(null); // 'strategy' | 'tier1' | 'tier2' | 'review'

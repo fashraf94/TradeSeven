@@ -348,8 +348,8 @@ function SnakeDraftTab() {
         </p>
         <div style={{ display: 'flex', gap: 8 }}>
           {[
-            { label: 'Steady', color: C.primary },
-            { label: 'Risky', color: C.amber },
+            { label: 'Neutral', color: C.primary },
+            { label: 'Aggressive', color: C.amber },
             { label: 'Defensive', color: C.green },
           ].map((cat) => (
             <div key={cat.label} style={{

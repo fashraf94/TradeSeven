@@ -90,7 +90,7 @@ import { safePortfolioArray, getUserPortfolioFlat, getOpponentPortfolioFlat, get
 // BaggerBomb V3 portfolio utilities
 import { flattenPortfolio, flattenBench, calculateAssetScoreV3 } from './utils/baggerBombUtils';
 // Snake Draft asset pools
-import { STEADY_STOCKS, RISKY_STOCKS, DEFENSIVE_STOCKS, STEADY_CRYPTO, RISKY_CRYPTO, DEFENSIVE_CRYPTO } from './services/draftAssets';
+import { NEUTRAL_STOCKS, AGGRESSIVE_STOCKS, DEFENSIVE_STOCKS, STEADY_CRYPTO, RISKY_CRYPTO, DEFENSIVE_CRYPTO } from './services/draftAssets';
 import { createInitialFreeAgents } from './services/freeAgentRotationService';
 // Recommendation Engine
 import {
@@ -2325,7 +2325,7 @@ const CATEGORY_ICONS = {
       </svg>
     )
   },
-  steady: {
+  neutral: {
     gradient: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
     shadow: 'rgba(59, 130, 246, 0.4)',
     svg: (
@@ -2372,9 +2372,9 @@ const CURATED_GROUPS = [
     ],
   },
   {
-    id: 'steady',
-    title: 'Steady Performers',
-    iconType: 'steady',
+    id: 'neutral',
+    title: 'Neutral Performers',
+    iconType: 'neutral',
     color: '#3b82f6',
     description: 'Reliable blue chips with consistent returns',
     maxPicks: 2,
@@ -2998,8 +2998,8 @@ const DraftPriorityRanker = ({
 
   // Category colors from spec
   const categoryColors = {
-    steady: '#3b82f6',    // Blue
-    risky: '#ef4444',     // Red
+    neutral: '#3b82f6',    // Blue
+    aggressive: '#ef4444',     // Red
     defensive: '#8b5cf6', // Purple
   };
 
@@ -3008,8 +3008,8 @@ const DraftPriorityRanker = ({
 
   // Get assets for selection - use thesis to determine if crypto or stocks
   const isCryptoMode = thesis?.portfolioType === 'crypto';
-  const steadyAssets = isCryptoMode ? STEADY_CRYPTO : STEADY_STOCKS;
-  const riskyAssets = isCryptoMode ? RISKY_CRYPTO : RISKY_STOCKS;
+  const neutralAssets = isCryptoMode ? STEADY_CRYPTO : NEUTRAL_STOCKS;
+  const aggressiveAssets = isCryptoMode ? RISKY_CRYPTO : AGGRESSIVE_STOCKS;
   const defensiveAssets = isCryptoMode ? DEFENSIVE_CRYPTO : DEFENSIVE_STOCKS;
 
   // Current phase (initialize to 'strategy' if null)
@@ -3092,9 +3092,9 @@ const DraftPriorityRanker = ({
     const allPicks = [];
 
     // Add Tier 1 picks (priority)
-    ['steady', 'risky', 'defensive'].forEach(category => {
+    ['neutral', 'aggressive', 'defensive'].forEach(category => {
       tier1Picks[category].forEach((symbol, index) => {
-        const asset = [...steadyAssets, ...riskyAssets, ...defensiveAssets].find(a => a.symbol === symbol);
+        const asset = [...neutralAssets, ...aggressiveAssets, ...defensiveAssets].find(a => a.symbol === symbol);
         allPicks.push({
           symbol,
           name: asset?.name || symbol,
@@ -3108,9 +3108,9 @@ const DraftPriorityRanker = ({
     });
 
     // Add Tier 2 picks (backup)
-    ['steady', 'risky', 'defensive'].forEach(category => {
+    ['neutral', 'aggressive', 'defensive'].forEach(category => {
       tier2Picks[category].forEach((symbol, index) => {
-        const asset = [...steadyAssets, ...riskyAssets, ...defensiveAssets].find(a => a.symbol === symbol);
+        const asset = [...neutralAssets, ...aggressiveAssets, ...defensiveAssets].find(a => a.symbol === symbol);
         allPicks.push({
           symbol,
           name: asset?.name || symbol,
@@ -3305,12 +3305,12 @@ const DraftPriorityRanker = ({
               justifyContent: 'center',
               boxShadow: `0 4px 12px ${categoryColor}40`,
             }}>
-              {category === 'steady' && (
+              {category === 'neutral' && (
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2">
                   <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
                 </svg>
               )}
-              {category === 'risky' && (
+              {category === 'aggressive' && (
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2">
                   <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
                 </svg>
@@ -3335,8 +3335,8 @@ const DraftPriorityRanker = ({
                 fontSize: '11px',
                 margin: '2px 0 0 0',
               }}>
-                {category === 'steady' && 'Stable blue-chip assets'}
-                {category === 'risky' && 'High volatility plays'}
+                {category === 'neutral' && 'Stable blue-chip assets'}
+                {category === 'aggressive' && 'High volatility plays'}
                 {category === 'defensive' && 'Safe haven positions'}
               </p>
             </div>
@@ -3494,18 +3494,18 @@ const DraftPriorityRanker = ({
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
               {[
                 {
-                  id: 'steady-first',
-                  title: 'Steady First',
+                  id: 'neutral-first',
+                  title: 'Neutral First',
                   emoji: '🛡️',
-                  description: 'Lock in blue-chip assets early, add risky plays later',
-                  color: categoryColors.steady,
+                  description: 'Lock in blue-chip assets early, add aggressive plays later',
+                  color: categoryColors.neutral,
                 },
                 {
-                  id: 'risky-first',
-                  title: 'Risk Early',
+                  id: 'aggressive-first',
+                  title: 'Aggressive First',
                   emoji: '⚡',
                   description: 'Grab high-volatility assets before opponents',
-                  color: categoryColors.risky,
+                  color: categoryColors.aggressive,
                 },
                 {
                   id: 'balanced',
@@ -3625,8 +3625,8 @@ const DraftPriorityRanker = ({
               These are your must-drafts.
             </p>
 
-            {renderCategorySection('steady', 'Steady Assets', steadyAssets, 1)}
-            {renderCategorySection('risky', 'Risky Assets', riskyAssets, 1)}
+            {renderCategorySection('neutral', 'Neutral Assets', neutralAssets, 1)}
+            {renderCategorySection('aggressive', 'Aggressive Assets', aggressiveAssets, 1)}
             {renderCategorySection('defensive', 'Defensive Assets', defensiveAssets, 1)}
           </div>
         )}
@@ -3643,8 +3643,8 @@ const DraftPriorityRanker = ({
               These are alternatives if Tier 1 picks are taken.
             </p>
 
-            {renderCategorySection('steady', 'Steady Assets', steadyAssets, 2)}
-            {renderCategorySection('risky', 'Risky Assets', riskyAssets, 2)}
+            {renderCategorySection('neutral', 'Neutral Assets', neutralAssets, 2)}
+            {renderCategorySection('aggressive', 'Aggressive Assets', aggressiveAssets, 2)}
             {renderCategorySection('defensive', 'Defensive Assets', defensiveAssets, 2)}
           </div>
         )}
@@ -3684,12 +3684,12 @@ const DraftPriorityRanker = ({
                   justifyContent: 'center',
                 }}>
                   <span style={{ fontSize: '16px' }}>
-                    {draftStrategy === 'steady-first' ? '🛡️' : draftStrategy === 'risky-first' ? '⚡' : '⚖️'}
+                    {draftStrategy === 'neutral-first' ? '🛡️' : draftStrategy === 'aggressive-first' ? '⚡' : '⚖️'}
                   </span>
                 </div>
                 <div>
                   <div style={{ color: '#ffffff', fontWeight: '700', fontSize: '14px' }}>
-                    Strategy: {draftStrategy === 'steady-first' ? 'Steady First' : draftStrategy === 'risky-first' ? 'Risk Early' : 'Balanced'}
+                    Strategy: {draftStrategy === 'neutral-first' ? 'Neutral First' : draftStrategy === 'aggressive-first' ? 'Aggressive First' : 'Balanced'}
                   </div>
                   <div style={{ color: '#8b949e', fontSize: '12px' }}>
                     Your chosen draft approach
@@ -3731,7 +3731,7 @@ const DraftPriorityRanker = ({
                 </span>
               </div>
 
-              {['steady', 'risky', 'defensive'].map(category => (
+              {['neutral', 'aggressive', 'defensive'].map(category => (
                 <div key={category} style={{ marginBottom: '8px' }}>
                   <div style={{
                     display: 'flex',
@@ -3816,7 +3816,7 @@ const DraftPriorityRanker = ({
                 </span>
               </div>
 
-              {['steady', 'risky', 'defensive'].map(category => (
+              {['neutral', 'aggressive', 'defensive'].map(category => (
                 <div key={category} style={{ marginBottom: '8px' }}>
                   <div style={{
                     display: 'flex',
@@ -4396,15 +4396,15 @@ const GamePlan = ({
 
     // Group by category for each tier
     const buildTierCategories = (tierAssets) => ({
-      steady: tierAssets.filter(a => a.draftCategory === 'steady').map(a => a.symbol),
-      risky: tierAssets.filter(a => a.draftCategory === 'risky').map(a => a.symbol),
+      neutral: tierAssets.filter(a => a.draftCategory === 'neutral').map(a => a.symbol),
+      aggressive: tierAssets.filter(a => a.draftCategory === 'aggressive').map(a => a.symbol),
       defensive: tierAssets.filter(a => a.draftCategory === 'defensive').map(a => a.symbol),
     });
 
     // Get strategy label
     const getStrategyLabel = (strategy) => {
-      if (strategy === 'steady-first') return 'Steady First';
-      if (strategy === 'risky-first') return 'Risk Early';
+      if (strategy === 'neutral-first') return 'Neutral First';
+      if (strategy === 'aggressive-first') return 'Aggressive First';
       if (strategy === 'balanced') return 'Balanced';
       return 'Custom';
     };
@@ -4414,10 +4414,10 @@ const GamePlan = ({
       const tips = [];
       const strategy = gamePlan.draftStrategy;
 
-      if (strategy === 'risky-first') {
-        tips.push('Your strategy: Prioritize RISKY picks early');
-      } else if (strategy === 'steady-first') {
-        tips.push('Your strategy: Lock in STEADY picks first');
+      if (strategy === 'aggressive-first') {
+        tips.push('Your strategy: Prioritize AGGRESSIVE picks early');
+      } else if (strategy === 'neutral-first') {
+        tips.push('Your strategy: Lock in NEUTRAL picks first');
       } else {
         tips.push('Your strategy: Mix categories each round');
       }
@@ -4462,8 +4462,8 @@ const GamePlan = ({
 
       // Category counts
       categoryCounts: gamePlan.categoryCounts || {
-        steady: portfolio.filter(p => p.draftCategory === 'steady').length,
-        risky: portfolio.filter(p => p.draftCategory === 'risky').length,
+        neutral: portfolio.filter(p => p.draftCategory === 'neutral').length,
+        aggressive: portfolio.filter(p => p.draftCategory === 'aggressive').length,
         defensive: portfolio.filter(p => p.draftCategory === 'defensive').length,
       },
     };
@@ -4654,8 +4654,8 @@ const GamePlan = ({
                   {tierAssets.map((asset, idx) => {
                     // Category styling for Snake Draft
                     const categoryConfig = {
-                      steady: { label: 'Steady', color: '#22c55e', bg: 'rgba(34, 197, 94, 0.2)' },
-                      risky: { label: 'Risky', color: '#f59e0b', bg: 'rgba(245, 158, 11, 0.2)' },
+                      neutral: { label: 'Neutral', color: '#22c55e', bg: 'rgba(34, 197, 94, 0.2)' },
+                      aggressive: { label: 'Aggressive', color: '#f59e0b', bg: 'rgba(245, 158, 11, 0.2)' },
                       defensive: { label: 'Defensive', color: '#3b82f6', bg: 'rgba(59, 130, 246, 0.2)' }
                     };
                     const catConfig = categoryConfig[asset.draftCategory] || categoryConfig.risky;
@@ -4709,7 +4709,7 @@ const GamePlan = ({
               💡 DRAFT TIPS
             </div>
             <ul style={{ color: '#c9d1d9', fontSize: '12px', margin: 0, paddingLeft: '20px', lineHeight: '1.8' }}>
-              <li>Track your category counts - you MUST have 3 Steady, 3 Risky, 3 Defensive</li>
+              <li>Track your category counts - you MUST have 3 Neutral, 3 Aggressive, 3 Defensive</li>
               <li>If picking late in a round, pivot to best available</li>
               <li>Watch what opponents pick - adjust on the fly</li>
             </ul>
@@ -4723,8 +4723,8 @@ const GamePlan = ({
             justifyContent: 'center'
           }}>
             {[
-              { label: 'Steady', key: 'steady', color: '#22c55e' },
-              { label: 'Risky', key: 'risky', color: '#f59e0b' },
+              { label: 'Neutral', key: 'neutral', color: '#22c55e' },
+              { label: 'Aggressive', key: 'aggressive', color: '#f59e0b' },
               { label: 'Defensive', key: 'defensive', color: '#3b82f6' }
             ].map(cat => {
               const count = gamePlan.categoryCounts?.[cat.key] || 0;
@@ -9056,8 +9056,8 @@ const ResearchFlow = ({ stocksData, cryptoData, onUsePortfolio, onClose, colors,
 
   // Snake Draft Priority Ranker state
   const [draftStrategy, setDraftStrategy] = useState(null);
-  const [tier1Picks, setTier1Picks] = useState({ steady: [], risky: [], defensive: [] });
-  const [tier2Picks, setTier2Picks] = useState({ steady: [], risky: [], defensive: [] });
+  const [tier1Picks, setTier1Picks] = useState({ neutral: [], aggressive: [], defensive: [] });
+  const [tier2Picks, setTier2Picks] = useState({ neutral: [], aggressive: [], defensive: [] });
   const [draftRankerPhase, setDraftRankerPhase] = useState(null);
 
   // Money Map state
@@ -9211,8 +9211,8 @@ const ResearchFlow = ({ stocksData, cryptoData, onUsePortfolio, onClose, colors,
     setSelectedAsset(null);
     // Reset draft ranker state
     setDraftStrategy(null);
-    setTier1Picks({ steady: [], risky: [], defensive: [] });
-    setTier2Picks({ steady: [], risky: [], defensive: [] });
+    setTier1Picks({ neutral: [], aggressive: [], defensive: [] });
+    setTier2Picks({ neutral: [], aggressive: [], defensive: [] });
     setDraftRankerPhase(null);
   };
 
@@ -9513,8 +9513,8 @@ const ResearchFlow = ({ stocksData, cryptoData, onUsePortfolio, onClose, colors,
         portfolio: rankerData.portfolio || [],
         isSnakeDraft: true,
         categoryCounts: {
-          steady: rankerData.tier1Picks?.steady?.length || 0,
-          risky: rankerData.tier1Picks?.risky?.length || 0,
+          neutral: rankerData.tier1Picks?.neutral?.length || 0,
+          aggressive: rankerData.tier1Picks?.aggressive?.length || 0,
           defensive: rankerData.tier1Picks?.defensive?.length || 0,
         },
         risks: ['High-priority picks may be taken by opponents'],
@@ -10256,7 +10256,7 @@ const TUTORIALS = {
       {
         icon: '🎯',
         title: 'Build Your Team',
-        description: 'Pick 9 assets total from 75 available. Categories: Steady (safe), Risky (volatile), and Defensive (stable).',
+        description: 'Pick 9 assets total from 75 available. Categories: Neutral (safe), Aggressive (volatile), and Defensive (stable).',
         tip: 'Balance your categories for optimal results!'
       },
       {
@@ -11767,7 +11767,7 @@ export default function PortfolioDuel() {
   // Draft Lobby/Room state - Phase 3
   const [draftState, setDraftState] = useState(null);
   const [draftCopied, setDraftCopied] = useState(false);
-  const [selectedDraftCategory, setSelectedDraftCategory] = useState('steady');
+  const [selectedDraftCategory, setSelectedDraftCategory] = useState('neutral');
   const [draftTimeRemaining, setDraftTimeRemaining] = useState(120);
   const [draftAssetInfoModal, setDraftAssetInfoModal] = useState(null); // Asset to show info for
 
@@ -11865,9 +11865,9 @@ export default function PortfolioDuel() {
   const [researchViewMode, setResearchViewMode] = useState('guided'); // 'guided' | 'classic'
 
   // Snake Draft Priority Ranker state (replaces conviction check for snake-draft battles)
-  const [draftStrategy, setDraftStrategy] = useState(null); // 'steady-first' | 'risky-first' | 'balanced'
-  const [tier1Picks, setTier1Picks] = useState({ steady: [], risky: [], defensive: [] });
-  const [tier2Picks, setTier2Picks] = useState({ steady: [], risky: [], defensive: [] });
+  const [draftStrategy, setDraftStrategy] = useState(null); // 'neutral-first' | 'aggressive-first' | 'balanced'
+  const [tier1Picks, setTier1Picks] = useState({ neutral: [], aggressive: [], defensive: [] });
+  const [tier2Picks, setTier2Picks] = useState({ neutral: [], aggressive: [], defensive: [] });
   const [draftRankerPhase, setDraftRankerPhase] = useState(null); // 'strategy' | 'tier1' | 'tier2' | 'review'
 
   // Desktop background state
@@ -17869,8 +17869,8 @@ export default function PortfolioDuel() {
           portfolio: rankerData.portfolio || [],
           isSnakeDraft: true,
           categoryCounts: {
-            steady: rankerData.tier1Picks?.steady?.length || 0,
-            risky: rankerData.tier1Picks?.risky?.length || 0,
+            neutral: rankerData.tier1Picks?.neutral?.length || 0,
+            aggressive: rankerData.tier1Picks?.aggressive?.length || 0,
             defensive: rankerData.tier1Picks?.defensive?.length || 0,
           },
           risks: ['High-priority picks may be taken by opponents'],
@@ -17905,8 +17905,8 @@ export default function PortfolioDuel() {
       // Reset Draft Ranker state
       setDraftRankerPhase(null);
       setDraftStrategy(null);
-      setTier1Picks({ steady: [], risky: [], defensive: [] });
-      setTier2Picks({ steady: [], risky: [], defensive: [] });
+      setTier1Picks({ neutral: [], aggressive: [], defensive: [] });
+      setTier2Picks({ neutral: [], aggressive: [], defensive: [] });
     };
 
     // Handler to start training battle with portfolio
@@ -17950,8 +17950,8 @@ export default function PortfolioDuel() {
       // Reset Draft Ranker state
       setDraftRankerPhase(null);
       setDraftStrategy(null);
-      setTier1Picks({ steady: [], risky: [], defensive: [] });
-      setTier2Picks({ steady: [], risky: [], defensive: [] });
+      setTier1Picks({ neutral: [], aggressive: [], defensive: [] });
+      setTier2Picks({ neutral: [], aggressive: [], defensive: [] });
     };
 
     // Handler to save game plan as template
@@ -18006,8 +18006,8 @@ export default function PortfolioDuel() {
       // Reset Draft Ranker state when going back
       setDraftRankerPhase(null);
       setDraftStrategy(null);
-      setTier1Picks({ steady: [], risky: [], defensive: [] });
-      setTier2Picks({ steady: [], risky: [], defensive: [] });
+      setTier1Picks({ neutral: [], aggressive: [], defensive: [] });
+      setTier2Picks({ neutral: [], aggressive: [], defensive: [] });
     };
 
     // Get sector color for stock
@@ -19303,8 +19303,8 @@ export default function PortfolioDuel() {
                       // Reset Draft Ranker state
                       setDraftRankerPhase(null);
                       setDraftStrategy(null);
-                      setTier1Picks({ steady: [], risky: [], defensive: [] });
-                      setTier2Picks({ steady: [], risky: [], defensive: [] });
+                      setTier1Picks({ neutral: [], aggressive: [], defensive: [] });
+                      setTier2Picks({ neutral: [], aggressive: [], defensive: [] });
                     }}
                     onBack={handleBackFromGamePlan}
                     colors={colors}

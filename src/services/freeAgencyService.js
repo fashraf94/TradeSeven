@@ -405,7 +405,7 @@ export const processCPUSwap = async (draftId, cpuPlayer) => {
     }
 
     // Pick a random category that has free agents
-    const categories = ['steady', 'risky', 'defensive'];
+    const categories = ['neutral', 'aggressive', 'defensive'];
     const availableCategories = categories.filter(cat =>
       (draft.freeAgents?.[cat]?.length || 0) > 0
     );

@@ -52,12 +52,12 @@ function getFirebaseAdmin() {
  * Strategy: random category from needed categories, random asset from that category.
  */
 function selectAutopickAsset(player, availableAssets) {
-  const categories = player.categories || { steady: 0, risky: 0, defensive: 0 };
+  const categories = player.categories || { neutral: 0, aggressive: 0, defensive: 0 };
 
   // Find categories that still need picks (max 3 per category)
   const neededCategories = [];
-  if ((categories.steady || 0) < 3) neededCategories.push('steady');
-  if ((categories.risky || 0) < 3) neededCategories.push('risky');
+  if ((categories.neutral || 0) < 3) neededCategories.push('neutral');
+  if ((categories.aggressive || 0) < 3) neededCategories.push('aggressive');
   if ((categories.defensive || 0) < 3) neededCategories.push('defensive');
 
   if (neededCategories.length === 0) return null;

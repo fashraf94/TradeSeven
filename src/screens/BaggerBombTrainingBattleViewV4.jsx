@@ -76,6 +76,7 @@ export default function BaggerBombTrainingBattleViewV4({
 }) {
   // State
   const [currentPrices, setCurrentPrices] = useState({});
+  const [previousClosePrices, setPreviousClosePrices] = useState({}); // EODHD-polled previous close prices
   const [loadingPrices, setLoadingPrices] = useState(true);
   const [thresholds, setThresholds] = useState(battle?.thresholds || {});
 
@@ -89,6 +90,33 @@ export default function BaggerBombTrainingBattleViewV4({
   const myData = isCreator ? battle?.creator : battle?.opponent;
   const oppData = isCreator ? battle?.opponent : battle?.creator;
   const [startingPrices, setStartingPrices] = useState(battle?.state?.startingPrices || {});
+
+  // Previous close prices for threshold baseline — layered per-symbol merge:
+  // Layer 1 (base): startingPrices (entry fallback for day 1 / old battles)
+  // Layer 2: Firebase battle.state.previousClosePrices (may be stale after day 1)
+  // Layer 3 (wins): EODHD-polled previousClosePrices (freshest daily data)
+  const previousClosePriceMap = useMemo(() => {
+    const map = { ...(startingPrices || {}) };
+    const fbPrevClose = battle?.state?.previousClosePrices;
+    if (fbPrevClose && typeof fbPrevClose === 'object') {
+      Object.entries(fbPrevClose).forEach(([sym, price]) => {
+        if (price > 0) map[sym] = price;
+      });
+    }
+    if (previousClosePrices && typeof previousClosePrices === 'object') {
+      Object.entries(previousClosePrices).forEach(([sym, price]) => {
+        if (price > 0) map[sym] = price;
+      });
+    }
+    console.log('[BB-Fix] Training previousClosePriceMap:', {
+      sampleSymbol: Object.keys(map)[0],
+      entry: startingPrices?.[Object.keys(map)[0]],
+      firebase: battle?.state?.previousClosePrices?.[Object.keys(map)[0]],
+      eodhd: previousClosePrices?.[Object.keys(map)[0]],
+      result: map[Object.keys(map)[0]],
+    });
+    return map;
+  }, [battle?.state?.previousClosePrices, previousClosePrices, startingPrices]);
 
   // Free agent daily open prices (for card % display — shows today's change)
   const [freeAgentDailyOpens, setFreeAgentDailyOpens] = useState({});
@@ -260,12 +288,27 @@ export default function BaggerBombTrainingBattleViewV4({
         cryptoSymbols.length > 0 ? stockAPI.getMultipleCryptoPrices(cryptoSymbols) : {},
       ]);
 
+      const newPreviousCloses = {};
+
+      // Collect prices and previousClose from EODHD — but NOT high/low.
+      // EODHD data.high/data.low reflect the full trading day including
+      // pre-activation movement, which causes false BaggerBomb/Bust triggers.
       Object.entries(stockData).forEach(([symbol, data]) => {
         if (data?.price) prices[symbol] = data.price;
+        if (data?.previousClose) newPreviousCloses[symbol] = data.previousClose;
       });
       Object.entries(cryptoData).forEach(([symbol, data]) => {
         if (data?.price) prices[symbol] = data.price;
+        if (data?.previousClose) newPreviousCloses[symbol] = data.previousClose;
       });
+
+      if (Object.keys(newPreviousCloses).length > 0) {
+        setPreviousClosePrices(prev => ({ ...prev, ...newPreviousCloses }));
+        console.log('[BB-Fix] Training EODHD previousClose fetched:', {
+          count: Object.keys(newPreviousCloses).length,
+          sample: Object.entries(newPreviousCloses).slice(0, 3).map(([s, p]) => `${s}=${p}`).join(', '),
+        });
+      }
 
       // Extract daily open prices from batch API (used for FreeAgentBar % display)
       const apiDailyOpens = {};
@@ -376,7 +419,17 @@ export default function BaggerBombTrainingBattleViewV4({
       priceChange = -priceChange;
     }
 
-    const multiplier = baseATR > 0 ? priceChange / baseATR : 0;
+    // Compute daily-relative threshold price change for ChamberFuse/ProximityLabel
+    const prevClose = previousClosePriceMap[asset.symbol] || openPrice;
+    let thresholdPriceChange = prevClose > 0
+      ? ((currentPrice - prevClose) / prevClose) * 100
+      : priceChange; // fallback to entry-relative if no prevClose
+    // Short position inversion for threshold
+    if (asset.direction === 'short') {
+      thresholdPriceChange = -thresholdPriceChange;
+    }
+
+    const multiplier = baseATR > 0 ? thresholdPriceChange / baseATR : 0;
 
     const history = {
       maxMultiplier: multiplier > 0 ? multiplier : 0,
@@ -386,19 +439,23 @@ export default function BaggerBombTrainingBattleViewV4({
     const score = calculateAssetScoreV3(
       { ...asset, baseATR, tier },
       priceChange,
-      history
+      history,
+      {}, // extremeChanges
+      thresholdPriceChange
     );
 
     return {
       ...asset,
       priceChange,
+      thresholdPriceChange,
       baseATR,
       points: score.totalPoints,
       badges: score.badges,
       history,
       tierMultiplier: score.tierMultiplier,
+      previousClosePrice: prevClose,
     };
-  }, [currentPrices, startingPrices, thresholds]);
+  }, [currentPrices, startingPrices, thresholds, previousClosePriceMap]);
 
   // Threshold detection for training events (both player + opponent)
   useEffect(() => {
@@ -412,11 +469,12 @@ export default function BaggerBombTrainingBattleViewV4({
         // V5: Skip cash positions entirely — no thresholds, no events
         if (asset.isCash) return;
 
-        const openPrice = asset.swapPrice || startingPrices[asset.symbol] || asset.price || 0;
-        const currentPrice = currentPrices[asset.symbol] || openPrice;
-        if (!openPrice || !currentPrice) return;
+        // Daily baseline for threshold detection (previousClose resets each day)
+        const dailyBaseline = previousClosePriceMap[asset.symbol] || asset.swapPrice || startingPrices[asset.symbol] || asset.price || 0;
+        const currentPrice = currentPrices[asset.symbol] || dailyBaseline;
+        if (!dailyBaseline || !currentPrice) return;
 
-        let priceChange = openPrice > 0 ? ((currentPrice - openPrice) / openPrice) * 100 : 0;
+        let priceChange = dailyBaseline > 0 ? ((currentPrice - dailyBaseline) / dailyBaseline) * 100 : 0;
         // V5: Invert for short positions
         if (asset.direction === 'short') {
           priceChange = -priceChange;
@@ -504,7 +562,7 @@ export default function BaggerBombTrainingBattleViewV4({
 
     detectForPortfolio(myPortfolioRaw, prevPlayerMultRef, playerHistoryRef, myData?.username || 'You');
     detectForPortfolio(oppData?.portfolio, prevOppMultRef, oppHistoryRef, oppData?.username || 'CPU Opponent');
-  }, [currentPrices, startingPrices, thresholds, myPortfolioRaw, oppData?.portfolio, myData?.username, oppData?.username]);
+  }, [currentPrices, startingPrices, previousClosePriceMap, thresholds, myPortfolioRaw, oppData?.portfolio, myData?.username, oppData?.username]);
 
   // Build enriched portfolio (pass tier for conviction multiplier)
   const buildEnrichedPortfolio = useCallback((rawPortfolio) => {

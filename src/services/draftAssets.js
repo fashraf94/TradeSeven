@@ -6,120 +6,130 @@
 // STOCK ASSETS
 // ============================================
 
-export const STEADY_STOCKS = [
-  // Mega-Cap Tech (Established)
-  { symbol: 'AAPL', name: 'Apple', sector: 'Technology' },
-  { symbol: 'MSFT', name: 'Microsoft', sector: 'Technology' },
-  { symbol: 'GOOGL', name: 'Alphabet', sector: 'Technology' },
+// ============================================
+// NEUTRAL STOCKS (25) — Moderate beta, large-cap foundation
+// These stocks move WITH the market
+// ============================================
+export const NEUTRAL_STOCKS = [
+  // Mega-Cap Tech
+  { symbol: 'AAPL', name: 'Apple', category: 'neutral' },
+  { symbol: 'MSFT', name: 'Microsoft', category: 'neutral' },
+  { symbol: 'GOOGL', name: 'Alphabet (Google)', category: 'neutral' },
+  { symbol: 'AVGO', name: 'Broadcom', category: 'neutral' },
 
-  // Financial Giants
-  { symbol: 'JPM', name: 'JPMorgan Chase', sector: 'Financials' },
-  { symbol: 'V', name: 'Visa', sector: 'Financials' },
-  { symbol: 'MA', name: 'Mastercard', sector: 'Financials' },
-  { symbol: 'BAC', name: 'Bank of America', sector: 'Financials' },
-  { symbol: 'WFC', name: 'Wells Fargo', sector: 'Financials' },
+  // Financials
+  { symbol: 'JPM', name: 'JPMorgan Chase', category: 'neutral' },
+  { symbol: 'V', name: 'Visa', category: 'neutral' },
+  { symbol: 'MA', name: 'Mastercard', category: 'neutral' },
+  { symbol: 'BAC', name: 'Bank of America', category: 'neutral' },
+  { symbol: 'WFC', name: 'Wells Fargo', category: 'neutral' },
+  { symbol: 'BRK-B', name: 'Berkshire Hathaway', category: 'neutral' },
+
+  // Consumer
+  { symbol: 'WMT', name: 'Walmart', category: 'neutral' },
+  { symbol: 'COST', name: 'Costco', category: 'neutral' },
+  { symbol: 'HD', name: 'Home Depot', category: 'neutral' },
+  { symbol: 'NKE', name: 'Nike', category: 'neutral' },
+  { symbol: 'SBUX', name: 'Starbucks', category: 'neutral' },
+  { symbol: 'DIS', name: 'Disney', category: 'neutral' },
+
+  // Industrials
+  { symbol: 'HON', name: 'Honeywell', category: 'neutral' },
+  { symbol: 'CAT', name: 'Caterpillar', category: 'neutral' },
+  { symbol: 'GE', name: 'GE Aerospace', category: 'neutral' },
+  { symbol: 'GEV', name: 'GE Vernova', category: 'neutral' },
+  { symbol: 'UNP', name: 'Union Pacific', category: 'neutral' },
+
+  // Tech & Healthcare
+  { symbol: 'CSCO', name: 'Cisco', category: 'neutral' },
+  { symbol: 'TXN', name: 'Texas Instruments', category: 'neutral' },
+  { symbol: 'ABT', name: 'Abbott Laboratories', category: 'neutral' },
+  { symbol: 'DHR', name: 'Danaher', category: 'neutral' },
+];
+
+// ============================================
+// AGGRESSIVE STOCKS (25) — High beta, high-growth upside plays
+// These stocks swing HARDER than the market
+// ============================================
+export const AGGRESSIVE_STOCKS = [
+  // Mega-Cap Growth (High Beta)
+  { symbol: 'NVDA', name: 'NVIDIA', category: 'aggressive' },
+  { symbol: 'TSLA', name: 'Tesla', category: 'aggressive' },
+  { symbol: 'AMD', name: 'Advanced Micro Devices', category: 'aggressive' },
+  { symbol: 'AMZN', name: 'Amazon', category: 'aggressive' },
+  { symbol: 'META', name: 'Meta Platforms', category: 'aggressive' },
+
+  // High-Growth Tech
+  { symbol: 'NFLX', name: 'Netflix', category: 'aggressive' },
+  { symbol: 'CRM', name: 'Salesforce', category: 'aggressive' },
+  { symbol: 'SHOP', name: 'Shopify', category: 'aggressive' },
+  { symbol: 'PLTR', name: 'Palantir', category: 'aggressive' },
+  { symbol: 'SNOW', name: 'Snowflake', category: 'aggressive' },
+  { symbol: 'ADBE', name: 'Adobe', category: 'aggressive' },
+  { symbol: 'QCOM', name: 'Qualcomm', category: 'aggressive' },
+  { symbol: 'INTC', name: 'Intel', category: 'aggressive' },
+
+  // Fintech & Finance (High Beta)
+  { symbol: 'COIN', name: 'Coinbase', category: 'aggressive' },
+  { symbol: 'AFRM', name: 'Affirm', category: 'aggressive' },
+  { symbol: 'HOOD', name: 'Robinhood', category: 'aggressive' },
+  { symbol: 'MS', name: 'Morgan Stanley', category: 'aggressive' },
+
+  // Momentum & Thematic
+  { symbol: 'DKNG', name: 'DraftKings', category: 'aggressive' },
+  { symbol: 'GME', name: 'GameStop', category: 'aggressive' },
+  { symbol: 'BE', name: 'Bloom Energy', category: 'aggressive' },
+  { symbol: 'RKLB', name: 'Rocket Lab', category: 'aggressive' },
+  { symbol: 'MPC', name: 'Marathon Petroleum', category: 'aggressive' },
+  { symbol: 'CRWV', name: 'CoreWeave', category: 'aggressive' },
+  { symbol: 'BA', name: 'Boeing', category: 'aggressive' },
+  { symbol: 'F', name: 'Ford', category: 'aggressive' },
+];
+
+// ============================================
+// DEFENSIVE STOCKS (25) — Low beta, dividends, recession-resistant
+// These stocks RESIST the market
+// ============================================
+export const DEFENSIVE_STOCKS = [
+  // Healthcare Defensive
+  { symbol: 'JNJ', name: 'Johnson & Johnson', category: 'defensive' },
+  { symbol: 'MRK', name: 'Merck', category: 'defensive' },
+  { symbol: 'BMY', name: 'Bristol-Myers Squibb', category: 'defensive' },
+  { symbol: 'GILD', name: 'Gilead Sciences', category: 'defensive' },
+  { symbol: 'AMGN', name: 'Amgen', category: 'defensive' },
+  { symbol: 'CVS', name: 'CVS Health', category: 'defensive' },
 
   // Consumer Staples
-  { symbol: 'PG', name: 'Procter & Gamble', sector: 'Consumer Staples' },
-  { symbol: 'KO', name: 'Coca-Cola', sector: 'Consumer Staples' },
-  { symbol: 'PEP', name: 'PepsiCo', sector: 'Consumer Staples' },
-  { symbol: 'WMT', name: 'Walmart', sector: 'Retail' },
-  { symbol: 'COST', name: 'Costco', sector: 'Retail' },
+  { symbol: 'KO', name: 'Coca-Cola', category: 'defensive' },
+  { symbol: 'PEP', name: 'PepsiCo', category: 'defensive' },
+  { symbol: 'PG', name: 'Procter & Gamble', category: 'defensive' },
+  { symbol: 'GIS', name: 'General Mills', category: 'defensive' },
 
-  // Healthcare Giants
-  { symbol: 'JNJ', name: 'Johnson & Johnson', sector: 'Healthcare' },
-  { symbol: 'UNH', name: 'UnitedHealth', sector: 'Healthcare' },
-  { symbol: 'PFE', name: 'Pfizer', sector: 'Healthcare' },
-  { symbol: 'MRK', name: 'Merck', sector: 'Healthcare' },
-  { symbol: 'ABBV', name: 'AbbVie', sector: 'Healthcare' },
-
-  // Industrial/Conglomerate
-  { symbol: 'BRK.B', name: 'Berkshire Hathaway', sector: 'Conglomerate' },
-  { symbol: 'HON', name: 'Honeywell', sector: 'Industrials' },
-  { symbol: 'MMM', name: '3M', sector: 'Industrials' },
-  { symbol: 'CAT', name: 'Caterpillar', sector: 'Industrials' },
-
-  // Communication
-  { symbol: 'VZ', name: 'Verizon', sector: 'Communication' },
-  { symbol: 'T', name: 'AT&T', sector: 'Communication' },
-  { symbol: 'CMCSA', name: 'Comcast', sector: 'Communication' }
-];
-
-export const RISKY_STOCKS = [
-  // High-Growth Tech
-  { symbol: 'NVDA', name: 'NVIDIA', sector: 'Technology' },
-  { symbol: 'TSLA', name: 'Tesla', sector: 'Automotive' },
-  { symbol: 'META', name: 'Meta Platforms', sector: 'Technology' },
-  { symbol: 'AMD', name: 'AMD', sector: 'Technology' },
-  { symbol: 'CRM', name: 'Salesforce', sector: 'Technology' },
-  { symbol: 'NFLX', name: 'Netflix', sector: 'Entertainment' },
-  { symbol: 'SHOP', name: 'Shopify', sector: 'Technology' },
-  { symbol: 'XYZ', name: 'Block', sector: 'Fintech' },
-  { symbol: 'SNOW', name: 'Snowflake', sector: 'Technology' },
-  { symbol: 'PLTR', name: 'Palantir', sector: 'Technology' },
-
-  // Biotech/Pharma (High Risk)
-  { symbol: 'MRNA', name: 'Moderna', sector: 'Biotech' },
-  { symbol: 'BNTX', name: 'BioNTech', sector: 'Biotech' },
-  { symbol: 'CRSP', name: 'CRISPR Therapeutics', sector: 'Biotech' },
-
-  // EV/Clean Energy
-  { symbol: 'RIVN', name: 'Rivian', sector: 'Automotive' },
-  { symbol: 'LCID', name: 'Lucid Motors', sector: 'Automotive' },
-  { symbol: 'ENPH', name: 'Enphase Energy', sector: 'Energy' },
-  { symbol: 'PLUG', name: 'Plug Power', sector: 'Energy' },
-
-  // High-Beta Tech
-  { symbol: 'ROKU', name: 'Roku', sector: 'Technology' },
-  { symbol: 'DKNG', name: 'DraftKings', sector: 'Entertainment' },
-  { symbol: 'COIN', name: 'Coinbase', sector: 'Fintech' },
-  { symbol: 'HOOD', name: 'Robinhood', sector: 'Fintech' },
-  { symbol: 'AFRM', name: 'Affirm', sector: 'Fintech' },
-  { symbol: 'UPST', name: 'Upstart', sector: 'Fintech' },
-
-  // Meme/Momentum
-  { symbol: 'GME', name: 'GameStop', sector: 'Retail' },
-  { symbol: 'AMC', name: 'AMC Entertainment', sector: 'Entertainment' }
-];
-
-export const DEFENSIVE_STOCKS = [
   // Utilities
-  { symbol: 'NEE', name: 'NextEra Energy', sector: 'Utilities' },
-  { symbol: 'DUK', name: 'Duke Energy', sector: 'Utilities' },
-  { symbol: 'SO', name: 'Southern Company', sector: 'Utilities' },
-  { symbol: 'D', name: 'Dominion Energy', sector: 'Utilities' },
-  { symbol: 'AEP', name: 'American Electric Power', sector: 'Utilities' },
-  { symbol: 'XEL', name: 'Xcel Energy', sector: 'Utilities' },
+  { symbol: 'NEE', name: 'NextEra Energy', category: 'defensive' },
+  { symbol: 'DUK', name: 'Duke Energy', category: 'defensive' },
+  { symbol: 'SO', name: 'Southern Company', category: 'defensive' },
+  { symbol: 'D', name: 'Dominion Energy', category: 'defensive' },
+  { symbol: 'AEP', name: 'American Electric Power', category: 'defensive' },
+  { symbol: 'XEL', name: 'Xcel Energy', category: 'defensive' },
 
   // REITs
-  { symbol: 'AMT', name: 'American Tower', sector: 'REIT' },
-  { symbol: 'PLD', name: 'Prologis', sector: 'REIT' },
-  { symbol: 'CCI', name: 'Crown Castle', sector: 'REIT' },
-  { symbol: 'EQIX', name: 'Equinix', sector: 'REIT' },
-  { symbol: 'O', name: 'Realty Income', sector: 'REIT' },
+  { symbol: 'AMT', name: 'American Tower', category: 'defensive' },
+  { symbol: 'PLD', name: 'Prologis', category: 'defensive' },
+  { symbol: 'CCI', name: 'Crown Castle', category: 'defensive' },
+  { symbol: 'EQIX', name: 'Equinix', category: 'defensive' },
 
-  // Consumer Defensive
-  { symbol: 'CL', name: 'Colgate-Palmolive', sector: 'Consumer Staples' },
-  { symbol: 'GIS', name: 'General Mills', sector: 'Consumer Staples' },
-  { symbol: 'K', name: 'Kellogg', sector: 'Consumer Staples' },
-  { symbol: 'KMB', name: 'Kimberly-Clark', sector: 'Consumer Staples' },
-  { symbol: 'SJM', name: 'JM Smucker', sector: 'Consumer Staples' },
-
-  // Healthcare Defensive
-  { symbol: 'BMY', name: 'Bristol-Myers Squibb', sector: 'Healthcare' },
-  { symbol: 'GILD', name: 'Gilead Sciences', sector: 'Healthcare' },
-  { symbol: 'AMGN', name: 'Amgen', sector: 'Healthcare' },
-  { symbol: 'CVS', name: 'CVS Health', sector: 'Healthcare' },
-  { symbol: 'WBA', name: 'Walgreens', sector: 'Healthcare' },
-
-  // Gold/Precious Metals
-  { symbol: 'NEM', name: 'Newmont', sector: 'Materials' },
-  { symbol: 'GOLD', name: 'Barrick Gold', sector: 'Materials' },
-
-  // Defense
-  { symbol: 'LMT', name: 'Lockheed Martin', sector: 'Defense' },
-  { symbol: 'RTX', name: 'RTX (Raytheon)', sector: 'Defense' }
+  // Defense & Energy
+  { symbol: 'LMT', name: 'Lockheed Martin', category: 'defensive' },
+  { symbol: 'RTX', name: 'RTX (Raytheon)', category: 'defensive' },
+  { symbol: 'XOM', name: 'ExxonMobil', category: 'defensive' },
+  { symbol: 'COP', name: 'ConocoPhillips', category: 'defensive' },
+  { symbol: 'PWR', name: 'Quanta Services', category: 'defensive' },
 ];
+
+// Backward-compatible aliases (safety net for any missed imports)
+export const STEADY_STOCKS = NEUTRAL_STOCKS;
+export const RISKY_STOCKS = AGGRESSIVE_STOCKS;
 
 // ============================================
 // CRYPTO ASSETS
@@ -219,14 +229,15 @@ export const DEFENSIVE_CRYPTO = [
 export function getAssetPool(type) {
   if (type === 'stocks') {
     return {
-      steady: [...STEADY_STOCKS],
-      risky: [...RISKY_STOCKS],
+      neutral: [...NEUTRAL_STOCKS],
+      aggressive: [...AGGRESSIVE_STOCKS],
       defensive: [...DEFENSIVE_STOCKS]
     };
   } else {
+    // Crypto drafts still use steady/risky/defensive keys for now
     return {
-      steady: [...STEADY_CRYPTO],
-      risky: [...RISKY_CRYPTO],
+      neutral: [...STEADY_CRYPTO],
+      aggressive: [...RISKY_CRYPTO],
       defensive: [...DEFENSIVE_CRYPTO]
     };
   }
@@ -237,7 +248,7 @@ export function getAssetPool(type) {
  */
 export function getTotalAssetCount(type) {
   const pool = getAssetPool(type);
-  return pool.steady.length + pool.risky.length + pool.defensive.length;
+  return pool.neutral.length + pool.aggressive.length + pool.defensive.length;
 }
 
 /**
@@ -286,9 +297,11 @@ export function shuffleArray(array) {
 }
 
 export default {
+  NEUTRAL_STOCKS,
+  AGGRESSIVE_STOCKS,
+  DEFENSIVE_STOCKS,
   STEADY_STOCKS,
   RISKY_STOCKS,
-  DEFENSIVE_STOCKS,
   STEADY_CRYPTO,
   RISKY_CRYPTO,
   DEFENSIVE_CRYPTO,

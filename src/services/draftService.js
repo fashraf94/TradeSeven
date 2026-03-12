@@ -61,6 +61,16 @@ const removeUndefined = (obj) => {
   return obj;
 };
 
+// Helper to normalize category keys (handles old drafts with steady/risky keys)
+function normalizeCategoryKeys(categories) {
+  if (!categories) return { neutral: 0, aggressive: 0, defensive: 0 };
+  return {
+    neutral: categories.neutral || categories.steady || 0,
+    aggressive: categories.aggressive || categories.risky || 0,
+    defensive: categories.defensive || 0,
+  };
+}
+
 // ============================================
 // DRAFT CREATION
 // ============================================
@@ -93,7 +103,7 @@ export async function createMultiplayerDraft(userId, username, type, startTimeMi
       isCPU: false,
       picks: [],
       pickCategories: [],
-      categories: { steady: 0, risky: 0, defensive: 0 },
+      categories: { neutral: 0, aggressive: 0, defensive: 0 },
       lastSeen: new Date().toISOString(),
       isAbsent: false
     }],
@@ -138,7 +148,7 @@ export async function createTrainingDraft(userId, username, type) {
     isCPU: true,
     picks: [],
     pickCategories: [],
-    categories: { steady: 0, risky: 0, defensive: 0 }
+    categories: { neutral: 0, aggressive: 0, defensive: 0 }
   }));
 
   // Human player + 3 CPUs
@@ -151,7 +161,7 @@ export async function createTrainingDraft(userId, username, type) {
       isCPU: false,
       picks: [],
       pickCategories: [],
-      categories: { steady: 0, risky: 0, defensive: 0 },
+      categories: { neutral: 0, aggressive: 0, defensive: 0 },
       lastSeen: new Date().toISOString(),
       isAbsent: false
     },
@@ -237,7 +247,7 @@ export async function joinDraftByCode(code, userId, username) {
     isCPU: false,
     picks: [],
     pickCategories: [],
-    categories: { steady: 0, risky: 0, defensive: 0 },
+    categories: { neutral: 0, aggressive: 0, defensive: 0 },
     lastSeen: new Date().toISOString(),
     isAbsent: false
   };
@@ -594,8 +604,8 @@ export async function handleAutopick(draftId, userId) {
 
   // Find needed category (each player needs 3 of each)
   const neededCategories = [];
-  if ((player.categories?.steady || 0) < 3) neededCategories.push('steady');
-  if ((player.categories?.risky || 0) < 3) neededCategories.push('risky');
+  if ((player.categories?.neutral || 0) < 3) neededCategories.push('neutral');
+  if ((player.categories?.aggressive || 0) < 3) neededCategories.push('aggressive');
   if ((player.categories?.defensive || 0) < 3) neededCategories.push('defensive');
 
   if (neededCategories.length === 0) {
@@ -650,8 +660,8 @@ export async function processCPUTurn(draftId) {
 
   // Generate pick
   const neededCategories = [];
-  if (currentPlayer.categories.steady < 3) neededCategories.push('steady');
-  if (currentPlayer.categories.risky < 3) neededCategories.push('risky');
+  if (currentPlayer.categories.neutral < 3) neededCategories.push('neutral');
+  if (currentPlayer.categories.aggressive < 3) neededCategories.push('aggressive');
   if (currentPlayer.categories.defensive < 3) neededCategories.push('defensive');
 
   const category = neededCategories[Math.floor(Math.random() * neededCategories.length)];

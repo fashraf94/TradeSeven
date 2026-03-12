@@ -11,15 +11,15 @@ import React from 'react';
 const CommandDeckYouPanel = ({
   username = 'YOU',
   stats = {
-    steadyPicked: 0,
-    riskyPicked: 0,
+    neutralPicked: 0,
+    aggressivePicked: 0,
     defensivePicked: 0,
   },
   isYourTurn = false,
   totalValue = 0,
 }) => {
   // Calculate total picks
-  const totalPicks = stats.steadyPicked + stats.riskyPicked + stats.defensivePicked;
+  const totalPicks = stats.neutralPicked + stats.aggressivePicked + stats.defensivePicked;
 
   // Format display value (placeholder for now)
   const formatValue = (val) => {
@@ -138,7 +138,7 @@ const CommandDeckYouPanel = ({
       >
         <span>{formatValue(totalValue)}</span>
         <span style={{ opacity: 0.5 }}>|</span>
-        <span>R{stats.riskyPicked}</span>
+        <span>A{stats.aggressivePicked}</span>
         <span style={{ opacity: 0.5 }}>|</span>
         <span>D{stats.defensivePicked}</span>
       </div>

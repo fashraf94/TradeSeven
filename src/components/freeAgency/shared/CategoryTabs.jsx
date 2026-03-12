@@ -5,7 +5,7 @@ import { HOLO_COLORS, CATEGORY_CONFIG } from '../../../constants/holoTheme';
  * CategoryTabs - Tab buttons for filtering by asset category
  *
  * Features:
- * - Three tabs: Steady, Risky, Defensive
+ * - Three tabs: Neutral, Aggressive, Defensive
  * - Shows count of available free agents per category
  * - Highlights selected tab with category color
  * - Disabled state when swapping is blocked
@@ -14,9 +14,9 @@ const CategoryTabs = ({
   selectedCategory,
   onSelectCategory,
   disabled = false,
-  counts = { steady: 0, risky: 0, defensive: 0 } // Number of free agents in each
+  counts = { neutral: 0, aggressive: 0, defensive: 0 } // Number of free agents in each
 }) => {
-  const categories = ['steady', 'risky', 'defensive'];
+  const categories = ['neutral', 'aggressive', 'defensive'];
 
   return (
     <div style={{

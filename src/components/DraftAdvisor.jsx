@@ -146,8 +146,8 @@ const STOCK_ANALYSIS_DATA = {
 
 // Helper to get category emoji
 const getCategoryEmoji = (category) => {
-  if (category === 'steady') return '🛡️';
-  if (category === 'risky') return '⚡';
+  if (category === 'neutral') return '🛡️';
+  if (category === 'aggressive') return '⚡';
   if (category === 'defensive') return '🏛️';
   return '📊';
 };
@@ -290,11 +290,11 @@ const NotesModal = ({ isOpen, onClose, notes }) => {
                       .filter(([_, picks]) => picks && picks.length > 0)
                       .map(([category, picks]) => (
                         <span key={category} style={{
-                          background: category === 'steady' ? 'rgba(59, 130, 246, 0.2)' :
-                                      category === 'risky' ? 'rgba(239, 68, 68, 0.2)' :
+                          background: category === 'neutral' ? 'rgba(59, 130, 246, 0.2)' :
+                                      category === 'aggressive' ? 'rgba(239, 68, 68, 0.2)' :
                                       'rgba(139, 92, 246, 0.2)',
-                          border: `1px solid ${category === 'steady' ? '#3b82f6' :
-                                              category === 'risky' ? '#ef4444' : '#8b5cf6'}40`,
+                          border: `1px solid ${category === 'neutral' ? '#3b82f6' :
+                                              category === 'aggressive' ? '#ef4444' : '#8b5cf6'}40`,
                           padding: '4px 8px',
                           borderRadius: '6px',
                           fontSize: '12px'
@@ -381,8 +381,8 @@ const NotesModal = ({ isOpen, onClose, notes }) => {
 export default function DraftAdvisor({
   myPicks = [],
   availableStocks = [],
-  availableSteady = [],
-  availableRisky = [],
+  availableNeutral = [],
+  availableAggressive = [],
   availableDefensive = [],
   categoryRequirements = null,
   draftPosition = null,
@@ -490,12 +490,12 @@ export default function DraftAdvisor({
             myPicks: myPicks.map(p => p.symbol || p.name || p),
             myPicksDetailed,
             availableStocks: availableStocks.map(s => s.symbol || s.name || s),
-            availableSteady: availableSteady.map(s => ({
+            availableNeutral: availableNeutral.map(s => ({
               symbol: s.symbol,
               name: s.name,
               change24h: s.percentChange || s.change24h || 0
             })),
-            availableRisky: availableRisky.map(s => ({
+            availableAggressive: availableAggressive.map(s => ({
               symbol: s.symbol,
               name: s.name,
               change24h: s.percentChange || s.change24h || 0
@@ -557,12 +557,12 @@ export default function DraftAdvisor({
           myPicks: myPicks.map(p => p.symbol || p.name || p),
           myPicksDetailed,
           availableStocks: availableStocks.map(s => s.symbol || s.name || s),
-          availableSteady: availableSteady.map(s => ({
+          availableNeutral: availableNeutral.map(s => ({
             symbol: s.symbol,
             name: s.name,
             change24h: s.percentChange || s.change24h || 0
           })),
-          availableRisky: availableRisky.map(s => ({
+          availableAggressive: availableAggressive.map(s => ({
             symbol: s.symbol,
             name: s.name,
             change24h: s.percentChange || s.change24h || 0
@@ -990,13 +990,13 @@ export default function DraftAdvisor({
       }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
           <span>Picks: {myPicks.length}</span>
-          <span>Available: {availableSteady.length + availableRisky.length + availableDefensive.length || availableStocks.length}</span>
+          <span>Available: {availableNeutral.length + availableAggressive.length + availableDefensive.length || availableStocks.length}</span>
           {round && <span>Round {round}</span>}
         </div>
         {categoryRequirements && (
           <div style={{ display: 'flex', gap: '8px', justifyContent: 'center', marginTop: '4px' }}>
-            <span>📊 {categoryRequirements.steadyPicked || 0}/{categoryRequirements.steadyRequired || 0}</span>
-            <span>🔥 {categoryRequirements.riskyPicked || 0}/{categoryRequirements.riskyRequired || 0}</span>
+            <span>📊 {categoryRequirements.neutralPicked || 0}/{categoryRequirements.neutralRequired || 0}</span>
+            <span>🔥 {categoryRequirements.aggressivePicked || 0}/{categoryRequirements.aggressiveRequired || 0}</span>
             <span>🛡️ {categoryRequirements.defensivePicked || 0}/{categoryRequirements.defensiveRequired || 0}</span>
           </div>
         )}

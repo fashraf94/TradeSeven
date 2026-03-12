@@ -32,7 +32,7 @@ import SectorTab from './SectorTab';
  * Props:
  * - asset: { symbol, name, price, percentChange?, change?, sector? }
  * - sector: string (for sector badge color)
- * - category: 'steady' | 'risky' | 'defensive' (optional, for draft context)
+ * - category: 'neutral' | 'aggressive' | 'defensive' (optional, for draft context)
  * - isMyTurn: boolean (default: false) - shows ON THE CLOCK alert
  * - timeRemaining: number (default: 0) - seconds remaining in draft
  * - canPick: boolean (default: false) - enables acquire button in draft
@@ -238,7 +238,7 @@ const AssetResearchModal = ({
 
   // Category styles derived from CATEGORY_CONFIG
   const getCategoryStyle = (cat) => {
-    const config = CATEGORY_CONFIG[cat] || CATEGORY_CONFIG.steady;
+    const config = CATEGORY_CONFIG[cat] || CATEGORY_CONFIG.neutral;
     const color = config.color;
     // Convert hex to rgba for backgrounds/borders
     const hexToRgba = (hex, alpha) => {

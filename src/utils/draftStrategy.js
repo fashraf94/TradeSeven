@@ -8,7 +8,7 @@
 
 // Asset category mappings for Snake Draft
 // These match the categories used in draftAssets.js
-const STEADY_SYMBOLS = new Set([
+const NEUTRAL_SYMBOLS = new Set([
   // Mega-Cap Tech (Established)
   'AAPL', 'MSFT', 'GOOGL',
   // Financial Giants
@@ -18,14 +18,14 @@ const STEADY_SYMBOLS = new Set([
   // Healthcare Giants
   'JNJ', 'UNH', 'PFE', 'MRK', 'ABBV',
   // Industrial/Conglomerate
-  'BRK.B', 'HON', 'MMM', 'CAT',
+  'BRK-B', 'HON', 'MMM', 'CAT',
   // Communication
   'VZ', 'T', 'CMCSA',
-  // Steady Crypto
+  // Neutral Crypto
   'BTC', 'ETH'
 ]);
 
-const RISKY_SYMBOLS = new Set([
+const AGGRESSIVE_SYMBOLS = new Set([
   // High-Growth Tech
   'NVDA', 'TSLA', 'META', 'AMD', 'CRM', 'NFLX', 'SHOP', 'XYZ', 'SNOW', 'PLTR',
   // Biotech/Pharma
@@ -36,7 +36,7 @@ const RISKY_SYMBOLS = new Set([
   'ROKU', 'DKNG', 'COIN', 'HOOD', 'AFRM', 'UPST',
   // Meme/Momentum
   'GME', 'AMC',
-  // Risky Crypto
+  // Aggressive Crypto
   'SOL', 'DOGE', 'SHIB', 'PEPE', 'AVAX', 'MATIC', 'DOT'
 ]);
 
@@ -58,15 +58,15 @@ const DEFENSIVE_SYMBOLS = new Set([
 /**
  * Determines the draft category for an asset
  * @param {string} symbol - Asset symbol
- * @returns {string} - 'steady', 'risky', or 'defensive'
+ * @returns {string} - 'neutral', 'aggressive', or 'defensive'
  */
 export function getAssetCategory(symbol) {
   const upperSymbol = symbol?.toUpperCase();
-  if (STEADY_SYMBOLS.has(upperSymbol)) return 'steady';
-  if (RISKY_SYMBOLS.has(upperSymbol)) return 'risky';
+  if (NEUTRAL_SYMBOLS.has(upperSymbol)) return 'neutral';
+  if (AGGRESSIVE_SYMBOLS.has(upperSymbol)) return 'aggressive';
   if (DEFENSIVE_SYMBOLS.has(upperSymbol)) return 'defensive';
   // Default categorization based on common patterns
-  return 'risky'; // Unknown assets default to risky
+  return 'aggressive'; // Unknown assets default to aggressive
 }
 
 /**
@@ -120,10 +120,10 @@ export function generateSnakeDraftStrategyText(sortedPortfolio, thesis) {
   // Group picks by tier and category
   const getPicksByTierAndCategory = (tier) => {
     const tierAssets = sortedPortfolio.filter(p => p.tier === tier);
-    const steady = tierAssets.filter(p => p.draftCategory === 'steady').map(p => p.symbol);
-    const risky = tierAssets.filter(p => p.draftCategory === 'risky').map(p => p.symbol);
+    const neutral = tierAssets.filter(p => p.draftCategory === 'neutral').map(p => p.symbol);
+    const aggressive = tierAssets.filter(p => p.draftCategory === 'aggressive').map(p => p.symbol);
     const defensive = tierAssets.filter(p => p.draftCategory === 'defensive').map(p => p.symbol);
-    return { steady, risky, defensive };
+    return { neutral, aggressive, defensive };
   };
 
   const tier1 = getPicksByTierAndCategory(1);
@@ -137,8 +137,8 @@ export function generateSnakeDraftStrategyText(sortedPortfolio, thesis) {
 
   const formatTierPicks = (tierPicks) => {
     const parts = [
-      formatCategoryPicks('Steady', tierPicks.steady),
-      formatCategoryPicks('Risky', tierPicks.risky),
+      formatCategoryPicks('Neutral', tierPicks.neutral),
+      formatCategoryPicks('Aggressive', tierPicks.aggressive),
       formatCategoryPicks('Defensive', tierPicks.defensive)
     ].filter(p => p);
     return parts.length > 0 ? parts.join('\n') : 'None selected';
@@ -146,8 +146,8 @@ export function generateSnakeDraftStrategyText(sortedPortfolio, thesis) {
 
   // Count categories in portfolio
   const categoryCounts = {
-    steady: sortedPortfolio.filter(p => p.draftCategory === 'steady').length,
-    risky: sortedPortfolio.filter(p => p.draftCategory === 'risky').length,
+    neutral: sortedPortfolio.filter(p => p.draftCategory === 'neutral').length,
+    aggressive: sortedPortfolio.filter(p => p.draftCategory === 'aggressive').length,
     defensive: sortedPortfolio.filter(p => p.draftCategory === 'defensive').length
   };
 
@@ -179,8 +179,8 @@ ${formatTierPicks(tier3)}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 📊 CATEGORY TRACKER
-□ Steady: ${categoryCounts.steady}/3 needed
-□ Risky: ${categoryCounts.risky}/3 needed
+□ Neutral: ${categoryCounts.neutral}/3 needed
+□ Aggressive: ${categoryCounts.aggressive}/3 needed
 □ Defensive: ${categoryCounts.defensive}/3 needed
 
 💡 DRAFT TIPS
@@ -203,8 +203,8 @@ export function createSnakeDraftGamePlan(portfolio, thesis, metadata = {}) {
 
   // Calculate category counts for display
   const categoryCounts = {
-    steady: sortedPortfolio.filter(p => p.draftCategory === 'steady').length,
-    risky: sortedPortfolio.filter(p => p.draftCategory === 'risky').length,
+    neutral: sortedPortfolio.filter(p => p.draftCategory === 'neutral').length,
+    aggressive: sortedPortfolio.filter(p => p.draftCategory === 'aggressive').length,
     defensive: sortedPortfolio.filter(p => p.draftCategory === 'defensive').length
   };
 

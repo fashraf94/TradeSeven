@@ -27,8 +27,8 @@ const RosterSection = ({
 }) => {
   // Flatten roster with gains for display
   const allAssets = [
-    ...(roster.steady || []),
-    ...(roster.risky || []),
+    ...(roster.neutral || []),
+    ...(roster.aggressive || []),
     ...(roster.defensive || []),
   ];
 

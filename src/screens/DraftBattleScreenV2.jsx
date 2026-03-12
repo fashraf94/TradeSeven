@@ -446,7 +446,7 @@ const DraftBattleScreenV2 = ({
             gain: 0,
             lockedPrice: currentDraft.lockedPrices?.[symbol] || 0,
             currentPrice: 0,
-            category: player.pickCategories?.[symbol] || 'steady',
+            category: player.pickCategories?.[symbol] || 'neutral',
             totalScore: 0,
           })),
           bestAsset: { symbol: '-', gain: 0, totalScore: 0 },
@@ -576,7 +576,7 @@ const DraftBattleScreenV2 = ({
 
         for (let pickIndex = 0; pickIndex < (player.picks || []).length; pickIndex++) {
           const symbol = player.picks[pickIndex];
-          const category = player.pickCategories?.[pickIndex] || 'steady';
+          const category = player.pickCategories?.[pickIndex] || 'neutral';
 
           // Normalize symbol for lookup
           let lookupKey;

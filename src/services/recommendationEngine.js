@@ -19,7 +19,7 @@ const STOCK_SECTORS = {
 
 // Volatility classification
 const HIGH_VOLATILITY = ['TSLA', 'NVDA', 'AMD', 'COIN', 'GME', 'AMC', 'RIVN', 'LCID', 'PLTR', 'SNAP', 'HOOD', 'MARA', 'RIOT', 'MSTR', 'BTC', 'ETH', 'SOL', 'DOGE', 'SHIB', 'XRP', 'ADA', 'AVAX', 'DOT', 'MATIC', 'LINK', 'UNI', 'AAVE', 'CRV', 'APE', 'PEPE', 'WIF', 'BONK', 'NEAR', 'INJ', 'TIA', 'SUI', 'SEI'];
-const LOW_VOLATILITY = ['JNJ', 'PG', 'KO', 'PEP', 'WMT', 'MCD', 'VZ', 'T', 'SO', 'DUK', 'SPY', 'QQQ', 'DIA', 'IWM', 'VTI', 'VOO', 'BRK.B', 'UNH', 'HD', 'COST', 'USDT', 'USDC', 'DAI', 'BUSD'];
+const LOW_VOLATILITY = ['JNJ', 'PG', 'KO', 'PEP', 'WMT', 'MCD', 'VZ', 'T', 'SO', 'DUK', 'SPY', 'QQQ', 'DIA', 'IWM', 'VTI', 'VOO', 'BRK-B', 'UNH', 'HD', 'COST', 'USDT', 'USDC', 'DAI', 'BUSD'];
 
 /**
  * Get sector for a stock symbol
@@ -776,7 +776,7 @@ function analyzeMustHaves(mustHavePicks) {
   }
 
   // Check for mega-cap bias
-  const megaCaps = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'NVDA', 'META', 'TSLA', 'BRK.B'];
+  const megaCaps = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'NVDA', 'META', 'TSLA', 'BRK-B'];
   const megaCapCount = mustHavePicks.filter(p => megaCaps.includes(p.symbol)).length;
   if (megaCapCount >= 3) {
     analysis.characteristics.push('mega-cap-heavy');
@@ -866,7 +866,7 @@ function getSuggestions(analysis, selectedSectors, riskStyle) {
 
   if (riskStyle === 'conservative' && suggestions.safePlays.length < 3) {
     suggestions.safePlays.push(
-      { symbol: 'BRK.B', reason: 'Diversified conglomerate', tag: 'DIVERSIFIED' },
+      { symbol: 'BRK-B', reason: 'Diversified conglomerate', tag: 'DIVERSIFIED' },
       { symbol: 'V', reason: 'Stable fintech leader', tag: 'FINTECH' }
     );
   }

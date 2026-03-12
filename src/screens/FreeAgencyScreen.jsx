@@ -8,7 +8,7 @@ const FreeAgencyScreen = ({
 }) => {
   const [freeAgents, setFreeAgents] = useState({ steady: [], risky: [], defensive: [] });
   const [playerRoster, setPlayerRoster] = useState({ steady: [], risky: [], defensive: [] });
-  const [selectedCategory, setSelectedCategory] = useState('steady');
+  const [selectedCategory, setSelectedCategory] = useState('neutral');
   const [swapsRemaining, setSwapsRemaining] = useState(2);
   const [isWindowOpen, setIsWindowOpen] = useState(false);
   const [timeInfo, setTimeInfo] = useState(null);
@@ -234,7 +234,7 @@ const FreeAgencyScreen = ({
               📋 YOUR ROSTER - Tap to drop
             </h2>
 
-            {['steady', 'risky', 'defensive'].map(category => (
+            {['neutral', 'aggressive', 'defensive'].map(category => (
               <div key={category} style={{ marginBottom: '16px' }}>
                 <div style={{
                   display: 'flex',
@@ -307,7 +307,7 @@ const FreeAgencyScreen = ({
 
             {/* Category Tabs */}
             <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
-              {['steady', 'risky', 'defensive'].map(category => {
+              {['neutral', 'aggressive', 'defensive'].map(category => {
                 const isSelectedCategory = selectedDrop?.category === category;
                 const isDisabled = selectedDrop && !isSelectedCategory;
 

@@ -24,7 +24,7 @@ export const SECTORS = {
     emoji: '🏦',
     color: '#f59e0b',
     description: 'Banks, insurance, asset management, fintech',
-    topHoldings: ['BRK.B', 'JPM', 'V', 'MA', 'BAC', 'WFC', 'GS', 'MS', 'SPGI', 'AXP', 'PGR', 'BLK', 'C', 'MMC', 'CB', 'SCHW', 'ICE', 'CME', 'AON', 'USB']
+    topHoldings: ['BRK-B', 'JPM', 'V', 'MA', 'BAC', 'WFC', 'GS', 'MS', 'SPGI', 'AXP', 'PGR', 'BLK', 'C', 'MMC', 'CB', 'SCHW', 'ICE', 'CME', 'AON', 'USB']
   },
   XLE: {
     id: 'XLE',

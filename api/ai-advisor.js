@@ -69,11 +69,11 @@ const DRAFT_SYSTEM_PROMPT = `You are a tactical draft advisor for FantasyTrades 
 
 CRITICAL RULES FOR FANTASYTRADES DRAFTS:
 1. Users have 60 seconds per pick - be EXTREMELY concise (under 100 words)
-2. FantasyTrades uses THREE GAME CATEGORIES: Steady, Risky, Defensive
+2. FantasyTrades uses THREE GAME CATEGORIES: Neutral, Aggressive, Defensive
 3. ONLY suggest assets from the AVAILABLE lists provided - never suggest already-drafted assets
 4. Pay attention to CATEGORY requirements - if user needs a Defensive pick, ONLY suggest from Defensive
 5. The categories are GAME CATEGORIES assigned by FantasyTrades, NOT real-world financial classifications
-6. An asset's game category may differ from its real-world classification (e.g., TSLA might be "Risky" in-game)
+6. An asset's game category may differ from its real-world classification (e.g., TSLA might be "Aggressive" in-game)
 
 RESPONSE FORMAT:
 - Bullet points only, no paragraphs
@@ -107,8 +107,8 @@ YOUR DRAFT STATUS:
     const req = context.categoryRequirements;
     parts.push(`
 CATEGORY REQUIREMENTS:
-- Steady: ${req.steadyPicked || 0}/${req.steadyRequired || 0} picked (need ${Math.max(0, (req.steadyRequired || 0) - (req.steadyPicked || 0))} more)
-- Risky: ${req.riskyPicked || 0}/${req.riskyRequired || 0} picked (need ${Math.max(0, (req.riskyRequired || 0) - (req.riskyPicked || 0))} more)
+- Neutral: ${req.neutralPicked || 0}/${req.neutralRequired || 0} picked (need ${Math.max(0, (req.neutralRequired || 0) - (req.neutralPicked || 0))} more)
+- Aggressive: ${req.aggressivePicked || 0}/${req.aggressiveRequired || 0} picked (need ${Math.max(0, (req.aggressiveRequired || 0) - (req.aggressivePicked || 0))} more)
 - Defensive: ${req.defensivePicked || 0}/${req.defensiveRequired || 0} picked (need ${Math.max(0, (req.defensiveRequired || 0) - (req.defensivePicked || 0))} more)`);
   }
 
@@ -128,16 +128,16 @@ YOUR CURRENT PICKS: ${context.myPicks.join(', ')}`);
 AVAILABLE ASSETS BY CATEGORY:
 ════════════════════════════════════════`);
 
-  if (context.availableSteady?.length > 0) {
+  if (context.availableNeutral?.length > 0) {
     parts.push(`
-📊 STEADY CATEGORY (${context.availableSteady.length} available):
-${context.availableSteady.slice(0, 15).map(a => `- ${a.symbol}: ${a.name || ''} | ${(a.change24h || 0) >= 0 ? '+' : ''}${(a.change24h || 0).toFixed(1)}%`).join('\n')}`);
+📊 NEUTRAL CATEGORY (${context.availableNeutral.length} available):
+${context.availableNeutral.slice(0, 15).map(a => `- ${a.symbol}: ${a.name || ''} | ${(a.change24h || 0) >= 0 ? '+' : ''}${(a.change24h || 0).toFixed(1)}%`).join('\n')}`);
   }
 
-  if (context.availableRisky?.length > 0) {
+  if (context.availableAggressive?.length > 0) {
     parts.push(`
-🔥 RISKY CATEGORY (${context.availableRisky.length} available):
-${context.availableRisky.slice(0, 15).map(a => `- ${a.symbol}: ${a.name || ''} | ${(a.change24h || 0) >= 0 ? '+' : ''}${(a.change24h || 0).toFixed(1)}%`).join('\n')}`);
+🔥 AGGRESSIVE CATEGORY (${context.availableAggressive.length} available):
+${context.availableAggressive.slice(0, 15).map(a => `- ${a.symbol}: ${a.name || ''} | ${(a.change24h || 0) >= 0 ? '+' : ''}${(a.change24h || 0).toFixed(1)}%`).join('\n')}`);
   }
 
   if (context.availableDefensive?.length > 0) {
@@ -147,7 +147,7 @@ ${context.availableDefensive.slice(0, 15).map(a => `- ${a.symbol}: ${a.name || '
   }
 
   // Fallback if no categorized assets but has availableStocks
-  if (!context.availableSteady && !context.availableRisky && !context.availableDefensive && context.availableStocks?.length > 0) {
+  if (!context.availableNeutral && !context.availableAggressive && !context.availableDefensive && context.availableStocks?.length > 0) {
     parts.push(`
 AVAILABLE ASSETS (uncategorized):
 ${context.availableStocks.slice(0, 20).map(s => typeof s === 'string' ? `- ${s}` : `- ${s.symbol}`).join('\n')}`);
@@ -167,14 +167,14 @@ const getNeededCategory = (context) => {
   if (!context?.categoryRequirements) return null;
 
   const req = context.categoryRequirements;
-  const steadyNeeded = Math.max(0, (req.steadyRequired || 0) - (req.steadyPicked || 0));
-  const riskyNeeded = Math.max(0, (req.riskyRequired || 0) - (req.riskyPicked || 0));
+  const neutralNeeded = Math.max(0, (req.neutralRequired || 0) - (req.neutralPicked || 0));
+  const aggressiveNeeded = Math.max(0, (req.aggressiveRequired || 0) - (req.aggressivePicked || 0));
   const defensiveNeeded = Math.max(0, (req.defensiveRequired || 0) - (req.defensivePicked || 0));
 
   // If only one category has remaining picks, that's what they need
-  if (steadyNeeded > 0 && riskyNeeded === 0 && defensiveNeeded === 0) return 'Steady';
-  if (riskyNeeded > 0 && steadyNeeded === 0 && defensiveNeeded === 0) return 'Risky';
-  if (defensiveNeeded > 0 && steadyNeeded === 0 && riskyNeeded === 0) return 'Defensive';
+  if (neutralNeeded > 0 && aggressiveNeeded === 0 && defensiveNeeded === 0) return 'Neutral';
+  if (aggressiveNeeded > 0 && neutralNeeded === 0 && defensiveNeeded === 0) return 'Aggressive';
+  if (defensiveNeeded > 0 && neutralNeeded === 0 && aggressiveNeeded === 0) return 'Defensive';
 
   return null; // Multiple categories still available
 };

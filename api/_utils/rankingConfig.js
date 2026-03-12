@@ -17,7 +17,7 @@ export const STOCK_UNIVERSE = {
     name: 'Technology',
     etf: 'XLK',
     color: '#3b82f6',
-    stocks: ['AAPL','MSFT','NVDA','AVGO','ORCL','CRM','AMD','ADBE','CSCO','ACN','IBM','INTC','QCOM','TXN','NOW','INTU','AMAT','MU','LRCX','KLAC'],
+    stocks: ['AAPL','MSFT','NVDA','AVGO','ORCL','CRM','AMD','ADBE','CSCO','ACN','IBM','INTC','QCOM','TXN','NOW','INTU','AMAT','MU','LRCX','KLAC','SHOP','PLTR','SNOW','BE','CRWV'],
   },
   XLV: {
     name: 'Healthcare',
@@ -29,7 +29,7 @@ export const STOCK_UNIVERSE = {
     name: 'Financials',
     etf: 'XLF',
     color: '#f59e0b',
-    stocks: ['BRK-B','JPM','V','MA','BAC','WFC','GS','MS','SPGI','AXP','PGR','BLK','C','MMC','CB','SCHW','ICE','CME','AON','USB'],
+    stocks: ['BRK-B','JPM','V','MA','BAC','WFC','GS','MS','SPGI','AXP','PGR','BLK','C','MMC','CB','SCHW','ICE','CME','AON','USB','COIN','AFRM','HOOD'],
   },
   XLE: {
     name: 'Energy',
@@ -41,7 +41,7 @@ export const STOCK_UNIVERSE = {
     name: 'Consumer Discretionary',
     etf: 'XLY',
     color: '#8b5cf6',
-    stocks: ['AMZN','TSLA','HD','MCD','NKE','LOW','BKNG','SBUX','TJX','ORLY','CMG','MAR','GM','F','DHI','AZO','ROST','LEN','YUM','EBAY'],
+    stocks: ['AMZN','TSLA','HD','MCD','NKE','LOW','BKNG','SBUX','TJX','ORLY','CMG','MAR','GM','F','DHI','AZO','ROST','LEN','YUM','EBAY','DKNG','GME'],
   },
   XLP: {
     name: 'Consumer Staples',
@@ -53,7 +53,7 @@ export const STOCK_UNIVERSE = {
     name: 'Industrials',
     etf: 'XLI',
     color: '#6366f1',
-    stocks: ['GE','CAT','RTX','UNP','HON','DE','BA','LMT','UPS','ADP','ETN','ITW','NOC','GD','WM','CSX','NSC','MMM','EMR','FDX'],
+    stocks: ['GE','CAT','RTX','UNP','HON','DE','BA','LMT','UPS','ADP','ETN','ITW','NOC','GD','WM','CSX','NSC','MMM','EMR','FDX','GEV','RKLB','PWR'],
   },
   XLB: {
     name: 'Materials',
