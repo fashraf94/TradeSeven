@@ -103,8 +103,8 @@ const MiniPlayerPanel = ({
         marginTop: '3px',
         fontWeight: '500'
       }}>
-        <span style={{ color: '#00d9ff' }}>S{player?.categories?.steady || 0}</span>
-        <span style={{ color: '#f59e0b' }}>R{player?.categories?.risky || 0}</span>
+        <span style={{ color: '#00d9ff' }}>N{player?.categories?.neutral || 0}</span>
+        <span style={{ color: '#f59e0b' }}>A{player?.categories?.aggressive || 0}</span>
         <span style={{ color: '#10b981' }}>D{player?.categories?.defensive || 0}</span>
       </div>
 

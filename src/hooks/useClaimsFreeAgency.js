@@ -29,7 +29,7 @@ const useClaimsFreeAgency = (currentDraft, user, setScreen, logger = console) =>
   // Selection (for submitting new claim)
   const [selectedDrop, setSelectedDrop] = useState(null);
   const [selectedAdd, setSelectedAdd] = useState(null);
-  const [selectedCategory, setSelectedCategory] = useState('steady');
+  const [selectedCategory, setSelectedCategory] = useState('neutral');
   const [showConfirmModal, setShowConfirmModal] = useState(false);
 
   // UI state
@@ -169,7 +169,7 @@ const useClaimsFreeAgency = (currentDraft, user, setScreen, logger = console) =>
 
   useEffect(() => {
     const allSymbols = new Set();
-    ['steady', 'risky', 'defensive'].forEach(cat => {
+    ['neutral', 'aggressive', 'defensive'].forEach(cat => {
       (freeAgents[cat] || []).forEach(a => { if (a.symbol) allSymbols.add(a.symbol.toUpperCase()); });
       (playerRoster[cat] || []).forEach(a => { if (a.symbol) allSymbols.add(a.symbol.toUpperCase()); });
     });

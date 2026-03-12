@@ -22,7 +22,7 @@ export const useDraft = (user, screen, setScreen = null) => {
   // Draft Lobby/Room state - Phase 3
   const [draftState, setDraftState] = useState(null);
   const [draftCopied, setDraftCopied] = useState(false);
-  const [selectedDraftCategory, setSelectedDraftCategory] = useState('steady');
+  const [selectedDraftCategory, setSelectedDraftCategory] = useState('neutral');
   const [draftTimeRemaining, setDraftTimeRemaining] = useState(120);
   const [draftAssetInfoModal, setDraftAssetInfoModal] = useState(null);
 
@@ -462,7 +462,7 @@ export const useDraft = (user, screen, setScreen = null) => {
     setDraftState(null);
     setDraftJoinCode('');
     setDraftCopied(false);
-    setSelectedDraftCategory('steady');
+    setSelectedDraftCategory('neutral');
     setDraftTimeRemaining(120);
     setAutopickCountdown(null);
     setDraftError(null);

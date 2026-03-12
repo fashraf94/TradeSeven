@@ -20,7 +20,7 @@ const RosterAssetCard = ({
   compact = false,
   isLocked = false,  // Orange Zone swap lock
 }) => {
-  const categoryConfig = CATEGORY_CONFIG[asset.category] || CATEGORY_CONFIG.steady;
+  const categoryConfig = CATEGORY_CONFIG[asset.category] || CATEGORY_CONFIG.neutral;
   const gain = asset.gain || 0;
   const effectiveDisabled = disabled || isLocked;
 

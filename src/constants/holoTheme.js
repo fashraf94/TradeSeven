@@ -31,8 +31,8 @@ export const HOLO_COLORS = {
   bronze: '#cd7f32',
 
   // Category Colors (STANDARDIZED - use these everywhere)
-  steady: '#00ffff',    // Cyan
-  risky: '#f59e0b',     // Amber
+  neutral: '#00ffff',    // Cyan
+  aggressive: '#f59e0b',     // Amber
   defensive: '#10b981', // Green
 
   // Sector Colors
@@ -122,8 +122,8 @@ export const RANK_CONFIG = {
 };
 
 export const CATEGORY_CONFIG = {
-  steady: { letter: 'S', color: HOLO_COLORS.steady, label: 'Steady' },
-  risky: { letter: 'R', color: HOLO_COLORS.risky, label: 'Risky' },
+  neutral: { letter: 'N', color: HOLO_COLORS.neutral, label: 'Neutral' },
+  aggressive: { letter: 'A', color: HOLO_COLORS.aggressive, label: 'Aggressive' },
   defensive: { letter: 'D', color: HOLO_COLORS.defensive, label: 'Defensive' },
 };
 

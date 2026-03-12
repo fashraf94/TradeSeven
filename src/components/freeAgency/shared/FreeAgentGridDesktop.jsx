@@ -29,8 +29,8 @@ const FreeAgentGridDesktop = ({
   const categoryLocked = false;
 
   const counts = {
-    steady: freeAgents.steady?.length || 0,
-    risky: freeAgents.risky?.length || 0,
+    neutral: freeAgents.neutral?.length || 0,
+    aggressive: freeAgents.aggressive?.length || 0,
     defensive: freeAgents.defensive?.length || 0,
   };
 

@@ -72,7 +72,7 @@ const HoloAssetCard = React.forwardRef(({
   onSelect,                  // NEW: Called when card body is clicked
   onGetInfo,                 // NEW: Called when "Get Info" button is clicked
   onAcquire,                 // Keep for backward compatibility
-  category = 'steady',
+  category = 'neutral',
   disabled = false,
   compact = false,           // Phone-optimized compact mode
   shockwaveDelay = null,     // Shockwave ripple delay in seconds (null = inactive)
@@ -120,8 +120,8 @@ const HoloAssetCard = React.forwardRef(({
   const accentGlow = sectorColor.glow;
 
   // Category color for INFO button dot
-  const categoryColor = category === 'steady' ? '#00d9ff'
-    : category === 'risky' ? '#f59e0b'
+  const categoryColor = category === 'neutral' ? '#00d9ff'
+    : category === 'aggressive' ? '#f59e0b'
     : '#10b981';
 
   // Handle pick with animation
@@ -156,12 +156,12 @@ const HoloAssetCard = React.forwardRef(({
 
   // Category configuration
   const categoryConfig = {
-    steady: { letter: 'S', color: '#10b981', label: 'Steady' },
-    risky: { letter: 'R', color: '#f59e0b', label: 'Risky' },
+    neutral: { letter: 'N', color: '#10b981', label: 'Neutral' },
+    aggressive: { letter: 'A', color: '#f59e0b', label: 'Aggressive' },
     defensive: { letter: 'D', color: '#3b82f6', label: 'Defensive' },
   };
 
-  const catConfig = categoryConfig[category] || categoryConfig.steady;
+  const catConfig = categoryConfig[category] || categoryConfig.neutral;
 
   // Format price
   const formatPrice = (p) => {

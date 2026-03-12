@@ -22,7 +22,7 @@ const FreeAgentCard = ({
   disabled = false,
   livePrices = {},
 }) => {
-  const categoryConfig = CATEGORY_CONFIG[asset.category] || CATEGORY_CONFIG.steady;
+  const categoryConfig = CATEGORY_CONFIG[asset.category] || CATEGORY_CONFIG.neutral;
 
   // Compute daily points from live price data (percentChange × 10 base scoring)
   const priceData = livePrices[asset.symbol] || livePrices[asset.symbol?.toUpperCase()] || {};

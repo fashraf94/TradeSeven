@@ -128,7 +128,7 @@ const getSectorForSymbol = (symbol, category, draft) => {
   if (!symbol || !draft.availableAssets) return null;
 
   // Check all categories if category not specified
-  const categories = category ? [category] : ['steady', 'risky', 'defensive'];
+  const categories = category ? [category] : ['neutral', 'aggressive', 'defensive'];
 
   for (const cat of categories) {
     const assets = draft.availableAssets[cat];
@@ -339,8 +339,8 @@ export const updateDraftAggregates = async (draftRecord) => {
 
       // Category pick counts
       categoryPicks: {
-        steady: (current.categoryPicks?.steady || 0) + countCategoryPicks(draftRecord.picks, 'steady'),
-        risky: (current.categoryPicks?.risky || 0) + countCategoryPicks(draftRecord.picks, 'risky'),
+        neutral: (current.categoryPicks?.neutral || 0) + countCategoryPicks(draftRecord.picks, 'neutral'),
+        aggressive: (current.categoryPicks?.aggressive || 0) + countCategoryPicks(draftRecord.picks, 'aggressive'),
         defensive: (current.categoryPicks?.defensive || 0) + countCategoryPicks(draftRecord.picks, 'defensive')
       },
 

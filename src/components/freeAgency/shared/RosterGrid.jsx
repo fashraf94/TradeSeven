@@ -8,13 +8,13 @@ import RosterAssetCard from './RosterAssetCard';
  * NEW FLOW: Step 2 - User selects which asset to DROP after selecting a free agent.
  *
  * Features:
- * - 3x3 grid organized by category (Steady/Risky/Defensive)
+ * - 3x3 grid organized by category (Neutral/Aggressive/Defensive)
  * - Category headers with colored indicators
  * - Only active when a free agent is selected
  * - Highlights matching category
  */
 const RosterGrid = ({
-  roster,           // { steady: [], risky: [], defensive: [] }
+  roster,           // { neutral: [], aggressive: [], defensive: [] }
   selectedDrop,
   selectedAdd,      // NEW: the free agent being added
   onSelectDrop,
@@ -22,7 +22,7 @@ const RosterGrid = ({
   canSwap,
   orangeZoneLocked = {},  // Orange Zone swap lock status by symbol
 }) => {
-  const categories = ['steady', 'risky', 'defensive'];
+  const categories = ['neutral', 'aggressive', 'defensive'];
   const isActive = selectedAdd !== null;
 
   return (

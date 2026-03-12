@@ -9,13 +9,13 @@ import React, { useState, useEffect, useRef } from 'react';
  */
 
 const RosterGauges = ({
-  steady = { picked: 0, required: 3 },
-  risky = { picked: 0, required: 3 },
+  neutral = { picked: 0, required: 3 },
+  aggressive = { picked: 0, required: 3 },
   defensive = { picked: 0, required: 3 },
   onGaugeClick,
 }) => {
   // Track previous values for animation triggers
-  const prevValuesRef = useRef({ steady: 0, risky: 0, defensive: 0 });
+  const prevValuesRef = useRef({ neutral: 0, aggressive: 0, defensive: 0 });
   const [flashingGauge, setFlashingGauge] = useState(null);
   const [celebratingGauge, setCelebratingGauge] = useState(null);
 
@@ -37,29 +37,29 @@ const RosterGauges = ({
       prevValuesRef.current[key] = currentPicked;
     };
 
-    checkChange('steady', steady.picked, steady.required);
-    checkChange('risky', risky.picked, risky.required);
+    checkChange('neutral', neutral.picked, neutral.required);
+    checkChange('aggressive', aggressive.picked, aggressive.required);
     checkChange('defensive', defensive.picked, defensive.required);
-  }, [steady.picked, risky.picked, defensive.picked, steady.required, risky.required, defensive.required]);
+  }, [neutral.picked, aggressive.picked, defensive.picked, neutral.required, aggressive.required, defensive.required]);
   // Category configurations
   const categories = [
     {
-      key: 'steady',
-      letter: 'S',
-      label: 'Steady',
+      key: 'neutral',
+      letter: 'N',
+      label: 'Neutral',
       color: '#00ffff',      // Cyan
       glowColor: 'rgba(0, 255, 255, 0.5)',
       bgColor: 'rgba(0, 255, 255, 0.1)',
-      data: steady,
+      data: neutral,
     },
     {
-      key: 'risky',
-      letter: 'R',
-      label: 'Risky',
+      key: 'aggressive',
+      letter: 'A',
+      label: 'Aggressive',
       color: '#f59e0b',      // Amber/Orange
       glowColor: 'rgba(245, 158, 11, 0.5)',
       bgColor: 'rgba(245, 158, 11, 0.1)',
-      data: risky,
+      data: aggressive,
     },
     {
       key: 'defensive',
@@ -297,14 +297,14 @@ const RosterGauges = ({
  * Alternative compact version for mobile
  */
 export const RosterGaugesCompact = ({
-  steady = { picked: 0, required: 3 },
-  risky = { picked: 0, required: 3 },
+  neutral = { picked: 0, required: 3 },
+  aggressive = { picked: 0, required: 3 },
   defensive = { picked: 0, required: 3 },
   onGaugeClick,
 }) => {
   const categories = [
-    { key: 'steady', letter: 'S', color: '#00ffff', data: steady },
-    { key: 'risky', letter: 'R', color: '#f59e0b', data: risky },
+    { key: 'neutral', letter: 'N', color: '#00ffff', data: neutral },
+    { key: 'aggressive', letter: 'A', color: '#f59e0b', data: aggressive },
     { key: 'defensive', letter: 'D', color: '#10b981', data: defensive },
   ];
 

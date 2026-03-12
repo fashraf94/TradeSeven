@@ -17,8 +17,8 @@ const PlayerPanel = ({
   isYou = false,
   isCPU = false,
   stats = {
-    steadyPicked: 0,
-    riskyPicked: 0,
+    neutralPicked: 0,
+    aggressivePicked: 0,
     defensivePicked: 0,
   },
   lastPick,
@@ -39,7 +39,7 @@ const PlayerPanel = ({
   }, [lastPick, prevLastPick]);
 
   // Calculate total picks
-  const totalPicks = stats.steadyPicked + stats.riskyPicked + stats.defensivePicked;
+  const totalPicks = stats.neutralPicked + stats.aggressivePicked + stats.defensivePicked;
 
   // Determine visual state
   const getState = () => {
@@ -307,8 +307,8 @@ const PlayerPanel = ({
           color: '#6e7681',
         }}
       >
-        <span style={{ color: '#00ffff' }}>S{stats.steadyPicked}</span>
-        <span style={{ color: '#f59e0b' }}>R{stats.riskyPicked}</span>
+        <span style={{ color: '#00ffff' }}>N{stats.neutralPicked}</span>
+        <span style={{ color: '#f59e0b' }}>A{stats.aggressivePicked}</span>
         <span style={{ color: '#10b981' }}>D{stats.defensivePicked}</span>
       </div>
 
