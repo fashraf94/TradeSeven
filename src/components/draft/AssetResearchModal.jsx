@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import ReactDOM from 'react-dom';
 import { HOLO_COLORS, CATEGORY_CONFIG, getSectorColor, getRatingColor } from '../../constants/holoTheme';
 import { getCompanyProfile } from '../../services/fundamentalsService';
+import { getStockPrice } from '../../services/eodhdAPI';
 import { formatLargeNumber } from '../../utils/formatters';
 import ChartHeader from '../Research/ChartHeader';
 import WhyMovingPopup from '../Research/WhyMovingPopup';
@@ -234,6 +235,23 @@ const AssetResearchModal = ({
       setProfile(null);
     }
   }, [currentAsset?.symbol]);
+
+  // Fetch current price for internally-navigated stocks (not the original asset).
+  // The original asset gets wsPrice from parent; navigated stocks need their own price fetch.
+  useEffect(() => {
+    if (isOriginalAsset || !currentAsset?.symbol) return;
+    if (currentAsset?.price > 0) return; // Already has price (e.g., restored from history)
+
+    let cancelled = false;
+    getStockPrice(currentAsset.symbol).then(data => {
+      if (cancelled || !data?.price) return;
+      setCurrentAsset(prev => {
+        if (prev?.symbol !== data.symbol) return prev;
+        return { ...prev, price: data.price, percentChange: data.percentChange || 0 };
+      });
+    });
+    return () => { cancelled = true; };
+  }, [currentAsset?.symbol, isOriginalAsset]);
 
   if (!asset) return null;
 
