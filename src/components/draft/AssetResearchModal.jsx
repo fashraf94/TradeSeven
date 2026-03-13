@@ -119,15 +119,18 @@ const AssetResearchModal = ({
   const [drawerSnapState, setDrawerSnapState] = useState('mid');
   const [v2ContainerHeight, setV2ContainerHeight] = useState(600);
   const v2ContainerRef = useRef(null);
+  const isInternalNavRef = useRef(false);
   const { isMobile, isTablet } = useIsMobile();
 
   const handleNavigateToStock = useCallback((ticker, name) => {
+    isInternalNavRef.current = true;
     setStockHistory(prev => [...prev, currentAsset]);
     setCurrentAsset({ symbol: ticker, name: name || ticker });
   }, [currentAsset]);
 
   const handleNavigateBack = useCallback(() => {
     if (stockHistory.length === 0) return;
+    isInternalNavRef.current = true;
     const prev = stockHistory[stockHistory.length - 1];
     setStockHistory(h => h.slice(0, -1));
     setCurrentAsset(prev);
@@ -210,7 +213,12 @@ const AssetResearchModal = ({
   }, []);
 
   // Reset tab default when asset or defaultTab changes (e.g. "View Chart" click while modal is open)
+  // Skip reset on internal navigation (leaderboard tap / back button) to preserve tab context
   useEffect(() => {
+    if (isInternalNavRef.current) {
+      isInternalNavRef.current = false;
+      return;
+    }
     setActiveTab(defaultTab || (isCrypto ? 'health' : 'fundamental'));
   }, [currentAsset?.symbol, defaultTab]);
 

@@ -62,6 +62,11 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
 
     const cacheKey = isBomb ? `${symbol}_30m_bomb` : `${symbol}_${apiTimeframe}`;
 
+    // Clear stale data when switching to a different symbol (prevents showing previous stock's price)
+    if (lastFetchKeyRef.current && !lastFetchKeyRef.current.startsWith(`${symbol}_`)) {
+      setRawData(null);
+    }
+
     // Guard: skip if we already fetched this exact key (prevents edge-case duplicate fetches)
     if (lastFetchKeyRef.current === cacheKey && rawData) return;
     lastFetchKeyRef.current = cacheKey;

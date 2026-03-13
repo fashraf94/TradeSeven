@@ -35,8 +35,6 @@ const PILLAR_CONFIG = [
   { key: 'capitalEff',    label: 'Capital Efficiency',  icon: '💎' },
   { key: 'momentum',      label: 'Momentum',            icon: '⚡' },
   { key: 'sentiment',     label: 'Sentiment',           icon: '🎯' },
-  // Backward compat: old 4-pillar keys rendered if present in data
-  { key: 'quality',       label: 'Quality',             icon: '💎', legacy: true },
 ];
 
 // Dimension formatters — values are stored in Firestore as:
@@ -621,13 +619,7 @@ const CompeteTab = ({ symbol, isMobile, onNavigateToStock }) => {
   }, [symbol]);
 
   // Build the pillar list from data — show whatever pillars exist in the response
-  const activePillars = useMemo(() => {
-    if (!data?.pillars) return PILLAR_CONFIG.filter(p => !p.legacy);
-    return PILLAR_CONFIG.filter(p => {
-      if (p.legacy) return !!data.pillars[p.key]; // only show legacy keys if data has them
-      return true; // always show new 7-pillar keys
-    });
-  }, [data]);
+  const activePillars = useMemo(() => PILLAR_CONFIG, []);
 
   if (loading) return <SkeletonLoader />;
   if (error || !data) return <NotAvailableCard error={error} statusCode={errorStatus} />;
