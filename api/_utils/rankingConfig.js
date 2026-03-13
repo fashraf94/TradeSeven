@@ -96,103 +96,85 @@ for (const [sectorId, sector] of Object.entries(STOCK_UNIVERSE)) {
 export const SECTOR_ETFS = Object.values(STOCK_UNIVERSE).map(s => s.etf);
 
 // ---------------------------------------------------------------------------
-// 8 Ranking Dimensions
+// 7 Ranking Dimensions (Compete Tab — 4-pillar model)
 // ---------------------------------------------------------------------------
 
 export const DIMENSIONS = {
-  growth: {
+  revenueGrowth: {
     label: 'Revenue Growth YoY',
-    pillar: 'growth',
+    pillar: 'quality',
     field: 'revenueGrowthYOY',
     inverted: false,
     unit: '%',
     source: 'Highlights.QuarterlyRevenueGrowthYOY',
   },
-  profitability: {
+  opMargin: {
     label: 'Operating Margin TTM',
-    pillar: 'profitability',
+    pillar: 'quality',
     field: 'opMarginTTM',
     inverted: false,
     unit: '%',
     source: 'Highlights.OperatingMarginTTM',
   },
-  profitabilityTrend: {
-    label: 'Margin Trend (TTM vs Prior TTM)',
-    pillar: 'profitability',
-    field: 'marginTrend',
-    inverted: false,
-    unit: 'pp',
-    computed: true,
-  },
-  efficiency: {
+  roa: {
     label: 'Return on Assets TTM',
-    pillar: 'efficiency',
+    pillar: 'quality',
     field: 'roaTTM',
     inverted: false,
     unit: '%',
     source: 'Highlights.ReturnOnAssetsTTM',
   },
-  valuation: {
-    label: 'Forward P/E',
+  evEbitda: {
+    label: 'EV/EBITDA',
     pillar: 'valuation',
-    field: 'forwardPE',
+    field: 'evEbitda',
     inverted: true,
     unit: 'x',
-    source: 'Valuation.ForwardPE',
+    source: 'Valuation.EnterpriseValueEbitda',
   },
-  healthCash: {
+  fcfYield: {
     label: 'FCF Yield',
-    pillar: 'health',
+    pillar: 'capitalEff',
     field: 'fcfYield',
     inverted: false,
     unit: '%',
     computed: true,
   },
-  healthDebt: {
-    label: 'Interest Coverage',
-    pillar: 'health',
-    field: 'interestCoverage',
-    inverted: false,
-    unit: 'x',
-    computed: true,
-  },
-  sentimentPrice: {
-    label: '52-Week Range Position',
-    pillar: 'sentiment',
-    field: 'range52wPosition',
+  sixMonthReturn: {
+    label: '6-Month Price Return',
+    pillar: 'momentum',
+    field: 'sixMonthReturn',
     inverted: false,
     unit: '%',
-    source: 'Computed from Technicals.52WeekHigh/Low',
+    computed: true,
   },
-  sentimentRevisions: {
+  earningsRevisions: {
     label: 'Earnings Revision Trend',
-    pillar: 'sentiment',
-    field: 'epsRevisionScore',
+    pillar: 'momentum',
+    field: 'earningsRevisions',
     inverted: false,
     unit: 'score',
-    computed: true,
-  },
-  growthEPS: {
-    label: 'EPS Growth (Forward)',
-    pillar: 'growth',
-    field: 'epsGrowthForward',
-    inverted: false,
-    unit: '%',
     computed: true,
   },
 };
 
 // ---------------------------------------------------------------------------
-// 6 Pillars (dual-dimension pillars for Health + Sentiment)
+// 4 Pillars — Weighted composite (30/30/25/15)
 // ---------------------------------------------------------------------------
 
 export const PILLARS = {
-  growth:        { label: 'Growth',        dimensions: ['growth', 'growthEPS'], weights: [0.60, 0.40] },
-  profitability: { label: 'Profitability', dimensions: ['profitability', 'profitabilityTrend'], weights: [0.65, 0.35] },
-  efficiency:    { label: 'Efficiency',    dimensions: ['efficiency'] },
-  valuation:     { label: 'Valuation',     dimensions: ['valuation'] },
-  health:        { label: 'Health',        dimensions: ['healthCash', 'healthDebt'] },
-  sentiment:     { label: 'Sentiment',     dimensions: ['sentimentPrice', 'sentimentRevisions'] },
+  momentum:   { label: 'Momentum',          dimensions: ['sixMonthReturn', 'earningsRevisions'], weight: 0.30 },
+  quality:    { label: 'Quality',           dimensions: ['revenueGrowth', 'opMargin', 'roa'], weight: 0.30 },
+  valuation:  { label: 'Valuation',         dimensions: ['evEbitda'], weight: 0.25 },
+  capitalEff: { label: 'Capital Efficiency', dimensions: ['fcfYield'], weight: 0.15 },
+};
+
+// Per-pillar weight for composite score computation
+export const COMPETE_PILLAR_WEIGHTS = {
+  momentum:   0.30,
+  quality:    0.30,
+  valuation:  0.25,
+  capitalEff: 0.15,
 };
 
 // ---------------------------------------------------------------------------

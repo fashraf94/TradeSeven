@@ -1,32 +1,41 @@
 // api/cron/compute-rankings.js
-// Daily pre-market cron: computes sector-adjusted peer rankings for ~220 stocks.
+// Daily cron: computes sector-adjusted peer rankings for ~220 stocks,
+// runs Coiled Spring / Running on Fumes scanner, generates badges.
 //
 // Schedule: 0 11 * * 1-5 (UTC 11:00 = ET 6:00 AM / 7:00 AM, Mon–Fri)
 //
 // Flow:
-//   1. Fetch EODHD fundamentals for all stocks in universe (batched 10-at-a-time)
-//   2. Fetch historical prices for SPY + 11 sector ETFs (13 calls)
-//   3. Extract 8 raw metrics per stock
-//   4. Rank within each sector → percentile scores
-//   5. Compute composite score + tier labels
-//   6. Compute sector-level aggregates (composite + breadth)
-//   7. Persist to Firestore (peerRankings + sectorRankings collections)
-//
-// Total API calls: ~233 (220 fundamentals + 13 historical)
-// Expected runtime: ~12-15 seconds
+//   Phase A: Fetch EODHD fundamentals + bulk prices + rolling price history
+//   Phase B: Extract metrics, rank within sectors, compute composite scores
+//   Phase C: Coiled Spring / Running on Fumes scanner (additive, never blocks rankings)
+//   Phase D: Persist to Firestore (peerRankings + sectorRankings + scannerSummary)
+
+export const config = { maxDuration: 120 };
 
 import { initializeApp, getApps, cert } from 'firebase-admin/app';
-import { getFirestore, FieldValue } from 'firebase-admin/firestore';
+import { getFirestore } from 'firebase-admin/firestore';
 import {
   STOCK_UNIVERSE,
   DIMENSIONS,
   PILLARS,
+  COMPETE_PILLAR_WEIGHTS,
   SECTOR_COMPOSITE_WEIGHTS,
   EODHD_FUNDAMENTALS_FILTER,
   getTierLabel,
   normalizeToScore,
   computeReturn,
 } from '../_utils/rankingConfig.js';
+import {
+  annualizedVolatility,
+  computeVAD,
+  compute21dSMA,
+  daysSince52WeekHigh,
+  generateDNABadge,
+  getDebtRiskBadge,
+  generateSpringNarrative,
+  generateFumesNarrative,
+  percentileRank,
+} from '../_utils/rankingHelpers.js';
 
 // ---------------------------------------------------------------------------
 // Logging
@@ -82,6 +91,12 @@ function sleep(ms) {
   return new Promise(r => setTimeout(r, ms));
 }
 
+function median(arr) {
+  if (!arr || arr.length === 0) return null;
+  const sorted = [...arr].sort((a, b) => a - b);
+  return sorted[Math.floor(sorted.length / 2)];
+}
+
 // ---------------------------------------------------------------------------
 // EODHD Fetchers
 // ---------------------------------------------------------------------------
@@ -89,7 +104,6 @@ function sleep(ms) {
 const API_BASE = 'https://eodhd.com/api';
 
 async function fetchSingleFundamental(ticker, apiKey) {
-  // Normalize ticker for EODHD (BRK-B → BRK-B.US, dots are fine)
   const eohdTicker = ticker.replace(/\./g, '-');
   const url = `${API_BASE}/fundamentals/${eohdTicker}.US?api_token=${apiKey}&fmt=json&filter=${EODHD_FUNDAMENTALS_FILTER}`;
 
@@ -104,6 +118,7 @@ async function fetchSingleFundamental(ticker, apiKey) {
     earnings: data.Earnings || {},
     incomeQ: data.Financials?.Income_Statement?.quarterly || {},
     cashFlowQ: data.Financials?.Cash_Flow?.quarterly || {},
+    incomeY: data.Financials?.Income_Statement?.yearly || {},
     name: data.General?.Name || ticker,
   };
 }
@@ -133,12 +148,10 @@ async function fetchAllFundamentals(stocks, apiKey) {
       }
     });
 
-    // Rate-limit between batches
     if (i + BATCH_SIZE < stocks.length) {
       await sleep(DELAY_MS);
     }
 
-    // Progress log every 50 stocks
     if ((i + BATCH_SIZE) % 50 < BATCH_SIZE) {
       logInfo(`Fetched ${Math.min(i + BATCH_SIZE, stocks.length)}/${stocks.length} fundamentals (${success} ok, ${failed} failed)`);
     }
@@ -159,7 +172,72 @@ async function fetchHistoricalPrices(symbol, apiKey, days = 180) {
 }
 
 // ---------------------------------------------------------------------------
-// Metric Extraction
+// Rolling Price History
+// ---------------------------------------------------------------------------
+
+/**
+ * Read the rolling price history from Firestore, append today's prices,
+ * trim to 200 days, and write back.
+ * Returns a Map of ticker → array of daily closes (newest first).
+ */
+async function updateRollingPriceHistory(db, bulkPrices) {
+  const today = new Date().toISOString().split('T')[0];
+
+  // Build today's price map from bulk data
+  const todayPrices = {};
+  if (Array.isArray(bulkPrices)) {
+    for (const entry of bulkPrices) {
+      const sym = (entry.code || entry.symbol || '').replace(/\.US$/i, '');
+      if (sym && entry.close) todayPrices[sym] = entry.close;
+    }
+  }
+
+  // Read existing rolling history
+  let days = [];
+  try {
+    const doc = await db.collection('priceHistory').doc('rolling').get();
+    if (doc.exists) {
+      days = doc.data()?.days || [];
+    }
+  } catch (err) {
+    logWarn(`Failed to read rolling price history: ${err.message}`);
+  }
+
+  // Don't add duplicate entries for the same date
+  if (days.length > 0 && days[0]?.date === today) {
+    logInfo('Rolling price history already has today\'s data — skipping append');
+  } else if (Object.keys(todayPrices).length > 0) {
+    days.unshift({ date: today, prices: todayPrices });
+    // Trim to 200 days
+    if (days.length > 200) days = days.slice(0, 200);
+
+    try {
+      await db.collection('priceHistory').doc('rolling').set({
+        days,
+        updatedAt: new Date(),
+        dayCount: days.length,
+      });
+      logInfo(`Rolling price history updated: ${days.length} days stored`);
+    } catch (err) {
+      logWarn(`Failed to write rolling price history: ${err.message}`);
+    }
+  }
+
+  // Build per-ticker close arrays (newest first) for scanner
+  const tickerHistory = new Map();
+  for (const day of days) {
+    if (!day.prices) continue;
+    for (const [ticker, price] of Object.entries(day.prices)) {
+      if (!tickerHistory.has(ticker)) tickerHistory.set(ticker, []);
+      tickerHistory.get(ticker).push(price);
+    }
+  }
+
+  return tickerHistory;
+}
+
+// ---------------------------------------------------------------------------
+// Metric Extraction (7 dimensions)
 // ---------------------------------------------------------------------------
 
 /**
@@ -187,7 +265,6 @@ function computeEpsRevisionScore(earnings) {
   if (!earnings?.Trend) return null;
 
   const trendEntries = Object.values(earnings.Trend);
-  // Prefer current-year estimate, fall back to next-quarter
   const trend = trendEntries.find(t => t.period === '0y')
     || trendEntries.find(t => t.period === '+1q');
   if (!trend) return null;
@@ -200,122 +277,89 @@ function computeEpsRevisionScore(earnings) {
 }
 
 /**
- * Extract the 8 raw metrics from EODHD fundamentals data.
+ * Extract yearly EBIT and interest expense for debt risk badge.
+ * Uses the most recent yearly income statement.
+ */
+function extractYearlyDebtMetrics(incomeY) {
+  if (!incomeY || typeof incomeY !== 'object') return { ebit: null, interestExpense: null };
+  const years = Object.keys(incomeY).sort().reverse();
+  if (years.length === 0) return { ebit: null, interestExpense: null };
+  const latest = incomeY[years[0]];
+  const ebit = parseFloat(latest?.operatingIncome ?? latest?.ebit);
+  const intExp = parseFloat(latest?.interestExpense);
+  return {
+    ebit: isNaN(ebit) ? null : ebit,
+    interestExpense: isNaN(intExp) ? null : intExp,
+  };
+}
+
+/**
+ * Extract the 7 raw metrics from EODHD fundamentals data.
  */
 function extractMetrics(ticker, fundamentals) {
   const h = fundamentals.highlights;
   const v = fundamentals.valuation;
   const t = fundamentals.technicals;
 
-  // 1. Revenue Growth YoY (as decimal, e.g., 0.12 = 12%)
+  // 1. Revenue Growth YoY
   const revenueGrowthYOY = h.QuarterlyRevenueGrowthYOY ?? null;
 
-  // 2. Operating Margin TTM (as decimal, e.g., 0.25 = 25%)
+  // 2. Operating Margin TTM
   const opMarginTTM = h.OperatingMarginTTM ?? null;
 
-  // 3. ROA TTM (as decimal)
+  // 3. ROA TTM
   const roaTTM = h.ReturnOnAssetsTTM ?? null;
 
-  // 4. Forward P/E
-  const forwardPE = v.ForwardPE ?? null;
+  // 4. EV/EBITDA (inverted: lower = better)
+  let evEbitda = v.EnterpriseValueEbitda ?? null;
+  if (evEbitda != null && (evEbitda < 0 || evEbitda > 200)) {
+    evEbitda = null; // Will be hardcoded to 0th percentile in ranking
+  }
 
   // 5. FCF Yield = TTM FCF / Market Cap
-  //    FCF = Operating Cash Flow + CapEx (CapEx is negative in EODHD)
   const marketCap = h.MarketCapitalization ?? null;
   const ocfTTM = getQuarterlyTTM(fundamentals.cashFlowQ, 'totalCashFromOperatingActivities');
   const capexTTM = getQuarterlyTTM(fundamentals.cashFlowQ, 'capitalExpenditures');
   const fcfTTM = (ocfTTM != null && capexTTM != null)
-    ? ocfTTM + capexTTM  // CapEx is negative, so OCF + CapEx = OCF - |CapEx|
+    ? ocfTTM + capexTTM
     : null;
   const fcfYield = (fcfTTM != null && marketCap > 0)
     ? (fcfTTM / marketCap) * 100
     : null;
 
-  // 6. Interest Coverage = TTM Operating Income / |TTM Interest Expense|
-  //    Use operatingIncome (more reliably reported than ebit)
-  const ebitTTM = getQuarterlyTTM(fundamentals.incomeQ, 'operatingIncome');
-  const intExpTTM = getQuarterlyTTM(fundamentals.incomeQ, 'interestExpense');
-  let interestCoverage = null;
-  if (ebitTTM != null && intExpTTM != null && Math.abs(intExpTTM) > 0) {
-    interestCoverage = ebitTTM / Math.abs(intExpTTM);
-    // Cap at a reasonable max to avoid outliers
-    if (interestCoverage > 200) interestCoverage = 200;
-  }
+  // 6. Six-month return — computed later from rolling price history (placeholder)
+  const sixMonthReturn = null;
 
-  // 7. 52-Week Range Position
+  // 7. Earnings revisions — from EODHD Earnings Trend as fallback
+  const earningsRevisions = computeEpsRevisionScore(fundamentals.earnings);
+
+  // Extra fields for scanner & badges (not in composite)
   const high52 = t['52WeekHigh'] ?? null;
   const low52 = t['52WeekLow'] ?? null;
-  let range52wPosition = null;
-  if (high52 && low52 && high52 > low52) {
-    // Derive current price from market cap / shares or use midpoint
-    // EODHD Highlights doesn't include current price directly,
-    // but we can derive: SharesOutstanding is not in our filter.
-    // Instead, use the 52w range position formula with the
-    // last available data. If we have the technicals, we also
-    // typically have the last price nearby. Use Beta as a proxy check.
-    // For now, use a simple heuristic: if we have market cap and
-    // shares outstanding (not in filter), fall back to midpoint estimate.
-    // Actually — we'll compute this when we get bulk prices.
-    range52wPosition = null; // Will be filled from bulk prices
-  }
-
-  // 8. EPS Revision Score
-  const epsRevisionScore = computeEpsRevisionScore(fundamentals.earnings);
-
-  // 9. EPS Growth Forward = (next-year EPS estimate / current-year) - 1
-  let epsGrowthForward = null;
-  if (fundamentals.earnings?.Trend) {
-    const trendEntries = Object.values(fundamentals.earnings.Trend);
-    const current0y = trendEntries.find(t => t.period === '0y');
-    const next1y = trendEntries.find(t => t.period === '+1y');
-    const epsNow = parseFloat(current0y?.earningsEstimateAvg);
-    const epsNext = parseFloat(next1y?.earningsEstimateAvg);
-    if (!isNaN(epsNow) && !isNaN(epsNext) && Math.abs(epsNow) > 0) {
-      epsGrowthForward = ((epsNext - epsNow) / Math.abs(epsNow)) * 100;
-    }
-  }
-
-  // 10. Profitability Margin Trend (Current TTM margin vs Prior TTM margin)
-  let marginTrend = null;
-  const sortedQuarters = Object.values(fundamentals.incomeQ)
-    .filter(q => q.date)
-    .sort((a, b) => b.date.localeCompare(a.date));
-
-  if (sortedQuarters.length >= 8) {
-    const currentRev = sortedQuarters.slice(0, 4).reduce((s, q) => s + (parseFloat(q.totalRevenue) || 0), 0);
-    const currentOp  = sortedQuarters.slice(0, 4).reduce((s, q) => s + (parseFloat(q.operatingIncome) || 0), 0);
-    const priorRev   = sortedQuarters.slice(4, 8).reduce((s, q) => s + (parseFloat(q.totalRevenue) || 0), 0);
-    const priorOp    = sortedQuarters.slice(4, 8).reduce((s, q) => s + (parseFloat(q.operatingIncome) || 0), 0);
-
-    if (currentRev > 0 && priorRev > 0) {
-      const currentMargin = currentOp / currentRev;
-      const priorMargin = priorOp / priorRev;
-      marginTrend = (currentMargin - priorMargin) * 100; // percentage points
-    }
-  }
+  const { ebit, interestExpense } = extractYearlyDebtMetrics(fundamentals.incomeY);
 
   return {
     revenueGrowthYOY,
     opMarginTTM,
     roaTTM,
-    forwardPE,
+    evEbitda,
     fcfYield,
-    interestCoverage,
-    range52wPosition,
-    epsRevisionScore,
-    epsGrowthForward,
-    marginTrend,
+    sixMonthReturn,
+    earningsRevisions,
     marketCap,
     high52,
     low52,
+    ebit,
+    interestExpense,
     name: fundamentals.name,
   };
 }
 
 /**
- * Fill in range52wPosition using bulk last-day prices.
+ * Enrich metrics with current prices from bulk data and compute 6M returns
+ * from rolling price history.
  */
-function enrichWithPrices(allMetrics, bulkPrices) {
+function enrichWithPrices(allMetrics, bulkPrices, tickerHistory) {
   // Build ticker → price map from bulk data
   const priceMap = {};
   if (Array.isArray(bulkPrices)) {
@@ -326,26 +370,33 @@ function enrichWithPrices(allMetrics, bulkPrices) {
   }
 
   for (const [ticker, metrics] of Object.entries(allMetrics)) {
+    // Set current price
     const price = priceMap[ticker] || priceMap[ticker.replace(/-/g, '.')];
-    if (price && metrics.high52 && metrics.low52 && metrics.high52 > metrics.low52) {
-      metrics.range52wPosition = ((price - metrics.low52) / (metrics.high52 - metrics.low52)) * 100;
-      // Clamp to 0-100
-      metrics.range52wPosition = Math.max(0, Math.min(100, metrics.range52wPosition));
-    }
     metrics.currentPrice = price || null;
+
+    // Compute 6-month return from rolling price history
+    if (tickerHistory) {
+      const history = tickerHistory.get(ticker) || tickerHistory.get(ticker.replace(/-/g, '.'));
+      if (history && history.length >= 126) {
+        const current = history[0];
+        const past = history[Math.min(125, history.length - 1)];
+        if (current > 0 && past > 0) {
+          metrics.sixMonthReturn = ((current - past) / past) * 100;
+        }
+      }
+    }
   }
 }
 
 // ---------------------------------------------------------------------------
-// Ranking Engine
+// Ranking Engine (4-pillar model)
 // ---------------------------------------------------------------------------
 
 /**
- * Rank stocks within a single sector across all 8 dimensions.
- * Returns an array of ranked stock objects.
+ * Rank stocks within a single sector across all 7 dimensions.
+ * Computes 4 pillar percentiles and weighted composite score.
  */
 function rankSectorStocks(sectorId, sectorStocks, allMetrics) {
-  const sector = STOCK_UNIVERSE[sectorId];
   const stocks = sectorStocks
     .map(s => ({
       ...s,
@@ -353,15 +404,14 @@ function rankSectorStocks(sectorId, sectorStocks, allMetrics) {
     }))
     .filter(s => s.metrics);
 
-  const n = stocks.length;
-  if (n === 0) return [];
+  if (stocks.length === 0) return [];
 
-  // Initialize ranks/percentiles for each stock
+  // Initialize ranks for each stock
   for (const stock of stocks) {
     stock.ranks = {};
   }
 
-  // For each dimension, rank stocks
+  // For each dimension, rank stocks within sector
   for (const [dimKey, dimDef] of Object.entries(DIMENSIONS)) {
     const withValues = stocks
       .filter(s => s.metrics[dimDef.field] != null)
@@ -369,7 +419,7 @@ function rankSectorStocks(sectorId, sectorStocks, allMetrics) {
 
     if (withValues.length === 0) continue;
 
-    // Sort: for inverted dimensions (lower = better), sort ascending
+    // Sort: for inverted (lower = better), sort ascending so rank 1 = lowest
     withValues.sort((a, b) =>
       dimDef.inverted ? a.value - b.value : b.value - a.value
     );
@@ -385,42 +435,63 @@ function rankSectorStocks(sectorId, sectorStocks, allMetrics) {
           : 50,
       };
     });
+
+    // EV/EBITDA special: stocks with negative/null EV/EBITDA get 0th percentile
+    if (dimKey === 'evEbitda') {
+      for (const stock of stocks) {
+        const rawEv = stock.metrics?.evEbitda;
+        if (rawEv == null && !stock.ranks.evEbitda) {
+          stock.ranks.evEbitda = {
+            rank: withValues.length + 1,
+            totalWithData: withValues.length + 1,
+            value: null,
+            percentile: 0,
+          };
+        }
+      }
+    }
   }
 
-  // Compute pillar scores (weighted average of constituent dimension percentiles)
+  // Compute pillar scores (average of constituent dimension percentiles)
   for (const stock of stocks) {
     stock.pillars = {};
     for (const [pillarKey, pillarDef] of Object.entries(PILLARS)) {
-      const defaultWeight = 1 / pillarDef.dimensions.length;
-      let totalWeight = 0;
-      let weightedSum = 0;
+      const pcts = pillarDef.dimensions
+        .map(d => stock.ranks[d]?.percentile)
+        .filter(p => p != null);
 
-      pillarDef.dimensions.forEach((d, i) => {
-        const pct = stock.ranks[d]?.percentile;
-        if (pct != null) {
-          const w = pillarDef.weights?.[i] ?? defaultWeight;
-          totalWeight += w;
-          weightedSum += pct * w;
-        }
-      });
-
-      stock.pillars[pillarKey] = totalWeight > 0
-        ? Math.round(weightedSum / totalWeight)
+      stock.pillars[pillarKey] = pcts.length > 0
+        ? Math.round(pcts.reduce((s, v) => s + v, 0) / pcts.length)
         : null;
     }
   }
 
-  // Compute composite score = average of all available pillar scores
+  // Compute weighted composite score with weight redistribution for missing pillars
   for (const stock of stocks) {
-    const pillarScores = Object.values(stock.pillars).filter(v => v != null);
-    // Require at least 3 of 6 pillars for a meaningful score
-    stock.compositeScore = pillarScores.length >= 3
-      ? Math.round(pillarScores.reduce((s, v) => s + v, 0) / pillarScores.length)
-      : null;
+    let totalWeight = 0;
+    let weightedSum = 0;
+    let availablePillars = 0;
+
+    for (const [pillarKey, weight] of Object.entries(COMPETE_PILLAR_WEIGHTS)) {
+      if (stock.pillars[pillarKey] != null) {
+        totalWeight += weight;
+        weightedSum += stock.pillars[pillarKey] * weight;
+        availablePillars++;
+      }
+    }
+
+    // Require at least 2 of 4 pillars (i.e., 3+ of 7 dimensions) for meaningful score
+    if (availablePillars >= 2 && totalWeight > 0) {
+      // Redistribute missing weights proportionally
+      stock.compositeScore = Math.round(weightedSum / totalWeight);
+    } else {
+      stock.compositeScore = null;
+    }
+
     stock.metricsAvailable = Object.keys(stock.ranks).length;
   }
 
-  // Sort by composite score to assign overall rank
+  // Sort by composite to assign rank
   const ranked = stocks
     .filter(s => s.compositeScore != null)
     .sort((a, b) => b.compositeScore - a.compositeScore);
@@ -429,9 +500,11 @@ function rankSectorStocks(sectorId, sectorStocks, allMetrics) {
     s.compositeRank = idx + 1;
     s.totalPeers = ranked.length;
     s.tier = getTierLabel(s.compositeScore);
+    s.dnaBadge = generateDNABadge(s.compositeRank, s.pillars);
+    s.debtRiskBadge = getDebtRiskBadge(s.metrics?.ebit, s.metrics?.interestExpense);
   });
 
-  // Build leaderboard array for this sector
+  // Build leaderboard
   const leaderboard = ranked.map(s => ({
     rank: s.compositeRank,
     ticker: s.ticker,
@@ -441,9 +514,20 @@ function rankSectorStocks(sectorId, sectorStocks, allMetrics) {
     tierColor: s.tier.color,
   }));
 
-  // Attach leaderboard to each stock
   for (const s of ranked) {
     s.leaderboard = leaderboard;
+  }
+
+  // Compute sector medians for context
+  const sectorMedians = {};
+  for (const [dimKey, dimDef] of Object.entries(DIMENSIONS)) {
+    const values = ranked
+      .map(s => s.metrics?.[dimDef.field])
+      .filter(v => v != null);
+    sectorMedians[dimDef.field] = median(values);
+  }
+  for (const s of ranked) {
+    s.sectorMedians = sectorMedians;
   }
 
   return ranked;
@@ -456,10 +540,11 @@ function computeSectorAggregate(sectorId, rankedStocks, etfPrices, spyPrices) {
   const sector = STOCK_UNIVERSE[sectorId];
   if (!rankedStocks || rankedStocks.length === 0) return null;
 
-  // 1. Breadth: % of stocks with 52w range position > 50
-  const withRange = rankedStocks.filter(s => s.metrics?.range52wPosition != null);
-  const above50 = withRange.filter(s => s.metrics.range52wPosition > 50).length;
-  const breadthPct = withRange.length > 0 ? (above50 / withRange.length) * 100 : 50;
+  // 1. Breadth: % of stocks above sector median composite
+  const scores = rankedStocks.map(s => s.compositeScore).filter(v => v != null);
+  const medianScore = median(scores) || 50;
+  const aboveMedian = scores.filter(s => s > medianScore).length;
+  const breadthPct = scores.length > 0 ? (aboveMedian / scores.length) * 100 : 50;
 
   // 2. 3M Relative Momentum vs SPY
   const etfReturn3M = computeReturn(etfPrices, 63);
@@ -470,30 +555,22 @@ function computeSectorAggregate(sectorId, rankedStocks, etfPrices, spyPrices) {
 
   // 3. Median Earnings Revision Score
   const revScores = rankedStocks
-    .map(s => s.metrics?.epsRevisionScore)
+    .map(s => s.metrics?.earningsRevisions)
     .filter(v => v != null)
     .sort((a, b) => a - b);
-  const medianRevisions = revScores.length > 0
-    ? revScores[Math.floor(revScores.length / 2)]
-    : 0;
+  const medianRevisions = median(revScores) || 0;
 
   // 4. Median Revenue Growth
   const growths = rankedStocks
     .map(s => s.metrics?.revenueGrowthYOY)
-    .filter(v => v != null)
-    .sort((a, b) => a - b);
-  const medianGrowth = growths.length > 0
-    ? growths[Math.floor(growths.length / 2)]
-    : 0;
+    .filter(v => v != null);
+  const medianGrowth = median(growths) || 0;
 
-  // 5. Valuation Discount (Phase 1: just median Forward P/E, lower is better)
-  const pes = rankedStocks
-    .map(s => s.metrics?.forwardPE)
-    .filter(v => v != null && v > 0)
-    .sort((a, b) => a - b);
-  const medianPE = pes.length > 0
-    ? pes[Math.floor(pes.length / 2)]
-    : null;
+  // 5. Valuation Discount (median EV/EBITDA, lower = better)
+  const evs = rankedStocks
+    .map(s => s.metrics?.evEbitda)
+    .filter(v => v != null && v > 0);
+  const medianEV = median(evs);
 
   // Normalize each factor to 0-100
   const factors = {
@@ -501,10 +578,9 @@ function computeSectorAggregate(sectorId, rankedStocks, etfPrices, spyPrices) {
     momentum3M: normalizeToScore(relMomentum, -20, 20),
     earningsRevisions: normalizeToScore(medianRevisions, -10, 10),
     medianGrowth: normalizeToScore((medianGrowth || 0) * 100, -10, 40),
-    valuationDiscount: medianPE != null ? normalizeToScore(30 - medianPE, -30, 30) : 50,
+    valuationDiscount: medianEV != null ? normalizeToScore(30 - medianEV, -30, 30) : 50,
   };
 
-  // Weighted composite
   let compositeScore = 0;
   for (const [factor, weight] of Object.entries(SECTOR_COMPOSITE_WEIGHTS)) {
     compositeScore += (factors[factor] ?? 50) * weight;
@@ -518,12 +594,12 @@ function computeSectorAggregate(sectorId, rankedStocks, etfPrices, spyPrices) {
     compositeScore: Math.round(compositeScore),
     breadth: {
       value: Math.round(breadthPct),
-      label: `${above50} of ${withRange.length} above 52w midpoint`,
+      label: `${aboveMedian} of ${scores.length} above sector median`,
     },
     factors,
     medianMetrics: {
       revenueGrowth: medianGrowth,
-      forwardPE: medianPE,
+      evEbitda: medianEV,
       earningsRevisions: medianRevisions,
     },
     stockCount: rankedStocks.length,
@@ -532,14 +608,293 @@ function computeSectorAggregate(sectorId, rankedStocks, etfPrices, spyPrices) {
 }
 
 // ---------------------------------------------------------------------------
+// Phase C: Coiled Spring & Running on Fumes Scanner
+// ---------------------------------------------------------------------------
+
+/**
+ * Run the scanner on all ranked stocks.
+ * Returns { scannerResults, scannerSummary }.
+ * This function is wrapped in try/catch in the handler — it must never crash the cron.
+ */
+function runScanner(allRanked, tickerHistory, estimatesData) {
+  const scannerResults = {}; // ticker → { coiledSpring, runningOnFumes }
+  const coiledSprings = [];
+  const fumes = [];
+
+  // Check if we have enough price history for scanner
+  const sampleHistory = tickerHistory?.values()?.next()?.value;
+  const historyDays = sampleHistory?.length || 0;
+  if (historyDays < 21) {
+    logWarn(`Scanner skipped — only ${historyDays} days of price history (need ≥21)`);
+    return { scannerResults, scannerSummary: buildEmptyScannerSummary() };
+  }
+
+  const hasEstimates = estimatesData != null && Object.keys(estimatesData).length > 0;
+  if (!hasEstimates) {
+    logWarn('Scanner skipped — estimates cache not yet populated');
+    return { scannerResults, scannerSummary: buildEmptyScannerSummary() };
+  }
+
+  for (const stock of allRanked) {
+    const ticker = stock.ticker;
+    const m = stock.metrics;
+    if (!m) continue;
+
+    const history = tickerHistory.get(ticker) || tickerHistory.get(ticker.replace(/-/g, '.'));
+    const estimates = estimatesData?.[ticker] || null;
+
+    // Compute scanner metrics
+    const annVol = history ? annualizedVolatility(history) : null;
+    const vad = computeVAD(m.currentPrice, m.high52, annVol);
+    const sma21 = history ? compute21dSMA(history) : null;
+    const daysFromHigh = history ? daysSince52WeekHigh(history, m.high52) : 200;
+    const rawDrawdown = (m.high52 && m.currentPrice)
+      ? (m.high52 - m.currentPrice) / m.high52
+      : null;
+    const distFromHigh = (m.high52 && m.currentPrice)
+      ? ((m.currentPrice - m.high52) / m.high52) * 100
+      : null;
+
+    // Extract estimates data
+    const rsr = estimates?.rsr ?? null;
+    const ems = estimates?.ems ?? null;
+    const emsPercentile = estimates?.emsPercentile ?? null;
+    const analystCount = estimates?.earningsEstimateNumberOfAnalysts ?? null;
+    const revisionsUp = estimates?.epsRevisionsUpLast30days ?? 0;
+    const revisionsDown = estimates?.epsRevisionsDownLast30days ?? 0;
+    const revisionVolume = revisionsUp + revisionsDown;
+
+    const scannerEntry = { coiledSpring: null, runningOnFumes: null };
+
+    // --- COILED SPRING GATES ---
+    const springGates = {
+      vadAboveThreshold: vad != null && vad > 0.85,
+      solvent: m.opMarginTTM != null && m.opMarginTTM > 0,
+      analystCoverage: analystCount != null && analystCount >= 4,
+      revisionFloor: rsr != null && rsr >= 0.50,
+      revisionVolume: revisionVolume >= 3,
+      aboveSMA: m.currentPrice != null && sma21 != null && m.currentPrice > sma21,
+      temporalWindow: daysFromHigh >= 21 && daysFromHigh <= 150,
+    };
+
+    const passesAllSpringGates = Object.values(springGates).every(Boolean);
+
+    if (passesAllSpringGates) {
+      coiledSprings.push({
+        ticker,
+        sectorId: stock.sectorId,
+        vad,
+        rawDrawdown,
+        rsr,
+        emsPercentile: emsPercentile || 0,
+        revisionScore: (rsr || 0) + (emsPercentile || 0),
+        daysFromHigh,
+        currentPrice: m.currentPrice,
+        high52: m.high52,
+        sma21,
+        name: m.name,
+      });
+    }
+
+    // --- RUNNING ON FUMES GATES ---
+    const fumesGates = {
+      nearHigh: distFromHigh != null && distFromHigh > -5,
+      deterioratingRevisions: rsr != null && rsr < 0.40,
+      revisionVolume: revisionVolume >= 3,
+      analystCoverage: analystCount != null && analystCount >= 4,
+    };
+
+    const passesAllFumesGates = Object.values(fumesGates).every(Boolean);
+
+    if (passesAllFumesGates) {
+      fumes.push({
+        ticker,
+        sectorId: stock.sectorId,
+        rsr,
+        distFromHigh,
+        currentPrice: m.currentPrice,
+        high52: m.high52,
+        name: m.name,
+      });
+    }
+
+    scannerResults[ticker] = scannerEntry;
+  }
+
+  // Score Coiled Springs
+  scoreCoiledSprings(coiledSprings, scannerResults);
+
+  // Score Running on Fumes
+  scoreRunningOnFumes(fumes, scannerResults);
+
+  // Build scanner summary
+  const scannerSummary = buildScannerSummary(coiledSprings, fumes);
+
+  return { scannerResults, scannerSummary };
+}
+
+function scoreCoiledSprings(candidates, scannerResults) {
+  if (candidates.length === 0) return;
+
+  // Group by sector
+  const bySector = {};
+  for (const c of candidates) {
+    if (!bySector[c.sectorId]) bySector[c.sectorId] = [];
+    bySector[c.sectorId].push(c);
+  }
+
+  for (const c of candidates) {
+    const sectorPeers = bySector[c.sectorId] || [];
+    // Use cross-sector pool if fewer than 3 in sector
+    const pool = sectorPeers.length >= 3 ? sectorPeers : candidates;
+    const crossSector = sectorPeers.length < 3;
+
+    const vadValues = pool.map(p => p.vad).sort((a, b) => a - b);
+    const revValues = pool.map(p => p.revisionScore).sort((a, b) => a - b);
+
+    const zDrawdown = percentileRank(c.vad, vadValues);
+    const zRevisions = percentileRank(c.revisionScore, revValues);
+
+    const score = Math.round((zRevisions * 0.65) + (zDrawdown * 0.35));
+
+    const narrative = generateSpringNarrative({
+      rawDrawdown: c.rawDrawdown,
+      vad: c.vad,
+      rsr: c.rsr,
+      currentPrice: c.currentPrice,
+      sma21: c.sma21,
+    });
+
+    scannerResults[c.ticker].coiledSpring = {
+      qualifies: true,
+      score,
+      vad: Math.round(c.vad * 100) / 100,
+      rawDrawdown: Math.round((c.rawDrawdown || 0) * 1000) / 1000,
+      annualizedVol: c.vad && c.rawDrawdown ? Math.round((c.rawDrawdown / c.vad) * 1000) / 1000 : null,
+      daysSinceHigh: c.daysFromHigh,
+      rsr: Math.round((c.rsr || 0) * 100) / 100,
+      ems: c.emsPercentile || null,
+      price21dSMA: c.sma21 ? Math.round(c.sma21 * 100) / 100 : null,
+      currentPrice: c.currentPrice,
+      high52Week: c.high52,
+      narrative,
+      crossSector,
+    };
+  }
+}
+
+function scoreRunningOnFumes(candidates, scannerResults) {
+  if (candidates.length === 0) return;
+
+  const rsrInverted = candidates.map(c => 1 - (c.rsr || 0)).sort((a, b) => a - b);
+  const proximityValues = candidates
+    .map(c => 1 - Math.abs((c.distFromHigh || 0) / 100))
+    .sort((a, b) => a - b);
+
+  for (const c of candidates) {
+    const revDeterioration = percentileRank(1 - (c.rsr || 0), rsrInverted);
+    const proximityToHigh = percentileRank(
+      1 - Math.abs((c.distFromHigh || 0) / 100),
+      proximityValues
+    );
+
+    const score = Math.round((revDeterioration * 0.65) + (proximityToHigh * 0.35));
+
+    const narrative = generateFumesNarrative({
+      distFromHigh: c.distFromHigh,
+      rsr: c.rsr,
+    });
+
+    scannerResults[c.ticker].runningOnFumes = {
+      qualifies: true,
+      score,
+      distFromHigh: Math.round((c.distFromHigh || 0) * 100) / 100,
+      rsr: Math.round((c.rsr || 0) * 100) / 100,
+      currentPrice: c.currentPrice,
+      high52Week: c.high52,
+      narrative,
+    };
+  }
+}
+
+function buildScannerSummary(coiledSprings, fumes) {
+  // Sort by score descending
+  const sortedSprings = [...coiledSprings].sort((a, b) => {
+    const sa = a._score || 0;
+    const sb = b._score || 0;
+    return sb - sa;
+  });
+
+  // Build sector counts for springs
+  const springBySector = {};
+  for (const c of coiledSprings) {
+    const sectorName = STOCK_UNIVERSE[c.sectorId]?.name || c.sectorId;
+    if (!springBySector[sectorName]) {
+      springBySector[sectorName] = { count: 0, tickers: [], sectorSignal: false };
+    }
+    springBySector[sectorName].count++;
+    springBySector[sectorName].tickers.push(c.ticker);
+  }
+  // Flag sector signal if ≥4 (≥20% of ~20 stocks)
+  for (const sector of Object.values(springBySector)) {
+    sector.sectorSignal = sector.count >= 4;
+  }
+
+  // Build sector counts for fumes
+  const fumesBySector = {};
+  for (const c of fumes) {
+    const sectorName = STOCK_UNIVERSE[c.sectorId]?.name || c.sectorId;
+    if (!fumesBySector[sectorName]) {
+      fumesBySector[sectorName] = { count: 0, tickers: [], sectorSignal: false };
+    }
+    fumesBySector[sectorName].count++;
+    fumesBySector[sectorName].tickers.push(c.ticker);
+  }
+
+  return {
+    computedAt: new Date().toISOString(),
+    coiledSprings: {
+      total: coiledSprings.length,
+      top3: coiledSprings.slice(0, 3).map(c => ({
+        ticker: c.ticker,
+        sector: STOCK_UNIVERSE[c.sectorId]?.name || c.sectorId,
+        score: c._score || 0,
+        drawdown: c.rawDrawdown != null ? `${Math.round(c.rawDrawdown * 100)}%` : null,
+        rsr: c.rsr != null ? Math.round(c.rsr * 100) / 100 : null,
+      })),
+      bySector: springBySector,
+    },
+    runningOnFumes: {
+      total: fumes.length,
+      top3: fumes.slice(0, 3).map(c => ({
+        ticker: c.ticker,
+        sector: STOCK_UNIVERSE[c.sectorId]?.name || c.sectorId,
+        score: c._score || 0,
+        distFromHigh: c.distFromHigh != null ? `${Math.abs(Math.round(c.distFromHigh * 100) / 100)}%` : null,
+        rsr: c.rsr != null ? Math.round(c.rsr * 100) / 100 : null,
+      })),
+      bySector: fumesBySector,
+    },
+  };
+}
+
+function buildEmptyScannerSummary() {
+  return {
+    computedAt: new Date().toISOString(),
+    coiledSprings: { total: 0, top3: [], bySector: {} },
+    runningOnFumes: { total: 0, top3: [], bySector: {} },
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Firestore Persistence
 // ---------------------------------------------------------------------------
 
-async function persistResults(db, allRanked, sectorAggregates) {
+async function persistResults(db, allRanked, sectorAggregates, scannerResults, scannerSummary) {
   const now = new Date();
   const expiresAt = new Date(now.getTime() + 26 * 60 * 60 * 1000); // 26 hours
 
-  // Sort sector aggregates by composite score for cross-sector ranking
+  // Sort sector aggregates for cross-sector ranking
   const sortedSectors = [...sectorAggregates]
     .filter(Boolean)
     .sort((a, b) => b.compositeScore - a.compositeScore);
@@ -549,7 +904,6 @@ async function persistResults(db, allRanked, sectorAggregates) {
     s.tier = getTierLabel(s.compositeScore);
   });
 
-  // Build sector summary lookup for embedding in per-stock docs
   const sectorSummaryMap = {};
   for (const s of sortedSectors) {
     sectorSummaryMap[s.sectorId] = {
@@ -562,12 +916,36 @@ async function persistResults(db, allRanked, sectorAggregates) {
     };
   }
 
-  // Batch write — up to 500 ops per batch, we have ~221
+  // Batch write — up to 500 ops per batch, we have ~221 + 2
   const batch = db.batch();
   let opCount = 0;
 
   for (const stock of allRanked) {
     const ref = db.collection('peerRankings').doc(stock.ticker);
+    const scannerData = scannerResults?.[stock.ticker] || { coiledSpring: null, runningOnFumes: null };
+
+    // Build per-dimension detail for each pillar
+    const pillarDetails = {};
+    for (const [pillarKey, pillarDef] of Object.entries(PILLARS)) {
+      const dimensions = {};
+      for (const dimKey of pillarDef.dimensions) {
+        const dimRank = stock.ranks?.[dimKey];
+        const dimDef = DIMENSIONS[dimKey];
+        if (dimRank) {
+          dimensions[dimKey] = {
+            value: dimRank.value,
+            rank: dimRank.rank,
+            percentile: dimRank.percentile,
+            sectorMedian: stock.sectorMedians?.[dimDef?.field] ?? null,
+          };
+        }
+      }
+      pillarDetails[pillarKey] = {
+        percentile: stock.pillars?.[pillarKey] ?? null,
+        dimensions,
+      };
+    }
+
     const doc = {
       ticker: stock.ticker,
       name: stock.metrics?.name || stock.ticker,
@@ -578,21 +956,20 @@ async function persistResults(db, allRanked, sectorAggregates) {
       totalPeers: stock.totalPeers,
       metricsAvailable: stock.metricsAvailable,
       tier: stock.tier,
-      dimensions: stock.ranks,
-      pillars: stock.pillars,
+      dnaBadge: stock.dnaBadge || null,
+      pillars: pillarDetails,
       metrics: {
-        revenueGrowthYOY: stock.metrics?.revenueGrowthYOY,
-        opMarginTTM: stock.metrics?.opMarginTTM,
-        roaTTM: stock.metrics?.roaTTM,
-        forwardPE: stock.metrics?.forwardPE,
-        fcfYield: stock.metrics?.fcfYield,
-        interestCoverage: stock.metrics?.interestCoverage,
-        range52wPosition: stock.metrics?.range52wPosition,
-        epsRevisionScore: stock.metrics?.epsRevisionScore,
-        epsGrowthForward: stock.metrics?.epsGrowthForward,
-        marginTrend: stock.metrics?.marginTrend,
-        marketCap: stock.metrics?.marketCap,
+        revenueGrowthYOY: stock.metrics?.revenueGrowthYOY ?? null,
+        opMarginTTM: stock.metrics?.opMarginTTM ?? null,
+        roaTTM: stock.metrics?.roaTTM ?? null,
+        evEbitda: stock.metrics?.evEbitda ?? null,
+        fcfYield: stock.metrics?.fcfYield ?? null,
+        sixMonthReturn: stock.metrics?.sixMonthReturn ?? null,
+        earningsRevisions: stock.metrics?.earningsRevisions ?? null,
+        marketCap: stock.metrics?.marketCap ?? null,
       },
+      debtRiskBadge: stock.debtRiskBadge || null,
+      scanner: scannerData,
       leaderboard: stock.leaderboard,
       sectorSummary: sectorSummaryMap[stock.sectorId] || null,
       computedAt: now,
@@ -602,7 +979,7 @@ async function persistResults(db, allRanked, sectorAggregates) {
     opCount++;
   }
 
-  // Write sector rankings document
+  // Write sector rankings
   const sectorRef = db.collection('sectorRankings').doc('latest');
   batch.set(sectorRef, {
     sectors: sortedSectors,
@@ -611,8 +988,15 @@ async function persistResults(db, allRanked, sectorAggregates) {
   });
   opCount++;
 
+  // Write scanner summary
+  if (scannerSummary) {
+    const scannerRef = db.collection('scannerSummary').doc('latest');
+    batch.set(scannerRef, scannerSummary);
+    opCount++;
+  }
+
   await batch.commit();
-  logInfo(`Persisted ${opCount} documents to Firestore (${allRanked.length} stocks + 1 sector doc)`);
+  logInfo(`Persisted ${opCount} documents to Firestore (${allRanked.length} stocks + sector + scanner)`);
 }
 
 // ---------------------------------------------------------------------------
@@ -641,7 +1025,11 @@ export default async function handler(req, res) {
   }
 
   try {
-    // Step 1: Build flat stock list
+    const db = getFirebaseAdmin();
+
+    // ===== PHASE A: DATA FETCHING =====
+
+    // A1: Build flat stock list
     const allStocks = [];
     for (const [sectorId, sector] of Object.entries(STOCK_UNIVERSE)) {
       for (const ticker of sector.stocks) {
@@ -650,7 +1038,7 @@ export default async function handler(req, res) {
     }
     logInfo(`Stock universe: ${allStocks.length} stocks across ${Object.keys(STOCK_UNIVERSE).length} sectors`);
 
-    // Step 2: Fetch fundamentals (batched, ~220 calls)
+    // A2: Fetch fundamentals (batched, ~220 calls)
     const allFundamentals = await fetchAllFundamentals(allStocks, API_KEY);
     const fetchedCount = Object.keys(allFundamentals).length;
     logInfo(`Fundamentals fetched: ${fetchedCount}/${allStocks.length}`);
@@ -663,7 +1051,7 @@ export default async function handler(req, res) {
       });
     }
 
-    // Step 3: Fetch bulk last-day prices (1 call)
+    // A3: Fetch bulk last-day prices (1 call)
     let bulkPrices = [];
     try {
       const bulkRes = await fetch(
@@ -672,10 +1060,10 @@ export default async function handler(req, res) {
       if (bulkRes.ok) bulkPrices = await bulkRes.json();
       logInfo(`Bulk prices: ${bulkPrices.length} entries`);
     } catch (err) {
-      logWarn(`Bulk price fetch failed: ${err.message} — 52w position will be unavailable`);
+      logWarn(`Bulk price fetch failed: ${err.message}`);
     }
 
-    // Step 4: Fetch historical prices for SPY + sector ETFs (13 calls)
+    // A4: Fetch historical prices for SPY + sector ETFs (13 calls)
     const historicalPrices = {};
     const etfSymbols = ['SPY', ...Object.values(STOCK_UNIVERSE).map(s => s.etf)];
     const etfPromises = etfSymbols.map(sym =>
@@ -690,7 +1078,26 @@ export default async function handler(req, res) {
     });
     logInfo(`Historical prices fetched for ${etfSymbols.length} ETFs`);
 
-    // Step 5: Extract metrics
+    // A5: Update rolling price history (for scanner + 6M returns)
+    const tickerHistory = await updateRollingPriceHistory(db, bulkPrices);
+
+    // A6: Read estimates cache (for scanner revision gates)
+    let estimatesData = null;
+    try {
+      const estDoc = await db.collection('estimatesCache').doc('latest').get();
+      if (estDoc.exists) {
+        estimatesData = estDoc.data()?.stocks || estDoc.data();
+        logInfo(`Estimates cache loaded: ${Object.keys(estimatesData).length} stocks`);
+      } else {
+        logWarn('Estimates cache not found — scanner will be skipped');
+      }
+    } catch (err) {
+      logWarn(`Failed to read estimates cache: ${err.message}`);
+    }
+
+    // ===== PHASE B: RANKING COMPUTATION =====
+
+    // B1: Extract metrics
     const allMetrics = {};
     for (const { ticker } of allStocks) {
       if (allFundamentals[ticker]) {
@@ -698,13 +1105,13 @@ export default async function handler(req, res) {
       }
     }
 
-    // Enrich with bulk prices (fills range52wPosition)
-    enrichWithPrices(allMetrics, bulkPrices);
+    // B2: Enrich with prices + 6M returns
+    enrichWithPrices(allMetrics, bulkPrices, tickerHistory);
 
     const metricsCount = Object.keys(allMetrics).length;
     logInfo(`Metrics extracted for ${metricsCount} stocks`);
 
-    // Step 6: Rank within each sector
+    // B3: Rank within each sector
     const allRanked = [];
     const sectorAggregates = [];
 
@@ -713,20 +1120,37 @@ export default async function handler(req, res) {
       const ranked = rankSectorStocks(sectorId, sectorStocks, allMetrics);
       allRanked.push(...ranked);
 
-      // Compute sector aggregate
       const etfPrices = historicalPrices[sector.etf] || [];
       const spyPrices = historicalPrices['SPY'] || [];
       const agg = computeSectorAggregate(sectorId, ranked, etfPrices, spyPrices);
       if (agg) sectorAggregates.push(agg);
 
-      logInfo(`Sector ${sector.name}: ${ranked.length} stocks ranked, top: ${ranked[0]?.ticker || 'N/A'} (${ranked[0]?.compositeScore ?? 'N/A'})`);
+      logInfo(`Sector ${sector.name}: ${ranked.length} ranked, top: ${ranked[0]?.ticker || 'N/A'} (${ranked[0]?.compositeScore ?? 'N/A'})`);
     }
 
     logInfo(`Total ranked: ${allRanked.length} stocks, ${sectorAggregates.length} sectors`);
 
-    // Step 7: Persist to Firestore
-    const db = getFirebaseAdmin();
-    await persistResults(db, allRanked, sectorAggregates);
+    // ===== PHASE C: SCANNER (wrapped in try/catch — never blocks rankings) =====
+
+    let scannerResults = {};
+    let scannerSummary = buildEmptyScannerSummary();
+
+    try {
+      const scannerOutput = runScanner(allRanked, tickerHistory, estimatesData);
+      scannerResults = scannerOutput.scannerResults;
+      scannerSummary = scannerOutput.scannerSummary;
+
+      const springCount = scannerSummary.coiledSprings?.total || 0;
+      const fumesCount = scannerSummary.runningOnFumes?.total || 0;
+      logInfo(`Scanner complete: ${springCount} Coiled Springs, ${fumesCount} Running on Fumes`);
+    } catch (scannerErr) {
+      logError(`Scanner failed (rankings will still persist): ${scannerErr.message}`);
+      console.error(scannerErr.stack);
+    }
+
+    // ===== PHASE D: PERSIST =====
+
+    await persistResults(db, allRanked, sectorAggregates, scannerResults, scannerSummary);
 
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
     logInfo(`Rankings cron complete in ${elapsed}s`);
@@ -738,6 +1162,9 @@ export default async function handler(req, res) {
         stocksFetched: fetchedCount,
         stocksRanked: allRanked.length,
         sectorsRanked: sectorAggregates.length,
+        coiledSprings: scannerSummary.coiledSprings?.total || 0,
+        runningOnFumes: scannerSummary.runningOnFumes?.total || 0,
+        priceHistoryDays: tickerHistory?.values()?.next()?.value?.length || 0,
         elapsedSeconds: parseFloat(elapsed),
       },
     });

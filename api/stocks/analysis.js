@@ -123,19 +123,18 @@ function formatPillarContext(rankings) {
   if (!rankings) return '';
   const d = rankings;
   let ctx = 'RANKING DATA:\n';
-  if (d.composite != null) ctx += `Composite Score: ${d.composite}/100\n`;
-  if (d.dimensions) {
-    const dim = d.dimensions;
-    if (dim.growth != null) ctx += `Growth: ${dim.growth} | `;
-    if (dim.profitability != null) ctx += `Profitability: ${dim.profitability} | `;
-    if (dim.efficiency != null) ctx += `Efficiency: ${dim.efficiency}\n`;
-    if (dim.valuation != null) ctx += `Valuation: ${dim.valuation} | `;
-    if (dim.health != null) ctx += `Health: ${dim.health} | `;
-    if (dim.sentiment != null) ctx += `Sentiment: ${dim.sentiment}\n`;
+  if (d.compositeScore != null) ctx += `Composite Score: ${d.compositeScore}/100\n`;
+  if (d.pillars) {
+    const p = d.pillars;
+    if (p.momentum?.percentile != null) ctx += `Momentum: ${p.momentum.percentile} | `;
+    if (p.quality?.percentile != null) ctx += `Quality: ${p.quality.percentile} | `;
+    if (p.valuation?.percentile != null) ctx += `Valuation: ${p.valuation.percentile}\n`;
+    if (p.capitalEff?.percentile != null) ctx += `Capital Efficiency: ${p.capitalEff.percentile}\n`;
   }
-  if (d.sectorRank != null && d.sectorTotal != null) {
-    ctx += `Sector Rank: #${d.sectorRank} of ${d.sectorTotal}\n`;
+  if (d.compositeRank != null && d.totalPeers != null) {
+    ctx += `Sector Rank: #${d.compositeRank} of ${d.totalPeers}\n`;
   }
+  if (d.dnaBadge) ctx += `DNA: ${d.dnaBadge}\n`;
   return ctx;
 }
 
