@@ -9,6 +9,8 @@ import { useCooldown } from '../../hooks/useCooldown';
 import { IntelligenceProvider, useIntelligence } from '../../contexts/IntelligenceContext';
 import AssetResearchModal from '../draft/AssetResearchModal';
 import WhyMovingPopup from './WhyMovingPopup';
+import { SECTORS } from '../../constants/sectors';
+import { COMPANY_SECTORS } from '../../config/stockData';
 import MarketPulseCard from './MarketPulseCard';
 import UpcomingEventsPanel from './UpcomingEventsPanel';
 import ReadAcrossAlert from './ReadAcrossAlert';
@@ -2730,6 +2732,27 @@ const ResearchLandingPage = ({
     buildMarketContextString,
   } = useResearchIntelligence({ stocksData, allAssets, marketBreadth, moversData, marketNews });
 
+  // ─── Peer moves for Why Moving popup ─────────────────────
+  const whyMovingPeerMoves = useMemo(() => {
+    if (!whyMovingTarget?.symbol || !stocksData?.length) return undefined;
+    const SECTOR_TO_ETF = {
+      technology: 'XLK', financial: 'XLF', healthcare: 'XLV',
+      energy: 'XLE', consumer_cyclical: 'XLY', consumer_defensive: 'XLP',
+      industrial: 'XLI', communication: 'XLC', real_estate: 'XLRE',
+      utilities: 'XLU', basic_materials: 'XLB',
+    };
+    const targetSector = COMPANY_SECTORS[whyMovingTarget.symbol];
+    if (!targetSector) return undefined;
+    const sectorETF = SECTOR_TO_ETF[targetSector];
+    if (!sectorETF || !SECTORS[sectorETF]) return undefined;
+    const peers = SECTORS[sectorETF].topHoldings.filter(t => t !== whyMovingTarget.symbol);
+    return stocksData
+      .filter(s => peers.includes(s.symbol))
+      .map(s => ({ symbol: s.symbol, change: s.percentChange || s.change || 0 }))
+      .sort((a, b) => Math.abs(b.change) - Math.abs(a.change))
+      .slice(0, 4);
+  }, [whyMovingTarget?.symbol, stocksData]);
+
   // ─── Data fetching ───────────────────────────────────────
   useEffect(() => {
     // Fetch top movers
@@ -2855,6 +2878,7 @@ const ResearchLandingPage = ({
           price={whyMovingTarget?.price}
           isOpen={!!whyMovingTarget}
           onClose={() => setWhyMovingTarget(null)}
+          peerMoves={whyMovingPeerMoves}
         />
       </>
     );

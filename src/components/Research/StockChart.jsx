@@ -40,6 +40,8 @@ const StockChart = ({
   const trendlineSeriesRef = useRef([]);
   const lastCrosshairUpdateRef = useRef(0);
   const isHoveringCandleRef = useRef(false);
+  const savedRangeRef = useRef(null);
+  const lastTimeframeRef = useRef(null);
 
   const [ohlcData, setOhlcData] = useState(null);
   const [showSMA, setShowSMA] = useState(false);
@@ -485,6 +487,9 @@ const StockChart = ({
       }
     }
 
+    const isTimeframeChange = lastTimeframeRef.current !== timeframe;
+    lastTimeframeRef.current = timeframe;
+
     if (isSpectateView) {
       // Spectate: wider candles, right margin, fit all returned candles
       // barSpacing 12+ makes hourly fallback candles large and readable
@@ -496,8 +501,18 @@ const StockChart = ({
           chart.timeScale().scrollToRealTime();
         }
       });
+      savedRangeRef.current = null;
+    } else if (!isTimeframeChange && savedRangeRef.current) {
+      // Same timeframe, data-only update — restore user's zoom/pan position
+      try {
+        chart.timeScale().setVisibleLogicalRange(savedRangeRef.current);
+      } catch {
+        chart.timeScale().fitContent();
+      }
     } else {
+      // Initial load or timeframe change — auto-fit to show all data
       chart.timeScale().fitContent();
+      savedRangeRef.current = null;
     }
 
     // OHLC: set default to latest candle (bomb view: daily aggregate)
@@ -560,6 +575,12 @@ const StockChart = ({
     resizeObserver.observe(container);
 
     return () => {
+      // Save visible range before destruction so data-only updates can restore it
+      try {
+        if (chartRef.current) {
+          savedRangeRef.current = chart.timeScale().getVisibleLogicalRange();
+        }
+      } catch { /* chart may already be disposed */ }
       resizeObserver.disconnect();
       smaSeriesRefs.current = [];
       trendlineSeriesRef.current = [];
