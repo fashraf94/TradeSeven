@@ -40,7 +40,7 @@ export default async function handler(req, res) {
     return;
   }
 
-  const { symbol } = req.query;
+  const symbol = req.query.symbol || req.query.ticker;
   if (!symbol) {
     return res.status(400).json({ error: 'Missing symbol parameter' });
   }
