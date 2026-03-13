@@ -10,6 +10,7 @@ import {
   addBaggerBombEvent,
   updateAssetHistoryInBattle,
 } from '../firebase/firebaseService';
+import { getCurrentTradingDay } from '../constants/battleTimingV4';
 import { getVolatilityThresholds } from '../services/volatilityService';
 import {
   updateAssetHistory,
@@ -110,25 +111,45 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
     return { ...battleHistory, ...localHistory };
   }, [battle, isCreator, localHistory]);
 
+  // Current trading day (V3 is session-based / single-day, defaults to 1)
+  const currentTradingDay = useMemo(() => {
+    const dates = battle?.timing?.tradingDayDates;
+    if (!dates || dates.length === 0) return 1;
+    return getCurrentTradingDay(dates);
+  }, [battle?.timing?.tradingDayDates]);
+
   // Previous close prices for threshold baseline — layered per-symbol merge:
-  // Layer 1 (base): activationPrices (entry fallback for day 1 / old battles)
-  // Layer 2: Firebase battle.state.previousClosePrices (may be stale after day 1)
-  // Layer 3 (wins): EODHD-polled previousClosePrices (freshest daily data)
+  // Day 1: entry price is the threshold baseline (no daily reset yet)
+  // Day 2+: Layer Firebase then EODHD over entry prices (freshest wins)
   const previousClosePriceMap = useMemo(() => {
     const map = { ...(activationPrices || {}) };
-    const fbPrevClose = battle?.state?.previousClosePrices;
-    if (fbPrevClose && typeof fbPrevClose === 'object') {
-      Object.entries(fbPrevClose).forEach(([sym, price]) => {
-        if (price > 0) map[sym] = price;
-      });
+
+    if (currentTradingDay >= 2) {
+      // Day 2+: layer in Firebase, then EODHD (freshest wins)
+      const fbPrevClose = battle?.state?.previousClosePrices;
+      if (fbPrevClose && typeof fbPrevClose === 'object') {
+        Object.entries(fbPrevClose).forEach(([sym, price]) => {
+          if (price > 0) map[sym] = price;
+        });
+      }
+      if (previousClosePrices && typeof previousClosePrices === 'object') {
+        Object.entries(previousClosePrices).forEach(([sym, price]) => {
+          if (price > 0) map[sym] = price;
+        });
+      }
     }
-    if (previousClosePrices && typeof previousClosePrices === 'object') {
-      Object.entries(previousClosePrices).forEach(([sym, price]) => {
-        if (price > 0) map[sym] = price;
-      });
-    }
+
+    const sampleSym = Object.keys(map)[0];
+    console.log('[BB-Fix] V3 prevCloseMap:', {
+      day: currentTradingDay,
+      usingDaily: currentTradingDay >= 2,
+      eodhd: previousClosePrices?.[sampleSym],
+      entry: activationPrices?.[sampleSym],
+      result: map?.[sampleSym],
+    });
+
     return map;
-  }, [battle?.state?.previousClosePrices, previousClosePrices, activationPrices]);
+  }, [battle?.state?.previousClosePrices, previousClosePrices, activationPrices, currentTradingDay]);
 
   // Calculate scores with history
   const calculateScores = useCallback((portfolio, prices, openPrices, history, extremes = {}, battleThresholds = {}, prevClosePrices = {}) => {

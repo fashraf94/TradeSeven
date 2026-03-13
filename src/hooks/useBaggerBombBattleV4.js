@@ -162,24 +162,37 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
   }, [activationPrices]);
 
   // Previous close prices for threshold baseline — layered merge:
-  // Layer 1 (base): activationPrices (entry fallback for day 1 / old battles)
-  // Layer 2: Firebase battle.state.previousClosePrices (may be stale after day 1)
-  // Layer 3 (wins): EODHD-polled previousClosePrices (freshest daily data)
+  // Day 1: entry price is the threshold baseline (no daily reset yet)
+  // Day 2+: Layer Firebase then EODHD over entry prices (freshest wins)
   const previousClosePriceMap = useMemo(() => {
     const map = { ...(activationPrices || {}) };
-    const fbPrevClose = battle?.state?.previousClosePrices;
-    if (fbPrevClose && typeof fbPrevClose === 'object') {
-      Object.entries(fbPrevClose).forEach(([sym, price]) => {
-        if (price > 0) map[sym] = price;
-      });
+
+    if (currentTradingDay >= 2) {
+      // Day 2+: layer in Firebase, then EODHD (freshest wins)
+      const fbPrevClose = battle?.state?.previousClosePrices;
+      if (fbPrevClose && typeof fbPrevClose === 'object') {
+        Object.entries(fbPrevClose).forEach(([sym, price]) => {
+          if (price > 0) map[sym] = price;
+        });
+      }
+      if (previousClosePrices && typeof previousClosePrices === 'object') {
+        Object.entries(previousClosePrices).forEach(([sym, price]) => {
+          if (price > 0) map[sym] = price;
+        });
+      }
     }
-    if (previousClosePrices && typeof previousClosePrices === 'object') {
-      Object.entries(previousClosePrices).forEach(([sym, price]) => {
-        if (price > 0) map[sym] = price;
-      });
-    }
+
+    const sampleSym = Object.keys(map)[0];
+    console.log('[BB-Fix] prevCloseMap:', {
+      day: currentTradingDay,
+      usingDaily: currentTradingDay >= 2,
+      eodhd: previousClosePrices?.[sampleSym],
+      entry: activationPrices?.[sampleSym],
+      result: map?.[sampleSym],
+    });
+
     return map;
-  }, [battle?.state?.previousClosePrices, previousClosePrices, activationPrices]);
+  }, [battle?.state?.previousClosePrices, previousClosePrices, activationPrices, currentTradingDay]);
 
   // Free agents data
   const freeAgents = useMemo(() => {
@@ -665,6 +678,14 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
         crossed.forEach((threshold) => {
           const existingBadges = getBadgesFromHistory(assetHistory);
           if (!existingBadges.includes(threshold.name)) {
+            console.log('[BB-Fix] CROSSING:', asset.symbol, {
+              day: currentTradingDay,
+              badge: threshold.name,
+              dailyBaseline,
+              currentMultiplier: currentMultiplier.toFixed(3),
+              prevMultiplier: prevMultiplier?.toFixed(3),
+              historyMax: assetHistory?.maxMultiplier?.toFixed(3),
+            });
             const newHistory = updateAssetHistory(asset.symbol, extremeMultiplier, assetHistory);
             setLocalHistory((prev) => ({
               ...prev,
@@ -904,11 +925,13 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
       portfolioFlat.forEach((asset) => {
         if (!asset) return;
 
-        const assetOpenPrice = asset.swapPrice || openPrices[asset.symbol];
+        // Daily baseline for threshold/history tracking (previousClose resets each day)
+        const dailyBaseline = previousClosePriceMap[asset.symbol] || asset.swapPrice || openPrices[asset.symbol];
         const currentPrice = effectivePrices[asset.symbol];
-        if (!assetOpenPrice || !currentPrice) return;
+        if (!dailyBaseline || !currentPrice) return;
 
-        const priceChange = ((currentPrice - assetOpenPrice) / assetOpenPrice) * 100;
+        let priceChange = ((currentPrice - dailyBaseline) / dailyBaseline) * 100;
+        if (asset.direction === 'short') priceChange = -priceChange;
         const baseATR = battle?.thresholds?.[asset.symbol]?.threshold || asset.baseATR || 2.5;
         const currentMultiplier = priceChange / baseATR;
 
@@ -917,14 +940,14 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
         const assetExtremes = dailyExtremes[asset.symbol];
         let highMultiplier = currentMultiplier;
         let lowMultiplier = currentMultiplier;
-        if (assetExtremes && assetOpenPrice > 0) {
+        if (assetExtremes && dailyBaseline > 0) {
           if (assetExtremes.high > 0) {
-            let highPctChange = ((assetExtremes.high - assetOpenPrice) / assetOpenPrice) * 100;
+            let highPctChange = ((assetExtremes.high - dailyBaseline) / dailyBaseline) * 100;
             if (asset.direction === 'short') highPctChange = -highPctChange;
             highMultiplier = Math.max(currentMultiplier, highPctChange / baseATR);
           }
           if (assetExtremes.low > 0) {
-            let lowPctChange = ((assetExtremes.low - assetOpenPrice) / assetOpenPrice) * 100;
+            let lowPctChange = ((assetExtremes.low - dailyBaseline) / dailyBaseline) * 100;
             if (asset.direction === 'short') lowPctChange = -lowPctChange;
             lowMultiplier = Math.min(currentMultiplier, lowPctChange / baseATR);
           }
@@ -942,6 +965,13 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
         const badge = finalHistory.maxMultiplier >= 1 ? 'baggerBomb' : finalHistory.minMultiplier <= -1 ? 'bust' : 'none';
 
         if (updatedHistory) {
+          console.log('[BB-Fix] historyTracker update:', asset.symbol, {
+            dailyBaseline,
+            currentMultiplier: currentMultiplier.toFixed(3),
+            oldMax: assetHistory.maxMultiplier?.toFixed(3),
+            newMax: updatedHistory.maxMultiplier?.toFixed(3),
+            badge,
+          });
           setHistoryFn((prev) => ({
             ...prev,
             [asset.symbol]: updatedHistory,
@@ -956,7 +986,7 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
 
     processPortfolio(myPortfolioFlat, combinedHistory, setLocalHistory, true);
     processPortfolio(oppPortfolioFlat, oppHistory, setLocalOppHistory, false);
-  }, [hasValidBaseline, effectivePrices, openPrices, dailyExtremes, myPortfolioFlat, oppPortfolioFlat, battle, battleId, isCreator, combinedHistory, oppHistory]);
+  }, [hasValidBaseline, effectivePrices, openPrices, previousClosePriceMap, dailyExtremes, myPortfolioFlat, oppPortfolioFlat, battle, battleId, isCreator, combinedHistory, oppHistory]);
 
   // ==================== PRICE FETCHING ====================
 

@@ -91,32 +91,22 @@ export default function BaggerBombTrainingBattleViewV4({
   const oppData = isCreator ? battle?.opponent : battle?.creator;
   const [startingPrices, setStartingPrices] = useState(battle?.state?.startingPrices || {});
 
-  // Previous close prices for threshold baseline — layered per-symbol merge:
-  // Layer 1 (base): startingPrices (entry fallback for day 1 / old battles)
-  // Layer 2: Firebase battle.state.previousClosePrices (may be stale after day 1)
-  // Layer 3 (wins): EODHD-polled previousClosePrices (freshest daily data)
+  // Previous close prices for threshold baseline:
+  // Training is always Day 1 — entry price is the threshold baseline (no daily reset)
   const previousClosePriceMap = useMemo(() => {
     const map = { ...(startingPrices || {}) };
-    const fbPrevClose = battle?.state?.previousClosePrices;
-    if (fbPrevClose && typeof fbPrevClose === 'object') {
-      Object.entries(fbPrevClose).forEach(([sym, price]) => {
-        if (price > 0) map[sym] = price;
-      });
-    }
-    if (previousClosePrices && typeof previousClosePrices === 'object') {
-      Object.entries(previousClosePrices).forEach(([sym, price]) => {
-        if (price > 0) map[sym] = price;
-      });
-    }
-    console.log('[BB-Fix] Training previousClosePriceMap:', {
-      sampleSymbol: Object.keys(map)[0],
-      entry: startingPrices?.[Object.keys(map)[0]],
-      firebase: battle?.state?.previousClosePrices?.[Object.keys(map)[0]],
-      eodhd: previousClosePrices?.[Object.keys(map)[0]],
-      result: map[Object.keys(map)[0]],
+    // Training mode: never layer EODHD/Firebase over entry prices (always Day 1)
+
+    const sampleSym = Object.keys(map)[0];
+    console.log('[BB-Fix] Training prevCloseMap:', {
+      day: 1,
+      usingDaily: false,
+      eodhd: previousClosePrices?.[sampleSym],
+      entry: startingPrices?.[sampleSym],
+      result: map?.[sampleSym],
     });
     return map;
-  }, [battle?.state?.previousClosePrices, previousClosePrices, startingPrices]);
+  }, [startingPrices, previousClosePrices]);
 
   // Free agent daily open prices (for card % display — shows today's change)
   const [freeAgentDailyOpens, setFreeAgentDailyOpens] = useState({});
