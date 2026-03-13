@@ -22,13 +22,13 @@ const PILLAR_CONFIG = [
 ];
 
 const DIM_META = {
-  sixMonthReturn:    { label: '6M Price Return',   format: v => `${(v * 100).toFixed(1)}%` },
-  earningsRevisions: { label: 'Earnings Revisions', format: v => `${(v * 100).toFixed(1)}%` },
-  revenueGrowth:     { label: 'Revenue Growth YoY', format: v => `${v.toFixed(1)}%` },
-  opMargin:          { label: 'Operating Margin',   format: v => `${v.toFixed(1)}%` },
-  roa:               { label: 'Return on Assets',   format: v => `${v.toFixed(1)}%` },
-  evEbitda:          { label: 'EV/EBITDA',           format: v => `${v.toFixed(1)}x`, lowerIsBetter: true },
-  fcfYield:          { label: 'FCF Yield',           format: v => `${(v * 100).toFixed(2)}%` },
+  sixMonthReturn:    { label: '6M Price Return',   format: v => v != null ? `${v.toFixed(1)}%` : '—' },
+  earningsRevisions: { label: 'Earnings Revisions', format: v => v != null ? `${v.toFixed(1)}%` : '—' },
+  revenueGrowth:     { label: 'Revenue Growth YoY', format: v => v != null ? `${(v * 100).toFixed(1)}%` : '—' },
+  opMargin:          { label: 'Operating Margin',   format: v => v != null ? `${(v * 100).toFixed(1)}%` : '—' },
+  roa:               { label: 'Return on Assets',   format: v => v != null ? `${(v * 100).toFixed(1)}%` : '—' },
+  evEbitda:          { label: 'EV/EBITDA',           format: v => v != null ? `${v.toFixed(1)}x` : '—', lowerIsBetter: true },
+  fcfYield:          { label: 'FCF Yield',           format: v => v != null ? `${v.toFixed(2)}%` : '—' },
 };
 
 function tierColor(tier) {
@@ -226,7 +226,7 @@ function CompositeRankCard({ data }) {
         {/* Info */}
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: '12px', color: '#e6edf3', fontWeight: '600' }}>
-            {data.ticker} · {data.name}
+            {data.ticker}{data.name && data.name !== data.ticker ? ` · ${data.name}` : ''}
           </div>
 
           {/* Score bar */}
@@ -483,7 +483,7 @@ function SectorLeaderboard({ data, currentSymbol, onNavigateToStock, isMobile })
 
           const isMe = entry.ticker === upperSymbol;
           const isClickable = !isMe && !!onNavigateToStock;
-          const entryColor = tierColor(entry.tier);
+          const entryColor = entry.tierColor || tierColor(entry.tier);
 
           return (
             <div
@@ -530,7 +530,7 @@ function SectorLeaderboard({ data, currentSymbol, onNavigateToStock, isMobile })
               }}>
                 <div style={{
                   height: '100%', borderRadius: '2px',
-                  width: `${entry.compositeScore}%`,
+                  width: `${entry.score ?? entry.compositeScore}%`,
                   background: entryColor,
                 }} />
               </div>
@@ -539,7 +539,7 @@ function SectorLeaderboard({ data, currentSymbol, onNavigateToStock, isMobile })
                 color: entryColor,
                 flex: '0 0 24px', textAlign: 'right',
               }}>
-                {entry.compositeScore}
+                {entry.score ?? entry.compositeScore}
               </span>
             </div>
           );
