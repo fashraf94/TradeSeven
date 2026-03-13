@@ -394,7 +394,7 @@ function enrichWithPrices(allMetrics, bulkPrices, tickerHistory) {
 
 /**
  * Rank stocks within a single sector across all 7 dimensions.
- * Computes 4 pillar percentiles and weighted composite score.
+ * Computes 7 pillar percentiles (1:1 dimension-to-pillar) and weighted composite score.
  */
 function rankSectorStocks(sectorId, sectorStocks, allMetrics) {
   const stocks = sectorStocks
@@ -480,8 +480,8 @@ function rankSectorStocks(sectorId, sectorStocks, allMetrics) {
       }
     }
 
-    // Require at least 2 of 4 pillars (i.e., 3+ of 7 dimensions) for meaningful score
-    if (availablePillars >= 2 && totalWeight > 0) {
+    // Require at least 3 of 7 pillars for meaningful score
+    if (availablePillars >= 3 && totalWeight > 0) {
       // Redistribute missing weights proportionally
       stock.compositeScore = Math.round(weightedSum / totalWeight);
     } else {
@@ -943,6 +943,7 @@ async function persistResults(db, allRanked, sectorAggregates, scannerResults, s
       pillarDetails[pillarKey] = {
         percentile: stock.pillars?.[pillarKey] ?? null,
         dimensions,
+        dimension: Object.values(dimensions)[0] || null,
       };
     }
 
