@@ -1212,6 +1212,10 @@ const AssetResearchModal = ({
         price={currentAsset?.price}
         isOpen={whyMovingOpen}
         onClose={() => setWhyMovingOpen(false)}
+        open={researchData.todayDailyCandle?.open}
+        high={researchData.todayDailyCandle?.high}
+        low={researchData.todayDailyCandle?.low}
+        close={researchData.todayDailyCandle?.close}
       />
     </>,
     document.body
