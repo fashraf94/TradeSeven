@@ -129,10 +129,121 @@ function InsightLine({ label, text, color }) {
 }
 
 // ---------------------------------------------------------------------------
+// AI Analysis Components
+// ---------------------------------------------------------------------------
+
+const SHIMMER_KEYFRAMES = `@keyframes avd-shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }`;
+
+const shimmerStyle = {
+  background: 'linear-gradient(90deg, rgba(255,255,255,0.03) 25%, rgba(255,255,255,0.06) 50%, rgba(255,255,255,0.03) 75%)',
+  backgroundSize: '200% 100%',
+  animation: 'avd-shimmer 1.5s infinite',
+  borderRadius: '6px',
+};
+
+function AnalysisSkeleton() {
+  return (
+    <div style={{ marginTop: '12px' }}>
+      <div style={{ height: '10px', width: '30%', marginBottom: '10px', ...shimmerStyle }} />
+      <div style={{ height: '12px', width: '95%', marginBottom: '6px', ...shimmerStyle }} />
+      <div style={{ height: '12px', width: '80%', marginBottom: '6px', ...shimmerStyle }} />
+      <div style={{ height: '12px', width: '88%', marginBottom: '6px', ...shimmerStyle }} />
+      <div style={{ height: '12px', width: '70%', marginBottom: '6px', ...shimmerStyle }} />
+      <style>{SHIMMER_KEYFRAMES}</style>
+    </div>
+  );
+}
+
+function parseBold(text) {
+  const parts = text.split(/\*\*(.*?)\*\*/g);
+  return parts.map((part, i) =>
+    i % 2 === 1
+      ? <span key={i} style={{ fontWeight: 600, color: '#ffffff' }}>{part}</span>
+      : <span key={i}>{part}</span>
+  );
+}
+
+function renderMarkdown(text) {
+  if (!text) return null;
+  return text.split('\n').map((line, i) => {
+    if (line.startsWith('- ') || line.startsWith('• ')) {
+      const content = line.replace(/^[-•]\s*/, '');
+      return (
+        <div key={i} style={{ paddingLeft: '12px', marginBottom: '8px' }}>
+          <span style={{ color: '#00d9ff', marginRight: '8px' }}>•</span>
+          {parseBold(content)}
+        </div>
+      );
+    }
+    if (line.trim()) {
+      return <div key={i} style={{ marginBottom: '8px' }}>{parseBold(line)}</div>;
+    }
+    return null;
+  });
+}
+
+function AIAnalysisSection({ analysis, collapsed, onToggle }) {
+  if (collapsed != null) {
+    // Collapsible mode (for Tier 1 supported tabs)
+    return (
+      <div style={{ marginTop: '12px' }}>
+        <button
+          onClick={onToggle}
+          style={{
+            background: 'none', border: 'none', cursor: 'pointer',
+            fontSize: '11px', color: '#00d9ff', fontWeight: 600,
+            padding: '4px 0', display: 'flex', alignItems: 'center', gap: '4px',
+          }}
+        >
+          {collapsed ? 'Show AI Summary \u25BE' : 'Hide AI Summary \u25B4'}
+        </button>
+        {!collapsed && (
+          <div style={{
+            padding: '12px', backgroundColor: 'rgba(0, 217, 255, 0.03)',
+            borderRadius: '10px', border: '1px solid rgba(0, 217, 255, 0.1)',
+            marginTop: '4px',
+          }}>
+            <div style={{
+              fontSize: '10px', color: '#00d9ff', fontWeight: 600,
+              marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.5px',
+            }}>
+              AI Analysis
+            </div>
+            <div style={{ fontSize: '13px', lineHeight: '1.6', color: '#e0e0e0' }}>
+              {renderMarkdown(analysis)}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // Expanded mode (for Tier 2 unsupported tabs)
+  return (
+    <div style={{
+      padding: '12px', backgroundColor: 'rgba(0, 217, 255, 0.03)',
+      borderRadius: '10px', border: '1px solid rgba(0, 217, 255, 0.1)',
+      marginTop: '12px',
+    }}>
+      <div style={{
+        fontSize: '10px', color: '#00d9ff', fontWeight: 600,
+        marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.5px',
+      }}>
+        AI Analysis
+      </div>
+      <div style={{ fontSize: '13px', lineHeight: '1.6', color: '#e0e0e0' }}>
+        {renderMarkdown(analysis)}
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // GROWTH TAB
 // ---------------------------------------------------------------------------
 
-function GrowthTabSupported({ parsedData, isMobile }) {
+function GrowthTabSupported({ parsedData, isMobile, aiAnalysis, analysisLoading }) {
+  const [aiCollapsed, setAiCollapsed] = useState(true);
   const { quarterly, revenue } = parsedData;
 
   // Build revenue chart data from quarterly table
@@ -269,11 +380,14 @@ function GrowthTabSupported({ parsedData, isMobile }) {
             accentColor="#a78bfa" isMobile={isMobile} />
         )}
       </div>
+      {analysisLoading ? <AnalysisSkeleton /> : aiAnalysis ? (
+        <AIAnalysisSection analysis={aiAnalysis} collapsed={aiCollapsed} onToggle={() => setAiCollapsed(c => !c)} />
+      ) : null}
     </div>
   );
 }
 
-function GrowthTabUnsupported({ stockData, isMobile }) {
+function GrowthTabUnsupported({ stockData, isMobile, aiAnalysis, analysisLoading }) {
   return (
     <div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '12px' }}>
@@ -294,8 +408,9 @@ function GrowthTabUnsupported({ stockData, isMobile }) {
             : null}
           accentColor="#f59e0b" isMobile={isMobile} />
       </div>
-      <InsightLine label="Note" text="Detailed segment analytics available for curated stocks."
-        color="#8b949e" />
+      {analysisLoading ? <AnalysisSkeleton /> : aiAnalysis ? (
+        <AIAnalysisSection analysis={aiAnalysis} />
+      ) : null}
     </div>
   );
 }
@@ -405,7 +520,8 @@ function RiskBubbleCanvas({ risks, isMobile }) {
   );
 }
 
-function RisksTabSupported({ parsedData, isMobile }) {
+function RisksTabSupported({ parsedData, isMobile, aiAnalysis, analysisLoading }) {
+  const [aiCollapsed, setAiCollapsed] = useState(true);
   const { risks: riskData } = parsedData;
   const risks = riskData?.risks || [];
 
@@ -464,11 +580,14 @@ function RisksTabSupported({ parsedData, isMobile }) {
           );
         })}
       </div>
+      {analysisLoading ? <AnalysisSkeleton /> : aiAnalysis ? (
+        <AIAnalysisSection analysis={aiAnalysis} collapsed={aiCollapsed} onToggle={() => setAiCollapsed(c => !c)} />
+      ) : null}
     </div>
   );
 }
 
-function RisksTabUnsupported({ stockData, isMobile }) {
+function RisksTabUnsupported({ stockData, isMobile, aiAnalysis, analysisLoading }) {
   const risks = [];
   if (stockData?.peRatio != null && stockData.peRatio > 40) {
     risks.push({ name: 'Valuation Risk', desc: 'P/E ratio above 40x indicates premium valuation', color: '#f59e0b' });
@@ -495,7 +614,9 @@ function RisksTabUnsupported({ stockData, isMobile }) {
           <div style={{ fontSize: '11px', color: '#8b949e', marginTop: '2px' }}>{r.desc}</div>
         </div>
       ))}
-      <InsightLine label="Tip" text="Deep risk analysis available for curated stocks." color="#8b949e" />
+      {analysisLoading ? <AnalysisSkeleton /> : aiAnalysis ? (
+        <AIAnalysisSection analysis={aiAnalysis} />
+      ) : null}
     </div>
   );
 }
@@ -533,7 +654,8 @@ function GaugeBar({ label, value, maxValue, unit, color, isMobile }) {
   );
 }
 
-function HealthTabSupported({ parsedData, isMobile }) {
+function HealthTabSupported({ parsedData, isMobile, aiAnalysis, analysisLoading }) {
+  const [aiCollapsed, setAiCollapsed] = useState(true);
   const { quarterly, health } = parsedData;
 
   // Build margin trend chart from quarterly data
@@ -635,11 +757,14 @@ function HealthTabSupported({ parsedData, isMobile }) {
             unit="$" color="#a78bfa" isMobile={isMobile} />
         )}
       </div>
+      {analysisLoading ? <AnalysisSkeleton /> : aiAnalysis ? (
+        <AIAnalysisSection analysis={aiAnalysis} collapsed={aiCollapsed} onToggle={() => setAiCollapsed(c => !c)} />
+      ) : null}
     </div>
   );
 }
 
-function HealthTabUnsupported({ stockData, isMobile }) {
+function HealthTabUnsupported({ stockData, isMobile, aiAnalysis, analysisLoading }) {
   return (
     <div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '12px' }}>
@@ -650,8 +775,9 @@ function HealthTabUnsupported({ stockData, isMobile }) {
           value={stockData?.marketCap ? formatLargeNumber(stockData.marketCap, 1) : null}
           accentColor="#00d9ff" isMobile={isMobile} />
       </div>
-      <InsightLine label="Note" text="Detailed financial health analysis available for curated stocks."
-        color="#8b949e" />
+      {analysisLoading ? <AnalysisSkeleton /> : aiAnalysis ? (
+        <AIAnalysisSection analysis={aiAnalysis} />
+      ) : null}
     </div>
   );
 }
@@ -662,7 +788,36 @@ function HealthTabUnsupported({ stockData, isMobile }) {
 
 const AnalysisVisualDashboard = ({ symbol, stockData, isMobile }) => {
   const [activeSubTab, setActiveSubTab] = useState('growth');
+  const [aiAnalysis, setAiAnalysis] = useState(null);
+  const [analysisLoading, setAnalysisLoading] = useState(false);
+  const cacheRef = useRef(new Map());
   const isSupported = TICKERS.includes(symbol);
+
+  // Fetch AI analysis when symbol changes
+  useEffect(() => {
+    if (!symbol) return;
+
+    const cached = cacheRef.current.get(symbol);
+    if (cached) {
+      setAiAnalysis(cached);
+      setAnalysisLoading(false);
+      return;
+    }
+
+    setAiAnalysis(null);
+    setAnalysisLoading(true);
+
+    fetch(`/api/stocks/analysis?symbol=${encodeURIComponent(symbol)}&mode=quick`)
+      .then(r => r.json())
+      .then(data => {
+        if (data.analysis) {
+          cacheRef.current.set(symbol, data.analysis);
+          setAiAnalysis(data.analysis);
+        }
+      })
+      .catch(() => {})
+      .finally(() => setAnalysisLoading(false));
+  }, [symbol]);
 
   const parsedData = useMemo(() => {
     if (!isSupported) return null;
@@ -677,26 +832,28 @@ const AnalysisVisualDashboard = ({ symbol, stockData, isMobile }) => {
     };
   }, [symbol, isSupported]);
 
+  const aiProps = { aiAnalysis, analysisLoading };
+
   return (
     <div>
       <SubTabSelector activeTab={activeSubTab} onTabChange={setActiveSubTab} />
 
       {activeSubTab === 'growth' && (
         isSupported && parsedData
-          ? <GrowthTabSupported parsedData={parsedData} isMobile={isMobile} />
-          : <GrowthTabUnsupported stockData={stockData} isMobile={isMobile} />
+          ? <GrowthTabSupported parsedData={parsedData} isMobile={isMobile} {...aiProps} />
+          : <GrowthTabUnsupported stockData={stockData} isMobile={isMobile} {...aiProps} />
       )}
 
       {activeSubTab === 'risks' && (
         isSupported && parsedData
-          ? <RisksTabSupported parsedData={parsedData} isMobile={isMobile} />
-          : <RisksTabUnsupported stockData={stockData} isMobile={isMobile} />
+          ? <RisksTabSupported parsedData={parsedData} isMobile={isMobile} {...aiProps} />
+          : <RisksTabUnsupported stockData={stockData} isMobile={isMobile} {...aiProps} />
       )}
 
       {activeSubTab === 'health' && (
         isSupported && parsedData
-          ? <HealthTabSupported parsedData={parsedData} isMobile={isMobile} />
-          : <HealthTabUnsupported stockData={stockData} isMobile={isMobile} />
+          ? <HealthTabSupported parsedData={parsedData} isMobile={isMobile} {...aiProps} />
+          : <HealthTabUnsupported stockData={stockData} isMobile={isMobile} {...aiProps} />
       )}
 
       {activeSubTab === 'earnings' && (
