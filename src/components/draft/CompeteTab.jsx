@@ -197,7 +197,7 @@ function DimensionBullet({ dim, color }) {
 // ---------------------------------------------------------------------------
 
 function CompositeRankCard({ data }) {
-  const color = tierColor(data.tier);
+  const color = data.tier?.color || tierColor(data.tier?.label || data.tier);
 
   return (
     <div style={{
@@ -258,7 +258,7 @@ function CompositeRankCard({ data }) {
             fontSize: '10px', fontWeight: '600', color,
             textTransform: 'uppercase', letterSpacing: '0.5px',
           }}>
-            {data.tier}
+            {data.tier?.label || data.tier}
           </div>
         </div>
       </div>
