@@ -137,6 +137,7 @@ const AssetResearchModal = ({
   }, [stockHistory]);
 
   const canGoBack = stockHistory.length > 0;
+  const isOriginalAsset = currentAsset?.symbol === asset?.symbol;
 
   const handleClose = useCallback(() => {
     setStockHistory([]);
@@ -156,7 +157,7 @@ const AssetResearchModal = ({
 
   // v2: Research data hook for chart + enhanced technical tab
   const researchData = useResearchData(version >= 2 ? currentAsset?.symbol : null, {
-    currentPrice: wsPrice || currentAsset?.price || currentAsset?.currentPrice || 0,
+    currentPrice: (isOriginalAsset ? wsPrice : null) || currentAsset?.price || currentAsset?.currentPrice || 0,
     isCrypto: isCrypto,
     initialTimeframe: defaultTimeframe,
   });
@@ -640,7 +641,7 @@ const AssetResearchModal = ({
                   bombData={bombData}
                   symbol={currentAsset?.symbol}
                   todayDailyCandle={researchData.todayDailyCandle}
-                  realtimeExtremes={realtimeExtremes}
+                  realtimeExtremes={isOriginalAsset ? realtimeExtremes : null}
                 />
               )}
             </div>
