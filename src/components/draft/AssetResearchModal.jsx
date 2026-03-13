@@ -628,6 +628,7 @@ const AssetResearchModal = ({
               )}
               {researchData.ohlcvData && researchData.ohlcvData.length > 0 && (
                 <StockChart
+                  key={currentAsset?.symbol}
                   ohlcvData={researchData.ohlcvData}
                   rawData={researchData.rawData}
                   timeframe={researchData.timeframe}
