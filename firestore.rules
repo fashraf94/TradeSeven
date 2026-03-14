@@ -251,6 +251,16 @@ service cloud.firestore {
     }
 
     // ═══════════════════════════════════════════
+    // FantasyTimes — AI-generated newsroom stories
+    // Public read, server-only writes (Admin SDK)
+    // ═══════════════════════════════════════════
+
+    match /fantasyTimesStories/{storyId} {
+      allow read: if true;
+      allow create, update, delete: if false;
+    }
+
+    // ═══════════════════════════════════════════
     // Default deny everything else
     // ═══════════════════════════════════════════
     match /{document=**} {
