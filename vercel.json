@@ -117,6 +117,10 @@
     {
       "path": "/api/cron/compute-briefs",
       "schedule": "0 1 * * 0"
+    },
+    {
+      "path": "/api/cron/compute-estimates",
+      "schedule": "0 10 * * 6"
     }
   ]
 }
