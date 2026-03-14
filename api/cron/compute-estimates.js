@@ -12,7 +12,7 @@
 //   Phase D: Compute EMS percentiles within sectors
 //   Phase E: Persist to Firestore (estimatesCache/latest)
 
-export const config = { maxDuration: 120 };
+export const config = { maxDuration: 180 };
 
 import { initializeApp, getApps, cert } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
@@ -67,7 +67,9 @@ function getFirebaseAdmin() {
 }
 
 const API_BASE = 'https://eodhd.com/api';
-const CHUNK_SIZE = 50;
+const CHUNK_SIZE = 30;
+const MAX_RETRIES = 2;
+const RETRY_DELAY_MS = 2000;
 
 // ---------------------------------------------------------------------------
 // Phase A: Fetch EODHD Data
@@ -77,40 +79,69 @@ const CHUNK_SIZE = 50;
  * Fetch trends data for all tickers in chunks.
  * Returns Map: ticker → { '0q': entry, '+1q': entry, '0y': entry, '+1y': entry }
  */
+async function fetchWithRetry(url, label) {
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      const res = await fetch(url);
+      if (!res.ok) {
+        const body = await res.text().catch(() => '');
+        logWarn(`${label} HTTP ${res.status} (attempt ${attempt + 1}): ${body.slice(0, 200)}`);
+        if (attempt < MAX_RETRIES) {
+          await sleep(RETRY_DELAY_MS * (attempt + 1));
+          continue;
+        }
+        return null;
+      }
+      const data = await res.json();
+      if (!Array.isArray(data)) {
+        logWarn(`${label} response not an array (attempt ${attempt + 1}): ${typeof data} — ${JSON.stringify(data).slice(0, 300)}`);
+        if (attempt < MAX_RETRIES) {
+          await sleep(RETRY_DELAY_MS * (attempt + 1));
+          continue;
+        }
+        return null;
+      }
+      return data;
+    } catch (err) {
+      logWarn(`${label} error (attempt ${attempt + 1}): ${err.message}`);
+      if (attempt < MAX_RETRIES) {
+        await sleep(RETRY_DELAY_MS * (attempt + 1));
+        continue;
+      }
+      return null;
+    }
+  }
+  return null;
+}
+
+function normalizeEodhdTicker(code) {
+  // EODHD returns codes like "AAPL.US" or "BRK-B.US"
+  // Strip the .US suffix, then convert hyphens to dots (BRK-B → BRK.B)
+  return code.replace(/\.US$/i, '').replace(/-/g, '.');
+}
+
 async function fetchAllTrends(apiKey) {
   const trendsMap = {};
 
   for (let i = 0; i < ALL_TICKERS.length; i += CHUNK_SIZE) {
     const chunk = ALL_TICKERS.slice(i, i + CHUNK_SIZE);
+    const chunkIdx = i / CHUNK_SIZE + 1;
     const symbols = chunk.map(t => `${t.replace(/\./g, '-')}.US`).join(',');
+    const url = `${API_BASE}/calendar/trends?symbols=${symbols}&api_token=${apiKey}&fmt=json`;
 
-    try {
-      const res = await fetch(
-        `${API_BASE}/calendar/trends?symbols=${symbols}&api_token=${apiKey}&fmt=json`
-      );
-      if (!res.ok) {
-        logWarn(`Trends fetch failed for chunk ${i / CHUNK_SIZE + 1}: HTTP ${res.status}`);
-        continue;
-      }
-      const data = await res.json();
-      if (!Array.isArray(data)) {
-        logWarn(`Trends response not an array for chunk ${i / CHUNK_SIZE + 1}`);
-        continue;
-      }
+    const data = await fetchWithRetry(url, `Trends chunk ${chunkIdx}`);
+    if (!data) continue;
 
-      for (const entry of data) {
-        const code = entry.code;
-        if (!code) continue;
-        // Normalize ticker: EODHD may return with or without dots
-        const ticker = code.replace(/-/g, '.');
-        if (!trendsMap[ticker]) trendsMap[ticker] = {};
-        trendsMap[ticker][entry.period] = entry;
-      }
-    } catch (err) {
-      logWarn(`Trends fetch error for chunk ${i / CHUNK_SIZE + 1}: ${err.message}`);
+    for (const entry of data) {
+      const code = entry.code;
+      if (!code) continue;
+      const ticker = normalizeEodhdTicker(code);
+      if (!trendsMap[ticker]) trendsMap[ticker] = {};
+      trendsMap[ticker][entry.period] = entry;
     }
 
-    if (i + CHUNK_SIZE < ALL_TICKERS.length) await sleep(250);
+    logInfo(`Trends chunk ${chunkIdx}: ${data.length} entries`);
+    if (i + CHUNK_SIZE < ALL_TICKERS.length) await sleep(500);
   }
 
   return trendsMap;
@@ -123,41 +154,37 @@ async function fetchAllTrends(apiKey) {
 async function fetchAllEarnings(apiKey) {
   const earningsMap = {};
 
+  // Use a 2-year lookback for earnings history (covers ~8 quarters)
+  const now = new Date();
+  const fromDate = new Date(now);
+  fromDate.setFullYear(now.getFullYear() - 2);
+  const from = fromDate.toISOString().slice(0, 10);
+  const to = now.toISOString().slice(0, 10);
+
   for (let i = 0; i < ALL_TICKERS.length; i += CHUNK_SIZE) {
     const chunk = ALL_TICKERS.slice(i, i + CHUNK_SIZE);
+    const chunkIdx = i / CHUNK_SIZE + 1;
     const symbols = chunk.map(t => `${t.replace(/\./g, '-')}.US`).join(',');
+    const url = `${API_BASE}/calendar/earnings?symbols=${symbols}&from=${from}&to=${to}&api_token=${apiKey}&fmt=json`;
 
-    try {
-      const res = await fetch(
-        `${API_BASE}/calendar/earnings?symbols=${symbols}&api_token=${apiKey}&fmt=json`
-      );
-      if (!res.ok) {
-        logWarn(`Earnings fetch failed for chunk ${i / CHUNK_SIZE + 1}: HTTP ${res.status}`);
-        continue;
-      }
-      const data = await res.json();
-      if (!Array.isArray(data)) {
-        logWarn(`Earnings response not an array for chunk ${i / CHUNK_SIZE + 1}`);
-        continue;
-      }
+    const data = await fetchWithRetry(url, `Earnings chunk ${chunkIdx}`);
+    if (!data) continue;
 
-      for (const entry of data) {
-        const code = entry.code;
-        if (!code) continue;
-        const ticker = code.replace(/-/g, '.');
-        if (!earningsMap[ticker]) earningsMap[ticker] = [];
-        earningsMap[ticker].push({
-          date: entry.date || entry.report_date,
-          actual: entry.actual != null ? Number(entry.actual) : null,
-          estimate: entry.estimate != null ? Number(entry.estimate) : null,
-          difference: entry.difference != null ? Number(entry.difference) : null,
-        });
-      }
-    } catch (err) {
-      logWarn(`Earnings fetch error for chunk ${i / CHUNK_SIZE + 1}: ${err.message}`);
+    for (const entry of data) {
+      const code = entry.code;
+      if (!code) continue;
+      const ticker = normalizeEodhdTicker(code);
+      if (!earningsMap[ticker]) earningsMap[ticker] = [];
+      earningsMap[ticker].push({
+        date: entry.date || entry.report_date,
+        actual: entry.actual != null ? Number(entry.actual) : null,
+        estimate: entry.estimate != null ? Number(entry.estimate) : null,
+        difference: entry.difference != null ? Number(entry.difference) : null,
+      });
     }
 
-    if (i + CHUNK_SIZE < ALL_TICKERS.length) await sleep(250);
+    logInfo(`Earnings chunk ${chunkIdx}: ${data.length} entries`);
+    if (i + CHUNK_SIZE < ALL_TICKERS.length) await sleep(500);
   }
 
   // Sort each ticker's earnings by date descending (most recent first)
@@ -373,10 +400,10 @@ export default async function handler(req, res) {
 
     // ===== PHASE A: FETCH DATA =====
 
-    const [trendsMap, earningsMap] = await Promise.all([
-      fetchAllTrends(API_KEY),
-      fetchAllEarnings(API_KEY),
-    ]);
+    // Fetch sequentially to avoid EODHD rate limits
+    const trendsMap = await fetchAllTrends(API_KEY);
+    logInfo(`Trends fetch complete, starting earnings fetch...`);
+    const earningsMap = await fetchAllEarnings(API_KEY);
 
     const trendsCount = Object.keys(trendsMap).length;
     const earningsCount = Object.keys(earningsMap).length;
