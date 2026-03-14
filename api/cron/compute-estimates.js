@@ -79,7 +79,7 @@ const RETRY_DELAY_MS = 2000;
  * Fetch trends data for all tickers in chunks.
  * Returns Map: ticker → { '0q': entry, '+1q': entry, '0y': entry, '+1y': entry }
  */
-async function fetchWithRetry(url, label) {
+async function fetchWithRetry(url, label, extractKey) {
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     try {
       const res = await fetch(url);
@@ -92,9 +92,17 @@ async function fetchWithRetry(url, label) {
         }
         return null;
       }
-      const data = await res.json();
-      if (!Array.isArray(data)) {
-        logWarn(`${label} response not an array (attempt ${attempt + 1}): ${typeof data} — ${JSON.stringify(data).slice(0, 300)}`);
+      const raw = await res.json();
+      // EODHD may return a flat array or a wrapper object like
+      // { type: "Trends", trends: [[...], [...]] } or { type: "Earnings", earnings: [...] }
+      let data;
+      if (Array.isArray(raw)) {
+        data = raw;
+      } else if (extractKey && raw && Array.isArray(raw[extractKey])) {
+        // trends comes as array-of-arrays, earnings as flat array
+        data = raw[extractKey].flat();
+      } else {
+        logWarn(`${label} could not extract array (attempt ${attempt + 1}): ${typeof raw} — ${JSON.stringify(raw).slice(0, 300)}`);
         if (attempt < MAX_RETRIES) {
           await sleep(RETRY_DELAY_MS * (attempt + 1));
           continue;
@@ -129,7 +137,7 @@ async function fetchAllTrends(apiKey) {
     const symbols = chunk.map(t => `${t.replace(/\./g, '-')}.US`).join(',');
     const url = `${API_BASE}/calendar/trends?symbols=${symbols}&api_token=${apiKey}&fmt=json`;
 
-    const data = await fetchWithRetry(url, `Trends chunk ${chunkIdx}`);
+    const data = await fetchWithRetry(url, `Trends chunk ${chunkIdx}`, 'trends');
     if (!data) continue;
 
     for (const entry of data) {
@@ -167,7 +175,7 @@ async function fetchAllEarnings(apiKey) {
     const symbols = chunk.map(t => `${t.replace(/\./g, '-')}.US`).join(',');
     const url = `${API_BASE}/calendar/earnings?symbols=${symbols}&from=${from}&to=${to}&api_token=${apiKey}&fmt=json`;
 
-    const data = await fetchWithRetry(url, `Earnings chunk ${chunkIdx}`);
+    const data = await fetchWithRetry(url, `Earnings chunk ${chunkIdx}`, 'earnings');
     if (!data) continue;
 
     for (const entry of data) {
