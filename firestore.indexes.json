@@ -28,6 +28,43 @@
         }
       ]
     }
+    ,
+    {
+      "collectionGroup": "fantasyTimesStories",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "expiresAt",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "publishedAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "fantasyTimesStories",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "primaryTicker",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "reporter",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "publishedAt",
+          "order": "DESCENDING"
+        }
+      ]
+    }
   ],
   "fieldOverrides": []
 }
