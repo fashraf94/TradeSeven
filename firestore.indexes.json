@@ -40,6 +40,10 @@
         {
           "fieldPath": "expiresAt",
           "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "publishedAt",
+          "order": "DESCENDING"
         }
       ]
     },
@@ -49,6 +53,10 @@
       "fields": [
         {
           "fieldPath": "primaryTicker",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "reporter",
           "order": "ASCENDING"
         },
         {
