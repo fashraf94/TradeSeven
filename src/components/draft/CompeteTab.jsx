@@ -38,19 +38,50 @@ const PILLAR_CONFIG = [
 ];
 
 // Dimension formatters — values are stored in Firestore as:
-//   revenueGrowthYOY, opMarginTTM, roaTTM: EODHD decimals (0.157 = 15.7%)
-//   sixMonthReturn, earningsRevisions: already *100 (15.3 = 15.3%)
-//   fcfYield: already *100 (3.5 = 3.5%)
-//   evEbitda: ratio (15.2 = 15.2x)
+//   EODHD decimals (×100 in formatter): revenueGrowth, epsGrowth, opMargin, netMargin, grossMargin, roa, roe
+//   Already ×100 in cron: fcfYield, fcfMargin, sixMonthReturn, threeMonthReturn, oneMonthReturn, earningsRevisions, avgSurprise
+//   Ratios: evEbitda, trailingPE, priceSales, priceBook
+//   Percentage (EODHD reports as decimal): dividendYield
+const pctDec = v => v != null ? `${(v * 100).toFixed(1)}%` : '—';
+const pctRaw = v => v != null ? `${v.toFixed(1)}%` : '—';
+const ratio  = v => v != null ? `${v.toFixed(1)}x` : '—';
+
 const DIM_FORMAT = {
-  revenueGrowth:     { label: 'Revenue Growth YoY',  format: v => v != null ? `${(v * 100).toFixed(1)}%` : '—' },
-  opMargin:          { label: 'Operating Margin',     format: v => v != null ? `${(v * 100).toFixed(1)}%` : '—' },
-  roa:               { label: 'Return on Assets',     format: v => v != null ? `${(v * 100).toFixed(1)}%` : '—' },
-  evEbitda:          { label: 'EV/EBITDA',            format: v => v != null ? `${v.toFixed(1)}x` : '—', lowerIsBetter: true },
-  fcfYield:          { label: 'FCF Yield',            format: v => v != null ? `${v.toFixed(2)}%` : '—' },
-  sixMonthReturn:    { label: '6M Price Return',      format: v => v != null ? `${v.toFixed(1)}%` : '—' },
-  earningsRevisions: { label: 'Earnings Revisions',   format: v => v != null ? `${v.toFixed(1)}%` : '—' },
+  // Growth
+  revenueGrowth:     { label: 'Revenue Growth YoY',    format: pctDec },
+  epsGrowth:         { label: 'EPS Growth YoY',         format: pctDec },
+  // Profitability
+  opMargin:          { label: 'Operating Margin',       format: pctDec },
+  netMargin:         { label: 'Net Profit Margin',      format: pctDec },
+  grossMargin:       { label: 'Gross Margin',           format: pctDec },
+  // Efficiency
+  roa:               { label: 'Return on Assets',       format: pctDec },
+  roe:               { label: 'Return on Equity',       format: pctDec },
+  // Valuation (all inverted — lower is better)
+  evEbitda:          { label: 'EV/EBITDA',              format: ratio, lowerIsBetter: true },
+  trailingPE:        { label: 'P/E Ratio (TTM)',        format: ratio, lowerIsBetter: true },
+  priceSales:        { label: 'Price/Sales',            format: ratio, lowerIsBetter: true },
+  priceBook:         { label: 'Price/Book',             format: ratio, lowerIsBetter: true },
+  // Capital Efficiency
+  fcfYield:          { label: 'FCF Yield',              format: v => v != null ? `${v.toFixed(2)}%` : '—' },
+  dividendYield:     { label: 'Dividend Yield',         format: v => v != null ? `${(v * 100).toFixed(2)}%` : '—' },
+  fcfMargin:         { label: 'FCF Margin',             format: pctRaw },
+  // Momentum
+  sixMonthReturn:    { label: '6M Price Return',        format: pctRaw },
+  threeMonthReturn:  { label: '3M Price Return',        format: pctRaw },
+  oneMonthReturn:    { label: '1M Price Return',        format: pctRaw },
+  // Sentiment
+  earningsRevisions: { label: 'Earnings Revisions',     format: pctRaw },
+  avgSurprise:       { label: 'Avg Earnings Surprise',  format: pctRaw },
 };
+
+function getMultiplierText(value, median, lowerIsBetter) {
+  if (median === 0 || value == null || median == null) return '';
+  const r = lowerIsBetter ? median / value : value / median;
+  if (r > 1.5) return `${r.toFixed(1)}x ${lowerIsBetter ? 'cheaper than' : 'above'} sector median`;
+  if (r < 0.67) return `${(1/r).toFixed(1)}x ${lowerIsBetter ? 'more expensive than' : 'below'} sector median`;
+  return 'Near sector median';
+}
 
 function relativeTime(isoString) {
   if (!isoString) return null;
@@ -260,10 +291,13 @@ function PillarRow({ pillar, pillarData, isExpanded, onToggle, isMobile }) {
   const pTier = tierFromPercentile(percentile);
   const color = TIER_COLORS[pTier] || '#8b949e';
 
-  // Get the single dimension — support both new (dimension) and old (dimensions) shapes
-  const dim = pillarData?.dimension || (pillarData?.dimensions ? Object.values(pillarData.dimensions)[0] : null);
-  const dimKey = pillarData?.dimensions ? Object.keys(pillarData.dimensions)[0] : null;
-  const meta = dimKey ? DIM_FORMAT[dimKey] : null;
+  // Get all dimensions — support both multi-dimension and legacy single-dimension shapes
+  const dimensions = pillarData?.dimensions || {};
+  const dimEntries = Object.entries(dimensions)
+    .filter(([k, d]) => d?.percentile != null && DIM_FORMAT[k]);
+
+  // Fallback: legacy single-dimension shape
+  const legacyDim = dimEntries.length === 0 && pillarData?.dimension ? pillarData.dimension : null;
 
   return (
     <div style={{
@@ -318,52 +352,57 @@ function PillarRow({ pillar, pillarData, isExpanded, onToggle, isMobile }) {
         </span>
       </button>
 
-      {/* Expanded dimension detail */}
-      {isExpanded && dim && meta && (
+      {/* Expanded multi-dimension detail */}
+      {isExpanded && dimEntries.length > 0 && (
         <div style={{ padding: '6px 10px 10px 10px', borderTop: '1px solid rgba(255,255,255,0.04)' }}>
-          <div style={{ fontSize: '10px', fontWeight: '600', color: '#e6edf3', marginBottom: '6px' }}>
-            {meta.label}{meta.lowerIsBetter ? ' (lower is better)' : ''}
-          </div>
+          {dimEntries.map(([dimKey, dim], idx) => {
+            const meta = DIM_FORMAT[dimKey];
+            const dimColor = TIER_COLORS[tierFromPercentile(dim.percentile)] || '#8b949e';
+            return (
+              <div key={dimKey} style={{ marginBottom: idx < dimEntries.length - 1 ? 10 : 0 }}>
+                <div style={{ fontSize: '10px', fontWeight: '600', color: '#e6edf3', marginBottom: '4px' }}>
+                  {meta.label}{meta.lowerIsBetter ? ' (lower is better)' : ''}
+                </div>
 
-          <div style={{ display: 'flex', gap: '12px', fontSize: '10px', marginBottom: '6px' }}>
-            <div>
-              <span style={{ color: '#6e7681' }}>Value </span>
-              <span style={{ color: '#e6edf3', fontFamily: MONO, fontWeight: '600' }}>
-                {meta.format(dim.value)}
-              </span>
-            </div>
-            <div>
-              <span style={{ color: '#6e7681' }}>Rank </span>
-              <span style={{ color: '#e6edf3', fontFamily: MONO }}>
-                #{dim.rank}
-              </span>
-            </div>
-            <div>
-              <span style={{ color: '#6e7681' }}>Percentile </span>
-              <span style={{ color, fontFamily: MONO, fontWeight: '600' }}>
-                P{dim.percentile}
-              </span>
-            </div>
-          </div>
+                <div style={{ display: 'flex', gap: '12px', fontSize: '10px', marginBottom: '4px' }}>
+                  <div>
+                    <span style={{ color: '#6e7681' }}>Value </span>
+                    <span style={{ color: '#e6edf3', fontFamily: MONO, fontWeight: '600' }}>
+                      {meta.format(dim.value)}
+                    </span>
+                  </div>
+                  <div>
+                    <span style={{ color: '#6e7681' }}>Rank </span>
+                    <span style={{ color: '#e6edf3', fontFamily: MONO }}>
+                      #{dim.rank}
+                    </span>
+                  </div>
+                  <div>
+                    <span style={{ color: '#6e7681' }}>Percentile </span>
+                    <span style={{ color: dimColor, fontFamily: MONO, fontWeight: '600' }}>
+                      P{dim.percentile}
+                    </span>
+                  </div>
+                </div>
 
-          {dim.sectorMedian != null && (
-            <div style={{ fontSize: '10px', color: '#6e7681' }}>
-              Sector median: <span style={{ fontFamily: MONO }}>{meta.format(dim.sectorMedian)}</span>
-              {dim.value != null && dim.sectorMedian != null && dim.sectorMedian !== 0 && (() => {
-                const ratio = meta.lowerIsBetter
-                  ? dim.sectorMedian / dim.value
-                  : dim.value / dim.sectorMedian;
-                if (ratio > 1.5) return ` · ${ratio.toFixed(1)}x sector median`;
-                if (ratio < 0.67) return ` · ${ratio.toFixed(1)}x sector median`;
-                return ' · Near sector median';
-              })()}
-            </div>
-          )}
+                {dim.sectorMedian != null && (
+                  <div style={{ fontSize: '10px', color: '#6e7681', marginBottom: '4px' }}>
+                    Sector median: <span style={{ fontFamily: MONO }}>{meta.format(dim.sectorMedian)}</span>
+                    {dim.value != null && dim.sectorMedian !== 0 &&
+                      ` · ${getMultiplierText(dim.value, dim.sectorMedian, meta.lowerIsBetter)}`
+                    }
+                  </div>
+                )}
+
+                <BulletChart percentile={dim.percentile} color={dimColor} height={4} />
+              </div>
+            );
+          })}
         </div>
       )}
 
-      {/* Show placeholder when expanded but no dimension data */}
-      {isExpanded && !dim && (
+      {/* Fallback: legacy single-dimension or no data */}
+      {isExpanded && dimEntries.length === 0 && !legacyDim && (
         <div style={{ padding: '8px 10px', fontSize: '10px', color: '#6e7681', fontStyle: 'italic' }}>
           Dimension data not yet available. Rankings will populate after the next daily computation.
         </div>

@@ -96,10 +96,11 @@ for (const [sectorId, sector] of Object.entries(STOCK_UNIVERSE)) {
 export const SECTOR_ETFS = Object.values(STOCK_UNIVERSE).map(s => s.etf);
 
 // ---------------------------------------------------------------------------
-// 7 Ranking Dimensions — each maps 1:1 to a pillar
+// Ranking Dimensions — 7 pillars, 2-4 dimensions each
 // ---------------------------------------------------------------------------
 
 export const DIMENSIONS = {
+  // ── Growth ──────────────────────────────────────────────────────────────
   revenueGrowth: {
     label: 'Revenue Growth YoY',
     pillar: 'growth',
@@ -108,6 +109,16 @@ export const DIMENSIONS = {
     unit: '%',
     source: 'Highlights.QuarterlyRevenueGrowthYOY',
   },
+  epsGrowth: {
+    label: 'EPS Growth YoY',
+    pillar: 'growth',
+    field: 'earningsGrowthYOY',
+    inverted: false,
+    unit: '%',
+    source: 'Highlights.QuarterlyEarningsGrowthYOY',
+  },
+
+  // ── Profitability ───────────────────────────────────────────────────────
   opMargin: {
     label: 'Operating Margin',
     pillar: 'profitability',
@@ -116,6 +127,24 @@ export const DIMENSIONS = {
     unit: '%',
     source: 'Highlights.OperatingMarginTTM',
   },
+  netMargin: {
+    label: 'Net Profit Margin',
+    pillar: 'profitability',
+    field: 'profitMarginTTM',
+    inverted: false,
+    unit: '%',
+    source: 'Highlights.ProfitMarginTTM',
+  },
+  grossMargin: {
+    label: 'Gross Margin',
+    pillar: 'profitability',
+    field: 'grossMargin',
+    inverted: false,
+    unit: '%',
+    computed: true,
+  },
+
+  // ── Efficiency ──────────────────────────────────────────────────────────
   roa: {
     label: 'Return on Assets',
     pillar: 'efficiency',
@@ -124,6 +153,16 @@ export const DIMENSIONS = {
     unit: '%',
     source: 'Highlights.ReturnOnAssetsTTM',
   },
+  roe: {
+    label: 'Return on Equity',
+    pillar: 'efficiency',
+    field: 'roeTTM',
+    inverted: false,
+    unit: '%',
+    source: 'Highlights.ReturnOnEquityTTM',
+  },
+
+  // ── Valuation (all inverted — lower = better) ──────────────────────────
   evEbitda: {
     label: 'EV/EBITDA',
     pillar: 'valuation',
@@ -132,6 +171,32 @@ export const DIMENSIONS = {
     unit: 'x',
     source: 'Valuation.EnterpriseValueEbitda',
   },
+  trailingPE: {
+    label: 'P/E Ratio (TTM)',
+    pillar: 'valuation',
+    field: 'trailingPE',
+    inverted: true,
+    unit: 'x',
+    source: 'Valuation.TrailingPE',
+  },
+  priceSales: {
+    label: 'Price/Sales',
+    pillar: 'valuation',
+    field: 'priceSalesTTM',
+    inverted: true,
+    unit: 'x',
+    source: 'Valuation.PriceSalesTTM',
+  },
+  priceBook: {
+    label: 'Price/Book',
+    pillar: 'valuation',
+    field: 'priceBookMRQ',
+    inverted: true,
+    unit: 'x',
+    source: 'Valuation.PriceBookMRQ',
+  },
+
+  // ── Capital Efficiency ─────────────────────────────────────────────────
   fcfYield: {
     label: 'FCF Yield',
     pillar: 'capitalEff',
@@ -140,6 +205,24 @@ export const DIMENSIONS = {
     unit: '%',
     computed: true,
   },
+  dividendYield: {
+    label: 'Dividend Yield',
+    pillar: 'capitalEff',
+    field: 'dividendYield',
+    inverted: false,
+    unit: '%',
+    source: 'Highlights.DividendYield',
+  },
+  fcfMargin: {
+    label: 'FCF Margin',
+    pillar: 'capitalEff',
+    field: 'fcfMargin',
+    inverted: false,
+    unit: '%',
+    computed: true,
+  },
+
+  // ── Momentum ───────────────────────────────────────────────────────────
   sixMonthReturn: {
     label: '6M Price Return',
     pillar: 'momentum',
@@ -148,6 +231,24 @@ export const DIMENSIONS = {
     unit: '%',
     computed: true,
   },
+  threeMonthReturn: {
+    label: '3M Price Return',
+    pillar: 'momentum',
+    field: 'threeMonthReturn',
+    inverted: false,
+    unit: '%',
+    computed: true,
+  },
+  oneMonthReturn: {
+    label: '1M Price Return',
+    pillar: 'momentum',
+    field: 'oneMonthReturn',
+    inverted: false,
+    unit: '%',
+    computed: true,
+  },
+
+  // ── Sentiment ──────────────────────────────────────────────────────────
   earningsRevisions: {
     label: 'Earnings Revisions',
     pillar: 'sentiment',
@@ -156,20 +257,28 @@ export const DIMENSIONS = {
     unit: 'score',
     computed: true,
   },
+  avgSurprise: {
+    label: 'Avg Earnings Surprise',
+    pillar: 'sentiment',
+    field: 'avgEarningsSurprise',
+    inverted: false,
+    unit: '%',
+    computed: true,
+  },
 };
 
 // ---------------------------------------------------------------------------
-// 7 Pillars — Equal weight (1/7 each), one dimension per pillar
+// 7 Pillars — Equal weight (1/7 each), 2-4 dimensions each
 // ---------------------------------------------------------------------------
 
 export const PILLARS = {
-  growth:        { label: 'Growth',             icon: '📈', dimensions: ['revenueGrowth'],    weight: 1/7 },
-  profitability: { label: 'Profitability',       icon: '💰', dimensions: ['opMargin'],         weight: 1/7 },
-  efficiency:    { label: 'Efficiency',          icon: '⚙️', dimensions: ['roa'],              weight: 1/7 },
-  valuation:     { label: 'Valuation',           icon: '📊', dimensions: ['evEbitda'],         weight: 1/7 },
-  capitalEff:    { label: 'Capital Efficiency',  icon: '💎', dimensions: ['fcfYield'],         weight: 1/7 },
-  momentum:      { label: 'Momentum',            icon: '⚡', dimensions: ['sixMonthReturn'],   weight: 1/7 },
-  sentiment:     { label: 'Sentiment',           icon: '🎯', dimensions: ['earningsRevisions'], weight: 1/7 },
+  growth:        { label: 'Growth',             icon: '📈', dimensions: ['revenueGrowth', 'epsGrowth'],                              weight: 1/7 },
+  profitability: { label: 'Profitability',       icon: '💰', dimensions: ['opMargin', 'netMargin', 'grossMargin'],                   weight: 1/7 },
+  efficiency:    { label: 'Efficiency',          icon: '⚙️', dimensions: ['roa', 'roe'],                                             weight: 1/7 },
+  valuation:     { label: 'Valuation',           icon: '📊', dimensions: ['evEbitda', 'trailingPE', 'priceSales', 'priceBook'],      weight: 1/7 },
+  capitalEff:    { label: 'Capital Efficiency',  icon: '💎', dimensions: ['fcfYield', 'dividendYield', 'fcfMargin'],                 weight: 1/7 },
+  momentum:      { label: 'Momentum',            icon: '⚡', dimensions: ['sixMonthReturn', 'threeMonthReturn', 'oneMonthReturn'],   weight: 1/7 },
+  sentiment:     { label: 'Sentiment',           icon: '🎯', dimensions: ['earningsRevisions', 'avgSurprise'],                       weight: 1/7 },
 };
 
 // Per-pillar weight for composite score computation — tune these without touching other code
