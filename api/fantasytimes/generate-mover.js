@@ -76,6 +76,7 @@ export default async function handler(req, res) {
 
   try {
     const db = getFirebaseAdmin();
+    logInfo('Step 1: Validation passed, got Firebase admin');
 
     // ── Dedup check ─────────────────────────────────────────────────
     const fourHoursAgo = new Date(Date.now() - 4 * 60 * 60 * 1000);
@@ -103,6 +104,7 @@ export default async function handler(req, res) {
       }
       logInfo(`Volatility override for ${upperSymbol}: atrMultiple=${atrMultiple}, percentChange=${percentChange}%`);
     }
+    logInfo('Step 2: Dedup check passed', { symbol: upperSymbol });
 
     // ── Fetch EODHD news headlines ──────────────────────────────────
     let newsHeadlines = [];
@@ -119,12 +121,14 @@ export default async function handler(req, res) {
     } catch (e) {
       logError('Failed to fetch EODHD news, continuing without', { error: e.message });
     }
+    logInfo('Step 3: News fetched', { headlineCount: newsHeadlines.length });
 
     // ── Load knowledge context (Tier 1 stocks) ─────────────────────
     let knowledgeExcerpt = '';
     if (TICKERS.includes(upperSymbol) && STOCK_DATA[upperSymbol]?.knowledgePackage) {
       knowledgeExcerpt = STOCK_DATA[upperSymbol].knowledgePackage.slice(0, 1500);
     }
+    logInfo('Step 4: Knowledge loaded', { hasKnowledge: !!knowledgeExcerpt, excerptLength: knowledgeExcerpt.length });
 
     // ── Build user message ──────────────────────────────────────────
     const userMessage = [
@@ -150,6 +154,7 @@ export default async function handler(req, res) {
 
     // ── Call Claude Haiku with Tool Use ──────────────────────────────
     logInfo(`Generating story for ${upperSymbol} (${percentChange}%, ${atrMultiple}x ATR)`);
+    logInfo('Step 5: Calling Claude API...', { model: REPORTER_PROFILES.kai.model, messageLength: userMessage.length });
     const anthropic = getAnthropicClient();
 
     const response = await anthropic.messages.create({
@@ -161,6 +166,7 @@ export default async function handler(req, res) {
       tool_choice: { type: 'tool', name: 'publish_story' },
       messages: [{ role: 'user', content: userMessage }],
     });
+    logInfo('Step 6: Claude response received', { stopReason: response.stop_reason, contentBlocks: response.content?.length });
 
     // ── Extract structured output from Tool Use ─────────────────────
     const toolBlock = response.content.find((block) => block.type === 'tool_use');
@@ -205,6 +211,7 @@ export default async function handler(req, res) {
       status: 'published',
     };
 
+    logInfo('Step 7: Writing to Firestore...', { headline: storyDoc.headline });
     const docRef = await db.collection('fantasyTimesStories').add(storyDoc);
 
     logInfo(`Published story ${docRef.id} for ${upperSymbol}`, {
@@ -218,7 +225,13 @@ export default async function handler(req, res) {
       headline: storyDoc.headline,
     });
   } catch (error) {
-    logError('Generation failed', { error: error.message, stack: error.stack });
+    logError('Generation failed', {
+      error: error.message,
+      stack: error.stack,
+      name: error.name,
+      status: error.status,
+      type: error.error?.type,
+    });
     return res.status(500).json({ success: false, error: 'Story generation failed' });
   }
 }
