@@ -1,3 +1,4 @@
+console.log('generate-macro loaded');
 // api/fantasytimes/generate-macro.js
 // Kai's Macro Alert — triggered when 5+ stocks fire within 2 minutes.
 // Single story covering a broad market event.
@@ -9,7 +10,7 @@ import {
   KAI_MACRO_SYSTEM_PROMPT,
   PUBLISH_MACRO_TOOL,
   REPORTER_PROFILES,
-} from '../../src/prompts/fantasyTimesPrompts.js';
+} from '../_utils/fantasyTimesPrompts.js';
 
 export const config = { maxDuration: 30 };
 

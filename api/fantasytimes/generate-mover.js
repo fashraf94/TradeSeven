@@ -1,3 +1,4 @@
+console.log('generate-mover loaded');
 // api/fantasytimes/generate-mover.js
 // Kai's Market Pulse — individual stock mover story generation.
 // POST endpoint called when ATR threshold crossed.
@@ -10,7 +11,7 @@ import {
   KAI_SYSTEM_PROMPT,
   PUBLISH_STORY_TOOL,
   REPORTER_PROFILES,
-} from '../../src/prompts/fantasyTimesPrompts.js';
+} from '../_utils/fantasyTimesPrompts.js';
 
 export const config = { maxDuration: 30 };
 
