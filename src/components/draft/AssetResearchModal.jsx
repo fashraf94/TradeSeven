@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import ReactDOM from 'react-dom';
 import { HOLO_COLORS, CATEGORY_CONFIG, getSectorColor, getRatingColor } from '../../constants/holoTheme';
 import { getCompanyProfile } from '../../services/fundamentalsService';
+import { getStockPrice } from '../../services/eodhdAPI';
 import { formatLargeNumber } from '../../utils/formatters';
 import ChartHeader from '../Research/ChartHeader';
 import WhyMovingPopup from '../Research/WhyMovingPopup';
@@ -119,21 +120,25 @@ const AssetResearchModal = ({
   const [drawerSnapState, setDrawerSnapState] = useState('mid');
   const [v2ContainerHeight, setV2ContainerHeight] = useState(600);
   const v2ContainerRef = useRef(null);
+  const isInternalNavRef = useRef(false);
   const { isMobile, isTablet } = useIsMobile();
 
   const handleNavigateToStock = useCallback((ticker, name) => {
+    isInternalNavRef.current = true;
     setStockHistory(prev => [...prev, currentAsset]);
     setCurrentAsset({ symbol: ticker, name: name || ticker });
   }, [currentAsset]);
 
   const handleNavigateBack = useCallback(() => {
     if (stockHistory.length === 0) return;
+    isInternalNavRef.current = true;
     const prev = stockHistory[stockHistory.length - 1];
     setStockHistory(h => h.slice(0, -1));
     setCurrentAsset(prev);
   }, [stockHistory]);
 
   const canGoBack = stockHistory.length > 0;
+  const isOriginalAsset = currentAsset?.symbol === asset?.symbol;
 
   const handleClose = useCallback(() => {
     setStockHistory([]);
@@ -153,7 +158,7 @@ const AssetResearchModal = ({
 
   // v2: Research data hook for chart + enhanced technical tab
   const researchData = useResearchData(version >= 2 ? currentAsset?.symbol : null, {
-    currentPrice: wsPrice || currentAsset?.price || currentAsset?.currentPrice || 0,
+    currentPrice: (isOriginalAsset ? wsPrice : null) || currentAsset?.price || currentAsset?.currentPrice || 0,
     isCrypto: isCrypto,
     initialTimeframe: defaultTimeframe,
   });
@@ -210,7 +215,12 @@ const AssetResearchModal = ({
   }, []);
 
   // Reset tab default when asset or defaultTab changes (e.g. "View Chart" click while modal is open)
+  // Skip reset on internal navigation (leaderboard tap / back button) to preserve tab context
   useEffect(() => {
+    if (isInternalNavRef.current) {
+      isInternalNavRef.current = false;
+      return;
+    }
     setActiveTab(defaultTab || (isCrypto ? 'health' : 'fundamental'));
   }, [currentAsset?.symbol, defaultTab]);
 
@@ -225,6 +235,23 @@ const AssetResearchModal = ({
       setProfile(null);
     }
   }, [currentAsset?.symbol]);
+
+  // Fetch current price for internally-navigated stocks (not the original asset).
+  // The original asset gets wsPrice from parent; navigated stocks need their own price fetch.
+  useEffect(() => {
+    if (isOriginalAsset || !currentAsset?.symbol) return;
+    if (currentAsset?.price > 0) return; // Already has price (e.g., restored from history)
+
+    let cancelled = false;
+    getStockPrice(currentAsset.symbol).then(data => {
+      if (cancelled || !data?.price) return;
+      setCurrentAsset(prev => {
+        if (prev?.symbol !== data.symbol) return prev;
+        return { ...prev, price: data.price, percentChange: data.percentChange || 0 };
+      });
+    });
+    return () => { cancelled = true; };
+  }, [currentAsset?.symbol, isOriginalAsset]);
 
   if (!asset) return null;
 
@@ -620,6 +647,7 @@ const AssetResearchModal = ({
               )}
               {researchData.ohlcvData && researchData.ohlcvData.length > 0 && (
                 <StockChart
+                  key={currentAsset?.symbol}
                   ohlcvData={researchData.ohlcvData}
                   rawData={researchData.rawData}
                   timeframe={researchData.timeframe}
@@ -631,7 +659,7 @@ const AssetResearchModal = ({
                   bombData={bombData}
                   symbol={currentAsset?.symbol}
                   todayDailyCandle={researchData.todayDailyCandle}
-                  realtimeExtremes={realtimeExtremes}
+                  realtimeExtremes={isOriginalAsset ? realtimeExtremes : null}
                 />
               )}
             </div>

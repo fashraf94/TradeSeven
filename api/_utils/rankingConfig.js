@@ -96,29 +96,29 @@ for (const [sectorId, sector] of Object.entries(STOCK_UNIVERSE)) {
 export const SECTOR_ETFS = Object.values(STOCK_UNIVERSE).map(s => s.etf);
 
 // ---------------------------------------------------------------------------
-// 7 Ranking Dimensions (Compete Tab — 4-pillar model)
+// 7 Ranking Dimensions — each maps 1:1 to a pillar
 // ---------------------------------------------------------------------------
 
 export const DIMENSIONS = {
   revenueGrowth: {
     label: 'Revenue Growth YoY',
-    pillar: 'quality',
+    pillar: 'growth',
     field: 'revenueGrowthYOY',
     inverted: false,
     unit: '%',
     source: 'Highlights.QuarterlyRevenueGrowthYOY',
   },
   opMargin: {
-    label: 'Operating Margin TTM',
-    pillar: 'quality',
+    label: 'Operating Margin',
+    pillar: 'profitability',
     field: 'opMarginTTM',
     inverted: false,
     unit: '%',
     source: 'Highlights.OperatingMarginTTM',
   },
   roa: {
-    label: 'Return on Assets TTM',
-    pillar: 'quality',
+    label: 'Return on Assets',
+    pillar: 'efficiency',
     field: 'roaTTM',
     inverted: false,
     unit: '%',
@@ -141,7 +141,7 @@ export const DIMENSIONS = {
     computed: true,
   },
   sixMonthReturn: {
-    label: '6-Month Price Return',
+    label: '6M Price Return',
     pillar: 'momentum',
     field: 'sixMonthReturn',
     inverted: false,
@@ -149,8 +149,8 @@ export const DIMENSIONS = {
     computed: true,
   },
   earningsRevisions: {
-    label: 'Earnings Revision Trend',
-    pillar: 'momentum',
+    label: 'Earnings Revisions',
+    pillar: 'sentiment',
     field: 'earningsRevisions',
     inverted: false,
     unit: 'score',
@@ -159,22 +159,28 @@ export const DIMENSIONS = {
 };
 
 // ---------------------------------------------------------------------------
-// 4 Pillars — Weighted composite (30/30/25/15)
+// 7 Pillars — Equal weight (1/7 each), one dimension per pillar
 // ---------------------------------------------------------------------------
 
 export const PILLARS = {
-  momentum:   { label: 'Momentum',          dimensions: ['sixMonthReturn', 'earningsRevisions'], weight: 0.30 },
-  quality:    { label: 'Quality',           dimensions: ['revenueGrowth', 'opMargin', 'roa'], weight: 0.30 },
-  valuation:  { label: 'Valuation',         dimensions: ['evEbitda'], weight: 0.25 },
-  capitalEff: { label: 'Capital Efficiency', dimensions: ['fcfYield'], weight: 0.15 },
+  growth:        { label: 'Growth',             icon: '📈', dimensions: ['revenueGrowth'],    weight: 1/7 },
+  profitability: { label: 'Profitability',       icon: '💰', dimensions: ['opMargin'],         weight: 1/7 },
+  efficiency:    { label: 'Efficiency',          icon: '⚙️', dimensions: ['roa'],              weight: 1/7 },
+  valuation:     { label: 'Valuation',           icon: '📊', dimensions: ['evEbitda'],         weight: 1/7 },
+  capitalEff:    { label: 'Capital Efficiency',  icon: '💎', dimensions: ['fcfYield'],         weight: 1/7 },
+  momentum:      { label: 'Momentum',            icon: '⚡', dimensions: ['sixMonthReturn'],   weight: 1/7 },
+  sentiment:     { label: 'Sentiment',           icon: '🎯', dimensions: ['earningsRevisions'], weight: 1/7 },
 };
 
-// Per-pillar weight for composite score computation
+// Per-pillar weight for composite score computation — tune these without touching other code
 export const COMPETE_PILLAR_WEIGHTS = {
-  momentum:   0.30,
-  quality:    0.30,
-  valuation:  0.25,
-  capitalEff: 0.15,
+  growth:        1/7,
+  profitability: 1/7,
+  efficiency:    1/7,
+  valuation:     1/7,
+  capitalEff:    1/7,
+  momentum:      1/7,
+  sentiment:     1/7,
 };
 
 // ---------------------------------------------------------------------------

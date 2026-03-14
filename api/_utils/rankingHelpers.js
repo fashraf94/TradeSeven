@@ -120,10 +120,13 @@ export function daysSince52WeekHigh(dailyCloses, high52Week) {
  */
 export function generateDNABadge(rank, pillars) {
   const pillarNames = {
-    momentum: 'Momentum',
-    quality: 'Quality',
+    growth: 'Growth',
+    profitability: 'Profitability',
+    efficiency: 'Efficiency',
     valuation: 'Valuation',
     capitalEff: 'Cash Flow',
+    momentum: 'Momentum',
+    sentiment: 'Sentiment',
   };
 
   const entries = Object.entries(pillars)

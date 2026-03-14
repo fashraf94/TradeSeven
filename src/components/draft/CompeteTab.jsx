@@ -1,10 +1,10 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 
 // ---------------------------------------------------------------------------
 // Constants & Design Tokens
 // ---------------------------------------------------------------------------
 
-const MONO_FONT = "'JetBrains Mono', 'SF Mono', monospace";
+const MONO = "'JetBrains Mono', 'SF Mono', monospace";
 
 const TIER_COLORS = {
   'Sector Leader': '#ffd700',
@@ -14,26 +14,9 @@ const TIER_COLORS = {
   'Lags Sector': '#ef4444',
 };
 
-const PILLAR_CONFIG = [
-  { key: 'momentum', label: 'Momentum', icon: '⚡' },
-  { key: 'quality', label: 'Quality', icon: '💎' },
-  { key: 'valuation', label: 'Valuation', icon: '📊' },
-  { key: 'capitalEff', label: 'Capital Efficiency', icon: '💰' },
-];
-
-const DIM_META = {
-  sixMonthReturn:    { label: '6M Price Return',   format: v => `${(v * 100).toFixed(1)}%` },
-  earningsRevisions: { label: 'Earnings Revisions', format: v => `${(v * 100).toFixed(1)}%` },
-  revenueGrowth:     { label: 'Revenue Growth YoY', format: v => `${v.toFixed(1)}%` },
-  opMargin:          { label: 'Operating Margin',   format: v => `${v.toFixed(1)}%` },
-  roa:               { label: 'Return on Assets',   format: v => `${v.toFixed(1)}%` },
-  evEbitda:          { label: 'EV/EBITDA',           format: v => `${v.toFixed(1)}x`, lowerIsBetter: true },
-  fcfYield:          { label: 'FCF Yield',           format: v => `${(v * 100).toFixed(2)}%` },
-};
-
-function tierColor(tier) {
-  return TIER_COLORS[tier] || '#8b949e';
-}
+// Handle tier as object {min, label, color} or string
+function getTierLabel(tier) { return tier?.label || tier || 'Unknown'; }
+function getTierColor(tier) { return tier?.color || TIER_COLORS[tier?.label || tier] || '#8b949e'; }
 
 function tierFromPercentile(p) {
   if (p == null) return 'In-Line';
@@ -44,18 +27,30 @@ function tierFromPercentile(p) {
   return 'Lags Sector';
 }
 
-function formatMedianComparison(value, median, meta) {
-  if (value == null || median == null || median === 0) return null;
-  const ratio = value / median;
-  if (meta?.lowerIsBetter) {
-    if (ratio > 1.3) return `${ratio.toFixed(1)}x sector median (expensive)`;
-    if (ratio < 0.7) return `${(1 / ratio).toFixed(1)}x cheaper than median`;
-    return null;
-  }
-  if (ratio > 1.5) return `${ratio.toFixed(1)}x sector median`;
-  if (ratio < 0.5 && median > 0) return `${(ratio * 100).toFixed(0)}% of median`;
-  return null;
-}
+const PILLAR_CONFIG = [
+  { key: 'growth',        label: 'Growth',             icon: '📈' },
+  { key: 'profitability', label: 'Profitability',       icon: '💰' },
+  { key: 'efficiency',    label: 'Efficiency',          icon: '⚙️' },
+  { key: 'valuation',     label: 'Valuation',           icon: '📊' },
+  { key: 'capitalEff',    label: 'Capital Efficiency',  icon: '💎' },
+  { key: 'momentum',      label: 'Momentum',            icon: '⚡' },
+  { key: 'sentiment',     label: 'Sentiment',           icon: '🎯' },
+];
+
+// Dimension formatters — values are stored in Firestore as:
+//   revenueGrowthYOY, opMarginTTM, roaTTM: EODHD decimals (0.157 = 15.7%)
+//   sixMonthReturn, earningsRevisions: already *100 (15.3 = 15.3%)
+//   fcfYield: already *100 (3.5 = 3.5%)
+//   evEbitda: ratio (15.2 = 15.2x)
+const DIM_FORMAT = {
+  revenueGrowth:     { label: 'Revenue Growth YoY',  format: v => v != null ? `${(v * 100).toFixed(1)}%` : '—' },
+  opMargin:          { label: 'Operating Margin',     format: v => v != null ? `${(v * 100).toFixed(1)}%` : '—' },
+  roa:               { label: 'Return on Assets',     format: v => v != null ? `${(v * 100).toFixed(1)}%` : '—' },
+  evEbitda:          { label: 'EV/EBITDA',            format: v => v != null ? `${v.toFixed(1)}x` : '—', lowerIsBetter: true },
+  fcfYield:          { label: 'FCF Yield',            format: v => v != null ? `${v.toFixed(2)}%` : '—' },
+  sixMonthReturn:    { label: '6M Price Return',      format: v => v != null ? `${v.toFixed(1)}%` : '—' },
+  earningsRevisions: { label: 'Earnings Revisions',   format: v => v != null ? `${v.toFixed(1)}%` : '—' },
+};
 
 function relativeTime(isoString) {
   if (!isoString) return null;
@@ -63,8 +58,7 @@ function relativeTime(isoString) {
   const hours = Math.floor(ms / 3600000);
   if (hours < 1) return 'just now';
   if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  return `${days}d ago`;
+  return `${Math.floor(hours / 24)}d ago`;
 }
 
 // ---------------------------------------------------------------------------
@@ -74,28 +68,25 @@ function relativeTime(isoString) {
 function SkeletonLoader() {
   return (
     <div style={{ padding: '8px 0' }}>
-      {/* Rank card skeleton */}
       <div style={{
-        height: '100px', borderRadius: '10px', marginBottom: '12px',
+        height: '110px', borderRadius: '10px', marginBottom: '12px',
         background: 'rgba(255,255,255,0.04)',
-        animation: 'compete-pulse 1.5s ease-in-out infinite',
+        animation: 'ranks-pulse 1.5s ease-in-out infinite',
       }} />
-      {/* Pillar skeletons */}
-      {[1, 2, 3, 4].map(i => (
+      {[1, 2, 3, 4, 5, 6, 7].map(i => (
         <div key={i} style={{
-          height: '40px', borderRadius: '6px', marginBottom: '6px',
+          height: '38px', borderRadius: '6px', marginBottom: '4px',
           background: 'rgba(255,255,255,0.04)',
-          animation: 'compete-pulse 1.5s ease-in-out infinite',
-          animationDelay: `${i * 0.1}s`,
+          animation: 'ranks-pulse 1.5s ease-in-out infinite',
+          animationDelay: `${i * 0.08}s`,
         }} />
       ))}
-      {/* Leaderboard skeleton */}
       <div style={{
-        height: '160px', borderRadius: '8px', marginTop: '12px',
+        height: '140px', borderRadius: '8px', marginTop: '12px',
         background: 'rgba(255,255,255,0.04)',
-        animation: 'compete-pulse 1.5s ease-in-out infinite',
+        animation: 'ranks-pulse 1.5s ease-in-out infinite',
       }} />
-      <style>{`@keyframes compete-pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }`}</style>
+      <style>{`@keyframes ranks-pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }`}</style>
     </div>
   );
 }
@@ -106,9 +97,9 @@ function SkeletonLoader() {
 
 function NotAvailableCard({ error, statusCode }) {
   const message = statusCode === 503
-    ? 'Rankings are computed daily. Check back after market close.'
+    ? 'Rankings are computed daily at 6 AM ET. Check back after market close.'
     : statusCode === 404
-      ? 'This stock is not in the ranking universe. Rankings cover ~220 S&P 500 stocks across 11 GICS sectors.'
+      ? 'This stock is not in the MarketClash ranking universe (~220 S&P 500 stocks).'
       : error || 'Peer rankings are not available for this stock.';
 
   return (
@@ -134,13 +125,27 @@ function NotAvailableCard({ error, statusCode }) {
 }
 
 // ---------------------------------------------------------------------------
-// Bullet Chart (percentile bar with median tick)
+// Staleness Note
+// ---------------------------------------------------------------------------
+
+function StalenessNote({ computedAt }) {
+  if (!computedAt) return null;
+  const ms = Date.now() - new Date(computedAt).getTime();
+  if (ms < 48 * 3600000) return null;
+  return (
+    <div style={{ textAlign: 'center', padding: '4px 0', fontSize: '10px', color: '#6e7681' }}>
+      Last updated {relativeTime(computedAt)}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Bullet Chart
 // ---------------------------------------------------------------------------
 
 function BulletChart({ percentile, color, height = 6 }) {
   return (
     <div style={{ position: 'relative', flex: 1, height: `${height}px`, borderRadius: `${height / 2}px`, background: 'rgba(255,255,255,0.06)' }}>
-      {/* Filled portion */}
       <div style={{
         height: '100%', borderRadius: `${height / 2}px`,
         width: percentile != null ? `${Math.min(100, Math.max(0, percentile))}%` : '0%',
@@ -148,7 +153,6 @@ function BulletChart({ percentile, color, height = 6 }) {
         transition: 'width 0.4s ease',
         boxShadow: percentile >= 60 ? `0 0 6px ${color}40` : 'none',
       }} />
-      {/* Median tick at 50% */}
       <div style={{
         position: 'absolute', left: '50%', top: '-1px', bottom: '-1px',
         width: '1px', background: 'rgba(255,255,255,0.25)',
@@ -158,46 +162,12 @@ function BulletChart({ percentile, color, height = 6 }) {
 }
 
 // ---------------------------------------------------------------------------
-// Dimension Bullet Chart (shows min/max range, median, stock position)
-// ---------------------------------------------------------------------------
-
-function DimensionBullet({ dim, color }) {
-  if (!dim || dim.min == null || dim.max == null) return null;
-  const range = dim.max - dim.min;
-  if (range <= 0) return null;
-
-  const stockPos = ((dim.value - dim.min) / range) * 100;
-  const medianPos = dim.sectorMedian != null ? ((dim.sectorMedian - dim.min) / range) * 100 : null;
-
-  return (
-    <div style={{ position: 'relative', flex: '0 0 60px', height: '6px', borderRadius: '3px', background: 'rgba(255,255,255,0.06)' }}>
-      {/* Stock position dot */}
-      <div style={{
-        position: 'absolute',
-        left: `${Math.min(100, Math.max(0, stockPos))}%`,
-        top: '50%', transform: 'translate(-50%, -50%)',
-        width: '8px', height: '8px', borderRadius: '50%',
-        background: color, boxShadow: `0 0 4px ${color}60`,
-      }} />
-      {/* Median tick */}
-      {medianPos != null && (
-        <div style={{
-          position: 'absolute',
-          left: `${Math.min(100, Math.max(0, medianPos))}%`,
-          top: '-2px', bottom: '-2px',
-          width: '1px', background: 'rgba(255,255,255,0.3)',
-        }} />
-      )}
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
 // Composite Rank Card
 // ---------------------------------------------------------------------------
 
 function CompositeRankCard({ data }) {
-  const color = tierColor(data.tier);
+  const color = getTierColor(data.tier);
+  const tierLabel = getTierLabel(data.tier);
 
   return (
     <div style={{
@@ -212,10 +182,7 @@ function CompositeRankCard({ data }) {
           padding: '8px 12px', borderRadius: '8px',
           background: `${color}15`, border: `1px solid ${color}30`,
         }}>
-          <div style={{
-            fontSize: '28px', fontWeight: '700', lineHeight: '1',
-            color, fontFamily: MONO_FONT,
-          }}>
+          <div style={{ fontSize: '28px', fontWeight: '700', lineHeight: '1', color, fontFamily: MONO }}>
             #{data.compositeRank}
           </div>
           <div style={{ fontSize: '10px', color: '#8b949e', marginTop: '2px' }}>
@@ -226,26 +193,20 @@ function CompositeRankCard({ data }) {
         {/* Info */}
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: '12px', color: '#e6edf3', fontWeight: '600' }}>
-            {data.ticker} · {data.name}
+            {data.ticker}{data.name && data.name !== data.ticker ? ` · ${data.name}` : ''}
           </div>
 
           {/* Score bar */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '6px' }}>
-            <div style={{
-              flex: 1, height: '8px', borderRadius: '4px',
-              background: 'rgba(255,255,255,0.06)',
-            }}>
+            <div style={{ flex: 1, height: '8px', borderRadius: '4px', background: 'rgba(255,255,255,0.06)' }}>
               <div style={{
                 height: '100%', borderRadius: '4px',
-                width: `${data.compositeScore}%`,
+                width: `${data.compositeScore || 0}%`,
                 background: `linear-gradient(90deg, ${color}80, ${color})`,
                 transition: 'width 0.4s ease',
               }} />
             </div>
-            <span style={{
-              fontSize: '14px', fontWeight: '700', color,
-              fontFamily: MONO_FONT, flexShrink: 0,
-            }}>
+            <span style={{ fontSize: '14px', fontWeight: '700', color, fontFamily: MONO, flexShrink: 0 }}>
               {data.compositeScore}
             </span>
           </div>
@@ -258,7 +219,7 @@ function CompositeRankCard({ data }) {
             fontSize: '10px', fontWeight: '600', color,
             textTransform: 'uppercase', letterSpacing: '0.5px',
           }}>
-            {data.tier}
+            {tierLabel}
           </div>
         </div>
       </div>
@@ -268,8 +229,7 @@ function CompositeRankCard({ data }) {
         <div style={{
           marginTop: '10px', padding: '8px 10px', borderRadius: '6px',
           background: 'rgba(255,255,255,0.03)',
-          fontSize: '11px', color: '#8b949e', lineHeight: '1.4',
-          fontStyle: 'italic',
+          fontSize: '11px', color: '#8b949e', lineHeight: '1.4', fontStyle: 'italic',
         }}>
           "{data.dnaBadge}"
         </div>
@@ -280,11 +240,11 @@ function CompositeRankCard({ data }) {
         <div style={{
           marginTop: '8px', display: 'inline-flex', alignItems: 'center', gap: '4px',
           padding: '3px 8px', borderRadius: '4px',
-          background: 'rgba(239, 68, 68, 0.12)',
-          border: '1px solid rgba(239, 68, 68, 0.25)',
-          fontSize: '10px', fontWeight: '600', color: '#ef4444',
+          background: `${data.debtRiskBadge.color || '#ef4444'}18`,
+          border: `1px solid ${data.debtRiskBadge.color || '#ef4444'}30`,
+          fontSize: '10px', fontWeight: '600', color: data.debtRiskBadge.color || '#ef4444',
         }}>
-          🔴 {data.debtRiskBadge}
+          {data.debtRiskBadge.label || data.debtRiskBadge}
         </div>
       )}
     </div>
@@ -292,18 +252,22 @@ function CompositeRankCard({ data }) {
 }
 
 // ---------------------------------------------------------------------------
-// Pillar Row (expandable with dimensions)
+// Pillar Row (expandable with dimension detail)
 // ---------------------------------------------------------------------------
 
-function PillarRow({ pillar, pillarData, isExpanded, onToggle }) {
+function PillarRow({ pillar, pillarData, isExpanded, onToggle, isMobile }) {
   const percentile = pillarData?.percentile;
-  const dimensions = pillarData?.dimensions || {};
   const pTier = tierFromPercentile(percentile);
-  const color = tierColor(pTier);
+  const color = TIER_COLORS[pTier] || '#8b949e';
+
+  // Get the single dimension — support both new (dimension) and old (dimensions) shapes
+  const dim = pillarData?.dimension || (pillarData?.dimensions ? Object.values(pillarData.dimensions)[0] : null);
+  const dimKey = pillarData?.dimensions ? Object.keys(pillarData.dimensions)[0] : null;
+  const meta = dimKey ? DIM_FORMAT[dimKey] : null;
 
   return (
     <div style={{
-      marginBottom: '4px', borderRadius: '6px',
+      marginBottom: '3px', borderRadius: '6px',
       background: isExpanded ? 'rgba(255,255,255,0.04)' : 'transparent',
       border: '1px solid rgba(255,255,255,0.06)',
       overflow: 'hidden',
@@ -313,16 +277,15 @@ function PillarRow({ pillar, pillarData, isExpanded, onToggle }) {
         onClick={onToggle}
         style={{
           display: 'flex', alignItems: 'center', gap: '6px',
-          width: '100%', padding: '8px 10px', cursor: 'pointer',
+          width: '100%', padding: '7px 10px', cursor: 'pointer',
           background: 'none', border: 'none', textAlign: 'left',
         }}
       >
-        <span style={{ fontSize: '13px', flexShrink: 0, lineHeight: '1' }}>
-          {pillar.icon}
-        </span>
+        <span style={{ fontSize: '12px', flexShrink: 0, lineHeight: '1' }}>{pillar.icon}</span>
         <span style={{
           fontSize: '11px', fontWeight: '600', color: '#e6edf3',
-          flex: '0 0 85px',
+          flex: isMobile ? '0 0 70px' : '0 0 105px',
+          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
         }}>
           {pillar.label}
         </span>
@@ -331,10 +294,20 @@ function PillarRow({ pillar, pillarData, isExpanded, onToggle }) {
 
         <span style={{
           fontSize: '11px', fontWeight: '600', color,
-          fontFamily: MONO_FONT, flex: '0 0 30px', textAlign: 'right',
+          fontFamily: MONO, flex: '0 0 30px', textAlign: 'right',
         }}>
           {percentile != null ? `P${percentile}` : '—'}
         </span>
+
+        {!isMobile && (
+          <span style={{
+            fontSize: '9px', fontWeight: '500', color,
+            flex: '0 0 72px', textAlign: 'right',
+            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+          }}>
+            {percentile != null ? pTier : ''}
+          </span>
+        )}
 
         <span style={{
           fontSize: '9px', color: '#6e7681', flex: '0 0 12px',
@@ -345,53 +318,54 @@ function PillarRow({ pillar, pillarData, isExpanded, onToggle }) {
         </span>
       </button>
 
-      {/* Expanded dimensions */}
-      {isExpanded && (
-        <div style={{ padding: '0 10px 8px 10px' }}>
-          {Object.entries(dimensions).map(([dimKey, dim]) => {
-            const meta = DIM_META[dimKey];
-            if (!dim || !meta) return null;
+      {/* Expanded dimension detail */}
+      {isExpanded && dim && meta && (
+        <div style={{ padding: '6px 10px 10px 10px', borderTop: '1px solid rgba(255,255,255,0.04)' }}>
+          <div style={{ fontSize: '10px', fontWeight: '600', color: '#e6edf3', marginBottom: '6px' }}>
+            {meta.label}{meta.lowerIsBetter ? ' (lower is better)' : ''}
+          </div>
 
-            const dimTier = tierFromPercentile(dim.percentile);
-            const dimColor = tierColor(dimTier);
-            const medianComp = formatMedianComparison(dim.value, dim.sectorMedian, meta);
+          <div style={{ display: 'flex', gap: '12px', fontSize: '10px', marginBottom: '6px' }}>
+            <div>
+              <span style={{ color: '#6e7681' }}>Value </span>
+              <span style={{ color: '#e6edf3', fontFamily: MONO, fontWeight: '600' }}>
+                {meta.format(dim.value)}
+              </span>
+            </div>
+            <div>
+              <span style={{ color: '#6e7681' }}>Rank </span>
+              <span style={{ color: '#e6edf3', fontFamily: MONO }}>
+                #{dim.rank}
+              </span>
+            </div>
+            <div>
+              <span style={{ color: '#6e7681' }}>Percentile </span>
+              <span style={{ color, fontFamily: MONO, fontWeight: '600' }}>
+                P{dim.percentile}
+              </span>
+            </div>
+          </div>
 
-            return (
-              <div key={dimKey} style={{
-                padding: '6px 0',
-                borderTop: '1px solid rgba(255,255,255,0.04)',
-              }}>
-                <div style={{
-                  display: 'flex', alignItems: 'center', gap: '6px',
-                }}>
-                  <span style={{ fontSize: '10px', color: '#8b949e', flex: 1, minWidth: 0 }}>
-                    {meta.label}
-                  </span>
-                  <span style={{
-                    fontSize: '10px', fontFamily: MONO_FONT, color: '#e6edf3',
-                    flexShrink: 0, whiteSpace: 'nowrap',
-                  }}>
-                    {meta.format(dim.value)}
-                  </span>
-                  <span style={{
-                    fontSize: '9px', color: '#6e7681',
-                    flex: '0 0 40px', textAlign: 'right',
-                  }}>
-                    #{dim.rank}
-                  </span>
-                  <DimensionBullet dim={dim} color={dimColor} />
-                </div>
-                {medianComp && (
-                  <div style={{
-                    fontSize: '9px', color: '#6e7681', marginTop: '2px',
-                    paddingLeft: '2px',
-                  }}>
-                    {medianComp}
-                  </div>
-                )}
-              </div>
-            );
-          })}
+          {dim.sectorMedian != null && (
+            <div style={{ fontSize: '10px', color: '#6e7681' }}>
+              Sector median: <span style={{ fontFamily: MONO }}>{meta.format(dim.sectorMedian)}</span>
+              {dim.value != null && dim.sectorMedian != null && dim.sectorMedian !== 0 && (() => {
+                const ratio = meta.lowerIsBetter
+                  ? dim.sectorMedian / dim.value
+                  : dim.value / dim.sectorMedian;
+                if (ratio > 1.5) return ` · ${ratio.toFixed(1)}x sector median`;
+                if (ratio < 0.67) return ` · ${ratio.toFixed(1)}x sector median`;
+                return ' · Near sector median';
+              })()}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Show placeholder when expanded but no dimension data */}
+      {isExpanded && !dim && (
+        <div style={{ padding: '8px 10px', fontSize: '10px', color: '#6e7681', fontStyle: 'italic' }}>
+          Dimension data not yet available. Rankings will populate after the next daily computation.
         </div>
       )}
     </div>
@@ -409,7 +383,6 @@ function SectorLeaderboard({ data, currentSymbol, onNavigateToStock, isMobile })
 
   const upperSymbol = currentSymbol?.toUpperCase();
 
-  // Collapse logic: >10 entries → show top 5, current stock, bottom 2
   const visibleEntries = useMemo(() => {
     if (showAll || leaderboard.length <= 10) return leaderboard;
 
@@ -418,21 +391,18 @@ function SectorLeaderboard({ data, currentSymbol, onNavigateToStock, isMobile })
     const currentEntry = leaderboard.find(e => e.ticker === upperSymbol);
     const currentIdx = leaderboard.findIndex(e => e.ticker === upperSymbol);
 
-    // If current stock is already in top 5 or bottom 2, no gap needed
     const isInTop5 = currentIdx >= 0 && currentIdx < 5;
     const isInBottom = currentIdx >= leaderboard.length - 2;
 
     if (isInTop5 || isInBottom || !currentEntry) {
-      // Just show top 5 + bottom 2 with gap
       return [...top5, { _gap: true, _label: `... ${leaderboard.length - 7} more ...` }, ...bottom2];
     }
 
-    // Show top 5 + gap + current + gap + bottom 2
     const result = [...top5];
-    result.push({ _gap: true, _label: `...` });
+    result.push({ _gap: true, _label: '...' });
     result.push(currentEntry);
     if (currentIdx < leaderboard.length - 3) {
-      result.push({ _gap: true, _label: `...` });
+      result.push({ _gap: true, _label: '...' });
     }
     result.push(...bottom2.filter(e => e.ticker !== currentEntry.ticker));
     return result;
@@ -440,23 +410,14 @@ function SectorLeaderboard({ data, currentSymbol, onNavigateToStock, isMobile })
 
   return (
     <div style={{ marginTop: '12px' }}>
-      <div style={{
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        marginBottom: '6px',
-      }}>
-        <div style={{
-          fontSize: '10px', color: '#8b949e',
-          textTransform: 'uppercase', letterSpacing: '0.5px',
-        }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+        <div style={{ fontSize: '10px', color: '#8b949e', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
           {data.sectorName} Leaderboard
         </div>
         {leaderboard.length > 10 && (
           <button
             onClick={() => setShowAll(!showAll)}
-            style={{
-              background: 'none', border: 'none', cursor: 'pointer',
-              fontSize: '10px', color: '#00d9ff', fontWeight: '600',
-            }}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '10px', color: '#00d9ff', fontWeight: '600' }}
           >
             {showAll ? 'Collapse' : 'Show All'}
           </button>
@@ -482,8 +443,9 @@ function SectorLeaderboard({ data, currentSymbol, onNavigateToStock, isMobile })
           }
 
           const isMe = entry.ticker === upperSymbol;
-          const isClickable = !isMe && !!onNavigateToStock;
-          const entryColor = tierColor(entry.tier);
+          const isClickable = !isMe && typeof onNavigateToStock === 'function';
+          const entryScore = entry.score ?? entry.compositeScore;
+          const entryColor = entry.tierColor || TIER_COLORS[entry.tier] || '#8b949e';
 
           return (
             <div
@@ -501,16 +463,12 @@ function SectorLeaderboard({ data, currentSymbol, onNavigateToStock, isMobile })
                 transition: 'background 0.15s',
               }}
             >
-              <span style={{
-                fontSize: '10px', fontFamily: MONO_FONT, color: '#6e7681',
-                flex: '0 0 20px', textAlign: 'right',
-              }}>
+              <span style={{ fontSize: '10px', fontFamily: MONO, color: '#6e7681', flex: '0 0 20px', textAlign: 'right' }}>
                 {entry.rank}
               </span>
               <span style={{
                 fontSize: '11px', fontWeight: isMe ? '700' : '600',
-                color: isMe ? '#00d9ff' : '#e6edf3',
-                flex: '0 0 48px',
+                color: isMe ? '#00d9ff' : '#e6edf3', flex: '0 0 48px',
               }}>
                 {entry.ticker}
               </span>
@@ -522,24 +480,21 @@ function SectorLeaderboard({ data, currentSymbol, onNavigateToStock, isMobile })
                   {entry.name}
                 </span>
               )}
-              {/* Mini score bar */}
               <div style={{
                 flex: isMobile ? 1 : '0 0 60px',
-                height: '4px', borderRadius: '2px',
-                background: 'rgba(255,255,255,0.06)',
+                height: '4px', borderRadius: '2px', background: 'rgba(255,255,255,0.06)',
               }}>
                 <div style={{
                   height: '100%', borderRadius: '2px',
-                  width: `${entry.compositeScore}%`,
+                  width: `${entryScore || 0}%`,
                   background: entryColor,
                 }} />
               </div>
               <span style={{
-                fontSize: '11px', fontWeight: '600', fontFamily: MONO_FONT,
-                color: entryColor,
-                flex: '0 0 24px', textAlign: 'right',
+                fontSize: '11px', fontWeight: '600', fontFamily: MONO,
+                color: entryColor, flex: '0 0 24px', textAlign: 'right',
               }}>
-                {entry.compositeScore}
+                {entryScore}
               </span>
             </div>
           );
@@ -556,11 +511,11 @@ function SectorLeaderboard({ data, currentSymbol, onNavigateToStock, isMobile })
 function ScannerBadges({ scanner }) {
   if (!scanner) return null;
   const { coiledSpring, runningOnFumes } = scanner;
-  if (!coiledSpring && !runningOnFumes) return null;
+  if (!coiledSpring?.qualifies && !runningOnFumes?.qualifies) return null;
 
   return (
     <div style={{ marginTop: '12px' }}>
-      {coiledSpring && (
+      {coiledSpring?.qualifies && (
         <div style={{
           padding: '12px', marginBottom: '8px', borderRadius: '8px',
           background: 'rgba(16, 185, 129, 0.08)',
@@ -568,14 +523,9 @@ function ScannerBadges({ scanner }) {
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px' }}>
             <span style={{ fontSize: '14px' }}>🎯</span>
-            <span style={{ fontSize: '12px', fontWeight: '700', color: '#10b981' }}>
-              Coiled Spring
-            </span>
+            <span style={{ fontSize: '12px', fontWeight: '700', color: '#10b981' }}>Coiled Spring</span>
             {coiledSpring.score != null && (
-              <span style={{
-                fontSize: '10px', fontFamily: MONO_FONT, color: '#10b981',
-                marginLeft: 'auto',
-              }}>
+              <span style={{ fontSize: '10px', fontFamily: MONO, color: '#10b981', marginLeft: 'auto' }}>
                 Score: {coiledSpring.score}
               </span>
             )}
@@ -588,7 +538,7 @@ function ScannerBadges({ scanner }) {
         </div>
       )}
 
-      {runningOnFumes && (
+      {runningOnFumes?.qualifies && (
         <div style={{
           padding: '12px', marginBottom: '8px', borderRadius: '8px',
           background: 'rgba(245, 158, 11, 0.08)',
@@ -596,14 +546,9 @@ function ScannerBadges({ scanner }) {
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px' }}>
             <span style={{ fontSize: '14px' }}>⚠️</span>
-            <span style={{ fontSize: '12px', fontWeight: '700', color: '#f59e0b' }}>
-              Running on Fumes
-            </span>
+            <span style={{ fontSize: '12px', fontWeight: '700', color: '#f59e0b' }}>Running on Fumes</span>
             {runningOnFumes.score != null && (
-              <span style={{
-                fontSize: '10px', fontFamily: MONO_FONT, color: '#f59e0b',
-                marginLeft: 'auto',
-              }}>
+              <span style={{ fontSize: '10px', fontFamily: MONO, color: '#f59e0b', marginLeft: 'auto' }}>
                 Score: {runningOnFumes.score}
               </span>
             )}
@@ -615,25 +560,6 @@ function ScannerBadges({ scanner }) {
           )}
         </div>
       )}
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Staleness Note
-// ---------------------------------------------------------------------------
-
-function StalenessNote({ computedAt }) {
-  if (!computedAt) return null;
-  const ms = Date.now() - new Date(computedAt).getTime();
-  if (ms < 48 * 3600000) return null;
-
-  return (
-    <div style={{
-      textAlign: 'center', padding: '4px 0',
-      fontSize: '10px', color: '#6e7681',
-    }}>
-      Last updated {relativeTime(computedAt)}
     </div>
   );
 }
@@ -659,7 +585,7 @@ const CompeteTab = ({ symbol, isMobile, onNavigateToStock }) => {
     setData(null);
     setExpandedPillar(null);
 
-    fetch(`/api/stocks/peer-rankings?ticker=${encodeURIComponent(symbol)}`)
+    fetch(`/api/stocks/peer-rankings?symbol=${encodeURIComponent(symbol)}`)
       .then(r => {
         if (!r.ok) {
           const status = r.status;
@@ -674,7 +600,6 @@ const CompeteTab = ({ symbol, isMobile, onNavigateToStock }) => {
       })
       .then(json => {
         if (cancelled) return;
-        // Handle both wrapped {success, data} and direct response shapes
         const payload = json.success !== undefined ? json.data : json;
         if (!payload || (!payload.ticker && !payload.compositeScore)) {
           throw new Error('Peer rankings not available for this stock.');
@@ -693,6 +618,9 @@ const CompeteTab = ({ symbol, isMobile, onNavigateToStock }) => {
     return () => { cancelled = true; };
   }, [symbol]);
 
+  // Build the pillar list from data — show whatever pillars exist in the response
+  const activePillars = useMemo(() => PILLAR_CONFIG, []);
+
   if (loading) return <SkeletonLoader />;
   if (error || !data) return <NotAvailableCard error={error} statusCode={errorStatus} />;
 
@@ -708,15 +636,14 @@ const CompeteTab = ({ symbol, isMobile, onNavigateToStock }) => {
       }}>
         Pillar Breakdown
       </div>
-      {PILLAR_CONFIG.map(pillar => (
+      {activePillars.map(pillar => (
         <PillarRow
           key={pillar.key}
           pillar={pillar}
           pillarData={data.pillars?.[pillar.key]}
           isExpanded={expandedPillar === pillar.key}
-          onToggle={() => setExpandedPillar(
-            expandedPillar === pillar.key ? null : pillar.key
-          )}
+          onToggle={() => setExpandedPillar(expandedPillar === pillar.key ? null : pillar.key)}
+          isMobile={isMobile}
         />
       ))}
 

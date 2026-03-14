@@ -10,12 +10,13 @@
 //   Phase C: Coiled Spring / Running on Fumes scanner (additive, never blocks rankings)
 //   Phase D: Persist to Firestore (peerRankings + sectorRankings + scannerSummary)
 
-export const config = { maxDuration: 120 };
+export const config = { maxDuration: 180 };
 
 import { initializeApp, getApps, cert } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 import {
   STOCK_UNIVERSE,
+  ALL_TICKERS,
   DIMENSIONS,
   PILLARS,
   COMPETE_PILLAR_WEIGHTS,
@@ -180,7 +181,7 @@ async function fetchHistoricalPrices(symbol, apiKey, days = 180) {
  * trim to 200 days, and write back.
  * Returns a Map of ticker → array of daily closes (newest first).
  */
-async function updateRollingPriceHistory(db, bulkPrices) {
+async function updateRollingPriceHistory(db, bulkPrices, apiKey) {
   const today = new Date().toISOString().split('T')[0];
 
   // Build today's price map from bulk data
@@ -201,6 +202,81 @@ async function updateRollingPriceHistory(db, bulkPrices) {
     }
   } catch (err) {
     logWarn(`Failed to read rolling price history: ${err.message}`);
+  }
+
+  // --- One-time backfill: if <130 days, fetch ~200 days of historical prices ---
+  if (days.length < 130 && apiKey) {
+    logInfo(`Rolling history has ${days.length} days — backfilling to ~200 days`);
+    const fromStr = getDateDaysAgo(285); // 285 calendar days ≈ 200 trading days
+
+    const historicalPrices = {}; // ticker → [{ date, close }, ...]
+    const BATCH_SIZE = 10;
+    let successCount = 0;
+
+    for (let i = 0; i < ALL_TICKERS.length; i += BATCH_SIZE) {
+      const batch = ALL_TICKERS.slice(i, i + BATCH_SIZE);
+      const results = await Promise.allSettled(
+        batch.map(async (ticker) => {
+          const eohdTicker = ticker.replace(/\./g, '-');
+          const url = `${API_BASE}/eod/${eohdTicker}.US?api_token=${apiKey}&fmt=json&period=d&from=${fromStr}`;
+          const res = await fetch(url);
+          if (!res.ok) return null;
+          return { ticker, data: await res.json() };
+        })
+      );
+      for (const r of results) {
+        if (r.status === 'fulfilled' && r.value) {
+          historicalPrices[r.value.ticker] = r.value.data;
+          successCount++;
+        }
+      }
+      if (i + BATCH_SIZE < ALL_TICKERS.length) await sleep(250);
+    }
+
+    logInfo(`Backfill fetched ${successCount}/${ALL_TICKERS.length} stocks`);
+
+    // Build day snapshots: { date, prices: { AAPL: 185.50, ... } }
+    const allDates = new Set();
+    for (const dayArr of Object.values(historicalPrices)) {
+      if (Array.isArray(dayArr)) dayArr.forEach(d => allDates.add(d.date));
+    }
+    const sortedDates = [...allDates].sort();
+    const recentDates = sortedDates.slice(-200);
+
+    const backfilledDays = recentDates.map(date => {
+      const prices = {};
+      for (const [ticker, dayArr] of Object.entries(historicalPrices)) {
+        if (Array.isArray(dayArr)) {
+          const match = dayArr.find(d => d.date === date);
+          if (match?.close) prices[ticker] = match.close;
+        }
+      }
+      return { date, prices };
+    });
+
+    // Merge backfilled days with any existing days (deduplicate by date)
+    const existingDates = new Set(days.map(d => d.date));
+    const merged = [...days];
+    for (const bd of backfilledDays) {
+      if (!existingDates.has(bd.date)) merged.push(bd);
+    }
+    // Sort newest-first, trim to 200
+    merged.sort((a, b) => b.date.localeCompare(a.date));
+    days = merged.slice(0, 200);
+
+    logInfo(`Backfill complete: ${days.length} days for ${successCount} stocks`);
+
+    // Persist backfilled data immediately
+    try {
+      await db.collection('priceHistory').doc('rolling').set({
+        days,
+        updatedAt: new Date(),
+        dayCount: days.length,
+      });
+      logInfo(`Backfilled rolling history persisted: ${days.length} days`);
+    } catch (err) {
+      logWarn(`Failed to write backfilled rolling history: ${err.message}`);
+    }
   }
 
   // Don't add duplicate entries for the same date
@@ -394,7 +470,7 @@ function enrichWithPrices(allMetrics, bulkPrices, tickerHistory) {
 
 /**
  * Rank stocks within a single sector across all 7 dimensions.
- * Computes 4 pillar percentiles and weighted composite score.
+ * Computes 7 pillar percentiles (1:1 dimension-to-pillar) and weighted composite score.
  */
 function rankSectorStocks(sectorId, sectorStocks, allMetrics) {
   const stocks = sectorStocks
@@ -480,8 +556,8 @@ function rankSectorStocks(sectorId, sectorStocks, allMetrics) {
       }
     }
 
-    // Require at least 2 of 4 pillars (i.e., 3+ of 7 dimensions) for meaningful score
-    if (availablePillars >= 2 && totalWeight > 0) {
+    // Require at least 3 of 7 pillars for meaningful score
+    if (availablePillars >= 3 && totalWeight > 0) {
       // Redistribute missing weights proportionally
       stock.compositeScore = Math.round(weightedSum / totalWeight);
     } else {
@@ -943,6 +1019,7 @@ async function persistResults(db, allRanked, sectorAggregates, scannerResults, s
       pillarDetails[pillarKey] = {
         percentile: stock.pillars?.[pillarKey] ?? null,
         dimensions,
+        dimension: Object.values(dimensions)[0] || null,
       };
     }
 
@@ -1079,7 +1156,7 @@ export default async function handler(req, res) {
     logInfo(`Historical prices fetched for ${etfSymbols.length} ETFs`);
 
     // A5: Update rolling price history (for scanner + 6M returns)
-    const tickerHistory = await updateRollingPriceHistory(db, bulkPrices);
+    const tickerHistory = await updateRollingPriceHistory(db, bulkPrices, API_KEY);
 
     // A6: Read estimates cache (for scanner revision gates)
     let estimatesData = null;
