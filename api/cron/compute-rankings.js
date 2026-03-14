@@ -313,7 +313,7 @@ async function updateRollingPriceHistory(db, bulkPrices, apiKey) {
 }
 
 // ---------------------------------------------------------------------------
-// Metric Extraction (7 dimensions)
+// Metric Extraction
 // ---------------------------------------------------------------------------
 
 /**
@@ -353,6 +353,25 @@ function computeEpsRevisionScore(earnings) {
 }
 
 /**
+ * Compute average earnings surprise % from the last 4 quarters of Earnings.History.
+ */
+function computeAvgSurprise(earnings) {
+  if (!earnings?.History) return null;
+  const entries = Object.values(earnings.History)
+    .filter(e => {
+      const actual = parseFloat(e.epsActual);
+      const estimate = parseFloat(e.epsEstimate);
+      return !isNaN(actual) && !isNaN(estimate) && estimate !== 0;
+    })
+    .slice(0, 4);
+  if (entries.length < 2) return null;
+  const surprises = entries.map(e =>
+    ((parseFloat(e.epsActual) - parseFloat(e.epsEstimate)) / Math.abs(parseFloat(e.epsEstimate))) * 100
+  );
+  return surprises.reduce((s, v) => s + v, 0) / surprises.length;
+}
+
+/**
  * Extract yearly EBIT and interest expense for debt risk badge.
  * Uses the most recent yearly income statement.
  */
@@ -370,29 +389,47 @@ function extractYearlyDebtMetrics(incomeY) {
 }
 
 /**
- * Extract the 7 raw metrics from EODHD fundamentals data.
+ * Extract raw metrics from EODHD fundamentals data across all dimensions.
  */
 function extractMetrics(ticker, fundamentals) {
   const h = fundamentals.highlights;
   const v = fundamentals.valuation;
   const t = fundamentals.technicals;
 
-  // 1. Revenue Growth YoY
+  // ── Growth ────────────────────────────────────────────────────────────
   const revenueGrowthYOY = h.QuarterlyRevenueGrowthYOY ?? null;
+  const earningsGrowthYOY = h.QuarterlyEarningsGrowthYOY ?? null;
 
-  // 2. Operating Margin TTM
+  // ── Profitability ─────────────────────────────────────────────────────
   const opMarginTTM = h.OperatingMarginTTM ?? null;
+  const profitMarginTTM = h.ProfitMarginTTM ?? null;
+  const grossMargin = (h.GrossProfitTTM != null && h.RevenueTTM > 0)
+    ? h.GrossProfitTTM / h.RevenueTTM
+    : null;
 
-  // 3. ROA TTM
+  // ── Efficiency ────────────────────────────────────────────────────────
   const roaTTM = h.ReturnOnAssetsTTM ?? null;
+  const roeTTM = h.ReturnOnEquityTTM ?? null;
 
-  // 4. EV/EBITDA (inverted: lower = better)
+  // ── Valuation (all inverted — lower = better) ─────────────────────────
   let evEbitda = v.EnterpriseValueEbitda ?? null;
   if (evEbitda != null && (evEbitda < 0 || evEbitda > 200)) {
     evEbitda = null; // Will be hardcoded to 0th percentile in ranking
   }
+  let trailingPE = v.TrailingPE ?? null;
+  if (trailingPE != null && (trailingPE < 0 || trailingPE > 500)) {
+    trailingPE = null;
+  }
+  let priceSalesTTM = v.PriceSalesTTM ?? null;
+  if (priceSalesTTM != null && priceSalesTTM <= 0) {
+    priceSalesTTM = null;
+  }
+  let priceBookMRQ = v.PriceBookMRQ ?? null;
+  if (priceBookMRQ != null && priceBookMRQ <= 0) {
+    priceBookMRQ = null;
+  }
 
-  // 5. FCF Yield = TTM FCF / Market Cap
+  // ── Capital Efficiency ────────────────────────────────────────────────
   const marketCap = h.MarketCapitalization ?? null;
   const ocfTTM = getQuarterlyTTM(fundamentals.cashFlowQ, 'totalCashFromOperatingActivities');
   const capexTTM = getQuarterlyTTM(fundamentals.cashFlowQ, 'capitalExpenditures');
@@ -402,12 +439,20 @@ function extractMetrics(ticker, fundamentals) {
   const fcfYield = (fcfTTM != null && marketCap > 0)
     ? (fcfTTM / marketCap) * 100
     : null;
+  const dividendYield = h.DividendYield ?? null;
+  const revenueTTM = h.RevenueTTM ?? null;
+  const fcfMargin = (fcfTTM != null && revenueTTM > 0)
+    ? (fcfTTM / revenueTTM) * 100
+    : null;
 
-  // 6. Six-month return — computed later from rolling price history (placeholder)
+  // ── Momentum (placeholders — computed later from rolling price history)
   const sixMonthReturn = null;
+  const threeMonthReturn = null;
+  const oneMonthReturn = null;
 
-  // 7. Earnings revisions — from EODHD Earnings Trend as fallback
+  // ── Sentiment ─────────────────────────────────────────────────────────
   const earningsRevisions = computeEpsRevisionScore(fundamentals.earnings);
+  const avgEarningsSurprise = computeAvgSurprise(fundamentals.earnings);
 
   // Extra fields for scanner & badges (not in composite)
   const high52 = t['52WeekHigh'] ?? null;
@@ -416,12 +461,24 @@ function extractMetrics(ticker, fundamentals) {
 
   return {
     revenueGrowthYOY,
+    earningsGrowthYOY,
     opMarginTTM,
+    profitMarginTTM,
+    grossMargin,
     roaTTM,
+    roeTTM,
     evEbitda,
+    trailingPE,
+    priceSalesTTM,
+    priceBookMRQ,
     fcfYield,
+    dividendYield,
+    fcfMargin,
     sixMonthReturn,
+    threeMonthReturn,
+    oneMonthReturn,
     earningsRevisions,
+    avgEarningsSurprise,
     marketCap,
     high52,
     low52,
@@ -450,14 +507,25 @@ function enrichWithPrices(allMetrics, bulkPrices, tickerHistory) {
     const price = priceMap[ticker] || priceMap[ticker.replace(/-/g, '.')];
     metrics.currentPrice = price || null;
 
-    // Compute 6-month return from rolling price history
+    // Compute momentum returns from rolling price history
     if (tickerHistory) {
       const history = tickerHistory.get(ticker) || tickerHistory.get(ticker.replace(/-/g, '.'));
-      if (history && history.length >= 126) {
+      if (history) {
         const current = history[0];
-        const past = history[Math.min(125, history.length - 1)];
-        if (current > 0 && past > 0) {
-          metrics.sixMonthReturn = ((current - past) / past) * 100;
+        // 6-month return (126 trading days)
+        if (history.length >= 126 && current > 0) {
+          const past126 = history[Math.min(125, history.length - 1)];
+          if (past126 > 0) metrics.sixMonthReturn = ((current - past126) / past126) * 100;
+        }
+        // 3-month return (63 trading days)
+        if (history.length >= 63 && current > 0) {
+          const past63 = history[Math.min(62, history.length - 1)];
+          if (past63 > 0) metrics.threeMonthReturn = ((current - past63) / past63) * 100;
+        }
+        // 1-month return (21 trading days)
+        if (history.length >= 21 && current > 0) {
+          const past21 = history[Math.min(20, history.length - 1)];
+          if (past21 > 0) metrics.oneMonthReturn = ((current - past21) / past21) * 100;
         }
       }
     }
@@ -465,12 +533,12 @@ function enrichWithPrices(allMetrics, bulkPrices, tickerHistory) {
 }
 
 // ---------------------------------------------------------------------------
-// Ranking Engine (4-pillar model)
+// Ranking Engine (7-pillar model)
 // ---------------------------------------------------------------------------
 
 /**
- * Rank stocks within a single sector across all 7 dimensions.
- * Computes 7 pillar percentiles (1:1 dimension-to-pillar) and weighted composite score.
+ * Rank stocks within a single sector across all dimensions.
+ * Computes 7 pillar percentiles (avg of constituent dimensions) and weighted composite score.
  */
 function rankSectorStocks(sectorId, sectorStocks, allMetrics) {
   const stocks = sectorStocks
@@ -512,12 +580,12 @@ function rankSectorStocks(sectorId, sectorStocks, allMetrics) {
       };
     });
 
-    // EV/EBITDA special: stocks with negative/null EV/EBITDA get 0th percentile
-    if (dimKey === 'evEbitda') {
+    // Inverted valuation metrics: stocks with negative/null values get 0th percentile
+    if (dimDef.inverted) {
       for (const stock of stocks) {
-        const rawEv = stock.metrics?.evEbitda;
-        if (rawEv == null && !stock.ranks.evEbitda) {
-          stock.ranks.evEbitda = {
+        const rawVal = stock.metrics?.[dimDef.field];
+        if (rawVal == null && !stock.ranks[dimKey]) {
+          stock.ranks[dimKey] = {
             rank: withValues.length + 1,
             totalWithData: withValues.length + 1,
             value: null,
@@ -1037,12 +1105,24 @@ async function persistResults(db, allRanked, sectorAggregates, scannerResults, s
       pillars: pillarDetails,
       metrics: {
         revenueGrowthYOY: stock.metrics?.revenueGrowthYOY ?? null,
+        earningsGrowthYOY: stock.metrics?.earningsGrowthYOY ?? null,
         opMarginTTM: stock.metrics?.opMarginTTM ?? null,
+        profitMarginTTM: stock.metrics?.profitMarginTTM ?? null,
+        grossMargin: stock.metrics?.grossMargin ?? null,
         roaTTM: stock.metrics?.roaTTM ?? null,
+        roeTTM: stock.metrics?.roeTTM ?? null,
         evEbitda: stock.metrics?.evEbitda ?? null,
+        trailingPE: stock.metrics?.trailingPE ?? null,
+        priceSalesTTM: stock.metrics?.priceSalesTTM ?? null,
+        priceBookMRQ: stock.metrics?.priceBookMRQ ?? null,
         fcfYield: stock.metrics?.fcfYield ?? null,
+        dividendYield: stock.metrics?.dividendYield ?? null,
+        fcfMargin: stock.metrics?.fcfMargin ?? null,
         sixMonthReturn: stock.metrics?.sixMonthReturn ?? null,
+        threeMonthReturn: stock.metrics?.threeMonthReturn ?? null,
+        oneMonthReturn: stock.metrics?.oneMonthReturn ?? null,
         earningsRevisions: stock.metrics?.earningsRevisions ?? null,
+        avgEarningsSurprise: stock.metrics?.avgEarningsSurprise ?? null,
         marketCap: stock.metrics?.marketCap ?? null,
       },
       debtRiskBadge: stock.debtRiskBadge || null,
