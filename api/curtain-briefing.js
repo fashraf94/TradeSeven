@@ -1,3 +1,4 @@
+// DEPRECATED: Replaced by FantasyTimes newsroom
 // api/curtain-briefing.js
 // Daily Story read endpoint — returns the latest chapter (or full timeline)
 // with user personalization. Never returns 500 — always falls back gracefully.

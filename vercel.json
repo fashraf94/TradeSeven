@@ -95,26 +95,6 @@
       "schedule": "25 14 * * 1-5"
     },
     {
-      "path": "/api/cron/curtain-generate-chapter",
-      "schedule": "0 13 * * 1-5"
-    },
-    {
-      "path": "/api/cron/curtain-generate-chapter",
-      "schedule": "0 15 * * 1-5"
-    },
-    {
-      "path": "/api/cron/curtain-generate-chapter",
-      "schedule": "0 18 * * 1-5"
-    },
-    {
-      "path": "/api/cron/curtain-generate-chapter",
-      "schedule": "15 21 * * 1-5"
-    },
-    {
-      "path": "/api/cron/curtain-generate-chapter",
-      "schedule": "30 23 * * 1-5"
-    },
-    {
       "path": "/api/cron/compute-briefs",
       "schedule": "0 1 * * 0"
     },
@@ -161,6 +141,14 @@
     {
       "path": "/api/fantasytimes/generate-column?type=wrap",
       "schedule": "0 21,22 * * 5"
+    },
+    {
+      "path": "/api/fantasytimes/cleanup",
+      "schedule": "0 7 * * *"
+    },
+    {
+      "path": "/api/fantasytimes/scan-movers",
+      "schedule": "*/15 13,14,15,16,17,18,19,20 * * 1-5"
     }
   ]
 }
