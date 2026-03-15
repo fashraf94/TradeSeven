@@ -50,6 +50,7 @@ const BaggerBombLobby = lazy(() => import('./screens/BaggerBombLobby'));
 const BaggerBombSetupScreen = lazy(() => import('./screens/BaggerBombSetupScreen'));
 const BaggerBombGamePlanFlow = lazy(() => import('./components/GamePlan/BaggerBombGamePlanFlow'));
 const StonkOptionsArenaV2 = lazy(() => import('./components/optionsArena/StonkOptionsArenaV2'));
+const FantasyTimesFeed = lazy(() => import('./components/FantasyTimes/FantasyTimesFeed'));
 
 // Legacy aliases for backwards compatibility
 const TDBattleScoreboard = BaggerBombScoreboard;
@@ -20755,6 +20756,33 @@ export default function PortfolioDuel() {
                   <span style={{ fontWeight: '600', fontSize: '14px' }}>Profile</span>
                 </button>
 
+                {/* FANTASYTIMES */}
+                <button
+                  onClick={() => {
+                    setScreen('fantasytimes');
+                    setSidebarOpen(false);
+                  }}
+                  style={{
+                    width: '100%',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '12px',
+                    padding: '12px 16px',
+                    borderRadius: '8px',
+                    backgroundColor: screen === 'fantasytimes' ? '#00d9ff' : 'transparent',
+                    color: screen === 'fantasytimes' ? '#000000' : '#d1d5db',
+                    border: 'none',
+                    marginBottom: '8px',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s'
+                  }}
+                >
+                  <svg style={{ width: '20px', height: '20px', flexShrink: 0 }} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9a2 2 0 00-2-2h-2m-4-3H9M7 16h6M7 8h6v4H7V8z" />
+                  </svg>
+                  <span style={{ fontWeight: '600', fontSize: '14px' }}>FantasyTimes</span>
+                </button>
+
                 {/* NOTIFICATIONS */}
                 <button
                   onClick={() => {
@@ -23183,6 +23211,52 @@ export default function PortfolioDuel() {
           stockAPI={stockAPI}
           initialCash={10000}
           user={user}
+        />
+      </Suspense>
+      </ErrorBoundary>
+    );
+  }
+
+  // FANTASYTIMES FEED
+  if (screen === 'fantasytimes') {
+    // Extract active battle tickers from battles array
+    const activeBattleTickers = (battles || [])
+      .filter((b) => b.status === 'active' || b.status === 'in_progress')
+      .flatMap((b) => {
+        const portfolio = b.creator?.username === user?.username
+          ? (b.creator?.portfolio || b.creatorPortfolio || [])
+          : (b.opponent?.portfolio || b.opponentPortfolio || []);
+        return (Array.isArray(portfolio) ? portfolio : []).map((a) => a?.symbol).filter(Boolean);
+      });
+
+    // Read user watchlist from localStorage
+    let userWatchlist = [];
+    try {
+      const saved = localStorage.getItem('user_watchlist');
+      if (saved) userWatchlist = JSON.parse(saved);
+    } catch { /* ignore */ }
+
+    return (
+      <ErrorBoundary name="FantasyTimes" onNavigateDashboard={() => setScreen('dashboard')}>
+      <Suspense fallback={
+        <div style={{
+          minHeight: '100vh',
+          background: '#0a0e14',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          color: '#00d9ff'
+        }}>
+          Loading FantasyTimes...
+        </div>
+      }>
+        <FantasyTimesFeed
+          currentUser={user}
+          isMobile={!isDesktop}
+          isDesktop={isDesktop}
+          userWatchlist={userWatchlist}
+          activeBattleTickers={activeBattleTickers}
+          onNavigate={setScreen}
         />
       </Suspense>
       </ErrorBoundary>

@@ -244,6 +244,24 @@ export const PUBLISH_MARKET_PULSE_TOOL = {
   },
 };
 
+// ═══ KIM — SECTOR STRATEGIST ══════════════════════════════════════
+export const KIM_SYSTEM_PROMPT = `You are Kim, the Sector Strategist for FantasyTimes --- the newsroom inside FantasyTrades, a competitive financial gaming platform.
+
+YOUR IDENTITY: The columnist whose articles people save. You see the whole board while everyone else watches individual pieces. Opinionated. Provocative. You take a clear stance on themes, never on individual stocks. You connect dots across companies and sectors. Occasionally contrarian. The writer who starts with 'Everyone is wrong about...' and then makes you agree.
+
+YOUR FORMATTING RULES (STRICT --- these define your visual identity):
+- Write in flowing, authoritative paragraphs
+- Use em-dashes for emphasis --- like this
+- NEVER use bullet points or section headers
+- The text reads like a newspaper column: continuous, thematic
+- Total length: 400-600 words. The long reads.
+
+MONDAY PREVIEW: The week's dominant theme + what to watch for
+FRIDAY WRAP: The week's defining narrative + what carries forward
+
+${ANTI_SLOP_RULES}
+`;
+
 // ═══ NETA — ECONOMICS DESK ════════════════════════════════════════
 export const NETA_RECAP_SYSTEM_PROMPT = `You are Neta, the Economics Desk reporter for FantasyTimes --- the newsroom inside FantasyTrades, a competitive financial gaming platform.
 
@@ -440,5 +458,39 @@ export const PUBLISH_EARNINGS_RECAP_TOOL = {
       },
     },
     required: ['headline', 'subheadline', 'body', 'sentiment', 'themes', 'symbol', 'outcome', 'recommended_action'],
+  },
+};
+
+// ═══ KIM TOOL SCHEMAS ═══════════════════════════════════════════
+
+export const PUBLISH_SECTOR_COLUMN_TOOL = {
+  name: 'publish_sector_column',
+  description: 'Publish a FantasyTimes sector strategy column (weekly preview or wrap)',
+  input_schema: {
+    type: 'object',
+    properties: {
+      headline: { type: 'string', description: 'Max 120 chars, thematic sector headline' },
+      subheadline: { type: 'string', description: 'Max 200 chars' },
+      body: { type: 'string', description: '400-600 words, markdown, flowing paragraphs with em-dashes, NO bullet points or headers' },
+      sentiment: {
+        type: 'string',
+        enum: ['bullish', 'bearish', 'neutral', 'mixed'],
+      },
+      themes: {
+        type: 'array',
+        items: { type: 'string' },
+        description: 'Sector themes discussed (e.g., AI Infrastructure, Rate Sensitivity, Energy Transition)',
+      },
+      topSectors: {
+        type: 'array',
+        items: { type: 'string' },
+        description: 'Top 2-3 sectors discussed in the column',
+      },
+      recommended_action: {
+        type: 'string',
+        enum: ['BAGGERBOMB', 'EARNINGSGAME', 'SNAKEDRAFT', 'WATCHLIST', 'RESEARCH'],
+      },
+    },
+    required: ['headline', 'subheadline', 'body', 'sentiment', 'themes', 'topSectors', 'recommended_action'],
   },
 };

@@ -153,6 +153,14 @@
     {
       "path": "/api/fantasytimes/poll-batch",
       "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/fantasytimes/generate-column?type=preview",
+      "schedule": "0 10,11 * * 1"
+    },
+    {
+      "path": "/api/fantasytimes/generate-column?type=wrap",
+      "schedule": "0 21,22 * * 5"
     }
   ]
 }
