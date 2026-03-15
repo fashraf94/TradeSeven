@@ -8,12 +8,21 @@ const TYPE_ICONS = {
   classic: Swords,
   draft: Layers,
   training: Bot,
+  trainingDraft: Bot,
 };
 
 const TYPE_COLORS = {
   classic: '#00d9ff',
   draft: '#22c55e',
   training: '#9333ea',
+  trainingDraft: '#9333ea',
+};
+
+const TYPE_LABELS = {
+  classic: 'Classic',
+  draft: 'Draft',
+  training: 'Training',
+  trainingDraft: 'Training',
 };
 
 function getEndTime(battle) {
@@ -112,7 +121,7 @@ export default function BattleRow({ battle, battleType, user, colors, onPress })
           fontWeight: '500',
           textTransform: 'capitalize',
         }}>
-          {battleType}
+          {TYPE_LABELS[battleType] || battleType}
         </div>
       </div>
 

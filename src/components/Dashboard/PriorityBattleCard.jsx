@@ -40,7 +40,7 @@ export default function PriorityBattleCard({ battle, battleType, user, onPress }
 
       <ClashCard
         battle={battle}
-        battleType={battleType}
+        battleType={battleType === 'trainingDraft' ? 'draft' : battleType}
         user={user}
         onPress={onPress}
         isMostUrgent={true}

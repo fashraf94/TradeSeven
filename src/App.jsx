@@ -19833,7 +19833,6 @@ export default function PortfolioDuel() {
               unreadCount={unreadCount}
               activeDraftBanner={activeDraftBanner}
               setActiveDraftBanner={setActiveDraftBanner}
-              setDraftState={setDraftState}
             />
           </div>
         </ErrorBoundary>

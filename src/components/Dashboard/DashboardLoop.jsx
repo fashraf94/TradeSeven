@@ -53,13 +53,13 @@ export default function DashboardLoop({
   unreadCount,
   activeDraftBanner,
   setActiveDraftBanner,
-  setDraftState,
 }) {
   // ─── Battle merge: combine all active battles sorted by end time ───────────
   const allBattles = useMemo(() => {
     const merged = [
       ...activeBattles.filter(b => !b.isTrainingBattle).map(b => ({ battle: b, type: 'classic' })),
-      ...activeDraftBattles.filter(b => b.status === 'active').map(b => ({ battle: b, type: 'draft' })),
+      ...activeDraftBattles.filter(b => b.status === 'active' && b.isTraining !== true).map(b => ({ battle: b, type: 'draft' })),
+      ...activeDraftBattles.filter(b => b.status === 'active' && b.isTraining === true).map(b => ({ battle: b, type: 'trainingDraft' })),
       ...activeTrainingBattles.map(b => ({ battle: b, type: 'training' })),
     ];
 
@@ -77,7 +77,7 @@ export default function DashboardLoop({
 
   // ─── Battle press handler (replicated from LiveClashesSection) ─────────────
   const handleBattlePress = (battle, type) => {
-    if (type === 'draft') {
+    if (type === 'draft' || type === 'trainingDraft') {
       setCurrentDraft(battle);
       setScreen('draftBattle');
     } else if (type === 'training') {
