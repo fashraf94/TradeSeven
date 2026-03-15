@@ -1,6 +1,6 @@
 console.log('generate-mover loaded');
 // api/fantasytimes/generate-mover.js
-// Kai's Market Pulse — individual stock mover story generation.
+// Alex's Stock Spotlight — individual stock mover story generation.
 // POST endpoint called when ATR threshold crossed.
 
 import Anthropic from '@anthropic-ai/sdk';
@@ -8,14 +8,14 @@ import { applySecurityMiddleware } from '../_utils/security.js';
 import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
 import { STOCK_DATA, TICKERS } from '../_utils/stockIntelligenceData.js';
 import {
-  KAI_SYSTEM_PROMPT,
+  ALEX_SYSTEM_PROMPT,
   PUBLISH_STORY_TOOL,
   REPORTER_PROFILES,
 } from '../_utils/fantasyTimesPrompts.js';
 
 export const config = { maxDuration: 30 };
 
-const LOG_PREFIX = '[FantasyTimes:Kai]';
+const LOG_PREFIX = '[FantasyTimes:Alex]';
 
 function logInfo(msg, data = null) {
   const ts = new Date().toISOString();
@@ -84,7 +84,7 @@ export default async function handler(req, res) {
     const dedupQuery = await db
       .collection('fantasyTimesStories')
       .where('primaryTicker', '==', upperSymbol)
-      .where('reporter', '==', 'kai')
+      .where('reporter', '==', 'alex')
       .where('publishedAt', '>', fourHoursAgo)
       .limit(1)
       .get();
@@ -155,14 +155,14 @@ export default async function handler(req, res) {
 
     // ── Call Claude Haiku with Tool Use ──────────────────────────────
     logInfo(`Generating story for ${upperSymbol} (${percentChange}%, ${atrMultiple}x ATR)`);
-    logInfo('Step 5: Calling Claude API...', { model: REPORTER_PROFILES.kai.model, messageLength: userMessage.length });
+    logInfo('Step 5: Calling Claude API...', { model: REPORTER_PROFILES.alex.model, messageLength: userMessage.length });
     const anthropic = getAnthropicClient();
 
     const response = await anthropic.messages.create({
-      model: REPORTER_PROFILES.kai.model,
+      model: REPORTER_PROFILES.alex.model,
       max_tokens: 500,
       temperature: 0.8,
-      system: KAI_SYSTEM_PROMPT,
+      system: ALEX_SYSTEM_PROMPT,
       tools: [PUBLISH_STORY_TOOL],
       tool_choice: { type: 'tool', name: 'publish_story' },
       messages: [{ role: 'user', content: userMessage }],
@@ -180,12 +180,12 @@ export default async function handler(req, res) {
 
     // ── Write to Firestore ──────────────────────────────────────────
     const now = new Date();
-    const expiresAt = new Date(now.getTime() + REPORTER_PROFILES.kai.expiryHours * 60 * 60 * 1000);
+    const expiresAt = new Date(now.getTime() + REPORTER_PROFILES.alex.expiryHours * 60 * 60 * 1000);
 
     const storyDoc = {
-      reporter: 'kai',
-      reporterName: REPORTER_PROFILES.kai.name,
-      reporterBeat: REPORTER_PROFILES.kai.beat,
+      reporter: 'alex',
+      reporterName: REPORTER_PROFILES.alex.name,
+      reporterBeat: REPORTER_PROFILES.alex.beat,
       type: 'market_mover',
       headline: String(storyData.headline || '').slice(0, 120),
       subheadline: String(storyData.subheadline || '').slice(0, 200),
@@ -205,7 +205,7 @@ export default async function handler(req, res) {
         direction: direction || (percentChange >= 0 ? 'up' : 'down'),
       },
       newsContext: newsHeadlines,
-      generatedBy: REPORTER_PROFILES.kai.model,
+      generatedBy: REPORTER_PROFILES.alex.model,
       batchId: null,
       publishedAt: now,
       expiresAt: expiresAt,

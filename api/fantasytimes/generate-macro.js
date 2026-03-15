@@ -1,20 +1,20 @@
 console.log('generate-macro loaded');
 // api/fantasytimes/generate-macro.js
-// Kai's Macro Alert — triggered when 5+ stocks fire within 2 minutes.
+// Alex's Macro Alert — triggered when 5+ stocks fire within 2 minutes.
 // Single story covering a broad market event.
 
 import Anthropic from '@anthropic-ai/sdk';
 import { applySecurityMiddleware } from '../_utils/security.js';
 import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
 import {
-  KAI_MACRO_SYSTEM_PROMPT,
+  ALEX_MACRO_SYSTEM_PROMPT,
   PUBLISH_MACRO_TOOL,
   REPORTER_PROFILES,
 } from '../_utils/fantasyTimesPrompts.js';
 
 export const config = { maxDuration: 30 };
 
-const LOG_PREFIX = '[FantasyTimes:Kai:Macro]';
+const LOG_PREFIX = '[FantasyTimes:Alex:Macro]';
 
 function logInfo(msg, data = null) {
   const ts = new Date().toISOString();
@@ -110,10 +110,10 @@ export default async function handler(req, res) {
     const anthropic = getAnthropicClient();
 
     const response = await anthropic.messages.create({
-      model: REPORTER_PROFILES.kai.model,
+      model: REPORTER_PROFILES.alex.model,
       max_tokens: 700,
       temperature: 0.8,
-      system: KAI_MACRO_SYSTEM_PROMPT,
+      system: ALEX_MACRO_SYSTEM_PROMPT,
       tools: [PUBLISH_MACRO_TOOL],
       tool_choice: { type: 'tool', name: 'publish_macro' },
       messages: [{ role: 'user', content: userMessage }],
@@ -130,12 +130,12 @@ export default async function handler(req, res) {
 
     // ── Write to Firestore ──────────────────────────────────────────
     const now = new Date();
-    const expiresAt = new Date(now.getTime() + REPORTER_PROFILES.kai.expiryHours * 60 * 60 * 1000);
+    const expiresAt = new Date(now.getTime() + REPORTER_PROFILES.alex.expiryHours * 60 * 60 * 1000);
 
     const storyDoc = {
-      reporter: 'kai',
-      reporterName: REPORTER_PROFILES.kai.name,
-      reporterBeat: REPORTER_PROFILES.kai.beat,
+      reporter: 'alex',
+      reporterName: REPORTER_PROFILES.alex.name,
+      reporterBeat: REPORTER_PROFILES.alex.beat,
       type: 'macro_alert',
       headline: String(storyData.headline || '').slice(0, 120),
       subheadline: String(storyData.subheadline || '').slice(0, 200),
@@ -153,7 +153,7 @@ export default async function handler(req, res) {
         avgChange: ctx.avgChange || 0,
       },
       newsContext: marketHeadlines,
-      generatedBy: REPORTER_PROFILES.kai.model,
+      generatedBy: REPORTER_PROFILES.alex.model,
       batchId: null,
       publishedAt: now,
       expiresAt: expiresAt,
