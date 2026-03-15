@@ -120,8 +120,6 @@ import ResearchLandingPage from './components/Research/ResearchLandingPage';
 // Dashboard Components
 import { GameModeToggle, ResearchModeButton, WeeklyChallengesPanel, GameModeCarousel, DashboardTabs, LiveClashesSection, PvpLobbiesSection, YourActivity, SeasonalBanner, TrainingLiveFeed, PendingLobbiesSection } from './components/Dashboard';
 import { useIsMobile } from './hooks/useIsMobile';
-// Curtain — daily market briefing overlay (cold launch)
-import { CurtainScreen } from './components/Curtain';
 import { isMarketOpen } from './utils/marketSchedule';
 
 // ============================================
@@ -11714,10 +11712,6 @@ export default function PortfolioDuel() {
   const [cryptoPercentage, setCryptoPercentage] = useState(10); // Default 10% for crypto
   const [showRulesModal, setShowRulesModal] = useState(false); // Rules modal state
 
-  // Curtain (daily briefing overlay)
-  const [showCurtain, setShowCurtain] = useState(false);
-  const [curtainBriefing, setCurtainBriefing] = useState(null);
-
   // BaggerBomb lobby time selection
   const [lobbyTimeMinutes, setLobbyTimeMinutes] = useState(30); // Default 30 minutes
 
@@ -12747,66 +12741,6 @@ export default function PortfolioDuel() {
       setScreen('dashboard');
     }
   }, [user, userLoading]);
-
-  // Curtain — fetch daily briefing on cold launch (new tab)
-  useEffect(() => {
-    return; // TEMPORARILY DISABLED — curtain brief
-    if (!user || authLoading) return;
-    const CURTAIN_SESSION_KEY = 'curtain_dismissed';
-    if (sessionStorage.getItem(CURTAIN_SESSION_KEY)) return;
-
-    const CURTAIN_CACHE_KEY = 'curtain_briefing_cache';
-    const cached = localStorage.getItem(CURTAIN_CACHE_KEY);
-    if (cached) {
-      try {
-        const parsed = JSON.parse(cached);
-        const age = Date.now() - (parsed._cachedAt || 0);
-        const ttl = isMarketOpen() ? 5 * 60 * 1000 : 15 * 60 * 1000;
-        if (age < ttl && parsed.briefing?.latest?.brief) {
-          setCurtainBriefing(parsed.briefing);
-          setShowCurtain(true);
-          return;
-        }
-      } catch { /* ignore corrupt cache */ }
-    }
-
-    const fetchBriefing = async () => {
-      try {
-        const watchlist = JSON.parse(localStorage.getItem('user_watchlist') || '[]');
-        const res = await fetch('/api/curtain-briefing', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            userContext: {
-              username: user.username || 'there',
-              battleStocks: [],
-              watchlistStocks: Array.isArray(watchlist) ? watchlist : [],
-              battleInfo: [],
-            },
-            mode: 'latest',
-          }),
-        });
-        const data = await res.json();
-        if (data.success && data.briefing?.latest?.brief) {
-          localStorage.setItem(CURTAIN_CACHE_KEY, JSON.stringify({
-            ...data,
-            _cachedAt: Date.now(),
-          }));
-          setCurtainBriefing(data.briefing);
-          setShowCurtain(true);
-        }
-      } catch (err) {
-        console.warn('[Curtain] Failed to fetch briefing:', err.message);
-      }
-    };
-    fetchBriefing();
-  }, [user, authLoading]);
-
-  // Curtain dismiss handler
-  const handleCurtainDismiss = useCallback(() => {
-    sessionStorage.setItem('curtain_dismissed', 'true');
-    setShowCurtain(false);
-  }, []);
 
   // Handle window resize for desktop background
   useEffect(() => {
@@ -23330,14 +23264,6 @@ export default function PortfolioDuel() {
         </>
       )}
 
-      {/* Curtain — daily market briefing overlay (cold launch) */}
-      {showCurtain && curtainBriefing && (
-        <CurtainScreen
-          briefing={curtainBriefing}
-          onDismiss={handleCurtainDismiss}
-          isMobile={isMobile}
-        />
-      )}
 
       {/* ClashBot Bug Reporter — persistent floating widget on all screens when logged in */}
       {user && (

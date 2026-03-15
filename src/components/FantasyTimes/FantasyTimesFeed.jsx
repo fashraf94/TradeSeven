@@ -101,7 +101,7 @@ export default function FantasyTimesFeed({
       minHeight: '100vh',
       backgroundColor: '#0a0e14',
       color: '#e6edf3',
-      maxWidth: isDesktop ? '680px' : '100%',
+      maxWidth: isDesktop ? '880px' : '100%',
       margin: isDesktop ? '0 auto' : 0,
     }}>
       {/* Header */}

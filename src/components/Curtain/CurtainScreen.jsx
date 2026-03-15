@@ -1,3 +1,4 @@
+// DEPRECATED: Replaced by FantasyTimes newsroom
 // CurtainScreen — Full-screen daily market briefing overlay
 // Shown on cold launch (new tab). Typewriter animation over particle canvas.
 

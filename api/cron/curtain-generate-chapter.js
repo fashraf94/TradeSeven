@@ -1,3 +1,4 @@
+// DEPRECATED: Replaced by FantasyTimes newsroom
 // api/cron/curtain-generate-chapter.js
 // Daily Story cron — generates one chapter of the market narrative per invocation.
 //

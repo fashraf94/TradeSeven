@@ -57,9 +57,9 @@ export default function StoryDetail({ story, isOpen, onClose, isMobile }) {
         transition: { type: 'spring', damping: 25, stiffness: 300 },
       }
     : {
-        initial: { opacity: 0, scale: 0.95 },
-        animate: { opacity: 1, scale: 1 },
-        exit: { opacity: 0, scale: 0.95 },
+        initial: { opacity: 0, scale: 0.95, x: '-50%', y: '-50%' },
+        animate: { opacity: 1, scale: 1, x: '-50%', y: '-50%' },
+        exit: { opacity: 0, scale: 0.95, x: '-50%', y: '-50%' },
         transition: { duration: 0.2 },
       };
 
@@ -102,7 +102,6 @@ export default function StoryDetail({ story, isOpen, onClose, isMobile }) {
                 : {
                     top: '50%',
                     left: '50%',
-                    transform: 'translate(-50%, -50%)',
                     maxWidth: '640px',
                     width: '90vw',
                     maxHeight: '85vh',
