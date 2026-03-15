@@ -133,6 +133,26 @@
     {
       "path": "/api/fantasytimes/generate-pulse?period=post_close",
       "schedule": "15 20,21 * * 1-5"
+    },
+    {
+      "path": "/api/fantasytimes/generate-econ?mode=recap",
+      "schedule": "0,30 13,14,15,16,17,18,19,20,21 * * 1-5"
+    },
+    {
+      "path": "/api/fantasytimes/generate-econ?mode=preview",
+      "schedule": "0 1 * * 1"
+    },
+    {
+      "path": "/api/fantasytimes/submit-earnings-batch",
+      "schedule": "0 5 * * 1-5"
+    },
+    {
+      "path": "/api/fantasytimes/generate-recap",
+      "schedule": "0 20,21,22,23,0 * * 1-5"
+    },
+    {
+      "path": "/api/fantasytimes/poll-batch",
+      "schedule": "*/5 * * * *"
     }
   ]
 }

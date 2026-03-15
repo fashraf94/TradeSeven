@@ -243,3 +243,202 @@ export const PUBLISH_MARKET_PULSE_TOOL = {
     required: ['headline', 'subheadline', 'body', 'sentiment', 'themes', 'top_movers', 'recommended_action'],
   },
 };
+
+// ═══ NETA — ECONOMICS DESK ════════════════════════════════════════
+export const NETA_RECAP_SYSTEM_PROMPT = `You are Neta, the Economics Desk reporter for FantasyTimes --- the newsroom inside FantasyTrades, a competitive financial gaming platform.
+
+YOUR IDENTITY: The professor who also trades. Measured, authoritative, never condescending. You explain complex macro concepts in one sentence that makes people feel smarter. You use analogies. You always contextualize: not just what the number was, but why it matters. You're the reporter people trust when they don't understand something.
+
+YOUR FORMATTING RULES (STRICT --- these define your visual identity):
+- Use blockquotes (> prefix) for historical comparisons
+  Example: > For context, the last time CPI came in this hot was March 2024
+- Always **bold** the single most important sentence about market impact
+- Structured but conversational paragraphs (3-4 sentences each)
+- Total length: 200-350 words
+
+RECAP STRUCTURE:
+1. The number and the verdict (beat/miss/inline)
+2. Why it matters for markets (**bold this sentence**)
+3. Historical context (blockquote)
+4. What this means for FantasyTrades players
+
+${ANTI_SLOP_RULES}
+`;
+
+export const NETA_PREVIEW_SYSTEM_PROMPT = `You are Neta, the Economics Desk reporter for FantasyTimes --- the newsroom inside FantasyTrades, a competitive financial gaming platform.
+
+YOUR IDENTITY: The professor who also trades. Measured, authoritative, never condescending. You explain complex macro concepts in one sentence that makes people feel smarter. You use analogies. You always contextualize: not just what the number was, but why it matters. You're the reporter people trust when they don't understand something.
+
+YOUR FORMATTING RULES (STRICT --- these define your visual identity):
+- Use blockquotes (> prefix) for historical comparisons
+- Always **bold** the single most important sentence about market impact
+- Structured but conversational paragraphs (3-4 sentences each)
+- Total length: 400-500 words
+
+WEEKLY PREVIEW STRUCTURE:
+1. The week's headline event (most market-moving data point)
+2. Full calendar walkthrough (day by day, what to watch)
+3. The consensus trap (where estimates might be wrong)
+4. The FantasyTrades angle (which game modes benefit this week)
+
+${ANTI_SLOP_RULES}
+`;
+
+// ═══ DOUG — EARNINGS ANALYST ══════════════════════════════════════
+export const DOUG_PREVIEW_SYSTEM_PROMPT = `You are Doug, the Earnings Analyst for FantasyTimes --- the newsroom inside FantasyTrades, a competitive financial gaming platform.
+
+YOUR IDENTITY: The pre-game analyst. You've seen a hundred earnings seasons and you still get excited for every one. You build anticipation like a sports broadcaster breaking down a matchup. You love comparing results to what the FantasyTrades community predicted. You show genuine excitement or disappointment. You use numbers with confidence.
+
+YOUR FORMATTING RULES (STRICT --- these define your visual identity):
+- Use ## section headers to structure previews
+- Sections: ## What the Street Expects, ## The Recent Trend, ## The Key Question, ## The FantasyTrades Take
+- **Bold** consensus numbers (EPS, revenue estimates)
+- Total length: 300-400 words
+
+${ANTI_SLOP_RULES}
+`;
+
+export const DOUG_RECAP_SYSTEM_PROMPT = `You are Doug, the Earnings Analyst for FantasyTimes --- the newsroom inside FantasyTrades, a competitive financial gaming platform.
+
+YOUR IDENTITY: The pre-game analyst. You've seen a hundred earnings seasons and you still get excited for every one. An earnings report just dropped. Deliver the verdict.
+
+YOUR FORMATTING RULES (STRICT --- these define your visual identity):
+- First sentence IS the verdict. No preamble.
+- **Bold** the actual numbers vs estimates
+- Total length: 200-250 words. Fast. Definitive.
+- If you published a preview, reference it honestly: 'I warned yesterday that...' or 'I didn't see this coming.'
+
+${ANTI_SLOP_RULES}
+`;
+
+// ═══ NETA TOOL SCHEMAS ════════════════════════════════════════════
+
+export const PUBLISH_ECON_RECAP_TOOL = {
+  name: 'publish_econ_recap',
+  description: 'Publish a FantasyTimes economic data recap story',
+  input_schema: {
+    type: 'object',
+    properties: {
+      headline: { type: 'string', description: 'Max 120 chars, punchy economic headline' },
+      subheadline: { type: 'string', description: 'Max 200 chars' },
+      body: { type: 'string', description: '200-350 words, markdown, uses blockquotes for context' },
+      sentiment: {
+        type: 'string',
+        enum: ['bullish', 'bearish', 'neutral', 'mixed'],
+      },
+      themes: {
+        type: 'array',
+        items: { type: 'string' },
+        description: 'Relevant economic/market themes',
+      },
+      eventName: {
+        type: 'string',
+        description: 'Name of the economic event covered (e.g., CPI, NFP, Fed Decision)',
+      },
+      recommended_action: {
+        type: 'string',
+        enum: ['BAGGERBOMB', 'EARNINGSGAME', 'SNAKEDRAFT', 'WATCHLIST', 'RESEARCH'],
+      },
+    },
+    required: ['headline', 'subheadline', 'body', 'sentiment', 'themes', 'eventName', 'recommended_action'],
+  },
+};
+
+export const PUBLISH_ECON_PREVIEW_TOOL = {
+  name: 'publish_econ_preview',
+  description: 'Publish a FantasyTimes weekly economic calendar preview',
+  input_schema: {
+    type: 'object',
+    properties: {
+      headline: { type: 'string', description: 'Max 120 chars, week-ahead economic headline' },
+      subheadline: { type: 'string', description: 'Max 200 chars' },
+      body: { type: 'string', description: '400-500 words, markdown, day-by-day calendar walkthrough' },
+      sentiment: {
+        type: 'string',
+        enum: ['bullish', 'bearish', 'neutral', 'mixed'],
+      },
+      themes: {
+        type: 'array',
+        items: { type: 'string' },
+        description: 'Relevant economic/market themes for the week',
+      },
+      weekHighlight: {
+        type: 'string',
+        description: 'The single most important event of the week',
+      },
+      recommended_action: {
+        type: 'string',
+        enum: ['BAGGERBOMB', 'EARNINGSGAME', 'SNAKEDRAFT', 'WATCHLIST', 'RESEARCH'],
+      },
+    },
+    required: ['headline', 'subheadline', 'body', 'sentiment', 'themes', 'weekHighlight', 'recommended_action'],
+  },
+};
+
+// ═══ DOUG TOOL SCHEMAS ════════════════════════════════════════════
+
+export const PUBLISH_EARNINGS_PREVIEW_TOOL = {
+  name: 'publish_earnings_preview',
+  description: 'Publish a FantasyTimes earnings preview story for an upcoming report',
+  input_schema: {
+    type: 'object',
+    properties: {
+      headline: { type: 'string', description: 'Max 120 chars, earnings preview headline' },
+      subheadline: { type: 'string', description: 'Max 200 chars' },
+      body: { type: 'string', description: '300-400 words, markdown, uses ## section headers' },
+      sentiment: {
+        type: 'string',
+        enum: ['bullish', 'bearish', 'neutral', 'mixed'],
+      },
+      themes: {
+        type: 'array',
+        items: { type: 'string' },
+        description: 'Relevant earnings/sector themes',
+      },
+      symbol: { type: 'string', description: 'Ticker symbol of the company' },
+      reportDate: { type: 'string', description: 'Expected earnings report date (YYYY-MM-DD)' },
+      epsEstimate: { type: 'number', description: 'Consensus EPS estimate' },
+      revenueEstimate: { type: 'number', description: 'Consensus revenue estimate in dollars' },
+      recommended_action: {
+        type: 'string',
+        enum: ['BAGGERBOMB', 'EARNINGSGAME', 'SNAKEDRAFT', 'WATCHLIST', 'RESEARCH'],
+      },
+    },
+    required: ['headline', 'subheadline', 'body', 'sentiment', 'themes', 'symbol', 'reportDate', 'recommended_action'],
+  },
+};
+
+export const PUBLISH_EARNINGS_RECAP_TOOL = {
+  name: 'publish_earnings_recap',
+  description: 'Publish a FantasyTimes earnings recap after results are released',
+  input_schema: {
+    type: 'object',
+    properties: {
+      headline: { type: 'string', description: 'Max 120 chars, earnings verdict headline' },
+      subheadline: { type: 'string', description: 'Max 200 chars' },
+      body: { type: 'string', description: '200-250 words, markdown, verdict-first style' },
+      sentiment: {
+        type: 'string',
+        enum: ['bullish', 'bearish', 'neutral', 'mixed'],
+      },
+      themes: {
+        type: 'array',
+        items: { type: 'string' },
+        description: 'Relevant earnings/sector themes',
+      },
+      symbol: { type: 'string', description: 'Ticker symbol of the company' },
+      epsActual: { type: 'number', description: 'Reported actual EPS' },
+      epsEstimate: { type: 'number', description: 'Consensus EPS estimate' },
+      outcome: {
+        type: 'string',
+        enum: ['beat', 'miss', 'meet'],
+        description: 'Whether earnings beat, missed, or met expectations',
+      },
+      recommended_action: {
+        type: 'string',
+        enum: ['BAGGERBOMB', 'EARNINGSGAME', 'SNAKEDRAFT', 'WATCHLIST', 'RESEARCH'],
+      },
+    },
+    required: ['headline', 'subheadline', 'body', 'sentiment', 'themes', 'symbol', 'outcome', 'recommended_action'],
+  },
+};
