@@ -3,12 +3,13 @@
 // Single-column scrollable feed merging PVP + Training battles
 // Desktop layout is NOT affected — this only renders on mobile
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
+import { Swords, Zap } from 'lucide-react';
 import PriorityBattleCard from './PriorityBattleCard';
 import BattleRow from './BattleRow';
 import FantasyTimesTeaser from './FantasyTimesTeaser';
-import LoopGameModeCard from './LoopGameModeCard';
+import GamesModal from './GamesModal';
 import PendingLobbiesSection from './PendingLobbiesSection';
 import { useTheme } from '../../contexts/ThemeContext';
 import { isMarketOpen } from '../../utils/marketSchedule';
@@ -66,6 +67,8 @@ export default function DashboardLoop({
 }) {
   const { tokens } = useTheme();
   const marketOpen = isMarketOpen();
+  const [gamesModalOpen, setGamesModalOpen] = useState(false);
+  const [gamesModalMode, setGamesModalMode] = useState('pvp');
 
   // ─── Battle merge: combine all active battles sorted by end time ───────────
   const allBattles = useMemo(() => {
@@ -336,6 +339,58 @@ export default function DashboardLoop({
         }}
       >
 
+        {/* ── CTA: Game Buttons ─────────────────────────────────────────── */}
+        <motion.div variants={sectionVariants} style={{ display: 'flex', gap: '12px' }}>
+          <motion.button
+            onClick={() => { setGamesModalMode('pvp'); setGamesModalOpen(true); }}
+            whileTap={{ scale: 0.97 }}
+            transition={{ type: 'spring', stiffness: 400, damping: 25 }}
+            style={{
+              flex: 1,
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '6px',
+              padding: '16px',
+              borderRadius: '14px',
+              border: '1px solid rgba(245,158,11,0.2)',
+              background: 'linear-gradient(135deg, rgba(245,158,11,0.15), rgba(245,158,11,0.05))',
+              boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.05), inset 0 -1px 0 rgba(0,0,0,0.4)',
+              cursor: 'pointer',
+            }}
+          >
+            <Swords size={20} color={tokens.amber} />
+            <span style={{ fontSize: '15px', fontWeight: '600', color: tokens.textPrimary }}>
+              Challenge
+            </span>
+          </motion.button>
+          <motion.button
+            onClick={() => { setGamesModalMode('training'); setGamesModalOpen(true); }}
+            whileTap={{ scale: 0.97 }}
+            transition={{ type: 'spring', stiffness: 400, damping: 25 }}
+            style={{
+              flex: 1,
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '6px',
+              padding: '16px',
+              borderRadius: '14px',
+              border: '1px solid rgba(147,51,234,0.2)',
+              background: 'linear-gradient(135deg, rgba(147,51,234,0.15), rgba(147,51,234,0.05))',
+              boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.05), inset 0 -1px 0 rgba(0,0,0,0.4)',
+              cursor: 'pointer',
+            }}
+          >
+            <Zap size={20} color={tokens.purpleText} />
+            <span style={{ fontSize: '15px', fontWeight: '600', color: tokens.textPrimary }}>
+              Quick Play
+            </span>
+          </motion.button>
+        </motion.div>
+
         {/* ── Section 1: Priority Battle ──────────────────────────────────── */}
         {priorityBattle && (
           <motion.div variants={sectionVariants}>
@@ -392,40 +447,7 @@ export default function DashboardLoop({
           <FantasyTimesTeaser setScreen={setScreen} />
         </motion.div>
 
-        {/* ── Section 4: Game Mode Cards ───────────────────────────────────── */}
-        <motion.div variants={sectionVariants}>
-          <div style={{
-            marginBottom: '12px',
-            padding: '0 4px',
-          }}>
-            <span style={{
-              fontSize: '11px',
-              fontWeight: '700',
-              color: tokens.textFaint,
-              textTransform: 'uppercase',
-              letterSpacing: '1.5px',
-            }}>
-              Play a Game
-            </span>
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            <LoopGameModeCard
-              modeId="baggerbomb"
-              onPvpSelect={() => setShowBaggerBombModal(true)}
-              onTrainSelect={() => setShowBaggerBombTrainingConfirm(true)}
-            />
-            <LoopGameModeCard
-              modeId="snakeDraft"
-              onPvpSelect={() => setShowSnakeDraftModal(true)}
-              onTrainSelect={() => {
-                setTrainingConfirmType('stocks');
-                setShowTrainingConfirmModal(true);
-              }}
-            />
-          </div>
-        </motion.div>
-
-        {/* ── Section 5: Pending Lobbies ───────────────────────────────────── */}
+        {/* ── Section 4: Pending Lobbies ───────────────────────────────────── */}
         <motion.div variants={sectionVariants}>
         <PendingLobbiesSection
           lobbyBattles={lobbyBattles}
@@ -438,7 +460,7 @@ export default function DashboardLoop({
         />
         </motion.div>
 
-        {/* ── Section 6: Stats Row ────────────────────────────────────────── */}
+        {/* ── Section 5: Stats Row ────────────────────────────────────────── */}
         <motion.div variants={sectionVariants} style={{
           display: 'flex',
           gap: '12px',
@@ -503,6 +525,18 @@ export default function DashboardLoop({
           </div>
         </motion.div>
       </motion.div>
+
+      {/* ─── Games Modal ──────────────────────────────────────────────────── */}
+      <GamesModal
+        isOpen={gamesModalOpen}
+        onClose={() => setGamesModalOpen(false)}
+        mode={gamesModalMode}
+        setShowBaggerBombModal={setShowBaggerBombModal}
+        setShowSnakeDraftModal={setShowSnakeDraftModal}
+        setShowBaggerBombTrainingConfirm={setShowBaggerBombTrainingConfirm}
+        setShowTrainingConfirmModal={setShowTrainingConfirmModal}
+        setTrainingConfirmType={setTrainingConfirmType}
+      />
     </div>
   );
 }

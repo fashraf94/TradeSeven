@@ -1,3 +1,4 @@
+// DEPRECATED: Phase 2.7 — Replaced by GamesModal + CTA buttons. Kept for potential desktop use.
 // /src/components/Dashboard/LoopGameModeCard.jsx
 // Unified game mode card with dual CTAs (PVP + Training) for The Loop mobile feed
 
