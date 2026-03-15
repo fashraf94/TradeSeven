@@ -7,6 +7,7 @@ import './styles/holographic.css'
 import App from './App.jsx'
 import { Analytics } from '@vercel/analytics/react';
 import { UserProvider } from './contexts';
+import { ThemeProvider } from './contexts/ThemeContext';
 import ErrorBoundary from './components/ErrorBoundary';
 
 // Initialize Firebase on app startup
@@ -22,7 +23,9 @@ createRoot(document.getElementById('root')).render(
   <StrictMode>
     <ErrorBoundary name="FantasyTrades App">
       <UserProvider>
-        <App />
+        <ThemeProvider>
+          <App />
+        </ThemeProvider>
       </UserProvider>
     </ErrorBoundary>
     <Analytics />

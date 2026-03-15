@@ -121,6 +121,7 @@ import ResearchLandingPage from './components/Research/ResearchLandingPage';
 import { GameModeToggle, ResearchModeButton, WeeklyChallengesPanel, GameModeCarousel, DashboardTabs, LiveClashesSection, PvpLobbiesSection, YourActivity, SeasonalBanner, TrainingLiveFeed, PendingLobbiesSection } from './components/Dashboard';
 import { useIsMobile } from './hooks/useIsMobile';
 import { isMarketOpen } from './utils/marketSchedule';
+import BottomNav from './components/Navigation/BottomNav';
 
 // ============================================
 // LAZY LOADING FALLBACK
@@ -10209,6 +10210,15 @@ import {
 } from 'lucide-react';
 
 const PERCENTAGE_OPTIONS = [7.5, 10, 12.5, 15, 17.5, 20];
+
+// Screens that hide the mobile bottom navigation (gameplay/builder screens)
+const GAMEPLAY_SCREENS = [
+  'battle', 'draftBattle', 'draftRoom', 'draftLobby', 'baggerBombLobby',
+  'baggerBombSetup', 'baggerBombBuilder', 'baggerBombJoinBuilder',
+  'joinPortfolioBuilderTD', 'trainingPortfolioBuilderTD', 'builder', 'join',
+  'draftSetup', 'draftJoin', 'draftTraining', 'draftResults', 'draftBattleLegacy',
+  'freeAgency', 'freeAgencyLegacy', 'earningsGame', 'stonkOptionsArena', 'tdBuilder',
+];
 
 // Dark Gaming Theme Colors
 const colors = {
@@ -23272,6 +23282,16 @@ export default function PortfolioDuel() {
         </>
       )}
 
+
+      {/* ========== MOBILE BOTTOM NAV ========== */}
+      {user && isMobile && screen !== 'home' && !GAMEPLAY_SCREENS.includes(screen) && (
+        <BottomNav
+          screen={screen}
+          setScreen={setScreen}
+          setShowResearchMode={setShowResearchMode}
+          showResearchMode={showResearchMode}
+        />
+      )}
 
       {/* ClashBot Bug Reporter — persistent floating widget on all screens when logged in */}
       {user && (
