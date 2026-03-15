@@ -10,9 +10,11 @@ import PriorityBattleCard from './PriorityBattleCard';
 import BattleRow from './BattleRow';
 import FantasyTimesTeaser from './FantasyTimesTeaser';
 import GamesModal from './GamesModal';
+import QuickPlayModal from './QuickPlayModal';
 import PendingLobbiesSection from './PendingLobbiesSection';
 import { useTheme } from '../../contexts/ThemeContext';
 import { isMarketOpen } from '../../utils/marketSchedule';
+import { didUserWin } from '../../utils/battleHelpers';
 
 // ─── Motion variants ─────────────────────────────────────────────────────────
 
@@ -68,15 +70,15 @@ export default function DashboardLoop({
   const { tokens } = useTheme();
   const marketOpen = isMarketOpen();
   const [gamesModalOpen, setGamesModalOpen] = useState(false);
-  const [gamesModalMode, setGamesModalMode] = useState('pvp');
+  const [quickPlayOpen, setQuickPlayOpen] = useState(false);
 
   // ─── Battle merge: combine all active battles sorted by end time ───────────
   const allBattles = useMemo(() => {
     const merged = [
-      ...activeBattles.filter(b => !b.isTrainingBattle).map(b => ({ battle: b, type: 'classic' })),
+      ...activeBattles.filter(b => !b.isTrainingBattle && b.status !== 'completed').map(b => ({ battle: b, type: 'classic' })),
       ...activeDraftBattles.filter(b => b.status === 'active' && b.isTraining !== true).map(b => ({ battle: b, type: 'draft' })),
       ...activeDraftBattles.filter(b => b.status === 'active' && b.isTraining === true).map(b => ({ battle: b, type: 'trainingDraft' })),
-      ...activeTrainingBattles.map(b => ({ battle: b, type: 'training' })),
+      ...activeTrainingBattles.filter(b => b.state?.status !== 'completed').map(b => ({ battle: b, type: 'training' })),
     ];
 
     return merged.sort((a, b) => {
@@ -156,6 +158,17 @@ export default function DashboardLoop({
   // ─── Stats ─────────────────────────────────────────────────────────────────
   const totalActive = allBattles.length;
   const totalCompleted = completedBattles?.length || 0;
+
+  // ─── Recent results (last 1-2 completed battles) ──────────────────────────
+  const recentResults = useMemo(() => {
+    return (completedBattles || [])
+      .sort((a, b) => {
+        const aTime = a.completedAt || a.timeline?.completedAt || a.endDate || 0;
+        const bTime = b.completedAt || b.timeline?.completedAt || b.endDate || 0;
+        return new Date(bTime) - new Date(aTime);
+      })
+      .slice(0, 2);
+  }, [completedBattles]);
 
   return (
     <div style={{
@@ -342,7 +355,7 @@ export default function DashboardLoop({
         {/* ── CTA: Game Buttons ─────────────────────────────────────────── */}
         <motion.div variants={sectionVariants} style={{ display: 'flex', gap: '12px' }}>
           <motion.button
-            onClick={() => { setGamesModalMode('pvp'); setGamesModalOpen(true); }}
+            onClick={() => setGamesModalOpen(true)}
             whileTap={{ scale: 0.97 }}
             transition={{ type: 'spring', stiffness: 400, damping: 25 }}
             style={{
@@ -362,11 +375,11 @@ export default function DashboardLoop({
           >
             <Swords size={20} color={tokens.amber} />
             <span style={{ fontSize: '15px', fontWeight: '600', color: tokens.textPrimary }}>
-              Challenge
+              Games
             </span>
           </motion.button>
           <motion.button
-            onClick={() => { setGamesModalMode('training'); setGamesModalOpen(true); }}
+            onClick={() => setQuickPlayOpen(true)}
             whileTap={{ scale: 0.97 }}
             transition={{ type: 'spring', stiffness: 400, damping: 25 }}
             style={{
@@ -439,6 +452,56 @@ export default function DashboardLoop({
                 onPress={() => handleBattlePress(battle, type)}
               />
             ))}
+          </motion.div>
+        )}
+
+        {/* ── Recent Results ────────────────────────────────────────────── */}
+        {recentResults.length > 0 && (
+          <motion.div variants={sectionVariants} style={{ opacity: 0.8 }}>
+            <div style={{ marginBottom: '12px', padding: '0 4px' }}>
+              <span style={{
+                fontSize: '11px',
+                fontWeight: '700',
+                color: tokens.textFaint,
+                textTransform: 'uppercase',
+                letterSpacing: '1.5px',
+              }}>
+                Recent Results
+              </span>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              {recentResults.map((battle, i) => {
+                const won = didUserWin(battle, user?.username);
+                const bType = battle.isDraft ? 'draft' : (battle.isTrainingBattle ? 'training' : 'classic');
+                return (
+                  <div key={battle.id || i} style={{ position: 'relative' }}>
+                    <BattleRow
+                      battle={battle}
+                      battleType={bType}
+                      user={user}
+                      onPress={() => handleBattlePress(battle, bType)}
+                    />
+                    <div style={{
+                      position: 'absolute',
+                      top: '50%',
+                      right: '16px',
+                      transform: 'translateY(-50%)',
+                      padding: '3px 10px',
+                      borderRadius: '6px',
+                      fontSize: '10px',
+                      fontWeight: '700',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.5px',
+                      background: won === true ? 'rgba(52,211,153,0.15)' : won === false ? 'rgba(239,68,68,0.15)' : 'rgba(148,163,184,0.15)',
+                      color: won === true ? tokens.emerald : won === false ? tokens.red : tokens.textMuted,
+                      pointerEvents: 'none',
+                    }}>
+                      {won === true ? 'WIN' : won === false ? 'LOSS' : '—'}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </motion.div>
         )}
 
@@ -530,9 +593,24 @@ export default function DashboardLoop({
       <GamesModal
         isOpen={gamesModalOpen}
         onClose={() => setGamesModalOpen(false)}
-        mode={gamesModalMode}
         setShowBaggerBombModal={setShowBaggerBombModal}
         setShowSnakeDraftModal={setShowSnakeDraftModal}
+        setShowBaggerBombTrainingConfirm={setShowBaggerBombTrainingConfirm}
+        setShowTrainingConfirmModal={setShowTrainingConfirmModal}
+        setTrainingConfirmType={setTrainingConfirmType}
+      />
+
+      {/* ─── Quick Play Modal ─────────────────────────────────────────────── */}
+      <QuickPlayModal
+        isOpen={quickPlayOpen}
+        onClose={() => setQuickPlayOpen(false)}
+        lobbyBattles={lobbyBattles}
+        user={user}
+        setCurrentBattle={setCurrentBattle}
+        setCurrentDraft={setCurrentDraft}
+        setScreen={setScreen}
+        setBattleToJoin={setBattleToJoin}
+        copyToClipboard={copyToClipboard}
         setShowBaggerBombTrainingConfirm={setShowBaggerBombTrainingConfirm}
         setShowTrainingConfirmModal={setShowTrainingConfirmModal}
         setTrainingConfirmType={setTrainingConfirmType}
