@@ -148,7 +148,7 @@ export const getFreeAgents = async (draftId, category = null) => {
     const draftRef = doc(db, 'drafts', draftId);
     const draftSnap = await getDoc(draftRef);
 
-    if (!draftSnap.exists()) return category ? [] : { steady: [], risky: [], defensive: [] };
+    if (!draftSnap.exists()) return category ? [] : { neutral: [], aggressive: [], defensive: [] };
 
     const draft = draftSnap.data();
 
@@ -157,10 +157,10 @@ export const getFreeAgents = async (draftId, category = null) => {
     }
 
     // Return all free agents organized by category
-    return draft.freeAgents || { steady: [], risky: [], defensive: [] };
+    return draft.freeAgents || { neutral: [], aggressive: [], defensive: [] };
   } catch (error) {
     console.error('Error getting free agents:', error);
-    return category ? [] : { steady: [], risky: [], defensive: [] };
+    return category ? [] : { neutral: [], aggressive: [], defensive: [] };
   }
 };
 
@@ -181,8 +181,8 @@ export const getPlayerRoster = async (draftId, odUserId) => {
 
     // Organize roster by category
     const roster = {
-      steady: [],
-      risky: [],
+      neutral: [],
+      aggressive: [],
       defensive: []
     };
 
@@ -458,8 +458,8 @@ export const initializeFreeAgents = (draft, allAssets = null) => {
 
   // Organize unpicked assets by category
   const freeAgents = {
-    steady: [],
-    risky: [],
+    neutral: [],
+    aggressive: [],
     defensive: []
   };
 

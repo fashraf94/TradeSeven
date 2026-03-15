@@ -298,8 +298,8 @@ async function executeAutopick(db, draftId) {
 
       // Free agents = remaining available assets (already filtered)
       const freeAgents = {
-        steady: updatedAvailable.steady || [],
-        risky: updatedAvailable.risky || [],
+        neutral: updatedAvailable.neutral || [],
+        aggressive: updatedAvailable.aggressive || [],
         defensive: updatedAvailable.defensive || [],
       };
 
@@ -317,6 +317,11 @@ async function executeAutopick(db, draftId) {
       updateData.freeAgents = freeAgents;
       updateData.swapHistory = [];
       updateData.dailySwaps = {};
+      updateData.claimSystem = {
+        enabled: true,
+        currentWaiverPriority: [],
+        processingLog: [],
+      };
 
       logInfo(`Draft complete - transitioning to battle`, {
         draftId,
