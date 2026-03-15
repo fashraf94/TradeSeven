@@ -2,12 +2,14 @@
 // Horizontal scroll of mini story cards for The Loop mobile feed
 // Uses useFantasyTimes hook directly
 
-import React from 'react';
+import React, { useState } from 'react';
+import { motion } from 'framer-motion';
 import { ChevronRight } from 'lucide-react';
 import { useFantasyTimes } from '../../hooks/useFantasyTimes';
 import { isMarketOpen } from '../../utils/marketSchedule';
 import { REPORTER_PROFILES } from '../../prompts/fantasyTimesPrompts';
 import { useTheme } from '../../contexts/ThemeContext';
+import TapGlint from '../shared/TapGlint';
 
 function timeAgo(timestamp) {
   if (!timestamp) return '';
@@ -31,6 +33,7 @@ export default function FantasyTimesTeaser({ setScreen }) {
   const { tokens } = useTheme();
   const { rankedStories, loading } = useFantasyTimes();
   const marketOpen = isMarketOpen();
+  const [tapCounts, setTapCounts] = useState({});
 
   if (loading) {
     return (
@@ -117,15 +120,24 @@ export default function FantasyTimesTeaser({ setScreen }) {
           scrollbarWidth: 'none',
           msOverflowStyle: 'none',
           WebkitOverflowScrolling: 'touch',
+          scrollSnapType: 'x mandatory',
         }}
       >
         {stories.map((story, i) => {
           const reporterColor = getReporterColor(story.reporter);
+          const cardKey = story.id || i;
           return (
-            <div
-              key={story.id || i}
-              onClick={() => setScreen('fantasytimes')}
+            <motion.div
+              key={cardKey}
+              onClick={() => {
+                setTapCounts(prev => ({ ...prev, [cardKey]: (prev[cardKey] || 0) + 1 }));
+                setScreen('fantasytimes');
+              }}
+              whileTap={{ scale: 0.97 }}
+              transition={{ type: 'spring', stiffness: 400, damping: 25 }}
               style={{
+                position: 'relative',
+                overflow: 'hidden',
                 minWidth: '240px',
                 maxWidth: '240px',
                 padding: '12px',
@@ -133,12 +145,15 @@ export default function FantasyTimesTeaser({ setScreen }) {
                 borderRadius: '12px',
                 border: `1px solid ${tokens.borderDefault}`,
                 borderLeft: `3px solid ${reporterColor}`,
+                boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.05), inset 0 -1px 0 rgba(0,0,0,0.4)',
                 cursor: 'pointer',
                 display: 'flex',
                 flexDirection: 'column',
                 gap: '8px',
+                scrollSnapAlign: 'start',
               }}
             >
+              <TapGlint triggerKey={tapCounts[cardKey] || 0} />
               {/* Headline */}
               <div style={{
                 fontSize: '13px',
@@ -174,7 +189,7 @@ export default function FantasyTimesTeaser({ setScreen }) {
                   {timeAgo(story.publishedAt)}
                 </span>
               </div>
-            </div>
+            </motion.div>
           );
         })}
       </div>

@@ -4,6 +4,7 @@
 // Desktop layout is NOT affected — this only renders on mobile
 
 import React, { useMemo } from 'react';
+import { motion } from 'framer-motion';
 import PriorityBattleCard from './PriorityBattleCard';
 import BattleRow from './BattleRow';
 import FantasyTimesTeaser from './FantasyTimesTeaser';
@@ -11,6 +12,17 @@ import LoopGameModeCard from './LoopGameModeCard';
 import PendingLobbiesSection from './PendingLobbiesSection';
 import { useTheme } from '../../contexts/ThemeContext';
 import { isMarketOpen } from '../../utils/marketSchedule';
+
+// ─── Motion variants ─────────────────────────────────────────────────────────
+
+const containerVariants = {
+  hidden: {},
+  visible: { transition: { staggerChildren: 0.05 } },
+};
+const sectionVariants = {
+  hidden: { opacity: 0, y: 12 },
+  visible: { opacity: 1, y: 0, transition: { type: 'spring', stiffness: 300, damping: 24, mass: 0.8 } },
+};
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -307,21 +319,26 @@ export default function DashboardLoop({
       )}
 
       {/* ─── Feed Content ───────────────────────────────────────────────────── */}
-      <div style={{
-        flex: 1,
-        padding: '20px 16px 140px 16px',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '24px',
-        maxWidth: '600px',
-        margin: '0 auto',
-        width: '100%',
-        boxSizing: 'border-box',
-      }}>
+      <motion.div
+        variants={containerVariants}
+        initial="hidden"
+        animate="visible"
+        style={{
+          flex: 1,
+          padding: '20px 16px 140px 16px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '24px',
+          maxWidth: '600px',
+          margin: '0 auto',
+          width: '100%',
+          boxSizing: 'border-box',
+        }}
+      >
 
         {/* ── Section 1: Priority Battle ──────────────────────────────────── */}
         {priorityBattle && (
-          <div>
+          <motion.div variants={sectionVariants}>
             <div style={{
               display: 'flex',
               alignItems: 'center',
@@ -352,12 +369,12 @@ export default function DashboardLoop({
               user={user}
               onPress={() => handleBattlePress(priorityBattle.battle, priorityBattle.type)}
             />
-          </div>
+          </motion.div>
         )}
 
         {/* ── Section 2: Secondary Battles ────────────────────────────────── */}
         {secondaryBattles.length > 0 && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          <motion.div variants={sectionVariants} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
             {secondaryBattles.map(({ battle, type }, i) => (
               <BattleRow
                 key={battle.id || battle.firestoreId || i}
@@ -367,14 +384,16 @@ export default function DashboardLoop({
                 onPress={() => handleBattlePress(battle, type)}
               />
             ))}
-          </div>
+          </motion.div>
         )}
 
         {/* ── Section 3: Fantasy Times Teaser ─────────────────────────────── */}
-        <FantasyTimesTeaser setScreen={setScreen} />
+        <motion.div variants={sectionVariants}>
+          <FantasyTimesTeaser setScreen={setScreen} />
+        </motion.div>
 
         {/* ── Section 4: Game Mode Cards ───────────────────────────────────── */}
-        <div>
+        <motion.div variants={sectionVariants}>
           <div style={{
             marginBottom: '12px',
             padding: '0 4px',
@@ -404,9 +423,10 @@ export default function DashboardLoop({
               }}
             />
           </div>
-        </div>
+        </motion.div>
 
         {/* ── Section 5: Pending Lobbies ───────────────────────────────────── */}
+        <motion.div variants={sectionVariants}>
         <PendingLobbiesSection
           lobbyBattles={lobbyBattles}
           user={user}
@@ -416,9 +436,10 @@ export default function DashboardLoop({
           setBattleToJoin={setBattleToJoin}
           copyToClipboard={copyToClipboard}
         />
+        </motion.div>
 
         {/* ── Section 6: Stats Row ────────────────────────────────────────── */}
-        <div style={{
+        <motion.div variants={sectionVariants} style={{
           display: 'flex',
           gap: '12px',
           padding: '0 4px',
@@ -429,6 +450,7 @@ export default function DashboardLoop({
             background: tokens.bgCard,
             borderRadius: '12px',
             border: `1px solid ${tokens.borderDefault}`,
+            boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.05), inset 0 -1px 0 rgba(0,0,0,0.4)',
             textAlign: 'center',
           }}>
             <div style={{ fontSize: '24px', fontWeight: '700', color: tokens.teal }}>
@@ -447,6 +469,7 @@ export default function DashboardLoop({
             background: tokens.bgCard,
             borderRadius: '12px',
             border: `1px solid ${tokens.borderDefault}`,
+            boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.05), inset 0 -1px 0 rgba(0,0,0,0.4)',
             textAlign: 'center',
           }}>
             <div style={{ fontSize: '24px', fontWeight: '700', color: tokens.emerald }}>
@@ -465,6 +488,7 @@ export default function DashboardLoop({
             background: tokens.bgCard,
             borderRadius: '12px',
             border: `1px solid ${tokens.borderDefault}`,
+            boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.05), inset 0 -1px 0 rgba(0,0,0,0.4)',
             textAlign: 'center',
           }}>
             <div style={{ fontSize: '24px', fontWeight: '700', color: tokens.amber }}>
@@ -477,8 +501,8 @@ export default function DashboardLoop({
               Tokens
             </div>
           </div>
-        </div>
-      </div>
+        </motion.div>
+      </motion.div>
     </div>
   );
 }

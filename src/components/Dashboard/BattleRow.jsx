@@ -2,8 +2,10 @@
 // Compact 64px row for secondary battles in The Loop mobile feed
 
 import React, { useState, useEffect } from 'react';
+import { motion } from 'framer-motion';
 import { Swords, Layers, Bot } from 'lucide-react';
 import { useTheme } from '../../contexts/ThemeContext';
+import TapGlint from '../shared/TapGlint';
 
 const TYPE_ICONS = {
   classic: Swords,
@@ -52,6 +54,7 @@ function getOpponentName(battle, user) {
 export default function BattleRow({ battle, battleType, user, onPress }) {
   const { tokens } = useTheme();
   const [now, setNow] = useState(Date.now());
+  const [tapCount, setTapCount] = useState(0);
   const Icon = TYPE_ICONS[battleType] || Swords;
 
   const typeColors = {
@@ -74,9 +77,13 @@ export default function BattleRow({ battle, battleType, user, onPress }) {
   const isUrgent = remaining !== null && remaining < 3600000 && remaining > 0;
 
   return (
-    <div
-      onClick={onPress}
+    <motion.div
+      onClick={() => { setTapCount(c => c + 1); onPress(); }}
+      whileTap={{ scale: 0.98 }}
+      transition={{ type: 'spring', stiffness: 400, damping: 25 }}
       style={{
+        position: 'relative',
+        overflow: 'hidden',
         height: '64px',
         display: 'flex',
         alignItems: 'center',
@@ -85,9 +92,11 @@ export default function BattleRow({ battle, battleType, user, onPress }) {
         background: tokens.bgCard,
         borderRadius: '12px',
         border: `1px solid ${isUrgent ? 'rgba(239,68,68,0.2)' : tokens.borderDefault}`,
+        boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.05), inset 0 -1px 0 rgba(0,0,0,0.4)',
         cursor: 'pointer',
       }}
     >
+      <TapGlint triggerKey={tapCount} />
       {/* Type icon */}
       <div style={{
         width: '40px',
@@ -141,15 +150,21 @@ export default function BattleRow({ battle, battleType, user, onPress }) {
       </div>
 
       {/* Right: time remaining */}
-      <div style={{
-        fontSize: '13px',
-        fontWeight: '500',
-        color: isUrgent ? tokens.red : tokens.textMuted,
-        whiteSpace: 'nowrap',
-        flexShrink: 0,
-      }}>
+      <motion.span
+        key={remaining !== null ? formatTimeRemaining(remaining) : 'active'}
+        initial={{ scale: 1.15, opacity: 0.7 }}
+        animate={{ scale: 1, opacity: 1 }}
+        transition={{ duration: 0.3 }}
+        style={{
+          fontSize: '13px',
+          fontWeight: '500',
+          color: isUrgent ? tokens.red : tokens.textMuted,
+          whiteSpace: 'nowrap',
+          flexShrink: 0,
+        }}
+      >
         {remaining !== null ? formatTimeRemaining(remaining) : 'Active'}
-      </div>
-    </div>
+      </motion.span>
+    </motion.div>
   );
 }

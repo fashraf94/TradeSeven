@@ -2,6 +2,7 @@
 // Unified game mode card with dual CTAs (PVP + Training) for The Loop mobile feed
 
 import React from 'react';
+import { motion } from 'framer-motion';
 import { Flame, Users, Bot } from 'lucide-react';
 import { useTheme } from '../../contexts/ThemeContext';
 
@@ -51,6 +52,7 @@ export default function LoopGameModeCard({ modeId, onPvpSelect, onTrainSelect })
       background: tokens.bgCard,
       borderRadius: '16px',
       border: `1px solid ${tokens.borderDefault}`,
+      boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.05), inset 0 -1px 0 rgba(0,0,0,0.4)',
       padding: '20px',
       display: 'flex',
       flexDirection: 'column',
@@ -94,8 +96,10 @@ export default function LoopGameModeCard({ modeId, onPvpSelect, onTrainSelect })
 
       {/* Dual CTA buttons */}
       <div style={{ display: 'flex', gap: '10px' }}>
-        <button
+        <motion.button
           onClick={onPvpSelect}
+          whileTap={{ scale: 0.96 }}
+          transition={{ type: 'spring', stiffness: 400, damping: 25 }}
           style={{
             flex: 1,
             display: 'flex',
@@ -116,9 +120,11 @@ export default function LoopGameModeCard({ modeId, onPvpSelect, onTrainSelect })
         >
           <Users size={14} />
           Challenge
-        </button>
-        <button
+        </motion.button>
+        <motion.button
           onClick={onTrainSelect}
+          whileTap={{ scale: 0.96 }}
+          transition={{ type: 'spring', stiffness: 400, damping: 25 }}
           style={{
             flex: 1,
             display: 'flex',
@@ -139,7 +145,7 @@ export default function LoopGameModeCard({ modeId, onPvpSelect, onTrainSelect })
         >
           <Bot size={14} />
           vs AI
-        </button>
+        </motion.button>
       </div>
     </div>
   );
