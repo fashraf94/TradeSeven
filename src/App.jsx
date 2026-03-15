@@ -19794,21 +19794,7 @@ export default function PortfolioDuel() {
           {/* Animated Desktop Background */}
           <DesktopBackground isDesktop={isDesktop} />
 
-          {/* Global Overlays */}
-          <ChallengeToast />
-          {false && <MidGameChallengePopup />}
-          {false && <RiskChallengePopup />}
-          {false && <RiskChallengeResultPopup />}
-          {showSlotMachine && weeklyChallenges.length >= 4 && (
-            <SlotMachineContent
-              challenges={weeklyChallenges}
-              onClose={() => {
-                setShowSlotMachine(false);
-                setSlotMachineRevealed(true);
-                markSlotMachineShown();
-              }}
-            />
-          )}
+          {/* Global overlays and XP modal moved to unified return */}
 
           <div style={{
             minHeight: '100vh',
@@ -19818,155 +19804,6 @@ export default function PortfolioDuel() {
             position: 'relative',
             zIndex: 1
           }}>
-          {/* XP Progress Modal */}
-          {showXPModal && (
-            <div
-              onClick={() => setShowXPModal(false)}
-              style={{
-                position: 'fixed',
-                top: 0,
-                left: 0,
-                right: 0,
-                bottom: 0,
-                background: 'rgba(0, 0, 0, 0.8)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                zIndex: 1000,
-                backdropFilter: 'blur(4px)',
-                WebkitBackdropFilter: 'blur(4px)'
-              }}
-            >
-              <motion.div
-                initial={{ scale: 0.9, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                transition={{ duration: 0.2 }}
-                onClick={(e) => e.stopPropagation()}
-                style={{
-                  background: colors.cardBg,
-                  borderRadius: '20px',
-                  padding: '32px',
-                  width: '90%',
-                  maxWidth: '400px',
-                  border: `1px solid ${colors.border}`,
-                  boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
-                  position: 'relative'
-                }}
-              >
-                {/* Close button */}
-                <button
-                  onClick={() => setShowXPModal(false)}
-                  aria-label="Close modal"
-                  style={{
-                    position: 'absolute',
-                    top: '16px',
-                    right: '16px',
-                    width: '32px',
-                    height: '32px',
-                    borderRadius: '50%',
-                    border: `1px solid ${colors.borderSubtle}`,
-                    background: 'transparent',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    color: colors.textSecondary,
-                    transition: 'all 0.2s'
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.background = `${colors.red}20`;
-                    e.currentTarget.style.borderColor = colors.red;
-                    e.currentTarget.style.color = colors.red;
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.background = 'transparent';
-                    e.currentTarget.style.borderColor = colors.borderSubtle;
-                    e.currentTarget.style.color = colors.textSecondary;
-                  }}
-                >
-                  <X style={{ height: '18px', width: '18px' }} />
-                </button>
-
-                {/* Rank Icon */}
-                <div style={{ textAlign: 'center', marginBottom: '24px' }}>
-                  <div style={{
-                    width: '80px',
-                    height: '80px',
-                    margin: '0 auto 16px',
-                    borderRadius: '20px',
-                    background: `linear-gradient(135deg, ${colors.cyan}20 0%, ${colors.green}20 100%)`,
-                    border: `3px solid ${colors.cyan}`,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    boxShadow: `0 0 30px ${colors.cyan}40`
-                  }}>
-                    <Shield style={{ height: '40px', width: '40px', color: colors.cyan }} />
-                  </div>
-                  <h2 style={{
-                    fontSize: '28px',
-                    fontWeight: 'bold',
-                    color: colors.textPrimary,
-                    margin: '0 0 4px 0',
-                    textTransform: 'uppercase',
-                    letterSpacing: '2px'
-                  }}>
-                    {user.rank}
-                  </h2>
-                  <p style={{ fontSize: '14px', color: colors.textSecondary, margin: 0 }}>
-                    Level {user.level}
-                  </p>
-                </div>
-
-                {/* XP Progress */}
-                <div style={{ marginBottom: '24px' }}>
-                  <div style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    marginBottom: '8px',
-                    fontSize: '14px'
-                  }}>
-                    <span style={{ color: colors.textSecondary }}>Experience Points</span>
-                    <span style={{ color: colors.cyan, fontWeight: '600' }}>{user.xp} / {xpForNextLevel} XP</span>
-                  </div>
-                  <div style={{
-                    width: '100%',
-                    height: '12px',
-                    background: 'rgba(0, 217, 255, 0.1)',
-                    borderRadius: '9999px',
-                    overflow: 'hidden'
-                  }}>
-                    <motion.div
-                      initial={{ width: 0 }}
-                      animate={{ width: `${xpProgress}%` }}
-                      transition={{ duration: 0.8, ease: 'easeOut' }}
-                      style={{
-                        height: '100%',
-                        borderRadius: '9999px',
-                        background: `linear-gradient(90deg, ${colors.green} 0%, ${colors.cyan} 100%)`,
-                        boxShadow: `0 0 10px ${colors.cyan}60`
-                      }}
-                    />
-                  </div>
-                </div>
-
-                {/* Next Rank Info */}
-                <div style={{
-                  background: 'rgba(0, 0, 0, 0.3)',
-                  borderRadius: '12px',
-                  padding: '16px',
-                  textAlign: 'center'
-                }}>
-                  <p style={{ fontSize: '14px', color: colors.textSecondary, margin: '0 0 8px 0' }}>
-                    {xpNeeded} XP to next rank
-                  </p>
-                  <p style={{ fontSize: '18px', fontWeight: '600', color: colors.green, margin: 0 }}>
-                    {nextRank}
-                  </p>
-                </div>
-              </motion.div>
-            </div>
-          )}
 
           {/* DESKTOP ONLY: Top Header - Static */}
           <div
@@ -20427,62 +20264,800 @@ export default function PortfolioDuel() {
             )}
           </div>
 
-          {/* DESKTOP: Bottom Stats Bar - Fixed */}
-          <div
-            id="tour-rank-section"
-            className="hidden md:flex"
-            style={{
-              position: 'fixed',
-              bottom: 0,
-              left: 0,
-              right: 0,
-              height: '56px',
-              background: colors.cardBg,
-              borderTop: `1px solid ${colors.border}`,
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '32px',
-              zIndex: 100
-            }}
-          >
-            {/* Wins */}
-            <div className="flex items-center gap-2">
-              <Trophy className="w-4 h-4" style={{ color: colors.gold }} />
-              <span className="text-sm" style={{ color: colors.textSecondary }}>Wins:</span>
-              <span className="text-base font-semibold" style={{ color: colors.green }}>{user.wins}</span>
-            </div>
-
-            {/* Losses */}
-            <div className="flex items-center gap-2">
-              <Skull className="w-4 h-4" style={{ color: colors.textMuted }} />
-              <span className="text-sm" style={{ color: colors.textSecondary }}>Losses:</span>
-              <span className="text-base font-semibold" style={{ color: colors.red }}>{user.losses}</span>
-            </div>
-
-            {/* Battles */}
-            <div className="flex items-center gap-2">
-              <Swords className="w-4 h-4" style={{ color: colors.cyan }} />
-              <span className="text-sm" style={{ color: colors.textSecondary }}>Battles:</span>
-              <span className="text-base font-semibold" style={{ color: colors.cyan }}>{user.wins + user.losses}</span>
-            </div>
-
-            {/* Rank - Clickable */}
-            <button
-              onClick={() => setShowXPModal(true)}
-              className="flex items-center gap-2 px-3 py-1.5 rounded-lg transition-all"
-              style={{ background: 'transparent', border: `1px solid ${colors.borderSubtle}` }}
-              onMouseEnter={(e) => { e.currentTarget.style.borderColor = colors.cyan; e.currentTarget.style.background = `${colors.cyan}10`; }}
-              onMouseLeave={(e) => { e.currentTarget.style.borderColor = colors.borderSubtle; e.currentTarget.style.background = 'transparent'; }}
-            >
-              <Shield className="w-4 h-4" style={{ color: colors.cyan }} />
-              <span className="text-sm font-medium" style={{ color: colors.textPrimary }}>{user.rank}</span>
-              <span className="text-xs" style={{ color: colors.textSecondary }}>(Lvl {user.level})</span>
-            </button>
-          </div>
+          {/* Bottom stats bar moved to unified return */}
         </div>
 
-        {/* Sliding Sidebar - Like Claude.ai */}
-        {sidebarOpen && (
+        {/* Sidebar moved to unified return — renders at app level */}
+        {/* All modals moved to unified return — renders at app level */}
+        </div>
+      </ErrorBoundary>
+    );
+  }
+
+  // PORTFOLIO BUILDER SCREEN (Create Game) - EXTRACTED TO BuilderScreen.jsx
+  if (screen === 'builder') {
+    return (
+      <ErrorBoundary name="Portfolio Builder" onNavigateDashboard={() => setScreen('dashboard')}>
+      <BuilderScreen
+        // Layout
+        isDesktop={isDesktop}
+        containerStyle={containerStyle}
+        // Market data
+        stocksData={stocksData}
+        cryptoData={cryptoData}
+        loadingMarketData={loadingMarketData}
+        // Portfolio state
+        portfolio={portfolio}
+        setPortfolio={setPortfolio}
+        portfolioType={portfolioType}
+        setPortfolioType={setPortfolioType}
+        portfolioName={portfolioName}
+        setPortfolioName={setPortfolioName}
+        selectedCrypto={selectedCrypto}
+        setSelectedCrypto={setSelectedCrypto}
+        cryptoPercentage={cryptoPercentage}
+        setCryptoPercentage={setCryptoPercentage}
+        // Builder state
+        builderCategory={builderCategory}
+        setBuilderCategory={setBuilderCategory}
+        builderMode={builderMode}
+        setBuilderMode={setBuilderMode}
+        joinCode={joinCode}
+        setJoinCode={setJoinCode}
+        searchTerm={searchTerm}
+        setSearchTerm={setSearchTerm}
+        assetType={assetType}
+        setAssetType={setAssetType}
+        // Modal state
+        showPortfolioManager={showPortfolioManager}
+        setShowPortfolioManager={setShowPortfolioManager}
+        showTemplatesModal={showTemplatesModal}
+        setShowTemplatesModal={setShowTemplatesModal}
+        saveTemplateModal={saveTemplateModal}
+        setSaveTemplateModal={setSaveTemplateModal}
+        templateName={templateName}
+        setTemplateName={setTemplateName}
+        // Templates
+        portfolioTemplates={portfolioTemplates}
+        // Handlers
+        handleRemoveAsset={handleRemoveAsset}
+        handleCreateBattle={handleCreateBattle}
+        handleJoinBattle={handleJoinBattle}
+        handleCreateTrainingBattle={handleCreateTrainingBattle}
+        savePortfolioTemplate={savePortfolioTemplate}
+        loadTemplateToPortfolio={loadTemplateToPortfolio}
+        addNotification={addNotification}
+        // Navigation
+        setScreen={setScreen}
+      />
+      </ErrorBoundary>
+    );
+  }
+
+  // BAGGERBOMB TRAINING PORTFOLIO BUILDER SCREEN (V4 - No Bench, 1 Swap)
+  if (screen === 'trainingPortfolioBuilderTD') {
+    return (
+      <ErrorBoundary name="Training Builder" onNavigateDashboard={() => setScreen('dashboard')}>
+      <SlotBasedBuilder
+        stocks={stocksData}
+        crypto={cryptoData}
+        version={4}
+        onComplete={handleCreateBaggerBombTrainingBattleV4}
+        onBack={() => {
+          setBuilderMode('create');
+          setScreen('dashboard');
+        }}
+      />
+      </ErrorBoundary>
+    );
+  }
+
+  // BAGGERBOMB LOBBY - Find and join open battles
+  if (screen === 'baggerBombLobby') {
+    return (
+      <ErrorBoundary name="BaggerBomb Lobby" onNavigateDashboard={() => setScreen('dashboard')}>
+      <Suspense fallback={<LoadingFallback />}>
+        <BaggerBombLobby
+          user={user}
+          openBattles={lobbyBattles}
+          loading={lobbyLoading}
+          onCreateBattle={() => {
+            setBattleToJoin(null);
+            setScreen('baggerBombSetup');
+          }}
+          onJoinBattle={(battle) => {
+            setBattleToJoin(battle);
+            setScreen('baggerBombJoinBuilder');
+          }}
+          onBack={() => setScreen('dashboard')}
+          onRefresh={async () => {
+            setLobbyLoading(true);
+            try {
+              const battles = await getOpenBaggerBombBattles();
+              setLobbyBattles(battles);
+            } catch (err) {
+              console.error('Failed to refresh lobby:', err);
+            }
+            setLobbyLoading(false);
+          }}
+        />
+      </Suspense>
+      </ErrorBoundary>
+    );
+  }
+
+  // BAGGERBOMB SETUP - Time selection before portfolio builder
+  if (screen === 'baggerBombSetup') {
+    return (
+      <ErrorBoundary name="BaggerBomb Setup" onNavigateDashboard={() => setScreen('dashboard')}>
+      <Suspense fallback={<LoadingFallback />}>
+        <BaggerBombSetupScreen
+          onBack={() => setScreen('baggerBombLobby')}
+          onContinue={(timeMinutes) => {
+            setLobbyTimeMinutes(timeMinutes);
+            setScreen('baggerBombBuilder');
+          }}
+        />
+      </Suspense>
+      </ErrorBoundary>
+    );
+  }
+
+  // BAGGERBOMB CREATE BATTLE - New SlotBasedBuilder (V4: no bench)
+  if (screen === 'baggerBombBuilder') {
+    return (
+      <ErrorBoundary name="BaggerBomb Builder" onNavigateDashboard={() => setScreen('dashboard')}>
+      <SlotBasedBuilder
+        stocks={stocksData}
+        crypto={cryptoData}
+        version={4}
+        onComplete={async (portfolio) => {
+          try {
+            console.log('[BaggerBomb V4] Portfolio submitted:', portfolio);
+            // Create BaggerBomb V4 battle with tiered portfolio (no bench)
+            const battleData = await createBaggerBombBattleV4({
+              portfolio: {
+                star: portfolio.star,
+                core: portfolio.core,
+                support: portfolio.support,
+              },
+              creator: {
+                uid: user.uid || user.odUserId || user.username,
+                odUserId: user.odUserId || user.username,
+                username: user.displayName || user.username,
+                avatar: user.avatar || '',
+              },
+            }, lobbyTimeMinutes);
+            if (battleData?.id) {
+              showToast(`Battle created! Waiting for opponent...`);
+              setCurrentBattle(battleData);
+              setScreen('baggerBombLobby');
+            }
+          } catch (error) {
+            console.error('Failed to create BaggerBomb battle:', error);
+            showToast('Failed to create battle. Please try again.');
+          }
+        }}
+        onBack={() => {
+          setScreen('baggerBombSetup');
+        }}
+      />
+      </ErrorBoundary>
+    );
+  }
+
+  // BAGGERBOMB JOIN FROM LOBBY - Build portfolio then join selected battle
+  if (screen === 'baggerBombJoinBuilder') {
+    const joinBattleVersion = battleToJoin?._v || 3;
+    return (
+      <ErrorBoundary name="Join Battle Builder" onNavigateDashboard={() => setScreen('dashboard')}>
+      <SlotBasedBuilder
+        stocks={stocksData}
+        crypto={cryptoData}
+        version={joinBattleVersion >= 4 ? 4 : 3}
+        onComplete={async (portfolio) => {
+          try {
+            if (!battleToJoin?.id) {
+              showToast('No battle selected. Please select from lobby.');
+              setScreen('baggerBombLobby');
+              return;
+            }
+            console.log('[BaggerBomb] Joining battle from lobby:', battleToJoin.id, 'version:', joinBattleVersion);
+            const joinData = {
+              portfolio: {
+                star: portfolio.star,
+                core: portfolio.core,
+                support: portfolio.support,
+              },
+              ...(joinBattleVersion < 4 ? { bench: portfolio.bench } : {}),
+              uid: user.uid || user.odUserId || user.username,
+              odUserId: user.odUserId || user.username,
+              username: user.displayName || user.username,
+              avatar: user.avatar || '',
+            };
+
+            // Use the correct join function based on version
+            // Join functions fetch real-time prices internally via captureBattlePrices
+            const joinFn = joinBattleVersion >= 4 ? joinBaggerBombBattleV4 : joinBaggerBombBattleV3;
+            const result = await joinFn(battleToJoin.id, joinData, { joinByBattleId: true });
+            if (result?.success) {
+              showToast(`Joined battle!`);
+              setCurrentBattle(result.battle);
+              setBattleToJoin(null);
+              setScreen('battle');
+            }
+          } catch (error) {
+            console.error('Failed to join BaggerBomb battle:', error);
+            showToast('Failed to join battle. It may have already started.');
+            setScreen('baggerBombLobby');
+          }
+        }}
+        onBack={() => {
+          setBattleToJoin(null);
+          setScreen('baggerBombLobby');
+        }}
+      />
+      </ErrorBoundary>
+    );
+  }
+
+  // BAGGERBOMB JOIN BATTLE (Legacy - via code, defaults to V4)
+  if (screen === 'joinPortfolioBuilderTD') {
+    return (
+      <ErrorBoundary name="Join Battle" onNavigateDashboard={() => setScreen('dashboard')}>
+      <SlotBasedBuilder
+        stocks={stocksData}
+        crypto={cryptoData}
+        version={4}
+        onComplete={async (portfolio) => {
+          try {
+            console.log('[BaggerBomb] Joining with portfolio:', portfolio);
+            // Try V4 join first, fall back to V3
+            const joinData = {
+              portfolio: {
+                star: portfolio.star,
+                core: portfolio.core,
+                support: portfolio.support,
+              },
+              uid: user.uid || user.odUserId || user.username,
+              odUserId: user.odUserId || user.username,
+              username: user.displayName || user.username,
+              avatar: user.avatar || '',
+            };
+
+            // Join functions fetch real-time prices internally via captureBattlePrices
+            let result;
+            try {
+              result = await joinBaggerBombBattleV4(joinCode, joinData);
+            } catch (v4Error) {
+              // Fall back to V3 join (battle may be V3)
+              console.log('[BaggerBomb] V4 join failed, trying V3:', v4Error.message);
+              result = await joinBaggerBombBattleV3(joinCode, {
+                ...joinData,
+                bench: portfolio.bench,
+              });
+            }
+            if (result?.success) {
+              showToast(`Joined BaggerBomb battle!`);
+              setCurrentBattle(result.battle);
+              setJoinCode('');
+              setScreen('battle');
+            }
+          } catch (error) {
+            console.error('Failed to join BaggerBomb battle:', error);
+            showToast('Failed to join battle. Please check the code and try again.');
+          }
+        }}
+        onBack={() => {
+          setJoinCode('');
+          setScreen('join');
+        }}
+      />
+      </ErrorBoundary>
+    );
+  }
+
+  // JOIN GAME SCREEN - Extracted to JoinScreen component
+  if (screen === 'join') {
+    return (
+      <ErrorBoundary name="Join Battle" onNavigateDashboard={() => setScreen('dashboard')}>
+      <JoinScreen
+        isDesktop={isDesktop}
+        joinCode={joinCode}
+        setJoinCode={setJoinCode}
+        joinBattleType={joinBattleType}
+        setJoinBattleType={setJoinBattleType}
+        onBack={() => {
+          setJoinCode('');
+          setJoinBattleType('classic');
+          setBuilderMode('create');
+          setScreen('dashboard');
+        }}
+        onContinue={(battleType) => {
+          if (battleType === 'baggerbomb') {
+            setScreen('joinPortfolioBuilderTD');
+          } else {
+            setScreen('builder');
+          }
+        }}
+      />
+      </ErrorBoundary>
+    );
+  }
+
+  // TRAINING MODE SCREEN - Handled via useEffect to avoid render-time state updates
+  // The useEffect at the top of the component handles the redirect to builder
+
+  // DRAFT SETUP SCREEN - Extracted to DraftSetupScreen component
+  if (screen === 'draftSetup') {
+    return (
+      <ErrorBoundary name="Draft Setup" onNavigateDashboard={() => setScreen('dashboard')}>
+      <DraftSetupScreen
+        user={user}
+        assetType={assetType}
+        setAssetType={setAssetType}
+        onBack={() => setScreen('dashboard')}
+        onCreateDraft={(draft) => {
+          setCurrentDraft(draft);
+          setScreen('draftLobby');
+        }}
+      />
+      </ErrorBoundary>
+    );
+  }
+
+  // DRAFT JOIN SCREEN - Snake Draft Lobby Browser
+  if (screen === 'draftJoin') {
+    return (
+      <ErrorBoundary name="Draft Join" onNavigateDashboard={() => setScreen('dashboard')}>
+      <DraftJoinScreen
+        user={user}
+        lobbyBattles={lobbyBattles}
+        draftJoinCode={draftJoinCode}
+        setDraftJoinCode={setDraftJoinCode}
+        onBack={() => setScreen('dashboard')}
+        onJoinDraft={(draft) => {
+          setCurrentDraft(draft);
+          setScreen('draftLobby');
+        }}
+        onCreateDraft={() => setScreen('draftSetup')}
+      />
+      </ErrorBoundary>
+    );
+  }
+
+  // DRAFT TRAINING SCREEN - Extracted to DraftTrainingScreen component
+  if (screen === 'draftTraining') {
+    return (
+      <ErrorBoundary name="Draft Training" onNavigateDashboard={() => setScreen('dashboard')}>
+      <DraftTrainingScreen
+        user={user}
+        assetType={assetType}
+        setAssetType={setAssetType}
+        onBack={() => setScreen('dashboard')}
+        onStartTraining={(draft) => {
+          setCurrentDraft(draft);
+          setScreen('draftRoom');
+        }}
+      />
+      </ErrorBoundary>
+    );
+  }
+
+  // DRAFT LOBBY SCREEN - Extracted to DraftLobbyScreen component
+  if (screen === 'draftLobby') {
+    return (
+      <ErrorBoundary name="Draft Lobby" onNavigateDashboard={() => setScreen('dashboard')}>
+      <DraftLobbyScreen
+        user={user}
+        currentDraft={currentDraft}
+        draftState={draftState}
+        onBack={() => setScreen('dashboard')}
+        onStartDraft={() => {}}
+        onLeaveLobby={() => setScreen('dashboard')}
+      />
+      </ErrorBoundary>
+    );
+  }
+
+  // DRAFT ROOM SCREEN - Holographic War Room (Phase 5 Integration)
+  if (screen === 'draftRoom') {
+    return (
+      <ErrorBoundary name="Draft Room" onNavigateDashboard={() => setScreen('dashboard')}>
+      <DraftRoomScreen
+        containerStyle={containerStyle}
+        draftState={draftState}
+        currentDraft={currentDraft}
+        user={user}
+        selectedDraftCategory={selectedDraftCategory}
+        setSelectedDraftCategory={setSelectedDraftCategory}
+        draftTimeRemaining={draftTimeRemaining}
+        autopickCountdown={autopickCountdown}
+        isRosterExpanded={isRosterExpanded}
+        setIsRosterExpanded={setIsRosterExpanded}
+        userNotes={userNotes}
+        colors={colors}
+        stocksData={stocksData}
+        setScreen={setScreen}
+        getStockSector={getStockSector}
+        getSectorColor={getSectorColor}
+        setCurrentDraft={setCurrentDraft}
+      />
+      </ErrorBoundary>
+    );
+  }
+
+
+  // DRAFT ROOM OLD CODE REMOVED - See src/screens/DraftRoomScreen.jsx
+
+  // DRAFT HISTORY SCREEN - Phase 4
+  if (screen === 'draftHistory') {
+    return (
+      <ErrorBoundary name="Draft History" onNavigateDashboard={() => setScreen('dashboard')}>
+      <DraftHistoryScreen
+        user={user}
+        onBack={() => setScreen('dashboard')}
+      />
+      </ErrorBoundary>
+    );
+  }
+
+  // DRAFT RESULTS SCREEN - Using Snake Draft Grid Layout (DraftCompleteScreen)
+  if (screen === 'draftResults') {
+    return (
+      <ErrorBoundary name="Draft Results" onNavigateDashboard={() => setScreen('dashboard')}>
+      <DraftCompleteScreen
+        containerStyle={containerStyle}
+        currentDraft={currentDraft}
+        user={user}
+        onBack={() => {
+          setCurrentDraft(null);
+          setScreen('dashboard');
+        }}
+        onNavigate={setScreen}
+      />
+      </ErrorBoundary>
+    );
+  }
+
+
+  // DRAFT RESULTS OLD CODE REMOVED - See src/screens/DraftResultsScreen.jsx
+
+  // DRAFT BATTLE VIEW SCREEN - Now using V2 (Altitude Map Redesign) as production
+  if (screen === 'draftBattle') {
+    return (
+      <ErrorBoundary name="Draft Battle" onNavigateDashboard={() => setScreen('dashboard')}>
+      <DraftBattleScreenV2
+        containerStyle={containerStyle}
+        user={user}
+        currentDraft={currentDraft}
+        setCurrentDraft={setCurrentDraft}
+        setScreen={setScreen}
+        logger={logger}
+      />
+      </ErrorBoundary>
+    );
+  }
+
+  // DRAFT BATTLE V1 (Legacy) - Keep as fallback route
+  // Use 'draftBattleLegacy' to access the old design if needed
+  if (screen === 'draftBattleLegacy') {
+    return (
+      <ErrorBoundary name="Draft Battle" onNavigateDashboard={() => setScreen('dashboard')}>
+      <DraftBattleScreen
+        containerStyle={containerStyle}
+        user={user}
+        currentDraft={currentDraft}
+        setCurrentDraft={setCurrentDraft}
+        setScreen={setScreen}
+        logger={logger}
+      />
+      </ErrorBoundary>
+    );
+  }
+
+
+  // DRAFT BATTLE VIEW OLD CODE REMOVED - See src/screens/DraftBattleScreen.jsx
+
+  // FREE AGENCY SCREEN - Claims-based (waiver wire) or V2 (FCFS)
+  if (screen === 'freeAgency') {
+    if (currentDraft?.claimSystem?.enabled) {
+      return (
+        <ErrorBoundary name="Waiver Claims" onNavigateDashboard={() => setScreen('dashboard')}>
+          <ClaimsFreeAgencyScreen
+            containerStyle={containerStyle}
+            currentDraft={currentDraft}
+            user={user}
+            setScreen={setScreen}
+            logger={logger}
+          />
+        </ErrorBoundary>
+      );
+    }
+    return (
+      <ErrorBoundary name="Free Agency" onNavigateDashboard={() => setScreen('dashboard')}>
+      <FreeAgencyScreenV2
+        containerStyle={containerStyle}
+        currentDraft={currentDraft}
+        user={user}
+        setScreen={setScreen}
+        logger={logger}
+      />
+      </ErrorBoundary>
+    );
+  }
+
+  // Legacy Free Agency Screen (kept for backwards compatibility)
+  if (screen === 'freeAgencyLegacy') {
+    return (
+      <ErrorBoundary name="Free Agency" onNavigateDashboard={() => setScreen('dashboard')}>
+      <FreeAgencyScreen
+        containerStyle={containerStyle}
+        currentDraft={currentDraft}
+        user={user}
+        onBack={() => setScreen('draftResults')}
+      />
+      </ErrorBoundary>
+    );
+  }
+
+  // FreeAgencyScreen old code DELETED - moved to src/screens/FreeAgencyScreen.jsx
+  // (approximately 550 lines removed)
+
+
+  // BATTLE VIEW SCREEN - Extracted to BattleViewScreen component
+  if (screen === 'battle' && currentBattle) {
+    return (
+      <ErrorBoundary name="Battle View" onNavigateDashboard={() => setScreen('dashboard')}>
+      <BattleViewScreen
+        containerStyle={containerStyle}
+        isDesktop={isDesktop}
+        currentBattle={currentBattle}
+        user={user}
+        battlePrices={battlePrices}
+        battleTimer={battleTimer}
+        onBack={() => setScreen('dashboard')}
+        ActiveRiskChallengeIndicator={ActiveRiskChallengeIndicator}
+        LoadingFallback={LoadingFallback}
+        BaggerBombBattleViewRedesign={BaggerBombBattleViewRedesign}
+        BaggerBombBattleViewConnected={BaggerBombBattleViewConnected}
+        BaggerBombTrainingBattleViewV3={BaggerBombTrainingBattleViewV3}
+        BaggerBombBattleViewConnectedV4={BaggerBombBattleViewConnectedV4}
+        BaggerBombTrainingBattleViewV4={BaggerBombTrainingBattleViewV4}
+      />
+      </ErrorBoundary>
+    );
+  }
+
+
+  // BATTLE VIEW OLD CODE REMOVED - See src/screens/BattleViewScreen.jsx
+
+  // PREVIOUS BATTLES SCREEN - Extracted to PreviousBattlesScreen component
+  if (screen === 'previousBattles') {
+    return (
+      <ErrorBoundary name="Previous Battles" onNavigateDashboard={() => setScreen('dashboard')}>
+      <PreviousBattlesScreen
+        containerStyle={containerStyle}
+        isDesktop={isDesktop}
+        colors={colors}
+        previousBattles={previousBattles}
+        selectedPreviousBattle={selectedPreviousBattle}
+        setSelectedPreviousBattle={setSelectedPreviousBattle}
+        user={user}
+        getUsername={getUsername}
+        battleTimer={battleTimer}
+        onBack={() => setScreen('dashboard')}
+        onViewMatchup={(battle) => {
+          setCurrentBattle(battle);
+          setScreen('battle');
+        }}
+      />
+      </ErrorBoundary>
+    );
+  }
+
+
+  // previousBattles OLD CODE REMOVED - See src/screens/PreviousBattlesScreen.jsx
+
+  // WINS SCREEN
+  if (screen === 'wins') {
+    return (
+      <ErrorBoundary name="Wins" onNavigateDashboard={() => setScreen('dashboard')}>
+      <WinsScreen
+        user={user}
+        previousBattles={previousBattles}
+        colors={colors}
+        getUsername={getUsername}
+        battleTimer={battleTimer}
+        onBack={() => setScreen('dashboard')}
+        onViewBattle={(battle) => { setSelectedPreviousBattle(battle); setScreen('previousBattles'); }}
+        onNavigate={setScreen}
+      />
+      </ErrorBoundary>
+    );
+  }
+
+  // LOSSES SCREEN
+  if (screen === 'losses') {
+    return (
+      <ErrorBoundary name="Losses" onNavigateDashboard={() => setScreen('dashboard')}>
+      <LossesScreen
+        user={user}
+        previousBattles={previousBattles}
+        colors={colors}
+        getUsername={getUsername}
+        battleTimer={battleTimer}
+        onBack={() => setScreen('dashboard')}
+        onViewBattle={(battle) => { setSelectedPreviousBattle(battle); setScreen('previousBattles'); }}
+        onNavigate={setScreen}
+      />
+      </ErrorBoundary>
+    );
+  }
+
+  // BATTLE HISTORY SCREEN - Extracted to BattleHistoryScreen component
+  if (screen === 'battleHistory') {
+    return (
+      <ErrorBoundary name="Battle History" onNavigateDashboard={() => setScreen('dashboard')}>
+      <BattleHistoryScreen
+        containerStyle={containerStyle}
+        colors={colors}
+        previousBattles={previousBattles}
+        completedDraftBattles={completedDraftBattles}
+        completedTrainingBattles={completedTrainingBattles}
+        historyTab={historyTab}
+        setHistoryTab={setHistoryTab}
+        loadingTrainingBattles={loadingTrainingBattles}
+        user={user}
+        onBack={() => setScreen('dashboard')}
+        sendRematchRequest={sendRematchRequest}
+        BattleHistoryCard={BattleHistoryCard}
+        completedV4Battles={completedV4Battles}
+        completedBaggerBombBattles={completedBaggerBombBattles}
+      />
+      </ErrorBoundary>
+    );
+  }
+
+  // BATTLE HISTORY OLD CODE REMOVED - See src/screens/BattleHistoryScreen.jsx
+
+  // BUG REPORT ADMIN — ClashBot triage view
+  if (screen === 'bugReportAdmin') {
+    return (
+      <BugReportAdmin
+        user={user}
+        colors={colors}
+        isDesktop={isDesktop}
+        onBack={() => setScreen('profile')}
+      />
+    );
+  }
+
+  // PROFILE SCREEN - REDESIGNED
+  if (screen === 'profile') {
+    return (
+      <ErrorBoundary name="Profile" onNavigateDashboard={() => setScreen('dashboard')}>
+      <ProfileScreen
+        user={user}
+        isDesktop={isDesktop}
+        onBack={() => setScreen('dashboard')}
+        setScreen={setScreen}
+      />
+      </ErrorBoundary>
+    );
+  }
+
+  // STONK OPTIONS ARENA V2
+  if (screen === 'stonkOptionsArena') {
+    return (
+      <ErrorBoundary name="Options Arena" onNavigateDashboard={() => setScreen('dashboard')}>
+      <Suspense fallback={
+        <div style={{
+          minHeight: '100vh',
+          background: '#0a0a1a',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          color: '#00d9ff'
+        }}>
+          Loading Options Arena...
+        </div>
+      }>
+        <StonkOptionsArenaV2
+          onBack={() => setScreen('dashboard')}
+          stocksData={stocksData}
+          stockAPI={stockAPI}
+          initialCash={10000}
+          user={user}
+        />
+      </Suspense>
+      </ErrorBoundary>
+    );
+  }
+
+  // FANTASYTIMES FEED
+  if (screen === 'fantasytimes') {
+    // Extract active battle tickers from battles array
+    const activeBattleTickers = (battles || [])
+      .filter((b) => b.status === 'active' || b.status === 'in_progress')
+      .flatMap((b) => {
+        const portfolio = b.creator?.username === user?.username
+          ? (b.creator?.portfolio || b.creatorPortfolio || [])
+          : (b.opponent?.portfolio || b.opponentPortfolio || []);
+        return (Array.isArray(portfolio) ? portfolio : []).map((a) => a?.symbol).filter(Boolean);
+      });
+
+    // Read user watchlist from localStorage
+    let userWatchlist = [];
+    try {
+      const saved = localStorage.getItem('user_watchlist');
+      if (saved) userWatchlist = JSON.parse(saved);
+    } catch { /* ignore */ }
+
+    return (
+      <ErrorBoundary name="FantasyTimes" onNavigateDashboard={() => setScreen('dashboard')}>
+      <Suspense fallback={
+        <div style={{
+          minHeight: '100vh',
+          background: '#0a0e14',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          color: '#00d9ff'
+        }}>
+          Loading FantasyTimes...
+        </div>
+      }>
+        <FantasyTimesFeed
+          currentUser={user}
+          isMobile={!isDesktop}
+          isDesktop={isDesktop}
+          userWatchlist={userWatchlist}
+          activeBattleTickers={activeBattleTickers}
+          onNavigate={setScreen}
+        />
+      </Suspense>
+      </ErrorBoundary>
+    );
+  }
+
+  // No screen matched — return null to fall through to unified return
+  return null;
+  }; // end getScreenContent
+
+  const screenContent = getScreenContent();
+
+  // ============================================
+  // UNIFIED RETURN — EarningsGame (always mounted) + active screen + ClashBot widget
+  // ============================================
+  return (
+    <>
+      {/* EarningsGame - ALWAYS MOUNTED to prevent state loss from Firestore battle updates */}
+      {/* Uses CSS display toggle instead of conditional rendering */}
+      <div style={{
+        display: screen === 'earningsGame' ? 'block' : 'none',
+        position: screen === 'earningsGame' ? 'relative' : 'fixed',
+        visibility: screen === 'earningsGame' ? 'visible' : 'hidden',
+        pointerEvents: screen === 'earningsGame' ? 'auto' : 'none',
+        top: screen === 'earningsGame' ? 'auto' : '-9999px',
+        left: screen === 'earningsGame' ? 'auto' : '-9999px'
+      }}>
+        <ErrorBoundary name="Earnings Game" onNavigateDashboard={() => setScreen('dashboard')}>
+        <EarningsGameScreen
+          user={user}
+          onBack={() => setScreen('dashboard')}
+          setScreen={setScreen}
+          colors={colors}
+          isDesktop={isDesktop}
+        />
+        </ErrorBoundary>
+      </div>
+
+      {/* Active screen content from routing */}
+      {screenContent}
+
+      {/* ========== APP-LEVEL SIDEBAR (extracted from dashboard) ========== */}
+      {user && sidebarOpen && (
           <>
             {/* Backdrop/Overlay */}
             <div
@@ -20823,11 +21398,175 @@ export default function PortfolioDuel() {
               </div>
             </div>
           </>
-        )}
+      )}
 
-        {/* ============================================ */}
-        {/* NOTIFICATIONS MODAL */}
-        {/* ============================================ */}
+      {/* ========== APP-LEVEL OVERLAYS (extracted from dashboard) ========== */}
+      <ChallengeToast />
+      {false && <MidGameChallengePopup />}
+      {false && <RiskChallengePopup />}
+      {false && <RiskChallengeResultPopup />}
+      {showSlotMachine && weeklyChallenges.length >= 4 && (
+        <SlotMachineContent
+          challenges={weeklyChallenges}
+          onClose={() => {
+            setShowSlotMachine(false);
+            setSlotMachineRevealed(true);
+            markSlotMachineShown();
+          }}
+        />
+      )}
+
+      {/* ========== XP PROGRESS MODAL (extracted from dashboard) ========== */}
+      {showXPModal && (
+        <div
+          onClick={() => setShowXPModal(false)}
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'rgba(0, 0, 0, 0.8)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1000,
+            backdropFilter: 'blur(4px)',
+            WebkitBackdropFilter: 'blur(4px)'
+          }}
+        >
+          <motion.div
+            initial={{ scale: 0.9, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            transition={{ duration: 0.2 }}
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: colors.cardBg,
+              borderRadius: '20px',
+              padding: '32px',
+              width: '90%',
+              maxWidth: '400px',
+              border: `1px solid ${colors.border}`,
+              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
+              position: 'relative'
+            }}
+          >
+            {/* Close button */}
+            <button
+              onClick={() => setShowXPModal(false)}
+              aria-label="Close modal"
+              style={{
+                position: 'absolute',
+                top: '16px',
+                right: '16px',
+                width: '32px',
+                height: '32px',
+                borderRadius: '50%',
+                border: `1px solid ${colors.borderSubtle}`,
+                background: 'transparent',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: colors.textSecondary,
+                transition: 'all 0.2s'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = `${colors.red}20`;
+                e.currentTarget.style.borderColor = colors.red;
+                e.currentTarget.style.color = colors.red;
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'transparent';
+                e.currentTarget.style.borderColor = colors.borderSubtle;
+                e.currentTarget.style.color = colors.textSecondary;
+              }}
+            >
+              <X style={{ height: '18px', width: '18px' }} />
+            </button>
+
+            {/* Rank Icon */}
+            <div style={{ textAlign: 'center', marginBottom: '24px' }}>
+              <div style={{
+                width: '80px',
+                height: '80px',
+                margin: '0 auto 16px',
+                borderRadius: '20px',
+                background: `linear-gradient(135deg, ${colors.cyan}20 0%, ${colors.green}20 100%)`,
+                border: `3px solid ${colors.cyan}`,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                boxShadow: `0 0 30px ${colors.cyan}40`
+              }}>
+                <Shield style={{ height: '40px', width: '40px', color: colors.cyan }} />
+              </div>
+              <h2 style={{
+                fontSize: '28px',
+                fontWeight: 'bold',
+                color: colors.textPrimary,
+                margin: '0 0 4px 0',
+                textTransform: 'uppercase',
+                letterSpacing: '2px'
+              }}>
+                {user.rank}
+              </h2>
+              <p style={{ fontSize: '14px', color: colors.textSecondary, margin: 0 }}>
+                Level {user.level}
+              </p>
+            </div>
+
+            {/* XP Progress */}
+            <div style={{ marginBottom: '24px' }}>
+              <div style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                marginBottom: '8px',
+                fontSize: '14px'
+              }}>
+                <span style={{ color: colors.textSecondary }}>Experience Points</span>
+                <span style={{ color: colors.cyan, fontWeight: '600' }}>{user.xp} / {xpForNextLevel} XP</span>
+              </div>
+              <div style={{
+                width: '100%',
+                height: '12px',
+                background: 'rgba(0, 217, 255, 0.1)',
+                borderRadius: '9999px',
+                overflow: 'hidden'
+              }}>
+                <motion.div
+                  initial={{ width: 0 }}
+                  animate={{ width: `${xpProgress}%` }}
+                  transition={{ duration: 0.8, ease: 'easeOut' }}
+                  style={{
+                    height: '100%',
+                    borderRadius: '9999px',
+                    background: `linear-gradient(90deg, ${colors.green} 0%, ${colors.cyan} 100%)`,
+                    boxShadow: `0 0 10px ${colors.cyan}60`
+                  }}
+                />
+              </div>
+            </div>
+
+            {/* Next Rank Info */}
+            <div style={{
+              background: 'rgba(0, 0, 0, 0.3)',
+              borderRadius: '12px',
+              padding: '16px',
+              textAlign: 'center'
+            }}>
+              <p style={{ fontSize: '14px', color: colors.textSecondary, margin: '0 0 8px 0' }}>
+                {xpNeeded} XP to next rank
+              </p>
+              <p style={{ fontSize: '18px', fontWeight: '600', color: colors.green, margin: 0 }}>
+                {nextRank}
+              </p>
+            </div>
+          </motion.div>
+        </div>
+      )}
+
+      {/* ========== APP-LEVEL MODALS (extracted from dashboard) ========== */}
         {showNotifications && (
           <>
             {/* Backdrop */}
@@ -22445,792 +23184,61 @@ export default function PortfolioDuel() {
 
         {/* ========== SPOTLIGHT TOUR (Interactive Onboarding) ========== */}
         <SpotlightTour />
-        </div>
-      </ErrorBoundary>
-    );
-  }
 
-  // PORTFOLIO BUILDER SCREEN (Create Game) - EXTRACTED TO BuilderScreen.jsx
-  if (screen === 'builder') {
-    return (
-      <ErrorBoundary name="Portfolio Builder" onNavigateDashboard={() => setScreen('dashboard')}>
-      <BuilderScreen
-        // Layout
-        isDesktop={isDesktop}
-        containerStyle={containerStyle}
-        // Market data
-        stocksData={stocksData}
-        cryptoData={cryptoData}
-        loadingMarketData={loadingMarketData}
-        // Portfolio state
-        portfolio={portfolio}
-        setPortfolio={setPortfolio}
-        portfolioType={portfolioType}
-        setPortfolioType={setPortfolioType}
-        portfolioName={portfolioName}
-        setPortfolioName={setPortfolioName}
-        selectedCrypto={selectedCrypto}
-        setSelectedCrypto={setSelectedCrypto}
-        cryptoPercentage={cryptoPercentage}
-        setCryptoPercentage={setCryptoPercentage}
-        // Builder state
-        builderCategory={builderCategory}
-        setBuilderCategory={setBuilderCategory}
-        builderMode={builderMode}
-        setBuilderMode={setBuilderMode}
-        joinCode={joinCode}
-        setJoinCode={setJoinCode}
-        searchTerm={searchTerm}
-        setSearchTerm={setSearchTerm}
-        assetType={assetType}
-        setAssetType={setAssetType}
-        // Modal state
-        showPortfolioManager={showPortfolioManager}
-        setShowPortfolioManager={setShowPortfolioManager}
-        showTemplatesModal={showTemplatesModal}
-        setShowTemplatesModal={setShowTemplatesModal}
-        saveTemplateModal={saveTemplateModal}
-        setSaveTemplateModal={setSaveTemplateModal}
-        templateName={templateName}
-        setTemplateName={setTemplateName}
-        // Templates
-        portfolioTemplates={portfolioTemplates}
-        // Handlers
-        handleRemoveAsset={handleRemoveAsset}
-        handleCreateBattle={handleCreateBattle}
-        handleJoinBattle={handleJoinBattle}
-        handleCreateTrainingBattle={handleCreateTrainingBattle}
-        savePortfolioTemplate={savePortfolioTemplate}
-        loadTemplateToPortfolio={loadTemplateToPortfolio}
-        addNotification={addNotification}
-        // Navigation
-        setScreen={setScreen}
-      />
-      </ErrorBoundary>
-    );
-  }
+      {/* ========== DESKTOP BOTTOM STATS BAR (extracted from dashboard) ========== */}
+      {user && screen === 'dashboard' && (
+          <div
+            id="tour-rank-section"
+            className="hidden md:flex"
+            style={{
+              position: 'fixed',
+              bottom: 0,
+              left: 0,
+              right: 0,
+              height: '56px',
+              background: colors.cardBg,
+              borderTop: `1px solid ${colors.border}`,
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '32px',
+              zIndex: 100
+            }}
+          >
+            {/* Wins */}
+            <div className="flex items-center gap-2">
+              <Trophy className="w-4 h-4" style={{ color: colors.gold }} />
+              <span className="text-sm" style={{ color: colors.textSecondary }}>Wins:</span>
+              <span className="text-base font-semibold" style={{ color: colors.green }}>{user.wins}</span>
+            </div>
 
-  // BAGGERBOMB TRAINING PORTFOLIO BUILDER SCREEN (V4 - No Bench, 1 Swap)
-  if (screen === 'trainingPortfolioBuilderTD') {
-    return (
-      <ErrorBoundary name="Training Builder" onNavigateDashboard={() => setScreen('dashboard')}>
-      <SlotBasedBuilder
-        stocks={stocksData}
-        crypto={cryptoData}
-        version={4}
-        onComplete={handleCreateBaggerBombTrainingBattleV4}
-        onBack={() => {
-          setBuilderMode('create');
-          setScreen('dashboard');
-        }}
-      />
-      </ErrorBoundary>
-    );
-  }
+            {/* Losses */}
+            <div className="flex items-center gap-2">
+              <Skull className="w-4 h-4" style={{ color: colors.textMuted }} />
+              <span className="text-sm" style={{ color: colors.textSecondary }}>Losses:</span>
+              <span className="text-base font-semibold" style={{ color: colors.red }}>{user.losses}</span>
+            </div>
 
-  // BAGGERBOMB LOBBY - Find and join open battles
-  if (screen === 'baggerBombLobby') {
-    return (
-      <ErrorBoundary name="BaggerBomb Lobby" onNavigateDashboard={() => setScreen('dashboard')}>
-      <Suspense fallback={<LoadingFallback />}>
-        <BaggerBombLobby
-          user={user}
-          openBattles={lobbyBattles}
-          loading={lobbyLoading}
-          onCreateBattle={() => {
-            setBattleToJoin(null);
-            setScreen('baggerBombSetup');
-          }}
-          onJoinBattle={(battle) => {
-            setBattleToJoin(battle);
-            setScreen('baggerBombJoinBuilder');
-          }}
-          onBack={() => setScreen('dashboard')}
-          onRefresh={async () => {
-            setLobbyLoading(true);
-            try {
-              const battles = await getOpenBaggerBombBattles();
-              setLobbyBattles(battles);
-            } catch (err) {
-              console.error('Failed to refresh lobby:', err);
-            }
-            setLobbyLoading(false);
-          }}
-        />
-      </Suspense>
-      </ErrorBoundary>
-    );
-  }
+            {/* Battles */}
+            <div className="flex items-center gap-2">
+              <Swords className="w-4 h-4" style={{ color: colors.cyan }} />
+              <span className="text-sm" style={{ color: colors.textSecondary }}>Battles:</span>
+              <span className="text-base font-semibold" style={{ color: colors.cyan }}>{user.wins + user.losses}</span>
+            </div>
 
-  // BAGGERBOMB SETUP - Time selection before portfolio builder
-  if (screen === 'baggerBombSetup') {
-    return (
-      <ErrorBoundary name="BaggerBomb Setup" onNavigateDashboard={() => setScreen('dashboard')}>
-      <Suspense fallback={<LoadingFallback />}>
-        <BaggerBombSetupScreen
-          onBack={() => setScreen('baggerBombLobby')}
-          onContinue={(timeMinutes) => {
-            setLobbyTimeMinutes(timeMinutes);
-            setScreen('baggerBombBuilder');
-          }}
-        />
-      </Suspense>
-      </ErrorBoundary>
-    );
-  }
-
-  // BAGGERBOMB CREATE BATTLE - New SlotBasedBuilder (V4: no bench)
-  if (screen === 'baggerBombBuilder') {
-    return (
-      <ErrorBoundary name="BaggerBomb Builder" onNavigateDashboard={() => setScreen('dashboard')}>
-      <SlotBasedBuilder
-        stocks={stocksData}
-        crypto={cryptoData}
-        version={4}
-        onComplete={async (portfolio) => {
-          try {
-            console.log('[BaggerBomb V4] Portfolio submitted:', portfolio);
-            // Create BaggerBomb V4 battle with tiered portfolio (no bench)
-            const battleData = await createBaggerBombBattleV4({
-              portfolio: {
-                star: portfolio.star,
-                core: portfolio.core,
-                support: portfolio.support,
-              },
-              creator: {
-                uid: user.uid || user.odUserId || user.username,
-                odUserId: user.odUserId || user.username,
-                username: user.displayName || user.username,
-                avatar: user.avatar || '',
-              },
-            }, lobbyTimeMinutes);
-            if (battleData?.id) {
-              showToast(`Battle created! Waiting for opponent...`);
-              setCurrentBattle(battleData);
-              setScreen('baggerBombLobby');
-            }
-          } catch (error) {
-            console.error('Failed to create BaggerBomb battle:', error);
-            showToast('Failed to create battle. Please try again.');
-          }
-        }}
-        onBack={() => {
-          setScreen('baggerBombSetup');
-        }}
-      />
-      </ErrorBoundary>
-    );
-  }
-
-  // BAGGERBOMB JOIN FROM LOBBY - Build portfolio then join selected battle
-  if (screen === 'baggerBombJoinBuilder') {
-    const joinBattleVersion = battleToJoin?._v || 3;
-    return (
-      <ErrorBoundary name="Join Battle Builder" onNavigateDashboard={() => setScreen('dashboard')}>
-      <SlotBasedBuilder
-        stocks={stocksData}
-        crypto={cryptoData}
-        version={joinBattleVersion >= 4 ? 4 : 3}
-        onComplete={async (portfolio) => {
-          try {
-            if (!battleToJoin?.id) {
-              showToast('No battle selected. Please select from lobby.');
-              setScreen('baggerBombLobby');
-              return;
-            }
-            console.log('[BaggerBomb] Joining battle from lobby:', battleToJoin.id, 'version:', joinBattleVersion);
-            const joinData = {
-              portfolio: {
-                star: portfolio.star,
-                core: portfolio.core,
-                support: portfolio.support,
-              },
-              ...(joinBattleVersion < 4 ? { bench: portfolio.bench } : {}),
-              uid: user.uid || user.odUserId || user.username,
-              odUserId: user.odUserId || user.username,
-              username: user.displayName || user.username,
-              avatar: user.avatar || '',
-            };
-
-            // Use the correct join function based on version
-            // Join functions fetch real-time prices internally via captureBattlePrices
-            const joinFn = joinBattleVersion >= 4 ? joinBaggerBombBattleV4 : joinBaggerBombBattleV3;
-            const result = await joinFn(battleToJoin.id, joinData, { joinByBattleId: true });
-            if (result?.success) {
-              showToast(`Joined battle!`);
-              setCurrentBattle(result.battle);
-              setBattleToJoin(null);
-              setScreen('battle');
-            }
-          } catch (error) {
-            console.error('Failed to join BaggerBomb battle:', error);
-            showToast('Failed to join battle. It may have already started.');
-            setScreen('baggerBombLobby');
-          }
-        }}
-        onBack={() => {
-          setBattleToJoin(null);
-          setScreen('baggerBombLobby');
-        }}
-      />
-      </ErrorBoundary>
-    );
-  }
-
-  // BAGGERBOMB JOIN BATTLE (Legacy - via code, defaults to V4)
-  if (screen === 'joinPortfolioBuilderTD') {
-    return (
-      <ErrorBoundary name="Join Battle" onNavigateDashboard={() => setScreen('dashboard')}>
-      <SlotBasedBuilder
-        stocks={stocksData}
-        crypto={cryptoData}
-        version={4}
-        onComplete={async (portfolio) => {
-          try {
-            console.log('[BaggerBomb] Joining with portfolio:', portfolio);
-            // Try V4 join first, fall back to V3
-            const joinData = {
-              portfolio: {
-                star: portfolio.star,
-                core: portfolio.core,
-                support: portfolio.support,
-              },
-              uid: user.uid || user.odUserId || user.username,
-              odUserId: user.odUserId || user.username,
-              username: user.displayName || user.username,
-              avatar: user.avatar || '',
-            };
-
-            // Join functions fetch real-time prices internally via captureBattlePrices
-            let result;
-            try {
-              result = await joinBaggerBombBattleV4(joinCode, joinData);
-            } catch (v4Error) {
-              // Fall back to V3 join (battle may be V3)
-              console.log('[BaggerBomb] V4 join failed, trying V3:', v4Error.message);
-              result = await joinBaggerBombBattleV3(joinCode, {
-                ...joinData,
-                bench: portfolio.bench,
-              });
-            }
-            if (result?.success) {
-              showToast(`Joined BaggerBomb battle!`);
-              setCurrentBattle(result.battle);
-              setJoinCode('');
-              setScreen('battle');
-            }
-          } catch (error) {
-            console.error('Failed to join BaggerBomb battle:', error);
-            showToast('Failed to join battle. Please check the code and try again.');
-          }
-        }}
-        onBack={() => {
-          setJoinCode('');
-          setScreen('join');
-        }}
-      />
-      </ErrorBoundary>
-    );
-  }
-
-  // JOIN GAME SCREEN - Extracted to JoinScreen component
-  if (screen === 'join') {
-    return (
-      <ErrorBoundary name="Join Battle" onNavigateDashboard={() => setScreen('dashboard')}>
-      <JoinScreen
-        isDesktop={isDesktop}
-        joinCode={joinCode}
-        setJoinCode={setJoinCode}
-        joinBattleType={joinBattleType}
-        setJoinBattleType={setJoinBattleType}
-        onBack={() => {
-          setJoinCode('');
-          setJoinBattleType('classic');
-          setBuilderMode('create');
-          setScreen('dashboard');
-        }}
-        onContinue={(battleType) => {
-          if (battleType === 'baggerbomb') {
-            setScreen('joinPortfolioBuilderTD');
-          } else {
-            setScreen('builder');
-          }
-        }}
-      />
-      </ErrorBoundary>
-    );
-  }
-
-  // TRAINING MODE SCREEN - Handled via useEffect to avoid render-time state updates
-  // The useEffect at the top of the component handles the redirect to builder
-
-  // DRAFT SETUP SCREEN - Extracted to DraftSetupScreen component
-  if (screen === 'draftSetup') {
-    return (
-      <ErrorBoundary name="Draft Setup" onNavigateDashboard={() => setScreen('dashboard')}>
-      <DraftSetupScreen
-        user={user}
-        assetType={assetType}
-        setAssetType={setAssetType}
-        onBack={() => setScreen('dashboard')}
-        onCreateDraft={(draft) => {
-          setCurrentDraft(draft);
-          setScreen('draftLobby');
-        }}
-      />
-      </ErrorBoundary>
-    );
-  }
-
-  // DRAFT JOIN SCREEN - Snake Draft Lobby Browser
-  if (screen === 'draftJoin') {
-    return (
-      <ErrorBoundary name="Draft Join" onNavigateDashboard={() => setScreen('dashboard')}>
-      <DraftJoinScreen
-        user={user}
-        lobbyBattles={lobbyBattles}
-        draftJoinCode={draftJoinCode}
-        setDraftJoinCode={setDraftJoinCode}
-        onBack={() => setScreen('dashboard')}
-        onJoinDraft={(draft) => {
-          setCurrentDraft(draft);
-          setScreen('draftLobby');
-        }}
-        onCreateDraft={() => setScreen('draftSetup')}
-      />
-      </ErrorBoundary>
-    );
-  }
-
-  // DRAFT TRAINING SCREEN - Extracted to DraftTrainingScreen component
-  if (screen === 'draftTraining') {
-    return (
-      <ErrorBoundary name="Draft Training" onNavigateDashboard={() => setScreen('dashboard')}>
-      <DraftTrainingScreen
-        user={user}
-        assetType={assetType}
-        setAssetType={setAssetType}
-        onBack={() => setScreen('dashboard')}
-        onStartTraining={(draft) => {
-          setCurrentDraft(draft);
-          setScreen('draftRoom');
-        }}
-      />
-      </ErrorBoundary>
-    );
-  }
-
-  // DRAFT LOBBY SCREEN - Extracted to DraftLobbyScreen component
-  if (screen === 'draftLobby') {
-    return (
-      <ErrorBoundary name="Draft Lobby" onNavigateDashboard={() => setScreen('dashboard')}>
-      <DraftLobbyScreen
-        user={user}
-        currentDraft={currentDraft}
-        draftState={draftState}
-        onBack={() => setScreen('dashboard')}
-        onStartDraft={() => {}}
-        onLeaveLobby={() => setScreen('dashboard')}
-      />
-      </ErrorBoundary>
-    );
-  }
-
-  // DRAFT ROOM SCREEN - Holographic War Room (Phase 5 Integration)
-  if (screen === 'draftRoom') {
-    return (
-      <ErrorBoundary name="Draft Room" onNavigateDashboard={() => setScreen('dashboard')}>
-      <DraftRoomScreen
-        containerStyle={containerStyle}
-        draftState={draftState}
-        currentDraft={currentDraft}
-        user={user}
-        selectedDraftCategory={selectedDraftCategory}
-        setSelectedDraftCategory={setSelectedDraftCategory}
-        draftTimeRemaining={draftTimeRemaining}
-        autopickCountdown={autopickCountdown}
-        isRosterExpanded={isRosterExpanded}
-        setIsRosterExpanded={setIsRosterExpanded}
-        userNotes={userNotes}
-        colors={colors}
-        stocksData={stocksData}
-        setScreen={setScreen}
-        getStockSector={getStockSector}
-        getSectorColor={getSectorColor}
-        setCurrentDraft={setCurrentDraft}
-      />
-      </ErrorBoundary>
-    );
-  }
-
-
-  // DRAFT ROOM OLD CODE REMOVED - See src/screens/DraftRoomScreen.jsx
-
-  // DRAFT HISTORY SCREEN - Phase 4
-  if (screen === 'draftHistory') {
-    return (
-      <ErrorBoundary name="Draft History" onNavigateDashboard={() => setScreen('dashboard')}>
-      <DraftHistoryScreen
-        user={user}
-        onBack={() => setScreen('dashboard')}
-      />
-      </ErrorBoundary>
-    );
-  }
-
-  // DRAFT RESULTS SCREEN - Using Snake Draft Grid Layout (DraftCompleteScreen)
-  if (screen === 'draftResults') {
-    return (
-      <ErrorBoundary name="Draft Results" onNavigateDashboard={() => setScreen('dashboard')}>
-      <DraftCompleteScreen
-        containerStyle={containerStyle}
-        currentDraft={currentDraft}
-        user={user}
-        onBack={() => {
-          setCurrentDraft(null);
-          setScreen('dashboard');
-        }}
-        onNavigate={setScreen}
-      />
-      </ErrorBoundary>
-    );
-  }
-
-
-  // DRAFT RESULTS OLD CODE REMOVED - See src/screens/DraftResultsScreen.jsx
-
-  // DRAFT BATTLE VIEW SCREEN - Now using V2 (Altitude Map Redesign) as production
-  if (screen === 'draftBattle') {
-    return (
-      <ErrorBoundary name="Draft Battle" onNavigateDashboard={() => setScreen('dashboard')}>
-      <DraftBattleScreenV2
-        containerStyle={containerStyle}
-        user={user}
-        currentDraft={currentDraft}
-        setCurrentDraft={setCurrentDraft}
-        setScreen={setScreen}
-        logger={logger}
-      />
-      </ErrorBoundary>
-    );
-  }
-
-  // DRAFT BATTLE V1 (Legacy) - Keep as fallback route
-  // Use 'draftBattleLegacy' to access the old design if needed
-  if (screen === 'draftBattleLegacy') {
-    return (
-      <ErrorBoundary name="Draft Battle" onNavigateDashboard={() => setScreen('dashboard')}>
-      <DraftBattleScreen
-        containerStyle={containerStyle}
-        user={user}
-        currentDraft={currentDraft}
-        setCurrentDraft={setCurrentDraft}
-        setScreen={setScreen}
-        logger={logger}
-      />
-      </ErrorBoundary>
-    );
-  }
-
-
-  // DRAFT BATTLE VIEW OLD CODE REMOVED - See src/screens/DraftBattleScreen.jsx
-
-  // FREE AGENCY SCREEN - Claims-based (waiver wire) or V2 (FCFS)
-  if (screen === 'freeAgency') {
-    if (currentDraft?.claimSystem?.enabled) {
-      return (
-        <ErrorBoundary name="Waiver Claims" onNavigateDashboard={() => setScreen('dashboard')}>
-          <ClaimsFreeAgencyScreen
-            containerStyle={containerStyle}
-            currentDraft={currentDraft}
-            user={user}
-            setScreen={setScreen}
-            logger={logger}
-          />
-        </ErrorBoundary>
-      );
-    }
-    return (
-      <ErrorBoundary name="Free Agency" onNavigateDashboard={() => setScreen('dashboard')}>
-      <FreeAgencyScreenV2
-        containerStyle={containerStyle}
-        currentDraft={currentDraft}
-        user={user}
-        setScreen={setScreen}
-        logger={logger}
-      />
-      </ErrorBoundary>
-    );
-  }
-
-  // Legacy Free Agency Screen (kept for backwards compatibility)
-  if (screen === 'freeAgencyLegacy') {
-    return (
-      <ErrorBoundary name="Free Agency" onNavigateDashboard={() => setScreen('dashboard')}>
-      <FreeAgencyScreen
-        containerStyle={containerStyle}
-        currentDraft={currentDraft}
-        user={user}
-        onBack={() => setScreen('draftResults')}
-      />
-      </ErrorBoundary>
-    );
-  }
-
-  // FreeAgencyScreen old code DELETED - moved to src/screens/FreeAgencyScreen.jsx
-  // (approximately 550 lines removed)
-
-
-  // BATTLE VIEW SCREEN - Extracted to BattleViewScreen component
-  if (screen === 'battle' && currentBattle) {
-    return (
-      <ErrorBoundary name="Battle View" onNavigateDashboard={() => setScreen('dashboard')}>
-      <BattleViewScreen
-        containerStyle={containerStyle}
-        isDesktop={isDesktop}
-        currentBattle={currentBattle}
-        user={user}
-        battlePrices={battlePrices}
-        battleTimer={battleTimer}
-        onBack={() => setScreen('dashboard')}
-        ActiveRiskChallengeIndicator={ActiveRiskChallengeIndicator}
-        LoadingFallback={LoadingFallback}
-        BaggerBombBattleViewRedesign={BaggerBombBattleViewRedesign}
-        BaggerBombBattleViewConnected={BaggerBombBattleViewConnected}
-        BaggerBombTrainingBattleViewV3={BaggerBombTrainingBattleViewV3}
-        BaggerBombBattleViewConnectedV4={BaggerBombBattleViewConnectedV4}
-        BaggerBombTrainingBattleViewV4={BaggerBombTrainingBattleViewV4}
-      />
-      </ErrorBoundary>
-    );
-  }
-
-
-  // BATTLE VIEW OLD CODE REMOVED - See src/screens/BattleViewScreen.jsx
-
-  // PREVIOUS BATTLES SCREEN - Extracted to PreviousBattlesScreen component
-  if (screen === 'previousBattles') {
-    return (
-      <ErrorBoundary name="Previous Battles" onNavigateDashboard={() => setScreen('dashboard')}>
-      <PreviousBattlesScreen
-        containerStyle={containerStyle}
-        isDesktop={isDesktop}
-        colors={colors}
-        previousBattles={previousBattles}
-        selectedPreviousBattle={selectedPreviousBattle}
-        setSelectedPreviousBattle={setSelectedPreviousBattle}
-        user={user}
-        getUsername={getUsername}
-        battleTimer={battleTimer}
-        onBack={() => setScreen('dashboard')}
-        onViewMatchup={(battle) => {
-          setCurrentBattle(battle);
-          setScreen('battle');
-        }}
-      />
-      </ErrorBoundary>
-    );
-  }
-
-
-  // previousBattles OLD CODE REMOVED - See src/screens/PreviousBattlesScreen.jsx
-
-  // WINS SCREEN
-  if (screen === 'wins') {
-    return (
-      <ErrorBoundary name="Wins" onNavigateDashboard={() => setScreen('dashboard')}>
-      <WinsScreen
-        user={user}
-        previousBattles={previousBattles}
-        colors={colors}
-        getUsername={getUsername}
-        battleTimer={battleTimer}
-        onBack={() => setScreen('dashboard')}
-        onViewBattle={(battle) => { setSelectedPreviousBattle(battle); setScreen('previousBattles'); }}
-        onNavigate={setScreen}
-      />
-      </ErrorBoundary>
-    );
-  }
-
-  // LOSSES SCREEN
-  if (screen === 'losses') {
-    return (
-      <ErrorBoundary name="Losses" onNavigateDashboard={() => setScreen('dashboard')}>
-      <LossesScreen
-        user={user}
-        previousBattles={previousBattles}
-        colors={colors}
-        getUsername={getUsername}
-        battleTimer={battleTimer}
-        onBack={() => setScreen('dashboard')}
-        onViewBattle={(battle) => { setSelectedPreviousBattle(battle); setScreen('previousBattles'); }}
-        onNavigate={setScreen}
-      />
-      </ErrorBoundary>
-    );
-  }
-
-  // BATTLE HISTORY SCREEN - Extracted to BattleHistoryScreen component
-  if (screen === 'battleHistory') {
-    return (
-      <ErrorBoundary name="Battle History" onNavigateDashboard={() => setScreen('dashboard')}>
-      <BattleHistoryScreen
-        containerStyle={containerStyle}
-        colors={colors}
-        previousBattles={previousBattles}
-        completedDraftBattles={completedDraftBattles}
-        completedTrainingBattles={completedTrainingBattles}
-        historyTab={historyTab}
-        setHistoryTab={setHistoryTab}
-        loadingTrainingBattles={loadingTrainingBattles}
-        user={user}
-        onBack={() => setScreen('dashboard')}
-        sendRematchRequest={sendRematchRequest}
-        BattleHistoryCard={BattleHistoryCard}
-        completedV4Battles={completedV4Battles}
-        completedBaggerBombBattles={completedBaggerBombBattles}
-      />
-      </ErrorBoundary>
-    );
-  }
-
-  // BATTLE HISTORY OLD CODE REMOVED - See src/screens/BattleHistoryScreen.jsx
-
-  // BUG REPORT ADMIN — ClashBot triage view
-  if (screen === 'bugReportAdmin') {
-    return (
-      <BugReportAdmin
-        user={user}
-        colors={colors}
-        isDesktop={isDesktop}
-        onBack={() => setScreen('profile')}
-      />
-    );
-  }
-
-  // PROFILE SCREEN - REDESIGNED
-  if (screen === 'profile') {
-    return (
-      <ErrorBoundary name="Profile" onNavigateDashboard={() => setScreen('dashboard')}>
-      <ProfileScreen
-        user={user}
-        isDesktop={isDesktop}
-        onBack={() => setScreen('dashboard')}
-        setScreen={setScreen}
-      />
-      </ErrorBoundary>
-    );
-  }
-
-  // STONK OPTIONS ARENA V2
-  if (screen === 'stonkOptionsArena') {
-    return (
-      <ErrorBoundary name="Options Arena" onNavigateDashboard={() => setScreen('dashboard')}>
-      <Suspense fallback={
-        <div style={{
-          minHeight: '100vh',
-          background: '#0a0a1a',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          color: '#00d9ff'
-        }}>
-          Loading Options Arena...
-        </div>
-      }>
-        <StonkOptionsArenaV2
-          onBack={() => setScreen('dashboard')}
-          stocksData={stocksData}
-          stockAPI={stockAPI}
-          initialCash={10000}
-          user={user}
-        />
-      </Suspense>
-      </ErrorBoundary>
-    );
-  }
-
-  // FANTASYTIMES FEED
-  if (screen === 'fantasytimes') {
-    // Extract active battle tickers from battles array
-    const activeBattleTickers = (battles || [])
-      .filter((b) => b.status === 'active' || b.status === 'in_progress')
-      .flatMap((b) => {
-        const portfolio = b.creator?.username === user?.username
-          ? (b.creator?.portfolio || b.creatorPortfolio || [])
-          : (b.opponent?.portfolio || b.opponentPortfolio || []);
-        return (Array.isArray(portfolio) ? portfolio : []).map((a) => a?.symbol).filter(Boolean);
-      });
-
-    // Read user watchlist from localStorage
-    let userWatchlist = [];
-    try {
-      const saved = localStorage.getItem('user_watchlist');
-      if (saved) userWatchlist = JSON.parse(saved);
-    } catch { /* ignore */ }
-
-    return (
-      <ErrorBoundary name="FantasyTimes" onNavigateDashboard={() => setScreen('dashboard')}>
-      <Suspense fallback={
-        <div style={{
-          minHeight: '100vh',
-          background: '#0a0e14',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          color: '#00d9ff'
-        }}>
-          Loading FantasyTimes...
-        </div>
-      }>
-        <FantasyTimesFeed
-          currentUser={user}
-          isMobile={!isDesktop}
-          isDesktop={isDesktop}
-          userWatchlist={userWatchlist}
-          activeBattleTickers={activeBattleTickers}
-          onNavigate={setScreen}
-        />
-      </Suspense>
-      </ErrorBoundary>
-    );
-  }
-
-  // No screen matched — return null to fall through to unified return
-  return null;
-  }; // end getScreenContent
-
-  const screenContent = getScreenContent();
-
-  // ============================================
-  // UNIFIED RETURN — EarningsGame (always mounted) + active screen + ClashBot widget
-  // ============================================
-  return (
-    <>
-      {/* EarningsGame - ALWAYS MOUNTED to prevent state loss from Firestore battle updates */}
-      {/* Uses CSS display toggle instead of conditional rendering */}
-      <div style={{
-        display: screen === 'earningsGame' ? 'block' : 'none',
-        position: screen === 'earningsGame' ? 'relative' : 'fixed',
-        visibility: screen === 'earningsGame' ? 'visible' : 'hidden',
-        pointerEvents: screen === 'earningsGame' ? 'auto' : 'none',
-        top: screen === 'earningsGame' ? 'auto' : '-9999px',
-        left: screen === 'earningsGame' ? 'auto' : '-9999px'
-      }}>
-        <ErrorBoundary name="Earnings Game" onNavigateDashboard={() => setScreen('dashboard')}>
-        <EarningsGameScreen
-          user={user}
-          onBack={() => setScreen('dashboard')}
-          setScreen={setScreen}
-          colors={colors}
-          isDesktop={isDesktop}
-        />
-        </ErrorBoundary>
-      </div>
-
-      {/* Active screen content from routing */}
-      {screenContent}
+            {/* Rank - Clickable */}
+            <button
+              onClick={() => setShowXPModal(true)}
+              className="flex items-center gap-2 px-3 py-1.5 rounded-lg transition-all"
+              style={{ background: 'transparent', border: `1px solid ${colors.borderSubtle}` }}
+              onMouseEnter={(e) => { e.currentTarget.style.borderColor = colors.cyan; e.currentTarget.style.background = `${colors.cyan}10`; }}
+              onMouseLeave={(e) => { e.currentTarget.style.borderColor = colors.borderSubtle; e.currentTarget.style.background = 'transparent'; }}
+            >
+              <Shield className="w-4 h-4" style={{ color: colors.cyan }} />
+              <span className="text-sm font-medium" style={{ color: colors.textPrimary }}>{user.rank}</span>
+              <span className="text-xs" style={{ color: colors.textSecondary }}>(Lvl {user.level})</span>
+            </button>
+          </div>
+      )}
 
       {/* Only show default content when NOT on earningsGame and no screen matched */}
       {!screenContent && screen !== 'earningsGame' && (
