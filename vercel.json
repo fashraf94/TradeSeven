@@ -121,6 +121,18 @@
     {
       "path": "/api/cron/compute-estimates",
       "schedule": "0 10 * * 6"
+    },
+    {
+      "path": "/api/fantasytimes/generate-pulse?period=pre_market",
+      "schedule": "30 13,14 * * 1-5"
+    },
+    {
+      "path": "/api/fantasytimes/generate-pulse?period=midday",
+      "schedule": "0 16,17 * * 1-5"
+    },
+    {
+      "path": "/api/fantasytimes/generate-pulse?period=post_close",
+      "schedule": "15 20,21 * * 1-5"
     }
   ]
 }
