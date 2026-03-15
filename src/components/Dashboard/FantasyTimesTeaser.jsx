@@ -3,10 +3,11 @@
 // Uses useFantasyTimes hook directly
 
 import React from 'react';
-import { Newspaper, ChevronRight } from 'lucide-react';
+import { ChevronRight } from 'lucide-react';
 import { useFantasyTimes } from '../../hooks/useFantasyTimes';
 import { isMarketOpen } from '../../utils/marketSchedule';
 import { REPORTER_PROFILES } from '../../prompts/fantasyTimesPrompts';
+import { useTheme } from '../../contexts/ThemeContext';
 
 function timeAgo(timestamp) {
   if (!timestamp) return '';
@@ -21,12 +22,13 @@ function timeAgo(timestamp) {
 }
 
 function getReporterColor(reporter) {
-  if (!reporter) return '#8b949e';
+  if (!reporter) return '#64748b';
   const key = reporter.toLowerCase();
-  return REPORTER_PROFILES[key]?.color || '#8b949e';
+  return REPORTER_PROFILES[key]?.color || '#64748b';
 }
 
-export default function FantasyTimesTeaser({ setScreen, colors }) {
+export default function FantasyTimesTeaser({ setScreen }) {
+  const { tokens } = useTheme();
   const { rankedStories, loading } = useFantasyTimes();
   const marketOpen = isMarketOpen();
 
@@ -36,11 +38,11 @@ export default function FantasyTimesTeaser({ setScreen, colors }) {
         <div style={{
           height: '120px',
           borderRadius: '12px',
-          background: 'rgba(22, 27, 34, 0.5)',
+          background: tokens.bgCard,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          color: '#8b949e',
+          color: tokens.textMuted,
           fontSize: '13px',
         }}>
           Loading stories...
@@ -63,11 +65,10 @@ export default function FantasyTimesTeaser({ setScreen, colors }) {
         padding: '0 4px',
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <Newspaper size={16} color="#f59e0b" />
           <span style={{
-            fontSize: '13px',
+            fontSize: '11px',
             fontWeight: '700',
-            color: '#e6edf3',
+            color: tokens.textFaint,
             textTransform: 'uppercase',
             letterSpacing: '1.5px',
           }}>
@@ -75,13 +76,13 @@ export default function FantasyTimesTeaser({ setScreen, colors }) {
           </span>
           <span style={{
             padding: '2px 8px',
-            borderRadius: '8px',
+            borderRadius: '4px',
             fontSize: '10px',
             fontWeight: '600',
-            background: marketOpen ? 'rgba(34, 197, 94, 0.15)' : 'rgba(239, 68, 68, 0.15)',
-            color: marketOpen ? '#22c55e' : '#ef4444',
+            background: tokens.bgIcon,
+            color: tokens.textMuted,
           }}>
-            {marketOpen ? 'MARKET OPEN' : 'MARKET CLOSED'}
+            {marketOpen ? 'OPEN' : 'CLOSED'}
           </span>
         </div>
         <button
@@ -92,7 +93,7 @@ export default function FantasyTimesTeaser({ setScreen, colors }) {
             gap: '2px',
             background: 'none',
             border: 'none',
-            color: '#f59e0b',
+            color: tokens.teal,
             fontSize: '12px',
             fontWeight: '600',
             cursor: 'pointer',
@@ -118,68 +119,64 @@ export default function FantasyTimesTeaser({ setScreen, colors }) {
           WebkitOverflowScrolling: 'touch',
         }}
       >
-        {stories.map((story, i) => (
-          <div
-            key={story.id || i}
-            onClick={() => setScreen('fantasytimes')}
-            style={{
-              minWidth: '200px',
-              maxWidth: '200px',
-              padding: '12px',
-              background: 'rgba(22, 27, 34, 0.8)',
-              borderRadius: '12px',
-              border: '1px solid rgba(48, 54, 61, 0.6)',
-              cursor: 'pointer',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '8px',
-            }}
-          >
-            {/* Reporter color bar */}
-            <div style={{
-              width: '32px',
-              height: '3px',
-              borderRadius: '2px',
-              background: getReporterColor(story.reporter),
-            }} />
-
-            {/* Headline */}
-            <div style={{
-              fontSize: '13px',
-              fontWeight: '600',
-              color: '#e6edf3',
-              lineHeight: '1.35',
-              display: '-webkit-box',
-              WebkitLineClamp: 2,
-              WebkitBoxOrient: 'vertical',
-              overflow: 'hidden',
-            }}>
-              {story.headline}
-            </div>
-
-            {/* Meta row */}
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              marginTop: 'auto',
-            }}>
-              <span style={{
-                fontSize: '11px',
+        {stories.map((story, i) => {
+          const reporterColor = getReporterColor(story.reporter);
+          return (
+            <div
+              key={story.id || i}
+              onClick={() => setScreen('fantasytimes')}
+              style={{
+                minWidth: '240px',
+                maxWidth: '240px',
+                padding: '12px',
+                background: tokens.bgCard,
+                borderRadius: '12px',
+                border: `1px solid ${tokens.borderDefault}`,
+                borderLeft: `3px solid ${reporterColor}`,
+                cursor: 'pointer',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '8px',
+              }}
+            >
+              {/* Headline */}
+              <div style={{
+                fontSize: '13px',
                 fontWeight: '500',
-                color: getReporterColor(story.reporter),
+                color: tokens.textPrimary,
+                lineHeight: '1.35',
+                display: '-webkit-box',
+                WebkitLineClamp: 2,
+                WebkitBoxOrient: 'vertical',
+                overflow: 'hidden',
               }}>
-                {story.reporter || 'Staff'}
-              </span>
-              <span style={{
-                fontSize: '10px',
-                color: '#6e7681',
+                {story.headline}
+              </div>
+
+              {/* Meta row */}
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                marginTop: 'auto',
               }}>
-                {timeAgo(story.publishedAt)}
-              </span>
+                <span style={{
+                  fontSize: '11px',
+                  fontWeight: '500',
+                  color: tokens.textFaint,
+                }}>
+                  {story.reporter || 'Staff'}
+                </span>
+                <span style={{
+                  fontSize: '10px',
+                  color: tokens.textFaint,
+                }}>
+                  {timeAgo(story.publishedAt)}
+                </span>
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

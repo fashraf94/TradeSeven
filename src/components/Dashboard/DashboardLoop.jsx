@@ -4,12 +4,13 @@
 // Desktop layout is NOT affected — this only renders on mobile
 
 import React, { useMemo } from 'react';
-import { Flame, Menu } from 'lucide-react';
 import PriorityBattleCard from './PriorityBattleCard';
 import BattleRow from './BattleRow';
 import FantasyTimesTeaser from './FantasyTimesTeaser';
 import LoopGameModeCard from './LoopGameModeCard';
 import PendingLobbiesSection from './PendingLobbiesSection';
+import { useTheme } from '../../contexts/ThemeContext';
+import { isMarketOpen } from '../../utils/marketSchedule';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -29,7 +30,6 @@ function getGreeting() {
 
 export default function DashboardLoop({
   user,
-  colors,
   activeBattles,
   activeDraftBattles,
   activeTrainingBattles,
@@ -43,17 +43,18 @@ export default function DashboardLoop({
   copyToClipboard,
   setShowBaggerBombModal,
   setShowSnakeDraftModal,
-  setShowBuilderModal,
   setShowBaggerBombTrainingConfirm,
   setShowTrainingConfirmModal,
   setTrainingConfirmType,
-  setShowClassicTrainingConfirm,
   isMobile,
   setSidebarOpen,
   unreadCount,
   activeDraftBanner,
   setActiveDraftBanner,
 }) {
+  const { tokens } = useTheme();
+  const marketOpen = isMarketOpen();
+
   // ─── Battle merge: combine all active battles sorted by end time ───────────
   const allBattles = useMemo(() => {
     const merged = [
@@ -68,7 +69,7 @@ export default function DashboardLoop({
       const bEnd = getEndTime(b.battle);
       if (!aEnd) return 1;
       if (!bEnd) return -1;
-      return new Date(aEnd) - new Date(bEnd); // soonest ending first
+      return new Date(aEnd) - new Date(bEnd);
     });
   }, [activeBattles, activeDraftBattles, activeTrainingBattles]);
 
@@ -87,7 +88,6 @@ export default function DashboardLoop({
         setScreen('battle');
         return;
       }
-      // V2/V3 training conversion
       const isBaggerBomb = battle._v === 2 || battle._v === 3 || battle.type === 'baggerbomb';
       const isV3 = battle._v === 3;
       const convertedBattle = {
@@ -133,7 +133,6 @@ export default function DashboardLoop({
       setActiveBattleId(battle.id);
       setScreen('battle');
     } else {
-      // Classic 1v1
       setCurrentBattle(battle);
       setScreen('battle');
     }
@@ -148,14 +147,14 @@ export default function DashboardLoop({
       minHeight: '100vh',
       display: 'flex',
       flexDirection: 'column',
-      background: colors.background,
+      background: tokens.bgApp,
       position: 'relative',
       zIndex: 1,
     }}>
       {/* ─── Header ─────────────────────────────────────────────────────────── */}
       <header style={{
-        background: 'linear-gradient(180deg, #161b22 0%, #0d1117 100%)',
-        borderBottom: '2px solid #21262d',
+        background: tokens.bgCard,
+        borderBottom: `1px solid ${tokens.borderDefault}`,
         padding: '12px 16px',
         position: 'sticky',
         top: 0,
@@ -187,9 +186,9 @@ export default function DashboardLoop({
             }}
             aria-label="Open menu"
           >
-            <div style={{ width: '24px', height: '2px', backgroundColor: '#00d9ff', borderRadius: '1px' }} />
-            <div style={{ width: '24px', height: '2px', backgroundColor: '#00d9ff', borderRadius: '1px' }} />
-            <div style={{ width: '24px', height: '2px', backgroundColor: '#00d9ff', borderRadius: '1px' }} />
+            <div style={{ width: '24px', height: '2px', backgroundColor: tokens.teal, borderRadius: '1px' }} />
+            <div style={{ width: '24px', height: '2px', backgroundColor: tokens.teal, borderRadius: '1px' }} />
+            <div style={{ width: '24px', height: '2px', backgroundColor: tokens.teal, borderRadius: '1px' }} />
             {unreadCount > 0 && (
               <span style={{
                 position: 'absolute',
@@ -201,28 +200,47 @@ export default function DashboardLoop({
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                backgroundColor: '#ef4444',
+                backgroundColor: tokens.red,
                 borderRadius: '9px',
-                color: '#ffffff',
+                color: tokens.textWhite,
                 fontSize: '10px',
                 fontWeight: '700',
                 lineHeight: 1,
-                boxShadow: '0 2px 4px rgba(0,0,0,0.3)',
+                boxShadow: tokens.glowRedDot,
               }}>
                 {unreadCount > 9 ? '9+' : unreadCount}
               </span>
             )}
           </button>
 
-          {/* Center: greeting */}
-          <div style={{ textAlign: 'center' }}>
-            <div style={{
-              fontSize: '14px',
+          {/* Center: greeting + market status */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span style={{
+              fontSize: '16px',
               fontWeight: '600',
-              color: '#e6edf3',
+              color: tokens.textPrimary,
             }}>
               {getGreeting()}, {user?.username || 'Player'}
-            </div>
+            </span>
+            <span style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px',
+              padding: '2px 8px',
+              borderRadius: '4px',
+              background: tokens.bgIcon,
+              fontSize: '10px',
+              fontWeight: '600',
+              color: tokens.textMuted,
+            }}>
+              <span style={{
+                width: '5px',
+                height: '5px',
+                borderRadius: '50%',
+                background: marketOpen ? tokens.emerald : tokens.textFaintest,
+              }} />
+              {marketOpen ? 'Open' : 'Closed'}
+            </span>
           </div>
 
           {/* Right: avatar */}
@@ -230,14 +248,14 @@ export default function DashboardLoop({
             width: '38px',
             height: '38px',
             borderRadius: '50%',
-            background: '#1a1f2e',
-            border: '2px solid #00d9ff',
+            background: tokens.bgCard,
+            border: `2px solid ${tokens.teal}`,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             fontSize: '16px',
             fontWeight: '600',
-            color: '#ffffff',
+            color: tokens.textWhite,
           }}>
             {(user?.username || 'P')[0].toUpperCase()}
           </div>
@@ -253,7 +271,8 @@ export default function DashboardLoop({
             setScreen('draftRoom');
           }}
           style={{
-            background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+            background: `linear-gradient(135deg, rgba(217,119,6,0.15), ${tokens.bgCard})`,
+            borderLeft: `2px solid ${tokens.amber}`,
             padding: '12px 16px',
             cursor: 'pointer',
             display: 'flex',
@@ -265,24 +284,24 @@ export default function DashboardLoop({
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <span style={{ fontSize: '18px' }}>⚠️</span>
             <div>
-              <div style={{ color: '#ffffff', fontWeight: 'bold', fontSize: '14px' }}>
+              <div style={{ color: tokens.amber, fontWeight: 'bold', fontSize: '14px' }}>
                 Active Draft in Progress!
               </div>
-              <div style={{ color: 'rgba(255,255,255,0.8)', fontSize: '12px' }}>
+              <div style={{ color: tokens.textSecondary, fontSize: '12px' }}>
                 {activeDraftBanner.code} • Tap to rejoin
               </div>
             </div>
           </div>
           <span style={{
-            padding: '8px 16px',
-            background: '#ffffff',
-            color: '#d97706',
-            fontWeight: 'bold',
-            fontSize: '13px',
+            padding: '6px 14px',
+            background: 'rgba(245,158,11,0.15)',
+            color: tokens.amber,
+            fontWeight: '600',
+            fontSize: '12px',
             border: 'none',
-            borderRadius: '8px',
+            borderRadius: '20px',
           }}>
-            REJOIN →
+            REJOIN
           </span>
         </div>
       )}
@@ -310,21 +329,17 @@ export default function DashboardLoop({
               marginBottom: '12px',
               padding: '0 4px',
             }}>
-              <Flame size={16} color="#00d9ff" />
               <span style={{
-                fontSize: '13px',
+                fontSize: '11px',
                 fontWeight: '700',
-                color: '#e6edf3',
+                color: tokens.textFaint,
                 textTransform: 'uppercase',
                 letterSpacing: '1.5px',
               }}>
                 Priority Battle
               </span>
               <span style={{
-                background: 'rgba(0, 217, 255, 0.1)',
-                color: '#00d9ff',
-                padding: '2px 8px',
-                borderRadius: '8px',
+                color: tokens.teal,
                 fontSize: '11px',
                 fontWeight: '600',
               }}>
@@ -349,7 +364,6 @@ export default function DashboardLoop({
                 battle={battle}
                 battleType={type}
                 user={user}
-                colors={colors}
                 onPress={() => handleBattlePress(battle, type)}
               />
             ))}
@@ -357,21 +371,18 @@ export default function DashboardLoop({
         )}
 
         {/* ── Section 3: Fantasy Times Teaser ─────────────────────────────── */}
-        <FantasyTimesTeaser setScreen={setScreen} colors={colors} />
+        <FantasyTimesTeaser setScreen={setScreen} />
 
         {/* ── Section 4: Game Mode Cards ───────────────────────────────────── */}
         <div>
           <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px',
             marginBottom: '12px',
             padding: '0 4px',
           }}>
             <span style={{
-              fontSize: '13px',
+              fontSize: '11px',
               fontWeight: '700',
-              color: '#e6edf3',
+              color: tokens.textFaint,
               textTransform: 'uppercase',
               letterSpacing: '1.5px',
             }}>
@@ -391,11 +402,6 @@ export default function DashboardLoop({
                 setTrainingConfirmType('stocks');
                 setShowTrainingConfirmModal(true);
               }}
-            />
-            <LoopGameModeCard
-              modeId="classic"
-              onPvpSelect={() => setShowBuilderModal(true)}
-              onTrainSelect={() => setShowClassicTrainingConfirm(true)}
             />
           </div>
         </div>
@@ -420,45 +426,54 @@ export default function DashboardLoop({
           <div style={{
             flex: 1,
             padding: '16px',
-            background: 'rgba(22, 27, 34, 0.8)',
+            background: tokens.bgCard,
             borderRadius: '12px',
-            border: '1px solid rgba(48, 54, 61, 0.6)',
+            border: `1px solid ${tokens.borderDefault}`,
             textAlign: 'center',
           }}>
-            <div style={{ fontSize: '24px', fontWeight: '700', color: '#00d9ff' }}>
+            <div style={{ fontSize: '24px', fontWeight: '700', color: tokens.teal }}>
               {totalActive}
             </div>
-            <div style={{ fontSize: '11px', color: '#8b949e', fontWeight: '500', marginTop: '4px' }}>
-              Active Battles
+            <div style={{
+              fontSize: '10px', color: tokens.textFaint, fontWeight: '600',
+              marginTop: '4px', textTransform: 'uppercase', letterSpacing: '1.5px',
+            }}>
+              Active
             </div>
           </div>
           <div style={{
             flex: 1,
             padding: '16px',
-            background: 'rgba(22, 27, 34, 0.8)',
+            background: tokens.bgCard,
             borderRadius: '12px',
-            border: '1px solid rgba(48, 54, 61, 0.6)',
+            border: `1px solid ${tokens.borderDefault}`,
             textAlign: 'center',
           }}>
-            <div style={{ fontSize: '24px', fontWeight: '700', color: '#22c55e' }}>
+            <div style={{ fontSize: '24px', fontWeight: '700', color: tokens.emerald }}>
               {totalCompleted}
             </div>
-            <div style={{ fontSize: '11px', color: '#8b949e', fontWeight: '500', marginTop: '4px' }}>
+            <div style={{
+              fontSize: '10px', color: tokens.textFaint, fontWeight: '600',
+              marginTop: '4px', textTransform: 'uppercase', letterSpacing: '1.5px',
+            }}>
               Completed
             </div>
           </div>
           <div style={{
             flex: 1,
             padding: '16px',
-            background: 'rgba(22, 27, 34, 0.8)',
+            background: tokens.bgCard,
             borderRadius: '12px',
-            border: '1px solid rgba(48, 54, 61, 0.6)',
+            border: `1px solid ${tokens.borderDefault}`,
             textAlign: 'center',
           }}>
-            <div style={{ fontSize: '24px', fontWeight: '700', color: '#f59e0b' }}>
-              🪙 {user?.tokens || 0}
+            <div style={{ fontSize: '24px', fontWeight: '700', color: tokens.amber }}>
+              {user?.tokens || 0}
             </div>
-            <div style={{ fontSize: '11px', color: '#8b949e', fontWeight: '500', marginTop: '4px' }}>
+            <div style={{
+              fontSize: '10px', color: tokens.textFaint, fontWeight: '600',
+              marginTop: '4px', textTransform: 'uppercase', letterSpacing: '1.5px',
+            }}>
               Tokens
             </div>
           </div>

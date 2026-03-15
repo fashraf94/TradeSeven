@@ -3,19 +3,13 @@
 
 import React, { useState, useEffect } from 'react';
 import { Swords, Layers, Bot } from 'lucide-react';
+import { useTheme } from '../../contexts/ThemeContext';
 
 const TYPE_ICONS = {
   classic: Swords,
   draft: Layers,
   training: Bot,
   trainingDraft: Bot,
-};
-
-const TYPE_COLORS = {
-  classic: '#00d9ff',
-  draft: '#22c55e',
-  training: '#9333ea',
-  trainingDraft: '#9333ea',
 };
 
 const TYPE_LABELS = {
@@ -41,7 +35,6 @@ function formatTimeRemaining(ms) {
 
 function getOpponentName(battle, user) {
   const username = user?.username;
-  // V3/V4
   if (battle.creator && battle.opponent) {
     const isCreator = (battle.creator?.odUserId || battle.creator?.uid) === (user?.odUserId || user?.username) ||
       battle.creator?.username === username;
@@ -49,7 +42,6 @@ function getOpponentName(battle, user) {
       ? (battle.opponent?.username || 'Opponent')
       : (battle.creator?.username || 'Creator');
   }
-  // Draft
   if (battle.players) {
     const other = battle.players.find(p => p.username !== username);
     return other?.username || 'Opponent';
@@ -57,10 +49,19 @@ function getOpponentName(battle, user) {
   return 'Opponent';
 }
 
-export default function BattleRow({ battle, battleType, user, colors, onPress }) {
+export default function BattleRow({ battle, battleType, user, onPress }) {
+  const { tokens } = useTheme();
   const [now, setNow] = useState(Date.now());
   const Icon = TYPE_ICONS[battleType] || Swords;
-  const accent = TYPE_COLORS[battleType] || '#00d9ff';
+
+  const typeColors = {
+    classic: tokens.teal,
+    draft: tokens.emerald,
+    training: tokens.purpleText,
+    trainingDraft: tokens.purpleText,
+  };
+  const accent = typeColors[battleType] || tokens.teal;
+  const isTrainingType = battleType === 'training' || battleType === 'trainingDraft';
 
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 60000);
@@ -81,20 +82,18 @@ export default function BattleRow({ battle, battleType, user, colors, onPress })
         alignItems: 'center',
         gap: '12px',
         padding: '0 16px',
-        background: 'rgba(22, 27, 34, 0.8)',
+        background: tokens.bgCard,
         borderRadius: '12px',
-        border: `1px solid ${isUrgent ? 'rgba(239, 68, 68, 0.3)' : 'rgba(48, 54, 61, 0.6)'}`,
+        border: `1px solid ${isUrgent ? 'rgba(239,68,68,0.2)' : tokens.borderDefault}`,
         cursor: 'pointer',
-        transition: 'border-color 0.2s ease',
       }}
     >
       {/* Type icon */}
       <div style={{
-        width: '36px',
-        height: '36px',
+        width: '40px',
+        height: '40px',
         borderRadius: '10px',
-        background: `${accent}15`,
-        border: `1px solid ${accent}30`,
+        background: tokens.bgIcon,
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
@@ -107,29 +106,45 @@ export default function BattleRow({ battle, battleType, user, colors, onPress })
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{
           fontSize: '14px',
-          fontWeight: '600',
-          color: '#e6edf3',
+          fontWeight: '500',
+          color: tokens.textPrimary,
           whiteSpace: 'nowrap',
           overflow: 'hidden',
           textOverflow: 'ellipsis',
         }}>
           vs {opponent}
         </div>
-        <div style={{
-          fontSize: '11px',
-          color: accent,
-          fontWeight: '500',
-          textTransform: 'capitalize',
-        }}>
-          {TYPE_LABELS[battleType] || battleType}
-        </div>
+        {isTrainingType ? (
+          <span style={{
+            display: 'inline-block',
+            fontSize: '10px',
+            fontWeight: '600',
+            color: tokens.purpleText,
+            background: 'rgba(147,51,234,0.15)',
+            padding: '2px 8px',
+            borderRadius: '4px',
+            textTransform: 'uppercase',
+            letterSpacing: '0.5px',
+            marginTop: '2px',
+          }}>
+            Training
+          </span>
+        ) : (
+          <div style={{
+            fontSize: '12px',
+            color: tokens.textFaint,
+            marginTop: '1px',
+          }}>
+            {TYPE_LABELS[battleType] || battleType}
+          </div>
+        )}
       </div>
 
       {/* Right: time remaining */}
       <div style={{
         fontSize: '13px',
-        fontWeight: '600',
-        color: isUrgent ? '#ef4444' : '#8b949e',
+        fontWeight: '500',
+        color: isUrgent ? tokens.red : tokens.textMuted,
         whiteSpace: 'nowrap',
         flexShrink: 0,
       }}>

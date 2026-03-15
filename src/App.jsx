@@ -19809,7 +19809,6 @@ export default function PortfolioDuel() {
             <DesktopBackground isDesktop={isDesktop} />
             <DashboardLoop
               user={user}
-              colors={colors}
               activeBattles={activeBattles}
               activeDraftBattles={activeDraftBattles}
               activeTrainingBattles={activeTrainingBattles}
@@ -19823,11 +19822,9 @@ export default function PortfolioDuel() {
               copyToClipboard={copyToClipboard}
               setShowBaggerBombModal={setShowBaggerBombModal}
               setShowSnakeDraftModal={setShowSnakeDraftModal}
-              setShowBuilderModal={setShowBuilderModal}
               setShowBaggerBombTrainingConfirm={setShowBaggerBombTrainingConfirm}
               setShowTrainingConfirmModal={setShowTrainingConfirmModal}
               setTrainingConfirmType={setTrainingConfirmType}
-              setShowClassicTrainingConfirm={setShowClassicTrainingConfirm}
               isMobile={isMobile}
               setSidebarOpen={setSidebarOpen}
               unreadCount={unreadCount}
