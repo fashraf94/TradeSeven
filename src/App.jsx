@@ -122,6 +122,7 @@ import { GameModeToggle, ResearchModeButton, WeeklyChallengesPanel, GameModeCaro
 import { useIsMobile } from './hooks/useIsMobile';
 import { isMarketOpen } from './utils/marketSchedule';
 import BottomNav from './components/Navigation/BottomNav';
+import DashboardLoop from './components/Dashboard/DashboardLoop';
 
 // ============================================
 // LAZY LOADING FALLBACK
@@ -19798,6 +19799,50 @@ export default function PortfolioDuel() {
     const currentRankIndex = ranks.indexOf(user.rank);
     const nextRank = currentRankIndex < ranks.length - 1 ? ranks[currentRankIndex + 1] : 'Max Rank';
 
+    // ═══════════════════════════════════════════════════════════
+    // MOBILE: The Loop — unified battle feed
+    // ═══════════════════════════════════════════════════════════
+    if (isMobile) {
+      return (
+        <ErrorBoundary name="Dashboard" onNavigateDashboard={() => { setScreen('home'); }}>
+          <div style={containerStyle}>
+            <DesktopBackground isDesktop={isDesktop} />
+            <DashboardLoop
+              user={user}
+              colors={colors}
+              activeBattles={activeBattles}
+              activeDraftBattles={activeDraftBattles}
+              activeTrainingBattles={activeTrainingBattles}
+              lobbyBattles={lobbyBattles}
+              completedBattles={completedBattles}
+              setCurrentBattle={setCurrentBattle}
+              setCurrentDraft={setCurrentDraft}
+              setScreen={setScreen}
+              setActiveBattleId={setActiveBattleId}
+              setBattleToJoin={setBattleToJoin}
+              copyToClipboard={copyToClipboard}
+              setShowBaggerBombModal={setShowBaggerBombModal}
+              setShowSnakeDraftModal={setShowSnakeDraftModal}
+              setShowBuilderModal={setShowBuilderModal}
+              setShowBaggerBombTrainingConfirm={setShowBaggerBombTrainingConfirm}
+              setShowTrainingConfirmModal={setShowTrainingConfirmModal}
+              setTrainingConfirmType={setTrainingConfirmType}
+              setShowClassicTrainingConfirm={setShowClassicTrainingConfirm}
+              isMobile={isMobile}
+              setSidebarOpen={setSidebarOpen}
+              unreadCount={unreadCount}
+              activeDraftBanner={activeDraftBanner}
+              setActiveDraftBanner={setActiveDraftBanner}
+              setDraftState={setDraftState}
+            />
+          </div>
+        </ErrorBoundary>
+      );
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // DESKTOP: existing tabbed layout (unchanged)
+    // ═══════════════════════════════════════════════════════════
     return (
       <ErrorBoundary name="Dashboard" onNavigateDashboard={() => { setScreen('home'); }}>
         <div style={containerStyle}>
