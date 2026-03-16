@@ -12,6 +12,7 @@ import {
 } from '../firebase/firebaseService';
 import { getCurrentTradingDay } from '../constants/battleTimingV4';
 import { getVolatilityThresholds } from '../services/volatilityService';
+import { isMarketOpen } from '../utils/marketSchedule';
 import {
   updateAssetHistory,
   detectThresholdCross,
@@ -73,6 +74,7 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
   const chainTimeoutRef = useRef(null);
   const CHAIN_WINDOW_MS = 500; // Triggers within 500ms are part of the same chain
   const TRIGGER_DISPLAY_MS = 800; // How long each trigger displays
+  const lastLiveScoreWriteRef = useRef(0);
 
   // Session state
   const [currentSessionKey, setCurrentSessionKey] = useState(getCurrentSession());
@@ -331,6 +333,29 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
 
     return Math.round(total);
   }, [oppScores, battle, isCreator]);
+
+  // ==================== LIVE SCORE WRITE-BACK ====================
+  // Periodically persist both players' computed scores to Firebase so the
+  // dashboard can display them without running live price hooks.
+  useEffect(() => {
+    if (!battle || !battleId || battleId.startsWith('training_')) return;
+    if (battle.status !== 'active') return;
+    if (!isMarketOpen()) return;
+    if (myTotalScore === 0 && oppTotalScore === 0) return;
+
+    const now = Date.now();
+    if (now - lastLiveScoreWriteRef.current < 60_000) return;
+    lastLiveScoreWriteRef.current = now;
+
+    const creatorScore = isCreator ? myTotalScore : oppTotalScore;
+    const opponentScore = isCreator ? oppTotalScore : myTotalScore;
+
+    updateDoc(doc(db, 'battles', battleId), {
+      'creator.liveScore': creatorScore,
+      'opponent.liveScore': opponentScore,
+      'liveScoreUpdatedAt': new Date().toISOString(),
+    }).catch((err) => console.warn('[LiveScore] write failed:', err.message));
+  }, [battle, battleId, isCreator, myTotalScore, oppTotalScore]);
 
   // Build player/opponent objects for BattleHeader
   const player = useMemo(() => ({
