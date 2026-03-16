@@ -86,6 +86,13 @@ export default async function handler(req, res) {
     return res.status(405).json({ success: false, error: 'Method not allowed' });
   }
 
+  // Cron / admin auth — no legitimate consumer calls this via HTTP
+  const isVercelCron = req.headers['x-vercel-cron'] === '1';
+  const authHeader = req.headers.authorization;
+  if (!isVercelCron && authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+
   const { storyId, headline, body, reporter, type, primaryTicker, sentiment, dataSnapshot } = req.body || {};
 
   if (!headline || !reporter || !type) {
