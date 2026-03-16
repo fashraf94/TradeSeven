@@ -51,7 +51,9 @@ export default function DesktopSidebar({
       bottom: 0,
       width: '220px',
       background: tokens.bgCard,
+      backgroundImage: 'linear-gradient(90deg, rgba(255,255,255,0.02) 0%, transparent 30%)',
       borderRight: `1px solid ${tokens.borderDefault}`,
+      boxShadow: '4px 0 20px rgba(0,0,0,0.2)',
       zIndex: 40,
       padding: '20px 16px',
       display: 'flex',
@@ -102,6 +104,7 @@ export default function DesktopSidebar({
                   : hovered
                     ? 'rgba(255,255,255,0.03)'
                     : 'transparent',
+                boxShadow: active ? 'inset 0 0 20px rgba(94,234,212,0.03)' : 'none',
                 color: active ? tokens.teal : tokens.textMuted,
                 fontSize: '14px',
                 fontWeight: '500',

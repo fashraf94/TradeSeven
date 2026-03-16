@@ -167,7 +167,7 @@ export default function DashboardDesktop({
       justifyContent: 'center',
       width: 'calc(100% - 220px)',
       minHeight: '100vh',
-      background: tokens.bgApp,
+      background: '#111318',
       position: 'relative',
       zIndex: 1,
     }}>
@@ -181,7 +181,7 @@ export default function DashboardDesktop({
           padding: '24px 32px 40px',
           display: 'flex',
           flexDirection: 'column',
-          gap: '28px',
+          gap: '24px',
         }}
       >
 
@@ -224,48 +224,50 @@ export default function DashboardDesktop({
           <motion.button
             onClick={() => setGamesModalOpen(true)}
             whileTap={{ scale: 0.97 }}
+            whileHover={{ scale: 1.02 }}
             transition={{ type: 'spring', stiffness: 400, damping: 25 }}
             style={{
               flex: 1,
               display: 'flex',
-              flexDirection: 'column',
+              flexDirection: 'row',
               alignItems: 'center',
-              justifyContent: 'center',
-              gap: '8px',
-              padding: '20px',
+              gap: '10px',
+              padding: '14px 20px',
               borderRadius: '14px',
               border: '1px solid rgba(245,158,11,0.2)',
               background: 'linear-gradient(135deg, rgba(245,158,11,0.15), rgba(245,158,11,0.05))',
+              backgroundImage: 'linear-gradient(180deg, rgba(255,255,255,0.04) 0%, transparent 50%)',
               boxShadow: tokens.obsidianShadow,
               cursor: 'pointer',
             }}
           >
-            <Swords size={24} color={tokens.amber} />
-            <span style={{ fontSize: '16px', fontWeight: '600', color: tokens.textPrimary }}>
+            <Swords size={20} color={tokens.amber} />
+            <span style={{ fontSize: '15px', fontWeight: '600', color: tokens.textPrimary }}>
               Games
             </span>
           </motion.button>
           <motion.button
             onClick={() => setQuickPlayOpen(true)}
             whileTap={{ scale: 0.97 }}
+            whileHover={{ scale: 1.02 }}
             transition={{ type: 'spring', stiffness: 400, damping: 25 }}
             style={{
               flex: 1,
               display: 'flex',
-              flexDirection: 'column',
+              flexDirection: 'row',
               alignItems: 'center',
-              justifyContent: 'center',
-              gap: '8px',
-              padding: '20px',
+              gap: '10px',
+              padding: '14px 20px',
               borderRadius: '14px',
               border: '1px solid rgba(147,51,234,0.2)',
               background: 'linear-gradient(135deg, rgba(147,51,234,0.15), rgba(147,51,234,0.05))',
+              backgroundImage: 'linear-gradient(180deg, rgba(255,255,255,0.04) 0%, transparent 50%)',
               boxShadow: tokens.obsidianShadow,
               cursor: 'pointer',
             }}
           >
-            <Zap size={24} color={tokens.purpleText} />
-            <span style={{ fontSize: '16px', fontWeight: '600', color: tokens.textPrimary }}>
+            <Zap size={20} color={tokens.purpleText} />
+            <span style={{ fontSize: '15px', fontWeight: '600', color: tokens.textPrimary }}>
               Quick Play
             </span>
           </motion.button>
@@ -281,10 +283,13 @@ export default function DashboardDesktop({
                 setScreen('draftRoom');
               }}
               style={{
-                background: `linear-gradient(135deg, rgba(217,119,6,0.15), ${tokens.bgCard})`,
-                borderLeft: `2px solid ${tokens.amber}`,
-                borderRadius: '12px',
+                background: `linear-gradient(135deg, rgba(217,119,6,0.12) 0%, ${tokens.bgCard} 100%)`,
+                border: `1px solid rgba(245,158,11,0.2)`,
+                borderLeft: `3px solid ${tokens.amber}`,
+                borderRadius: '14px',
                 padding: '14px 20px',
+                backgroundImage: 'linear-gradient(180deg, rgba(255,255,255,0.03) 0%, transparent 40%)',
+                boxShadow: `${tokens.obsidianShadow}, 0 2px 12px rgba(245,158,11,0.05)`,
                 cursor: 'pointer',
                 display: 'flex',
                 alignItems: 'center',
@@ -304,11 +309,11 @@ export default function DashboardDesktop({
                 </div>
               </div>
               <span style={{
-                padding: '6px 14px',
+                padding: '6px 16px',
                 background: 'rgba(245,158,11,0.15)',
                 color: tokens.amber,
                 fontWeight: '600',
-                fontSize: '12px',
+                fontSize: '13px',
                 borderRadius: '20px',
               }}>
                 REJOIN
@@ -354,17 +359,22 @@ export default function DashboardDesktop({
               {gridBattles.map(({ battle, type }, i) => {
                 const key = battle.id || battle.firestoreId || i;
                 return (
-                  <div
+                  <motion.div
                     key={key}
                     onClick={() => {
                       setTapCounts(prev => ({ ...prev, [key]: (prev[key] || 0) + 1 }));
                       handleBattlePress(battle, type);
                     }}
+                    whileHover={{ scale: 1.01, boxShadow: `${tokens.obsidianShadow}, 0 8px 30px rgba(0,0,0,0.4)` }}
+                    transition={{ type: 'spring', stiffness: 300, damping: 25 }}
                     style={{
                       position: 'relative',
                       overflow: 'hidden',
                       borderRadius: '16px',
-                      boxShadow: tokens.obsidianShadow,
+                      border: `1px solid ${tokens.borderDefault}`,
+                      boxShadow: `${tokens.obsidianShadow}, 0 4px 20px rgba(0,0,0,0.3)`,
+                      background: tokens.bgCard,
+                      backgroundImage: 'linear-gradient(180deg, rgba(255,255,255,0.03) 0%, transparent 40%)',
                       cursor: 'pointer',
                       gridColumn: gridBattles.length === 1 ? '1 / -1' : undefined,
                     }}
@@ -376,7 +386,7 @@ export default function DashboardDesktop({
                       user={user}
                       onPress={() => handleBattlePress(battle, type)}
                     />
-                  </div>
+                  </motion.div>
                 );
               })}
             </div>
@@ -385,9 +395,10 @@ export default function DashboardDesktop({
               padding: '40px 20px',
               textAlign: 'center',
               background: tokens.bgCard,
+              backgroundImage: 'linear-gradient(180deg, rgba(255,255,255,0.03) 0%, transparent 40%)',
               borderRadius: '16px',
               border: `1px solid ${tokens.borderDefault}`,
-              boxShadow: tokens.obsidianShadow,
+              boxShadow: `${tokens.obsidianShadow}, 0 4px 20px rgba(0,0,0,0.3)`,
             }}>
               <div style={{ fontSize: '16px', fontWeight: '600', color: tokens.textPrimary, marginBottom: '8px' }}>
                 No active battles
@@ -418,7 +429,12 @@ export default function DashboardDesktop({
                 const won = didUserWin(battle, user?.username);
                 const bType = battle.isDraft ? 'draft' : (battle.isTrainingBattle ? 'training' : 'classic');
                 return (
-                  <div key={battle.id || i} style={{ position: 'relative' }}>
+                  <motion.div
+                    key={battle.id || i}
+                    whileHover={{ scale: 1.01, boxShadow: `${tokens.obsidianShadow}, 0 8px 30px rgba(0,0,0,0.4)` }}
+                    transition={{ type: 'spring', stiffness: 300, damping: 25 }}
+                    style={{ position: 'relative', borderRadius: '12px', overflow: 'hidden' }}
+                  >
                     <BattleRow
                       battle={battle}
                       battleType={bType}
@@ -442,7 +458,7 @@ export default function DashboardDesktop({
                     }}>
                       {won === true ? 'WIN' : won === false ? 'LOSS' : '—'}
                     </div>
-                  </div>
+                  </motion.div>
                 );
               })}
             </div>
