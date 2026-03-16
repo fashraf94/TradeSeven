@@ -49,7 +49,8 @@ import {
 // ==================== CONSTANTS ====================
 
 const PRICE_POLL_INTERVAL = 60000; // 60 seconds
-const ROTATION_CHECK_INTERVAL = 1000; // 1 second countdown
+const ROTATION_CHECK_INTERVAL = 5000; // 5 second countdown check (rotations happen every 90min-3hr)
+const ROTATION_COOLDOWN_MS = 30000;   // 30s cooldown after successful rotation
 
 const isCrypto = (symbol) => {
   const cryptoSymbols = ['BTC', 'ETH', 'SOL', 'ADA', 'DOT', 'AVAX', 'MATIC', 'LINK', 'UNI', 'XRP', 'DOGE', 'SHIB', 'LTC', 'AAVE', 'ATOM', 'ALGO', 'XLM'];
@@ -116,6 +117,14 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
 
   // Rotation lock to prevent double-rotation
   const rotationInProgressRef = useRef(false);
+
+  // Battle ref for stable triggerRotation callback (avoids depending on battle object identity)
+  const battleRef = useRef(null);
+  // Exponential backoff on rotation failure (consecutive failure count, capped at 6 → max 64s)
+  const rotationBackoffRef = useRef(0);
+  // Timestamps for backoff and cooldown tracking
+  const lastRotationAttemptRef = useRef(0);
+  const lastRotationSuccessRef = useRef(0);
 
   // ==================== DERIVED STATE ====================
 
@@ -1074,21 +1083,31 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
 
   // ==================== FREE AGENT ROTATION ====================
 
-  const triggerRotation = useCallback(async () => {
-    if (!battleId || !battle || battleId.startsWith('training_') || rotationInProgressRef.current) return;
+  // Keep battleRef in sync so triggerRotation can read current battle without depending on it
+  useEffect(() => {
+    battleRef.current = battle;
+  }, [battle]);
 
-    const nextAt = battle?.freeAgents?.nextRotationAt;
+  const triggerRotation = useCallback(async () => {
+    const currentBattle = battleRef.current;
+    if (!battleId || !currentBattle || battleId.startsWith('training_') || rotationInProgressRef.current) return;
+
+    const nextAt = currentBattle?.freeAgents?.nextRotationAt;
     if (!shouldRotate(nextAt)) return;
 
     rotationInProgressRef.current = true;
+    lastRotationAttemptRef.current = Date.now();
     try {
       await rotateFreeAgents(battleId);
+      rotationBackoffRef.current = 0;
+      lastRotationSuccessRef.current = Date.now();
     } catch (err) {
       console.error('Error during free agent rotation:', err);
+      rotationBackoffRef.current = Math.min(rotationBackoffRef.current + 1, 6);
     } finally {
       rotationInProgressRef.current = false;
     }
-  }, [battleId, battle]);
+  }, [battleId]);
 
   // ==================== SWAP EXECUTION ====================
 
@@ -1251,6 +1270,16 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
 
       // Trigger rotation when countdown reaches 0
       if (countdown === 0) {
+        // Exponential backoff: skip if within backoff window after recent failure
+        if (rotationBackoffRef.current > 0) {
+          const backoffMs = Math.pow(2, rotationBackoffRef.current) * 1000;
+          if (Date.now() - lastRotationAttemptRef.current < backoffMs) return;
+        }
+
+        // Cooldown: skip if a rotation just succeeded recently
+        if (lastRotationSuccessRef.current > 0 &&
+            Date.now() - lastRotationSuccessRef.current < ROTATION_COOLDOWN_MS) return;
+
         triggerRotation();
       }
     };
