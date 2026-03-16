@@ -14,6 +14,7 @@ import {
   REPORTER_PROFILES,
 } from '../_utils/fantasyTimesPrompts.js';
 import { getDefaultVisual, shouldOverrideVisual, callArtDirector } from '../_utils/fantasyTimesVisuals.js';
+import { getClaimsForReporter, formatClaimsForPrompt } from '../_utils/ingestedClaims.js';
 
 export const config = { maxDuration: 60 };
 
@@ -233,7 +234,7 @@ async function handleRecap(req, res, db) {
     fetchRealTimePrice('QQQ'),
   ]);
 
-  const userMessage = [
+  let userMessage = [
     `ECONOMIC DATA RELEASE:`,
     `Event: ${event.event}`,
     `Date: ${event.date} at ${event.time}`,
@@ -250,6 +251,18 @@ async function handleRecap(req, res, db) {
     '',
     `Write an economic data recap for this ${event.event} release. Use the publish_econ_recap tool.`,
   ].join('\n');
+
+  // Enrich with ingested claims (if available)
+  let recapClaimsContext = '';
+  try {
+    const claims = await getClaimsForReporter('neta', { source: 'fed_event', limit: 6 });
+    recapClaimsContext = formatClaimsForPrompt(claims);
+  } catch (e) {
+    logError('Claims fetch failed for neta recap:', e.message);
+  }
+  if (recapClaimsContext) {
+    userMessage += `\n\nFED/MACRO EVENT INSIGHTS (from press conference analysis):\n${recapClaimsContext}`;
+  }
 
   const anthropic = getAnthropicClient();
   logInfo('Calling Claude API for recap...', { model: REPORTER_PROFILES.neta.model });
@@ -379,7 +392,7 @@ async function handlePreview(req, res, db) {
     (e) => `- ${e.day} ${e.date} at ${e.time}: ${e.event} (impact: ${e.impact}, estimate: ${e.estimate || 'TBD'}, previous: ${e.previous || 'N/A'})`
   );
 
-  const userMessage = [
+  let userMessage = [
     'WEEKLY ECONOMIC CALENDAR PREVIEW:',
     '',
     `Highlight: ${calendar.highlight || 'Multiple releases scheduled'}`,
@@ -392,6 +405,18 @@ async function handlePreview(req, res, db) {
     '',
     'Write a weekly economic calendar preview. Use the publish_econ_preview tool.',
   ].join('\n');
+
+  // Enrich with ingested claims (if available)
+  let previewClaimsContext = '';
+  try {
+    const claims = await getClaimsForReporter('neta', { source: 'fed_event', limit: 6 });
+    previewClaimsContext = formatClaimsForPrompt(claims);
+  } catch (e) {
+    logError('Claims fetch failed for neta preview:', e.message);
+  }
+  if (previewClaimsContext) {
+    userMessage += `\n\nRECENT MACRO CONTEXT:\n${previewClaimsContext}`;
+  }
 
   const anthropic = getAnthropicClient();
   logInfo('Calling Claude Sonnet for weekly preview...');

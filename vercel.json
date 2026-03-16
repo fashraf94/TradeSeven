@@ -149,6 +149,22 @@
     {
       "path": "/api/fantasytimes/scan-movers",
       "schedule": "*/15 13,14,15,16,17,18,19,20 * * 1-5"
+    },
+    {
+      "path": "/api/fantasytimes/ingest-earnings",
+      "schedule": "30 23 * * 1-5"
+    },
+    {
+      "path": "/api/fantasytimes/ingest-earnings",
+      "schedule": "30 3 * * 2-6"
+    },
+    {
+      "path": "/api/fantasytimes/ingest-econ",
+      "schedule": "45 14,18,22 * * 1-5"
+    },
+    {
+      "path": "/api/fantasytimes/ingest-cleanup",
+      "schedule": "0 8 * * 0"
     }
   ]
 }

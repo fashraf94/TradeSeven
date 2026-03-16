@@ -13,6 +13,7 @@ import {
   REPORTER_PROFILES,
 } from '../_utils/fantasyTimesPrompts.js';
 import { getDefaultVisual, shouldOverrideVisual, callArtDirector } from '../_utils/fantasyTimesVisuals.js';
+import { getClaimsForReporter, formatClaimsForPrompt } from '../_utils/ingestedClaims.js';
 
 export const config = { maxDuration: 60 };
 
@@ -208,7 +209,7 @@ export default async function handler(req, res) {
       (p) => `- **${p.symbol}**: $${p.price.toFixed(2)} (${p.changePercent >= 0 ? '+' : ''}${p.changePercent.toFixed(2)}%)`
     );
 
-    const userMessage = [
+    let userMessage = [
       `${periodLabel} MARKET PULSE:`,
       '',
       'MARKET INDICES:',
@@ -225,6 +226,21 @@ export default async function handler(req, res) {
       '',
       `Write a ${periodLabel} Market Pulse story. Use the publish_market_pulse tool.`,
     ].join('\n');
+
+    // Enrich with high-impact ingested claims (if available)
+    let claimsContext = '';
+    try {
+      const claims = await getClaimsForReporter('kai', { limit: 5 });
+      const impactful = claims.filter(c =>
+        (c.sentiment === 'bullish' || c.sentiment === 'bearish') && c.confidence === 'high'
+      );
+      claimsContext = formatClaimsForPrompt(impactful);
+    } catch (e) {
+      logError('Claims fetch failed for kai:', e.message);
+    }
+    if (claimsContext) {
+      userMessage += `\n\nMARKET-MOVING CONTEXT:\n${claimsContext}`;
+    }
 
     // ── Call Claude Haiku with Tool Use ──────────────────────────────────
     logInfo('Calling Claude API...', { model: REPORTER_PROFILES.kai.model, messageLength: userMessage.length });
