@@ -13031,62 +13031,48 @@ export default function PortfolioDuel() {
     };
   }, [user, isPageVisible]);
 
-  // Fetch active draft battles for dashboard (pauses when tab is hidden)
+  // Combined draft poll — single user-scoped query replaces separate draft battles + active draft banner polls
   useEffect(() => {
-    if (screen !== 'dashboard' || !isPageVisible) return;
+    if (screen !== 'dashboard' || !isPageVisible || !user) return;
 
-    const fetchActiveDraftBattles = async () => {
+    const fetchDraftData = async () => {
       try {
-        const currentUserId = user?.odUserId || user?.username;
-        if (!currentUserId) return;
+        const userId = user.odUserId || user.username;
+        if (!userId) return;
 
-        // Query Firebase for draft battles where user is a player
         const { collection, query, where, getDocs } = await import('firebase/firestore');
         const { db } = await import('./firebase/config');
 
+        // Single query: get all user's non-completed drafts
         const draftsRef = collection(db, 'drafts');
-
-        // Query for battles in progress
         const q = query(
           draftsRef,
-          where('status', '==', 'battle')
+          where('playerIds', 'array-contains', userId),
+          where('status', 'in', ['waiting', 'active', 'battle'])
         );
-
         const snapshot = await getDocs(q);
+        const userDrafts = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
 
-        const allBattles = snapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        }));
-
-        // Filter locally for user's battles (since array-contains with playerIds can be inconsistent)
-        const userBattles = allBattles.filter(b =>
-          b.playerIds?.includes(currentUserId) ||
-          b.players?.some(p => p.odUserId === currentUserId)
-        );
-
-        // Filter out expired battles (past battleEndTime)
+        // Split results for both consumers
         const now = new Date();
-        const activeBattles = userBattles.filter(b => {
+
+        // 1) Draft battles (status === 'battle') — feeds dashboard battle cards
+        const battleDrafts = userDrafts.filter(d => d.status === 'battle');
+        const activeBattles = battleDrafts.filter(b => {
           if (!b.battleEndTime) return true;
           return new Date(b.battleEndTime) > now;
         });
-
-        // Sort by end time (soonest first)
         activeBattles.sort((a, b) => {
           const aEnd = new Date(a.battleEndTime || 0);
           const bEnd = new Date(b.battleEndTime || 0);
           return aEnd - bEnd;
         });
-
         setActiveDraftBattles(activeBattles);
 
-        // Check for expired battles that need to be completed
-        const expiredBattles = userBattles.filter(b => {
-          if (!b.battleEndTime) return false;
-          return new Date(b.battleEndTime) <= now;
-        });
-
+        // Auto-complete expired draft battles
+        const expiredBattles = battleDrafts.filter(b =>
+          b.battleEndTime && new Date(b.battleEndTime) <= now
+        );
         if (expiredBattles.length > 0) {
           const draftService = await import('./services/draftService');
           for (const battle of expiredBattles) {
@@ -13095,17 +13081,21 @@ export default function PortfolioDuel() {
             }
           }
         }
+
+        // 2) Active drafts (waiting/active) — feeds active draft banner
+        const activeDrafts = userDrafts.filter(d => d.status === 'waiting' || d.status === 'active');
+        const activeDraft = activeDrafts.find(d => d.status === 'active') || activeDrafts[0] || null;
+        setActiveDraftBanner(activeDraft);
       } catch (error) {
-        console.error('Error fetching draft battles:', error);
+        console.error('[DraftPoll] query failed:', error);
         setActiveDraftBattles([]);
+        setActiveDraftBanner(null);
       }
     };
 
-    fetchActiveDraftBattles();
-
-    // Refresh every 30 seconds
-    const refreshInterval = setInterval(fetchActiveDraftBattles, 30000);
-    return () => clearInterval(refreshInterval);
+    fetchDraftData();
+    const interval = setInterval(fetchDraftData, 120_000); // 120s instead of 30s
+    return () => clearInterval(interval);
   }, [screen, user, isPageVisible]);
 
   // Helper: calculate training battle score for a portfolio (mirrors ClashCardTrainingV4)
@@ -14426,32 +14416,7 @@ export default function PortfolioDuel() {
     return () => clearInterval(absentCheckInterval);
   }, [screen, draftState?.id, draftState?.status, draftState?.hostId, user]);
 
-  // Check for active draft on dashboard (rejoin functionality, pauses when tab hidden)
-  useEffect(() => {
-    if (screen !== 'dashboard' || !isPageVisible) return;
-
-    const checkActiveDraft = async () => {
-      try {
-        const draftService = await import('./services/draftService');
-        const userId = user?.odUserId || user?.username;
-
-        if (!userId) return;
-
-        const activeDraft = await draftService.getUserActiveDraft(userId);
-        setActiveDraftBanner(activeDraft);
-      } catch (error) {
-        console.error('Error checking active draft:', error);
-        setActiveDraftBanner(null);
-      }
-    };
-
-    checkActiveDraft();
-
-    // Also check periodically in case draft status changes
-    const checkInterval = setInterval(checkActiveDraft, 30000);
-
-    return () => clearInterval(checkInterval);
-  }, [screen, user, isPageVisible]);
+  // NOTE: Active draft banner check is now handled by the combined draft poll above (Fix 2)
 
   // Check for active BaggerBomb V3 battles on dashboard (rejoin functionality)
   useEffect(() => {
