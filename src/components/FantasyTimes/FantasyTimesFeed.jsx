@@ -297,6 +297,15 @@ export default function FantasyTimesFeed({
                 color: isActive ? sf.color : '#6e7681',
               }}
             >
+              {isActive && sf.key !== 'all' && (
+                <div style={{
+                  width: 6,
+                  height: 6,
+                  borderRadius: '50%',
+                  backgroundColor: sf.color,
+                  flexShrink: 0,
+                }} />
+              )}
               {sf.label}
               <span style={{
                 fontSize: '10px',
@@ -400,14 +409,32 @@ export default function FantasyTimesFeed({
 
         {!loading && !error && filteredStories.length === 0 && (
           <div style={{
-            padding: '40px 16px',
+            padding: '60px 20px',
             textAlign: 'center',
             color: '#6e7681',
-            fontSize: '13px',
           }}>
-            {reporterFilter === 'all'
-              ? 'No stories yet. Check back soon.'
-              : `No stories from ${REPORTERS.find((r) => r.key === reporterFilter)?.label || 'this reporter'} right now.`}
+            {stories.length === 0 ? (
+              <>
+                <div style={{ fontSize: 28, marginBottom: 12 }}>📰</div>
+                <div style={{ fontSize: 14, fontWeight: 600, color: '#8b949e', marginBottom: 6 }}>No stories yet</div>
+                <div style={{ fontSize: 13 }}>Check back soon.</div>
+              </>
+            ) : (
+              <>
+                <div style={{ fontSize: 28, marginBottom: 12 }}>🔍</div>
+                <div style={{ fontSize: 14, fontWeight: 600, color: '#8b949e', marginBottom: 6 }}>No stories match your filters</div>
+                <div style={{ fontSize: 13 }}>
+                  {(() => {
+                    const parts = [];
+                    if (reporterFilter !== 'all') parts.push(REPORTERS.find((r) => r.key === reporterFilter)?.label || reporterFilter);
+                    if (sentimentFilter !== 'all') parts.push(sentimentFilter);
+                    return parts.length > 0
+                      ? `No ${parts.join(' + ')} stories right now. Try adjusting your filters.`
+                      : 'Try adjusting your reporter or sentiment filters.';
+                  })()}
+                </div>
+              </>
+            )}
           </div>
         )}
 
