@@ -439,6 +439,7 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
     if (!battle || !battleId) return;
     if (battle.status !== 'active') return;
     if (!isMarketOpen()) return;
+    if (document.hidden) return;
     if (myTotalScore === 0 && oppTotalScore === 0) return;
 
     const now = Date.now();
