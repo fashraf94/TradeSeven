@@ -216,7 +216,7 @@ export default function DashboardBattleCard({
   const currentUserId = user?.odUserId || user?.username;
 
   // ─── Game type detection ──────────────────────────────────────────────────
-  const isBaggerBomb = battle._v >= 2 || battle.type === 'baggerbomb';
+  const isBaggerBomb = battle._v >= 2 || battle.type?.includes('baggerbomb');
   const isDraftType = battleType === 'draft' || battleType === 'trainingDraft';
   const isTraining = battle.isTrainingBattle || battleType === 'training' || battleType === 'trainingDraft';
   const isDraftBattle = isDraftType || (isTraining && battle.players?.length > 2);
@@ -258,7 +258,7 @@ export default function DashboardBattleCard({
       myScore = battle.player1?.percentChange || 0;
       theirScore = battle.player2?.percentChange || 0;
       opponentName = 'CPU';
-      isPoints = false;
+      isPoints = isBaggerBomb;
     }
 
     if (isTraining && opponentName === 'Opponent') {
