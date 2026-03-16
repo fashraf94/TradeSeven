@@ -33,3 +33,4 @@ export { default as QuickPlayModal } from './QuickPlayModal';
 export { default as BattleRow } from './BattleRow';
 export { default as PriorityBattleCard } from './PriorityBattleCard';
 export { default as FantasyTimesTeaser } from './FantasyTimesTeaser';
+export { default as DashboardDesktop } from './DashboardDesktop';
