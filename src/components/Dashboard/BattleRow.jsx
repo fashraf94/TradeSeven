@@ -7,6 +7,7 @@ import { Swords, Layers, Bot } from 'lucide-react';
 import { useTheme } from '../../contexts/ThemeContext';
 import TapGlint from '../shared/TapGlint';
 import { getEndTime } from '../../utils/battleHelpers';
+import { calculate1v1PreviewData } from './ClashCard';
 
 const TYPE_ICONS = {
   classic: Swords,
@@ -71,6 +72,10 @@ export default function BattleRow({ battle, battleType, user, onPress, grouped =
   const remaining = endTime ? Math.max(0, new Date(endTime).getTime() - now) : null;
   const opponent = getOpponentName(battle, user);
   const isUrgent = remaining !== null && remaining < 3600000 && remaining > 0;
+
+  const preview = calculate1v1PreviewData(battle, user?.username);
+  const myScore = preview?.myGain ?? 0;
+  const theirScore = preview?.theirGain ?? 0;
 
   return (
     <motion.div
@@ -144,6 +149,38 @@ export default function BattleRow({ battle, battleType, user, onPress, grouped =
             {TYPE_LABELS[battleType] || battleType}
           </div>
         )}
+      </div>
+
+      {/* Scores */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        flexShrink: 0,
+        gap: '0',
+      }}>
+        <span style={{
+          color: '#5eead4',
+          fontWeight: 700,
+          fontSize: '16px',
+          fontVariantNumeric: 'tabular-nums',
+        }}>
+          {myScore >= 0 ? '+' : ''}{Math.round(myScore)}
+        </span>
+        <span style={{
+          color: 'rgba(255,255,255,0.3)',
+          fontSize: '11px',
+          margin: '0 4px',
+        }}>
+          vs
+        </span>
+        <span style={{
+          color: 'rgba(255,255,255,0.5)',
+          fontWeight: 600,
+          fontSize: '14px',
+          fontVariantNumeric: 'tabular-nums',
+        }}>
+          {theirScore >= 0 ? '+' : ''}{Math.round(theirScore)}
+        </span>
       </div>
 
       {/* Right: time remaining */}
