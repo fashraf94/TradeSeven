@@ -7,7 +7,7 @@
 import { applySecurityMiddleware } from '../_utils/security.js';
 
 export default async function handler(req, res) {
-  if (applySecurityMiddleware(req, res, { rateLimit: { limit: 100, windowMs: 60000 } })) {
+  if (applySecurityMiddleware(req, res, { rateLimit: { limit: 60, windowMs: 60000 } })) {
     return;
   }
 

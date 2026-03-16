@@ -12,7 +12,7 @@ const CLAUDE_MODEL = 'claude-haiku-4-5-20251001';
 const ANTHROPIC_API_URL = 'https://api.anthropic.com/v1/messages';
 const ANTHROPIC_API_VERSION = '2023-06-01';
 const TEMPERATURE = 0.9;
-const RATE_LIMIT = 60;
+const RATE_LIMIT = 30;
 const RATE_LIMIT_WINDOW_MS = 60000;
 
 // Dynamic max_tokens — shorter for openers, tighter for everything else

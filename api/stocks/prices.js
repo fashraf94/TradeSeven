@@ -21,7 +21,7 @@ function safeDateFromEpoch(timestamp) {
 export default async function handler(req, res) {
   // Apply security middleware (CORS, security headers, rate limiting, preflight)
   // Higher limit for this endpoint since it handles historical/technical data that requires multiple calls
-  if (applySecurityMiddleware(req, res, { rateLimit: { limit: 200, windowMs: 60000 } })) {
+  if (applySecurityMiddleware(req, res, { rateLimit: { limit: 60, windowMs: 60000 } })) {
     return;
   }
 
