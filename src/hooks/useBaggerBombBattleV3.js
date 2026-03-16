@@ -338,19 +338,20 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
   // Periodically persist both players' computed scores to Firebase so the
   // dashboard can display them without running live price hooks.
   useEffect(() => {
-    if (!battle || !battleId || battleId.startsWith('training_')) return;
+    if (!battle || !battleId) return;
     if (battle.status !== 'active') return;
     if (!isMarketOpen()) return;
     if (myTotalScore === 0 && oppTotalScore === 0) return;
 
     const now = Date.now();
-    if (now - lastLiveScoreWriteRef.current < 60_000) return;
+    if (now - lastLiveScoreWriteRef.current < 15_000) return;
     lastLiveScoreWriteRef.current = now;
 
     const creatorScore = isCreator ? myTotalScore : oppTotalScore;
     const opponentScore = isCreator ? oppTotalScore : myTotalScore;
 
-    updateDoc(doc(db, 'battles', battleId), {
+    const coll = battleId.startsWith('training_') ? 'trainingBattles' : 'battles';
+    updateDoc(doc(db, coll, battleId), {
       'creator.liveScore': creatorScore,
       'opponent.liveScore': opponentScore,
       'liveScoreUpdatedAt': new Date().toISOString(),
