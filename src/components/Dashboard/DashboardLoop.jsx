@@ -34,6 +34,15 @@ function getEndTime(battle) {
     battle.timing?.endDate || battle.timeline?.endDate || null;
 }
 
+function isEnded(battle) {
+  const endTime = getEndTime(battle);
+  if (!endTime) return false;
+  const endMs = typeof endTime === 'object' && endTime.seconds
+    ? endTime.seconds * 1000
+    : new Date(endTime).getTime();
+  return endMs < Date.now();
+}
+
 function getGreeting() {
   const hour = new Date().getHours();
   if (hour < 12) return 'Good morning';
@@ -75,10 +84,10 @@ export default function DashboardLoop({
   // ─── Battle merge: combine all active battles sorted by end time ───────────
   const allBattles = useMemo(() => {
     const merged = [
-      ...activeBattles.filter(b => !b.isTrainingBattle && b.status !== 'completed').map(b => ({ battle: b, type: 'classic' })),
-      ...activeDraftBattles.filter(b => b.status === 'active' && b.isTraining !== true).map(b => ({ battle: b, type: 'draft' })),
-      ...activeDraftBattles.filter(b => b.status === 'active' && b.isTraining === true).map(b => ({ battle: b, type: 'trainingDraft' })),
-      ...activeTrainingBattles.filter(b => b.state?.status !== 'completed').map(b => ({ battle: b, type: 'training' })),
+      ...activeBattles.filter(b => !b.isTrainingBattle && !isEnded(b)).map(b => ({ battle: b, type: 'classic' })),
+      ...activeDraftBattles.filter(b => b.status === 'active' && b.isTraining !== true && !isEnded(b)).map(b => ({ battle: b, type: 'draft' })),
+      ...activeDraftBattles.filter(b => b.status === 'active' && b.isTraining === true && !isEnded(b)).map(b => ({ battle: b, type: 'trainingDraft' })),
+      ...activeTrainingBattles.filter(b => !isEnded(b)).map(b => ({ battle: b, type: 'training' })),
     ];
 
     return merged.sort((a, b) => {

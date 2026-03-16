@@ -1,6 +1,6 @@
 // /src/components/Dashboard/GamesModal.jsx
-// Bottom-sheet modal with swipeable game mode card carousel
-// Each card: icon, description, Go to Lobby / Play vs AI / How to Score
+// Centered overlay modal with swipeable game mode card carousel
+// Each card: premium color-tinted bg, icon with gradient glow, description, action buttons
 
 import React, { useState, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -18,6 +18,11 @@ const GAME_MODES = [
     Icon: Flame,
     iconColor: '#f59e0b',
     accentBg: 'rgba(245,158,11,0.12)',
+    cardBg: 'linear-gradient(135deg, #1a1508 0%, #110d03 100%)',
+    borderColor: 'rgba(245,158,11,0.3)',
+    glowShadow: '0 0 20px rgba(245,158,11,0.1)',
+    iconGradient: 'linear-gradient(135deg, #dc2626 0%, #f97316 100%)',
+    iconGlow: '0 4px 15px rgba(220,38,38,0.4)',
   },
   {
     id: 'snakeDraft',
@@ -27,8 +32,50 @@ const GAME_MODES = [
     Icon: TrendingUp,
     iconColor: '#34d399',
     accentBg: 'rgba(52,211,153,0.12)',
+    cardBg: 'linear-gradient(135deg, #091a10 0%, #040f08 100%)',
+    borderColor: 'rgba(52,211,153,0.3)',
+    glowShadow: '0 0 20px rgba(52,211,153,0.1)',
+    iconGradient: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+    iconGlow: '0 4px 15px rgba(16,185,129,0.4)',
   },
 ];
+
+// ─── Decorative SVGs ─────────────────────────────────────────────────────────
+
+function ExplosionSvg() {
+  return (
+    <svg width="100" height="100" viewBox="0 0 100 100" style={{
+      position: 'absolute', right: '-5px', bottom: '-5px', opacity: 0.08, pointerEvents: 'none',
+    }}>
+      <polygon
+        points="50,5 61,35 95,35 67,55 78,90 50,70 22,90 33,55 5,35 39,35"
+        fill="#f97316"
+      />
+      <circle cx="30" cy="25" r="3" fill="#dc2626" opacity="0.8" />
+      <circle cx="70" cy="30" r="2" fill="#f97316" opacity="0.6" />
+      <circle cx="75" cy="70" r="2.5" fill="#dc2626" opacity="0.7" />
+    </svg>
+  );
+}
+
+function SnakeSvg() {
+  return (
+    <svg width="120" height="120" viewBox="0 0 120 120" style={{
+      position: 'absolute', right: '-10px', bottom: '-10px', opacity: 0.08, pointerEvents: 'none',
+    }}>
+      <path
+        d="M10,60 Q30,30 50,60 T90,60"
+        stroke="#10b981"
+        strokeWidth="8"
+        strokeLinecap="round"
+        fill="none"
+      />
+      <circle cx="90" cy="60" r="6" fill="#10b981" />
+      <circle cx="86" cy="56" r="2" fill="white" />
+      <circle cx="86" cy="64" r="2" fill="white" />
+    </svg>
+  );
+}
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
@@ -81,47 +128,37 @@ export default function GamesModal({
             position: 'fixed',
             inset: 0,
             zIndex: 200,
-            backgroundColor: 'rgba(0,0,0,0.7)',
+            background: 'rgba(0,0,0,0.75)',
             backdropFilter: 'blur(8px)',
             WebkitBackdropFilter: 'blur(8px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '20px',
           }}
         >
-          {/* Modal Panel */}
+          {/* Modal Container */}
           <motion.div
-            initial={{ y: '100%' }}
-            animate={{ y: 0 }}
-            exit={{ y: '100%' }}
-            transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-            drag="y"
-            dragConstraints={{ top: 0 }}
-            dragElastic={0.2}
-            onDragEnd={(_, info) => { if (info.offset.y > 100) onClose(); }}
+            initial={{ opacity: 0, scale: 0.95, y: 10 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.95, y: 10 }}
+            transition={{ type: 'spring', stiffness: 300, damping: 28 }}
             onClick={e => e.stopPropagation()}
             style={{
-              position: 'fixed',
-              bottom: 0,
-              left: 0,
-              right: 0,
+              width: '100%',
+              maxWidth: '420px',
               maxHeight: '85vh',
               background: tokens.bgApp,
-              borderRadius: '24px 24px 0 0',
+              borderRadius: '20px',
+              border: `1px solid ${tokens.borderDefault}`,
+              boxShadow: '0 25px 60px rgba(0,0,0,0.5)',
               overflow: 'hidden',
               display: 'flex',
               flexDirection: 'column',
             }}
           >
-            {/* Grab handle */}
-            <div style={{ display: 'flex', justifyContent: 'center', paddingTop: '12px' }}>
-              <div style={{
-                width: '36px',
-                height: '4px',
-                borderRadius: '2px',
-                background: tokens.textFaintest,
-              }} />
-            </div>
-
             {/* Header */}
-            <div style={{ position: 'relative', padding: '16px 0 12px', textAlign: 'center' }}>
+            <div style={{ position: 'relative', padding: '20px 20px 12px', textAlign: 'center' }}>
               <span style={{ fontSize: '18px', fontWeight: '600', color: tokens.textPrimary }}>
                 Games
               </span>
@@ -129,8 +166,8 @@ export default function GamesModal({
                 onClick={onClose}
                 style={{
                   position: 'absolute',
-                  top: '14px',
-                  right: '20px',
+                  top: '16px',
+                  right: '16px',
                   width: '32px',
                   height: '32px',
                   display: 'flex',
@@ -156,7 +193,7 @@ export default function GamesModal({
                 overflowX: 'auto',
                 scrollSnapType: 'x mandatory',
                 gap: '16px',
-                padding: '4px 7.5% 0',
+                padding: '4px 7.5% 8px',
                 scrollbarWidth: 'none',
                 msOverflowStyle: 'none',
                 WebkitOverflowScrolling: 'touch',
@@ -168,31 +205,38 @@ export default function GamesModal({
                 <div
                   key={game.id}
                   style={{
+                    position: 'relative',
                     minWidth: '85%',
                     maxWidth: '85%',
                     scrollSnapAlign: 'center',
                     flexShrink: 0,
-                    background: tokens.bgCard,
-                    border: `1px solid ${tokens.borderDefault}`,
+                    background: game.cardBg,
+                    border: `1px solid ${game.borderColor}`,
                     borderRadius: '20px',
                     padding: '24px',
-                    boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.05), inset 0 -1px 0 rgba(0,0,0,0.4)',
+                    boxShadow: `inset 0 1px 0 rgba(255,255,255,0.05), inset 0 -1px 0 rgba(0,0,0,0.4), ${game.glowShadow}`,
                     display: 'flex',
                     flexDirection: 'column',
-                    marginBottom: '8px',
+                    overflow: 'hidden',
                   }}
                 >
+                  {/* Decorative SVG */}
+                  {game.id === 'baggerbomb' ? <ExplosionSvg /> : <SnakeSvg />}
+
                   {/* Icon */}
                   <div style={{
-                    width: '64px',
-                    height: '64px',
-                    borderRadius: '16px',
-                    background: tokens.bgIcon,
+                    width: '72px',
+                    height: '72px',
+                    borderRadius: '18px',
+                    background: game.iconGradient,
+                    boxShadow: game.iconGlow,
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
+                    position: 'relative',
+                    zIndex: 1,
                   }}>
-                    <game.Icon size={32} color={game.iconColor} />
+                    <game.Icon size={36} color="#fff" />
                   </div>
 
                   {/* Name + subtitle */}
@@ -201,13 +245,18 @@ export default function GamesModal({
                     fontWeight: '700',
                     color: tokens.textPrimary,
                     marginTop: '16px',
+                    position: 'relative',
+                    zIndex: 1,
                   }}>
                     {game.name}
                   </div>
                   <div style={{
                     fontSize: '14px',
-                    color: tokens.textMuted,
+                    color: game.iconColor,
                     marginTop: '4px',
+                    fontWeight: '500',
+                    position: 'relative',
+                    zIndex: 1,
                   }}>
                     {game.subtitle}
                   </div>
@@ -218,12 +267,21 @@ export default function GamesModal({
                     color: tokens.textSecondary,
                     lineHeight: 1.5,
                     marginTop: '12px',
+                    position: 'relative',
+                    zIndex: 1,
                   }}>
                     {game.description}
                   </div>
 
                   {/* Action buttons */}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '20px' }}>
+                  <div style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '8px',
+                    marginTop: '20px',
+                    position: 'relative',
+                    zIndex: 1,
+                  }}>
                     <motion.button
                       onClick={() => handleLobby(game.id)}
                       whileTap={{ scale: 0.98 }}
@@ -304,8 +362,7 @@ export default function GamesModal({
               display: 'flex',
               justifyContent: 'center',
               gap: '8px',
-              padding: '12px 0',
-              paddingBottom: 'calc(20px + env(safe-area-inset-bottom))',
+              padding: '12px 0 20px',
             }}>
               {GAME_MODES.map((_, i) => (
                 <div
