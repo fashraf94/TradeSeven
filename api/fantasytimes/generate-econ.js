@@ -13,7 +13,7 @@ import {
   PUBLISH_ECON_PREVIEW_TOOL,
   REPORTER_PROFILES,
 } from '../_utils/fantasyTimesPrompts.js';
-import { getDefaultVisual } from '../_utils/fantasyTimesVisuals.js';
+import { getDefaultVisual, shouldOverrideVisual, callArtDirector } from '../_utils/fantasyTimesVisuals.js';
 
 export const config = { maxDuration: 60 };
 
@@ -310,6 +310,11 @@ async function handleRecap(req, res, db) {
   const docRef = await db.collection('fantasyTimesStories').add(storyDoc);
   logInfo(`Published econ recap ${docRef.id}`, { event: event.event, headline: storyDoc.headline });
 
+  // Art Director override for edge-case story types
+  if (shouldOverrideVisual(storyDoc.reporter, storyDoc.type)) {
+    await callArtDirector(storyDoc, docRef.id, db);
+  }
+
   return res.status(200).json({
     success: true,
     storyId: docRef.id,
@@ -442,6 +447,11 @@ async function handlePreview(req, res, db) {
 
   const docRef = await db.collection('fantasyTimesStories').add(storyDoc);
   logInfo(`Published weekly preview ${docRef.id}`, { headline: storyDoc.headline });
+
+  // Art Director override for edge-case story types
+  if (shouldOverrideVisual(storyDoc.reporter, storyDoc.type)) {
+    await callArtDirector(storyDoc, docRef.id, db);
+  }
 
   return res.status(200).json({
     success: true,

@@ -10,7 +10,7 @@ import {
   PUBLISH_SECTOR_COLUMN_TOOL,
   REPORTER_PROFILES,
 } from '../_utils/fantasyTimesPrompts.js';
-import { getDefaultVisual } from '../_utils/fantasyTimesVisuals.js';
+import { getDefaultVisual, shouldOverrideVisual, callArtDirector } from '../_utils/fantasyTimesVisuals.js';
 import { STOCK_DATA, TICKERS } from '../_utils/stockIntelligenceData.js';
 
 export const config = { maxDuration: 60 };
@@ -312,6 +312,11 @@ export default async function handler(req, res) {
 
     const docRef = await db.collection('fantasyTimesStories').add(storyDoc);
     logInfo(`Published ${columnType} column ${docRef.id}`, { headline: storyDoc.headline });
+
+    // Art Director override for edge-case story types
+    if (shouldOverrideVisual(storyDoc.reporter, storyDoc.type)) {
+      await callArtDirector(storyDoc, docRef.id, db);
+    }
 
     return res.status(200).json({
       success: true,

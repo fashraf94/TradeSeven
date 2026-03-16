@@ -116,8 +116,60 @@ export function getDefaultVisual(reporter, storyType, dataSnapshot, primaryTicke
 }
 
 /**
- * Art Director Haiku system prompt — prepared for Phase 4 fallback endpoint.
- * Not used in Phase 1 deterministic path.
+ * Check if a story's reporter + type combination is outside the expected
+ * deterministic mapping, indicating the Art Director should be consulted.
+ */
+export function shouldOverrideVisual(reporter, storyType) {
+  const expectedTypes = {
+    kai: ['market_pulse'],
+    alex: ['market_mover'],
+    neta: ['econ_recap', 'econ_preview'],
+    doug: ['earnings_preview', 'earnings_recap'],
+    kim: ['sector_column'],
+  };
+  const expected = expectedTypes[reporter] || [];
+  return !expected.includes(storyType);
+}
+
+/**
+ * Call the Art Director (Haiku) to override visual assignment for an edge-case story.
+ * Updates Firestore in-place if the result differs from current visual.
+ * Catches all errors silently — the deterministic visual is kept on failure.
+ *
+ * @param {object} storyDoc - The full story document object
+ * @param {string} docId - Firestore document ID
+ * @param {object} db - Firestore database instance
+ */
+export async function callArtDirector(storyDoc, docId, db) {
+  try {
+    // Dynamic import to avoid circular dependency and keep the module lightweight
+    const { runArtDirector } = await import('../fantasytimes/art-director.js');
+
+    const result = await runArtDirector({
+      headline: storyDoc.headline,
+      body: storyDoc.body,
+      reporter: storyDoc.reporter,
+      type: storyDoc.type,
+      primaryTicker: storyDoc.primaryTicker,
+      sentiment: storyDoc.sentiment,
+      dataSnapshot: storyDoc.dataSnapshot,
+    });
+
+    // Only update if the Art Director returned something different and non-none
+    if (result.visualType !== 'none' && result.visualType !== storyDoc.visualType) {
+      await db.collection('fantasyTimesStories').doc(docId).update({
+        visualType: result.visualType,
+        visualConfig: result.visualConfig,
+      });
+      console.log(`[ArtDirector] Overrode visual for ${docId}: ${storyDoc.visualType} → ${result.visualType}`);
+    }
+  } catch (err) {
+    console.warn('[ArtDirector] Override failed:', err.message);
+  }
+}
+
+/**
+ * Art Director Haiku system prompt.
  */
 export const ART_DIRECTOR_PROMPT = `You are the Art Director for an elite financial news feed. Your job is to read a news story and assign the single best visual layout.
 

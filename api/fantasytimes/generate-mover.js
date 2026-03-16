@@ -12,7 +12,7 @@ import {
   PUBLISH_STORY_TOOL,
   REPORTER_PROFILES,
 } from '../_utils/fantasyTimesPrompts.js';
-import { getDefaultVisual } from '../_utils/fantasyTimesVisuals.js';
+import { getDefaultVisual, shouldOverrideVisual, callArtDirector } from '../_utils/fantasyTimesVisuals.js';
 
 export const config = { maxDuration: 30 };
 
@@ -206,6 +206,11 @@ export async function generateAlexMoverStory({
     headline: storyDoc.headline,
     sentiment: storyDoc.sentiment,
   });
+
+  // Art Director override for edge-case story types
+  if (shouldOverrideVisual(storyDoc.reporter, storyDoc.type)) {
+    await callArtDirector(storyDoc, docRef.id, db);
+  }
 
   return { success: true, storyId: docRef.id, headline: storyDoc.headline };
 }

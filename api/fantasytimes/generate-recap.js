@@ -12,7 +12,7 @@ import {
   PUBLISH_EARNINGS_RECAP_TOOL,
   REPORTER_PROFILES,
 } from '../_utils/fantasyTimesPrompts.js';
-import { getDefaultVisual } from '../_utils/fantasyTimesVisuals.js';
+import { getDefaultVisual, shouldOverrideVisual, callArtDirector } from '../_utils/fantasyTimesVisuals.js';
 
 export const config = { maxDuration: 60 };
 
@@ -283,6 +283,11 @@ export default async function handler(req, res) {
       outcome,
       headline: storyDoc.headline,
     });
+
+    // Art Director override for edge-case story types
+    if (shouldOverrideVisual(storyDoc.reporter, storyDoc.type)) {
+      await callArtDirector(storyDoc, docRef.id, db);
+    }
 
     return res.status(200).json({
       success: true,

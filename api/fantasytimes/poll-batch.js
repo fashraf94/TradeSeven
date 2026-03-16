@@ -7,7 +7,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { applySecurityMiddleware } from '../_utils/security.js';
 import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
 import { REPORTER_PROFILES } from '../_utils/fantasyTimesPrompts.js';
-import { getDefaultVisual } from '../_utils/fantasyTimesVisuals.js';
+import { getDefaultVisual, shouldOverrideVisual, callArtDirector } from '../_utils/fantasyTimesVisuals.js';
 
 export const config = { maxDuration: 10 };
 
@@ -145,9 +145,14 @@ export default async function handler(req, res) {
               storyDoc.visualType = visualType;
               storyDoc.visualConfig = visualConfig;
 
-              await db.collection('fantasyTimesStories').add(storyDoc);
+              const docRef = await db.collection('fantasyTimesStories').add(storyDoc);
               storiesCreated++;
               logInfo(`Created preview for ${symbol}`, { headline: storyDoc.headline });
+
+              // Art Director override for edge-case story types
+              if (shouldOverrideVisual(storyDoc.reporter, storyDoc.type)) {
+                await callArtDirector(storyDoc, docRef.id, db);
+              }
             } catch (writeErr) {
               errors.push(`${result.custom_id}: Write failed - ${writeErr.message}`);
               failures++;
