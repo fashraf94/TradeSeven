@@ -6,13 +6,12 @@
 import React, { useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Swords, Zap } from 'lucide-react';
-import ClashCard from './ClashCard';
+import DashboardBattleCard from './DashboardBattleCard';
 import BattleRow from './BattleRow';
 import FantasyTimesTeaser from './FantasyTimesTeaser';
 import GamesModal from './GamesModal';
 import QuickPlayModal from './QuickPlayModal';
 import PendingLobbiesSection from './PendingLobbiesSection';
-import TapGlint from '../shared/TapGlint';
 import { useTheme } from '../../contexts/ThemeContext';
 import { isMarketOpen } from '../../utils/marketSchedule';
 import { didUserWin, getEndTime, isEnded } from '../../utils/battleHelpers';
@@ -64,7 +63,6 @@ export default function DashboardDesktop({
   const marketOpen = isMarketOpen();
   const [gamesModalOpen, setGamesModalOpen] = useState(false);
   const [quickPlayOpen, setQuickPlayOpen] = useState(false);
-  const [tapCounts, setTapCounts] = useState({});
 
   // ─── Battle merge: combine all active battles sorted by end time ───────────
   const allBattles = useMemo(() => {
@@ -171,6 +169,16 @@ export default function DashboardDesktop({
       position: 'relative',
       zIndex: 1,
     }}>
+      {/* Ambient breathing glow */}
+      <div style={{
+        position: 'absolute', top: '22%', left: '50%',
+        width: '140%', height: '380px',
+        background: 'radial-gradient(ellipse at center, rgba(94,234,212,0.12) 0%, rgba(168,85,247,0.06) 40%, transparent 70%)',
+        filter: 'blur(50px)', transform: 'translate(-50%, -50%)',
+        zIndex: 0, pointerEvents: 'none',
+        animation: 'ambientBreathe 8s infinite alternate ease-in-out',
+      }} />
+
       <motion.div
         variants={containerVariants}
         initial="hidden"
@@ -324,26 +332,20 @@ export default function DashboardDesktop({
 
         {/* ── Battle Grid (2-column) ─────────────────────────────────────── */}
         <motion.div variants={sectionVariants}>
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px',
-            marginBottom: '16px',
-          }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
+            <span style={{ fontSize: 12 }}>⚔️</span>
             <span style={{
-              fontSize: '11px',
-              fontWeight: '700',
-              color: tokens.textFaint,
-              textTransform: 'uppercase',
-              letterSpacing: '1.5px',
+              fontSize: 11, fontWeight: 700, color: tokens.textFaint,
+              letterSpacing: '0.08em', textTransform: 'uppercase',
             }}>
               Active Battles
             </span>
             {totalActive > 0 && (
               <span style={{
-                color: tokens.teal,
-                fontSize: '11px',
-                fontWeight: '600',
+                fontSize: 10, fontWeight: 700, color: tokens.teal,
+                background: 'rgba(94,234,212,0.1)',
+                border: '1px solid rgba(94,234,212,0.15)',
+                padding: '2px 8px', borderRadius: 4,
               }}>
                 {totalActive} active
               </span>
@@ -356,40 +358,20 @@ export default function DashboardDesktop({
               gridTemplateColumns: 'repeat(2, 1fr)',
               gap: '16px',
             }}>
-              {gridBattles.map(({ battle, type }, i) => {
-                const key = battle.id || battle.firestoreId || i;
-                return (
-                  <motion.div
-                    key={key}
-                    onClick={() => {
-                      setTapCounts(prev => ({ ...prev, [key]: (prev[key] || 0) + 1 }));
-                      handleBattlePress(battle, type);
-                    }}
-                    whileHover={{ scale: 1.01, boxShadow: `${tokens.obsidianShadow}, 0 8px 30px rgba(0,0,0,0.4)` }}
-                    whileTap={{ scale: 0.98 }}
-                    transition={{ type: 'spring', stiffness: 300, damping: 25 }}
-                    style={{
-                      position: 'relative',
-                      overflow: 'hidden',
-                      borderRadius: '16px',
-                      border: `1px solid ${tokens.borderDefault}`,
-                      boxShadow: `${tokens.obsidianShadow}, 0 4px 20px rgba(0,0,0,0.3)`,
-                      background: tokens.bgCard,
-                      backgroundImage: 'linear-gradient(180deg, rgba(255,255,255,0.03) 0%, transparent 40%)',
-                      cursor: 'pointer',
-                      gridColumn: gridBattles.length === 1 ? '1 / -1' : undefined,
-                    }}
-                  >
-                    <TapGlint triggerKey={tapCounts[key] || 0} />
-                    <ClashCard
-                      battle={battle}
-                      battleType={type === 'trainingDraft' ? 'draft' : type}
-                      user={user}
-                      onPress={() => handleBattlePress(battle, type)}
-                    />
-                  </motion.div>
-                );
-              })}
+              {gridBattles.map(({ battle, type }, i) => (
+                <div key={battle.id || battle.firestoreId || i} style={{
+                  gridColumn: gridBattles.length === 1 ? '1 / -1' : undefined,
+                }}>
+                  <DashboardBattleCard
+                    battle={battle}
+                    battleType={type}
+                    user={user}
+                    tokens={tokens}
+                    onPress={() => handleBattlePress(battle, type)}
+                    isMostUrgent={i === 0}
+                  />
+                </div>
+              ))}
             </div>
           ) : (
             <div style={{
@@ -414,13 +396,11 @@ export default function DashboardDesktop({
         {/* ── Recent Results ────────────────────────────────────────────── */}
         {recentResults.length > 0 && (
           <motion.div variants={sectionVariants}>
-            <div style={{ marginBottom: '12px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+              <span style={{ fontSize: 12 }}>📊</span>
               <span style={{
-                fontSize: '11px',
-                fontWeight: '700',
-                color: tokens.textFaint,
-                textTransform: 'uppercase',
-                letterSpacing: '1.5px',
+                fontSize: 11, fontWeight: 700, color: tokens.textFaint,
+                letterSpacing: '0.08em', textTransform: 'uppercase',
               }}>
                 Recent Results
               </span>

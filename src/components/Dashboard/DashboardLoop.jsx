@@ -6,7 +6,7 @@
 import React, { useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Swords, Zap } from 'lucide-react';
-import PriorityBattleCard from './PriorityBattleCard';
+import DashboardBattleCard from './DashboardBattleCard';
 import BattleRow from './BattleRow';
 import FantasyTimesTeaser from './FantasyTimesTeaser';
 import GamesModal from './GamesModal';
@@ -173,6 +173,16 @@ export default function DashboardLoop({
       position: 'relative',
       zIndex: 1,
     }}>
+      {/* Ambient breathing glow */}
+      <div style={{
+        position: 'absolute', top: '22%', left: '50%',
+        width: '140%', height: '380px',
+        background: 'radial-gradient(ellipse at center, rgba(94,234,212,0.12) 0%, rgba(168,85,247,0.06) 40%, transparent 70%)',
+        filter: 'blur(50px)', transform: 'translate(-50%, -50%)',
+        zIndex: 0, pointerEvents: 'none',
+        animation: 'ambientBreathe 8s infinite alternate ease-in-out',
+      }} />
+
       {/* ─── Header ─────────────────────────────────────────────────────────── */}
       <header style={{
         background: tokens.bgCard,
@@ -405,64 +415,68 @@ export default function DashboardLoop({
         {/* ── Section 1: Priority Battle ──────────────────────────────────── */}
         {priorityBattle && (
           <motion.div variants={sectionVariants}>
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              marginBottom: '12px',
-              padding: '0 4px',
-            }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, padding: '0 4px' }}>
+              <span style={{ fontSize: 12 }}>🔥</span>
               <span style={{
-                fontSize: '11px',
-                fontWeight: '700',
-                color: tokens.textFaint,
-                textTransform: 'uppercase',
-                letterSpacing: '1.5px',
+                fontSize: 11, fontWeight: 700, color: tokens.textFaint,
+                letterSpacing: '0.08em', textTransform: 'uppercase',
               }}>
                 Priority Battle
               </span>
               <span style={{
-                color: tokens.teal,
-                fontSize: '11px',
-                fontWeight: '600',
+                fontSize: 10, fontWeight: 700, color: tokens.teal,
+                background: 'rgba(94,234,212,0.1)',
+                border: '1px solid rgba(94,234,212,0.15)',
+                padding: '2px 8px', borderRadius: 4,
               }}>
                 {totalActive} active
               </span>
             </div>
-            <PriorityBattleCard
+            <DashboardBattleCard
               battle={priorityBattle.battle}
               battleType={priorityBattle.type}
               user={user}
+              tokens={tokens}
               onPress={() => handleBattlePress(priorityBattle.battle, priorityBattle.type)}
+              isMostUrgent={true}
             />
           </motion.div>
         )}
 
         {/* ── Section 2: Secondary Battles ────────────────────────────────── */}
         {secondaryBattles.length > 0 && (
-          <motion.div variants={sectionVariants} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            {secondaryBattles.map(({ battle, type }, i) => (
-              <BattleRow
-                key={battle.id || battle.firestoreId || i}
-                battle={battle}
-                battleType={type}
-                user={user}
-                onPress={() => handleBattlePress(battle, type)}
-              />
-            ))}
+          <motion.div variants={sectionVariants}>
+            <div style={{
+              background: tokens.bgCard, borderRadius: 14,
+              border: `1px solid ${tokens.borderDefault}`, overflow: 'hidden',
+              boxShadow: tokens.obsidianShadow,
+              backgroundImage: 'linear-gradient(180deg, rgba(255,255,255,0.03) 0%, transparent 40%)',
+            }}>
+              {secondaryBattles.map(({ battle, type }, i) => (
+                <div key={battle.id || battle.firestoreId || i} style={{
+                  borderBottom: i < secondaryBattles.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none',
+                }}>
+                  <BattleRow
+                    battle={battle}
+                    battleType={type}
+                    user={user}
+                    onPress={() => handleBattlePress(battle, type)}
+                    grouped
+                  />
+                </div>
+              ))}
+            </div>
           </motion.div>
         )}
 
         {/* ── Recent Results ────────────────────────────────────────────── */}
         {recentResults.length > 0 && (
           <motion.div variants={sectionVariants} style={{ opacity: 0.8 }}>
-            <div style={{ marginBottom: '12px', padding: '0 4px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, padding: '0 4px' }}>
+              <span style={{ fontSize: 12 }}>📊</span>
               <span style={{
-                fontSize: '11px',
-                fontWeight: '700',
-                color: tokens.textFaint,
-                textTransform: 'uppercase',
-                letterSpacing: '1.5px',
+                fontSize: 11, fontWeight: 700, color: tokens.textFaint,
+                letterSpacing: '0.08em', textTransform: 'uppercase',
               }}>
                 Recent Results
               </span>
