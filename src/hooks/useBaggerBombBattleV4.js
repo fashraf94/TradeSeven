@@ -12,6 +12,7 @@ import {
   updateAssetHistoryInBattle,
 } from '../firebase/firebaseService';
 import { getVolatilityThresholds } from '../services/volatilityService';
+import { isMarketOpen } from '../utils/marketSchedule';
 import {
   updateAssetHistory,
   detectThresholdCross,
@@ -125,6 +126,7 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
   // Timestamps for backoff and cooldown tracking
   const lastRotationAttemptRef = useRef(0);
   const lastRotationSuccessRef = useRef(0);
+  const lastLiveScoreWriteRef = useRef(0);
 
   // ==================== DERIVED STATE ====================
 
@@ -429,6 +431,29 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
   const oppTotalScore = useMemo(() => {
     return Math.round(oppBankedScore + oppScores.totalScore + oppClosedTradePoints);
   }, [oppBankedScore, oppScores.totalScore, oppClosedTradePoints]);
+
+  // ==================== LIVE SCORE WRITE-BACK ====================
+  // Periodically persist both players' computed scores to Firebase so the
+  // dashboard can display them without running live price hooks.
+  useEffect(() => {
+    if (!battle || !battleId || battleId.startsWith('training_')) return;
+    if (battle.status !== 'active') return;
+    if (!isMarketOpen()) return;
+    if (myTotalScore === 0 && oppTotalScore === 0) return;
+
+    const now = Date.now();
+    if (now - lastLiveScoreWriteRef.current < 60_000) return;
+    lastLiveScoreWriteRef.current = now;
+
+    const creatorScore = isCreator ? myTotalScore : oppTotalScore;
+    const opponentScore = isCreator ? oppTotalScore : myTotalScore;
+
+    updateDoc(doc(db, 'battles', battleId), {
+      'creator.liveScore': creatorScore,
+      'opponent.liveScore': opponentScore,
+      'liveScoreUpdatedAt': new Date().toISOString(),
+    }).catch((err) => console.warn('[LiveScore] write failed:', err.message));
+  }, [battle, battleId, isCreator, myTotalScore, oppTotalScore]);
 
   // ==================== BUILD PLAYER/OPPONENT OBJECTS ====================
 
