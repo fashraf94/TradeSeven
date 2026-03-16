@@ -419,6 +419,7 @@ export default function FantasyTimesFeed({
             onStoryPress={handleStoryClick}
             activeBattleTickers={activeBattleTickers}
             isMobile={isMobile}
+            isDesktop={isDesktop}
             initialExpanded={idx < 2}
           />
         ))}

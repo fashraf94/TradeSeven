@@ -23,6 +23,7 @@ export default function FeedSection({
   onStoryPress,
   activeBattleTickers,
   isMobile,
+  isDesktop,
   initialExpanded = true,
 }) {
   const [expanded, setExpanded] = useState(initialExpanded);
@@ -33,6 +34,7 @@ export default function FeedSection({
   const visibleItems = showAll ? items : items.slice(0, DEFAULT_VISIBLE);
   const hasMore = totalItems > DEFAULT_VISIBLE;
   const accentColor = SECTION_COLORS[section.id] || '#5eead4';
+  const useGrid = isDesktop && section.id === 'movers_spotlights';
 
   return (
     <div style={{ marginBottom: 24 }}>
@@ -89,13 +91,17 @@ export default function FeedSection({
             transition={springTransition}
             style={{ overflow: 'hidden' }}
           >
-            <div style={{ padding: '4px 0' }}>
+            <div style={{
+              padding: '4px 0',
+              ...(useGrid ? { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' } : {}),
+            }}>
               {visibleItems.map((item, idx) => (
                 <motion.div
                   key={item.type === 'cluster' ? `cluster-${item.ticker}` : `single-${item.story.id}`}
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ ...springTransition, delay: idx * 0.05 }}
+                  style={useGrid && item.type === 'cluster' ? { gridColumn: '1 / -1' } : undefined}
                 >
                   {item.type === 'cluster' ? (
                     <StoryThread
