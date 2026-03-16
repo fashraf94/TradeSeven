@@ -94,6 +94,24 @@ export default function FantasyTimesFeed({
     return counts;
   }, [reporterFiltered]);
 
+  // Reporter counts (after sentiment filter, before reporter filter — for badge display)
+  const reporterCounts = useMemo(() => {
+    const base = sentimentFilter === 'all'
+      ? stories
+      : stories.filter((s) => {
+          if (sentimentFilter === 'neutral') return s.sentiment === 'neutral' || s.sentiment === 'mixed';
+          return s.sentiment === sentimentFilter;
+        });
+    const counts = { all: base.length };
+    for (const r of REPORTERS) {
+      if (r.key !== 'all') counts[r.key] = 0;
+    }
+    for (const s of base) {
+      if (counts[s.reporter] !== undefined) counts[s.reporter]++;
+    }
+    return counts;
+  }, [stories, sentimentFilter]);
+
   // All Stories tab: reporter + sentiment filtered, then sectioned
   const allStoriesFiltered = applySentimentFilter(reporterFiltered);
   const sections = useMemo(() => groupStoriesBySections(allStoriesFiltered), [allStoriesFiltered]);
@@ -204,6 +222,8 @@ export default function FantasyTimesFeed({
         {REPORTERS.map((r) => {
           const isActive = reporterFilter === r.key;
           const IconComp = r.icon ? ICON_MAP[r.icon] : null;
+          const count = reporterCounts[r.key] || 0;
+          const dimmed = count === 0 && r.key !== 'all';
           return (
             <button
               key={r.key}
@@ -222,10 +242,23 @@ export default function FantasyTimesFeed({
                 transition: 'all 0.15s',
                 backgroundColor: isActive ? r.color : '#161b22',
                 color: isActive ? '#0a0e14' : '#8b949e',
+                opacity: dimmed ? 0.4 : 1,
               }}
             >
               {IconComp && <IconComp size={12} />}
               {r.label}
+              <span style={{
+                fontSize: '10px',
+                fontWeight: 700,
+                padding: '0 4px',
+                borderRadius: '6px',
+                backgroundColor: isActive ? 'rgba(10,14,20,0.2)' : `${r.color}25`,
+                color: isActive ? '#0a0e14' : r.color,
+                minWidth: '16px',
+                textAlign: 'center',
+              }}>
+                {count}
+              </span>
             </button>
           );
         })}
