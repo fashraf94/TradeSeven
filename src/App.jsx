@@ -3,6 +3,7 @@ import ClashBotWidget from './components/ClashBot/ClashBotWidget';
 import BugReportAdmin from './components/ClashBot/BugReportAdmin';
 import { loadBattlesSafe, saveBattlesSafe, isSameBattles } from './services/LocalStorage';
 import { useUser } from './contexts/UserContext';
+import { usePageVisibility } from './hooks/usePageVisibility';
 import * as battleTimer from './services/battleTimer';
 import * as challengeService from './services/challengeService';
 import { calculateV4FinalScores } from './services/dailyScoringV4Service';
@@ -11691,6 +11692,7 @@ export default function PortfolioDuel() {
   // User state from context (single source of truth)
   const { user, login, register, loginWithGoogle, logout, updateUser, loading: userLoading, authLoading, forgotPassword } = useUser();
   const { isMobile } = useIsMobile();
+  const isPageVisible = usePageVisibility();
 
   const [screen, setScreen] = useState('home');
   const [historyTab, setHistoryTab] = useState('draft'); // 'classic', 'draft', or 'training'
@@ -12821,8 +12823,10 @@ export default function PortfolioDuel() {
     }
   }, [showBuilderModal]);
 
-  // Load market data on mount
+  // Load market data on mount (pauses when tab is hidden)
   useEffect(() => {
+    if (!isPageVisible) return;
+
     async function loadMarketData() {
       setLoadingMarketData(true);
 
@@ -12849,7 +12853,7 @@ export default function PortfolioDuel() {
     // Refresh prices every 5 minutes
     const interval = setInterval(loadMarketData, 5 * 60 * 1000);
     return () => clearInterval(interval);
-  }, []);
+  }, [isPageVisible]);
 
   // Load battles from localStorage on mount
   useEffect(() => {
@@ -12916,7 +12920,7 @@ export default function PortfolioDuel() {
     // Subscribe on dashboard or lobby screens to show open lobbies in LiveFeed
     const shouldSubscribe = screen === 'dashboard' || screen === 'baggerBombLobby';
 
-    if (!shouldSubscribe) {
+    if (!shouldSubscribe || !isPageVisible) {
       return;
     }
 
@@ -12931,11 +12935,11 @@ export default function PortfolioDuel() {
     return () => {
       unsubscribe();
     };
-  }, [screen]);
+  }, [screen, isPageVisible]);
 
-  // Subscribe to Firestore battle updates for real-time sync
+  // Subscribe to Firestore battle updates for real-time sync (pauses when tab is hidden)
   useEffect(() => {
-    if (!user) return;
+    if (!user || !isPageVisible) return;
 
     const userId = user.odUserId || user.username;
     if (!userId) return;
@@ -13025,11 +13029,11 @@ export default function PortfolioDuel() {
       console.log('🔥 Unsubscribing from Firestore battle updates');
       unsubscribe();
     };
-  }, [user]);
+  }, [user, isPageVisible]);
 
-  // Fetch active draft battles for dashboard
+  // Fetch active draft battles for dashboard (pauses when tab is hidden)
   useEffect(() => {
-    if (screen !== 'dashboard') return;
+    if (screen !== 'dashboard' || !isPageVisible) return;
 
     const fetchActiveDraftBattles = async () => {
       try {
@@ -13102,7 +13106,7 @@ export default function PortfolioDuel() {
     // Refresh every 30 seconds
     const refreshInterval = setInterval(fetchActiveDraftBattles, 30000);
     return () => clearInterval(refreshInterval);
-  }, [screen, user]);
+  }, [screen, user, isPageVisible]);
 
   // Helper: calculate training battle score for a portfolio (mirrors ClashCardTrainingV4)
   function calculateTrainingScore(portfolio, endingPrices, startingPrices) {
@@ -13120,9 +13124,9 @@ export default function PortfolioDuel() {
     return Math.round(total);
   }
 
-  // ⭐ Fetch training battles from Firebase (persists across sessions)
+  // ⭐ Fetch training battles from Firebase (persists across sessions, pauses when tab hidden)
   useEffect(() => {
-    if (screen !== 'dashboard') return;
+    if (screen !== 'dashboard' || !isPageVisible) return;
 
     const fetchTrainingBattles = async () => {
       try {
@@ -13224,7 +13228,7 @@ export default function PortfolioDuel() {
     // Refresh every 30 seconds
     const refreshInterval = setInterval(fetchTrainingBattles, 30000);
     return () => clearInterval(refreshInterval);
-  }, [screen, user]);
+  }, [screen, user, isPageVisible]);
 
   // ⭐ MID-GAME CHALLENGE CHECKING SYSTEM
   // Check for mid-game challenges periodically during active battles
@@ -14422,9 +14426,9 @@ export default function PortfolioDuel() {
     return () => clearInterval(absentCheckInterval);
   }, [screen, draftState?.id, draftState?.status, draftState?.hostId, user]);
 
-  // Check for active draft on dashboard (rejoin functionality)
+  // Check for active draft on dashboard (rejoin functionality, pauses when tab hidden)
   useEffect(() => {
-    if (screen !== 'dashboard') return;
+    if (screen !== 'dashboard' || !isPageVisible) return;
 
     const checkActiveDraft = async () => {
       try {
@@ -14447,7 +14451,7 @@ export default function PortfolioDuel() {
     const checkInterval = setInterval(checkActiveDraft, 30000);
 
     return () => clearInterval(checkInterval);
-  }, [screen, user]);
+  }, [screen, user, isPageVisible]);
 
   // Check for active BaggerBomb V3 battles on dashboard (rejoin functionality)
   useEffect(() => {
