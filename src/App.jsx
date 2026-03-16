@@ -13216,7 +13216,7 @@ export default function PortfolioDuel() {
     fetchTrainingBattles();
 
     // Refresh every 30 seconds
-    const refreshInterval = setInterval(fetchTrainingBattles, 30000);
+    const refreshInterval = setInterval(fetchTrainingBattles, 120_000);
     return () => clearInterval(refreshInterval);
   }, [screen, user, isPageVisible]);
 
