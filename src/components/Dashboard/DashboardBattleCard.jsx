@@ -35,6 +35,28 @@ function getOpponentName(battle, user) {
   return 'Opponent';
 }
 
+// Extract banked daily scores + closed trade points from static battle document.
+// Mirrors getBankedScoreTotal from dailyScoringV4Service + closedTrades sum.
+function extractSnapshotScore(battle, role) {
+  let total = 0;
+  const dailyScores = battle.state?.dailyScores;
+  if (dailyScores) {
+    for (const dayKey of Object.keys(dailyScores)) {
+      const day = dailyScores[dayKey];
+      if (day?.recorded && day[role]?.activeScore != null && isFinite(day[role].activeScore)) {
+        total += day[role].activeScore;
+      }
+    }
+  }
+  const closedTrades = battle[role]?.closedTrades;
+  if (Array.isArray(closedTrades)) {
+    for (const trade of closedTrades) {
+      total += trade.lockedPoints || 0;
+    }
+  }
+  return Math.round(total);
+}
+
 // ─── Sub-components ──────────────────────────────────────────────────────────
 
 function HeaderBar({ gameLabel, accentColor, remainingMs, isEnded }) {
@@ -216,7 +238,7 @@ export default function DashboardBattleCard({
   const currentUserId = user?.odUserId || user?.username;
 
   // ─── Game type detection ──────────────────────────────────────────────────
-  const isBaggerBomb = battle._v >= 2 || battle.type === 'baggerbomb';
+  const isBaggerBomb = battle._v >= 2 || battle.type?.includes('baggerbomb');
   const isDraftType = battleType === 'draft' || battleType === 'trainingDraft';
   const isTraining = battle.isTrainingBattle || battleType === 'training' || battleType === 'trainingDraft';
   const isDraftBattle = isDraftType || (isTraining && battle.players?.length > 2);
@@ -253,12 +275,26 @@ export default function DashboardBattleCard({
       theirScore = preview.theirGain;
       opponentName = preview.opponent || 'Opponent';
       isPoints = !!preview.isV3 || isBaggerBomb;
+
+      // V3/V4: calculate1v1PreviewData reads totalPoints/totalScore which are
+      // never written to Firebase. Fall back to banked daily scores + closed trades.
+      if (preview.isV3 && myScore === 0 && theirScore === 0) {
+        const isCreator = battle.creator?.username === user?.username;
+        const myRole = isCreator ? 'creator' : 'opponent';
+        const theirRole = isCreator ? 'opponent' : 'creator';
+        const bankedMy = extractSnapshotScore(battle, myRole);
+        const bankedTheir = extractSnapshotScore(battle, theirRole);
+        if (bankedMy !== 0 || bankedTheir !== 0) {
+          myScore = bankedMy;
+          theirScore = bankedTheir;
+        }
+      }
     } else if (isTraining) {
       // Training fallback: use percentChange fields
       myScore = battle.player1?.percentChange || 0;
       theirScore = battle.player2?.percentChange || 0;
       opponentName = 'CPU';
-      isPoints = false;
+      isPoints = isBaggerBomb;
     }
 
     if (isTraining && opponentName === 'Opponent') {
