@@ -142,18 +142,24 @@ export function shouldOverrideVisual(reporter, storyType) {
  */
 export async function callArtDirector(storyDoc, docId, db) {
   try {
-    // Dynamic import to avoid circular dependency and keep the module lightweight
-    const { runArtDirector } = await import('../fantasytimes/art-director.js');
-
-    const result = await runArtDirector({
-      headline: storyDoc.headline,
-      body: storyDoc.body,
-      reporter: storyDoc.reporter,
-      type: storyDoc.type,
-      primaryTicker: storyDoc.primaryTicker,
-      sentiment: storyDoc.sentiment,
-      dataSnapshot: storyDoc.dataSnapshot,
-    });
+    const result = await Promise.race([
+      (async () => {
+        // Dynamic import to avoid circular dependency and keep the module lightweight
+        const { runArtDirector } = await import('../fantasytimes/art-director.js');
+        return runArtDirector({
+          headline: storyDoc.headline,
+          body: storyDoc.body,
+          reporter: storyDoc.reporter,
+          type: storyDoc.type,
+          primaryTicker: storyDoc.primaryTicker,
+          sentiment: storyDoc.sentiment,
+          dataSnapshot: storyDoc.dataSnapshot,
+        });
+      })(),
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Art Director timeout (2s)')), 2000)
+      ),
+    ]);
 
     // Only update if the Art Director returned something different and non-none
     if (result.visualType !== 'none' && result.visualType !== storyDoc.visualType) {
@@ -164,7 +170,7 @@ export async function callArtDirector(storyDoc, docId, db) {
       console.log(`[ArtDirector] Overrode visual for ${docId}: ${storyDoc.visualType} → ${result.visualType}`);
     }
   } catch (err) {
-    console.warn('[ArtDirector] Override failed:', err.message);
+    console.warn('[ArtDirector] Override skipped:', err.message);
   }
 }
 
