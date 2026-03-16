@@ -1,3 +1,4 @@
+// DEPRECATED: Replaced by DashboardLoop/DashboardDesktop in March 2026 dashboard redesign. Kept for reference. Safe to delete.
 // /src/components/Dashboard/DashboardTabs.jsx
 // 3-tab navigation: PVP | TRAIN & EARN | RESEARCH
 // Color-coded glowing tabs inspired by tarot card design

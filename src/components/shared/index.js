@@ -7,3 +7,6 @@ export { default as GainLossBadge } from './GainLossBadge';
 export { default as HoloCard } from './HoloCard';
 export { default as AssetWeightCard } from './AssetWeightCard';
 export { default as ConfirmationPopup } from './ConfirmationPopup';
+export { default as TapGlint } from './TapGlint';
+export { default as CenteredModal } from './CenteredModal';
+export { default as AnimatedScore } from './AnimatedScore';

@@ -91,7 +91,6 @@ const EconomicNews = ({ news, isLoading, colors }) => {
       .sort((a, b) => b.economicScore - a.economicScore)
       .slice(0, 5);
 
-    console.log('[EconomicNews] Found', economicNews.length, 'economic articles');
     return economicNews;
   };
 

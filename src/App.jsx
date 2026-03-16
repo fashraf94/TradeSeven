@@ -118,7 +118,7 @@ import { StockIntelligenceScreen } from './components/StockIntelligence';
 // Research Landing Page (redesigned)
 import ResearchLandingPage from './components/Research/ResearchLandingPage';
 // Dashboard Components
-import { GameModeToggle, ResearchModeButton, WeeklyChallengesPanel, GameModeCarousel, DashboardTabs, LiveClashesSection, PvpLobbiesSection, YourActivity, SeasonalBanner, TrainingLiveFeed, PendingLobbiesSection } from './components/Dashboard';
+import { GameModeToggle, ResearchModeButton, WeeklyChallengesPanel, PendingLobbiesSection } from './components/Dashboard';
 import { useIsMobile } from './hooks/useIsMobile';
 import { isMarketOpen } from './utils/marketSchedule';
 import BottomNav from './components/Navigation/BottomNav';
@@ -11693,7 +11693,6 @@ export default function PortfolioDuel() {
   const { isMobile } = useIsMobile();
 
   const [screen, setScreen] = useState('home');
-  const [dashboardTab, setDashboardTab] = useState('pvp'); // 'pvp' | 'train' - dashboard tab state
   const [historyTab, setHistoryTab] = useState('draft'); // 'classic', 'draft', or 'training'
   const [username, setUsername] = useState('');
   const [portfolioName, setPortfolioName] = useState('');

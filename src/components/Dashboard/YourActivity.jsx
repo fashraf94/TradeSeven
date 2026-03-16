@@ -1,3 +1,4 @@
+// DEPRECATED: Replaced by DashboardLoop/DashboardDesktop in March 2026 dashboard redesign. Kept for reference. Safe to delete.
 // /src/components/Dashboard/YourActivity.jsx
 // TRAIN & EARN tab bottom section - personal activity timeline
 // Types: Completed Game, Win Streak, Challenge Completed, Personal Best
