@@ -415,11 +415,14 @@ export default function DashboardLoop({
         {/* ── Section 1: Priority Battle ──────────────────────────────────── */}
         {priorityBattle && (
           <motion.div variants={sectionVariants}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, padding: '0 4px' }}>
-              <span style={{ fontSize: 12 }}>🔥</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px', padding: '0 4px' }}>
+              <div style={{
+                width: '3px', height: '18px', borderRadius: '2px',
+                background: 'linear-gradient(180deg, #5eead4, #5eead4 60%, transparent)',
+              }} />
               <span style={{
-                fontSize: 11, fontWeight: 700, color: tokens.textFaint,
-                letterSpacing: '0.08em', textTransform: 'uppercase',
+                fontSize: '13px', fontWeight: 700, letterSpacing: '1.5px',
+                textTransform: 'uppercase', color: 'rgba(255,255,255,0.7)',
               }}>
                 Priority Battle
               </span>
@@ -472,11 +475,14 @@ export default function DashboardLoop({
         {/* ── Recent Results ────────────────────────────────────────────── */}
         {recentResults.length > 0 && (
           <motion.div variants={sectionVariants} style={{ opacity: 0.8 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, padding: '0 4px' }}>
-              <span style={{ fontSize: 12 }}>📊</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px', padding: '0 4px' }}>
+              <div style={{
+                width: '3px', height: '18px', borderRadius: '2px',
+                background: 'linear-gradient(180deg, #5eead4, #5eead4 60%, transparent)',
+              }} />
               <span style={{
-                fontSize: 11, fontWeight: 700, color: tokens.textFaint,
-                letterSpacing: '0.08em', textTransform: 'uppercase',
+                fontSize: '13px', fontWeight: 700, letterSpacing: '1.5px',
+                textTransform: 'uppercase', color: 'rgba(255,255,255,0.7)',
               }}>
                 Recent Results
               </span>

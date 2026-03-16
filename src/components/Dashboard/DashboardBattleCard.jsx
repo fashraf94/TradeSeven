@@ -149,7 +149,10 @@ function ScoreSection1v1({ myScore, theirScore, opponentName, isPoints, tokens }
   return (
     <div style={{ padding: 14, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
       <div>
-        <div style={{ fontSize: 10, fontWeight: 500, color: tokens.textFaint, marginBottom: 4 }}>
+        <div style={{
+          color: 'rgba(255,255,255,0.6)', fontSize: '13px', fontWeight: 600,
+          letterSpacing: '0.5px', textTransform: 'uppercase', marginBottom: 4,
+        }}>
           Your Score:
         </div>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 4 }}>
@@ -165,7 +168,10 @@ function ScoreSection1v1({ myScore, theirScore, opponentName, isPoints, tokens }
         </div>
       </div>
       <div style={{ textAlign: 'right' }}>
-        <div style={{ fontSize: 10, fontWeight: 500, color: tokens.textFaint, marginBottom: 4 }}>
+        <div style={{
+          color: 'rgba(255,255,255,0.55)', fontSize: '12px', fontWeight: 600,
+          letterSpacing: '0.3px', marginBottom: 4,
+        }}>
           vs {opponentName}:
         </div>
         <AnimatedScore
