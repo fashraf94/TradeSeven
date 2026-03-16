@@ -5,6 +5,7 @@ import React from 'react';
 import { motion } from 'framer-motion';
 import { Zap, TrendingUp, Globe, BarChart3, Compass } from 'lucide-react';
 import { REPORTER_PROFILES } from '../../prompts/fantasyTimesPrompts';
+import StoryVisualSafe from './StoryVisualSafe';
 
 const ICON_MAP = {
   Zap,
@@ -103,6 +104,13 @@ export default function StoryCard({ story, onClick, activeBattleTickers = [], is
       whileHover={{ backgroundColor: '#161b22' }}
       whileTap={{ scale: 0.99 }}
     >
+      {/* Visual */}
+      <StoryVisualSafe
+        visualType={story.visualType}
+        visualConfig={story.visualConfig}
+        size="compact"
+      />
+
       {/* Row 1: Reporter identity + time */}
       <div style={{
         display: 'flex',
