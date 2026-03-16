@@ -104,19 +104,29 @@ export default function FeedSection({
                   style={useGrid && item.type === 'cluster' ? { gridColumn: '1 / -1' } : undefined}
                 >
                   {item.type === 'cluster' ? (
-                    <StoryThread
-                      cluster={item}
-                      onStoryPress={onStoryPress}
-                      activeBattleTickers={activeBattleTickers}
-                      isMobile={isMobile}
-                    />
+                    <div style={{ marginBottom: idx === 0 ? 16 : 8 }}>
+                      <StoryThread
+                        cluster={item}
+                        onStoryPress={onStoryPress}
+                        activeBattleTickers={activeBattleTickers}
+                        isMobile={isMobile}
+                      />
+                    </div>
                   ) : (
-                    <StoryCard
-                      story={item.story}
-                      onClick={() => onStoryPress(item.story)}
-                      activeBattleTickers={activeBattleTickers}
-                      isMobile={isMobile}
-                    />
+                    <div style={idx === 0 ? {
+                      borderLeft: `3px solid ${accentColor}`,
+                      paddingLeft: 12,
+                      marginBottom: 16,
+                    } : {
+                      marginBottom: 8,
+                    }}>
+                      <StoryCard
+                        story={item.story}
+                        onClick={() => onStoryPress(item.story)}
+                        activeBattleTickers={activeBattleTickers}
+                        isMobile={isMobile}
+                      />
+                    </div>
                   )}
                 </motion.div>
               ))}
