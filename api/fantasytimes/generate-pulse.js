@@ -12,6 +12,7 @@ import {
   PUBLISH_MARKET_PULSE_TOOL,
   REPORTER_PROFILES,
 } from '../_utils/fantasyTimesPrompts.js';
+import { getDefaultVisual } from '../_utils/fantasyTimesVisuals.js';
 
 export const config = { maxDuration: 60 };
 
@@ -278,6 +279,13 @@ export default async function handler(req, res) {
       expiresAt: expiresAt,
       status: 'published',
     };
+
+    // Stamp visual fields
+    const { visualType, visualConfig } = getDefaultVisual(
+      storyDoc.reporter, storyDoc.type, storyDoc.dataSnapshot, storyDoc.primaryTicker
+    );
+    storyDoc.visualType = visualType;
+    storyDoc.visualConfig = visualConfig;
 
     logInfo('Writing to Firestore...', { headline: storyDoc.headline });
     const docRef = await db.collection('fantasyTimesStories').add(storyDoc);

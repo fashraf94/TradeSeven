@@ -10,6 +10,7 @@ import {
   PUBLISH_SECTOR_COLUMN_TOOL,
   REPORTER_PROFILES,
 } from '../_utils/fantasyTimesPrompts.js';
+import { getDefaultVisual } from '../_utils/fantasyTimesVisuals.js';
 import { STOCK_DATA, TICKERS } from '../_utils/stockIntelligenceData.js';
 
 export const config = { maxDuration: 60 };
@@ -301,6 +302,13 @@ export default async function handler(req, res) {
       expiresAt,
       status: 'published',
     };
+
+    // Stamp visual fields
+    const { visualType, visualConfig } = getDefaultVisual(
+      storyDoc.reporter, storyDoc.type, storyDoc.dataSnapshot, storyDoc.primaryTicker
+    );
+    storyDoc.visualType = visualType;
+    storyDoc.visualConfig = visualConfig;
 
     const docRef = await db.collection('fantasyTimesStories').add(storyDoc);
     logInfo(`Published ${columnType} column ${docRef.id}`, { headline: storyDoc.headline });

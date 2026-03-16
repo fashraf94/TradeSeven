@@ -7,6 +7,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { applySecurityMiddleware } from '../_utils/security.js';
 import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
 import { REPORTER_PROFILES } from '../_utils/fantasyTimesPrompts.js';
+import { getDefaultVisual } from '../_utils/fantasyTimesVisuals.js';
 
 export const config = { maxDuration: 10 };
 
@@ -136,6 +137,13 @@ export default async function handler(req, res) {
                 expiresAt: expiresAt,
                 status: 'published',
               };
+
+              // Stamp visual fields
+              const { visualType, visualConfig } = getDefaultVisual(
+                storyDoc.reporter, storyDoc.type, storyDoc.dataSnapshot, storyDoc.primaryTicker
+              );
+              storyDoc.visualType = visualType;
+              storyDoc.visualConfig = visualConfig;
 
               await db.collection('fantasyTimesStories').add(storyDoc);
               storiesCreated++;

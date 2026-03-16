@@ -12,6 +12,7 @@ import {
   PUBLISH_STORY_TOOL,
   REPORTER_PROFILES,
 } from '../_utils/fantasyTimesPrompts.js';
+import { getDefaultVisual } from '../_utils/fantasyTimesVisuals.js';
 
 export const config = { maxDuration: 30 };
 
@@ -190,6 +191,13 @@ export async function generateAlexMoverStory({
     expiresAt: expiresAt,
     status: 'published',
   };
+
+  // Stamp visual fields
+  const { visualType, visualConfig } = getDefaultVisual(
+    storyDoc.reporter, storyDoc.type, storyDoc.dataSnapshot, storyDoc.primaryTicker
+  );
+  storyDoc.visualType = visualType;
+  storyDoc.visualConfig = visualConfig;
 
   logInfo('Step 7: Writing to Firestore...', { headline: storyDoc.headline });
   const docRef = await db.collection('fantasyTimesStories').add(storyDoc);

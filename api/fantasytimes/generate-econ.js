@@ -13,6 +13,7 @@ import {
   PUBLISH_ECON_PREVIEW_TOOL,
   REPORTER_PROFILES,
 } from '../_utils/fantasyTimesPrompts.js';
+import { getDefaultVisual } from '../_utils/fantasyTimesVisuals.js';
 
 export const config = { maxDuration: 60 };
 
@@ -299,6 +300,13 @@ async function handleRecap(req, res, db) {
     status: 'published',
   };
 
+  // Stamp visual fields
+  const { visualType, visualConfig } = getDefaultVisual(
+    storyDoc.reporter, storyDoc.type, storyDoc.dataSnapshot, storyDoc.primaryTicker
+  );
+  storyDoc.visualType = visualType;
+  storyDoc.visualConfig = visualConfig;
+
   const docRef = await db.collection('fantasyTimesStories').add(storyDoc);
   logInfo(`Published econ recap ${docRef.id}`, { event: event.event, headline: storyDoc.headline });
 
@@ -424,6 +432,13 @@ async function handlePreview(req, res, db) {
     expiresAt: expiresAt,
     status: 'published',
   };
+
+  // Stamp visual fields
+  const { visualType: previewVisualType, visualConfig: previewVisualConfig } = getDefaultVisual(
+    storyDoc.reporter, storyDoc.type, storyDoc.dataSnapshot, storyDoc.primaryTicker
+  );
+  storyDoc.visualType = previewVisualType;
+  storyDoc.visualConfig = previewVisualConfig;
 
   const docRef = await db.collection('fantasyTimesStories').add(storyDoc);
   logInfo(`Published weekly preview ${docRef.id}`, { headline: storyDoc.headline });
