@@ -12,6 +12,7 @@ import {
   PUBLISH_STORY_TOOL,
   REPORTER_PROFILES,
 } from '../_utils/fantasyTimesPrompts.js';
+import { getDefaultVisual, shouldOverrideVisual, callArtDirector } from '../_utils/fantasyTimesVisuals.js';
 
 export const config = { maxDuration: 30 };
 
@@ -191,6 +192,13 @@ export async function generateAlexMoverStory({
     status: 'published',
   };
 
+  // Stamp visual fields
+  const { visualType, visualConfig } = getDefaultVisual(
+    storyDoc.reporter, storyDoc.type, storyDoc.dataSnapshot, storyDoc.primaryTicker
+  );
+  storyDoc.visualType = visualType;
+  storyDoc.visualConfig = visualConfig;
+
   logInfo('Step 7: Writing to Firestore...', { headline: storyDoc.headline });
   const docRef = await db.collection('fantasyTimesStories').add(storyDoc);
 
@@ -199,6 +207,11 @@ export async function generateAlexMoverStory({
     sentiment: storyDoc.sentiment,
   });
 
+  // Art Director override for edge-case story types
+  if (shouldOverrideVisual(storyDoc.reporter, storyDoc.type)) {
+    await callArtDirector(storyDoc, docRef.id, db);
+  }
+
   return { success: true, storyId: docRef.id, headline: storyDoc.headline };
 }
 
@@ -206,6 +219,13 @@ export default async function handler(req, res) {
   // Security + rate limiting
   if (applySecurityMiddleware(req, res, { rateLimit: { limit: 20, windowMs: 60000 } })) {
     return;
+  }
+
+  // --- Cron/Admin Authentication ---
+  const isVercelCron = req.headers['x-vercel-cron'] === '1';
+  const authHeader = req.headers.authorization;
+  if (!isVercelCron && authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+    return res.status(401).json({ error: 'Unauthorized' });
   }
 
   if (req.method !== 'POST') {

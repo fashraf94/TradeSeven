@@ -13,6 +13,7 @@ import {
   PUBLISH_ECON_PREVIEW_TOOL,
   REPORTER_PROFILES,
 } from '../_utils/fantasyTimesPrompts.js';
+import { getDefaultVisual, shouldOverrideVisual, callArtDirector } from '../_utils/fantasyTimesVisuals.js';
 
 export const config = { maxDuration: 60 };
 
@@ -128,6 +129,13 @@ Rules:
 export default async function handler(req, res) {
   if (applySecurityMiddleware(req, res, { rateLimit: { limit: 10, windowMs: 60000 } })) {
     return;
+  }
+
+  // --- Cron/Admin Authentication ---
+  const isVercelCron = req.headers['x-vercel-cron'] === '1';
+  const authHeader = req.headers.authorization;
+  if (!isVercelCron && authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+    return res.status(401).json({ error: 'Unauthorized' });
   }
 
   if (req.method !== 'POST' && req.method !== 'GET') {
@@ -299,8 +307,20 @@ async function handleRecap(req, res, db) {
     status: 'published',
   };
 
+  // Stamp visual fields
+  const { visualType, visualConfig } = getDefaultVisual(
+    storyDoc.reporter, storyDoc.type, storyDoc.dataSnapshot, storyDoc.primaryTicker
+  );
+  storyDoc.visualType = visualType;
+  storyDoc.visualConfig = visualConfig;
+
   const docRef = await db.collection('fantasyTimesStories').add(storyDoc);
   logInfo(`Published econ recap ${docRef.id}`, { event: event.event, headline: storyDoc.headline });
+
+  // Art Director override for edge-case story types
+  if (shouldOverrideVisual(storyDoc.reporter, storyDoc.type)) {
+    await callArtDirector(storyDoc, docRef.id, db);
+  }
 
   return res.status(200).json({
     success: true,
@@ -425,8 +445,20 @@ async function handlePreview(req, res, db) {
     status: 'published',
   };
 
+  // Stamp visual fields
+  const { visualType: previewVisualType, visualConfig: previewVisualConfig } = getDefaultVisual(
+    storyDoc.reporter, storyDoc.type, storyDoc.dataSnapshot, storyDoc.primaryTicker
+  );
+  storyDoc.visualType = previewVisualType;
+  storyDoc.visualConfig = previewVisualConfig;
+
   const docRef = await db.collection('fantasyTimesStories').add(storyDoc);
   logInfo(`Published weekly preview ${docRef.id}`, { headline: storyDoc.headline });
+
+  // Art Director override for edge-case story types
+  if (shouldOverrideVisual(storyDoc.reporter, storyDoc.type)) {
+    await callArtDirector(storyDoc, docRef.id, db);
+  }
 
   return res.status(200).json({
     success: true,

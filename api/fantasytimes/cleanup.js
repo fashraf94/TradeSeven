@@ -15,6 +15,13 @@ export default async function handler(req, res) {
     return;
   }
 
+  // --- Cron/Admin Authentication ---
+  const isVercelCron = req.headers['x-vercel-cron'] === '1';
+  const authHeader = req.headers.authorization;
+  if (!isVercelCron && authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+
   if (req.method !== 'GET') {
     return res.status(405).json({ success: false, error: 'Method not allowed' });
   }

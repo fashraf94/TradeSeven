@@ -1,13 +1,15 @@
 // src/components/FantasyTimes/FantasyTimesFeed.jsx
 // Main FantasyTimes feed container — header, reporter filters, tabs, story list.
 
-import React, { useState, useCallback, useRef, useEffect } from 'react';
+import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Zap, TrendingUp, Globe, BarChart3, Compass, ArrowLeft } from 'lucide-react';
 import { REPORTER_PROFILES } from '../../prompts/fantasyTimesPrompts';
 import { useFantasyTimes } from '../../hooks/useFantasyTimes';
+import { groupStoriesBySections } from '../../services/fantasyTimesClient';
 import StoryCard from './StoryCard';
 import StoryDetail from './StoryDetail';
+import FeedSection from './FeedSection';
 
 const ICON_MAP = { Zap, TrendingUp, Globe, BarChart3, Compass };
 
@@ -21,6 +23,13 @@ const REPORTERS = [
 ];
 
 const PAGE_SIZE = 10;
+
+const SENTIMENT_FILTERS = [
+  { key: 'all', label: 'All', color: '#8b949e' },
+  { key: 'bullish', label: 'Bullish', color: '#10b981' },
+  { key: 'bearish', label: 'Bearish', color: '#ef4444' },
+  { key: 'neutral', label: 'Neutral', color: '#6e7681' },
+];
 
 /**
  * Check if current time is during US market hours (9:30 AM - 4 PM ET, weekdays).
@@ -46,6 +55,7 @@ export default function FantasyTimesFeed({
   onNavigate,
 }) {
   const [reporterFilter, setReporterFilter] = useState('all');
+  const [sentimentFilter, setSentimentFilter] = useState('all');
   const [activeTab, setActiveTab] = useState('all'); // 'all' | 'foryou'
   const [selectedStory, setSelectedStory] = useState(null);
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
@@ -59,25 +69,71 @@ export default function FantasyTimesFeed({
 
   const { stories, rankedStories, loading, error, refresh, unreadCount } = useFantasyTimes(userContext);
 
-  // Choose story list based on tab
-  const baseStories = activeTab === 'foryou' ? rankedStories : stories;
+  // Apply reporter filter to raw stories (shared by both tabs)
+  const reporterFiltered = reporterFilter === 'all'
+    ? stories
+    : stories.filter((s) => s.reporter === reporterFilter);
 
-  // Apply reporter filter
-  const filteredStories = reporterFilter === 'all'
-    ? baseStories
-    : baseStories.filter((s) => s.reporter === reporterFilter);
+  // Apply sentiment filter (for All Stories tab)
+  const applySentimentFilter = (list) => {
+    if (sentimentFilter === 'all') return list;
+    return list.filter((s) => {
+      if (sentimentFilter === 'neutral') return s.sentiment === 'neutral' || s.sentiment === 'mixed';
+      return s.sentiment === sentimentFilter;
+    });
+  };
 
-  const visibleStories = filteredStories.slice(0, visibleCount);
-  const hasMore = visibleCount < filteredStories.length;
+  // Sentiment counts (after reporter filter, for badge display)
+  const sentimentCounts = useMemo(() => {
+    const counts = { all: reporterFiltered.length, bullish: 0, bearish: 0, neutral: 0 };
+    for (const s of reporterFiltered) {
+      if (s.sentiment === 'bullish') counts.bullish++;
+      else if (s.sentiment === 'bearish') counts.bearish++;
+      else counts.neutral++; // neutral + mixed
+    }
+    return counts;
+  }, [reporterFiltered]);
+
+  // Reporter counts (after sentiment filter, before reporter filter — for badge display)
+  const reporterCounts = useMemo(() => {
+    const base = sentimentFilter === 'all'
+      ? stories
+      : stories.filter((s) => {
+          if (sentimentFilter === 'neutral') return s.sentiment === 'neutral' || s.sentiment === 'mixed';
+          return s.sentiment === sentimentFilter;
+        });
+    const counts = { all: base.length };
+    for (const r of REPORTERS) {
+      if (r.key !== 'all') counts[r.key] = 0;
+    }
+    for (const s of base) {
+      if (counts[s.reporter] !== undefined) counts[s.reporter]++;
+    }
+    return counts;
+  }, [stories, sentimentFilter]);
+
+  // All Stories tab: reporter + sentiment filtered, then sectioned
+  const allStoriesFiltered = applySentimentFilter(reporterFiltered);
+  const sections = useMemo(() => groupStoriesBySections(allStoriesFiltered), [allStoriesFiltered]);
+
+  // For You tab: reporter filtered ranked stories, flat list with infinite scroll
+  const forYouBase = reporterFilter === 'all'
+    ? rankedStories
+    : rankedStories.filter((s) => s.reporter === reporterFilter);
+  const forYouVisible = forYouBase.slice(0, visibleCount);
+  const forYouHasMore = visibleCount < forYouBase.length;
+
+  // For empty state check
+  const filteredStories = activeTab === 'foryou' ? forYouBase : allStoriesFiltered;
 
   // Reset visible count when filter changes
   useEffect(() => {
     setVisibleCount(PAGE_SIZE);
-  }, [reporterFilter, activeTab]);
+  }, [reporterFilter, sentimentFilter, activeTab]);
 
-  // Infinite scroll via IntersectionObserver
+  // Infinite scroll via IntersectionObserver (For You tab only)
   useEffect(() => {
-    if (!sentinelRef.current || !hasMore) return;
+    if (activeTab !== 'foryou' || !sentinelRef.current || !forYouHasMore) return;
     const observer = new IntersectionObserver(
       (entries) => {
         if (entries[0].isIntersecting) {
@@ -88,7 +144,7 @@ export default function FantasyTimesFeed({
     );
     observer.observe(sentinelRef.current);
     return () => observer.disconnect();
-  }, [hasMore, filteredStories.length]);
+  }, [activeTab, forYouHasMore, forYouBase.length]);
 
   const handleStoryClick = useCallback((story) => {
     setSelectedStory(story);
@@ -166,6 +222,8 @@ export default function FantasyTimesFeed({
         {REPORTERS.map((r) => {
           const isActive = reporterFilter === r.key;
           const IconComp = r.icon ? ICON_MAP[r.icon] : null;
+          const count = reporterCounts[r.key] || 0;
+          const dimmed = count === 0 && r.key !== 'all';
           return (
             <button
               key={r.key}
@@ -184,10 +242,81 @@ export default function FantasyTimesFeed({
                 transition: 'all 0.15s',
                 backgroundColor: isActive ? r.color : '#161b22',
                 color: isActive ? '#0a0e14' : '#8b949e',
+                opacity: dimmed ? 0.4 : 1,
               }}
             >
               {IconComp && <IconComp size={12} />}
               {r.label}
+              <span style={{
+                fontSize: '10px',
+                fontWeight: 700,
+                padding: '0 4px',
+                borderRadius: '6px',
+                backgroundColor: isActive ? 'rgba(10,14,20,0.2)' : `${r.color}25`,
+                color: isActive ? '#0a0e14' : r.color,
+                minWidth: '16px',
+                textAlign: 'center',
+              }}>
+                {count}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Sentiment filter pills */}
+      <div style={{
+        padding: '4px 16px 8px',
+        display: 'flex',
+        gap: '6px',
+        overflowX: 'auto',
+        WebkitOverflowScrolling: 'touch',
+        msOverflowStyle: 'none',
+        scrollbarWidth: 'none',
+      }}>
+        {SENTIMENT_FILTERS.map((sf) => {
+          const isActive = sentimentFilter === sf.key;
+          const count = sentimentCounts[sf.key] || 0;
+          return (
+            <button
+              key={sf.key}
+              onClick={() => setSentimentFilter(sf.key)}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px',
+                padding: '4px 8px',
+                borderRadius: '12px',
+                border: isActive ? `1px solid ${sf.color}` : '1px solid #21262d',
+                fontSize: '11px',
+                fontWeight: 600,
+                cursor: 'pointer',
+                whiteSpace: 'nowrap',
+                transition: 'all 0.15s',
+                backgroundColor: isActive ? `${sf.color}18` : 'transparent',
+                color: isActive ? sf.color : '#6e7681',
+              }}
+            >
+              {isActive && sf.key !== 'all' && (
+                <div style={{
+                  width: 6,
+                  height: 6,
+                  borderRadius: '50%',
+                  backgroundColor: sf.color,
+                  flexShrink: 0,
+                }} />
+              )}
+              {sf.label}
+              <span style={{
+                fontSize: '10px',
+                fontWeight: 700,
+                padding: '0 4px',
+                borderRadius: '6px',
+                backgroundColor: isActive ? `${sf.color}25` : 'rgba(255,255,255,0.04)',
+                color: isActive ? sf.color : '#484f58',
+              }}>
+                {count}
+              </span>
             </button>
           );
         })}
@@ -280,31 +409,65 @@ export default function FantasyTimesFeed({
 
         {!loading && !error && filteredStories.length === 0 && (
           <div style={{
-            padding: '40px 16px',
+            padding: '60px 20px',
             textAlign: 'center',
             color: '#6e7681',
-            fontSize: '13px',
           }}>
-            {reporterFilter === 'all'
-              ? 'No stories yet. Check back soon.'
-              : `No stories from ${REPORTERS.find((r) => r.key === reporterFilter)?.label || 'this reporter'} right now.`}
+            {stories.length === 0 ? (
+              <>
+                <div style={{ fontSize: 28, marginBottom: 12 }}>📰</div>
+                <div style={{ fontSize: 14, fontWeight: 600, color: '#8b949e', marginBottom: 6 }}>No stories yet</div>
+                <div style={{ fontSize: 13 }}>Check back soon.</div>
+              </>
+            ) : (
+              <>
+                <div style={{ fontSize: 28, marginBottom: 12 }}>🔍</div>
+                <div style={{ fontSize: 14, fontWeight: 600, color: '#8b949e', marginBottom: 6 }}>No stories match your filters</div>
+                <div style={{ fontSize: 13 }}>
+                  {(() => {
+                    const parts = [];
+                    if (reporterFilter !== 'all') parts.push(REPORTERS.find((r) => r.key === reporterFilter)?.label || reporterFilter);
+                    if (sentimentFilter !== 'all') parts.push(sentimentFilter);
+                    return parts.length > 0
+                      ? `No ${parts.join(' + ')} stories right now. Try adjusting your filters.`
+                      : 'Try adjusting your reporter or sentiment filters.';
+                  })()}
+                </div>
+              </>
+            )}
           </div>
         )}
 
-        <AnimatePresence>
-          {visibleStories.map((story) => (
-            <StoryCard
-              key={story.id}
-              story={story}
-              onClick={() => handleStoryClick(story)}
-              activeBattleTickers={activeBattleTickers}
-              isMobile={isMobile}
-            />
-          ))}
-        </AnimatePresence>
+        {/* All Stories: sectioned layout */}
+        {activeTab === 'all' && sections.map((section, idx) => (
+          <FeedSection
+            key={section.id}
+            section={section}
+            onStoryPress={handleStoryClick}
+            activeBattleTickers={activeBattleTickers}
+            isMobile={isMobile}
+            isDesktop={isDesktop}
+            initialExpanded={idx < 2}
+          />
+        ))}
 
-        {/* Infinite scroll sentinel */}
-        {hasMore && <div ref={sentinelRef} style={{ height: 1 }} />}
+        {/* For You: flat ranked list with infinite scroll */}
+        {activeTab === 'foryou' && (
+          <>
+            <AnimatePresence>
+              {forYouVisible.map((story) => (
+                <StoryCard
+                  key={story.id}
+                  story={story}
+                  onClick={() => handleStoryClick(story)}
+                  activeBattleTickers={activeBattleTickers}
+                  isMobile={isMobile}
+                />
+              ))}
+            </AnimatePresence>
+            {forYouHasMore && <div ref={sentinelRef} style={{ height: 1 }} />}
+          </>
+        )}
       </div>
 
       {/* Story detail modal/sheet */}

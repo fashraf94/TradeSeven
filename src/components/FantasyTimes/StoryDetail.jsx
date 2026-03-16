@@ -5,6 +5,7 @@ import React, { useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Zap, TrendingUp, Globe, BarChart3, Compass } from 'lucide-react';
 import { REPORTER_PROFILES } from '../../prompts/fantasyTimesPrompts';
+import StoryVisualSafe from './StoryVisualSafe';
 
 const ICON_MAP = { Zap, TrendingUp, Globe, BarChart3, Compass };
 
@@ -176,6 +177,17 @@ export default function StoryDetail({ story, isOpen, onClose, isMobile }) {
 
             {/* Content */}
             <div style={{ padding: '16px 20px' }}>
+              {/* Visual */}
+              {story.visualType && story.visualType !== 'none' && (
+                <div style={{ marginBottom: 16 }}>
+                  <StoryVisualSafe
+                    visualType={story.visualType}
+                    visualConfig={story.visualConfig}
+                    size="expanded"
+                  />
+                </div>
+              )}
+
               {/* Headline */}
               <h2 style={{
                 color: '#e6edf3',

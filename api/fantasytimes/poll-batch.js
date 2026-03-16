@@ -7,6 +7,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { applySecurityMiddleware } from '../_utils/security.js';
 import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
 import { REPORTER_PROFILES } from '../_utils/fantasyTimesPrompts.js';
+import { getDefaultVisual, shouldOverrideVisual, callArtDirector } from '../_utils/fantasyTimesVisuals.js';
 
 export const config = { maxDuration: 10 };
 
@@ -33,6 +34,13 @@ function getAnthropicClient() {
 export default async function handler(req, res) {
   if (applySecurityMiddleware(req, res, { rateLimit: { limit: 20, windowMs: 60000 } })) {
     return;
+  }
+
+  // --- Cron/Admin Authentication ---
+  const isVercelCron = req.headers['x-vercel-cron'] === '1';
+  const authHeader = req.headers.authorization;
+  if (!isVercelCron && authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+    return res.status(401).json({ error: 'Unauthorized' });
   }
 
   if (req.method !== 'GET') {
@@ -137,9 +145,21 @@ export default async function handler(req, res) {
                 status: 'published',
               };
 
-              await db.collection('fantasyTimesStories').add(storyDoc);
+              // Stamp visual fields
+              const { visualType, visualConfig } = getDefaultVisual(
+                storyDoc.reporter, storyDoc.type, storyDoc.dataSnapshot, storyDoc.primaryTicker
+              );
+              storyDoc.visualType = visualType;
+              storyDoc.visualConfig = visualConfig;
+
+              const docRef = await db.collection('fantasyTimesStories').add(storyDoc);
               storiesCreated++;
               logInfo(`Created preview for ${symbol}`, { headline: storyDoc.headline });
+
+              // Art Director override for edge-case story types
+              if (shouldOverrideVisual(storyDoc.reporter, storyDoc.type)) {
+                await callArtDirector(storyDoc, docRef.id, db);
+              }
             } catch (writeErr) {
               errors.push(`${result.custom_id}: Write failed - ${writeErr.message}`);
               failures++;

@@ -12,6 +12,7 @@ import {
   PUBLISH_EARNINGS_RECAP_TOOL,
   REPORTER_PROFILES,
 } from '../_utils/fantasyTimesPrompts.js';
+import { getDefaultVisual, shouldOverrideVisual, callArtDirector } from '../_utils/fantasyTimesVisuals.js';
 
 export const config = { maxDuration: 60 };
 
@@ -73,6 +74,13 @@ async function fetchTodaysEarnings() {
 export default async function handler(req, res) {
   if (applySecurityMiddleware(req, res, { rateLimit: { limit: 10, windowMs: 60000 } })) {
     return;
+  }
+
+  // --- Cron/Admin Authentication ---
+  const isVercelCron = req.headers['x-vercel-cron'] === '1';
+  const authHeader = req.headers.authorization;
+  if (!isVercelCron && authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+    return res.status(401).json({ error: 'Unauthorized' });
   }
 
   if (req.method !== 'POST' && req.method !== 'GET') {
@@ -269,12 +277,24 @@ export default async function handler(req, res) {
       status: 'published',
     };
 
+    // Stamp visual fields
+    const { visualType, visualConfig } = getDefaultVisual(
+      storyDoc.reporter, storyDoc.type, storyDoc.dataSnapshot, storyDoc.primaryTicker
+    );
+    storyDoc.visualType = visualType;
+    storyDoc.visualConfig = visualConfig;
+
     const docRef = await db.collection('fantasyTimesStories').add(storyDoc);
     logInfo(`Published earnings recap ${docRef.id}`, {
       symbol: earning.symbol,
       outcome,
       headline: storyDoc.headline,
     });
+
+    // Art Director override for edge-case story types
+    if (shouldOverrideVisual(storyDoc.reporter, storyDoc.type)) {
+      await callArtDirector(storyDoc, docRef.id, db);
+    }
 
     return res.status(200).json({
       success: true,

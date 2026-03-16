@@ -8,6 +8,7 @@ import { ChevronRight } from 'lucide-react';
 import { useFantasyTimes } from '../../hooks/useFantasyTimes';
 import { isMarketOpen } from '../../utils/marketSchedule';
 import { REPORTER_PROFILES } from '../../prompts/fantasyTimesPrompts';
+import StoryVisualSafe from '../FantasyTimes/StoryVisualSafe';
 import { useTheme } from '../../contexts/ThemeContext';
 import TapGlint from '../shared/TapGlint';
 
@@ -154,6 +155,21 @@ export default function FantasyTimesTeaser({ setScreen }) {
               }}
             >
               <TapGlint triggerKey={tapCounts[cardKey] || 0} />
+              {/* Visual or fallback gradient */}
+              {story.visualType && story.visualType !== 'none' ? (
+                <StoryVisualSafe
+                  visualType={story.visualType}
+                  visualConfig={story.visualConfig}
+                  size="micro"
+                />
+              ) : (
+                <div style={{
+                  height: 80,
+                  background: `linear-gradient(135deg, ${reporterColor}15, transparent)`,
+                  borderRadius: '8px 8px 0 0',
+                  marginBottom: -4,
+                }} />
+              )}
               {/* Headline */}
               <div style={{
                 fontSize: '13px',
