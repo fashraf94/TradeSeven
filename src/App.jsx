@@ -19825,7 +19825,6 @@ export default function PortfolioDuel() {
               setShowBaggerBombTrainingConfirm={setShowBaggerBombTrainingConfirm}
               setShowTrainingConfirmModal={setShowTrainingConfirmModal}
               setTrainingConfirmType={setTrainingConfirmType}
-              isMobile={isMobile}
               setSidebarOpen={setSidebarOpen}
               unreadCount={unreadCount}
               activeDraftBanner={activeDraftBanner}

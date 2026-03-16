@@ -70,7 +70,6 @@ export default function DashboardLoop({
   setShowBaggerBombTrainingConfirm,
   setShowTrainingConfirmModal,
   setTrainingConfirmType,
-  isMobile,
   setSidebarOpen,
   unreadCount,
   activeDraftBanner,
