@@ -1,0 +1,245 @@
+// src/components/FantasyTimes/visuals/StoryChart.jsx
+// Alex's price chart visual — lightweight-charts area/candlestick for story feed.
+// Reuses chart creation patterns from src/components/Research/StockChart.jsx.
+
+import React, { useEffect, useRef, useState } from 'react';
+import { motion } from 'framer-motion';
+import { createChart, AreaSeries, CandlestickSeries, HistogramSeries, LineSeries } from 'lightweight-charts';
+import { fetchHistoricalOHLCV } from '../../../services/eodhdAPI';
+import { prepareChartData } from '../../Research/chartUtils';
+import { DARK_TOKENS } from '../../../theme/tokens';
+import { VISUAL_HEIGHTS } from '../StoryVisualSafe';
+import ChartSkeleton from './ChartSkeleton';
+
+// Module-level session cache to avoid refetching the same ticker
+const chartDataCache = new Map();
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+function getCachedData(ticker) {
+  const entry = chartDataCache.get(ticker);
+  if (entry && Date.now() - entry.timestamp < CACHE_TTL) return entry.data;
+  return null;
+}
+
+function setCachedData(ticker, data) {
+  chartDataCache.set(ticker, { data, timestamp: Date.now() });
+}
+
+export default function StoryChart({ config, size }) {
+  const containerRef = useRef(null);
+  const chartRef = useRef(null);
+  const [chartData, setChartData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const height = VISUAL_HEIGHTS[size] || VISUAL_HEIGHTS.compact;
+
+  // Fetch 7-day OHLCV data
+  useEffect(() => {
+    if (!config.ticker) {
+      setLoading(false);
+      return;
+    }
+
+    const cached = getCachedData(config.ticker);
+    if (cached) {
+      setChartData(cached);
+      setLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+
+    fetchHistoricalOHLCV(config.ticker, '1d', { days: 7 })
+      .then(raw => {
+        if (cancelled || !raw || raw.length === 0) {
+          setLoading(false);
+          return;
+        }
+        const prepared = prepareChartData(raw);
+        if (prepared.length > 0) {
+          setCachedData(config.ticker, prepared);
+          setChartData(prepared);
+        }
+        setLoading(false);
+      })
+      .catch(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    return () => { cancelled = true; };
+  }, [config.ticker]);
+
+  // Create chart when data is ready
+  useEffect(() => {
+    if (!containerRef.current || !chartData || chartData.length === 0) return;
+
+    const container = containerRef.current;
+    const isBullish = config.sentiment === 'bullish';
+    const lineColor = isBullish ? '#5eead4' : '#ef4444';
+
+    const chart = createChart(container, {
+      width: container.clientWidth,
+      height: height,
+      layout: {
+        background: { type: 'solid', color: 'transparent' },
+        textColor: DARK_TOKENS.textFaint || '#64748b',
+        fontSize: 10,
+      },
+      grid: {
+        vertLines: { visible: false },
+        horzLines: { visible: false },
+      },
+      crosshair: {
+        mode: size === 'micro' ? 0 : 1,
+      },
+      rightPriceScale: {
+        visible: size === 'expanded',
+        borderVisible: false,
+      },
+      timeScale: {
+        visible: size === 'expanded',
+        borderVisible: false,
+      },
+      handleScroll: false,
+      handleScale: false,
+    });
+
+    chartRef.current = chart;
+
+    if (size === 'expanded') {
+      // Expanded: full candlestick with volume
+      const candleSeries = chart.addSeries(CandlestickSeries, {
+        upColor: '#00ff88',
+        downColor: '#ff4757',
+        wickUpColor: '#00ff88',
+        wickDownColor: '#ff4757',
+        borderVisible: false,
+      });
+      candleSeries.setData(chartData);
+
+      // Volume bars
+      try {
+        const volumeSeries = chart.addSeries(HistogramSeries, {
+          color: 'rgba(94,234,212,0.15)',
+          priceScaleId: 'volume',
+          priceFormat: { type: 'volume' },
+        });
+        chart.priceScale('volume').applyOptions({
+          scaleMargins: { top: 0.8, bottom: 0 },
+        });
+        volumeSeries.setData(chartData.map(c => ({
+          time: c.time,
+          value: c.volume || 0,
+          color: c.close >= c.open ? 'rgba(0,255,136,0.2)' : 'rgba(255,71,87,0.2)',
+        })));
+      } catch (e) {
+        console.warn('[StoryChart] Volume error:', e);
+      }
+
+      // 20-period SMA
+      if (chartData.length >= 20) {
+        try {
+          const smaLine = chart.addSeries(LineSeries, {
+            color: 'rgba(0,217,255,0.5)',
+            lineWidth: 1,
+            priceLineVisible: false,
+            lastValueVisible: false,
+            crosshairMarkerVisible: false,
+          });
+          const smaData = [];
+          for (let i = 19; i < chartData.length; i++) {
+            let sum = 0;
+            for (let j = i - 19; j <= i; j++) sum += chartData[j].close;
+            smaData.push({ time: chartData[i].time, value: sum / 20 });
+          }
+          smaLine.setData(smaData);
+        } catch (e) {
+          console.warn('[StoryChart] SMA error:', e);
+        }
+      }
+
+      // Previous close reference line
+      if (config.previousClose > 0) {
+        try {
+          candleSeries.createPriceLine({
+            price: config.previousClose,
+            color: 'rgba(255,255,255,0.2)',
+            lineWidth: 1,
+            lineStyle: 2,
+            axisLabelVisible: false,
+          });
+        } catch (e) {
+          console.warn('[StoryChart] Price line error:', e);
+        }
+      }
+    } else {
+      // Micro + Compact: area chart
+      const areaSeries = chart.addSeries(AreaSeries, {
+        lineColor: lineColor,
+        topColor: isBullish ? 'rgba(94,234,212,0.25)' : 'rgba(239,68,68,0.25)',
+        bottomColor: 'transparent',
+        lineWidth: size === 'micro' ? 1.5 : 2,
+        priceLineVisible: false,
+        lastValueVisible: false,
+        crosshairMarkerVisible: size !== 'micro',
+      });
+
+      areaSeries.setData(chartData.map(c => ({
+        time: c.time,
+        value: c.close,
+      })));
+
+      // Compact: add previous close reference line
+      if (size === 'compact' && config.previousClose > 0) {
+        try {
+          areaSeries.createPriceLine({
+            price: config.previousClose,
+            color: 'rgba(255,255,255,0.2)',
+            lineWidth: 1,
+            lineStyle: 2,
+            axisLabelVisible: false,
+          });
+        } catch (e) {
+          console.warn('[StoryChart] Price line error:', e);
+        }
+      }
+    }
+
+    chart.timeScale().fitContent();
+
+    // Resize observer
+    const resizeObserver = new ResizeObserver(() => {
+      if (chartRef.current && container) {
+        chartRef.current.applyOptions({ width: container.clientWidth });
+      }
+    });
+    resizeObserver.observe(container);
+
+    return () => {
+      resizeObserver.disconnect();
+      chart.remove();
+      chartRef.current = null;
+    };
+  }, [chartData, size, height, config.sentiment, config.previousClose]);
+
+  const pctDir = config.percentChange > 0 ? 'up' : 'down';
+  const ariaLabel = `${config.ticker} 7-day price chart. Current: $${config.currentPrice}, ${pctDir} ${Math.abs(config.percentChange || 0).toFixed(2)}%`;
+
+  if (loading) {
+    return <ChartSkeleton height={height} />;
+  }
+
+  if (!chartData || chartData.length === 0) return null;
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ type: 'spring', stiffness: 300, damping: 25, delay: 0.1 }}
+      style={{ height, width: '100%', overflow: 'hidden', borderRadius: 8 }}
+      role="img"
+      aria-label={ariaLabel}
+    >
+      <div ref={containerRef} style={{ width: '100%', height: '100%' }} />
+    </motion.div>
+  );
+}
