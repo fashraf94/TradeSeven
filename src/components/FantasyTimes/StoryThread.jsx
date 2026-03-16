@@ -38,7 +38,16 @@ export default function StoryThread({
   const { ticker, lead, thread, reporterCount } = cluster;
 
   const leadProfile = REPORTER_PROFILES[lead.reporter] || REPORTER_PROFILES.kai;
-  const spineColor = `${leadProfile.color}4D`; // 30% opacity hex
+  const isMultiReporter = reporterCount > 1;
+
+  // Collect unique reporter profiles for multi-reporter threads
+  const uniqueReporters = isMultiReporter
+    ? [...new Set([lead.reporter, ...thread.map((s) => s.reporter)])]
+        .map((key) => REPORTER_PROFILES[key] || REPORTER_PROFILES.kai)
+    : [];
+
+  // Teal spine for multi-reporter, lead reporter color for single
+  const spineColor = isMultiReporter ? '#5eead433' : `${leadProfile.color}4D`;
 
   const visibleThread = expanded ? thread : thread.slice(0, 1);
   const hiddenCount = thread.length - 1;
@@ -77,6 +86,18 @@ export default function StoryThread({
             borderRadius: 1,
           }}
         />
+        {isMultiReporter && uniqueReporters.map((rp, i) => (
+          <div
+            key={i}
+            style={{
+              width: 6,
+              height: 6,
+              borderRadius: '50%',
+              backgroundColor: rp.color,
+              flexShrink: 0,
+            }}
+          />
+        ))}
         {indicatorText}
       </div>
 
