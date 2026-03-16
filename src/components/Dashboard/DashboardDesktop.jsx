@@ -332,11 +332,14 @@ export default function DashboardDesktop({
 
         {/* ── Battle Grid (2-column) ─────────────────────────────────────── */}
         <motion.div variants={sectionVariants}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
-            <span style={{ fontSize: 12 }}>⚔️</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px' }}>
+            <div style={{
+              width: '3px', height: '18px', borderRadius: '2px',
+              background: 'linear-gradient(180deg, #5eead4, #5eead4 60%, transparent)',
+            }} />
             <span style={{
-              fontSize: 11, fontWeight: 700, color: tokens.textFaint,
-              letterSpacing: '0.08em', textTransform: 'uppercase',
+              fontSize: '13px', fontWeight: 700, letterSpacing: '1.5px',
+              textTransform: 'uppercase', color: 'rgba(255,255,255,0.7)',
             }}>
               Active Battles
             </span>
@@ -396,11 +399,14 @@ export default function DashboardDesktop({
         {/* ── Recent Results ────────────────────────────────────────────── */}
         {recentResults.length > 0 && (
           <motion.div variants={sectionVariants}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-              <span style={{ fontSize: 12 }}>📊</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
+              <div style={{
+                width: '3px', height: '18px', borderRadius: '2px',
+                background: 'linear-gradient(180deg, #5eead4, #5eead4 60%, transparent)',
+              }} />
               <span style={{
-                fontSize: 11, fontWeight: 700, color: tokens.textFaint,
-                letterSpacing: '0.08em', textTransform: 'uppercase',
+                fontSize: '13px', fontWeight: 700, letterSpacing: '1.5px',
+                textTransform: 'uppercase', color: 'rgba(255,255,255,0.7)',
               }}>
                 Recent Results
               </span>
