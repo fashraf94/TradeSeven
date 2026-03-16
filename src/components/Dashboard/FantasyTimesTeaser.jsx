@@ -145,7 +145,7 @@ export default function FantasyTimesTeaser({ setScreen }) {
                 borderRadius: '12px',
                 border: `1px solid ${tokens.borderDefault}`,
                 borderLeft: `3px solid ${reporterColor}`,
-                boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.05), inset 0 -1px 0 rgba(0,0,0,0.4)',
+                boxShadow: tokens.obsidianShadow,
                 cursor: 'pointer',
                 display: 'flex',
                 flexDirection: 'column',

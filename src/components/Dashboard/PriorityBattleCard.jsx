@@ -6,11 +6,7 @@ import React, { useState } from 'react';
 import ClashCard from './ClashCard';
 import { useTheme } from '../../contexts/ThemeContext';
 import TapGlint from '../shared/TapGlint';
-
-function getEndTime(battle) {
-  return battle.endDate || battle.battleEndTime ||
-    battle.timing?.endDate || battle.timeline?.endDate || null;
-}
+import { getEndTime } from '../../utils/battleHelpers';
 
 export default function PriorityBattleCard({ battle, battleType, user, onPress }) {
   const { tokens } = useTheme();
@@ -25,7 +21,7 @@ export default function PriorityBattleCard({ battle, battleType, user, onPress }
       style={{
         position: 'relative',
         overflow: 'hidden',
-        boxShadow: `${tokens.glowPurpleCard}, inset 0 1px 0 rgba(255,255,255,0.05), inset 0 -1px 0 rgba(0,0,0,0.4)`,
+        boxShadow: `${tokens.glowPurpleCard}, ${tokens.obsidianShadow}`,
       }}
     >
       <TapGlint triggerKey={tapCount} />

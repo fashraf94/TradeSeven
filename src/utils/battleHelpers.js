@@ -268,6 +268,26 @@ export const calculateAgentPriceChanges = (agents, currentPrices, dailyOpens) =>
 };
 
 /**
+ * Get the end time from a battle object, checking multiple field paths
+ */
+export const getEndTime = (battle) => {
+  return battle.endDate || battle.battleEndTime ||
+    battle.timing?.endDate || battle.timeline?.endDate || null;
+};
+
+/**
+ * Check if a battle has ended based on its end time
+ */
+export const isEnded = (battle) => {
+  const endTime = getEndTime(battle);
+  if (!endTime) return false;
+  const endMs = typeof endTime === 'object' && endTime.seconds
+    ? endTime.seconds * 1000
+    : new Date(endTime).getTime();
+  return endMs < Date.now();
+};
+
+/**
  * Default export with all helpers
  */
 export default {
@@ -286,5 +306,7 @@ export default {
   getUserScore,
   getOpponentScore,
   transformSessionScores,
-  calculateAgentPriceChanges
+  calculateAgentPriceChanges,
+  getEndTime,
+  isEnded
 };

@@ -3,9 +3,10 @@
 // Each card: premium color-tinted bg, icon with gradient glow, description, action buttons
 
 import React, { useState, useRef, useCallback } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { X, Flame, TrendingUp, Users, Bot, BookOpen } from 'lucide-react';
+import { motion } from 'framer-motion';
+import { Flame, TrendingUp, Users, Bot, BookOpen } from 'lucide-react';
 import { useTheme } from '../../contexts/ThemeContext';
+import CenteredModal from '../shared/CenteredModal';
 
 // ─── Game mode data ──────────────────────────────────────────────────────────
 
@@ -116,74 +117,7 @@ export default function GamesModal({
   };
 
   return (
-    <AnimatePresence>
-      {isOpen && (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          transition={{ duration: 0.2 }}
-          onClick={onClose}
-          style={{
-            position: 'fixed',
-            inset: 0,
-            zIndex: 200,
-            background: 'rgba(0,0,0,0.75)',
-            backdropFilter: 'blur(8px)',
-            WebkitBackdropFilter: 'blur(8px)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: '20px',
-          }}
-        >
-          {/* Modal Container */}
-          <motion.div
-            initial={{ opacity: 0, scale: 0.95, y: 10 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.95, y: 10 }}
-            transition={{ type: 'spring', stiffness: 300, damping: 28 }}
-            onClick={e => e.stopPropagation()}
-            style={{
-              width: '100%',
-              maxWidth: '420px',
-              maxHeight: '85vh',
-              background: tokens.bgApp,
-              borderRadius: '20px',
-              border: `1px solid ${tokens.borderDefault}`,
-              boxShadow: '0 25px 60px rgba(0,0,0,0.5)',
-              overflow: 'hidden',
-              display: 'flex',
-              flexDirection: 'column',
-            }}
-          >
-            {/* Header */}
-            <div style={{ position: 'relative', padding: '20px 20px 12px', textAlign: 'center' }}>
-              <span style={{ fontSize: '18px', fontWeight: '600', color: tokens.textPrimary }}>
-                Games
-              </span>
-              <button
-                onClick={onClose}
-                style={{
-                  position: 'absolute',
-                  top: '16px',
-                  right: '16px',
-                  width: '32px',
-                  height: '32px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  background: tokens.bgIcon,
-                  border: 'none',
-                  borderRadius: '50%',
-                  cursor: 'pointer',
-                  color: tokens.textFaint,
-                }}
-              >
-                <X size={18} />
-              </button>
-            </div>
-
+    <CenteredModal isOpen={isOpen} onClose={onClose} title="Games">
             {/* Carousel */}
             <div
               ref={scrollRef}
@@ -214,7 +148,7 @@ export default function GamesModal({
                     border: `1px solid ${game.borderColor}`,
                     borderRadius: '20px',
                     padding: '24px',
-                    boxShadow: `inset 0 1px 0 rgba(255,255,255,0.05), inset 0 -1px 0 rgba(0,0,0,0.4), ${game.glowShadow}`,
+                    boxShadow: `${tokens.obsidianShadow}, ${game.glowShadow}`,
                     display: 'flex',
                     flexDirection: 'column',
                     overflow: 'hidden',
@@ -377,9 +311,6 @@ export default function GamesModal({
                 />
               ))}
             </div>
-          </motion.div>
-        </motion.div>
-      )}
-    </AnimatePresence>
+    </CenteredModal>
   );
 }

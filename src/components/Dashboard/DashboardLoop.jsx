@@ -14,7 +14,7 @@ import QuickPlayModal from './QuickPlayModal';
 import PendingLobbiesSection from './PendingLobbiesSection';
 import { useTheme } from '../../contexts/ThemeContext';
 import { isMarketOpen } from '../../utils/marketSchedule';
-import { didUserWin } from '../../utils/battleHelpers';
+import { didUserWin, getEndTime, isEnded } from '../../utils/battleHelpers';
 
 // ─── Motion variants ─────────────────────────────────────────────────────────
 
@@ -28,20 +28,6 @@ const sectionVariants = {
 };
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
-
-function getEndTime(battle) {
-  return battle.endDate || battle.battleEndTime ||
-    battle.timing?.endDate || battle.timeline?.endDate || null;
-}
-
-function isEnded(battle) {
-  const endTime = getEndTime(battle);
-  if (!endTime) return false;
-  const endMs = typeof endTime === 'object' && endTime.seconds
-    ? endTime.seconds * 1000
-    : new Date(endTime).getTime();
-  return endMs < Date.now();
-}
 
 function getGreeting() {
   const hour = new Date().getHours();
@@ -377,7 +363,7 @@ export default function DashboardLoop({
               borderRadius: '14px',
               border: '1px solid rgba(245,158,11,0.2)',
               background: 'linear-gradient(135deg, rgba(245,158,11,0.15), rgba(245,158,11,0.05))',
-              boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.05), inset 0 -1px 0 rgba(0,0,0,0.4)',
+              boxShadow: tokens.obsidianShadow,
               cursor: 'pointer',
             }}
           >
@@ -401,7 +387,7 @@ export default function DashboardLoop({
               borderRadius: '14px',
               border: '1px solid rgba(147,51,234,0.2)',
               background: 'linear-gradient(135deg, rgba(147,51,234,0.15), rgba(147,51,234,0.05))',
-              boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.05), inset 0 -1px 0 rgba(0,0,0,0.4)',
+              boxShadow: tokens.obsidianShadow,
               cursor: 'pointer',
             }}
           >
@@ -543,7 +529,7 @@ export default function DashboardLoop({
             background: tokens.bgCard,
             borderRadius: '12px',
             border: `1px solid ${tokens.borderDefault}`,
-            boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.05), inset 0 -1px 0 rgba(0,0,0,0.4)',
+            boxShadow: tokens.obsidianShadow,
             textAlign: 'center',
           }}>
             <div style={{ fontSize: '24px', fontWeight: '700', color: tokens.teal }}>
@@ -562,7 +548,7 @@ export default function DashboardLoop({
             background: tokens.bgCard,
             borderRadius: '12px',
             border: `1px solid ${tokens.borderDefault}`,
-            boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.05), inset 0 -1px 0 rgba(0,0,0,0.4)',
+            boxShadow: tokens.obsidianShadow,
             textAlign: 'center',
           }}>
             <div style={{ fontSize: '24px', fontWeight: '700', color: tokens.emerald }}>
@@ -581,7 +567,7 @@ export default function DashboardLoop({
             background: tokens.bgCard,
             borderRadius: '12px',
             border: `1px solid ${tokens.borderDefault}`,
-            boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.05), inset 0 -1px 0 rgba(0,0,0,0.4)',
+            boxShadow: tokens.obsidianShadow,
             textAlign: 'center',
           }}>
             <div style={{ fontSize: '24px', fontWeight: '700', color: tokens.amber }}>

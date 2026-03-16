@@ -26,6 +26,7 @@ export const DARK_TOKENS = {
   glowPurpleBtn: '0 0 15px rgba(147,51,234,0.3)',
   glowRedDot: '0 0 8px rgba(239,68,68,0.8)',
   glowTealNav: '0 0 12px rgba(94,234,212,0.7)',
+  obsidianShadow: 'inset 0 1px 0 rgba(255,255,255,0.05), inset 0 -1px 0 rgba(0,0,0,0.4)',
 
   // Text
   textWhite: '#ffffff',
@@ -57,6 +58,7 @@ export const LIGHT_TOKENS = {
   glowPurpleBtn: '0 0 15px rgba(147,51,234,0.2)',
   glowRedDot: '0 0 8px rgba(239,68,68,0.6)',
   glowTealNav: '0 0 12px rgba(13,148,136,0.5)',
+  obsidianShadow: 'inset 0 1px 0 rgba(255,255,255,0.7), inset 0 -1px 0 rgba(0,0,0,0.08)',
   textWhite: '#0f172a',
   textPrimary: '#1e293b',
   textSecondary: '#475569',

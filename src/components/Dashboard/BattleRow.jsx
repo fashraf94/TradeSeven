@@ -6,6 +6,7 @@ import { motion } from 'framer-motion';
 import { Swords, Layers, Bot } from 'lucide-react';
 import { useTheme } from '../../contexts/ThemeContext';
 import TapGlint from '../shared/TapGlint';
+import { getEndTime } from '../../utils/battleHelpers';
 
 const TYPE_ICONS = {
   classic: Swords,
@@ -20,11 +21,6 @@ const TYPE_LABELS = {
   training: 'Training',
   trainingDraft: 'Training',
 };
-
-function getEndTime(battle) {
-  return battle.endDate || battle.battleEndTime ||
-    battle.timing?.endDate || battle.timeline?.endDate || null;
-}
 
 function formatTimeRemaining(ms) {
   if (ms <= 0) return 'Ended';
@@ -92,7 +88,7 @@ export default function BattleRow({ battle, battleType, user, onPress }) {
         background: tokens.bgCard,
         borderRadius: '12px',
         border: `1px solid ${isUrgent ? 'rgba(239,68,68,0.2)' : tokens.borderDefault}`,
-        boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.05), inset 0 -1px 0 rgba(0,0,0,0.4)',
+        boxShadow: tokens.obsidianShadow,
         cursor: 'pointer',
       }}
     >
