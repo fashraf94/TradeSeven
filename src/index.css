@@ -547,6 +547,17 @@ img, video, canvas, svg {
   100% { transform: scale(1); }
 }
 
+@keyframes flowGradient {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+@keyframes ambientBreathe {
+  0% { opacity: 0.12; transform: scale(1) translate(-50%, -50%); }
+  100% { opacity: 0.22; transform: scale(1.05) translate(-48%, -48%); }
+}
+
 /* Reduced Motion Support */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {

@@ -6,7 +6,7 @@
 import React, { useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Swords, Zap } from 'lucide-react';
-import PriorityBattleCard from './PriorityBattleCard';
+import DashboardBattleCard from './DashboardBattleCard';
 import BattleRow from './BattleRow';
 import FantasyTimesTeaser from './FantasyTimesTeaser';
 import GamesModal from './GamesModal';
@@ -14,7 +14,7 @@ import QuickPlayModal from './QuickPlayModal';
 import PendingLobbiesSection from './PendingLobbiesSection';
 import { useTheme } from '../../contexts/ThemeContext';
 import { isMarketOpen } from '../../utils/marketSchedule';
-import { didUserWin } from '../../utils/battleHelpers';
+import { didUserWin, getEndTime, isEnded } from '../../utils/battleHelpers';
 
 // ─── Motion variants ─────────────────────────────────────────────────────────
 
@@ -28,20 +28,6 @@ const sectionVariants = {
 };
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
-
-function getEndTime(battle) {
-  return battle.endDate || battle.battleEndTime ||
-    battle.timing?.endDate || battle.timeline?.endDate || null;
-}
-
-function isEnded(battle) {
-  const endTime = getEndTime(battle);
-  if (!endTime) return false;
-  const endMs = typeof endTime === 'object' && endTime.seconds
-    ? endTime.seconds * 1000
-    : new Date(endTime).getTime();
-  return endMs < Date.now();
-}
 
 function getGreeting() {
   const hour = new Date().getHours();
@@ -70,7 +56,6 @@ export default function DashboardLoop({
   setShowBaggerBombTrainingConfirm,
   setShowTrainingConfirmModal,
   setTrainingConfirmType,
-  isMobile,
   setSidebarOpen,
   unreadCount,
   activeDraftBanner,
@@ -184,10 +169,20 @@ export default function DashboardLoop({
       minHeight: '100vh',
       display: 'flex',
       flexDirection: 'column',
-      background: tokens.bgApp,
+      background: '#111318',
       position: 'relative',
       zIndex: 1,
     }}>
+      {/* Ambient breathing glow */}
+      <div style={{
+        position: 'absolute', top: '22%', left: '50%',
+        width: '140%', height: '380px',
+        background: 'radial-gradient(ellipse at center, rgba(94,234,212,0.12) 0%, rgba(168,85,247,0.06) 40%, transparent 70%)',
+        filter: 'blur(50px)', transform: 'translate(-50%, -50%)',
+        zIndex: 0, pointerEvents: 'none',
+        animation: 'ambientBreathe 8s infinite alternate ease-in-out',
+      }} />
+
       {/* ─── Header ─────────────────────────────────────────────────────────── */}
       <header style={{
         background: tokens.bgCard,
@@ -309,6 +304,7 @@ export default function DashboardLoop({
           }}
           style={{
             background: `linear-gradient(135deg, rgba(217,119,6,0.15), ${tokens.bgCard})`,
+            backgroundImage: 'linear-gradient(180deg, rgba(255,255,255,0.03) 0%, transparent 40%)',
             borderLeft: `2px solid ${tokens.amber}`,
             padding: '12px 16px',
             cursor: 'pointer',
@@ -316,6 +312,7 @@ export default function DashboardLoop({
             alignItems: 'center',
             justifyContent: 'space-between',
             gap: '12px',
+            boxShadow: `${tokens.obsidianShadow}, 0 2px 12px rgba(245,158,11,0.05)`,
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -378,7 +375,8 @@ export default function DashboardLoop({
               borderRadius: '14px',
               border: '1px solid rgba(245,158,11,0.2)',
               background: 'linear-gradient(135deg, rgba(245,158,11,0.15), rgba(245,158,11,0.05))',
-              boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.05), inset 0 -1px 0 rgba(0,0,0,0.4)',
+              backgroundImage: 'linear-gradient(180deg, rgba(255,255,255,0.04) 0%, transparent 50%)',
+              boxShadow: tokens.obsidianShadow,
               cursor: 'pointer',
             }}
           >
@@ -402,7 +400,8 @@ export default function DashboardLoop({
               borderRadius: '14px',
               border: '1px solid rgba(147,51,234,0.2)',
               background: 'linear-gradient(135deg, rgba(147,51,234,0.15), rgba(147,51,234,0.05))',
-              boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.05), inset 0 -1px 0 rgba(0,0,0,0.4)',
+              backgroundImage: 'linear-gradient(180deg, rgba(255,255,255,0.04) 0%, transparent 50%)',
+              boxShadow: tokens.obsidianShadow,
               cursor: 'pointer',
             }}
           >
@@ -416,64 +415,68 @@ export default function DashboardLoop({
         {/* ── Section 1: Priority Battle ──────────────────────────────────── */}
         {priorityBattle && (
           <motion.div variants={sectionVariants}>
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              marginBottom: '12px',
-              padding: '0 4px',
-            }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, padding: '0 4px' }}>
+              <span style={{ fontSize: 12 }}>🔥</span>
               <span style={{
-                fontSize: '11px',
-                fontWeight: '700',
-                color: tokens.textFaint,
-                textTransform: 'uppercase',
-                letterSpacing: '1.5px',
+                fontSize: 11, fontWeight: 700, color: tokens.textFaint,
+                letterSpacing: '0.08em', textTransform: 'uppercase',
               }}>
                 Priority Battle
               </span>
               <span style={{
-                color: tokens.teal,
-                fontSize: '11px',
-                fontWeight: '600',
+                fontSize: 10, fontWeight: 700, color: tokens.teal,
+                background: 'rgba(94,234,212,0.1)',
+                border: '1px solid rgba(94,234,212,0.15)',
+                padding: '2px 8px', borderRadius: 4,
               }}>
                 {totalActive} active
               </span>
             </div>
-            <PriorityBattleCard
+            <DashboardBattleCard
               battle={priorityBattle.battle}
               battleType={priorityBattle.type}
               user={user}
+              tokens={tokens}
               onPress={() => handleBattlePress(priorityBattle.battle, priorityBattle.type)}
+              isMostUrgent={true}
             />
           </motion.div>
         )}
 
         {/* ── Section 2: Secondary Battles ────────────────────────────────── */}
         {secondaryBattles.length > 0 && (
-          <motion.div variants={sectionVariants} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            {secondaryBattles.map(({ battle, type }, i) => (
-              <BattleRow
-                key={battle.id || battle.firestoreId || i}
-                battle={battle}
-                battleType={type}
-                user={user}
-                onPress={() => handleBattlePress(battle, type)}
-              />
-            ))}
+          <motion.div variants={sectionVariants}>
+            <div style={{
+              background: tokens.bgCard, borderRadius: 14,
+              border: `1px solid ${tokens.borderDefault}`, overflow: 'hidden',
+              boxShadow: tokens.obsidianShadow,
+              backgroundImage: 'linear-gradient(180deg, rgba(255,255,255,0.03) 0%, transparent 40%)',
+            }}>
+              {secondaryBattles.map(({ battle, type }, i) => (
+                <div key={battle.id || battle.firestoreId || i} style={{
+                  borderBottom: i < secondaryBattles.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none',
+                }}>
+                  <BattleRow
+                    battle={battle}
+                    battleType={type}
+                    user={user}
+                    onPress={() => handleBattlePress(battle, type)}
+                    grouped
+                  />
+                </div>
+              ))}
+            </div>
           </motion.div>
         )}
 
         {/* ── Recent Results ────────────────────────────────────────────── */}
         {recentResults.length > 0 && (
           <motion.div variants={sectionVariants} style={{ opacity: 0.8 }}>
-            <div style={{ marginBottom: '12px', padding: '0 4px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, padding: '0 4px' }}>
+              <span style={{ fontSize: 12 }}>📊</span>
               <span style={{
-                fontSize: '11px',
-                fontWeight: '700',
-                color: tokens.textFaint,
-                textTransform: 'uppercase',
-                letterSpacing: '1.5px',
+                fontSize: 11, fontWeight: 700, color: tokens.textFaint,
+                letterSpacing: '0.08em', textTransform: 'uppercase',
               }}>
                 Recent Results
               </span>
@@ -542,9 +545,10 @@ export default function DashboardLoop({
             flex: 1,
             padding: '16px',
             background: tokens.bgCard,
+            backgroundImage: 'linear-gradient(180deg, rgba(255,255,255,0.03) 0%, transparent 40%)',
             borderRadius: '12px',
             border: `1px solid ${tokens.borderDefault}`,
-            boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.05), inset 0 -1px 0 rgba(0,0,0,0.4)',
+            boxShadow: tokens.obsidianShadow,
             textAlign: 'center',
           }}>
             <div style={{ fontSize: '24px', fontWeight: '700', color: tokens.teal }}>
@@ -561,9 +565,10 @@ export default function DashboardLoop({
             flex: 1,
             padding: '16px',
             background: tokens.bgCard,
+            backgroundImage: 'linear-gradient(180deg, rgba(255,255,255,0.03) 0%, transparent 40%)',
             borderRadius: '12px',
             border: `1px solid ${tokens.borderDefault}`,
-            boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.05), inset 0 -1px 0 rgba(0,0,0,0.4)',
+            boxShadow: tokens.obsidianShadow,
             textAlign: 'center',
           }}>
             <div style={{ fontSize: '24px', fontWeight: '700', color: tokens.emerald }}>
@@ -580,9 +585,10 @@ export default function DashboardLoop({
             flex: 1,
             padding: '16px',
             background: tokens.bgCard,
+            backgroundImage: 'linear-gradient(180deg, rgba(255,255,255,0.03) 0%, transparent 40%)',
             borderRadius: '12px',
             border: `1px solid ${tokens.borderDefault}`,
-            boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.05), inset 0 -1px 0 rgba(0,0,0,0.4)',
+            boxShadow: tokens.obsidianShadow,
             textAlign: 'center',
           }}>
             <div style={{ fontSize: '24px', fontWeight: '700', color: tokens.amber }}>

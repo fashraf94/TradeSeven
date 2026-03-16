@@ -26,3 +26,11 @@ export { default as TrainingLiveFeed } from './TrainingLiveFeed';
 export { default as PendingLobbiesSection } from './PendingLobbiesSection';
 export { default as PvpLobbiesSection } from './PvpWatchlistSection';
 export { WatchlistContainer } from './Watchlist';
+// Loop components (Phase 2.0–2.9)
+export { default as DashboardLoop } from './DashboardLoop';
+export { default as GamesModal } from './GamesModal';
+export { default as QuickPlayModal } from './QuickPlayModal';
+export { default as BattleRow } from './BattleRow';
+export { default as DashboardBattleCard } from './DashboardBattleCard';
+export { default as FantasyTimesTeaser } from './FantasyTimesTeaser';
+export { default as DashboardDesktop } from './DashboardDesktop';

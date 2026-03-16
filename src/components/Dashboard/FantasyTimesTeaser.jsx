@@ -23,14 +23,14 @@ function timeAgo(timestamp) {
   return `${Math.floor(hours / 24)}d ago`;
 }
 
-function getReporterColor(reporter) {
-  if (!reporter) return '#64748b';
-  const key = reporter.toLowerCase();
-  return REPORTER_PROFILES[key]?.color || '#64748b';
-}
-
 export default function FantasyTimesTeaser({ setScreen }) {
   const { tokens } = useTheme();
+
+  function getReporterColor(reporter) {
+    if (!reporter) return tokens.textFaint;
+    const key = reporter.toLowerCase();
+    return REPORTER_PROFILES[key]?.color || tokens.textFaint;
+  }
   const { rankedStories, loading } = useFantasyTimes();
   const marketOpen = isMarketOpen();
   const [tapCounts, setTapCounts] = useState({});
@@ -145,7 +145,7 @@ export default function FantasyTimesTeaser({ setScreen }) {
                 borderRadius: '12px',
                 border: `1px solid ${tokens.borderDefault}`,
                 borderLeft: `3px solid ${reporterColor}`,
-                boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.05), inset 0 -1px 0 rgba(0,0,0,0.4)',
+                boxShadow: tokens.obsidianShadow,
                 cursor: 'pointer',
                 display: 'flex',
                 flexDirection: 'column',

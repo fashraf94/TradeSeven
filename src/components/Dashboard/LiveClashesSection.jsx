@@ -1,3 +1,4 @@
+// DEPRECATED: Replaced by DashboardLoop/DashboardDesktop in March 2026 dashboard redesign. Kept for reference. Safe to delete.
 // /src/components/Dashboard/LiveClashesSection.jsx
 // Displays active battles as Clash Cards in a horizontal carousel
 // Handles both PVP and Training modes, shows count + urgency indicators

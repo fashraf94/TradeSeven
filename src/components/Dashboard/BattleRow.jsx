@@ -6,6 +6,7 @@ import { motion } from 'framer-motion';
 import { Swords, Layers, Bot } from 'lucide-react';
 import { useTheme } from '../../contexts/ThemeContext';
 import TapGlint from '../shared/TapGlint';
+import { getEndTime } from '../../utils/battleHelpers';
 
 const TYPE_ICONS = {
   classic: Swords,
@@ -20,11 +21,6 @@ const TYPE_LABELS = {
   training: 'Training',
   trainingDraft: 'Training',
 };
-
-function getEndTime(battle) {
-  return battle.endDate || battle.battleEndTime ||
-    battle.timing?.endDate || battle.timeline?.endDate || null;
-}
 
 function formatTimeRemaining(ms) {
   if (ms <= 0) return 'Ended';
@@ -51,7 +47,7 @@ function getOpponentName(battle, user) {
   return 'Opponent';
 }
 
-export default function BattleRow({ battle, battleType, user, onPress }) {
+export default function BattleRow({ battle, battleType, user, onPress, grouped = false }) {
   const { tokens } = useTheme();
   const [now, setNow] = useState(Date.now());
   const [tapCount, setTapCount] = useState(0);
@@ -89,10 +85,11 @@ export default function BattleRow({ battle, battleType, user, onPress }) {
         alignItems: 'center',
         gap: '12px',
         padding: '0 16px',
-        background: tokens.bgCard,
-        borderRadius: '12px',
-        border: `1px solid ${isUrgent ? 'rgba(239,68,68,0.2)' : tokens.borderDefault}`,
-        boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.05), inset 0 -1px 0 rgba(0,0,0,0.4)',
+        background: grouped ? 'transparent' : tokens.bgCard,
+        borderRadius: grouped ? 0 : '12px',
+        border: grouped ? 'none' : `1px solid ${isUrgent ? 'rgba(239,68,68,0.2)' : tokens.borderDefault}`,
+        boxShadow: grouped ? 'none' : `${tokens.obsidianShadow}, 0 2px 12px rgba(0,0,0,0.2)`,
+        backgroundImage: grouped ? 'none' : 'linear-gradient(180deg, rgba(255,255,255,0.03) 0%, transparent 40%)',
         cursor: 'pointer',
       }}
     >

@@ -1,3 +1,4 @@
+// DEPRECATED: Replaced by DashboardLoop/DashboardDesktop in March 2026 dashboard redesign. Kept for reference. Safe to delete.
 // /src/components/Dashboard/LiveFeed.jsx
 // PVP tab bottom section - shows live activity from the community
 // 3 content types: Open Lobby (cyan), Winning Portfolio (green), Top Stock (amber)

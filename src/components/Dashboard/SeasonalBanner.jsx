@@ -1,3 +1,4 @@
+// DEPRECATED: Replaced by DashboardLoop/DashboardDesktop in March 2026 dashboard redesign. Kept for reference. Safe to delete.
 // /src/components/Dashboard/SeasonalBanner.jsx
 // Amber/gold seasonal banner shown between Live Clashes and Game Cards
 // PVP variant: EarningsGame Tournament CTA

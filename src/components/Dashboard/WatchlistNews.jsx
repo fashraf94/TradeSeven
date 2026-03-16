@@ -126,7 +126,6 @@ const WatchlistNews = ({ colors }) => {
   const saveCustomWatchlist = (symbols) => {
     try {
       localStorage.setItem(WATCHLIST_STORAGE_KEY, JSON.stringify(symbols));
-      console.log('[Watchlist] Saved custom watchlist:', symbols);
     } catch (e) {
       console.warn('[Watchlist] Error saving custom watchlist:', e);
     }
@@ -137,7 +136,6 @@ const WatchlistNews = ({ colors }) => {
     // First check for custom watchlist
     const customWatchlist = getCustomWatchlist();
     if (customWatchlist && customWatchlist.length > 0) {
-      console.log('[Watchlist] Using custom watchlist:', customWatchlist);
       setHasWatchlist(true);
       return customWatchlist.slice(0, 8);
     }
@@ -199,7 +197,6 @@ const WatchlistNews = ({ colors }) => {
     }
 
     const symbolArray = Array.from(symbols);
-    console.log('[Watchlist] Found user symbols:', symbolArray);
 
     // If no user symbols found, use defaults
     if (symbolArray.length === 0) {
@@ -219,11 +216,9 @@ const WatchlistNews = ({ colors }) => {
       try {
         const symbols = getWatchlistSymbols();
         setWatchlistSymbols(symbols);
-        console.log('[Watchlist] Fetching news for:', symbols);
 
         // Fetch news for all symbols
         const newsMap = await getMultipleStockNews(symbols, 2);
-        console.log('[Watchlist] News received:', Object.keys(newsMap));
 
         // Flatten and dedupe news items, attach symbol info
         const allNews = [];

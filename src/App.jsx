@@ -118,11 +118,13 @@ import { StockIntelligenceScreen } from './components/StockIntelligence';
 // Research Landing Page (redesigned)
 import ResearchLandingPage from './components/Research/ResearchLandingPage';
 // Dashboard Components
-import { GameModeToggle, ResearchModeButton, WeeklyChallengesPanel, GameModeCarousel, DashboardTabs, LiveClashesSection, PvpLobbiesSection, YourActivity, SeasonalBanner, TrainingLiveFeed, PendingLobbiesSection } from './components/Dashboard';
+import { GameModeToggle, ResearchModeButton, WeeklyChallengesPanel, PendingLobbiesSection } from './components/Dashboard';
 import { useIsMobile } from './hooks/useIsMobile';
 import { isMarketOpen } from './utils/marketSchedule';
 import BottomNav from './components/Navigation/BottomNav';
 import DashboardLoop from './components/Dashboard/DashboardLoop';
+import DashboardDesktop from './components/Dashboard/DashboardDesktop';
+import DesktopSidebar from './components/Navigation/DesktopSidebar';
 
 // ============================================
 // LAZY LOADING FALLBACK
@@ -11691,7 +11693,6 @@ export default function PortfolioDuel() {
   const { isMobile } = useIsMobile();
 
   const [screen, setScreen] = useState('home');
-  const [dashboardTab, setDashboardTab] = useState('pvp'); // 'pvp' | 'train' - dashboard tab state
   const [historyTab, setHistoryTab] = useState('draft'); // 'classic', 'draft', or 'training'
   const [username, setUsername] = useState('');
   const [portfolioName, setPortfolioName] = useState('');
@@ -19825,7 +19826,6 @@ export default function PortfolioDuel() {
               setShowBaggerBombTrainingConfirm={setShowBaggerBombTrainingConfirm}
               setShowTrainingConfirmModal={setShowTrainingConfirmModal}
               setTrainingConfirmType={setTrainingConfirmType}
-              isMobile={isMobile}
               setSidebarOpen={setSidebarOpen}
               unreadCount={unreadCount}
               activeDraftBanner={activeDraftBanner}
@@ -19837,493 +19837,39 @@ export default function PortfolioDuel() {
     }
 
     // ═══════════════════════════════════════════════════════════
-    // DESKTOP: existing tabbed layout (unchanged)
+    // DESKTOP: The Minimal — two-panel layout (Phase 3)
     // ═══════════════════════════════════════════════════════════
     return (
       <ErrorBoundary name="Dashboard" onNavigateDashboard={() => { setScreen('home'); }}>
         <div style={containerStyle}>
-          {/* Animated Desktop Background */}
           <DesktopBackground isDesktop={isDesktop} />
 
-          {/* Global overlays and XP modal moved to unified return */}
-
-          <div style={{
-            minHeight: '100vh',
-            display: 'flex',
-            flexDirection: 'column',
-            background: colors.background,
-            position: 'relative',
-            zIndex: 1
-          }}>
-
-          {/* DESKTOP ONLY: Top Header - Static */}
-          <div
-            className="hidden md:block"
-            style={{
-              padding: '12px 24px',
-              background: 'transparent',
-              borderBottom: `1px solid ${colors.borderSubtle}`
-            }}
-          >
-            <div className="max-w-5xl mx-auto">
-              <div className="flex justify-between items-center">
-                {/* Logo */}
-                <div className="flex items-center gap-2.5">
-                  <Flame className="w-6 h-6" style={{ color: colors.cyan }} />
-                  <span className="text-xl font-bold" style={{
-                    background: 'linear-gradient(90deg, #FF8C00, #468CFF)',
-                    WebkitBackgroundClip: 'text',
-                    WebkitTextFillColor: 'transparent',
-                    backgroundClip: 'text'
-                  }}>FantasyTrades</span>
-                </div>
-
-                {/* User & Logout */}
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-full flex items-center justify-center"
-                    style={{ background: colors.cardBg, border: `2px solid ${colors.cyan}` }}>
-                    <User className="w-3.5 h-3.5" style={{ color: colors.cyan }} />
-                  </div>
-                  <span className="text-sm font-medium" style={{ color: colors.textPrimary }}>{user.username}</span>
-                  <button
-                    onClick={() => { logout(); setUsername(''); setScreen('home'); }}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm transition-all"
-                    style={{ background: 'transparent', border: `1px solid ${colors.borderSubtle}`, color: colors.textSecondary }}
-                    onMouseEnter={(e) => { e.currentTarget.style.borderColor = colors.red; e.currentTarget.style.color = colors.red; }}
-                    onMouseLeave={(e) => { e.currentTarget.style.borderColor = colors.borderSubtle; e.currentTarget.style.color = colors.textSecondary; }}
-                  >
-                    <LogOut className="w-3.5 h-3.5" />
-                    Logout
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Active Draft Banner - Show ONLY when draft is actively in progress (not waiting/pending) */}
-          {activeDraftBanner && activeDraftBanner.status === 'active' && (
-            <div
-              onClick={() => {
-                setCurrentDraft(activeDraftBanner);
-                setActiveDraftBanner(null);
-                setScreen('draftRoom');
-              }}
-              style={{
-                background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
-                padding: '16px',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                gap: '12px'
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                <div style={{
-                  width: '40px',
-                  height: '40px',
-                  background: 'rgba(255,255,255,0.2)',
-                  borderRadius: '50%',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontSize: '20px'
-                }}>
-                  ⚠️
-                </div>
-                <div>
-                  <div style={{ color: '#ffffff', fontWeight: 'bold', fontSize: '16px' }}>
-                    Active Draft in Progress!
-                  </div>
-                  <div style={{ color: 'rgba(255,255,255,0.8)', fontSize: '13px' }}>
-                    {activeDraftBanner.code} • {activeDraftBanner.type === 'stocks' ? '📈 Stocks' : '🪙 Crypto'} • Draft in progress
-                  </div>
-                </div>
-              </div>
-
-              <button
-                style={{
-                  padding: '10px 20px',
-                  background: '#ffffff',
-                  color: '#d97706',
-                  fontWeight: 'bold',
-                  fontSize: '14px',
-                  border: 'none',
-                  borderRadius: '8px',
-                  cursor: 'pointer',
-                  whiteSpace: 'nowrap'
-                }}
-              >
-                REJOIN →
-              </button>
-            </div>
-          )}
-
-          {/* Dashboard Header with Hamburger Menu and Logo */}
-          <header style={{
-            background: 'linear-gradient(180deg, #161b22 0%, #0d1117 100%)',
-            borderBottom: '2px solid #21262d',
-            padding: '12px 16px',
-            position: 'sticky',
-            top: 0,
-            zIndex: 40
-          }}>
-            <div style={{
-              maxWidth: '900px',
-              margin: '0 auto',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between'
-            }}>
-
-              {/* Left section - Hamburger Menu + Logo */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                {/* Hamburger Menu Button */}
-                <button
-                  id="tour-hamburger-menu"
-                  onClick={() => setSidebarOpen(true)}
-                  style={{
-                    position: 'relative',
-                    minWidth: '44px',
-                    minHeight: '44px',
-                    padding: '8px',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '5px',
-                    backgroundColor: 'transparent',
-                    border: 'none',
-                    cursor: 'pointer',
-                    touchAction: 'manipulation',
-                    WebkitTapHighlightColor: 'transparent'
-                  }}
-                  aria-label="Open menu"
-                >
-                  {/* Three horizontal cyan lines */}
-                  <div style={{ width: '24px', height: '2px', backgroundColor: '#00d9ff', borderRadius: '1px' }}></div>
-                  <div style={{ width: '24px', height: '2px', backgroundColor: '#00d9ff', borderRadius: '1px' }}></div>
-                  <div style={{ width: '24px', height: '2px', backgroundColor: '#00d9ff', borderRadius: '1px' }}></div>
-
-                  {/* Unread notifications badge */}
-                  {unreadCount > 0 && (
-                    <span style={{
-                      position: 'absolute',
-                      top: '4px',
-                      right: '4px',
-                      minWidth: '18px',
-                      height: '18px',
-                      padding: '0 5px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      backgroundColor: '#ef4444',
-                      borderRadius: '9px',
-                      color: '#ffffff',
-                      fontSize: '10px',
-                      fontWeight: '700',
-                      lineHeight: 1,
-                      boxShadow: '0 2px 4px rgba(0,0,0,0.3)'
-                    }}>
-                      {unreadCount > 9 ? '9+' : unreadCount}
-                    </span>
-                  )}
-                </button>
-
-                {/* Logo - Left aligned after hamburger */}
-                <FantasyTradesLogo size="small" />
-              </div>
-
-              {/* Right Side - Token Balance + User Info */}
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '10px',
-                padding: '4px 8px'
-              }}>
-                {/* Token Balance */}
-                <div style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '4px',
-                  padding: '4px 10px',
-                  background: 'rgba(245, 158, 11, 0.1)',
-                  borderRadius: '8px',
-                  border: '1px solid rgba(245, 158, 11, 0.25)',
-                }}>
-                  <span style={{ fontSize: '14px' }}>🪙</span>
-                  <span style={{
-                    fontSize: '13px',
-                    fontWeight: '700',
-                    color: '#f59e0b',
-                    fontFamily: "'SF Mono', 'Monaco', monospace",
-                  }}>
-                    {user?.tokens || 0}
-                  </span>
-                </div>
-                {/* Avatar Circle */}
-                <div style={{
-                  width: '38px',
-                  height: '38px',
-                  borderRadius: '50%',
-                  background: '#1a1f2e',
-                  border: '2px solid #00d9ff',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontSize: '16px',
-                  fontWeight: '600',
-                  color: '#ffffff'
-                }}>
-                  {(user?.username || 'P')[0].toUpperCase()}
-                </div>
-                {/* User Text Info */}
-                <div style={{
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'flex-start'
-                }}>
-                  <span style={{
-                    color: '#ffffff',
-                    fontWeight: '600',
-                    fontSize: '14px'
-                  }}>
-                    {user?.username || 'Player'}
-                  </span>
-                  <span style={{
-                    color: '#8b949e',
-                    fontSize: '12px',
-                    fontWeight: '500'
-                  }}>
-                    {user?.rank || 'Rookie'}
-                  </span>
-                </div>
-              </div>
-            </div>
-          </header>
-
-          {/* Dashboard Tabs - PVP | TRAIN & EARN | RESEARCH */}
-          <DashboardTabs
-            activeTab={dashboardTab}
-            setActiveTab={setDashboardTab}
-            setShowResearchMode={setShowResearchMode}
-            colors={colors}
+          <DashboardDesktop
+            user={user}
+            activeBattles={activeBattles}
+            activeDraftBattles={activeDraftBattles}
+            activeTrainingBattles={activeTrainingBattles}
+            lobbyBattles={lobbyBattles}
+            completedBattles={completedBattles}
+            setCurrentBattle={setCurrentBattle}
+            setCurrentDraft={setCurrentDraft}
+            setScreen={setScreen}
+            setActiveBattleId={setActiveBattleId}
+            setBattleToJoin={setBattleToJoin}
+            copyToClipboard={copyToClipboard}
+            setShowBaggerBombModal={setShowBaggerBombModal}
+            setShowSnakeDraftModal={setShowSnakeDraftModal}
+            setShowBaggerBombTrainingConfirm={setShowBaggerBombTrainingConfirm}
+            setShowTrainingConfirmModal={setShowTrainingConfirmModal}
+            setTrainingConfirmType={setTrainingConfirmType}
+            activeDraftBanner={activeDraftBanner}
+            setActiveDraftBanner={setActiveDraftBanner}
           />
-
-          {/* Main Content Area - Mobile-first with responsive padding */}
-          <div
-            id="tour-dashboard-content"
-            className="pt-4 md:pt-0 pb-28 md:pb-20 px-4 md:px-6"
-            style={{
-              flex: 1,
-              width: '100%',
-              maxWidth: '900px',
-              margin: '0 auto',
-              boxSizing: 'border-box',
-              overflowX: 'hidden',
-              paddingLeft: '16px',
-              paddingRight: '16px',
-            }}
-          >
-            {/* ═══════════════════════════════════════════════════════════
-                PVP TAB
-                ═══════════════════════════════════════════════════════════ */}
-            {dashboardTab === 'pvp' && (
-              <>
-                {/* Live Clashes - PVP battles (classic 1v1 + draft) */}
-                <LiveClashesSection
-                  activeBattles={activeBattles}
-                  activeDraftBattles={activeDraftBattles}
-                  activeTrainingBattles={[]}
-                  isTrainingMode={false}
-                  user={user}
-                  colors={colors}
-                  setCurrentBattle={setCurrentBattle}
-                  setCurrentDraft={setCurrentDraft}
-                  setScreen={setScreen}
-                  setActiveBattleId={setActiveBattleId}
-                />
-
-                {/* Pending Lobbies - BaggerBomb + Snake Draft waiting for opponents */}
-                <PendingLobbiesSection
-                  lobbyBattles={lobbyBattles}
-                  user={user}
-                  setCurrentBattle={setCurrentBattle}
-                  setCurrentDraft={setCurrentDraft}
-                  setScreen={setScreen}
-                  setBattleToJoin={setBattleToJoin}
-                  copyToClipboard={copyToClipboard}
-                />
-
-                {/* Enter the Arena - Section Header */}
-                <div style={{ display: 'flex', alignItems: 'baseline', gap: '12px', padding: '0 16px', marginBottom: '16px', marginTop: '24px' }}>
-                  <Swords size={18} color="#10b981" />
-                  <span style={{
-                    fontSize: '18px', fontWeight: '700', letterSpacing: '2px', textTransform: 'uppercase', fontStyle: 'italic',
-                    background: 'linear-gradient(90deg, #10b981 0%, #34d399 100%)',
-                    WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text',
-                  }}>
-                    ENTER THE ARENA
-                  </span>
-                  <span style={{ fontSize: '13px', color: '#6e7681', fontWeight: '400', fontStyle: 'normal' }}>
-                    — Challenge friends or rivals
-                  </span>
-                </div>
-                <GameModeCarousel
-                  mode="pvp"
-                  onSelect={(modeId) => {
-                    if (modeId === 'baggerbomb') setShowBaggerBombModal(true);
-                    else if (modeId === 'snakeDraft') setShowSnakeDraftModal(true);
-                  }}
-                  isMobile={isMobile}
-                  colors={colors}
-                />
-
-                {/* Weekly Challenges — TEMPORARILY DISABLED */}
-                {false && <WeeklyChallengesPanel
-                  showWeeklyChallenges={showWeeklyChallenges}
-                  setShowWeeklyChallenges={setShowWeeklyChallenges}
-                  weeklyChallenges={weeklyChallenges}
-                  activeDailyChallenge={activeDailyChallenge}
-                  challengeProgress={challengeProgress}
-                  completedWeeklyChallenges={completedWeeklyChallenges}
-                  expandedChallengeId={expandedChallengeId}
-                  setExpandedChallengeId={setExpandedChallengeId}
-                  acceptChallenge={acceptChallenge}
-                  colors={colors}
-                />}
-
-                {/* Open Lobbies */}
-                <PvpLobbiesSection
-                  user={user}
-                  colors={colors}
-                  lobbyBattles={lobbyBattles}
-                  setCurrentDraft={setCurrentDraft}
-                  setScreen={setScreen}
-                  setJoinCode={setJoinCode}
-                  setJoinBattleType={setJoinBattleType}
-                  setDraftState={setDraftState}
-                  copyToClipboard={copyToClipboard}
-                  onJoinLobby={async (lobby) => {
-                    // Handle BaggerBomb V3/V4 lobbies
-                    if (lobby._v === 3 || lobby._v === 4) {
-                      setBattleToJoin(lobby);
-                      setScreen('baggerBombJoinBuilder');
-                      return;
-                    }
-                    // Handle Snake Draft lobbies - need to join the draft first
-                    if (lobby.isSnakeDraft || lobby.battleType === 'snake-draft') {
-                      try {
-                        const draftService = await import('./services/draftService');
-                        const userId = user?.odUserId || user?.username;
-                        const username = user?.odUsername || user?.username;
-
-                        // Check if user is already in the draft
-                        const existingPlayer = lobby.players?.find(p => p.odUserId === userId);
-                        if (existingPlayer) {
-                          // Already in draft, just navigate
-                          setCurrentDraft(lobby);
-                          setDraftState(lobby);
-                          setScreen('draftLobby');
-                          return;
-                        }
-
-                        // Join the draft by code
-                        const draft = await draftService.joinDraftByCode(lobby.code, userId, username);
-                        setCurrentDraft(draft);
-                        setDraftState(draft);
-                        setScreen('draftLobby');
-                      } catch (error) {
-                        console.error('Failed to join Snake Draft:', error);
-                        alert(error.message || 'Failed to join draft');
-                      }
-                      return;
-                    }
-                  }}
-                />
-              </>
-            )}
-
-            {/* ═══════════════════════════════════════════════════════════
-                TRAIN & EARN TAB
-                ═══════════════════════════════════════════════════════════ */}
-            {dashboardTab === 'train' && (
-              <>
-                {/* Active Training - training battles + training drafts */}
-                <LiveClashesSection
-                  activeBattles={[]}
-                  activeDraftBattles={activeDraftBattles}
-                  activeTrainingBattles={activeTrainingBattles}
-                  isTrainingMode={true}
-                  user={user}
-                  colors={colors}
-                  setCurrentBattle={setCurrentBattle}
-                  setCurrentDraft={setCurrentDraft}
-                  setScreen={setScreen}
-                  setActiveBattleId={setActiveBattleId}
-                />
-
-                {/* Quick Play - Section Header */}
-                <div style={{ display: 'flex', alignItems: 'baseline', gap: '12px', padding: '0 16px', marginBottom: '16px', marginTop: '24px' }}>
-                  <Zap size={18} color="#8b5cf6" />
-                  <span style={{
-                    fontSize: '18px', fontWeight: '700', letterSpacing: '2px', textTransform: 'uppercase', fontStyle: 'italic',
-                    background: 'linear-gradient(90deg, #8b5cf6 0%, #a78bfa 100%)',
-                    WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text',
-                  }}>
-                    QUICK PLAY
-                  </span>
-                  <span style={{ fontSize: '13px', color: '#6e7681', fontWeight: '400', fontStyle: 'normal' }}>
-                    — Practice against AI
-                  </span>
-                </div>
-                <GameModeCarousel
-                  mode="train"
-                  onSelect={(modeId) => {
-                    if (modeId === 'baggerbomb') setShowBaggerBombTrainingConfirm(true);
-                    else if (modeId === 'snakeDraft') {
-                      setTrainingConfirmType('stocks');
-                      setShowTrainingConfirmModal(true);
-                    }
-                  }}
-                  isMobile={isMobile}
-                  colors={colors}
-                />
-
-                {/* Weekly Challenges — TEMPORARILY DISABLED */}
-                {false && <WeeklyChallengesPanel
-                  showWeeklyChallenges={showWeeklyChallenges}
-                  setShowWeeklyChallenges={setShowWeeklyChallenges}
-                  weeklyChallenges={weeklyChallenges}
-                  activeDailyChallenge={activeDailyChallenge}
-                  challengeProgress={challengeProgress}
-                  completedWeeklyChallenges={completedWeeklyChallenges}
-                  expandedChallengeId={expandedChallengeId}
-                  setExpandedChallengeId={setExpandedChallengeId}
-                  acceptChallenge={acceptChallenge}
-                  colors={colors}
-                />}
-
-                {/* Your Activity - personal timeline */}
-                <YourActivity
-                  completedBattles={completedBattles}
-                  user={user}
-                  colors={colors}
-                />
-
-              </>
-            )}
-          </div>
-
-          {/* Bottom stats bar moved to unified return */}
-        </div>
-
-        {/* Sidebar moved to unified return — renders at app level */}
-        {/* All modals moved to unified return — renders at app level */}
         </div>
       </ErrorBoundary>
     );
   }
+
 
   // PORTFOLIO BUILDER SCREEN (Create Game) - EXTRACTED TO BuilderScreen.jsx
   if (screen === 'builder') {
@@ -20949,6 +20495,7 @@ export default function PortfolioDuel() {
   // BATTLE HISTORY SCREEN - Extracted to BattleHistoryScreen component
   if (screen === 'battleHistory') {
     return (
+      <div style={{ marginLeft: isDesktop ? '220px' : 0 }}>
       <ErrorBoundary name="Battle History" onNavigateDashboard={() => setScreen('dashboard')}>
       <BattleHistoryScreen
         containerStyle={containerStyle}
@@ -20967,6 +20514,7 @@ export default function PortfolioDuel() {
         completedBaggerBombBattles={completedBaggerBombBattles}
       />
       </ErrorBoundary>
+      </div>
     );
   }
 
@@ -20987,6 +20535,7 @@ export default function PortfolioDuel() {
   // PROFILE SCREEN - REDESIGNED
   if (screen === 'profile') {
     return (
+      <div style={{ marginLeft: isDesktop ? '220px' : 0 }}>
       <ErrorBoundary name="Profile" onNavigateDashboard={() => setScreen('dashboard')}>
       <ProfileScreen
         user={user}
@@ -20995,6 +20544,7 @@ export default function PortfolioDuel() {
         setScreen={setScreen}
       />
       </ErrorBoundary>
+      </div>
     );
   }
 
@@ -21046,6 +20596,7 @@ export default function PortfolioDuel() {
     } catch { /* ignore */ }
 
     return (
+      <div style={{ marginLeft: isDesktop ? '220px' : 0 }}>
       <ErrorBoundary name="FantasyTimes" onNavigateDashboard={() => setScreen('dashboard')}>
       <Suspense fallback={
         <div style={{
@@ -21069,6 +20620,7 @@ export default function PortfolioDuel() {
         />
       </Suspense>
       </ErrorBoundary>
+      </div>
     );
   }
 
@@ -21107,8 +20659,20 @@ export default function PortfolioDuel() {
       {/* Active screen content from routing */}
       {screenContent}
 
-      {/* ========== APP-LEVEL SIDEBAR (extracted from dashboard) ========== */}
-      {user && sidebarOpen && (
+      {/* ========== DESKTOP SIDEBAR (Phase 3) ========== */}
+      {user && !isMobile && !GAMEPLAY_SCREENS.includes(screen) && screen !== 'home' && (
+        <DesktopSidebar
+          screen={screen}
+          setScreen={setScreen}
+          setShowResearchMode={setShowResearchMode}
+          showResearchMode={showResearchMode}
+          user={user}
+          unreadCount={unreadCount}
+        />
+      )}
+
+      {/* ========== APP-LEVEL MOBILE SIDEBAR (extracted from dashboard) ========== */}
+      {user && sidebarOpen && isMobile && (
           <>
             {/* Backdrop/Overlay */}
             <div
