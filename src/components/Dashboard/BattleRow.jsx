@@ -88,7 +88,8 @@ export default function BattleRow({ battle, battleType, user, onPress }) {
         background: tokens.bgCard,
         borderRadius: '12px',
         border: `1px solid ${isUrgent ? 'rgba(239,68,68,0.2)' : tokens.borderDefault}`,
-        boxShadow: tokens.obsidianShadow,
+        boxShadow: `${tokens.obsidianShadow}, 0 2px 12px rgba(0,0,0,0.2)`,
+        backgroundImage: 'linear-gradient(180deg, rgba(255,255,255,0.03) 0%, transparent 40%)',
         cursor: 'pointer',
       }}
     >

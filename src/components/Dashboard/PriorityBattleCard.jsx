@@ -21,7 +21,8 @@ export default function PriorityBattleCard({ battle, battleType, user, onPress }
       style={{
         position: 'relative',
         overflow: 'hidden',
-        boxShadow: `${tokens.glowPurpleCard}, ${tokens.obsidianShadow}`,
+        boxShadow: `${tokens.glowPurpleCard}, ${tokens.obsidianShadow}, 0 4px 16px rgba(0,0,0,0.3)`,
+        backgroundImage: 'linear-gradient(180deg, rgba(255,255,255,0.03) 0%, transparent 40%)',
       }}
     >
       <TapGlint triggerKey={tapCount} />

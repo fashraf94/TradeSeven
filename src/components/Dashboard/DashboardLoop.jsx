@@ -169,7 +169,7 @@ export default function DashboardLoop({
       minHeight: '100vh',
       display: 'flex',
       flexDirection: 'column',
-      background: tokens.bgApp,
+      background: '#111318',
       position: 'relative',
       zIndex: 1,
     }}>
@@ -294,6 +294,7 @@ export default function DashboardLoop({
           }}
           style={{
             background: `linear-gradient(135deg, rgba(217,119,6,0.15), ${tokens.bgCard})`,
+            backgroundImage: 'linear-gradient(180deg, rgba(255,255,255,0.03) 0%, transparent 40%)',
             borderLeft: `2px solid ${tokens.amber}`,
             padding: '12px 16px',
             cursor: 'pointer',
@@ -301,6 +302,7 @@ export default function DashboardLoop({
             alignItems: 'center',
             justifyContent: 'space-between',
             gap: '12px',
+            boxShadow: `${tokens.obsidianShadow}, 0 2px 12px rgba(245,158,11,0.05)`,
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -363,6 +365,7 @@ export default function DashboardLoop({
               borderRadius: '14px',
               border: '1px solid rgba(245,158,11,0.2)',
               background: 'linear-gradient(135deg, rgba(245,158,11,0.15), rgba(245,158,11,0.05))',
+              backgroundImage: 'linear-gradient(180deg, rgba(255,255,255,0.04) 0%, transparent 50%)',
               boxShadow: tokens.obsidianShadow,
               cursor: 'pointer',
             }}
@@ -387,6 +390,7 @@ export default function DashboardLoop({
               borderRadius: '14px',
               border: '1px solid rgba(147,51,234,0.2)',
               background: 'linear-gradient(135deg, rgba(147,51,234,0.15), rgba(147,51,234,0.05))',
+              backgroundImage: 'linear-gradient(180deg, rgba(255,255,255,0.04) 0%, transparent 50%)',
               boxShadow: tokens.obsidianShadow,
               cursor: 'pointer',
             }}
@@ -527,6 +531,7 @@ export default function DashboardLoop({
             flex: 1,
             padding: '16px',
             background: tokens.bgCard,
+            backgroundImage: 'linear-gradient(180deg, rgba(255,255,255,0.03) 0%, transparent 40%)',
             borderRadius: '12px',
             border: `1px solid ${tokens.borderDefault}`,
             boxShadow: tokens.obsidianShadow,
@@ -546,6 +551,7 @@ export default function DashboardLoop({
             flex: 1,
             padding: '16px',
             background: tokens.bgCard,
+            backgroundImage: 'linear-gradient(180deg, rgba(255,255,255,0.03) 0%, transparent 40%)',
             borderRadius: '12px',
             border: `1px solid ${tokens.borderDefault}`,
             boxShadow: tokens.obsidianShadow,
@@ -565,6 +571,7 @@ export default function DashboardLoop({
             flex: 1,
             padding: '16px',
             background: tokens.bgCard,
+            backgroundImage: 'linear-gradient(180deg, rgba(255,255,255,0.03) 0%, transparent 40%)',
             borderRadius: '12px',
             border: `1px solid ${tokens.borderDefault}`,
             boxShadow: tokens.obsidianShadow,

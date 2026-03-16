@@ -149,6 +149,7 @@ export default function GamesModal({
                     borderRadius: '20px',
                     padding: '24px',
                     boxShadow: `${tokens.obsidianShadow}, ${game.glowShadow}`,
+                    backgroundImage: 'linear-gradient(180deg, rgba(255,255,255,0.03) 0%, transparent 40%)',
                     display: 'flex',
                     flexDirection: 'column',
                     overflow: 'hidden',

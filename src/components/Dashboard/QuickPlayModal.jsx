@@ -138,6 +138,7 @@ export default function QuickPlayModal({
                         border: `1px solid ${tokens.borderDefault}`,
                         borderRadius: '14px',
                         boxShadow: tokens.obsidianShadow,
+                        backgroundImage: 'linear-gradient(180deg, rgba(255,255,255,0.03) 0%, transparent 40%)',
                         cursor: 'pointer',
                         textAlign: 'left',
                       }}

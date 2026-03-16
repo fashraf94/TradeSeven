@@ -366,6 +366,7 @@ export default function DashboardDesktop({
                       handleBattlePress(battle, type);
                     }}
                     whileHover={{ scale: 1.01, boxShadow: `${tokens.obsidianShadow}, 0 8px 30px rgba(0,0,0,0.4)` }}
+                    whileTap={{ scale: 0.98 }}
                     transition={{ type: 'spring', stiffness: 300, damping: 25 }}
                     style={{
                       position: 'relative',
