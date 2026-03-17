@@ -340,7 +340,7 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
   useEffect(() => {
     console.log('[LS-DIAG][V3] write-back effect fired', battleId, {
       hasBattle: !!battle,
-      status: battle?.status,
+      status: battle?.state?.status,
       marketOpen: isMarketOpen(),
       docHidden: document.hidden,
       myTotalScore,
@@ -348,7 +348,7 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
       msSinceLastWrite: Date.now() - lastLiveScoreWriteRef.current,
     });
     if (!battle || !battleId) return;
-    if (battle.status !== 'active') return;
+    if (battle.state?.status !== 'active') return;
     if (!isMarketOpen()) return;
     if (document.hidden) return;
     if (myTotalScore === 0 && oppTotalScore === 0) return;
