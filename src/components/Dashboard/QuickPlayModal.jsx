@@ -156,91 +156,8 @@ export default function QuickPlayModal({
               padding: '0 20px',
               paddingBottom: '24px',
             }}>
-              {/* Section 1: Open Lobbies */}
+              {/* Section 1: Instant AI Play */}
               <div>
-                <div style={{
-                  fontSize: '11px',
-                  fontWeight: '700',
-                  color: tokens.textFaint,
-                  textTransform: 'uppercase',
-                  letterSpacing: '1.5px',
-                  marginBottom: '12px',
-                  padding: '0 4px',
-                }}>
-                  Join a Game
-                </div>
-                {joinableLobbies.length > 0 ? (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    {joinableLobbies.map(lobby => (
-                      <div
-                        key={lobby.id}
-                        style={{
-                          background: tokens.bgCard,
-                          borderLeft: '4px solid #00d9ff',
-                          borderRadius: '10px',
-                          padding: '12px 14px',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '12px',
-                        }}
-                      >
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{
-                            fontSize: '13px',
-                            color: tokens.textPrimary,
-                            lineHeight: 1.4,
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                            whiteSpace: 'nowrap',
-                          }}>
-                            {getCreatorName(lobby)} created a {getBattleTypeLabel(lobby)} lobby
-                          </div>
-                          <div style={{
-                            fontSize: '12px',
-                            color: tokens.textMuted,
-                            marginTop: '2px',
-                          }}>
-                            {getPlayerCountDisplay(lobby)}
-                          </div>
-                        </div>
-                        <button
-                          onClick={(e) => { e.stopPropagation(); handleJoinLobby(lobby); }}
-                          style={{
-                            padding: '6px 12px',
-                            minHeight: '32px',
-                            background: 'rgba(0,217,255,0.08)',
-                            border: '1px solid rgba(0,217,255,0.25)',
-                            borderRadius: '6px',
-                            color: '#00d9ff',
-                            fontSize: '11px',
-                            fontWeight: 700,
-                            cursor: 'pointer',
-                            flexShrink: 0,
-                            transition: 'all 0.2s',
-                            outline: 'none',
-                          }}
-                          onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(0,217,255,0.18)'; }}
-                          onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(0,217,255,0.08)'; }}
-                        >
-                          [JOIN]
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div style={{
-                    textAlign: 'center',
-                    padding: '20px',
-                    color: tokens.textFaint,
-                    fontSize: '14px',
-                  }}>
-                    No open lobbies right now
-                  </div>
-                )}
-              </div>
-
-              {/* Section 2: Instant AI Play */}
-              <div style={{ marginTop: '24px' }}>
                 <div style={{
                   fontSize: '11px',
                   fontWeight: '700',
@@ -304,6 +221,97 @@ export default function QuickPlayModal({
                     </motion.button>
                   ))}
                 </div>
+              </div>
+
+              {/* Section 2: Open Lobbies */}
+              <div style={{ marginTop: '24px' }}>
+                <div style={{
+                  fontSize: '11px',
+                  fontWeight: '700',
+                  color: tokens.textFaint,
+                  textTransform: 'uppercase',
+                  letterSpacing: '1.5px',
+                  marginBottom: '12px',
+                  padding: '0 4px',
+                }}>
+                  Join a Game
+                </div>
+                {joinableLobbies.length > 0 ? (
+                  <div style={{
+                    maxHeight: '240px',
+                    overflowY: 'auto',
+                    scrollBehavior: 'smooth',
+                    scrollbarWidth: 'thin',
+                    scrollbarColor: 'rgba(255,255,255,0.15) rgba(255,255,255,0.05)',
+                  }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      {joinableLobbies.map(lobby => (
+                        <div
+                          key={lobby.id}
+                          style={{
+                            background: tokens.bgCard,
+                            borderLeft: '4px solid #00d9ff',
+                            borderRadius: '10px',
+                            padding: '12px 14px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '12px',
+                          }}
+                        >
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{
+                              fontSize: '13px',
+                              color: tokens.textPrimary,
+                              lineHeight: 1.4,
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap',
+                            }}>
+                              {getCreatorName(lobby)} created a {getBattleTypeLabel(lobby)} lobby
+                            </div>
+                            <div style={{
+                              fontSize: '12px',
+                              color: tokens.textMuted,
+                              marginTop: '2px',
+                            }}>
+                              {getPlayerCountDisplay(lobby)}
+                            </div>
+                          </div>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); handleJoinLobby(lobby); }}
+                            style={{
+                              padding: '6px 12px',
+                              minHeight: '32px',
+                              background: 'rgba(0,217,255,0.08)',
+                              border: '1px solid rgba(0,217,255,0.25)',
+                              borderRadius: '6px',
+                              color: '#00d9ff',
+                              fontSize: '11px',
+                              fontWeight: 700,
+                              cursor: 'pointer',
+                              flexShrink: 0,
+                              transition: 'all 0.2s',
+                              outline: 'none',
+                            }}
+                            onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(0,217,255,0.18)'; }}
+                            onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(0,217,255,0.08)'; }}
+                          >
+                            [JOIN]
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{
+                    textAlign: 'center',
+                    padding: '20px',
+                    color: tokens.textFaint,
+                    fontSize: '14px',
+                  }}>
+                    No open lobbies right now
+                  </div>
+                )}
               </div>
             </div>
     </CenteredModal>

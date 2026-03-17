@@ -40,6 +40,7 @@ export function getDefaultVisual(reporter, storyType, dataSnapshot, primaryTicke
         previousClose: (snap.price || 0) - (snap.change || 0),
         currentPrice: snap.price || 0,
         percentChange: snap.percentChange || 0,
+        timeframe: storyType === 'market_mover' ? 'intraday' : '1d',
       },
     };
   }

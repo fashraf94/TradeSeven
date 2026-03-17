@@ -4,9 +4,10 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
-import { createChart, AreaSeries, CandlestickSeries, HistogramSeries, LineSeries } from 'lightweight-charts';
+import { createChart, AreaSeries, CandlestickSeries, HistogramSeries } from 'lightweight-charts';
 import { fetchHistoricalOHLCV } from '../../../services/eodhdAPI';
 import { prepareChartData } from '../../Research/chartUtils';
+import { detectLevels } from '../../../services/levelDetection';
 import { DARK_TOKENS } from '../../../theme/tokens';
 import { VISUAL_HEIGHTS } from '../StoryVisualSafe';
 import ChartSkeleton from './ChartSkeleton';
@@ -15,14 +16,16 @@ import ChartSkeleton from './ChartSkeleton';
 const chartDataCache = new Map();
 const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
-function getCachedData(ticker) {
-  const entry = chartDataCache.get(ticker);
+function getCachedData(ticker, timeframe) {
+  const key = `${ticker}_${timeframe || '1d'}`;
+  const entry = chartDataCache.get(key);
   if (entry && Date.now() - entry.timestamp < CACHE_TTL) return entry.data;
   return null;
 }
 
-function setCachedData(ticker, data) {
-  chartDataCache.set(ticker, { data, timestamp: Date.now() });
+function setCachedData(ticker, timeframe, data) {
+  const key = `${ticker}_${timeframe || '1d'}`;
+  chartDataCache.set(key, { data, timestamp: Date.now() });
 }
 
 export default function StoryChart({ config, size }) {
@@ -32,14 +35,15 @@ export default function StoryChart({ config, size }) {
   const [loading, setLoading] = useState(true);
   const height = VISUAL_HEIGHTS[size] || VISUAL_HEIGHTS.compact;
 
-  // Fetch 7-day OHLCV data
+  // Fetch OHLCV data — intraday (5m, 1 day) or daily (1d, 7 days)
   useEffect(() => {
     if (!config.ticker) {
       setLoading(false);
       return;
     }
 
-    const cached = getCachedData(config.ticker);
+    const tf = config.timeframe || '1d';
+    const cached = getCachedData(config.ticker, tf);
     if (cached) {
       setChartData(cached);
       setLoading(false);
@@ -47,8 +51,11 @@ export default function StoryChart({ config, size }) {
     }
 
     let cancelled = false;
+    const isIntraday = tf === 'intraday';
+    const apiTimeframe = isIntraday ? '5m' : '1d';
+    const apiDays = isIntraday ? 1 : 7;
 
-    fetchHistoricalOHLCV(config.ticker, '1d', { days: 7 })
+    fetchHistoricalOHLCV(config.ticker, apiTimeframe, { days: apiDays })
       .then(raw => {
         if (cancelled || !raw || raw.length === 0) {
           setLoading(false);
@@ -56,7 +63,7 @@ export default function StoryChart({ config, size }) {
         }
         const prepared = prepareChartData(raw);
         if (prepared.length > 0) {
-          setCachedData(config.ticker, prepared);
+          setCachedData(config.ticker, tf, prepared);
           setChartData(prepared);
         }
         setLoading(false);
@@ -66,7 +73,7 @@ export default function StoryChart({ config, size }) {
       });
 
     return () => { cancelled = true; };
-  }, [config.ticker]);
+  }, [config.ticker, config.timeframe]);
 
   // Create chart when data is ready
   useEffect(() => {
@@ -74,7 +81,7 @@ export default function StoryChart({ config, size }) {
 
     const container = containerRef.current;
     const isBullish = config.sentiment === 'bullish';
-    const lineColor = isBullish ? '#5eead4' : '#ef4444';
+    const lineColor = isBullish ? '#10b981' : '#ef4444';
 
     const chart = createChart(container, {
       width: container.clientWidth,
@@ -99,8 +106,8 @@ export default function StoryChart({ config, size }) {
         visible: size === 'expanded',
         borderVisible: false,
       },
-      handleScroll: false,
-      handleScale: false,
+      handleScroll: size === 'expanded',
+      handleScale: size === 'expanded',
     });
 
     chartRef.current = chart;
@@ -135,28 +142,6 @@ export default function StoryChart({ config, size }) {
         console.warn('[StoryChart] Volume error:', e);
       }
 
-      // 20-period SMA
-      if (chartData.length >= 20) {
-        try {
-          const smaLine = chart.addSeries(LineSeries, {
-            color: 'rgba(0,217,255,0.5)',
-            lineWidth: 1,
-            priceLineVisible: false,
-            lastValueVisible: false,
-            crosshairMarkerVisible: false,
-          });
-          const smaData = [];
-          for (let i = 19; i < chartData.length; i++) {
-            let sum = 0;
-            for (let j = i - 19; j <= i; j++) sum += chartData[j].close;
-            smaData.push({ time: chartData[i].time, value: sum / 20 });
-          }
-          smaLine.setData(smaData);
-        } catch (e) {
-          console.warn('[StoryChart] SMA error:', e);
-        }
-      }
-
       // Previous close reference line
       if (config.previousClose > 0) {
         try {
@@ -171,11 +156,33 @@ export default function StoryChart({ config, size }) {
           console.warn('[StoryChart] Price line error:', e);
         }
       }
+
+      // Support/Resistance levels
+      if (chartData.length >= 10) {
+        try {
+          const levels = detectLevels([...chartData].reverse(), {});
+          const srLines = [
+            ...(levels.support || []).slice(0, 2).map(l => ({ price: l.price, color: 'rgba(16,185,129,0.4)' })),
+            ...(levels.resistance || []).slice(0, 2).map(l => ({ price: l.price, color: 'rgba(239,68,68,0.4)' })),
+          ];
+          srLines.forEach(({ price, color }) => {
+            candleSeries.createPriceLine({
+              price,
+              color,
+              lineWidth: 1,
+              lineStyle: 2,
+              axisLabelVisible: false,
+            });
+          });
+        } catch (e) {
+          console.warn('[StoryChart] S/R level error:', e);
+        }
+      }
     } else {
       // Micro + Compact: area chart
       const areaSeries = chart.addSeries(AreaSeries, {
         lineColor: lineColor,
-        topColor: isBullish ? 'rgba(94,234,212,0.25)' : 'rgba(239,68,68,0.25)',
+        topColor: isBullish ? 'rgba(16,185,129,0.2)' : 'rgba(239,68,68,0.25)',
         bottomColor: 'transparent',
         lineWidth: size === 'micro' ? 1.5 : 2,
         priceLineVisible: false,
@@ -222,7 +229,8 @@ export default function StoryChart({ config, size }) {
   }, [chartData, size, height, config.sentiment, config.previousClose]);
 
   const pctDir = config.percentChange > 0 ? 'up' : 'down';
-  const ariaLabel = `${config.ticker} 7-day price chart. Current: $${config.currentPrice}, ${pctDir} ${Math.abs(config.percentChange || 0).toFixed(2)}%`;
+  const tfLabel = config.timeframe === 'intraday' ? 'intraday' : '7-day';
+  const ariaLabel = `${config.ticker} ${tfLabel} price chart. Current: $${config.currentPrice}, ${pctDir} ${Math.abs(config.percentChange || 0).toFixed(2)}%`;
 
   if (loading) {
     return <ChartSkeleton height={height} />;

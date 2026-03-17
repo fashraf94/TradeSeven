@@ -177,17 +177,6 @@ export default function StoryDetail({ story, isOpen, onClose, isMobile }) {
 
             {/* Content */}
             <div style={{ padding: '16px 20px' }}>
-              {/* Visual */}
-              {story.visualType && story.visualType !== 'none' && (
-                <div style={{ marginBottom: 16 }}>
-                  <StoryVisualSafe
-                    visualType={story.visualType}
-                    visualConfig={story.visualConfig}
-                    size="expanded"
-                  />
-                </div>
-              )}
-
               {/* Headline */}
               <h2 style={{
                 color: '#e6edf3',
@@ -218,6 +207,17 @@ export default function StoryDetail({ story, isOpen, onClose, isMobile }) {
                 }}
                 dangerouslySetInnerHTML={{ __html: `<p style="margin:8px 0;line-height:1.6">${bodyHtml}</p>` }}
               />
+
+              {/* Visual — after body text */}
+              {story.visualType && story.visualType !== 'none' && (
+                <div style={{ marginTop: 16, marginBottom: 16 }}>
+                  <StoryVisualSafe
+                    visualType={story.visualType}
+                    visualConfig={story.visualConfig}
+                    size="expanded"
+                  />
+                </div>
+              )}
 
               {/* Related tickers */}
               {story.tickers && story.tickers.length > 0 && (
