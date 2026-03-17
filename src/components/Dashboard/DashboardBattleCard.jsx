@@ -282,6 +282,16 @@ export default function DashboardBattleCard({
       opponentName = preview.opponent || 'Opponent';
       isPoints = !!preview.isV3 || isBaggerBomb;
 
+      if (!window.__lsDiagThrottle) window.__lsDiagThrottle = {};
+      const _dbcKey = battle?.id + '_dbc';
+      const _dbcNow = Date.now();
+      if (!window.__lsDiagThrottle[_dbcKey] || _dbcNow - window.__lsDiagThrottle[_dbcKey] > 10000) {
+        window.__lsDiagThrottle[_dbcKey] = _dbcNow;
+        console.log('[LS-DIAG] DashboardBattleCard scores', battle?.id, {
+          myScore, theirScore, isPoints, battleV: battle._v,
+        });
+      }
+
       // V3/V4: calculate1v1PreviewData reads totalPoints/totalScore which are
       // never written to Firebase. Fall back to banked daily scores + closed trades.
       if (preview.isV3 && myScore === 0 && theirScore === 0) {
@@ -290,6 +300,11 @@ export default function DashboardBattleCard({
         const theirRole = isCreator ? 'opponent' : 'creator';
         const bankedMy = extractSnapshotScore(battle, myRole);
         const bankedTheir = extractSnapshotScore(battle, theirRole);
+        console.log('[LS-DIAG] fell through to extractSnapshotScore', battle?.id, {
+          bankedMy, bankedTheir,
+          originalMyScore: preview.myGain,
+          originalTheirScore: preview.theirGain,
+        });
         if (bankedMy !== 0 || bankedTheir !== 0) {
           myScore = bankedMy;
           theirScore = bankedTheir;

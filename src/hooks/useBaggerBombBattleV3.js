@@ -338,6 +338,15 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
   // Periodically persist both players' computed scores to Firebase so the
   // dashboard can display them without running live price hooks.
   useEffect(() => {
+    console.log('[LS-DIAG][V3] write-back effect fired', battleId, {
+      hasBattle: !!battle,
+      status: battle?.status,
+      marketOpen: isMarketOpen(),
+      docHidden: document.hidden,
+      myTotalScore,
+      oppTotalScore,
+      msSinceLastWrite: Date.now() - lastLiveScoreWriteRef.current,
+    });
     if (!battle || !battleId) return;
     if (battle.status !== 'active') return;
     if (!isMarketOpen()) return;
@@ -352,11 +361,12 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
     const opponentScore = isCreator ? oppTotalScore : myTotalScore;
 
     const coll = battleId.startsWith('training_') ? 'trainingBattles' : 'battles';
+    console.log('[LS-DIAG][V3] write DISPATCHED', battleId, { creatorScore, opponentScore, coll });
     updateDoc(doc(db, coll, battleId), {
       'creator.liveScore': creatorScore,
       'opponent.liveScore': opponentScore,
       'liveScoreUpdatedAt': new Date().toISOString(),
-    }).catch((err) => console.warn('[LiveScore] write failed:', err.message));
+    }).catch((err) => console.warn('[LS-DIAG][V3] write FAILED:', battleId, err.message));
   }, [battle, battleId, isCreator, myTotalScore, oppTotalScore]);
 
   // Build player/opponent objects for BattleHeader
