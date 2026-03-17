@@ -2065,6 +2065,7 @@ export async function joinBaggerBombBattleV4(battleIdOrCode, opponentData, optio
 
     // Set day1 open prices = starting prices
     const tradingDays = battleData.timing?.tradingDays || 3;
+    const activationDayDates = getTradingDayDates(new Date(), tradingDays);
     const dailyOpenPrices = initializeDailyOpenPrices(tradingDays);
     dailyOpenPrices.day1 = { ...startingPrices };
 
@@ -2096,6 +2097,10 @@ export async function joinBaggerBombBattleV4(battleIdOrCode, opponentData, optio
       'state.isActive': true,
 
       thresholds: mergedThresholds,
+
+      'timing.tradingDayDates': activationDayDates,
+      'timing.scheduledEnd': getBattleEndTimeV4(activationDayDates).toISOString(),
+      'timing.actualStart': new Date().toISOString(),
 
       updatedAt: new Date().toISOString(),
     });
