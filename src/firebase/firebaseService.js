@@ -44,6 +44,45 @@ import {
 } from '../constants/battleTimingV4.js';
 import { createInitialFreeAgents } from '../services/freeAgentRotationService.js';
 import { toISOString as dateToISO } from '../utils/dateUtils.js';
+import { trackRead } from '../utils/firestoreReadCounter';
+
+// =====================================================
+// HMR GUARD: prevent rapid re-subscription to the same listeners
+// =====================================================
+const _activeListeners = new Map(); // key -> { unsubscribe, subscribedAt }
+const LISTENER_COOLDOWN_MS = 5000; // 5 second cooldown
+
+function guardedOnSnapshot(queryRef, listenerKey, callback, errorCallback) {
+  const existing = _activeListeners.get(listenerKey);
+  const now = Date.now();
+
+  // If a listener with this key was created < 5s ago, reuse it
+  if (existing && (now - existing.subscribedAt) < LISTENER_COOLDOWN_MS) {
+    console.log(`[Firestore Guard] Skipping re-subscribe for "${listenerKey}" (${now - existing.subscribedAt}ms since last)`);
+    return existing.unsubscribe;
+  }
+
+  // Clean up old listener if exists
+  if (existing) {
+    try { existing.unsubscribe(); } catch (e) { /* ignore */ }
+  }
+
+  // Create new listener
+  const unsubscribe = onSnapshot(queryRef, callback, errorCallback);
+
+  // Wrap unsubscribe to also clean up the map
+  const wrappedUnsubscribe = () => {
+    _activeListeners.delete(listenerKey);
+    unsubscribe();
+  };
+
+  _activeListeners.set(listenerKey, {
+    unsubscribe: wrappedUnsubscribe,
+    subscribedAt: now
+  });
+
+  return wrappedUnsubscribe;
+}
 
 // =====================================================
 // HELPERS
@@ -406,30 +445,40 @@ export async function completeBattle(battleId, resultData) {
  */
 export function subscribeToBattles(userId, callback) {
   // Query battles where user is creator (by uid)
+  // Note: orderBy + limit requires composite Firestore indexes.
+  // If you see index errors, click the link in the error message to create them.
   const q1 = query(
     collection(db, 'battles'),
     where('creator.uid', '==', userId),
-    where('archived', '==', false)
+    where('archived', '==', false),
+    orderBy('createdAt', 'desc'),
+    limit(25)
   );
 
   // Query battles where user is opponent (by uid)
   const q2 = query(
     collection(db, 'battles'),
     where('opponent.uid', '==', userId),
-    where('archived', '==', false)
+    where('archived', '==', false),
+    orderBy('createdAt', 'desc'),
+    limit(25)
   );
 
   // Also query by odUserId for V3 battles (since App.jsx may use odUserId as userId)
   const q3 = query(
     collection(db, 'battles'),
     where('creator.odUserId', '==', userId),
-    where('archived', '==', false)
+    where('archived', '==', false),
+    orderBy('createdAt', 'desc'),
+    limit(25)
   );
 
   const q4 = query(
     collection(db, 'battles'),
     where('opponent.odUserId', '==', userId),
-    where('archived', '==', false)
+    where('archived', '==', false),
+    orderBy('createdAt', 'desc'),
+    limit(25)
   );
 
   const allBattles = new Map();
@@ -465,10 +514,11 @@ export function subscribeToBattles(userId, callback) {
 
   // Helper: create an onSnapshot listener with error handling + getDocs fallback
   const listenWithFallback = (q, label) => {
-    return onSnapshot(q, (snapshot) => {
+    return guardedOnSnapshot(q, `battles_${label}`, (snapshot) => {
       snapshot.docs.forEach(d => {
         allBattles.set(d.id, { id: d.id, ...d.data() });
       });
+      trackRead('subscribeToBattles', snapshot.docs.length);
       sortAndCallback();
     }, (error) => {
       console.error(`❌ onSnapshot error (${label}):`, error.message);
@@ -646,7 +696,7 @@ export function subscribeToChallenges(battleId, callback) {
     where('archived', '==', false)
   );
 
-  const unsubscribe = onSnapshot(q, (snapshot) => {
+  const unsubscribe = guardedOnSnapshot(q, `challenges_${battleId}`, (snapshot) => {
     const challenges = snapshot.docs.map(doc => ({
       id: doc.id,
       ...doc.data()
@@ -3922,10 +3972,11 @@ export function subscribeToSnakeDraftLobby(callback) {
     const q = query(
       collection(db, 'drafts'),
       where('status', '==', 'waiting'),
-      where('isTraining', '==', false)
+      where('isTraining', '==', false),
+      limit(25)
     );
 
-    const unsubscribe = onSnapshot(q, (snapshot) => {
+    const unsubscribe = guardedOnSnapshot(q, 'lobby_snakedraft', (snapshot) => {
       const drafts = snapshot.docs
         .map(doc => ({
           id: doc.id,
@@ -3939,6 +3990,7 @@ export function subscribeToSnakeDraftLobby(callback) {
           return bTime - aTime;
         });
 
+      trackRead('lobbyListener', snapshot.docs.length);
       console.log(`📥 Snake Draft lobby update: ${drafts.length} open lobbies`);
       callback(drafts);
     }, (error) => {
@@ -4073,10 +4125,11 @@ export function subscribeToLobby(callback) {
       where('_v', 'in', [3, 4]),
       where('state.status', '==', 'waiting'),
       where('visibility', '==', 'public'),
-      where('archived', '==', false)
+      where('archived', '==', false),
+      limit(25)
     );
 
-    const unsubscribe = onSnapshot(q, (snapshot) => {
+    const unsubscribe = guardedOnSnapshot(q, 'lobby_baggerbomb', (snapshot) => {
       const battles = snapshot.docs
         .map(doc => ({ id: doc.id, ...doc.data() }))
         .filter(isValidLobbyBattle) // Filter out stale/invalid battles
@@ -4086,6 +4139,7 @@ export function subscribeToLobby(callback) {
           return new Date(bTime) - new Date(aTime);
         });
 
+      trackRead('lobbyListener', snapshot.docs.length);
       console.log(`📥 Lobby update: ${battles.length} open battles`);
       callback(battles);
     }, (error) => {

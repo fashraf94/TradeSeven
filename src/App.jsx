@@ -17,6 +17,7 @@ import { analyzeStockWithAI, generateFallbackAnalysis } from './services/technic
 // WebSocket → Cache bridge (flushes WS prices to cacheService so REST calls are skipped)
 import { startWsCacheBridge } from './services/wsCacheBridge';
 import './firebase/config';
+import { trackRead } from './utils/firestoreReadCounter';
 import { motion } from 'framer-motion';
 // Event watchlist configuration for Week Ahead calendar
 import { EVENT_TYPE_CONFIG } from './data/eventWatchlist';
@@ -13041,7 +13042,7 @@ export default function PortfolioDuel() {
         const userId = user.odUserId || user.username;
         if (!userId) return;
 
-        const { collection, query, where, getDocs } = await import('firebase/firestore');
+        const { collection, query, where, getDocs, limit } = await import('firebase/firestore');
         const { db } = await import('./firebase/config');
 
         // Single query: get all user's non-completed drafts
@@ -13049,9 +13050,11 @@ export default function PortfolioDuel() {
         const q = query(
           draftsRef,
           where('playerIds', 'array-contains', userId),
-          where('status', 'in', ['waiting', 'active', 'battle'])
+          where('status', 'in', ['waiting', 'active', 'battle']),
+          limit(10)
         );
         const snapshot = await getDocs(q);
+        trackRead('draftPoll', snapshot.size);
         const userDrafts = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
 
         // Split results for both consumers
@@ -13124,7 +13127,7 @@ export default function PortfolioDuel() {
         const currentUserId = user?.odUserId || user?.username;
         if (!currentUserId) return;
 
-        const { collection, query, where, getDocs, doc, updateDoc } = await import('firebase/firestore');
+        const { collection, query, where, getDocs, doc, updateDoc, limit } = await import('firebase/firestore');
         const { db } = await import('./firebase/config');
 
         // Query Firebase for training battles where user is a player
@@ -13132,10 +13135,12 @@ export default function PortfolioDuel() {
         const q = query(
           trainingRef,
           where('playerIds', 'array-contains', currentUserId),
-          where('state.status', 'in', ['active', 'waiting'])
+          where('state.status', 'in', ['active', 'waiting']),
+          limit(10)
         );
 
         const snapshot = await getDocs(q);
+        trackRead('trainingPoll', snapshot.size);
 
         const allBattles = snapshot.docs.map(d => ({
           id: d.id,

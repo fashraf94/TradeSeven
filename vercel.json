@@ -64,7 +64,7 @@
     },
     {
       "path": "/api/lobbies/cleanup-expired",
-      "schedule": "*/5 9-23 * * *"
+      "schedule": "*/15 9-23 * * *"
     },
     {
       "path": "/api/cron/snake-draft-daily-scores",
@@ -72,7 +72,7 @@
     },
     {
       "path": "/api/cron/snake-draft-autopick",
-      "schedule": "* * * * *"
+      "schedule": "*/5 * * * *"
     },
     {
       "path": "/api/cron/baggerbomb-v4-daily-scores",
