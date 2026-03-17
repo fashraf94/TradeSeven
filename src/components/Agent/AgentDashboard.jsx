@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Bot, Trophy, TrendingUp } from 'lucide-react';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useIsMobile } from '../../hooks/useIsMobile';
+import useAgent from '../../hooks/useAgent';
 import AgentSidebar from './AgentSidebar';
 import AgentMindTab from './AgentMindTab';
 import AgentLeaderboardTab from './AgentLeaderboardTab';
@@ -73,6 +74,8 @@ const AgentDashboard = ({ user, setScreen }) => {
   const { tokens } = useTheme();
   const { isMobile, isDesktop } = useIsMobile();
   const [activeTab, setActiveTab] = useState('mind');
+  const { agent, loading, hasAgent, speech, deployText, maturityStage,
+          activeDirectives, groupedDirectives, record, seedTestAgent } = useAgent(user?.odUserId);
 
   return (
     <div style={{
@@ -80,6 +83,41 @@ const AgentDashboard = ({ user, setScreen }) => {
       background: tokens.bgAgent,
       paddingBottom: isMobile ? '100px' : 0,
     }}>
+      {/* Dev seed button — shown when no agent exists */}
+      {!hasAgent && !loading && (
+        <div style={{
+          textAlign: 'center',
+          padding: '40px 20px',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          gap: '16px',
+        }}>
+          <div style={{ fontSize: '16px', color: tokens.textSecondary }}>
+            No agent found. Seed test data?
+          </div>
+          <motion.button
+            whileTap={{ scale: 0.97 }}
+            onClick={async () => {
+              const id = await seedTestAgent();
+              if (id) console.log('Test agent created:', id);
+            }}
+            style={{
+              background: `linear-gradient(135deg, ${tokens.teal}, ${tokens.purple})`,
+              border: 'none',
+              borderRadius: '12px',
+              padding: '12px 24px',
+              color: '#fff',
+              fontSize: '14px',
+              fontWeight: '600',
+              cursor: 'pointer',
+            }}
+          >
+            Seed Test Agent (Dev Only)
+          </motion.button>
+        </div>
+      )}
+
       <motion.div
         variants={containerVariants}
         initial="hidden"
