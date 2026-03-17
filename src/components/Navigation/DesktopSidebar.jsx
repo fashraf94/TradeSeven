@@ -2,12 +2,13 @@
 // Fixed left sidebar for desktop — navigation, stats, user profile
 
 import React, { useState } from 'react';
-import { Swords, Newspaper, BarChart3, Clock, Settings, Flame } from 'lucide-react';
+import { Swords, Newspaper, BarChart3, Clock, Settings, Flame, Bot } from 'lucide-react';
 import { useTheme } from '../../contexts/ThemeContext';
 
 const NAV_ITEMS = [
   { id: 'compete', label: 'Compete', Icon: Swords, screen: 'dashboard' },
   { id: 'news', label: 'News', Icon: Newspaper, screen: 'fantasytimes' },
+  { id: 'agent', label: 'Agent', Icon: Bot, screen: 'agent' },
   { id: 'research', label: 'Research', Icon: BarChart3, screen: null },
   { id: 'history', label: 'History', Icon: Clock, screen: 'battleHistory' },
   { id: 'settings', label: 'Settings', Icon: Settings, screen: 'profile' },
