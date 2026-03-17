@@ -194,12 +194,15 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
     }
 
     const sampleSym = Object.keys(map)[0];
-    console.log('[BB-Fix] prevCloseMap:', {
-      day: currentTradingDay,
-      usingDaily: currentTradingDay >= 2,
-      eodhd: previousClosePrices?.[sampleSym],
-      entry: activationPrices?.[sampleSym],
-      result: map?.[sampleSym],
+    console.log('[BB-DIAG] previousClosePriceMap:', {
+      currentTradingDay,
+      hasDayGate: currentTradingDay >= 2,
+      sampleEntry: activationPrices?.[sampleSym],
+      sampleResult: map?.[sampleSym],
+      sampleEODHD: previousClosePrices?.[sampleSym],
+      sampleFirebase: battle?.state?.previousClosePrices?.[sampleSym],
+      entryAndResultMatch: JSON.stringify(activationPrices) === JSON.stringify(map),
+      mapKeys: Object.keys(map).slice(0, 3),
     });
 
     return map;
@@ -237,6 +240,12 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
   // ==================== SCORING ====================
 
   const calculateScores = useCallback((portfolio, prices, openPriceMap, history, extremes = {}, battleThresholds = {}, prevClosePrices = {}) => {
+    console.log('[BB-DIAG] calculateScores called:', {
+      openPriceMapSample: Object.entries(openPriceMap).slice(0, 2).map(([k, v]) => `${k}:${v}`),
+      prevClosePricesSample: Object.entries(prevClosePrices).slice(0, 2).map(([k, v]) => `${k}:${v}`),
+      areSame: JSON.stringify(openPriceMap) === JSON.stringify(prevClosePrices),
+      paramCount: arguments.length,
+    });
     if (!portfolio || portfolio.length === 0) {
       return { totalScore: 0, assetScores: [], baggerBombs: 0, busts: 0 };
     }
@@ -658,6 +667,16 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
       const currentPrice = effectivePrices[asset.symbol];
       if (!dailyBaseline || !currentPrice) return;
 
+      if (asset.symbol === myPortfolioFlat[0]?.symbol) {
+        console.log('[BB-DIAG] detection (player):', asset.symbol, {
+          dailyBaseline,
+          entryPrice: openPrices?.[asset.symbol],
+          currentPrice,
+          baselineIsEntry: dailyBaseline === openPrices?.[asset.symbol],
+          previousCloseMapValue: previousClosePriceMap?.[asset.symbol],
+        });
+      }
+
       let thresholdChange = ((currentPrice - dailyBaseline) / dailyBaseline) * 100;
       // V5: Invert for short positions
       if (asset.direction === 'short') {
@@ -823,6 +842,16 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
       const currentPrice = effectivePrices[asset.symbol];
       if (!dailyBaseline || !currentPrice) return;
 
+      if (asset.symbol === oppPortfolioFlat[0]?.symbol) {
+        console.log('[BB-DIAG] detection (opponent):', asset.symbol, {
+          dailyBaseline,
+          entryPrice: openPrices?.[asset.symbol],
+          currentPrice,
+          baselineIsEntry: dailyBaseline === openPrices?.[asset.symbol],
+          previousCloseMapValue: previousClosePriceMap?.[asset.symbol],
+        });
+      }
+
       let thresholdChange = ((currentPrice - dailyBaseline) / dailyBaseline) * 100;
       // V5: Invert for short positions
       if (asset.direction === 'short') {
@@ -965,6 +994,15 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
         const dailyBaseline = previousClosePriceMap[asset.symbol] || asset.swapPrice || openPrices[asset.symbol];
         const currentPrice = effectivePrices[asset.symbol];
         if (!dailyBaseline || !currentPrice) return;
+
+        if (asset.symbol === portfolioFlat[0]?.symbol) {
+          console.log('[BB-DIAG] history tracker:', asset.symbol, {
+            dailyBaseline,
+            entryPrice: openPrices?.[asset.symbol],
+            previousCloseMapValue: previousClosePriceMap?.[asset.symbol],
+            baselineIsEntry: dailyBaseline === openPrices?.[asset.symbol],
+          });
+        }
 
         let priceChange = ((currentPrice - dailyBaseline) / dailyBaseline) * 100;
         if (asset.direction === 'short') priceChange = -priceChange;
