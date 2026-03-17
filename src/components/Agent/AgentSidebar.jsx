@@ -6,16 +6,28 @@ const AgentSidebar = ({ agent, speech, isDesktop, isMobile, tokens, onDeploy }) 
   const avatarSize = isDesktop ? 72 : 56;
   const nameSize = isDesktop ? '18px' : '16px';
 
+  // Null-safe defaults
+  const name = agent?.name || 'Agent';
+  const avatarColors = agent?.avatarColors || ['#5eead4', '#a855f7'];
+  const archetype = agent?.archetype
+    ? agent.archetype.replace(/_/g, ' ').replace(/^./, c => c.toUpperCase())
+    : 'Unknown';
+  const drift = agent?.archetypeDrift || null;
+  const wins = agent?.stats?.wins || 0;
+  const losses = agent?.stats?.losses || 0;
+  const avgScore = agent?.stats?.avgScore || 0;
+  const evoCycle = agent?.evolutionCycle || 0;
+
   const Avatar = () => (
     <div style={{
       width: `${avatarSize}px`, height: `${avatarSize}px`, borderRadius: '50%',
-      background: `linear-gradient(135deg, ${agent.avatarColors[0]}, ${agent.avatarColors[1]})`,
+      background: `linear-gradient(135deg, ${avatarColors[0]}, ${avatarColors[1]})`,
       display: 'flex', alignItems: 'center', justifyContent: 'center',
       fontSize: isDesktop ? '28px' : '22px', fontWeight: '700', color: '#fff',
       boxShadow: '0 0 20px rgba(94,234,212,0.3)',
       flexShrink: 0,
     }}>
-      {agent.name.charAt(0)}
+      {name.charAt(0)}
     </div>
   );
 
@@ -29,7 +41,7 @@ const AgentSidebar = ({ agent, speech, isDesktop, isMobile, tokens, onDeploy }) 
         fontSize: nameSize, fontWeight: '700', color: tokens.textWhite,
         letterSpacing: '-0.02em',
       }}>
-        {agent.name}
+        {name}
       </span>
       <span style={{
         display: 'inline-block', padding: '4px 12px', borderRadius: '20px',
@@ -37,14 +49,14 @@ const AgentSidebar = ({ agent, speech, isDesktop, isMobile, tokens, onDeploy }) 
         border: '1px solid rgba(147,51,234,0.3)',
         fontSize: '11px', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.5px',
       }}>
-        {agent.archetype}
+        {archetype}
       </span>
-      {agent.archetypeDrift && (
+      {drift && (
         <span style={{
           fontSize: '12px', color: tokens.textFaint, fontStyle: 'italic',
           textAlign: isDesktop ? 'center' : 'left', lineHeight: '1.4',
         }}>
-          {agent.archetypeDrift}
+          {drift}
         </span>
       )}
     </div>
@@ -57,9 +69,9 @@ const AgentSidebar = ({ agent, speech, isDesktop, isMobile, tokens, onDeploy }) 
       borderBottom: `1px solid ${tokens.borderDefault}`,
     }}>
       {[
-        { label: 'Record', value: `${agent.stats.wins}W-${agent.stats.losses}L` },
-        { label: 'Avg', value: agent.stats.avgScore },
-        { label: 'Evo', value: agent.evolutionCycle },
+        { label: 'Record', value: `${wins}W-${losses}L` },
+        { label: 'Avg', value: avgScore },
+        { label: 'Evo', value: evoCycle },
       ].map((stat, i) => (
         <div key={stat.label} style={{
           flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center',
@@ -114,7 +126,7 @@ const AgentSidebar = ({ agent, speech, isDesktop, isMobile, tokens, onDeploy }) 
         <span style={{
           fontStyle: 'italic', fontSize: '13px', color: tokens.textSecondary, lineHeight: '1.5',
         }}>
-          "{speech}"
+          "{speech || "..."}"
         </span>
       </div>
     </div>

@@ -70,7 +70,7 @@ const BattleLogRow = ({ entry, tokens }) => {
       </span>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontSize: '13px', color: tokens.textPrimary, fontWeight: '600' }}>
-          {isEvo ? `Evo: ${entry.mode}` : `vs ${entry.opponent}`}
+          {isEvo ? `Evo: ${entry.mode}` : (entry.opponent ? `vs ${entry.opponent}` : entry.mode || 'Game')}
         </div>
         <div style={{
           fontSize: '11px', color: tokens.textFaint, marginTop: '2px',
@@ -102,15 +102,16 @@ const AgentMindTab = ({ agent, scouting, battleLog, news, tokens, isDesktop, isM
     strategy_session: tokens.amber,
   };
 
-  // Group directives by source
+  // Group directives by source (null-safe)
   const directiveGroups = {};
-  (agent.directives || []).forEach(d => {
+  (agent?.directives || []).forEach(d => {
     if (!directiveGroups[d.source]) directiveGroups[d.source] = [];
     directiveGroups[d.source].push(d);
   });
+  const hasDirectives = Object.keys(directiveGroups).length > 0;
 
-  // Extract recent memory from agent
-  const memory = agent.memory || [];
+  // Extract recent memory from agent (null-safe)
+  const memory = agent?.memory || [];
 
   return (
     <motion.div variants={containerVariants} initial="hidden" animate="visible"
@@ -122,13 +123,19 @@ const AgentMindTab = ({ agent, scouting, battleLog, news, tokens, isDesktop, isM
         borderLeft: `3px solid ${tokens.amber}`,
       }}>
         <SectionHeader icon={Eye} label="Scouting Report" tokens={tokens} />
-        <p style={{ fontSize: '14px', color: tokens.textPrimary, lineHeight: '1.6', margin: 0 }}>
-          {scouting}
-        </p>
+        {scouting ? (
+          <p style={{ fontSize: '14px', color: tokens.textPrimary, lineHeight: '1.6', margin: 0 }}>
+            {scouting}
+          </p>
+        ) : (
+          <p style={{ fontSize: '14px', color: tokens.textMuted, lineHeight: '1.6', margin: 0, fontStyle: 'italic' }}>
+            Deploy your agent to generate a scouting report.
+          </p>
+        )}
       </motion.div>
 
       {/* 2. Consolidated Insight */}
-      {agent.consolidatedInsight && (
+      {agent?.consolidatedInsight && (
         <motion.div variants={sectionVariants} style={cardStyle(tokens)}>
           <SectionHeader icon={Target} label="Agent Insight" tokens={tokens} />
           <p style={{ fontSize: '14px', color: tokens.textSecondary, lineHeight: '1.6', margin: 0 }}>
@@ -147,9 +154,15 @@ const AgentMindTab = ({ agent, scouting, battleLog, news, tokens, isDesktop, isM
         <motion.div variants={sectionVariants} style={cardStyle(tokens)}>
           <SectionHeader icon={Swords} label="Battle Log" tokens={tokens} />
           <div style={{ display: 'flex', flexDirection: 'column' }}>
-            {battleLog.map((entry, i) => (
-              <BattleLogRow key={entry.id || i} entry={entry} tokens={tokens} />
-            ))}
+            {battleLog.length === 0 ? (
+              <div style={{ padding: '20px', textAlign: 'center', color: tokens.textMuted, fontSize: '13px' }}>
+                No battles yet. Deploy your agent to start competing.
+              </div>
+            ) : (
+              battleLog.map((entry, i) => (
+                <BattleLogRow key={entry.id || i} entry={entry} tokens={tokens} />
+              ))
+            )}
           </div>
         </motion.div>
 
@@ -173,7 +186,7 @@ const AgentMindTab = ({ agent, scouting, battleLog, news, tokens, isDesktop, isM
                       fontSize: '10px', fontWeight: '600', color: tokens.textFaint,
                       textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '4px',
                     }}>
-                      {m.mode}
+                      {m.mode || m.gameMode || 'Game'}
                     </div>
                     <div style={{ fontSize: '12px', color: tokens.textSecondary, lineHeight: '1.4' }}>
                       {m.lesson}
@@ -187,47 +200,53 @@ const AgentMindTab = ({ agent, scouting, battleLog, news, tokens, isDesktop, isM
           {/* Active Directives */}
           <div>
             <SectionHeader icon={Shield} label="Directives" tokens={tokens} />
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              {Object.entries(directiveGroups).map(([source, directives]) => {
-                const color = sourceColorMap[source] || tokens.textMuted;
-                const config = SOURCE_CONFIG[source] || { label: source };
-                return (
-                  <div key={source}>
-                    <span style={{
-                      fontSize: '10px', fontWeight: '600', color: tokens.textFaint,
-                      textTransform: 'uppercase', letterSpacing: '0.5px',
-                      marginBottom: '6px', display: 'block',
-                    }}>
-                      {config.label}
-                    </span>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                      {directives.map((d, i) => {
-                        const isExpired = d.expiresAt && new Date(d.expiresAt) < new Date();
-                        return (
-                          <span key={d.id || i} style={{
-                            display: 'inline-flex', alignItems: 'center', gap: '6px',
-                            padding: '4px 10px', borderRadius: '6px',
-                            background: hexToRgba(color, 0.12),
-                            border: `1px solid ${hexToRgba(color, 0.25)}`,
-                            color: color,
-                            fontSize: '11px', fontWeight: '500',
-                            opacity: isExpired ? 0.5 : 1,
-                          }}>
-                            {d.text}
-                          </span>
-                        );
-                      })}
+            {hasDirectives ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                {Object.entries(directiveGroups).map(([source, directives]) => {
+                  const color = sourceColorMap[source] || tokens.textMuted;
+                  const config = SOURCE_CONFIG[source] || { label: source };
+                  return (
+                    <div key={source}>
+                      <span style={{
+                        fontSize: '10px', fontWeight: '600', color: tokens.textFaint,
+                        textTransform: 'uppercase', letterSpacing: '0.5px',
+                        marginBottom: '6px', display: 'block',
+                      }}>
+                        {config.label}
+                      </span>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                        {directives.map((d, i) => {
+                          const isExpired = d.expiresAt && new Date(d.expiresAt) < new Date();
+                          return (
+                            <span key={d.id || i} style={{
+                              display: 'inline-flex', alignItems: 'center', gap: '6px',
+                              padding: '4px 10px', borderRadius: '6px',
+                              background: hexToRgba(color, 0.12),
+                              border: `1px solid ${hexToRgba(color, 0.25)}`,
+                              color: color,
+                              fontSize: '11px', fontWeight: '500',
+                              opacity: isExpired ? 0.5 : 1,
+                            }}>
+                              {d.text}
+                            </span>
+                          );
+                        })}
+                      </div>
                     </div>
-                  </div>
-                );
-              })}
-            </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div style={{ padding: '12px', color: tokens.textMuted, fontSize: '12px' }}>
+                No active directives. Coach your agent after a game to add directives.
+              </div>
+            )}
           </div>
         </motion.div>
       </div>
 
       {/* 4. Fantasy Times Intel Strip */}
-      {news.length > 0 && (
+      {news?.length > 0 && (
         <motion.div variants={sectionVariants}>
           <SectionHeader icon={Newspaper} label="Fantasy Times Intel" tokens={tokens} />
           <FantasyTimesStrip stories={news} tokens={tokens} isDesktop={isDesktop} isMobile={isMobile} />

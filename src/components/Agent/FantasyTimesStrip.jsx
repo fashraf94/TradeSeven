@@ -1,6 +1,8 @@
 import React from 'react';
 
 const FantasyTimesStrip = ({ stories, tokens, isDesktop, isMobile }) => {
+  if (!stories?.length) return null;
+
   const gridColumns = isDesktop ? 'repeat(4, 1fr)' : isMobile ? undefined : 'repeat(2, 1fr)';
 
   return (
