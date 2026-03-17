@@ -147,6 +147,21 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
     return getCurrentTradingDay(dates);
   }, [battle?.timing?.tradingDayDates]);
 
+  // Safety net: if battle has been active 20+ hours but currentTradingDay is 0,
+  // force day 2 so the daily baseline (previousClosePriceMap) activates
+  const effectiveTradingDay = useMemo(() => {
+    if (currentTradingDay > 0) return currentTradingDay;
+    const timestamp = battle?.timing?.actualStart || battle?.timing?.createdAt;
+    if (!timestamp) return currentTradingDay;
+    const ms = Date.now() - new Date(timestamp).getTime();
+    const hoursActive = ms / (1000 * 60 * 60);
+    return hoursActive > 20 ? 2 : currentTradingDay;
+  }, [currentTradingDay, battle?.timing?.actualStart, battle?.timing?.createdAt]);
+
+  if (effectiveTradingDay !== currentTradingDay) {
+    console.log('[BB-DIAG] tradingDay override:', { raw: currentTradingDay, effective: effectiveTradingDay });
+  }
+
   const totalTradingDays = battle?.timing?.tradingDays || 3;
 
   // Get portfolios in flat format for price fetching (NO bench)
@@ -178,7 +193,7 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
   const previousClosePriceMap = useMemo(() => {
     const map = { ...(activationPrices || {}) };
 
-    if (currentTradingDay >= 2) {
+    if (effectiveTradingDay >= 2) {
       // Day 2+: layer in Firebase, then EODHD (freshest wins)
       const fbPrevClose = battle?.state?.previousClosePrices;
       if (fbPrevClose && typeof fbPrevClose === 'object') {
@@ -195,8 +210,8 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
 
     const sampleSym = Object.keys(map)[0];
     console.log('[BB-DIAG] previousClosePriceMap:', {
-      currentTradingDay,
-      hasDayGate: currentTradingDay >= 2,
+      currentTradingDay: effectiveTradingDay,
+      hasDayGate: effectiveTradingDay >= 2,
       sampleEntry: activationPrices?.[sampleSym],
       sampleResult: map?.[sampleSym],
       sampleEODHD: previousClosePrices?.[sampleSym],
@@ -206,7 +221,7 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
     });
 
     return map;
-  }, [battle?.state?.previousClosePrices, previousClosePrices, activationPrices, currentTradingDay]);
+  }, [battle?.state?.previousClosePrices, previousClosePrices, activationPrices, effectiveTradingDay]);
 
   // Free agents data
   const freeAgents = useMemo(() => {
@@ -218,8 +233,8 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
   // Swaps remaining
   const swapsRemaining = useMemo(() => {
     if (!myData?.swaps?.remaining) return 3; // Default to max while data loads
-    return getDailySwapsRemaining(myData.swaps, currentTradingDay);
-  }, [myData?.swaps, currentTradingDay]);
+    return getDailySwapsRemaining(myData.swaps, effectiveTradingDay);
+  }, [myData?.swaps, effectiveTradingDay]);
 
   // Closed trades
   const closedTrades = useMemo(() => {
@@ -397,13 +412,13 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
 
   const myScores = useMemo(() => {
     if (!hasValidBaseline) {
-      console.log(`[Scoring] BASELINE SOURCE: WAITING (no scoring — day ${currentTradingDay} baseline not loaded)`);
+      console.log(`[Scoring] BASELINE SOURCE: WAITING (no scoring — day ${effectiveTradingDay} baseline not loaded)`);
       return { totalScore: 0, assetScores: [], baggerBombs: 0, busts: 0 };
     }
-    console.log(`[Scoring] BASELINE SOURCE: entryPrices (day ${currentTradingDay}), thresholds from previousClose`);
+    console.log(`[Scoring] BASELINE SOURCE: entryPrices (day ${effectiveTradingDay}), thresholds from previousClose`);
     // Base points use openPrices (entry, cumulative). Threshold multiplier uses previousClosePriceMap (daily).
     return calculateScores(myPortfolioFlat, effectivePrices, openPrices, combinedHistory, dailyExtremes, battleThresholds, previousClosePriceMap);
-  }, [hasValidBaseline, currentTradingDay, myPortfolioFlat, effectivePrices, openPrices, combinedHistory, dailyExtremes, calculateScores, battleThresholds, previousClosePriceMap]);
+  }, [hasValidBaseline, effectiveTradingDay, myPortfolioFlat, effectivePrices, openPrices, combinedHistory, dailyExtremes, calculateScores, battleThresholds, previousClosePriceMap]);
 
   const oppScores = useMemo(() => {
     if (!hasValidBaseline) {
@@ -454,7 +469,7 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
   useEffect(() => {
     console.log('[LS-DIAG] write-back effect fired', battleId, {
       hasBattle: !!battle,
-      status: battle?.status,
+      status: battle?.state?.status,
       marketOpen: isMarketOpen(),
       docHidden: document.hidden,
       myTotalScore,
@@ -463,7 +478,7 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
       isCreator,
     });
     if (!battle || !battleId) return;
-    if (battle.status !== 'active') return;
+    if (battle.state?.status !== 'active') return;
     if (!isMarketOpen()) return;
     if (document.hidden) return;
     if (myTotalScore === 0 && oppTotalScore === 0) return;
@@ -752,7 +767,7 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
           const existingBadges = getBadgesFromHistory(assetHistory);
           if (!existingBadges.includes(threshold.name)) {
             console.log('[BB-Fix] CROSSING:', asset.symbol, {
-              day: currentTradingDay,
+              day: effectiveTradingDay,
               badge: threshold.name,
               dailyBaseline,
               currentMultiplier: currentMultiplier.toFixed(3),
@@ -1231,7 +1246,7 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
         outTier,
         outSlotIndex,
         agentObj,
-        currentTradingDay,
+        effectiveTradingDay,
         effectivePrices,
         { swapType, direction }
       );
@@ -1244,7 +1259,7 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
     } finally {
       setIsSwapExecuting(false);
     }
-  }, [battleId, battle, playerId, currentTradingDay, effectivePrices, isSwapExecuting, closeSwapModal]);
+  }, [battleId, battle, playerId, effectiveTradingDay, effectivePrices, isSwapExecuting, closeSwapModal]);
 
   // ==================== EFFECTS ====================
 
@@ -1304,19 +1319,19 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
   useEffect(() => {
     if (!battle || !battleId || battleId.startsWith('training_')) return;
     if (Object.keys(effectivePrices).length === 0) return;
-    if (currentTradingDay <= 0 || currentTradingDay > totalTradingDays) return;
+    if (effectiveTradingDay <= 0 || effectiveTradingDay > totalTradingDays) return;
     if (bankingInProgressRef.current) return;
 
     const runBanking = async () => {
       bankingInProgressRef.current = true;
       try {
         // Primary: bank current day if daily end has passed
-        if (isAfterDailyEndV4() && needsDayBanking(battle, currentTradingDay)) {
-          await bankDailyScores(battleId, currentTradingDay, effectivePrices);
+        if (isAfterDailyEndV4() && needsDayBanking(battle, effectiveTradingDay)) {
+          await bankDailyScores(battleId, effectiveTradingDay, effectivePrices);
         }
         // Fallback: bank any previous days that were missed
-        if (currentTradingDay > 1) {
-          await checkAndBankPreviousDays(battleId, currentTradingDay, effectivePrices);
+        if (effectiveTradingDay > 1) {
+          await checkAndBankPreviousDays(battleId, effectiveTradingDay, effectivePrices);
         }
       } catch (err) {
         console.error('[DailyScoringV4] Banking error:', err);
@@ -1326,12 +1341,12 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
     };
 
     runBanking();
-  }, [battle, battleId, currentTradingDay, totalTradingDays, effectivePrices]);
+  }, [battle, battleId, effectiveTradingDay, totalTradingDays, effectivePrices]);
 
   // Reset local history caches on day transition (Firebase history gets reset by bankDailyScores)
-  const prevTradingDayRef = useRef(currentTradingDay);
+  const prevTradingDayRef = useRef(effectiveTradingDay);
   useEffect(() => {
-    if (currentTradingDay > 0 && currentTradingDay !== prevTradingDayRef.current && prevTradingDayRef.current > 0) {
+    if (effectiveTradingDay > 0 && effectiveTradingDay !== prevTradingDayRef.current && prevTradingDayRef.current > 0) {
       setLocalHistory({});
       setLocalOppHistory({});
       prevMultipliersRef.current = {};
@@ -1340,8 +1355,8 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
       localEventsRef.current = [];
       setLocalEventsVersion(v => v + 1);
     }
-    prevTradingDayRef.current = currentTradingDay;
-  }, [currentTradingDay]);
+    prevTradingDayRef.current = effectiveTradingDay;
+  }, [effectiveTradingDay]);
 
   // Free agent rotation countdown + auto-trigger
   useEffect(() => {
@@ -1424,7 +1439,7 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
     opponent,
 
     // V4 Multi-day
-    currentTradingDay,
+    currentTradingDay: effectiveTradingDay,
     totalTradingDays,
     tradingDayDates: battle?.timing?.tradingDayDates || [],
 
