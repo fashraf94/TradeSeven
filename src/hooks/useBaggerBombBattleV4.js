@@ -441,10 +441,27 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
     return Math.round(oppBankedScore + oppScores.totalScore + oppClosedTradePoints);
   }, [oppBankedScore, oppScores.totalScore, oppClosedTradePoints]);
 
+  console.log('[LS-DIAG] scores computed', battleId, {
+    myTotalScore, oppTotalScore,
+    bankedScore, oppBankedScore,
+    myLiveScore: myScores.totalScore, oppLiveScore: oppScores.totalScore,
+    closedTradePoints, oppClosedTradePoints,
+  });
+
   // ==================== LIVE SCORE WRITE-BACK ====================
   // Periodically persist both players' computed scores to Firebase so the
   // dashboard can display them without running live price hooks.
   useEffect(() => {
+    console.log('[LS-DIAG] write-back effect fired', battleId, {
+      hasBattle: !!battle,
+      status: battle?.status,
+      marketOpen: isMarketOpen(),
+      docHidden: document.hidden,
+      myTotalScore,
+      oppTotalScore,
+      msSinceLastWrite: Date.now() - lastLiveScoreWriteRef.current,
+      isCreator,
+    });
     if (!battle || !battleId) return;
     if (battle.status !== 'active') return;
     if (!isMarketOpen()) return;
@@ -459,11 +476,12 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
     const opponentScore = isCreator ? oppTotalScore : myTotalScore;
 
     const coll = battleId.startsWith('training_') ? 'trainingBattles' : 'battles';
+    console.log('[LS-DIAG] write DISPATCHED', battleId, { creatorScore, opponentScore, coll });
     updateDoc(doc(db, coll, battleId), {
       'creator.liveScore': creatorScore,
       'opponent.liveScore': opponentScore,
       'liveScoreUpdatedAt': new Date().toISOString(),
-    }).catch((err) => console.warn('[LiveScore] write failed:', err.message));
+    }).catch((err) => console.warn('[LS-DIAG] write FAILED:', battleId, err.message));
   }, [battle, battleId, isCreator, myTotalScore, oppTotalScore]);
 
   // ==================== BUILD PLAYER/OPPONENT OBJECTS ====================
