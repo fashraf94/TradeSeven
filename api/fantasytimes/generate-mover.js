@@ -13,6 +13,7 @@ import {
   REPORTER_PROFILES,
 } from '../_utils/fantasyTimesPrompts.js';
 import { getDefaultVisual, shouldOverrideVisual, callArtDirector } from '../_utils/fantasyTimesVisuals.js';
+import { getClaimsForReporter, formatClaimsForPrompt } from '../_utils/ingestedClaims.js';
 
 export const config = { maxDuration: 30 };
 
@@ -112,7 +113,7 @@ export async function generateAlexMoverStory({
   logInfo('Step 4: Knowledge loaded', { hasKnowledge: !!knowledgeExcerpt, excerptLength: knowledgeExcerpt.length });
 
   // ── Build user message ──────────────────────────────────────────
-  const userMessage = [
+  let userMessage = [
     `STOCK MOVE ALERT:`,
     `- Symbol: ${upperSymbol}`,
     `- Current Price: $${Number(currentPrice).toFixed(2)}`,
@@ -132,6 +133,18 @@ export async function generateAlexMoverStory({
   ]
     .filter(Boolean)
     .join('\n');
+
+  // Enrich with ingested claims (if available)
+  let claimsContext = '';
+  try {
+    const claims = await getClaimsForReporter('alex', { ticker: upperSymbol, limit: 5 });
+    claimsContext = formatClaimsForPrompt(claims);
+  } catch (e) {
+    logError('Claims fetch failed for alex:', e.message);
+  }
+  if (claimsContext) {
+    userMessage += `\n\nRECENT COMPANY INSIGHTS:\n${claimsContext}`;
+  }
 
   // ── Call Claude Haiku with Tool Use ──────────────────────────────
   logInfo(`Generating story for ${upperSymbol} (${percentChange}%, ${atrMultiple}x ATR)`);

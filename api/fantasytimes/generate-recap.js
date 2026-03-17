@@ -13,6 +13,7 @@ import {
   REPORTER_PROFILES,
 } from '../_utils/fantasyTimesPrompts.js';
 import { getDefaultVisual, shouldOverrideVisual, callArtDirector } from '../_utils/fantasyTimesVisuals.js';
+import { getClaimsForReporter, formatClaimsForPrompt } from '../_utils/ingestedClaims.js';
 
 export const config = { maxDuration: 60 };
 
@@ -203,7 +204,7 @@ export default async function handler(req, res) {
       ? `${earningsDetail.surprisePercent.toFixed(1)}%`
       : 'N/A';
 
-    const userMessage = [
+    let userMessage = [
       `EARNINGS RESULT: ${earning.symbol}`,
       `Company: ${earning.companyName}`,
       `Report Date: ${earning.reportDate}`,
@@ -221,6 +222,18 @@ export default async function handler(req, res) {
     ]
       .filter((line) => line !== '')
       .join('\n');
+
+    // Enrich with ingested claims (if available)
+    let claimsContext = '';
+    try {
+      const claims = await getClaimsForReporter('doug', { ticker: earning.symbol, source: 'earnings_call', limit: 8 });
+      claimsContext = formatClaimsForPrompt(claims);
+    } catch (e) {
+      logError('Claims fetch failed for doug:', e.message);
+    }
+    if (claimsContext) {
+      userMessage += `\n\nEARNINGS CALL INSIGHTS (from transcript analysis):\n${claimsContext}`;
+    }
 
     const anthropic = getAnthropicClient();
     logInfo('Calling Claude API for recap...', { model: REPORTER_PROFILES.doug.model });

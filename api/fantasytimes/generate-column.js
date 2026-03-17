@@ -12,6 +12,7 @@ import {
 } from '../_utils/fantasyTimesPrompts.js';
 import { getDefaultVisual, shouldOverrideVisual, callArtDirector } from '../_utils/fantasyTimesVisuals.js';
 import { STOCK_DATA, TICKERS } from '../_utils/stockIntelligenceData.js';
+import { getClaimsForReporter, formatClaimsForPrompt } from '../_utils/ingestedClaims.js';
 
 export const config = { maxDuration: 60 };
 
@@ -238,7 +239,7 @@ export default async function handler(req, res) {
     }
 
     const dayLabel = columnType === 'preview' ? 'MONDAY PREVIEW' : 'FRIDAY WRAP';
-    const userMessage = [
+    let userMessage = [
       `COLUMN TYPE: ${dayLabel}`,
       `Date: ${getTodayET()}`,
       '',
@@ -252,6 +253,18 @@ export default async function handler(req, res) {
       '',
       `Write a ${columnType === 'preview' ? 'Monday weekly preview' : 'Friday weekly wrap'} column. Use the publish_sector_column tool.`,
     ].join('\n');
+
+    // Enrich with ingested claims (if available)
+    let claimsContext = '';
+    try {
+      const claims = await getClaimsForReporter('kim', { limit: 10 });
+      claimsContext = formatClaimsForPrompt(claims);
+    } catch (e) {
+      logError('Claims fetch failed for kim:', e.message);
+    }
+    if (claimsContext) {
+      userMessage += `\n\nCROSS-COMPANY INSIGHTS FROM RECENT EVENTS:\n${claimsContext}`;
+    }
 
     const anthropic = getAnthropicClient();
     logInfo('Calling Claude Sonnet for column...', { model: REPORTER_PROFILES.kim.model });
