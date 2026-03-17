@@ -206,11 +206,11 @@ const AgentMindTab = ({ agent, scouting, battleLog, news, tokens, isDesktop, isM
                         return (
                           <span key={d.id || i} style={{
                             display: 'inline-flex', alignItems: 'center', gap: '6px',
-                            padding: '6px 12px', borderRadius: '20px',
+                            padding: '4px 10px', borderRadius: '6px',
                             background: hexToRgba(color, 0.12),
                             border: `1px solid ${hexToRgba(color, 0.25)}`,
                             color: color,
-                            fontSize: '12px', fontWeight: '500',
+                            fontSize: '11px', fontWeight: '500',
                             opacity: isExpired ? 0.5 : 1,
                           }}>
                             {d.text}
