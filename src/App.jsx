@@ -126,6 +126,7 @@ import BottomNav from './components/Navigation/BottomNav';
 import DashboardLoop from './components/Dashboard/DashboardLoop';
 import DashboardDesktop from './components/Dashboard/DashboardDesktop';
 import DesktopSidebar from './components/Navigation/DesktopSidebar';
+import { AgentDashboard } from './components/Agent';
 
 // ============================================
 // LAZY LOADING FALLBACK
@@ -20588,6 +20589,20 @@ export default function PortfolioDuel() {
           onNavigate={setScreen}
         />
       </Suspense>
+      </ErrorBoundary>
+      </div>
+    );
+  }
+
+  // AGENT DASHBOARD
+  if (screen === 'agent') {
+    return (
+      <div style={{ marginLeft: isDesktop ? '220px' : 0 }}>
+      <ErrorBoundary name="Agent Dashboard" onNavigateDashboard={() => setScreen('dashboard')}>
+        <AgentDashboard
+          user={user}
+          setScreen={setScreen}
+        />
       </ErrorBoundary>
       </div>
     );
