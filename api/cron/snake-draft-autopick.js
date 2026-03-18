@@ -4,7 +4,7 @@
 // This is a BACKUP to the client-side autopick in useDraft.js.
 // When all clients disconnect, this ensures drafts don't freeze.
 //
-// Schedule: */15 * * * * (every 15 minutes)
+// Schedule: */10 * * * * (every 10 minutes)
 //   - Consider */1 or */2 for faster response on Vercel Pro plan
 //   - Client-side autopick handles immediate (<2s) response for connected clients
 //

@@ -4,6 +4,7 @@
 // GET endpoint called every 15 min during market hours.
 
 import { applySecurityMiddleware } from '../_utils/security.js';
+import { isMarketHolidayToday } from '../_utils/marketHolidayCheck.js';
 import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
 import { TICKERS, STOCK_DATA } from '../_utils/stockIntelligenceData.js';
 import { generateAlexMoverStory } from './generate-mover.js';
@@ -48,6 +49,10 @@ export default async function handler(req, res) {
   const authHeader = req.headers.authorization;
   if (!isVercelCron && authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
     return res.status(401).json({ error: 'Unauthorized' });
+  }
+
+  if (isMarketHolidayToday()) {
+    return res.status(200).json({ skipped: true, reason: 'Market holiday' });
   }
 
   if (req.method !== 'GET') {
