@@ -16,8 +16,9 @@ import { getRemainingTime } from '../../../services/battleTimer';
 function calculate1v1PreviewData(battle, username) {
   if (!battle) return null;
 
-  // V3 BaggerBomb battles use totalScore instead of portfolio values
-  if (battle._v === 3 || battle._v === 4) {
+  // V3/V4 BaggerBomb battles use totalScore instead of portfolio values
+  // Use Number() to handle string _v from Firestore (e.g., "3" vs 3)
+  if (Number(battle._v) >= 3) {
     const isCreator = battle.creator?.username === username;
     const opponent = isCreator ? battle.opponent?.username : battle.creator?.username;
 

@@ -6,7 +6,8 @@
 import { applySecurityMiddleware } from '../_utils/security.js';
 import { isMarketHolidayToday } from '../_utils/marketHolidayCheck.js';
 import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
-import { TICKERS, STOCK_DATA } from '../_utils/stockIntelligenceData.js';
+import { STOCK_DATA } from '../_utils/stockIntelligenceData.js';
+import { FANTASYTIMES_TICKERS, SECTOR_MAP } from '../_utils/fantasyTimesTickers.js';
 import { generateAlexMoverStory } from './generate-mover.js';
 
 export const config = { maxDuration: 60 };
@@ -69,9 +70,9 @@ export default async function handler(req, res) {
     const results = { scanned: 0, movers: [], storiesGenerated: 0, skipped: 0, errors: [] };
 
     // Fetch real-time quotes for all tracked symbols
-    logInfo(`Scanning ${TICKERS.length} symbols for big movers (>=${MOVE_THRESHOLD_PCT}%)`);
+    logInfo(`Scanning ${FANTASYTIMES_TICKERS.length} symbols for big movers (>=${MOVE_THRESHOLD_PCT}%)`);
 
-    for (const symbol of TICKERS) {
+    for (const symbol of FANTASYTIMES_TICKERS) {
       try {
         const url = `https://eodhd.com/api/real-time/${symbol}.US?api_token=${process.env.EODHD_API_KEY}&fmt=json`;
         const resp = await fetch(url);
@@ -111,7 +112,7 @@ export default async function handler(req, res) {
         const close = parseFloat(data.close) || 0;
         const previousClose = parseFloat(data.previousClose) || 0;
         const priceChange = close - previousClose;
-        const sector = STOCK_DATA[symbol]?.sector || 'Unknown';
+        const sector = STOCK_DATA[symbol]?.sector || SECTOR_MAP[symbol] || 'Unknown';
 
         const storyResult = await generateAlexMoverStory({
           symbol,

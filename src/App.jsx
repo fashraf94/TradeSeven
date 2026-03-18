@@ -12967,7 +12967,7 @@ export default function PortfolioDuel() {
         createdAt: fb.timing?.createdAt || fb.timeline?.createdAt || fb.createdAt,
         startingPrices: fb.state?.startingPrices || fb.startingPrices,
         firestoreId: fb.id,
-        _v: fb._v || 1, // Preserve version marker
+        _v: Number(fb._v) || 1, // Preserve version marker (ensure numeric)
         type: fb.type, // Preserve battle type for V3
         // Preserve full V3 structure for BaggerBomb battles
         ...(fb._v >= 2 && {
