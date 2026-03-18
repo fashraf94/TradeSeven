@@ -155,7 +155,19 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
     if (!timestamp) return currentTradingDay;
     const ms = Date.now() - new Date(timestamp).getTime();
     const hoursActive = ms / (1000 * 60 * 60);
-    return hoursActive > 20 ? 2 : currentTradingDay;
+    const result = hoursActive > 20 ? 2 : currentTradingDay;
+    console.log('[BB-DIAG] tradingDay detail:', {
+      rawCurrentTradingDay: currentTradingDay,
+      effectiveTradingDay: result,
+      tradingDayDates: battle?.timing?.tradingDayDates,
+      tradingDayDatesLength: battle?.timing?.tradingDayDates?.length,
+      actualStart: battle?.timing?.actualStart,
+      createdAt: battle?.timing?.createdAt,
+      todayET: new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }),
+      todayDateOnly: new Date().toLocaleDateString('en-US', { timeZone: 'America/New_York' }),
+      battleId: battle?.id,
+    });
+    return result;
   }, [currentTradingDay, battle?.timing?.actualStart, battle?.timing?.createdAt]);
 
   if (effectiveTradingDay !== currentTradingDay) {
