@@ -1,6 +1,8 @@
 // /src/services/researchAdvisor.js
 // Claude-powered recommendation enhancement
 
+import { fetchWithAuth } from '../utils/fetchWithAuth';
+
 /**
  * Safe number formatting helper
  */
@@ -168,9 +170,8 @@ export function selectOptimalCrypto(selectedCryptos, portfolioRisk, maxAllowed =
  */
 export async function enhanceRecommendations(recommendations, thesis, marketContext) {
   try {
-    const response = await fetch('/api/ai-advisor', {
+    const response = await fetchWithAuth('/api/ai-advisor', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         advisorType: 'research',
         action: 'enhance_recommendations',
@@ -290,9 +291,8 @@ function parseEnhancedExplanations(recommendations, response) {
  */
 export async function getAssetDeepDive(asset, thesis) {
   try {
-    const response = await fetch('/api/ai-advisor', {
+    const response = await fetchWithAuth('/api/ai-advisor', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         advisorType: 'research',
         action: 'asset_deep_dive',
@@ -381,9 +381,8 @@ function parseDeepDiveResponse(response) {
  */
 export async function generateGamePlan(thesis, convictionData, pinnedInsights, recommendations) {
   try {
-    const response = await fetch('/api/ai-advisor', {
+    const response = await fetchWithAuth('/api/ai-advisor', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         advisorType: 'research',
         action: 'generate_game_plan',

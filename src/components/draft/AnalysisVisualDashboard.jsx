@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
+import { fetchWithAuth } from '../../utils/fetchWithAuth';
 import {
   BarChart, Bar, AreaChart, Area, XAxis, YAxis, Tooltip,
   ResponsiveContainer, CartesianGrid, Cell, ReferenceLine,
@@ -807,7 +808,7 @@ const AnalysisVisualDashboard = ({ symbol, stockData, isMobile }) => {
     setAiAnalysis(null);
     setAnalysisLoading(true);
 
-    fetch(`/api/stocks/analysis?symbol=${encodeURIComponent(symbol)}&mode=quick`)
+    fetchWithAuth(`/api/stocks/analysis?symbol=${encodeURIComponent(symbol)}&mode=quick`)
       .then(r => r.json())
       .then(data => {
         if (data.analysis) {

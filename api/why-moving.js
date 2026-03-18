@@ -15,6 +15,8 @@
  */
 
 import { applySecurityMiddleware } from './_utils/security.js';
+import { requireAuth } from './_utils/authMiddleware.js';
+import { sanitizeDocumentId } from './_utils/sanitizeInput.js';
 import { getFromCache, setInCache, CACHE_TIERS } from './_utils/serverCache.js';
 import { querySonar } from './helpers/sonar.js';
 
@@ -95,6 +97,9 @@ export default async function handler(req, res) {
     return;
   }
 
+  const user = await requireAuth(req, res);
+  if (!user) return;
+
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
@@ -105,7 +110,10 @@ export default async function handler(req, res) {
     return res.status(400).json({ success: false, error: 'Missing or invalid symbol' });
   }
 
-  const cleanSymbol = symbol.toUpperCase().trim();
+  const cleanSymbol = sanitizeDocumentId(symbol.toUpperCase().trim());
+  if (!cleanSymbol) {
+    return res.status(400).json({ success: false, error: 'Invalid symbol format' });
+  }
 
   // Check server cache (30-min TTL via NEWS tier)
   const cacheKey = `why_moving_${cleanSymbol}`;

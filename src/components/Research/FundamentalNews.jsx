@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { getStockNews } from '../../services/eodhdAPI';
 import StyledIcon from '../shared/StyledIcon';
+import { fetchWithAuth } from '../../utils/fetchWithAuth';
 
 /**
  * FundamentalNews - Fetches real stock news and makes articles clickable
@@ -77,9 +78,8 @@ const FundamentalNews = ({ symbol, colors }) => {
     setSentimentError(null);
 
     try {
-      const response = await fetch('/api/ai-advisor', {
+      const response = await fetchWithAuth('/api/ai-advisor', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           type: 'news-sentiment',
           symbol: symbol,

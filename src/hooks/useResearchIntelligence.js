@@ -3,6 +3,7 @@
 
 import { useState, useCallback, useMemo, useEffect } from 'react';
 import { SECTORS } from '../constants/sectors';
+import { fetchWithAuth } from '../utils/fetchWithAuth';
 
 const DEFAULT_WATCHLIST = ['AAPL', 'NVDA', 'TSLA', 'GOOGL', 'MSFT', 'AMZN'];
 const INTEL_CACHE_KEY = 'research_intel_cache_v2';
@@ -79,7 +80,7 @@ export function useResearchIntelligence({ stocksData, allAssets, marketBreadth, 
     setMarketPulseLoading(true);
     setMarketPulseError(false);
     try {
-      const res = await fetch('/api/market-pulse');
+      const res = await fetchWithAuth('/api/market-pulse');
       const data = await res.json();
       if (data.success) {
         setMarketPulse(data.data);
@@ -127,7 +128,7 @@ export function useResearchIntelligence({ stocksData, allAssets, marketBreadth, 
     setUpcomingEconomicLoading(true);
     setUpcomingEconomicError(false);
     try {
-      const res = await fetch('/api/economic-events-sonar');
+      const res = await fetchWithAuth('/api/economic-events-sonar');
       const data = await res.json();
       if (data.success) {
         setUpcomingEconomic(data.data);
@@ -145,7 +146,7 @@ export function useResearchIntelligence({ stocksData, allAssets, marketBreadth, 
     setUpcomingEarningsLoading(true);
     setUpcomingEarningsError(false);
     try {
-      const res = await fetch('/api/earnings-calendar-sonar');
+      const res = await fetchWithAuth('/api/earnings-calendar-sonar');
       const data = await res.json();
       if (data.success) {
         setUpcomingEarnings(data.data);
@@ -454,9 +455,8 @@ export function useResearchIntelligence({ stocksData, allAssets, marketBreadth, 
     setIntelLoading(true);
     try {
       const context = buildIntelContext();
-      const response = await fetch('/api/research-intel', {
+      const response = await fetchWithAuth('/api/research-intel', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ context }),
       });
 
@@ -488,9 +488,8 @@ export function useResearchIntelligence({ stocksData, allAssets, marketBreadth, 
     if (threadCache[symbol]) return;
 
     try {
-      const response = await fetch('/api/research-thread', {
+      const response = await fetchWithAuth('/api/research-thread', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ symbol, discoveryContext, sectorContext }),
       });
       const result = await response.json();
@@ -509,9 +508,8 @@ export function useResearchIntelligence({ stocksData, allAssets, marketBreadth, 
   const fetchTracker = useCallback(async (symbol, price, percentChange) => {
     if (trackerCache[symbol]) return;
     try {
-      const response = await fetch('/api/research-tracker', {
+      const response = await fetchWithAuth('/api/research-tracker', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ symbol, price, percentChange }),
       });
       const result = await response.json();
@@ -585,9 +583,8 @@ export function useResearchIntelligence({ stocksData, allAssets, marketBreadth, 
 
     setWeeklyReportLoading(true);
     try {
-      const response = await fetch('/api/research-weekly-report', {
+      const response = await fetchWithAuth('/api/research-weekly-report', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           watchlist: watchlistStocks.map(s => s.symbol),
           stockData: watchlistStocks,

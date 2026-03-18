@@ -3,6 +3,7 @@
 // Replaces Build My Thesis in the Research Tools grid.
 
 import React, { useState, useMemo, useRef, useCallback, useEffect } from 'react';
+import { fetchWithAuth } from '../../utils/fetchWithAuth';
 import { motion, AnimatePresence } from 'framer-motion';
 import { HOLO_COLORS } from '../../constants/holoTheme';
 import { TICKERS } from '@/data/stockIntelligenceData';
@@ -459,9 +460,8 @@ const StockIntelligenceScreen = ({ onBack, stocksData, cryptoData, colors, user 
 
     try {
       const data = await triggerCooldown(async () => {
-        const res = await fetch('/api/stock-intelligence', {
+        const res = await fetchWithAuth('/api/stock-intelligence', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             symbol: selectedSymbol.symbol,
             question: questionText,

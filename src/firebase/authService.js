@@ -347,6 +347,24 @@ export function getCurrentUser() {
 }
 
 /**
+ * Get the current user's Firebase ID token for API authentication.
+ * Returns null if not logged in (does not throw).
+ * Token is auto-refreshed by Firebase SDK if expired.
+ *
+ * @returns {Promise<string|null>} - Firebase ID token or null
+ */
+export async function getIdToken() {
+  const user = auth.currentUser;
+  if (!user) return null;
+  try {
+    return await user.getIdToken();
+  } catch (err) {
+    console.error('[Auth] Failed to get ID token:', err);
+    return null;
+  }
+}
+
+/**
  * Parse Firebase Auth error codes to user-friendly messages
  *
  * @param {Error} error - Firebase error
@@ -410,5 +428,6 @@ export default {
   getUserData,
   updateUserStats,
   onAuthChange,
-  getCurrentUser
+  getCurrentUser,
+  getIdToken
 };

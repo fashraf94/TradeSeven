@@ -4,12 +4,12 @@
 
 import { initializeApp, getApps, cert } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
+import { getAuth } from 'firebase-admin/auth';
 
 let dbInstance = null;
+let authInstance = null;
 
-export function getFirebaseAdmin() {
-  if (dbInstance) return dbInstance;
-
+function ensureInitialized() {
   if (getApps().length === 0) {
     const serviceAccount = {
       projectId: process.env.FIREBASE_PROJECT_ID,
@@ -21,7 +21,22 @@ export function getFirebaseAdmin() {
       credential: cert(serviceAccount),
     });
   }
+}
+
+export function getFirebaseAdmin() {
+  if (dbInstance) return dbInstance;
+
+  ensureInitialized();
 
   dbInstance = getFirestore();
   return dbInstance;
+}
+
+export function getFirebaseAuth() {
+  if (authInstance) return authInstance;
+
+  ensureInitialized();
+
+  authInstance = getAuth();
+  return authInstance;
 }

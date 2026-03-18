@@ -4,6 +4,7 @@
 
 import { applySecurityMiddleware } from './_utils/security.js';
 import { sanitizeInput } from './_utils/sanitizeInput.js';
+import { requireAuth } from './_utils/authMiddleware.js';
 
 const LOG_PREFIX = '[ClashCast]';
 
@@ -197,6 +198,9 @@ export default async function handler(req, res) {
   if (applySecurityMiddleware(req, res, { rateLimit: { limit: RATE_LIMIT, windowMs: RATE_LIMIT_WINDOW_MS } })) {
     return;
   }
+
+  const user = await requireAuth(req, res);
+  if (!user) return;
 
   if (req.method !== 'POST') {
     return res.status(405).json({ success: false, error: 'Method not allowed' });

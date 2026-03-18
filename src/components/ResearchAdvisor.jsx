@@ -2,6 +2,7 @@
 // AI-powered research assistant for FantasyTrades
 
 import React, { useState, useRef, useEffect } from 'react';
+import { fetchWithAuth } from '../utils/fetchWithAuth';
 
 const QUICK_ACTIONS = [
   { id: 'whats-hot', label: "What's Hot", icon: '🔥' },
@@ -433,9 +434,8 @@ export default function ResearchAdvisor({
         cryptoCount: marketData.crypto.length
       });
 
-      const response = await fetch('/api/ai-advisor', {
+      const response = await fetchWithAuth('/api/ai-advisor', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           advisorType: 'research',
           message: messageText,

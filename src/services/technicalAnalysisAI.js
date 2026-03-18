@@ -4,6 +4,8 @@
  * Supports conversational Explore tab with preset questions
  */
 
+import { fetchWithAuth } from '../utils/fetchWithAuth';
+
 // ============================================
 // FREEFORM FOLLOW-UP PROMPT (for AI-generated follow-up questions)
 // ============================================
@@ -596,9 +598,8 @@ export const analyzeStockWithAI = async (symbol, ohlcvData, calculatedIndicators
 
   try {
     // Call Claude API via existing /api/ai-advisor endpoint
-    const response = await fetch('/api/ai-advisor', {
+    const response = await fetchWithAuth('/api/ai-advisor', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         advisorType: 'technical-analysis',
         mode,
@@ -745,9 +746,8 @@ export const analyzeExploreQuestion = async (symbol, questionId, ohlcvData, calc
   }
 
   try {
-    const response = await fetch('/api/ai-advisor', {
+    const response = await fetchWithAuth('/api/ai-advisor', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         advisorType: 'technical-analysis',
         mode: 'explore',

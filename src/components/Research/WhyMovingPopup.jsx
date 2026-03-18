@@ -8,6 +8,7 @@
 // Backward-compatible with v1 response format (explanation/factors/keyDataPoint/outlook).
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { fetchWithAuth } from '../../utils/fetchWithAuth';
 import { motion, AnimatePresence } from 'framer-motion';
 import { HOLO_COLORS } from '../../constants/holoTheme';
 
@@ -314,9 +315,8 @@ const WhyMovingPopup = ({ symbol, name, change, price, isOpen, onClose, open, hi
       // Include peer moves if available
       if (peerMoves && peerMoves.length > 0) body.peerMoves = peerMoves;
 
-      const res = await fetch('/api/why-moving', {
+      const res = await fetchWithAuth('/api/why-moving', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
         signal: controller.signal,
       });

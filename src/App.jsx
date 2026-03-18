@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, lazy, Suspense } from 'react';
+import { fetchWithAuth } from './utils/fetchWithAuth';
 import ClashBotWidget from './components/ClashBot/ClashBotWidget';
 import BugReportAdmin from './components/ClashBot/BugReportAdmin';
 import { loadBattlesSafe, saveBattlesSafe, isSameBattles } from './services/LocalStorage';
@@ -6425,9 +6426,8 @@ const EarningsInsights = ({ symbol, colors }) => {
         ).join('\n');
 
         // Call AI advisor for insights
-        const response = await fetch('/api/ai-advisor', {
+        const response = await fetchWithAuth('/api/ai-advisor', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             type: 'earnings_insights',
             context: {
@@ -6698,9 +6698,8 @@ const LatestEarningsReport = ({ symbol, colors }) => {
 
     try {
       // Direct web search for earnings insights
-      const webSearchResponse = await fetch('/api/ai-advisor', {
+      const webSearchResponse = await fetchWithAuth('/api/ai-advisor', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           type: 'earnings-web-search',
           symbol: symbol,
@@ -7491,9 +7490,8 @@ const AIMarketSummary = ({ marketData, news, moversData, colors }) => {
 
       try {
         // Call the AI advisor API for market summary
-        const response = await fetch('/api/ai-advisor', {
+        const response = await fetchWithAuth('/api/ai-advisor', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             type: 'market_summary',
             context: {
@@ -17814,9 +17812,8 @@ export default function PortfolioDuel() {
           timestamp: note.createdAt
         }));
 
-        const response = await fetch('/api/ai-advisor', {
+        const response = await fetchWithAuth('/api/ai-advisor', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             advisorType: 'research',
             action: 'game-plan',

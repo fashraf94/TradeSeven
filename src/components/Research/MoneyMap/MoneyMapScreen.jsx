@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { fetchAllSectorsData } from '../../../services/sectorDataService';
 import { computeMoneyMapData, BELLWETHER_MAP } from '../../../services/moneyMapEngine';
+import { fetchWithAuth } from '../../../utils/fetchWithAuth';
 import { SECTORS } from '../../../constants/sectors';
 import RegimeBanner from './RegimeBanner';
 import ConfidenceGauge from './ConfidenceGauge';
@@ -323,9 +324,8 @@ const MoneyMapScreen = ({ onBack, stocksData }) => {
     const sector = data?.sectors?.[sectorId];
     if (!sector) return;
     try {
-      const res = await fetch('/api/sector-insight', {
+      const res = await fetchWithAuth('/api/sector-insight', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           sectorName: sector.name,
           etfSymbol: sectorId,

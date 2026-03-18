@@ -2,6 +2,7 @@
 // AI-powered tactical advisor for snake drafts
 
 import React, { useState } from 'react';
+import { fetchWithAuth } from '../utils/fetchWithAuth';
 
 const DRAFT_ACTIONS = [
   { id: 'analyze', label: 'Analyze Draft', icon: '🔍', description: 'Review draft state' },
@@ -480,9 +481,8 @@ export default function DraftAdvisor({
         category: p.category || 'Unknown'
       }));
 
-      const response = await fetch('/api/ai-advisor', {
+      const response = await fetchWithAuth('/api/ai-advisor', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           advisorType: 'draft',
           action: actionId,
@@ -547,9 +547,8 @@ export default function DraftAdvisor({
       category: p.category || 'Unknown'
     }));
 
-    fetch('/api/ai-advisor', {
+    fetchWithAuth('/api/ai-advisor', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         advisorType: 'draft',
         action: 'compare',
