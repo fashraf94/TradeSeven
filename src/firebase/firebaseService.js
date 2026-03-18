@@ -445,13 +445,12 @@ export async function completeBattle(battleId, resultData) {
  */
 export function subscribeToBattles(userId, callback) {
   // Query battles where user is creator (by uid)
-  // Note: orderBy + limit requires composite Firestore indexes.
-  // If you see index errors, click the link in the error message to create them.
+  // No orderBy — battles without top-level createdAt were excluded by Firestore.
+  // Client-side sorting in sortAndCallback handles ordering.
   const q1 = query(
     collection(db, 'battles'),
     where('creator.uid', '==', userId),
     where('archived', '==', false),
-    orderBy('createdAt', 'desc'),
     limit(25)
   );
 
@@ -460,7 +459,6 @@ export function subscribeToBattles(userId, callback) {
     collection(db, 'battles'),
     where('opponent.uid', '==', userId),
     where('archived', '==', false),
-    orderBy('createdAt', 'desc'),
     limit(25)
   );
 
@@ -469,7 +467,6 @@ export function subscribeToBattles(userId, callback) {
     collection(db, 'battles'),
     where('creator.odUserId', '==', userId),
     where('archived', '==', false),
-    orderBy('createdAt', 'desc'),
     limit(25)
   );
 
@@ -477,7 +474,6 @@ export function subscribeToBattles(userId, callback) {
     collection(db, 'battles'),
     where('opponent.odUserId', '==', userId),
     where('archived', '==', false),
-    orderBy('createdAt', 'desc'),
     limit(25)
   );
 

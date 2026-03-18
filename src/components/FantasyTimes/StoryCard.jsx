@@ -5,7 +5,7 @@ import React from 'react';
 import { motion } from 'framer-motion';
 import { Zap, TrendingUp, Globe, BarChart3, Compass } from 'lucide-react';
 import { REPORTER_PROFILES } from '../../prompts/fantasyTimesPrompts';
-import StoryVisualSafe from './StoryVisualSafe';
+import { findStock } from '../../data/assets';
 
 const ICON_MAP = {
   Zap,
@@ -20,6 +20,13 @@ const SENTIMENT_COLORS = {
   bearish: '#ff3366',
   neutral: '#8b949e',
   mixed: '#f59e0b',
+};
+
+const SENTIMENT_GRADIENTS = {
+  bullish: 'linear-gradient(135deg, rgba(16,185,129,0.15), transparent)',
+  bearish: 'linear-gradient(135deg, rgba(239,68,68,0.15), transparent)',
+  mixed: 'linear-gradient(135deg, rgba(245,158,11,0.12), transparent)',
+  neutral: 'linear-gradient(135deg, rgba(100,116,139,0.10), transparent)',
 };
 
 /**
@@ -54,8 +61,6 @@ function getCTALabel(story, activeBattleTickers = []) {
         return `Check Your ${ticker} Battle`;
       }
       return ticker ? `Draft ${ticker} in BaggerBomb` : 'Open BaggerBomb';
-    case 'EARNINGSGAME':
-      return 'Place Your Parlay';
     case 'WATCHLIST':
       return 'Add to Watchlist';
     case 'RESEARCH':
@@ -72,6 +77,10 @@ export default function StoryCard({ story, onClick, activeBattleTickers = [], is
   const IconComponent = ICON_MAP[profile.icon] || Zap;
   const sentimentColor = SENTIMENT_COLORS[story.sentiment] || SENTIMENT_COLORS.neutral;
 
+  const primaryTicker = story.primaryTicker || (story.tickers && story.tickers[0]);
+  const stockInfo = primaryTicker ? findStock(primaryTicker) : null;
+  const companyName = stockInfo?.name || null;
+
   // Price change from dataSnapshot
   const priceChange = story.dataSnapshot?.percentChange
     || story.dataSnapshot?.avgIndexChange
@@ -85,6 +94,8 @@ export default function StoryCard({ story, onClick, activeBattleTickers = [], is
   const battleSet = new Set((activeBattleTickers || []).map((t) => t.toUpperCase()));
   const inBattle = storyTickers.some((t) => battleSet.has(t));
 
+  const sentimentGradient = SENTIMENT_GRADIENTS[story.sentiment] || SENTIMENT_GRADIENTS.neutral;
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 15 }}
@@ -96,143 +107,185 @@ export default function StoryCard({ story, onClick, activeBattleTickers = [], is
         border: '1px solid #21262d',
         borderLeft: `3px solid ${profile.color}`,
         borderRadius: '8px',
-        padding: isMobile ? '12px' : '14px 16px',
         marginBottom: '8px',
         cursor: 'pointer',
         transition: 'background-color 0.15s',
+        overflow: 'hidden',
       }}
       whileHover={{ backgroundColor: '#161b22' }}
       whileTap={{ scale: 0.99 }}
     >
-      {/* Visual */}
-      <StoryVisualSafe
-        visualType={story.visualType}
-        visualConfig={story.visualConfig}
-        size="compact"
-      />
-
-      {/* Row 1: Reporter identity + time */}
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: '8px',
-        marginBottom: '6px',
-      }}>
+      {/* Visual Header */}
+      {primaryTicker ? (
         <div style={{
-          width: 24,
-          height: 24,
-          borderRadius: '50%',
-          backgroundColor: `${profile.color}22`,
+          background: sentimentGradient,
+          padding: '12px 16px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+        }}>
+          <div>
+            <div style={{
+              color: '#e6edf3',
+              fontSize: '24px',
+              fontWeight: 700,
+              lineHeight: 1.2,
+              letterSpacing: '0.5px',
+            }}>
+              {primaryTicker}
+            </div>
+            {companyName && (
+              <div style={{
+                color: '#6e7681',
+                fontSize: '12px',
+                marginTop: '2px',
+              }}>
+                {companyName}
+              </div>
+            )}
+          </div>
+          {priceChange !== null && (
+            <span style={{
+              color: priceChange >= 0 ? '#00ff88' : '#ff3366',
+              fontSize: '14px',
+              fontWeight: 700,
+              whiteSpace: 'nowrap',
+              padding: '4px 8px',
+              borderRadius: '6px',
+              backgroundColor: priceChange >= 0 ? 'rgba(0,255,136,0.1)' : 'rgba(255,51,102,0.1)',
+            }}>
+              {priceChange >= 0 ? '+' : ''}{Number(priceChange).toFixed(2)}%
+            </span>
+          )}
+        </div>
+      ) : (
+        <div style={{
+          background: `linear-gradient(135deg, ${profile.color}26, transparent)`,
+          padding: '12px 16px',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          flexShrink: 0,
         }}>
-          <IconComponent size={13} color={profile.color} />
+          <div style={{
+            width: 36,
+            height: 36,
+            borderRadius: '50%',
+            backgroundColor: `${profile.color}33`,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}>
+            <IconComponent size={20} color={profile.color} />
+          </div>
         </div>
-        <span style={{ color: profile.color, fontSize: '12px', fontWeight: 600 }}>
-          {profile.name}
-        </span>
-        <span style={{ color: '#6e7681', fontSize: '11px' }}>·</span>
-        <span style={{ color: '#6e7681', fontSize: '11px' }}>{profile.beat}</span>
-        <span style={{ color: '#6e7681', fontSize: '11px', marginLeft: 'auto' }}>
-          {timeAgo(story.publishedAt)}
-        </span>
-      </div>
+      )}
 
-      {/* Row 2: Headline + price change */}
-      <div style={{
-        display: 'flex',
-        alignItems: 'flex-start',
-        gap: '8px',
-        marginBottom: '4px',
-      }}>
+      <div style={{ padding: isMobile ? '12px' : '14px 16px' }}>
+        {/* Row 1: Reporter identity + time */}
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+          marginBottom: '6px',
+        }}>
+          <div style={{
+            width: 24,
+            height: 24,
+            borderRadius: '50%',
+            backgroundColor: `${profile.color}22`,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            flexShrink: 0,
+          }}>
+            <IconComponent size={13} color={profile.color} />
+          </div>
+          <span style={{ color: profile.color, fontSize: '12px', fontWeight: 600 }}>
+            {profile.name}
+          </span>
+          <span style={{ color: '#6e7681', fontSize: '11px' }}>·</span>
+          <span style={{ color: '#6e7681', fontSize: '11px' }}>{profile.beat}</span>
+          <span style={{ color: '#6e7681', fontSize: '11px', marginLeft: 'auto' }}>
+            {timeAgo(story.publishedAt)}
+          </span>
+        </div>
+
+        {/* Row 2: Headline */}
         <div style={{
           color: '#e6edf3',
           fontSize: '14px',
           fontWeight: 600,
           lineHeight: 1.3,
-          flex: 1,
+          marginBottom: '4px',
         }}>
           {story.headline}
         </div>
-        {priceChange !== null && (
-          <span style={{
-            color: priceChange >= 0 ? '#00ff88' : '#ff3366',
-            fontSize: '12px',
-            fontWeight: 600,
-            whiteSpace: 'nowrap',
-            flexShrink: 0,
-          }}>
-            {priceChange >= 0 ? '+' : ''}{Number(priceChange).toFixed(2)}%
-          </span>
-        )}
-      </div>
 
-      {/* Row 3: Subheadline */}
-      <div style={{
-        color: '#8b949e',
-        fontSize: '13px',
-        lineHeight: 1.4,
-        marginBottom: '8px',
-        display: '-webkit-box',
-        WebkitLineClamp: 2,
-        WebkitBoxOrient: 'vertical',
-        overflow: 'hidden',
-      }}>
-        {story.subheadline}
-      </div>
-
-      {/* Row 4: CTA + sentiment + battle badge */}
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: '8px',
-        flexWrap: 'wrap',
-      }}>
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            // CTA action handled by parent
-          }}
-          style={{
-            padding: '4px 10px',
-            fontSize: '11px',
-            fontWeight: 600,
-            borderRadius: '4px',
-            border: `1px solid ${profile.color}44`,
-            backgroundColor: `${profile.color}15`,
-            color: profile.color,
-            cursor: 'pointer',
-            transition: 'background-color 0.15s',
-          }}
-        >
-          {ctaLabel}
-        </button>
-        <span style={{
-          fontSize: '10px',
-          fontWeight: 600,
-          padding: '2px 6px',
-          borderRadius: '3px',
-          backgroundColor: `${sentimentColor}18`,
-          color: sentimentColor,
-          textTransform: 'uppercase',
+        {/* Row 3: Subheadline */}
+        <div style={{
+          color: '#8b949e',
+          fontSize: '13px',
+          lineHeight: 1.4,
+          marginBottom: '8px',
+          display: '-webkit-box',
+          WebkitLineClamp: 2,
+          WebkitBoxOrient: 'vertical',
+          overflow: 'hidden',
         }}>
-          {story.sentiment}
-        </span>
-        {inBattle && (
+          {story.subheadline}
+        </div>
+
+        {/* Row 4: CTA + sentiment + battle badge */}
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+          flexWrap: 'wrap',
+        }}>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              // CTA action handled by parent
+            }}
+            style={{
+              padding: '4px 10px',
+              fontSize: '11px',
+              fontWeight: 600,
+              borderRadius: '4px',
+              border: `1px solid ${profile.color}44`,
+              backgroundColor: `${profile.color}15`,
+              color: profile.color,
+              cursor: 'pointer',
+              transition: 'background-color 0.15s',
+            }}
+          >
+            {ctaLabel}
+          </button>
           <span style={{
             fontSize: '10px',
-            fontWeight: 700,
+            fontWeight: 600,
             padding: '2px 6px',
             borderRadius: '3px',
-            backgroundColor: '#00d9ff18',
-            color: '#00d9ff',
+            backgroundColor: `${sentimentColor}18`,
+            color: sentimentColor,
             textTransform: 'uppercase',
           }}>
-            IN BATTLE
+            {story.sentiment}
           </span>
-        )}
+          {inBattle && (
+            <span style={{
+              fontSize: '10px',
+              fontWeight: 700,
+              padding: '2px 6px',
+              borderRadius: '3px',
+              backgroundColor: '#00d9ff18',
+              color: '#00d9ff',
+              textTransform: 'uppercase',
+            }}>
+              IN BATTLE
+            </span>
+          )}
+        </div>
       </div>
     </motion.div>
   );
