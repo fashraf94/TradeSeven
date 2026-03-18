@@ -98,7 +98,7 @@ YOUR STORY STRUCTURE:
 2. The movers: Top 3-5 stocks driving the session (with % changes)
 3. The catalyst: What's actually causing this (economic data, earnings, geopolitical, sector rotation)
 4. The outlook: What to watch for the rest of the session/tomorrow
-5. The FantasyTrades angle: Which game modes are most interesting right now
+5. The FantasyTrades angle: Which game modes benefit from today's market conditions. Reference BaggerBomb for volatile days, Snake Draft for strategic positioning. Never mention EarningsGame.
 
 ${ANTI_SLOP_RULES}
 `;
@@ -120,7 +120,7 @@ YOUR STORY STRUCTURE:
 1. Lead with the move (direction, magnitude, ATR context)
 2. Explain the catalyst using ONLY the news headlines provided (NEVER invent a reason --- if no clear catalyst in headlines, say 'no clear catalyst yet' and focus on technicals)
 3. One key technical level being tested
-4. The FantasyTrades angle (BaggerBomb/draft implications)
+4. The FantasyTrades angle: how this stock's move affects its rankings position and what it means for BaggerBomb players holding this stock.
 
 ${ANTI_SLOP_RULES}
 `;
@@ -143,7 +143,7 @@ YOUR STORY STRUCTURE:
 1. Lead with the scale of the move (how many stocks, dominant direction, average magnitude)
 2. Break down the top movers with bullet points
 3. Sector breakdown if relevant
-4. What this means for active FantasyTrades battles
+4. What this means for active BaggerBomb and Snake Draft battles.
 
 ${ANTI_SLOP_RULES}
 `;
@@ -171,7 +171,7 @@ export const PUBLISH_STORY_TOOL = {
       },
       recommended_action: {
         type: 'string',
-        enum: ['BAGGERBOMB', 'EARNINGSGAME', 'SNAKEDRAFT', 'WATCHLIST', 'RESEARCH'],
+        enum: ['BAGGERBOMB', 'SNAKEDRAFT', 'WATCHLIST', 'RESEARCH'],
       },
     },
     required: ['headline', 'subheadline', 'body', 'sentiment', 'themes', 'recommended_action'],
@@ -198,7 +198,7 @@ export const PUBLISH_MACRO_TOOL = {
       },
       recommended_action: {
         type: 'string',
-        enum: ['BAGGERBOMB', 'EARNINGSGAME', 'SNAKEDRAFT', 'WATCHLIST', 'RESEARCH'],
+        enum: ['BAGGERBOMB', 'SNAKEDRAFT', 'WATCHLIST', 'RESEARCH'],
       },
     },
     required: ['headline', 'subheadline', 'body', 'sentiment', 'themes', 'recommended_action'],
@@ -237,7 +237,7 @@ export const PUBLISH_MARKET_PULSE_TOOL = {
       },
       recommended_action: {
         type: 'string',
-        enum: ['BAGGERBOMB', 'EARNINGSGAME', 'SNAKEDRAFT', 'WATCHLIST', 'RESEARCH'],
+        enum: ['BAGGERBOMB', 'SNAKEDRAFT', 'WATCHLIST', 'RESEARCH'],
       },
     },
     required: ['headline', 'subheadline', 'body', 'sentiment', 'themes', 'top_movers', 'recommended_action'],
@@ -278,7 +278,7 @@ RECAP STRUCTURE:
 1. The number and the verdict (beat/miss/inline)
 2. Why it matters for markets (**bold this sentence**)
 3. Historical context (blockquote)
-4. What this means for FantasyTrades players
+4. What this means for BaggerBomb and Snake Draft players. Never mention EarningsGame.
 
 ${ANTI_SLOP_RULES}
 `;
@@ -297,7 +297,7 @@ WEEKLY PREVIEW STRUCTURE:
 1. The week's headline event (most market-moving data point)
 2. Full calendar walkthrough (day by day, what to watch)
 3. The consensus trap (where estimates might be wrong)
-4. The FantasyTrades angle (which game modes benefit this week)
+4. The FantasyTrades angle: how this economic data affects market conditions for BaggerBomb and Snake Draft players. Never mention EarningsGame.
 
 ${ANTI_SLOP_RULES}
 `;
@@ -309,7 +309,7 @@ YOUR IDENTITY: The pre-game analyst. You've seen a hundred earnings seasons and 
 
 YOUR FORMATTING RULES (STRICT --- these define your visual identity):
 - Use ## section headers to structure previews
-- Sections: ## What the Street Expects, ## The Recent Trend, ## The Key Question, ## The FantasyTrades Take
+- Sections: ## What the Street Expects, ## The Recent Trend, ## The Key Question, ## The FantasyTrades Take (how this earnings result repositions the stock in rankings and what it means for BaggerBomb and Snake Draft players; never mention EarningsGame)
 - **Bold** consensus numbers (EPS, revenue estimates)
 - Total length: 300-400 words
 
@@ -355,7 +355,7 @@ export const PUBLISH_ECON_RECAP_TOOL = {
       },
       recommended_action: {
         type: 'string',
-        enum: ['BAGGERBOMB', 'EARNINGSGAME', 'SNAKEDRAFT', 'WATCHLIST', 'RESEARCH'],
+        enum: ['BAGGERBOMB', 'SNAKEDRAFT', 'WATCHLIST', 'RESEARCH'],
       },
     },
     required: ['headline', 'subheadline', 'body', 'sentiment', 'themes', 'eventName', 'recommended_action'],
@@ -386,7 +386,7 @@ export const PUBLISH_ECON_PREVIEW_TOOL = {
       },
       recommended_action: {
         type: 'string',
-        enum: ['BAGGERBOMB', 'EARNINGSGAME', 'SNAKEDRAFT', 'WATCHLIST', 'RESEARCH'],
+        enum: ['BAGGERBOMB', 'SNAKEDRAFT', 'WATCHLIST', 'RESEARCH'],
       },
     },
     required: ['headline', 'subheadline', 'body', 'sentiment', 'themes', 'weekHighlight', 'recommended_action'],
@@ -419,7 +419,7 @@ export const PUBLISH_EARNINGS_PREVIEW_TOOL = {
       revenueEstimate: { type: 'number', description: 'Consensus revenue estimate in dollars' },
       recommended_action: {
         type: 'string',
-        enum: ['BAGGERBOMB', 'EARNINGSGAME', 'SNAKEDRAFT', 'WATCHLIST', 'RESEARCH'],
+        enum: ['BAGGERBOMB', 'SNAKEDRAFT', 'WATCHLIST', 'RESEARCH'],
       },
     },
     required: ['headline', 'subheadline', 'body', 'sentiment', 'themes', 'symbol', 'reportDate', 'recommended_action'],
@@ -454,7 +454,7 @@ export const PUBLISH_EARNINGS_RECAP_TOOL = {
       },
       recommended_action: {
         type: 'string',
-        enum: ['BAGGERBOMB', 'EARNINGSGAME', 'SNAKEDRAFT', 'WATCHLIST', 'RESEARCH'],
+        enum: ['BAGGERBOMB', 'SNAKEDRAFT', 'WATCHLIST', 'RESEARCH'],
       },
     },
     required: ['headline', 'subheadline', 'body', 'sentiment', 'themes', 'symbol', 'outcome', 'recommended_action'],
@@ -488,7 +488,7 @@ export const PUBLISH_SECTOR_COLUMN_TOOL = {
       },
       recommended_action: {
         type: 'string',
-        enum: ['BAGGERBOMB', 'EARNINGSGAME', 'SNAKEDRAFT', 'WATCHLIST', 'RESEARCH'],
+        enum: ['BAGGERBOMB', 'SNAKEDRAFT', 'WATCHLIST', 'RESEARCH'],
       },
     },
     required: ['headline', 'subheadline', 'body', 'sentiment', 'themes', 'topSectors', 'recommended_action'],

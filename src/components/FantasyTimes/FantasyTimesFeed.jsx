@@ -1,15 +1,18 @@
 // src/components/FantasyTimes/FantasyTimesFeed.jsx
 // Main FantasyTimes feed container — header, reporter filters, tabs, story list.
 
-import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
+import React, { useState, useCallback, useMemo, useRef, useEffect, lazy, Suspense } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Zap, TrendingUp, Globe, BarChart3, Compass, ArrowLeft } from 'lucide-react';
 import { REPORTER_PROFILES } from '../../prompts/fantasyTimesPrompts';
 import { useFantasyTimes } from '../../hooks/useFantasyTimes';
 import { groupStoriesBySections } from '../../services/fantasyTimesClient';
+import { findStock } from '../../data/assets';
 import StoryCard from './StoryCard';
 import StoryDetail from './StoryDetail';
 import FeedSection from './FeedSection';
+
+const AssetResearchModal = lazy(() => import('../draft/AssetResearchModal'));
 
 const ICON_MAP = { Zap, TrendingUp, Globe, BarChart3, Compass };
 
@@ -58,6 +61,7 @@ export default function FantasyTimesFeed({
   const [sentimentFilter, setSentimentFilter] = useState('all');
   const [activeTab, setActiveTab] = useState('all'); // 'all' | 'foryou'
   const [selectedStory, setSelectedStory] = useState(null);
+  const [researchSymbol, setResearchSymbol] = useState(null);
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const sentinelRef = useRef(null);
 
@@ -148,6 +152,10 @@ export default function FantasyTimesFeed({
 
   const handleStoryClick = useCallback((story) => {
     setSelectedStory(story);
+  }, []);
+
+  const handleOpenResearch = useCallback((symbol) => {
+    setResearchSymbol(symbol);
   }, []);
 
   const marketOpen = isMarketOpen();
@@ -475,8 +483,24 @@ export default function FantasyTimesFeed({
         story={selectedStory}
         isOpen={!!selectedStory}
         onClose={() => setSelectedStory(null)}
+        onOpenResearch={handleOpenResearch}
         isMobile={isMobile}
       />
+
+      {researchSymbol && (
+        <Suspense fallback={null}>
+          <AssetResearchModal
+            asset={{
+              symbol: researchSymbol,
+              name: findStock(researchSymbol)?.name || researchSymbol,
+            }}
+            sector={findStock(researchSymbol)?.sector || ''}
+            onClose={() => setResearchSymbol(null)}
+            showActionButton={false}
+            version={2}
+          />
+        </Suspense>
+      )}
     </div>
   );
 }
