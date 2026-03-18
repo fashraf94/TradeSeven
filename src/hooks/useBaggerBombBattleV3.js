@@ -74,7 +74,7 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
   const chainTimeoutRef = useRef(null);
   const CHAIN_WINDOW_MS = 500; // Triggers within 500ms are part of the same chain
   const TRIGGER_DISPLAY_MS = 800; // How long each trigger displays
-  const lastLiveScoreWriteRef = useRef(0);
+
 
   // Session state
   const [currentSessionKey, setCurrentSessionKey] = useState(getCurrentSession());
@@ -126,8 +126,23 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
   const previousClosePriceMap = useMemo(() => {
     const map = { ...(activationPrices || {}) };
 
-    if (currentTradingDay >= 1) {
-      // Day 2+: layer in Firebase, then EODHD (freshest wins)
+    // Calendar day gate: only layer EODHD/Firebase previousClose once a new
+    // calendar day (ET) has started since activation.  On the creation day the
+    // entry price IS the threshold baseline — using yesterday's close would
+    // cause instant false BaggerBombs/Busts.
+    const activationDate = battle?.timing?.actualStart || battle?.state?.activatedAt;
+    const isNewCalendarDay = (() => {
+      if (!activationDate) return false;
+      const actDate = new Date(typeof activationDate === 'object' && activationDate.toDate
+        ? activationDate.toDate()
+        : activationDate);
+      const nowET = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
+      const actET = new Date(actDate.toLocaleString('en-US', { timeZone: 'America/New_York' }));
+      return nowET.toDateString() !== actET.toDateString();
+    })();
+
+    if (isNewCalendarDay) {
+      // New calendar day: layer in Firebase, then EODHD (freshest wins)
       const fbPrevClose = battle?.state?.previousClosePrices;
       if (fbPrevClose && typeof fbPrevClose === 'object') {
         Object.entries(fbPrevClose).forEach(([sym, price]) => {
@@ -144,14 +159,14 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
     const sampleSym = Object.keys(map)[0];
     console.log('[BB-Fix] V3 prevCloseMap:', {
       day: currentTradingDay,
-      usingDaily: currentTradingDay >= 1,
+      isNewCalendarDay,
       eodhd: previousClosePrices?.[sampleSym],
       entry: activationPrices?.[sampleSym],
       result: map?.[sampleSym],
     });
 
     return map;
-  }, [battle?.state?.previousClosePrices, previousClosePrices, activationPrices, currentTradingDay]);
+  }, [battle?.state?.previousClosePrices, battle?.timing?.actualStart, battle?.state?.activatedAt, previousClosePrices, activationPrices, currentTradingDay]);
 
   // Calculate scores with history
   const calculateScores = useCallback((portfolio, prices, openPrices, history, extremes = {}, battleThresholds = {}, prevClosePrices = {}) => {
@@ -338,35 +353,23 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
   // Periodically persist both players' computed scores to Firebase so the
   // dashboard can display them without running live price hooks.
   useEffect(() => {
-    console.log('[LS-DIAG][V3] write-back effect fired', battleId, {
-      hasBattle: !!battle,
-      status: battle?.state?.status,
-      marketOpen: isMarketOpen(),
-      docHidden: document.hidden,
-      myTotalScore,
-      oppTotalScore,
-      msSinceLastWrite: Date.now() - lastLiveScoreWriteRef.current,
-    });
     if (!battle || !battleId) return;
     if (battle.state?.status !== 'active') return;
-    if (!isMarketOpen()) return;
-    if (document.hidden) return;
-    if (myTotalScore === 0 && oppTotalScore === 0) return;
-
-    const now = Date.now();
-    if (now - lastLiveScoreWriteRef.current < 15_000) return;
-    lastLiveScoreWriteRef.current = now;
-
-    const creatorScore = isCreator ? myTotalScore : oppTotalScore;
-    const opponentScore = isCreator ? oppTotalScore : myTotalScore;
-
-    const coll = battleId.startsWith('training_') ? 'trainingBattles' : 'battles';
-    console.log('[LS-DIAG][V3] write DISPATCHED', battleId, { creatorScore, opponentScore, coll });
-    updateDoc(doc(db, coll, battleId), {
-      'creator.liveScore': creatorScore,
-      'opponent.liveScore': opponentScore,
-      'liveScoreUpdatedAt': new Date().toISOString(),
-    }).catch((err) => console.warn('[LS-DIAG][V3] write FAILED:', battleId, err.message));
+    const interval = setInterval(() => {
+      if (!isMarketOpen()) return;
+      if (document.hidden) return;
+      if (myTotalScore === 0 && oppTotalScore === 0) return;
+      const creatorScore = isCreator ? myTotalScore : oppTotalScore;
+      const opponentScore = isCreator ? oppTotalScore : myTotalScore;
+      const coll = battleId.startsWith('training_') ? 'trainingBattles' : 'battles';
+      updateDoc(doc(db, coll, battleId), {
+        'creator.liveScore': creatorScore,
+        'opponent.liveScore': opponentScore,
+        'liveScoreUpdatedAt': new Date().toISOString(),
+      }).catch((err) => console.warn('[LiveScore] write failed:', err.message));
+      console.log('[LS-DIAG] write DISPATCHED', battleId, { creatorScore, opponentScore, coll });
+    }, 15000); // Every 15 seconds on the clock
+    return () => clearInterval(interval);
   }, [battle, battleId, isCreator, myTotalScore, oppTotalScore]);
 
   // Build player/opponent objects for BattleHeader
