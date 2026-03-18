@@ -126,7 +126,7 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
   // Timestamps for backoff and cooldown tracking
   const lastRotationAttemptRef = useRef(0);
   const lastRotationSuccessRef = useRef(0);
-  const lastLiveScoreWriteRef = useRef(0);
+
 
   // ==================== DERIVED STATE ====================
 
@@ -479,36 +479,23 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
   // Periodically persist both players' computed scores to Firebase so the
   // dashboard can display them without running live price hooks.
   useEffect(() => {
-    console.log('[LS-DIAG] write-back effect fired', battleId, {
-      hasBattle: !!battle,
-      status: battle?.state?.status,
-      marketOpen: isMarketOpen(),
-      docHidden: document.hidden,
-      myTotalScore,
-      oppTotalScore,
-      msSinceLastWrite: Date.now() - lastLiveScoreWriteRef.current,
-      isCreator,
-    });
     if (!battle || !battleId) return;
     if (battle.state?.status !== 'active') return;
-    if (!isMarketOpen()) return;
-    if (document.hidden) return;
-    if (myTotalScore === 0 && oppTotalScore === 0) return;
-
-    const now = Date.now();
-    if (now - lastLiveScoreWriteRef.current < 15_000) return;
-    lastLiveScoreWriteRef.current = now;
-
-    const creatorScore = isCreator ? myTotalScore : oppTotalScore;
-    const opponentScore = isCreator ? oppTotalScore : myTotalScore;
-
-    const coll = battleId.startsWith('training_') ? 'trainingBattles' : 'battles';
-    console.log('[LS-DIAG] write DISPATCHED', battleId, { creatorScore, opponentScore, coll });
-    updateDoc(doc(db, coll, battleId), {
-      'creator.liveScore': creatorScore,
-      'opponent.liveScore': opponentScore,
-      'liveScoreUpdatedAt': new Date().toISOString(),
-    }).catch((err) => console.warn('[LS-DIAG] write FAILED:', battleId, err.message));
+    const interval = setInterval(() => {
+      if (!isMarketOpen()) return;
+      if (document.hidden) return;
+      if (myTotalScore === 0 && oppTotalScore === 0) return;
+      const creatorScore = isCreator ? myTotalScore : oppTotalScore;
+      const opponentScore = isCreator ? oppTotalScore : myTotalScore;
+      const coll = battleId.startsWith('training_') ? 'trainingBattles' : 'battles';
+      updateDoc(doc(db, coll, battleId), {
+        'creator.liveScore': creatorScore,
+        'opponent.liveScore': opponentScore,
+        'liveScoreUpdatedAt': new Date().toISOString(),
+      }).catch((err) => console.warn('[LiveScore] write failed:', err.message));
+      console.log('[LS-DIAG] write DISPATCHED', battleId, { creatorScore, opponentScore, coll });
+    }, 15000); // Every 15 seconds on the clock
+    return () => clearInterval(interval);
   }, [battle, battleId, isCreator, myTotalScore, oppTotalScore]);
 
   // ==================== BUILD PLAYER/OPPONENT OBJECTS ====================
