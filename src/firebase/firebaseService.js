@@ -1246,6 +1246,7 @@ export async function createBaggerBombBattleV3(battleData, lobbyTimeMinutes = 30
       },
 
       archived: false,
+      createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
 
@@ -1925,6 +1926,7 @@ export async function createBaggerBombBattleV4(battleData, lobbyTimeMinutes = 30
 
       isTraining: isTraining || false,
       archived: false,
+      createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
 

@@ -205,8 +205,23 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
   const previousClosePriceMap = useMemo(() => {
     const map = { ...(activationPrices || {}) };
 
-    if (effectiveTradingDay >= 1) {
-      // Day 2+: layer in Firebase, then EODHD (freshest wins)
+    // Calendar day gate: only layer EODHD/Firebase previousClose once a new
+    // calendar day (ET) has started since activation.  On the creation day the
+    // entry price IS the threshold baseline — using yesterday's close would
+    // cause instant false BaggerBombs/Busts.
+    const activationDate = battle?.timing?.actualStart || battle?.state?.activatedAt;
+    const isNewCalendarDay = (() => {
+      if (!activationDate) return false;
+      const actDate = new Date(typeof activationDate === 'object' && activationDate.toDate
+        ? activationDate.toDate()
+        : activationDate);
+      const nowET = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
+      const actET = new Date(actDate.toLocaleString('en-US', { timeZone: 'America/New_York' }));
+      return nowET.toDateString() !== actET.toDateString();
+    })();
+
+    if (isNewCalendarDay) {
+      // New calendar day: layer in Firebase, then EODHD (freshest wins)
       const fbPrevClose = battle?.state?.previousClosePrices;
       if (fbPrevClose && typeof fbPrevClose === 'object') {
         Object.entries(fbPrevClose).forEach(([sym, price]) => {
@@ -223,7 +238,7 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
     const sampleSym = Object.keys(map)[0];
     console.log('[BB-DIAG] previousClosePriceMap:', {
       currentTradingDay: effectiveTradingDay,
-      hasDayGate: effectiveTradingDay >= 1,
+      isNewCalendarDay,
       sampleEntry: activationPrices?.[sampleSym],
       sampleResult: map?.[sampleSym],
       sampleEODHD: previousClosePrices?.[sampleSym],
@@ -233,7 +248,7 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
     });
 
     return map;
-  }, [battle?.state?.previousClosePrices, previousClosePrices, activationPrices, effectiveTradingDay]);
+  }, [battle?.state?.previousClosePrices, battle?.timing?.actualStart, battle?.state?.activatedAt, previousClosePrices, activationPrices, effectiveTradingDay]);
 
   // Free agents data
   const freeAgents = useMemo(() => {
