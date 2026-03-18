@@ -12891,30 +12891,6 @@ export default function PortfolioDuel() {
     }
   }, [battles]);
 
-  // Refresh battles when entering dashboard or join screen
-  useEffect(() => {
-    if (screen === 'dashboard' || screen === 'join') {
-      const saved = loadBattlesSafe();
-      if (!isSameBattles(battles, saved)) {
-        setBattles(saved);
-      }
-    }
-  }, [screen]);
-
-  // Poll for updates while on dashboard
-  useEffect(() => {
-    if (screen !== 'dashboard') return;
-
-    const interval = setInterval(() => {
-      const saved = loadBattlesSafe();
-      if (!isSameBattles(battles, saved)) {
-        setBattles(saved);
-      }
-    }, 2000);
-
-    return () => clearInterval(interval);
-  }, [screen, battles]);
-
   // Subscribe to all game lobbies (BaggerBomb + Snake Draft) for dashboard and lobby screens
   useEffect(() => {
     // Subscribe on dashboard or lobby screens to show open lobbies in LiveFeed
@@ -12978,6 +12954,7 @@ export default function PortfolioDuel() {
           thresholds: fb.thresholds,
           sessionScores: fb.sessionScores,
           events: fb.events,
+          liveScoreUpdatedAt: fb.liveScoreUpdatedAt,
         }),
         _source: 'firestore' // Mark source for debugging
       }));
@@ -13000,7 +12977,14 @@ export default function PortfolioDuel() {
           const existingBattle = battleMap.get(battle.id);
           if (existingBattle) {
             // Merge: keep local fields, update with Firestore data
-            battleMap.set(battle.id, { ...existingBattle, ...battle, _source: 'firestore' });
+            // Firestore creator/opponent always win (contain latest liveScore)
+            battleMap.set(battle.id, {
+              ...existingBattle,
+              ...battle,
+              creator: battle.creator ?? existingBattle.creator,
+              opponent: battle.opponent ?? existingBattle.opponent,
+              _source: 'firestore'
+            });
           } else {
             // New battle from Firestore
             battleMap.set(battle.id, battle);
@@ -13010,16 +12994,9 @@ export default function PortfolioDuel() {
         const mergedBattles = Array.from(battleMap.values());
         debugBattles('After Firebase merge', mergedBattles);
 
-        // Only update localStorage if there are actual changes
-        const prevIds = new Set(prevBattles.map(b => b.firestoreId || b.id));
-        const mergedIds = new Set(mergedBattles.map(b => b.firestoreId || b.id));
-        const hasChanges = mergedBattles.length !== prevBattles.length ||
-          [...mergedIds].some(id => !prevIds.has(id));
-
-        if (hasChanges) {
-          saveBattlesSafe(mergedBattles);
-          console.log('💾 Saved merged battles to localStorage');
-        }
+        // Always save to localStorage when Firestore data arrives
+        // (ensures liveScore and other data updates are persisted)
+        saveBattlesSafe(mergedBattles);
 
         return mergedBattles;
       });
