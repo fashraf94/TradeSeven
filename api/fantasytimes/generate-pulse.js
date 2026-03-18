@@ -7,7 +7,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { applySecurityMiddleware } from '../_utils/security.js';
 import { isMarketHolidayToday } from '../_utils/marketHolidayCheck.js';
 import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
-import { TICKERS } from '../_utils/stockIntelligenceData.js';
+import { FANTASYTIMES_TICKERS } from '../_utils/fantasyTimesTickers.js';
 import {
   KAI_SYSTEM_PROMPT,
   PUBLISH_MARKET_PULSE_TOOL,
@@ -163,7 +163,7 @@ export default async function handler(req, res) {
 
     // ── Fetch all tracked stock prices ─────────────────────────────────
     logInfo('Fetching tracked stock prices...');
-    const stockPrices = await fetchBatchPrices(TICKERS);
+    const stockPrices = await fetchBatchPrices(FANTASYTIMES_TICKERS);
     logInfo('Stock prices fetched', { count: stockPrices.length });
 
     // Sort by absolute % change, take top 5

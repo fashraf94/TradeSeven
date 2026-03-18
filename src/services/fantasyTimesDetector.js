@@ -5,6 +5,9 @@
 
 import { wsManager } from './websocketService.js';
 import { fetchHistoricalOHLCV } from './eodhdAPI.js';
+import { FANTASYTIMES_TICKERS, SECTOR_MAP } from '../../api/_utils/fantasyTimesTickers.js';
+
+export { FANTASYTIMES_TICKERS, SECTOR_MAP };
 
 const LOG_PREFIX = '[FantasyTimesDetector]';
 const ATR_THRESHOLD = 1.5; // Trigger at 1.5x ATR

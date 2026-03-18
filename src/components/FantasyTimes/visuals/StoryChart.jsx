@@ -16,15 +16,15 @@ import ChartSkeleton from './ChartSkeleton';
 const chartDataCache = new Map();
 const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
-function getCachedData(ticker, timeframe) {
-  const key = `${ticker}_${timeframe || '1d'}`;
+function getCachedData(ticker, timeframe, size) {
+  const key = `${ticker}_${timeframe || '1d'}_${size || 'compact'}`;
   const entry = chartDataCache.get(key);
   if (entry && Date.now() - entry.timestamp < CACHE_TTL) return entry.data;
   return null;
 }
 
-function setCachedData(ticker, timeframe, data) {
-  const key = `${ticker}_${timeframe || '1d'}`;
+function setCachedData(ticker, timeframe, size, data) {
+  const key = `${ticker}_${timeframe || '1d'}_${size || 'compact'}`;
   chartDataCache.set(key, { data, timestamp: Date.now() });
 }
 
@@ -43,7 +43,7 @@ export default function StoryChart({ config, size }) {
     }
 
     const tf = config.timeframe || '1d';
-    const cached = getCachedData(config.ticker, tf);
+    const cached = getCachedData(config.ticker, tf, size);
     if (cached) {
       setChartData(cached);
       setLoading(false);
@@ -53,7 +53,8 @@ export default function StoryChart({ config, size }) {
     let cancelled = false;
     const isIntraday = tf === 'intraday';
     const apiTimeframe = isIntraday ? '5m' : '1d';
-    const apiDays = isIntraday ? 1 : 7;
+    // Expanded: 6 months of daily data; Compact: 30 days; Intraday: 1 day
+    const apiDays = isIntraday ? 1 : (size === 'expanded' ? 180 : 30);
 
     fetchHistoricalOHLCV(config.ticker, apiTimeframe, { days: apiDays })
       .then(raw => {
@@ -63,7 +64,7 @@ export default function StoryChart({ config, size }) {
         }
         const prepared = prepareChartData(raw);
         if (prepared.length > 0) {
-          setCachedData(config.ticker, tf, prepared);
+          setCachedData(config.ticker, tf, size, prepared);
           setChartData(prepared);
         }
         setLoading(false);
@@ -73,7 +74,7 @@ export default function StoryChart({ config, size }) {
       });
 
     return () => { cancelled = true; };
-  }, [config.ticker, config.timeframe]);
+  }, [config.ticker, config.timeframe, size]);
 
   // Create chart when data is ready
   useEffect(() => {
@@ -83,31 +84,35 @@ export default function StoryChart({ config, size }) {
     const isBullish = config.sentiment === 'bullish';
     const lineColor = isBullish ? '#10b981' : '#ef4444';
 
+    const isExpanded = size === 'expanded';
     const chart = createChart(container, {
       width: container.clientWidth,
       height: height,
       layout: {
-        background: { type: 'solid', color: 'transparent' },
-        textColor: DARK_TOKENS.textFaint || '#64748b',
+        background: { type: 'solid', color: isExpanded ? '#0a1628' : 'transparent' },
+        textColor: isExpanded ? '#8b949e' : (DARK_TOKENS.textFaint || '#64748b'),
         fontSize: 10,
       },
       grid: {
-        vertLines: { visible: false },
-        horzLines: { visible: false },
+        vertLines: { visible: isExpanded, color: 'rgba(0,255,255,0.03)' },
+        horzLines: { visible: isExpanded, color: 'rgba(0,255,255,0.03)' },
       },
       crosshair: {
         mode: size === 'micro' ? 0 : 1,
       },
       rightPriceScale: {
-        visible: size === 'expanded',
-        borderVisible: false,
+        visible: isExpanded,
+        borderVisible: isExpanded,
+        borderColor: 'rgba(0,255,255,0.2)',
       },
       timeScale: {
-        visible: size === 'expanded',
-        borderVisible: false,
+        visible: isExpanded,
+        borderVisible: isExpanded,
+        borderColor: 'rgba(0,255,255,0.2)',
       },
-      handleScroll: size === 'expanded',
-      handleScale: size === 'expanded',
+      watermark: { visible: false },
+      handleScroll: isExpanded,
+      handleScale: isExpanded,
     });
 
     chartRef.current = chart;
@@ -229,7 +234,7 @@ export default function StoryChart({ config, size }) {
   }, [chartData, size, height, config.sentiment, config.previousClose]);
 
   const pctDir = config.percentChange > 0 ? 'up' : 'down';
-  const tfLabel = config.timeframe === 'intraday' ? 'intraday' : '7-day';
+  const tfLabel = config.timeframe === 'intraday' ? 'intraday' : (size === 'expanded' ? '6-month' : '30-day');
   const ariaLabel = `${config.ticker} ${tfLabel} price chart. Current: $${config.currentPrice}, ${pctDir} ${Math.abs(config.percentChange || 0).toFixed(2)}%`;
 
   if (loading) {
