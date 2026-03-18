@@ -126,7 +126,7 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
   const previousClosePriceMap = useMemo(() => {
     const map = { ...(activationPrices || {}) };
 
-    if (currentTradingDay >= 2) {
+    if (currentTradingDay >= 1) {
       // Day 2+: layer in Firebase, then EODHD (freshest wins)
       const fbPrevClose = battle?.state?.previousClosePrices;
       if (fbPrevClose && typeof fbPrevClose === 'object') {
@@ -144,7 +144,7 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
     const sampleSym = Object.keys(map)[0];
     console.log('[BB-Fix] V3 prevCloseMap:', {
       day: currentTradingDay,
-      usingDaily: currentTradingDay >= 2,
+      usingDaily: currentTradingDay >= 1,
       eodhd: previousClosePrices?.[sampleSym],
       entry: activationPrices?.[sampleSym],
       result: map?.[sampleSym],
