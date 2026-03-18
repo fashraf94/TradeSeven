@@ -271,8 +271,22 @@ const AgentDashboard = ({ user, setScreen }) => {
                     isMobile={isMobile}
                   />
                 )}
-                {activeTab === 'leaderboard' && <AgentLeaderboardTab tokens={tokens} />}
-                {activeTab === 'evolution' && <AgentEvolutionTab tokens={tokens} />}
+                {activeTab === 'leaderboard' && (
+                  <AgentLeaderboardTab
+                    tokens={tokens}
+                    isDesktop={isDesktop}
+                    isMobile={isMobile}
+                    currentUserId={user?.odUserId}
+                  />
+                )}
+                {activeTab === 'evolution' && (
+                  <AgentEvolutionTab
+                    agent={agent}
+                    tokens={tokens}
+                    isDesktop={isDesktop}
+                    isMobile={isMobile}
+                  />
+                )}
               </motion.div>
             </AnimatePresence>
           </div>

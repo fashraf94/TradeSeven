@@ -45,6 +45,7 @@ export const getAgentById = async (agentId) => {
 
 export const getLeaderboard = async (limitCount = 50) => {
   try {
+    // Primary query: agents with 5+ games
     const q = query(
       collection(db, AGENTS_COLLECTION),
       where('stats.gamesPlayed', '>=', 5),
@@ -52,8 +53,31 @@ export const getLeaderboard = async (limitCount = 50) => {
       limit(limitCount)
     );
     const snapshot = await getDocs(q);
-    const agents = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-    return agents.sort((a, b) => (b.stats?.avgScore || 0) - (a.stats?.avgScore || 0));
+    let agents = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+
+    // Fallback: if no agents qualify, show all agents (pre-beta mode)
+    if (agents.length === 0) {
+      const fallbackQ = query(
+        collection(db, AGENTS_COLLECTION),
+        orderBy('stats.gamesPlayed', 'desc'),
+        limit(limitCount)
+      );
+      const fallbackSnapshot = await getDocs(fallbackQ);
+      agents = fallbackSnapshot.docs.map(d => ({
+        id: d.id,
+        ...d.data(),
+        _preBeta: true,
+      }));
+    }
+
+    // Sort by avgScore client-side (primary), win % as tiebreaker
+    return agents.sort((a, b) => {
+      const avgDiff = (b.stats?.avgScore || 0) - (a.stats?.avgScore || 0);
+      if (avgDiff !== 0) return avgDiff;
+      const bGp = b.stats?.gamesPlayed || 1;
+      const aGp = a.stats?.gamesPlayed || 1;
+      return ((b.stats?.wins || 0) / bGp) - ((a.stats?.wins || 0) / aGp);
+    });
   } catch (error) {
     console.error('Error fetching leaderboard:', error);
     return [];
