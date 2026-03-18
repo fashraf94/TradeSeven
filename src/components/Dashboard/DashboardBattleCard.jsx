@@ -292,20 +292,22 @@ export default function DashboardBattleCard({
         });
       }
 
-      // V3/V4: calculate1v1PreviewData reads totalPoints/totalScore which are
-      // never written to Firebase. Fall back to banked daily scores + closed trades.
-      if (preview.isV3 && myScore === 0 && theirScore === 0) {
+      // V3/V4: prefer liveScore from preview when available.
+      // Fall back to banked daily scores + closed trades only when liveScore is missing.
+      if (preview.isV3) {
         const isCreator = battle.creator?.username === user?.username;
         const myRole = isCreator ? 'creator' : 'opponent';
         const theirRole = isCreator ? 'opponent' : 'creator';
         const bankedMy = extractSnapshotScore(battle, myRole);
         const bankedTheir = extractSnapshotScore(battle, theirRole);
-        console.log('[LS-DIAG] fell through to extractSnapshotScore', battle?.id, {
-          bankedMy, bankedTheir,
-          originalMyScore: preview.myGain,
-          originalTheirScore: preview.theirGain,
-        });
-        if (bankedMy !== 0 || bankedTheir !== 0) {
+
+        // Use liveScore (from preview) if available, otherwise banked scores
+        if (myScore === 0 && theirScore === 0 && (bankedMy !== 0 || bankedTheir !== 0)) {
+          console.log('[LS-DIAG] fell through to extractSnapshotScore', battle?.id, {
+            bankedMy, bankedTheir,
+            originalMyScore: preview.myGain,
+            originalTheirScore: preview.theirGain,
+          });
           myScore = bankedMy;
           theirScore = bankedTheir;
         }
