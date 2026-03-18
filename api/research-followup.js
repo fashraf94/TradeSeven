@@ -4,6 +4,7 @@
 
 import { applySecurityMiddleware } from './_utils/security.js';
 import { sanitizeInput } from './_utils/sanitizeInput.js';
+import { requireAuth } from './_utils/authMiddleware.js';
 
 const SYSTEM_PROMPT = `You are a market intelligence analyst for the FantasyTrades educational trading platform. A user is asking a follow-up question about today's market.
 
@@ -30,6 +31,9 @@ export default async function handler(req, res) {
   if (applySecurityMiddleware(req, res, { rateLimit: { limit: 15, windowMs: 60000 } })) {
     return;
   }
+
+  const user = await requireAuth(req, res);
+  if (!user) return;
 
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });

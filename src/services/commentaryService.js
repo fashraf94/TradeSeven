@@ -2,6 +2,8 @@
 // Monitors battle state changes and generates AI commentary for scoring events.
 // Commentary is keyed by event ID so the Live Feed can look up which events have it.
 
+import { fetchWithAuth } from '../utils/fetchWithAuth';
+
 // ── Event type mapping from V3/V4 hook names to ClashCast API names ──
 const TYPE_MAP = {
   bagger: 'BAGGERBOMB',
@@ -329,9 +331,8 @@ export class CommentaryEngine {
     this.onCommentary(eventId, null, true, isSynthetic ? this._buildSyntheticEvent(eventId, event) : null);
 
     try {
-      const response = await fetch('/api/battle-commentary', {
+      const response = await fetchWithAuth('/api/battle-commentary', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           event: {
             type: event.type,

@@ -3,6 +3,8 @@
 // Called when user expands a TrackerStockCard in the mobile Research Intelligence Hub
 
 import { applySecurityMiddleware } from './_utils/security.js';
+import { requireAuth } from './_utils/authMiddleware.js';
+import { sanitizeDocumentId } from './_utils/sanitizeInput.js';
 import { getFromCache, setInCache, CACHE_TIERS } from './_utils/serverCache.js';
 
 const SYSTEM_PROMPT = `You are the FantasyTrades Tracker Bot. You provide quick, focused intelligence on a single stock for educational purposes.
@@ -25,6 +27,9 @@ export default async function handler(req, res) {
     return;
   }
 
+  const user = await requireAuth(req, res);
+  if (!user) return;
+
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
@@ -36,9 +41,10 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { symbol, price, percentChange } = req.body;
+    const { symbol: rawSymbol, price, percentChange } = req.body;
+    const symbol = sanitizeDocumentId(rawSymbol);
     if (!symbol) {
-      return res.status(400).json({ success: false, error: 'Missing symbol' });
+      return res.status(400).json({ success: false, error: 'Missing or invalid symbol' });
     }
 
     // Check memory cache

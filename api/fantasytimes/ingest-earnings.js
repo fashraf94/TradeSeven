@@ -3,6 +3,7 @@
 // Runs after market close to catch after-hours earnings.
 
 import { applySecurityMiddleware } from '../_utils/security.js';
+import { isMarketHolidayToday } from '../_utils/marketHolidayCheck.js';
 import { TICKERS } from '../_utils/stockIntelligenceData.js';
 import { getClaimsForTicker } from '../_utils/ingestedClaims.js';
 import { ingestEarningsCall } from '../_utils/ingestionPipeline.js';
@@ -59,6 +60,10 @@ export default async function handler(req, res) {
   const authHeader = req.headers.authorization;
   if (!isVercelCron && authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
     return res.status(401).json({ error: 'Unauthorized' });
+  }
+
+  if (isMarketHolidayToday()) {
+    return res.status(200).json({ skipped: true, reason: 'Market holiday' });
   }
 
   try {

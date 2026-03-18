@@ -4,6 +4,8 @@
 
 import { querySonar } from './helpers/sonar.js';
 import { applySecurityMiddleware } from './_utils/security.js';
+import { requireAuth } from './_utils/authMiddleware.js';
+import { sanitizeInput, sanitizeDocumentId } from './_utils/sanitizeInput.js';
 import { getFromCache, setInCache } from './_utils/serverCache.js';
 
 // =============================================================================
@@ -41,12 +43,17 @@ export default async function handler(req, res) {
     return;
   }
 
+  const user = await requireAuth(req, res);
+  if (!user) return;
+
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { sectorName, etfSymbol, change1M, breadthPct, quadrant } = req.body || {};
+  const { sectorName: rawSectorName, etfSymbol: rawEtfSymbol, change1M, breadthPct, quadrant } = req.body || {};
 
+  const sectorName = sanitizeInput(rawSectorName, 100);
+  const etfSymbol = sanitizeDocumentId(rawEtfSymbol);
   if (!sectorName || !etfSymbol) {
     return res.status(400).json({ error: 'Missing required fields: sectorName, etfSymbol' });
   }

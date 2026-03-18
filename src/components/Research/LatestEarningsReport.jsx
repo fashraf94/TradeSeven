@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { fetchLatestEarnings } from '../../services/eodhdAPI';
+import { fetchWithAuth } from '../../utils/fetchWithAuth';
 
 /**
  * LatestEarningsReport - Displays latest earnings data with AI insights
@@ -82,9 +83,8 @@ const LatestEarningsReport = ({ symbol, colors }) => {
     console.log(`[EarningsInsights] Searching web for ${symbol} earnings...`);
 
     try {
-      const webSearchResponse = await fetch('/api/ai-advisor', {
+      const webSearchResponse = await fetchWithAuth('/api/ai-advisor', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           type: 'earnings-web-search',
           symbol: symbol,

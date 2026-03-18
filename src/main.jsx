@@ -8,6 +8,7 @@ import App from './App.jsx'
 import { Analytics } from '@vercel/analytics/react';
 import { UserProvider } from './contexts';
 import { ThemeProvider } from './contexts/ThemeContext';
+import { FantasyTimesProvider } from './contexts/FantasyTimesContext';
 import ErrorBoundary from './components/ErrorBoundary';
 
 // Initialize Firebase on app startup
@@ -24,7 +25,9 @@ createRoot(document.getElementById('root')).render(
     <ErrorBoundary name="FantasyTrades App">
       <UserProvider>
         <ThemeProvider>
-          <App />
+          <FantasyTimesProvider>
+            <App />
+          </FantasyTimesProvider>
         </ThemeProvider>
       </UserProvider>
     </ErrorBoundary>

@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { BookOpen } from 'lucide-react';
 import CollapsibleSection from './CollapsibleSection';
 import { fetchBitcoinOnChainData } from '../../services/onChainService';
+import { fetchWithAuth } from '../../utils/fetchWithAuth';
 import { HOLO_COLORS } from '../../constants/holoTheme';
 
 // ============================================
@@ -652,9 +653,8 @@ const HealthTab = ({ asset, symbol }) => {
         if (isBTC && onChainData && onChainData.success) {
           setAiLoading(true);
           try {
-            const res = await fetch('/api/ai-advisor', {
+            const res = await fetchWithAuth('/api/ai-advisor', {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ type: 'crypto-health', onChainData, symbol }),
             });
             const summary = await res.json();

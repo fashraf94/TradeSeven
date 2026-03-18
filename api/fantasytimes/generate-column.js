@@ -4,6 +4,7 @@
 
 import Anthropic from '@anthropic-ai/sdk';
 import { applySecurityMiddleware } from '../_utils/security.js';
+import { isMarketHolidayToday } from '../_utils/marketHolidayCheck.js';
 import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
 import {
   KIM_SYSTEM_PROMPT,
@@ -140,6 +141,10 @@ export default async function handler(req, res) {
   const authHeader = req.headers.authorization;
   if (!isVercelCron && authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
     return res.status(401).json({ error: 'Unauthorized' });
+  }
+
+  if (isMarketHolidayToday()) {
+    return res.status(200).json({ skipped: true, reason: 'Market holiday' });
   }
 
   if (req.method !== 'POST' && req.method !== 'GET') {

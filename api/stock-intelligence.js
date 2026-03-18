@@ -4,6 +4,8 @@
 // balanced educational analysis with bull/bear perspectives.
 
 import { applySecurityMiddleware } from './_utils/security.js';
+import { requireAuth } from './_utils/authMiddleware.js';
+import { sanitizeInput } from './_utils/sanitizeInput.js';
 import { getStockAnalysisData } from './_utils/marketDataCache.js';
 import { buildIntelligencePrompt, detectComparisonSymbols } from './_utils/intelligencePrompt.js';
 import { getSupplyChainCoverage } from './_utils/supplyChainLookup.js';
@@ -31,6 +33,10 @@ export default async function handler(req, res) {
   if (applySecurityMiddleware(req, res, { rateLimit: { limit: RATE_LIMIT, windowMs: RATE_LIMIT_WINDOW_MS } })) {
     return;
   }
+
+  // 1b. Auth check
+  const user = await requireAuth(req, res);
+  if (!user) return;
 
   // 2. Method check
   if (req.method !== 'POST') {
@@ -63,9 +69,14 @@ export default async function handler(req, res) {
     return res.status(400).json({ success: false, error: `Question must be ${MAX_QUESTION_LENGTH} characters or fewer` });
   }
 
+  const sanitizedQuestion = sanitizeInput(question, MAX_QUESTION_LENGTH);
+  if (!sanitizedQuestion) {
+    return res.status(400).json({ success: false, error: 'Invalid question content' });
+  }
+
   try {
     // 5. Detect comparison mode — user may be comparing two assets
-    const comparison = detectComparisonSymbols(question);
+    const comparison = detectComparisonSymbols(sanitizedQuestion);
 
     // 6. Fetch cached market data (both assets in comparison mode)
     let stockData;
@@ -118,7 +129,7 @@ export default async function handler(req, res) {
         ? `You are the FantasyTrades Stock Intelligence Agent — an educational tool that helps users understand stocks through data-backed analysis. You are NOT a financial advisor.\n\nMODE: QUICK INSIGHTS\nRespond ONLY with valid JSON, no markdown fences, no preamble.\nSchema:\n{\n  "headline": "Key tension or insight in ≤12 words",\n  "content": "3-4 bullet points. Each bullet: **Metric:** Value — one sentence of context. Keep total under 120 words. Never recommend buying or selling.",\n  "dataPoints": [\n    { "label": "METRIC NAME", "value": "specific number or value", "context": "One sentence explaining what it means" }\n  ],\n  "bullCase": "2-3 sentences. Data-backed reasons for optimism. Cite specific metrics.",\n  "bearCase": "2-3 sentences. Data-backed risks or concerns. Cite specific metrics.",\n  "educationalNote": "Teach one concept that helps the user understand this stock better. 2-3 sentences."\n}\nRules:\n- dataPoints: exactly 3-4 items, each with a concrete number\n- content: use **bold** for metric names in bullets\n- Never recommend buying, selling, or holding\n- Every claim must reference a specific number from the provided data`
         : `You are the FantasyTrades Stock Intelligence Agent — an educational tool that helps users understand stocks through data-backed analysis. You are NOT a financial advisor.\n\nMODE: DEEP ANALYSIS\nRespond ONLY with valid JSON, no markdown fences, no preamble.\nSchema:\n{\n  "headline": "Key tension or thesis in ≤15 words",\n  "content": "3-4 paragraphs of analysis. Lead with data, not opinion. Explain concepts — teach what metrics mean, not just their values. Present both sides. Reference cross-company connections when relevant. Use 'the data suggests,' 'bulls would argue / bears would counter.' Keep under 300 words. Never recommend buying or selling.",\n  "dataPoints": [\n    { "label": "METRIC NAME", "value": "specific number or value", "context": "One sentence explaining significance" }\n  ],\n  "bullCase": "3-4 sentences. Comprehensive data-backed bull thesis with specific metrics and cross-company context.",\n  "bearCase": "3-4 sentences. Comprehensive data-backed bear thesis with specific metrics and structural risks.",\n  "educationalNote": "Teach one important concept this data reveals — explain a metric, a pattern, or a structural dynamic that helps the user think about stocks more intelligently. 3-4 sentences."\n}\nRules:\n- dataPoints: exactly 4 items, each with a concrete number\n- content: use **bold** for emphasis on key terms\n- Never recommend buying, selling, or holding\n- Every claim must reference a specific number from the provided data\n- Cross-company connections (e.g., how this stock relates to others) are encouraged in content and bullCase/bearCase`;
 
-      const intelligenceUserMessage = `${bundleContext}\n\n---\n\nUser Question: ${question.trim()}`;
+      const intelligenceUserMessage = `${bundleContext}\n\n---\n\nUser Question: ${sanitizedQuestion}`;
 
       const maxTokens = mode === 'quick' ? MAX_TOKENS_QUICK : MAX_TOKENS_DEEP;
 
@@ -205,7 +216,7 @@ export default async function handler(req, res) {
       systemPrompt, userPrompt, questionTypes, estimatedTokens,
       isComparison, comparisonSymbols,
     } = buildIntelligencePrompt(
-      question.trim(),
+      sanitizedQuestion,
       stockData,
       context || {},
       comparisonData

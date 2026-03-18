@@ -4,6 +4,8 @@
  * Uses existing /api/ai-advisor endpoint
  */
 
+import { fetchWithAuth } from '../utils/fetchWithAuth';
+
 /**
  * Get current trading session based on Eastern Time
  */
@@ -117,11 +119,8 @@ Write a brief, actionable game plan strategy (3-4 sentences max) that:
 Keep it conversational and exciting - this is a game! Use specific stock symbols when relevant.
 Do NOT use bullet points or headers. Write in flowing prose.`;
 
-    const response = await fetch('/api/ai-advisor', {
+    const response = await fetchWithAuth('/api/ai-advisor', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
       body: JSON.stringify({
         advisorType: 'gameplan',
         prompt: prompt,
@@ -185,11 +184,8 @@ Response format (JSON only, no explanation):
   "reasoning": "Brief one-sentence explanation"
 }`;
 
-    const response = await fetch('/api/ai-advisor', {
+    const response = await fetchWithAuth('/api/ai-advisor', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
       body: JSON.stringify({
         advisorType: 'gameplan',
         prompt: prompt,

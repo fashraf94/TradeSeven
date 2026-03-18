@@ -3,6 +3,7 @@
 // Runs after major data release windows (9:45 AM, 1:45 PM, 5:45 PM ET).
 
 import { applySecurityMiddleware } from '../_utils/security.js';
+import { isMarketHolidayToday } from '../_utils/marketHolidayCheck.js';
 import { querySonar } from '../helpers/sonar.js';
 import { getClaimsForTicker } from '../_utils/ingestedClaims.js';
 import { ingestFedEvent } from '../_utils/ingestionPipeline.js';
@@ -96,6 +97,10 @@ export default async function handler(req, res) {
   const authHeader = req.headers.authorization;
   if (!isVercelCron && authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
     return res.status(401).json({ error: 'Unauthorized' });
+  }
+
+  if (isMarketHolidayToday()) {
+    return res.status(200).json({ skipped: true, reason: 'Market holiday' });
   }
 
   try {

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { motion } from 'framer-motion';
 import { HOLO_COLORS } from '../../constants/holoTheme';
 import { getTopMoversWithNews, getMarketNews } from '../../services/eodhdAPI';
+import { fetchWithAuth } from '../../utils/fetchWithAuth';
 
 import { useAssetResearch } from '../../hooks/useAssetResearch';
 import { useResearchIntelligence } from '../../hooks/useResearchIntelligence';
@@ -591,9 +592,8 @@ const DesktopIntelChat = ({ buildMarketContextString }) => {
 
     try {
       const result = await triggerCooldown(async () => {
-        const res = await fetch('/api/research-followup', {
+        const res = await fetchWithAuth('/api/research-followup', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ question: text, parentContext, marketContext }),
         });
         return res.json();
@@ -1223,9 +1223,8 @@ const QuestionCard = ({ question, index, buildMarketContextString }) => {
       const parentContext = (question.answer?.insights || []).map(i => i.text).join('\n');
       const marketContext = buildMarketContextString ? buildMarketContextString() : '';
 
-      const response = await fetch('/api/research-followup', {
+      const response = await fetchWithAuth('/api/research-followup', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ question: text, parentContext, marketContext }),
       });
       const result = await response.json();

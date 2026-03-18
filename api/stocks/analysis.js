@@ -8,6 +8,8 @@
 import { initializeApp, getApps, cert } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 import { applySecurityMiddleware } from '../_utils/security.js';
+import { requireAuth } from '../_utils/authMiddleware.js';
+import { sanitizeDocumentId } from '../_utils/sanitizeInput.js';
 import { getFromCache, setInCache, setCacheHeaders } from '../_utils/serverCache.js';
 import { getStockContext, TICKERS } from '../_utils/stockIntelligenceData.js';
 import { getStockBrief } from '../_utils/stockBriefService.js';
@@ -202,13 +204,21 @@ export default async function handler(req, res) {
     return;
   }
 
+  const user = await requireAuth(req, res);
+  if (!user) return;
+
   const { symbol, mode = 'quick' } = req.query;
 
   if (!symbol || typeof symbol !== 'string') {
     return res.status(400).json({ error: 'Missing symbol parameter' });
   }
 
-  const upper = symbol.trim().toUpperCase();
+  const sanitizedSymbol = sanitizeDocumentId(symbol.trim().toUpperCase());
+  if (!sanitizedSymbol) {
+    return res.status(400).json({ error: 'Invalid symbol format' });
+  }
+
+  const upper = sanitizedSymbol;
   if (upper.length > 10 || !/^[A-Z0-9.\-]+$/.test(upper)) {
     return res.status(400).json({ error: 'Invalid symbol format' });
   }

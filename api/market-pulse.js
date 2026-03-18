@@ -4,6 +4,7 @@
 
 import { querySonar } from './helpers/sonar.js';
 import { applySecurityMiddleware } from './_utils/security.js';
+import { requireAuth } from './_utils/authMiddleware.js';
 import { getFromCache, setInCache } from './_utils/serverCache.js';
 
 // =============================================================================
@@ -49,6 +50,9 @@ export default async function handler(req, res) {
   if (applySecurityMiddleware(req, res, { rateLimit: { limit: 10, windowMs: 60000 } })) {
     return;
   }
+
+  const user = await requireAuth(req, res);
+  if (!user) return;
 
   if (req.method !== 'GET') {
     return res.status(405).json({ error: 'Method not allowed' });

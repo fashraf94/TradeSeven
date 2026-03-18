@@ -1,6 +1,7 @@
 // /src/components/Dashboard/AIMarketSummary.jsx
 
 import React, { useState, useEffect } from 'react';
+import { fetchWithAuth } from '../../utils/fetchWithAuth';
 
 /**
  * AIMarketSummary - AI-powered market summary
@@ -27,9 +28,8 @@ const AIMarketSummary = ({ marketData, news, moversData, colors }) => {
 
       try {
         // Call the AI advisor API for market summary
-        const response = await fetch('/api/ai-advisor', {
+        const response = await fetchWithAuth('/api/ai-advisor', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             type: 'market_summary',
             context: {

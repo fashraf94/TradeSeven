@@ -3,6 +3,8 @@
 // Called when user taps "View Weekly Intel Report" in the mobile Research Intelligence Hub
 
 import { applySecurityMiddleware } from './_utils/security.js';
+import { requireAuth } from './_utils/authMiddleware.js';
+import { sanitizeDocumentId } from './_utils/sanitizeInput.js';
 import { getFromCache, setInCache, CACHE_TIERS } from './_utils/serverCache.js';
 
 const SYSTEM_PROMPT = `You are the FantasyTrades Weekly Intel Report generator. You produce a concise weekly portfolio summary for educational purposes.
@@ -29,6 +31,9 @@ export default async function handler(req, res) {
     return;
   }
 
+  const user = await requireAuth(req, res);
+  if (!user) return;
+
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
@@ -40,12 +45,16 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { watchlist, stockData } = req.body;
-    if (!Array.isArray(watchlist) || !watchlist.length) {
+    const { watchlist: rawWatchlist, stockData } = req.body;
+    if (!Array.isArray(rawWatchlist) || !rawWatchlist.length) {
       return res.status(400).json({ success: false, error: 'Missing or invalid watchlist' });
     }
     if (stockData && !Array.isArray(stockData)) {
       return res.status(400).json({ success: false, error: 'stockData must be an array' });
+    }
+    const watchlist = rawWatchlist.map(s => sanitizeDocumentId(s)).filter(Boolean);
+    if (!watchlist.length) {
+      return res.status(400).json({ success: false, error: 'No valid symbols in watchlist' });
     }
 
     // Check memory cache

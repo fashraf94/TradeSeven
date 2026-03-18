@@ -20,35 +20,15 @@
   "crons": [
     {
       "path": "/api/earnings/resolve-tournament",
-      "schedule": "0 23 * * 1-5"
-    },
-    {
-      "path": "/api/earnings/resolve-tournament",
-      "schedule": "0 3 * * 2-6"
-    },
-    {
-      "path": "/api/earnings/resolve-tournament",
-      "schedule": "0 14 * * 1-5"
+      "schedule": "0 3,14,23 * * 1-6"
     },
     {
       "path": "/api/earnings/sync-queue?days=7",
-      "schedule": "0 9 * * *"
+      "schedule": "0 9 * * 1-5"
     },
     {
-      "path": "/api/earnings/verify-batch?batch=1&limit=5",
-      "schedule": "0 10 * * *"
-    },
-    {
-      "path": "/api/earnings/verify-batch?batch=2&limit=5",
-      "schedule": "0 14 * * *"
-    },
-    {
-      "path": "/api/earnings/verify-batch?batch=3&limit=5",
-      "schedule": "0 18 * * *"
-    },
-    {
-      "path": "/api/earnings/verify-batch?batch=4&limit=5",
-      "schedule": "0 22 * * *"
+      "path": "/api/earnings/verify-batch",
+      "schedule": "0 10,14,18,22 * * 1-5"
     },
     {
       "path": "/api/options/resolve-tournament",
@@ -56,15 +36,11 @@
     },
     {
       "path": "/api/options/transition-status",
-      "schedule": "5 21 * * 1"
-    },
-    {
-      "path": "/api/options/transition-status",
-      "schedule": "0 14 * * 2"
+      "schedule": "0 14,21 * * 1-2"
     },
     {
       "path": "/api/lobbies/cleanup-expired",
-      "schedule": "*/5 9-23 * * *"
+      "schedule": "*/15 9-23 * * 1-5"
     },
     {
       "path": "/api/cron/snake-draft-daily-scores",
@@ -72,7 +48,7 @@
     },
     {
       "path": "/api/cron/snake-draft-autopick",
-      "schedule": "* * * * *"
+      "schedule": "*/10 * * * *"
     },
     {
       "path": "/api/cron/baggerbomb-v4-daily-scores",
@@ -132,7 +108,7 @@
     },
     {
       "path": "/api/fantasytimes/poll-batch",
-      "schedule": "*/5 * * * *"
+      "schedule": "*/15 * * * 1-5"
     },
     {
       "path": "/api/fantasytimes/generate-column?type=preview",
@@ -144,7 +120,7 @@
     },
     {
       "path": "/api/fantasytimes/cleanup",
-      "schedule": "0 7 * * *"
+      "schedule": "0 7 * * 1,4"
     },
     {
       "path": "/api/fantasytimes/scan-movers",
