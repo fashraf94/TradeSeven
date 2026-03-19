@@ -84,6 +84,8 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
   const hasInitializedExtremesRef = useRef(false);
   const prevOppMultipliersRef = useRef({});
   const redZoneActiveRef = useRef(new Set());
+  const myTotalScoreRef = useRef(0);
+  const oppTotalScoreRef = useRef(0);
 
   // Local events for EventFeed (both player + opponent).
   // Stored in a ref to avoid re-rendering the entire component tree (including any
@@ -483,25 +485,25 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
     return Math.round(oppBankedScore + oppScores.totalScore + oppClosedTradePoints);
   }, [oppBankedScore, oppScores.totalScore, oppClosedTradePoints]);
 
-  console.log('[LS-DIAG] scores computed', battleId, {
-    myTotalScore, oppTotalScore,
-    bankedScore, oppBankedScore,
-    myLiveScore: myScores.totalScore, oppLiveScore: oppScores.totalScore,
-    closedTradePoints, oppClosedTradePoints,
-  });
+  // Keep score refs in sync for stable setInterval closure
+  useEffect(() => { myTotalScoreRef.current = myTotalScore; }, [myTotalScore]);
+  useEffect(() => { oppTotalScoreRef.current = oppTotalScore; }, [oppTotalScore]);
 
   // ==================== LIVE SCORE WRITE-BACK ====================
   // Periodically persist both players' computed scores to Firebase so the
   // dashboard can display them without running live price hooks.
+  // Deps are stable (battle/battleId/isCreator) — scores read from refs.
   useEffect(() => {
     if (!battle || !battleId) return;
     if (battle.state?.status !== 'active') return;
     const interval = setInterval(() => {
       if (!isMarketOpen()) return;
       if (document.hidden) return;
-      if (myTotalScore === 0 && oppTotalScore === 0) return;
-      const creatorScore = isCreator ? myTotalScore : oppTotalScore;
-      const opponentScore = isCreator ? oppTotalScore : myTotalScore;
+      const myScore = myTotalScoreRef.current;
+      const oppScore = oppTotalScoreRef.current;
+      if (myScore === 0 && oppScore === 0) return;
+      const creatorScore = isCreator ? myScore : oppScore;
+      const opponentScore = isCreator ? oppScore : myScore;
       const coll = battleId.startsWith('training_') ? 'trainingBattles' : 'battles';
       updateDoc(doc(db, coll, battleId), {
         'creator.liveScore': creatorScore,
@@ -511,7 +513,7 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
       console.log('[LS-DIAG] write DISPATCHED', battleId, { creatorScore, opponentScore, coll });
     }, 15000); // Every 15 seconds on the clock
     return () => clearInterval(interval);
-  }, [battle, battleId, isCreator, myTotalScore, oppTotalScore]);
+  }, [battle, battleId, isCreator]);
 
   // ==================== BUILD PLAYER/OPPONENT OBJECTS ====================
 
