@@ -254,6 +254,38 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
     return map;
   }, [battle?.state?.previousClosePrices, battle?.timing?.actualStart, battle?.state?.activatedAt, previousClosePrices, activationPrices, effectiveTradingDay]);
 
+  // ==================== CRON dailyLevels (Phase B) ====================
+  // Phase A cron writes pre-computed dollar thresholds to battle.state.dailyLevels.
+  // When available and matching today's date (ET), use cron baselines for threshold
+  // detection instead of the previousClosePriceMap / EODHD system.
+  const dailyLevels = battle?.state?.dailyLevels;
+  const useCronLevels = useMemo(() => {
+    if (!dailyLevels?.date || !dailyLevels?.assets) return false;
+    if (Object.keys(dailyLevels.assets).length === 0) return false;
+    const todayET = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+    return dailyLevels.date === todayET;
+  }, [dailyLevels?.date, dailyLevels?.assets]);
+
+  // When cron levels available, use cron baselines as threshold baselines.
+  // Otherwise fall back to previousClosePriceMap (EODHD / Firebase previousClose).
+  const thresholdBaselines = useMemo(() => {
+    if (!useCronLevels) return previousClosePriceMap;
+    const map = { ...(activationPrices || {}) }; // fallback for symbols not in cron
+    Object.entries(dailyLevels.assets).forEach(([sym, levels]) => {
+      if (levels.baseline > 0) map[sym] = levels.baseline;
+    });
+    return map;
+  }, [useCronLevels, dailyLevels?.assets, previousClosePriceMap, activationPrices]);
+
+  console.log('[BB-CRON] dailyLevels status:', {
+    hasDailyLevels: !!dailyLevels?.assets,
+    levelsDate: dailyLevels?.date,
+    todayET: new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' }),
+    useCronLevels,
+    sampleSymbol: Object.keys(dailyLevels?.assets || {})[0],
+    sampleBagger: dailyLevels?.assets?.[Object.keys(dailyLevels?.assets || {})[0]]?.baggerBomb,
+  });
+
   // Free agents data
   const freeAgents = useMemo(() => {
     return battle?.freeAgents?.current || [];
@@ -446,18 +478,18 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
       console.log(`[Scoring] BASELINE SOURCE: WAITING (no scoring — day ${effectiveTradingDay} baseline not loaded)`);
       return { totalScore: 0, assetScores: [], baggerBombs: 0, busts: 0 };
     }
-    console.log(`[Scoring] BASELINE SOURCE: entryPrices (day ${effectiveTradingDay}), thresholds from previousClose`);
-    // Base points use openPrices (entry, cumulative). Threshold multiplier uses previousClosePriceMap (daily).
-    return calculateScores(myPortfolioFlat, effectivePrices, openPrices, combinedHistory, dailyExtremes, battleThresholds, previousClosePriceMap);
-  }, [hasValidBaseline, effectiveTradingDay, myPortfolioFlat, effectivePrices, openPrices, combinedHistory, dailyExtremes, calculateScores, battleThresholds, previousClosePriceMap]);
+    console.log(`[Scoring] BASELINE SOURCE: entryPrices (day ${effectiveTradingDay}), thresholds from ${useCronLevels ? 'cronLevels' : 'previousClose'}`);
+    // Base points use openPrices (entry, cumulative). Threshold multiplier uses thresholdBaselines (cron or previousClose).
+    return calculateScores(myPortfolioFlat, effectivePrices, openPrices, combinedHistory, dailyExtremes, battleThresholds, thresholdBaselines);
+  }, [hasValidBaseline, effectiveTradingDay, myPortfolioFlat, effectivePrices, openPrices, combinedHistory, dailyExtremes, calculateScores, battleThresholds, thresholdBaselines, useCronLevels]);
 
   const oppScores = useMemo(() => {
     if (!hasValidBaseline) {
       return { totalScore: 0, assetScores: [], baggerBombs: 0, busts: 0 };
     }
-    // Base points use openPrices (entry, cumulative). Threshold multiplier uses previousClosePriceMap (daily).
-    return calculateScores(oppPortfolioFlat, effectivePrices, openPrices, oppHistory || {}, dailyExtremes, battleThresholds, previousClosePriceMap);
-  }, [hasValidBaseline, oppPortfolioFlat, effectivePrices, openPrices, oppHistory, dailyExtremes, calculateScores, battleThresholds, previousClosePriceMap]);
+    // Base points use openPrices (entry, cumulative). Threshold multiplier uses thresholdBaselines (cron or previousClose).
+    return calculateScores(oppPortfolioFlat, effectivePrices, openPrices, oppHistory || {}, dailyExtremes, battleThresholds, thresholdBaselines);
+  }, [hasValidBaseline, oppPortfolioFlat, effectivePrices, openPrices, oppHistory, dailyExtremes, calculateScores, battleThresholds, thresholdBaselines]);
 
   // V4: Total score = banked previous days + current active score + locked closed trade points
   const closedTradePoints = useMemo(() => {
@@ -530,7 +562,7 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
 
   // ==================== BUILD PLAYER/OPPONENT OBJECTS ====================
 
-  const buildTacticalAsset = useCallback((asset, scores, history, bThresholds = {}, prices = {}, baselines = {}, actPrices = {}, prevClosePrices = {}) => {
+  const buildTacticalAsset = useCallback((asset, scores, history, bThresholds = {}, prices = {}, baselines = {}, actPrices = {}, prevClosePrices = {}, cronAssetsMap = null) => {
     if (!asset) return null;
 
     // V5: Cash positions earn 0 points, no scoring
@@ -585,6 +617,8 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
       swapPrice: asset.swapPrice || 0,
       // Previous close for threshold target display (BaggerBombTab)
       previousClosePrice: prevClosePrices[asset.symbol] || actPrices[asset.symbol] || baselines[asset.symbol] || 0,
+      // Cron-computed dollar levels for display (Phase B)
+      dailyLevels: cronAssetsMap?.[asset.symbol] || null,
       threshold: resolvedATR,
       gain: scoreData?.priceChange || 0,
       totalScore: scoreData?.totalPoints || 0,
@@ -596,25 +630,27 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
     };
   }, []);
 
+  const cronAssetsMap = useCronLevels ? dailyLevels?.assets : null;
+
   const playerPortfolio = useMemo(() => {
     const portfolio = myData?.portfolio;
     if (!portfolio) return { star: [], core: [], support: [] };
     return {
-      star: (portfolio.star || []).map((a) => buildTacticalAsset(a, myScores, combinedHistory, battleThresholds, effectivePrices, openPrices, activationPrices || {}, previousClosePriceMap || activationPrices || {})),
-      core: (portfolio.core || []).map((a) => buildTacticalAsset(a, myScores, combinedHistory, battleThresholds, effectivePrices, openPrices, activationPrices || {}, previousClosePriceMap || activationPrices || {})),
-      support: (portfolio.support || []).map((a) => buildTacticalAsset(a, myScores, combinedHistory, battleThresholds, effectivePrices, openPrices, activationPrices || {}, previousClosePriceMap || activationPrices || {})),
+      star: (portfolio.star || []).map((a) => buildTacticalAsset(a, myScores, combinedHistory, battleThresholds, effectivePrices, openPrices, activationPrices || {}, thresholdBaselines || activationPrices || {}, cronAssetsMap)),
+      core: (portfolio.core || []).map((a) => buildTacticalAsset(a, myScores, combinedHistory, battleThresholds, effectivePrices, openPrices, activationPrices || {}, thresholdBaselines || activationPrices || {}, cronAssetsMap)),
+      support: (portfolio.support || []).map((a) => buildTacticalAsset(a, myScores, combinedHistory, battleThresholds, effectivePrices, openPrices, activationPrices || {}, thresholdBaselines || activationPrices || {}, cronAssetsMap)),
     };
-  }, [myData?.portfolio, myScores, combinedHistory, buildTacticalAsset, battleThresholds, effectivePrices, openPrices, activationPrices, previousClosePriceMap]);
+  }, [myData?.portfolio, myScores, combinedHistory, buildTacticalAsset, battleThresholds, effectivePrices, openPrices, activationPrices, thresholdBaselines, cronAssetsMap]);
 
   const opponentPortfolio = useMemo(() => {
     const portfolio = oppData?.portfolio;
     if (!portfolio) return { star: [], core: [], support: [] };
     return {
-      star: (portfolio.star || []).map((a) => buildTacticalAsset(a, oppScores, oppHistory || {}, battleThresholds, effectivePrices, openPrices, activationPrices || {}, previousClosePriceMap || activationPrices || {})),
-      core: (portfolio.core || []).map((a) => buildTacticalAsset(a, oppScores, oppHistory || {}, battleThresholds, effectivePrices, openPrices, activationPrices || {}, previousClosePriceMap || activationPrices || {})),
-      support: (portfolio.support || []).map((a) => buildTacticalAsset(a, oppScores, oppHistory || {}, battleThresholds, effectivePrices, openPrices, activationPrices || {}, previousClosePriceMap || activationPrices || {})),
+      star: (portfolio.star || []).map((a) => buildTacticalAsset(a, oppScores, oppHistory || {}, battleThresholds, effectivePrices, openPrices, activationPrices || {}, thresholdBaselines || activationPrices || {}, cronAssetsMap)),
+      core: (portfolio.core || []).map((a) => buildTacticalAsset(a, oppScores, oppHistory || {}, battleThresholds, effectivePrices, openPrices, activationPrices || {}, thresholdBaselines || activationPrices || {}, cronAssetsMap)),
+      support: (portfolio.support || []).map((a) => buildTacticalAsset(a, oppScores, oppHistory || {}, battleThresholds, effectivePrices, openPrices, activationPrices || {}, thresholdBaselines || activationPrices || {}, cronAssetsMap)),
     };
-  }, [oppData?.portfolio, oppScores, oppHistory, buildTacticalAsset, battleThresholds, effectivePrices, openPrices, activationPrices, previousClosePriceMap]);
+  }, [oppData?.portfolio, oppScores, oppHistory, buildTacticalAsset, battleThresholds, effectivePrices, openPrices, activationPrices, thresholdBaselines, cronAssetsMap]);
 
   const player = useMemo(() => ({
     id: myData?.uid,
@@ -724,18 +760,19 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
       // V5: Skip cash positions entirely — no thresholds, no events
       if (asset.isCash) return;
 
-      // Daily baseline for threshold detection (previousClose resets each day)
-      const dailyBaseline = previousClosePriceMap[asset.symbol] || asset.swapPrice || openPrices[asset.symbol];
+      // Daily baseline for threshold detection: prefer cron baseline, then previousClose, then entry
+      const dailyBaseline = thresholdBaselines[asset.symbol] || asset.swapPrice || openPrices[asset.symbol];
       const currentPrice = effectivePrices[asset.symbol];
       if (!dailyBaseline || !currentPrice) return;
 
       if (asset.symbol === myPortfolioFlat[0]?.symbol) {
         console.log('[BB-DIAG] detection (player):', asset.symbol, {
           dailyBaseline,
+          baselineSource: useCronLevels ? 'cronLevels' : 'previousClose',
           entryPrice: openPrices?.[asset.symbol],
           currentPrice,
           baselineIsEntry: dailyBaseline === openPrices?.[asset.symbol],
-          previousCloseMapValue: previousClosePriceMap?.[asset.symbol],
+          thresholdBaselinesValue: thresholdBaselines?.[asset.symbol],
         });
       }
 
@@ -886,7 +923,7 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
         });
       }
     });
-  }, [hasValidBaseline, effectivePrices, openPrices, previousClosePriceMap, dailyExtremes, myPortfolioFlat, battle, battleId, isCreator, combinedHistory, queueTrigger, myData?.username, pushLocalEvent]);
+  }, [hasValidBaseline, effectivePrices, openPrices, thresholdBaselines, useCronLevels, dailyExtremes, myPortfolioFlat, battle, battleId, isCreator, combinedHistory, queueTrigger, myData?.username, pushLocalEvent]);
 
   // Opponent threshold detection (display-only — no Firestore writes, no celebration)
   useEffect(() => {
@@ -899,18 +936,19 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
       // V5: Skip cash positions entirely
       if (asset.isCash) return;
 
-      // Daily baseline for threshold detection (previousClose resets each day)
-      const dailyBaseline = previousClosePriceMap[asset.symbol] || asset.swapPrice || openPrices[asset.symbol];
+      // Daily baseline for threshold detection: prefer cron baseline, then previousClose, then entry
+      const dailyBaseline = thresholdBaselines[asset.symbol] || asset.swapPrice || openPrices[asset.symbol];
       const currentPrice = effectivePrices[asset.symbol];
       if (!dailyBaseline || !currentPrice) return;
 
       if (asset.symbol === oppPortfolioFlat[0]?.symbol) {
         console.log('[BB-DIAG] detection (opponent):', asset.symbol, {
           dailyBaseline,
+          baselineSource: useCronLevels ? 'cronLevels' : 'previousClose',
           entryPrice: openPrices?.[asset.symbol],
           currentPrice,
           baselineIsEntry: dailyBaseline === openPrices?.[asset.symbol],
-          previousCloseMapValue: previousClosePriceMap?.[asset.symbol],
+          thresholdBaselinesValue: thresholdBaselines?.[asset.symbol],
         });
       }
 
@@ -1122,7 +1160,7 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
 
     processPortfolio(myPortfolioFlat, combinedHistory, setLocalHistory, true);
     processPortfolio(oppPortfolioFlat, oppHistory, setLocalOppHistory, false);
-  }, [hasValidBaseline, effectivePrices, openPrices, previousClosePriceMap, dailyExtremes, myPortfolioFlat, oppPortfolioFlat, battle, battleId, isCreator, combinedHistory, oppHistory]);
+  }, [hasValidBaseline, effectivePrices, openPrices, thresholdBaselines, useCronLevels, dailyExtremes, myPortfolioFlat, oppPortfolioFlat, battle, battleId, isCreator, combinedHistory, oppHistory]);
 
   // ==================== PRICE FETCHING ====================
 

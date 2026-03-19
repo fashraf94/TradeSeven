@@ -269,6 +269,8 @@ function AssetSide({
         priceChange={thresholdPriceChange ?? priceChange}
         baseATR={baseATR}
         history={history}
+        dailyLevels={asset.dailyLevels}
+        currentPrice={asset.currentPrice}
         size="small"
         align={isRight ? 'right' : 'left'}
       />

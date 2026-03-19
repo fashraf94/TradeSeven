@@ -41,10 +41,12 @@ const BaggerBombTab = ({ asset }) => {
     asset?.currentPrice ||
     null;
 
-  // Threshold baseline: use previousClosePrice for threshold dollar targets.
-  // This ensures two battles on the same stock show identical threshold targets.
-  // Falls back to baselinePrice for old battles or research modal context.
-  const thresholdBaseline = asset?.previousClosePrice || baselinePrice;
+  // Cron-computed dollar levels from Phase A (when available)
+  const cronLevels = asset?.dailyLevels;
+
+  // Threshold baseline: prefer cron baseline, then previousClosePrice, then entry.
+  // Cron baseline ensures both players see identical threshold targets.
+  const thresholdBaseline = cronLevels?.baseline || asset?.previousClosePrice || baselinePrice;
 
   const formatTargetPrice = (price) => {
     if (!price || price <= 0) return null;
@@ -123,11 +125,11 @@ const BaggerBombTab = ({ asset }) => {
           marginTop: '-12px',
           marginBottom: '12px',
         }}>
-          Entry Price: <span style={{ color: '#e0e0e0', fontWeight: 600 }}>
+          {cronLevels ? "Today's Baseline" : 'Entry Price'}: <span style={{ color: '#e0e0e0', fontWeight: 600 }}>
             ${thresholdBaseline.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
           </span>
           <span style={{ color: '#6e7681', marginLeft: '8px' }}>
-            (scoring baseline)
+            ({cronLevels ? 'daily threshold anchor' : 'scoring baseline'})
           </span>
         </div>
       )}
@@ -154,7 +156,11 @@ const BaggerBombTab = ({ asset }) => {
         }}>
           {BAGGER_TIERS.map((tier, i) => {
             const pct = baseThreshold * tier.multiplier;
-            const targetPrice = thresholdBaseline ? thresholdBaseline * (1 + pct / 100) : null;
+            // Use cron dollar target directly when available, otherwise compute from baseline
+            const cronKey = tier.key; // 'bagger' → cronLevels.baggerBomb, etc.
+            const cronTargetMap = { bagger: 'baggerBomb', doubleBagger: 'doubleBagger', tenBagger: 'tenBagger' };
+            const targetPrice = cronLevels?.[cronTargetMap[cronKey]]
+              || (thresholdBaseline ? thresholdBaseline * (1 + pct / 100) : null);
             return (
               <div key={tier.key} style={{
                 display: 'flex',
@@ -193,7 +199,10 @@ const BaggerBombTab = ({ asset }) => {
         }}>
           {BUST_TIERS.map((tier, i) => {
             const pct = baseThreshold * tier.multiplier;
-            const targetPrice = thresholdBaseline ? thresholdBaseline * (1 - pct / 100) : null;
+            // Use cron dollar target directly when available, otherwise compute from baseline
+            const cronTargetMap = { bust: 'bust', crash: 'crash', meltdown: 'meltdown' };
+            const targetPrice = cronLevels?.[cronTargetMap[tier.key]]
+              || (thresholdBaseline ? thresholdBaseline * (1 - pct / 100) : null);
             return (
               <div key={tier.key} style={{
                 display: 'flex',
@@ -389,7 +398,10 @@ const BaggerBombTab = ({ asset }) => {
         }}>
           <strong style={{ color: '#f59e0b' }}>Note:</strong> Threshold tiers are 1.0x, 1.5x, and 2.0x of the base threshold ({baseThreshold.toFixed(1)}%).
           {thresholdBaseline > 0 && (
-            <span> Baseline: {formatTargetPrice(thresholdBaseline)}.</span>
+            <span> {cronLevels ? "Today's Baseline" : 'Baseline'}: {formatTargetPrice(thresholdBaseline)}.</span>
+          )}
+          {cronLevels && (
+            <span style={{ color: 'rgba(0, 217, 255, 0.7)' }}> Targets from daily cron.</span>
           )}
         </div>
       </div>

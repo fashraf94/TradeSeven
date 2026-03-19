@@ -165,6 +165,8 @@ export default function ProximityLabel({
   priceChange,
   baseATR,
   history = { maxMultiplier: 0, minMultiplier: 0 },
+  dailyLevels = null,
+  currentPrice = null,
   size = 'default',
   align = 'left',
 }) {
@@ -172,6 +174,20 @@ export default function ProximityLabel({
     () => calculateNextThreshold(priceChange, baseATR, history),
     [priceChange, baseATR, history]
   );
+
+  // When cron levels available, compute dollar distance to next threshold
+  const dollarInfo = useMemo(() => {
+    if (!dailyLevels || !currentPrice || currentPrice <= 0) return null;
+    if (direction === 'maxed' || highestCrossed) return null;
+    // Map label to cron level key
+    const labelToKey = { 'Bagger': 'baggerBomb', 'Double': 'doubleBagger', 'TenBagger': 'tenBagger', 'Bust': 'bust', 'Crash': 'crash', 'Meltdown': 'meltdown' };
+    const targetKey = labelToKey[label];
+    const targetPrice = targetKey ? dailyLevels[targetKey] : null;
+    if (!targetPrice) return null;
+    const dollarDistance = Math.abs(targetPrice - currentPrice);
+    const pctDistance = (dollarDistance / currentPrice) * 100;
+    return { dollarDistance, pctDistance, targetPrice };
+  }, [dailyLevels, currentPrice, direction, highestCrossed, label]);
 
   const isSmall = size === 'small';
   const fontSize = isSmall ? '10px' : '12px';
@@ -191,7 +207,7 @@ export default function ProximityLabel({
     return '#f59e0b';
   };
 
-  // Format the display text - "💣 X.X% to BaggerBomb" format
+  // Format the display text - "💣 X.X% to BaggerBomb" or "💣 $3.50 to Bagger" format
   const formatText = () => {
     if (achievement) return achievement.text;
     if (direction === 'maxed') {
@@ -199,6 +215,10 @@ export default function ProximityLabel({
     }
     if (distance === 0) {
       return `${icon}`;
+    }
+    // When cron levels available, show dollar distance
+    if (dollarInfo) {
+      return `${icon} $${dollarInfo.dollarDistance.toFixed(2)} to ${label}`;
     }
     return `${icon} ${distance.toFixed(1)}% to ${label}`;
   };
@@ -239,6 +259,18 @@ ProximityLabel.propTypes = {
     maxMultiplier: PropTypes.number,
     minMultiplier: PropTypes.number,
   }),
+  /** Cron-computed dollar levels (Phase B) */
+  dailyLevels: PropTypes.shape({
+    baseline: PropTypes.number,
+    baggerBomb: PropTypes.number,
+    doubleBagger: PropTypes.number,
+    tenBagger: PropTypes.number,
+    bust: PropTypes.number,
+    crash: PropTypes.number,
+    meltdown: PropTypes.number,
+  }),
+  /** Current market price for dollar distance calculation */
+  currentPrice: PropTypes.number,
   /** Size variant */
   size: PropTypes.oneOf(['small', 'default']),
   /** Text alignment */
