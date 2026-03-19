@@ -1,8 +1,9 @@
 // /src/components/Navigation/DesktopSidebar.jsx
 // Fixed left sidebar for desktop — navigation, stats, user profile
+// Supports collapsed (64px, icons only) and expanded (220px, full labels) states
 
 import React, { useState } from 'react';
-import { Swords, Newspaper, BarChart3, Clock, Settings, Flame, Bot } from 'lucide-react';
+import { Swords, Newspaper, BarChart3, Clock, Settings, Flame, Bot, ChevronRight, ChevronLeft } from 'lucide-react';
 import { useTheme } from '../../contexts/ThemeContext';
 
 const NAV_ITEMS = [
@@ -14,6 +15,100 @@ const NAV_ITEMS = [
   { id: 'settings', label: 'Settings', Icon: Settings, screen: 'profile' },
 ];
 
+function NavItem({ item, active, collapsed, hovered, onHover, onLeave, onClick, tokens, unreadCount }) {
+  const [tooltipVisible, setTooltipVisible] = useState(false);
+
+  return (
+    <button
+      onClick={onClick}
+      onMouseEnter={() => { onHover(); if (collapsed) setTooltipVisible(true); }}
+      onMouseLeave={() => { onLeave(); setTooltipVisible(false); }}
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: '12px',
+        padding: collapsed ? '10px 0' : '10px 14px',
+        borderRadius: '10px',
+        border: 'none',
+        borderLeft: active ? `3px solid ${tokens.teal}` : '3px solid transparent',
+        background: active
+          ? 'rgba(94,234,212,0.08)'
+          : hovered
+            ? 'rgba(255,255,255,0.03)'
+            : 'transparent',
+        boxShadow: active ? 'inset 0 0 20px rgba(94,234,212,0.03)' : 'none',
+        color: active ? tokens.teal : tokens.textMuted,
+        fontSize: '14px',
+        fontWeight: '500',
+        cursor: 'pointer',
+        width: '100%',
+        textAlign: 'left',
+        position: 'relative',
+        transition: 'background 0.15s ease',
+        justifyContent: collapsed ? 'center' : 'flex-start',
+      }}
+    >
+      <div style={{
+        width: '40px',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        flexShrink: 0,
+      }}>
+        <item.Icon size={20} />
+      </div>
+      <span style={{
+        opacity: collapsed ? 0 : 1,
+        transition: 'opacity 0.15s ease',
+        whiteSpace: 'nowrap',
+        overflow: 'hidden',
+      }}>
+        {item.label}
+      </span>
+      {item.id === 'news' && unreadCount > 0 && (
+        <span style={{
+          position: 'absolute',
+          right: collapsed ? '6px' : '12px',
+          top: collapsed ? '4px' : 'auto',
+          minWidth: '18px',
+          height: '18px',
+          borderRadius: '9px',
+          background: tokens.teal,
+          color: tokens.bgApp,
+          fontSize: '10px',
+          fontWeight: '700',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '0 5px',
+        }}>
+          {unreadCount > 9 ? '9+' : unreadCount}
+        </span>
+      )}
+      {/* Tooltip in collapsed state */}
+      {collapsed && tooltipVisible && (
+        <div style={{
+          position: 'fixed',
+          left: '68px',
+          background: '#161b22',
+          color: '#fff',
+          fontSize: '12px',
+          fontWeight: '500',
+          padding: '5px 10px',
+          borderRadius: '6px',
+          whiteSpace: 'nowrap',
+          pointerEvents: 'none',
+          zIndex: 9999,
+          boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
+          border: '1px solid #21262d',
+        }}>
+          {item.label}
+        </div>
+      )}
+    </button>
+  );
+}
+
 export default function DesktopSidebar({
   screen,
   setScreen,
@@ -21,6 +116,8 @@ export default function DesktopSidebar({
   showResearchMode,
   user,
   unreadCount,
+  collapsed,
+  onToggleCollapse,
 }) {
   const { tokens } = useTheme();
   const [hoveredId, setHoveredId] = useState(null);
@@ -50,13 +147,15 @@ export default function DesktopSidebar({
       left: 0,
       top: 0,
       bottom: 0,
-      width: '220px',
+      width: collapsed ? '64px' : '220px',
+      transition: 'width 0.2s ease',
+      overflow: 'hidden',
       background: tokens.bgCard,
       backgroundImage: 'linear-gradient(90deg, rgba(255,255,255,0.02) 0%, transparent 30%)',
       borderRight: `1px solid ${tokens.borderDefault}`,
       boxShadow: '4px 0 20px rgba(0,0,0,0.2)',
       zIndex: 40,
-      padding: '20px 16px',
+      padding: collapsed ? '20px 0' : '20px 16px',
       display: 'flex',
       flexDirection: 'column',
     }}>
@@ -66,9 +165,10 @@ export default function DesktopSidebar({
         alignItems: 'center',
         gap: '10px',
         marginBottom: '32px',
-        padding: '0 10px',
+        padding: collapsed ? '0' : '0 10px',
+        justifyContent: collapsed ? 'center' : 'flex-start',
       }}>
-        <Flame size={22} color={tokens.teal} />
+        <Flame size={22} color={tokens.teal} style={{ flexShrink: 0 }} />
         <span style={{
           fontSize: '18px',
           fontWeight: '700',
@@ -76,6 +176,10 @@ export default function DesktopSidebar({
           WebkitBackgroundClip: 'text',
           WebkitTextFillColor: 'transparent',
           backgroundClip: 'text',
+          opacity: collapsed ? 0 : 1,
+          transition: 'opacity 0.15s ease',
+          whiteSpace: 'nowrap',
+          overflow: 'hidden',
         }}>
           FantasyTrades
         </span>
@@ -83,86 +187,82 @@ export default function DesktopSidebar({
 
       {/* Navigation */}
       <nav style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-        {NAV_ITEMS.map((item) => {
-          const active = isActive(item);
-          const hovered = hoveredId === item.id;
-          return (
-            <button
-              key={item.id}
-              onClick={() => handleNav(item)}
-              onMouseEnter={() => setHoveredId(item.id)}
-              onMouseLeave={() => setHoveredId(null)}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '12px',
-                padding: '10px 14px',
-                borderRadius: '10px',
-                border: 'none',
-                borderLeft: active ? `3px solid ${tokens.teal}` : '3px solid transparent',
-                background: active
-                  ? 'rgba(94,234,212,0.08)'
-                  : hovered
-                    ? 'rgba(255,255,255,0.03)'
-                    : 'transparent',
-                boxShadow: active ? 'inset 0 0 20px rgba(94,234,212,0.03)' : 'none',
-                color: active ? tokens.teal : tokens.textMuted,
-                fontSize: '14px',
-                fontWeight: '500',
-                cursor: 'pointer',
-                width: '100%',
-                textAlign: 'left',
-                position: 'relative',
-                transition: 'background 0.15s ease',
-              }}
-            >
-              <item.Icon size={20} />
-              {item.label}
-              {item.id === 'news' && unreadCount > 0 && (
-                <span style={{
-                  position: 'absolute',
-                  right: '12px',
-                  minWidth: '20px',
-                  height: '20px',
-                  borderRadius: '10px',
-                  background: tokens.teal,
-                  color: tokens.bgApp,
-                  fontSize: '11px',
-                  fontWeight: '700',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  padding: '0 6px',
-                }}>
-                  {unreadCount > 9 ? '9+' : unreadCount}
-                </span>
-              )}
-            </button>
-          );
-        })}
+        {NAV_ITEMS.map((item) => (
+          <NavItem
+            key={item.id}
+            item={item}
+            active={isActive(item)}
+            collapsed={collapsed}
+            hovered={hoveredId === item.id}
+            onHover={() => setHoveredId(item.id)}
+            onLeave={() => setHoveredId(null)}
+            onClick={() => handleNav(item)}
+            tokens={tokens}
+            unreadCount={item.id === 'news' ? unreadCount : 0}
+          />
+        ))}
       </nav>
 
       {/* Spacer */}
       <div style={{ flex: 1 }} />
 
+      {/* Toggle button */}
+      <button
+        onClick={onToggleCollapse}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '8px',
+          margin: collapsed ? '0 auto 8px' : '0 10px 8px',
+          borderRadius: '8px',
+          border: `1px solid ${tokens.borderDivider}`,
+          background: 'transparent',
+          color: tokens.textMuted,
+          cursor: 'pointer',
+          transition: 'color 0.15s ease, background 0.15s ease',
+          width: collapsed ? '40px' : '100%',
+        }}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.color = tokens.teal;
+          e.currentTarget.style.background = 'rgba(94,234,212,0.06)';
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.color = tokens.textMuted;
+          e.currentTarget.style.background = 'transparent';
+        }}
+      >
+        {collapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
+      </button>
+
       {/* Stats */}
       <div style={{
         borderTop: `1px solid ${tokens.borderDivider}`,
-        paddingTop: '16px',
-        marginTop: '16px',
+        paddingTop: '12px',
+        marginTop: '4px',
         display: 'flex',
         flexDirection: 'column',
-        gap: '6px',
-        padding: '16px 10px 12px',
+        gap: '4px',
+        padding: collapsed ? '12px 0 8px' : '12px 10px 8px',
+        alignItems: collapsed ? 'center' : 'flex-start',
+        overflow: 'hidden',
       }}>
-        <div style={{ fontSize: '13px' }}>
-          <span style={{ color: tokens.emerald, fontWeight: '600' }}>W: {wins}</span>
-          <span style={{ color: tokens.textFaintest, margin: '0 8px' }}>•</span>
-          <span style={{ color: tokens.red, fontWeight: '600' }}>L: {losses}</span>
-        </div>
-        <div style={{ fontSize: '13px', color: tokens.textMuted }}>
-          Rate: {winRate}%
-        </div>
+        {collapsed ? (
+          <div style={{ fontSize: '11px', color: tokens.emerald, fontWeight: '600', textAlign: 'center' }}>
+            {wins}W
+          </div>
+        ) : (
+          <>
+            <div style={{ fontSize: '13px', whiteSpace: 'nowrap' }}>
+              <span style={{ color: tokens.emerald, fontWeight: '600' }}>W: {wins}</span>
+              <span style={{ color: tokens.textFaintest, margin: '0 8px' }}>•</span>
+              <span style={{ color: tokens.red, fontWeight: '600' }}>L: {losses}</span>
+            </div>
+            <div style={{ fontSize: '13px', color: tokens.textMuted, whiteSpace: 'nowrap' }}>
+              Rate: {winRate}%
+            </div>
+          </>
+        )}
       </div>
 
       {/* User */}
@@ -170,26 +270,29 @@ export default function DesktopSidebar({
         onClick={() => { setShowResearchMode(false); setScreen('profile'); }}
         style={{
           borderTop: `1px solid ${tokens.borderDivider}`,
-          paddingTop: '16px',
+          paddingTop: '12px',
           display: 'flex',
           alignItems: 'center',
           gap: '12px',
           cursor: 'pointer',
-          padding: '16px 10px 0',
+          padding: collapsed ? '12px 0 0' : '12px 10px 0',
+          justifyContent: collapsed ? 'center' : 'flex-start',
+          overflow: 'hidden',
         }}
       >
         <div style={{
-          width: '40px',
-          height: '40px',
+          width: collapsed ? '32px' : '40px',
+          height: collapsed ? '32px' : '40px',
           borderRadius: '50%',
           background: tokens.bgIcon,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          fontSize: '16px',
+          fontSize: collapsed ? '13px' : '16px',
           fontWeight: '600',
           color: tokens.teal,
           flexShrink: 0,
+          transition: 'width 0.2s ease, height 0.2s ease, font-size 0.2s ease',
         }}>
           {(user?.username || 'U')[0].toUpperCase()}
         </div>
@@ -200,6 +303,8 @@ export default function DesktopSidebar({
           overflow: 'hidden',
           textOverflow: 'ellipsis',
           whiteSpace: 'nowrap',
+          opacity: collapsed ? 0 : 1,
+          transition: 'opacity 0.15s ease',
         }}>
           {user?.username || 'Player'}
         </span>
