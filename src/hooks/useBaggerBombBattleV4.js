@@ -501,6 +501,13 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
   useEffect(() => {
     if (!battleId) return;
     const interval = setInterval(() => {
+      console.log('[LS-DEBUG] interval tick', {
+        battleStatusRef: battleStatusRef.current,
+        marketOpen: isMarketOpen(),
+        docHidden: document.hidden,
+        myScore: myTotalScoreRef.current,
+        oppScore: oppTotalScoreRef.current
+      });
       if (battleStatusRef.current !== 'active') return;
       if (!isMarketOpen()) return;
       if (document.hidden) return;
