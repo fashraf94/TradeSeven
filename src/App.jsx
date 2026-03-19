@@ -22507,17 +22507,24 @@ export default function PortfolioDuel() {
           onConfirm={() => {
             // Check training battle limit - MUST filter by current user
             const userTrainingBattles = battles.filter(b => {
-              // Must be a training battle
               if (!b.isTrainingBattle && !b.isTraining) return false;
 
-              // Check if battle is active or waiting
+              // Exclude completed/ended battles (state.status is the canonical field;
+              // top-level b.status is never updated on completion)
+              const stateStatus = b.state?.status;
+              if (stateStatus === 'completed' || stateStatus === 'ended') return false;
+              if (b.result) return false;
+
               const isActiveOrWaiting = b.status === 'waiting' || b.status === 'active' ||
-                                        b.state?.status === 'active' || b.state?.status === 'waiting';
+                                        stateStatus === 'active' || stateStatus === 'waiting';
               if (!isActiveOrWaiting) return false;
 
-              // Check if current user is the creator of this training battle
               return getUsername(b.creator) === user?.username;
             }, 'userTrainingBattles in classic training confirm');
+
+            const totalTraining = battles.filter(b => (b.isTrainingBattle || b.isTraining) && getUsername(b.creator) === user?.username).length;
+            const completedCount = totalTraining - userTrainingBattles.length;
+            console.log(`[TRAINING-LIMIT] Total training: ${totalTraining}, Active: ${userTrainingBattles.length}, Completed: ${completedCount}`);
 
             if (userTrainingBattles.length >= MAX_TRAINING_BATTLES) {
               alert(`You've reached the maximum of ${MAX_TRAINING_BATTLES} active training battles. Complete or delete a battle first.`);
@@ -22560,17 +22567,24 @@ export default function PortfolioDuel() {
           onConfirm={() => {
             // Check training battle limit - MUST filter by current user
             const userTrainingBattles = battles.filter(b => {
-              // Must be a training battle
               if (!b.isTrainingBattle && !b.isTraining) return false;
 
-              // Check if battle is active or waiting
+              // Exclude completed/ended battles (state.status is the canonical field;
+              // top-level b.status is never updated on completion)
+              const stateStatus = b.state?.status;
+              if (stateStatus === 'completed' || stateStatus === 'ended') return false;
+              if (b.result) return false;
+
               const isActiveOrWaiting = b.status === 'waiting' || b.status === 'active' ||
-                                        b.state?.status === 'active' || b.state?.status === 'waiting';
+                                        stateStatus === 'active' || stateStatus === 'waiting';
               if (!isActiveOrWaiting) return false;
 
-              // Check if current user is the creator of this training battle
               return getUsername(b.creator) === user?.username;
             }, 'userTrainingBattles in BaggerBomb training confirm');
+
+            const totalTraining = battles.filter(b => (b.isTrainingBattle || b.isTraining) && getUsername(b.creator) === user?.username).length;
+            const completedCount = totalTraining - userTrainingBattles.length;
+            console.log(`[TRAINING-LIMIT] Total training: ${totalTraining}, Active: ${userTrainingBattles.length}, Completed: ${completedCount}`);
 
             if (userTrainingBattles.length >= MAX_TRAINING_BATTLES) {
               alert(`You've reached the maximum of ${MAX_TRAINING_BATTLES} active training battles. Complete or delete a battle first.`);
