@@ -272,6 +272,21 @@ service cloud.firestore {
     }
 
     // ═══════════════════════════════════════════
+    // Index Intelligence & Stock Technical Scores
+    // Public read, server-only writes (Admin SDK)
+    // ═══════════════════════════════════════════
+
+    match /indexIntelligence/{docId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    match /stockTechnicalScores/{symbol} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    // ═══════════════════════════════════════════
     // Default deny everything else
     // ═══════════════════════════════════════════
     match /{document=**} {

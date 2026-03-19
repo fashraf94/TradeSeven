@@ -145,6 +145,14 @@
     {
       "path": "/api/fantasytimes/ingest-cleanup",
       "schedule": "0 8 * * 0"
+    },
+    {
+      "path": "/api/cron/compute-index-intelligence",
+      "schedule": "30 10 * * 1-5"
+    },
+    {
+      "path": "/api/cron/compute-index-intelligence",
+      "schedule": "30 11 * * 1-5"
     }
   ]
 }
