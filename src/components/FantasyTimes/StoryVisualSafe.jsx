@@ -12,7 +12,7 @@ const StatCard = React.lazy(() => import('./visuals/StatCard'));
 const EpsGauge = React.lazy(() => import('./visuals/EpsGauge'));
 const SectorHeatmap = React.lazy(() => import('./visuals/SectorHeatmap'));
 
-export const VISUAL_HEIGHTS = { micro: 80, compact: 120, expanded: 280 };
+export const VISUAL_HEIGHTS = { micro: 80, compact: 120, hero: 160, expanded: 280 };
 
 // ── ErrorBoundary ──────────────────────────────────────────────────
 class VisualErrorBoundary extends React.Component {

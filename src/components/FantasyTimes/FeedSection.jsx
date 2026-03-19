@@ -93,7 +93,7 @@ export default function FeedSection({
           >
             <div style={{
               padding: '4px 0',
-              ...(useGrid ? { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' } : {}),
+              ...(useGrid ? { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' } : {}),
             }}>
               {visibleItems.map((item, idx) => (
                 <motion.div
@@ -113,18 +113,14 @@ export default function FeedSection({
                       />
                     </div>
                   ) : (
-                    <div style={idx === 0 ? {
-                      borderLeft: `3px solid ${accentColor}`,
-                      paddingLeft: 12,
-                      marginBottom: 16,
-                    } : {
-                      marginBottom: 8,
-                    }}>
+                    <div style={{ marginBottom: idx === 0 ? 16 : 8 }}>
                       <StoryCard
                         story={item.story}
                         onClick={() => onStoryPress(item.story)}
                         activeBattleTickers={activeBattleTickers}
                         isMobile={isMobile}
+                        isHero={idx === 0 && section.id !== 'movers_spotlights'}
+                        isMover={section.id === 'movers_spotlights'}
                       />
                     </div>
                   )}

@@ -65,6 +65,7 @@ export default function StoryThread({
         onClick={() => onStoryPress(lead)}
         activeBattleTickers={activeBattleTickers}
         isMobile={isMobile}
+        isHero
       />
 
       {/* Thread indicator */}

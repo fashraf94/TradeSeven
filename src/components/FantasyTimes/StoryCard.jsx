@@ -1,33 +1,13 @@
 // src/components/FantasyTimes/StoryCard.jsx
-// Story card for the FantasyTimes feed — left border accent, reporter identity, CTA.
+// Story card for the FantasyTimes feed — supports hero, standard, and mover variants.
 
 import React from 'react';
 import { motion } from 'framer-motion';
-import { Zap, TrendingUp, Globe, BarChart3, Compass } from 'lucide-react';
-import { REPORTER_PROFILES } from '../../prompts/fantasyTimesPrompts';
+import { REPORTER_COLORS, SENTIMENT_COLORS, FEED_TOKENS, getReporterGlow, getSentimentBorder } from '../../constants/reporterTheme';
+import ReporterAvatar from './ReporterAvatar';
+import StoryVisualSafe from './StoryVisualSafe';
+import MoverSparkline from './visuals/MoverSparkline';
 import { findStock } from '../../data/assets';
-
-const ICON_MAP = {
-  Zap,
-  TrendingUp,
-  Globe,
-  BarChart3,
-  Compass,
-};
-
-const SENTIMENT_COLORS = {
-  bullish: '#00ff88',
-  bearish: '#ff3366',
-  neutral: '#8b949e',
-  mixed: '#f59e0b',
-};
-
-const SENTIMENT_GRADIENTS = {
-  bullish: 'linear-gradient(135deg, rgba(16,185,129,0.15), transparent)',
-  bearish: 'linear-gradient(135deg, rgba(239,68,68,0.15), transparent)',
-  mixed: 'linear-gradient(135deg, rgba(245,158,11,0.12), transparent)',
-  neutral: 'linear-gradient(135deg, rgba(100,116,139,0.10), transparent)',
-};
 
 /**
  * Format "time ago" from a publishedAt timestamp.
@@ -72,29 +52,57 @@ function getCTALabel(story, activeBattleTickers = []) {
   }
 }
 
-export default function StoryCard({ story, onClick, activeBattleTickers = [], isMobile }) {
-  const profile = REPORTER_PROFILES[story.reporter] || REPORTER_PROFILES.kai;
-  const IconComponent = ICON_MAP[profile.icon] || Zap;
-  const sentimentColor = SENTIMENT_COLORS[story.sentiment] || SENTIMENT_COLORS.neutral;
+// Variant-specific style tokens
+const VARIANT_STYLES = {
+  hero: {
+    padding: FEED_TOKENS.paddingHero,
+    boxShadow: `${FEED_TOKENS.obsidianShadow}, ${FEED_TOKENS.heroInnerGlow}`,
+    headlineFontSize: 18,
+    headlineFontWeight: 700,
+    bodyFontSize: 13,
+    visualSize: 'hero',
+    bodyMarginTop: 10,
+  },
+  standard: {
+    padding: FEED_TOKENS.paddingStandard,
+    boxShadow: FEED_TOKENS.obsidianShadow,
+    headlineFontSize: 15,
+    headlineFontWeight: 600,
+    bodyFontSize: 12,
+    visualSize: 'compact',
+    bodyMarginTop: 8,
+  },
+  mover: {
+    padding: 14,
+    boxShadow: FEED_TOKENS.obsidianShadow,
+    headlineFontSize: 14,
+    headlineFontWeight: 600,
+    bodyFontSize: 12,
+    visualSize: null,
+    bodyMarginTop: 6,
+  },
+};
+
+export default function StoryCard({
+  story, onClick, activeBattleTickers = [], isMobile,
+  isHero = false, isMover = false,
+}) {
+  const variant = isMover ? 'mover' : isHero ? 'hero' : 'standard';
+  const styles = VARIANT_STYLES[variant];
+  const reporter = REPORTER_COLORS[story.reporter];
+  const reporterColor = reporter ? reporter.hex : '#5eead4';
 
   const primaryTicker = story.primaryTicker || (story.tickers && story.tickers[0]);
   const stockInfo = primaryTicker ? findStock(primaryTicker) : null;
   const companyName = stockInfo?.name || null;
 
-  // Price change from dataSnapshot
   const priceChange = story.dataSnapshot?.percentChange
     || story.dataSnapshot?.avgIndexChange
     || story.dataSnapshot?.spy?.changePercent
     || null;
+  const isPositive = priceChange !== null ? priceChange >= 0 : true;
 
-  const ctaLabel = getCTALabel(story, activeBattleTickers);
-
-  // Check if story ticker is in an active battle
-  const storyTickers = (story.tickers || []).map((t) => t.toUpperCase());
-  const battleSet = new Set((activeBattleTickers || []).map((t) => t.toUpperCase()));
-  const inBattle = storyTickers.some((t) => battleSet.has(t));
-
-  const sentimentGradient = SENTIMENT_GRADIENTS[story.sentiment] || SENTIMENT_GRADIENTS.neutral;
+  const hasVisual = story.visualType && story.visualType !== 'none';
 
   return (
     <motion.div
@@ -103,190 +111,195 @@ export default function StoryCard({ story, onClick, activeBattleTickers = [], is
       transition={{ duration: 0.3, type: 'spring', bounce: 0.3 }}
       onClick={onClick}
       style={{
-        backgroundColor: '#0d1117',
-        border: '1px solid #21262d',
-        borderLeft: `3px solid ${profile.color}`,
-        borderRadius: '8px',
-        marginBottom: '8px',
+        backgroundColor: FEED_TOKENS.bgCard,
+        border: `1px solid ${FEED_TOKENS.bgCardBorder}`,
+        borderLeft: getSentimentBorder(story.sentiment),
+        borderRadius: FEED_TOKENS.cardRadius,
+        boxShadow: styles.boxShadow,
+        backgroundImage: getReporterGlow(story.reporter),
+        padding: styles.padding,
         cursor: 'pointer',
-        transition: 'background-color 0.15s',
         overflow: 'hidden',
       }}
-      whileHover={{ backgroundColor: '#161b22' }}
+      whileHover={{ backgroundColor: '#1a1d27' }}
       whileTap={{ scale: 0.99 }}
     >
-      {/* Visual Header */}
-      {primaryTicker ? (
+      {variant === 'mover' ? (
+        <MoverLayout
+          story={story}
+          styles={styles}
+          primaryTicker={primaryTicker}
+          companyName={companyName}
+          priceChange={priceChange}
+          isPositive={isPositive}
+          reporterColor={reporterColor}
+        />
+      ) : (
+        <EditorialLayout
+          story={story}
+          styles={styles}
+          variant={variant}
+          reporterColor={reporterColor}
+          hasVisual={hasVisual}
+          activeBattleTickers={activeBattleTickers}
+        />
+      )}
+    </motion.div>
+  );
+}
+
+// Hero + Standard card layout
+function EditorialLayout({ story, styles, variant, reporterColor, hasVisual, activeBattleTickers }) {
+  const reporter = REPORTER_COLORS[story.reporter];
+  const reporterName = reporter ? reporter.name : 'Reporter';
+  const beat = reporter ? reporter.beat : '';
+
+  return (
+    <>
+      {/* Header row: avatar + reporter name + beat + timestamp */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <ReporterAvatar reporter={story.reporter} size={24} />
+        <span style={{ color: '#e2e8f0', fontSize: 12, fontWeight: 600 }}>
+          {reporterName}
+        </span>
+        <span style={{ color: '#94a3b8', fontSize: 12 }}>·</span>
+        <span style={{ color: '#94a3b8', fontSize: 12 }}>{beat}</span>
+        <span style={{ color: '#94a3b8', fontSize: 12, marginLeft: 'auto' }}>
+          {timeAgo(story.publishedAt)}
+        </span>
+      </div>
+
+      {/* Headline */}
+      <div style={{
+        color: '#e2e8f0',
+        fontSize: styles.headlineFontSize,
+        fontWeight: styles.headlineFontWeight,
+        lineHeight: 1.3,
+        marginTop: 8,
+      }}>
+        {story.headline}
+      </div>
+
+      {/* Visual container */}
+      {styles.visualSize && hasVisual && (
         <div style={{
-          background: sentimentGradient,
-          padding: '12px 16px',
+          marginTop: FEED_TOKENS.gapStandard,
+          borderRadius: FEED_TOKENS.innerRadius,
+          overflow: 'hidden',
+        }}>
+          <StoryVisualSafe
+            visualType={story.visualType}
+            visualConfig={story.visualConfig}
+            size={styles.visualSize}
+          />
+        </div>
+      )}
+
+      {/* Visual fallback gradient for hero when no chart data */}
+      {styles.visualSize && !hasVisual && variant === 'hero' && (
+        <div style={{
+          marginTop: FEED_TOKENS.gapStandard,
+          height: 160,
+          background: `linear-gradient(135deg, ${reporterColor}15, transparent)`,
+          borderRadius: FEED_TOKENS.innerRadius,
+        }} />
+      )}
+
+      {/* Body preview */}
+      <div style={{
+        color: '#94a3b8',
+        fontSize: styles.bodyFontSize,
+        fontWeight: 400,
+        lineHeight: 1.5,
+        marginTop: styles.bodyMarginTop,
+        display: '-webkit-box',
+        WebkitLineClamp: 2,
+        WebkitBoxOrient: 'vertical',
+        overflow: 'hidden',
+      }}>
+        {story.subheadline}
+      </div>
+
+      {/* CTA — ghost text link */}
+      <div style={{ marginTop: 12, textAlign: 'right' }}>
+        <span style={{
+          color: reporterColor,
+          fontSize: 12,
+          fontWeight: 600,
+          cursor: 'pointer',
+        }}>
+          Read Full Story →
+        </span>
+      </div>
+    </>
+  );
+}
+
+// Mover / ticker card layout
+function MoverLayout({ story, styles, primaryTicker, companyName, priceChange, isPositive, reporterColor }) {
+  const sentimentColor = isPositive ? SENTIMENT_COLORS.bullish : SENTIMENT_COLORS.bearish;
+  const changeText = priceChange !== null
+    ? `${isPositive ? '+' : ''}${Number(priceChange).toFixed(2)}%`
+    : null;
+
+  return (
+    <>
+      {/* Ticker row: badge + sparkline */}
+      {primaryTicker && (
+        <div style={{
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
         }}>
-          <div>
-            <div style={{
-              color: '#e6edf3',
-              fontSize: '24px',
-              fontWeight: 700,
-              lineHeight: 1.2,
-              letterSpacing: '0.5px',
-            }}>
-              {primaryTicker}
-            </div>
-            {companyName && (
-              <div style={{
-                color: '#6e7681',
-                fontSize: '12px',
-                marginTop: '2px',
-              }}>
-                {companyName}
-              </div>
-            )}
-          </div>
-          {priceChange !== null && (
-            <span style={{
-              color: priceChange >= 0 ? '#00ff88' : '#ff3366',
-              fontSize: '14px',
-              fontWeight: 700,
-              whiteSpace: 'nowrap',
-              padding: '4px 8px',
-              borderRadius: '6px',
-              backgroundColor: priceChange >= 0 ? 'rgba(0,255,136,0.1)' : 'rgba(255,51,102,0.1)',
-            }}>
-              {priceChange >= 0 ? '+' : ''}{Number(priceChange).toFixed(2)}%
-            </span>
-          )}
-        </div>
-      ) : (
-        <div style={{
-          background: `linear-gradient(135deg, ${profile.color}26, transparent)`,
-          padding: '12px 16px',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-        }}>
-          <div style={{
-            width: 36,
-            height: 36,
-            borderRadius: '50%',
-            backgroundColor: `${profile.color}33`,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
+          <span style={{
+            fontSize: 13,
+            fontWeight: 700,
+            color: sentimentColor,
           }}>
-            <IconComponent size={20} color={profile.color} />
-          </div>
+            {primaryTicker}{changeText ? ` (${changeText})` : ''}
+          </span>
+          <MoverSparkline isPositive={isPositive} width={60} height={24} />
         </div>
       )}
 
-      <div style={{ padding: isMobile ? '12px' : '14px 16px' }}>
-        {/* Row 1: Reporter identity + time */}
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '8px',
-          marginBottom: '6px',
-        }}>
-          <div style={{
-            width: 24,
-            height: 24,
-            borderRadius: '50%',
-            backgroundColor: `${profile.color}22`,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            flexShrink: 0,
-          }}>
-            <IconComponent size={13} color={profile.color} />
-          </div>
-          <span style={{ color: profile.color, fontSize: '12px', fontWeight: 600 }}>
-            {profile.name}
-          </span>
-          <span style={{ color: '#6e7681', fontSize: '11px' }}>·</span>
-          <span style={{ color: '#6e7681', fontSize: '11px' }}>{profile.beat}</span>
-          <span style={{ color: '#6e7681', fontSize: '11px', marginLeft: 'auto' }}>
-            {timeAgo(story.publishedAt)}
-          </span>
-        </div>
-
-        {/* Row 2: Headline */}
-        <div style={{
-          color: '#e6edf3',
-          fontSize: '14px',
-          fontWeight: 600,
-          lineHeight: 1.3,
-          marginBottom: '4px',
-        }}>
-          {story.headline}
-        </div>
-
-        {/* Row 3: Subheadline */}
-        <div style={{
-          color: '#8b949e',
-          fontSize: '13px',
-          lineHeight: 1.4,
-          marginBottom: '8px',
-          display: '-webkit-box',
-          WebkitLineClamp: 2,
-          WebkitBoxOrient: 'vertical',
-          overflow: 'hidden',
-        }}>
-          {story.subheadline}
-        </div>
-
-        {/* Row 4: CTA + sentiment + battle badge */}
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '8px',
-          flexWrap: 'wrap',
-        }}>
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              // CTA action handled by parent
-            }}
-            style={{
-              padding: '4px 10px',
-              fontSize: '11px',
-              fontWeight: 600,
-              borderRadius: '4px',
-              border: `1px solid ${profile.color}44`,
-              backgroundColor: `${profile.color}15`,
-              color: profile.color,
-              cursor: 'pointer',
-              transition: 'background-color 0.15s',
-            }}
-          >
-            {ctaLabel}
-          </button>
-          <span style={{
-            fontSize: '10px',
-            fontWeight: 600,
-            padding: '2px 6px',
-            borderRadius: '3px',
-            backgroundColor: `${sentimentColor}18`,
-            color: sentimentColor,
-            textTransform: 'uppercase',
-          }}>
-            {story.sentiment}
-          </span>
-          {inBattle && (
-            <span style={{
-              fontSize: '10px',
-              fontWeight: 700,
-              padding: '2px 6px',
-              borderRadius: '3px',
-              backgroundColor: '#00d9ff18',
-              color: '#00d9ff',
-              textTransform: 'uppercase',
-            }}>
-              IN BATTLE
-            </span>
-          )}
-        </div>
+      {/* Headline */}
+      <div style={{
+        color: '#e2e8f0',
+        fontSize: styles.headlineFontSize,
+        fontWeight: styles.headlineFontWeight,
+        lineHeight: 1.3,
+        marginTop: 8,
+      }}>
+        {story.headline}
       </div>
-    </motion.div>
+
+      {/* Body preview */}
+      <div style={{
+        color: '#94a3b8',
+        fontSize: styles.bodyFontSize,
+        fontWeight: 400,
+        lineHeight: 1.4,
+        marginTop: styles.bodyMarginTop,
+        display: '-webkit-box',
+        WebkitLineClamp: 2,
+        WebkitBoxOrient: 'vertical',
+        overflow: 'hidden',
+      }}>
+        {story.subheadline}
+      </div>
+
+      {/* Reporter row */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 6,
+        marginTop: 10,
+      }}>
+        <ReporterAvatar reporter={story.reporter} size={18} />
+        <span style={{ color: '#94a3b8', fontSize: 11, fontWeight: 500 }}>
+          {REPORTER_COLORS[story.reporter]?.name || 'Reporter'}
+        </span>
+      </div>
+    </>
   );
 }
