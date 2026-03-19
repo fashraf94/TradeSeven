@@ -4,7 +4,7 @@
 import React, { useState, useCallback, useMemo, useRef, useEffect, lazy, Suspense } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Zap, TrendingUp, Globe, BarChart3, Compass, ArrowLeft } from 'lucide-react';
-import { REPORTER_PROFILES } from '../../prompts/fantasyTimesPrompts';
+import { REPORTER_COLORS } from '../../constants/reporterTheme';
 import { useFantasyTimes } from '../../hooks/useFantasyTimes';
 import { groupStoriesBySections } from '../../services/fantasyTimesClient';
 import { findStock } from '../../data/assets';
@@ -17,11 +17,11 @@ const ICON_MAP = { Zap, TrendingUp, Globe, BarChart3, Compass };
 
 const REPORTERS = [
   { key: 'all', label: 'All', color: '#00d9ff', icon: null },
-  { key: 'kai', label: 'Kai', ...REPORTER_PROFILES.kai },
-  { key: 'alex', label: 'Alex', ...REPORTER_PROFILES.alex },
-  { key: 'neta', label: 'Neta', ...REPORTER_PROFILES.neta },
-  { key: 'doug', label: 'Doug', ...REPORTER_PROFILES.doug },
-  { key: 'kim', label: 'Kim', ...REPORTER_PROFILES.kim },
+  { key: 'kai', label: 'Kai', color: REPORTER_COLORS.kai.hex },
+  { key: 'alex', label: 'Alex', color: REPORTER_COLORS.alex.hex },
+  { key: 'neta', label: 'Neta', color: REPORTER_COLORS.neta.hex },
+  { key: 'doug', label: 'Doug', color: REPORTER_COLORS.doug.hex },
+  { key: 'kim', label: 'Kim', color: REPORTER_COLORS.kim.hex },
 ];
 
 const PAGE_SIZE = 10;
