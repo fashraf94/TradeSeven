@@ -11692,7 +11692,8 @@ export default function PortfolioDuel() {
 
   // User state from context (single source of truth)
   const { user, login, register, loginWithGoogle, logout, updateUser, loading: userLoading, authLoading, forgotPassword } = useUser();
-  const { isMobile } = useIsMobile();
+  const { isMobile: rawIsMobile, isTablet } = useIsMobile();
+  const isMobile = rawIsMobile || isTablet;  // Treat <=768px as mobile for layout forks
   const isPageVisible = usePageVisibility();
 
   const [screen, setScreen] = useState('home');
@@ -20621,6 +20622,17 @@ export default function PortfolioDuel() {
   // ============================================
   return (
     <>
+      {/* Temporary diagnostic banner for mobile detection verification */}
+      {process.env.NODE_ENV === 'development' && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0,
+          background: isMobile ? 'green' : 'red',
+          color: 'white', textAlign: 'center',
+          fontSize: '10px', padding: '2px', zIndex: 99999
+        }}>
+          {window.innerWidth}px | {isMobile ? 'MOBILE' : 'DESKTOP'} | vh:{window.innerHeight}
+        </div>
+      )}
       {/* EarningsGame - ALWAYS MOUNTED to prevent state loss from Firestore battle updates */}
       {/* Uses CSS display toggle instead of conditional rendering */}
       <div style={{
