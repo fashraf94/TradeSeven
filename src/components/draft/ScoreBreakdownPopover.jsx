@@ -190,6 +190,26 @@ const ScoreBreakdownPopover = ({ asset, events: battleEvents = [], onClose, entr
             </div>
           )}
 
+          {/* Today's Baseline (from cron dailyLevels) */}
+          {asset?.dailyLevels?.baseline > 0 && (
+            <div style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              padding: '6px 14px',
+              marginBottom: '8px',
+              borderRadius: '6px',
+              backgroundColor: 'rgba(245, 158, 11, 0.06)',
+              border: '1px solid rgba(245, 158, 11, 0.15)',
+              fontSize: '12px',
+            }}>
+              <span style={{ color: '#9ca3af' }}>Today&apos;s Baseline</span>
+              <span style={{ color: '#f59e0b', fontWeight: 600 }}>
+                ${asset.dailyLevels.baseline.toFixed(2)}
+              </span>
+            </div>
+          )}
+
           {/* Score Rows */}
           <div style={{
             display: 'flex',
