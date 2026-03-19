@@ -384,7 +384,7 @@ export default function StoryDetail({ story, onClose, isMobile, isDesktop }) {
       minHeight: '100vh',
       backgroundColor: '#0a0e14',
       color: '#e6edf3',
-      maxWidth: isDesktop ? '780px' : '100%',
+      maxWidth: isDesktop ? '960px' : '100%',
       margin: isDesktop ? '0 auto' : 0,
     }}>
       {/* ── Top bar with back arrow ── */}

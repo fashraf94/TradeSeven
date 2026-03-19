@@ -42,7 +42,7 @@ export default function FeedSection({
   const useGrid = isDesktop && section.id === 'movers_spotlights';
 
   return (
-    <div style={{ marginTop: 24, marginBottom: 12 }}>
+    <div style={{ marginTop: 20, marginBottom: 8 }}>
       {/* Section header */}
       <button
         onClick={() => setExpanded((prev) => !prev)}
@@ -155,7 +155,7 @@ export default function FeedSection({
             style={{ overflow: 'hidden' }}
           >
             <div style={{
-              padding: '8px 0 0',
+              padding: '12px 0 0',
               ...(useGrid
                 ? { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }
                 : section.id === 'movers_spotlights'
@@ -171,7 +171,7 @@ export default function FeedSection({
                   style={useGrid && item.type === 'cluster' ? { gridColumn: '1 / -1' } : undefined}
                 >
                   {item.type === 'cluster' ? (
-                    <div style={{ marginBottom: useGrid ? 0 : (idx === 0 ? 16 : 8) }}>
+                    <div style={{ marginBottom: useGrid ? 0 : 12 }}>
                       <StoryThread
                         cluster={item}
                         onStoryPress={onStoryPress}
@@ -180,7 +180,7 @@ export default function FeedSection({
                       />
                     </div>
                   ) : (
-                    <div style={{ marginBottom: useGrid ? 0 : (idx === 0 ? 16 : 8) }}>
+                    <div style={{ marginBottom: useGrid ? 0 : 12 }}>
                       <StoryCard
                         story={item.story}
                         onClick={() => onStoryPress(item.story)}
@@ -205,6 +205,7 @@ export default function FeedSection({
                     display: 'block',
                     width: '100%',
                     padding: '8px 16px',
+                    marginTop: 4,
                     background: 'none',
                     border: 'none',
                     color: reporterColor,

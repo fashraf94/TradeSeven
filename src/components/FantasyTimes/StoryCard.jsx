@@ -80,6 +80,7 @@ const VARIANT_STYLES = {
     bodyFontSize: 12,
     visualSize: null,
     bodyMarginTop: 6,
+    minHeight: 160,
   },
 };
 
@@ -120,6 +121,9 @@ export default function StoryCard({
         padding: styles.padding,
         cursor: 'pointer',
         overflow: 'hidden',
+        minHeight: styles.minHeight || 'auto',
+        display: styles.minHeight ? 'flex' : undefined,
+        flexDirection: styles.minHeight ? 'column' : undefined,
       }}
       whileHover={{ backgroundColor: '#1a1d27' }}
       whileTap={{ scale: 0.99 }}
@@ -284,16 +288,18 @@ function MoverLayout({ story, styles, primaryTicker, companyName, priceChange, i
         WebkitLineClamp: 2,
         WebkitBoxOrient: 'vertical',
         overflow: 'hidden',
+        flex: 1,
       }}>
         {story.subheadline}
       </div>
 
-      {/* Reporter row */}
+      {/* Reporter row — pinned to bottom via marginTop auto */}
       <div style={{
         display: 'flex',
         alignItems: 'center',
         gap: 6,
-        marginTop: 10,
+        marginTop: 'auto',
+        paddingTop: 10,
       }}>
         <ReporterAvatar reporter={story.reporter} size={18} />
         <span style={{ color: '#94a3b8', fontSize: 11, fontWeight: 500 }}>

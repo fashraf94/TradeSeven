@@ -164,7 +164,7 @@ export default function FantasyTimesFeed({
       minHeight: '100vh',
       backgroundColor: '#0a0e14',
       color: '#e6edf3',
-      maxWidth: isDesktop ? '780px' : '100%',
+      maxWidth: isDesktop ? '960px' : '100%',
       margin: isDesktop ? '0 auto' : 0,
     }}>
       {/* Header */}
@@ -463,13 +463,14 @@ export default function FantasyTimesFeed({
           <>
             <AnimatePresence>
               {forYouVisible.map((story) => (
-                <StoryCard
-                  key={story.id}
-                  story={story}
-                  onClick={() => handleStoryClick(story)}
-                  activeBattleTickers={activeBattleTickers}
-                  isMobile={isMobile}
-                />
+                <div key={story.id} style={{ marginBottom: 12 }}>
+                  <StoryCard
+                    story={story}
+                    onClick={() => handleStoryClick(story)}
+                    activeBattleTickers={activeBattleTickers}
+                    isMobile={isMobile}
+                  />
+                </div>
               ))}
             </AnimatePresence>
             {forYouHasMore && <div ref={sentinelRef} style={{ height: 1 }} />}
