@@ -11768,6 +11768,7 @@ export default function PortfolioDuel() {
 
   // Sidebar navigation state
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(true); // desktop sidebar collapsed by default
 
   // Game Mode state - Phase 1: Foundation
   // 'classic' = Builder 1v1 (existing gameplay)
@@ -19818,6 +19819,7 @@ export default function PortfolioDuel() {
             setTrainingConfirmType={setTrainingConfirmType}
             activeDraftBanner={activeDraftBanner}
             setActiveDraftBanner={setActiveDraftBanner}
+            sidebarCollapsed={sidebarCollapsed}
           />
         </div>
       </ErrorBoundary>
@@ -20449,7 +20451,7 @@ export default function PortfolioDuel() {
   // BATTLE HISTORY SCREEN - Extracted to BattleHistoryScreen component
   if (screen === 'battleHistory') {
     return (
-      <div style={{ marginLeft: isDesktop ? '220px' : 0 }}>
+      <div style={{ marginLeft: isDesktop ? (sidebarCollapsed ? '64px' : '220px') : 0, transition: 'margin-left 0.2s ease' }}>
       <ErrorBoundary name="Battle History" onNavigateDashboard={() => setScreen('dashboard')}>
       <BattleHistoryScreen
         containerStyle={containerStyle}
@@ -20489,7 +20491,7 @@ export default function PortfolioDuel() {
   // PROFILE SCREEN - REDESIGNED
   if (screen === 'profile') {
     return (
-      <div style={{ marginLeft: isDesktop ? '220px' : 0 }}>
+      <div style={{ marginLeft: isDesktop ? (sidebarCollapsed ? '64px' : '220px') : 0, transition: 'margin-left 0.2s ease' }}>
       <ErrorBoundary name="Profile" onNavigateDashboard={() => setScreen('dashboard')}>
       <ProfileScreen
         user={user}
@@ -20533,7 +20535,7 @@ export default function PortfolioDuel() {
   // FANTASYTIMES STORY DETAIL (full page)
   if (screen === 'storyDetail' && selectedStory) {
     return (
-      <div style={{ marginLeft: isDesktop ? '220px' : 0 }}>
+      <div style={{ marginLeft: isDesktop ? (sidebarCollapsed ? '64px' : '220px') : 0, transition: 'margin-left 0.2s ease' }}>
       <ErrorBoundary name="StoryDetail" onNavigateDashboard={() => setScreen('dashboard')}>
       <Suspense fallback={<div style={{ minHeight: '100vh', background: '#0a0e14' }} />}>
         <StoryDetail
@@ -20568,7 +20570,7 @@ export default function PortfolioDuel() {
     } catch { /* ignore */ }
 
     return (
-      <div style={{ marginLeft: isDesktop ? '220px' : 0 }}>
+      <div style={{ marginLeft: isDesktop ? (sidebarCollapsed ? '64px' : '220px') : 0, transition: 'margin-left 0.2s ease' }}>
       <ErrorBoundary name="FantasyTimes" onNavigateDashboard={() => setScreen('dashboard')}>
       <Suspense fallback={
         <div style={{
@@ -20600,7 +20602,7 @@ export default function PortfolioDuel() {
   // AGENT DASHBOARD
   if (screen === 'agent') {
     return (
-      <div style={{ marginLeft: isDesktop ? '220px' : 0 }}>
+      <div style={{ marginLeft: isDesktop ? (sidebarCollapsed ? '64px' : '220px') : 0, transition: 'margin-left 0.2s ease' }}>
       <ErrorBoundary name="Agent Dashboard" onNavigateDashboard={() => setScreen('dashboard')}>
         <AgentDashboard
           user={user}
@@ -20666,6 +20668,8 @@ export default function PortfolioDuel() {
           showResearchMode={showResearchMode}
           user={user}
           unreadCount={unreadCount}
+          collapsed={sidebarCollapsed}
+          onToggleCollapse={() => setSidebarCollapsed(prev => !prev)}
         />
       )}
 

@@ -58,6 +58,7 @@ export default function DashboardDesktop({
   setTrainingConfirmType,
   activeDraftBanner,
   setActiveDraftBanner,
+  sidebarCollapsed,
 }) {
   const { tokens } = useTheme();
   const marketOpen = isMarketOpen();
@@ -160,10 +161,11 @@ export default function DashboardDesktop({
 
   return (
     <div style={{
-      marginLeft: '220px',
+      marginLeft: sidebarCollapsed ? '64px' : '220px',
       display: 'flex',
       justifyContent: 'center',
-      width: 'calc(100% - 220px)',
+      width: sidebarCollapsed ? 'calc(100% - 64px)' : 'calc(100% - 220px)',
+      transition: 'margin-left 0.2s ease, width 0.2s ease',
       minHeight: '100vh',
       background: '#111318',
       position: 'relative',
