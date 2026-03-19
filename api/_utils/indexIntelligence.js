@@ -134,6 +134,9 @@ export function computeBreadthQuality(spyChange, rspChange) {
  * @returns {{ tnx: number, tnxChange: number, regime: string, detail: string }}
  */
 export function classifyYieldRegime(tnxClose, tnxPrevClose) {
+  // EODHD returns TNX as a price-like number (e.g. 42.59); divide by 10 to get actual yield %
+  tnxClose = tnxClose / 10;
+  tnxPrevClose = tnxPrevClose / 10;
   const tnxChange = Number((tnxClose - tnxPrevClose).toFixed(2));
   const direction = tnxChange > 0 ? `+${tnxChange}bps` : `${tnxChange}bps`;
   let regime, detail;
