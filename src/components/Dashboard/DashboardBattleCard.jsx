@@ -7,6 +7,7 @@ import { motion } from 'framer-motion';
 import { calculate1v1PreviewData, getRemainingMs, buildDraftStandings } from './ClashCard';
 import AnimatedScore from '../shared/AnimatedScore';
 import TapGlint from '../shared/TapGlint';
+import { useBaggerBombCardScore } from '../../hooks/useBaggerBombCardScore';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -255,6 +256,9 @@ export default function DashboardBattleCard({
 
   const isEnded = remainingMs <= 0;
 
+  // Client-side score computation (replaces dependency on liveScore from Firebase)
+  const { myScore: cardMyScore, oppScore: cardOppScore, isLoading: cardScoreLoading } = useBaggerBombCardScore(battle, user);
+
   // ─── Score data extraction ────────────────────────────────────────────────
   let content;
 
@@ -292,24 +296,25 @@ export default function DashboardBattleCard({
         });
       }
 
-      // V3/V4: prefer liveScore from preview when available.
-      // Fall back to banked daily scores + closed trades only when liveScore is missing.
+      // V3/V4: prefer client-side computed scores from useBaggerBombCardScore.
+      // Fall back to liveScore (Firebase) while hook is loading, then banked scores as last resort.
       if (preview.isV3) {
-        const isCreator = battle.creator?.username === user?.username;
-        const myRole = isCreator ? 'creator' : 'opponent';
-        const theirRole = isCreator ? 'opponent' : 'creator';
-        const bankedMy = extractSnapshotScore(battle, myRole);
-        const bankedTheir = extractSnapshotScore(battle, theirRole);
+        if (!cardScoreLoading) {
+          // Hook has finished — use its computed scores
+          myScore = cardMyScore;
+          theirScore = cardOppScore;
+        } else {
+          // Hook still loading — fall back to liveScore from preview, then banked scores
+          const isCreator = battle.creator?.username === user?.username;
+          const myRole = isCreator ? 'creator' : 'opponent';
+          const theirRole = isCreator ? 'opponent' : 'creator';
+          const bankedMy = extractSnapshotScore(battle, myRole);
+          const bankedTheir = extractSnapshotScore(battle, theirRole);
 
-        // Use liveScore (from preview) if available, otherwise banked scores
-        if (myScore === 0 && theirScore === 0 && (bankedMy !== 0 || bankedTheir !== 0)) {
-          console.log('[LS-DIAG] fell through to extractSnapshotScore', battle?.id, {
-            bankedMy, bankedTheir,
-            originalMyScore: preview.myGain,
-            originalTheirScore: preview.theirGain,
-          });
-          myScore = bankedMy;
-          theirScore = bankedTheir;
+          if (myScore === 0 && theirScore === 0 && (bankedMy !== 0 || bankedTheir !== 0)) {
+            myScore = bankedMy;
+            theirScore = bankedTheir;
+          }
         }
       }
     } else if (isTraining) {
