@@ -106,7 +106,9 @@ function flattenPortfolio(portfolio) {
   return flat;
 }
 
-// Fetch stock prices from EODHD API
+// Fetch stock + crypto prices from EODHD API
+// Stocks need .US suffix, crypto needs -USD.CC suffix.
+// Pattern from pre-market-warmup.js and api/crypto/prices.js.
 async function fetchStockPrices(symbols) {
   const apiKey = process.env.EODHD_API_KEY;
   if (!apiKey) {
@@ -114,25 +116,58 @@ async function fetchStockPrices(symbols) {
     return {};
   }
 
+  // Separate stocks and crypto, format with exchange suffixes
+  const stockSymbols = symbols.filter(s => !isCrypto(s));
+  const cryptoSymbols = symbols.filter(s => isCrypto(s));
+
+  // Format for EODHD: AAPL → AAPL.US, BRK.B → BRK-B.US, BTC → BTC-USD.CC
+  const formattedStocks = stockSymbols.map(s => `${s.replace(/\./g, '-')}.US`);
+  const formattedCrypto = cryptoSymbols.map(s => `${s.toUpperCase()}-USD.CC`);
+  const allFormatted = [...formattedStocks, ...formattedCrypto];
+
+  logInfo(`Symbol breakdown: ${stockSymbols.length} stocks, ${cryptoSymbols.length} crypto`);
+
   const prices = {};
-  try {
-    const symbolList = symbols.join(',');
-    const url = `https://eodhd.com/api/real-time/${symbolList}?api_token=${apiKey}&fmt=json`;
-    const response = await fetch(url);
-    if (!response.ok) throw new Error(`EODHD API error: ${response.status}`);
+  const BATCH_SIZE = 20;
 
-    const data = await response.json();
-    const priceArray = Array.isArray(data) ? data : [data];
+  for (let i = 0; i < allFormatted.length; i += BATCH_SIZE) {
+    const batch = allFormatted.slice(i, i + BATCH_SIZE);
+    const symbolList = batch.join(',');
 
-    for (const item of priceArray) {
-      if (item.code && item.close != null) {
-        prices[item.code.toUpperCase()] = item.close;
+    try {
+      const url = `https://eodhd.com/api/real-time/${symbolList}?api_token=${apiKey}&fmt=json`;
+      const response = await fetch(url);
+      if (!response.ok) {
+        logWarn(`EODHD batch fetch failed: ${response.status} (batch ${Math.floor(i / BATCH_SIZE) + 1})`);
+        continue;
       }
+
+      const data = await response.json();
+      const priceArray = Array.isArray(data) ? data : [data];
+
+      for (const item of priceArray) {
+        if (!item || !item.code || item.close == null) continue;
+        // Strip exchange suffix to get clean symbol for lookup
+        // "AAPL.US" → "AAPL", "BTC-USD.CC" → "BTC"
+        let cleanSymbol;
+        if (item.code.endsWith('.CC')) {
+          cleanSymbol = item.code.split('-')[0]; // BTC-USD.CC → BTC
+        } else {
+          cleanSymbol = item.code.replace(/\.US$/i, ''); // AAPL.US → AAPL
+        }
+        prices[cleanSymbol.toUpperCase()] = item.close;
+      }
+    } catch (error) {
+      logError(`Batch fetch error (batch ${Math.floor(i / BATCH_SIZE) + 1})`, { error: error.message });
     }
-    logInfo(`Fetched closing prices for ${Object.keys(prices).length}/${symbols.length} symbols`);
-  } catch (error) {
-    logError('Error fetching stock prices', { error: error.message });
+
+    // Rate limiting between batches
+    if (i + BATCH_SIZE < allFormatted.length) {
+      await new Promise(r => setTimeout(r, 200));
+    }
   }
+
+  logInfo(`Fetched closing prices for ${Object.keys(prices).length}/${symbols.length} symbols`);
   return prices;
 }
 
@@ -190,6 +225,34 @@ function computeBattleLevels(battleData, closingPrices, targetDate, computedAt) 
 /** Round to 2 decimal places */
 function round2(n) {
   return Math.round(n * 100) / 100;
+}
+
+// Crypto symbols — duplicated from src/services/sessionScoringService.js
+// (serverless crons can't import from src/)
+const CRYPTO_SYMBOLS = new Set([
+  'BTC', 'ETH', 'SOL', 'ADA', 'DOGE', 'XRP', 'AVAX', 'DOT',
+  'MATIC', 'LINK', 'UNI', 'ATOM', 'LTC', 'BCH', 'NEAR', 'APT',
+  'ARB', 'OP', 'SHIB', 'PEPE', 'BNB', 'TRX', 'TON', 'XLM',
+  'ALGO', 'FIL', 'AAVE', 'MKR', 'CRV', 'SNX', 'COMP', 'VET',
+  'SAND', 'MANA', 'AXS', 'IMX', 'GALA', 'ENJ',
+  'RNDR', 'RENDER', 'FET', 'OCEAN', 'TAO',
+  'USDT', 'USDC',
+  'ICP', 'HBAR', 'XMR', 'ETC', 'SUI', 'SUI20947', 'INJ',
+  'FLOKI', 'BONK', 'WIF', 'ASI', 'AGIX', 'AKT',
+  '1INCH', 'SUSHI', 'CAKE', 'SEI',
+  'DAI', 'FRAX', 'TUSD',
+  'LDO', 'RPL', 'FXS', 'CBETH',
+  'GRT', 'BAND', 'API3',
+  'CRO', 'KCS', 'OKB', 'LEO',
+  'ZEC', 'DASH', 'WBTC',
+  'ENS', 'QNT', 'THETA', 'HNT', 'AR',
+  'FTM', 'EGLD', 'RUNE', 'KAVA', 'CELO',
+  'PENDLE', 'DYDX', 'CFX', 'SSV', 'MINA', 'STORJ', 'HIGH',
+  'TWT', 'WOO', 'OSMO', 'JOE',
+]);
+
+function isCrypto(symbol) {
+  return CRYPTO_SYMBOLS.has(symbol.toUpperCase());
 }
 
 // Main handler
