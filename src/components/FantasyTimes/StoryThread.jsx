@@ -1,17 +1,18 @@
 // src/components/FantasyTimes/StoryThread.jsx
-// Renders a clustered group of stories about the same stock.
-// Lead story is a full StoryCard; thread items are compressed rows with a spine line.
+// Renders a clustered group of stories about the same stock as a timeline thread
+// inside a single obsidian card with a vertical spine and glowing dots.
 
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { REPORTER_PROFILES } from '../../prompts/fantasyTimesPrompts';
-import StoryCard from './StoryCard';
+import { REPORTER_COLORS, FEED_TOKENS, getReporterGlow } from '../../constants/reporterTheme';
+import ReporterAvatar from './ReporterAvatar';
+import StoryVisualSafe from './StoryVisualSafe';
 
 const springTransition = { type: 'spring', stiffness: 300, damping: 25 };
+const DEFAULT_VISIBLE_NODES = 2;
 
 /**
- * Format "time ago" from a publishedAt timestamp (duplicated from StoryCard
- * to keep StoryThread self-contained without exporting from StoryCard).
+ * Format "time ago" from a publishedAt timestamp.
  */
 function timeAgo(publishedAt) {
   if (!publishedAt) return '';
@@ -37,182 +38,216 @@ export default function StoryThread({
   const [expanded, setExpanded] = useState(false);
   const { ticker, lead, thread, reporterCount } = cluster;
 
-  const leadProfile = REPORTER_PROFILES[lead.reporter] || REPORTER_PROFILES.kai;
+  const leadReporter = REPORTER_COLORS[lead.reporter];
+  const leadColor = leadReporter?.hex || '#5eead4';
+  const leadRgb = leadReporter?.rgb || '94, 234, 212';
   const isMultiReporter = reporterCount > 1;
 
-  // Collect unique reporter profiles for multi-reporter threads
-  const uniqueReporters = isMultiReporter
-    ? [...new Set([lead.reporter, ...thread.map((s) => s.reporter)])]
-        .map((key) => REPORTER_PROFILES[key] || REPORTER_PROFILES.kai)
-    : [];
+  // For single-reporter threads, use lead reporter color for spine
+  // For multi-reporter, use a neutral teal
+  const spineColorHex = isMultiReporter ? '#5eead4' : leadColor;
+  const spineColorRgb = isMultiReporter ? '94, 234, 212' : leadRgb;
 
-  // Teal spine for multi-reporter, lead reporter color for single
-  const spineColor = isMultiReporter ? '#5eead433' : `${leadProfile.color}4D`;
+  const hasVisual = lead.visualType && lead.visualType !== 'none';
 
-  const visibleThread = expanded ? thread : thread.slice(0, 1);
-  const hiddenCount = thread.length - 1;
-
-  const indicatorText =
-    reporterCount > 1
-      ? `${reporterCount} reporters covering ${ticker}`
-      : `${thread.length} more about ${ticker}`;
+  const visibleNodes = expanded ? thread : thread.slice(0, DEFAULT_VISIBLE_NODES);
+  const hiddenCount = thread.length - DEFAULT_VISIBLE_NODES;
 
   return (
-    <div style={{ marginBottom: 12 }}>
-      {/* Lead story — full card */}
-      <StoryCard
-        story={lead}
-        onClick={() => onStoryPress(lead)}
-        activeBattleTickers={activeBattleTickers}
-        isMobile={isMobile}
-        isHero
-      />
-
-      {/* Thread indicator */}
-      <div
-        style={{
-          fontSize: 12,
-          color: '#8b949e',
-          padding: '6px 16px 4px',
-          display: 'flex',
-          alignItems: 'center',
-          gap: 6,
-        }}
-      >
-        <div
-          style={{
-            width: 12,
-            height: 2,
-            backgroundColor: spineColor,
-            borderRadius: 1,
-          }}
-        />
-        {isMultiReporter && uniqueReporters.map((rp, i) => (
-          <div
-            key={i}
-            style={{
-              width: 6,
-              height: 6,
-              borderRadius: '50%',
-              backgroundColor: rp.color,
-              flexShrink: 0,
-            }}
-          />
-        ))}
-        {indicatorText}
+    <div style={{
+      backgroundColor: FEED_TOKENS.bgCard,
+      border: `1px solid ${FEED_TOKENS.bgCardBorder}`,
+      borderRadius: FEED_TOKENS.cardRadius,
+      boxShadow: FEED_TOKENS.obsidianShadow,
+      overflow: 'hidden',
+    }}>
+      {/* Thread header */}
+      <div style={{
+        padding: '16px 16px 12px',
+        fontSize: 16,
+        fontWeight: 700,
+        color: '#e2e8f0',
+        letterSpacing: 0.3,
+      }}>
+        {ticker} THREAD
       </div>
 
-      {/* Thread items with spine line */}
-      <div style={{ position: 'relative', paddingLeft: 0 }}>
-        {/* Vertical spine */}
-        <div
-          style={{
+      {/* Lead card — compact inline layout */}
+      <div
+        onClick={() => onStoryPress(lead)}
+        style={{
+          display: 'flex',
+          gap: 12,
+          padding: '0 16px 16px',
+          cursor: 'pointer',
+        }}
+      >
+        {/* Left: Visual thumbnail or gradient placeholder */}
+        <div style={{
+          width: 120,
+          height: 80,
+          borderRadius: FEED_TOKENS.innerRadius,
+          overflow: 'hidden',
+          flexShrink: 0,
+          background: hasVisual ? undefined : `linear-gradient(135deg, rgba(${leadRgb}, 0.15), transparent)`,
+        }}>
+          {hasVisual && (
+            <StoryVisualSafe
+              visualType={lead.visualType}
+              visualConfig={lead.visualConfig}
+              size="micro"
+            />
+          )}
+        </div>
+
+        {/* Right: Headline + reporter */}
+        <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+          <div style={{
+            fontSize: 14,
+            fontWeight: 600,
+            color: '#e2e8f0',
+            lineHeight: 1.3,
+            display: '-webkit-box',
+            WebkitLineClamp: 2,
+            WebkitBoxOrient: 'vertical',
+            overflow: 'hidden',
+          }}>
+            {lead.headline}
+          </div>
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            marginTop: 6,
+          }}>
+            <ReporterAvatar reporter={lead.reporter} size={18} />
+            <span style={{ fontSize: 11, fontWeight: 500, color: '#94a3b8' }}>
+              {leadReporter?.name?.split(' ')[0] || lead.reporter}
+            </span>
+            <span style={{ fontSize: 11, color: '#64748b', marginLeft: 'auto' }}>
+              {timeAgo(lead.publishedAt)}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* Thread nodes with spine */}
+      {thread.length > 0 && (
+        <div style={{ position: 'relative' }}>
+          {/* Vertical spine line */}
+          <div style={{
             position: 'absolute',
-            left: 20,
+            left: 32,
             top: 0,
             bottom: 0,
             width: 2,
-            backgroundColor: spineColor,
+            backgroundColor: `rgba(${spineColorRgb}, 0.3)`,
             borderRadius: 1,
-          }}
-        />
+          }} />
 
-        <AnimatePresence initial={false}>
-          {visibleThread.map((story, idx) => {
-            const profile = REPORTER_PROFILES[story.reporter] || REPORTER_PROFILES.kai;
-            const initial = (profile.name || story.reporter || '?')[0].toUpperCase();
+          <AnimatePresence initial={false}>
+            {visibleNodes.map((story, idx) => {
+              const storyReporter = REPORTER_COLORS[story.reporter];
+              const dotColor = storyReporter?.hex || spineColorHex;
+              const dotRgb = storyReporter?.rgb || spineColorRgb;
 
-            return (
-              <motion.div
-                key={story.id}
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: 40 }}
-                exit={{ opacity: 0, height: 0 }}
-                transition={{ ...springTransition, delay: idx * 0.03 }}
-                onClick={() => onStoryPress(story)}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  height: 40,
-                  padding: '4px 16px 4px 36px',
-                  cursor: 'pointer',
-                  borderBottom: '1px solid rgba(255,255,255,0.04)',
-                }}
-              >
-                {/* Reporter avatar */}
-                <div
-                  style={{
-                    width: 16,
-                    height: 16,
-                    borderRadius: '50%',
-                    backgroundColor: profile.color,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontSize: 9,
-                    fontWeight: 700,
-                    color: '#0a0e14',
-                    flexShrink: 0,
-                  }}
+              return (
+                <motion.div
+                  key={story.id}
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  exit={{ opacity: 0, height: 0 }}
+                  transition={{ ...springTransition, delay: idx * 0.03 }}
                 >
-                  {initial}
-                </div>
+                  {/* Divider between nodes */}
+                  {idx > 0 && (
+                    <div style={{
+                      height: 1,
+                      backgroundColor: 'rgba(255,255,255,0.04)',
+                      margin: '0 16px',
+                    }} />
+                  )}
 
-                {/* Headline */}
-                <span
-                  style={{
-                    flex: 1,
-                    fontSize: 13,
-                    color: '#e6edf3',
-                    marginLeft: 8,
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
-                  }}
-                >
-                  {story.headline}
-                </span>
+                  <div
+                    onClick={() => onStoryPress(story)}
+                    style={{
+                      padding: '12px 16px 12px 48px',
+                      cursor: 'pointer',
+                      position: 'relative',
+                    }}
+                  >
+                    {/* Glowing dot on spine */}
+                    <div style={{
+                      position: 'absolute',
+                      left: 28,
+                      top: 16,
+                      width: 10,
+                      height: 10,
+                      borderRadius: '50%',
+                      backgroundColor: dotColor,
+                      boxShadow: `0 0 6px rgba(${dotRgb}, 0.4)`,
+                    }} />
 
-                {/* Timestamp */}
-                <span
-                  style={{
-                    fontSize: 11,
-                    color: '#6e7681',
-                    flexShrink: 0,
-                    marginLeft: 8,
-                  }}
-                >
-                  {timeAgo(story.publishedAt)}
-                </span>
-              </motion.div>
-            );
-          })}
-        </AnimatePresence>
+                    {/* Headline */}
+                    <div style={{
+                      fontSize: 13,
+                      fontWeight: 500,
+                      color: '#e2e8f0',
+                      lineHeight: 1.4,
+                      display: '-webkit-box',
+                      WebkitLineClamp: 2,
+                      WebkitBoxOrient: 'vertical',
+                      overflow: 'hidden',
+                    }}>
+                      {story.headline}
+                    </div>
 
-        {/* Expand/collapse toggle */}
-        {hiddenCount > 0 && (
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              setExpanded((prev) => !prev);
-            }}
-            style={{
-              display: 'block',
-              width: '100%',
-              padding: '6px 16px 6px 36px',
-              background: 'none',
-              border: 'none',
-              color: '#5eead4',
-              fontSize: 12,
-              fontWeight: 600,
-              cursor: 'pointer',
-              textAlign: 'left',
-            }}
-          >
-            {expanded ? 'Show less' : `Show ${hiddenCount} more`}
-          </button>
-        )}
-      </div>
+                    {/* Reporter row */}
+                    <div style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 6,
+                      marginTop: 4,
+                    }}>
+                      <ReporterAvatar reporter={story.reporter} size={18} />
+                      <span style={{ fontSize: 11, fontWeight: 500, color: '#94a3b8' }}>
+                        {storyReporter?.name?.split(' ')[0] || story.reporter}
+                      </span>
+                      <span style={{ fontSize: 11, color: '#64748b', marginLeft: 'auto' }}>
+                        {timeAgo(story.publishedAt)}
+                      </span>
+                    </div>
+                  </div>
+                </motion.div>
+              );
+            })}
+          </AnimatePresence>
+
+          {/* Expand/collapse toggle */}
+          {hiddenCount > 0 && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setExpanded((prev) => !prev);
+              }}
+              style={{
+                display: 'block',
+                width: '100%',
+                padding: '8px 16px 12px 48px',
+                background: 'none',
+                border: 'none',
+                color: spineColorHex,
+                fontSize: 12,
+                fontWeight: 500,
+                cursor: 'pointer',
+                textAlign: 'left',
+              }}
+            >
+              {expanded ? 'Show less' : `Show ${hiddenCount} more stories about ${ticker}`}
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }
