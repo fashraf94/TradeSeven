@@ -26,7 +26,7 @@ function NavItem({ item, active, collapsed, hovered, onHover, onLeave, onClick, 
       style={{
         display: 'flex',
         alignItems: 'center',
-        gap: '12px',
+        gap: collapsed ? 0 : '12px',
         padding: collapsed ? '10px 0' : '10px 14px',
         borderRadius: '10px',
         border: 'none',
@@ -49,7 +49,7 @@ function NavItem({ item, active, collapsed, hovered, onHover, onLeave, onClick, 
       }}
     >
       <div style={{
-        width: '40px',
+        width: collapsed ? 'auto' : '40px',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
@@ -59,6 +59,7 @@ function NavItem({ item, active, collapsed, hovered, onHover, onLeave, onClick, 
       </div>
       <span style={{
         opacity: collapsed ? 0 : 1,
+        width: collapsed ? 0 : 'auto',
         transition: 'opacity 0.15s ease',
         whiteSpace: 'nowrap',
         overflow: 'hidden',
@@ -192,7 +193,7 @@ export default function DesktopSidebar({
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        gap: '10px',
+        gap: collapsed ? 0 : '10px',
         marginBottom: collapsed ? '12px' : '24px',
         padding: collapsed ? '0' : '0 10px',
       }}>
@@ -267,7 +268,7 @@ export default function DesktopSidebar({
           paddingTop: '12px',
           display: 'flex',
           alignItems: 'center',
-          gap: '12px',
+          gap: collapsed ? 0 : '12px',
           cursor: 'pointer',
           padding: collapsed ? '12px 0 0' : '12px 10px 0',
           justifyContent: collapsed ? 'center' : 'flex-start',
@@ -298,6 +299,7 @@ export default function DesktopSidebar({
           textOverflow: 'ellipsis',
           whiteSpace: 'nowrap',
           opacity: collapsed ? 0 : 1,
+          width: collapsed ? 0 : 'auto',
           transition: 'opacity 0.15s ease',
         }}>
           {user?.username || 'Player'}
@@ -329,7 +331,7 @@ export default function DesktopSidebar({
             style={{
               display: 'flex',
               alignItems: 'center',
-              gap: '12px',
+              gap: collapsed ? 0 : '12px',
               padding: collapsed ? '8px 0' : '8px 14px',
               borderRadius: '8px',
               border: 'none',
@@ -345,7 +347,7 @@ export default function DesktopSidebar({
             }}
           >
             <div style={{
-              width: '40px',
+              width: collapsed ? 'auto' : '40px',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
@@ -355,6 +357,7 @@ export default function DesktopSidebar({
             </div>
             <span style={{
               opacity: collapsed ? 0 : 1,
+              width: collapsed ? 0 : 'auto',
               transition: 'opacity 0.15s ease',
               whiteSpace: 'nowrap',
               overflow: 'hidden',
