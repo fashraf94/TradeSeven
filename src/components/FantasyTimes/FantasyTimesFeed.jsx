@@ -9,7 +9,6 @@ import { useFantasyTimes } from '../../hooks/useFantasyTimes';
 import { groupStoriesBySections } from '../../services/fantasyTimesClient';
 import { findStock } from '../../data/assets';
 import StoryCard from './StoryCard';
-import StoryDetail from './StoryDetail';
 import FeedSection from './FeedSection';
 
 const AssetResearchModal = lazy(() => import('../draft/AssetResearchModal'));
@@ -56,11 +55,11 @@ export default function FantasyTimesFeed({
   userWatchlist = [],
   activeBattleTickers = [],
   onNavigate,
+  onStorySelect,
 }) {
   const [reporterFilter, setReporterFilter] = useState('all');
   const [sentimentFilter, setSentimentFilter] = useState('all');
   const [activeTab, setActiveTab] = useState('all'); // 'all' | 'foryou'
-  const [selectedStory, setSelectedStory] = useState(null);
   const [researchSymbol, setResearchSymbol] = useState(null);
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const sentinelRef = useRef(null);
@@ -151,8 +150,8 @@ export default function FantasyTimesFeed({
   }, [activeTab, forYouHasMore, forYouBase.length]);
 
   const handleStoryClick = useCallback((story) => {
-    setSelectedStory(story);
-  }, []);
+    if (onStorySelect) onStorySelect(story);
+  }, [onStorySelect]);
 
   const handleOpenResearch = useCallback((symbol) => {
     setResearchSymbol(symbol);
@@ -477,15 +476,6 @@ export default function FantasyTimesFeed({
           </>
         )}
       </div>
-
-      {/* Story detail modal/sheet */}
-      <StoryDetail
-        story={selectedStory}
-        isOpen={!!selectedStory}
-        onClose={() => setSelectedStory(null)}
-        onOpenResearch={handleOpenResearch}
-        isMobile={isMobile}
-      />
 
       {researchSymbol && (
         <Suspense fallback={null}>
