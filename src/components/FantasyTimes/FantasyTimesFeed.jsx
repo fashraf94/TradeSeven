@@ -165,7 +165,7 @@ export default function FantasyTimesFeed({
       minHeight: '100vh',
       backgroundColor: '#0a0e14',
       color: '#e6edf3',
-      maxWidth: isDesktop ? '880px' : '100%',
+      maxWidth: isDesktop ? '780px' : '100%',
       margin: isDesktop ? '0 auto' : 0,
     }}>
       {/* Header */}
@@ -385,7 +385,7 @@ export default function FantasyTimesFeed({
       </div>
 
       {/* Story list */}
-      <div style={{ padding: '8px 12px' }}>
+      <div style={{ padding: isDesktop ? '24px' : '8px 12px' }}>
         {loading && stories.length === 0 && (
           <div style={{ padding: '40px 16px', textAlign: 'center' }}>
             {[1, 2, 3].map((i) => (
