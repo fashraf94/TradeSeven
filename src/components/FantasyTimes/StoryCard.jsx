@@ -80,7 +80,7 @@ const VARIANT_STYLES = {
     bodyFontSize: 12,
     visualSize: null,
     bodyMarginTop: 6,
-    minHeight: 160,
+    minHeight: 200,
   },
 };
 
@@ -221,7 +221,7 @@ function EditorialLayout({ story, styles, variant, reporterColor, hasVisual, act
         WebkitBoxOrient: 'vertical',
         overflow: 'hidden',
       }}>
-        {story.subheadline}
+        {story.subheadline?.replace(/\*\*/g, '') || ''}
       </div>
 
       {/* CTA — ghost text link */}
@@ -290,7 +290,7 @@ function MoverLayout({ story, styles, primaryTicker, companyName, priceChange, i
         overflow: 'hidden',
         flex: 1,
       }}>
-        {story.subheadline}
+        {story.subheadline?.replace(/\*\*/g, '') || ''}
       </div>
 
       {/* Reporter row — pinned to bottom via marginTop auto */}

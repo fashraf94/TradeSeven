@@ -16,7 +16,10 @@ const SECTION_META = {
   sector_watch:      { Icon: Grid3X3,     reporter: 'kim' },
 };
 
-const DEFAULT_VISIBLE = 3;
+function getDefaultVisible(sectionId, isDesktop) {
+  if (sectionId === 'movers_spotlights') return isDesktop ? 6 : 4;
+  return 3;
+}
 
 const springTransition = { type: 'spring', stiffness: 300, damping: 25 };
 
@@ -33,8 +36,9 @@ export default function FeedSection({
 
   const items = section.clustered || [];
   const totalItems = items.length;
-  const visibleItems = showAll ? items : items.slice(0, DEFAULT_VISIBLE);
-  const hasMore = totalItems > DEFAULT_VISIBLE;
+  const defaultVisible = getDefaultVisible(section.id, isDesktop);
+  const visibleItems = showAll ? items : items.slice(0, defaultVisible);
+  const hasMore = totalItems > defaultVisible;
   const meta = SECTION_META[section.id] || {};
   const reporter = REPORTER_COLORS[meta.reporter];
   const reporterColor = reporter?.hex || '#5eead4';
@@ -42,7 +46,7 @@ export default function FeedSection({
   const useGrid = isDesktop && section.id === 'movers_spotlights';
 
   return (
-    <div style={{ marginTop: 20, marginBottom: 8 }}>
+    <div style={{ marginTop: 24, marginBottom: 8 }}>
       {/* Section header */}
       <button
         onClick={() => setExpanded((prev) => !prev)}
@@ -66,10 +70,10 @@ export default function FeedSection({
                 gap: 8,
               }}>
                 <span style={{
-                  fontSize: 14,
+                  fontSize: 13,
                   fontWeight: 700,
                   textTransform: 'uppercase',
-                  letterSpacing: 0.5,
+                  letterSpacing: 1.5,
                   color: '#94a3b8',
                   whiteSpace: 'nowrap',
                 }}>
@@ -85,7 +89,7 @@ export default function FeedSection({
               <div style={{ flex: 1, height: 1, backgroundColor: '#1C1A27' }} />
             </div>
             <span style={{
-              fontSize: 12,
+              fontSize: 11,
               fontWeight: 400,
               color: '#64748b',
               marginTop: 4,
@@ -104,10 +108,10 @@ export default function FeedSection({
                 <SectionIcon size={20} color={reporterColor} style={{ flexShrink: 0 }} />
               )}
               <span style={{
-                fontSize: 14,
+                fontSize: 13,
                 fontWeight: 700,
                 textTransform: 'uppercase',
-                letterSpacing: 0.5,
+                letterSpacing: 1.5,
                 color: '#e2e8f0',
                 flex: 1,
               }}>
@@ -133,7 +137,7 @@ export default function FeedSection({
               </span>
             </div>
             <div style={{ marginTop: 2, paddingLeft: 28 }}>
-              <span style={{ fontSize: 12, fontWeight: 400, color: '#94a3b8' }}>
+              <span style={{ fontSize: 11, fontWeight: 400, color: '#94a3b8' }}>
                 by the AI-reporter{' '}
                 <span style={{ fontWeight: 500, color: reporterColor }}>
                   {reporter?.name?.split(' ')[0] || meta.reporter}
@@ -157,7 +161,7 @@ export default function FeedSection({
             <div style={{
               padding: '12px 0 0',
               ...(useGrid
-                ? { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }
+                ? { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '16px' }
                 : section.id === 'movers_spotlights'
                   ? { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }
                   : {}),
