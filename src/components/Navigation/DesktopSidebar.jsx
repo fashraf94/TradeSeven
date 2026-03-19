@@ -3,7 +3,7 @@
 // Supports collapsed (64px, icons only) and expanded (220px, full labels) states
 
 import React, { useState } from 'react';
-import { Swords, Newspaper, BarChart3, Clock, Settings, Flame, Bot, ChevronRight, ChevronLeft } from 'lucide-react';
+import { Swords, Newspaper, BarChart3, Clock, Settings, Flame, Bot, ChevronRight, ChevronLeft, LogOut } from 'lucide-react';
 import { useTheme } from '../../contexts/ThemeContext';
 
 const NAV_ITEMS = [
@@ -118,6 +118,7 @@ export default function DesktopSidebar({
   unreadCount,
   collapsed,
   onToggleCollapse,
+  onLogout,
 }) {
   const { tokens } = useTheme();
   const [hoveredId, setHoveredId] = useState(null);
@@ -159,12 +160,12 @@ export default function DesktopSidebar({
       display: 'flex',
       flexDirection: 'column',
     }}>
-      {/* Logo */}
+      {/* Logo + Toggle */}
       <div style={{
         display: 'flex',
         alignItems: 'center',
         gap: '10px',
-        marginBottom: '32px',
+        marginBottom: collapsed ? '12px' : '32px',
         padding: collapsed ? '0' : '0 10px',
         justifyContent: collapsed ? 'center' : 'flex-start',
       }}>
@@ -183,7 +184,51 @@ export default function DesktopSidebar({
         }}>
           FantasyTrades
         </span>
+        {!collapsed && (
+          <button
+            onClick={onToggleCollapse}
+            style={{
+              marginLeft: 'auto',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: '4px',
+              border: 'none',
+              background: 'transparent',
+              color: '#8b949e',
+              cursor: 'pointer',
+              borderRadius: '6px',
+              transition: 'color 0.15s ease',
+            }}
+            onMouseEnter={(e) => { e.currentTarget.style.color = tokens.teal; }}
+            onMouseLeave={(e) => { e.currentTarget.style.color = '#8b949e'; }}
+          >
+            <ChevronLeft size={16} />
+          </button>
+        )}
       </div>
+      {collapsed && (
+        <button
+          onClick={onToggleCollapse}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '4px',
+            margin: '0 auto 12px',
+            border: 'none',
+            background: 'transparent',
+            color: '#8b949e',
+            cursor: 'pointer',
+            borderRadius: '6px',
+            transition: 'color 0.15s ease',
+          }}
+          onMouseEnter={(e) => { e.currentTarget.style.color = tokens.teal; }}
+          onMouseLeave={(e) => { e.currentTarget.style.color = '#8b949e'; }}
+        >
+          <ChevronRight size={16} />
+        </button>
+      )}
 
       {/* Navigation */}
       <nav style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
@@ -206,64 +251,29 @@ export default function DesktopSidebar({
       {/* Spacer */}
       <div style={{ flex: 1 }} />
 
-      {/* Toggle button */}
-      <button
-        onClick={onToggleCollapse}
-        style={{
+      {/* Stats — hidden when collapsed */}
+      {!collapsed && (
+        <div style={{
+          borderTop: `1px solid ${tokens.borderDivider}`,
+          paddingTop: '12px',
+          marginTop: '4px',
           display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          padding: '8px',
-          margin: collapsed ? '0 auto 8px' : '0 10px 8px',
-          borderRadius: '8px',
-          border: `1px solid ${tokens.borderDivider}`,
-          background: 'transparent',
-          color: tokens.textMuted,
-          cursor: 'pointer',
-          transition: 'color 0.15s ease, background 0.15s ease',
-          width: collapsed ? '40px' : '100%',
-        }}
-        onMouseEnter={(e) => {
-          e.currentTarget.style.color = tokens.teal;
-          e.currentTarget.style.background = 'rgba(94,234,212,0.06)';
-        }}
-        onMouseLeave={(e) => {
-          e.currentTarget.style.color = tokens.textMuted;
-          e.currentTarget.style.background = 'transparent';
-        }}
-      >
-        {collapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
-      </button>
-
-      {/* Stats */}
-      <div style={{
-        borderTop: `1px solid ${tokens.borderDivider}`,
-        paddingTop: '12px',
-        marginTop: '4px',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '4px',
-        padding: collapsed ? '12px 0 8px' : '12px 10px 8px',
-        alignItems: collapsed ? 'center' : 'flex-start',
-        overflow: 'hidden',
-      }}>
-        {collapsed ? (
-          <div style={{ fontSize: '11px', color: tokens.emerald, fontWeight: '600', textAlign: 'center' }}>
-            {wins}W
+          flexDirection: 'column',
+          gap: '4px',
+          padding: '12px 10px 8px',
+          alignItems: 'flex-start',
+          overflow: 'hidden',
+        }}>
+          <div style={{ fontSize: '13px', whiteSpace: 'nowrap' }}>
+            <span style={{ color: tokens.emerald, fontWeight: '600' }}>W: {wins}</span>
+            <span style={{ color: tokens.textFaintest, margin: '0 8px' }}>•</span>
+            <span style={{ color: tokens.red, fontWeight: '600' }}>L: {losses}</span>
           </div>
-        ) : (
-          <>
-            <div style={{ fontSize: '13px', whiteSpace: 'nowrap' }}>
-              <span style={{ color: tokens.emerald, fontWeight: '600' }}>W: {wins}</span>
-              <span style={{ color: tokens.textFaintest, margin: '0 8px' }}>•</span>
-              <span style={{ color: tokens.red, fontWeight: '600' }}>L: {losses}</span>
-            </div>
-            <div style={{ fontSize: '13px', color: tokens.textMuted, whiteSpace: 'nowrap' }}>
-              Rate: {winRate}%
-            </div>
-          </>
-        )}
-      </div>
+          <div style={{ fontSize: '13px', color: tokens.textMuted, whiteSpace: 'nowrap' }}>
+            Rate: {winRate}%
+          </div>
+        </div>
+      )}
 
       {/* User */}
       <div
@@ -309,6 +319,90 @@ export default function DesktopSidebar({
           {user?.username || 'Player'}
         </span>
       </div>
+
+      {/* Logout */}
+      {onLogout && (
+        <div style={{
+          borderTop: `1px solid ${tokens.borderDivider}`,
+          marginTop: '12px',
+          paddingTop: '12px',
+          padding: collapsed ? '12px 0 0' : '12px 10px 0',
+        }}>
+          <button
+            onClick={onLogout}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = 'rgba(248,113,113,0.1)';
+              e.currentTarget.style.color = '#f87171';
+              const tooltip = e.currentTarget.querySelector('[data-tooltip]');
+              if (tooltip) tooltip.style.display = 'block';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = 'transparent';
+              e.currentTarget.style.color = '#8b949e';
+              const tooltip = e.currentTarget.querySelector('[data-tooltip]');
+              if (tooltip) tooltip.style.display = 'none';
+            }}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '12px',
+              padding: collapsed ? '8px 0' : '8px 14px',
+              borderRadius: '8px',
+              border: 'none',
+              background: 'transparent',
+              color: '#8b949e',
+              fontSize: '14px',
+              fontWeight: '500',
+              cursor: 'pointer',
+              width: '100%',
+              justifyContent: collapsed ? 'center' : 'flex-start',
+              transition: 'background 0.15s ease, color 0.15s ease',
+              position: 'relative',
+            }}
+          >
+            <div style={{
+              width: '40px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexShrink: 0,
+            }}>
+              <LogOut size={18} />
+            </div>
+            <span style={{
+              opacity: collapsed ? 0 : 1,
+              transition: 'opacity 0.15s ease',
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+            }}>
+              Log Out
+            </span>
+            {collapsed && (
+              <div
+                data-tooltip
+                style={{
+                  display: 'none',
+                  position: 'fixed',
+                  left: '68px',
+                  background: '#161b22',
+                  color: '#fff',
+                  fontSize: '12px',
+                  fontWeight: '500',
+                  padding: '5px 10px',
+                  borderRadius: '6px',
+                  whiteSpace: 'nowrap',
+                  pointerEvents: 'none',
+                  zIndex: 9999,
+                  boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
+                  border: '1px solid #21262d',
+                }}
+              >
+                Log Out
+              </div>
+            )}
+          </button>
+        </div>
+      )}
     </div>
   );
 }

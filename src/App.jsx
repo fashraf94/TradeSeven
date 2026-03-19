@@ -20670,6 +20670,7 @@ export default function PortfolioDuel() {
           unreadCount={unreadCount}
           collapsed={sidebarCollapsed}
           onToggleCollapse={() => setSidebarCollapsed(prev => !prev)}
+          onLogout={() => { logout(); setScreen('home'); }}
         />
       )}
 
