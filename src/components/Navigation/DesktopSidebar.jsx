@@ -3,7 +3,7 @@
 // Supports collapsed (64px, icons only) and expanded (220px, full labels) states
 
 import React, { useState } from 'react';
-import { Swords, Newspaper, BarChart3, Clock, Settings, Flame, Bot, ChevronRight, ChevronLeft, LogOut } from 'lucide-react';
+import { Swords, Newspaper, BarChart3, Clock, Settings, Flame, Bot, PanelLeftClose, PanelLeftOpen, LogOut } from 'lucide-react';
 import { useTheme } from '../../contexts/ThemeContext';
 
 const NAV_ITEMS = [
@@ -30,7 +30,7 @@ function NavItem({ item, active, collapsed, hovered, onHover, onLeave, onClick, 
         padding: collapsed ? '10px 0' : '10px 14px',
         borderRadius: '10px',
         border: 'none',
-        borderLeft: active ? `3px solid ${tokens.teal}` : '3px solid transparent',
+        borderLeft: collapsed ? 'none' : (active ? `3px solid ${tokens.teal}` : '3px solid transparent'),
         background: active
           ? 'rgba(94,234,212,0.08)'
           : hovered
@@ -160,14 +160,41 @@ export default function DesktopSidebar({
       display: 'flex',
       flexDirection: 'column',
     }}>
-      {/* Logo + Toggle */}
+      {/* Toggle — very top */}
+      <div style={{
+        display: 'flex',
+        justifyContent: collapsed ? 'center' : 'flex-end',
+        padding: collapsed ? '0 0 8px' : '0 10px 8px',
+      }}>
+        <button
+          onClick={onToggleCollapse}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '4px',
+            border: 'none',
+            background: 'transparent',
+            color: '#8b949e',
+            cursor: 'pointer',
+            borderRadius: '6px',
+            transition: 'color 0.15s ease',
+          }}
+          onMouseEnter={(e) => { e.currentTarget.style.color = '#5eead4'; }}
+          onMouseLeave={(e) => { e.currentTarget.style.color = '#8b949e'; }}
+        >
+          {collapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
+        </button>
+      </div>
+
+      {/* Logo */}
       <div style={{
         display: 'flex',
         alignItems: 'center',
+        justifyContent: 'center',
         gap: '10px',
-        marginBottom: collapsed ? '12px' : '32px',
+        marginBottom: collapsed ? '12px' : '24px',
         padding: collapsed ? '0' : '0 10px',
-        justifyContent: collapsed ? 'center' : 'flex-start',
       }}>
         <Flame size={22} color={tokens.teal} style={{ flexShrink: 0 }} />
         <span style={{
@@ -178,57 +205,14 @@ export default function DesktopSidebar({
           WebkitTextFillColor: 'transparent',
           backgroundClip: 'text',
           opacity: collapsed ? 0 : 1,
-          transition: 'opacity 0.15s ease',
+          width: collapsed ? 0 : 'auto',
+          transition: 'opacity 0.15s ease, width 0.2s ease',
           whiteSpace: 'nowrap',
           overflow: 'hidden',
         }}>
           FantasyTrades
         </span>
-        {!collapsed && (
-          <button
-            onClick={onToggleCollapse}
-            style={{
-              marginLeft: 'auto',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              padding: '4px',
-              border: 'none',
-              background: 'transparent',
-              color: '#8b949e',
-              cursor: 'pointer',
-              borderRadius: '6px',
-              transition: 'color 0.15s ease',
-            }}
-            onMouseEnter={(e) => { e.currentTarget.style.color = tokens.teal; }}
-            onMouseLeave={(e) => { e.currentTarget.style.color = '#8b949e'; }}
-          >
-            <ChevronLeft size={16} />
-          </button>
-        )}
       </div>
-      {collapsed && (
-        <button
-          onClick={onToggleCollapse}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: '4px',
-            margin: '0 auto 12px',
-            border: 'none',
-            background: 'transparent',
-            color: '#8b949e',
-            cursor: 'pointer',
-            borderRadius: '6px',
-            transition: 'color 0.15s ease',
-          }}
-          onMouseEnter={(e) => { e.currentTarget.style.color = tokens.teal; }}
-          onMouseLeave={(e) => { e.currentTarget.style.color = '#8b949e'; }}
-        >
-          <ChevronRight size={16} />
-        </button>
-      )}
 
       {/* Navigation */}
       <nav style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
