@@ -4,12 +4,11 @@
 import React, { useState, useCallback, useMemo, useRef, useEffect, lazy, Suspense } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Zap, TrendingUp, Globe, BarChart3, Compass, ArrowLeft } from 'lucide-react';
-import { REPORTER_PROFILES } from '../../prompts/fantasyTimesPrompts';
+import { REPORTER_COLORS } from '../../constants/reporterTheme';
 import { useFantasyTimes } from '../../hooks/useFantasyTimes';
 import { groupStoriesBySections } from '../../services/fantasyTimesClient';
 import { findStock } from '../../data/assets';
 import StoryCard from './StoryCard';
-import StoryDetail from './StoryDetail';
 import FeedSection from './FeedSection';
 
 const AssetResearchModal = lazy(() => import('../draft/AssetResearchModal'));
@@ -18,11 +17,11 @@ const ICON_MAP = { Zap, TrendingUp, Globe, BarChart3, Compass };
 
 const REPORTERS = [
   { key: 'all', label: 'All', color: '#00d9ff', icon: null },
-  { key: 'kai', label: 'Kai', ...REPORTER_PROFILES.kai },
-  { key: 'alex', label: 'Alex', ...REPORTER_PROFILES.alex },
-  { key: 'neta', label: 'Neta', ...REPORTER_PROFILES.neta },
-  { key: 'doug', label: 'Doug', ...REPORTER_PROFILES.doug },
-  { key: 'kim', label: 'Kim', ...REPORTER_PROFILES.kim },
+  { key: 'kai', label: 'Kai', color: REPORTER_COLORS.kai.hex },
+  { key: 'alex', label: 'Alex', color: REPORTER_COLORS.alex.hex },
+  { key: 'neta', label: 'Neta', color: REPORTER_COLORS.neta.hex },
+  { key: 'doug', label: 'Doug', color: REPORTER_COLORS.doug.hex },
+  { key: 'kim', label: 'Kim', color: REPORTER_COLORS.kim.hex },
 ];
 
 const PAGE_SIZE = 10;
@@ -56,11 +55,11 @@ export default function FantasyTimesFeed({
   userWatchlist = [],
   activeBattleTickers = [],
   onNavigate,
+  onStorySelect,
 }) {
   const [reporterFilter, setReporterFilter] = useState('all');
   const [sentimentFilter, setSentimentFilter] = useState('all');
   const [activeTab, setActiveTab] = useState('all'); // 'all' | 'foryou'
-  const [selectedStory, setSelectedStory] = useState(null);
   const [researchSymbol, setResearchSymbol] = useState(null);
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const sentinelRef = useRef(null);
@@ -151,8 +150,8 @@ export default function FantasyTimesFeed({
   }, [activeTab, forYouHasMore, forYouBase.length]);
 
   const handleStoryClick = useCallback((story) => {
-    setSelectedStory(story);
-  }, []);
+    if (onStorySelect) onStorySelect(story);
+  }, [onStorySelect]);
 
   const handleOpenResearch = useCallback((symbol) => {
     setResearchSymbol(symbol);
@@ -165,7 +164,7 @@ export default function FantasyTimesFeed({
       minHeight: '100vh',
       backgroundColor: '#0a0e14',
       color: '#e6edf3',
-      maxWidth: isDesktop ? '880px' : '100%',
+      maxWidth: isDesktop ? '1080px' : '100%',
       margin: isDesktop ? '0 auto' : 0,
     }}>
       {/* Header */}
@@ -385,7 +384,7 @@ export default function FantasyTimesFeed({
       </div>
 
       {/* Story list */}
-      <div style={{ padding: '8px 12px' }}>
+      <div style={{ padding: isDesktop ? '24px 32px' : '8px 12px 80px' }}>
         {loading && stories.length === 0 && (
           <div style={{ padding: '40px 16px', textAlign: 'center' }}>
             {[1, 2, 3].map((i) => (
@@ -464,28 +463,20 @@ export default function FantasyTimesFeed({
           <>
             <AnimatePresence>
               {forYouVisible.map((story) => (
-                <StoryCard
-                  key={story.id}
-                  story={story}
-                  onClick={() => handleStoryClick(story)}
-                  activeBattleTickers={activeBattleTickers}
-                  isMobile={isMobile}
-                />
+                <div key={story.id} style={{ marginBottom: 12 }}>
+                  <StoryCard
+                    story={story}
+                    onClick={() => handleStoryClick(story)}
+                    activeBattleTickers={activeBattleTickers}
+                    isMobile={isMobile}
+                  />
+                </div>
               ))}
             </AnimatePresence>
             {forYouHasMore && <div ref={sentinelRef} style={{ height: 1 }} />}
           </>
         )}
       </div>
-
-      {/* Story detail modal/sheet */}
-      <StoryDetail
-        story={selectedStory}
-        isOpen={!!selectedStory}
-        onClose={() => setSelectedStory(null)}
-        onOpenResearch={handleOpenResearch}
-        isMobile={isMobile}
-      />
 
       {researchSymbol && (
         <Suspense fallback={null}>

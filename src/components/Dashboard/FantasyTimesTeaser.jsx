@@ -7,7 +7,7 @@ import { motion } from 'framer-motion';
 import { ChevronRight } from 'lucide-react';
 import { useFantasyTimes } from '../../hooks/useFantasyTimes';
 import { isMarketOpen } from '../../utils/marketSchedule';
-import { REPORTER_PROFILES } from '../../prompts/fantasyTimesPrompts';
+import { REPORTER_COLORS } from '../../constants/reporterTheme';
 import StoryVisualSafe from '../FantasyTimes/StoryVisualSafe';
 import { useTheme } from '../../contexts/ThemeContext';
 import TapGlint from '../shared/TapGlint';
@@ -30,7 +30,7 @@ export default function FantasyTimesTeaser({ setScreen }) {
   function getReporterColor(reporter) {
     if (!reporter) return tokens.textFaint;
     const key = reporter.toLowerCase();
-    return REPORTER_PROFILES[key]?.color || tokens.textFaint;
+    return REPORTER_COLORS[key]?.hex || tokens.textFaint;
   }
   const { rankedStories, loading } = useFantasyTimes();
   const marketOpen = isMarketOpen();

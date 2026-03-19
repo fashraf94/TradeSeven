@@ -54,6 +54,7 @@ const BaggerBombSetupScreen = lazy(() => import('./screens/BaggerBombSetupScreen
 const BaggerBombGamePlanFlow = lazy(() => import('./components/GamePlan/BaggerBombGamePlanFlow'));
 const StonkOptionsArenaV2 = lazy(() => import('./components/optionsArena/StonkOptionsArenaV2'));
 const FantasyTimesFeed = lazy(() => import('./components/FantasyTimes/FantasyTimesFeed'));
+const StoryDetail = lazy(() => import('./components/FantasyTimes/StoryDetail'));
 
 // Legacy aliases for backwards compatibility
 const TDBattleScoreboard = BaggerBombScoreboard;
@@ -11705,6 +11706,9 @@ export default function PortfolioDuel() {
   const [cryptoData, setCryptoData] = useState([]);
   const [loadingMarketData, setLoadingMarketData] = useState(true);
 
+  // FantasyTimes story detail
+  const [selectedStory, setSelectedStory] = useState(null);
+
   // Battle management
   const [battles, setBattles] = useState([]);
   const [currentBattle, setCurrentBattle] = useState(null);
@@ -20525,6 +20529,24 @@ export default function PortfolioDuel() {
     );
   }
 
+  // FANTASYTIMES STORY DETAIL (full page)
+  if (screen === 'storyDetail' && selectedStory) {
+    return (
+      <div style={{ marginLeft: isDesktop ? '220px' : 0 }}>
+      <ErrorBoundary name="StoryDetail" onNavigateDashboard={() => setScreen('dashboard')}>
+      <Suspense fallback={<div style={{ minHeight: '100vh', background: '#0a0e14' }} />}>
+        <StoryDetail
+          story={selectedStory}
+          onClose={() => { setSelectedStory(null); setScreen('fantasytimes'); }}
+          isMobile={!isDesktop}
+          isDesktop={isDesktop}
+        />
+      </Suspense>
+      </ErrorBoundary>
+      </div>
+    );
+  }
+
   // FANTASYTIMES FEED
   if (screen === 'fantasytimes') {
     // Extract active battle tickers from battles array
@@ -20566,6 +20588,7 @@ export default function PortfolioDuel() {
           userWatchlist={userWatchlist}
           activeBattleTickers={activeBattleTickers}
           onNavigate={setScreen}
+          onStorySelect={(story) => { setSelectedStory(story); setScreen('storyDetail'); }}
         />
       </Suspense>
       </ErrorBoundary>

@@ -1,12 +1,14 @@
 // src/components/FantasyTimes/StoryDetail.jsx
-// Expanded story view — bottom sheet on mobile, modal on desktop.
+// Full-page story detail view — navigated via screen === 'storyDetail'.
 
-import React, { useEffect, useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { X, Zap, TrendingUp, Globe, BarChart3, Compass, ArrowRight } from 'lucide-react';
-import { REPORTER_PROFILES } from '../../prompts/fantasyTimesPrompts';
+import React, { useEffect, useState, lazy, Suspense } from 'react';
+import { ArrowLeft, BarChart3, ArrowRight } from 'lucide-react';
+import { REPORTER_COLORS, SENTIMENT_COLORS, FEED_TOKENS, getReporterGlow } from '../../constants/reporterTheme';
+import ReporterAvatar from './ReporterAvatar';
+import StoryVisualSafe from './StoryVisualSafe';
+import { findStock } from '../../data/assets';
 
-const ICON_MAP = { Zap, TrendingUp, Globe, BarChart3, Compass };
+const AssetResearchModal = lazy(() => import('../draft/AssetResearchModal'));
 
 // ── Tier color from composite score ──────────────────────────────
 function tierColor(score) {
@@ -102,7 +104,7 @@ function StockRankCard({ ticker }) {
   if (loading) {
     return (
       <div style={{
-        background: '#161b22',
+        background: FEED_TOKENS.bgCard,
         borderRadius: '10px',
         padding: '16px',
         marginTop: '16px',
@@ -122,8 +124,8 @@ function StockRankCard({ ticker }) {
 
   return (
     <div style={{
-      background: '#161b22',
-      border: '1px solid #21262d',
+      background: FEED_TOKENS.bgCard,
+      border: `1px solid ${FEED_TOKENS.bgCardBorder}`,
       borderRadius: '10px',
       padding: '16px',
       marginTop: '16px',
@@ -139,7 +141,6 @@ function StockRankCard({ ticker }) {
         FantasyTrades Ranking
       </div>
 
-      {/* Header row: ticker, rank, overall score */}
       <div style={{
         display: 'flex',
         alignItems: 'center',
@@ -152,23 +153,12 @@ function StockRankCard({ ticker }) {
             #{data.compositeRank} of {data.totalPeers}
           </span>
         </div>
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '6px',
-        }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
           <span style={{ color: '#8b949e', fontSize: '12px' }}>Overall:</span>
-          <span style={{
-            color,
-            fontSize: '16px',
-            fontWeight: 700,
-          }}>
-            {score}/100
-          </span>
+          <span style={{ color, fontSize: '16px', fontWeight: 700 }}>{score}/100</span>
         </div>
       </div>
 
-      {/* Tier badge */}
       <div style={{
         display: 'inline-block',
         padding: '2px 8px',
@@ -182,7 +172,6 @@ function StockRankCard({ ticker }) {
         {tierLabel(score)}
       </div>
 
-      {/* Pillar bars */}
       {Object.entries(pillars).map(([key, pillar]) => (
         <PillarBar key={key} name={key} percentile={pillar.percentile} />
       ))}
@@ -213,7 +202,7 @@ function SectorRankCard({ topSectors }) {
   if (loading) {
     return (
       <div style={{
-        background: '#161b22',
+        background: FEED_TOKENS.bgCard,
         borderRadius: '10px',
         padding: '16px',
         marginTop: '16px',
@@ -227,7 +216,6 @@ function SectorRankCard({ topSectors }) {
   }
   if (!data?.sectors) return null;
 
-  // Show top 3 sectors, prioritizing those mentioned in the story
   const topSet = new Set((topSectors || []).map((s) => s.toUpperCase()));
   const sorted = [...data.sectors].sort((a, b) => {
     const aMatch = topSet.has(a.name?.toUpperCase()) || topSet.has(a.etf?.toUpperCase()) ? 1 : 0;
@@ -239,8 +227,8 @@ function SectorRankCard({ topSectors }) {
 
   return (
     <div style={{
-      background: '#161b22',
-      border: '1px solid #21262d',
+      background: FEED_TOKENS.bgCard,
+      border: `1px solid ${FEED_TOKENS.bgCardBorder}`,
       borderRadius: '10px',
       padding: '16px',
       marginTop: '16px',
@@ -317,34 +305,55 @@ function SectorRankCard({ topSectors }) {
   );
 }
 
+// ── Format timestamp ─────────────────────────────────────────────
+function formatTimestamp(publishedAt) {
+  if (!publishedAt) return '';
+  const ms = publishedAt._seconds
+    ? publishedAt._seconds * 1000
+    : new Date(publishedAt).getTime();
+  return new Date(ms).toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}
+
+// ── Estimate read time ───────────────────────────────────────────
+function estimateReadTime(body) {
+  if (!body) return '';
+  const words = body.split(/\s+/).length;
+  const mins = Math.max(1, Math.round(words / 200));
+  return `${mins} min read`;
+}
+
 // ── Markdown renderer with pull-quote support ────────────────────
 function renderMarkdownWithPullQuote(text, reporterName, reporterBeat, reporterColor) {
   if (!text) return '';
 
-  // Extract the first **bold** block for pull-quote
   let pullQuoteHtml = '';
   let processedText = text;
-  const boldMatch = text.match(/\*\*(.+?)\*\*/);
+  processedText = processedText.replace(/EARNINGSGAME/g, 'EARNINGS ANALYSIS');
+  processedText = processedText.replace(/WATCHLIST/g, 'watchlist');
+  const boldMatch = processedText.match(/\*\*(.+?)\*\*/);
   if (boldMatch) {
     const quoteText = boldMatch[1];
-    pullQuoteHtml = `<div style="border-left:3px solid ${reporterColor};background:${reporterColor}0D;padding:16px 20px;margin:20px 0;border-radius:0 8px 8px 0"><div style="font-size:16px;font-style:italic;color:#e6edf3;line-height:1.6">&ldquo;${quoteText.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}&rdquo;</div><div style="font-size:12px;color:#6e7681;margin-top:8px">&mdash; ${reporterName}, ${reporterBeat}</div></div>`;
-    // Replace the first bold occurrence with the pull-quote
+    pullQuoteHtml = `<div style="border-left:3px solid ${reporterColor};background:${reporterColor}0D;padding:16px 20px;margin:20px 0;border-radius:0 8px 8px 0"><div style="font-size:16px;font-style:italic;color:#e2e8f0;line-height:1.6">&ldquo;${quoteText.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}&rdquo;</div><div style="font-size:12px;color:#6e7681;margin-top:8px">&mdash; ${reporterName}, ${reporterBeat}</div></div>`;
     processedText = text.replace(boldMatch[0], `__PULLQUOTE__`);
   }
 
-  // Run standard markdown rendering
   let html = processedText
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
-    .replace(/^&gt;\s?(.+)$/gm, '<blockquote style="border-left:3px solid #30363d;padding-left:12px;color:#8b949e;margin:8px 0;font-style:italic">$1</blockquote>')
-    .replace(/^## (.+)$/gm, '<h3 style="color:#e6edf3;font-size:15px;margin:16px 0 8px;font-weight:700">$1</h3>')
-    .replace(/\*\*(.+?)\*\*/g, '<strong style="color:#e6edf3">$1</strong>')
-    .replace(/^- (.+)$/gm, '<li style="color:#8b949e;margin:2px 0;margin-left:16px">$1</li>')
-    .replace(/\n\n/g, '</p><p style="margin:8px 0;line-height:1.6">')
+    .replace(/^&gt;\s?(.+)$/gm, '<blockquote style="border-left:3px solid #30363d;padding-left:12px;color:#94a3b8;margin:12px 0;font-style:italic">$1</blockquote>')
+    .replace(/^## (.+)$/gm, '<h3 style="color:#e2e8f0;font-size:16px;margin:20px 0 10px;font-weight:700">$1</h3>')
+    .replace(/\*\*(.+?)\*\*/g, '<strong style="color:#e2e8f0">$1</strong>')
+    .replace(/^- (.+)$/gm, '<li style="color:#94a3b8;margin:4px 0;margin-left:16px">$1</li>')
+    .replace(/\n\n/g, '</p><p style="margin:0 0 16px;line-height:1.65">')
     .replace(/\n/g, '<br/>');
 
-  // Insert pull-quote back
   if (pullQuoteHtml) {
     html = html.replace('__PULLQUOTE__', pullQuoteHtml);
   }
@@ -352,268 +361,287 @@ function renderMarkdownWithPullQuote(text, reporterName, reporterBeat, reporterC
   return html;
 }
 
-export default function StoryDetail({ story, isOpen, onClose, onOpenResearch, isMobile }) {
-  if (!isOpen || !story) return null;
+// ── Main Component ───────────────────────────────────────────────
+export default function StoryDetail({ story, onClose, isMobile, isDesktop }) {
+  const [researchSymbol, setResearchSymbol] = useState(null);
 
-  const profile = REPORTER_PROFILES[story.reporter] || REPORTER_PROFILES.kai;
-  const IconComponent = ICON_MAP[profile.icon] || Zap;
+  if (!story) return null;
+
+  const reporter = REPORTER_COLORS[story.reporter] || REPORTER_COLORS.kai;
+  const reporterColor = reporter.hex;
   const primaryTicker = story.primaryTicker || (story.tickers && story.tickers[0]);
-  const showResearchButton = primaryTicker && onOpenResearch;
   const showStockRank = (story.reporter === 'alex' || story.reporter === 'doug') && primaryTicker;
   const showSectorRank = story.reporter === 'kim';
+  const hasVisual = story.visualType && story.visualType !== 'none';
 
-  // Lock body scroll when open
-  useEffect(() => {
-    if (isOpen) {
-      document.body.style.overflow = 'hidden';
-      return () => { document.body.style.overflow = ''; };
-    }
-  }, [isOpen]);
+  const sentimentColor = SENTIMENT_COLORS[story.sentiment] || SENTIMENT_COLORS.neutral;
+  const sentimentLabel = story.sentiment
+    ? story.sentiment.charAt(0).toUpperCase() + story.sentiment.slice(1)
+    : 'Neutral';
 
-  const bodyHtml = renderMarkdownWithPullQuote(story.body, profile.name, profile.beat, profile.color);
-
-  const modalVariants = isMobile
-    ? {
-        initial: { y: '100%' },
-        animate: { y: 0 },
-        exit: { y: '100%' },
-        transition: { type: 'spring', damping: 25, stiffness: 300 },
-      }
-    : {
-        initial: { opacity: 0, scale: 0.95, x: '-50%', y: '-50%' },
-        animate: { opacity: 1, scale: 1, x: '-50%', y: '-50%' },
-        exit: { opacity: 0, scale: 0.95, x: '-50%', y: '-50%' },
-        transition: { duration: 0.2 },
-      };
+  const bodyHtml = renderMarkdownWithPullQuote(story.body, reporter.name, reporter.beat, reporterColor);
 
   return (
-    <AnimatePresence>
-      {isOpen && (
-        <>
-          {/* Backdrop */}
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            onClick={onClose}
-            style={{
-              position: 'fixed',
-              inset: 0,
-              background: 'rgba(0, 0, 0, 0.8)',
-              backdropFilter: 'blur(8px)',
-              zIndex: 100,
-            }}
+    <div style={{
+      minHeight: '100vh',
+      backgroundColor: '#0a0e14',
+      color: '#e6edf3',
+      maxWidth: isDesktop ? '1080px' : '100%',
+      margin: isDesktop ? '0 auto' : 0,
+    }}>
+      {/* ── Top bar with back arrow ── */}
+      <div style={{
+        padding: '12px 16px',
+        borderBottom: `1px solid ${FEED_TOKENS.bgCardBorder}`,
+        display: 'flex',
+        alignItems: 'center',
+        gap: '12px',
+        position: 'sticky',
+        top: 0,
+        backgroundColor: '#0a0e14',
+        zIndex: 10,
+      }}>
+        <button
+          onClick={onClose}
+          style={{
+            background: 'none',
+            border: 'none',
+            color: '#8b949e',
+            cursor: 'pointer',
+            padding: '4px',
+            display: 'flex',
+            alignItems: 'center',
+          }}
+        >
+          <ArrowLeft size={20} />
+        </button>
+        <span style={{ color: '#00d9ff', fontSize: '14px', fontWeight: 600 }}>
+          FantasyTimes
+        </span>
+      </div>
+
+      {/* ── Expanded visual (280px) ── */}
+      {hasVisual && (
+        <div style={{
+          borderRadius: 0,
+          overflow: 'hidden',
+          backgroundImage: getReporterGlow(story.reporter),
+        }}>
+          <StoryVisualSafe
+            visualType={story.visualType}
+            visualConfig={story.visualConfig}
+            size="expanded"
           />
+        </div>
+      )}
 
-          {/* Modal/Sheet */}
-          <motion.div
-            {...modalVariants}
-            style={{
-              position: 'fixed',
-              zIndex: 101,
-              backgroundColor: '#0d1117',
-              overflowY: 'auto',
-              ...(isMobile
-                ? {
-                    bottom: 0,
-                    left: 0,
-                    right: 0,
-                    height: '90vh',
-                    borderTopLeftRadius: '16px',
-                    borderTopRightRadius: '16px',
-                  }
-                : {
-                    top: '50%',
-                    left: '50%',
-                    maxWidth: '640px',
-                    width: '90vw',
-                    maxHeight: '85vh',
-                    borderRadius: '12px',
-                    border: '1px solid #21262d',
-                  }),
-            }}
-          >
-            {/* Drag handle (mobile) */}
-            {isMobile && (
-              <div style={{
-                display: 'flex',
-                justifyContent: 'center',
-                padding: '10px 0 4px',
-              }}>
-                <div style={{
-                  width: 36,
-                  height: 4,
-                  borderRadius: 2,
-                  backgroundColor: '#30363d',
-                }} />
-              </div>
-            )}
+      {/* ── Content area ── */}
+      <div style={{ padding: isDesktop ? '24px 32px' : '16px 20px' }}>
+        {/* Headline */}
+        <h1 style={{
+          color: '#e2e8f0',
+          fontSize: isDesktop ? '24px' : '20px',
+          fontWeight: 700,
+          lineHeight: 1.3,
+          margin: '0 0 12px',
+        }}>
+          {story.headline}
+        </h1>
 
-            {/* Header */}
-            <div style={{
-              padding: '16px 20px 12px',
-              borderBottom: '1px solid #21262d',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '10px',
-            }}>
-              <div style={{
-                width: 32,
-                height: 32,
-                borderRadius: '50%',
-                backgroundColor: `${profile.color}22`,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                flexShrink: 0,
-              }}>
-                <IconComponent size={16} color={profile.color} />
-              </div>
-              <div style={{ flex: 1 }}>
-                <div style={{ color: profile.color, fontSize: '13px', fontWeight: 600 }}>
-                  {profile.name} · {profile.beat}
-                </div>
-                <div style={{ color: '#6e7681', fontSize: '11px' }}>
-                  {story.publishedAt
-                    ? new Date(
-                        story.publishedAt._seconds
-                          ? story.publishedAt._seconds * 1000
-                          : story.publishedAt
-                      ).toLocaleString()
-                    : ''}
-                </div>
-              </div>
-              <button
-                onClick={onClose}
+        {/* Subheadline */}
+        {story.subheadline && (
+          <p style={{
+            color: '#94a3b8',
+            fontSize: '15px',
+            margin: '0 0 16px',
+            lineHeight: 1.5,
+          }}>
+            {story.subheadline}
+          </p>
+        )}
+
+        {/* ── Reporter row + sentiment badge ── */}
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          marginBottom: '4px',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <ReporterAvatar reporter={story.reporter} size={28} />
+            <div>
+              <span style={{ color: '#e2e8f0', fontSize: '14px', fontWeight: 600 }}>
+                {reporter.name}
+              </span>
+              <span style={{ color: '#94a3b8', fontSize: '14px', marginLeft: '6px' }}>
+                {reporter.beat}
+              </span>
+            </div>
+          </div>
+
+          {/* Sentiment badge */}
+          <span style={{
+            fontSize: '11px',
+            fontWeight: 600,
+            textTransform: 'uppercase',
+            padding: '3px 8px',
+            borderRadius: '4px',
+            backgroundColor: `${sentimentColor}26`,
+            color: sentimentColor,
+            letterSpacing: '0.3px',
+          }}>
+            {sentimentLabel}
+          </span>
+        </div>
+
+        {/* Timestamp + read time */}
+        <div style={{
+          color: '#64748b',
+          fontSize: '12px',
+          marginBottom: '16px',
+          paddingLeft: '36px',
+        }}>
+          {formatTimestamp(story.publishedAt)}
+          {story.body && (
+            <span style={{ marginLeft: '8px' }}>
+              · {estimateReadTime(story.body)}
+            </span>
+          )}
+        </div>
+
+        {/* ── Divider ── */}
+        <div style={{
+          height: '1px',
+          backgroundColor: FEED_TOKENS.bgCardBorder,
+          margin: '0 0 20px',
+        }} />
+
+        {/* ── Body text ── */}
+        <div
+          style={{
+            color: '#e2e8f0',
+            fontSize: '15px',
+            fontWeight: 400,
+            lineHeight: 1.65,
+          }}
+          dangerouslySetInnerHTML={{
+            __html: `<p style="margin:0 0 16px;line-height:1.65">${bodyHtml}</p>`,
+          }}
+        />
+
+        {/* ── Rank cards ── */}
+        {showStockRank && <StockRankCard ticker={primaryTicker} />}
+        {showSectorRank && <SectorRankCard topSectors={story.topSectors} />}
+
+        {/* ── Related tickers ── */}
+        {story.tickers && story.tickers.length > 0 && (
+          <div style={{
+            display: 'flex',
+            gap: '6px',
+            flexWrap: 'wrap',
+            marginTop: '20px',
+          }}>
+            {story.tickers.map((ticker) => (
+              <span
+                key={ticker}
                 style={{
-                  background: 'none',
-                  border: 'none',
-                  color: '#8b949e',
-                  cursor: 'pointer',
-                  padding: '4px',
+                  fontSize: '11px',
+                  fontWeight: 600,
+                  padding: '4px 10px',
+                  borderRadius: '6px',
+                  backgroundColor: FEED_TOKENS.bgCard,
+                  border: `1px solid ${FEED_TOKENS.bgCardBorder}`,
+                  color: '#e6edf3',
                 }}
               >
-                <X size={20} />
-              </button>
+                {ticker}
+              </span>
+            ))}
+          </div>
+        )}
+
+        {/* ── Related Game Actions card ── */}
+        {primaryTicker && story.recommended_action !== 'EARNINGSGAME' && story.recommended_action !== 'WATCHLIST' && (
+          <div style={{
+            marginTop: '24px',
+            backgroundColor: FEED_TOKENS.bgCard,
+            border: `1px solid ${FEED_TOKENS.bgCardBorder}`,
+            borderRadius: FEED_TOKENS.cardRadius,
+            boxShadow: FEED_TOKENS.obsidianShadow,
+            overflow: 'hidden',
+          }}>
+            <div style={{
+              padding: '12px 16px 8px',
+              fontSize: '10px',
+              fontWeight: 700,
+              color: '#6e7681',
+              textTransform: 'uppercase',
+              letterSpacing: '0.5px',
+            }}>
+              Related Game Actions
             </div>
 
-            {/* Content */}
-            <div style={{ padding: '16px 20px' }}>
-              {/* Headline */}
-              <h2 style={{
-                color: '#e6edf3',
-                fontSize: '18px',
-                fontWeight: 700,
-                lineHeight: 1.3,
-                margin: '0 0 8px',
-              }}>
-                {story.headline}
-              </h2>
-
-              {/* Subheadline */}
-              <p style={{
-                color: '#8b949e',
-                fontSize: '14px',
-                margin: '0 0 16px',
-                lineHeight: 1.4,
-              }}>
-                {story.subheadline}
-              </p>
-
-              {/* Body */}
-              <div
-                style={{
-                  color: '#c9d1d9',
-                  fontSize: '14px',
-                  lineHeight: 1.7,
-                }}
-                dangerouslySetInnerHTML={{ __html: `<p style="margin:8px 0;line-height:1.6">${bodyHtml}</p>` }}
-              />
-
-              {/* Ranks visual */}
-              {showStockRank && <StockRankCard ticker={primaryTicker} />}
-              {showSectorRank && <SectorRankCard topSectors={story.topSectors} />}
-
-              {/* Research button (replaces old chart) */}
-              {showResearchButton && (
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onOpenResearch(primaryTicker);
-                  }}
-                  style={{
-                    width: '100%',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '12px',
-                    padding: '16px',
-                    marginTop: '16px',
-                    background: `linear-gradient(135deg, ${profile.color}1A, ${profile.color}08)`,
-                    border: `1px solid ${profile.color}4D`,
-                    borderRadius: '12px',
-                    cursor: 'pointer',
-                    transition: 'box-shadow 0.2s',
-                    textAlign: 'left',
-                  }}
-                  onMouseEnter={(e) => { e.currentTarget.style.boxShadow = `0 0 20px ${profile.color}20`; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.boxShadow = 'none'; }}
-                >
-                  <BarChart3 size={22} color={profile.color} style={{ flexShrink: 0 }} />
-                  <div style={{ flex: 1 }}>
-                    <div style={{ color: '#e6edf3', fontSize: '15px', fontWeight: 600 }}>
-                      View {primaryTicker} in Research
-                    </div>
-                    <div style={{ color: '#6e7681', fontSize: '12px', marginTop: '2px' }}>
-                      Full chart, technicals, rankings
-                    </div>
-                  </div>
-                  <ArrowRight size={18} color="#6e7681" style={{ flexShrink: 0 }} />
-                </button>
-              )}
-
-              {/* Related tickers */}
-              {story.tickers && story.tickers.length > 0 && (
-                <div style={{
-                  display: 'flex',
-                  gap: '6px',
-                  flexWrap: 'wrap',
-                  marginTop: '16px',
-                  paddingTop: '12px',
-                  borderTop: '1px solid #21262d',
-                }}>
-                  {story.tickers.map((ticker) => (
-                    <span
-                      key={ticker}
-                      style={{
-                        fontSize: '11px',
-                        fontWeight: 600,
-                        padding: '3px 8px',
-                        borderRadius: '4px',
-                        backgroundColor: '#21262d',
-                        color: '#e6edf3',
-                      }}
-                    >
-                      {ticker}
-                    </span>
-                  ))}
+            {/* Research button */}
+            <button
+              onClick={() => setResearchSymbol(primaryTicker)}
+              style={{
+                width: '100%',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '12px',
+                padding: '12px 16px',
+                background: 'none',
+                border: 'none',
+                borderTop: `1px solid ${FEED_TOKENS.bgCardBorder}`,
+                cursor: 'pointer',
+                textAlign: 'left',
+                transition: 'background-color 0.15s',
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = `${reporterColor}0A`; }}
+              onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; }}
+            >
+              <BarChart3 size={18} color={reporterColor} style={{ flexShrink: 0 }} />
+              <div style={{ flex: 1 }}>
+                <div style={{ color: '#e6edf3', fontSize: '14px', fontWeight: 600 }}>
+                  Research {primaryTicker}
                 </div>
-              )}
+                <div style={{ color: '#6e7681', fontSize: '12px', marginTop: '1px' }}>
+                  Full chart, technicals, rankings
+                </div>
+              </div>
+              <ArrowRight size={16} color="#6e7681" style={{ flexShrink: 0 }} />
+            </button>
+          </div>
+        )}
 
-              {/* Disclaimer */}
-              <p style={{
-                color: '#6e7681',
-                fontSize: '11px',
-                marginTop: '20px',
-                paddingTop: '12px',
-                borderTop: '1px solid #21262d',
-                lineHeight: 1.4,
-              }}>
-                FantasyTimes — AI-generated for educational and entertainment purposes. Not financial advice.
-              </p>
-            </div>
-          </motion.div>
-        </>
+        {/* ── Disclaimer ── */}
+        <p style={{
+          color: '#6e7681',
+          fontSize: '11px',
+          marginTop: '24px',
+          paddingTop: '16px',
+          borderTop: `1px solid ${FEED_TOKENS.bgCardBorder}`,
+          lineHeight: 1.4,
+        }}>
+          FantasyTimes — AI-generated for educational and entertainment purposes. Not financial advice.
+        </p>
+      </div>
+
+      {/* ── Research modal (local) ── */}
+      {researchSymbol && (
+        <Suspense fallback={null}>
+          <AssetResearchModal
+            asset={{
+              symbol: researchSymbol,
+              name: findStock(researchSymbol)?.name || researchSymbol,
+            }}
+            sector={findStock(researchSymbol)?.sector || ''}
+            onClose={() => setResearchSymbol(null)}
+            showActionButton={false}
+            version={2}
+          />
+        </Suspense>
       )}
-    </AnimatePresence>
+    </div>
   );
 }
