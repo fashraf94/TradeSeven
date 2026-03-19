@@ -27,31 +27,6 @@ function timeAgo(publishedAt) {
   return `${days}d ago`;
 }
 
-/**
- * Get CTA label based on recommended_action and user state.
- */
-function getCTALabel(story, activeBattleTickers = []) {
-  const action = story.recommended_action;
-  const ticker = story.primaryTicker || (story.tickers && story.tickers[0]);
-  const battleSet = new Set((activeBattleTickers || []).map((t) => t.toUpperCase()));
-
-  switch (action) {
-    case 'BAGGERBOMB':
-      if (ticker && battleSet.has(ticker.toUpperCase())) {
-        return `Check Your ${ticker} Battle`;
-      }
-      return ticker ? `Draft ${ticker} in BaggerBomb` : 'Open BaggerBomb';
-    case 'WATCHLIST':
-      return 'Add to Watchlist';
-    case 'RESEARCH':
-      return 'Open Research Hub';
-    case 'SNAKEDRAFT':
-      return 'Join Snake Draft';
-    default:
-      return 'Read More';
-  }
-}
-
 // Variant-specific style tokens
 const VARIANT_STYLES = {
   hero: {

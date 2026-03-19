@@ -5,7 +5,7 @@
 
 export const REPORTER_COLORS = {
   kai:  { hex: '#00D9FF', rgb: '0, 217, 255', name: 'Kai', beat: 'Market Pulse' },
-  alex: { hex: '#FF6B6B', rgb: '255, 107, 107', name: 'Alex', beat: 'Stock Spotlight' },
+  alex: { hex: '#E05DBF', rgb: '224, 93, 191', name: 'Alex', beat: 'Stock Spotlight' },
   neta: { hex: '#F59E0B', rgb: '245, 158, 11', name: 'Neta', beat: 'Economics Desk' },
   doug: { hex: '#FFD700', rgb: '255, 215, 0', name: 'Doug', beat: 'Earnings Analyst' },
   kim:  { hex: '#A78BFA', rgb: '167, 139, 250', name: 'Kim', beat: 'Sector Strategist' },

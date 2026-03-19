@@ -334,7 +334,9 @@ function renderMarkdownWithPullQuote(text, reporterName, reporterBeat, reporterC
 
   let pullQuoteHtml = '';
   let processedText = text;
-  const boldMatch = text.match(/\*\*(.+?)\*\*/);
+  processedText = processedText.replace(/EARNINGSGAME/g, 'EARNINGS ANALYSIS');
+  processedText = processedText.replace(/WATCHLIST/g, 'watchlist');
+  const boldMatch = processedText.match(/\*\*(.+?)\*\*/);
   if (boldMatch) {
     const quoteText = boldMatch[1];
     pullQuoteHtml = `<div style="border-left:3px solid ${reporterColor};background:${reporterColor}0D;padding:16px 20px;margin:20px 0;border-radius:0 8px 8px 0"><div style="font-size:16px;font-style:italic;color:#e2e8f0;line-height:1.6">&ldquo;${quoteText.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}&rdquo;</div><div style="font-size:12px;color:#6e7681;margin-top:8px">&mdash; ${reporterName}, ${reporterBeat}</div></div>`;
@@ -559,7 +561,7 @@ export default function StoryDetail({ story, onClose, isMobile, isDesktop }) {
         )}
 
         {/* ── Related Game Actions card ── */}
-        {primaryTicker && (
+        {primaryTicker && story.recommended_action !== 'EARNINGSGAME' && story.recommended_action !== 'WATCHLIST' && (
           <div style={{
             marginTop: '24px',
             backgroundColor: FEED_TOKENS.bgCard,
