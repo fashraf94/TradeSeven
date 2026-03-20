@@ -84,6 +84,7 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
   const hasInitializedExtremesRef = useRef(false);
   const prevOppMultipliersRef = useRef({});
   const redZoneActiveRef = useRef(new Set());
+  const prevUseCronLevelsRef = useRef(false);
   const myTotalScoreRef = useRef(0);
   const oppTotalScoreRef = useRef(0);
   const battleStatusRef = useRef(null);
@@ -1424,6 +1425,19 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
     }
     prevTradingDayRef.current = effectiveTradingDay;
   }, [effectiveTradingDay]);
+
+  // Reset multiplier refs when cron levels activate to prevent false threshold crossings.
+  // Without this, prevMultipliersRef holds stale values from the old baseline, causing
+  // the detection effect to see false "crossings" and fire badges for every asset at once.
+  // The first-tick guard (line ~806) will re-initialize on the next price tick.
+  useEffect(() => {
+    if (useCronLevels !== prevUseCronLevelsRef.current) {
+      prevMultipliersRef.current = {};
+      prevOppMultipliersRef.current = {};
+      console.log('[BB-CRON] prevMultipliersRef reset — useCronLevels changed to', useCronLevels);
+      prevUseCronLevelsRef.current = useCronLevels;
+    }
+  }, [useCronLevels]);
 
   // Free agent rotation countdown + auto-trigger
   useEffect(() => {
