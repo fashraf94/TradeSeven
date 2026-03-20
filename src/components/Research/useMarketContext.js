@@ -6,6 +6,7 @@ import { db } from '../../firebase/config';
  * useMarketContext — Fetches index intelligence data from Firestore.
  * Reads indexIntelligence/marketContext (global) and indexIntelligence/{symbol} (per-index).
  * Caches data in state to avoid re-fetching on tab switches.
+ * Includes a single automatic retry on failure (handles transient network errors).
  */
 export default function useMarketContext(symbol) {
   const [marketContext, setMarketContext] = useState(null);
@@ -14,7 +15,7 @@ export default function useMarketContext(symbol) {
   const [error, setError] = useState(null);
   const loadedSymbolRef = useRef(null);
 
-  const fetchData = useCallback(async () => {
+  const fetchData = useCallback(async (isRetry = false) => {
     if (!symbol) return;
     setLoading(true);
     setError(null);
@@ -27,7 +28,21 @@ export default function useMarketContext(symbol) {
       setIndexData(indexSnap.exists() ? indexSnap.data() : null);
       loadedSymbolRef.current = symbol;
     } catch (err) {
-      console.error('[useMarketContext] Firestore read failed:', err);
+      const errCode = err.code || 'unknown';
+      console.error(
+        `[useMarketContext] Firestore read failed (${isRetry ? 'retry' : 'first attempt'}):\n` +
+        `  paths: indexIntelligence/marketContext, indexIntelligence/${symbol}\n` +
+        `  code: ${errCode}\n` +
+        `  message: ${err.message}`
+      );
+      if (errCode === 'permission-denied') {
+        console.error('[useMarketContext] Firestore rules may not be deployed. Run: firebase deploy --only firestore:rules');
+      }
+      // Auto-retry once after a short delay (covers transient network errors)
+      if (!isRetry) {
+        await new Promise(r => setTimeout(r, 1500));
+        return fetchData(true);
+      }
       setError(err.message || 'Failed to load market intelligence');
     } finally {
       setLoading(false);
