@@ -437,7 +437,7 @@ export default function StoryDetail({ story, onClose, isMobile, isDesktop }) {
       )}
 
       {/* ── Content area ── */}
-      <div style={{ padding: isDesktop ? '24px 32px' : '16px 20px' }}>
+      <div style={{ padding: isDesktop ? '24px 32px' : '16px 20px 100px' }}>
         {/* Headline */}
         <h1 style={{
           color: '#e2e8f0',

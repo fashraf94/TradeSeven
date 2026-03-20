@@ -267,8 +267,19 @@ function BreadthRatesCard({ breadthQuality, breadthComposite, yields }) {
 }
 
 // ── Section E: Sector Snapshot ──
-function SectorSnapshot({ topSector, worstSector }) {
-  const hasData = topSector && topSector !== 'N/A' && worstSector && worstSector !== 'N/A';
+function fmtChange(val) {
+  if (val == null) return '—';
+  const sign = val >= 0 ? '+' : '';
+  return `${sign}${val.toFixed(2)}%`;
+}
+
+function changeColor(val) {
+  if (val == null) return HOLO_COLORS.textMuted;
+  return val >= 0 ? '#10b981' : '#ef4444';
+}
+
+function SectorSnapshot({ sectorSnapshot, topSector, worstSector }) {
+  const hasData = sectorSnapshot && sectorSnapshot.length > 0;
   return (
     <div style={cardStyle}>
       <span style={{ fontSize: '10px', fontWeight: '600', color: HOLO_COLORS.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
@@ -276,14 +287,50 @@ function SectorSnapshot({ topSector, worstSector }) {
       </span>
       {hasData ? (
         <div style={{ marginTop: '8px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-            <span style={{ fontSize: '12px', color: HOLO_COLORS.textSecondary }}>Strongest</span>
-            <span style={{ fontSize: '12px', fontWeight: '600', color: '#10b981' }}>{topSector}</span>
+          {/* Column headers */}
+          <div style={{ display: 'flex', alignItems: 'center', marginBottom: '6px', paddingBottom: '4px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+            <span style={{ flex: 1, fontSize: '10px', fontWeight: '600', color: HOLO_COLORS.textMuted }}>Sector</span>
+            <span style={{ width: '52px', textAlign: 'right', fontSize: '10px', fontWeight: '600', color: HOLO_COLORS.textMuted }}>1D</span>
+            <span style={{ width: '52px', textAlign: 'right', fontSize: '10px', fontWeight: '600', color: HOLO_COLORS.textMuted }}>1W</span>
+            <span style={{ width: '52px', textAlign: 'right', fontSize: '10px', fontWeight: '600', color: HOLO_COLORS.textMuted }}>1M</span>
           </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-            <span style={{ fontSize: '12px', color: HOLO_COLORS.textSecondary }}>Weakest</span>
-            <span style={{ fontSize: '12px', fontWeight: '600', color: '#ef4444' }}>{worstSector}</span>
-          </div>
+          {sectorSnapshot.map((s) => {
+            const isTop = s.sector === topSector;
+            const isWorst = s.sector === worstSector;
+            return (
+              <div
+                key={s.etf}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  padding: '4px 0',
+                  borderLeft: isTop ? '2px solid #10b981' : isWorst ? '2px solid #ef4444' : '2px solid transparent',
+                  paddingLeft: '6px',
+                }}
+              >
+                <span style={{
+                  flex: 1,
+                  fontSize: '11px',
+                  fontWeight: isTop || isWorst ? '600' : '400',
+                  color: isTop ? '#10b981' : isWorst ? '#ef4444' : HOLO_COLORS.textSecondary,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}>
+                  {s.etf}
+                </span>
+                <span style={{ width: '52px', textAlign: 'right', fontSize: '11px', fontWeight: '600', fontFamily: 'monospace', color: changeColor(s.changePercent) }}>
+                  {fmtChange(s.changePercent)}
+                </span>
+                <span style={{ width: '52px', textAlign: 'right', fontSize: '11px', fontWeight: '600', fontFamily: 'monospace', color: changeColor(s.weekChange) }}>
+                  {fmtChange(s.weekChange)}
+                </span>
+                <span style={{ width: '52px', textAlign: 'right', fontSize: '11px', fontWeight: '600', fontFamily: 'monospace', color: changeColor(s.monthChange) }}>
+                  {fmtChange(s.monthChange)}
+                </span>
+              </div>
+            );
+          })}
         </div>
       ) : (
         <p style={{ margin: '8px 0 0', fontSize: '12px', color: HOLO_COLORS.textMuted }}>
@@ -393,7 +440,7 @@ export default function MarketContextTab({ symbol, onNavigateToStock }) {
   }
 
   return (
-    <div style={{ padding: '4px 0' }}>
+    <div style={{ padding: '4px 0 100px' }}>
       <style>{`@keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }`}</style>
 
       <WeatherCard regime={marketContext.regime} regimeDetail={marketContext.regimeDetail} />
@@ -412,6 +459,7 @@ export default function MarketContextTab({ symbol, onNavigateToStock }) {
       />
 
       <SectorSnapshot
+        sectorSnapshot={marketContext.sectorSnapshot}
         topSector={marketContext.topSectorToday}
         worstSector={marketContext.worstSectorToday}
       />

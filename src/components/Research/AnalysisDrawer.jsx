@@ -202,7 +202,7 @@ const AnalysisDrawer = ({
           WebkitOverflowScrolling: 'touch',
           overscrollBehavior: 'contain',
           touchAction: 'pan-y',
-          padding: '0 12px 12px',
+          padding: '0 12px 80px',
         }}
       >
         {children}

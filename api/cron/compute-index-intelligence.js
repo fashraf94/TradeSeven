@@ -263,20 +263,31 @@ export default async function handler(req, res) {
       log(`  ✗ TNX: ${err.message}`);
     }
 
-    // Step 2B — Fetch Sector ETF daily data (5 days each, compute daily change)
+    // Step 2B — Fetch Sector ETF data (35 days each, compute 1D/1W/1M changes)
     log('Step 2B: Fetching sector ETF data...');
     const sectorSnapshot = [];
     for (const sec of SECTOR_ETFS) {
       try {
-        const data = await fetchOHLCV(sec.eodhd, 5);
+        const data = await fetchOHLCV(sec.eodhd, 35);
         if (data.length >= 2) {
           const todayClose = data[0].close;   // fetchOHLCV returns newest-first
           const prevClose = data[1].close;
           const changePercent = ((todayClose - prevClose) / prevClose) * 100;
+
+          // Week change: ~5 trading days back
+          const weekIdx = Math.min(5, data.length - 1);
+          const weekChange = ((todayClose - data[weekIdx].close) / data[weekIdx].close) * 100;
+
+          // Month change: ~21 trading days back
+          const monthIdx = Math.min(21, data.length - 1);
+          const monthChange = ((todayClose - data[monthIdx].close) / data[monthIdx].close) * 100;
+
           sectorSnapshot.push({
             sector: sec.name,
             etf: sec.etf,
             changePercent: Math.round(changePercent * 100) / 100,
+            weekChange: Math.round(weekChange * 100) / 100,
+            monthChange: Math.round(monthChange * 100) / 100,
           });
         }
       } catch (err) {
