@@ -12,15 +12,17 @@ import {
   KAI_SYSTEM_PROMPT,
   PUBLISH_MARKET_PULSE_TOOL,
   REPORTER_PROFILES,
+  getMarketContextBlock,
 } from '../_utils/fantasyTimesPrompts.js';
 import { getDefaultVisual, shouldOverrideVisual, callArtDirector } from '../_utils/fantasyTimesVisuals.js';
 import { getClaimsForReporter, formatClaimsForPrompt } from '../_utils/ingestedClaims.js';
+import { isIndex, INDEX_SYMBOLS as INDEX_SYMBOL_SET } from '../_utils/indexRegistry.js';
 
 export const config = { maxDuration: 60 };
 
 const LOG_PREFIX = '[FantasyTimes:Kai:Pulse]';
 const VALID_PERIODS = ['pre_market', 'midday', 'post_close'];
-const INDEX_SYMBOLS = ['SPY', 'QQQ', 'DIA'];
+const INDEX_SYMBOLS = [...INDEX_SYMBOL_SET];
 
 function logInfo(msg, data = null) {
   const ts = new Date().toISOString();
@@ -156,7 +158,11 @@ export default async function handler(req, res) {
     }
     logInfo('Dedup check passed');
 
-    // ── Fetch index prices (SPY, QQQ, DIA) ────────────────────────────
+    // ── Fetch market context from Index Intelligence ──────────────────
+    const { block: marketContextBlock, data: marketContextData } = await getMarketContextBlock();
+    logInfo('Market context fetched', { hasContext: marketContextBlock.length > 0 });
+
+    // ── Fetch index prices (SPY, QQQ, DIA, IWM) ──────────────────────
     logInfo('Fetching index prices...');
     const indexPrices = await fetchBatchPrices(INDEX_SYMBOLS);
     logInfo('Index prices fetched', { count: indexPrices.length });
@@ -192,6 +198,7 @@ export default async function handler(req, res) {
     const spyData = indexPrices.find((p) => p.symbol === 'SPY');
     const qqqData = indexPrices.find((p) => p.symbol === 'QQQ');
     const diaData = indexPrices.find((p) => p.symbol === 'DIA');
+    const iwmData = indexPrices.find((p) => p.symbol === 'IWM');
 
     const avgIndexChange = indexPrices.length > 0
       ? indexPrices.reduce((sum, p) => sum + p.changePercent, 0) / indexPrices.length
@@ -255,7 +262,7 @@ export default async function handler(req, res) {
       model: REPORTER_PROFILES.kai.model,
       max_tokens: 800,
       temperature: 0.8,
-      system: KAI_SYSTEM_PROMPT,
+      system: KAI_SYSTEM_PROMPT + (marketContextBlock || ''),
       tools: [PUBLISH_MARKET_PULSE_TOOL],
       tool_choice: { type: 'tool', name: 'publish_market_pulse' },
       messages: [{ role: 'user', content: userMessage }],
@@ -272,6 +279,31 @@ export default async function handler(req, res) {
     const storyData = toolBlock.input;
     const moverTickers = topMovers.map((m) => m.symbol);
 
+    // ── Determine primaryTicker and tickers array ─────────────────────
+    const primaryTicker = storyData.primaryTicker || null;
+    let storyTickers = [...moverTickers];
+    if (primaryTicker && isIndex(primaryTicker)) {
+      // Index-driven story: include all index symbols in tickers
+      for (const sym of INDEX_SYMBOLS) {
+        if (!storyTickers.includes(sym)) {
+          storyTickers.push(sym);
+        }
+      }
+    }
+
+    // ── Build dataSnapshot ────────────────────────────────────────────
+    const buildIndexSnap = (liveData, ctxKey) => {
+      if (liveData) {
+        return { price: liveData.price, change: liveData.change, changePercent: liveData.changePercent };
+      }
+      // Fallback to market context data if live fetch missed
+      const ctx = marketContextData?.[ctxKey];
+      if (ctx) {
+        return { price: ctx.price, change: ctx.change, changePercent: ctx.changePercent };
+      }
+      return null;
+    };
+
     // ── Write to Firestore ──────────────────────────────────────────────
     const now = new Date();
     const expiresAt = new Date(now.getTime() + REPORTER_PROFILES.kai.expiryHours * 60 * 60 * 1000);
@@ -284,8 +316,8 @@ export default async function handler(req, res) {
       headline: String(storyData.headline || '').slice(0, 120),
       subheadline: String(storyData.subheadline || '').slice(0, 200),
       body: String(storyData.body || ''),
-      tickers: moverTickers,
-      primaryTicker: null,
+      tickers: storyTickers,
+      primaryTicker,
       sector: 'Market',
       themes: Array.isArray(storyData.themes) ? storyData.themes : [],
       sentiment: storyData.sentiment || 'neutral',
@@ -295,9 +327,10 @@ export default async function handler(req, res) {
         period,
         marketDirection,
         avgIndexChange: Number(avgIndexChange.toFixed(2)),
-        spy: spyData ? { price: spyData.price, changePercent: spyData.changePercent } : null,
-        qqq: qqqData ? { price: qqqData.price, changePercent: qqqData.changePercent } : null,
-        dia: diaData ? { price: diaData.price, changePercent: diaData.changePercent } : null,
+        spy: buildIndexSnap(spyData, 'spy'),
+        qqq: buildIndexSnap(qqqData, 'qqq'),
+        dia: buildIndexSnap(diaData, 'dia'),
+        iwm: buildIndexSnap(iwmData, 'iwm'),
         topMovers: Array.isArray(storyData.top_movers) ? storyData.top_movers : [],
       },
       newsContext: marketHeadlines,

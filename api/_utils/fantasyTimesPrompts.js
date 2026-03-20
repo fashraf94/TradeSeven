@@ -2,6 +2,8 @@
 // FantasyTimes Virtual Newsroom — Reporter prompts, tool schemas, and profiles.
 // 5 reporters: Kai (Market Pulse), Alex (Stock Spotlight), Neta, Doug, Kim.
 
+import { getFirebaseAdmin } from './firebaseAdmin.js';
+
 // ═══ REPORTER PROFILES ═══════════════════════════════════════════
 // Identity data for all 5 reporters. Used by generation endpoints and feed UI.
 export const REPORTER_PROFILES = {
@@ -214,6 +216,10 @@ export const PUBLISH_MARKET_PULSE_TOOL = {
       headline: { type: 'string', description: 'Max 120 chars, broad market headline' },
       subheadline: { type: 'string', description: 'Max 200 chars' },
       body: { type: 'string', description: '250-400 words, markdown, broad market summary' },
+      primaryTicker: {
+        type: 'string',
+        description: 'Primary ticker for the story. Use SPY for broad market, QQQ for tech-led, DIA for blue-chip, IWM for small-cap stories. Omit for individual stock-driven stories.',
+      },
       sentiment: {
         type: 'string',
         enum: ['bullish', 'bearish', 'neutral', 'mixed'],
@@ -494,3 +500,58 @@ export const PUBLISH_SECTOR_COLUMN_TOOL = {
     required: ['headline', 'subheadline', 'body', 'sentiment', 'themes', 'topSectors', 'recommended_action'],
   },
 };
+
+// ═══ MARKET CONTEXT BLOCK ════════════════════════════════════════
+// Reads indexIntelligence/marketContext from Firestore and returns
+// a formatted text block for injection into any reporter's system prompt.
+// Returns { block: string, data: object|null }. On failure, block is ''
+// and data is null — reporters work exactly as before (graceful degradation).
+
+export async function getMarketContextBlock() {
+  try {
+    const db = getFirebaseAdmin();
+    const doc = await db.collection('indexIntelligence').doc('marketContext').get();
+    if (!doc.exists) return { block: '', data: null };
+    const ctx = doc.data();
+
+    const block = `
+
+=== MARKET CONTEXT (use this to anchor macro stories) ===
+Market Regime: ${ctx.regime ?? 'unknown'} — ${ctx.regimeDetail ?? ''}
+Today's Indexes: SPY ${ctx.spy?.changePercent != null ? (ctx.spy.changePercent >= 0 ? '+' : '') + ctx.spy.changePercent.toFixed(2) + '%' : 'N/A'} | QQQ ${ctx.qqq?.changePercent != null ? (ctx.qqq.changePercent >= 0 ? '+' : '') + ctx.qqq.changePercent.toFixed(2) + '%' : 'N/A'} | DIA ${ctx.dia?.changePercent != null ? (ctx.dia.changePercent >= 0 ? '+' : '') + ctx.dia.changePercent.toFixed(2) + '%' : 'N/A'} | IWM ${ctx.iwm?.changePercent != null ? (ctx.iwm.changePercent >= 0 ? '+' : '') + ctx.iwm.changePercent.toFixed(2) + '%' : 'N/A'}
+Leadership: ${ctx.leadership ?? 'N/A'}
+Divergence: ${ctx.divergence?.active ? ctx.divergence.detail : 'None detected'}
+Breadth Quality: ${ctx.breadthQuality?.signal ?? 'N/A'} — ${ctx.breadthQuality?.detail ?? ''}
+Rates: 10Y yield at ${ctx.yields?.tnx != null ? ctx.yields.tnx.toFixed(2) : 'N/A'}% (${ctx.yields?.regime ?? 'N/A'}) — ${ctx.yields?.detail ?? ''}
+Volatility: ${ctx.volatilityRegime ?? 'N/A'}
+
+TECHNICAL LEADERS (strongest RS vs SPY):
+  ${(ctx.technicalLeaders || []).join(', ') || 'N/A'}
+TECHNICAL LAGGARDS (weakest RS vs SPY):
+  ${(ctx.technicalLaggards || []).join(', ') || 'N/A'}
+
+INDEX STORY RULES:
+- When writing about BROAD MARKET moves (SPY, overall direction), set primaryTicker to "SPY" and include relevant indexes in the tickers array: ["SPY", "QQQ", "DIA", "IWM"]
+- When writing about TECH-LED moves (QQQ diverging), set primaryTicker to "QQQ"
+- When writing about SMALL-CAP moves (IWM diverging), set primaryTicker to "IWM"
+- When writing about BLUE-CHIP/DOW moves, set primaryTicker to "DIA"
+- Reference index performance BY NAME in your headlines and body text (e.g., "S&P 500 slides 1.4%..." not "Broad market slides...")
+- Individual stock stories should still use the stock as primaryTicker, but frame within index context when relevant
+- Call out technical leaders/laggards when covering broad market moves
+
+ADDITIONAL STORY FOCUS:
+- When the broad market moves more than 0.5% in either direction, LEAD with the index story. Write "S&P 500 slides 1.4% as Fed signals hawkish stance" — NOT "ABBV drops as broad market sells off."
+- When SPY and RSP (equal-weight S&P) diverge, that IS the story. Write "S&P 500 pushed higher on mega-cap strength, but equal-weight participation lagged — a fragile, narrow rally."
+- When yields (10Y) move significantly, connect to index action. Write "Nasdaq slides 1.2% as the 10-year yield pushes past 4.3%, pressuring tech valuations."
+- When indexes diverge from each other, make that the headline. Write "Small caps (Russell 2000) surge 0.65% while Nasdaq drops — a classic rotation signal."
+- Call out technical leaders when covering broad moves: "Among the market's strongest technical leaders — EQIX, XOM, and GEV — all held gains even as the S&P corrected."
+- For macro/index stories, the dataSnapshot MUST include spy, qqq, dia, and iwm objects with price, change, and changePercent.
+=== END MARKET CONTEXT ===
+`;
+
+    return { block, data: ctx };
+  } catch (err) {
+    console.error('[FantasyTimes] Failed to fetch market context:', err.message);
+    return { block: '', data: null };
+  }
+}
