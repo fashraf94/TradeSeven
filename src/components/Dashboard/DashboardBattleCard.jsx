@@ -297,14 +297,20 @@ export default function DashboardBattleCard({
       }
 
       // V3/V4: prefer client-side computed scores from useBaggerBombCardScore.
-      // Fall back to liveScore (Firebase) while hook is loading, then banked scores as last resort.
+      // Once the hook has produced non-zero scores, always use them (they persist
+      // across brief non-applicable gaps via the hook's internal ref cache).
+      // Only fall back to banked scores when the hook is still loading its first result.
       if (preview.isV3) {
-        if (!cardScoreLoading) {
-          // Hook has finished — use its computed scores
+        if (cardMyScore !== 0 || cardOppScore !== 0) {
+          // Hook has computed real scores — always prefer them
+          myScore = cardMyScore;
+          theirScore = cardOppScore;
+        } else if (!cardScoreLoading) {
+          // Hook finished but scores are genuinely 0
           myScore = cardMyScore;
           theirScore = cardOppScore;
         } else {
-          // Hook still loading — fall back to liveScore from preview, then banked scores
+          // Hook still loading and no scores yet — fall back to banked scores
           const isCreator = battle.creator?.username === user?.username;
           const myRole = isCreator ? 'creator' : 'opponent';
           const theirRole = isCreator ? 'opponent' : 'creator';
