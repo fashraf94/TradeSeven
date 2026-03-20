@@ -2,7 +2,7 @@
 // Polls prices every 30s and computes BaggerBomb scores without Firebase writes,
 // WebSocket, swap mode, or celebrations.
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { stockAPI, POPULAR_CRYPTO } from '../services/eodhdAPI';
 import { calculateAssetScoreV3, flattenPortfolio } from '../utils/baggerBombUtils';
 import { getBankedScoreTotal } from '../services/dailyScoringV4Service';
@@ -185,17 +185,24 @@ export function useBaggerBombCardScore(battle, user) {
     return () => clearInterval(interval);
   }, [isApplicable, fetchPrices]);
 
+  // Cache last valid scores so they persist across remounts / brief non-applicable gaps
+  const lastScores = useRef({ my: 0, opp: 0 });
+
   // Compute final scores
   const myScore = useMemo(() => {
-    if (!isApplicable || Object.keys(currentPrices).length === 0) return 0;
+    if (!isApplicable || Object.keys(currentPrices).length === 0) return lastScores.current.my;
     const active = computePortfolioScore(myPortfolio, currentPrices, openPrices, battleThresholds, previousClosePriceMap);
-    return Math.round(bankedMy + active + closedMy);
+    const score = Math.round(bankedMy + active + closedMy);
+    lastScores.current.my = score;
+    return score;
   }, [isApplicable, myPortfolio, currentPrices, openPrices, battleThresholds, previousClosePriceMap, bankedMy, closedMy]);
 
   const oppScore = useMemo(() => {
-    if (!isApplicable || Object.keys(currentPrices).length === 0) return 0;
+    if (!isApplicable || Object.keys(currentPrices).length === 0) return lastScores.current.opp;
     const active = computePortfolioScore(oppPortfolio, currentPrices, openPrices, battleThresholds, previousClosePriceMap);
-    return Math.round(bankedOpp + active + closedOpp);
+    const score = Math.round(bankedOpp + active + closedOpp);
+    lastScores.current.opp = score;
+    return score;
   }, [isApplicable, oppPortfolio, currentPrices, openPrices, battleThresholds, previousClosePriceMap, bankedOpp, closedOpp]);
 
   return { myScore, oppScore, isLoading };
