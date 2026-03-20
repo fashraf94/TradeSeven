@@ -218,7 +218,7 @@ export default function ProximityLabel({
     }
     // When cron levels available, show dollar distance
     if (dollarInfo) {
-      return `${icon} $${dollarInfo.dollarDistance.toFixed(2)} to ${label}`;
+      return `${icon} ${dollarInfo.pctDistance.toFixed(1)}% to ${label}`;
     }
     return `${icon} ${distance.toFixed(1)}% to ${label}`;
   };

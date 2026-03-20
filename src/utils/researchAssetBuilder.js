@@ -115,6 +115,8 @@ export function buildResearchAsset(asset, options = {}) {
   if (asset.bustPoints !== undefined) result.bustPoints = asset.bustPoints;
   if (asset.totalScore !== undefined) result.totalScore = asset.totalScore;
   if (asset.gain !== undefined) result.gain = asset.gain;
+  if (asset.dailyLevels !== undefined) result.dailyLevels = asset.dailyLevels;
+  if (asset.previousClosePrice !== undefined) result.previousClosePrice = asset.previousClosePrice;
 
   return result;
 }

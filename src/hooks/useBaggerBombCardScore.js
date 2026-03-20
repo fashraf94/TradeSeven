@@ -165,14 +165,22 @@ export function useBaggerBombCardScore(battle, user) {
     }
   }, [myPortfolio, oppPortfolio]);
 
-  // Poll prices every 30s
+  // Non-applicable battles: stop loading immediately
   useEffect(() => {
     if (!isApplicable) {
       setIsLoading(false);
-      return;
     }
+  }, [isApplicable]);
 
+  // Immediate fetch when battle data is available
+  useEffect(() => {
+    if (!isApplicable) return;
     fetchPrices();
+  }, [isApplicable, fetchPrices]);
+
+  // Poll prices every 30s
+  useEffect(() => {
+    if (!isApplicable) return;
     const interval = setInterval(fetchPrices, CARD_POLL_INTERVAL);
     return () => clearInterval(interval);
   }, [isApplicable, fetchPrices]);
