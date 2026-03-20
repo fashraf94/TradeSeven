@@ -23,6 +23,7 @@ import {
   computeTechnicalScore,
 } from '../_utils/indexIntelligence.js';
 import { DRAFT_STOCK_SYMBOLS } from '../_utils/draftStockList.js';
+import { STOCK_UNIVERSE } from '../_utils/rankingConfig.js';
 
 export const config = { maxDuration: 300 };
 
@@ -36,6 +37,10 @@ const INDEX_SYMBOLS = [
   { symbol: 'IWM', eodhd: 'IWM.US', name: 'Russell 2000' },
   { symbol: 'RSP', eodhd: 'RSP.US', name: 'S&P 500 Equal Weight' },
 ];
+
+const SECTOR_ETFS = Object.entries(STOCK_UNIVERSE).map(([id, s]) => ({
+  id, name: s.name, etf: s.etf, eodhd: s.etf + '.US',
+}));
 
 // ───────────────────────────────────────────────
 // Logging
@@ -258,6 +263,30 @@ export default async function handler(req, res) {
       log(`  ✗ TNX: ${err.message}`);
     }
 
+    // Step 2B — Fetch Sector ETF daily data (5 days each, compute daily change)
+    log('Step 2B: Fetching sector ETF data...');
+    const sectorSnapshot = [];
+    for (const sec of SECTOR_ETFS) {
+      try {
+        const data = await fetchOHLCV(sec.eodhd, 5);
+        if (data.length >= 2) {
+          const todayClose = data[0].close;   // fetchOHLCV returns newest-first
+          const prevClose = data[1].close;
+          const changePercent = ((todayClose - prevClose) / prevClose) * 100;
+          sectorSnapshot.push({
+            sector: sec.name,
+            etf: sec.etf,
+            changePercent: Math.round(changePercent * 100) / 100,
+          });
+        }
+      } catch (err) {
+        errors.push({ symbol: sec.etf, error: err.message });
+        log(`  ✗ ${sec.etf}: ${err.message}`);
+      }
+    }
+    sectorSnapshot.sort((a, b) => b.changePercent - a.changePercent);
+    log(`  ✓ Sector snapshot: ${sectorSnapshot.length}/11 sectors`);
+
     // Step 3 — Compute Per-Index Technicals
     log('Step 3: Computing per-index technicals...');
     const indexTechnicals = {};
@@ -410,10 +439,11 @@ export default async function handler(req, res) {
     const technicalLeaders = stockScores.slice(0, 5).map(s => s.symbol);
     const technicalLaggards = stockScores.slice(-5).reverse().map(s => s.symbol);
 
-    // Determine top sector from leaders (simplified: first leader's sector would need sector mapping,
-    // but we can derive it from the data we have)
-    const topSectorToday = 'N/A';
-    const worstSectorToday = 'N/A';
+    // Top/worst sector from ETF daily performance
+    const topSectorToday = sectorSnapshot.length > 0 ? sectorSnapshot[0].sector : 'N/A';
+    const topSectorChange = sectorSnapshot.length > 0 ? sectorSnapshot[0].changePercent : null;
+    const worstSectorToday = sectorSnapshot.length > 0 ? sectorSnapshot[sectorSnapshot.length - 1].sector : 'N/A';
+    const worstSectorChange = sectorSnapshot.length > 0 ? sectorSnapshot[sectorSnapshot.length - 1].changePercent : null;
 
     // Step 6 — Write to Firestore
     log('Step 6: Writing to Firestore...');
@@ -445,8 +475,11 @@ export default async function handler(req, res) {
       breadthComposite,
       breadthTier,
       volatilityRegime,
+      sectorSnapshot,
       topSectorToday,
+      topSectorChange,
       worstSectorToday,
+      worstSectorChange,
       technicalLeaders,
       technicalLaggards,
       updatedAt: FieldValue.serverTimestamp(),
@@ -475,6 +508,7 @@ export default async function handler(req, res) {
       indexesProcessed: Object.keys(indexTechnicals).length,
       tnxProcessed: tnxData !== null,
       stocksScored: stocksProcessed,
+      sectorsProcessed: sectorSnapshot.length,
       firestoreWrites: writeCount,
       regime: regime.regime,
       topLeader: technicalLeaders[0] || null,
