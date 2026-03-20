@@ -1,17 +1,19 @@
 import React from 'react';
 import { HOLO_COLORS, CATEGORY_CONFIG, getSectorColor } from '../../constants/holoTheme';
+import { INDEX_REGISTRY } from '../../constants/indexRegistry';
 
 /**
  * ChartHeader - Compact 56px header bar for the redesigned research modal.
  * Replaces the giant hero block with a space-efficient layout.
  */
-const ChartHeader = ({ asset, sector, category, onClose, onWhyMoving, onBack }) => {
+const ChartHeader = ({ asset, sector, category, isIndex, onClose, onWhyMoving, onBack }) => {
   if (!asset) return null;
 
   const sectorColor = getSectorColor(sector);
   const priceChange = asset.percentChange || asset.change || 0;
   const isPositive = priceChange >= 0;
   const catConfig = category ? CATEGORY_CONFIG[category] : null;
+  const indexInfo = isIndex ? INDEX_REGISTRY[asset.symbol] : null;
 
   return (
     <div style={{
@@ -41,10 +43,10 @@ const ChartHeader = ({ asset, sector, category, onClose, onWhyMoving, onBack }) 
         <span style={{
           fontSize: '16px',
           fontWeight: '800',
-          color: HOLO_COLORS.textPrimary,
+          color: indexInfo ? indexInfo.color : HOLO_COLORS.textPrimary,
           letterSpacing: '0.5px',
         }}>
-          {asset.symbol}
+          {indexInfo ? indexInfo.name : asset.symbol}
         </span>
 
         <span style={{
@@ -54,7 +56,7 @@ const ChartHeader = ({ asset, sector, category, onClose, onWhyMoving, onBack }) 
           textOverflow: 'ellipsis',
           whiteSpace: 'nowrap',
         }}>
-          {asset.name}
+          {indexInfo ? `(${asset.symbol})` : asset.name}
         </span>
 
         {/* Category pill */}

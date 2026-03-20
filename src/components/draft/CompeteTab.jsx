@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import useTechnicalScore from '../Research/useTechnicalScore';
 
 // ---------------------------------------------------------------------------
 // Constants & Design Tokens
@@ -35,6 +36,25 @@ const PILLAR_CONFIG = [
   { key: 'capitalEff',    label: 'Capital Efficiency',  icon: '💎' },
   { key: 'momentum',      label: 'Momentum',            icon: '⚡' },
   { key: 'sentiment',     label: 'Sentiment',           icon: '🎯' },
+];
+
+const TECHNICAL_FACTORS = [
+  { key: 'rsPercentile', label: 'Relative Strength', icon: '💪', max: 30, scoreKey: 'rsPercentile',
+    format: (v) => v != null ? `P${Math.round(v)}` : '—' },
+  { key: 'smaPosition', label: 'SMA Position', icon: '📐', max: 25, scoreKey: 'smaScore',
+    format: (_, factors) => {
+      if (!factors) return '—';
+      const flags = [factors.aboveSMA20 && '20d', factors.aboveSMA50 && '50d', factors.aboveSMA200 && '200d'].filter(Boolean);
+      return flags.length ? `Above ${flags.join(', ')}` : 'Below all';
+    } },
+  { key: 'highProximity', label: '52-Week Proximity', icon: '🎯', max: 15, scoreKey: 'highProximity',
+    format: (_, factors) => factors?.distTo52wkHigh != null ? `${factors.distTo52wkHigh.toFixed(1)}% off high` : '—' },
+  { key: 'volume', label: 'Volume Confirm', icon: '📊', max: 12, scoreKey: 'volumeConfirmation',
+    format: (_, factors) => factors?.upDayVolRatio != null ? `${factors.upDayVolRatio.toFixed(2)}x ratio` : '—' },
+  { key: 'rsi', label: 'RSI Context', icon: '⚡', max: 10, scoreKey: 'rsiContext',
+    format: (_, factors) => factors?.rsi != null ? `RSI ${Math.round(factors.rsi)}` : '—' },
+  { key: 'rsTrend', label: 'RS Trend', icon: '📈', max: 8, scoreKey: 'rsTrendScore',
+    format: (_, factors) => factors?.rsTrendSlope != null ? `${factors.rsTrendSlope > 0 ? '+' : ''}${factors.rsTrendSlope.toFixed(3)}` : '—' },
 ];
 
 // Dimension formatters — values are stored in Firestore as:
@@ -604,6 +624,161 @@ function ScannerBadges({ scanner }) {
 }
 
 // ---------------------------------------------------------------------------
+// Technical Factor Row
+// ---------------------------------------------------------------------------
+
+function TechnicalFactorRow({ factor, techData }) {
+  const subScore = techData?.[factor.scoreKey] ?? 0;
+  const pct = Math.min(100, Math.max(0, (subScore / factor.max) * 100));
+  const tier = tierFromPercentile(pct);
+  const color = TIER_COLORS[tier] || '#8b949e';
+  const formattedValue = factor.format(subScore, techData?.factors);
+
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'center', gap: '6px',
+      padding: '7px 10px', marginBottom: '3px', borderRadius: '6px',
+      border: '1px solid rgba(255,255,255,0.06)',
+    }}>
+      <span style={{ fontSize: '12px', flexShrink: 0, lineHeight: '1' }}>{factor.icon}</span>
+      <span style={{
+        fontSize: '11px', fontWeight: '600', color: '#e6edf3',
+        flex: '0 0 100px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+      }}>
+        {factor.label}
+      </span>
+
+      <BulletChart percentile={pct} color={color} />
+
+      <span style={{
+        fontSize: '11px', fontWeight: '600', color,
+        fontFamily: MONO, flex: '0 0 38px', textAlign: 'right',
+      }}>
+        {Math.round(subScore)}/{factor.max}
+      </span>
+
+      <span style={{
+        fontSize: '10px', color: '#8b949e',
+        flex: '0 0 80px', textAlign: 'right',
+        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+      }}>
+        {formattedValue}
+      </span>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Dual Badge Header
+// ---------------------------------------------------------------------------
+
+function DualBadgeHeader({ data, techData, techLoading }) {
+  const fundColor = getTierColor(data.tier);
+  const fundTier = getTierLabel(data.tier);
+
+  const techScore = techData?.technicalScore;
+  const techTier = techScore != null ? tierFromPercentile(techScore) : null;
+  const techColor = '#A78BFA';
+
+  return (
+    <div style={{ display: 'flex', gap: '10px', marginBottom: '12px' }}>
+      {/* Fundamental Badge */}
+      <div style={{
+        flex: 1, padding: '12px 10px', borderRadius: '10px',
+        background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)',
+      }}>
+        <div style={{ fontSize: '9px', color: '#8b949e', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '6px' }}>
+          Fundamental
+        </div>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px' }}>
+          <span style={{ fontSize: '24px', fontWeight: '700', color: fundColor, fontFamily: MONO, lineHeight: '1' }}>
+            #{data.compositeRank}
+          </span>
+          <span style={{ fontSize: '10px', color: '#6e7681' }}>of {data.totalPeers}</span>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '6px' }}>
+          <div style={{ flex: 1, height: '6px', borderRadius: '3px', background: 'rgba(255,255,255,0.06)' }}>
+            <div style={{
+              height: '100%', borderRadius: '3px',
+              width: `${data.compositeScore || 0}%`,
+              background: `linear-gradient(90deg, ${fundColor}80, ${fundColor})`,
+              transition: 'width 0.4s ease',
+            }} />
+          </div>
+          <span style={{ fontSize: '12px', fontWeight: '700', color: fundColor, fontFamily: MONO, flexShrink: 0 }}>
+            {data.compositeScore}
+          </span>
+        </div>
+        <div style={{
+          display: 'inline-block', marginTop: '6px',
+          padding: '2px 6px', borderRadius: '4px',
+          background: `${fundColor}18`, border: `1px solid ${fundColor}30`,
+          fontSize: '9px', fontWeight: '600', color: fundColor,
+          textTransform: 'uppercase', letterSpacing: '0.5px',
+        }}>
+          {fundTier}
+        </div>
+      </div>
+
+      {/* Technical Badge */}
+      {techData && (
+        <div style={{
+          flex: 1, padding: '12px 10px', borderRadius: '10px',
+          background: 'rgba(255,255,255,0.03)', border: `1px solid ${techColor}20`,
+        }}>
+          <div style={{ fontSize: '9px', color: '#8b949e', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '6px' }}>
+            Technical
+          </div>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px' }}>
+            <span style={{ fontSize: '24px', fontWeight: '700', color: techColor, fontFamily: MONO, lineHeight: '1' }}>
+              #{techData.technicalRank}
+            </span>
+            <span style={{ fontSize: '10px', color: '#6e7681' }}>rank</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '6px' }}>
+            <div style={{ flex: 1, height: '6px', borderRadius: '3px', background: 'rgba(255,255,255,0.06)' }}>
+              <div style={{
+                height: '100%', borderRadius: '3px',
+                width: `${techScore || 0}%`,
+                background: `linear-gradient(90deg, ${techColor}80, ${techColor})`,
+                transition: 'width 0.4s ease',
+              }} />
+            </div>
+            <span style={{ fontSize: '12px', fontWeight: '700', color: techColor, fontFamily: MONO, flexShrink: 0 }}>
+              {techScore}
+            </span>
+          </div>
+          {techTier && (
+            <div style={{
+              display: 'inline-block', marginTop: '6px',
+              padding: '2px 6px', borderRadius: '4px',
+              background: `${techColor}18`, border: `1px solid ${techColor}30`,
+              fontSize: '9px', fontWeight: '600', color: techColor,
+              textTransform: 'uppercase', letterSpacing: '0.5px',
+            }}>
+              {techTier}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Technical shimmer while loading */}
+      {techLoading && !techData && (
+        <div style={{
+          flex: 1, padding: '12px 10px', borderRadius: '10px',
+          background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)',
+          animation: 'ranks-pulse 1.5s ease-in-out infinite',
+        }}>
+          <div style={{ height: '10px', width: '60px', borderRadius: '4px', background: 'rgba(255,255,255,0.06)', marginBottom: '8px' }} />
+          <div style={{ height: '24px', width: '50px', borderRadius: '4px', background: 'rgba(255,255,255,0.06)', marginBottom: '8px' }} />
+          <div style={{ height: '6px', borderRadius: '3px', background: 'rgba(255,255,255,0.06)' }} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Main Component
 // ---------------------------------------------------------------------------
 
@@ -613,6 +788,7 @@ const CompeteTab = ({ symbol, isMobile, onNavigateToStock }) => {
   const [error, setError] = useState(null);
   const [errorStatus, setErrorStatus] = useState(null);
   const [expandedPillar, setExpandedPillar] = useState(null);
+  const { data: techData, loading: techLoading } = useTechnicalScore(symbol);
 
   useEffect(() => {
     if (!symbol) return;
@@ -666,7 +842,49 @@ const CompeteTab = ({ symbol, isMobile, onNavigateToStock }) => {
   return (
     <div>
       <StalenessNote computedAt={data.computedAt} />
-      <CompositeRankCard data={data} />
+
+      {/* Dual Badge Header — Fundamental + Technical */}
+      <DualBadgeHeader data={data} techData={techData} techLoading={techLoading} />
+
+      {/* DNA Badge */}
+      {data.dnaBadge && (
+        <div style={{
+          marginBottom: '12px', padding: '8px 10px', borderRadius: '6px',
+          background: 'rgba(255,255,255,0.03)',
+          fontSize: '11px', color: '#8b949e', lineHeight: '1.4', fontStyle: 'italic',
+        }}>
+          &ldquo;{data.dnaBadge}&rdquo;
+        </div>
+      )}
+
+      {/* Debt Risk Badge */}
+      {data.debtRiskBadge && (
+        <div style={{
+          marginBottom: '12px', display: 'inline-flex', alignItems: 'center', gap: '4px',
+          padding: '3px 8px', borderRadius: '4px',
+          background: `${data.debtRiskBadge.color || '#ef4444'}18`,
+          border: `1px solid ${data.debtRiskBadge.color || '#ef4444'}30`,
+          fontSize: '10px', fontWeight: '600', color: data.debtRiskBadge.color || '#ef4444',
+        }}>
+          {data.debtRiskBadge.label || data.debtRiskBadge}
+        </div>
+      )}
+
+      {/* Technical Score Breakdown */}
+      {techData && (
+        <>
+          <div style={{
+            fontSize: '10px', color: '#8b949e', marginBottom: '6px',
+            textTransform: 'uppercase', letterSpacing: '0.5px',
+          }}>
+            Technical Score Breakdown
+          </div>
+          {TECHNICAL_FACTORS.map(factor => (
+            <TechnicalFactorRow key={factor.key} factor={factor} techData={techData} />
+          ))}
+          <div style={{ marginBottom: '12px' }} />
+        </>
+      )}
 
       {/* Pillar Breakdown */}
       <div style={{

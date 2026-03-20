@@ -18,6 +18,8 @@ import { CRYPTO_SYMBOLS } from '../../services/sessionScoringService';
 import AnalysisVisualDashboard from './AnalysisVisualDashboard';
 import CompeteTab from './CompeteTab';
 import SectorTab from './SectorTab';
+import { isIndex, INDEX_REGISTRY } from '../../constants/indexRegistry';
+import MarketContextTab from '../Research/MarketContextTab';
 
 /**
  * AssetResearchModal - Detailed asset research view (reusable across screens)
@@ -102,16 +104,28 @@ const AssetResearchModal = ({
   useEffect(() => {
     setCurrentAsset(asset);
     setStockHistory([]);
+    // Assets opened without a price (index ETFs, stocks from FantasyTimes) — fetch from EODHD
+    if (!(asset?.price > 0)) {
+      getStockPrice(asset.symbol).then(data => {
+        if (!data?.price || isNaN(data.price)) return;
+        setCurrentAsset(prev => {
+          if (prev?.symbol !== data.symbol) return prev;
+          return { ...prev, price: data.price, percentChange: data.percentChange || 0 };
+        });
+      }).catch(err => console.warn('[AssetPrice] Failed:', err.message));
+    }
   }, [asset?.symbol]);
 
   const isCrypto = useMemo(() => (
     currentAsset?.isCrypto || currentAsset?.category === 'crypto' || CRYPTO_SYMBOLS.has(currentAsset?.symbol)
   ), [currentAsset?.symbol, currentAsset?.isCrypto, currentAsset?.category]);
 
+  const isIndexAsset = useMemo(() => isIndex(currentAsset?.symbol), [currentAsset?.symbol]);
+
   const isGameContext = isGameContextProp !== undefined
     ? isGameContextProp
     : (onAcquire !== null || showActionButton);
-  const [activeTab, setActiveTab] = useState(defaultTab || (isCrypto ? 'health' : 'fundamental'));
+  const [activeTab, setActiveTab] = useState(defaultTab || (isCrypto ? 'health' : isIndexAsset ? 'marketContext' : 'fundamental'));
   const [whyMovingOpen, setWhyMovingOpen] = useState(false);
   const [profile, setProfile] = useState(null);
   const [profileLoading, setProfileLoading] = useState(false);
@@ -215,13 +229,25 @@ const AssetResearchModal = ({
   }, []);
 
   // Reset tab default when asset or defaultTab changes (e.g. "View Chart" click while modal is open)
-  // Skip reset on internal navigation (leaderboard tap / back button) to preserve tab context
+  // Skip reset on internal navigation (leaderboard tap / back button) to preserve tab context,
+  // UNLESS the asset type changed (e.g. index → stock), in which case reset to avoid showing
+  // an invalid tab (marketContext for a stock, or fundamental for an index).
   useEffect(() => {
+    const correctTab = defaultTab || (isCrypto ? 'health' : isIndexAsset ? 'marketContext' : 'fundamental');
     if (isInternalNavRef.current) {
       isInternalNavRef.current = false;
+      // Reset tab if it's invalid for the new asset type
+      if (
+        (activeTab === 'marketContext' && !isIndexAsset) ||
+        (activeTab === 'health' && !isCrypto) ||
+        (isIndexAsset && activeTab !== 'marketContext' && activeTab !== 'technical') ||
+        (isCrypto && activeTab !== 'health')
+      ) {
+        setActiveTab(correctTab);
+      }
       return;
     }
-    setActiveTab(defaultTab || (isCrypto ? 'health' : 'fundamental'));
+    setActiveTab(correctTab);
   }, [currentAsset?.symbol, defaultTab]);
 
   useEffect(() => {
@@ -429,7 +455,7 @@ const AssetResearchModal = ({
 
         {/* Header: v2 compact header vs v1 original header */}
         {version >= 2 ? (
-          <ChartHeader asset={enrichedAsset} sector={sector} category={category} onClose={handleClose} onWhyMoving={() => setWhyMovingOpen(true)} onBack={canGoBack ? handleNavigateBack : undefined} />
+          <ChartHeader asset={enrichedAsset} sector={sector} category={category} isIndex={isIndexAsset} onClose={handleClose} onWhyMoving={() => setWhyMovingOpen(true)} onBack={canGoBack ? handleNavigateBack : undefined} />
         ) : (
           <div
             style={{
@@ -687,6 +713,7 @@ const AssetResearchModal = ({
               setActiveTab={setActiveTab}
               onSnapStateChange={handleDrawerSnapChange}
               isCrypto={isCrypto}
+              isIndex={isIndexAsset}
               hasBombData={!!bombData}
               isGameContext={isGameContext}
             >
@@ -775,6 +802,13 @@ const AssetResearchModal = ({
                 <SectorTab
                   symbol={currentAsset?.symbol}
                   isMobile={isMobile}
+                  onNavigateToStock={handleNavigateToStock}
+                />
+              )}
+
+              {activeTab === 'marketContext' && (
+                <MarketContextTab
+                  symbol={currentAsset?.symbol}
                   onNavigateToStock={handleNavigateToStock}
                 />
               )}

@@ -529,7 +529,12 @@ TECHNICAL LEADERS (strongest RS vs SPY):
   ${(ctx.technicalLeaders || []).join(', ') || 'N/A'}
 TECHNICAL LAGGARDS (weakest RS vs SPY):
   ${(ctx.technicalLaggards || []).join(', ') || 'N/A'}
-
+${(ctx.sectorSnapshot && ctx.sectorSnapshot.length > 0) ? `
+SECTOR PERFORMANCE (ETF changes — use this to verify sector claims):
+${ctx.sectorSnapshot.map(s => `  ${s.sector} (${s.etf}): 1D ${s.changePercent != null ? (s.changePercent > 0 ? '+' : '') + s.changePercent.toFixed(2) + '%' : 'N/A'} | 1W ${s.weekChange != null ? (s.weekChange > 0 ? '+' : '') + s.weekChange.toFixed(2) + '%' : 'N/A'} | 1M ${s.monthChange != null ? (s.monthChange > 0 ? '+' : '') + s.monthChange.toFixed(2) + '%' : 'N/A'}`).join('\n')}
+Top Sector: ${ctx.topSectorToday} (${ctx.topSectorChange != null ? (ctx.topSectorChange > 0 ? '+' : '') + ctx.topSectorChange.toFixed(2) + '%' : ''})
+Worst Sector: ${ctx.worstSectorToday} (${ctx.worstSectorChange != null ? (ctx.worstSectorChange > 0 ? '+' : '') + ctx.worstSectorChange.toFixed(2) + '%' : ''})
+` : ''}
 INDEX STORY RULES:
 - When writing about BROAD MARKET moves (SPY, overall direction), set primaryTicker to "SPY" and include relevant indexes in the tickers array: ["SPY", "QQQ", "DIA", "IWM"]
 - When writing about TECH-LED moves (QQQ diverging), set primaryTicker to "QQQ"
@@ -546,6 +551,15 @@ ADDITIONAL STORY FOCUS:
 - When indexes diverge from each other, make that the headline. Write "Small caps (Russell 2000) surge 0.65% while Nasdaq drops — a classic rotation signal."
 - Call out technical leaders when covering broad moves: "Among the market's strongest technical leaders — EQIX, XOM, and GEV — all held gains even as the S&P corrected."
 - For macro/index stories, the dataSnapshot MUST include spy, qqq, dia, and iwm objects with price, change, and changePercent.
+
+SECTOR ACCURACY RULES (CRITICAL):
+- Before claiming ANY sector is strong or weak, CHECK the SECTOR PERFORMANCE data above. The sector ETF change is the ground truth, not individual stock performance.
+- Example of WRONG: "Consumer discretionary strength powered by SBUX +3.4%." (XLY was actually -0.75%)
+- Example of RIGHT: "SBUX bucked the consumer discretionary trend, rallying 3.4% even as XLY dropped 0.75%."
+- When a stock moves opposite to its sector, that IS the story — it's a divergence worth calling out.
+- Always name the sector ETF ticker when discussing sector performance (e.g., "Energy (XLE) led all sectors at +1.2%").
+- NEVER claim a sector is "strong" or "leading" based on a single stock. ALWAYS check the sector ETF performance first.
+- When discussing sector trends, reference the ETF performance AND name 2-3 stocks from different industries within that sector.
 === END MARKET CONTEXT ===
 `;
 

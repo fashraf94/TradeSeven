@@ -23,6 +23,7 @@ import {
   computeTechnicalScore,
 } from '../_utils/indexIntelligence.js';
 import { DRAFT_STOCK_SYMBOLS } from '../_utils/draftStockList.js';
+import { STOCK_UNIVERSE } from '../_utils/rankingConfig.js';
 
 export const config = { maxDuration: 300 };
 
@@ -36,6 +37,10 @@ const INDEX_SYMBOLS = [
   { symbol: 'IWM', eodhd: 'IWM.US', name: 'Russell 2000' },
   { symbol: 'RSP', eodhd: 'RSP.US', name: 'S&P 500 Equal Weight' },
 ];
+
+const SECTOR_ETFS = Object.entries(STOCK_UNIVERSE).map(([id, s]) => ({
+  id, name: s.name, etf: s.etf, eodhd: s.etf + '.US',
+}));
 
 // ───────────────────────────────────────────────
 // Logging
@@ -235,28 +240,57 @@ export default async function handler(req, res) {
   try {
     const db = getFirebaseAdmin();
 
-    // Step 2 — Fetch Index OHLCV
-    log('Step 2: Fetching index OHLCV data...');
+    // Step 2 — Fetch Index OHLCV + TNX + Sector ETFs in parallel
+    log('Step 2: Fetching index, TNX, and sector ETF data in parallel...');
     const indexData = {};
-    for (const idx of INDEX_SYMBOLS) {
-      try {
-        indexData[idx.symbol] = await fetchOHLCV(idx.eodhd);
-        log(`  ✓ ${idx.symbol}: ${indexData[idx.symbol].length} days`);
-      } catch (err) {
-        errors.push({ symbol: idx.symbol, error: err.message });
-        log(`  ✗ ${idx.symbol}: ${err.message}`);
+    let tnxData = null;
+    const sectorSnapshot = [];
+
+    const allResults = await Promise.allSettled([
+      ...INDEX_SYMBOLS.map(idx =>
+        fetchOHLCV(idx.eodhd).then(data => ({ type: 'index', symbol: idx.symbol, data }))
+      ),
+      fetchOHLCV('TNX.INDX', 30).then(data => ({ type: 'tnx', data })),
+      ...SECTOR_ETFS.map(sec =>
+        fetchOHLCV(sec.eodhd, 35).then(data => ({ type: 'sector', sec, data }))
+      ),
+    ]);
+
+    // Process all results (indexes, TNX, sectors)
+    for (const result of allResults) {
+      if (result.status === 'fulfilled') {
+        const { type, symbol, sec, data } = result.value;
+        if (type === 'index') {
+          indexData[symbol] = data;
+          log(`  ✓ ${symbol}: ${data.length} days`);
+        } else if (type === 'tnx') {
+          tnxData = data;
+          log(`  ✓ TNX: ${data.length} days`);
+        } else if (type === 'sector' && data.length >= 2) {
+          const todayClose = data[0].close;
+          const prevClose = data[1].close;
+          const changePercent = ((todayClose - prevClose) / prevClose) * 100;
+          const weekIdx = Math.min(5, data.length - 1);
+          const weekChange = ((todayClose - data[weekIdx].close) / data[weekIdx].close) * 100;
+          const monthIdx = Math.min(21, data.length - 1);
+          const monthChange = ((todayClose - data[monthIdx].close) / data[monthIdx].close) * 100;
+          sectorSnapshot.push({
+            sector: sec.name,
+            etf: sec.etf,
+            changePercent: Math.round(changePercent * 100) / 100,
+            weekChange: Math.round(weekChange * 100) / 100,
+            monthChange: Math.round(monthChange * 100) / 100,
+          });
+        }
+      } else {
+        // Extract symbol from the rejection for error logging
+        const errMsg = result.reason?.message || 'Unknown error';
+        errors.push({ error: errMsg });
+        log(`  ✗ Fetch failed: ${errMsg}`);
       }
     }
-
-    // Fetch TNX (Treasury yield) — 30 days only
-    let tnxData = null;
-    try {
-      tnxData = await fetchOHLCV('TNX.INDX', 30);
-      log(`  ✓ TNX: ${tnxData.length} days`);
-    } catch (err) {
-      errors.push({ symbol: 'TNX', error: err.message });
-      log(`  ✗ TNX: ${err.message}`);
-    }
+    sectorSnapshot.sort((a, b) => b.changePercent - a.changePercent);
+    log(`  ✓ Indexes: ${Object.keys(indexData).length}/5, TNX: ${tnxData ? 'yes' : 'no'}, Sectors: ${sectorSnapshot.length}/11`);
 
     // Step 3 — Compute Per-Index Technicals
     log('Step 3: Computing per-index technicals...');
@@ -410,10 +444,11 @@ export default async function handler(req, res) {
     const technicalLeaders = stockScores.slice(0, 5).map(s => s.symbol);
     const technicalLaggards = stockScores.slice(-5).reverse().map(s => s.symbol);
 
-    // Determine top sector from leaders (simplified: first leader's sector would need sector mapping,
-    // but we can derive it from the data we have)
-    const topSectorToday = 'N/A';
-    const worstSectorToday = 'N/A';
+    // Top/worst sector from ETF daily performance
+    const topSectorToday = sectorSnapshot.length > 0 ? sectorSnapshot[0].sector : 'N/A';
+    const topSectorChange = sectorSnapshot.length > 0 ? sectorSnapshot[0].changePercent : null;
+    const worstSectorToday = sectorSnapshot.length > 0 ? sectorSnapshot[sectorSnapshot.length - 1].sector : 'N/A';
+    const worstSectorChange = sectorSnapshot.length > 0 ? sectorSnapshot[sectorSnapshot.length - 1].changePercent : null;
 
     // Step 6 — Write to Firestore
     log('Step 6: Writing to Firestore...');
@@ -445,8 +480,11 @@ export default async function handler(req, res) {
       breadthComposite,
       breadthTier,
       volatilityRegime,
+      sectorSnapshot,
       topSectorToday,
+      topSectorChange,
       worstSectorToday,
+      worstSectorChange,
       technicalLeaders,
       technicalLaggards,
       updatedAt: FieldValue.serverTimestamp(),
@@ -475,6 +513,7 @@ export default async function handler(req, res) {
       indexesProcessed: Object.keys(indexTechnicals).length,
       tnxProcessed: tnxData !== null,
       stocksScored: stocksProcessed,
+      sectorsProcessed: sectorSnapshot.length,
       firestoreWrites: writeCount,
       regime: regime.regime,
       topLeader: technicalLeaders[0] || null,
