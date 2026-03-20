@@ -14,6 +14,7 @@ export { default as CollapsibleSection } from './CollapsibleSection';
 export { default as TechnicalTabV2 } from './TechnicalTabV2';
 export { default as HealthTab } from './HealthTab';
 export { ChartSkeleton, LevelsSkeleton, DrawerSkeleton } from './ResearchSkeletons';
+export { default as MarketContextTab } from './MarketContextTab';
 
 // Research Landing Page (redesigned dashboard)
 export { default as ResearchLandingPage } from './ResearchLandingPage';

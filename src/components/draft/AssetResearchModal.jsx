@@ -18,6 +18,8 @@ import { CRYPTO_SYMBOLS } from '../../services/sessionScoringService';
 import AnalysisVisualDashboard from './AnalysisVisualDashboard';
 import CompeteTab from './CompeteTab';
 import SectorTab from './SectorTab';
+import { isIndex, INDEX_REGISTRY } from '../../constants/indexRegistry';
+import MarketContextTab from '../Research/MarketContextTab';
 
 /**
  * AssetResearchModal - Detailed asset research view (reusable across screens)
@@ -108,10 +110,12 @@ const AssetResearchModal = ({
     currentAsset?.isCrypto || currentAsset?.category === 'crypto' || CRYPTO_SYMBOLS.has(currentAsset?.symbol)
   ), [currentAsset?.symbol, currentAsset?.isCrypto, currentAsset?.category]);
 
+  const isIndexAsset = useMemo(() => isIndex(currentAsset?.symbol), [currentAsset?.symbol]);
+
   const isGameContext = isGameContextProp !== undefined
     ? isGameContextProp
     : (onAcquire !== null || showActionButton);
-  const [activeTab, setActiveTab] = useState(defaultTab || (isCrypto ? 'health' : 'fundamental'));
+  const [activeTab, setActiveTab] = useState(defaultTab || (isCrypto ? 'health' : isIndexAsset ? 'marketContext' : 'fundamental'));
   const [whyMovingOpen, setWhyMovingOpen] = useState(false);
   const [profile, setProfile] = useState(null);
   const [profileLoading, setProfileLoading] = useState(false);
@@ -221,7 +225,7 @@ const AssetResearchModal = ({
       isInternalNavRef.current = false;
       return;
     }
-    setActiveTab(defaultTab || (isCrypto ? 'health' : 'fundamental'));
+    setActiveTab(defaultTab || (isCrypto ? 'health' : isIndexAsset ? 'marketContext' : 'fundamental'));
   }, [currentAsset?.symbol, defaultTab]);
 
   useEffect(() => {
@@ -429,7 +433,7 @@ const AssetResearchModal = ({
 
         {/* Header: v2 compact header vs v1 original header */}
         {version >= 2 ? (
-          <ChartHeader asset={enrichedAsset} sector={sector} category={category} onClose={handleClose} onWhyMoving={() => setWhyMovingOpen(true)} onBack={canGoBack ? handleNavigateBack : undefined} />
+          <ChartHeader asset={enrichedAsset} sector={sector} category={category} isIndex={isIndexAsset} onClose={handleClose} onWhyMoving={() => setWhyMovingOpen(true)} onBack={canGoBack ? handleNavigateBack : undefined} />
         ) : (
           <div
             style={{
@@ -687,6 +691,7 @@ const AssetResearchModal = ({
               setActiveTab={setActiveTab}
               onSnapStateChange={handleDrawerSnapChange}
               isCrypto={isCrypto}
+              isIndex={isIndexAsset}
               hasBombData={!!bombData}
               isGameContext={isGameContext}
             >
@@ -775,6 +780,13 @@ const AssetResearchModal = ({
                 <SectorTab
                   symbol={currentAsset?.symbol}
                   isMobile={isMobile}
+                  onNavigateToStock={handleNavigateToStock}
+                />
+              )}
+
+              {activeTab === 'marketContext' && (
+                <MarketContextTab
+                  symbol={currentAsset?.symbol}
                   onNavigateToStock={handleNavigateToStock}
                 />
               )}

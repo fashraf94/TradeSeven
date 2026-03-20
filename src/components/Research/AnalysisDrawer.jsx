@@ -5,6 +5,7 @@ import useDrawerSnap from './useDrawerSnap';
 import { useIsMobile } from '../../hooks/useIsMobile';
 
 const TAB_CONFIGS = [
+  { key: 'marketContext', label: '\uD83C\uDF10 Market', activeColor: '#00D9FF' },
   { key: 'health', label: '\u26D3\uFE0F Health', activeColor: HOLO_COLORS.amber },
   { key: 'fundamental', label: 'Analysis', activeColor: HOLO_COLORS.primary },
   { key: 'compete', label: 'Ranks', activeColor: '#a78bfa' },
@@ -31,6 +32,7 @@ const AnalysisDrawer = ({
   onSnapStateChange,
   children,
   isCrypto = false,
+  isIndex = false,
   hasBombData = false,
   isGameContext = false,
 }) => {
@@ -155,8 +157,10 @@ const AnalysisDrawer = ({
         >
           <style>{`.drawer-tabs-scroll::-webkit-scrollbar { display: none; }`}</style>
           {TAB_CONFIGS.filter(t => {
+            if (isIndex && ['fundamental', 'health', 'compete', 'sector', 'baggerbomb'].includes(t.key)) return false;
+            if (!isIndex && t.key === 'marketContext') return false;
             if (isCrypto && ['fundamental', 'compete', 'sector'].includes(t.key)) return false;
-            if (!isCrypto && t.key === 'health') return false;
+            if (!isCrypto && !isIndex && t.key === 'health') return false;
             if (t.key === 'baggerbomb' && !hasBombData && !isGameContext) return false;
             return true;
           }).map(tab => (
