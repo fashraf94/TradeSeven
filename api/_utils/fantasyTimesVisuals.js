@@ -24,6 +24,7 @@ export function getDefaultVisual(reporter, storyType, dataSnapshot, primaryTicke
           { symbol: 'SPY', pctChange: snap.spy?.changePercent || 0 },
           { symbol: 'QQQ', pctChange: snap.qqq?.changePercent || 0 },
           { symbol: 'DIA', pctChange: snap.dia?.changePercent || 0 },
+          { symbol: 'IWM', pctChange: snap.iwm?.changePercent || 0 },
         ],
       },
     };
