@@ -104,16 +104,16 @@ const AssetResearchModal = ({
   useEffect(() => {
     setCurrentAsset(asset);
     setStockHistory([]);
-    // Index ETFs don't get wsPrice from parent — fetch price from EODHD
-    if (isIndex(asset?.symbol) && !(asset?.price > 0)) {
-      console.log('[IndexPrice] Fetching price for', asset.symbol);
+    // Assets opened without a price (index ETFs, stocks from FantasyTimes) — fetch from EODHD
+    if (!(asset?.price > 0)) {
+      console.log('[AssetPrice] Fetching price for', asset.symbol);
       getStockPrice(asset.symbol).then(data => {
         if (!data?.price) return;
         setCurrentAsset(prev => {
           if (prev?.symbol !== data.symbol) return prev;
           return { ...prev, price: data.price, percentChange: data.percentChange || 0 };
         });
-      }).catch(err => console.warn('[IndexPrice] Failed:', err.message));
+      }).catch(err => console.warn('[AssetPrice] Failed:', err.message));
     }
   }, [asset?.symbol]);
 
@@ -230,13 +230,25 @@ const AssetResearchModal = ({
   }, []);
 
   // Reset tab default when asset or defaultTab changes (e.g. "View Chart" click while modal is open)
-  // Skip reset on internal navigation (leaderboard tap / back button) to preserve tab context
+  // Skip reset on internal navigation (leaderboard tap / back button) to preserve tab context,
+  // UNLESS the asset type changed (e.g. index → stock), in which case reset to avoid showing
+  // an invalid tab (marketContext for a stock, or fundamental for an index).
   useEffect(() => {
+    const correctTab = defaultTab || (isCrypto ? 'health' : isIndexAsset ? 'marketContext' : 'fundamental');
     if (isInternalNavRef.current) {
       isInternalNavRef.current = false;
+      // Reset tab if it's invalid for the new asset type
+      if (
+        (activeTab === 'marketContext' && !isIndexAsset) ||
+        (activeTab === 'health' && !isCrypto) ||
+        (isIndexAsset && activeTab !== 'marketContext' && activeTab !== 'technical') ||
+        (isCrypto && activeTab !== 'health')
+      ) {
+        setActiveTab(correctTab);
+      }
       return;
     }
-    setActiveTab(defaultTab || (isCrypto ? 'health' : isIndexAsset ? 'marketContext' : 'fundamental'));
+    setActiveTab(correctTab);
   }, [currentAsset?.symbol, defaultTab]);
 
   useEffect(() => {
