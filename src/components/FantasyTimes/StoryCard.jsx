@@ -8,6 +8,7 @@ import ReporterAvatar from './ReporterAvatar';
 import StoryVisualSafe from './StoryVisualSafe';
 import MoverSparkline from './visuals/MoverSparkline';
 import { findStock } from '../../data/assets';
+import { INDEX_REGISTRY } from '../../constants/indexRegistry';
 
 /**
  * Format "time ago" from a publishedAt timestamp.
@@ -70,11 +71,12 @@ export default function StoryCard({
 
   const primaryTicker = story.primaryTicker || (story.tickers && story.tickers[0]);
   const stockInfo = primaryTicker ? findStock(primaryTicker) : null;
-  const companyName = stockInfo?.name || null;
+  const indexInfo = primaryTicker ? INDEX_REGISTRY[primaryTicker] : null;
+  const companyName = indexInfo?.name || stockInfo?.name || null;
 
   const priceChange = story.dataSnapshot?.percentChange
     || story.dataSnapshot?.avgIndexChange
-    || story.dataSnapshot?.spy?.changePercent
+    || (primaryTicker && story.dataSnapshot?.[primaryTicker.toLowerCase()]?.changePercent)
     || null;
   const isPositive = priceChange !== null ? priceChange >= 0 : true;
 
@@ -109,6 +111,7 @@ export default function StoryCard({
           styles={styles}
           primaryTicker={primaryTicker}
           companyName={companyName}
+          indexInfo={indexInfo}
           priceChange={priceChange}
           isPositive={isPositive}
           reporterColor={reporterColor}
@@ -215,11 +218,15 @@ function EditorialLayout({ story, styles, variant, reporterColor, hasVisual, act
 }
 
 // Mover / ticker card layout
-function MoverLayout({ story, styles, primaryTicker, companyName, priceChange, isPositive, reporterColor }) {
+function MoverLayout({ story, styles, primaryTicker, companyName, indexInfo, priceChange, isPositive, reporterColor }) {
   const sentimentColor = isPositive ? SENTIMENT_COLORS.bullish : SENTIMENT_COLORS.bearish;
+  const tickerColor = indexInfo ? indexInfo.color : sentimentColor;
   const changeText = priceChange !== null
     ? `${isPositive ? '+' : ''}${Number(priceChange).toFixed(2)}%`
     : null;
+  const tickerDisplay = indexInfo
+    ? `${indexInfo.name} (${primaryTicker})`
+    : primaryTicker;
 
   return (
     <>
@@ -233,9 +240,9 @@ function MoverLayout({ story, styles, primaryTicker, companyName, priceChange, i
           <span style={{
             fontSize: 13,
             fontWeight: 700,
-            color: sentimentColor,
+            color: tickerColor,
           }}>
-            {primaryTicker}{changeText ? ` (${changeText})` : ''}
+            {tickerDisplay}{changeText ? ` (${changeText})` : ''}
           </span>
           <MoverSparkline isPositive={isPositive} width={60} height={24} />
         </div>

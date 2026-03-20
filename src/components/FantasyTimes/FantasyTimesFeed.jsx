@@ -8,6 +8,7 @@ import { REPORTER_COLORS } from '../../constants/reporterTheme';
 import { useFantasyTimes } from '../../hooks/useFantasyTimes';
 import { groupStoriesBySections } from '../../services/fantasyTimesClient';
 import { findStock } from '../../data/assets';
+import { INDEX_REGISTRY } from '../../constants/indexRegistry';
 import StoryCard from './StoryCard';
 import FeedSection from './FeedSection';
 
@@ -483,7 +484,7 @@ export default function FantasyTimesFeed({
           <AssetResearchModal
             asset={{
               symbol: researchSymbol,
-              name: findStock(researchSymbol)?.name || researchSymbol,
+              name: INDEX_REGISTRY[researchSymbol]?.name || findStock(researchSymbol)?.name || researchSymbol,
             }}
             sector={findStock(researchSymbol)?.sector || ''}
             onClose={() => setResearchSymbol(null)}

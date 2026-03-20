@@ -7,6 +7,7 @@ import { REPORTER_COLORS, SENTIMENT_COLORS, FEED_TOKENS, getReporterGlow } from 
 import ReporterAvatar from './ReporterAvatar';
 import StoryVisualSafe from './StoryVisualSafe';
 import { findStock } from '../../data/assets';
+import { isIndex, INDEX_REGISTRY } from '../../constants/indexRegistry';
 
 const AssetResearchModal = lazy(() => import('../draft/AssetResearchModal'));
 
@@ -541,27 +542,32 @@ export default function StoryDetail({ story, onClose, isMobile, isDesktop }) {
             flexWrap: 'wrap',
             marginTop: '20px',
           }}>
-            {story.tickers.map((ticker) => (
-              <span
-                key={ticker}
-                style={{
-                  fontSize: '11px',
-                  fontWeight: 600,
-                  padding: '4px 10px',
-                  borderRadius: '6px',
-                  backgroundColor: FEED_TOKENS.bgCard,
-                  border: `1px solid ${FEED_TOKENS.bgCardBorder}`,
-                  color: '#e6edf3',
-                }}
-              >
-                {ticker}
-              </span>
-            ))}
+            {story.tickers.map((ticker) => {
+              const idxInfo = INDEX_REGISTRY[ticker];
+              return (
+                <button
+                  key={ticker}
+                  onClick={() => setResearchSymbol(ticker)}
+                  style={{
+                    fontSize: '11px',
+                    fontWeight: 600,
+                    padding: '4px 10px',
+                    borderRadius: '6px',
+                    backgroundColor: idxInfo ? `${idxInfo.color}15` : FEED_TOKENS.bgCard,
+                    border: `1px solid ${idxInfo ? `${idxInfo.color}40` : FEED_TOKENS.bgCardBorder}`,
+                    color: idxInfo ? idxInfo.color : '#e6edf3',
+                    cursor: 'pointer',
+                  }}
+                >
+                  {idxInfo ? idxInfo.name : ticker}
+                </button>
+              );
+            })}
           </div>
         )}
 
         {/* ── Related Game Actions card ── */}
-        {primaryTicker && story.recommended_action !== 'EARNINGSGAME' && story.recommended_action !== 'WATCHLIST' && (
+        {primaryTicker && story.recommended_action !== 'EARNINGSGAME' && (story.recommended_action !== 'WATCHLIST' || isIndex(primaryTicker)) && (
           <div style={{
             marginTop: '24px',
             backgroundColor: FEED_TOKENS.bgCard,
@@ -603,7 +609,7 @@ export default function StoryDetail({ story, onClose, isMobile, isDesktop }) {
               <BarChart3 size={18} color={reporterColor} style={{ flexShrink: 0 }} />
               <div style={{ flex: 1 }}>
                 <div style={{ color: '#e6edf3', fontSize: '14px', fontWeight: 600 }}>
-                  Research {primaryTicker}
+                  Research {INDEX_REGISTRY[primaryTicker]?.name || primaryTicker}
                 </div>
                 <div style={{ color: '#6e7681', fontSize: '12px', marginTop: '1px' }}>
                   Full chart, technicals, rankings
@@ -633,7 +639,7 @@ export default function StoryDetail({ story, onClose, isMobile, isDesktop }) {
           <AssetResearchModal
             asset={{
               symbol: researchSymbol,
-              name: findStock(researchSymbol)?.name || researchSymbol,
+              name: INDEX_REGISTRY[researchSymbol]?.name || findStock(researchSymbol)?.name || researchSymbol,
             }}
             sector={findStock(researchSymbol)?.sector || ''}
             onClose={() => setResearchSymbol(null)}
