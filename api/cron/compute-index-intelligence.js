@@ -240,48 +240,40 @@ export default async function handler(req, res) {
   try {
     const db = getFirebaseAdmin();
 
-    // Step 2 — Fetch Index OHLCV
-    log('Step 2: Fetching index OHLCV data...');
+    // Step 2 — Fetch Index OHLCV + TNX + Sector ETFs in parallel
+    log('Step 2: Fetching index, TNX, and sector ETF data in parallel...');
     const indexData = {};
-    for (const idx of INDEX_SYMBOLS) {
-      try {
-        indexData[idx.symbol] = await fetchOHLCV(idx.eodhd);
-        log(`  ✓ ${idx.symbol}: ${indexData[idx.symbol].length} days`);
-      } catch (err) {
-        errors.push({ symbol: idx.symbol, error: err.message });
-        log(`  ✗ ${idx.symbol}: ${err.message}`);
-      }
-    }
-
-    // Fetch TNX (Treasury yield) — 30 days only
     let tnxData = null;
-    try {
-      tnxData = await fetchOHLCV('TNX.INDX', 30);
-      log(`  ✓ TNX: ${tnxData.length} days`);
-    } catch (err) {
-      errors.push({ symbol: 'TNX', error: err.message });
-      log(`  ✗ TNX: ${err.message}`);
-    }
-
-    // Step 2B — Fetch Sector ETF data (35 days each, compute 1D/1W/1M changes)
-    log('Step 2B: Fetching sector ETF data...');
     const sectorSnapshot = [];
-    for (const sec of SECTOR_ETFS) {
-      try {
-        const data = await fetchOHLCV(sec.eodhd, 35);
-        if (data.length >= 2) {
-          const todayClose = data[0].close;   // fetchOHLCV returns newest-first
+
+    const allResults = await Promise.allSettled([
+      ...INDEX_SYMBOLS.map(idx =>
+        fetchOHLCV(idx.eodhd).then(data => ({ type: 'index', symbol: idx.symbol, data }))
+      ),
+      fetchOHLCV('TNX.INDX', 30).then(data => ({ type: 'tnx', data })),
+      ...SECTOR_ETFS.map(sec =>
+        fetchOHLCV(sec.eodhd, 35).then(data => ({ type: 'sector', sec, data }))
+      ),
+    ]);
+
+    // Process all results (indexes, TNX, sectors)
+    for (const result of allResults) {
+      if (result.status === 'fulfilled') {
+        const { type, symbol, sec, data } = result.value;
+        if (type === 'index') {
+          indexData[symbol] = data;
+          log(`  ✓ ${symbol}: ${data.length} days`);
+        } else if (type === 'tnx') {
+          tnxData = data;
+          log(`  ✓ TNX: ${data.length} days`);
+        } else if (type === 'sector' && data.length >= 2) {
+          const todayClose = data[0].close;
           const prevClose = data[1].close;
           const changePercent = ((todayClose - prevClose) / prevClose) * 100;
-
-          // Week change: ~5 trading days back
           const weekIdx = Math.min(5, data.length - 1);
           const weekChange = ((todayClose - data[weekIdx].close) / data[weekIdx].close) * 100;
-
-          // Month change: ~21 trading days back
           const monthIdx = Math.min(21, data.length - 1);
           const monthChange = ((todayClose - data[monthIdx].close) / data[monthIdx].close) * 100;
-
           sectorSnapshot.push({
             sector: sec.name,
             etf: sec.etf,
@@ -290,13 +282,15 @@ export default async function handler(req, res) {
             monthChange: Math.round(monthChange * 100) / 100,
           });
         }
-      } catch (err) {
-        errors.push({ symbol: sec.etf, error: err.message });
-        log(`  ✗ ${sec.etf}: ${err.message}`);
+      } else {
+        // Extract symbol from the rejection for error logging
+        const errMsg = result.reason?.message || 'Unknown error';
+        errors.push({ error: errMsg });
+        log(`  ✗ Fetch failed: ${errMsg}`);
       }
     }
     sectorSnapshot.sort((a, b) => b.changePercent - a.changePercent);
-    log(`  ✓ Sector snapshot: ${sectorSnapshot.length}/11 sectors`);
+    log(`  ✓ Indexes: ${Object.keys(indexData).length}/5, TNX: ${tnxData ? 'yes' : 'no'}, Sectors: ${sectorSnapshot.length}/11`);
 
     // Step 3 — Compute Per-Index Technicals
     log('Step 3: Computing per-index technicals...');

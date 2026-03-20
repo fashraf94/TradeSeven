@@ -445,6 +445,15 @@ export default function MarketContextTab({ symbol, onNavigateToStock }) {
 
       <WeatherCard regime={marketContext.regime} regimeDetail={marketContext.regimeDetail} />
 
+      {marketContext.updatedAt && (
+        <div style={{ fontSize: '10px', color: HOLO_COLORS.textMuted, textAlign: 'right', marginBottom: '4px' }}>
+          Updated {(() => {
+            const d = marketContext.updatedAt?.toDate ? marketContext.updatedAt.toDate() : new Date(marketContext.updatedAt);
+            return d.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' });
+          })()}
+        </div>
+      )}
+
       <IndexStrip marketContext={marketContext} currentSymbol={symbol} />
 
       <LeadershipDivergenceCard

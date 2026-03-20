@@ -1,6 +1,7 @@
 // src/services/draftAssets.js
 // Draft Mode Asset Pools - 75 Stocks + 75 Crypto
 // Each category has 25 assets
+// NOTE: Server-side copy at api/_utils/draftStockList.js — keep both in sync.
 
 // ============================================
 // STOCK ASSETS

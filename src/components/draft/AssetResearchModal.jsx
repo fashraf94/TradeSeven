@@ -106,9 +106,8 @@ const AssetResearchModal = ({
     setStockHistory([]);
     // Assets opened without a price (index ETFs, stocks from FantasyTimes) — fetch from EODHD
     if (!(asset?.price > 0)) {
-      console.log('[AssetPrice] Fetching price for', asset.symbol);
       getStockPrice(asset.symbol).then(data => {
-        if (!data?.price) return;
+        if (!data?.price || isNaN(data.price)) return;
         setCurrentAsset(prev => {
           if (prev?.symbol !== data.symbol) return prev;
           return { ...prev, price: data.price, percentChange: data.percentChange || 0 };

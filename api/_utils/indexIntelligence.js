@@ -2,6 +2,21 @@
 // Pure computation helpers for Index Intelligence.
 // No API calls, no Firestore — just math and classification logic.
 
+// Tunable thresholds — adjust these to change classification sensitivity.
+const THRESHOLDS = {
+  leadershipSpread: 0.3,        // % difference to detect index leadership
+  rotationDivergence: 0.5,      // % QQQ-IWM gap for rotation signal
+  spyFlatZone: 0.2,             // % SPY move to consider "flat"
+  narrowParticipationMove: 1.0,  // % move needed when SPY is flat
+  smallCapMomentumMinSpy: 0.1,  // minimum SPY move for small-cap momentum
+  smallCapMomentumMultiplier: 2, // IWM must exceed SPY by this factor
+  breadthProximity: 0.3,        // % SPY-RSP gap for breadth quality
+  yieldAccommodative: 4.0,      // 10Y yield below this = accommodative
+  yieldNeutral: 4.5,            // 10Y yield below this = neutral
+  yieldRestrictive: 5.0,        // 10Y yield below this = restrictive
+  rsTrendFlat: 0.0005,          // RS slope below this = flat trend
+};
+
 /**
  * Classify market regime based on SPY price relative to moving averages.
  * @param {number} price - Current SPY price
@@ -47,11 +62,11 @@ export function detectLeadership(spyChange, qqqChange, diaChange, iwmChange) {
   const all = [spyChange, qqqChange, diaChange, iwmChange];
   const spread = Math.max(...all) - Math.min(...all);
 
-  if (qqqChange - spyChange > 0.3) return 'tech_leads';
-  if (iwmChange - spyChange > 0.3) return 'small_cap_leads';
-  if (diaChange - qqqChange > 0.3) return 'defensive_leads';
-  if (spread < 0.3 && all.every(v => v > 0)) return 'broad_rally';
-  if (spread < 0.3 && all.every(v => v < 0)) return 'broad_selloff';
+  if (qqqChange - spyChange > THRESHOLDS.leadershipSpread) return 'tech_leads';
+  if (iwmChange - spyChange > THRESHOLDS.leadershipSpread) return 'small_cap_leads';
+  if (diaChange - qqqChange > THRESHOLDS.leadershipSpread) return 'defensive_leads';
+  if (spread < THRESHOLDS.leadershipSpread && all.every(v => v > 0)) return 'broad_rally';
+  if (spread < THRESHOLDS.leadershipSpread && all.every(v => v < 0)) return 'broad_selloff';
   return 'mixed';
 }
 
@@ -64,8 +79,8 @@ export function detectLeadership(spyChange, qqqChange, diaChange, iwmChange) {
  * @returns {{ active: boolean, type: string, detail: string }}
  */
 export function detectDivergence(spyChange, qqqChange, diaChange, iwmChange) {
-  // QQQ and IWM moving opposite directions by >0.5% total
-  if (Math.sign(qqqChange) !== Math.sign(iwmChange) && Math.abs(qqqChange - iwmChange) > 0.5) {
+  // QQQ and IWM moving opposite directions
+  if (Math.sign(qqqChange) !== Math.sign(iwmChange) && Math.abs(qqqChange - iwmChange) > THRESHOLDS.rotationDivergence) {
     const leader = qqqChange > iwmChange ? 'tech' : 'small-caps';
     return {
       active: true,
@@ -74,8 +89,8 @@ export function detectDivergence(spyChange, qqqChange, diaChange, iwmChange) {
     };
   }
 
-  // SPY flat but QQQ or IWM moving >1%
-  if (Math.abs(spyChange) < 0.2 && (Math.abs(qqqChange) > 1 || Math.abs(iwmChange) > 1)) {
+  // SPY flat but QQQ or IWM moving significantly
+  if (Math.abs(spyChange) < THRESHOLDS.spyFlatZone && (Math.abs(qqqChange) > THRESHOLDS.narrowParticipationMove || Math.abs(iwmChange) > THRESHOLDS.narrowParticipationMove)) {
     const mover = Math.abs(qqqChange) > Math.abs(iwmChange) ? 'QQQ' : 'IWM';
     const moveVal = mover === 'QQQ' ? qqqChange : iwmChange;
     return {
@@ -85,8 +100,8 @@ export function detectDivergence(spyChange, qqqChange, diaChange, iwmChange) {
     };
   }
 
-  // All same direction but IWM magnitude >2x SPY
-  if (Math.sign(spyChange) === Math.sign(iwmChange) && Math.abs(spyChange) > 0.1 && Math.abs(iwmChange) > Math.abs(spyChange) * 2) {
+  // All same direction but IWM magnitude much larger than SPY
+  if (Math.sign(spyChange) === Math.sign(iwmChange) && Math.abs(spyChange) > THRESHOLDS.smallCapMomentumMinSpy && Math.abs(iwmChange) > Math.abs(spyChange) * THRESHOLDS.smallCapMomentumMultiplier) {
     return {
       active: true,
       type: 'small_cap_momentum',
@@ -113,10 +128,10 @@ export function computeBreadthQuality(spyChange, rspChange) {
   } else if (spyChange < 0 && rspChange > 0) {
     signal = 'divergent';
     detail = `SPY ${spyChange.toFixed(2)}% but RSP +${rspChange.toFixed(2)}% — broad market stronger than mega-caps suggest.`;
-  } else if (Math.abs(diff) < 0.3) {
+  } else if (Math.abs(diff) < THRESHOLDS.breadthProximity) {
     signal = 'broad_participation';
     detail = `SPY and RSP within ${Math.abs(diff).toFixed(2)}% — healthy broad participation.`;
-  } else if (diff > 0.3) {
+  } else if (diff > THRESHOLDS.breadthProximity) {
     signal = 'narrow_leadership';
     detail = `SPY ${spyChange > 0 ? '+' : ''}${spyChange.toFixed(2)}% but RSP ${rspChange > 0 ? '+' : ''}${rspChange.toFixed(2)}% — rally driven by mega-caps.`;
   } else {
@@ -141,13 +156,13 @@ export function classifyYieldRegime(tnxClose, tnxPrevClose) {
   const direction = tnxChange > 0 ? `+${tnxChange}bps` : `${tnxChange}bps`;
   let regime, detail;
 
-  if (tnxClose < 4.0) {
+  if (tnxClose < THRESHOLDS.yieldAccommodative) {
     regime = 'accommodative';
     detail = `10Y at ${tnxClose.toFixed(2)}%, ${direction} — accommodative zone, supportive for equities.`;
-  } else if (tnxClose < 4.5) {
+  } else if (tnxClose < THRESHOLDS.yieldNeutral) {
     regime = 'neutral';
     detail = `10Y at ${tnxClose.toFixed(2)}%, ${direction} — neutral zone.`;
-  } else if (tnxClose < 5.0) {
+  } else if (tnxClose < THRESHOLDS.yieldRestrictive) {
     regime = 'restrictive';
     detail = `10Y at ${tnxClose.toFixed(2)}%, ${direction} — restrictive zone, headwind for growth stocks.`;
   } else {
@@ -169,6 +184,7 @@ export function computeRS(stockCloses, spyCloses, period) {
   if (!stockCloses || !spyCloses || stockCloses.length < period + 1 || spyCloses.length < period + 1) {
     return null;
   }
+  if (spyCloses[0] === 0 || spyCloses[period] === 0 || stockCloses[0] === 0) return null;
 
   const ratioToday = stockCloses[0] / spyCloses[0];
   const ratioPeriodAgo = stockCloses[period] / spyCloses[period];
@@ -216,7 +232,7 @@ export function computeRSTrend(stockCloses, spyCloses, lookback = 10) {
   const slope = (n * sumXY - sumX * sumY) / (n * sumX2 - sumX * sumX);
 
   let trend;
-  if (Math.abs(slope) < 0.0005) trend = 'flat';
+  if (Math.abs(slope) < THRESHOLDS.rsTrendFlat) trend = 'flat';
   else if (slope > 0) trend = 'rising';
   else trend = 'falling';
 

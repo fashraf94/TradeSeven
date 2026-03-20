@@ -531,7 +531,7 @@ TECHNICAL LAGGARDS (weakest RS vs SPY):
   ${(ctx.technicalLaggards || []).join(', ') || 'N/A'}
 ${(ctx.sectorSnapshot && ctx.sectorSnapshot.length > 0) ? `
 SECTOR PERFORMANCE (ETF changes — use this to verify sector claims):
-${ctx.sectorSnapshot.map(s => `  ${s.sector} (${s.etf}): 1D ${s.changePercent > 0 ? '+' : ''}${s.changePercent.toFixed(2)}% | 1W ${s.weekChange != null ? (s.weekChange > 0 ? '+' : '') + s.weekChange.toFixed(2) + '%' : 'N/A'} | 1M ${s.monthChange != null ? (s.monthChange > 0 ? '+' : '') + s.monthChange.toFixed(2) + '%' : 'N/A'}`).join('\n')}
+${ctx.sectorSnapshot.map(s => `  ${s.sector} (${s.etf}): 1D ${s.changePercent != null ? (s.changePercent > 0 ? '+' : '') + s.changePercent.toFixed(2) + '%' : 'N/A'} | 1W ${s.weekChange != null ? (s.weekChange > 0 ? '+' : '') + s.weekChange.toFixed(2) + '%' : 'N/A'} | 1M ${s.monthChange != null ? (s.monthChange > 0 ? '+' : '') + s.monthChange.toFixed(2) + '%' : 'N/A'}`).join('\n')}
 Top Sector: ${ctx.topSectorToday} (${ctx.topSectorChange != null ? (ctx.topSectorChange > 0 ? '+' : '') + ctx.topSectorChange.toFixed(2) + '%' : ''})
 Worst Sector: ${ctx.worstSectorToday} (${ctx.worstSectorChange != null ? (ctx.worstSectorChange > 0 ? '+' : '') + ctx.worstSectorChange.toFixed(2) + '%' : ''})
 ` : ''}
