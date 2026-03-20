@@ -104,6 +104,17 @@ const AssetResearchModal = ({
   useEffect(() => {
     setCurrentAsset(asset);
     setStockHistory([]);
+    // Index ETFs don't get wsPrice from parent — fetch price from EODHD
+    if (isIndex(asset?.symbol) && !(asset?.price > 0)) {
+      console.log('[IndexPrice] Fetching price for', asset.symbol);
+      getStockPrice(asset.symbol).then(data => {
+        if (!data?.price) return;
+        setCurrentAsset(prev => {
+          if (prev?.symbol !== data.symbol) return prev;
+          return { ...prev, price: data.price, percentChange: data.percentChange || 0 };
+        });
+      }).catch(err => console.warn('[IndexPrice] Failed:', err.message));
+    }
   }, [asset?.symbol]);
 
   const isCrypto = useMemo(() => (
@@ -256,22 +267,6 @@ const AssetResearchModal = ({
     });
     return () => { cancelled = true; };
   }, [currentAsset?.symbol, isOriginalAsset]);
-
-  // Fetch price for index ETFs — they don't get wsPrice from parent components
-  useEffect(() => {
-    if (!isIndexAsset || !currentAsset?.symbol) return;
-    if (currentAsset?.price > 0) return;
-
-    let cancelled = false;
-    getStockPrice(currentAsset.symbol).then(data => {
-      if (cancelled || !data?.price) return;
-      setCurrentAsset(prev => {
-        if (prev?.symbol !== data.symbol) return prev;
-        return { ...prev, price: data.price, percentChange: data.percentChange || 0 };
-      });
-    });
-    return () => { cancelled = true; };
-  }, [currentAsset?.symbol, isIndexAsset]);
 
   if (!asset) return null;
 
