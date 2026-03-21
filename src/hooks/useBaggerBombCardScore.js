@@ -8,6 +8,8 @@ import { calculateAssetScoreV3, flattenPortfolio } from '../utils/baggerBombUtil
 import { getBankedScoreTotal } from '../services/dailyScoringV4Service';
 
 const CARD_POLL_INTERVAL = 30000; // 30 seconds
+const SCORE_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+const scoreCache = new Map(); // battleId -> { my, opp, timestamp }
 
 const CRYPTO_LIST = ['BTC', 'ETH', 'SOL', 'ADA', 'DOT', 'AVAX', 'MATIC', 'LINK', 'UNI', 'XRP', 'DOGE', 'SHIB', 'LTC', 'AAVE', 'ATOM', 'ALGO', 'XLM'];
 const isCrypto = (symbol) =>
@@ -186,7 +188,10 @@ export function useBaggerBombCardScore(battle, user) {
   }, [isApplicable, fetchPrices]);
 
   // Cache last valid scores so they persist across remounts / brief non-applicable gaps
-  const lastScores = useRef({ my: 0, opp: 0 });
+  const battleId = battle?.id;
+  const cached = battleId ? scoreCache.get(battleId) : null;
+  const cacheValid = cached && (Date.now() - cached.timestamp < SCORE_CACHE_TTL);
+  const lastScores = useRef(cacheValid ? { my: cached.my, opp: cached.opp } : { my: 0, opp: 0 });
 
   // Compute final scores
   const myScore = useMemo(() => {
@@ -194,16 +199,24 @@ export function useBaggerBombCardScore(battle, user) {
     const active = computePortfolioScore(myPortfolio, currentPrices, openPrices, battleThresholds, previousClosePriceMap);
     const score = Math.round(bankedMy + active + closedMy);
     lastScores.current.my = score;
+    if (battleId) {
+      const prev = scoreCache.get(battleId) || { my: 0, opp: 0, timestamp: Date.now() };
+      scoreCache.set(battleId, { ...prev, my: score, timestamp: Date.now() });
+    }
     return score;
-  }, [isApplicable, myPortfolio, currentPrices, openPrices, battleThresholds, previousClosePriceMap, bankedMy, closedMy]);
+  }, [isApplicable, myPortfolio, currentPrices, openPrices, battleThresholds, previousClosePriceMap, bankedMy, closedMy, battleId]);
 
   const oppScore = useMemo(() => {
     if (!isApplicable || Object.keys(currentPrices).length === 0) return lastScores.current.opp;
     const active = computePortfolioScore(oppPortfolio, currentPrices, openPrices, battleThresholds, previousClosePriceMap);
     const score = Math.round(bankedOpp + active + closedOpp);
     lastScores.current.opp = score;
+    if (battleId) {
+      const prev = scoreCache.get(battleId) || { my: 0, opp: 0, timestamp: Date.now() };
+      scoreCache.set(battleId, { ...prev, opp: score, timestamp: Date.now() });
+    }
     return score;
-  }, [isApplicable, oppPortfolio, currentPrices, openPrices, battleThresholds, previousClosePriceMap, bankedOpp, closedOpp]);
+  }, [isApplicable, oppPortfolio, currentPrices, openPrices, battleThresholds, previousClosePriceMap, bankedOpp, closedOpp, battleId]);
 
   return { myScore, oppScore, isLoading };
 }
