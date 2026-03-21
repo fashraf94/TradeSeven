@@ -15,6 +15,7 @@ import {
 } from '../_utils/fantasyTimesPrompts.js';
 import { getDefaultVisual, shouldOverrideVisual, callArtDirector } from '../_utils/fantasyTimesVisuals.js';
 import { getClaimsForReporter, formatClaimsForPrompt } from '../_utils/ingestedClaims.js';
+import { appendEarningsResult } from '../_utils/fantasyTimesConsensus.js';
 
 export const config = { maxDuration: 60 };
 
@@ -308,6 +309,20 @@ export default async function handler(req, res) {
       outcome,
       headline: storyDoc.headline,
     });
+
+    // Write earnings result to consensus
+    try {
+      const today = new Date().toISOString().split('T')[0];
+      await appendEarningsResult(today, earning.symbol, {
+        result: outcome,
+        epsActual: earning.epsActual,
+        epsEstimate: earning.epsEstimate,
+        revenueActual: earningsDetail?.revenue || null,
+        revenueEstimate: earningsDetail?.revenueEstimate || null,
+      });
+    } catch (err) {
+      console.error('[CONSENSUS] Failed to append earnings result:', err.message);
+    }
 
     // Art Director override for edge-case story types
     if (shouldOverrideVisual(storyDoc.reporter, storyDoc.type)) {

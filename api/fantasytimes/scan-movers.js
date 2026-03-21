@@ -9,6 +9,7 @@ import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
 import { STOCK_DATA } from '../_utils/stockIntelligenceData.js';
 import { FANTASYTIMES_TICKERS, SECTOR_MAP } from '../_utils/fantasyTimesTickers.js';
 import { generateAlexMoverStory } from './generate-mover.js';
+import { appendCatalyst } from '../_utils/fantasyTimesConsensus.js';
 
 export const config = { maxDuration: 60 };
 
@@ -92,6 +93,22 @@ export default async function handler(req, res) {
 
         logInfo(`Big mover detected: ${symbol} ${changeP >= 0 ? '+' : ''}${changeP.toFixed(2)}%`);
         results.movers.push({ symbol, changeP });
+
+        // Write early catalyst to consensus (before Alex's full story)
+        try {
+          const today = new Date().toISOString().split('T')[0];
+          await appendCatalyst(today, symbol, {
+            direction: changeP >= 0 ? 'up' : 'down',
+            percentChange: Math.abs(changeP),
+            atrMultiple: 1.5,
+            catalyst: `${symbol} moved ${changeP >= 0 ? '+' : ''}${changeP.toFixed(1)}% (1.5x ATR) — awaiting Alex's analysis`,
+            source: 'scan_movers',
+            confidence: 'low',
+            reporter: 'system',
+          });
+        } catch (err) {
+          console.error('[CONSENSUS] Failed to append scan-mover catalyst:', err.message);
+        }
 
         // Dedup: check if Alex already has a story for this symbol today
         const dedupQuery = await db

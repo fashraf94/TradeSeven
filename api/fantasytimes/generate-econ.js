@@ -16,6 +16,7 @@ import {
 } from '../_utils/fantasyTimesPrompts.js';
 import { getDefaultVisual, shouldOverrideVisual, callArtDirector } from '../_utils/fantasyTimesVisuals.js';
 import { getClaimsForReporter, formatClaimsForPrompt } from '../_utils/ingestedClaims.js';
+import { appendEconomics } from '../_utils/fantasyTimesConsensus.js';
 
 export const config = { maxDuration: 60 };
 
@@ -334,6 +335,20 @@ async function handleRecap(req, res, db) {
 
   const docRef = await db.collection('fantasyTimesStories').add(storyDoc);
   logInfo(`Published econ recap ${docRef.id}`, { event: event.event, headline: storyDoc.headline });
+
+  // Write economic event to consensus
+  try {
+    const today = new Date().toISOString().split('T')[0];
+    await appendEconomics(today, {
+      event: event.event,
+      actual: event.actual,
+      expected: event.estimate,
+      impact: storyData.sentiment || event.impact || 'neutral',
+      time: new Date().toISOString(),
+    });
+  } catch (err) {
+    console.error('[CONSENSUS] Failed to append economics:', err.message);
+  }
 
   // Art Director override for edge-case story types
   if (shouldOverrideVisual(storyDoc.reporter, storyDoc.type)) {

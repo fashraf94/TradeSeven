@@ -103,6 +103,7 @@ YOUR STORY STRUCTURE:
 5. The FantasyTrades angle: Which game modes benefit from today's market conditions. Reference BaggerBomb for volatile days, Snake Draft for strategic positioning. Never mention EarningsGame.
 
 ${ANTI_SLOP_RULES}
+${FACT_CHECK_RULES}
 `;
 
 // ═══ ALEX — STOCK SPOTLIGHT (Individual Movers) ══════════════════
@@ -125,6 +126,7 @@ YOUR STORY STRUCTURE:
 4. The FantasyTrades angle: how this stock's move affects its rankings position and what it means for BaggerBomb players holding this stock.
 
 ${ANTI_SLOP_RULES}
+${FACT_CHECK_RULES}
 `;
 
 export const ALEX_MACRO_SYSTEM_PROMPT = `You are Alex, the Stock Spotlight reporter for FantasyTimes --- the newsroom inside FantasyTrades, a competitive financial gaming platform.
@@ -148,6 +150,7 @@ YOUR STORY STRUCTURE:
 4. What this means for active BaggerBomb and Snake Draft battles.
 
 ${ANTI_SLOP_RULES}
+${FACT_CHECK_RULES}
 `;
 
 // ═══ TOOL USE SCHEMAS ═════════════════════════════════════════════
@@ -266,6 +269,7 @@ MONDAY PREVIEW: The week's dominant theme + what to watch for
 FRIDAY WRAP: The week's defining narrative + what carries forward
 
 ${ANTI_SLOP_RULES}
+${FACT_CHECK_RULES}
 `;
 
 // ═══ NETA — ECONOMICS DESK ════════════════════════════════════════
@@ -287,6 +291,7 @@ RECAP STRUCTURE:
 4. What this means for BaggerBomb and Snake Draft players. Never mention EarningsGame.
 
 ${ANTI_SLOP_RULES}
+${FACT_CHECK_RULES}
 `;
 
 export const NETA_PREVIEW_SYSTEM_PROMPT = `You are Neta, the Economics Desk reporter for FantasyTimes --- the newsroom inside FantasyTrades, a competitive financial gaming platform.
@@ -306,6 +311,7 @@ WEEKLY PREVIEW STRUCTURE:
 4. The FantasyTrades angle: how this economic data affects market conditions for BaggerBomb and Snake Draft players. Never mention EarningsGame.
 
 ${ANTI_SLOP_RULES}
+${FACT_CHECK_RULES}
 `;
 
 // ═══ DOUG — EARNINGS ANALYST ══════════════════════════════════════
@@ -320,6 +326,7 @@ YOUR FORMATTING RULES (STRICT --- these define your visual identity):
 - Total length: 300-400 words
 
 ${ANTI_SLOP_RULES}
+${FACT_CHECK_RULES}
 `;
 
 export const DOUG_RECAP_SYSTEM_PROMPT = `You are Doug, the Earnings Analyst for FantasyTimes --- the newsroom inside FantasyTrades, a competitive financial gaming platform.
@@ -333,6 +340,7 @@ YOUR FORMATTING RULES (STRICT --- these define your visual identity):
 - If you published a preview, reference it honestly: 'I warned yesterday that...' or 'I didn't see this coming.'
 
 ${ANTI_SLOP_RULES}
+${FACT_CHECK_RULES}
 `;
 
 // ═══ NETA TOOL SCHEMAS ════════════════════════════════════════════
@@ -569,3 +577,15 @@ SECTOR ACCURACY RULES (CRITICAL):
     return { block: '', data: null };
   }
 }
+
+// ═══ FACT-CHECK RULES ═══════════════════════════════════════════
+// Injected into all reporter system prompts alongside ANTI_SLOP_RULES.
+export const FACT_CHECK_RULES = `
+FACT-CHECK RULES (apply to ALL FantasyTimes reporters):
+
+EARNINGS ATTRIBUTION RULE: You will receive a list of companies with valid earnings attribution under EARNINGS_VALID. This includes companies that reported today AND companies that reported after yesterday's close. NEVER attribute a stock's price movement to an earnings report unless that ticker appears in the EARNINGS_VALID list. If the list is empty or the ticker is absent, the move was NOT caused by earnings. Violation of this rule is a critical factual error.
+
+CATALYST CONSISTENCY RULE: You will receive CONFIRMED_CATALYSTS from other reporters. When referencing a stock that has a confirmed catalyst, you MUST align with that attribution. You may add additional context or frame it differently, but you must not contradict the stated cause. If no confirmed catalyst exists for a stock, you may attribute based on available data but use hedging language ("likely driven by", "amid reports of").
+
+SECTOR ACCURACY RULE: When describing sector performance, use the SECTOR_DATA provided. One stock's performance does not represent its sector. Do not claim a sector is down because one stock in it declined — check the sector ETF data. Do not claim a sector is leading unless the ETF data confirms it.
+`;

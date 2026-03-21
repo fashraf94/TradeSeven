@@ -14,6 +14,7 @@ import {
 import { getDefaultVisual, shouldOverrideVisual, callArtDirector } from '../_utils/fantasyTimesVisuals.js';
 import { STOCK_DATA, TICKERS } from '../_utils/stockIntelligenceData.js';
 import { getClaimsForReporter, formatClaimsForPrompt } from '../_utils/ingestedClaims.js';
+import { buildConsensusBlock } from '../_utils/fantasyTimesConsensus.js';
 
 export const config = { maxDuration: 60 };
 
@@ -271,6 +272,16 @@ export default async function handler(req, res) {
       userMessage += `\n\nCROSS-COMPANY INSIGHTS FROM RECENT EVENTS:\n${claimsContext}`;
     }
 
+    // ── Fetch consensus block for sector context ─────────────────────
+    let consensusContext = '';
+    try {
+      const today = new Date().toISOString().split('T')[0];
+      consensusContext = await buildConsensusBlock(today, 'post_close');
+      logInfo('Consensus block built for Kim', { length: consensusContext.length });
+    } catch (err) {
+      console.error('[CONSENSUS] Failed to build Kim consensus:', err.message);
+    }
+
     const anthropic = getAnthropicClient();
     logInfo('Calling Claude Sonnet for column...', { model: REPORTER_PROFILES.kim.model });
 
@@ -278,7 +289,7 @@ export default async function handler(req, res) {
       model: REPORTER_PROFILES.kim.model,
       max_tokens: 1200,
       temperature: 0.85,
-      system: KIM_SYSTEM_PROMPT,
+      system: KIM_SYSTEM_PROMPT + (consensusContext || ''),
       tools: [PUBLISH_SECTOR_COLUMN_TOOL],
       tool_choice: { type: 'tool', name: 'publish_sector_column' },
       messages: [{ role: 'user', content: userMessage }],

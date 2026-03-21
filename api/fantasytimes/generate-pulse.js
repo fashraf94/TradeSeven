@@ -17,6 +17,7 @@ import {
 import { getDefaultVisual, shouldOverrideVisual, callArtDirector } from '../_utils/fantasyTimesVisuals.js';
 import { getClaimsForReporter, formatClaimsForPrompt } from '../_utils/ingestedClaims.js';
 import { isIndex, INDEX_SYMBOLS as INDEX_SYMBOL_SET } from '../_utils/indexRegistry.js';
+import { buildConsensusBlock, checkEarningsAttribution } from '../_utils/fantasyTimesConsensus.js';
 
 export const config = { maxDuration: 60 };
 
@@ -162,6 +163,16 @@ export default async function handler(req, res) {
     const { block: marketContextBlock, data: marketContextData } = await getMarketContextBlock();
     logInfo('Market context fetched', { hasContext: marketContextBlock.length > 0 });
 
+    // ── Fetch consensus block from Newsroom Consensus Layer ──────────
+    let consensusBlock = '';
+    try {
+      const today = new Date().toISOString().split('T')[0];
+      consensusBlock = await buildConsensusBlock(today, period);
+      logInfo('Consensus block built', { length: consensusBlock.length });
+    } catch (err) {
+      logError('Consensus block failed (non-blocking)', { error: err.message });
+    }
+
     // ── Fetch index prices (SPY, QQQ, DIA, IWM) ──────────────────────
     logInfo('Fetching index prices...');
     const indexPrices = await fetchBatchPrices(INDEX_SYMBOLS);
@@ -262,7 +273,7 @@ export default async function handler(req, res) {
       model: REPORTER_PROFILES.kai.model,
       max_tokens: 800,
       temperature: 0.8,
-      system: KAI_SYSTEM_PROMPT + (marketContextBlock || ''),
+      system: KAI_SYSTEM_PROMPT + (marketContextBlock || '') + (consensusBlock || ''),
       tools: [PUBLISH_MARKET_PULSE_TOOL],
       tool_choice: { type: 'tool', name: 'publish_market_pulse' },
       messages: [{ role: 'user', content: userMessage }],
@@ -277,6 +288,43 @@ export default async function handler(req, res) {
     }
 
     const storyData = toolBlock.input;
+
+    // ── Publish interceptor — check earnings attribution ──────────────
+    const today = new Date().toISOString().split('T')[0];
+    try {
+      const consensusDoc = await db.collection('fantasyTimesConsensus').doc(today).get();
+      const earnings = consensusDoc.exists ? consensusDoc.data()?.earnings : {};
+      const earningsValid = [
+        ...(earnings?.reportingToday || []),
+        ...(earnings?.reportedYesterdayAfterClose || []),
+      ];
+      const check = checkEarningsAttribution(storyData.body, earningsValid);
+      if (!check.passed) {
+        console.warn(`[CONSENSUS] BLOCKED Kai pulse: earnings attribution for ${check.violations.join(', ')}`);
+        try {
+          await db.collection('fantasyTimesSuppressions').doc(today).set({
+            [String(Date.now())]: {
+              reporter: 'kai',
+              period,
+              violations: check.violations,
+              headline: storyData.headline,
+              body: storyData.body,
+              suppressedAt: new Date().toISOString(),
+            },
+          }, { merge: true });
+        } catch (suppErr) {
+          console.error('[CONSENSUS] Failed to log suppression:', suppErr.message);
+        }
+        return res.status(200).json({
+          success: false,
+          reason: 'earnings_attribution_blocked',
+          violations: check.violations,
+        });
+      }
+    } catch (err) {
+      console.error('[CONSENSUS] Interceptor error (non-blocking):', err.message);
+    }
+
     const moverTickers = topMovers.map((m) => m.symbol);
 
     // ── Determine primaryTicker and tickers array ─────────────────────
