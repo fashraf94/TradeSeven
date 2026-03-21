@@ -14,7 +14,7 @@ import {
 } from '../_utils/fantasyTimesPrompts.js';
 import { getDefaultVisual, shouldOverrideVisual, callArtDirector } from '../_utils/fantasyTimesVisuals.js';
 import { getClaimsForReporter, formatClaimsForPrompt } from '../_utils/ingestedClaims.js';
-import { appendCatalyst } from '../_utils/fantasyTimesConsensus.js';
+import { appendCatalyst, checkEarningsAttribution } from '../_utils/fantasyTimesConsensus.js';
 
 export const config = { maxDuration: 30 };
 
@@ -189,6 +189,38 @@ export async function generateAlexMoverStory({
   }
 
   const storyData = toolBlock.input;
+
+  // ── Publish interceptor — check earnings attribution ────────────
+  try {
+    const today = new Date().toISOString().split('T')[0];
+    const consensusDoc = await db.collection('fantasyTimesConsensus').doc(today).get();
+    const earnings = consensusDoc.exists ? consensusDoc.data()?.earnings : {};
+    const earningsValid = [
+      ...(earnings?.reportingToday || []),
+      ...(earnings?.reportedYesterdayAfterClose || []),
+    ];
+    const check = checkEarningsAttribution(storyData.body, earningsValid);
+    if (!check.passed) {
+      console.warn(`[CONSENSUS] BLOCKED Alex mover: earnings attribution for ${check.violations.join(', ')}`);
+      try {
+        await db.collection('fantasyTimesSuppressions').doc(today).set({
+          [String(Date.now())]: {
+            reporter: 'alex',
+            ticker: upperSymbol,
+            violations: check.violations,
+            headline: storyData.headline,
+            body: storyData.body,
+            suppressedAt: new Date().toISOString(),
+          },
+        }, { merge: true });
+      } catch (suppErr) {
+        console.error('[CONSENSUS] Failed to log suppression:', suppErr.message);
+      }
+      return { success: false, reason: 'earnings_attribution_blocked', violations: check.violations };
+    }
+  } catch (err) {
+    console.error('[CONSENSUS] Interceptor error (non-blocking):', err.message);
+  }
 
   // ── Write to Firestore ──────────────────────────────────────────
   const now = new Date();
