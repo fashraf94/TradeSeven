@@ -14,6 +14,7 @@ import {
 } from '../_utils/fantasyTimesPrompts.js';
 import { getDefaultVisual, shouldOverrideVisual, callArtDirector } from '../_utils/fantasyTimesVisuals.js';
 import { getClaimsForReporter, formatClaimsForPrompt } from '../_utils/ingestedClaims.js';
+import { appendCatalyst } from '../_utils/fantasyTimesConsensus.js';
 
 export const config = { maxDuration: 30 };
 
@@ -112,6 +113,21 @@ export async function generateAlexMoverStory({
   }
   logInfo('Step 4: Knowledge loaded', { hasKnowledge: !!knowledgeExcerpt, excerptLength: knowledgeExcerpt.length });
 
+  // ── Check consensus for existing catalyst ──────────────────────
+  let consensusContext = '';
+  try {
+    const today = new Date().toISOString().split('T')[0];
+    const consensusDoc = await db.collection('fantasyTimesConsensus').doc(today).get();
+    if (consensusDoc.exists) {
+      const existing = consensusDoc.data()?.catalysts?.[upperSymbol];
+      if (existing) {
+        consensusContext = `\n\nNEWSROOM CONTEXT: Another reporter attributed ${upperSymbol}'s move to: "${existing.catalyst}". Align with or update this attribution.\n`;
+      }
+    }
+  } catch (err) {
+    logError('Consensus read failed (non-blocking)', { error: err.message });
+  }
+
   // ── Build user message ──────────────────────────────────────────
   let userMessage = [
     `STOCK MOVE ALERT:`,
@@ -144,6 +160,9 @@ export async function generateAlexMoverStory({
   }
   if (claimsContext) {
     userMessage += `\n\nRECENT COMPANY INSIGHTS:\n${claimsContext}`;
+  }
+  if (consensusContext) {
+    userMessage += consensusContext;
   }
 
   // ── Call Claude Haiku with Tool Use ──────────────────────────────
@@ -219,6 +238,22 @@ export async function generateAlexMoverStory({
     headline: storyDoc.headline,
     sentiment: storyDoc.sentiment,
   });
+
+  // Write catalyst to consensus
+  try {
+    const today = new Date().toISOString().split('T')[0];
+    await appendCatalyst(today, upperSymbol, {
+      direction: direction || (percentChange >= 0 ? 'up' : 'down'),
+      percentChange: Number(percentChange),
+      atrMultiple: Number(atrMultiple),
+      catalyst: storyData.headline || storyData.subheadline || '',
+      source: 'alex_mover',
+      confidence: atrMultiple >= 2.0 ? 'high' : atrMultiple >= 1.5 ? 'medium' : 'low',
+      reporter: 'alex',
+    });
+  } catch (err) {
+    logError('Failed to append catalyst', { error: err.message });
+  }
 
   // Art Director override for edge-case story types
   if (shouldOverrideVisual(storyDoc.reporter, storyDoc.type)) {

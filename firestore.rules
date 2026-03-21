@@ -287,6 +287,21 @@ service cloud.firestore {
     }
 
     // ═══════════════════════════════════════════
+    // FantasyTimes Consensus & Suppressions
+    // Public read, server-only writes (Admin SDK)
+    // ═══════════════════════════════════════════
+
+    match /fantasyTimesConsensus/{date} {
+      allow read: if true;
+      allow create, update, delete: if false;
+    }
+
+    match /fantasyTimesSuppressions/{date} {
+      allow read: if true;
+      allow create, update, delete: if false;
+    }
+
+    // ═══════════════════════════════════════════
     // Default deny everything else
     // ═══════════════════════════════════════════
     match /{document=**} {

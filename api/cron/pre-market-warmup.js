@@ -12,7 +12,8 @@
 import { initializeApp, getApps, cert } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 import { setInCache } from '../_utils/serverCache.js';
-import { isPreMarketWindow, isTodayHoliday } from '../_utils/marketSchedule.js';
+import { isPreMarketWindow, isTodayHoliday, formatDateString, getETDate } from '../_utils/marketSchedule.js';
+import { seedConsensus } from '../_utils/fantasyTimesConsensus.js';
 
 const LOG_PREFIX = '[PreMarketWarmup]';
 
@@ -240,7 +241,16 @@ export default async function handler(req, res) {
     const duration = Date.now() - startTime;
     log(`Warm-up complete: ${totalWarmed} warmed, ${totalFailed} failed (${duration}ms)`);
 
-    // 6. Return results
+    // 6. Seed FantasyTimes consensus document for today
+    try {
+      const todayStr = formatDateString(getETDate());
+      await seedConsensus(todayStr);
+      log(`Consensus seeded for ${todayStr}`);
+    } catch (err) {
+      log(`Consensus seed failed (non-blocking): ${err.message}`);
+    }
+
+    // 7. Return results
     return res.status(200).json({
       success: true,
       stocksWarmed: totalWarmed,

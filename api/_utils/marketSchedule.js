@@ -88,6 +88,24 @@ export function isTodayHoliday() {
 }
 
 /**
+ * Get the previous trading day before a given date string (YYYY-MM-DD).
+ * Walks backwards, skipping weekends and NYSE holidays.
+ */
+export function getPreviousTradingDay(dateStr) {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const date = new Date(y, m - 1, d);
+  for (let i = 0; i < 10; i++) {
+    date.setDate(date.getDate() - 1);
+    const day = date.getDay();
+    if (day === 0 || day === 6) continue;
+    const ds = formatDateString(date);
+    if (!isMarketHoliday(ds)) return ds;
+  }
+  // Fallback: shouldn't happen with 10 iterations
+  return formatDateString(date);
+}
+
+/**
  * Check if the stock market is currently open (regular trading hours).
  */
 export function isMarketOpen() {

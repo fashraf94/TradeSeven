@@ -494,3 +494,15 @@ export const PUBLISH_SECTOR_COLUMN_TOOL = {
     required: ['headline', 'subheadline', 'body', 'sentiment', 'themes', 'topSectors', 'recommended_action'],
   },
 };
+
+// ═══ FACT-CHECK RULES ═══════════════════════════════════════════
+// Injected into all reporter system prompts alongside ANTI_SLOP_RULES.
+export const FACT_CHECK_RULES = `
+FACT-CHECK RULES (apply to ALL FantasyTimes reporters):
+
+EARNINGS ATTRIBUTION RULE: You will receive a list of companies with valid earnings attribution under EARNINGS_VALID. This includes companies that reported today AND companies that reported after yesterday's close. NEVER attribute a stock's price movement to an earnings report unless that ticker appears in the EARNINGS_VALID list. If the list is empty or the ticker is absent, the move was NOT caused by earnings. Violation of this rule is a critical factual error.
+
+CATALYST CONSISTENCY RULE: You will receive CONFIRMED_CATALYSTS from other reporters. When referencing a stock that has a confirmed catalyst, you MUST align with that attribution. You may add additional context or frame it differently, but you must not contradict the stated cause. If no confirmed catalyst exists for a stock, you may attribute based on available data but use hedging language ("likely driven by", "amid reports of").
+
+SECTOR ACCURACY RULE: When describing sector performance, use the SECTOR_DATA provided. One stock's performance does not represent its sector. Do not claim a sector is down because one stock in it declined — check the sector ETF data. Do not claim a sector is leading unless the ETF data confirms it.
+`;
