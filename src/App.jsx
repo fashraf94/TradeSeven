@@ -97,6 +97,7 @@ import DashboardLoop from './components/Dashboard/DashboardLoop';
 import DashboardDesktop from './components/Dashboard/DashboardDesktop';
 import DesktopSidebar from './components/Navigation/DesktopSidebar';
 import { AgentDashboard } from './components/Agent';
+import { AcademyFeed } from './components/Academy';
 
 // ============================================
 // LAZY LOADING FALLBACK
@@ -7904,6 +7905,23 @@ export default function PortfolioDuel() {
     );
   };
   const getScreenContent = () => {
+
+  // ACADEMY SCREEN
+  if (showAcademy) {
+    return (
+      <div style={{
+        marginLeft: isDesktop ? (sidebarCollapsed ? '64px' : '220px') : 0,
+        transition: 'margin-left 0.2s ease',
+        minHeight: '100vh',
+        background: isDesktop ? '#111318' : '#0D0E12',
+      }}>
+        <AcademyFeed
+          isMobile={isMobile}
+          onClose={() => setShowAcademy(false)}
+        />
+      </div>
+    );
+  }
 
   // AUTH LOADING - Show loading screen while Firebase Auth checks session
   if (authLoading) {
