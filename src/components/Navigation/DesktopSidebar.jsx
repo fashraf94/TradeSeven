@@ -3,14 +3,14 @@
 // Supports collapsed (64px, icons only) and expanded (220px, full labels) states
 
 import React, { useState } from 'react';
-import { Swords, Newspaper, BarChart3, Clock, Settings, Flame, Bot, PanelLeftClose, PanelLeftOpen, LogOut } from 'lucide-react';
+import { Swords, Newspaper, GraduationCap, Clock, Settings, Flame, Bot, PanelLeftClose, PanelLeftOpen, LogOut } from 'lucide-react';
 import { useTheme } from '../../contexts/ThemeContext';
 
 const NAV_ITEMS = [
   { id: 'compete', label: 'Compete', Icon: Swords, screen: 'dashboard' },
   { id: 'news', label: 'News', Icon: Newspaper, screen: 'fantasytimes' },
   { id: 'agent', label: 'Agent', Icon: Bot, screen: 'agent' },
-  { id: 'research', label: 'Research', Icon: BarChart3, screen: null },
+  { id: 'academy', label: 'Academy', Icon: GraduationCap, screen: null },
   { id: 'history', label: 'History', Icon: Clock, screen: 'battleHistory' },
   { id: 'settings', label: 'Settings', Icon: Settings, screen: 'profile' },
 ];
@@ -113,8 +113,8 @@ function NavItem({ item, active, collapsed, hovered, onHover, onLeave, onClick, 
 export default function DesktopSidebar({
   screen,
   setScreen,
-  setShowResearchMode,
-  showResearchMode,
+  setShowAcademy,
+  showAcademy,
   user,
   unreadCount,
   collapsed,
@@ -125,15 +125,15 @@ export default function DesktopSidebar({
   const [hoveredId, setHoveredId] = useState(null);
 
   const isActive = (item) => {
-    if (item.id === 'research') return showResearchMode;
+    if (item.id === 'academy') return showAcademy;
     return screen === item.screen;
   };
 
   const handleNav = (item) => {
-    if (item.id === 'research') {
-      setShowResearchMode(true);
+    if (item.id === 'academy') {
+      setShowAcademy(true);
     } else {
-      setShowResearchMode(false);
+      setShowAcademy(false);
       setScreen(item.screen);
     }
   };
@@ -262,7 +262,7 @@ export default function DesktopSidebar({
 
       {/* User */}
       <div
-        onClick={() => { setShowResearchMode(false); setScreen('profile'); }}
+        onClick={() => { setShowAcademy(false); setScreen('profile'); }}
         style={{
           borderTop: `1px solid ${tokens.borderDivider}`,
           paddingTop: '12px',

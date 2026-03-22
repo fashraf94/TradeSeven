@@ -2,8 +2,6 @@
 
 export { default as FundamentalNews } from './FundamentalNews';
 export { default as LatestEarningsReport } from './LatestEarningsReport';
-export { MoneyMapScreen } from './MoneyMap';
-
 // v2 Research Modal components
 export { default as ChartHeader } from './ChartHeader';
 export { default as StockChart } from './StockChart';
@@ -17,5 +15,3 @@ export { ChartSkeleton, LevelsSkeleton, DrawerSkeleton } from './ResearchSkeleto
 export { default as MarketContextTab } from './MarketContextTab';
 export { default as useTechnicalScore } from './useTechnicalScore';
 
-// Research Landing Page (redesigned dashboard)
-export { default as ResearchLandingPage } from './ResearchLandingPage';
