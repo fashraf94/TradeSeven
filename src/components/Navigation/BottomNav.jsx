@@ -1,12 +1,12 @@
 import React from 'react';
-import { Swords, Newspaper, Bot, BarChart3, User } from 'lucide-react';
+import { Swords, Newspaper, Bot, GraduationCap, User } from 'lucide-react';
 import { useTheme } from '../../contexts/ThemeContext';
 
 const NAV_ITEMS = [
   { id: 'compete', label: 'Compete', icon: Swords, screen: 'dashboard', iconSize: 24 },
   { id: 'news', label: 'News', icon: Newspaper, screen: 'fantasytimes', iconSize: 24 },
   { id: 'agent', label: 'Agent', icon: Bot, screen: 'agent', iconSize: 28 },
-  { id: 'research', label: 'Research', icon: BarChart3, screen: null, iconSize: 24 },
+  { id: 'academy', label: 'Academy', icon: GraduationCap, screen: null, iconSize: 24 },
   { id: 'profile', label: 'Profile', icon: User, screen: 'profile', iconSize: 24 },
 ];
 
@@ -19,7 +19,7 @@ const FALLBACK = {
   textMuted: '#94a3b8',
 };
 
-export default function BottomNav({ screen, setScreen, setShowResearchMode, showResearchMode }) {
+export default function BottomNav({ screen, setScreen, setShowAcademy, showAcademy }) {
   let tokens;
   try {
     const theme = useTheme();
@@ -32,14 +32,14 @@ export default function BottomNav({ screen, setScreen, setShowResearchMode, show
     if (item.id === 'compete') return screen === 'dashboard';
     if (item.id === 'news') return screen === 'fantasytimes';
     if (item.id === 'agent') return screen === 'agent';
-    if (item.id === 'research') return showResearchMode;
+    if (item.id === 'academy') return showAcademy;
     if (item.id === 'profile') return screen === 'profile';
     return false;
   };
 
   const handlePress = (item) => {
-    if (item.id === 'research') {
-      setShowResearchMode(true);
+    if (item.id === 'academy') {
+      setShowAcademy(true);
       return;
     }
     if (item.screen) {

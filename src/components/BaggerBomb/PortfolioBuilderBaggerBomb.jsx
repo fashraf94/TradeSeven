@@ -13,7 +13,7 @@ import { STOCKS, CRYPTO } from '../../data/assets';
 // import { getVolatilityThresholds } from '../../services/volatilityService';
 // import { getMultipleStockPrices, getMultipleCryptoPrices } from '../../services/eodhdAPI';
 import StockDetailModal from './StockDetailModal';
-import { NotesTab } from '../GamePlan';
+import NotesTab from './NotesTab';
 import { useUser } from '../../contexts';
 import { HOLO_COLORS } from '../../constants/holoTheme';
 

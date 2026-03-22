@@ -8,7 +8,6 @@ export { default as MarketBriefing } from './MarketBriefing';
 export { default as SlotMachineOverlay } from './SlotMachineOverlay';
 export { default as SpotlightTour } from './SpotlightTour';
 export { default as GameModeToggle } from './GameModeToggle';
-export { default as ResearchModeButton } from './ResearchModeButton';
 export { default as BattleActionCards } from './BattleActionCards';
 export { default as TrainingModePanel } from './TrainingModePanel';
 export { default as WeeklyChallengesPanel } from './WeeklyChallenges';

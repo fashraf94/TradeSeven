@@ -1,4 +1,4 @@
-// src/components/GamePlan/NotesTab.jsx
+// src/components/BaggerBomb/NotesTab.jsx
 // Displays saved game plan notes
 
 import React, { useState, useEffect } from 'react';
