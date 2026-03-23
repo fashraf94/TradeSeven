@@ -26,7 +26,7 @@ import { fetchHistoricalOHLCV } from '../../services/eodhdAPI';
  * │                                     │
  * └─────────────────────────────────────┘
  */
-const ScoreBreakdownPopover = ({ asset, events: battleEvents = [], onClose, entryPrice: entryPriceProp = 0, battleCreatedAt = null, priceHistory = [] }) => {
+const ScoreBreakdownPopover = ({ asset, events: battleEvents = [], onClose, entryPrice: entryPriceProp = 0, battleCreatedAt = null, priceHistory = [], bankedBadgePoints = 0 }) => {
   const {
     symbol,
     gain = 0,
@@ -305,6 +305,33 @@ const ScoreBreakdownPopover = ({ asset, events: battleEvents = [], onClose, entr
                 {bustPoints.toFixed(1)} pts
               </span>
             </div>
+
+            {/* Banked Badge Points from Previous Days */}
+            {bankedBadgePoints !== 0 && (
+              <div style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                padding: '6px 12px',
+                borderTop: `1px solid ${HOLO_COLORS.borderSubtle}33`,
+                marginTop: '2px',
+              }}>
+                <span style={{
+                  color: HOLO_COLORS.textSecondary,
+                  fontSize: '12px',
+                }}>
+                  Previous Days: Badges
+                </span>
+                <span style={{
+                  fontFamily: 'monospace',
+                  fontWeight: 600,
+                  fontSize: '13px',
+                  color: bankedBadgePoints >= 0 ? HOLO_COLORS.green : HOLO_COLORS.red,
+                }}>
+                  {bankedBadgePoints >= 0 ? '+' : ''}{bankedBadgePoints.toFixed(1)} pts
+                </span>
+              </div>
+            )}
 
             {/* Divider */}
             <div style={{

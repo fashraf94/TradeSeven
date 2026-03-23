@@ -160,15 +160,6 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
       }
     }
 
-    const sampleSym = Object.keys(map)[0];
-    console.log('[BB-Fix] V3 prevCloseMap:', {
-      day: currentTradingDay,
-      isNewCalendarDay,
-      eodhd: previousClosePrices?.[sampleSym],
-      entry: activationPrices?.[sampleSym],
-      result: map?.[sampleSym],
-    });
-
     return map;
   }, [battle?.state?.previousClosePrices, battle?.timing?.actualStart, battle?.state?.activatedAt, previousClosePrices, activationPrices, currentTradingDay]);
 
@@ -382,7 +373,6 @@ export function useBaggerBombBattleV3(battleId, userId, options = {}) {
         'opponent.liveScore': opponentScore,
         'liveScoreUpdatedAt': new Date().toISOString(),
       }).catch((err) => console.warn('[LiveScore] write failed:', err.message));
-      console.log('[LS-DIAG] write DISPATCHED', battleId, { creatorScore, opponentScore, coll });
     }, 15000);
     return () => clearInterval(interval);
   }, [battleId]);

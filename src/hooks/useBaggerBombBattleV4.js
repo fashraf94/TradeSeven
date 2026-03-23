@@ -161,23 +161,8 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
     const ms = Date.now() - new Date(timestamp).getTime();
     const hoursActive = ms / (1000 * 60 * 60);
     const result = hoursActive > 20 ? 2 : currentTradingDay;
-    console.log('[BB-DIAG] tradingDay detail:', {
-      rawCurrentTradingDay: currentTradingDay,
-      effectiveTradingDay: result,
-      tradingDayDates: battle?.timing?.tradingDayDates,
-      tradingDayDatesLength: battle?.timing?.tradingDayDates?.length,
-      actualStart: battle?.timing?.actualStart,
-      createdAt: battle?.timing?.createdAt,
-      todayET: new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }),
-      todayDateOnly: new Date().toLocaleDateString('en-US', { timeZone: 'America/New_York' }),
-      battleId: battle?.id,
-    });
     return result;
   }, [currentTradingDay, battle?.timing?.actualStart, battle?.timing?.createdAt]);
-
-  if (effectiveTradingDay !== currentTradingDay) {
-    console.log('[BB-DIAG] tradingDay override:', { raw: currentTradingDay, effective: effectiveTradingDay });
-  }
 
   const totalTradingDays = battle?.timing?.tradingDays || 3;
 
@@ -240,18 +225,6 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
       }
     }
 
-    const sampleSym = Object.keys(map)[0];
-    console.log('[BB-DIAG] previousClosePriceMap:', {
-      currentTradingDay: effectiveTradingDay,
-      isNewCalendarDay,
-      sampleEntry: activationPrices?.[sampleSym],
-      sampleResult: map?.[sampleSym],
-      sampleEODHD: previousClosePrices?.[sampleSym],
-      sampleFirebase: battle?.state?.previousClosePrices?.[sampleSym],
-      entryAndResultMatch: JSON.stringify(activationPrices) === JSON.stringify(map),
-      mapKeys: Object.keys(map).slice(0, 3),
-    });
-
     return map;
   }, [battle?.state?.previousClosePrices, battle?.timing?.actualStart, battle?.state?.activatedAt, previousClosePrices, activationPrices, effectiveTradingDay]);
 
@@ -278,14 +251,6 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
     return map;
   }, [useCronLevels, dailyLevels?.assets, previousClosePriceMap, activationPrices]);
 
-  console.log('[BB-CRON] dailyLevels status:', {
-    hasDailyLevels: !!dailyLevels?.assets,
-    levelsDate: dailyLevels?.date,
-    todayET: new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' }),
-    useCronLevels,
-    sampleSymbol: Object.keys(dailyLevels?.assets || {})[0],
-    sampleBagger: dailyLevels?.assets?.[Object.keys(dailyLevels?.assets || {})[0]]?.baggerBomb,
-  });
 
   // Free agents data
   const freeAgents = useMemo(() => {
@@ -319,12 +284,6 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
   // ==================== SCORING ====================
 
   const calculateScores = useCallback((portfolio, prices, openPriceMap, history, extremes = {}, battleThresholds = {}, prevClosePrices = {}) => {
-    console.log('[BB-DIAG] calculateScores called:', {
-      openPriceMapSample: Object.entries(openPriceMap).slice(0, 2).map(([k, v]) => `${k}:${v}`),
-      prevClosePricesSample: Object.entries(prevClosePrices).slice(0, 2).map(([k, v]) => `${k}:${v}`),
-      areSame: JSON.stringify(openPriceMap) === JSON.stringify(prevClosePrices),
-      paramCount: arguments.length,
-    });
     if (!portfolio || portfolio.length === 0) {
       return { totalScore: 0, assetScores: [], baggerBombs: 0, busts: 0 };
     }
@@ -512,6 +471,16 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
     return getBankedScoreTotal(battle?.state?.dailyScores, oppRole);
   }, [battle?.state?.dailyScores, isCreator]);
 
+  // Banked badge points (diagnostic — for ScoreBreakdownPopover display)
+  const myBankedBadgePoints = useMemo(() => {
+    return battle?.state?.bankedBadgePoints?.[playerId]?.total || 0;
+  }, [battle?.state?.bankedBadgePoints, playerId]);
+
+  const oppBankedBadgePoints = useMemo(() => {
+    const oppRole = isCreator ? 'opponent' : 'creator';
+    return battle?.state?.bankedBadgePoints?.[oppRole]?.total || 0;
+  }, [battle?.state?.bankedBadgePoints, isCreator]);
+
   const myTotalScore = useMemo(() => {
     return Math.round(bankedScore + myScores.totalScore + closedTradePoints);
   }, [bankedScore, myScores.totalScore, closedTradePoints]);
@@ -534,13 +503,6 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
   useEffect(() => {
     if (!battleId) return;
     const interval = setInterval(() => {
-      console.log('[LS-DEBUG] interval tick', {
-        battleStatusRef: battleStatusRef.current,
-        marketOpen: isMarketOpen(),
-        docHidden: document.hidden,
-        myScore: myTotalScoreRef.current,
-        oppScore: oppTotalScoreRef.current
-      });
       if (battleStatusRef.current !== 'active') return;
       if (!isMarketOpen()) return;
       if (document.hidden) return;
@@ -556,7 +518,6 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
         'opponent.liveScore': opponentScore,
         'liveScoreUpdatedAt': new Date().toISOString(),
       }).catch((err) => console.warn('[LiveScore] write failed:', err.message));
-      console.log('[LS-DIAG] write DISPATCHED', battleId, { creatorScore, opponentScore, coll });
     }, 15000);
     return () => clearInterval(interval);
   }, [battleId]);
@@ -766,17 +727,6 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
       const currentPrice = effectivePrices[asset.symbol];
       if (!dailyBaseline || !currentPrice) return;
 
-      if (asset.symbol === myPortfolioFlat[0]?.symbol) {
-        console.log('[BB-DIAG] detection (player):', asset.symbol, {
-          dailyBaseline,
-          baselineSource: useCronLevels ? 'cronLevels' : 'previousClose',
-          entryPrice: openPrices?.[asset.symbol],
-          currentPrice,
-          baselineIsEntry: dailyBaseline === openPrices?.[asset.symbol],
-          thresholdBaselinesValue: thresholdBaselines?.[asset.symbol],
-        });
-      }
-
       let thresholdChange = ((currentPrice - dailyBaseline) / dailyBaseline) * 100;
       // V5: Invert for short positions
       if (asset.direction === 'short') {
@@ -833,14 +783,6 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
         crossed.forEach((threshold) => {
           const existingBadges = getBadgesFromHistory(assetHistory);
           if (!existingBadges.includes(threshold.name)) {
-            console.log('[BB-Fix] CROSSING:', asset.symbol, {
-              day: effectiveTradingDay,
-              badge: threshold.name,
-              dailyBaseline,
-              currentMultiplier: currentMultiplier.toFixed(3),
-              prevMultiplier: prevMultiplier?.toFixed(3),
-              historyMax: assetHistory?.maxMultiplier?.toFixed(3),
-            });
             const newHistory = updateAssetHistory(asset.symbol, extremeMultiplier, assetHistory);
             setLocalHistory((prev) => ({
               ...prev,
@@ -941,17 +883,6 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
       const dailyBaseline = thresholdBaselines[asset.symbol] || asset.swapPrice || openPrices[asset.symbol];
       const currentPrice = effectivePrices[asset.symbol];
       if (!dailyBaseline || !currentPrice) return;
-
-      if (asset.symbol === oppPortfolioFlat[0]?.symbol) {
-        console.log('[BB-DIAG] detection (opponent):', asset.symbol, {
-          dailyBaseline,
-          baselineSource: useCronLevels ? 'cronLevels' : 'previousClose',
-          entryPrice: openPrices?.[asset.symbol],
-          currentPrice,
-          baselineIsEntry: dailyBaseline === openPrices?.[asset.symbol],
-          thresholdBaselinesValue: thresholdBaselines?.[asset.symbol],
-        });
-      }
 
       let thresholdChange = ((currentPrice - dailyBaseline) / dailyBaseline) * 100;
       // V5: Invert for short positions
@@ -1096,15 +1027,6 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
         const currentPrice = effectivePrices[asset.symbol];
         if (!dailyBaseline || !currentPrice) return;
 
-        if (asset.symbol === portfolioFlat[0]?.symbol) {
-          console.log('[BB-DIAG] history tracker:', asset.symbol, {
-            dailyBaseline,
-            entryPrice: openPrices?.[asset.symbol],
-            previousCloseMapValue: previousClosePriceMap?.[asset.symbol],
-            baselineIsEntry: dailyBaseline === openPrices?.[asset.symbol],
-          });
-        }
-
         let priceChange = ((currentPrice - dailyBaseline) / dailyBaseline) * 100;
         if (asset.direction === 'short') priceChange = -priceChange;
         const baseATR = battle?.thresholds?.[asset.symbol]?.threshold || asset.baseATR || 2.5;
@@ -1140,13 +1062,6 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
         const badge = finalHistory.maxMultiplier >= 1 ? 'baggerBomb' : finalHistory.minMultiplier <= -1 ? 'bust' : 'none';
 
         if (updatedHistory) {
-          console.log('[BB-Fix] historyTracker update:', asset.symbol, {
-            dailyBaseline,
-            currentMultiplier: currentMultiplier.toFixed(3),
-            oldMax: assetHistory.maxMultiplier?.toFixed(3),
-            newMax: updatedHistory.maxMultiplier?.toFixed(3),
-            badge,
-          });
           setHistoryFn((prev) => ({
             ...prev,
             [asset.symbol]: updatedHistory,
@@ -1434,7 +1349,6 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
     if (useCronLevels !== prevUseCronLevelsRef.current) {
       prevMultipliersRef.current = {};
       prevOppMultipliersRef.current = {};
-      console.log('[BB-CRON] prevMultipliersRef reset — useCronLevels changed to', useCronLevels);
       prevUseCronLevelsRef.current = useCronLevels;
     }
   }, [useCronLevels]);
@@ -1544,6 +1458,8 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
     // Banked daily scores (previous days)
     bankedScore,
     oppBankedScore,
+    myBankedBadgePoints,
+    oppBankedBadgePoints,
 
     // Events for EventFeed (local detections + Firebase history including swaps)
     events: mergedEvents,

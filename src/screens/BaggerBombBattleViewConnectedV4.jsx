@@ -55,6 +55,8 @@ export default function BaggerBombBattleViewConnectedV4({
     clearTrigger,
     dailyExtremes,
     priceHistory,
+    myBankedBadgePoints,
+    oppBankedBadgePoints,
   } = useBaggerBombBattleV4(battleId, userId, { realtimePrices: wsPrices });
 
   // Extract symbols from battle data for WebSocket subscription
@@ -343,6 +345,8 @@ export default function BaggerBombBattleViewConnectedV4({
         onSwapCryptoShort={handleSwapCryptoShort}
         onGoToCash={handleGoToCash}
         rosterAssets={flattenPortfolio(player?.portfolio)}
+        myBankedBadgePoints={myBankedBadgePoints}
+        oppBankedBadgePoints={oppBankedBadgePoints}
       />
 
       {/* Threshold Trigger Celebration Overlay with Chain Support */}

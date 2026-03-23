@@ -13,7 +13,7 @@
 //   - Training battles are skipped
 
 import { initializeApp, getApps, cert } from 'firebase-admin/app';
-import { getFirestore, FieldPath } from 'firebase-admin/firestore';
+import { getFirestore, FieldPath, FieldValue } from 'firebase-admin/firestore';
 
 const LOG_PREFIX = '[BaggerBombV4Cron]';
 
@@ -238,6 +238,21 @@ async function bankBattleScores(db, battleDoc, currentPrices) {
       activeScore: Math.round(totalActive * 100) / 100,
       closingPrices: capturedClosing,
       assetScores,
+    };
+
+    // Extract badge points for the bankedBadgePoints accumulator
+    let badgePointsToday = 0;
+    const perAssetBadges = {};
+    for (const s of assetScores) {
+      if (s.badges && s.badges.length > 0) {
+        perAssetBadges[s.symbol] = s.badges;
+        badgePointsToday += s.bonusPoints || 0;
+      }
+    }
+    updates[`state.bankedBadgePoints.${role}.total`] = FieldValue.increment(badgePointsToday);
+    updates[`state.bankedBadgePoints.${role}.breakdown.${dayKey}`] = {
+      points: badgePointsToday,
+      badges: perAssetBadges,
     };
 
     // Reset history for all assets

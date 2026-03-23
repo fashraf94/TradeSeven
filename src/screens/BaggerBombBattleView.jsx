@@ -252,6 +252,9 @@ export default function BaggerBombBattleView({
   getEventCommentary,
   clashCastActive = false,
   syntheticEvents = [],
+  // Badge accumulator (Phase C)
+  myBankedBadgePoints = 0,
+  oppBankedBadgePoints = 0,
 }) {
   const isV4 = battleVersion >= 4;
   const isV5 = battleVersion >= 5;
@@ -689,6 +692,7 @@ export default function BaggerBombBattleView({
           entryPrice={battle?.state?.startingPrices?.[breakdownAsset.symbol] || breakdownAsset.swapPrice || openPrices[breakdownAsset.symbol] || 0}
           battleCreatedAt={battle?.timing?.createdAt || battle?.createdAt || null}
           priceHistory={priceHistory?.[breakdownAsset.symbol] || []}
+          bankedBadgePoints={myBankedBadgePoints}
         />
       )}
 
