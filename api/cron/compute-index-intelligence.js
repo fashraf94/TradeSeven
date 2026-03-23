@@ -501,6 +501,71 @@ export default async function handler(req, res) {
       writeCount++;
     }
 
+    // Build stockRankings summary (composite of fundamental + technical)
+    if (stockScores.length > 0) {
+      log('  Building stockRankings summary...');
+      const totalTechStocks = stockScores.length;
+
+      // Fetch peerRankings for all scored symbols (batch in groups of 30 for Firestore 'in' limit)
+      const symbols = stockScores.map(s => s.symbol);
+      const fundMap = new Map();
+      for (let i = 0; i < symbols.length; i += 30) {
+        const chunk = symbols.slice(i, i + 30);
+        const snap = await db.collection('peerRankings')
+          .where('ticker', 'in', chunk)
+          .get();
+        snap.forEach(doc => {
+          const d = doc.data();
+          fundMap.set(d.ticker, d);
+        });
+      }
+
+      const rankingStocks = [];
+      for (const tech of stockScores) {
+        const fund = fundMap.get(tech.symbol);
+        const fundRank = fund?.compositeRank;
+        const fundScore = fund?.compositeScore;
+        const fundTotalPeers = fund?.totalPeers;
+        const sectorName = fund?.sectorName || null;
+
+        // Composite: average of fundamental percentile (sector-scoped) and technical percentile (global)
+        let compositeScore = null;
+        if (fundRank != null && fundTotalPeers > 0 && tech.technicalRank != null) {
+          const fundPercentile = ((fundTotalPeers - fundRank) / fundTotalPeers) * 100;
+          const techPercentile = ((totalTechStocks - tech.technicalRank) / totalTechStocks) * 100;
+          compositeScore = Math.round(((fundPercentile + techPercentile) / 2) * 10) / 10;
+        }
+
+        rankingStocks.push({
+          symbol: tech.symbol,
+          sectorName,
+          fundamentalRank: fundRank || null,
+          fundamentalScore: fundScore || null,
+          fundamentalTotalPeers: fundTotalPeers || null,
+          technicalRank: tech.technicalRank,
+          technicalScore: tech.technicalScore,
+          compositeScore,
+        });
+      }
+
+      // Sort by compositeScore descending (nulls last)
+      rankingStocks.sort((a, b) => {
+        if (a.compositeScore == null && b.compositeScore == null) return 0;
+        if (a.compositeScore == null) return 1;
+        if (b.compositeScore == null) return -1;
+        return b.compositeScore - a.compositeScore;
+      });
+
+      const rankingsRef = db.collection('indexIntelligence').doc('stockRankings');
+      batch.set(rankingsRef, {
+        stocks: rankingStocks,
+        totalTechStocks,
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+      writeCount++;
+      log(`  ✓ stockRankings summary: ${rankingStocks.length} stocks, ${rankingStocks.filter(s => s.compositeScore != null).length} with composite`);
+    }
+
     await batch.commit();
     log(`  ✓ Wrote ${writeCount} documents to Firestore`);
 
