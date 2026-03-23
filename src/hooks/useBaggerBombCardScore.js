@@ -111,6 +111,25 @@ export function useBaggerBombCardScore(battle, user) {
     return map;
   }, [openPrices, battle?.timing?.actualStart, battle?.state?.activatedAt, battle?.state?.previousClosePrices, previousClosePrices]);
 
+  // Cron dailyLevels: when available and matching today (ET), use cron baselines
+  // for threshold detection instead of EODHD previousClose. Mirrors V4 hook logic.
+  const dailyLevels = battle?.state?.dailyLevels;
+  const useCronLevels = useMemo(() => {
+    if (!dailyLevels?.date || !dailyLevels?.assets) return false;
+    if (Object.keys(dailyLevels.assets).length === 0) return false;
+    const todayET = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+    return dailyLevels.date === todayET;
+  }, [dailyLevels?.date, dailyLevels?.assets]);
+
+  const thresholdBaselines = useMemo(() => {
+    if (!useCronLevels) return previousClosePriceMap;
+    const map = { ...(openPrices || {}) };
+    Object.entries(dailyLevels.assets).forEach(([sym, levels]) => {
+      if (levels.baseline > 0) map[sym] = levels.baseline;
+    });
+    return map;
+  }, [useCronLevels, dailyLevels?.assets, previousClosePriceMap, openPrices]);
+
   // Banked scores + closed trade points (static from battle document)
   const bankedMy = useMemo(() => getBankedScoreTotal(battle?.state?.dailyScores, myRole), [battle?.state?.dailyScores, myRole]);
   const bankedOpp = useMemo(() => getBankedScoreTotal(battle?.state?.dailyScores, oppRole), [battle?.state?.dailyScores, oppRole]);
@@ -196,7 +215,7 @@ export function useBaggerBombCardScore(battle, user) {
   // Compute final scores
   const myScore = useMemo(() => {
     if (!isApplicable || Object.keys(currentPrices).length === 0) return lastScores.current.my;
-    const active = computePortfolioScore(myPortfolio, currentPrices, openPrices, battleThresholds, previousClosePriceMap);
+    const active = computePortfolioScore(myPortfolio, currentPrices, openPrices, battleThresholds, thresholdBaselines);
     const score = Math.round(bankedMy + active + closedMy);
     lastScores.current.my = score;
     if (battleId) {
@@ -204,11 +223,11 @@ export function useBaggerBombCardScore(battle, user) {
       scoreCache.set(battleId, { ...prev, my: score, timestamp: Date.now() });
     }
     return score;
-  }, [isApplicable, myPortfolio, currentPrices, openPrices, battleThresholds, previousClosePriceMap, bankedMy, closedMy, battleId]);
+  }, [isApplicable, myPortfolio, currentPrices, openPrices, battleThresholds, thresholdBaselines, bankedMy, closedMy, battleId]);
 
   const oppScore = useMemo(() => {
     if (!isApplicable || Object.keys(currentPrices).length === 0) return lastScores.current.opp;
-    const active = computePortfolioScore(oppPortfolio, currentPrices, openPrices, battleThresholds, previousClosePriceMap);
+    const active = computePortfolioScore(oppPortfolio, currentPrices, openPrices, battleThresholds, thresholdBaselines);
     const score = Math.round(bankedOpp + active + closedOpp);
     lastScores.current.opp = score;
     if (battleId) {
@@ -216,7 +235,7 @@ export function useBaggerBombCardScore(battle, user) {
       scoreCache.set(battleId, { ...prev, opp: score, timestamp: Date.now() });
     }
     return score;
-  }, [isApplicable, oppPortfolio, currentPrices, openPrices, battleThresholds, previousClosePriceMap, bankedOpp, closedOpp, battleId]);
+  }, [isApplicable, oppPortfolio, currentPrices, openPrices, battleThresholds, thresholdBaselines, bankedOpp, closedOpp, battleId]);
 
   return { myScore, oppScore, isLoading };
 }
