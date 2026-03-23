@@ -286,16 +286,6 @@ export default function DashboardBattleCard({
       opponentName = preview.opponent || 'Opponent';
       isPoints = !!preview.isV3 || isBaggerBomb;
 
-      if (!window.__lsDiagThrottle) window.__lsDiagThrottle = {};
-      const _dbcKey = battle?.id + '_dbc';
-      const _dbcNow = Date.now();
-      if (!window.__lsDiagThrottle[_dbcKey] || _dbcNow - window.__lsDiagThrottle[_dbcKey] > 10000) {
-        window.__lsDiagThrottle[_dbcKey] = _dbcNow;
-        console.log('[LS-DIAG] DashboardBattleCard scores', battle?.id, {
-          myScore, theirScore, isPoints, battleV: battle._v,
-        });
-      }
-
       // V3/V4: prefer client-side computed scores from useBaggerBombCardScore.
       // Once the hook has produced non-zero scores, always use them (they persist
       // across brief non-applicable gaps via the hook's internal ref cache).

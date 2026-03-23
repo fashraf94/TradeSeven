@@ -31,21 +31,6 @@ function calculate1v1PreviewData(battle, username) {
       : (battle.creator?.liveScore ?? battle.creator?.totalPoints ?? battle.creator?.totalScore ?? 0);
     const isWinning = myScore > theirScore;
 
-    if (!window.__lsDiagThrottle) window.__lsDiagThrottle = {};
-    const _tKey = battle?.id + '_preview';
-    const _tNow = Date.now();
-    if (!window.__lsDiagThrottle[_tKey] || _tNow - window.__lsDiagThrottle[_tKey] > 10000) {
-      window.__lsDiagThrottle[_tKey] = _tNow;
-      console.log('[LS-DIAG] calculate1v1PreviewData', battle?.id, {
-        myScore, theirScore,
-        creatorLiveScore: battle.creator?.liveScore,
-        opponentLiveScore: battle.opponent?.liveScore,
-        creatorTotalPoints: battle.creator?.totalPoints,
-        opponentTotalPoints: battle.opponent?.totalPoints,
-        liveScoreUpdatedAt: battle.liveScoreUpdatedAt,
-      });
-    }
-
     return {
       opponent: opponent || 'Opponent',
       myGain: myScore,

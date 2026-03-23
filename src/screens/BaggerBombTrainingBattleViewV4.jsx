@@ -97,14 +97,6 @@ export default function BaggerBombTrainingBattleViewV4({
     const map = { ...(startingPrices || {}) };
     // Training mode: never layer EODHD/Firebase over entry prices (always Day 1)
 
-    const sampleSym = Object.keys(map)[0];
-    console.log('[BB-DIAG] Training previousClosePriceMap:', {
-      sampleEntry: startingPrices?.[sampleSym],
-      sampleResult: map?.[sampleSym],
-      sampleEODHD: previousClosePrices?.[sampleSym],
-      entryAndResultMatch: JSON.stringify(startingPrices) === JSON.stringify(map),
-      mapKeys: Object.keys(map).slice(0, 3),
-    });
     return map;
   }, [startingPrices, previousClosePrices]);
 
@@ -294,10 +286,6 @@ export default function BaggerBombTrainingBattleViewV4({
 
       if (Object.keys(newPreviousCloses).length > 0) {
         setPreviousClosePrices(prev => ({ ...prev, ...newPreviousCloses }));
-        console.log('[BB-Fix] Training EODHD previousClose fetched:', {
-          count: Object.keys(newPreviousCloses).length,
-          sample: Object.entries(newPreviousCloses).slice(0, 3).map(([s, p]) => `${s}=${p}`).join(', '),
-        });
       }
 
       // Extract daily open prices from batch API (used for FreeAgentBar % display)
@@ -463,16 +451,6 @@ export default function BaggerBombTrainingBattleViewV4({
         const dailyBaseline = previousClosePriceMap[asset.symbol] || asset.swapPrice || startingPrices[asset.symbol] || asset.price || 0;
         const currentPrice = currentPrices[asset.symbol] || dailyBaseline;
         if (!dailyBaseline || !currentPrice) return;
-
-        if (asset.symbol === flat[0]?.symbol) {
-          console.log('[BB-DIAG] training detection:', asset.symbol, {
-            dailyBaseline,
-            entryPrice: startingPrices?.[asset.symbol],
-            currentPrice,
-            baselineIsEntry: dailyBaseline === startingPrices?.[asset.symbol],
-            previousCloseMapValue: previousClosePriceMap?.[asset.symbol],
-          });
-        }
 
         let priceChange = dailyBaseline > 0 ? ((currentPrice - dailyBaseline) / dailyBaseline) * 100 : 0;
         // V5: Invert for short positions

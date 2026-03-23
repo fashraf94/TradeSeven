@@ -14,7 +14,7 @@ import { doc, runTransaction } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import { getEasternTime } from '../constants/battleTiming';
 import { V4_PVP_TIMING, getCurrentTradingDay } from '../constants/battleTimingV4';
-import { calculateAssetScoreV3, flattenPortfolio } from '../utils/baggerBombUtils';
+import { calculateAssetScoreV3, flattenPortfolio, THRESHOLD_POINTS } from '../utils/baggerBombUtils';
 
 // ============================================
 // HELPERS
@@ -193,6 +193,22 @@ export async function bankDailyScores(battleId, dayNumber, closingPrices, source
         activeScore,
         closingPrices: capturedClosing,
         assetScores,
+      };
+
+      // Extract badge points for the bankedBadgePoints accumulator
+      let badgePointsToday = 0;
+      const perAssetBadges = {};
+      assetScores.forEach(s => {
+        if (s.badges && s.badges.length > 0) {
+          perAssetBadges[s.symbol] = s.badges;
+          badgePointsToday += s.badges.reduce((sum, b) => sum + (THRESHOLD_POINTS[b] || 0), 0);
+        }
+      });
+      const existingBadgeTotal = data.state?.bankedBadgePoints?.[role]?.total || 0;
+      updates[`state.bankedBadgePoints.${role}.total`] = existingBadgeTotal + badgePointsToday;
+      updates[`state.bankedBadgePoints.${role}.breakdown.${dayKey}`] = {
+        points: badgePointsToday,
+        badges: perAssetBadges,
       };
 
       // Reset history for all portfolio assets, archiving old values

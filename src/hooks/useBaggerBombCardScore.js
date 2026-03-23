@@ -1,5 +1,5 @@
 // useBaggerBombCardScore — lightweight client-side score computation for dashboard cards.
-// Polls prices every 30s and computes BaggerBomb scores without Firebase writes,
+// Polls prices every 5s and computes BaggerBomb scores without Firebase writes,
 // WebSocket, swap mode, or celebrations.
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
@@ -7,7 +7,7 @@ import { stockAPI, POPULAR_CRYPTO } from '../services/eodhdAPI';
 import { calculateAssetScoreV3, flattenPortfolio } from '../utils/baggerBombUtils';
 import { getBankedScoreTotal } from '../services/dailyScoringV4Service';
 
-const CARD_POLL_INTERVAL = 30000; // 30 seconds
+const CARD_POLL_INTERVAL = 5000; // 5 seconds
 const SCORE_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 const scoreCache = new Map(); // battleId -> { my, opp, timestamp }
 
