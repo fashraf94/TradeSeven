@@ -15,7 +15,7 @@ import TechnicalAnalysisTab from './ResearchTabs/TechnicalAnalysisTab';
 import BaggerBombTab from './ResearchTabs/BaggerBombTab';
 import HealthTab from '../Research/HealthTab';
 import { CRYPTO_SYMBOLS } from '../../services/sessionScoringService';
-import AnalysisVisualDashboard from './AnalysisVisualDashboard';
+import AnalysisQATab from '../Research/AnalysisQATab';
 import CompeteTab from './CompeteTab';
 import SectorTab from './SectorTab';
 import { isIndex, INDEX_REGISTRY } from '../../constants/indexRegistry';
@@ -763,11 +763,10 @@ const AssetResearchModal = ({
                       )}
                     </div>
                   )}
-                  {/* Visual Intelligence Dashboard */}
-                  <AnalysisVisualDashboard
+                  {/* Q&A Cards — Ask About This Stock */}
+                  <AnalysisQATab
                     symbol={currentAsset?.symbol}
-                    stockData={profile}
-                    isMobile={isMobile}
+                    companyName={profile?.Name || currentAsset?.name}
                   />
                 </div>
               )}
@@ -1112,11 +1111,10 @@ const AssetResearchModal = ({
                   </div>
                 )}
 
-                {/* Visual Intelligence Dashboard */}
-                <AnalysisVisualDashboard
+                {/* Q&A Cards — Ask About This Stock */}
+                <AnalysisQATab
                   symbol={currentAsset?.symbol}
-                  stockData={profile}
-                  isMobile={isMobile}
+                  companyName={profile?.Name || currentAsset?.name}
                 />
               </div>
             )}

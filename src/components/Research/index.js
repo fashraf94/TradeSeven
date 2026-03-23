@@ -1,7 +1,5 @@
 // /src/components/Research/index.js
 
-export { default as FundamentalNews } from './FundamentalNews';
-export { default as LatestEarningsReport } from './LatestEarningsReport';
 // v2 Research Modal components
 export { default as ChartHeader } from './ChartHeader';
 export { default as StockChart } from './StockChart';

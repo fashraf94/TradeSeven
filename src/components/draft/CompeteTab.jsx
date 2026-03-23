@@ -1,5 +1,9 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { doc, getDoc } from 'firebase/firestore';
+import { db } from '../../firebase/config';
 import useTechnicalScore from '../Research/useTechnicalScore';
+import RanksLeaderboard from '../Research/RanksLeaderboard';
 
 // ---------------------------------------------------------------------------
 // Constants & Design Tokens
@@ -672,7 +676,7 @@ function TechnicalFactorRow({ factor, techData }) {
 // Dual Badge Header
 // ---------------------------------------------------------------------------
 
-function DualBadgeHeader({ data, techData, techLoading }) {
+function DualBadgeHeader({ data, techData, techLoading, selectedView, onSelectView }) {
   const fundColor = getTierColor(data.tier);
   const fundTier = getTierLabel(data.tier);
 
@@ -680,12 +684,19 @@ function DualBadgeHeader({ data, techData, techLoading }) {
   const techTier = techScore != null ? tierFromPercentile(techScore) : null;
   const techColor = '#A78BFA';
 
+  const isFundSelected = selectedView === 'fundamental';
+  const isTechSelected = selectedView === 'technical';
+
   return (
     <div style={{ display: 'flex', gap: '10px', marginBottom: '12px' }}>
       {/* Fundamental Badge */}
-      <div style={{
-        flex: 1, padding: '12px 10px', borderRadius: '10px',
-        background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)',
+      <div
+        onClick={() => onSelectView('fundamental')}
+        style={{
+        flex: 1, padding: '12px 10px', borderRadius: '10px', cursor: 'pointer',
+        background: 'rgba(255,255,255,0.03)',
+        border: isFundSelected ? `1px solid ${fundColor}60` : '1px solid rgba(255,255,255,0.06)',
+        transition: 'border-color 0.2s',
       }}>
         <div style={{ fontSize: '9px', color: '#8b949e', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '6px' }}>
           Fundamental
@@ -722,9 +733,13 @@ function DualBadgeHeader({ data, techData, techLoading }) {
 
       {/* Technical Badge */}
       {techData && (
-        <div style={{
-          flex: 1, padding: '12px 10px', borderRadius: '10px',
-          background: 'rgba(255,255,255,0.03)', border: `1px solid ${techColor}20`,
+        <div
+          onClick={() => onSelectView('technical')}
+          style={{
+          flex: 1, padding: '12px 10px', borderRadius: '10px', cursor: 'pointer',
+          background: 'rgba(255,255,255,0.03)',
+          border: isTechSelected ? `1px solid ${techColor}60` : `1px solid ${techColor}20`,
+          transition: 'border-color 0.2s',
         }}>
           <div style={{ fontSize: '9px', color: '#8b949e', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '6px' }}>
             Technical
@@ -788,7 +803,23 @@ const CompeteTab = ({ symbol, isMobile, onNavigateToStock }) => {
   const [error, setError] = useState(null);
   const [errorStatus, setErrorStatus] = useState(null);
   const [expandedPillar, setExpandedPillar] = useState(null);
+  const [selectedRankView, setSelectedRankView] = useState('fundamental');
+  const [rankingsData, setRankingsData] = useState(null);
   const { data: techData, loading: techLoading } = useTechnicalScore(symbol);
+
+  // Fetch stockRankings summary (single Firestore read, cached by SDK)
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const snap = await getDoc(doc(db, 'indexIntelligence', 'stockRankings'));
+        if (!cancelled && snap.exists()) setRankingsData(snap.data());
+      } catch (err) {
+        console.error('[CompeteTab] Failed to load stockRankings:', err.message);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => {
     if (!symbol) return;
@@ -843,8 +874,14 @@ const CompeteTab = ({ symbol, isMobile, onNavigateToStock }) => {
     <div>
       <StalenessNote computedAt={data.computedAt} />
 
-      {/* Dual Badge Header — Fundamental + Technical */}
-      <DualBadgeHeader data={data} techData={techData} techLoading={techLoading} />
+      {/* Dual Badge Header — Fundamental + Technical (tappable toggle) */}
+      <DualBadgeHeader
+        data={data}
+        techData={techData}
+        techLoading={techLoading}
+        selectedView={selectedRankView}
+        onSelectView={setSelectedRankView}
+      />
 
       {/* DNA Badge */}
       {data.dnaBadge && (
@@ -870,46 +907,114 @@ const CompeteTab = ({ symbol, isMobile, onNavigateToStock }) => {
         </div>
       )}
 
-      {/* Technical Score Breakdown */}
-      {techData && (
-        <>
-          <div style={{
-            fontSize: '10px', color: '#8b949e', marginBottom: '6px',
-            textTransform: 'uppercase', letterSpacing: '0.5px',
-          }}>
-            Technical Score Breakdown
-          </div>
-          {TECHNICAL_FACTORS.map(factor => (
-            <TechnicalFactorRow key={factor.key} factor={factor} techData={techData} />
-          ))}
-          <div style={{ marginBottom: '12px' }} />
-        </>
-      )}
+      {/* Toggled Breakdown Content */}
+      <AnimatePresence mode="wait">
+        {selectedRankView === 'technical' && techData ? (
+          <motion.div
+            key="technical"
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={{ duration: 0.2 }}
+          >
+            {/* Technical Score headline */}
+            <div style={{
+              fontSize: '13px', fontWeight: '600', color: '#A78BFA',
+              marginBottom: '8px',
+            }}>
+              Technical Score: {techData.technicalScore}/100
+            </div>
+            <div style={{
+              fontSize: '10px', color: '#8b949e', marginBottom: '6px',
+              textTransform: 'uppercase', letterSpacing: '0.5px',
+            }}>
+              Technical Score Breakdown
+            </div>
+            {TECHNICAL_FACTORS.map(factor => (
+              <TechnicalFactorRow key={factor.key} factor={factor} techData={techData} />
+            ))}
 
-      {/* Pillar Breakdown */}
-      <div style={{
-        fontSize: '10px', color: '#8b949e', marginBottom: '6px',
-        textTransform: 'uppercase', letterSpacing: '0.5px',
-      }}>
-        Pillar Breakdown
-      </div>
-      {activePillars.map(pillar => (
-        <PillarRow
-          key={pillar.key}
-          pillar={pillar}
-          pillarData={data.pillars?.[pillar.key]}
-          isExpanded={expandedPillar === pillar.key}
-          onToggle={() => setExpandedPillar(expandedPillar === pillar.key ? null : pillar.key)}
-          isMobile={isMobile}
+            {/* Technical Leaderboard */}
+            {rankingsData?.stocks && (
+              <RanksLeaderboard
+                type="technical"
+                stocks={rankingsData.stocks}
+                currentSymbol={symbol}
+                onNavigateToStock={onNavigateToStock}
+              />
+            )}
+          </motion.div>
+        ) : selectedRankView === 'technical' && !techData && !techLoading ? (
+          <motion.div
+            key="technical-na"
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={{ duration: 0.2 }}
+          >
+            <div style={{
+              padding: '16px', borderRadius: '8px',
+              background: 'rgba(255,255,255,0.03)',
+              fontSize: '12px', color: '#8b949e', textAlign: 'center',
+            }}>
+              Technical scoring not available for this stock
+            </div>
+          </motion.div>
+        ) : (
+          <motion.div
+            key="fundamental"
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={{ duration: 0.2 }}
+          >
+            {/* Pillar Breakdown */}
+            <div style={{
+              fontSize: '10px', color: '#8b949e', marginBottom: '6px',
+              textTransform: 'uppercase', letterSpacing: '0.5px',
+            }}>
+              Pillar Breakdown
+            </div>
+            {activePillars.map(pillar => (
+              <PillarRow
+                key={pillar.key}
+                pillar={pillar}
+                pillarData={data.pillars?.[pillar.key]}
+                isExpanded={expandedPillar === pillar.key}
+                onToggle={() => setExpandedPillar(expandedPillar === pillar.key ? null : pillar.key)}
+                isMobile={isMobile}
+              />
+            ))}
+
+            <SectorLeaderboard
+              data={data}
+              currentSymbol={symbol}
+              onNavigateToStock={onNavigateToStock}
+              isMobile={isMobile}
+            />
+
+            {/* Fundamental Leaderboard (cross-sector) */}
+            {rankingsData?.stocks && (
+              <RanksLeaderboard
+                type="fundamental"
+                stocks={rankingsData.stocks}
+                currentSymbol={symbol}
+                onNavigateToStock={onNavigateToStock}
+              />
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Composite Leaderboard — always visible */}
+      {rankingsData?.stocks && (
+        <RanksLeaderboard
+          type="composite"
+          stocks={rankingsData.stocks}
+          currentSymbol={symbol}
+          onNavigateToStock={onNavigateToStock}
         />
-      ))}
-
-      <SectorLeaderboard
-        data={data}
-        currentSymbol={symbol}
-        onNavigateToStock={onNavigateToStock}
-        isMobile={isMobile}
-      />
+      )}
 
       <ScannerBadges scanner={data.scanner} />
     </div>
