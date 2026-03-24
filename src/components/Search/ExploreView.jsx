@@ -233,7 +233,7 @@ const ExploreView = ({ stocksData, onOpenResearch, isMobile }) => {
       {/* Category Grid */}
       <div style={{
         display: 'grid',
-        gridTemplateColumns: 'repeat(2, 1fr)',
+        gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(3, 1fr)',
         gap: '12px',
         marginBottom: '16px',
       }}>
