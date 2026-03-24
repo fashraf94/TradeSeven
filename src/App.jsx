@@ -50,6 +50,7 @@ const BaggerBombSetupScreen = lazy(() => import('./screens/BaggerBombSetupScreen
 const StonkOptionsArenaV2 = lazy(() => import('./components/optionsArena/StonkOptionsArenaV2'));
 const FantasyTimesFeed = lazy(() => import('./components/FantasyTimes/FantasyTimesFeed'));
 const StoryDetail = lazy(() => import('./components/FantasyTimes/StoryDetail'));
+const SearchDiscover = lazy(() => import('./components/Search/SearchDiscover'));
 
 // Legacy aliases for backwards compatibility
 const TDBattleScoreboard = BaggerBombScoreboard;
@@ -8780,6 +8781,24 @@ export default function PortfolioDuel() {
         isDesktop={isDesktop}
         onBack={() => setScreen('profile')}
       />
+    );
+  }
+
+  // SEARCH & DISCOVER SCREEN
+  if (screen === 'search') {
+    return (
+      <div style={{ marginLeft: isDesktop ? (sidebarCollapsed ? '64px' : '220px') : 0, transition: 'margin-left 0.2s ease' }}>
+      <Suspense fallback={<div />}>
+        <SearchDiscover
+          user={user}
+          isMobile={isMobile}
+          isDesktop={isDesktop}
+          setScreen={setScreen}
+          stocksData={stocksData}
+          sidebarCollapsed={sidebarCollapsed}
+        />
+      </Suspense>
+      </div>
     );
   }
 

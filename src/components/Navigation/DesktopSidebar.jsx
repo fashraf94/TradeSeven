@@ -3,7 +3,7 @@
 // Supports collapsed (64px, icons only) and expanded (220px, full labels) states
 
 import React, { useState } from 'react';
-import { Swords, Newspaper, GraduationCap, Clock, Settings, Flame, Bot, PanelLeftClose, PanelLeftOpen, LogOut } from 'lucide-react';
+import { Swords, Newspaper, GraduationCap, Clock, Settings, Flame, Bot, PanelLeftClose, PanelLeftOpen, LogOut, Search } from 'lucide-react';
 import { useTheme } from '../../contexts/ThemeContext';
 
 const NAV_ITEMS = [
@@ -11,6 +11,7 @@ const NAV_ITEMS = [
   { id: 'news', label: 'News', Icon: Newspaper, screen: 'fantasytimes' },
   { id: 'agent', label: 'Agent', Icon: Bot, screen: 'agent' },
   { id: 'academy', label: 'Academy', Icon: GraduationCap, screen: null },
+  { id: 'search', label: 'Search', Icon: Search, screen: 'search' },
   { id: 'history', label: 'History', Icon: Clock, screen: 'battleHistory' },
   { id: 'settings', label: 'Settings', Icon: Settings, screen: 'profile' },
 ];
