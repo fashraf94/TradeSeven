@@ -148,12 +148,15 @@ export const prepareChartData = (rawData) => {
     const rawTime = candle.date || candle.datetime || candle.timestamp;
     const time = formatTime(rawTime, isIntraday);
     if (!time) return null;
+    const adjClose = Number(candle.adjusted_close) || Number(candle.close);
+    const rawClose = Number(candle.close);
+    const factor = rawClose > 0 ? adjClose / rawClose : 1;
     return {
       time,
-      open: Number(candle.open),
-      high: Number(candle.high),
-      low: Number(candle.low),
-      close: Number(candle.close),
+      open: Number(candle.open) * factor,
+      high: Number(candle.high) * factor,
+      low: Number(candle.low) * factor,
+      close: adjClose,
       volume: Number(candle.volume) || 0,
     };
   }).filter(c => c !== null && isValidFormattedCandle(c));
