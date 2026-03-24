@@ -3,11 +3,7 @@ import { Sparkles } from 'lucide-react';
 import { useTheme } from '../../contexts/ThemeContext';
 import { SECTORS } from '../../constants/sectors';
 
-// Reverse lookup: sectorName → color
-const SECTOR_COLORS = {};
-Object.values(SECTORS).forEach(s => { SECTOR_COLORS[s.name] = s.color; });
-
-// Also map sectorId → { name, color }
+// Map sectorId → { name, color }
 const getSectorInfo = (sectorId) => {
   const s = SECTORS[sectorId];
   return s ? { name: s.name, color: s.color } : { name: sectorId || 'Unknown', color: '#6b7280' };

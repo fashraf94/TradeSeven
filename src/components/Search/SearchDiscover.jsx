@@ -16,7 +16,7 @@ const TABS = [
   { id: 'institutional', label: 'Institutional', badge: 'Soon' },
 ];
 
-const SearchDiscover = ({ user, isMobile, isDesktop, setScreen, stocksData, sidebarCollapsed }) => {
+const SearchDiscover = ({ user, isMobile, isDesktop, setScreen, stocksData }) => {
   const { tokens } = useTheme();
   const [activeTab, setActiveTab] = useState('explore');
   const [showSearchOverlay, setShowSearchOverlay] = useState(false);
@@ -123,7 +123,7 @@ const SearchDiscover = ({ user, isMobile, isDesktop, setScreen, stocksData, side
         {TABS.map(tab => (
           <button
             key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
+            onClick={() => { setResearchAsset(null); setActiveTab(tab.id); }}
             style={mainTabStyle(activeTab === tab.id)}
           >
             {tab.label}
