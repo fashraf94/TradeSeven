@@ -1,13 +1,7 @@
 import React, { useMemo } from 'react';
 import { Sparkles } from 'lucide-react';
 import { useTheme } from '../../contexts/ThemeContext';
-import { SECTORS } from '../../constants/sectors';
-
-// Map sectorId → { name, color }
-const getSectorInfo = (sectorId) => {
-  const s = SECTORS[sectorId];
-  return s ? { name: s.name, color: s.color } : { name: sectorId || 'Unknown', color: '#6b7280' };
-};
+import { resolveSectorInfo } from '../../utils/sectorUtils';
 
 const SectorConcentration = ({ stocks, type, count = 20 }) => {
   const { tokens } = useTheme();
@@ -19,7 +13,7 @@ const SectorConcentration = ({ stocks, type, count = 20 }) => {
     const sectorCounts = {};
 
     topN.forEach(stock => {
-      const info = getSectorInfo(stock.sectorId);
+      const info = resolveSectorInfo(stock);
       if (!sectorCounts[info.name]) {
         sectorCounts[info.name] = { name: info.name, color: info.color, count: 0 };
       }

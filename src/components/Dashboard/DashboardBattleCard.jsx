@@ -257,7 +257,7 @@ export default function DashboardBattleCard({
   const isEnded = remainingMs <= 0;
 
   // Client-side score computation (replaces dependency on liveScore from Firebase)
-  const { myScore: cardMyScore, oppScore: cardOppScore, isLoading: cardScoreLoading } = useBaggerBombCardScore(battle, user);
+  const { myScore: cardMyScore, oppScore: cardOppScore, isLoading: cardScoreLoading, isCreator: cardIsCreator } = useBaggerBombCardScore(battle, user);
 
   // ─── Score data extraction ────────────────────────────────────────────────
   let content;
@@ -275,6 +275,11 @@ export default function DashboardBattleCard({
   } else {
     // 1v1 battle (classic, baggerbomb, training)
     const preview = calculate1v1PreviewData(battle, user?.username);
+
+    // Unified isCreator — matches the hook's logic (odUserId/uid/username)
+    const isCreator = (battle.creator?.odUserId || battle.creator?.uid) === currentUserId ||
+      battle.creator?.username === user?.username;
+
     let myScore = 0;
     let theirScore = 0;
     let opponentName = 'Opponent';
@@ -285,6 +290,14 @@ export default function DashboardBattleCard({
       theirScore = preview.theirGain;
       opponentName = preview.opponent || 'Opponent';
       isPoints = !!preview.isV3 || isBaggerBomb;
+
+      // For V3+, override opponent name using unified isCreator to avoid role mismatch
+      // with the preview function (which only checks username).
+      if (preview.isV3) {
+        opponentName = isCreator
+          ? (battle.opponent?.username || 'Opponent')
+          : (battle.creator?.username || 'Creator');
+      }
 
       // V3/V4: prefer client-side computed scores from useBaggerBombCardScore.
       // Once the hook has produced non-zero scores, always use them (they persist
@@ -301,7 +314,6 @@ export default function DashboardBattleCard({
           theirScore = cardOppScore;
         } else {
           // Hook still loading and no scores yet — fall back to banked scores
-          const isCreator = battle.creator?.username === user?.username;
           const myRole = isCreator ? 'creator' : 'opponent';
           const theirRole = isCreator ? 'opponent' : 'creator';
           const bankedMy = extractSnapshotScore(battle, myRole);
@@ -324,6 +336,16 @@ export default function DashboardBattleCard({
     if (isTraining && opponentName === 'Opponent') {
       opponentName = 'CPU';
     }
+
+    // Diagnostic: detect role mismatches between hook and local determination
+    console.log('[CardScore]', battle.id, {
+      cardMyScore, cardOppScore, cardScoreLoading,
+      hookIsCreator: cardIsCreator,
+      localIsCreator: isCreator,
+      previewMyGain: preview?.myGain,
+      previewTheirGain: preview?.theirGain,
+      userId: currentUserId,
+    });
 
     content = (
       <>
