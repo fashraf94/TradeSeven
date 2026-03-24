@@ -81,6 +81,127 @@ const ErrorState = ({ onRetry }) => (
 );
 
 // ---------------------------------------------------------------------------
+// Response Renderer — formats structured API responses
+// ---------------------------------------------------------------------------
+
+function parseResponse(response) {
+  if (!response) return null;
+  if (typeof response === 'object') return response;
+  if (typeof response === 'string' && response.trimStart().startsWith('{')) {
+    try { return JSON.parse(response); } catch { return null; }
+  }
+  return null;
+}
+
+const ContentParagraphs = ({ text }) => {
+  if (!text) return null;
+  const paragraphs = String(text).split(/\n\n+/);
+  return paragraphs.map((p, i) => (
+    <div key={i} style={{
+      fontSize: '13px',
+      color: 'rgba(255,255,255,0.85)',
+      lineHeight: 1.6,
+      marginBottom: i < paragraphs.length - 1 ? 8 : 0,
+      whiteSpace: 'pre-wrap',
+    }}>
+      {p}
+    </div>
+  ));
+};
+
+const DataPointsSection = ({ dataPoints }) => {
+  if (!Array.isArray(dataPoints) || dataPoints.length === 0) return null;
+  return (
+    <div style={{ marginTop: 4 }}>
+      <div style={{
+        fontSize: '10px',
+        letterSpacing: '1.2px',
+        textTransform: 'uppercase',
+        color: 'rgba(255,255,255,0.4)',
+        marginBottom: '8px',
+        fontWeight: 600,
+      }}>
+        Data Points
+      </div>
+      {dataPoints.map((dp, i) => (
+        <div key={i} style={{
+          padding: '8px 0',
+          borderTop: i > 0 ? '1px solid rgba(255,255,255,0.06)' : 'none',
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '12px' }}>
+            <span style={{ fontSize: '13px', color: 'rgba(255,255,255,0.6)' }}>{dp.label}</span>
+            <span style={{ fontSize: '13px', fontWeight: 600, color: '#00d9ff', flexShrink: 0 }}>{dp.value}</span>
+          </div>
+          {dp.context && (
+            <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.4)', fontStyle: 'italic', marginTop: '3px' }}>
+              {dp.context}
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+};
+
+const CaseCard = ({ title, text, bgColor, borderColor, titleColor }) => {
+  if (!text) return null;
+  return (
+    <div style={{
+      background: bgColor,
+      borderLeft: `3px solid ${borderColor}`,
+      borderRadius: '6px',
+      padding: '10px 12px',
+    }}>
+      <div style={{
+        fontSize: '10px',
+        letterSpacing: '1.2px',
+        textTransform: 'uppercase',
+        color: titleColor,
+        fontWeight: 600,
+        marginBottom: '4px',
+      }}>
+        {title}
+      </div>
+      <div style={{ fontSize: '13px', color: 'rgba(255,255,255,0.8)', lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>
+        {text}
+      </div>
+    </div>
+  );
+};
+
+const FormattedResponse = ({ response }) => {
+  const parsed = parseResponse(response);
+
+  // Plain string fallback
+  if (!parsed) {
+    return <ContentParagraphs text={String(response)} />;
+  }
+
+  // Structured object with at least content or headline
+  const { headline, content, dataPoints, bullCase, bearCase, educationalNote } = parsed;
+
+  // If parsed but has no known fields, render as plain text
+  if (!headline && !content && !dataPoints && !bullCase && !bearCase && !educationalNote) {
+    return <ContentParagraphs text={JSON.stringify(response, null, 2)} />;
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+      {headline && (
+        <div style={{ fontSize: '15px', fontWeight: 600, color: '#ffffff' }}>
+          {headline}
+        </div>
+      )}
+      {content && <ContentParagraphs text={content} />}
+      <DataPointsSection dataPoints={dataPoints} />
+      <CaseCard title="Bull Case" text={bullCase} bgColor="rgba(0,255,136,0.06)" borderColor="#00ff88" titleColor="#00ff88" />
+      <CaseCard title="Bear Case" text={bearCase} bgColor="rgba(255,71,87,0.06)" borderColor="#ff4757" titleColor="#ff4757" />
+      <CaseCard title="Key Insight" text={educationalNote} bgColor="rgba(168,85,247,0.06)" borderColor="#a855f7" titleColor="#a855f7" />
+    </div>
+  );
+};
+
+// ---------------------------------------------------------------------------
 // QuestionCard
 // ---------------------------------------------------------------------------
 
@@ -171,15 +292,7 @@ const QuestionCard = ({ question, isActive, isLoading, response, error, onTap, o
                 padding: '12px 16px',
                 background: 'rgba(0, 217, 255, 0.03)',
               }}>
-                <p style={{
-                  margin: 0,
-                  fontSize: '13px',
-                  lineHeight: 1.6,
-                  color: 'rgba(255, 255, 255, 0.85)',
-                  whiteSpace: 'pre-wrap',
-                }}>
-                  {response}
-                </p>
+                <FormattedResponse response={response} />
               </div>
             )}
           </motion.div>
