@@ -676,13 +676,18 @@ function TechnicalFactorRow({ factor, techData }) {
 // Dual Badge Header
 // ---------------------------------------------------------------------------
 
-function DualBadgeHeader({ data, techData, techLoading, selectedView, onSelectView }) {
-  const fundColor = getTierColor(data.tier);
+function DualBadgeHeader({ data, techData, techLoading, selectedView, onSelectView, sectorTechRank, sectorTechTotal }) {
+  const fundColor = '#f59e0b';
   const fundTier = getTierLabel(data.tier);
 
   const techScore = techData?.technicalScore;
-  const techTier = techScore != null ? tierFromPercentile(techScore) : null;
-  const techColor = '#A78BFA';
+  const sectorTechPercentile = (sectorTechRank != null && sectorTechTotal > 0)
+    ? ((sectorTechTotal - sectorTechRank) / sectorTechTotal) * 100
+    : null;
+  const techTier = sectorTechPercentile != null
+    ? tierFromPercentile(sectorTechPercentile)
+    : (techScore != null ? tierFromPercentile(techScore) : null);
+  const techColor = '#00d9ff';
 
   const isFundSelected = selectedView === 'fundamental';
   const isTechSelected = selectedView === 'technical';
@@ -694,11 +699,11 @@ function DualBadgeHeader({ data, techData, techLoading, selectedView, onSelectVi
         onClick={() => onSelectView('fundamental')}
         style={{
         flex: 1, padding: '12px 10px', borderRadius: '10px', cursor: 'pointer',
-        background: 'rgba(255,255,255,0.03)',
-        border: isFundSelected ? `1px solid ${fundColor}60` : '1px solid rgba(255,255,255,0.06)',
-        transition: 'border-color 0.2s',
+        background: isFundSelected ? 'rgba(245,158,11,0.05)' : 'rgba(255,255,255,0.03)',
+        border: isFundSelected ? `1px solid rgba(245,158,11,0.4)` : '1px solid rgba(255,255,255,0.1)',
+        transition: 'border-color 0.2s, background 0.2s',
       }}>
-        <div style={{ fontSize: '9px', color: '#8b949e', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '6px' }}>
+        <div style={{ fontSize: '9px', color: fundColor, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '6px', fontWeight: '600' }}>
           Fundamental
         </div>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px' }}>
@@ -723,7 +728,7 @@ function DualBadgeHeader({ data, techData, techLoading, selectedView, onSelectVi
         <div style={{
           display: 'inline-block', marginTop: '6px',
           padding: '2px 6px', borderRadius: '4px',
-          background: `${fundColor}18`, border: `1px solid ${fundColor}30`,
+          background: `${fundColor}18`, border: `1px solid rgba(245,158,11,0.3)`,
           fontSize: '9px', fontWeight: '600', color: fundColor,
           textTransform: 'uppercase', letterSpacing: '0.5px',
         }}>
@@ -737,18 +742,20 @@ function DualBadgeHeader({ data, techData, techLoading, selectedView, onSelectVi
           onClick={() => onSelectView('technical')}
           style={{
           flex: 1, padding: '12px 10px', borderRadius: '10px', cursor: 'pointer',
-          background: 'rgba(255,255,255,0.03)',
-          border: isTechSelected ? `1px solid ${techColor}60` : `1px solid ${techColor}20`,
-          transition: 'border-color 0.2s',
+          background: isTechSelected ? 'rgba(0,217,255,0.05)' : 'rgba(255,255,255,0.03)',
+          border: isTechSelected ? `1px solid rgba(0,217,255,0.4)` : '1px solid rgba(255,255,255,0.1)',
+          transition: 'border-color 0.2s, background 0.2s',
         }}>
-          <div style={{ fontSize: '9px', color: '#8b949e', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '6px' }}>
+          <div style={{ fontSize: '9px', color: techColor, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '6px', fontWeight: '600' }}>
             Technical
           </div>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px' }}>
             <span style={{ fontSize: '24px', fontWeight: '700', color: techColor, fontFamily: MONO, lineHeight: '1' }}>
-              #{techData.technicalRank}
+              #{sectorTechRank || techData.technicalRank}
             </span>
-            <span style={{ fontSize: '10px', color: '#6e7681' }}>rank</span>
+            <span style={{ fontSize: '10px', color: '#6e7681' }}>
+              {sectorTechTotal ? `of ${sectorTechTotal}` : 'rank'}
+            </span>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '6px' }}>
             <div style={{ flex: 1, height: '6px', borderRadius: '3px', background: 'rgba(255,255,255,0.06)' }}>
@@ -767,7 +774,7 @@ function DualBadgeHeader({ data, techData, techLoading, selectedView, onSelectVi
             <div style={{
               display: 'inline-block', marginTop: '6px',
               padding: '2px 6px', borderRadius: '4px',
-              background: `${techColor}18`, border: `1px solid ${techColor}30`,
+              background: `${techColor}18`, border: `1px solid rgba(0,217,255,0.3)`,
               fontSize: '9px', fontWeight: '600', color: techColor,
               textTransform: 'uppercase', letterSpacing: '0.5px',
             }}>
@@ -864,6 +871,12 @@ const CompeteTab = ({ symbol, isMobile, onNavigateToStock }) => {
     return () => { cancelled = true; };
   }, [symbol]);
 
+  // Look up current stock's sector rankings data
+  const currentStockRanking = useMemo(() => {
+    if (!rankingsData?.stocks) return null;
+    return rankingsData.stocks.find(s => s.symbol === symbol) || null;
+  }, [rankingsData, symbol]);
+
   // Build the pillar list from data — show whatever pillars exist in the response
   const activePillars = useMemo(() => PILLAR_CONFIG, []);
 
@@ -881,6 +894,8 @@ const CompeteTab = ({ symbol, isMobile, onNavigateToStock }) => {
         techLoading={techLoading}
         selectedView={selectedRankView}
         onSelectView={setSelectedRankView}
+        sectorTechRank={currentStockRanking?.sectorTechnicalRank}
+        sectorTechTotal={currentStockRanking?.sectorTechnicalTotal}
       />
 
       {/* DNA Badge */}
@@ -919,7 +934,7 @@ const CompeteTab = ({ symbol, isMobile, onNavigateToStock }) => {
           >
             {/* Technical Score headline */}
             <div style={{
-              fontSize: '13px', fontWeight: '600', color: '#A78BFA',
+              fontSize: '13px', fontWeight: '600', color: '#00d9ff',
               marginBottom: '8px',
             }}>
               Technical Score: {techData.technicalScore}/100
@@ -934,13 +949,26 @@ const CompeteTab = ({ symbol, isMobile, onNavigateToStock }) => {
               <TechnicalFactorRow key={factor.key} factor={factor} techData={techData} />
             ))}
 
-            {/* Technical Leaderboard */}
+            {/* Sector Technical Leaderboard */}
+            {rankingsData?.stocks && currentStockRanking?.sectorId && (
+              <RanksLeaderboard
+                type="technical"
+                stocks={rankingsData.stocks}
+                currentSymbol={symbol}
+                onNavigateToStock={onNavigateToStock}
+                title={`${currentStockRanking.sectorName || 'Sector'} Technical Leaderboard`}
+                sectorFilter={currentStockRanking.sectorId}
+              />
+            )}
+
+            {/* Broad Technical Leaderboard */}
             {rankingsData?.stocks && (
               <RanksLeaderboard
                 type="technical"
                 stocks={rankingsData.stocks}
                 currentSymbol={symbol}
                 onNavigateToStock={onNavigateToStock}
+                title="All Stocks Technical Leaderboard"
               />
             )}
           </motion.div>
@@ -993,13 +1021,14 @@ const CompeteTab = ({ symbol, isMobile, onNavigateToStock }) => {
               isMobile={isMobile}
             />
 
-            {/* Fundamental Leaderboard (cross-sector) */}
+            {/* Broad Fundamental Leaderboard */}
             {rankingsData?.stocks && (
               <RanksLeaderboard
                 type="fundamental"
                 stocks={rankingsData.stocks}
                 currentSymbol={symbol}
                 onNavigateToStock={onNavigateToStock}
+                title="All Stocks Fundamental Leaderboard"
               />
             )}
           </motion.div>
