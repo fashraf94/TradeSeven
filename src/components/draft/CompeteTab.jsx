@@ -811,6 +811,7 @@ const CompeteTab = ({ symbol, isMobile, onNavigateToStock }) => {
   const [errorStatus, setErrorStatus] = useState(null);
   const [expandedPillar, setExpandedPillar] = useState(null);
   const [selectedRankView, setSelectedRankView] = useState('fundamental');
+  const [leaderboardTab, setLeaderboardTab] = useState('fundamental');
   const [rankingsData, setRankingsData] = useState(null);
   const { data: techData, loading: techLoading } = useTechnicalScore(symbol);
 
@@ -949,18 +950,6 @@ const CompeteTab = ({ symbol, isMobile, onNavigateToStock }) => {
               <TechnicalFactorRow key={factor.key} factor={factor} techData={techData} />
             ))}
 
-            {/* Sector Technical Leaderboard */}
-            {rankingsData?.stocks && currentStockRanking?.sectorId && (
-              <RanksLeaderboard
-                type="technical"
-                stocks={rankingsData.stocks}
-                currentSymbol={symbol}
-                onNavigateToStock={onNavigateToStock}
-                title={`${currentStockRanking.sectorName || 'Sector'} Technical Leaderboard`}
-                sectorFilter={currentStockRanking.sectorId}
-              />
-            )}
-
           </motion.div>
         ) : selectedRankView === 'technical' && !techData && !techLoading ? (
           <motion.div
@@ -1004,16 +993,96 @@ const CompeteTab = ({ symbol, isMobile, onNavigateToStock }) => {
               />
             ))}
 
-            <SectorLeaderboard
-              data={data}
-              currentSymbol={symbol}
-              onNavigateToStock={onNavigateToStock}
-              isMobile={isMobile}
-            />
-
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Unified Sector Leaderboard with Fundamental | Technical toggle */}
+      {(data.leaderboard?.length > 0 || (rankingsData?.stocks && currentStockRanking?.sectorId)) && (
+        <div style={{ marginTop: '12px' }}>
+          {/* Pill toggle row */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'flex-end',
+            marginBottom: '4px',
+          }}>
+            <div style={{ display: 'flex', gap: '4px' }}>
+              <button
+                onClick={() => setLeaderboardTab('fundamental')}
+                style={{
+                  padding: '4px 12px',
+                  borderRadius: '16px',
+                  fontSize: '11px',
+                  fontWeight: '600',
+                  border: 'none',
+                  cursor: 'pointer',
+                  background: leaderboardTab === 'fundamental' ? 'rgba(94, 234, 212, 0.15)' : 'transparent',
+                  color: leaderboardTab === 'fundamental' ? '#5eead4' : '#6e7681',
+                  transition: 'all 0.15s',
+                }}
+              >
+                Fundamental
+              </button>
+              <button
+                onClick={() => setLeaderboardTab('technical')}
+                style={{
+                  padding: '4px 12px',
+                  borderRadius: '16px',
+                  fontSize: '11px',
+                  fontWeight: '600',
+                  border: 'none',
+                  cursor: 'pointer',
+                  background: leaderboardTab === 'technical' ? 'rgba(167, 139, 250, 0.15)' : 'transparent',
+                  color: leaderboardTab === 'technical' ? '#a78bfa' : '#6e7681',
+                  transition: 'all 0.15s',
+                }}
+              >
+                Technical
+              </button>
+            </div>
+          </div>
+
+          {/* Conditional leaderboard render */}
+          {leaderboardTab === 'fundamental' ? (
+            data.leaderboard?.length > 0 ? (
+              <SectorLeaderboard
+                data={data}
+                currentSymbol={symbol}
+                onNavigateToStock={onNavigateToStock}
+                isMobile={isMobile}
+              />
+            ) : (
+              <div style={{
+                padding: '16px', borderRadius: '8px',
+                background: 'rgba(255,255,255,0.03)',
+                fontSize: '12px', color: '#8b949e', textAlign: 'center',
+              }}>
+                Fundamental leaderboard not available
+              </div>
+            )
+          ) : (
+            rankingsData?.stocks && currentStockRanking?.sectorId ? (
+              <RanksLeaderboard
+                type="technical"
+                stocks={rankingsData.stocks}
+                currentSymbol={symbol}
+                onNavigateToStock={onNavigateToStock}
+                title={`${currentStockRanking.sectorName || data.sectorName || 'Sector'} Technical Leaderboard`}
+                sectorFilter={currentStockRanking.sectorId}
+              />
+            ) : (
+              <div style={{
+                padding: '16px', borderRadius: '8px',
+                background: 'rgba(255,255,255,0.03)',
+                fontSize: '12px', color: '#8b949e', textAlign: 'center',
+              }}>
+                Technical rankings not available
+              </div>
+            )
+          )}
+        </div>
+      )}
 
       <ScannerBadges scanner={data.scanner} />
     </div>
