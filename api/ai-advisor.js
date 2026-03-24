@@ -5,6 +5,7 @@ import { applySecurityMiddleware } from './_utils/security.js';
 import { sanitizeInput } from './_utils/sanitizeInput.js';
 import { requireAuth } from './_utils/authMiddleware.js';
 import { getSystemPromptForMode } from './_utils/technicalAnalysisPrompts.js';
+import { detectQuestionType, INTELLIGENCE_SYSTEM_PROMPT } from './_utils/intelligencePrompt.js';
 
 // Dynamic system prompt with current date
 const getResearchSystemPrompt = () => {
@@ -996,7 +997,14 @@ export default async function handler(req, res) {
         return res.status(400).json({ error: 'Invalid prompt for technical analysis' });
       }
 
-      console.log(`[AI Advisor] Technical analysis request (${mode || 'quick'} mode), prompt length:`, sanitizedPrompt.length);
+      // Detect question type to choose the right system prompt
+      const questionTypes = detectQuestionType(sanitizedPrompt);
+      const isPurelyTechnical = questionTypes.length === 1 && questionTypes[0] === 'technical';
+      const systemPromptForRequest = isPurelyTechnical
+        ? getSystemPromptForMode(mode)
+        : INTELLIGENCE_SYSTEM_PROMPT;
+
+      console.log(`[AI Advisor] Technical analysis request (${mode || 'quick'} mode, types: ${questionTypes.join(',')}), prompt length:`, sanitizedPrompt.length);
 
       const response = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
@@ -1008,7 +1016,7 @@ export default async function handler(req, res) {
         body: JSON.stringify({
           model: mode === 'deep' ? 'claude-sonnet-4-20250514' : 'claude-haiku-4-5-20251001',
           max_tokens: techMaxTokens || (mode === 'deep' ? 3000 : 800),
-          system: getSystemPromptForMode(mode),
+          system: systemPromptForRequest,
           messages: [
             { role: 'user', content: sanitizedPrompt }
           ],

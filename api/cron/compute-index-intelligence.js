@@ -22,8 +22,7 @@ import {
   computeRSTrend,
   computeTechnicalScore,
 } from '../_utils/indexIntelligence.js';
-import { DRAFT_STOCK_SYMBOLS } from '../_utils/draftStockList.js';
-import { STOCK_UNIVERSE } from '../_utils/rankingConfig.js';
+import { STOCK_UNIVERSE, ALL_TICKERS, TICKER_TO_SECTOR } from '../_utils/rankingConfig.js';
 
 export const config = { maxDuration: 300 };
 
@@ -354,8 +353,8 @@ export default async function handler(req, res) {
     else if (breadthComposite >= 30) breadthTier = 'thinning';
     else breadthTier = 'weak';
 
-    // Step 5 — Compute RS + Technical Scores for 75 draft stocks
-    log('Step 5: Fetching OHLCV for 75 draft stocks...');
+    // Step 5 — Compute RS + Technical Scores for full stock universe
+    log(`Step 5: Fetching OHLCV for ${ALL_TICKERS.length} stocks...`);
     let stockScores = [];
     let stocksProcessed = 0;
 
@@ -365,14 +364,14 @@ export default async function handler(req, res) {
       log('⚠ SPY has insufficient data (<50 days). Skipping RS computation.');
       errors.push({ symbol: 'RS_COMPUTATION', error: 'SPY insufficient data — need 50+ days' });
     } else {
-      const { results: stockOHLCV, errors: stockErrors } = await fetchBatch(DRAFT_STOCK_SYMBOLS, 10, 500);
+      const { results: stockOHLCV, errors: stockErrors } = await fetchBatch(ALL_TICKERS, 10, 500);
       errors.push(...stockErrors);
-      log(`  Fetched ${Object.keys(stockOHLCV).length}/${DRAFT_STOCK_SYMBOLS.length} stocks`);
+      log(`  Fetched ${Object.keys(stockOHLCV).length}/${ALL_TICKERS.length} stocks`);
 
       // Compute RS20 change for all stocks (for percentile ranking)
       log('  Computing RS + Technical Scores...');
       const rsData = [];
-      for (const sym of DRAFT_STOCK_SYMBOLS) {
+      for (const sym of ALL_TICKERS) {
         const ohlcv = stockOHLCV[sym];
         if (!ohlcv || ohlcv.length < 50) continue;
 
@@ -526,7 +525,8 @@ export default async function handler(req, res) {
         const fundRank = fund?.compositeRank;
         const fundScore = fund?.compositeScore;
         const fundTotalPeers = fund?.totalPeers;
-        const sectorName = fund?.sectorName || null;
+        const sectorId = TICKER_TO_SECTOR[tech.symbol];
+        const sectorName = fund?.sectorName || (sectorId ? STOCK_UNIVERSE[sectorId]?.name : null);
 
         // Composite: average of fundamental percentile (sector-scoped) and technical percentile (global)
         let compositeScore = null;
