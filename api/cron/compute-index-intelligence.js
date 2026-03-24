@@ -435,8 +435,24 @@ export default async function handler(req, res) {
         s.technicalRank = idx + 1;
       });
 
+      // --- Sector Technical Ranking ---
+      const sectorGroups = {};
+      for (const stock of stockScores) {
+        const sid = TICKER_TO_SECTOR[stock.symbol];
+        if (!sid) continue;
+        if (!sectorGroups[sid]) sectorGroups[sid] = [];
+        sectorGroups[sid].push(stock);
+      }
+      for (const [, sectorStocks] of Object.entries(sectorGroups)) {
+        sectorStocks.sort((a, b) => b.technicalScore - a.technicalScore);
+        sectorStocks.forEach((stock, index) => {
+          stock.sectorTechnicalRank = index + 1;
+          stock.sectorTechnicalTotal = sectorStocks.length;
+        });
+      }
+
       stocksProcessed = stockScores.length;
-      log(`  Scored ${stocksProcessed} stocks`);
+      log(`  Scored ${stocksProcessed} stocks across ${Object.keys(sectorGroups).length} sectors`);
     }
 
     // Top/Bottom leaders for marketContext
@@ -528,22 +544,25 @@ export default async function handler(req, res) {
         const sectorId = TICKER_TO_SECTOR[tech.symbol];
         const sectorName = fund?.sectorName || (sectorId ? STOCK_UNIVERSE[sectorId]?.name : null);
 
-        // Composite: average of fundamental percentile (sector-scoped) and technical percentile (global)
+        // Composite: average of fundamental percentile (sector-scoped) and technical percentile (sector-scoped)
         let compositeScore = null;
-        if (fundRank != null && fundTotalPeers > 0 && tech.technicalRank != null) {
+        if (fundRank != null && fundTotalPeers > 0 && tech.sectorTechnicalRank != null && tech.sectorTechnicalTotal > 0) {
           const fundPercentile = ((fundTotalPeers - fundRank) / fundTotalPeers) * 100;
-          const techPercentile = ((totalTechStocks - tech.technicalRank) / totalTechStocks) * 100;
+          const techPercentile = ((tech.sectorTechnicalTotal - tech.sectorTechnicalRank) / tech.sectorTechnicalTotal) * 100;
           compositeScore = Math.round(((fundPercentile + techPercentile) / 2) * 10) / 10;
         }
 
         rankingStocks.push({
           symbol: tech.symbol,
+          sectorId: sectorId || null,
           sectorName,
           fundamentalRank: fundRank || null,
           fundamentalScore: fundScore || null,
           fundamentalTotalPeers: fundTotalPeers || null,
           technicalRank: tech.technicalRank,
           technicalScore: tech.technicalScore,
+          sectorTechnicalRank: tech.sectorTechnicalRank || null,
+          sectorTechnicalTotal: tech.sectorTechnicalTotal || null,
           compositeScore,
         });
       }
@@ -556,10 +575,21 @@ export default async function handler(req, res) {
         return b.compositeScore - a.compositeScore;
       });
 
+      // Build sectors lookup for efficient frontend leaderboard rendering
+      const sectors = {};
+      for (const [sid, sectorStocks] of Object.entries(sectorGroups)) {
+        sectors[sid] = {
+          name: STOCK_UNIVERSE[sid]?.name || sid,
+          stocks: sectorStocks.map(s => s.symbol),
+          totalStocks: sectorStocks.length,
+        };
+      }
+
       const rankingsRef = db.collection('indexIntelligence').doc('stockRankings');
       batch.set(rankingsRef, {
         stocks: rankingStocks,
         totalTechStocks,
+        sectors,
         updatedAt: FieldValue.serverTimestamp(),
       });
       writeCount++;

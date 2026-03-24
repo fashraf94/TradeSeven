@@ -48,7 +48,7 @@ function getOpponentName(battle, user) {
   return 'Opponent';
 }
 
-export default function BattleRow({ battle, battleType, user, onPress, grouped = false }) {
+export default function BattleRow({ battle, battleType, user, onPress, grouped = false, overrideMyScore, overrideOppScore }) {
   const { tokens } = useTheme();
   const [now, setNow] = useState(Date.now());
   const [tapCount, setTapCount] = useState(0);
@@ -74,8 +74,9 @@ export default function BattleRow({ battle, battleType, user, onPress, grouped =
   const isUrgent = remaining !== null && remaining < 3600000 && remaining > 0;
 
   const preview = calculate1v1PreviewData(battle, user?.username);
-  const myScore = preview?.myGain ?? 0;
-  const theirScore = preview?.theirGain ?? 0;
+  const hasOverride = overrideMyScore != null || overrideOppScore != null;
+  const myScore = hasOverride ? (overrideMyScore ?? 0) : (preview?.myGain ?? 0);
+  const theirScore = hasOverride ? (overrideOppScore ?? 0) : (preview?.theirGain ?? 0);
 
   return (
     <motion.div
