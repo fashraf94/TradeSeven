@@ -15,6 +15,7 @@ import PendingLobbiesSection from './PendingLobbiesSection';
 import { useTheme } from '../../contexts/ThemeContext';
 import { isMarketOpen } from '../../utils/marketSchedule';
 import { didUserWin, getEndTime, isEnded } from '../../utils/battleHelpers';
+import { useDashboardScores } from '../../hooks/useDashboardScores';
 
 // ─── Motion variants ─────────────────────────────────────────────────────────
 
@@ -86,6 +87,10 @@ export default function DashboardLoop({
 
   const priorityBattle = allBattles[0] || null;
   const secondaryBattles = allBattles.slice(1);
+
+  // Centralized score polling for secondary battle rows
+  const userId = user?.odUserId || user?.username;
+  const dashboardScores = useDashboardScores(allBattles, userId);
 
   // ─── Battle press handler (replicated from LiveClashesSection) ─────────────
   const handleBattlePress = (battle, type) => {
@@ -465,6 +470,8 @@ export default function DashboardLoop({
                     user={user}
                     onPress={() => handleBattlePress(battle, type)}
                     grouped
+                    overrideMyScore={dashboardScores.get(battle.id)?.myScore}
+                    overrideOppScore={dashboardScores.get(battle.id)?.oppScore}
                   />
                 </div>
               ))}

@@ -15,6 +15,7 @@ import PendingLobbiesSection from './PendingLobbiesSection';
 import { useTheme } from '../../contexts/ThemeContext';
 import { isMarketOpen } from '../../utils/marketSchedule';
 import { didUserWin, getEndTime, isEnded } from '../../utils/battleHelpers';
+import { useDashboardScores } from '../../hooks/useDashboardScores';
 
 // ─── Motion variants ─────────────────────────────────────────────────────────
 
@@ -85,6 +86,10 @@ export default function DashboardDesktop({
 
   const gridBattles = allBattles.slice(0, 6);
   const totalActive = allBattles.length;
+
+  // Centralized score polling for all dashboard battles
+  const userId = user?.odUserId || user?.username;
+  const dashboardScores = useDashboardScores(allBattles, userId);
 
   // ─── Battle press handler ─────────────────────────────────────────────────
   const handleBattlePress = (battle, type) => {
