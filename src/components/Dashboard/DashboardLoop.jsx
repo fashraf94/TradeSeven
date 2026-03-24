@@ -280,20 +280,24 @@ export default function DashboardLoop({
             </span>
           </div>
 
-          {/* Right: avatar */}
-          <div style={{
-            width: '38px',
-            height: '38px',
-            borderRadius: '50%',
-            background: tokens.bgCard,
-            border: `2px solid ${tokens.teal}`,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            fontSize: '16px',
-            fontWeight: '600',
-            color: tokens.textWhite,
-          }}>
+          {/* Right: avatar — tappable → profile */}
+          <div
+            onClick={() => setScreen('profile')}
+            style={{
+              width: '38px',
+              height: '38px',
+              borderRadius: '50%',
+              background: tokens.bgCard,
+              border: `2px solid ${tokens.teal}`,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: '16px',
+              fontWeight: '600',
+              color: tokens.textWhite,
+              cursor: 'pointer',
+            }}
+          >
             {(user?.username || 'P')[0].toUpperCase()}
           </div>
         </div>

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Swords, Newspaper, Bot, GraduationCap, User } from 'lucide-react';
+import { Swords, Newspaper, Bot, GraduationCap, Search } from 'lucide-react';
 import { useTheme } from '../../contexts/ThemeContext';
 
 const NAV_ITEMS = [
@@ -7,7 +7,7 @@ const NAV_ITEMS = [
   { id: 'news', label: 'News', icon: Newspaper, screen: 'fantasytimes', iconSize: 24 },
   { id: 'agent', label: 'Agent', icon: Bot, screen: 'agent', iconSize: 28 },
   { id: 'academy', label: 'Academy', icon: GraduationCap, screen: null, iconSize: 24 },
-  { id: 'profile', label: 'Profile', icon: User, screen: 'profile', iconSize: 24 },
+  { id: 'search', label: 'Search', icon: Search, screen: 'search', iconSize: 24 },
 ];
 
 // Fallback tokens in case ThemeProvider is not available
@@ -33,7 +33,7 @@ export default function BottomNav({ screen, setScreen, setShowAcademy, showAcade
     if (item.id === 'news') return screen === 'fantasytimes';
     if (item.id === 'agent') return screen === 'agent';
     if (item.id === 'academy') return showAcademy;
-    if (item.id === 'profile') return screen === 'profile';
+    if (item.id === 'search') return screen === 'search';
     return false;
   };
 
