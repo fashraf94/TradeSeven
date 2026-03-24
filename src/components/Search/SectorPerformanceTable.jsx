@@ -56,6 +56,9 @@ function computeReturns(prices) {
   };
 
   return {
+    '1d': getReturn(1),
+    '1w': getReturn(5),
+    '1m': getReturn(21),
     '3m': getReturn(63),
     '1y': getReturn(252),
   };
@@ -193,9 +196,9 @@ const SectorPerformanceTable = ({ marketContext, onOpenResearch, isMobile, token
         ...entry,
         isBenchmark: entry.symbol === BENCHMARK.symbol,
         returns: {
-          '1d': snap['1d'] ?? null,
-          '1w': snap['1w'] ?? null,
-          '1m': snap['1m'] ?? null,
+          '1d': snap['1d'] ?? ext['1d'] ?? null,
+          '1w': snap['1w'] ?? ext['1w'] ?? null,
+          '1m': snap['1m'] ?? ext['1m'] ?? null,
           '3m': ext['3m'] ?? null,
           '1y': ext['1y'] ?? null,
         },
