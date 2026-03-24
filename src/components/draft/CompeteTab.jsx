@@ -961,16 +961,6 @@ const CompeteTab = ({ symbol, isMobile, onNavigateToStock }) => {
               />
             )}
 
-            {/* Broad Technical Leaderboard */}
-            {rankingsData?.stocks && (
-              <RanksLeaderboard
-                type="technical"
-                stocks={rankingsData.stocks}
-                currentSymbol={symbol}
-                onNavigateToStock={onNavigateToStock}
-                title="All Stocks Technical Leaderboard"
-              />
-            )}
           </motion.div>
         ) : selectedRankView === 'technical' && !techData && !techLoading ? (
           <motion.div
@@ -1021,29 +1011,9 @@ const CompeteTab = ({ symbol, isMobile, onNavigateToStock }) => {
               isMobile={isMobile}
             />
 
-            {/* Broad Fundamental Leaderboard */}
-            {rankingsData?.stocks && (
-              <RanksLeaderboard
-                type="fundamental"
-                stocks={rankingsData.stocks}
-                currentSymbol={symbol}
-                onNavigateToStock={onNavigateToStock}
-                title="All Stocks Fundamental Leaderboard"
-              />
-            )}
           </motion.div>
         )}
       </AnimatePresence>
-
-      {/* Composite Leaderboard — always visible */}
-      {rankingsData?.stocks && (
-        <RanksLeaderboard
-          type="composite"
-          stocks={rankingsData.stocks}
-          currentSymbol={symbol}
-          onNavigateToStock={onNavigateToStock}
-        />
-      )}
 
       <ScannerBadges scanner={data.scanner} />
     </div>
