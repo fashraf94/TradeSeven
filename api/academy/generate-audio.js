@@ -25,16 +25,20 @@ export const config = { maxDuration: 300 };
 // Constants
 // ---------------------------------------------------------------------------
 
-const SCENE_ORDER = ['hook', 'context', 'chartReplay', 'mechanism', 'gameConnection', 'outro'];
+// Each entry lists alternative scene names in priority order (new name first, old fallback second).
+// The endpoint accepts EITHER naming convention (or a mix).
+const SCENE_PAIRS = [
+  ['coldOpen', 'hook'],
+  ['setup', 'context'],
+  ['evidence', 'chartReplay'],
+  ['revelation', 'mechanism'],
+  ['connection', 'gameConnection'],
+  ['outro'],
+];
 
-const SCENE_BREAKS = {
-  hook: '<break time="1.5s" />',
-  context: '<break time="1.0s" />',
-  chartReplay: '<break time="1.0s" />',
-  mechanism: '<break time="1.0s" />',
-  gameConnection: '<break time="1.0s" />',
-  // no break after outro
-};
+// SSML break after each scene (by index). 1.5s after the first scene, 1.0s between others.
+// No break after the last scene that has narration.
+const SCENE_BREAK_TIMES = ['1.5s', '1.0s', '1.0s', '1.0s', '1.0s'];
 
 const DEFAULT_MODEL_ID = 'eleven_multilingual_v2';
 const DEFAULT_OUTPUT_FORMAT = 'mp3_44100_128';
@@ -67,21 +71,38 @@ function logError(message, data = null) {
 function extractNarrations(scenes) {
   const perScene = {};
   const parts = [];
+  let matchedCount = 0;
 
-  for (const sceneName of SCENE_ORDER) {
-    const scene = scenes[sceneName];
-    if (!scene || !scene.narration || typeof scene.narration !== 'string') continue;
+  for (let i = 0; i < SCENE_PAIRS.length; i++) {
+    const alternatives = SCENE_PAIRS[i];
+    // Pick the first alternative that has narration text
+    let sceneName = null;
+    let scene = null;
+    for (const name of alternatives) {
+      const candidate = scenes[name];
+      if (candidate && candidate.narration && typeof candidate.narration === 'string' && candidate.narration.trim()) {
+        sceneName = name;
+        scene = candidate;
+        break;
+      }
+    }
+    if (!sceneName) continue;
 
     const text = scene.narration.trim();
-    if (!text) continue;
-
     const wordCount = text.split(/\s+/).length;
     perScene[sceneName] = { characterCount: text.length, wordCount };
 
     parts.push(text);
-    if (SCENE_BREAKS[sceneName]) {
-      parts.push(SCENE_BREAKS[sceneName]);
+    // Add SSML break after this scene (except the very last scene with narration)
+    if (SCENE_BREAK_TIMES[i]) {
+      parts.push(`<break time="${SCENE_BREAK_TIMES[i]}" />`);
     }
+    matchedCount++;
+  }
+
+  // Remove trailing break if the last pushed item was a break tag
+  if (parts.length > 0 && parts[parts.length - 1].startsWith('<break')) {
+    parts.pop();
   }
 
   const combined = parts.join(' ');

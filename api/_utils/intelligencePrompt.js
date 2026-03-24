@@ -216,6 +216,17 @@ const KEYWORD_MAP = {
     ' vs ', ' versus ', 'compare', 'compared', 'or better', 'which is',
     ' vs.', 'head to head',
   ],
+  general: [
+    'company', 'business', 'do', 'does', 'overview', 'about', 'describe',
+    'what is', 'who is', 'segments', 'products', 'services', 'model',
+  ],
+  competitive: [
+    'competitor', 'competitors', 'compete', 'competition', 'versus', 'vs',
+    'rival', 'market share', 'compared',
+  ],
+  risk: [
+    'risk', 'risks', 'danger', 'threat', 'downside', 'concern', 'worry', 'vulnerable',
+  ],
 };
 
 // Price movement words that signal technical context is needed alongside news
@@ -232,7 +243,9 @@ const DATA_FIELDS_BY_TYPE = {
   earnings:    ['earnings', 'fundamentals', 'news'],
   news:        ['news', 'daily'],
   comparison:  ['daily', 'technicals', 'fundamentals', 'news', 'earnings'],
-  general:     ['technicals_summary', 'fundamentals', 'news_brief'],
+  general:     ['fundamentals', 'news_brief', 'technicals_summary'],
+  competitive: ['fundamentals', 'news_brief'],
+  risk:        ['fundamentals', 'news', 'technicals_summary'],
 };
 
 /**
@@ -272,7 +285,13 @@ export function detectQuestionType(question) {
     }
   }
 
-  // 3. Comparison overrides — include everything for both symbols
+  // 3. General/competitive/risk → always include fundamental data
+  if ((types.includes('general') || types.includes('competitive') || types.includes('risk'))
+      && !types.includes('fundamental')) {
+    types.push('fundamental');
+  }
+
+  // 4. Comparison overrides — include everything for both symbols
   // (comparison is already in types if detected, and DATA_FIELDS_BY_TYPE handles it)
 
   // Default to general if nothing matched
@@ -465,6 +484,12 @@ function formatFundamentals(fundamentals) {
 
   if (fundamentals.name) lines.push(`Company: ${fundamentals.name}`);
   if (fundamentals.sector) lines.push(`Sector: ${fundamentals.sector} | Industry: ${fundamentals.industry || 'N/A'}`);
+  if (fundamentals.description) {
+    const desc = fundamentals.description.length > 300
+      ? fundamentals.description.slice(0, 300) + '...'
+      : fundamentals.description;
+    lines.push(`Business: ${desc}`);
+  }
 
   const metrics = [];
   if (fundamentals.marketCap != null) metrics.push(`Market Cap: ${formatMarketCap(fundamentals.marketCap)}`);
