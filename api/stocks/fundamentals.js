@@ -61,6 +61,7 @@ export default async function handler(req, res) {
     const analysts = fundamentals.AnalystRatings || {};
     const earnings = fundamentals.Earnings || {};
     const general = fundamentals.General || {};
+    const etfData = fundamentals.ETF_Data || {};
 
     // Calculate 7-day momentum from historical data
     const momentum7d = calculateMomentum(historical, 7);
@@ -165,7 +166,16 @@ export default async function handler(req, res) {
       marketCap: highlights.MarketCapitalization || 0,
 
       // Historical prices for charts (last 30 days)
-      historicalPrices: historical.slice(0, 30).reverse().map(d => d.close)
+      historicalPrices: historical.slice(0, 30).reverse().map(d => d.close),
+
+      // ETF holdings (only present for ETF symbols)
+      etfHoldings: Object.keys(etfData.Top_10_Holdings || {}).length > 0
+        ? Object.entries(etfData.Top_10_Holdings).map(([key, data]) => ({
+            name: data.Name || key,
+            symbol: data.Code || key,
+            weight: parseFloat(data.Assets_Percent) || 0,
+          })).sort((a, b) => b.weight - a.weight)
+        : undefined,
     };
 
     console.log(`[API] Returning fundamentals for ${upperSymbol}`);
