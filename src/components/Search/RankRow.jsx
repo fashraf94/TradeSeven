@@ -1,14 +1,6 @@
 import React from 'react';
 import { motion } from 'framer-motion';
-import { SECTORS } from '../../constants/sectors';
-
-// Map sectorId (e.g., 'XLK') to color and name
-const getSectorInfo = (sectorId) => {
-  const sector = SECTORS[sectorId];
-  return sector
-    ? { name: sector.name, color: sector.color }
-    : { name: sectorId || '—', color: '#6b7280' };
-};
+import { resolveSectorInfo } from '../../utils/sectorUtils';
 
 const GRADIENT_MAP = {
   composite: 'linear-gradient(90deg, rgba(94,234,212,0.6), rgba(16,185,129,0.9))',
@@ -23,7 +15,7 @@ const SCORE_COLOR_MAP = {
 };
 
 const RankRow = ({ stock, rank, type, maxScore, onTap }) => {
-  const sectorInfo = getSectorInfo(stock.sectorId);
+  const sectorInfo = resolveSectorInfo(stock);
   const scoreKey = type === 'composite' ? 'compositeScore' : type === 'fundamental' ? 'fundamentalScore' : 'technicalScore';
   const score = stock[scoreKey] || 0;
   const barWidth = maxScore > 0 ? Math.max(5, (score / maxScore) * 100) : 5;
