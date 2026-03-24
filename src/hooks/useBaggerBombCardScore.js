@@ -210,7 +210,10 @@ export function useBaggerBombCardScore(battle, user) {
   const battleId = battle?.id;
   const cached = battleId ? scoreCache.get(battleId) : null;
   const cacheValid = cached && (Date.now() - cached.timestamp < SCORE_CACHE_TTL);
-  const lastScores = useRef(cacheValid ? { my: cached.my, opp: cached.opp } : { my: 0, opp: 0 });
+  const lastScores = useRef(cacheValid
+    ? { my: cached.my, opp: cached.opp }
+    : { my: Math.round(bankedMy + closedMy), opp: Math.round(bankedOpp + closedOpp) }
+  );
 
   // Compute final scores
   const myScore = useMemo(() => {
@@ -237,5 +240,5 @@ export function useBaggerBombCardScore(battle, user) {
     return score;
   }, [isApplicable, oppPortfolio, currentPrices, openPrices, battleThresholds, thresholdBaselines, bankedOpp, closedOpp, battleId]);
 
-  return { myScore, oppScore, isLoading };
+  return { myScore, oppScore, isLoading, isCreator };
 }
