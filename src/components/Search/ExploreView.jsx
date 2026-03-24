@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { TrendingUp, TrendingDown, BarChart3, Flame, ChevronDown, ChevronUp } from 'lucide-react';
+import { TrendingUp, TrendingDown, Flame, ChevronDown, ChevronUp } from 'lucide-react';
 import { useTheme } from '../../contexts/ThemeContext';
 import { STOCKS } from '../../data/assets';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../../firebase/config';
+import SectorPerformanceTable from './SectorPerformanceTable';
 
 const CATEGORIES = [
   {
@@ -20,13 +21,6 @@ const CATEGORIES = [
     subtitle: 'Biggest daily decliners',
     accent: '#ef4444',
     icon: TrendingDown,
-  },
-  {
-    id: 'sectors',
-    title: 'Sector Ranks',
-    subtitle: 'Sector performance today',
-    accent: '#A78BFA',
-    icon: BarChart3,
   },
   {
     id: 'trending',
@@ -84,19 +78,7 @@ const ExploreView = ({ stocksData, onOpenResearch, isMobile }) => {
       .sort((a, b) => a.percentChange - b.percentChange);
   }, [stocksData]);
 
-  const sectorData = useMemo(() => {
-    if (!marketContext?.sectorPerformance) return [];
-    const perf = marketContext.sectorPerformance;
-    return Object.entries(perf)
-      .map(([name, data]) => ({
-        name,
-        change: typeof data === 'number' ? data : data?.dailyChange || data?.change || 0,
-      }))
-      .sort((a, b) => b.change - a.change);
-  }, [marketContext]);
-
   const trendingStocks = useMemo(() => {
-    // Placeholder: use top stocks by absolute change as proxy for "trending"
     if (!stocksData?.length) return [];
     return [...stocksData]
       .filter(s => typeof s.percentChange === 'number')
@@ -117,12 +99,6 @@ const ExploreView = ({ stocksData, onOpenResearch, isMobile }) => {
           label: s.symbol,
           value: `${s.percentChange.toFixed(2)}%`,
           color: '#ef4444',
-        }));
-      case 'sectors':
-        return sectorData.slice(0, 3).map(s => ({
-          label: s.name,
-          value: `${s.change >= 0 ? '+' : ''}${s.change.toFixed(2)}%`,
-          color: s.change >= 0 ? '#10b981' : '#ef4444',
         }));
       case 'trending':
         return trendingStocks.slice(0, 3).map(s => ({
@@ -241,6 +217,8 @@ const ExploreView = ({ stocksData, onOpenResearch, isMobile }) => {
           const preview = getPreviewItems(cat.id);
           const isExpanded = expandedCard === cat.id;
           const Icon = cat.icon;
+          // On mobile, trending (3rd card, alone in 2nd row) spans full width
+          const spanFull = isMobile && i === 2 && !isExpanded;
 
           return (
             <motion.div
@@ -248,14 +226,11 @@ const ExploreView = ({ stocksData, onOpenResearch, isMobile }) => {
               initial={{ opacity: 0, y: 16 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: i * 0.05, duration: 0.3 }}
-              style={{ gridColumn: isExpanded ? 'span 2' : undefined }}
+              style={{ gridColumn: isExpanded || spanFull ? 'span 2' : undefined }}
             >
               <motion.div
                 whileTap={{ scale: 0.98 }}
-                onClick={() => {
-                  if (cat.id === 'sectors') return; // sectors don't expand to stock list
-                  setExpandedCard(isExpanded ? null : cat.id);
-                }}
+                onClick={() => setExpandedCard(isExpanded ? null : cat.id)}
                 style={{
                   borderRadius: '14px',
                   background: tokens.bgCard,
@@ -284,11 +259,10 @@ const ExploreView = ({ stocksData, onOpenResearch, isMobile }) => {
                   <span style={{ fontSize: '13px', fontWeight: 700, color: cat.accent }}>
                     {cat.title}
                   </span>
-                  {cat.id !== 'sectors' && (
-                    isExpanded
-                      ? <ChevronUp size={14} color={tokens.textMuted} style={{ marginLeft: 'auto' }} />
-                      : <ChevronDown size={14} color={tokens.textMuted} style={{ marginLeft: 'auto' }} />
-                  )}
+                  {isExpanded
+                    ? <ChevronUp size={14} color={tokens.textMuted} style={{ marginLeft: 'auto' }} />
+                    : <ChevronDown size={14} color={tokens.textMuted} style={{ marginLeft: 'auto' }} />
+                  }
                 </div>
                 <div style={{ fontSize: '11px', color: '#6b7280', marginBottom: '10px' }}>
                   {cat.subtitle}
@@ -312,7 +286,7 @@ const ExploreView = ({ stocksData, onOpenResearch, isMobile }) => {
 
                 {/* Expanded list */}
                 <AnimatePresence>
-                  {isExpanded && cat.id !== 'sectors' && (
+                  {isExpanded && (
                     <motion.div
                       initial={{ height: 0, opacity: 0 }}
                       animate={{ height: 'auto', opacity: 1 }}
@@ -320,7 +294,7 @@ const ExploreView = ({ stocksData, onOpenResearch, isMobile }) => {
                       transition={{ duration: 0.2 }}
                       style={{ overflow: 'hidden', marginTop: '8px', borderTop: `0.5px solid ${tokens.borderDefault}`, paddingTop: '8px' }}
                     >
-                      {getExpandedList(cat.id).slice(3).map((stock, k) => (
+                      {getExpandedList(cat.id).slice(3).map((stock) => (
                         <button
                           key={stock.symbol}
                           onClick={(e) => { e.stopPropagation(); handleStockTap(stock); }}
@@ -369,6 +343,7 @@ const ExploreView = ({ stocksData, onOpenResearch, isMobile }) => {
             gridTemplateColumns: `repeat(${indices.length}, 1fr)`,
             gap: '8px',
             border: `0.5px solid ${tokens.borderDefault}`,
+            marginBottom: '16px',
           }}
         >
           {indices.map(idx => (
@@ -395,6 +370,14 @@ const ExploreView = ({ stocksData, onOpenResearch, isMobile }) => {
           ))}
         </motion.div>
       )}
+
+      {/* Sector Performance Table */}
+      <SectorPerformanceTable
+        marketContext={marketContext}
+        onOpenResearch={onOpenResearch}
+        isMobile={isMobile}
+        tokens={tokens}
+      />
     </div>
   );
 };
