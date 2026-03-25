@@ -8,6 +8,7 @@ const TAB_CONFIGS = [
   { key: 'marketContext', label: '\uD83C\uDF10 Market', activeColor: '#00D9FF' },
   { key: 'health', label: '\u26D3\uFE0F Health', activeColor: HOLO_COLORS.amber },
   { key: 'fundamental', label: 'Analysis', activeColor: HOLO_COLORS.primary },
+  { key: 'holdings', label: 'Holdings', activeColor: '#a78bfa' },
   { key: 'compete', label: 'Ranks', activeColor: '#a78bfa' },
   { key: 'sector', label: 'Sector', activeColor: HOLO_COLORS.amber },
   { key: 'technical', label: 'Technical', activeColor: HOLO_COLORS.primary },
@@ -33,6 +34,7 @@ const AnalysisDrawer = ({
   children,
   isCrypto = false,
   isIndex = false,
+  isSectorETF = false,
   hasBombData = false,
   isGameContext = false,
 }) => {
@@ -157,10 +159,12 @@ const AnalysisDrawer = ({
         >
           <style>{`.drawer-tabs-scroll::-webkit-scrollbar { display: none; }`}</style>
           {TAB_CONFIGS.filter(t => {
-            if (isIndex && ['fundamental', 'health', 'compete', 'sector', 'baggerbomb'].includes(t.key)) return false;
+            if (isIndex && ['fundamental', 'health', 'compete', 'sector', 'baggerbomb', 'holdings'].includes(t.key)) return false;
             if (!isIndex && t.key === 'marketContext') return false;
-            if (isCrypto && ['fundamental', 'compete', 'sector'].includes(t.key)) return false;
-            if (!isCrypto && !isIndex && t.key === 'health') return false;
+            if (isSectorETF && ['fundamental', 'health', 'marketContext', 'baggerbomb'].includes(t.key)) return false;
+            if (!isSectorETF && t.key === 'holdings') return false;
+            if (isCrypto && ['fundamental', 'compete', 'sector', 'holdings'].includes(t.key)) return false;
+            if (!isCrypto && !isIndex && !isSectorETF && t.key === 'health') return false;
             if (t.key === 'baggerbomb' && !hasBombData && !isGameContext) return false;
             return true;
           }).map(tab => (

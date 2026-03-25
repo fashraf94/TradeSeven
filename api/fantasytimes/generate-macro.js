@@ -192,6 +192,8 @@ export default async function handler(req, res) {
       sentiment: storyData.sentiment || 'mixed',
       urgency: 'breaking',
       recommended_action: storyData.recommended_action || 'RESEARCH',
+      pullquote: typeof storyData.pullquote === 'string' && storyData.pullquote.length > 5
+        ? storyData.pullquote.slice(0, 80) : null,
       dataSnapshot: {
         triggerCount: triggers.length,
         dominantDirection: ctx.dominantDirection || 'mixed',

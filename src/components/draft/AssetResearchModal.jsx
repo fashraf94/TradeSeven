@@ -20,6 +20,9 @@ import CompeteTab from './CompeteTab';
 import SectorTab from './SectorTab';
 import { isIndex, INDEX_REGISTRY } from '../../constants/indexRegistry';
 import MarketContextTab from '../Research/MarketContextTab';
+import { SECTORS } from '../../constants/sectors';
+import HoldingsTab from '../Research/HoldingsTab';
+import SectorETFRanksTab from '../Research/SectorETFRanksTab';
 
 /**
  * AssetResearchModal - Detailed asset research view (reusable across screens)
@@ -121,11 +124,12 @@ const AssetResearchModal = ({
   ), [currentAsset?.symbol, currentAsset?.isCrypto, currentAsset?.category]);
 
   const isIndexAsset = useMemo(() => isIndex(currentAsset?.symbol), [currentAsset?.symbol]);
+  const isSectorETF = useMemo(() => !!SECTORS[currentAsset?.symbol], [currentAsset?.symbol]);
 
   const isGameContext = isGameContextProp !== undefined
     ? isGameContextProp
     : (onAcquire !== null || showActionButton);
-  const [activeTab, setActiveTab] = useState(defaultTab || (isCrypto ? 'health' : isIndexAsset ? 'marketContext' : 'fundamental'));
+  const [activeTab, setActiveTab] = useState(defaultTab || (isCrypto ? 'health' : isIndexAsset ? 'marketContext' : isSectorETF ? 'holdings' : 'fundamental'));
   const [whyMovingOpen, setWhyMovingOpen] = useState(false);
   const [profile, setProfile] = useState(null);
   const [profileLoading, setProfileLoading] = useState(false);
@@ -233,14 +237,16 @@ const AssetResearchModal = ({
   // UNLESS the asset type changed (e.g. index → stock), in which case reset to avoid showing
   // an invalid tab (marketContext for a stock, or fundamental for an index).
   useEffect(() => {
-    const correctTab = defaultTab || (isCrypto ? 'health' : isIndexAsset ? 'marketContext' : 'fundamental');
+    const correctTab = defaultTab || (isCrypto ? 'health' : isIndexAsset ? 'marketContext' : isSectorETF ? 'holdings' : 'fundamental');
     if (isInternalNavRef.current) {
       isInternalNavRef.current = false;
       // Reset tab if it's invalid for the new asset type
       if (
         (activeTab === 'marketContext' && !isIndexAsset) ||
         (activeTab === 'health' && !isCrypto) ||
+        (activeTab === 'holdings' && !isSectorETF) ||
         (isIndexAsset && activeTab !== 'marketContext' && activeTab !== 'technical') ||
+        (isSectorETF && !['holdings', 'compete', 'sector', 'technical'].includes(activeTab)) ||
         (isCrypto && activeTab !== 'health')
       ) {
         setActiveTab(correctTab);
@@ -714,6 +720,7 @@ const AssetResearchModal = ({
               onSnapStateChange={handleDrawerSnapChange}
               isCrypto={isCrypto}
               isIndex={isIndexAsset}
+              isSectorETF={isSectorETF}
               hasBombData={!!bombData}
               isGameContext={isGameContext}
             >
@@ -789,10 +796,24 @@ const AssetResearchModal = ({
                 <BaggerBombTab asset={currentAsset} />
               )}
 
-              {activeTab === 'compete' && (
+              {activeTab === 'holdings' && isSectorETF && (
+                <HoldingsTab
+                  symbol={currentAsset?.symbol}
+                  onNavigateToStock={handleNavigateToStock}
+                />
+              )}
+
+              {activeTab === 'compete' && !isSectorETF && (
                 <CompeteTab
                   symbol={currentAsset?.symbol}
                   isMobile={isMobile}
+                  onNavigateToStock={handleNavigateToStock}
+                />
+              )}
+
+              {activeTab === 'compete' && isSectorETF && (
+                <SectorETFRanksTab
+                  symbol={currentAsset?.symbol}
                   onNavigateToStock={handleNavigateToStock}
                 />
               )}

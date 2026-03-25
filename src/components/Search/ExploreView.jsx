@@ -6,6 +6,7 @@ import { STOCKS } from '../../data/assets';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../../firebase/config';
 import SectorPerformanceTable from './SectorPerformanceTable';
+import { INDEX_REGISTRY } from '../../constants/indexRegistry';
 
 const CATEGORIES = [
   {
@@ -147,13 +148,14 @@ const ExploreView = ({ stocksData, onOpenResearch, isMobile }) => {
   // Market indices
   const indices = useMemo(() => {
     const indexSymbols = ['SPY', 'QQQ', 'DIA', 'IWM'];
-    if (!marketContext?.indices) return [];
+    if (!marketContext) return [];
     return indexSymbols.map(sym => {
-      const data = marketContext.indices?.[sym];
+      const data = marketContext[sym.toLowerCase()];
       if (!data) return null;
       return {
         symbol: sym,
-        change: data.dailyChange || data.change || 0,
+        name: INDEX_REGISTRY[sym]?.name || sym,
+        change: data.changePercent || 0,
         price: data.price || 0,
       };
     }).filter(Boolean);
@@ -349,10 +351,17 @@ const ExploreView = ({ stocksData, onOpenResearch, isMobile }) => {
           {indices.map(idx => (
             <div
               key={idx.symbol}
-              style={{ textAlign: 'center' }}
+              onClick={() => onOpenResearch({
+                symbol: idx.symbol,
+                name: idx.name,
+                isIndex: true,
+                price: idx.price,
+                percentChange: idx.change,
+              })}
+              style={{ textAlign: 'center', cursor: 'pointer' }}
             >
-              <div style={{ fontSize: '12px', fontWeight: 700, color: tokens.textPrimary }}>
-                {idx.symbol}
+              <div style={{ fontSize: '11px', fontWeight: 600, color: tokens.textSecondary }}>
+                {idx.name}
               </div>
               {idx.price > 0 && (
                 <div style={{ fontSize: '11px', color: tokens.textMuted }}>
@@ -360,8 +369,8 @@ const ExploreView = ({ stocksData, onOpenResearch, isMobile }) => {
                 </div>
               )}
               <div style={{
-                fontSize: '12px',
-                fontWeight: 600,
+                fontSize: '13px',
+                fontWeight: 700,
                 color: idx.change >= 0 ? '#10b981' : '#ef4444',
               }}>
                 {idx.change >= 0 ? '+' : ''}{idx.change.toFixed(2)}%

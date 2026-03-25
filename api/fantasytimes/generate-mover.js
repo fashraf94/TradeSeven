@@ -40,6 +40,28 @@ function getAnthropicClient() {
 }
 
 /**
+ * Classify BaggerBomb tier from ATR multiple and direction.
+ * Aligns with BAGGER_TIERS / BUST_TIERS in baggerBombScoring.js:
+ *   Positive: bagger (1.0x), double_bagger (1.5x), ten_bagger (2.0x)
+ *   Negative: bust (1.0x), crash (1.5x), meltdown (2.0x)
+ *   Below 1.0x or unknown direction: 'none'
+ */
+function classifyBaggerTier(atrMultiple, direction) {
+  const m = Math.abs(Number(atrMultiple) || 0);
+  const isDown = direction === 'down';
+  if (m >= 2.0) return isDown ? 'meltdown' : 'ten_bagger';
+  if (m >= 1.5) return isDown ? 'crash' : 'double_bagger';
+  if (m >= 1.0) return isDown ? 'bust' : 'bagger';
+  return 'none';
+}
+
+function getBaggerPoints(tier) {
+  const pts = { bagger: '+15', double_bagger: '+30', ten_bagger: '+50',
+                bust: '-10', crash: '-20', meltdown: '-35' };
+  return pts[tier] || '0';
+}
+
+/**
  * Core mover story generation logic. Used by the HTTP handler and scan-movers.js.
  * Returns { success, storyId?, headline?, reason?, message?, error? }
  */
@@ -165,6 +187,17 @@ export async function generateAlexMoverStory({
     userMessage += consensusContext;
   }
 
+  // ── BaggerBomb tier classification ────────────────────────────
+  const resolvedDirection = direction || (percentChange >= 0 ? 'up' : 'down');
+  const baggerTier = classifyBaggerTier(atrMultiple, resolvedDirection);
+
+  userMessage += `\n\nBAGGERBOMB CONTEXT:
+- Tier: ${baggerTier}
+- ATR Multiple: ${Number(atrMultiple).toFixed(1)}x
+- Direction: ${resolvedDirection}
+${baggerTier !== 'none' ? `- Points: ${getBaggerPoints(baggerTier)}` : '- No threshold crossed yet'}
+Match your voice to this tier. Set baggerTier to "${baggerTier}" in your tool call.`;
+
   // ── Call Claude Haiku with Tool Use ──────────────────────────────
   logInfo(`Generating story for ${upperSymbol} (${percentChange}%, ${atrMultiple}x ATR)`);
   logInfo('Step 5: Calling Claude API...', { model: REPORTER_PROFILES.alex.model, messageLength: userMessage.length });
@@ -241,6 +274,9 @@ export async function generateAlexMoverStory({
     sentiment: storyData.sentiment || 'neutral',
     urgency: atrMultiple >= 2.5 ? 'breaking' : 'timely',
     recommended_action: storyData.recommended_action || 'WATCHLIST',
+    pullquote: typeof storyData.pullquote === 'string' && storyData.pullquote.length > 5
+      ? storyData.pullquote.slice(0, 80) : null,
+    baggerTier: baggerTier,
     dataSnapshot: {
       price: Number(currentPrice),
       change: Number(priceChange),
