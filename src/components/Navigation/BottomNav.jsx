@@ -83,11 +83,31 @@ export default function BottomNav({ screen, setScreen, setShowAcademy, showAcade
               gap: '2px',
               background: 'none',
               border: 'none',
-              cursor: 'pointer',
+              cursor: item.id === 'academy' ? 'default' : 'pointer',
               padding: '8px 0',
               position: 'relative',
+              opacity: item.id === 'academy' ? 0.35 : 1,
+              pointerEvents: item.id === 'academy' ? 'none' : 'auto',
             }}
           >
+            {/* "Soon" badge for Academy */}
+            {item.id === 'academy' && (
+              <span style={{
+                position: 'absolute',
+                top: '2px',
+                right: '2px',
+                fontSize: '8px',
+                fontWeight: 700,
+                color: '#5eead4',
+                background: 'rgba(94,234,212,0.15)',
+                padding: '2px 5px',
+                borderRadius: '6px',
+                lineHeight: 1,
+              }}>
+                Soon
+              </span>
+            )}
+
             {/* Active indicator bar */}
             {active && (
               <div

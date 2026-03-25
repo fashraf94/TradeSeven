@@ -94,6 +94,7 @@ const RankingsView = ({ onOpenResearch, isMobile }) => {
     cursor: 'pointer',
     fontFamily: 'inherit',
     transition: 'all 0.2s ease',
+    flexShrink: 0,
   });
 
   if (loading) {
@@ -115,7 +116,16 @@ const RankingsView = ({ onOpenResearch, isMobile }) => {
   return (
     <div>
       {/* Sub-tab pills */}
-      <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
+      <div style={{
+        display: 'flex',
+        gap: '8px',
+        marginBottom: '16px',
+        overflowX: 'auto',
+        whiteSpace: 'nowrap',
+        WebkitOverflowScrolling: 'touch',
+        scrollbarWidth: 'none',
+        msOverflowStyle: 'none',
+      }}>
         {SUB_TABS.map(tab => (
           <button
             key={tab.id}
