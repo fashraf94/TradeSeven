@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { Info } from 'lucide-react';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../../firebase/config';
 import useTechnicalScore from '../Research/useTechnicalScore';
@@ -66,6 +67,46 @@ const TECHNICAL_FACTORS = [
   { key: 'rsi', label: 'RSI Context', icon: '⚡', max: 9, scoreKey: 'rsiContext',
     format: (_, factors) => factors?.rsi != null ? `RSI ${Math.round(factors.rsi)}` : '—' },
 ];
+
+// Educational explanations — static text, no API calls
+const TECHNICAL_FACTOR_EXPLANATIONS = {
+  rsVsSpy: 'Measures how this stock performs compared to the S&P 500 over 20 days. A high percentile means it\'s outperforming most of the market — a sign of institutional accumulation.',
+  sectorRS: 'Measures how this stock performs compared to its own sector ETF. Leading its sector means genuine strength — not just riding a sector-wide wave.',
+  smaPosition: 'Checks whether the stock is trading above its 20-day, 50-day, and 200-day moving averages. Above all three signals a strong uptrend institutions are supporting.',
+  macd: 'Detects momentum shifts via fast and slow moving averages. A bullish crossover means momentum is accelerating — the stock is gaining speed.',
+  highProximity: 'How close the stock is to its yearly high. Stocks near highs have cleared all resistance — sellers who wanted out already sold, leaving a clear path higher.',
+  volume: 'Compares volume on up-days vs down-days. When up-day volume exceeds down-day volume, big money is buying on strength rather than selling into rallies.',
+  rsi: 'Gauges whether momentum is healthy (50-70), overextended (80+), or in breakdown territory (below 30). Best scores go to strong but not overheated momentum.',
+};
+
+const FUNDAMENTAL_PILLAR_EXPLANATIONS = {
+  growth: 'Measures revenue and earnings growth trajectory. Companies growing faster than peers attract investor attention and higher valuations.',
+  profitability: 'Evaluates operating margins, net margins, and return on equity. Highly profitable companies convert more revenue into actual earnings.',
+  earningsConsistency: 'Tracks how reliably a company beats Wall Street expectations. A high beat rate means management under-promises and over-delivers.',
+  financialHealth: 'Assesses balance sheet strength: debt levels, liquidity, and interest coverage. Fortress balance sheets survive downturns and fund future growth.',
+  sentiment: 'Combines analyst earnings revisions, historical surprise data, and short interest positioning. Rising revisions signal Wall Street confidence.',
+  valuation: 'Compares price multiples (P/E, P/S, EV/EBITDA) against sector peers. Lower valuations relative to peers may indicate underpricing for quality.',
+  capitalEff: 'Measures how effectively the company uses invested capital. High free cash flow yield and strong ROIC mean the business creates real shareholder value.',
+  efficiency: 'Evaluates return on assets and return on equity. Efficient companies squeeze more profit from their asset base — doing more with less.',
+};
+
+const GAME_MODE_EXPLANATIONS = {
+  baggerBombFit: {
+    text: 'Optimized for 1-day PvP battles. Heavily weights technical momentum (90%) over fundamentals (10%). Rewards high volatility with strong MACD signals and sector leadership.',
+    factors: 'Top factors: MACD momentum, volume surges, sector RS, high ATR',
+    color: '#ef4444',
+  },
+  snakeDraftFit: {
+    text: 'Balanced for 5-day draft competitions. Equally weights fundamentals and technicals (50/50). Penalizes extreme volatility. Favors strong sector positioning and solid balance sheets.',
+    factors: 'Top factors: Sector RS, financial health, SMA trend, low ATR',
+    color: '#14b8a6',
+  },
+  earningsGameFit: {
+    text: 'Tuned for earnings prediction. Heavily weights fundamentals (85%) with earnings consistency as the dominant signal. Companies that reliably beat expectations are the most predictable.',
+    factors: 'Top factors: Earnings beat rate (2.5x weight), analyst sentiment, RSI context',
+    color: '#f59e0b',
+  },
+};
 
 // Dimension formatters — values are stored in Firestore as:
 //   EODHD decimals (×100 in formatter): revenueGrowth, epsGrowth, opMargin, netMargin, grossMargin, roa, roe
@@ -388,6 +429,20 @@ function PillarRow({ pillar, pillarData, isExpanded, onToggle, isMobile }) {
         </span>
       </button>
 
+      {/* Pillar explanation */}
+      {isExpanded && FUNDAMENTAL_PILLAR_EXPLANATIONS[pillar.key] && (
+        <div style={{
+          padding: '6px 10px 6px 40px',
+          borderTop: '1px solid rgba(255,255,255,0.04)',
+          borderLeft: '2px solid #f59e0b',
+          background: 'rgba(255,255,255,0.03)',
+        }}>
+          <span style={{ fontSize: '12px', color: '#8b949e', lineHeight: '1.5' }}>
+            {FUNDAMENTAL_PILLAR_EXPLANATIONS[pillar.key]}
+          </span>
+        </div>
+      )}
+
       {/* Expanded multi-dimension detail */}
       {isExpanded && dimEntries.length > 0 && (
         <div style={{ padding: '6px 10px 10px 10px', borderTop: '1px solid rgba(255,255,255,0.04)' }}>
@@ -643,43 +698,86 @@ function ScannerBadges({ scanner }) {
 // Technical Factor Row
 // ---------------------------------------------------------------------------
 
-function TechnicalFactorRow({ factor, techData }) {
+function TechnicalFactorRow({ factor, techData, isExpanded, onToggle }) {
   const subScore = techData?.[factor.scoreKey] ?? 0;
   const pct = Math.min(100, Math.max(0, (subScore / factor.max) * 100));
   const tier = tierFromPercentile(pct);
   const color = TIER_COLORS[tier] || '#8b949e';
   const formattedValue = factor.format(subScore, techData?.factors);
+  const explanation = TECHNICAL_FACTOR_EXPLANATIONS[factor.key];
 
   return (
     <div style={{
-      display: 'flex', alignItems: 'center', gap: '6px',
-      padding: '7px 10px', marginBottom: '3px', borderRadius: '6px',
+      marginBottom: '3px', borderRadius: '6px',
       border: '1px solid rgba(255,255,255,0.06)',
+      background: isExpanded ? 'rgba(255,255,255,0.04)' : 'transparent',
+      overflow: 'hidden',
     }}>
-      <span style={{ fontSize: '12px', flexShrink: 0, lineHeight: '1' }}>{factor.icon}</span>
-      <span style={{
-        fontSize: '11px', fontWeight: '600', color: '#e6edf3',
-        flex: '0 0 100px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-      }}>
-        {factor.label}
-      </span>
+      <div
+        onClick={onToggle}
+        role="button"
+        aria-expanded={isExpanded}
+        style={{
+          display: 'flex', alignItems: 'center', gap: '6px',
+          padding: '7px 10px', cursor: 'pointer',
+        }}
+      >
+        <span style={{ fontSize: '12px', flexShrink: 0, lineHeight: '1' }}>{factor.icon}</span>
+        <span style={{
+          fontSize: '11px', fontWeight: '600', color: '#e6edf3',
+          flex: '0 0 100px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+        }}>
+          {factor.label}
+        </span>
 
-      <BulletChart percentile={pct} color={color} />
+        <BulletChart percentile={pct} color={color} />
 
-      <span style={{
-        fontSize: '11px', fontWeight: '600', color,
-        fontFamily: MONO, flex: '0 0 38px', textAlign: 'right',
-      }}>
-        {Math.round(subScore)}/{factor.max}
-      </span>
+        <span style={{
+          fontSize: '11px', fontWeight: '600', color,
+          fontFamily: MONO, flex: '0 0 38px', textAlign: 'right',
+        }}>
+          {Math.round(subScore)}/{factor.max}
+        </span>
 
-      <span style={{
-        fontSize: '10px', color: '#8b949e',
-        flex: '0 0 80px', textAlign: 'right',
-        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-      }}>
-        {formattedValue}
-      </span>
+        <span style={{
+          fontSize: '10px', color: '#8b949e',
+          flex: '0 0 68px', textAlign: 'right',
+          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+        }}>
+          {formattedValue}
+        </span>
+
+        <span style={{
+          fontSize: '9px', color: '#6e7681', flex: '0 0 12px',
+          transition: 'transform 0.2s',
+          transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)',
+        }}>
+          ▼
+        </span>
+      </div>
+
+      <AnimatePresence>
+        {isExpanded && explanation && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            style={{ overflow: 'hidden' }}
+          >
+            <div style={{
+              padding: '6px 12px 8px 40px',
+              borderTop: '1px solid rgba(255,255,255,0.04)',
+              borderLeft: '2px solid #00d9ff',
+              background: 'rgba(255,255,255,0.03)',
+            }}>
+              <span style={{ fontSize: '12px', color: '#8b949e', lineHeight: '1.5' }}>
+                {explanation}
+              </span>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
@@ -822,6 +920,8 @@ const CompeteTab = ({ symbol, isMobile, onNavigateToStock }) => {
   const [error, setError] = useState(null);
   const [errorStatus, setErrorStatus] = useState(null);
   const [expandedPillar, setExpandedPillar] = useState(null);
+  const [expandedFactor, setExpandedFactor] = useState(null);
+  const [expandedGameMode, setExpandedGameMode] = useState(null);
   const [selectedRankView, setSelectedRankView] = useState('fundamental');
   const [leaderboardTab, setLeaderboardTab] = useState('fundamental');
   const [rankingsData, setRankingsData] = useState(null);
@@ -935,29 +1035,62 @@ const CompeteTab = ({ symbol, isMobile, onNavigateToStock }) => {
         </div>
       )}
 
-      {/* Game-Mode Fit Badges (NEW) */}
+      {/* Game-Mode Fit Badges */}
       {currentStockRanking && (currentStockRanking.baggerBombFit != null || currentStockRanking.snakeDraftFit != null || currentStockRanking.earningsGameFit != null) && (
-        <div style={{
-          display: 'flex', gap: '6px', marginBottom: '12px', flexWrap: 'wrap',
-        }}>
-          {[
-            { key: 'baggerBombFit', rankKey: 'baggerBombRank', label: 'BaggerBomb', color: '#ef4444', bg: '#ef444418' },
-            { key: 'snakeDraftFit', rankKey: 'snakeDraftRank', label: 'Snake Draft', color: '#14b8a6', bg: '#14b8a618' },
-            { key: 'earningsGameFit', rankKey: 'earningsGameRank', label: 'Earnings', color: '#f59e0b', bg: '#f59e0b18' },
-          ].filter(m => currentStockRanking[m.key] != null).map(mode => (
-            <div key={mode.key} style={{
-              padding: '4px 8px', borderRadius: '4px',
-              background: mode.bg, border: `1px solid ${mode.color}30`,
-              fontSize: '10px', fontWeight: '600', color: mode.color,
-              display: 'flex', alignItems: 'center', gap: '4px',
-            }}>
-              {mode.label}: #{currentStockRanking[mode.rankKey] || '—'}
-              <span style={{ opacity: 0.7, fontWeight: '400' }}>
-                ({currentStockRanking[mode.key]})
-              </span>
-            </div>
-          ))}
-        </div>
+        <>
+          <div style={{
+            display: 'flex', gap: '6px', marginBottom: expandedGameMode ? '6px' : '12px', flexWrap: 'wrap',
+          }}>
+            {[
+              { key: 'baggerBombFit', rankKey: 'baggerBombRank', label: 'BaggerBomb', color: '#ef4444', bg: '#ef444418' },
+              { key: 'snakeDraftFit', rankKey: 'snakeDraftRank', label: 'Snake Draft', color: '#14b8a6', bg: '#14b8a618' },
+              { key: 'earningsGameFit', rankKey: 'earningsGameRank', label: 'Earnings', color: '#f59e0b', bg: '#f59e0b18' },
+            ].filter(m => currentStockRanking[m.key] != null).map(mode => (
+              <div key={mode.key} style={{
+                padding: '4px 8px', borderRadius: '4px',
+                background: mode.bg, border: `1px solid ${mode.color}30`,
+                fontSize: '10px', fontWeight: '600', color: mode.color,
+                display: 'flex', alignItems: 'center', gap: '4px',
+                cursor: 'pointer',
+              }}
+                onClick={() => setExpandedGameMode(prev => prev === mode.key ? null : mode.key)}
+                role="button"
+                aria-expanded={expandedGameMode === mode.key}
+              >
+                {mode.label}: #{currentStockRanking[mode.rankKey] || '—'}
+                <span style={{ opacity: 0.7, fontWeight: '400' }}>
+                  ({currentStockRanking[mode.key]})
+                </span>
+                <Info size={12} style={{ opacity: 0.6, flexShrink: 0 }} />
+              </div>
+            ))}
+          </div>
+          <AnimatePresence>
+            {expandedGameMode && GAME_MODE_EXPLANATIONS[expandedGameMode] && (
+              <motion.div
+                key={expandedGameMode}
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: 'auto', opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                transition={{ duration: 0.2 }}
+                style={{ overflow: 'hidden' }}
+              >
+                <div style={{
+                  padding: '8px 12px', marginBottom: '12px', borderRadius: '6px',
+                  background: 'rgba(255,255,255,0.03)',
+                  borderLeft: `2px solid ${GAME_MODE_EXPLANATIONS[expandedGameMode].color}`,
+                }}>
+                  <div style={{ fontSize: '12px', color: '#8b949e', lineHeight: '1.5', marginBottom: '4px' }}>
+                    {GAME_MODE_EXPLANATIONS[expandedGameMode].text}
+                  </div>
+                  <div style={{ fontSize: '11px', color: '#6e7681', fontStyle: 'italic' }}>
+                    {GAME_MODE_EXPLANATIONS[expandedGameMode].factors}
+                  </div>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </>
       )}
 
       {/* Squeeze Watch Badge (NEW) */}
@@ -996,7 +1129,13 @@ const CompeteTab = ({ symbol, isMobile, onNavigateToStock }) => {
               Technical Score Breakdown
             </div>
             {TECHNICAL_FACTORS.map(factor => (
-              <TechnicalFactorRow key={factor.key} factor={factor} techData={techData} />
+              <TechnicalFactorRow
+                key={factor.key}
+                factor={factor}
+                techData={techData}
+                isExpanded={expandedFactor === factor.key}
+                onToggle={() => setExpandedFactor(prev => prev === factor.key ? null : factor.key)}
+              />
             ))}
 
           </motion.div>
