@@ -168,6 +168,14 @@ export default async function handler(req, res) {
 
     let portfolioResult = portToolUse.input;
 
+    // Normalize crypto fields — Haiku sometimes returns arrays instead of strings
+    if (Array.isArray(portfolioResult.support_crypto)) {
+      portfolioResult.support_crypto = portfolioResult.support_crypto[0];
+    }
+    if (Array.isArray(portfolioResult.bench_crypto)) {
+      portfolioResult.bench_crypto = portfolioResult.bench_crypto[0];
+    }
+
     // 8. Validate portfolio
     const validation = validatePortfolio(portfolioResult, validSymbols);
 
@@ -184,7 +192,18 @@ export default async function handler(req, res) {
           { role: 'assistant', content: portfolioResponse.content },
           {
             role: 'user',
-            content: `ERROR: Your portfolio has issues: ${validation.errors.join(', ')}. Fix these and resubmit using the submit_portfolio tool.`,
+            content: [
+              {
+                type: 'tool_result',
+                tool_use_id: portToolUse.id,
+                is_error: true,
+                content: `Validation failed: ${validation.errors.join(', ')}. Fix these issues.`,
+              },
+              {
+                type: 'text',
+                text: 'Please fix the errors and resubmit using the submit_portfolio tool.',
+              },
+            ],
           },
         ],
         tools: [PORTFOLIO_TOOL],
@@ -196,6 +215,13 @@ export default async function handler(req, res) {
         const retryValidation = validatePortfolio(retryToolUse.input, validSymbols);
         if (retryValidation.valid) {
           portfolioResult = retryToolUse.input;
+          // Normalize crypto fields on retry result too
+          if (Array.isArray(portfolioResult.support_crypto)) {
+            portfolioResult.support_crypto = portfolioResult.support_crypto[0];
+          }
+          if (Array.isArray(portfolioResult.bench_crypto)) {
+            portfolioResult.bench_crypto = portfolioResult.bench_crypto[0];
+          }
         } else {
           console.error('[agent/decide] Retry also failed. Using fallback portfolio.');
           portfolioResult = buildFallbackPortfolio(shortlistData);
