@@ -173,7 +173,7 @@ export default async function handler(req, res) {
         ? Object.entries(etfData.Top_10_Holdings).map(([key, data]) => ({
             name: data.Name || key,
             symbol: data.Code || key,
-            weight: parseFloat(data.Assets_Percent) || 0,
+            weight: parseFloat(data['Assets_%']) || 0,
           })).sort((a, b) => b.weight - a.weight)
         : undefined,
     };
