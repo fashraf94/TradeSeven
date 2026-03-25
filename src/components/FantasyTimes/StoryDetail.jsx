@@ -330,18 +330,36 @@ function estimateReadTime(body) {
 }
 
 // ── Markdown renderer with pull-quote support ────────────────────
-function renderMarkdownWithPullQuote(text, reporterName, reporterBeat, reporterColor) {
+function renderMarkdownWithPullQuote(text, reporterName, reporterBeat, reporterColor, explicitPullquote) {
   if (!text) return '';
 
   let pullQuoteHtml = '';
   let processedText = text;
   processedText = processedText.replace(/EARNINGSGAME/g, 'EARNINGS ANALYSIS');
   processedText = processedText.replace(/WATCHLIST/g, 'watchlist');
-  const boldMatch = processedText.match(/\*\*(.+?)\*\*/);
-  if (boldMatch) {
-    const quoteText = boldMatch[1];
-    pullQuoteHtml = `<div style="border-left:3px solid ${reporterColor};background:${reporterColor}0D;padding:16px 20px;margin:20px 0;border-radius:0 8px 8px 0"><div style="font-size:16px;font-style:italic;color:#e2e8f0;line-height:1.6">&ldquo;${quoteText.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}&rdquo;</div><div style="font-size:12px;color:#6e7681;margin-top:8px">&mdash; ${reporterName}, ${reporterBeat}</div></div>`;
-    processedText = text.replace(boldMatch[0], `__PULLQUOTE__`);
+
+  // Priority 1: explicit pullquote from Firestore (structured field)
+  const usePullquote = typeof explicitPullquote === 'string' && explicitPullquote.length > 5
+    ? explicitPullquote
+    : null;
+
+  if (usePullquote) {
+    pullQuoteHtml = `<div style="border-left:3px solid ${reporterColor};background:${reporterColor}0D;padding:16px 20px;margin:20px 0;border-radius:0 8px 8px 0"><div style="font-size:16px;font-style:italic;color:#e2e8f0;line-height:1.6">&ldquo;${usePullquote.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}&rdquo;</div><div style="font-size:12px;color:#6e7681;margin-top:8px">&mdash; ${reporterName}, ${reporterBeat}</div></div>`;
+    // Insert pullquote after the first paragraph break
+    const firstBreak = processedText.indexOf('\n\n');
+    if (firstBreak > -1) {
+      processedText = processedText.slice(0, firstBreak) + '\n\n__PULLQUOTE__\n\n' + processedText.slice(firstBreak + 2);
+    } else {
+      processedText += '\n\n__PULLQUOTE__';
+    }
+  } else {
+    // Priority 2: fallback to regex extraction from first **bold** in body (>5 chars guards against tickers)
+    const boldMatch = processedText.match(/\*\*(.+?)\*\*/);
+    if (boldMatch && boldMatch[1].length > 5) {
+      const quoteText = boldMatch[1];
+      pullQuoteHtml = `<div style="border-left:3px solid ${reporterColor};background:${reporterColor}0D;padding:16px 20px;margin:20px 0;border-radius:0 8px 8px 0"><div style="font-size:16px;font-style:italic;color:#e2e8f0;line-height:1.6">&ldquo;${quoteText.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}&rdquo;</div><div style="font-size:12px;color:#6e7681;margin-top:8px">&mdash; ${reporterName}, ${reporterBeat}</div></div>`;
+      processedText = text.replace(boldMatch[0], `__PULLQUOTE__`);
+    }
   }
 
   let html = processedText
@@ -380,7 +398,7 @@ export default function StoryDetail({ story, onClose, isMobile, isDesktop }) {
     ? story.sentiment.charAt(0).toUpperCase() + story.sentiment.slice(1)
     : 'Neutral';
 
-  const bodyHtml = renderMarkdownWithPullQuote(story.body, reporter.name, reporter.beat, reporterColor);
+  const bodyHtml = renderMarkdownWithPullQuote(story.body, reporter.name, reporter.beat, reporterColor, story.pullquote);
 
   return (
     <div style={{

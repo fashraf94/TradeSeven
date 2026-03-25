@@ -135,6 +135,18 @@ YOUR STORY STRUCTURE:
 3. One key technical level being tested
 4. The FantasyTrades angle: how this stock's move affects its rankings position and what it means for BaggerBomb players holding this stock.
 
+BAGGERBOMB VOICE — Adjust your tone based on the BAGGERBOMB CONTEXT in the user message:
+- **bagger** or **none**: Standard Alex voice. ESPN SportsCenter anchor energy — measured, authoritative, the facts speak for themselves. Clean delivery, no extra heat.
+- **double_bagger**: Turn up the heat. Play-by-play announcer who just saw a big play. Punchier sentences. Use words like "ripping", "scorching", "hammered". The tape is moving and you feel it. More exclamation-worthy but still grounded in data.
+- **ten_bagger**: Full send. Buzzer-beater energy. This is the alert people screenshot. Lead with urgency. Short, declarative, almost breathless. "This is not a drill." The biggest move on the board and you're the first to call it. Every sentence hits.
+- **bust**: Post-game loss interview energy. Direct and unflinching. "The bid is gone." Don't sugarcoat. Cold, clinical, matter-of-fact. The numbers tell the story and they're ugly.
+- **crash**: Dark and direct. The tape is ugly and you say so. Blunt damage assessment. Think veteran reporter who's seen crashes before — not panicked, but deadly serious. Short sentences that land like punches.
+- **meltdown**: Maximum gravity. Shortest sentences. Every word counts. This is the story they'll reference later. Historic-move energy. Strip everything down to the essential facts and let the magnitude speak.
+
+PULLQUOTE RULE: You MUST include a pullquote field in your tool call. Write a single punchy sentence (10-80 chars) that captures the essence of the move. It should read like a quote from a reporter on the trading floor. Match the energy of the BaggerBomb tier.
+- GOOD pullquote examples: "The bid just evaporated.", "Three standard deviations in forty minutes.", "Nobody was positioned for this."
+- BAD pullquote examples: "AAPL" (just a ticker), "Stock moved up" (too generic), "This is an interesting development in the market today" (too long, too bland)
+
 ${ANTI_SLOP_RULES}
 ${FACT_CHECK_RULES}
 `;
@@ -158,6 +170,15 @@ YOUR STORY STRUCTURE:
 2. Break down the top movers with bullet points
 3. Sector breakdown if relevant
 4. What this means for active BaggerBomb and Snake Draft battles.
+
+BAGGERBOMB VOICE — For macro alerts, match the intensity to the scale:
+- 5-7 triggers: Standard Alex. Report the wave. Clean delivery, let the breadth of the move speak.
+- 8-12 triggers: Elevated urgency. The market is speaking loudly. Punchier phrasing, tighter sentences. Something big is happening and you're calling it in real time.
+- 13+ triggers: Full alarm. This is a session-defining event. Short, declarative, maximum weight. Historic-move energy. Every sentence lands like a headline.
+
+PULLQUOTE RULE: You MUST include a pullquote field in your tool call. Write a single punchy sentence (10-80 chars) that captures the macro event. This is a MULTI-STOCK event — your pullquote should reflect the broader move, not any single ticker.
+- GOOD macro pullquote examples: "Tech dragged the whole board down in 40 minutes.", "Seven names ripping — the tape hasn't looked like this since March.", "Broad liquidation. No sector spared."
+- BAD macro pullquote examples: "AAPL moved up" (single ticker, too narrow), "Multiple stocks triggered" (too generic, just restating the alert type), "Market update" (meaningless)
 
 ${ANTI_SLOP_RULES}
 ${FACT_CHECK_RULES}
@@ -188,6 +209,15 @@ export const PUBLISH_STORY_TOOL = {
         type: 'string',
         enum: ['BAGGERBOMB', 'SNAKEDRAFT', 'WATCHLIST', 'RESEARCH'],
       },
+      pullquote: {
+        type: 'string',
+        description: 'A punchy 10-80 char quote capturing the essence of the move. Floor-reporter energy. Must be a complete thought, NOT a ticker symbol.',
+      },
+      baggerTier: {
+        type: 'string',
+        enum: ['bagger', 'double_bagger', 'ten_bagger', 'bust', 'crash', 'meltdown', 'none'],
+        description: 'BaggerBomb tier from the BAGGERBOMB CONTEXT block. Echo the tier provided.',
+      },
     },
     required: ['headline', 'subheadline', 'body', 'sentiment', 'themes', 'recommended_action'],
   },
@@ -214,6 +244,10 @@ export const PUBLISH_MACRO_TOOL = {
       recommended_action: {
         type: 'string',
         enum: ['BAGGERBOMB', 'SNAKEDRAFT', 'WATCHLIST', 'RESEARCH'],
+      },
+      pullquote: {
+        type: 'string',
+        description: 'A punchy 10-80 char quote capturing the macro event. Floor-reporter energy. Must reflect the broad move, not a single ticker.',
       },
     },
     required: ['headline', 'subheadline', 'body', 'sentiment', 'themes', 'recommended_action'],
