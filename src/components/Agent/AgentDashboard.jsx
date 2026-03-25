@@ -83,7 +83,7 @@ const buildScoutingReport = (agent, maturityStage) => {
 
 // ── Component ──────────────────────────────────────────────
 
-const AgentDashboard = ({ user, setScreen }) => {
+const AgentDashboard = ({ user, setScreen, onCreateAgentBattle }) => {
   const { tokens } = useTheme();
   const { isMobile, isDesktop } = useIsMobile();
   const [activeTab, setActiveTab] = useState('mind');
@@ -96,17 +96,35 @@ const AgentDashboard = ({ user, setScreen }) => {
     if (!agent?.id || deploying) return;
     setDeploying(true);
     try {
+      // Step 1: Generate portfolio via AI
       const response = await fetch('/api/agent/decide', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ agentId: agent.id }),
       });
       const data = await response.json();
-      if (data.success) {
-        console.log('[Deploy] Portfolio generated:', data.portfolio);
-        // TODO Phase E-1: Create BaggerBomb battle with this portfolio
-      } else {
+
+      if (!data.success) {
         console.error('[Deploy] Failed:', data.error);
+        setDeploying(false);
+        return;
+      }
+
+      // Step 2: Create training battle with the agent's portfolio
+      const battleId = await onCreateAgentBattle(
+        data.portfolio,
+        data.bench,
+        {
+          agentId: agent.id,
+          innerMonologue: data.innerMonologue,
+          strategyBrief: data.strategyBrief,
+        }
+      );
+
+      // Step 3: Update agent with active battle reference
+      if (battleId) {
+        const { updateAgent } = await import('../../services/agentService');
+        await updateAgent(agent.id, { currentBattleId: battleId });
       }
     } catch (err) {
       console.error('[Deploy] Error:', err);
