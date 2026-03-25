@@ -1,6 +1,11 @@
 // api/_utils/agentBattleService.js
 // CRUD operations for the agentBattles collection.
 // Agent battles are fully self-contained — they do NOT reference the battles collection.
+//
+// Required Firestore composite indexes (create in Firebase Console or auto-generated):
+//   1. agentId ASC, status ASC  — one active battle per agent check
+//   2. status ASC               — cron: find all active battles
+//   3. ownerId ASC, createdAt DESC — dashboard: user's battle history
 
 import { getETDate, formatDateString, isMarketHoliday } from './marketSchedule.js';
 
