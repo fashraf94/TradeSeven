@@ -129,6 +129,14 @@ service cloud.firestore {
                     && resource.data.ownerId == request.auth.uid;
     }
 
+    // AGENT BATTLES — Server-only collection (cron evaluation system)
+    // All writes via admin SDK (bypasses rules). Client can only read own battles.
+    match /agentBattles/{battleId} {
+      allow read: if request.auth != null
+                  && resource.data.ownerId == request.auth.uid;
+      allow create, update, delete: if false;
+    }
+
     // Draft user stats — document ID is the userId
     match /draftUserStats/{userId} {
       allow read: if request.auth != null;

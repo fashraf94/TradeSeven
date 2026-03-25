@@ -10,6 +10,8 @@ import {
   formatMarketCSV,
   formatStoriesSummary,
 } from '../_utils/agentPromptAssembly.js';
+import { createAgentBattle } from '../_utils/agentBattleService.js';
+import { getStockAnalysisData } from '../_utils/marketDataCache.js';
 
 // Vercel Pro timeout — two-call AI chain needs breathing room
 export const config = { maxDuration: 60 };
@@ -222,9 +224,105 @@ export default async function handler(req, res) {
       updatedAt: new Date().toISOString(),
     });
 
-    // 11. Return to client
+    // === PHASE 2: Create Agent Battle ===
+
+    // 11. Check for existing active battle (one per agent)
+    const activeBattles = await db.collection('agentBattles')
+      .where('agentId', '==', agentDoc.id)
+      .where('status', '==', 'active')
+      .limit(1)
+      .get();
+
+    if (!activeBattles.empty) {
+      return res.status(200).json({
+        success: true,
+        portfolioUpdated: true,
+        battleCreated: false,
+        reason: 'Agent already has an active battle',
+        existingBattleId: activeBattles.docs[0].id,
+        portfolio: enrichedPortfolio.portfolio,
+        bench: enrichedPortfolio.bench,
+        innerMonologue: portfolioResult.innerMonologue,
+        strategyBrief: strategy.brief,
+      });
+    }
+
+    // 12. Build sector map from stockUniverse (already in memory)
+    const sectorMap = {};
+    stockUniverse.forEach(s => { sectorMap[s.symbol] = s.sectorName || 'Unknown'; });
+    CRYPTO_ASSETS.forEach(c => { sectorMap[c.symbol] = 'Crypto'; });
+
+    // 13. Fetch entry prices (rate-limited: 5 concurrent, 200ms between batches)
+    const allSymbols = [
+      ...enrichedPortfolio.portfolio.star.map(a => a.symbol),
+      ...enrichedPortfolio.portfolio.core.map(a => a.symbol),
+      ...enrichedPortfolio.portfolio.support.map(a => a.symbol),
+      ...enrichedPortfolio.bench.stocks.map(a => a.symbol),
+      ...(enrichedPortfolio.bench.crypto ? [enrichedPortfolio.bench.crypto.symbol] : []),
+    ].filter(Boolean);
+
+    const startingPrices = {};
+    const PRICE_CONCURRENCY = 5;
+    for (let i = 0; i < allSymbols.length; i += PRICE_CONCURRENCY) {
+      const batch = allSymbols.slice(i, i + PRICE_CONCURRENCY);
+      await Promise.allSettled(batch.map(async (symbol) => {
+        try {
+          const data = await getStockAnalysisData(symbol, { forceRefresh: true, fields: ['daily'] });
+          if (data?.price?.current) startingPrices[symbol] = data.price.current;
+        } catch (err) {
+          console.warn(`[agent/decide] Price fetch failed for ${symbol}:`, err.message);
+        }
+      }));
+      if (i + PRICE_CONCURRENCY < allSymbols.length) {
+        await new Promise(r => setTimeout(r, 200));
+      }
+    }
+
+    // 14. Build thresholds from baseATR on assets (consistent with scoring engine)
+    const thresholds = {};
+    const allAssets = [
+      ...enrichedPortfolio.portfolio.star,
+      ...enrichedPortfolio.portfolio.core,
+      ...enrichedPortfolio.portfolio.support,
+      ...enrichedPortfolio.bench.stocks,
+      ...(enrichedPortfolio.bench.crypto ? [enrichedPortfolio.bench.crypto] : []),
+    ].filter(Boolean);
+    for (const asset of allAssets) {
+      const baseATR = asset.baseATR || (asset.isCrypto ? 5.0 : 2.5);
+      thresholds[asset.symbol] = {
+        threshold: baseATR,
+        rallyThreshold: baseATR * 1.5,
+        moonshotThreshold: baseATR * 2.0,
+      };
+    }
+
+    // 15. Create agent battle
+    const agentData = {
+      id: agentDoc.id,
+      ...agent,
+      lastDecision: {
+        portfolio: enrichedPortfolio.portfolio,
+        bench: enrichedPortfolio.bench,
+        innerMonologue: portfolioResult.innerMonologue,
+        strategyBrief: strategy.brief,
+        shortlist: strategy.shortlist,
+      },
+    };
+
+    const battleResult = await createAgentBattle(
+      db, agentData, thresholds, startingPrices,
+      { duration: req.body.duration || '3d', sectorMap }
+    );
+
+    // 16. Write activeBattleId back to agent doc
+    await agentRef.update({ activeBattleId: battleResult.id });
+
+    // 17. Return to client
     return res.status(200).json({
       success: true,
+      portfolioUpdated: true,
+      battleCreated: true,
+      agentBattleId: battleResult.id,
       portfolio: enrichedPortfolio.portfolio,
       bench: enrichedPortfolio.bench,
       innerMonologue: portfolioResult.innerMonologue,
