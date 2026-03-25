@@ -454,7 +454,10 @@ function extractBalanceSheetMetrics(balanceSheetY, incomeY, sectorId) {
       const ebit = parseFloat(inc?.operatingIncome ?? inc?.ebit);
       const intExp = parseFloat(inc?.interestExpense);
       if (!isNaN(ebit) && !isNaN(intExp) && intExp !== 0) {
-        result.interestCoverage = Math.abs(ebit / intExp);
+        // Math.abs on denominator only — EODHD reports interest expense as negative
+        // When EBIT is negative (pre-profit), ic < 0 → exclude from pillar average
+        const ic = ebit / Math.abs(intExp);
+        result.interestCoverage = ic > 0 ? ic : null;
       } else if (!isNaN(ebit) && (isNaN(intExp) || intExp === 0)) {
         // No interest expense — debt-free or net cash, excellent coverage
         const netDebt = parseFloat(bs?.netDebt);
