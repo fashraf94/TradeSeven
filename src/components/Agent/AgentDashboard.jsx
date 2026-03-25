@@ -87,9 +87,32 @@ const AgentDashboard = ({ user, setScreen }) => {
   const { tokens } = useTheme();
   const { isMobile, isDesktop } = useIsMobile();
   const [activeTab, setActiveTab] = useState('mind');
+  const [deploying, setDeploying] = useState(false);
   const { agent, loading, hasAgent, speech, deployText, maturityStage,
           activeDirectives, groupedDirectives, record, seedTestAgent } = useAgent(user?.odUserId);
   const { stories: rawStories } = useFantasyTimes();
+
+  const handleDeploy = async () => {
+    if (!agent?.id || deploying) return;
+    setDeploying(true);
+    try {
+      const response = await fetch('/api/agent/decide', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ agentId: agent.id }),
+      });
+      const data = await response.json();
+      if (data.success) {
+        console.log('[Deploy] Portfolio generated:', data.portfolio);
+        // TODO Phase E-1: Create BaggerBomb battle with this portfolio
+      } else {
+        console.error('[Deploy] Failed:', data.error);
+      }
+    } catch (err) {
+      console.error('[Deploy] Error:', err);
+    }
+    setDeploying(false);
+  };
   const transformedStories = transformStoriesForStrip(rawStories);
 
   return (
@@ -192,7 +215,8 @@ const AgentDashboard = ({ user, setScreen }) => {
               isDesktop={isDesktop}
               isMobile={isMobile}
               tokens={tokens}
-              onDeploy={() => {}}
+              onDeploy={handleDeploy}
+              deploying={deploying}
             />
           </motion.div>
 
