@@ -2,7 +2,7 @@ import React from 'react';
 import { motion } from 'framer-motion';
 import { Zap } from 'lucide-react';
 
-const AgentSidebar = ({ agent, speech, isDesktop, isMobile, tokens, onDeploy }) => {
+const AgentSidebar = ({ agent, speech, isDesktop, isMobile, tokens, onDeploy, deploying }) => {
   const avatarSize = isDesktop ? 72 : 56;
   const nameSize = isDesktop ? '18px' : '16px';
 
@@ -95,18 +95,21 @@ const AgentSidebar = ({ agent, speech, isDesktop, isMobile, tokens, onDeploy }) 
   const DeployButton = () => (
     <motion.button
       onClick={onDeploy}
-      whileTap={{ scale: 0.97 }}
-      whileHover={{ scale: 1.02 }}
+      disabled={deploying}
+      whileTap={deploying ? {} : { scale: 0.97 }}
+      whileHover={deploying ? {} : { scale: 1.02 }}
       style={{
         width: '100%', padding: '12px', borderRadius: '12px', border: 'none',
         background: 'linear-gradient(135deg, #5eead4, #0d9488)',
-        color: '#0f172a', fontSize: '14px', fontWeight: '700', cursor: 'pointer',
+        color: '#0f172a', fontSize: '14px', fontWeight: '700',
+        cursor: deploying ? 'wait' : 'pointer',
+        opacity: deploying ? 0.7 : 1,
         display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
         boxShadow: `0 4px 16px rgba(94,234,212,0.3), ${tokens.obsidianShadow}`,
       }}
     >
       <Zap size={16} />
-      Deploy to BaggerBomb
+      {deploying ? 'Thinking...' : 'Deploy to BaggerBomb'}
     </motion.button>
   );
 

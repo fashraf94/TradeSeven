@@ -6178,6 +6178,183 @@ export default function PortfolioDuel() {
   };
 
   // ============================================
+  // AGENT DEPLOY: CREATE V3 TRAINING BATTLE FROM AI-GENERATED PORTFOLIO
+  // ============================================
+
+  const handleCreateAgentTrainingBattle = async (portfolioData, benchData, agentMeta) => {
+    // portfolioData: { star: [...], core: [...], support: [...] } — from api/agent/decide
+    // benchData: { stocks: [...], crypto: {...} } — from api/agent/decide
+    // agentMeta: { agentId, innerMonologue, strategyBrief }
+
+    // Defensive check: stocksData/cryptoData must be loaded
+    if (!stocksData?.length || !cryptoData?.length) {
+      showToast('Market data still loading — try again in a moment.');
+      return null;
+    }
+
+    // 1. Generate CPU portfolio (reuse existing V3 logic)
+    const cpuPortfolioData = generateCPUPortfolioBaggerBombV3(stocksData, cryptoData);
+
+    // 2. Calculate timing (1 hour for training)
+    const now = new Date();
+    const startDate = new Date(now);
+    const TRAINING_DURATION = 60 * 60 * 1000;
+    const endDate = new Date(startDate.getTime() + TRAINING_DURATION);
+
+    // 3. Flatten all portfolios + fetch starting prices
+    const userAssets = flattenPortfolio(portfolioData);
+    const cpuAssets = flattenPortfolio(cpuPortfolioData.portfolio);
+    const userBenchAssets = flattenBench(benchData);
+    const cpuBenchAssets = flattenBench(cpuPortfolioData.bench);
+    const allAssets = [...userAssets, ...cpuAssets, ...userBenchAssets, ...cpuBenchAssets];
+    const uniqueSymbols = [...new Set(allAssets.map(a => a?.symbol).filter(Boolean))];
+
+    const { startingPrices } = await fetchBattlePrices(uniqueSymbols);
+
+    // 4. Price update helpers (same as V3 training handler)
+    const updateV3PortfolioPrices = (portfolio) => ({
+      star: (portfolio.star || []).map(a => a ? { ...a, price: startingPrices[a.symbol] || a.price || 0 } : null),
+      core: (portfolio.core || []).map(a => a ? { ...a, price: startingPrices[a.symbol] || a.price || 0 } : null),
+      support: (portfolio.support || []).map(a => a ? { ...a, price: startingPrices[a.symbol] || a.price || 0 } : null),
+    });
+
+    const updateV3BenchPrices = (bench) => ({
+      stocks: (bench.stocks || []).map(a => a ? { ...a, price: startingPrices[a.symbol] || a.price || 0 } : null),
+      crypto: bench.crypto ? { ...bench.crypto, price: startingPrices[bench.crypto.symbol] || bench.crypto.price || 0 } : null,
+    });
+
+    // 5. Build battle object — identical to V3 training shape + agent metadata
+    const battleId = `training_agent_v3_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const odUserId = user.odUserId || user.username;
+
+    const trainingBattle = {
+      id: battleId,
+      challengeCode: 'TRAINING',
+      _v: 3,
+
+      creator: {
+        uid: odUserId,
+        odUserId: odUserId,
+        username: user.username,
+        portfolioName: 'Agent Deploy',
+        portfolio: updateV3PortfolioPrices(portfolioData),
+        bench: updateV3BenchPrices(benchData),
+        history: {},
+      },
+
+      opponent: {
+        uid: 'cpu',
+        odUserId: 'cpu',
+        username: 'CPU Opponent',
+        portfolioName: 'CPU Strategy',
+        portfolio: updateV3PortfolioPrices(cpuPortfolioData.portfolio),
+        bench: updateV3BenchPrices(cpuPortfolioData.bench),
+        history: {},
+      },
+
+      timeline: {
+        createdAt: now.toISOString(),
+        startDate: startDate.toISOString(),
+        endDate: endDate.toISOString(),
+        completedAt: null,
+      },
+
+      state: {
+        status: 'active',
+        currentSession: '',
+        completedSessions: [],
+        startingPrices: startingPrices,
+      },
+
+      sessionPrices: {
+        MORNING_BELL: { open: {}, close: {}, capturedAt: { open: '', close: '' } },
+        MIDDAY: { open: {}, close: {}, capturedAt: { open: '', close: '' } },
+        POWER_HOUR: { open: {}, close: {}, capturedAt: { open: '', close: '' } },
+        NIGHT_GAME: { open: {}, close: {}, capturedAt: { open: '', close: '' } },
+      },
+
+      breakouts: { creator: [], opponent: [] },
+      substitutions: [],
+      sessionScores: {
+        MORNING_BELL: { creator: 0, opponent: 0, winner: '' },
+        MIDDAY: { creator: 0, opponent: 0, winner: '' },
+        POWER_HOUR: { creator: 0, opponent: 0, winner: '' },
+        NIGHT_GAME: { creator: 0, opponent: 0, winner: '' },
+      },
+
+      status: 'active',
+      startDate: startDate.toISOString(),
+      endDate: endDate.toISOString(),
+      startingPrices: startingPrices,
+
+      isTraining: true,
+      isTrainingBattle: true,
+      createdAt: now.toISOString(),
+
+      playerIds: [odUserId, 'cpu'],
+      creatorId: odUserId,
+
+      player1: {
+        odUserId: odUserId,
+        username: user.username,
+        portfolioName: 'Agent Deploy',
+        portfolio: updateV3PortfolioPrices(portfolioData),
+        bench: updateV3BenchPrices(benchData),
+        portfolioType: 'baggerbomb',
+        startValue: 1000000,
+        currentValue: 1000000,
+        percentChange: 0,
+        isCreator: true,
+      },
+      player2: {
+        odUserId: 'cpu',
+        username: 'CPU Opponent',
+        portfolioName: 'CPU Strategy',
+        portfolio: updateV3PortfolioPrices(cpuPortfolioData.portfolio),
+        bench: updateV3BenchPrices(cpuPortfolioData.bench),
+        portfolioType: 'baggerbomb',
+        startValue: 1000000,
+        currentValue: 1000000,
+        percentChange: 0,
+        isCPU: true,
+      },
+
+      type: 'baggerbomb',
+
+      // Agent metadata — links battle to the agent that created it
+      agentId: agentMeta.agentId,
+      agentDeployed: true,
+      agentInnerMonologue: agentMeta.innerMonologue || null,
+      agentStrategyBrief: agentMeta.strategyBrief || null,
+    };
+
+    // 6. Save to Firebase
+    try {
+      const { doc, setDoc } = await import('firebase/firestore');
+      const { db } = await import('./firebase/config');
+      await setDoc(doc(db, 'trainingBattles', battleId), trainingBattle);
+      console.log('✅ Agent Training V3 battle saved to Firebase:', battleId);
+    } catch (firebaseError) {
+      console.error('⚠️ Failed to save agent training battle to Firebase:', firebaseError);
+    }
+
+    // 7. Update React state
+    setBattles(prevBattles => {
+      const exists = prevBattles.some(b => b.id === trainingBattle.id);
+      if (exists) return prevBattles;
+      const updatedBattles = [...prevBattles, trainingBattle];
+      saveBattlesSafe(updatedBattles);
+      return updatedBattles;
+    });
+
+    setActiveBattleId(trainingBattle.id);
+    setScreen('dashboard');
+    showToast(`Agent deployed to BaggerBomb Training! 🤖💣`);
+
+    return battleId;
+  };
+
+  // ============================================
   // BAGGERBOMB TRAINING V4: CREATE V4 TRAINING BATTLE (No Bench, 1 Swap, 1 Day)
   // ============================================
   const handleCreateBaggerBombTrainingBattleV4 = async (portfolioData) => {
@@ -8921,6 +9098,7 @@ export default function PortfolioDuel() {
         <AgentDashboard
           user={user}
           setScreen={setScreen}
+          onCreateAgentBattle={handleCreateAgentTrainingBattle}
         />
       </ErrorBoundary>
       </div>
