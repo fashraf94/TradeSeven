@@ -14,7 +14,9 @@ const useAgent = (userId) => {
 
   // Real-time Firestore subscription
   useEffect(() => {
+    console.log('[useAgent] userId:', userId);
     if (!userId) {
+      console.log('[useAgent] No userId, returning null agent');
       setAgent(null);
       setLoading(false);
       return;
@@ -22,6 +24,7 @@ const useAgent = (userId) => {
 
     setLoading(true);
     const unsubscribe = subscribeToUserAgent(userId, (agentData) => {
+      console.log('[useAgent] subscription result:', agentData ? `agent found (id: ${agentData.id})` : 'no agent found');
       setAgent(agentData);
       setLoading(false);
       setError(null);
@@ -138,7 +141,10 @@ const useAgent = (userId) => {
   }, [agent]);
 
   const handleSeedTestAgent = useCallback(async () => {
-    if (!userId) return null;
+    if (!userId) {
+      console.warn('[useAgent] seedTestAgent called with no userId — aborting to prevent orphan doc');
+      return null;
+    }
     try {
       const agentId = await seedTestAgent(userId);
       return agentId;
