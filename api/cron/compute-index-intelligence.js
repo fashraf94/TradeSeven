@@ -684,8 +684,15 @@ export default async function handler(req, res) {
       });
 
       // Build sectors lookup for efficient frontend leaderboard rendering
+      const sectorGroupsLocal = {};
+      for (const stock of stockScores) {
+        const sid = TICKER_TO_SECTOR[stock.symbol];
+        if (!sid) continue;
+        if (!sectorGroupsLocal[sid]) sectorGroupsLocal[sid] = [];
+        sectorGroupsLocal[sid].push(stock);
+      }
       const sectors = {};
-      for (const [sid, sectorStocks] of Object.entries(sectorGroups)) {
+      for (const [sid, sectorStocks] of Object.entries(sectorGroupsLocal)) {
         sectors[sid] = {
           name: STOCK_UNIVERSE[sid]?.name || sid,
           stocks: sectorStocks.map(s => s.symbol),
