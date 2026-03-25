@@ -165,7 +165,7 @@ const RankingsView = ({ onOpenResearch, isMobile }) => {
             <span style={{ width: '48px' }}>Ticker</span>
             <span>Sector</span>
             <span style={{ flex: 1 }} />
-            <span style={{ width: '28px', textAlign: 'right' }}>Score</span>
+            <span style={{ width: '28px', textAlign: 'right', whiteSpace: 'nowrap' }}>Score</span>
           </div>
 
           {displayedStocks.map((stock, i) => (
