@@ -22,7 +22,8 @@ import {
   computeRSTrend,
   computeTechnicalScore,
 } from '../_utils/indexIntelligence.js';
-import { STOCK_UNIVERSE, ALL_TICKERS, TICKER_TO_SECTOR } from '../_utils/rankingConfig.js';
+import { STOCK_UNIVERSE, ALL_TICKERS, TICKER_TO_SECTOR, TECHNICAL_FACTOR_WEIGHTS } from '../_utils/rankingConfig.js';
+import { computeGameModeFits, assignGameModeRanks } from '../_utils/gameModeScoring.js';
 
 export const config = { maxDuration: 300 };
 
@@ -251,9 +252,12 @@ export default async function handler(req, res) {
       ),
       fetchOHLCV('TNX.INDX', 30).then(data => ({ type: 'tnx', data })),
       ...SECTOR_ETFS.map(sec =>
-        fetchOHLCV(sec.eodhd, 35).then(data => ({ type: 'sector', sec, data }))
+        fetchOHLCV(sec.eodhd, 50).then(data => ({ type: 'sector', sec, data }))
       ),
     ]);
+
+    // Sector ETF close data for Sector-Relative Strength computation
+    const sectorETFCloses = {}; // { sectorId: number[] (closes, newest first) }
 
     // Process all results (indexes, TNX, sectors)
     for (const result of allResults) {
@@ -266,6 +270,8 @@ export default async function handler(req, res) {
           tnxData = data;
           log(`  ✓ TNX: ${data.length} days`);
         } else if (type === 'sector' && data.length >= 2) {
+          // Store sector ETF closes for Sector RS computation
+          sectorETFCloses[sec.id] = data.map(d => d.close);
           const todayClose = data[0].close;
           const prevClose = data[1].close;
           const changePercent = ((todayClose - prevClose) / prevClose) * 100;
@@ -393,6 +399,28 @@ export default async function handler(req, res) {
         rsPercentileMap[d.sym] = Math.round((idx / Math.max(sortedByRS.length - 1, 1)) * 100);
       });
 
+      // Compute Sector RS for each stock (RS of stock vs its sector ETF)
+      // Group by sector, compute RS, then compute percentile within each sector
+      const sectorRSMap = {}; // sym → sectorRSPercentile
+      const sectorRSGroups = {}; // sectorId → [{ sym, rsChange }]
+      for (const d of rsData) {
+        const sectorId = TICKER_TO_SECTOR[d.sym];
+        if (!sectorId || !sectorETFCloses[sectorId] || sectorETFCloses[sectorId].length < 22) continue;
+        const etfCloses = sectorETFCloses[sectorId];
+        const sectorRS = computeRS(d.closes, etfCloses, 20);
+        if (sectorRS) {
+          if (!sectorRSGroups[sectorId]) sectorRSGroups[sectorId] = [];
+          sectorRSGroups[sectorId].push({ sym: d.sym, rsChange: sectorRS.change });
+        }
+      }
+      // Compute percentile ranks within each sector
+      for (const [, group] of Object.entries(sectorRSGroups)) {
+        group.sort((a, b) => a.rsChange - b.rsChange);
+        group.forEach((item, idx) => {
+          sectorRSMap[item.sym] = Math.round((idx / Math.max(group.length - 1, 1)) * 100);
+        });
+      }
+
       // Compute full technical score for each stock
       for (const d of rsData) {
         const closes = d.closes;
@@ -405,7 +433,38 @@ export default async function handler(req, res) {
         const sma200 = calculateSMA(closes, 200);
         const rsi = calculateRSI(closes, 14);
 
+        // MACD computation (NEW) — uses existing calculateMACD
+        const macdResult = calculateMACD(closes);
+        let macdEnhanced = null;
+        if (macdResult) {
+          // Compute previous histogram for expansion detection
+          // We need to compute MACD for closes[1:] to get the prior bar's histogram
+          const prevCloses = closes.slice(1);
+          const prevMacd = prevCloses.length >= 26 ? calculateMACD(prevCloses) : null;
+
+          // Detect fresh crossovers by comparing current vs previous signal relationship
+          let freshBullishCross = false;
+          let freshBearishCross = false;
+          if (prevMacd) {
+            const nowAbove = macdResult.macd > macdResult.signal;
+            const prevAbove = prevMacd.macd > prevMacd.signal;
+            if (nowAbove && !prevAbove) freshBullishCross = true;
+            if (!nowAbove && prevAbove) freshBearishCross = true;
+          }
+
+          macdEnhanced = {
+            ...macdResult,
+            prevHistogram: prevMacd?.histogram ?? null,
+            freshBullishCross,
+            freshBearishCross,
+          };
+        }
+
+        // ATR computation (for game-mode scoring)
+        const atr = calculateATR(highs, lows, closes, 14);
+
         const rsPercentile = rsPercentileMap[d.sym] ?? 50;
+        const sectorRSPercentile = sectorRSMap[d.sym] ?? null;
         const scoreResult = computeTechnicalScore({
           closes,
           highs,
@@ -414,17 +473,16 @@ export default async function handler(req, res) {
           spyCloses,
           rsPercentile,
           rsTrend: d.rsTrend,
-          technicals: { rsi, sma20, sma50, sma200 },
+          technicals: { rsi, sma20, sma50, sma200, macd: macdEnhanced },
+          sectorRSPercentile,
         });
-
-        // Fill in the slope in factors
-        scoreResult.factors.rsTrendSlope = d.rsTrendSlope;
 
         stockScores.push({
           symbol: d.sym,
           rs20: d.rs20 ? { value: d.rs20.value, change: d.rs20.change, percentile: rsPercentile } : null,
           rs50: d.rs50 ? { value: d.rs50.value, change: d.rs50.change, percentile: 0 } : null,
           rsTrend: d.rsTrend,
+          atrPercent: atr?.percent ?? null,
           ...scoreResult,
         });
       }
@@ -535,6 +593,18 @@ export default async function handler(req, res) {
         });
       }
 
+      // Compute ATR percentiles across all stocks for game-mode scoring
+      const atrValues = stockScores
+        .filter(s => s.atrPercent != null)
+        .map(s => ({ sym: s.symbol, atr: s.atrPercent }))
+        .sort((a, b) => a.atr - b.atr);
+      const atrPercentileMap = {};
+      atrValues.forEach((item, idx) => {
+        atrPercentileMap[item.sym] = atrValues.length > 1
+          ? idx / (atrValues.length - 1)
+          : 0.5;
+      });
+
       const rankingStocks = [];
       for (const tech of stockScores) {
         const fund = fundMap.get(tech.symbol);
@@ -552,7 +622,35 @@ export default async function handler(req, res) {
           compositeScore = Math.round(((fundPercentile + techPercentile) / 2) * 10) / 10;
         }
 
-        rankingStocks.push({
+        // Build pillar scores from peerRankings data (for game-mode computation)
+        const pillarScores = {};
+        if (fund?.pillars) {
+          for (const [key, pillar] of Object.entries(fund.pillars)) {
+            if (pillar?.percentile != null) pillarScores[key] = pillar.percentile;
+          }
+        }
+
+        // Build technical factor scores (normalized to 0-100 for game-mode computation)
+        const techFactors = tech.factors || {};
+        const technicalFactorScores = {
+          rsVsSpy: techFactors.rsPercentile ?? 50,
+          sectorRS: techFactors.sectorRSPercentile ?? techFactors.rsPercentile ?? 50,
+          smaPosition: tech.smaScore != null ? (tech.smaScore / 18) * 100 : 50,
+          macd: tech.macdScore != null ? (tech.macdScore / 12) * 100 : 50,
+          weekHighProx: tech.highProximity != null ? (tech.highProximity / 12) * 100 : 50,
+          volume: tech.volumeConfirmation != null ? (tech.volumeConfirmation / 12) * 100 : 50,
+          rsi: tech.rsiContext != null ? (tech.rsiContext / 9) * 100 : 50,
+        };
+
+        // Compute game-mode fit scores
+        const atrPercentile = atrPercentileMap[tech.symbol] ?? 0.5;
+        const gameModes = computeGameModeFits({
+          pillarScores,
+          technicalFactorScores,
+          atrPercentile,
+        });
+
+        const stockEntry = {
           symbol: tech.symbol,
           sectorId: sectorId || null,
           sectorName,
@@ -564,8 +662,18 @@ export default async function handler(req, res) {
           sectorTechnicalRank: tech.sectorTechnicalRank || null,
           sectorTechnicalTotal: tech.sectorTechnicalTotal || null,
           compositeScore,
-        });
+          // Game-mode fit scores (NEW)
+          baggerBombFit: gameModes.baggerBombFit ?? null,
+          snakeDraftFit: gameModes.snakeDraftFit ?? null,
+          earningsGameFit: gameModes.earningsGameFit ?? null,
+          atrPercentile: Math.round(atrPercentile * 100) / 100,
+        };
+
+        rankingStocks.push(stockEntry);
       }
+
+      // Assign game-mode ranks
+      assignGameModeRanks(rankingStocks);
 
       // Sort by compositeScore descending (nulls last)
       rankingStocks.sort((a, b) => {

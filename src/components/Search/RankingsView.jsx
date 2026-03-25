@@ -8,9 +8,12 @@ import RankRow from './RankRow';
 import SectorConcentration from './SectorConcentration';
 
 const SUB_TABS = [
-  { id: 'composite', label: 'Composite' },
-  { id: 'fundamental', label: 'Fundamental' },
-  { id: 'technical', label: 'Technical' },
+  { id: 'composite', label: 'Composite', group: 'rankings' },
+  { id: 'fundamental', label: 'Fundamental', group: 'rankings' },
+  { id: 'technical', label: 'Technical', group: 'rankings' },
+  { id: 'baggerBomb', label: 'BaggerBomb', group: 'gamefit' },
+  { id: 'snakeDraft', label: 'Snake Draft', group: 'gamefit' },
+  { id: 'earningsGame', label: 'Earnings', group: 'gamefit' },
 ];
 
 const RankingsView = ({ onOpenResearch, isMobile }) => {
@@ -36,34 +39,34 @@ const RankingsView = ({ onOpenResearch, isMobile }) => {
     return () => { cancelled = true; };
   }, []);
 
+  // Map sub-tab IDs to score/rank keys
+  const TAB_KEYS = {
+    composite:    { scoreKey: 'compositeScore',    rankKey: null },
+    fundamental:  { scoreKey: 'fundamentalScore',  rankKey: 'fundamentalRank' },
+    technical:    { scoreKey: 'technicalScore',     rankKey: 'technicalRank' },
+    baggerBomb:   { scoreKey: 'baggerBombFit',      rankKey: 'baggerBombRank' },
+    snakeDraft:   { scoreKey: 'snakeDraftFit',      rankKey: 'snakeDraftRank' },
+    earningsGame: { scoreKey: 'earningsGameFit',    rankKey: 'earningsGameRank' },
+  };
+
   // Sort stocks based on active sub-tab
   const sortedStocks = useMemo(() => {
     if (!rankingsData?.stocks) return [];
     const stocks = [...rankingsData.stocks];
+    const { scoreKey, rankKey } = TAB_KEYS[activeSubTab] || TAB_KEYS.composite;
 
-    if (activeSubTab === 'composite') {
-      return stocks
-        .filter(s => s.compositeScore != null)
-        .sort((a, b) => (b.compositeScore || 0) - (a.compositeScore || 0));
+    const filtered = stocks.filter(s => s[scoreKey] != null);
+    if (rankKey) {
+      return filtered.sort((a, b) => (a[rankKey] || 999) - (b[rankKey] || 999));
     }
-    if (activeSubTab === 'fundamental') {
-      return stocks
-        .filter(s => s.fundamentalScore != null)
-        .sort((a, b) => (a.fundamentalRank || 999) - (b.fundamentalRank || 999));
-    }
-    if (activeSubTab === 'technical') {
-      return stocks
-        .filter(s => s.technicalScore != null)
-        .sort((a, b) => (a.technicalRank || 999) - (b.technicalRank || 999));
-    }
-    return stocks;
+    return filtered.sort((a, b) => (b[scoreKey] || 0) - (a[scoreKey] || 0));
   }, [rankingsData, activeSubTab]);
 
   // Max score for progress bar normalization
   const maxScore = useMemo(() => {
     if (!sortedStocks.length) return 100;
-    const key = activeSubTab === 'composite' ? 'compositeScore' : activeSubTab === 'fundamental' ? 'fundamentalScore' : 'technicalScore';
-    return Math.max(...sortedStocks.map(s => s[key] || 0), 1);
+    const { scoreKey } = TAB_KEYS[activeSubTab] || TAB_KEYS.composite;
+    return Math.max(...sortedStocks.map(s => s[scoreKey] || 0), 1);
   }, [sortedStocks, activeSubTab]);
 
   const displayedStocks = showAll ? sortedStocks : sortedStocks.slice(0, 10);

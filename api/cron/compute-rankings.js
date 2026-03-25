@@ -23,6 +23,7 @@ import {
   COMPETE_PILLAR_WEIGHTS,
   SECTOR_COMPOSITE_WEIGHTS,
   EODHD_FUNDAMENTALS_FILTER,
+  SECTOR_BEAT_RATES,
   getTierLabel,
   normalizeToScore,
   computeReturn,
@@ -121,6 +122,9 @@ async function fetchSingleFundamental(ticker, apiKey) {
     incomeQ: data.Financials?.Income_Statement?.quarterly || {},
     cashFlowQ: data.Financials?.Cash_Flow?.quarterly || {},
     incomeY: data.Financials?.Income_Statement?.yearly || {},
+    balanceSheetQ: data.Financials?.Balance_Sheet?.quarterly || {},
+    balanceSheetY: data.Financials?.Balance_Sheet?.yearly || {},
+    sharesStats: data.SharesStats || {},
     name: data.General?.Name || ticker,
   };
 }
@@ -399,6 +403,181 @@ function computeAvgSurprise(earnings) {
   return surprises.reduce((s, v) => s + v, 0) / surprises.length;
 }
 
+// ---------------------------------------------------------------------------
+// Financial Health — Balance Sheet Metrics
+// ---------------------------------------------------------------------------
+
+/**
+ * Extract balance sheet metrics for the Financial Health pillar.
+ * Uses most recent yearly balance sheet + income statement data.
+ *
+ * Pre-profit handling:
+ * - If EBITDA null/negative: skip interest coverage + net debt/EBITDA,
+ *   those dimensions will be null (pillar averages remaining dimensions).
+ * - If net cash (negative net debt): award high score via raw values.
+ */
+function extractBalanceSheetMetrics(balanceSheetY, incomeY, sectorId) {
+  const result = {
+    debtToEquity: null,
+    currentRatio: null,
+    interestCoverage: null,
+    netDebtEbitda: null,
+  };
+
+  if (!balanceSheetY || typeof balanceSheetY !== 'object') return result;
+
+  const bsYears = Object.keys(balanceSheetY).sort().reverse();
+  if (bsYears.length === 0) return result;
+  const bs = balanceSheetY[bsYears[0]];
+
+  // Debt-to-Equity
+  const totalDebt = parseFloat(bs?.shortLongTermDebtTotal ?? bs?.longTermDebt ?? 0);
+  const equity = parseFloat(bs?.totalStockholderEquity);
+  if (!isNaN(equity) && equity > 0 && !isNaN(totalDebt)) {
+    result.debtToEquity = totalDebt / equity;
+  } else if (!isNaN(equity) && equity > 0) {
+    result.debtToEquity = 0; // No debt
+  }
+
+  // Current Ratio
+  const curAssets = parseFloat(bs?.totalCurrentAssets);
+  const curLiabilities = parseFloat(bs?.totalCurrentLiabilities);
+  if (!isNaN(curAssets) && !isNaN(curLiabilities) && curLiabilities > 0) {
+    result.currentRatio = curAssets / curLiabilities;
+  }
+
+  // Interest Coverage (EBIT / Interest Expense)
+  if (incomeY && typeof incomeY === 'object') {
+    const incYears = Object.keys(incomeY).sort().reverse();
+    if (incYears.length > 0) {
+      const inc = incomeY[incYears[0]];
+      const ebit = parseFloat(inc?.operatingIncome ?? inc?.ebit);
+      const intExp = parseFloat(inc?.interestExpense);
+      if (!isNaN(ebit) && !isNaN(intExp) && intExp !== 0) {
+        result.interestCoverage = Math.abs(ebit / intExp);
+      } else if (!isNaN(ebit) && (isNaN(intExp) || intExp === 0)) {
+        // No interest expense — debt-free or net cash, excellent coverage
+        const netDebt = parseFloat(bs?.netDebt);
+        if (!isNaN(netDebt) && netDebt < 0) {
+          result.interestCoverage = 100; // Net cash position, max score
+        }
+      }
+    }
+  }
+
+  // Net Debt / EBITDA
+  const netDebt = parseFloat(bs?.netDebt);
+  if (!isNaN(netDebt)) {
+    if (netDebt < 0) {
+      // Net cash position = best possible score (will rank highest as inverted)
+      result.netDebtEbitda = -1; // Negative = net cash, inverted dimension means this scores best
+    } else if (incomeY && typeof incomeY === 'object') {
+      const incYears = Object.keys(incomeY).sort().reverse();
+      if (incYears.length > 0) {
+        const inc = incomeY[incYears[0]];
+        // Approximate EBITDA: operating income + depreciation
+        const opIncome = parseFloat(inc?.operatingIncome ?? inc?.ebit);
+        const depreciation = parseFloat(inc?.depreciationAndAmortization ?? 0);
+        const ebitda = !isNaN(opIncome) ? opIncome + (isNaN(depreciation) ? 0 : depreciation) : null;
+        if (ebitda != null && ebitda > 0) {
+          result.netDebtEbitda = netDebt / ebitda;
+        }
+      }
+    }
+  }
+
+  return result;
+}
+
+// ---------------------------------------------------------------------------
+// Earnings Consistency — Beat Rate, Surprise Magnitude, Consistency
+// ---------------------------------------------------------------------------
+
+/**
+ * Compute earnings consistency metrics from EODHD Earnings.History.
+ * Uses up to 12 quarters of data. Falls back to sector default beat rate
+ * for stocks with <4 quarters.
+ *
+ * @returns {{ beatRate: number|null, avgSurpriseMag: number|null, surpriseConsistency: number|null }}
+ */
+function computeEarningsConsistency(earnings, sectorId) {
+  const result = { beatRate: null, avgSurpriseMag: null, surpriseConsistency: null };
+  if (!earnings?.History) {
+    // Fall back to sector default beat rate
+    const defaultRate = SECTOR_BEAT_RATES[sectorId] ?? 0.68;
+    result.beatRate = defaultRate * 100; // Convert to percentage
+    return result;
+  }
+
+  const entries = Object.values(earnings.History)
+    .filter(e => {
+      const actual = parseFloat(e.epsActual);
+      const estimate = parseFloat(e.epsEstimate);
+      return !isNaN(actual) && !isNaN(estimate) && estimate !== 0;
+    })
+    .slice(0, 12); // Up to 12 quarters
+
+  if (entries.length < 4) {
+    // Insufficient data — use sector default
+    const defaultRate = SECTOR_BEAT_RATES[sectorId] ?? 0.68;
+    result.beatRate = defaultRate * 100;
+    if (entries.length >= 2) {
+      // Can still compute partial surprise stats
+      const surprises = entries.map(e =>
+        ((parseFloat(e.epsActual) - parseFloat(e.epsEstimate)) / Math.abs(parseFloat(e.epsEstimate))) * 100
+      );
+      result.avgSurpriseMag = surprises.reduce((s, v) => s + Math.abs(v), 0) / surprises.length;
+    }
+    logInfo(`[RANK] ${sectorId} stock: earnings consistency using ${entries.length} quarters (sector default for beat rate)`);
+    return result;
+  }
+
+  // Compute surprise percentages
+  const surprises = entries.map(e =>
+    ((parseFloat(e.epsActual) - parseFloat(e.epsEstimate)) / Math.abs(parseFloat(e.epsEstimate))) * 100
+  );
+
+  // Beat Rate: % of quarters where actual > estimate
+  const beats = entries.filter(e => parseFloat(e.epsActual) > parseFloat(e.epsEstimate)).length;
+  result.beatRate = (beats / entries.length) * 100;
+
+  // Avg Surprise Magnitude (absolute value — measures consistency of beating, not direction)
+  const posSurprises = surprises.filter(s => s > 0);
+  result.avgSurpriseMag = posSurprises.length > 0
+    ? posSurprises.reduce((s, v) => s + v, 0) / posSurprises.length
+    : 0;
+
+  // Surprise Consistency (std dev of surprise %) — lower = more predictable = better
+  // This dimension is inverted in DIMENSIONS config, so lower std dev → higher percentile
+  const mean = surprises.reduce((s, v) => s + v, 0) / surprises.length;
+  const variance = surprises.reduce((s, v) => s + (v - mean) ** 2, 0) / surprises.length;
+  result.surpriseConsistency = Math.sqrt(variance);
+
+  return result;
+}
+
+// ---------------------------------------------------------------------------
+// Short Interest Score
+// ---------------------------------------------------------------------------
+
+/**
+ * Compute short interest score from SharesStats data.
+ * ShortPercentOfFloat: stored as raw value (higher = more bearish sentiment).
+ * This dimension is inverted in DIMENSIONS config, so lower short interest → higher percentile.
+ *
+ * Also returns squeeze flag data for UI badge display.
+ */
+function computeShortInterestMetrics(sharesStats) {
+  const shortPctFloat = parseFloat(sharesStats?.ShortPercentOfFloat);
+  const shortRatio = parseFloat(sharesStats?.ShortRatio);
+
+  return {
+    shortInterestScore: !isNaN(shortPctFloat) ? shortPctFloat : null,
+    shortRatio: !isNaN(shortRatio) ? shortRatio : null,
+    squeezeWatch: !isNaN(shortPctFloat) && shortPctFloat > 15,
+  };
+}
+
 /**
  * Extract yearly EBIT and interest expense for debt risk badge.
  * Uses the most recent yearly income statement.
@@ -473,14 +652,26 @@ function extractMetrics(ticker, fundamentals) {
     ? (fcfTTM / revenueTTM) * 100
     : null;
 
-  // ── Momentum (placeholders — computed later from rolling price history)
+  // ── Momentum (still computed for scanner, but NOT in pillar system)
   const sixMonthReturn = null;
   const threeMonthReturn = null;
   const oneMonthReturn = null;
 
+  // ── Financial Health (NEW) ────────────────────────────────────────────
+  const sectorId = TICKER_TO_SECTOR[ticker];
+  const balanceSheetMetrics = extractBalanceSheetMetrics(
+    fundamentals.balanceSheetY, fundamentals.incomeY, sectorId
+  );
+
+  // ── Earnings Consistency (NEW) ────────────────────────────────────────
+  const earningsConsistencyMetrics = computeEarningsConsistency(
+    fundamentals.earnings, sectorId
+  );
+
   // ── Sentiment ─────────────────────────────────────────────────────────
   const earningsRevisions = computeEpsRevisionScore(fundamentals.earnings);
   const avgEarningsSurprise = computeAvgSurprise(fundamentals.earnings);
+  const shortInterestMetrics = computeShortInterestMetrics(fundamentals.sharesStats);
 
   // Extra fields for scanner & badges (not in composite)
   const high52 = t['52WeekHigh'] ?? null;
@@ -502,11 +693,26 @@ function extractMetrics(ticker, fundamentals) {
     fcfYield,
     dividendYield,
     fcfMargin,
+    // Momentum (kept for scanner, not in pillar system)
     sixMonthReturn,
     threeMonthReturn,
     oneMonthReturn,
+    // Financial Health (NEW)
+    debtToEquity: balanceSheetMetrics.debtToEquity,
+    currentRatio: balanceSheetMetrics.currentRatio,
+    interestCoverage: balanceSheetMetrics.interestCoverage,
+    netDebtEbitda: balanceSheetMetrics.netDebtEbitda,
+    // Earnings Consistency (NEW)
+    beatRate: earningsConsistencyMetrics.beatRate,
+    avgSurpriseMag: earningsConsistencyMetrics.avgSurpriseMag,
+    surpriseConsistency: earningsConsistencyMetrics.surpriseConsistency,
+    // Sentiment (expanded with short interest)
     earningsRevisions,
     avgEarningsSurprise,
+    shortInterestScore: shortInterestMetrics.shortInterestScore,
+    shortRatio: shortInterestMetrics.shortRatio,
+    squeezeWatch: shortInterestMetrics.squeezeWatch,
+    // Scanner & badges
     marketCap,
     high52,
     low52,
@@ -561,7 +767,7 @@ function enrichWithPrices(allMetrics, bulkPrices, sectorDocs) {
 }
 
 // ---------------------------------------------------------------------------
-// Ranking Engine (7-pillar model)
+// Ranking Engine (8-pillar model)
 // ---------------------------------------------------------------------------
 
 /**
@@ -1146,11 +1352,25 @@ async function persistResults(db, allRanked, sectorAggregates, scannerResults, s
         fcfYield: stock.metrics?.fcfYield ?? null,
         dividendYield: stock.metrics?.dividendYield ?? null,
         fcfMargin: stock.metrics?.fcfMargin ?? null,
+        // Momentum (kept for scanner context, no longer a pillar)
         sixMonthReturn: stock.metrics?.sixMonthReturn ?? null,
         threeMonthReturn: stock.metrics?.threeMonthReturn ?? null,
         oneMonthReturn: stock.metrics?.oneMonthReturn ?? null,
+        // Financial Health (NEW)
+        debtToEquity: stock.metrics?.debtToEquity ?? null,
+        currentRatio: stock.metrics?.currentRatio ?? null,
+        interestCoverage: stock.metrics?.interestCoverage ?? null,
+        netDebtEbitda: stock.metrics?.netDebtEbitda ?? null,
+        // Earnings Consistency (NEW)
+        beatRate: stock.metrics?.beatRate ?? null,
+        avgSurpriseMag: stock.metrics?.avgSurpriseMag ?? null,
+        surpriseConsistency: stock.metrics?.surpriseConsistency ?? null,
+        // Sentiment (expanded)
         earningsRevisions: stock.metrics?.earningsRevisions ?? null,
         avgEarningsSurprise: stock.metrics?.avgEarningsSurprise ?? null,
+        shortInterestScore: stock.metrics?.shortInterestScore ?? null,
+        shortRatio: stock.metrics?.shortRatio ?? null,
+        squeezeWatch: stock.metrics?.squeezeWatch ?? false,
         marketCap: stock.metrics?.marketCap ?? null,
       },
       debtRiskBadge: stock.debtRiskBadge || null,

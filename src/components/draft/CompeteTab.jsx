@@ -33,32 +33,38 @@ function tierFromPercentile(p) {
 }
 
 const PILLAR_CONFIG = [
-  { key: 'growth',        label: 'Growth',             icon: '📈' },
-  { key: 'profitability', label: 'Profitability',       icon: '💰' },
-  { key: 'efficiency',    label: 'Efficiency',          icon: '⚙️' },
-  { key: 'valuation',     label: 'Valuation',           icon: '📊' },
-  { key: 'capitalEff',    label: 'Capital Efficiency',  icon: '💎' },
-  { key: 'momentum',      label: 'Momentum',            icon: '⚡' },
-  { key: 'sentiment',     label: 'Sentiment',           icon: '🎯' },
+  { key: 'growth',              label: 'Growth',                icon: '📈' },
+  { key: 'profitability',       label: 'Profitability',          icon: '💰' },
+  { key: 'earningsConsistency', label: 'Earnings Consistency',   icon: '🎯' },
+  { key: 'financialHealth',     label: 'Financial Health',       icon: '🛡️' },
+  { key: 'sentiment',           label: 'Sentiment',              icon: '📡' },
+  { key: 'valuation',           label: 'Valuation',              icon: '📊' },
+  { key: 'capitalEff',          label: 'Capital Efficiency',     icon: '💎' },
+  { key: 'efficiency',          label: 'Efficiency',             icon: '⚙️' },
 ];
 
 const TECHNICAL_FACTORS = [
-  { key: 'rsPercentile', label: 'Relative Strength', icon: '💪', max: 30, scoreKey: 'rsPercentile',
-    format: (v) => v != null ? `P${Math.round(v)}` : '—' },
-  { key: 'smaPosition', label: 'SMA Position', icon: '📐', max: 25, scoreKey: 'smaScore',
+  { key: 'rsVsSpy', label: 'RS vs SPY', icon: '💪', max: 22, scoreKey: 'rsVsSpyScore',
+    format: (v, factors) => factors?.rsPercentile != null ? `P${Math.round(factors.rsPercentile)}` : '—' },
+  { key: 'sectorRS', label: 'Sector RS', icon: '🏆', max: 15, scoreKey: 'sectorRSScore',
+    format: (v, factors) => factors?.sectorRSPercentile != null ? `P${Math.round(factors.sectorRSPercentile)}` : '—' },
+  { key: 'smaPosition', label: 'SMA Position', icon: '📐', max: 18, scoreKey: 'smaScore',
     format: (_, factors) => {
       if (!factors) return '—';
       const flags = [factors.aboveSMA20 && '20d', factors.aboveSMA50 && '50d', factors.aboveSMA200 && '200d'].filter(Boolean);
       return flags.length ? `Above ${flags.join(', ')}` : 'Below all';
     } },
-  { key: 'highProximity', label: '52-Week Proximity', icon: '🎯', max: 15, scoreKey: 'highProximity',
+  { key: 'macd', label: 'MACD Signal', icon: '📈', max: 12, scoreKey: 'macdScore',
+    format: (_, factors) => {
+      if (factors?.macdAboveSignal == null) return '—';
+      return factors.macdAboveSignal ? 'Bullish' : 'Bearish';
+    } },
+  { key: 'highProximity', label: '52-Week Proximity', icon: '🎯', max: 12, scoreKey: 'highProximity',
     format: (_, factors) => factors?.distTo52wkHigh != null ? `${factors.distTo52wkHigh.toFixed(1)}% off high` : '—' },
   { key: 'volume', label: 'Volume Confirm', icon: '📊', max: 12, scoreKey: 'volumeConfirmation',
     format: (_, factors) => factors?.upDayVolRatio != null ? `${factors.upDayVolRatio.toFixed(2)}x ratio` : '—' },
-  { key: 'rsi', label: 'RSI Context', icon: '⚡', max: 10, scoreKey: 'rsiContext',
+  { key: 'rsi', label: 'RSI Context', icon: '⚡', max: 9, scoreKey: 'rsiContext',
     format: (_, factors) => factors?.rsi != null ? `RSI ${Math.round(factors.rsi)}` : '—' },
-  { key: 'rsTrend', label: 'RS Trend', icon: '📈', max: 8, scoreKey: 'rsTrendScore',
-    format: (_, factors) => factors?.rsTrendSlope != null ? `${factors.rsTrendSlope > 0 ? '+' : ''}${factors.rsTrendSlope.toFixed(3)}` : '—' },
 ];
 
 // Dimension formatters — values are stored in Firestore as:
@@ -72,31 +78,37 @@ const ratio  = v => v != null ? `${v.toFixed(1)}x` : '—';
 
 const DIM_FORMAT = {
   // Growth
-  revenueGrowth:     { label: 'Revenue Growth YoY',    format: pctDec },
-  epsGrowth:         { label: 'EPS Growth YoY',         format: pctDec },
+  revenueGrowth:      { label: 'Revenue Growth YoY',    format: pctDec },
+  epsGrowth:          { label: 'EPS Growth YoY',         format: pctDec },
   // Profitability
-  opMargin:          { label: 'Operating Margin',       format: pctDec },
-  netMargin:         { label: 'Net Profit Margin',      format: pctDec },
-  grossMargin:       { label: 'Gross Margin',           format: pctDec },
+  opMargin:           { label: 'Operating Margin',       format: pctDec },
+  netMargin:          { label: 'Net Profit Margin',      format: pctDec },
+  grossMargin:        { label: 'Gross Margin',           format: pctDec },
   // Efficiency
-  roa:               { label: 'Return on Assets',       format: pctDec },
-  roe:               { label: 'Return on Equity',       format: pctDec },
+  roa:                { label: 'Return on Assets',       format: pctDec },
+  roe:                { label: 'Return on Equity',       format: pctDec },
   // Valuation (all inverted — lower is better)
-  evEbitda:          { label: 'EV/EBITDA',              format: ratio, lowerIsBetter: true },
-  trailingPE:        { label: 'P/E Ratio (TTM)',        format: ratio, lowerIsBetter: true },
-  priceSales:        { label: 'Price/Sales',            format: ratio, lowerIsBetter: true },
-  priceBook:         { label: 'Price/Book',             format: ratio, lowerIsBetter: true },
+  evEbitda:           { label: 'EV/EBITDA',              format: ratio, lowerIsBetter: true },
+  trailingPE:         { label: 'P/E Ratio (TTM)',        format: ratio, lowerIsBetter: true },
+  priceSales:         { label: 'Price/Sales',            format: ratio, lowerIsBetter: true },
+  priceBook:          { label: 'Price/Book',             format: ratio, lowerIsBetter: true },
   // Capital Efficiency
-  fcfYield:          { label: 'FCF Yield',              format: v => v != null ? `${v.toFixed(2)}%` : '—' },
-  dividendYield:     { label: 'Dividend Yield',         format: v => v != null ? `${(v * 100).toFixed(2)}%` : '—' },
-  fcfMargin:         { label: 'FCF Margin',             format: pctRaw },
-  // Momentum
-  sixMonthReturn:    { label: '6M Price Return',        format: pctRaw },
-  threeMonthReturn:  { label: '3M Price Return',        format: pctRaw },
-  oneMonthReturn:    { label: '1M Price Return',        format: pctRaw },
-  // Sentiment
-  earningsRevisions: { label: 'Earnings Revisions',     format: pctRaw },
-  avgSurprise:       { label: 'Avg Earnings Surprise',  format: pctRaw },
+  fcfYield:           { label: 'FCF Yield',              format: v => v != null ? `${v.toFixed(2)}%` : '—' },
+  dividendYield:      { label: 'Dividend Yield',         format: v => v != null ? `${(v * 100).toFixed(2)}%` : '—' },
+  fcfMargin:          { label: 'FCF Margin',             format: pctRaw },
+  // Financial Health (NEW)
+  debtToEquity:       { label: 'Debt/Equity',            format: ratio, lowerIsBetter: true },
+  currentRatio:       { label: 'Current Ratio',          format: ratio },
+  interestCoverage:   { label: 'Interest Coverage',      format: ratio },
+  netDebtEbitda:      { label: 'Net Debt/EBITDA',        format: ratio, lowerIsBetter: true },
+  // Earnings Consistency (NEW)
+  beatRate:           { label: 'Beat Rate',              format: pctRaw },
+  avgSurpriseMag:     { label: 'Avg Surprise Magnitude', format: pctRaw },
+  surpriseConsistency:{ label: 'Surprise Consistency',   format: v => v != null ? `${v.toFixed(1)}% std dev` : '—', lowerIsBetter: true },
+  // Sentiment (expanded)
+  earningsRevisions:  { label: 'Earnings Revisions',     format: pctRaw },
+  avgSurprise:        { label: 'Avg Earnings Surprise',  format: pctRaw },
+  shortInterest:      { label: 'Short Interest',         format: v => v != null ? `${v.toFixed(1)}%` : '—', lowerIsBetter: true },
 };
 
 function getMultiplierText(value, median, lowerIsBetter) {
@@ -128,7 +140,7 @@ function SkeletonLoader() {
         background: 'rgba(255,255,255,0.04)',
         animation: 'ranks-pulse 1.5s ease-in-out infinite',
       }} />
-      {[1, 2, 3, 4, 5, 6, 7].map(i => (
+      {[1, 2, 3, 4, 5, 6, 7, 8].map(i => (
         <div key={i} style={{
           height: '38px', borderRadius: '6px', marginBottom: '4px',
           background: 'rgba(255,255,255,0.04)',
@@ -920,6 +932,43 @@ const CompeteTab = ({ symbol, isMobile, onNavigateToStock }) => {
           fontSize: '10px', fontWeight: '600', color: data.debtRiskBadge.color || '#ef4444',
         }}>
           {data.debtRiskBadge.label || data.debtRiskBadge}
+        </div>
+      )}
+
+      {/* Game-Mode Fit Badges (NEW) */}
+      {currentStockRanking && (currentStockRanking.baggerBombFit != null || currentStockRanking.snakeDraftFit != null || currentStockRanking.earningsGameFit != null) && (
+        <div style={{
+          display: 'flex', gap: '6px', marginBottom: '12px', flexWrap: 'wrap',
+        }}>
+          {[
+            { key: 'baggerBombFit', rankKey: 'baggerBombRank', label: 'BaggerBomb', color: '#ef4444', bg: '#ef444418' },
+            { key: 'snakeDraftFit', rankKey: 'snakeDraftRank', label: 'Snake Draft', color: '#14b8a6', bg: '#14b8a618' },
+            { key: 'earningsGameFit', rankKey: 'earningsGameRank', label: 'Earnings', color: '#f59e0b', bg: '#f59e0b18' },
+          ].filter(m => currentStockRanking[m.key] != null).map(mode => (
+            <div key={mode.key} style={{
+              padding: '4px 8px', borderRadius: '4px',
+              background: mode.bg, border: `1px solid ${mode.color}30`,
+              fontSize: '10px', fontWeight: '600', color: mode.color,
+              display: 'flex', alignItems: 'center', gap: '4px',
+            }}>
+              {mode.label}: #{currentStockRanking[mode.rankKey] || '—'}
+              <span style={{ opacity: 0.7, fontWeight: '400' }}>
+                ({currentStockRanking[mode.key]})
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Squeeze Watch Badge (NEW) */}
+      {data.metrics?.squeezeWatch && (
+        <div style={{
+          marginBottom: '12px', display: 'inline-flex', alignItems: 'center', gap: '4px',
+          padding: '3px 8px', borderRadius: '4px',
+          background: '#f59e0b18', border: '1px solid #f59e0b30',
+          fontSize: '10px', fontWeight: '600', color: '#f59e0b',
+        }}>
+          ⚡ Squeeze Watch — {data.metrics.shortInterestScore?.toFixed(1)}% short float
         </div>
       )}
 

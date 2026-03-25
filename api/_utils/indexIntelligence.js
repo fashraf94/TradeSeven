@@ -241,6 +241,16 @@ export function computeRSTrend(stockCloses, spyCloses, lookback = 10) {
 
 /**
  * Compute the full Technical Score for a single stock.
+ *
+ * 7 Factors (RS Trend Direction removed, Sector RS + MACD added):
+ * - RS vs SPY (percentile rank)              — 22 pts
+ * - Sector-Relative Strength (NEW)           — 15 pts
+ * - SMA Positioning (above/below 20/50/200)  — 18 pts
+ * - MACD Signal Alignment (NEW)              — 12 pts
+ * - 52-Week High Proximity                   — 12 pts
+ * - Volume Confirmation                      — 12 pts
+ * - RSI Trend Context                        — 9 pts
+ *
  * @param {object} params
  * @param {number[]} params.closes - Stock closes (newest-first)
  * @param {number[]} params.highs - Stock highs (newest-first)
@@ -249,7 +259,8 @@ export function computeRSTrend(stockCloses, spyCloses, lookback = 10) {
  * @param {number[]} params.spyCloses - SPY closes (newest-first)
  * @param {number} params.rsPercentile - Pre-computed RS percentile (0-100)
  * @param {string} params.rsTrend - Pre-computed RS trend ('rising'|'flat'|'falling')
- * @param {object} params.technicals - Pre-computed technical indicators { rsi, sma20, sma50, sma200 }
+ * @param {object} params.technicals - Pre-computed indicators { rsi, sma20, sma50, sma200, macd }
+ * @param {number|null} [params.sectorRSPercentile] - RS vs sector ETF percentile (0-100)
  * @returns {object} Technical score breakdown
  */
 export function computeTechnicalScore({
@@ -261,28 +272,56 @@ export function computeTechnicalScore({
   rsPercentile,
   rsTrend,
   technicals,
+  sectorRSPercentile,
 }) {
   const currentPrice = closes[0];
 
-  // --- SMA Score (out of 25) ---
+  // --- RS vs SPY Score (out of 22) ---
+  const rsVsSpyScore = Math.round((rsPercentile / 100) * 22);
+
+  // --- Sector-Relative Strength (out of 15) --- NEW
+  const sectorRSPct = sectorRSPercentile != null ? sectorRSPercentile : rsPercentile;
+  const sectorRSScore = Math.round((sectorRSPct / 100) * 15);
+
+  // --- SMA Score (out of 18) ---
   let smaScore = 0;
   const aboveSMA200 = technicals.sma200 !== null && currentPrice > technicals.sma200;
   const aboveSMA50 = technicals.sma50 !== null && currentPrice > technicals.sma50;
   const aboveSMA20 = technicals.sma20 !== null && currentPrice > technicals.sma20;
-  if (aboveSMA200) smaScore += 10;
-  if (aboveSMA50) smaScore += 8;
-  if (aboveSMA20) smaScore += 7;
+  if (aboveSMA200) smaScore += 8;
+  if (aboveSMA50) smaScore += 6;
+  if (aboveSMA20) smaScore += 4;
 
-  // --- 52-Week High Proximity (out of 15) ---
+  // --- MACD Signal Alignment (out of 12) --- NEW
+  let macdScore = 6; // default neutral
+  const macd = technicals.macd;
+  if (macd && macd.macd != null && macd.signal != null && macd.histogram != null) {
+    const aboveSignal = macd.macd > macd.signal;
+    // Determine if histogram is expanding (getting more positive or less negative)
+    const histExpanding = macd.prevHistogram != null
+      ? macd.histogram > macd.prevHistogram
+      : macd.histogram > 0;
+
+    if (aboveSignal && histExpanding) macdScore = 12;        // Strong bullish momentum
+    else if (aboveSignal && !histExpanding) macdScore = 8;   // Bullish but weakening
+    else if (!aboveSignal && histExpanding) macdScore = 6;   // Potential bullish crossover forming
+    else macdScore = 2;                                       // Bearish momentum deepening
+
+    // Fresh crossover bonus/penalty (within last 3 bars)
+    if (macd.freshBullishCross) macdScore = Math.min(12, macdScore + 2);
+    if (macd.freshBearishCross) macdScore = Math.max(0, macdScore - 2);
+  }
+
+  // --- 52-Week High Proximity (out of 12) ---
   const tradingDays = Math.min(252, highs.length);
   const high52w = Math.max(...highs.slice(0, tradingDays));
   const distToHigh = ((high52w - currentPrice) / high52w) * 100;
   let highProximity;
-  if (distToHigh <= 5) highProximity = 15;
-  else if (distToHigh <= 10) highProximity = 12;
-  else if (distToHigh <= 20) highProximity = 8;
-  else if (distToHigh <= 30) highProximity = 5;
-  else highProximity = 2;
+  if (distToHigh <= 5) highProximity = 12;
+  else if (distToHigh <= 10) highProximity = 10;
+  else if (distToHigh <= 20) highProximity = 7;
+  else if (distToHigh <= 30) highProximity = 4;
+  else highProximity = 1;
 
   // --- Volume Confirmation (out of 12) ---
   let volumeConfirmation = 6; // default
@@ -310,28 +349,18 @@ export function computeTechnicalScore({
     else volumeConfirmation = 3;
   }
 
-  // --- RSI Context (out of 10) ---
-  let rsiContext = 5; // default
+  // --- RSI Context (out of 9) ---
+  let rsiContext = 4; // default
   const rsiValue = technicals.rsi?.value ?? 50;
-  if (rsiValue >= 50 && rsiValue <= 70 && rsTrend === 'rising') rsiContext = 10;
-  else if (rsiValue >= 40 && rsiValue < 50 && rsTrend === 'rising') rsiContext = 7;
-  else if (rsiValue > 80) rsiContext = 5;
+  if (rsiValue >= 50 && rsiValue <= 70 && rsTrend === 'rising') rsiContext = 9;
+  else if (rsiValue >= 40 && rsiValue < 50 && rsTrend === 'rising') rsiContext = 6;
+  else if (rsiValue > 80) rsiContext = 4;
   else if (rsiValue < 30 && rsTrend === 'falling') rsiContext = 0;
-  else if (rsiValue >= 50 && rsiValue <= 70) rsiContext = 7;
-  else if (rsiValue < 40) rsiContext = 3;
-
-  // --- RS Trend Score (out of 8) ---
-  let rsTrendScore;
-  if (rsTrend === 'rising') rsTrendScore = 8;
-  else if (rsTrend === 'flat') rsTrendScore = 4;
-  else rsTrendScore = 0;
-
-  // --- RS Percentile Score (out of 30) ---
-  // rsPercentile is 0-100, scale to 0-30
-  const rsPercentileScore = Math.round((rsPercentile / 100) * 30);
+  else if (rsiValue >= 50 && rsiValue <= 70) rsiContext = 6;
+  else if (rsiValue < 40) rsiContext = 2;
 
   // --- Total Technical Score ---
-  const technicalScore = rsPercentileScore + smaScore + highProximity + volumeConfirmation + rsiContext + rsTrendScore;
+  const technicalScore = rsVsSpyScore + sectorRSScore + smaScore + macdScore + highProximity + volumeConfirmation + rsiContext;
 
   // Compute up/down volume ratio for factors output
   let upDayVolRatio = 1;
@@ -352,16 +381,20 @@ export function computeTechnicalScore({
     highProximity,
     volumeConfirmation,
     rsiContext,
-    rsTrendScore,
+    sectorRSScore,
+    macdScore,
+    rsVsSpyScore,
     factors: {
       rsPercentile,
+      sectorRSPercentile: sectorRSPct,
       aboveSMA20,
       aboveSMA50,
       aboveSMA200,
       distTo52wkHigh: Number(distToHigh.toFixed(1)),
       upDayVolRatio: Number(upDayVolRatio.toFixed(2)),
       rsi: rsiValue,
-      rsTrendSlope: 0, // filled in by caller
+      macdHistogram: macd?.histogram ?? null,
+      macdAboveSignal: macd ? macd.macd > macd.signal : null,
     },
   };
 }

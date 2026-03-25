@@ -6,17 +6,32 @@ const GRADIENT_MAP = {
   composite: 'linear-gradient(90deg, rgba(94,234,212,0.6), rgba(16,185,129,0.9))',
   fundamental: 'linear-gradient(90deg, rgba(245,158,11,0.5), rgba(245,158,11,0.9))',
   technical: 'linear-gradient(90deg, rgba(168,85,250,0.5), rgba(168,85,250,0.9))',
+  baggerBomb: 'linear-gradient(90deg, rgba(239,68,68,0.5), rgba(249,115,22,0.9))',
+  snakeDraft: 'linear-gradient(90deg, rgba(20,184,166,0.5), rgba(16,185,129,0.9))',
+  earningsGame: 'linear-gradient(90deg, rgba(245,158,11,0.4), rgba(234,179,8,0.9))',
 };
 
 const SCORE_COLOR_MAP = {
   composite: '#5eead4',
   fundamental: '#f59e0b',
   technical: '#A78BFA',
+  baggerBomb: '#ef4444',
+  snakeDraft: '#14b8a6',
+  earningsGame: '#eab308',
+};
+
+const SCORE_KEY_MAP = {
+  composite: 'compositeScore',
+  fundamental: 'fundamentalScore',
+  technical: 'technicalScore',
+  baggerBomb: 'baggerBombFit',
+  snakeDraft: 'snakeDraftFit',
+  earningsGame: 'earningsGameFit',
 };
 
 const RankRow = ({ stock, rank, type, maxScore, onTap }) => {
   const sectorInfo = resolveSectorInfo(stock);
-  const scoreKey = type === 'composite' ? 'compositeScore' : type === 'fundamental' ? 'fundamentalScore' : 'technicalScore';
+  const scoreKey = SCORE_KEY_MAP[type] || 'compositeScore';
   const score = stock[scoreKey] || 0;
   const barWidth = maxScore > 0 ? Math.max(5, (score / maxScore) * 100) : 5;
   const gradient = GRADIENT_MAP[type] || GRADIENT_MAP.composite;
