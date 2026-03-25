@@ -92,9 +92,10 @@ export function validateTradeDecision(decision, battle) {
  * @param {Object} benchAsset - The bench asset to swap in
  * @param {number} currentDay - Current trading day (1-indexed)
  * @param {Object} currentPrices - { symbol: { current, previousClose, ... } }
+ * @param {Object} evaluationMetadata - { id, action, trigger, rationale, hypothesis, evaluationId, tradingDay }
  * @returns {Object} { closedTrade, incomingAsset }
  */
-export async function executeSwapServer(db, battleId, battle, resolvedTier, resolvedSlotIndex, benchAsset, currentDay, currentPrices) {
+export async function executeSwapServer(db, battleId, battle, resolvedTier, resolvedSlotIndex, benchAsset, currentDay, currentPrices, evaluationMetadata = {}) {
   const battleRef = db.collection('agentBattles').doc(battleId);
 
   return await db.runTransaction(async (transaction) => {
@@ -158,6 +159,8 @@ export async function executeSwapServer(db, battleId, battle, resolvedTier, reso
       swapDay: currentDay,
       isCrypto: outAsset.isCrypto || false,
       direction: outAsset.direction || null,
+      // Evaluation metadata (enrichment fields from the cron)
+      ...evaluationMetadata,
     };
 
     // ---- Build incoming asset ----

@@ -107,18 +107,31 @@ export default async function handler(req, res) {
 async function processAgentBattle(db, battle, summary) {
   const battleRef = db.collection('agentBattles').doc(battle.id);
 
-  // ---- Idempotency: check evaluatingAt lock ----
-  if (battle.cronState?.evaluatingAt) {
-    const lockAge = Date.now() - new Date(battle.cronState.evaluatingAt).getTime();
-    if (lockAge < EVALUATING_LOCK_TIMEOUT_MS) {
-      console.log(`${LOG_PREFIX} Battle ${battle.id} already being evaluated (lock age: ${lockAge}ms) — skipping`);
-      summary.skipped++;
-      return;
-    }
-  }
+  // ---- Idempotency: atomically check and acquire evaluatingAt lock ----
+  const lockAcquired = await db.runTransaction(async (transaction) => {
+    const doc = await transaction.get(battleRef);
+    const data = doc.data();
+    const currentLock = data?.cronState?.evaluatingAt;
 
-  // Set lock
-  await battleRef.update({ 'cronState.evaluatingAt': new Date().toISOString() });
+    if (currentLock) {
+      const lockAge = Date.now() - new Date(currentLock).getTime();
+      if (lockAge < EVALUATING_LOCK_TIMEOUT_MS) {
+        return false; // Lock held by another process
+      }
+    }
+
+    // Atomically claim the lock
+    transaction.update(battleRef, {
+      'cronState.evaluatingAt': new Date().toISOString(),
+    });
+    return true;
+  });
+
+  if (!lockAcquired) {
+    console.log(`${LOG_PREFIX} Battle ${battle.id} already being evaluated — skipping`);
+    summary.skipped++;
+    return;
+  }
 
   try {
     const ctx = battle.agentContext || {};
@@ -295,10 +308,19 @@ async function processAgentBattle(db, battle, summary) {
         // Execute the swap
         try {
           const benchAsset = findBenchAsset(battle.portfolio?.bench, haikuResult.symbolIn);
+          const evaluationMetadata = {
+            id: `trade_${String((battle.scoreState?.tradeCount || 0) + 1).padStart(3, '0')}`,
+            action: 'SWAP',
+            trigger: triggers.map(t => t.type).join(', '),
+            rationale: haikuResult.rationale || null,
+            hypothesis: haikuResult.hypothesis || null,
+            evaluationId: evalId,
+            tradingDay: currentDay,
+          };
           await executeSwapServer(
             db, battle.id, battle,
             validation.resolvedTier, validation.resolvedSlotIndex,
-            benchAsset, currentDay, prices
+            benchAsset, currentDay, prices, evaluationMetadata
           );
           summary.swapped++;
         } catch (swapErr) {

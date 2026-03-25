@@ -44,10 +44,11 @@ export function evaluateTriggers(battle, assetScores, prices, news) {
     }
   }
 
-  // Threshold proximity: asset within 0.2x ATR of a penalty threshold
+  // Threshold proximity: asset within 0.2x ATR of a bonus or penalty threshold
   for (const score of assetScores) {
     const mult = score.multiplier;
-    // Check proximity to bust (-1.0x), crash (-1.5x), meltdown (-2.0x)
+
+    // Negative thresholds: approaching penalties
     const penaltyThresholds = [
       { name: 'Bust', level: -1.0 },
       { name: 'Crash', level: -1.5 },
@@ -60,6 +61,24 @@ export function evaluateTriggers(battle, assetScores, prices, news) {
           type: 'threshold_proximity',
           detail: `${score.symbol} at ${mult.toFixed(2)}x ATR — only ${distance.toFixed(2)}x from ${threshold.name} (${threshold.level}x)`,
         });
+      }
+    }
+
+    // Positive thresholds: approaching bonuses
+    const bonusThresholds = [
+      { name: 'BaggerBomb (+15 pts)', level: 1.0, badge: 'bagger' },
+      { name: 'DoubleBagger (+30 pts)', level: 1.5, badge: 'doubleBagger' },
+      { name: 'TenBagger (+50 pts)', level: 2.0, badge: 'tenBagger' },
+    ];
+    for (const threshold of bonusThresholds) {
+      // Approaching from below, within 0.2x ATR, and badge not already earned
+      if (mult > 0 && mult < threshold.level && mult >= threshold.level - 0.2) {
+        if (!score.badges?.includes(threshold.badge)) {
+          triggers.push({
+            type: 'threshold_proximity',
+            detail: `${score.symbol} at +${mult.toFixed(2)}x ATR — approaching ${threshold.name} at +${threshold.level}x`,
+          });
+        }
       }
     }
   }

@@ -355,19 +355,19 @@ export function formatRecentEvals(evaluations, limit = 3) {
 // ==================== CSV BUILDERS ====================
 
 function buildPortfolioCSV(assetScores, prices, battle) {
-  const header = 'Tier,Symbol,Entry,$Entry,$Current,Gain%,ATR Mult,Badges,ATR%';
-  const startingPrices = battle.scoring?.thresholds || {};
+  const header = 'Tier,Symbol,Sector,Entry,$Entry,$Current,Gain%,ATR Mult,Badges,ATR%';
+  const flat = flattenPortfolioServer(battle.portfolio);
 
   const rows = assetScores.map(score => {
     const price = prices[score.symbol];
     const currentPrice = price?.current || 0;
-    const flat = flattenPortfolioServer(battle.portfolio);
     const asset = flat.find(a => a.symbol === score.symbol);
+    const sector = asset?.sector || 'Unknown';
     const entryPrice = asset?.swapPrice || battle.portfolio?.startingPrices?.[score.symbol] || 0;
     const entryDay = asset?.swappedInDay ? `Day${asset.swappedInDay}` : 'Day1';
     const badgeStr = score.badges.length > 0 ? `[${score.badges.join(',')}]` : '[]';
 
-    return `${asset?.tier || 'support'},${score.symbol},${entryDay},$${entryPrice.toFixed(2)},$${currentPrice.toFixed(2)},${formatPct(score.priceChange)}%,${score.multiplier >= 0 ? '+' : ''}${score.multiplier.toFixed(2)}x,${badgeStr},${score.baseATR.toFixed(1)}%`;
+    return `${asset?.tier || 'support'},${score.symbol},${sector},${entryDay},$${entryPrice.toFixed(2)},$${currentPrice.toFixed(2)},${formatPct(score.priceChange)}%,${score.multiplier >= 0 ? '+' : ''}${score.multiplier.toFixed(2)}x,${badgeStr},${score.baseATR.toFixed(1)}%`;
   });
 
   return [header, ...rows].join('\n');
@@ -379,7 +379,7 @@ function buildBenchCSV(bench, prices) {
   const allBench = flattenBenchServer(bench);
   if (allBench.length === 0) return 'BENCH: Empty — no stocks available for swap.';
 
-  const header = 'BENCH (available for swap):\nSymbol,$Current,Daily%,ATR%,Status';
+  const header = 'BENCH (available for swap):\nSymbol,Sector,$Current,Daily%,ATR%,Status';
   const now = new Date();
 
   const rows = allBench.map(asset => {
@@ -387,6 +387,7 @@ function buildBenchCSV(bench, prices) {
     const currentPrice = price?.current || 0;
     const dailyPct = price?.changePercent || 0;
     const atr = asset.baseATR || 2.5;
+    const sector = asset.sector || 'Unknown';
 
     let status = 'available';
     if (asset.cooldownUntil) {
@@ -396,7 +397,7 @@ function buildBenchCSV(bench, prices) {
       }
     }
 
-    return `${asset.symbol},$${currentPrice.toFixed(2)},${formatPct(dailyPct)}%,${atr.toFixed(1)}%,${status}`;
+    return `${asset.symbol},${sector},$${currentPrice.toFixed(2)},${formatPct(dailyPct)}%,${atr.toFixed(1)}%,${status}`;
   });
 
   return [header, ...rows].join('\n');

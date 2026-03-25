@@ -27,10 +27,11 @@ export async function findActiveAgentBattles(db) {
  * @param {Object} agentData - Full agent document (from agents collection)
  * @param {Object} thresholds - { symbol: { threshold, rallyThreshold, moonshotThreshold } }
  * @param {Object} startingPrices - { symbol: currentPrice }
- * @param {Object} options - { duration: '1d'|'3d'|'5d' }
+ * @param {Object} options - { duration: '1d'|'3d'|'5d', sectorMap: { symbol: sectorName } }
  * @returns {{ id: string }} Created document reference
  */
 export async function createAgentBattle(db, agentData, thresholds, startingPrices, options = {}) {
+  const sectorMap = options.sectorMap || {};
   const now = new Date().toISOString();
   const duration = options.duration || '3d';
   const tradingDays = computeTradingDays(duration);
@@ -64,14 +65,14 @@ export async function createAgentBattle(db, agentData, thresholds, startingPrice
     },
 
     portfolio: {
-      star: deepCopyArray(portfolio.star),
-      core: deepCopyArray(portfolio.core),
-      support: deepCopyArray(portfolio.support),
+      star: deepCopyArrayWithSector(portfolio.star, sectorMap),
+      core: deepCopyArrayWithSector(portfolio.core, sectorMap),
+      support: deepCopyArrayWithSector(portfolio.support, sectorMap),
       // Note: crypto lives inside support[2] (isCrypto: true) — not a separate field.
       // See api/agent/decide.js:368 — support = [...support_stocks, support_crypto]
       bench: {
-        stocks: deepCopyArray(bench?.stocks),
-        crypto: bench?.crypto ? { ...bench.crypto } : null,
+        stocks: deepCopyArrayWithSector(bench?.stocks, sectorMap),
+        crypto: bench?.crypto ? { ...bench.crypto, sector: sectorMap[bench.crypto.symbol] || (bench.crypto.isCrypto ? 'Crypto' : 'Unknown') } : null,
       },
       startingPrices: { ...startingPrices },
     },
@@ -96,9 +97,9 @@ export async function createAgentBattle(db, agentData, thresholds, startingPrice
       consolidatedInsight: agentData.consolidatedInsight || null,
       // Frozen snapshot of the initial portfolio (Amendment 5)
       initialPortfolio: {
-        star: deepCopyArray(portfolio.star),
-        core: deepCopyArray(portfolio.core),
-        support: deepCopyArray(portfolio.support),
+        star: deepCopyArrayWithSector(portfolio.star, sectorMap),
+        core: deepCopyArrayWithSector(portfolio.core, sectorMap),
+        support: deepCopyArrayWithSector(portfolio.support, sectorMap),
       },
     },
 
@@ -164,17 +165,29 @@ function computeTradingDays(duration) {
 }
 
 /**
- * Compute battle expiry: 8 PM ET on the last trading day.
+ * Compute battle expiry: 4:00 PM ET (market close) on the last trading day.
+ * Returns a UTC ISO string. Handles DST correctly by computing the ET→UTC offset
+ * dynamically for the specific date (EDT = UTC-4, EST = UTC-5).
  */
 function computeExpiry(tradingDays) {
   if (!tradingDays.length) return new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
 
   const lastDay = tradingDays[tradingDays.length - 1];
-  // Approximate: last trading day + 20:00 ET
-  // Use ET offset to avoid DST issues
-  const [year, month, day] = lastDay.split('-').map(Number);
-  const expiryET = new Date(year, month - 1, day, 20, 0, 0);
-  return expiryET.toISOString();
+  // To find the UTC equivalent of 16:00 ET on lastDay:
+  // 1. Create a known UTC reference point on that date
+  // 2. Convert it to ET to measure the offset
+  // 3. Apply the offset to 16:00 ET to get correct UTC
+  const refUTC = new Date(`${lastDay}T12:00:00Z`);
+  const refETStr = refUTC.toLocaleString('en-US', { timeZone: 'America/New_York' });
+  const refET = new Date(refETStr);
+  // etOffsetMs = how much to ADD to ET local time to get UTC
+  // e.g., EDT (UTC-4): refUTC=12:00Z, refET reads as 8:00 local → offset = 12:00Z - 8:00 = +4h
+  // e.g., EST (UTC-5): refUTC=12:00Z, refET reads as 7:00 local → offset = 12:00Z - 7:00 = +5h
+  const etOffsetMs = refUTC.getTime() - refET.getTime();
+  // 16:00 ET in UTC = parse "16:00" as if UTC, then add the ET offset
+  const closeAsUTC = new Date(`${lastDay}T16:00:00Z`);
+  const closeUTC = new Date(closeAsUTC.getTime() + etOffsetMs);
+  return closeUTC.toISOString();
 }
 
 /**
@@ -192,4 +205,13 @@ function filterActiveDirectives(directives) {
 function deepCopyArray(arr) {
   if (!arr) return [];
   return arr.map(item => item ? { ...item } : null);
+}
+
+function deepCopyArrayWithSector(arr, sectorMap) {
+  if (!arr) return [];
+  return arr.map(item => {
+    if (!item) return null;
+    const sector = sectorMap[item.symbol] || (item.isCrypto ? 'Crypto' : 'Unknown');
+    return { ...item, sector };
+  });
 }
