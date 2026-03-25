@@ -96,7 +96,7 @@ for (const [sectorId, sector] of Object.entries(STOCK_UNIVERSE)) {
 export const SECTOR_ETFS = Object.values(STOCK_UNIVERSE).map(s => s.etf);
 
 // ---------------------------------------------------------------------------
-// Ranking Dimensions — 7 pillars, 2-4 dimensions each
+// Ranking Dimensions — 8 pillars, 2-4 dimensions each
 // ---------------------------------------------------------------------------
 
 export const DIMENSIONS = {
@@ -222,33 +222,67 @@ export const DIMENSIONS = {
     computed: true,
   },
 
-  // ── Momentum ───────────────────────────────────────────────────────────
-  sixMonthReturn: {
-    label: '6M Price Return',
-    pillar: 'momentum',
-    field: 'sixMonthReturn',
+  // ── Financial Health (NEW) ─────────────────────────────────────────────
+  debtToEquity: {
+    label: 'Debt/Equity',
+    pillar: 'financialHealth',
+    field: 'debtToEquity',
+    inverted: true,
+    unit: 'x',
+    computed: true,
+  },
+  currentRatio: {
+    label: 'Current Ratio',
+    pillar: 'financialHealth',
+    field: 'currentRatio',
+    inverted: false,
+    unit: 'x',
+    computed: true,
+  },
+  interestCoverage: {
+    label: 'Interest Coverage',
+    pillar: 'financialHealth',
+    field: 'interestCoverage',
+    inverted: false,
+    unit: 'x',
+    computed: true,
+  },
+  netDebtEbitda: {
+    label: 'Net Debt/EBITDA',
+    pillar: 'financialHealth',
+    field: 'netDebtEbitda',
+    inverted: true,
+    unit: 'x',
+    computed: true,
+  },
+
+  // ── Earnings Consistency (NEW) ─────────────────────────────────────────
+  beatRate: {
+    label: 'Beat Rate',
+    pillar: 'earningsConsistency',
+    field: 'beatRate',
     inverted: false,
     unit: '%',
     computed: true,
   },
-  threeMonthReturn: {
-    label: '3M Price Return',
-    pillar: 'momentum',
-    field: 'threeMonthReturn',
+  avgSurpriseMag: {
+    label: 'Avg Surprise Magnitude',
+    pillar: 'earningsConsistency',
+    field: 'avgSurpriseMag',
     inverted: false,
     unit: '%',
     computed: true,
   },
-  oneMonthReturn: {
-    label: '1M Price Return',
-    pillar: 'momentum',
-    field: 'oneMonthReturn',
-    inverted: false,
+  surpriseConsistency: {
+    label: 'Surprise Consistency',
+    pillar: 'earningsConsistency',
+    field: 'surpriseConsistency',
+    inverted: true,
     unit: '%',
     computed: true,
   },
 
-  // ── Sentiment ──────────────────────────────────────────────────────────
+  // ── Sentiment (expanded with Short Interest) ───────────────────────────
   earningsRevisions: {
     label: 'Earnings Revisions',
     pillar: 'sentiment',
@@ -265,31 +299,62 @@ export const DIMENSIONS = {
     unit: '%',
     computed: true,
   },
+  shortInterest: {
+    label: 'Short Interest',
+    pillar: 'sentiment',
+    field: 'shortInterestScore',
+    inverted: true,
+    unit: '%',
+    computed: true,
+  },
 };
 
 // ---------------------------------------------------------------------------
-// 7 Pillars — Equal weight (1/7 each), 2-4 dimensions each
+// 8 Pillars — weighted to 100%, 2-4 dimensions each
+//
+// Momentum pillar REMOVED — price returns are a technical signal, not
+// fundamental. The Technical Score already captures momentum via RS vs SPY,
+// SMA Positioning, and the new MACD factor.
 // ---------------------------------------------------------------------------
 
 export const PILLARS = {
-  growth:        { label: 'Growth',             icon: '📈', dimensions: ['revenueGrowth', 'epsGrowth'],                              weight: 1/7 },
-  profitability: { label: 'Profitability',       icon: '💰', dimensions: ['opMargin', 'netMargin', 'grossMargin'],                   weight: 1/7 },
-  efficiency:    { label: 'Efficiency',          icon: '⚙️', dimensions: ['roa', 'roe'],                                             weight: 1/7 },
-  valuation:     { label: 'Valuation',           icon: '📊', dimensions: ['evEbitda', 'trailingPE', 'priceSales', 'priceBook'],      weight: 1/7 },
-  capitalEff:    { label: 'Capital Efficiency',  icon: '💎', dimensions: ['fcfYield', 'dividendYield', 'fcfMargin'],                 weight: 1/7 },
-  momentum:      { label: 'Momentum',            icon: '⚡', dimensions: ['sixMonthReturn', 'threeMonthReturn', 'oneMonthReturn'],   weight: 1/7 },
-  sentiment:     { label: 'Sentiment',           icon: '🎯', dimensions: ['earningsRevisions', 'avgSurprise'],                       weight: 1/7 },
+  growth:              { label: 'Growth',                icon: '📈', dimensions: ['revenueGrowth', 'epsGrowth'],                              weight: 0.15 },
+  profitability:       { label: 'Profitability',          icon: '💰', dimensions: ['opMargin', 'netMargin', 'grossMargin'],                   weight: 0.15 },
+  earningsConsistency: { label: 'Earnings Consistency',   icon: '🎯', dimensions: ['beatRate', 'avgSurpriseMag', 'surpriseConsistency'],      weight: 0.15 },
+  financialHealth:     { label: 'Financial Health',       icon: '🛡️', dimensions: ['debtToEquity', 'currentRatio', 'interestCoverage', 'netDebtEbitda'], weight: 0.15 },
+  sentiment:           { label: 'Sentiment',              icon: '📡', dimensions: ['earningsRevisions', 'avgSurprise', 'shortInterest'],      weight: 0.15 },
+  valuation:           { label: 'Valuation',              icon: '📊', dimensions: ['evEbitda', 'trailingPE', 'priceSales', 'priceBook'],      weight: 0.10 },
+  capitalEff:          { label: 'Capital Efficiency',     icon: '💎', dimensions: ['fcfYield', 'dividendYield', 'fcfMargin'],                 weight: 0.10 },
+  efficiency:          { label: 'Efficiency',             icon: '⚙️', dimensions: ['roa', 'roe'],                                             weight: 0.05 },
 };
 
 // Per-pillar weight for composite score computation — tune these without touching other code
 export const COMPETE_PILLAR_WEIGHTS = {
-  growth:        1/7,
-  profitability: 1/7,
-  efficiency:    1/7,
-  valuation:     1/7,
-  capitalEff:    1/7,
-  momentum:      1/7,
-  sentiment:     1/7,
+  growth:              0.15,
+  profitability:       0.15,
+  earningsConsistency: 0.15,
+  financialHealth:     0.15,
+  sentiment:           0.15,
+  valuation:           0.10,
+  capitalEff:          0.10,
+  efficiency:          0.05,
+};
+
+// ---------------------------------------------------------------------------
+// Technical Factor Weights — 7 factors summing to 100%
+//
+// RS Trend Direction REMOVED — signal captured by RS percentile changes
+// over time and the new MACD factor.
+// ---------------------------------------------------------------------------
+
+export const TECHNICAL_FACTOR_WEIGHTS = {
+  rsVsSpy:      0.22,  // Macro relative strength (was 30pts/100)
+  sectorRS:     0.15,  // NEW: Intra-sector leadership vs sector ETF
+  smaPosition:  0.18,  // Trend structure via moving averages (was 25pts/100)
+  macd:         0.12,  // NEW: Momentum inflection via MACD crossover state
+  weekHighProx: 0.12,  // Distance to 52-week high (was 15pts/100)
+  volume:       0.12,  // Up/down volume ratio confirmation (same)
+  rsi:          0.09,  // RSI context for overbought/oversold (was 10pts/100)
 };
 
 // ---------------------------------------------------------------------------
@@ -354,6 +419,110 @@ export function computeReturn(prices, days) {
 
 /**
  * EODHD filter string for fundamentals — only fetch needed sections.
+ * SharesStats added for short interest data (ShortPercentOfFloat, ShortRatio).
  */
 export const EODHD_FUNDAMENTALS_FILTER =
-  'Highlights,Valuation,Technicals,Earnings,Financials,General::Name';
+  'Highlights,Valuation,Technicals,Earnings,Financials,SharesStats,General::Name';
+
+// ---------------------------------------------------------------------------
+// Sector Default Beat Rates — fallback for stocks with <4 quarters of history
+// ---------------------------------------------------------------------------
+
+export const SECTOR_BEAT_RATES = {
+  XLK: 0.72, // Technology
+  XLV: 0.68, // Healthcare
+  XLF: 0.70, // Financials
+  XLE: 0.65, // Energy
+  XLY: 0.68, // Consumer Discretionary
+  XLP: 0.66, // Consumer Staples
+  XLI: 0.67, // Industrials
+  XLB: 0.64, // Materials
+  XLU: 0.70, // Utilities
+  XLRE: 0.66, // Real Estate
+  XLC: 0.69, // Communication Services
+};
+
+// ---------------------------------------------------------------------------
+// Game-Mode Context Weighting Profiles
+//
+// Each profile defines how to blend fundamental + technical base scores,
+// plus ATR as a volatility modifier and per-factor/pillar weight overrides.
+// These produce game-specific fit scores (0-100) alongside the standard
+// Composite Score.
+// ---------------------------------------------------------------------------
+
+export const GAME_MODE_PROFILES = {
+  standard: {
+    fundamentalWeight: 0.50,
+    technicalWeight: 0.50,
+    atrModifier: 0,
+  },
+
+  baggerBomb: {
+    // 1-day PvP — maximize explosive upside potential
+    fundamentalWeight: 0.10,
+    technicalWeight: 0.90,
+    atrModifier: 0.20,  // REWARD high volatility
+    technicalOverrides: {
+      rsVsSpy:      1.2,
+      sectorRS:     1.3,
+      macd:         1.5,
+      volume:       1.4,
+      smaPosition:  0.6,
+      rsi:          0.8,
+      weekHighProx: 0.7,
+    },
+  },
+
+  snakeDraft: {
+    // 5-day tournament — steady compounding, avoid drawdowns
+    fundamentalWeight: 0.50,
+    technicalWeight: 0.50,
+    atrModifier: -0.10,  // PENALIZE high volatility
+    technicalOverrides: {
+      rsVsSpy:      1.0,
+      sectorRS:     1.5,
+      macd:         1.0,
+      volume:       0.8,
+      smaPosition:  1.2,
+      rsi:          1.1,
+      weekHighProx: 1.0,
+    },
+    fundamentalOverrides: {
+      financialHealth:     1.3,
+      profitability:       1.2,
+      earningsConsistency: 1.0,
+      growth:              1.0,
+      sentiment:           0.9,
+      valuation:           0.8,
+      capitalEff:          0.8,
+      efficiency:          0.5,
+    },
+  },
+
+  earningsGame: {
+    // Earnings prediction — execution history is king
+    fundamentalWeight: 0.85,
+    technicalWeight: 0.15,
+    atrModifier: 0,
+    fundamentalOverrides: {
+      earningsConsistency: 2.5,
+      sentiment:           1.5,
+      growth:              1.2,
+      profitability:       1.0,
+      financialHealth:     0.5,
+      valuation:           0.5,
+      capitalEff:          0.3,
+      efficiency:          0.2,
+    },
+    technicalOverrides: {
+      rsi:          2.0,
+      rsVsSpy:      0.5,
+      sectorRS:     0.3,
+      macd:         0.5,
+      volume:       0.5,
+      smaPosition:  0.3,
+      weekHighProx: 0.3,
+    },
+  },
+};

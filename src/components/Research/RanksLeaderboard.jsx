@@ -21,6 +21,24 @@ const TYPE_CONFIG = {
     scoreColor: '#00d9ff',
     scoreKey: 'compositeScore',
   },
+  baggerBomb: {
+    label: 'BAGGERBOMB FIT',
+    gradient: 'linear-gradient(90deg, rgba(239,68,68,0.5), rgba(249,115,22,0.9))',
+    scoreColor: '#ef4444',
+    scoreKey: 'baggerBombFit',
+  },
+  snakeDraft: {
+    label: 'SNAKE DRAFT FIT',
+    gradient: 'linear-gradient(90deg, rgba(20,184,166,0.5), rgba(16,185,129,0.9))',
+    scoreColor: '#14b8a6',
+    scoreKey: 'snakeDraftFit',
+  },
+  earningsGame: {
+    label: 'EARNINGS GAME FIT',
+    gradient: 'linear-gradient(90deg, rgba(245,158,11,0.4), rgba(234,179,8,0.9))',
+    scoreColor: '#eab308',
+    scoreKey: 'earningsGameFit',
+  },
 };
 
 const RanksLeaderboard = ({ type, stocks, currentSymbol, onNavigateToStock, title, sectorFilter }) => {
