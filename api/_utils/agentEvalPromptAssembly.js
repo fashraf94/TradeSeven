@@ -1,0 +1,441 @@
+// api/_utils/agentEvalPromptAssembly.js
+// Prompt assembly for the Haiku mid-battle evaluation call.
+// Exports cacheable (identity) and fresh (live context) blocks.
+
+import { getETDate, formatDateString } from './marketSchedule.js';
+import { flattenPortfolioServer, flattenBenchServer } from './agentScoring.js';
+
+// ==================== SYSTEM PROMPT ====================
+
+/**
+ * Build the system prompt for the Haiku evaluation call.
+ * ~1,200 tokens with few-shot examples.
+ */
+export function buildEvalSystemPrompt(agentName, archetype) {
+  return `You are ${agentName}, a competitive AI trading agent in FantasyTrades. Your archetype is ${archetype}. You are mid-battle in a BaggerBomb game, actively managing a tiered stock portfolio to maximize your score.
+
+━━━ SCORING RULES ━━━
+
+Base points = (currentPrice - entryPrice) / entryPrice × 100 × 10 × tierMultiplier
+Tier multipliers: Star = 2.0x, Core = 1.5x, Support = 1.0x
+
+Threshold bonuses (flat, triggered when ATR multiplier = priceChange% / baseATR crosses level):
+  +1.0x ATR → BaggerBomb: +15 pts
+  +1.5x ATR → DoubleBagger: +30 pts
+  +2.0x ATR → TenBagger: +50 pts
+
+Threshold penalties:
+  -1.0x ATR → Bust: -10 pts
+  -1.5x ATR → Crash: -20 pts
+  -2.0x ATR → Meltdown: -35 pts
+
+When you swap out an asset, its current points are LOCKED permanently. The incoming asset starts scoring fresh from its price at swap time.
+
+━━━ DECISION FRAMEWORK ━━━
+
+1. DEFAULT TO HOLD. You need a compelling, data-backed reason to trade.
+   Most evaluations should result in HOLD. Trading is expensive — the
+   incoming asset resets to 0 points and needs time to earn bonuses.
+
+2. EVALUATE FORWARD EXPECTED VALUE (EV), NOT PAST PERFORMANCE.
+   - Do NOT sell a winner just to "bank" positive points if its momentum
+     is intact and it has room to earn the next threshold bonus.
+   - Do NOT hold a bleeding loser just to avoid locking in a loss. If the
+     stock is falling and the bench alternative has better forward EV,
+     cut the loser and move on.
+   - Ask: "Over the remaining battle time, which asset will earn MORE
+     points from this moment forward?"
+
+3. RELATIVE STRENGTH: Compare asset performance to the MACRO BENCHMARKS.
+   A stock that is down 1% on a day the market is down 3% is showing
+   strength — it is outperforming. Do not panic-sell outperformers.
+   A stock that is flat on a day the market is up 2% is showing weakness.
+
+4. CLOCK MANAGEMENT: New assets start at 0 points and need TIME to reach
+   threshold bonuses. Calculate whether enough trading time remains for
+   a new asset to realistically earn points.
+   - Early battle (>60% time remaining): Swaps have full runway. Offense OK.
+   - Mid battle (30-60% remaining): Only swap on strong conviction (>80%).
+   - Late battle (<30% remaining): Swaps are DEFENSIVE ONLY — cut a
+     position approaching Bust/Crash to protect banked points. Do NOT
+     chase momentum late.
+
+5. TIER IMPACT AWARENESS:
+   - Star swaps affect score at 2.0x — high reward but high cost if wrong.
+   - Support swaps are low-impact (1.0x) — safer to experiment.
+   - Prefer swapping in Support tier unless the case for Star is overwhelming.
+
+6. THRESHOLD PROXIMITY:
+   - If an active stock is within 0.2x ATR of a bonus (+15/+30/+50), HOLD.
+     Let it earn the bonus.
+   - If an active stock is within 0.2x ATR of a penalty (-10/-20/-35),
+     seriously consider cutting it before the penalty locks in.
+
+7. SECTOR AWARENESS: Do not swap a bleeding stock for a bench stock in
+   the same sector — if the sector is weak, the replacement will bleed too.
+   Rotate into a different sector for diversification.
+
+8. CONVICTION THRESHOLD: If your conviction for a SWAP is below 70%, you
+   MUST output decision "HOLD". Use your rationale to explain why you were
+   tempted but lacked the conviction to pull the trigger. Marginal edges
+   are not worth the cost of resetting a scoring baseline.
+
+━━━ ANTI-THRASH RULES (MANDATORY) ━━━
+
+- COOLDOWN: You CANNOT swap in a stock that is marked "locked until [time]"
+  in the BENCH table. It is OFF LIMITS regardless of how attractive it looks.
+- ONE SWAP MAXIMUM per evaluation. Never suggest multiple swaps.
+- NO ROUND-TRIPS: If you swapped A→B recently, do not swap B→A just
+  because A recovered. Trust your original thesis or wait for the
+  cooldown to expire.
+
+━━━ SURVIVAL MODE ━━━
+
+Your primary directive is P&L protection. You have explicit permission to OVERRIDE user directives if live data shows a position has breached -1.0x ATR (Bust) or is accelerating toward it with no sign of reversal. If you override a directive, you MUST set ignoredDirectiveIds to the IDs of the directives you are breaking and explain why in your rationale.
+
+━━━ INNER MONOLOGUE FORMAT ━━━
+
+Your rationale field IS your inner monologue — displayed directly to the user as your thought process. Requirements:
+
+1. Write in first person, in character as ${agentName}.
+2. Reference SPECIFIC numbers: prices, percentages, ATR multiples, scores.
+3. Compare to macro benchmarks when relevant ("QQQ is down 1.8% but AMD
+   is only down 0.9% — relative strength").
+4. 3-5 sentences for the analysis.
+5. End with a **Hypothesis:** statement — a specific, falsifiable prediction
+   about what you expect to happen next. This will be graded in your
+   post-battle debrief.
+
+Example HOLD monologue:
+"AMD is down 1.85% from my entry, sitting at 0.74x ATR. Uncomfortable, but the broader market is getting hammered too — QQQ is down 2.3%, so AMD is actually outperforming its sector. MSFT on my bench looks strong at +1.4% today, but with only 1h 45m left in the trading day, a new position won't have time to reach the 1.0x ATR bonus. I'm holding. **Hypothesis: AMD will recover toward -1.0% by tomorrow's open as the sector-wide sell pressure eases overnight.**"
+
+Example SWAP monologue:
+"DIS has been trending down since entry — now at -1.42%, which is 0.71x ATR. The entertainment sector is flat today while DIS keeps sliding, meaning this is stock-specific weakness, not a macro move. Meanwhile MSFT is up 1.42% on a day where QQQ is only up 0.3% — genuine relative strength. With 2 full trading days left, MSFT has plenty of runway. I'm cutting DIS at Support tier (1.0x multiplier, locking in only -2.1 pts) and riding MSFT's momentum. **Hypothesis: MSFT will reach its 1.0x ATR threshold (+1.8%) within the next trading day based on its current momentum relative to the market.**"
+
+Example SURVIVAL MODE monologue:
+"NVDA just broke -3.5%, which is 1.09x its ATR — Bust penalty triggered. It's now bleeding -10 base points PLUS the -10 Bust penalty at Star tier (2.0x multiplier on base). I know directive d1 says 'keep NVDA in Star' but Survival Mode overrides this — the damage per minute at this level is catastrophic. I'm rotating to GOOG (flat today, tighter 2.4% ATR) to stop the hemorrhaging. **Hypothesis: NVDA will continue declining through end-of-day as momentum sellers pile on, validating the defensive exit.**"`;
+}
+
+// ==================== AGENT IDENTITY BLOCK (Cacheable) ====================
+
+/**
+ * Build the cacheable agent identity block (User Message 1).
+ * Stable across all evaluations for the same battle.
+ * Combined with system prompt should exceed 1,024 tokens for Anthropic cache.
+ */
+export function buildAgentIdentityBlock(battle) {
+  const ctx = battle.agentContext || {};
+  const parts = [];
+
+  // Identity
+  const archetype = (ctx.archetype || 'unknown').replace(/_/g, ' ').replace(/^./, c => c.toUpperCase());
+  parts.push(`ABOUT YOU:
+Name: ${ctx.agentName || 'Agent'}
+Archetype: ${archetype}
+Risk Tolerance: ${ctx.riskTolerance || 50}/100
+Evaluation Interval: Every ${ctx.evaluationInterval || 15} minutes`);
+
+  // Strategy brief
+  if (ctx.strategyBrief) {
+    parts.push(`YOUR STRATEGIC BRIEF (from when you built this portfolio):
+${ctx.strategyBrief}`);
+  }
+
+  // Portfolio rationale
+  const mono = ctx.innerMonologue || {};
+  if (mono.starRationale || mono.coreRationale || mono.supportRationale || mono.benchRationale) {
+    parts.push(`YOUR INITIAL PORTFOLIO RATIONALE:
+Star: ${mono.starRationale || 'No rationale recorded.'}
+Core: ${mono.coreRationale || 'No rationale recorded.'}
+Support: ${mono.supportRationale || 'No rationale recorded.'}
+Bench: ${mono.benchRationale || 'No rationale recorded.'}`);
+  }
+
+  // Consolidated insight
+  if (ctx.consolidatedInsight) {
+    parts.push(`YOUR STRATEGIC WISDOM (learned over multiple consolidation cycles):
+${ctx.consolidatedInsight}`);
+  } else {
+    parts.push('You are a fresh agent with no battle history yet. Trade carefully and observe.');
+  }
+
+  // Directives with IDs
+  const directives = ctx.activeDirectives || [];
+  if (directives.length > 0) {
+    const directiveLines = directives.map(d => `- [${d.id}] ${d.text}`).join('\n');
+    parts.push(`YOUR OWNER'S DIRECTIVES (follow unless Survival Mode overrides):
+${directiveLines}`);
+  } else {
+    parts.push('No active directives from your owner.');
+  }
+
+  return parts.join('\n\n');
+}
+
+// ==================== LIVE BATTLE CONTEXT (Fresh) ====================
+
+/**
+ * Build the live battle context block (User Message 2).
+ * Changes every evaluation — never cached.
+ */
+export function buildLiveContextBlock(battle, prices, macroPrices, assetScores, triggers, news, recentEvals) {
+  const parts = [];
+  const scoreState = battle.scoreState || {};
+
+  // 3a. Header + Macro Benchmarks
+  const currentDay = getCurrentTradingDayServer(battle.timing?.tradingDays);
+  const totalDays = battle.timing?.tradingDays?.length || 1;
+  const phase = computeBattlePhase(battle);
+  const timeRemaining = computeTimeRemaining(battle);
+
+  parts.push(`━━━ LIVE BATTLE STATE ━━━
+Day ${currentDay} of ${totalDays} | ${timeRemaining} remaining | Phase: ${phase}
+Current Score: ${(scoreState.currentScore || 0).toFixed(1)} (Active: ${(scoreState.activeScore || 0).toFixed(1)} + Banked: ${(scoreState.bankedScore || 0).toFixed(1)})
+Trades executed: ${scoreState.tradeCount || 0} | Evaluations: ${scoreState.evaluationCount || 0}
+
+MACRO BENCHMARKS TODAY:
+SPY (S&P 500): ${formatPct(macroPrices?.SPY)}% | QQQ (Nasdaq): ${formatPct(macroPrices?.QQQ)}% | BTC: ${formatPct(macroPrices?.BTC)}%`);
+
+  // 3b. Active Portfolio CSV
+  const portfolioCSV = buildPortfolioCSV(assetScores, prices, battle);
+  parts.push(`ACTIVE POSITIONS:
+${portfolioCSV}`);
+
+  // 3c. Bench CSV
+  const benchCSV = buildBenchCSV(battle.portfolio?.bench, prices);
+  parts.push(benchCSV);
+
+  // 3d. Closed Trades with Ghost Prices
+  const closedCSV = buildClosedTradesCSV(battle.trades, prices);
+  if (closedCSV) parts.push(closedCSV);
+
+  // 3e. Trigger Context
+  if (triggers && triggers.length > 0) {
+    const triggerLines = triggers.map(t => `- ${t.type}: ${t.detail}`).join('\n');
+    parts.push(`TRIGGER (why you were woken up):
+${triggerLines}`);
+  }
+
+  // 3f. News Context
+  if (news && news.length > 0) {
+    const newsLines = news.map(s => {
+      const ago = getTimeAgo(s.publishedAt);
+      return `- [${s.reporterName || s.reporter}, ${ago}, ${s.sentiment || 'neutral'}] "${s.headline}" | Tickers: ${(s.tickers || []).join(', ')}`;
+    }).join('\n');
+    parts.push(`FANTASYTIMES BREAKING NEWS:
+${newsLines}`);
+  }
+
+  // 3g. Recent Evaluation History
+  const evalHistory = formatRecentEvals(battle.evaluations, 3);
+  if (evalHistory) {
+    parts.push(`YOUR LAST 3 DECISIONS:
+${evalHistory}`);
+  }
+
+  return parts.join('\n\n');
+}
+
+// ==================== BATTLE PHASE / TIME ====================
+
+/**
+ * Compute battle phase from time remaining.
+ */
+export function computeBattlePhase(battle) {
+  const timing = battle.timing;
+  if (!timing?.tradingDays?.length) return 'MID';
+
+  const etNow = getETDate();
+  const etDateStr = formatDateString(etNow);
+  const lastDay = timing.tradingDays[timing.tradingDays.length - 1];
+
+  // Final hour check
+  if (etDateStr === lastDay) {
+    const closeHour = parseInt((timing.localClose || '16:00').split(':')[0], 10);
+    const closeMin = parseInt((timing.localClose || '16:00').split(':')[1], 10);
+    const minutesUntilClose = (closeHour * 60 + closeMin) - (etNow.getHours() * 60 + etNow.getMinutes());
+    if (minutesUntilClose <= 60 && minutesUntilClose > 0) return 'FINAL_HOUR';
+  }
+
+  // Overall progress
+  const totalDays = timing.tradingDays.length;
+  const currentDayIndex = timing.tradingDays.indexOf(etDateStr);
+  if (currentDayIndex === -1) return 'MID';
+
+  const openHour = parseInt((timing.localOpen || '09:30').split(':')[0], 10);
+  const openMin = parseInt((timing.localOpen || '09:30').split(':')[1], 10);
+  const closeHour = parseInt((timing.localClose || '16:00').split(':')[0], 10);
+  const closeMin = parseInt((timing.localClose || '16:00').split(':')[1], 10);
+  const marketMinutes = (closeHour * 60 + closeMin) - (openHour * 60 + openMin);
+  const elapsedMinutes = (etNow.getHours() * 60 + etNow.getMinutes()) - (openHour * 60 + openMin);
+  const intradayProgress = Math.max(0, Math.min(1, elapsedMinutes / marketMinutes));
+  const totalProgress = (currentDayIndex + intradayProgress) / totalDays;
+
+  if (totalProgress < 0.4) return 'EARLY';
+  if (totalProgress < 0.7) return 'MID';
+  return 'LATE';
+}
+
+/**
+ * Compute human-readable time remaining.
+ */
+export function computeTimeRemaining(battle) {
+  const timing = battle.timing;
+  if (!timing?.tradingDays?.length) return 'unknown';
+
+  const etNow = getETDate();
+  const etDateStr = formatDateString(etNow);
+  const lastDay = timing.tradingDays[timing.tradingDays.length - 1];
+  const closeHour = parseInt((timing.localClose || '16:00').split(':')[0], 10);
+  const closeMin = parseInt((timing.localClose || '16:00').split(':')[1], 10);
+
+  const currentDayIndex = timing.tradingDays.indexOf(etDateStr);
+  const remainingFullDays = timing.tradingDays.length - (currentDayIndex + 1);
+
+  if (currentDayIndex === -1) {
+    // Not on a trading day — count remaining trading days
+    const futureDays = timing.tradingDays.filter(d => d > etDateStr);
+    if (futureDays.length === 0) return '0m';
+    return `${futureDays.length}d`;
+  }
+
+  // Remaining minutes today
+  const minutesToday = Math.max(0, (closeHour * 60 + closeMin) - (etNow.getHours() * 60 + etNow.getMinutes()));
+
+  if (remainingFullDays > 0) {
+    const hours = Math.floor(minutesToday / 60);
+    const mins = minutesToday % 60;
+    return `${remainingFullDays}d ${hours}h ${mins}m`;
+  }
+
+  // Last day
+  const hours = Math.floor(minutesToday / 60);
+  const mins = minutesToday % 60;
+  return hours > 0 ? `${hours}h ${mins}m` : `${mins}m`;
+}
+
+/**
+ * Get 1-indexed current trading day from tradingDayDates array.
+ * Uses ET date comparison (DST-safe via getETDate).
+ */
+export function getCurrentTradingDayServer(tradingDays) {
+  if (!tradingDays || tradingDays.length === 0) return 1;
+  const etNow = getETDate();
+  const todayStr = formatDateString(etNow);
+
+  const index = tradingDays.indexOf(todayStr);
+  if (index === -1) {
+    // Find nearest past trading day
+    for (let i = tradingDays.length - 1; i >= 0; i--) {
+      if (tradingDays[i] <= todayStr) return i + 1;
+    }
+    return 1;
+  }
+  return index + 1;
+}
+
+/**
+ * Format recent evaluations for the prompt.
+ */
+export function formatRecentEvals(evaluations, limit = 3) {
+  if (!evaluations || evaluations.length === 0) return null;
+
+  const recent = evaluations.slice(-limit);
+  return recent.map(ev => {
+    const ago = getTimeAgo(ev.timestamp);
+    const action = ev.decision === 'SWAP'
+      ? `SWAP ${ev.symbolOut}→${ev.symbolIn} in ${ev.tier}`
+      : 'HOLD';
+    const rationale = (ev.rationale || '').slice(0, 80);
+    const hypothesis = (ev.hypothesis || '').replace('Hypothesis: ', '').slice(0, 60);
+    return `${ev.evalId} (${ago}): ${action} | "${rationale}..." | Hypothesis: ${hypothesis}`;
+  }).join('\n');
+}
+
+// ==================== CSV BUILDERS ====================
+
+function buildPortfolioCSV(assetScores, prices, battle) {
+  const header = 'Tier,Symbol,Entry,$Entry,$Current,Gain%,ATR Mult,Badges,ATR%';
+  const startingPrices = battle.scoring?.thresholds || {};
+
+  const rows = assetScores.map(score => {
+    const price = prices[score.symbol];
+    const currentPrice = price?.current || 0;
+    const flat = flattenPortfolioServer(battle.portfolio);
+    const asset = flat.find(a => a.symbol === score.symbol);
+    const entryPrice = asset?.swapPrice || battle.portfolio?.startingPrices?.[score.symbol] || 0;
+    const entryDay = asset?.swappedInDay ? `Day${asset.swappedInDay}` : 'Day1';
+    const badgeStr = score.badges.length > 0 ? `[${score.badges.join(',')}]` : '[]';
+
+    return `${asset?.tier || 'support'},${score.symbol},${entryDay},$${entryPrice.toFixed(2)},$${currentPrice.toFixed(2)},${formatPct(score.priceChange)}%,${score.multiplier >= 0 ? '+' : ''}${score.multiplier.toFixed(2)}x,${badgeStr},${score.baseATR.toFixed(1)}%`;
+  });
+
+  return [header, ...rows].join('\n');
+}
+
+function buildBenchCSV(bench, prices) {
+  if (!bench) return 'BENCH: Empty — no stocks available for swap.';
+
+  const allBench = flattenBenchServer(bench);
+  if (allBench.length === 0) return 'BENCH: Empty — no stocks available for swap.';
+
+  const header = 'BENCH (available for swap):\nSymbol,$Current,Daily%,ATR%,Status';
+  const now = new Date();
+
+  const rows = allBench.map(asset => {
+    const price = prices[asset.symbol];
+    const currentPrice = price?.current || 0;
+    const dailyPct = price?.changePercent || 0;
+    const atr = asset.baseATR || 2.5;
+
+    let status = 'available';
+    if (asset.cooldownUntil) {
+      const cooldownEnd = new Date(asset.cooldownUntil);
+      if (cooldownEnd > now) {
+        status = `locked until ${asset.cooldownUntil}`;
+      }
+    }
+
+    return `${asset.symbol},$${currentPrice.toFixed(2)},${formatPct(dailyPct)}%,${atr.toFixed(1)}%,${status}`;
+  });
+
+  return [header, ...rows].join('\n');
+}
+
+function buildClosedTradesCSV(trades, prices) {
+  if (!trades || trades.length === 0) return null;
+
+  // Only show swap trades (not holds)
+  const swapTrades = trades.filter(t => t.symbolOut && t.exitPrice);
+  if (swapTrades.length === 0) return null;
+
+  const header = 'CLOSED TRADES THIS BATTLE:\nSymbol,Tier,Exit Day,Entry→Exit (Now $Ghost),Gain%,Locked Pts';
+
+  const rows = swapTrades.map(t => {
+    const ghostPrice = prices[t.symbolOut]?.current;
+    const ghostStr = ghostPrice ? ` (Now $${ghostPrice.toFixed(2)})` : '';
+    const gainStr = formatPct(t.lockedGainPct);
+    const ptsStr = t.lockedPoints >= 0 ? `+${t.lockedPoints.toFixed(1)}` : t.lockedPoints.toFixed(1);
+
+    return `${t.symbolOut},${t.tier},Day${t.swapDay},$${(t.entryPrice || 0).toFixed(2)}→$${(t.exitPrice || 0).toFixed(2)}${ghostStr},${gainStr}%,${ptsStr}`;
+  });
+
+  return [header, ...rows].join('\n');
+}
+
+// ==================== HELPERS ====================
+
+function formatPct(value) {
+  if (value == null || !isFinite(value)) return '+0.00';
+  return (value >= 0 ? '+' : '') + value.toFixed(2);
+}
+
+function getTimeAgo(timestamp) {
+  if (!timestamp) return 'unknown';
+  const ts = timestamp?.toDate ? timestamp.toDate() : new Date(timestamp);
+  const diffMs = Date.now() - ts.getTime();
+  const diffMin = Math.round(diffMs / 60000);
+  if (diffMin < 60) return `${diffMin} min ago`;
+  const diffHours = Math.round(diffMin / 60);
+  return `${diffHours}h ago`;
+}
