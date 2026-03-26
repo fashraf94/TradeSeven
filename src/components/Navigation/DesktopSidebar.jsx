@@ -10,7 +10,7 @@ const NAV_ITEMS = [
   { id: 'compete', label: 'Compete', Icon: Swords, screen: 'dashboard' },
   { id: 'news', label: 'News', Icon: Newspaper, screen: 'fantasytimes' },
   { id: 'agent', label: 'Agent', Icon: Bot, screen: 'agent' },
-  { id: 'academy', label: 'Academy', Icon: GraduationCap, screen: null },
+  { id: 'academy', label: 'Academy', Icon: GraduationCap, screen: null, disabled: true },
   { id: 'search', label: 'Search', Icon: Search, screen: 'search' },
   { id: 'history', label: 'History', Icon: Clock, screen: 'battleHistory' },
   { id: 'settings', label: 'Settings', Icon: Settings, screen: 'profile' },
@@ -18,11 +18,12 @@ const NAV_ITEMS = [
 
 function NavItem({ item, active, collapsed, hovered, onHover, onLeave, onClick, tokens, unreadCount }) {
   const [tooltipVisible, setTooltipVisible] = useState(false);
+  const isDisabled = item.disabled === true;
 
   return (
     <button
-      onClick={onClick}
-      onMouseEnter={() => { onHover(); if (collapsed) setTooltipVisible(true); }}
+      onClick={isDisabled ? undefined : onClick}
+      onMouseEnter={() => { if (!isDisabled) onHover(); if (collapsed) setTooltipVisible(true); }}
       onMouseLeave={() => { onLeave(); setTooltipVisible(false); }}
       style={{
         display: 'flex',
@@ -34,19 +35,21 @@ function NavItem({ item, active, collapsed, hovered, onHover, onLeave, onClick, 
         borderLeft: collapsed ? 'none' : (active ? `3px solid ${tokens.teal}` : '3px solid transparent'),
         background: active
           ? 'rgba(94,234,212,0.08)'
-          : hovered
+          : hovered && !isDisabled
             ? 'rgba(255,255,255,0.03)'
             : 'transparent',
         boxShadow: active ? 'inset 0 0 20px rgba(94,234,212,0.03)' : 'none',
         color: active ? tokens.teal : tokens.textMuted,
         fontSize: '14px',
         fontWeight: '500',
-        cursor: 'pointer',
+        cursor: isDisabled ? 'default' : 'pointer',
         width: '100%',
         textAlign: 'left',
         position: 'relative',
         transition: 'background 0.15s ease',
         justifyContent: collapsed ? 'center' : 'flex-start',
+        opacity: isDisabled ? 0.35 : 1,
+        pointerEvents: isDisabled ? 'none' : 'auto',
       }}
     >
       <div style={{
@@ -67,6 +70,20 @@ function NavItem({ item, active, collapsed, hovered, onHover, onLeave, onClick, 
       }}>
         {item.label}
       </span>
+      {isDisabled && !collapsed && (
+        <span style={{
+          fontSize: '8px',
+          fontWeight: 700,
+          color: '#5eead4',
+          background: 'rgba(94,234,212,0.15)',
+          padding: '2px 5px',
+          borderRadius: '6px',
+          lineHeight: 1,
+          marginLeft: 'auto',
+        }}>
+          Soon
+        </span>
+      )}
       {item.id === 'news' && unreadCount > 0 && (
         <span style={{
           position: 'absolute',
