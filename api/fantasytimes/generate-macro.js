@@ -13,6 +13,7 @@ import {
 } from '../_utils/fantasyTimesPrompts.js';
 import { getDefaultVisual, shouldOverrideVisual, callArtDirector } from '../_utils/fantasyTimesVisuals.js';
 import { checkEarningsAttribution } from '../_utils/fantasyTimesConsensus.js';
+import { fetchMarketCatalysts } from '../_utils/sonarCatalystFetch.js';
 
 export const config = { maxDuration: 30 };
 
@@ -68,21 +69,9 @@ export default async function handler(req, res) {
   try {
     const db = getFirebaseAdmin();
 
-    // ── Fetch general market news (not per-ticker) ──────────────────
-    let marketHeadlines = [];
-    try {
-      const newsUrl = `https://eodhd.com/api/news?limit=3&api_token=${process.env.EODHD_API_KEY}&fmt=json`;
-      const newsRes = await fetch(newsUrl);
-      if (newsRes.ok) {
-        const newsData = await newsRes.json();
-        marketHeadlines = (newsData || [])
-          .slice(0, 3)
-          .map((n) => n.title || n.headline)
-          .filter(Boolean);
-      }
-    } catch (e) {
-      logError('Failed to fetch market news', { error: e.message });
-    }
+    // ── Fetch catalyst context via Sonar (EODHD fallback) ──────────
+    const catalystData = await fetchMarketCatalysts(triggers);
+    logInfo('Catalyst fetched', { source: catalystData.fallback ? 'eodhd' : 'sonar', hasText: !!catalystData.catalysts });
 
     // ── Build user message ──────────────────────────────────────────
     const triggerLines = triggers.map(
@@ -104,10 +93,12 @@ export default async function handler(req, res) {
         ? `- Sector breakdown: ${JSON.stringify(ctx.sectorBreakdown)}`
         : '',
       '',
-      'MARKET HEADLINES:',
-      marketHeadlines.length > 0
-        ? marketHeadlines.map((h, i) => `${i + 1}. ${h}`).join('\n')
-        : 'No recent headlines available.',
+      'MARKET CATALYST CONTEXT:',
+      catalystData.catalysts
+        ? catalystData.catalysts
+        : catalystData.headlines.length > 0
+          ? catalystData.headlines.map((h, i) => `${i + 1}. ${h}`).join('\n')
+          : 'No recent catalyst context available.',
       '',
       'Write a Macro Alert story covering this broad market move. Use the publish_macro tool.',
     ]
@@ -199,7 +190,8 @@ export default async function handler(req, res) {
         dominantDirection: ctx.dominantDirection || 'mixed',
         avgChange: ctx.avgChange || 0,
       },
-      newsContext: marketHeadlines,
+      newsContext: catalystData.raw || catalystData.headlines,
+      catalystSource: catalystData.fallback ? 'eodhd' : 'sonar',
       generatedBy: REPORTER_PROFILES.alex.model,
       batchId: null,
       publishedAt: now,

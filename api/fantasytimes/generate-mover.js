@@ -15,6 +15,7 @@ import {
 import { getDefaultVisual, shouldOverrideVisual, callArtDirector } from '../_utils/fantasyTimesVisuals.js';
 import { getClaimsForReporter, formatClaimsForPrompt } from '../_utils/ingestedClaims.js';
 import { appendCatalyst, checkEarningsAttribution } from '../_utils/fantasyTimesConsensus.js';
+import { fetchTickerCatalysts } from '../_utils/sonarCatalystFetch.js';
 
 export const config = { maxDuration: 30 };
 
@@ -111,22 +112,11 @@ export async function generateAlexMoverStory({
   }
   logInfo('Step 2: Dedup check passed', { symbol: upperSymbol });
 
-  // ── Fetch EODHD news headlines ──────────────────────────────────
-  let newsHeadlines = [];
-  try {
-    const newsUrl = `https://eodhd.com/api/news?s=${upperSymbol}.US&limit=5&api_token=${process.env.EODHD_API_KEY}&fmt=json`;
-    const newsRes = await fetch(newsUrl);
-    if (newsRes.ok) {
-      const newsData = await newsRes.json();
-      newsHeadlines = (newsData || [])
-        .slice(0, 5)
-        .map((n) => n.title || n.headline)
-        .filter(Boolean);
-    }
-  } catch (e) {
-    logError('Failed to fetch EODHD news, continuing without', { error: e.message });
-  }
-  logInfo('Step 3: News fetched', { headlineCount: newsHeadlines.length });
+  // ── Fetch catalyst context via Sonar (EODHD fallback) ──────────
+  const resolvedDir = direction || (percentChange >= 0 ? 'up' : 'down');
+  const companyName = STOCK_DATA[upperSymbol]?.name || '';
+  const catalystData = await fetchTickerCatalysts(upperSymbol, companyName, percentChange, resolvedDir);
+  logInfo('Step 3: Catalyst fetched', { source: catalystData.fallback ? 'eodhd' : 'sonar', hasText: !!catalystData.catalysts });
 
   // ── Load knowledge context (Tier 1 stocks) ─────────────────────
   let knowledgeExcerpt = '';
@@ -161,10 +151,14 @@ export async function generateAlexMoverStory({
     `- ATR Multiple: ${Number(atrMultiple).toFixed(1)}x (triggered at 1.5x)`,
     `- Sector: ${sector}`,
     '',
-    `RECENT NEWS HEADLINES FOR ${upperSymbol}:`,
-    newsHeadlines.length > 0
-      ? newsHeadlines.map((h, i) => `${i + 1}. ${h}`).join('\n')
-      : 'No recent headlines available. Focus on technicals.',
+    `NEWS & CATALYST CONTEXT FOR ${upperSymbol}:`,
+    catalystData.catalysts
+      ? catalystData.catalysts
+      : catalystData.headlines.length > 0
+        ? catalystData.headlines.map((h, i) => `${i + 1}. ${h}`).join('\n')
+        : 'No recent catalyst context available. Focus on technicals.',
+    '',
+    'Use this context to explain WHY the stock moved. Be specific about the actual catalysts — name court cases, executive actions, policy changes, analyst upgrades/downgrades, or company announcements. Do not default to generic macro narratives if specific catalysts are available.',
     '',
     knowledgeExcerpt ? `COMPANY CONTEXT:\n${knowledgeExcerpt}\n` : '',
     `Write a Market Pulse story about this move. Use the publish_story tool.`,
@@ -284,7 +278,8 @@ Match your voice to this tier. Set baggerTier to "${baggerTier}" in your tool ca
       atrMultiple: Number(atrMultiple),
       direction: direction || (percentChange >= 0 ? 'up' : 'down'),
     },
-    newsContext: newsHeadlines,
+    newsContext: catalystData.raw || catalystData.headlines,
+    catalystSource: catalystData.fallback ? 'eodhd' : 'sonar',
     generatedBy: REPORTER_PROFILES.alex.model,
     batchId: null,
     publishedAt: now,
