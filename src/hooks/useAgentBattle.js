@@ -10,6 +10,7 @@ import { db } from '../firebase/config';
  * @returns {{ battle: Object|null, statusFeed: Array, loading: boolean, error: string|null }}
  */
 const useAgentBattle = (agentBattleId) => {
+  console.log('[useAgentBattle] Subscribing to:', agentBattleId);
   const [battle, setBattle] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);

@@ -75,7 +75,7 @@ function buildWhyUserPrompt({ symbol, name, change, price, open, high, low, clos
 
   // Calibrate depth based on move magnitude
   if (Math.abs(change) >= 3) {
-    prompt += ` This is a significant move. Identify the specific catalyst — was it earnings, guidance, an analyst action, sector news, or a macro event? Provide detailed context.`;
+    prompt += ` This is a significant move. Identify the specific catalyst — was it earnings, guidance, an analyst action, a court decision, regulatory action, executive change, layoffs, M&A activity, or a company announcement? Include any breaking developments from the last 24 hours. Name exact events, not just macro themes.`;
   } else if (Math.abs(change) >= 1) {
     prompt += ` What is driving this move? Is it stock-specific or part of a broader sector/market trend?`;
   } else {
