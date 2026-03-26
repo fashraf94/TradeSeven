@@ -439,8 +439,8 @@ export default function StoryDetail({ story, onClose, isMobile, isDesktop }) {
         </span>
       </div>
 
-      {/* ── Expanded visual (280px) ── */}
-      {hasVisual && (
+      {/* ── Expanded visual (280px) — or ranking card for price_chart ── */}
+      {hasVisual && story.visualType !== 'price_chart' && (
         <div style={{
           borderRadius: 0,
           overflow: 'hidden',
@@ -451,6 +451,11 @@ export default function StoryDetail({ story, onClose, isMobile, isDesktop }) {
             visualConfig={story.visualConfig}
             size="expanded"
           />
+        </div>
+      )}
+      {story.visualType === 'price_chart' && primaryTicker && (
+        <div style={{ padding: isDesktop ? '16px 32px' : '12px 20px' }}>
+          <StockRankCard ticker={primaryTicker} />
         </div>
       )}
 
@@ -549,7 +554,7 @@ export default function StoryDetail({ story, onClose, isMobile, isDesktop }) {
         />
 
         {/* ── Rank cards ── */}
-        {showStockRank && <StockRankCard ticker={primaryTicker} />}
+        {showStockRank && story.visualType !== 'price_chart' && <StockRankCard ticker={primaryTicker} />}
         {showSectorRank && <SectorRankCard topSectors={story.topSectors} />}
 
         {/* ── Related tickers ── */}
