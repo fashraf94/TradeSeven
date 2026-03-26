@@ -8,6 +8,7 @@ import { calculate1v1PreviewData, getRemainingMs, buildDraftStandings } from './
 import AnimatedScore from '../shared/AnimatedScore';
 import TapGlint from '../shared/TapGlint';
 import { useBaggerBombCardScore } from '../../hooks/useBaggerBombCardScore';
+import { Bot } from 'lucide-react';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -60,7 +61,7 @@ function extractSnapshotScore(battle, role) {
 
 // ─── Sub-components ──────────────────────────────────────────────────────────
 
-function HeaderBar({ gameLabel, accentColor, remainingMs, isEnded }) {
+function HeaderBar({ gameLabel, accentColor, remainingMs, isEnded, isAgent }) {
   const timeText = formatTimeRemaining(remainingMs);
 
   return (
@@ -80,8 +81,9 @@ function HeaderBar({ gameLabel, accentColor, remainingMs, isEnded }) {
           boxShadow: `0 0 6px ${accentColor}80`,
           flexShrink: 0,
         }} />
+        {isAgent && <Bot size={14} color="#0d9488" style={{ flexShrink: 0 }} />}
         <span style={{
-          fontSize: 10, fontWeight: 700, color: accentColor,
+          fontSize: 10, fontWeight: 700, color: isAgent ? '#0d9488' : accentColor,
           textTransform: 'uppercase', letterSpacing: '0.05em',
         }}>
           {gameLabel}
@@ -250,6 +252,8 @@ export default function DashboardBattleCard({
   const isTraining = battle.isTrainingBattle || battleType === 'training' || battleType === 'trainingDraft';
   const isDraftBattle = isDraftType || (isTraining && battle.players?.length > 2);
 
+  const isAgent = battle.agentDeployed === true;
+
   const gameLabel = isDraftType ? 'SNAKE DRAFT' : (isBaggerBomb ? 'BAGGERBOMB' : 'CLASSIC');
   const fullLabel = isTraining ? `${gameLabel} AI` : gameLabel;
   const accentColor = isDraftType ? '#34d399' : (isBaggerBomb ? '#f59e0b' : '#5eead4');
@@ -380,8 +384,11 @@ export default function DashboardBattleCard({
         position: 'relative',
         overflow: 'hidden',
         background: tokens.bgCard,
-        backgroundImage: 'linear-gradient(180deg, rgba(255,255,255,0.03) 0%, transparent 40%)',
+        backgroundImage: isAgent
+          ? 'linear-gradient(135deg, rgba(13,148,136,0.08) 0%, transparent 60%), linear-gradient(180deg, rgba(255,255,255,0.03) 0%, transparent 40%)'
+          : 'linear-gradient(180deg, rgba(255,255,255,0.03) 0%, transparent 40%)',
         border: cardBorder,
+        borderLeft: isAgent ? '3px solid #0d9488' : undefined,
         borderRadius: 16,
         boxShadow: cardShadow,
         cursor: 'pointer',
@@ -391,6 +398,7 @@ export default function DashboardBattleCard({
       <HeaderBar
         gameLabel={fullLabel}
         accentColor={accentColor}
+        isAgent={isAgent}
         remainingMs={remainingMs}
         isEnded={isEnded}
       />
