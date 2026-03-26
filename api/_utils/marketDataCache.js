@@ -582,6 +582,92 @@ async function fetchRealTimePrice(eohdSymbol, apiKey, result) {
 }
 
 // ============================================
+// EXPORT: fetchIntradayCandles
+// ============================================
+
+/**
+ * Fetch intraday OHLCV candles from EODHD for a single symbol.
+ * Returns candles in chronological order (oldest first) — ready for VWAP calculation.
+ *
+ * @param {string} symbol - Stock or crypto symbol (e.g., 'AAPL', 'BTC-USD.CC')
+ * @param {object} options
+ * @param {string} options.interval - Candle interval: '5m' (default), '1m', '1h'
+ * @param {number} options.hoursBack - How many hours of data to fetch (default: 8, covers full trading day)
+ * @returns {Array<{ datetime: string, open: number, high: number, low: number, close: number, volume: number }>}
+ */
+export async function fetchIntradayCandles(symbol, options = {}) {
+  const { interval = '5m', hoursBack = 8 } = options;
+  const apiKey = getApiKey();
+  const clean = getCleanSymbol(symbol);
+  const isCrypto = isCryptoSymbol(symbol);
+  const eohdSymbol = formatEODHDSymbol(clean, isCrypto);
+
+  const fromTs = Math.floor((Date.now() - hoursBack * 60 * 60 * 1000) / 1000);
+  const toTs = Math.floor(Date.now() / 1000);
+  const url = `${API_BASE}/intraday/${eohdSymbol}?api_token=${apiKey}&fmt=json&interval=${interval}&from=${fromTs}&to=${toTs}`;
+
+  console.log(`[MarketDataCache] Fetching intraday ${interval} for ${eohdSymbol}`);
+  const response = await fetch(url);
+
+  if (!response.ok) {
+    throw new Error(`EODHD intraday responded with ${response.status} for ${eohdSymbol}`);
+  }
+
+  const data = await response.json();
+  if (!Array.isArray(data) || data.length === 0) return [];
+
+  // EODHD returns oldest-first (chronological) — keep that order for VWAP
+  return data.map(d => ({
+    datetime: d.datetime || new Date(d.timestamp * 1000).toISOString(),
+    open: d.open,
+    high: d.high,
+    low: d.low,
+    close: d.close,
+    volume: d.volume || 0,
+  }));
+}
+
+/**
+ * Batch fetch intraday candles for multiple symbols with concurrency limiting.
+ * Returns a map of symbol → candles array.
+ *
+ * @param {string[]} symbols - Array of symbols
+ * @param {object} options - Same as fetchIntradayCandles options
+ * @returns {Object<string, Array>} Map of symbol → candles (empty array on failure)
+ */
+export async function fetchIntradayBatch(symbols, options = {}) {
+  const CONCURRENCY = 5;
+  const results = {};
+
+  for (let i = 0; i < symbols.length; i += CONCURRENCY) {
+    const batch = symbols.slice(i, i + CONCURRENCY);
+    const batchResults = await Promise.allSettled(
+      batch.map(async (symbol) => {
+        const candles = await fetchIntradayCandles(symbol, options);
+        return { symbol, candles };
+      })
+    );
+
+    for (const result of batchResults) {
+      if (result.status === 'fulfilled') {
+        results[result.value.symbol] = result.value.candles;
+      } else {
+        const sym = batch[batchResults.indexOf(result)];
+        console.warn(`[MarketDataCache] Intraday fetch failed for ${sym}:`, result.reason?.message);
+        results[sym] = [];
+      }
+    }
+
+    // Rate limiting between batches
+    if (i + CONCURRENCY < symbols.length) {
+      await new Promise(r => setTimeout(r, 200));
+    }
+  }
+
+  return results;
+}
+
+// ============================================
 // EXPORT: prefetchBatch
 // ============================================
 

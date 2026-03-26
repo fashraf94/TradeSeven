@@ -8,12 +8,13 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
 import { isMarketOpen } from '../_utils/marketSchedule.js';
-import { getStockAnalysisData } from '../_utils/marketDataCache.js';
+import { getStockAnalysisData, fetchIntradayBatch } from '../_utils/marketDataCache.js';
 import { findActiveAgentBattles } from '../_utils/agentBattleService.js';
 import {
   calculateAssetScoreServer,
   flattenPortfolioServer,
 } from '../_utils/agentScoring.js';
+import { calculateVWAP } from '../_utils/technicalCalculations.js';
 import {
   buildEvalSystemPrompt,
   buildAgentIdentityBlock,
@@ -224,11 +225,48 @@ async function processAgentBattle(db, battle, summary) {
     }
     scoreUpdate.thresholdHistory = updatedThresholdHistory;
 
+    // ---- Fetch intraday candles for VWAP computation ----
+    const momentumData = { vwap: {}, rankings: {} };
+    try {
+      const intradayMap = await fetchIntradayBatch(portfolioSymbols, { interval: '5m' });
+      for (const symbol of portfolioSymbols) {
+        const candles = intradayMap[symbol];
+        if (candles && candles.length > 0) {
+          const vwapResult = calculateVWAP(candles);
+          if (vwapResult) {
+            momentumData.vwap[symbol] = vwapResult;
+          }
+        }
+      }
+    } catch (err) {
+      console.warn(`${LOG_PREFIX} Intraday fetch failed for battle ${battle.id}:`, err.message);
+    }
+
+    // ---- Fetch stockRankings for bandwidth/NR7 data ----
+    try {
+      const rankingsDoc = await db.collection('indexIntelligence').doc('stockRankings').get();
+      if (rankingsDoc.exists) {
+        const rankingsData = rankingsDoc.data();
+        const stocksArray = rankingsData?.stocks || [];
+        for (const stock of stocksArray) {
+          if (portfolioSymbols.includes(stock.symbol)) {
+            momentumData.rankings[stock.symbol] = {
+              bBandwidthPercentile: stock.bBandwidthPercentile ?? null,
+              nr7Flag: stock.nr7Flag ?? false,
+              dailyRange: stock.dailyRange ?? null,
+            };
+          }
+        }
+      }
+    } catch (err) {
+      console.warn(`${LOG_PREFIX} Rankings fetch failed for battle ${battle.id}:`, err.message);
+    }
+
     // ---- Fetch news for trigger gate ----
     const news = await fetchRecentNews(db, portfolioSymbols);
 
     // ---- Evaluate triggers ----
-    const { shouldEvaluate, triggers } = evaluateTriggers(battle, assetScores, prices, news);
+    const { shouldEvaluate, triggers } = evaluateTriggers(battle, assetScores, prices, news, momentumData);
 
     if (!shouldEvaluate) {
       // No triggers — update scores and move on
@@ -265,7 +303,7 @@ async function processAgentBattle(db, battle, summary) {
               role: 'user',
               content: buildLiveContextBlock(
                 battle, prices, macroPrices, assetScores,
-                triggers, news, battle.evaluations
+                triggers, news, battle.evaluations, momentumData
               ),
             },
           ],

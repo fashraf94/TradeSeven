@@ -80,6 +80,20 @@ When you swap out an asset, its current points are LOCKED permanently. The incom
    tempted but lacked the conviction to pull the trigger. Marginal edges
    are not worth the cost of resetting a scoring baseline.
 
+━━━ INTRADAY MOMENTUM SIGNALS ━━━
+
+When provided, use these signals to refine your decisions:
+
+- VWAP DEVIATION: Price above VWAP = intraday bullish momentum. Price below VWAP =
+  intraday bearish momentum. Deviation >1.5% is significant.
+- BOLLINGER BANDWIDTH PERCENTILE: Low percentile (≤20th) = "squeeze" — volatility
+  contracted, breakout likely. High percentile (≥80th) = expanded volatility.
+  Squeezes on your active holdings suggest patience (breakout coming).
+  Squeezes on bench stocks suggest swap opportunity (catch the breakout).
+- NR7 (Narrowest Range 7 Days): When flagged, the stock's daily range is the
+  tightest in 7 days. This is a volatility contraction pattern — often precedes
+  a sharp directional move. Do NOT swap out NR7 stocks unless they're bleeding.
+
 ━━━ ANTI-THRASH RULES (MANDATORY) ━━━
 
 - COOLDOWN: You CANNOT swap in a stock that is marked "locked until [time]"
@@ -177,8 +191,19 @@ ${directiveLines}`);
 /**
  * Build the live battle context block (User Message 2).
  * Changes every evaluation — never cached.
+ *
+ * @param {Object} battle - Full agentBattle document
+ * @param {Object} prices - Price map
+ * @param {Object} macroPrices - Macro benchmark % changes
+ * @param {Object[]} assetScores - Scored active assets
+ * @param {Object[]} triggers - Fired triggers
+ * @param {Object[]} news - FantasyTimes stories
+ * @param {Object[]} recentEvals - Recent evaluations
+ * @param {Object} [momentumData] - Optional intraday momentum data
+ * @param {Object} [momentumData.vwap] - { symbol: { vwap, currentPrice, vwapDeviation } }
+ * @param {Object} [momentumData.rankings] - { symbol: { bBandwidthPercentile, nr7Flag, dailyRange } }
  */
-export function buildLiveContextBlock(battle, prices, macroPrices, assetScores, triggers, news, recentEvals) {
+export function buildLiveContextBlock(battle, prices, macroPrices, assetScores, triggers, news, recentEvals, momentumData) {
   const parts = [];
   const scoreState = battle.scoreState || {};
 
@@ -214,6 +239,14 @@ ${portfolioCSV}`);
     const triggerLines = triggers.map(t => `- ${t.type}: ${t.detail}`).join('\n');
     parts.push(`TRIGGER (why you were woken up):
 ${triggerLines}`);
+  }
+
+  // 3e2. Intraday Momentum Snapshot
+  if (momentumData) {
+    const momentumLines = buildMomentumSnapshot(assetScores, momentumData);
+    if (momentumLines) {
+      parts.push(momentumLines);
+    }
   }
 
   // 3f. News Context
@@ -439,4 +472,46 @@ function getTimeAgo(timestamp) {
   if (diffMin < 60) return `${diffMin} min ago`;
   const diffHours = Math.round(diffMin / 60);
   return `${diffHours}h ago`;
+}
+
+/**
+ * Build the intraday momentum snapshot for injection into the live context.
+ */
+function buildMomentumSnapshot(assetScores, momentumData) {
+  if (!momentumData) return null;
+
+  const { vwap, rankings } = momentumData;
+  const lines = [];
+
+  for (const score of assetScores) {
+    const sym = score.symbol;
+    const vwapInfo = vwap?.[sym];
+    const rankInfo = rankings?.[sym];
+
+    const parts = [];
+    if (vwapInfo && vwapInfo.vwapDeviation != null) {
+      const dev = vwapInfo.vwapDeviation;
+      parts.push(`VWAP: $${vwapInfo.vwap.toFixed(2)} (${dev >= 0 ? '+' : ''}${dev.toFixed(2)}%)`);
+    }
+    if (rankInfo?.bBandwidthPercentile != null) {
+      const bwPct = rankInfo.bBandwidthPercentile;
+      const squeezeLabel = bwPct <= 20 ? ' [SQUEEZE]' : bwPct >= 80 ? ' [EXPANDED]' : '';
+      parts.push(`BB Width: ${bwPct}th pctl${squeezeLabel}`);
+    }
+    if (rankInfo?.nr7Flag) {
+      parts.push('NR7: YES [CONTRACTION]');
+    }
+    if (rankInfo?.dailyRange != null) {
+      parts.push(`Range: $${rankInfo.dailyRange.toFixed(2)}`);
+    }
+
+    if (parts.length > 0) {
+      lines.push(`${sym}: ${parts.join(' | ')}`);
+    }
+  }
+
+  if (lines.length === 0) return null;
+
+  return `INTRADAY MOMENTUM SNAPSHOT:
+${lines.join('\n')}`;
 }

@@ -314,6 +314,71 @@ export function calculateVolumeProfile(volumes, period = 20) {
 }
 
 // ============================================
+// VWAP (Volume-Weighted Average Price)
+// ============================================
+
+/**
+ * Calculate VWAP from intraday OHLCV candles.
+ * @param {Array<{ high: number, low: number, close: number, volume: number }>} intradayCandles
+ *   Array of intraday candles (oldest first — chronological order)
+ * @returns {{ vwap: number, currentPrice: number, vwapDeviation: number }|null}
+ *   vwapDeviation is % above (+) or below (-) VWAP
+ */
+export function calculateVWAP(intradayCandles) {
+  if (!intradayCandles || intradayCandles.length === 0) return null;
+
+  let cumulativeTPV = 0; // cumulative(typicalPrice * volume)
+  let cumulativeVolume = 0;
+
+  for (const candle of intradayCandles) {
+    const typicalPrice = (candle.high + candle.low + candle.close) / 3;
+    const vol = candle.volume || 0;
+    cumulativeTPV += typicalPrice * vol;
+    cumulativeVolume += vol;
+  }
+
+  if (cumulativeVolume === 0) return null;
+
+  const vwap = cumulativeTPV / cumulativeVolume;
+  const currentPrice = intradayCandles[intradayCandles.length - 1].close;
+  const vwapDeviation = ((currentPrice - vwap) / vwap) * 100;
+
+  return {
+    vwap: Number(vwap.toFixed(4)),
+    currentPrice: Number(currentPrice.toFixed(4)),
+    vwapDeviation: Number(vwapDeviation.toFixed(4)),
+  };
+}
+
+// ============================================
+// NR7 (Narrowest Range of 7 Days)
+// ============================================
+
+/**
+ * Detect if the most recent daily range is the narrowest of the last 7 trading days.
+ * @param {number[]} highs - Array of high prices (newest first)
+ * @param {number[]} lows - Array of low prices (newest first)
+ * @returns {{ nr7: boolean, dailyRange: number, ranges: number[] }|null}
+ */
+export function calculateNR7(highs, lows) {
+  if (!highs || !lows || highs.length < 7 || lows.length < 7) return null;
+
+  const ranges = [];
+  for (let i = 0; i < 7; i++) {
+    ranges.push(highs[i] - lows[i]);
+  }
+
+  const todayRange = ranges[0];
+  const isNR7 = ranges.slice(1).every(r => todayRange <= r);
+
+  return {
+    nr7: isNR7,
+    dailyRange: Number(todayRange.toFixed(4)),
+    ranges: ranges.map(r => Number(r.toFixed(4))),
+  };
+}
+
+// ============================================
 // CONVENIENCE: ALL INDICATORS
 // ============================================
 
