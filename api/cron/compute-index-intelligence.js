@@ -11,6 +11,8 @@ import {
   calculateRSI,
   calculateMACD,
   calculateATR,
+  calculateBollingerBands,
+  calculateNR7,
 } from '../_utils/technicalCalculations.js';
 import {
   classifyRegime,
@@ -463,6 +465,12 @@ export default async function handler(req, res) {
         // ATR computation (for game-mode scoring)
         const atr = calculateATR(highs, lows, closes, 14);
 
+        // NR7 + daily range computation
+        const nr7Result = calculateNR7(highs, lows);
+
+        // Bollinger bandwidth (raw value — percentile computed after loop)
+        const bbResult = calculateBollingerBands(closes, 20, 2);
+
         const rsPercentile = rsPercentileMap[d.sym] ?? 50;
         const sectorRSPercentile = sectorRSMap[d.sym] ?? null;
         const scoreResult = computeTechnicalScore({
@@ -483,6 +491,9 @@ export default async function handler(req, res) {
           rs50: d.rs50 ? { value: d.rs50.value, change: d.rs50.change, percentile: 0 } : null,
           rsTrend: d.rsTrend,
           atrPercent: atr?.percent ?? null,
+          dailyRange: nr7Result?.dailyRange ?? null,
+          nr7Flag: nr7Result?.nr7 ?? false,
+          bBandwidth: bbResult?.bandwidth ?? null,
           ...scoreResult,
         });
       }
@@ -605,6 +616,18 @@ export default async function handler(req, res) {
           : 0.5;
       });
 
+      // Compute Bollinger bandwidth percentiles across all stocks
+      const bwValues = stockScores
+        .filter(s => s.bBandwidth != null)
+        .map(s => ({ sym: s.symbol, bw: s.bBandwidth }))
+        .sort((a, b) => a.bw - b.bw);
+      const bBandwidthPercentileMap = {};
+      bwValues.forEach((item, idx) => {
+        bBandwidthPercentileMap[item.sym] = bwValues.length > 1
+          ? Math.round((idx / (bwValues.length - 1)) * 100)
+          : 50;
+      });
+
       const rankingStocks = [];
       for (const tech of stockScores) {
         const fund = fundMap.get(tech.symbol);
@@ -662,11 +685,15 @@ export default async function handler(req, res) {
           sectorTechnicalRank: tech.sectorTechnicalRank || null,
           sectorTechnicalTotal: tech.sectorTechnicalTotal || null,
           compositeScore,
-          // Game-mode fit scores (NEW)
+          // Game-mode fit scores
           baggerBombFit: gameModes.baggerBombFit ?? null,
           snakeDraftFit: gameModes.snakeDraftFit ?? null,
           earningsGameFit: gameModes.earningsGameFit ?? null,
           atrPercentile: Math.round(atrPercentile * 100) / 100,
+          // Intraday momentum fields (Sprint 1)
+          dailyRange: tech.dailyRange ?? null,
+          nr7Flag: tech.nr7Flag ?? false,
+          bBandwidthPercentile: bBandwidthPercentileMap[tech.symbol] ?? null,
         };
 
         rankingStocks.push(stockEntry);

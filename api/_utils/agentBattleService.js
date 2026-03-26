@@ -110,6 +110,13 @@ export async function createAgentBattle(db, agentData, thresholds, startingPrice
 
     trades: [],
     evaluations: [],
+    statusFeed: [],
+
+    // Execution mode controls (Sprint 3)
+    executionMode: 'copilot',       // 'autopilot' | 'copilot' | 'manual'
+    pendingProposal: null,          // Set when Haiku proposes a swap in copilot/manual mode
+    proposalHistory: [],            // Resolved proposals (approved/vetoed/expired)
+    battleLedger: [],               // All user-agent interactions for Film Room review
 
     scoreState: {
       currentScore: 0,

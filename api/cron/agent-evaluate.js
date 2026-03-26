@@ -8,12 +8,14 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
 import { isMarketOpen } from '../_utils/marketSchedule.js';
-import { getStockAnalysisData } from '../_utils/marketDataCache.js';
+import { getStockAnalysisData, fetchIntradayBatch } from '../_utils/marketDataCache.js';
 import { findActiveAgentBattles } from '../_utils/agentBattleService.js';
 import {
   calculateAssetScoreServer,
   flattenPortfolioServer,
+  flattenBenchServer,
 } from '../_utils/agentScoring.js';
+import { calculateVWAP } from '../_utils/technicalCalculations.js';
 import {
   buildEvalSystemPrompt,
   buildAgentIdentityBlock,
@@ -24,11 +26,14 @@ import {
 import { TRADE_DECISION_TOOL } from '../_utils/agentEvalToolSchema.js';
 import { evaluateTriggers, fetchRecentNews } from '../_utils/agentTriggerGate.js';
 import { validateTradeDecision, executeSwapServer } from '../_utils/agentSwapExecution.js';
+import { classifyStockRegime, classifyMarketPosture } from '../_utils/agentRegimeClassifier.js';
+import { evaluateRisk, calculate5minSMA20, pickEmergencyReplacement, findPortfolioSlot } from '../_utils/agentRiskManager.js';
 
 export const config = { maxDuration: 60 };
 
 const LOG_PREFIX = '[AgentEval]';
 const EVALUATING_LOCK_TIMEOUT_MS = 120_000; // 2 minutes
+const TIME_BUDGET_MS = 50_000; // 50 seconds — leave 10s buffer for cleanup/response
 
 let anthropicClient = null;
 function getAnthropicClient() {
@@ -65,8 +70,16 @@ export default async function handler(req, res) {
 
     console.log(`${LOG_PREFIX} Found ${battles.length} active agent battle(s)`);
 
-    // ---- 4. Process each battle sequentially ----
+    // ---- 4. Process each battle sequentially (with time budget) ----
     for (const battle of battles) {
+      const elapsed = Date.now() - startTime;
+      if (elapsed > TIME_BUDGET_MS) {
+        const remaining = battles.length - summary.evaluated - summary.errors;
+        console.log(`${LOG_PREFIX} Time budget exceeded (${elapsed}ms). ${remaining} agent(s) deferred to next tick.`);
+        summary.skipped += remaining;
+        break;
+      }
+
       try {
         await processAgentBattle(db, battle, summary);
       } catch (err) {
@@ -224,17 +237,219 @@ async function processAgentBattle(db, battle, summary) {
     }
     scoreUpdate.thresholdHistory = updatedThresholdHistory;
 
+    // ---- Parallel data fetch: intraday + rankings + technicalScores + marketContext ----
+    const momentumData = { vwap: {}, rankings: {} };
+    const technicalScoresMap = {};
+    let marketContext = null;
+    let spyData = null;
+
+    const allTechSymbols = [...new Set([...portfolioSymbols, ...benchSymbols])];
+    const techRefs = allTechSymbols.map(s => db.collection('stockTechnicalScores').doc(s));
+
+    const [intradayResult, rankingsResult, techScoresResult, intelligenceResult] = await Promise.allSettled([
+      fetchIntradayBatch(portfolioSymbols, { interval: '5m' }),
+      db.collection('indexIntelligence').doc('stockRankings').get(),
+      techRefs.length > 0 ? db.getAll(...techRefs) : Promise.resolve([]),
+      db.getAll(
+        db.collection('indexIntelligence').doc('marketContext'),
+        db.collection('indexIntelligence').doc('SPY')
+      ),
+    ]);
+
+    // Process intraday candles → VWAP + 5min SMA20
+    if (intradayResult.status === 'fulfilled') {
+      const intradayMap = intradayResult.value;
+      for (const symbol of portfolioSymbols) {
+        const candles = intradayMap[symbol];
+        if (candles && candles.length > 0) {
+          const vwapResult = calculateVWAP(candles);
+          if (vwapResult) {
+            const sma20_5m = calculate5minSMA20(candles);
+            momentumData.vwap[symbol] = { ...vwapResult, sma20_5m };
+          }
+        }
+      }
+    } else {
+      console.warn(`${LOG_PREFIX} Intraday fetch failed:`, intradayResult.reason?.message);
+    }
+
+    // Process stockRankings → bandwidth/NR7
+    if (rankingsResult.status === 'fulfilled' && rankingsResult.value.exists) {
+      const stocksArray = rankingsResult.value.data()?.stocks || [];
+      for (const stock of stocksArray) {
+        if (portfolioSymbols.includes(stock.symbol) || benchSymbols.includes(stock.symbol)) {
+          momentumData.rankings[stock.symbol] = {
+            bBandwidthPercentile: stock.bBandwidthPercentile ?? null,
+            nr7Flag: stock.nr7Flag ?? false,
+            dailyRange: stock.dailyRange ?? null,
+          };
+        }
+      }
+    }
+
+    // Process stockTechnicalScores → regime classification input
+    if (techScoresResult.status === 'fulfilled') {
+      for (const doc of techScoresResult.value) {
+        if (doc.exists) technicalScoresMap[doc.id] = doc.data();
+      }
+    }
+
+    // Process marketContext + SPY index docs
+    if (intelligenceResult.status === 'fulfilled') {
+      const [mcDoc, spyDoc] = intelligenceResult.value;
+      if (mcDoc.exists) marketContext = mcDoc.data();
+      if (spyDoc.exists) spyData = spyDoc.data();
+    }
+
+    // ---- Regime classification ----
+    const marketPosture = (marketContext && spyData)
+      ? classifyMarketPosture(marketContext, spyData)
+      : 'selective';
+
+    const stockRegimes = {};
+    for (const symbol of allTechSymbols) {
+      const techScore = technicalScoresMap[symbol];
+      if (techScore) stockRegimes[symbol] = classifyStockRegime(techScore);
+    }
+
+    momentumData.regimes = stockRegimes;
+    momentumData.marketPosture = marketPosture;
+
+    // ---- Risk evaluation layer (runs BEFORE trigger gate) ----
+    const riskStatus = {};
+    const riskSwaps = [];
+    const lockedPositions = new Set();
+    const statusFeedEntries = [];
+    const vwapTicks = { ...(battle.cronState?.vwapTicks || {}) };
+
+    for (const score of assetScores) {
+      const asset = flatPortfolio.find(a => a.symbol === score.symbol);
+      const currentPrice = prices[score.symbol]?.current;
+      const entryPrice = asset?.swapPrice || startingPrices[score.symbol] || 0;
+      const vwapInfo = momentumData.vwap[score.symbol] || null;
+
+      // Update VWAP tick counter
+      if (vwapInfo && vwapInfo.vwapDeviation < 0) {
+        vwapTicks[score.symbol] = (vwapTicks[score.symbol] || 0) + 1;
+      } else {
+        vwapTicks[score.symbol] = 0;
+      }
+
+      const intradaySnapshot = vwapInfo ? {
+        vwap: vwapInfo.vwap,
+        vwapDeviation: vwapInfo.vwapDeviation,
+        sma20_5m: vwapInfo.sma20_5m || null,
+      } : null;
+
+      const riskResult = evaluateRisk(
+        { symbol: score.symbol, tier: asset?.tier, baseATR: score.baseATR },
+        currentPrice, entryPrice, score.baseATR,
+        intradaySnapshot,
+        { ticksBelowVwap: vwapTicks[score.symbol] }
+      );
+
+      riskStatus[score.symbol] = riskResult;
+
+      if (['EMERGENCY_SWAP', 'SWAP_OUT', 'TRAIL_STOP'].includes(riskResult.action)) {
+        riskSwaps.push({ score, asset, riskResult });
+      }
+      if (riskResult.action === 'LOCK') {
+        lockedPositions.add(score.symbol);
+      }
+    }
+
+    momentumData.riskStatus = riskStatus;
+
+    // ---- Execute risk-triggered swaps (no Haiku needed) ----
+    for (const { score, asset, riskResult } of riskSwaps) {
+      const allBench = flattenBenchServer(battle.portfolio?.bench);
+      const replacement = pickEmergencyReplacement(allBench, prices, asset?.isCrypto === true);
+
+      if (!replacement) {
+        console.warn(`${LOG_PREFIX} No bench replacement for risk swap of ${score.symbol} — skipping`);
+        continue;
+      }
+
+      const slot = findPortfolioSlot(battle.portfolio, score.symbol);
+      if (!slot) {
+        console.warn(`${LOG_PREFIX} Could not find portfolio slot for ${score.symbol}`);
+        continue;
+      }
+
+      try {
+        const riskTradeId = `trade_${String((battle.scoreState?.tradeCount || 0) + 1 + statusFeedEntries.filter(e => e.action !== 'hold').length).padStart(3, '0')}`;
+        const evaluationMetadata = {
+          id: riskTradeId,
+          action: 'SWAP',
+          trigger: riskResult.reason,
+          rationale: `Risk manager: ${riskResult.detail}`,
+          hypothesis: null,
+          evaluationId: `risk_${riskResult.reason}_${score.symbol}`,
+          tradingDay: currentDay,
+        };
+
+        await executeSwapServer(
+          db, battle.id, battle,
+          slot.tier, slot.slotIndex,
+          replacement, currentDay, prices, evaluationMetadata
+        );
+
+        statusFeedEntries.push({
+          timestamp: new Date().toISOString(),
+          message: `Risk: ${riskResult.detail}`,
+          pvpContext: null,
+          action: riskResult.action.toLowerCase(),
+          regime: stockRegimes[score.symbol] || null,
+          score: Math.round(currentScore * 100) / 100,
+          citedRules: [riskResult.reason],
+          triggeredBy: `risk_${riskResult.reason}`,
+          source: 'risk_manager',
+          evalId: null,
+          symbolOut: score.symbol,
+          symbolIn: replacement.symbol,
+        });
+
+        summary.swapped++;
+
+        // Re-read battle doc after swap for accurate state in subsequent processing
+        const updatedDoc = await battleRef.get();
+        Object.assign(battle, updatedDoc.data());
+      } catch (err) {
+        console.error(`${LOG_PREFIX} Risk swap failed for ${score.symbol}:`, err.message);
+      }
+    }
+
+    // ---- Proposal lifecycle check (after risk evaluation, before triggers/Haiku) ----
+    const proposalHandled = await handlePendingProposal(db, battleRef, battle, prices, statusFeedEntries, summary);
+    if (proposalHandled === 'skip_haiku') {
+      // Proposal is pending and not expired — write scores/risk but skip trigger gate + Haiku
+      scoreUpdate['cronState.lastEvaluatedAt'] = new Date().toISOString();
+      scoreUpdate['cronState.evaluatingAt'] = null;
+      scoreUpdate['cronState.vwapTicks'] = vwapTicks;
+      const existingFeed = battle.statusFeed || [];
+      scoreUpdate.statusFeed = [...existingFeed, ...statusFeedEntries].slice(-50);
+      await battleRef.update(scoreUpdate);
+      summary.evaluated++;
+      summary.held++;
+      return;
+    }
+
     // ---- Fetch news for trigger gate ----
     const news = await fetchRecentNews(db, portfolioSymbols);
 
     // ---- Evaluate triggers ----
-    const { shouldEvaluate, triggers } = evaluateTriggers(battle, assetScores, prices, news);
+    const { shouldEvaluate, triggers } = evaluateTriggers(battle, assetScores, prices, news, momentumData);
 
     if (!shouldEvaluate) {
-      // No triggers — update scores and move on
+      // No triggers — update scores, VWAP ticks, and status feed, then move on
       scoreUpdate['cronState.lastEvaluatedAt'] = new Date().toISOString();
       scoreUpdate['cronState.triggerGatePassCount'] = (battle.cronState?.triggerGatePassCount || 0) + 1;
       scoreUpdate['cronState.evaluatingAt'] = null;
+      scoreUpdate['cronState.vwapTicks'] = vwapTicks;
+      if (statusFeedEntries.length > 0) {
+        const existingFeed = battle.statusFeed || [];
+        scoreUpdate.statusFeed = [...existingFeed, ...statusFeedEntries].slice(-50);
+      }
       await battleRef.update(scoreUpdate);
       summary.evaluated++;
       summary.held++;
@@ -255,7 +470,7 @@ async function processAgentBattle(db, battle, summary) {
       const response = await Promise.race([
         anthropic.messages.create({
           model: 'claude-haiku-4-5-20251001',
-          max_tokens: 800,
+          max_tokens: 1024,
           temperature: 0.4,
           system: buildEvalSystemPrompt(agentName, archetype),
           messages: [
@@ -265,7 +480,7 @@ async function processAgentBattle(db, battle, summary) {
               role: 'user',
               content: buildLiveContextBlock(
                 battle, prices, macroPrices, assetScores,
-                triggers, news, battle.evaluations
+                triggers, news, battle.evaluations, momentumData
               ),
             },
           ],
@@ -297,55 +512,155 @@ async function processAgentBattle(db, battle, summary) {
     let downgraded = false;
     let validationErrors = [];
 
+    // Block Haiku from swapping out LOCKED positions
+    if (decision === 'SWAP' && haikuResult && lockedPositions.has(haikuResult.symbolOut)) {
+      validationErrors.push(`${haikuResult.symbolOut} is LOCKED (near bonus threshold) — swap blocked`);
+      decision = 'HOLD';
+      downgraded = true;
+      console.warn(`${LOG_PREFIX} SWAP blocked by risk LOCK for ${haikuResult.symbolOut}`);
+    }
+
+    // Block Haiku from swapping IN distressed stocks
+    if (decision === 'SWAP' && haikuResult && stockRegimes[haikuResult.symbolIn] === 'distressed') {
+      validationErrors.push(`${haikuResult.symbolIn} is DISTRESSED regime — swap blocked`);
+      decision = 'HOLD';
+      downgraded = true;
+      console.warn(`${LOG_PREFIX} SWAP blocked: ${haikuResult.symbolIn} is distressed`);
+    }
+
+    let pendingProposalUpdate = null;
+
     if (decision === 'SWAP' && haikuResult) {
       const validation = validateTradeDecision(haikuResult, battle);
       if (!validation.valid) {
-        validationErrors = validation.errors;
+        validationErrors = [...validationErrors, ...validation.errors];
         decision = 'HOLD';
         downgraded = true;
         console.warn(`${LOG_PREFIX} SWAP downgraded to HOLD for battle ${battle.id}:`, validation.errors);
       } else {
-        // Execute the swap
-        try {
-          const benchAsset = findBenchAsset(battle.portfolio?.bench, haikuResult.symbolIn);
-          const evaluationMetadata = {
-            id: `trade_${String((battle.scoreState?.tradeCount || 0) + 1).padStart(3, '0')}`,
-            action: 'SWAP',
-            trigger: triggers.map(t => t.type).join(', '),
+        const mode = battle.executionMode || 'copilot';
+
+        if (mode === 'autopilot') {
+          // Autopilot: execute immediately (original behavior)
+          try {
+            const benchAsset = findBenchAsset(battle.portfolio?.bench, haikuResult.symbolIn);
+            const evaluationMetadata = {
+              id: `trade_${String((battle.scoreState?.tradeCount || 0) + 1).padStart(3, '0')}`,
+              action: 'SWAP',
+              trigger: triggers.map(t => t.type).join(', '),
+              rationale: haikuResult.rationale || null,
+              hypothesis: haikuResult.hypothesis || null,
+              evaluationId: evalId,
+              tradingDay: currentDay,
+            };
+            await executeSwapServer(
+              db, battle.id, battle,
+              validation.resolvedTier, validation.resolvedSlotIndex,
+              benchAsset, currentDay, prices, evaluationMetadata
+            );
+            summary.swapped++;
+          } catch (swapErr) {
+            console.error(`${LOG_PREFIX} Swap execution failed for battle ${battle.id}:`, swapErr.message);
+            validationErrors.push(`Swap execution failed: ${swapErr.message}`);
+            decision = 'HOLD';
+            downgraded = true;
+          }
+        } else {
+          // Co-Pilot or Manual: write proposal instead of executing
+          const ttlMinutes = mode === 'copilot' ? 10 : 15;
+          const proposalId = `prop_${String((battle.proposalHistory || []).length + 1).padStart(3, '0')}`;
+
+          pendingProposalUpdate = {
+            proposalId,
+            evalId,
+            symbolOut: haikuResult.symbolOut,
+            symbolIn: haikuResult.symbolIn,
+            tier: validation.resolvedTier,
+            slotIndex: validation.resolvedSlotIndex,
+            conviction: haikuResult.conviction || 0,
             rationale: haikuResult.rationale || null,
             hypothesis: haikuResult.hypothesis || null,
-            evaluationId: evalId,
-            tradingDay: currentDay,
+            riskAssessment: haikuResult.riskAssessment || 'low',
+            triggers: triggers.map(t => t.type),
+            regime: stockRegimes[haikuResult.symbolOut] || null,
+            marketPosture,
+            scoreAtProposal: Math.round(currentScore * 100) / 100,
+            createdAt: now,
+            expiresAt: new Date(Date.now() + ttlMinutes * 60 * 1000).toISOString(),
+            mode,
+            resolvedAt: null,
+            resolution: null,
+            resolvedBy: null,
+            benchAsset: findBenchAsset(battle.portfolio?.bench, haikuResult.symbolIn),
+            evaluationMetadata: {
+              id: `trade_${String((battle.scoreState?.tradeCount || 0) + 1).padStart(3, '0')}`,
+              action: 'SWAP',
+              trigger: triggers.map(t => t.type).join(', '),
+              rationale: haikuResult.rationale || null,
+              hypothesis: haikuResult.hypothesis || null,
+              evaluationId: evalId,
+              tradingDay: currentDay,
+            },
           };
-          await executeSwapServer(
-            db, battle.id, battle,
-            validation.resolvedTier, validation.resolvedSlotIndex,
-            benchAsset, currentDay, prices, evaluationMetadata
-          );
-          summary.swapped++;
-        } catch (swapErr) {
-          console.error(`${LOG_PREFIX} Swap execution failed for battle ${battle.id}:`, swapErr.message);
-          validationErrors.push(`Swap execution failed: ${swapErr.message}`);
-          decision = 'HOLD';
-          downgraded = true;
+
+          decision = 'PROPOSAL';
+          console.log(`${LOG_PREFIX} ${mode} mode: Created proposal ${proposalId} for ${haikuResult.symbolOut}→${haikuResult.symbolIn} (${ttlMinutes}min TTL)`);
         }
       }
     }
 
     if (decision === 'HOLD') {
       summary.held++;
+    } else if (decision === 'PROPOSAL') {
+      summary.held++; // Not swapped yet — count as held
+    }
+
+    // ---- Build status feed entry from Haiku result ----
+    if (decision === 'PROPOSAL' && pendingProposalUpdate) {
+      const mode = battle.executionMode || 'copilot';
+      const ttl = mode === 'copilot' ? '10' : '15';
+      statusFeedEntries.push({
+        timestamp: now,
+        message: haikuResult?.status_feed_update || `Proposing: Swap ${haikuResult.symbolOut} → ${haikuResult.symbolIn}. Awaiting Coach approval (${ttl}min).`,
+        pvpContext: haikuResult?.pvp_context || null,
+        action: 'proposal',
+        regime: stockRegimes[haikuResult?.symbolOut] || null,
+        score: Math.round(currentScore * 100) / 100,
+        citedRules: haikuResult?.cited_rules || [],
+        triggeredBy: triggers.map(t => t.type).join(', '),
+        source: 'haiku',
+        evalId,
+        symbolOut: haikuResult?.symbolOut,
+        symbolIn: haikuResult?.symbolIn,
+      });
+    } else if (haikuResult?.status_feed_update || decision === 'SWAP') {
+      statusFeedEntries.push({
+        timestamp: now,
+        message: haikuResult?.status_feed_update || null,
+        pvpContext: haikuResult?.pvp_context || null,
+        action: decision === 'SWAP' ? 'swap' : 'hold',
+        regime: stockRegimes[haikuResult?.symbolOut] || null,
+        score: Math.round(currentScore * 100) / 100,
+        citedRules: haikuResult?.cited_rules || [],
+        triggeredBy: triggers.map(t => t.type).join(', '),
+        source: 'haiku',
+        evalId,
+        symbolOut: decision === 'SWAP' ? haikuResult?.symbolOut : null,
+        symbolIn: decision === 'SWAP' ? haikuResult?.symbolIn : null,
+      });
     }
 
     // ---- Build evaluation record ----
+    const isSwapOrProposal = decision === 'SWAP' || decision === 'PROPOSAL';
     const evaluation = {
       evalId,
       timestamp: now,
       day: currentDay,
       battlePhase: phase,
       decision,
-      symbolOut: decision === 'SWAP' ? haikuResult?.symbolOut : null,
-      symbolIn: decision === 'SWAP' ? haikuResult?.symbolIn : null,
-      tier: decision === 'SWAP' ? validateTradeDecision(haikuResult, battle).resolvedTier : null,
+      symbolOut: isSwapOrProposal ? haikuResult?.symbolOut : null,
+      symbolIn: isSwapOrProposal ? haikuResult?.symbolIn : null,
+      tier: isSwapOrProposal ? validateTradeDecision(haikuResult, battle).resolvedTier : null,
       rationale: haikuResult?.rationale || (haikuResult ? null : 'Haiku call failed — defaulting to HOLD'),
       hypothesis: haikuResult?.hypothesis || null,
       conviction: haikuResult?.conviction || 0,
@@ -359,6 +674,7 @@ async function processAgentBattle(db, battle, summary) {
       },
       validationErrors,
       downgraded,
+      marketPosture,
     };
 
     // ---- Write everything ----
@@ -367,11 +683,16 @@ async function processAgentBattle(db, battle, summary) {
       ? (battle.cronState?.consecutiveHolds || 0) + 1
       : 0;
 
+    // Cap statusFeed at 50 entries
+    const existingFeed = battle.statusFeed || [];
+    const updatedFeed = [...existingFeed, ...statusFeedEntries].slice(-50);
+
     const finalUpdate = {
       ...scoreUpdate,
       evaluations,
+      statusFeed: updatedFeed,
       'scoreState.evaluationCount': evaluations.length,
-      'scoreState.holdCount': decision === 'HOLD'
+      'scoreState.holdCount': (decision === 'HOLD' || decision === 'PROPOSAL')
         ? (battle.scoreState?.holdCount || 0) + 1
         : (battle.scoreState?.holdCount || 0),
       'cronState.lastEvaluatedAt': now,
@@ -380,8 +701,14 @@ async function processAgentBattle(db, battle, summary) {
       'cronState.totalTokens.input': (battle.cronState?.totalTokens?.input || 0) + inputTokens,
       'cronState.totalTokens.output': (battle.cronState?.totalTokens?.output || 0) + outputTokens,
       'cronState.consecutiveHolds': consecutiveHolds,
+      'cronState.vwapTicks': vwapTicks,
       'cronState.evaluatingAt': null,
     };
+
+    // Write pending proposal if mode branching created one
+    if (pendingProposalUpdate) {
+      finalUpdate.pendingProposal = pendingProposalUpdate;
+    }
 
     await battleRef.update(finalUpdate);
     summary.evaluated++;
@@ -400,4 +727,159 @@ function findBenchAsset(bench, symbol) {
   if (stockMatch) return stockMatch;
   if (bench.crypto?.symbol === symbol) return bench.crypto;
   return null;
+}
+
+/**
+ * Fetch fresh prices for a pending proposal's symbols.
+ */
+async function fetchPricesForProposal(proposal) {
+  const symbols = [proposal.symbolOut, proposal.symbolIn].filter(Boolean);
+  const prices = {};
+  await Promise.all(symbols.map(async (symbol) => {
+    try {
+      const data = await getStockAnalysisData(symbol, { forceRefresh: true, fields: ['daily'] });
+      if (data?.price) prices[symbol] = data.price;
+    } catch (err) {
+      console.warn(`${LOG_PREFIX} Price fetch for proposal symbol ${symbol} failed:`, err.message);
+    }
+  }));
+  return prices;
+}
+
+/**
+ * Handle pending proposal lifecycle: expiry, approved, vetoed.
+ * Runs AFTER risk evaluation, BEFORE trigger gate/Haiku.
+ * Returns 'skip_haiku' if a pending proposal is still active, 'continue' otherwise.
+ */
+async function handlePendingProposal(db, battleRef, battle, prices, statusFeedEntries, summary) {
+  const proposal = battle.pendingProposal;
+  if (!proposal) return 'continue';
+
+  // Already resolved by client — execute or clear
+  if (proposal.resolvedAt && proposal.resolution) {
+    if (proposal.resolution === 'approved') {
+      // Execute the approved swap
+      try {
+        const freshPrices = await fetchPricesForProposal(proposal);
+        // Verify bench asset still exists
+        const benchAsset = findBenchAsset(battle.portfolio?.bench, proposal.symbolIn);
+        if (!benchAsset) {
+          console.warn(`${LOG_PREFIX} Bench asset ${proposal.symbolIn} no longer available — lapsing approved proposal`);
+          statusFeedEntries.push({
+            timestamp: new Date().toISOString(),
+            message: `Approved swap ${proposal.symbolOut} → ${proposal.symbolIn} could not execute — bench asset no longer available.`,
+            action: 'hold', source: 'proposal_system',
+            symbolOut: proposal.symbolOut, symbolIn: proposal.symbolIn,
+          });
+        } else {
+          await executeSwapServer(
+            db, battle.id, battle,
+            proposal.tier, proposal.slotIndex,
+            benchAsset, proposal.evaluationMetadata?.tradingDay || 1,
+            freshPrices, proposal.evaluationMetadata || {}
+          );
+          statusFeedEntries.push({
+            timestamp: new Date().toISOString(),
+            message: `Coach approved: Swap ${proposal.symbolOut} → ${proposal.symbolIn}`,
+            action: 'swap', source: 'proposal_system',
+            symbolOut: proposal.symbolOut, symbolIn: proposal.symbolIn,
+          });
+          summary.swapped++;
+        }
+      } catch (err) {
+        console.error(`${LOG_PREFIX} Approved proposal execution failed:`, err.message);
+        statusFeedEntries.push({
+          timestamp: new Date().toISOString(),
+          message: `Approved swap failed: ${err.message}`,
+          action: 'hold', source: 'proposal_system',
+        });
+      }
+      // Move to history and clear
+      const history = [...(battle.proposalHistory || []), proposal];
+      await battleRef.update({ pendingProposal: null, proposalHistory: history });
+      const updatedDoc = await battleRef.get();
+      Object.assign(battle, updatedDoc.data());
+      return 'continue';
+    }
+
+    if (proposal.resolution === 'vetoed') {
+      statusFeedEntries.push({
+        timestamp: new Date().toISOString(),
+        message: `Coach vetoed: Swap ${proposal.symbolOut} → ${proposal.symbolIn}${proposal.userReason ? ` (${proposal.userReason})` : ''}`,
+        action: 'hold', source: 'proposal_system',
+        symbolOut: proposal.symbolOut, symbolIn: proposal.symbolIn,
+      });
+      const history = [...(battle.proposalHistory || []), proposal];
+      await battleRef.update({ pendingProposal: null, proposalHistory: history });
+      const updatedDoc = await battleRef.get();
+      Object.assign(battle, updatedDoc.data());
+      summary.held++;
+      return 'continue';
+    }
+  }
+
+  // Not resolved — check expiry
+  const now = Date.now();
+  const expiresAt = new Date(proposal.expiresAt).getTime();
+
+  if (now < expiresAt) {
+    // Still pending and not expired — skip trigger gate + Haiku (risk already ran)
+    console.log(`${LOG_PREFIX} Battle ${battle.id} has pending proposal (${proposal.proposalId}) — skipping Haiku`);
+    return 'skip_haiku';
+  }
+
+  // Expired — handle based on mode
+  if (proposal.mode === 'copilot') {
+    // Auto-execute on expiry
+    try {
+      const freshPrices = await fetchPricesForProposal(proposal);
+      const benchAsset = findBenchAsset(battle.portfolio?.bench, proposal.symbolIn);
+      if (!benchAsset) {
+        console.warn(`${LOG_PREFIX} Bench asset ${proposal.symbolIn} gone — lapsing expired copilot proposal`);
+        statusFeedEntries.push({
+          timestamp: new Date().toISOString(),
+          message: `Proposal expired but ${proposal.symbolIn} no longer on bench. Lapsed.`,
+          action: 'hold', source: 'proposal_system',
+        });
+      } else {
+        await executeSwapServer(
+          db, battle.id, battle,
+          proposal.tier, proposal.slotIndex,
+          benchAsset, proposal.evaluationMetadata?.tradingDay || 1,
+          freshPrices, proposal.evaluationMetadata || {}
+        );
+        statusFeedEntries.push({
+          timestamp: new Date().toISOString(),
+          message: `Auto-executed: Swap ${proposal.symbolOut} → ${proposal.symbolIn} (proposal expired, Co-Pilot mode)`,
+          action: 'swap', source: 'proposal_system',
+          symbolOut: proposal.symbolOut, symbolIn: proposal.symbolIn,
+        });
+        summary.swapped++;
+      }
+    } catch (err) {
+      console.error(`${LOG_PREFIX} Expired copilot proposal execution failed:`, err.message);
+    }
+  } else {
+    // Manual mode — lapse without executing
+    statusFeedEntries.push({
+      timestamp: new Date().toISOString(),
+      message: `Proposal lapsed: Swap ${proposal.symbolOut} → ${proposal.symbolIn} (no Coach action within 15min, Manual mode)`,
+      action: 'hold', source: 'proposal_system',
+      symbolOut: proposal.symbolOut, symbolIn: proposal.symbolIn,
+    });
+    summary.held++;
+  }
+
+  // Move expired proposal to history and clear
+  const resolvedProposal = {
+    ...proposal,
+    resolvedAt: new Date().toISOString(),
+    resolution: proposal.mode === 'copilot' ? 'auto_executed' : 'lapsed',
+    resolvedBy: 'system',
+  };
+  const history = [...(battle.proposalHistory || []), resolvedProposal];
+  await battleRef.update({ pendingProposal: null, proposalHistory: history });
+  const updatedDoc = await battleRef.get();
+  Object.assign(battle, updatedDoc.data());
+  return 'continue';
 }

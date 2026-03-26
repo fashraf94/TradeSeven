@@ -11,9 +11,12 @@ import { flattenPortfolioServer, flattenBenchServer } from './agentScoring.js';
  * @param {Object[]} assetScores - Scored active assets (from calculateAssetScoreServer)
  * @param {Object} prices - { symbol: { current, previousClose, change, changePercent } }
  * @param {Object[]} news - FantasyTimes stories matching active tickers (or null)
+ * @param {Object} [momentumData] - Optional intraday momentum data
+ * @param {Object} [momentumData.vwap] - { symbol: { vwap, currentPrice, vwapDeviation } }
+ * @param {Object} [momentumData.rankings] - { symbol: { bBandwidthPercentile, nr7Flag, dailyRange } }
  * @returns {{ shouldEvaluate: boolean, triggers: Array<{ type: string, detail: string }> }}
  */
-export function evaluateTriggers(battle, assetScores, prices, news) {
+export function evaluateTriggers(battle, assetScores, prices, news, momentumData) {
   const triggers = [];
   const evaluations = battle.evaluations || [];
 
@@ -103,6 +106,48 @@ export function evaluateTriggers(battle, assetScores, prices, news) {
         triggers.push({
           type: 'bench_outperformance',
           detail: `${benchAsset.symbol} up ${dailyChangePct.toFixed(2)}% today (${benchATRMult.toFixed(2)}x ATR from daily open)`,
+        });
+      }
+    }
+  }
+
+  // Intraday momentum: VWAP deviation (price significantly above/below VWAP)
+  if (momentumData?.vwap) {
+    for (const score of assetScores) {
+      const vwapInfo = momentumData.vwap[score.symbol];
+      if (!vwapInfo || vwapInfo.vwapDeviation == null) continue;
+
+      const dev = vwapInfo.vwapDeviation;
+      // Trigger if price deviates more than 1.5% from VWAP in either direction
+      if (Math.abs(dev) >= 1.5) {
+        const direction = dev > 0 ? 'above' : 'below';
+        triggers.push({
+          type: 'vwap_deviation',
+          detail: `${score.symbol} trading ${Math.abs(dev).toFixed(2)}% ${direction} VWAP ($${vwapInfo.vwap.toFixed(2)}) — ${dev > 0 ? 'bullish momentum' : 'bearish momentum'}`,
+        });
+      }
+    }
+  }
+
+  // Intraday momentum: Bollinger bandwidth squeeze (low percentile = contraction → potential breakout)
+  if (momentumData?.rankings) {
+    for (const score of assetScores) {
+      const rankInfo = momentumData.rankings[score.symbol];
+      if (!rankInfo) continue;
+
+      // Bandwidth squeeze: below 20th percentile signals compression
+      if (rankInfo.bBandwidthPercentile != null && rankInfo.bBandwidthPercentile <= 20) {
+        triggers.push({
+          type: 'bandwidth_squeeze',
+          detail: `${score.symbol} Bollinger bandwidth at ${rankInfo.bBandwidthPercentile}th percentile — volatility squeeze, potential breakout imminent`,
+        });
+      }
+
+      // NR7 flag: narrowest range of 7 days
+      if (rankInfo.nr7Flag) {
+        triggers.push({
+          type: 'nr7_contraction',
+          detail: `${score.symbol} NR7 detected — narrowest daily range in 7 days (range: $${(rankInfo.dailyRange || 0).toFixed(2)}), breakout setup`,
         });
       }
     }

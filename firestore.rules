@@ -129,12 +129,19 @@ service cloud.firestore {
                     && resource.data.ownerId == request.auth.uid;
     }
 
-    // AGENT BATTLES — Server-only collection (cron evaluation system)
-    // All writes via admin SDK (bypasses rules). Client can only read own battles.
+    // AGENT BATTLES — Server-managed collection with limited client writes.
+    // Cron writes via Admin SDK (bypasses rules). Client can read own + update execution controls.
     match /agentBattles/{battleId} {
       allow read: if request.auth != null
                   && resource.data.ownerId == request.auth.uid;
-      allow create, update, delete: if false;
+
+      // Allow owner to update ONLY execution control fields
+      allow update: if request.auth != null
+                    && resource.data.ownerId == request.auth.uid
+                    && request.resource.data.diff(resource.data).affectedKeys()
+                       .hasOnly(['executionMode', 'pendingProposal', 'proposalHistory', 'battleLedger', 'updatedAt']);
+
+      allow create, delete: if false;
     }
 
     // Draft user stats — document ID is the userId

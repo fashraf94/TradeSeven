@@ -80,6 +80,66 @@ When you swap out an asset, its current points are LOCKED permanently. The incom
    tempted but lacked the conviction to pull the trigger. Marginal edges
    are not worth the cost of resetting a scoring baseline.
 
+━━━ INTRADAY MOMENTUM SIGNALS ━━━
+
+When provided, use these signals to refine your decisions:
+
+- VWAP DEVIATION: Price above VWAP = intraday bullish momentum. Price below VWAP =
+  intraday bearish momentum. Deviation >1.5% is significant.
+- BOLLINGER BANDWIDTH PERCENTILE: Low percentile (≤20th) = "squeeze" — volatility
+  contracted, breakout likely. High percentile (≥80th) = expanded volatility.
+  Squeezes on your active holdings suggest patience (breakout coming).
+  Squeezes on bench stocks suggest swap opportunity (catch the breakout).
+- NR7 (Narrowest Range 7 Days): When flagged, the stock's daily range is the
+  tightest in 7 days. This is a volatility contraction pattern — often precedes
+  a sharp directional move. Do NOT swap out NR7 stocks unless they're bleeding.
+
+━━━ REGIME-AWARE STRATEGY ━━━
+
+Your decisions should adapt to the current market posture and per-stock regimes:
+
+MARKET POSTURE:
+- risk_on: Offense permitted. Swaps for upside OK. Full conviction range.
+- selective: Moderate caution. Only swap on >80% conviction. Prefer relative strength.
+- defensive: Capital preservation. Swaps are defensive only (cut losers). Do not chase.
+
+STOCK REGIMES:
+- directional_expansion: Strong trend + volume. Strategies:
+  S1 Volatility Squeeze Breakout (BB squeeze + volume surge + price above upper BB).
+  S2 52-Week High Breakout (within 5% of 52W high + volume > 1.2x + intraday range
+  position > 80% to confirm buyers driving breakout, not just tagging resistance).
+  Hold winners. Do not fight the trend.
+- directional_contraction: Quiet uptrend. Strategy:
+  S3 RS Momentum + VWAP Pullback (RS > 80th percentile + pullback to VWAP + 5min RSI
+  bouncing off 40). Hold, tighten expectations.
+- choppy: No clear direction. Strategy:
+  S4 VWAP Mean Reversion only (deviation > 1 std below VWAP + 5min RSI < 25
+  recovering). Avoid swapping INTO choppy stocks.
+- distressed: High volatility + downtrend. STRICT EXCLUSION. Do NOT buy distressed
+  stocks. If held, evaluate for swap-out immediately.
+
+CROSS-REGIME STRATEGY:
+- S5 News-Catalyst Momentum (Star/Core tier): When a FantasyTimes story with positive
+  sentiment tags a stock AND volume ratio > 1.2x AND 5-min price breaks above previous
+  day's high AND price is above VWAP → strong entry signal. Assign to Star if ATR
+  High/Extreme, Core if ATR Normal. Exit when 5-min RSI > 85 then drops below 80
+  (hype exhaustion) OR a negative FantasyTimes story appears on the ticker.
+  Applies across ALL regimes except Distressed.
+
+NR7-flagged stocks get priority consideration for Squeeze Breakout strategy (S1).
+
+RISK STATUS:
+- LOCKED positions CANNOT be swapped out. Only hard stops override locks.
+- If a position shows WARNING status, consider preemptive swap before penalty.
+- The risk manager handles emergency exits automatically — focus on strategic decisions.
+
+STATUS FEED:
+- When something meaningful happens (trade, threshold crossed, strategy triggered,
+  notable market move), provide a status_feed_update in your response.
+- Also provide pvp_context comparing portfolio to market benchmarks.
+- Cite specific rules in cited_rules when they influence your decision.
+- Omit these fields if nothing noteworthy occurred this tick.
+
 ━━━ ANTI-THRASH RULES (MANDATORY) ━━━
 
 - COOLDOWN: You CANNOT swap in a stock that is marked "locked until [time]"
@@ -177,8 +237,19 @@ ${directiveLines}`);
 /**
  * Build the live battle context block (User Message 2).
  * Changes every evaluation — never cached.
+ *
+ * @param {Object} battle - Full agentBattle document
+ * @param {Object} prices - Price map
+ * @param {Object} macroPrices - Macro benchmark % changes
+ * @param {Object[]} assetScores - Scored active assets
+ * @param {Object[]} triggers - Fired triggers
+ * @param {Object[]} news - FantasyTimes stories
+ * @param {Object[]} recentEvals - Recent evaluations
+ * @param {Object} [momentumData] - Optional intraday momentum data
+ * @param {Object} [momentumData.vwap] - { symbol: { vwap, currentPrice, vwapDeviation } }
+ * @param {Object} [momentumData.rankings] - { symbol: { bBandwidthPercentile, nr7Flag, dailyRange } }
  */
-export function buildLiveContextBlock(battle, prices, macroPrices, assetScores, triggers, news, recentEvals) {
+export function buildLiveContextBlock(battle, prices, macroPrices, assetScores, triggers, news, recentEvals, momentumData) {
   const parts = [];
   const scoreState = battle.scoreState || {};
 
@@ -195,6 +266,12 @@ Trades executed: ${scoreState.tradeCount || 0} | Evaluations: ${scoreState.evalu
 
 MACRO BENCHMARKS TODAY:
 SPY (S&P 500): ${formatPct(macroPrices?.SPY)}% | QQQ (Nasdaq): ${formatPct(macroPrices?.QQQ)}% | BTC: ${formatPct(macroPrices?.BTC)}%`);
+
+  // 3a2. Regime Context
+  if (momentumData?.marketPosture || momentumData?.regimes) {
+    const regimeLines = buildRegimeContext(assetScores, momentumData);
+    if (regimeLines) parts.push(regimeLines);
+  }
 
   // 3b. Active Portfolio CSV
   const portfolioCSV = buildPortfolioCSV(assetScores, prices, battle);
@@ -214,6 +291,20 @@ ${portfolioCSV}`);
     const triggerLines = triggers.map(t => `- ${t.type}: ${t.detail}`).join('\n');
     parts.push(`TRIGGER (why you were woken up):
 ${triggerLines}`);
+  }
+
+  // 3e2. Intraday Momentum Snapshot
+  if (momentumData) {
+    const momentumLines = buildMomentumSnapshot(assetScores, momentumData);
+    if (momentumLines) {
+      parts.push(momentumLines);
+    }
+  }
+
+  // 3e3. Risk Status
+  if (momentumData?.riskStatus) {
+    const riskLines = buildRiskStatusBlock(assetScores, momentumData.riskStatus);
+    if (riskLines) parts.push(riskLines);
   }
 
   // 3f. News Context
@@ -424,6 +515,55 @@ function buildClosedTradesCSV(trades, prices) {
   return [header, ...rows].join('\n');
 }
 
+// ==================== REGIME + RISK HELPERS ====================
+
+/**
+ * Build regime context block for prompt injection.
+ */
+function buildRegimeContext(assetScores, momentumData) {
+  const { marketPosture, regimes } = momentumData;
+  const lines = [];
+
+  if (marketPosture) {
+    lines.push(`MARKET POSTURE: ${marketPosture}`);
+  }
+
+  if (regimes && Object.keys(regimes).length > 0) {
+    const regimeEntries = assetScores
+      .map(s => `${s.symbol}=${regimes[s.symbol] || 'unknown'}`)
+      .join(', ');
+    lines.push(`STOCK REGIMES: ${regimeEntries}`);
+  }
+
+  if (lines.length === 0) return null;
+  return `REGIME CONTEXT:\n${lines.join('\n')}`;
+}
+
+/**
+ * Build risk status block for prompt injection.
+ */
+function buildRiskStatusBlock(assetScores, riskStatus) {
+  if (!riskStatus || Object.keys(riskStatus).length === 0) return null;
+
+  const entries = [];
+  for (const score of assetScores) {
+    const risk = riskStatus[score.symbol];
+    if (!risk || risk.action === 'HOLD') {
+      entries.push(`${score.symbol}: HOLD`);
+    } else if (risk.action === 'LOCK') {
+      entries.push(`${score.symbol}: LOCKED (${risk.detail})`);
+    } else {
+      entries.push(`${score.symbol}: ${risk.action} (${risk.reason})`);
+    }
+  }
+
+  // Only show if there's at least one non-HOLD entry
+  const hasAction = entries.some(e => !e.endsWith('HOLD'));
+  if (!hasAction) return null;
+
+  return `RISK STATUS:\n${entries.join('\n')}`;
+}
+
 // ==================== HELPERS ====================
 
 function formatPct(value) {
@@ -439,4 +579,46 @@ function getTimeAgo(timestamp) {
   if (diffMin < 60) return `${diffMin} min ago`;
   const diffHours = Math.round(diffMin / 60);
   return `${diffHours}h ago`;
+}
+
+/**
+ * Build the intraday momentum snapshot for injection into the live context.
+ */
+function buildMomentumSnapshot(assetScores, momentumData) {
+  if (!momentumData) return null;
+
+  const { vwap, rankings } = momentumData;
+  const lines = [];
+
+  for (const score of assetScores) {
+    const sym = score.symbol;
+    const vwapInfo = vwap?.[sym];
+    const rankInfo = rankings?.[sym];
+
+    const parts = [];
+    if (vwapInfo && vwapInfo.vwapDeviation != null) {
+      const dev = vwapInfo.vwapDeviation;
+      parts.push(`VWAP: $${vwapInfo.vwap.toFixed(2)} (${dev >= 0 ? '+' : ''}${dev.toFixed(2)}%)`);
+    }
+    if (rankInfo?.bBandwidthPercentile != null) {
+      const bwPct = rankInfo.bBandwidthPercentile;
+      const squeezeLabel = bwPct <= 20 ? ' [SQUEEZE]' : bwPct >= 80 ? ' [EXPANDED]' : '';
+      parts.push(`BB Width: ${bwPct}th pctl${squeezeLabel}`);
+    }
+    if (rankInfo?.nr7Flag) {
+      parts.push('NR7: YES [CONTRACTION]');
+    }
+    if (rankInfo?.dailyRange != null) {
+      parts.push(`Range: $${rankInfo.dailyRange.toFixed(2)}`);
+    }
+
+    if (parts.length > 0) {
+      lines.push(`${sym}: ${parts.join(' | ')}`);
+    }
+  }
+
+  if (lines.length === 0) return null;
+
+  return `INTRADAY MOMENTUM SNAPSHOT:
+${lines.join('\n')}`;
 }
