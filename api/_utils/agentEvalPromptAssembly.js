@@ -104,17 +104,29 @@ MARKET POSTURE:
 - defensive: Capital preservation. Swaps are defensive only (cut losers). Do not chase.
 
 STOCK REGIMES:
-- directional_expansion: Strong trend + volume. Strategies: Volatility Squeeze Breakout
-  (BB squeeze + volume surge), 52-Week High Breakout (within 5% of 52W high + volume).
+- directional_expansion: Strong trend + volume. Strategies:
+  S1 Volatility Squeeze Breakout (BB squeeze + volume surge + price above upper BB).
+  S2 52-Week High Breakout (within 5% of 52W high + volume > 1.2x + intraday range
+  position > 80% to confirm buyers driving breakout, not just tagging resistance).
   Hold winners. Do not fight the trend.
-- directional_contraction: Quiet uptrend. Strategy: RS Momentum + VWAP Pullback (RS >
-  80th percentile + pullback to VWAP + RSI bouncing off 40). Hold, tighten expectations.
-- choppy: No clear direction. Strategy: VWAP Mean Reversion only (deviation > 1 std
-  below VWAP + RSI < 25 recovering). Avoid swapping INTO choppy stocks.
+- directional_contraction: Quiet uptrend. Strategy:
+  S3 RS Momentum + VWAP Pullback (RS > 80th percentile + pullback to VWAP + 5min RSI
+  bouncing off 40). Hold, tighten expectations.
+- choppy: No clear direction. Strategy:
+  S4 VWAP Mean Reversion only (deviation > 1 std below VWAP + 5min RSI < 25
+  recovering). Avoid swapping INTO choppy stocks.
 - distressed: High volatility + downtrend. STRICT EXCLUSION. Do NOT buy distressed
   stocks. If held, evaluate for swap-out immediately.
 
-NR7-flagged stocks get priority consideration for Squeeze Breakout strategy.
+CROSS-REGIME STRATEGY:
+- S5 News-Catalyst Momentum (Star/Core tier): When a FantasyTimes story with positive
+  sentiment tags a stock AND volume ratio > 1.2x AND 5-min price breaks above previous
+  day's high AND price is above VWAP → strong entry signal. Assign to Star if ATR
+  High/Extreme, Core if ATR Normal. Exit when 5-min RSI > 85 then drops below 80
+  (hype exhaustion) OR a negative FantasyTimes story appears on the ticker.
+  Applies across ALL regimes except Distressed.
+
+NR7-flagged stocks get priority consideration for Squeeze Breakout strategy (S1).
 
 RISK STATUS:
 - LOCKED positions CANNOT be swapped out. Only hard stops override locks.

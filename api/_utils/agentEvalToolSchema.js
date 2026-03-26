@@ -61,13 +61,13 @@ export const TRADE_DECISION_TOOL = {
       pvp_context: {
         type: 'string',
         description:
-          'Market-relative observation. Example: "Our tech positions are outperforming the broader market" or "Portfolio trailing S&P today on sector rotation." Compare portfolio performance to market benchmarks.',
+          'Market-relative observation comparing portfolio performance to benchmarks. Example: "Tech positions outperforming broader market" or "Portfolio trailing S&P on sector rotation." Omit if nothing noteworthy — do not generate filler observations every tick.',
       },
       cited_rules: {
         type: 'array',
         items: { type: 'string' },
         description:
-          'Array of strategy/rule names that influenced this decision. E.g., ["threshold_proximity", "sector_rotation", "survival_mode"]. Empty array if no specific rules cited.',
+          'Strategy or rule names that influenced this decision. Use these standard names when applicable: "volatility_squeeze", "52w_high_breakout", "rs_momentum", "vwap_mean_reversion", "news_catalyst", "bust_avoidance", "vwap_failure", "threshold_lock". Empty array if no specific rule was primary driver.',
       },
     },
   },

@@ -33,6 +33,7 @@ export const config = { maxDuration: 60 };
 
 const LOG_PREFIX = '[AgentEval]';
 const EVALUATING_LOCK_TIMEOUT_MS = 120_000; // 2 minutes
+const TIME_BUDGET_MS = 50_000; // 50 seconds — leave 10s buffer for cleanup/response
 
 let anthropicClient = null;
 function getAnthropicClient() {
@@ -69,8 +70,16 @@ export default async function handler(req, res) {
 
     console.log(`${LOG_PREFIX} Found ${battles.length} active agent battle(s)`);
 
-    // ---- 4. Process each battle sequentially ----
+    // ---- 4. Process each battle sequentially (with time budget) ----
     for (const battle of battles) {
+      const elapsed = Date.now() - startTime;
+      if (elapsed > TIME_BUDGET_MS) {
+        const remaining = battles.length - summary.evaluated - summary.errors;
+        console.log(`${LOG_PREFIX} Time budget exceeded (${elapsed}ms). ${remaining} agent(s) deferred to next tick.`);
+        summary.skipped += remaining;
+        break;
+      }
+
       try {
         await processAgentBattle(db, battle, summary);
       } catch (err) {
@@ -389,7 +398,7 @@ async function processAgentBattle(db, battle, summary) {
           timestamp: new Date().toISOString(),
           message: `Risk: ${riskResult.detail}`,
           pvpContext: null,
-          action: riskResult.action,
+          action: riskResult.action.toLowerCase(),
           regime: stockRegimes[score.symbol] || null,
           score: Math.round(currentScore * 100) / 100,
           citedRules: [riskResult.reason],
