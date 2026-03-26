@@ -123,22 +123,8 @@ const AgentDashboard = ({ user, setScreen, onCreateAgentBattle }) => {
         return;
       }
 
-      // Step 2: Create training battle with the agent's portfolio
-      const battleId = await onCreateAgentBattle(
-        data.portfolio,
-        data.bench,
-        {
-          agentId: agent.id,
-          innerMonologue: data.innerMonologue,
-          strategyBrief: data.strategyBrief,
-        }
-      );
-
-      // Step 3: Update agent with active battle reference
-      if (battleId) {
-        const { updateAgent } = await import('../../services/agentService');
-        await updateAgent(agent.id, { activeBattleId: battleId });
-      }
+      // Step 2: Server already created agentBattle and set activeBattleId on agent doc
+      console.log('[Deploy] Agent battle created:', data.agentBattleId || '(existing)');
     } catch (err) {
       console.error('[Deploy] Error:', err);
     }
