@@ -94,6 +94,40 @@ When provided, use these signals to refine your decisions:
   tightest in 7 days. This is a volatility contraction pattern — often precedes
   a sharp directional move. Do NOT swap out NR7 stocks unless they're bleeding.
 
+━━━ REGIME-AWARE STRATEGY ━━━
+
+Your decisions should adapt to the current market posture and per-stock regimes:
+
+MARKET POSTURE:
+- risk_on: Offense permitted. Swaps for upside OK. Full conviction range.
+- selective: Moderate caution. Only swap on >80% conviction. Prefer relative strength.
+- defensive: Capital preservation. Swaps are defensive only (cut losers). Do not chase.
+
+STOCK REGIMES:
+- directional_expansion: Strong trend + volume. Strategies: Volatility Squeeze Breakout
+  (BB squeeze + volume surge), 52-Week High Breakout (within 5% of 52W high + volume).
+  Hold winners. Do not fight the trend.
+- directional_contraction: Quiet uptrend. Strategy: RS Momentum + VWAP Pullback (RS >
+  80th percentile + pullback to VWAP + RSI bouncing off 40). Hold, tighten expectations.
+- choppy: No clear direction. Strategy: VWAP Mean Reversion only (deviation > 1 std
+  below VWAP + RSI < 25 recovering). Avoid swapping INTO choppy stocks.
+- distressed: High volatility + downtrend. STRICT EXCLUSION. Do NOT buy distressed
+  stocks. If held, evaluate for swap-out immediately.
+
+NR7-flagged stocks get priority consideration for Squeeze Breakout strategy.
+
+RISK STATUS:
+- LOCKED positions CANNOT be swapped out. Only hard stops override locks.
+- If a position shows WARNING status, consider preemptive swap before penalty.
+- The risk manager handles emergency exits automatically — focus on strategic decisions.
+
+STATUS FEED:
+- When something meaningful happens (trade, threshold crossed, strategy triggered,
+  notable market move), provide a status_feed_update in your response.
+- Also provide pvp_context comparing portfolio to market benchmarks.
+- Cite specific rules in cited_rules when they influence your decision.
+- Omit these fields if nothing noteworthy occurred this tick.
+
 ━━━ ANTI-THRASH RULES (MANDATORY) ━━━
 
 - COOLDOWN: You CANNOT swap in a stock that is marked "locked until [time]"
@@ -221,6 +255,12 @@ Trades executed: ${scoreState.tradeCount || 0} | Evaluations: ${scoreState.evalu
 MACRO BENCHMARKS TODAY:
 SPY (S&P 500): ${formatPct(macroPrices?.SPY)}% | QQQ (Nasdaq): ${formatPct(macroPrices?.QQQ)}% | BTC: ${formatPct(macroPrices?.BTC)}%`);
 
+  // 3a2. Regime Context
+  if (momentumData?.marketPosture || momentumData?.regimes) {
+    const regimeLines = buildRegimeContext(assetScores, momentumData);
+    if (regimeLines) parts.push(regimeLines);
+  }
+
   // 3b. Active Portfolio CSV
   const portfolioCSV = buildPortfolioCSV(assetScores, prices, battle);
   parts.push(`ACTIVE POSITIONS:
@@ -247,6 +287,12 @@ ${triggerLines}`);
     if (momentumLines) {
       parts.push(momentumLines);
     }
+  }
+
+  // 3e3. Risk Status
+  if (momentumData?.riskStatus) {
+    const riskLines = buildRiskStatusBlock(assetScores, momentumData.riskStatus);
+    if (riskLines) parts.push(riskLines);
   }
 
   // 3f. News Context
@@ -455,6 +501,55 @@ function buildClosedTradesCSV(trades, prices) {
   });
 
   return [header, ...rows].join('\n');
+}
+
+// ==================== REGIME + RISK HELPERS ====================
+
+/**
+ * Build regime context block for prompt injection.
+ */
+function buildRegimeContext(assetScores, momentumData) {
+  const { marketPosture, regimes } = momentumData;
+  const lines = [];
+
+  if (marketPosture) {
+    lines.push(`MARKET POSTURE: ${marketPosture}`);
+  }
+
+  if (regimes && Object.keys(regimes).length > 0) {
+    const regimeEntries = assetScores
+      .map(s => `${s.symbol}=${regimes[s.symbol] || 'unknown'}`)
+      .join(', ');
+    lines.push(`STOCK REGIMES: ${regimeEntries}`);
+  }
+
+  if (lines.length === 0) return null;
+  return `REGIME CONTEXT:\n${lines.join('\n')}`;
+}
+
+/**
+ * Build risk status block for prompt injection.
+ */
+function buildRiskStatusBlock(assetScores, riskStatus) {
+  if (!riskStatus || Object.keys(riskStatus).length === 0) return null;
+
+  const entries = [];
+  for (const score of assetScores) {
+    const risk = riskStatus[score.symbol];
+    if (!risk || risk.action === 'HOLD') {
+      entries.push(`${score.symbol}: HOLD`);
+    } else if (risk.action === 'LOCK') {
+      entries.push(`${score.symbol}: LOCKED (${risk.detail})`);
+    } else {
+      entries.push(`${score.symbol}: ${risk.action} (${risk.reason})`);
+    }
+  }
+
+  // Only show if there's at least one non-HOLD entry
+  const hasAction = entries.some(e => !e.endsWith('HOLD'));
+  if (!hasAction) return null;
+
+  return `RISK STATUS:\n${entries.join('\n')}`;
 }
 
 // ==================== HELPERS ====================

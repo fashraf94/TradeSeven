@@ -13,6 +13,7 @@ import { findActiveAgentBattles } from '../_utils/agentBattleService.js';
 import {
   calculateAssetScoreServer,
   flattenPortfolioServer,
+  flattenBenchServer,
 } from '../_utils/agentScoring.js';
 import { calculateVWAP } from '../_utils/technicalCalculations.js';
 import {
@@ -25,6 +26,8 @@ import {
 import { TRADE_DECISION_TOOL } from '../_utils/agentEvalToolSchema.js';
 import { evaluateTriggers, fetchRecentNews } from '../_utils/agentTriggerGate.js';
 import { validateTradeDecision, executeSwapServer } from '../_utils/agentSwapExecution.js';
+import { classifyStockRegime, classifyMarketPosture } from '../_utils/agentRegimeClassifier.js';
+import { evaluateRisk, calculate5minSMA20, pickEmergencyReplacement, findPortfolioSlot } from '../_utils/agentRiskManager.js';
 
 export const config = { maxDuration: 60 };
 
@@ -225,41 +228,186 @@ async function processAgentBattle(db, battle, summary) {
     }
     scoreUpdate.thresholdHistory = updatedThresholdHistory;
 
-    // ---- Fetch intraday candles for VWAP computation ----
+    // ---- Parallel data fetch: intraday + rankings + technicalScores + marketContext ----
     const momentumData = { vwap: {}, rankings: {} };
-    try {
-      const intradayMap = await fetchIntradayBatch(portfolioSymbols, { interval: '5m' });
+    const technicalScoresMap = {};
+    let marketContext = null;
+    let spyData = null;
+
+    const allTechSymbols = [...new Set([...portfolioSymbols, ...benchSymbols])];
+    const techRefs = allTechSymbols.map(s => db.collection('stockTechnicalScores').doc(s));
+
+    const [intradayResult, rankingsResult, techScoresResult, intelligenceResult] = await Promise.allSettled([
+      fetchIntradayBatch(portfolioSymbols, { interval: '5m' }),
+      db.collection('indexIntelligence').doc('stockRankings').get(),
+      techRefs.length > 0 ? db.getAll(...techRefs) : Promise.resolve([]),
+      db.getAll(
+        db.collection('indexIntelligence').doc('marketContext'),
+        db.collection('indexIntelligence').doc('SPY')
+      ),
+    ]);
+
+    // Process intraday candles → VWAP + 5min SMA20
+    if (intradayResult.status === 'fulfilled') {
+      const intradayMap = intradayResult.value;
       for (const symbol of portfolioSymbols) {
         const candles = intradayMap[symbol];
         if (candles && candles.length > 0) {
           const vwapResult = calculateVWAP(candles);
           if (vwapResult) {
-            momentumData.vwap[symbol] = vwapResult;
+            const sma20_5m = calculate5minSMA20(candles);
+            momentumData.vwap[symbol] = { ...vwapResult, sma20_5m };
           }
         }
       }
-    } catch (err) {
-      console.warn(`${LOG_PREFIX} Intraday fetch failed for battle ${battle.id}:`, err.message);
+    } else {
+      console.warn(`${LOG_PREFIX} Intraday fetch failed:`, intradayResult.reason?.message);
     }
 
-    // ---- Fetch stockRankings for bandwidth/NR7 data ----
-    try {
-      const rankingsDoc = await db.collection('indexIntelligence').doc('stockRankings').get();
-      if (rankingsDoc.exists) {
-        const rankingsData = rankingsDoc.data();
-        const stocksArray = rankingsData?.stocks || [];
-        for (const stock of stocksArray) {
-          if (portfolioSymbols.includes(stock.symbol)) {
-            momentumData.rankings[stock.symbol] = {
-              bBandwidthPercentile: stock.bBandwidthPercentile ?? null,
-              nr7Flag: stock.nr7Flag ?? false,
-              dailyRange: stock.dailyRange ?? null,
-            };
-          }
+    // Process stockRankings → bandwidth/NR7
+    if (rankingsResult.status === 'fulfilled' && rankingsResult.value.exists) {
+      const stocksArray = rankingsResult.value.data()?.stocks || [];
+      for (const stock of stocksArray) {
+        if (portfolioSymbols.includes(stock.symbol) || benchSymbols.includes(stock.symbol)) {
+          momentumData.rankings[stock.symbol] = {
+            bBandwidthPercentile: stock.bBandwidthPercentile ?? null,
+            nr7Flag: stock.nr7Flag ?? false,
+            dailyRange: stock.dailyRange ?? null,
+          };
         }
       }
-    } catch (err) {
-      console.warn(`${LOG_PREFIX} Rankings fetch failed for battle ${battle.id}:`, err.message);
+    }
+
+    // Process stockTechnicalScores → regime classification input
+    if (techScoresResult.status === 'fulfilled') {
+      for (const doc of techScoresResult.value) {
+        if (doc.exists) technicalScoresMap[doc.id] = doc.data();
+      }
+    }
+
+    // Process marketContext + SPY index docs
+    if (intelligenceResult.status === 'fulfilled') {
+      const [mcDoc, spyDoc] = intelligenceResult.value;
+      if (mcDoc.exists) marketContext = mcDoc.data();
+      if (spyDoc.exists) spyData = spyDoc.data();
+    }
+
+    // ---- Regime classification ----
+    const marketPosture = (marketContext && spyData)
+      ? classifyMarketPosture(marketContext, spyData)
+      : 'selective';
+
+    const stockRegimes = {};
+    for (const symbol of allTechSymbols) {
+      const techScore = technicalScoresMap[symbol];
+      if (techScore) stockRegimes[symbol] = classifyStockRegime(techScore);
+    }
+
+    momentumData.regimes = stockRegimes;
+    momentumData.marketPosture = marketPosture;
+
+    // ---- Risk evaluation layer (runs BEFORE trigger gate) ----
+    const riskStatus = {};
+    const riskSwaps = [];
+    const lockedPositions = new Set();
+    const statusFeedEntries = [];
+    const vwapTicks = { ...(battle.cronState?.vwapTicks || {}) };
+
+    for (const score of assetScores) {
+      const asset = flatPortfolio.find(a => a.symbol === score.symbol);
+      const currentPrice = prices[score.symbol]?.current;
+      const entryPrice = asset?.swapPrice || startingPrices[score.symbol] || 0;
+      const vwapInfo = momentumData.vwap[score.symbol] || null;
+
+      // Update VWAP tick counter
+      if (vwapInfo && vwapInfo.vwapDeviation < 0) {
+        vwapTicks[score.symbol] = (vwapTicks[score.symbol] || 0) + 1;
+      } else {
+        vwapTicks[score.symbol] = 0;
+      }
+
+      const intradaySnapshot = vwapInfo ? {
+        vwap: vwapInfo.vwap,
+        vwapDeviation: vwapInfo.vwapDeviation,
+        sma20_5m: vwapInfo.sma20_5m || null,
+      } : null;
+
+      const riskResult = evaluateRisk(
+        { symbol: score.symbol, tier: asset?.tier, baseATR: score.baseATR },
+        currentPrice, entryPrice, score.baseATR,
+        intradaySnapshot,
+        { ticksBelowVwap: vwapTicks[score.symbol] }
+      );
+
+      riskStatus[score.symbol] = riskResult;
+
+      if (['EMERGENCY_SWAP', 'SWAP_OUT', 'TRAIL_STOP'].includes(riskResult.action)) {
+        riskSwaps.push({ score, asset, riskResult });
+      }
+      if (riskResult.action === 'LOCK') {
+        lockedPositions.add(score.symbol);
+      }
+    }
+
+    momentumData.riskStatus = riskStatus;
+
+    // ---- Execute risk-triggered swaps (no Haiku needed) ----
+    for (const { score, asset, riskResult } of riskSwaps) {
+      const allBench = flattenBenchServer(battle.portfolio?.bench);
+      const replacement = pickEmergencyReplacement(allBench, prices, asset?.isCrypto === true);
+
+      if (!replacement) {
+        console.warn(`${LOG_PREFIX} No bench replacement for risk swap of ${score.symbol} — skipping`);
+        continue;
+      }
+
+      const slot = findPortfolioSlot(battle.portfolio, score.symbol);
+      if (!slot) {
+        console.warn(`${LOG_PREFIX} Could not find portfolio slot for ${score.symbol}`);
+        continue;
+      }
+
+      try {
+        const riskTradeId = `trade_${String((battle.scoreState?.tradeCount || 0) + 1 + statusFeedEntries.filter(e => e.action !== 'hold').length).padStart(3, '0')}`;
+        const evaluationMetadata = {
+          id: riskTradeId,
+          action: 'SWAP',
+          trigger: riskResult.reason,
+          rationale: `Risk manager: ${riskResult.detail}`,
+          hypothesis: null,
+          evaluationId: `risk_${riskResult.reason}_${score.symbol}`,
+          tradingDay: currentDay,
+        };
+
+        await executeSwapServer(
+          db, battle.id, battle,
+          slot.tier, slot.slotIndex,
+          replacement, currentDay, prices, evaluationMetadata
+        );
+
+        statusFeedEntries.push({
+          timestamp: new Date().toISOString(),
+          message: `Risk: ${riskResult.detail}`,
+          pvpContext: null,
+          action: riskResult.action,
+          regime: stockRegimes[score.symbol] || null,
+          score: Math.round(currentScore * 100) / 100,
+          citedRules: [riskResult.reason],
+          triggeredBy: `risk_${riskResult.reason}`,
+          source: 'risk_manager',
+          evalId: null,
+          symbolOut: score.symbol,
+          symbolIn: replacement.symbol,
+        });
+
+        summary.swapped++;
+
+        // Re-read battle doc after swap for accurate state in subsequent processing
+        const updatedDoc = await battleRef.get();
+        Object.assign(battle, updatedDoc.data());
+      } catch (err) {
+        console.error(`${LOG_PREFIX} Risk swap failed for ${score.symbol}:`, err.message);
+      }
     }
 
     // ---- Fetch news for trigger gate ----
@@ -269,10 +417,15 @@ async function processAgentBattle(db, battle, summary) {
     const { shouldEvaluate, triggers } = evaluateTriggers(battle, assetScores, prices, news, momentumData);
 
     if (!shouldEvaluate) {
-      // No triggers — update scores and move on
+      // No triggers — update scores, VWAP ticks, and status feed, then move on
       scoreUpdate['cronState.lastEvaluatedAt'] = new Date().toISOString();
       scoreUpdate['cronState.triggerGatePassCount'] = (battle.cronState?.triggerGatePassCount || 0) + 1;
       scoreUpdate['cronState.evaluatingAt'] = null;
+      scoreUpdate['cronState.vwapTicks'] = vwapTicks;
+      if (statusFeedEntries.length > 0) {
+        const existingFeed = battle.statusFeed || [];
+        scoreUpdate.statusFeed = [...existingFeed, ...statusFeedEntries].slice(-50);
+      }
       await battleRef.update(scoreUpdate);
       summary.evaluated++;
       summary.held++;
@@ -293,7 +446,7 @@ async function processAgentBattle(db, battle, summary) {
       const response = await Promise.race([
         anthropic.messages.create({
           model: 'claude-haiku-4-5-20251001',
-          max_tokens: 800,
+          max_tokens: 1024,
           temperature: 0.4,
           system: buildEvalSystemPrompt(agentName, archetype),
           messages: [
@@ -335,10 +488,26 @@ async function processAgentBattle(db, battle, summary) {
     let downgraded = false;
     let validationErrors = [];
 
+    // Block Haiku from swapping out LOCKED positions
+    if (decision === 'SWAP' && haikuResult && lockedPositions.has(haikuResult.symbolOut)) {
+      validationErrors.push(`${haikuResult.symbolOut} is LOCKED (near bonus threshold) — swap blocked`);
+      decision = 'HOLD';
+      downgraded = true;
+      console.warn(`${LOG_PREFIX} SWAP blocked by risk LOCK for ${haikuResult.symbolOut}`);
+    }
+
+    // Block Haiku from swapping IN distressed stocks
+    if (decision === 'SWAP' && haikuResult && stockRegimes[haikuResult.symbolIn] === 'distressed') {
+      validationErrors.push(`${haikuResult.symbolIn} is DISTRESSED regime — swap blocked`);
+      decision = 'HOLD';
+      downgraded = true;
+      console.warn(`${LOG_PREFIX} SWAP blocked: ${haikuResult.symbolIn} is distressed`);
+    }
+
     if (decision === 'SWAP' && haikuResult) {
       const validation = validateTradeDecision(haikuResult, battle);
       if (!validation.valid) {
-        validationErrors = validation.errors;
+        validationErrors = [...validationErrors, ...validation.errors];
         decision = 'HOLD';
         downgraded = true;
         console.warn(`${LOG_PREFIX} SWAP downgraded to HOLD for battle ${battle.id}:`, validation.errors);
@@ -374,6 +543,24 @@ async function processAgentBattle(db, battle, summary) {
       summary.held++;
     }
 
+    // ---- Build status feed entry from Haiku result ----
+    if (haikuResult?.status_feed_update || decision === 'SWAP') {
+      statusFeedEntries.push({
+        timestamp: now,
+        message: haikuResult?.status_feed_update || null,
+        pvpContext: haikuResult?.pvp_context || null,
+        action: decision === 'SWAP' ? 'swap' : 'hold',
+        regime: stockRegimes[haikuResult?.symbolOut] || null,
+        score: Math.round(currentScore * 100) / 100,
+        citedRules: haikuResult?.cited_rules || [],
+        triggeredBy: triggers.map(t => t.type).join(', '),
+        source: 'haiku',
+        evalId: `eval_${String((battle.evaluations?.length || 0) + 1).padStart(3, '0')}`,
+        symbolOut: decision === 'SWAP' ? haikuResult?.symbolOut : null,
+        symbolIn: decision === 'SWAP' ? haikuResult?.symbolIn : null,
+      });
+    }
+
     // ---- Build evaluation record ----
     const evaluation = {
       evalId,
@@ -397,6 +584,7 @@ async function processAgentBattle(db, battle, summary) {
       },
       validationErrors,
       downgraded,
+      marketPosture,
     };
 
     // ---- Write everything ----
@@ -405,9 +593,14 @@ async function processAgentBattle(db, battle, summary) {
       ? (battle.cronState?.consecutiveHolds || 0) + 1
       : 0;
 
+    // Cap statusFeed at 50 entries
+    const existingFeed = battle.statusFeed || [];
+    const updatedFeed = [...existingFeed, ...statusFeedEntries].slice(-50);
+
     const finalUpdate = {
       ...scoreUpdate,
       evaluations,
+      statusFeed: updatedFeed,
       'scoreState.evaluationCount': evaluations.length,
       'scoreState.holdCount': decision === 'HOLD'
         ? (battle.scoreState?.holdCount || 0) + 1
@@ -418,6 +611,7 @@ async function processAgentBattle(db, battle, summary) {
       'cronState.totalTokens.input': (battle.cronState?.totalTokens?.input || 0) + inputTokens,
       'cronState.totalTokens.output': (battle.cronState?.totalTokens?.output || 0) + outputTokens,
       'cronState.consecutiveHolds': consecutiveHolds,
+      'cronState.vwapTicks': vwapTicks,
       'cronState.evaluatingAt': null,
     };
 

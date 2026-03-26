@@ -53,6 +53,22 @@ export const TRADE_DECISION_TOOL = {
         description:
           'Array of directive IDs being overridden due to Survival Mode. Empty array if no directives violated. Example: ["d1", "d3"]',
       },
+      status_feed_update: {
+        type: 'string',
+        description:
+          'A 1-2 sentence status update for the battle dashboard. Reference the active strategy, specific indicators, or risk levels. Be concise and personality-consistent. Only generate when something meaningful happened (trade, threshold crossed, notable move). Omit if nothing noteworthy.',
+      },
+      pvp_context: {
+        type: 'string',
+        description:
+          'Market-relative observation. Example: "Our tech positions are outperforming the broader market" or "Portfolio trailing S&P today on sector rotation." Compare portfolio performance to market benchmarks.',
+      },
+      cited_rules: {
+        type: 'array',
+        items: { type: 'string' },
+        description:
+          'Array of strategy/rule names that influenced this decision. E.g., ["threshold_proximity", "sector_rotation", "survival_mode"]. Empty array if no specific rules cited.',
+      },
     },
   },
 };
