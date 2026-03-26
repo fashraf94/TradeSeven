@@ -147,6 +147,20 @@ async function processAgentBattle(db, battle, summary) {
   }
 
   try {
+    // Migration guard for pre-Sprint 2/3 battles
+    const migrationFields = {};
+    if (battle.executionMode === undefined) migrationFields.executionMode = 'copilot';
+    if (battle.pendingProposal === undefined) migrationFields.pendingProposal = null;
+    if (battle.proposalHistory === undefined) migrationFields.proposalHistory = [];
+    if (battle.battleLedger === undefined) migrationFields.battleLedger = [];
+    if (battle.statusFeed === undefined) migrationFields.statusFeed = [];
+
+    if (Object.keys(migrationFields).length > 0) {
+      console.log(`${LOG_PREFIX} Migrating battle ${battle.id}: adding ${Object.keys(migrationFields).join(', ')}`);
+      await battleRef.update(migrationFields);
+      Object.assign(battle, migrationFields);
+    }
+
     const ctx = battle.agentContext || {};
     const currentDay = getCurrentTradingDayServer(battle.timing?.tradingDays);
 
