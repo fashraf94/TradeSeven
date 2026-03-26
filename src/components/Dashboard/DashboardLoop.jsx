@@ -61,6 +61,7 @@ export default function DashboardLoop({
   unreadCount,
   activeDraftBanner,
   setActiveDraftBanner,
+  onStoryPress,
 }) {
   const { tokens } = useTheme();
   const marketOpen = isMarketOpen();
@@ -536,7 +537,7 @@ export default function DashboardLoop({
 
         {/* ── Section 3: Fantasy Times Teaser ─────────────────────────────── */}
         <motion.div variants={sectionVariants}>
-          <FantasyTimesTeaser setScreen={setScreen} />
+          <FantasyTimesTeaser setScreen={setScreen} onStoryPress={onStoryPress} />
         </motion.div>
 
         {/* ── Section 4: Pending Lobbies ───────────────────────────────────── */}
