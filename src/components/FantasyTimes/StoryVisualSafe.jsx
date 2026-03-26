@@ -5,7 +5,6 @@
 import React from 'react';
 
 // Lazy-load visual components to keep initial bundle lean
-const StoryChart = React.lazy(() => import('./visuals/StoryChart'));
 const MarketBar = React.lazy(() => import('./visuals/MarketBar'));
 const ComparisonBar = React.lazy(() => import('./visuals/ComparisonBar'));
 const StatCard = React.lazy(() => import('./visuals/StatCard'));
@@ -36,8 +35,6 @@ function StoryVisual({ visualType, visualConfig, size }) {
   const config = visualConfig || {};
 
   switch (visualType) {
-    case 'price_chart':
-      return <StoryChart config={config} size={size} />;
     case 'market_bar':
       return <MarketBar config={config} size={size} />;
     case 'comparison_bar':
