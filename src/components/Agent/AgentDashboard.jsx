@@ -1,20 +1,23 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Bot, Trophy, TrendingUp } from 'lucide-react';
+import { Bot, Trophy, TrendingUp, Activity } from 'lucide-react';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useIsMobile } from '../../hooks/useIsMobile';
 import useAgent from '../../hooks/useAgent';
+import useAgentBattle from '../../hooks/useAgentBattle';
 import { useFantasyTimes } from '../../hooks/useFantasyTimes';
 import { REPORTER_PROFILES } from '../../prompts/fantasyTimesPrompts';
 import AgentSidebar from './AgentSidebar';
 import AgentMindTab from './AgentMindTab';
 import AgentLeaderboardTab from './AgentLeaderboardTab';
 import AgentEvolutionTab from './AgentEvolutionTab';
+import AgentStrategyTab from './AgentStrategyTab';
 
 // ── Tabs ──────────────────────────────────────────────────
 
 const TABS = [
   { key: 'mind', label: 'Mind', icon: Bot },
+  { key: 'strategy', label: 'Strategy', icon: Activity },
   { key: 'leaderboard', label: 'Leaderboard', icon: Trophy },
   { key: 'evolution', label: 'Evolution', icon: TrendingUp },
 ];
@@ -90,7 +93,16 @@ const AgentDashboard = ({ user, setScreen, onCreateAgentBattle }) => {
   const [deploying, setDeploying] = useState(false);
   const { agent, loading, hasAgent, speech, deployText, maturityStage,
           activeDirectives, groupedDirectives, record, seedTestAgent } = useAgent(user?.odUserId);
+  const { battle: agentBattle, statusFeed, loading: battleLoading } = useAgentBattle(agent?.currentBattleId);
   const { stories: rawStories } = useFantasyTimes();
+
+  // Track last-seen feed length for notification dot (avoids re-rendering tab bar)
+  const lastSeenFeedLengthRef = useRef(0);
+  const hasNewFeedEntries = statusFeed.length > lastSeenFeedLengthRef.current;
+  // Mark as seen when user views the strategy tab
+  if (activeTab === 'strategy') {
+    lastSeenFeedLengthRef.current = statusFeed.length;
+  }
 
   const handleDeploy = async () => {
     if (!agent?.id || deploying) return;
@@ -275,6 +287,15 @@ const AgentDashboard = ({ user, setScreen, onCreateAgentBattle }) => {
                   >
                     <Icon size={16} />
                     {tab.label}
+                    {tab.key === 'strategy' && hasNewFeedEntries && !isActive && (
+                      <span style={{
+                        width: '6px', height: '6px',
+                        borderRadius: '50%',
+                        background: tokens.teal,
+                        boxShadow: tokens.glowTealNav,
+                        flexShrink: 0,
+                      }} />
+                    )}
                     {isActive && (
                       <motion.div
                         layoutId="agentTabIndicator"
@@ -308,6 +329,16 @@ const AgentDashboard = ({ user, setScreen, onCreateAgentBattle }) => {
                     scouting={buildScoutingReport(agent, maturityStage)}
                     battleLog={buildBattleLog(agent)}
                     news={transformedStories}
+                    tokens={tokens}
+                    isDesktop={isDesktop}
+                    isMobile={isMobile}
+                  />
+                )}
+                {activeTab === 'strategy' && (
+                  <AgentStrategyTab
+                    battle={agentBattle}
+                    statusFeed={statusFeed}
+                    loading={battleLoading}
                     tokens={tokens}
                     isDesktop={isDesktop}
                     isMobile={isMobile}
