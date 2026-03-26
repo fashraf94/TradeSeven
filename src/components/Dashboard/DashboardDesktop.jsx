@@ -60,6 +60,7 @@ export default function DashboardDesktop({
   activeDraftBanner,
   setActiveDraftBanner,
   sidebarCollapsed,
+  onStoryPress,
 }) {
   const { tokens } = useTheme();
   const marketOpen = isMarketOpen();
@@ -461,7 +462,7 @@ export default function DashboardDesktop({
 
         {/* ── FantasyTimes Teaser ──────────────────────────────────────── */}
         <motion.div variants={sectionVariants}>
-          <FantasyTimesTeaser setScreen={setScreen} />
+          <FantasyTimesTeaser setScreen={setScreen} onStoryPress={onStoryPress} />
         </motion.div>
 
         {/* ── Pending Lobbies ──────────────────────────────────────────── */}

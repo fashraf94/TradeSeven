@@ -1022,10 +1022,15 @@ export function useBaggerBombBattleV4(battleId, userId, options = {}) {
       portfolioFlat.forEach((asset) => {
         if (!asset) return;
 
-        // Daily baseline for threshold/history tracking (previousClose resets each day)
-        const dailyBaseline = previousClosePriceMap[asset.symbol] || asset.swapPrice || openPrices[asset.symbol];
+        // Daily baseline for threshold/history tracking — use thresholdBaselines
+        // (cron levels when available, else previousClose) to match scoring & threshold detection
+        const dailyBaseline = thresholdBaselines[asset.symbol] || asset.swapPrice || openPrices[asset.symbol];
         const currentPrice = effectivePrices[asset.symbol];
         if (!dailyBaseline || !currentPrice) return;
+
+        if (asset.symbol === 'AMD') {
+          console.log(`[HIST-FIX] ${asset.symbol} baseline: ${dailyBaseline}, thresholdBaseline: ${thresholdBaselines[asset.symbol]}, prevClose: ${previousClosePriceMap[asset.symbol]}, useCron: ${useCronLevels}`);
+        }
 
         let priceChange = ((currentPrice - dailyBaseline) / dailyBaseline) * 100;
         if (asset.direction === 'short') priceChange = -priceChange;

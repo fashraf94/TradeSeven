@@ -8,9 +8,10 @@ import { ChevronRight } from 'lucide-react';
 import { useFantasyTimes } from '../../hooks/useFantasyTimes';
 import { isMarketOpen } from '../../utils/marketSchedule';
 import { REPORTER_COLORS } from '../../constants/reporterTheme';
-import StoryVisualSafe from '../FantasyTimes/StoryVisualSafe';
 import { useTheme } from '../../contexts/ThemeContext';
 import TapGlint from '../shared/TapGlint';
+
+const BEAT_ICONS = { kai: '⚡', alex: '📊', neta: '🌐', doug: '📈', kim: '🧭' };
 
 function timeAgo(timestamp) {
   if (!timestamp) return '';
@@ -24,13 +25,18 @@ function timeAgo(timestamp) {
   return `${Math.floor(hours / 24)}d ago`;
 }
 
-export default function FantasyTimesTeaser({ setScreen }) {
+export default function FantasyTimesTeaser({ setScreen, onStoryPress }) {
   const { tokens } = useTheme();
 
   function getReporterColor(reporter) {
     if (!reporter) return tokens.textFaint;
     const key = reporter.toLowerCase();
     return REPORTER_COLORS[key]?.hex || tokens.textFaint;
+  }
+  function getReporterRgb(reporter) {
+    if (!reporter) return '100,116,139';
+    const key = reporter.toLowerCase();
+    return REPORTER_COLORS[key]?.rgb || '100,116,139';
   }
   const { rankedStories, loading } = useFantasyTimes();
   const marketOpen = isMarketOpen();
@@ -60,7 +66,7 @@ export default function FantasyTimesTeaser({ setScreen }) {
 
   return (
     <div>
-      {/* Section header */}
+      {/* Section header — "See all" always navigates to feed, NOT to a specific story */}
       <div style={{
         display: 'flex',
         alignItems: 'center',
@@ -126,13 +132,23 @@ export default function FantasyTimesTeaser({ setScreen }) {
       >
         {stories.map((story, i) => {
           const reporterColor = getReporterColor(story.reporter);
+          const reporterRgb = getReporterRgb(story.reporter);
+          const reporterKey = (story.reporter || '').toLowerCase();
           const cardKey = story.id || i;
+          const hasTicker = !!story.primaryTicker;
+          const pctChange = story.dataSnapshot?.percentChange;
+          const pctPositive = pctChange != null && pctChange >= 0;
+          const pctColor = pctPositive ? '#10b981' : '#ef4444';
           return (
             <motion.div
               key={cardKey}
               onClick={() => {
                 setTapCounts(prev => ({ ...prev, [cardKey]: (prev[cardKey] || 0) + 1 }));
-                setScreen('fantasytimes');
+                if (onStoryPress) {
+                  onStoryPress(story);
+                } else {
+                  setScreen('fantasytimes');
+                }
               }}
               whileTap={{ scale: 0.97 }}
               transition={{ type: 'spring', stiffness: 400, damping: 25 }}
@@ -141,7 +157,6 @@ export default function FantasyTimesTeaser({ setScreen }) {
                 overflow: 'hidden',
                 minWidth: '240px',
                 maxWidth: '240px',
-                padding: '12px',
                 background: tokens.bgCard,
                 borderRadius: '12px',
                 border: `1px solid ${tokens.borderDefault}`,
@@ -150,28 +165,68 @@ export default function FantasyTimesTeaser({ setScreen }) {
                 cursor: 'pointer',
                 display: 'flex',
                 flexDirection: 'column',
-                gap: '8px',
                 scrollSnapAlign: 'start',
               }}
             >
               <TapGlint triggerKey={tapCounts[cardKey] || 0} />
-              {/* Visual or fallback gradient */}
-              {story.visualType && story.visualType !== 'none' ? (
-                <StoryVisualSafe
-                  visualType={story.visualType}
-                  visualConfig={story.visualConfig}
-                  size="micro"
-                />
-              ) : (
-                <div style={{
-                  height: 80,
-                  background: `linear-gradient(135deg, ${reporterColor}15, transparent)`,
-                  borderRadius: '8px 8px 0 0',
-                  marginBottom: -4,
-                }} />
-              )}
+
+              {/* Ticker hero visual */}
+              <div style={{
+                height: 80,
+                borderRadius: '12px 12px 0 0',
+                background: hasTicker
+                  ? `linear-gradient(135deg, rgba(${reporterRgb}, 0.15) 0%, rgba(0,0,0,0.4) 100%)`
+                  : `linear-gradient(135deg, rgba(${reporterRgb}, 0.1) 0%, rgba(${reporterRgb}, 0.05) 50%, rgba(0,0,0,0.3) 100%)`,
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 4,
+              }}>
+                {hasTicker ? (
+                  <>
+                    <span style={{
+                      fontSize: 22,
+                      fontWeight: 700,
+                      color: '#ffffff',
+                      letterSpacing: '0.02em',
+                    }}>
+                      {story.primaryTicker}
+                    </span>
+                    {pctChange != null && (
+                      <span style={{
+                        fontSize: 11,
+                        fontWeight: 600,
+                        color: pctColor,
+                        background: pctPositive ? 'rgba(16,185,129,0.15)' : 'rgba(239,68,68,0.15)',
+                        padding: '1px 8px',
+                        borderRadius: 8,
+                      }}>
+                        {pctPositive ? '+' : ''}{pctChange.toFixed(1)}%
+                      </span>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <span style={{ fontSize: 28 }}>
+                      {BEAT_ICONS[reporterKey] || '📰'}
+                    </span>
+                    <span style={{
+                      fontSize: 10,
+                      fontWeight: 500,
+                      color: reporterColor,
+                      textTransform: 'uppercase',
+                      letterSpacing: '1px',
+                    }}>
+                      {REPORTER_COLORS[reporterKey]?.beat || 'News'}
+                    </span>
+                  </>
+                )}
+              </div>
+
               {/* Headline */}
               <div style={{
+                padding: '10px 12px 0',
                 fontSize: '13px',
                 fontWeight: '500',
                 color: tokens.textPrimary,
@@ -190,6 +245,7 @@ export default function FantasyTimesTeaser({ setScreen }) {
                 alignItems: 'center',
                 justifyContent: 'space-between',
                 marginTop: 'auto',
+                padding: '8px 12px 10px',
               }}>
                 <span style={{
                   fontSize: '11px',

@@ -61,6 +61,9 @@ export const DATA_TYPE_TIERS = {
   'weekAhead': CACHE_TIERS.MODERATE,
   'metrics': CACHE_TIERS.MODERATE,
 
+  // INTRADAY - 5 minute cache (30m/1h candles during market hours)
+  'intraday': CACHE_TIERS.MODERATE,
+
   // LIGHT - 5 minute cache
   'prices': CACHE_TIERS.LIGHT,
   'crypto': CACHE_TIERS.LIGHT,

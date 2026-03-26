@@ -8258,6 +8258,7 @@ export default function PortfolioDuel() {
               unreadCount={unreadCount}
               activeDraftBanner={activeDraftBanner}
               setActiveDraftBanner={setActiveDraftBanner}
+              onStoryPress={(story) => { setSelectedStory(story); setScreen('storyDetail'); }}
             />
           </div>
         </ErrorBoundary>
@@ -8293,6 +8294,7 @@ export default function PortfolioDuel() {
             activeDraftBanner={activeDraftBanner}
             setActiveDraftBanner={setActiveDraftBanner}
             sidebarCollapsed={sidebarCollapsed}
+            onStoryPress={(story) => { setSelectedStory(story); setScreen('storyDetail'); }}
           />
         </div>
       </ErrorBoundary>
