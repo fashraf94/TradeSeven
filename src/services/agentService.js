@@ -284,3 +284,40 @@ export const seedTestAgent = async (ownerId) => {
   console.log('Test agent seeded with ID:', docRef.id);
   return docRef.id;
 };
+
+// ============================================
+// AGENT BATTLE OPERATIONS (Sprint 3)
+// ============================================
+
+const BATTLES_COLLECTION = 'agentBattles';
+
+export const updateExecutionMode = async (battleId, mode) => {
+  const docRef = doc(db, BATTLES_COLLECTION, battleId);
+  await updateDoc(docRef, {
+    executionMode: mode,
+    updatedAt: serverTimestamp(),
+  });
+};
+
+export const resolveProposal = async (battleId, currentProposal, resolution, userReason = null) => {
+  const docRef = doc(db, BATTLES_COLLECTION, battleId);
+  const resolved = {
+    ...currentProposal,
+    resolvedAt: new Date().toISOString(),
+    resolution,
+    resolvedBy: 'coach',
+    userReason,
+  };
+  await updateDoc(docRef, {
+    pendingProposal: resolved,
+    updatedAt: serverTimestamp(),
+  });
+};
+
+export const appendBattleLedger = async (battleId, entry) => {
+  const docRef = doc(db, BATTLES_COLLECTION, battleId);
+  await updateDoc(docRef, {
+    battleLedger: arrayUnion({ ...entry, timestamp: new Date().toISOString() }),
+    updatedAt: serverTimestamp(),
+  });
+};

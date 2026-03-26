@@ -46,8 +46,10 @@ const useAgentBattle = (agentBattleId) => {
   }, [agentBattleId]);
 
   const statusFeed = battle?.statusFeed || [];
+  const executionMode = battle?.executionMode || 'copilot';
+  const pendingProposal = battle?.pendingProposal || null;
 
-  return { battle, statusFeed, loading, error };
+  return { battle, statusFeed, executionMode, pendingProposal, loading, error };
 };
 
 export default useAgentBattle;

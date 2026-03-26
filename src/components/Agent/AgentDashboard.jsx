@@ -93,12 +93,13 @@ const AgentDashboard = ({ user, setScreen, onCreateAgentBattle }) => {
   const [deploying, setDeploying] = useState(false);
   const { agent, loading, hasAgent, speech, deployText, maturityStage,
           activeDirectives, groupedDirectives, record, seedTestAgent } = useAgent(user?.odUserId);
-  const { battle: agentBattle, statusFeed, loading: battleLoading } = useAgentBattle(agent?.currentBattleId);
+  const { battle: agentBattle, statusFeed, executionMode, pendingProposal, loading: battleLoading } = useAgentBattle(agent?.currentBattleId);
   const { stories: rawStories } = useFantasyTimes();
 
   // Track last-seen feed length for notification dot (avoids re-rendering tab bar)
   const lastSeenFeedLengthRef = useRef(0);
   const hasNewFeedEntries = statusFeed.length > lastSeenFeedLengthRef.current;
+  const hasPendingProposal = pendingProposal && !pendingProposal.resolvedAt;
   // Mark as seen when user views the strategy tab
   if (activeTab === 'strategy') {
     lastSeenFeedLengthRef.current = statusFeed.length;
@@ -287,7 +288,20 @@ const AgentDashboard = ({ user, setScreen, onCreateAgentBattle }) => {
                   >
                     <Icon size={16} />
                     {tab.label}
-                    {tab.key === 'strategy' && hasNewFeedEntries && !isActive && (
+                    {tab.key === 'strategy' && !isActive && hasPendingProposal && (
+                      <motion.span
+                        animate={{ scale: [1, 1.4, 1], opacity: [1, 0.7, 1] }}
+                        transition={{ duration: 1.5, repeat: Infinity }}
+                        style={{
+                          width: '7px', height: '7px',
+                          borderRadius: '50%',
+                          background: tokens.amber,
+                          boxShadow: `0 0 8px ${tokens.amber}`,
+                          flexShrink: 0,
+                        }}
+                      />
+                    )}
+                    {tab.key === 'strategy' && !isActive && !hasPendingProposal && hasNewFeedEntries && (
                       <span style={{
                         width: '6px', height: '6px',
                         borderRadius: '50%',
@@ -338,6 +352,8 @@ const AgentDashboard = ({ user, setScreen, onCreateAgentBattle }) => {
                   <AgentStrategyTab
                     battle={agentBattle}
                     statusFeed={statusFeed}
+                    executionMode={executionMode}
+                    pendingProposal={pendingProposal}
                     loading={battleLoading}
                     tokens={tokens}
                     isDesktop={isDesktop}

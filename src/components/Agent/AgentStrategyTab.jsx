@@ -1,7 +1,9 @@
 import React from 'react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { Activity, Zap, Clock } from 'lucide-react';
 import StatusFeedTimeline from './StatusFeedTimeline';
+import ExecutionModeToggle from './ExecutionModeToggle';
+import ProposalCard from './ProposalCard';
 
 const containerVariants = {
   hidden: {},
@@ -38,7 +40,7 @@ const SectionHeader = ({ icon: Icon, label, tokens }) => (
   </div>
 );
 
-const AgentStrategyTab = ({ battle, statusFeed, loading, tokens, isDesktop, isMobile }) => {
+const AgentStrategyTab = ({ battle, statusFeed, executionMode, pendingProposal, loading, tokens, isDesktop, isMobile }) => {
   // No active battle
   if (!battle && !loading) {
     return (
@@ -86,6 +88,7 @@ const AgentStrategyTab = ({ battle, statusFeed, loading, tokens, isDesktop, isMo
   const scoreState = battle?.scoreState || {};
   const isActive = battle?.status === 'active';
   const isCompleted = battle?.status === 'completed';
+  const hasPendingProposal = pendingProposal && !pendingProposal.resolvedAt;
 
   return (
     <motion.div
@@ -133,6 +136,29 @@ const AgentStrategyTab = ({ battle, statusFeed, loading, tokens, isDesktop, isMo
           </div>
         </div>
       </motion.div>
+
+      {/* Execution Mode Toggle */}
+      {isActive && (
+        <motion.div variants={sectionVariants} style={cardStyle(tokens)}>
+          <ExecutionModeToggle
+            battleId={battle.id}
+            executionMode={executionMode}
+            tokens={tokens}
+            disabled={!isActive}
+          />
+        </motion.div>
+      )}
+
+      {/* Pending Proposal Card */}
+      <AnimatePresence>
+        {hasPendingProposal && (
+          <ProposalCard
+            battleId={battle.id}
+            proposal={pendingProposal}
+            tokens={tokens}
+          />
+        )}
+      </AnimatePresence>
 
       {/* Strategy Feed */}
       <motion.div variants={sectionVariants} style={cardStyle(tokens)}>
