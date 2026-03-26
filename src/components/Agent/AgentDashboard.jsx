@@ -93,7 +93,7 @@ const AgentDashboard = ({ user, setScreen, onCreateAgentBattle }) => {
   const [deploying, setDeploying] = useState(false);
   const { agent, loading, hasAgent, speech, deployText, maturityStage,
           activeDirectives, groupedDirectives, record, seedTestAgent } = useAgent(user?.odUserId);
-  const { battle: agentBattle, statusFeed, executionMode, pendingProposal, loading: battleLoading } = useAgentBattle(agent?.currentBattleId);
+  const { battle: agentBattle, statusFeed, executionMode, pendingProposal, loading: battleLoading } = useAgentBattle(agent?.activeBattleId);
   const { stories: rawStories } = useFantasyTimes();
 
   // Track last-seen feed length for notification dot (avoids re-rendering tab bar)
@@ -137,7 +137,7 @@ const AgentDashboard = ({ user, setScreen, onCreateAgentBattle }) => {
       // Step 3: Update agent with active battle reference
       if (battleId) {
         const { updateAgent } = await import('../../services/agentService');
-        await updateAgent(agent.id, { currentBattleId: battleId });
+        await updateAgent(agent.id, { activeBattleId: battleId });
       }
     } catch (err) {
       console.error('[Deploy] Error:', err);

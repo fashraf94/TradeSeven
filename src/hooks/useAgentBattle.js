@@ -6,7 +6,7 @@ import { db } from '../firebase/config';
  * Subscribe to an agent's active battle document from the agentBattles collection.
  * Returns the full battle doc and extracts statusFeed for convenience.
  *
- * @param {string|null} agentBattleId - The agentBattle document ID (from agent.currentBattleId)
+ * @param {string|null} agentBattleId - The agentBattle document ID (from agent.activeBattleId)
  * @returns {{ battle: Object|null, statusFeed: Array, loading: boolean, error: string|null }}
  */
 const useAgentBattle = (agentBattleId) => {
