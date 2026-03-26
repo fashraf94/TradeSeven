@@ -94,8 +94,12 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
     };
 
     // Check in-memory cache (skip cache for spectate — always fetch fresh)
-    if (!isSpectate && cacheRef.current[cacheKey]) {
-      setRawData(cacheRef.current[cacheKey]);
+    // Bomb/intraday data expires after 5 minutes to avoid showing stale candles
+    const INTRADAY_STALE_MS = 5 * 60 * 1000;
+    const refEntry = cacheRef.current[cacheKey];
+    const isRefStale = isBomb && refEntry?.cachedAt && (Date.now() - refEntry.cachedAt > INTRADAY_STALE_MS);
+    if (!isSpectate && refEntry && !isRefStale) {
+      setRawData(refEntry.data || refEntry);
       setError(null);
       return;
     }
@@ -120,7 +124,8 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
           if (isSpectate) {
             // Spectate fallback: use cached 30m bomb data if available
             const bombCacheKey = `${symbol}_30m_bomb`;
-            const cachedBomb = cacheRef.current[bombCacheKey];
+            const cachedBombEntry = cacheRef.current[bombCacheKey];
+            const cachedBomb = cachedBombEntry?.data || cachedBombEntry;
             if (cachedBomb && cachedBomb.length > 0) {
               console.log('[useResearchData] Spectate 1m empty, falling back to cached 30m bomb data');
               setRawData(cachedBomb);
@@ -136,7 +141,7 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
           }
         } else {
           const filtered = isBomb ? filterToRegularHours(data) : data;
-          if (!isSpectate) cacheRef.current[cacheKey] = filtered;
+          if (!isSpectate) cacheRef.current[cacheKey] = isBomb ? { data: filtered, cachedAt: Date.now() } : filtered;
           setRawData(filtered);
           if (isSpectate) spectateSettledRef.current = true;
 
@@ -584,7 +589,7 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
         if (!data || data.length === 0) {
           setError('No historical data available');
         } else {
-          cacheRef.current[cacheKey] = data;
+          cacheRef.current[cacheKey] = isBomb ? { data, cachedAt: Date.now() } : data;
           setRawData(data);
         }
       })

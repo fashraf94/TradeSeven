@@ -28,6 +28,8 @@ const NORMAL_TTL_MS = {
   analyst: 60 * 60 * 1000,
   weekAhead: 60 * 60 * 1000,
   metrics: 60 * 60 * 1000,
+  // INTRADAY (5min) — 30m/1h candles need frequent refresh during market hours
+  intraday: 5 * 60 * 1000,
   // LIGHT (2min)
   prices: 2 * 60 * 1000,
   crypto: 2 * 60 * 1000,

@@ -773,9 +773,11 @@ export function clearEarningsCache() {
 export async function fetchHistoricalOHLCV(symbol, timeframe = '1d', { days, from, to, type } = {}) {
   const upperSymbol = symbol.toUpperCase();
   const cacheKey = `ohlcv_${upperSymbol}_${timeframe}${days ? `_${days}d` : ''}`;
+  const isIntraday = ['30m', '1h', '1m'].includes(timeframe);
+  const cacheDataType = isIntraday ? 'intraday' : 'historical';
 
-  // Check cache (AGGRESSIVE tier - longer TTL for historical data)
-  const cached = cacheService.get('historical', cacheKey);
+  // Check cache (intraday: 5 min TTL, daily/weekly: 24h TTL)
+  const cached = cacheService.get(cacheDataType, cacheKey);
   if (cached !== null) {
     console.log(`[EODHD] Using cached ${timeframe} OHLCV for ${upperSymbol}`);
     // Return cached data - could be array (old format) or object with metadata
@@ -808,10 +810,9 @@ export async function fetchHistoricalOHLCV(symbol, timeframe = '1d', { days, fro
         console.warn(`[EODHD] ${result.fallbackMessage} for ${upperSymbol}`);
       }
 
-      // Cache with longer TTL (historical data doesn't change)
-      // Cache the actual timeframe's data to avoid re-fetching
+      // Cache: intraday (5 min TTL) vs daily/weekly (24h TTL)
       const actualCacheKey = `ohlcv_${upperSymbol}_${result.timeframe}${days ? `_${days}d` : ''}`;
-      cacheService.set('historical', actualCacheKey, result.data);
+      cacheService.set(cacheDataType, actualCacheKey, result.data);
 
       console.log(`[EODHD] Got ${result.data.length} ${result.timeframe} OHLCV candles for ${upperSymbol}`);
 
