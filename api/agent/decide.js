@@ -20,7 +20,7 @@ export const config = { maxDuration: 60 };
 let anthropicClient = null;
 function getAnthropicClient() {
   if (!anthropicClient) {
-    anthropicClient = new Anthropic({ apiKey: process.env.CLAUDE_API_KEY });
+    anthropicClient = new Anthropic({ apiKey: process.env.CLAUDE_API_KEY, maxRetries: 2 });
   }
   return anthropicClient;
 }
