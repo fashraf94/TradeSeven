@@ -344,6 +344,7 @@ const AgentDashboard = ({ user, setScreen, onCreateAgentBattle }) => {
                     strategyPreset={strategyPreset}
                     gameplanMeeting={gameplanMeeting}
                     agentId={agent?.id}
+                    agent={agent}
                     loading={battleLoading}
                     tokens={tokens}
                     isDesktop={isDesktop}

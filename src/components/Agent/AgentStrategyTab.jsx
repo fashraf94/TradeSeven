@@ -9,6 +9,7 @@ import GameplanMeetingCard from './GameplanMeetingCard';
 import DebateModal from './DebateModal';
 import FilmRoomCard from './FilmRoomCard';
 import TradeGradingCard from './TradeGradingCard';
+import OpenChatPanel from './OpenChatPanel';
 
 const containerVariants = {
   hidden: {},
@@ -45,7 +46,7 @@ const SectionHeader = ({ icon: Icon, label, tokens }) => (
   </div>
 );
 
-const AgentStrategyTab = ({ battle, statusFeed, executionMode, pendingProposal, strategyPreset, gameplanMeeting, agentId, loading, tokens, isDesktop, isMobile }) => {
+const AgentStrategyTab = ({ battle, statusFeed, executionMode, pendingProposal, strategyPreset, gameplanMeeting, agentId, agent, loading, tokens, isDesktop, isMobile }) => {
   const [debateTarget, setDebateTarget] = useState(null);
   // No active battle
   if (!battle && !loading) {
@@ -198,6 +199,13 @@ const AgentStrategyTab = ({ battle, statusFeed, executionMode, pendingProposal, 
       {battle?.dailyReviews?.length > 0 && (
         <motion.div variants={sectionVariants}>
           <FilmRoomCard battle={battle} agentId={agentId} tokens={tokens} />
+        </motion.div>
+      )}
+
+      {/* Open Chat Panel (pre/post market) */}
+      {isActive && (
+        <motion.div variants={sectionVariants}>
+          <OpenChatPanel battle={battle} agentId={agentId} agent={agent} tokens={tokens} />
         </motion.div>
       )}
 

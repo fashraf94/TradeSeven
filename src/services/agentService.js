@@ -167,6 +167,30 @@ export const removeDirective = async (agentId, directive) => {
   });
 };
 
+export const toggleDirective = async (agentId, directiveId, isActive) => {
+  const docRef = doc(db, AGENTS_COLLECTION, agentId);
+  const snap = await getDoc(docRef);
+  if (!snap.exists()) return;
+  const directives = (snap.data().directives || []).map(d =>
+    d.id === directiveId ? { ...d, isActive } : d
+  );
+  await updateDoc(docRef, { directives, updatedAt: serverTimestamp() });
+};
+
+export const pinDirective = async (agentId, directiveId, pinned) => {
+  const docRef = doc(db, AGENTS_COLLECTION, agentId);
+  const snap = await getDoc(docRef);
+  if (!snap.exists()) return;
+  const directives = (snap.data().directives || []).map(d =>
+    d.id === directiveId ? { ...d, priority: pinned ? 1 : 0 } : d
+  );
+  await updateDoc(docRef, { directives, updatedAt: serverTimestamp() });
+};
+
+export const addCoachingRule = async (agentId, text) => {
+  return addDirective(agentId, { text, source: 'coaching' });
+};
+
 export const addMemoryReflection = async (agentId, reflection) => {
   const agent = await getAgentById(agentId);
   if (!agent) throw new Error('Agent not found');

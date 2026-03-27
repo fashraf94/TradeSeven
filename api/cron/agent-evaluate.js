@@ -158,6 +158,8 @@ async function processAgentBattle(db, battle, summary) {
     if (battle.strategyPreset === undefined) migrationFields.strategyPreset = 'balanced';
     if (battle.gameplanMeeting === undefined) migrationFields.gameplanMeeting = null;
     if (battle.gameplanMeetingHistory === undefined) migrationFields.gameplanMeetingHistory = [];
+    if (battle.chatExchanges === undefined) migrationFields.chatExchanges = [];
+    if (battle.chatBudgetUsed === undefined) migrationFields.chatBudgetUsed = 0;
 
     if (Object.keys(migrationFields).length > 0) {
       console.log(`${LOG_PREFIX} Migrating battle ${battle.id}: adding ${Object.keys(migrationFields).join(', ')}`);

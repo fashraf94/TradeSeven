@@ -120,6 +120,8 @@ export async function createAgentBattle(db, agentData, thresholds, startingPrice
     battleLedger: [],               // All user-agent interactions for Film Room review
     gameplanMeeting: null,          // Active gameplan meeting (Sprint 4)
     gameplanMeetingHistory: [],     // Resolved gameplan meetings
+    chatExchanges: [],              // Open chat history (Sprint 6)
+    chatBudgetUsed: 0,              // Chat exchanges used this battle
 
     scoreState: {
       currentScore: 0,

@@ -219,14 +219,23 @@ ${ctx.consolidatedInsight}`);
     parts.push('You are a fresh agent with no battle history yet. Trade carefully and observe.');
   }
 
-  // Directives with IDs
-  const directives = ctx.activeDirectives || [];
-  if (directives.length > 0) {
-    const directiveLines = directives.map(d => `- [${d.id}] ${d.text}`).join('\n');
-    parts.push(`YOUR OWNER'S DIRECTIVES (follow unless Survival Mode overrides):
-${directiveLines}`);
+  // Playbook (directives) with IDs — filter inactive, group pinned vs active
+  const allDirectives = ctx.activeDirectives || [];
+  const activeDirectives = allDirectives.filter(d => d.isActive !== false);
+  const pinned = activeDirectives.filter(d => (d.priority || 0) > 0);
+  const regular = activeDirectives.filter(d => (d.priority || 0) === 0);
+
+  if (pinned.length > 0 || regular.length > 0) {
+    const lines = [];
+    if (pinned.length > 0) {
+      lines.push(`PINNED (high priority):\n${pinned.map(d => `- [${d.id}] ${d.text}`).join('\n')}`);
+    }
+    if (regular.length > 0) {
+      lines.push(`ACTIVE:\n${regular.map(d => `- [${d.id}] ${d.text}`).join('\n')}`);
+    }
+    parts.push(`YOUR PLAYBOOK (follow unless Survival Mode overrides):\n${lines.join('\n\n')}`);
   } else {
-    parts.push('No active directives from your owner.');
+    parts.push('No active Playbook rules from your owner.');
   }
 
   return parts.join('\n\n');

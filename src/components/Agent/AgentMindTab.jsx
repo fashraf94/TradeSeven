@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Eye, Swords, Shield, Newspaper, Target, Clock } from 'lucide-react';
+import { Eye, Swords, Shield, Newspaper, Target, Clock, BookOpen } from 'lucide-react';
 import FantasyTimesStrip from './FantasyTimesStrip';
+import PlaybookPanel from './PlaybookPanel';
 
 const containerVariants = {
   hidden: {},
@@ -96,6 +97,7 @@ const SOURCE_CONFIG = {
 };
 
 const AgentMindTab = ({ agent, scouting, battleLog, news, tokens, isDesktop, isMobile }) => {
+  const [playbookOpen, setPlaybookOpen] = useState(false);
   const sourceColorMap = {
     coaching: tokens.purple,
     pinned: tokens.teal,
@@ -199,7 +201,22 @@ const AgentMindTab = ({ agent, scouting, battleLog, news, tokens, isDesktop, isM
 
           {/* Active Directives */}
           <div>
-            <SectionHeader icon={Shield} label="Directives" tokens={tokens} />
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <SectionHeader icon={Shield} label="Directives" tokens={tokens} />
+              <button
+                onClick={() => setPlaybookOpen(true)}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: '4px',
+                  padding: '4px 10px', borderRadius: '8px',
+                  border: `1px solid ${tokens.borderDefault}`,
+                  background: 'transparent', color: tokens.teal,
+                  fontSize: '10px', fontWeight: 600, cursor: 'pointer',
+                  fontFamily: 'inherit', marginBottom: '12px',
+                }}
+              >
+                <BookOpen size={11} /> Manage Playbook
+              </button>
+            </div>
             {hasDirectives ? (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                 {Object.entries(directiveGroups).map(([source, directives]) => {
@@ -252,6 +269,13 @@ const AgentMindTab = ({ agent, scouting, battleLog, news, tokens, isDesktop, isM
           <FantasyTimesStrip stories={news} tokens={tokens} isDesktop={isDesktop} isMobile={isMobile} />
         </motion.div>
       )}
+      {/* Playbook Modal */}
+      <PlaybookPanel
+        isOpen={playbookOpen}
+        onClose={() => setPlaybookOpen(false)}
+        agent={agent}
+        tokens={tokens}
+      />
     </motion.div>
   );
 };
