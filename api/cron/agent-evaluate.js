@@ -171,6 +171,8 @@ async function processAgentBattle(db, battle, summary) {
     if (battle.gameplanMeetingHistory === undefined) migrationFields.gameplanMeetingHistory = [];
     if (battle.chatExchanges === undefined) migrationFields.chatExchanges = [];
     if (battle.chatBudgetUsed === undefined) migrationFields.chatBudgetUsed = 0;
+    if (battle.dailyReviews === undefined) migrationFields.dailyReviews = [];
+    if (battle.dailyGrades === undefined) migrationFields.dailyGrades = {};
 
     if (Object.keys(migrationFields).length > 0) {
       console.log(`${LOG_PREFIX} Migrating battle ${battle.id}: adding ${Object.keys(migrationFields).join(', ')}`);
@@ -1018,7 +1020,9 @@ async function handleGameplanMeeting(db, battleRef, battle, prices, statusFeedEn
           db, battle.id, battle,
           slot.tier, slot.slotIndex,
           benchAsset, currentDay, prices,
-          { id: tradeId, action: 'SWAP', trigger: 'gameplan_rotation', rationale: swap.rationale, tradingDay: currentDay }
+          { id: tradeId, action: 'SWAP', trigger: 'gameplan_rotation', rationale: swap.rationale, tradingDay: currentDay,
+            entryRegime: null, entryMarketPosture: null, entryConviction: 0,
+            entryPreset: battle.strategyPreset || 'balanced', entryMode: battle.executionMode || 'copilot', exitReason: 'gameplan_rotation' }
         );
         statusFeedEntries.push({
           timestamp: new Date().toISOString(),

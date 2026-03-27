@@ -221,7 +221,7 @@ ${ctx.consolidatedInsight}`);
 
   // Playbook (directives) with IDs — filter inactive, group pinned vs active
   const allDirectives = ctx.activeDirectives || [];
-  const activeDirectives = allDirectives.filter(d => d.isActive !== false);
+  const activeDirectives = allDirectives.filter(d => d.isActive !== false).slice(0, 20);
   const pinned = activeDirectives.filter(d => (d.priority || 0) > 0);
   const regular = activeDirectives.filter(d => (d.priority || 0) === 0);
 
