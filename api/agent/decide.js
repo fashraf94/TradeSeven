@@ -260,12 +260,17 @@ export default async function handler(req, res) {
       .get();
 
     if (!activeBattles.empty) {
+      const existingBattleId = activeBattles.docs[0].id;
+
+      // Ensure activeBattleId is set on agent doc (may be missing if previous deploy partially failed)
+      await agentRef.update({ activeBattleId: existingBattleId });
+
       return res.status(200).json({
         success: true,
         portfolioUpdated: true,
         battleCreated: false,
         reason: 'Agent already has an active battle',
-        existingBattleId: activeBattles.docs[0].id,
+        existingBattleId,
         portfolio: enrichedPortfolio.portfolio,
         bench: enrichedPortfolio.bench,
         innerMonologue: portfolioResult.innerMonologue,

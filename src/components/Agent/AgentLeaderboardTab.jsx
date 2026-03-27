@@ -31,6 +31,7 @@ const ARCHETYPE_STYLES = {
   contrarian: { label: 'Contrarian', bg: 'rgba(168, 85, 247, 0.12)', color: '#a855f7' },
   analyst: { label: 'Analyst', bg: 'rgba(59, 130, 246, 0.12)', color: '#3b82f6' },
   copycat: { label: 'Copycat', bg: 'rgba(245, 158, 11, 0.12)', color: '#f59e0b' },
+  guardian: { label: 'Guardian', bg: 'rgba(59, 130, 246, 0.12)', color: '#3b82f6' },
 };
 
 const RANK_COLORS = [
