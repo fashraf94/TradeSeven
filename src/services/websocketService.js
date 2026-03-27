@@ -581,6 +581,22 @@ class WebSocketManager {
 
   // ==================== PRICE CACHE (for wsCacheBridge) ====================
 
+  getLatestPrices(symbols) {
+    const prices = {};
+    for (const sym of symbols) {
+      const entry = this._priceCache.get(sym.toUpperCase());
+      if (entry && entry.price > 0) {
+        prices[sym.toUpperCase()] = entry.price;
+      }
+    }
+    return prices;
+  }
+
+  getLatestPrice(symbol) {
+    const entry = this._priceCache.get(symbol.toUpperCase());
+    return entry?.price > 0 ? entry.price : null;
+  }
+
   getAllCachedPrices() {
     const result = {};
     for (const [symbol, data] of this._priceCache) {
