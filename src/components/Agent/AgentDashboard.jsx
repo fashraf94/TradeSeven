@@ -12,6 +12,7 @@ import AgentMindTab from './AgentMindTab';
 import AgentLeaderboardTab from './AgentLeaderboardTab';
 import AgentEvolutionTab from './AgentEvolutionTab';
 import AgentStrategyTab from './AgentStrategyTab';
+import AgentCreationFlow from './AgentCreationFlow';
 import LevelUpNotification from './LevelUpNotification';
 
 // ── Tabs ──────────────────────────────────────────────────
@@ -94,7 +95,7 @@ const AgentDashboard = ({ user, setScreen, onCreateAgentBattle }) => {
   const [deploying, setDeploying] = useState(false);
   const { agent, loading, hasAgent, speech, deployText, maturityStage,
           currentLevel, levelConfig, nextLevelInfo, levelUpEvent, clearLevelUp,
-          activeDirectives, groupedDirectives, record, seedTestAgent } = useAgent(user?.odUserId);
+          activeDirectives, groupedDirectives, record } = useAgent(user?.odUserId);
   const { battle: agentBattle, statusFeed, executionMode, pendingProposal, strategyPreset, gameplanMeeting, loading: battleLoading } = useAgentBattle(agent?.activeBattleId);
   const { stories: rawStories } = useFantasyTimes();
 
@@ -155,62 +156,17 @@ const AgentDashboard = ({ user, setScreen, onCreateAgentBattle }) => {
         </div>
       )}
 
-      {/* No agent — empty state with seed button */}
+      {/* No agent — creation flow */}
       {!hasAgent && !loading && (
-        <div style={{
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'center',
-          minHeight: '60vh',
-          gap: '20px',
-          padding: '40px 20px',
-          textAlign: 'center',
-        }}>
-          <div style={{
-            width: '80px',
-            height: '80px',
-            borderRadius: '50%',
-            background: `linear-gradient(135deg, ${tokens.teal}, ${tokens.purple})`,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            opacity: 0.6,
-          }}>
-            <Bot size={36} color="#fff" />
-          </div>
-          <div style={{ fontSize: '20px', fontWeight: '700', color: tokens.textWhite }}>
-            Build your trading agent
-          </div>
-          <div style={{
-            fontSize: '14px',
-            color: tokens.textSecondary,
-            maxWidth: '340px',
-            lineHeight: '1.6',
-          }}>
-            Create an AI agent that learns your style, reads the market, and competes on your behalf.
-          </div>
-          <motion.button
-            whileTap={{ scale: 0.97 }}
-            onClick={async () => {
-              const id = await seedTestAgent();
-              if (id) console.log('Test agent created:', id);
-            }}
-            style={{
-              background: `linear-gradient(135deg, ${tokens.teal}, ${tokens.purple})`,
-              border: 'none',
-              borderRadius: '12px',
-              padding: '14px 28px',
-              color: '#fff',
-              fontSize: '15px',
-              fontWeight: '600',
-              cursor: 'pointer',
-              marginTop: '8px',
-            }}
-          >
-            Create Agent (Dev: Seeds Test Data)
-          </motion.button>
-        </div>
+        <AgentCreationFlow
+          user={user}
+          tokens={tokens}
+          isDesktop={isDesktop}
+          isMobile={isMobile}
+          onComplete={(agentId) => {
+            console.log('[Agent] Created:', agentId);
+          }}
+        />
       )}
 
       {/* Dashboard layout — only when agent exists */}
