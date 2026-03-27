@@ -149,6 +149,10 @@
     {
       "path": "/api/cron/agent-evaluate",
       "schedule": "*/15 13,14,15,16,17,18,19,20,21 * * 1-5"
+    },
+    {
+      "path": "/api/cron/agent-batch-review",
+      "schedule": "15 20,21 * * 1-5"
     }
   ]
 }

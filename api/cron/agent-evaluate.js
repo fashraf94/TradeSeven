@@ -869,7 +869,16 @@ async function handlePendingProposal(db, battleRef, battle, prices, statusFeedEn
         action: 'hold', source: 'proposal_system',
         symbolOut: proposal.symbolOut, symbolIn: proposal.symbolIn,
       });
-      const history = [...(battle.proposalHistory || []), proposal];
+      // Enrich with veto-time prices for counterfactual tracking
+      const vetoEnriched = {
+        ...proposal,
+        vetoedAtPrice: {
+          [proposal.symbolIn]: prices[proposal.symbolIn]?.current || null,
+          [proposal.symbolOut]: prices[proposal.symbolOut]?.current || null,
+        },
+        vetoedAtTimestamp: new Date().toISOString(),
+      };
+      const history = [...(battle.proposalHistory || []), vetoEnriched];
       await battleRef.update({ pendingProposal: null, proposalHistory: history });
       const updatedDoc = await battleRef.get();
       Object.assign(battle, updatedDoc.data());

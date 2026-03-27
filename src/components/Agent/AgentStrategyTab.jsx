@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Activity, Zap, Clock } from 'lucide-react';
 import StatusFeedTimeline from './StatusFeedTimeline';
@@ -6,6 +6,9 @@ import ExecutionModeToggle from './ExecutionModeToggle';
 import StrategyPresetToggle from './StrategyPresetToggle';
 import ProposalCard from './ProposalCard';
 import GameplanMeetingCard from './GameplanMeetingCard';
+import DebateModal from './DebateModal';
+import FilmRoomCard from './FilmRoomCard';
+import TradeGradingCard from './TradeGradingCard';
 
 const containerVariants = {
   hidden: {},
@@ -42,7 +45,8 @@ const SectionHeader = ({ icon: Icon, label, tokens }) => (
   </div>
 );
 
-const AgentStrategyTab = ({ battle, statusFeed, executionMode, pendingProposal, strategyPreset, gameplanMeeting, loading, tokens, isDesktop, isMobile }) => {
+const AgentStrategyTab = ({ battle, statusFeed, executionMode, pendingProposal, strategyPreset, gameplanMeeting, agentId, loading, tokens, isDesktop, isMobile }) => {
+  const [debateTarget, setDebateTarget] = useState(null);
   // No active battle
   if (!battle && !loading) {
     return (
@@ -185,6 +189,18 @@ const AgentStrategyTab = ({ battle, statusFeed, executionMode, pendingProposal, 
         )}
       </AnimatePresence>
 
+      {/* Trade Grading Card (post-market window) */}
+      {isActive && (
+        <TradeGradingCard battle={battle} tokens={tokens} />
+      )}
+
+      {/* Film Room Card (daily review) */}
+      {battle?.dailyReviews?.length > 0 && (
+        <motion.div variants={sectionVariants}>
+          <FilmRoomCard battle={battle} agentId={agentId} tokens={tokens} />
+        </motion.div>
+      )}
+
       {/* Strategy Feed */}
       <motion.div variants={sectionVariants} style={cardStyle(tokens)}>
         <SectionHeader icon={Activity} label="Strategy Feed" tokens={tokens} />
@@ -193,8 +209,18 @@ const AgentStrategyTab = ({ battle, statusFeed, executionMode, pendingProposal, 
           tokens={tokens}
           isDesktop={isDesktop}
           isMobile={isMobile}
+          onChallenge={isActive ? (symbol) => setDebateTarget(symbol) : undefined}
         />
       </motion.div>
+
+      {/* Debate Modal */}
+      <DebateModal
+        isOpen={!!debateTarget}
+        onClose={() => setDebateTarget(null)}
+        battleId={battle?.id}
+        targetSymbol={debateTarget}
+        tokens={tokens}
+      />
     </motion.div>
   );
 };

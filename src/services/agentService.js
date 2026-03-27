@@ -345,3 +345,11 @@ export const resolveGameplanMeeting = async (battleId, resolution) => {
     updatedAt: serverTimestamp(),
   });
 };
+
+export const submitDailyGrades = async (battleId, dateStr, grades) => {
+  const docRef = doc(db, BATTLES_COLLECTION, battleId);
+  await updateDoc(docRef, {
+    [`dailyGrades.${dateStr}`]: { trades: grades, submittedAt: new Date().toISOString() },
+    updatedAt: serverTimestamp(),
+  });
+};
