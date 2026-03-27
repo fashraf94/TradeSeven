@@ -738,7 +738,7 @@ async function processAgentBattle(db, battle, summary) {
     };
 
     // ---- Write everything ----
-    const evaluations = [...(battle.evaluations || []), evaluation];
+    const evaluations = [...(battle.evaluations || []), evaluation].slice(-150);
     const consecutiveHolds = decision === 'HOLD'
       ? (battle.cronState?.consecutiveHolds || 0) + 1
       : 0;
@@ -854,8 +854,8 @@ async function handlePendingProposal(db, battleRef, battle, prices, statusFeedEn
           action: 'hold', source: 'proposal_system',
         });
       }
-      // Move to history and clear
-      const history = [...(battle.proposalHistory || []), proposal];
+      // Move to history and clear (cap at 50)
+      const history = [...(battle.proposalHistory || []), proposal].slice(-50);
       await battleRef.update({ pendingProposal: null, proposalHistory: history });
       const updatedDoc = await battleRef.get();
       Object.assign(battle, updatedDoc.data());
@@ -878,7 +878,7 @@ async function handlePendingProposal(db, battleRef, battle, prices, statusFeedEn
         },
         vetoedAtTimestamp: new Date().toISOString(),
       };
-      const history = [...(battle.proposalHistory || []), vetoEnriched];
+      const history = [...(battle.proposalHistory || []), vetoEnriched].slice(-50);
       await battleRef.update({ pendingProposal: null, proposalHistory: history });
       const updatedDoc = await battleRef.get();
       Object.assign(battle, updatedDoc.data());
@@ -946,7 +946,7 @@ async function handlePendingProposal(db, battleRef, battle, prices, statusFeedEn
     resolution: proposal.mode === 'copilot' ? 'auto_executed' : 'lapsed',
     resolvedBy: 'system',
   };
-  const history = [...(battle.proposalHistory || []), resolvedProposal];
+  const history = [...(battle.proposalHistory || []), resolvedProposal].slice(-50);
   await battleRef.update({ pendingProposal: null, proposalHistory: history });
   const updatedDoc = await battleRef.get();
   Object.assign(battle, updatedDoc.data());

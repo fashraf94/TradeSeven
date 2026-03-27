@@ -51,6 +51,11 @@ const DebateModal = ({ isOpen, onClose, battleId, targetSymbol, tokens }) => {
 
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
+        if (res.status === 404) {
+          setError('This position has been swapped out. You can only challenge active positions.');
+          setPhase('idle');
+          return;
+        }
         throw new Error(err.error || `Request failed (${res.status})`);
       }
 

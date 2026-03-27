@@ -130,8 +130,11 @@ async function processBattleReview(db, battle) {
     `- Vetoed ${c.symbolIn}: veto price $${c.vetoPrice}, close $${c.closePrice}, delta ${c.deltaPct}%`
   ).join('\n');
 
-  const gradeLines = grades
-    ? Object.entries(grades).map(([k, v]) => `- ${k}: ${v}`).join('\n')
+  const gradeLines = grades?.trades?.length
+    ? grades.trades.map(g => {
+        const note = g.note ? ` — Note: "${g.note}"` : '';
+        return `- Trade ${(g.tradeIndex ?? 0) + 1} (${g.symbolOut || '?'} → ${g.symbolIn || '?'}): ${g.grade || 'no_opinion'}${note}`;
+      }).join('\n')
     : 'No grades submitted';
 
   const directives = battle.agentContext?.directives;

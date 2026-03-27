@@ -52,6 +52,11 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: `Invalid stance. Must be one of: ${VALID_STANCES.join(', ')}` });
   }
 
+  // Sanitize user input before prompt injection
+  const sanitizedContext = additionalContext
+    ? String(additionalContext).slice(0, 200).replace(/[\n\r\t]/g, ' ').replace(/[<>{}]/g, '').trim() || null
+    : null;
+
   const db = getFirebaseAdmin();
 
   try {
@@ -145,7 +150,7 @@ ${directives}
 
 COACH'S CHALLENGE:
 Stance: "${userStance}"
-${additionalContext ? `Additional context: "${additionalContext}"` : ''}`;
+${sanitizedContext ? `Additional context: "${sanitizedContext}"` : ''}`;
 
     // 12. Call Haiku with 10s timeout
     const anthropic = getAnthropicClient();
