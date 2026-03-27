@@ -222,8 +222,8 @@ export async function executeSwapServer(db, battleId, battle, resolvedTier, reso
         : (liveData.portfolio.bench?.crypto || null);
     }
 
-    // ---- Append to trades array ----
-    const trades = [...(liveData.trades || []), closedTrade];
+    // ---- Append to trades array (cap at 50) ----
+    const trades = [...(liveData.trades || []), closedTrade].slice(-50);
 
     // ---- Build update object ----
     const updates = {

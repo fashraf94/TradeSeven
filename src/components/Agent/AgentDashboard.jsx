@@ -12,6 +12,7 @@ import AgentMindTab from './AgentMindTab';
 import AgentLeaderboardTab from './AgentLeaderboardTab';
 import AgentEvolutionTab from './AgentEvolutionTab';
 import AgentStrategyTab from './AgentStrategyTab';
+import LevelUpNotification from './LevelUpNotification';
 
 // ── Tabs ──────────────────────────────────────────────────
 
@@ -92,14 +93,16 @@ const AgentDashboard = ({ user, setScreen, onCreateAgentBattle }) => {
   const [activeTab, setActiveTab] = useState('mind');
   const [deploying, setDeploying] = useState(false);
   const { agent, loading, hasAgent, speech, deployText, maturityStage,
+          currentLevel, levelConfig, nextLevelInfo, levelUpEvent, clearLevelUp,
           activeDirectives, groupedDirectives, record, seedTestAgent } = useAgent(user?.odUserId);
-  const { battle: agentBattle, statusFeed, executionMode, pendingProposal, loading: battleLoading } = useAgentBattle(agent?.activeBattleId);
+  const { battle: agentBattle, statusFeed, executionMode, pendingProposal, strategyPreset, gameplanMeeting, loading: battleLoading } = useAgentBattle(agent?.activeBattleId);
   const { stories: rawStories } = useFantasyTimes();
 
   // Track last-seen feed length for notification dot (avoids re-rendering tab bar)
   const lastSeenFeedLengthRef = useRef(0);
   const hasNewFeedEntries = statusFeed.length > lastSeenFeedLengthRef.current;
   const hasPendingProposal = pendingProposal && !pendingProposal.resolvedAt;
+  const hasGameplanMeeting = gameplanMeeting?.status === 'pending';
   // Mark as seen when user views the strategy tab
   if (activeTab === 'strategy') {
     lastSeenFeedLengthRef.current = statusFeed.length;
@@ -229,6 +232,9 @@ const AgentDashboard = ({ user, setScreen, onCreateAgentBattle }) => {
             <AgentSidebar
               agent={agent}
               speech={speech}
+              currentLevel={currentLevel}
+              levelConfig={levelConfig}
+              nextLevelInfo={nextLevelInfo}
               isDesktop={isDesktop}
               isMobile={isMobile}
               tokens={tokens}
@@ -274,20 +280,20 @@ const AgentDashboard = ({ user, setScreen, onCreateAgentBattle }) => {
                   >
                     <Icon size={16} />
                     {tab.label}
-                    {tab.key === 'strategy' && !isActive && hasPendingProposal && (
+                    {tab.key === 'strategy' && !isActive && (hasPendingProposal || hasGameplanMeeting) && (
                       <motion.span
                         animate={{ scale: [1, 1.4, 1], opacity: [1, 0.7, 1] }}
                         transition={{ duration: 1.5, repeat: Infinity }}
                         style={{
                           width: '7px', height: '7px',
                           borderRadius: '50%',
-                          background: tokens.amber,
-                          boxShadow: `0 0 8px ${tokens.amber}`,
+                          background: hasGameplanMeeting ? '#f59e0b' : tokens.amber,
+                          boxShadow: `0 0 8px ${hasGameplanMeeting ? '#f59e0b' : tokens.amber}`,
                           flexShrink: 0,
                         }}
                       />
                     )}
-                    {tab.key === 'strategy' && !isActive && !hasPendingProposal && hasNewFeedEntries && (
+                    {tab.key === 'strategy' && !isActive && !hasPendingProposal && !hasGameplanMeeting && hasNewFeedEntries && (
                       <span style={{
                         width: '6px', height: '6px',
                         borderRadius: '50%',
@@ -340,6 +346,10 @@ const AgentDashboard = ({ user, setScreen, onCreateAgentBattle }) => {
                     statusFeed={statusFeed}
                     executionMode={executionMode}
                     pendingProposal={pendingProposal}
+                    strategyPreset={strategyPreset}
+                    gameplanMeeting={gameplanMeeting}
+                    agentId={agent?.id}
+                    agent={agent}
                     loading={battleLoading}
                     tokens={tokens}
                     isDesktop={isDesktop}
@@ -366,6 +376,16 @@ const AgentDashboard = ({ user, setScreen, onCreateAgentBattle }) => {
             </AnimatePresence>
           </div>
         </motion.div>
+      )}
+
+      {/* Level-Up Notification */}
+      {levelUpEvent && (
+        <LevelUpNotification
+          event={levelUpEvent}
+          agentName={agent?.name}
+          onDismiss={clearLevelUp}
+          tokens={tokens}
+        />
       )}
     </div>
   );

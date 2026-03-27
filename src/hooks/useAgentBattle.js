@@ -49,8 +49,12 @@ const useAgentBattle = (agentBattleId) => {
   const statusFeed = battle?.statusFeed || [];
   const executionMode = battle?.executionMode || 'copilot';
   const pendingProposal = battle?.pendingProposal || null;
+  const strategyPreset = battle?.strategyPreset || 'balanced';
+  const gameplanMeeting = battle?.gameplanMeeting || null;
+  const chatExchanges = battle?.chatExchanges || [];
+  const chatBudgetUsed = battle?.chatBudgetUsed || 0;
 
-  return { battle, statusFeed, executionMode, pendingProposal, loading, error };
+  return { battle, statusFeed, executionMode, pendingProposal, strategyPreset, gameplanMeeting, chatExchanges, chatBudgetUsed, loading, error };
 };
 
 export default useAgentBattle;

@@ -108,27 +108,35 @@ function ReturnCell({ value, tokens }) {
   );
 }
 
-const SectorPerformanceTable = ({ marketContext, onOpenResearch, isMobile, tokens }) => {
+const SectorPerformanceTable = ({ marketContext, freshPrices, onOpenResearch, isMobile, tokens }) => {
   const [selectedTimeframe, setSelectedTimeframe] = useState('1d');
   const [sortKey, setSortKey] = useState('1d');
   const [sortAsc, setSortAsc] = useState(false);
   const [extendedReturns, setExtendedReturns] = useState({}); // { XLK: { '3m': 5.2, '1y': 18.4 }, ... }
   const [loadingExtended, setLoadingExtended] = useState(false);
 
-  // Build sector data from Firestore sectorSnapshot (1D/1W/1M)
+  // Build sector data from Firestore sectorSnapshot (1D/1W/1M), overlay fresh 1D prices
   const snapshotMap = useMemo(() => {
     const map = {};
     const snapshot = marketContext?.sectorSnapshot;
     if (!Array.isArray(snapshot)) return map;
     snapshot.forEach(s => {
+      const fresh = freshPrices?.[s.etf];
       map[s.etf] = {
-        '1d': s.changePercent ?? null,
+        '1d': fresh?.percentChange ?? s.changePercent ?? null,
         '1w': s.weekChange ?? null,
         '1m': s.monthChange ?? null,
       };
     });
+    // Also overlay SPY benchmark 1D
+    if (freshPrices?.SPY) {
+      map['SPY'] = {
+        ...map['SPY'],
+        '1d': freshPrices.SPY.percentChange ?? map['SPY']?.['1d'] ?? null,
+      };
+    }
     return map;
-  }, [marketContext]);
+  }, [marketContext, freshPrices]);
 
   // Fetch extended returns (3M/1Y) from historical API
   const fetchExtendedReturns = useCallback(async () => {

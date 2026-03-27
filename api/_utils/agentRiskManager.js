@@ -24,31 +24,36 @@ const LOCK_PROXIMITY = 0.2; // ATR multiples within which to lock
  * @param {number} baseATR - ATR as percent of price
  * @param {Object|null} intradaySnapshot - { vwap, vwapDeviation, sma20_5m } or null
  * @param {Object} cronMemory - { ticksBelowVwap: number }
+ * @param {Object} [presetOverrides] - Optional preset risk overrides { bustBuffer, vwapFailureTicks, trailStopATR }
  * @returns {{ action: string, reason: string|null, detail: string }}
  */
-export function evaluateRisk(position, currentPrice, entryPrice, baseATR, intradaySnapshot, cronMemory) {
+export function evaluateRisk(position, currentPrice, entryPrice, baseATR, intradaySnapshot, cronMemory, presetOverrides = {}) {
   if (!currentPrice || !entryPrice || entryPrice <= 0 || !baseATR || baseATR <= 0) {
     return { action: 'HOLD', reason: null, detail: '' };
   }
 
+  const bustBuffer = presetOverrides.bustBuffer ?? -0.85;
+  const vwapTicks = presetOverrides.vwapFailureTicks ?? 2;
+  const trailATR = presetOverrides.trailStopATR ?? 1.5;
+
   const priceChangePct = ((currentPrice - entryPrice) / entryPrice) * 100;
   const atrMultiplier = priceChangePct / baseATR;
 
-  // 1. EMERGENCY_SWAP — bust avoidance at -0.85x ATR
-  if (atrMultiplier <= -0.85) {
+  // 1. EMERGENCY_SWAP — bust avoidance at preset-configured ATR buffer
+  if (atrMultiplier <= bustBuffer) {
     return {
       action: 'EMERGENCY_SWAP',
       reason: 'bust_avoidance',
-      detail: `${position.symbol} at ${atrMultiplier.toFixed(2)}x ATR (${priceChangePct.toFixed(2)}% from entry). Hit -0.85x bust avoidance buffer. Emergency rotation to protect score.`,
+      detail: `${position.symbol} at ${atrMultiplier.toFixed(2)}x ATR (${priceChangePct.toFixed(2)}% from entry). Hit ${bustBuffer}x bust avoidance buffer. Emergency rotation to protect score.`,
     };
   }
 
-  // 2. SWAP_OUT — VWAP failure (2+ consecutive ticks below VWAP)
-  if (intradaySnapshot && cronMemory?.ticksBelowVwap >= 2) {
+  // 2. SWAP_OUT — VWAP failure (preset-configured consecutive ticks below VWAP)
+  if (intradaySnapshot && cronMemory?.ticksBelowVwap >= vwapTicks) {
     return {
       action: 'SWAP_OUT',
       reason: 'vwap_failure',
-      detail: `${position.symbol} below VWAP ($${intradaySnapshot.vwap?.toFixed(2) || '?'}) for ${cronMemory.ticksBelowVwap} consecutive ticks (30+ min). Institutional support lost.`,
+      detail: `${position.symbol} below VWAP ($${intradaySnapshot.vwap?.toFixed(2) || '?'}) for ${cronMemory.ticksBelowVwap} consecutive ticks. Institutional support lost.`,
     };
   }
 
@@ -67,12 +72,12 @@ export function evaluateRisk(position, currentPrice, entryPrice, baseATR, intrad
     }
   }
 
-  // 4. TRAIL_STOP — above +1.5x ATR (DoubleBagger territory) and below 5min SMA20
-  if (atrMultiplier >= 1.5 && intradaySnapshot?.sma20_5m != null && currentPrice < intradaySnapshot.sma20_5m) {
+  // 4. TRAIL_STOP — above preset-configured ATR level and below 5min SMA20
+  if (atrMultiplier >= trailATR && intradaySnapshot?.sma20_5m != null && currentPrice < intradaySnapshot.sma20_5m) {
     return {
       action: 'TRAIL_STOP',
       reason: 'stepped_trail',
-      detail: `${position.symbol} at +${atrMultiplier.toFixed(2)}x ATR but fell below 5min SMA20 ($${intradaySnapshot.sma20_5m.toFixed(2)}). Protecting DoubleBagger gains.`,
+      detail: `${position.symbol} at +${atrMultiplier.toFixed(2)}x ATR but fell below 5min SMA20 ($${intradaySnapshot.sma20_5m.toFixed(2)}). Protecting gains above ${trailATR}x ATR.`,
     };
   }
 

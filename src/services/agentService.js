@@ -167,6 +167,30 @@ export const removeDirective = async (agentId, directive) => {
   });
 };
 
+export const toggleDirective = async (agentId, directiveId, isActive) => {
+  const docRef = doc(db, AGENTS_COLLECTION, agentId);
+  const snap = await getDoc(docRef);
+  if (!snap.exists()) return;
+  const directives = (snap.data().directives || []).map(d =>
+    d.id === directiveId ? { ...d, isActive } : d
+  );
+  await updateDoc(docRef, { directives, updatedAt: serverTimestamp() });
+};
+
+export const pinDirective = async (agentId, directiveId, pinned) => {
+  const docRef = doc(db, AGENTS_COLLECTION, agentId);
+  const snap = await getDoc(docRef);
+  if (!snap.exists()) return;
+  const directives = (snap.data().directives || []).map(d =>
+    d.id === directiveId ? { ...d, priority: pinned ? 1 : 0 } : d
+  );
+  await updateDoc(docRef, { directives, updatedAt: serverTimestamp() });
+};
+
+export const addCoachingRule = async (agentId, text) => {
+  return addDirective(agentId, { text, source: 'coaching' });
+};
+
 export const addMemoryReflection = async (agentId, reflection) => {
   const agent = await getAgentById(agentId);
   if (!agent) throw new Error('Agent not found');
@@ -318,6 +342,38 @@ export const appendBattleLedger = async (battleId, entry) => {
   const docRef = doc(db, BATTLES_COLLECTION, battleId);
   await updateDoc(docRef, {
     battleLedger: arrayUnion({ ...entry, timestamp: new Date().toISOString() }),
+    updatedAt: serverTimestamp(),
+  });
+};
+
+export const updateStrategyPreset = async (battleId, preset) => {
+  const docRef = doc(db, BATTLES_COLLECTION, battleId);
+  await updateDoc(docRef, {
+    strategyPreset: preset,
+    updatedAt: serverTimestamp(),
+  });
+};
+
+export const resolveGameplanMeeting = async (battleId, resolution) => {
+  const docRef = doc(db, BATTLES_COLLECTION, battleId);
+  const snap = await getDoc(docRef);
+  const meeting = snap.data()?.gameplanMeeting;
+  if (!meeting) return;
+  await updateDoc(docRef, {
+    gameplanMeeting: {
+      ...meeting,
+      status: resolution,
+      resolvedAt: new Date().toISOString(),
+      resolvedBy: 'coach',
+    },
+    updatedAt: serverTimestamp(),
+  });
+};
+
+export const submitDailyGrades = async (battleId, dateStr, grades) => {
+  const docRef = doc(db, BATTLES_COLLECTION, battleId);
+  await updateDoc(docRef, {
+    [`dailyGrades.${dateStr}`]: { trades: grades, submittedAt: new Date().toISOString() },
     updatedAt: serverTimestamp(),
   });
 };

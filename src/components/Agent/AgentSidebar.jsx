@@ -2,7 +2,7 @@ import React from 'react';
 import { motion } from 'framer-motion';
 import { Zap } from 'lucide-react';
 
-const AgentSidebar = ({ agent, speech, isDesktop, isMobile, tokens, onDeploy, deploying }) => {
+const AgentSidebar = ({ agent, speech, currentLevel, levelConfig, nextLevelInfo, isDesktop, isMobile, tokens, onDeploy, deploying }) => {
   const avatarSize = isDesktop ? 72 : 56;
   const nameSize = isDesktop ? '18px' : '16px';
 
@@ -61,6 +61,42 @@ const AgentSidebar = ({ agent, speech, isDesktop, isMobile, tokens, onDeploy, de
       )}
     </div>
   );
+
+  const LevelProgress = () => {
+    const badgeColor = levelConfig?.color || '#6b7280';
+    const gamesPlayed = agent?.stats?.gamesPlayed || 0;
+    const next = nextLevelInfo;
+    let progressPct = 100;
+    if (next) {
+      const currentMin = levelConfig?.minGames || 0;
+      const nextMin = next.level === 'starter' ? 5 : 15;
+      const range = nextMin - currentMin;
+      progressPct = range > 0 ? Math.min(100, ((gamesPlayed - currentMin) / range) * 100) : 0;
+    }
+    return (
+      <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <span style={{
+            padding: '2px 8px', borderRadius: '8px', fontSize: '10px', fontWeight: 700,
+            background: `${badgeColor}22`, color: badgeColor, letterSpacing: '0.3px',
+          }}>
+            {levelConfig?.label || 'Rookie'}
+          </span>
+          {next && (
+            <span style={{ fontSize: '10px', color: tokens.textFaint }}>
+              {next.gamesNeeded} game{next.gamesNeeded !== 1 ? 's' : ''} to {next.label}
+            </span>
+          )}
+        </div>
+        <div style={{ width: '100%', height: '4px', borderRadius: '2px', background: 'rgba(255,255,255,0.06)' }}>
+          <div style={{
+            width: `${progressPct}%`, height: '100%', borderRadius: '2px',
+            background: badgeColor, transition: 'width 0.5s ease',
+          }} />
+        </div>
+      </div>
+    );
+  };
 
   const StatsRow = () => (
     <div style={{
@@ -148,6 +184,7 @@ const AgentSidebar = ({ agent, speech, isDesktop, isMobile, tokens, onDeploy, de
       }}>
         <Avatar />
         <NameBlock />
+        <LevelProgress />
         <StatsRow />
         <DeployButton />
         <SpeechBubble />
@@ -166,6 +203,7 @@ const AgentSidebar = ({ agent, speech, isDesktop, isMobile, tokens, onDeploy, de
         <Avatar />
         <NameBlock />
       </div>
+      <LevelProgress />
       <StatsRow />
       <DeployButton />
       <SpeechBubble />

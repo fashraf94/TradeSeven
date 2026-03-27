@@ -219,14 +219,23 @@ ${ctx.consolidatedInsight}`);
     parts.push('You are a fresh agent with no battle history yet. Trade carefully and observe.');
   }
 
-  // Directives with IDs
-  const directives = ctx.activeDirectives || [];
-  if (directives.length > 0) {
-    const directiveLines = directives.map(d => `- [${d.id}] ${d.text}`).join('\n');
-    parts.push(`YOUR OWNER'S DIRECTIVES (follow unless Survival Mode overrides):
-${directiveLines}`);
+  // Playbook (directives) with IDs — filter inactive, group pinned vs active
+  const allDirectives = ctx.activeDirectives || [];
+  const activeDirectives = allDirectives.filter(d => d.isActive !== false).slice(0, 20);
+  const pinned = activeDirectives.filter(d => (d.priority || 0) > 0);
+  const regular = activeDirectives.filter(d => (d.priority || 0) === 0);
+
+  if (pinned.length > 0 || regular.length > 0) {
+    const lines = [];
+    if (pinned.length > 0) {
+      lines.push(`PINNED (high priority):\n${pinned.map(d => `- [${d.id}] ${d.text}`).join('\n')}`);
+    }
+    if (regular.length > 0) {
+      lines.push(`ACTIVE:\n${regular.map(d => `- [${d.id}] ${d.text}`).join('\n')}`);
+    }
+    parts.push(`YOUR PLAYBOOK (follow unless Survival Mode overrides):\n${lines.join('\n\n')}`);
   } else {
-    parts.push('No active directives from your owner.');
+    parts.push('No active Playbook rules from your owner.');
   }
 
   return parts.join('\n\n');
@@ -248,8 +257,9 @@ ${directiveLines}`);
  * @param {Object} [momentumData] - Optional intraday momentum data
  * @param {Object} [momentumData.vwap] - { symbol: { vwap, currentPrice, vwapDeviation } }
  * @param {Object} [momentumData.rankings] - { symbol: { bBandwidthPercentile, nr7Flag, dailyRange } }
+ * @param {Object} [presetConfig] - Optional strategy preset config from agentPresetConfig.js
  */
-export function buildLiveContextBlock(battle, prices, macroPrices, assetScores, triggers, news, recentEvals, momentumData) {
+export function buildLiveContextBlock(battle, prices, macroPrices, assetScores, triggers, news, recentEvals, momentumData, presetConfig) {
   const parts = [];
   const scoreState = battle.scoreState || {};
 
@@ -271,6 +281,11 @@ SPY (S&P 500): ${formatPct(macroPrices?.SPY)}% | QQQ (Nasdaq): ${formatPct(macro
   if (momentumData?.marketPosture || momentumData?.regimes) {
     const regimeLines = buildRegimeContext(assetScores, momentumData);
     if (regimeLines) parts.push(regimeLines);
+  }
+
+  // 3a3. Strategy Preset Context
+  if (presetConfig) {
+    parts.push(`STRATEGY PRESET: ${presetConfig.label}\n${presetConfig.promptGuidance}`);
   }
 
   // 3b. Active Portfolio CSV

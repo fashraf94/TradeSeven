@@ -102,7 +102,7 @@ const entryVariants = {
   exit: { opacity: 0, transition: { duration: 0.15 } },
 };
 
-const FeedEntry = ({ entry, tokens }) => {
+const FeedEntry = ({ entry, tokens, onChallenge }) => {
   const config = getActionConfig(entry.action, tokens);
   const Icon = config.icon;
   const isRisk = isRiskAction(entry.action);
@@ -230,6 +230,28 @@ const FeedEntry = ({ entry, tokens }) => {
             {entry.score >= 0 ? '+' : ''}{entry.score.toFixed(1)}
           </span>
         )}
+
+        {/* Challenge button */}
+        {onChallenge && entry.symbolOut && (
+          <button
+            onClick={(e) => { e.stopPropagation(); onChallenge(entry.symbolOut); }}
+            style={{
+              marginLeft: entry.score == null ? 'auto' : '6px',
+              padding: '2px 8px',
+              borderRadius: '8px',
+              border: `1px solid rgba(245, 158, 11, 0.25)`,
+              background: 'rgba(245, 158, 11, 0.08)',
+              color: '#f59e0b',
+              fontSize: '10px',
+              fontWeight: 600,
+              cursor: 'pointer',
+              flexShrink: 0,
+              fontFamily: 'inherit',
+            }}
+          >
+            Challenge
+          </button>
+        )}
       </div>
     </motion.div>
   );
@@ -237,7 +259,7 @@ const FeedEntry = ({ entry, tokens }) => {
 
 // ── Main Timeline ──────────────────────────────────────────
 
-const StatusFeedTimeline = ({ statusFeed = [], tokens, isDesktop, isMobile }) => {
+const StatusFeedTimeline = ({ statusFeed = [], tokens, isDesktop, isMobile, onChallenge }) => {
   // Reverse to show newest first; filter out empty entries
   const entries = [...statusFeed]
     .reverse()
@@ -283,6 +305,7 @@ const StatusFeedTimeline = ({ statusFeed = [], tokens, isDesktop, isMobile }) =>
             key={entry.evalId || entry.timestamp || i}
             entry={entry}
             tokens={tokens}
+            onChallenge={onChallenge}
           />
         ))}
       </AnimatePresence>

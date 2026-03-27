@@ -26,8 +26,9 @@ import {
 import { TRADE_DECISION_TOOL } from '../_utils/agentEvalToolSchema.js';
 import { evaluateTriggers, fetchRecentNews } from '../_utils/agentTriggerGate.js';
 import { validateTradeDecision, executeSwapServer } from '../_utils/agentSwapExecution.js';
-import { classifyStockRegime, classifyMarketPosture } from '../_utils/agentRegimeClassifier.js';
+import { classifyStockRegime, classifyMarketPosture, getPresetAdjustedStrategies } from '../_utils/agentRegimeClassifier.js';
 import { evaluateRisk, calculate5minSMA20, pickEmergencyReplacement, findPortfolioSlot } from '../_utils/agentRiskManager.js';
+import { getPresetConfig } from '../_utils/agentPresetConfig.js';
 
 export const config = { maxDuration: 60 };
 
@@ -78,6 +79,17 @@ export default async function handler(req, res) {
         console.log(`${LOG_PREFIX} Time budget exceeded (${elapsed}ms). ${remaining} agent(s) deferred to next tick.`);
         summary.skipped += remaining;
         break;
+      }
+
+      // Check if battle has expired — complete it instead of processing
+      if (battle.expiresAt && new Date(battle.expiresAt) < new Date()) {
+        try {
+          await completeBattle(db, battle, summary);
+        } catch (err) {
+          console.error(`${LOG_PREFIX} Error completing battle ${battle.id}:`, err.message);
+          summary.errors++;
+        }
+        continue;
       }
 
       try {
@@ -147,13 +159,20 @@ async function processAgentBattle(db, battle, summary) {
   }
 
   try {
-    // Migration guard for pre-Sprint 2/3 battles
+    // Migration guard for pre-Sprint 2/3/4 battles
     const migrationFields = {};
     if (battle.executionMode === undefined) migrationFields.executionMode = 'copilot';
     if (battle.pendingProposal === undefined) migrationFields.pendingProposal = null;
     if (battle.proposalHistory === undefined) migrationFields.proposalHistory = [];
     if (battle.battleLedger === undefined) migrationFields.battleLedger = [];
     if (battle.statusFeed === undefined) migrationFields.statusFeed = [];
+    if (battle.strategyPreset === undefined) migrationFields.strategyPreset = 'balanced';
+    if (battle.gameplanMeeting === undefined) migrationFields.gameplanMeeting = null;
+    if (battle.gameplanMeetingHistory === undefined) migrationFields.gameplanMeetingHistory = [];
+    if (battle.chatExchanges === undefined) migrationFields.chatExchanges = [];
+    if (battle.chatBudgetUsed === undefined) migrationFields.chatBudgetUsed = 0;
+    if (battle.dailyReviews === undefined) migrationFields.dailyReviews = [];
+    if (battle.dailyGrades === undefined) migrationFields.dailyGrades = {};
 
     if (Object.keys(migrationFields).length > 0) {
       console.log(`${LOG_PREFIX} Migrating battle ${battle.id}: adding ${Object.keys(migrationFields).join(', ')}`);
@@ -163,6 +182,9 @@ async function processAgentBattle(db, battle, summary) {
 
     const ctx = battle.agentContext || {};
     const currentDay = getCurrentTradingDayServer(battle.timing?.tradingDays);
+
+    // ---- Strategy preset config (Sprint 4) ----
+    const presetConfig = getPresetConfig(battle.strategyPreset || 'balanced');
 
     // ---- Collect all symbols ----
     const flatPortfolio = flattenPortfolioServer(battle.portfolio);
@@ -359,7 +381,8 @@ async function processAgentBattle(db, battle, summary) {
         { symbol: score.symbol, tier: asset?.tier, baseATR: score.baseATR },
         currentPrice, entryPrice, score.baseATR,
         intradaySnapshot,
-        { ticksBelowVwap: vwapTicks[score.symbol] }
+        { ticksBelowVwap: vwapTicks[score.symbol] },
+        presetConfig.risk
       );
 
       riskStatus[score.symbol] = riskResult;
@@ -400,6 +423,12 @@ async function processAgentBattle(db, battle, summary) {
           hypothesis: null,
           evaluationId: `risk_${riskResult.reason}_${score.symbol}`,
           tradingDay: currentDay,
+          entryRegime: stockRegimes[score.symbol] || null,
+          entryMarketPosture: marketPosture,
+          entryConviction: 0,
+          entryPreset: battle.strategyPreset || 'balanced',
+          entryMode: battle.executionMode || 'copilot',
+          exitReason: riskResult.reason,
         };
 
         await executeSwapServer(
@@ -448,6 +477,44 @@ async function processAgentBattle(db, battle, summary) {
       return;
     }
 
+    // ---- Gameplan meeting lifecycle check (after proposals, before triggers) ----
+    const gameplanHandled = await handleGameplanMeeting(db, battleRef, battle, prices, statusFeedEntries, summary);
+    if (gameplanHandled === 'skip_haiku') {
+      scoreUpdate['cronState.lastEvaluatedAt'] = new Date().toISOString();
+      scoreUpdate['cronState.evaluatingAt'] = null;
+      scoreUpdate['cronState.vwapTicks'] = vwapTicks;
+      const existingFeed = battle.statusFeed || [];
+      scoreUpdate.statusFeed = [...existingFeed, ...statusFeedEntries].slice(-50);
+      await battleRef.update(scoreUpdate);
+      summary.evaluated++;
+      summary.held++;
+      return;
+    }
+
+    // ---- Gameplan meeting trigger detection (only if no meeting pending) ----
+    if (!battle.gameplanMeeting) {
+      const gameplanTrigger = detectGameplanMeetingTrigger(battle, assetScores, prices, flatPortfolio, benchAssets, technicalScoresMap);
+      if (gameplanTrigger) {
+        const todayET = new Date().toLocaleDateString('en-US', { timeZone: 'America/New_York' });
+        statusFeedEntries.push({
+          timestamp: new Date().toISOString(),
+          message: `Gameplan Meeting: ${gameplanTrigger.diagnosis} Proposing rotation to ${gameplanTrigger.toSectors.join('/')}.`,
+          action: 'gameplan_meeting', source: 'gameplan_meeting',
+        });
+        scoreUpdate.gameplanMeeting = gameplanTrigger;
+        scoreUpdate['cronState.lastGameplanDate'] = todayET;
+        // Write and skip Haiku — gameplan IS the evaluation
+        scoreUpdate['cronState.lastEvaluatedAt'] = new Date().toISOString();
+        scoreUpdate['cronState.evaluatingAt'] = null;
+        scoreUpdate['cronState.vwapTicks'] = vwapTicks;
+        const existingFeed = battle.statusFeed || [];
+        scoreUpdate.statusFeed = [...existingFeed, ...statusFeedEntries].slice(-50);
+        await battleRef.update(scoreUpdate);
+        summary.evaluated++;
+        return;
+      }
+    }
+
     // ---- Fetch news for trigger gate ----
     const news = await fetchRecentNews(db, portfolioSymbols);
 
@@ -494,7 +561,7 @@ async function processAgentBattle(db, battle, summary) {
               role: 'user',
               content: buildLiveContextBlock(
                 battle, prices, macroPrices, assetScores,
-                triggers, news, battle.evaluations, momentumData
+                triggers, news, battle.evaluations, momentumData, presetConfig
               ),
             },
           ],
@@ -566,6 +633,12 @@ async function processAgentBattle(db, battle, summary) {
               hypothesis: haikuResult.hypothesis || null,
               evaluationId: evalId,
               tradingDay: currentDay,
+              entryRegime: stockRegimes[haikuResult.symbolOut] || null,
+              entryMarketPosture: marketPosture,
+              entryConviction: haikuResult.conviction || 0,
+              entryPreset: battle.strategyPreset || 'balanced',
+              entryMode: battle.executionMode || 'copilot',
+              exitReason: 'haiku_decision',
             };
             await executeSwapServer(
               db, battle.id, battle,
@@ -614,6 +687,12 @@ async function processAgentBattle(db, battle, summary) {
               hypothesis: haikuResult.hypothesis || null,
               evaluationId: evalId,
               tradingDay: currentDay,
+              entryRegime: stockRegimes[haikuResult.symbolOut] || null,
+              entryMarketPosture: marketPosture,
+              entryConviction: haikuResult.conviction || 0,
+              entryPreset: battle.strategyPreset || 'balanced',
+              entryMode: mode,
+              exitReason: 'haiku_decision',
             },
           };
 
@@ -692,7 +771,7 @@ async function processAgentBattle(db, battle, summary) {
     };
 
     // ---- Write everything ----
-    const evaluations = [...(battle.evaluations || []), evaluation];
+    const evaluations = [...(battle.evaluations || []), evaluation].slice(-150);
     const consecutiveHolds = decision === 'HOLD'
       ? (battle.cronState?.consecutiveHolds || 0) + 1
       : 0;
@@ -808,8 +887,8 @@ async function handlePendingProposal(db, battleRef, battle, prices, statusFeedEn
           action: 'hold', source: 'proposal_system',
         });
       }
-      // Move to history and clear
-      const history = [...(battle.proposalHistory || []), proposal];
+      // Move to history and clear (cap at 50)
+      const history = [...(battle.proposalHistory || []), proposal].slice(-50);
       await battleRef.update({ pendingProposal: null, proposalHistory: history });
       const updatedDoc = await battleRef.get();
       Object.assign(battle, updatedDoc.data());
@@ -823,7 +902,16 @@ async function handlePendingProposal(db, battleRef, battle, prices, statusFeedEn
         action: 'hold', source: 'proposal_system',
         symbolOut: proposal.symbolOut, symbolIn: proposal.symbolIn,
       });
-      const history = [...(battle.proposalHistory || []), proposal];
+      // Enrich with veto-time prices for counterfactual tracking
+      const vetoEnriched = {
+        ...proposal,
+        vetoedAtPrice: {
+          [proposal.symbolIn]: prices[proposal.symbolIn]?.current || null,
+          [proposal.symbolOut]: prices[proposal.symbolOut]?.current || null,
+        },
+        vetoedAtTimestamp: new Date().toISOString(),
+      };
+      const history = [...(battle.proposalHistory || []), vetoEnriched].slice(-50);
       await battleRef.update({ pendingProposal: null, proposalHistory: history });
       const updatedDoc = await battleRef.get();
       Object.assign(battle, updatedDoc.data());
@@ -891,9 +979,312 @@ async function handlePendingProposal(db, battleRef, battle, prices, statusFeedEn
     resolution: proposal.mode === 'copilot' ? 'auto_executed' : 'lapsed',
     resolvedBy: 'system',
   };
-  const history = [...(battle.proposalHistory || []), resolvedProposal];
+  const history = [...(battle.proposalHistory || []), resolvedProposal].slice(-50);
   await battleRef.update({ pendingProposal: null, proposalHistory: history });
   const updatedDoc = await battleRef.get();
   Object.assign(battle, updatedDoc.data());
   return 'continue';
+}
+
+// ==================== GAMEPLAN MEETING ====================
+
+/**
+ * Handle existing gameplan meeting lifecycle: approved, rejected, expired.
+ * Mirrors handlePendingProposal pattern.
+ * Returns 'skip_haiku' if a pending meeting blocks evaluation, 'continue' otherwise.
+ */
+async function handleGameplanMeeting(db, battleRef, battle, prices, statusFeedEntries, summary) {
+  const meeting = battle.gameplanMeeting;
+  if (!meeting) return 'continue';
+
+  // Already resolved by client
+  if (meeting.status === 'approved') {
+    // Execute suggested swaps
+    for (const swap of (meeting.suggestedSwaps || [])) {
+      try {
+        const benchAsset = findBenchAsset(battle.portfolio?.bench, swap.symbolIn);
+        if (!benchAsset) {
+          statusFeedEntries.push({
+            timestamp: new Date().toISOString(),
+            message: `Gameplan swap ${swap.symbolOut} → ${swap.symbolIn} skipped — bench asset unavailable.`,
+            action: 'hold', source: 'gameplan_meeting',
+          });
+          continue;
+        }
+        const slot = findPortfolioSlot(battle.portfolio, swap.symbolOut);
+        if (!slot) continue;
+
+        const currentDay = getCurrentTradingDayServer(battle.timing?.tradingDays);
+        const tradeId = `trade_${String((battle.scoreState?.tradeCount || 0) + 1).padStart(3, '0')}`;
+        await executeSwapServer(
+          db, battle.id, battle,
+          slot.tier, slot.slotIndex,
+          benchAsset, currentDay, prices,
+          { id: tradeId, action: 'SWAP', trigger: 'gameplan_rotation', rationale: swap.rationale, tradingDay: currentDay,
+            entryRegime: null, entryMarketPosture: null, entryConviction: 0,
+            entryPreset: battle.strategyPreset || 'balanced', entryMode: battle.executionMode || 'copilot', exitReason: 'gameplan_rotation' }
+        );
+        statusFeedEntries.push({
+          timestamp: new Date().toISOString(),
+          message: `Gameplan approved: ${swap.symbolOut} → ${swap.symbolIn}`,
+          action: 'swap', source: 'gameplan_meeting',
+          symbolOut: swap.symbolOut, symbolIn: swap.symbolIn,
+        });
+        summary.swapped++;
+        // Re-read battle after swap
+        const updatedDoc = await battleRef.get();
+        Object.assign(battle, updatedDoc.data());
+      } catch (err) {
+        console.error(`${LOG_PREFIX} Gameplan swap failed for ${swap.symbolOut}:`, err.message);
+      }
+    }
+    // Move to history and clear
+    const history = [...(battle.gameplanMeetingHistory || []), meeting];
+    await battleRef.update({ gameplanMeeting: null, gameplanMeetingHistory: history });
+    const updatedDoc = await battleRef.get();
+    Object.assign(battle, updatedDoc.data());
+    return 'continue';
+  }
+
+  if (meeting.status === 'rejected') {
+    statusFeedEntries.push({
+      timestamp: new Date().toISOString(),
+      message: 'Gameplan rejected by Coach. Holding current positions.',
+      action: 'hold', source: 'gameplan_meeting',
+    });
+    const history = [...(battle.gameplanMeetingHistory || []), meeting];
+    await battleRef.update({ gameplanMeeting: null, gameplanMeetingHistory: history });
+    const updatedDoc = await battleRef.get();
+    Object.assign(battle, updatedDoc.data());
+    return 'continue';
+  }
+
+  // Still pending — check expiry
+  const now = Date.now();
+  const expiresAt = new Date(meeting.expiresAt).getTime();
+
+  if (now >= expiresAt) {
+    // Expired
+    const expired = { ...meeting, status: 'expired', resolvedAt: new Date().toISOString(), resolvedBy: 'system' };
+    const history = [...(battle.gameplanMeetingHistory || []), expired];
+    statusFeedEntries.push({
+      timestamp: new Date().toISOString(),
+      message: 'Gameplan meeting expired. Continuing with current strategy.',
+      action: 'hold', source: 'gameplan_meeting',
+    });
+    await battleRef.update({ gameplanMeeting: null, gameplanMeetingHistory: history });
+    const updatedDoc = await battleRef.get();
+    Object.assign(battle, updatedDoc.data());
+    return 'continue';
+  }
+
+  // Pending and not expired — skip trigger gate (like proposal pending), but risk still ran
+  console.log(`${LOG_PREFIX} Battle ${battle.id} has pending gameplan meeting — skipping Haiku`);
+  return 'skip_haiku';
+}
+
+/**
+ * Detect whether a gameplan meeting should be triggered.
+ * Triggers on:
+ * 1. 3+ consecutive losing trades
+ * 2. One sector responsible for >60% of total negative P&L
+ *
+ * Frequency cap: max 1 per trading day.
+ */
+function detectGameplanMeetingTrigger(battle, assetScores, prices, flatPortfolio, benchAssets, technicalScoresMap) {
+  // Frequency cap: 1 per calendar day (ET)
+  const todayET = new Date().toLocaleDateString('en-US', { timeZone: 'America/New_York' });
+  if (battle.cronState?.lastGameplanDate === todayET) return null;
+
+  const startingPrices = battle.portfolio?.startingPrices || {};
+  let triggered = false;
+  let diagnosis = '';
+  let fromSector = '';
+
+  // --- Trigger 1: 3 consecutive losing trades ---
+  const trades = battle.trades || [];
+  if (trades.length >= 3) {
+    const last3 = trades.slice(-3);
+    const allLosing = last3.every(t => {
+      const pnl = (t.lockedPoints ?? t.points ?? 0);
+      return pnl < 0;
+    });
+    if (allLosing) {
+      triggered = true;
+      diagnosis = `3 consecutive losing trades. Last 3 swaps all resulted in negative points.`;
+    }
+  }
+
+  // --- Trigger 2: Sector drag >60% of total negative P&L ---
+  if (!triggered) {
+    const sectorPnL = {};
+    let totalNegativePnL = 0;
+
+    for (const score of assetScores) {
+      const asset = flatPortfolio.find(a => a.symbol === score.symbol);
+      if (!asset) continue;
+      const sector = asset.sector || 'Unknown';
+      const currentPrice = prices[score.symbol]?.current;
+      const entryPrice = asset.swapPrice || startingPrices[score.symbol] || 0;
+      if (!currentPrice || !entryPrice) continue;
+
+      const pnl = ((currentPrice - entryPrice) / entryPrice) * 100;
+      if (pnl < 0) {
+        sectorPnL[sector] = (sectorPnL[sector] || 0) + pnl;
+        totalNegativePnL += pnl;
+      }
+    }
+
+    if (totalNegativePnL < -1) { // At least -1% aggregate loss to trigger
+      for (const [sector, pnl] of Object.entries(sectorPnL)) {
+        const share = pnl / totalNegativePnL; // Both negative, so share is positive
+        if (share > 0.6) {
+          triggered = true;
+          fromSector = sector;
+          diagnosis = `${sector} sector dragging performance (${Math.abs(pnl).toFixed(1)}% loss, ${(share * 100).toFixed(0)}% of total negative P&L).`;
+          break;
+        }
+      }
+    }
+  }
+
+  if (!triggered) return null;
+
+  // --- Find opportunity: leading sectors from bench ---
+  const benchSectorScores = {};
+  for (const benchAsset of benchAssets) {
+    const techScore = technicalScoresMap?.[benchAsset.symbol];
+    if (!techScore) continue;
+    const sector = benchAsset.sector || 'Unknown';
+    if (sector === fromSector) continue; // Skip the dragging sector
+    if (!benchSectorScores[sector]) benchSectorScores[sector] = [];
+    benchSectorScores[sector].push({ symbol: benchAsset.symbol, score: techScore.technicalScore || 0, name: benchAsset.name || benchAsset.symbol });
+  }
+
+  // Sort sectors by average technical score
+  const rankedSectors = Object.entries(benchSectorScores)
+    .map(([sector, stocks]) => ({
+      sector,
+      avgScore: stocks.reduce((sum, s) => sum + s.score, 0) / stocks.length,
+      bestStock: stocks.sort((a, b) => b.score - a.score)[0],
+    }))
+    .sort((a, b) => b.avgScore - a.avgScore);
+
+  const toSectors = rankedSectors.slice(0, 2).map(s => s.sector);
+  const opportunity = toSectors.length > 0
+    ? `${toSectors.join(' and ')} showing strength. Top bench candidates: ${rankedSectors.slice(0, 2).map(s => `${s.bestStock.symbol} (${s.sector}, Score ${s.bestStock.score})`).join(', ')}.`
+    : 'Bench stocks available for rotation.';
+
+  // --- Build suggested swaps ---
+  const suggestedSwaps = [];
+  if (fromSector) {
+    // Find worst active positions from dragging sector
+    const draggingPositions = assetScores
+      .filter(s => {
+        const asset = flatPortfolio.find(a => a.symbol === s.symbol);
+        return asset?.sector === fromSector;
+      })
+      .map(s => {
+        const asset = flatPortfolio.find(a => a.symbol === s.symbol);
+        const currentPrice = prices[s.symbol]?.current;
+        const entryPrice = asset?.swapPrice || startingPrices[s.symbol] || 0;
+        const pnl = entryPrice ? ((currentPrice - entryPrice) / entryPrice) * 100 : 0;
+        return { symbol: s.symbol, pnl };
+      })
+      .sort((a, b) => a.pnl - b.pnl); // Worst first
+
+    const topBenchCandidates = rankedSectors.slice(0, 2).map(s => s.bestStock);
+
+    for (let i = 0; i < Math.min(draggingPositions.length, topBenchCandidates.length); i++) {
+      suggestedSwaps.push({
+        symbolOut: draggingPositions[i].symbol,
+        symbolIn: topBenchCandidates[i].symbol,
+        rationale: `${draggingPositions[i].symbol} down ${draggingPositions[i].pnl.toFixed(1)}%, ${topBenchCandidates[i].symbol} (${rankedSectors[i].sector}) has tech score ${topBenchCandidates[i].score}.`,
+      });
+    }
+  }
+
+  // Build EOD expiry
+  const nowET = new Date().toLocaleString('en-US', { timeZone: 'America/New_York' });
+  const todayDate = new Date(nowET);
+  todayDate.setHours(16, 0, 0, 0); // 4:00 PM ET
+  const expiresAt = todayDate.toISOString();
+
+  return {
+    id: `gpm_${Date.now()}`,
+    createdAt: new Date().toISOString(),
+    diagnosis,
+    opportunity,
+    proposedAction: 'rotate_sector',
+    fromSector: fromSector || null,
+    toSectors,
+    suggestedSwaps,
+    status: 'pending',
+    expiresAt,
+    resolvedAt: null,
+    resolvedBy: null,
+  };
+}
+
+// ==================== BATTLE COMPLETION ====================
+
+/**
+ * Complete an expired battle: set status, update agent stats.
+ */
+async function completeBattle(db, battle, summary) {
+  const battleRef = db.collection('agentBattles').doc(battle.id);
+  const now = new Date().toISOString();
+  const scoreState = battle.scoreState || {};
+  const currentScore = scoreState.currentScore || 0;
+  const result = currentScore > 0 ? 'win' : 'loss';
+
+  // Update battle status
+  const existingFeed = battle.statusFeed || [];
+  await battleRef.update({
+    status: 'completed',
+    completedAt: now,
+    'cronState.evaluatingAt': null,
+    statusFeed: [...existingFeed, {
+      timestamp: now,
+      message: `Battle complete. Final score: ${currentScore >= 0 ? '+' : ''}${currentScore.toFixed(1)} pts. Result: ${result === 'win' ? 'Win' : 'Loss'}.`,
+      action: 'battle_complete',
+      source: 'system',
+      score: Math.round(currentScore * 100) / 100,
+    }].slice(-50),
+  });
+
+  // Update agent stats (server-side equivalent of client updateAgentStats)
+  const agentRef = db.collection('agents').doc(battle.agentId);
+  const agentDoc = await agentRef.get();
+  if (agentDoc.exists) {
+    const stats = agentDoc.data().stats || {};
+    const newGamesPlayed = (stats.gamesPlayed || 0) + 1;
+    const newWins = (stats.wins || 0) + (result === 'win' ? 1 : 0);
+    const newLosses = (stats.losses || 0) + (result === 'loss' ? 1 : 0);
+    const newTotalScore = (stats.totalScore || 0) + currentScore;
+    const newAvgScore = Math.round(newTotalScore / newGamesPlayed);
+    let newStreak = stats.currentStreak || 0;
+    if (result === 'win') {
+      newStreak = newStreak >= 0 ? newStreak + 1 : 1;
+    } else {
+      newStreak = newStreak <= 0 ? newStreak - 1 : -1;
+    }
+    const newBestStreak = Math.max(stats.bestStreak || 0, Math.abs(newStreak));
+
+    await agentRef.update({
+      stats: {
+        wins: newWins,
+        losses: newLosses,
+        gamesPlayed: newGamesPlayed,
+        totalScore: Math.round(newTotalScore * 100) / 100,
+        avgScore: newAvgScore,
+        currentStreak: newStreak,
+        bestStreak: newBestStreak,
+      },
+      activeBattleId: null,
+    });
+  }
+
+  console.log(`${LOG_PREFIX} Battle ${battle.id} completed. Score: ${currentScore.toFixed(1)}, Result: ${result}`);
+  summary.evaluated++;
 }
