@@ -8703,7 +8703,6 @@ export default function PortfolioDuel() {
         autopickCountdown={autopickCountdown}
         isRosterExpanded={isRosterExpanded}
         setIsRosterExpanded={setIsRosterExpanded}
-        userNotes={userNotes}
         colors={colors}
         stocksData={stocksData}
         setScreen={setScreen}
