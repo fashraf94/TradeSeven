@@ -160,7 +160,7 @@ Use the submit_agent_profile tool to submit the derived profile.`;
 
     if (!toolUse?.input) {
       console.error('[create-profile] No tool_use in Haiku response');
-      return res.status(200).json({ success: true, profile: buildFallbackProfile(agentName) });
+      return res.status(200).json({ success: true, profile: buildFallbackProfile(agentName), fallback: true });
     }
 
     const profile = toolUse.input;
@@ -201,6 +201,6 @@ Use the submit_agent_profile tool to submit the derived profile.`;
     return res.status(200).json({ success: true, profile });
   } catch (error) {
     console.error('[create-profile] Error:', error.message);
-    return res.status(200).json({ success: true, profile: buildFallbackProfile(agentName) });
+    return res.status(200).json({ success: true, profile: buildFallbackProfile(agentName), fallback: true });
   }
 }
