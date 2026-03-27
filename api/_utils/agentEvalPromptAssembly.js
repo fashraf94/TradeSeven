@@ -248,8 +248,9 @@ ${directiveLines}`);
  * @param {Object} [momentumData] - Optional intraday momentum data
  * @param {Object} [momentumData.vwap] - { symbol: { vwap, currentPrice, vwapDeviation } }
  * @param {Object} [momentumData.rankings] - { symbol: { bBandwidthPercentile, nr7Flag, dailyRange } }
+ * @param {Object} [presetConfig] - Optional strategy preset config from agentPresetConfig.js
  */
-export function buildLiveContextBlock(battle, prices, macroPrices, assetScores, triggers, news, recentEvals, momentumData) {
+export function buildLiveContextBlock(battle, prices, macroPrices, assetScores, triggers, news, recentEvals, momentumData, presetConfig) {
   const parts = [];
   const scoreState = battle.scoreState || {};
 
@@ -271,6 +272,11 @@ SPY (S&P 500): ${formatPct(macroPrices?.SPY)}% | QQQ (Nasdaq): ${formatPct(macro
   if (momentumData?.marketPosture || momentumData?.regimes) {
     const regimeLines = buildRegimeContext(assetScores, momentumData);
     if (regimeLines) parts.push(regimeLines);
+  }
+
+  // 3a3. Strategy Preset Context
+  if (presetConfig) {
+    parts.push(`STRATEGY PRESET: ${presetConfig.label}\n${presetConfig.promptGuidance}`);
   }
 
   // 3b. Active Portfolio CSV

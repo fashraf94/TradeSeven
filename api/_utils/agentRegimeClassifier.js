@@ -110,3 +110,40 @@ export function getStrategiesForRegime(regime) {
       return [];
   }
 }
+
+/**
+ * Get strategies adjusted by the user's strategy preset.
+ * Wraps getStrategiesForRegime with preset-specific overrides.
+ *
+ * @param {string} regime - Stock regime
+ * @param {Object} presetConfig - From agentPresetConfig.js
+ * @returns {string[]} Array of strategy names (empty = HOLD_ONLY)
+ */
+export function getPresetAdjustedStrategies(regime, presetConfig) {
+  if (!presetConfig) return getStrategiesForRegime(regime);
+
+  const regimeConfig = presetConfig.regime || {};
+
+  // If preset blocks this regime entirely, return empty (HOLD_ONLY)
+  if (regimeConfig.holdOnlyRegimes && regimeConfig.holdOnlyRegimes.includes(regime)) {
+    return [];
+  }
+
+  const baseStrategies = getStrategiesForRegime(regime);
+
+  // If preset has no favored strategies, use base as-is
+  if (!regimeConfig.favoredStrategies) return baseStrategies;
+
+  // If base has strategies, intersect with favored (keep order of favored)
+  if (baseStrategies.length > 0) {
+    const baseSet = new Set(baseStrategies);
+    const intersection = regimeConfig.favoredStrategies.filter(s => baseSet.has(s));
+    return intersection.length > 0 ? intersection : baseStrategies;
+  }
+
+  // Don't override distressed — exit-only should remain exit-only
+  if (regime === 'distressed') return [];
+
+  // For empty-base regimes (e.g., choppy with aggressive), allow favored strategies
+  return regimeConfig.favoredStrategies;
+}

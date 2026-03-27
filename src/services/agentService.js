@@ -321,3 +321,27 @@ export const appendBattleLedger = async (battleId, entry) => {
     updatedAt: serverTimestamp(),
   });
 };
+
+export const updateStrategyPreset = async (battleId, preset) => {
+  const docRef = doc(db, BATTLES_COLLECTION, battleId);
+  await updateDoc(docRef, {
+    strategyPreset: preset,
+    updatedAt: serverTimestamp(),
+  });
+};
+
+export const resolveGameplanMeeting = async (battleId, resolution) => {
+  const docRef = doc(db, BATTLES_COLLECTION, battleId);
+  const snap = await getDoc(docRef);
+  const meeting = snap.data()?.gameplanMeeting;
+  if (!meeting) return;
+  await updateDoc(docRef, {
+    gameplanMeeting: {
+      ...meeting,
+      status: resolution,
+      resolvedAt: new Date().toISOString(),
+      resolvedBy: 'coach',
+    },
+    updatedAt: serverTimestamp(),
+  });
+};
