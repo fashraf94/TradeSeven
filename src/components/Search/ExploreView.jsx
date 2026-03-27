@@ -7,6 +7,7 @@ import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../../firebase/config';
 import SectorPerformanceTable from './SectorPerformanceTable';
 import { INDEX_REGISTRY } from '../../constants/indexRegistry';
+import { getMultipleStockPrices } from '../../services/eodhdAPI';
 
 const CATEGORIES = [
   {
@@ -40,6 +41,7 @@ const ExploreView = ({ stocksData, onOpenResearch, isMobile }) => {
   const { tokens } = useTheme();
   const [expandedCard, setExpandedCard] = useState(null);
   const [marketContext, setMarketContext] = useState(null);
+  const [freshPrices, setFreshPrices] = useState(null);
   const [recentSearches, setRecentSearches] = useState([]);
 
   // Load recent searches from localStorage
@@ -63,6 +65,20 @@ const ExploreView = ({ stocksData, onOpenResearch, isMobile }) => {
     })();
     return () => { cancelled = true; };
   }, []);
+
+  // Fetch fresh prices for indices + sector ETFs after marketContext loads
+  useEffect(() => {
+    if (!marketContext) return;
+    let cancelled = false;
+    const symbols = [
+      'SPY', 'QQQ', 'DIA', 'IWM',
+      'XLK', 'XLF', 'XLY', 'XLP', 'XLE', 'XLI', 'XLB', 'XLU', 'XLRE', 'XLC', 'XLV',
+    ];
+    getMultipleStockPrices(symbols)
+      .then(prices => { if (!cancelled) setFreshPrices(prices); })
+      .catch(() => console.warn('[ExploreView] Fresh price fetch failed, using cached data'));
+    return () => { cancelled = true; };
+  }, [marketContext]);
 
   // Compute category data
   const gainers = useMemo(() => {
@@ -145,21 +161,22 @@ const ExploreView = ({ stocksData, onOpenResearch, isMobile }) => {
     });
   };
 
-  // Market indices
+  // Market indices (prefer fresh prices over stale Firestore data)
   const indices = useMemo(() => {
     const indexSymbols = ['SPY', 'QQQ', 'DIA', 'IWM'];
     if (!marketContext) return [];
     return indexSymbols.map(sym => {
       const data = marketContext[sym.toLowerCase()];
       if (!data) return null;
+      const fresh = freshPrices?.[sym];
       return {
         symbol: sym,
         name: INDEX_REGISTRY[sym]?.name || sym,
-        change: data.changePercent || 0,
-        price: data.price || 0,
+        change: fresh?.percentChange ?? data.changePercent ?? 0,
+        price: fresh?.price ?? data.price ?? 0,
       };
     }).filter(Boolean);
-  }, [marketContext]);
+  }, [marketContext, freshPrices]);
 
   return (
     <div>
@@ -383,6 +400,7 @@ const ExploreView = ({ stocksData, onOpenResearch, isMobile }) => {
       {/* Sector Performance Table */}
       <SectorPerformanceTable
         marketContext={marketContext}
+        freshPrices={freshPrices}
         onOpenResearch={onOpenResearch}
         isMobile={isMobile}
         tokens={tokens}
