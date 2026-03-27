@@ -260,21 +260,37 @@ export default async function handler(req, res) {
       .get();
 
     if (!activeBattles.empty) {
+      const existingBattle = activeBattles.docs[0].data();
       const existingBattleId = activeBattles.docs[0].id;
 
-      // Ensure activeBattleId is set on agent doc (may be missing if previous deploy partially failed)
-      await agentRef.update({ activeBattleId: existingBattleId });
+      // Check if the "active" battle has actually expired
+      const expiresAt = existingBattle.expiresAt;
+      const isExpired = expiresAt && (
+        (expiresAt.toDate ? expiresAt.toDate() : new Date(expiresAt)) < new Date()
+      );
 
-      return res.status(200).json({
-        success: true,
-        portfolioUpdated: true,
-        battleCreated: false,
-        reason: 'Agent already has an active battle',
-        existingBattleId,
-        portfolio: enrichedPortfolio.portfolio,
-        bench: enrichedPortfolio.bench,
-        innerMonologue: portfolioResult.innerMonologue,
-        strategyBrief: strategy.brief,
+      if (!isExpired) {
+        // Truly active battle exists — sync activeBattleId and return
+        await agentRef.update({ activeBattleId: existingBattleId });
+
+        return res.status(200).json({
+          success: true,
+          portfolioUpdated: true,
+          battleCreated: false,
+          reason: 'Agent already has an active battle',
+          existingBattleId,
+          portfolio: enrichedPortfolio.portfolio,
+          bench: enrichedPortfolio.bench,
+          innerMonologue: portfolioResult.innerMonologue,
+          strategyBrief: strategy.brief,
+        });
+      }
+
+      // Battle has expired — mark it as completed and proceed to create new one
+      await db.collection('agentBattles').doc(existingBattleId).update({
+        status: 'completed',
+        completedAt: new Date().toISOString(),
+        completionReason: 'expired',
       });
     }
 
