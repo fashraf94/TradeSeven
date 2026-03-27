@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { MessageSquare, Send, Loader2, Check, X, ChevronDown, ChevronUp } from 'lucide-react';
 import { addDirective, appendBattleLedger } from '../../services/agentService';
 import { getAuth } from 'firebase/auth';
+import { getLevelConfig } from '../../constants/agentProgression';
 
 const hexToRgba = (hex, alpha) => {
   const r = parseInt(hex.slice(1, 3), 16);
@@ -10,12 +11,6 @@ const hexToRgba = (hex, alpha) => {
   const b = parseInt(hex.slice(5, 7), 16);
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 };
-
-function getChatBudget(gamesPlayed) {
-  if (gamesPlayed >= 15) return 6;
-  if (gamesPlayed >= 5) return 4;
-  return 2;
-}
 
 function isMarketHoursClient() {
   const now = new Date().toLocaleString('en-US', { timeZone: 'America/New_York' });
@@ -39,7 +34,7 @@ const OpenChatPanel = ({ battle, agentId, agent, tokens }) => {
   const chatExchanges = battle?.chatExchanges || [];
   const chatBudgetUsed = battle?.chatBudgetUsed || 0;
   const gamesPlayed = agent?.stats?.gamesPlayed || 0;
-  const budget = getChatBudget(gamesPlayed);
+  const budget = getLevelConfig(gamesPlayed).chatBudget;
   const budgetExhausted = chatBudgetUsed >= budget;
   const duringMarket = isMarketHoursClient();
   const isActive = battle?.status === 'active';

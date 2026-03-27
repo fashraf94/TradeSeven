@@ -12,6 +12,7 @@ import AgentMindTab from './AgentMindTab';
 import AgentLeaderboardTab from './AgentLeaderboardTab';
 import AgentEvolutionTab from './AgentEvolutionTab';
 import AgentStrategyTab from './AgentStrategyTab';
+import LevelUpNotification from './LevelUpNotification';
 
 // ── Tabs ──────────────────────────────────────────────────
 
@@ -92,6 +93,7 @@ const AgentDashboard = ({ user, setScreen, onCreateAgentBattle }) => {
   const [activeTab, setActiveTab] = useState('mind');
   const [deploying, setDeploying] = useState(false);
   const { agent, loading, hasAgent, speech, deployText, maturityStage,
+          currentLevel, levelConfig, nextLevelInfo, levelUpEvent, clearLevelUp,
           activeDirectives, groupedDirectives, record, seedTestAgent } = useAgent(user?.odUserId);
   const { battle: agentBattle, statusFeed, executionMode, pendingProposal, strategyPreset, gameplanMeeting, loading: battleLoading } = useAgentBattle(agent?.activeBattleId);
   const { stories: rawStories } = useFantasyTimes();
@@ -230,6 +232,9 @@ const AgentDashboard = ({ user, setScreen, onCreateAgentBattle }) => {
             <AgentSidebar
               agent={agent}
               speech={speech}
+              currentLevel={currentLevel}
+              levelConfig={levelConfig}
+              nextLevelInfo={nextLevelInfo}
               isDesktop={isDesktop}
               isMobile={isMobile}
               tokens={tokens}
@@ -371,6 +376,16 @@ const AgentDashboard = ({ user, setScreen, onCreateAgentBattle }) => {
             </AnimatePresence>
           </div>
         </motion.div>
+      )}
+
+      {/* Level-Up Notification */}
+      {levelUpEvent && (
+        <LevelUpNotification
+          event={levelUpEvent}
+          agentName={agent?.name}
+          onDismiss={clearLevelUp}
+          tokens={tokens}
+        />
       )}
     </div>
   );

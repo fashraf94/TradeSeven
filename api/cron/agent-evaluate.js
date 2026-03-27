@@ -81,6 +81,17 @@ export default async function handler(req, res) {
         break;
       }
 
+      // Check if battle has expired — complete it instead of processing
+      if (battle.expiresAt && new Date(battle.expiresAt) < new Date()) {
+        try {
+          await completeBattle(db, battle, summary);
+        } catch (err) {
+          console.error(`${LOG_PREFIX} Error completing battle ${battle.id}:`, err.message);
+          summary.errors++;
+        }
+        continue;
+      }
+
       try {
         await processAgentBattle(db, battle, summary);
       } catch (err) {
@@ -410,6 +421,12 @@ async function processAgentBattle(db, battle, summary) {
           hypothesis: null,
           evaluationId: `risk_${riskResult.reason}_${score.symbol}`,
           tradingDay: currentDay,
+          entryRegime: stockRegimes[score.symbol] || null,
+          entryMarketPosture: marketPosture,
+          entryConviction: 0,
+          entryPreset: battle.strategyPreset || 'balanced',
+          entryMode: battle.executionMode || 'copilot',
+          exitReason: riskResult.reason,
         };
 
         await executeSwapServer(
@@ -614,6 +631,12 @@ async function processAgentBattle(db, battle, summary) {
               hypothesis: haikuResult.hypothesis || null,
               evaluationId: evalId,
               tradingDay: currentDay,
+              entryRegime: stockRegimes[haikuResult.symbolOut] || null,
+              entryMarketPosture: marketPosture,
+              entryConviction: haikuResult.conviction || 0,
+              entryPreset: battle.strategyPreset || 'balanced',
+              entryMode: battle.executionMode || 'copilot',
+              exitReason: 'haiku_decision',
             };
             await executeSwapServer(
               db, battle.id, battle,
@@ -662,6 +685,12 @@ async function processAgentBattle(db, battle, summary) {
               hypothesis: haikuResult.hypothesis || null,
               evaluationId: evalId,
               tradingDay: currentDay,
+              entryRegime: stockRegimes[haikuResult.symbolOut] || null,
+              entryMarketPosture: marketPosture,
+              entryConviction: haikuResult.conviction || 0,
+              entryPreset: battle.strategyPreset || 'balanced',
+              entryMode: mode,
+              exitReason: 'haiku_decision',
             },
           };
 
@@ -1191,4 +1220,67 @@ function detectGameplanMeetingTrigger(battle, assetScores, prices, flatPortfolio
     resolvedAt: null,
     resolvedBy: null,
   };
+}
+
+// ==================== BATTLE COMPLETION ====================
+
+/**
+ * Complete an expired battle: set status, update agent stats.
+ */
+async function completeBattle(db, battle, summary) {
+  const battleRef = db.collection('agentBattles').doc(battle.id);
+  const now = new Date().toISOString();
+  const scoreState = battle.scoreState || {};
+  const currentScore = scoreState.currentScore || 0;
+  const result = currentScore > 0 ? 'win' : 'loss';
+
+  // Update battle status
+  const existingFeed = battle.statusFeed || [];
+  await battleRef.update({
+    status: 'completed',
+    completedAt: now,
+    'cronState.evaluatingAt': null,
+    statusFeed: [...existingFeed, {
+      timestamp: now,
+      message: `Battle complete. Final score: ${currentScore >= 0 ? '+' : ''}${currentScore.toFixed(1)} pts. Result: ${result === 'win' ? 'Win' : 'Loss'}.`,
+      action: 'battle_complete',
+      source: 'system',
+      score: Math.round(currentScore * 100) / 100,
+    }].slice(-50),
+  });
+
+  // Update agent stats (server-side equivalent of client updateAgentStats)
+  const agentRef = db.collection('agents').doc(battle.agentId);
+  const agentDoc = await agentRef.get();
+  if (agentDoc.exists) {
+    const stats = agentDoc.data().stats || {};
+    const newGamesPlayed = (stats.gamesPlayed || 0) + 1;
+    const newWins = (stats.wins || 0) + (result === 'win' ? 1 : 0);
+    const newLosses = (stats.losses || 0) + (result === 'loss' ? 1 : 0);
+    const newTotalScore = (stats.totalScore || 0) + currentScore;
+    const newAvgScore = Math.round(newTotalScore / newGamesPlayed);
+    let newStreak = stats.currentStreak || 0;
+    if (result === 'win') {
+      newStreak = newStreak >= 0 ? newStreak + 1 : 1;
+    } else {
+      newStreak = newStreak <= 0 ? newStreak - 1 : -1;
+    }
+    const newBestStreak = Math.max(stats.bestStreak || 0, Math.abs(newStreak));
+
+    await agentRef.update({
+      stats: {
+        wins: newWins,
+        losses: newLosses,
+        gamesPlayed: newGamesPlayed,
+        totalScore: Math.round(newTotalScore * 100) / 100,
+        avgScore: newAvgScore,
+        currentStreak: newStreak,
+        bestStreak: newBestStreak,
+      },
+      activeBattleId: null,
+    });
+  }
+
+  console.log(`${LOG_PREFIX} Battle ${battle.id} completed. Score: ${currentScore.toFixed(1)}, Result: ${result}`);
+  summary.evaluated++;
 }

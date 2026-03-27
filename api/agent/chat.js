@@ -16,10 +16,11 @@ function getAnthropicClient() {
   return anthropicClient;
 }
 
+// Thresholds mirrored from src/constants/agentProgression.js — keep in sync
 function getChatBudget(gamesPlayed) {
-  if (gamesPlayed >= 15) return 6;
-  if (gamesPlayed >= 5) return 4;
-  return 2;
+  if (gamesPlayed >= 15) return 6;  // Partner
+  if (gamesPlayed >= 5) return 4;   // Starter
+  return 2;                          // Rookie
 }
 
 export default async function handler(req, res) {

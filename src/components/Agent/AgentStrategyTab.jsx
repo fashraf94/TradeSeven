@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Activity, Zap, Clock } from 'lucide-react';
+import { getLevelConfig } from '../../constants/agentProgression';
 import StatusFeedTimeline from './StatusFeedTimeline';
 import ExecutionModeToggle from './ExecutionModeToggle';
 import StrategyPresetToggle from './StrategyPresetToggle';
@@ -69,7 +70,7 @@ const AgentStrategyTab = ({ battle, statusFeed, executionMode, pendingProposal, 
         }}>
           <Activity size={32} color={tokens.textFaint} style={{ opacity: 0.5 }} />
           <p style={{ fontSize: '14px', color: tokens.textMuted, lineHeight: '1.6', maxWidth: '280px', margin: 0 }}>
-            Deploy your agent to see the strategy feed. Your agent's decisions, trades, and risk actions will appear here in real-time.
+            {getLevelConfig(agent?.stats?.gamesPlayed || 0).speech || 'Deploy your agent to see the strategy feed.'}
           </p>
         </motion.div>
       </motion.div>

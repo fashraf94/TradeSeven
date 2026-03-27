@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   subscribeToUserAgent,
   createAgent,
@@ -6,11 +6,13 @@ import {
   removeDirective,
   seedTestAgent
 } from '../services/agentService';
+import { getAgentLevel, getLevelConfig, getNextLevelInfo, AGENT_LEVELS } from '../constants/agentProgression';
 
 const useAgent = (userId) => {
   const [agent, setAgent] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [levelUpEvent, setLevelUpEvent] = useState(null);
 
   // Real-time Firestore subscription
   useEffect(() => {
@@ -39,14 +41,37 @@ const useAgent = (userId) => {
 
   const hasAgent = useMemo(() => agent !== null, [agent]);
 
+  // Unified level system (source of truth: agentProgression.js)
+  const gamesPlayed = agent?.stats?.gamesPlayed || 0;
+  const currentLevel = useMemo(() => getAgentLevel(gamesPlayed), [gamesPlayed]);
+  const levelConfig = useMemo(() => getLevelConfig(gamesPlayed), [gamesPlayed]);
+  const nextLevelInfo = useMemo(() => getNextLevelInfo(gamesPlayed), [gamesPlayed]);
+
+  // Level-up detection
+  const prevLevelRef = useRef(currentLevel);
+  useEffect(() => {
+    if (prevLevelRef.current && currentLevel !== prevLevelRef.current) {
+      const prev = AGENT_LEVELS[prevLevelRef.current];
+      const curr = AGENT_LEVELS[currentLevel];
+      if (curr.minGames > prev.minGames) {
+        setLevelUpEvent({
+          from: prevLevelRef.current,
+          to: currentLevel,
+          unlocks: getNextLevelInfo(prev.minGames)?.unlocks || [],
+        });
+      }
+    }
+    prevLevelRef.current = currentLevel;
+  }, [currentLevel]);
+
+  // Backward-compatible maturityStage (derived from level)
   const maturityStage = useMemo(() => {
     if (!agent) return 'none';
-    const games = agent.stats?.gamesPlayed || 0;
-    if (games === 0) return 'fresh';
-    if (games < 5) return 'growing';
-    if (games < 25) return 'maturing';
+    if (gamesPlayed === 0) return 'fresh';
+    if (currentLevel === 'rookie') return 'growing';
+    if (currentLevel === 'starter') return 'maturing';
     return 'veteran';
-  }, [agent]);
+  }, [agent, gamesPlayed, currentLevel]);
 
   const speech = useMemo(() => {
     if (!agent) return '';
@@ -164,6 +189,11 @@ const useAgent = (userId) => {
     error,
     hasAgent,
     maturityStage,
+    currentLevel,
+    levelConfig,
+    nextLevelInfo,
+    levelUpEvent,
+    clearLevelUp: () => setLevelUpEvent(null),
     speech,
     deployText,
     activeDirectives,

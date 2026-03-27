@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { BookOpen, Pin, PinOff, ToggleLeft, ToggleRight, Trash2, Plus } from 'lucide-react';
 import CenteredModal from '../shared/CenteredModal';
 import { toggleDirective, pinDirective, removeDirective, addCoachingRule } from '../../services/agentService';
+import { getLevelConfig } from '../../constants/agentProgression';
 
 const hexToRgba = (hex, alpha) => {
   const r = parseInt(hex.slice(1, 3), 16);
@@ -31,17 +32,7 @@ const SOURCE_LABELS = {
   system: 'System',
 };
 
-function getMaxSlots(gamesPlayed) {
-  if (gamesPlayed >= 15) return 20;
-  if (gamesPlayed >= 5) return 10;
-  return 5;
-}
-
-function getLevelLabel(gamesPlayed) {
-  if (gamesPlayed >= 15) return 'Partner';
-  if (gamesPlayed >= 5) return 'Starter';
-  return 'Rookie';
-}
+// Progression thresholds imported from agentProgression.js
 
 const PlaybookPanel = ({ isOpen, onClose, agent, tokens }) => {
   const [addingRule, setAddingRule] = useState(false);
@@ -50,7 +41,8 @@ const PlaybookPanel = ({ isOpen, onClose, agent, tokens }) => {
 
   const directives = agent?.directives || [];
   const gamesPlayed = agent?.stats?.gamesPlayed || 0;
-  const maxSlots = getMaxSlots(gamesPlayed);
+  const levelCfg = getLevelConfig(gamesPlayed);
+  const maxSlots = levelCfg.playbookSlots;
 
   const { active, inactive } = useMemo(() => {
     const now = new Date();
@@ -180,7 +172,7 @@ const PlaybookPanel = ({ isOpen, onClose, agent, tokens }) => {
             {active.length} / {maxSlots} slots used
           </span>
           <span style={{ fontSize: '10px', fontWeight: 600, color: tokens.teal }}>
-            {getLevelLabel(gamesPlayed)} level
+            {levelCfg.label} level
           </span>
         </div>
 
