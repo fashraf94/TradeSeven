@@ -95,7 +95,7 @@ const PlaybookPanel = ({ isOpen, onClose, agent, tokens, onNavigateToForge }) =>
 
     fetchBundles();
     return () => { cancelled = true; };
-  }, [isOpen, agent?.id, equippedBundleIds.length]);
+  }, [isOpen, agent?.id, JSON.stringify(equippedBundleIds)]);
 
   const { active, inactive } = useMemo(() => {
     const now = new Date();
@@ -161,6 +161,7 @@ const PlaybookPanel = ({ isOpen, onClose, agent, tokens, onNavigateToForge }) =>
   };
 
   const handleUnequip = async (bundleId) => {
+    if (!agent?.id) return;
     if (agent?.activeBattleId) {
       setConfirmUnequipId(null);
       return;

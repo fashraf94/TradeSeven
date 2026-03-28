@@ -28,8 +28,6 @@ function getLevelLabel(level) {
 }
 
 export default function MyBundlesTab({ forge, tokens, isMobile, agent }) {
-  const [editingNameId, setEditingNameId] = useState(null);
-  const [editNameValue, setEditNameValue] = useState('');
   const [expandedForgedId, setExpandedForgedId] = useState(null);
   const [forgeSuccessBundle, setForgeSuccessBundle] = useState(null);
   const [showNamePrompt, setShowNamePrompt] = useState(null); // bundleId
@@ -74,10 +72,14 @@ export default function MyBundlesTab({ forge, tokens, isMobile, agent }) {
 
   const doForge = async (bundleId) => {
     setShowNamePrompt(null);
+    // Capture bundle info before the async forge call (state will be stale after)
+    const bundle = forge.draftBundles.find(b => b.id === bundleId);
     await forge.forgeBundleFn(bundleId);
-    // Find the now-forged bundle for success screen
-    const forged = forge.bundles.find(b => b.id === bundleId);
-    setForgeSuccessBundle(forged || { id: bundleId });
+    setForgeSuccessBundle({
+      id: bundleId,
+      name: bundle?.name || 'Bundle',
+      ruleCount: bundle?.ruleIds?.length || 0,
+    });
   };
 
   const handleNamePromptConfirm = async () => {
@@ -166,40 +168,13 @@ export default function MyBundlesTab({ forge, tokens, isMobile, agent }) {
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <Package size={16} color="#f59e0b" />
-            {editingNameId === bundle.id ? (
-              <input
-                value={editNameValue}
-                onChange={e => setEditNameValue(e.target.value)}
-                onBlur={() => setEditingNameId(null)}
-                onKeyDown={e => e.key === 'Enter' && setEditingNameId(null)}
-                autoFocus
-                style={{
-                  padding: '2px 8px',
-                  borderRadius: '6px',
-                  border: `1px solid ${tokens.teal}44`,
-                  background: `${tokens.teal}08`,
-                  color: tokens.textWhite,
-                  fontSize: '15px',
-                  fontWeight: 700,
-                  fontFamily: 'inherit',
-                  outline: 'none',
-                  width: '160px',
-                }}
-              />
-            ) : (
-              <span
-                onClick={() => { setEditingNameId(bundle.id); setEditNameValue(bundle.name); }}
-                style={{
-                  fontSize: '15px',
-                  fontWeight: 700,
-                  color: tokens.textWhite,
-                  cursor: 'pointer',
-                }}
-                title="Click to rename"
-              >
-                {bundle.name}
-              </span>
-            )}
+            <span style={{
+                fontSize: '15px',
+                fontWeight: 700,
+                color: tokens.textWhite,
+              }}>
+              {bundle.name}
+            </span>
           </div>
           <span style={{
             padding: '3px 10px',

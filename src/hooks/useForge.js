@@ -196,18 +196,19 @@ export function useForge(agentId) {
     }
   }, [agentId, showToast]);
 
-  // Delete a rule (soft delete)
+  // Delete a rule (soft delete + reload bundles to clear orphaned ruleIds)
   const deleteRule = useCallback(async (ruleId) => {
     if (!agentId) return;
     try {
       await softDeleteRule(agentId, ruleId);
       setRules(prev => prev.filter(r => r.id !== ruleId));
+      await loadData();
       showToast('Rule deleted');
     } catch (err) {
       console.error('[useForge] deleteRule failed:', err);
       showToast(err.message || 'Failed to delete rule');
     }
-  }, [agentId, showToast]);
+  }, [agentId, showToast, loadData]);
 
   // Create a manual rule
   const createManualRule = useCallback(async ({ text, category }) => {
@@ -275,7 +276,7 @@ export function useForge(agentId) {
 
   // Forge a bundle
   const forgeBundleFn = useCallback(async (bundleId) => {
-    if (!agentId) return;
+    if (!agentId || forgingBundleId) return;
     setForgingBundleId(bundleId);
     try {
       await forgeBundleSvc(agentId, bundleId);
@@ -287,11 +288,11 @@ export function useForge(agentId) {
     } finally {
       setForgingBundleId(null);
     }
-  }, [agentId, showToast, loadData]);
+  }, [agentId, forgingBundleId, showToast, loadData]);
 
   // Equip a bundle
   const equipBundleFn = useCallback(async (bundleId) => {
-    if (!agentId) return;
+    if (!agentId || equippingBundleId) return;
     setEquippingBundleId(bundleId);
     try {
       await equipBundleSvc(agentId, bundleId);
@@ -303,11 +304,11 @@ export function useForge(agentId) {
     } finally {
       setEquippingBundleId(null);
     }
-  }, [agentId, showToast, loadData]);
+  }, [agentId, equippingBundleId, showToast, loadData]);
 
   // Unequip a bundle
   const unequipBundleFn = useCallback(async (bundleId) => {
-    if (!agentId) return;
+    if (!agentId || equippingBundleId) return;
     try {
       await unequipBundleSvc(agentId, bundleId);
       await loadData();
@@ -316,11 +317,11 @@ export function useForge(agentId) {
       console.error('[useForge] unequipBundle failed:', err);
       showToast(err.message || 'Failed to unequip bundle');
     }
-  }, [agentId, showToast, loadData]);
+  }, [agentId, equippingBundleId, showToast, loadData]);
 
   // Reforge a bundle
   const reforgeBundleFn = useCallback(async (bundleId) => {
-    if (!agentId) return;
+    if (!agentId || forgingBundleId) return;
     try {
       await reforgeBundleSvc(agentId, bundleId);
       await loadData();
@@ -329,7 +330,7 @@ export function useForge(agentId) {
       console.error('[useForge] reforgeBundle failed:', err);
       showToast(err.message || 'Failed to reforge bundle');
     }
-  }, [agentId, showToast, loadData]);
+  }, [agentId, forgingBundleId, showToast, loadData]);
 
   return {
     // Tab / UI state
