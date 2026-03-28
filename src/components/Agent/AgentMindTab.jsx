@@ -96,7 +96,7 @@ const SOURCE_CONFIG = {
   strategy_session: { label: 'Strategy Session' },
 };
 
-const AgentMindTab = ({ agent, scouting, battleLog, news, tokens, isDesktop, isMobile }) => {
+const AgentMindTab = ({ agent, scouting, battleLog, news, tokens, isDesktop, isMobile, onNavigateToForge }) => {
   const [playbookOpen, setPlaybookOpen] = useState(false);
   const sourceColorMap = {
     coaching: tokens.purple,
@@ -275,6 +275,7 @@ const AgentMindTab = ({ agent, scouting, battleLog, news, tokens, isDesktop, isM
         onClose={() => setPlaybookOpen(false)}
         agent={agent}
         tokens={tokens}
+        onNavigateToForge={onNavigateToForge}
       />
     </motion.div>
   );

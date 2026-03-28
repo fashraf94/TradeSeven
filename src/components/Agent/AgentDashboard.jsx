@@ -88,7 +88,7 @@ const buildScoutingReport = (agent, maturityStage) => {
 
 // ── Component ──────────────────────────────────────────────
 
-const AgentDashboard = ({ user, setScreen, onCreateAgentBattle }) => {
+const AgentDashboard = ({ user, setScreen, onCreateAgentBattle, setShowForge }) => {
   const { tokens } = useTheme();
   const { isMobile, isDesktop } = useIsMobile();
   const [activeTab, setActiveTab] = useState('mind');
@@ -294,6 +294,7 @@ const AgentDashboard = ({ user, setScreen, onCreateAgentBattle }) => {
                     tokens={tokens}
                     isDesktop={isDesktop}
                     isMobile={isMobile}
+                    onNavigateToForge={setShowForge ? () => setShowForge(true) : undefined}
                   />
                 )}
                 {activeTab === 'strategy' && (

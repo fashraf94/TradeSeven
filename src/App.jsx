@@ -9101,6 +9101,7 @@ export default function PortfolioDuel() {
           user={user}
           setScreen={setScreen}
           onCreateAgentBattle={handleCreateAgentTrainingBattle}
+          setShowForge={setShowForge}
         />
       </ErrorBoundary>
       </div>

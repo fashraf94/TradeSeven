@@ -9,6 +9,8 @@ import { useTheme } from '../../contexts/ThemeContext';
 import { useForge } from '../../hooks/useForge';
 import useAgent from '../../hooks/useAgent';
 import DiscoverTab from './DiscoverTab';
+import MyRulesTab from './MyRulesTab';
+import MyBundlesTab from './MyBundlesTab';
 
 const TABS = [
   { id: 'discover', label: 'Discover', Icon: Compass },
@@ -164,10 +166,19 @@ export default function ForgeScreen({ isMobile, onClose, user }) {
             />
           )}
           {forge.activeTab === 'myRules' && (
-            <PlaceholderTab label="My Rules" tokens={tokens} />
+            <MyRulesTab
+              forge={forge}
+              tokens={tokens}
+              isMobile={isMobile}
+            />
           )}
           {forge.activeTab === 'myBundles' && (
-            <PlaceholderTab label="My Bundles" tokens={tokens} />
+            <MyBundlesTab
+              forge={forge}
+              tokens={tokens}
+              isMobile={isMobile}
+              agent={agent}
+            />
           )}
           {forge.activeTab === 'stats' && (
             <PlaceholderTab label="Stats" tokens={tokens} />
