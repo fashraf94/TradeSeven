@@ -1,11 +1,24 @@
 // src/hooks/useForge.js
-// Manages Forge state: tabs, category filter, expanded card, rules, bundles, addRuleToBundle action.
+// Manages Forge state: tabs, category filter, expanded card, rules, bundles,
+// and all CRUD actions (add, refine, delete, forge, equip, unequip, reforge).
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { collection, query, where, getDocs, orderBy } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import { FORGE_RULE_TEMPLATES, FORGE_CATEGORIES } from '../data/forgeKnowledgeBase';
-import { createRule, createBundle, addRuleToBundle as addRuleToBundleSvc, getRules, softDeleteRule } from '../services/forgeService';
+import {
+  createRule,
+  createBundle,
+  addRuleToBundle as addRuleToBundleSvc,
+  removeRuleFromBundle as removeRuleFromBundleSvc,
+  getRules,
+  updateRule,
+  softDeleteRule,
+  forgeBundle as forgeBundleSvc,
+  equipBundle as equipBundleSvc,
+  unequipBundle as unequipBundleSvc,
+  reforgeBundle as reforgeBundleSvc,
+} from '../services/forgeService';
 
 export function useForge(agentId) {
   const [activeTab, setActiveTab] = useState('discover');
@@ -17,29 +30,58 @@ export function useForge(agentId) {
   const [toast, setToast] = useState(null);
   const [addingRuleId, setAddingRuleId] = useState(null);
 
+  // UI state for My Rules / My Bundles
+  const [editingRuleId, setEditingRuleId] = useState(null);
+  const [showRulePicker, setShowRulePicker] = useState(null); // bundleId or null
+  const [forgingBundleId, setForgingBundleId] = useState(null);
+  const [equippingBundleId, setEquippingBundleId] = useState(null);
+
   // Show toast with auto-dismiss
   const showToast = useCallback((message) => {
     setToast(message);
     setTimeout(() => setToast(null), 3000);
   }, []);
 
-  // Load user's rules and bundles from Firestore on mount
+  // Load user's rules and bundles from Firestore
+  const loadData = useCallback(async () => {
+    if (!agentId) return;
+    setLoading(true);
+    try {
+      const agentRules = await getRules(agentId);
+      const bundlesRef = collection(db, 'agents', agentId, 'bundles');
+      const bundlesQ = query(bundlesRef, orderBy('createdAt', 'desc'));
+      const bundlesSnap = await getDocs(bundlesQ);
+      const agentBundles = bundlesSnap.docs
+        .map(d => ({ id: d.id, ...d.data() }))
+        .filter(b => b.status !== 'archived');
+      setRules(agentRules);
+      setBundles(agentBundles);
+    } catch (err) {
+      console.error('[useForge] Failed to load forge data:', err);
+      if (err.code === 'permission-denied') {
+        showToast('Permission denied loading rules. Try signing out and back in.');
+      } else {
+        showToast('Failed to load forge data. Please try again.');
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, [agentId, showToast]);
+
+  // Load on mount / agentId change
   useEffect(() => {
     if (!agentId) return;
     let cancelled = false;
-
-    const load = async () => {
+    const doLoad = async () => {
       setLoading(true);
       try {
-        // Load rules
         const agentRules = await getRules(agentId);
-
-        // Load bundles (no getBundles in forgeService, query directly)
         const bundlesRef = collection(db, 'agents', agentId, 'bundles');
         const bundlesQ = query(bundlesRef, orderBy('createdAt', 'desc'));
         const bundlesSnap = await getDocs(bundlesQ);
-        const agentBundles = bundlesSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-
+        const agentBundles = bundlesSnap.docs
+          .map(d => ({ id: d.id, ...d.data() }))
+          .filter(b => b.status !== 'archived');
         if (!cancelled) {
           setRules(agentRules);
           setBundles(agentBundles);
@@ -57,8 +99,7 @@ export function useForge(agentId) {
         if (!cancelled) setLoading(false);
       }
     };
-
-    load();
+    doLoad();
     return () => { cancelled = true; };
   }, [agentId, showToast]);
 
@@ -68,20 +109,41 @@ export function useForge(agentId) {
     return FORGE_RULE_TEMPLATES.filter(t => t.category === selectedCategory);
   }, [selectedCategory]);
 
-  // Add a rule from a template to a draft bundle
+  // ── Computed values ──────────────────────────
+  const unassignedRules = useMemo(
+    () => rules.filter(r => !r.bundleIds || r.bundleIds.length === 0),
+    [rules]
+  );
+
+  const draftBundles = useMemo(
+    () => bundles.filter(b => b.status === 'draft'),
+    [bundles]
+  );
+
+  const forgedBundles = useMemo(
+    () => bundles.filter(b => b.status === 'forged'),
+    [bundles]
+  );
+
+  const equippedBundles = useMemo(
+    () => bundles.filter(b => b.status === 'equipped'),
+    [bundles]
+  );
+
+  // ── Actions ──────────────────────────────────
+
+  // Add a rule from a Discover template to a draft bundle
   const addRuleToBundle = useCallback(async (template) => {
     if (!agentId || addingRuleId) return;
     setAddingRuleId(template.id);
 
     try {
-      // Step 1: Find or create a draft bundle
       let targetBundle = bundles.find(b => b.status === 'draft');
       if (!targetBundle) {
         const bundleId = await createBundle(agentId, { name: 'My Strategy' });
         targetBundle = { id: bundleId, name: 'My Strategy', status: 'draft', ruleIds: [] };
       }
 
-      // Step 2: Create the rule from the template
       const firstTemplate = template.forgeTemplates[0];
       let ruleText = firstTemplate.text;
       if (firstTemplate.params) {
@@ -98,7 +160,6 @@ export function useForge(agentId) {
         params: firstTemplate.params || null,
       });
 
-      // Step 3: Add rule to bundle — if this fails, clean up the orphaned rule
       try {
         await addRuleToBundleSvc(agentId, targetBundle.id, ruleId);
       } catch (bundleErr) {
@@ -107,23 +168,8 @@ export function useForge(agentId) {
         throw bundleErr;
       }
 
-      // Step 4: Only update local state after BOTH writes succeed
-      const newRule = { id: ruleId, text: ruleText, category: template.category };
-      setRules(prev => [newRule, ...prev]);
-
-      // Update bundles — add new bundle if it was just created, or update existing
-      setBundles(prev => {
-        const exists = prev.some(b => b.id === targetBundle.id);
-        if (!exists) {
-          return [{ ...targetBundle, ruleIds: [ruleId] }, ...prev];
-        }
-        return prev.map(b =>
-          b.id === targetBundle.id
-            ? { ...b, ruleIds: [...(b.ruleIds || []), ruleId] }
-            : b
-        );
-      });
-
+      // Reload data to stay in sync
+      await loadData();
       const ruleCount = (targetBundle.ruleIds?.length || 0) + 1;
       showToast(`Rule added to '${targetBundle.name}' bundle! (${ruleCount} rules)`);
     } catch (err) {
@@ -132,22 +178,209 @@ export function useForge(agentId) {
     } finally {
       setAddingRuleId(null);
     }
-  }, [agentId, addingRuleId, bundles, showToast]);
+  }, [agentId, addingRuleId, bundles, showToast, loadData]);
+
+  // Refine a rule (update text + category)
+  const refineRule = useCallback(async (ruleId, updates) => {
+    if (!agentId) return;
+    try {
+      await updateRule(agentId, ruleId, { ...updates, isRefined: true });
+      setRules(prev => prev.map(r =>
+        r.id === ruleId ? { ...r, ...updates, isRefined: true } : r
+      ));
+      setEditingRuleId(null);
+      showToast('Rule refined');
+    } catch (err) {
+      console.error('[useForge] refineRule failed:', err);
+      showToast(err.message || 'Failed to refine rule');
+    }
+  }, [agentId, showToast]);
+
+  // Delete a rule (soft delete + reload bundles to clear orphaned ruleIds)
+  const deleteRule = useCallback(async (ruleId) => {
+    if (!agentId) return;
+    try {
+      await softDeleteRule(agentId, ruleId);
+      setRules(prev => prev.filter(r => r.id !== ruleId));
+      await loadData();
+      showToast('Rule deleted');
+    } catch (err) {
+      console.error('[useForge] deleteRule failed:', err);
+      showToast(err.message || 'Failed to delete rule');
+    }
+  }, [agentId, showToast, loadData]);
+
+  // Create a manual rule
+  const createManualRule = useCallback(async ({ text, category }) => {
+    if (!agentId) return;
+    try {
+      const ruleId = await createRule(agentId, {
+        text,
+        category,
+        source: 'manual',
+        visibility: 'private',
+      });
+      setRules(prev => [
+        { id: ruleId, text, category, source: 'manual', visibility: 'private', bundleIds: [], isRefined: false },
+        ...prev,
+      ]);
+      showToast('Rule created');
+    } catch (err) {
+      console.error('[useForge] createManualRule failed:', err);
+      showToast(err.message || 'Failed to create rule');
+    }
+  }, [agentId, showToast]);
+
+  // Create a new draft bundle
+  const createNewBundle = useCallback(async (name = 'New Strategy') => {
+    if (!agentId) return;
+    try {
+      const bundleId = await createBundle(agentId, { name });
+      setBundles(prev => [
+        { id: bundleId, name, status: 'draft', ruleIds: [], ruleSnapshots: [], version: 1 },
+        ...prev,
+      ]);
+      showToast('Bundle created');
+      return bundleId;
+    } catch (err) {
+      console.error('[useForge] createNewBundle failed:', err);
+      showToast(err.message || 'Failed to create bundle');
+    }
+  }, [agentId, showToast]);
+
+  // Add a rule to a specific bundle (from rule picker)
+  const addRuleToBundleById = useCallback(async (bundleId, ruleId) => {
+    if (!agentId) return;
+    try {
+      await addRuleToBundleSvc(agentId, bundleId, ruleId);
+      await loadData();
+      showToast('Rule added to bundle');
+    } catch (err) {
+      console.error('[useForge] addRuleToBundleById failed:', err);
+      showToast(err.message || 'Failed to add rule to bundle');
+    }
+  }, [agentId, showToast, loadData]);
+
+  // Remove a rule from a bundle
+  const removeRuleFromBundle = useCallback(async (bundleId, ruleId) => {
+    if (!agentId) return;
+    try {
+      await removeRuleFromBundleSvc(agentId, bundleId, ruleId);
+      await loadData();
+      showToast('Rule removed from bundle');
+    } catch (err) {
+      console.error('[useForge] removeRuleFromBundle failed:', err);
+      showToast(err.message || 'Failed to remove rule');
+    }
+  }, [agentId, showToast, loadData]);
+
+  // Forge a bundle
+  const forgeBundleFn = useCallback(async (bundleId) => {
+    if (!agentId || forgingBundleId) return;
+    setForgingBundleId(bundleId);
+    try {
+      await forgeBundleSvc(agentId, bundleId);
+      await loadData();
+      showToast('Bundle forged!');
+    } catch (err) {
+      console.error('[useForge] forgeBundle failed:', err);
+      showToast(err.message || 'Failed to forge bundle');
+    } finally {
+      setForgingBundleId(null);
+    }
+  }, [agentId, forgingBundleId, showToast, loadData]);
+
+  // Equip a bundle
+  const equipBundleFn = useCallback(async (bundleId) => {
+    if (!agentId || equippingBundleId) return;
+    setEquippingBundleId(bundleId);
+    try {
+      await equipBundleSvc(agentId, bundleId);
+      await loadData();
+      showToast('Bundle equipped! Your agent will use these rules in the next battle.');
+    } catch (err) {
+      console.error('[useForge] equipBundle failed:', err);
+      showToast(err.message || 'Failed to equip bundle');
+    } finally {
+      setEquippingBundleId(null);
+    }
+  }, [agentId, equippingBundleId, showToast, loadData]);
+
+  // Unequip a bundle
+  const unequipBundleFn = useCallback(async (bundleId) => {
+    if (!agentId || equippingBundleId) return;
+    try {
+      await unequipBundleSvc(agentId, bundleId);
+      await loadData();
+      showToast('Bundle unequipped');
+    } catch (err) {
+      console.error('[useForge] unequipBundle failed:', err);
+      showToast(err.message || 'Failed to unequip bundle');
+    }
+  }, [agentId, equippingBundleId, showToast, loadData]);
+
+  // Reforge a bundle
+  const reforgeBundleFn = useCallback(async (bundleId) => {
+    if (!agentId || forgingBundleId) return;
+    try {
+      await reforgeBundleSvc(agentId, bundleId);
+      await loadData();
+      showToast('Bundle reforged — new draft created');
+    } catch (err) {
+      console.error('[useForge] reforgeBundle failed:', err);
+      showToast(err.message || 'Failed to reforge bundle');
+    }
+  }, [agentId, forgingBundleId, showToast, loadData]);
 
   return {
+    // Tab / UI state
     activeTab,
     setActiveTab,
     selectedCategory,
     setSelectedCategory,
     expandedCardId,
     setExpandedCardId,
+    loading,
+    toast,
+    showToast,
+
+    // Data
     rules,
     bundles,
-    loading,
     filteredTemplates,
     categories: FORGE_CATEGORIES,
+
+    // Computed
+    unassignedRules,
+    draftBundles,
+    forgedBundles,
+    equippedBundles,
+
+    // UI state for My Rules / My Bundles
+    editingRuleId,
+    setEditingRuleId,
+    showRulePicker,
+    setShowRulePicker,
+    forgingBundleId,
+    equippingBundleId,
+
+    // Actions — Discover
     addRuleToBundle,
     addingRuleId,
-    toast,
+
+    // Actions — My Rules
+    refineRule,
+    deleteRule,
+    createManualRule,
+
+    // Actions — My Bundles
+    createNewBundle,
+    addRuleToBundleById,
+    removeRuleFromBundle,
+    forgeBundleFn,
+    equipBundleFn,
+    unequipBundleFn,
+    reforgeBundleFn,
+    reloadData: loadData,
   };
 }
