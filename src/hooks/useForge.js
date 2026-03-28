@@ -17,6 +17,12 @@ export function useForge(agentId) {
   const [toast, setToast] = useState(null);
   const [addingRuleId, setAddingRuleId] = useState(null);
 
+  // Show toast with auto-dismiss
+  const showToast = useCallback((message) => {
+    setToast(message);
+    setTimeout(() => setToast(null), 3000);
+  }, []);
+
   // Load user's rules and bundles from Firestore on mount
   useEffect(() => {
     if (!agentId) return;
@@ -40,6 +46,13 @@ export function useForge(agentId) {
         }
       } catch (err) {
         console.error('[useForge] Failed to load forge data:', err);
+        if (!cancelled) {
+          if (err.code === 'permission-denied') {
+            showToast('Permission denied loading rules. Try signing out and back in.');
+          } else {
+            showToast('Failed to load forge data. Please try again.');
+          }
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -47,19 +60,13 @@ export function useForge(agentId) {
 
     load();
     return () => { cancelled = true; };
-  }, [agentId]);
+  }, [agentId, showToast]);
 
   // Filter templates by selected category
   const filteredTemplates = useMemo(() => {
     if (selectedCategory === 'all') return FORGE_RULE_TEMPLATES;
     return FORGE_RULE_TEMPLATES.filter(t => t.category === selectedCategory);
   }, [selectedCategory]);
-
-  // Show toast with auto-dismiss
-  const showToast = useCallback((message) => {
-    setToast(message);
-    setTimeout(() => setToast(null), 3000);
-  }, []);
 
   // Add a rule from a template to a draft bundle
   const addRuleToBundle = useCallback(async (template) => {
