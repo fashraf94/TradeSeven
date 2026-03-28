@@ -4,7 +4,7 @@
 
 import {
   collection, doc, addDoc, updateDoc, getDoc, getDocs,
-  query, where, orderBy, serverTimestamp, writeBatch
+  query, orderBy, serverTimestamp, writeBatch
 } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import { getAgentLevel } from '../constants/agentProgression';
@@ -288,24 +288,20 @@ export const forgeBundle = async (agentId, bundleId) => {
  * Equip a forged bundle on the agent.
  *
  * SECURITY NOTE (V1): This function runs client-side using the Firebase JS SDK.
- * The battle-active check (no mid-battle swaps) is enforced here but could
- * theoretically be bypassed by a modified client. For V1 with trusted beta users
- * this is acceptable. Before public launch, migrate this to a server-side
- * Cloud Function or API endpoint using Admin SDK to enforce the check server-side.
- *
- * The Firestore security rules provide basic write permission checks, but cannot
- * enforce the "no active battle" business logic — that requires reading from
- * the agentBattles collection which rules can't cross-reference efficiently.
+ * The battle-active check uses the agent's activeBattleId field (also enforced
+ * in the UI by MyBundlesTab). For V1 with trusted beta users this is acceptable.
+ * Before public launch, migrate this to a server-side Cloud Function or API
+ * endpoint using Admin SDK to enforce the check server-side.
  */
 export const equipBundle = async (agentId, bundleId) => {
-  // 1. Check no active battle exists
-  const battlesQ = query(
-    collection(db, 'agentBattles'),
-    where('agentId', '==', agentId),
-    where('status', '==', 'active')
-  );
-  const activeBattles = await getDocs(battlesQ);
-  if (!activeBattles.empty) {
+  // 1. Read agent doc for current equip state, progression level, and battle check
+  const agentRef = doc(db, 'agents', agentId);
+  const agentSnap = await getDoc(agentRef);
+  if (!agentSnap.exists()) throw new Error('Agent not found');
+  const agentData = agentSnap.data();
+
+  // Check no active battle (mirrors MyBundlesTab UI guard)
+  if (agentData.activeBattleId) {
     throw new Error('Cannot equip bundle while agent has an active battle. Wait for the battle to complete.');
   }
 
@@ -316,11 +312,6 @@ export const equipBundle = async (agentId, bundleId) => {
   const bundle = bundleSnap.data();
   if (bundle.status !== 'forged') throw new Error('Bundle must be forged before equipping');
 
-  // 3. Read agent doc for current equip state and progression level
-  const agentRef = doc(db, 'agents', agentId);
-  const agentSnap = await getDoc(agentRef);
-  if (!agentSnap.exists()) throw new Error('Agent not found');
-  const agentData = agentSnap.data();
   const currentEquipped = agentData?.equippedBundleIds || [];
 
   // Amendment 4: Check equipped bundle limit against progression level
