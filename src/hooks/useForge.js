@@ -5,7 +5,7 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import { collection, query, where, getDocs, orderBy } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import { FORGE_RULE_TEMPLATES, FORGE_CATEGORIES } from '../data/forgeKnowledgeBase';
-import { createRule, createBundle, addRuleToBundle as addRuleToBundleSvc, getRules } from '../services/forgeService';
+import { createRule, createBundle, addRuleToBundle as addRuleToBundleSvc, getRules, softDeleteRule } from '../services/forgeService';
 
 export function useForge(agentId) {
   const [activeTab, setActiveTab] = useState('discover');
@@ -15,6 +15,7 @@ export function useForge(agentId) {
   const [bundles, setBundles] = useState([]);
   const [loading, setLoading] = useState(false);
   const [toast, setToast] = useState(null);
+  const [addingRuleId, setAddingRuleId] = useState(null);
 
   // Load user's rules and bundles from Firestore on mount
   useEffect(() => {
@@ -62,24 +63,19 @@ export function useForge(agentId) {
 
   // Add a rule from a template to a draft bundle
   const addRuleToBundle = useCallback(async (template) => {
-    if (!agentId) return;
+    if (!agentId || addingRuleId) return;
+    setAddingRuleId(template.id);
 
     try {
-      // Find or create a draft bundle
-      let draftBundle = bundles.find(b => b.status === 'draft');
-      let bundleId;
-
-      if (!draftBundle) {
-        bundleId = await createBundle(agentId, { name: 'My Strategy' });
-        draftBundle = { id: bundleId, name: 'My Strategy', status: 'draft', ruleIds: [] };
-        setBundles(prev => [draftBundle, ...prev]);
-      } else {
-        bundleId = draftBundle.id;
+      // Step 1: Find or create a draft bundle
+      let targetBundle = bundles.find(b => b.status === 'draft');
+      if (!targetBundle) {
+        const bundleId = await createBundle(agentId, { name: 'My Strategy' });
+        targetBundle = { id: bundleId, name: 'My Strategy', status: 'draft', ruleIds: [] };
       }
 
-      // Create the rule from the template
+      // Step 2: Create the rule from the template
       const firstTemplate = template.forgeTemplates[0];
-      // Resolve default param values into the text
       let ruleText = firstTemplate.text;
       if (firstTemplate.params) {
         for (const [key, config] of Object.entries(firstTemplate.params)) {
@@ -95,26 +91,41 @@ export function useForge(agentId) {
         params: firstTemplate.params || null,
       });
 
-      // Add rule to bundle
-      await addRuleToBundleSvc(agentId, bundleId, ruleId);
+      // Step 3: Add rule to bundle — if this fails, clean up the orphaned rule
+      try {
+        await addRuleToBundleSvc(agentId, targetBundle.id, ruleId);
+      } catch (bundleErr) {
+        console.error('[useForge] Failed to add rule to bundle, rolling back:', bundleErr);
+        await softDeleteRule(agentId, ruleId).catch(() => {});
+        throw bundleErr;
+      }
 
-      // Update local state
+      // Step 4: Only update local state after BOTH writes succeed
       const newRule = { id: ruleId, text: ruleText, category: template.category };
       setRules(prev => [newRule, ...prev]);
-      setBundles(prev => prev.map(b =>
-        b.id === bundleId
-          ? { ...b, ruleIds: [...(b.ruleIds || []), ruleId] }
-          : b
-      ));
 
-      const updatedBundle = bundles.find(b => b.id === bundleId) || draftBundle;
-      const ruleCount = (updatedBundle.ruleIds?.length || 0) + 1;
-      showToast(`Rule added to '${updatedBundle.name || 'My Strategy'}' bundle! (${ruleCount} rules)`);
+      // Update bundles — add new bundle if it was just created, or update existing
+      setBundles(prev => {
+        const exists = prev.some(b => b.id === targetBundle.id);
+        if (!exists) {
+          return [{ ...targetBundle, ruleIds: [ruleId] }, ...prev];
+        }
+        return prev.map(b =>
+          b.id === targetBundle.id
+            ? { ...b, ruleIds: [...(b.ruleIds || []), ruleId] }
+            : b
+        );
+      });
+
+      const ruleCount = (targetBundle.ruleIds?.length || 0) + 1;
+      showToast(`Rule added to '${targetBundle.name}' bundle! (${ruleCount} rules)`);
     } catch (err) {
       console.error('[useForge] addRuleToBundle failed:', err);
       showToast(err.message || 'Failed to add rule');
+    } finally {
+      setAddingRuleId(null);
     }
-  }, [agentId, bundles, showToast]);
+  }, [agentId, addingRuleId, bundles, showToast]);
 
   return {
     activeTab,
@@ -129,6 +140,7 @@ export function useForge(agentId) {
     filteredTemplates,
     categories: FORGE_CATEGORIES,
     addRuleToBundle,
+    addingRuleId,
     toast,
   };
 }

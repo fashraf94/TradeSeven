@@ -67,7 +67,7 @@ export default function ForgeScreen({ isMobile, onClose, user }) {
   return (
     <div style={{
       minHeight: '100vh',
-      background: '#0D0E12',
+      background: tokens.bgApp,
       paddingBottom: isMobile ? '80px' : '0',
     }}>
       {/* Header */}
@@ -188,7 +188,7 @@ export default function ForgeScreen({ isMobile, onClose, user }) {
               bottom: isMobile ? '80px' : '24px',
               left: '50%',
               transform: 'translateX(-50%)',
-              background: '#1a1d24',
+              background: tokens.bgCard,
               border: `1px solid ${tokens.teal}33`,
               borderRadius: '12px',
               padding: '12px 20px',

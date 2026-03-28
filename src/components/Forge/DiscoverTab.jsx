@@ -45,7 +45,7 @@ function CategoryFilterPills({ selectedCategory, onSelect, tokens }) {
               cursor: 'pointer',
               border: isActive ? `1px solid ${cat.color}4D` : '1px solid rgba(255,255,255,0.08)',
               background: isActive ? `${cat.color}26` : 'rgba(255,255,255,0.04)',
-              color: isActive ? cat.color : '#8b949e',
+              color: isActive ? cat.color : tokens.textMuted,
               transition: 'all 0.2s ease',
             }}
           >
@@ -57,13 +57,13 @@ function CategoryFilterPills({ selectedCategory, onSelect, tokens }) {
   );
 }
 
-function RuleTemplateCard({ template, isExpanded, onToggleExpand, onAddToBundle, tokens }) {
+function RuleTemplateCard({ template, isExpanded, onToggleExpand, onAddToBundle, isAdding, tokens }) {
   const category = FORGE_CATEGORIES.find(c => c.id === template.category);
   const diffStyle = DIFFICULTY_COLORS[template.difficulty] || DIFFICULTY_COLORS.beginner;
 
   return (
     <div style={{
-      background: '#15171E',
+      background: tokens.bgCard,
       border: '1px solid rgba(255,255,255,0.06)',
       borderRadius: '16px',
       padding: '16px',
@@ -199,6 +199,7 @@ function RuleTemplateCard({ template, isExpanded, onToggleExpand, onAddToBundle,
         </button>
 
         <button
+          disabled={isAdding}
           onClick={() => onAddToBundle(template)}
           style={{
             display: 'flex',
@@ -211,12 +212,16 @@ function RuleTemplateCard({ template, isExpanded, onToggleExpand, onAddToBundle,
             background: `${tokens.teal}1A`,
             border: `1px solid ${tokens.teal}40`,
             color: tokens.teal,
-            cursor: 'pointer',
+            cursor: isAdding ? 'default' : 'pointer',
+            opacity: isAdding ? 0.5 : 1,
+            pointerEvents: isAdding ? 'none' : 'auto',
             transition: 'all 0.2s ease',
           }}
           onMouseEnter={(e) => {
-            e.currentTarget.style.background = `${tokens.teal}30`;
-            e.currentTarget.style.boxShadow = `0 0 12px ${tokens.teal}20`;
+            if (!isAdding) {
+              e.currentTarget.style.background = `${tokens.teal}30`;
+              e.currentTarget.style.boxShadow = `0 0 12px ${tokens.teal}20`;
+            }
           }}
           onMouseLeave={(e) => {
             e.currentTarget.style.background = `${tokens.teal}1A`;
@@ -224,7 +229,7 @@ function RuleTemplateCard({ template, isExpanded, onToggleExpand, onAddToBundle,
           }}
         >
           <Plus size={13} />
-          Add to Bundle
+          {isAdding ? 'Adding...' : 'Add to Bundle'}
         </button>
       </div>
     </div>
@@ -232,7 +237,7 @@ function RuleTemplateCard({ template, isExpanded, onToggleExpand, onAddToBundle,
 }
 
 export default function DiscoverTab({ isMobile, forge, tokens }) {
-  const { filteredTemplates, selectedCategory, setSelectedCategory, expandedCardId, setExpandedCardId, addRuleToBundle } = forge;
+  const { filteredTemplates, selectedCategory, setSelectedCategory, expandedCardId, setExpandedCardId, addRuleToBundle, addingRuleId } = forge;
 
   const handleToggleExpand = (id) => {
     setExpandedCardId(expandedCardId === id ? null : id);
@@ -273,6 +278,7 @@ export default function DiscoverTab({ isMobile, forge, tokens }) {
             isExpanded={expandedCardId === template.id}
             onToggleExpand={handleToggleExpand}
             onAddToBundle={addRuleToBundle}
+            isAdding={addingRuleId === template.id}
             tokens={tokens}
           />
         ))}

@@ -72,10 +72,10 @@ export function buildStrategyUserPrompt(agent) {
     const strategies = activeRules.filter(r => r.category === 'technical' || r.category === 'fundamental' || !r.category);
     const rLines = [];
     if (constraints.length > 0) {
-      rLines.push(`CONSTRAINTS:\n${constraints.map((r, i) => `C${i + 1}. ${r.text}`).join('\n')}`);
+      rLines.push(`CONSTRAINTS:\n${constraints.map((r, i) => `C${i + 1}. ${sanitizeRuleText(r.text)}`).join('\n')}`);
     }
     if (strategies.length > 0) {
-      rLines.push(`STRATEGY PREFERENCES:\n${strategies.map((r, i) => `S${i + 1}. ${r.text}`).join('\n')}`);
+      rLines.push(`STRATEGY PREFERENCES:\n${strategies.map((r, i) => `S${i + 1}. ${sanitizeRuleText(r.text)}`).join('\n')}`);
     }
     parts.push(`FORGE RULES (follow alongside directives):\n${rLines.join('\n')}`);
   }
@@ -220,6 +220,32 @@ function filterActiveDirectives(directives) {
     if (!d.expiresAt) return true;
     return new Date(d.expiresAt).getTime() > now;
   });
+}
+
+/**
+ * Sanitize user-authored rule text before injecting into the system prompt.
+ * Prevents prompt injection, caps length, strips control characters.
+ */
+function sanitizeRuleText(text) {
+  if (!text || typeof text !== 'string') return '';
+  let cleaned = text.slice(0, 200);
+  cleaned = cleaned.replace(/==\s*.*?\s*==/g, '');
+  cleaned = cleaned.replace(/━+/g, '');
+  const injectionPatterns = [
+    /ignore\s+(all\s+)?(previous|above|prior)\s+(instructions?|rules?|constraints?)/gi,
+    /disregard\s+(all\s+)?(previous|above|prior)/gi,
+    /stop\.?\s*(ignore|forget|disregard)/gi,
+    /system\s*prompt/gi,
+    /you\s+are\s+now/gi,
+    /new\s+instructions?:/gi,
+    /override\s+(all|previous|system)/gi,
+  ];
+  for (const pattern of injectionPatterns) {
+    cleaned = cleaned.replace(pattern, '[removed]');
+  }
+  cleaned = cleaned.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '');
+  cleaned = cleaned.replace(/\s+/g, ' ').trim();
+  return cleaned;
 }
 
 /**
