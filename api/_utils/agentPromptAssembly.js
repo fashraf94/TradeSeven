@@ -65,6 +65,21 @@ export function buildStrategyUserPrompt(agent) {
     parts.push('No specific directives from your user yet. Use your best judgment.');
   }
 
+  // Forge rules (structured constraint/strategy framework)
+  const activeRules = agent.activeRules || [];
+  if (activeRules.length > 0) {
+    const constraints = activeRules.filter(r => r.category === 'risk' || r.category === 'allocation');
+    const strategies = activeRules.filter(r => r.category === 'technical' || r.category === 'fundamental' || !r.category);
+    const rLines = [];
+    if (constraints.length > 0) {
+      rLines.push(`CONSTRAINTS:\n${constraints.map((r, i) => `C${i + 1}. ${r.text}`).join('\n')}`);
+    }
+    if (strategies.length > 0) {
+      rLines.push(`STRATEGY PREFERENCES:\n${strategies.map((r, i) => `S${i + 1}. ${r.text}`).join('\n')}`);
+    }
+    parts.push(`FORGE RULES (follow alongside directives):\n${rLines.join('\n')}`);
+  }
+
   parts.push(
     'Produce your strategic analysis and recommended shortlist of 25-35 tickers using the submit_strategy tool.'
   );

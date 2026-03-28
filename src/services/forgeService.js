@@ -1,0 +1,418 @@
+// src/services/forgeService.js
+// Forge data layer — Rules and Bundles CRUD for the agent rule system.
+// Rules live in agents/{agentId}/rules/, Bundles in agents/{agentId}/bundles/.
+
+import {
+  collection, doc, addDoc, updateDoc, getDoc, getDocs,
+  query, where, orderBy, serverTimestamp, writeBatch
+} from 'firebase/firestore';
+import { db } from '../firebase/config';
+import { getAgentLevel } from '../constants/agentProgression';
+import { FORGE_LIMITS } from '../constants/agentProgression';
+
+// ============================================
+// RULES CRUD
+// ============================================
+
+/**
+ * Create a new rule in the agent's rules subcollection.
+ * @param {string} agentId
+ * @param {Object} ruleData - { text, source, sourceRef?, visibility?, category?, params? }
+ * @returns {string} The new rule document ID
+ */
+export const createRule = async (agentId, ruleData) => {
+  const rulesRef = collection(db, 'agents', agentId, 'rules');
+  const ruleDoc = {
+    text: ruleData.text,
+    source: ruleData.source,
+    sourceRef: ruleData.sourceRef || null,
+    visibility: ruleData.visibility || 'private',
+    category: ruleData.category || null,
+    params: ruleData.params || null,
+    isRefined: false,
+    isDeleted: false,
+    bundleIds: [],
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  };
+  const docRef = await addDoc(rulesRef, ruleDoc);
+  return docRef.id;
+};
+
+/**
+ * Get all non-deleted rules for an agent.
+ * @param {string} agentId
+ * @param {Object} [options]
+ * @param {boolean} [options.includeDeleted=false]
+ * @returns {Object[]} Array of rule objects with id
+ */
+export const getRules = async (agentId, { includeDeleted = false } = {}) => {
+  const rulesRef = collection(db, 'agents', agentId, 'rules');
+  const q = query(rulesRef, orderBy('createdAt', 'desc'));
+  const snapshot = await getDocs(q);
+  const rules = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+  if (includeDeleted) return rules;
+  return rules.filter(r => !r.isDeleted);
+};
+
+/**
+ * Update specific fields on a rule document.
+ * @param {string} agentId
+ * @param {string} ruleId
+ * @param {Object} updates - Allowed: text, category, visibility, params, isRefined
+ */
+export const updateRule = async (agentId, ruleId, updates) => {
+  const allowed = ['text', 'category', 'visibility', 'params', 'isRefined'];
+  const filtered = {};
+  for (const key of allowed) {
+    if (key in updates) filtered[key] = updates[key];
+  }
+  filtered.updatedAt = serverTimestamp();
+  const ruleRef = doc(db, 'agents', agentId, 'rules', ruleId);
+  await updateDoc(ruleRef, filtered);
+};
+
+/**
+ * Soft-delete a rule (sets isDeleted: true).
+ * Does NOT remove from bundles — forged bundles keep their snapshots.
+ */
+export const softDeleteRule = async (agentId, ruleId) => {
+  const ruleRef = doc(db, 'agents', agentId, 'rules', ruleId);
+  await updateDoc(ruleRef, {
+    isDeleted: true,
+    updatedAt: serverTimestamp(),
+  });
+};
+
+// ============================================
+// BUNDLES CRUD
+// ============================================
+
+/**
+ * Create a new draft bundle.
+ * @param {string} agentId
+ * @param {Object} bundleData - { name }
+ * @returns {string} The new bundle document ID
+ */
+export const createBundle = async (agentId, bundleData) => {
+  const bundlesRef = collection(db, 'agents', agentId, 'bundles');
+  const bundleDoc = {
+    name: bundleData.name,
+    version: 1,
+    previousVersionId: null,
+    status: 'draft',
+    ruleIds: [],
+    ruleSnapshots: [],
+    conflictCheckResult: null,
+    createdAt: serverTimestamp(),
+    forgedAt: null,
+    equippedAt: null,
+    archivedAt: null,
+    performanceData: {
+      battlesEquipped: 0,
+      totalCitations: 0,
+      successfulCitations: 0,
+    },
+  };
+  const docRef = await addDoc(bundlesRef, bundleDoc);
+  return docRef.id;
+};
+
+/**
+ * Add a rule to a draft bundle. Only modifies ruleIds (Amendment 3).
+ * Validates rule count against progression level limits (Amendment 4).
+ * @param {string} agentId
+ * @param {string} bundleId
+ * @param {string} ruleId
+ */
+export const addRuleToBundle = async (agentId, bundleId, ruleId) => {
+  const bundleRef = doc(db, 'agents', agentId, 'bundles', bundleId);
+  const bundleSnap = await getDoc(bundleRef);
+  if (!bundleSnap.exists()) throw new Error('Bundle not found');
+  const bundle = bundleSnap.data();
+  if (bundle.status !== 'draft') throw new Error('Can only add rules to draft bundles');
+  if (bundle.ruleIds.includes(ruleId)) throw new Error('Rule already in bundle');
+
+  // Amendment 4: Check rule count against level limit
+  const agentRef = doc(db, 'agents', agentId);
+  const agentSnap = await getDoc(agentRef);
+  const agentData = agentSnap.data();
+  const level = getAgentLevel(agentData?.stats?.gamesPlayed || 0);
+  const limits = FORGE_LIMITS[level];
+  if (bundle.ruleIds.length >= limits.maxRulesPerBundle) {
+    throw new Error(`Rule limit reached (${limits.maxRulesPerBundle} rules for ${level} level). Level up by playing more games to increase the limit.`);
+  }
+
+  // Verify rule exists and is not deleted
+  const ruleRef = doc(db, 'agents', agentId, 'rules', ruleId);
+  const ruleSnap = await getDoc(ruleRef);
+  if (!ruleSnap.exists()) throw new Error('Rule not found');
+  if (ruleSnap.data().isDeleted) throw new Error('Cannot add a deleted rule to a bundle');
+
+  await updateDoc(bundleRef, {
+    ruleIds: [...bundle.ruleIds, ruleId],
+    updatedAt: serverTimestamp(),
+  });
+};
+
+/**
+ * Remove a rule from a draft bundle. Only modifies ruleIds (Amendment 3).
+ */
+export const removeRuleFromBundle = async (agentId, bundleId, ruleId) => {
+  const bundleRef = doc(db, 'agents', agentId, 'bundles', bundleId);
+  const bundleSnap = await getDoc(bundleRef);
+  if (!bundleSnap.exists()) throw new Error('Bundle not found');
+  const bundle = bundleSnap.data();
+  if (bundle.status !== 'draft') throw new Error('Can only remove rules from draft bundles');
+
+  await updateDoc(bundleRef, {
+    ruleIds: bundle.ruleIds.filter(id => id !== ruleId),
+    updatedAt: serverTimestamp(),
+  });
+};
+
+/**
+ * Forge a bundle — freeze rule snapshots from live data (Amendment 2 & 3).
+ * Reads all rules referenced by ruleIds, builds ruleSnapshots with category.
+ * Changes status from 'draft' to 'forged'.
+ */
+export const forgeBundle = async (agentId, bundleId) => {
+  const bundleRef = doc(db, 'agents', agentId, 'bundles', bundleId);
+  const bundleSnap = await getDoc(bundleRef);
+  if (!bundleSnap.exists()) throw new Error('Bundle not found');
+  const bundle = bundleSnap.data();
+  if (bundle.status !== 'draft') throw new Error('Can only forge draft bundles');
+  if (bundle.ruleIds.length === 0) throw new Error('Cannot forge an empty bundle');
+
+  // Read all rules to build frozen snapshots
+  const ruleSnapshots = [];
+  for (const ruleId of bundle.ruleIds) {
+    const ruleRef = doc(db, 'agents', agentId, 'rules', ruleId);
+    const ruleSnap = await getDoc(ruleRef);
+    if (!ruleSnap.exists()) continue;
+    const rule = ruleSnap.data();
+    if (rule.isDeleted) continue;
+    ruleSnapshots.push({
+      id: ruleId,
+      text: rule.text,
+      category: rule.category,     // MUST be present — prompt assembly depends on this (Amendment 2)
+      visibility: rule.visibility,
+    });
+  }
+
+  if (ruleSnapshots.length === 0) {
+    throw new Error('No valid (non-deleted) rules to forge');
+  }
+
+  await updateDoc(bundleRef, {
+    ruleSnapshots,
+    status: 'forged',
+    forgedAt: new Date().toISOString(),
+    updatedAt: serverTimestamp(),
+  });
+};
+
+/**
+ * Equip a forged bundle on the agent.
+ *
+ * SECURITY NOTE (V1): This function runs client-side using the Firebase JS SDK.
+ * The battle-active check (no mid-battle swaps) is enforced here but could
+ * theoretically be bypassed by a modified client. For V1 with trusted beta users
+ * this is acceptable. Before public launch, migrate this to a server-side
+ * Cloud Function or API endpoint using Admin SDK to enforce the check server-side.
+ *
+ * The Firestore security rules provide basic write permission checks, but cannot
+ * enforce the "no active battle" business logic — that requires reading from
+ * the agentBattles collection which rules can't cross-reference efficiently.
+ */
+export const equipBundle = async (agentId, bundleId) => {
+  // 1. Check no active battle exists
+  const battlesQ = query(
+    collection(db, 'agentBattles'),
+    where('agentId', '==', agentId),
+    where('status', '==', 'active')
+  );
+  const activeBattles = await getDocs(battlesQ);
+  if (!activeBattles.empty) {
+    throw new Error('Cannot equip bundle while agent has an active battle. Wait for the battle to complete.');
+  }
+
+  // 2. Read bundle and validate status
+  const bundleRef = doc(db, 'agents', agentId, 'bundles', bundleId);
+  const bundleSnap = await getDoc(bundleRef);
+  if (!bundleSnap.exists()) throw new Error('Bundle not found');
+  const bundle = bundleSnap.data();
+  if (bundle.status !== 'forged') throw new Error('Bundle must be forged before equipping');
+
+  // 3. Read agent doc for current equip state and progression level
+  const agentRef = doc(db, 'agents', agentId);
+  const agentSnap = await getDoc(agentRef);
+  if (!agentSnap.exists()) throw new Error('Agent not found');
+  const agentData = agentSnap.data();
+  const currentEquipped = agentData?.equippedBundleIds || [];
+
+  // Amendment 4: Check equipped bundle limit against progression level
+  const level = getAgentLevel(agentData?.stats?.gamesPlayed || 0);
+  const limits = FORGE_LIMITS[level];
+  if (currentEquipped.length >= limits.maxBundles) {
+    throw new Error(
+      `Bundle limit reached for your agent's level (${limits.maxBundles} bundles at ${level}). Unequip a bundle first or level up by playing more games.`
+    );
+  }
+
+  // 4. Gather rule snapshots from all equipped bundles + this one
+  const allSnapshots = [];
+  for (const eid of currentEquipped) {
+    const eSnap = await getDoc(doc(db, 'agents', agentId, 'bundles', eid));
+    if (eSnap.exists()) {
+      const eData = eSnap.data();
+      allSnapshots.push(...(eData.ruleSnapshots || []).map(r => ({
+        ...r, bundleName: eData.name,
+      })));
+    }
+  }
+  allSnapshots.push(...(bundle.ruleSnapshots || []).map(r => ({
+    ...r, bundleName: bundle.name,
+  })));
+
+  // 5. Build activeRules array
+  const activeRules = allSnapshots.map(snap => ({
+    ruleId: snap.id,
+    text: snap.text,
+    category: snap.category || null,
+    bundleName: snap.bundleName,
+  }));
+
+  // 6. Batch write: update bundle status + agent doc
+  const batch = writeBatch(db);
+  batch.update(bundleRef, {
+    status: 'equipped',
+    equippedAt: new Date().toISOString(),
+    updatedAt: serverTimestamp(),
+  });
+  batch.update(agentRef, {
+    equippedBundleIds: [...currentEquipped, bundleId],
+    activeRules,
+    updatedAt: serverTimestamp(),
+  });
+  await batch.commit();
+};
+
+/**
+ * Unequip a bundle — revert to forged status and rebuild activeRules.
+ */
+export const unequipBundle = async (agentId, bundleId) => {
+  const bundleRef = doc(db, 'agents', agentId, 'bundles', bundleId);
+  const bundleSnap = await getDoc(bundleRef);
+  if (!bundleSnap.exists()) throw new Error('Bundle not found');
+  const bundle = bundleSnap.data();
+  if (bundle.status !== 'equipped') throw new Error('Bundle is not equipped');
+
+  const agentRef = doc(db, 'agents', agentId);
+  const agentSnap = await getDoc(agentRef);
+  const agentData = agentSnap.data();
+  const remainingIds = (agentData?.equippedBundleIds || []).filter(id => id !== bundleId);
+
+  // Rebuild activeRules from remaining equipped bundles
+  const allSnapshots = [];
+  for (const eid of remainingIds) {
+    const eSnap = await getDoc(doc(db, 'agents', agentId, 'bundles', eid));
+    if (eSnap.exists()) {
+      const eData = eSnap.data();
+      allSnapshots.push(...(eData.ruleSnapshots || []).map(r => ({
+        ...r, bundleName: eData.name,
+      })));
+    }
+  }
+
+  const activeRules = allSnapshots.map(snap => ({
+    ruleId: snap.id,
+    text: snap.text,
+    category: snap.category || null,
+    bundleName: snap.bundleName,
+  }));
+
+  const batch = writeBatch(db);
+  batch.update(bundleRef, {
+    status: 'forged',
+    equippedAt: null,
+    updatedAt: serverTimestamp(),
+  });
+  batch.update(agentRef, {
+    equippedBundleIds: remainingIds,
+    activeRules,
+    updatedAt: serverTimestamp(),
+  });
+  await batch.commit();
+};
+
+/**
+ * Reforge a bundle — archive old version and create a new draft from its rules.
+ * @returns {string} New bundle document ID
+ */
+export const reforgeBundle = async (agentId, bundleId) => {
+  const bundleRef = doc(db, 'agents', agentId, 'bundles', bundleId);
+  const bundleSnap = await getDoc(bundleRef);
+  if (!bundleSnap.exists()) throw new Error('Bundle not found');
+  const bundle = bundleSnap.data();
+
+  if (bundle.status === 'draft') throw new Error('Cannot reforge a draft bundle — edit it directly');
+
+  // If equipped, unequip first
+  if (bundle.status === 'equipped') {
+    await unequipBundle(agentId, bundleId);
+  }
+
+  // Archive old bundle
+  await updateDoc(bundleRef, {
+    status: 'archived',
+    archivedAt: new Date().toISOString(),
+    updatedAt: serverTimestamp(),
+  });
+
+  // Create new draft with same rules, incremented version
+  const bundlesRef = collection(db, 'agents', agentId, 'bundles');
+  const newBundleDoc = {
+    name: bundle.name,
+    version: (bundle.version || 1) + 1,
+    previousVersionId: bundleId,
+    status: 'draft',
+    ruleIds: bundle.ruleIds || [],
+    ruleSnapshots: [],   // Draft bundles don't have snapshots (Amendment 3)
+    conflictCheckResult: null,
+    createdAt: serverTimestamp(),
+    forgedAt: null,
+    equippedAt: null,
+    archivedAt: null,
+    performanceData: {
+      battlesEquipped: 0,
+      totalCitations: 0,
+      successfulCitations: 0,
+    },
+  };
+  const docRef = await addDoc(bundlesRef, newBundleDoc);
+  return docRef.id;
+};
+
+/**
+ * Archive a bundle. If equipped, also cleans up activeRules on the agent.
+ */
+export const archiveBundle = async (agentId, bundleId) => {
+  const bundleRef = doc(db, 'agents', agentId, 'bundles', bundleId);
+  const bundleSnap = await getDoc(bundleRef);
+  if (!bundleSnap.exists()) throw new Error('Bundle not found');
+  const bundle = bundleSnap.data();
+
+  if (bundle.status === 'archived') throw new Error('Bundle is already archived');
+
+  // If equipped, unequip first to rebuild activeRules
+  if (bundle.status === 'equipped') {
+    await unequipBundle(agentId, bundleId);
+  }
+
+  await updateDoc(bundleRef, {
+    status: 'archived',
+    archivedAt: new Date().toISOString(),
+    updatedAt: serverTimestamp(),
+  });
+};

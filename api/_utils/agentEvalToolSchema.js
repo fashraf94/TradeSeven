@@ -69,6 +69,42 @@ export const TRADE_DECISION_TOOL = {
         description:
           'Strategy or rule names that influenced this decision. Use these standard names when applicable: "volatility_squeeze", "52w_high_breakout", "rs_momentum", "vwap_mean_reversion", "news_catalyst", "bust_avoidance", "vwap_failure", "threshold_lock". Empty array if no specific rule was primary driver.',
       },
+      cited_forge_rules: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            ruleId: { type: 'string', description: 'The rule identifier (C1, S2, etc.)' },
+            ruleText: { type: 'string', description: 'The rule text for traceability' },
+            influence: {
+              type: 'string',
+              enum: ['followed', 'blocked_trade'],
+              description: 'How this rule influenced the decision',
+            },
+          },
+          required: ['ruleId', 'influence'],
+        },
+        description:
+          'Forge rules that influenced this decision. Only include rules that materially affected your reasoning. Empty array if no forge rules were relevant.',
+      },
+      overridden_forge_rules: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            ruleId: { type: 'string', description: 'The rule identifier (C1, S2, etc.)' },
+            ruleText: { type: 'string', description: 'The rule text for traceability' },
+            reason: {
+              type: 'string',
+              enum: ['no_match', 'conflict_with_constraint', 'market_conditions', 'insufficient_data', 'higher_priority_opportunity'],
+              description: 'Why the rule was considered but not followed. no_match = no stocks met criteria. conflict_with_constraint = a higher-priority constraint blocked it. market_conditions = current conditions make the signal unreliable. insufficient_data = data unavailable. higher_priority_opportunity = a better opportunity outside this rule scope.',
+            },
+          },
+          required: ['ruleId', 'reason'],
+        },
+        description:
+          'Forge rules that were deliberately overridden in this decision, with structured reason.',
+      },
     },
   },
 };

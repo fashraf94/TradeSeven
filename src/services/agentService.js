@@ -101,6 +101,9 @@ export const createAgent = async (ownerId, agentData) => {
       memory: [],
       consolidatedInsight: '',
       directives: [],
+      activeRules: [],
+      equippedBundleIds: [],
+      starterKitCompleted: false,
       stats: {
         wins: 0,
         losses: 0,

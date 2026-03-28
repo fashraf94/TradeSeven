@@ -140,6 +140,15 @@ STATUS FEED:
 - Cite specific rules in cited_rules when they influence your decision.
 - Omit these fields if nothing noteworthy occurred this tick.
 
+━━━ FORGE RULES ━━━
+
+When FORGE RULES are present in your identity block, they represent user-configured rules organized as CONSTRAINTS and STRATEGY PREFERENCES.
+
+- CONSTRAINTS (C1, C2, ...) are HARD rules — you must obey them unless Survival Mode activates.
+- STRATEGY PREFERENCES (S1, S2, ...) are SOFT rules — follow them when possible but you may deviate with explanation.
+
+When forge rules influence your decision, populate cited_forge_rules with the rule IDs and how they influenced you (followed or blocked_trade). If you considered a rule but it did not apply, use overridden_forge_rules with the appropriate reason. If Survival Mode forces you to break a constraint, use overridden_forge_rules. Constraints always override strategy preferences.
+
 ━━━ ANTI-THRASH RULES (MANDATORY) ━━━
 
 - COOLDOWN: You CANNOT swap in a stock that is marked "locked until [time]"
@@ -238,7 +247,45 @@ ${ctx.consolidatedInsight}`);
     parts.push('No active Playbook rules from your owner.');
   }
 
+  // Forge Rules (structured constraint/strategy framework)
+  const activeRules = ctx.activeRules || [];
+  if (activeRules.length > 0) {
+    const constraints = activeRules.filter(r =>
+      r.category === 'risk' || r.category === 'allocation'
+    );
+    const strategies = activeRules.filter(r =>
+      r.category === 'technical' || r.category === 'fundamental' || !r.category
+    );
+
+    const ruleLines = [];
+    if (constraints.length > 0) {
+      const cLines = constraints.map((r, i) =>
+        `C${i + 1}. ${r.text} [${capitalize(r.category)}]`
+      );
+      ruleLines.push(`== CONSTRAINTS (must obey) ==\n${cLines.join('\n')}`);
+    }
+    if (strategies.length > 0) {
+      const sLines = strategies.map((r, i) =>
+        `S${i + 1}. ${r.text} [${capitalize(r.category || 'general')}]`
+      );
+      ruleLines.push(`== STRATEGY PREFERENCES (should follow) ==\n${sLines.join('\n')}`);
+    }
+    ruleLines.push(
+      'When making trades:\n' +
+      '- Check ALL constraints before executing. If a trade violates a constraint, do not execute. Cite the constraint.\n' +
+      '- Use strategy preferences to rank opportunities. Cite preferences that influenced your picks.\n' +
+      '- If no strategy preference matches, trade on your own analysis.\n' +
+      '- Constraints always override strategy preferences.'
+    );
+    parts.push(`YOUR FORGE RULES:\n${ruleLines.join('\n\n')}`);
+  }
+
   return parts.join('\n\n');
+}
+
+function capitalize(str) {
+  if (!str) return '';
+  return str.charAt(0).toUpperCase() + str.slice(1);
 }
 
 // ==================== LIVE BATTLE CONTEXT (Fresh) ====================
