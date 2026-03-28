@@ -19,6 +19,7 @@ import {
   unequipBundle as unequipBundleSvc,
   reforgeBundle as reforgeBundleSvc,
 } from '../services/forgeService';
+import { computeForgeStats } from '../services/forgeStatsService';
 
 export function useForge(agentId) {
   const [activeTab, setActiveTab] = useState('discover');
@@ -29,6 +30,11 @@ export function useForge(agentId) {
   const [loading, setLoading] = useState(false);
   const [toast, setToast] = useState(null);
   const [addingRuleId, setAddingRuleId] = useState(null);
+
+  // Stats state
+  const [stats, setStats] = useState(null);
+  const [statsLoading, setStatsLoading] = useState(false);
+  const [archivedBundles, setArchivedBundles] = useState([]);
 
   // UI state for My Rules / My Bundles
   const [editingRuleId, setEditingRuleId] = useState(null);
@@ -102,6 +108,35 @@ export function useForge(agentId) {
     doLoad();
     return () => { cancelled = true; };
   }, [agentId, showToast]);
+
+  // Load stats from battle citation data (on-demand)
+  const loadStats = useCallback(async () => {
+    if (!agentId) return;
+    setStatsLoading(true);
+    try {
+      // Fetch ALL bundles including archived (main loadData filters them out)
+      const bundlesRef = collection(db, 'agents', agentId, 'bundles');
+      const bundlesQ = query(bundlesRef, orderBy('createdAt', 'desc'));
+      const bundlesSnap = await getDocs(bundlesQ);
+      const allBundles = bundlesSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+      setArchivedBundles(allBundles.filter(b => b.status === 'archived'));
+
+      const result = await computeForgeStats(agentId, allBundles);
+      setStats(result);
+    } catch (err) {
+      console.error('[useForge] Failed to load stats:', err);
+      showToast('Failed to load stats');
+    } finally {
+      setStatsLoading(false);
+    }
+  }, [agentId, showToast]);
+
+  // Lazy-load stats when Stats tab is first visited
+  useEffect(() => {
+    if (activeTab === 'stats' && stats === null && !statsLoading) {
+      loadStats();
+    }
+  }, [activeTab, stats, statsLoading, loadStats]);
 
   // Filter templates by selected category
   const filteredTemplates = useMemo(() => {
@@ -372,6 +407,12 @@ export function useForge(agentId) {
     refineRule,
     deleteRule,
     createManualRule,
+
+    // Stats
+    stats,
+    statsLoading,
+    archivedBundles,
+    loadStats,
 
     // Actions — My Bundles
     createNewBundle,
