@@ -100,6 +100,10 @@ const useAgent = (userId) => {
     }
   }, [maturityStage]);
 
+  // Forge rules (from equipped bundles)
+  const activeRules = useMemo(() => agent?.activeRules || [], [agent]);
+  const equippedBundleIds = useMemo(() => agent?.equippedBundleIds || [], [agent]);
+
   const activeDirectives = useMemo(() => {
     if (!agent?.directives) return [];
     const now = new Date();
@@ -193,6 +197,8 @@ const useAgent = (userId) => {
     clearLevelUp: () => setLevelUpEvent(null),
     speech,
     deployText,
+    activeRules,
+    equippedBundleIds,
     activeDirectives,
     groupedDirectives,
     winRate,

@@ -97,6 +97,8 @@ export async function createAgentBattle(db, agentData, thresholds, startingPrice
       strategyBrief: agentData.lastDecision?.strategyBrief || '',
       innerMonologue: agentData.lastDecision?.innerMonologue || {},
       activeDirectives: filterActiveDirectives(agentData.directives || []),
+      activeRules: agentData.activeRules || [],
+      equippedBundleIds: agentData.equippedBundleIds || [],
       riskTolerance: agentData.config?.risk || 50,
       evaluationInterval: 15,
       consolidatedInsight: agentData.consolidatedInsight || null,
