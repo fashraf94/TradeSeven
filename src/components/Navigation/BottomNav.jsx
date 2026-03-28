@@ -1,12 +1,12 @@
 import React from 'react';
-import { Swords, Newspaper, Bot, GraduationCap, Search } from 'lucide-react';
+import { Swords, Newspaper, Bot, Hammer, Search } from 'lucide-react';
 import { useTheme } from '../../contexts/ThemeContext';
 
 const NAV_ITEMS = [
   { id: 'compete', label: 'Compete', icon: Swords, screen: 'dashboard', iconSize: 24 },
   { id: 'news', label: 'News', icon: Newspaper, screen: 'fantasytimes', iconSize: 24 },
   { id: 'agent', label: 'Agent', icon: Bot, screen: 'agent', iconSize: 28 },
-  { id: 'academy', label: 'Academy', icon: GraduationCap, screen: null, iconSize: 24 },
+  { id: 'forge', label: 'Forge', icon: Hammer, screen: null, iconSize: 24 },
   { id: 'search', label: 'Search', icon: Search, screen: 'search', iconSize: 24 },
 ];
 
@@ -19,7 +19,7 @@ const FALLBACK = {
   textMuted: '#94a3b8',
 };
 
-export default function BottomNav({ screen, setScreen, setShowAcademy, showAcademy }) {
+export default function BottomNav({ screen, setScreen, setShowForge, showForge }) {
   let tokens;
   try {
     const theme = useTheme();
@@ -32,14 +32,14 @@ export default function BottomNav({ screen, setScreen, setShowAcademy, showAcade
     if (item.id === 'compete') return screen === 'dashboard';
     if (item.id === 'news') return screen === 'fantasytimes';
     if (item.id === 'agent') return screen === 'agent';
-    if (item.id === 'academy') return showAcademy;
+    if (item.id === 'forge') return showForge;
     if (item.id === 'search') return screen === 'search';
     return false;
   };
 
   const handlePress = (item) => {
-    if (item.id === 'academy') {
-      setShowAcademy(true);
+    if (item.id === 'forge') {
+      setShowForge(true);
       return;
     }
     if (item.screen) {
@@ -83,31 +83,11 @@ export default function BottomNav({ screen, setScreen, setShowAcademy, showAcade
               gap: '2px',
               background: 'none',
               border: 'none',
-              cursor: item.id === 'academy' ? 'default' : 'pointer',
+              cursor: 'pointer',
               padding: '8px 0',
               position: 'relative',
-              opacity: item.id === 'academy' ? 0.35 : 1,
-              pointerEvents: item.id === 'academy' ? 'none' : 'auto',
             }}
           >
-            {/* "Soon" badge for Academy */}
-            {item.id === 'academy' && (
-              <span style={{
-                position: 'absolute',
-                top: '2px',
-                right: '2px',
-                fontSize: '8px',
-                fontWeight: 700,
-                color: '#5eead4',
-                background: 'rgba(94,234,212,0.15)',
-                padding: '2px 5px',
-                borderRadius: '6px',
-                lineHeight: 1,
-              }}>
-                Soon
-              </span>
-            )}
-
             {/* Active indicator bar */}
             {active && (
               <div
