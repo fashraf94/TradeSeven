@@ -11,6 +11,7 @@ import useAgent from '../../hooks/useAgent';
 import DiscoverTab from './DiscoverTab';
 import MyRulesTab from './MyRulesTab';
 import MyBundlesTab from './MyBundlesTab';
+import StatsTab from './StatsTab';
 
 const TABS = [
   { id: 'discover', label: 'Discover', Icon: Compass },
@@ -181,7 +182,12 @@ export default function ForgeScreen({ isMobile, onClose, user }) {
             />
           )}
           {forge.activeTab === 'stats' && (
-            <PlaceholderTab label="Stats" tokens={tokens} />
+            <StatsTab
+              forge={forge}
+              tokens={tokens}
+              isMobile={isMobile}
+              agent={agent}
+            />
           )}
         </motion.div>
       </AnimatePresence>
