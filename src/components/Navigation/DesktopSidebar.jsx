@@ -3,14 +3,14 @@
 // Supports collapsed (64px, icons only) and expanded (220px, full labels) states
 
 import React, { useState } from 'react';
-import { Swords, Newspaper, GraduationCap, Clock, Settings, Flame, Bot, PanelLeftClose, PanelLeftOpen, LogOut, Search } from 'lucide-react';
+import { Swords, Newspaper, Hammer, Clock, Settings, Flame, Bot, PanelLeftClose, PanelLeftOpen, LogOut, Search } from 'lucide-react';
 import { useTheme } from '../../contexts/ThemeContext';
 
 const NAV_ITEMS = [
   { id: 'compete', label: 'Compete', Icon: Swords, screen: 'dashboard' },
   { id: 'news', label: 'News', Icon: Newspaper, screen: 'fantasytimes' },
   { id: 'agent', label: 'Agent', Icon: Bot, screen: 'agent' },
-  { id: 'academy', label: 'Academy', Icon: GraduationCap, screen: null, disabled: true },
+  { id: 'forge', label: 'Forge', Icon: Hammer, screen: null },
   { id: 'search', label: 'Search', Icon: Search, screen: 'search' },
   { id: 'history', label: 'History', Icon: Clock, screen: 'battleHistory' },
   { id: 'settings', label: 'Settings', Icon: Settings, screen: 'profile' },
@@ -131,8 +131,8 @@ function NavItem({ item, active, collapsed, hovered, onHover, onLeave, onClick, 
 export default function DesktopSidebar({
   screen,
   setScreen,
-  setShowAcademy,
-  showAcademy,
+  setShowForge,
+  showForge,
   user,
   unreadCount,
   collapsed,
@@ -143,15 +143,15 @@ export default function DesktopSidebar({
   const [hoveredId, setHoveredId] = useState(null);
 
   const isActive = (item) => {
-    if (item.id === 'academy') return showAcademy;
+    if (item.id === 'forge') return showForge;
     return screen === item.screen;
   };
 
   const handleNav = (item) => {
-    if (item.id === 'academy') {
-      setShowAcademy(true);
+    if (item.id === 'forge') {
+      setShowForge(true);
     } else {
-      setShowAcademy(false);
+      setShowForge(false);
       setScreen(item.screen);
     }
   };
@@ -280,7 +280,7 @@ export default function DesktopSidebar({
 
       {/* User */}
       <div
-        onClick={() => { setShowAcademy(false); setScreen('profile'); }}
+        onClick={() => { setShowForge(false); setScreen('profile'); }}
         style={{
           borderTop: `1px solid ${tokens.borderDivider}`,
           paddingTop: '12px',

@@ -260,13 +260,13 @@ ${ctx.consolidatedInsight}`);
     const ruleLines = [];
     if (constraints.length > 0) {
       const cLines = constraints.map((r, i) =>
-        `C${i + 1}. ${r.text} [${capitalize(r.category)}]`
+        `C${i + 1}. ${sanitizeRuleText(r.text)} [${capitalize(r.category)}]`
       );
       ruleLines.push(`== CONSTRAINTS (must obey) ==\n${cLines.join('\n')}`);
     }
     if (strategies.length > 0) {
       const sLines = strategies.map((r, i) =>
-        `S${i + 1}. ${r.text} [${capitalize(r.category || 'general')}]`
+        `S${i + 1}. ${sanitizeRuleText(r.text)} [${capitalize(r.category || 'general')}]`
       );
       ruleLines.push(`== STRATEGY PREFERENCES (should follow) ==\n${sLines.join('\n')}`);
     }
@@ -286,6 +286,41 @@ ${ctx.consolidatedInsight}`);
 function capitalize(str) {
   if (!str) return '';
   return str.charAt(0).toUpperCase() + str.slice(1);
+}
+
+/**
+ * Sanitize user-authored rule text before injecting into the system prompt.
+ * Prevents prompt injection, caps length, strips control characters.
+ */
+function sanitizeRuleText(text) {
+  if (!text || typeof text !== 'string') return '';
+
+  // Cap length — rules should be concise instructions
+  let cleaned = text.slice(0, 200);
+
+  // Strip patterns that could hijack the prompt structure
+  cleaned = cleaned.replace(/==\s*.*?\s*==/g, '');
+  cleaned = cleaned.replace(/━+/g, '');
+
+  // Remove common injection phrases
+  const injectionPatterns = [
+    /ignore\s+(all\s+)?(previous|above|prior)\s+(instructions?|rules?|constraints?)/gi,
+    /disregard\s+(all\s+)?(previous|above|prior)/gi,
+    /stop\.?\s*(ignore|forget|disregard)/gi,
+    /system\s*prompt/gi,
+    /you\s+are\s+now/gi,
+    /new\s+instructions?:/gi,
+    /override\s+(all|previous|system)/gi,
+  ];
+  for (const pattern of injectionPatterns) {
+    cleaned = cleaned.replace(pattern, '[removed]');
+  }
+
+  // Strip control characters and collapse whitespace
+  cleaned = cleaned.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '');
+  cleaned = cleaned.replace(/\s+/g, ' ').trim();
+
+  return cleaned;
 }
 
 // ==================== LIVE BATTLE CONTEXT (Fresh) ====================

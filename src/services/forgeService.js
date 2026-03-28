@@ -11,6 +11,57 @@ import { getAgentLevel } from '../constants/agentProgression';
 import { FORGE_LIMITS } from '../constants/agentProgression';
 
 // ============================================
+// VALIDATION
+// ============================================
+
+const VALID_CATEGORIES = ['technical', 'fundamental', 'risk', 'allocation'];
+const VALID_SOURCES = [
+  'forge_discover',       // Rules created from Discover templates
+  'forge_custom',         // User-created custom rules
+  'discover',             // Legacy/test source
+  'manual',               // Manual entry
+  'agent_batch_review',   // Agent communication — batch review
+  'agent_open_chat',      // Agent communication — open chat
+  'agent_debate',         // Agent communication — debate
+  'agent_reflection',     // Agent communication — reflection
+];
+const VALID_VISIBILITIES = ['public', 'private'];
+const MAX_RULE_TEXT_LENGTH = 200;
+const MAX_PARAMS_KEYS = 5;
+
+function validateRuleInput(ruleData) {
+  const errors = [];
+
+  if (!ruleData.text || typeof ruleData.text !== 'string') {
+    errors.push('Rule text is required and must be a string');
+  } else if (ruleData.text.trim().length === 0) {
+    errors.push('Rule text cannot be empty');
+  } else if (ruleData.text.length > MAX_RULE_TEXT_LENGTH) {
+    errors.push(`Rule text must be ${MAX_RULE_TEXT_LENGTH} characters or less`);
+  }
+
+  if (ruleData.category && !VALID_CATEGORIES.includes(ruleData.category)) {
+    errors.push(`Category must be one of: ${VALID_CATEGORIES.join(', ')}`);
+  }
+
+  if (ruleData.source && !VALID_SOURCES.includes(ruleData.source)) {
+    errors.push(`Source must be one of: ${VALID_SOURCES.join(', ')}`);
+  }
+
+  if (ruleData.visibility && !VALID_VISIBILITIES.includes(ruleData.visibility)) {
+    errors.push(`Visibility must be one of: ${VALID_VISIBILITIES.join(', ')}`);
+  }
+
+  if (ruleData.params && typeof ruleData.params === 'object') {
+    if (Object.keys(ruleData.params).length > MAX_PARAMS_KEYS) {
+      errors.push(`Params must have ${MAX_PARAMS_KEYS} or fewer keys`);
+    }
+  }
+
+  return errors;
+}
+
+// ============================================
 // RULES CRUD
 // ============================================
 
@@ -21,6 +72,11 @@ import { FORGE_LIMITS } from '../constants/agentProgression';
  * @returns {string} The new rule document ID
  */
 export const createRule = async (agentId, ruleData) => {
+  const errors = validateRuleInput(ruleData);
+  if (errors.length > 0) {
+    throw new Error(`Invalid rule: ${errors.join('; ')}`);
+  }
+
   const rulesRef = collection(db, 'agents', agentId, 'rules');
   const ruleDoc = {
     text: ruleData.text,
@@ -62,6 +118,22 @@ export const getRules = async (agentId, { includeDeleted = false } = {}) => {
  * @param {Object} updates - Allowed: text, category, visibility, params, isRefined
  */
 export const updateRule = async (agentId, ruleId, updates) => {
+  // Validate fields being updated
+  if (updates.text !== undefined) {
+    if (typeof updates.text !== 'string' || updates.text.trim().length === 0) {
+      throw new Error('Rule text must be a non-empty string');
+    }
+    if (updates.text.length > MAX_RULE_TEXT_LENGTH) {
+      throw new Error(`Rule text must be ${MAX_RULE_TEXT_LENGTH} characters or less`);
+    }
+  }
+  if (updates.category !== undefined && updates.category !== null && !VALID_CATEGORIES.includes(updates.category)) {
+    throw new Error(`Category must be one of: ${VALID_CATEGORIES.join(', ')}`);
+  }
+  if (updates.visibility !== undefined && !VALID_VISIBILITIES.includes(updates.visibility)) {
+    throw new Error(`Visibility must be one of: ${VALID_VISIBILITIES.join(', ')}`);
+  }
+
   const allowed = ['text', 'category', 'visibility', 'params', 'isRefined'];
   const filtered = {};
   for (const key of allowed) {

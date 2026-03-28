@@ -98,7 +98,7 @@ import DashboardLoop from './components/Dashboard/DashboardLoop';
 import DashboardDesktop from './components/Dashboard/DashboardDesktop';
 import DesktopSidebar from './components/Navigation/DesktopSidebar';
 import { AgentDashboard } from './components/Agent';
-import { AcademyFeed } from './components/Academy';
+import { ForgeScreen } from './components/Forge';
 
 // ============================================
 // LAZY LOADING FALLBACK
@@ -2305,8 +2305,8 @@ export default function PortfolioDuel() {
   const [showSpotlightTour, setShowSpotlightTour] = useState(false);
   const [tourStep, setTourStep] = useState(0);
 
-  // Academy state (replaces Research Mode)
-  const [showAcademy, setShowAcademy] = useState(false);
+  // Forge state (replaces Academy)
+  const [showForge, setShowForge] = useState(false);
 
   // Desktop background state
   const [isDesktop, setIsDesktop] = useState(typeof window !== 'undefined' && window.innerWidth > 768);
@@ -8084,8 +8084,8 @@ export default function PortfolioDuel() {
   };
   const getScreenContent = () => {
 
-  // ACADEMY SCREEN
-  if (showAcademy) {
+  // FORGE SCREEN
+  if (showForge) {
     return (
       <div style={{
         marginLeft: isDesktop ? (sidebarCollapsed ? '64px' : '220px') : 0,
@@ -8093,9 +8093,10 @@ export default function PortfolioDuel() {
         minHeight: '100vh',
         background: isDesktop ? '#111318' : '#0D0E12',
       }}>
-        <AcademyFeed
+        <ForgeScreen
           isMobile={isMobile}
-          onClose={() => setShowAcademy(false)}
+          onClose={() => setShowForge(false)}
+          user={user}
         />
       </div>
     );
@@ -9157,8 +9158,8 @@ export default function PortfolioDuel() {
         <DesktopSidebar
           screen={screen}
           setScreen={setScreen}
-          setShowAcademy={setShowAcademy}
-          showAcademy={showAcademy}
+          setShowForge={setShowForge}
+          showForge={showForge}
           user={user}
           unreadCount={unreadCount}
           collapsed={sidebarCollapsed}
@@ -11403,8 +11404,8 @@ export default function PortfolioDuel() {
         <BottomNav
           screen={screen}
           setScreen={setScreen}
-          setShowAcademy={setShowAcademy}
-          showAcademy={showAcademy}
+          setShowForge={setShowForge}
+          showForge={showForge}
         />
       )}
 
