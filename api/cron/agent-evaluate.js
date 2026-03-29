@@ -515,11 +515,19 @@ async function processAgentBattle(db, battle, summary) {
       }
     }
 
-    // ---- Fetch news for trigger gate ----
-    const news = await fetchRecentNews(db, portfolioSymbols);
+    // ---- Fetch news for trigger gate (portfolio + bench tickers) ----
+    const allNewsTickers = [...new Set([...portfolioSymbols, ...benchSymbols])];
+    const news = await fetchRecentNews(db, allNewsTickers);
 
     // ---- Evaluate triggers ----
-    const { shouldEvaluate, triggers } = evaluateTriggers(battle, assetScores, prices, news, momentumData);
+    const seenStoryIds = battle.cronState?.seenStoryIds || [];
+    const { shouldEvaluate, triggers, newStoryIds } = evaluateTriggers(battle, assetScores, prices, news, momentumData, seenStoryIds);
+
+    // Persist any new story IDs to prevent re-triggering (cap at 50)
+    if (newStoryIds.length > 0) {
+      const updatedSeenIds = [...seenStoryIds, ...newStoryIds].slice(-50);
+      scoreUpdate['cronState.seenStoryIds'] = updatedSeenIds;
+    }
 
     if (!shouldEvaluate) {
       // No triggers — update scores, VWAP ticks, and status feed, then move on

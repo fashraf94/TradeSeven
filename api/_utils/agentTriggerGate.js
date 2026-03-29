@@ -14,9 +14,10 @@ import { flattenPortfolioServer, flattenBenchServer } from './agentScoring.js';
  * @param {Object} [momentumData] - Optional intraday momentum data
  * @param {Object} [momentumData.vwap] - { symbol: { vwap, currentPrice, vwapDeviation } }
  * @param {Object} [momentumData.rankings] - { symbol: { bBandwidthPercentile, nr7Flag, dailyRange } }
- * @returns {{ shouldEvaluate: boolean, triggers: Array<{ type: string, detail: string }> }}
+ * @param {string[]} [seenStoryIds] - Story IDs already processed (prevent re-triggering)
+ * @returns {{ shouldEvaluate: boolean, triggers: Array<{ type: string, detail: string }>, newStoryIds: string[] }}
  */
-export function evaluateTriggers(battle, assetScores, prices, news, momentumData) {
+export function evaluateTriggers(battle, assetScores, prices, news, momentumData, seenStoryIds) {
   const triggers = [];
   const evaluations = battle.evaluations || [];
 
@@ -154,9 +155,13 @@ export function evaluateTriggers(battle, assetScores, prices, news, momentumData
   }
 
   // News catalyst: FantasyTimes stories mentioning active tickers
+  // Filter out stories already seen to prevent re-triggering
+  const seenSet = new Set(seenStoryIds || []);
+  const newStoryIds = [];
   if (news && news.length > 0) {
     const activeSymbols = new Set(assetScores.map(s => s.symbol));
     for (const story of news) {
+      if (seenSet.has(story.id)) continue;
       const matchingTickers = (story.tickers || []).filter(t => activeSymbols.has(t));
       if (matchingTickers.length > 0) {
         const ago = getTimeAgo(story.publishedAt);
@@ -164,6 +169,7 @@ export function evaluateTriggers(battle, assetScores, prices, news, momentumData
           type: 'news_catalyst',
           detail: `[${story.reporterName || story.reporter}, ${ago}, ${story.sentiment || 'neutral'}] "${story.headline}" | Tickers: ${matchingTickers.join(', ')}`,
         });
+        newStoryIds.push(story.id);
       }
     }
   }
@@ -171,29 +177,41 @@ export function evaluateTriggers(battle, assetScores, prices, news, momentumData
   return {
     shouldEvaluate: triggers.length > 0,
     triggers,
+    newStoryIds,
   };
 }
 
 /**
- * Query FantasyTimes stories from the last 2 hours that mention any of the given symbols.
+ * Query FantasyTimes stories that mention any of the given symbols.
+ *
+ * @param {Object} db - Firestore instance
+ * @param {string[]} symbols - Ticker symbols to search for
+ * @param {Object} [options]
+ * @param {number} [options.cutoffMinutes=120] - How far back to look (default 2 hours)
+ * @param {number} [options.limitPerSymbol=2] - Max stories per symbol query
+ * @param {number} [options.maxSymbols=10] - Max symbols to query (Firestore array-contains limitation)
  */
-export async function fetchRecentNews(db, symbols) {
+export async function fetchRecentNews(db, symbols, options = {}) {
   if (!symbols || symbols.length === 0) return [];
 
-  const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
+  const cutoffMinutes = options.cutoffMinutes || 120;
+  const limitPerSymbol = options.limitPerSymbol || 2;
+  const maxSymbols = options.maxSymbols || 10;
+
+  const cutoff = new Date(Date.now() - cutoffMinutes * 60 * 1000);
   const stories = [];
 
   // Firestore array-contains only supports one value per query,
   // so we query for each symbol and deduplicate
   const seen = new Set();
-  for (const symbol of symbols.slice(0, 7)) {
+  for (const symbol of symbols.slice(0, maxSymbols)) {
     try {
       const snap = await db
         .collection('fantasyTimesStories')
         .where('tickers', 'array-contains', symbol)
-        .where('publishedAt', '>', twoHoursAgo)
+        .where('publishedAt', '>', cutoff)
         .orderBy('publishedAt', 'desc')
-        .limit(2)
+        .limit(limitPerSymbol)
         .get();
 
       for (const doc of snap.docs) {
