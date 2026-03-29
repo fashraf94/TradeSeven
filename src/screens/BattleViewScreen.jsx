@@ -16,7 +16,17 @@ const BattleViewScreen = ({
   BaggerBombTrainingBattleViewV3,
   BaggerBombBattleViewConnectedV4,
   BaggerBombTrainingBattleViewV4,
+  AgentBattleScreen,
 }) => {
+  // Agent battles → dedicated AgentBattleScreen
+  if (currentBattle.agentDeployed === true && AgentBattleScreen) {
+    return (
+      <Suspense fallback={<LoadingFallback />}>
+        <AgentBattleScreen battle={currentBattle} user={user} onBack={onBack} />
+      </Suspense>
+    );
+  }
+
   // V4 battles
   if (currentBattle._v >= 4) {
     // V4 Training battles
