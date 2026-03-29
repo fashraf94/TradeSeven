@@ -13,6 +13,10 @@ import ExecutionModeToggle from '../components/Agent/ExecutionModeToggle';
 import AgentPortfolioStrip from '../components/Agent/AgentPortfolioStrip';
 import StrategyPresetBadge from '../components/Agent/StrategyPresetBadge';
 import HypothesisTicker from '../components/Agent/HypothesisTicker';
+import AgentActivityFeed from '../components/Agent/AgentActivityFeed';
+import ForgeCitationCard from '../components/Agent/ForgeCitationCard';
+import DebateModal from '../components/Agent/DebateModal';
+import { addFeedBookmark, removeFeedBookmark } from '../services/agentService';
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -209,6 +213,10 @@ function ControlsRow({ agentBattleId, executionMode, strategyPreset, tokens }) {
 export default function AgentBattleScreen({ battle, user, onBack }) {
   const { tokens } = useTheme();
   const [filterTicker, setFilterTicker] = useState(null);
+  const [debateOpen, setDebateOpen] = useState(false);
+  const [debateSymbol, setDebateSymbol] = useState(null);
+  const [citationOpen, setCitationOpen] = useState(false);
+  const [citationRuleId, setCitationRuleId] = useState(null);
 
   // Resolve agentBattleId from the regular battle's agentId
   const { agentBattleId, loading: idLoading } = useAgentBattleId(battle?.agentId);
@@ -219,6 +227,8 @@ export default function AgentBattleScreen({ battle, user, onBack }) {
     statusFeed,
     executionMode,
     strategyPreset,
+    gameplanMeeting,
+    feedBookmarks,
     loading: battleLoading,
   } = useAgentBattle(agentBattleId);
 
@@ -226,6 +236,16 @@ export default function AgentBattleScreen({ battle, user, onBack }) {
 
   const handleTickerTap = useCallback((symbol) => {
     setFilterTicker(prev => prev === symbol ? null : symbol);
+  }, []);
+
+  const handleChallenge = useCallback((entry) => {
+    setDebateSymbol(entry.symbolOut);
+    setDebateOpen(true);
+  }, []);
+
+  const handleCitationTap = useCallback((ruleId) => {
+    setCitationRuleId(ruleId);
+    setCitationOpen(true);
   }, []);
 
   // Loading state
@@ -344,34 +364,46 @@ export default function AgentBattleScreen({ battle, user, onBack }) {
         <div style={{ height: 8 }} />
       </div>
 
-      {/* ═══ SCROLLABLE BOTTOM SECTION (~70%) ═══ */}
+      {/* ═══ ACTIVITY FEED (~70%) ═══ */}
       <div style={{
         flex: 1,
-        overflowY: 'auto',
-        WebkitOverflowScrolling: 'touch',
+        overflow: 'hidden',
         display: 'flex',
         flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: 24,
       }}>
-        <div style={{
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          gap: 10,
-          opacity: 0.4,
-        }}>
-          <TrendingUp size={32} color={tokens.textFaint || '#64748b'} />
-          <span style={{
-            fontSize: 13,
-            color: tokens.textFaint || '#64748b',
-            textAlign: 'center',
-          }}>
-            Activity feed coming in Phase 2
-          </span>
-        </div>
+        <AgentActivityFeed
+          statusFeed={statusFeed}
+          feedBookmarks={feedBookmarks}
+          filterTicker={filterTicker}
+          onClearFilter={() => setFilterTicker(null)}
+          onBookmark={(entryId) => addFeedBookmark(agentBattleId, entryId)}
+          onUnbookmark={(entryId) => removeFeedBookmark(agentBattleId, entryId)}
+          onChallenge={handleChallenge}
+          onCitationTap={handleCitationTap}
+          battleId={agentBattleId}
+          isAgentVsAgent={!!agentBattle?.opponentAgentId}
+          gameplanMeeting={gameplanMeeting}
+          tokens={tokens}
+        />
       </div>
+
+      {/* ═══ MODALS ═══ */}
+      <DebateModal
+        isOpen={debateOpen}
+        onClose={() => setDebateOpen(false)}
+        battleId={agentBattleId}
+        targetSymbol={debateSymbol}
+        tokens={tokens}
+      />
+
+      <ForgeCitationCard
+        isOpen={citationOpen}
+        onClose={() => setCitationOpen(false)}
+        ruleId={citationRuleId}
+        battleData={agentBattle}
+        statusFeed={statusFeed}
+        tokens={tokens}
+      />
     </div>
   );
 }

@@ -380,3 +380,19 @@ export const submitDailyGrades = async (battleId, dateStr, grades) => {
     updatedAt: serverTimestamp(),
   });
 };
+
+export const addFeedBookmark = async (battleId, entryId) => {
+  const docRef = doc(db, BATTLES_COLLECTION, battleId);
+  await updateDoc(docRef, {
+    feedBookmarks: arrayUnion(entryId),
+    updatedAt: serverTimestamp(),
+  });
+};
+
+export const removeFeedBookmark = async (battleId, entryId) => {
+  const docRef = doc(db, BATTLES_COLLECTION, battleId);
+  await updateDoc(docRef, {
+    feedBookmarks: arrayRemove(entryId),
+    updatedAt: serverTimestamp(),
+  });
+};

@@ -53,8 +53,9 @@ const useAgentBattle = (agentBattleId) => {
   const gameplanMeeting = battle?.gameplanMeeting || null;
   const chatExchanges = battle?.chatExchanges || [];
   const chatBudgetUsed = battle?.chatBudgetUsed || 0;
+  const feedBookmarks = battle?.feedBookmarks || [];
 
-  return { battle, statusFeed, executionMode, pendingProposal, strategyPreset, gameplanMeeting, chatExchanges, chatBudgetUsed, loading, error };
+  return { battle, statusFeed, executionMode, pendingProposal, strategyPreset, gameplanMeeting, chatExchanges, chatBudgetUsed, feedBookmarks, loading, error };
 };
 
 export default useAgentBattle;
