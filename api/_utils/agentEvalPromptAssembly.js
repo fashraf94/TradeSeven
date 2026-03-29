@@ -414,11 +414,17 @@ ${triggerLines}`);
   if (news && news.length > 0) {
     const activeRules = battle.agentContext?.activeRules || [];
     if (activeRules.length > 0) {
-      const portfolioSymbols = (flattenPortfolioServer(battle.portfolio) || []).map(a => a.symbol).filter(Boolean);
-      const rankedStories = rankAndSelectStories(news, activeRules, portfolioSymbols, 3);
-      const gameContext = computeGameContext(battle);
-      const newsBlock = buildNewsIntelligenceBlock(rankedStories, activeRules, gameContext);
-      if (newsBlock) parts.push(newsBlock);
+      try {
+        const portfolioSymbols = (flattenPortfolioServer(battle.portfolio) || []).map(a => a.symbol).filter(Boolean);
+        const rankedStories = rankAndSelectStories(news, activeRules, portfolioSymbols, 3);
+        const gameContext = computeGameContext(battle);
+        const newsBlock = buildNewsIntelligenceBlock(rankedStories, activeRules, gameContext);
+        if (newsBlock) parts.push(newsBlock);
+      } catch (err) {
+        console.warn('[PromptAssembly] News intelligence block failed, falling back to bare headlines:', err.message);
+        const bareBlock = buildBareNewsBlock(news);
+        if (bareBlock) parts.push(bareBlock);
+      }
     } else {
       // Fallback: bare headline format for agents without Forge rules
       const bareBlock = buildBareNewsBlock(news);

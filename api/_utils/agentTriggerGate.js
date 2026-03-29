@@ -160,9 +160,11 @@ export function evaluateTriggers(battle, assetScores, prices, news, momentumData
   const newStoryIds = [];
   if (news && news.length > 0) {
     const activeSymbols = new Set(assetScores.map(s => s.symbol));
+    const benchSymbols = flattenBenchServer(battle.portfolio?.bench).map(a => a.symbol).filter(Boolean);
+    const triggerSymbols = new Set([...activeSymbols, ...benchSymbols]);
     for (const story of news) {
       if (seenSet.has(story.id)) continue;
-      const matchingTickers = (story.tickers || []).filter(t => activeSymbols.has(t));
+      const matchingTickers = (story.tickers || []).filter(t => triggerSymbols.has(t));
       if (matchingTickers.length > 0) {
         const ago = getTimeAgo(story.publishedAt);
         triggers.push({
