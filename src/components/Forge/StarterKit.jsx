@@ -1,0 +1,647 @@
+// src/components/Forge/StarterKit.jsx
+// 3-question onboarding flow that builds a user's first bundle.
+// Zero AI cost — all question-to-rule mapping is hardcoded.
+
+import React, { useState, useMemo, useCallback } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { FORGE_RULE_TEMPLATES, FORGE_CATEGORIES } from '../../data/forgeKnowledgeBase';
+import { createRule, createBundle, addRuleToBundle, forgeBundle, equipBundle } from '../../services/forgeService';
+import { updateAgent } from '../../services/agentService';
+
+// ── Question-to-rule mapping ─────────────────────────────────
+
+const RISK_RULES = {
+  conservative: [
+    { id: 'risk-sector-diversification', params: { n: 4 } },
+    { id: 'risk-volatility-avoidance', params: {} },
+  ],
+  balanced: [
+    { id: 'risk-sector-diversification', params: {} },
+  ],
+  aggressive: [
+    { id: 'risk-sector-diversification', params: { n: 2 } },
+  ],
+};
+
+const SECTOR_RULES = {
+  technology: [
+    { id: 'alloc-sector-cap', params: { sector: 'Technology', pct: 50 } },
+    { id: 'fund-revenue-growth', params: {} },
+  ],
+  healthcare: [
+    { id: 'alloc-sector-cap', params: { sector: 'Healthcare', pct: 50 } },
+    { id: 'fund-financial-health', params: {} },
+  ],
+  finance: [
+    { id: 'alloc-sector-cap', params: { sector: 'Financials', pct: 50 } },
+    { id: 'fund-bank-pb', params: {} },
+  ],
+  energy: [
+    { id: 'alloc-sector-cap', params: { sector: 'Energy', pct: 50 } },
+    { id: 'fund-financial-health', params: {} },
+  ],
+  no_preference: [
+    { id: 'alloc-even-spread', params: {} },
+    { id: 'fund-earnings-surprise', params: {} },
+  ],
+};
+
+const GAME_RULES = {
+  baggerbomb: [{ id: 'tech-rsi-oversold', params: {} }],
+  snake_draft: [{ id: 'tech-relative-strength', params: {} }],
+  both: [{ id: 'tech-moving-average-trend', params: {} }],
+};
+
+// ── Questions config ─────────────────────────────────────────
+
+const QUESTIONS = [
+  {
+    key: 'risk',
+    title: 'How should your agent play?',
+    subtitle: 'Step 1 of 3',
+    options: [
+      { value: 'conservative', emoji: '\u{1F6E1}\uFE0F', label: 'Conservative', desc: "Protect my portfolio. I'd rather miss a big win than take a big loss." },
+      { value: 'balanced', emoji: '\u2696\uFE0F', label: 'Balanced', desc: 'Mix of safety and opportunity. I want steady growth.' },
+      { value: 'aggressive', emoji: '\u{1F680}', label: 'Aggressive', desc: "Swing for the fences. I'm okay with risk for bigger rewards." },
+    ],
+  },
+  {
+    key: 'sector',
+    title: 'How should your agent focus?',
+    subtitle: 'Step 2 of 3',
+    options: [
+      { value: 'technology', emoji: '\u{1F4BB}', label: 'Technology', desc: 'AI, software, semiconductors' },
+      { value: 'healthcare', emoji: '\u{1F48A}', label: 'Healthcare', desc: 'Biotech, pharma, medical devices' },
+      { value: 'finance', emoji: '\u{1F3E6}', label: 'Finance', desc: 'Banks, fintech, insurance' },
+      { value: 'energy', emoji: '\u26A1', label: 'Energy', desc: 'Oil, renewables, utilities' },
+      { value: 'no_preference', emoji: '\u{1F310}', label: 'No preference', desc: 'I want to explore everything' },
+    ],
+  },
+  {
+    key: 'game',
+    title: 'What will you play most?',
+    subtitle: 'Step 3 of 3',
+    options: [
+      { value: 'baggerbomb', emoji: '\u{1F4A5}', label: 'BaggerBomb', desc: '1v1 battles. I want explosive picks.' },
+      { value: 'snake_draft', emoji: '\u{1F40D}', label: 'Snake Draft', desc: 'Draft competitions. I want well-rounded teams.' },
+      { value: 'both', emoji: '\u{1F3AF}', label: 'Both / Not sure', desc: 'I want a general strategy.' },
+    ],
+  },
+];
+
+// ── Helpers ──────────────────────────────────────────────────
+
+function getTemplate(templateId) {
+  return FORGE_RULE_TEMPLATES.find(t => t.id === templateId);
+}
+
+function getCategoryColor(categoryId) {
+  const cat = FORGE_CATEGORIES.find(c => c.id === categoryId);
+  return cat?.color || '#5eead4';
+}
+
+function getCategoryLabel(categoryId) {
+  const cat = FORGE_CATEGORIES.find(c => c.id === categoryId);
+  return cat?.label || categoryId;
+}
+
+function resolveRuleText(templateId, paramOverrides) {
+  const template = getTemplate(templateId);
+  if (!template) return '';
+  const ft = template.forgeTemplates[0];
+  let text = ft.text;
+  if (ft.params) {
+    for (const [key, config] of Object.entries(ft.params)) {
+      const value = paramOverrides[key] !== undefined ? paramOverrides[key] : config.default;
+      text = text.replace(`{${key}}`, value);
+    }
+  }
+  return text;
+}
+
+function buildSelectedRules(answers) {
+  const { risk, sector, game } = answers;
+  if (!risk || !sector || !game) return [];
+  return [
+    ...RISK_RULES[risk],
+    ...SECTOR_RULES[sector],
+    ...GAME_RULES[game],
+  ];
+}
+
+function getAlternatives(rule, allSelected) {
+  const template = getTemplate(rule.id);
+  if (!template) return [];
+  const selectedIds = new Set(allSelected.map(r => r.id));
+  return FORGE_RULE_TEMPLATES
+    .filter(t => t.category === template.category && !selectedIds.has(t.id))
+    .map(t => ({ id: t.id, params: {} }));
+}
+
+// ── Subcomponents ────────────────────────────────────────────
+
+function ProgressDots({ step, tokens }) {
+  return (
+    <div style={{ display: 'flex', gap: '8px', justifyContent: 'center', marginBottom: '24px' }}>
+      {[0, 1, 2].map(i => (
+        <div
+          key={i}
+          style={{
+            width: '10px',
+            height: '10px',
+            borderRadius: '50%',
+            background: i <= step ? tokens.teal : 'rgba(255,255,255,0.12)',
+            transition: 'background 0.3s ease',
+          }}
+        />
+      ))}
+    </div>
+  );
+}
+
+function OptionCard({ option, isSelected, onSelect, tokens }) {
+  return (
+    <motion.button
+      whileHover={{ scale: 1.02 }}
+      whileTap={{ scale: 0.98 }}
+      onClick={onSelect}
+      style={{
+        display: 'flex',
+        alignItems: 'flex-start',
+        gap: '14px',
+        width: '100%',
+        padding: '16px 18px',
+        borderRadius: '14px',
+        border: isSelected ? `2px solid ${tokens.teal}` : '2px solid rgba(255,255,255,0.06)',
+        background: isSelected ? `${tokens.teal}15` : '#15171E',
+        cursor: 'pointer',
+        textAlign: 'left',
+        transition: 'border-color 0.2s, background 0.2s',
+        minHeight: '48px',
+      }}
+    >
+      <span style={{ fontSize: '22px', lineHeight: '1.2', flexShrink: 0 }}>{option.emoji}</span>
+      <div style={{ flex: 1 }}>
+        <div style={{ fontSize: '15px', fontWeight: 600, color: tokens.textWhite, marginBottom: '4px' }}>
+          {option.label}
+        </div>
+        <div style={{ fontSize: '13px', color: tokens.textMuted, lineHeight: '1.4' }}>
+          {option.desc}
+        </div>
+      </div>
+    </motion.button>
+  );
+}
+
+function RulePreviewCard({ rule, index, onSwap, swapOpen, alternatives, onSwapSelect, tokens }) {
+  const template = getTemplate(rule.id);
+  if (!template) return null;
+  const categoryColor = getCategoryColor(template.category);
+  const ruleText = resolveRuleText(rule.id, rule.params);
+
+  return (
+    <div style={{ position: 'relative' }}>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '12px',
+          padding: '14px 16px',
+          background: '#15171E',
+          borderRadius: swapOpen ? '14px 14px 0 0' : '14px',
+          border: '1px solid rgba(255,255,255,0.06)',
+          borderBottom: swapOpen ? '1px solid rgba(255,255,255,0.03)' : '1px solid rgba(255,255,255,0.06)',
+        }}
+      >
+        <span
+          style={{
+            fontSize: '11px',
+            fontWeight: 700,
+            color: categoryColor,
+            textTransform: 'uppercase',
+            letterSpacing: '0.5px',
+            flexShrink: 0,
+            minWidth: '48px',
+          }}
+        >
+          {getCategoryLabel(template.category)}
+        </span>
+        <span style={{ fontSize: '13px', color: tokens.textPrimary, flex: 1, lineHeight: '1.4' }}>
+          {ruleText}
+        </span>
+        {alternatives.length > 0 && (
+          <motion.button
+            whileHover={{ scale: 1.1 }}
+            whileTap={{ scale: 0.9 }}
+            onClick={() => onSwap(index)}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: tokens.textMuted,
+              cursor: 'pointer',
+              padding: '6px',
+              borderRadius: '8px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: '16px',
+              flexShrink: 0,
+              minWidth: '36px',
+              minHeight: '36px',
+            }}
+            title="Swap this rule"
+          >
+            \u21C4
+          </motion.button>
+        )}
+      </div>
+
+      {/* Swap picker */}
+      <AnimatePresence>
+        {swapOpen && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            style={{ overflow: 'hidden' }}
+          >
+            <div
+              style={{
+                background: '#1A1D26',
+                borderRadius: '0 0 14px 14px',
+                border: '1px solid rgba(255,255,255,0.06)',
+                borderTop: 'none',
+                padding: '8px',
+              }}
+            >
+              <div style={{ fontSize: '11px', color: tokens.textMuted, padding: '4px 8px 8px', fontWeight: 500 }}>
+                Swap with:
+              </div>
+              {alternatives.map(alt => {
+                const altTemplate = getTemplate(alt.id);
+                if (!altTemplate) return null;
+                return (
+                  <motion.button
+                    key={alt.id}
+                    whileHover={{ background: 'rgba(255,255,255,0.06)' }}
+                    whileTap={{ scale: 0.98 }}
+                    onClick={() => onSwapSelect(index, alt)}
+                    style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '2px',
+                      width: '100%',
+                      padding: '10px 12px',
+                      borderRadius: '10px',
+                      border: 'none',
+                      background: 'transparent',
+                      cursor: 'pointer',
+                      textAlign: 'left',
+                      minHeight: '48px',
+                    }}
+                  >
+                    <span style={{ fontSize: '13px', fontWeight: 600, color: tokens.textWhite }}>
+                      {altTemplate.headline}
+                    </span>
+                    <span style={{ fontSize: '12px', color: tokens.textMuted, lineHeight: '1.3' }}>
+                      {altTemplate.description}
+                    </span>
+                  </motion.button>
+                );
+              })}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+// ── Main Component ───────────────────────────────────────────
+
+export default function StarterKit({ agentId, agent, forge, tokens, isMobile, onComplete, onSkip }) {
+  const [step, setStep] = useState(0);
+  const [answers, setAnswers] = useState({ risk: null, sector: null, game: null });
+  const [selectedRules, setSelectedRules] = useState([]);
+  const [forging, setForging] = useState(false);
+  const [forgingDone, setForgingDone] = useState(false);
+  const [swappingIndex, setSwappingIndex] = useState(null);
+  const [error, setError] = useState(null);
+
+  const handleSelect = useCallback((questionKey, value) => {
+    const newAnswers = { ...answers, [questionKey]: value };
+    setAnswers(newAnswers);
+
+    // Short delay for selection animation, then advance
+    setTimeout(() => {
+      if (step < 2) {
+        setStep(step + 1);
+      } else {
+        // All 3 answered — compute rules and go to result screen
+        setSelectedRules(buildSelectedRules(newAnswers));
+        setStep(3);
+      }
+    }, 250);
+  }, [answers, step]);
+
+  const handleSkip = useCallback(async () => {
+    try {
+      await updateAgent(agentId, { starterKitCompleted: true });
+      onSkip();
+    } catch (err) {
+      console.error('[StarterKit] skip failed:', err);
+    }
+  }, [agentId, onSkip]);
+
+  const handleSwapToggle = useCallback((index) => {
+    setSwappingIndex(prev => prev === index ? null : index);
+  }, []);
+
+  const handleSwapSelect = useCallback((index, newRule) => {
+    setSelectedRules(prev => {
+      const next = [...prev];
+      next[index] = newRule;
+      return next;
+    });
+    setSwappingIndex(null);
+  }, []);
+
+  const handleForgeAndEquip = useCallback(async () => {
+    if (forging) return;
+    setForging(true);
+    setError(null);
+
+    try {
+      // 1. Create all rules
+      const ruleIds = [];
+      for (const rule of selectedRules) {
+        const template = getTemplate(rule.id);
+        const ft = template.forgeTemplates[0];
+        // Merge param overrides with defaults
+        const mergedParams = {};
+        if (ft.params) {
+          for (const [key, config] of Object.entries(ft.params)) {
+            mergedParams[key] = rule.params[key] !== undefined ? rule.params[key] : config.default;
+          }
+        }
+        let ruleText = ft.text;
+        for (const [key, val] of Object.entries(mergedParams)) {
+          ruleText = ruleText.replace(`{${key}}`, val);
+        }
+
+        const ruleId = await createRule(agentId, {
+          text: ruleText,
+          source: 'forge_discover',
+          sourceRef: template.id,
+          category: ft.category || template.category,
+          params: Object.keys(ft.params || {}).length > 0 ? ft.params : null,
+        });
+        ruleIds.push(ruleId);
+      }
+
+      // 2. Create bundle
+      const bundleId = await createBundle(agentId, { name: 'Starter Strategy' });
+
+      // 3. Add rules to bundle
+      for (const ruleId of ruleIds) {
+        await addRuleToBundle(agentId, bundleId, ruleId);
+      }
+
+      // 4. Forge
+      await forgeBundle(agentId, bundleId);
+
+      // 5. Equip
+      await equipBundle(agentId, bundleId);
+
+      // 6. Mark completed
+      await updateAgent(agentId, { starterKitCompleted: true });
+
+      // 7. Show success briefly, then dismiss
+      setForgingDone(true);
+      setTimeout(() => {
+        onComplete();
+      }, 1800);
+    } catch (err) {
+      console.error('[StarterKit] forge failed:', err);
+      setError(err.message || 'Something went wrong. Tap to try again.');
+      setForging(false);
+    }
+  }, [agentId, selectedRules, forging, onComplete]);
+
+  // ── Render ─────────────────────────────────────────────────
+
+  const padding = isMobile ? '20px 16px' : '32px 24px';
+  const maxWidth = '520px';
+
+  // Success screen
+  if (forgingDone) {
+    return (
+      <div style={{
+        minHeight: '60vh',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding,
+      }}>
+        <motion.div
+          initial={{ scale: 0.8, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          transition={{ type: 'spring', stiffness: 200, damping: 20 }}
+          style={{ textAlign: 'center' }}
+        >
+          <div style={{ fontSize: '48px', marginBottom: '16px' }}>{'\u2692\uFE0F'}</div>
+          <h2 style={{ fontSize: '22px', fontWeight: 700, color: tokens.textWhite, margin: '0 0 8px' }}>
+            Your strategy is ready!
+          </h2>
+          <p style={{ fontSize: '14px', color: tokens.textMuted, margin: 0, lineHeight: '1.5' }}>
+            Your agent will use these rules in its next battle.
+          </p>
+        </motion.div>
+      </div>
+    );
+  }
+
+  // Result screen (step 3)
+  if (step === 3) {
+    return (
+      <div style={{ padding, maxWidth, margin: '0 auto' }}>
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.35 }}
+        >
+          <div style={{ textAlign: 'center', marginBottom: '28px' }}>
+            <div style={{ fontSize: '36px', marginBottom: '12px' }}>{'\u2692\uFE0F'}</div>
+            <h2 style={{ fontSize: '22px', fontWeight: 700, color: tokens.textWhite, margin: '0 0 6px' }}>
+              Your First Strategy
+            </h2>
+            <p style={{ fontSize: '14px', color: tokens.textMuted, margin: 0 }}>
+              {selectedRules.length} rules &middot; &ldquo;Starter Strategy&rdquo;
+            </p>
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '12px' }}>
+            {selectedRules.map((rule, i) => (
+              <RulePreviewCard
+                key={`${rule.id}-${i}`}
+                rule={rule}
+                index={i}
+                onSwap={handleSwapToggle}
+                swapOpen={swappingIndex === i}
+                alternatives={getAlternatives(rule, selectedRules)}
+                onSwapSelect={handleSwapSelect}
+                tokens={tokens}
+              />
+            ))}
+          </div>
+
+          <p style={{ fontSize: '12px', color: tokens.textMuted, textAlign: 'center', margin: '0 0 24px' }}>
+            {'\u21C4'} Not the right fit? Tap the swap icon to pick an alternative.
+          </p>
+
+          {error && (
+            <div style={{
+              background: 'rgba(249,112,102,0.1)',
+              border: '1px solid rgba(249,112,102,0.3)',
+              borderRadius: '10px',
+              padding: '10px 14px',
+              marginBottom: '16px',
+              fontSize: '13px',
+              color: '#f97066',
+              textAlign: 'center',
+            }}>
+              {error}
+            </div>
+          )}
+
+          <motion.button
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.97 }}
+            onClick={handleForgeAndEquip}
+            disabled={forging}
+            style={{
+              width: '100%',
+              padding: '16px',
+              borderRadius: '14px',
+              border: 'none',
+              background: forging
+                ? `${tokens.teal}80`
+                : `linear-gradient(135deg, ${tokens.teal}, ${tokens.teal}CC)`,
+              color: '#0D0F14',
+              fontSize: '16px',
+              fontWeight: 700,
+              cursor: forging ? 'wait' : 'pointer',
+              transition: 'opacity 0.2s',
+              minHeight: '52px',
+            }}
+          >
+            {forging ? 'Forging...' : '\u{1F525} Forge & Equip Bundle'}
+          </motion.button>
+
+          <button
+            onClick={handleSkip}
+            disabled={forging}
+            style={{
+              display: 'block',
+              width: '100%',
+              padding: '14px',
+              marginTop: '12px',
+              background: 'none',
+              border: 'none',
+              color: tokens.textMuted,
+              fontSize: '13px',
+              cursor: 'pointer',
+              textAlign: 'center',
+              minHeight: '48px',
+            }}
+          >
+            Skip &mdash; I'll explore on my own
+          </button>
+        </motion.div>
+      </div>
+    );
+  }
+
+  // Question steps (0, 1, 2)
+  const question = QUESTIONS[step];
+
+  return (
+    <div style={{ padding, maxWidth, margin: '0 auto' }}>
+      <ProgressDots step={step} tokens={tokens} />
+
+      <AnimatePresence mode="wait">
+        <motion.div
+          key={step}
+          initial={{ opacity: 0, x: 60 }}
+          animate={{ opacity: 1, x: 0 }}
+          exit={{ opacity: 0, x: -60 }}
+          transition={{ duration: 0.3 }}
+        >
+          {step === 0 && (
+            <div style={{ textAlign: 'center', marginBottom: '8px' }}>
+              <div style={{ fontSize: '36px', marginBottom: '8px' }}>{'\u{1F525}'}</div>
+              <h2 style={{ fontSize: '22px', fontWeight: 700, color: tokens.textWhite, margin: '0 0 4px' }}>
+                Build Your First Strategy
+              </h2>
+            </div>
+          )}
+
+          <p style={{
+            fontSize: '11px',
+            fontWeight: 600,
+            color: tokens.teal,
+            textTransform: 'uppercase',
+            letterSpacing: '1px',
+            marginBottom: '6px',
+            textAlign: 'center',
+          }}>
+            {question.subtitle}
+          </p>
+
+          <h3 style={{
+            fontSize: '18px',
+            fontWeight: 600,
+            color: tokens.textWhite,
+            textAlign: 'center',
+            margin: '0 0 20px',
+          }}>
+            {question.title}
+          </h3>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            {question.options.map(option => (
+              <OptionCard
+                key={option.value}
+                option={option}
+                isSelected={answers[question.key] === option.value}
+                onSelect={() => handleSelect(question.key, option.value)}
+                tokens={tokens}
+              />
+            ))}
+          </div>
+
+          <button
+            onClick={handleSkip}
+            style={{
+              display: 'block',
+              width: '100%',
+              padding: '14px',
+              marginTop: '20px',
+              background: 'none',
+              border: 'none',
+              color: tokens.textMuted,
+              fontSize: '13px',
+              cursor: 'pointer',
+              textAlign: 'center',
+              minHeight: '48px',
+            }}
+          >
+            Skip &mdash; I'll explore on my own
+          </button>
+        </motion.div>
+      </AnimatePresence>
+    </div>
+  );
+}
