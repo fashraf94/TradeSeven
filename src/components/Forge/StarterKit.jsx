@@ -5,7 +5,7 @@
 import React, { useState, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { FORGE_RULE_TEMPLATES, FORGE_CATEGORIES } from '../../data/forgeKnowledgeBase';
-import { createRule, createBundle, addRuleToBundle, forgeBundle, equipBundle } from '../../services/forgeService';
+import { createRule, createBundle, addRuleToBundle, forgeBundle, equipBundle, softDeleteRule } from '../../services/forgeService';
 import { updateAgent } from '../../services/agentService';
 
 // ── Question-to-rule mapping ─────────────────────────────────
@@ -372,9 +372,9 @@ export default function StarterKit({ agentId, agent, forge, tokens, isMobile, on
     setForging(true);
     setError(null);
 
+    const ruleIds = [];
     try {
       // 1. Create all rules
-      const ruleIds = [];
       for (const rule of selectedRules) {
         const template = getTemplate(rule.id);
         const ft = template.forgeTemplates[0];
@@ -424,7 +424,12 @@ export default function StarterKit({ agentId, agent, forge, tokens, isMobile, on
       }, 1800);
     } catch (err) {
       console.error('[StarterKit] forge failed:', err);
+      // Clean up orphaned rules created before the failure
+      for (const ruleId of ruleIds) {
+        await softDeleteRule(agentId, ruleId).catch(() => {});
+      }
       setError(err.message || 'Something went wrong. Tap to try again.');
+    } finally {
       setForging(false);
     }
   }, [agentId, selectedRules, forging, onComplete]);
