@@ -157,7 +157,7 @@ service cloud.firestore {
       allow update: if request.auth != null
                     && resource.data.ownerId == request.auth.uid
                     && request.resource.data.diff(resource.data).affectedKeys()
-                       .hasOnly(['executionMode', 'pendingProposal', 'battleLedger', 'updatedAt', 'strategyPreset', 'gameplanMeeting', 'gameplanMeetingHistory', 'dailyGrades']);
+                       .hasOnly(['executionMode', 'pendingProposal', 'battleLedger', 'updatedAt', 'strategyPreset', 'gameplanMeeting', 'gameplanMeetingHistory', 'dailyGrades', 'feedBookmarks']);
 
       allow create, delete: if false;
     }
