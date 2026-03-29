@@ -45,6 +45,7 @@ const BaggerBombBattleViewConnected = lazy(() => import('./screens/BaggerBombBat
 const BaggerBombTrainingBattleViewV3 = lazy(() => import('./screens/BaggerBombTrainingBattleViewV3'));
 const BaggerBombBattleViewConnectedV4 = lazy(() => import('./screens/BaggerBombBattleViewConnectedV4'));
 const BaggerBombTrainingBattleViewV4 = lazy(() => import('./screens/BaggerBombTrainingBattleViewV4'));
+const AgentBattleScreen = lazy(() => import('./screens/AgentBattleScreen'));
 const BaggerBombLobby = lazy(() => import('./screens/BaggerBombLobby'));
 const BaggerBombSetupScreen = lazy(() => import('./screens/BaggerBombSetupScreen'));
 const StonkOptionsArenaV2 = lazy(() => import('./components/optionsArena/StonkOptionsArenaV2'));
@@ -8852,6 +8853,7 @@ export default function PortfolioDuel() {
         BaggerBombTrainingBattleViewV3={BaggerBombTrainingBattleViewV3}
         BaggerBombBattleViewConnectedV4={BaggerBombBattleViewConnectedV4}
         BaggerBombTrainingBattleViewV4={BaggerBombTrainingBattleViewV4}
+        AgentBattleScreen={AgentBattleScreen}
       />
       </ErrorBoundary>
     );
