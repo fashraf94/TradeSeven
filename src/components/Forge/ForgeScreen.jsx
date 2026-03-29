@@ -12,6 +12,7 @@ import DiscoverTab from './DiscoverTab';
 import MyRulesTab from './MyRulesTab';
 import MyBundlesTab from './MyBundlesTab';
 import StatsTab from './StatsTab';
+import StarterKit from './StarterKit';
 
 const TABS = [
   { id: 'discover', label: 'Discover', Icon: Compass },
@@ -66,6 +67,13 @@ export default function ForgeScreen({ isMobile, onClose, user }) {
   const agentId = agent?.id || null;
 
   const forge = useForge(agentId);
+
+  const showStarterKit = agentId
+    && agent
+    && !agent.starterKitCompleted
+    && !forge.loading
+    && forge.rules.length === 0
+    && forge.bundles.length === 0;
 
   return (
     <div style={{
@@ -150,47 +158,59 @@ export default function ForgeScreen({ isMobile, onClose, user }) {
         })}
       </div>
 
-      {/* Tab content */}
-      <AnimatePresence mode="wait">
-        <motion.div
-          key={forge.activeTab}
-          initial={{ opacity: 0, y: 8 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: -8 }}
-          transition={{ duration: 0.2 }}
-        >
-          {forge.activeTab === 'discover' && (
-            <DiscoverTab
-              isMobile={isMobile}
-              forge={forge}
-              tokens={tokens}
-            />
-          )}
-          {forge.activeTab === 'myRules' && (
-            <MyRulesTab
-              forge={forge}
-              tokens={tokens}
-              isMobile={isMobile}
-            />
-          )}
-          {forge.activeTab === 'myBundles' && (
-            <MyBundlesTab
-              forge={forge}
-              tokens={tokens}
-              isMobile={isMobile}
-              agent={agent}
-            />
-          )}
-          {forge.activeTab === 'stats' && (
-            <StatsTab
-              forge={forge}
-              tokens={tokens}
-              isMobile={isMobile}
-              agent={agent}
-            />
-          )}
-        </motion.div>
-      </AnimatePresence>
+      {/* Tab content or Starter Kit */}
+      {showStarterKit ? (
+        <StarterKit
+          agentId={agentId}
+          agent={agent}
+          forge={forge}
+          tokens={tokens}
+          isMobile={isMobile}
+          onComplete={() => forge.reloadData()}
+          onSkip={() => forge.reloadData()}
+        />
+      ) : (
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={forge.activeTab}
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={{ duration: 0.2 }}
+          >
+            {forge.activeTab === 'discover' && (
+              <DiscoverTab
+                isMobile={isMobile}
+                forge={forge}
+                tokens={tokens}
+              />
+            )}
+            {forge.activeTab === 'myRules' && (
+              <MyRulesTab
+                forge={forge}
+                tokens={tokens}
+                isMobile={isMobile}
+              />
+            )}
+            {forge.activeTab === 'myBundles' && (
+              <MyBundlesTab
+                forge={forge}
+                tokens={tokens}
+                isMobile={isMobile}
+                agent={agent}
+              />
+            )}
+            {forge.activeTab === 'stats' && (
+              <StatsTab
+                forge={forge}
+                tokens={tokens}
+                isMobile={isMobile}
+                agent={agent}
+              />
+            )}
+          </motion.div>
+        </AnimatePresence>
+      )}
 
       {/* Toast */}
       <AnimatePresence>
