@@ -125,6 +125,15 @@ export async function createAgentBattle(db, agentData, thresholds, startingPrice
     chatExchanges: [],              // Open chat history (Sprint 6)
     chatBudgetUsed: 0,              // Chat exchanges used this battle
 
+    // Watchlist: tiered stock tracking for open universe trading (Phase 0)
+    watchlist: agentData.lastDecision?.watchlist || {
+      active: [],
+      hotBench: [],
+      monitoring: [],
+      lastRefreshed: null,
+      totalStocks: 0,
+    },
+
     scoreState: {
       currentScore: 0,
       activeScore: 0,

@@ -33,13 +33,14 @@ export function validateTradeDecision(decision, battle) {
       resolvedSlotIndex = found.slotIndex;
     }
 
-    // 2. Check symbolIn exists in bench
+    // 2. Check symbolIn exists in bench or watchlist hotBench
     const benchAsset = findAssetInBench(battle.portfolio?.bench, decision.symbolIn);
-    if (!benchAsset) {
-      errors.push(`symbolIn "${decision.symbolIn}" not found in bench`);
+    const hotBenchMatch = !benchAsset && (battle.watchlist?.hotBench || []).includes(decision.symbolIn);
+    if (!benchAsset && !hotBenchMatch) {
+      errors.push(`symbolIn "${decision.symbolIn}" not found in bench or watchlist`);
     }
 
-    // 3. Check 24h cooldown on bench asset
+    // 3. Check 24h cooldown on bench asset (hotBench stocks have no cooldown)
     if (benchAsset?.cooldownUntil) {
       const cooldownEnd = new Date(benchAsset.cooldownUntil);
       if (cooldownEnd > new Date()) {
@@ -48,9 +49,11 @@ export function validateTradeDecision(decision, battle) {
     }
 
     // 4. Asset type match (stock↔stock, crypto↔crypto)
-    if (found && benchAsset) {
+    if (found && (benchAsset || hotBenchMatch)) {
       const activeAsset = getAssetAt(battle.portfolio, found.tier, found.slotIndex);
-      if (activeAsset && activeAsset.isCrypto !== benchAsset.isCrypto) {
+      // hotBench stocks are always non-crypto
+      const incomingIsCrypto = benchAsset ? benchAsset.isCrypto : false;
+      if (activeAsset && activeAsset.isCrypto !== incomingIsCrypto) {
         errors.push('Cannot swap stock for crypto or vice versa');
       }
     }

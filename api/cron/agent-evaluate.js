@@ -183,6 +183,9 @@ async function processAgentBattle(db, battle, summary) {
     const ctx = battle.agentContext || {};
     const currentDay = getCurrentTradingDayServer(battle.timing?.tradingDays);
 
+    // StatusFeed cap: 100 for agent battles, 50 for PvP
+    const STATUS_FEED_CAP = battle.agentId ? 100 : 50;
+
     // ---- Strategy preset config (Sprint 4) ----
     const presetConfig = getPresetConfig(battle.strategyPreset || 'balanced');
 
@@ -195,7 +198,9 @@ async function processAgentBattle(db, battle, summary) {
     ].filter(Boolean);
     const benchSymbols = benchAssets.map(a => a.symbol).filter(Boolean);
     const macroSymbols = ['SPY', 'QQQ', 'BTC-USD.CC'];
-    const allSymbols = [...new Set([...portfolioSymbols, ...benchSymbols, ...macroSymbols])];
+    // Expand with watchlist hotBench for open universe trading (may be updated by daily refresh)
+    let hotBenchSymbols = battle.watchlist?.hotBench || [];
+    const allSymbols = [...new Set([...portfolioSymbols, ...benchSymbols, ...hotBenchSymbols, ...macroSymbols])];
 
     // ---- Fetch prices ----
     const prices = {};
@@ -309,17 +314,97 @@ async function processAgentBattle(db, battle, summary) {
       console.warn(`${LOG_PREFIX} Intraday fetch failed:`, intradayResult.reason?.message);
     }
 
-    // Process stockRankings → bandwidth/NR7
+    // Process stockRankings → bandwidth/NR7 + build hotBench asset map
+    const hotBenchAssetMap = {};
+    let stockRankingsArray = [];
     if (rankingsResult.status === 'fulfilled' && rankingsResult.value.exists) {
-      const stocksArray = rankingsResult.value.data()?.stocks || [];
-      for (const stock of stocksArray) {
-        if (portfolioSymbols.includes(stock.symbol) || benchSymbols.includes(stock.symbol)) {
+      stockRankingsArray = rankingsResult.value.data()?.stocks || [];
+
+      // ---- Daily watchlist refresh (lightweight, rankings-based) ----
+      const lastEvalDay = battle.cronState?.lastEvalTradingDay || 0;
+      const isNewTradingDay = currentDay > lastEvalDay && currentDay >= 1;
+
+      if (isNewTradingDay && battle.watchlist) {
+        const portfolioSet = new Set(portfolioSymbols);
+        const benchSet = new Set(benchSymbols);
+        const candidates = stockRankingsArray
+          .filter(s => !portfolioSet.has(s.symbol) && !benchSet.has(s.symbol))
+          .sort((a, b) => (b.baggerBombFit || 0) - (a.baggerBombFit || 0));
+
+        const newHotBench = candidates.slice(0, 15).map(s => s.symbol);
+        const hotBenchSetRefresh = new Set(newHotBench);
+        const newMonitoring = candidates
+          .filter(s => !hotBenchSetRefresh.has(s.symbol))
+          .slice(0, 18)
+          .map(s => s.symbol);
+
+        const refreshedWatchlist = {
+          active: portfolioSymbols,
+          hotBench: newHotBench,
+          monitoring: newMonitoring,
+          lastRefreshed: new Date().toISOString(),
+          totalStocks: portfolioSymbols.length + newHotBench.length + newMonitoring.length,
+        };
+
+        scoreUpdate.watchlist = refreshedWatchlist;
+        battle.watchlist = refreshedWatchlist;
+        // Update hotBenchSymbols for this eval cycle
+        hotBenchSymbols = newHotBench;
+
+        statusFeedEntries.push({
+          timestamp: new Date().toISOString(),
+          message: `Daily watchlist refresh: ${newHotBench.length} hotBench, ${newMonitoring.length} monitoring stocks updated`,
+          action: 'watchlist_refresh',
+        });
+        scoreUpdate['cronState.lastEvalTradingDay'] = currentDay;
+
+        // Fetch prices for any new hotBench tickers not already fetched
+        const newTickersNeedingPrices = newHotBench.filter(t => !prices[t]);
+        if (newTickersNeedingPrices.length > 0) {
+          await Promise.allSettled(newTickersNeedingPrices.map(async (symbol) => {
+            try {
+              const data = await getStockAnalysisData(symbol, { forceRefresh: true, fields: ['daily'] });
+              if (data?.price) prices[symbol] = data.price;
+            } catch (_e) { /* skip — best effort */ }
+          }));
+        }
+      } else if (!isNewTradingDay && currentDay >= 1) {
+        // Not a new day — just track the day if not yet set
+        if (!battle.cronState?.lastEvalTradingDay) {
+          scoreUpdate['cronState.lastEvalTradingDay'] = currentDay;
+        }
+      }
+
+      const hotBenchSet = new Set(hotBenchSymbols);
+      const existingBenchSet = new Set(benchSymbols);
+
+      for (const stock of stockRankingsArray) {
+        if (portfolioSymbols.includes(stock.symbol) || benchSymbols.includes(stock.symbol) || hotBenchSet.has(stock.symbol)) {
           momentumData.rankings[stock.symbol] = {
             bBandwidthPercentile: stock.bBandwidthPercentile ?? null,
             nr7Flag: stock.nr7Flag ?? false,
             dailyRange: stock.dailyRange ?? null,
           };
         }
+        // Build synthetic bench assets for hotBench stocks not already in bench
+        if (hotBenchSet.has(stock.symbol) && !existingBenchSet.has(stock.symbol)) {
+          hotBenchAssetMap[stock.symbol] = {
+            symbol: stock.symbol,
+            name: stock.name || stock.symbol,
+            baseATR: stock.baseATR || (stock.atrPercentile ? stock.atrPercentile * 8 : 2.5),
+            isCrypto: false,
+            sector: stock.sectorName || 'Unknown',
+          };
+        }
+      }
+
+      // Merge hotBench assets into battle bench for prompt assembly + validation
+      if (Object.keys(hotBenchAssetMap).length > 0) {
+        const originalBenchStocks = battle.portfolio?.bench?.stocks || [];
+        battle.portfolio.bench.stocks = [
+          ...originalBenchStocks,
+          ...Object.values(hotBenchAssetMap),
+        ];
       }
     }
 
@@ -470,7 +555,7 @@ async function processAgentBattle(db, battle, summary) {
       scoreUpdate['cronState.evaluatingAt'] = null;
       scoreUpdate['cronState.vwapTicks'] = vwapTicks;
       const existingFeed = battle.statusFeed || [];
-      scoreUpdate.statusFeed = [...existingFeed, ...statusFeedEntries].slice(-50);
+      scoreUpdate.statusFeed = [...existingFeed, ...statusFeedEntries].slice(-STATUS_FEED_CAP);
       await battleRef.update(scoreUpdate);
       summary.evaluated++;
       summary.held++;
@@ -484,7 +569,7 @@ async function processAgentBattle(db, battle, summary) {
       scoreUpdate['cronState.evaluatingAt'] = null;
       scoreUpdate['cronState.vwapTicks'] = vwapTicks;
       const existingFeed = battle.statusFeed || [];
-      scoreUpdate.statusFeed = [...existingFeed, ...statusFeedEntries].slice(-50);
+      scoreUpdate.statusFeed = [...existingFeed, ...statusFeedEntries].slice(-STATUS_FEED_CAP);
       await battleRef.update(scoreUpdate);
       summary.evaluated++;
       summary.held++;
@@ -508,16 +593,59 @@ async function processAgentBattle(db, battle, summary) {
         scoreUpdate['cronState.evaluatingAt'] = null;
         scoreUpdate['cronState.vwapTicks'] = vwapTicks;
         const existingFeed = battle.statusFeed || [];
-        scoreUpdate.statusFeed = [...existingFeed, ...statusFeedEntries].slice(-50);
+        scoreUpdate.statusFeed = [...existingFeed, ...statusFeedEntries].slice(-STATUS_FEED_CAP);
         await battleRef.update(scoreUpdate);
         summary.evaluated++;
         return;
       }
     }
 
-    // ---- Fetch news for trigger gate (portfolio + bench tickers) ----
-    const allNewsTickers = [...new Set([...portfolioSymbols, ...benchSymbols])];
+    // ---- Fetch news for trigger gate (portfolio + bench + hotBench tickers) ----
+    const allNewsTickers = [...new Set([...portfolioSymbols, ...benchSymbols, ...hotBenchSymbols])];
     const news = await fetchRecentNews(db, allNewsTickers);
+
+    // ---- Catalyst override: add stocks from FantasyTimes stories not in eval set ----
+    const evalTickerSet = new Set([...portfolioSymbols, ...benchSymbols, ...hotBenchSymbols]);
+    const catalystTickers = [];
+    for (const story of news) {
+      for (const ticker of (story.tickers || [])) {
+        if (!evalTickerSet.has(ticker) && !catalystTickers.includes(ticker)) {
+          catalystTickers.push(ticker);
+        }
+      }
+    }
+    if (catalystTickers.length > 0) {
+      const limitedCatalysts = catalystTickers.slice(0, 5);
+      for (const ticker of limitedCatalysts) {
+        const rankingData = stockRankingsArray.find(s => s.symbol === ticker);
+        if (rankingData && !hotBenchAssetMap[ticker]) {
+          hotBenchAssetMap[ticker] = {
+            symbol: ticker,
+            name: rankingData.name || ticker,
+            baseATR: rankingData.baseATR || (rankingData.atrPercentile ? rankingData.atrPercentile * 8 : 2.5),
+            isCrypto: false,
+            sector: rankingData.sectorName || 'Unknown',
+          };
+          // Add to bench for this eval cycle
+          battle.portfolio.bench.stocks.push(hotBenchAssetMap[ticker]);
+          // Fetch price if not already fetched
+          if (!prices[ticker]) {
+            try {
+              const data = await getStockAnalysisData(ticker, { forceRefresh: true, fields: ['daily'] });
+              if (data?.price) prices[ticker] = data.price;
+            } catch (_e) { /* skip — catalyst is best-effort */ }
+          }
+        }
+      }
+      const addedCatalysts = limitedCatalysts.filter(t => hotBenchAssetMap[t]);
+      if (addedCatalysts.length > 0) {
+        statusFeedEntries.push({
+          timestamp: new Date().toISOString(),
+          message: `Catalyst detected: ${addedCatalysts.join(', ')} added to watchlist via FantasyTimes`,
+          action: 'catalyst_override',
+        });
+      }
+    }
 
     // ---- Evaluate triggers ----
     const seenStoryIds = battle.cronState?.seenStoryIds || [];
@@ -537,7 +665,7 @@ async function processAgentBattle(db, battle, summary) {
       scoreUpdate['cronState.vwapTicks'] = vwapTicks;
       if (statusFeedEntries.length > 0) {
         const existingFeed = battle.statusFeed || [];
-        scoreUpdate.statusFeed = [...existingFeed, ...statusFeedEntries].slice(-50);
+        scoreUpdate.statusFeed = [...existingFeed, ...statusFeedEntries].slice(-STATUS_FEED_CAP);
       }
       await battleRef.update(scoreUpdate);
       summary.evaluated++;
@@ -790,7 +918,7 @@ async function processAgentBattle(db, battle, summary) {
 
     // Cap statusFeed at 50 entries
     const existingFeed = battle.statusFeed || [];
-    const updatedFeed = [...existingFeed, ...statusFeedEntries].slice(-50);
+    const updatedFeed = [...existingFeed, ...statusFeedEntries].slice(-STATUS_FEED_CAP);
 
     const finalUpdate = {
       ...scoreUpdate,
