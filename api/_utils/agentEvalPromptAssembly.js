@@ -4,6 +4,12 @@
 
 import { getETDate, formatDateString } from './marketSchedule.js';
 import { flattenPortfolioServer, flattenBenchServer } from './agentScoring.js';
+import {
+  computeGameContext,
+  rankAndSelectStories,
+  buildNewsIntelligenceBlock,
+  buildBareNewsBlock,
+} from './agentNewsContext.js';
 
 // ==================== SYSTEM PROMPT ====================
 
@@ -404,14 +410,26 @@ ${triggerLines}`);
     if (riskLines) parts.push(riskLines);
   }
 
-  // 3f. News Context
+  // 3f. News Context — enhanced with reporter intelligence when Forge rules are equipped
   if (news && news.length > 0) {
-    const newsLines = news.map(s => {
-      const ago = getTimeAgo(s.publishedAt);
-      return `- [${s.reporterName || s.reporter}, ${ago}, ${s.sentiment || 'neutral'}] "${s.headline}" | Tickers: ${(s.tickers || []).join(', ')}`;
-    }).join('\n');
-    parts.push(`FANTASYTIMES BREAKING NEWS:
-${newsLines}`);
+    const activeRules = battle.agentContext?.activeRules || [];
+    if (activeRules.length > 0) {
+      try {
+        const portfolioSymbols = (flattenPortfolioServer(battle.portfolio) || []).map(a => a.symbol).filter(Boolean);
+        const rankedStories = rankAndSelectStories(news, activeRules, portfolioSymbols, 3);
+        const gameContext = computeGameContext(battle);
+        const newsBlock = buildNewsIntelligenceBlock(rankedStories, activeRules, gameContext);
+        if (newsBlock) parts.push(newsBlock);
+      } catch (err) {
+        console.warn('[PromptAssembly] News intelligence block failed, falling back to bare headlines:', err.message);
+        const bareBlock = buildBareNewsBlock(news);
+        if (bareBlock) parts.push(bareBlock);
+      }
+    } else {
+      // Fallback: bare headline format for agents without Forge rules
+      const bareBlock = buildBareNewsBlock(news);
+      if (bareBlock) parts.push(bareBlock);
+    }
   }
 
   // 3g. Recent Evaluation History
