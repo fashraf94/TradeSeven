@@ -234,6 +234,36 @@ export default async function handler(req, res) {
     // 9. Enrich with full asset data (convert tickers to V3 objects)
     const enrichedPortfolio = enrichPortfolio(portfolioResult, stockUniverse);
 
+    // 9b. Construct watchlist from Sonnet shortlist + stockRankings
+    const portfolioTickers = [
+      ...enrichedPortfolio.portfolio.star.map(a => a.symbol),
+      ...enrichedPortfolio.portfolio.core.map(a => a.symbol),
+      ...enrichedPortfolio.portfolio.support.map(a => a.symbol),
+    ].filter(Boolean);
+    const benchTickers = enrichedPortfolio.bench.stocks.map(a => a.symbol).filter(Boolean);
+    const selectedSet = new Set([...portfolioTickers, ...benchTickers]);
+
+    // HotBench: remaining shortlist tickers not in portfolio or bench (Sonnet conviction order)
+    const hotBench = strategy.shortlist
+      .filter(t => !selectedSet.has(t))
+      .slice(0, 15);
+
+    // Monitoring: top baggerBombFit stocks not already selected or in hotBench
+    const allSelectedSet = new Set([...selectedSet, ...hotBench]);
+    const monitoringPicks = stockUniverse
+      .filter(s => !allSelectedSet.has(s.symbol))
+      .sort((a, b) => (b.baggerBombFit || 0) - (a.baggerBombFit || 0))
+      .slice(0, 18)
+      .map(s => s.symbol);
+
+    const watchlist = {
+      active: portfolioTickers,
+      hotBench,
+      monitoring: monitoringPicks,
+      lastRefreshed: new Date().toISOString(),
+      totalStocks: portfolioTickers.length + hotBench.length + monitoringPicks.length,
+    };
+
     // 10. Write to Firestore + clear lock
     await agentRef.update({
       lastDecision: {
@@ -242,6 +272,7 @@ export default async function handler(req, res) {
         innerMonologue: portfolioResult.innerMonologue,
         strategyBrief: strategy.brief,
         shortlist: strategy.shortlist,
+        watchlist,
         createdAt: new Date().toISOString(),
         models: { strategy: 'sonnet-4', portfolio: 'haiku-4.5' },
       },
@@ -353,6 +384,7 @@ export default async function handler(req, res) {
         innerMonologue: portfolioResult.innerMonologue,
         strategyBrief: strategy.brief,
         shortlist: strategy.shortlist,
+        watchlist,
       },
     };
 
