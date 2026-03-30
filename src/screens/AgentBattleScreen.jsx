@@ -8,7 +8,7 @@
 
 import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronLeft, ChevronDown, Activity, Bot, Zap, Users, Hand, Flame, Scale, ShieldCheck } from 'lucide-react';
+import { ChevronLeft, Activity, Bot } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import useAgentBattleId from '../hooks/useAgentBattleId';
 import useAgentBattle from '../hooks/useAgentBattle';
@@ -333,65 +333,6 @@ function TabBar({ activeTab, onTabChange, hasCommandDot, commandDotColor, hasFil
   );
 }
 
-// ─── Collapsed Summary Strip ──────────────────────────────────────────────────
-
-const MODE_ICONS = { autopilot: Zap, copilot: Users, manual: Hand };
-const MODE_LABELS = { autopilot: 'Autopilot', copilot: 'Co-Pilot', manual: 'Manual' };
-const PRESET_ICONS = { aggressive: Flame, balanced: Scale, defensive: ShieldCheck };
-const PRESET_LABELS = { aggressive: 'Aggressive', balanced: 'Balanced', defensive: 'Defensive' };
-const PRESET_COLORS = { aggressive: '#f59e0b', balanced: '#5eead4', defensive: '#3b82f6' };
-
-function CollapsedSummary({ executionMode, strategyPreset, onExpand }) {
-  const mode = executionMode || 'copilot';
-  const preset = strategyPreset || 'balanced';
-  const ModeIcon = MODE_ICONS[mode] || Users;
-  const PresetIcon = PRESET_ICONS[preset] || Scale;
-  const presetColor = PRESET_COLORS[preset] || '#5eead4';
-
-  return (
-    <motion.button
-      onClick={onExpand}
-      whileTap={{ scale: 0.98 }}
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        width: '100%',
-        padding: '10px 14px',
-        margin: '0 12px',
-        maxWidth: 'calc(100% - 24px)',
-        borderRadius: 10,
-        border: 'none',
-        background: 'rgba(255, 255, 255, 0.04)',
-        cursor: 'pointer',
-        gap: 10,
-      }}
-    >
-      {/* Mode */}
-      <ModeIcon size={13} color="#5eead4" />
-      <span style={{ fontSize: 12, fontWeight: 600, color: '#5eead4' }}>
-        {MODE_LABELS[mode]}
-      </span>
-
-      {/* Separator */}
-      <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.2)' }}>•</span>
-
-      {/* Preset */}
-      <PresetIcon size={13} color={presetColor} />
-      <span style={{ fontSize: 12, fontWeight: 600, color: presetColor }}>
-        {PRESET_LABELS[preset]}
-      </span>
-
-      {/* Spacer + Chevron */}
-      <div style={{ flex: 1 }} />
-      <ChevronDown
-        size={14}
-        color="rgba(255,255,255,0.3)"
-        style={{ transition: 'transform 0.2s' }}
-      />
-    </motion.button>
-  );
-}
-
 // ─── Section Label ────────────────────────────────────────────────────────────
 
 function SectionLabel({ children }) {
@@ -418,7 +359,6 @@ export default function AgentBattleScreen({ battle, user, onBack }) {
 
   // Tab state
   const [activeTab, setActiveTab] = useState('matchups');
-  const [controlsExpanded, setControlsExpanded] = useState(true);
 
   // Modal state
   const [filterTicker, setFilterTicker] = useState(null);
@@ -792,9 +732,7 @@ export default function AgentBattleScreen({ battle, user, onBack }) {
         overflow: 'hidden',
         display: 'flex',
         flexDirection: 'column',
-        maxWidth: isDesktop ? 640 : undefined,
         width: '100%',
-        alignSelf: 'center',
       }}>
         <AnimatePresence mode="wait">
           {/* ── Matchups Tab ──────────────────────────────────────────── */}
@@ -810,6 +748,9 @@ export default function AgentBattleScreen({ battle, user, onBack }) {
                 overflowY: 'auto',
                 WebkitOverflowScrolling: 'touch',
                 paddingBottom: 32,
+                maxWidth: isDesktop ? 800 : undefined,
+                width: '100%',
+                alignSelf: 'center',
               }}
             >
               {TIERS.map(tier => (
@@ -853,41 +794,28 @@ export default function AgentBattleScreen({ battle, user, onBack }) {
                 overflow: 'hidden',
               }}
             >
-              {/* ─── Collapsible Controls Panel ─── */}
+              {/* ─── Controls Panel (always visible, centered) ─── */}
               <div style={{
                 flexShrink: 0,
                 borderBottom: '1px solid rgba(255,255,255,0.04)',
                 background: 'linear-gradient(180deg, rgba(94,234,212,0.03) 0%, transparent 100%)',
+                padding: isDesktop ? '10px 24px 8px' : '10px 14px 8px',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
               }}>
-                {controlsExpanded ? (
-                  <motion.div
-                    key="expanded"
-                    initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: 1, height: 'auto' }}
-                    exit={{ opacity: 0, height: 0 }}
-                    transition={{ type: 'spring', stiffness: 300, damping: 28 }}
-                    style={{ overflow: 'hidden', padding: isDesktop ? '10px 24px 8px' : '10px 14px 8px' }}
-                  >
-                    {/* Collapse toggle */}
-                    <button
-                      onClick={() => setControlsExpanded(false)}
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 4,
-                        background: 'none',
-                        border: 'none',
-                        cursor: 'pointer',
-                        padding: '0 0 8px',
-                        fontSize: 10,
-                        color: 'rgba(255,255,255,0.3)',
-                      }}
-                    >
-                      <ChevronDown size={12} style={{ transform: 'rotate(180deg)' }} />
-                      <span>Collapse</span>
-                    </button>
+                <div style={{ width: '100%', maxWidth: isDesktop ? 540 : undefined }}>
+                  {/* Strategy Posture section */}
+                  <SectionLabel>Strategy Posture</SectionLabel>
+                  <StrategyPresetBadge
+                    battleId={agentBattleId}
+                    strategyPreset={strategyPreset}
+                    tokens={tokens}
+                    disabled={isBattleCompleted}
+                  />
 
-                    {/* Execution Mode section */}
+                  {/* Execution Mode section */}
+                  <div style={{ marginTop: 14 }}>
                     <SectionLabel>Execution Mode</SectionLabel>
                     <ExecutionModeToggle
                       battleId={agentBattleId}
@@ -896,32 +824,13 @@ export default function AgentBattleScreen({ battle, user, onBack }) {
                       disabled={isBattleCompleted}
                       variant="cards"
                     />
-
-                    {/* Strategy Posture section */}
-                    <div style={{ marginTop: 14 }}>
-                      <SectionLabel>Strategy Posture</SectionLabel>
-                      <StrategyPresetBadge
-                        battleId={agentBattleId}
-                        strategyPreset={strategyPreset}
-                        tokens={tokens}
-                        disabled={isBattleCompleted}
-                      />
-                    </div>
-
-                    {/* Hypothesis ticker */}
-                    <div style={{ marginTop: 10 }}>
-                      <HypothesisTicker statusFeed={statusFeed} tokens={tokens} />
-                    </div>
-                  </motion.div>
-                ) : (
-                  <div style={{ padding: '6px 0' }}>
-                    <CollapsedSummary
-                      executionMode={executionMode}
-                      strategyPreset={strategyPreset}
-                      onExpand={() => setControlsExpanded(true)}
-                    />
                   </div>
-                )}
+
+                  {/* Hypothesis ticker */}
+                  <div style={{ marginTop: 10 }}>
+                    <HypothesisTicker statusFeed={statusFeed} tokens={tokens} />
+                  </div>
+                </div>
               </div>
 
               {/* ─── Activity Feed ─── */}
