@@ -7,6 +7,7 @@ import React, { useMemo, useEffect, useRef, useState } from 'react';
 import PropTypes from 'prop-types';
 import { motion } from 'framer-motion';
 import { HOLO_COLORS, GLOW_EFFECTS } from '../../constants/holoTheme';
+import { TUG_SPRING } from '../../constants/animationTokens';
 
 // Threshold multipliers (of baseATR)
 const MULTIPLIERS = {
@@ -439,7 +440,7 @@ export default function ChamberFuse({
           ...needlePulseAnimate,
         }}
         transition={{
-          left: { type: 'spring', stiffness: 80, damping: 15 },
+          left: TUG_SPRING,
           x: isPrimed ? { duration: 0.2 + (0.15 * (1 - primedIntensity)), repeat: Infinity, ease: 'easeInOut' } : { duration: 0 },
           scale: { duration: 0.2 },
           boxShadow: needlePulseTransition,

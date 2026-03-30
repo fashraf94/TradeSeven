@@ -558,12 +558,22 @@ img, video, canvas, svg {
   100% { opacity: 0.22; transform: scale(1.05) translate(-48%, -48%); }
 }
 
+/* Threshold Heat — breathing animation for proximity text */
+@keyframes thresholdBreath {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
 /* Reduced Motion Support */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+  }
+
+  .threshold-breathing {
+    animation: none !important;
   }
 }
 

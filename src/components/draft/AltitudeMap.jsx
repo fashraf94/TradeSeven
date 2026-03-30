@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect, useRef } from 'react';
 import { HOLO_COLORS } from '../../constants/holoTheme';
 import TacticalPod from './TacticalPod';
 import OvertakeCallout from './OvertakeCallout';
@@ -34,6 +34,44 @@ const AltitudeMap = ({
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
+
+  // ---- Dynamic river glow: intensity tracks aggregate score momentum ----
+  const prevTotalRef = useRef(null);
+  const glowTargetRef = useRef(0.3); // baseline
+  const [glowIntensity, setGlowIntensity] = useState(0.3);
+
+  // Compute aggregate total and set target intensity
+  useEffect(() => {
+    const totalPoints = standings.reduce((sum, p) => sum + (p.totalPoints || 0), 0);
+    if (prevTotalRef.current !== null) {
+      const delta = Math.abs(totalPoints - prevTotalRef.current);
+      // Map delta to intensity: 0 delta → 0.3 baseline, 10+ delta → 1.0
+      glowTargetRef.current = Math.min(1.0, 0.3 + (delta / 10) * 0.7);
+    }
+    prevTotalRef.current = totalPoints;
+  }, [standings]);
+
+  // Lerp glowIntensity toward target at 10% per 100ms tick
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setGlowIntensity(prev => {
+        const target = glowTargetRef.current;
+        const diff = target - prev;
+        if (Math.abs(diff) < 0.01) {
+          // Decay target back to baseline when settled
+          glowTargetRef.current = Math.max(0.3, glowTargetRef.current - 0.02);
+          return target;
+        }
+        return prev + diff * 0.1;
+      });
+    }, 100);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Derive SVG animate values from intensity
+  const glowOpacityLow = (0.15 + (glowIntensity - 0.3) * 0.14).toFixed(3);  // 0.15 → 0.25
+  const glowOpacityHigh = (0.30 + (glowIntensity - 0.3) * 0.29).toFixed(3); // 0.30 → 0.50
+  const glowScale = 1 + (glowIntensity - 0.3) * 0.114; // max ~1.08
 
   // Minimum vertical separation between pods (in pixels)
   const MIN_POD_SEPARATION = isMobile ? 95 : 130;
@@ -420,25 +458,27 @@ const AltitudeMap = ({
         {/* The snake path — layered: glow → main → centerline */}
         {snakePath && (
           <>
-            {/* Wide pulsing glow layer */}
-            <path
-              d={snakePath}
-              fill="none"
-              stroke="url(#snakeGradient)"
-              strokeWidth="15"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              filter="url(#riverGlow)"
-            >
-              <animate
-                attributeName="opacity"
-                values="0.15;0.3;0.15"
-                dur="3s"
-                repeatCount="indefinite"
-                calcMode="spline"
-                keySplines="0.4 0 0.6 1;0.4 0 0.6 1"
-              />
-            </path>
+            {/* Wide pulsing glow layer — intensity tracks score momentum */}
+            <g style={{ transform: `scale(${glowScale})`, transformOrigin: 'center' }}>
+              <path
+                d={snakePath}
+                fill="none"
+                stroke="url(#snakeGradient)"
+                strokeWidth="15"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                filter="url(#riverGlow)"
+              >
+                <animate
+                  attributeName="opacity"
+                  values={`${glowOpacityLow};${glowOpacityHigh};${glowOpacityLow}`}
+                  dur="3s"
+                  repeatCount="indefinite"
+                  calcMode="spline"
+                  keySplines="0.4 0 0.6 1;0.4 0 0.6 1"
+                />
+              </path>
+            </g>
 
             {/* Main river path */}
             <path
@@ -569,6 +609,7 @@ const AltitudeMap = ({
               onScout={onScoutPlayer}
               isBeingScouted={isBeingScouted}
               isFlashing={flashingPods?.has(player.odUserId)}
+              isConverging={player.isConverging || false}
             />
           </div>
         );
