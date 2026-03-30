@@ -10,81 +10,82 @@ import { updateAgent } from '../../services/agentService';
 
 // ── Question-to-rule mapping ─────────────────────────────────
 
+const STYLE_RULES = {
+  momentum: [
+    { id: 'tech-moving-average-trend', params: {} },
+    { id: 'tech-bollinger-squeeze', params: {} },
+  ],
+  value: [
+    { id: 'fund-value-pe', params: {} },
+    { id: 'fund-earnings-surprise', params: {} },
+  ],
+  contrarian: [
+    { id: 'tech-rsi-oversold', params: {} },
+    { id: 'tech-rsi-overbought', params: {} },
+  ],
+};
+
 const RISK_RULES = {
-  conservative: [
-    { id: 'risk-sector-diversification', params: { n: 4 } },
-    { id: 'risk-volatility-avoidance', params: {} },
+  safe: [
+    { id: 'risk-sector-diversification', params: {} },
+    { id: 'risk-single-stock-limit', params: {} },
   ],
   balanced: [
     { id: 'risk-sector-diversification', params: {} },
   ],
-  aggressive: [
-    { id: 'risk-sector-diversification', params: { n: 2 } },
-  ],
+  yolo: [],
 };
 
-const SECTOR_RULES = {
-  technology: [
-    { id: 'alloc-sector-cap', params: { sector: 'Technology', pct: 50 } },
-    { id: 'fund-revenue-growth', params: {} },
-  ],
-  healthcare: [
-    { id: 'alloc-sector-cap', params: { sector: 'Healthcare', pct: 50 } },
-    { id: 'fund-financial-health', params: {} },
-  ],
-  finance: [
-    { id: 'alloc-sector-cap', params: { sector: 'Financials', pct: 50 } },
-    { id: 'fund-bank-pb', params: {} },
-  ],
-  energy: [
-    { id: 'alloc-sector-cap', params: { sector: 'Energy', pct: 50 } },
-    { id: 'fund-financial-health', params: {} },
-  ],
-  no_preference: [
+const ALLOC_RULES = {
+  even: [
     { id: 'alloc-even-spread', params: {} },
-    { id: 'fund-earnings-surprise', params: {} },
+  ],
+  conviction: [
+    { id: 'alloc-tier-preference', params: {} },
+    { id: 'alloc-sector-cap', params: {} },
+  ],
+  mixed: [
+    { id: 'alloc-sector-minimum', params: {} },
   ],
 };
 
-const GAME_RULES = {
-  baggerbomb: [{ id: 'tech-rsi-oversold', params: {} }],
-  snake_draft: [{ id: 'tech-relative-strength', params: {} }],
-  both: [{ id: 'tech-moving-average-trend', params: {} }],
+const BUNDLE_NAMES = {
+  momentum: 'Momentum Strategy',
+  value: 'Value Strategy',
+  contrarian: 'Contrarian Strategy',
 };
 
 // ── Questions config ─────────────────────────────────────────
 
 const QUESTIONS = [
   {
-    key: 'risk',
-    title: 'How should your agent play?',
+    key: 'style',
+    title: "What's your style?",
     subtitle: 'Step 1 of 3',
     options: [
-      { value: 'conservative', emoji: '\u{1F6E1}\uFE0F', label: 'Conservative', desc: "Protect my portfolio. I'd rather miss a big win than take a big loss." },
-      { value: 'balanced', emoji: '\u2696\uFE0F', label: 'Balanced', desc: 'Mix of safety and opportunity. I want steady growth.' },
-      { value: 'aggressive', emoji: '\u{1F680}', label: 'Aggressive', desc: "Swing for the fences. I'm okay with risk for bigger rewards." },
+      { value: 'momentum', emoji: '\u{1F4C8}', label: 'I chase momentum', desc: 'Ride trends and breakouts when stocks are moving fast' },
+      { value: 'value', emoji: '\u{1F48E}', label: 'I hunt for value', desc: 'Find undervalued companies with strong earnings potential' },
+      { value: 'contrarian', emoji: '\u{1F504}', label: 'I go against the crowd', desc: 'Buy when others panic, sell when others get greedy' },
     ],
   },
   {
-    key: 'sector',
-    title: 'How should your agent focus?',
+    key: 'risk',
+    title: 'How much risk is okay?',
     subtitle: 'Step 2 of 3',
     options: [
-      { value: 'technology', emoji: '\u{1F4BB}', label: 'Technology', desc: 'AI, software, semiconductors' },
-      { value: 'healthcare', emoji: '\u{1F48A}', label: 'Healthcare', desc: 'Biotech, pharma, medical devices' },
-      { value: 'finance', emoji: '\u{1F3E6}', label: 'Finance', desc: 'Banks, fintech, insurance' },
-      { value: 'energy', emoji: '\u26A1', label: 'Energy', desc: 'Oil, renewables, utilities' },
-      { value: 'no_preference', emoji: '\u{1F310}', label: 'No preference', desc: 'I want to explore everything' },
+      { value: 'safe', emoji: '\u{1F6E1}\uFE0F', label: 'Keep it safe', desc: 'Diversify across sectors and limit exposure to any single stock' },
+      { value: 'balanced', emoji: '\u2696\uFE0F', label: 'Balanced', desc: "Spread picks across sectors but don't overthink it" },
+      { value: 'yolo', emoji: '\u{1F525}', label: 'Let it ride', desc: 'No guardrails \u2014 your agent trades with full conviction' },
     ],
   },
   {
-    key: 'game',
-    title: 'What will you play most?',
+    key: 'alloc',
+    title: 'How should your agent allocate?',
     subtitle: 'Step 3 of 3',
     options: [
-      { value: 'baggerbomb', emoji: '\u{1F4A5}', label: 'BaggerBomb', desc: '1v1 battles. I want explosive picks.' },
-      { value: 'snake_draft', emoji: '\u{1F40D}', label: 'Snake Draft', desc: 'Draft competitions. I want well-rounded teams.' },
-      { value: 'both', emoji: '\u{1F3AF}', label: 'Both / Not sure', desc: 'I want a general strategy.' },
+      { value: 'even', emoji: '\u{1F4CA}', label: 'Spread it evenly', desc: 'Equal weight across all picks \u2014 no favorites' },
+      { value: 'conviction', emoji: '\u{1F3AF}', label: 'Bet big on the best', desc: 'Overweight your strongest conviction picks' },
+      { value: 'mixed', emoji: '\u{1F500}', label: 'Mix safe and risky', desc: 'Balance some safe picks with some volatile ones' },
     ],
   },
 ];
@@ -120,12 +121,12 @@ function resolveRuleText(templateId, paramOverrides) {
 }
 
 function buildSelectedRules(answers) {
-  const { risk, sector, game } = answers;
-  if (!risk || !sector || !game) return [];
+  const { style, risk, alloc } = answers;
+  if (!style || !risk || !alloc) return [];
   return [
+    ...STYLE_RULES[style],
     ...RISK_RULES[risk],
-    ...SECTOR_RULES[sector],
-    ...GAME_RULES[game],
+    ...ALLOC_RULES[alloc],
   ];
 }
 
@@ -322,7 +323,7 @@ function RulePreviewCard({ rule, index, onSwap, swapOpen, alternatives, onSwapSe
 
 export default function StarterKit({ agentId, agent, forge, tokens, isMobile, onComplete, onSkip }) {
   const [step, setStep] = useState(0);
-  const [answers, setAnswers] = useState({ risk: null, sector: null, game: null });
+  const [answers, setAnswers] = useState({ style: null, risk: null, alloc: null });
   const [selectedRules, setSelectedRules] = useState([]);
   const [forging, setForging] = useState(false);
   const [forgingDone, setForgingDone] = useState(false);
@@ -401,7 +402,8 @@ export default function StarterKit({ agentId, agent, forge, tokens, isMobile, on
       }
 
       // 2. Create bundle
-      const bundleId = await createBundle(agentId, { name: 'Starter Strategy' });
+      const bundleName = BUNDLE_NAMES[answers.style] || 'Starter Strategy';
+      const bundleId = await createBundle(agentId, { name: bundleName });
 
       // 3. Add rules to bundle
       for (const ruleId of ruleIds) {
@@ -483,7 +485,7 @@ export default function StarterKit({ agentId, agent, forge, tokens, isMobile, on
               Your First Strategy
             </h2>
             <p style={{ fontSize: '14px', color: tokens.textMuted, margin: 0 }}>
-              {selectedRules.length} rules &middot; &ldquo;Starter Strategy&rdquo;
+              {selectedRules.length} rules &middot; &ldquo;{BUNDLE_NAMES[answers.style] || 'Starter Strategy'}&rdquo;
             </p>
           </div>
 
