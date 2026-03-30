@@ -15,6 +15,8 @@ import { FORGE_LIMITS } from '../../constants/agentProgression';
 import { getAgentLevel } from '../../constants/agentProgression';
 import ForgeRuleCard from './ForgeRuleCard';
 import RuleDetailSheet from './RuleDetailSheet';
+import CenteredModal from '../shared/CenteredModal';
+import StarterKit from './StarterKit';
 
 // ── Icon lookup for collection definitions ──────────────────────────
 const COLLECTION_ICONS = {
@@ -232,6 +234,7 @@ function FullLibraryView({ forge, tokens, isMobile, onBack }) {
 export default function DiscoverTab({ isMobile, forge, tokens, agent }) {
   const [showFullLibrary, setShowFullLibrary] = useState(false);
   const [selectedRule, setSelectedRule] = useState(null);
+  const [showStarterKitModal, setShowStarterKitModal] = useState(false);
 
   // Determine which rule IDs are already collected
   const collectedRuleSourceRefs = useMemo(() => {
@@ -381,9 +384,7 @@ export default function DiscoverTab({ isMobile, forge, tokens, agent }) {
           <button
             onClick={() => {
               if (showStarterKit) {
-                // Starter Kit guided flow not yet implemented —
-                // send user to full library as interim action
-                setShowFullLibrary(true);
+                setShowStarterKitModal(true);
               } else {
                 const el = document.getElementById('collection-momentum-hunter');
                 if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -401,7 +402,7 @@ export default function DiscoverTab({ isMobile, forge, tokens, agent }) {
               cursor: 'pointer',
             }}
           >
-            {showStarterKit ? 'Browse Rules' : 'Explore'}
+            {showStarterKit ? 'Get Started' : 'Explore'}
           </button>
 
           {/* Watermark icon */}
@@ -542,6 +543,31 @@ export default function DiscoverTab({ isMobile, forge, tokens, agent }) {
           />
         )}
       </AnimatePresence>
+
+      {/* Starter Kit Modal */}
+      <CenteredModal
+        isOpen={showStarterKitModal}
+        onClose={() => setShowStarterKitModal(false)}
+        title="Build Your Strategy"
+      >
+        <div style={{ padding: '0 20px 20px', maxHeight: '65vh', overflowY: 'auto' }}>
+          <StarterKit
+            agentId={agent?.id}
+            agent={agent}
+            forge={forge}
+            tokens={tokens}
+            isMobile={isMobile}
+            onComplete={() => {
+              setShowStarterKitModal(false);
+              forge.reloadData();
+            }}
+            onSkip={() => {
+              setShowStarterKitModal(false);
+              forge.reloadData();
+            }}
+          />
+        </div>
+      </CenteredModal>
     </div>
   );
 }
