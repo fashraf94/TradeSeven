@@ -2,7 +2,7 @@
 // Renders: score header (tug-of-war layout), portfolio strip, controls, hypothesis ticker
 // Bottom section is a placeholder for Phase 2 activity feed.
 
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronLeft, Activity, TrendingUp, Bot } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
@@ -272,11 +272,13 @@ export default function AgentBattleScreen({ battle, user, onBack }) {
   const isBattleCompleted = agentBattle?.status === 'completed';
 
   // Film Room mode: activates after market close (4 PM ET), weekends, holidays, or battle completed
-  const isFilmRoom = useMemo(() => {
-    if (isBattleCompleted) return true;
-    const { state } = getMarketState();
-    return state === 'CLOSED_AFTERHOURS' || state === 'CLOSED_WEEKEND' || state === 'CLOSED_HOLIDAY';
-  }, [isBattleCompleted]);
+  // Not memoized — getMarketState() is cheap and must recompute on every render
+  // so the mode switches promptly when the market closes.
+  const { state: marketState } = getMarketState();
+  const isFilmRoom = isBattleCompleted
+    || marketState === 'CLOSED_AFTERHOURS'
+    || marketState === 'CLOSED_WEEKEND'
+    || marketState === 'CLOSED_HOLIDAY';
 
   const handleTickerTap = useCallback((symbol) => {
     setFilterTicker(prev => prev === symbol ? null : symbol);
