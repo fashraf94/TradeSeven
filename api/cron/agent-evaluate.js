@@ -271,6 +271,9 @@ async function processAgentBattle(db, battle, summary) {
       scoreUpdate['scoreState.peakScoreAt'] = new Date().toISOString();
     }
 
+    // ---- Status feed entries (declared early — referenced by watchlist refresh + risk layer) ----
+    const statusFeedEntries = [];
+
     // ---- Update threshold history ----
     const updatedThresholdHistory = { ...(battle.thresholdHistory || {}) };
     for (const score of assetScores) {
@@ -440,7 +443,6 @@ async function processAgentBattle(db, battle, summary) {
     const riskStatus = {};
     const riskSwaps = [];
     const lockedPositions = new Set();
-    const statusFeedEntries = [];
     const vwapTicks = { ...(battle.cronState?.vwapTicks || {}) };
 
     for (const score of assetScores) {
@@ -652,7 +654,7 @@ async function processAgentBattle(db, battle, summary) {
     const { shouldEvaluate, triggers, newStoryIds } = evaluateTriggers(battle, assetScores, prices, news, momentumData, seenStoryIds);
 
     // Persist any new story IDs to prevent re-triggering (cap at 50)
-    if (newStoryIds.length > 0) {
+    if (newStoryIds?.length > 0) {
       const updatedSeenIds = [...seenStoryIds, ...newStoryIds].slice(-50);
       scoreUpdate['cronState.seenStoryIds'] = updatedSeenIds;
     }
