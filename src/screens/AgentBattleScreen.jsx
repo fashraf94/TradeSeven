@@ -27,7 +27,8 @@ import ClosedTradesSection from '../components/BaggerBomb/ClosedTradesSection';
 import { useWebSocketPrices } from '../hooks/useWebSocketPrices';
 import { stockAPI, POPULAR_CRYPTO } from '../services/eodhdAPI';
 import { calculateAssetScoreV3 } from '../utils/baggerBombUtils';
-import { DEFAULT_THRESHOLD } from '../utils/researchAssetBuilder';
+import { DEFAULT_THRESHOLD, buildResearchAsset } from '../utils/researchAssetBuilder';
+import AssetResearchModal from '../components/draft/AssetResearchModal';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -366,6 +367,7 @@ export default function AgentBattleScreen({ battle, user, onBack }) {
   const [debateSymbol, setDebateSymbol] = useState(null);
   const [citationOpen, setCitationOpen] = useState(false);
   const [citationRuleId, setCitationRuleId] = useState(null);
+  const [researchAsset, setResearchAsset] = useState(null);
 
   // Price state
   const [currentPrices, setCurrentPrices] = useState({});
@@ -612,6 +614,21 @@ export default function AgentBattleScreen({ battle, user, onBack }) {
     setCitationOpen(true);
   }, []);
 
+  const handleSymbolClick = useCallback((asset) => {
+    setResearchAsset(asset);
+  }, []);
+
+  // Memoize enriched research asset to avoid re-renders on every price tick
+  const stableResearchAsset = useMemo(() => {
+    if (!researchAsset) return null;
+    return buildResearchAsset(researchAsset, {
+      livePrices: effectivePrices,
+      thresholds,
+      startingPrices,
+      useDefaultThreshold: true,
+    });
+  }, [researchAsset, effectivePrices, thresholds, startingPrices]);
+
   // ── Loading state ─────────────────────────────────────────────────────────
 
   if (loading && !agentBattle) {
@@ -747,10 +764,7 @@ export default function AgentBattleScreen({ battle, user, onBack }) {
                 flex: 1,
                 overflowY: 'auto',
                 WebkitOverflowScrolling: 'touch',
-                paddingBottom: 32,
-                maxWidth: isDesktop ? 800 : undefined,
-                width: '100%',
-                alignSelf: 'center',
+                paddingBottom: 100,
               }}
             >
               {TIERS.map(tier => (
@@ -764,6 +778,7 @@ export default function AgentBattleScreen({ battle, user, onBack }) {
                       tier={tier.key}
                       allocationLabel={`${tier.emoji} ${tier.allocation}`}
                       isCryptoSlot={tier.hasCrypto && i === tier.slots - 1}
+                      onSymbolClick={handleSymbolClick}
                     />
                   ))}
                 </div>
@@ -907,6 +922,19 @@ export default function AgentBattleScreen({ battle, user, onBack }) {
         statusFeed={statusFeed}
         tokens={tokens}
       />
+
+      {stableResearchAsset && (
+        <AssetResearchModal
+          asset={stableResearchAsset}
+          onClose={() => setResearchAsset(null)}
+          showActionButton={false}
+          isGameContext={true}
+          version={2}
+          defaultTab="baggerbomb"
+          defaultTimeframe="bomb"
+          wsPrice={effectivePrices[stableResearchAsset?.symbol]}
+        />
+      )}
     </div>
   );
 }
