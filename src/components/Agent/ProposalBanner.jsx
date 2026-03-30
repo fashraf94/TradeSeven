@@ -316,8 +316,10 @@ export default function ProposalBanner({
             style={{
               position: 'fixed',
               bottom: 80,
-              left: 12,
-              right: 12,
+              left: '50%',
+              transform: 'translateX(-50%)',
+              width: 'calc(100% - 24px)',
+              maxWidth: 576,
               zIndex: 999,
               borderRadius: 16,
               background: 'rgba(13,14,18,0.95)',
@@ -504,6 +506,7 @@ export default function ProposalBanner({
                     <motion.button
                       onClick={handleApprove}
                       disabled={resolving || msRemaining <= 0}
+                      aria-label="Approve proposed trade"
                       whileTap={resolving ? {} : { scale: 0.97 }}
                       style={{
                         flex: 1,
@@ -511,7 +514,8 @@ export default function ProposalBanner({
                         alignItems: 'center',
                         justifyContent: 'center',
                         gap: 6,
-                        padding: '10px',
+                        padding: '12px 10px',
+                        minHeight: 44,
                         borderRadius: 10,
                         border: 'none',
                         background: `linear-gradient(135deg, ${tokens.teal || '#5eead4'}, #0d9488)`,
@@ -530,6 +534,7 @@ export default function ProposalBanner({
                     <motion.button
                       onClick={() => setShowVetoReasons(true)}
                       disabled={resolving || msRemaining <= 0}
+                      aria-label="Veto proposed trade"
                       whileTap={resolving ? {} : { scale: 0.97 }}
                       style={{
                         flex: 1,
@@ -537,7 +542,8 @@ export default function ProposalBanner({
                         alignItems: 'center',
                         justifyContent: 'center',
                         gap: 6,
-                        padding: '10px',
+                        padding: '12px 10px',
+                        minHeight: 44,
                         borderRadius: 10,
                         border: `1px solid ${hexToRgba(tokens.red || '#ef4444', 0.3)}`,
                         background: hexToRgba(tokens.red || '#ef4444', 0.06),

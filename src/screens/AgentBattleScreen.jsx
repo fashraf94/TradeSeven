@@ -3,7 +3,7 @@
 // Bottom section is a placeholder for Phase 2 activity feed.
 
 import React, { useState, useCallback, useMemo } from 'react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronLeft, Activity, TrendingUp, Bot } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import useAgentBattleId from '../hooks/useAgentBattleId';
@@ -38,9 +38,28 @@ function computeTugOfWarWidth(myScore, oppScore) {
   return Math.max(10, Math.min(90, (Math.abs(myScore) / total) * 100));
 }
 
+// ─── Responsive helpers ───────────────────────────────────────────────────────
+
+function useIsDesktop() {
+  const [isDesktop, setIsDesktop] = useState(
+    typeof window !== 'undefined' && window.innerWidth >= 768
+  );
+  React.useEffect(() => {
+    const mq = window.matchMedia('(min-width: 768px)');
+    const handler = (e) => setIsDesktop(e.matches);
+    mq.addEventListener('change', handler);
+    return () => mq.removeEventListener('change', handler);
+  }, []);
+  return isDesktop;
+}
+
+// ─── Stagger animation spring ─────────────────────────────────────────────────
+
+const staggerSpring = { type: 'spring', stiffness: 200, damping: 20 };
+
 // ─── Score Header ──────────────────────────────────────────────────────────────
 
-function ScoreHeader({ agentBattle, tokens, isFilmRoom }) {
+function ScoreHeader({ agentBattle, tokens, isFilmRoom, isDesktop }) {
   const myScore = agentBattle?.scoreState?.currentScore || 0;
   const oppScore = 0; // CPU score — will be computed in Phase 2 with price integration
   const dayLabel = computeDayLabel(agentBattle?.timing, isFilmRoom);
@@ -51,12 +70,17 @@ function ScoreHeader({ agentBattle, tokens, isFilmRoom }) {
   const isLeading = myScore >= oppScore;
 
   return (
-    <div style={{
-      padding: '10px 16px 8px',
-      display: 'flex',
-      flexDirection: 'column',
-      gap: 6,
-    }}>
+    <motion.div
+      initial={{ opacity: 0, y: -12 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ ...staggerSpring, delay: 0 }}
+      style={{
+        padding: isDesktop ? '14px 24px 10px' : '10px 16px 8px',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 6,
+      }}
+    >
       {/* Names + Scores row */}
       <div style={{
         display: 'flex',
@@ -182,31 +206,35 @@ function ScoreHeader({ agentBattle, tokens, isFilmRoom }) {
           borderRadius: '0 3px 3px 0',
         }} />
       </div>
-    </div>
+    </motion.div>
   );
 }
 
 // ─── Controls Row ──────────────────────────────────────────────────────────────
 
-function ControlsRow({ agentBattleId, executionMode, strategyPreset, tokens }) {
+function ControlsRow({ agentBattleId, executionMode, strategyPreset, tokens, isDesktop, disabled }) {
   return (
     <div style={{
       display: 'flex',
       alignItems: 'flex-start',
       gap: 10,
-      padding: '6px 16px',
+      padding: isDesktop ? '6px 24px' : '6px 16px',
+      opacity: disabled ? 0.5 : 1,
+      pointerEvents: disabled ? 'none' : 'auto',
     }}>
       <div style={{ flex: 1, minWidth: 0 }}>
         <ExecutionModeToggle
           battleId={agentBattleId}
           executionMode={executionMode}
           tokens={tokens}
+          disabled={disabled}
         />
       </div>
       <StrategyPresetBadge
         battleId={agentBattleId}
         strategyPreset={strategyPreset}
         tokens={tokens}
+        disabled={disabled}
       />
     </div>
   );
@@ -216,6 +244,7 @@ function ControlsRow({ agentBattleId, executionMode, strategyPreset, tokens }) {
 
 export default function AgentBattleScreen({ battle, user, onBack }) {
   const { tokens } = useTheme();
+  const isDesktop = useIsDesktop();
   const [filterTicker, setFilterTicker] = useState(null);
   const [debateOpen, setDebateOpen] = useState(false);
   const [debateSymbol, setDebateSymbol] = useState(null);
@@ -239,11 +268,15 @@ export default function AgentBattleScreen({ battle, user, onBack }) {
 
   const loading = idLoading || battleLoading;
 
-  // Film Room mode: activates after market close (4 PM ET), weekends, holidays
+  // Battle completed check
+  const isBattleCompleted = agentBattle?.status === 'completed';
+
+  // Film Room mode: activates after market close (4 PM ET), weekends, holidays, or battle completed
   const isFilmRoom = useMemo(() => {
+    if (isBattleCompleted) return true;
     const { state } = getMarketState();
     return state === 'CLOSED_AFTERHOURS' || state === 'CLOSED_WEEKEND' || state === 'CLOSED_HOLIDAY';
-  }, []);
+  }, [isBattleCompleted]);
 
   const handleTickerTap = useCallback((symbol) => {
     setFilterTicker(prev => prev === symbol ? null : symbol);
@@ -305,7 +338,7 @@ export default function AgentBattleScreen({ battle, user, onBack }) {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          padding: '8px 12px 0',
+          padding: isDesktop ? '8px 24px 0' : '8px 12px 0',
         }}>
           <button
             onClick={onBack}
@@ -319,7 +352,8 @@ export default function AgentBattleScreen({ battle, user, onBack }) {
               background: 'transparent',
               border: 'none',
               cursor: 'pointer',
-              padding: '4px 6px',
+              padding: '8px 6px',
+              minHeight: 44,
               borderRadius: 8,
             }}
           >
@@ -350,29 +384,50 @@ export default function AgentBattleScreen({ battle, user, onBack }) {
         </div>
 
         {/* Row 1: Score header */}
-        <ScoreHeader agentBattle={agentBattle} tokens={tokens} isFilmRoom={isFilmRoom} />
+        <ScoreHeader agentBattle={agentBattle} tokens={tokens} isFilmRoom={isFilmRoom} isDesktop={isDesktop} />
 
         {/* Rows 2-4: hidden in Film Room mode */}
         {!isFilmRoom && (
           <>
             {/* Row 2: Portfolio strip */}
-            <AgentPortfolioStrip
-              portfolio={agentBattle?.portfolio}
-              tokens={tokens}
-              filterTicker={filterTicker}
-              onTickerTap={handleTickerTap}
-            />
+            <motion.div
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ ...staggerSpring, delay: 0.1 }}
+            >
+              <AgentPortfolioStrip
+                portfolio={agentBattle?.portfolio}
+                tokens={tokens}
+                filterTicker={filterTicker}
+                onTickerTap={handleTickerTap}
+                isDesktop={isDesktop}
+              />
+            </motion.div>
 
             {/* Row 3: Controls */}
-            <ControlsRow
-              agentBattleId={agentBattleId}
-              executionMode={executionMode}
-              strategyPreset={strategyPreset}
-              tokens={tokens}
-            />
+            <motion.div
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ ...staggerSpring, delay: 0.2 }}
+            >
+              <ControlsRow
+                agentBattleId={agentBattleId}
+                executionMode={executionMode}
+                strategyPreset={strategyPreset}
+                tokens={tokens}
+                isDesktop={isDesktop}
+                disabled={isBattleCompleted}
+              />
+            </motion.div>
 
             {/* Row 4: Hypothesis ticker */}
-            <HypothesisTicker statusFeed={statusFeed} tokens={tokens} />
+            <motion.div
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ ...staggerSpring, delay: 0.3 }}
+            >
+              <HypothesisTicker statusFeed={statusFeed} tokens={tokens} />
+            </motion.div>
           </>
         )}
 
@@ -382,14 +437,24 @@ export default function AgentBattleScreen({ battle, user, onBack }) {
 
       {/* ═══ MAIN CONTENT ═══ */}
       {isFilmRoom ? (
-        <AgentFilmRoom
-          agentBattle={agentBattle}
-          agentBattleId={agentBattleId}
-          statusFeed={statusFeed}
-          feedBookmarks={feedBookmarks}
-          tokens={tokens}
-          onCitationTap={handleCitationTap}
-        />
+        <div style={{
+          flex: 1,
+          maxWidth: isDesktop ? 600 : undefined,
+          width: '100%',
+          alignSelf: 'center',
+          overflow: 'hidden',
+          display: 'flex',
+          flexDirection: 'column',
+        }}>
+          <AgentFilmRoom
+            agentBattle={agentBattle}
+            agentBattleId={agentBattleId}
+            statusFeed={statusFeed}
+            feedBookmarks={feedBookmarks}
+            tokens={tokens}
+            onCitationTap={handleCitationTap}
+          />
+        </div>
       ) : (
         <>
           <div style={{
@@ -397,6 +462,9 @@ export default function AgentBattleScreen({ battle, user, onBack }) {
             overflow: 'hidden',
             display: 'flex',
             flexDirection: 'column',
+            maxWidth: isDesktop ? 600 : undefined,
+            width: '100%',
+            alignSelf: 'center',
           }}>
             <AgentActivityFeed
               statusFeed={statusFeed}

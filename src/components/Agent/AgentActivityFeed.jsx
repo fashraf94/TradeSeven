@@ -219,8 +219,8 @@ function buildGroupedFeed(entries, filterTicker) {
 // ── Animation Variants ────────────────────────────────────────────────────────
 
 const entryVariants = {
-  hidden: { opacity: 0, y: -8 },
-  visible: { opacity: 1, y: 0, transition: { type: 'spring', stiffness: 300, damping: 24 } },
+  hidden: { opacity: 0, x: 20 },
+  visible: { opacity: 1, x: 0, transition: { type: 'spring', stiffness: 300, damping: 24 } },
   exit: { opacity: 0, transition: { duration: 0.15 } },
 };
 
@@ -302,6 +302,7 @@ const HighTierCard = ({
       animate="visible"
       exit="exit"
       layout
+      whileHover={{ background: isOpponent ? hexToRgba(tokens.bgCard || '#0d1117', 0.65) : hexToRgba(tokens.bgCard || '#0d1117', 1) }}
       style={{
         display: 'flex',
         background: isOpponent ? hexToRgba(tokens.bgCard || '#0d1117', 0.6) : (tokens.bgCard || '#0d1117'),
@@ -311,6 +312,7 @@ const HighTierCard = ({
         boxShadow: tokens.obsidianShadow,
         backgroundImage: isOpponent ? 'none' : 'linear-gradient(180deg, rgba(255,255,255,0.02) 0%, transparent 40%)',
         opacity: isOpponent ? 0.7 : 1,
+        transition: 'background 0.15s ease',
       }}
     >
       {/* Left accent bar */}
@@ -456,10 +458,14 @@ const HighTierCard = ({
                 e.stopPropagation();
                 isBookmarked ? onUnbookmark?.(entryId) : onBookmark?.(entryId);
               }}
+              aria-label={isBookmarked ? 'Remove bookmark' : 'Add bookmark'}
               style={{
                 display: 'flex',
                 alignItems: 'center',
-                padding: 4,
+                justifyContent: 'center',
+                width: 44,
+                height: 44,
+                margin: -10,
                 background: 'transparent',
                 border: 'none',
                 cursor: 'pointer',
@@ -476,8 +482,10 @@ const HighTierCard = ({
           {!isOpponent && onChallenge && entry.symbolOut && (
             <button
               onClick={(e) => { e.stopPropagation(); onChallenge(entry); }}
+              aria-label={`Challenge ${entry.symbolOut} trade`}
               style={{
-                padding: '2px 8px',
+                padding: '6px 10px',
+                minHeight: 32,
                 borderRadius: 8,
                 border: '1px solid rgba(245, 158, 11, 0.25)',
                 background: 'rgba(245, 158, 11, 0.08)',
@@ -513,12 +521,15 @@ const CollapsibleGroup = ({ group, tokens }) => {
       {/* Collapsed pill */}
       <button
         onClick={() => setExpanded(prev => !prev)}
+        aria-label={`${count} grouped evaluations, tap to ${expanded ? 'collapse' : 'expand'}`}
+        aria-expanded={expanded}
         style={{
           display: 'flex',
           alignItems: 'center',
           gap: 6,
           width: '100%',
-          padding: '8px 14px',
+          padding: '10px 14px',
+          minHeight: 44,
           borderRadius: 10,
           border: `1px solid ${hexToRgba(tokens.textMuted || '#6e7681', 0.12)}`,
           background: hexToRgba(tokens.bgCard || '#0d1117', 0.5),
@@ -786,21 +797,24 @@ const AgentActivityFeed = ({
       </div>
 
       {/* Jump to latest pill */}
-      {userScrolledUp && (
+      <AnimatePresence>
+        {userScrolledUp && (
         <motion.button
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: 10 }}
           onClick={jumpToLatest}
+          aria-label="Jump to latest feed entries"
           style={{
             position: 'absolute',
-            bottom: 16,
+            top: 12,
             left: '50%',
             transform: 'translateX(-50%)',
             display: 'flex',
             alignItems: 'center',
             gap: 6,
-            padding: '6px 14px',
+            padding: '8px 16px',
+            minHeight: 44,
             borderRadius: 20,
             border: `1px solid ${hexToRgba(tokens.teal || '#5eead4', 0.3)}`,
             background: tokens.bgCard || '#0d1117',
@@ -813,10 +827,11 @@ const AgentActivityFeed = ({
             zIndex: 10,
           }}
         >
-          <ArrowDown size={12} />
+          <ArrowDown size={12} style={{ transform: 'rotate(180deg)' }} />
           Jump to latest
         </motion.button>
-      )}
+        )}
+      </AnimatePresence>
     </div>
   );
 };
