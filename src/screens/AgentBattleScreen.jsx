@@ -15,6 +15,7 @@ import StrategyPresetBadge from '../components/Agent/StrategyPresetBadge';
 import HypothesisTicker from '../components/Agent/HypothesisTicker';
 import AgentActivityFeed from '../components/Agent/AgentActivityFeed';
 import ForgeCitationCard from '../components/Agent/ForgeCitationCard';
+import ProposalBanner from '../components/Agent/ProposalBanner';
 import DebateModal from '../components/Agent/DebateModal';
 import { addFeedBookmark, removeFeedBookmark } from '../services/agentService';
 
@@ -226,6 +227,7 @@ export default function AgentBattleScreen({ battle, user, onBack }) {
     battle: agentBattle,
     statusFeed,
     executionMode,
+    pendingProposal,
     strategyPreset,
     gameplanMeeting,
     feedBookmarks,
@@ -386,6 +388,15 @@ export default function AgentBattleScreen({ battle, user, onBack }) {
           tokens={tokens}
         />
       </div>
+
+      {/* ═══ PROPOSAL BANNER ═══ */}
+      <ProposalBanner
+        pendingProposal={pendingProposal}
+        executionMode={executionMode}
+        battleId={agentBattleId}
+        onCitationTap={handleCitationTap}
+        tokens={tokens}
+      />
 
       {/* ═══ MODALS ═══ */}
       <DebateModal
