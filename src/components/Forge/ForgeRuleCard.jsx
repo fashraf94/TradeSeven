@@ -18,7 +18,7 @@ const CATEGORY_ICONS = {
   allocation: PieChart,
 };
 
-export default function ForgeRuleCard({ rule, isCollected, onAdd, onLearnMore, style }) {
+export default function ForgeRuleCard({ rule, isCollected, onAdd, onLearnMore, isAdding, style }) {
   const catColor = CATEGORY_COLORS[rule.category] || '#5eead4';
   const CatIcon = CATEGORY_ICONS[rule.category] || Activity;
 
@@ -102,6 +102,8 @@ export default function ForgeRuleCard({ rule, isCollected, onAdd, onLearnMore, s
           style={{
             width: 32,
             height: 32,
+            padding: 6,
+            boxSizing: 'content-box',
             flexShrink: 0,
             borderRadius: 9999,
             background: 'rgba(34, 197, 94, 0.15)',
@@ -117,11 +119,15 @@ export default function ForgeRuleCard({ rule, isCollected, onAdd, onLearnMore, s
         <button
           onClick={(e) => {
             e.stopPropagation();
+            if (isAdding) return;
             onAdd(rule);
           }}
+          disabled={isAdding}
           style={{
             width: 32,
             height: 32,
+            padding: 6,
+            boxSizing: 'content-box',
             flexShrink: 0,
             borderRadius: 9999,
             border: '1px solid #21262d',
@@ -129,8 +135,9 @@ export default function ForgeRuleCard({ rule, isCollected, onAdd, onLearnMore, s
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            cursor: 'pointer',
-            padding: 0,
+            cursor: isAdding ? 'not-allowed' : 'pointer',
+            opacity: isAdding ? 0.5 : 1,
+            transition: 'opacity 0.2s ease',
           }}
         >
           <Plus size={16} color="#5eead4" />

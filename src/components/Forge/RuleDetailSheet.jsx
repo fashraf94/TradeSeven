@@ -18,13 +18,22 @@ const DIFFICULTY_LABELS = {
   advanced: 'Advanced',
 };
 
-export default function RuleDetailSheet({ rule, isCollected, onAdd, onClose }) {
+export default function RuleDetailSheet({ rule, isCollected, isAdding, onAdd, onClose }) {
   const [isDesktop, setIsDesktop] = useState(window.innerWidth >= 768);
 
   useEffect(() => {
     const handleResize = () => setIsDesktop(window.innerWidth >= 768);
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  // Lock body scroll while sheet is open
+  useEffect(() => {
+    const originalOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = originalOverflow;
+    };
   }, []);
 
   if (!rule) return null;
@@ -257,7 +266,8 @@ export default function RuleDetailSheet({ rule, isCollected, onAdd, onClose }) {
             </button>
           ) : (
             <button
-              onClick={() => onAdd(rule)}
+              onClick={() => { if (!isAdding) onAdd(rule); }}
+              disabled={isAdding}
               style={{
                 width: '100%',
                 height: 48,
@@ -268,16 +278,18 @@ export default function RuleDetailSheet({ rule, isCollected, onAdd, onClose }) {
                 alignItems: 'center',
                 justifyContent: 'center',
                 gap: 8,
-                cursor: 'pointer',
+                cursor: isAdding ? 'not-allowed' : 'pointer',
                 fontSize: 14,
                 fontWeight: 600,
                 color: '#0D0E12',
                 padding: 0,
                 boxShadow: '0 4px 12px rgba(94, 234, 212, 0.3)',
+                opacity: isAdding ? 0.6 : 1,
+                transition: 'opacity 0.2s ease',
               }}
             >
               <Plus size={18} />
-              Add to My Rules
+              {isAdding ? 'Adding...' : 'Add to My Rules'}
             </button>
           )}
         </div>

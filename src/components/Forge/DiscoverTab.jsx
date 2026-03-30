@@ -245,7 +245,7 @@ export default function DiscoverTab({ isMobile, forge, tokens, agent }) {
   const isRuleCollected = (templateId) => collectedRuleSourceRefs.has(templateId);
 
   // Agent level & rule capacity
-  const agentLevel = agent ? getAgentLevel(agent.gamesPlayed || 0) : 'rookie';
+  const agentLevel = agent ? getAgentLevel(agent?.stats?.gamesPlayed || 0) : 'rookie';
   const forgeLimits = FORGE_LIMITS[agentLevel] || FORGE_LIMITS.rookie;
   const equippedCount = (forge.rules || []).length;
   const ruleCapacity = forgeLimits.maxRulesPerBundle * forgeLimits.maxBundles;
@@ -380,8 +380,11 @@ export default function DiscoverTab({ isMobile, forge, tokens, agent }) {
           {/* CTA Button */}
           <button
             onClick={() => {
-              if (!showStarterKit) {
-                // Scroll to Momentum Hunter collection (just visual, no nav)
+              if (showStarterKit) {
+                // Starter Kit guided flow not yet implemented —
+                // send user to full library as interim action
+                setShowFullLibrary(true);
+              } else {
                 const el = document.getElementById('collection-momentum-hunter');
                 if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
               }
@@ -398,7 +401,7 @@ export default function DiscoverTab({ isMobile, forge, tokens, agent }) {
               cursor: 'pointer',
             }}
           >
-            {showStarterKit ? 'Get Started' : 'Explore'}
+            {showStarterKit ? 'Browse Rules' : 'Explore'}
           </button>
 
           {/* Watermark icon */}
@@ -482,6 +485,7 @@ export default function DiscoverTab({ isMobile, forge, tokens, agent }) {
                   key={rule.id}
                   rule={rule}
                   isCollected={isRuleCollected(rule.id)}
+                  isAdding={forge.addingRuleId === rule.id}
                   onAdd={handleAddRule}
                   onLearnMore={handleLearnMore}
                   style={isDesktop ? { width: '100%' } : undefined}
@@ -532,6 +536,7 @@ export default function DiscoverTab({ isMobile, forge, tokens, agent }) {
           <RuleDetailSheet
             rule={selectedRule}
             isCollected={isRuleCollected(selectedRule.id)}
+            isAdding={forge.addingRuleId === selectedRule.id}
             onAdd={handleAddRule}
             onClose={() => setSelectedRule(null)}
           />
