@@ -26,14 +26,14 @@ export function evaluateTriggers(battle, assetScores, prices, news, momentumData
   // First evaluation of the battle
   if (evaluations.length === 0) {
     triggers.push({ type: 'forced_open', detail: 'First evaluation of the battle.' });
-    return { shouldEvaluate: true, triggers };
+    return { shouldEvaluate: true, triggers, newStoryIds: [] };
   }
 
   // Final hour detection
   const phase = computePhaseFromBattle(battle);
   if (phase === 'FINAL_HOUR') {
     triggers.push({ type: 'forced_close', detail: 'Final evaluation before battle ends.' });
-    return { shouldEvaluate: true, triggers };
+    return { shouldEvaluate: true, triggers, newStoryIds: [] };
   }
 
   // ---- CONDITIONAL TRIGGERS ----

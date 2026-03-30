@@ -1,6 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import { motion, useReducedMotion } from 'framer-motion';
 import { HOLO_COLORS, GLOW_EFFECTS, RANK_CONFIG } from '../../constants/holoTheme';
+import { HOLO_SWEEP, CONVERGENCE } from '../../constants/animationTokens';
 import { BotIcon, StarIcon } from './HoloIcons';
+import DataStrike from '../shared/DataStrike';
 
 /**
  * TacticalPod - Hexagonal player marker for the Altitude Map
@@ -26,6 +29,7 @@ const TacticalPod = ({
   onScout,          // Callback when tapped (for scouting opponents)
   isBeingScouted = false,  // Boolean - is this pod currently being scouted?
   isFlashing = false,      // Boolean - briefly true when shockwave fires from this pod
+  isConverging = false,    // Boolean - within 3 points of overtaking player above
   style = {},       // Position styles from parent
 }) => {
   // Mobile detection for responsive sizing
@@ -39,19 +43,18 @@ const TacticalPod = ({
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // Score pulse detection — briefly animate when points change
-  const [prevScore, setPrevScore] = useState(player.totalPoints || 0);
-  const [isPulsing, setIsPulsing] = useState(false);
+  // Holo-foil sweep on score change
+  const shouldReduceMotion = useReducedMotion();
+  const prevScoreRef = useRef(null);
+  const [sweepKey, setSweepKey] = useState(0);
 
   useEffect(() => {
     const currentScore = player.totalPoints || 0;
-    if (currentScore !== prevScore) {
-      setIsPulsing(true);
-      setPrevScore(currentScore);
-      const timer = setTimeout(() => setIsPulsing(false), 600);
-      return () => clearTimeout(timer);
+    if (prevScoreRef.current !== null && prevScoreRef.current !== currentScore && !shouldReduceMotion) {
+      setSweepKey(k => k + 1);
     }
-  }, [player.totalPoints, prevScore]);
+    prevScoreRef.current = currentScore;
+  }, [player.totalPoints, shouldReduceMotion]);
 
   // Responsive dimensions - Phase 5.6: Reduced mobile sizes to prevent overlap
   const podWidth = isMobile ? 75 : 110;
@@ -157,7 +160,7 @@ const TacticalPod = ({
           height: `${podHeight}px`,
           clipPath: hexClipPath,
           background: `linear-gradient(180deg, ${colors.bg} 0%, rgba(13, 17, 23, 0.95) 100%)`,
-          border: `2px solid ${colors.border}`,
+          border: `2px solid ${isConverging ? CONVERGENCE.amberBorderColor : colors.border}`,
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'center',
@@ -165,6 +168,7 @@ const TacticalPod = ({
           padding: isMobile ? '8px 4px' : '12px 8px',
           backdropFilter: 'blur(8px)',
           position: 'relative',
+          transition: 'border-color 0.5s ease',
         }}>
           {/* Rank Badge - positioned at top of hexagon */}
           <div style={{
@@ -181,6 +185,8 @@ const TacticalPod = ({
             letterSpacing: '0.5px',
             boxShadow: `0 2px 8px rgba(0, 0, 0, 0.4), 0 0 12px ${colors.border}40`,
             border: `1px solid ${colors.border}60`,
+            textShadow: isConverging ? CONVERGENCE.textShadow : 'none',
+            transition: 'text-shadow 0.5s ease',
           }}>
             {RANK_CONFIG[rank]?.label || `${rank}TH`}
           </div>
@@ -223,17 +229,19 @@ const TacticalPod = ({
 
           {/* Total Points - PRIMARY SCORE */}
           <div style={{
-            fontSize: gainFontSize,
-            fontWeight: 700,
-            color: (player.totalPoints || 0) >= 0 ? HOLO_COLORS.green : HOLO_COLORS.red,
+            marginTop: isMobile ? '2px' : '4px',
+            fontFamily: 'monospace',
             textShadow: (player.totalPoints || 0) >= 0
               ? '0 0 8px rgba(0, 255, 136, 0.6)'
               : '0 0 8px rgba(255, 51, 102, 0.6)',
-            marginTop: isMobile ? '2px' : '4px',
-            fontFamily: 'monospace',
-            animation: isPulsing ? 'scorePulse 0.5s ease-out' : 'none',
           }}>
-            {(player.totalPoints || 0) >= 0 ? '+' : ''}{(player.totalPoints || 0).toFixed(0)} pts
+            <DataStrike
+              value={parseInt((player.totalPoints || 0).toFixed(0), 10)}
+              showSign
+              suffix=" pts"
+              size={parseInt(gainFontSize, 10)}
+              color={(player.totalPoints || 0) >= 0 ? HOLO_COLORS.green : HOLO_COLORS.red}
+            />
           </div>
 
           {/* BaggerBomb / Bust Indicators */}
@@ -296,6 +304,31 @@ const TacticalPod = ({
               color: movement === '↑' ? HOLO_COLORS.green : HOLO_COLORS.red,
             }}>
               {movement}
+            </div>
+          )}
+
+          {/* Holo-foil sweep overlay — fires on score change */}
+          {sweepKey > 0 && (
+            <div style={{
+              position: 'absolute',
+              inset: 0,
+              overflow: 'hidden',
+              pointerEvents: 'none',
+              zIndex: 15,
+            }}>
+              <motion.div
+                key={sweepKey}
+                initial={{ x: '-100%' }}
+                animate={{ x: '200%' }}
+                transition={{ duration: HOLO_SWEEP.duration, ease: HOLO_SWEEP.ease }}
+                style={{
+                  position: 'absolute',
+                  inset: 0,
+                  width: '100%',
+                  height: '100%',
+                  background: HOLO_SWEEP.gradient,
+                }}
+              />
             </div>
           )}
         </div>

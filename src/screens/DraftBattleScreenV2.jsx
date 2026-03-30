@@ -31,6 +31,7 @@ import { updateDraftHistory } from '../firebase/firebaseService';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useBaggerShockwave } from '../hooks/useBaggerShockwave';
 import { BAGGER_SHOCKWAVE_CONFIG } from '../utils/shockwaveUtils';
+import { CONVERGENCE } from '../constants/animationTokens';
 
 /**
  * Utility to refresh draft data from Firebase
@@ -717,9 +718,16 @@ const DraftBattleScreenV2 = ({
       // Sort by total POINTS (descending) - this is the key change!
       const sorted = playerPerformances.sort((a, b) => b.totalPoints - a.totalPoints);
 
-      // Assign ranks
+      // Assign ranks + convergence detection
       sorted.forEach((player, index) => {
         player.currentRank = index + 1;
+        // Trailing player is converging if within CONVERGENCE.pointThreshold of player above
+        if (index > 0) {
+          const gap = sorted[index - 1].totalPoints - player.totalPoints;
+          player.isConverging = gap <= CONVERGENCE.pointThreshold && gap >= 0;
+        } else {
+          player.isConverging = false;
+        }
       });
 
       setStandings(sorted);
