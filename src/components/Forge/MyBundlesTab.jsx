@@ -32,6 +32,9 @@ export default function MyBundlesTab({ forge, tokens, isMobile, agent }) {
   const [forgeSuccessBundle, setForgeSuccessBundle] = useState(null);
   const [showNamePrompt, setShowNamePrompt] = useState(null); // bundleId
   const [namePromptValue, setNamePromptValue] = useState('');
+  const [deletingBundleId, setDeletingBundleId] = useState(null);
+  const [editingNameBundleId, setEditingNameBundleId] = useState(null);
+  const [editingNameValue, setEditingNameValue] = useState('');
 
   const level = getAgentLevel(agent);
   const limits = FORGE_LIMITS[level] || FORGE_LIMITS.rookie;
@@ -84,8 +87,9 @@ export default function MyBundlesTab({ forge, tokens, isMobile, agent }) {
 
   const handleNamePromptConfirm = async () => {
     const bundleId = showNamePrompt;
-    // If user provided a name, we don't have updateBundleName in forgeService
-    // so we proceed with forge — the name stays as-is for now
+    if (namePromptValue?.trim() && !['My Strategy', 'New Strategy'].includes(namePromptValue.trim())) {
+      await forge.renameDraftBundle(bundleId, namePromptValue.trim());
+    }
     setShowNamePrompt(null);
     await doForge(bundleId);
   };
@@ -166,15 +170,66 @@ export default function MyBundlesTab({ forge, tokens, isMobile, agent }) {
       >
         {/* Header */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <Package size={16} color="#f59e0b" />
-            <span style={{
-                fontSize: '15px',
-                fontWeight: 700,
-                color: tokens.textWhite,
-              }}>
-              {bundle.name}
-            </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1, minWidth: 0 }}>
+            <Package size={16} color="#f59e0b" style={{ flexShrink: 0 }} />
+            {editingNameBundleId === bundle.id ? (
+              <input
+                autoFocus
+                value={editingNameValue}
+                onChange={(e) => setEditingNameValue(e.target.value)}
+                onBlur={() => {
+                  if (editingNameValue.trim() && editingNameValue.trim() !== bundle.name) {
+                    forge.renameDraftBundle(bundle.id, editingNameValue.trim());
+                  }
+                  setEditingNameBundleId(null);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') e.target.blur();
+                  if (e.key === 'Escape') setEditingNameBundleId(null);
+                }}
+                style={{
+                  fontSize: '15px',
+                  fontWeight: 700,
+                  color: tokens.textWhite,
+                  background: 'transparent',
+                  border: 'none',
+                  borderBottom: `1px solid ${tokens.teal}`,
+                  outline: 'none',
+                  padding: '0 0 2px',
+                  fontFamily: 'inherit',
+                  width: '100%',
+                }}
+              />
+            ) : (
+              <button
+                onClick={() => {
+                  setEditingNameBundleId(bundle.id);
+                  setEditingNameValue(bundle.name);
+                }}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  background: 'none',
+                  border: 'none',
+                  cursor: 'pointer',
+                  padding: 0,
+                  minWidth: 0,
+                }}
+              >
+                <span style={{
+                  fontSize: '15px',
+                  fontWeight: 700,
+                  color: tokens.textWhite,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}>
+                  {bundle.name}
+                </span>
+                <Edit3 size={12} color={tokens.textMuted} style={{ flexShrink: 0 }} />
+              </button>
+            )}
           </div>
           <span style={{
             padding: '3px 10px',
@@ -320,6 +375,34 @@ export default function MyBundlesTab({ forge, tokens, isMobile, agent }) {
           <Hammer size={16} />
           {forge.forgingBundleId === bundle.id ? 'Forging...' : 'Forge Bundle'}
         </motion.button>
+
+        {/* Delete Draft */}
+        <button
+          onClick={() => {
+            if (deletingBundleId === bundle.id) {
+              forge.archiveBundleFn(bundle.id);
+              setDeletingBundleId(null);
+            } else {
+              setDeletingBundleId(bundle.id);
+              setTimeout(() => setDeletingBundleId(null), 3000);
+            }
+          }}
+          style={{
+            background: 'none',
+            border: 'none',
+            cursor: 'pointer',
+            color: deletingBundleId === bundle.id ? '#ef4444' : tokens.textFaint,
+            fontSize: '12px',
+            fontWeight: 500,
+            padding: '8px 0',
+            width: '100%',
+            textAlign: 'center',
+            fontFamily: 'inherit',
+            transition: 'color 0.15s',
+          }}
+        >
+          {deletingBundleId === bundle.id ? 'Tap again to confirm' : 'Delete Draft'}
+        </button>
       </motion.div>
     );
   };

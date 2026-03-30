@@ -3,7 +3,7 @@
 // and all CRUD actions (add, refine, delete, forge, equip, unequip, reforge).
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { collection, query, where, getDocs, orderBy } from 'firebase/firestore';
+import { collection, query, where, getDocs, orderBy, doc, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import { FORGE_RULE_TEMPLATES, FORGE_CATEGORIES } from '../data/forgeKnowledgeBase';
 import {
@@ -18,6 +18,7 @@ import {
   equipBundle as equipBundleSvc,
   unequipBundle as unequipBundleSvc,
   reforgeBundle as reforgeBundleSvc,
+  archiveBundle as archiveBundleSvc,
 } from '../services/forgeService';
 import { computeForgeStats } from '../services/forgeStatsService';
 
@@ -367,6 +368,32 @@ export function useForge(agentId) {
     }
   }, [agentId, forgingBundleId, showToast, loadData]);
 
+  // Archive (delete) a bundle
+  const archiveBundleFn = useCallback(async (bundleId) => {
+    if (!agentId) return;
+    try {
+      await archiveBundleSvc(agentId, bundleId);
+      await loadData();
+      showToast('Bundle deleted');
+    } catch (err) {
+      console.error('[useForge] archiveBundle failed:', err);
+      showToast(err.message || 'Failed to delete bundle');
+    }
+  }, [agentId, showToast, loadData]);
+
+  // Rename a draft bundle (direct Firestore update)
+  const renameDraftBundle = useCallback(async (bundleId, newName) => {
+    if (!agentId || !newName?.trim()) return;
+    try {
+      const bundleRef = doc(db, 'agents', agentId, 'bundles', bundleId);
+      await updateDoc(bundleRef, { name: newName.trim() });
+      await loadData();
+    } catch (err) {
+      console.error('[useForge] renameDraftBundle failed:', err);
+      showToast(err.message || 'Failed to rename bundle');
+    }
+  }, [agentId, showToast, loadData]);
+
   return {
     // Tab / UI state
     activeTab,
@@ -422,6 +449,8 @@ export function useForge(agentId) {
     equipBundleFn,
     unequipBundleFn,
     reforgeBundleFn,
+    archiveBundleFn,
+    renameDraftBundle,
     reloadData: loadData,
   };
 }
