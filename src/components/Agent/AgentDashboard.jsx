@@ -127,8 +127,19 @@ const AgentDashboard = ({ user, setScreen, onCreateAgentBattle, setShowForge }) 
         return;
       }
 
-      // Step 2: Server already created agentBattle and set activeBattleId on agent doc
+      // Step 2: Create training battle and navigate to battle view
       console.log('[Deploy] Agent battle created:', data.agentBattleId || '(existing)');
+      if (onCreateAgentBattle) {
+        await onCreateAgentBattle(
+          data.portfolio,
+          data.bench,
+          {
+            agentId: agent.id,
+            innerMonologue: data.innerMonologue || null,
+            strategyBrief: data.strategyBrief || null,
+          }
+        );
+      }
     } catch (err) {
       console.error('[Deploy] Error:', err);
     }
