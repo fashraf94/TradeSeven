@@ -2,18 +2,20 @@
 // Renders: score header (tug-of-war layout), portfolio strip, controls, hypothesis ticker
 // Bottom section is a placeholder for Phase 2 activity feed.
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { ChevronLeft, Activity, TrendingUp, Bot } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import useAgentBattleId from '../hooks/useAgentBattleId';
 import useAgentBattle from '../hooks/useAgentBattle';
+import { getMarketState } from '../utils/marketSchedule';
 import AnimatedScore from '../components/shared/AnimatedScore';
 import ExecutionModeToggle from '../components/Agent/ExecutionModeToggle';
 import AgentPortfolioStrip from '../components/Agent/AgentPortfolioStrip';
 import StrategyPresetBadge from '../components/Agent/StrategyPresetBadge';
 import HypothesisTicker from '../components/Agent/HypothesisTicker';
 import AgentActivityFeed from '../components/Agent/AgentActivityFeed';
+import AgentFilmRoom from '../components/Agent/AgentFilmRoom';
 import ForgeCitationCard from '../components/Agent/ForgeCitationCard';
 import ProposalBanner from '../components/Agent/ProposalBanner';
 import DebateModal from '../components/Agent/DebateModal';
@@ -21,12 +23,13 @@ import { addFeedBookmark, removeFeedBookmark } from '../services/agentService';
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
 
-function computeDayLabel(timing) {
+function computeDayLabel(timing, isFilmRoom) {
   if (!timing) return '';
   const { tradingDays, currentTradingDay } = timing;
   const total = tradingDays?.length || 0;
   const current = currentTradingDay || 1;
-  return `Day ${current} of ${total}`;
+  const suffix = isFilmRoom ? ' Final' : '';
+  return `Day ${current} of ${total}${suffix}`;
 }
 
 function computeTugOfWarWidth(myScore, oppScore) {
@@ -37,10 +40,10 @@ function computeTugOfWarWidth(myScore, oppScore) {
 
 // ─── Score Header ──────────────────────────────────────────────────────────────
 
-function ScoreHeader({ agentBattle, tokens }) {
+function ScoreHeader({ agentBattle, tokens, isFilmRoom }) {
   const myScore = agentBattle?.scoreState?.currentScore || 0;
   const oppScore = 0; // CPU score — will be computed in Phase 2 with price integration
-  const dayLabel = computeDayLabel(agentBattle?.timing);
+  const dayLabel = computeDayLabel(agentBattle?.timing, isFilmRoom);
   const agentName = agentBattle?.agentContext?.agentName || 'Your Agent';
   const tradeCount = agentBattle?.scoreState?.tradeCount || 0;
 
@@ -236,6 +239,12 @@ export default function AgentBattleScreen({ battle, user, onBack }) {
 
   const loading = idLoading || battleLoading;
 
+  // Film Room mode: activates after market close (4 PM ET), weekends, holidays
+  const isFilmRoom = useMemo(() => {
+    const { state } = getMarketState();
+    return state === 'CLOSED_AFTERHOURS' || state === 'CLOSED_WEEKEND' || state === 'CLOSED_HOLIDAY';
+  }, []);
+
   const handleTickerTap = useCallback((symbol) => {
     setFilterTicker(prev => prev === symbol ? null : symbol);
   }, []);
@@ -341,62 +350,80 @@ export default function AgentBattleScreen({ battle, user, onBack }) {
         </div>
 
         {/* Row 1: Score header */}
-        <ScoreHeader agentBattle={agentBattle} tokens={tokens} />
+        <ScoreHeader agentBattle={agentBattle} tokens={tokens} isFilmRoom={isFilmRoom} />
 
-        {/* Row 2: Portfolio strip */}
-        <AgentPortfolioStrip
-          portfolio={agentBattle?.portfolio}
-          tokens={tokens}
-          filterTicker={filterTicker}
-          onTickerTap={handleTickerTap}
-        />
+        {/* Rows 2-4: hidden in Film Room mode */}
+        {!isFilmRoom && (
+          <>
+            {/* Row 2: Portfolio strip */}
+            <AgentPortfolioStrip
+              portfolio={agentBattle?.portfolio}
+              tokens={tokens}
+              filterTicker={filterTicker}
+              onTickerTap={handleTickerTap}
+            />
 
-        {/* Row 3: Controls */}
-        <ControlsRow
-          agentBattleId={agentBattleId}
-          executionMode={executionMode}
-          strategyPreset={strategyPreset}
-          tokens={tokens}
-        />
+            {/* Row 3: Controls */}
+            <ControlsRow
+              agentBattleId={agentBattleId}
+              executionMode={executionMode}
+              strategyPreset={strategyPreset}
+              tokens={tokens}
+            />
 
-        {/* Row 4: Hypothesis ticker */}
-        <HypothesisTicker statusFeed={statusFeed} tokens={tokens} />
+            {/* Row 4: Hypothesis ticker */}
+            <HypothesisTicker statusFeed={statusFeed} tokens={tokens} />
+          </>
+        )}
 
         {/* Bottom spacer for the top section */}
         <div style={{ height: 8 }} />
       </div>
 
-      {/* ═══ ACTIVITY FEED (~70%) ═══ */}
-      <div style={{
-        flex: 1,
-        overflow: 'hidden',
-        display: 'flex',
-        flexDirection: 'column',
-      }}>
-        <AgentActivityFeed
+      {/* ═══ MAIN CONTENT ═══ */}
+      {isFilmRoom ? (
+        <AgentFilmRoom
+          agentBattle={agentBattle}
+          agentBattleId={agentBattleId}
           statusFeed={statusFeed}
           feedBookmarks={feedBookmarks}
-          filterTicker={filterTicker}
-          onClearFilter={() => setFilterTicker(null)}
-          onBookmark={(entryId) => addFeedBookmark(agentBattleId, entryId)}
-          onUnbookmark={(entryId) => removeFeedBookmark(agentBattleId, entryId)}
-          onChallenge={handleChallenge}
-          onCitationTap={handleCitationTap}
-          battleId={agentBattleId}
-          isAgentVsAgent={!!agentBattle?.opponentAgentId}
-          gameplanMeeting={gameplanMeeting}
           tokens={tokens}
+          onCitationTap={handleCitationTap}
         />
-      </div>
+      ) : (
+        <>
+          <div style={{
+            flex: 1,
+            overflow: 'hidden',
+            display: 'flex',
+            flexDirection: 'column',
+          }}>
+            <AgentActivityFeed
+              statusFeed={statusFeed}
+              feedBookmarks={feedBookmarks}
+              filterTicker={filterTicker}
+              onClearFilter={() => setFilterTicker(null)}
+              onBookmark={(entryId) => addFeedBookmark(agentBattleId, entryId)}
+              onUnbookmark={(entryId) => removeFeedBookmark(agentBattleId, entryId)}
+              onChallenge={handleChallenge}
+              onCitationTap={handleCitationTap}
+              battleId={agentBattleId}
+              isAgentVsAgent={!!agentBattle?.opponentAgentId}
+              gameplanMeeting={gameplanMeeting}
+              tokens={tokens}
+            />
+          </div>
 
-      {/* ═══ PROPOSAL BANNER ═══ */}
-      <ProposalBanner
-        pendingProposal={pendingProposal}
-        executionMode={executionMode}
-        battleId={agentBattleId}
-        onCitationTap={handleCitationTap}
-        tokens={tokens}
-      />
+          {/* Proposal banner — only during market hours */}
+          <ProposalBanner
+            pendingProposal={pendingProposal}
+            executionMode={executionMode}
+            battleId={agentBattleId}
+            onCitationTap={handleCitationTap}
+            tokens={tokens}
+          />
+        </>
+      )}
 
       {/* ═══ MODALS ═══ */}
       <DebateModal
