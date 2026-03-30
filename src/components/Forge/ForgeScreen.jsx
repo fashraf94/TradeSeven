@@ -183,6 +183,7 @@ export default function ForgeScreen({ isMobile, onClose, user }) {
                 isMobile={isMobile}
                 forge={forge}
                 tokens={tokens}
+                agent={agent}
               />
             )}
             {forge.activeTab === 'myRules' && (
