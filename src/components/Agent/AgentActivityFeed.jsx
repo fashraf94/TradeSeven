@@ -76,6 +76,10 @@ const HIGH_ACTIONS = new Set([
   'swap', 'emergency_swap', 'swap_out', 'trail_stop', 'lock',
 ]);
 
+const LOW_ACTIONS = new Set([
+  'watchlist_refresh', 'catalyst_override',
+]);
+
 function getEntryTier(entry) {
   const type = entry.type;
   if (type && HIGH_TYPES.has(type)) return 'HIGH';
@@ -89,6 +93,7 @@ function getEntryTier(entry) {
   // Fallback to action field
   if (entry.action && HIGH_ACTIONS.has(entry.action)) return 'HIGH';
   if (entry.action === 'hold') return 'LOW';
+  if (entry.action && LOW_ACTIONS.has(entry.action)) return 'LOW';
   // Default: if it has a message but no recognized type/action, treat as LOW
   if (!entry.action && !type) return 'LOW';
   return 'HIGH';
@@ -644,7 +649,7 @@ const AgentActivityFeed = ({
   // Auto-scroll on new entries
   useEffect(() => {
     if (statusFeed.length > prevLengthRef.current && !userScrolledUp && feedRef.current) {
-      feedRef.current.scrollTo({ top: feedRef.current.scrollHeight, behavior: 'smooth' });
+      feedRef.current.scrollTo({ top: 0, behavior: 'smooth' });
     }
     prevLengthRef.current = statusFeed.length;
   }, [statusFeed.length, userScrolledUp]);
@@ -652,14 +657,14 @@ const AgentActivityFeed = ({
   // Scroll handler to detect manual scroll
   const handleScroll = useCallback(() => {
     if (!feedRef.current) return;
-    const { scrollTop, scrollHeight, clientHeight } = feedRef.current;
-    const isNearBottom = scrollTop >= scrollHeight - clientHeight - 100;
-    setUserScrolledUp(!isNearBottom);
+    const { scrollTop } = feedRef.current;
+    const isNearTop = scrollTop <= 100;
+    setUserScrolledUp(!isNearTop);
   }, []);
 
   const jumpToLatest = useCallback(() => {
     if (feedRef.current) {
-      feedRef.current.scrollTo({ top: feedRef.current.scrollHeight, behavior: 'smooth' });
+      feedRef.current.scrollTo({ top: 0, behavior: 'smooth' });
       setUserScrolledUp(false);
     }
   }, []);
