@@ -31,7 +31,8 @@ export const FORGE_RULE_TEMPLATES = [
     ],
     relatedIndicator: 'RSI (14-period)',
     kbEntryId: null,
-    tags: ['momentum', 'RSI', 'oversold', 'mean-reversion']
+    tags: ['momentum', 'RSI', 'oversold', 'mean-reversion'],
+    agentUseDescription: 'Your agent will check RSI levels before buying and prioritize stocks with RSI below 30 that show reversal signals.',
   },
   {
     id: 'tech-rsi-overbought',
@@ -51,7 +52,8 @@ export const FORGE_RULE_TEMPLATES = [
     ],
     relatedIndicator: 'RSI (14-period)',
     kbEntryId: null,
-    tags: ['momentum', 'RSI', 'overbought']
+    tags: ['momentum', 'RSI', 'overbought'],
+    agentUseDescription: 'Your agent will skip stocks with RSI above 70, avoiding positions that have rallied too fast and may pull back.',
   },
   {
     id: 'tech-bollinger-squeeze',
@@ -69,7 +71,8 @@ export const FORGE_RULE_TEMPLATES = [
     ],
     relatedIndicator: 'Bollinger Band position',
     kbEntryId: null,
-    tags: ['volatility', 'Bollinger', 'breakout', 'volume']
+    tags: ['volatility', 'Bollinger', 'breakout', 'volume'],
+    agentUseDescription: 'Your agent will scan for Bollinger Band squeezes and flag stocks where a breakout is likely, confirming with volume before acting.',
   },
   {
     id: 'tech-moving-average-trend',
@@ -89,7 +92,8 @@ export const FORGE_RULE_TEMPLATES = [
     ],
     relatedIndicator: '50-day Moving Average',
     kbEntryId: 'moving-averages',
-    tags: ['trend', 'moving-average', 'momentum']
+    tags: ['trend', 'moving-average', 'momentum'],
+    agentUseDescription: 'Your agent will filter out stocks trading below their moving average, keeping only those with confirmed uptrend momentum.',
   },
   {
     id: 'tech-macd-bullish',
@@ -107,7 +111,8 @@ export const FORGE_RULE_TEMPLATES = [
     ],
     relatedIndicator: 'MACD Signal',
     kbEntryId: null,
-    tags: ['momentum', 'MACD', 'crossover', 'trend-reversal']
+    tags: ['momentum', 'MACD', 'crossover', 'trend-reversal'],
+    agentUseDescription: 'Your agent will watch for MACD bullish crossovers and boost conviction on stocks where momentum is shifting from bearish to bullish.',
   },
   {
     id: 'tech-volume-surge',
@@ -127,7 +132,8 @@ export const FORGE_RULE_TEMPLATES = [
     ],
     relatedIndicator: 'Volume',
     kbEntryId: 'volume-liquidity',
-    tags: ['volume', 'institutional', 'confirmation']
+    tags: ['volume', 'institutional', 'confirmation'],
+    agentUseDescription: 'Your agent will weight volume-confirmed price moves more heavily, treating unusual volume spikes as signals of institutional interest.',
   },
   {
     id: 'tech-relative-strength',
@@ -147,7 +153,8 @@ export const FORGE_RULE_TEMPLATES = [
     ],
     relatedIndicator: 'Relative Strength',
     kbEntryId: null,
-    tags: ['relative-strength', 'sector', 'leaders']
+    tags: ['relative-strength', 'sector', 'leaders'],
+    agentUseDescription: 'Your agent will rank stocks against their sector peers and favor those outperforming the group, avoiding laggards.',
   },
   {
     id: 'tech-avoid-declining',
@@ -167,7 +174,8 @@ export const FORGE_RULE_TEMPLATES = [
     ],
     relatedIndicator: '200-day Moving Average',
     kbEntryId: 'moving-averages',
-    tags: ['trend', 'downtrend', 'risk-avoidance']
+    tags: ['trend', 'downtrend', 'risk-avoidance'],
+    agentUseDescription: 'Your agent will automatically exclude stocks trading below their long-term moving average, avoiding potential value traps.',
   },
 
   // ══════════════════════════════════════
@@ -191,7 +199,8 @@ export const FORGE_RULE_TEMPLATES = [
     ],
     relatedIndicator: 'Earnings Surprise',
     kbEntryId: null,
-    tags: ['earnings', 'surprise', 'momentum']
+    tags: ['earnings', 'surprise', 'momentum'],
+    agentUseDescription: 'Your agent will check recent earnings reports and prioritize companies that beat analyst estimates, signaling strong execution.',
   },
   {
     id: 'fund-revenue-growth',
@@ -211,7 +220,8 @@ export const FORGE_RULE_TEMPLATES = [
     ],
     relatedIndicator: 'Revenue Growth',
     kbEntryId: null,
-    tags: ['revenue', 'growth', 'top-line']
+    tags: ['revenue', 'growth', 'top-line'],
+    agentUseDescription: 'Your agent will screen for companies with strong top-line revenue growth, filtering out stagnant businesses.',
   },
   {
     id: 'fund-value-pe',
@@ -231,7 +241,8 @@ export const FORGE_RULE_TEMPLATES = [
     ],
     relatedIndicator: 'P/E Ratio',
     kbEntryId: null,
-    tags: ['value', 'PE', 'valuation']
+    tags: ['value', 'PE', 'valuation'],
+    agentUseDescription: 'Your agent will compare each stock\'s P/E ratio against its sector median and favor those trading at a discount.',
   },
   {
     id: 'fund-bank-pb',
@@ -251,7 +262,8 @@ export const FORGE_RULE_TEMPLATES = [
     ],
     relatedIndicator: 'P/B Ratio',
     kbEntryId: 'sector-playbook-banks',
-    tags: ['banks', 'financials', 'PB', 'sector-specific']
+    tags: ['banks', 'financials', 'PB', 'sector-specific'],
+    agentUseDescription: 'Your agent will use P/B ratio instead of P/E when evaluating bank stocks, flagging those trading above book value as expensive.',
   },
   {
     id: 'fund-financial-health',
@@ -271,7 +283,8 @@ export const FORGE_RULE_TEMPLATES = [
     ],
     relatedIndicator: 'Financial Health Score',
     kbEntryId: null,
-    tags: ['health', 'balance-sheet', 'quality']
+    tags: ['health', 'balance-sheet', 'quality'],
+    agentUseDescription: 'Your agent will assess debt levels, cash flow, and margins to avoid companies with weak balance sheets that could crack under pressure.',
   },
   {
     id: 'fund-market-cap',
@@ -291,7 +304,8 @@ export const FORGE_RULE_TEMPLATES = [
     ],
     relatedIndicator: 'Market Capitalization',
     kbEntryId: 'market-capitalization',
-    tags: ['market-cap', 'size', 'large-cap', 'small-cap']
+    tags: ['market-cap', 'size', 'large-cap', 'small-cap'],
+    agentUseDescription: 'Your agent will filter stocks by market capitalization, focusing on the size category that best fits your risk tolerance and game strategy.',
   },
 
   // ══════════════════════════════════════
@@ -315,7 +329,8 @@ export const FORGE_RULE_TEMPLATES = [
     ],
     relatedIndicator: null,
     kbEntryId: null,
-    tags: ['diversification', 'sector', 'foundational']
+    tags: ['diversification', 'sector', 'foundational'],
+    agentUseDescription: 'Your agent will ensure picks are spread across multiple sectors, rejecting portfolios that concentrate too heavily in one industry.',
   },
   {
     id: 'risk-single-stock-limit',
@@ -335,7 +350,8 @@ export const FORGE_RULE_TEMPLATES = [
     ],
     relatedIndicator: null,
     kbEntryId: null,
-    tags: ['concentration', 'position-sizing', 'foundational']
+    tags: ['concentration', 'position-sizing', 'foundational'],
+    agentUseDescription: 'Your agent will cap the portfolio weight of any single stock, preventing one bad pick from sinking your entire game.',
   },
   {
     id: 'risk-volatility-avoidance',
@@ -355,7 +371,8 @@ export const FORGE_RULE_TEMPLATES = [
     ],
     relatedIndicator: 'ATR (Average True Range)',
     kbEntryId: null,
-    tags: ['volatility', 'ATR', 'risk-avoidance']
+    tags: ['volatility', 'ATR', 'risk-avoidance'],
+    agentUseDescription: 'Your agent will measure each stock\'s volatility against its sector average and avoid those with unusually wild price swings.',
   },
   {
     id: 'risk-exit-atr-stop',
@@ -375,7 +392,8 @@ export const FORGE_RULE_TEMPLATES = [
     ],
     relatedIndicator: 'ATR (Average True Range)',
     kbEntryId: null,
-    tags: ['stop-loss', 'ATR', 'exit-strategy']
+    tags: ['stop-loss', 'ATR', 'exit-strategy'],
+    agentUseDescription: 'Your agent will automatically exit positions that drop beyond a set ATR threshold from entry, cutting losses before they compound.',
   },
   {
     id: 'risk-avoid-declining-trend',
@@ -395,7 +413,8 @@ export const FORGE_RULE_TEMPLATES = [
     ],
     relatedIndicator: '200-day Moving Average',
     kbEntryId: null,
-    tags: ['downtrend', 'trend', 'risk-avoidance']
+    tags: ['downtrend', 'trend', 'risk-avoidance'],
+    agentUseDescription: 'Your agent will avoid buying stocks in sustained downtrends, waiting for a confirmed trend reversal before considering them.',
   },
 
   // ══════════════════════════════════════
@@ -420,7 +439,8 @@ export const FORGE_RULE_TEMPLATES = [
     ],
     relatedIndicator: null,
     kbEntryId: null,
-    tags: ['sector', 'cap', 'exposure', 'foundational']
+    tags: ['sector', 'cap', 'exposure', 'foundational'],
+    agentUseDescription: 'Your agent will enforce a maximum percentage for any single sector, rebalancing when one sector grows too dominant.',
   },
   {
     id: 'alloc-sector-minimum',
@@ -441,7 +461,8 @@ export const FORGE_RULE_TEMPLATES = [
     ],
     relatedIndicator: null,
     kbEntryId: null,
-    tags: ['sector', 'minimum', 'allocation']
+    tags: ['sector', 'minimum', 'allocation'],
+    agentUseDescription: 'Your agent will always allocate at least the specified percentage to your chosen sector, even when other signals compete for attention.',
   },
   {
     id: 'alloc-tier-preference',
@@ -461,7 +482,8 @@ export const FORGE_RULE_TEMPLATES = [
     ],
     relatedIndicator: null,
     kbEntryId: null,
-    tags: ['tier', 'star', 'BaggerBomb', 'game-specific']
+    tags: ['tier', 'star', 'BaggerBomb', 'game-specific'],
+    agentUseDescription: 'Your agent will select Star tier stocks based on your preferred attribute, putting your highest-conviction pick in the 2x multiplier slot.',
   },
   {
     id: 'alloc-even-spread',
@@ -479,6 +501,7 @@ export const FORGE_RULE_TEMPLATES = [
     ],
     relatedIndicator: null,
     kbEntryId: null,
-    tags: ['balanced', 'even', 'defensive']
+    tags: ['balanced', 'even', 'defensive'],
+    agentUseDescription: 'Your agent will distribute portfolio weight equally across available sectors, preventing any one sector from dominating your picks.',
   },
 ];
