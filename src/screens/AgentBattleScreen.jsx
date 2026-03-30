@@ -671,7 +671,6 @@ export default function AgentBattleScreen({ battle, user, onBack }) {
       <div style={{
         flexShrink: 0,
         background: tokens.bgAgent || '#1C1A27',
-        borderBottom: `1px solid ${tokens.borderDefault || 'rgba(255,255,255,0.05)'}`,
       }}>
         {/* Back button bar */}
         <div style={{
@@ -744,7 +743,13 @@ export default function AgentBattleScreen({ battle, user, onBack }) {
       </div>
 
       {/* ═══ TAB CONTENT ═══ */}
-      <div style={{
+      <div style={activeTab === 'matchups' ? {
+        flex: 1,
+        overflowY: 'auto',
+        paddingBottom: 100,
+        position: 'relative',
+        zIndex: 2,
+      } : {
         flex: 1,
         overflow: 'hidden',
         display: 'flex',
@@ -760,12 +765,6 @@ export default function AgentBattleScreen({ battle, user, onBack }) {
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -20 }}
               transition={{ duration: 0.15 }}
-              style={{
-                flex: 1,
-                overflowY: 'auto',
-                WebkitOverflowScrolling: 'touch',
-                paddingBottom: 100,
-              }}
             >
               {TIERS.map(tier => (
                 <div key={tier.key}>
@@ -785,12 +784,10 @@ export default function AgentBattleScreen({ battle, user, onBack }) {
               ))}
 
               {/* Closed trades */}
-              <div style={{ padding: '8px 12px 0' }}>
-                <ClosedTradesSection
-                  closedTrades={agentBattle?.trades || []}
-                  defaultExpanded={false}
-                />
-              </div>
+              <ClosedTradesSection
+                closedTrades={agentBattle?.trades || []}
+                defaultExpanded={false}
+              />
             </motion.div>
           )}
 
