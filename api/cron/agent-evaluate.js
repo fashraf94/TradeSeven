@@ -207,7 +207,7 @@ async function processAgentBattle(db, battle, summary) {
     await Promise.all(
       allSymbols.map(async (symbol) => {
         try {
-          const data = await getStockAnalysisData(symbol, { forceRefresh: true, fields: ['daily'] });
+          const data = await getStockAnalysisData(symbol, { forceRefresh: true, fields: ['daily', 'price'] });
           if (data?.price) {
             prices[symbol] = data.price;
           }
@@ -366,7 +366,7 @@ async function processAgentBattle(db, battle, summary) {
         if (newTickersNeedingPrices.length > 0) {
           await Promise.allSettled(newTickersNeedingPrices.map(async (symbol) => {
             try {
-              const data = await getStockAnalysisData(symbol, { forceRefresh: true, fields: ['daily'] });
+              const data = await getStockAnalysisData(symbol, { forceRefresh: true, fields: ['daily', 'price'] });
               if (data?.price) prices[symbol] = data.price;
             } catch (_e) { /* skip — best effort */ }
           }));
@@ -633,7 +633,7 @@ async function processAgentBattle(db, battle, summary) {
           // Fetch price if not already fetched
           if (!prices[ticker]) {
             try {
-              const data = await getStockAnalysisData(ticker, { forceRefresh: true, fields: ['daily'] });
+              const data = await getStockAnalysisData(ticker, { forceRefresh: true, fields: ['daily', 'price'] });
               if (data?.price) prices[ticker] = data.price;
             } catch (_e) { /* skip — catalyst is best-effort */ }
           }
@@ -972,7 +972,7 @@ async function fetchPricesForProposal(proposal) {
   const prices = {};
   await Promise.all(symbols.map(async (symbol) => {
     try {
-      const data = await getStockAnalysisData(symbol, { forceRefresh: true, fields: ['daily'] });
+      const data = await getStockAnalysisData(symbol, { forceRefresh: true, fields: ['daily', 'price'] });
       if (data?.price) prices[symbol] = data.price;
     } catch (err) {
       console.warn(`${LOG_PREFIX} Price fetch for proposal symbol ${symbol} failed:`, err.message);

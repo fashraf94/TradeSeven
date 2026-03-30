@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Film, ChevronDown, ChevronUp, Check, X } from 'lucide-react';
-import { addDirective, appendBattleLedger } from '../../services/agentService';
+import { addDirective, appendBattleLedger, updateReviewDecision } from '../../services/agentService';
 
 const hexToRgba = (hex, alpha) => {
   const r = parseInt(hex.slice(1, 3), 16);
@@ -14,7 +14,10 @@ const GRADE_COLORS = { A: '#10b981', B: '#5eead4', C: '#f59e0b', D: '#ef4444', F
 
 const FilmRoomCard = ({ battle, agentId, tokens }) => {
   const [expandedSection, setExpandedSection] = useState(null);
-  const [resolvedRules, setResolvedRules] = useState({}); // { ruleIndex: 'accepted' | 'rejected' }
+
+  // Persisted review decisions from Firestore (survives re-renders/navigation)
+  const reviewDecisions = battle?.reviewDecisions || {};
+  const getRuleId = (reviewDate, index) => `${reviewDate}_rule_${index}`;
 
   // Find latest review
   const review = useMemo(() => {
@@ -29,27 +32,29 @@ const FilmRoomCard = ({ battle, agentId, tokens }) => {
   const gradeColor = GRADE_COLORS[review.selfGrade] || tokens.textMuted;
 
   const handleAcceptRule = async (rule, index) => {
-    if (resolvedRules[index] || !agentId) return;
+    const ruleId = getRuleId(review.date, index);
+    if (reviewDecisions[ruleId] || !agentId) return;
     try {
       await addDirective(agentId, { text: rule.text, source: 'batch_review' });
+      await updateReviewDecision(battle.id, ruleId, 'accepted');
       await appendBattleLedger(battle.id, {
         type: 'rule_accepted',
         details: { ruleText: rule.text, source: 'batch_review', reviewDate: review.date },
       });
-      setResolvedRules(prev => ({ ...prev, [index]: 'accepted' }));
     } catch (err) {
       console.error('[FilmRoom] Failed to accept rule:', err.message);
     }
   };
 
   const handleRejectRule = async (rule, index) => {
-    if (resolvedRules[index]) return;
+    const ruleId = getRuleId(review.date, index);
+    if (reviewDecisions[ruleId]) return;
     try {
+      await updateReviewDecision(battle.id, ruleId, 'rejected');
       await appendBattleLedger(battle.id, {
         type: 'rule_rejected',
         details: { ruleText: rule.text, source: 'batch_review', reviewDate: review.date },
       });
-      setResolvedRules(prev => ({ ...prev, [index]: 'rejected' }));
     } catch (err) {
       console.error('[FilmRoom] Failed to reject rule:', err.message);
     }
@@ -185,7 +190,8 @@ const FilmRoomCard = ({ battle, agentId, tokens }) => {
               Proposed Playbook Rules
             </div>
             {review.proposedRules.map((rule, i) => {
-              const resolved = resolvedRules[i];
+              const ruleId = getRuleId(review.date, i);
+              const resolved = reviewDecisions[ruleId];
               return (
                 <div key={i} style={{
                   padding: '10px 12px', borderRadius: '10px', marginBottom: '6px',

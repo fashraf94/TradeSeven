@@ -145,6 +145,16 @@ export const updateAgent = async (agentId, updates) => {
 };
 
 export const addDirective = async (agentId, directive) => {
+  const docRef = doc(db, AGENTS_COLLECTION, agentId);
+
+  // Duplicate guard: skip if a directive with the same text already exists
+  const snap = await getDoc(docRef);
+  const existing = snap.data()?.directives || [];
+  if (existing.some(d => d.text === directive.text)) {
+    console.warn('[addDirective] Duplicate directive skipped:', directive.text);
+    return existing.find(d => d.text === directive.text);
+  }
+
   const newDirective = {
     id: `dir_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
     text: directive.text,
@@ -153,7 +163,6 @@ export const addDirective = async (agentId, directive) => {
     createdAt: new Date().toISOString(),
   };
 
-  const docRef = doc(db, AGENTS_COLLECTION, agentId);
   await updateDoc(docRef, {
     directives: arrayUnion(newDirective),
     updatedAt: serverTimestamp(),
@@ -345,6 +354,14 @@ export const appendBattleLedger = async (battleId, entry) => {
   const docRef = doc(db, BATTLES_COLLECTION, battleId);
   await updateDoc(docRef, {
     battleLedger: arrayUnion({ ...entry, timestamp: new Date().toISOString() }),
+    updatedAt: serverTimestamp(),
+  });
+};
+
+export const updateReviewDecision = async (battleId, ruleId, decision) => {
+  const docRef = doc(db, BATTLES_COLLECTION, battleId);
+  await updateDoc(docRef, {
+    [`reviewDecisions.${ruleId}`]: decision,
     updatedAt: serverTimestamp(),
   });
 };

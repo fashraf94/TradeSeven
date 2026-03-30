@@ -104,9 +104,12 @@ const AgentMindTab = ({ agent, scouting, battleLog, news, tokens, isDesktop, isM
     strategy_session: tokens.amber,
   };
 
-  // Group directives by source (null-safe)
+  // Group directives by source (null-safe), deduplicated by text
   const directiveGroups = {};
+  const seenTexts = new Set();
   (agent?.directives || []).forEach(d => {
+    if (seenTexts.has(d.text)) return;
+    seenTexts.add(d.text);
     if (!directiveGroups[d.source]) directiveGroups[d.source] = [];
     directiveGroups[d.source].push(d);
   });
