@@ -10,7 +10,7 @@ const TIER_CONFIG = {
   support: { prefix: '\u25AB', label: '1x', borderColor: 'rgba(255,255,255,0.15)', bgTint: 'rgba(255,255,255,0.03)' },
 };
 
-function PillItem({ asset, tier, slotIndex, isFiltered, isDimmed, tokens, onTap }) {
+function PillItem({ asset, tier, slotIndex, isFiltered, isDimmed, tokens, onTap, isDesktop }) {
   const config = TIER_CONFIG[tier];
   const longPressTimer = useRef(null);
 
@@ -38,8 +38,8 @@ function PillItem({ asset, tier, slotIndex, isFiltered, isDimmed, tokens, onTap 
         if (longPressTimer.current) clearTimeout(longPressTimer.current);
       }}
       style={{
-        minWidth: 80,
-        height: 60,
+        minWidth: isDesktop ? 96 : 80,
+        height: isDesktop ? 68 : 60,
         borderRadius: 12,
         border: `2px solid ${isFiltered ? '#5eead4' : config.borderColor}`,
         background: config.bgTint,
@@ -86,7 +86,7 @@ function PillItem({ asset, tier, slotIndex, isFiltered, isDimmed, tokens, onTap 
   );
 }
 
-export default function AgentPortfolioStrip({ portfolio, tokens, filterTicker, onTickerTap }) {
+export default function AgentPortfolioStrip({ portfolio, tokens, filterTicker, onTickerTap, isDesktop }) {
   if (!portfolio) return null;
 
   const pills = [
@@ -102,10 +102,10 @@ export default function AgentPortfolioStrip({ portfolio, tokens, filterTicker, o
       <div
         style={{
           display: 'flex',
-          gap: 8,
+          gap: isDesktop ? 10 : 8,
           overflowX: 'auto',
           overflowY: 'hidden',
-          padding: '6px 16px',
+          padding: isDesktop ? '6px 24px' : '6px 16px',
           WebkitOverflowScrolling: 'touch',
           scrollbarWidth: 'none',
           msOverflowStyle: 'none',
@@ -122,6 +122,7 @@ export default function AgentPortfolioStrip({ portfolio, tokens, filterTicker, o
             isDimmed={hasFilter && filterTicker !== asset.symbol}
             tokens={tokens}
             onTap={onTickerTap}
+            isDesktop={isDesktop}
           />
         ))}
       </div>

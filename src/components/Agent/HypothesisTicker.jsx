@@ -10,8 +10,8 @@ function extractHypothesis(statusFeed) {
   // Walk backwards through feed to find latest hypothesis-bearing entry
   for (let i = statusFeed.length - 1; i >= 0; i--) {
     const entry = statusFeed[i];
-    if (entry.type === 'hypothesis' && entry.text) return entry;
-    if (entry.type === 'evaluation' && entry.hypothesis) {
+    if ((entry.type === 'hypothesis' || entry.action === 'hypothesis') && entry.text) return entry;
+    if ((entry.type === 'evaluation' || entry.action === 'evaluation') && entry.hypothesis) {
       return { text: entry.hypothesis, reasoning: entry.reasoning || entry.text, timestamp: entry.timestamp };
     }
     if (entry.hypothesis) {
