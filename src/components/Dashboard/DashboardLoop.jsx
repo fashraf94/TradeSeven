@@ -144,7 +144,12 @@ export default function DashboardLoop({
         sessionScores: battle.sessions || {},
         isTraining: true,
         isTrainingBattle: true,
-        createdAt: battle.timeline?.createdAt
+        createdAt: battle.timeline?.createdAt,
+        // Agent metadata — preserve for AgentBattleScreen routing
+        agentDeployed: battle.agentDeployed || false,
+        agentId: battle.agentId || null,
+        agentInnerMonologue: battle.agentInnerMonologue || null,
+        agentStrategyBrief: battle.agentStrategyBrief || null,
       };
       setCurrentBattle(convertedBattle);
       setActiveBattleId(battle.id);

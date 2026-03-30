@@ -3,7 +3,7 @@
 
 import { useState, useEffect } from 'react';
 import { collection, query, where, limit, onSnapshot } from 'firebase/firestore';
-import { db } from '../firebase/config';
+import { db, auth } from '../firebase/config';
 
 const useAgentBattleId = (agentId) => {
   const [agentBattleId, setAgentBattleId] = useState(null);
@@ -17,9 +17,16 @@ const useAgentBattleId = (agentId) => {
       return;
     }
 
+    if (!auth.currentUser) {
+      setAgentBattleId(null);
+      setLoading(false);
+      return;
+    }
+
     const q = query(
       collection(db, 'agentBattles'),
       where('agentId', '==', agentId),
+      where('ownerId', '==', auth.currentUser.uid),
       where('status', '==', 'active'),
       limit(1)
     );
