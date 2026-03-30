@@ -60,4 +60,4 @@ function getPresetConfig(preset) {
   return PRESET_CONFIGS[preset] || PRESET_CONFIGS.balanced;
 }
 
-module.exports = { PRESET_CONFIGS, getPresetConfig };
+export { PRESET_CONFIGS, getPresetConfig };

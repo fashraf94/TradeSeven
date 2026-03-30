@@ -6,6 +6,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { stockAPI, POPULAR_CRYPTO } from '../services/eodhdAPI';
 import { calculateAssetScoreV3, flattenPortfolio } from '../utils/baggerBombUtils';
 import { getBankedScoreTotal } from '../services/dailyScoringV4Service';
+import { getVolatilityThresholds } from '../services/volatilityService';
 
 const CARD_POLL_INTERVAL = 5000; // 5 seconds
 const SCORE_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
@@ -77,7 +78,34 @@ export function useBaggerBombCardScore(battle, user) {
   );
 
   const openPrices = useMemo(() => battle?.state?.startingPrices || {}, [battle?.state?.startingPrices]);
-  const battleThresholds = useMemo(() => battle?.thresholds || {}, [battle?.thresholds]);
+  const storedThresholds = useMemo(() => battle?.thresholds || {}, [battle?.thresholds]);
+  const [fetchedThresholds, setFetchedThresholds] = useState({});
+
+  // One-time threshold fetch for symbols missing from the battle doc (e.g. training battles)
+  useEffect(() => {
+    if (!isApplicable) return;
+    const allAssets = [...myPortfolio, ...oppPortfolio].filter(Boolean);
+    const symbols = [...new Set(allAssets.map(a => a.symbol).filter(Boolean))];
+    const missing = symbols.filter(s => !storedThresholds[s]);
+    if (missing.length === 0) return;
+
+    const stockSymbols = missing.filter(s => !isCrypto(s));
+    const cryptoSymbols = missing.filter(s => isCrypto(s));
+
+    Promise.all([
+      stockSymbols.length > 0 ? getVolatilityThresholds(stockSymbols, 'stock') : {},
+      cryptoSymbols.length > 0 ? getVolatilityThresholds(cryptoSymbols, 'crypto') : {},
+    ]).then(([stockT, cryptoT]) => {
+      setFetchedThresholds(prev => ({ ...prev, ...stockT, ...cryptoT }));
+    }).catch(err => {
+      console.warn('[CardScore] threshold fetch failed:', err.message);
+    });
+  }, [isApplicable, myPortfolio, oppPortfolio, storedThresholds]);
+
+  const battleThresholds = useMemo(
+    () => ({ ...fetchedThresholds, ...storedThresholds }),
+    [storedThresholds, fetchedThresholds],
+  );
 
   // Calendar day gate for previousClosePriceMap (mirrors V4 hook logic)
   const previousClosePriceMap = useMemo(() => {
