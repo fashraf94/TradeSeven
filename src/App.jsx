@@ -6349,7 +6349,8 @@ export default function PortfolioDuel() {
     });
 
     setActiveBattleId(trainingBattle.id);
-    setScreen('dashboard');
+    setCurrentBattle(trainingBattle);
+    setScreen('battle');
     showToast(`Agent deployed to BaggerBomb Training! 🤖💣`);
 
     return battleId;
