@@ -6196,11 +6196,12 @@ export default function PortfolioDuel() {
     // 1. Generate CPU portfolio (reuse existing V3 logic)
     const cpuPortfolioData = generateCPUPortfolioBaggerBombV3(stocksData, cryptoData);
 
-    // 2. Calculate timing (1 hour for training)
+    // 2. Calculate timing — use agent battle expiry if available, else 1 hour fallback
     const now = new Date();
     const startDate = new Date(now);
-    const TRAINING_DURATION = 60 * 60 * 1000;
-    const endDate = new Date(startDate.getTime() + TRAINING_DURATION);
+    const endDate = agentMeta?.expiresAt
+      ? new Date(agentMeta.expiresAt)
+      : new Date(startDate.getTime() + 60 * 60 * 1000);
 
     // 3. Flatten all portfolios + fetch starting prices
     const userAssets = flattenPortfolio(portfolioData);
@@ -6333,6 +6334,7 @@ export default function PortfolioDuel() {
     try {
       const { doc, setDoc } = await import('firebase/firestore');
       const { db } = await import('./firebase/config');
+      // TODO: Remove training battle creation for agent deploys — dashboard should read from agentBattles directly
       await setDoc(doc(db, 'trainingBattles', battleId), trainingBattle);
       console.log('✅ Agent Training V3 battle saved to Firebase:', battleId);
     } catch (firebaseError) {

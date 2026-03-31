@@ -137,6 +137,7 @@ const AgentDashboard = ({ user, setScreen, onCreateAgentBattle, setShowForge }) 
             agentId: agent.id,
             innerMonologue: data.innerMonologue || null,
             strategyBrief: data.strategyBrief || null,
+            expiresAt: data.expiresAt || null,
           }
         );
       }
