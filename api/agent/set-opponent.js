@@ -1,5 +1,6 @@
 import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
 import { applySecurityMiddleware } from '../_utils/security.js';
+import { requireAuth } from '../_utils/authMiddleware.js';
 
 export const config = { maxDuration: 10 };
 
@@ -21,6 +22,10 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
+  // Verify Firebase ID token (same pattern as chat.js / debate.js)
+  const user = await requireAuth(req, res);
+  if (!user) return;
+
   const { agentBattleId, opponent, startingPrices } = req.body;
 
   if (!agentBattleId || !opponent?.portfolio) {
@@ -39,9 +44,8 @@ export default async function handler(req, res) {
 
     const battle = battleSnap.data();
 
-    // Ownership check
-    const uid = req.headers['x-user-uid'];
-    if (battle.ownerId !== uid) {
+    // Ownership check — verified uid from Firebase token, not client header
+    if (battle.ownerId !== user.uid) {
       return res.status(403).json({ error: 'Not authorised' });
     }
 
@@ -82,6 +86,6 @@ export default async function handler(req, res) {
     return res.status(200).json({ success: true });
   } catch (error) {
     console.error('[agent/set-opponent] Error:', error);
-    return res.status(500).json({ error: 'Failed to set opponent', details: error.message });
+    return res.status(500).json({ error: 'Failed to set opponent' });
   }
 }

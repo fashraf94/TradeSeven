@@ -6259,10 +6259,10 @@ export default function PortfolioDuel() {
     if (agentBattleId) {
       try {
         const { auth } = await import('./firebase/config');
-        const uid = auth.currentUser?.uid;
+        const idToken = await auth.currentUser?.getIdToken();
         const resp = await fetch('/api/agent/set-opponent', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'x-user-uid': uid },
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
           body: JSON.stringify({
             agentBattleId,
             opponent: { portfolio: cpuPortfolio, bench: cpuBench },
