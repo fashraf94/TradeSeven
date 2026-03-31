@@ -7,7 +7,6 @@ import { REPORTER_COLORS, BROADSHEET_TOKENS } from '../../constants/reporterThem
 import { getMarketState } from '../../utils/marketSchedule';
 import EditorialStory from './EditorialStory';
 import StoryVisualSafe from './StoryVisualSafe';
-import ReporterAvatar from './ReporterAvatar';
 import { toDate } from '../../utils/timeAgo';
 import { ChevronUp } from 'lucide-react';
 
@@ -204,7 +203,10 @@ function KimMobilePreview({ story, onStorySelect }) {
 
 // ── Mobile Breaking Hero ──
 
-const swipeKeyframes = `@keyframes swipeHint { 0%, 100% { transform: translateX(-50%) translateY(0); } 50% { transform: translateX(-50%) translateY(8px); } }`;
+const swipeKeyframes = `
+  @keyframes swipeHint { 0%, 100% { transform: translateX(-50%) translateY(0); } 50% { transform: translateX(-50%) translateY(8px); } }
+  @media (prefers-reduced-motion: reduce) { .swipe-hint { animation: none !important; } }
+`;
 
 function MobileBreakingHero({ hero, onStoryExpand }) {
   const reporterColor = REPORTER_COLORS[hero.reporter];
@@ -318,7 +320,7 @@ function MobileBreakingHero({ hero, onStoryExpand }) {
       </div>
 
       {/* Swipe-up indicator */}
-      <div style={{
+      <div className="swipe-hint" style={{
         position: 'absolute', bottom: 12, left: '50%',
         animation: 'swipeHint 2s ease-in-out infinite',
         display: 'flex', flexDirection: 'column',
@@ -570,7 +572,7 @@ function MobileFrontPage({ hero, stories, movers, isBreaking, onStoryExpand, exp
               <div
                 key={story.id}
                 onClick={() => onStorySelect?.(story)}
-                onKeyDown={(e) => { if (e.key === 'Enter') onStorySelect?.(story); }}
+                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onStorySelect?.(story); } }}
                 tabIndex={0}
                 role="button"
                 style={{
