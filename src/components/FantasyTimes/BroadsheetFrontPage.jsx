@@ -2,26 +2,23 @@
 // Editorial front page layout — hero zone + fold + below-fold sections + movers.
 // Phase 4: mobile polish, KimMobilePreview, time-of-day editorial rhythm.
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { REPORTER_COLORS, BROADSHEET_TOKENS } from '../../constants/reporterTheme';
-import { getMarketState } from '../../utils/marketSchedule';
+import { doc, getDoc } from 'firebase/firestore';
+import { db } from '../../firebase/config';
 import EditorialStory from './EditorialStory';
 import StoryVisualSafe from './StoryVisualSafe';
+import SidebarSectorBars from './SidebarSectorBars';
 import { toDate } from '../../utils/timeAgo';
 import { ChevronUp } from 'lucide-react';
 
 // ── Edition Detection ──
 
 function getEdition() {
-  const ms = getMarketState();
-  if (ms.state === 'OPEN' || ms.state === 'PRE_MARKET') return 'live';
-  // For CLOSED_AFTERHOURS, distinguish morning vs evening by ET hour
-  if (ms.state === 'CLOSED_AFTERHOURS') {
-    const etStr = new Date().toLocaleString('en-US', { timeZone: 'America/New_York' });
-    const etHour = new Date(etStr).getHours();
-    if (etHour >= 4 && etHour < 10) return 'morning';
-  }
-  return 'evening'; // CLOSED_AFTERHOURS (evening), CLOSED_WEEKEND, CLOSED_HOLIDAY
+  const etStr = new Date().toLocaleString('en-US', { timeZone: 'America/New_York' });
+  const etHour = new Date(etStr).getHours();
+  // Neta owns the morning until 11 AM ET, Kai owns everything else
+  return etHour < 11 ? 'morning' : 'standard';
 }
 
 // ── Story Selection Logic ──
@@ -33,43 +30,24 @@ function selectFrontPageStories(stories, edition) {
 
   const findBest = (predicate) => sorted.find(predicate) || null;
 
-  let hero, sidebar;
   const used = new Set();
 
-  if (edition === 'morning') {
-    hero = findBest(s => s.type === 'econ_preview')
-        || findBest(s => s.type === 'earnings_preview')
-        || findBest(s => s.urgency === 'timely')
-        || sorted[0];
-    used.add(hero?.id);
-    sidebar = findBest(s => s.type === 'sector_column' && !used.has(s.id));
-  } else if (edition === 'evening') {
-    hero = findBest(s => s.type === 'sector_column')
-        || findBest(s => s.type === 'earnings_recap')
-        || findBest(s => s.urgency !== 'breaking')
-        || sorted[0];
-    used.add(hero?.id);
-    // Kim is likely hero, so sidebar gets Neta
-    sidebar = findBest(s => s.reporter === 'neta' && !used.has(s.id))
-           || findBest(s => s.type === 'sector_column' && !used.has(s.id));
-  } else {
-    // Live edition — default
-    hero = findBest(s => s.urgency === 'breaking')
-        || findBest(s => s.urgency === 'timely')
-        || sorted[0];
-    used.add(hero?.id);
-    sidebar = findBest(s => s.type === 'sector_column' && !used.has(s.id))
-           || findBest(s => s.urgency === 'evergreen' && !used.has(s.id));
-  }
+  // Hero: Neta in morning, Kai otherwise
+  const hero = edition === 'morning'
+    ? (findBest(s => s.reporter === 'neta') || findBest(s => s.reporter === 'kai') || sorted[0])
+    : (findBest(s => s.reporter === 'kai') || sorted[0]);
+  used.add(hero?.id);
 
+  // Sidebar: always Kim's latest column
+  const sidebar = findBest(s => s.type === 'sector_column' && !used.has(s.id));
   if (sidebar) used.add(sidebar.id);
 
-  // Below-fold
-  const belowFoldLeft = findBest(s => s.type === 'market_mover' && !used.has(s.id));
+  // Below-fold: Alex left, then the reporter not in hero on right
+  const belowFoldLeft = findBest(s => s.reporter === 'alex' && !used.has(s.id));
   if (belowFoldLeft) used.add(belowFoldLeft.id);
-  const belowFoldRight = findBest(s =>
-    (s.type === 'econ_recap' || s.type === 'econ_preview') && !used.has(s.id)
-  );
+  const belowFoldRight = edition === 'morning'
+    ? findBest(s => s.reporter === 'kai' && !used.has(s.id))
+    : findBest(s => s.reporter === 'neta' && !used.has(s.id));
   const belowFold = [belowFoldLeft, belowFoldRight].filter(Boolean);
 
   // Movers: all market_mover stories, sorted by |percentChange| desc
@@ -382,9 +360,8 @@ function MobileSectionHeader({ label, color }) {
 
 // ── Desktop Front Page ──
 
-function DesktopFrontPage({ hero, sidebar, belowFold, movers, onStoryExpand, expandedStoryId, onResearch, onStorySelect, edition }) {
-  // Evening edition with no sidebar uses relaxed 2-column above-fold
-  const aboveFoldColumns = (edition === 'evening' && !sidebar) ? '1fr 1fr' : (sidebar ? '3fr 1fr' : '1fr');
+function DesktopFrontPage({ hero, sidebar, belowFold, movers, onStoryExpand, expandedStoryId, onResearch, onStorySelect, edition, sectorData }) {
+  const aboveFoldColumns = sidebar ? '3fr 1fr' : '1fr';
 
   return (
     <div>
@@ -464,6 +441,8 @@ function DesktopFrontPage({ hero, sidebar, belowFold, movers, onStoryExpand, exp
             }}>
               BY {REPORTER_COLORS[sidebar.reporter]?.name || sidebar.reporter}
             </div>
+
+            {sectorData && <SidebarSectorBars sectorData={sectorData} />}
           </div>
         )}
       </div>
@@ -667,6 +646,23 @@ export default function BroadsheetFrontPage({ stories, onStoryExpand, isDesktop,
     [stories, edition]
   );
 
+  const [sectorData, setSectorData] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const snap = await getDoc(doc(db, 'indexIntelligence', 'marketContext'));
+        if (!cancelled && snap.exists()) {
+          setSectorData(snap.data().sectorSnapshot || []);
+        }
+      } catch (_) {
+        // Sector bars are enhancement, not critical
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
   const storyCount = stories?.length || 0;
   const isBreaking = isBreakingRecent(hero);
 
@@ -701,6 +697,7 @@ export default function BroadsheetFrontPage({ stories, onStoryExpand, isDesktop,
       onResearch={onResearch}
       onStorySelect={onStorySelect}
       edition={edition}
+      sectorData={sectorData}
     />
   );
 }
