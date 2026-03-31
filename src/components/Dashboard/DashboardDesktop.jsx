@@ -159,13 +159,18 @@ export default function DashboardDesktop({
     }
   };
 
-  // ─── Recent results (last 2 completed battles) ──────────────────────────
+  // ─── Recent results (last 2 completed battles within 48 hours) ─────────────
   const recentResults = useMemo(() => {
+    const fortyEightHoursAgo = Date.now() - 48 * 60 * 60 * 1000;
     return (completedBattles || [])
       .sort((a, b) => {
         const aTime = a.completedAt || a.timeline?.completedAt || a.endDate || 0;
         const bTime = b.completedAt || b.timeline?.completedAt || b.endDate || 0;
         return new Date(bTime) - new Date(aTime);
+      })
+      .filter(b => {
+        const time = b.completedAt || b.timeline?.completedAt || b.endDate;
+        return time && new Date(time).getTime() > fortyEightHoursAgo;
       })
       .slice(0, 2);
   }, [completedBattles]);
