@@ -240,7 +240,7 @@ function MobileNormalLead({ hero, onStoryExpand }) {
 
 // ── Desktop Front Page ──
 
-function DesktopFrontPage({ hero, sidebar, belowFold, movers, onStoryExpand }) {
+function DesktopFrontPage({ hero, sidebar, belowFold, movers, onStoryExpand, expandedStoryId, onResearch }) {
   return (
     <div>
       {/* ═══ ABOVE THE FOLD ═══ */}
@@ -260,6 +260,9 @@ function DesktopFrontPage({ hero, sidebar, belowFold, movers, onStoryExpand }) {
               variant="hero"
               isDesktop={true}
               onExpand={onStoryExpand}
+              isExpanded={expandedStoryId === hero.id}
+              onCollapse={() => onStoryExpand(null)}
+              onResearch={onResearch}
               showVisual={true}
             />
           )}
@@ -346,6 +349,7 @@ function DesktopFrontPage({ hero, sidebar, belowFold, movers, onStoryExpand }) {
         <div style={{
           display: 'grid',
           gridTemplateColumns: belowFold.length > 1 ? '1fr 1fr' : '1fr',
+          alignItems: 'start',
         }}>
           {belowFold.map((story, idx) => (
             <div
@@ -361,6 +365,9 @@ function DesktopFrontPage({ hero, sidebar, belowFold, movers, onStoryExpand }) {
                 variant="secondary"
                 isDesktop={true}
                 onExpand={onStoryExpand}
+                isExpanded={expandedStoryId === story.id}
+                onCollapse={() => onStoryExpand(null)}
+                onResearch={onResearch}
               />
             </div>
           ))}
@@ -377,7 +384,7 @@ function DesktopFrontPage({ hero, sidebar, belowFold, movers, onStoryExpand }) {
 
 // ── Mobile Front Page ──
 
-function MobileFrontPage({ hero, stories, movers, isBreaking, onStoryExpand }) {
+function MobileFrontPage({ hero, stories, movers, isBreaking, onStoryExpand, expandedStoryId, onResearch }) {
   // Remaining stories (not the hero)
   const remaining = stories.filter(s => s.id !== hero?.id);
 
@@ -404,6 +411,9 @@ function MobileFrontPage({ hero, stories, movers, isBreaking, onStoryExpand }) {
             variant="compact"
             isDesktop={false}
             onExpand={onStoryExpand}
+            isExpanded={expandedStoryId === story.id}
+            onCollapse={() => onStoryExpand(null)}
+            onResearch={onResearch}
           />
         ))}
       </div>
@@ -492,7 +502,7 @@ function MoversSection({ movers }) {
 
 // ── Main Component ──
 
-export default function BroadsheetFrontPage({ stories, onStoryExpand, isDesktop, expandedStoryId }) {
+export default function BroadsheetFrontPage({ stories, onStoryExpand, isDesktop, expandedStoryId, onResearch }) {
   const { hero, sidebar, belowFold, movers } = useMemo(
     () => selectFrontPageStories(stories),
     [stories]
@@ -511,6 +521,8 @@ export default function BroadsheetFrontPage({ stories, onStoryExpand, isDesktop,
         movers={movers}
         isBreaking={isBreaking}
         onStoryExpand={onStoryExpand}
+        expandedStoryId={expandedStoryId}
+        onResearch={onResearch}
       />
     );
   }
@@ -528,6 +540,8 @@ export default function BroadsheetFrontPage({ stories, onStoryExpand, isDesktop,
       belowFold={storyCount >= 2 ? belowFold : []}
       movers={movers}
       onStoryExpand={onStoryExpand}
+      expandedStoryId={expandedStoryId}
+      onResearch={onResearch}
     />
   );
 }

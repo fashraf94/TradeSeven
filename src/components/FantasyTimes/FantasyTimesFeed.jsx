@@ -51,12 +51,16 @@ export default function FantasyTimesFeed({
   const { stories, loading, error, refresh } = useFantasyTimes(userContext);
 
   const handleStoryExpand = useCallback((storyId) => {
-    // Phase 1: delegate to existing StoryDetail via onStorySelect
-    if (onStorySelect) {
-      const story = stories.find(s => s.id === storyId);
-      if (story) onStorySelect(story);
+    if (storyId === null || storyId === expandedStoryId) {
+      setExpandedStoryId(null);
+    } else {
+      setExpandedStoryId(storyId);
     }
-  }, [onStorySelect, stories]);
+  }, [expandedStoryId]);
+
+  const handleResearch = useCallback((ticker) => {
+    setResearchSymbol(ticker);
+  }, []);
 
   // Memoize filtered stories for reporter desks
   const reporterStories = useMemo(
@@ -171,6 +175,7 @@ export default function FantasyTimesFeed({
                   onStoryExpand={handleStoryExpand}
                   isDesktop={isDesktop}
                   expandedStoryId={expandedStoryId}
+                  onResearch={handleResearch}
                 />
               ) : (
                 <ReporterDesk
@@ -181,6 +186,7 @@ export default function FantasyTimesFeed({
                   onStoryExpand={handleStoryExpand}
                   onStoryCollapse={() => setExpandedStoryId(null)}
                   onStorySelect={onStorySelect}
+                  onResearch={handleResearch}
                 />
               )}
             </motion.div>

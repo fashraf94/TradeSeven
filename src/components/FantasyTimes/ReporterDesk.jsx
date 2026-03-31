@@ -94,7 +94,7 @@ function EmptyDesk({ reporter }) {
 
 // ── Kai's Desk: 3-column dense grid ──
 
-function KaiDesk({ stories, isDesktop, onStoryExpand }) {
+function KaiDesk({ stories, isDesktop, onStoryExpand, expandedStoryId, onResearch }) {
   if (stories.length === 0) return <EmptyDesk reporter="kai" />;
 
   const lead = stories[0];
@@ -106,7 +106,8 @@ function KaiDesk({ stories, isDesktop, onStoryExpand }) {
     return (
       <div style={{ padding: '0 16px' }}>
         {stories.slice(0, 2).map(s => (
-          <EditorialStory key={s.id} story={s} variant="compact" onExpand={onStoryExpand} />
+          <EditorialStory key={s.id} story={s} variant="compact" onExpand={onStoryExpand}
+            isExpanded={expandedStoryId === s.id} onCollapse={() => onStoryExpand(null)} onResearch={onResearch} />
         ))}
         {stories.slice(2).map(s => (
           <EditorialStory key={s.id} story={s} variant="dense" onExpand={onStoryExpand} />
@@ -122,13 +123,15 @@ function KaiDesk({ stories, isDesktop, onStoryExpand }) {
         display: 'grid',
         gridTemplateColumns: `repeat(${columnCount}, 1fr)`,
         gap: 0,
+        alignItems: 'start',
       }}>
         {/* Lead story */}
         <div style={{
           borderRight: columnCount > 1 ? `1px solid ${BROADSHEET_TOKENS.columnRule}` : 'none',
           padding: 48,
         }}>
-          <EditorialStory story={lead} variant="secondary" isDesktop onExpand={onStoryExpand} showVisual />
+          <EditorialStory story={lead} variant="secondary" isDesktop onExpand={onStoryExpand} showVisual
+            isExpanded={expandedStoryId === lead.id} onCollapse={() => onStoryExpand(null)} onResearch={onResearch} />
         </div>
 
         {/* Secondary stories */}
@@ -137,7 +140,8 @@ function KaiDesk({ stories, isDesktop, onStoryExpand }) {
             borderRight: idx === 0 && columnCount > 2 ? `1px solid ${BROADSHEET_TOKENS.columnRule}` : 'none',
             padding: 48,
           }}>
-            <EditorialStory story={s} variant="secondary" isDesktop onExpand={onStoryExpand} />
+            <EditorialStory story={s} variant="secondary" isDesktop onExpand={onStoryExpand}
+              isExpanded={expandedStoryId === s.id} onCollapse={() => onStoryExpand(null)} onResearch={onResearch} />
           </div>
         ))}
       </div>
@@ -311,7 +315,7 @@ function AlexDesk({ stories, isDesktop, onStorySelect }) {
 
 // ── Neta's Desk: 2-column editorial ──
 
-function EditorialDesk({ stories, reporter, isDesktop, onStoryExpand, emptyMessage }) {
+function EditorialDesk({ stories, reporter, isDesktop, onStoryExpand, emptyMessage, expandedStoryId, onResearch }) {
   if (stories.length === 0) {
     if (emptyMessage) {
       return (
@@ -340,7 +344,8 @@ function EditorialDesk({ stories, reporter, isDesktop, onStoryExpand, emptyMessa
     return (
       <div style={{ padding: '0 16px' }}>
         {stories.map(s => (
-          <EditorialStory key={s.id} story={s} variant="compact" onExpand={onStoryExpand} />
+          <EditorialStory key={s.id} story={s} variant="compact" onExpand={onStoryExpand}
+            isExpanded={expandedStoryId === s.id} onCollapse={() => onStoryExpand(null)} onResearch={onResearch} />
         ))}
       </div>
     );
@@ -355,18 +360,21 @@ function EditorialDesk({ stories, reporter, isDesktop, onStoryExpand, emptyMessa
       display: 'grid',
       gridTemplateColumns: right.length > 0 ? '1fr 1fr' : '1fr',
       gap: 0,
+      alignItems: 'start',
     }}>
       <div style={{
         borderRight: right.length > 0 ? `1px solid ${BROADSHEET_TOKENS.columnRule}` : 'none',
       }}>
         {left.map(s => (
-          <EditorialStory key={s.id} story={s} variant="secondary" isDesktop onExpand={onStoryExpand} />
+          <EditorialStory key={s.id} story={s} variant="secondary" isDesktop onExpand={onStoryExpand}
+            isExpanded={expandedStoryId === s.id} onCollapse={() => onStoryExpand(null)} onResearch={onResearch} />
         ))}
       </div>
       {right.length > 0 && (
         <div>
           {right.map(s => (
-            <EditorialStory key={s.id} story={s} variant="secondary" isDesktop onExpand={onStoryExpand} />
+            <EditorialStory key={s.id} story={s} variant="secondary" isDesktop onExpand={onStoryExpand}
+              isExpanded={expandedStoryId === s.id} onCollapse={() => onStoryExpand(null)} onResearch={onResearch} />
           ))}
         </div>
       )}
@@ -374,7 +382,7 @@ function EditorialDesk({ stories, reporter, isDesktop, onStoryExpand, emptyMessa
   );
 }
 
-function NetaDesk({ stories, isDesktop, onStoryExpand }) {
+function NetaDesk({ stories, isDesktop, onStoryExpand, expandedStoryId, onResearch }) {
   // Sort: previews first, then recaps
   const sorted = [...stories].sort((a, b) => {
     const aPreview = a.type === 'econ_preview' ? 0 : 1;
@@ -388,11 +396,13 @@ function NetaDesk({ stories, isDesktop, onStoryExpand }) {
       reporter="neta"
       isDesktop={isDesktop}
       onStoryExpand={onStoryExpand}
+      expandedStoryId={expandedStoryId}
+      onResearch={onResearch}
     />
   );
 }
 
-function DougDesk({ stories, isDesktop, onStoryExpand }) {
+function DougDesk({ stories, isDesktop, onStoryExpand, expandedStoryId, onResearch }) {
   // Sort: previews first, then recaps
   const sorted = [...stories].sort((a, b) => {
     const aPreview = a.type === 'earnings_preview' ? 0 : 1;
@@ -406,6 +416,8 @@ function DougDesk({ stories, isDesktop, onStoryExpand }) {
       reporter="doug"
       isDesktop={isDesktop}
       onStoryExpand={onStoryExpand}
+      expandedStoryId={expandedStoryId}
+      onResearch={onResearch}
       emptyMessage="Earnings season is quiet. Doug will be back when companies start reporting."
     />
   );
@@ -413,7 +425,7 @@ function DougDesk({ stories, isDesktop, onStoryExpand }) {
 
 // ── Kim's Desk: single centered essay column ──
 
-function KimDesk({ stories, isDesktop, onStoryExpand, onStorySelect }) {
+function KimDesk({ stories, isDesktop, onStoryExpand, onStorySelect, expandedStoryId, onResearch }) {
   if (stories.length === 0) return <EmptyDesk reporter="kim" />;
 
   const layout = REPORTER_LAYOUTS.kim;
@@ -443,7 +455,8 @@ function KimDesk({ stories, isDesktop, onStoryExpand, onStorySelect }) {
             EARLIER COLUMNS
           </div>
           {older.map(s => (
-            <EditorialStory key={s.id} story={s} variant="compact" onExpand={onStoryExpand} />
+            <EditorialStory key={s.id} story={s} variant="compact" onExpand={onStoryExpand}
+              isExpanded={expandedStoryId === s.id} onCollapse={() => onStoryExpand(null)} onResearch={onResearch} />
           ))}
         </div>
       )}
@@ -461,6 +474,7 @@ export default function ReporterDesk({
   onStoryExpand,
   onStoryCollapse,
   onStorySelect,
+  onResearch,
 }) {
   if (!reporter || !REPORTER_COLORS[reporter]) return null;
 
@@ -479,19 +493,24 @@ export default function ReporterDesk({
       <DeskHeader reporter={reporter} isDesktop={isDesktop} />
 
       {reporter === 'kai' && (
-        <KaiDesk stories={sorted} isDesktop={isDesktop} onStoryExpand={onStoryExpand} />
+        <KaiDesk stories={sorted} isDesktop={isDesktop} onStoryExpand={onStoryExpand}
+          expandedStoryId={expandedStoryId} onResearch={onResearch} />
       )}
       {reporter === 'alex' && (
         <AlexDesk stories={sorted} isDesktop={isDesktop} onStorySelect={onStorySelect || onStoryExpand} />
       )}
       {reporter === 'neta' && (
-        <NetaDesk stories={sorted} isDesktop={isDesktop} onStoryExpand={onStoryExpand} />
+        <NetaDesk stories={sorted} isDesktop={isDesktop} onStoryExpand={onStoryExpand}
+          expandedStoryId={expandedStoryId} onResearch={onResearch} />
       )}
       {reporter === 'doug' && (
-        <DougDesk stories={sorted} isDesktop={isDesktop} onStoryExpand={onStoryExpand} />
+        <DougDesk stories={sorted} isDesktop={isDesktop} onStoryExpand={onStoryExpand}
+          expandedStoryId={expandedStoryId} onResearch={onResearch} />
       )}
       {reporter === 'kim' && (
-        <KimDesk stories={sorted} isDesktop={isDesktop} onStoryExpand={onStoryExpand} onStorySelect={onStorySelect || onStoryExpand} />
+        <KimDesk stories={sorted} isDesktop={isDesktop} onStoryExpand={onStoryExpand}
+          expandedStoryId={expandedStoryId} onResearch={onResearch}
+          onStorySelect={onStorySelect || onStoryExpand} />
       )}
     </div>
   );
