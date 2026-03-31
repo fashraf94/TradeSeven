@@ -4,7 +4,10 @@
 import React from 'react';
 import { BROADSHEET_TOKENS } from '../../constants/reporterTheme';
 
-const pulseKeyframes = `@keyframes livePulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }`;
+const pulseKeyframes = `
+  @keyframes livePulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+  @media (prefers-reduced-motion: reduce) { .live-pulse-dot { animation: none !important; } }
+`;
 
 export default function BroadsheetMasthead({ isDesktop, isLive, accentColor }) {
   const height = isDesktop ? BROADSHEET_TOKENS.mastheadHeight.desktop : BROADSHEET_TOKENS.mastheadHeight.mobile;
@@ -52,7 +55,7 @@ export default function BroadsheetMasthead({ isDesktop, isLive, accentColor }) {
       }}>
         {isLive && (
           <>
-            <div style={{
+            <div className="live-pulse-dot" style={{
               width: 8,
               height: 8,
               borderRadius: '50%',

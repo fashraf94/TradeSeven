@@ -2,10 +2,9 @@
 // Individual reporter section with layout per REPORTER_LAYOUTS.
 // Kai: 3-col dense grid, Alex: 2-col ticker cards, Neta/Doug: 2-col editorial, Kim: centered essay.
 
-import React from 'react';
+import React, { useMemo } from 'react';
 import { REPORTER_COLORS, BROADSHEET_TOKENS, REPORTER_LAYOUTS } from '../../constants/reporterTheme';
 import EditorialStory from './EditorialStory';
-import StoryVisualSafe from './StoryVisualSafe';
 import KimDropCapColumn from './KimDropCapColumn';
 import { timeAgo } from '../../utils/timeAgo';
 
@@ -181,6 +180,9 @@ function AlexTickerCard({ story, onStorySelect }) {
   return (
     <div
       onClick={() => onStorySelect(story)}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onStorySelect(story); } }}
+      tabIndex={0}
+      role="button"
       style={{
         backgroundColor: '#343439',
         padding: 24,
@@ -247,6 +249,9 @@ function AlexDesk({ stories, isDesktop, onStorySelect }) {
             <div
               key={s.id}
               onClick={() => onStorySelect(s)}
+              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onStorySelect(s); } }}
+              tabIndex={0}
+              role="button"
               style={{
                 borderLeft: `2px solid ${REPORTER_COLORS.alex.hex}`,
                 padding: '12px 16px',
@@ -459,12 +464,15 @@ export default function ReporterDesk({
 }) {
   if (!reporter || !REPORTER_COLORS[reporter]) return null;
 
-  // Sort stories by publishedAt descending
-  const sorted = [...(stories || [])].sort((a, b) => {
-    const aMs = a.publishedAt?._seconds ? a.publishedAt._seconds * 1000 : new Date(a.publishedAt || 0).getTime();
-    const bMs = b.publishedAt?._seconds ? b.publishedAt._seconds * 1000 : new Date(b.publishedAt || 0).getTime();
-    return bMs - aMs;
-  });
+  // Sort stories by publishedAt descending (memoized)
+  const sorted = useMemo(() =>
+    [...(stories || [])].sort((a, b) => {
+      const aMs = a.publishedAt?._seconds ? a.publishedAt._seconds * 1000 : new Date(a.publishedAt || 0).getTime();
+      const bMs = b.publishedAt?._seconds ? b.publishedAt._seconds * 1000 : new Date(b.publishedAt || 0).getTime();
+      return bMs - aMs;
+    }),
+    [stories]
+  );
 
   return (
     <div style={{ paddingTop: isDesktop ? 32 : 16 }}>

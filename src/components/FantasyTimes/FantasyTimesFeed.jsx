@@ -1,7 +1,7 @@
 // src/components/FantasyTimes/FantasyTimesFeed.jsx
 // V3 Broadsheet orchestrator — masthead, reporter nav, front page / reporter desk content.
 
-import React, { useState, useCallback, lazy, Suspense } from 'react';
+import React, { useState, useCallback, useMemo, lazy, Suspense } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { REPORTER_COLORS, BROADSHEET_TOKENS } from '../../constants/reporterTheme';
 import { useFantasyTimes } from '../../hooks/useFantasyTimes';
@@ -57,6 +57,12 @@ export default function FantasyTimesFeed({
       if (story) onStorySelect(story);
     }
   }, [onStorySelect, stories]);
+
+  // Memoize filtered stories for reporter desks
+  const reporterStories = useMemo(
+    () => activeSection !== 'frontPage' ? stories.filter(s => s.reporter === activeSection) : [],
+    [stories, activeSection]
+  );
 
   const marketOpen = isMarketOpen();
 
@@ -169,7 +175,7 @@ export default function FantasyTimesFeed({
               ) : (
                 <ReporterDesk
                   reporter={activeSection}
-                  stories={stories.filter(s => s.reporter === activeSection)}
+                  stories={reporterStories}
                   isDesktop={isDesktop}
                   expandedStoryId={expandedStoryId}
                   onStoryExpand={handleStoryExpand}

@@ -3,7 +3,6 @@
 
 import React, { useMemo } from 'react';
 import { REPORTER_COLORS, BROADSHEET_TOKENS } from '../../constants/reporterTheme';
-import { groupStoriesBySections } from '../../services/fantasyTimesClient';
 import EditorialStory from './EditorialStory';
 import ReporterAvatar from './ReporterAvatar';
 import { toDate } from '../../utils/timeAgo';
@@ -107,6 +106,9 @@ function MobileBreakingHero({ hero, onStoryExpand }) {
   return (
     <div
       onClick={() => onStoryExpand && onStoryExpand(hero.id)}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onStoryExpand?.(hero.id); } }}
+      tabIndex={0}
+      role="button"
       style={{
         minHeight: '75vh',
         display: 'flex',
@@ -267,6 +269,9 @@ function DesktopFrontPage({ hero, sidebar, belowFold, movers, onStoryExpand }) {
         {sidebar && (
           <div
             onClick={() => onStoryExpand && onStoryExpand(sidebar.id)}
+            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onStoryExpand?.(sidebar.id); } }}
+            tabIndex={0}
+            role="button"
             style={{
               backgroundColor: BROADSHEET_TOKENS.bgSidebarStory,
               padding: 32,

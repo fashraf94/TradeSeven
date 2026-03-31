@@ -60,14 +60,22 @@ function Byline({ story, reporter, style: extraStyle }) {
 }
 
 // ── Hero Variant ──
+function handleKeyDown(onClick) {
+  return (e) => {
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(); }
+  };
+}
+
 function HeroStory({ story, isDesktop, onClick, showVisual }) {
   const [isHovered, setIsHovered] = useState(false);
-  const reporterColor = REPORTER_COLORS[story.reporter];
   const hasVisual = showVisual && story.visualType && story.visualType !== 'none';
 
   return (
     <article
       onClick={onClick}
+      onKeyDown={handleKeyDown(onClick)}
+      tabIndex={0}
+      role="button"
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
       style={{
@@ -158,6 +166,9 @@ function SecondaryStory({ story, isDesktop, onClick }) {
   return (
     <article
       onClick={onClick}
+      onKeyDown={handleKeyDown(onClick)}
+      tabIndex={0}
+      role="button"
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
       style={{
@@ -236,6 +247,9 @@ function CompactStory({ story, onClick }) {
   return (
     <article
       onClick={onClick}
+      onKeyDown={handleKeyDown(onClick)}
+      tabIndex={0}
+      role="button"
       style={{
         padding: '12px 16px 12px 18px',
         borderLeft: `2px solid ${reporterColor?.hex || '#859398'}`,
@@ -298,6 +312,9 @@ function DenseStory({ story, onClick }) {
   return (
     <article
       onClick={onClick}
+      onKeyDown={handleKeyDown(onClick)}
+      tabIndex={0}
+      role="button"
       style={{
         display: 'flex',
         alignItems: 'baseline',

@@ -3,7 +3,6 @@
 
 import React from 'react';
 import { REPORTER_COLORS, BROADSHEET_TOKENS } from '../../constants/reporterTheme';
-import { timeAgo } from '../../utils/timeAgo';
 
 function getReadTime(body) {
   if (!body) return 1;
@@ -13,7 +12,7 @@ function getReadTime(body) {
 export default function KimDropCapColumn({ story, isDesktop, onStorySelect }) {
   if (!story) return null;
 
-  const dropCapId = `kim-drop-cap-${story.id || 'default'}`;
+  const dropCapId = `kim-drop-cap-${(story.id || 'default').replace(/[^a-zA-Z0-9_-]/g, '')}`;
   const kimColor = REPORTER_COLORS.kim;
   const bodyText = (story.body || story.subheadline || '').replace(/\*\*(.*?)\*\*/g, '$1');
 
