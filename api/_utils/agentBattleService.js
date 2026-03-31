@@ -7,7 +7,11 @@
 //   2. status ASC               — cron: find all active battles
 //   3. ownerId ASC, createdAt DESC — dashboard: user's battle history
 
-import { getETDate, formatDateString, isMarketHoliday } from './marketSchedule.js';
+import { getETDate, formatDateString, isMarketHoliday, isEarlyCloseDay, getNextMarketClose } from './marketSchedule.js';
+
+// Duration mode: 'fullday' = single trading day (until market close), 'legacy' = multi-day (1d/3d/5d)
+const AGENT_BATTLE_DURATION_MODE = 'fullday';
+const CRYPTO_EXTENDED_CLOSE_HOUR = 20; // 8:00 PM ET (Night Game session end)
 
 // ==================== QUERY ====================
 
@@ -38,8 +42,7 @@ export async function findActiveAgentBattles(db) {
 export async function createAgentBattle(db, agentData, thresholds, startingPrices, options = {}) {
   const sectorMap = options.sectorMap || {};
   const now = new Date().toISOString();
-  const duration = options.duration || '3d';
-  const tradingDays = computeTradingDays(duration);
+  const duration = options.duration || '1d';
 
   const portfolio = agentData.lastDecision?.portfolio;
   const bench = agentData.lastDecision?.bench;
@@ -48,16 +51,31 @@ export async function createAgentBattle(db, agentData, thresholds, startingPrice
     throw new Error('Agent has no lastDecision.portfolio — run decide endpoint first');
   }
 
+  // Compute trading days and expiry based on duration mode
+  let tradingDays, expiresAt, localClose;
+
+  if (AGENT_BATTLE_DURATION_MODE === 'fullday') {
+    const fullDay = computeFullDayExpiry(portfolio);
+    tradingDays = [fullDay.targetDateStr];
+    expiresAt = fullDay.expiresAt;
+    localClose = `${String(fullDay.effectiveCloseHour).padStart(2, '0')}:00`;
+  } else {
+    // Legacy multi-day mode
+    tradingDays = computeTradingDays(duration);
+    expiresAt = computeExpiry(tradingDays);
+    localClose = '16:00';
+  }
+
   const battleDoc = {
     agentId: agentData.id,
     ownerId: agentData.ownerId,
     status: 'active',
     gameMode: 'baggerbomb_agent',
-    duration,
+    duration: AGENT_BATTLE_DURATION_MODE === 'fullday' ? 'fullday' : duration,
     createdAt: now,
     activatedAt: now,
     completedAt: null,
-    expiresAt: computeExpiry(tradingDays),
+    expiresAt,
     updatedAt: now,
 
     timing: {
@@ -65,7 +83,7 @@ export async function createAgentBattle(db, agentData, thresholds, startingPrice
       currentTradingDay: 1,
       timezone: 'America/New_York',
       localOpen: '09:30',
-      localClose: '16:00',
+      localClose,
       lastDailyResetAt: null,
     },
 
@@ -216,6 +234,41 @@ function computeExpiry(tradingDays) {
   const closeAsUTC = new Date(`${lastDay}T16:00:00Z`);
   const closeUTC = new Date(closeAsUTC.getTime() + etOffsetMs);
   return closeUTC.toISOString();
+}
+
+/**
+ * Check if any asset in the portfolio has isCrypto: true.
+ * Crypto lives inside support[2] (isCrypto: true) — see api/agent/decide.js:368.
+ */
+function hasCryptoInPortfolio(portfolio) {
+  if (!portfolio) return false;
+  const allSlots = [...(portfolio.star || []), ...(portfolio.core || []), ...(portfolio.support || [])];
+  return allSlots.some(slot => slot?.isCrypto === true);
+}
+
+/**
+ * Compute expiry for a full trading day battle.
+ * - Stocks only: expires at 4:00 PM ET (or 1:00 PM on early close days)
+ * - With crypto: expires at 8:00 PM ET (Night Game end), except early close days
+ * - If created outside market hours: targets the next trading day's close
+ *
+ * Uses the same DST-safe ET→UTC conversion pattern as computeExpiry().
+ */
+function computeFullDayExpiry(portfolio) {
+  const hasCrypto = hasCryptoInPortfolio(portfolio);
+  const closeET = getNextMarketClose({ cryptoExtended: hasCrypto });
+  const targetDateStr = formatDateString(closeET);
+  const effectiveCloseHour = closeET.getHours();
+
+  // Convert ET close time to UTC using DST-safe offset computation
+  const refUTC = new Date(`${targetDateStr}T12:00:00Z`);
+  const refETStr = refUTC.toLocaleString('en-US', { timeZone: 'America/New_York' });
+  const refET = new Date(refETStr);
+  const etOffsetMs = refUTC.getTime() - refET.getTime();
+  const closeAsUTC = new Date(`${targetDateStr}T${String(effectiveCloseHour).padStart(2, '0')}:00:00Z`);
+  const closeUTC = new Date(closeAsUTC.getTime() + etOffsetMs);
+
+  return { expiresAt: closeUTC.toISOString(), targetDateStr, effectiveCloseHour };
 }
 
 /**

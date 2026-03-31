@@ -390,7 +390,7 @@ export default async function handler(req, res) {
 
     const battleResult = await createAgentBattle(
       db, agentData, thresholds, startingPrices,
-      { duration: req.body.duration || '3d', sectorMap }
+      { duration: req.body.duration || '1d', sectorMap }
     );
 
     // 16. Write activeBattleId back to agent doc

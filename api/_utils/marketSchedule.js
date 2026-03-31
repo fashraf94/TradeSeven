@@ -200,6 +200,50 @@ export function getNextMarketOpen() {
 }
 
 /**
+ * Get the next market close time, skipping weekends and holidays.
+ * If the market is currently open (or within crypto-extended hours), returns today's close.
+ * Otherwise, returns the close time on the next trading day.
+ *
+ * @param {Object} [options]
+ * @param {boolean} [options.cryptoExtended=false] - If true, close is 20:00 ET (Night Game end) instead of 16:00
+ * @returns {Date} Next market close time in ET
+ */
+export function getNextMarketClose(options = {}) {
+  const { cryptoExtended = false } = options;
+  const now = getETDate();
+  const day = now.getDay();
+  const todayStr = formatDateString(now);
+  const minutes = now.getHours() * 60 + now.getMinutes();
+  const isWeekday = day >= 1 && day <= 5;
+  const isHoliday = isMarketHoliday(todayStr);
+  const earlyClose = isEarlyCloseDay(todayStr);
+
+  const standardCloseHour = earlyClose ? EARLY_CLOSE_HOUR : MARKET_CLOSE_HOUR;
+  const standardCloseMin = earlyClose ? EARLY_CLOSE_MIN : MARKET_CLOSE_MIN;
+  const effectiveCloseHour = cryptoExtended && !earlyClose ? 20 : standardCloseHour;
+  const effectiveCloseMin = cryptoExtended && !earlyClose ? 0 : standardCloseMin;
+  const closeMinutes = effectiveCloseHour * 60 + effectiveCloseMin;
+
+  // If it's a trading day and before the effective close, close is today
+  if (isWeekday && !isHoliday && minutes < closeMinutes) {
+    const closeTime = new Date(now);
+    closeTime.setHours(effectiveCloseHour, effectiveCloseMin, 0, 0);
+    return closeTime;
+  }
+
+  // Otherwise, next trading day's close
+  const nextOpen = getNextMarketOpen();
+  const nextDateStr = formatDateString(nextOpen);
+  const nextEarly = isEarlyCloseDay(nextDateStr);
+  const nextCloseHour = cryptoExtended && !nextEarly ? 20 : (nextEarly ? EARLY_CLOSE_HOUR : MARKET_CLOSE_HOUR);
+  const nextCloseMin = cryptoExtended && !nextEarly ? 0 : (nextEarly ? EARLY_CLOSE_MIN : MARKET_CLOSE_MIN);
+
+  const closeTime = new Date(nextOpen);
+  closeTime.setHours(nextCloseHour, nextCloseMin, 0, 0);
+  return closeTime;
+}
+
+/**
  * Get milliseconds until the next market open.
  */
 export function getTimeUntilNextOpen() {
