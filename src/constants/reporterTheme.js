@@ -95,7 +95,7 @@ export const BROADSHEET_TOKENS = {
 
   // Dormant Visual Treatment
   dormantFilter: 'grayscale(100%) opacity(0.7)',
-  dormantBlend: 'screen',
+  dormantBlend: 'normal',
   activeFilter: 'none',
 
   // Reporter Section Accent
