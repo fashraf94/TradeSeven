@@ -2,6 +2,7 @@
 // V3 Broadsheet orchestrator — masthead, reporter nav, front page / reporter desk content.
 
 import React, { useState, useCallback, lazy, Suspense } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
 import { REPORTER_COLORS, BROADSHEET_TOKENS } from '../../constants/reporterTheme';
 import { useFantasyTimes } from '../../hooks/useFantasyTimes';
 import { findStock } from '../../data/assets';
@@ -9,6 +10,7 @@ import { INDEX_REGISTRY } from '../../constants/indexRegistry';
 import BroadsheetMasthead from './BroadsheetMasthead';
 import ReporterNavStrip from './ReporterNavStrip';
 import BroadsheetFrontPage from './BroadsheetFrontPage';
+import ReporterDesk from './ReporterDesk';
 
 const AssetResearchModal = lazy(() => import('../draft/AssetResearchModal'));
 
@@ -147,22 +149,36 @@ export default function FantasyTimesFeed({
           </div>
         )}
 
-        {/* Front Page */}
-        {!loading && !error && stories.length > 0 && activeSection === 'frontPage' && (
-          <BroadsheetFrontPage
-            stories={stories}
-            onStoryExpand={handleStoryExpand}
-            isDesktop={isDesktop}
-            expandedStoryId={expandedStoryId}
-          />
-        )}
-
-        {/* Reporter Desk Placeholder (Phase 2) */}
-        {!loading && !error && stories.length > 0 && activeSection !== 'frontPage' && (
-          <ReporterDeskPlaceholder
-            reporter={activeSection}
-            isDesktop={isDesktop}
-          />
+        {/* Content: Front Page or Reporter Desk with Glass Plate Shift transition */}
+        {!loading && !error && stories.length > 0 && (
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={activeSection}
+              initial={{ x: 30, opacity: 0 }}
+              animate={{ x: 0, opacity: 1 }}
+              exit={{ x: -30, opacity: 0, scale: 0.98 }}
+              transition={{ duration: 0.25, ease: [0.4, 0, 0.2, 1] }}
+            >
+              {activeSection === 'frontPage' ? (
+                <BroadsheetFrontPage
+                  stories={stories}
+                  onStoryExpand={handleStoryExpand}
+                  isDesktop={isDesktop}
+                  expandedStoryId={expandedStoryId}
+                />
+              ) : (
+                <ReporterDesk
+                  reporter={activeSection}
+                  stories={stories.filter(s => s.reporter === activeSection)}
+                  isDesktop={isDesktop}
+                  expandedStoryId={expandedStoryId}
+                  onStoryExpand={handleStoryExpand}
+                  onStoryCollapse={() => setExpandedStoryId(null)}
+                  onStorySelect={onStorySelect}
+                />
+              )}
+            </motion.div>
+          </AnimatePresence>
         )}
       </main>
 
@@ -184,49 +200,3 @@ export default function FantasyTimesFeed({
   );
 }
 
-// ── Reporter Desk Placeholder (Phase 2) ──
-
-function ReporterDeskPlaceholder({ reporter, isDesktop }) {
-  const color = REPORTER_COLORS[reporter];
-  if (!color) return null;
-
-  return (
-    <div style={{
-      display: 'flex',
-      flexDirection: 'column',
-      alignItems: 'center',
-      justifyContent: 'center',
-      minHeight: 400,
-      padding: 48,
-      textAlign: 'center',
-    }}>
-      <div style={{
-        fontFamily: BROADSHEET_TOKENS.fontHeadline,
-        fontSize: isDesktop ? 36 : 24,
-        fontWeight: 700,
-        color: color.hex,
-        marginBottom: 8,
-      }}>
-        {color.name}
-      </div>
-      <div style={{
-        fontFamily: BROADSHEET_TOKENS.fontMono,
-        fontSize: 12,
-        letterSpacing: '0.2em',
-        textTransform: 'uppercase',
-        color: color.hex,
-        opacity: 0.7,
-        marginBottom: 24,
-      }}>
-        {color.beat}
-      </div>
-      <div style={{
-        fontFamily: BROADSHEET_TOKENS.fontBody,
-        fontSize: 14,
-        color: '#859398',
-      }}>
-        Section coming soon
-      </div>
-    </div>
-  );
-}
