@@ -226,13 +226,16 @@ function MobileBreakingHero({ hero, onStoryExpand }) {
 
 // ── Mobile Normal Lead ──
 
-function MobileNormalLead({ hero, onStoryExpand }) {
+function MobileNormalLead({ hero, onStoryExpand, expandedStoryId, onResearch }) {
   return (
     <EditorialStory
       story={hero}
       variant="hero"
       isDesktop={false}
       onExpand={onStoryExpand}
+      isExpanded={expandedStoryId === hero?.id}
+      onCollapse={() => onStoryExpand(null)}
+      onResearch={onResearch}
       showVisual={true}
     />
   );
@@ -394,7 +397,7 @@ function MobileFrontPage({ hero, stories, movers, isBreaking, onStoryExpand, exp
       {hero && isBreaking ? (
         <MobileBreakingHero hero={hero} onStoryExpand={onStoryExpand} />
       ) : hero ? (
-        <MobileNormalLead hero={hero} onStoryExpand={onStoryExpand} />
+        <MobileNormalLead hero={hero} onStoryExpand={onStoryExpand} expandedStoryId={expandedStoryId} onResearch={onResearch} />
       ) : null}
 
       {/* Hairline rule */}

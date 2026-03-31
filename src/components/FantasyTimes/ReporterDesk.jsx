@@ -6,7 +6,6 @@ import React, { useMemo } from 'react';
 import { REPORTER_COLORS, BROADSHEET_TOKENS, REPORTER_LAYOUTS } from '../../constants/reporterTheme';
 import EditorialStory from './EditorialStory';
 import KimDropCapColumn from './KimDropCapColumn';
-import { timeAgo } from '../../utils/timeAgo';
 
 const BIO_TAGLINES = {
   kai: 'Watching the tape so you don\'t have to',
@@ -472,7 +471,6 @@ export default function ReporterDesk({
   isDesktop,
   expandedStoryId,
   onStoryExpand,
-  onStoryCollapse,
   onStorySelect,
   onResearch,
 }) {

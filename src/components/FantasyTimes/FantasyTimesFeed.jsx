@@ -1,7 +1,7 @@
 // src/components/FantasyTimes/FantasyTimesFeed.jsx
 // V3 Broadsheet orchestrator — masthead, reporter nav, front page / reporter desk content.
 
-import React, { useState, useCallback, useMemo, lazy, Suspense } from 'react';
+import React, { useState, useCallback, useMemo, useEffect, lazy, Suspense } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { REPORTER_COLORS, BROADSHEET_TOKENS } from '../../constants/reporterTheme';
 import { useFantasyTimes } from '../../hooks/useFantasyTimes';
@@ -41,6 +41,11 @@ export default function FantasyTimesFeed({
   const [activeSection, setActiveSection] = useState('frontPage');
   const [expandedStoryId, setExpandedStoryId] = useState(null);
   const [researchSymbol, setResearchSymbol] = useState(null);
+
+  // Reset expanded story when switching sections
+  useEffect(() => {
+    setExpandedStoryId(null);
+  }, [activeSection]);
 
   const userContext = {
     watchlist: userWatchlist,
@@ -184,7 +189,6 @@ export default function FantasyTimesFeed({
                   isDesktop={isDesktop}
                   expandedStoryId={expandedStoryId}
                   onStoryExpand={handleStoryExpand}
-                  onStoryCollapse={() => setExpandedStoryId(null)}
                   onStorySelect={onStorySelect}
                   onResearch={handleResearch}
                 />
