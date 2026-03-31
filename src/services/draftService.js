@@ -664,14 +664,24 @@ export async function processCPUTurn(draftId) {
   if (currentPlayer.categories.aggressive < 3) neededCategories.push('aggressive');
   if (currentPlayer.categories.defensive < 3) neededCategories.push('defensive');
 
-  const category = neededCategories[Math.floor(Math.random() * neededCategories.length)];
-  const available = draft.availableAssets[category];
+  // Try all needed categories (shuffled for randomness) before giving up
+  const shuffled = [...neededCategories].sort(() => Math.random() - 0.5);
+  let pickedCategory = null;
+  let available = null;
+  for (const cat of shuffled) {
+    const assets = draft.availableAssets[cat];
+    if (assets && assets.length > 0) {
+      pickedCategory = cat;
+      available = assets;
+      break;
+    }
+  }
 
-  if (available.length === 0) return;
+  if (!pickedCategory || !available) return;
 
   const asset = {
     ...available[Math.floor(Math.random() * available.length)],
-    category
+    category: pickedCategory
   };
 
   const result = await makePick(draftId, draft.currentPlayerId, asset, false);

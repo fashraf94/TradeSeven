@@ -72,8 +72,8 @@ export default function DashboardLoop({
   const allBattles = useMemo(() => {
     const merged = [
       ...activeBattles.filter(b => !b.isTrainingBattle && !isEnded(b)).map(b => ({ battle: b, type: 'classic' })),
-      ...activeDraftBattles.filter(b => b.status === 'active' && b.isTraining !== true && !isEnded(b)).map(b => ({ battle: b, type: 'draft' })),
-      ...activeDraftBattles.filter(b => b.status === 'active' && b.isTraining === true && !isEnded(b)).map(b => ({ battle: b, type: 'trainingDraft' })),
+      ...activeDraftBattles.filter(b => b.status === 'battle' && b.isTraining !== true && !isEnded(b)).map(b => ({ battle: b, type: 'draft' })),
+      ...activeDraftBattles.filter(b => b.status === 'battle' && b.isTraining === true && !isEnded(b)).map(b => ({ battle: b, type: 'trainingDraft' })),
       ...activeTrainingBattles.filter(b => !isEnded(b)).map(b => ({ battle: b, type: 'training' })),
     ];
 
@@ -164,13 +164,18 @@ export default function DashboardLoop({
   const totalActive = allBattles.length;
   const totalCompleted = completedBattles?.length || 0;
 
-  // ─── Recent results (last 1-2 completed battles) ──────────────────────────
+  // ─── Recent results (last 2 completed battles within 48 hours) ─────────────
   const recentResults = useMemo(() => {
+    const fortyEightHoursAgo = Date.now() - 48 * 60 * 60 * 1000;
     return (completedBattles || [])
       .sort((a, b) => {
         const aTime = a.completedAt || a.timeline?.completedAt || a.endDate || 0;
         const bTime = b.completedAt || b.timeline?.completedAt || b.endDate || 0;
         return new Date(bTime) - new Date(aTime);
+      })
+      .filter(b => {
+        const time = b.completedAt || b.timeline?.completedAt || b.endDate;
+        return time && new Date(time).getTime() > fortyEightHoursAgo;
       })
       .slice(0, 2);
   }, [completedBattles]);
