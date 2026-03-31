@@ -19,6 +19,8 @@ export const config = {
   maxDuration: 30,
 };
 
+const STALE_DRAFT_THRESHOLD_MS = 24 * 60 * 60 * 1000; // 24 hours
+
 const LOG_PREFIX = '[AutopickCron]';
 
 function log(level, message, data = null) {
@@ -49,7 +51,7 @@ function getFirebaseAdmin() {
 
 /**
  * Select an asset for autopick.
- * Strategy: random category from needed categories, random asset from that category.
+ * Strategy: try all needed categories (shuffled for randomness) before giving up.
  */
 function selectAutopickAsset(player, availableAssets) {
   const categories = player.categories || { neutral: 0, aggressive: 0, defensive: 0 };
@@ -62,16 +64,17 @@ function selectAutopickAsset(player, availableAssets) {
 
   if (neededCategories.length === 0) return null;
 
-  // Pick random needed category
-  const category = neededCategories[Math.floor(Math.random() * neededCategories.length)];
-  const available = availableAssets[category];
+  // Try all needed categories (shuffled for randomness) before giving up
+  const shuffled = [...neededCategories].sort(() => Math.random() - 0.5);
+  for (const cat of shuffled) {
+    const available = availableAssets[cat];
+    if (available && available.length > 0) {
+      const asset = available[Math.floor(Math.random() * available.length)];
+      return { ...asset, category: cat };
+    }
+  }
 
-  if (!available || available.length === 0) return null;
-
-  // Pick random asset from that category
-  const asset = available[Math.floor(Math.random() * available.length)];
-
-  return { ...asset, category };
+  return null;
 }
 
 /**
@@ -387,12 +390,38 @@ export default async function handler(req, res) {
 
     logInfo(`Found ${activeDraftsSnap.size} active drafts with expired deadlines`);
 
+    // Cancel stale active drafts (>24h old) — they're irrecoverable
+    const staleThreshold = Timestamp.fromMillis(Date.now() - STALE_DRAFT_THRESHOLD_MS);
+    const staleDraftsSnap = await db.collection('drafts')
+      .where('status', '==', 'active')
+      .where('startedAt', '<', staleThreshold)
+      .get();
+
+    let staleCancelled = 0;
+    for (const doc of staleDraftsSnap.docs) {
+      try {
+        await doc.ref.update({
+          status: 'cancelled',
+          cancelReason: 'Stale active draft (>24h)',
+          cancelledAt: FieldValue.serverTimestamp(),
+        });
+        staleCancelled++;
+        logInfo(`Cancelled stale draft ${doc.id}`);
+      } catch (error) {
+        logError(`Error cancelling stale draft ${doc.id}`, { error: error.message });
+      }
+    }
+    if (staleCancelled > 0) {
+      logInfo(`Cancelled ${staleCancelled} stale drafts`);
+    }
+
     if (activeDraftsSnap.empty) {
       return res.status(200).json({
         success: true,
         timestamp: new Date().toISOString(),
         checked: 0,
         autopicked: 0,
+        staleCancelled,
         errors: 0,
         details: [],
       });
@@ -402,6 +431,7 @@ export default async function handler(req, res) {
       checked: activeDraftsSnap.size,
       autopicked: 0,
       completed: 0,
+      staleCancelled,
       skipped: 0,
       errors: 0,
       details: [],
