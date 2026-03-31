@@ -52,44 +52,49 @@ export default async function handler(req, res) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
-  // ---- 2. Market hours guard ----
-  if (!isMarketOpen()) {
-    return res.status(200).json({ skipped: true, reason: 'market_closed' });
-  }
-
   const db = getFirebaseAdmin();
   const startTime = Date.now();
-  const summary = { evaluated: 0, triggered: 0, swapped: 0, held: 0, errors: 0, skipped: 0 };
+  const summary = { evaluated: 0, triggered: 0, swapped: 0, held: 0, errors: 0, skipped: 0, expired: 0 };
 
   try {
-    // ---- 3. Query active agent battles ----
-    const battles = await findActiveAgentBattles(db);
+    // ---- 2. Complete expired battles (runs regardless of market hours) ----
+    const allBattles = await findActiveAgentBattles(db);
+    const activeBattles = [];
 
-    if (battles.length === 0) {
-      return res.status(200).json({ evaluated: 0, message: 'No active agent battles' });
-    }
-
-    console.log(`${LOG_PREFIX} Found ${battles.length} active agent battle(s)`);
-
-    // ---- 4. Process each battle sequentially (with time budget) ----
-    for (const battle of battles) {
-      const elapsed = Date.now() - startTime;
-      if (elapsed > TIME_BUDGET_MS) {
-        const remaining = battles.length - summary.evaluated - summary.errors;
-        console.log(`${LOG_PREFIX} Time budget exceeded (${elapsed}ms). ${remaining} agent(s) deferred to next tick.`);
-        summary.skipped += remaining;
-        break;
-      }
-
-      // Check if battle has expired — complete it instead of processing
+    for (const battle of allBattles) {
       if (battle.expiresAt && new Date(battle.expiresAt) < new Date()) {
         try {
           await completeBattle(db, battle, summary);
+          summary.expired++;
         } catch (err) {
-          console.error(`${LOG_PREFIX} Error completing battle ${battle.id}:`, err.message);
+          console.error(`${LOG_PREFIX} Error completing expired battle ${battle.id}:`, err.message);
           summary.errors++;
         }
-        continue;
+      } else {
+        activeBattles.push(battle);
+      }
+    }
+
+    // ---- 3. Market hours guard (only for evaluations, not expiry completion) ----
+    if (!isMarketOpen()) {
+      const duration = Date.now() - startTime;
+      return res.status(200).json({ skipped: true, reason: 'market_closed', expired: summary.expired, duration });
+    }
+
+    if (activeBattles.length === 0) {
+      return res.status(200).json({ evaluated: 0, expired: summary.expired, message: 'No active agent battles' });
+    }
+
+    console.log(`${LOG_PREFIX} Found ${activeBattles.length} active agent battle(s) (${summary.expired} expired and completed)`);
+
+    // ---- 4. Process each battle sequentially (with time budget) ----
+    for (const battle of activeBattles) {
+      const elapsed = Date.now() - startTime;
+      if (elapsed > TIME_BUDGET_MS) {
+        const remaining = activeBattles.length - summary.evaluated - summary.errors;
+        console.log(`${LOG_PREFIX} Time budget exceeded (${elapsed}ms). ${remaining} agent(s) deferred to next tick.`);
+        summary.skipped += remaining;
+        break;
       }
 
       try {
