@@ -9,24 +9,7 @@ import StoryVisualSafe from './StoryVisualSafe';
 import MoverSparkline from './visuals/MoverSparkline';
 import { findStock } from '../../data/assets';
 import { INDEX_REGISTRY } from '../../constants/indexRegistry';
-
-/**
- * Format "time ago" from a publishedAt timestamp.
- */
-function timeAgo(publishedAt) {
-  if (!publishedAt) return '';
-  const ms = publishedAt._seconds
-    ? publishedAt._seconds * 1000
-    : new Date(publishedAt).getTime();
-  const diff = Date.now() - ms;
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1) return 'just now';
-  if (mins < 60) return `${mins}m ago`;
-  const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  return `${days}d ago`;
-}
+import { timeAgo } from '../../utils/timeAgo';
 
 // Variant-specific style tokens
 const VARIANT_STYLES = {

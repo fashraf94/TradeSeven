@@ -7,27 +7,10 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { REPORTER_COLORS, FEED_TOKENS, getReporterGlow } from '../../constants/reporterTheme';
 import ReporterAvatar from './ReporterAvatar';
 import StoryVisualSafe from './StoryVisualSafe';
+import { timeAgo } from '../../utils/timeAgo';
 
 const springTransition = { type: 'spring', stiffness: 300, damping: 25 };
 const DEFAULT_VISIBLE_NODES = 2;
-
-/**
- * Format "time ago" from a publishedAt timestamp.
- */
-function timeAgo(publishedAt) {
-  if (!publishedAt) return '';
-  const ms = publishedAt._seconds
-    ? publishedAt._seconds * 1000
-    : new Date(publishedAt).getTime();
-  const diff = Date.now() - ms;
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1) return 'just now';
-  if (mins < 60) return `${mins}m ago`;
-  const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  return `${days}d ago`;
-}
 
 export default function StoryThread({
   cluster,
