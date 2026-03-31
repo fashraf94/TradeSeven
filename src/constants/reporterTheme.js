@@ -65,3 +65,79 @@ export const getSentimentBorder = (sentiment) => {
 export const getReporterByKey = (key) => {
   return REPORTER_COLORS[key] || null;
 };
+
+// ── Broadsheet Tokens (V3 Newspaper Layout) ──
+
+export const BROADSHEET_TOKENS = {
+  // Typography
+  fontHeadline: "'Newsreader', Georgia, 'Times New Roman', serif",
+  fontBody: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+  fontMono: "'SF Mono', 'Fira Code', 'Cascadia Code', monospace",
+
+  // Surfaces
+  bgPage: '#0D0E12',
+  bgSidebarStory: '#1a1b20',
+  bgMoverCard: '#292a2e',
+  bgHoverStory: '#1f1f24',
+
+  // Column Rules & Fold Line
+  columnRule: 'rgba(255, 255, 255, 0.08)',
+  foldLine: 'rgba(255, 255, 255, 0.12)',
+  sectionRule: 'rgba(133, 147, 152, 0.15)',
+  storyDivider: 'rgba(133, 147, 152, 0.15)',
+
+  // Masthead
+  mastheadBg: 'rgba(18, 19, 23, 0.7)',
+  mastheadBorder: 'rgba(255, 255, 255, 0.1)',
+
+  // Ambient Glow (hero zone)
+  heroGlow: (reporterRgb) => `radial-gradient(circle at 50% 50%, rgba(${reporterRgb}, 0.08) 0%, transparent 70%)`,
+
+  // Dormant Visual Treatment
+  dormantFilter: 'grayscale(100%) opacity(0.7)',
+  dormantBlend: 'screen',
+  activeFilter: 'none',
+
+  // Reporter Section Accent
+  sectionAccentBorder: (reporterHex) => `2px solid ${reporterHex}`,
+
+  // Spacing
+  mastheadHeight: { desktop: 56, mobile: 48 },
+  navStripHeight: 44,
+  columnGap: { desktop: 24, mobile: 16 },
+  sectionGap: { desktop: 48, mobile: 32 },
+  storyPadding: { desktop: 48, mobile: 16 },
+  heroMinHeight: 600,
+  mobileHeroVh: 75,
+};
+
+// ── Reporter Section Layouts ──
+
+export const REPORTER_LAYOUTS = {
+  kai: {
+    columns: 3,
+    style: 'dense-grid',
+    description: 'Tight 3-column grid with rapid-fire updates',
+  },
+  alex: {
+    columns: 2,
+    style: 'ticker-grid',
+    description: '2-column ticker card grid with sparklines',
+  },
+  neta: {
+    columns: 2,
+    style: 'editorial',
+    description: '2-column editorial layout with comparison visuals',
+  },
+  doug: {
+    columns: 2,
+    style: 'editorial',
+    description: '2-column layout with structured earnings content',
+  },
+  kim: {
+    columns: 1,
+    maxWidth: 640,
+    style: 'essay',
+    description: 'Single centered column, wide margins, drop cap, muted text',
+  },
+};
