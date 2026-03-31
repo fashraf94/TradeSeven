@@ -63,9 +63,9 @@ const QUESTIONS = [
     title: "What's your style?",
     subtitle: 'Step 1 of 3',
     options: [
-      { value: 'momentum', emoji: '\u{1F4C8}', label: 'I chase momentum', desc: 'Ride trends and breakouts when stocks are moving fast' },
-      { value: 'value', emoji: '\u{1F48E}', label: 'I hunt for value', desc: 'Find undervalued companies with strong earnings potential' },
-      { value: 'contrarian', emoji: '\u{1F504}', label: 'I go against the crowd', desc: 'Buy when others panic, sell when others get greedy' },
+      { value: 'momentum', emoji: '\u{1F4C8}', label: 'I chase momentum', desc: 'Ride trends and breakouts when stocks are moving fast', reason: 'chase momentum', summaryFragment: 'chase momentum and ride trends' },
+      { value: 'value', emoji: '\u{1F48E}', label: 'I hunt for value', desc: 'Find undervalued companies with strong earnings potential', reason: 'hunt for value', summaryFragment: 'find undervalued companies' },
+      { value: 'contrarian', emoji: '\u{1F504}', label: 'I go against the crowd', desc: 'Buy when others panic, sell when others get greedy', reason: 'go against the crowd', summaryFragment: 'go against the crowd' },
     ],
   },
   {
@@ -73,9 +73,9 @@ const QUESTIONS = [
     title: 'How much risk is okay?',
     subtitle: 'Step 2 of 3',
     options: [
-      { value: 'safe', emoji: '\u{1F6E1}\uFE0F', label: 'Keep it safe', desc: 'Diversify across sectors and limit exposure to any single stock' },
-      { value: 'balanced', emoji: '\u2696\uFE0F', label: 'Balanced', desc: "Spread picks across sectors but don't overthink it" },
-      { value: 'yolo', emoji: '\u{1F525}', label: 'Let it ride', desc: 'No guardrails \u2014 your agent trades with full conviction' },
+      { value: 'safe', emoji: '\u{1F6E1}\uFE0F', label: 'Keep it safe', desc: 'Diversify across sectors and limit exposure to any single stock', reason: 'want to keep it safe', summaryFragment: 'keep risk in check' },
+      { value: 'balanced', emoji: '\u2696\uFE0F', label: 'Balanced', desc: "Spread picks across sectors but don't overthink it", reason: 'like a balanced approach', summaryFragment: 'stay balanced on risk' },
+      { value: 'yolo', emoji: '\u{1F525}', label: 'Let it ride', desc: 'No guardrails \u2014 your agent trades with full conviction', reason: 'trade with full conviction', summaryFragment: 'trade without guardrails' },
     ],
   },
   {
@@ -83,9 +83,9 @@ const QUESTIONS = [
     title: 'How should your agent allocate?',
     subtitle: 'Step 3 of 3',
     options: [
-      { value: 'even', emoji: '\u{1F4CA}', label: 'Spread it evenly', desc: 'Equal weight across all picks \u2014 no favorites' },
-      { value: 'conviction', emoji: '\u{1F3AF}', label: 'Bet big on the best', desc: 'Overweight your strongest conviction picks' },
-      { value: 'mixed', emoji: '\u{1F500}', label: 'Mix safe and risky', desc: 'Balance some safe picks with some volatile ones' },
+      { value: 'even', emoji: '\u{1F4CA}', label: 'Spread it evenly', desc: 'Equal weight across all picks \u2014 no favorites', reason: 'spread it evenly', summaryFragment: 'spread picks evenly' },
+      { value: 'conviction', emoji: '\u{1F3AF}', label: 'Bet big on the best', desc: 'Overweight your strongest conviction picks', reason: 'bet big on your best', summaryFragment: 'bet big on your best picks' },
+      { value: 'mixed', emoji: '\u{1F500}', label: 'Mix safe and risky', desc: 'Balance some safe picks with some volatile ones', reason: 'mix safe and risky', summaryFragment: 'balance safe and volatile picks' },
     ],
   },
 ];
@@ -123,11 +123,34 @@ function resolveRuleText(templateId, paramOverrides) {
 function buildSelectedRules(answers) {
   const { style, risk, alloc } = answers;
   if (!style || !risk || !alloc) return [];
-  return [
-    ...STYLE_RULES[style],
-    ...RISK_RULES[risk],
-    ...ALLOC_RULES[alloc],
-  ];
+
+  const styleOption = QUESTIONS[0].options.find(o => o.value === style);
+  const riskOption = QUESTIONS[1].options.find(o => o.value === risk);
+  const allocOption = QUESTIONS[2].options.find(o => o.value === alloc);
+
+  const taggedRules = [];
+  (STYLE_RULES[style] || []).forEach(rule => {
+    taggedRules.push({ ...rule, reason: styleOption?.reason || '' });
+  });
+  (RISK_RULES[risk] || []).forEach(rule => {
+    taggedRules.push({ ...rule, reason: riskOption?.reason || '' });
+  });
+  (ALLOC_RULES[alloc] || []).forEach(rule => {
+    taggedRules.push({ ...rule, reason: allocOption?.reason || '' });
+  });
+  return taggedRules;
+}
+
+function buildBundleSummary(answers) {
+  const fragments = QUESTIONS.map(q => {
+    const selected = q.options.find(o => o.value === answers[q.key]);
+    return selected?.summaryFragment || '';
+  }).filter(Boolean);
+
+  if (fragments.length === 0) return '';
+  if (fragments.length === 1) return `You ${fragments[0]}.`;
+  if (fragments.length === 2) return `You ${fragments[0]} and ${fragments[1]}.`;
+  return `You ${fragments[0]}, ${fragments[1]}, and ${fragments[2]}.`;
 }
 
 function getAlternatives(rule, allSelected) {
@@ -252,7 +275,7 @@ function RulePreviewCard({ rule, index, onSwap, swapOpen, alternatives, onSwapSe
             }}
             title="Swap this rule"
           >
-            \u21C4
+            Swap
           </motion.button>
         )}
       </div>
@@ -479,34 +502,101 @@ export default function StarterKit({ agentId, agent, forge, tokens, isMobile, on
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.35 }}
         >
-          <div style={{ textAlign: 'center', marginBottom: '28px' }}>
-            <div style={{ fontSize: '36px', marginBottom: '12px' }}>{'\u2692\uFE0F'}</div>
-            <h2 style={{ fontSize: '22px', fontWeight: 700, color: tokens.textWhite, margin: '0 0 6px' }}>
-              Your First Strategy
-            </h2>
-            <p style={{ fontSize: '14px', color: tokens.textMuted, margin: 0 }}>
-              {selectedRules.length} rules &middot; &ldquo;{BUNDLE_NAMES[answers.style] || 'Starter Strategy'}&rdquo;
-            </p>
-          </div>
+          {/* Bundle name hero */}
+          <h2 style={{
+            fontSize: '24px',
+            fontWeight: 800,
+            color: '#ffffff',
+            textAlign: 'center',
+            margin: '0 0 4px',
+          }}>
+            {BUNDLE_NAMES[answers.style] || 'Starter Strategy'}
+          </h2>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '12px' }}>
-            {selectedRules.map((rule, i) => (
-              <RulePreviewCard
-                key={`${rule.id}-${i}`}
-                rule={rule}
-                index={i}
-                onSwap={handleSwapToggle}
-                swapOpen={swappingIndex === i}
-                alternatives={getAlternatives(rule, selectedRules)}
-                onSwapSelect={handleSwapSelect}
-                tokens={tokens}
-              />
-            ))}
-          </div>
-
-          <p style={{ fontSize: '12px', color: tokens.textMuted, textAlign: 'center', margin: '0 0 24px' }}>
-            {'\u21C4'} Not the right fit? Tap the swap icon to pick an alternative.
+          {/* Bundle summary */}
+          <p style={{
+            fontSize: '14px',
+            color: '#8b949e',
+            textAlign: 'center',
+            lineHeight: 1.5,
+            margin: '0 auto 24px',
+            maxWidth: '300px',
+          }}>
+            {buildBundleSummary(answers)}
           </p>
+
+          {/* Rule count badge */}
+          <div style={{ textAlign: 'center', marginBottom: '20px' }}>
+            <span style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
+              background: 'rgba(94, 234, 212, 0.1)',
+              borderRadius: '9999px',
+              padding: '4px 14px',
+              fontSize: '12px',
+              color: '#5eead4',
+              fontWeight: 600,
+            }}>
+              {selectedRules.length} rules in this bundle
+            </span>
+          </div>
+
+          {/* Rule cards */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '24px' }}>
+            {selectedRules.map((rule, i) => {
+              const template = getTemplate(rule.id);
+              if (!template) return null;
+              const categoryColor = getCategoryColor(template.category);
+              const ruleText = resolveRuleText(rule.id, rule.params);
+              return (
+                <div
+                  key={`${rule.id}-${i}`}
+                  style={{
+                    background: '#15171E',
+                    border: '1px solid #21262d',
+                    borderLeft: `4px solid ${categoryColor}`,
+                    borderRadius: '12px',
+                    padding: '14px 16px',
+                  }}
+                >
+                  <div style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                  }}>
+                    <span style={{
+                      fontSize: '14px',
+                      color: '#e6edf3',
+                      fontWeight: 500,
+                    }}>
+                      {ruleText}
+                    </span>
+                    <span style={{
+                      fontSize: '10px',
+                      color: categoryColor,
+                      fontWeight: 700,
+                      textTransform: 'uppercase',
+                      flexShrink: 0,
+                      marginLeft: '12px',
+                    }}>
+                      {getCategoryLabel(template.category)}
+                    </span>
+                  </div>
+                  {rule.reason && (
+                    <div style={{
+                      marginTop: '6px',
+                      fontSize: '11px',
+                      color: '#8b949e',
+                      fontStyle: 'italic',
+                    }}>
+                      Because you {rule.reason}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
 
           {error && (
             <div style={{
@@ -523,6 +613,7 @@ export default function StarterKit({ agentId, agent, forge, tokens, isMobile, on
             </div>
           )}
 
+          {/* Primary CTA */}
           <motion.button
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.97 }}
@@ -530,42 +621,43 @@ export default function StarterKit({ agentId, agent, forge, tokens, isMobile, on
             disabled={forging}
             style={{
               width: '100%',
-              padding: '16px',
-              borderRadius: '14px',
+              padding: '14px 24px',
+              borderRadius: '12px',
               border: 'none',
               background: forging
-                ? `${tokens.teal}80`
-                : `linear-gradient(135deg, ${tokens.teal}, ${tokens.teal}CC)`,
-              color: '#0D0F14',
-              fontSize: '16px',
+                ? 'rgba(94, 234, 212, 0.5)'
+                : 'linear-gradient(135deg, #5eead4 0%, #00d9ff 100%)',
+              color: '#0D0E12',
+              fontSize: '15px',
               fontWeight: 700,
               cursor: forging ? 'wait' : 'pointer',
-              transition: 'opacity 0.2s',
+              boxShadow: forging ? 'none' : '0 4px 16px rgba(94, 234, 212, 0.3)',
               minHeight: '52px',
             }}
           >
-            {forging ? 'Forging...' : '\u{1F525} Forge & Equip Bundle'}
+            {forging ? 'Creating...' : 'Forge & Equip Bundle'}
           </motion.button>
 
-          <button
-            onClick={handleSkip}
-            disabled={forging}
+          {/* Change answers link */}
+          <div
+            onClick={() => {
+              if (forging) return;
+              setStep(0);
+              setAnswers({ style: null, risk: null, alloc: null });
+              setSelectedRules([]);
+              setError(null);
+            }}
             style={{
-              display: 'block',
-              width: '100%',
-              padding: '14px',
               marginTop: '12px',
-              background: 'none',
-              border: 'none',
-              color: tokens.textMuted,
-              fontSize: '13px',
-              cursor: 'pointer',
               textAlign: 'center',
-              minHeight: '48px',
+              fontSize: '13px',
+              color: '#8b949e',
+              cursor: forging ? 'default' : 'pointer',
+              opacity: forging ? 0.5 : 1,
             }}
           >
-            Skip &mdash; I'll explore on my own
-          </button>
+            {'\u2190'} Change my answers
+          </div>
         </motion.div>
       </div>
     );
