@@ -1,47 +1,82 @@
 // src/components/FantasyTimes/BroadsheetFrontPage.jsx
 // Editorial front page layout — hero zone + fold + below-fold sections + movers.
+// Phase 4: mobile polish, KimMobilePreview, time-of-day editorial rhythm.
 
 import React, { useMemo } from 'react';
 import { REPORTER_COLORS, BROADSHEET_TOKENS } from '../../constants/reporterTheme';
+import { getMarketState } from '../../utils/marketSchedule';
 import EditorialStory from './EditorialStory';
+import StoryVisualSafe from './StoryVisualSafe';
 import ReporterAvatar from './ReporterAvatar';
 import { toDate } from '../../utils/timeAgo';
 import { ChevronUp } from 'lucide-react';
 
+// ── Edition Detection ──
+
+function getEdition() {
+  const ms = getMarketState();
+  if (ms.state === 'OPEN' || ms.state === 'PRE_MARKET') return 'live';
+  // For CLOSED_AFTERHOURS, distinguish morning vs evening by ET hour
+  if (ms.state === 'CLOSED_AFTERHOURS') {
+    const etStr = new Date().toLocaleString('en-US', { timeZone: 'America/New_York' });
+    const etHour = new Date(etStr).getHours();
+    if (etHour >= 4 && etHour < 10) return 'morning';
+  }
+  return 'evening'; // CLOSED_AFTERHOURS (evening), CLOSED_WEEKEND, CLOSED_HOLIDAY
+}
+
 // ── Story Selection Logic ──
 
-function selectFrontPageStories(stories) {
+function selectFrontPageStories(stories, edition) {
   if (!stories || stories.length === 0) return { hero: null, sidebar: null, belowFold: [], movers: [] };
 
-  // Sort all stories by publishedAt desc
   const sorted = [...stories].sort((a, b) => toDate(b.publishedAt).getTime() - toDate(a.publishedAt).getTime());
 
-  // Hero: most recent with urgency "breaking" or "timely", fallback to most recent
-  const hero = sorted.find(s => s.urgency === 'breaking' || s.urgency === 'timely') || sorted[0];
+  const findBest = (predicate) => sorted.find(predicate) || null;
 
-  // Sidebar: most recent Kim story (sector_column), fallback to most recent evergreen
-  const sidebar = sorted.find(s => s.type === 'sector_column' && s.id !== hero?.id)
-    || sorted.find(s => s.urgency === 'evergreen' && s.id !== hero?.id)
-    || null;
+  let hero, sidebar;
+  const used = new Set();
 
-  // Below-fold: Alex market_mover + Neta econ story, excluding hero/sidebar
-  const used = new Set([hero?.id, sidebar?.id].filter(Boolean));
-  const belowFoldLeft = sorted.find(s => s.type === 'market_mover' && !used.has(s.id)) || null;
+  if (edition === 'morning') {
+    hero = findBest(s => s.type === 'econ_preview')
+        || findBest(s => s.type === 'earnings_preview')
+        || findBest(s => s.urgency === 'timely')
+        || sorted[0];
+    used.add(hero?.id);
+    sidebar = findBest(s => s.type === 'sector_column' && !used.has(s.id));
+  } else if (edition === 'evening') {
+    hero = findBest(s => s.type === 'sector_column')
+        || findBest(s => s.type === 'earnings_recap')
+        || findBest(s => s.urgency !== 'breaking')
+        || sorted[0];
+    used.add(hero?.id);
+    // Kim is likely hero, so sidebar gets Neta
+    sidebar = findBest(s => s.reporter === 'neta' && !used.has(s.id))
+           || findBest(s => s.type === 'sector_column' && !used.has(s.id));
+  } else {
+    // Live edition — default
+    hero = findBest(s => s.urgency === 'breaking')
+        || findBest(s => s.urgency === 'timely')
+        || sorted[0];
+    used.add(hero?.id);
+    sidebar = findBest(s => s.type === 'sector_column' && !used.has(s.id))
+           || findBest(s => s.urgency === 'evergreen' && !used.has(s.id));
+  }
+
+  if (sidebar) used.add(sidebar.id);
+
+  // Below-fold
+  const belowFoldLeft = findBest(s => s.type === 'market_mover' && !used.has(s.id));
   if (belowFoldLeft) used.add(belowFoldLeft.id);
-  const belowFoldRight = sorted.find(s =>
+  const belowFoldRight = findBest(s =>
     (s.type === 'econ_recap' || s.type === 'econ_preview') && !used.has(s.id)
-  ) || null;
-
+  );
   const belowFold = [belowFoldLeft, belowFoldRight].filter(Boolean);
 
   // Movers: all market_mover stories, sorted by |percentChange| desc
   const movers = sorted
     .filter(s => s.type === 'market_mover')
-    .sort((a, b) => {
-      const aChange = Math.abs(a.dataSnapshot?.percentChange || 0);
-      const bChange = Math.abs(b.dataSnapshot?.percentChange || 0);
-      return bChange - aChange;
-    });
+    .sort((a, b) => Math.abs(b.dataSnapshot?.percentChange || 0) - Math.abs(a.dataSnapshot?.percentChange || 0));
 
   return { hero, sidebar, belowFold, movers };
 }
@@ -49,47 +84,45 @@ function selectFrontPageStories(stories) {
 function isBreakingRecent(story) {
   if (!story || story.urgency !== 'breaking') return false;
   const publishedMs = toDate(story.publishedAt).getTime();
-  return (Date.now() - publishedMs) < 2 * 60 * 60 * 1000; // 2 hours
+  return (Date.now() - publishedMs) < 2 * 60 * 60 * 1000;
 }
 
-// ── Mover Card (inline, no separate component for Phase 1) ──
+// ── Mover Card ──
 
-function MoverCard({ story }) {
-  const reporterColor = REPORTER_COLORS[story.reporter];
+function MoverCard({ story, onClick }) {
   const change = story.dataSnapshot?.percentChange || 0;
   const isPositive = change >= 0;
   const ticker = story.primaryTicker || (story.tickers && story.tickers[0]) || '';
 
   return (
-    <div style={{
-      backgroundColor: '#343439',
-      padding: 24,
-      borderRadius: 0,
-      cursor: 'pointer',
-    }}>
+    <div
+      onClick={onClick}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick?.(); } }}
+      tabIndex={0}
+      role="button"
+      style={{
+        backgroundColor: '#343439',
+        padding: 24,
+        borderRadius: 0,
+        cursor: 'pointer',
+      }}
+    >
       <div style={{
         fontFamily: BROADSHEET_TOKENS.fontMono,
-        fontSize: 10,
-        color: '#859398',
-        textTransform: 'uppercase',
-        letterSpacing: '0.1em',
-        marginBottom: 4,
+        fontSize: 10, color: '#859398',
+        textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 4,
       }}>
         {ticker}
       </div>
       <div style={{
         fontFamily: BROADSHEET_TOKENS.fontHeadline,
-        fontSize: 20,
-        fontWeight: 700,
-        color: '#e3e2e7',
-        marginBottom: 8,
+        fontSize: 20, fontWeight: 700, color: '#e3e2e7', marginBottom: 8,
       }}>
         {story.headline?.split(':')[0] || ticker}
       </div>
       <div style={{
         fontFamily: BROADSHEET_TOKENS.fontMono,
-        fontSize: 12,
-        fontWeight: 600,
+        fontSize: 12, fontWeight: 600,
         color: isPositive ? '#00d9ff' : '#ffb4ab',
       }}>
         {isPositive ? '+' : ''}{change.toFixed(2)}%
@@ -98,10 +131,84 @@ function MoverCard({ story }) {
   );
 }
 
+// ── Kim Mobile Preview ──
+
+function KimMobilePreview({ story, onStorySelect }) {
+  if (!story) return null;
+  const kimColor = REPORTER_COLORS.kim;
+  const bodyPreview = (story.body || '').replace(/\*\*(.*?)\*\*/g, '$1').substring(0, 200);
+
+  return (
+    <div style={{
+      position: 'relative',
+      background: BROADSHEET_TOKENS.bgPage,
+      padding: 24,
+      borderLeft: `4px solid ${kimColor.hex}`,
+      borderTop: '1px solid rgba(60, 73, 77, 0.2)',
+      borderBottom: '1px solid rgba(60, 73, 77, 0.2)',
+      overflow: 'hidden',
+    }}>
+      {/* Purple ambient glow */}
+      <div style={{
+        position: 'absolute', bottom: -80, left: -80,
+        width: 256, height: 256,
+        background: 'rgba(139, 92, 246, 0.1)',
+        filter: 'blur(80px)', borderRadius: '50%',
+        pointerEvents: 'none',
+      }} />
+      <div style={{ position: 'relative', zIndex: 1 }}>
+        <span style={{
+          fontFamily: BROADSHEET_TOKENS.fontMono,
+          fontSize: 10, letterSpacing: '0.3em',
+          color: kimColor.hex,
+          textTransform: 'uppercase', fontWeight: 700,
+          display: 'block', marginBottom: 16,
+        }}>
+          KIM'S WEEKLY
+        </span>
+        <h3 style={{
+          fontFamily: BROADSHEET_TOKENS.fontHeadline,
+          fontSize: 22, fontWeight: 700,
+          lineHeight: 1.2, color: '#e3e2e7',
+          margin: '0 0 16px', textWrap: 'balance',
+        }}>
+          {story.headline}
+        </h3>
+        {bodyPreview && (
+          <p style={{
+            fontFamily: BROADSHEET_TOKENS.fontBody,
+            fontSize: 14, lineHeight: 1.8, color: '#b3b9c5',
+            margin: '0 0 24px',
+          }}>
+            {bodyPreview}...
+          </p>
+        )}
+        <button
+          onClick={(e) => { e.stopPropagation(); onStorySelect?.(story); }}
+          style={{
+            background: 'transparent', border: 'none',
+            fontFamily: BROADSHEET_TOKENS.fontMono,
+            fontSize: 10, color: kimColor.hex,
+            textTransform: 'uppercase', letterSpacing: '0.2em',
+            fontWeight: 700, cursor: 'pointer',
+            borderBottom: `1px solid ${kimColor.hex}`,
+            paddingBottom: 2, padding: '2px 0',
+          }}
+        >
+          READ FULL COLUMN
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ── Mobile Breaking Hero ──
+
+const swipeKeyframes = `@keyframes swipeHint { 0%, 100% { transform: translateX(-50%) translateY(0); } 50% { transform: translateX(-50%) translateY(8px); } }`;
 
 function MobileBreakingHero({ hero, onStoryExpand }) {
   const reporterColor = REPORTER_COLORS[hero.reporter];
+  const hasVisual = hero.visualType && hero.visualType !== 'none';
 
   return (
     <div
@@ -121,50 +228,54 @@ function MobileBreakingHero({ hero, onStoryExpand }) {
         backgroundColor: '#0D0E12',
       }}
     >
+      <style>{swipeKeyframes}</style>
+
+      {/* Art Director visual as background */}
+      {hasVisual && (
+        <div style={{
+          position: 'absolute', top: 0, left: 0, width: '100%', height: 320,
+          filter: 'grayscale(1) brightness(0.75) contrast(1.25)',
+          opacity: 0.6, zIndex: 0, overflow: 'hidden',
+        }}>
+          <StoryVisualSafe
+            visualType={hero.visualType}
+            visualConfig={hero.visualConfig}
+            size="expanded"
+          />
+        </div>
+      )}
+
       {/* Ambient glow */}
       <div style={{
-        position: 'absolute',
-        top: 20,
-        right: -40,
-        width: 256,
-        height: 256,
-        borderRadius: '50%',
-        background: `rgba(${reporterColor?.rgb || '0,217,255'}, 0.15)`,
-        filter: 'blur(100px)',
-        pointerEvents: 'none',
+        position: 'absolute', top: '25%', right: -80,
+        width: 256, height: 256, borderRadius: '50%',
+        background: `rgba(${reporterColor?.rgb || '0,217,255'}, 0.1)`,
+        filter: 'blur(100px)', pointerEvents: 'none', zIndex: 0,
       }} />
 
       {/* Gradient overlay */}
       <div style={{
-        position: 'absolute',
-        inset: 0,
-        background: 'linear-gradient(to bottom, transparent 30%, rgba(13,14,18,0.4) 60%, #0D0E12 100%)',
-        pointerEvents: 'none',
+        position: 'absolute', inset: 0,
+        background: 'linear-gradient(to bottom, transparent 0%, rgba(18,19,23,0.4) 50%, #121317 100%)',
+        pointerEvents: 'none', zIndex: 1,
       }} />
 
-      <div style={{ position: 'relative', zIndex: 1 }}>
+      <div style={{ position: 'relative', zIndex: 2 }}>
         <span style={{
           fontFamily: BROADSHEET_TOKENS.fontMono,
-          fontSize: 12,
-          fontWeight: 700,
+          fontSize: 12, fontWeight: 700,
           color: reporterColor?.hex || '#00d9ff',
-          letterSpacing: '0.2em',
-          textTransform: 'uppercase',
-          marginBottom: 12,
-          display: 'block',
+          letterSpacing: '0.2em', textTransform: 'uppercase',
+          marginBottom: 12, display: 'block',
         }}>
           BREAKING
         </span>
 
         <h2 style={{
           fontFamily: BROADSHEET_TOKENS.fontHeadline,
-          fontSize: 32,
-          fontWeight: 700,
-          letterSpacing: '-0.02em',
-          lineHeight: 1.1,
-          color: '#e3e2e7',
-          margin: '0 0 16px',
-          textWrap: 'balance',
+          fontSize: 32, fontWeight: 700,
+          letterSpacing: '-0.02em', lineHeight: 1.1,
+          color: '#fff9ef', margin: '0 0 16px', textWrap: 'balance',
         }}>
           {hero.headline}
         </h2>
@@ -172,26 +283,34 @@ function MobileBreakingHero({ hero, onStoryExpand }) {
         {hero.subheadline && (
           <p style={{
             fontFamily: BROADSHEET_TOKENS.fontBody,
-            fontSize: 14,
-            lineHeight: 1.5,
-            color: '#bbc9ce',
+            fontSize: 14, lineHeight: 1.5, color: '#bbc9ce',
             margin: '0 0 16px',
-            display: '-webkit-box',
-            WebkitLineClamp: 3,
-            WebkitBoxOrient: 'vertical',
-            overflow: 'hidden',
+            display: '-webkit-box', WebkitLineClamp: 3,
+            WebkitBoxOrient: 'vertical', overflow: 'hidden',
           }}>
             {hero.subheadline.replace(/\*\*/g, '')}
           </p>
         )}
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <ReporterAvatar reporter={hero.reporter} size={32} />
+          {/* Square monogram per Stitch breaking mockup */}
+          <div style={{
+            width: 32, height: 32, borderRadius: 4,
+            background: '#292a2e',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}>
+            <span style={{
+              fontFamily: BROADSHEET_TOKENS.fontHeadline,
+              fontSize: 16, fontWeight: 700,
+              color: reporterColor?.hex || '#00d9ff',
+            }}>
+              {(hero.reporter || '').charAt(0).toUpperCase()}
+            </span>
+          </div>
           <span style={{
             fontFamily: BROADSHEET_TOKENS.fontMono,
-            fontSize: 11,
-            color: '#859398',
-            textTransform: 'uppercase',
+            fontSize: 10, color: '#fff9ef',
+            textTransform: 'uppercase', letterSpacing: '0.15em',
           }}>
             {reporterColor?.name} • {reporterColor?.beat}
           </span>
@@ -200,22 +319,16 @@ function MobileBreakingHero({ hero, onStoryExpand }) {
 
       {/* Swipe-up indicator */}
       <div style={{
-        position: 'absolute',
-        bottom: 12,
-        left: '50%',
-        transform: 'translateX(-50%)',
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        opacity: 0.4,
+        position: 'absolute', bottom: 12, left: '50%',
+        animation: 'swipeHint 2s ease-in-out infinite',
+        display: 'flex', flexDirection: 'column',
+        alignItems: 'center', opacity: 0.4, zIndex: 2,
       }}>
         <ChevronUp size={18} color="#859398" />
         <span style={{
           fontFamily: BROADSHEET_TOKENS.fontMono,
-          fontSize: 9,
-          color: '#859398',
-          letterSpacing: '0.15em',
-          textTransform: 'uppercase',
+          fontSize: 9, color: '#859398',
+          letterSpacing: '0.15em', textTransform: 'uppercase',
         }}>
           MORE
         </span>
@@ -241,15 +354,42 @@ function MobileNormalLead({ hero, onStoryExpand, expandedStoryId, onResearch }) 
   );
 }
 
+// ── Section Header (mobile) ──
+
+function MobileSectionHeader({ label, color }) {
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'center', gap: 8,
+      padding: '16px 16px 12px',
+    }}>
+      <span style={{
+        width: 16, height: 1,
+        backgroundColor: color,
+        display: 'inline-block',
+      }} />
+      <span style={{
+        fontFamily: BROADSHEET_TOKENS.fontMono,
+        fontSize: 10, letterSpacing: '0.3em',
+        color, textTransform: 'uppercase',
+      }}>
+        {label}
+      </span>
+    </div>
+  );
+}
+
 // ── Desktop Front Page ──
 
-function DesktopFrontPage({ hero, sidebar, belowFold, movers, onStoryExpand, expandedStoryId, onResearch }) {
+function DesktopFrontPage({ hero, sidebar, belowFold, movers, onStoryExpand, expandedStoryId, onResearch, onStorySelect, edition }) {
+  // Evening edition with no sidebar uses relaxed 2-column above-fold
+  const aboveFoldColumns = (edition === 'evening' && !sidebar) ? '1fr 1fr' : (sidebar ? '3fr 1fr' : '1fr');
+
   return (
     <div>
       {/* ═══ ABOVE THE FOLD ═══ */}
       <div style={{
         display: 'grid',
-        gridTemplateColumns: sidebar ? '3fr 1fr' : '1fr',
+        gridTemplateColumns: aboveFoldColumns,
         minHeight: BROADSHEET_TOKENS.heroMinHeight,
         backgroundColor: '#121317',
       }}>
@@ -274,8 +414,8 @@ function DesktopFrontPage({ hero, sidebar, belowFold, movers, onStoryExpand, exp
         {/* Sidebar (right — typically Kim) */}
         {sidebar && (
           <div
-            onClick={() => onStoryExpand && onStoryExpand(sidebar.id)}
-            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onStoryExpand?.(sidebar.id); } }}
+            onClick={() => onStorySelect?.(sidebar)}
+            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onStorySelect?.(sidebar); } }}
             tabIndex={0}
             role="button"
             style={{
@@ -288,9 +428,7 @@ function DesktopFrontPage({ hero, sidebar, belowFold, movers, onStoryExpand, exp
           >
             <span style={{
               fontFamily: BROADSHEET_TOKENS.fontMono,
-              fontSize: 12,
-              fontWeight: 700,
-              letterSpacing: '0.1em',
+              fontSize: 12, fontWeight: 700, letterSpacing: '0.1em',
               textTransform: 'uppercase',
               color: REPORTER_COLORS[sidebar.reporter]?.hex || '#ffdbd8',
               marginBottom: 12,
@@ -300,12 +438,8 @@ function DesktopFrontPage({ hero, sidebar, belowFold, movers, onStoryExpand, exp
 
             <h3 style={{
               fontFamily: BROADSHEET_TOKENS.fontHeadline,
-              fontSize: 24,
-              fontWeight: 700,
-              lineHeight: 1.25,
-              color: '#e3e2e7',
-              margin: '0 0 12px',
-              textWrap: 'balance',
+              fontSize: 24, fontWeight: 700, lineHeight: 1.25,
+              color: '#e3e2e7', margin: '0 0 12px', textWrap: 'balance',
             }}>
               {sidebar.headline}
             </h3>
@@ -313,15 +447,10 @@ function DesktopFrontPage({ hero, sidebar, belowFold, movers, onStoryExpand, exp
             {sidebar.subheadline && (
               <p style={{
                 fontFamily: BROADSHEET_TOKENS.fontBody,
-                fontSize: 14,
-                lineHeight: 1.6,
-                color: '#bbc9ce',
-                margin: '0 0 16px',
-                flex: 1,
-                display: '-webkit-box',
-                WebkitLineClamp: 5,
-                WebkitBoxOrient: 'vertical',
-                overflow: 'hidden',
+                fontSize: 14, lineHeight: 1.6, color: '#bbc9ce',
+                margin: '0 0 16px', flex: 1,
+                display: '-webkit-box', WebkitLineClamp: 5,
+                WebkitBoxOrient: 'vertical', overflow: 'hidden',
               }}>
                 {sidebar.subheadline.replace(/\*\*/g, '')}
               </p>
@@ -329,9 +458,7 @@ function DesktopFrontPage({ hero, sidebar, belowFold, movers, onStoryExpand, exp
 
             <div style={{
               fontFamily: BROADSHEET_TOKENS.fontMono,
-              fontSize: 10,
-              color: '#859398',
-              textTransform: 'uppercase',
+              fontSize: 10, color: '#859398', textTransform: 'uppercase',
             }}>
               BY {REPORTER_COLORS[sidebar.reporter]?.name || sidebar.reporter}
             </div>
@@ -341,10 +468,7 @@ function DesktopFrontPage({ hero, sidebar, belowFold, movers, onStoryExpand, exp
 
       {/* ═══ THE FOLD ═══ */}
       {belowFold.length > 0 && (
-        <div style={{
-          height: 1,
-          backgroundColor: BROADSHEET_TOKENS.foldLine,
-        }} />
+        <div style={{ height: 1, backgroundColor: BROADSHEET_TOKENS.foldLine }} />
       )}
 
       {/* ═══ BELOW THE FOLD ═══ */}
@@ -379,7 +503,7 @@ function DesktopFrontPage({ hero, sidebar, belowFold, movers, onStoryExpand, exp
 
       {/* ═══ MOVERS & SPOTLIGHTS ═══ */}
       {movers.length > 0 && (
-        <MoversSection movers={movers} />
+        <MoversSection movers={movers} onStorySelect={onStorySelect} />
       )}
     </div>
   );
@@ -387,9 +511,11 @@ function DesktopFrontPage({ hero, sidebar, belowFold, movers, onStoryExpand, exp
 
 // ── Mobile Front Page ──
 
-function MobileFrontPage({ hero, stories, movers, isBreaking, onStoryExpand, expandedStoryId, onResearch }) {
-  // Remaining stories (not the hero)
+function MobileFrontPage({ hero, stories, movers, isBreaking, onStoryExpand, expandedStoryId, onResearch, onStorySelect }) {
   const remaining = stories.filter(s => s.id !== hero?.id);
+  // Find Kim's story for special treatment
+  const kimStory = remaining.find(s => s.reporter === 'kim');
+  const otherStories = remaining.filter(s => s.reporter !== 'kim');
 
   return (
     <div>
@@ -407,7 +533,7 @@ function MobileFrontPage({ hero, stories, movers, isBreaking, onStoryExpand, exp
 
       {/* Below-fold stories (compact) */}
       <div style={{ padding: '8px 0' }}>
-        {remaining.slice(0, 8).map((story) => (
+        {otherStories.slice(0, 6).map((story) => (
           <EditorialStory
             key={story.id}
             story={story}
@@ -421,32 +547,64 @@ function MobileFrontPage({ hero, stories, movers, isBreaking, onStoryExpand, exp
         ))}
       </div>
 
+      {/* Kim's Weekly preview */}
+      {kimStory && (
+        <>
+          <MobileSectionHeader label="SECTOR WATCH" color={REPORTER_COLORS.kim.hex} />
+          <KimMobilePreview story={kimStory} onStorySelect={onStorySelect} />
+        </>
+      )}
+
       {/* Movers horizontal scroll */}
       {movers.length > 0 && (
         <div style={{ padding: '0 0 16px' }}>
+          <MobileSectionHeader label="MOVERS" color={REPORTER_COLORS.alex.hex} />
           <div style={{
-            fontFamily: BROADSHEET_TOKENS.fontMono,
-            fontSize: 11,
-            letterSpacing: '0.3em',
-            color: '#859398',
-            textTransform: 'uppercase',
-            padding: '16px 16px 12px',
-            borderTop: '1px solid rgba(60, 73, 77, 0.3)',
-          }}>
-            MOVERS & SPOTLIGHTS
-          </div>
-          <div style={{
-            display: 'flex',
-            gap: 1,
-            overflowX: 'auto',
+            display: 'flex', overflowX: 'auto', gap: 0,
+            borderTop: '1px solid rgba(60, 73, 77, 0.2)',
+            borderBottom: '1px solid rgba(60, 73, 77, 0.2)',
+            msOverflowStyle: 'none', scrollbarWidth: 'none',
             WebkitOverflowScrolling: 'touch',
-            msOverflowStyle: 'none',
-            scrollbarWidth: 'none',
-            padding: '0 16px',
           }}>
             {movers.slice(0, 6).map(story => (
-              <div key={story.id} style={{ minWidth: 140, flexShrink: 0 }}>
-                <MoverCard story={story} />
+              <div
+                key={story.id}
+                onClick={() => onStorySelect?.(story)}
+                onKeyDown={(e) => { if (e.key === 'Enter') onStorySelect?.(story); }}
+                tabIndex={0}
+                role="button"
+                style={{
+                  minWidth: 140, padding: 16,
+                  background: '#121317',
+                  borderRight: '1px solid rgba(60, 73, 77, 0.2)',
+                  cursor: 'pointer',
+                  display: 'flex', flexDirection: 'column',
+                }}
+              >
+                <span style={{
+                  fontFamily: BROADSHEET_TOKENS.fontMono,
+                  fontSize: 10, color: '#bbc9ce',
+                  textTransform: 'uppercase', marginBottom: 4,
+                }}>
+                  {story.primaryTicker || 'STOCK'}
+                </span>
+                <span style={{
+                  fontFamily: BROADSHEET_TOKENS.fontHeadline,
+                  fontSize: 20, fontWeight: 700, color: '#e3e2e7',
+                }}>
+                  {story.dataSnapshot?.price
+                    ? `$${Number(story.dataSnapshot.price).toLocaleString()}`
+                    : story.primaryTicker || '—'}
+                </span>
+                <span style={{
+                  fontFamily: BROADSHEET_TOKENS.fontMono,
+                  fontSize: 10, marginTop: 4,
+                  color: (story.dataSnapshot?.percentChange || 0) >= 0 ? '#00d9ff' : '#ffb4ab',
+                }}>
+                  {(story.dataSnapshot?.percentChange || 0) >= 0 ? '+' : ''}
+                  {(story.dataSnapshot?.percentChange || 0).toFixed(2)}%{' '}
+                  {(story.dataSnapshot?.percentChange || 0) >= 0 ? '▲' : '▼'}
+                </span>
               </div>
             ))}
           </div>
@@ -458,31 +616,25 @@ function MobileFrontPage({ hero, stories, movers, isBreaking, onStoryExpand, exp
 
 // ── Movers Section (Desktop) ──
 
-function MoversSection({ movers }) {
+function MoversSection({ movers, onStorySelect }) {
   return (
     <div style={{ backgroundColor: BROADSHEET_TOKENS.bgSidebarStory }}>
       <div style={{
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
+        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
         padding: '20px 48px 16px',
         borderTop: '1px solid rgba(60, 73, 77, 0.3)',
       }}>
         <span style={{
           fontFamily: BROADSHEET_TOKENS.fontMono,
-          fontSize: 12,
-          letterSpacing: '0.4em',
-          color: '#859398',
-          textTransform: 'uppercase',
+          fontSize: 12, letterSpacing: '0.4em',
+          color: '#859398', textTransform: 'uppercase',
         }}>
           MOVERS & SPOTLIGHTS
         </span>
         <span style={{
           fontFamily: BROADSHEET_TOKENS.fontMono,
-          fontSize: 11,
-          color: REPORTER_COLORS.alex.hex,
-          cursor: 'pointer',
-          letterSpacing: '0.05em',
+          fontSize: 11, color: REPORTER_COLORS.alex.hex,
+          cursor: 'pointer', letterSpacing: '0.05em',
         }}>
           VIEW FULL TICKER
         </span>
@@ -496,7 +648,7 @@ function MoversSection({ movers }) {
         padding: '0 48px 48px',
       }}>
         {movers.slice(0, 6).map(story => (
-          <MoverCard key={story.id} story={story} />
+          <MoverCard key={story.id} story={story} onClick={() => onStorySelect?.(story)} />
         ))}
       </div>
     </div>
@@ -505,10 +657,12 @@ function MoversSection({ movers }) {
 
 // ── Main Component ──
 
-export default function BroadsheetFrontPage({ stories, onStoryExpand, isDesktop, expandedStoryId, onResearch }) {
+export default function BroadsheetFrontPage({ stories, onStoryExpand, isDesktop, expandedStoryId, onResearch, onStorySelect }) {
+  const edition = useMemo(() => getEdition(), []);
+
   const { hero, sidebar, belowFold, movers } = useMemo(
-    () => selectFrontPageStories(stories),
-    [stories]
+    () => selectFrontPageStories(stories, edition),
+    [stories, edition]
   );
 
   const storyCount = stories?.length || 0;
@@ -526,14 +680,12 @@ export default function BroadsheetFrontPage({ stories, onStoryExpand, isDesktop,
         onStoryExpand={onStoryExpand}
         expandedStoryId={expandedStoryId}
         onResearch={onResearch}
+        onStorySelect={onStorySelect}
       />
     );
   }
 
-  // Desktop: adaptive grid based on story count
-  // 1 story: hero only (full width, no sidebar)
-  // 2-3: hero + below-fold (no sidebar)
-  // 4+: full layout with sidebar
+  // Desktop: adaptive grid based on story count and edition
   const showSidebar = storyCount >= 4 ? sidebar : null;
 
   return (
@@ -545,6 +697,8 @@ export default function BroadsheetFrontPage({ stories, onStoryExpand, isDesktop,
       onStoryExpand={onStoryExpand}
       expandedStoryId={expandedStoryId}
       onResearch={onResearch}
+      onStorySelect={onStorySelect}
+      edition={edition}
     />
   );
 }

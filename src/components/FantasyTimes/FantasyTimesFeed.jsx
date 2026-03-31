@@ -181,6 +181,7 @@ export default function FantasyTimesFeed({
                   isDesktop={isDesktop}
                   expandedStoryId={expandedStoryId}
                   onResearch={handleResearch}
+                  onStorySelect={onStorySelect}
                 />
               ) : (
                 <ReporterDesk
