@@ -127,7 +127,7 @@ const AgentDashboard = ({ user, setScreen, onCreateAgentBattle, setShowForge }) 
         return;
       }
 
-      // Step 2: Create training battle and navigate to battle view
+      // Step 2: Set opponent + navigate to battle view
       console.log('[Deploy] Agent battle created:', data.agentBattleId || '(existing)');
       if (onCreateAgentBattle) {
         await onCreateAgentBattle(
@@ -135,6 +135,7 @@ const AgentDashboard = ({ user, setScreen, onCreateAgentBattle, setShowForge }) 
           data.bench,
           {
             agentId: agent.id,
+            agentBattleId: data.agentBattleId || null,
             innerMonologue: data.innerMonologue || null,
             strategyBrief: data.strategyBrief || null,
             expiresAt: data.expiresAt || null,

@@ -2191,6 +2191,7 @@ export default function PortfolioDuel() {
   const [activeDraftBattles, setActiveDraftBattles] = useState([]);
   const [completedDraftBattles, setCompletedDraftBattles] = useState([]);
   const [activeTrainingBattles, setActiveTrainingBattles] = useState([]); // Firebase-persisted training battles
+  const [activeAgentBattles, setActiveAgentBattles] = useState([]); // agentBattles collection (agent deploys)
   const [completedTrainingBattles, setCompletedTrainingBattles] = useState([]); // For Battle History training tab
   const [loadingTrainingBattles, setLoadingTrainingBattles] = useState(false);
   const [completedBaggerBombBattles, setCompletedBaggerBombBattles] = useState([]); // For Battle History BaggerBomb tab (Firestore)
@@ -3630,6 +3631,39 @@ export default function PortfolioDuel() {
     const refreshInterval = setInterval(fetchTrainingBattles, 120_000);
     return () => clearInterval(refreshInterval);
   }, [screen, user, isPageVisible]);
+
+  // ⭐ Fetch active agent battles from agentBattles collection
+  useEffect(() => {
+    if (screen !== 'dashboard' || !isPageVisible) return;
+
+    const fetchAgentBattles = async () => {
+      try {
+        const { collection, query, where, getDocs, limit } = await import('firebase/firestore');
+        const { db, auth } = await import('./firebase/config');
+        if (!auth.currentUser?.uid) return;
+
+        const q = query(
+          collection(db, 'agentBattles'),
+          where('ownerId', '==', auth.currentUser.uid),
+          where('status', '==', 'active'),
+          limit(5)
+        );
+
+        const snapshot = await getDocs(q);
+        trackRead('agentBattlePoll', snapshot.size);
+
+        const battles = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+        setActiveAgentBattles(battles);
+      } catch (error) {
+        console.error('Error fetching agent battles:', error);
+        setActiveAgentBattles([]);
+      }
+    };
+
+    fetchAgentBattles();
+    const refreshInterval = setInterval(fetchAgentBattles, 120_000);
+    return () => clearInterval(refreshInterval);
+  }, [screen, isPageVisible]);
 
   // ⭐ MID-GAME CHALLENGE CHECKING SYSTEM
   // Check for mid-game challenges periodically during active battles
@@ -6185,7 +6219,7 @@ export default function PortfolioDuel() {
   const handleCreateAgentTrainingBattle = async (portfolioData, benchData, agentMeta) => {
     // portfolioData: { star: [...], core: [...], support: [...] } — from api/agent/decide
     // benchData: { stocks: [...], crypto: {...} } — from api/agent/decide
-    // agentMeta: { agentId, innerMonologue, strategyBrief }
+    // agentMeta: { agentId, agentBattleId, innerMonologue, strategyBrief, expiresAt }
 
     // Defensive check: stocksData/cryptoData must be loaded
     if (!stocksData?.length || !cryptoData?.length) {
@@ -6193,27 +6227,20 @@ export default function PortfolioDuel() {
       return null;
     }
 
+    const agentBattleId = agentMeta?.agentBattleId;
+
     // 1. Generate CPU portfolio (reuse existing V3 logic)
     const cpuPortfolioData = generateCPUPortfolioBaggerBombV3(stocksData, cryptoData);
 
-    // 2. Calculate timing — use agent battle expiry if available, else 1 hour fallback
-    const now = new Date();
-    const startDate = new Date(now);
-    const endDate = agentMeta?.expiresAt
-      ? new Date(agentMeta.expiresAt)
-      : new Date(startDate.getTime() + 60 * 60 * 1000);
-
-    // 3. Flatten all portfolios + fetch starting prices
-    const userAssets = flattenPortfolio(portfolioData);
+    // 2. Fetch starting prices for CPU symbols (agent symbols already have prices from API)
     const cpuAssets = flattenPortfolio(cpuPortfolioData.portfolio);
-    const userBenchAssets = flattenBench(benchData);
     const cpuBenchAssets = flattenBench(cpuPortfolioData.bench);
-    const allAssets = [...userAssets, ...cpuAssets, ...userBenchAssets, ...cpuBenchAssets];
-    const uniqueSymbols = [...new Set(allAssets.map(a => a?.symbol).filter(Boolean))];
+    const allCpuAssets = [...cpuAssets, ...cpuBenchAssets];
+    const cpuSymbols = [...new Set(allCpuAssets.map(a => a?.symbol).filter(Boolean))];
 
-    const { startingPrices } = await fetchBattlePrices(uniqueSymbols);
+    const { startingPrices } = await fetchBattlePrices(cpuSymbols);
 
-    // 4. Price update helpers (same as V3 training handler)
+    // 3. Price update helpers
     const updateV3PortfolioPrices = (portfolio) => ({
       star: (portfolio.star || []).map(a => a ? { ...a, price: startingPrices[a.symbol] || a.price || 0 } : null),
       core: (portfolio.core || []).map(a => a ? { ...a, price: startingPrices[a.symbol] || a.price || 0 } : null),
@@ -6225,14 +6252,45 @@ export default function PortfolioDuel() {
       crypto: bench.crypto ? { ...bench.crypto, price: startingPrices[bench.crypto.symbol] || bench.crypto.price || 0 } : null,
     });
 
-    // 5. Build battle object — identical to V3 training shape + agent metadata
-    const battleId = `training_agent_v3_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    const odUserId = user.odUserId || user.username;
+    const cpuPortfolio = updateV3PortfolioPrices(cpuPortfolioData.portfolio);
+    const cpuBench = updateV3BenchPrices(cpuPortfolioData.bench);
 
-    const trainingBattle = {
-      id: battleId,
-      challengeCode: 'TRAINING',
+    // 4. Write CPU opponent to the agentBattle document via server endpoint
+    if (agentBattleId) {
+      try {
+        const { auth } = await import('./firebase/config');
+        const uid = auth.currentUser?.uid;
+        const resp = await fetch('/api/agent/set-opponent', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-user-uid': uid },
+          body: JSON.stringify({
+            agentBattleId,
+            opponent: { portfolio: cpuPortfolio, bench: cpuBench },
+            startingPrices,
+          }),
+        });
+        const result = await resp.json();
+        if (!resp.ok) {
+          console.error('[Deploy] set-opponent failed:', result.error);
+        } else {
+          console.log('✅ CPU opponent written to agentBattle:', agentBattleId, result.alreadySet ? '(already set)' : '');
+        }
+      } catch (err) {
+        console.error('[Deploy] set-opponent error:', err);
+      }
+    }
+
+    // 5. Build in-memory battle object for AgentBattleScreen navigation
+    const odUserId = user.odUserId || user.username;
+    const now = new Date();
+
+    const currentBattleObj = {
+      id: agentBattleId || `agent_${Date.now()}`,
       _v: 3,
+      type: 'baggerbomb',
+      agentDeployed: true,
+      agentId: agentMeta.agentId,
+      agentBattleId: agentBattleId,
 
       creator: {
         uid: odUserId,
@@ -6241,7 +6299,6 @@ export default function PortfolioDuel() {
         portfolioName: 'Agent Deploy',
         portfolio: updateV3PortfolioPrices(portfolioData),
         bench: updateV3BenchPrices(benchData),
-        history: {},
       },
 
       opponent: {
@@ -6249,113 +6306,31 @@ export default function PortfolioDuel() {
         odUserId: 'cpu',
         username: 'CPU Opponent',
         portfolioName: 'CPU Strategy',
-        portfolio: updateV3PortfolioPrices(cpuPortfolioData.portfolio),
-        bench: updateV3BenchPrices(cpuPortfolioData.bench),
-        history: {},
-      },
-
-      timeline: {
-        createdAt: now.toISOString(),
-        startDate: startDate.toISOString(),
-        endDate: endDate.toISOString(),
-        completedAt: null,
+        portfolio: cpuPortfolio,
+        bench: cpuBench,
       },
 
       state: {
         status: 'active',
-        currentSession: '',
-        completedSessions: [],
         startingPrices: startingPrices,
       },
 
-      sessionPrices: {
-        MORNING_BELL: { open: {}, close: {}, capturedAt: { open: '', close: '' } },
-        MIDDAY: { open: {}, close: {}, capturedAt: { open: '', close: '' } },
-        POWER_HOUR: { open: {}, close: {}, capturedAt: { open: '', close: '' } },
-        NIGHT_GAME: { open: {}, close: {}, capturedAt: { open: '', close: '' } },
+      timeline: {
+        createdAt: now.toISOString(),
+        endDate: agentMeta?.expiresAt || new Date(now.getTime() + 60 * 60 * 1000).toISOString(),
       },
-
-      breakouts: { creator: [], opponent: [] },
-      substitutions: [],
-      sessionScores: {
-        MORNING_BELL: { creator: 0, opponent: 0, winner: '' },
-        MIDDAY: { creator: 0, opponent: 0, winner: '' },
-        POWER_HOUR: { creator: 0, opponent: 0, winner: '' },
-        NIGHT_GAME: { creator: 0, opponent: 0, winner: '' },
-      },
-
-      status: 'active',
-      startDate: startDate.toISOString(),
-      endDate: endDate.toISOString(),
-      startingPrices: startingPrices,
 
       isTraining: true,
       isTrainingBattle: true,
-      createdAt: now.toISOString(),
-
-      playerIds: [odUserId, 'cpu'],
-      creatorId: odUserId,
-
-      player1: {
-        odUserId: odUserId,
-        username: user.username,
-        portfolioName: 'Agent Deploy',
-        portfolio: updateV3PortfolioPrices(portfolioData),
-        bench: updateV3BenchPrices(benchData),
-        portfolioType: 'baggerbomb',
-        startValue: 1000000,
-        currentValue: 1000000,
-        percentChange: 0,
-        isCreator: true,
-      },
-      player2: {
-        odUserId: 'cpu',
-        username: 'CPU Opponent',
-        portfolioName: 'CPU Strategy',
-        portfolio: updateV3PortfolioPrices(cpuPortfolioData.portfolio),
-        bench: updateV3BenchPrices(cpuPortfolioData.bench),
-        portfolioType: 'baggerbomb',
-        startValue: 1000000,
-        currentValue: 1000000,
-        percentChange: 0,
-        isCPU: true,
-      },
-
-      type: 'baggerbomb',
-
-      // Agent metadata — links battle to the agent that created it
-      agentId: agentMeta.agentId,
-      agentDeployed: true,
-      agentInnerMonologue: agentMeta.innerMonologue || null,
-      agentStrategyBrief: agentMeta.strategyBrief || null,
     };
 
-    // 6. Save to Firebase
-    try {
-      const { doc, setDoc } = await import('firebase/firestore');
-      const { db } = await import('./firebase/config');
-      // TODO: Remove training battle creation for agent deploys — dashboard should read from agentBattles directly
-      await setDoc(doc(db, 'trainingBattles', battleId), trainingBattle);
-      console.log('✅ Agent Training V3 battle saved to Firebase:', battleId);
-    } catch (firebaseError) {
-      console.error('⚠️ Failed to save agent training battle to Firebase:', firebaseError);
-    }
-
-    // 7. Update React state
-    setBattles(prevBattles => {
-      const exists = prevBattles.some(b => b.id === trainingBattle.id);
-      if (exists) return prevBattles;
-      const updatedBattles = [...prevBattles, trainingBattle];
-      saveBattlesSafe(updatedBattles);
-      return updatedBattles;
-    });
-
-    setActiveBattleId(trainingBattle.id);
-    setCurrentBattle(trainingBattle);
+    // 6. Navigate to battle screen (no Firestore write — dashboard reads agentBattles directly)
+    setActiveBattleId(currentBattleObj.id);
+    setCurrentBattle(currentBattleObj);
     setScreen('battle');
-    showToast(`Agent deployed to BaggerBomb Training! 🤖💣`);
+    showToast(`Agent deployed to BaggerBomb! 🤖💣`);
 
-    return battleId;
+    return agentBattleId;
   };
 
   // ============================================
@@ -8246,6 +8221,7 @@ export default function PortfolioDuel() {
               activeBattles={activeBattles}
               activeDraftBattles={activeDraftBattles}
               activeTrainingBattles={activeTrainingBattles}
+              activeAgentBattles={activeAgentBattles}
               lobbyBattles={lobbyBattles}
               completedBattles={completedBattles}
               setCurrentBattle={setCurrentBattle}
@@ -8283,6 +8259,7 @@ export default function PortfolioDuel() {
             activeBattles={activeBattles}
             activeDraftBattles={activeDraftBattles}
             activeTrainingBattles={activeTrainingBattles}
+            activeAgentBattles={activeAgentBattles}
             lobbyBattles={lobbyBattles}
             completedBattles={completedBattles}
             setCurrentBattle={setCurrentBattle}

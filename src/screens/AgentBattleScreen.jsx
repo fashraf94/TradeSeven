@@ -380,7 +380,10 @@ export default function AgentBattleScreen({ battle, user, onBack }) {
 
   // ── Agent battle data ─────────────────────────────────────────────────────
 
-  const { agentBattleId, loading: idLoading } = useAgentBattleId(battle?.agentId);
+  // Use direct agentBattleId if available (from dashboard), else look up via agentId
+  const directId = battle?.agentBattleId || null;
+  const { agentBattleId: queriedId, loading: idLoading } = useAgentBattleId(directId ? null : battle?.agentId);
+  const agentBattleId = directId || queriedId;
   const {
     battle: agentBattle,
     statusFeed,
