@@ -72,8 +72,8 @@ export default function DashboardLoop({
   const allBattles = useMemo(() => {
     const merged = [
       ...activeBattles.filter(b => !b.isTrainingBattle && !isEnded(b)).map(b => ({ battle: b, type: 'classic' })),
-      ...activeDraftBattles.filter(b => b.status === 'active' && b.isTraining !== true && !isEnded(b)).map(b => ({ battle: b, type: 'draft' })),
-      ...activeDraftBattles.filter(b => b.status === 'active' && b.isTraining === true && !isEnded(b)).map(b => ({ battle: b, type: 'trainingDraft' })),
+      ...activeDraftBattles.filter(b => b.status === 'battle' && b.isTraining !== true && !isEnded(b)).map(b => ({ battle: b, type: 'draft' })),
+      ...activeDraftBattles.filter(b => b.status === 'battle' && b.isTraining === true && !isEnded(b)).map(b => ({ battle: b, type: 'trainingDraft' })),
       ...activeTrainingBattles.filter(b => !isEnded(b)).map(b => ({ battle: b, type: 'training' })),
     ];
 
