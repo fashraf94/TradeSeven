@@ -2,10 +2,13 @@
 // Editorial front page layout — hero zone + fold + below-fold sections + movers.
 // Phase 4: mobile polish, KimMobilePreview, time-of-day editorial rhythm.
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { REPORTER_COLORS, BROADSHEET_TOKENS } from '../../constants/reporterTheme';
+import { doc, getDoc } from 'firebase/firestore';
+import { db } from '../../firebase/config';
 import EditorialStory from './EditorialStory';
 import StoryVisualSafe from './StoryVisualSafe';
+import SidebarSectorBars from './SidebarSectorBars';
 import { toDate } from '../../utils/timeAgo';
 import { ChevronUp } from 'lucide-react';
 
@@ -357,7 +360,7 @@ function MobileSectionHeader({ label, color }) {
 
 // ── Desktop Front Page ──
 
-function DesktopFrontPage({ hero, sidebar, belowFold, movers, onStoryExpand, expandedStoryId, onResearch, onStorySelect, edition }) {
+function DesktopFrontPage({ hero, sidebar, belowFold, movers, onStoryExpand, expandedStoryId, onResearch, onStorySelect, edition, sectorData }) {
   const aboveFoldColumns = sidebar ? '3fr 1fr' : '1fr';
 
   return (
@@ -438,6 +441,8 @@ function DesktopFrontPage({ hero, sidebar, belowFold, movers, onStoryExpand, exp
             }}>
               BY {REPORTER_COLORS[sidebar.reporter]?.name || sidebar.reporter}
             </div>
+
+            {sectorData && <SidebarSectorBars sectorData={sectorData} />}
           </div>
         )}
       </div>
@@ -641,6 +646,23 @@ export default function BroadsheetFrontPage({ stories, onStoryExpand, isDesktop,
     [stories, edition]
   );
 
+  const [sectorData, setSectorData] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const snap = await getDoc(doc(db, 'indexIntelligence', 'marketContext'));
+        if (!cancelled && snap.exists()) {
+          setSectorData(snap.data().sectorSnapshot || []);
+        }
+      } catch (_) {
+        // Sector bars are enhancement, not critical
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
   const storyCount = stories?.length || 0;
   const isBreaking = isBreakingRecent(hero);
 
@@ -675,6 +697,7 @@ export default function BroadsheetFrontPage({ stories, onStoryExpand, isDesktop,
       onResearch={onResearch}
       onStorySelect={onStorySelect}
       edition={edition}
+      sectorData={sectorData}
     />
   );
 }

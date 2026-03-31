@@ -25,14 +25,20 @@ function buildPath(w, h, isPositive) {
   return `M${points.join(' L')}`;
 }
 
-export default function MoverSparkline({ isPositive = true, width = 60, height = 24 }) {
+export default function MoverSparkline({ isPositive = true, width = 60, height = 24, responsive = false }) {
   const id = useId();
   const color = isPositive ? GREEN : RED;
   const linePath = buildPath(width, height, isPositive);
   const areaPath = `${linePath} L${width},${height} L0,${height} Z`;
 
   return (
-    <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} style={{ flexShrink: 0 }}>
+    <svg
+      width={responsive ? '100%' : width}
+      height={height}
+      viewBox={`0 0 ${width} ${height}`}
+      preserveAspectRatio={responsive ? 'none' : undefined}
+      style={{ flexShrink: 0, display: 'block' }}
+    >
       <defs>
         <linearGradient id={`spark-fill-${id}`} x1="0" y1="0" x2="0" y2="1">
           <stop offset="0%" stopColor={color} stopOpacity={0.25} />

@@ -6,6 +6,7 @@ import React, { useMemo } from 'react';
 import { REPORTER_COLORS, BROADSHEET_TOKENS, REPORTER_LAYOUTS } from '../../constants/reporterTheme';
 import EditorialStory from './EditorialStory';
 import KimDropCapColumn from './KimDropCapColumn';
+import MoverSparkline from './visuals/MoverSparkline';
 
 const BIO_TAGLINES = {
   kai: 'Watching the tape so you don\'t have to',
@@ -171,7 +172,7 @@ function KaiDesk({ stories, isDesktop, onStoryExpand, expandedStoryId, onResearc
 
 function AlexTickerCard({ story, onStorySelect }) {
   const change = story.dataSnapshot?.percentChange || 0;
-  const isPositive = change >= 0;
+  const isPositive = story.sentiment === 'bullish' || (story.sentiment !== 'bearish' && change >= 0);
   const ticker = story.primaryTicker || (story.tickers && story.tickers[0]) || '';
   const price = story.dataSnapshot?.price;
 
@@ -192,6 +193,8 @@ function AlexTickerCard({ story, onStorySelect }) {
         borderRadius: 0,
         cursor: 'pointer',
         transition: 'background-color 0.15s ease',
+        position: 'relative',
+        overflow: 'hidden',
       }}
       onMouseEnter={e => e.currentTarget.style.backgroundColor = '#3e3e44'}
       onMouseLeave={e => e.currentTarget.style.backgroundColor = '#343439'}
@@ -235,6 +238,17 @@ function AlexTickerCard({ story, onStorySelect }) {
       }}>
         {isPositive ? '+' : ''}{change.toFixed(2)}%
       </div>
+      {/* Sparkline background */}
+      <div style={{
+        position: 'absolute',
+        bottom: 0,
+        left: 0,
+        right: 0,
+        pointerEvents: 'none',
+        opacity: 0.4,
+      }}>
+        <MoverSparkline isPositive={isPositive} width={320} height={48} responsive />
+      </div>
     </div>
   );
 }
@@ -248,6 +262,7 @@ function AlexDesk({ stories, isDesktop, onStorySelect }) {
         {stories.map(s => {
           const change = s.dataSnapshot?.percentChange || 0;
           const ticker = s.primaryTicker || (s.tickers && s.tickers[0]) || '';
+          const mobileIsPositive = s.sentiment === 'bullish' || (s.sentiment !== 'bearish' && change >= 0);
           return (
             <div
               key={s.id}
@@ -260,6 +275,8 @@ function AlexDesk({ stories, isDesktop, onStorySelect }) {
                 padding: '12px 16px',
                 cursor: 'pointer',
                 marginBottom: 8,
+                position: 'relative',
+                overflow: 'hidden',
               }}
             >
               <div style={{
@@ -289,6 +306,16 @@ function AlexDesk({ stories, isDesktop, onStorySelect }) {
                   {change >= 0 ? '+' : ''}{change.toFixed(2)}%
                 </span>
               )}
+              <div style={{
+                position: 'absolute',
+                bottom: 0,
+                left: 0,
+                right: 0,
+                pointerEvents: 'none',
+                opacity: 0.3,
+              }}>
+                <MoverSparkline isPositive={mobileIsPositive} width={320} height={36} responsive />
+              </div>
             </div>
           );
         })}
