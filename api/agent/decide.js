@@ -402,6 +402,7 @@ export default async function handler(req, res) {
       portfolioUpdated: true,
       battleCreated: true,
       agentBattleId: battleResult.id,
+      expiresAt: battleResult.expiresAt,
       portfolio: enrichedPortfolio.portfolio,
       bench: enrichedPortfolio.bench,
       innerMonologue: portfolioResult.innerMonologue,

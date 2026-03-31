@@ -59,6 +59,7 @@ function computeDayLabel(timing) {
   if (!timing) return '';
   const { tradingDays, currentTradingDay } = timing;
   const total = tradingDays?.length || 0;
+  if (total <= 1) return '';
   const current = currentTradingDay || 1;
   return `Day ${current} of ${total}`;
 }
@@ -379,7 +380,10 @@ export default function AgentBattleScreen({ battle, user, onBack }) {
 
   // ── Agent battle data ─────────────────────────────────────────────────────
 
-  const { agentBattleId, loading: idLoading } = useAgentBattleId(battle?.agentId);
+  // Use direct agentBattleId if available (from dashboard), else look up via agentId
+  const directId = battle?.agentBattleId || null;
+  const { agentBattleId: queriedId, loading: idLoading } = useAgentBattleId(directId ? null : battle?.agentId);
+  const agentBattleId = directId || queriedId;
   const {
     battle: agentBattle,
     statusFeed,
@@ -508,7 +512,7 @@ export default function AgentBattleScreen({ battle, user, onBack }) {
       priceChange = -priceChange;
     }
 
-    const prevClose = previousClosePrices[asset.symbol] || openPrice;
+    const prevClose = startingPrices[asset.symbol] || previousClosePrices[asset.symbol] || openPrice;
     let thresholdPriceChange = prevClose > 0
       ? ((curPrice - prevClose) / prevClose) * 100
       : priceChange;

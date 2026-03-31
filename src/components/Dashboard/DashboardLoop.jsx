@@ -44,6 +44,7 @@ export default function DashboardLoop({
   activeBattles,
   activeDraftBattles,
   activeTrainingBattles,
+  activeAgentBattles = [],
   lobbyBattles,
   completedBattles,
   setCurrentBattle,
@@ -69,12 +70,30 @@ export default function DashboardLoop({
   const [quickPlayOpen, setQuickPlayOpen] = useState(false);
 
   // ─── Battle merge: combine all active battles sorted by end time ───────────
+  const odUserId = user?.odUserId || user?.username;
   const allBattles = useMemo(() => {
     const merged = [
       ...activeBattles.filter(b => !b.isTrainingBattle && !isEnded(b)).map(b => ({ battle: b, type: 'classic' })),
       ...activeDraftBattles.filter(b => b.status === 'battle' && b.isTraining !== true && !isEnded(b)).map(b => ({ battle: b, type: 'draft' })),
       ...activeDraftBattles.filter(b => b.status === 'battle' && b.isTraining === true && !isEnded(b)).map(b => ({ battle: b, type: 'trainingDraft' })),
-      ...activeTrainingBattles.filter(b => !isEnded(b)).map(b => ({ battle: b, type: 'training' })),
+      ...activeTrainingBattles.filter(b => !isEnded(b) && !b.agentDeployed).map(b => ({ battle: b, type: 'training' })),
+      // Agent battles from agentBattles collection — normalized to training battle shape
+      ...activeAgentBattles.filter(b => b.status === 'active').map(b => ({
+        battle: {
+          ...b,
+          _v: 3,
+          type: 'baggerbomb',
+          isTrainingBattle: true,
+          agentDeployed: true,
+          agentBattleId: b.id,
+          creator: { portfolio: b.portfolio, username: user?.username, odUserId },
+          opponent: { portfolio: b.opponent?.portfolio || { star: [], core: [], support: [] }, username: 'CPU Opponent', odUserId: 'cpu' },
+          state: { status: b.status, startingPrices: b.portfolio?.startingPrices || {} },
+          thresholds: b.scoring?.thresholds || {},
+          timeline: { endDate: b.expiresAt, createdAt: b.createdAt },
+        },
+        type: 'training',
+      })),
     ];
 
     return merged.sort((a, b) => {
@@ -84,7 +103,7 @@ export default function DashboardLoop({
       if (!bEnd) return -1;
       return new Date(aEnd) - new Date(bEnd);
     });
-  }, [activeBattles, activeDraftBattles, activeTrainingBattles]);
+  }, [activeBattles, activeDraftBattles, activeTrainingBattles, activeAgentBattles, user?.username, odUserId]);
 
   const priorityBattle = allBattles[0] || null;
   const secondaryBattles = allBattles.slice(1);
@@ -148,6 +167,7 @@ export default function DashboardLoop({
         // Agent metadata — preserve for AgentBattleScreen routing
         agentDeployed: battle.agentDeployed || false,
         agentId: battle.agentId || null,
+        agentBattleId: battle.agentBattleId || null,
         agentInnerMonologue: battle.agentInnerMonologue || null,
         agentStrategyBrief: battle.agentStrategyBrief || null,
       };

@@ -180,7 +180,7 @@ export async function createAgentBattle(db, agentData, thresholds, startingPrice
   };
 
   const docRef = await db.collection('agentBattles').add(battleDoc);
-  return { id: docRef.id };
+  return { id: docRef.id, expiresAt };
 }
 
 // ==================== HELPERS ====================
