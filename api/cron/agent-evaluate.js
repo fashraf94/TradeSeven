@@ -29,6 +29,7 @@ import { validateTradeDecision, executeSwapServer } from '../_utils/agentSwapExe
 import { classifyStockRegime, classifyMarketPosture, getPresetAdjustedStrategies } from '../_utils/agentRegimeClassifier.js';
 import { evaluateRisk, calculate5minSMA20, pickEmergencyReplacement, findPortfolioSlot } from '../_utils/agentRiskManager.js';
 import { getPresetConfig } from '../_utils/agentPresetConfig.js';
+import { generateReflection } from '../agent/reflect.js';
 
 export const config = { maxDuration: 60 };
 
@@ -65,6 +66,10 @@ export default async function handler(req, res) {
       if (battle.expiresAt && new Date(battle.expiresAt) < new Date()) {
         try {
           await completeBattle(db, battle, summary);
+          // Trigger post-battle reflection (non-blocking)
+          generateReflection(db, battle.id).catch(err => {
+            console.error(`${LOG_PREFIX} Reflection failed for battle ${battle.id}:`, err.message);
+          });
           summary.expired++;
         } catch (err) {
           console.error(`${LOG_PREFIX} Error completing expired battle ${battle.id}:`, err.message);

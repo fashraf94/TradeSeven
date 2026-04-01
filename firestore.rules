@@ -335,6 +335,22 @@ service cloud.firestore {
     }
 
     // ═══════════════════════════════════════════
+    // GAME DESIGN FEEDBACK (server-only)
+    // ═══════════════════════════════════════════
+
+    match /gameDesignFeedback/{docId} {
+      allow read, write: if false;
+    }
+
+    match /gameDesignDigests/{docId} {
+      allow read, write: if false;
+    }
+
+    match /gameDesignFeedbackArchive/{docId} {
+      allow read, write: if false;
+    }
+
+    // ═══════════════════════════════════════════
     // Default deny everything else
     // ═══════════════════════════════════════════
     match /{document=**} {
