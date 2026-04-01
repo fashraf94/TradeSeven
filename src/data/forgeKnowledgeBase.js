@@ -855,4 +855,457 @@ export const FORGE_RULE_TEMPLATES = [
     tags: ['VWAP', 'thesis-invalidation', 'institutional', 'exit'],
     agentUseDescription: 'Your agent will track how many consecutive evaluation intervals each stock remains below its daily VWAP, and force an exit swap when the specified threshold is reached.',
   },
+
+  // ══════════════════════════════════════
+  // GAME STATE CATEGORY
+  // ══════════════════════════════════════
+
+  // GS-01: Early Phase Bench Preservation
+  {
+    id: 'gs-01',
+    category: 'game_state',
+    headline: 'Survive the opening chaos',
+    description: 'Restricts offensive swaps in the EARLY phase — agent trusts its initial portfolio.',
+    hook: 'The morning is chaos — survive the noise before making moves',
+    learnMore: 'The first phase of a trading day is dominated by volatile opening prints and erratic price swings. Most of these moves reverse within minutes. This rule tells your agent to trust its initial picks and avoid knee-jerk swaps during the EARLY phase, unless a stock is in serious trouble.',
+    difficulty: 'beginner',
+    forgeTemplates: [
+      {
+        text: 'In the EARLY phase, disable swap evaluations unless a stock drops below {atr} ATR',
+        params: {
+          atr: { type: 'number', default: -1.0, min: -1.5, max: -0.5 }
+        },
+        category: 'game_state'
+      }
+    ],
+    relatedIndicator: 'ATR (Average True Range)',
+    kbEntryId: null,
+    tags: ['phase', 'early', 'preservation', 'patience'],
+    agentUseDescription: 'Your agent will disable swap evaluations during the EARLY phase, only allowing swaps if a stock drops below the specified ATR threshold — preserving your initial portfolio through the noisy opening.',
+  },
+
+  // GS-02: Phase-Scaled Risk Tolerance
+  {
+    id: 'gs-02',
+    category: 'game_state',
+    headline: 'Scale risk by time of day',
+    description: 'Widens or tightens stop-loss thresholds based on the current time phase.',
+    hook: 'Morning volatility needs a wide leash, but final hour needs a tight one',
+    learnMore: 'Volatility is not constant throughout the day — it spikes at the open, settles midday, and surges again at the close. This rule adjusts stop-loss thresholds by phase so your agent gives stocks more room to breathe in the volatile morning and tightens up as the day ends and every point counts.',
+    difficulty: 'advanced',
+    forgeTemplates: [
+      {
+        text: 'Scale ATR-based stop thresholds by phase: EARLY {early}x, MID {mid}x, LATE {late}x, FINAL_HOUR {final}x',
+        params: {
+          early: { type: 'number', default: 2.0, min: 1.5, max: 3.0 },
+          mid: { type: 'number', default: 1.5, min: 1.0, max: 2.0 },
+          late: { type: 'number', default: 1.2, min: 1.0, max: 1.5 },
+          final: { type: 'number', default: 1.0, min: 0.5, max: 1.5 }
+        },
+        category: 'game_state'
+      }
+    ],
+    relatedIndicator: 'ATR (Average True Range)',
+    kbEntryId: null,
+    tags: ['phase', 'risk-scaling', 'stop-loss', 'time-aware'],
+    agentUseDescription: 'Your agent will multiply ATR-based stop thresholds by phase-specific scaling factors, giving stocks more breathing room early in the day and tightening stops as the battle progresses.',
+  },
+
+  // GS-03: Bench Optionality Time Decay
+  {
+    id: 'gs-03',
+    category: 'game_state',
+    headline: 'Use the bench before it expires',
+    description: 'Makes swaps easier to justify as the day progresses.',
+    hook: 'An unused bench at the closing bell is a wasted resource',
+    learnMore: 'Your bench stocks are like options — they lose value as time passes. Early in the day there\'s plenty of time for your current picks to work, so swaps should be rare. But as phase transitions tick by, an unused bench becomes a liability. This rule lowers hurdle rates with each phase to encourage timely use of your bench.',
+    difficulty: 'intermediate',
+    forgeTemplates: [
+      {
+        text: 'Reduce swap hurdle rates by {pct}% for each phase transition (EARLY → MID → LATE → FINAL_HOUR)',
+        params: {
+          pct: { type: 'number', default: 20, min: 10, max: 40 }
+        },
+        category: 'game_state'
+      }
+    ],
+    relatedIndicator: null,
+    kbEntryId: null,
+    tags: ['phase', 'time-decay', 'optionality', 'bench'],
+    agentUseDescription: 'Your agent will reduce swap hurdle rates by the specified percentage at each phase transition, making it progressively easier to justify using bench stocks as the day progresses.',
+  },
+
+  // GS-04: Par Score Target
+  {
+    id: 'gs-04',
+    category: 'game_state',
+    headline: 'Set your scoring target',
+    description: 'Sets an internal score benchmark that triggers strategy shifts between aggressive and defensive.',
+    hook: 'Define what winning means for your agent — everything else adjusts around this number',
+    learnMore: 'A par score is your agent\'s internal definition of "winning." Once set, other game-state rules can use it to decide when to play aggressively (below par) or defensively (above par). It\'s the foundation for adaptive strategy — without a target, your agent has no way to know if it\'s ahead or behind.',
+    difficulty: 'beginner',
+    forgeTemplates: [
+      {
+        text: 'Set a par score target of {points} points. Use this to determine whether to play aggressively or defensively',
+        params: {
+          points: { type: 'number', default: 80, min: 30, max: 200 }
+        },
+        category: 'game_state'
+      }
+    ],
+    relatedIndicator: null,
+    kbEntryId: null,
+    tags: ['score', 'par', 'benchmark', 'foundation'],
+    agentUseDescription: 'Your agent will use the par score target as a benchmark to determine whether it should play aggressively or defensively, informing other game-state rules.',
+  },
+
+  // GS-05: Leading — Defensive Posture
+  {
+    id: 'gs-05',
+    category: 'game_state',
+    headline: 'Protect the lead',
+    description: 'When score exceeds par target, shifts to capital preservation.',
+    hook: 'When you\'re ahead, protect the lead — like running out the clock in football',
+    learnMore: 'When your score is well above par, the smart play is to protect what you\'ve earned rather than risk it chasing more. This rule widens loss tolerance (so minor dips don\'t trigger panicked swaps) and restricts swaps to emergencies only — like running out the clock when you\'re winning.',
+    difficulty: 'intermediate',
+    forgeTemplates: [
+      {
+        text: 'When score exceeds par target by {pct}%, widen loss tolerance to {atr} ATR and restrict swaps to emergency exits only',
+        params: {
+          pct: { type: 'number', default: 20, min: 10, max: 50 },
+          atr: { type: 'number', default: -1.2, min: -1.5, max: -0.8 }
+        },
+        category: 'game_state'
+      }
+    ],
+    relatedIndicator: null,
+    kbEntryId: null,
+    tags: ['score', 'leading', 'defensive', 'clock-management'],
+    agentUseDescription: 'Your agent will shift to defensive mode when score exceeds the par target by the specified percentage, widening loss tolerance and restricting swaps to emergency exits only.',
+  },
+
+  // GS-06: Trailing — Aggressive Posture
+  {
+    id: 'gs-06',
+    category: 'game_state',
+    headline: 'Play to win from behind',
+    description: 'When score falls below par target, increases risk appetite.',
+    hook: 'When you\'re behind with time running out, play to win — not to lose slowly',
+    learnMore: 'When your score is significantly below par and time is running out, playing it safe guarantees a loss. This rule increases risk appetite in the LATE and FINAL_HOUR phases — lowering swap hurdles and prioritizing high-ATR bench stocks that have the explosive potential to close the gap.',
+    difficulty: 'intermediate',
+    forgeTemplates: [
+      {
+        text: 'When score falls below {pct}% of par target and phase is LATE or FINAL_HOUR, reduce all swap hurdle rates by {reduction}% and prioritize high-ATR bench stocks',
+        params: {
+          pct: { type: 'number', default: 80, min: 50, max: 90 },
+          reduction: { type: 'number', default: 50, min: 25, max: 75 }
+        },
+        category: 'game_state'
+      }
+    ],
+    relatedIndicator: null,
+    kbEntryId: null,
+    tags: ['score', 'trailing', 'aggressive', 'hail-mary'],
+    agentUseDescription: 'Your agent will shift to aggressive mode when trailing the par target in late phases, reducing swap hurdle rates and prioritizing high-ATR bench stocks to maximize comeback potential.',
+  },
+
+  // GS-07: Satisficer's Lock
+  {
+    id: 'gs-07',
+    category: 'game_state',
+    headline: 'Lock in a great score',
+    description: 'When score exceeds a high ceiling, completely disables offensive swaps.',
+    hook: 'Sometimes good enough is the smartest play — lock in a great score and stop gambling',
+    learnMore: 'There comes a point where your score is so good that any additional swap is more likely to hurt than help. This rule sets a ceiling score at which your agent stops all offensive trading and only acts to prevent catastrophic losses. It\'s the ultimate "quit while you\'re ahead" rule.',
+    difficulty: 'advanced',
+    forgeTemplates: [
+      {
+        text: 'When score exceeds {ceiling} points, disable all offensive swaps. Only swap if a stock falls within {atr} ATR of a Crash threshold',
+        params: {
+          ceiling: { type: 'number', default: 150, min: 80, max: 300 },
+          atr: { type: 'number', default: 0.2, min: 0.1, max: 0.5 }
+        },
+        category: 'game_state'
+      }
+    ],
+    relatedIndicator: null,
+    kbEntryId: null,
+    tags: ['score', 'aspiration', 'lock', 'capital-preservation'],
+    agentUseDescription: 'Your agent will completely disable offensive swaps when the score exceeds the ceiling, only allowing emergency swaps to prevent stocks from reaching Crash thresholds.',
+  },
+
+  // GS-08: Hot Hand Swap Freeze
+  {
+    id: 'gs-08',
+    category: 'game_state',
+    headline: 'Don\'t fix what isn\'t broken',
+    description: 'When the portfolio is on a winning streak, locks it to prevent over-managing success.',
+    hook: 'Don\'t fix what isn\'t broken — if your portfolio is hitting thresholds, leave it alone',
+    learnMore: 'When your portfolio is on a hot streak — multiple positive thresholds hit in a short window — the worst thing your agent can do is tinker. This rule dramatically increases swap hurdle rates during winning streaks, effectively freezing the portfolio to let the momentum play out.',
+    difficulty: 'intermediate',
+    forgeTemplates: [
+      {
+        text: 'If {thresholds} or more positive thresholds have been hit in the last {cycles} evaluation cycles, increase swap hurdle rates by {mult}x',
+        params: {
+          thresholds: { type: 'number', default: 2, min: 1, max: 4 },
+          cycles: { type: 'number', default: 4, min: 2, max: 8 },
+          mult: { type: 'number', default: 3.0, min: 2.0, max: 5.0 }
+        },
+        category: 'game_state'
+      }
+    ],
+    relatedIndicator: null,
+    kbEntryId: null,
+    tags: ['momentum', 'hot-hand', 'freeze', 'winning-streak'],
+    agentUseDescription: 'Your agent will track positive threshold hits across evaluation cycles and dramatically increase swap hurdle rates during winning streaks, preventing unnecessary trades when the portfolio is performing well.',
+  },
+
+  // GS-09: Drawdown Regime Breaker
+  {
+    id: 'gs-09',
+    category: 'game_state',
+    headline: 'Break the losing streak',
+    description: 'If the portfolio bleeds slowly over consecutive cycles, forces a change.',
+    hook: 'A slow bleed is worse than a quick cut — break the losing pattern',
+    learnMore: 'A slow, steady decline is harder to detect than a sudden crash, but just as damaging. When portfolio P&L has been negative for several consecutive cycles, the current strategy clearly isn\'t working. This rule forces a swap of the worst performer to break the losing pattern.',
+    difficulty: 'intermediate',
+    forgeTemplates: [
+      {
+        text: 'If portfolio P&L has been negative for {cycles} consecutive evaluation cycles, force a swap of the worst-performing stock',
+        params: {
+          cycles: { type: 'number', default: 4, min: 3, max: 6 }
+        },
+        category: 'game_state'
+      }
+    ],
+    relatedIndicator: null,
+    kbEntryId: null,
+    tags: ['drawdown', 'regime-break', 'forced-swap', 'losing-streak'],
+    agentUseDescription: 'Your agent will track consecutive negative P&L cycles and force a swap of the worst-performing stock when the specified threshold is reached, breaking destructive losing patterns.',
+  },
+
+  // GS-10: End-of-Day Reversal Fade
+  {
+    id: 'gs-10',
+    category: 'game_state',
+    headline: 'Don\'t chase afternoon runners',
+    description: 'In FINAL_HOUR, prevents swapping INTO stocks that have already run up massively.',
+    hook: 'Stocks that ran all day often reverse in the last hour — don\'t chase yesterday\'s winner at 3pm',
+    learnMore: 'Stocks that have already made large intraday moves are statistically more likely to reverse in the final hour as traders take profits. Swapping into a stock that\'s already up big is chasing — you\'re buying at the top. This rule blocks your agent from swapping into overextended stocks during FINAL_HOUR.',
+    difficulty: 'intermediate',
+    forgeTemplates: [
+      {
+        text: 'In FINAL_HOUR, prohibit swapping into any bench stock with intraday P&L exceeding {atr} ATR',
+        params: {
+          atr: { type: 'number', default: 1.5, min: 1.0, max: 2.0 }
+        },
+        category: 'game_state'
+      }
+    ],
+    relatedIndicator: 'ATR (Average True Range)',
+    kbEntryId: null,
+    tags: ['phase', 'final-hour', 'reversal', 'institutional'],
+    agentUseDescription: 'Your agent will block swaps into bench stocks that have already moved beyond the specified ATR threshold during FINAL_HOUR, preventing chasing of overextended stocks.',
+  },
+
+  // GS-12: After-Hours Catalyst Positioning
+  {
+    id: 'gs-12',
+    category: 'game_state',
+    headline: 'Position for after-hours moves',
+    description: 'In the final evaluation, prioritizes stocks with scheduled post-market catalysts.',
+    hook: 'Scoring continues after the bell — position for after-hours earnings moves',
+    learnMore: 'If scoring continues after market close, stocks with scheduled after-hours catalysts (like earnings reports) can deliver massive moves. This rule tells your agent to prioritize those stocks in its final evaluation, but only if they have enough volatility (ATR) to actually capture the move.',
+    difficulty: 'advanced',
+    forgeTemplates: [
+      {
+        text: 'In the final evaluation before market close, prioritize bench stocks with scheduled after-hours catalysts if their ATR exceeds {pct}% of price',
+        params: {
+          pct: { type: 'number', default: 2.0, min: 1.0, max: 4.0 }
+        },
+        category: 'game_state'
+      }
+    ],
+    relatedIndicator: 'ATR (Average True Range)',
+    kbEntryId: null,
+    tags: ['after-hours', 'earnings', 'catalyst', 'final-swap'],
+    agentUseDescription: 'Your agent will prioritize bench stocks with after-hours catalysts in its final evaluation, but only if their ATR exceeds the specified percentage of price.',
+  },
+
+  // ══════════════════════════════════════
+  // THRESHOLD STRATEGY CATEGORY
+  // ══════════════════════════════════════
+
+  // TH-01: Proximity Persistence
+  {
+    id: 'th-01',
+    category: 'threshold',
+    headline: 'Hold near the bonus line',
+    description: 'The closer a stock is to a positive threshold, the harder it becomes to swap out.',
+    hook: 'When your stock is inches from a bonus, hold your nerve — the payoff is worth the wait',
+    learnMore: 'When a stock is close to triggering a positive scoring threshold, swapping it out means giving up on imminent bonus points. This rule increases swap resistance as stocks approach thresholds — the closer you are, the more evidence is needed to justify an exit. But if the stock reverses hard, the protection lifts.',
+    difficulty: 'beginner',
+    forgeTemplates: [
+      {
+        text: 'If a stock is within {atr} ATR of its next positive threshold, increase its swap resistance by {mult}x. Do not swap unless it reverses more than {drawdown} ATR from its peak',
+        params: {
+          atr: { type: 'number', default: 0.25, min: 0.1, max: 0.5 },
+          mult: { type: 'number', default: 2.0, min: 1.5, max: 3.0 },
+          drawdown: { type: 'number', default: 0.3, min: 0.15, max: 0.5 }
+        },
+        category: 'threshold'
+      }
+    ],
+    relatedIndicator: 'ATR (Average True Range)',
+    kbEntryId: null,
+    tags: ['threshold', 'proximity', 'hold', 'goal-gradient'],
+    agentUseDescription: 'Your agent will increase swap resistance for stocks approaching positive thresholds, requiring a significant drawdown reversal before allowing a swap of a near-threshold stock.',
+  },
+
+  // TH-04: House Money Pursuit
+  {
+    id: 'th-04',
+    category: 'threshold',
+    headline: 'Chase the next bonus',
+    description: 'After hitting a threshold, widens stops to chase the next tier — treats locked-in points as a cushion.',
+    hook: 'You already banked the bonus — now play with house money and go for the bigger prize',
+    learnMore: 'Once a stock triggers a threshold bonus, those points are locked in. This gives you a cushion to play with — "house money." By widening the trailing stop after a threshold hit, your agent gives the stock more room to run toward the next, bigger bonus tier instead of locking in a modest gain.',
+    difficulty: 'intermediate',
+    forgeTemplates: [
+      {
+        text: 'After a stock triggers {threshold}, widen the trailing stop by an additional {atr} ATR to chase the next threshold tier',
+        params: {
+          threshold: { type: 'select', default: 'BaggerBomb', options: ['BaggerBomb', 'Double Bagger'] },
+          atr: { type: 'number', default: 0.5, min: 0.3, max: 1.0 }
+        },
+        category: 'threshold'
+      }
+    ],
+    relatedIndicator: 'ATR (Average True Range)',
+    kbEntryId: null,
+    tags: ['threshold', 'post-bonus', 'house-money', 'aggressive'],
+    agentUseDescription: 'Your agent will widen trailing stops after a stock triggers the specified threshold, giving it more room to pursue the next bonus tier using the locked-in points as a cushion.',
+  },
+
+  // TH-05: Bird-in-the-Hand Lock
+  {
+    id: 'th-05',
+    category: 'threshold',
+    headline: 'Lock in the win',
+    description: 'After hitting a threshold, tightens stops to lock in base P&L — especially in high-multiplier tiers.',
+    hook: 'A guaranteed win beats a maybe — lock in your gains before the market takes them back',
+    learnMore: 'The opposite of House Money — this rule prioritizes certainty over upside. After a threshold hit, it tightens the trailing stop to protect your gains, especially for Star and Core tier stocks where the multiplier amplifies both gains and losses. A guaranteed win is worth more than a gamble for a bigger one.',
+    difficulty: 'intermediate',
+    forgeTemplates: [
+      {
+        text: 'After a stock in {tier} tier triggers a positive threshold, tighten the trailing stop to {atr} ATR below the current price',
+        params: {
+          tier: { type: 'select', default: 'Star', options: ['Star', 'Star and Core', 'Any tier'] },
+          atr: { type: 'number', default: 0.2, min: 0.1, max: 0.4 }
+        },
+        category: 'threshold'
+      }
+    ],
+    relatedIndicator: 'ATR (Average True Range)',
+    kbEntryId: null,
+    tags: ['threshold', 'post-bonus', 'profit-lock', 'conservative'],
+    agentUseDescription: 'Your agent will tighten trailing stops after a stock triggers a positive threshold in the specified tier, locking in gains by reducing the distance between the current price and the stop level.',
+  },
+
+  // TH-07: Asymmetric Loss Multiplier
+  {
+    id: 'th-07',
+    category: 'threshold',
+    headline: 'Fear losses more than you love gains',
+    description: 'Makes the agent treat negative thresholds as closer than they are — fear of loss should outweigh excitement about gains.',
+    hook: 'Losing 35 points hurts way more than gaining 15 feels good — be properly scared of penalties',
+    learnMore: 'Scoring penalties are often much larger than bonuses. A Bust costs -35 points while a BaggerBomb only earns +15. This asymmetry means your agent should be disproportionately afraid of approaching negative thresholds. This rule multiplies the perceived proximity of penalties so your agent reacts sooner.',
+    difficulty: 'beginner',
+    forgeTemplates: [
+      {
+        text: 'Multiply the perceived proximity of all negative thresholds by {mult}x when calculating swap urgency',
+        params: {
+          mult: { type: 'number', default: 1.5, min: 1.2, max: 2.0 }
+        },
+        category: 'threshold'
+      }
+    ],
+    relatedIndicator: null,
+    kbEntryId: null,
+    tags: ['threshold', 'loss-aversion', 'penalty', 'asymmetry'],
+    agentUseDescription: 'Your agent will multiply the perceived proximity of negative thresholds by the specified factor, making it react to approaching penalties sooner and with greater urgency than it does for approaching bonuses.',
+  },
+
+  // TH-08: Sunk-Cost Threshold Timeout
+  {
+    id: 'th-08',
+    category: 'threshold',
+    headline: 'Know when to give up waiting',
+    description: 'If a stock hovers near a threshold without crossing it, the agent resets and treats it as swappable.',
+    hook: 'Just because a stock is close doesn\'t mean it\'ll get there — know when to give up waiting',
+    learnMore: 'Proximity Persistence protects stocks near thresholds, but that protection can become a trap. If a stock hovers near a bonus for too long without triggering it, you\'re falling for the sunk-cost fallacy. This rule sets a timeout — after the specified wait, the proximity bonus resets and the stock becomes swappable again.',
+    difficulty: 'intermediate',
+    forgeTemplates: [
+      {
+        text: 'If a stock remains within {atr} ATR of a positive threshold for more than {minutes} minutes without triggering it, reset its proximity bonus',
+        params: {
+          atr: { type: 'number', default: 0.15, min: 0.05, max: 0.3 },
+          minutes: { type: 'number', default: 45, min: 15, max: 90 }
+        },
+        category: 'threshold'
+      }
+    ],
+    relatedIndicator: 'ATR (Average True Range)',
+    kbEntryId: null,
+    tags: ['threshold', 'sunk-cost', 'timeout', 'discipline'],
+    agentUseDescription: 'Your agent will track how long each stock has been hovering near a positive threshold and reset its proximity bonus after the specified timeout, preventing the sunk-cost fallacy from locking up roster spots.',
+  },
+
+  // TH-09: Weakest-Link Swap Priority
+  {
+    id: 'th-09',
+    category: 'threshold',
+    headline: 'Replace the weakest link',
+    description: 'When swapping, always eject the stock furthest from any positive threshold.',
+    hook: 'Every portfolio has a weakest link — make sure that\'s the one that gets replaced',
+    learnMore: 'Not all stocks are equal when it comes to scoring potential. The stock furthest from its next positive threshold is contributing the least to your score potential. When it\'s time to swap, this rule ensures the weakest link gets ejected — not a stock that might be close to triggering a bonus.',
+    difficulty: 'beginner',
+    forgeTemplates: [
+      {
+        text: 'When initiating a swap, select the stock with the greatest distance to its next positive threshold as the ejection candidate',
+        params: {
+          exempt_tiers: { type: 'select', default: 'None', options: ['None', 'Star only', 'Star and Core'] }
+        },
+        category: 'threshold'
+      }
+    ],
+    relatedIndicator: null,
+    kbEntryId: null,
+    tags: ['threshold', 'weakest-link', 'portfolio-triage', 'swap-selection'],
+    agentUseDescription: 'Your agent will select the stock with the greatest distance to its next positive threshold as the swap ejection candidate, ensuring the weakest scorer gets replaced first.',
+  },
+
+  // TH-10: Portfolio Scoring Posture
+  {
+    id: 'th-10',
+    category: 'threshold',
+    headline: 'Choose your scoring personality',
+    description: 'Sets the agent\'s global philosophy — harvest many small bonuses or hunt rare big ones.',
+    hook: 'Do you want lots of +15s or one epic +50? This defines your agent\'s scoring personality',
+    learnMore: 'There are two ways to score big: collect many small threshold bonuses (Harvest) or hold out for rare, massive ones (Hunt). Harvest mode swaps stocks after BaggerBomb to bring in fresh threshold candidates. Hunt mode holds for deeper milestones. Balanced mode adapts based on game state. This is the most fundamental strategic choice you can make.',
+    difficulty: 'beginner',
+    forgeTemplates: [
+      {
+        text: 'Set scoring posture to {posture}. In Harvest mode, swap stocks after BaggerBomb for fresh candidates. In Hunt mode, hold for deeper milestones',
+        params: {
+          posture: { type: 'select', default: 'Balanced', options: ['Harvest (many +15s)', 'Hunt (few +50s)', 'Balanced'] }
+        },
+        category: 'threshold'
+      }
+    ],
+    relatedIndicator: null,
+    kbEntryId: null,
+    tags: ['threshold', 'posture', 'harvest', 'hunt', 'philosophy'],
+    agentUseDescription: 'Your agent will follow the specified scoring posture — Harvest mode recycles stocks after BaggerBomb for fresh threshold candidates, Hunt mode holds for deeper milestones, and Balanced adapts based on game state.',
+  },
 ];
