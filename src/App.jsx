@@ -6281,6 +6281,14 @@ export default function PortfolioDuel() {
     }
 
     // 5. Build in-memory battle object for AgentBattleScreen navigation
+    // Include agent asset prices in startingPrices for complete coverage
+    const agentAssets = [...flattenPortfolio(portfolioData), ...flattenBench(benchData)];
+    const agentStartingPrices = {};
+    agentAssets.forEach(a => {
+      if (a?.symbol && a?.price) agentStartingPrices[a.symbol] = a.price;
+    });
+    const allStartingPrices = { ...agentStartingPrices, ...startingPrices };
+
     const odUserId = user.odUserId || user.username;
     const now = new Date();
 
@@ -6312,7 +6320,7 @@ export default function PortfolioDuel() {
 
       state: {
         status: 'active',
-        startingPrices: startingPrices,
+        startingPrices: allStartingPrices,
       },
 
       timeline: {
