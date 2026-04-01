@@ -45,6 +45,11 @@ export async function generateReflection(db, battleId) {
   }
   const battleDoc = { id: battleSnap.id, ...battleSnap.data() };
 
+  if (battleDoc.status !== 'completed') {
+    console.warn(`${LOG_PREFIX} Battle ${battleId} is not completed (status: ${battleDoc.status}), skipping reflection`);
+    return;
+  }
+
   // 2. Read agent document (for writing memory[] and checking gamesPlayed)
   const agentRef = db.collection('agents').doc(battleDoc.agentId);
   const agentSnap = await agentRef.get();
@@ -91,7 +96,7 @@ export async function generateReflection(db, battleId) {
   // 6. Check if consolidation is due (every 5 games)
   try {
     const stats = agentDoc.stats || {};
-    const gamesPlayed = (stats.gamesPlayed || 0) + 1; // +1 because completeBattle just incremented
+    const gamesPlayed = stats.gamesPlayed || 0;
     if (gamesPlayed > 0 && gamesPlayed % 5 === 0) {
       await agentRef.update({ pendingConsolidation: true });
       console.log(`${LOG_PREFIX} Flagged agent ${battleDoc.agentId} for consolidation (game ${gamesPlayed})`);
