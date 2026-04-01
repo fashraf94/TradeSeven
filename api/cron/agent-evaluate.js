@@ -29,6 +29,7 @@ import { validateTradeDecision, executeSwapServer } from '../_utils/agentSwapExe
 import { classifyStockRegime, classifyMarketPosture, getPresetAdjustedStrategies } from '../_utils/agentRegimeClassifier.js';
 import { evaluateRisk, calculate5minSMA20, pickEmergencyReplacement, findPortfolioSlot } from '../_utils/agentRiskManager.js';
 import { getPresetConfig } from '../_utils/agentPresetConfig.js';
+import { generateReflection } from '../agent/reflect.js';
 
 export const config = { maxDuration: 60 };
 
@@ -65,6 +66,10 @@ export default async function handler(req, res) {
       if (battle.expiresAt && new Date(battle.expiresAt) < new Date()) {
         try {
           await completeBattle(db, battle, summary);
+          // Trigger post-battle reflection (non-blocking)
+          generateReflection(db, battle.id).catch(err => {
+            console.error(`${LOG_PREFIX} Reflection failed for battle ${battle.id}:`, err.message);
+          });
           summary.expired++;
         } catch (err) {
           console.error(`${LOG_PREFIX} Error completing expired battle ${battle.id}:`, err.message);
@@ -205,7 +210,9 @@ async function processAgentBattle(db, battle, summary) {
     const macroSymbols = ['SPY', 'QQQ', 'BTC-USD.CC'];
     // Expand with watchlist hotBench for open universe trading (may be updated by daily refresh)
     let hotBenchSymbols = battle.watchlist?.hotBench || [];
-    const allSymbols = [...new Set([...portfolioSymbols, ...benchSymbols, ...hotBenchSymbols, ...macroSymbols])];
+    const cpuPortfolioFlat = flattenPortfolioServer(battle.opponent?.portfolio);
+    const cpuSymbols = cpuPortfolioFlat.map(a => a.symbol).filter(Boolean);
+    const allSymbols = [...new Set([...portfolioSymbols, ...benchSymbols, ...hotBenchSymbols, ...cpuSymbols, ...macroSymbols])];
 
     // ---- Fetch prices ----
     const prices = {};
@@ -258,6 +265,36 @@ async function processAgentBattle(db, battle, summary) {
       );
     });
 
+    // ---- Compute CPU opponent scores ----
+    const cpuAssetScores = cpuPortfolioFlat.map(asset => {
+      const currentPrice = prices[asset.symbol]?.current;
+      const entryPrice = startingPrices[asset.symbol] || 0;
+
+      if (!currentPrice || entryPrice <= 0) {
+        return calculateAssetScoreServer(
+          { symbol: asset.symbol, baseATR: asset.baseATR, tier: asset.tier, direction: asset.direction },
+          0,
+          {}
+        );
+      }
+
+      const priceChange = ((currentPrice - entryPrice) / entryPrice) * 100;
+      const previousClose = prices[asset.symbol]?.previousClose;
+      const thresholdPriceChange = previousClose && previousClose > 0
+        ? ((currentPrice - previousClose) / previousClose) * 100
+        : null;
+
+      return calculateAssetScoreServer(
+        { symbol: asset.symbol, baseATR: asset.baseATR, tier: asset.tier, direction: asset.direction },
+        priceChange,
+        {},
+        {},
+        thresholdPriceChange
+      );
+    });
+
+    const opponentScore = cpuAssetScores.reduce((sum, s) => sum + s.totalPoints, 0);
+
     // ---- Update scores (always, even without Haiku) ----
     const activeScore = assetScores.reduce((sum, s) => sum + s.totalPoints, 0);
     const bankedScore = (battle.trades || []).reduce((sum, t) => sum + (t.lockedPoints || 0), 0);
@@ -267,6 +304,7 @@ async function processAgentBattle(db, battle, summary) {
       'scoreState.activeScore': Math.round(activeScore * 100) / 100,
       'scoreState.bankedScore': Math.round(bankedScore * 100) / 100,
       'scoreState.currentScore': Math.round(currentScore * 100) / 100,
+      'scoreState.opponentScore': Math.round(opponentScore * 100) / 100,
       'scoreState.lastScoredAt': new Date().toISOString(),
     };
 
@@ -1383,17 +1421,19 @@ async function completeBattle(db, battle, summary) {
   const now = new Date().toISOString();
   const scoreState = battle.scoreState || {};
   const currentScore = scoreState.currentScore || 0;
-  const result = currentScore > 0 ? 'win' : 'loss';
+  const opponentScore = scoreState.opponentScore || 0;
+  const result = currentScore > opponentScore ? 'win' : (currentScore < opponentScore ? 'loss' : 'draw');
 
   // Update battle status
   const existingFeed = battle.statusFeed || [];
+  const resultLabel = result === 'win' ? 'Win' : result === 'loss' ? 'Loss' : 'Draw';
   await battleRef.update({
     status: 'completed',
     completedAt: now,
     'cronState.evaluatingAt': null,
     statusFeed: [...existingFeed, {
       timestamp: now,
-      message: `Battle complete. Final score: ${currentScore >= 0 ? '+' : ''}${currentScore.toFixed(1)} pts. Result: ${result === 'win' ? 'Win' : 'Loss'}.`,
+      message: `Battle complete. Agent: ${currentScore >= 0 ? '+' : ''}${currentScore.toFixed(1)} pts vs CPU: ${opponentScore >= 0 ? '+' : ''}${opponentScore.toFixed(1)} pts. Result: ${resultLabel}.`,
       action: 'battle_complete',
       source: 'system',
       score: Math.round(currentScore * 100) / 100,
@@ -1408,13 +1448,16 @@ async function completeBattle(db, battle, summary) {
     const newGamesPlayed = (stats.gamesPlayed || 0) + 1;
     const newWins = (stats.wins || 0) + (result === 'win' ? 1 : 0);
     const newLosses = (stats.losses || 0) + (result === 'loss' ? 1 : 0);
+    const newDraws = (stats.draws || 0) + (result === 'draw' ? 1 : 0);
     const newTotalScore = (stats.totalScore || 0) + currentScore;
     const newAvgScore = Math.round(newTotalScore / newGamesPlayed);
     let newStreak = stats.currentStreak || 0;
     if (result === 'win') {
       newStreak = newStreak >= 0 ? newStreak + 1 : 1;
-    } else {
+    } else if (result === 'loss') {
       newStreak = newStreak <= 0 ? newStreak - 1 : -1;
+    } else {
+      newStreak = 0; // draws reset streak
     }
     const newBestStreak = Math.max(stats.bestStreak || 0, Math.abs(newStreak));
 
@@ -1422,6 +1465,7 @@ async function completeBattle(db, battle, summary) {
       stats: {
         wins: newWins,
         losses: newLosses,
+        draws: newDraws,
         gamesPlayed: newGamesPlayed,
         totalScore: Math.round(newTotalScore * 100) / 100,
         avgScore: newAvgScore,
@@ -1432,6 +1476,6 @@ async function completeBattle(db, battle, summary) {
     });
   }
 
-  console.log(`${LOG_PREFIX} Battle ${battle.id} completed. Score: ${currentScore.toFixed(1)}, Result: ${result}`);
+  console.log(`${LOG_PREFIX} Battle ${battle.id} completed. Agent: ${currentScore.toFixed(1)} vs CPU: ${opponentScore.toFixed(1)}, Result: ${result}`);
   summary.evaluated++;
 }

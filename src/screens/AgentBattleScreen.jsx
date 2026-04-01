@@ -136,7 +136,7 @@ function TierHeader({ tier }) {
 
 function ScoreHeader({ agentBattle, tokens, isDesktop, playerScore, opponentScore }) {
   const myScore = playerScore ?? (agentBattle?.scoreState?.currentScore || 0);
-  const oppScore = opponentScore ?? 0;
+  const oppScore = opponentScore ?? (agentBattle?.scoreState?.opponentScore || 0);
   const dayLabel = computeDayLabel(agentBattle?.timing);
   const agentName = agentBattle?.agentContext?.agentName || 'Your Agent';
   const tradeCount = agentBattle?.scoreState?.tradeCount || 0;
@@ -592,7 +592,9 @@ export default function AgentBattleScreen({ battle, user, onBack }) {
   const displayPlayerScore = loadingPrices
     ? (agentBattle?.scoreState?.currentScore || 0)
     : playerTotalScore;
-  const displayOpponentScore = loadingPrices ? 0 : opponentTotalScore;
+  const displayOpponentScore = loadingPrices
+    ? (agentBattle?.scoreState?.opponentScore || 0)
+    : opponentTotalScore;
 
   // ── Notification dots ─────────────────────────────────────────────────────
 

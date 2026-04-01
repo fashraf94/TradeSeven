@@ -72,6 +72,25 @@ export default async function handler(req, res) {
       ...(startingPrices || {}),
     };
 
+    // Build CPU thresholds from opponent portfolio baseATR values
+    const cpuThresholds = {};
+    ['star', 'core', 'support'].forEach(tier => {
+      (opponent.portfolio[tier] || []).forEach(asset => {
+        if (asset?.symbol) {
+          const baseATR = asset.baseATR || (asset.isCrypto ? 5.0 : 2.5);
+          cpuThresholds[asset.symbol] = {
+            threshold: baseATR,
+            rallyThreshold: baseATR * 1.5,
+            moonshotThreshold: baseATR * 2.0,
+          };
+        }
+      });
+    });
+    const mergedThresholds = {
+      ...(battle.scoring?.thresholds || {}),
+      ...cpuThresholds,
+    };
+
     await battleRef.update({
       opponent: {
         portfolio: opponent.portfolio,
@@ -80,6 +99,7 @@ export default async function handler(req, res) {
         odUserId: 'cpu',
       },
       'portfolio.startingPrices': mergedStartingPrices,
+      'scoring.thresholds': mergedThresholds,
       updatedAt: new Date().toISOString(),
     });
 
