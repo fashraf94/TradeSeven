@@ -1308,4 +1308,930 @@ export const FORGE_RULE_TEMPLATES = [
     tags: ['threshold', 'posture', 'harvest', 'hunt', 'philosophy'],
     agentUseDescription: 'Your agent will follow the specified scoring posture — Harvest mode recycles stocks after BaggerBomb for fresh threshold candidates, Hunt mode holds for deeper milestones, and Balanced adapts based on game state.',
   },
+
+  // ══════════════════════════════════════
+  // TIER STRATEGY CATEGORY
+  // ══════════════════════════════════════
+
+  // TS-01: Volatility-Adjusted Star Cap
+  {
+    id: 'ts-01',
+    category: 'tier_strategy',
+    headline: 'Keep wild stocks out of Star',
+    description: 'Prevents Star tier from being assigned to erratic, high-volatility stocks.',
+    hook: 'The 2x multiplier doubles everything — including losses. Keep wild stocks out of Star',
+    learnMore: 'The Star tier\'s 2x multiplier is a double-edged sword — it amplifies gains but also losses. When a stock\'s intraday ATR spikes well beyond its historical average, it\'s behaving erratically. This rule caps the maximum tier for such stocks, keeping the powerful multiplier away from unpredictable movers.',
+    difficulty: 'intermediate',
+    forgeTemplates: [
+      {
+        text: 'If a stock\'s current intraday ATR exceeds {pct}% of its 14-day average ATR, restrict its maximum tier to {tier}',
+        params: {
+          pct: { type: 'number', default: 200, min: 150, max: 300 },
+          tier: { type: 'select', default: 'Support', options: ['Support', 'Core'] }
+        },
+        category: 'tier_strategy'
+      }
+    ],
+    relatedIndicator: 'ATR (Average True Range)',
+    kbEntryId: null,
+    tags: ['tier', 'volatility', 'star-cap', 'risk-reduction'],
+    agentUseDescription: 'Your agent will compare each stock\'s current intraday ATR to its 14-day average and restrict the maximum tier assignment for stocks whose volatility exceeds the specified threshold.',
+  },
+
+  // TS-02: Multi-Timeframe Conviction Gate
+  {
+    id: 'ts-02',
+    category: 'tier_strategy',
+    headline: 'Require multi-timeframe agreement',
+    description: 'Star tier requires both daily trend AND intraday momentum to be bullish.',
+    hook: 'True conviction means every timeframe agrees — if daily and intraday diverge, demote',
+    learnMore: 'A stock can look great on the daily chart but be falling apart intraday, or vice versa. This rule requires both the Daily Technical Score and intraday VWAP position to be bullish before Star tier is allowed. If either timeframe breaks down, the stock is demoted — true conviction demands agreement across timeframes.',
+    difficulty: 'advanced',
+    forgeTemplates: [
+      {
+        text: 'A stock is only eligible for Star tier if its Daily Technical Score is above {score} AND price is above daily VWAP. If either breaks, demote to {tier}',
+        params: {
+          score: { type: 'number', default: 70, min: 50, max: 90 },
+          tier: { type: 'select', default: 'Support', options: ['Support', 'Core'] }
+        },
+        category: 'tier_strategy'
+      }
+    ],
+    relatedIndicator: 'VWAP / Daily Technical Score',
+    kbEntryId: null,
+    tags: ['tier', 'multi-timeframe', 'VWAP', 'conviction'],
+    agentUseDescription: 'Your agent will only assign Star tier to stocks where both the Daily Technical Score exceeds the threshold and price is above VWAP, demoting immediately if either condition breaks.',
+  },
+
+  // TS-03: Free-Ride Threshold Holder
+  {
+    id: 'ts-03',
+    category: 'tier_strategy',
+    headline: 'Park stalled threshold plays in Support',
+    description: 'Stocks near a threshold with stalled momentum are restricted to Support — the bonus is the same regardless of tier.',
+    hook: 'Threshold bonuses don\'t care about the multiplier — park stalled stocks in Support and give Star to something moving',
+    learnMore: 'Threshold bonuses are flat point amounts — they don\'t get multiplied by tier. So a stock sitting near a threshold with neutral momentum (RSI 40-60) doesn\'t benefit from being in Star or Core. This rule parks those stocks in Support, freeing the multiplier tiers for stocks with real directional momentum.',
+    difficulty: 'advanced',
+    forgeTemplates: [
+      {
+        text: 'If a stock is within {atr} ATR of a positive threshold but its 5-minute RSI is between 40 and 60, restrict to Support tier',
+        params: {
+          atr: { type: 'number', default: 0.2, min: 0.1, max: 0.4 }
+        },
+        category: 'tier_strategy'
+      }
+    ],
+    relatedIndicator: 'RSI (5-minute) / ATR',
+    kbEntryId: null,
+    tags: ['tier', 'threshold', 'free-ride', 'scoring-asymmetry'],
+    agentUseDescription: 'Your agent will restrict stocks to Support tier when they are near a positive threshold but showing neutral RSI momentum, preserving multiplier tiers for stocks with directional movement.',
+  },
+
+  // TS-04: Performance-Based Tier Rotation
+  {
+    id: 'ts-04',
+    category: 'tier_strategy',
+    headline: 'Star goes to the hottest stock',
+    description: 'Dynamically promotes the highest-velocity stock to Star — the multiplier is earned, not assumed.',
+    hook: 'Star tier should go to your hottest stock right now — not the one you liked best this morning',
+    learnMore: 'Your pre-market Star pick may not be the best performer once trading begins. This rule compares P&L velocity across all stocks at regular intervals and promotes the hottest mover to Star. The 2x multiplier is earned through performance, not assumed from overnight analysis.',
+    difficulty: 'intermediate',
+    forgeTemplates: [
+      {
+        text: 'Every {interval} minutes, compare P&L velocity. If a Core or Support stock outperforms Star over the last {cycles} cycles, swap their tiers',
+        params: {
+          interval: { type: 'number', default: 30, min: 15, max: 60 },
+          cycles: { type: 'number', default: 2, min: 1, max: 4 }
+        },
+        category: 'tier_strategy'
+      }
+    ],
+    relatedIndicator: null,
+    kbEntryId: null,
+    tags: ['tier', 'rotation', 'performance', 'meritocracy'],
+    agentUseDescription: 'Your agent will compare P&L velocity across all stocks at regular intervals and swap tier assignments when a lower-tier stock consistently outperforms the current Star.',
+  },
+
+  // TS-05: Post-Threshold Exhaustion Scale-Out
+  {
+    id: 'ts-05',
+    category: 'tier_strategy',
+    headline: 'Demote tired Star stocks after a bonus',
+    description: 'After a Star stock hits a bonus AND shows overbought signals, demotes it to lock in multiplied gains.',
+    hook: 'Your Star stock earned a bonus but looks tired — demote before the reversal eats your 2x gains',
+    learnMore: 'When a Star stock triggers a threshold bonus and simultaneously shows overbought RSI, it may be exhausted. Keeping it in Star means the 2x multiplier will amplify the likely pullback. This rule demotes to Support and promotes the strongest Core stock, capturing the bonus while protecting against a reversal.',
+    difficulty: 'intermediate',
+    forgeTemplates: [
+      {
+        text: 'When a Star tier stock triggers a positive threshold AND its 5-minute RSI exceeds {rsi}, demote to Support and promote the Core stock with highest MACD trajectory',
+        params: {
+          rsi: { type: 'number', default: 75, min: 65, max: 85 }
+        },
+        category: 'tier_strategy'
+      }
+    ],
+    relatedIndicator: 'RSI (5-minute) / MACD',
+    kbEntryId: null,
+    tags: ['tier', 'exhaustion', 'scale-out', 'profit-taking'],
+    agentUseDescription: 'Your agent will demote Star stocks to Support after they trigger a threshold bonus while showing overbought RSI, promoting the strongest Core stock to Star to protect multiplied gains.',
+  },
+
+  // TS-06: Stagnation Demotion
+  {
+    id: 'ts-06',
+    category: 'tier_strategy',
+    headline: 'Don\'t waste Star on a flatline',
+    description: 'Strips the Star multiplier from stocks that have flatlined — the 2x is wasted on a stock that isn\'t moving.',
+    hook: 'A 2x multiplier on zero movement is still zero — move the Star to something actually trading',
+    learnMore: 'The Star multiplier only matters if the stock is moving. A flatlined stock in Star tier is wasting the most powerful tool in your arsenal. This rule detects stagnation over consecutive evaluation cycles and demotes the stock, promoting the most active alternative to capture the multiplier\'s potential.',
+    difficulty: 'beginner',
+    forgeTemplates: [
+      {
+        text: 'If a Star stock\'s price changes less than {pct}% over {cycles} consecutive evaluation cycles, demote to Support',
+        params: {
+          pct: { type: 'number', default: 0.1, min: 0.05, max: 0.3 },
+          cycles: { type: 'number', default: 3, min: 2, max: 5 }
+        },
+        category: 'tier_strategy'
+      }
+    ],
+    relatedIndicator: null,
+    kbEntryId: null,
+    tags: ['tier', 'stagnation', 'dead-multiplier', 'rotation'],
+    agentUseDescription: 'Your agent will monitor Star stock price movement across evaluation cycles and demote to Support if the stock flatlines, promoting the most active stock to Star.',
+  },
+
+  // TS-07: Penalty Shielding Demotion
+  {
+    id: 'ts-07',
+    category: 'tier_strategy',
+    headline: 'Demote before the penalty hits',
+    description: 'When a Star/Core stock approaches a negative threshold, demotes to Support to halve the continuous P&L bleed.',
+    hook: 'The penalty is the same in any tier, but the damage on the way down is halved in Support — demote before it hurts',
+    learnMore: 'Negative threshold penalties are flat point deductions regardless of tier, but the continuous P&L bleed on the way down IS multiplied. By demoting to Support before a stock reaches a penalty threshold, you halve the damage from the decline while the penalty itself stays the same. Re-promotion requires the stock to recover significantly.',
+    difficulty: 'beginner',
+    forgeTemplates: [
+      {
+        text: 'When any Star or Core stock comes within {atr} ATR of a negative threshold, demote to Support. Re-promotion requires moving {recovery} ATR away',
+        params: {
+          atr: { type: 'number', default: 0.3, min: 0.1, max: 0.5 },
+          recovery: { type: 'number', default: 0.5, min: 0.3, max: 0.8 }
+        },
+        category: 'tier_strategy'
+      }
+    ],
+    relatedIndicator: 'ATR (Average True Range)',
+    kbEntryId: null,
+    tags: ['tier', 'penalty', 'shielding', 'demotion', 'meltdown-guard'],
+    agentUseDescription: 'Your agent will demote Star or Core stocks to Support when they approach negative thresholds, halving the multiplied P&L bleed. Re-promotion requires the stock to move the specified ATR distance away from the threshold.',
+  },
+
+  // TS-08: Thesis Drift Sentinel
+  {
+    id: 'ts-08',
+    category: 'tier_strategy',
+    headline: 'Catch the hidden divergence',
+    description: 'Demotes a stock when price and momentum diverge — new highs with fading MACD is a warning sign.',
+    hook: 'When the speedometer drops but the car keeps climbing, the hill is about to win',
+    learnMore: 'Bearish divergence — price making new highs while MACD histogram declines — is one of the most reliable reversal warnings in technical analysis. For a Star stock, this divergence is especially dangerous because the 2x multiplier will amplify the coming reversal. This rule catches the divergence early and demotes before the damage is done.',
+    difficulty: 'advanced',
+    forgeTemplates: [
+      {
+        text: 'If a Star stock\'s price makes a new intraday high but its 5-minute MACD histogram is declining, demote to {tier}',
+        params: {
+          tier: { type: 'select', default: 'Core', options: ['Core', 'Support'] }
+        },
+        category: 'tier_strategy'
+      }
+    ],
+    relatedIndicator: 'MACD (5-minute)',
+    kbEntryId: null,
+    tags: ['tier', 'divergence', 'thesis-drift', 'MACD'],
+    agentUseDescription: 'Your agent will monitor for bearish divergence between price and MACD histogram on Star stocks, demoting immediately when price makes a new high but MACD histogram is declining.',
+  },
+
+  // TS-09: Early-Session Discovery Cap
+  {
+    id: 'ts-09',
+    category: 'tier_strategy',
+    headline: 'Cap tiers during the morning open',
+    description: 'Restricts the Star tier during the first 30-45 minutes to prevent morning whipsaw at 2x.',
+    hook: 'The morning open is a guessing game — don\'t let 2x amplify a wrong guess',
+    learnMore: 'The first 30-45 minutes of trading are the most volatile and unpredictable period of the day. Assigning Star tier during this window means amplifying the noise at 2x. This rule caps all stocks at a lower tier during the discovery period, then promotes the top performer to Star once the dust settles.',
+    difficulty: 'beginner',
+    forgeTemplates: [
+      {
+        text: 'During the first {minutes} minutes of EARLY phase, restrict maximum tier to {tier}. Promote top performer to Star after',
+        params: {
+          minutes: { type: 'number', default: 45, min: 15, max: 60 },
+          tier: { type: 'select', default: 'Core', options: ['Core', 'Support'] }
+        },
+        category: 'tier_strategy'
+      }
+    ],
+    relatedIndicator: null,
+    kbEntryId: null,
+    tags: ['tier', 'early-session', 'discovery', 'morning-cap'],
+    agentUseDescription: 'Your agent will restrict the maximum tier during the first minutes of the EARLY phase, then promote the top-performing stock to Star once the restriction period ends.',
+  },
+
+  // ══════════════════════════════════════
+  // TECHNICAL CATEGORY (expansion)
+  // ══════════════════════════════════════
+
+  // T-09: VWAP Pullback Entry
+  {
+    id: 't-09',
+    category: 'technical',
+    headline: 'Buy the dip to fair value',
+    description: 'Prefer stocks that have pulled back to VWAP in an uptrend — buying at institutional fair value.',
+    hook: 'Smart money buys the dip to the average price',
+    learnMore: 'VWAP represents the average price institutions are paying throughout the day. When an uptrending stock pulls back to VWAP, it\'s offering a discount to institutional fair value. These pullbacks are high-probability entry points because big buyers tend to step in and defend the VWAP level.',
+    difficulty: 'beginner',
+    forgeTemplates: [
+      {
+        text: 'Prefer stocks where price has pulled back to within {pct}% of daily VWAP while trend remains bullish',
+        params: {
+          pct: { type: 'number', default: 0.3, min: 0.1, max: 1.0 }
+        },
+        category: 'technical'
+      }
+    ],
+    relatedIndicator: 'VWAP',
+    kbEntryId: null,
+    tags: ['VWAP', 'pullback', 'institutional', 'entry'],
+    agentUseDescription: 'Your agent will prioritize stocks that have pulled back to within the specified percentage of their daily VWAP while maintaining a bullish overall trend.',
+  },
+
+  // T-10: VWAP Deviation Fade
+  {
+    id: 't-10',
+    category: 'technical',
+    headline: 'Avoid overextended stocks',
+    description: 'Avoid stocks that have moved more than 2 standard deviations from VWAP.',
+    hook: 'When a stock moves too far too fast from its average, it almost always comes back',
+    learnMore: 'Stocks trading far above or below VWAP are statistically likely to revert to the mean. When price moves beyond 2 standard deviations from VWAP, the move is overextended and the risk of a reversal is high. This rule reduces selection priority for these stretched stocks to avoid buying at unsustainable prices.',
+    difficulty: 'intermediate',
+    forgeTemplates: [
+      {
+        text: 'Reduce selection priority for stocks trading beyond {dev} standard deviations from daily VWAP',
+        params: {
+          dev: { type: 'number', default: 2.0, min: 1.5, max: 3.0 }
+        },
+        category: 'technical'
+      }
+    ],
+    relatedIndicator: 'VWAP',
+    kbEntryId: null,
+    tags: ['VWAP', 'mean-reversion', 'overextended', 'fade'],
+    agentUseDescription: 'Your agent will reduce selection priority for stocks trading beyond the specified number of standard deviations from their daily VWAP, avoiding overextended moves.',
+  },
+
+  // T-11: Relative Strength Preference
+  {
+    id: 't-11',
+    category: 'technical',
+    headline: 'Follow institutional accumulation',
+    description: 'Prioritize stocks outperforming SPY — institutional accumulation signal.',
+    hook: 'Stocks that hold up when the market drops are being accumulated by institutions',
+    learnMore: 'Relative Strength vs. SPY measures how a stock performs compared to the broad market. Stocks with high relative strength are being accumulated by institutions — they hold up during selloffs and lead during rallies. This rule prioritizes market leaders and avoids laggards that can\'t keep up.',
+    difficulty: 'beginner',
+    forgeTemplates: [
+      {
+        text: 'Prefer stocks with RS vs SPY score above {score}/22. Avoid stocks below {floor}',
+        params: {
+          score: { type: 'number', default: 15, min: 10, max: 22 },
+          floor: { type: 'number', default: 8, min: 0, max: 15 }
+        },
+        category: 'technical'
+      }
+    ],
+    relatedIndicator: 'Relative Strength vs. SPY',
+    kbEntryId: null,
+    tags: ['relative-strength', 'SPY', 'institutional', 'alpha'],
+    agentUseDescription: 'Your agent will prefer stocks with Relative Strength vs. SPY scores above the specified threshold and avoid stocks scoring below the floor.',
+  },
+
+  // T-12: Bollinger Squeeze Priority
+  {
+    id: 't-12',
+    category: 'technical',
+    headline: 'Catch the volatility squeeze',
+    description: 'Prioritize stocks with extremely narrow Bollinger Bands — about to explode.',
+    hook: 'Quiet stocks are loading up energy — when the squeeze breaks, it\'s usually explosive',
+    learnMore: 'When Bollinger Bands contract to their narrowest width, it signals that volatility is being compressed like a spring. The subsequent breakout is often explosive and directional. Combined with above-average volume, a Bollinger squeeze is one of the most reliable breakout setups in technical analysis.',
+    difficulty: 'intermediate',
+    forgeTemplates: [
+      {
+        text: 'Prioritize stocks where Bollinger Band Width is in lowest {pct}th percentile, especially with volume above {vol}x average',
+        params: {
+          pct: { type: 'number', default: 10, min: 5, max: 25 },
+          vol: { type: 'number', default: 1.5, min: 1.0, max: 2.5 }
+        },
+        category: 'technical'
+      }
+    ],
+    relatedIndicator: 'Bollinger Bands',
+    kbEntryId: null,
+    tags: ['bollinger', 'squeeze', 'volatility', 'breakout'],
+    agentUseDescription: 'Your agent will prioritize stocks with Bollinger Band Width in the lowest percentile of recent history, especially when accompanied by above-average volume signaling an imminent breakout.',
+  },
+
+  // T-13: RSI Divergence Warning
+  {
+    id: 't-13',
+    category: 'technical',
+    headline: 'Spot hidden momentum shifts',
+    description: 'Flags stocks where price and RSI disagree — momentum fading despite price looking strong.',
+    hook: 'When momentum fades but price looks strong, a reversal is coming',
+    learnMore: 'RSI divergence occurs when price makes a new high but RSI makes a lower high (bearish) or price makes a new low but RSI makes a higher low (bullish). This disconnect between price and momentum is one of the earliest reversal warnings. This rule adjusts conviction based on divergence signals.',
+    difficulty: 'advanced',
+    forgeTemplates: [
+      {
+        text: 'Reduce conviction in stocks showing bearish RSI divergence. Increase conviction for bullish divergence',
+        params: {},
+        category: 'technical'
+      }
+    ],
+    relatedIndicator: 'RSI (14-period)',
+    kbEntryId: null,
+    tags: ['RSI', 'divergence', 'momentum', 'reversal-warning'],
+    agentUseDescription: 'Your agent will detect RSI divergence patterns and adjust conviction accordingly — reducing it for bearish divergence and increasing it for bullish divergence.',
+  },
+
+  // T-14: Volume Breakout Validation
+  {
+    id: 't-14',
+    category: 'technical',
+    headline: 'Demand volume proof on breakouts',
+    description: 'Only trust breakouts with a volume spike — moves without volume are fake.',
+    hook: 'A breakout without volume is a promise without action — demand proof',
+    learnMore: 'A price breakout is only meaningful if it\'s backed by significantly above-average volume. Volume confirms that institutions are participating in the move. Breakouts on normal or low volume are often false signals that quickly reverse. This rule filters out fake breakouts by requiring a volume spike.',
+    difficulty: 'beginner',
+    forgeTemplates: [
+      {
+        text: 'Only act on breakouts where volume exceeds {mult}x the 20-day average',
+        params: {
+          mult: { type: 'number', default: 1.5, min: 1.2, max: 3.0 }
+        },
+        category: 'technical'
+      }
+    ],
+    relatedIndicator: 'Volume (20-day average)',
+    kbEntryId: null,
+    tags: ['volume', 'breakout', 'validation', 'institutional'],
+    agentUseDescription: 'Your agent will only act on breakout signals when volume exceeds the specified multiple of the 20-day average, filtering out false breakouts on thin volume.',
+  },
+
+  // T-15: NR7 Compression Alert
+  {
+    id: 't-15',
+    category: 'technical',
+    headline: 'Catch the narrowest range breakout',
+    description: 'Flag stocks with their narrowest daily range in 7 days — maximum energy compression.',
+    hook: 'The quietest day in a week is usually followed by one of the loudest',
+    learnMore: 'NR7 (Narrow Range 7) flags stocks trading in their tightest daily range in seven sessions. Like a Bollinger squeeze, this compression signals stored energy that often releases in a powerful directional move. When combined with a strong technical score, NR7 stocks are prime breakout candidates.',
+    difficulty: 'intermediate',
+    forgeTemplates: [
+      {
+        text: 'Prioritize stocks flagged with NR7 when combined with technical score above {score}',
+        params: {
+          score: { type: 'number', default: 70, min: 50, max: 90 }
+        },
+        category: 'technical'
+      }
+    ],
+    relatedIndicator: 'NR7 (Narrow Range 7)',
+    kbEntryId: null,
+    tags: ['NR7', 'compression', 'breakout', 'volatility'],
+    agentUseDescription: 'Your agent will prioritize NR7-flagged stocks for portfolio selection when they also have a technical score above the specified threshold.',
+  },
+
+  // T-16: Multi-Signal Confluence
+  {
+    id: 't-16',
+    category: 'technical',
+    headline: 'Require multiple green lights',
+    description: 'Require multiple indicators to agree before the agent acts — reduces false signals.',
+    hook: 'One green light could be a fluke — three green lights mean the move is real',
+    learnMore: 'Any single indicator can give a false signal. But when multiple independent indicators agree — price above VWAP, positive MACD histogram, and RSI in the bullish 50-70 range — the probability of a real move increases dramatically. This rule requires multi-signal confluence before your agent acts.',
+    difficulty: 'intermediate',
+    forgeTemplates: [
+      {
+        text: 'Only select stocks where at least {count} of these are bullish: price above VWAP, MACD histogram positive, RSI 50-70',
+        params: {
+          count: { type: 'select', default: '2 of 3', options: ['2 of 3', '3 of 3'] }
+        },
+        category: 'technical'
+      }
+    ],
+    relatedIndicator: 'VWAP / MACD / RSI',
+    kbEntryId: null,
+    tags: ['confluence', 'multi-indicator', 'quality-filter', 'false-signal'],
+    agentUseDescription: 'Your agent will only select stocks where the specified number of indicators are simultaneously bullish, filtering out false signals from single-indicator noise.',
+  },
+
+  // ══════════════════════════════════════
+  // FUNDAMENTAL CATEGORY (expansion)
+  // ══════════════════════════════════════
+
+  // F-07: Earnings Surprise Momentum
+  {
+    id: 'f-07',
+    category: 'fundamental',
+    headline: 'Ride the earnings surprise wave',
+    description: 'Prefer stocks that consistently beat earnings estimates by large margins.',
+    hook: 'Companies that keep beating expectations keep surprising the market',
+    learnMore: 'Post-Earnings Announcement Drift (PEAD) is one of the most well-documented market anomalies — stocks that beat earnings estimates tend to keep drifting in the surprise direction for weeks. This rule targets consistent big beaters, where the drift effect is strongest.',
+    difficulty: 'intermediate',
+    forgeTemplates: [
+      {
+        text: 'Prefer stocks where earnings beat rate exceeds {beat_pct}% and surprise magnitude is in top {decile}',
+        params: {
+          beat_pct: { type: 'number', default: 75, min: 50, max: 100 },
+          decile: { type: 'select', default: 'Top 20%', options: ['Top 10%', 'Top 20%', 'Top 30%'] }
+        },
+        category: 'fundamental'
+      }
+    ],
+    relatedIndicator: 'Earnings Beat Rate',
+    kbEntryId: null,
+    tags: ['earnings', 'surprise', 'PEAD', 'momentum'],
+    agentUseDescription: 'Your agent will prioritize stocks with high earnings beat rates and surprise magnitudes in the specified top percentile, capturing post-earnings announcement drift.',
+  },
+
+  // F-08: Free Cash Flow Quality Filter
+  {
+    id: 'f-08',
+    category: 'fundamental',
+    headline: 'Trust the cash, not the math',
+    description: 'Prefer stocks with positive free cash flow — the real measure of financial health.',
+    hook: 'Earnings can be faked with accounting tricks — cash flow can\'t',
+    learnMore: 'Free cash flow is the cash a company generates after capital expenditures — it\'s much harder to manipulate than reported earnings. Companies with high FCF yield (FCF divided by market cap) are generating real money relative to their valuation, making them more resilient and less likely to disappoint.',
+    difficulty: 'beginner',
+    forgeTemplates: [
+      {
+        text: 'Prefer stocks where FCF is positive and FCF yield is in top {pct}% of universe',
+        params: {
+          pct: { type: 'number', default: 25, min: 10, max: 50 }
+        },
+        category: 'fundamental'
+      }
+    ],
+    relatedIndicator: 'Free Cash Flow Yield',
+    kbEntryId: null,
+    tags: ['FCF', 'quality', 'cash-flow', 'resilience'],
+    agentUseDescription: 'Your agent will prioritize stocks with positive free cash flow and FCF yield in the top percentile of the universe, focusing on companies with genuine financial strength.',
+  },
+
+  // F-09: Sector-Adjusted Leverage Safety
+  {
+    id: 'f-09',
+    category: 'fundamental',
+    headline: 'Avoid over-leveraged companies',
+    description: 'Avoid over-leveraged companies using sector-relative debt limits.',
+    hook: 'A bank with 1.5x debt is normal — a tech company with 1.5x debt is a red flag',
+    learnMore: 'Different sectors carry different amounts of debt as standard practice — financials are naturally leveraged while tech companies typically are not. This rule compares a company\'s debt-to-equity against its sector average rather than an absolute number, catching truly over-leveraged companies regardless of industry.',
+    difficulty: 'intermediate',
+    forgeTemplates: [
+      {
+        text: 'Avoid stocks where D/E exceeds {mult}x sector average. Tighten to {tight_mult}x when sentiment is bearish',
+        params: {
+          mult: { type: 'number', default: 1.25, min: 1.0, max: 2.0 },
+          tight_mult: { type: 'number', default: 1.0, min: 0.75, max: 1.25 }
+        },
+        category: 'fundamental'
+      }
+    ],
+    relatedIndicator: 'Debt-to-Equity Ratio',
+    kbEntryId: null,
+    tags: ['leverage', 'debt', 'sector-relative', 'safety'],
+    agentUseDescription: 'Your agent will avoid stocks with debt-to-equity ratios exceeding the specified multiple of their sector average, tightening the threshold further during bearish sentiment.',
+  },
+
+  // F-10: Sector-Specific Valuation Routing
+  {
+    id: 'f-10',
+    category: 'fundamental',
+    headline: 'Use the right valuation yardstick',
+    description: 'Uses the right valuation metric for each sector — P/B for banks, P/S for tech, dividend yield for utilities.',
+    hook: 'You wouldn\'t judge a fish by how well it climbs a tree — use the right yardstick',
+    learnMore: 'P/E ratios are meaningless for unprofitable growth companies. P/B is the standard for banks. P/S works best for high-growth tech. Dividend yield matters most for utilities. This rule routes each stock to the valuation metric that actually matters for its sector, then selects the cheapest stocks on the correct measure.',
+    difficulty: 'advanced',
+    forgeTemplates: [
+      {
+        text: 'Evaluate stocks using the metric appropriate to their sector. Prefer stocks in cheapest {pct}% on correct metric',
+        params: {
+          pct: { type: 'number', default: 40, min: 20, max: 60 }
+        },
+        category: 'fundamental'
+      }
+    ],
+    relatedIndicator: 'P/E, P/B, P/S, Dividend Yield',
+    kbEntryId: null,
+    tags: ['valuation', 'sector-specific', 'P/B', 'P/S', 'dividend'],
+    agentUseDescription: 'Your agent will evaluate each stock using the valuation metric most appropriate for its sector and prefer stocks ranking in the cheapest percentile on that metric.',
+  },
+
+  // F-11: Revenue Growth Acceleration
+  {
+    id: 'f-11',
+    category: 'fundamental',
+    headline: 'Chase accelerating growth',
+    description: 'Prefer stocks where the growth rate is accelerating, not just high.',
+    hook: 'Acceleration beats speed — growing 10% after 8% is better than 15% after 20%',
+    learnMore: 'A company growing revenue at 10% after growing at 8% last quarter is accelerating — the trend is improving. A company growing at 15% after 20% is decelerating — the trend is worsening. Markets reward acceleration because it signals improving business conditions and often leads to upward estimate revisions.',
+    difficulty: 'intermediate',
+    forgeTemplates: [
+      {
+        text: 'Prefer stocks where current revenue growth rate is at least {bps} basis points higher than previous quarter',
+        params: {
+          bps: { type: 'number', default: 200, min: 50, max: 500 }
+        },
+        category: 'fundamental'
+      }
+    ],
+    relatedIndicator: 'Revenue Growth Rate',
+    kbEntryId: null,
+    tags: ['revenue', 'acceleration', 'growth', 'second-derivative'],
+    agentUseDescription: 'Your agent will prefer stocks showing revenue growth acceleration — where the current quarter\'s growth rate exceeds the previous quarter\'s by the specified number of basis points.',
+  },
+
+  // F-12: Analyst Revision Momentum
+  {
+    id: 'f-12',
+    category: 'fundamental',
+    headline: 'Follow the analyst upgrades',
+    description: 'Prefer stocks where analyst consensus has improved recently.',
+    hook: 'When Wall Street upgrades in unison, they know something the market hasn\'t priced in',
+    learnMore: 'Analyst estimate revisions are one of the strongest predictors of near-term stock performance. When multiple analysts simultaneously raise their estimates, they\'re responding to new information the market hasn\'t fully priced. This rule captures the revision momentum signal before the broader market catches up.',
+    difficulty: 'beginner',
+    forgeTemplates: [
+      {
+        text: 'Prefer stocks where analyst consensus has improved over past {days} days. Avoid deteriorating consensus',
+        params: {
+          days: { type: 'number', default: 30, min: 14, max: 60 }
+        },
+        category: 'fundamental'
+      }
+    ],
+    relatedIndicator: 'Analyst Consensus Rating',
+    kbEntryId: null,
+    tags: ['analyst', 'revision', 'consensus', 'institutional'],
+    agentUseDescription: 'Your agent will prefer stocks with improving analyst consensus over the specified period and avoid stocks where consensus is deteriorating.',
+  },
+
+  // F-13: Earnings Calendar Risk Management
+  {
+    id: 'f-13',
+    category: 'fundamental',
+    headline: 'Manage earnings week risk',
+    description: 'Adjusts selection priority based on proximity to earnings dates.',
+    hook: 'Earnings week is like a coin flip on steroids',
+    learnMore: 'Earnings announcements create massive gap risk — stocks can jump or drop 10%+ overnight. This rule lets you control how your agent handles stocks approaching their earnings date. The default is to reduce priority (avoid the coin flip), but you can override for stocks with high historical beat rates.',
+    difficulty: 'intermediate',
+    forgeTemplates: [
+      {
+        text: 'Within {days} days of earnings, {action} selection priority. Override if beat rate above {beat_pct}%',
+        params: {
+          days: { type: 'number', default: 3, min: 1, max: 7 },
+          action: { type: 'select', default: 'decrease', options: ['decrease', 'increase', 'neutral'] },
+          beat_pct: { type: 'number', default: 80, min: 60, max: 100 }
+        },
+        category: 'fundamental'
+      }
+    ],
+    relatedIndicator: 'Earnings Calendar',
+    kbEntryId: null,
+    tags: ['earnings', 'calendar', 'gap-risk', 'timing'],
+    agentUseDescription: 'Your agent will adjust selection priority for stocks approaching earnings dates based on the specified action, with an override for stocks exceeding the beat rate threshold.',
+  },
+
+  // ══════════════════════════════════════
+  // RISK CATEGORY (expansion)
+  // ══════════════════════════════════════
+
+  // R-06: Sector Concentration Cap
+  {
+    id: 'r-06',
+    category: 'risk',
+    headline: 'Cap sector exposure',
+    description: 'Limits the number of stocks from any single sector.',
+    hook: 'When one sector tanks, you don\'t want half your portfolio going with it',
+    learnMore: 'Sector concentration is one of the most common portfolio killers. If three of your five stocks are tech and tech drops 5%, your whole portfolio suffers. This rule caps the maximum number of stocks from any single sector, forcing diversification that protects you from sector-specific shocks.',
+    difficulty: 'beginner',
+    forgeTemplates: [
+      {
+        text: 'Limit portfolio to maximum of {max} stocks from any single sector',
+        params: {
+          max: { type: 'number', default: 2, min: 1, max: 3 }
+        },
+        category: 'risk'
+      }
+    ],
+    relatedIndicator: null,
+    kbEntryId: null,
+    tags: ['sector', 'concentration', 'diversification', 'constraint'],
+    agentUseDescription: 'Your agent will enforce a maximum number of stocks from any single sector when building and rebalancing the portfolio.',
+  },
+
+  // R-07: Sub-Sector Correlation Guard
+  {
+    id: 'r-07',
+    category: 'risk',
+    headline: 'Avoid hidden correlation traps',
+    description: 'Avoids holding multiple stocks from the same sub-industry.',
+    hook: 'Three chip stocks isn\'t diversification — it\'s a triple bet on semiconductors',
+    learnMore: 'Sector diversification isn\'t enough — two semiconductor stocks in different ETF sectors still move together. This rule goes deeper, treating stocks from the same sub-industry as highly correlated and limiting overlap. True diversification means different business drivers, not just different ticker symbols.',
+    difficulty: 'intermediate',
+    forgeTemplates: [
+      {
+        text: 'Avoid holding more than {max} stock from the same sub-industry',
+        params: {
+          max: { type: 'number', default: 1, min: 1, max: 2 }
+        },
+        category: 'risk'
+      }
+    ],
+    relatedIndicator: null,
+    kbEntryId: null,
+    tags: ['sub-sector', 'correlation', 'proxy', 'concentration'],
+    agentUseDescription: 'Your agent will limit holdings from the same sub-industry to the specified maximum, preventing hidden correlation from undermining portfolio diversification.',
+  },
+
+  // R-08: Market Cap Barbell
+  {
+    id: 'r-08',
+    category: 'risk',
+    headline: 'Mix stability with explosiveness',
+    description: 'Ensures mix of large-cap stability and small-cap volatility.',
+    hook: 'Big stocks keep you alive, small stocks make you rich — you need both',
+    learnMore: 'Large-cap stocks provide stability and predictable scoring, while small-caps deliver the explosive moves needed to hit high thresholds. A barbell strategy combines both extremes — large-cap anchors that protect your baseline score and small-cap satellites that provide upside potential.',
+    difficulty: 'beginner',
+    forgeTemplates: [
+      {
+        text: 'Maintain at least {anchors} large-cap stocks and no more than {sails} small-cap stocks',
+        params: {
+          anchors: { type: 'number', default: 2, min: 1, max: 4 },
+          sails: { type: 'number', default: 2, min: 1, max: 3 }
+        },
+        category: 'risk'
+      }
+    ],
+    relatedIndicator: 'Market Capitalization',
+    kbEntryId: null,
+    tags: ['market-cap', 'barbell', 'stability', 'anchor'],
+    agentUseDescription: 'Your agent will maintain a minimum number of large-cap anchor stocks and cap the number of small-cap stocks, ensuring a barbell mix of stability and explosive potential.',
+  },
+
+  // R-09: Portfolio Drawdown Circuit Breaker
+  {
+    id: 'r-09',
+    category: 'risk',
+    headline: 'Switch to survival mode',
+    description: 'Shifts to defensive mode if total portfolio drops below a threshold.',
+    hook: 'When the whole portfolio is bleeding, stop trying to be a hero',
+    learnMore: 'When your total portfolio drawdown exceeds a critical level, something has gone systemically wrong — the market regime may have shifted or your strategy is mismatched with conditions. This circuit breaker shifts to defensive mode, restricting new swaps to low-volatility stocks only until conditions stabilize.',
+    difficulty: 'intermediate',
+    forgeTemplates: [
+      {
+        text: 'If total portfolio drawdown exceeds {pct}%, shift to defensive mode with low-ATR stocks only',
+        params: {
+          pct: { type: 'number', default: 10, min: 5, max: 20 }
+        },
+        category: 'risk'
+      }
+    ],
+    relatedIndicator: null,
+    kbEntryId: null,
+    tags: ['drawdown', 'circuit-breaker', 'defensive', 'survival'],
+    agentUseDescription: 'Your agent will shift to defensive mode when total portfolio drawdown exceeds the specified percentage, restricting new swaps to low-ATR stocks only.',
+  },
+
+  // R-10: Volatility Regime Scaling
+  {
+    id: 'r-10',
+    category: 'risk',
+    headline: 'De-risk in volatile markets',
+    description: 'Reduces high-ATR exposure when the broad market is in a volatile regime.',
+    hook: 'When the whole market is panicking, even good stocks get dragged down',
+    learnMore: 'In high-volatility market regimes, correlations spike and even fundamentally strong stocks get dragged down. This rule detects elevated market volatility and restricts the portfolio to lower-ATR stocks, reducing exposure to the wild swings that can devastate a portfolio in chaotic conditions.',
+    difficulty: 'intermediate',
+    forgeTemplates: [
+      {
+        text: 'When market volatility is elevated, restrict portfolio to stocks with ATR below {pct}% of price',
+        params: {
+          pct: { type: 'number', default: 3.0, min: 1.5, max: 5.0 }
+        },
+        category: 'risk'
+      }
+    ],
+    relatedIndicator: 'ATR (Average True Range)',
+    kbEntryId: null,
+    tags: ['volatility', 'regime', 'SPY-ATR', 'de-risk'],
+    agentUseDescription: 'Your agent will restrict the portfolio to stocks with ATR below the specified percentage of price when broad market volatility is elevated.',
+  },
+
+  // R-11: Crypto Containment Protocol
+  {
+    id: 'r-11',
+    category: 'risk',
+    headline: 'Keep crypto on a leash',
+    description: 'Manages the mandatory crypto asset to prevent portfolio-destroying volatility.',
+    hook: 'Crypto can make or break your battle — keep it on a leash',
+    learnMore: 'Crypto assets are mandatory in the portfolio but carry extreme volatility. An uncontrolled crypto position in Star tier can single-handedly swing your score by 50+ points. This rule restricts crypto to a lower tier and limits exposure to major coins during portfolio drawdowns.',
+    difficulty: 'beginner',
+    forgeTemplates: [
+      {
+        text: 'Restrict mandatory crypto to {tier} tier. During drawdowns, limit to major coins only',
+        params: {
+          tier: { type: 'select', default: 'Support', options: ['Support', 'Core', 'Any'] }
+        },
+        category: 'risk'
+      }
+    ],
+    relatedIndicator: null,
+    kbEntryId: null,
+    tags: ['crypto', 'containment', 'volatility', 'mandatory-asset'],
+    agentUseDescription: 'Your agent will restrict the mandatory crypto asset to the specified tier and limit to major coins only during portfolio drawdowns.',
+  },
+
+  // R-12: Bearish Sector Exclusion
+  {
+    id: 'r-12',
+    category: 'risk',
+    headline: 'Avoid sectors in the news doghouse',
+    description: 'Excludes stocks in sectors with negative FantasyTimes sentiment.',
+    hook: 'Don\'t fight the news — if FantasyTimes says a sector is in trouble, listen',
+    learnMore: 'FantasyTimes sentiment reflects the current news narrative around each sector. Fighting negative sentiment is a losing battle — even fundamentally strong stocks get dragged down when their sector is under fire. This rule excludes stocks from sectors with bearish or worse sentiment, keeping your portfolio aligned with the prevailing narrative.',
+    difficulty: 'beginner',
+    forgeTemplates: [
+      {
+        text: 'Avoid buying stocks in sectors where FantasyTimes sentiment is {sentiment} or worse',
+        params: {
+          sentiment: { type: 'select', default: 'bearish', options: ['bearish', 'neutral'] }
+        },
+        category: 'risk'
+      }
+    ],
+    relatedIndicator: 'FantasyTimes Sentiment',
+    kbEntryId: null,
+    tags: ['sentiment', 'sector', 'exclusion', 'news-aware'],
+    agentUseDescription: 'Your agent will exclude stocks from sectors where FantasyTimes sentiment is at or below the specified level, avoiding sectors under negative news pressure.',
+  },
+
+  // ══════════════════════════════════════
+  // ALLOCATION CATEGORY (expansion)
+  // ══════════════════════════════════════
+
+  // A-05: Volatility Barbell
+  {
+    id: 'a-05',
+    category: 'allocation',
+    headline: 'Build a barbell portfolio',
+    description: 'Split portfolio between high-ATR explosive stocks and low-ATR anchors — avoid the moderate middle.',
+    hook: 'Safe stocks keep you in the game, explosive stocks win it — need both extremes',
+    learnMore: 'A barbell portfolio combines two extremes: low-ATR anchor stocks that protect your baseline score and high-ATR rockets that chase explosive threshold bonuses. The boring middle ground — moderate stocks that neither protect nor explode — is the worst of both worlds in a single-day battle.',
+    difficulty: 'intermediate',
+    forgeTemplates: [
+      {
+        text: 'Build portfolio with at least {anchors} low-ATR anchors (below {low_pct}%) and {rockets} high-ATR rockets (above {high_pct}%)',
+        params: {
+          anchors: { type: 'number', default: 2, min: 1, max: 3 },
+          rockets: { type: 'number', default: 2, min: 1, max: 3 },
+          low_pct: { type: 'number', default: 1.5, min: 0.5, max: 2.5 },
+          high_pct: { type: 'number', default: 3.5, min: 2.5, max: 5.0 }
+        },
+        category: 'allocation'
+      }
+    ],
+    relatedIndicator: 'ATR (Average True Range)',
+    kbEntryId: null,
+    tags: ['barbell', 'volatility', 'anchors', 'explosive'],
+    agentUseDescription: 'Your agent will build a barbell portfolio with the specified number of low-ATR anchor stocks and high-ATR explosive stocks, avoiding moderate-volatility stocks in between.',
+  },
+
+  // A-06: Momentum Tilt
+  {
+    id: 'a-06',
+    category: 'allocation',
+    headline: 'Lean into market leaders',
+    description: 'Overweight stocks with the highest relative strength — lean into the market leaders.',
+    hook: 'Stocks beating the market today tend to keep beating it tomorrow — lean into leaders',
+    learnMore: 'Momentum is the most persistent factor in equity markets — stocks with high relative strength tend to continue outperforming. This rule tilts your portfolio toward market leaders by requiring minimum RS scores for selection and reserving Star and Core tiers for the strongest performers.',
+    difficulty: 'beginner',
+    forgeTemplates: [
+      {
+        text: 'Prefer stocks with RS vs SPY above {rs_min}/22. Star and Core only for top {pct}% RS',
+        params: {
+          rs_min: { type: 'number', default: 15, min: 10, max: 22 },
+          pct: { type: 'number', default: 25, min: 10, max: 50 }
+        },
+        category: 'allocation'
+      }
+    ],
+    relatedIndicator: 'Relative Strength vs. SPY',
+    kbEntryId: null,
+    tags: ['momentum', 'relative-strength', 'leaders', 'overweight'],
+    agentUseDescription: 'Your agent will prefer stocks with RS vs. SPY above the minimum threshold and restrict Star and Core tier assignments to stocks in the top percentile of RS rankings.',
+  },
+
+  // A-07: Defensive/Growth Balance
+  {
+    id: 'a-07',
+    category: 'allocation',
+    headline: 'Balance defense and offense',
+    description: 'Ensure a mix of high-ATR growth engines and high-fundamental-score defensive anchors.',
+    hook: 'Growth stocks chase thresholds, defensive stocks protect the score — balance your appetite',
+    learnMore: 'Growth stocks with high ATR chase the big threshold bonuses, while defensive stocks with strong fundamentals protect your baseline score from collapsing. The right balance depends on your risk appetite — more defensive stocks for safety, more growth stocks for upside.',
+    difficulty: 'intermediate',
+    forgeTemplates: [
+      {
+        text: 'Maintain at least {defensive} high-fundamental-score stocks and up to {growth} high-ATR growth stocks',
+        params: {
+          defensive: { type: 'number', default: 2, min: 1, max: 4 },
+          growth: { type: 'number', default: 3, min: 2, max: 4 },
+          fund_min: { type: 'number', default: 70, min: 50, max: 90 }
+        },
+        category: 'allocation'
+      }
+    ],
+    relatedIndicator: 'Fundamental Composite Score',
+    kbEntryId: null,
+    tags: ['defensive', 'growth', 'balance', 'quality'],
+    agentUseDescription: 'Your agent will maintain a minimum number of high-fundamental-score defensive stocks and cap the number of high-ATR growth stocks, balancing protection and upside.',
+  },
+
+  // A-08: Sentiment-Driven Sector Rotation
+  {
+    id: 'a-08',
+    category: 'allocation',
+    headline: 'Ride the sentiment tailwinds',
+    description: 'Overweight sectors with positive FantasyTimes sentiment — ride the narrative tailwinds.',
+    hook: 'When the news cycle turns on a sector, the smart money moves first — move with it',
+    learnMore: 'FantasyTimes sentiment reflects the current news narrative for each sector. Sectors with bullish sentiment benefit from institutional buying pressure as the narrative drives capital flows. This rule overweights favored sectors and rebalances when sentiment shifts, keeping your portfolio aligned with the dominant market story.',
+    difficulty: 'intermediate',
+    forgeTemplates: [
+      {
+        text: 'Overweight sectors where FantasyTimes sentiment is {sentiment} or better',
+        params: {
+          sentiment: { type: 'select', default: 'bullish', options: ['bullish', 'neutral or better'] }
+        },
+        category: 'allocation'
+      }
+    ],
+    relatedIndicator: 'FantasyTimes Sentiment',
+    kbEntryId: null,
+    tags: ['sentiment', 'sector-rotation', 'FantasyTimes', 'macro'],
+    agentUseDescription: 'Your agent will overweight sectors with FantasyTimes sentiment at or above the specified level and rebalance when sentiment changes.',
+  },
+
+  // A-09: Complementary Bench Strategy
+  {
+    id: 'a-09',
+    category: 'allocation',
+    headline: 'Build a versatile bench',
+    description: 'Build the bench to complement the active roster — different sectors, different styles.',
+    hook: 'Your bench isn\'t a backup squad — it\'s a toolkit for when the market changes',
+    learnMore: 'A bench that mirrors your active roster is useless — when your picks are struggling, your bench will be too. This rule builds a complementary bench with different sector exposure and high-ATR breakout candidates, giving you real optionality when market conditions shift.',
+    difficulty: 'beginner',
+    forgeTemplates: [
+      {
+        text: 'At least {complement} bench stocks from different sectors. Include {high_upside} high-ATR breakout candidates',
+        params: {
+          complement: { type: 'number', default: 2, min: 1, max: 3 },
+          high_upside: { type: 'number', default: 1, min: 0, max: 2 }
+        },
+        category: 'allocation'
+      }
+    ],
+    relatedIndicator: null,
+    kbEntryId: null,
+    tags: ['bench', 'complement', 'diversification', 'toolkit'],
+    agentUseDescription: 'Your agent will build a bench with stocks from different sectors than the active roster and include high-ATR breakout candidates for swap optionality.',
+  },
+
+  // A-10: Economic Calendar Positioning
+  {
+    id: 'a-10',
+    category: 'allocation',
+    headline: 'Position for economic events',
+    description: 'Tilt the portfolio toward event-sensitive sectors ahead of major economic announcements.',
+    hook: 'Big economic announcements move entire sectors — be positioned before the news drops',
+    learnMore: 'Major economic events like FOMC decisions, CPI releases, and jobs reports create predictable sector-level moves. Rate-sensitive sectors react to Fed decisions, consumer sectors to CPI data, and so on. This rule tilts your portfolio toward the sectors historically most affected by upcoming events.',
+    difficulty: 'advanced',
+    forgeTemplates: [
+      {
+        text: 'When high-impact event is within {days} days, tilt toward historically sensitive sectors',
+        params: {
+          days: { type: 'number', default: 2, min: 1, max: 5 }
+        },
+        category: 'allocation'
+      }
+    ],
+    relatedIndicator: 'Economic Calendar',
+    kbEntryId: null,
+    tags: ['economic-calendar', 'FOMC', 'CPI', 'macro-positioning'],
+    agentUseDescription: 'Your agent will tilt portfolio allocation toward sectors historically sensitive to upcoming high-impact economic events within the specified time window.',
+  },
 ];
