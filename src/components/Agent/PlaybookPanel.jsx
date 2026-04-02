@@ -191,10 +191,10 @@ const PlaybookPanel = ({ isOpen, onClose, agent, tokens, onNavigateToForge }) =>
   };
 
   // Format rules in C1/C2/S1/S2 style
-  // Constraints = risk + allocation, Strategy = technical + fundamental
+  // Constraints = risk + allocation + mid_battle + game_state, Strategy = technical + fundamental + threshold + tier_strategy
   const formatBundleRules = (snapshots) => {
-    const constraints = (snapshots || []).filter(s => s.category === 'risk' || s.category === 'allocation');
-    const strategy = (snapshots || []).filter(s => s.category === 'technical' || s.category === 'fundamental');
+    const constraints = (snapshots || []).filter(s => s.category === 'risk' || s.category === 'allocation' || s.category === 'mid_battle' || s.category === 'game_state');
+    const strategy = (snapshots || []).filter(s => s.category === 'technical' || s.category === 'fundamental' || s.category === 'threshold' || s.category === 'tier_strategy');
     const result = [];
     constraints.forEach((s, i) => result.push({ label: `C${i + 1}`, ...s }));
     strategy.forEach((s, i) => result.push({ label: `S${i + 1}`, ...s }));
