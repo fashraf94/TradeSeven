@@ -159,7 +159,7 @@ function AccordionRuleCard({ rule, isEquipped, onAdd, onRemove, agentExists }) {
   );
 }
 
-export default function CategoryAccordion({
+const CategoryAccordion = React.memo(function CategoryAccordion({
   category,
   rules,
   equippedRuleIds,
@@ -170,9 +170,7 @@ export default function CategoryAccordion({
   agentExists,
 }) {
   const catColor = category.color || CATEGORY_COLORS[category.id] || '#5eead4';
-  const equippedCount = rules.filter(r => equippedRuleIds.has(r.id)).size
-    ? rules.filter(r => equippedRuleIds.has(r.id)).length
-    : rules.filter(r => equippedRuleIds.has(r.id)).length;
+  const equippedCount = rules.filter(r => equippedRuleIds.has(r.id)).length;
 
   return (
     <div style={{ marginBottom: 8 }}>
@@ -272,4 +270,6 @@ export default function CategoryAccordion({
       </AnimatePresence>
     </div>
   );
-}
+});
+
+export default CategoryAccordion;

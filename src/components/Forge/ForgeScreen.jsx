@@ -78,15 +78,15 @@ export default function ForgeScreen({ isMobile: isMobileProp, onClose, user }) {
     [forge.rules]
   );
 
-  // Group templates by current category group
-  const activeCats = forge.categoryGroup === 'strategy' ? STRATEGY_CATEGORIES : CONTROLS_CATEGORIES;
+  // Group templates by current category group — memoized to avoid accordion re-renders
   const categorySections = useMemo(() => {
-    return activeCats.map(catId => {
+    const cats = forge.categoryGroup === 'strategy' ? STRATEGY_CATEGORIES : CONTROLS_CATEGORIES;
+    return cats.map(catId => {
       const catMeta = forge.categories.find(c => c.id === catId);
       const catRules = FORGE_RULE_TEMPLATES.filter(t => t.category === catId);
       return { category: catMeta, rules: catRules };
     });
-  }, [activeCats, forge.categories]);
+  }, [forge.categoryGroup, forge.categories]);
 
   // Conflict detection on add
   const handleAddRule = useCallback(async (templateId) => {

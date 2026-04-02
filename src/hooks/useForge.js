@@ -225,18 +225,23 @@ export function useForge(agentId) {
 
   // Compute overlay weights from equipped bundle rules for RadarChart
   const overlayWeights = useMemo(() => {
+    const defaultWeights = FORGE_CATEGORIES.reduce((acc, cat) => ({ ...acc, [cat.id]: 0 }), {});
     const equipped = bundles.filter(b => b.status === 'equipped');
     const allRuleIds = equipped.flatMap(b => b.ruleIds || []);
-    const total = allRuleIds.length;
-    if (total === 0) {
-      return FORGE_CATEGORIES.reduce((acc, cat) => ({ ...acc, [cat.id]: 0 }), {});
-    }
-    // Count rules per category by looking up the rule objects
+    if (allRuleIds.length === 0) return defaultWeights;
+
+    // Resolve rules, filtering out soft-deleted/unresolvable IDs
+    const resolvedRules = allRuleIds
+      .map(id => rules.find(r => r.id === id))
+      .filter(Boolean);
+    const total = resolvedRules.length;
+    if (total === 0) return defaultWeights;
+
+    // Count rules per category from resolved rules only
     const catCounts = {};
     FORGE_CATEGORIES.forEach(cat => { catCounts[cat.id] = 0; });
-    for (const ruleId of allRuleIds) {
-      const rule = rules.find(r => r.id === ruleId);
-      if (rule && catCounts[rule.category] !== undefined) {
+    for (const rule of resolvedRules) {
+      if (catCounts[rule.category] !== undefined) {
         catCounts[rule.category]++;
       }
     }
@@ -483,12 +488,18 @@ export function useForge(agentId) {
     }
   }, [agentId, showToast, loadData]);
 
-  // Rename a draft bundle (direct Firestore update)
+  // Rename a draft bundle (sanitized Firestore update)
   const renameDraftBundle = useCallback(async (bundleId, newName) => {
     if (!agentId || !newName?.trim()) return;
+    // Sanitize: allow only alphanumeric, spaces, hyphens, underscores; cap at 50 chars
+    const sanitized = newName.trim().replace(/[^a-zA-Z0-9 \-_]/g, '').slice(0, 50);
+    if (!sanitized) {
+      showToast('Bundle name must contain valid characters (letters, numbers, spaces, hyphens)');
+      return;
+    }
     try {
       const bundleRef = doc(db, 'agents', agentId, 'bundles', bundleId);
-      await updateDoc(bundleRef, { name: newName.trim() });
+      await updateDoc(bundleRef, { name: sanitized });
       await loadData();
     } catch (err) {
       console.error('[useForge] renameDraftBundle failed:', err);

@@ -3,6 +3,7 @@
 // Phase 1: static mech frame with state-driven opacity/glow. Overlays come in Phase 2.
 
 import React, { useMemo } from 'react';
+import { useReducedMotion } from 'framer-motion';
 
 const STATES = {
   dormant: { opacity: 0.3, glow: false, breathing: false },
@@ -13,7 +14,8 @@ const STATES = {
 
 export default function MechSVG({ state = 'idle', size = 'hero', reducedMotion = false }) {
   const config = STATES[state] || STATES.idle;
-  const animate = config.breathing && !reducedMotion;
+  const prefersReduced = useReducedMotion();
+  const animate = config.breathing && !reducedMotion && !prefersReduced;
   const isVisor = size === 'visor';
 
   const strokeColor = state === 'dormant' ? '#2A2D35' : '#E6EDF3';

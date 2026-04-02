@@ -21,17 +21,22 @@ export default function BundlePresetModal({ forge, onClose }) {
     try {
       const bundleId = await forge.createNewBundle(collection.title);
       if (bundleId) {
-        // Add each rule from the collection to the bundle
+        let addedCount = 0;
         for (const ruleId of collection.ruleIds) {
           const template = FORGE_RULE_TEMPLATES.find(t => t.id === ruleId);
           if (template) {
             await forge.addRuleToBundle(template);
+            addedCount++;
           }
+        }
+        // Warn if some templates were unavailable
+        if (addedCount < collection.ruleIds.length) {
+          forge.showToast(`Bundle created with ${addedCount} of ${collection.ruleIds.length} rules. Some rules were unavailable.`);
         }
       }
       onClose();
     } catch (err) {
-      console.error('[BundlePresetModal] Failed to create preset bundle:', err);
+      forge.showToast('Failed to create bundle. Please try again.');
     } finally {
       setCreating(false);
     }
@@ -44,7 +49,7 @@ export default function BundlePresetModal({ forge, onClose }) {
       await forge.createNewBundle('My Strategy');
       onClose();
     } catch (err) {
-      console.error('[BundlePresetModal] Failed to create bundle:', err);
+      forge.showToast('Failed to create bundle. Please try again.');
     } finally {
       setCreating(false);
     }
