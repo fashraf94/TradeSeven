@@ -115,6 +115,7 @@ export async function generateAlexMoverStory({
   // ── Fetch catalyst context via Sonar (EODHD fallback) ──────────
   const resolvedDir = direction || (percentChange >= 0 ? 'up' : 'down');
   const companyName = STOCK_DATA[upperSymbol]?.name || '';
+  const shortCompanyName = STOCK_DATA[upperSymbol]?.shortName || companyName || upperSymbol;
   const catalystData = await fetchTickerCatalysts(upperSymbol, companyName, percentChange, resolvedDir);
   logInfo('Step 3: Catalyst fetched', { source: catalystData.fallback ? 'eodhd' : 'sonar', hasText: !!catalystData.catalysts });
 
@@ -144,11 +145,12 @@ export async function generateAlexMoverStory({
   let userMessage = [
     `STOCK MOVE ALERT:`,
     `- Symbol: ${upperSymbol}`,
+    `- Company: ${shortCompanyName}`,
     `- Current Price: $${Number(currentPrice).toFixed(2)}`,
     `- Change: ${priceChange >= 0 ? '+' : ''}$${Number(priceChange).toFixed(2)} (${percentChange >= 0 ? '+' : ''}${Number(percentChange).toFixed(2)}%)`,
     `- Direction: ${direction || (percentChange >= 0 ? 'up' : 'down')}`,
-    `- ATR(14): $${Number(atr14).toFixed(2)}`,
-    `- ATR Multiple: ${Number(atrMultiple).toFixed(1)}x (triggered at 1.5x)`,
+    `- [INTERNAL - do not mention in story] Volatility Baseline (ATR-14): $${Number(atr14).toFixed(2)}`,
+    `- [INTERNAL - do not mention in story] Volatility Multiple: ${Number(atrMultiple).toFixed(1)}x`,
     `- Sector: ${sector}`,
     '',
     `NEWS & CATALYST CONTEXT FOR ${upperSymbol}:`,
@@ -187,7 +189,7 @@ export async function generateAlexMoverStory({
 
   userMessage += `\n\nBAGGERBOMB CONTEXT:
 - Tier: ${baggerTier}
-- ATR Multiple: ${Number(atrMultiple).toFixed(1)}x
+- [INTERNAL] Volatility Multiple: ${Number(atrMultiple).toFixed(1)}x
 - Direction: ${resolvedDirection}
 ${baggerTier !== 'none' ? `- Points: ${getBaggerPoints(baggerTier)}` : '- No threshold crossed yet'}
 Match your voice to this tier. Set baggerTier to "${baggerTier}" in your tool call.`;

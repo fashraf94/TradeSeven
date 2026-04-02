@@ -189,8 +189,9 @@ function AlexTickerCard({ story, onStorySelect }) {
       role="button"
       style={{
         backgroundColor: '#343439',
-        padding: 24,
+        padding: '24px 24px 56px 24px',
         borderRadius: 0,
+        borderLeft: `3px solid ${isPositive ? '#00d9ff' : '#ffb4ab'}`,
         cursor: 'pointer',
         transition: 'background-color 0.15s ease',
         position: 'relative',
@@ -271,8 +272,8 @@ function AlexDesk({ stories, isDesktop, onStorySelect }) {
               tabIndex={0}
               role="button"
               style={{
-                borderLeft: `2px solid ${REPORTER_COLORS.alex.hex}`,
-                padding: '12px 16px',
+                borderLeft: `2px solid ${mobileIsPositive ? '#00d9ff' : '#ffb4ab'}`,
+                padding: '12px 16px 44px 16px',
                 cursor: 'pointer',
                 marginBottom: 8,
                 position: 'relative',
