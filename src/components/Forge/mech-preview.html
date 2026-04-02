@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Mech Artwork V2 Preview</title>
+  <style>
+    body {
+      background: #0D0E12;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+    }
+    .container {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 20px;
+    }
+    svg {
+      width: 400px;
+      height: auto;
+    }
+    .label {
+      color: rgba(255,255,255,0.4);
+      font-size: 12px;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 280"
+         fill="none" stroke-linecap="round" stroke-linejoin="round">
+
+      <defs>
+        <filter id="eyeGlow" x="-50%" y="-50%" width="200%" height="200%">
+          <feGaussianBlur in="SourceGraphic" stdDeviation="3" result="blur"/>
+          <feMerge>
+            <feMergeNode in="blur"/>
+            <feMergeNode in="SourceGraphic"/>
+          </feMerge>
+        </filter>
+
+        <filter id="coreGlow" x="-50%" y="-50%" width="200%" height="200%">
+          <feGaussianBlur in="SourceGraphic" stdDeviation="2" result="blur"/>
+          <feMerge>
+            <feMergeNode in="blur"/>
+            <feMergeNode in="SourceGraphic"/>
+          </feMerge>
+        </filter>
+
+        <filter id="antennaTipGlow" x="-50%" y="-50%" width="200%" height="200%">
+          <feGaussianBlur in="SourceGraphic" stdDeviation="4" result="blur"/>
+          <feMerge>
+            <feMergeNode in="blur"/>
+            <feMergeNode in="SourceGraphic"/>
+          </feMerge>
+        </filter>
+
+        <radialGradient id="platformGlow" cx="50%" cy="50%" r="50%">
+          <stop offset="0%" stop-color="#5EEAD4" stop-opacity="0.12"/>
+          <stop offset="100%" stop-color="#5EEAD4" stop-opacity="0"/>
+        </radialGradient>
+      </defs>
+
+      <g id="platform">
+        <ellipse cx="100" cy="260" rx="60" ry="10" fill="url(#platformGlow)"/>
+        <ellipse cx="100" cy="260" rx="50" ry="7"
+          stroke="#5EEAD4" stroke-width="1" stroke-dasharray="6 4"
+          fill="none" opacity="0.5"/>
+      </g>
+
+      <g id="robot-body">
+
+        <g id="legs">
+          <g id="leg-left">
+            <line x1="84" y1="178" x2="80" y2="210" stroke="#E6EDF3" stroke-width="2.5"/>
+            <circle cx="80" cy="210" r="4" stroke="#E6EDF3" stroke-width="1.5" fill="rgba(94,234,212,0.15)"/>
+            <line x1="80" y1="214" x2="78" y2="240" stroke="#E6EDF3" stroke-width="2.5"/>
+            <rect x="72" y="218" width="12" height="16" rx="3"
+              stroke="#E6EDF3" stroke-width="1.2" fill="none" opacity="0.5"/>
+            <path d="M66 240 L88 240 Q92 240 92 248 L92 252 Q92 258 86 258 L66 258 Q60 258 60 252 L60 244 Q60 240 66 240 Z"
+              stroke="#E6EDF3" stroke-width="1.8" fill="none"/>
+          </g>
+          <g id="leg-right">
+            <line x1="116" y1="178" x2="120" y2="210" stroke="#E6EDF3" stroke-width="2.5"/>
+            <circle cx="120" cy="210" r="4" stroke="#E6EDF3" stroke-width="1.5" fill="rgba(94,234,212,0.15)"/>
+            <line x1="120" y1="214" x2="122" y2="240" stroke="#E6EDF3" stroke-width="2.5"/>
+            <rect x="116" y="218" width="12" height="16" rx="3"
+              stroke="#E6EDF3" stroke-width="1.2" fill="none" opacity="0.5"/>
+            <path d="M112 240 L134 240 Q140 240 140 248 L140 252 Q140 258 134 258 L114 258 Q108 258 108 252 L108 244 Q108 240 112 240 Z"
+              stroke="#E6EDF3" stroke-width="1.8" fill="none"/>
+          </g>
+        </g>
+
+        <g id="torso">
+          <rect x="72" y="118" width="56" height="55" rx="10"
+            stroke="#E6EDF3" stroke-width="2.2" fill="none"/>
+          <line x1="100" y1="118" x2="100" y2="173"
+            stroke="#E6EDF3" stroke-width="0.8" opacity="0.3"/>
+          <path d="M80 128 Q100 122 120 128"
+            stroke="#E6EDF3" stroke-width="1" fill="none" opacity="0.4"/>
+          <circle cx="88" cy="155" r="1.5" stroke="#E6EDF3" stroke-width="1" fill="none" opacity="0.4"/>
+          <circle cx="94" cy="155" r="1.5" stroke="#E6EDF3" stroke-width="1" fill="none" opacity="0.4"/>
+          <line x1="112" y1="150" x2="122" y2="150"
+            stroke="#E6EDF3" stroke-width="0.8" opacity="0.3"/>
+          <line x1="112" y1="154" x2="120" y2="154"
+            stroke="#E6EDF3" stroke-width="0.8" opacity="0.3"/>
+          <rect x="70" y="168" width="60" height="8" rx="3"
+            stroke="#E6EDF3" stroke-width="1.5" fill="none" opacity="0.6"/>
+          <rect x="95" y="169" width="10" height="6" rx="1.5"
+            stroke="#E6EDF3" stroke-width="1" fill="none" opacity="0.5"/>
+
+          <g id="power-core">
+            <rect x="91" y="133" width="18" height="15" rx="3"
+              stroke="#E6EDF3" stroke-width="1.2" fill="rgba(94,234,212,0.06)"/>
+            <path d="M100 145 L96.5 141 Q94.5 138.5 96.5 137 Q98.5 135.5 100 138 Q101.5 135.5 103.5 137 Q105.5 138.5 103.5 141 Z"
+              stroke="#5EEAD4" stroke-width="1" fill="rgba(94,234,212,0.3)"
+              filter="url(#coreGlow)"/>
+          </g>
+        </g>
+
+        <g id="arms">
+          <g id="arm-left">
+            <rect x="56" y="118" width="18" height="10" rx="4"
+              stroke="#E6EDF3" stroke-width="1.5" fill="none" opacity="0.7"/>
+            <line x1="65" y1="128" x2="58" y2="158" stroke="#E6EDF3" stroke-width="2"/>
+            <circle cx="58" cy="158" r="3.5"
+              stroke="#E6EDF3" stroke-width="1.2" fill="rgba(94,234,212,0.15)"/>
+            <line x1="58" y1="162" x2="54" y2="190" stroke="#E6EDF3" stroke-width="2"/>
+            <rect x="49" y="166" width="10" height="18" rx="3"
+              stroke="#E6EDF3" stroke-width="1" fill="none" opacity="0.5"/>
+            <path d="M48 190 L44 198 M52 190 L52 200 M56 190 L58 198"
+              stroke="#E6EDF3" stroke-width="1.5"/>
+            <path d="M46 190 Q52 192 58 190"
+              stroke="#E6EDF3" stroke-width="1.2" fill="none"/>
+          </g>
+          <g id="arm-right">
+            <rect x="126" y="118" width="18" height="10" rx="4"
+              stroke="#E6EDF3" stroke-width="1.5" fill="none" opacity="0.7"/>
+            <line x1="135" y1="128" x2="142" y2="155" stroke="#E6EDF3" stroke-width="2"/>
+            <circle cx="142" cy="155" r="3.5"
+              stroke="#E6EDF3" stroke-width="1.2" fill="rgba(94,234,212,0.15)"/>
+            <line x1="142" y1="159" x2="148" y2="184" stroke="#E6EDF3" stroke-width="2"/>
+            <rect x="143" y="162" width="10" height="16" rx="3"
+              stroke="#E6EDF3" stroke-width="1" fill="none" opacity="0.5"/>
+            <path d="M144 184 L140 176 M148 184 L148 174 M152 184 L156 177"
+              stroke="#E6EDF3" stroke-width="1.5"/>
+            <path d="M142 184 Q148 186 154 184"
+              stroke="#E6EDF3" stroke-width="1.2" fill="none"/>
+          </g>
+        </g>
+
+        <g id="neck">
+          <line x1="90" y1="105" x2="88" y2="118" stroke="#E6EDF3" stroke-width="1.8"/>
+          <line x1="110" y1="105" x2="112" y2="118" stroke="#E6EDF3" stroke-width="1.8"/>
+          <ellipse cx="100" cy="112" rx="14" ry="3"
+            stroke="#E6EDF3" stroke-width="1" fill="none" opacity="0.4"/>
+        </g>
+
+        <g id="head">
+
+          <g id="helmet">
+            <path d="M62 95 L62 55 Q62 18 100 18 Q138 18 138 55 L138 95 Q138 105 128 105 L72 105 Q62 105 62 95 Z"
+              stroke="#E6EDF3" stroke-width="2.2" fill="none"/>
+            <path d="M68 46 Q100 28 132 46"
+              stroke="#E6EDF3" stroke-width="1" fill="none" opacity="0.2"/>
+            <path d="M62 52 L138 52"
+              stroke="#E6EDF3" stroke-width="1.5" fill="none" opacity="0.4"/>
+            <path d="M72 95 Q100 108 128 95"
+              stroke="#E6EDF3" stroke-width="1.5" fill="none" opacity="0.5"/>
+            <rect x="56" y="62" width="7" height="12" rx="2"
+              stroke="#E6EDF3" stroke-width="1" fill="none" opacity="0.35"/>
+            <rect x="137" y="62" width="7" height="12" rx="2"
+              stroke="#E6EDF3" stroke-width="1" fill="none" opacity="0.35"/>
+          </g>
+
+          <g id="antenna">
+            <line x1="100" y1="18" x2="100" y2="8" stroke="#E6EDF3" stroke-width="1.5"/>
+            <circle cx="100" cy="6" r="3"
+              stroke="#5EEAD4" stroke-width="1.2"
+              fill="rgba(94,234,212,0.4)"
+              filter="url(#antennaTipGlow)"/>
+            <circle cx="100" cy="18" r="2.5"
+              stroke="#E6EDF3" stroke-width="1" fill="none"/>
+          </g>
+
+          <g id="face">
+
+            <path d="M90 62 Q100 58 110 62"
+              stroke="#E6EDF3" stroke-width="2" fill="none" opacity="0.5"/>
+
+            <g id="eye-left">
+              <g id="eye-left-frame">
+                <circle cx="82" cy="64" r="15"
+                  stroke="#E6EDF3" stroke-width="3" fill="none"/>
+                <circle cx="82" cy="64" r="11"
+                  stroke="#E6EDF3" stroke-width="0.8" fill="none" opacity="0.25"/>
+              </g>
+              <circle cx="82" cy="64" r="8"
+                fill="#5EEAD4" opacity="0.15"/>
+              <g id="eye-left-pupil">
+                <circle cx="82" cy="64" r="6"
+                  fill="#5EEAD4" opacity="0.85"
+                  filter="url(#eyeGlow)"/>
+                <circle cx="82" cy="64" r="2.5"
+                  fill="#0D0E12" opacity="0.6"/>
+              </g>
+            </g>
+
+            <g id="eye-right">
+              <g id="eye-right-frame">
+                <circle cx="118" cy="64" r="15"
+                  stroke="#E6EDF3" stroke-width="3" fill="none"/>
+                <circle cx="118" cy="64" r="11"
+                  stroke="#E6EDF3" stroke-width="0.8" fill="none" opacity="0.25"/>
+              </g>
+              <circle cx="118" cy="64" r="8"
+                fill="#5EEAD4" opacity="0.15"/>
+              <g id="eye-right-pupil">
+                <circle cx="118" cy="64" r="6"
+                  fill="#5EEAD4" opacity="0.85"
+                  filter="url(#eyeGlow)"/>
+                <circle cx="118" cy="64" r="2.5"
+                  fill="#0D0E12" opacity="0.6"/>
+              </g>
+            </g>
+
+            <g id="mouth">
+              <path d="M93 82 Q100 87 107 82"
+                stroke="#5EEAD4" stroke-width="1.5" fill="none" opacity="0.6"/>
+            </g>
+
+          </g>
+        </g>
+
+      </g>
+    </svg>
+    <div class="label">Mech Artwork V2 — Review Draft</div>
+  </div>
+</body>
+</html>
