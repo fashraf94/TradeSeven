@@ -1,13 +1,11 @@
 // src/components/Forge/ForgeScreen.jsx
-// Mech Bay layout — Phase 1 redesign of The Forge.
-// Replaces the old 4-tab shell with mech hero + scroll-driven visor strip +
-// Strategy/Controls toggle + category accordions.
+// Mech Bay layout — compact collections + flat 8-accordion browser + management panels.
 
 import React, { useRef, useMemo, useState, useCallback } from 'react';
 import { motion, AnimatePresence, useScroll, useTransform } from 'framer-motion';
-import { ArrowLeft, Hammer, BarChart3, ArrowRight, ChevronLeft } from 'lucide-react';
+import { ArrowLeft, Hammer, BarChart3, List, Package } from 'lucide-react';
 import { useTheme } from '../../contexts/ThemeContext';
-import { useForge, STRATEGY_CATEGORIES, CONTROLS_CATEGORIES } from '../../hooks/useForge';
+import { useForge, CATEGORY_ORDER } from '../../hooks/useForge';
 import useAgent from '../../hooks/useAgent';
 import { useIsMobile } from '../../hooks/useIsMobile';
 import { FORGE_RULE_TEMPLATES, FORGE_CONFLICT_PAIRS } from '../../data/forgeKnowledgeBase';
@@ -16,14 +14,17 @@ import { FORGE_LIMITS } from '../../constants/agentProgression';
 import MechSVG from './MechSVG';
 import MechVisorStrip from './MechVisorStrip';
 import RadarChart from './RadarChart';
-import StrategyControlsToggle from './StrategyControlsToggle';
 import CategoryAccordion from './CategoryAccordion';
 import BundleStrip from './BundleStrip';
 import AgentLearnedSection from './AgentLearnedSection';
 import StarterKit from './StarterKit';
 import StatsTab from './StatsTab';
 import BundlePresetModal from './BundlePresetModal';
-import CollectionCard from './CollectionCard';
+import CollectionChips from './CollectionChips';
+import CollectionDetailSheet from './CollectionDetailSheet';
+import ManagementPanel from './ManagementPanel';
+import MyRulesTab from './MyRulesTab';
+import MyBundlesTab from './MyBundlesTab';
 
 const TABS = [
   { id: 'forge', label: 'The Forge', Icon: Hammer },
@@ -48,6 +49,9 @@ export default function ForgeScreen({ isMobile: isMobileProp, onClose, user }) {
   const heroRef = useRef(null);
   const [showPresetModal, setShowPresetModal] = useState(false);
   const [learnedExpanded, setLearnedExpanded] = useState(false);
+  const [selectedCollection, setSelectedCollection] = useState(null);
+  const [showMyRules, setShowMyRules] = useState(false);
+  const [showMyBundles, setShowMyBundles] = useState(false);
 
   // Scroll-driven mech → visor strip transition (mobile only)
   const { scrollY } = useScroll({ container: isDesktop ? undefined : scrollRef });
@@ -79,15 +83,14 @@ export default function ForgeScreen({ isMobile: isMobileProp, onClose, user }) {
     [forge.rules]
   );
 
-  // Group templates by current category group — memoized to avoid accordion re-renders
-  const categorySections = useMemo(() => {
-    const cats = forge.categoryGroup === 'strategy' ? STRATEGY_CATEGORIES : CONTROLS_CATEGORIES;
-    return cats.map(catId => {
+  // All 8 category sections for flat accordion display
+  const allCategorySections = useMemo(() => {
+    return CATEGORY_ORDER.map(catId => {
       const catMeta = forge.categories.find(c => c.id === catId);
-      const catRules = FORGE_RULE_TEMPLATES.filter(t => t.category === catId);
+      const catRules = forge.templatesByCategory[catId] || [];
       return { category: catMeta, rules: catRules };
     });
-  }, [forge.categoryGroup, forge.categories]);
+  }, [forge.categories, forge.templatesByCategory]);
 
   // Track which templates the user has already collected (by sourceRef)
   const collectedSourceRefs = useMemo(() => {
@@ -243,6 +246,26 @@ export default function ForgeScreen({ isMobile: isMobileProp, onClose, user }) {
               />
             </div>
           )}
+
+          {/* Management links */}
+          {hasAgent && (
+            <div style={{ display: 'flex', gap: 16, marginTop: 12, width: '100%', maxWidth: 320 }}>
+              <button onClick={() => setShowMyRules(true)} style={{
+                display: 'flex', alignItems: 'center', gap: 5,
+                background: 'none', border: 'none', color: '#5EEAD4',
+                fontSize: 12, fontWeight: 600, cursor: 'pointer', padding: 0,
+              }}>
+                <List size={14} /> My Rules ({forge.rules.length})
+              </button>
+              <button onClick={() => setShowMyBundles(true)} style={{
+                display: 'flex', alignItems: 'center', gap: 5,
+                background: 'none', border: 'none', color: '#5EEAD4',
+                fontSize: 12, fontWeight: 600, cursor: 'pointer', padding: 0,
+              }}>
+                <Package size={14} /> My Bundles ({forge.bundles.length})
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Right pane — scrollable content */}
@@ -285,94 +308,44 @@ export default function ForgeScreen({ isMobile: isMobileProp, onClose, user }) {
               </div>
 
               <AnimatePresence mode="wait">
-                {forge.activeTab === 'forge' && forge.browseMode === 'collections' && (
+                {forge.activeTab === 'forge' && (
                   <motion.div
-                    key="collections"
-                    initial={{ opacity: 0, x: -20 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    exit={{ opacity: 0, x: -20 }}
+                    key="forge"
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -8 }}
                     transition={{ duration: 0.2 }}
                   >
-                    {/* Section header */}
-                    <div style={{
-                      fontSize: 11, fontWeight: 700, color: '#4a5568',
-                      textTransform: 'uppercase', letterSpacing: '0.1em',
-                      fontFamily: 'ui-monospace, SFMono-Regular, monospace',
-                      marginBottom: 12,
-                    }}>
-                      BUILD PACKAGES
-                    </div>
-                    {/* Collection cards — 2-column grid on desktop */}
-                    <div style={{
-                      display: 'grid',
-                      gridTemplateColumns: 'repeat(2, 1fr)',
-                      gap: 12,
-                    }}>
-                      {forge.collectionData.map(collection => (
-                        <CollectionCard
-                          key={collection.id}
-                          collection={collection}
-                          collectedSourceRefs={collectedSourceRefs}
-                          onAddAll={handleAddAllCollection}
-                          agentExists={!!hasAgent}
-                          isAdding={!!forge.addingRuleId}
-                        />
-                      ))}
-                    </div>
-                    {/* Browse All link */}
-                    <button
-                      onClick={() => forge.setBrowseMode('categories')}
-                      style={{
-                        display: 'flex', alignItems: 'center', gap: 6,
-                        margin: '20px 0 0 auto', padding: '8px 0',
-                        background: 'none', border: 'none',
-                        color: '#5EEAD4', fontSize: 14, fontWeight: 600,
-                        cursor: 'pointer',
-                      }}
-                    >
-                      Browse All {FORGE_RULE_TEMPLATES.length} Rules <ArrowRight size={14} />
-                    </button>
-                  </motion.div>
-                )}
-                {forge.activeTab === 'forge' && forge.browseMode === 'categories' && (
-                  <motion.div
-                    key="categories"
-                    initial={{ opacity: 0, x: 20 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    exit={{ opacity: 0, x: 20 }}
-                    transition={{ duration: 0.2 }}
-                  >
-                    {/* Back link */}
-                    <button
-                      onClick={() => forge.setBrowseMode('collections')}
-                      style={{
-                        display: 'flex', alignItems: 'center', gap: 4,
-                        marginBottom: 12, padding: '4px 0',
-                        background: 'none', border: 'none',
-                        color: '#718096', fontSize: 13, cursor: 'pointer',
-                      }}
-                    >
-                      <ChevronLeft size={14} /> Back to Build Packages
-                    </button>
-                    <StrategyControlsToggle
-                      activeGroup={forge.categoryGroup}
-                      onToggle={forge.setCategoryGroup}
+                    {/* Quick Start chips */}
+                    <CollectionChips
+                      collections={forge.collectionData}
+                      collectedSourceRefs={collectedSourceRefs}
+                      onSelectCollection={setSelectedCollection}
+                      agentExists={!!hasAgent}
                     />
-                    <div style={{ marginTop: 16 }}>
-                      {categorySections.map(({ category, rules }) => (
-                        <CategoryAccordion
-                          key={category.id}
-                          category={category}
-                          rules={rules}
-                          equippedRuleIds={equippedRuleIds}
-                          isExpanded={forge.expandedAccordions.has(category.id)}
-                          onToggle={() => forge.toggleAccordion(category.id)}
-                          onAddRule={handleAddRule}
-                          onRemoveRule={handleRemoveRule}
-                          agentExists={!!hasAgent}
-                        />
-                      ))}
+                    {/* Browse Rules header */}
+                    <div style={{
+                      fontSize: 10, fontWeight: 700, color: '#718096',
+                      textTransform: 'uppercase', letterSpacing: '0.15em',
+                      fontFamily: 'ui-monospace, SFMono-Regular, monospace',
+                      marginBottom: 10,
+                    }}>
+                      BROWSE RULES
                     </div>
+                    {/* All 8 category accordions */}
+                    {allCategorySections.map(({ category, rules }) => (
+                      <CategoryAccordion
+                        key={category.id}
+                        category={category}
+                        rules={rules}
+                        equippedRuleIds={equippedRuleIds}
+                        isExpanded={forge.expandedAccordions.has(category.id)}
+                        onToggle={() => forge.toggleAccordion(category.id)}
+                        onAddRule={handleAddRule}
+                        onRemoveRule={handleRemoveRule}
+                        agentExists={!!hasAgent}
+                      />
+                    ))}
                     <AgentLearnedSection
                       rules={learnedRules}
                       isExpanded={learnedExpanded}
@@ -424,6 +397,37 @@ export default function ForgeScreen({ isMobile: isMobileProp, onClose, user }) {
             onClose={() => setShowPresetModal(false)}
           />
         )}
+
+        {/* Collection detail sheet */}
+        <AnimatePresence>
+          {selectedCollection && (
+            <CollectionDetailSheet
+              collection={selectedCollection}
+              collectedSourceRefs={collectedSourceRefs}
+              onAddAll={handleAddAllCollection}
+              onAddRule={(rule) => forge.addRuleToBundle(rule)}
+              onClose={() => setSelectedCollection(null)}
+              agentExists={!!hasAgent}
+              isAdding={!!forge.addingRuleId}
+            />
+          )}
+        </AnimatePresence>
+
+        {/* Management panels */}
+        <AnimatePresence>
+          {showMyRules && (
+            <ManagementPanel title="My Rules" onClose={() => setShowMyRules(false)}>
+              <MyRulesTab forge={forge} tokens={tokens} isMobile={false} />
+            </ManagementPanel>
+          )}
+        </AnimatePresence>
+        <AnimatePresence>
+          {showMyBundles && (
+            <ManagementPanel title="My Bundles" onClose={() => setShowMyBundles(false)}>
+              <MyBundlesTab forge={forge} tokens={tokens} isMobile={false} agent={agent} />
+            </ManagementPanel>
+          )}
+        </AnimatePresence>
       </div>
     );
   }
@@ -530,6 +534,29 @@ export default function ForgeScreen({ isMobile: isMobileProp, onClose, user }) {
         />
       )}
 
+      {/* Management links */}
+      {hasAgent && (
+        <div style={{
+          display: 'flex', gap: 16, padding: '8px 16px',
+          background: '#0D0E12',
+        }}>
+          <button onClick={() => setShowMyRules(true)} style={{
+            display: 'flex', alignItems: 'center', gap: 5,
+            background: 'none', border: 'none', color: '#5EEAD4',
+            fontSize: 12, fontWeight: 600, cursor: 'pointer', padding: 0,
+          }}>
+            <List size={14} /> My Rules ({forge.rules.length})
+          </button>
+          <button onClick={() => setShowMyBundles(true)} style={{
+            display: 'flex', alignItems: 'center', gap: 5,
+            background: 'none', border: 'none', color: '#5EEAD4',
+            fontSize: 12, fontWeight: 600, cursor: 'pointer', padding: 0,
+          }}>
+            <Package size={14} /> My Bundles ({forge.bundles.length})
+          </button>
+        </div>
+      )}
+
       {/* Create bundle CTA when no bundles */}
       {hasAgent && forge.bundles.length === 0 && !forge.loading && (
         <div style={{ padding: '12px 16px' }}>
@@ -583,88 +610,35 @@ export default function ForgeScreen({ isMobile: isMobileProp, onClose, user }) {
             })}
           </div>
 
-          {/* Strategy/Controls toggle — sticky, only in category browser mode */}
-          {forge.activeTab === 'forge' && forge.browseMode === 'categories' && (
-            <div style={{
-              position: 'sticky',
-              top: 70,
-              zIndex: 40,
-              background: tokens.bgApp,
-              padding: '8px 16px',
-            }}>
-              <StrategyControlsToggle
-                activeGroup={forge.categoryGroup}
-                onToggle={forge.setCategoryGroup}
-              />
-            </div>
-          )}
-
           {/* Tab content */}
           <div style={{ padding: '0 16px' }}>
             <AnimatePresence mode="wait">
-              {forge.activeTab === 'forge' && forge.browseMode === 'collections' && (
+              {forge.activeTab === 'forge' && (
                 <motion.div
-                  key="collections"
-                  initial={{ opacity: 0, x: -20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: -20 }}
+                  key="forge"
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -8 }}
                   transition={{ duration: 0.2 }}
                 >
-                  {/* Section header */}
+                  {/* Quick Start chips */}
+                  <CollectionChips
+                    collections={forge.collectionData}
+                    collectedSourceRefs={collectedSourceRefs}
+                    onSelectCollection={setSelectedCollection}
+                    agentExists={!!hasAgent}
+                  />
+                  {/* Browse Rules header */}
                   <div style={{
-                    fontSize: 11, fontWeight: 700, color: '#4a5568',
-                    textTransform: 'uppercase', letterSpacing: '0.1em',
+                    fontSize: 10, fontWeight: 700, color: '#718096',
+                    textTransform: 'uppercase', letterSpacing: '0.15em',
                     fontFamily: 'ui-monospace, SFMono-Regular, monospace',
-                    marginBottom: 12,
+                    marginBottom: 10,
                   }}>
-                    BUILD PACKAGES
+                    BROWSE RULES
                   </div>
-                  {forge.collectionData.map(collection => (
-                    <CollectionCard
-                      key={collection.id}
-                      collection={collection}
-                      collectedSourceRefs={collectedSourceRefs}
-                      onAddAll={handleAddAllCollection}
-                      agentExists={!!hasAgent}
-                      isAdding={!!forge.addingRuleId}
-                    />
-                  ))}
-                  {/* Browse All link */}
-                  <button
-                    onClick={() => { forge.setBrowseMode('categories'); handleScrollToTop(); }}
-                    style={{
-                      display: 'flex', alignItems: 'center', gap: 6,
-                      margin: '16px 0 0 auto', padding: '8px 0',
-                      background: 'none', border: 'none',
-                      color: '#5EEAD4', fontSize: 14, fontWeight: 600,
-                      cursor: 'pointer',
-                    }}
-                  >
-                    Browse All {FORGE_RULE_TEMPLATES.length} Rules <ArrowRight size={14} />
-                  </button>
-                </motion.div>
-              )}
-              {forge.activeTab === 'forge' && forge.browseMode === 'categories' && (
-                <motion.div
-                  key={`categories-${forge.categoryGroup}`}
-                  initial={{ opacity: 0, x: 20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: 20 }}
-                  transition={{ duration: 0.2 }}
-                >
-                  {/* Back link */}
-                  <button
-                    onClick={() => forge.setBrowseMode('collections')}
-                    style={{
-                      display: 'flex', alignItems: 'center', gap: 4,
-                      marginBottom: 8, padding: '4px 0',
-                      background: 'none', border: 'none',
-                      color: '#718096', fontSize: 13, cursor: 'pointer',
-                    }}
-                  >
-                    <ChevronLeft size={14} /> Back to Build Packages
-                  </button>
-                  {categorySections.map(({ category, rules }) => (
+                  {/* All 8 category accordions */}
+                  {allCategorySections.map(({ category, rules }) => (
                     <CategoryAccordion
                       key={category.id}
                       category={category}
@@ -728,6 +702,37 @@ export default function ForgeScreen({ isMobile: isMobileProp, onClose, user }) {
           onClose={() => setShowPresetModal(false)}
         />
       )}
+
+      {/* Collection detail sheet */}
+      <AnimatePresence>
+        {selectedCollection && (
+          <CollectionDetailSheet
+            collection={selectedCollection}
+            collectedSourceRefs={collectedSourceRefs}
+            onAddAll={handleAddAllCollection}
+            onAddRule={(rule) => forge.addRuleToBundle(rule)}
+            onClose={() => setSelectedCollection(null)}
+            agentExists={!!hasAgent}
+            isAdding={!!forge.addingRuleId}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Management panels */}
+      <AnimatePresence>
+        {showMyRules && (
+          <ManagementPanel title="My Rules" onClose={() => setShowMyRules(false)}>
+            <MyRulesTab forge={forge} tokens={tokens} isMobile={true} />
+          </ManagementPanel>
+        )}
+      </AnimatePresence>
+      <AnimatePresence>
+        {showMyBundles && (
+          <ManagementPanel title="My Bundles" onClose={() => setShowMyBundles(false)}>
+            <MyBundlesTab forge={forge} tokens={tokens} isMobile={true} agent={agent} />
+          </ManagementPanel>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

@@ -23,9 +23,15 @@ import {
 } from '../services/forgeService';
 import { computeForgeStats } from '../services/forgeStatsService';
 
-// Category group mappings for Strategy/Controls toggle
-export const STRATEGY_CATEGORIES = ['technical', 'fundamental', 'threshold', 'tier_strategy'];
-export const CONTROLS_CATEGORIES = ['risk', 'allocation', 'mid_battle', 'game_state'];
+// Category group mappings (kept for reference but no longer used in UI toggle)
+const STRATEGY_CATEGORIES = ['technical', 'fundamental', 'threshold', 'tier_strategy'];
+const CONTROLS_CATEGORIES = ['risk', 'allocation', 'mid_battle', 'game_state'];
+
+// Display order for all 8 categories — familiar first, game-specific last
+export const CATEGORY_ORDER = [
+  'technical', 'fundamental', 'risk', 'allocation',
+  'mid_battle', 'game_state', 'threshold', 'tier_strategy',
+];
 
 // Helper to read persisted forge UI state from localStorage
 function loadPersistedState(agentId) {
@@ -35,22 +41,18 @@ function loadPersistedState(agentId) {
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     return {
-      categoryGroup: parsed.categoryGroup || 'strategy',
       expandedAccordions: new Set(parsed.expandedAccordions || []),
-      browseMode: parsed.browseMode || 'collections',
     };
   } catch {
     return null;
   }
 }
 
-function savePersistedState(agentId, categoryGroup, expandedAccordions, browseMode) {
+function savePersistedState(agentId, expandedAccordions) {
   if (!agentId) return;
   try {
     localStorage.setItem(`forge_state_${agentId}`, JSON.stringify({
-      categoryGroup,
       expandedAccordions: [...expandedAccordions],
-      browseMode: browseMode || 'collections',
     }));
   } catch { /* ignore quota errors */ }
 }
@@ -65,10 +67,8 @@ export function useForge(agentId) {
   const [toast, setToast] = useState(null);
   const [addingRuleId, setAddingRuleId] = useState(null);
 
-  // Mech Bay state — category group toggle + accordion expansion + browse mode
-  const [categoryGroup, setCategoryGroupRaw] = useState('strategy');
+  // Mech Bay state — accordion expansion
   const [expandedAccordions, setExpandedAccordions] = useState(new Set());
-  const [browseMode, setBrowseModeRaw] = useState('collections');
   const persistedInit = useRef(false);
 
   // Stats state
@@ -87,29 +87,13 @@ export function useForge(agentId) {
     if (!agentId || persistedInit.current) return;
     const saved = loadPersistedState(agentId);
     if (saved) {
-      setCategoryGroupRaw(saved.categoryGroup);
       setExpandedAccordions(saved.expandedAccordions);
-      setBrowseModeRaw(saved.browseMode || 'collections');
     } else {
-      // Default: first category in strategy group expanded
-      setExpandedAccordions(new Set([STRATEGY_CATEGORIES[0]]));
+      // Default: first category expanded
+      setExpandedAccordions(new Set([CATEGORY_ORDER[0]]));
     }
     persistedInit.current = true;
   }, [agentId]);
-
-  // Persist UI state to localStorage
-  const setCategoryGroup = useCallback((group) => {
-    setCategoryGroupRaw(group);
-    const firstCat = group === 'strategy' ? STRATEGY_CATEGORIES[0] : CONTROLS_CATEGORIES[0];
-    const newExpanded = new Set([firstCat]);
-    setExpandedAccordions(newExpanded);
-    if (agentId) savePersistedState(agentId, group, newExpanded, browseMode);
-  }, [agentId, browseMode]);
-
-  const setBrowseMode = useCallback((mode) => {
-    setBrowseModeRaw(mode);
-    if (agentId) savePersistedState(agentId, categoryGroup, expandedAccordions, mode);
-  }, [agentId, categoryGroup, expandedAccordions]);
 
   const toggleAccordion = useCallback((categoryId) => {
     setExpandedAccordions(prev => {
@@ -119,10 +103,10 @@ export function useForge(agentId) {
       } else {
         next.add(categoryId);
       }
-      if (agentId) savePersistedState(agentId, categoryGroup, next, browseMode);
+      if (agentId) savePersistedState(agentId, next);
       return next;
     });
-  }, [agentId, categoryGroup]);
+  }, [agentId]);
 
   // Show toast with auto-dismiss
   const showToast = useCallback((message) => {
@@ -226,11 +210,15 @@ export function useForge(agentId) {
     return FORGE_RULE_TEMPLATES.filter(t => t.category === selectedCategory);
   }, [selectedCategory]);
 
-  // Group templates by active category group (Strategy or Controls)
-  const groupedTemplates = useMemo(() => {
-    const cats = categoryGroup === 'strategy' ? STRATEGY_CATEGORIES : CONTROLS_CATEGORIES;
-    return FORGE_RULE_TEMPLATES.filter(t => cats.includes(t.category));
-  }, [categoryGroup]);
+  // All 92 templates grouped by category for flat accordion display
+  const templatesByCategory = useMemo(() => {
+    const map = {};
+    CATEGORY_ORDER.forEach(catId => { map[catId] = []; });
+    FORGE_RULE_TEMPLATES.forEach(t => {
+      if (map[t.category]) map[t.category].push(t);
+    });
+    return map;
+  }, []);
 
   // Pre-compute collection data with resolved rules and category colors
   const collectionData = useMemo(() => {
@@ -548,18 +536,14 @@ export function useForge(agentId) {
     showToast,
 
     // Mech Bay state
-    categoryGroup,
-    setCategoryGroup,
     expandedAccordions,
     toggleAccordion,
-    browseMode,
-    setBrowseMode,
 
     // Data
     rules,
     bundles,
     filteredTemplates,
-    groupedTemplates,
+    templatesByCategory,
     collectionData,
     categories: FORGE_CATEGORIES,
 
