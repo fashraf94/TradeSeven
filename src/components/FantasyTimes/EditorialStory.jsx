@@ -255,8 +255,8 @@ function HeroStory({ story, isDesktop, onClick, showVisual, isExpanded, onCollap
             position: 'relative',
           }}>
             <div style={{
-              filter: isHovered ? BROADSHEET_TOKENS.activeFilter : BROADSHEET_TOKENS.dormantFilter,
-              mixBlendMode: isHovered ? 'normal' : BROADSHEET_TOKENS.dormantBlend,
+              filter: (!isDesktop || isHovered) ? BROADSHEET_TOKENS.activeFilter : BROADSHEET_TOKENS.dormantFilter,
+              mixBlendMode: (!isDesktop || isHovered) ? 'normal' : BROADSHEET_TOKENS.dormantBlend,
               transition: 'all 0.7s ease',
               width: '100%',
               height: '100%',
