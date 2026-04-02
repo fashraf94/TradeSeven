@@ -52,6 +52,7 @@ export default function ForgeScreen({ isMobile: isMobileProp, onClose, user }) {
   const [selectedCollection, setSelectedCollection] = useState(null);
   const [showMyRules, setShowMyRules] = useState(false);
   const [showMyBundles, setShowMyBundles] = useState(false);
+  const [mechReactPulse, setMechReactPulse] = useState(null);
 
   // Scroll-driven mech → visor strip transition (mobile only)
   const { scrollY } = useScroll({ container: isDesktop ? undefined : scrollRef });
@@ -135,12 +136,15 @@ export default function ForgeScreen({ isMobile: isMobileProp, onClose, user }) {
     const template = FORGE_RULE_TEMPLATES.find(t => t.id === templateId);
     if (template) {
       await forge.addRuleToBundle(template);
+      const cat = forge.categories.find(c => c.id === (template.forgeTemplates?.[0]?.category || template.category));
+      setMechReactPulse({ type: 'ruleAdd', color: cat?.color || '#5EEAD4', timestamp: Date.now() });
     }
   }, [bundleRuleIds, forge]);
 
   const handleRemoveRule = useCallback(async (ruleId) => {
     if (activeBundleId) {
       await forge.removeRuleFromBundle(activeBundleId, ruleId);
+      setMechReactPulse({ type: 'ruleRemove', color: '#5EEAD4', timestamp: Date.now() });
     }
   }, [activeBundleId, forge]);
 
@@ -218,7 +222,7 @@ export default function ForgeScreen({ isMobile: isMobileProp, onClose, user }) {
           </div>
 
           {/* Mech */}
-          <MechSVG state={hasAgent ? 'idle' : 'dormant'} size="hero" />
+          <MechSVG state={hasAgent ? 'idle' : 'dormant'} size="hero" reactPulse={mechReactPulse} />
 
           {/* No-agent overlay */}
           {!hasAgent && (
@@ -240,7 +244,11 @@ export default function ForgeScreen({ isMobile: isMobileProp, onClose, user }) {
                 bundles={forge.bundles}
                 capacity={capacity}
                 isEquipped={activeBundle?.status === 'equipped'}
-                onForgeBundle={() => activeBundleId && forge.forgeBundleFn(activeBundleId)}
+                onForgeBundle={async () => {
+                  if (!activeBundleId) return;
+                  await forge.forgeBundleFn(activeBundleId);
+                  setMechReactPulse({ type: 'equip', color: '#5EEAD4', timestamp: Date.now() });
+                }}
                 onSwitchBundle={() => {}}
                 onRenameBundle={forge.renameDraftBundle}
               />
@@ -405,7 +413,11 @@ export default function ForgeScreen({ isMobile: isMobileProp, onClose, user }) {
               collection={selectedCollection}
               collectedSourceRefs={collectedSourceRefs}
               onAddAll={handleAddAllCollection}
-              onAddRule={(rule) => forge.addRuleToBundle(rule)}
+              onAddRule={async (rule) => {
+                await forge.addRuleToBundle(rule);
+                const cat = forge.categories.find(c => c.id === rule.category);
+                setMechReactPulse({ type: 'ruleAdd', color: cat?.color || '#5EEAD4', timestamp: Date.now() });
+              }}
               onClose={() => setSelectedCollection(null)}
               agentExists={!!hasAgent}
               isAdding={!!forge.addingRuleId}
@@ -492,7 +504,7 @@ export default function ForgeScreen({ isMobile: isMobileProp, onClose, user }) {
           padding: '8px 16px 16px',
           position: 'relative',
         }}>
-          <MechSVG state={hasAgent ? 'idle' : 'dormant'} size="hero" />
+          <MechSVG state={hasAgent ? 'idle' : 'dormant'} size="hero" reactPulse={mechReactPulse} />
 
           {/* No-agent overlay */}
           {!hasAgent && (
@@ -528,7 +540,11 @@ export default function ForgeScreen({ isMobile: isMobileProp, onClose, user }) {
           bundles={forge.bundles}
           capacity={capacity}
           isEquipped={activeBundle?.status === 'equipped'}
-          onForgeBundle={() => activeBundleId && forge.forgeBundleFn(activeBundleId)}
+          onForgeBundle={async () => {
+                  if (!activeBundleId) return;
+                  await forge.forgeBundleFn(activeBundleId);
+                  setMechReactPulse({ type: 'equip', color: '#5EEAD4', timestamp: Date.now() });
+                }}
           onSwitchBundle={() => {}}
           onRenameBundle={forge.renameDraftBundle}
         />
@@ -710,7 +726,11 @@ export default function ForgeScreen({ isMobile: isMobileProp, onClose, user }) {
             collection={selectedCollection}
             collectedSourceRefs={collectedSourceRefs}
             onAddAll={handleAddAllCollection}
-            onAddRule={(rule) => forge.addRuleToBundle(rule)}
+            onAddRule={async (rule) => {
+                await forge.addRuleToBundle(rule);
+                const cat = forge.categories.find(c => c.id === rule.category);
+                setMechReactPulse({ type: 'ruleAdd', color: cat?.color || '#5EEAD4', timestamp: Date.now() });
+              }}
             onClose={() => setSelectedCollection(null)}
             agentExists={!!hasAgent}
             isAdding={!!forge.addingRuleId}
