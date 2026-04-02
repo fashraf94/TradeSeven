@@ -10,6 +10,7 @@ const ComparisonBar = React.lazy(() => import('./visuals/ComparisonBar'));
 const StatCard = React.lazy(() => import('./visuals/StatCard'));
 const EpsGauge = React.lazy(() => import('./visuals/EpsGauge'));
 const SectorHeatmap = React.lazy(() => import('./visuals/SectorHeatmap'));
+const PriceChart = React.lazy(() => import('./visuals/PriceChart'));
 
 export const VISUAL_HEIGHTS = { micro: 80, compact: 120, hero: 160, expanded: 280 };
 
@@ -45,6 +46,8 @@ function StoryVisual({ visualType, visualConfig, size }) {
       return <EpsGauge config={config} size={size} />;
     case 'sector_heatmap':
       return <SectorHeatmap config={config} size={size} />;
+    case 'price_chart':
+      return <PriceChart config={config} size={size} />;
     default:
       return null;
   }
