@@ -136,7 +136,7 @@ export default function MechSVG({ state = 'idle', size = 'hero', reducedMotion =
   if (isVisor) {
     return (
       <svg
-        viewBox="30 55 140 40"
+        viewBox="70 52 60 32"
         width="120"
         height="50"
         fill="none"
@@ -159,26 +159,14 @@ export default function MechSVG({ state = 'idle', size = 'hero', reducedMotion =
           filter={config.glow ? 'url(#visorGlowSmall)' : undefined}
           style={{ willChange: config.glow ? 'filter' : 'auto' }}
         >
-          {/* Visor shape */}
-          <path
-            d="M60 70 L80 62 L120 62 L140 70 L120 78 L80 78 Z"
-            stroke={visorColor}
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            fill="none"
-          />
-          {/* Visor inner detail */}
-          <path
-            d="M72 70 L85 65 L115 65 L128 70 L115 75 L85 75 Z"
-            stroke={visorColor}
-            strokeWidth="1.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            fill={`${visorColor}15`}
-          />
-          {/* Visor center dot */}
-          <circle cx="100" cy="70" r="3" fill={visorColor} opacity="0.8" />
+          {/* Eye sockets */}
+          <ellipse cx="88" cy="64" rx="9" ry="7" fill="none" stroke="#E6EDF3" strokeWidth="1.5" opacity="0.4" />
+          <ellipse cx="112" cy="64" rx="9" ry="7" fill="none" stroke="#E6EDF3" strokeWidth="1.5" opacity="0.4" />
+          {/* Eye pupils */}
+          <circle cx="88" cy="64" r="3" fill={visorColor} opacity="0.9" />
+          <circle cx="112" cy="64" r="3" fill={visorColor} opacity="0.9" />
+          {/* Mouth */}
+          <line x1="95" y1="76" x2="105" y2="76" stroke={visorColor} strokeWidth="1.5" strokeLinecap="round" opacity="0.5" />
         </g>
       </svg>
     );
@@ -319,51 +307,104 @@ export default function MechSVG({ state = 'idle', size = 'hero', reducedMotion =
             <path d="M112 248 L124 248 L134 248 L136 258 L110 258 Z" stroke={strokeColor} strokeWidth="2" />
           </g>
 
-          {/* ── Visor with expression system ── */}
+          {/* ── Face with expression system ── */}
           <g
             id="mech-visor"
             opacity={config.opacity}
             filter={config.glow ? 'url(#visorGlow)' : undefined}
             style={{ willChange: config.glow ? 'filter' : 'auto' }}
           >
-            {/* Visor outer frame — always visible */}
-            <path
-              d="M74 68 L84 60 L116 60 L126 68 L116 76 L84 76 Z"
-              stroke={activeVisorColor}
-              strokeWidth="2"
-              fill="none"
-              style={visorTransitionStyle}
-            />
-            {/* Visor inner frame — always visible */}
-            <path
-              d="M80 68 L88 63 L112 63 L120 68 L112 73 L88 73 Z"
-              stroke={activeVisorColor}
-              strokeWidth="1.5"
-              fill={`${activeVisorColor}15`}
-              style={visorTransitionStyle}
-            />
+            <g id="mech-face">
 
-            {/* Expression: idle — center dot */}
-            <g opacity={exprOpacity('idle')} style={transitionStyle}>
-              <circle cx="100" cy="68" r="2.5" fill={activeVisorColor} opacity="0.9" style={visorTransitionStyle} />
-            </g>
+              {/* ===== LEFT EYE ===== */}
+              <g id="eye-left">
+                {/* Eye socket — always visible face frame */}
+                <ellipse cx="88" cy="64" rx="9" ry="7"
+                  fill="none" stroke={strokeColor} strokeWidth="1.5" opacity="0.4"
+                />
+                {/* Idle: round pupil */}
+                <g opacity={exprOpacity('idle')} style={transitionStyle}>
+                  <circle cx="88" cy="64" r="4"
+                    fill={activeVisorColor} opacity="0.9"
+                    style={visorTransitionStyle}
+                  />
+                </g>
+                {/* Blink: squished to thin line */}
+                <g opacity={exprOpacity('blink')} style={noMotion ? {} : { transition: 'opacity 0.08s ease' }}>
+                  <ellipse cx="88" cy="64" rx="5" ry="0.8"
+                    fill={activeVisorColor} opacity="0.9"
+                  />
+                </g>
+                {/* Happy: upward arc ^ */}
+                <g opacity={exprOpacity('happy')} style={transitionStyle}>
+                  <path d="M83 66 Q88 59 93 66"
+                    stroke={activeVisorColor} strokeWidth="2.5" strokeLinecap="round"
+                    fill="none" style={visorTransitionStyle}
+                  />
+                </g>
+                {/* Thinking: shifted-up smaller pupil */}
+                <g opacity={exprOpacity('thinking')} style={transitionStyle}>
+                  <circle cx="88" cy="62" r="3"
+                    fill={activeVisorColor} opacity="0.7"
+                    style={visorTransitionStyle}
+                  />
+                </g>
+              </g>
 
-            {/* Expression: blink — thin squished line overlaying idle */}
-            <g opacity={exprOpacity('blink')} style={noMotion ? {} : { transition: 'opacity 0.08s ease' }}>
-              <ellipse cx="100" cy="68" rx="6" ry="0.8" fill={activeVisorColor} opacity="0.9" style={visorTransitionStyle} />
-            </g>
+              {/* ===== RIGHT EYE ===== */}
+              <g id="eye-right">
+                {/* Eye socket — always visible face frame */}
+                <ellipse cx="112" cy="64" rx="9" ry="7"
+                  fill="none" stroke={strokeColor} strokeWidth="1.5" opacity="0.4"
+                />
+                {/* Idle: round pupil */}
+                <g opacity={exprOpacity('idle')} style={transitionStyle}>
+                  <circle cx="112" cy="64" r="4"
+                    fill={activeVisorColor} opacity="0.9"
+                    style={visorTransitionStyle}
+                  />
+                </g>
+                {/* Blink: squished to thin line */}
+                <g opacity={exprOpacity('blink')} style={noMotion ? {} : { transition: 'opacity 0.08s ease' }}>
+                  <ellipse cx="112" cy="64" rx="5" ry="0.8"
+                    fill={activeVisorColor} opacity="0.9"
+                  />
+                </g>
+                {/* Happy: upward arc ^ */}
+                <g opacity={exprOpacity('happy')} style={transitionStyle}>
+                  <path d="M107 66 Q112 59 117 66"
+                    stroke={activeVisorColor} strokeWidth="2.5" strokeLinecap="round"
+                    fill="none" style={visorTransitionStyle}
+                  />
+                </g>
+                {/* Thinking: shifted-up smaller pupil */}
+                <g opacity={exprOpacity('thinking')} style={transitionStyle}>
+                  <circle cx="112" cy="62" r="3"
+                    fill={activeVisorColor} opacity="0.7"
+                    style={visorTransitionStyle}
+                  />
+                </g>
+              </g>
 
-            {/* Expression: happy — ^ ^ arcs */}
-            <g opacity={exprOpacity('happy')} style={transitionStyle}>
-              <path d="M88 70 L92 65 L96 70" stroke={activeVisorColor} strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round" style={visorTransitionStyle} />
-              <path d="M104 70 L108 65 L112 70" stroke={activeVisorColor} strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round" style={visorTransitionStyle} />
-            </g>
+              {/* ===== MOUTH ===== */}
+              <g id="mech-mouth">
+                {/* Neutral: small horizontal line */}
+                <g opacity={expression === 'idle' || expression === 'blink' || expression === 'thinking' ? (state === 'dormant' ? 0 : 1) : 0}
+                   style={transitionStyle}>
+                  <line x1="95" y1="76" x2="105" y2="76"
+                    stroke={activeVisorColor} strokeWidth="1.5" strokeLinecap="round"
+                    opacity="0.5" style={visorTransitionStyle}
+                  />
+                </g>
+                {/* Happy: upward smile curve */}
+                <g opacity={exprOpacity('happy')} style={transitionStyle}>
+                  <path d="M93 74 Q100 80 107 74"
+                    stroke={activeVisorColor} strokeWidth="2" strokeLinecap="round"
+                    fill="none" opacity="0.7" style={visorTransitionStyle}
+                  />
+                </g>
+              </g>
 
-            {/* Expression: thinking — three dots */}
-            <g opacity={exprOpacity('thinking')} style={transitionStyle}>
-              <circle cx="92" cy="68" r="2" fill={activeVisorColor} opacity="0.8" style={visorTransitionStyle} />
-              <circle cx="100" cy="68" r="2" fill={activeVisorColor} opacity="0.8" style={visorTransitionStyle} />
-              <circle cx="108" cy="68" r="2" fill={activeVisorColor} opacity="0.8" style={visorTransitionStyle} />
             </g>
           </g>
         </motion.g>
