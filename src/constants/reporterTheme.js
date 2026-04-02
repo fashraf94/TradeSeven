@@ -136,7 +136,7 @@ export const REPORTER_LAYOUTS = {
   },
   kim: {
     columns: 1,
-    maxWidth: 640,
+    maxWidth: 860,
     style: 'essay',
     description: 'Single centered column, wide margins, drop cap, muted text',
   },

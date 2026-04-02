@@ -10,7 +10,7 @@ import ReporterAvatar from './ReporterAvatar';
 import StoryVisualSafe from './StoryVisualSafe';
 import { timeAgo } from '../../utils/timeAgo';
 
-const SPRING = { type: 'spring', stiffness: 300, damping: 25 };
+const EASE = { duration: 0.3, ease: [0.4, 0, 0.2, 1] };
 
 function getReadTime(body) {
   if (!body) return 1;
@@ -89,7 +89,7 @@ function ExpandedContent({ story, onCollapse, onResearch }) {
       initial={{ opacity: 0, height: 0 }}
       animate={{ opacity: 1, height: 'auto' }}
       exit={{ opacity: 0, height: 0 }}
-      transition={SPRING}
+      transition={EASE}
       style={{ overflow: 'hidden' }}
     >
       {/* Awakened Art Director Visual */}
@@ -246,10 +246,10 @@ function HeroStory({ story, isDesktop, onClick, showVisual, isExpanded, onCollap
 
       {/* Dormant visual — only show when collapsed */}
       {hasVisual && !isExpanded && (
-        <div style={{ position: 'relative', marginBottom: 24 }}>
+        <div style={{ position: 'relative', marginBottom: 16 }}>
           <div style={{
             width: '100%',
-            aspectRatio: '21 / 9',
+            maxHeight: 280,
             overflow: 'hidden',
             border: '1px solid rgba(60, 73, 77, 0.3)',
             position: 'relative',
@@ -534,7 +534,7 @@ export default function EditorialStory({
   }, [isExpanded]);
 
   return (
-    <motion.div ref={storyRef} layout transition={SPRING}>
+    <motion.div ref={storyRef} layout transition={{ layout: { duration: 0.3, ease: [0.4, 0, 0.2, 1] } }}>
       {variant === 'hero' && (
         <HeroStory story={story} isDesktop={isDesktop} onClick={handleClick} showVisual={showVisual}
           isExpanded={isExpanded} onCollapse={onCollapse} onResearch={onResearch} />
