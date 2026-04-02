@@ -10,6 +10,10 @@ const CATEGORY_META = {
   fundamental:  { label: 'Fundamental',  color: '#a78bfa' },
   risk:         { label: 'Risk',         color: '#f97066' },
   allocation:   { label: 'Allocation',   color: '#f59e0b' },
+  mid_battle:   { label: 'Mid-Battle',   color: '#38bdf8' },
+  game_state:   { label: 'Game State',   color: '#fb923c' },
+  threshold:    { label: 'Threshold',    color: '#e879f9' },
+  tier_strategy:{ label: 'Tier Strategy', color: '#fbbf24' },
 };
 
 const FILTER_PILLS = [
@@ -19,7 +23,7 @@ const FILTER_PILLS = [
   { id: 'unassigned', label: 'Unassigned' },
 ];
 
-const CATEGORIES = ['technical', 'fundamental', 'risk', 'allocation'];
+const CATEGORIES = ['technical', 'fundamental', 'risk', 'allocation', 'mid_battle', 'game_state', 'threshold', 'tier_strategy'];
 
 function getSourceLabel(rule) {
   switch (rule.source) {

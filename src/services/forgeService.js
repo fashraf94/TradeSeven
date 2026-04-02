@@ -14,7 +14,7 @@ import { FORGE_LIMITS } from '../constants/agentProgression';
 // VALIDATION
 // ============================================
 
-const VALID_CATEGORIES = ['technical', 'fundamental', 'risk', 'allocation'];
+const VALID_CATEGORIES = ['technical', 'fundamental', 'risk', 'allocation', 'mid_battle', 'game_state', 'threshold', 'tier_strategy'];
 const VALID_SOURCES = [
   'forge_discover',       // Rules created from Discover templates
   'forge_custom',         // User-created custom rules

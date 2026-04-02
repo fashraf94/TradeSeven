@@ -15,10 +15,10 @@ function buildPositionalMap(activeRules) {
   if (!activeRules || activeRules.length === 0) return {};
 
   const constraints = activeRules.filter(r =>
-    r.category === 'risk' || r.category === 'allocation'
+    r.category === 'risk' || r.category === 'allocation' || r.category === 'mid_battle' || r.category === 'game_state'
   );
   const strategies = activeRules.filter(r =>
-    r.category === 'technical' || r.category === 'fundamental' || !r.category
+    r.category === 'technical' || r.category === 'fundamental' || r.category === 'threshold' || r.category === 'tier_strategy' || !r.category
   );
 
   const map = {};

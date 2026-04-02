@@ -10,6 +10,10 @@ const CATEGORY_META = {
   fundamental:  { label: 'Fundamental',  color: '#a78bfa' },
   risk:         { label: 'Risk',         color: '#f97066' },
   allocation:   { label: 'Allocation',   color: '#f59e0b' },
+  mid_battle:   { label: 'Mid-Battle',   color: '#38bdf8' },
+  game_state:   { label: 'Game State',   color: '#fb923c' },
+  threshold:    { label: 'Threshold',    color: '#e879f9' },
+  tier_strategy:{ label: 'Tier Strategy', color: '#fbbf24' },
 };
 
 const CATEGORY_FILTERS = [
@@ -18,6 +22,10 @@ const CATEGORY_FILTERS = [
   { id: 'fundamental', label: 'Fundamental' },
   { id: 'risk', label: 'Risk' },
   { id: 'allocation', label: 'Allocation' },
+  { id: 'mid_battle', label: 'Mid-Battle' },
+  { id: 'game_state', label: 'Game State' },
+  { id: 'threshold', label: 'Threshold' },
+  { id: 'tier_strategy', label: 'Tier Strategy' },
 ];
 
 export default function RulePickerModal({ isOpen, onClose, rules, bundleRuleIds, onAdd, tokens }) {
