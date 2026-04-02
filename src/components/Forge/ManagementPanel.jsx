@@ -22,32 +22,32 @@ export default function ManagementPanel({ title, onClose, children }) {
   }, []);
 
   if (isDesktop) {
-    // Desktop: centered modal
+    // Desktop: centered modal — backdrop is the flex centering container
+    // so framer-motion scale animation doesn't fight with translate centering
     return (
-      <>
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          onClick={onClose}
-          style={{
-            position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)',
-            backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)',
-            zIndex: 60,
-          }}
-        />
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        onClick={onClose}
+        style={{
+          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)',
+          backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)',
+          zIndex: 60,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}
+      >
         <motion.div
           initial={{ scale: 0.95, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}
           exit={{ scale: 0.95, opacity: 0 }}
           transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+          onClick={e => e.stopPropagation()}
           style={{
-            position: 'fixed', top: '50%', left: '50%',
-            transform: 'translate(-50%, -50%)',
             width: '80%', maxWidth: 800, maxHeight: '85vh',
             background: '#0D0E12', borderRadius: 16,
             border: '1px solid rgba(255,255,255,0.08)',
-            zIndex: 61, display: 'flex', flexDirection: 'column',
+            display: 'flex', flexDirection: 'column',
             overflow: 'hidden',
           }}
         >
@@ -75,7 +75,7 @@ export default function ManagementPanel({ title, onClose, children }) {
             {children}
           </div>
         </motion.div>
-      </>
+      </motion.div>
     );
   }
 

@@ -150,13 +150,19 @@ export default function CollectionDetailSheet({
                   <div style={{ fontSize: 14, fontWeight: 600, color: '#ffffff', lineHeight: 1.3 }}>
                     {rule.headline}
                   </div>
+                  {rule.hook && (
+                    <div style={{
+                      fontSize: 13, lineHeight: 1.5, marginTop: 3,
+                      color: '#A0AEC0', fontStyle: 'italic',
+                    }}>
+                      {rule.hook}
+                    </div>
+                  )}
                   <div style={{
-                    fontSize: 12, lineHeight: 1.4, marginTop: 3,
-                    color: rule.hook ? '#A0AEC0' : '#8b949e',
-                    fontStyle: rule.hook ? 'italic' : 'normal',
-                    whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                    fontSize: 13, lineHeight: 1.5, marginTop: rule.hook ? 2 : 3,
+                    color: '#8b949e',
                   }}>
-                    {rule.hook || rule.description}
+                    {rule.description}
                   </div>
                   <div style={{
                     fontSize: 10, color: '#4a5568', textTransform: 'uppercase',
