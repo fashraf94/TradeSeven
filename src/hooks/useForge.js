@@ -2,10 +2,11 @@
 // Manages Forge state: tabs, category filter, expanded card, rules, bundles,
 // and all CRUD actions (add, refine, delete, forge, equip, unequip, reforge).
 
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { collection, query, where, getDocs, orderBy, doc, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import { FORGE_RULE_TEMPLATES, FORGE_CATEGORIES } from '../data/forgeKnowledgeBase';
+import { FORGE_COLLECTIONS } from '../data/forgeCollections';
 import {
   createRule,
   createBundle,
@@ -22,8 +23,42 @@ import {
 } from '../services/forgeService';
 import { computeForgeStats } from '../services/forgeStatsService';
 
+// Category group mappings (kept for reference but no longer used in UI toggle)
+const STRATEGY_CATEGORIES = ['technical', 'fundamental', 'threshold', 'tier_strategy'];
+const CONTROLS_CATEGORIES = ['risk', 'allocation', 'mid_battle', 'game_state'];
+
+// Display order for all 8 categories — familiar first, game-specific last
+export const CATEGORY_ORDER = [
+  'technical', 'fundamental', 'risk', 'allocation',
+  'mid_battle', 'game_state', 'threshold', 'tier_strategy',
+];
+
+// Helper to read persisted forge UI state from localStorage
+function loadPersistedState(agentId) {
+  if (!agentId) return null;
+  try {
+    const raw = localStorage.getItem(`forge_state_${agentId}`);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return {
+      expandedAccordions: new Set(parsed.expandedAccordions || []),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function savePersistedState(agentId, expandedAccordions) {
+  if (!agentId) return;
+  try {
+    localStorage.setItem(`forge_state_${agentId}`, JSON.stringify({
+      expandedAccordions: [...expandedAccordions],
+    }));
+  } catch { /* ignore quota errors */ }
+}
+
 export function useForge(agentId) {
-  const [activeTab, setActiveTab] = useState('discover');
+  const [activeTab, setActiveTab] = useState('forge');
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [expandedCardId, setExpandedCardId] = useState(null);
   const [rules, setRules] = useState([]);
@@ -31,6 +66,10 @@ export function useForge(agentId) {
   const [loading, setLoading] = useState(false);
   const [toast, setToast] = useState(null);
   const [addingRuleId, setAddingRuleId] = useState(null);
+
+  // Mech Bay state — accordion expansion
+  const [expandedAccordions, setExpandedAccordions] = useState(new Set());
+  const persistedInit = useRef(false);
 
   // Stats state
   const [stats, setStats] = useState(null);
@@ -42,6 +81,32 @@ export function useForge(agentId) {
   const [showRulePicker, setShowRulePicker] = useState(null); // bundleId or null
   const [forgingBundleId, setForgingBundleId] = useState(null);
   const [equippingBundleId, setEquippingBundleId] = useState(null);
+
+  // Restore persisted UI state on mount
+  useEffect(() => {
+    if (!agentId || persistedInit.current) return;
+    const saved = loadPersistedState(agentId);
+    if (saved) {
+      setExpandedAccordions(saved.expandedAccordions);
+    } else {
+      // Default: first category expanded
+      setExpandedAccordions(new Set([CATEGORY_ORDER[0]]));
+    }
+    persistedInit.current = true;
+  }, [agentId]);
+
+  const toggleAccordion = useCallback((categoryId) => {
+    setExpandedAccordions(prev => {
+      const next = new Set(prev);
+      if (next.has(categoryId)) {
+        next.delete(categoryId);
+      } else {
+        next.add(categoryId);
+      }
+      if (agentId) savePersistedState(agentId, next);
+      return next;
+    });
+  }, [agentId]);
 
   // Show toast with auto-dismiss
   const showToast = useCallback((message) => {
@@ -132,9 +197,9 @@ export function useForge(agentId) {
     }
   }, [agentId, showToast]);
 
-  // Lazy-load stats when Stats tab is first visited
+  // Lazy-load stats when Proving Grounds tab is first visited
   useEffect(() => {
-    if (activeTab === 'stats' && stats === null && !statsLoading) {
+    if (activeTab === 'provingGrounds' && stats === null && !statsLoading) {
       loadStats();
     }
   }, [activeTab, stats, statsLoading, loadStats]);
@@ -144,6 +209,64 @@ export function useForge(agentId) {
     if (selectedCategory === 'all') return FORGE_RULE_TEMPLATES;
     return FORGE_RULE_TEMPLATES.filter(t => t.category === selectedCategory);
   }, [selectedCategory]);
+
+  // All 92 templates grouped by category for flat accordion display
+  const templatesByCategory = useMemo(() => {
+    const map = {};
+    CATEGORY_ORDER.forEach(catId => { map[catId] = []; });
+    FORGE_RULE_TEMPLATES.forEach(t => {
+      if (map[t.category]) map[t.category].push(t);
+    });
+    return map;
+  }, []);
+
+  // Pre-compute collection data with resolved rules and category colors
+  const collectionData = useMemo(() => {
+    return FORGE_COLLECTIONS.map(collection => {
+      const resolvedRules = collection.ruleIds
+        .map(id => FORGE_RULE_TEMPLATES.find(t => t.id === id))
+        .filter(Boolean);
+      const catColorSet = new Set();
+      resolvedRules.forEach(r => {
+        const cat = FORGE_CATEGORIES.find(c => c.id === r.category);
+        if (cat) catColorSet.add(cat.color);
+      });
+      return {
+        ...collection,
+        rules: resolvedRules,
+        categoryColors: [...catColorSet],
+      };
+    });
+  }, []);
+
+  // Compute overlay weights from equipped bundle rules for RadarChart
+  const overlayWeights = useMemo(() => {
+    const defaultWeights = FORGE_CATEGORIES.reduce((acc, cat) => ({ ...acc, [cat.id]: 0 }), {});
+    const equipped = bundles.filter(b => b.status === 'equipped');
+    const allRuleIds = equipped.flatMap(b => b.ruleIds || []);
+    if (allRuleIds.length === 0) return defaultWeights;
+
+    // Resolve rules, filtering out soft-deleted/unresolvable IDs
+    const resolvedRules = allRuleIds
+      .map(id => rules.find(r => r.id === id))
+      .filter(Boolean);
+    const total = resolvedRules.length;
+    if (total === 0) return defaultWeights;
+
+    // Count rules per category from resolved rules only
+    const catCounts = {};
+    FORGE_CATEGORIES.forEach(cat => { catCounts[cat.id] = 0; });
+    for (const rule of resolvedRules) {
+      if (catCounts[rule.category] !== undefined) {
+        catCounts[rule.category]++;
+      }
+    }
+    const weights = {};
+    FORGE_CATEGORIES.forEach(cat => {
+      weights[cat.id] = catCounts[cat.id] / total;
+    });
+    return weights;
+  }, [bundles, rules]);
 
   // ── Computed values ──────────────────────────
   const unassignedRules = useMemo(
@@ -381,12 +504,18 @@ export function useForge(agentId) {
     }
   }, [agentId, showToast, loadData]);
 
-  // Rename a draft bundle (direct Firestore update)
+  // Rename a draft bundle (sanitized Firestore update)
   const renameDraftBundle = useCallback(async (bundleId, newName) => {
     if (!agentId || !newName?.trim()) return;
+    // Sanitize: allow only alphanumeric, spaces, hyphens, underscores; cap at 50 chars
+    const sanitized = newName.trim().replace(/[^a-zA-Z0-9 \-_]/g, '').slice(0, 50);
+    if (!sanitized) {
+      showToast('Bundle name must contain valid characters (letters, numbers, spaces, hyphens)');
+      return;
+    }
     try {
       const bundleRef = doc(db, 'agents', agentId, 'bundles', bundleId);
-      await updateDoc(bundleRef, { name: newName.trim() });
+      await updateDoc(bundleRef, { name: sanitized });
       await loadData();
     } catch (err) {
       console.error('[useForge] renameDraftBundle failed:', err);
@@ -406,10 +535,16 @@ export function useForge(agentId) {
     toast,
     showToast,
 
+    // Mech Bay state
+    expandedAccordions,
+    toggleAccordion,
+
     // Data
     rules,
     bundles,
     filteredTemplates,
+    templatesByCategory,
+    collectionData,
     categories: FORGE_CATEGORIES,
 
     // Computed
@@ -417,6 +552,7 @@ export function useForge(agentId) {
     draftBundles,
     forgedBundles,
     equippedBundles,
+    overlayWeights,
 
     // UI state for My Rules / My Bundles
     editingRuleId,

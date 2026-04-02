@@ -1,3 +1,6 @@
+// DEPRECATED: Replaced by CategoryAccordion system in ForgeScreen (Phase 1 Mech Bay).
+// Kept for rollback purposes — do not add new features here.
+//
 // src/components/Forge/DiscoverTab.jsx
 // Three-layer Discover experience: Spotlight → Collection Carousels → Browse All.
 // The legacy flat list is preserved as FullLibraryView, toggled via "Browse All" button.

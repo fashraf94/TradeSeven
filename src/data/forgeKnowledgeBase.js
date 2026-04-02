@@ -7,8 +7,8 @@ export const FORGE_CATEGORIES = [
   { id: 'fundamental', label: 'Fundamental', color: '#a78bfa', description: 'Financial metrics and company valuation' },
   { id: 'risk', label: 'Risk', color: '#f97066', description: 'Protective constraints and risk management' },
   { id: 'allocation', label: 'Allocation', color: '#f59e0b', description: 'Portfolio construction and position sizing' },
-  { id: 'mid_battle', label: 'Mid-Battle Trading', color: '#38bdf8', description: 'Swap timing, hurdle rates, and mid-game trade management' },
-  { id: 'game_state', label: 'Game State', color: '#fb923c', description: 'Phase-aware strategy shifts and score-based decisions' },
+  { id: 'mid_battle', label: 'Mid-Battle Trading', color: '#6366F1', description: 'Swap timing, hurdle rates, and mid-game trade management' },
+  { id: 'game_state', label: 'Game State', color: '#94A3B8', description: 'Phase-aware strategy shifts and score-based decisions' },
   { id: 'threshold', label: 'Threshold Strategy', color: '#f472b6', description: 'Scoring threshold proximity and bonus optimization' },
   { id: 'tier_strategy', label: 'Tier Strategy', color: '#34d399', description: 'Dynamic tier allocation and multiplier management' },
 ];
