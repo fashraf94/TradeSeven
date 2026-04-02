@@ -2235,3 +2235,17 @@ export const FORGE_RULE_TEMPLATES = [
     agentUseDescription: 'Your agent will tilt portfolio allocation toward sectors historically sensitive to upcoming high-impact economic events within the specified time window.',
   },
 ];
+
+export const FORGE_CONFLICT_PAIRS = [
+  { ruleA: 'th-04', ruleB: 'th-05', message: 'House Money Pursuit and Bird-in-the-Hand Lock are opposite strategies. Choose one.' },
+  { ruleA: 'gs-05', ruleB: 'gs-06', message: 'Leading Defensive and Trailing Aggressive trigger at opposite score levels. Set your Par Score Target correctly.' },
+  { ruleA: 'gs-07', ruleB: 'th-10', message: 'Satisficer\'s Lock disables trading, but Scoring Posture may want swaps. Choose your endgame.' },
+  { ruleA: 'th-10', ruleB: 'th-04', message: 'Harvest posture swaps after BaggerBomb, but House Money holds. Mutually exclusive.' },
+  { ruleA: 'mb-01', ruleB: 'mb-09', message: 'Signal Maturation Hold vs Catastrophic Loss Eject. Eject should always override.' },
+  { ruleA: 'mb-10', ruleB: 'mb-09', message: 'Midday Lull blocks swaps, but Catastrophic Eject is an emergency. Eject should win.' },
+  { ruleA: 'mb-08', ruleB: 'mb-15', message: 'Disposition Override protects winners, but VWAP Invalidation forces exits. VWAP overrides reversing winners.' },
+  { ruleA: 'th-01', ruleB: 'th-08', message: 'Proximity Persistence holds near thresholds, Sunk-Cost Timeout gives up. Timeout should eventually override.' },
+  { ruleA: 'ts-01', ruleB: 'ts-04', message: 'Volatility Cap may restrict a stock that Performance Rotation wants to promote. Cap takes precedence.' },
+  { ruleA: 'gs-10', ruleB: 'mb-11', message: 'Reversal Fade avoids afternoon runners, Power Hour increases sensitivity. Choose your final-hour philosophy.' },
+  { ruleA: 'ts-07', ruleB: 'th-04', message: 'Penalty Shielding demotes near penalties, House Money widens stops. If reversing toward Bust, shielding wins.' },
+];

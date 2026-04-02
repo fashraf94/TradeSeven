@@ -2,13 +2,17 @@
 // Compact rule card (260×88px) used in collection carousels and full library.
 
 import React from 'react';
-import { Plus, Check, Activity, TrendingUp, Shield, PieChart } from 'lucide-react';
+import { Plus, Check, Activity, TrendingUp, Shield, PieChart, Swords, Clock, Target, Layers } from 'lucide-react';
 
 const CATEGORY_COLORS = {
   technical: '#5eead4',
   fundamental: '#f59e0b',
   risk: '#ef4444',
   allocation: '#8b5cf6',
+  mid_battle: '#38bdf8',
+  game_state: '#fb923c',
+  threshold: '#e879f9',
+  tier_strategy: '#fbbf24',
 };
 
 const CATEGORY_ICONS = {
@@ -16,6 +20,10 @@ const CATEGORY_ICONS = {
   fundamental: TrendingUp,
   risk: Shield,
   allocation: PieChart,
+  mid_battle: Swords,
+  game_state: Clock,
+  threshold: Target,
+  tier_strategy: Layers,
 };
 
 export default function ForgeRuleCard({ rule, isCollected, onAdd, onLearnMore, isAdding, style }) {
