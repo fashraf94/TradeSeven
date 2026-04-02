@@ -361,6 +361,7 @@ function MobileSectionHeader({ label, color }) {
 // ── Sidebar: Today's Tickers ──
 
 function SidebarTodaysTickers({ stories, onStorySelect }) {
+  const [showAll, setShowAll] = useState(false);
   const tickers = useMemo(() => {
     const map = new Map();
     (stories || []).forEach(story => {
@@ -387,6 +388,9 @@ function SidebarTodaysTickers({ stories, onStorySelect }) {
     return [...map.values()].sort((a, b) => b.count - a.count);
   }, [stories]);
 
+  const displayTickers = showAll ? tickers : tickers.slice(0, 7);
+  const hasMore = tickers.length > 7;
+
   if (tickers.length === 0) return null;
 
   return (
@@ -402,7 +406,7 @@ function SidebarTodaysTickers({ stories, onStorySelect }) {
         TODAY'S TICKERS
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
-        {tickers.map(({ ticker, count, latestStory, sentiment, change }) => {
+        {displayTickers.map(({ ticker, count, latestStory, sentiment, change }) => {
           const isPositive = sentiment === 'bullish' || (change != null && change > 0);
           const isNegative = sentiment === 'bearish' || (change != null && change < 0);
           const color = isPositive ? '#10b981' : isNegative ? '#ef4444' : '#8b949e';
@@ -466,6 +470,27 @@ function SidebarTodaysTickers({ stories, onStorySelect }) {
             </div>
           );
         })}
+        {hasMore && (
+          <button
+            onClick={() => setShowAll(prev => !prev)}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: '#00d9ff',
+              fontFamily: BROADSHEET_TOKENS.fontMono,
+              fontSize: 10,
+              letterSpacing: '0.05em',
+              cursor: 'pointer',
+              padding: '10px 0 2px',
+              textAlign: 'left',
+              opacity: 0.8,
+            }}
+            onMouseEnter={e => { e.currentTarget.style.opacity = '1'; }}
+            onMouseLeave={e => { e.currentTarget.style.opacity = '0.8'; }}
+          >
+            {showAll ? 'Show less' : `Show all ${tickers.length} tickers`}
+          </button>
+        )}
       </div>
     </div>
   );

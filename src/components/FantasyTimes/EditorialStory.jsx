@@ -296,6 +296,26 @@ function HeroStory({ story, isDesktop, onClick, showVisual, isExpanded, onCollap
         </p>
       )}
 
+      {/* Body preview — only when collapsed */}
+      {!isExpanded && story.body && (
+        <p style={{
+          fontFamily: BROADSHEET_TOKENS.fontBody,
+          fontSize: isDesktop ? 15 : 14,
+          lineHeight: 1.6,
+          color: '#8b949e',
+          maxWidth: 720,
+          margin: 0,
+          marginTop: story.subheadline ? 8 : 0,
+          display: '-webkit-box',
+          WebkitLineClamp: 3,
+          WebkitBoxOrient: 'vertical',
+          overflow: 'hidden',
+        }}>
+          {story.body.replace(/\*\*(.*?)\*\*/g, '$1').slice(0, 300)}
+          {story.body.length > 300 ? '...' : ''}
+        </p>
+      )}
+
       {/* Expanded content */}
       <AnimatePresence>
         {isExpanded && (
