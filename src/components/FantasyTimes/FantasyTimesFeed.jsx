@@ -37,10 +37,20 @@ export default function FantasyTimesFeed({
   activeBattleTickers = [],
   onNavigate,
   onStorySelect,
+  returnToSection,
+  onReturnSectionConsumed,
 }) {
-  const [activeSection, setActiveSection] = useState('frontPage');
+  const [activeSection, setActiveSection] = useState(returnToSection || 'frontPage');
   const [expandedStoryId, setExpandedStoryId] = useState(null);
   const [researchSymbol, setResearchSymbol] = useState(null);
+
+  // Consume returnToSection on mount so it doesn't persist across navigations
+  useEffect(() => {
+    if (returnToSection) {
+      setActiveSection(returnToSection);
+      onReturnSectionConsumed?.();
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Reset expanded story when switching sections
   useEffect(() => {
@@ -181,7 +191,7 @@ export default function FantasyTimesFeed({
                   isDesktop={isDesktop}
                   expandedStoryId={expandedStoryId}
                   onResearch={handleResearch}
-                  onStorySelect={onStorySelect}
+                  onStorySelect={(story) => onStorySelect?.(story, activeSection)}
                 />
               ) : (
                 <ReporterDesk
@@ -190,7 +200,7 @@ export default function FantasyTimesFeed({
                   isDesktop={isDesktop}
                   expandedStoryId={expandedStoryId}
                   onStoryExpand={handleStoryExpand}
-                  onStorySelect={onStorySelect}
+                  onStorySelect={(story) => onStorySelect?.(story, activeSection)}
                   onResearch={handleResearch}
                 />
               )}

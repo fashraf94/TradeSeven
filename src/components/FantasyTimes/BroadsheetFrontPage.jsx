@@ -358,9 +358,147 @@ function MobileSectionHeader({ label, color }) {
   );
 }
 
+// ── Sidebar: Today's Tickers ──
+
+function SidebarTodaysTickers({ stories, onStorySelect }) {
+  const [showAll, setShowAll] = useState(false);
+  const tickers = useMemo(() => {
+    const map = new Map();
+    (stories || []).forEach(story => {
+      const all = [
+        ...(story.tickers || []),
+        ...(story.primaryTicker ? [story.primaryTicker] : []),
+      ];
+      [...new Set(all)].forEach(ticker => {
+        if (!ticker) return;
+        const existing = map.get(ticker);
+        if (!existing) {
+          map.set(ticker, {
+            ticker,
+            count: 1,
+            latestStory: story,
+            sentiment: story.sentiment,
+            change: story.dataSnapshot?.percentChange,
+          });
+        } else {
+          existing.count += 1;
+        }
+      });
+    });
+    return [...map.values()].sort((a, b) => b.count - a.count);
+  }, [stories]);
+
+  const displayTickers = showAll ? tickers : tickers.slice(0, 7);
+  const hasMore = tickers.length > 7;
+
+  if (tickers.length === 0) return null;
+
+  return (
+    <div style={{ marginTop: 20 }} onClick={e => e.stopPropagation()} onKeyDown={e => e.stopPropagation()}>
+      <div style={{
+        fontFamily: BROADSHEET_TOKENS.fontMono,
+        fontSize: 10,
+        letterSpacing: '0.2em',
+        color: '#00d9ff',
+        textTransform: 'uppercase',
+        marginBottom: 12,
+      }}>
+        TODAY'S TICKERS
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+        {displayTickers.map(({ ticker, count, latestStory, sentiment, change }) => {
+          const isPositive = sentiment === 'bullish' || (change != null && change > 0);
+          const isNegative = sentiment === 'bearish' || (change != null && change < 0);
+          const color = isPositive ? '#10b981' : isNegative ? '#ef4444' : '#8b949e';
+
+          return (
+            <div
+              key={ticker}
+              onClick={() => onStorySelect?.(latestStory)}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '8px 0',
+                borderBottom: '1px solid rgba(255,255,255,0.04)',
+                cursor: 'pointer',
+                transition: 'background 0.15s ease',
+              }}
+              onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.03)'; }}
+              onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
+              tabIndex={0}
+              role="button"
+              onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onStorySelect?.(latestStory); } }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{
+                  width: 6, height: 6, borderRadius: '50%',
+                  background: color, flexShrink: 0,
+                }} />
+                <span style={{
+                  fontFamily: BROADSHEET_TOKENS.fontMono,
+                  fontSize: 12, fontWeight: 600,
+                  color: '#e3e2e7',
+                  letterSpacing: '0.05em',
+                }}>
+                  {ticker}
+                </span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                {count > 1 && (
+                  <span style={{
+                    fontFamily: BROADSHEET_TOKENS.fontMono,
+                    fontSize: 9,
+                    color: '#6e7681',
+                    background: 'rgba(255,255,255,0.05)',
+                    padding: '2px 6px',
+                    borderRadius: 2,
+                  }}>
+                    {count}x
+                  </span>
+                )}
+                {change != null && (
+                  <span style={{
+                    fontFamily: BROADSHEET_TOKENS.fontMono,
+                    fontSize: 10, fontWeight: 600,
+                    color: color,
+                  }}>
+                    {change >= 0 ? '+' : ''}{change.toFixed(1)}%
+                  </span>
+                )}
+              </div>
+            </div>
+          );
+        })}
+        {hasMore && (
+          <button
+            onClick={() => setShowAll(prev => !prev)}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: '#00d9ff',
+              fontFamily: BROADSHEET_TOKENS.fontMono,
+              fontSize: 10,
+              letterSpacing: '0.05em',
+              cursor: 'pointer',
+              padding: '10px 0 2px',
+              textAlign: 'left',
+              opacity: 0.8,
+            }}
+            onMouseEnter={e => { e.currentTarget.style.opacity = '1'; }}
+            onMouseLeave={e => { e.currentTarget.style.opacity = '0.8'; }}
+          >
+            {showAll ? 'Show less' : `Show all ${tickers.length} tickers`}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── Desktop Front Page ──
 
-function DesktopFrontPage({ hero, sidebar, belowFold, movers, onStoryExpand, expandedStoryId, onResearch, onStorySelect, edition, sectorData }) {
+function DesktopFrontPage({ hero, sidebar, belowFold, movers, onStoryExpand, expandedStoryId, onResearch, onStorySelect, edition, sectorData, stories }) {
   const aboveFoldColumns = sidebar ? '3fr 1fr' : '1fr';
 
   return (
@@ -443,6 +581,8 @@ function DesktopFrontPage({ hero, sidebar, belowFold, movers, onStoryExpand, exp
             </div>
 
             {sectorData && <SidebarSectorBars sectorData={sectorData} />}
+
+            <SidebarTodaysTickers stories={stories} onStorySelect={onStorySelect} />
           </div>
         )}
       </div>
@@ -698,6 +838,7 @@ export default function BroadsheetFrontPage({ stories, onStoryExpand, isDesktop,
       onStorySelect={onStorySelect}
       edition={edition}
       sectorData={sectorData}
+      stories={stories}
     />
   );
 }

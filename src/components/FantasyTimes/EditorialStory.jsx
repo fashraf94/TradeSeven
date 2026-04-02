@@ -10,7 +10,7 @@ import ReporterAvatar from './ReporterAvatar';
 import StoryVisualSafe from './StoryVisualSafe';
 import { timeAgo } from '../../utils/timeAgo';
 
-const SPRING = { type: 'spring', stiffness: 300, damping: 25 };
+const EASE = { duration: 0.3, ease: [0.4, 0, 0.2, 1] };
 
 function getReadTime(body) {
   if (!body) return 1;
@@ -89,7 +89,7 @@ function ExpandedContent({ story, onCollapse, onResearch }) {
       initial={{ opacity: 0, height: 0 }}
       animate={{ opacity: 1, height: 'auto' }}
       exit={{ opacity: 0, height: 0 }}
-      transition={SPRING}
+      transition={EASE}
       style={{ overflow: 'hidden' }}
     >
       {/* Awakened Art Director Visual */}
@@ -246,17 +246,17 @@ function HeroStory({ story, isDesktop, onClick, showVisual, isExpanded, onCollap
 
       {/* Dormant visual — only show when collapsed */}
       {hasVisual && !isExpanded && (
-        <div style={{ position: 'relative', marginBottom: 24 }}>
+        <div style={{ position: 'relative', marginBottom: 16 }}>
           <div style={{
             width: '100%',
-            aspectRatio: '21 / 9',
+            maxHeight: 280,
             overflow: 'hidden',
             border: '1px solid rgba(60, 73, 77, 0.3)',
             position: 'relative',
           }}>
             <div style={{
-              filter: isHovered ? BROADSHEET_TOKENS.activeFilter : BROADSHEET_TOKENS.dormantFilter,
-              mixBlendMode: isHovered ? 'normal' : BROADSHEET_TOKENS.dormantBlend,
+              filter: (!isDesktop || isHovered) ? BROADSHEET_TOKENS.activeFilter : BROADSHEET_TOKENS.dormantFilter,
+              mixBlendMode: (!isDesktop || isHovered) ? 'normal' : BROADSHEET_TOKENS.dormantBlend,
               transition: 'all 0.7s ease',
               width: '100%',
               height: '100%',
@@ -293,6 +293,26 @@ function HeroStory({ story, isDesktop, onClick, showVisual, isExpanded, onCollap
           overflow: 'hidden',
         }}>
           {story.subheadline.replace(/\*\*/g, '')}
+        </p>
+      )}
+
+      {/* Body preview — only when collapsed */}
+      {!isExpanded && story.body && (
+        <p style={{
+          fontFamily: BROADSHEET_TOKENS.fontBody,
+          fontSize: isDesktop ? 15 : 14,
+          lineHeight: 1.6,
+          color: '#8b949e',
+          maxWidth: 720,
+          margin: 0,
+          marginTop: story.subheadline ? 8 : 0,
+          display: '-webkit-box',
+          WebkitLineClamp: 3,
+          WebkitBoxOrient: 'vertical',
+          overflow: 'hidden',
+        }}>
+          {story.body.replace(/\*\*(.*?)\*\*/g, '$1').slice(0, 300)}
+          {story.body.length > 300 ? '...' : ''}
         </p>
       )}
 
@@ -534,7 +554,7 @@ export default function EditorialStory({
   }, [isExpanded]);
 
   return (
-    <motion.div ref={storyRef} layout transition={SPRING}>
+    <motion.div ref={storyRef} layout transition={{ layout: { duration: 0.3, ease: [0.4, 0, 0.2, 1] } }}>
       {variant === 'hero' && (
         <HeroStory story={story} isDesktop={isDesktop} onClick={handleClick} showVisual={showVisual}
           isExpanded={isExpanded} onCollapse={onCollapse} onResearch={onResearch} />

@@ -2183,6 +2183,7 @@ export default function PortfolioDuel() {
 
   // FantasyTimes story detail
   const [selectedStory, setSelectedStory] = useState(null);
+  const [storyReturnSection, setStoryReturnSection] = useState(null);
 
   // Battle management
   const [battles, setBattles] = useState([]);
@@ -9074,7 +9075,9 @@ export default function PortfolioDuel() {
           userWatchlist={userWatchlist}
           activeBattleTickers={activeBattleTickers}
           onNavigate={setScreen}
-          onStorySelect={(story) => { setSelectedStory(story); setScreen('storyDetail'); }}
+          onStorySelect={(story, section) => { setSelectedStory(story); setStoryReturnSection(section || null); setScreen('storyDetail'); }}
+          returnToSection={storyReturnSection}
+          onReturnSectionConsumed={() => setStoryReturnSection(null)}
         />
       </Suspense>
       </ErrorBoundary>
