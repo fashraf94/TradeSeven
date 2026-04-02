@@ -1,6 +1,5 @@
 // src/components/Forge/MechSVG.jsx
-// Holographic wireframe mech rendered as inline SVG — visual centerpiece of the Mech Bay.
-// V2 chibi companion design with goggle eyes, barrel torso, heart power core.
+// Holographic wireframe mech — Gemini V3 approved design.
 // Phase 1 "The Soul": expressions, blink timer, reactive bounce, color flash.
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
@@ -133,11 +132,23 @@ export default function MechSVG({ state = 'idle', size = 'hero', reducedMotion =
     ? {}
     : { transition: 'stroke 0.8s ease, fill 0.8s ease' };
 
+  // ── Style helpers (Gemini CSS classes → dynamic inline) ──
+  const wire = { stroke: strokeColor, fill: '#0D0E12', strokeWidth: 2.5 };
+  const accent = {
+    stroke: activeVisorColor, strokeWidth: 2.5, strokeLinecap: 'round',
+    strokeLinejoin: 'round', fill: 'none',
+    ...visorTransitionStyle,
+  };
+  const accentFill = {
+    fill: activeVisorColor, stroke: 'none',
+    ...visorTransitionStyle,
+  };
+
   // ── Visor crop mode (simplified static face for 70px strip) ──
   if (isVisor) {
     return (
       <svg
-        viewBox="62 48 76 40"
+        viewBox="60 32 80 50"
         width="120"
         height="50"
         fill="none"
@@ -147,7 +158,7 @@ export default function MechSVG({ state = 'idle', size = 'hero', reducedMotion =
         {config.glow && (
           <defs>
             <filter id="eyeGlowSmall" x="-50%" y="-50%" width="200%" height="200%">
-              <feGaussianBlur stdDeviation="3" result="blur" />
+              <feGaussianBlur stdDeviation="2.5" result="blur" />
               <feMerge>
                 <feMergeNode in="blur" />
                 <feMergeNode in="SourceGraphic" />
@@ -155,19 +166,24 @@ export default function MechSVG({ state = 'idle', size = 'hero', reducedMotion =
             </filter>
           </defs>
         )}
-        <g
-          opacity={config.opacity}
-          filter={config.glow ? 'url(#eyeGlowSmall)' : undefined}
-          style={{ willChange: config.glow ? 'filter' : 'auto' }}
-        >
-          {/* Goggle rims */}
-          <circle cx="82" cy="64" r="15" stroke="#E6EDF3" strokeWidth="3" fill="none" />
-          <circle cx="118" cy="64" r="15" stroke="#E6EDF3" strokeWidth="3" fill="none" />
-          {/* Iris pupils */}
-          <circle cx="82" cy="64" r="5" fill={visorColor} opacity="0.85" />
-          <circle cx="118" cy="64" r="5" fill={visorColor} opacity="0.85" />
+        <g opacity={config.opacity}>
+          {/* Head background */}
+          <rect x="65" y="35" width="70" height="48" rx="14" fill="#0D0E12" stroke="#E6EDF3" strokeWidth="2.5" />
+          {/* Goggle frames */}
+          <rect x="70" y="44" width="27" height="22" rx="11" fill="#0D0E12" stroke="#E6EDF3" strokeWidth="2.5" />
+          <rect x="103" y="44" width="27" height="22" rx="11" fill="#0D0E12" stroke="#E6EDF3" strokeWidth="2.5" />
+          {/* Goggle bridge */}
+          <line x1="97" y1="55" x2="103" y2="55" stroke="#E6EDF3" strokeWidth="3" />
+          {/* Eyes */}
+          <circle cx="83.5" cy="55" r="4" fill={visorColor} opacity="0.85"
+            filter={config.glow ? 'url(#eyeGlowSmall)' : undefined} />
+          <circle cx="116.5" cy="55" r="4" fill={visorColor} opacity="0.85"
+            filter={config.glow ? 'url(#eyeGlowSmall)' : undefined} />
+          {/* Highlights */}
+          <circle cx="85" cy="53.5" r="1" fill="#FFFFFF" opacity="0.7" />
+          <circle cx="118" cy="53.5" r="1" fill="#FFFFFF" opacity="0.7" />
           {/* Mouth */}
-          <path d="M93 82 Q100 85 107 82" stroke={visorColor} strokeWidth="1.5" strokeLinecap="round" fill="none" opacity="0.5" />
+          <path d="M87 72 Q100 77 113 72" stroke={visorColor} strokeWidth="2" strokeLinecap="round" fill="none" opacity="0.6" />
         </g>
       </svg>
     );
@@ -184,10 +200,21 @@ export default function MechSVG({ state = 'idle', size = 'hero', reducedMotion =
         fill="none"
         xmlns="http://www.w3.org/2000/svg"
         style={{ display: 'block' }}
+        strokeLinecap="round"
+        strokeLinejoin="round"
       >
         <defs>
           {config.glow && (
-            <filter id="eyeGlow" x="-50%" y="-50%" width="200%" height="200%">
+            <filter id="teal-glow" x="-50%" y="-50%" width="200%" height="200%">
+              <feGaussianBlur stdDeviation="2.5" result="blur" />
+              <feMerge>
+                <feMergeNode in="blur" />
+                <feMergeNode in="SourceGraphic" />
+              </feMerge>
+            </filter>
+          )}
+          {config.glow && (
+            <filter id="core-glow" x="-50%" y="-50%" width="200%" height="200%">
               <feGaussianBlur stdDeviation="3" result="blur" />
               <feMerge>
                 <feMergeNode in="blur" />
@@ -195,274 +222,213 @@ export default function MechSVG({ state = 'idle', size = 'hero', reducedMotion =
               </feMerge>
             </filter>
           )}
-          {config.glow && (
-            <filter id="coreGlow" x="-50%" y="-50%" width="200%" height="200%">
-              <feGaussianBlur stdDeviation="2" result="blur" />
-              <feMerge>
-                <feMergeNode in="blur" />
-                <feMergeNode in="SourceGraphic" />
-              </feMerge>
-            </filter>
-          )}
-          {config.glow && (
-            <filter id="antennaTipGlow" x="-50%" y="-50%" width="200%" height="200%">
-              <feGaussianBlur stdDeviation="4" result="blur" />
-              <feMerge>
-                <feMergeNode in="blur" />
-                <feMergeNode in="SourceGraphic" />
-              </feMerge>
-            </filter>
-          )}
-          <radialGradient id="platformGlow" cx="50%" cy="50%" r="50%">
-            <stop offset="0%" stopColor={visorColor} stopOpacity="0.12" />
-            <stop offset="100%" stopColor={visorColor} stopOpacity="0" />
-          </radialGradient>
         </defs>
 
         <motion.g animate={mechControls}>
           {/* ===== PLATFORM ===== */}
           <g id="platform" opacity={config.opacity}>
-            <ellipse cx="100" cy="260" rx="60" ry="10" fill="url(#platformGlow)" />
-            <ellipse cx="100" cy="260" rx="50" ry="7"
-              stroke="#5EEAD4" strokeWidth="1" strokeDasharray="6 4"
+            <ellipse cx="100" cy="260" rx="65" ry="8"
+              stroke="#5EEAD4" strokeWidth="1.5" strokeDasharray="6 6"
               fill="none" opacity="0.5"
             />
           </g>
 
           {/* ===== ROBOT BODY ===== */}
-          <g id="robot-body" opacity={config.opacity} strokeLinecap="round" strokeLinejoin="round">
+          <g id="robot-body" opacity={config.opacity}>
 
-            {/* ── LEGS (renders first — behind torso) ── */}
-            <g id="legs">
-              <g id="leg-left">
-                <line x1="84" y1="178" x2="80" y2="210" stroke={strokeColor} strokeWidth="2.5" />
-                <circle cx="80" cy="210" r="4" stroke={strokeColor} strokeWidth="1.5" fill="rgba(94,234,212,0.15)" />
-                <line x1="80" y1="214" x2="78" y2="240" stroke={strokeColor} strokeWidth="2.5" />
-                <rect x="72" y="218" width="12" height="16" rx="3" stroke={strokeColor} strokeWidth="1.2" fill="#0D0E12" opacity="0.5" />
-                <path d="M66 240 L88 240 Q92 240 92 248 L92 252 Q92 258 86 258 L66 258 Q60 258 60 252 L60 244 Q60 240 66 240 Z"
-                  stroke={strokeColor} strokeWidth="1.8" fill="#0D0E12" />
-              </g>
-              <g id="leg-right">
-                <line x1="116" y1="178" x2="120" y2="210" stroke={strokeColor} strokeWidth="2.5" />
-                <circle cx="120" cy="210" r="4" stroke={strokeColor} strokeWidth="1.5" fill="rgba(94,234,212,0.15)" />
-                <line x1="120" y1="214" x2="122" y2="240" stroke={strokeColor} strokeWidth="2.5" />
-                <rect x="116" y="218" width="12" height="16" rx="3" stroke={strokeColor} strokeWidth="1.2" fill="#0D0E12" opacity="0.5" />
-                <path d="M112 240 L134 240 Q140 240 140 248 L140 252 Q140 258 134 258 L114 258 Q108 258 108 252 L108 244 Q108 240 112 240 Z"
-                  stroke={strokeColor} strokeWidth="1.8" fill="#0D0E12" />
-              </g>
+            {/* ── PLANT IN BOOT ── */}
+            <g id="plant-in-boot">
+              <path d="M148 260 L163 260 L163 253 L158 253 L158 245 L148 245 Z" style={{ ...wire, strokeWidth: 2 }} />
+              <path d="M153 245 Q153 238 158 235" style={{ ...accent, strokeWidth: 2, fill: 'none' }} />
+              <path d="M153 241 Q148 239 150 237 Q153 237 153 241" style={accentFill} />
+              <path d="M156 238 Q161 236 160 233 Q156 234 156 238" style={accentFill} />
             </g>
 
-            {/* ── ARMS (renders before torso — shoulder joints hidden by torso fill) ── */}
+            {/* ── ARMS (behind torso for layering) ── */}
             <g id="arms">
-              <g id="arm-left">
-                <rect x="56" y="118" width="18" height="10" rx="4" stroke={strokeColor} strokeWidth="1.5" fill="#0D0E12" opacity="0.7" />
-                <line x1="65" y1="128" x2="58" y2="158" stroke={strokeColor} strokeWidth="2" />
-                <circle cx="58" cy="158" r="3.5" stroke={strokeColor} strokeWidth="1.2" fill="rgba(94,234,212,0.15)" />
-                <line x1="58" y1="162" x2="54" y2="190" stroke={strokeColor} strokeWidth="2" />
-                <rect x="49" y="166" width="10" height="18" rx="3" stroke={strokeColor} strokeWidth="1" fill="#0D0E12" opacity="0.5" />
-                {/* Hand — chunky 3-finger robot hand (relaxed down) */}
-                <circle cx="52" cy="191" r="3.5" stroke={strokeColor} strokeWidth="1.2" fill="#0D0E12" />
-                <rect x="44" y="194" width="3.5" height="8" rx="1.5" stroke={strokeColor} strokeWidth="1" fill="#0D0E12" transform="rotate(-12, 45.75, 194)" />
-                <rect x="50" y="194" width="3.5" height="9" rx="1.5" stroke={strokeColor} strokeWidth="1" fill="#0D0E12" />
-                <rect x="56" y="194" width="3.5" height="7.5" rx="1.5" stroke={strokeColor} strokeWidth="1" fill="#0D0E12" transform="rotate(12, 57.75, 194)" />
-              </g>
-              <g id="arm-right">
-                <rect x="126" y="118" width="18" height="10" rx="4" stroke={strokeColor} strokeWidth="1.5" fill="#0D0E12" opacity="0.7" />
-                <line x1="135" y1="128" x2="142" y2="155" stroke={strokeColor} strokeWidth="2" />
-                <circle cx="142" cy="155" r="3.5" stroke={strokeColor} strokeWidth="1.2" fill="rgba(94,234,212,0.15)" />
-                <line x1="142" y1="159" x2="148" y2="184" stroke={strokeColor} strokeWidth="2" />
-                <rect x="143" y="162" width="10" height="16" rx="3" stroke={strokeColor} strokeWidth="1" fill="#0D0E12" opacity="0.5" />
-                {/* Hand — chunky 3-finger robot hand (raised wave) */}
-                <circle cx="148" cy="183" r="3.5" stroke={strokeColor} strokeWidth="1.2" fill="#0D0E12" />
-                <rect x="140" y="173" width="3.5" height="8" rx="1.5" stroke={strokeColor} strokeWidth="1" fill="#0D0E12" transform="rotate(15, 141.75, 177)" />
-                <rect x="146" y="171" width="3.5" height="9" rx="1.5" stroke={strokeColor} strokeWidth="1" fill="#0D0E12" />
-                <rect x="152" y="173" width="3.5" height="8" rx="1.5" stroke={strokeColor} strokeWidth="1" fill="#0D0E12" transform="rotate(-15, 153.75, 177)" />
-              </g>
+              {/* Left arm */}
+              <rect x="45" y="95" width="20" height="12" rx="4" style={wire} />
+              <rect x="48" y="107" width="14" height="35" rx="6" style={wire} />
+              <circle cx="55" cy="146" r="6" style={wire} />
+              <rect x="48" y="152" width="14" height="30" rx="6" style={wire} />
+              <rect x="50" y="182" width="10" height="6" rx="2" style={wire} />
+              <path d="M50 188 L45 200 L49 200 L53 188 Z" style={{ ...wire, strokeWidth: 2 }} />
+              <path d="M60 188 L65 200 L61 200 L57 188 Z" style={{ ...wire, strokeWidth: 2 }} />
+              {/* Right arm */}
+              <rect x="135" y="95" width="20" height="12" rx="4" style={wire} />
+              <rect x="138" y="107" width="14" height="35" rx="6" style={wire} />
+              <circle cx="145" cy="146" r="6" style={wire} />
+              <rect x="138" y="152" width="14" height="30" rx="6" style={wire} />
+              <rect x="140" y="182" width="10" height="6" rx="2" style={wire} />
+              <path d="M140 188 L135 200 L139 200 L143 188 Z" style={{ ...wire, strokeWidth: 2 }} />
+              <path d="M150 188 L155 200 L151 200 L147 188 Z" style={{ ...wire, strokeWidth: 2 }} />
             </g>
 
-            {/* ── NECK (renders before torso — hidden by torso fill) ── */}
-            <g id="neck">
-              <line x1="90" y1="105" x2="88" y2="118" stroke={strokeColor} strokeWidth="1.8" />
-              <line x1="110" y1="105" x2="112" y2="118" stroke={strokeColor} strokeWidth="1.8" />
-              <ellipse cx="100" cy="112" rx="14" ry="3" stroke={strokeColor} strokeWidth="1" fill="none" opacity="0.4" />
+            {/* ── LEGS (behind torso for layering) ── */}
+            <g id="legs">
+              {/* Left leg */}
+              <rect x="73" y="170" width="10" height="35" rx="4" style={wire} />
+              <circle cx="78" cy="209" r="6" style={wire} />
+              <rect x="73" y="215" width="10" height="35" rx="4" style={wire} />
+              <path d="M65 260 L91 260 L85 248 L71 248 Z" style={wire} />
+              {/* Right leg */}
+              <rect x="117" y="170" width="10" height="35" rx="4" style={wire} />
+              <circle cx="122" cy="209" r="6" style={wire} />
+              <rect x="117" y="215" width="10" height="35" rx="4" style={wire} />
+              <path d="M109 260 L135 260 L129 248 L115 248 Z" style={wire} />
             </g>
 
-            {/* ── TORSO (renders after arms/neck — fills hide what's behind) ── */}
+            {/* ── TORSO (renders after arms/legs — fills hide what's behind) ── */}
             <g id="torso">
-              <rect x="72" y="118" width="56" height="55" rx="10" stroke={strokeColor} strokeWidth="2.2" fill="#0D0E12" />
-              <line x1="100" y1="118" x2="100" y2="173" stroke={strokeColor} strokeWidth="0.8" opacity="0.3" />
-              <path d="M80 128 Q100 122 120 128" stroke={strokeColor} strokeWidth="1" fill="none" opacity="0.4" />
-              <circle cx="88" cy="155" r="1.5" stroke={strokeColor} strokeWidth="1" fill="none" opacity="0.4" />
-              <circle cx="94" cy="155" r="1.5" stroke={strokeColor} strokeWidth="1" fill="none" opacity="0.4" />
-              <line x1="112" y1="150" x2="122" y2="150" stroke={strokeColor} strokeWidth="0.8" opacity="0.3" />
-              <line x1="112" y1="154" x2="120" y2="154" stroke={strokeColor} strokeWidth="0.8" opacity="0.3" />
-              <rect x="70" y="168" width="60" height="8" rx="3" stroke={strokeColor} strokeWidth="1.5" fill="#0D0E12" opacity="0.6" />
-              <rect x="95" y="169" width="10" height="6" rx="1.5" stroke={strokeColor} strokeWidth="1" fill="#0D0E12" opacity="0.5" />
-
-              {/* POWER CORE — heart screen */}
-              <g id="power-core">
-                <rect x="91" y="133" width="18" height="15" rx="3"
-                  stroke={strokeColor} strokeWidth="1.2" fill="rgba(94,234,212,0.06)" />
-                <path d="M100 145 L96.5 141 Q94.5 138.5 96.5 137 Q98.5 135.5 100 138 Q101.5 135.5 103.5 137 Q105.5 138.5 103.5 141 Z"
-                  stroke="#5EEAD4" strokeWidth="1" fill="rgba(94,234,212,0.3)"
-                  filter={config.glow ? 'url(#coreGlow)' : undefined} />
+              {/* Neck (hidden behind torso barrel) */}
+              <rect x="90" y="80" width="20" height="15" style={wire} />
+              <line x1="93" y1="88" x2="107" y2="88" stroke={strokeColor} strokeWidth="1.5" />
+              {/* Chest barrel */}
+              <rect x="65" y="93" width="70" height="68" rx="10" style={wire} />
+              {/* Belt */}
+              <rect x="70" y="161" width="60" height="14" rx="4" style={wire} />
+              {/* Chest corner brackets (teal accent) */}
+              <g id="chest-framing" opacity="0.6">
+                <path d="M85 110 L80 110 L80 115" style={{ ...accent, strokeWidth: 2, fill: 'none' }} />
+                <path d="M115 110 L120 110 L120 115" style={{ ...accent, strokeWidth: 2, fill: 'none' }} />
+                <path d="M80 141 L80 146 L85 146" style={{ ...accent, strokeWidth: 2, fill: 'none' }} />
+                <path d="M120 141 L120 146 L115 146" style={{ ...accent, strokeWidth: 2, fill: 'none' }} />
               </g>
-            </g>
-
-            {/* ── HEAD (renders last — on top of everything) ── */}
-            <g id="head">
-
-              {/* HELMET */}
-              <g id="helmet">
-                {/* Glass dome — semi-transparent outer shell (renders behind solid helmet) */}
-                <path d="M56 98 Q56 10 100 8 Q144 10 144 98"
-                  stroke={strokeColor} strokeWidth="1" fill="none" opacity="0.15"
-                />
-                {/* Glass dome highlight */}
-                <path d="M72 38 Q100 22 128 38"
-                  stroke={strokeColor} strokeWidth="0.8" fill="none" opacity="0.1"
-                />
-                {/* Main dome shell (solid fill hides antenna stalk + neck behind head) */}
-                <path d="M62 95 L62 55 Q62 18 100 18 Q138 18 138 55 L138 95 Q138 105 128 105 L72 105 Q62 105 62 95 Z"
-                  stroke={strokeColor} strokeWidth="2.2" fill="#0D0E12" />
-                {/* Dome top highlight */}
-                <path d="M68 46 Q100 28 132 46" stroke={strokeColor} strokeWidth="1" fill="none" opacity="0.2" />
-                {/* Visor brim */}
-                <path d="M62 52 L138 52" stroke={strokeColor} strokeWidth="1.5" fill="none" opacity="0.4" />
-                {/* Chin guard arc */}
-                <path d="M72 95 Q100 108 128 95" stroke={strokeColor} strokeWidth="1.5" fill="none" opacity="0.5" />
-                {/* Ear sensor left */}
-                <rect x="56" y="62" width="7" height="12" rx="2" stroke={strokeColor} strokeWidth="1" fill="none" opacity="0.35" />
-                {/* Ear sensor right */}
-                <rect x="137" y="62" width="7" height="12" rx="2" stroke={strokeColor} strokeWidth="1" fill="none" opacity="0.35" />
-              </g>
-
-              {/* ANTENNA */}
-              <g id="antenna">
-                <line x1="100" y1="18" x2="100" y2="8" stroke={strokeColor} strokeWidth="1.5" />
-                <circle cx="100" cy="6" r="3"
-                  stroke={state === 'dormant' ? strokeColor : activeVisorColor} strokeWidth="1.2"
-                  fill={state === 'dormant' ? 'none' : `${activeVisorColor}66`}
-                  filter={config.glow ? 'url(#antennaTipGlow)' : undefined}
+              {/* ARC REACTOR — power core */}
+              <g id="power-core" transform="translate(100, 128)">
+                <circle cx="0" cy="0" r="12"
+                  fill="none" stroke={activeVisorColor} strokeWidth="1.5" opacity="0.4"
                   style={visorTransitionStyle}
                 />
-                <circle cx="100" cy="18" r="2.5" stroke={strokeColor} strokeWidth="1" fill="none" />
+                <circle cx="0" cy="0" r="8"
+                  fill="none" stroke={activeVisorColor} strokeWidth="1" opacity="0.6"
+                  style={visorTransitionStyle}
+                />
+                <circle cx="0" cy="0" r="4"
+                  fill={activeVisorColor} opacity="0.8"
+                  filter={config.glow ? 'url(#core-glow)' : undefined}
+                  style={visorTransitionStyle}
+                />
+                <circle cx="0" cy="0" r="1.5" fill="#FFFFFF" opacity="0.9" />
+                {[0, 60, 120, 180, 240, 300].map(angle => (
+                  <line key={angle}
+                    x1={Math.cos(angle * Math.PI / 180) * 5}
+                    y1={Math.sin(angle * Math.PI / 180) * 5}
+                    x2={Math.cos(angle * Math.PI / 180) * 11}
+                    y2={Math.sin(angle * Math.PI / 180) * 11}
+                    stroke={activeVisorColor} strokeWidth="0.8" opacity="0.3"
+                    strokeLinecap="round" style={visorTransitionStyle}
+                  />
+                ))}
+              </g>
+            </g>
+
+            {/* ── HEAD (renders last — on top) ── */}
+            <g id="head">
+              {/* Antenna */}
+              <g id="antenna">
+                <line x1="100" y1="22" x2="100" y2="35" stroke={strokeColor} strokeWidth="1.5" />
+                <circle cx="100" cy="20" r="4"
+                  stroke={state === 'dormant' ? strokeColor : activeVisorColor} strokeWidth="1.2"
+                  fill={state === 'dormant' ? 'none' : activeVisorColor}
+                  opacity={state === 'dormant' ? 0.3 : 1}
+                  filter={config.glow ? 'url(#teal-glow)' : undefined}
+                  style={visorTransitionStyle}
+                />
+              </g>
+              {/* Head shape */}
+              <rect x="65" y="35" width="70" height="48" rx="14" style={wire} />
+              {/* Goggle frames */}
+              <rect x="70" y="44" width="27" height="22" rx="11" style={wire} />
+              <rect x="103" y="44" width="27" height="22" rx="11" style={wire} />
+              {/* Goggle bridge */}
+              <line x1="97" y1="55" x2="103" y2="55" stroke={strokeColor} strokeWidth="3" />
+
+              {/* ===== EYES (expression-aware) ===== */}
+              <g id="eyes">
+                {/* === LEFT EYE === */}
+                {/* Idle iris */}
+                <circle cx="83.5" cy="55" r="5"
+                  fill={activeVisorColor}
+                  filter={config.glow ? 'url(#teal-glow)' : undefined}
+                  opacity={state === 'dormant' ? 0 : (expression === 'blink' ? 0.3 : (expression === 'happy' ? 0 : 1))}
+                  style={{ transition: noMotion ? 'none' : 'fill 0.8s ease, opacity 0.15s ease' }}
+                />
+                {/* Idle highlight */}
+                <circle cx="85" cy="53.5" r="1.5" fill="#FFFFFF"
+                  opacity={state === 'dormant' ? 0 : (expression === 'idle' || expression === 'thinking' ? 0.8 : 0)}
+                  style={transitionStyle}
+                />
+                {/* Blink squish */}
+                <ellipse cx="83.5" cy="55" rx="5" ry="0.8"
+                  fill={activeVisorColor}
+                  opacity={exprOpacity('blink')}
+                  style={{ transition: noMotion ? 'none' : 'opacity 0.08s ease' }}
+                />
+                {/* Happy arc ^ */}
+                <path d="M78 57 Q83.5 50 89 57"
+                  stroke={activeVisorColor} strokeWidth="2.5" strokeLinecap="round" fill="none"
+                  opacity={exprOpacity('happy')}
+                  filter={config.glow ? 'url(#teal-glow)' : undefined}
+                  style={{ transition: noMotion ? 'none' : 'opacity 0.15s ease, stroke 0.8s ease' }}
+                />
+                {/* Thinking shifted iris */}
+                <circle cx="83.5" cy="52" r="3"
+                  fill={activeVisorColor}
+                  opacity={exprOpacity('thinking')}
+                  filter={config.glow ? 'url(#teal-glow)' : undefined}
+                  style={{ transition: noMotion ? 'none' : 'opacity 0.15s ease' }}
+                />
+
+                {/* === RIGHT EYE === */}
+                {/* Idle iris */}
+                <circle cx="116.5" cy="55" r="5"
+                  fill={activeVisorColor}
+                  filter={config.glow ? 'url(#teal-glow)' : undefined}
+                  opacity={state === 'dormant' ? 0 : (expression === 'blink' ? 0.3 : (expression === 'happy' ? 0 : 1))}
+                  style={{ transition: noMotion ? 'none' : 'fill 0.8s ease, opacity 0.15s ease' }}
+                />
+                {/* Idle highlight */}
+                <circle cx="118" cy="53.5" r="1.5" fill="#FFFFFF"
+                  opacity={state === 'dormant' ? 0 : (expression === 'idle' || expression === 'thinking' ? 0.8 : 0)}
+                  style={transitionStyle}
+                />
+                {/* Blink squish */}
+                <ellipse cx="116.5" cy="55" rx="5" ry="0.8"
+                  fill={activeVisorColor}
+                  opacity={exprOpacity('blink')}
+                  style={{ transition: noMotion ? 'none' : 'opacity 0.08s ease' }}
+                />
+                {/* Happy arc ^ */}
+                <path d="M111 57 Q116.5 50 122 57"
+                  stroke={activeVisorColor} strokeWidth="2.5" strokeLinecap="round" fill="none"
+                  opacity={exprOpacity('happy')}
+                  filter={config.glow ? 'url(#teal-glow)' : undefined}
+                  style={{ transition: noMotion ? 'none' : 'opacity 0.15s ease, stroke 0.8s ease' }}
+                />
+                {/* Thinking shifted iris */}
+                <circle cx="116.5" cy="52" r="3"
+                  fill={activeVisorColor}
+                  opacity={exprOpacity('thinking')}
+                  filter={config.glow ? 'url(#teal-glow)' : undefined}
+                  style={{ transition: noMotion ? 'none' : 'opacity 0.15s ease' }}
+                />
               </g>
 
-              {/* FACE */}
-              <g id="face">
-                {/* Goggle bridge */}
-                <path d="M90 62 Q100 58 110 62" stroke={strokeColor} strokeWidth="2" fill="none" opacity="0.5" />
-
-                {/* ===== LEFT EYE ===== */}
-                <g id="eye-left">
-                  <g id="eye-left-frame">
-                    <circle cx="82" cy="64" r="15" stroke={strokeColor} strokeWidth="3" fill="#0D0E12" />
-                    <circle cx="82" cy="64" r="11" stroke={strokeColor} strokeWidth="0.8" fill="none" opacity="0.25" />
-                  </g>
-                  {/* Iris background — always visible when not dormant */}
-                  <circle cx="82" cy="64" r="8"
-                    fill={activeVisorColor} opacity={state === 'dormant' ? 0 : 0.15}
-                    style={visorTransitionStyle}
-                  />
-                  <g id="eye-left-pupil">
-                    {/* Idle: glowing iris + dark pupil */}
-                    <g opacity={exprOpacity('idle')} style={transitionStyle}>
-                      <circle cx="82" cy="64" r="6"
-                        fill={activeVisorColor} opacity="0.85"
-                        filter={config.glow ? 'url(#eyeGlow)' : undefined}
-                        style={visorTransitionStyle}
-                      />
-                      <circle cx="82" cy="64" r="2.5" fill="#0D0E12" opacity="0.6" />
-                    </g>
-                    {/* Blink: squished thin line */}
-                    <g opacity={exprOpacity('blink')} style={noMotion ? {} : { transition: 'opacity 0.08s ease' }}>
-                      <ellipse cx="82" cy="64" rx="6" ry="0.8"
-                        fill={activeVisorColor} opacity="0.9"
-                      />
-                    </g>
-                    {/* Happy: upward arc ^ */}
-                    <g opacity={exprOpacity('happy')} style={transitionStyle}>
-                      <path d="M75 66 Q82 56 89 66"
-                        stroke={activeVisorColor} strokeWidth="2.5" strokeLinecap="round"
-                        fill="none" style={visorTransitionStyle}
-                      />
-                    </g>
-                    {/* Thinking: shifted-up smaller iris */}
-                    <g opacity={exprOpacity('thinking')} style={transitionStyle}>
-                      <circle cx="82" cy="61" r="4"
-                        fill={activeVisorColor} opacity="0.7"
-                        style={visorTransitionStyle}
-                      />
-                      <circle cx="82" cy="61" r="1.5" fill="#0D0E12" opacity="0.5" />
-                    </g>
-                  </g>
-                </g>
-
-                {/* ===== RIGHT EYE ===== */}
-                <g id="eye-right">
-                  <g id="eye-right-frame">
-                    <circle cx="118" cy="64" r="15" stroke={strokeColor} strokeWidth="3" fill="#0D0E12" />
-                    <circle cx="118" cy="64" r="11" stroke={strokeColor} strokeWidth="0.8" fill="none" opacity="0.25" />
-                  </g>
-                  {/* Iris background */}
-                  <circle cx="118" cy="64" r="8"
-                    fill={activeVisorColor} opacity={state === 'dormant' ? 0 : 0.15}
-                    style={visorTransitionStyle}
-                  />
-                  <g id="eye-right-pupil">
-                    {/* Idle: glowing iris + dark pupil */}
-                    <g opacity={exprOpacity('idle')} style={transitionStyle}>
-                      <circle cx="118" cy="64" r="6"
-                        fill={activeVisorColor} opacity="0.85"
-                        filter={config.glow ? 'url(#eyeGlow)' : undefined}
-                        style={visorTransitionStyle}
-                      />
-                      <circle cx="118" cy="64" r="2.5" fill="#0D0E12" opacity="0.6" />
-                    </g>
-                    {/* Blink: squished thin line */}
-                    <g opacity={exprOpacity('blink')} style={noMotion ? {} : { transition: 'opacity 0.08s ease' }}>
-                      <ellipse cx="118" cy="64" rx="6" ry="0.8"
-                        fill={activeVisorColor} opacity="0.9"
-                      />
-                    </g>
-                    {/* Happy: upward arc ^ */}
-                    <g opacity={exprOpacity('happy')} style={transitionStyle}>
-                      <path d="M111 66 Q118 56 125 66"
-                        stroke={activeVisorColor} strokeWidth="2.5" strokeLinecap="round"
-                        fill="none" style={visorTransitionStyle}
-                      />
-                    </g>
-                    {/* Thinking: shifted-up smaller iris */}
-                    <g opacity={exprOpacity('thinking')} style={transitionStyle}>
-                      <circle cx="118" cy="61" r="4"
-                        fill={activeVisorColor} opacity="0.7"
-                        style={visorTransitionStyle}
-                      />
-                      <circle cx="118" cy="61" r="1.5" fill="#0D0E12" opacity="0.5" />
-                    </g>
-                  </g>
-                </g>
-
-                {/* ===== MOUTH ===== */}
-                <g id="mouth">
-                  {/* Neutral: subtle smile — shown during idle, blink, thinking */}
-                  <g opacity={expression === 'idle' || expression === 'blink' || expression === 'thinking' ? (state === 'dormant' ? 0 : 1) : 0}
-                     style={transitionStyle}>
-                    <path d="M93 82 Q100 85 107 82"
-                      stroke={activeVisorColor} strokeWidth="1.5" strokeLinecap="round"
-                      fill="none" opacity="0.5" style={visorTransitionStyle}
-                    />
-                  </g>
-                  {/* Happy: bigger smile */}
-                  <g opacity={exprOpacity('happy')} style={transitionStyle}>
-                    <path d="M91 80 Q100 88 109 80"
-                      stroke={activeVisorColor} strokeWidth="2" strokeLinecap="round"
-                      fill="none" opacity="0.7" style={visorTransitionStyle}
-                    />
-                  </g>
-                </g>
-
+              {/* ===== MOUTH (expression-aware) ===== */}
+              <g id="mouth">
+                {/* Neutral smile — idle, blink, thinking */}
+                <path d="M87 72 Q100 77 113 72"
+                  stroke={activeVisorColor} strokeWidth="2.5" strokeLinecap="round" fill="none"
+                  opacity={state === 'dormant' ? 0 : (expression === 'happy' ? 0 : 0.8)}
+                  style={{ transition: noMotion ? 'none' : 'opacity 0.15s ease, stroke 0.8s ease' }}
+                />
+                {/* Happy big smile */}
+                <path d="M85 71 Q100 80 115 71"
+                  stroke={activeVisorColor} strokeWidth="2.5" strokeLinecap="round" fill="none"
+                  opacity={exprOpacity('happy')}
+                  style={{ transition: noMotion ? 'none' : 'opacity 0.15s ease, stroke 0.8s ease' }}
+                />
               </g>
             </g>
 
