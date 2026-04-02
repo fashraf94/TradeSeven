@@ -6,6 +6,7 @@ import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { collection, query, where, getDocs, orderBy, doc, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import { FORGE_RULE_TEMPLATES, FORGE_CATEGORIES } from '../data/forgeKnowledgeBase';
+import { FORGE_COLLECTIONS } from '../data/forgeCollections';
 import {
   createRule,
   createBundle,
@@ -36,18 +37,20 @@ function loadPersistedState(agentId) {
     return {
       categoryGroup: parsed.categoryGroup || 'strategy',
       expandedAccordions: new Set(parsed.expandedAccordions || []),
+      browseMode: parsed.browseMode || 'collections',
     };
   } catch {
     return null;
   }
 }
 
-function savePersistedState(agentId, categoryGroup, expandedAccordions) {
+function savePersistedState(agentId, categoryGroup, expandedAccordions, browseMode) {
   if (!agentId) return;
   try {
     localStorage.setItem(`forge_state_${agentId}`, JSON.stringify({
       categoryGroup,
       expandedAccordions: [...expandedAccordions],
+      browseMode: browseMode || 'collections',
     }));
   } catch { /* ignore quota errors */ }
 }
@@ -62,9 +65,10 @@ export function useForge(agentId) {
   const [toast, setToast] = useState(null);
   const [addingRuleId, setAddingRuleId] = useState(null);
 
-  // Mech Bay state — category group toggle + accordion expansion
+  // Mech Bay state — category group toggle + accordion expansion + browse mode
   const [categoryGroup, setCategoryGroupRaw] = useState('strategy');
   const [expandedAccordions, setExpandedAccordions] = useState(new Set());
+  const [browseMode, setBrowseModeRaw] = useState('collections');
   const persistedInit = useRef(false);
 
   // Stats state
@@ -85,6 +89,7 @@ export function useForge(agentId) {
     if (saved) {
       setCategoryGroupRaw(saved.categoryGroup);
       setExpandedAccordions(saved.expandedAccordions);
+      setBrowseModeRaw(saved.browseMode || 'collections');
     } else {
       // Default: first category in strategy group expanded
       setExpandedAccordions(new Set([STRATEGY_CATEGORIES[0]]));
@@ -92,15 +97,19 @@ export function useForge(agentId) {
     persistedInit.current = true;
   }, [agentId]);
 
-  // Persist categoryGroup + expandedAccordions to localStorage
+  // Persist UI state to localStorage
   const setCategoryGroup = useCallback((group) => {
     setCategoryGroupRaw(group);
-    // When switching groups, expand the first category of the new group
     const firstCat = group === 'strategy' ? STRATEGY_CATEGORIES[0] : CONTROLS_CATEGORIES[0];
     const newExpanded = new Set([firstCat]);
     setExpandedAccordions(newExpanded);
-    if (agentId) savePersistedState(agentId, group, newExpanded);
-  }, [agentId]);
+    if (agentId) savePersistedState(agentId, group, newExpanded, browseMode);
+  }, [agentId, browseMode]);
+
+  const setBrowseMode = useCallback((mode) => {
+    setBrowseModeRaw(mode);
+    if (agentId) savePersistedState(agentId, categoryGroup, expandedAccordions, mode);
+  }, [agentId, categoryGroup, expandedAccordions]);
 
   const toggleAccordion = useCallback((categoryId) => {
     setExpandedAccordions(prev => {
@@ -110,7 +119,7 @@ export function useForge(agentId) {
       } else {
         next.add(categoryId);
       }
-      if (agentId) savePersistedState(agentId, categoryGroup, next);
+      if (agentId) savePersistedState(agentId, categoryGroup, next, browseMode);
       return next;
     });
   }, [agentId, categoryGroup]);
@@ -222,6 +231,25 @@ export function useForge(agentId) {
     const cats = categoryGroup === 'strategy' ? STRATEGY_CATEGORIES : CONTROLS_CATEGORIES;
     return FORGE_RULE_TEMPLATES.filter(t => cats.includes(t.category));
   }, [categoryGroup]);
+
+  // Pre-compute collection data with resolved rules and category colors
+  const collectionData = useMemo(() => {
+    return FORGE_COLLECTIONS.map(collection => {
+      const resolvedRules = collection.ruleIds
+        .map(id => FORGE_RULE_TEMPLATES.find(t => t.id === id))
+        .filter(Boolean);
+      const catColorSet = new Set();
+      resolvedRules.forEach(r => {
+        const cat = FORGE_CATEGORIES.find(c => c.id === r.category);
+        if (cat) catColorSet.add(cat.color);
+      });
+      return {
+        ...collection,
+        rules: resolvedRules,
+        categoryColors: [...catColorSet],
+      };
+    });
+  }, []);
 
   // Compute overlay weights from equipped bundle rules for RadarChart
   const overlayWeights = useMemo(() => {
@@ -524,12 +552,15 @@ export function useForge(agentId) {
     setCategoryGroup,
     expandedAccordions,
     toggleAccordion,
+    browseMode,
+    setBrowseMode,
 
     // Data
     rules,
     bundles,
     filteredTemplates,
     groupedTemplates,
+    collectionData,
     categories: FORGE_CATEGORIES,
 
     // Computed
