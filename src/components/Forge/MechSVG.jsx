@@ -232,37 +232,72 @@ export default function MechSVG({ state = 'idle', size = 'hero', reducedMotion =
           {/* ===== ROBOT BODY ===== */}
           <g id="robot-body" opacity={config.opacity} strokeLinecap="round" strokeLinejoin="round">
 
-            {/* ── LEGS ── */}
+            {/* ── LEGS (renders first — behind torso) ── */}
             <g id="legs">
               <g id="leg-left">
                 <line x1="84" y1="178" x2="80" y2="210" stroke={strokeColor} strokeWidth="2.5" />
                 <circle cx="80" cy="210" r="4" stroke={strokeColor} strokeWidth="1.5" fill="rgba(94,234,212,0.15)" />
                 <line x1="80" y1="214" x2="78" y2="240" stroke={strokeColor} strokeWidth="2.5" />
-                <rect x="72" y="218" width="12" height="16" rx="3" stroke={strokeColor} strokeWidth="1.2" fill="none" opacity="0.5" />
+                <rect x="72" y="218" width="12" height="16" rx="3" stroke={strokeColor} strokeWidth="1.2" fill="#0D0E12" opacity="0.5" />
                 <path d="M66 240 L88 240 Q92 240 92 248 L92 252 Q92 258 86 258 L66 258 Q60 258 60 252 L60 244 Q60 240 66 240 Z"
-                  stroke={strokeColor} strokeWidth="1.8" fill="none" />
+                  stroke={strokeColor} strokeWidth="1.8" fill="#0D0E12" />
               </g>
               <g id="leg-right">
                 <line x1="116" y1="178" x2="120" y2="210" stroke={strokeColor} strokeWidth="2.5" />
                 <circle cx="120" cy="210" r="4" stroke={strokeColor} strokeWidth="1.5" fill="rgba(94,234,212,0.15)" />
                 <line x1="120" y1="214" x2="122" y2="240" stroke={strokeColor} strokeWidth="2.5" />
-                <rect x="116" y="218" width="12" height="16" rx="3" stroke={strokeColor} strokeWidth="1.2" fill="none" opacity="0.5" />
+                <rect x="116" y="218" width="12" height="16" rx="3" stroke={strokeColor} strokeWidth="1.2" fill="#0D0E12" opacity="0.5" />
                 <path d="M112 240 L134 240 Q140 240 140 248 L140 252 Q140 258 134 258 L114 258 Q108 258 108 252 L108 244 Q108 240 112 240 Z"
-                  stroke={strokeColor} strokeWidth="1.8" fill="none" />
+                  stroke={strokeColor} strokeWidth="1.8" fill="#0D0E12" />
               </g>
             </g>
 
-            {/* ── TORSO ── */}
+            {/* ── ARMS (renders before torso — shoulder joints hidden by torso fill) ── */}
+            <g id="arms">
+              <g id="arm-left">
+                <rect x="56" y="118" width="18" height="10" rx="4" stroke={strokeColor} strokeWidth="1.5" fill="#0D0E12" opacity="0.7" />
+                <line x1="65" y1="128" x2="58" y2="158" stroke={strokeColor} strokeWidth="2" />
+                <circle cx="58" cy="158" r="3.5" stroke={strokeColor} strokeWidth="1.2" fill="rgba(94,234,212,0.15)" />
+                <line x1="58" y1="162" x2="54" y2="190" stroke={strokeColor} strokeWidth="2" />
+                <rect x="49" y="166" width="10" height="18" rx="3" stroke={strokeColor} strokeWidth="1" fill="#0D0E12" opacity="0.5" />
+                {/* Hand — chunky 3-finger robot hand (relaxed down) */}
+                <circle cx="52" cy="191" r="3.5" stroke={strokeColor} strokeWidth="1.2" fill="#0D0E12" />
+                <rect x="44" y="194" width="3.5" height="8" rx="1.5" stroke={strokeColor} strokeWidth="1" fill="#0D0E12" transform="rotate(-12, 45.75, 194)" />
+                <rect x="50" y="194" width="3.5" height="9" rx="1.5" stroke={strokeColor} strokeWidth="1" fill="#0D0E12" />
+                <rect x="56" y="194" width="3.5" height="7.5" rx="1.5" stroke={strokeColor} strokeWidth="1" fill="#0D0E12" transform="rotate(12, 57.75, 194)" />
+              </g>
+              <g id="arm-right">
+                <rect x="126" y="118" width="18" height="10" rx="4" stroke={strokeColor} strokeWidth="1.5" fill="#0D0E12" opacity="0.7" />
+                <line x1="135" y1="128" x2="142" y2="155" stroke={strokeColor} strokeWidth="2" />
+                <circle cx="142" cy="155" r="3.5" stroke={strokeColor} strokeWidth="1.2" fill="rgba(94,234,212,0.15)" />
+                <line x1="142" y1="159" x2="148" y2="184" stroke={strokeColor} strokeWidth="2" />
+                <rect x="143" y="162" width="10" height="16" rx="3" stroke={strokeColor} strokeWidth="1" fill="#0D0E12" opacity="0.5" />
+                {/* Hand — chunky 3-finger robot hand (raised wave) */}
+                <circle cx="148" cy="183" r="3.5" stroke={strokeColor} strokeWidth="1.2" fill="#0D0E12" />
+                <rect x="140" y="173" width="3.5" height="8" rx="1.5" stroke={strokeColor} strokeWidth="1" fill="#0D0E12" transform="rotate(15, 141.75, 177)" />
+                <rect x="146" y="171" width="3.5" height="9" rx="1.5" stroke={strokeColor} strokeWidth="1" fill="#0D0E12" />
+                <rect x="152" y="173" width="3.5" height="8" rx="1.5" stroke={strokeColor} strokeWidth="1" fill="#0D0E12" transform="rotate(-15, 153.75, 177)" />
+              </g>
+            </g>
+
+            {/* ── NECK (renders before torso — hidden by torso fill) ── */}
+            <g id="neck">
+              <line x1="90" y1="105" x2="88" y2="118" stroke={strokeColor} strokeWidth="1.8" />
+              <line x1="110" y1="105" x2="112" y2="118" stroke={strokeColor} strokeWidth="1.8" />
+              <ellipse cx="100" cy="112" rx="14" ry="3" stroke={strokeColor} strokeWidth="1" fill="none" opacity="0.4" />
+            </g>
+
+            {/* ── TORSO (renders after arms/neck — fills hide what's behind) ── */}
             <g id="torso">
-              <rect x="72" y="118" width="56" height="55" rx="10" stroke={strokeColor} strokeWidth="2.2" fill="none" />
+              <rect x="72" y="118" width="56" height="55" rx="10" stroke={strokeColor} strokeWidth="2.2" fill="#0D0E12" />
               <line x1="100" y1="118" x2="100" y2="173" stroke={strokeColor} strokeWidth="0.8" opacity="0.3" />
               <path d="M80 128 Q100 122 120 128" stroke={strokeColor} strokeWidth="1" fill="none" opacity="0.4" />
               <circle cx="88" cy="155" r="1.5" stroke={strokeColor} strokeWidth="1" fill="none" opacity="0.4" />
               <circle cx="94" cy="155" r="1.5" stroke={strokeColor} strokeWidth="1" fill="none" opacity="0.4" />
               <line x1="112" y1="150" x2="122" y2="150" stroke={strokeColor} strokeWidth="0.8" opacity="0.3" />
               <line x1="112" y1="154" x2="120" y2="154" stroke={strokeColor} strokeWidth="0.8" opacity="0.3" />
-              <rect x="70" y="168" width="60" height="8" rx="3" stroke={strokeColor} strokeWidth="1.5" fill="none" opacity="0.6" />
-              <rect x="95" y="169" width="10" height="6" rx="1.5" stroke={strokeColor} strokeWidth="1" fill="none" opacity="0.5" />
+              <rect x="70" y="168" width="60" height="8" rx="3" stroke={strokeColor} strokeWidth="1.5" fill="#0D0E12" opacity="0.6" />
+              <rect x="95" y="169" width="10" height="6" rx="1.5" stroke={strokeColor} strokeWidth="1" fill="#0D0E12" opacity="0.5" />
 
               {/* POWER CORE — heart screen */}
               <g id="power-core">
@@ -274,46 +309,31 @@ export default function MechSVG({ state = 'idle', size = 'hero', reducedMotion =
               </g>
             </g>
 
-            {/* ── ARMS ── */}
-            <g id="arms">
-              <g id="arm-left">
-                <rect x="56" y="118" width="18" height="10" rx="4" stroke={strokeColor} strokeWidth="1.5" fill="none" opacity="0.7" />
-                <line x1="65" y1="128" x2="58" y2="158" stroke={strokeColor} strokeWidth="2" />
-                <circle cx="58" cy="158" r="3.5" stroke={strokeColor} strokeWidth="1.2" fill="rgba(94,234,212,0.15)" />
-                <line x1="58" y1="162" x2="54" y2="190" stroke={strokeColor} strokeWidth="2" />
-                <rect x="49" y="166" width="10" height="18" rx="3" stroke={strokeColor} strokeWidth="1" fill="none" opacity="0.5" />
-                <path d="M48 190 L44 198 M52 190 L52 200 M56 190 L58 198" stroke={strokeColor} strokeWidth="1.5" />
-                <path d="M46 190 Q52 192 58 190" stroke={strokeColor} strokeWidth="1.2" fill="none" />
-              </g>
-              <g id="arm-right">
-                <rect x="126" y="118" width="18" height="10" rx="4" stroke={strokeColor} strokeWidth="1.5" fill="none" opacity="0.7" />
-                <line x1="135" y1="128" x2="142" y2="155" stroke={strokeColor} strokeWidth="2" />
-                <circle cx="142" cy="155" r="3.5" stroke={strokeColor} strokeWidth="1.2" fill="rgba(94,234,212,0.15)" />
-                <line x1="142" y1="159" x2="148" y2="184" stroke={strokeColor} strokeWidth="2" />
-                <rect x="143" y="162" width="10" height="16" rx="3" stroke={strokeColor} strokeWidth="1" fill="none" opacity="0.5" />
-                <path d="M144 184 L140 176 M148 184 L148 174 M152 184 L156 177" stroke={strokeColor} strokeWidth="1.5" />
-                <path d="M142 184 Q148 186 154 184" stroke={strokeColor} strokeWidth="1.2" fill="none" />
-              </g>
-            </g>
-
-            {/* ── NECK ── */}
-            <g id="neck">
-              <line x1="90" y1="105" x2="88" y2="118" stroke={strokeColor} strokeWidth="1.8" />
-              <line x1="110" y1="105" x2="112" y2="118" stroke={strokeColor} strokeWidth="1.8" />
-              <ellipse cx="100" cy="112" rx="14" ry="3" stroke={strokeColor} strokeWidth="1" fill="none" opacity="0.4" />
-            </g>
-
-            {/* ── HEAD ── */}
+            {/* ── HEAD (renders last — on top of everything) ── */}
             <g id="head">
 
               {/* HELMET */}
               <g id="helmet">
+                {/* Glass dome — semi-transparent outer shell (renders behind solid helmet) */}
+                <path d="M56 98 Q56 10 100 8 Q144 10 144 98"
+                  stroke={strokeColor} strokeWidth="1" fill="none" opacity="0.15"
+                />
+                {/* Glass dome highlight */}
+                <path d="M72 38 Q100 22 128 38"
+                  stroke={strokeColor} strokeWidth="0.8" fill="none" opacity="0.1"
+                />
+                {/* Main dome shell (solid fill hides antenna stalk + neck behind head) */}
                 <path d="M62 95 L62 55 Q62 18 100 18 Q138 18 138 55 L138 95 Q138 105 128 105 L72 105 Q62 105 62 95 Z"
-                  stroke={strokeColor} strokeWidth="2.2" fill="none" />
+                  stroke={strokeColor} strokeWidth="2.2" fill="#0D0E12" />
+                {/* Dome top highlight */}
                 <path d="M68 46 Q100 28 132 46" stroke={strokeColor} strokeWidth="1" fill="none" opacity="0.2" />
+                {/* Visor brim */}
                 <path d="M62 52 L138 52" stroke={strokeColor} strokeWidth="1.5" fill="none" opacity="0.4" />
+                {/* Chin guard arc */}
                 <path d="M72 95 Q100 108 128 95" stroke={strokeColor} strokeWidth="1.5" fill="none" opacity="0.5" />
+                {/* Ear sensor left */}
                 <rect x="56" y="62" width="7" height="12" rx="2" stroke={strokeColor} strokeWidth="1" fill="none" opacity="0.35" />
+                {/* Ear sensor right */}
                 <rect x="137" y="62" width="7" height="12" rx="2" stroke={strokeColor} strokeWidth="1" fill="none" opacity="0.35" />
               </g>
 
@@ -337,7 +357,7 @@ export default function MechSVG({ state = 'idle', size = 'hero', reducedMotion =
                 {/* ===== LEFT EYE ===== */}
                 <g id="eye-left">
                   <g id="eye-left-frame">
-                    <circle cx="82" cy="64" r="15" stroke={strokeColor} strokeWidth="3" fill="none" />
+                    <circle cx="82" cy="64" r="15" stroke={strokeColor} strokeWidth="3" fill="#0D0E12" />
                     <circle cx="82" cy="64" r="11" stroke={strokeColor} strokeWidth="0.8" fill="none" opacity="0.25" />
                   </g>
                   {/* Iris background — always visible when not dormant */}
@@ -382,7 +402,7 @@ export default function MechSVG({ state = 'idle', size = 'hero', reducedMotion =
                 {/* ===== RIGHT EYE ===== */}
                 <g id="eye-right">
                   <g id="eye-right-frame">
-                    <circle cx="118" cy="64" r="15" stroke={strokeColor} strokeWidth="3" fill="none" />
+                    <circle cx="118" cy="64" r="15" stroke={strokeColor} strokeWidth="3" fill="#0D0E12" />
                     <circle cx="118" cy="64" r="11" stroke={strokeColor} strokeWidth="0.8" fill="none" opacity="0.25" />
                   </g>
                   {/* Iris background */}
