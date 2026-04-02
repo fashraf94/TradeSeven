@@ -2,7 +2,7 @@
 // Manages Forge state: tabs, category filter, expanded card, rules, bundles,
 // and all CRUD actions (add, refine, delete, forge, equip, unequip, reforge).
 
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { collection, query, where, getDocs, orderBy, doc, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import { FORGE_RULE_TEMPLATES, FORGE_CATEGORIES } from '../data/forgeKnowledgeBase';
@@ -22,8 +22,38 @@ import {
 } from '../services/forgeService';
 import { computeForgeStats } from '../services/forgeStatsService';
 
+// Category group mappings for Strategy/Controls toggle
+export const STRATEGY_CATEGORIES = ['technical', 'fundamental', 'threshold', 'tier_strategy'];
+export const CONTROLS_CATEGORIES = ['risk', 'allocation', 'mid_battle', 'game_state'];
+
+// Helper to read persisted forge UI state from localStorage
+function loadPersistedState(agentId) {
+  if (!agentId) return null;
+  try {
+    const raw = localStorage.getItem(`forge_state_${agentId}`);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return {
+      categoryGroup: parsed.categoryGroup || 'strategy',
+      expandedAccordions: new Set(parsed.expandedAccordions || []),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function savePersistedState(agentId, categoryGroup, expandedAccordions) {
+  if (!agentId) return;
+  try {
+    localStorage.setItem(`forge_state_${agentId}`, JSON.stringify({
+      categoryGroup,
+      expandedAccordions: [...expandedAccordions],
+    }));
+  } catch { /* ignore quota errors */ }
+}
+
 export function useForge(agentId) {
-  const [activeTab, setActiveTab] = useState('discover');
+  const [activeTab, setActiveTab] = useState('forge');
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [expandedCardId, setExpandedCardId] = useState(null);
   const [rules, setRules] = useState([]);
@@ -31,6 +61,11 @@ export function useForge(agentId) {
   const [loading, setLoading] = useState(false);
   const [toast, setToast] = useState(null);
   const [addingRuleId, setAddingRuleId] = useState(null);
+
+  // Mech Bay state — category group toggle + accordion expansion
+  const [categoryGroup, setCategoryGroupRaw] = useState('strategy');
+  const [expandedAccordions, setExpandedAccordions] = useState(new Set());
+  const persistedInit = useRef(false);
 
   // Stats state
   const [stats, setStats] = useState(null);
@@ -42,6 +77,43 @@ export function useForge(agentId) {
   const [showRulePicker, setShowRulePicker] = useState(null); // bundleId or null
   const [forgingBundleId, setForgingBundleId] = useState(null);
   const [equippingBundleId, setEquippingBundleId] = useState(null);
+
+  // Restore persisted UI state on mount
+  useEffect(() => {
+    if (!agentId || persistedInit.current) return;
+    const saved = loadPersistedState(agentId);
+    if (saved) {
+      setCategoryGroupRaw(saved.categoryGroup);
+      setExpandedAccordions(saved.expandedAccordions);
+    } else {
+      // Default: first category in strategy group expanded
+      setExpandedAccordions(new Set([STRATEGY_CATEGORIES[0]]));
+    }
+    persistedInit.current = true;
+  }, [agentId]);
+
+  // Persist categoryGroup + expandedAccordions to localStorage
+  const setCategoryGroup = useCallback((group) => {
+    setCategoryGroupRaw(group);
+    // When switching groups, expand the first category of the new group
+    const firstCat = group === 'strategy' ? STRATEGY_CATEGORIES[0] : CONTROLS_CATEGORIES[0];
+    const newExpanded = new Set([firstCat]);
+    setExpandedAccordions(newExpanded);
+    if (agentId) savePersistedState(agentId, group, newExpanded);
+  }, [agentId]);
+
+  const toggleAccordion = useCallback((categoryId) => {
+    setExpandedAccordions(prev => {
+      const next = new Set(prev);
+      if (next.has(categoryId)) {
+        next.delete(categoryId);
+      } else {
+        next.add(categoryId);
+      }
+      if (agentId) savePersistedState(agentId, categoryGroup, next);
+      return next;
+    });
+  }, [agentId, categoryGroup]);
 
   // Show toast with auto-dismiss
   const showToast = useCallback((message) => {
@@ -132,9 +204,9 @@ export function useForge(agentId) {
     }
   }, [agentId, showToast]);
 
-  // Lazy-load stats when Stats tab is first visited
+  // Lazy-load stats when Proving Grounds tab is first visited
   useEffect(() => {
-    if (activeTab === 'stats' && stats === null && !statsLoading) {
+    if (activeTab === 'provingGrounds' && stats === null && !statsLoading) {
       loadStats();
     }
   }, [activeTab, stats, statsLoading, loadStats]);
@@ -144,6 +216,36 @@ export function useForge(agentId) {
     if (selectedCategory === 'all') return FORGE_RULE_TEMPLATES;
     return FORGE_RULE_TEMPLATES.filter(t => t.category === selectedCategory);
   }, [selectedCategory]);
+
+  // Group templates by active category group (Strategy or Controls)
+  const groupedTemplates = useMemo(() => {
+    const cats = categoryGroup === 'strategy' ? STRATEGY_CATEGORIES : CONTROLS_CATEGORIES;
+    return FORGE_RULE_TEMPLATES.filter(t => cats.includes(t.category));
+  }, [categoryGroup]);
+
+  // Compute overlay weights from equipped bundle rules for RadarChart
+  const overlayWeights = useMemo(() => {
+    const equipped = bundles.filter(b => b.status === 'equipped');
+    const allRuleIds = equipped.flatMap(b => b.ruleIds || []);
+    const total = allRuleIds.length;
+    if (total === 0) {
+      return FORGE_CATEGORIES.reduce((acc, cat) => ({ ...acc, [cat.id]: 0 }), {});
+    }
+    // Count rules per category by looking up the rule objects
+    const catCounts = {};
+    FORGE_CATEGORIES.forEach(cat => { catCounts[cat.id] = 0; });
+    for (const ruleId of allRuleIds) {
+      const rule = rules.find(r => r.id === ruleId);
+      if (rule && catCounts[rule.category] !== undefined) {
+        catCounts[rule.category]++;
+      }
+    }
+    const weights = {};
+    FORGE_CATEGORIES.forEach(cat => {
+      weights[cat.id] = catCounts[cat.id] / total;
+    });
+    return weights;
+  }, [bundles, rules]);
 
   // ── Computed values ──────────────────────────
   const unassignedRules = useMemo(
@@ -406,10 +508,17 @@ export function useForge(agentId) {
     toast,
     showToast,
 
+    // Mech Bay state
+    categoryGroup,
+    setCategoryGroup,
+    expandedAccordions,
+    toggleAccordion,
+
     // Data
     rules,
     bundles,
     filteredTemplates,
+    groupedTemplates,
     categories: FORGE_CATEGORIES,
 
     // Computed
@@ -417,6 +526,7 @@ export function useForge(agentId) {
     draftBundles,
     forgedBundles,
     equippedBundles,
+    overlayWeights,
 
     // UI state for My Rules / My Bundles
     editingRuleId,

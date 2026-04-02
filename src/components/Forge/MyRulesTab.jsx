@@ -1,3 +1,6 @@
+// DEPRECATED: Replaced by CategoryAccordion system in ForgeScreen (Phase 1 Mech Bay).
+// Kept for rollback purposes — do not add new features here.
+//
 // src/components/Forge/MyRulesTab.jsx
 // Displays all rules the user has collected, grouped by source, with filter, refine, and delete.
 
@@ -10,8 +13,8 @@ const CATEGORY_META = {
   fundamental:  { label: 'Fundamental',  color: '#a78bfa' },
   risk:         { label: 'Risk',         color: '#f97066' },
   allocation:   { label: 'Allocation',   color: '#f59e0b' },
-  mid_battle:   { label: 'Mid-Battle',   color: '#38bdf8' },
-  game_state:   { label: 'Game State',   color: '#fb923c' },
+  mid_battle:   { label: 'Mid-Battle',   color: '#6366F1' },
+  game_state:   { label: 'Game State',   color: '#94A3B8' },
   threshold:    { label: 'Threshold',    color: '#e879f9' },
   tier_strategy:{ label: 'Tier Strategy', color: '#fbbf24' },
 };

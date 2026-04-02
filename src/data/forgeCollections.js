@@ -72,7 +72,7 @@ export const FORGE_COLLECTIONS = [
     title: 'Battle Tactics',
     subtitle: 'Rules that control when and how your agent trades during live battles',
     icon: 'Swords',
-    accentColor: '#38bdf8',
+    accentColor: '#6366F1',
     ruleIds: [
       'mb-01',
       'mb-04',
@@ -87,7 +87,7 @@ export const FORGE_COLLECTIONS = [
     title: 'Game Clock Plays',
     subtitle: 'Phase-aware rules that shift strategy as the battle progresses',
     icon: 'Clock',
-    accentColor: '#fb923c',
+    accentColor: '#94A3B8',
     ruleIds: [
       'gs-01',
       'gs-02',

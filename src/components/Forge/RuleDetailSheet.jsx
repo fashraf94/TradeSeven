@@ -10,8 +10,8 @@ const CATEGORY_COLORS = {
   fundamental: '#f59e0b',
   risk: '#ef4444',
   allocation: '#8b5cf6',
-  mid_battle: '#38bdf8',
-  game_state: '#fb923c',
+  mid_battle: '#6366F1',
+  game_state: '#94A3B8',
   threshold: '#e879f9',
   tier_strategy: '#fbbf24',
 };
