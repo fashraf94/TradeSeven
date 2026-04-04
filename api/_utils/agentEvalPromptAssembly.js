@@ -266,13 +266,13 @@ ${ctx.consolidatedInsight}`);
     const ruleLines = [];
     if (constraints.length > 0) {
       const cLines = constraints.map((r, i) =>
-        `C${i + 1}. ${sanitizeRuleText(r.text)} [${capitalize(r.category)}]`
+        `C${i + 1}. ${resolveRuleText(r)} [${capitalize(r.category)}]`
       );
       ruleLines.push(`== CONSTRAINTS (must obey) ==\n${cLines.join('\n')}`);
     }
     if (strategies.length > 0) {
       const sLines = strategies.map((r, i) =>
-        `S${i + 1}. ${sanitizeRuleText(r.text)} [${capitalize(r.category || 'general')}]`
+        `S${i + 1}. ${resolveRuleText(r)} [${capitalize(r.category || 'general')}]`
       );
       ruleLines.push(`== STRATEGY PREFERENCES (should follow) ==\n${sLines.join('\n')}`);
     }
@@ -327,6 +327,38 @@ function sanitizeRuleText(text) {
   cleaned = cleaned.replace(/\s+/g, ' ').trim();
 
   return cleaned;
+}
+
+/**
+ * Interpolates a rule text template with parameter values.
+ * Replaces {paramKey} placeholders with values from paramValues (or param defaults).
+ * @param {string} template - text with {paramKey} placeholders
+ * @param {Object} paramDefs - params schema from forgeKnowledgeBase (has .default per key)
+ * @param {Object|null} paramValues - user's stored overrides (may be partial or null)
+ * @returns {string} fully interpolated rule text
+ */
+function interpolateRuleText(template, paramDefs, paramValues) {
+  if (!template || !paramDefs) return template || '';
+  let result = template;
+  for (const [key, def] of Object.entries(paramDefs)) {
+    const value = (paramValues && paramValues[key] !== undefined)
+      ? paramValues[key]
+      : def.default;
+    result = result.replace(new RegExp(`\\{${key}\\}`, 'g'), String(value));
+  }
+  return result;
+}
+
+/**
+ * Resolves a rule's display text for prompt injection.
+ * If the rule has a textTemplate + params, interpolates server-side.
+ * Otherwise falls back to the pre-interpolated r.text (backward compat).
+ */
+function resolveRuleText(r) {
+  if (r.textTemplate && r.params) {
+    return sanitizeRuleText(interpolateRuleText(r.textTemplate, r.params, r.paramValues));
+  }
+  return sanitizeRuleText(r.text);
 }
 
 // ==================== LIVE BATTLE CONTEXT (Fresh) ====================

@@ -314,10 +314,12 @@ export function useForge(agentId) {
 
       const ruleId = await createRule(agentId, {
         text: ruleText,
+        textTemplate: firstTemplate.text,
         source: 'forge_discover',
         sourceRef: template.id,
         category: firstTemplate.category || template.category,
         params: firstTemplate.params || null,
+        paramValues: paramValues || null,
       });
 
       try {

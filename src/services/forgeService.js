@@ -85,6 +85,8 @@ export const createRule = async (agentId, ruleData) => {
     visibility: ruleData.visibility || 'private',
     category: ruleData.category || null,
     params: ruleData.params || null,
+    paramValues: ruleData.paramValues || null,
+    textTemplate: ruleData.textTemplate || null,
     isRefined: false,
     isDeleted: false,
     bundleIds: [],
@@ -134,7 +136,7 @@ export const updateRule = async (agentId, ruleId, updates) => {
     throw new Error(`Visibility must be one of: ${VALID_VISIBILITIES.join(', ')}`);
   }
 
-  const allowed = ['text', 'category', 'visibility', 'params', 'isRefined'];
+  const allowed = ['text', 'category', 'visibility', 'params', 'isRefined', 'paramValues', 'textTemplate'];
   const filtered = {};
   for (const key of allowed) {
     if (key in updates) filtered[key] = updates[key];
@@ -267,6 +269,9 @@ export const forgeBundle = async (agentId, bundleId) => {
     ruleSnapshots.push({
       id: ruleId,
       text: rule.text,
+      textTemplate: rule.textTemplate || null,
+      params: rule.params || null,
+      paramValues: rule.paramValues || null,
       category: rule.category,     // MUST be present — prompt assembly depends on this (Amendment 2)
       visibility: rule.visibility,
     });
@@ -342,6 +347,9 @@ export const equipBundle = async (agentId, bundleId) => {
   const activeRules = allSnapshots.map(snap => ({
     ruleId: snap.id,
     text: snap.text,
+    textTemplate: snap.textTemplate || null,
+    params: snap.params || null,
+    paramValues: snap.paramValues || null,
     category: snap.category || null,
     bundleName: snap.bundleName,
   }));
@@ -391,6 +399,9 @@ export const unequipBundle = async (agentId, bundleId) => {
   const activeRules = allSnapshots.map(snap => ({
     ruleId: snap.id,
     text: snap.text,
+    textTemplate: snap.textTemplate || null,
+    params: snap.params || null,
+    paramValues: snap.paramValues || null,
     category: snap.category || null,
     bundleName: snap.bundleName,
   }));
