@@ -1,9 +1,11 @@
 // src/components/Forge/CategoryAccordion.jsx
 // Collapsible section for a single rule category with inline rule cards.
+// Phase B: Split button (Add + Gear) and RuleConfigDrawer integration.
 
 import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronDown, Plus, Check } from 'lucide-react';
+import { ChevronDown, Plus, Check, Settings2 } from 'lucide-react';
+import RuleConfigDrawer from './RuleConfigDrawer';
 
 // Reuse color + icon maps from ForgeRuleCard for consistency
 const CATEGORY_COLORS = {
@@ -23,8 +25,9 @@ const DIFFICULTY_COLORS = {
   advanced: '#f97066',
 };
 
-function AccordionRuleCard({ rule, isEquipped, onAdd, onRemove, agentExists }) {
+function AccordionRuleCard({ rule, isEquipped, onAdd, onRemove, agentExists, isConfigOpen, onToggleConfig }) {
   const catColor = CATEGORY_COLORS[rule.category] || '#5eead4';
+  const hasParams = rule.forgeTemplates?.[0]?.params && Object.keys(rule.forgeTemplates[0].params).length > 0;
 
   return (
     <div style={{
@@ -116,7 +119,7 @@ function AccordionRuleCard({ rule, isEquipped, onAdd, onRemove, agentExists }) {
             </button>
           ) : isEquipped ? (
             <button
-              onClick={() => onRemove(rule.id)}
+              onClick={(e) => { e.stopPropagation(); onRemove(rule.id); }}
               style={{
                 fontSize: 11,
                 fontWeight: 600,
@@ -134,27 +137,78 @@ function AccordionRuleCard({ rule, isEquipped, onAdd, onRemove, agentExists }) {
               <Check size={12} /> Equipped
             </button>
           ) : (
-            <button
-              onClick={() => onAdd(rule.id)}
-              style={{
-                fontSize: 11,
-                fontWeight: 600,
-                color: '#5EEAD4',
-                background: 'none',
-                border: '1px solid rgba(94,234,212,0.3)',
-                borderRadius: 8,
-                padding: '6px 10px',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: 4,
-              }}
-            >
-              <Plus size={12} /> Add
-            </button>
+            /* Split button: [+ Add | Gear] */
+            <div style={{
+              display: 'flex',
+              alignItems: 'stretch',
+              border: '1px solid rgba(94,234,212,0.3)',
+              borderRadius: 8,
+              overflow: 'hidden',
+            }}>
+              {/* Add button */}
+              <button
+                onClick={(e) => { e.stopPropagation(); onAdd(rule.id); }}
+                style={{
+                  fontSize: 11,
+                  fontWeight: 600,
+                  color: isConfigOpen ? '#6E7681' : '#5EEAD4',
+                  background: 'none',
+                  border: 'none',
+                  padding: '6px 10px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 4,
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                <Plus size={12} />
+                {isConfigOpen ? 'Defaults' : 'Add'}
+              </button>
+
+              {/* Divider + Gear button (only if rule has params) */}
+              {hasParams && (
+                <>
+                  <div style={{
+                    width: 1,
+                    background: '#2A2D35',
+                    alignSelf: 'stretch',
+                  }} />
+                  <button
+                    onClick={(e) => { e.stopPropagation(); onToggleConfig(rule.id); }}
+                    style={{
+                      width: 32,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      background: 'none',
+                      border: 'none',
+                      cursor: 'pointer',
+                      padding: 0,
+                    }}
+                  >
+                    <Settings2
+                      size={14}
+                      color={isConfigOpen ? catColor : '#5EEAD4'}
+                      fill={isConfigOpen ? catColor : 'none'}
+                    />
+                  </button>
+                </>
+              )}
+            </div>
           )}
         </div>
       </div>
+
+      {/* Config Drawer */}
+      {hasParams && (
+        <RuleConfigDrawer
+          rule={rule}
+          isOpen={isConfigOpen}
+          onAdd={(paramValues) => onAdd(rule.id, paramValues)}
+          categoryColor={catColor}
+        />
+      )}
     </div>
   );
 }
@@ -168,6 +222,8 @@ const CategoryAccordion = React.memo(function CategoryAccordion({
   onAddRule,
   onRemoveRule,
   agentExists,
+  expandedRuleId,
+  onToggleRuleConfig,
 }) {
   const catColor = category.color || CATEGORY_COLORS[category.id] || '#5eead4';
   const equippedCount = rules.filter(r => equippedRuleIds.has(r.id)).length;
@@ -252,6 +308,8 @@ const CategoryAccordion = React.memo(function CategoryAccordion({
                   onAdd={onAddRule}
                   onRemove={onRemoveRule}
                   agentExists={agentExists}
+                  isConfigOpen={expandedRuleId === rule.id}
+                  onToggleConfig={onToggleRuleConfig}
                 />
               ))}
               {rules.length === 0 && (

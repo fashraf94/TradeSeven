@@ -292,7 +292,7 @@ export function useForge(agentId) {
   // ── Actions ──────────────────────────────────
 
   // Add a rule from a Discover template to a draft bundle
-  const addRuleToBundle = useCallback(async (template) => {
+  const addRuleToBundle = useCallback(async (template, paramValues) => {
     if (!agentId || addingRuleId) return;
     setAddingRuleId(template.id);
 
@@ -307,7 +307,8 @@ export function useForge(agentId) {
       let ruleText = firstTemplate.text;
       if (firstTemplate.params) {
         for (const [key, config] of Object.entries(firstTemplate.params)) {
-          ruleText = ruleText.replace(`{${key}}`, config.default);
+          const val = paramValues?.[key] !== undefined ? paramValues[key] : config.default;
+          ruleText = ruleText.replace(`{${key}}`, val);
         }
       }
 

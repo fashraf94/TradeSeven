@@ -53,6 +53,7 @@ export default function ForgeScreen({ isMobile: isMobileProp, onClose, user }) {
   const [showMyRules, setShowMyRules] = useState(false);
   const [showMyBundles, setShowMyBundles] = useState(false);
   const [mechReactPulse, setMechReactPulse] = useState(null);
+  const [configRuleId, setConfigRuleId] = useState(null);
 
   // Scroll-driven mech → visor strip transition (mobile only)
   const { scrollY } = useScroll({ container: isDesktop ? undefined : scrollRef });
@@ -110,7 +111,11 @@ export default function ForgeScreen({ isMobile: isMobileProp, onClose, user }) {
   }, [collectedSourceRefs, forge]);
 
   // Conflict detection on add
-  const handleAddRule = useCallback(async (templateId) => {
+  const handleToggleRuleConfig = useCallback((ruleId) => {
+    setConfigRuleId(prev => prev === ruleId ? null : ruleId);
+  }, []);
+
+  const handleAddRule = useCallback(async (templateId, paramValues) => {
     // Check for conflicts
     if (FORGE_CONFLICT_PAIRS) {
       const conflictPair = FORGE_CONFLICT_PAIRS.find(pair => {
@@ -135,9 +140,10 @@ export default function ForgeScreen({ isMobile: isMobileProp, onClose, user }) {
     // Find template and add
     const template = FORGE_RULE_TEMPLATES.find(t => t.id === templateId);
     if (template) {
-      await forge.addRuleToBundle(template);
+      await forge.addRuleToBundle(template, paramValues);
       const cat = forge.categories.find(c => c.id === (template.forgeTemplates?.[0]?.category || template.category));
       setMechReactPulse({ type: 'ruleAdd', color: cat?.color || '#5EEAD4', timestamp: Date.now() });
+      setConfigRuleId(null);
     }
   }, [bundleRuleIds, forge]);
 
@@ -352,6 +358,8 @@ export default function ForgeScreen({ isMobile: isMobileProp, onClose, user }) {
                         onAddRule={handleAddRule}
                         onRemoveRule={handleRemoveRule}
                         agentExists={!!hasAgent}
+                        expandedRuleId={configRuleId}
+                        onToggleRuleConfig={handleToggleRuleConfig}
                       />
                     ))}
                     <AgentLearnedSection
