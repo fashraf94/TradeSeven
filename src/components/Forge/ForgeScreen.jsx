@@ -110,6 +110,32 @@ export default function ForgeScreen({ isMobile: isMobileProp, onClose, user }) {
     }
   }, [collectedSourceRefs, forge]);
 
+  // Use This Playbook — creates a new bundle with all rules + paramOverrides
+  const handleUsePlaybook = useCallback(async (collection) => {
+    if (!collection.rules) return;
+    for (const rule of collection.rules) {
+      if (!collectedSourceRefs.has(rule.id)) {
+        const overrides = rule.paramOverrides || null;
+        await forge.addRuleToBundle(rule, overrides);
+      }
+    }
+    forge.showToast(`${collection.title} Playbook created!`);
+    setSelectedCollection(null);
+  }, [collectedSourceRefs, forge]);
+
+  // Merge collection rules into existing active bundle
+  const handleMergeIntoBundle = useCallback(async (collection) => {
+    if (!collection.rules) return;
+    for (const rule of collection.rules) {
+      if (!collectedSourceRefs.has(rule.id)) {
+        const overrides = rule.paramOverrides || null;
+        await forge.addRuleToBundle(rule, overrides);
+      }
+    }
+    forge.showToast(`Merged ${collection.title} rules into bundle!`);
+    setSelectedCollection(null);
+  }, [collectedSourceRefs, forge]);
+
   // Conflict detection on add
   const handleToggleRuleConfig = useCallback((ruleId) => {
     setConfigRuleId(prev => prev === ruleId ? null : ruleId);
@@ -429,6 +455,9 @@ export default function ForgeScreen({ isMobile: isMobileProp, onClose, user }) {
               onClose={() => setSelectedCollection(null)}
               agentExists={!!hasAgent}
               isAdding={!!forge.addingRuleId}
+              onUsePlaybook={handleUsePlaybook}
+              activeBundleName={forge.bundles.find(b => b.status === 'draft')?.name}
+              onMergeIntoBundle={handleMergeIntoBundle}
             />
           )}
         </AnimatePresence>
