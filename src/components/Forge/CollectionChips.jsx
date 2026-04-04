@@ -35,8 +35,9 @@ export default React.memo(function CollectionChips({
         WebkitOverflowScrolling: 'touch',
       }}>
         {collections.map(collection => {
-          const collectedCount = collection.ruleIds.filter(id => collectedSourceRefs.has(id)).length;
-          const allCollected = collectedCount === collection.ruleIds.length;
+          const ids = collection.ruleIds || [];
+          const collectedCount = ids.filter(id => collectedSourceRefs.has(id)).length;
+          const allCollected = ids.length > 0 && collectedCount === ids.length;
 
           return (
             <button

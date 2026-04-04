@@ -72,10 +72,10 @@ export function buildStrategyUserPrompt(agent) {
     const strategies = activeRules.filter(r => r.category === 'technical' || r.category === 'fundamental' || !r.category);
     const rLines = [];
     if (constraints.length > 0) {
-      rLines.push(`CONSTRAINTS:\n${constraints.map((r, i) => `C${i + 1}. ${sanitizeRuleText(r.text)}`).join('\n')}`);
+      rLines.push(`CONSTRAINTS:\n${constraints.map((r, i) => `C${i + 1}. ${resolveRuleText(r)}`).join('\n')}`);
     }
     if (strategies.length > 0) {
-      rLines.push(`STRATEGY PREFERENCES:\n${strategies.map((r, i) => `S${i + 1}. ${sanitizeRuleText(r.text)}`).join('\n')}`);
+      rLines.push(`STRATEGY PREFERENCES:\n${strategies.map((r, i) => `S${i + 1}. ${resolveRuleText(r)}`).join('\n')}`);
     }
     parts.push(`FORGE RULES (follow alongside directives):\n${rLines.join('\n')}`);
   }
@@ -246,6 +246,25 @@ function sanitizeRuleText(text) {
   cleaned = cleaned.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '');
   cleaned = cleaned.replace(/\s+/g, ' ').trim();
   return cleaned;
+}
+
+function interpolateRuleText(template, paramDefs, paramValues) {
+  if (!template || !paramDefs) return template || '';
+  let result = template;
+  for (const [key, def] of Object.entries(paramDefs)) {
+    const value = (paramValues && paramValues[key] !== undefined)
+      ? paramValues[key]
+      : def.default;
+    result = result.replace(new RegExp(`\\{${key}\\}`, 'g'), String(value));
+  }
+  return result;
+}
+
+function resolveRuleText(r) {
+  if (r.textTemplate && r.params) {
+    return sanitizeRuleText(interpolateRuleText(r.textTemplate, r.params, r.paramValues));
+  }
+  return sanitizeRuleText(r.text);
 }
 
 /**

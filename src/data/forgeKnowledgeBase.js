@@ -28,7 +28,8 @@ export const FORGE_RULE_TEMPLATES = [
       {
         text: 'Prefer stocks with RSI below {threshold}',
         params: {
-          threshold: { type: 'number', default: 30, min: 15, max: 40 }
+          threshold: { type: 'number', default: 30, min: 15, max: 45, step: 5, unit: 'RSI', label: 'Oversold threshold', hint: 'RSI level below which a stock is considered oversold. Swing traders use 35, day traders prefer 20-25.' },
+          volumeConfirm: { type: 'toggle', default: false, label: 'Require volume confirmation', hint: 'When on, only triggers when volume exceeds the 20-day average — confirms institutional participation.' },
         },
         category: 'technical'
       }
@@ -49,7 +50,8 @@ export const FORGE_RULE_TEMPLATES = [
       {
         text: 'Avoid stocks with RSI above {threshold}',
         params: {
-          threshold: { type: 'number', default: 70, min: 60, max: 85 }
+          threshold: { type: 'number', default: 70, min: 60, max: 85, step: 5, unit: 'RSI', label: 'Overbought ceiling', hint: 'RSI level above which a stock is considered overbought. Defensive players use 65 to exit before reversals.' },
+          strictMode: { type: 'toggle', default: false, label: 'Hard exclusion mode', hint: 'When on, completely excludes overbought stocks instead of just deprioritizing them.' },
         },
         category: 'technical'
       }
@@ -68,8 +70,11 @@ export const FORGE_RULE_TEMPLATES = [
     difficulty: 'intermediate',
     forgeTemplates: [
       {
-        text: 'Prefer stocks showing Bollinger Band squeeze with volume confirmation',
-        params: {},
+        text: 'Prefer stocks showing Bollinger Band squeeze below {bandwidthThreshold}th percentile with volume confirmation',
+        params: {
+          bandwidthThreshold: { type: 'number', default: 20, min: 5, max: 40, step: 5, unit: '%ile', label: 'Compression percentile', hint: 'How narrow the Bollinger Bands must be. Lower = tighter squeeze = more explosive breakout potential.' },
+          volumeConfirm: { type: 'toggle', default: false, label: 'Require breakout volume', hint: 'When on, only triggers on above-average volume — filters out false breakouts.' },
+        },
         category: 'technical'
       }
     ],
@@ -89,7 +94,8 @@ export const FORGE_RULE_TEMPLATES = [
       {
         text: 'Prefer stocks trading above their {period}-day moving average',
         params: {
-          period: { type: 'select', default: '50', options: ['20', '50', '200'] }
+          period: { type: 'select', default: '50', options: [{ value: '20', label: 'SMA 20 (aggressive)' }, { value: '50', label: 'SMA 50 (institutional)' }, { value: '200', label: 'SMA 200 (macro)' }], label: 'Trend moving average', hint: 'Which moving average defines the trend. SMA 50 is the institutional standard.' },
+          requireAlignment: { type: 'toggle', default: false, label: 'Require full bullish alignment', hint: 'When on, requires SMA 20 > SMA 50 > SMA 200 — the strongest trend confirmation.' },
         },
         category: 'technical'
       }
@@ -108,8 +114,11 @@ export const FORGE_RULE_TEMPLATES = [
     difficulty: 'intermediate',
     forgeTemplates: [
       {
-        text: 'Prefer stocks with bullish MACD crossover signal',
-        params: {},
+        text: 'Prefer stocks with {macdDirection} MACD signal and RSI above {rsiFloor}',
+        params: {
+          macdDirection: { type: 'select', default: 'histogram expanding', options: [{ value: 'histogram expanding', label: 'Histogram expanding' }, { value: 'bullish crossover', label: 'Bullish crossover' }, { value: 'above zero line', label: 'Above zero line' }], label: 'MACD momentum signal', hint: 'What defines accelerating momentum. Histogram expanding detects acceleration earliest.' },
+          rsiFloor: { type: 'number', default: 50, min: 40, max: 65, step: 5, unit: 'RSI', label: 'Minimum RSI for momentum', hint: 'Ensures momentum is occurring in a bullish regime. 55+ filters out weak bounces.' },
+        },
         category: 'technical'
       }
     ],
@@ -129,7 +138,7 @@ export const FORGE_RULE_TEMPLATES = [
       {
         text: 'Prefer stocks showing volume above {multiplier}x their average',
         params: {
-          multiplier: { type: 'select', default: '2', options: ['1.5', '2', '3'] }
+          multiplier: { type: 'select', default: '2', options: [{ value: '1.5', label: '1.5x (sensitive)' }, { value: '2', label: '2x (standard)' }, { value: '3', label: '3x (strong conviction)' }], label: 'Volume surge multiplier', hint: 'How much above average volume must be. Higher = fewer but stronger signals.' },
         },
         category: 'technical'
       }
@@ -150,7 +159,7 @@ export const FORGE_RULE_TEMPLATES = [
       {
         text: 'Prefer stocks with relative strength in the {rank} of their sector',
         params: {
-          rank: { type: 'select', default: 'top quartile', options: ['top quartile', 'above median'] }
+          rank: { type: 'select', default: 'top quartile', options: [{ value: 'top quartile', label: 'Top quartile (top 25%)' }, { value: 'above median', label: 'Above median (top 50%)' }], label: 'Relative strength rank', hint: 'How selective to be about sector leadership. Top quartile is more selective but finds the strongest leaders.' },
         },
         category: 'technical'
       }
@@ -171,7 +180,7 @@ export const FORGE_RULE_TEMPLATES = [
       {
         text: 'Avoid stocks trading below their {period}-day moving average',
         params: {
-          period: { type: 'select', default: '200', options: ['50', '200'] }
+          period: { type: 'select', default: '200', options: [{ value: '50', label: '50-day (medium-term)' }, { value: '200', label: '200-day (long-term)' }], label: 'Downtrend moving average', hint: 'Which moving average defines the downtrend. 200-day catches long-term declines, 50-day is more sensitive.' },
         },
         category: 'technical'
       }
@@ -196,7 +205,7 @@ export const FORGE_RULE_TEMPLATES = [
       {
         text: 'Favor companies with positive earnings surprise in the last {quarters} quarters',
         params: {
-          quarters: { type: 'select', default: '2', options: ['1', '2', '3'] }
+          quarters: { type: 'select', default: '2', options: [{ value: '1', label: '1 quarter' }, { value: '2', label: '2 quarters' }, { value: '3', label: '3 quarters' }], label: 'Lookback quarters', hint: 'How many recent quarters must show positive surprise. More quarters = stronger signal but fewer matches.' }
         },
         category: 'fundamental'
       }
@@ -217,7 +226,7 @@ export const FORGE_RULE_TEMPLATES = [
       {
         text: 'Prefer companies with revenue growth above {pct}%',
         params: {
-          pct: { type: 'number', default: 10, min: 5, max: 30 }
+          pct: { type: 'number', default: 10, min: 5, max: 30, step: 5, unit: '%', label: 'Minimum revenue growth', hint: 'Year-over-year revenue growth threshold. Growth investors use 15%+, value investors accept 5%.' },
         },
         category: 'fundamental'
       }
@@ -238,7 +247,7 @@ export const FORGE_RULE_TEMPLATES = [
       {
         text: 'Prefer stocks with P/E ratio below {level}',
         params: {
-          level: { type: 'select', default: 'sector median', options: ['sector median', '20', '15'] }
+          level: { type: 'select', default: 'sector median', options: [{ value: 'sector median', label: 'Sector median' }, { value: '20', label: 'P/E below 20' }, { value: '15', label: 'P/E below 15 (deep value)' }], label: 'Valuation ceiling', hint: 'P/E threshold for value screening. Sector median is relative, fixed numbers are absolute targets.' }
         },
         category: 'fundamental'
       }
@@ -259,7 +268,7 @@ export const FORGE_RULE_TEMPLATES = [
       {
         text: 'Evaluate bank stocks using P/B ratio; flag banks with P/B above {threshold} as expensive',
         params: {
-          threshold: { type: 'number', default: 2.0, min: 1.0, max: 3.0 }
+          threshold: { type: 'number', default: 2.0, min: 1.0, max: 3.0, step: 0.5, unit: 'P/B', label: 'P/B expensive threshold', hint: 'Price-to-book level above which a bank is considered expensive. Most banks trade between 1.0-2.5x book.' },
         },
         category: 'fundamental'
       }
@@ -280,7 +289,7 @@ export const FORGE_RULE_TEMPLATES = [
       {
         text: 'Prefer companies with financial health score rated {level} or better',
         params: {
-          level: { type: 'select', default: 'moderate', options: ['strong', 'moderate'] }
+          level: { type: 'select', default: 'moderate', options: [{ value: 'strong', label: 'Strong only' }, { value: 'moderate', label: 'Moderate or better' }], label: 'Minimum health rating', hint: 'How strict the financial health filter is. Strong-only is more selective but finds the most resilient companies.' }
         },
         category: 'fundamental'
       }
@@ -301,7 +310,7 @@ export const FORGE_RULE_TEMPLATES = [
       {
         text: 'Prefer {size} cap stocks',
         params: {
-          size: { type: 'select', default: 'large', options: ['large', 'mid', 'small'] }
+          size: { type: 'select', default: 'large', options: [{ value: 'large', label: 'Large cap (>$10B)' }, { value: 'mid', label: 'Mid cap ($2-10B)' }, { value: 'small', label: 'Small cap (<$2B)' }], label: 'Market cap preference', hint: 'Large caps are stable, mid caps balance growth and stability, small caps are volatile but explosive.' }
         },
         category: 'fundamental'
       }
@@ -326,7 +335,7 @@ export const FORGE_RULE_TEMPLATES = [
       {
         text: 'Diversify across at least {n} sectors',
         params: {
-          n: { type: 'number', default: 3, min: 2, max: 6 }
+          n: { type: 'number', default: 3, min: 2, max: 6, step: 1, unit: 'sectors', label: 'Minimum sectors', hint: 'How many different sectors the portfolio must span. Defensive players use 4-5.' },
         },
         category: 'risk'
       }
@@ -347,7 +356,7 @@ export const FORGE_RULE_TEMPLATES = [
       {
         text: 'No single stock above {pct}% of portfolio',
         params: {
-          pct: { type: 'number', default: 40, min: 20, max: 60 }
+          pct: { type: 'number', default: 40, min: 20, max: 60, step: 5, unit: '%', label: 'Maximum single-stock weight', hint: 'Cap on any single stock as percentage of portfolio. Lower = more diversified, higher = more concentrated.' },
         },
         category: 'risk'
       }
@@ -368,7 +377,7 @@ export const FORGE_RULE_TEMPLATES = [
       {
         text: 'Avoid stocks with volatility above {level} for their sector',
         params: {
-          level: { type: 'select', default: '2x sector average', options: ['1.5x sector average', '2x sector average', '3x sector average'] }
+          level: { type: 'select', default: '2x sector average', options: [{ value: '1.5x sector average', label: '1.5x sector avg (strict)' }, { value: '2x sector average', label: '2x sector avg (standard)' }, { value: '3x sector average', label: '3x sector avg (lenient)' }], label: 'Volatility ceiling', hint: 'How much above the sector average volatility is tolerated. Stricter = fewer but more stable picks.' }
         },
         category: 'risk'
       }
@@ -389,7 +398,7 @@ export const FORGE_RULE_TEMPLATES = [
       {
         text: 'Exit any position that drops below {multiplier}x ATR from entry',
         params: {
-          multiplier: { type: 'select', default: '-2', options: ['-1.5', '-2', '-2.5', '-3'] }
+          multiplier: { type: 'select', default: '-2', options: [{ value: '-1.5', label: '-1.5x ATR (tight)' }, { value: '-2', label: '-2x ATR (standard)' }, { value: '-2.5', label: '-2.5x ATR (wide)' }, { value: '-3', label: '-3x ATR (very wide)' }], label: 'Stop-loss distance', hint: 'How far a stock must drop before exit. Tighter stops cut losses faster but trigger more often.' },
         },
         category: 'risk'
       }
@@ -410,7 +419,7 @@ export const FORGE_RULE_TEMPLATES = [
       {
         text: 'Avoid stocks in a sustained downtrend (below {period}-day moving average)',
         params: {
-          period: { type: 'select', default: '200', options: ['50', '200'] }
+          period: { type: 'select', default: '200', options: [{ value: '50', label: '50-day (medium-term)' }, { value: '200', label: '200-day (long-term)' }], label: 'Trend period', hint: 'Which moving average defines the downtrend. 200-day is more conservative, 50-day catches declines earlier.' },
         },
         category: 'risk'
       }
@@ -435,8 +444,8 @@ export const FORGE_RULE_TEMPLATES = [
       {
         text: 'Cap {sector} sector at {pct}% of portfolio',
         params: {
-          sector: { type: 'select', default: 'any single', options: ['any single', 'Technology', 'Healthcare', 'Financials', 'Energy', 'Consumer Discretionary', 'Consumer Staples', 'Industrials', 'Materials', 'Real Estate', 'Communication Services', 'Utilities'] },
-          pct: { type: 'number', default: 40, min: 20, max: 80 }
+          sector: { type: 'select', default: 'any single', options: [{ value: 'any single', label: 'Any single sector' }, { value: 'Technology', label: 'Technology' }, { value: 'Healthcare', label: 'Healthcare' }, { value: 'Financials', label: 'Financials' }, { value: 'Energy', label: 'Energy' }, { value: 'Consumer Discretionary', label: 'Consumer Discretionary' }, { value: 'Consumer Staples', label: 'Consumer Staples' }, { value: 'Industrials', label: 'Industrials' }, { value: 'Materials', label: 'Materials' }, { value: 'Real Estate', label: 'Real Estate' }, { value: 'Communication Services', label: 'Communication Services' }, { value: 'Utilities', label: 'Utilities' }], label: 'Sector scope', hint: 'Which sector to cap. "Any single" applies the cap uniformly to all sectors.' },
+          pct: { type: 'number', default: 40, min: 20, max: 80, step: 5, unit: '%', label: 'Maximum sector weight', hint: 'Maximum percentage of portfolio in this sector. Lower = more diversified.' },
         },
         category: 'allocation'
       }
@@ -457,8 +466,8 @@ export const FORGE_RULE_TEMPLATES = [
       {
         text: 'Allocate at least {pct}% to {sector} sector',
         params: {
-          sector: { type: 'select', default: 'Technology', options: ['Technology', 'Healthcare', 'Financials', 'Energy', 'Consumer Discretionary', 'Consumer Staples', 'Industrials', 'Materials', 'Real Estate', 'Communication Services', 'Utilities'] },
-          pct: { type: 'number', default: 20, min: 10, max: 50 }
+          sector: { type: 'select', default: 'Technology', options: [{ value: 'Technology', label: 'Technology' }, { value: 'Healthcare', label: 'Healthcare' }, { value: 'Financials', label: 'Financials' }, { value: 'Energy', label: 'Energy' }, { value: 'Consumer Discretionary', label: 'Consumer Discretionary' }, { value: 'Consumer Staples', label: 'Consumer Staples' }, { value: 'Industrials', label: 'Industrials' }, { value: 'Materials', label: 'Materials' }, { value: 'Real Estate', label: 'Real Estate' }, { value: 'Communication Services', label: 'Communication Services' }, { value: 'Utilities', label: 'Utilities' }], label: 'Target sector', hint: 'Which sector to guarantee exposure to.' },
+          pct: { type: 'number', default: 20, min: 10, max: 50, step: 5, unit: '%', label: 'Minimum sector weight', hint: 'Minimum percentage of portfolio allocated to this sector.' },
         },
         category: 'allocation'
       }
@@ -479,7 +488,7 @@ export const FORGE_RULE_TEMPLATES = [
       {
         text: 'Prefer {attribute} stocks for Star tier in BaggerBomb',
         params: {
-          attribute: { type: 'select', default: 'high momentum', options: ['high momentum', 'undervalued', 'high relative strength', 'high volume', 'positive earnings surprise'] }
+          attribute: { type: 'select', default: 'high momentum', options: [{ value: 'high momentum', label: 'High momentum' }, { value: 'undervalued', label: 'Undervalued' }, { value: 'high relative strength', label: 'High relative strength' }, { value: 'high volume', label: 'High volume' }, { value: 'positive earnings surprise', label: 'Positive earnings surprise' }], label: 'Star tier criteria', hint: 'What attribute determines the Star tier pick. Momentum riders prefer high momentum, value players prefer undervalued.' }
         },
         category: 'allocation'
       }
@@ -498,8 +507,10 @@ export const FORGE_RULE_TEMPLATES = [
     difficulty: 'beginner',
     forgeTemplates: [
       {
-        text: 'Spread allocation evenly across available sectors',
-        params: {},
+        text: 'Spread allocation evenly across available sectors with {conviction} enforcement',
+        params: {
+          conviction: { type: 'select', default: 'moderate', options: [{ value: 'light', label: 'Light touch' }, { value: 'moderate', label: 'Moderate' }, { value: 'strong', label: 'Strong conviction' }], label: 'Rule strength', hint: 'How strictly the agent follows this directive.' },
+        },
         category: 'allocation'
       }
     ],
@@ -526,7 +537,7 @@ export const FORGE_RULE_TEMPLATES = [
       {
         text: 'Do not swap a stock held for less than {minutes} minutes unless it is approaching a Bust threshold',
         params: {
-          minutes: { type: 'number', default: 60, min: 15, max: 180 }
+          minutes: { type: 'number', default: 60, min: 15, max: 180, step: 15, unit: 'min', label: 'Minimum hold time', hint: 'How long to hold before considering a swap. Longer = more patience with your thesis.' },
         },
         category: 'mid_battle'
       }
@@ -550,8 +561,8 @@ export const FORGE_RULE_TEMPLATES = [
       {
         text: 'Swap any stock that has moved less than {atr} ATR in either direction over the last {minutes} minutes',
         params: {
-          atr: { type: 'number', default: 0.2, min: 0.1, max: 0.5 },
-          minutes: { type: 'number', default: 90, min: 45, max: 150 }
+          atr: { type: 'number', default: 0.2, min: 0.1, max: 0.5, step: 0.1, unit: 'ATR', label: 'Minimum movement', hint: 'ATR movement required. Day traders use 0.3 (30% of daily range).' },
+          minutes: { type: 'number', default: 90, min: 45, max: 150, step: 15, unit: 'min', label: 'Stagnation window', hint: 'Time to wait before declaring dead money. Day traders use 60 min.' }
         },
         category: 'mid_battle'
       }
@@ -575,7 +586,7 @@ export const FORGE_RULE_TEMPLATES = [
       {
         text: 'Only swap if the bench stock\'s intraday performance exceeds the active stock\'s by at least {atr} ATR',
         params: {
-          atr: { type: 'number', default: 0.5, min: 0.25, max: 1.0 }
+          atr: { type: 'number', default: 0.5, min: 0.25, max: 1.0, step: 0.25, unit: 'ATR', label: 'Swap hurdle', hint: 'Bench stock must outperform by this much. Lower = more responsive to breakouts.' },
         },
         category: 'mid_battle'
       }
@@ -599,7 +610,7 @@ export const FORGE_RULE_TEMPLATES = [
       {
         text: 'Only swap into a bench stock if its price is above the daily VWAP and the 5-minute MACD shows a {signal} signal',
         params: {
-          signal: { type: 'select', default: 'bullish crossover', options: ['bullish crossover', 'positive histogram', 'any bullish'] }
+          signal: { type: 'select', default: 'bullish crossover', options: [{ value: 'bullish crossover', label: 'Bullish crossover' }, { value: 'positive histogram', label: 'Positive histogram' }, { value: 'any bullish', label: 'Any bullish signal' }], label: 'MACD confirmation type', hint: 'Positive histogram detects active momentum; crossover confirms direction change.' }
         },
         category: 'mid_battle'
       }
@@ -623,8 +634,8 @@ export const FORGE_RULE_TEMPLATES = [
       {
         text: 'Multiply the swap hurdle rate by {star}x for Star tier and {core}x for Core tier stocks',
         params: {
-          star: { type: 'number', default: 2.0, min: 1.5, max: 3.0 },
-          core: { type: 'number', default: 1.5, min: 1.0, max: 2.0 }
+          star: { type: 'number', default: 2.0, min: 1.5, max: 3.0, step: 0.5, unit: 'x', label: 'Star tier hurdle multiplier', hint: 'How much harder it is to swap a Star stock. Higher = more protection for your best pick.' },
+          core: { type: 'number', default: 1.5, min: 1.0, max: 2.0, step: 0.5, unit: 'x', label: 'Core tier hurdle multiplier', hint: 'How much harder it is to swap a Core stock. Lower than Star but still provides protection.' }
         },
         category: 'mid_battle'
       }
@@ -648,9 +659,9 @@ export const FORGE_RULE_TEMPLATES = [
       {
         text: 'If {swaps} or more swaps are executed within {window} minutes, disable non-emergency evaluations for {freeze} minutes',
         params: {
-          swaps: { type: 'number', default: 2, min: 1, max: 4 },
-          window: { type: 'number', default: 60, min: 30, max: 120 },
-          freeze: { type: 'number', default: 45, min: 15, max: 90 }
+          swaps: { type: 'number', default: 2, min: 1, max: 4, step: 1, unit: '', label: 'Swap limit', hint: 'Number of swaps that triggers the circuit breaker. Lower = more conservative.' },
+          window: { type: 'number', default: 60, min: 30, max: 120, step: 15, unit: 'min', label: 'Detection window', hint: 'Time window for counting swaps. Shorter window catches rapid-fire churning.' },
+          freeze: { type: 'number', default: 45, min: 15, max: 90, step: 15, unit: 'min', label: 'Cooldown duration', hint: 'How long to freeze non-emergency swaps. Longer = more time for the market to settle.' }
         },
         category: 'mid_battle'
       }
@@ -674,7 +685,7 @@ export const FORGE_RULE_TEMPLATES = [
       {
         text: 'Do not swap any stock with positive P&L until it reaches the {threshold} scoring threshold',
         params: {
-          threshold: { type: 'select', default: 'BaggerBomb (+1.0x)', options: ['BaggerBomb (+1.0x)', 'Double Bagger (+1.5x)'] }
+          threshold: { type: 'select', default: 'BaggerBomb (+1.0x)', options: [{ value: 'BaggerBomb (+1.0x)', label: 'BaggerBomb (+1.0x)' }, { value: 'Double Bagger (+1.5x)', label: 'Double Bagger (+1.5x)' }], label: 'Minimum hold target', hint: 'Don\'t sell winners until this threshold. Momentum riders hold to Double Bagger.' }
         },
         category: 'mid_battle'
       }
@@ -698,7 +709,7 @@ export const FORGE_RULE_TEMPLATES = [
       {
         text: 'Automatically swap any stock that drops below {atr} ATR from entry, regardless of tier or hold time',
         params: {
-          atr: { type: 'number', default: -1.0, min: -1.5, max: -0.5 }
+          atr: { type: 'number', default: -1.0, min: -1.5, max: -0.5, step: 0.1, unit: 'ATR', label: 'Emergency exit distance', hint: 'ATR loss that triggers immediate exit. Defensive: -0.7, Day: -1.0, Swing: -1.5.' },
         },
         category: 'mid_battle'
       }
@@ -722,8 +733,8 @@ export const FORGE_RULE_TEMPLATES = [
       {
         text: 'Between {start} and {end}, block all swap evaluations unless triggered by a news catalyst',
         params: {
-          start: { type: 'select', default: '11:30 AM', options: ['11:00 AM', '11:30 AM', '12:00 PM'] },
-          end: { type: 'select', default: '1:30 PM', options: ['1:00 PM', '1:30 PM', '2:00 PM'] }
+          start: { type: 'select', default: '11:30 AM', options: [{ value: '11:00 AM', label: '11:00 AM (early)' }, { value: '11:30 AM', label: '11:30 AM (standard)' }, { value: '12:00 PM', label: '12:00 PM (late)' }], label: 'Lull start time', hint: 'When to begin blocking swap evaluations. Earlier = more conservative.' },
+          end: { type: 'select', default: '1:30 PM', options: [{ value: '1:00 PM', label: '1:00 PM (short)' }, { value: '1:30 PM', label: '1:30 PM (standard)' }, { value: '2:00 PM', label: '2:00 PM (extended)' }], label: 'Lull end time', hint: 'When to resume swap evaluations. Later = longer quiet period.' }
         },
         category: 'mid_battle'
       }
@@ -747,8 +758,8 @@ export const FORGE_RULE_TEMPLATES = [
       {
         text: 'After {time}, reduce the swap hurdle rate by {pct}% and evaluate bench stocks showing 5-minute MACD divergence',
         params: {
-          time: { type: 'select', default: '3:00 PM', options: ['2:30 PM', '3:00 PM', '3:30 PM'] },
-          pct: { type: 'number', default: 50, min: 25, max: 75 }
+          time: { type: 'select', default: '3:00 PM', options: [{ value: '2:30 PM', label: '2:30 PM (early)' }, { value: '3:00 PM', label: '3:00 PM (standard)' }, { value: '3:30 PM', label: '3:30 PM (late)' }], label: 'Power hour start', hint: 'When to start reducing hurdle rates. Earlier = more time to capture institutional moves.' },
+          pct: { type: 'number', default: 50, min: 25, max: 75, step: 25, unit: '%', label: 'Hurdle reduction', hint: 'How much to reduce the swap hurdle rate. Higher = more aggressive in the final push.' }
         },
         category: 'mid_battle'
       }
@@ -772,8 +783,8 @@ export const FORGE_RULE_TEMPLATES = [
       {
         text: 'Reduce the swap hurdle rate by {pct}% for each hour after {start}',
         params: {
-          pct: { type: 'number', default: 15, min: 5, max: 30 },
-          start: { type: 'select', default: '1:00 PM', options: ['12:00 PM', '1:00 PM', '2:00 PM'] }
+          pct: { type: 'number', default: 15, min: 5, max: 30, step: 5, unit: '%', label: 'Hourly decay rate', hint: 'Hurdle reduction per hour. Higher = faster decay, more willingness to swap as time runs out.' },
+          start: { type: 'select', default: '1:00 PM', options: [{ value: '12:00 PM', label: '12:00 PM (early)' }, { value: '1:00 PM', label: '1:00 PM (standard)' }, { value: '2:00 PM', label: '2:00 PM (late)' }], label: 'Decay start time', hint: 'When hurdle rate decay begins. Earlier start = more gradual reduction.' }
         },
         category: 'mid_battle'
       }
@@ -797,7 +808,7 @@ export const FORGE_RULE_TEMPLATES = [
       {
         text: 'When a news trigger fires, wait {intervals} evaluation intervals before allowing a swap based on that catalyst',
         params: {
-          intervals: { type: 'number', default: 1, min: 1, max: 3 }
+          intervals: { type: 'number', default: 1, min: 1, max: 3, step: 1, unit: '', label: 'Confirmation delay', hint: 'Evaluation intervals to wait after news. More intervals = more time for overreaction to settle.' },
         },
         category: 'mid_battle'
       }
@@ -821,7 +832,7 @@ export const FORGE_RULE_TEMPLATES = [
       {
         text: 'Only act on a news catalyst if the FantasyTimes sentiment direction matches the stock\'s {indicator} direction',
         params: {
-          indicator: { type: 'select', default: '5-min VWAP trend', options: ['5-min VWAP trend', '5-min RSI direction', '5-min MACD histogram'] }
+          indicator: { type: 'select', default: '5-min VWAP trend', options: [{ value: '5-min VWAP trend', label: '5-min VWAP trend' }, { value: '5-min RSI direction', label: '5-min RSI direction' }, { value: '5-min MACD histogram', label: '5-min MACD histogram' }], label: 'Price confirmation indicator', hint: 'Which technical indicator must confirm the news sentiment before acting.' }
         },
         category: 'mid_battle'
       }
@@ -845,7 +856,7 @@ export const FORGE_RULE_TEMPLATES = [
       {
         text: 'Swap any stock that remains below its daily VWAP for {intervals} consecutive evaluations, regardless of tier',
         params: {
-          intervals: { type: 'number', default: 3, min: 2, max: 5 }
+          intervals: { type: 'number', default: 3, min: 2, max: 5, step: 1, unit: '', label: 'Below-VWAP tolerance', hint: 'Consecutive eval intervals below VWAP before forcing exit. Day traders use 2 (30 min).' },
         },
         category: 'mid_battle'
       }
@@ -873,7 +884,7 @@ export const FORGE_RULE_TEMPLATES = [
       {
         text: 'In the EARLY phase, disable swap evaluations unless a stock drops below {atr} ATR',
         params: {
-          atr: { type: 'number', default: -1.0, min: -1.5, max: -0.5 }
+          atr: { type: 'number', default: -1.0, min: -1.5, max: -0.5, step: 0.1, unit: 'ATR', label: 'Emergency swap threshold', hint: 'ATR drop that overrides the early-phase hold. More negative = more patience in the opening.' },
         },
         category: 'game_state'
       }
@@ -897,10 +908,10 @@ export const FORGE_RULE_TEMPLATES = [
       {
         text: 'Scale ATR-based stop thresholds by phase: EARLY {early}x, MID {mid}x, LATE {late}x, FINAL_HOUR {final}x',
         params: {
-          early: { type: 'number', default: 2.0, min: 1.5, max: 3.0 },
-          mid: { type: 'number', default: 1.5, min: 1.0, max: 2.0 },
-          late: { type: 'number', default: 1.2, min: 1.0, max: 1.5 },
-          final: { type: 'number', default: 1.0, min: 0.5, max: 1.5 }
+          early: { type: 'number', default: 2.0, min: 1.5, max: 3.0, step: 0.5, unit: 'x', label: 'EARLY phase multiplier', hint: 'Stop-loss multiplier during volatile opening. Higher = more room to breathe.' },
+          mid: { type: 'number', default: 1.5, min: 1.0, max: 2.0, step: 0.5, unit: 'x', label: 'MID phase multiplier', hint: 'Stop-loss multiplier during midday. Moderate room as volatility settles.' },
+          late: { type: 'number', default: 1.2, min: 1.0, max: 1.5, step: 0.1, unit: 'x', label: 'LATE phase multiplier', hint: 'Stop-loss multiplier as day progresses. Tighter to protect gains.' },
+          final: { type: 'number', default: 1.0, min: 0.5, max: 1.5, step: 0.1, unit: 'x', label: 'FINAL_HOUR multiplier', hint: 'Stop-loss multiplier in the last hour. Tightest to lock in the final score.' }
         },
         category: 'game_state'
       }
@@ -924,7 +935,7 @@ export const FORGE_RULE_TEMPLATES = [
       {
         text: 'Reduce swap hurdle rates by {pct}% for each phase transition (EARLY → MID → LATE → FINAL_HOUR)',
         params: {
-          pct: { type: 'number', default: 20, min: 10, max: 40 }
+          pct: { type: 'number', default: 20, min: 10, max: 40, step: 5, unit: '%', label: 'Phase decay rate', hint: 'How much to reduce hurdle rates per phase transition. Higher = faster unlocking of bench optionality.' },
         },
         category: 'game_state'
       }
@@ -948,7 +959,7 @@ export const FORGE_RULE_TEMPLATES = [
       {
         text: 'Set a par score target of {points} points. Use this to determine whether to play aggressively or defensively',
         params: {
-          points: { type: 'number', default: 80, min: 30, max: 200 }
+          points: { type: 'number', default: 80, min: 30, max: 200, step: 10, unit: 'pts', label: 'Par score target', hint: 'Your scoring benchmark. Other game-state rules reference this to decide aggressive vs. defensive play.' }
         },
         category: 'game_state'
       }
@@ -972,8 +983,8 @@ export const FORGE_RULE_TEMPLATES = [
       {
         text: 'When score exceeds par target by {pct}%, widen loss tolerance to {atr} ATR and restrict swaps to emergency exits only',
         params: {
-          pct: { type: 'number', default: 20, min: 10, max: 50 },
-          atr: { type: 'number', default: -1.2, min: -1.5, max: -0.8 }
+          pct: { type: 'number', default: 20, min: 10, max: 50, step: 5, unit: '%', label: 'Lead margin', hint: 'How far above par triggers defensive mode. Higher = only shift when solidly ahead.' },
+          atr: { type: 'number', default: -1.2, min: -1.5, max: -0.8, step: 0.1, unit: 'ATR', label: 'Widened loss tolerance', hint: 'Relaxed stop-loss for leading positions. More negative = more breathing room.' }
         },
         category: 'game_state'
       }
@@ -997,8 +1008,8 @@ export const FORGE_RULE_TEMPLATES = [
       {
         text: 'When score falls below {pct}% of par target and phase is LATE or FINAL_HOUR, reduce all swap hurdle rates by {reduction}% and prioritize high-ATR bench stocks',
         params: {
-          pct: { type: 'number', default: 80, min: 50, max: 90 },
-          reduction: { type: 'number', default: 50, min: 25, max: 75 }
+          pct: { type: 'number', default: 80, min: 50, max: 90, step: 5, unit: '%', label: 'Trailing threshold', hint: 'Score as percentage of par that triggers aggressive mode. Lower = activate sooner.' },
+          reduction: { type: 'number', default: 50, min: 25, max: 75, step: 25, unit: '%', label: 'Hurdle rate reduction', hint: 'How much to reduce swap hurdle rates. Higher = more aggressive comeback attempt.' }
         },
         category: 'game_state'
       }
@@ -1022,8 +1033,8 @@ export const FORGE_RULE_TEMPLATES = [
       {
         text: 'When score exceeds {ceiling} points, disable all offensive swaps. Only swap if a stock falls within {atr} ATR of a Crash threshold',
         params: {
-          ceiling: { type: 'number', default: 150, min: 80, max: 300 },
-          atr: { type: 'number', default: 0.2, min: 0.1, max: 0.5 }
+          ceiling: { type: 'number', default: 150, min: 80, max: 300, step: 10, unit: 'pts', label: 'Lock-in ceiling', hint: 'Score at which all offensive swaps stop. Higher = more ambitious before locking in.' },
+          atr: { type: 'number', default: 0.2, min: 0.1, max: 0.5, step: 0.1, unit: 'ATR', label: 'Crash protection distance', hint: 'Only swap if stock is this close to a Crash threshold. Lower = tighter emergency detection.' }
         },
         category: 'game_state'
       }
@@ -1047,9 +1058,9 @@ export const FORGE_RULE_TEMPLATES = [
       {
         text: 'If {thresholds} or more positive thresholds have been hit in the last {cycles} evaluation cycles, increase swap hurdle rates by {mult}x',
         params: {
-          thresholds: { type: 'number', default: 2, min: 1, max: 4 },
-          cycles: { type: 'number', default: 4, min: 2, max: 8 },
-          mult: { type: 'number', default: 3.0, min: 2.0, max: 5.0 }
+          thresholds: { type: 'number', default: 2, min: 1, max: 4, step: 1, unit: '', label: 'Threshold hit count', hint: 'How many positive thresholds define a hot streak. Lower = triggers freeze more easily.' },
+          cycles: { type: 'number', default: 4, min: 2, max: 8, step: 1, unit: '', label: 'Lookback cycles', hint: 'Evaluation cycles to look back for threshold hits. Shorter = more reactive to recent streaks.' },
+          mult: { type: 'number', default: 3.0, min: 2.0, max: 5.0, step: 0.5, unit: 'x', label: 'Hurdle rate multiplier', hint: 'How much to increase swap hurdle rates during a hot streak. Higher = harder to break the streak.' }
         },
         category: 'game_state'
       }
@@ -1073,7 +1084,7 @@ export const FORGE_RULE_TEMPLATES = [
       {
         text: 'If portfolio P&L has been negative for {cycles} consecutive evaluation cycles, force a swap of the worst-performing stock',
         params: {
-          cycles: { type: 'number', default: 4, min: 3, max: 6 }
+          cycles: { type: 'number', default: 4, min: 3, max: 6, step: 1, unit: '', label: 'Consecutive loss cycles', hint: 'How many negative cycles before forcing a swap. Lower = faster pattern-breaking.' },
         },
         category: 'game_state'
       }
@@ -1097,7 +1108,7 @@ export const FORGE_RULE_TEMPLATES = [
       {
         text: 'In FINAL_HOUR, prohibit swapping into any bench stock with intraday P&L exceeding {atr} ATR',
         params: {
-          atr: { type: 'number', default: 1.5, min: 1.0, max: 2.0 }
+          atr: { type: 'number', default: 1.5, min: 1.0, max: 2.0, step: 0.5, unit: 'ATR', label: 'Overextension threshold', hint: 'Maximum intraday ATR gain before a stock is considered too extended to buy in FINAL_HOUR.' },
         },
         category: 'game_state'
       }
@@ -1121,7 +1132,7 @@ export const FORGE_RULE_TEMPLATES = [
       {
         text: 'In the final evaluation before market close, prioritize bench stocks with scheduled after-hours catalysts if their ATR exceeds {pct}% of price',
         params: {
-          pct: { type: 'number', default: 2.0, min: 1.0, max: 4.0 }
+          pct: { type: 'number', default: 2.0, min: 1.0, max: 4.0, step: 0.5, unit: '%', label: 'Minimum ATR % of price', hint: 'ATR percentage threshold for after-hours candidates. Higher = only volatile stocks with big move potential.' },
         },
         category: 'game_state'
       }
@@ -1149,9 +1160,9 @@ export const FORGE_RULE_TEMPLATES = [
       {
         text: 'If a stock is within {atr} ATR of its next positive threshold, increase its swap resistance by {mult}x. Do not swap unless it reverses more than {drawdown} ATR from its peak',
         params: {
-          atr: { type: 'number', default: 0.25, min: 0.1, max: 0.5 },
-          mult: { type: 'number', default: 2.0, min: 1.5, max: 3.0 },
-          drawdown: { type: 'number', default: 0.3, min: 0.15, max: 0.5 }
+          atr: { type: 'number', default: 0.25, min: 0.1, max: 0.5, step: 0.05, unit: 'ATR', label: 'Proximity range', hint: 'How close to a threshold before swap resistance kicks in. Lower = tighter protection zone.' },
+          mult: { type: 'number', default: 2.0, min: 1.5, max: 3.0, step: 0.5, unit: 'x', label: 'Resistance multiplier', hint: 'How much harder it is to swap a near-threshold stock. Higher = stronger hold near bonuses.' },
+          drawdown: { type: 'number', default: 0.3, min: 0.15, max: 0.5, step: 0.05, unit: 'ATR', label: 'Reversal override', hint: 'ATR drawdown from peak that overrides proximity hold. Lower = faster bail on reversals.' }
         },
         category: 'threshold'
       }
@@ -1175,8 +1186,8 @@ export const FORGE_RULE_TEMPLATES = [
       {
         text: 'After a stock triggers {threshold}, widen the trailing stop by an additional {atr} ATR to chase the next threshold tier',
         params: {
-          threshold: { type: 'select', default: 'BaggerBomb', options: ['BaggerBomb', 'Double Bagger'] },
-          atr: { type: 'number', default: 0.5, min: 0.3, max: 1.0 }
+          threshold: { type: 'select', default: 'BaggerBomb', options: [{ value: 'BaggerBomb', label: 'BaggerBomb' }, { value: 'Double Bagger', label: 'Double Bagger' }], label: 'Trigger threshold', hint: 'Which scoring level activates the stop widening.' },
+          atr: { type: 'number', default: 0.5, min: 0.3, max: 1.0, step: 0.1, unit: 'ATR', label: 'Additional stop buffer', hint: 'Extra ATR room after threshold hit. Momentum riders use 0.75 to chase Double Bagger.' }
         },
         category: 'threshold'
       }
@@ -1200,8 +1211,8 @@ export const FORGE_RULE_TEMPLATES = [
       {
         text: 'After a stock in {tier} tier triggers a positive threshold, tighten the trailing stop to {atr} ATR below the current price',
         params: {
-          tier: { type: 'select', default: 'Star', options: ['Star', 'Star and Core', 'Any tier'] },
-          atr: { type: 'number', default: 0.2, min: 0.1, max: 0.4 }
+          tier: { type: 'select', default: 'Star', options: [{ value: 'Star', label: 'Star only' }, { value: 'Star and Core', label: 'Star and Core' }, { value: 'Any tier', label: 'Any tier' }], label: 'Apply to tier', hint: 'Which tier gets the profit lock. Star tier has the most to protect (2x multiplier).' },
+          atr: { type: 'number', default: 0.2, min: 0.1, max: 0.4, step: 0.05, unit: 'ATR', label: 'Trailing stop distance', hint: 'ATR below peak price. Defensive players use 0.1-0.2 (extremely tight) to lock in bonuses.' }
         },
         category: 'threshold'
       }
@@ -1225,7 +1236,7 @@ export const FORGE_RULE_TEMPLATES = [
       {
         text: 'Multiply the perceived proximity of all negative thresholds by {mult}x when calculating swap urgency',
         params: {
-          mult: { type: 'number', default: 1.5, min: 1.2, max: 2.0 }
+          mult: { type: 'number', default: 1.5, min: 1.2, max: 2.0, step: 0.1, unit: 'x', label: 'Loss perception multiplier', hint: 'How much closer penalties feel. 2.0x = Kahneman loss aversion. Higher = more defensive.' },
         },
         category: 'threshold'
       }
@@ -1249,8 +1260,8 @@ export const FORGE_RULE_TEMPLATES = [
       {
         text: 'If a stock remains within {atr} ATR of a positive threshold for more than {minutes} minutes without triggering it, reset its proximity bonus',
         params: {
-          atr: { type: 'number', default: 0.15, min: 0.05, max: 0.3 },
-          minutes: { type: 'number', default: 45, min: 15, max: 90 }
+          atr: { type: 'number', default: 0.15, min: 0.05, max: 0.3, step: 0.05, unit: 'ATR', label: 'Hover zone', hint: 'ATR distance that defines "near" a threshold. Wider zone = more stocks affected by the timeout.' },
+          minutes: { type: 'number', default: 45, min: 15, max: 90, step: 15, unit: 'min', label: 'Timeout duration', hint: 'How long to wait before resetting proximity bonus. Shorter = less patience with hovering.' }
         },
         category: 'threshold'
       }
@@ -1274,7 +1285,7 @@ export const FORGE_RULE_TEMPLATES = [
       {
         text: 'When initiating a swap, select the stock with the greatest distance to its next positive threshold as the ejection candidate',
         params: {
-          exempt_tiers: { type: 'select', default: 'None', options: ['None', 'Star only', 'Star and Core'] }
+          exempt_tiers: { type: 'select', default: 'None', options: [{ value: 'None', label: 'None (all swappable)' }, { value: 'Star only', label: 'Star only exempt' }, { value: 'Star and Core', label: 'Star and Core exempt' }], label: 'Tier exemptions', hint: 'Which tiers are protected from weakest-link ejection. Exempting Star protects your 2x pick.' }
         },
         category: 'threshold'
       }
@@ -1298,7 +1309,7 @@ export const FORGE_RULE_TEMPLATES = [
       {
         text: 'Set scoring posture to {posture}. In Harvest mode, swap stocks after BaggerBomb for fresh candidates. In Hunt mode, hold for deeper milestones',
         params: {
-          posture: { type: 'select', default: 'Balanced', options: ['Harvest (many +15s)', 'Hunt (few +50s)', 'Balanced'] }
+          posture: { type: 'select', default: 'Balanced', options: [{ value: 'Harvest (many +15s)', label: 'Harvest (many +15s)' }, { value: 'Hunt (few +50s)', label: 'Hunt (few +50s)' }, { value: 'Balanced', label: 'Balanced (adaptive)' }], label: 'Scoring philosophy', hint: 'Harvest collects small bonuses frequently, Hunt holds for big ones, Balanced adapts to game state.' }
         },
         category: 'threshold'
       }
@@ -1326,8 +1337,8 @@ export const FORGE_RULE_TEMPLATES = [
       {
         text: 'If a stock\'s current intraday ATR exceeds {pct}% of its 14-day average ATR, restrict its maximum tier to {tier}',
         params: {
-          pct: { type: 'number', default: 200, min: 150, max: 300 },
-          tier: { type: 'select', default: 'Support', options: ['Support', 'Core'] }
+          pct: { type: 'number', default: 200, min: 150, max: 300, step: 25, unit: '%', label: 'Volatility spike threshold', hint: 'Current ATR as % of 14-day average that triggers tier restriction. Lower = more sensitive to volatility spikes.' },
+          tier: { type: 'select', default: 'Support', options: [{ value: 'Support', label: 'Support (safest)' }, { value: 'Core', label: 'Core (moderate)' }], label: 'Maximum tier for volatile stocks', hint: 'What tier to restrict erratic stocks to. Support removes the multiplier entirely.' },
         },
         category: 'tier_strategy'
       }
@@ -1351,8 +1362,8 @@ export const FORGE_RULE_TEMPLATES = [
       {
         text: 'A stock is only eligible for Star tier if its Daily Technical Score is above {score} AND price is above daily VWAP. If either breaks, demote to {tier}',
         params: {
-          score: { type: 'number', default: 70, min: 50, max: 90 },
-          tier: { type: 'select', default: 'Support', options: ['Support', 'Core'] }
+          score: { type: 'number', default: 70, min: 50, max: 90, step: 5, unit: '/100', label: 'Technical score minimum', hint: 'Daily Technical Score required for Star eligibility. Higher = stricter quality gate.' },
+          tier: { type: 'select', default: 'Support', options: [{ value: 'Support', label: 'Support (strict)' }, { value: 'Core', label: 'Core (moderate)' }], label: 'Demotion tier', hint: 'Where to demote when conviction breaks. Support removes the multiplier entirely.' },
         },
         category: 'tier_strategy'
       }
@@ -1376,7 +1387,7 @@ export const FORGE_RULE_TEMPLATES = [
       {
         text: 'If a stock is within {atr} ATR of a positive threshold but its 5-minute RSI is between 40 and 60, restrict to Support tier',
         params: {
-          atr: { type: 'number', default: 0.2, min: 0.1, max: 0.4 }
+          atr: { type: 'number', default: 0.2, min: 0.1, max: 0.4, step: 0.1, unit: 'ATR', label: 'Threshold proximity', hint: 'ATR distance to threshold that defines "near." Wider = more stocks get parked in Support.' },
         },
         category: 'tier_strategy'
       }
@@ -1400,8 +1411,8 @@ export const FORGE_RULE_TEMPLATES = [
       {
         text: 'Every {interval} minutes, compare P&L velocity. If a Core or Support stock outperforms Star over the last {cycles} cycles, swap their tiers',
         params: {
-          interval: { type: 'number', default: 30, min: 15, max: 60 },
-          cycles: { type: 'number', default: 2, min: 1, max: 4 }
+          interval: { type: 'number', default: 30, min: 15, max: 60, step: 15, unit: 'min', label: 'Review interval', hint: 'How often to compare P&L velocity across stocks. Faster = more responsive to momentum shifts.' },
+          cycles: { type: 'number', default: 2, min: 1, max: 4, step: 1, unit: '', label: 'Outperformance cycles', hint: 'Consecutive cycles a stock must outperform Star before promotion. Higher = more conviction required.' }
         },
         category: 'tier_strategy'
       }
@@ -1425,7 +1436,7 @@ export const FORGE_RULE_TEMPLATES = [
       {
         text: 'When a Star tier stock triggers a positive threshold AND its 5-minute RSI exceeds {rsi}, demote to Support and promote the Core stock with highest MACD trajectory',
         params: {
-          rsi: { type: 'number', default: 75, min: 65, max: 85 }
+          rsi: { type: 'number', default: 75, min: 65, max: 85, step: 5, unit: 'RSI', label: 'Overbought RSI trigger', hint: 'RSI level that signals exhaustion after a bonus hit. Lower = more aggressive about demoting tired winners.' }
         },
         category: 'tier_strategy'
       }
@@ -1449,8 +1460,8 @@ export const FORGE_RULE_TEMPLATES = [
       {
         text: 'If a Star stock\'s price changes less than {pct}% over {cycles} consecutive evaluation cycles, demote to Support',
         params: {
-          pct: { type: 'number', default: 0.1, min: 0.05, max: 0.3 },
-          cycles: { type: 'number', default: 3, min: 2, max: 5 }
+          pct: { type: 'number', default: 0.1, min: 0.05, max: 0.3, step: 0.05, unit: '%', label: 'Stagnation threshold', hint: 'Maximum price change that counts as flat. Lower = stricter definition of stagnation.' },
+          cycles: { type: 'number', default: 3, min: 2, max: 5, step: 1, unit: '', label: 'Stagnation cycles', hint: 'Consecutive flat cycles before demotion. Lower = faster response to dead multiplier.' }
         },
         category: 'tier_strategy'
       }
@@ -1474,8 +1485,8 @@ export const FORGE_RULE_TEMPLATES = [
       {
         text: 'When any Star or Core stock comes within {atr} ATR of a negative threshold, demote to Support. Re-promotion requires moving {recovery} ATR away',
         params: {
-          atr: { type: 'number', default: 0.3, min: 0.1, max: 0.5 },
-          recovery: { type: 'number', default: 0.5, min: 0.3, max: 0.8 }
+          atr: { type: 'number', default: 0.3, min: 0.1, max: 0.5, step: 0.1, unit: 'ATR', label: 'Demotion trigger distance', hint: 'ATR distance to negative threshold that triggers tier demotion. Lower = earlier protection.' },
+          recovery: { type: 'number', default: 0.5, min: 0.3, max: 0.8, step: 0.1, unit: 'ATR', label: 'Recovery distance for re-promotion', hint: 'ATR distance away from threshold needed to restore tier. Higher = prevents dead cat bounce re-promotion.' }
         },
         category: 'tier_strategy'
       }
@@ -1499,7 +1510,7 @@ export const FORGE_RULE_TEMPLATES = [
       {
         text: 'If a Star stock\'s price makes a new intraday high but its 5-minute MACD histogram is declining, demote to {tier}',
         params: {
-          tier: { type: 'select', default: 'Core', options: ['Core', 'Support'] }
+          tier: { type: 'select', default: 'Core', options: [{ value: 'Core', label: 'Core (moderate demotion)' }, { value: 'Support', label: 'Support (full demotion)' }], label: 'Divergence demotion tier', hint: 'Where to send a Star stock showing bearish divergence. Support removes the multiplier entirely.' },
         },
         category: 'tier_strategy'
       }
@@ -1523,8 +1534,8 @@ export const FORGE_RULE_TEMPLATES = [
       {
         text: 'During the first {minutes} minutes of EARLY phase, restrict maximum tier to {tier}. Promote top performer to Star after',
         params: {
-          minutes: { type: 'number', default: 45, min: 15, max: 60 },
-          tier: { type: 'select', default: 'Core', options: ['Core', 'Support'] }
+          minutes: { type: 'number', default: 45, min: 15, max: 60, step: 15, unit: 'min', label: 'Discovery period', hint: 'How long to restrict Star tier at the open. Longer = more data before committing the 2x multiplier.' },
+          tier: { type: 'select', default: 'Core', options: [{ value: 'Core', label: 'Core (moderate cap)' }, { value: 'Support', label: 'Support (strict cap)' }], label: 'Morning max tier', hint: 'Maximum tier during the discovery period. Core still provides some multiplier benefit.' },
         },
         category: 'tier_strategy'
       }
@@ -1552,7 +1563,7 @@ export const FORGE_RULE_TEMPLATES = [
       {
         text: 'Prefer stocks where price has pulled back to within {pct}% of daily VWAP while trend remains bullish',
         params: {
-          pct: { type: 'number', default: 0.3, min: 0.1, max: 1.0 }
+          pct: { type: 'number', default: 0.3, min: 0.1, max: 1.0, step: 0.1, unit: '%', label: 'VWAP pullback tolerance', hint: 'How close to VWAP the price must pull back. Day traders use 0.2%, swing traders use 0.5%.' },
         },
         category: 'technical'
       }
@@ -1576,7 +1587,7 @@ export const FORGE_RULE_TEMPLATES = [
       {
         text: 'Reduce selection priority for stocks trading beyond {dev} standard deviations from daily VWAP',
         params: {
-          dev: { type: 'number', default: 2.0, min: 1.5, max: 3.0 }
+          dev: { type: 'number', default: 2.0, min: 1.5, max: 3.0, step: 0.5, unit: 'σ', label: 'Overextension threshold', hint: 'Standard deviations from VWAP before a stock is considered overextended. Higher = more room for winners to run.' }
         },
         category: 'technical'
       }
@@ -1600,8 +1611,8 @@ export const FORGE_RULE_TEMPLATES = [
       {
         text: 'Prefer stocks with RS vs SPY score above {score}/22. Avoid stocks below {floor}',
         params: {
-          score: { type: 'number', default: 15, min: 10, max: 22 },
-          floor: { type: 'number', default: 8, min: 0, max: 15 }
+          score: { type: 'number', default: 15, min: 10, max: 22, step: 1, unit: '/22', label: 'RS preference score', hint: 'Minimum Relative Strength vs SPY. Momentum riders use 18 (top 20%), swing traders use 17.' },
+          floor: { type: 'number', default: 8, min: 0, max: 15, step: 1, unit: '/22', label: 'RS avoidance floor', hint: 'Below this score, the stock is avoided entirely. Higher = stricter quality filter.' }
         },
         category: 'technical'
       }
@@ -1625,8 +1636,8 @@ export const FORGE_RULE_TEMPLATES = [
       {
         text: 'Prioritize stocks where Bollinger Band Width is in lowest {pct}th percentile, especially with volume above {vol}x average',
         params: {
-          pct: { type: 'number', default: 10, min: 5, max: 25 },
-          vol: { type: 'number', default: 1.5, min: 1.0, max: 2.5 }
+          pct: { type: 'number', default: 10, min: 5, max: 25, step: 5, unit: '%ile', label: 'Squeeze tightness', hint: 'How extreme the compression must be. 10th percentile = tighter than 90% of history.' },
+          vol: { type: 'number', default: 1.5, min: 1.0, max: 2.5, step: 0.5, unit: 'x', label: 'Volume confirmation multiplier', hint: 'Volume above this multiple of average confirms the squeeze breakout.' }
         },
         category: 'technical'
       }
@@ -1648,8 +1659,10 @@ export const FORGE_RULE_TEMPLATES = [
     difficulty: 'advanced',
     forgeTemplates: [
       {
-        text: 'Reduce conviction in stocks showing bearish RSI divergence. Increase conviction for bullish divergence',
-        params: {},
+        text: 'Reduce conviction in stocks showing bearish RSI divergence. Increase conviction for bullish divergence with {conviction} enforcement',
+        params: {
+          conviction: { type: 'select', default: 'moderate', options: [{ value: 'light', label: 'Light touch' }, { value: 'moderate', label: 'Moderate' }, { value: 'strong', label: 'Strong conviction' }], label: 'Rule strength', hint: 'How strictly the agent follows this directive.' },
+        },
         category: 'technical'
       }
     ],
@@ -1672,7 +1685,7 @@ export const FORGE_RULE_TEMPLATES = [
       {
         text: 'Only act on breakouts where volume exceeds {mult}x the 20-day average',
         params: {
-          mult: { type: 'number', default: 1.5, min: 1.2, max: 3.0 }
+          mult: { type: 'number', default: 1.5, min: 1.2, max: 3.0, step: 0.1, unit: 'x', label: 'Volume confirmation threshold', hint: 'Volume must exceed this multiple of 20-day average for breakout to be valid. Higher = fewer but stronger signals.' },
         },
         category: 'technical'
       }
@@ -1696,7 +1709,7 @@ export const FORGE_RULE_TEMPLATES = [
       {
         text: 'Prioritize stocks flagged with NR7 when combined with technical score above {score}',
         params: {
-          score: { type: 'number', default: 70, min: 50, max: 90 }
+          score: { type: 'number', default: 70, min: 50, max: 90, step: 5, unit: '/100', label: 'Technical score minimum', hint: 'NR7 stocks must also have a strong technical score. Higher = more selective breakout candidates.' },
         },
         category: 'technical'
       }
@@ -1720,7 +1733,7 @@ export const FORGE_RULE_TEMPLATES = [
       {
         text: 'Only select stocks where at least {count} of these are bullish: price above VWAP, MACD histogram positive, RSI 50-70',
         params: {
-          count: { type: 'select', default: '2 of 3', options: ['2 of 3', '3 of 3'] }
+          count: { type: 'select', default: '2 of 3', options: [{ value: '2 of 3', label: '2 of 3 (moderate)' }, { value: '3 of 3', label: '3 of 3 (strict)' }], label: 'Confluence requirement', hint: 'How many indicators must agree. 3 of 3 is the strongest filter but may miss some opportunities.' }
         },
         category: 'technical'
       }
@@ -1748,8 +1761,8 @@ export const FORGE_RULE_TEMPLATES = [
       {
         text: 'Prefer stocks where earnings beat rate exceeds {beat_pct}% and surprise magnitude is in top {decile}',
         params: {
-          beat_pct: { type: 'number', default: 75, min: 50, max: 100 },
-          decile: { type: 'select', default: 'Top 20%', options: ['Top 10%', 'Top 20%', 'Top 30%'] }
+          beat_pct: { type: 'number', default: 75, min: 50, max: 100, step: 5, unit: '%', label: 'Earnings beat rate', hint: 'Minimum percentage of quarters the company must have beaten estimates. Higher = more consistent beaters.' },
+          decile: { type: 'select', default: 'Top 20%', options: [{ value: 'Top 10%', label: 'Top 10% (elite)' }, { value: 'Top 20%', label: 'Top 20% (strong)' }, { value: 'Top 30%', label: 'Top 30% (moderate)' }], label: 'Surprise magnitude', hint: 'How large the earnings beats must be relative to peers. Top 10% finds the biggest upside surprises.' }
         },
         category: 'fundamental'
       }
@@ -1773,7 +1786,7 @@ export const FORGE_RULE_TEMPLATES = [
       {
         text: 'Prefer stocks where FCF is positive and FCF yield is in top {pct}% of universe',
         params: {
-          pct: { type: 'number', default: 25, min: 10, max: 50 }
+          pct: { type: 'number', default: 25, min: 10, max: 50, step: 5, unit: '%', label: 'FCF yield percentile', hint: 'Top percentile of FCF yield to target. Lower = more selective, finds the best cash generators.' },
         },
         category: 'fundamental'
       }
@@ -1797,8 +1810,8 @@ export const FORGE_RULE_TEMPLATES = [
       {
         text: 'Avoid stocks where D/E exceeds {mult}x sector average. Tighten to {tight_mult}x when sentiment is bearish',
         params: {
-          mult: { type: 'number', default: 1.25, min: 1.0, max: 2.0 },
-          tight_mult: { type: 'number', default: 1.0, min: 0.75, max: 1.25 }
+          mult: { type: 'number', default: 1.25, min: 1.0, max: 2.0, step: 0.25, unit: 'x', label: 'Normal leverage ceiling', hint: 'Maximum D/E as multiple of sector average. Higher = more tolerant of leverage.' },
+          tight_mult: { type: 'number', default: 1.0, min: 0.75, max: 1.25, step: 0.25, unit: 'x', label: 'Bearish leverage ceiling', hint: 'Tighter ceiling during bearish sentiment. Lower = more defensive when markets are nervous.' }
         },
         category: 'fundamental'
       }
@@ -1822,7 +1835,7 @@ export const FORGE_RULE_TEMPLATES = [
       {
         text: 'Evaluate stocks using the metric appropriate to their sector. Prefer stocks in cheapest {pct}% on correct metric',
         params: {
-          pct: { type: 'number', default: 40, min: 20, max: 60 }
+          pct: { type: 'number', default: 40, min: 20, max: 60, step: 10, unit: '%', label: 'Value percentile', hint: 'Prefer stocks in cheapest X% on their sector-appropriate metric. Lower = stricter value filter.' },
         },
         category: 'fundamental'
       }
@@ -1846,7 +1859,7 @@ export const FORGE_RULE_TEMPLATES = [
       {
         text: 'Prefer stocks where current revenue growth rate is at least {bps} basis points higher than previous quarter',
         params: {
-          bps: { type: 'number', default: 200, min: 50, max: 500 }
+          bps: { type: 'number', default: 200, min: 50, max: 500, step: 50, unit: 'bps', label: 'Acceleration threshold', hint: 'Basis points of revenue growth acceleration required. Higher = only the strongest accelerators.' }
         },
         category: 'fundamental'
       }
@@ -1870,7 +1883,7 @@ export const FORGE_RULE_TEMPLATES = [
       {
         text: 'Prefer stocks where analyst consensus has improved over past {days} days. Avoid deteriorating consensus',
         params: {
-          days: { type: 'number', default: 30, min: 14, max: 60 }
+          days: { type: 'number', default: 30, min: 14, max: 60, step: 7, unit: 'days', label: 'Revision lookback', hint: 'How far back to check for analyst consensus changes. Shorter = more responsive to recent upgrades.' },
         },
         category: 'fundamental'
       }
@@ -1894,9 +1907,9 @@ export const FORGE_RULE_TEMPLATES = [
       {
         text: 'Within {days} days of earnings, {action} selection priority. Override if beat rate above {beat_pct}%',
         params: {
-          days: { type: 'number', default: 3, min: 1, max: 7 },
-          action: { type: 'select', default: 'decrease', options: ['decrease', 'increase', 'neutral'] },
-          beat_pct: { type: 'number', default: 80, min: 60, max: 100 }
+          days: { type: 'number', default: 3, min: 1, max: 7, step: 1, unit: 'days', label: 'Earnings proximity window', hint: 'Days before earnings to adjust priority. Larger window = earlier positioning.' },
+          action: { type: 'select', default: 'decrease', options: [{ value: 'decrease', label: 'Decrease priority (avoid)' }, { value: 'increase', label: 'Increase priority (lean in)' }, { value: 'neutral', label: 'Neutral (ignore)' }], label: 'Default earnings action', hint: 'How to handle stocks approaching earnings. Decrease avoids the gap risk, increase bets on the report.' },
+          beat_pct: { type: 'number', default: 80, min: 60, max: 100, step: 5, unit: '%', label: 'Override beat rate', hint: 'Beat rate above which the default action is overridden. Only relevant if default is decrease.' }
         },
         category: 'fundamental'
       }
@@ -1924,7 +1937,7 @@ export const FORGE_RULE_TEMPLATES = [
       {
         text: 'Limit portfolio to maximum of {max} stocks from any single sector',
         params: {
-          max: { type: 'number', default: 2, min: 1, max: 3 }
+          max: { type: 'number', default: 2, min: 1, max: 3, step: 1, unit: '', label: 'Maximum stocks per sector', hint: 'Hard cap on stocks from any single sector. Lower = more diversified but less ability to concentrate in hot sectors.' },
         },
         category: 'risk'
       }
@@ -1948,7 +1961,7 @@ export const FORGE_RULE_TEMPLATES = [
       {
         text: 'Avoid holding more than {max} stock from the same sub-industry',
         params: {
-          max: { type: 'number', default: 1, min: 1, max: 2 }
+          max: { type: 'number', default: 1, min: 1, max: 2, step: 1, unit: '', label: 'Sub-industry limit', hint: 'Maximum stocks from the same sub-industry. 1 ensures true diversification within sectors.' },
         },
         category: 'risk'
       }
@@ -1972,8 +1985,8 @@ export const FORGE_RULE_TEMPLATES = [
       {
         text: 'Maintain at least {anchors} large-cap stocks and no more than {sails} small-cap stocks',
         params: {
-          anchors: { type: 'number', default: 2, min: 1, max: 4 },
-          sails: { type: 'number', default: 2, min: 1, max: 3 }
+          anchors: { type: 'number', default: 2, min: 1, max: 4, step: 1, unit: '', label: 'Large-cap anchors', hint: 'Minimum number of stable large-cap stocks. More anchors = more baseline protection.' },
+          sails: { type: 'number', default: 2, min: 1, max: 3, step: 1, unit: '', label: 'Small-cap limit', hint: 'Maximum number of volatile small-cap stocks. Fewer = less explosive risk.' },
         },
         category: 'risk'
       }
@@ -1997,7 +2010,7 @@ export const FORGE_RULE_TEMPLATES = [
       {
         text: 'If total portfolio drawdown exceeds {pct}%, shift to defensive mode with low-ATR stocks only',
         params: {
-          pct: { type: 'number', default: 10, min: 5, max: 20 }
+          pct: { type: 'number', default: 10, min: 5, max: 20, step: 5, unit: '%', label: 'Drawdown trigger', hint: 'Portfolio loss percentage that triggers survival mode. Lower = earlier defensive shift.' },
         },
         category: 'risk'
       }
@@ -2021,7 +2034,7 @@ export const FORGE_RULE_TEMPLATES = [
       {
         text: 'When market volatility is elevated, restrict portfolio to stocks with ATR below {pct}% of price',
         params: {
-          pct: { type: 'number', default: 3.0, min: 1.5, max: 5.0 }
+          pct: { type: 'number', default: 3.0, min: 1.5, max: 5.0, step: 0.5, unit: '%', label: 'ATR/price cap', hint: 'Maximum ATR as percentage of price during volatile markets. Lower = only the calmest stocks allowed.' },
         },
         category: 'risk'
       }
@@ -2045,7 +2058,7 @@ export const FORGE_RULE_TEMPLATES = [
       {
         text: 'Restrict mandatory crypto to {tier} tier. During drawdowns, limit to major coins only',
         params: {
-          tier: { type: 'select', default: 'Support', options: ['Support', 'Core', 'Any'] }
+          tier: { type: 'select', default: 'Support', options: [{ value: 'Support', label: 'Support (safest)' }, { value: 'Core', label: 'Core (moderate)' }, { value: 'Any', label: 'Any tier (unrestricted)' }], label: 'Crypto tier cap', hint: 'Maximum tier for the mandatory crypto asset. Support removes the multiplier entirely.' },
         },
         category: 'risk'
       }
@@ -2069,7 +2082,7 @@ export const FORGE_RULE_TEMPLATES = [
       {
         text: 'Avoid buying stocks in sectors where FantasyTimes sentiment is {sentiment} or worse',
         params: {
-          sentiment: { type: 'select', default: 'bearish', options: ['bearish', 'neutral'] }
+          sentiment: { type: 'select', default: 'bearish', options: [{ value: 'bearish', label: 'Bearish (avoid negative)' }, { value: 'neutral', label: 'Neutral (avoid non-bullish)' }], label: 'Sentiment exclusion floor', hint: 'Minimum sentiment to allow buying. Neutral is stricter — only buys into bullish sectors.' },
         },
         category: 'risk'
       }
@@ -2097,10 +2110,10 @@ export const FORGE_RULE_TEMPLATES = [
       {
         text: 'Build portfolio with at least {anchors} low-ATR anchors (below {low_pct}%) and {rockets} high-ATR rockets (above {high_pct}%)',
         params: {
-          anchors: { type: 'number', default: 2, min: 1, max: 3 },
-          rockets: { type: 'number', default: 2, min: 1, max: 3 },
-          low_pct: { type: 'number', default: 1.5, min: 0.5, max: 2.5 },
-          high_pct: { type: 'number', default: 3.5, min: 2.5, max: 5.0 }
+          anchors: { type: 'number', default: 2, min: 1, max: 3, step: 1, unit: '', label: 'Low-ATR anchors', hint: 'Minimum stable, low-volatility stocks for baseline protection.' },
+          rockets: { type: 'number', default: 2, min: 1, max: 3, step: 1, unit: '', label: 'High-ATR rockets', hint: 'Number of explosive, high-volatility stocks for threshold-chasing upside.' },
+          low_pct: { type: 'number', default: 1.5, min: 0.5, max: 2.5, step: 0.5, unit: '%', label: 'Anchor ATR ceiling', hint: 'Maximum ATR % of price for anchor stocks. Lower = calmer anchors.' },
+          high_pct: { type: 'number', default: 3.5, min: 2.5, max: 5.0, step: 0.5, unit: '%', label: 'Rocket ATR floor', hint: 'Minimum ATR % of price for rocket stocks. Higher = more explosive picks.' }
         },
         category: 'allocation'
       }
@@ -2124,8 +2137,8 @@ export const FORGE_RULE_TEMPLATES = [
       {
         text: 'Prefer stocks with RS vs SPY above {rs_min}/22. Star and Core only for top {pct}% RS',
         params: {
-          rs_min: { type: 'number', default: 15, min: 10, max: 22 },
-          pct: { type: 'number', default: 25, min: 10, max: 50 }
+          rs_min: { type: 'number', default: 15, min: 10, max: 22, step: 1, unit: '/22', label: 'Minimum RS score', hint: 'Minimum Relative Strength vs SPY for selection. Higher = only the strongest market leaders.' },
+          pct: { type: 'number', default: 25, min: 10, max: 50, step: 5, unit: '%', label: 'Top RS for premium tiers', hint: 'Only stocks in the top X% of RS rankings get Star or Core. Lower = more exclusive.' }
         },
         category: 'allocation'
       }
@@ -2149,9 +2162,9 @@ export const FORGE_RULE_TEMPLATES = [
       {
         text: 'Maintain at least {defensive} high-fundamental-score stocks and up to {growth} high-ATR growth stocks',
         params: {
-          defensive: { type: 'number', default: 2, min: 1, max: 4 },
-          growth: { type: 'number', default: 3, min: 2, max: 4 },
-          fund_min: { type: 'number', default: 70, min: 50, max: 90 }
+          defensive: { type: 'number', default: 2, min: 1, max: 4, step: 1, unit: '', label: 'Defensive stock count', hint: 'Minimum high-fundamental-score stocks for baseline protection.' },
+          growth: { type: 'number', default: 3, min: 2, max: 4, step: 1, unit: '', label: 'Growth stock limit', hint: 'Maximum high-ATR growth stocks. More = higher upside but more risk.' },
+          fund_min: { type: 'number', default: 70, min: 50, max: 90, step: 10, unit: '/100', label: 'Fundamental score floor', hint: 'Minimum composite fundamental score for defensive picks. Higher = stricter quality.' }
         },
         category: 'allocation'
       }
@@ -2175,7 +2188,7 @@ export const FORGE_RULE_TEMPLATES = [
       {
         text: 'Overweight sectors where FantasyTimes sentiment is {sentiment} or better',
         params: {
-          sentiment: { type: 'select', default: 'bullish', options: ['bullish', 'neutral or better'] }
+          sentiment: { type: 'select', default: 'bullish', options: [{ value: 'bullish', label: 'Bullish only' }, { value: 'neutral or better', label: 'Neutral or better' }], label: 'Sentiment threshold', hint: 'Minimum FantasyTimes sentiment for sector overweighting. Neutral is less selective but catches more sectors.' },
         },
         category: 'allocation'
       }
@@ -2199,8 +2212,8 @@ export const FORGE_RULE_TEMPLATES = [
       {
         text: 'At least {complement} bench stocks from different sectors. Include {high_upside} high-ATR breakout candidates',
         params: {
-          complement: { type: 'number', default: 2, min: 1, max: 3 },
-          high_upside: { type: 'number', default: 1, min: 0, max: 2 }
+          complement: { type: 'number', default: 2, min: 1, max: 3, step: 1, unit: '', label: 'Cross-sector bench stocks', hint: 'Minimum bench stocks from different sectors than the active roster. Higher = more diversified swap options.' },
+          high_upside: { type: 'number', default: 1, min: 0, max: 2, step: 1, unit: '', label: 'High-ATR bench candidates', hint: 'Number of explosive breakout candidates to keep on the bench for momentum swaps.' }
         },
         category: 'allocation'
       }
@@ -2224,7 +2237,7 @@ export const FORGE_RULE_TEMPLATES = [
       {
         text: 'When high-impact event is within {days} days, tilt toward historically sensitive sectors',
         params: {
-          days: { type: 'number', default: 2, min: 1, max: 5 }
+          days: { type: 'number', default: 2, min: 1, max: 5, step: 1, unit: 'days', label: 'Event proximity window', hint: 'Days before a high-impact event to start positioning. Larger window = earlier preparation.' },
         },
         category: 'allocation'
       }

@@ -223,7 +223,8 @@ export function useForge(agentId) {
   // Pre-compute collection data with resolved rules and category colors
   const collectionData = useMemo(() => {
     return FORGE_COLLECTIONS.map(collection => {
-      const resolvedRules = collection.ruleIds
+      const ids = collection.ruleIds || [];
+      const resolvedRules = ids
         .map(id => FORGE_RULE_TEMPLATES.find(t => t.id === id))
         .filter(Boolean);
       const catColorSet = new Set();
@@ -231,9 +232,18 @@ export function useForge(agentId) {
         const cat = FORGE_CATEGORIES.find(c => c.id === r.category);
         if (cat) catColorSet.add(cat.color);
       });
+      // For style collections, attach paramOverrides + rationale from collection.rules
+      const rulesWithOverrides = collection.rules
+        ? resolvedRules.map(r => {
+            const collRule = collection.rules.find(cr => cr.ruleId === r.id);
+            return collRule
+              ? { ...r, paramOverrides: collRule.paramOverrides, rationale: collRule.rationale }
+              : r;
+          })
+        : resolvedRules;
       return {
         ...collection,
-        rules: resolvedRules,
+        rules: rulesWithOverrides,
         categoryColors: [...catColorSet],
       };
     });
@@ -292,7 +302,7 @@ export function useForge(agentId) {
   // ── Actions ──────────────────────────────────
 
   // Add a rule from a Discover template to a draft bundle
-  const addRuleToBundle = useCallback(async (template) => {
+  const addRuleToBundle = useCallback(async (template, paramValues) => {
     if (!agentId || addingRuleId) return;
     setAddingRuleId(template.id);
 
@@ -307,16 +317,19 @@ export function useForge(agentId) {
       let ruleText = firstTemplate.text;
       if (firstTemplate.params) {
         for (const [key, config] of Object.entries(firstTemplate.params)) {
-          ruleText = ruleText.replace(`{${key}}`, config.default);
+          const val = paramValues?.[key] !== undefined ? paramValues[key] : config.default;
+          ruleText = ruleText.replace(`{${key}}`, val);
         }
       }
 
       const ruleId = await createRule(agentId, {
         text: ruleText,
+        textTemplate: firstTemplate.text,
         source: 'forge_discover',
         sourceRef: template.id,
         category: firstTemplate.category || template.category,
         params: firstTemplate.params || null,
+        paramValues: paramValues || null,
       });
 
       try {
