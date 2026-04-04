@@ -94,7 +94,7 @@ export const FORGE_RULE_TEMPLATES = [
       {
         text: 'Prefer stocks trading above their {period}-day moving average',
         params: {
-          period: { type: 'select', default: 'SMA 50', options: [{ value: 'SMA 20', label: 'SMA 20 (aggressive)' }, { value: 'SMA 50', label: 'SMA 50 (institutional)' }, { value: 'SMA 200', label: 'SMA 200 (macro)' }], label: 'Trend moving average', hint: 'Which moving average defines the trend. SMA 50 is the institutional standard.' },
+          period: { type: 'select', default: '50', options: [{ value: '20', label: 'SMA 20 (aggressive)' }, { value: '50', label: 'SMA 50 (institutional)' }, { value: '200', label: 'SMA 200 (macro)' }], label: 'Trend moving average', hint: 'Which moving average defines the trend. SMA 50 is the institutional standard.' },
           requireAlignment: { type: 'toggle', default: false, label: 'Require full bullish alignment', hint: 'When on, requires SMA 20 > SMA 50 > SMA 200 — the strongest trend confirmation.' },
         },
         category: 'technical'
