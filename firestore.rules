@@ -129,11 +129,20 @@ service cloud.firestore {
                     && resource.data.ownerId == request.auth.uid;
 
       // FORGE: Rules subcollection — soft-delete only, no hard deletes
+      // Field-level validation for paramValues and textTemplate (Phase C security hardening)
       match /rules/{ruleId} {
         allow read: if request.auth != null
                     && get(/databases/$(database)/documents/agents/$(agentId)).data.ownerId == request.auth.uid;
         allow create, update: if request.auth != null
-                    && get(/databases/$(database)/documents/agents/$(agentId)).data.ownerId == request.auth.uid;
+                    && get(/databases/$(database)/documents/agents/$(agentId)).data.ownerId == request.auth.uid
+                    && (!('textTemplate' in request.resource.data)
+                        || request.resource.data.textTemplate == null
+                        || (request.resource.data.textTemplate is string
+                            && request.resource.data.textTemplate.size() <= 500))
+                    && (!('paramValues' in request.resource.data)
+                        || request.resource.data.paramValues == null
+                        || (request.resource.data.paramValues is map
+                            && request.resource.data.paramValues.keys().size() <= 5));
         allow delete: if false;
       }
 

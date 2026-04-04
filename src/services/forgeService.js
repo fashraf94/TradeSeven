@@ -58,6 +58,37 @@ function validateRuleInput(ruleData) {
     }
   }
 
+  // Validate paramValues: plain object, max 5 keys, values must be string/number/boolean, strings max 50 chars
+  if (ruleData.paramValues != null) {
+    if (typeof ruleData.paramValues !== 'object' || Array.isArray(ruleData.paramValues)) {
+      errors.push('paramValues must be a plain object');
+    } else {
+      const pvKeys = Object.keys(ruleData.paramValues);
+      if (pvKeys.length > MAX_PARAMS_KEYS) {
+        errors.push(`paramValues must have ${MAX_PARAMS_KEYS} or fewer keys`);
+      }
+      for (const k of pvKeys) {
+        const v = ruleData.paramValues[k];
+        const t = typeof v;
+        if (t !== 'string' && t !== 'number' && t !== 'boolean') {
+          errors.push(`paramValues.${k} must be a string, number, or boolean`);
+        }
+        if (t === 'string' && v.length > 50) {
+          errors.push(`paramValues.${k} must be 50 characters or less`);
+        }
+      }
+    }
+  }
+
+  // Validate textTemplate: string, max 500 chars
+  if (ruleData.textTemplate != null) {
+    if (typeof ruleData.textTemplate !== 'string') {
+      errors.push('textTemplate must be a string');
+    } else if (ruleData.textTemplate.length > 500) {
+      errors.push('textTemplate must be 500 characters or less');
+    }
+  }
+
   return errors;
 }
 
@@ -134,6 +165,33 @@ export const updateRule = async (agentId, ruleId, updates) => {
   }
   if (updates.visibility !== undefined && !VALID_VISIBILITIES.includes(updates.visibility)) {
     throw new Error(`Visibility must be one of: ${VALID_VISIBILITIES.join(', ')}`);
+  }
+  if (updates.paramValues != null) {
+    if (typeof updates.paramValues !== 'object' || Array.isArray(updates.paramValues)) {
+      throw new Error('paramValues must be a plain object');
+    }
+    const pvKeys = Object.keys(updates.paramValues);
+    if (pvKeys.length > MAX_PARAMS_KEYS) {
+      throw new Error(`paramValues must have ${MAX_PARAMS_KEYS} or fewer keys`);
+    }
+    for (const k of pvKeys) {
+      const v = updates.paramValues[k];
+      const t = typeof v;
+      if (t !== 'string' && t !== 'number' && t !== 'boolean') {
+        throw new Error(`paramValues.${k} must be a string, number, or boolean`);
+      }
+      if (t === 'string' && v.length > 50) {
+        throw new Error(`paramValues.${k} must be 50 characters or less`);
+      }
+    }
+  }
+  if (updates.textTemplate !== undefined && updates.textTemplate !== null) {
+    if (typeof updates.textTemplate !== 'string') {
+      throw new Error('textTemplate must be a string');
+    }
+    if (updates.textTemplate.length > 500) {
+      throw new Error('textTemplate must be 500 characters or less');
+    }
   }
 
   const allowed = ['text', 'category', 'visibility', 'params', 'isRefined', 'paramValues', 'textTemplate'];
