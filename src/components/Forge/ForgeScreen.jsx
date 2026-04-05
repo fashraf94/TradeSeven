@@ -131,14 +131,19 @@ export default function ForgeScreen({ isMobile: isMobileProp, onClose, user }) {
       if (collectedSourceRefs.has(rule.id)) continue;
       const overrides = rule.paramOverrides || null;
 
-      if (hasProgression && hints) {
-        const status = addedIndex < hints.activeCount ? 'active' : 'queued';
-        await forge.addRuleToBundle(rule, overrides, { status, priority: rule.priority });
-        if (status === 'active') activeCount++;
-        else queuedCount++;
-      } else {
-        await forge.addRuleToBundle(rule, overrides);
-        activeCount++;
+      try {
+        if (hasProgression && hints) {
+          const status = addedIndex < hints.activeCount ? 'active' : 'queued';
+          await forge.addRuleToBundle(rule, overrides, { status, priority: rule.priority });
+          if (status === 'active') activeCount++;
+          else queuedCount++;
+        } else {
+          await forge.addRuleToBundle(rule, overrides);
+          activeCount++;
+        }
+      } catch {
+        // Bundle capacity reached — stop adding, toast will reflect actual counts
+        break;
       }
       addedIndex++;
     }
