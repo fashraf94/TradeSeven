@@ -1,16 +1,41 @@
 // src/components/Forge/CollectionDetailSheet.jsx
 // Bottom sheet (mobile) / side panel (desktop) showing a collection's rules.
 // Phase E: Enhanced for Trading Style Collections with philosophy, param diffs, rationale.
+// Phase F: Progressive unlock — priority tier grouping, locked cards, progression indicator.
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { motion } from 'framer-motion';
-import { X, Plus, Check, ChevronDown, Sparkles } from 'lucide-react';
+import { X, Plus, Check, ChevronDown, Sparkles, Lock } from 'lucide-react';
+import { getNextLevelInfo, AGENT_LEVELS } from '../../constants/agentProgression';
 
 const DIFFICULTY_COLORS = {
   beginner: '#5eead4',
   intermediate: '#a78bfa',
   advanced: '#f97066',
 };
+
+// Priority tier metadata for progressive collections
+const TIER_HEADERS = {
+  1: { emoji: '\u{1F3AF}', label: 'Core Strategy', sublabel: 'active at all levels' },
+  2: { emoji: '\u{1F527}', label: 'Foundation', sublabel: 'active at Rookie+' },
+  3: { emoji: '\u26A1',    label: 'Competitive Edge', sublabel: 'unlocks at Starter' },
+  4: { emoji: '\u{1F3C6}', label: 'Mastery', sublabel: 'unlocks at Partner' },
+};
+
+// Which level is required for each priority tier
+const TIER_REQUIRED_LEVEL = { 1: 'rookie', 2: 'rookie', 3: 'starter', 4: 'partner' };
+const LEVEL_ORDER = { rookie: 0, starter: 1, partner: 2 };
+
+function isTierLocked(priority, agentLevel) {
+  const requiredLevel = TIER_REQUIRED_LEVEL[priority] || 'rookie';
+  return (LEVEL_ORDER[agentLevel] || 0) < (LEVEL_ORDER[requiredLevel] || 0);
+}
+
+function getUnlockLabel(priority) {
+  if (priority === 3) return 'Unlocks at Starter level';
+  if (priority === 4) return 'Unlocks at Partner level';
+  return null;
+}
 
 function ParamDiffRow({ paramKey, paramDef, overrideValue, accentColor }) {
   if (!paramDef) return null;
@@ -114,6 +139,8 @@ export default function CollectionDetailSheet({
   onUsePlaybook,
   activeBundleName,
   onMergeIntoBundle,
+  agentLevel,
+  gamesPlayed,
 }) {
   const [isDesktop, setIsDesktop] = useState(window.innerWidth >= 768);
 
@@ -138,6 +165,166 @@ export default function CollectionDetailSheet({
   const collectedCount = ruleIds.filter(id => collectedSourceRefs.has(id)).length;
   const allCollected = ruleIds.length > 0 && collectedCount === ruleIds.length;
   const remainingCount = ruleIds.length - collectedCount;
+
+  const hasProgression = !!collection.progressionHints;
+  const currentLevel = agentLevel || 'rookie';
+  const hints = hasProgression ? collection.progressionHints[currentLevel] : null;
+  const totalRules = rules?.length || 0;
+  const activeCount = hints?.activeCount || totalRules;
+
+  // Group rules by priority tier for progressive collections
+  const tierGroups = useMemo(() => {
+    if (!hasProgression || !rules) return null;
+    const groups = {};
+    for (const rule of rules) {
+      const p = rule.priority || 1;
+      if (!groups[p]) groups[p] = [];
+      groups[p].push(rule);
+    }
+    return groups;
+  }, [hasProgression, rules]);
+
+  // Next level info for progression indicator
+  const nextLevelInfo = useMemo(() => {
+    if (!hasProgression || gamesPlayed == null) return null;
+    return getNextLevelInfo(gamesPlayed);
+  }, [hasProgression, gamesPlayed]);
+
+  // CTA label for progressive collections
+  const ctaLabel = hasProgression
+    ? `Use This Playbook (${activeCount} of ${totalRules} active)`
+    : 'Use This Playbook';
+
+  // Render a single rule card
+  const renderRuleCard = (rule, idx, { locked = false, isFirstInGroup = false }) => {
+    const isCollected = collectedSourceRefs.has(rule.id);
+    const paramDefs = rule.forgeTemplates?.[0]?.params;
+    const overrides = rule.paramOverrides;
+    const unlockLabel = locked ? getUnlockLabel(rule.priority) : null;
+
+    // Compute which params differ from defaults
+    const diffs = [];
+    if (isStyle && overrides && paramDefs) {
+      for (const [key, val] of Object.entries(overrides)) {
+        const def = paramDefs[key];
+        if (def && val !== def.default) {
+          diffs.push({ key, def, value: val });
+        }
+      }
+    }
+
+    return (
+      <div
+        key={rule.id}
+        style={{
+          padding: '12px 0',
+          borderTop: !isFirstInGroup ? '1px solid rgba(255,255,255,0.06)' : 'none',
+          display: 'flex',
+          alignItems: 'flex-start',
+          gap: 10,
+          opacity: locked ? 0.5 : 1,
+        }}
+      >
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 6,
+          }}>
+            {locked && <Lock size={14} style={{ color: '#6E7681', flexShrink: 0 }} />}
+            <span style={{ fontSize: 14, fontWeight: 600, color: '#ffffff', lineHeight: 1.3 }}>
+              {rule.headline}
+            </span>
+            {rule.category && (
+              <span style={{
+                fontSize: 10, color: '#4a5568', textTransform: 'uppercase',
+                letterSpacing: 0.5,
+              }}>
+                {rule.category}
+              </span>
+            )}
+          </div>
+
+          {locked && unlockLabel && (
+            <div style={{ fontSize: 11, color: '#6E7681', marginTop: 3 }}>
+              {unlockLabel}
+            </div>
+          )}
+
+          {/* Param diffs (style collections only) */}
+          {diffs.length > 0 && (
+            <div style={{ marginTop: 4 }}>
+              {diffs.map(d => (
+                <ParamDiffRow
+                  key={d.key}
+                  paramKey={d.key}
+                  paramDef={d.def}
+                  overrideValue={d.value}
+                  accentColor={accentColor}
+                />
+              ))}
+            </div>
+          )}
+
+          {/* Rationale (style collections only — works even when locked) */}
+          {isStyle && rule.rationale && (
+            <RationaleToggle rationale={rule.rationale} />
+          )}
+
+          {/* Description for non-style collections */}
+          {!isStyle && (
+            <>
+              {rule.hook && (
+                <div style={{
+                  fontSize: 13, lineHeight: 1.5, marginTop: 3,
+                  color: '#A0AEC0', fontStyle: 'italic',
+                }}>
+                  {rule.hook}
+                </div>
+              )}
+              <div style={{
+                fontSize: 13, lineHeight: 1.5, marginTop: rule.hook ? 2 : 3,
+                color: '#8b949e',
+              }}>
+                {rule.description}
+              </div>
+              <div style={{
+                fontSize: 10, color: '#4a5568', textTransform: 'uppercase',
+                letterSpacing: 0.5, marginTop: 4,
+              }}>
+                {rule.category} · <span style={{ color: DIFFICULTY_COLORS[rule.difficulty] || '#4a5568' }}>
+                  {rule.difficulty}
+                </span>
+              </div>
+            </>
+          )}
+        </div>
+        {/* Individual add/added — hidden for locked rules */}
+        {locked ? null : !agentExists ? null : isCollected ? (
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 4,
+            fontSize: 11, fontWeight: 600, color: '#5EEAD4',
+            flexShrink: 0, marginTop: 2,
+          }}>
+            <Check size={12} /> Added
+          </div>
+        ) : !isStyle ? (
+          <button
+            onClick={() => onAddRule(rule)}
+            disabled={isAdding}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 3,
+              fontSize: 11, fontWeight: 600, color: '#5EEAD4',
+              background: 'none', border: '1px solid rgba(94,234,212,0.3)',
+              borderRadius: 6, padding: '4px 10px', cursor: 'pointer',
+              flexShrink: 0, marginTop: 2,
+              opacity: isAdding ? 0.5 : 1,
+            }}
+          >
+            <Plus size={12} /> Add
+          </button>
+        ) : null}
+      </div>
+    );
+  };
 
   return (
     <>
@@ -245,130 +432,85 @@ export default function CollectionDetailSheet({
           </div>
         )}
 
+        {/* Progression indicator (progressive collections only) */}
+        {hasProgression && hints && (
+          <div style={{ padding: '0 20px 12px', flexShrink: 0 }}>
+            {/* Progress bar */}
+            <div style={{
+              height: 6,
+              borderRadius: 3,
+              background: '#1C1A27',
+              overflow: 'hidden',
+              marginBottom: 8,
+            }}>
+              <div style={{
+                height: '100%',
+                width: `${Math.round((activeCount / totalRules) * 100)}%`,
+                background: '#5EEAD4',
+                borderRadius: 3,
+                transition: 'width 0.3s ease',
+              }} />
+            </div>
+            {/* Status text */}
+            <div style={{ fontSize: 12, color: '#94A3B8', lineHeight: 1.5 }}>
+              {activeCount} of {totalRules} rules will activate at your level
+            </div>
+            <div style={{ fontSize: 12, color: '#6E7681', lineHeight: 1.5, marginTop: 2 }}>
+              {hints.message}
+            </div>
+            {/* Games remaining */}
+            {nextLevelInfo && (
+              <div style={{ fontSize: 11, color: '#4a5568', marginTop: 4 }}>
+                {nextLevelInfo.gamesNeeded} more game{nextLevelInfo.gamesNeeded !== 1 ? 's' : ''} to reach {nextLevelInfo.label}
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Rule list */}
         <div style={{
           flex: 1, overflowY: 'auto', padding: '0 20px',
         }}>
-          {rules.map((rule, idx) => {
-            const isCollected = collectedSourceRefs.has(rule.id);
-            const paramDefs = rule.forgeTemplates?.[0]?.params;
-            const overrides = rule.paramOverrides;
+          {hasProgression && tierGroups ? (
+            // Progressive: render grouped by priority tier
+            Object.keys(tierGroups)
+              .sort((a, b) => Number(a) - Number(b))
+              .map(priority => {
+                const p = Number(priority);
+                const tier = TIER_HEADERS[p];
+                const tierRules = tierGroups[p];
+                const locked = isTierLocked(p, currentLevel);
 
-            // Compute which params differ from defaults
-            const diffs = [];
-            if (isStyle && overrides && paramDefs) {
-              for (const [key, val] of Object.entries(overrides)) {
-                const def = paramDefs[key];
-                if (def && val !== def.default) {
-                  diffs.push({ key, def, value: val });
-                }
-              }
-            }
-
-            return (
-              <div
-                key={rule.id}
-                style={{
-                  padding: '12px 0',
-                  borderTop: idx > 0 ? '1px solid rgba(255,255,255,0.06)' : 'none',
-                  display: 'flex',
-                  alignItems: 'flex-start',
-                  gap: 10,
-                }}
-              >
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{
-                    display: 'flex', alignItems: 'center', gap: 6,
-                  }}>
-                    <span style={{ fontSize: 14, fontWeight: 600, color: '#ffffff', lineHeight: 1.3 }}>
-                      {rule.headline}
-                    </span>
-                    {rule.category && (
-                      <span style={{
-                        fontSize: 10, color: '#4a5568', textTransform: 'uppercase',
-                        letterSpacing: 0.5,
-                      }}>
-                        {rule.category}
+                return (
+                  <div key={p}>
+                    {/* Tier header */}
+                    <div style={{
+                      display: 'flex', alignItems: 'center', gap: 6,
+                      padding: '12px 0 4px',
+                      borderTop: p > 1 ? '1px solid rgba(255,255,255,0.08)' : 'none',
+                    }}>
+                      <span style={{ fontSize: 14 }}>{tier?.emoji}</span>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: locked ? '#4a5568' : '#ffffff' }}>
+                        {tier?.label || `Priority ${p}`}
                       </span>
+                      <span style={{ fontSize: 11, color: '#4a5568' }}>
+                        — {tier?.sublabel}
+                      </span>
+                      {locked && <Lock size={12} style={{ color: '#4a5568' }} />}
+                    </div>
+                    {/* Tier rules */}
+                    {tierRules.map((rule, idx) =>
+                      renderRuleCard(rule, idx, { locked, isFirstInGroup: idx === 0 })
                     )}
                   </div>
-
-                  {/* Param diffs (style collections only) */}
-                  {diffs.length > 0 && (
-                    <div style={{ marginTop: 4 }}>
-                      {diffs.map(d => (
-                        <ParamDiffRow
-                          key={d.key}
-                          paramKey={d.key}
-                          paramDef={d.def}
-                          overrideValue={d.value}
-                          accentColor={accentColor}
-                        />
-                      ))}
-                    </div>
-                  )}
-
-                  {/* Rationale (style collections only) */}
-                  {isStyle && rule.rationale && (
-                    <RationaleToggle rationale={rule.rationale} />
-                  )}
-
-                  {/* Description for non-style collections */}
-                  {!isStyle && (
-                    <>
-                      {rule.hook && (
-                        <div style={{
-                          fontSize: 13, lineHeight: 1.5, marginTop: 3,
-                          color: '#A0AEC0', fontStyle: 'italic',
-                        }}>
-                          {rule.hook}
-                        </div>
-                      )}
-                      <div style={{
-                        fontSize: 13, lineHeight: 1.5, marginTop: rule.hook ? 2 : 3,
-                        color: '#8b949e',
-                      }}>
-                        {rule.description}
-                      </div>
-                      <div style={{
-                        fontSize: 10, color: '#4a5568', textTransform: 'uppercase',
-                        letterSpacing: 0.5, marginTop: 4,
-                      }}>
-                        {rule.category} · <span style={{ color: DIFFICULTY_COLORS[rule.difficulty] || '#4a5568' }}>
-                          {rule.difficulty}
-                        </span>
-                      </div>
-                    </>
-                  )}
-                </div>
-                {/* Individual add/added */}
-                {!agentExists ? null : isCollected ? (
-                  <div style={{
-                    display: 'flex', alignItems: 'center', gap: 4,
-                    fontSize: 11, fontWeight: 600, color: '#5EEAD4',
-                    flexShrink: 0, marginTop: 2,
-                  }}>
-                    <Check size={12} /> Added
-                  </div>
-                ) : !isStyle ? (
-                  <button
-                    onClick={() => onAddRule(rule)}
-                    disabled={isAdding}
-                    style={{
-                      display: 'flex', alignItems: 'center', gap: 3,
-                      fontSize: 11, fontWeight: 600, color: '#5EEAD4',
-                      background: 'none', border: '1px solid rgba(94,234,212,0.3)',
-                      borderRadius: 6, padding: '4px 10px', cursor: 'pointer',
-                      flexShrink: 0, marginTop: 2,
-                      opacity: isAdding ? 0.5 : 1,
-                    }}
-                  >
-                    <Plus size={12} /> Add
-                  </button>
-                ) : null}
-              </div>
-            );
-          })}
+                );
+              })
+          ) : (
+            // Non-progressive: flat list (original behavior)
+            rules.map((rule, idx) =>
+              renderRuleCard(rule, idx, { locked: false, isFirstInGroup: idx === 0 })
+            )
+          )}
         </div>
 
         {/* CTA footer */}
@@ -390,7 +532,7 @@ export default function CollectionDetailSheet({
                     opacity: isAdding ? 0.6 : 1,
                   }}
                 >
-                  <Sparkles size={16} /> Use This Playbook
+                  <Sparkles size={16} /> {ctaLabel}
                 </button>
 
                 {/* Secondary: Merge Into Bundle (only if active bundle exists) */}

@@ -111,17 +111,50 @@ export default function ForgeScreen({ isMobile: isMobileProp, onClose, user }) {
   }, [collectedSourceRefs, forge]);
 
   // Use This Playbook — creates a new bundle with all rules + paramOverrides
+  // For collections with progressionHints, respects slot caps: active up to limit, rest queued
   const handleUsePlaybook = useCallback(async (collection) => {
     if (!collection.rules) return;
-    for (const rule of collection.rules) {
-      if (!collectedSourceRefs.has(rule.id)) {
-        const overrides = rule.paramOverrides || null;
-        await forge.addRuleToBundle(rule, overrides);
+
+    const hasProgression = !!collection.progressionHints;
+    const hints = hasProgression ? collection.progressionHints[level] : null;
+
+    // Sort rules by priority (1 first) for progressive collections
+    const sortedRules = hasProgression
+      ? [...collection.rules].sort((a, b) => (a.priority || 1) - (b.priority || 1))
+      : collection.rules;
+
+    let activeCount = 0;
+    let queuedCount = 0;
+    let addedIndex = 0;
+
+    for (const rule of sortedRules) {
+      if (collectedSourceRefs.has(rule.id)) continue;
+      const overrides = rule.paramOverrides || null;
+
+      try {
+        if (hasProgression && hints) {
+          const status = addedIndex < hints.activeCount ? 'active' : 'queued';
+          await forge.addRuleToBundle(rule, overrides, { status, priority: rule.priority });
+          if (status === 'active') activeCount++;
+          else queuedCount++;
+        } else {
+          await forge.addRuleToBundle(rule, overrides);
+          activeCount++;
+        }
+      } catch {
+        // Bundle capacity reached — stop adding, toast will reflect actual counts
+        break;
       }
+      addedIndex++;
     }
-    forge.showToast(`${collection.title} Playbook created!`);
+
+    if (hasProgression && queuedCount > 0) {
+      forge.showToast(`${collection.title} Playbook created! ${activeCount} active, ${queuedCount} queued`);
+    } else {
+      forge.showToast(`${collection.title} Playbook created!`);
+    }
     setSelectedCollection(null);
-  }, [collectedSourceRefs, forge]);
+  }, [collectedSourceRefs, forge, level]);
 
   // Merge collection rules into existing active bundle
   const handleMergeIntoBundle = useCallback(async (collection) => {
@@ -458,6 +491,8 @@ export default function ForgeScreen({ isMobile: isMobileProp, onClose, user }) {
               onUsePlaybook={handleUsePlaybook}
               activeBundleName={forge.bundles.find(b => b.status === 'draft')?.name}
               onMergeIntoBundle={handleMergeIntoBundle}
+              agentLevel={level}
+              gamesPlayed={agent?.stats?.gamesPlayed || 0}
             />
           )}
         </AnimatePresence>
@@ -771,6 +806,11 @@ export default function ForgeScreen({ isMobile: isMobileProp, onClose, user }) {
             onClose={() => setSelectedCollection(null)}
             agentExists={!!hasAgent}
             isAdding={!!forge.addingRuleId}
+            onUsePlaybook={handleUsePlaybook}
+            activeBundleName={forge.bundles.find(b => b.status === 'draft')?.name}
+            onMergeIntoBundle={handleMergeIntoBundle}
+            agentLevel={level}
+            gamesPlayed={agent?.stats?.gamesPlayed || 0}
           />
         )}
       </AnimatePresence>
