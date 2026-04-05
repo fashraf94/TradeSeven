@@ -2247,6 +2247,409 @@ export const FORGE_RULE_TEMPLATES = [
     tags: ['economic-calendar', 'FOMC', 'CPI', 'macro-positioning'],
     agentUseDescription: 'Your agent will tilt portfolio allocation toward sectors historically sensitive to upcoming high-impact economic events within the specified time window.',
   },
+
+  // TV-01: RSI Momentum Zone
+  {
+    id: 'tv-01',
+    category: 'technical',
+    headline: 'RSI Momentum Zone',
+    description: 'Targets stocks in the RSI sweet spot — strong momentum without overextension. Unlike the oversold bounce, this rule seeks stocks already moving.',
+    hook: 'The best stocks aren\'t oversold or overbought — they\'re in the power zone where momentum is building',
+    learnMore: 'RSI is often used to find oversold bounces, but quantitative research shows it works even better as a trend-following tool. Stocks with RSI between 50 and 70 are in a momentum sweet spot — strong enough to confirm a trend, but not so stretched that a pullback is imminent. This rule targets that power zone and avoids both weak (below 40) and overextended (above 75) stocks.',
+    difficulty: 'beginner',
+    forgeTemplates: [
+      {
+        text: 'Prefer stocks with 14-day RSI between {low} and {high}. This zone indicates building momentum without overextension. Deprioritize stocks with RSI below {weak} (no momentum) or above {stretched} (overextended)',
+        params: {
+          low: { type: 'number', default: 50, min: 40, max: 60, step: 5, unit: '', label: 'Zone floor', hint: 'RSI above this = momentum confirmed' },
+          high: { type: 'number', default: 70, min: 60, max: 80, step: 5, unit: '', label: 'Zone ceiling', hint: 'RSI above this = getting stretched' },
+          weak: { type: 'number', default: 40, min: 25, max: 50, step: 5, unit: '', label: 'Weak threshold', hint: 'Below this = no momentum' },
+          stretched: { type: 'number', default: 75, min: 65, max: 85, step: 5, unit: '', label: 'Stretched threshold', hint: 'Above this = overextended' },
+        },
+        category: 'technical'
+      }
+    ],
+    relatedIndicator: 'RSI (14-period)',
+    kbEntryId: null,
+    tags: ['RSI', 'momentum', 'zone', 'trend-following', 'tradingview'],
+    agentUseDescription: 'Your agent will prioritize stocks with RSI in the 50-70 momentum zone and deprioritize stocks with weak or overextended RSI readings.',
+  },
+
+  // TV-02: MACD Histogram Acceleration
+  {
+    id: 'tv-02',
+    category: 'technical',
+    headline: 'MACD Histogram Acceleration',
+    description: 'Focuses on whether the MACD histogram is growing or shrinking. A growing histogram means momentum is accelerating — the move is getting stronger.',
+    hook: 'A positive MACD is good, but a GROWING MACD is better — acceleration beats direction',
+    learnMore: 'Most traders only check whether MACD is positive or negative. But the real edge is in the histogram\'s rate of change — is it growing or shrinking? A growing histogram means the gap between the MACD line and signal line is widening, which indicates accelerating momentum. When the histogram starts shrinking, even if still positive, the move is losing steam and a reversal may be near.',
+    difficulty: 'intermediate',
+    forgeTemplates: [
+      {
+        text: 'Prefer stocks where the MACD histogram is positive AND growing (current bar larger than previous). When the histogram starts shrinking, even if still positive, {action}',
+        params: {
+          action: { type: 'select', default: 'reduce tier', options: [
+            { value: 'reduce tier', label: 'Reduce tier' },
+            { value: 'flag for swap', label: 'Flag for swap' },
+            { value: 'hold but monitor', label: 'Hold but monitor' },
+          ], label: 'On deceleration', hint: 'What to do when momentum peaks' },
+        },
+        category: 'technical'
+      }
+    ],
+    relatedIndicator: 'MACD Histogram',
+    kbEntryId: null,
+    tags: ['MACD', 'histogram', 'acceleration', 'momentum', 'tradingview'],
+    agentUseDescription: 'Your agent will favor stocks with a growing MACD histogram and take the specified action when histogram momentum decelerates.',
+  },
+
+  // TV-03: MACD Zero-Line Bounce
+  {
+    id: 'tv-03',
+    category: 'technical',
+    headline: 'MACD Zero-Line Bounce',
+    description: 'In an uptrend, MACD often pulls back toward zero then bounces. This catches the momentum reset before the next leg up.',
+    hook: 'When momentum cools to neutral in an uptrend, the next surge is loading — buy the pause',
+    learnMore: 'In a healthy uptrend, momentum doesn\'t stay at maximum forever — it naturally oscillates. When the MACD histogram pulls back toward zero, many traders panic and sell. But if the daily trend structure (technical score) remains healthy, this pause is actually the momentum resetting before the next leg higher. This rule prevents your agent from mistaking a normal momentum pullback for a trend reversal.',
+    difficulty: 'intermediate',
+    forgeTemplates: [
+      {
+        text: 'When a stock\'s MACD histogram is near zero but the daily technical score is above {score}, treat this as a momentum pause in an uptrend — increase hold patience to {minutes} minutes. This is a buying opportunity, not an exit signal',
+        params: {
+          score: { type: 'number', default: 60, min: 45, max: 80, step: 5, unit: '/100', label: 'Min daily score', hint: 'Confirms the trend is still healthy' },
+          minutes: { type: 'number', default: 120, min: 60, max: 240, step: 15, unit: 'min', label: 'Hold patience', hint: 'How long to wait for momentum to resume' },
+        },
+        category: 'technical'
+      }
+    ],
+    relatedIndicator: 'MACD Histogram',
+    kbEntryId: null,
+    tags: ['MACD', 'zero-line', 'pullback', 'trend-continuation', 'tradingview'],
+    agentUseDescription: 'Your agent will hold through MACD zero-line pauses when the daily technical score confirms the uptrend is intact, increasing hold patience instead of swapping.',
+  },
+
+  // TV-04: VWAP Reclaim Entry
+  {
+    id: 'tv-04',
+    category: 'technical',
+    headline: 'VWAP Reclaim Entry',
+    description: 'Targets stocks that dipped below VWAP and recovered back above it. The reclaim signals buyers stepping in at institutional fair value.',
+    hook: 'A stock that fights its way back above VWAP just proved the buyers are stronger than the sellers',
+    learnMore: 'VWAP (Volume-Weighted Average Price) represents the average price institutions paid throughout the day. When a stock dips below VWAP and then recovers above it, it signals that buyers stepped in at the institutional fair value level and overwhelmed sellers. This reclaim pattern is one of the most reliable intraday reversal signals because it demonstrates genuine buying pressure at a meaningful price level.',
+    difficulty: 'intermediate',
+    forgeTemplates: [
+      {
+        text: 'On the bench, prioritize stocks that have recently reclaimed VWAP from below (currently above VWAP with a VWAP deviation above {dev}% after previously being negative). This reversal pattern signals institutional buying',
+        params: {
+          dev: { type: 'number', default: 0.3, min: 0.1, max: 1.0, step: 0.1, unit: '%', label: 'Min deviation above VWAP', hint: 'How far above VWAP to confirm reclaim' },
+        },
+        category: 'technical'
+      }
+    ],
+    relatedIndicator: 'VWAP',
+    kbEntryId: null,
+    tags: ['VWAP', 'reclaim', 'reversal', 'institutional', 'tradingview'],
+    agentUseDescription: 'Your agent will prioritize bench stocks showing a VWAP reclaim pattern — dipping below and recovering above VWAP with sufficient deviation to confirm the reversal.',
+  },
+
+  // TV-05: Squeeze Direction Filter
+  {
+    id: 'tv-05',
+    category: 'technical',
+    headline: 'Squeeze Direction Filter',
+    description: 'When a Bollinger Band squeeze is detected, use MACD histogram direction to predict breakout direction. Positive histogram = likely upward breakout.',
+    hook: 'A squeeze tells you WHEN the move is coming — MACD tells you WHICH WAY',
+    learnMore: 'A Bollinger Band squeeze occurs when the bands contract tightly around price, indicating low volatility that typically precedes a big move. The problem is that squeezes break in both directions — up or down. By combining the squeeze detection with MACD histogram direction, you can filter for squeezes most likely to break upward. This is the core concept behind LazyBear\'s Squeeze Momentum Indicator, the most popular community script on TradingView.',
+    difficulty: 'intermediate',
+    forgeTemplates: [
+      {
+        text: 'When a stock is in a Bollinger squeeze (bandwidth below {bw}%), only select it if the MACD histogram is {direction}. A squeeze with negative momentum predicts a downward breakout — avoid',
+        params: {
+          bw: { type: 'number', default: 4, min: 2, max: 8, step: 1, unit: '%', label: 'Squeeze bandwidth', hint: 'Lower = tighter squeeze = bigger expected move' },
+          direction: { type: 'select', default: 'positive and growing', options: [
+            { value: 'positive', label: 'Positive (any)' },
+            { value: 'positive and growing', label: 'Positive & growing' },
+            { value: 'turning positive', label: 'Turning positive from negative' },
+          ], label: 'Required MACD state', hint: 'How strong must the directional signal be' },
+        },
+        category: 'technical'
+      }
+    ],
+    relatedIndicator: 'Bollinger Bands / MACD',
+    kbEntryId: null,
+    tags: ['bollinger', 'squeeze', 'MACD', 'direction', 'LazyBear', 'tradingview'],
+    agentUseDescription: 'Your agent will only select stocks in a Bollinger squeeze when the MACD histogram confirms a likely upward breakout direction, filtering out bearish squeezes.',
+  },
+
+  // TV-06: Bollinger Lower Band Entry
+  {
+    id: 'tv-06',
+    category: 'technical',
+    headline: 'Bollinger Lower Band Entry',
+    description: 'When price touches or penetrates the lower Bollinger Band, the stock is stretched below its statistical mean. Expect a bounce back toward the middle band.',
+    hook: 'Stocks that touch the lower band are statistically stretched — the rubber band usually snaps back',
+    learnMore: 'Bollinger Bands plot two standard deviations above and below a 20-period moving average. When price reaches the lower band, it\'s statistically at an extreme — roughly 95% of price action occurs within the bands. While a stock can "ride the band" in a strong downtrend, in normal conditions a touch of the lower band represents a high-probability mean reversion opportunity back toward the middle band (20 SMA).',
+    difficulty: 'beginner',
+    forgeTemplates: [
+      {
+        text: 'Look for stocks where Bollinger percentB is below {percentB}. These are trading near or below the lower band and are mean-reversion candidates. Set exit expectation at the middle band (20 SMA). {tierRule}',
+        params: {
+          percentB: { type: 'number', default: 0.1, min: 0.0, max: 0.3, step: 0.1, unit: '', label: 'Max percentB', hint: '0 = at the lower band, negative = below it' },
+          tierRule: { type: 'select', default: 'Support or Core only', options: [
+            { value: 'Support or Core only', label: 'Support/Core only (conservative)' },
+            { value: 'Core tier', label: 'Core tier (moderate)' },
+            { value: 'Any tier', label: 'Any tier (aggressive)' },
+          ], label: 'Tier restriction', hint: 'Mean reversion upside is defined, not explosive' },
+        },
+        category: 'technical'
+      }
+    ],
+    relatedIndicator: 'Bollinger Bands',
+    kbEntryId: null,
+    tags: ['bollinger', 'lower-band', 'mean-reversion', 'oversold', 'tradingview'],
+    agentUseDescription: 'Your agent will target stocks trading near or below the lower Bollinger Band as mean-reversion candidates, with tier restrictions reflecting the defined upside.',
+  },
+
+  // TV-07: Intraday Range Position
+  {
+    id: 'tv-07',
+    category: 'technical',
+    headline: 'Intraday Range Position',
+    description: 'Stocks that close near the low of their intraday range often bounce the next session. This is the IBS (Internal Bar Strength) concept from quantitative research.',
+    hook: 'A stock beaten down to its daily low is spring-loaded for a morning bounce — this is one of the most backtested edges in quant trading',
+    learnMore: 'Internal Bar Strength (IBS) measures where a stock\'s closing price falls within its intraday high-low range. Research across decades of data shows that stocks closing near their daily low tend to bounce the following session, while stocks closing near their high tend to pull back. This mean-reversion effect is one of the most robust edges in quantitative finance and works particularly well on liquid, large-cap stocks.',
+    difficulty: 'intermediate',
+    forgeTemplates: [
+      {
+        text: 'When a stock closes in the bottom {pct}% of its intraday range, increase hold patience to {minutes} minutes. A morning recovery is statistically likely. Do not swap a stock near its daily low unless it breaches a Bust threshold',
+        params: {
+          pct: { type: 'number', default: 20, min: 10, max: 40, step: 5, unit: '%', label: 'Bottom range %', hint: 'Lower = more extreme = higher bounce probability' },
+          minutes: { type: 'number', default: 90, min: 45, max: 180, step: 15, unit: 'min', label: 'Bounce patience', hint: 'How long to wait for the recovery' },
+        },
+        category: 'technical'
+      }
+    ],
+    relatedIndicator: null,
+    kbEntryId: null,
+    tags: ['IBS', 'range', 'bounce', 'mean-reversion', 'quant', 'tradingview'],
+    agentUseDescription: 'Your agent will increase hold patience for stocks closing near the bottom of their intraday range, giving the statistically likely morning bounce time to develop.',
+  },
+
+  // TV-08: Low Volume Pullback Hold
+  {
+    id: 'tv-08',
+    category: 'mid_battle',
+    headline: 'Low Volume Pullback Hold',
+    description: 'In an uptrend, pullbacks on below-average volume are healthy — they show a lack of selling pressure. The trend resumes when volume returns.',
+    hook: 'If nobody\'s actually selling, the dip isn\'t real — low volume pullbacks in uptrends are gifts',
+    learnMore: 'Volume tells you the conviction behind a price move. When a stock in an uptrend pulls back on below-average volume, it means there\'s no real selling pressure — the pullback is caused by a temporary absence of buyers, not an influx of sellers. These low-volume dips typically resolve when normal buying volume returns. Conversely, if volume INCREASES during a pullback, institutional sellers are participating and the dip may be real.',
+    difficulty: 'intermediate',
+    forgeTemplates: [
+      {
+        text: 'When a stock in an uptrend (daily technical score above {score}) pulls back on below-average volume (volume ratio below {vol}x), increase hold patience to {minutes} minutes. Only swap if volume INCREASES during the pullback',
+        params: {
+          score: { type: 'number', default: 55, min: 40, max: 75, step: 5, unit: '/100', label: 'Min trend score', hint: 'Confirms the stock is still in an uptrend' },
+          vol: { type: 'number', default: 0.8, min: 0.5, max: 1.0, step: 0.1, unit: 'x', label: 'Max volume ratio', hint: 'Below this = low volume = healthy pullback' },
+          minutes: { type: 'number', default: 90, min: 45, max: 180, step: 15, unit: 'min', label: 'Extra patience', hint: 'How long to hold during the low-volume dip' },
+        },
+        category: 'mid_battle'
+      }
+    ],
+    relatedIndicator: 'Volume / ATR',
+    kbEntryId: null,
+    tags: ['volume', 'pullback', 'hold', 'trend', 'patience', 'tradingview'],
+    agentUseDescription: 'Your agent will hold through pullbacks on low volume in uptrending stocks, only considering a swap if volume increases during the decline.',
+  },
+
+  // TV-09: Smart Money Liquidity Sweep
+  {
+    id: 'tv-09',
+    category: 'mid_battle',
+    headline: 'Smart Money Liquidity Sweep',
+    description: 'When a stock drops sharply on a volume spike then immediately recovers, institutional players swept stop-losses to accumulate at a lower price. Hold through this pattern.',
+    hook: 'That scary drop and instant recovery? That was smart money shaking out weak hands to buy cheaper',
+    learnMore: 'Liquidity sweeps are a core concept in Smart Money / ICT (Inner Circle Trader) methodology. Large institutions need to accumulate shares without driving the price up, so they deliberately push price through a support level to trigger stop-loss orders. This creates a burst of selling liquidity that they absorb. The telltale sign: a sharp drop on elevated volume followed by a quick recovery back above VWAP. If your stock shows this pattern, the "dip" was engineered — hold through it.',
+    difficulty: 'advanced',
+    forgeTemplates: [
+      {
+        text: 'When a stock drops more than {atr}x ATR intraday on elevated volume (above {vol}x average) but then recovers above VWAP within {minutes} minutes, do NOT swap — this is a liquidity sweep pattern. Increase hold conviction',
+        params: {
+          atr: { type: 'number', default: 0.5, min: 0.3, max: 1.0, step: 0.1, unit: 'x ATR', label: 'Drop threshold', hint: 'How far the stock must drop to trigger this pattern' },
+          vol: { type: 'number', default: 1.5, min: 1.2, max: 2.5, step: 0.1, unit: 'x avg', label: 'Volume spike', hint: 'Volume must be elevated for a true sweep' },
+          minutes: { type: 'number', default: 60, min: 30, max: 120, step: 15, unit: 'min', label: 'Recovery window', hint: 'How quickly it must recover to confirm the pattern' },
+        },
+        category: 'mid_battle'
+      }
+    ],
+    relatedIndicator: 'VWAP / Volume',
+    kbEntryId: null,
+    tags: ['smart-money', 'ICT', 'liquidity', 'sweep', 'institutional', 'tradingview'],
+    agentUseDescription: 'Your agent will recognize liquidity sweep patterns — sharp drops on volume followed by VWAP recovery — and hold through them instead of panic-swapping.',
+  },
+
+  // TV-10: Earnings + Technical Confluence
+  {
+    id: 'tv-10',
+    category: 'fundamental',
+    headline: 'Earnings + Technical Confluence',
+    description: 'Stocks with both strong earnings history AND bullish technicals have dual confirmation. Fundamental quality backs the technical momentum.',
+    hook: 'Great earnings AND great technicals? That\'s the market saying "this stock deserves to be here" — double conviction',
+    learnMore: 'The strongest stock picks have both fundamental quality and technical momentum. A stock with great earnings but weak technicals may be a value trap — the market knows something the numbers don\'t show. A stock with strong technicals but weak fundamentals may be a speculative bubble. When both signals agree, you have dual confirmation that the stock\'s price action is backed by real business performance.',
+    difficulty: 'beginner',
+    forgeTemplates: [
+      {
+        text: 'Prefer stocks where the fundamental composite score is above {fund_score} AND the daily technical score is above {tech_score}. Stocks meeting both criteria are eligible for {tier} tier. Stocks meeting only one are restricted to Core or below',
+        params: {
+          fund_score: { type: 'number', default: 65, min: 40, max: 85, step: 5, unit: '/100', label: 'Min fundamental score', hint: 'From peerRankings composite' },
+          tech_score: { type: 'number', default: 60, min: 40, max: 80, step: 5, unit: '/100', label: 'Min technical score', hint: 'From stockTechnicalScores composite' },
+          tier: { type: 'select', default: 'Star', options: [
+            { value: 'Star', label: 'Star eligible' },
+            { value: 'Core', label: 'Core max' },
+          ], label: 'Dual-confirm tier', hint: 'What tier can dual-confirmed stocks reach' },
+        },
+        category: 'fundamental'
+      }
+    ],
+    relatedIndicator: null,
+    kbEntryId: null,
+    tags: ['earnings', 'technical', 'confluence', 'dual-confirmation', 'tradingview'],
+    agentUseDescription: 'Your agent will require both strong fundamentals and strong technicals for Star tier eligibility, restricting single-signal stocks to Core or below.',
+  },
+
+  // TV-11: 52-Week High Breakout Preference
+  {
+    id: 'tv-11',
+    category: 'technical',
+    headline: '52-Week High Breakout Preference',
+    description: 'Stocks near their 52-week high are breaking through resistance. This is the Donchian / channel breakout concept — new highs attract momentum buyers.',
+    hook: 'Stocks making new highs tend to keep making new highs — resistance becomes support once it breaks',
+    learnMore: 'The Donchian Channel breakout strategy is one of the oldest and most respected trend-following systems. When a stock approaches or breaks its 52-week high, it\'s clearing a major resistance level that attracts momentum-following institutional capital. Contrary to the instinct that "it\'s too high to buy," stocks near their highs tend to continue higher because the breakout signals that all overhead supply has been absorbed.',
+    difficulty: 'beginner',
+    forgeTemplates: [
+      {
+        text: 'Prefer stocks with a highProximity score above {score} out of 12. Stocks within {pct}% of their 52-week high are in breakout territory and attract momentum-following institutional buyers',
+        params: {
+          score: { type: 'number', default: 9, min: 6, max: 12, step: 1, unit: '/12', label: 'Min highProximity', hint: 'Higher = closer to 52-week high' },
+          pct: { type: 'number', default: 5, min: 2, max: 15, step: 1, unit: '%', label: 'Max distance from high', hint: 'How close to the 52-week high to qualify' },
+        },
+        category: 'technical'
+      }
+    ],
+    relatedIndicator: '52-Week High',
+    kbEntryId: null,
+    tags: ['breakout', '52-week-high', 'Donchian', 'channel', 'momentum', 'tradingview'],
+    agentUseDescription: 'Your agent will prefer stocks trading near their 52-week high, using highProximity scores to identify breakout candidates with institutional momentum.',
+  },
+
+  // TV-12: Multi-Factor Tier Assignment
+  {
+    id: 'tv-12',
+    category: 'tier_strategy',
+    headline: 'Multi-Factor Tier Assignment',
+    description: 'Assigns tiers based on how many independent signals agree. More confirmations = higher tier. Stocks that only pass one check get the lowest tier.',
+    hook: 'One green light is a suggestion. Three green lights is conviction — let the evidence decide your tier',
+    learnMore: 'Alexander Elder\'s Triple Screen system and the MACD+RSI+Volume "Trinity" are among the most recommended indicator combinations on TradingView. The insight: no single indicator is reliable alone, but when three independent signals agree, the probability of a winning trade increases dramatically. This rule checks three factors — daily technical score, RSI momentum zone, and volume — and assigns tiers based on how many pass.',
+    difficulty: 'intermediate',
+    forgeTemplates: [
+      {
+        text: 'Check each stock against three factors: (1) Daily technical score above {tech}, (2) RSI in momentum zone {rsi_low}-{rsi_high}, (3) Volume above {vol}x average. Assign Star to stocks passing all 3. Core to stocks passing 2. Support to stocks passing 1 or 0',
+        params: {
+          tech: { type: 'number', default: 60, min: 40, max: 80, step: 5, unit: '/100', label: 'Technical threshold', hint: 'Daily composite score requirement' },
+          rsi_low: { type: 'number', default: 45, min: 30, max: 55, step: 5, unit: '', label: 'RSI floor', hint: 'Bottom of the momentum zone' },
+          rsi_high: { type: 'number', default: 70, min: 60, max: 80, step: 5, unit: '', label: 'RSI ceiling', hint: 'Top of the momentum zone' },
+          vol: { type: 'number', default: 1.2, min: 1.0, max: 2.0, step: 0.1, unit: 'x', label: 'Volume multiplier', hint: 'Volume vs 20-day average' },
+        },
+        category: 'tier_strategy'
+      }
+    ],
+    relatedIndicator: null,
+    kbEntryId: null,
+    tags: ['multi-factor', 'tier', 'trinity', 'triple-screen', 'confirmation', 'tradingview'],
+    agentUseDescription: 'Your agent will assign tiers based on how many of three independent factors each stock passes — daily technical score, RSI momentum zone, and volume confirmation.',
+  },
+
+  // TV-13: Volume Spike Institutional Signal
+  {
+    id: 'tv-13',
+    category: 'technical',
+    headline: 'Volume Spike Institutional Signal',
+    description: 'When volume explodes above 2x average on a bullish candle, institutions are taking a position. This is the strongest confirmation signal in technical analysis.',
+    hook: 'When the big money shows up, the volume screams it — a 2x spike on a green candle is the loudest buy signal in the market',
+    learnMore: 'Volume spikes are the fingerprint of institutional activity. When volume surges to 2x or more of the 20-day average on a positive price move, it indicates that large players — mutual funds, hedge funds, pension funds — are actively accumulating. This is the strongest form of technical confirmation because it represents real capital commitment, not just pattern interpretation. Retail traders can\'t move volume like this.',
+    difficulty: 'beginner',
+    forgeTemplates: [
+      {
+        text: 'When evaluating bench stocks for swaps, prioritize any stock showing a volume spike above {mult}x the 20-day average with positive price action. This overrides other technical signals — volume is the ultimate confirmation. Assign these stocks a minimum tier of {tier}',
+        params: {
+          mult: { type: 'number', default: 2.0, min: 1.5, max: 3.0, step: 0.1, unit: 'x', label: 'Spike multiplier', hint: 'How much above average to qualify as a spike' },
+          tier: { type: 'select', default: 'Core', options: [
+            { value: 'Star', label: 'Star minimum' },
+            { value: 'Core', label: 'Core minimum' },
+          ], label: 'Min tier on spike', hint: 'Volume conviction should be rewarded with tier placement' },
+        },
+        category: 'technical'
+      }
+    ],
+    relatedIndicator: 'Volume',
+    kbEntryId: null,
+    tags: ['volume', 'spike', 'institutional', 'confirmation', 'tradingview'],
+    agentUseDescription: 'Your agent will prioritize bench stocks with volume spikes above the specified multiplier on bullish price action, assigning a minimum tier floor to reflect institutional conviction.',
+  },
+
+  // TV-14: Sector Leader Selection
+  {
+    id: 'tv-14',
+    category: 'allocation',
+    headline: 'Sector Leader Selection',
+    description: 'Instead of picking stocks first, identify the strongest sectors then pick the leader within each one. Ride the sector tide and the stock wave simultaneously.',
+    hook: 'A great stock in a bad sector is swimming against the current — find the strongest sector first, then pick its champion',
+    learnMore: 'Sector rotation is a major driver of stock returns — studies show that sector selection explains more of a stock\'s performance than individual stock selection alone. By first identifying the strongest sectors using sector RS scores, then selecting the leader within each sector using RS vs SPY, you align both the macro and micro forces in your favor. This is the institutional approach: top-down sector allocation with bottom-up stock picking.',
+    difficulty: 'intermediate',
+    forgeTemplates: [
+      {
+        text: 'Overweight sectors with the highest sector RS scores. Within each strong sector, select the stock with the highest RS vs SPY score. Limit exposure to any single sector to {max_pct}%. When FantasyTimes reports sector rotation, adjust within {evals} evaluations',
+        params: {
+          max_pct: { type: 'number', default: 40, min: 25, max: 60, step: 5, unit: '%', label: 'Max sector weight', hint: 'Prevents over-concentration in one sector' },
+          evals: { type: 'number', default: 2, min: 1, max: 4, step: 1, unit: 'evals', label: 'Rotation speed', hint: 'How quickly to respond to sector shifts' },
+        },
+        category: 'allocation'
+      }
+    ],
+    relatedIndicator: 'Sector RS',
+    kbEntryId: null,
+    tags: ['sector', 'rotation', 'leader', 'RS', 'FantasyTimes', 'tradingview'],
+    agentUseDescription: 'Your agent will overweight the strongest sectors by RS score, select the leading stock within each, and respond to FantasyTimes sector rotation signals within the specified evaluation window.',
+  },
+
+  // TV-15: Threshold Harvest Swap
+  {
+    id: 'tv-15',
+    category: 'threshold',
+    headline: 'Threshold Harvest Swap',
+    description: 'After a stock hits a BaggerBomb threshold bonus, immediately evaluate whether to swap it for a fresh high-ATR candidate. The points are banked — now find the next threshold opportunity.',
+    hook: 'You already got the +15. The stock doesn\'t know it owes you another one — swap for a fresh rocket',
+    learnMore: 'BaggerBomb scoring thresholds award bonus points when a stock moves a certain multiple of its ATR. Once those points are banked, the stock has no memory of owing you more — it\'s equally likely to move toward the next threshold or to reverse. Meanwhile, a fresh high-ATR bench stock with bullish momentum has its full threshold journey ahead of it. This harvest swap strategy optimizes for multiple threshold hits across different stocks rather than waiting for one epic move.',
+    difficulty: 'advanced',
+    forgeTemplates: [
+      {
+        text: 'After a stock triggers a {threshold} threshold bonus, swap it out within {evals} evaluations for the highest-ATR bench stock with bullish momentum (RSI above {rsi} and above VWAP). The scored points are locked — maximize remaining time by finding the next threshold candidate',
+        params: {
+          threshold: { type: 'select', default: 'BaggerBomb (+1.0x)', options: [
+            { value: 'BaggerBomb (+1.0x)', label: 'After BaggerBomb (+15)' },
+            { value: 'Double Bagger (+1.5x)', label: 'After Double Bagger (+30)' },
+            { value: 'Any positive threshold', label: 'After any positive threshold' },
+          ], label: 'Harvest trigger', hint: 'Which threshold triggers the swap' },
+          evals: { type: 'number', default: 2, min: 1, max: 4, step: 1, unit: 'evals', label: 'Swap speed', hint: 'Evaluations before executing the harvest swap' },
+          rsi: { type: 'number', default: 50, min: 40, max: 60, step: 5, unit: '', label: 'Replacement RSI floor', hint: 'New stock must have momentum' },
+        },
+        category: 'threshold'
+      }
+    ],
+    relatedIndicator: 'ATR / Threshold',
+    kbEntryId: null,
+    tags: ['threshold', 'harvest', 'swap', 'scoring', 'BaggerBomb-native', 'tradingview'],
+    agentUseDescription: 'Your agent will swap out stocks that have triggered a scoring threshold bonus, replacing them with the highest-ATR bench candidate showing bullish momentum to chase the next threshold hit.',
+  },
 ];
 
 export const FORGE_CONFLICT_PAIRS = [
