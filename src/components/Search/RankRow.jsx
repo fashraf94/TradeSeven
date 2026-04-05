@@ -7,8 +7,6 @@ const GRADIENT_MAP = {
   fundamental: 'linear-gradient(90deg, rgba(245,158,11,0.5), rgba(245,158,11,0.9))',
   technical: 'linear-gradient(90deg, rgba(168,85,250,0.5), rgba(168,85,250,0.9))',
   baggerBomb: 'linear-gradient(90deg, rgba(239,68,68,0.5), rgba(249,115,22,0.9))',
-  snakeDraft: 'linear-gradient(90deg, rgba(20,184,166,0.5), rgba(16,185,129,0.9))',
-  earningsGame: 'linear-gradient(90deg, rgba(245,158,11,0.4), rgba(234,179,8,0.9))',
 };
 
 const SCORE_COLOR_MAP = {
@@ -16,8 +14,6 @@ const SCORE_COLOR_MAP = {
   fundamental: '#f59e0b',
   technical: '#A78BFA',
   baggerBomb: '#ef4444',
-  snakeDraft: '#14b8a6',
-  earningsGame: '#eab308',
 };
 
 const SCORE_KEY_MAP = {
@@ -25,8 +21,6 @@ const SCORE_KEY_MAP = {
   fundamental: 'fundamentalScore',
   technical: 'technicalScore',
   baggerBomb: 'baggerBombFit',
-  snakeDraft: 'snakeDraftFit',
-  earningsGame: 'earningsGameFit',
 };
 
 const RankRow = ({ stock, rank, type, maxScore, onTap }) => {

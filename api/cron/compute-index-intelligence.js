@@ -687,8 +687,6 @@ export default async function handler(req, res) {
           compositeScore,
           // Game-mode fit scores
           baggerBombFit: gameModes.baggerBombFit ?? null,
-          snakeDraftFit: gameModes.snakeDraftFit ?? null,
-          earningsGameFit: gameModes.earningsGameFit ?? null,
           atrPercentile: Math.round(atrPercentile * 100) / 100,
           // Intraday momentum fields (Sprint 1)
           dailyRange: tech.dailyRange ?? null,
