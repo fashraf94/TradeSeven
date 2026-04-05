@@ -461,16 +461,18 @@ export const GAME_MODE_PROFILES = {
   baggerBomb: {
     // 1-day PvP — maximize explosive upside potential
     fundamentalWeight: 0.10,
-    technicalWeight: 0.90,
-    atrModifier: 0.20,  // REWARD high volatility
+    technicalWeight:   0.70,   // down from 0.90, shares space with momentum heat
+    momentumWeight:    0.20,   // Momentum Heat sub-pillar (acceleration + turnover)
+    atrModifier:       0.20,   // REWARD high volatility
+    fundamentalOverrides: {
+      sentiment: 1.5,           // short-squeeze potential + analyst upgrades
+    },
     technicalOverrides: {
       rsVsSpy:      1.2,
       sectorRS:     1.3,
       macd:         1.5,
       volume:       1.4,
-      smaPosition:  0.6,
-      rsi:          0.8,
-      weekHighProx: 0.7,
+      weekHighProx: 1.3,        // breakout reward (flipped from 0.7 suppress)
     },
   },
 };

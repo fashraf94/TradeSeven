@@ -26,6 +26,7 @@ import {
 } from '../_utils/indexIntelligence.js';
 import { STOCK_UNIVERSE, ALL_TICKERS, TICKER_TO_SECTOR, TECHNICAL_FACTOR_WEIGHTS } from '../_utils/rankingConfig.js';
 import { computeGameModeFits, assignGameModeRanks } from '../_utils/gameModeScoring.js';
+import { computeMomentumRankings } from '../_utils/momentumScoring.js';
 
 export const config = { maxDuration: 300 };
 
@@ -78,7 +79,7 @@ function formatDate(date) {
   return date.toISOString().split('T')[0];
 }
 
-async function fetchOHLCV(eohdSymbol, daysBack = 200) {
+async function fetchOHLCV(eohdSymbol, daysBack = 252) {
   const fromDate = new Date();
   fromDate.setDate(fromDate.getDate() - Math.ceil(daysBack * 1.5)); // overshoot for weekends/holidays
   const url = `https://eodhd.com/api/eod/${eohdSymbol}?period=d&from=${formatDate(fromDate)}&fmt=json&api_token=${EODHD_API_KEY}`;
@@ -365,6 +366,7 @@ export default async function handler(req, res) {
     log(`Step 5: Fetching OHLCV for ${ALL_TICKERS.length} stocks...`);
     let stockScores = [];
     let stocksProcessed = 0;
+    const momentumMap = new Map();
 
     const spyCloses = indexData.SPY ? indexData.SPY.map(d => d.close) : null;
 
@@ -522,6 +524,21 @@ export default async function handler(req, res) {
 
       stocksProcessed = stockScores.length;
       log(`  Scored ${stocksProcessed} stocks across ${Object.keys(sectorGroups).length} sectors`);
+
+      // Momentum Rank (Phase 2) — 6 metrics + sub-pillars. Reuses rsData which
+      // already holds per-stock closes + ohlcv. Passes spyCloses for Residual
+      // Momentum (beta regression) and Intermediate RS (benchmark comparison).
+      const stockMomentumData = rsData.map(d => ({
+        symbol: d.sym,
+        closes: d.closes,
+        volumes: d.ohlcv.map(o => o.volume),
+      }));
+      // TODO: Wire lastEarningsDate + last-earnings-day return from peerRankings
+      // once compute-rankings.js persists per-event dates. For now earningsMap =
+      // null so computePeadAdjustment returns 0 for every stock (PEAD inactive).
+      const momentumResults = computeMomentumRankings(stockMomentumData, spyCloses, null);
+      momentumResults.forEach(r => momentumMap.set(r.symbol, r));
+      log(`  Computed momentum rank for ${momentumResults.length} stocks`);
     }
 
     // Top/Bottom leaders for marketContext
@@ -667,10 +684,15 @@ export default async function handler(req, res) {
 
         // Compute game-mode fit scores
         const atrPercentile = atrPercentileMap[tech.symbol] ?? 0.5;
+        const mom = momentumMap.get(tech.symbol);
+        const momentumData = mom?.momentumFactors
+          ? { heat: mom.momentumFactors.heat }
+          : null;
         const gameModes = computeGameModeFits({
           pillarScores,
           technicalFactorScores,
           atrPercentile,
+          momentumData,
         });
 
         const stockEntry = {
@@ -692,6 +714,10 @@ export default async function handler(req, res) {
           dailyRange: tech.dailyRange ?? null,
           nr7Flag: tech.nr7Flag ?? false,
           bBandwidthPercentile: bBandwidthPercentileMap[tech.symbol] ?? null,
+          // Momentum Rank (Phase 1)
+          momentumScore: mom?.momentumScore ?? null,
+          momentumRank: mom?.momentumRank ?? null,
+          momentumFactors: mom?.momentumFactors ?? null,
         };
 
         rankingStocks.push(stockEntry);

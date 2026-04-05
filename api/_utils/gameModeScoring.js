@@ -83,9 +83,12 @@ function computeWeightedScore(scores, weights) {
  * @param {Object} params.pillarScores - Fundamental pillar scores { growth: 75, profitability: 88, ... }
  * @param {Object} params.technicalFactorScores - Technical factor scores { rsVsSpy: 95, sectorRS: 88, ... }
  * @param {number} params.atrPercentile - ATR percentile rank (0-1 scale)
+ * @param {Object|null} [params.momentumData] - Per-stock momentum sub-pillar scores
+ *   from momentumMap, e.g. { heat: 72 }. Pass null if momentum isn't available;
+ *   profiles with a `momentumWeight` will contribute 0 in that case.
  * @returns {Object} { baggerBombFit } (0-100 or null)
  */
-export function computeGameModeFits({ pillarScores, technicalFactorScores, atrPercentile }) {
+export function computeGameModeFits({ pillarScores, technicalFactorScores, atrPercentile, momentumData = null }) {
   const results = {};
 
   for (const [modeName, profile] of Object.entries(GAME_MODE_PROFILES)) {
@@ -102,6 +105,15 @@ export function computeGameModeFits({ pillarScores, technicalFactorScores, atrPe
       const fScore = fundScore ?? 50; // neutral fallback
       const tScore = techScore ?? 50;
       fitScore = (fScore * profile.fundamentalWeight) + (tScore * profile.technicalWeight);
+
+      // Momentum Heat contribution (profiles opt-in via momentumWeight).
+      // Graceful null handling: missing momentumData or missing heat → 0 points.
+      if (profile.momentumWeight && momentumData) {
+        const heat = momentumData.heat;
+        if (heat != null && Number.isFinite(heat)) {
+          fitScore += heat * profile.momentumWeight;
+        }
+      }
 
       // Apply ATR modifier
       if (profile.atrModifier !== 0 && atrPercentile != null) {
