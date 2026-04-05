@@ -80,3 +80,38 @@ export function getNextLevelInfo(gamesPlayed) {
       : ['20 Playbook slots', '6 chat exchanges'],
   };
 }
+
+// TODO: Wire this into the level-up notification flow.
+// When agent.stats.gamesPlayed crosses a level threshold:
+// 1. Call getQueuedRulesForPromotion(agentRules, newLevel)
+// 2. Batch-update each rule's status from 'queued' to 'active' in Firestore
+// 3. Show the celebration notification with the returned message
+
+/**
+ * Promotes queued rules to active when a user levels up.
+ * Call this when agent.stats.gamesPlayed crosses a level threshold.
+ *
+ * @param {Object[]} rules - All rules for this agent (from Firestore)
+ * @param {string} newLevel - The new level ('starter' or 'partner')
+ * @returns {Object} { ruleIdsToPromote: string[], message: string|null }
+ */
+export function getQueuedRulesForPromotion(rules, newLevel) {
+  const levelConfig = AGENT_LEVELS[newLevel];
+  if (!levelConfig) return { ruleIdsToPromote: [], message: null };
+
+  const maxSlots = levelConfig.playbookSlots;
+  const activeRules = rules.filter(r => r.status === 'active' || !r.status);
+  const queuedRules = rules
+    .filter(r => r.status === 'queued')
+    .sort((a, b) => (a.priority || 99) - (b.priority || 99));
+
+  const availableSlots = maxSlots - activeRules.length;
+  const rulesToPromote = queuedRules.slice(0, Math.max(0, availableSlots));
+
+  return {
+    ruleIdsToPromote: rulesToPromote.map(r => r.id),
+    message: rulesToPromote.length > 0
+      ? `${rulesToPromote.length} new rules activated in your strategy!`
+      : null,
+  };
+}

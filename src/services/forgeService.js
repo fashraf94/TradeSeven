@@ -26,6 +26,7 @@ const VALID_SOURCES = [
   'agent_reflection',     // Agent communication — reflection
 ];
 const VALID_VISIBILITIES = ['public', 'private'];
+const VALID_STATUSES = ['draft', 'testing', 'active', 'proven', 'queued'];
 const MAX_RULE_TEXT_LENGTH = 200;
 const MAX_PARAMS_KEYS = 5;
 
@@ -89,6 +90,16 @@ function validateRuleInput(ruleData) {
     }
   }
 
+  // Validate status: must be one of VALID_STATUSES if provided
+  if (ruleData.status != null && !VALID_STATUSES.includes(ruleData.status)) {
+    errors.push(`Status must be one of: ${VALID_STATUSES.join(', ')}`);
+  }
+
+  // Validate priority: must be a number if provided
+  if (ruleData.priority != null && typeof ruleData.priority !== 'number') {
+    errors.push('Priority must be a number');
+  }
+
   return errors;
 }
 
@@ -118,6 +129,8 @@ export const createRule = async (agentId, ruleData) => {
     params: ruleData.params || null,
     paramValues: ruleData.paramValues || null,
     textTemplate: ruleData.textTemplate || null,
+    status: ruleData.status || 'active',
+    priority: ruleData.priority || 0,
     isRefined: false,
     isDeleted: false,
     bundleIds: [],
@@ -193,8 +206,14 @@ export const updateRule = async (agentId, ruleId, updates) => {
       throw new Error('textTemplate must be 500 characters or less');
     }
   }
+  if (updates.status !== undefined && updates.status !== null && !VALID_STATUSES.includes(updates.status)) {
+    throw new Error(`Status must be one of: ${VALID_STATUSES.join(', ')}`);
+  }
+  if (updates.priority !== undefined && updates.priority !== null && typeof updates.priority !== 'number') {
+    throw new Error('Priority must be a number');
+  }
 
-  const allowed = ['text', 'category', 'visibility', 'params', 'isRefined', 'paramValues', 'textTemplate'];
+  const allowed = ['text', 'category', 'visibility', 'params', 'isRefined', 'paramValues', 'textTemplate', 'status', 'priority'];
   const filtered = {};
   for (const key of allowed) {
     if (key in updates) filtered[key] = updates[key];

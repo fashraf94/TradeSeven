@@ -142,7 +142,13 @@ service cloud.firestore {
                     && (!('paramValues' in request.resource.data)
                         || request.resource.data.paramValues == null
                         || (request.resource.data.paramValues is map
-                            && request.resource.data.paramValues.keys().size() <= 5));
+                            && request.resource.data.paramValues.keys().size() <= 5))
+                    && (!('status' in request.resource.data)
+                        || request.resource.data.status == null
+                        || request.resource.data.status in ['draft', 'testing', 'active', 'proven', 'queued'])
+                    && (!('priority' in request.resource.data)
+                        || request.resource.data.priority == null
+                        || request.resource.data.priority is number);
         allow delete: if false;
       }
 
