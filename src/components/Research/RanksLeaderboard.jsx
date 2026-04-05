@@ -27,6 +27,12 @@ const TYPE_CONFIG = {
     scoreColor: '#ef4444',
     scoreKey: 'baggerBombFit',
   },
+  momentum: {
+    label: 'MOMENTUM LEADERBOARD',
+    gradient: 'linear-gradient(90deg, rgba(59,130,246,0.5), rgba(34,211,238,0.9))',
+    scoreColor: '#22d3ee',
+    scoreKey: 'momentumScore',
+  },
 };
 
 const RanksLeaderboard = ({ type, stocks, currentSymbol, onNavigateToStock, title, sectorFilter }) => {
@@ -44,6 +50,7 @@ const RanksLeaderboard = ({ type, stocks, currentSymbol, onNavigateToStock, titl
     const sorted = [...filtered].sort((a, b) => {
       if (type === 'fundamental') return (a.fundamentalRank || 999) - (b.fundamentalRank || 999);
       if (type === 'technical') return (a.technicalRank || 999) - (b.technicalRank || 999);
+      if (type === 'momentum') return (a.momentumRank || 999) - (b.momentumRank || 999);
       return (b.compositeScore || 0) - (a.compositeScore || 0);
     });
 

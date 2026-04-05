@@ -1081,6 +1081,83 @@ const CompeteTab = ({ symbol, isMobile, onNavigateToStock }) => {
         </>
       )}
 
+      {/* Momentum Rank — badge + sub-pillar breakdown + overlay pills */}
+      {currentStockRanking?.momentumScore != null && (
+        <div style={{
+          display: 'inline-flex', alignItems: 'center', gap: '4px',
+          padding: '4px 8px', borderRadius: '4px',
+          background: '#3b82f618', border: '1px solid #3b82f630',
+          fontSize: '10px', fontWeight: 600, color: '#3b82f6',
+          marginBottom: '8px',
+        }}>
+          Momentum: #{currentStockRanking.momentumRank ?? '—'}
+          <span style={{ opacity: 0.7, fontWeight: 400 }}>
+            ({currentStockRanking.momentumScore})
+          </span>
+        </div>
+      )}
+
+      {currentStockRanking?.momentumScore != null && currentStockRanking?.momentumFactors && (
+        <div style={{ marginBottom: '12px' }}>
+          <div style={{
+            fontSize: '11px', fontWeight: 600, color: '#94a3b8',
+            letterSpacing: '0.5px', marginBottom: '6px',
+          }}>
+            MOMENTUM BREAKDOWN
+          </div>
+          {[
+            { key: 'stability', label: 'Stability', color: '#3b82f6' },
+            { key: 'heat',      label: 'Heat',      color: '#f59e0b' },
+            { key: 'quality',   label: 'Quality',   color: '#22d3ee' },
+          ].map(p => {
+            const val = currentStockRanking.momentumFactors[p.key];
+            if (val == null) return null;
+            return (
+              <div key={p.key} style={{
+                display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px',
+              }}>
+                <span style={{ width: '60px', fontSize: '11px', color: '#cbd5e1' }}>
+                  {p.label}
+                </span>
+                <div style={{ flex: 1 }}>
+                  <BulletChart percentile={val} color={p.color} height={4} />
+                </div>
+                <span style={{
+                  width: '28px', fontSize: '11px', fontWeight: 600, color: p.color,
+                  fontFamily: MONO, textAlign: 'right',
+                }}>
+                  {val}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {(() => {
+        const f = currentStockRanking?.momentumFactors;
+        if (!f || currentStockRanking?.momentumScore == null) return null;
+        const pills = [];
+        if (f.peadAdjustment > 0)       pills.push({ label: '✅ PEAD Boost',   color: '#10b981' });
+        if (f.peadAdjustment < 0)       pills.push({ label: '⚠️ PEAD Drag',    color: '#f59e0b' });
+        if (f.overextensionPenalty > 0) pills.push({ label: '⚠️ Overextended', color: '#f59e0b' });
+        if (f.momentumBreakPenalty > 0) pills.push({ label: '⚠️ Trend Break',  color: '#ef4444' });
+        if (pills.length === 0) return null;
+        return (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginBottom: '12px' }}>
+            {pills.map(p => (
+              <span key={p.label} style={{
+                fontSize: '10px', padding: '2px 8px', borderRadius: '4px',
+                background: `${p.color}18`, border: `1px solid ${p.color}30`,
+                color: p.color, fontWeight: 600,
+              }}>
+                {p.label}
+              </span>
+            ))}
+          </div>
+        );
+      })()}
+
       {/* Squeeze Watch Badge (NEW) */}
       {data.metrics?.squeezeWatch && (
         <div style={{

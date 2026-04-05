@@ -335,6 +335,72 @@ export function percentileRank(scores) {
 
 const ROUND3 = (v) => (v == null || !Number.isFinite(v) ? null : Math.round(v * 1000) / 1000);
 
+// ---------------------------------------------------------------------------
+// Risk-guardrail overlays (Phase 3)
+//
+// Applied to the 6-metric composite Z (BMZ) AFTER weighting but BEFORE
+// percentile ranking. They reshape the final order without touching the raw
+// per-metric Z columns, so sub-pillar scores (Stability/Heat/Quality) remain
+// based on the pre-overlay signal.
+// ---------------------------------------------------------------------------
+
+/**
+ * Overextension penalty — Bollinger-style z-score of current price vs 20-day
+ * SMA/stddev (skip-day). Penalty kicks in above +2.5σ.
+ *
+ * @param {number[]} closes - newest-first
+ * @returns {number} non-negative penalty (subtracted from BMZ)
+ */
+function computeOverextensionPenalty(closes) {
+  if (!Array.isArray(closes) || closes.length < 22) return 0;
+  const window = closes.slice(1, 21);
+  const sma = window.reduce((a, b) => a + b, 0) / window.length;
+  const variance = window.reduce((acc, v) => acc + (v - sma) ** 2, 0) / window.length;
+  const stdDev = Math.sqrt(variance);
+  if (stdDev === 0) return 0;
+  const bollingerZ = (closes[1] - sma) / stdDev;
+  if (bollingerZ > 2.5) return 0.10 * (bollingerZ - 2.5);
+  return 0;
+}
+
+/**
+ * Momentum-break penalty — drawdown from 20-day peak (skip-day).
+ * Flat 0.3 at -5%, 0.6 at -10% or worse. Captures trend fractures even when
+ * the underlying metrics still look healthy.
+ *
+ * @param {number[]} closes - newest-first
+ * @returns {number} 0 / 0.3 / 0.6
+ */
+function computeMomentumBreakPenalty(closes) {
+  if (!Array.isArray(closes) || closes.length < 22) return 0;
+  const peak20 = Math.max(...closes.slice(1, 22));
+  if (!peak20) return 0;
+  const drawdown = (closes[1] - peak20) / peak20;
+  if (drawdown < -0.10) return 0.6;
+  if (drawdown < -0.05) return 0.3;
+  return 0;
+}
+
+/**
+ * Post-Earnings Announcement Drift adjustment.
+ *
+ * Stocks are known to drift in the direction of their earnings surprise for
+ * ~10 trading days. When a recent earnings event with a meaningful reaction
+ * is present, add/subtract a fixed 0.5σ to the composite.
+ *
+ * @param {{daysAgo: number, returnPct: number}|null} earningsInfo
+ * @returns {number} -0.5 / 0 / +0.5
+ */
+function computePeadAdjustment(earningsInfo) {
+  if (earningsInfo == null) return 0;
+  if (earningsInfo.daysAgo == null || earningsInfo.daysAgo > 10) return 0;
+  const r = earningsInfo.returnPct;
+  if (r == null || !Number.isFinite(r)) return 0;
+  if (r > 0.03) return 0.5;
+  if (r < -0.03) return -0.5;
+  return 0;
+}
+
 /**
  * Compute a single sub-pillar's weighted Z-score for every stock using
  * null-aware reweighting within the pillar. Returns an array of Z-scores
@@ -359,6 +425,9 @@ function computeSubPillarZ(zArrays, metricKeys) {
  *
  * @param {Array<{symbol: string, closes: number[], volumes: number[]}>} stockDataArray
  * @param {number[]} spyCloses - SPY closes, newest-first (for Residual Momentum & Intermediate RS)
+ * @param {Map<string, {daysAgo: number, returnPct: number}>|null} earningsMap -
+ *   Optional per-symbol earnings context for the PEAD overlay. Pass null to
+ *   disable PEAD (all adjustments will be 0).
  * @returns {Array<{
  *   symbol: string,
  *   momentumScore: number|null,   // 0-100 cross-sectional percentile of composite Z (BMZ)
@@ -373,10 +442,13 @@ function computeSubPillarZ(zArrays, metricKeys) {
  *     stability: number|null,         // 0-100 percentile
  *     heat: number|null,              // 0-100 percentile
  *     quality: number|null,           // 0-100 percentile
+ *     overextensionPenalty: number,   // ≥0, subtracted from BMZ
+ *     momentumBreakPenalty: number,   // 0 / 0.3 / 0.6
+ *     peadAdjustment: number,         // -0.5 / 0 / +0.5
  *   }
  * }>}
  */
-export function computeMomentumRankings(stockDataArray, spyCloses) {
+export function computeMomentumRankings(stockDataArray, spyCloses, earningsMap = null) {
   const n = stockDataArray.length;
   const hasSpy = Array.isArray(spyCloses) && spyCloses.length > 0;
 
@@ -434,6 +506,24 @@ export function computeMomentumRankings(stockDataArray, spyCloses) {
     bmz[i] = parts.reduce((acc, p) => acc + p.z * (p.w / totalW), 0);
   }
 
+  // Step 5b: Risk-guardrail overlays. Applied only to stocks with a valid BMZ
+  // so we don't fabricate a composite for stocks that lacked raw metrics.
+  // Sub-pillar Z-scores below use the pre-overlay z columns unchanged.
+  const overextArr = new Array(n).fill(0);
+  const mbreakArr = new Array(n).fill(0);
+  const peadArr = new Array(n).fill(0);
+  for (let i = 0; i < n; i++) {
+    if (bmz[i] == null) continue;
+    const s = stockDataArray[i];
+    const overext = computeOverextensionPenalty(s.closes);
+    const mbreak = computeMomentumBreakPenalty(s.closes);
+    const pead = computePeadAdjustment(earningsMap?.get(s.symbol) ?? null);
+    overextArr[i] = overext;
+    mbreakArr[i] = mbreak;
+    peadArr[i] = pead;
+    bmz[i] = bmz[i] - overext - mbreak + pead;
+  }
+
   // Step 6: momentumScore = percentile of BMZ (0-100); momentumRank = ordinal (1 = best).
   const momentumScore = percentileRank(bmz);
   const momentumRank = (() => {
@@ -470,6 +560,9 @@ export function computeMomentumRankings(stockDataArray, spyCloses) {
       stability:        stabilityPct[i],
       heat:             heatPct[i],
       quality:          qualityPct[i],
+      overextensionPenalty: ROUND3(overextArr[i]),
+      momentumBreakPenalty: ROUND3(mbreakArr[i]),
+      peadAdjustment:       ROUND3(peadArr[i]),
     },
   }));
 }

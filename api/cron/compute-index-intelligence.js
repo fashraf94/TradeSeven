@@ -533,7 +533,10 @@ export default async function handler(req, res) {
         closes: d.closes,
         volumes: d.ohlcv.map(o => o.volume),
       }));
-      const momentumResults = computeMomentumRankings(stockMomentumData, spyCloses);
+      // TODO: Wire lastEarningsDate + last-earnings-day return from peerRankings
+      // once compute-rankings.js persists per-event dates. For now earningsMap =
+      // null so computePeadAdjustment returns 0 for every stock (PEAD inactive).
+      const momentumResults = computeMomentumRankings(stockMomentumData, spyCloses, null);
       momentumResults.forEach(r => momentumMap.set(r.symbol, r));
       log(`  Computed momentum rank for ${momentumResults.length} stocks`);
     }

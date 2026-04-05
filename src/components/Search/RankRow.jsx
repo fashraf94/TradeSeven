@@ -7,6 +7,7 @@ const GRADIENT_MAP = {
   fundamental: 'linear-gradient(90deg, rgba(245,158,11,0.5), rgba(245,158,11,0.9))',
   technical: 'linear-gradient(90deg, rgba(168,85,250,0.5), rgba(168,85,250,0.9))',
   baggerBomb: 'linear-gradient(90deg, rgba(239,68,68,0.5), rgba(249,115,22,0.9))',
+  momentum: 'linear-gradient(90deg, rgba(59,130,246,0.5), rgba(34,211,238,0.9))',
 };
 
 const SCORE_COLOR_MAP = {
@@ -14,6 +15,7 @@ const SCORE_COLOR_MAP = {
   fundamental: '#f59e0b',
   technical: '#A78BFA',
   baggerBomb: '#ef4444',
+  momentum: '#22d3ee',
 };
 
 const SCORE_KEY_MAP = {
@@ -21,6 +23,7 @@ const SCORE_KEY_MAP = {
   fundamental: 'fundamentalScore',
   technical: 'technicalScore',
   baggerBomb: 'baggerBombFit',
+  momentum: 'momentumScore',
 };
 
 const RankRow = ({ stock, rank, type, maxScore, onTap }) => {

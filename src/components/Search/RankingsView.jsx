@@ -6,13 +6,51 @@ import { db } from '../../firebase/config';
 import { STOCKS } from '../../data/assets';
 import RankRow from './RankRow';
 import SectorConcentration from './SectorConcentration';
+import { resolveSectorInfo } from '../../utils/sectorUtils';
 
 const SUB_TABS = [
   { id: 'composite', label: 'Composite', group: 'rankings' },
   { id: 'fundamental', label: 'Fundamental', group: 'rankings' },
   { id: 'technical', label: 'Technical', group: 'rankings' },
   { id: 'baggerBomb', label: 'BaggerBomb', group: 'gamefit' },
+  { id: 'momentum', label: 'Momentum', group: 'rankings' },
 ];
+
+// Momentum-only banner: flags when a single sector dominates the top 22.
+// Independent of SectorConcentration (which uses top 20 with different copy).
+const MomentumSectorCrowdingBanner = ({ stocks, activeSubTab }) => {
+  if (activeSubTab !== 'momentum' || !stocks.length) return null;
+  const top = stocks.slice(0, 22);
+  if (top.length === 0) return null;
+  const counts = new Map();
+  top.forEach(s => {
+    const info = resolveSectorInfo(s);
+    const name = info.name || 'Unknown';
+    counts.set(name, (counts.get(name) || 0) + 1);
+  });
+  let topSector = null;
+  let topCount = 0;
+  counts.forEach((count, name) => {
+    if (count > topCount) { topCount = count; topSector = name; }
+  });
+  const share = topCount / top.length;
+  if (share <= 0.30) return null;
+  const pct = Math.round(share * 100);
+  return (
+    <div style={{
+      background: 'rgba(245,158,11,0.08)',
+      border: '1px solid rgba(245,158,11,0.2)',
+      borderRadius: '8px',
+      padding: '10px 14px',
+      fontSize: '12px',
+      color: '#f59e0b',
+      marginBottom: '12px',
+      lineHeight: 1.4,
+    }}>
+      ⚠️ {topSector} stocks represent {topCount} of the top {top.length} momentum stocks ({pct}%). Consider diversifying across sectors.
+    </div>
+  );
+};
 
 const RankingsView = ({ onOpenResearch, isMobile }) => {
   const { tokens } = useTheme();
@@ -43,6 +81,7 @@ const RankingsView = ({ onOpenResearch, isMobile }) => {
     fundamental:  { scoreKey: 'fundamentalScore',  rankKey: 'fundamentalRank' },
     technical:    { scoreKey: 'technicalScore',     rankKey: 'technicalRank' },
     baggerBomb:   { scoreKey: 'baggerBombFit',      rankKey: 'baggerBombRank' },
+    momentum:     { scoreKey: 'momentumScore',      rankKey: 'momentumRank' },
   };
 
   // Sort stocks based on active sub-tab
@@ -132,6 +171,9 @@ const RankingsView = ({ onOpenResearch, isMobile }) => {
           </button>
         ))}
       </div>
+
+      {/* Momentum-only sector crowding banner */}
+      <MomentumSectorCrowdingBanner stocks={sortedStocks} activeSubTab={activeSubTab} />
 
       {/* Sector Concentration Card */}
       <SectorConcentration
