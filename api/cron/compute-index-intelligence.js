@@ -684,13 +684,16 @@ export default async function handler(req, res) {
 
         // Compute game-mode fit scores
         const atrPercentile = atrPercentileMap[tech.symbol] ?? 0.5;
+        const mom = momentumMap.get(tech.symbol);
+        const momentumData = mom?.momentumFactors
+          ? { heat: mom.momentumFactors.heat }
+          : null;
         const gameModes = computeGameModeFits({
           pillarScores,
           technicalFactorScores,
           atrPercentile,
+          momentumData,
         });
-
-        const mom = momentumMap.get(tech.symbol);
 
         const stockEntry = {
           symbol: tech.symbol,
