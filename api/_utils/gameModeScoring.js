@@ -3,8 +3,7 @@
  *
  * Computes game-specific fit scores by applying different weight profiles
  * to the same underlying fundamental pillar + technical factor base scores.
- * ATR percentile acts as a volatility modifier (rewarded in BaggerBomb,
- * penalized in Snake Draft).
+ * ATR percentile acts as a volatility modifier (rewarded in BaggerBomb).
  *
  * All functions are pure math — no API calls, no Firestore access.
  */
@@ -84,7 +83,7 @@ function computeWeightedScore(scores, weights) {
  * @param {Object} params.pillarScores - Fundamental pillar scores { growth: 75, profitability: 88, ... }
  * @param {Object} params.technicalFactorScores - Technical factor scores { rsVsSpy: 95, sectorRS: 88, ... }
  * @param {number} params.atrPercentile - ATR percentile rank (0-1 scale)
- * @returns {Object} { baggerBombFit, snakeDraftFit, earningsGameFit } (each 0-100 or null)
+ * @returns {Object} { baggerBombFit } (0-100 or null)
  */
 export function computeGameModeFits({ pillarScores, technicalFactorScores, atrPercentile }) {
   const results = {};
@@ -126,7 +125,7 @@ export function computeGameModeFits({ pillarScores, technicalFactorScores, atrPe
  * @param {Array} stocks - Array of stock objects with fit scores already computed
  */
 export function assignGameModeRanks(stocks) {
-  const modes = ['baggerBomb', 'snakeDraft', 'earningsGame'];
+  const modes = ['baggerBomb'];
 
   for (const mode of modes) {
     const fitKey = `${mode}Fit`;
