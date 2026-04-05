@@ -12,8 +12,6 @@ const SUB_TABS = [
   { id: 'fundamental', label: 'Fundamental', group: 'rankings' },
   { id: 'technical', label: 'Technical', group: 'rankings' },
   { id: 'baggerBomb', label: 'BaggerBomb', group: 'gamefit' },
-  { id: 'snakeDraft', label: 'Snake Draft', group: 'gamefit' },
-  { id: 'earningsGame', label: 'Earnings', group: 'gamefit' },
 ];
 
 const RankingsView = ({ onOpenResearch, isMobile }) => {
@@ -45,8 +43,6 @@ const RankingsView = ({ onOpenResearch, isMobile }) => {
     fundamental:  { scoreKey: 'fundamentalScore',  rankKey: 'fundamentalRank' },
     technical:    { scoreKey: 'technicalScore',     rankKey: 'technicalRank' },
     baggerBomb:   { scoreKey: 'baggerBombFit',      rankKey: 'baggerBombRank' },
-    snakeDraft:   { scoreKey: 'snakeDraftFit',      rankKey: 'snakeDraftRank' },
-    earningsGame: { scoreKey: 'earningsGameFit',    rankKey: 'earningsGameRank' },
   };
 
   // Sort stocks based on active sub-tab

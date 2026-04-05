@@ -96,16 +96,6 @@ const GAME_MODE_EXPLANATIONS = {
     factors: 'Top factors: MACD momentum, volume surges, sector RS, high ATR',
     color: '#ef4444',
   },
-  snakeDraftFit: {
-    text: 'Balanced for 5-day draft competitions. Equally weights fundamentals and technicals (50/50). Penalizes extreme volatility. Favors strong sector positioning and solid balance sheets.',
-    factors: 'Top factors: Sector RS, financial health, SMA trend, low ATR',
-    color: '#14b8a6',
-  },
-  earningsGameFit: {
-    text: 'Tuned for earnings prediction. Heavily weights fundamentals (85%) with earnings consistency as the dominant signal. Companies that reliably beat expectations are the most predictable.',
-    factors: 'Top factors: Earnings beat rate (2.5x weight), analyst sentiment, RSI context',
-    color: '#f59e0b',
-  },
 };
 
 // Dimension formatters — values are stored in Firestore as:
@@ -1036,15 +1026,13 @@ const CompeteTab = ({ symbol, isMobile, onNavigateToStock }) => {
       )}
 
       {/* Game-Mode Fit Badges */}
-      {currentStockRanking && (currentStockRanking.baggerBombFit != null || currentStockRanking.snakeDraftFit != null || currentStockRanking.earningsGameFit != null) && (
+      {currentStockRanking && currentStockRanking.baggerBombFit != null && (
         <>
           <div style={{
             display: 'flex', gap: '6px', marginBottom: expandedGameMode ? '6px' : '12px', flexWrap: 'wrap',
           }}>
             {[
               { key: 'baggerBombFit', rankKey: 'baggerBombRank', label: 'BaggerBomb', color: '#ef4444', bg: '#ef444418' },
-              { key: 'snakeDraftFit', rankKey: 'snakeDraftRank', label: 'Snake Draft', color: '#14b8a6', bg: '#14b8a618' },
-              { key: 'earningsGameFit', rankKey: 'earningsGameRank', label: 'Earnings', color: '#f59e0b', bg: '#f59e0b18' },
             ].filter(m => currentStockRanking[m.key] != null).map(mode => (
               <div key={mode.key} style={{
                 padding: '4px 8px', borderRadius: '4px',
