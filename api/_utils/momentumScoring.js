@@ -1,5 +1,5 @@
 /**
- * Momentum Scoring — Phase 1 Foundation Metrics + Normalization Pipeline
+ * Momentum Scoring — Phase 2: Full 6-Metric Engine + Sub-Pillars
  *
  * Pure-math module for computing the Momentum Rank: a dedicated ranking
  * dimension alongside Composite/Fundamental/Technical/BaggerBomb that measures
@@ -13,25 +13,38 @@
  *
  * All functions are pure — no API calls, no Firestore access.
  *
- * Phase 1 metrics:
- *   1. Information Discreteness (FIP) — "Frog-in-the-Pan" momentum quality
- *   2. Kaufman Efficiency Ratio (KER) — path smoothness
- *   3. Momentum Acceleration — 1W vs 1M ROC comparison
- *   4. Turnover-Weighted Short-Term Momentum — volume-conditioned 1M return
- *
- * Phase 2 will add Residual Momentum + Intermediate RS and re-weight.
+ * Six metrics grouped into three sub-pillars:
+ *   Stability (35%):
+ *     1. Residual Momentum (20%)    — beta-neutral firm-specific alpha
+ *     2. Intermediate RS   (15%)    — 6-month excess return, skip last month
+ *   Heat (30%):
+ *     3. Acceleration      (15%)    — 1W vs 1M ROC comparison
+ *     4. Turnover Momentum (15%)    — volume-conditioned 1M return
+ *   Quality (35%):
+ *     5. Information Discreteness (20%) — Frog-in-the-Pan
+ *     6. Kaufman Efficiency Ratio (15%) — path smoothness
  */
 
 // ---------------------------------------------------------------------------
-// Weights (TEMPORARY — Phase 1 equal weighting across 4 metrics)
-// Phase 2 will replace with the final 6-metric formula.
+// Weights — final 6-metric formula (sum = 1.0)
 // ---------------------------------------------------------------------------
 
 export const MOMENTUM_WEIGHTS = {
-  fip: 0.25,
-  ker: 0.25,
-  acceleration: 0.25,
-  turnoverMom: 0.25,
+  residualMomentum: 0.20,
+  intermediateRS:   0.15,
+  acceleration:     0.15,
+  turnoverMom:      0.15,
+  fip:              0.20,
+  ker:              0.15,
+};
+
+// Sub-pillar groupings. Each pillar's totalWeight equals the sum of its
+// member metric weights in MOMENTUM_WEIGHTS and is used to normalize the
+// within-pillar weighted average.
+export const SUB_PILLARS = {
+  stability: { metrics: ['residualMomentum', 'intermediateRS'], totalWeight: 0.35 },
+  heat:      { metrics: ['acceleration', 'turnoverMom'],        totalWeight: 0.30 },
+  quality:   { metrics: ['fip', 'ker'],                         totalWeight: 0.35 },
 };
 
 // ---------------------------------------------------------------------------
@@ -152,6 +165,115 @@ export function computeTurnoverMomentum(closes, avgVolumePercentile) {
   return return21d * avgVolumePercentile;
 }
 
+/**
+ * Residual Momentum (beta-neutral).
+ *
+ * Regresses daily stock log-returns against SPY log-returns over the lookback
+ * window, then sums the residuals and standardizes by their stddev. Isolates
+ * firm-specific momentum from market beta so stocks that "rode the SPY wave"
+ * don't score highly here.
+ *
+ * Skip-day convention: window is indices 1..lookback (excludes T-0).
+ *
+ * @param {number[]} stockCloses - Stock closes, newest-first
+ * @param {number[]} spyCloses - SPY closes, newest-first (same date alignment)
+ * @param {number} lookback - Regression window in trading days (default 90)
+ * @returns {number|null} - Standardized residual sum, or null if insufficient data
+ */
+export function computeResidualMomentum(stockCloses, spyCloses, lookback = 90) {
+  if (!Array.isArray(stockCloses) || !Array.isArray(spyCloses)) return null;
+  if (stockCloses.length < lookback + 2 || spyCloses.length < lookback + 2) return null;
+
+  // Build daily log returns for i = 1..lookback.
+  const stockReturns = new Array(lookback);
+  const spyReturns = new Array(lookback);
+  for (let i = 1; i <= lookback; i++) {
+    const s0 = stockCloses[i];
+    const s1 = stockCloses[i + 1];
+    const m0 = spyCloses[i];
+    const m1 = spyCloses[i + 1];
+    if (!s0 || !s1 || !m0 || !m1) return null;
+    stockReturns[i - 1] = Math.log(s0 / s1);
+    spyReturns[i - 1] = Math.log(m0 / m1);
+  }
+
+  // Means
+  const n = lookback;
+  let sumS = 0;
+  let sumM = 0;
+  for (let i = 0; i < n; i++) {
+    sumS += stockReturns[i];
+    sumM += spyReturns[i];
+  }
+  const meanS = sumS / n;
+  const meanM = sumM / n;
+
+  // Covariance and variance of SPY returns
+  let cov = 0;
+  let varM = 0;
+  for (let i = 0; i < n; i++) {
+    const dS = stockReturns[i] - meanS;
+    const dM = spyReturns[i] - meanM;
+    cov += dS * dM;
+    varM += dM * dM;
+  }
+  cov /= n;
+  varM /= n;
+
+  if (varM === 0) return null;
+  const beta = cov / varM;
+
+  // Residuals: the portion of stock return not explained by SPY.
+  // Using the classical OLS residual form (includes alpha implicitly via mean-centering
+  // when we sum the residuals — the sum reflects both alpha*N and idiosyncratic drift).
+  const residuals = new Array(n);
+  let resSum = 0;
+  for (let i = 0; i < n; i++) {
+    const r = stockReturns[i] - beta * spyReturns[i];
+    residuals[i] = r;
+    resSum += r;
+  }
+
+  // Standardize by residual stddev.
+  const meanR = resSum / n;
+  let varR = 0;
+  for (let i = 0; i < n; i++) {
+    const d = residuals[i] - meanR;
+    varR += d * d;
+  }
+  varR /= n;
+  const stdR = Math.sqrt(varR);
+
+  if (stdR === 0) return null;
+  return resSum / stdR;
+}
+
+/**
+ * Intermediate Relative Strength (RS_126_21).
+ *
+ * Stock's excess return vs SPY over roughly 6 months (126 trading days),
+ * skipping the most recent month (21 days) to avoid short-term reversal
+ * contamination. The classic institutional trend anchor.
+ *
+ * @param {number[]} stockCloses - Stock closes, newest-first
+ * @param {number[]} spyCloses - SPY closes, newest-first
+ * @returns {number|null}
+ */
+export function computeIntermediateRS(stockCloses, spyCloses) {
+  if (!Array.isArray(stockCloses) || !Array.isArray(spyCloses)) return null;
+  if (stockCloses.length < 127 || spyCloses.length < 127) return null;
+
+  const sNow = stockCloses[21];
+  const sThen = stockCloses[126];
+  const mNow = spyCloses[21];
+  const mThen = spyCloses[126];
+  if (!sNow || !sThen || !mNow || !mThen) return null;
+
+  const stockReturn = (sNow / sThen) - 1;
+  const spyReturn = (mNow / mThen) - 1;
+  return stockReturn - spyReturn;
+}
+
 // ---------------------------------------------------------------------------
 // Normalization pipeline
 // ---------------------------------------------------------------------------
@@ -208,24 +330,57 @@ export function percentileRank(scores) {
 }
 
 // ---------------------------------------------------------------------------
-// Master: compute full-universe Momentum Rank (Phase 1)
+// Master: compute full-universe Momentum Rank (Phase 2 — 6 metrics)
 // ---------------------------------------------------------------------------
 
+const ROUND3 = (v) => (v == null || !Number.isFinite(v) ? null : Math.round(v * 1000) / 1000);
+
 /**
- * Compute Phase 1 Momentum Rank for the full stock universe.
+ * Compute a single sub-pillar's weighted Z-score for every stock using
+ * null-aware reweighting within the pillar. Returns an array of Z-scores
+ * (one per stock, null where all pillar metrics are null).
+ */
+function computeSubPillarZ(zArrays, metricKeys) {
+  const n = zArrays[metricKeys[0]].length;
+  const out = new Array(n).fill(null);
+  for (let i = 0; i < n; i++) {
+    const parts = metricKeys
+      .map(key => ({ z: zArrays[key][i], w: MOMENTUM_WEIGHTS[key] }))
+      .filter(p => p.z != null && Number.isFinite(p.z));
+    if (parts.length === 0) continue;
+    const totalW = parts.reduce((a, p) => a + p.w, 0);
+    out[i] = parts.reduce((acc, p) => acc + p.z * (p.w / totalW), 0);
+  }
+  return out;
+}
+
+/**
+ * Compute Phase 2 Momentum Rank for the full stock universe.
  *
  * @param {Array<{symbol: string, closes: number[], volumes: number[]}>} stockDataArray
+ * @param {number[]} spyCloses - SPY closes, newest-first (for Residual Momentum & Intermediate RS)
  * @returns {Array<{
  *   symbol: string,
- *   momentumScore: number|null,
- *   momentumRank: number|null,
- *   momentumFactors: { fip: number|null, ker: number|null, acceleration: number|null, turnoverMom: number|null }
+ *   momentumScore: number|null,   // 0-100 cross-sectional percentile of composite Z (BMZ)
+ *   momentumRank: number|null,    // Ordinal rank, 1 = best
+ *   momentumFactors: {
+ *     residualMomentum: number|null,  // winsorized Z
+ *     intermediateRS: number|null,    // winsorized Z
+ *     acceleration: number|null,      // winsorized Z
+ *     turnoverMom: number|null,       // winsorized Z
+ *     fip: number|null,               // winsorized Z
+ *     ker: number|null,               // winsorized Z
+ *     stability: number|null,         // 0-100 percentile
+ *     heat: number|null,              // 0-100 percentile
+ *     quality: number|null,           // 0-100 percentile
+ *   }
  * }>}
  */
-export function computeMomentumRankings(stockDataArray) {
+export function computeMomentumRankings(stockDataArray, spyCloses) {
   const n = stockDataArray.length;
+  const hasSpy = Array.isArray(spyCloses) && spyCloses.length > 0;
 
-  // Step 1: 21-day avg volume per stock (uses skip-day convention).
+  // Step 1: 21-day avg volume per stock (skip-day).
   const avgVolumes = stockDataArray.map(s => {
     if (!Array.isArray(s.volumes) || s.volumes.length < 22) return null;
     const window = s.volumes.slice(1, 22);
@@ -233,15 +388,17 @@ export function computeMomentumRankings(stockDataArray) {
     return sum / window.length;
   });
 
-  // Step 2: percentile-rank avg volume across the universe → 0..1 scale.
+  // Step 2: percentile-rank avg volume across universe → 0..1.
   const avgVolPctRank100 = percentileRank(avgVolumes);
   const avgVolPct = avgVolPctRank100.map(p => (p == null ? null : p / 100));
 
-  // Step 3: raw metrics per stock.
+  // Step 3: raw metrics per stock (6 total).
   const rawFip = new Array(n).fill(null);
   const rawKer = new Array(n).fill(null);
   const rawAccel = new Array(n).fill(null);
   const rawTurnover = new Array(n).fill(null);
+  const rawResMom = new Array(n).fill(null);
+  const rawIntRS = new Array(n).fill(null);
 
   for (let i = 0; i < n; i++) {
     const { closes } = stockDataArray[i];
@@ -249,46 +406,70 @@ export function computeMomentumRankings(stockDataArray) {
     rawKer[i] = computeKER(closes, 20);
     rawAccel[i] = computeAcceleration(closes);
     rawTurnover[i] = computeTurnoverMomentum(closes, avgVolPct[i]);
+    if (hasSpy) {
+      rawResMom[i] = computeResidualMomentum(closes, spyCloses, 90);
+      rawIntRS[i] = computeIntermediateRS(closes, spyCloses);
+    }
   }
 
   // Step 4: z-score + winsorize each metric column independently.
-  const zFip = zScoreWinsorize(rawFip);
-  const zKer = zScoreWinsorize(rawKer);
-  const zAccel = zScoreWinsorize(rawAccel);
-  const zTurnover = zScoreWinsorize(rawTurnover);
+  const z = {
+    residualMomentum: zScoreWinsorize(rawResMom),
+    intermediateRS:   zScoreWinsorize(rawIntRS),
+    acceleration:     zScoreWinsorize(rawAccel),
+    turnoverMom:      zScoreWinsorize(rawTurnover),
+    fip:              zScoreWinsorize(rawFip),
+    ker:              zScoreWinsorize(rawKer),
+  };
 
-  // Step 5: weighted composite with null-aware reweighting.
+  // Step 5: 6-metric weighted composite with null-aware reweighting.
+  const metricKeys = Object.keys(MOMENTUM_WEIGHTS);
   const bmz = new Array(n).fill(null);
   for (let i = 0; i < n; i++) {
-    const parts = [
-      { z: zFip[i], w: MOMENTUM_WEIGHTS.fip },
-      { z: zKer[i], w: MOMENTUM_WEIGHTS.ker },
-      { z: zAccel[i], w: MOMENTUM_WEIGHTS.acceleration },
-      { z: zTurnover[i], w: MOMENTUM_WEIGHTS.turnoverMom },
-    ].filter(p => p.z != null);
-
-    if (parts.length === 0) {
-      bmz[i] = null;
-      continue;
-    }
-
+    const parts = metricKeys
+      .map(key => ({ z: z[key][i], w: MOMENTUM_WEIGHTS[key] }))
+      .filter(p => p.z != null && Number.isFinite(p.z));
+    if (parts.length === 0) continue;
     const totalW = parts.reduce((a, p) => a + p.w, 0);
     bmz[i] = parts.reduce((acc, p) => acc + p.z * (p.w / totalW), 0);
   }
 
-  // Step 6: percentile-rank composites to 0..100.
-  const ranks = percentileRank(bmz);
+  // Step 6: momentumScore = percentile of BMZ (0-100); momentumRank = ordinal (1 = best).
+  const momentumScore = percentileRank(bmz);
+  const momentumRank = (() => {
+    const indexed = bmz
+      .map((v, i) => ({ v, i }))
+      .filter(({ v }) => v != null && Number.isFinite(v))
+      .sort((a, b) => b.v - a.v); // desc: highest BMZ → rank 1
+    const out = new Array(n).fill(null);
+    indexed.forEach(({ i }, idx) => { out[i] = idx + 1; });
+    return out;
+  })();
+
+  // Step 7: sub-pillar Z-scores → percentile-rank to 0..100.
+  const stabilityZ = computeSubPillarZ(z, SUB_PILLARS.stability.metrics);
+  const heatZ = computeSubPillarZ(z, SUB_PILLARS.heat.metrics);
+  const qualityZ = computeSubPillarZ(z, SUB_PILLARS.quality.metrics);
+
+  const stabilityPct = percentileRank(stabilityZ);
+  const heatPct = percentileRank(heatZ);
+  const qualityPct = percentileRank(qualityZ);
 
   // Assemble output.
   return stockDataArray.map((s, i) => ({
     symbol: s.symbol,
-    momentumScore: bmz[i] != null ? Math.round(bmz[i] * 1000) / 1000 : null,
-    momentumRank: ranks[i],
+    momentumScore: momentumScore[i],
+    momentumRank: momentumRank[i],
     momentumFactors: {
-      fip: zFip[i] != null ? Math.round(zFip[i] * 1000) / 1000 : null,
-      ker: zKer[i] != null ? Math.round(zKer[i] * 1000) / 1000 : null,
-      acceleration: zAccel[i] != null ? Math.round(zAccel[i] * 1000) / 1000 : null,
-      turnoverMom: zTurnover[i] != null ? Math.round(zTurnover[i] * 1000) / 1000 : null,
+      residualMomentum: ROUND3(z.residualMomentum[i]),
+      intermediateRS:   ROUND3(z.intermediateRS[i]),
+      acceleration:     ROUND3(z.acceleration[i]),
+      turnoverMom:      ROUND3(z.turnoverMom[i]),
+      fip:              ROUND3(z.fip[i]),
+      ker:              ROUND3(z.ker[i]),
+      stability:        stabilityPct[i],
+      heat:             heatPct[i],
+      quality:          qualityPct[i],
     },
   }));
 }

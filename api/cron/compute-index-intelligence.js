@@ -525,14 +525,15 @@ export default async function handler(req, res) {
       stocksProcessed = stockScores.length;
       log(`  Scored ${stocksProcessed} stocks across ${Object.keys(sectorGroups).length} sectors`);
 
-      // Momentum Rank (Phase 1) — compute after technical scores, before Firestore write.
-      // Reuses rsData which already holds per-stock closes + ohlcv.
+      // Momentum Rank (Phase 2) — 6 metrics + sub-pillars. Reuses rsData which
+      // already holds per-stock closes + ohlcv. Passes spyCloses for Residual
+      // Momentum (beta regression) and Intermediate RS (benchmark comparison).
       const stockMomentumData = rsData.map(d => ({
         symbol: d.sym,
         closes: d.closes,
         volumes: d.ohlcv.map(o => o.volume),
       }));
-      const momentumResults = computeMomentumRankings(stockMomentumData);
+      const momentumResults = computeMomentumRankings(stockMomentumData, spyCloses);
       momentumResults.forEach(r => momentumMap.set(r.symbol, r));
       log(`  Computed momentum rank for ${momentumResults.length} stocks`);
     }
