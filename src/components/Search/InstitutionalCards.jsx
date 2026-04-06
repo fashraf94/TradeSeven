@@ -65,15 +65,60 @@ const SECTOR_SHORT = {
   XLB: 'Materials', XLU: 'Utilities', XLRE: 'Real Estate', XLC: 'Communications',
 };
 
+// ── Helper: Render text with tappable ticker symbols ──
+function renderTextWithTickers(text, tickers, onStockTap) {
+  if (!tickers.length || !onStockTap) return text;
+
+  let parts = [text];
+  for (const ticker of tickers) {
+    const newParts = [];
+    for (const part of parts) {
+      if (typeof part === 'string') {
+        const idx = part.indexOf(ticker);
+        if (idx !== -1) {
+          if (idx > 0) newParts.push(part.slice(0, idx));
+          newParts.push(
+            <span
+              key={`${ticker}-${idx}`}
+              onClick={(e) => { e.stopPropagation(); onStockTap(ticker); }}
+              style={{
+                color: CYAN,
+                fontWeight: 700,
+                fontFamily: MONO,
+                cursor: 'pointer',
+                textDecoration: 'underline',
+                textDecorationColor: 'rgba(6, 182, 212, 0.3)',
+                textUnderlineOffset: '2px',
+              }}
+            >
+              {ticker}
+            </span>
+          );
+          newParts.push(part.slice(idx + ticker.length));
+        } else {
+          newParts.push(part);
+        }
+      } else {
+        newParts.push(part);
+      }
+    }
+    parts = newParts;
+  }
+
+  return <>{parts}</>;
+}
+
 // ══════════════════════════════════════
 // ── Component 1: HeroHeadlineCard ──
 // ══════════════════════════════════════
-export const HeroHeadlineCard = ({ headline, onAnalyze, updatedAt }) => {
-  if (!headline) return null;
+export const HeroHeadlineCard = ({ headline, heroInsights, onStockTap, updatedAt }) => {
+  if (!headline && !heroInsights?.length) return null;
 
   const dateLabel = updatedAt?.toDate
     ? updatedAt.toDate().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
     : null;
+
+  const insights = heroInsights?.length ? heroInsights : null;
 
   return (
     <div style={{
@@ -102,30 +147,43 @@ export const HeroHeadlineCard = ({ headline, onAnalyze, updatedAt }) => {
           {'\uD83D\uDCE1'} Quarterly Strategy Reveal
         </div>
 
-        <div style={{
-          fontSize: '20px', fontWeight: 700, color: '#ffffff',
-          lineHeight: 1.3, marginBottom: '16px',
-        }}>
-          {headline}
-        </div>
+        {insights ? (
+          <div style={{ marginBottom: '16px' }}>
+            {insights.map((insight, idx) => {
+              const isObj = typeof insight === 'object' && insight !== null;
+              const text = isObj ? insight.text : insight;
+              const tickers = isObj ? (insight.tickers || []) : [];
+              const isFirst = idx === 0;
 
-        {onAnalyze && (
-          <button
-            onClick={onAnalyze}
-            style={{
-              background: '#06b6d4', color: '#003640',
-              padding: '8px 20px', fontSize: '11px', fontWeight: 700,
-              textTransform: 'uppercase', letterSpacing: '0.1em',
-              border: 'none', cursor: 'pointer', borderRadius: '0px',
-            }}
-          >
-            Analyze Sector Flows &rarr;
-          </button>
+              return (
+                <div key={idx} style={{
+                  fontSize: isFirst ? '15px' : '13px',
+                  fontWeight: isFirst ? 600 : 400,
+                  color: isFirst ? '#ffffff' : '#c8ccd0',
+                  lineHeight: 1.6,
+                  paddingLeft: '12px',
+                  borderLeft: isFirst
+                    ? '2px solid #06b6d4'
+                    : '2px solid rgba(6, 182, 212, 0.25)',
+                  marginBottom: '10px',
+                }}>
+                  {tickers.length > 0 ? renderTextWithTickers(text, tickers, onStockTap) : text}
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div style={{
+            fontSize: '20px', fontWeight: 700, color: '#ffffff',
+            lineHeight: 1.3, marginBottom: '16px',
+          }}>
+            {headline}
+          </div>
         )}
 
         {dateLabel && (
           <div style={{
-            fontSize: '10px', fontFamily: MONO, color: '#6b7280', marginTop: '12px',
+            fontSize: '10px', fontFamily: MONO, color: '#6b7280', marginTop: '4px',
           }}>
             Filed {dateLabel} &middot; 45-day SEC reporting lag
           </div>
@@ -142,6 +200,87 @@ export const AlphaFeed = ({ storylines, onStockTap }) => {
   if (!storylines?.length) return null;
 
   return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+      {storylines.map((s, i) => {
+        const borderColor = STORYLINE_BORDERS[s.type] || CYAN;
+        const icon = STORYLINE_ICONS[s.type] || '\u26A1';
+        const label = STORYLINE_LABELS[s.type] || s.type;
+
+        // Split headline around the ticker symbol for highlighting
+        const tickerIdx = s.headline.indexOf(s.symbol);
+        const beforeTicker = tickerIdx >= 0 ? s.headline.slice(0, tickerIdx) : s.headline;
+        const afterTicker = tickerIdx >= 0 ? s.headline.slice(tickerIdx + s.symbol.length) : '';
+
+        return (
+          <div
+            key={`${s.symbol}-${i}`}
+            onClick={() => onStockTap && onStockTap(s.symbol)}
+            style={{
+              padding: '12px 14px',
+              borderLeft: `3px solid ${borderColor}`,
+              background: i % 2 === 0 ? 'rgba(255,255,255,0.015)' : 'transparent',
+              cursor: 'pointer',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+              <span style={{ fontSize: '14px', lineHeight: '20px', flexShrink: 0 }}>
+                {icon}
+              </span>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                {/* Headline with highlighted ticker */}
+                <div style={{
+                  fontSize: '13px', fontWeight: 600, color: '#e3e2e7',
+                  lineHeight: 1.4, marginBottom: '4px',
+                }}>
+                  {tickerIdx >= 0 ? (
+                    <>
+                      {beforeTicker}
+                      <span style={{
+                        color: borderColor, fontWeight: 700, fontFamily: MONO,
+                      }}>
+                        {s.symbol}
+                      </span>
+                      {afterTicker}
+                    </>
+                  ) : s.headline}
+                </div>
+
+                {/* Detail line */}
+                {s.detail && (
+                  <div style={{
+                    fontSize: '11px', color: '#6b7280', lineHeight: 1.3,
+                  }}>
+                    {s.detail}
+                  </div>
+                )}
+
+                {/* Metric pill */}
+                <div style={{
+                  display: 'inline-block', marginTop: '6px',
+                  padding: '2px 8px', borderRadius: '4px',
+                  fontSize: '10px', fontFamily: MONO, fontWeight: 600,
+                  color: borderColor,
+                  background: `${borderColor}15`,
+                  border: `1px solid ${borderColor}30`,
+                }}>
+                  {s.metric}
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
+// ══════════════════════════════════════
+// ── Component: UnderTheRadar ──
+// ══════════════════════════════════════
+export const UnderTheRadar = ({ stocks, onStockTap }) => {
+  if (!stocks?.length) return null;
+
+  return (
     <div style={{
       display: 'flex',
       gap: '12px',
@@ -152,24 +291,25 @@ export const AlphaFeed = ({ storylines, onStockTap }) => {
       scrollbarWidth: 'none',
       msOverflowStyle: 'none',
     }}>
-      {storylines.map((s, i) => {
-        const borderColor = STORYLINE_BORDERS[s.type] || CYAN;
-        const icon = STORYLINE_ICONS[s.type] || '\u26A1';
-        const label = STORYLINE_LABELS[s.type] || s.type;
+      {stocks.map((stock, i) => {
+        const arch = ARCHETYPE_STYLES[stock.archetype];
+        const signalLabel = stock.signal === 'new_position' ? 'New Position'
+          : stock.signal === 'accumulating' ? 'Accumulating'
+          : stock.signal === 'unchanged' ? 'Unchanged' : stock.signal;
 
         return (
           <motion.div
-            key={`${s.symbol}-${i}`}
+            key={`${stock.symbol}-${i}`}
             whileTap={{ scale: 0.97 }}
-            onClick={() => onStockTap && onStockTap(s.symbol)}
+            onClick={() => onStockTap && onStockTap(stock.symbol)}
             style={{
               flexShrink: 0,
-              width: '280px',
-              height: '140px',
+              width: '240px',
+              height: '120px',
               background: '#15171E',
-              borderLeft: `4px solid ${borderColor}`,
+              borderLeft: '4px solid #a78bfa',
               borderRadius: '12px',
-              padding: '14px',
+              padding: '12px',
               display: 'flex',
               flexDirection: 'column',
               justifyContent: 'space-between',
@@ -179,33 +319,51 @@ export const AlphaFeed = ({ storylines, onStockTap }) => {
           >
             {/* Eyebrow */}
             <div style={{
-              fontSize: '10px', fontFamily: MONO, color: '#6b7280',
-              textTransform: 'uppercase',
+              fontSize: '9px', fontFamily: MONO, color: '#a78bfa',
+              textTransform: 'uppercase', letterSpacing: '0.1em',
             }}>
-              {icon} {label} &middot; Q Filing
+              {'\uD83D\uDD0D'} Quiet Conviction
             </div>
 
-            {/* Headline */}
-            <div style={{
-              fontSize: '13px', fontWeight: 700, color: '#ffffff', lineHeight: 1.4,
-              display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
-              overflow: 'hidden', flex: 1, marginTop: '8px',
-            }}>
-              {s.headline}
+            {/* Ticker + Institution */}
+            <div>
+              <div style={{
+                fontSize: '16px', fontWeight: 700, color: '#ffffff', marginBottom: '2px',
+              }}>
+                {stock.symbol}
+              </div>
+              <div style={{
+                fontSize: '11px', color: '#9ca3af',
+                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+              }}>
+                {stock.institution}
+                {arch && (
+                  <span style={{
+                    fontSize: '9px', fontFamily: MONO, color: arch.color,
+                    background: arch.bg, border: `0.5px solid ${arch.border}`,
+                    padding: '1px 5px', borderRadius: '3px', marginLeft: '6px',
+                  }}>
+                    {arch.label}
+                  </span>
+                )}
+              </div>
             </div>
 
             {/* Bottom row */}
             <div style={{
-              borderTop: '1px solid rgba(255,255,255,0.06)',
-              paddingTop: '8px',
               display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: '6px',
             }}>
               <span style={{
-                fontSize: '12px', fontFamily: MONO, fontWeight: 700, color: borderColor,
+                fontSize: '10px', fontFamily: MONO, color: '#a78bfa', fontWeight: 600,
               }}>
-                {s.metric}
+                {formatWeight(stock.weight)} &middot; {signalLabel}
               </span>
-              <span style={{ fontSize: '12px', color: borderColor }}>{'\u26A1'}</span>
+              <span style={{
+                fontSize: '10px', fontFamily: MONO, color: '#6b7280',
+              }}>
+                {stock.activeHolderCount} holders
+              </span>
             </div>
           </motion.div>
         );
@@ -217,7 +375,7 @@ export const AlphaFeed = ({ storylines, onStockTap }) => {
 // ══════════════════════════════════════
 // ── Component 3: SectorRotation ──
 // ══════════════════════════════════════
-export const SectorRotation = ({ sectorFlows, sectorDrivers, isMobile }) => {
+export const SectorRotation = ({ sectorFlows, sectorDrivers, sectorAnalysis, isMobile }) => {
   if (!sectorFlows || Object.keys(sectorFlows).length === 0) return null;
 
   const entries = Object.entries(sectorFlows)
@@ -244,7 +402,7 @@ export const SectorRotation = ({ sectorFlows, sectorDrivers, isMobile }) => {
           <div key={etf} style={{ marginBottom: '16px' }}>
             {/* Sector name */}
             <div style={{
-              fontSize: '11px', fontWeight: 600, color: '#9ca3af',
+              fontSize: '12px', fontWeight: 600, color: '#e3e2e7',
               textTransform: 'uppercase', textAlign: 'center',
               marginBottom: '4px', letterSpacing: '0.1em',
             }}>
@@ -263,7 +421,10 @@ export const SectorRotation = ({ sectorFlows, sectorDrivers, isMobile }) => {
                 <div style={{
                   width: `${sellWidth}%`,
                   height: '20px',
-                  background: 'rgba(239, 68, 68, 0.2)',
+                  background: 'rgba(239, 68, 68, 0.15)',
+                  border: '1px solid rgba(239, 68, 68, 0.08)',
+                  borderRight: 'none',
+                  boxShadow: '0 0 8px rgba(239, 68, 68, 0.1)',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'flex-end',
@@ -272,8 +433,8 @@ export const SectorRotation = ({ sectorFlows, sectorDrivers, isMobile }) => {
                 }}>
                   {distTickers.length > 0 && (
                     <span style={{
-                      fontSize: '9px', fontFamily: MONO, color: '#ef4444',
-                      fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden',
+                      fontSize: '10px', fontFamily: MONO, color: '#ef4444',
+                      fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden',
                       textOverflow: 'ellipsis',
                     }}>
                       {distTickers.slice(0, 3).join(',')}
@@ -291,7 +452,7 @@ export const SectorRotation = ({ sectorFlows, sectorDrivers, isMobile }) => {
                   width: `${buyWidth}%`,
                   height: '20px',
                   background: 'rgba(6, 182, 212, 0.25)',
-                  boxShadow: '0 0 8px rgba(6, 182, 212, 0.15)',
+                  boxShadow: '0 0 8px rgba(6, 182, 212, 0.15), inset 0 0 8px rgba(6, 182, 212, 0.2)',
                   display: 'flex',
                   alignItems: 'center',
                   paddingLeft: '6px',
@@ -299,8 +460,8 @@ export const SectorRotation = ({ sectorFlows, sectorDrivers, isMobile }) => {
                 }}>
                   {accTickers.length > 0 && (
                     <span style={{
-                      fontSize: '9px', fontFamily: MONO, color: CYAN,
-                      fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden',
+                      fontSize: '10px', fontFamily: MONO, color: CYAN,
+                      fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden',
                       textOverflow: 'ellipsis',
                     }}>
                       {accTickers.slice(0, 3).join(',')}
@@ -314,6 +475,8 @@ export const SectorRotation = ({ sectorFlows, sectorDrivers, isMobile }) => {
             <div style={{
               fontSize: '9px', fontFamily: MONO, color: '#6b7280',
               display: 'flex', justifyContent: 'space-between', marginTop: '2px',
+              paddingBottom: '16px',
+              borderBottom: '1px solid rgba(255,255,255,0.03)',
             }}>
               <span>Distributing ({netSellers || 0})</span>
               <span>Accumulating ({netBuyers || 0})</span>
@@ -321,6 +484,26 @@ export const SectorRotation = ({ sectorFlows, sectorDrivers, isMobile }) => {
           </div>
         );
       })}
+
+      {sectorAnalysis && (
+        <div style={{
+          marginTop: '20px',
+          padding: '12px 14px',
+          background: 'rgba(6, 182, 212, 0.04)',
+          borderLeft: '3px solid rgba(6, 182, 212, 0.3)',
+          borderRadius: '0 8px 8px 0',
+        }}>
+          <p style={{
+            fontSize: '12px',
+            color: '#9ca3af',
+            lineHeight: 1.5,
+            margin: 0,
+            fontStyle: 'italic',
+          }}>
+            {sectorAnalysis}
+          </p>
+        </div>
+      )}
     </div>
   );
 };
@@ -397,9 +580,11 @@ export const CapitolHillTeaser = () => {
 // ══════════════════════════════════════
 // ── Component 5: WhaleLeaderboard ──
 // ══════════════════════════════════════
-export const WhaleLeaderboard = ({ institutions, onStockTap, isMobile }) => {
+export const WhaleLeaderboard = ({ institutions, institutionPortfolios, onStockTap, isMobile }) => {
   const [expandedId, setExpandedId] = useState(null);
-  const [showAll, setShowAll] = useState(false);
+  const [portfolioExpandedId, setPortfolioExpandedId] = useState(null);
+  const [showAllWhales, setShowAllWhales] = useState(false);
+  const [showFullPortfolio, setShowFullPortfolio] = useState(false);
 
   if (!institutions?.length) {
     return (
@@ -409,8 +594,16 @@ export const WhaleLeaderboard = ({ institutions, onStockTap, isMobile }) => {
     );
   }
 
-  const visible = showAll ? institutions : institutions.slice(0, 10);
+  const visible = showAllWhales ? institutions : institutions.slice(0, 10);
   const hasMore = institutions.length > 10;
+
+  const SIGNAL_COLORS = {
+    accumulating: CYAN,
+    new_position: CYAN,
+    trimming: '#f59e0b',
+    exiting: '#ef4444',
+    unchanged: '#64748b',
+  };
 
   return (
     <div>
@@ -418,12 +611,22 @@ export const WhaleLeaderboard = ({ institutions, onStockTap, isMobile }) => {
         const arch = ARCHETYPE_STYLES[inst.archetype];
         const isExpanded = expandedId === inst.name;
         const topBet = inst.topConviction?.[0];
+        const portfolio = institutionPortfolios?.[inst.name];
+        const isPortfolioOpen = portfolioExpandedId === inst.name;
 
         return (
           <div key={inst.name || i}>
             {/* Collapsed row */}
             <div
-              onClick={() => setExpandedId(isExpanded ? null : inst.name)}
+              onClick={() => {
+                if (isExpanded) {
+                  setExpandedId(null);
+                  setPortfolioExpandedId(null);
+                  setShowFullPortfolio(false);
+                } else {
+                  setExpandedId(inst.name);
+                }
+              }}
               style={{
                 background: isExpanded ? '#15171E' : 'transparent',
                 borderLeft: isExpanded ? '4px solid #06b6d4' : '4px solid transparent',
@@ -594,29 +797,138 @@ export const WhaleLeaderboard = ({ institutions, onStockTap, isMobile }) => {
                       </div>
                     )}
 
-                    {/* View Full Portfolio */}
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (onStockTap && topBet) onStockTap(topBet.symbol);
-                      }}
-                      style={{
-                        width: '100%',
-                        background: '#06b6d4',
-                        color: '#003640',
-                        padding: '10px',
-                        fontSize: '11px',
-                        fontWeight: 700,
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.1em',
-                        border: 'none',
-                        cursor: 'pointer',
-                        marginTop: '16px',
-                        borderRadius: '0px',
-                      }}
-                    >
-                      View Full Portfolio
-                    </button>
+                    {/* Full Portfolio (inline expandable) */}
+                    {portfolio?.positions?.length > 0 && (
+                      <div style={{ marginTop: '16px' }}>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (isPortfolioOpen) {
+                              setPortfolioExpandedId(null);
+                              setShowFullPortfolio(false);
+                            } else {
+                              setPortfolioExpandedId(inst.name);
+                              setShowFullPortfolio(false);
+                            }
+                          }}
+                          style={{
+                            width: '100%',
+                            background: isPortfolioOpen ? 'rgba(6, 182, 212, 0.12)' : 'rgba(6, 182, 212, 0.08)',
+                            color: CYAN,
+                            padding: '10px',
+                            fontSize: '11px',
+                            fontWeight: 700,
+                            textTransform: 'uppercase',
+                            letterSpacing: '0.1em',
+                            border: `1px solid rgba(6, 182, 212, ${isPortfolioOpen ? '0.3' : '0.2'})`,
+                            cursor: 'pointer',
+                            borderRadius: '4px',
+                            fontFamily: MONO,
+                          }}
+                        >
+                          {isPortfolioOpen ? 'Hide Portfolio' : `View Full Portfolio (${portfolio.stocksHeld})`}
+                        </button>
+
+                        <AnimatePresence>
+                          {isPortfolioOpen && (
+                            <motion.div
+                              initial={{ height: 0, opacity: 0 }}
+                              animate={{ height: 'auto', opacity: 1 }}
+                              exit={{ height: 0, opacity: 0 }}
+                              transition={{ duration: 0.2 }}
+                              style={{ overflow: 'hidden' }}
+                            >
+                              <div style={{
+                                fontSize: '10px', fontFamily: MONO, color: '#6b7280',
+                                textTransform: 'uppercase', letterSpacing: '0.15em',
+                                marginBottom: '10px', marginTop: '16px',
+                              }}>
+                                Full Portfolio ({portfolio.stocksHeld} positions)
+                              </div>
+
+                              {(() => {
+                                const positions = showFullPortfolio
+                                  ? portfolio.positions
+                                  : portfolio.positions.slice(0, 10);
+                                const maxW = portfolio.positions[0]?.weight || 1;
+
+                                return (
+                                  <>
+                                    {positions.map(pos => {
+                                      const sigColor = SIGNAL_COLORS[pos.signal] || '#64748b';
+                                      const sigLabel = pos.signal === 'new_position' ? 'New'
+                                        : pos.signal === 'accumulating' ? 'Acc'
+                                        : pos.signal === 'trimming' ? 'Trim'
+                                        : pos.signal === 'exiting' ? 'Exit'
+                                        : pos.signal === 'unchanged' ? '—' : pos.signal;
+
+                                      return (
+                                        <div
+                                          key={pos.symbol}
+                                          onClick={(e) => { e.stopPropagation(); onStockTap && onStockTap(pos.symbol); }}
+                                          style={{
+                                            display: 'flex', alignItems: 'center', gap: '8px',
+                                            padding: '6px 0',
+                                            borderBottom: '1px solid rgba(255,255,255,0.03)',
+                                            cursor: 'pointer',
+                                          }}
+                                        >
+                                          <span style={{
+                                            fontSize: '12px', fontFamily: MONO, fontWeight: 700,
+                                            color: '#ffffff', width: '50px', flexShrink: 0,
+                                          }}>
+                                            {pos.symbol}
+                                          </span>
+
+                                          <div style={{
+                                            flex: 1, height: '3px', background: '#1C1A27',
+                                            borderRadius: '2px', overflow: 'hidden',
+                                          }}>
+                                            <div style={{
+                                              width: `${(pos.weight / maxW) * 100}%`,
+                                              height: '100%', background: CYAN,
+                                              borderRadius: '2px',
+                                            }} />
+                                          </div>
+
+                                          <span style={{
+                                            fontSize: '11px', fontFamily: MONO, color: CYAN,
+                                            width: '50px', textAlign: 'right', flexShrink: 0,
+                                          }}>
+                                            {pos.weight.toFixed(2)}%
+                                          </span>
+
+                                          <span style={{
+                                            fontSize: '8px', fontFamily: MONO, fontWeight: 600,
+                                            color: sigColor, background: `${sigColor}15`,
+                                            padding: '1px 5px', borderRadius: '3px',
+                                            flexShrink: 0, minWidth: '28px', textAlign: 'center',
+                                          }}>
+                                            {sigLabel}
+                                          </span>
+                                        </div>
+                                      );
+                                    })}
+
+                                    {portfolio.positions.length > 10 && (
+                                      <div
+                                        onClick={(e) => { e.stopPropagation(); setShowFullPortfolio(!showFullPortfolio); }}
+                                        style={{
+                                          fontSize: '11px', fontFamily: MONO, color: CYAN,
+                                          cursor: 'pointer', padding: '10px 0', fontWeight: 600,
+                                        }}
+                                      >
+                                        {showFullPortfolio ? 'Show less' : `Show all ${portfolio.positions.length} \u2192`}
+                                      </div>
+                                    )}
+                                  </>
+                                );
+                              })()}
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
+                      </div>
+                    )}
                   </div>
                 </motion.div>
               )}
@@ -628,14 +940,14 @@ export const WhaleLeaderboard = ({ institutions, onStockTap, isMobile }) => {
       {/* Show more / less */}
       {hasMore && (
         <button
-          onClick={() => setShowAll(!showAll)}
+          onClick={() => setShowAllWhales(!showAllWhales)}
           style={{
             background: 'none', border: 'none', color: CYAN,
             fontSize: '11px', fontWeight: 500, cursor: 'pointer',
             padding: '10px 0', fontFamily: MONO,
           }}
         >
-          {showAll ? 'Show less' : `Show all ${institutions.length} \u2192`}
+          {showAllWhales ? 'Show less' : `Show all ${institutions.length} \u2192`}
         </button>
       )}
     </div>

@@ -251,7 +251,7 @@ export function generateStorylines(stockHoldingsMap) {
 
       storylines.push({
         type: 'cluster_buy',
-        priority: 100,
+        priority: 85,
         symbol,
         headline: `Smart Money Stampede: ${newEntrants.length} major funds simultaneously entered ${symbol}`,
         detail: newEntrants.join(', '),
@@ -339,7 +339,14 @@ export function generateStorylines(stockHoldingsMap) {
     return symbolCount[s.symbol] <= 2;
   });
 
-  return deduped.slice(0, 8);
+  // Cap per type: cluster_buy max 2, others max 3 — ensures variety
+  const typeCounts = {};
+  const typeCapped = deduped.filter(s => {
+    typeCounts[s.type] = (typeCounts[s.type] || 0) + 1;
+    return typeCounts[s.type] <= (s.type === 'cluster_buy' ? 2 : 3);
+  });
+
+  return typeCapped.slice(0, 8);
 }
 
 /**
@@ -461,7 +468,7 @@ export function generateHeroInsights({
 }) {
   const insights = [];
 
-  // Insight 1: Sector rotation (from existing heroHeadline logic)
+  // Insight 1: Sector rotation
   if (sectorFlows) {
     let maxAccum = { sector: null, score: -Infinity };
     let maxDistrib = { sector: null, score: -Infinity };
@@ -477,42 +484,60 @@ export function generateHeroInsights({
 
     if (maxAccum.sector && maxDistrib.sector && maxAccum.sector !== maxDistrib.sector
         && maxAccum.score > 2 && maxDistrib.score > 2) {
-      insights.push(`Smart money is rotating out of ${toName(maxDistrib.sector)} and into ${toName(maxAccum.sector)}`);
+      insights.push({
+        text: `Smart money is rotating out of ${toName(maxDistrib.sector)} and into ${toName(maxAccum.sector)}`,
+        type: 'rotation',
+        tickers: [],
+      });
     } else if (maxAccum.score > 2) {
-      insights.push(`Institutions are loading up on ${toName(maxAccum.sector)} stocks`);
+      insights.push({
+        text: `Institutions are loading up on ${toName(maxAccum.sector)} stocks`,
+        type: 'rotation',
+        tickers: [],
+      });
     }
   }
 
-  // Insight 2: Cluster buy count
-  const clusterBuyCount = (storylines || []).filter(s => s.type === 'cluster_buy').length;
-  if (clusterBuyCount >= 3) {
-    insights.push(`${clusterBuyCount} stocks triggered cluster buy alerts — unusual coordinated buying activity`);
-  } else if (clusterBuyCount > 0) {
-    const symbols = storylines.filter(s => s.type === 'cluster_buy').map(s => s.symbol).join(', ');
-    insights.push(`Cluster buy detected in ${symbols} — 3+ funds opened new positions simultaneously`);
+  // Insight 2: Cluster buys — list actual ticker symbols
+  const clusterBuyStories = (storylines || []).filter(s => s.type === 'cluster_buy');
+  if (clusterBuyStories.length > 0) {
+    const tickers = clusterBuyStories.map(s => s.symbol);
+    insights.push({
+      text: `Cluster buys detected in ${tickers.join(', ')} — multiple funds opened simultaneous new positions`,
+      type: 'cluster',
+      tickers,
+    });
   }
 
-  // Insight 3: Accumulation/distribution balance
-  const accumCount = (strongAccumulation || []).length;
-  const distribCount = (strongDistribution || []).length;
-  const totalProcessed = stocksProcessed || 75;
-  if (accumCount > 0 || distribCount > 0) {
-    const pct = Math.round((accumCount / totalProcessed) * 100);
-    insights.push(`${accumCount} of ${totalProcessed} stocks show strong accumulation (${pct}%), only ${distribCount} under distribution`);
+  // Insight 3: Distribution pressure — name the specific stocks
+  if (strongDistribution && strongDistribution.length > 0) {
+    insights.push({
+      text: `Under distribution pressure: ${strongDistribution.join(', ')} — institutions are net selling`,
+      type: 'distribution',
+      tickers: strongDistribution.slice(),
+    });
   }
 
-  // Insight 4: Biggest single-fund expansion
+  // Insight 4: Biggest single-fund expansion — name the fund and top bets
   if (topInstitutions && topInstitutions.length > 0) {
-    let maxNewPositions = { name: null, count: 0 };
+    let maxNewPositions = { name: null, count: 0, stocksHeld: 0, topBets: [] };
     for (const inst of topInstitutions) {
       if (!inst.positions) continue;
       const newCount = inst.positions.filter(p => p.signal === 'new_position').length;
       if (newCount > maxNewPositions.count) {
-        maxNewPositions = { name: inst.name, count: newCount };
+        const topBets = inst.positions
+          .sort((a, b) => b.totalAssetsPct - a.totalAssetsPct)
+          .slice(0, 3)
+          .map(p => p.symbol);
+        maxNewPositions = { name: inst.name, count: newCount, stocksHeld: inst.stocksHeld, topBets };
       }
     }
     if (maxNewPositions.count >= 3) {
-      insights.push(`${maxNewPositions.name} opened new positions in ${maxNewPositions.count} stocks — largest single-fund expansion`);
+      insights.push({
+        text: `${maxNewPositions.name} holds ${maxNewPositions.stocksHeld} stocks — top bets: ${maxNewPositions.topBets.join(', ')}`,
+        type: 'expansion',
+        tickers: maxNewPositions.topBets,
+      });
     }
   }
 
@@ -521,7 +546,7 @@ export function generateHeroInsights({
     let bestRatio = { sector: null, ratio: 0, buyers: 0, sellers: 0 };
     for (const [sector, flows] of Object.entries(sectorFlows)) {
       const total = flows.netBuyers + flows.netSellers;
-      if (total < 3) continue; // skip low-activity sectors
+      if (total < 3) continue;
       const ratio = flows.netBuyers / Math.max(flows.netSellers, 1);
       if (ratio > bestRatio.ratio) {
         bestRatio = { sector, ratio, buyers: flows.netBuyers, sellers: flows.netSellers };
@@ -529,7 +554,11 @@ export function generateHeroInsights({
     }
     if (bestRatio.sector && bestRatio.ratio >= 3) {
       const name = SECTOR_NAMES[bestRatio.sector] || bestRatio.sector;
-      insights.push(`${name} accumulation at ${bestRatio.buyers}:${bestRatio.sellers} buyer/seller ratio — strongest sector conviction`);
+      insights.push({
+        text: `${name} accumulation at ${bestRatio.buyers}:${bestRatio.sellers} buyer/seller ratio — strongest sector conviction`,
+        type: 'sector_strength',
+        tickers: [],
+      });
     }
   }
 
@@ -601,12 +630,12 @@ export function computeUnderTheRadar(stockHoldingsMap) {
     if (!institutions || institutions.length === 0) continue;
 
     const activeHolders = institutions.filter(i => i.archetype !== 'index_passive');
-    if (activeHolders.length > 8) continue;
+    if (activeHolders.length > 12) continue;
 
     for (const inst of activeHolders) {
-      if (inst.signal !== 'accumulating' && inst.signal !== 'new_position') continue;
-      if (inst.totalAssetsPct > 2.0) continue;
-      if (inst.totalAssetsPct < 0.01) continue;
+      if (!['accumulating', 'new_position', 'unchanged'].includes(inst.signal)) continue;
+      if (inst.totalAssetsPct > 3.0) continue;
+      if (inst.totalAssetsPct < 0.005) continue;
 
       const interestingArchetypes = ['quantitative', 'activist', 'transient', 'long_only'];
       if (!interestingArchetypes.includes(inst.archetype)) continue;
@@ -626,7 +655,7 @@ export function computeUnderTheRadar(stockHoldingsMap) {
   // Score: prefer fewer active holders (more "under the radar") and newer signals
   candidates.sort((a, b) => {
     const signalScore = (s) => s.signal === 'new_position' ? 2 : 1;
-    const radarScore = (c) => (10 - c.activeHolderCount) + signalScore(c);
+    const radarScore = (c) => (14 - c.activeHolderCount) + signalScore(c);
     return radarScore(b) - radarScore(a);
   });
 

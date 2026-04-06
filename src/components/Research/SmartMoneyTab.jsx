@@ -89,7 +89,7 @@ const ArchetypePill = ({ archetype }) => {
     <span style={{
       padding: '2px 8px',
       borderRadius: '10px',
-      fontSize: '10px',
+      fontSize: '11px',
       fontWeight: 600,
       fontFamily: MONO,
       color: style.color,
@@ -114,15 +114,16 @@ const SignalBadge = ({ signal }) => {
       gap: '3px',
       padding: '2px 7px',
       borderRadius: '10px',
-      fontSize: '10px',
+      fontSize: '11px',
       fontWeight: 600,
       fontFamily: MONO,
       color,
       background: `${color}15`,
+      border: `0.5px solid ${color}30`,
       whiteSpace: 'nowrap',
       flexShrink: 0,
     }}>
-      <Icon size={10} />
+      <span style={{ width: '5px', height: '5px', borderRadius: '50%', background: color, flexShrink: 0 }} />
       {label}
     </span>
   );
@@ -150,8 +151,8 @@ const HolderRow = ({ holder, index, showArchetype }) => {
       }}>
         <span style={{
           color: 'rgba(255,255,255,0.85)',
-          fontSize: '12px',
-          fontWeight: 500,
+          fontSize: '14px',
+          fontWeight: 600,
           overflow: 'hidden',
           textOverflow: 'ellipsis',
           whiteSpace: 'nowrap',
@@ -200,11 +201,12 @@ const HolderSection = ({ title, icon: SectionIcon, holders, showArchetype }) => 
         gap: '6px',
         marginBottom: '8px',
       }}>
+        <div style={{ width: '3px', height: '14px', background: '#06b6d4', borderRadius: '1px', flexShrink: 0 }} />
         <SectionIcon size={14} style={{ color: '#06b6d4' }} />
         <span style={{
           fontSize: '10px',
           fontWeight: 700,
-          letterSpacing: '1px',
+          letterSpacing: '1.5px',
           color: 'rgba(255,255,255,0.4)',
           textTransform: 'uppercase',
           fontFamily: MONO,
@@ -238,14 +240,18 @@ const HolderSection = ({ title, icon: SectionIcon, holders, showArchetype }) => 
             background: 'none',
             border: 'none',
             color: '#06b6d4',
-            fontSize: '11px',
+            fontSize: '12px',
             fontWeight: 500,
             cursor: 'pointer',
             padding: '8px 0',
             fontFamily: MONO,
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '4px',
           }}
         >
-          {showAll ? 'Show less' : `Show all ${holders.length} \u2192`}
+          {showAll ? 'Show less' : `Show all ${holders.length}`}
+          <ChevronRight size={12} style={{ transform: showAll ? 'rotate(90deg)' : 'none' }} />
         </button>
       )}
     </div>
@@ -266,6 +272,7 @@ const ConvictionHeader = ({ summary }) => {
       borderRadius: '12px',
       background: 'rgba(255,255,255,0.03)',
       border: '1px solid rgba(255,255,255,0.06)',
+      borderTop: '3px solid #06b6d4',
     }}>
       {/* Top row: badge + score */}
       <div style={{
@@ -279,11 +286,12 @@ const ConvictionHeader = ({ summary }) => {
           <span style={{
             padding: '3px 10px',
             borderRadius: '8px',
-            fontSize: '11px',
+            fontSize: '12px',
             fontWeight: 600,
             color: conviction.text,
             background: conviction.bg,
             border: `1px solid ${conviction.border}`,
+            boxShadow: `0 0 12px ${conviction.bg}`,
           }}>
             {conviction.label}
           </span>
@@ -307,7 +315,7 @@ const ConvictionHeader = ({ summary }) => {
         {/* Conviction score */}
         <span style={{
           fontFamily: MONO,
-          fontSize: '18px',
+          fontSize: '24px',
           fontWeight: 700,
           color: conviction.text,
         }}>
@@ -317,12 +325,13 @@ const ConvictionHeader = ({ summary }) => {
 
       {/* Buyer / Seller ratio bar */}
       <div style={{
-        height: '4px',
-        borderRadius: '2px',
+        height: '6px',
+        borderRadius: '3px',
         overflow: 'hidden',
         display: 'flex',
         background: 'rgba(148, 163, 184, 0.15)',
         marginBottom: '10px',
+        boxShadow: '0 1px 4px rgba(0,0,0,0.3)',
       }}>
         {buyerPct > 0 && (
           <div style={{ width: `${buyerPct}%`, background: '#06b6d4', transition: 'width 0.3s' }} />
@@ -346,17 +355,21 @@ const ConvictionHeader = ({ summary }) => {
         flexWrap: 'wrap',
       }}>
         <span>
-          <span style={{ color: '#06b6d4', fontWeight: 600 }}>{summary.buyersCount || 0}</span> buyers
+          <span style={{ color: '#06b6d4', fontSize: '2px', verticalAlign: 'middle', marginRight: '3px' }}>{'\u25CF'}</span>
+          <span style={{ color: '#06b6d4', fontWeight: 700, fontSize: '13px' }}>{summary.buyersCount || 0}</span> buyers
         </span>
         <span>
-          <span style={{ color: '#ef4444', fontWeight: 600 }}>{summary.sellersCount || 0}</span> sellers
+          <span style={{ color: '#ef4444', fontSize: '2px', verticalAlign: 'middle', marginRight: '3px' }}>{'\u25CF'}</span>
+          <span style={{ color: '#ef4444', fontWeight: 700, fontSize: '13px' }}>{summary.sellersCount || 0}</span> sellers
         </span>
         <span>
-          <span style={{ fontWeight: 600 }}>{summary.activeHolders || 0}</span> active holders
+          <span style={{ color: '#94a3b8', fontSize: '2px', verticalAlign: 'middle', marginRight: '3px' }}>{'\u25CF'}</span>
+          <span style={{ fontWeight: 700, fontSize: '13px' }}>{summary.activeHolders || 0}</span> active holders
         </span>
         {summary.newPositionsCount > 0 && (
           <span>
-            <span style={{ color: '#06b6d4', fontWeight: 600 }}>{summary.newPositionsCount}</span> new positions
+            <span style={{ color: '#06b6d4', fontSize: '2px', verticalAlign: 'middle', marginRight: '3px' }}>{'\u25CF'}</span>
+            <span style={{ color: '#06b6d4', fontWeight: 700, fontSize: '13px' }}>{summary.newPositionsCount}</span> new positions
           </span>
         )}
         {summary.reportDate && (
@@ -372,7 +385,7 @@ const ConvictionHeader = ({ summary }) => {
 // ── Forge Teaser CTA ──
 const ForgeTeaser = () => (
   <div style={{
-    background: 'linear-gradient(135deg, rgba(6, 182, 212, 0.08) 0%, rgba(13, 14, 18, 0.95) 70%)',
+    background: 'linear-gradient(135deg, rgba(6, 182, 212, 0.12) 0%, rgba(13, 14, 18, 0.95) 70%)',
     border: '0.5px solid rgba(6, 182, 212, 0.15)',
     borderRadius: '12px',
     padding: '14px',

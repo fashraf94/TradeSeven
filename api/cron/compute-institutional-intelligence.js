@@ -1,17 +1,16 @@
 // api/cron/compute-institutional-intelligence.js
-// Weekly cron: computes institutional intelligence for the 75 draft stocks.
+// Weekly cron: computes institutional intelligence for the full stock universe.
 //
 // Schedule: "0 1 * * 1" and "0 2 * * 1" (dual UTC hours for DST coverage)
 // Runs Sunday ~9 PM ET. Idempotent — running twice overwrites the same Firestore docs.
 //
-// Cost: 75 stocks x 10 API calls = 750 EODHD calls per run
-// Writes: 75 per-stock docs + 1 aggregate doc = 76 Firestore writes
+// Cost: ~269 stocks x 10 API calls = ~2690 EODHD calls per run (cached after first run)
+// Writes: ~269 per-stock docs + 1 aggregate doc = ~270 Firestore writes
 
 import { initializeApp, getApps, cert } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 import { getCachedHolders } from '../_utils/marketDataCache.js';
-import { DRAFT_STOCKS } from '../_utils/draftStockList.js';
-import { TICKER_TO_SECTOR } from '../_utils/rankingConfig.js';
+import { ALL_TICKERS, TICKER_TO_SECTOR } from '../_utils/rankingConfig.js';
 import {
   enrichHolder,
   computeSummary,
@@ -67,7 +66,7 @@ export default async function handler(req, res) {
   }
 
   const startTime = Date.now();
-  log(`Starting institutional intelligence computation for ${DRAFT_STOCKS.length} stocks`);
+  log(`Starting institutional intelligence computation for ${ALL_TICKERS.length} stocks`);
 
   const db = getFirebaseAdmin();
   const results = { processed: 0, skipped: 0, errors: 0 };
@@ -82,10 +81,10 @@ export default async function handler(req, res) {
   const stockHoldingsMap = {};       // symbol -> { institutions, summary, sector }
 
   // Process each stock sequentially (avoid rate limiting)
-  for (const symbol of DRAFT_STOCKS) {
+  for (const symbol of ALL_TICKERS) {
     try {
-      // Timeout guard: 50s max (Vercel 60s limit)
-      if (Date.now() - startTime > 50000) {
+      // Timeout guard: 110s max (Vercel 120s limit)
+      if (Date.now() - startTime > 110000) {
         log(`Timeout approaching at ${results.processed} stocks. Stopping.`);
         break;
       }
@@ -318,3 +317,7 @@ export default async function handler(req, res) {
     elapsed: `${elapsed}s`,
   });
 }
+
+export const config = {
+  maxDuration: 120, // 2 minutes for ~269 stocks
+};
