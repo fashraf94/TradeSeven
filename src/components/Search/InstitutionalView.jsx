@@ -1,149 +1,63 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useTheme } from '../../contexts/ThemeContext';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../../firebase/config';
 import { STOCKS } from '../../data/assets';
 import {
-  SmartMoneyPulse,
-  ConvictionCarousel,
-  ClusterBuyAlert,
-  BiggestMovers,
-  SectorFlowsGrid,
+  HeroHeadlineCard,
+  AlphaFeed,
+  SectorRotation,
+  CapitolHillTeaser,
+  WhaleLeaderboard,
 } from './InstitutionalCards';
 
 const MONO = "'JetBrains Mono', 'SF Mono', monospace";
 const CYAN = '#06b6d4';
 
-const ARCHETYPE_STYLES = {
-  index_passive: { label: 'Index',     color: '#64748b', bg: 'rgba(100, 116, 139, 0.12)' },
-  long_only:     { label: 'Long-Only', color: '#06b6d4', bg: 'rgba(6, 182, 212, 0.10)' },
-  quantitative:  { label: 'Quant',     color: '#a78bfa', bg: 'rgba(167, 139, 250, 0.10)' },
-  transient:     { label: 'Transient', color: '#f59e0b', bg: 'rgba(245, 158, 11, 0.10)' },
-  activist:      { label: 'Activist',  color: '#ef4444', bg: 'rgba(239, 68, 68, 0.10)' },
-};
-
 const SUB_TABS = [
   { id: 'overview', label: 'Overview' },
-  { id: 'leaderboard', label: 'Whale Leaderboard' },
+  { id: 'whales', label: 'Whale Leaderboard' },
 ];
 
-// Build lookup map for stock symbol → asset info
-const STOCK_MAP = {};
-STOCKS.forEach(s => { STOCK_MAP[s.symbol] = s; });
-
-// ── Whale Leaderboard ──
-const WhaleLeaderboard = ({ institutions, tokens }) => {
-  const [showAll, setShowAll] = useState(false);
-  if (!institutions?.length) {
-    return (
-      <div style={{ padding: '40px 0', textAlign: 'center', color: tokens.textMuted, fontSize: '13px' }}>
-        No institutional leaderboard data available.
-      </div>
-    );
-  }
-
-  const visible = showAll ? institutions : institutions.slice(0, 10);
-  const hasMore = institutions.length > 10;
-
-  return (
-    <div>
-      {/* Header */}
-      <div style={{ marginBottom: '12px' }}>
-        <div style={{ fontSize: '14px', fontWeight: 600, color: 'rgba(255,255,255,0.85)', marginBottom: '2px' }}>
-          Top Institutional Players
-        </div>
-        <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.4)' }}>
-          Ranked by coverage across {institutions.length > 0 ? 'draft' : ''} stocks
-        </div>
-      </div>
-
-      {/* Rows */}
-      {visible.map((inst, i) => {
-        const arch = ARCHETYPE_STYLES[inst.archetype];
-        const positions = inst.topPositions || [];
-
-        return (
-          <div key={inst.name || i} style={{
-            padding: '12px 0',
-            borderBottom: '0.5px solid rgba(255,255,255,0.06)',
-            background: i % 2 === 1 ? 'rgba(255,255,255,0.02)' : 'transparent',
-          }}>
-            {/* Line 1: Rank + Name + Archetype */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '5px' }}>
-              <span style={{
-                fontFamily: MONO, fontSize: '11px', fontWeight: 700,
-                color: 'rgba(255,255,255,0.3)', minWidth: '20px',
-              }}>
-                {i + 1}.
-              </span>
-              <span style={{
-                fontSize: '12px', fontWeight: 600, color: 'rgba(255,255,255,0.85)',
-                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1,
-              }}>
-                {inst.name}
-              </span>
-              {arch && (
-                <span style={{
-                  padding: '2px 8px', borderRadius: '10px', fontSize: '10px',
-                  fontWeight: 600, fontFamily: MONO, color: arch.color, background: arch.bg,
-                  flexShrink: 0,
-                }}>
-                  {arch.label}
-                </span>
-              )}
-            </div>
-            {/* Line 2: Holds X stocks + top positions */}
-            <div style={{
-              display: 'flex', alignItems: 'center', gap: '6px',
-              paddingLeft: '28px', flexWrap: 'wrap',
-            }}>
-              <span style={{ fontSize: '11px', color: 'rgba(255,255,255,0.4)', fontFamily: MONO }}>
-                Holds {inst.stocksHeld || 0} stocks
-              </span>
-              {positions.slice(0, 5).map(sym => (
-                <span key={sym} style={{
-                  background: 'rgba(255,255,255,0.06)',
-                  borderRadius: '6px',
-                  padding: '1px 6px',
-                  fontSize: '10px',
-                  fontFamily: MONO,
-                  fontWeight: 600,
-                  color: 'rgba(255,255,255,0.5)',
-                }}>
-                  {sym}
-                </span>
-              ))}
-            </div>
-          </div>
-        );
-      })}
-
-      {/* Show more / less */}
-      {hasMore && (
-        <button
-          onClick={() => setShowAll(!showAll)}
-          style={{
-            background: 'none', border: 'none', color: CYAN,
-            fontSize: '11px', fontWeight: 500, cursor: 'pointer',
-            padding: '10px 0', fontFamily: MONO,
-          }}
-        >
-          {showAll ? 'Show less' : `Show all ${institutions.length} \u2192`}
-        </button>
-      )}
-    </div>
-  );
-};
+// ── Section Header ──
+const SectionHeader = ({ title }) => (
+  <div style={{
+    display: 'flex', alignItems: 'center', gap: '8px',
+    marginBottom: '16px', marginTop: '32px',
+  }}>
+    <div style={{ width: '3px', height: '16px', background: CYAN }} />
+    <span style={{
+      fontSize: '11px', fontFamily: MONO, fontWeight: 700,
+      color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.15em',
+    }}>
+      {title}
+    </span>
+  </div>
+);
 
 // ══════════════════════════════════════
 // ── InstitutionalView Main Component ──
 // ══════════════════════════════════════
 const InstitutionalView = ({ onOpenResearch, stocksData, isMobile }) => {
-  const { tokens } = useTheme();
   const [activeSubTab, setActiveSubTab] = useState('overview');
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
+
+  // Build lookup map once
+  const STOCK_MAP = useMemo(() => {
+    const map = {};
+    STOCKS.forEach(s => { map[s.symbol] = s; });
+    return map;
+  }, []);
+
+  const handleStockTap = useCallback((symbol) => {
+    if (!onOpenResearch) return;
+    const stock = STOCK_MAP[symbol];
+    onOpenResearch(stock
+      ? { symbol: stock.symbol, name: stock.name, sector: stock.sector, price: 0, percentChange: 0, change: 0 }
+      : { symbol, name: symbol, price: 0, percentChange: 0, change: 0 }
+    );
+  }, [onOpenResearch, STOCK_MAP]);
 
   useEffect(() => {
     let cancelled = false;
@@ -160,37 +74,24 @@ const InstitutionalView = ({ onOpenResearch, stocksData, isMobile }) => {
     return () => { cancelled = true; };
   }, []);
 
-  const handleStockTap = (symbol) => {
-    if (!onOpenResearch) return;
-    const assetInfo = STOCK_MAP[symbol];
-    onOpenResearch({
-      symbol,
-      name: assetInfo?.name || symbol,
-      sector: assetInfo?.sector || '',
-      price: 0,
-      percentChange: 0,
-      change: 0,
-    });
-  };
-
   const subTabStyle = (isActive) => ({
     padding: '6px 14px',
     borderRadius: '20px',
     fontSize: '12px',
     fontWeight: 500,
-    background: isActive ? 'rgba(6,182,212,0.08)' : '#1a1d24',
+    background: isActive ? 'rgba(6, 182, 212, 0.08)' : '#1a1d24',
     color: isActive ? CYAN : '#9ca3af',
-    border: `0.5px solid ${isActive ? 'rgba(6,182,212,0.3)' : 'rgba(255,255,255,0.08)'}`,
+    border: `0.5px solid ${isActive ? 'rgba(6, 182, 212, 0.3)' : 'rgba(255,255,255,0.08)'}`,
     cursor: 'pointer',
     fontFamily: 'inherit',
-    transition: 'all 0.2s ease',
+    transition: 'none',
     flexShrink: 0,
   });
 
   // ── Loading state ──
   if (loading) {
     return (
-      <div style={{ padding: '40px 0', textAlign: 'center', color: tokens.textMuted, fontSize: '13px' }}>
+      <div style={{ padding: '40px 0', textAlign: 'center', color: '#6b7280', fontSize: '13px' }}>
         Loading institutional data...
       </div>
     );
@@ -199,7 +100,7 @@ const InstitutionalView = ({ onOpenResearch, stocksData, isMobile }) => {
   // ── No data state ──
   if (!data) {
     return (
-      <div style={{ padding: '40px 0', textAlign: 'center', color: tokens.textMuted, fontSize: '13px' }}>
+      <div style={{ padding: '40px 0', textAlign: 'center', color: '#6b7280', fontSize: '13px' }}>
         Institutional data not available.
       </div>
     );
@@ -240,36 +141,33 @@ const InstitutionalView = ({ onOpenResearch, stocksData, isMobile }) => {
         >
           {activeSubTab === 'overview' && (
             <div>
-              <SmartMoneyPulse data={data} tokens={tokens} />
-              <ConvictionCarousel
-                symbols={data.strongAccumulation}
-                distributionSymbols={data.strongDistribution}
-                onTap={handleStockTap}
-                tokens={tokens}
+              <HeroHeadlineCard
+                headline={data.heroHeadline}
+                updatedAt={data.updatedAt}
               />
-              <ClusterBuyAlert
-                stocks={data.clusterBuyStocks}
-                onTap={handleStockTap}
+
+              <SectionHeader title="Institutional Storylines" />
+              <AlphaFeed
+                storylines={data.storylines}
+                onStockTap={handleStockTap}
               />
-              <BiggestMovers
-                buys={data.biggestBuys}
-                sells={data.biggestSells}
-                onTap={handleStockTap}
-                tokens={tokens}
-                isMobile={isMobile}
-              />
-              <SectorFlowsGrid
+
+              <SectionHeader title="Where is Capital Moving?" />
+              <SectorRotation
                 sectorFlows={data.sectorFlows}
-                tokens={tokens}
+                sectorDrivers={data.sectorDrivers}
                 isMobile={isMobile}
               />
+
+              <CapitolHillTeaser />
             </div>
           )}
 
-          {activeSubTab === 'leaderboard' && (
+          {activeSubTab === 'whales' && (
             <WhaleLeaderboard
               institutions={data.topInstitutions}
-              tokens={tokens}
+              onStockTap={handleStockTap}
+              isMobile={isMobile}
             />
           )}
         </motion.div>
