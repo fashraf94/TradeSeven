@@ -7,6 +7,7 @@ import {
   buildStrategySystemPrompt,
   buildStrategyUserPrompt,
   buildPortfolioSystemPrompt,
+  buildInstitutionalBlock,
   formatMarketCSV,
   formatStoriesSummary,
 } from '../_utils/agentPromptAssembly.js';
@@ -150,7 +151,8 @@ export default async function handler(req, res) {
     ).join('\n');
 
     // 7. HAIKU CALL — Portfolio Construction (with Tool Use)
-    const portfolioSystem = buildPortfolioSystemPrompt(strategy.brief, shortlistCSV, cryptoListStr);
+    const instBlock = await buildInstitutionalBlock(agent.activeRules || [], strategy.shortlist);
+    const portfolioSystem = buildPortfolioSystemPrompt(strategy.brief, shortlistCSV, cryptoListStr, instBlock);
 
     const portfolioResponse = await anthropic.messages.create({
       model: 'claude-haiku-4-5-20251001',

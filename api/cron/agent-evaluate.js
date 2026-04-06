@@ -740,7 +740,7 @@ async function processAgentBattle(db, battle, summary) {
             { role: 'assistant', content: 'I understand my identity and strategic context. Show me the live battle state.' },
             {
               role: 'user',
-              content: buildLiveContextBlock(
+              content: await buildLiveContextBlock(
                 battle, prices, macroPrices, assetScores,
                 triggers, news, battle.evaluations, momentumData, presetConfig
               ),
