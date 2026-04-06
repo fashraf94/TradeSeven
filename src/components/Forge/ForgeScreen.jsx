@@ -486,33 +486,40 @@ export default function ForgeScreen({ isMobile: isMobileProp, onClose, user }) {
                       );
                     })}
                     {/* Advanced Firmware link */}
-                    <div style={{ textAlign: 'center', marginTop: 24, marginBottom: 24, padding: '0 16px' }}>
+                    <div style={{ textAlign: 'center', marginTop: 28, marginBottom: 28, padding: '0 16px' }}>
                       <button
                         onClick={() => setShowAdvancedFirmware(true)}
                         style={{
                           display: 'inline-flex',
                           alignItems: 'center',
-                          gap: 8,
-                          padding: '10px 20px',
-                          backgroundColor: 'transparent',
+                          justifyContent: 'center',
+                          gap: 10,
+                          padding: '14px 28px',
+                          backgroundColor: '#15171E',
                           border: '1px solid #2A2D35',
-                          borderRadius: 8,
-                          color: '#718096',
-                          fontSize: 13,
-                          fontWeight: 500,
+                          borderRadius: 10,
+                          color: '#A0AEC0',
+                          fontSize: 14,
+                          fontWeight: 600,
                           cursor: 'pointer',
-                          transition: 'all 0.2s',
+                          transition: 'all 0.2s ease',
+                          width: '100%',
+                          maxWidth: 400,
                         }}
                         onMouseEnter={e => {
                           e.currentTarget.style.borderColor = '#5EEAD4';
-                          e.currentTarget.style.color = '#5EEAD4';
+                          e.currentTarget.style.color = '#E2E8F0';
+                          e.currentTarget.style.backgroundColor = '#1C1A27';
+                          e.currentTarget.style.boxShadow = '0 0 12px rgba(94, 234, 212, 0.15)';
                         }}
                         onMouseLeave={e => {
                           e.currentTarget.style.borderColor = '#2A2D35';
-                          e.currentTarget.style.color = '#718096';
+                          e.currentTarget.style.color = '#A0AEC0';
+                          e.currentTarget.style.backgroundColor = '#15171E';
+                          e.currentTarget.style.boxShadow = 'none';
                         }}
                       >
-                        <Settings size={14} />
+                        <Settings size={16} />
                         Advanced Firmware — Browse all 107 rules
                       </button>
                     </div>

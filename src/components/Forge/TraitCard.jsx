@@ -1,13 +1,14 @@
 // src/components/Forge/TraitCard.jsx
 // Compact card for a single trait inside a DNA group.
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   TrendingUp, Search, Zap, BarChart3, ArrowUpRight, Compass,
   Target, CheckCheck, Gauge, RefreshCw, ShieldAlert,
   Lock, Clock, Repeat, PieChart, Rocket,
 } from 'lucide-react';
 import TraitStrengthToggle from './TraitStrengthToggle';
+import { FORGE_RULE_TEMPLATES } from '../../data/forgeKnowledgeBase';
 
 const TRAIT_ICONS = {
   TrendingUp, Search, Zap, BarChart3, ArrowUpRight, Compass,
@@ -116,6 +117,13 @@ export default function TraitCard({
   groupColor,
 }) {
   const [strength, setStrength] = useState(currentStrength || 'moderate');
+  const [showDetails, setShowDetails] = useState(false);
+
+  const ruleMap = useMemo(() => {
+    const map = {};
+    FORGE_RULE_TEMPLATES.forEach(r => { map[r.id] = r; });
+    return map;
+  }, []);
 
   // Sync local state when the prop changes (e.g., trait gets equipped externally)
   useEffect(() => {
@@ -152,11 +160,41 @@ export default function TraitCard({
 
       {/* Identity statement */}
       <div style={{
-        fontSize: 12, color: '#718096', marginBottom: 10,
+        fontSize: 12, color: '#718096', marginBottom: 4,
         overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
       }}>
         {trait.identityStatement}
       </div>
+
+      {/* What's inside toggle */}
+      <button
+        onClick={() => setShowDetails(!showDetails)}
+        style={{
+          background: 'none', border: 'none', padding: 0, marginTop: 4,
+          fontSize: 11, color: '#5EEAD4', cursor: 'pointer',
+          display: 'flex', alignItems: 'center', gap: 4,
+        }}
+      >
+        {showDetails ? '▾' : '▸'} What's inside ({trait.ruleIds.length} rules)
+      </button>
+      {showDetails && (
+        <div style={{
+          marginTop: 6, paddingLeft: 12, marginBottom: 6,
+          borderLeft: `2px solid ${groupColor}30`,
+        }}>
+          {trait.ruleIds.map(ruleId => {
+            const rule = ruleMap[ruleId];
+            if (!rule) return null;
+            return (
+              <div key={ruleId} style={{
+                fontSize: 11, color: '#A0AEC0', marginBottom: 3, lineHeight: 1.3,
+              }}>
+                • {rule.headline}
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       {/* Strength toggle */}
       <div style={{ marginBottom: 10 }}>
