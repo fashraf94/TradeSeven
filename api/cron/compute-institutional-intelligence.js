@@ -16,6 +16,9 @@ import {
   enrichHolder,
   computeSummary,
   getArchetype,
+  generateStorylines,
+  generateHeroHeadline,
+  computeSectorDrivers,
 } from '../_utils/institutionalIntelligence.js';
 
 const LOG_PREFIX = '[InstitutionalIntelligence]';
@@ -73,6 +76,7 @@ export default async function handler(req, res) {
   const sectorFlows = {};
   const strongAccumulation = [];
   const strongDistribution = [];
+  const stockHoldingsMap = {};       // symbol -> { institutions, summary, sector }
 
   // Process each stock sequentially (avoid rate limiting)
   for (const symbol of DRAFT_STOCKS) {
@@ -110,6 +114,13 @@ export default async function handler(req, res) {
 
       results.processed++;
 
+      // Accumulate per-stock data for storyline generation
+      stockHoldingsMap[symbol] = {
+        institutions,
+        summary,
+        sector: TICKER_TO_SECTOR[symbol] || null,
+      };
+
       // ── Accumulate cross-stock aggregations ──
 
       // Track institutions across stocks
@@ -120,16 +131,26 @@ export default async function handler(req, res) {
             name: inst.name,
             archetype: inst.archetype,
             stocksHeld: 0,
-            topPositions: [],
+            positions: [],
           };
         }
         allInstitutions[inst.name].stocksHeld++;
-        allInstitutions[inst.name].topPositions.push(symbol);
+        allInstitutions[inst.name].positions.push({
+          symbol,
+          totalAssetsPct: inst.totalAssetsPct,
+          changePct: inst.changePct,
+          signal: inst.signal,
+        });
       }
 
       // Track biggest movers (by % change)
       for (const inst of institutions) {
         if (inst.archetype === 'index_passive') continue;
+        // Data quality: skip extreme % changes (splits, entity errors)
+        if (Math.abs(inst.changePct) > 999) continue;
+        // Materiality: skip positions too small to be meaningful
+        if (inst.totalAssetsPct < 0.5) continue;
+
         if (inst.changePct > 20) {
           biggestBuys.push({
             symbol,
@@ -187,8 +208,23 @@ export default async function handler(req, res) {
     .sort((a, b) => b.stocksHeld - a.stocksHeld)
     .slice(0, 20)
     .map(inst => ({
-      ...inst,
-      topPositions: inst.topPositions.slice(0, 5), // cap for doc size
+      name: inst.name,
+      archetype: inst.archetype,
+      stocksHeld: inst.stocksHeld,
+      // Backward compat: array of symbol strings (used by frontend)
+      topPositions: inst.positions.slice(0, 5).map(p => p.symbol),
+      // Top 5 by portfolio weight (conviction), not insertion order
+      topConviction: inst.positions
+        .sort((a, b) => b.totalAssetsPct - a.totalAssetsPct)
+        .slice(0, 5)
+        .map(p => ({ symbol: p.symbol, weight: Math.round(p.totalAssetsPct * 100) / 100 })),
+      // Biggest add and biggest cut
+      biggestAdd: inst.positions
+        .filter(p => p.changePct > 0 && p.changePct < 999)
+        .sort((a, b) => b.changePct - a.changePct)[0] || null,
+      biggestCut: inst.positions
+        .filter(p => p.changePct < 0)
+        .sort((a, b) => a.changePct - b.changePct)[0] || null,
     }));
 
   // Derive sector sentiment
@@ -205,6 +241,11 @@ export default async function handler(req, res) {
     }
   }
 
+  // Generate narrative and driver fields from accumulated data
+  const storylines = generateStorylines(stockHoldingsMap);
+  const heroHeadline = generateHeroHeadline(sectorFlows);
+  const sectorDrivers = computeSectorDrivers(stockHoldingsMap);
+
   await db.collection('institutionalAggregates').doc('latest').set({
     updatedAt: new Date(),
     topInstitutions,
@@ -217,6 +258,9 @@ export default async function handler(req, res) {
     strongAccumulation,
     strongDistribution,
     sectorFlows,
+    storylines,
+    heroHeadline,
+    sectorDrivers,
     stocksProcessed: results.processed,
   });
 
