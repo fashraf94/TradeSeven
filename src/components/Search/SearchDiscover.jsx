@@ -13,7 +13,7 @@ const InstitutionalView = lazy(() => import('./InstitutionalView'));
 const TABS = [
   { id: 'explore', label: 'Explore' },
   { id: 'rankings', label: 'Rankings' },
-  { id: 'institutional', label: 'Institutional', badge: 'Soon' },
+  { id: 'institutional', label: 'Institutional' },
 ];
 
 const SearchDiscover = ({ user, isMobile, isDesktop, setScreen, stocksData }) => {
@@ -172,8 +172,12 @@ const SearchDiscover = ({ user, isMobile, isDesktop, setScreen, stocksData }) =>
             </Suspense>
           )}
           {activeTab === 'institutional' && (
-            <Suspense fallback={<div />}>
-              <InstitutionalView />
+            <Suspense fallback={<div style={{ color: tokens.textMuted, padding: '20px', textAlign: 'center', fontSize: '13px' }}>Loading institutional data...</div>}>
+              <InstitutionalView
+                onOpenResearch={onOpenResearch}
+                stocksData={stocksData}
+                isMobile={isMobile}
+              />
             </Suspense>
           )}
         </motion.div>
