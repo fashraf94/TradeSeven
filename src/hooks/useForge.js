@@ -27,10 +27,11 @@ import { computeForgeStats } from '../services/forgeStatsService';
 const STRATEGY_CATEGORIES = ['technical', 'fundamental', 'threshold', 'tier_strategy'];
 const CONTROLS_CATEGORIES = ['risk', 'allocation', 'mid_battle', 'game_state'];
 
-// Display order for all 8 categories — familiar first, game-specific last
+// Display order for all 9 categories — familiar first, game-specific last
 export const CATEGORY_ORDER = [
   'technical', 'fundamental', 'risk', 'allocation',
   'mid_battle', 'game_state', 'threshold', 'tier_strategy',
+  'institutional',
 ];
 
 // Helper to read persisted forge UI state from localStorage

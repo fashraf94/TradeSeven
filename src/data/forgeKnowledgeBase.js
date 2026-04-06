@@ -11,6 +11,7 @@ export const FORGE_CATEGORIES = [
   { id: 'game_state', label: 'Game State', color: '#94A3B8', description: 'Phase-aware strategy shifts and score-based decisions' },
   { id: 'threshold', label: 'Threshold Strategy', color: '#f472b6', description: 'Scoring threshold proximity and bonus optimization' },
   { id: 'tier_strategy', label: 'Tier Strategy', color: '#34d399', description: 'Dynamic tier allocation and multiplier management' },
+  { id: 'institutional', label: 'Institutional', color: '#06b6d4', description: 'Institutional ownership signals, conviction scoring, and smart-money flow analysis' },
 ];
 
 export const FORGE_RULE_TEMPLATES = [
@@ -2649,6 +2650,160 @@ export const FORGE_RULE_TEMPLATES = [
     kbEntryId: null,
     tags: ['threshold', 'harvest', 'swap', 'scoring', 'BaggerBomb-native', 'tradingview'],
     agentUseDescription: 'Your agent will swap out stocks that have triggered a scoring threshold bonus, replacing them with the highest-ATR bench candidate showing bullish momentum to chase the next threshold hit.',
+  },
+
+  // ══════════════════════════════════════
+  // INSTITUTIONAL CATEGORY
+  // ══════════════════════════════════════
+
+  // i-01: Institutional Conviction Filter
+  {
+    id: 'i-01',
+    category: 'institutional',
+    headline: 'Institutional Conviction Filter',
+    description: 'Prefer stocks where active institutional holders are net accumulating. Filters out passive index fund noise to focus on informed, high-conviction buying.',
+    learnMore: 'Institutional conviction is measured by weighting each holder\'s quarterly change by their portfolio concentration. A stock showing "strong accumulation" means multiple active fund managers are increasing positions as a significant percentage of their portfolios — not just index funds mechanically rebalancing. Research shows that a manager\'s most over-weighted positions outperform the market by 1.6-2.1% per quarter.',
+    difficulty: 'beginner',
+    forgeTemplates: [{
+      text: 'Strongly prefer drafting stocks where institutional conviction is {conviction}',
+      params: {
+        conviction: {
+          type: 'select',
+          default: 'strong_accumulation',
+          options: [
+            { value: 'strong_accumulation', label: 'Strong Accumulation' },
+            { value: 'mild_accumulation', label: 'Mild Accumulation' },
+          ],
+          label: 'Minimum Conviction Level',
+          hint: 'Strong filters out passive index inflows. Mild is more permissive but noisier.',
+        },
+      },
+      category: 'institutional',
+    }],
+    relatedIndicator: null,
+    kbEntryId: null,
+    tags: ['institutional', 'conviction', 'accumulation', 'smart-money', '13F'],
+    agentUseDescription: 'Filters the draft universe to stocks where active institutional holders (excluding passive index funds) are net accumulating. Uses the weighted conviction score from 13F filings. This is a soft preference — the agent can still draft stocks without institutional backing if technical signals are strong.',
+  },
+
+  // i-02: Distribution Avoidance
+  {
+    id: 'i-02',
+    category: 'institutional',
+    headline: 'Distribution Avoidance',
+    description: 'Strictly avoid stocks where institutions are actively selling. When smart money exits, overhead supply caps intraday upside and increases bust risk.',
+    learnMore: 'Institutional distribution creates a "VWAP ceiling" — when large funds are selling, their algorithms feed sell orders into any price rally, suppressing the momentum needed for ATR threshold crossings. Research shows that sell herding has a more persistent negative impact on returns than buy herding has a positive impact. This asymmetry makes distribution avoidance one of the most effective defensive rules.',
+    difficulty: 'beginner',
+    forgeTemplates: [{
+      text: 'Strictly avoid drafting stocks where institutional conviction is {level} or worse',
+      params: {
+        level: {
+          type: 'select',
+          default: 'strong_distribution',
+          options: [
+            { value: 'strong_distribution', label: 'Strong Distribution' },
+            { value: 'mild_distribution', label: 'Mild Distribution' },
+          ],
+          label: 'Avoidance Threshold',
+          hint: 'Strong Distribution filters the bottom ~10-15%. Mild Distribution is more aggressive and removes ~25-30%.',
+        },
+      },
+      category: 'institutional',
+    }],
+    relatedIndicator: null,
+    kbEntryId: null,
+    tags: ['institutional', 'distribution', 'avoidance', 'risk', 'smart-money'],
+    agentUseDescription: 'Hard filter that excludes stocks from the draftable universe when institutional holders are net selling. This is a defensive rule — stocks under active distribution face overhead selling pressure from institutional VWAP algorithms that cap intraday upside. Applied at draft time as a Level 1 filter.',
+  },
+
+  // i-03: Consensus Discovery
+  {
+    id: 'i-03',
+    category: 'institutional',
+    headline: 'Consensus Discovery',
+    description: 'Prefer stocks where multiple institutions opened brand new positions this quarter. New money entering a stock signals a fresh catalyst that passed rigorous research filters.',
+    learnMore: 'When an institution opens a new position, it means the stock competed for capital against every other opportunity in the manager\'s universe. When two or more do it independently in the same quarter, it signals a "consensus discovery" — multiple professional research teams found the same opportunity. This cluster buying pattern is one of the strongest alpha signals in 13F data.',
+    difficulty: 'intermediate',
+    forgeTemplates: [{
+      text: 'Prefer stocks where at least {count} top-20 institutional holders initiated a completely new position this quarter',
+      params: {
+        count: {
+          type: 'number',
+          default: 2,
+          min: 1,
+          max: 5,
+          step: 1,
+          unit: '',
+          label: 'Minimum New Positions',
+          hint: '1 is noise. 2 is consensus. 3+ is a stampede. Higher = stronger signal but fewer qualifying stocks.',
+        },
+      },
+      category: 'institutional',
+    }],
+    relatedIndicator: null,
+    kbEntryId: null,
+    tags: ['institutional', 'new-position', 'cluster-buy', 'catalyst', 'consensus'],
+    agentUseDescription: 'Identifies stocks with fresh institutional interest — positions that didn\'t exist last quarter. Multiple new positions in the same stock signal a consensus discovery among independent research teams. Applied as a preference during portfolio construction.',
+  },
+
+  // i-04: Whale Concentration Guard
+  {
+    id: 'i-04',
+    category: 'institutional',
+    headline: 'Whale Concentration Guard',
+    description: 'Avoid stocks where a single institution holds too large a stake. When one whale controls the float, their exit creates outsized price drops and bust risk.',
+    learnMore: 'When a single entity controls 20%+ of outstanding shares, the stock\'s liquidity becomes dependent on that fund\'s stability. If the whale faces redemptions, their forced selling overwhelms market depth and triggers cascading price drops. The threshold of 20% accounts for the dominance of passive index providers (Vanguard, BlackRock, State Street), who routinely hold 10-15% of major stocks through mechanical index inclusion.',
+    difficulty: 'intermediate',
+    forgeTemplates: [{
+      text: 'Avoid stocks where any single institutional entity holds more than {pct}% of total outstanding shares',
+      params: {
+        pct: {
+          type: 'number',
+          default: 20,
+          min: 10,
+          max: 35,
+          step: 1,
+          unit: '%',
+          label: 'Maximum Single-Holder Stake',
+          hint: '20% filters extreme concentration while allowing normal passive index holdings. Lower = stricter but may exclude popular large-caps.',
+        },
+      },
+      category: 'institutional',
+    }],
+    relatedIndicator: null,
+    kbEntryId: null,
+    tags: ['institutional', 'concentration', 'whale', 'risk', 'liquidity'],
+    agentUseDescription: 'Tail-risk filter that excludes stocks with extreme ownership concentration by a single entity. Applied at draft time to prevent the agent from holding stocks vulnerable to a single fund\'s liquidation cascade. The 20% default accounts for passive index fund dominance in modern markets.',
+  },
+
+  // i-05: Active Fund Overlap Guard
+  {
+    id: 'i-05',
+    category: 'institutional',
+    headline: 'Active Fund Overlap Guard',
+    description: 'Prevent drafting too many stocks held by the same active mutual fund. High overlap means correlated drawdowns when that fund faces redemptions.',
+    learnMore: 'When multiple stocks in your portfolio are top holdings of the same active mutual fund, they become linked through common flow shocks. During market stress, funds facing redemptions liquidate across their entire portfolio simultaneously — creating correlated crashes in seemingly unrelated stocks. This rule targets active fund overlap specifically because passive index funds (Vanguard, BlackRock) hold everything and carry no informational signal.',
+    difficulty: 'advanced',
+    forgeTemplates: [{
+      text: 'Ensure no more than {max} drafted stocks share the same top-3 active mutual fund holder (excluding passive index providers)',
+      params: {
+        max: {
+          type: 'number',
+          default: 2,
+          min: 1,
+          max: 4,
+          step: 1,
+          unit: '',
+          label: 'Maximum Overlap',
+          hint: '2 enforces strict diversification in a 5-stock portfolio. 3 allows moderate clustering. 1 is extremely restrictive.',
+        },
+      },
+      category: 'institutional',
+    }],
+    relatedIndicator: null,
+    kbEntryId: null,
+    tags: ['institutional', 'overlap', 'diversification', 'correlation', 'fund-risk'],
+    agentUseDescription: 'Portfolio diversification rule that limits how many drafted stocks can share the same active mutual fund as a top-3 holder. Passive index funds are excluded from the check since they hold everything mechanically. Applied during portfolio construction to prevent correlated liquidation risk.',
   },
 ];
 

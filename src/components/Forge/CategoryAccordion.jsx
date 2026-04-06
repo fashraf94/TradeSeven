@@ -17,6 +17,7 @@ const CATEGORY_COLORS = {
   game_state: '#94A3B8',
   threshold: '#e879f9',
   tier_strategy: '#fbbf24',
+  institutional: '#06b6d4',
 };
 
 const DIFFICULTY_COLORS = {
