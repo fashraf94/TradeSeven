@@ -3,13 +3,16 @@
 
 import React, { useRef, useMemo, useState, useCallback } from 'react';
 import { motion, AnimatePresence, useScroll, useTransform } from 'framer-motion';
-import { ArrowLeft, Hammer, BarChart3, List, Package } from 'lucide-react';
+import { ArrowLeft, Hammer, BarChart3, List, Package, Settings } from 'lucide-react';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useForge, CATEGORY_ORDER } from '../../hooks/useForge';
 import useAgent from '../../hooks/useAgent';
 import { useIsMobile } from '../../hooks/useIsMobile';
 import { FORGE_RULE_TEMPLATES, FORGE_CONFLICT_PAIRS } from '../../data/forgeKnowledgeBase';
 import { FORGE_LIMITS } from '../../constants/agentProgression';
+import { DNA_GROUPS } from '../../data/dnaGroups';
+import { TRAIT_LIBRARY } from '../../data/traitLibrary';
+import { useTraits } from '../../hooks/useTraits';
 
 import MechSVG from './MechSVG';
 import MechVisorStrip from './MechVisorStrip';
@@ -25,6 +28,8 @@ import CollectionDetailSheet from './CollectionDetailSheet';
 import ManagementPanel from './ManagementPanel';
 import MyRulesTab from './MyRulesTab';
 import MyBundlesTab from './MyBundlesTab';
+import DNAGroupCard from './DNAGroupCard';
+import TraitCard from './TraitCard';
 
 const TABS = [
   { id: 'forge', label: 'The Forge', Icon: Hammer },
@@ -44,6 +49,7 @@ export default function ForgeScreen({ isMobile: isMobileProp, onClose, user }) {
   const { agent, hasAgent } = useAgent(user?.uid);
   const agentId = agent?.id || null;
   const forge = useForge(agentId);
+  const traits = useTraits(agentId, forge);
 
   const scrollRef = useRef(null);
   const heroRef = useRef(null);
@@ -54,6 +60,8 @@ export default function ForgeScreen({ isMobile: isMobileProp, onClose, user }) {
   const [showMyBundles, setShowMyBundles] = useState(false);
   const [mechReactPulse, setMechReactPulse] = useState(null);
   const [configRuleId, setConfigRuleId] = useState(null);
+  const [expandedDnaGroup, setExpandedDnaGroup] = useState(null);
+  const [showAdvancedFirmware, setShowAdvancedFirmware] = useState(false);
 
   // Scroll-driven mech → visor strip transition (mobile only)
   const { scrollY } = useScroll({ container: isDesktop ? undefined : scrollRef });
@@ -93,6 +101,21 @@ export default function ForgeScreen({ isMobile: isMobileProp, onClose, user }) {
       return { category: catMeta, rules: catRules };
     });
   }, [forge.categories, forge.templatesByCategory]);
+
+  // Traits grouped by DNA group
+  const traitsByGroup = useMemo(() => ({
+    instincts: TRAIT_LIBRARY.filter(t => t.dnaGroup === 'instincts'),
+    strategy: TRAIT_LIBRARY.filter(t => t.dnaGroup === 'strategy'),
+    discipline: TRAIT_LIBRARY.filter(t => t.dnaGroup === 'discipline'),
+  }), []);
+
+  // Combo label gradient colors
+  const COMBO_GRADIENTS = {
+    instincts: '#5EEAD4, #ffffff',
+    strategy: '#F59E0B, #ffffff',
+    discipline: '#EF4444, #ffffff',
+    mixed: '#5EEAD4, #F59E0B',
+  };
 
   // Track which templates the user has already collected (by sourceRef)
   const collectedSourceRefs = useMemo(() => {
@@ -213,6 +236,11 @@ export default function ForgeScreen({ isMobile: isMobileProp, onClose, user }) {
     }
   }, [activeBundleId, forge]);
 
+  // Open Advanced Firmware from a trait card
+  const handleAdvancedOpen = useCallback(() => {
+    setShowAdvancedFirmware(true);
+  }, []);
+
   // Bundle creation with preset support
   const handleCreateBundle = useCallback(() => {
     if (forge.bundles.length === 0) {
@@ -300,6 +328,18 @@ export default function ForgeScreen({ isMobile: isMobileProp, onClose, user }) {
 
           {/* Radar chart */}
           <RadarChart weights={forge.overlayWeights} size={140} />
+
+          {/* Combo label */}
+          {traits.activeComboLabel && (
+            <div style={{
+              textAlign: 'center', marginTop: 4, fontSize: 14, fontWeight: 600,
+              fontStyle: 'italic',
+              background: `linear-gradient(90deg, ${COMBO_GRADIENTS[traits.activeComboLabel.gradientType] || COMBO_GRADIENTS.mixed})`,
+              WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
+            }}>
+              The {traits.activeComboLabel.label}
+            </div>
+          )}
 
           {/* Bundle strip */}
           {hasAgent && forge.bundles.length > 0 && (
@@ -396,31 +436,68 @@ export default function ForgeScreen({ isMobile: isMobileProp, onClose, user }) {
                       onSelectCollection={setSelectedCollection}
                       agentExists={!!hasAgent}
                     />
-                    {/* Browse Rules header */}
+                    {/* Agent DNA section header */}
                     <div style={{
                       fontSize: 10, fontWeight: 700, color: '#718096',
                       textTransform: 'uppercase', letterSpacing: '0.15em',
                       fontFamily: 'ui-monospace, SFMono-Regular, monospace',
                       marginBottom: 10,
                     }}>
-                      BROWSE RULES
+                      AGENT DNA
                     </div>
-                    {/* All 8 category accordions */}
-                    {allCategorySections.map(({ category, rules }) => (
-                      <CategoryAccordion
-                        key={category.id}
-                        category={category}
-                        rules={rules}
-                        equippedRuleIds={equippedRuleIds}
-                        isExpanded={forge.expandedAccordions.has(category.id)}
-                        onToggle={() => forge.toggleAccordion(category.id)}
-                        onAddRule={handleAddRule}
-                        onRemoveRule={handleRemoveRule}
-                        agentExists={!!hasAgent}
-                        expandedRuleId={configRuleId}
-                        onToggleRuleConfig={handleToggleRuleConfig}
-                      />
-                    ))}
+                    {/* DNA Group cards with trait cards */}
+                    {Object.entries(DNA_GROUPS).map(([groupId, group]) => {
+                      const groupTraits = traitsByGroup[groupId] || [];
+                      const equippedInGroup = traits.equippedTraits.filter(t => t.dnaGroup === groupId);
+                      const totalRules = groupTraits.reduce((sum, t) => sum + t.ruleIds.length, 0);
+                      const equippedRules = equippedInGroup.reduce((sum, t) => sum + t.ruleIds.length, 0);
+                      return (
+                        <DNAGroupCard
+                          key={groupId}
+                          group={group}
+                          equippedTraits={equippedInGroup}
+                          slotUsage={traits.getGroupSlotUsage(groupId)}
+                          totalRulesInGroup={totalRules}
+                          equippedRuleCount={equippedRules}
+                          isExpanded={expandedDnaGroup === groupId}
+                          onToggle={() => setExpandedDnaGroup(prev => prev === groupId ? null : groupId)}
+                        >
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8 }}>
+                            {groupTraits.map(trait => {
+                              const equipped = traits.equippedTraits.find(e => e.traitId === trait.id);
+                              return (
+                                <TraitCard
+                                  key={trait.id}
+                                  trait={trait}
+                                  isEquipped={!!equipped}
+                                  currentStrength={equipped?.strength || null}
+                                  isCustom={equipped?.isCustom || false}
+                                  onEquip={traits.equipTrait}
+                                  onUnequip={traits.unequipTrait}
+                                  onStrengthChange={traits.setTraitStrength}
+                                  onAdvancedOpen={handleAdvancedOpen}
+                                  canEquip={traits.canEquip(trait.id)}
+                                  groupColor={group.color}
+                                />
+                              );
+                            })}
+                          </div>
+                        </DNAGroupCard>
+                      );
+                    })}
+                    {/* Advanced Firmware link */}
+                    <div style={{ textAlign: 'center', marginTop: 16, marginBottom: 24 }}>
+                      <button
+                        onClick={() => setShowAdvancedFirmware(true)}
+                        style={{
+                          background: 'none', border: 'none', color: '#718096',
+                          fontSize: 12, cursor: 'pointer', textDecoration: 'underline',
+                          display: 'inline-flex', alignItems: 'center', gap: 4,
+                        }}
+                      >
+                        <Settings size={12} /> Advanced Firmware — Browse all rules
+                      </button>
+                    </div>
                     <AgentLearnedSection
                       rules={learnedRules}
                       isExpanded={learnedExpanded}
@@ -509,6 +586,27 @@ export default function ForgeScreen({ isMobile: isMobileProp, onClose, user }) {
           {showMyBundles && (
             <ManagementPanel title="My Bundles" onClose={() => setShowMyBundles(false)}>
               <MyBundlesTab forge={forge} tokens={tokens} isMobile={false} agent={agent} />
+            </ManagementPanel>
+          )}
+          {showAdvancedFirmware && (
+            <ManagementPanel title="Advanced Firmware" onClose={() => setShowAdvancedFirmware(false)}>
+              <div style={{ padding: '0 8px' }}>
+                {allCategorySections.map(({ category, rules }) => (
+                  <CategoryAccordion
+                    key={category.id}
+                    category={category}
+                    rules={rules}
+                    equippedRuleIds={equippedRuleIds}
+                    isExpanded={forge.expandedAccordions.has(category.id)}
+                    onToggle={() => forge.toggleAccordion(category.id)}
+                    onAddRule={handleAddRule}
+                    onRemoveRule={handleRemoveRule}
+                    agentExists={!!hasAgent}
+                    expandedRuleId={configRuleId}
+                    onToggleRuleConfig={handleToggleRuleConfig}
+                  />
+                ))}
+              </div>
             </ManagementPanel>
           )}
         </AnimatePresence>
@@ -602,6 +700,18 @@ export default function ForgeScreen({ isMobile: isMobileProp, onClose, user }) {
           <div style={{ marginTop: 8 }}>
             <RadarChart weights={forge.overlayWeights} size={80} />
           </div>
+
+          {/* Combo label */}
+          {traits.activeComboLabel && (
+            <div style={{
+              textAlign: 'center', marginTop: 4, fontSize: 13, fontWeight: 600,
+              fontStyle: 'italic',
+              background: `linear-gradient(90deg, ${COMBO_GRADIENTS[traits.activeComboLabel.gradientType] || COMBO_GRADIENTS.mixed})`,
+              WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
+            }}>
+              The {traits.activeComboLabel.label}
+            </div>
+          )}
         </div>
       </motion.div>
 
@@ -716,29 +826,68 @@ export default function ForgeScreen({ isMobile: isMobileProp, onClose, user }) {
                     onSelectCollection={setSelectedCollection}
                     agentExists={!!hasAgent}
                   />
-                  {/* Browse Rules header */}
+                  {/* Agent DNA section header */}
                   <div style={{
                     fontSize: 10, fontWeight: 700, color: '#718096',
                     textTransform: 'uppercase', letterSpacing: '0.15em',
                     fontFamily: 'ui-monospace, SFMono-Regular, monospace',
                     marginBottom: 10,
                   }}>
-                    BROWSE RULES
+                    AGENT DNA
                   </div>
-                  {/* All 8 category accordions */}
-                  {allCategorySections.map(({ category, rules }) => (
-                    <CategoryAccordion
-                      key={category.id}
-                      category={category}
-                      rules={rules}
-                      equippedRuleIds={equippedRuleIds}
-                      isExpanded={forge.expandedAccordions.has(category.id)}
-                      onToggle={() => forge.toggleAccordion(category.id)}
-                      onAddRule={handleAddRule}
-                      onRemoveRule={handleRemoveRule}
-                      agentExists={!!hasAgent}
-                    />
-                  ))}
+                  {/* DNA Group cards with trait cards */}
+                  {Object.entries(DNA_GROUPS).map(([groupId, group]) => {
+                    const groupTraits = traitsByGroup[groupId] || [];
+                    const equippedInGroup = traits.equippedTraits.filter(t => t.dnaGroup === groupId);
+                    const totalRules = groupTraits.reduce((sum, t) => sum + t.ruleIds.length, 0);
+                    const equippedRules = equippedInGroup.reduce((sum, t) => sum + t.ruleIds.length, 0);
+                    return (
+                      <DNAGroupCard
+                        key={groupId}
+                        group={group}
+                        equippedTraits={equippedInGroup}
+                        slotUsage={traits.getGroupSlotUsage(groupId)}
+                        totalRulesInGroup={totalRules}
+                        equippedRuleCount={equippedRules}
+                        isExpanded={expandedDnaGroup === groupId}
+                        onToggle={() => setExpandedDnaGroup(prev => prev === groupId ? null : groupId)}
+                      >
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                          {groupTraits.map(trait => {
+                            const equipped = traits.equippedTraits.find(e => e.traitId === trait.id);
+                            return (
+                              <TraitCard
+                                key={trait.id}
+                                trait={trait}
+                                isEquipped={!!equipped}
+                                currentStrength={equipped?.strength || null}
+                                isCustom={equipped?.isCustom || false}
+                                onEquip={traits.equipTrait}
+                                onUnequip={traits.unequipTrait}
+                                onStrengthChange={traits.setTraitStrength}
+                                onAdvancedOpen={handleAdvancedOpen}
+                                canEquip={traits.canEquip(trait.id)}
+                                groupColor={group.color}
+                              />
+                            );
+                          })}
+                        </div>
+                      </DNAGroupCard>
+                    );
+                  })}
+                  {/* Advanced Firmware link */}
+                  <div style={{ textAlign: 'center', marginTop: 16, marginBottom: 24 }}>
+                    <button
+                      onClick={() => setShowAdvancedFirmware(true)}
+                      style={{
+                        background: 'none', border: 'none', color: '#718096',
+                        fontSize: 12, cursor: 'pointer', textDecoration: 'underline',
+                        display: 'inline-flex', alignItems: 'center', gap: 4,
+                      }}
+                    >
+                      <Settings size={12} /> Advanced Firmware — Browse all rules
+                    </button>
+                  </div>
                   <AgentLearnedSection
                     rules={learnedRules}
                     isExpanded={learnedExpanded}
@@ -827,6 +976,25 @@ export default function ForgeScreen({ isMobile: isMobileProp, onClose, user }) {
         {showMyBundles && (
           <ManagementPanel title="My Bundles" onClose={() => setShowMyBundles(false)}>
             <MyBundlesTab forge={forge} tokens={tokens} isMobile={true} agent={agent} />
+          </ManagementPanel>
+        )}
+        {showAdvancedFirmware && (
+          <ManagementPanel title="Advanced Firmware" onClose={() => setShowAdvancedFirmware(false)}>
+            <div style={{ padding: '0 8px' }}>
+              {allCategorySections.map(({ category, rules }) => (
+                <CategoryAccordion
+                  key={category.id}
+                  category={category}
+                  rules={rules}
+                  equippedRuleIds={equippedRuleIds}
+                  isExpanded={forge.expandedAccordions.has(category.id)}
+                  onToggle={() => forge.toggleAccordion(category.id)}
+                  onAddRule={handleAddRule}
+                  onRemoveRule={handleRemoveRule}
+                  agentExists={!!hasAgent}
+                />
+              ))}
+            </div>
           </ManagementPanel>
         )}
       </AnimatePresence>
