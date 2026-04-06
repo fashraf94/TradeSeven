@@ -100,6 +100,11 @@ function validateRuleInput(ruleData) {
     errors.push('Priority must be a number');
   }
 
+  // Validate traitId: must be a string or null if provided
+  if (ruleData.traitId != null && typeof ruleData.traitId !== 'string') {
+    errors.push('traitId must be a string or null');
+  }
+
   return errors;
 }
 
@@ -131,6 +136,7 @@ export const createRule = async (agentId, ruleData) => {
     textTemplate: ruleData.textTemplate || null,
     status: ruleData.status || 'active',
     priority: ruleData.priority || 0,
+    traitId: ruleData.traitId || null,
     isRefined: false,
     isDeleted: false,
     bundleIds: [],
@@ -212,8 +218,11 @@ export const updateRule = async (agentId, ruleId, updates) => {
   if (updates.priority !== undefined && updates.priority !== null && typeof updates.priority !== 'number') {
     throw new Error('Priority must be a number');
   }
+  if (updates.traitId !== undefined && updates.traitId !== null && typeof updates.traitId !== 'string') {
+    throw new Error('traitId must be a string or null');
+  }
 
-  const allowed = ['text', 'category', 'visibility', 'params', 'isRefined', 'paramValues', 'textTemplate', 'status', 'priority'];
+  const allowed = ['text', 'category', 'visibility', 'params', 'isRefined', 'paramValues', 'textTemplate', 'status', 'priority', 'traitId'];
   const filtered = {};
   for (const key of allowed) {
     if (key in updates) filtered[key] = updates[key];

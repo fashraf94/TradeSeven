@@ -8,7 +8,11 @@ import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Package, Plus, Eye, EyeOff, Zap, Edit3, Hammer } from 'lucide-react';
 import { FORGE_LIMITS } from '../../constants/agentProgression';
+import { TRAIT_LIBRARY } from '../../data/traitLibrary';
 import RulePickerModal from './RulePickerModal';
+
+const TRAIT_BY_ID = {};
+TRAIT_LIBRARY.forEach(t => { TRAIT_BY_ID[t.id] = t; });
 
 const CATEGORY_META = {
   technical:    { label: 'Technical',    color: '#5eead4' },
@@ -34,8 +38,26 @@ function getLevelLabel(level) {
   return { rookie: 'Rookie', starter: 'Starter', partner: 'Partner' }[level] || 'Rookie';
 }
 
+function groupByTrait(items, getRule) {
+  const grouped = {};
+  const ungrouped = [];
+  items.forEach(item => {
+    const rule = typeof getRule === 'function' ? getRule(item) : item;
+    if (!rule) return;
+    const tid = rule.traitId;
+    if (tid && TRAIT_BY_ID[tid]) {
+      if (!grouped[tid]) grouped[tid] = [];
+      grouped[tid].push({ item, rule });
+    } else {
+      ungrouped.push({ item, rule });
+    }
+  });
+  return { grouped, ungrouped };
+}
+
 export default function MyBundlesTab({ forge, tokens, isMobile, agent }) {
   const [expandedForgedId, setExpandedForgedId] = useState(null);
+  const [expandedTraitId, setExpandedTraitId] = useState(null);
   const [forgeSuccessBundle, setForgeSuccessBundle] = useState(null);
   const [showNamePrompt, setShowNamePrompt] = useState(null); // bundleId
   const [namePromptValue, setNamePromptValue] = useState('');
@@ -256,89 +278,169 @@ export default function MyBundlesTab({ forge, tokens, isMobile, agent }) {
           {ruleCount} / {limits.maxRulesPerBundle} rules
         </div>
 
-        {/* Rule list */}
-        <div style={{
-          borderRadius: '10px',
-          border: `1px solid ${tokens.borderDefault}`,
-          overflow: 'hidden',
-          marginBottom: '12px',
-        }}>
-          {(bundle.ruleIds || []).map((ruleId, idx) => {
-            const rule = getRuleById(ruleId);
-            if (!rule) return null;
-            return (
-              <div
-                key={ruleId}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  padding: '8px 12px',
-                  borderBottom: idx < (bundle.ruleIds.length - 1) ? `1px solid ${tokens.borderDefault}` : 'none',
-                  background: 'transparent',
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1, minWidth: 0 }}>
-                  {renderCategoryBadge(rule.category)}
-                  <span style={{
-                    fontSize: '12px',
-                    color: tokens.textPrimary,
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
+        {/* Rule list — grouped by trait */}
+        {(() => {
+          const { grouped, ungrouped } = groupByTrait(
+            bundle.ruleIds || [],
+            (ruleId) => getRuleById(ruleId),
+          );
+          return (
+            <div style={{ marginBottom: '12px' }}>
+              {/* Trait-sourced rules */}
+              {Object.entries(grouped).map(([traitId, entries]) => {
+                const trait = TRAIT_BY_ID[traitId];
+                if (!trait) return null;
+                const isTraitExpanded = expandedTraitId === `${bundle.id}-${traitId}`;
+                return (
+                  <div key={traitId} style={{
+                    backgroundColor: '#15171E',
+                    border: `1px solid ${tokens.borderDefault}`,
+                    borderRadius: 8,
+                    padding: 12,
+                    marginBottom: 8,
                   }}>
-                    {rule.text}
-                  </span>
-                </div>
-                <button
-                  onClick={() => forge.removeRuleFromBundle(bundle.id, ruleId)}
-                  style={{
-                    padding: '4px 8px',
-                    borderRadius: '6px',
-                    border: '1px solid rgba(239,68,68,0.2)',
-                    background: 'transparent',
-                    color: '#ef4444',
-                    fontSize: '10px',
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                    fontFamily: 'inherit',
-                    flexShrink: 0,
-                    marginLeft: '8px',
-                  }}
-                >
-                  Remove
-                </button>
-              </div>
-            );
-          })}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
+                      <span style={{ fontSize: 14, fontWeight: 600, color: '#E2E8F0' }}>
+                        {trait.name}
+                      </span>
+                      <span style={{ fontSize: 11, color: '#718096' }}>
+                        ({entries.length} rule{entries.length !== 1 ? 's' : ''})
+                      </span>
+                    </div>
+                    <div style={{ fontSize: 11, color: '#718096', fontStyle: 'italic', marginBottom: 6 }}>
+                      {trait.identityStatement}
+                    </div>
+                    <button
+                      onClick={() => setExpandedTraitId(isTraitExpanded ? null : `${bundle.id}-${traitId}`)}
+                      style={{
+                        background: 'none', border: 'none', padding: 0,
+                        fontSize: 11, color: '#5EEAD4', cursor: 'pointer',
+                        display: 'flex', alignItems: 'center', gap: 4,
+                      }}
+                    >
+                      {isTraitExpanded ? '▾' : '▸'} {isTraitExpanded ? 'Hide rules' : 'Show rules'}
+                    </button>
+                    {isTraitExpanded && (
+                      <div style={{ marginTop: 6 }}>
+                        {entries.map(({ item: ruleId, rule }) => (
+                          <div key={ruleId} style={{
+                            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                            padding: '6px 0',
+                          }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0 }}>
+                              {renderCategoryBadge(rule.category)}
+                              <span style={{
+                                fontSize: 12, color: tokens.textPrimary,
+                                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                              }}>
+                                {rule.text}
+                              </span>
+                            </div>
+                            <button
+                              onClick={() => forge.removeRuleFromBundle(bundle.id, ruleId)}
+                              style={{
+                                padding: '4px 8px', borderRadius: 6,
+                                border: '1px solid rgba(239,68,68,0.2)',
+                                background: 'transparent', color: '#ef4444',
+                                fontSize: 10, fontWeight: 600,
+                                cursor: 'pointer', fontFamily: 'inherit',
+                                flexShrink: 0, marginLeft: 8,
+                              }}
+                            >
+                              Remove
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
 
-          {/* Empty slots */}
-          {Array.from({ length: Math.min(limits.maxRulesPerBundle - ruleCount, 2) }).map((_, i) => (
-            <button
-              key={`empty-${i}`}
-              onClick={() => forge.setShowRulePicker(bundle.id)}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '6px',
-                width: '100%',
-                padding: '10px 12px',
-                border: 'none',
-                borderTop: (ruleCount > 0 || i > 0) ? `1px dashed ${tokens.borderDefault}` : `1px dashed ${tokens.borderDefault}`,
-                background: 'transparent',
-                color: tokens.textMuted,
-                fontSize: '12px',
-                fontWeight: 500,
-                cursor: 'pointer',
-                fontFamily: 'inherit',
-              }}
-            >
-              <Plus size={12} />
-              Add rule from My Rules
-            </button>
-          ))}
-        </div>
+              {/* Custom (ungrouped) rules */}
+              {ungrouped.length > 0 && (
+                <div style={{
+                  borderRadius: '10px',
+                  border: `1px solid ${tokens.borderDefault}`,
+                  overflow: 'hidden',
+                }}>
+                  {Object.keys(grouped).length > 0 && (
+                    <div style={{
+                      fontSize: 11, color: '#718096', padding: '6px 12px',
+                      textTransform: 'uppercase', letterSpacing: 1,
+                      borderBottom: `1px solid ${tokens.borderDefault}`,
+                    }}>
+                      Custom Rules
+                    </div>
+                  )}
+                  {ungrouped.map(({ item: ruleId, rule }, idx) => (
+                    <div
+                      key={ruleId}
+                      style={{
+                        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                        padding: '8px 12px',
+                        borderBottom: idx < ungrouped.length - 1 ? `1px solid ${tokens.borderDefault}` : 'none',
+                        background: 'transparent',
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1, minWidth: 0 }}>
+                        {renderCategoryBadge(rule.category)}
+                        <span style={{
+                          fontSize: '12px', color: tokens.textPrimary,
+                          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                        }}>
+                          {rule.text}
+                        </span>
+                      </div>
+                      <button
+                        onClick={() => forge.removeRuleFromBundle(bundle.id, ruleId)}
+                        style={{
+                          padding: '4px 8px', borderRadius: '6px',
+                          border: '1px solid rgba(239,68,68,0.2)',
+                          background: 'transparent', color: '#ef4444',
+                          fontSize: '10px', fontWeight: 600,
+                          cursor: 'pointer', fontFamily: 'inherit',
+                          flexShrink: 0, marginLeft: '8px',
+                        }}
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Empty slots */}
+              {ruleCount < limits.maxRulesPerBundle && (
+                <div style={{
+                  borderRadius: '10px',
+                  border: `1px dashed ${tokens.borderDefault}`,
+                  overflow: 'hidden',
+                  marginTop: ungrouped.length > 0 || Object.keys(grouped).length > 0 ? 8 : 0,
+                }}>
+                  {Array.from({ length: Math.min(limits.maxRulesPerBundle - ruleCount, 2) }).map((_, i) => (
+                    <button
+                      key={`empty-${i}`}
+                      onClick={() => forge.setShowRulePicker(bundle.id)}
+                      style={{
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        gap: '6px', width: '100%', padding: '10px 12px',
+                        border: 'none',
+                        borderTop: i > 0 ? `1px dashed ${tokens.borderDefault}` : 'none',
+                        background: 'transparent', color: tokens.textMuted,
+                        fontSize: '12px', fontWeight: 500,
+                        cursor: 'pointer', fontFamily: 'inherit',
+                      }}
+                    >
+                      <Plus size={12} />
+                      Add rule from My Rules
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })()}
 
         {/* Composition summary */}
         {ruleCount > 0 && (
@@ -464,37 +566,85 @@ export default function MyBundlesTab({ forge, tokens, isMobile, agent }) {
           {forgedDate && ` · Forged ${forgedDate}`}
         </div>
 
-        {/* Expandable rules */}
+        {/* Expandable rules — grouped by trait */}
         <AnimatePresence>
           {isExpanded && (
             <motion.div
               initial={{ opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: 'auto' }}
               exit={{ opacity: 0, height: 0 }}
-              style={{
-                borderRadius: '10px',
-                border: `1px solid ${tokens.borderDefault}`,
-                overflow: 'hidden',
-                marginBottom: '12px',
-              }}
+              style={{ marginBottom: '12px' }}
             >
-              {(bundle.ruleSnapshots || []).map((snap, idx) => (
-                <div
-                  key={snap.id || idx}
-                  style={{
-                    padding: '8px 12px',
-                    borderBottom: idx < ruleCount - 1 ? `1px solid ${tokens.borderDefault}` : 'none',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px',
-                  }}
-                >
-                  {renderCategoryBadge(snap.category)}
-                  <span style={{ fontSize: '12px', color: tokens.textPrimary, lineHeight: '1.4' }}>
-                    {snap.text}
-                  </span>
-                </div>
-              ))}
+              {(() => {
+                const snaps = bundle.ruleSnapshots || [];
+                const { grouped, ungrouped } = groupByTrait(snaps, (snap) => snap);
+                return (
+                  <>
+                    {Object.entries(grouped).map(([traitId, entries]) => {
+                      const trait = TRAIT_BY_ID[traitId];
+                      if (!trait) return null;
+                      return (
+                        <div key={traitId} style={{
+                          backgroundColor: '#15171E',
+                          border: `1px solid ${tokens.borderDefault}`,
+                          borderRadius: 8,
+                          padding: '10px 12px',
+                          marginBottom: 6,
+                        }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                            <span style={{ fontSize: 13, fontWeight: 600, color: '#E2E8F0' }}>
+                              {trait.name}
+                            </span>
+                            <span style={{ fontSize: 11, color: '#718096' }}>
+                              ({entries.length} rule{entries.length !== 1 ? 's' : ''})
+                            </span>
+                          </div>
+                          {entries.map(({ rule: snap }, idx) => (
+                            <div key={snap.id || idx} style={{
+                              padding: '4px 0',
+                              display: 'flex', alignItems: 'center', gap: 8,
+                            }}>
+                              {renderCategoryBadge(snap.category)}
+                              <span style={{ fontSize: 12, color: tokens.textPrimary, lineHeight: 1.4 }}>
+                                {snap.text}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      );
+                    })}
+                    {ungrouped.length > 0 && (
+                      <div style={{
+                        borderRadius: 10,
+                        border: `1px solid ${tokens.borderDefault}`,
+                        overflow: 'hidden',
+                      }}>
+                        {Object.keys(grouped).length > 0 && (
+                          <div style={{
+                            fontSize: 11, color: '#718096', padding: '6px 12px',
+                            textTransform: 'uppercase', letterSpacing: 1,
+                            borderBottom: `1px solid ${tokens.borderDefault}`,
+                          }}>
+                            Custom Rules
+                          </div>
+                        )}
+                        {ungrouped.map(({ rule: snap }, idx) => (
+                          <div key={snap.id || idx} style={{
+                            padding: '8px 12px',
+                            borderBottom: idx < ungrouped.length - 1 ? `1px solid ${tokens.borderDefault}` : 'none',
+                            display: 'flex', alignItems: 'center', gap: 8,
+                          }}>
+                            {renderCategoryBadge(snap.category)}
+                            <span style={{ fontSize: 12, color: tokens.textPrimary, lineHeight: 1.4 }}>
+                              {snap.text}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
             </motion.div>
           )}
         </AnimatePresence>
