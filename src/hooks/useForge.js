@@ -23,6 +23,13 @@ import {
 } from '../services/forgeService';
 import { computeForgeStats } from '../services/forgeStatsService';
 
+// Pre-compute total available rules per category for radar proportional fill
+const categoryTotals = {};
+FORGE_RULE_TEMPLATES.forEach(r => {
+  const cat = r.forgeTemplates?.[0]?.category || r.category;
+  if (cat) categoryTotals[cat] = (categoryTotals[cat] || 0) + 1;
+});
+
 // Category group mappings (kept for reference but no longer used in UI toggle)
 const STRATEGY_CATEGORIES = ['technical', 'fundamental', 'threshold', 'tier_strategy'];
 const CONTROLS_CATEGORIES = ['risk', 'allocation', 'mid_battle', 'game_state'];
@@ -251,6 +258,7 @@ export function useForge(agentId) {
   }, []);
 
   // Compute overlay weights from equipped bundle rules for RadarChart
+  // Uses proportional fill: equipped-in-category / total-available-in-category
   const overlayWeights = useMemo(() => {
     const defaultWeights = FORGE_CATEGORIES.reduce((acc, cat) => ({ ...acc, [cat.id]: 0 }), {});
     const equipped = bundles.filter(b => b.status === 'equipped');
@@ -261,8 +269,7 @@ export function useForge(agentId) {
     const resolvedRules = allRuleIds
       .map(id => rules.find(r => r.id === id))
       .filter(Boolean);
-    const total = resolvedRules.length;
-    if (total === 0) return defaultWeights;
+    if (resolvedRules.length === 0) return defaultWeights;
 
     // Count rules per category from resolved rules only
     const catCounts = {};
@@ -272,9 +279,12 @@ export function useForge(agentId) {
         catCounts[rule.category]++;
       }
     }
+
+    // Normalize by total available rules per category (proportional fill)
     const weights = {};
     FORGE_CATEGORIES.forEach(cat => {
-      weights[cat.id] = catCounts[cat.id] / total;
+      const available = categoryTotals[cat.id] || 1;
+      weights[cat.id] = catCounts[cat.id] / available;
     });
     return weights;
   }, [bundles, rules]);
@@ -333,6 +343,7 @@ export function useForge(agentId) {
         paramValues: paramValues || null,
         ...(options.status && { status: options.status }),
         ...(options.priority != null && { priority: options.priority }),
+        ...(options.traitId && { traitId: options.traitId }),
       });
 
       try {

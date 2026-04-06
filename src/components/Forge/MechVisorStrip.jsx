@@ -46,7 +46,7 @@ export default function MechVisorStrip({ bundleName, capacity, onTapToExpand }) 
         fontFamily: 'ui-monospace, SFMono-Regular, monospace',
         flexShrink: 0,
       }}>
-        {capacity.current}/{capacity.max}
+        {capacity.current}/{capacity.max} rules
       </div>
     </div>
   );

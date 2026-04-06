@@ -103,6 +103,8 @@ export default function BundleStrip({
             padding: 4,
             zIndex: 60,
             minWidth: 180,
+            maxHeight: 240,
+            overflowY: 'auto',
           }}>
             {bundles.map(b => (
               <button
@@ -153,7 +155,7 @@ export default function BundleStrip({
             color: '#5EEAD4',
             fontFamily: 'ui-monospace, SFMono-Regular, monospace',
           }}>
-            {capacity.current}/{capacity.max}
+            {capacity.current}/{capacity.max} rules
           </span>
         </div>
       )}

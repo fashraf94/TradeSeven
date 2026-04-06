@@ -68,25 +68,16 @@ export default function DNAGroupCard({
             }} />
           </div>
 
-          {/* Slots + equipped trait names */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 3, fontSize: 11, color: '#718096' }}>
-              <span>Slots:</span>
-              {Array.from({ length: max }).map((_, i) => (
-                <span
-                  key={i}
-                  style={{
-                    display: 'inline-block', width: 7, height: 7, borderRadius: '50%',
-                    background: i < used ? group.color : '#2A2D35',
-                    transition: 'background 0.2s ease',
-                  }}
-                />
-              ))}
-              <span style={{ marginLeft: 2 }}>/ {max}</span>
-            </div>
+          {/* Slot usage + equipped trait names */}
+          <div style={{ display: 'flex', alignItems: 'center', fontSize: 11, marginTop: 4 }}>
+            <span style={{ color: used > 0 ? '#5EEAD4' : '#4A5568' }}>
+              {used === 0 && `Choose up to ${max} traits`}
+              {used > 0 && used < max && `${used} of ${max} chosen`}
+              {used >= max && `${max} of ${max} chosen (max)`}
+            </span>
             {equippedTraits.length > 0 && (
-              <span style={{ fontSize: 11, color: '#5EEAD4', opacity: 0.7 }}>
-                {equippedTraits.map(t => t.name).join(', ')}
+              <span style={{ color: '#5EEAD4', fontSize: 11, marginLeft: 8 }}>
+                — {equippedTraits.map(t => t.name).join(', ')}
               </span>
             )}
           </div>

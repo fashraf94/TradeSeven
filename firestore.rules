@@ -148,7 +148,10 @@ service cloud.firestore {
                         || request.resource.data.status in ['draft', 'testing', 'active', 'proven', 'queued'])
                     && (!('priority' in request.resource.data)
                         || request.resource.data.priority == null
-                        || request.resource.data.priority is number);
+                        || request.resource.data.priority is number)
+                    && (!('traitId' in request.resource.data)
+                        || request.resource.data.traitId == null
+                        || request.resource.data.traitId is string);
         allow delete: if false;
       }
 

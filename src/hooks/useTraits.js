@@ -158,6 +158,7 @@ export function useTraits(agentId, forge) {
         await forge.addRuleToBundle(template, paramOverrides, {
           status: 'active',
           priority: 1,
+          traitId: traitId,
         });
       }
     } catch (err) {
