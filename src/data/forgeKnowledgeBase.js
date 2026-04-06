@@ -2805,6 +2805,145 @@ export const FORGE_RULE_TEMPLATES = [
     tags: ['institutional', 'overlap', 'diversification', 'correlation', 'fund-risk'],
     agentUseDescription: 'Portfolio diversification rule that limits how many drafted stocks can share the same active mutual fund as a top-3 holder. Passive index funds are excluded from the check since they hold everything mechanically. Applied during portfolio construction to prevent correlated liquidation risk.',
   },
+
+  // i-06: Hedge Fund Favorites
+  {
+    id: 'i-06',
+    category: 'institutional',
+    headline: 'Hedge Fund Favorites',
+    description: 'Target stocks widely held by top hedge funds for momentum amplification. Crowded trades provide explosive intraday moves but carry reversal risk.',
+    learnMore: 'Stocks held by multiple top hedge funds benefit from persistent buying pressure during momentum phases — the Goldman Sachs "Hedge Fund VIP" index outperforms the S&P 500 in 60% of quarters. However, these crowded positions are fragile: when market stress hits, highly correlated hedge funds unwind simultaneously, causing violent crashes. Use this rule for BaggerBomb momentum plays but pair it with tight technical swap parameters.',
+    difficulty: 'intermediate',
+    forgeTemplates: [{
+      text: 'Target high-momentum setups in stocks held by at least {count} of the top-20 hedge funds, but maintain strict technical swap parameters due to crowded-trade reversal risk',
+      params: {
+        count: {
+          type: 'number',
+          default: 3,
+          min: 2,
+          max: 10,
+          step: 1,
+          unit: '',
+          label: 'Minimum Hedge Fund Holders',
+          hint: '3 identifies a crowded trade. 5+ is an extremely popular position with high momentum but severe crash risk.',
+        },
+      },
+      category: 'institutional',
+    }],
+    relatedIndicator: null,
+    kbEntryId: null,
+    tags: ['institutional', 'hedge-fund', 'crowded-trade', 'momentum', 'VIP'],
+    agentUseDescription: 'Momentum amplifier that prefers stocks widely held across top hedge funds. These "crowded trades" produce outsized intraday moves ideal for ATR threshold crossings. The agent must pair this with strict technical swap rules — if VWAP or 5-min MACD breaks down, exit immediately to avoid herd liquidation.',
+  },
+
+  // i-07: Sector Institutional Flow
+  {
+    id: 'i-07',
+    category: 'institutional',
+    headline: 'Sector Institutional Flow',
+    description: 'Align stock selection with sectors where institutional money is flowing in. Capital rotation at the sector level creates structural tailwinds for individual stocks.',
+    learnMore: 'Institutions don\'t just pick stocks — they rotate capital along sector lines. When massive funds rotate into Technology or out of Financials, it creates a rising or falling tide that individual stocks can\'t fight. Sector-level flow has 71% directional accuracy in high-signal sectors like Energy. This rule stacks well with FantasyTimes news sentiment for double confirmation.',
+    difficulty: 'beginner',
+    forgeTemplates: [{
+      text: 'Prefer drafting stocks in sectors where the aggregate institutional flow sentiment is {sentiment}',
+      params: {
+        sentiment: {
+          type: 'select',
+          default: 'bullish',
+          options: [
+            { value: 'bullish', label: 'Bullish (Net Accumulation)' },
+            { value: 'neutral', label: 'Neutral or Better' },
+          ],
+          label: 'Sector Flow Threshold',
+          hint: 'Bullish aligns with the dominant capital rotation. Neutral allows sectors that aren\'t actively distributing.',
+        },
+      },
+      category: 'institutional',
+    }],
+    relatedIndicator: null,
+    kbEntryId: null,
+    tags: ['institutional', 'sector', 'flow', 'rotation', 'macro'],
+    agentUseDescription: 'Macro-alignment rule that ensures the agent\'s stock picks are in sectors where institutional capital is flowing in. Acts as a structural tailwind multiplier for technical breakout signals. Stacks with FantasyTimes sector sentiment for dual confirmation. Applied as a Level 2 preference during portfolio construction.',
+  },
+
+  // i-08: Insider + Institution Confluence
+  {
+    id: 'i-08',
+    category: 'institutional',
+    headline: 'Insider + Institution Confluence',
+    description: 'The premium signal: prefer stocks where both institutional holders AND company insiders are buying. Dual confirmation from people with the deepest knowledge.',
+    learnMore: 'When corporate insiders (CEOs, CFOs) buy their own stock AND institutional managers are accumulating, it creates the strongest predictive signal in the 13F universe. Insiders know the company\'s immediate prospects; institutions validate the thesis with external analysis. Research shows this confluence yields 12-18% annualized abnormal returns. The 60-day insider lookback captures post-earnings buying windows while keeping the signal timely.',
+    difficulty: 'advanced',
+    forgeTemplates: [{
+      text: 'Highlight as highest-conviction: Strongly prefer stocks where institutional conviction is accumulating AND insider activity in the past {days} days shows net buying',
+      params: {
+        days: {
+          type: 'number',
+          default: 60,
+          min: 30,
+          max: 180,
+          step: 15,
+          unit: '',
+          label: 'Insider Lookback Window',
+          hint: '60 days captures recent post-earnings insider buying. 90 is standard for longer horizons. 30 is aggressive and may miss slower-moving signals.',
+        },
+      },
+      category: 'institutional',
+    }],
+    relatedIndicator: null,
+    kbEntryId: null,
+    tags: ['institutional', 'insider', 'confluence', 'premium', 'dual-signal', 'highest-conviction'],
+    agentUseDescription: 'The highest-ranked institutional rule. Combines lagged 13F institutional accumulation with near real-time insider buying (Form 4 filings, required within 2 business days). This confluence neutralizes the primary weakness of quarterly data by demanding a timely insider confirmation. Applied as the top priority during portfolio construction — stocks meeting this criteria get maximum draft preference.',
+  },
+
+  // i-09: Transient Capital Catalyst
+  {
+    id: 'i-09',
+    category: 'institutional',
+    headline: 'Transient Capital Catalyst',
+    description: 'Prefer stocks where accumulation is driven by high-turnover, short-horizon institutions. These "transient" funds amplify intraday volatility — exactly what BaggerBomb rewards.',
+    learnMore: 'Not all institutional money is equal. "Transient" institutions (high portfolio turnover, short holding periods) create significantly more stock return volatility than "dedicated" long-term holders. Since BaggerBomb rewards ATR threshold crossings, stocks with transient institutional accumulation are structurally more likely to produce the sharp intraday moves needed for Bagger bonuses. Dedicated holders provide stability but suppress the volatility BaggerBomb rewards.',
+    difficulty: 'advanced',
+    forgeTemplates: [{
+      text: 'Prefer stocks where recent institutional accumulation is driven by high-turnover transient institutions rather than long-term dedicated holders',
+      params: {},
+      category: 'institutional',
+    }],
+    relatedIndicator: null,
+    kbEntryId: null,
+    tags: ['institutional', 'transient', 'volatility', 'momentum', 'high-turnover', 'ATR'],
+    agentUseDescription: 'Volatility amplifier that biases the agent toward stocks with accumulation by high-turnover "transient" institutions (quantitative funds, short-horizon momentum funds) rather than low-turnover "dedicated" holders. Transient capital creates the sharp intraday price movements needed for ATR threshold crossings. This is a toggle rule with no parameters — the agent checks whether the accumulating institutions are classified as high-turnover in the archetype system.',
+  },
+
+  // i-10: Institutional Breadth Momentum
+  {
+    id: 'i-10',
+    category: 'institutional',
+    headline: 'Institutional Breadth Momentum',
+    description: 'Prefer stocks where the number of unique institutional holders is expanding quarter after quarter. A growing investor base often precedes major price re-ratings.',
+    learnMore: 'Breadth of ownership — how many unique funds hold a stock — is often more informative than depth (how much they hold). A stock being adopted by 10-20 new funds each quarter for multiple consecutive quarters experiences a "geometric expansion" in its investor base. This expanding breadth typically precedes significant price re-ratings as the stock graduates from niche to mainstream institutional coverage.',
+    difficulty: 'intermediate',
+    forgeTemplates: [{
+      text: 'Prefer stocks where the number of unique institutional holders has increased for at least {quarters} consecutive quarters',
+      params: {
+        quarters: {
+          type: 'number',
+          default: 2,
+          min: 1,
+          max: 4,
+          step: 1,
+          unit: '',
+          label: 'Consecutive Growth Quarters',
+          hint: '2 confirms a trend. 3+ is a strong geometric expansion. 1 may be noise.',
+        },
+      },
+      category: 'institutional',
+    }],
+    relatedIndicator: null,
+    kbEntryId: null,
+    tags: ['institutional', 'breadth', 'momentum', 'ownership-expansion', 'emerging'],
+    agentUseDescription: 'Identifies stocks with expanding institutional adoption — a growing number of unique fund holders over consecutive quarters. This "breadth momentum" often precedes significant price re-ratings as the stock moves from niche to mainstream institutional coverage. Applied as a preference during portfolio construction, particularly useful for mid-cap Rockets that are gaining institutional traction.',
+  },
 ];
 
 export const FORGE_CONFLICT_PAIRS = [
