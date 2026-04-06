@@ -145,6 +145,7 @@ const InstitutionalView = ({ onOpenResearch, stocksData, isMobile }) => {
               <HeroHeadlineCard
                 headline={data.heroHeadline}
                 heroInsights={data.heroInsights}
+                onStockTap={handleStockTap}
                 updatedAt={data.updatedAt}
               />
 

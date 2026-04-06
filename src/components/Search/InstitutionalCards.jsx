@@ -65,10 +65,53 @@ const SECTOR_SHORT = {
   XLB: 'Materials', XLU: 'Utilities', XLRE: 'Real Estate', XLC: 'Communications',
 };
 
+// ── Helper: Render text with tappable ticker symbols ──
+function renderTextWithTickers(text, tickers, onStockTap) {
+  if (!tickers.length || !onStockTap) return text;
+
+  let parts = [text];
+  for (const ticker of tickers) {
+    const newParts = [];
+    for (const part of parts) {
+      if (typeof part === 'string') {
+        const idx = part.indexOf(ticker);
+        if (idx !== -1) {
+          if (idx > 0) newParts.push(part.slice(0, idx));
+          newParts.push(
+            <span
+              key={`${ticker}-${idx}`}
+              onClick={(e) => { e.stopPropagation(); onStockTap(ticker); }}
+              style={{
+                color: CYAN,
+                fontWeight: 700,
+                fontFamily: MONO,
+                cursor: 'pointer',
+                textDecoration: 'underline',
+                textDecorationColor: 'rgba(6, 182, 212, 0.3)',
+                textUnderlineOffset: '2px',
+              }}
+            >
+              {ticker}
+            </span>
+          );
+          newParts.push(part.slice(idx + ticker.length));
+        } else {
+          newParts.push(part);
+        }
+      } else {
+        newParts.push(part);
+      }
+    }
+    parts = newParts;
+  }
+
+  return <>{parts}</>;
+}
+
 // ══════════════════════════════════════
 // ── Component 1: HeroHeadlineCard ──
 // ══════════════════════════════════════
-export const HeroHeadlineCard = ({ headline, heroInsights, updatedAt }) => {
+export const HeroHeadlineCard = ({ headline, heroInsights, onStockTap, updatedAt }) => {
   if (!headline && !heroInsights?.length) return null;
 
   const dateLabel = updatedAt?.toDate
@@ -106,21 +149,28 @@ export const HeroHeadlineCard = ({ headline, heroInsights, updatedAt }) => {
 
         {insights ? (
           <div style={{ marginBottom: '16px' }}>
-            {insights.map((insight, idx) => (
-              <div key={idx} style={{
-                fontSize: idx === 0 ? '15px' : '13px',
-                fontWeight: idx === 0 ? 600 : 400,
-                color: idx === 0 ? '#ffffff' : '#e3e2e7',
-                lineHeight: 1.6,
-                paddingLeft: '12px',
-                borderLeft: idx === 0
-                  ? '2px solid #06b6d4'
-                  : '2px solid rgba(6, 182, 212, 0.3)',
-                marginBottom: '8px',
-              }}>
-                {insight}
-              </div>
-            ))}
+            {insights.map((insight, idx) => {
+              const isObj = typeof insight === 'object' && insight !== null;
+              const text = isObj ? insight.text : insight;
+              const tickers = isObj ? (insight.tickers || []) : [];
+              const isFirst = idx === 0;
+
+              return (
+                <div key={idx} style={{
+                  fontSize: isFirst ? '15px' : '13px',
+                  fontWeight: isFirst ? 600 : 400,
+                  color: isFirst ? '#ffffff' : '#c8ccd0',
+                  lineHeight: 1.6,
+                  paddingLeft: '12px',
+                  borderLeft: isFirst
+                    ? '2px solid #06b6d4'
+                    : '2px solid rgba(6, 182, 212, 0.25)',
+                  marginBottom: '10px',
+                }}>
+                  {tickers.length > 0 ? renderTextWithTickers(text, tickers, onStockTap) : text}
+                </div>
+              );
+            })}
           </div>
         ) : (
           <div style={{
@@ -150,72 +200,74 @@ export const AlphaFeed = ({ storylines, onStockTap }) => {
   if (!storylines?.length) return null;
 
   return (
-    <div style={{
-      display: 'flex',
-      gap: '12px',
-      overflowX: 'auto',
-      WebkitOverflowScrolling: 'touch',
-      scrollSnapType: 'x mandatory',
-      paddingBottom: '8px',
-      scrollbarWidth: 'none',
-      msOverflowStyle: 'none',
-    }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
       {storylines.map((s, i) => {
         const borderColor = STORYLINE_BORDERS[s.type] || CYAN;
         const icon = STORYLINE_ICONS[s.type] || '\u26A1';
         const label = STORYLINE_LABELS[s.type] || s.type;
 
+        // Split headline around the ticker symbol for highlighting
+        const tickerIdx = s.headline.indexOf(s.symbol);
+        const beforeTicker = tickerIdx >= 0 ? s.headline.slice(0, tickerIdx) : s.headline;
+        const afterTicker = tickerIdx >= 0 ? s.headline.slice(tickerIdx + s.symbol.length) : '';
+
         return (
-          <motion.div
+          <div
             key={`${s.symbol}-${i}`}
-            whileTap={{ scale: 0.97 }}
             onClick={() => onStockTap && onStockTap(s.symbol)}
             style={{
-              flexShrink: 0,
-              width: '280px',
-              height: '140px',
-              background: '#15171E',
-              borderLeft: `4px solid ${borderColor}`,
-              borderRadius: '12px',
-              padding: '14px',
-              display: 'flex',
-              flexDirection: 'column',
-              justifyContent: 'space-between',
+              padding: '12px 14px',
+              borderLeft: `3px solid ${borderColor}`,
+              background: i % 2 === 0 ? 'rgba(255,255,255,0.015)' : 'transparent',
               cursor: 'pointer',
-              scrollSnapAlign: 'start',
             }}
           >
-            {/* Eyebrow */}
-            <div style={{
-              fontSize: '10px', fontFamily: MONO, color: '#6b7280',
-              textTransform: 'uppercase',
-            }}>
-              {icon} {label} &middot; Q Filing
-            </div>
-
-            {/* Headline */}
-            <div style={{
-              fontSize: '13px', fontWeight: 700, color: '#ffffff', lineHeight: 1.4,
-              display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
-              overflow: 'hidden', flex: 1, marginTop: '8px',
-            }}>
-              {s.headline}
-            </div>
-
-            {/* Bottom row */}
-            <div style={{
-              borderTop: '1px solid rgba(255,255,255,0.06)',
-              paddingTop: '8px',
-              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-            }}>
-              <span style={{
-                fontSize: '12px', fontFamily: MONO, fontWeight: 700, color: borderColor,
-              }}>
-                {s.metric}
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+              <span style={{ fontSize: '14px', lineHeight: '20px', flexShrink: 0 }}>
+                {icon}
               </span>
-              <span style={{ fontSize: '12px', color: borderColor }}>{'\u26A1'}</span>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                {/* Headline with highlighted ticker */}
+                <div style={{
+                  fontSize: '13px', fontWeight: 600, color: '#e3e2e7',
+                  lineHeight: 1.4, marginBottom: '4px',
+                }}>
+                  {tickerIdx >= 0 ? (
+                    <>
+                      {beforeTicker}
+                      <span style={{
+                        color: borderColor, fontWeight: 700, fontFamily: MONO,
+                      }}>
+                        {s.symbol}
+                      </span>
+                      {afterTicker}
+                    </>
+                  ) : s.headline}
+                </div>
+
+                {/* Detail line */}
+                {s.detail && (
+                  <div style={{
+                    fontSize: '11px', color: '#6b7280', lineHeight: 1.3,
+                  }}>
+                    {s.detail}
+                  </div>
+                )}
+
+                {/* Metric pill */}
+                <div style={{
+                  display: 'inline-block', marginTop: '6px',
+                  padding: '2px 8px', borderRadius: '4px',
+                  fontSize: '10px', fontFamily: MONO, fontWeight: 600,
+                  color: borderColor,
+                  background: `${borderColor}15`,
+                  border: `1px solid ${borderColor}30`,
+                }}>
+                  {s.metric}
+                </div>
+              </div>
             </div>
-          </motion.div>
+          </div>
         );
       })}
     </div>

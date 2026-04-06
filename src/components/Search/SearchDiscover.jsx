@@ -48,7 +48,7 @@ const SearchDiscover = ({ user, isMobile, isDesktop, setScreen, stocksData }) =>
         background: tokens.bgApp,
         padding: isMobile ? '16px' : '24px',
         paddingBottom: isMobile ? '80px' : '24px',
-        maxWidth: isDesktop ? '780px' : undefined,
+        maxWidth: isDesktop ? '1200px' : undefined,
         margin: isDesktop ? '0 auto' : undefined,
       }}
     >
