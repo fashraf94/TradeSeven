@@ -160,6 +160,13 @@ service cloud.firestore {
                     && get(/databases/$(database)/documents/agents/$(agentId)).data.ownerId == request.auth.uid;
         allow delete: if false;
       }
+
+      // BATTLE PATTERNS — Server-only writes via Admin SDK, owner read
+      match /battlePatterns/{patternId} {
+        allow read: if request.auth != null
+                    && get(/databases/$(database)/documents/agents/$(agentId)).data.ownerId == request.auth.uid;
+        allow write: if false;
+      }
     }
 
     // AGENT BATTLES — Server-managed collection with limited client writes.
