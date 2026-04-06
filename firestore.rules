@@ -334,6 +334,18 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Institutional holdings — public read, server-only write (Admin SDK)
+    match /institutionalHoldings/{symbol} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    // Institutional aggregates — public read, server-only write (Admin SDK)
+    match /institutionalAggregates/{docId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
     // ═══════════════════════════════════════════
     // FantasyTimes Consensus & Suppressions
     // Public read, server-only writes (Admin SDK)

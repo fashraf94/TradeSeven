@@ -32,6 +32,7 @@ const CACHE_TTL = {
   news:         30 * 60 * 1000,         // 30 minutes
   technicals:   4 * 60 * 60 * 1000,    // 4 hours
   earnings:     24 * 60 * 60 * 1000,   // 24 hours
+  holders:      7 * 24 * 60 * 60 * 1000, // 7 days (quarterly data, weekly refresh)
 };
 
 // In-memory (L1) TTLs in seconds (shorter than Firestore, fast access)
@@ -41,6 +42,7 @@ const MEMORY_TTL = {
   news:         120,   // 2 min
   technicals:   300,   // 5 min
   earnings:     1800,  // 30 min
+  holders:      3600,  // 1 hour
 };
 
 // All possible data field types
@@ -300,6 +302,35 @@ async function fetchFundamentals(eohdSymbol, apiKey) {
       strongSell: analysts.StrongSell || 0,
     },
   };
+}
+
+/**
+ * Fetch institutional + mutual fund holders from EODHD Fundamentals API.
+ * Uses filter=Holders which returns both Institutions and Funds subsections.
+ *
+ * EODHD returns object-indexed responses ({"0": {...}, "1": {...}}), not arrays.
+ * Cost: 10 API calls per request (EODHD fundamentals billing).
+ * Data: Quarterly (13F filings), up to 90 days stale.
+ * Availability: Equities only (not ETFs, funds, or indices).
+ */
+async function fetchHolders(eohdSymbol, apiKey) {
+  const url = `${API_BASE}/fundamentals/${eohdSymbol}?api_token=${apiKey}&filter=Holders&fmt=json`;
+
+  console.log(`[MarketDataCache] Fetching holders for ${eohdSymbol}`);
+  const response = await fetch(url);
+
+  if (!response.ok) {
+    console.error(`[MarketDataCache] Holders fetch failed for ${eohdSymbol}: ${response.status}`);
+    return null;
+  }
+
+  const data = await response.json();
+
+  // EODHD returns object-indexed responses, convert to arrays
+  const institutions = data?.Institutions ? Object.values(data.Institutions) : [];
+  const funds = data?.Funds ? Object.values(data.Funds) : [];
+
+  return { Institutions: institutions, Funds: funds };
 }
 
 /**
@@ -741,6 +772,44 @@ export async function invalidateCache(symbol) {
 
   await batch.commit();
   console.log(`[MarketDataCache] Invalidated ${suffixes.length} cache entries for ${clean}`);
+}
+
+/**
+ * Fetch holders with two-layer cache (L1 memory + L2 Firestore).
+ * Cache key: {SYMBOL}_holders, TTL: 7 days.
+ * Used by the institutional intelligence cron.
+ *
+ * @param {string} symbol - Stock symbol (e.g., 'AAPL')
+ * @returns {object|null} { Institutions: [...], Funds: [...] } or null
+ */
+export async function getCachedHolders(symbol) {
+  const clean = getCleanSymbol(symbol);
+  const docKey = `${clean}_holders`;
+  const ttlMs = CACHE_TTL.holders;
+  const db = getFirebaseAdmin();
+  const apiKey = getApiKey();
+  const eohdSymbol = formatEODHDSymbol(clean, false); // Holders is equities only
+
+  // Check L1 memory cache
+  const l1 = getFromCache(docKey);
+  if (l1) return l1;
+
+  // Check L2 Firestore cache
+  const cached = await getCachedData(db, docKey, ttlMs);
+  if (cached.data && !cached.isStale) {
+    setInCache(docKey, cached.data, MEMORY_TTL.holders);
+    return cached.data;
+  }
+
+  // Cache miss — fetch from EODHD
+  const holders = await fetchHolders(eohdSymbol, apiKey);
+  if (!holders) return null;
+
+  // Write to L2 Firestore + L1 memory
+  await setCachedData(db, docKey, holders, 'holders');
+  setInCache(docKey, holders, MEMORY_TTL.holders);
+
+  return holders;
 }
 
 // ============================================
