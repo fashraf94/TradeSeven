@@ -434,6 +434,213 @@ export function computeSectorDrivers(stockHoldingsMap) {
   return result;
 }
 
+// ══════════════════════════════════════════════
+// HERO INSIGHTS, SECTOR ANALYSIS, UNDER THE RADAR
+// ══════════════════════════════════════════════
+
+const SECTOR_NAMES = {
+  XLK: 'Technology', XLV: 'Healthcare', XLF: 'Financials', XLE: 'Energy',
+  XLY: 'Consumer Discretionary', XLP: 'Consumer Staples', XLI: 'Industrials',
+  XLB: 'Materials', XLU: 'Utilities', XLRE: 'Real Estate', XLC: 'Communications',
+};
+
+/**
+ * Generate 3-5 high-level intelligence observations from aggregate data.
+ * Each insight is a standalone sentence that reveals a meaningful pattern.
+ *
+ * Input: Full aggregate computation results
+ * Output: Array of 3-5 insight strings, prioritized by impact
+ */
+export function generateHeroInsights({
+  sectorFlows,
+  strongAccumulation,
+  strongDistribution,
+  storylines,
+  topInstitutions,
+  stocksProcessed,
+}) {
+  const insights = [];
+
+  // Insight 1: Sector rotation (from existing heroHeadline logic)
+  if (sectorFlows) {
+    let maxAccum = { sector: null, score: -Infinity };
+    let maxDistrib = { sector: null, score: -Infinity };
+
+    for (const [sector, flows] of Object.entries(sectorFlows)) {
+      const accumScore = flows.netBuyers - flows.netSellers;
+      const distribScore = flows.netSellers - flows.netBuyers;
+      if (accumScore > maxAccum.score) maxAccum = { sector, score: accumScore };
+      if (distribScore > maxDistrib.score) maxDistrib = { sector, score: distribScore };
+    }
+
+    const toName = (etf) => SECTOR_NAMES[etf] || etf;
+
+    if (maxAccum.sector && maxDistrib.sector && maxAccum.sector !== maxDistrib.sector
+        && maxAccum.score > 2 && maxDistrib.score > 2) {
+      insights.push(`Smart money is rotating out of ${toName(maxDistrib.sector)} and into ${toName(maxAccum.sector)}`);
+    } else if (maxAccum.score > 2) {
+      insights.push(`Institutions are loading up on ${toName(maxAccum.sector)} stocks`);
+    }
+  }
+
+  // Insight 2: Cluster buy count
+  const clusterBuyCount = (storylines || []).filter(s => s.type === 'cluster_buy').length;
+  if (clusterBuyCount >= 3) {
+    insights.push(`${clusterBuyCount} stocks triggered cluster buy alerts — unusual coordinated buying activity`);
+  } else if (clusterBuyCount > 0) {
+    const symbols = storylines.filter(s => s.type === 'cluster_buy').map(s => s.symbol).join(', ');
+    insights.push(`Cluster buy detected in ${symbols} — 3+ funds opened new positions simultaneously`);
+  }
+
+  // Insight 3: Accumulation/distribution balance
+  const accumCount = (strongAccumulation || []).length;
+  const distribCount = (strongDistribution || []).length;
+  const totalProcessed = stocksProcessed || 75;
+  if (accumCount > 0 || distribCount > 0) {
+    const pct = Math.round((accumCount / totalProcessed) * 100);
+    insights.push(`${accumCount} of ${totalProcessed} stocks show strong accumulation (${pct}%), only ${distribCount} under distribution`);
+  }
+
+  // Insight 4: Biggest single-fund expansion
+  if (topInstitutions && topInstitutions.length > 0) {
+    let maxNewPositions = { name: null, count: 0 };
+    for (const inst of topInstitutions) {
+      if (!inst.positions) continue;
+      const newCount = inst.positions.filter(p => p.signal === 'new_position').length;
+      if (newCount > maxNewPositions.count) {
+        maxNewPositions = { name: inst.name, count: newCount };
+      }
+    }
+    if (maxNewPositions.count >= 3) {
+      insights.push(`${maxNewPositions.name} opened new positions in ${maxNewPositions.count} stocks — largest single-fund expansion`);
+    }
+  }
+
+  // Insight 5: Sector with strongest buyer/seller ratio
+  if (sectorFlows) {
+    let bestRatio = { sector: null, ratio: 0, buyers: 0, sellers: 0 };
+    for (const [sector, flows] of Object.entries(sectorFlows)) {
+      const total = flows.netBuyers + flows.netSellers;
+      if (total < 3) continue; // skip low-activity sectors
+      const ratio = flows.netBuyers / Math.max(flows.netSellers, 1);
+      if (ratio > bestRatio.ratio) {
+        bestRatio = { sector, ratio, buyers: flows.netBuyers, sellers: flows.netSellers };
+      }
+    }
+    if (bestRatio.sector && bestRatio.ratio >= 3) {
+      const name = SECTOR_NAMES[bestRatio.sector] || bestRatio.sector;
+      insights.push(`${name} accumulation at ${bestRatio.buyers}:${bestRatio.sellers} buyer/seller ratio — strongest sector conviction`);
+    }
+  }
+
+  return insights.slice(0, 5);
+}
+
+/**
+ * Generate a 1-2 sentence contextual analysis of sector rotation data.
+ *
+ * Input: sectorFlows, sectorDrivers
+ * Output: String with 1-2 sentences
+ */
+export function generateSectorAnalysis(sectorFlows, sectorDrivers) {
+  if (!sectorFlows || Object.keys(sectorFlows).length === 0) {
+    return 'Institutional sector flow data is currently processing.';
+  }
+
+  const sorted = Object.entries(sectorFlows)
+    .map(([sector, flow]) => ({
+      sector,
+      name: SECTOR_NAMES[sector] || sector,
+      net: flow.netBuyers - flow.netSellers,
+      buyers: flow.netBuyers,
+      sellers: flow.netSellers,
+      drivers: sectorDrivers?.[sector] || { accumulators: [], distributors: [] },
+    }))
+    .sort((a, b) => b.net - a.net);
+
+  const top = sorted[0];
+  const bottom = sorted[sorted.length - 1];
+
+  const parts = [];
+
+  if (top && top.net > 0) {
+    const driverStr = top.drivers.accumulators?.length > 0
+      ? `, driven by ${top.drivers.accumulators.join(' and ')}`
+      : '';
+    parts.push(`${top.name} leads all sectors with ${top.buyers} stocks under accumulation${driverStr}.`);
+  }
+
+  if (bottom && bottom.net < 0) {
+    const driverStr = bottom.drivers.distributors?.length > 0
+      ? `, led by ${bottom.drivers.distributors.join(' and ')} outflows`
+      : '';
+    parts.push(`${bottom.name} faces the heaviest distribution pressure at ${bottom.sellers} net sellers${driverStr}.`);
+  }
+
+  if (parts.length === 0) {
+    return 'Institutional flows are broadly neutral across sectors this quarter.';
+  }
+
+  return parts.join(' ');
+}
+
+/**
+ * Find stocks with quiet institutional conviction from non-passive funds.
+ * These are small positions (< 2% portfolio weight) in stocks with fewer
+ * institutional holders — indicating early-stage institutional interest
+ * that hasn't become crowded yet.
+ *
+ * Input: stockHoldingsMap (symbol -> { institutions, summary, sector })
+ * Output: Array of { symbol, institution, archetype, weight, signal, changePct, activeHolderCount } objects, max 10
+ */
+export function computeUnderTheRadar(stockHoldingsMap) {
+  const candidates = [];
+
+  for (const [symbol, data] of Object.entries(stockHoldingsMap)) {
+    const { institutions } = data;
+    if (!institutions || institutions.length === 0) continue;
+
+    const activeHolders = institutions.filter(i => i.archetype !== 'index_passive');
+    if (activeHolders.length > 8) continue;
+
+    for (const inst of activeHolders) {
+      if (inst.signal !== 'accumulating' && inst.signal !== 'new_position') continue;
+      if (inst.totalAssetsPct > 2.0) continue;
+      if (inst.totalAssetsPct < 0.01) continue;
+
+      const interestingArchetypes = ['quantitative', 'activist', 'transient', 'long_only'];
+      if (!interestingArchetypes.includes(inst.archetype)) continue;
+
+      candidates.push({
+        symbol,
+        institution: inst.name,
+        archetype: inst.archetype,
+        weight: Math.round(inst.totalAssetsPct * 100) / 100,
+        signal: inst.signal,
+        changePct: inst.changePct,
+        activeHolderCount: activeHolders.length,
+      });
+    }
+  }
+
+  // Score: prefer fewer active holders (more "under the radar") and newer signals
+  candidates.sort((a, b) => {
+    const signalScore = (s) => s.signal === 'new_position' ? 2 : 1;
+    const radarScore = (c) => (10 - c.activeHolderCount) + signalScore(c);
+    return radarScore(b) - radarScore(a);
+  });
+
+  // Deduplicate: max 1 entry per symbol (pick the most interesting institution)
+  const seen = new Set();
+  const deduped = candidates.filter(c => {
+    if (seen.has(c.symbol)) return false;
+    seen.add(c.symbol);
+    return true;
+  });
+
+  return deduped.slice(0, 10);
+}
+
 // Helper for compact share formatting (used by storylines)
 function formatSharesCompact(n) {
   if (n >= 1e9) return `${(n / 1e9).toFixed(1)}B`;

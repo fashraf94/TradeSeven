@@ -18,7 +18,10 @@ import {
   getArchetype,
   generateStorylines,
   generateHeroHeadline,
+  generateHeroInsights,
   computeSectorDrivers,
+  generateSectorAnalysis,
+  computeUnderTheRadar,
 } from '../_utils/institutionalIntelligence.js';
 
 const LOG_PREFIX = '[InstitutionalIntelligence]';
@@ -246,6 +249,44 @@ export default async function handler(req, res) {
   const heroHeadline = generateHeroHeadline(sectorFlows);
   const sectorDrivers = computeSectorDrivers(stockHoldingsMap);
 
+  // NEW: Multiple hero insights (replaces single heroHeadline for frontend v2)
+  const heroInsights = generateHeroInsights({
+    sectorFlows,
+    strongAccumulation,
+    strongDistribution,
+    storylines,
+    topInstitutions: Object.values(allInstitutions)
+      .sort((a, b) => b.stocksHeld - a.stocksHeld)
+      .slice(0, 20),
+    stocksProcessed: results.processed,
+  });
+
+  // NEW: Sector analysis text
+  const sectorAnalysis = generateSectorAnalysis(sectorFlows, sectorDrivers);
+
+  // NEW: Under the radar stocks
+  const underTheRadar = computeUnderTheRadar(stockHoldingsMap);
+
+  // NEW: Pre-computed institution portfolios (top 20 only)
+  const institutionPortfolios = {};
+  for (const [name, inst] of Object.entries(allInstitutions)) {
+    const isTop20 = topInstitutions.some(t => t.name === name);
+    if (!isTop20) continue;
+
+    institutionPortfolios[name] = {
+      archetype: inst.archetype,
+      stocksHeld: inst.stocksHeld,
+      positions: inst.positions
+        .sort((a, b) => b.totalAssetsPct - a.totalAssetsPct)
+        .map(p => ({
+          symbol: p.symbol,
+          weight: Math.round(p.totalAssetsPct * 100) / 100,
+          changePct: Math.round(p.changePct * 100) / 100,
+          signal: p.signal,
+        })),
+    };
+  }
+
   await db.collection('institutionalAggregates').doc('latest').set({
     updatedAt: new Date(),
     topInstitutions,
@@ -261,6 +302,10 @@ export default async function handler(req, res) {
     storylines,
     heroHeadline,
     sectorDrivers,
+    heroInsights,
+    sectorAnalysis,
+    underTheRadar,
+    institutionPortfolios,
     stocksProcessed: results.processed,
   });
 
