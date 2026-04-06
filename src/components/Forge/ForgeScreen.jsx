@@ -486,16 +486,34 @@ export default function ForgeScreen({ isMobile: isMobileProp, onClose, user }) {
                       );
                     })}
                     {/* Advanced Firmware link */}
-                    <div style={{ textAlign: 'center', marginTop: 16, marginBottom: 24 }}>
+                    <div style={{ textAlign: 'center', marginTop: 24, marginBottom: 24, padding: '0 16px' }}>
                       <button
                         onClick={() => setShowAdvancedFirmware(true)}
                         style={{
-                          background: 'none', border: 'none', color: '#718096',
-                          fontSize: 12, cursor: 'pointer', textDecoration: 'underline',
-                          display: 'inline-flex', alignItems: 'center', gap: 4,
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 8,
+                          padding: '10px 20px',
+                          backgroundColor: 'transparent',
+                          border: '1px solid #2A2D35',
+                          borderRadius: 8,
+                          color: '#718096',
+                          fontSize: 13,
+                          fontWeight: 500,
+                          cursor: 'pointer',
+                          transition: 'all 0.2s',
+                        }}
+                        onMouseEnter={e => {
+                          e.currentTarget.style.borderColor = '#5EEAD4';
+                          e.currentTarget.style.color = '#5EEAD4';
+                        }}
+                        onMouseLeave={e => {
+                          e.currentTarget.style.borderColor = '#2A2D35';
+                          e.currentTarget.style.color = '#718096';
                         }}
                       >
-                        <Settings size={12} /> Advanced Firmware — Browse all rules
+                        <Settings size={14} />
+                        Advanced Firmware — Browse all 107 rules
                       </button>
                     </div>
                     <AgentLearnedSection

@@ -20,6 +20,89 @@ function getIcon(name, props) {
   return Icon ? <Icon {...props} /> : null;
 }
 
+const STRENGTH_DESCRIPTIONS = {
+  'trait-trend-rider': {
+    subtle: 'Follows trends loosely — flexible entry points, wide momentum zone',
+    moderate: 'Standard trend following — confirmed setups, balanced filters',
+    dominant: 'Strict trend adherence — only the strongest aligned setups',
+  },
+  'trait-bargain-hunter': {
+    subtle: 'Light oversold preference — casts a wide net for dip candidates',
+    moderate: 'Standard mean reversion — targets clear oversold signals',
+    dominant: 'Aggressive dip buying — deep oversold only, tight filters',
+  },
+  'trait-squeeze-whisperer': {
+    subtle: 'Watches for broad volatility compression patterns',
+    moderate: 'Targets confirmed squeezes with directional momentum',
+    dominant: 'Only the tightest squeezes with strong breakout signals',
+  },
+  'trait-volume-believer': {
+    subtle: 'Prefers above-average volume — soft confirmation requirement',
+    moderate: 'Requires solid volume spikes — institutional participation',
+    dominant: 'Demands extreme volume — only the clearest institutional signals',
+  },
+  'trait-breakout-chaser': {
+    subtle: 'Leans toward stocks near highs — moderate RS requirement',
+    moderate: 'Targets breakout leaders — strong RS and proximity filters',
+    dominant: 'Only the top breakout candidates — elite RS scores required',
+  },
+  'trait-smart-money-tracker': {
+    subtle: 'Follows VWAP loosely — broad institutional flow preference',
+    moderate: 'Strict VWAP adherence — confirmed institutional support required',
+    dominant: 'Aggressive institutional tracking — tight VWAP with sector rotation',
+  },
+  'trait-threshold-harvester': {
+    subtle: 'Balanced scoring approach — harvests only after Double Bagger',
+    moderate: 'Active harvesting — rotates after every BaggerBomb bonus',
+    dominant: 'Maximum harvest rate — rotates after any positive threshold hit',
+  },
+  'trait-dual-conviction': {
+    subtle: 'Moderate dual-check — both scores above average',
+    moderate: 'Standard conviction gate — solid fundamentals AND technicals',
+    dominant: 'Elite dual filter — only top-tier stocks on both dimensions',
+  },
+  'trait-score-adaptor': {
+    subtle: 'Gentle adaptation — small shifts when winning or losing',
+    moderate: 'Standard score awareness — clear mode shifts based on position',
+    dominant: 'Aggressive adaptation — sharp pivots between offense and defense',
+  },
+  'trait-sector-rotator': {
+    subtle: 'Gradual sector tilts — slow rotation, broad exposure allowed',
+    moderate: 'Active sector rotation — follows FantasyTimes signals promptly',
+    dominant: 'Aggressive rotation — concentrates in leading sectors, fast response',
+  },
+  'trait-penalty-dodger': {
+    subtle: 'Moderate protection — caps volatile stocks at Core tier',
+    moderate: 'Strong protection — restricts volatile stocks to Support tier',
+    dominant: 'Maximum protection — tight volatility limits, aggressive demotion',
+  },
+  'trait-iron-discipline': {
+    subtle: 'Relaxed stops — wider eject threshold, patient with swaps',
+    moderate: 'Standard discipline — balanced stops and swap hurdles',
+    dominant: 'Tight discipline — aggressive stops, high hurdle for every swap',
+  },
+  'trait-patient-holder': {
+    subtle: 'Some patience — short hold period, exits at Double Bagger',
+    moderate: 'Standard patience — 90 min holds, exits at BaggerBomb',
+    dominant: 'Maximum patience — long holds, trusts the thesis fully',
+  },
+  'trait-active-trader': {
+    subtle: 'Moderate activity — swaps stagnant stocks after 2 hours',
+    moderate: 'Active rotation — swaps stagnant stocks after 90 minutes',
+    dominant: 'Hyper-active — swaps quickly, low tolerance for stagnation',
+  },
+  'trait-diversifier': {
+    subtle: 'Light diversification — minimum sector spread',
+    moderate: 'Standard diversification — balanced barbell with sector coverage',
+    dominant: 'Maximum diversification — heavy anchors, broad sector spread',
+  },
+  'trait-let-winners-run': {
+    subtle: 'Holds winners to Double Bagger threshold before considering exit',
+    moderate: 'Holds winners through BaggerBomb — lets scoring thresholds decide',
+    dominant: 'Maximum conviction hold — rides winners through all thresholds',
+  },
+};
+
 export default function TraitCard({
   trait,
   isEquipped,
@@ -87,20 +170,28 @@ export default function TraitCard({
         />
       </div>
 
-      {/* Bottom row: advanced link + action */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        {/* Advanced Firmware link */}
-        <button
-          onClick={() => onAdvancedOpen(trait.id)}
-          style={{
-            background: 'none', border: 'none', color: '#718096',
-            fontSize: 11, cursor: 'pointer', padding: 0,
-            textDecoration: 'none',
-          }}
-        >
-          Advanced Firmware &rarr;
-        </button>
+      {/* Strength context preview */}
+      {STRENGTH_DESCRIPTIONS[trait.id] && (
+        <div style={{
+          fontSize: 11,
+          color: '#718096',
+          marginTop: -4,
+          marginBottom: 10,
+          fontStyle: 'italic',
+          lineHeight: 1.3,
+          minHeight: 28,
+        }}>
+          {STRENGTH_DESCRIPTIONS[trait.id][
+            (() => {
+              const v = isCustom ? 'custom' : (isEquipped ? currentStrength : strength);
+              return (v === 'custom' || !v) ? 'moderate' : v;
+            })()
+          ] || STRENGTH_DESCRIPTIONS[trait.id]['moderate']}
+        </div>
+      )}
 
+      {/* Bottom row: action */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
         {/* Equip / Unequip */}
         {isEquipped ? (
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -138,7 +229,7 @@ export default function TraitCard({
           </button>
         ) : (
           <span style={{ fontSize: 11, color: '#4A5568', fontStyle: 'italic' }}>
-            Slots full
+            Unequip a trait to make room (max 2 per group)
           </span>
         )}
       </div>
