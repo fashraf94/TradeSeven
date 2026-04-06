@@ -10,6 +10,7 @@ const TAB_CONFIGS = [
   { key: 'fundamental', label: 'Analysis', activeColor: HOLO_COLORS.primary },
   { key: 'holdings', label: 'Holdings', activeColor: '#a78bfa' },
   { key: 'compete', label: 'Ranks', activeColor: '#a78bfa' },
+  { key: 'smartMoney', label: 'Smart Money', activeColor: '#06b6d4' },
   { key: 'sector', label: 'Sector', activeColor: HOLO_COLORS.amber },
   { key: 'technical', label: 'Technical', activeColor: HOLO_COLORS.primary },
   { key: 'baggerbomb', label: '\uD83D\uDCA3 Bomb', activeColor: HOLO_COLORS.green },
@@ -163,7 +164,8 @@ const AnalysisDrawer = ({
             if (!isIndex && t.key === 'marketContext') return false;
             if (isSectorETF && ['fundamental', 'health', 'marketContext', 'baggerbomb'].includes(t.key)) return false;
             if (!isSectorETF && t.key === 'holdings') return false;
-            if (isCrypto && ['fundamental', 'compete', 'sector', 'holdings'].includes(t.key)) return false;
+            if (isCrypto && ['fundamental', 'compete', 'sector', 'holdings', 'smartMoney'].includes(t.key)) return false;
+            if (t.key === 'smartMoney' && (isIndex || isSectorETF)) return false;
             if (!isCrypto && !isIndex && !isSectorETF && t.key === 'health') return false;
             if (t.key === 'baggerbomb' && !hasBombData && !isGameContext) return false;
             return true;
