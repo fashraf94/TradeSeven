@@ -1,6 +1,8 @@
 // Prompt assembly for agent decide endpoint
 // Shared system prompts (cacheable) + agent-specific user prompts
 
+import { getFirebaseAdmin } from './firebaseAdmin.js';
+
 /**
  * Cacheable system prompt for the Sonnet strategy call.
  * Identical across all agents in the same market window.
@@ -68,8 +70,9 @@ export function buildStrategyUserPrompt(agent) {
   // Forge rules (structured constraint/strategy framework)
   const activeRules = agent.activeRules || [];
   if (activeRules.length > 0) {
-    const constraints = activeRules.filter(r => r.category === 'risk' || r.category === 'allocation');
-    const strategies = activeRules.filter(r => r.category === 'technical' || r.category === 'fundamental' || !r.category);
+    const constraintCats = new Set(['risk', 'allocation']);
+    const constraints = activeRules.filter(r => constraintCats.has(r.category));
+    const strategies = activeRules.filter(r => !constraintCats.has(r.category));
     const rLines = [];
     if (constraints.length > 0) {
       rLines.push(`CONSTRAINTS:\n${constraints.map((r, i) => `C${i + 1}. ${resolveRuleText(r)}`).join('\n')}`);
@@ -77,6 +80,19 @@ export function buildStrategyUserPrompt(agent) {
     if (strategies.length > 0) {
       rLines.push(`STRATEGY PREFERENCES:\n${strategies.map((r, i) => `S${i + 1}. ${resolveRuleText(r)}`).join('\n')}`);
     }
+
+    // Institutional data lag warning (only when institutional rules are active)
+    const hasInstitutionalRules = activeRules.some(r => r.category === 'institutional');
+    if (hasInstitutionalRules) {
+      rLines.push(
+        'C_INST: INSTITUTIONAL DATA LAG — Institutional accumulation/distribution data from 13F\n' +
+        'filings is lagged up to 135 days. NEVER hold a position based solely on strong\n' +
+        'institutional accumulation if VWAP or 5-min RSI shows a breakdown. Intraday technicals\n' +
+        'ALWAYS override stale institutional signals. Use institutional data for draft-time\n' +
+        'universe filtering, not intraday swap decisions.'
+      );
+    }
+
     parts.push(`FORGE RULES (follow alongside directives):\n${rLines.join('\n')}`);
   }
 
@@ -90,7 +106,7 @@ export function buildStrategyUserPrompt(agent) {
 /**
  * System prompt for the Haiku portfolio construction call.
  */
-export function buildPortfolioSystemPrompt(strategyBrief, shortlistCSV, cryptoList) {
+export function buildPortfolioSystemPrompt(strategyBrief, shortlistCSV, cryptoList, institutionalBlock = '') {
   return `You are a portfolio builder for BaggerBomb. Build the mathematically optimal portfolio from the pre-approved shortlist below.
 
 TIER RULES:
@@ -103,7 +119,7 @@ TIER RULES:
 
 STRATEGIC GUIDANCE FROM ANALYST:
 ${strategyBrief}
-
+${institutionalBlock ? `\n${institutionalBlock}\n` : ''}
 AVAILABLE STOCKS (pre-approved, pick ONLY from these):
 ${shortlistCSV}
 
@@ -265,6 +281,130 @@ function resolveRuleText(r) {
     return sanitizeRuleText(interpolateRuleText(r.textTemplate, r.params, r.paramValues));
   }
   return sanitizeRuleText(r.text);
+}
+
+// ==================== INSTITUTIONAL INTELLIGENCE ====================
+
+/**
+ * Fetch institutional context for stocks if the agent has institutional rules active.
+ * Reads from pre-computed Firestore collections (written by weekly cron).
+ * Returns null if no institutional rules are active.
+ */
+async function fetchInstitutionalContext(rules, symbols) {
+  const hasInstitutionalRules = rules.some(r => r.category === 'institutional');
+  if (!hasInstitutionalRules) return null;
+
+  try {
+    const db = getFirebaseAdmin();
+
+    // Fetch per-stock institutional summaries (batch read)
+    const perStock = {};
+    const batchSize = 10;
+    for (let i = 0; i < symbols.length; i += batchSize) {
+      const batch = symbols.slice(i, i + batchSize);
+      const promises = batch.map(sym =>
+        db.collection('institutionalHoldings').doc(sym).get()
+      );
+      const snapshots = await Promise.all(promises);
+      for (const snap of snapshots) {
+        if (snap.exists) {
+          const data = snap.data();
+          perStock[data.symbol] = data.summary;
+        }
+      }
+    }
+
+    // Fetch aggregate for sector flows + hero headline
+    let sectorFlows = null;
+    let heroHeadline = null;
+    try {
+      const aggSnap = await db.collection('institutionalAggregates').doc('latest').get();
+      if (aggSnap.exists) {
+        const agg = aggSnap.data();
+        sectorFlows = agg.sectorFlows || null;
+        heroHeadline = agg.heroHeadline || null;
+      }
+    } catch (err) {
+      console.warn('[AgentPrompt] Failed to fetch institutional aggregates:', err.message);
+    }
+
+    return { perStock, sectorFlows, heroHeadline };
+  } catch (err) {
+    console.warn('[AgentPrompt] Failed to fetch institutional context:', err.message);
+    return null;
+  }
+}
+
+/**
+ * Format institutional data into a prompt context block.
+ * Compact format to minimize tokens while providing actionable signals.
+ */
+function formatInstitutionalBlock(instContext) {
+  if (!instContext) return '';
+
+  const { perStock, sectorFlows, heroHeadline } = instContext;
+
+  const lines = [];
+  lines.push('=== INSTITUTIONAL INTELLIGENCE (13F Filings) ===');
+  lines.push('NOTE: This data is from quarterly SEC filings. It is lagged by up to 135 days.');
+  lines.push('Do NOT hold a position based solely on institutional accumulation if real-time');
+  lines.push('technicals (VWAP, 5-min RSI) show a breakdown. Institutional data provides the');
+  lines.push('historical "floor." Real-time technicals dictate the "action."');
+  lines.push('');
+
+  if (heroHeadline) {
+    lines.push(`MACRO ROTATION: ${heroHeadline}`);
+    lines.push('');
+  }
+
+  // Per-stock institutional signals
+  if (Object.keys(perStock).length > 0) {
+    lines.push('STOCK CONVICTION SIGNALS:');
+    lines.push('Symbol | Conviction | Score | Buyers | Sellers | New Positions | Cluster Buy');
+    lines.push('-------|------------|-------|--------|---------|---------------|------------');
+
+    for (const [symbol, summary] of Object.entries(perStock)) {
+      if (!summary) continue;
+      lines.push(
+        `${symbol} | ${summary.conviction || 'neutral'} | ${summary.convictionScore || 0} | ` +
+        `${summary.buyersCount || 0} | ${summary.sellersCount || 0} | ` +
+        `${summary.newPositionsCount || 0} | ${summary.clusterBuy ? 'YES' : 'no'}`
+      );
+    }
+    lines.push('');
+  }
+
+  // Sector flows (compact)
+  if (sectorFlows) {
+    const SECTOR_NAMES = {
+      XLK: 'Tech', XLV: 'Health', XLF: 'Finance', XLE: 'Energy',
+      XLY: 'Consumer', XLP: 'Staples', XLI: 'Industrial', XLB: 'Materials',
+      XLU: 'Utilities', XLRE: 'RealEst', XLC: 'Comms',
+    };
+
+    lines.push('SECTOR INSTITUTIONAL FLOWS:');
+    for (const [etf, flow] of Object.entries(sectorFlows)) {
+      const name = SECTOR_NAMES[etf] || etf;
+      lines.push(`${name}: ${flow.sentiment} (B:${flow.netBuyers} S:${flow.netSellers})`);
+    }
+    lines.push('');
+  }
+
+  lines.push('=== END INSTITUTIONAL INTELLIGENCE ===');
+
+  return lines.join('\n');
+}
+
+/**
+ * Build institutional intelligence block for portfolio construction.
+ * Convenience wrapper for the decide.js caller.
+ * @param {Array} activeRules - Agent's active Forge rules
+ * @param {string[]} symbols - Stock symbols being considered
+ * @returns {string} Formatted block or empty string
+ */
+export async function buildInstitutionalBlock(activeRules, symbols) {
+  const instContext = await fetchInstitutionalContext(activeRules, symbols);
+  return formatInstitutionalBlock(instContext);
 }
 
 /**

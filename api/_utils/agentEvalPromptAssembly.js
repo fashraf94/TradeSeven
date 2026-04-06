@@ -4,6 +4,7 @@
 
 import { getETDate, formatDateString } from './marketSchedule.js';
 import { flattenPortfolioServer, flattenBenchServer } from './agentScoring.js';
+import { getFirebaseAdmin } from './firebaseAdmin.js';
 import {
   computeGameContext,
   rankAndSelectStories,
@@ -256,12 +257,9 @@ ${ctx.consolidatedInsight}`);
   // Forge Rules (structured constraint/strategy framework)
   const activeRules = ctx.activeRules || [];
   if (activeRules.length > 0) {
-    const constraints = activeRules.filter(r =>
-      r.category === 'risk' || r.category === 'allocation'
-    );
-    const strategies = activeRules.filter(r =>
-      r.category === 'technical' || r.category === 'fundamental' || !r.category
-    );
+    const constraintCats = new Set(['risk', 'allocation']);
+    const constraints = activeRules.filter(r => constraintCats.has(r.category));
+    const strategies = activeRules.filter(r => !constraintCats.has(r.category));
 
     const ruleLines = [];
     if (constraints.length > 0) {
@@ -276,6 +274,19 @@ ${ctx.consolidatedInsight}`);
       );
       ruleLines.push(`== STRATEGY PREFERENCES (should follow) ==\n${sLines.join('\n')}`);
     }
+
+    // Institutional data lag warning (only when institutional rules are active)
+    const hasInstitutionalRules = activeRules.some(r => r.category === 'institutional');
+    if (hasInstitutionalRules) {
+      ruleLines.push(
+        'C_INST: INSTITUTIONAL DATA LAG — Institutional accumulation/distribution data from 13F\n' +
+        'filings is lagged up to 135 days. NEVER hold a position based solely on strong\n' +
+        'institutional accumulation if VWAP or 5-min RSI shows a breakdown. Intraday technicals\n' +
+        'ALWAYS override stale institutional signals. Use institutional data for draft-time\n' +
+        'universe filtering, not intraday swap decisions.'
+      );
+    }
+
     ruleLines.push(
       'When making trades:\n' +
       '- Check ALL constraints before executing. If a trade violates a constraint, do not execute. Cite the constraint.\n' +
@@ -361,6 +372,118 @@ function resolveRuleText(r) {
   return sanitizeRuleText(r.text);
 }
 
+// ==================== INSTITUTIONAL INTELLIGENCE ====================
+
+/**
+ * Fetch institutional context for stocks if the agent has institutional rules active.
+ * Reads from pre-computed Firestore collections (written by weekly cron).
+ * Returns null if no institutional rules are active.
+ */
+async function fetchInstitutionalContext(rules, symbols) {
+  const hasInstitutionalRules = rules.some(r => r.category === 'institutional');
+  if (!hasInstitutionalRules) return null;
+
+  try {
+    const db = getFirebaseAdmin();
+
+    // Fetch per-stock institutional summaries (batch read)
+    const perStock = {};
+    const batchSize = 10;
+    for (let i = 0; i < symbols.length; i += batchSize) {
+      const batch = symbols.slice(i, i + batchSize);
+      const promises = batch.map(sym =>
+        db.collection('institutionalHoldings').doc(sym).get()
+      );
+      const snapshots = await Promise.all(promises);
+      for (const snap of snapshots) {
+        if (snap.exists) {
+          const data = snap.data();
+          perStock[data.symbol] = data.summary;
+        }
+      }
+    }
+
+    // Fetch aggregate for sector flows + hero headline
+    let sectorFlows = null;
+    let heroHeadline = null;
+    try {
+      const aggSnap = await db.collection('institutionalAggregates').doc('latest').get();
+      if (aggSnap.exists) {
+        const agg = aggSnap.data();
+        sectorFlows = agg.sectorFlows || null;
+        heroHeadline = agg.heroHeadline || null;
+      }
+    } catch (err) {
+      console.warn('[AgentEval] Failed to fetch institutional aggregates:', err.message);
+    }
+
+    return { perStock, sectorFlows, heroHeadline };
+  } catch (err) {
+    console.warn('[AgentEval] Failed to fetch institutional context:', err.message);
+    return null;
+  }
+}
+
+/**
+ * Format institutional data into a prompt context block.
+ * Compact format to minimize tokens while providing actionable signals.
+ */
+function formatInstitutionalBlock(instContext) {
+  if (!instContext) return '';
+
+  const { perStock, sectorFlows, heroHeadline } = instContext;
+
+  const lines = [];
+  lines.push('=== INSTITUTIONAL INTELLIGENCE (13F Filings) ===');
+  lines.push('NOTE: This data is from quarterly SEC filings. It is lagged by up to 135 days.');
+  lines.push('Do NOT hold a position based solely on institutional accumulation if real-time');
+  lines.push('technicals (VWAP, 5-min RSI) show a breakdown. Institutional data provides the');
+  lines.push('historical "floor." Real-time technicals dictate the "action."');
+  lines.push('');
+
+  if (heroHeadline) {
+    lines.push(`MACRO ROTATION: ${heroHeadline}`);
+    lines.push('');
+  }
+
+  // Per-stock institutional signals
+  if (Object.keys(perStock).length > 0) {
+    lines.push('STOCK CONVICTION SIGNALS:');
+    lines.push('Symbol | Conviction | Score | Buyers | Sellers | New Positions | Cluster Buy');
+    lines.push('-------|------------|-------|--------|---------|---------------|------------');
+
+    for (const [symbol, summary] of Object.entries(perStock)) {
+      if (!summary) continue;
+      lines.push(
+        `${symbol} | ${summary.conviction || 'neutral'} | ${summary.convictionScore || 0} | ` +
+        `${summary.buyersCount || 0} | ${summary.sellersCount || 0} | ` +
+        `${summary.newPositionsCount || 0} | ${summary.clusterBuy ? 'YES' : 'no'}`
+      );
+    }
+    lines.push('');
+  }
+
+  // Sector flows (compact)
+  if (sectorFlows) {
+    const SECTOR_NAMES = {
+      XLK: 'Tech', XLV: 'Health', XLF: 'Finance', XLE: 'Energy',
+      XLY: 'Consumer', XLP: 'Staples', XLI: 'Industrial', XLB: 'Materials',
+      XLU: 'Utilities', XLRE: 'RealEst', XLC: 'Comms',
+    };
+
+    lines.push('SECTOR INSTITUTIONAL FLOWS:');
+    for (const [etf, flow] of Object.entries(sectorFlows)) {
+      const name = SECTOR_NAMES[etf] || etf;
+      lines.push(`${name}: ${flow.sentiment} (B:${flow.netBuyers} S:${flow.netSellers})`);
+    }
+    lines.push('');
+  }
+
+  lines.push('=== END INSTITUTIONAL INTELLIGENCE ===');
+
+  return lines.join('\n');
+}
+
 // ==================== LIVE BATTLE CONTEXT (Fresh) ====================
 
 /**
@@ -379,7 +502,7 @@ function resolveRuleText(r) {
  * @param {Object} [momentumData.rankings] - { symbol: { bBandwidthPercentile, nr7Flag, dailyRange } }
  * @param {Object} [presetConfig] - Optional strategy preset config from agentPresetConfig.js
  */
-export function buildLiveContextBlock(battle, prices, macroPrices, assetScores, triggers, news, recentEvals, momentumData, presetConfig) {
+export async function buildLiveContextBlock(battle, prices, macroPrices, assetScores, triggers, news, recentEvals, momentumData, presetConfig) {
   const parts = [];
   const scoreState = battle.scoreState || {};
 
@@ -442,9 +565,21 @@ ${triggerLines}`);
     if (riskLines) parts.push(riskLines);
   }
 
+  // 3e4. Institutional Intelligence (only if agent has institutional Forge rules)
+  const activeRules = battle.agentContext?.activeRules || [];
+  try {
+    const portfolioSymbols = (flattenPortfolioServer(battle.portfolio) || []).map(a => a.symbol).filter(Boolean);
+    const benchSymbols = (flattenBenchServer(battle.portfolio?.bench) || []).map(a => a.symbol).filter(Boolean);
+    const allSymbols = [...portfolioSymbols, ...benchSymbols];
+    const instContext = await fetchInstitutionalContext(activeRules, allSymbols);
+    const instBlock = formatInstitutionalBlock(instContext);
+    if (instBlock) parts.push(instBlock);
+  } catch (err) {
+    console.warn('[PromptAssembly] Institutional intelligence block failed:', err.message);
+  }
+
   // 3f. News Context — enhanced with reporter intelligence when Forge rules are equipped
   if (news && news.length > 0) {
-    const activeRules = battle.agentContext?.activeRules || [];
     if (activeRules.length > 0) {
       try {
         const portfolioSymbols = (flattenPortfolioServer(battle.portfolio) || []).map(a => a.symbol).filter(Boolean);
