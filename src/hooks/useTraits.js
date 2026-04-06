@@ -138,6 +138,8 @@ export function useTraits(agentId, forge) {
     }
 
     // Add each rule to the bundle
+    // Note: if this fails partway through, some rules may remain in the bundle
+    // without a trait entry. These act as standalone rules and can be cleaned up manually.
     try {
       for (const ruleId of def.ruleIds) {
         const template = TEMPLATE_MAP.get(ruleId);
@@ -198,12 +200,22 @@ export function useTraits(agentId, forge) {
     const def = TRAIT_BY_ID[traitId];
     if (!def) return;
 
-    // Find the rules added by this trait and remove them from the bundle
+    // Build set of ruleIds still needed by OTHER equipped traits
+    const otherTraitRuleIds = new Set();
+    for (const entry of equippedTraitEntries) {
+      if (entry.traitId === traitId) continue;
+      const entryDef = TRAIT_BY_ID[entry.traitId];
+      if (entryDef) {
+        for (const rid of entryDef.ruleIds) otherTraitRuleIds.add(rid);
+      }
+    }
+
+    // Remove only rules NOT needed by another equipped trait
     if (forge?.rules && forge?.bundles) {
       const draftBundle = forge.bundles.find(b => b.status === 'draft');
       if (draftBundle) {
         for (const ruleId of def.ruleIds) {
-          // Find the Firestore rule doc that was created from this template
+          if (otherTraitRuleIds.has(ruleId)) continue; // shared rule — keep it
           const rule = forge.rules.find(r => r.sourceRef === ruleId && !r.isDeleted);
           if (rule) {
             try {

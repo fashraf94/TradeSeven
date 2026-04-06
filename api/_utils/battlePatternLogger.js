@@ -14,6 +14,7 @@ import { FieldValue } from 'firebase-admin/firestore';
  * @param {Object} battle - The full agentBattles document at completion
  */
 export async function logBattlePattern(agentId, battleId, battle) {
+  try {
   const db = getFirebaseAdmin();
 
   // Fetch market context (optional — fail gracefully)
@@ -27,7 +28,7 @@ export async function logBattlePattern(agentId, battleId, battle) {
     console.error('[BattlePatternLogger] Failed to fetch market context:', err.message);
   }
 
-  const scoreState = battle.scoreState || {};
+  const scoreState = battle?.scoreState || {};
   const currentScore = scoreState.currentScore || 0;
   const opponentScore = scoreState.opponentScore || 0;
   const result = currentScore > opponentScore ? 'win' : (currentScore < opponentScore ? 'loss' : 'draw');
@@ -59,12 +60,13 @@ export async function logBattlePattern(agentId, battleId, battle) {
     marketRegime,
   };
 
-  try {
-    await db.collection('agents').doc(agentId)
-      .collection('battlePatterns').doc(battleId)
-      .set(pattern);
+  await db.collection('agents').doc(agentId)
+    .collection('battlePatterns').doc(battleId)
+    .set(pattern);
+
   } catch (err) {
-    console.error('[BattlePatternLogger] Failed to write pattern:', err.message);
+    // Silent failure — data logging should never break battle flow
+    console.error('[BattlePatternLogger] Failed to log pattern:', err.message);
   }
 }
 

@@ -1,7 +1,7 @@
 // src/components/Forge/TraitCard.jsx
 // Compact card for a single trait inside a DNA group.
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   TrendingUp, Search, Zap, BarChart3, ArrowUpRight, Compass,
   Target, CheckCheck, Gauge, RefreshCw, ShieldAlert,
@@ -33,6 +33,11 @@ export default function TraitCard({
   groupColor,
 }) {
   const [strength, setStrength] = useState(currentStrength || 'moderate');
+
+  // Sync local state when the prop changes (e.g., trait gets equipped externally)
+  useEffect(() => {
+    if (currentStrength) setStrength(currentStrength);
+  }, [currentStrength]);
 
   const handleStrengthChange = (newStrength) => {
     setStrength(newStrength);
