@@ -222,3 +222,222 @@ export function computeFreshness(reportDate, archetype) {
   if (daysSinceReport <= 135) return 'aging';
   return 'expired';
 }
+
+// ══════════════════════════════════════════════
+// STORYLINE & HEADLINE GENERATORS
+// ══════════════════════════════════════════════
+
+/**
+ * Generate narrative storyline cards from per-stock institutional data.
+ * No AI needed — pure template matching on signals and thresholds.
+ *
+ * Input: Map of symbol -> { institutions (enriched), summary }
+ * Output: Array of storyline objects, sorted by impact, capped at 8
+ */
+export function generateStorylines(stockHoldingsMap) {
+  const storylines = [];
+
+  for (const [symbol, data] of Object.entries(stockHoldingsMap)) {
+    const { institutions, summary } = data;
+
+    const activeHolders = institutions.filter(i => i.archetype !== 'index_passive');
+
+    // TEMPLATE 1: Cluster Buy (highest priority)
+    if (summary.clusterBuy) {
+      const newEntrants = activeHolders
+        .filter(i => i.signal === 'new_position')
+        .map(i => i.name)
+        .slice(0, 3);
+
+      storylines.push({
+        type: 'cluster_buy',
+        priority: 100,
+        symbol,
+        headline: `Smart Money Stampede: ${newEntrants.length} major funds simultaneously entered ${symbol}`,
+        detail: newEntrants.join(', '),
+        metric: `${newEntrants.length} new positions`,
+        metricType: 'count',
+        archetype: 'mixed',
+      });
+    }
+
+    // TEMPLATE 2: Massive new position (high conviction entry)
+    for (const inst of activeHolders) {
+      if (inst.signal === 'new_position' && inst.totalAssetsPct > 2.0) {
+        storylines.push({
+          type: 'new_position',
+          priority: 90,
+          symbol,
+          headline: `${inst.name} opens massive new stake in ${symbol}`,
+          detail: `Now ${inst.totalAssetsPct.toFixed(1)}% of their portfolio`,
+          metric: `${inst.totalAssetsPct.toFixed(1)}% of portfolio`,
+          metricType: 'weight',
+          archetype: inst.archetype,
+          institution: inst.name,
+        });
+      }
+    }
+
+    // TEMPLATE 3: Complete exit (high drama)
+    for (const inst of activeHolders) {
+      if (inst.signal === 'exiting') {
+        storylines.push({
+          type: 'exit',
+          priority: 85,
+          symbol,
+          headline: `${inst.name} liquidates entire ${symbol} position`,
+          detail: `Sold ${formatSharesCompact(Math.abs(inst.change))} shares`,
+          metric: 'Full Exit',
+          metricType: 'exit',
+          archetype: inst.archetype,
+          institution: inst.name,
+        });
+      }
+    }
+
+    // TEMPLATE 4: High-conviction accumulation (>5% portfolio weight AND accumulating)
+    for (const inst of activeHolders) {
+      if (inst.signal === 'accumulating' && inst.totalAssetsPct > 5.0) {
+        storylines.push({
+          type: 'high_conviction',
+          priority: 75,
+          symbol,
+          headline: `${inst.name} doubles down on ${symbol} — now their #1 bet`,
+          detail: `${inst.totalAssetsPct.toFixed(1)}% of portfolio, up ${inst.changePct.toFixed(1)}%`,
+          metric: `${inst.totalAssetsPct.toFixed(1)}% weight`,
+          metricType: 'weight',
+          archetype: inst.archetype,
+          institution: inst.name,
+        });
+      }
+    }
+
+    // TEMPLATE 5: Significant trimming by a major holder
+    for (const inst of activeHolders) {
+      if (inst.signal === 'trimming' && inst.totalAssetsPct > 3.0 && Math.abs(inst.changePct) > 10) {
+        storylines.push({
+          type: 'trimming',
+          priority: 60,
+          symbol,
+          headline: `${inst.name} cuts ${symbol} position by ${Math.abs(inst.changePct).toFixed(0)}%`,
+          detail: `Still holds ${inst.totalAssetsPct.toFixed(1)}% of portfolio`,
+          metric: `${inst.changePct.toFixed(0)}%`,
+          metricType: 'change',
+          archetype: inst.archetype,
+          institution: inst.name,
+        });
+      }
+    }
+  }
+
+  // Sort by priority (highest first), then deduplicate by symbol (max 2 storylines per stock)
+  storylines.sort((a, b) => b.priority - a.priority);
+
+  const symbolCount = {};
+  const deduped = storylines.filter(s => {
+    symbolCount[s.symbol] = (symbolCount[s.symbol] || 0) + 1;
+    return symbolCount[s.symbol] <= 2;
+  });
+
+  return deduped.slice(0, 8);
+}
+
+/**
+ * Generate the hero headline from sector flow data.
+ * Finds the sector with highest net accumulation and highest net distribution.
+ */
+export function generateHeroHeadline(sectorFlows) {
+  if (!sectorFlows || Object.keys(sectorFlows).length === 0) {
+    return 'Institutional intelligence processing — check back soon';
+  }
+
+  const SECTOR_NAMES = {
+    XLK: 'Technology', XLV: 'Healthcare', XLF: 'Financials', XLE: 'Energy',
+    XLY: 'Consumer Discretionary', XLP: 'Consumer Staples', XLI: 'Industrials',
+    XLB: 'Materials', XLU: 'Utilities', XLRE: 'Real Estate', XLC: 'Communications',
+  };
+
+  let maxAccum = { sector: null, score: -Infinity };
+  let maxDistrib = { sector: null, score: -Infinity };
+
+  for (const [sector, flows] of Object.entries(sectorFlows)) {
+    const accumScore = flows.netBuyers - flows.netSellers;
+    const distribScore = flows.netSellers - flows.netBuyers;
+
+    if (accumScore > maxAccum.score) {
+      maxAccum = { sector, score: accumScore };
+    }
+    if (distribScore > maxDistrib.score) {
+      maxDistrib = { sector, score: distribScore };
+    }
+  }
+
+  const toName = (etf) => SECTOR_NAMES[etf] || etf;
+
+  if (maxAccum.sector && maxDistrib.sector && maxAccum.sector !== maxDistrib.sector
+      && maxAccum.score > 2 && maxDistrib.score > 2) {
+    return `Smart money is rotating out of ${toName(maxDistrib.sector)} and into ${toName(maxAccum.sector)}`;
+  }
+
+  if (maxAccum.score > 2) {
+    return `Institutions are loading up on ${toName(maxAccum.sector)} stocks`;
+  }
+
+  if (maxDistrib.score > 2) {
+    return `Smart money is pulling back from ${toName(maxDistrib.sector)}`;
+  }
+
+  return 'Institutions are holding steady — no major sector rotations detected';
+}
+
+/**
+ * Compute sector driver tickers — the top 2 stocks driving accumulation/distribution per sector.
+ * Input: Map of symbol -> { summary, sector }
+ * Output: { XLK: { accumulators: ["NVDA","CRM"], distributors: ["INTC","CSCO"] }, ... }
+ */
+export function computeSectorDrivers(stockHoldingsMap) {
+  const sectorBuckets = {};
+
+  for (const [symbol, data] of Object.entries(stockHoldingsMap)) {
+    const sector = data.sector;
+    if (!sector) continue;
+
+    if (!sectorBuckets[sector]) {
+      sectorBuckets[sector] = { accumulators: [], distributors: [] };
+    }
+
+    const conviction = data.summary?.conviction;
+    const score = data.summary?.convictionScore || 0;
+
+    if (conviction === 'strong_accumulation' || conviction === 'mild_accumulation') {
+      sectorBuckets[sector].accumulators.push({ symbol, score });
+    }
+    if (conviction === 'strong_distribution' || conviction === 'mild_distribution') {
+      sectorBuckets[sector].distributors.push({ symbol, score: Math.abs(score) });
+    }
+  }
+
+  const result = {};
+  for (const [sector, bucket] of Object.entries(sectorBuckets)) {
+    result[sector] = {
+      accumulators: bucket.accumulators
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 2)
+        .map(s => s.symbol),
+      distributors: bucket.distributors
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 2)
+        .map(s => s.symbol),
+    };
+  }
+
+  return result;
+}
+
+// Helper for compact share formatting (used by storylines)
+function formatSharesCompact(n) {
+  if (n >= 1e9) return `${(n / 1e9).toFixed(1)}B`;
+  if (n >= 1e6) return `${(n / 1e6).toFixed(1)}M`;
+  if (n >= 1e3) return `${(n / 1e3).toFixed(0)}K`;
+  return n.toLocaleString();
+}
