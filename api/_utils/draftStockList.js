@@ -24,3 +24,6 @@ export const DRAFT_STOCK_SYMBOLS = [
   'AMT', 'PLD', 'CCI', 'EQIX',
   'LMT', 'RTX', 'XOM', 'COP', 'PWR',
 ];
+
+export const DRAFT_STOCKS = DRAFT_STOCK_SYMBOLS;
+export const DRAFT_STOCK_SET = new Set(DRAFT_STOCK_SYMBOLS);
