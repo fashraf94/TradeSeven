@@ -601,12 +601,12 @@ export function computeUnderTheRadar(stockHoldingsMap) {
     if (!institutions || institutions.length === 0) continue;
 
     const activeHolders = institutions.filter(i => i.archetype !== 'index_passive');
-    if (activeHolders.length > 8) continue;
+    if (activeHolders.length > 12) continue;
 
     for (const inst of activeHolders) {
-      if (inst.signal !== 'accumulating' && inst.signal !== 'new_position') continue;
-      if (inst.totalAssetsPct > 2.0) continue;
-      if (inst.totalAssetsPct < 0.01) continue;
+      if (!['accumulating', 'new_position', 'unchanged'].includes(inst.signal)) continue;
+      if (inst.totalAssetsPct > 3.0) continue;
+      if (inst.totalAssetsPct < 0.005) continue;
 
       const interestingArchetypes = ['quantitative', 'activist', 'transient', 'long_only'];
       if (!interestingArchetypes.includes(inst.archetype)) continue;
@@ -626,7 +626,7 @@ export function computeUnderTheRadar(stockHoldingsMap) {
   // Score: prefer fewer active holders (more "under the radar") and newer signals
   candidates.sort((a, b) => {
     const signalScore = (s) => s.signal === 'new_position' ? 2 : 1;
-    const radarScore = (c) => (10 - c.activeHolderCount) + signalScore(c);
+    const radarScore = (c) => (14 - c.activeHolderCount) + signalScore(c);
     return radarScore(b) - radarScore(a);
   });
 

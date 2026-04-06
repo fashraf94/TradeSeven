@@ -6,6 +6,7 @@ import { STOCKS } from '../../data/assets';
 import {
   HeroHeadlineCard,
   AlphaFeed,
+  UnderTheRadar,
   SectorRotation,
   CapitolHillTeaser,
   WhaleLeaderboard,
@@ -143,6 +144,7 @@ const InstitutionalView = ({ onOpenResearch, stocksData, isMobile }) => {
             <div>
               <HeroHeadlineCard
                 headline={data.heroHeadline}
+                heroInsights={data.heroInsights}
                 updatedAt={data.updatedAt}
               />
 
@@ -152,10 +154,21 @@ const InstitutionalView = ({ onOpenResearch, stocksData, isMobile }) => {
                 onStockTap={handleStockTap}
               />
 
+              {data.underTheRadar?.length > 0 && (
+                <>
+                  <SectionHeader title="Under the Radar" />
+                  <UnderTheRadar
+                    stocks={data.underTheRadar}
+                    onStockTap={handleStockTap}
+                  />
+                </>
+              )}
+
               <SectionHeader title="Where is Capital Moving?" />
               <SectorRotation
                 sectorFlows={data.sectorFlows}
                 sectorDrivers={data.sectorDrivers}
+                sectorAnalysis={data.sectorAnalysis}
                 isMobile={isMobile}
               />
 
@@ -166,6 +179,7 @@ const InstitutionalView = ({ onOpenResearch, stocksData, isMobile }) => {
           {activeSubTab === 'whales' && (
             <WhaleLeaderboard
               institutions={data.topInstitutions}
+              institutionPortfolios={data.institutionPortfolios}
               onStockTap={handleStockTap}
               isMobile={isMobile}
             />
