@@ -23,6 +23,7 @@ import MarketContextTab from '../Research/MarketContextTab';
 import { SECTORS } from '../../constants/sectors';
 import HoldingsTab from '../Research/HoldingsTab';
 import SectorETFRanksTab from '../Research/SectorETFRanksTab';
+import SmartMoneyTab from '../Research/SmartMoneyTab';
 
 /**
  * AssetResearchModal - Detailed asset research view (reusable across screens)
@@ -816,6 +817,10 @@ const AssetResearchModal = ({
                   symbol={currentAsset?.symbol}
                   onNavigateToStock={handleNavigateToStock}
                 />
+              )}
+
+              {activeTab === 'smartMoney' && (
+                <SmartMoneyTab symbol={currentAsset?.symbol} isMobile={isMobile} />
               )}
 
               {activeTab === 'sector' && (
