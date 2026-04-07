@@ -18,6 +18,7 @@ import { getFirestore } from 'firebase-admin/firestore';
 import { getFromCache, setInCache } from './serverCache.js';
 import { calculateAllIndicators } from './technicalCalculations.js';
 import { isMarketOpen, isPreMarketWindow, getEffectiveTTLMs, getMarketState } from './marketSchedule.js';
+import { VALID_CRYPTO_SYMBOLS } from './agentCryptoAssets.js';
 
 // ============================================
 // CONSTANTS
@@ -75,7 +76,7 @@ function getFirebaseAdmin() {
 function isCryptoSymbol(symbol) {
   if (!symbol) return false;
   const upper = symbol.toUpperCase();
-  return upper.includes('-USD.CC') || upper.endsWith('.CC');
+  return upper.includes('-USD.CC') || upper.endsWith('.CC') || VALID_CRYPTO_SYMBOLS.includes(upper);
 }
 
 function getCleanSymbol(symbol) {

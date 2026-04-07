@@ -347,7 +347,7 @@ export default async function handler(req, res) {
       const batch = allSymbols.slice(i, i + PRICE_CONCURRENCY);
       await Promise.allSettled(batch.map(async (symbol) => {
         try {
-          const data = await getStockAnalysisData(symbol, { forceRefresh: true, fields: ['daily'] });
+          const data = await getStockAnalysisData(symbol, { forceRefresh: true, fields: ['daily', 'price'] });
           if (data?.price?.current) startingPrices[symbol] = data.price.current;
         } catch (err) {
           console.warn(`[agent/decide] Price fetch failed for ${symbol}:`, err.message);
