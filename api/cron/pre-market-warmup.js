@@ -14,6 +14,7 @@ import { getFirestore } from 'firebase-admin/firestore';
 import { setInCache } from '../_utils/serverCache.js';
 import { isPreMarketWindow, isTodayHoliday, formatDateString, getETDate } from '../_utils/marketSchedule.js';
 import { seedConsensus } from '../_utils/fantasyTimesConsensus.js';
+import { flushExpiredCatalysts } from '../_utils/validatedCatalystCache.js';
 
 const LOG_PREFIX = '[PreMarketWarmup]';
 
@@ -248,6 +249,14 @@ export default async function handler(req, res) {
       log(`Consensus seeded for ${todayStr}`);
     } catch (err) {
       log(`Consensus seed failed (non-blocking): ${err.message}`);
+    }
+
+    // 6b. Flush expired validated catalyst cache
+    try {
+      await flushExpiredCatalysts();
+      log('Flushed expired validated catalysts');
+    } catch (err) {
+      log(`Catalyst cache flush failed (non-blocking): ${err.message}`);
     }
 
     // 7. Return results

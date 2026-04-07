@@ -16,6 +16,7 @@ import { getDefaultVisual, shouldOverrideVisual, callArtDirector } from '../_uti
 import { getClaimsForReporter, formatClaimsForPrompt } from '../_utils/ingestedClaims.js';
 import { appendCatalyst, checkEarningsAttribution } from '../_utils/fantasyTimesConsensus.js';
 import { fetchTickerCatalysts } from '../_utils/sonarCatalystFetch.js';
+import { getValidatedCatalyst, validateAndCacheCatalyst } from '../_utils/validatedCatalystCache.js';
 
 export const config = { maxDuration: 30 };
 
@@ -112,12 +113,29 @@ export async function generateAlexMoverStory({
   }
   logInfo('Step 2: Dedup check passed', { symbol: upperSymbol });
 
-  // ── Fetch catalyst context via Sonar (EODHD fallback) ──────────
+  // ── Fetch catalyst context via validated cache (Sonar + EODHD cross-validation) ──
   const resolvedDir = direction || (percentChange >= 0 ? 'up' : 'down');
   const companyName = STOCK_DATA[upperSymbol]?.name || '';
   const shortCompanyName = STOCK_DATA[upperSymbol]?.shortName || companyName || upperSymbol;
-  const catalystData = await fetchTickerCatalysts(upperSymbol, companyName, percentChange, resolvedDir);
-  logInfo('Step 3: Catalyst fetched', { source: catalystData.fallback ? 'eodhd' : 'sonar', hasText: !!catalystData.catalysts });
+  let catalystData;
+  let validatedSource;
+  try {
+    const cached = await getValidatedCatalyst(upperSymbol);
+    if (cached && cached.confidence !== 'low') {
+      catalystData = { catalysts: cached.catalyst, headlines: [], raw: cached.catalyst, citations: [], fallback: false };
+      validatedSource = `validated_${cached.source}`;
+      logInfo('Step 3: Using validated cache', { source: cached.source, confidence: cached.confidence });
+    } else {
+      const validated = await validateAndCacheCatalyst(upperSymbol, companyName, resolvedDir, percentChange);
+      catalystData = { catalysts: validated.catalyst, headlines: [], raw: validated.catalyst, citations: [], fallback: false };
+      validatedSource = `validated_${validated.source}`;
+      logInfo('Step 3: Validated catalyst', { source: validated.source, confidence: validated.confidence, agreement: validated.agreementScore });
+    }
+  } catch (err) {
+    logError('Validated cache failed, falling back to direct fetch', { error: err.message });
+    catalystData = await fetchTickerCatalysts(upperSymbol, companyName, percentChange, resolvedDir);
+    validatedSource = catalystData.fallback ? 'eodhd' : 'sonar';
+  }
 
   // ── Load knowledge context (Tier 1 stocks) ─────────────────────
   let knowledgeExcerpt = '';
@@ -281,7 +299,7 @@ Match your voice to this tier. Set baggerTier to "${baggerTier}" in your tool ca
       direction: direction || (percentChange >= 0 ? 'up' : 'down'),
     },
     newsContext: catalystData.raw || catalystData.headlines,
-    catalystSource: catalystData.fallback ? 'eodhd' : 'sonar',
+    catalystSource: validatedSource || (catalystData.fallback ? 'eodhd' : 'sonar'),
     generatedBy: REPORTER_PROFILES.alex.model,
     batchId: null,
     publishedAt: now,
@@ -312,7 +330,7 @@ Match your voice to this tier. Set baggerTier to "${baggerTier}" in your tool ca
       percentChange: Number(percentChange),
       atrMultiple: Number(atrMultiple),
       catalyst: storyData.headline || storyData.subheadline || '',
-      source: 'alex_mover',
+      source: validatedSource || 'alex_mover',
       confidence: atrMultiple >= 2.0 ? 'high' : atrMultiple >= 1.5 ? 'medium' : 'low',
       reporter: 'alex',
     });
