@@ -19,6 +19,7 @@ import { requireAuth } from './_utils/authMiddleware.js';
 import { sanitizeDocumentId } from './_utils/sanitizeInput.js';
 import { getFromCache, setInCache, CACHE_TIERS } from './_utils/serverCache.js';
 import { querySonar } from './helpers/sonar.js';
+import { getValidatedCatalyst } from './_utils/validatedCatalystCache.js';
 
 // =============================================================================
 // SYSTEM PROMPT (v2 — structured, catalyst-first)
@@ -122,6 +123,35 @@ export default async function handler(req, res) {
   if (cached) {
     console.log(`[WhyMoving] Cache HIT for ${cleanSymbol}`);
     return res.status(200).json(cached);
+  }
+
+  // Check validated catalyst cache (shared with Alex/FantasyTimes)
+  try {
+    const validated = await getValidatedCatalyst(cleanSymbol);
+    if (validated && validated.confidence !== 'low') {
+      const responseData = {
+        success: true,
+        data: {
+          catalyst: validated.catalyst,
+          catalystType: validated.source === 'sonar_uncorroborated' ? 'unknown' : 'news',
+          signals: [],
+          peerContext: null,
+          outlook: null,
+          sourceQuality: validated.confidence === 'high' ? 'high' : 'medium',
+          explanation: validated.catalyst,
+          factors: [],
+          keyDataPoint: null,
+          citations: [],
+          timestamp: Date.now(),
+          validatedSource: validated.source,
+        },
+      };
+      setInCache(cacheKey, responseData, CACHE_TIERS.NEWS.memoryTTL);
+      console.log(`[WhyMoving] Validated cache HIT for ${cleanSymbol} (${validated.source})`);
+      return res.status(200).json(responseData);
+    }
+  } catch (err) {
+    console.warn(`[WhyMoving] Validated cache check failed (non-blocking):`, err.message);
   }
 
   // Build user prompt with available context

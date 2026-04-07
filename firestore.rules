@@ -366,6 +366,11 @@ service cloud.firestore {
       allow create, update, delete: if false;
     }
 
+    match /validatedCatalysts/{date} {
+      allow read: if true;
+      allow create, update, delete: if false;
+    }
+
     match /fantasyTimesSuppressions/{date} {
       allow read: if true;
       allow create, update, delete: if false;
