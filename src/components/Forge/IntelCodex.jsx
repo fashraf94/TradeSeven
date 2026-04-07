@@ -11,7 +11,7 @@ FORGE_CATEGORIES.forEach(c => {
   DEFAULT_CATEGORY_COLORS[c.id] = { name: c.label, color: c.color };
 });
 
-export default function IntelCodex({ userRules, categoryColors, onJumpToForge }) {
+export default function IntelCodex({ userRules, categoryColors, onJumpToForge, onRefineRule, onDeleteRule }) {
   const [selectedRule, setSelectedRule] = useState(null);
   const [selectedIsPrivate, setSelectedIsPrivate] = useState(false);
   const { isMobile } = useIsMobile();
@@ -24,13 +24,16 @@ export default function IntelCodex({ userRules, categoryColors, onJumpToForge })
   };
 
   const handleRefine = (ruleId) => {
-    // Wired in C2 integration
-    console.warn('[IntelCodex] Refine not yet wired:', ruleId);
+    if (onRefineRule) {
+      onRefineRule(ruleId, {});
+    }
   };
 
   const handleDelete = (ruleId) => {
-    // Wired in C2 integration
-    console.warn('[IntelCodex] Delete not yet wired:', ruleId);
+    if (onDeleteRule) {
+      onDeleteRule(ruleId);
+      setSelectedRule(null);
+    }
   };
 
   // Desktop: split-pane layout
