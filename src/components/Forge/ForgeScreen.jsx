@@ -12,6 +12,7 @@ import { FORGE_RULE_TEMPLATES, FORGE_CONFLICT_PAIRS } from '../../data/forgeKnow
 import { DNA_GROUPS } from '../../data/dnaGroups';
 import { TRAIT_LIBRARY } from '../../data/traitLibrary';
 import { useTraits } from '../../hooks/useTraits';
+import { getMechColors } from '../../utils/getMechColors';
 
 import MechSVG from './MechSVG';
 import MechVisorStrip from './MechVisorStrip';
@@ -86,6 +87,9 @@ export default function ForgeScreen({ isMobile: isMobileProp, onClose, user }) {
     strategy: traits.getGroupSlotUsage('strategy'),
     discipline: traits.getGroupSlotUsage('discipline'),
   }), [traits.getGroupSlotUsage]);
+
+  // Mech color personality from DNA distribution
+  const mechColors = useMemo(() => getMechColors(slotUsage), [slotUsage]);
 
   // Agent-learned rules (non-Forge sources)
   const learnedRules = useMemo(
@@ -321,9 +325,17 @@ export default function ForgeScreen({ isMobile: isMobileProp, onClose, user }) {
             bundleCount={bundleCount}
             slotUsage={slotUsage}
             equippedTraits={traits.equippedTraits}
-            mechColors={null}
+            mechColors={mechColors}
           >
-            <MechSVG state={hasAgent ? 'idle' : 'dormant'} size="hero" reactPulse={mechReactPulse} />
+            <MechSVG
+              state={hasAgent ? 'idle' : 'dormant'}
+              size="hero"
+              reactPulse={mechReactPulse}
+              primaryGlow={mechColors.primaryGlow}
+              visorColor={mechColors.visorColor}
+              mode={mechColors.mode}
+              glowIntensity={mechColors.glowIntensity}
+            />
 
             {/* No-agent overlay */}
             {!hasAgent && (
@@ -666,9 +678,17 @@ export default function ForgeScreen({ isMobile: isMobileProp, onClose, user }) {
             bundleCount={bundleCount}
             slotUsage={slotUsage}
             equippedTraits={traits.equippedTraits}
-            mechColors={null}
+            mechColors={mechColors}
           >
-            <MechSVG state={hasAgent ? 'idle' : 'dormant'} size="hero" reactPulse={mechReactPulse} />
+            <MechSVG
+              state={hasAgent ? 'idle' : 'dormant'}
+              size="hero"
+              reactPulse={mechReactPulse}
+              primaryGlow={mechColors.primaryGlow}
+              visorColor={mechColors.visorColor}
+              mode={mechColors.mode}
+              glowIntensity={mechColors.glowIntensity}
+            />
 
             {/* No-agent overlay */}
             {!hasAgent && (

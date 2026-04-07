@@ -12,7 +12,11 @@ const STATES = {
   equipping: { opacity: 1, glow: true, breathing: false },
 };
 
-export default function MechSVG({ state = 'idle', size = 'hero', reducedMotion = false, reactPulse = null }) {
+export default function MechSVG({
+  state = 'idle', size = 'hero', reducedMotion = false, reactPulse = null,
+  primaryGlow = '#5EEAD4', visorColor: visorColorProp = '#5EEAD4',
+  mode = 'active', glowIntensity = 1,
+}) {
   const config = STATES[state] || STATES.idle;
   const prefersReduced = useReducedMotion();
   const noMotion = reducedMotion || prefersReduced;
@@ -20,12 +24,14 @@ export default function MechSVG({ state = 'idle', size = 'hero', reducedMotion =
   const isVisor = size === 'visor';
 
   const strokeColor = state === 'dormant' ? '#2A2D35' : '#E6EDF3';
-  const visorColor = '#5EEAD4';
+  const baseGlow = primaryGlow;         // body accents (chest brackets, platform, plant, power core)
+  const baseVisor = visorColorProp;     // face elements (eyes, mouth, antenna)
 
   // ── Expression state ──
   const [expression, setExpression] = useState('idle');
   const [glowColorOverride, setGlowColorOverride] = useState(null);
-  const activeVisorColor = glowColorOverride || visorColor;
+  const activeGlow = glowColorOverride || baseGlow;
+  const activeVisor = glowColorOverride || baseVisor;
 
   // ── Framer Motion controls for reactive bounce ──
   const mechControls = useAnimation();
@@ -106,6 +112,27 @@ export default function MechSVG({ state = 'idle', size = 'hero', reducedMotion =
     };
   }, [reactPulse]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ── Power surge on color change ──
+  const [surging, setSurging] = useState(false);
+  const prevPrimaryRef = useRef(primaryGlow);
+  useEffect(() => {
+    if (prevPrimaryRef.current !== primaryGlow && !noMotion) {
+      setSurging(true);
+      const t = setTimeout(() => setSurging(false), 400);
+      prevPrimaryRef.current = primaryGlow;
+      return () => clearTimeout(t);
+    }
+    prevPrimaryRef.current = primaryGlow;
+  }, [primaryGlow, noMotion]);
+
+  // ── Standby + surge styles for hero wrapper ──
+  const standbyStyles = mode === 'standby'
+    ? { opacity: 0.4, filter: 'grayscale(30%)' }
+    : {};
+  const surgeStyles = surging
+    ? { filter: 'brightness(1.3)', transition: 'all 0.15s ease-out' }
+    : { transition: 'filter 0.4s ease, opacity 0.4s ease' };
+
   // ── Breathing CSS ──
   const breathingStyle = animate
     ? { animation: 'mechBreathe 4s ease-in-out infinite' }
@@ -135,12 +162,12 @@ export default function MechSVG({ state = 'idle', size = 'hero', reducedMotion =
   // ── Style helpers (Gemini CSS classes → dynamic inline) ──
   const wire = { stroke: strokeColor, fill: '#0D0E12', strokeWidth: 2.5 };
   const accent = {
-    stroke: activeVisorColor, strokeWidth: 2.5, strokeLinecap: 'round',
+    stroke: activeGlow, strokeWidth: 2.5, strokeLinecap: 'round',
     strokeLinejoin: 'round', fill: 'none',
     ...visorTransitionStyle,
   };
   const accentFill = {
-    fill: activeVisorColor, stroke: 'none',
+    fill: activeGlow, stroke: 'none',
     ...visorTransitionStyle,
   };
 
@@ -153,7 +180,7 @@ export default function MechSVG({ state = 'idle', size = 'hero', reducedMotion =
         height="50"
         fill="none"
         xmlns="http://www.w3.org/2000/svg"
-        style={{ display: 'block' }}
+        style={{ display: 'block', ...(mode === 'standby' ? { opacity: 0.4 } : {}) }}
       >
         {config.glow && (
           <defs>
@@ -175,15 +202,15 @@ export default function MechSVG({ state = 'idle', size = 'hero', reducedMotion =
           {/* Goggle bridge */}
           <line x1="97" y1="55" x2="103" y2="55" stroke="#E6EDF3" strokeWidth="3" />
           {/* Eyes */}
-          <circle cx="83.5" cy="55" r="4" fill={visorColor} opacity="0.85"
+          <circle cx="83.5" cy="55" r="4" fill={baseVisor} opacity="0.85"
             filter={config.glow ? 'url(#eyeGlowSmall)' : undefined} />
-          <circle cx="116.5" cy="55" r="4" fill={visorColor} opacity="0.85"
+          <circle cx="116.5" cy="55" r="4" fill={baseVisor} opacity="0.85"
             filter={config.glow ? 'url(#eyeGlowSmall)' : undefined} />
           {/* Highlights */}
           <circle cx="85" cy="53.5" r="1" fill="#FFFFFF" opacity="0.7" />
           <circle cx="118" cy="53.5" r="1" fill="#FFFFFF" opacity="0.7" />
           {/* Mouth */}
-          <path d="M87 72 Q100 77 113 72" stroke={visorColor} strokeWidth="2" strokeLinecap="round" fill="none" opacity="0.6" />
+          <path d="M87 72 Q100 77 113 72" stroke={baseVisor} strokeWidth="2" strokeLinecap="round" fill="none" opacity="0.6" />
         </g>
       </svg>
     );
@@ -191,7 +218,7 @@ export default function MechSVG({ state = 'idle', size = 'hero', reducedMotion =
 
   // ── Hero mode: full mech body ──
   return (
-    <div style={{ width: '100%', maxWidth: 280, margin: '0 auto', ...breathingStyle }}>
+    <div style={{ width: '100%', maxWidth: 280, margin: '0 auto', ...breathingStyle, ...standbyStyles, ...surgeStyles }}>
       {!noMotion && animate && <style>{keyframes}</style>}
       <svg
         viewBox="0 0 200 280"
@@ -228,8 +255,9 @@ export default function MechSVG({ state = 'idle', size = 'hero', reducedMotion =
           {/* ===== PLATFORM ===== */}
           <g id="platform" opacity={config.opacity}>
             <ellipse cx="100" cy="260" rx="65" ry="8"
-              stroke="#5EEAD4" strokeWidth="1.5" strokeDasharray="6 6"
+              stroke={activeGlow} strokeWidth="1.5" strokeDasharray="6 6"
               fill="none" opacity="0.5"
+              style={visorTransitionStyle}
             />
           </g>
 
@@ -297,15 +325,15 @@ export default function MechSVG({ state = 'idle', size = 'hero', reducedMotion =
               {/* ARC REACTOR — power core */}
               <g id="power-core" transform="translate(100, 128)">
                 <circle cx="0" cy="0" r="12"
-                  fill="none" stroke={activeVisorColor} strokeWidth="1.5" opacity="0.4"
+                  fill="none" stroke={activeGlow} strokeWidth="1.5" opacity="0.4"
                   style={visorTransitionStyle}
                 />
                 <circle cx="0" cy="0" r="8"
-                  fill="none" stroke={activeVisorColor} strokeWidth="1" opacity="0.6"
+                  fill="none" stroke={activeGlow} strokeWidth="1" opacity="0.6"
                   style={visorTransitionStyle}
                 />
                 <circle cx="0" cy="0" r="4"
-                  fill={activeVisorColor} opacity="0.8"
+                  fill={activeGlow} opacity="0.8"
                   filter={config.glow ? 'url(#core-glow)' : undefined}
                   style={visorTransitionStyle}
                 />
@@ -316,7 +344,7 @@ export default function MechSVG({ state = 'idle', size = 'hero', reducedMotion =
                     y1={Math.sin(angle * Math.PI / 180) * 5}
                     x2={Math.cos(angle * Math.PI / 180) * 11}
                     y2={Math.sin(angle * Math.PI / 180) * 11}
-                    stroke={activeVisorColor} strokeWidth="0.8" opacity="0.3"
+                    stroke={activeGlow} strokeWidth="0.8" opacity="0.3"
                     strokeLinecap="round" style={visorTransitionStyle}
                   />
                 ))}
@@ -329,8 +357,8 @@ export default function MechSVG({ state = 'idle', size = 'hero', reducedMotion =
               <g id="antenna">
                 <line x1="100" y1="22" x2="100" y2="35" stroke={strokeColor} strokeWidth="1.5" />
                 <circle cx="100" cy="20" r="4"
-                  stroke={state === 'dormant' ? strokeColor : activeVisorColor} strokeWidth="1.2"
-                  fill={state === 'dormant' ? 'none' : activeVisorColor}
+                  stroke={state === 'dormant' ? strokeColor : activeVisor} strokeWidth="1.2"
+                  fill={state === 'dormant' ? 'none' : activeVisor}
                   opacity={state === 'dormant' ? 0.3 : 1}
                   filter={config.glow ? 'url(#teal-glow)' : undefined}
                   style={visorTransitionStyle}
@@ -349,7 +377,7 @@ export default function MechSVG({ state = 'idle', size = 'hero', reducedMotion =
                 {/* === LEFT EYE === */}
                 {/* Idle iris */}
                 <circle cx="83.5" cy="55" r="5"
-                  fill={activeVisorColor}
+                  fill={activeVisor}
                   filter={config.glow ? 'url(#teal-glow)' : undefined}
                   opacity={state === 'dormant' ? 0 : (expression === 'blink' ? 0.3 : (expression === 'happy' ? 0 : 1))}
                   style={{ transition: noMotion ? 'none' : 'fill 0.8s ease, opacity 0.15s ease' }}
@@ -361,20 +389,20 @@ export default function MechSVG({ state = 'idle', size = 'hero', reducedMotion =
                 />
                 {/* Blink squish */}
                 <ellipse cx="83.5" cy="55" rx="5" ry="0.8"
-                  fill={activeVisorColor}
+                  fill={activeVisor}
                   opacity={exprOpacity('blink')}
                   style={{ transition: noMotion ? 'none' : 'opacity 0.08s ease' }}
                 />
                 {/* Happy arc ^ */}
                 <path d="M78 57 Q83.5 50 89 57"
-                  stroke={activeVisorColor} strokeWidth="2.5" strokeLinecap="round" fill="none"
+                  stroke={activeVisor} strokeWidth="2.5" strokeLinecap="round" fill="none"
                   opacity={exprOpacity('happy')}
                   filter={config.glow ? 'url(#teal-glow)' : undefined}
                   style={{ transition: noMotion ? 'none' : 'opacity 0.15s ease, stroke 0.8s ease' }}
                 />
                 {/* Thinking shifted iris */}
                 <circle cx="83.5" cy="52" r="3"
-                  fill={activeVisorColor}
+                  fill={activeVisor}
                   opacity={exprOpacity('thinking')}
                   filter={config.glow ? 'url(#teal-glow)' : undefined}
                   style={{ transition: noMotion ? 'none' : 'opacity 0.15s ease' }}
@@ -383,7 +411,7 @@ export default function MechSVG({ state = 'idle', size = 'hero', reducedMotion =
                 {/* === RIGHT EYE === */}
                 {/* Idle iris */}
                 <circle cx="116.5" cy="55" r="5"
-                  fill={activeVisorColor}
+                  fill={activeVisor}
                   filter={config.glow ? 'url(#teal-glow)' : undefined}
                   opacity={state === 'dormant' ? 0 : (expression === 'blink' ? 0.3 : (expression === 'happy' ? 0 : 1))}
                   style={{ transition: noMotion ? 'none' : 'fill 0.8s ease, opacity 0.15s ease' }}
@@ -395,20 +423,20 @@ export default function MechSVG({ state = 'idle', size = 'hero', reducedMotion =
                 />
                 {/* Blink squish */}
                 <ellipse cx="116.5" cy="55" rx="5" ry="0.8"
-                  fill={activeVisorColor}
+                  fill={activeVisor}
                   opacity={exprOpacity('blink')}
                   style={{ transition: noMotion ? 'none' : 'opacity 0.08s ease' }}
                 />
                 {/* Happy arc ^ */}
                 <path d="M111 57 Q116.5 50 122 57"
-                  stroke={activeVisorColor} strokeWidth="2.5" strokeLinecap="round" fill="none"
+                  stroke={activeVisor} strokeWidth="2.5" strokeLinecap="round" fill="none"
                   opacity={exprOpacity('happy')}
                   filter={config.glow ? 'url(#teal-glow)' : undefined}
                   style={{ transition: noMotion ? 'none' : 'opacity 0.15s ease, stroke 0.8s ease' }}
                 />
                 {/* Thinking shifted iris */}
                 <circle cx="116.5" cy="52" r="3"
-                  fill={activeVisorColor}
+                  fill={activeVisor}
                   opacity={exprOpacity('thinking')}
                   filter={config.glow ? 'url(#teal-glow)' : undefined}
                   style={{ transition: noMotion ? 'none' : 'opacity 0.15s ease' }}
@@ -419,13 +447,13 @@ export default function MechSVG({ state = 'idle', size = 'hero', reducedMotion =
               <g id="mouth">
                 {/* Neutral smile — idle, blink, thinking */}
                 <path d="M87 72 Q100 77 113 72"
-                  stroke={activeVisorColor} strokeWidth="2.5" strokeLinecap="round" fill="none"
+                  stroke={activeVisor} strokeWidth="2.5" strokeLinecap="round" fill="none"
                   opacity={state === 'dormant' ? 0 : (expression === 'happy' ? 0 : 0.8)}
                   style={{ transition: noMotion ? 'none' : 'opacity 0.15s ease, stroke 0.8s ease' }}
                 />
                 {/* Happy big smile */}
                 <path d="M85 71 Q100 80 115 71"
-                  stroke={activeVisorColor} strokeWidth="2.5" strokeLinecap="round" fill="none"
+                  stroke={activeVisor} strokeWidth="2.5" strokeLinecap="round" fill="none"
                   opacity={exprOpacity('happy')}
                   style={{ transition: noMotion ? 'none' : 'opacity 0.15s ease, stroke 0.8s ease' }}
                 />
