@@ -171,7 +171,9 @@ const V2Content = ({ data }) => {
     <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
       {/* Catalyst headline */}
       <p style={{ color: HOLO_COLORS.textPrimary, fontSize: '14px', lineHeight: 1.6, margin: 0 }}>
-        {data.catalyst}
+        {data.catalyst && !data.catalyst.startsWith('```') && !data.catalyst.startsWith('{')
+          ? data.catalyst
+          : 'Unable to determine the specific catalyst at this time.'}
       </p>
 
       {/* Catalyst type badge */}

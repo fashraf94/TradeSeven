@@ -7,7 +7,7 @@
 
 import { querySonar } from '../helpers/sonar.js';
 
-const SONAR_TIMEOUT_MS = 3000;
+const SONAR_TIMEOUT_MS = 8000;
 
 const CATALYST_SYSTEM_PROMPT = `You are a financial catalyst analyst. Your job is to identify the specific, concrete reasons a stock or the broader market is moving RIGHT NOW. Prioritize breaking news, company-specific events, and actionable catalysts over generic macro narratives. Be concise and factual.`;
 
@@ -124,10 +124,14 @@ async function fetchEodhdTickerNews(symbol) {
     const res = await fetch(url);
     if (res.ok) {
       const data = await res.json();
-      return (data || [])
-        .slice(0, 5)
-        .map(n => n.title || n.headline)
-        .filter(Boolean);
+      const cutoff = Date.now() - (24 * 60 * 60 * 1000);
+      const articles = (data || []).slice(0, 5);
+      const fresh = articles.filter(n => {
+        const pubDate = n.date ? new Date(n.date).getTime() : 0;
+        return pubDate >= cutoff;
+      });
+      console.log(`[EODHD fallback] ${symbol}: ${articles.length} headlines fetched, ${fresh.length} within 24h`);
+      return fresh.map(n => n.title || n.headline).filter(Boolean);
     }
   } catch (e) {
     console.warn('[EODHD fallback] Ticker news fetch failed:', e.message);
@@ -145,10 +149,14 @@ async function fetchEodhdMarketNews() {
     const res = await fetch(url);
     if (res.ok) {
       const data = await res.json();
-      return (data || [])
-        .slice(0, 3)
-        .map(n => n.title || n.headline)
-        .filter(Boolean);
+      const cutoff = Date.now() - (24 * 60 * 60 * 1000);
+      const articles = (data || []).slice(0, 3);
+      const fresh = articles.filter(n => {
+        const pubDate = n.date ? new Date(n.date).getTime() : 0;
+        return pubDate >= cutoff;
+      });
+      console.log(`[EODHD fallback] Market news: ${articles.length} headlines fetched, ${fresh.length} within 24h`);
+      return fresh.map(n => n.title || n.headline).filter(Boolean);
     }
   } catch (e) {
     console.warn('[EODHD fallback] Market news fetch failed:', e.message);

@@ -116,7 +116,8 @@ export default async function handler(req, res) {
   }
 
   // Check server cache (30-min TTL via NEWS tier)
-  const cacheKey = `why_moving_${cleanSymbol}`;
+  const dateStr = new Date().toISOString().split('T')[0];
+  const cacheKey = `why_moving_${cleanSymbol}_${dateStr}`;
   const cached = getFromCache(cacheKey);
   if (cached) {
     console.log(`[WhyMoving] Cache HIT for ${cleanSymbol}`);
@@ -157,19 +158,26 @@ export default async function handler(req, res) {
         'bloomberg.com',
         'seekingalpha.com',
         'marketwatch.com',
+        'asia.nikkei.com',
+        'nikkei.com',
+        'barrons.com',
+        'ft.com',
+        'wsj.com',
+        'apnews.com',
+        'bbc.com',
       ],
     });
 
     // Parse JSON from Sonar response
     let parsed;
     try {
-      const jsonStr = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+      const jsonStr = text.replace(/^```(?:json|JSON)?\s*\n?/gm, '').replace(/\n?```\s*$/gm, '').trim();
       parsed = JSON.parse(jsonStr);
     } catch {
       // If JSON parsing fails, use raw text as explanation
       console.warn(`[WhyMoving] JSON parse failed for ${cleanSymbol}, raw text:`, text.slice(0, 200));
       parsed = {
-        catalyst: text.slice(0, 500),
+        catalyst: 'Unable to determine the specific catalyst at this time.',
         catalystType: 'unknown',
         signals: [],
         peerContext: null,
@@ -191,14 +199,14 @@ export default async function handler(req, res) {
       success: true,
       data: {
         // v2 fields
-        catalyst: parsed.catalyst || text.slice(0, 500),
+        catalyst: parsed.catalyst || 'Unable to determine the specific catalyst at this time.',
         catalystType: parsed.catalystType || 'unknown',
         signals,
         peerContext: parsed.peerContext || null,
         outlook: parsed.outlook || null,
         sourceQuality: parsed.sourceQuality || 'medium',
         // v1 compat fields
-        explanation: parsed.catalyst || text.slice(0, 500),
+        explanation: parsed.catalyst || 'Unable to determine the specific catalyst at this time.',
         factors,
         keyDataPoint: signals[0]?.detail || null,
         citations: citations || [],
