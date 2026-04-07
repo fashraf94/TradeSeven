@@ -14,7 +14,7 @@ const ICON_MAP = { Eye, Brain, Shield };
 
 const GROUP_ORDER = ['instincts', 'strategy', 'discipline'];
 
-export default function DNASocketMatrix({ slotUsage, equippedTraits, traitLibrary }) {
+export default function DNASocketMatrix({ slotUsage, equippedTraits }) {
   const [tooltip, setTooltip] = useState(null); // { groupId, pipIndex }
 
   return (

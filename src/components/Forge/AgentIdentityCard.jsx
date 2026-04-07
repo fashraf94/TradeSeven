@@ -6,7 +6,6 @@
  */
 
 import React from 'react';
-import { TRAIT_LIBRARY } from '../../data/traitLibrary';
 import LoadoutDropdown from './LoadoutDropdown';
 import DNASocketMatrix from './DNASocketMatrix';
 
@@ -93,7 +92,6 @@ export default function AgentIdentityCard({
         <DNASocketMatrix
           slotUsage={slotUsage}
           equippedTraits={equippedTraits}
-          traitLibrary={TRAIT_LIBRARY}
         />
       </div>
     </div>

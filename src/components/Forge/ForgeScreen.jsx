@@ -9,7 +9,6 @@ import { useForge, CATEGORY_ORDER } from '../../hooks/useForge';
 import useAgent from '../../hooks/useAgent';
 import { useIsMobile } from '../../hooks/useIsMobile';
 import { FORGE_RULE_TEMPLATES, FORGE_CONFLICT_PAIRS } from '../../data/forgeKnowledgeBase';
-import { FORGE_LIMITS } from '../../constants/agentProgression';
 import { DNA_GROUPS } from '../../data/dnaGroups';
 import { TRAIT_LIBRARY } from '../../data/traitLibrary';
 import { useTraits } from '../../hooks/useTraits';
@@ -70,9 +69,8 @@ export default function ForgeScreen({ isMobile: isMobileProp, onClose, user }) {
   const mechOpacity = useTransform(scrollY, [0, 200], [1, 0]);
   const visorOpacity = useTransform(scrollY, [150, 250], [0, 1]);
 
-  // Level and limits
+  // Level
   const level = getAgentLevel(agent);
-  const limits = FORGE_LIMITS[level] || FORGE_LIMITS.rookie;
 
   // Active bundle (first draft, or first equipped, or first bundle)
   const activeBundle = forge.draftBundles[0] || forge.equippedBundles[0] || forge.bundles[0];
@@ -87,13 +85,7 @@ export default function ForgeScreen({ isMobile: isMobileProp, onClose, user }) {
     instincts: traits.getGroupSlotUsage('instincts'),
     strategy: traits.getGroupSlotUsage('strategy'),
     discipline: traits.getGroupSlotUsage('discipline'),
-  }), [traits]);
-
-  // Capacity
-  const capacity = {
-    current: bundleRuleIds.length,
-    max: limits.maxRulesPerBundle,
-  };
+  }), [traits.getGroupSlotUsage]);
 
   // Agent-learned rules (non-Forge sources)
   const learnedRules = useMemo(
