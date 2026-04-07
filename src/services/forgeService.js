@@ -27,7 +27,7 @@ const VALID_SOURCES = [
 ];
 const VALID_VISIBILITIES = ['public', 'private'];
 const VALID_STATUSES = ['draft', 'testing', 'active', 'proven', 'queued'];
-const MAX_RULE_TEXT_LENGTH = 200;
+const MAX_RULE_TEXT_LENGTH = 1000;
 const MAX_PARAMS_KEYS = 5;
 
 function validateRuleInput(ruleData) {

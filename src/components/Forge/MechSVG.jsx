@@ -202,15 +202,15 @@ export default function MechSVG({
           {/* Goggle bridge */}
           <line x1="97" y1="55" x2="103" y2="55" stroke="#E6EDF3" strokeWidth="3" />
           {/* Eyes */}
-          <circle cx="83.5" cy="55" r="4" fill={baseVisor} opacity="0.85"
+          <circle cx="83.5" cy="55" r="4" fill={activeVisor} opacity="0.85"
             filter={config.glow ? 'url(#eyeGlowSmall)' : undefined} />
-          <circle cx="116.5" cy="55" r="4" fill={baseVisor} opacity="0.85"
+          <circle cx="116.5" cy="55" r="4" fill={activeVisor} opacity="0.85"
             filter={config.glow ? 'url(#eyeGlowSmall)' : undefined} />
           {/* Highlights */}
           <circle cx="85" cy="53.5" r="1" fill="#FFFFFF" opacity="0.7" />
           <circle cx="118" cy="53.5" r="1" fill="#FFFFFF" opacity="0.7" />
           {/* Mouth */}
-          <path d="M87 72 Q100 77 113 72" stroke={baseVisor} strokeWidth="2" strokeLinecap="round" fill="none" opacity="0.6" />
+          <path d="M87 72 Q100 77 113 72" stroke={activeVisor} strokeWidth="2" strokeLinecap="round" fill="none" opacity="0.6" />
         </g>
       </svg>
     );
