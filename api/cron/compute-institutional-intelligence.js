@@ -142,6 +142,8 @@ export default async function handler(req, res) {
           totalAssetsPct: inst.totalAssetsPct,
           changePct: inst.changePct,
           signal: inst.signal,
+          changeShares: inst.change,
+          currentShares: inst.currentShares,
         });
       }
 

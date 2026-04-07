@@ -105,10 +105,16 @@ export function getArchetype(name) {
 
 /**
  * Classify a holder's signal based on QoQ percentage change.
+ *
+ * A position is "new_position" only if every current share was added this
+ * quarter (change === currentShares), meaning no prior holding existed.
+ * A >100% increase with a prior holding is aggressive accumulation, not new.
  */
-export function classifySignal(changePct) {
+export function classifySignal(changePct, change = null, currentShares = null) {
   if (changePct == null || isNaN(changePct)) return 'unchanged';
-  if (changePct > 100) return 'new_position';
+  // Truly new: all current shares were added this quarter
+  if (changePct > 100 && change != null && currentShares != null
+      && currentShares > 0 && change === currentShares) return 'new_position';
   if (changePct > 5) return 'accumulating';
   if (changePct < -20) return 'exiting';
   if (changePct < -5) return 'trimming';
@@ -156,9 +162,11 @@ export function computeSummary(institutions, funds) {
 
   const buyers = active.filter(i => parseFloat(i.change) > 0).length;
   const sellers = active.filter(i => parseFloat(i.change) < 0).length;
-  const newPositions = institutions.filter(i =>
-    classifySignal(parseFloat(i.change_p)) === 'new_position'
-  ).length;
+  const newPositions = institutions.filter(i => {
+    const change = parseInt(i.change) || 0;
+    const shares = parseInt(i.currentShares) || 0;
+    return classifySignal(parseFloat(i.change_p), change, shares) === 'new_position';
+  }).length;
 
   const { score, level } = computeConvictionScore(institutions);
 
@@ -187,15 +195,17 @@ export function computeSummary(institutions, funds) {
  * Enrich a holder entry with derived fields.
  */
 export function enrichHolder(holder) {
+  const change = parseInt(holder.change) || 0;
+  const currentShares = parseInt(holder.currentShares) || 0;
   return {
     name: holder.name || 'Unknown',
     date: holder.date || null,
     totalSharesPct: parseFloat(holder.totalShares) || 0,
     totalAssetsPct: parseFloat(holder.totalAssets) || 0,
-    currentShares: parseInt(holder.currentShares) || 0,
-    change: parseInt(holder.change) || 0,
+    currentShares,
+    change,
     changePct: parseFloat(holder.change_p) || 0,
-    signal: classifySignal(parseFloat(holder.change_p)),
+    signal: classifySignal(parseFloat(holder.change_p), change, currentShares),
     archetype: getArchetype(holder.name),
   };
 }
