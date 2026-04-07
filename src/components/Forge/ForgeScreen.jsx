@@ -516,7 +516,6 @@ export default function ForgeScreen({ isMobile: isMobileProp, onClose, user }) {
                     <IntelCodex
                       userRules={forge.rules}
                       onJumpToForge={handleJumpToForge}
-                      onRefineRule={forge.refineRule}
                       onDeleteRule={forge.deleteRule}
                     />
                   </motion.div>

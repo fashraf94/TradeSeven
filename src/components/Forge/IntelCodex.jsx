@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState } from 'react';
 import { ArrowLeft } from 'lucide-react';
 import { useIsMobile } from '../../hooks/useIsMobile';
 import { FORGE_CATEGORIES } from '../../data/forgeKnowledgeBase';
@@ -11,7 +11,7 @@ FORGE_CATEGORIES.forEach(c => {
   DEFAULT_CATEGORY_COLORS[c.id] = { name: c.label, color: c.color };
 });
 
-export default function IntelCodex({ userRules, categoryColors, onJumpToForge, onRefineRule, onDeleteRule }) {
+export default function IntelCodex({ userRules, categoryColors, onJumpToForge, onDeleteRule }) {
   const [selectedRule, setSelectedRule] = useState(null);
   const [selectedIsPrivate, setSelectedIsPrivate] = useState(false);
   const { isMobile } = useIsMobile();
@@ -24,8 +24,10 @@ export default function IntelCodex({ userRules, categoryColors, onJumpToForge, o
   };
 
   const handleRefine = (ruleId) => {
-    if (onRefineRule) {
-      onRefineRule(ruleId, {});
+    // TODO: Add inline refine editor to the Codex dossier.
+    // Until then, switch to Forge tab where My Rules management panel has the refine UI.
+    if (onJumpToForge) {
+      onJumpToForge(ruleId);
     }
   };
 

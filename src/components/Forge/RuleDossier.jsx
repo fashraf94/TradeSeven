@@ -162,7 +162,7 @@ export default function RuleDossier({
             margin: 0,
             marginBottom: 8,
           }}>
-            {rule.headline}
+            {rule.headline || rule.text || 'Untitled Rule'}
           </h2>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
             {catInfo && (

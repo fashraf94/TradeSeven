@@ -165,16 +165,26 @@ export default function RuleDirectory({ selectedRuleId, onSelectRule, userRules,
   // Total library count
   const libraryCount = FORGE_RULE_TEMPLATES.length;
 
-  // Split user rules into public-sourced and private/custom
+  // Agent-learned rule sources that belong in their own section (not My Rules)
+  const LEARNED_SOURCES = new Set([
+    'batch_review', 'agent_batch_review', 'debate', 'agent_debate',
+    'open_chat', 'agent_open_chat', 'reflection', 'agent_reflection',
+  ]);
+
+  // Split user rules into public-sourced and private/custom (excluding learned rules)
   const discoverRules = useMemo(() =>
     (userRules || []).filter(r => r.source === 'forge_discover'),
     [userRules],
   );
   const privateRules = useMemo(() =>
-    (userRules || []).filter(r => r.source === 'manual' || r.source === 'forge_custom' || (r.visibility === 'private' && r.source !== 'forge_discover')),
+    (userRules || []).filter(r =>
+      !LEARNED_SOURCES.has(r.source) &&
+      r.source !== 'forge_discover' &&
+      (r.source === 'manual' || r.source === 'forge_custom' || r.visibility === 'private')
+    ),
     [userRules],
   );
-  const userRulesCount = (userRules || []).length;
+  const userRulesCount = discoverRules.length + privateRules.length;
 
   // Filter user rules by search
   const filteredDiscoverRules = useMemo(() =>
