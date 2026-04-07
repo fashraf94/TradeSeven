@@ -29,6 +29,8 @@ import { stockAPI, POPULAR_CRYPTO } from '../services/eodhdAPI';
 import { calculateAssetScoreV3 } from '../utils/baggerBombUtils';
 import { DEFAULT_THRESHOLD, buildResearchAsset } from '../utils/researchAssetBuilder';
 import AssetResearchModal from '../components/draft/AssetResearchModal';
+import ScoreBreakdownPopover from '../components/draft/ScoreBreakdownPopover';
+import { CONVICTION_MULTIPLIERS } from '../constants/baggerBombScoring';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -369,6 +371,7 @@ export default function AgentBattleScreen({ battle, user, onBack }) {
   const [citationOpen, setCitationOpen] = useState(false);
   const [citationRuleId, setCitationRuleId] = useState(null);
   const [researchAsset, setResearchAsset] = useState(null);
+  const [breakdownAsset, setBreakdownAsset] = useState(null);
 
   // Price state
   const [currentPrices, setCurrentPrices] = useState({});
@@ -624,6 +627,10 @@ export default function AgentBattleScreen({ battle, user, onBack }) {
     setResearchAsset(asset);
   }, []);
 
+  const handlePointsClick = useCallback((asset) => {
+    setBreakdownAsset(asset);
+  }, []);
+
   // Memoize enriched research asset to avoid re-renders on every price tick
   const stableResearchAsset = useMemo(() => {
     if (!researchAsset) return null;
@@ -784,6 +791,7 @@ export default function AgentBattleScreen({ battle, user, onBack }) {
                       allocationLabel={`${tier.emoji} ${tier.allocation}`}
                       isCryptoSlot={tier.hasCrypto && i === tier.slots - 1}
                       onSymbolClick={handleSymbolClick}
+                      onPointsClick={handlePointsClick}
                     />
                   ))}
                 </div>
@@ -936,6 +944,45 @@ export default function AgentBattleScreen({ battle, user, onBack }) {
           defaultTab="baggerbomb"
           defaultTimeframe="bomb"
           wsPrice={effectivePrices[stableResearchAsset?.symbol]}
+        />
+      )}
+
+      {breakdownAsset && (
+        <ScoreBreakdownPopover
+          asset={{
+            symbol: breakdownAsset.symbol,
+            gain: breakdownAsset.priceChange || 0,
+            threshold: thresholds[breakdownAsset.symbol]?.threshold || breakdownAsset.baseATR || 2.5,
+            tierMultiplier: CONVICTION_MULTIPLIERS[breakdownAsset.tier] || 1.0,
+            baggerBombs: breakdownAsset.badges?.filter(b =>
+              b === 'bagger' || b === 'doubleBagger' || b === 'tenBagger'
+            ).length || 0,
+            busts: breakdownAsset.badges?.filter(b =>
+              b === 'bust' || b === 'crash' || b === 'meltdown'
+            ).length || 0,
+            basePoints: Math.round((breakdownAsset.priceChange || 0) * 10 * (CONVICTION_MULTIPLIERS[breakdownAsset.tier] || 1.0)),
+            baggerBombPoints: breakdownAsset.badges?.reduce((sum, b) => {
+              if (b === 'bagger') return sum + 15;
+              if (b === 'doubleBagger') return sum + 30;
+              if (b === 'tenBagger') return sum + 50;
+              return sum;
+            }, 0) || 0,
+            bustPoints: breakdownAsset.badges?.reduce((sum, b) => {
+              if (b === 'bust') return sum - 10;
+              if (b === 'crash') return sum - 20;
+              if (b === 'meltdown') return sum - 35;
+              return sum;
+            }, 0) || 0,
+            totalScore: breakdownAsset.points || 0,
+            startingPrice: startingPrices?.[breakdownAsset.symbol] || breakdownAsset.swapPrice || 0,
+            currentPrice: breakdownAsset.currentPrice || 0,
+          }}
+          events={[]}
+          onClose={() => setBreakdownAsset(null)}
+          entryPrice={startingPrices?.[breakdownAsset.symbol] || breakdownAsset.swapPrice || 0}
+          battleCreatedAt={agentBattle?.createdAt || null}
+          priceHistory={[]}
+          bankedBadgePoints={0}
         />
       )}
     </div>
