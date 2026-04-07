@@ -762,11 +762,20 @@ export const WhaleLeaderboard = ({ institutions, institutionPortfolios, onStockT
                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                           <TrendingUp size={14} style={{ color: '#4ddcc6' }} />
                           <span style={{ fontSize: '13px', fontWeight: 700, color: '#ffffff' }}>
-                            Added: +{formatShares(inst.biggestAdd.changeShares)} {inst.biggestAdd.symbol}
+                            {/* New position: show share count (or just symbol if stale data) */}
+                            {!inst.biggestAdd.changeShares && inst.biggestAdd.changePct > 100
+                              ? inst.biggestAdd.currentShares
+                                ? `New Position: ${formatShares(inst.biggestAdd.currentShares)} shares of ${inst.biggestAdd.symbol}`
+                                : `New Position: ${inst.biggestAdd.symbol}`
+                              : `Added: +${formatShares(inst.biggestAdd.changeShares)} ${inst.biggestAdd.symbol}`
+                            }
                           </span>
                         </div>
                         <div style={{ fontSize: '10px', color: '#6b7280', marginTop: '4px', paddingLeft: '20px' }}>
-                          Position increase: {formatPct(inst.biggestAdd.changePct)}
+                          {!inst.biggestAdd.changeShares && inst.biggestAdd.changePct > 100
+                            ? 'New position this quarter'
+                            : `Position increase: ${formatPct(inst.biggestAdd.changePct)}`
+                          }
                         </div>
                       </div>
                     ) : (
@@ -784,7 +793,7 @@ export const WhaleLeaderboard = ({ institutions, institutionPortfolios, onStockT
                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                           <TrendingDown size={14} style={{ color: '#ef4444' }} />
                           <span style={{ fontSize: '13px', fontWeight: 700, color: '#ffffff' }}>
-                            Cut: {formatShares(inst.biggestCut.changeShares)} {inst.biggestCut.symbol}
+                            Cut: {formatShares(inst.biggestCut.changeShares || inst.biggestCut.change)} {inst.biggestCut.symbol}
                           </span>
                         </div>
                         <div style={{ fontSize: '10px', color: '#6b7280', marginTop: '4px', paddingLeft: '20px' }}>
