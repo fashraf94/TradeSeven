@@ -15,6 +15,7 @@ import { useTraits } from '../../hooks/useTraits';
 import { getMechColors } from '../../utils/getMechColors';
 
 import MechSVG from './MechSVG';
+import MechParticles from './MechParticles';
 import MechVisorStrip from './MechVisorStrip';
 // import RadarChart from './RadarChart';  // Moved to Proving Grounds — Phase C
 import CategoryAccordion from './CategoryAccordion';
@@ -334,15 +335,18 @@ export default function ForgeScreen({ isMobile: isMobileProp, onClose, user }) {
             equippedTraits={traits.equippedTraits}
             mechColors={mechColors}
           >
-            <MechSVG
-              state={hasAgent ? 'idle' : 'dormant'}
-              size="hero"
-              reactPulse={mechReactPulse}
-              primaryGlow={mechColors.primaryGlow}
-              visorColor={mechColors.visorColor}
-              mode={mechColors.mode}
-              glowIntensity={mechColors.glowIntensity}
-            />
+            <div style={{ position: 'relative', width: '100%', maxWidth: 280, margin: '0 auto' }}>
+              <MechParticles slotUsage={slotUsage} mechMode={mechColors.mode} />
+              <MechSVG
+                state={hasAgent ? 'idle' : 'dormant'}
+                size="hero"
+                reactPulse={mechReactPulse}
+                primaryGlow={mechColors.primaryGlow}
+                visorColor={mechColors.visorColor}
+                mode={mechColors.mode}
+                glowIntensity={mechColors.glowIntensity}
+              />
+            </div>
 
             {/* No-agent overlay */}
             {!hasAgent && (
