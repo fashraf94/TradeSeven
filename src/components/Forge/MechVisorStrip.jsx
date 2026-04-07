@@ -1,52 +1,47 @@
 // src/components/Forge/MechVisorStrip.jsx
-// 70px sticky header that appears when user scrolls past the mech hero zone.
+// 48px sticky header showing Class Title + Bundle Name when mech scrolls away (mobile).
 
 import React from 'react';
-import MechSVG from './MechSVG';
 
-export default function MechVisorStrip({ bundleName, capacity, onTapToExpand }) {
+export default function MechVisorStrip({ comboLabel, archetype, activeBundleName, onTapToExpand }) {
   return (
     <div
       onClick={onTapToExpand}
       style={{
-        height: 70,
+        height: 48,
         background: '#0D0E12',
         display: 'flex',
+        justifyContent: 'space-between',
         alignItems: 'center',
-        padding: '0 16px',
-        borderBottom: '1px solid rgba(255,255,255,0.08)',
+        padding: '8px 16px',
+        borderBottom: '1px solid #2A2D35',
         cursor: 'pointer',
-        gap: 12,
       }}
     >
-      {/* Visor crop */}
-      <div style={{ flexShrink: 0, width: 120 }}>
-        <MechSVG size="visor" state="idle" />
-      </div>
-
-      {/* Bundle name */}
+      {/* Left: Class Title */}
       <div style={{
-        flex: 1,
-        fontSize: 14,
-        fontWeight: 700,
-        color: '#ffffff',
-        textAlign: 'center',
-        whiteSpace: 'nowrap',
+        fontSize: 13,
+        fontWeight: 600,
+        fontStyle: 'italic',
+        color: '#5EEAD4',
         overflow: 'hidden',
         textOverflow: 'ellipsis',
+        whiteSpace: 'nowrap',
+        maxWidth: '50%',
       }}>
-        {bundleName || 'The Forge'}
+        {comboLabel ? `The ${comboLabel.label}` : archetype || 'Agent'}
       </div>
 
-      {/* Capacity */}
+      {/* Right: Bundle Name */}
       <div style={{
-        fontSize: 14,
-        fontWeight: 600,
-        color: '#5EEAD4',
-        fontFamily: 'ui-monospace, SFMono-Regular, monospace',
-        flexShrink: 0,
+        fontSize: 12,
+        color: '#718096',
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+        whiteSpace: 'nowrap',
+        maxWidth: '45%',
       }}>
-        {capacity.current}/{capacity.max} rules
+        {activeBundleName || 'No Strategy'}
       </div>
     </div>
   );

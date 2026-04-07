@@ -1,3 +1,4 @@
+// DEPRECATED: Replaced by LoadoutDropdown in AgentIdentityCard (April 2026)
 // src/components/Forge/BundleStrip.jsx
 // Inline bundle management bar between the mech and the rule browser.
 
