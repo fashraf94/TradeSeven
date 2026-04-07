@@ -13,6 +13,7 @@ import {
 } from '../_utils/agentPromptAssembly.js';
 import { createAgentBattle } from '../_utils/agentBattleService.js';
 import { getStockAnalysisData } from '../_utils/marketDataCache.js';
+import { computeArchetypeRankings, ARCHETYPE_TEMPERATURES } from '../_utils/archetypeScoring.js';
 
 // Vercel Pro timeout — two-call AI chain needs breathing room
 export const config = { maxDuration: 60 };
@@ -81,6 +82,11 @@ export default async function handler(req, res) {
     }
     const stockUniverse = rankingsDoc.data().stocks || [];
 
+    // 3b. Apply archetype-specific scoring and sorting
+    const archetype = agent.archetype || 'analyst';
+    const rankedStocks = computeArchetypeRankings(stockUniverse, archetype);
+    const temps = ARCHETYPE_TEMPERATURES[archetype] || ARCHETYPE_TEMPERATURES.analyst;
+
     // 4. Fetch recent FantasyTimes stories
     const storiesSnap = await db
       .collection('fantasyTimesStories')
@@ -90,16 +96,17 @@ export default async function handler(req, res) {
     const stories = storiesSnap.docs.map((d) => d.data());
 
     // 5. Build market data
-    const marketCSV = formatMarketCSV(stockUniverse);
+    const marketCSV = formatMarketCSV(rankedStocks);
     const storiesSummary = formatStoriesSummary(stories);
 
     // 6. SONNET CALL — Strategic Analysis (with Tool Use)
-    const strategySystem = buildStrategySystemPrompt(marketCSV, storiesSummary);
+    const strategySystem = buildStrategySystemPrompt(marketCSV, storiesSummary, archetype);
     const strategyUser = buildStrategyUserPrompt(agent);
 
     const strategyResponse = await anthropic.messages.create({
       model: 'claude-sonnet-4-20250514',
       max_tokens: 1500,
+      temperature: temps.sonnet,
       system: strategySystem,
       messages: [{ role: 'user', content: strategyUser }],
       tools: [STRATEGY_TOOL],
@@ -113,14 +120,11 @@ export default async function handler(req, res) {
     if (stratToolUse) {
       strategy = stratToolUse.input;
     } else {
-      // Fallback: Sonnet didn't use the tool — use top 35 by baggerBombFit
+      // Fallback: Sonnet didn't use the tool — use top 35 by archetypeScore
       console.warn('[agent/decide] Sonnet did not use submit_strategy tool. Using fallback shortlist.');
       strategy = {
-        brief: 'Automated selection based on BaggerBomb fitness scores.',
-        shortlist: stockUniverse
-          .sort((a, b) => (b.baggerBombFit || 0) - (a.baggerBombFit || 0))
-          .slice(0, 35)
-          .map((s) => s.symbol),
+        brief: 'Automated selection based on archetype fitness scores.',
+        shortlist: rankedStocks.slice(0, 35).map((s) => s.symbol),
       };
     }
 
@@ -129,20 +133,18 @@ export default async function handler(req, res) {
     strategy.shortlist = strategy.shortlist.filter((t) => validSymbols.has(t));
 
     if (strategy.shortlist.length < 15) {
-      // Not enough valid tickers — pad with top baggerBombFit stocks
+      // Not enough valid tickers — pad with top archetype-scored stocks
       const existing = new Set(strategy.shortlist);
-      const padding = stockUniverse
-        .slice()
-        .sort((a, b) => (b.baggerBombFit || 0) - (a.baggerBombFit || 0))
+      const padding = rankedStocks
         .filter((s) => !existing.has(s.symbol))
         .slice(0, 35 - strategy.shortlist.length)
         .map((s) => s.symbol);
       strategy.shortlist.push(...padding);
     }
 
-    // Get detailed data for shortlisted stocks only
+    // Get detailed data for shortlisted stocks only (from rankedStocks to preserve archetypeScore)
     const shortlistSet = new Set(strategy.shortlist);
-    const shortlistData = stockUniverse.filter((s) => shortlistSet.has(s.symbol));
+    const shortlistData = rankedStocks.filter((s) => shortlistSet.has(s.symbol));
     const shortlistCSV = formatMarketCSV(shortlistData);
 
     // Build crypto list string
@@ -157,6 +159,7 @@ export default async function handler(req, res) {
     const portfolioResponse = await anthropic.messages.create({
       model: 'claude-haiku-4-5-20251001',
       max_tokens: 800,
+      temperature: temps.haiku,
       system: portfolioSystem,
       messages: [{ role: 'user', content: 'Build the optimal portfolio now. Use the submit_portfolio tool.' }],
       tools: [PORTFOLIO_TOOL],
