@@ -3,7 +3,7 @@
 
 import React, { useRef, useMemo, useState, useCallback } from 'react';
 import { motion, AnimatePresence, useScroll, useTransform } from 'framer-motion';
-import { ArrowLeft, Hammer, BarChart3, Settings } from 'lucide-react';
+import { ArrowLeft, Hammer, BarChart3, Settings, BookOpen } from 'lucide-react';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useForge, CATEGORY_ORDER } from '../../hooks/useForge';
 import useAgent from '../../hooks/useAgent';
@@ -15,6 +15,7 @@ import { useTraits } from '../../hooks/useTraits';
 import { getMechColors } from '../../utils/getMechColors';
 
 import MechSVG from './MechSVG';
+import MechParticles from './MechParticles';
 import MechVisorStrip from './MechVisorStrip';
 // import RadarChart from './RadarChart';  // Moved to Proving Grounds — Phase C
 import CategoryAccordion from './CategoryAccordion';
@@ -27,6 +28,7 @@ import StatsTab from './StatsTab';
 import BundlePresetModal from './BundlePresetModal';
 import CollectionChips from './CollectionChips';
 import CollectionDetailSheet from './CollectionDetailSheet';
+import IntelCodex from './IntelCodex';
 import ManagementPanel from './ManagementPanel';
 import MyRulesTab from './MyRulesTab';
 import MyBundlesTab from './MyBundlesTab';
@@ -35,6 +37,7 @@ import TraitCard from './TraitCard';
 
 const TABS = [
   { id: 'forge', label: 'The Forge', Icon: Hammer },
+  { id: 'intelCodex', label: 'Intel Codex', Icon: BookOpen },
   { id: 'provingGrounds', label: 'Proving Grounds', Icon: BarChart3 },
 ];
 
@@ -249,6 +252,11 @@ export default function ForgeScreen({ isMobile: isMobileProp, onClose, user }) {
     }
   }, [forge]);
 
+  // Jump to Forge tab from Intel Codex "Found In" chip
+  const handleJumpToForge = useCallback(() => {
+    forge.setActiveTab('forge');
+  }, [forge]);
+
   // Scroll to top for visor tap
   const handleScrollToTop = useCallback(() => {
     if (scrollRef.current) {
@@ -327,15 +335,18 @@ export default function ForgeScreen({ isMobile: isMobileProp, onClose, user }) {
             equippedTraits={traits.equippedTraits}
             mechColors={mechColors}
           >
-            <MechSVG
-              state={hasAgent ? 'idle' : 'dormant'}
-              size="hero"
-              reactPulse={mechReactPulse}
-              primaryGlow={mechColors.primaryGlow}
-              visorColor={mechColors.visorColor}
-              mode={mechColors.mode}
-              glowIntensity={mechColors.glowIntensity}
-            />
+            <div style={{ position: 'relative', width: '100%', maxWidth: 280, margin: '0 auto' }}>
+              <MechParticles slotUsage={slotUsage} mechMode={mechColors.mode} />
+              <MechSVG
+                state={hasAgent ? 'idle' : 'dormant'}
+                size="hero"
+                reactPulse={mechReactPulse}
+                primaryGlow={mechColors.primaryGlow}
+                visorColor={mechColors.visorColor}
+                mode={mechColors.mode}
+                glowIntensity={mechColors.glowIntensity}
+              />
+            </div>
 
             {/* No-agent overlay */}
             {!hasAgent && (
@@ -494,6 +505,22 @@ export default function ForgeScreen({ isMobile: isMobileProp, onClose, user }) {
                       rules={learnedRules}
                       isExpanded={learnedExpanded}
                       onToggle={() => setLearnedExpanded(p => !p)}
+                    />
+                  </motion.div>
+                )}
+                {forge.activeTab === 'intelCodex' && (
+                  <motion.div
+                    key="intelCodex"
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -8 }}
+                    transition={{ duration: 0.2 }}
+                    style={{ minHeight: 'calc(100vh - 80px)' }}
+                  >
+                    <IntelCodex
+                      userRules={forge.rules}
+                      onJumpToForge={handleJumpToForge}
+                      onDeleteRule={forge.deleteRule}
                     />
                   </motion.div>
                 )}
@@ -851,6 +878,22 @@ export default function ForgeScreen({ isMobile: isMobileProp, onClose, user }) {
                     rules={learnedRules}
                     isExpanded={learnedExpanded}
                     onToggle={() => setLearnedExpanded(p => !p)}
+                  />
+                </motion.div>
+              )}
+              {forge.activeTab === 'intelCodex' && (
+                <motion.div
+                  key="intelCodex"
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -8 }}
+                  transition={{ duration: 0.2 }}
+                >
+                  <IntelCodex
+                    userRules={forge.rules}
+                    onJumpToForge={handleJumpToForge}
+                    onRefineRule={forge.refineRule}
+                    onDeleteRule={forge.deleteRule}
                   />
                 </motion.div>
               )}
