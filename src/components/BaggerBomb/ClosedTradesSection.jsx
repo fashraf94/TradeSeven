@@ -33,6 +33,7 @@ const formatSwapTime = (isoString) => {
  */
 function ClosedTradeRow({ trade }) {
   const {
+    symbolOut,
     symbol,
     tier,
     entryPrice,
@@ -41,6 +42,8 @@ function ClosedTradeRow({ trade }) {
     lockedGainPct = 0,
     swappedOutAt,
   } = trade;
+
+  const displaySymbol = symbolOut || symbol;
 
   // Guard against NaN/null (destructuring default only catches undefined)
   const safeLockedPoints = Number.isFinite(lockedPoints) ? lockedPoints : 0;
@@ -74,7 +77,7 @@ function ClosedTradeRow({ trade }) {
               color: HOLO_COLORS.textPrimary,
             }}
           >
-            {symbol}
+            {displaySymbol}
             {/* V5: Direction label for crypto trades */}
             {trade.direction === 'short' && (
               <span style={{ fontSize: '10px', color: HOLO_COLORS.red, marginLeft: '4px', fontWeight: 700 }}>
@@ -160,7 +163,8 @@ function ClosedTradeRow({ trade }) {
 
 ClosedTradeRow.propTypes = {
   trade: PropTypes.shape({
-    symbol: PropTypes.string.isRequired,
+    symbolOut: PropTypes.string,
+    symbol: PropTypes.string,
     name: PropTypes.string,
     tier: PropTypes.string,
     slotIndex: PropTypes.number,
@@ -286,7 +290,7 @@ export default function ClosedTradesSection({
             ) : (
               closedTrades.map((trade, index) => (
                 <ClosedTradeRow
-                  key={`${trade.symbol}-${trade.swappedOutAt || index}`}
+                  key={`${trade.symbolOut || trade.symbol}-${trade.swappedOutAt || index}`}
                   trade={trade}
                 />
               ))
@@ -302,7 +306,8 @@ ClosedTradesSection.propTypes = {
   /** Array of closed trade records */
   closedTrades: PropTypes.arrayOf(
     PropTypes.shape({
-      symbol: PropTypes.string.isRequired,
+      symbolOut: PropTypes.string,
+      symbol: PropTypes.string,
       name: PropTypes.string,
       tier: PropTypes.string,
       slotIndex: PropTypes.number,

@@ -2,12 +2,17 @@
 // Shared system prompts (cacheable) + agent-specific user prompts
 
 import { getFirebaseAdmin } from './firebaseAdmin.js';
+import { ARCHETYPE_CONSTRAINTS } from './archetypeScoring.js';
 
 /**
  * Cacheable system prompt for the Sonnet strategy call.
  * Identical across all agents in the same market window.
  */
-export function buildStrategySystemPrompt(marketCSV, storiesSummary) {
+export function buildStrategySystemPrompt(marketCSV, storiesSummary, archetype) {
+  const constraint = archetype && ARCHETYPE_CONSTRAINTS[archetype]
+    ? `\nARCHETYPE STRATEGY CONSTRAINT:\n${ARCHETYPE_CONSTRAINTS[archetype]}\n\nThe ARCH column in the stock data below is pre-computed for your archetype. Higher scores = better fit for your strategy. Use it as your primary sorting signal.`
+    : '';
+
   return `You are a strategic analyst for BaggerBomb, a competitive stock portfolio game. Your job: analyze market conditions, then recommend 25-35 stocks for a portfolio builder.
 
 GAME RULES:
@@ -17,8 +22,9 @@ GAME RULES:
 - Star amplifies gains AND losses — only put high-conviction plays here
 - BaggerBomb bonuses: +15 (1x ATR), +30 (1.5x ATR), +50 (2x ATR)
 - Bust penalties: -10 (1x ATR), -20 (1.5x ATR), -35 (2x ATR)
+${constraint}
 
-STOCK UNIVERSE (TICKER|SECTOR|FUND|TECH|BB_FIT|ATR_PCT):
+STOCK UNIVERSE (TICKER|SECTOR|FUND|TECH|BB_FIT|ATR_PCT|ARCH):
 ${marketCSV}
 
 RECENT FANTASYTIMES INTELLIGENCE:
@@ -135,14 +141,15 @@ Use the submit_portfolio tool to submit your selections with rationale for each 
 export function formatMarketCSV(stocks) {
   if (!stocks?.length) return 'No stock data available.';
 
-  const header = 'TICKER|SECTOR|FUND|TECH|BB_FIT|ATR_PCT';
+  const header = 'TICKER|SECTOR|FUND|TECH|BB_FIT|ATR_PCT|ARCH';
   const rows = stocks.map((s) => {
     const sector = s.sectorName || 'Unknown';
     const fund = s.fundamentalScore != null ? Math.round(s.fundamentalScore) : '-';
     const tech = s.technicalScore != null ? Math.round(s.technicalScore) : '-';
     const bbFit = s.baggerBombFit != null ? Math.round(s.baggerBombFit) : '-';
     const atr = s.atrPercentile != null ? s.atrPercentile.toFixed(2) : '-';
-    return `${s.symbol}|${sector}|${fund}|${tech}|${bbFit}|${atr}`;
+    const arch = s.archetypeScore != null ? s.archetypeScore.toFixed(1) : '-';
+    return `${s.symbol}|${sector}|${fund}|${tech}|${bbFit}|${atr}|${arch}`;
   });
 
   return [header, ...rows].join('\n');
