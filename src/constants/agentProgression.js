@@ -51,9 +51,9 @@ export const AGENT_LEVELS = {
 
 // Forge limits by progression level — controls bundle and rule capacity
 export const FORGE_LIMITS = {
-  rookie:  { maxBundles: 1, maxRulesPerBundle: 5 },
-  starter: { maxBundles: 2, maxRulesPerBundle: 7 },
-  partner: { maxBundles: 3, maxRulesPerBundle: 10 },
+  rookie:  { maxBundles: 5, maxRulesPerBundle: 5 },
+  starter: { maxBundles: 5, maxRulesPerBundle: 7 },
+  partner: { maxBundles: 5, maxRulesPerBundle: 10 },
 };
 
 export function getAgentLevel(gamesPlayed) {

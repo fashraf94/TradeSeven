@@ -420,6 +420,10 @@ export function useForge(agentId) {
   // Create a new draft bundle
   const createNewBundle = useCallback(async (name = 'New Strategy') => {
     if (!agentId) return;
+    if (bundles.length >= 5) {
+      showToast('Maximum 5 bundles. Archive a bundle to create a new one.');
+      return;
+    }
     try {
       const bundleId = await createBundle(agentId, { name });
       setBundles(prev => [
@@ -432,7 +436,7 @@ export function useForge(agentId) {
       console.error('[useForge] createNewBundle failed:', err);
       showToast(err.message || 'Failed to create bundle');
     }
-  }, [agentId, showToast]);
+  }, [agentId, bundles, showToast]);
 
   // Add a rule to a specific bundle (from rule picker)
   const addRuleToBundleById = useCallback(async (bundleId, ruleId) => {

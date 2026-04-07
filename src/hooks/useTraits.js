@@ -71,6 +71,33 @@ export function useTraits(agentId, forge) {
     }
   }, [agentId]);
 
+  // ── Auto-unequip traits whose rules are no longer in any active bundle ──
+  useEffect(() => {
+    if (!equippedTraitEntries.length || !forge?.bundles || !forge?.rules) return;
+
+    // Collect all rule IDs present in non-archived bundles
+    // (forge.bundles already excludes archived via loadData filter)
+    const activeBundleRuleIds = new Set(
+      forge.bundles.flatMap(b => b.ruleIds || [])
+    );
+
+    // Find traits with zero rules in active bundles
+    const orphaned = equippedTraitEntries.filter(et => {
+      const traitRules = forge.rules.filter(r => r.traitId === et.traitId);
+      if (traitRules.length === 0) return true;
+      return !traitRules.some(r => activeBundleRuleIds.has(r.id));
+    });
+
+    if (orphaned.length === 0) return;
+
+    // Silently remove orphaned traits (no toast)
+    const cleaned = equippedTraitEntries.filter(
+      et => !orphaned.some(o => o.traitId === et.traitId)
+    );
+    setEquippedTraitEntries(cleaned);
+    persistTraits(cleaned);
+  }, [forge?.bundles, forge?.rules, equippedTraitEntries, persistTraits]);
+
   // ── Enriched equipped traits (merge entries with trait definitions) ──
   const equippedTraits = useMemo(() => {
     return equippedTraitEntries
