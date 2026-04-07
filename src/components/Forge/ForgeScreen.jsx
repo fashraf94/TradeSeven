@@ -3,7 +3,7 @@
 
 import React, { useRef, useMemo, useState, useCallback } from 'react';
 import { motion, AnimatePresence, useScroll, useTransform } from 'framer-motion';
-import { ArrowLeft, Hammer, BarChart3, List, Package, Settings } from 'lucide-react';
+import { ArrowLeft, Hammer, BarChart3, Settings } from 'lucide-react';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useForge, CATEGORY_ORDER } from '../../hooks/useForge';
 import useAgent from '../../hooks/useAgent';
@@ -16,9 +16,11 @@ import { useTraits } from '../../hooks/useTraits';
 
 import MechSVG from './MechSVG';
 import MechVisorStrip from './MechVisorStrip';
-import RadarChart from './RadarChart';
+// import RadarChart from './RadarChart';  // Moved to Proving Grounds — Phase C
 import CategoryAccordion from './CategoryAccordion';
-import BundleStrip from './BundleStrip';
+// DEPRECATED: BundleStrip replaced by LoadoutDropdown in AgentIdentityCard (April 2026)
+// import BundleStrip from './BundleStrip';
+import AgentIdentityCard from './AgentIdentityCard';
 import AgentLearnedSection from './AgentLearnedSection';
 import StarterKit from './StarterKit';
 import StatsTab from './StatsTab';
@@ -78,6 +80,15 @@ export default function ForgeScreen({ isMobile: isMobileProp, onClose, user }) {
   const bundleRuleIds = activeBundle?.ruleIds || [];
   const equippedRuleIds = useMemo(() => new Set(bundleRuleIds), [bundleRuleIds]);
 
+  // Bundle data for AgentIdentityCard / LoadoutDropdown
+  const maxBundles = 5;
+  const bundleCount = forge.bundles?.filter(b => b.status !== 'archived').length || 0;
+  const slotUsage = useMemo(() => ({
+    instincts: traits.getGroupSlotUsage('instincts'),
+    strategy: traits.getGroupSlotUsage('strategy'),
+    discipline: traits.getGroupSlotUsage('discipline'),
+  }), [traits]);
+
   // Capacity
   const capacity = {
     current: bundleRuleIds.length,
@@ -108,14 +119,6 @@ export default function ForgeScreen({ isMobile: isMobileProp, onClose, user }) {
     strategy: TRAIT_LIBRARY.filter(t => t.dnaGroup === 'strategy'),
     discipline: TRAIT_LIBRARY.filter(t => t.dnaGroup === 'discipline'),
   }), []);
-
-  // Combo label gradient colors
-  const COMBO_GRADIENTS = {
-    instincts: '#5EEAD4, #ffffff',
-    strategy: '#F59E0B, #ffffff',
-    discipline: '#EF4444, #ffffff',
-    mixed: '#5EEAD4, #F59E0B',
-  };
 
   // Track which templates the user has already collected (by sourceRef)
   const collectedSourceRefs = useMemo(() => {
@@ -314,71 +317,31 @@ export default function ForgeScreen({ isMobile: isMobileProp, onClose, user }) {
             </h1>
           </div>
 
-          {/* Mech */}
-          <MechSVG state={hasAgent ? 'idle' : 'dormant'} size="hero" reactPulse={mechReactPulse} />
+          {/* Agent Identity Card — Mech + Class Title + Loadout + DNA Sockets */}
+          <AgentIdentityCard
+            comboLabel={traits.activeComboLabel}
+            archetype={agent?.archetype}
+            bundles={forge.bundles}
+            activeBundleId={activeBundleId}
+            onEquipBundle={forge.equipBundleFn}
+            onCreateBundle={handleCreateBundle}
+            maxBundles={maxBundles}
+            bundleCount={bundleCount}
+            slotUsage={slotUsage}
+            equippedTraits={traits.equippedTraits}
+            mechColors={null}
+          >
+            <MechSVG state={hasAgent ? 'idle' : 'dormant'} size="hero" reactPulse={mechReactPulse} />
 
-          {/* No-agent overlay */}
-          {!hasAgent && (
-            <div style={{ textAlign: 'center' }}>
-              <div style={{ fontSize: 15, color: tokens.textMuted, marginBottom: 12 }}>
-                Create Your Agent to Activate the Forge
+            {/* No-agent overlay */}
+            {!hasAgent && (
+              <div style={{ textAlign: 'center' }}>
+                <div style={{ fontSize: 15, color: tokens.textMuted, marginBottom: 12 }}>
+                  Create Your Agent to Activate the Forge
+                </div>
               </div>
-            </div>
-          )}
-
-          {/* Radar chart */}
-          <RadarChart weights={forge.overlayWeights} size={140} />
-
-          {/* Combo label */}
-          {traits.activeComboLabel && (
-            <div style={{
-              textAlign: 'center', marginTop: 4, fontSize: 14, fontWeight: 600,
-              fontStyle: 'italic',
-              background: `linear-gradient(90deg, ${COMBO_GRADIENTS[traits.activeComboLabel.gradientType] || COMBO_GRADIENTS.mixed})`,
-              WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
-            }}>
-              The {traits.activeComboLabel.label}
-            </div>
-          )}
-
-          {/* Bundle strip */}
-          {hasAgent && forge.bundles.length > 0 && (
-            <div style={{ width: '100%', maxWidth: 320 }}>
-              <BundleStrip
-                activeBundleId={activeBundleId}
-                bundles={forge.bundles}
-                capacity={capacity}
-                isEquipped={activeBundle?.status === 'equipped'}
-                onForgeBundle={async () => {
-                  if (!activeBundleId) return;
-                  await forge.forgeBundleFn(activeBundleId);
-                  setMechReactPulse({ type: 'equip', color: '#5EEAD4', timestamp: Date.now() });
-                }}
-                onSwitchBundle={() => {}}
-                onRenameBundle={forge.renameDraftBundle}
-              />
-            </div>
-          )}
-
-          {/* Management links */}
-          {hasAgent && (
-            <div style={{ display: 'flex', gap: 16, marginTop: 12, width: '100%', maxWidth: 320 }}>
-              <button onClick={() => setShowMyRules(true)} style={{
-                display: 'flex', alignItems: 'center', gap: 5,
-                background: 'none', border: 'none', color: '#5EEAD4',
-                fontSize: 12, fontWeight: 600, cursor: 'pointer', padding: 0,
-              }}>
-                <List size={14} /> My Rules ({forge.rules.length})
-              </button>
-              <button onClick={() => setShowMyBundles(true)} style={{
-                display: 'flex', alignItems: 'center', gap: 5,
-                background: 'none', border: 'none', color: '#5EEAD4',
-                fontSize: 12, fontWeight: 600, cursor: 'pointer', padding: 0,
-              }}>
-                <Package size={14} /> My Bundles ({forge.bundles.length})
-              </button>
-            </div>
-          )}
+            )}
+          </AgentIdentityCard>
         </div>
 
         {/* Right pane — scrollable content */}
@@ -661,8 +624,9 @@ export default function ForgeScreen({ isMobile: isMobileProp, onClose, user }) {
         }}
       >
         <MechVisorStrip
-          bundleName={activeBundle?.name}
-          capacity={capacity}
+          comboLabel={traits.activeComboLabel}
+          archetype={agent?.archetype}
+          activeBundleName={activeBundle?.name}
           onTapToExpand={handleScrollToTop}
         />
       </motion.div>
@@ -691,7 +655,7 @@ export default function ForgeScreen({ isMobile: isMobileProp, onClose, user }) {
           </h1>
         </div>
 
-        {/* Mech + Radar */}
+        {/* Agent Identity Card — Mech + Class Title + Loadout + DNA Sockets */}
         <div style={{
           display: 'flex',
           flexDirection: 'column',
@@ -699,86 +663,44 @@ export default function ForgeScreen({ isMobile: isMobileProp, onClose, user }) {
           padding: '8px 16px 16px',
           position: 'relative',
         }}>
-          <MechSVG state={hasAgent ? 'idle' : 'dormant'} size="hero" reactPulse={mechReactPulse} />
+          <AgentIdentityCard
+            comboLabel={traits.activeComboLabel}
+            archetype={agent?.archetype}
+            bundles={forge.bundles}
+            activeBundleId={activeBundleId}
+            onEquipBundle={forge.equipBundleFn}
+            onCreateBundle={handleCreateBundle}
+            maxBundles={maxBundles}
+            bundleCount={bundleCount}
+            slotUsage={slotUsage}
+            equippedTraits={traits.equippedTraits}
+            mechColors={null}
+          >
+            <MechSVG state={hasAgent ? 'idle' : 'dormant'} size="hero" reactPulse={mechReactPulse} />
 
-          {/* No-agent overlay */}
-          {!hasAgent && (
-            <div style={{
-              position: 'absolute',
-              inset: 0,
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              justifyContent: 'center',
-              background: 'rgba(13,14,18,0.7)',
-              borderRadius: 12,
-            }}>
+            {/* No-agent overlay */}
+            {!hasAgent && (
               <div style={{
-                fontSize: 15, color: tokens.textMuted, textAlign: 'center',
-                padding: '0 24px', marginBottom: 12,
+                position: 'absolute',
+                inset: 0,
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                background: 'rgba(13,14,18,0.7)',
+                borderRadius: 12,
               }}>
-                Create Your Agent to Activate the Forge
+                <div style={{
+                  fontSize: 15, color: tokens.textMuted, textAlign: 'center',
+                  padding: '0 24px', marginBottom: 12,
+                }}>
+                  Create Your Agent to Activate the Forge
+                </div>
               </div>
-            </div>
-          )}
-
-          <div style={{ marginTop: 8 }}>
-            <RadarChart weights={forge.overlayWeights} size={80} />
-          </div>
-
-          {/* Combo label */}
-          {traits.activeComboLabel && (
-            <div style={{
-              textAlign: 'center', marginTop: 4, fontSize: 13, fontWeight: 600,
-              fontStyle: 'italic',
-              background: `linear-gradient(90deg, ${COMBO_GRADIENTS[traits.activeComboLabel.gradientType] || COMBO_GRADIENTS.mixed})`,
-              WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
-            }}>
-              The {traits.activeComboLabel.label}
-            </div>
-          )}
+            )}
+          </AgentIdentityCard>
         </div>
       </motion.div>
-
-      {/* Bundle strip */}
-      {hasAgent && forge.bundles.length > 0 && (
-        <BundleStrip
-          activeBundleId={activeBundleId}
-          bundles={forge.bundles}
-          capacity={capacity}
-          isEquipped={activeBundle?.status === 'equipped'}
-          onForgeBundle={async () => {
-                  if (!activeBundleId) return;
-                  await forge.forgeBundleFn(activeBundleId);
-                  setMechReactPulse({ type: 'equip', color: '#5EEAD4', timestamp: Date.now() });
-                }}
-          onSwitchBundle={() => {}}
-          onRenameBundle={forge.renameDraftBundle}
-        />
-      )}
-
-      {/* Management links */}
-      {hasAgent && (
-        <div style={{
-          display: 'flex', gap: 16, padding: '8px 16px',
-          background: '#0D0E12',
-        }}>
-          <button onClick={() => setShowMyRules(true)} style={{
-            display: 'flex', alignItems: 'center', gap: 5,
-            background: 'none', border: 'none', color: '#5EEAD4',
-            fontSize: 12, fontWeight: 600, cursor: 'pointer', padding: 0,
-          }}>
-            <List size={14} /> My Rules ({forge.rules.length})
-          </button>
-          <button onClick={() => setShowMyBundles(true)} style={{
-            display: 'flex', alignItems: 'center', gap: 5,
-            background: 'none', border: 'none', color: '#5EEAD4',
-            fontSize: 12, fontWeight: 600, cursor: 'pointer', padding: 0,
-          }}>
-            <Package size={14} /> My Bundles ({forge.bundles.length})
-          </button>
-        </div>
-      )}
 
       {/* Create bundle CTA when no bundles */}
       {hasAgent && forge.bundles.length === 0 && !forge.loading && (
