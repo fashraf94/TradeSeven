@@ -26,6 +26,14 @@ function formatWeight(n) {
   return `${n.toFixed(2)}%`;
 }
 
+function formatAUM(n) {
+  if (!n) return null;
+  if (n >= 1e12) return `$${(n / 1e12).toFixed(1)}T`;
+  if (n >= 1e9) return `$${(n / 1e9).toFixed(1)}B`;
+  if (n >= 1e6) return `$${(n / 1e6).toFixed(0)}M`;
+  return `$${(n / 1e3).toFixed(0)}K`;
+}
+
 // ── Constants ──
 const ARCHETYPE_STYLES = {
   index_passive: { label: 'Index',     color: '#64748b', bg: 'rgba(100, 116, 139, 0.15)', border: 'rgba(100, 116, 139, 0.3)' },
@@ -663,6 +671,19 @@ export const WhaleLeaderboard = ({ institutions, institutionPortfolios, onStockT
                   </span>
                 )}
 
+                {inst.topSector && SECTORS[inst.topSector] && (
+                  <span style={{
+                    fontSize: '9px', fontWeight: 600, padding: '2px 8px',
+                    borderRadius: '4px', fontFamily: MONO,
+                    color: SECTORS[inst.topSector].color,
+                    background: `${SECTORS[inst.topSector].color}15`,
+                    border: `0.5px solid ${SECTORS[inst.topSector].color}40`,
+                    flexShrink: 0,
+                  }}>
+                    {SECTORS[inst.topSector].name}
+                  </span>
+                )}
+
                 {isExpanded
                   ? <ChevronDown size={16} style={{ color: '#6b7280', flexShrink: 0 }} />
                   : <ChevronRight size={16} style={{ color: '#6b7280', flexShrink: 0 }} />
@@ -676,6 +697,16 @@ export const WhaleLeaderboard = ({ institutions, institutionPortfolios, onStockT
                   paddingLeft: '36px',
                 }}>
                   Top Bet: {topBet.symbol} ({formatWeight(topBet.weight)})
+                </div>
+              )}
+
+              {/* Line 3: AUM */}
+              {inst.aum > 0 && (
+                <div style={{
+                  fontSize: '11px', color: '#8B8D97', fontFamily: MONO, marginTop: '2px',
+                  paddingLeft: '36px',
+                }}>
+                  AUM: {formatAUM(inst.aum)}
                 </div>
               )}
             </div>
@@ -793,7 +824,10 @@ export const WhaleLeaderboard = ({ institutions, institutionPortfolios, onStockT
                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                           <TrendingDown size={14} style={{ color: '#ef4444' }} />
                           <span style={{ fontSize: '13px', fontWeight: 700, color: '#ffffff' }}>
-                            Cut: {formatShares(inst.biggestCut.changeShares || inst.biggestCut.change)} {inst.biggestCut.symbol}
+                            {!inst.biggestCut.changeShares && !inst.biggestCut.change
+                              ? `Reduced: ${inst.biggestCut.symbol}`
+                              : `Cut: ${formatShares(Math.abs(inst.biggestCut.changeShares || inst.biggestCut.change))} ${inst.biggestCut.symbol}`
+                            }
                           </span>
                         </div>
                         <div style={{ fontSize: '10px', color: '#6b7280', marginTop: '4px', paddingLeft: '20px' }}>
