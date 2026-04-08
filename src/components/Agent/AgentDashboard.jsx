@@ -127,7 +127,7 @@ const AgentDashboard = ({ user, setScreen, onCreateAgentBattle, setShowForge }) 
         return;
       }
 
-      // Step 2: Set opponent + navigate to battle view
+      // Step 2: Navigate to battle view (opponent is now set server-side)
       console.log('[Deploy] Agent battle created:', data.agentBattleId || '(existing)');
       if (onCreateAgentBattle) {
         await onCreateAgentBattle(
@@ -139,6 +139,8 @@ const AgentDashboard = ({ user, setScreen, onCreateAgentBattle, setShowForge }) 
             innerMonologue: data.innerMonologue || null,
             strategyBrief: data.strategyBrief || null,
             expiresAt: data.expiresAt || null,
+            opponent: data.opponent || null,
+            opponentBench: data.opponentBench || null,
           }
         );
       }

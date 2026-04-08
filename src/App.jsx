@@ -6220,75 +6220,23 @@ export default function PortfolioDuel() {
   const handleCreateAgentTrainingBattle = async (portfolioData, benchData, agentMeta) => {
     // portfolioData: { star: [...], core: [...], support: [...] } — from api/agent/decide
     // benchData: { stocks: [...], crypto: {...} } — from api/agent/decide
-    // agentMeta: { agentId, agentBattleId, innerMonologue, strategyBrief, expiresAt }
-
-    // Defensive check: stocksData/cryptoData must be loaded
-    if (!stocksData?.length || !cryptoData?.length) {
-      showToast('Market data still loading — try again in a moment.');
-      return null;
-    }
+    // agentMeta: { agentId, agentBattleId, innerMonologue, strategyBrief, expiresAt, opponent, opponentBench }
+    // CPU opponent is now generated server-side in decide.js and included in the response.
 
     const agentBattleId = agentMeta?.agentBattleId;
+    const cpuPortfolio = agentMeta?.opponent || null;
+    const cpuBench = agentMeta?.opponentBench || null;
 
-    // 1. Generate CPU portfolio (reuse existing V3 logic)
-    const cpuPortfolioData = generateCPUPortfolioBaggerBombV3(stocksData, cryptoData);
-
-    // 2. Fetch starting prices for CPU symbols (agent symbols already have prices from API)
-    const cpuAssets = flattenPortfolio(cpuPortfolioData.portfolio);
-    const cpuBenchAssets = flattenBench(cpuPortfolioData.bench);
-    const allCpuAssets = [...cpuAssets, ...cpuBenchAssets];
-    const cpuSymbols = [...new Set(allCpuAssets.map(a => a?.symbol).filter(Boolean))];
-
-    const { startingPrices } = await fetchBattlePrices(cpuSymbols);
-
-    // 3. Price update helpers
-    const updateV3PortfolioPrices = (portfolio) => ({
-      star: (portfolio.star || []).map(a => a ? { ...a, price: startingPrices[a.symbol] || a.price || 0 } : null),
-      core: (portfolio.core || []).map(a => a ? { ...a, price: startingPrices[a.symbol] || a.price || 0 } : null),
-      support: (portfolio.support || []).map(a => a ? { ...a, price: startingPrices[a.symbol] || a.price || 0 } : null),
-    });
-
-    const updateV3BenchPrices = (bench) => ({
-      stocks: (bench.stocks || []).map(a => a ? { ...a, price: startingPrices[a.symbol] || a.price || 0 } : null),
-      crypto: bench.crypto ? { ...bench.crypto, price: startingPrices[bench.crypto.symbol] || bench.crypto.price || 0 } : null,
-    });
-
-    const cpuPortfolio = updateV3PortfolioPrices(cpuPortfolioData.portfolio);
-    const cpuBench = updateV3BenchPrices(cpuPortfolioData.bench);
-
-    // 4. Write CPU opponent to the agentBattle document via server endpoint
-    if (agentBattleId) {
-      try {
-        const { auth } = await import('./firebase/config');
-        const idToken = await auth.currentUser?.getIdToken();
-        const resp = await fetch('/api/agent/set-opponent', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
-          body: JSON.stringify({
-            agentBattleId,
-            opponent: { portfolio: cpuPortfolio, bench: cpuBench },
-            startingPrices,
-          }),
-        });
-        const result = await resp.json();
-        if (!resp.ok) {
-          console.error('[Deploy] set-opponent failed:', result.error);
-        } else {
-          console.log('✅ CPU opponent written to agentBattle:', agentBattleId, result.alreadySet ? '(already set)' : '');
-        }
-      } catch (err) {
-        console.error('[Deploy] set-opponent error:', err);
-      }
-    }
-
-    // 5. Build in-memory battle object for AgentBattleScreen navigation
-    // Include agent asset prices in startingPrices for complete coverage
+    // Build in-memory battle object for AgentBattleScreen navigation
+    // Collect agent asset prices for the startingPrices map
     const agentAssets = [...flattenPortfolio(portfolioData), ...flattenBench(benchData)];
-    const agentStartingPrices = {};
-    agentAssets.forEach(a => {
-      if (a?.symbol && a?.price) agentStartingPrices[a.symbol] = a.price;
+    const cpuAssets = cpuPortfolio ? [...flattenPortfolio(cpuPortfolio)] : [];
+    const cpuBenchAssets = cpuBench ? [...flattenBench(cpuBench)] : [];
+    const allAssets = [...agentAssets, ...cpuAssets, ...cpuBenchAssets];
+    const allStartingPrices = {};
+    allAssets.forEach(a => {
+      if (a?.symbol && a?.price) allStartingPrices[a.symbol] = a.price;
     });
-    const allStartingPrices = { ...agentStartingPrices, ...startingPrices };
 
     const odUserId = user.odUserId || user.username;
     const now = new Date();
@@ -6306,8 +6254,8 @@ export default function PortfolioDuel() {
         odUserId: odUserId,
         username: user.username,
         portfolioName: 'Agent Deploy',
-        portfolio: updateV3PortfolioPrices(portfolioData),
-        bench: updateV3BenchPrices(benchData),
+        portfolio: portfolioData,
+        bench: benchData,
       },
 
       opponent: {
@@ -6333,7 +6281,7 @@ export default function PortfolioDuel() {
       isTrainingBattle: true,
     };
 
-    // 6. Navigate to battle screen (no Firestore write — dashboard reads agentBattles directly)
+    // Navigate to battle screen (no Firestore write — dashboard reads agentBattles directly)
     setActiveBattleId(currentBattleObj.id);
     setCurrentBattle(currentBattleObj);
     setScreen('battle');
