@@ -13,6 +13,7 @@ import {
 } from '../_utils/agentPromptAssembly.js';
 import { createAgentBattle } from '../_utils/agentBattleService.js';
 import { getStockAnalysisData } from '../_utils/marketDataCache.js';
+import { generateCPUOpponent } from '../_utils/cpuOpponentGenerator.js';
 import { computeArchetypeRankings, ARCHETYPE_TEMPERATURES } from '../_utils/archetypeScoring.js';
 
 // Vercel Pro timeout — two-call AI chain needs breathing room
@@ -335,14 +336,31 @@ export default async function handler(req, res) {
     stockUniverse.forEach(s => { sectorMap[s.symbol] = s.sectorName || 'Unknown'; });
     CRYPTO_ASSETS.forEach(c => { sectorMap[c.symbol] = 'Crypto'; });
 
-    // 13. Fetch entry prices (rate-limited: 5 concurrent, 200ms between batches)
-    const allSymbols = [
-      ...enrichedPortfolio.portfolio.star.map(a => a.symbol),
-      ...enrichedPortfolio.portfolio.core.map(a => a.symbol),
-      ...enrichedPortfolio.portfolio.support.map(a => a.symbol),
-      ...enrichedPortfolio.bench.stocks.map(a => a.symbol),
+    // 13. Generate CPU opponent portfolio (server-side — eliminates fragile client set-opponent call)
+    const agentSymbols = new Set([
+      ...enrichedPortfolio.portfolio.star.map(a => a?.symbol),
+      ...enrichedPortfolio.portfolio.core.map(a => a?.symbol),
+      ...enrichedPortfolio.portfolio.support.map(a => a?.symbol),
+      ...enrichedPortfolio.bench.stocks.map(a => a?.symbol),
       ...(enrichedPortfolio.bench.crypto ? [enrichedPortfolio.bench.crypto.symbol] : []),
+    ].filter(Boolean));
+
+    const cpuOpponent = generateCPUOpponent(stockUniverse, CRYPTO_ASSETS, agentSymbols);
+
+    // Collect ALL symbols (agent + CPU) for price fetching
+    const cpuPortfolioAssets = [
+      ...(cpuOpponent.portfolio.star || []),
+      ...(cpuOpponent.portfolio.core || []),
+      ...(cpuOpponent.portfolio.support || []),
     ].filter(Boolean);
+    const cpuBenchAssets = [
+      ...(cpuOpponent.bench.stocks || []),
+      ...(cpuOpponent.bench.crypto ? [cpuOpponent.bench.crypto] : []),
+    ].filter(Boolean);
+    const cpuSymbols = [...cpuPortfolioAssets, ...cpuBenchAssets].map(a => a.symbol).filter(Boolean);
+
+    // 14. Fetch entry prices for all symbols (rate-limited: 5 concurrent, 200ms between batches)
+    const allSymbols = [...agentSymbols, ...cpuSymbols];
 
     const startingPrices = {};
     const PRICE_CONCURRENCY = 5;
@@ -361,7 +379,24 @@ export default async function handler(req, res) {
       }
     }
 
-    // 14. Build thresholds from baseATR on assets (consistent with scoring engine)
+    // Update CPU portfolio assets with fetched prices
+    ['star', 'core', 'support'].forEach(tier => {
+      (cpuOpponent.portfolio[tier] || []).forEach(asset => {
+        if (asset?.symbol && startingPrices[asset.symbol]) {
+          asset.price = startingPrices[asset.symbol];
+        }
+      });
+    });
+    (cpuOpponent.bench.stocks || []).forEach(asset => {
+      if (asset?.symbol && startingPrices[asset.symbol]) {
+        asset.price = startingPrices[asset.symbol];
+      }
+    });
+    if (cpuOpponent.bench.crypto?.symbol && startingPrices[cpuOpponent.bench.crypto.symbol]) {
+      cpuOpponent.bench.crypto.price = startingPrices[cpuOpponent.bench.crypto.symbol];
+    }
+
+    // 15. Build thresholds from baseATR on ALL assets (agent + CPU)
     const thresholds = {};
     const allAssets = [
       ...enrichedPortfolio.portfolio.star,
@@ -369,6 +404,8 @@ export default async function handler(req, res) {
       ...enrichedPortfolio.portfolio.support,
       ...enrichedPortfolio.bench.stocks,
       ...(enrichedPortfolio.bench.crypto ? [enrichedPortfolio.bench.crypto] : []),
+      ...cpuPortfolioAssets,
+      ...cpuBenchAssets,
     ].filter(Boolean);
     for (const asset of allAssets) {
       const baseATR = asset.baseATR || (asset.isCrypto ? 5.0 : 2.5);
@@ -379,7 +416,7 @@ export default async function handler(req, res) {
       };
     }
 
-    // 15. Create agent battle
+    // 16. Create agent battle
     const agentData = {
       id: agentDoc.id,
       ...agent,
@@ -393,15 +430,22 @@ export default async function handler(req, res) {
       },
     };
 
+    const opponent = {
+      portfolio: cpuOpponent.portfolio,
+      bench: cpuOpponent.bench,
+      username: 'CPU Opponent',
+      odUserId: 'cpu',
+    };
+
     const battleResult = await createAgentBattle(
       db, agentData, thresholds, startingPrices,
-      { duration: req.body.duration || '1d', sectorMap }
+      { duration: req.body.duration || '1d', sectorMap, opponent }
     );
 
-    // 16. Write activeBattleId back to agent doc
+    // 17. Write activeBattleId back to agent doc
     await agentRef.update({ activeBattleId: battleResult.id });
 
-    // 17. Return to client
+    // 18. Return to client
     return res.status(200).json({
       success: true,
       portfolioUpdated: true,
@@ -410,6 +454,8 @@ export default async function handler(req, res) {
       expiresAt: battleResult.expiresAt,
       portfolio: enrichedPortfolio.portfolio,
       bench: enrichedPortfolio.bench,
+      opponent: cpuOpponent.portfolio,
+      opponentBench: cpuOpponent.bench,
       innerMonologue: portfolioResult.innerMonologue,
       strategyBrief: strategy.brief,
     });

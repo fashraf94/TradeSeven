@@ -100,6 +100,8 @@ export async function createAgentBattle(db, agentData, thresholds, startingPrice
       startingPrices: { ...startingPrices },
     },
 
+    opponent: options.opponent || null,
+
     scoring: {
       thresholds: { ...thresholds },
       tierMultipliers: { star: 2.0, core: 1.5, support: 1.0 },
