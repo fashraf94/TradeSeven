@@ -6281,6 +6281,31 @@ export default function PortfolioDuel() {
       isTrainingBattle: true,
     };
 
+    // Overwrite server's 15-min-delayed prices with client's fresher prices
+    if (agentBattleId) {
+      const allUniqueSymbols = [...new Set(allAssets.map(a => a?.symbol).filter(Boolean))];
+      captureBattlePrices(allUniqueSymbols).then(async (freshPrices) => {
+        // Merge: keep server price if capture didn't get one
+        const merged = { ...allStartingPrices };
+        for (const [sym, price] of Object.entries(freshPrices)) {
+          if (price > 0) merged[sym] = price;
+        }
+        // Update Firestore (fire-and-forget)
+        try {
+          const { doc, updateDoc } = await import('firebase/firestore');
+          const { db } = await import('./firebase/config');
+          await updateDoc(doc(db, 'agentBattles', agentBattleId), {
+            'portfolio.startingPrices': merged,
+          });
+          console.log(`[AgentBattle] Overwrote startingPrices with ${Object.keys(freshPrices).length} fresh prices`);
+        } catch (err) {
+          console.warn('[AgentBattle] Failed to overwrite startingPrices:', err.message);
+        }
+      }).catch(err => {
+        console.warn('[AgentBattle] captureBattlePrices failed:', err.message);
+      });
+    }
+
     // Navigate to battle screen (no Firestore write — dashboard reads agentBattles directly)
     setActiveBattleId(currentBattleObj.id);
     setCurrentBattle(currentBattleObj);

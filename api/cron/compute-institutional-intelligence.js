@@ -207,6 +207,24 @@ export default async function handler(req, res) {
 
   // ── Write aggregate document ──
 
+  // Batch-read latest close prices from marketDataCache for AUM computation
+  const priceMap = {};
+  try {
+    const priceRefs = ALL_TICKERS.map(s => db.collection('marketDataCache').doc(`${s}_daily`));
+    const priceDocs = await db.getAll(...priceRefs);
+    priceDocs.forEach((doc, i) => {
+      if (doc.exists) {
+        const daily = doc.data()?.data;
+        if (Array.isArray(daily) && daily.length > 0) {
+          priceMap[ALL_TICKERS[i]] = daily[0].close;
+        }
+      }
+    });
+    log(`Loaded prices for ${Object.keys(priceMap).length} symbols`);
+  } catch (err) {
+    log(`Price batch-read failed (AUM will be 0): ${err.message}`);
+  }
+
   // Rank institutions by stock coverage
   const topInstitutions = Object.values(allInstitutions)
     .sort((a, b) => b.stocksHeld - a.stocksHeld)
@@ -229,6 +247,21 @@ export default async function handler(req, res) {
       biggestCut: inst.positions
         .filter(p => p.changePct < 0)
         .sort((a, b) => a.changePct - b.changePct)[0] || null,
+      // AUM: sum of (currentShares * lastClose) across tracked positions
+      aum: inst.positions.reduce((sum, p) => {
+        const price = priceMap[p.symbol];
+        return sum + (price ? p.currentShares * price : 0);
+      }, 0),
+      // Top sector by aggregate portfolio weight
+      topSector: (() => {
+        const sw = {};
+        for (const p of inst.positions) {
+          const sec = TICKER_TO_SECTOR[p.symbol];
+          if (sec) sw[sec] = (sw[sec] || 0) + p.totalAssetsPct;
+        }
+        const top = Object.entries(sw).sort((a, b) => b[1] - a[1])[0];
+        return top ? top[0] : null;
+      })(),
     }));
 
   // Derive sector sentiment

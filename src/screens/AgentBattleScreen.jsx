@@ -31,6 +31,9 @@ import { DEFAULT_THRESHOLD, buildResearchAsset } from '../utils/researchAssetBui
 import AssetResearchModal from '../components/draft/AssetResearchModal';
 import ScoreBreakdownPopover from '../components/draft/ScoreBreakdownPopover';
 import { CONVICTION_MULTIPLIERS } from '../constants/baggerBombScoring';
+import { doc, updateDoc } from 'firebase/firestore';
+import { db } from '../firebase/config';
+import { isMarketOpen } from '../utils/marketSchedule';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -485,6 +488,34 @@ export default function AgentBattleScreen({ battle, user, onBack }) {
     const interval = setInterval(fetchPrices, PRICE_POLL_INTERVAL);
     return () => clearInterval(interval);
   }, [fetchPrices]);
+
+  // ── Price beacon: write live prices to Firestore for cron consumption ────
+
+  useEffect(() => {
+    if (!agentBattleId || isBattleCompleted) return;
+
+    const writeBeacon = () => {
+      if (!isMarketOpen()) return;
+      const prices = {};
+      for (const sym of allSymbols) {
+        const p = effectivePrices[sym];
+        if (p > 0) prices[sym] = p;
+      }
+      if (Object.keys(prices).length === 0) return;
+
+      updateDoc(doc(db, 'agentBattles', agentBattleId), {
+        livePriceBeacon: {
+          prices,
+          updatedAt: new Date().toISOString(),
+          source: 'websocket',
+        },
+      }).catch(err => console.warn('[Beacon] Write failed:', err.message));
+    };
+
+    writeBeacon();
+    const interval = setInterval(writeBeacon, 60000);
+    return () => clearInterval(interval);
+  }, [agentBattleId, isBattleCompleted, allSymbols, effectivePrices]);
 
   // ── Asset enrichment ──────────────────────────────────────────────────────
 

@@ -118,11 +118,21 @@ export async function executeSwapServer(db, battleId, battle, resolvedTier, reso
     const outSymbol = outAsset.symbol;
     const inSymbol = benchAsset.symbol;
 
+    // Prefer live beacon prices over REST-fetched (15-min delayed) prices
+    const beacon = liveData.livePriceBeacon;
+    const beaconFresh = beacon?.updatedAt &&
+      (Date.now() - new Date(beacon.updatedAt).getTime()) < 120000; // < 2 min
+
+    const getPrice = (symbol) => {
+      if (beaconFresh && beacon.prices?.[symbol] > 0) return beacon.prices[symbol];
+      return currentPrices[symbol]?.current;
+    };
+
     // ---- Calculate locked points for outgoing asset ----
     const entryPrice = outAsset.swapPrice
       || liveData.portfolio?.startingPrices?.[outSymbol]
       || 0;
-    const exitPrice = currentPrices[outSymbol]?.current || entryPrice;
+    const exitPrice = getPrice(outSymbol) || entryPrice;
 
     let lockedPoints = 0;
     let lockedGainPct = 0;
@@ -167,7 +177,7 @@ export async function executeSwapServer(db, battleId, battle, resolvedTier, reso
     };
 
     // ---- Build incoming asset ----
-    const swapPrice = currentPrices[inSymbol]?.current || 0;
+    const swapPrice = getPrice(inSymbol) || 0;
     if (swapPrice <= 0) {
       throw new Error(`Cannot complete swap: no valid price for ${inSymbol}`);
     }
