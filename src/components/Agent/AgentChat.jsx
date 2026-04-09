@@ -120,7 +120,7 @@ function ExecutionCard({ directive }) {
           ))}
         </div>
         <span style={{ fontSize: 12, color: '#9CA3AF' }}>
-          Haiku will act on next evaluation
+          Executing on next evaluation window
         </span>
       </div>
     </motion.div>
@@ -182,6 +182,63 @@ function TradeEventCard({ event }) {
         {event.summary || event.description || `${event.action || 'SWAP'}: ${event.details || ''}`}
       </div>
     </div>
+  );
+}
+
+function InlineTrade({ trade }) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.25 }}
+      style={{
+        alignSelf: 'center',
+        maxWidth: '90%',
+        background: 'rgba(245, 158, 11, 0.06)',
+        border: '1px solid rgba(245, 158, 11, 0.15)',
+        borderRadius: 10,
+        padding: '10px 14px',
+        margin: '4px 0',
+      }}
+    >
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 6,
+        marginBottom: 4,
+      }}>
+        <span style={{
+          fontSize: 10,
+          fontWeight: 700,
+          color: '#F59E0B',
+          letterSpacing: '0.5px',
+          textTransform: 'uppercase',
+        }}>
+          Trade Executed
+        </span>
+        <span style={{ fontSize: 10, color: '#6B7280' }}>
+          {trade.timestamp instanceof Date
+            ? trade.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+            : ''}
+        </span>
+      </div>
+      <div style={{ fontSize: 13, color: '#FFFFFF', lineHeight: '1.4' }}>
+        {trade.symbolOut && trade.symbolIn ? (
+          <>
+            <span style={{ color: '#EF4444' }}>{trade.symbolOut}</span>
+            <span style={{ color: '#6B7280' }}> → </span>
+            <span style={{ color: '#5EEAD4' }}>{trade.symbolIn}</span>
+          </>
+        ) : (
+          trade.summary
+        )}
+      </div>
+      {trade.reason && (
+        <div style={{ fontSize: 11, color: '#9CA3AF', marginTop: 4, lineHeight: '1.4' }}>
+          {trade.reason}
+        </div>
+      )}
+    </motion.div>
   );
 }
 
@@ -503,17 +560,54 @@ export default function AgentChat({ battleId, agentId, agentName, chatExchanges,
 
   const budgetColor = budgetUsed >= 10 ? '#EF4444' : budgetUsed >= 8 ? '#F59E0B' : '#6B7280';
 
-  // ── Find last agent message index ──────────────────────────────────────────
+  // ── Find last agent message (by id, for combined timeline) ─────────────────
 
-  let lastAgentIdx = -1;
+  let lastAgentId = null;
   for (let i = messages.length - 1; i >= 0; i--) {
     if (messages[i].role === 'agent' && !messages[i].isTyping) {
-      lastAgentIdx = i;
+      lastAgentId = messages[i].id;
       break;
     }
   }
 
-  // ── Render ─────────────────────────────────────────────────────────────────
+  // ── Extract trade events from statusFeed for inline chat cards ────────────
+
+  const tradeEvents = React.useMemo(() => {
+    if (!statusFeed) return [];
+    const tradeActions = ['swap', 'emergency_swap', 'trade_executed'];
+    return statusFeed
+      .filter(entry => tradeActions.includes(entry.action))
+      .map(entry => {
+        const ts = typeof entry.timestamp === 'string'
+          ? new Date(entry.timestamp)
+          : entry.timestamp?.toDate?.()
+            || (entry.timestamp?.seconds ? new Date(entry.timestamp.seconds * 1000) : new Date());
+        return {
+          id: `trade-${ts.getTime()}-${entry.symbolOut || ''}`,
+          _type: 'trade',
+          timestamp: ts,
+          action: entry.action,
+          summary: entry.message || '',
+          symbolOut: entry.symbolOut || null,
+          symbolIn: entry.symbolIn || null,
+          reason: entry.reason || null,
+        };
+      });
+  }, [statusFeed]);
+
+  // ── Combined timeline: messages + trade events sorted chronologically ─────
+
+  const combinedTimeline = React.useMemo(() => {
+    const allItems = [
+      ...messages.map(m => ({ ...m, _type: 'message', timestamp: m.timestamp instanceof Date ? m.timestamp : new Date(m.timestamp || 0) })),
+      ...tradeEvents,
+    ];
+    return allItems.sort((a, b) => {
+      const timeA = a.timestamp instanceof Date ? a.timestamp.getTime() : 0;
+      const timeB = b.timestamp instanceof Date ? b.timestamp.getTime() : 0;
+      return timeA - timeB;
+    });
+  }, [messages, tradeEvents]);
 
   // ── Build thinking panel entries ────────────────────────────────────────────
 
@@ -532,9 +626,9 @@ export default function AgentChat({ battleId, agentId, agentName, chatExchanges,
     });
 
     // Trade events from statusFeed
-    const tradeTypes = ['swap', 'emergency_swap', 'trade_executed'];
+    const tradeActions = ['swap', 'emergency_swap', 'trade_executed'];
     (statusFeed || []).forEach(event => {
-      if (tradeTypes.includes(event.type)) {
+      if (tradeActions.includes(event.action)) {
         const ts = event.timestamp?.toMillis?.() || (typeof event.timestamp === 'string' ? new Date(event.timestamp).getTime() : event.timestamp) || 0;
         entries.push({ type: 'trade', event, timestamp: ts });
       }
@@ -559,19 +653,22 @@ export default function AgentChat({ battleId, agentId, agentName, chatExchanges,
         display: 'flex',
         flexDirection: 'column',
       }}>
-        {messages.length === 0 ? (
+        {messages.length === 0 && tradeEvents.length === 0 ? (
           <EmptyState onQuickStart={handleActionClick} disabled={isDisabled} />
         ) : (
-          messages.map((msg, i) => {
-            if (msg.isTyping) {
-              return <TypingIndicator key={msg.id} />;
+          combinedTimeline.map((item) => {
+            if (item._type === 'trade') {
+              return <InlineTrade key={item.id} trade={item} />;
+            }
+            if (item.isTyping) {
+              return <TypingIndicator key={item.id} />;
             }
             return (
               <MessageBubble
-                key={msg.id}
-                message={msg}
+                key={item.id}
+                message={item}
                 agentName={agentName}
-                isLastAgent={i === lastAgentIdx}
+                isLastAgent={item.id === lastAgentId}
                 onActionClick={handleActionClick}
                 isSending={isSending}
               />
