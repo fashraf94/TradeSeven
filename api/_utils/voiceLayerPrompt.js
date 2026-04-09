@@ -236,12 +236,18 @@ function buildConvictionsBlock(convictions, consolidatedInsight) {
 function buildBattleState(battle) {
   if (!battle) return 'No active battle. This is a strategy session.';
 
+  const portfolioDisplay = []
+    .concat((battle.portfolio?.star || []).map(p => `${p.symbol} (Star)`))
+    .concat((battle.portfolio?.core || []).map(p => `${p.symbol} (Core)`))
+    .concat((battle.portfolio?.support || []).map(p => `${p.symbol} (Support)`))
+    .join(', ');
+
   return `CURRENT BATTLE:
 - Mode: ${battle.gameMode}
 - Score: You ${battle.currentScore} — Opponent ${battle.opponentScore} (${battle.currentScore > battle.opponentScore ? 'LEADING' : battle.currentScore < battle.opponentScore ? 'TRAILING' : 'TIED'} by ${Math.abs(battle.currentScore - battle.opponentScore)} pts)
 - Market: ${battle.marketOpen ? 'OPEN' : 'CLOSED'}
 - Time remaining: ${battle.timeRemaining}
-- Your portfolio: ${battle.portfolio.map(p => `${p.symbol} (${p.tier})`).join(', ')}`;
+- Your portfolio: ${portfolioDisplay}`;
 }
 
 // ==================== EXPORTED FUNCTION ====================
