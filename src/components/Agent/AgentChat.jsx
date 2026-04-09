@@ -244,7 +244,7 @@ function MessageBubble({ message, agentName, isLastAgent, onActionClick, isSendi
       }}>
         {message.text}
       </div>
-      {message.directive ? (
+      {message.hasDirective && message.directive ? (
         <ExecutionCard directive={message.directive} />
       ) : isLastAgent && message.suggestedActions?.length > 0 && !isSending ? (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 8, paddingLeft: 4 }}>
