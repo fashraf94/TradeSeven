@@ -65,6 +65,68 @@ function ActionButton({ text, onClick, disabled }) {
   );
 }
 
+function ExecutionCard({ directive }) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 6 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.3, ease: 'easeOut' }}
+      style={{
+        background: 'rgba(94, 234, 212, 0.06)',
+        border: '1px solid rgba(94, 234, 212, 0.2)',
+        borderRadius: 12,
+        padding: '14px 16px',
+        marginTop: 8,
+        maxWidth: '85%',
+      }}
+    >
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 6,
+        fontSize: 11,
+        fontWeight: 700,
+        color: '#5EEAD4',
+        letterSpacing: '0.5px',
+        textTransform: 'uppercase',
+        marginBottom: 8,
+      }}>
+        <span>⚡</span>
+        <span>DIRECTIVE LOCKED IN</span>
+      </div>
+      <div style={{
+        fontSize: 13,
+        color: '#FFFFFF',
+        lineHeight: '1.5',
+        marginBottom: 10,
+      }}>
+        {directive.text}
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <div style={{ display: 'flex', gap: 4 }}>
+          {[0, 1, 2].map(i => (
+            <motion.span
+              key={i}
+              style={{
+                width: 4,
+                height: 4,
+                borderRadius: '50%',
+                background: '#5EEAD4',
+                display: 'block',
+              }}
+              animate={{ opacity: [0.2, 0.7, 0.2] }}
+              transition={{ duration: 2, repeat: Infinity, delay: i * 0.3 }}
+            />
+          ))}
+        </div>
+        <span style={{ fontSize: 12, color: '#9CA3AF' }}>
+          Haiku will act on next evaluation
+        </span>
+      </div>
+    </motion.div>
+  );
+}
+
 function MessageBubble({ message, agentName, isLastAgent, onActionClick, isSending }) {
   if (message.role === 'user') {
     return (
@@ -124,13 +186,15 @@ function MessageBubble({ message, agentName, isLastAgent, onActionClick, isSendi
       }}>
         {message.text}
       </div>
-      {isLastAgent && message.suggestedActions?.length > 0 && !isSending && (
+      {message.directive ? (
+        <ExecutionCard directive={message.directive} />
+      ) : isLastAgent && message.suggestedActions?.length > 0 && !isSending ? (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 8, paddingLeft: 4 }}>
           {message.suggestedActions.map((action, i) => (
             <ActionButton key={i} text={action} onClick={onActionClick} disabled={isSending} />
           ))}
         </div>
-      )}
+      ) : null}
     </motion.div>
   );
 }
@@ -225,6 +289,7 @@ export default function AgentChat({ battleId, agentId, agentName, chatExchanges,
         role: 'agent',
         text: ex.agentResponse,
         suggestedActions: isLast ? (ex.suggestedActions || null) : null,
+        directive: ex.hasDirective && ex.directive ? { text: ex.directive.text } : null,
         timestamp: ex.timestamp?.toMillis?.() || Date.now(),
       });
     });
@@ -330,6 +395,7 @@ export default function AgentChat({ battleId, agentId, agentName, chatExchanges,
         role: 'agent',
         text: data.agentMessage,
         suggestedActions: data.suggestedActions || null,
+        directive: data.extractedRule || null,
         timestamp: Date.now(),
       };
 
