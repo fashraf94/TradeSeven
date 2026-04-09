@@ -18,6 +18,7 @@ import StrategyPresetBadge from '../components/Agent/StrategyPresetBadge';
 import HypothesisTicker from '../components/Agent/HypothesisTicker';
 import AgentActivityFeed from '../components/Agent/AgentActivityFeed';
 import AgentFilmRoom from '../components/Agent/AgentFilmRoom';
+import AgentChat from '../components/Agent/AgentChat';
 import ForgeCitationCard from '../components/Agent/ForgeCitationCard';
 import ProposalBanner from '../components/Agent/ProposalBanner';
 import DebateModal from '../components/Agent/DebateModal';
@@ -397,6 +398,7 @@ export default function AgentBattleScreen({ battle, user, onBack }) {
     pendingProposal,
     strategyPreset,
     gameplanMeeting,
+    chatExchanges,
     feedBookmarks,
     loading: battleLoading,
   } = useAgentBattle(agentBattleId);
@@ -851,70 +853,12 @@ export default function AgentBattleScreen({ battle, user, onBack }) {
                 overflow: 'hidden',
               }}
             >
-              {/* ─── Controls Panel (always visible, centered) ─── */}
-              <div style={{
-                flexShrink: 0,
-                borderBottom: '1px solid rgba(255,255,255,0.04)',
-                background: 'linear-gradient(180deg, rgba(94,234,212,0.03) 0%, transparent 100%)',
-                padding: isDesktop ? '10px 24px 8px' : '10px 14px 8px',
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-              }}>
-                <div style={{ width: '100%', maxWidth: isDesktop ? 540 : undefined }}>
-                  {/* Strategy Posture section */}
-                  <SectionLabel>Strategy Posture</SectionLabel>
-                  <StrategyPresetBadge
-                    battleId={agentBattleId}
-                    strategyPreset={strategyPreset}
-                    tokens={tokens}
-                    disabled={isBattleCompleted}
-                  />
-
-                  {/* Execution Mode section */}
-                  <div style={{ marginTop: 14 }}>
-                    <SectionLabel>Execution Mode</SectionLabel>
-                    <ExecutionModeToggle
-                      battleId={agentBattleId}
-                      executionMode={executionMode}
-                      tokens={tokens}
-                      disabled={isBattleCompleted}
-                      variant="cards"
-                    />
-                  </div>
-
-                  {/* Hypothesis ticker */}
-                  <div style={{ marginTop: 10 }}>
-                    <HypothesisTicker statusFeed={statusFeed} tokens={tokens} />
-                  </div>
-                </div>
-              </div>
-
-              {/* ─── Activity Feed ─── */}
-              <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-                <AgentActivityFeed
-                  statusFeed={statusFeed}
-                  feedBookmarks={feedBookmarks}
-                  filterTicker={filterTicker}
-                  onClearFilter={() => setFilterTicker(null)}
-                  onBookmark={(entryId) => addFeedBookmark(agentBattleId, entryId)}
-                  onUnbookmark={(entryId) => removeFeedBookmark(agentBattleId, entryId)}
-                  onChallenge={handleChallenge}
-                  onCitationTap={handleCitationTap}
-                  battleId={agentBattleId}
-                  isAgentVsAgent={!!agentBattle?.opponentAgentId}
-                  gameplanMeeting={gameplanMeeting}
-                  tokens={tokens}
-                />
-              </div>
-
-              {/* Proposal banner */}
-              <ProposalBanner
-                pendingProposal={pendingProposal}
-                executionMode={executionMode}
+              <AgentChat
                 battleId={agentBattleId}
-                onCitationTap={handleCitationTap}
-                tokens={tokens}
+                agentId={battle?.agentId}
+                agentName={agentName}
+                chatExchanges={chatExchanges}
+                battleStatus={agentBattle?.status}
               />
             </motion.div>
           )}
