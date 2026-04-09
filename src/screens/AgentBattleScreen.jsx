@@ -856,7 +856,7 @@ export default function AgentBattleScreen({ battle, user, onBack }) {
               <AgentChat
                 battleId={agentBattleId}
                 agentId={battle?.agentId}
-                agentName={agentName}
+                agentName={agentBattle?.agentContext?.agentName || 'Your Agent'}
                 chatExchanges={chatExchanges}
                 battleStatus={agentBattle?.status}
               />
