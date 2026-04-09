@@ -226,13 +226,20 @@ export default async function handler(req, res) {
       });
     }
 
-    // 11. Fetch market context for anchor
+    // 11. Fetch market context for anchor + voiceLayerCache in parallel
     let anchorContext = null;
+    let marketSnapshot = null;
     try {
-      const marketCtxDoc = await db.collection('indexIntelligence').doc('marketContext').get();
+      const [marketCtxDoc, cacheDoc] = await Promise.all([
+        db.collection('indexIntelligence').doc('marketContext').get(),
+        db.collection('voiceLayerCache').doc(battleId).get(),
+      ]);
       if (marketCtxDoc.exists) {
         const ctx = marketCtxDoc.data();
         anchorContext = `Regime: ${ctx.regime}. ${ctx.regimeDetail || ''}`.trim();
+      }
+      if (cacheDoc.exists) {
+        marketSnapshot = cacheDoc.data();
       }
     } catch (err) {
       console.error('[VoiceLayer] Failed to fetch market context:', err.message);
@@ -258,6 +265,7 @@ export default async function handler(req, res) {
       elicitationTarget,
       conversationHistory,
       anchorContext,
+      marketSnapshot,
     });
 
     // 15. Call OpenRouter (Gemma 4)

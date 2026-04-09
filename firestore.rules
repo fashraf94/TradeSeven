@@ -344,6 +344,12 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Voice Layer Cache — authenticated read, server-only write (Admin SDK)
+    match /voiceLayerCache/{battleId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+
     // Institutional holdings — public read, server-only write (Admin SDK)
     match /institutionalHoldings/{symbol} {
       allow read: if true;
