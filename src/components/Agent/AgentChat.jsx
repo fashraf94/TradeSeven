@@ -200,13 +200,14 @@ export default function AgentChat({ battleId, agentId, agentName, chatExchanges,
   const [error, setError] = useState(null);
   const messagesEndRef = useRef(null);
   const textareaRef = useRef(null);
+  const initialLoadRef = useRef(false);
 
   const isDisabled = isSending || budgetUsed >= 10 || battleStatus === 'completed';
 
-  // ── Load existing history from chatExchanges prop ──────────────────────────
+  // ── Load existing history from chatExchanges prop (first mount only) ───────
 
   useEffect(() => {
-    if (!chatExchanges?.length) return;
+    if (!chatExchanges || initialLoadRef.current) return;
 
     const loaded = [];
     chatExchanges.forEach((ex, i) => {
@@ -222,14 +223,17 @@ export default function AgentChat({ battleId, agentId, agentName, chatExchanges,
       loaded.push({
         id: `exchange-${i}-agent`,
         role: 'agent',
-        text: ex.agentMessage,
+        text: ex.agentResponse,
         suggestedActions: isLast ? (ex.suggestedActions || null) : null,
         timestamp: ex.timestamp?.toMillis?.() || Date.now(),
       });
     });
 
-    setMessages(loaded);
-    setBudgetUsed(chatExchanges.length);
+    if (loaded.length > 0) {
+      setMessages(loaded);
+      setBudgetUsed(chatExchanges.length);
+    }
+    initialLoadRef.current = true;
   }, [chatExchanges]);
 
   // ── Auto-scroll on new messages ────────────────────────────────────────────
@@ -283,7 +287,13 @@ export default function AgentChat({ battleId, agentId, agentName, chatExchanges,
     setMessages(prev => [...prev, { id: typingId, role: 'agent', isTyping: true }]);
 
     try {
-      const idToken = await getAuth().currentUser.getIdToken();
+      const user = getAuth().currentUser;
+      if (!user) {
+        setMessages(prev => prev.filter(m => m.id !== typingId));
+        setError('Session expired. Please refresh.');
+        return;
+      }
+      const idToken = await user.getIdToken();
       const res = await fetch('/api/agent/chat', {
         method: 'POST',
         headers: {
@@ -324,7 +334,7 @@ export default function AgentChat({ battleId, agentId, agentName, chatExchanges,
       };
 
       setMessages(prev => prev.map(m => m.id === typingId ? agentMsg : m));
-      setBudgetUsed(data.exchangeNumber || budgetUsed + 1);
+      setBudgetUsed(prev => data.exchangeNumber || prev + 1);
     } catch (err) {
       // Remove typing indicator on network error
       setMessages(prev => prev.filter(m => m.id !== typingId));
