@@ -162,8 +162,8 @@ function ScratchpadCard({ message, index }) {
 function TradeEventCard({ event }) {
   return (
     <div style={{
-      background: 'rgba(245, 158, 11, 0.06)',
-      border: '1px solid rgba(245, 158, 11, 0.15)',
+      background: 'rgba(94, 234, 212, 0.04)',
+      border: '1px solid rgba(94, 234, 212, 0.12)',
       borderRadius: 10,
       padding: '12px 14px',
     }}>
@@ -171,7 +171,7 @@ function TradeEventCard({ event }) {
         display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8,
       }}>
         <span style={{
-          fontSize: 10, fontWeight: 700, color: '#F59E0B',
+          fontSize: 10, fontWeight: 700, color: '#5EEAD4',
           letterSpacing: '0.5px', textTransform: 'uppercase',
         }}>Trade executed</span>
         <span style={{ fontSize: 10, color: '#6B7280' }}>
@@ -185,7 +185,7 @@ function TradeEventCard({ event }) {
   );
 }
 
-function InlineTrade({ trade }) {
+function CompactTradeLog({ trades, onSymbolClick }) {
   return (
     <motion.div
       initial={{ opacity: 0, y: 8 }}
@@ -193,56 +193,119 @@ function InlineTrade({ trade }) {
       transition={{ duration: 0.25 }}
       style={{
         alignSelf: 'center',
-        maxWidth: '90%',
-        background: 'rgba(245, 158, 11, 0.06)',
-        border: '1px solid rgba(245, 158, 11, 0.15)',
-        borderRadius: 10,
+        width: '100%',
+        maxWidth: '340px',
+        background: 'rgba(94, 234, 212, 0.04)',
+        border: '1px solid rgba(94, 234, 212, 0.12)',
+        borderRadius: '10px',
         padding: '10px 14px',
         margin: '4px 0',
       }}
     >
       <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 6,
-        marginBottom: 4,
+        fontSize: '10px',
+        fontWeight: 700,
+        color: '#5EEAD4',
+        letterSpacing: '0.5px',
+        textTransform: 'uppercase',
+        marginBottom: '8px',
       }}>
-        <span style={{
-          fontSize: 10,
-          fontWeight: 700,
-          color: '#F59E0B',
-          letterSpacing: '0.5px',
-          textTransform: 'uppercase',
-        }}>
-          Trade Executed
-        </span>
-        <span style={{ fontSize: 10, color: '#6B7280' }}>
-          {trade.timestamp instanceof Date
-            ? trade.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-            : ''}
-        </span>
+        {trades.length} {trades.length === 1 ? 'trade' : 'trades'} executed
       </div>
-      <div style={{ fontSize: 13, color: '#FFFFFF', lineHeight: '1.4' }}>
-        {trade.symbolOut && trade.symbolIn ? (
-          <>
-            <span style={{ color: '#EF4444' }}>{trade.symbolOut}</span>
-            <span style={{ color: '#6B7280' }}> → </span>
-            <span style={{ color: '#5EEAD4' }}>{trade.symbolIn}</span>
-          </>
-        ) : (
-          trade.summary
-        )}
-      </div>
-      {trade.reason && (
-        <div style={{ fontSize: 11, color: '#9CA3AF', marginTop: 4, lineHeight: '1.4' }}>
-          {trade.reason}
+      {trades.map((trade, i) => (
+        <div
+          key={trade.id || i}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '4px 0',
+            borderTop: i > 0 ? '1px solid rgba(255,255,255,0.04)' : 'none',
+            fontSize: '13px',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+            <span
+              style={{ color: '#EF4444', cursor: onSymbolClick ? 'pointer' : 'default', borderBottom: onSymbolClick ? '1px dotted rgba(239,68,68,0.4)' : 'none' }}
+              onClick={() => onSymbolClick?.({ symbol: trade.symbolOut })}
+            >
+              {trade.symbolOut || '?'}
+            </span>
+            <span style={{ color: '#6B7280', fontSize: '11px' }}>→</span>
+            <span
+              style={{ color: '#5EEAD4', cursor: onSymbolClick ? 'pointer' : 'default', borderBottom: onSymbolClick ? '1px dotted rgba(94,234,212,0.4)' : 'none' }}
+              onClick={() => onSymbolClick?.({ symbol: trade.symbolIn })}
+            >
+              {trade.symbolIn || '?'}
+            </span>
+          </div>
+          <span style={{ fontSize: '11px', color: '#6B7280' }}>
+            {trade.timestamp instanceof Date
+              ? trade.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+              : ''}
+          </span>
         </div>
-      )}
+      ))}
     </motion.div>
   );
 }
 
-function MessageBubble({ message, agentName, isLastAgent, onActionClick, isSending }) {
+// ── Ticker detection in chat messages ─────────────────────────────────────────
+
+const EXCLUDED_WORDS = new Set([
+  'I', 'A', 'AM', 'PM', 'AT', 'IN', 'ON', 'OR', 'IF', 'IT', 'IS', 'TO',
+  'THE', 'AND', 'BUT', 'FOR', 'NOT', 'YOU', 'ALL', 'CAN', 'HER', 'WAS',
+  'ONE', 'OUR', 'OUT', 'ARE', 'HAS', 'HIS', 'HOW', 'ITS', 'LET', 'MAY',
+  'NEW', 'NOW', 'OLD', 'SEE', 'WAY', 'WHO', 'DID', 'GET', 'HIM', 'GOT',
+  'SAY', 'SHE', 'TOO', 'USE', 'ATR', 'ETF', 'CEO', 'IPO',
+  'HOLD', 'SWAP', 'STAR', 'CORE', 'WITH', 'THAT', 'THIS', 'FROM',
+  'HAVE', 'BEEN', 'WILL', 'YOUR', 'WHAT', 'WHEN', 'MAKE', 'LIKE',
+  'JUST', 'OVER', 'SUCH', 'TAKE', 'THAN', 'THEM', 'VERY', 'SOME',
+  'INTO', 'MOST', 'ALSO', 'DONE', 'WANT', 'GOES', 'MUCH',
+]);
+
+function renderMessageWithTickers(text, onSymbolClick, knownTickers) {
+  if (!text || !onSymbolClick) return text;
+
+  const parts = [];
+  let lastIndex = 0;
+  const regex = /\b([A-Z]{1,5})\b/g;
+  let match;
+
+  while ((match = regex.exec(text)) !== null) {
+    const word = match[1];
+    const isKnown = knownTickers?.has(word);
+    const isExcluded = EXCLUDED_WORDS.has(word);
+
+    if (isKnown || (!isExcluded && word.length >= 2)) {
+      if (match.index > lastIndex) {
+        parts.push(text.slice(lastIndex, match.index));
+      }
+      parts.push(
+        <span
+          key={match.index}
+          onClick={() => onSymbolClick({ symbol: word })}
+          style={{
+            color: '#5EEAD4',
+            cursor: 'pointer',
+            borderBottom: '1px dotted rgba(94, 234, 212, 0.4)',
+          }}
+        >
+          {word}
+        </span>
+      );
+      lastIndex = match.index + word.length;
+    }
+  }
+
+  if (lastIndex === 0) return text;
+  if (lastIndex < text.length) {
+    parts.push(text.slice(lastIndex));
+  }
+  return parts;
+}
+
+function MessageBubble({ message, agentName, isLastAgent, onActionClick, isSending, onSymbolClick, knownTickers }) {
   if (message.role === 'user') {
     return (
       <motion.div
@@ -299,7 +362,7 @@ function MessageBubble({ message, agentName, isLastAgent, onActionClick, isSendi
         whiteSpace: 'pre-wrap',
         wordBreak: 'break-word',
       }}>
-        {message.text}
+        {renderMessageWithTickers(message.text, onSymbolClick, knownTickers)}
       </div>
       {message.hasDirective && message.directive ? (
         <ExecutionCard directive={message.directive} />
@@ -371,7 +434,7 @@ function BudgetPips({ used, total }) {
 
 // ─── Main Component ──────────────────────────────────────────────────────────
 
-export default function AgentChat({ battleId, agentId, agentName, chatExchanges, battleStatus, statusFeed }) {
+export default function AgentChat({ battleId, agentId, agentName, chatExchanges, battleStatus, statusFeed, onSymbolClick, knownTickers }) {
   const [messages, setMessages] = useState([]);
   const [inputText, setInputText] = useState('');
   const [isSending, setIsSending] = useState(false);
@@ -609,6 +672,29 @@ export default function AgentChat({ battleId, agentId, agentName, chatExchanges,
     });
   }, [messages, tradeEvents]);
 
+  // ── Group consecutive trades for compact rendering ──────────────────────────
+
+  const renderItems = React.useMemo(() => {
+    const items = [];
+    let tradeBuffer = [];
+
+    combinedTimeline.forEach((item, i) => {
+      if (item._type === 'trade') {
+        tradeBuffer.push(item);
+      } else {
+        if (tradeBuffer.length > 0) {
+          items.push({ _type: 'trade_group', trades: [...tradeBuffer], id: `tg-${i}` });
+          tradeBuffer = [];
+        }
+        items.push(item);
+      }
+    });
+    if (tradeBuffer.length > 0) {
+      items.push({ _type: 'trade_group', trades: [...tradeBuffer], id: 'tg-end' });
+    }
+    return items;
+  }, [combinedTimeline]);
+
   // ── Build thinking panel entries ────────────────────────────────────────────
 
   const thinkingEntries = React.useMemo(() => {
@@ -656,9 +742,9 @@ export default function AgentChat({ battleId, agentId, agentName, chatExchanges,
         {messages.length === 0 && tradeEvents.length === 0 ? (
           <EmptyState onQuickStart={handleActionClick} disabled={isDisabled} />
         ) : (
-          combinedTimeline.map((item) => {
-            if (item._type === 'trade') {
-              return <InlineTrade key={item.id} trade={item} />;
+          renderItems.map((item) => {
+            if (item._type === 'trade_group') {
+              return <CompactTradeLog key={item.id} trades={item.trades} onSymbolClick={onSymbolClick} />;
             }
             if (item.isTyping) {
               return <TypingIndicator key={item.id} />;
@@ -671,6 +757,8 @@ export default function AgentChat({ battleId, agentId, agentName, chatExchanges,
                 isLastAgent={item.id === lastAgentId}
                 onActionClick={handleActionClick}
                 isSending={isSending}
+                onSymbolClick={onSymbolClick}
+                knownTickers={knownTickers}
               />
             );
           })
