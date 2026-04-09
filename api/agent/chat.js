@@ -129,6 +129,32 @@ function parseVoiceLayerResponse(rawText) {
   };
 }
 
+// ==================== RESPONSE SANITIZERS ====================
+
+const ELICITATION_DIMENSIONS = /(?:risk_appetite|concentration_tolerance|sector_convictions?|loss_reaction|win_reaction|tier_philosophy|momentum_vs_value|news_sensitivity|time_of_day_preference|macro_awareness|communication_frequency|autonomy_preference|feedback_style|competitive_focus|learning_orientation)/gi;
+
+function sanitizeScratchpad(raw) {
+  if (!raw) return null;
+  return raw
+    .replace(/Server target[\s:]+(?:was\s+)?[\w_]+/gi, '')
+    .replace(/target was [\w_]+/gi, '')
+    .replace(/Elicitation target[:\s]?[^.]+\./gi, '')
+    .replace(/Target this turn[:\s]?[^.]+\./gi, '')
+    .replace(ELICITATION_DIMENSIONS, '[internal]')
+    .replace(/\s{2,}/g, ' ')
+    .trim() || null;
+}
+
+function normalizeDirective(parsed) {
+  if (parsed.directive && typeof parsed.directive === 'object' && parsed.directive.text) {
+    return { text: parsed.directive.text, expiry: parsed.directive.expiry || 'end_of_battle' };
+  }
+  if (parsed.directive && typeof parsed.directive === 'string') {
+    return { text: parsed.directive, expiry: 'end_of_battle' };
+  }
+  return null;
+}
+
 // ==================== HANDLER ====================
 
 export default async function handler(req, res) {
@@ -240,24 +266,31 @@ export default async function handler(req, res) {
     // 16. Parse response
     const parsed = parseVoiceLayerResponse(rawResponse);
 
-    // 17. Map to client contract
+    // 17. Normalize and sanitize parsed fields
+    const cleanScratchpad = sanitizeScratchpad(parsed._scratchpad);
+    const normalizedDirective = normalizeDirective(parsed);
+
+    // 18. Map to client contract
     const clientResponse = {
       agentMessage: parsed.response,
-      extractedRule: parsed.hasDirective && parsed.directive
-        ? { text: parsed.directive.text, targetType: 'general', targetValue: null, rationale: parsed.directive.text }
+      extractedRule: normalizedDirective
+        ? { text: normalizedDirective.text, targetType: 'general', targetValue: null, rationale: normalizedDirective.text }
         : null,
       suggestedActions: parsed.suggestedActions || null,
       exchangeNumber: (battle.chatBudgetUsed || 0) + 1,
       budgetTotal: chatBudget,
+      scratchpad: cleanScratchpad,
+      hasDirective: parsed.hasDirective || false,
+      directive: normalizedDirective,
     };
 
-    // 18. Write exchange to battle doc
+    // 19. Write exchange to battle doc
     const exchange = {
       userMessage: sanitizedMessage,
       agentResponse: parsed.response,
-      scratchpad: parsed._scratchpad || null,
+      scratchpad: cleanScratchpad,
       hasDirective: parsed.hasDirective || false,
-      directive: parsed.directive || null,
+      directive: normalizedDirective,
       suggestedActions: parsed.suggestedActions || null,
       elicitationTarget: elicitationTarget.dimension,
       timestamp: new Date().toISOString(),
@@ -271,13 +304,13 @@ export default async function handler(req, res) {
       recentElicitationTargets: recentTargets,
     });
 
-    // 19. Write directive to agent doc (only if hasDirective)
-    if (parsed.hasDirective && parsed.directive) {
+    // 20. Write directive to agent doc (only if hasDirective)
+    if (parsed.hasDirective && normalizedDirective) {
       const directive = {
         id: `voice_${Date.now()}`,
-        text: parsed.directive.text,
+        text: normalizedDirective.text,
         source: 'voice_layer',
-        expiry: parsed.directive.expiry || 'end_of_battle',
+        expiry: normalizedDirective.expiry || 'end_of_battle',
         battleId,
         isActive: true,
         createdAt: new Date().toISOString(),
@@ -288,7 +321,7 @@ export default async function handler(req, res) {
       });
     }
 
-    // 20. Return response
+    // 21. Return response
     return res.status(200).json(clientResponse);
   } catch (error) {
     if (error.name === 'AbortError') {
