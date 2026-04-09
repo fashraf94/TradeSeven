@@ -325,6 +325,17 @@ export default function AgentChat({ battleId, agentId, agentName, chatExchanges,
   const textareaRef = useRef(null);
   const initialLoadRef = useRef(false);
 
+  // Desktop detection (≥768px → side-by-side, <768px → tabs)
+  const [isDesktop, setIsDesktop] = useState(
+    typeof window !== 'undefined' && window.innerWidth >= 768
+  );
+  useEffect(() => {
+    const mq = window.matchMedia('(min-width: 768px)');
+    const handler = (e) => setIsDesktop(e.matches);
+    mq.addEventListener('change', handler);
+    return () => mq.removeEventListener('change', handler);
+  }, []);
+
   const isDisabled = isSending || budgetUsed >= 10 || battleStatus === 'completed';
 
   // ── Load existing history from chatExchanges prop (first mount only) ───────
@@ -536,6 +547,225 @@ export default function AgentChat({ battleId, agentId, agentName, chatExchanges,
 
   // ── Render ─────────────────────────────────────────────────────────────────
 
+  // ── Shared JSX fragments ──────────────────────────────────────────────────
+
+  const chatContent = (
+    <>
+      {/* ── Message scroll area ──────────────────────────────────────── */}
+      <div style={{
+        flex: 1,
+        overflowY: 'auto',
+        padding: '12px 12px 8px',
+        display: 'flex',
+        flexDirection: 'column',
+      }}>
+        {messages.length === 0 ? (
+          <EmptyState onQuickStart={handleActionClick} disabled={isDisabled} />
+        ) : (
+          messages.map((msg, i) => {
+            if (msg.isTyping) {
+              return <TypingIndicator key={msg.id} />;
+            }
+            return (
+              <MessageBubble
+                key={msg.id}
+                message={msg}
+                agentName={agentName}
+                isLastAgent={i === lastAgentIdx}
+                onActionClick={handleActionClick}
+                isSending={isSending}
+              />
+            );
+          })
+        )}
+        <div ref={messagesEndRef} />
+      </div>
+
+      {/* ── Error message ────────────────────────────────────────────── */}
+      {error && (
+        <div style={{
+          padding: '6px 16px',
+          color: '#EF4444',
+          fontSize: 13,
+        }}>
+          {error}
+        </div>
+      )}
+
+      {/* ── Budget row ───────────────────────────────────────────────── */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: '6px 16px 4px',
+        color: budgetColor,
+        fontSize: 12,
+      }}>
+        <span>Messages: {budgetUsed} / 10</span>
+        <BudgetPips used={budgetUsed} total={10} />
+      </div>
+
+      {/* ── Input row ────────────────────────────────────────────────── */}
+      <div style={{
+        display: 'flex',
+        gap: 8,
+        padding: '8px 12px 12px',
+        borderTop: '1px solid rgba(255,255,255,0.06)',
+        alignItems: 'flex-end',
+      }}>
+        <textarea
+          ref={textareaRef}
+          value={inputText}
+          onChange={e => setInputText(e.target.value.slice(0, 2000))}
+          onKeyDown={handleKeyDown}
+          placeholder={battleStatus === 'completed' ? 'Battle ended' : 'Talk to your agent...'}
+          disabled={isDisabled}
+          rows={1}
+          style={{
+            flex: 1,
+            background: '#1C1A27',
+            border: '1px solid rgba(255,255,255,0.1)',
+            borderRadius: 12,
+            padding: '10px 14px',
+            color: '#FFFFFF',
+            fontSize: 14,
+            outline: 'none',
+            resize: 'none',
+            minHeight: 42,
+            maxHeight: 120,
+            fontFamily: 'inherit',
+            lineHeight: '1.4',
+            opacity: isDisabled ? 0.5 : 1,
+          }}
+        />
+        <button
+          onClick={() => sendMessage(inputText)}
+          disabled={!inputText.trim() || isDisabled}
+          style={{
+            width: 42,
+            height: 42,
+            borderRadius: 12,
+            background: (!inputText.trim() || isDisabled) ? 'rgba(94, 234, 212, 0.15)' : '#5EEAD4',
+            border: 'none',
+            cursor: (!inputText.trim() || isDisabled) ? 'not-allowed' : 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: (!inputText.trim() || isDisabled) ? '#5EEAD4' : '#0D0E12',
+            flexShrink: 0,
+            transition: 'all 0.15s ease',
+          }}
+        >
+          <Send size={18} />
+        </button>
+      </div>
+
+      {/* ── Character count (near limit) ─────────────────────────────── */}
+      {inputText.length > 1800 && (
+        <div style={{
+          textAlign: 'right',
+          padding: '0 16px 4px',
+          fontSize: 11,
+          color: inputText.length > 1950 ? '#EF4444' : '#6B7280',
+        }}>
+          {inputText.length} / 2000
+        </div>
+      )}
+    </>
+  );
+
+  const thinkingContent = (
+    <div style={{
+      flex: 1,
+      overflowY: 'auto',
+      padding: '12px',
+      display: 'flex',
+      flexDirection: 'column',
+      gap: 10,
+    }}>
+      {thinkingEntries.length === 0 ? (
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          flex: 1,
+          color: '#6B7280',
+          fontSize: 13,
+          textAlign: 'center',
+          padding: '32px 24px',
+          lineHeight: '1.5',
+        }}>
+          No thinking data yet. Start a conversation and your agent's reasoning will appear here.
+        </div>
+      ) : (
+        thinkingEntries.map((entry, i) =>
+          entry.type === 'scratchpad' ? (
+            <ScratchpadCard key={`sp-${entry.index}`} message={entry.message} index={entry.index} />
+          ) : (
+            <TradeEventCard key={`te-${i}`} event={entry.event} />
+          )
+        )
+      )}
+    </div>
+  );
+
+  // ── Layout ──────────────────────────────────────────────────────────────────
+
+  if (isDesktop) {
+    // ── Desktop: side-by-side ──────────────────────────────────────────────
+    return (
+      <div style={{
+        display: 'flex',
+        flexDirection: 'column',
+        height: '100%',
+        minHeight: 0,
+      }}>
+        <div style={{
+          display: 'flex',
+          flex: 1,
+          minHeight: 0,
+          gap: '1px',
+          background: 'rgba(255,255,255,0.06)',
+        }}>
+          {/* ── Left: Chat ─────────────────────────────────────────────── */}
+          <div style={{
+            flex: 1,
+            display: 'flex',
+            flexDirection: 'column',
+            minWidth: 0,
+            background: '#0D0E12',
+          }}>
+            {chatContent}
+          </div>
+
+          {/* ── Right: Agent Thinking ──────────────────────────────────── */}
+          <div style={{
+            width: '380px',
+            flexShrink: 0,
+            display: 'flex',
+            flexDirection: 'column',
+            background: '#0D0E12',
+            minHeight: 0,
+          }}>
+            <div style={{
+              padding: '12px 14px 8px',
+              fontSize: '11px',
+              fontWeight: 700,
+              color: '#5EEAD4',
+              letterSpacing: '0.5px',
+              textTransform: 'uppercase',
+              borderBottom: '1px solid rgba(255,255,255,0.06)',
+            }}>
+              Agent Thinking
+            </div>
+            {thinkingContent}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Mobile: tabbed layout (unchanged) ─────────────────────────────────────
   return (
     <div style={{
       display: 'flex',
@@ -569,164 +799,7 @@ export default function AgentChat({ battleId, agentId, agentName, chatExchanges,
         ))}
       </div>
 
-      {activeSubTab === 'chat' ? (
-        <>
-          {/* ── Message scroll area ──────────────────────────────────────── */}
-          <div style={{
-            flex: 1,
-            overflowY: 'auto',
-            padding: '12px 12px 8px',
-            display: 'flex',
-            flexDirection: 'column',
-          }}>
-            {messages.length === 0 ? (
-              <EmptyState onQuickStart={handleActionClick} disabled={isDisabled} />
-            ) : (
-              messages.map((msg, i) => {
-                if (msg.isTyping) {
-                  return <TypingIndicator key={msg.id} />;
-                }
-                return (
-                  <MessageBubble
-                    key={msg.id}
-                    message={msg}
-                    agentName={agentName}
-                    isLastAgent={i === lastAgentIdx}
-                    onActionClick={handleActionClick}
-                    isSending={isSending}
-                  />
-                );
-              })
-            )}
-            <div ref={messagesEndRef} />
-          </div>
-
-          {/* ── Error message ────────────────────────────────────────────── */}
-          {error && (
-            <div style={{
-              padding: '6px 16px',
-              color: '#EF4444',
-              fontSize: 13,
-            }}>
-              {error}
-            </div>
-          )}
-
-          {/* ── Budget row ───────────────────────────────────────────────── */}
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            padding: '6px 16px 4px',
-            color: budgetColor,
-            fontSize: 12,
-          }}>
-            <span>Messages: {budgetUsed} / 10</span>
-            <BudgetPips used={budgetUsed} total={10} />
-          </div>
-
-          {/* ── Input row ────────────────────────────────────────────────── */}
-          <div style={{
-            display: 'flex',
-            gap: 8,
-            padding: '8px 12px 12px',
-            borderTop: '1px solid rgba(255,255,255,0.06)',
-            alignItems: 'flex-end',
-          }}>
-            <textarea
-              ref={textareaRef}
-              value={inputText}
-              onChange={e => setInputText(e.target.value.slice(0, 2000))}
-              onKeyDown={handleKeyDown}
-              placeholder={battleStatus === 'completed' ? 'Battle ended' : 'Talk to your agent...'}
-              disabled={isDisabled}
-              rows={1}
-              style={{
-                flex: 1,
-                background: '#1C1A27',
-                border: '1px solid rgba(255,255,255,0.1)',
-                borderRadius: 12,
-                padding: '10px 14px',
-                color: '#FFFFFF',
-                fontSize: 14,
-                outline: 'none',
-                resize: 'none',
-                minHeight: 42,
-                maxHeight: 120,
-                fontFamily: 'inherit',
-                lineHeight: '1.4',
-                opacity: isDisabled ? 0.5 : 1,
-              }}
-            />
-            <button
-              onClick={() => sendMessage(inputText)}
-              disabled={!inputText.trim() || isDisabled}
-              style={{
-                width: 42,
-                height: 42,
-                borderRadius: 12,
-                background: (!inputText.trim() || isDisabled) ? 'rgba(94, 234, 212, 0.15)' : '#5EEAD4',
-                border: 'none',
-                cursor: (!inputText.trim() || isDisabled) ? 'not-allowed' : 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                color: (!inputText.trim() || isDisabled) ? '#5EEAD4' : '#0D0E12',
-                flexShrink: 0,
-                transition: 'all 0.15s ease',
-              }}
-            >
-              <Send size={18} />
-            </button>
-          </div>
-
-          {/* ── Character count (near limit) ─────────────────────────────── */}
-          {inputText.length > 1800 && (
-            <div style={{
-              textAlign: 'right',
-              padding: '0 16px 4px',
-              fontSize: 11,
-              color: inputText.length > 1950 ? '#EF4444' : '#6B7280',
-            }}>
-              {inputText.length} / 2000
-            </div>
-          )}
-        </>
-      ) : (
-        /* ── Agent Thinking panel ──────────────────────────────────────────── */
-        <div style={{
-          flex: 1,
-          overflowY: 'auto',
-          padding: '12px',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 10,
-        }}>
-          {thinkingEntries.length === 0 ? (
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              flex: 1,
-              color: '#6B7280',
-              fontSize: 13,
-              textAlign: 'center',
-              padding: '32px 24px',
-              lineHeight: '1.5',
-            }}>
-              No thinking data yet. Start a conversation and your agent's reasoning will appear here.
-            </div>
-          ) : (
-            thinkingEntries.map((entry, i) =>
-              entry.type === 'scratchpad' ? (
-                <ScratchpadCard key={`sp-${entry.index}`} message={entry.message} index={entry.index} />
-              ) : (
-                <TradeEventCard key={`te-${i}`} event={entry.event} />
-              )
-            )
-          )}
-        </div>
-      )}
+      {activeSubTab === 'chat' ? chatContent : thinkingContent}
     </div>
   );
 }
