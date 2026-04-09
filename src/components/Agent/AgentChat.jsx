@@ -127,6 +127,64 @@ function ExecutionCard({ directive }) {
   );
 }
 
+function ScratchpadCard({ message, index }) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      style={{
+        background: 'rgba(94, 234, 212, 0.04)',
+        border: '1px solid rgba(94, 234, 212, 0.1)',
+        borderRadius: 10,
+        padding: '12px 14px',
+      }}
+    >
+      <div style={{
+        display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8,
+      }}>
+        <span style={{
+          fontSize: 10, fontWeight: 700, color: '#5EEAD4',
+          letterSpacing: '0.5px', textTransform: 'uppercase',
+        }}>Scratchpad — msg {index}</span>
+        <span style={{ fontSize: 10, color: '#6B7280' }}>
+          {message.timestamp ? new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
+        </span>
+      </div>
+      <div style={{
+        fontSize: 12, color: '#9CA3AF', lineHeight: '1.6', fontFamily: 'monospace',
+      }}>
+        {message.scratchpad}
+      </div>
+    </motion.div>
+  );
+}
+
+function TradeEventCard({ event }) {
+  return (
+    <div style={{
+      background: 'rgba(245, 158, 11, 0.06)',
+      border: '1px solid rgba(245, 158, 11, 0.15)',
+      borderRadius: 10,
+      padding: '12px 14px',
+    }}>
+      <div style={{
+        display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8,
+      }}>
+        <span style={{
+          fontSize: 10, fontWeight: 700, color: '#F59E0B',
+          letterSpacing: '0.5px', textTransform: 'uppercase',
+        }}>Trade executed</span>
+        <span style={{ fontSize: 10, color: '#6B7280' }}>
+          {event.timestamp ? new Date(event.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
+        </span>
+      </div>
+      <div style={{ fontSize: 12, color: '#9CA3AF', lineHeight: '1.6' }}>
+        {event.summary || event.description || `${event.action || 'SWAP'}: ${event.details || ''}`}
+      </div>
+    </div>
+  );
+}
+
 function MessageBubble({ message, agentName, isLastAgent, onActionClick, isSending }) {
   if (message.role === 'user') {
     return (
@@ -256,12 +314,13 @@ function BudgetPips({ used, total }) {
 
 // ─── Main Component ──────────────────────────────────────────────────────────
 
-export default function AgentChat({ battleId, agentId, agentName, chatExchanges, battleStatus }) {
+export default function AgentChat({ battleId, agentId, agentName, chatExchanges, battleStatus, statusFeed }) {
   const [messages, setMessages] = useState([]);
   const [inputText, setInputText] = useState('');
   const [isSending, setIsSending] = useState(false);
   const [budgetUsed, setBudgetUsed] = useState(0);
   const [error, setError] = useState(null);
+  const [activeSubTab, setActiveSubTab] = useState('chat');
   const messagesEndRef = useRef(null);
   const textareaRef = useRef(null);
   const initialLoadRef = useRef(false);
@@ -289,6 +348,8 @@ export default function AgentChat({ battleId, agentId, agentName, chatExchanges,
         role: 'agent',
         text: ex.agentResponse,
         suggestedActions: isLast ? (ex.suggestedActions || null) : null,
+        scratchpad: ex.scratchpad || null,
+        hasDirective: ex.hasDirective || false,
         directive: ex.hasDirective && ex.directive ? { text: ex.directive.text } : null,
         timestamp: ex.timestamp?.toMillis?.() || Date.now(),
       });
@@ -395,7 +456,9 @@ export default function AgentChat({ battleId, agentId, agentName, chatExchanges,
         role: 'agent',
         text: data.agentMessage,
         suggestedActions: data.suggestedActions || null,
-        directive: data.extractedRule || null,
+        scratchpad: data.scratchpad || null,
+        hasDirective: data.hasDirective || false,
+        directive: data.directive || data.extractedRule || null,
         timestamp: Date.now(),
       };
 
@@ -441,6 +504,38 @@ export default function AgentChat({ battleId, agentId, agentName, chatExchanges,
 
   // ── Render ─────────────────────────────────────────────────────────────────
 
+  // ── Build thinking panel entries ────────────────────────────────────────────
+
+  const thinkingEntries = React.useMemo(() => {
+    const entries = [];
+
+    // Scratchpad entries from agent messages
+    let msgIndex = 0;
+    messages.forEach(m => {
+      if (m.role === 'agent' && !m.isTyping) {
+        msgIndex++;
+        if (m.scratchpad) {
+          entries.push({ type: 'scratchpad', message: m, index: msgIndex, timestamp: m.timestamp });
+        }
+      }
+    });
+
+    // Trade events from statusFeed
+    const tradeTypes = ['swap', 'emergency_swap', 'trade_executed'];
+    (statusFeed || []).forEach(event => {
+      if (tradeTypes.includes(event.type)) {
+        const ts = event.timestamp?.toMillis?.() || (typeof event.timestamp === 'string' ? new Date(event.timestamp).getTime() : event.timestamp) || 0;
+        entries.push({ type: 'trade', event, timestamp: ts });
+      }
+    });
+
+    // Sort newest first
+    entries.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+    return entries;
+  }, [messages, statusFeed]);
+
+  // ── Render ─────────────────────────────────────────────────────────────────
+
   return (
     <div style={{
       display: 'flex',
@@ -448,124 +543,188 @@ export default function AgentChat({ battleId, agentId, agentName, chatExchanges,
       height: '100%',
       minHeight: 0,
     }}>
-      {/* ── Message scroll area ────────────────────────────────────────────── */}
+      {/* ── Sub-tab bar ───────────────────────────────────────────────────── */}
       <div style={{
-        flex: 1,
-        overflowY: 'auto',
-        padding: '12px 12px 8px',
         display: 'flex',
-        flexDirection: 'column',
+        borderBottom: '1px solid rgba(255,255,255,0.06)',
       }}>
-        {messages.length === 0 ? (
-          <EmptyState onQuickStart={handleActionClick} disabled={isDisabled} />
-        ) : (
-          messages.map((msg, i) => {
-            if (msg.isTyping) {
-              return <TypingIndicator key={msg.id} />;
-            }
-            return (
-              <MessageBubble
-                key={msg.id}
-                message={msg}
-                agentName={agentName}
-                isLastAgent={i === lastAgentIdx}
-                onActionClick={handleActionClick}
-                isSending={isSending}
-              />
-            );
-          })
-        )}
-        <div ref={messagesEndRef} />
+        {['chat', 'thinking'].map(tab => (
+          <button
+            key={tab}
+            onClick={() => setActiveSubTab(tab)}
+            style={{
+              flex: 1,
+              background: 'none',
+              border: 'none',
+              borderBottom: activeSubTab === tab ? '2px solid #5EEAD4' : '2px solid transparent',
+              padding: '10px 0',
+              fontSize: 13,
+              fontWeight: activeSubTab === tab ? 600 : 500,
+              color: activeSubTab === tab ? '#5EEAD4' : '#6B7280',
+              cursor: 'pointer',
+            }}
+          >
+            {tab === 'chat' ? 'Chat' : 'Agent Thinking'}
+          </button>
+        ))}
       </div>
 
-      {/* ── Error message ──────────────────────────────────────────────────── */}
-      {error && (
-        <div style={{
-          padding: '6px 16px',
-          color: '#EF4444',
-          fontSize: 13,
-        }}>
-          {error}
-        </div>
-      )}
-
-      {/* ── Budget row ─────────────────────────────────────────────────────── */}
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        padding: '6px 16px 4px',
-        color: budgetColor,
-        fontSize: 12,
-      }}>
-        <span>Messages: {budgetUsed} / 10</span>
-        <BudgetPips used={budgetUsed} total={10} />
-      </div>
-
-      {/* ── Input row ──────────────────────────────────────────────────────── */}
-      <div style={{
-        display: 'flex',
-        gap: 8,
-        padding: '8px 12px 12px',
-        borderTop: '1px solid rgba(255,255,255,0.06)',
-        alignItems: 'flex-end',
-      }}>
-        <textarea
-          ref={textareaRef}
-          value={inputText}
-          onChange={e => setInputText(e.target.value.slice(0, 2000))}
-          onKeyDown={handleKeyDown}
-          placeholder={battleStatus === 'completed' ? 'Battle ended' : 'Talk to your agent...'}
-          disabled={isDisabled}
-          rows={1}
-          style={{
+      {activeSubTab === 'chat' ? (
+        <>
+          {/* ── Message scroll area ──────────────────────────────────────── */}
+          <div style={{
             flex: 1,
-            background: '#1C1A27',
-            border: '1px solid rgba(255,255,255,0.1)',
-            borderRadius: 12,
-            padding: '10px 14px',
-            color: '#FFFFFF',
-            fontSize: 14,
-            outline: 'none',
-            resize: 'none',
-            minHeight: 42,
-            maxHeight: 120,
-            fontFamily: 'inherit',
-            lineHeight: '1.4',
-            opacity: isDisabled ? 0.5 : 1,
-          }}
-        />
-        <button
-          onClick={() => sendMessage(inputText)}
-          disabled={!inputText.trim() || isDisabled}
-          style={{
-            width: 42,
-            height: 42,
-            borderRadius: 12,
-            background: (!inputText.trim() || isDisabled) ? 'rgba(94, 234, 212, 0.15)' : '#5EEAD4',
-            border: 'none',
-            cursor: (!inputText.trim() || isDisabled) ? 'not-allowed' : 'pointer',
+            overflowY: 'auto',
+            padding: '12px 12px 8px',
+            display: 'flex',
+            flexDirection: 'column',
+          }}>
+            {messages.length === 0 ? (
+              <EmptyState onQuickStart={handleActionClick} disabled={isDisabled} />
+            ) : (
+              messages.map((msg, i) => {
+                if (msg.isTyping) {
+                  return <TypingIndicator key={msg.id} />;
+                }
+                return (
+                  <MessageBubble
+                    key={msg.id}
+                    message={msg}
+                    agentName={agentName}
+                    isLastAgent={i === lastAgentIdx}
+                    onActionClick={handleActionClick}
+                    isSending={isSending}
+                  />
+                );
+              })
+            )}
+            <div ref={messagesEndRef} />
+          </div>
+
+          {/* ── Error message ────────────────────────────────────────────── */}
+          {error && (
+            <div style={{
+              padding: '6px 16px',
+              color: '#EF4444',
+              fontSize: 13,
+            }}>
+              {error}
+            </div>
+          )}
+
+          {/* ── Budget row ───────────────────────────────────────────────── */}
+          <div style={{
             display: 'flex',
             alignItems: 'center',
-            justifyContent: 'center',
-            color: (!inputText.trim() || isDisabled) ? '#5EEAD4' : '#0D0E12',
-            flexShrink: 0,
-            transition: 'all 0.15s ease',
-          }}
-        >
-          <Send size={18} />
-        </button>
-      </div>
+            justifyContent: 'space-between',
+            padding: '6px 16px 4px',
+            color: budgetColor,
+            fontSize: 12,
+          }}>
+            <span>Messages: {budgetUsed} / 10</span>
+            <BudgetPips used={budgetUsed} total={10} />
+          </div>
 
-      {/* ── Character count (near limit) ───────────────────────────────────── */}
-      {inputText.length > 1800 && (
+          {/* ── Input row ────────────────────────────────────────────────── */}
+          <div style={{
+            display: 'flex',
+            gap: 8,
+            padding: '8px 12px 12px',
+            borderTop: '1px solid rgba(255,255,255,0.06)',
+            alignItems: 'flex-end',
+          }}>
+            <textarea
+              ref={textareaRef}
+              value={inputText}
+              onChange={e => setInputText(e.target.value.slice(0, 2000))}
+              onKeyDown={handleKeyDown}
+              placeholder={battleStatus === 'completed' ? 'Battle ended' : 'Talk to your agent...'}
+              disabled={isDisabled}
+              rows={1}
+              style={{
+                flex: 1,
+                background: '#1C1A27',
+                border: '1px solid rgba(255,255,255,0.1)',
+                borderRadius: 12,
+                padding: '10px 14px',
+                color: '#FFFFFF',
+                fontSize: 14,
+                outline: 'none',
+                resize: 'none',
+                minHeight: 42,
+                maxHeight: 120,
+                fontFamily: 'inherit',
+                lineHeight: '1.4',
+                opacity: isDisabled ? 0.5 : 1,
+              }}
+            />
+            <button
+              onClick={() => sendMessage(inputText)}
+              disabled={!inputText.trim() || isDisabled}
+              style={{
+                width: 42,
+                height: 42,
+                borderRadius: 12,
+                background: (!inputText.trim() || isDisabled) ? 'rgba(94, 234, 212, 0.15)' : '#5EEAD4',
+                border: 'none',
+                cursor: (!inputText.trim() || isDisabled) ? 'not-allowed' : 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: (!inputText.trim() || isDisabled) ? '#5EEAD4' : '#0D0E12',
+                flexShrink: 0,
+                transition: 'all 0.15s ease',
+              }}
+            >
+              <Send size={18} />
+            </button>
+          </div>
+
+          {/* ── Character count (near limit) ─────────────────────────────── */}
+          {inputText.length > 1800 && (
+            <div style={{
+              textAlign: 'right',
+              padding: '0 16px 4px',
+              fontSize: 11,
+              color: inputText.length > 1950 ? '#EF4444' : '#6B7280',
+            }}>
+              {inputText.length} / 2000
+            </div>
+          )}
+        </>
+      ) : (
+        /* ── Agent Thinking panel ──────────────────────────────────────────── */
         <div style={{
-          textAlign: 'right',
-          padding: '0 16px 4px',
-          fontSize: 11,
-          color: inputText.length > 1950 ? '#EF4444' : '#6B7280',
+          flex: 1,
+          overflowY: 'auto',
+          padding: '12px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 10,
         }}>
-          {inputText.length} / 2000
+          {thinkingEntries.length === 0 ? (
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flex: 1,
+              color: '#6B7280',
+              fontSize: 13,
+              textAlign: 'center',
+              padding: '32px 24px',
+              lineHeight: '1.5',
+            }}>
+              No thinking data yet. Start a conversation and your agent's reasoning will appear here.
+            </div>
+          ) : (
+            thinkingEntries.map((entry, i) =>
+              entry.type === 'scratchpad' ? (
+                <ScratchpadCard key={`sp-${entry.index}`} message={entry.message} index={entry.index} />
+              ) : (
+                <TradeEventCard key={`te-${i}`} event={entry.event} />
+              )
+            )
+          )}
         </div>
       )}
     </div>

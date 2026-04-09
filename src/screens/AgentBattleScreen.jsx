@@ -859,6 +859,7 @@ export default function AgentBattleScreen({ battle, user, onBack }) {
                 agentName={agentBattle?.agentContext?.agentName || 'Your Agent'}
                 chatExchanges={chatExchanges}
                 battleStatus={agentBattle?.status}
+                statusFeed={statusFeed}
               />
             </motion.div>
           )}
