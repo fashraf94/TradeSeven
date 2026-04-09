@@ -249,6 +249,9 @@ export default async function handler(req, res) {
       suggestedActions: parsed.suggestedActions || null,
       exchangeNumber: (battle.chatBudgetUsed || 0) + 1,
       budgetTotal: chatBudget,
+      scratchpad: parsed._scratchpad || null,
+      hasDirective: parsed.hasDirective || false,
+      directive: parsed.directive || null,
     };
 
     // 18. Write exchange to battle doc
