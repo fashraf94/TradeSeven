@@ -253,12 +253,21 @@ function buildBattleState(battle) {
     .concat((battle.portfolio?.support || []).map(p => `${p.symbol} (Support)`))
     .join(', ');
 
+  const trades = battle.trades || [];
+  let tradeBlock = '';
+  if (trades.length > 0) {
+    const recent = trades.slice(-5);
+    tradeBlock = `\n\nRECENT TRADES (${trades.length} total):\n` + recent.map(t =>
+      `- ${t.action || 'SWAP'}: ${t.symbolOut} → ${t.symbolIn} (${t.tier || 'unknown'} tier) | ${t.rationale || t.trigger || 'N/A'}`
+    ).join('\n');
+  }
+
   return `CURRENT BATTLE:
 - Mode: ${battle.gameMode}
 - Score: You ${battle.currentScore} — Opponent ${battle.opponentScore} (${battle.currentScore > battle.opponentScore ? 'LEADING' : battle.currentScore < battle.opponentScore ? 'TRAILING' : 'TIED'} by ${Math.abs(battle.currentScore - battle.opponentScore)} pts)
 - Market: ${battle.marketOpen ? 'OPEN' : 'CLOSED'}
 - Time remaining: ${battle.timeRemaining}
-- Your portfolio: ${portfolioDisplay}`;
+- Your portfolio: ${portfolioDisplay}${tradeBlock}`;
 }
 
 // ==================== EXPORTED FUNCTION ====================
