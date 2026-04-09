@@ -270,9 +270,63 @@ function buildBattleState(battle) {
 - Your portfolio: ${portfolioDisplay}${tradeBlock}`;
 }
 
+// ==================== MARKET SNAPSHOT BLOCKS ====================
+
+function buildPortfolioBriefsBlock(marketSnapshot) {
+  if (!marketSnapshot?.portfolioBriefs?.length) return null;
+
+  const freshnessNote = marketSnapshot.dataFreshness?.prices === 'websocket'
+    ? '' : ' (Prices as of last cache refresh, not real-time.)';
+
+  const lines = marketSnapshot.portfolioBriefs.map(b => {
+    const sign = b.changePercent > 0 ? '+' : '';
+    let entry = `${b.symbol} (${b.tier} tier) — ${sign}${b.changePercent}%\nTrend: ${b.trendSummary}\nMomentum: ${b.momentumSummary}`;
+    if (b.thresholdNote) entry += `\nBaggerBomb: ${b.thresholdNote}`;
+    return entry;
+  });
+
+  return `YOUR PORTFOLIO${freshnessNote}\n${lines.join('\n\n')}`;
+}
+
+function buildScoutAlertsBlock(marketSnapshot) {
+  if (!marketSnapshot?.scoutAlerts?.length) return null;
+
+  const lines = marketSnapshot.scoutAlerts.map(a =>
+    `${a.headline}\n${a.detail}`
+  );
+
+  return `OPPORTUNITIES ON YOUR WATCHLIST:\n${lines.join('\n\n')}`;
+}
+
+function buildMarketSnapshotContext(marketSnapshot) {
+  const mc = marketSnapshot?.marketContext;
+  if (!mc) return null;
+
+  const spyLine = mc.spyChange != null
+    ? `SPY: ${mc.spyChange > 0 ? '+' : ''}${mc.spyChange}%`
+    : 'SPY: N/A';
+  const volLine = mc.volatilityRegime ? ` | Volatility: ${mc.volatilityRegime}` : '';
+
+  const topSectorLine = mc.topSector && mc.topSector !== 'N/A'
+    ? `\nSector leaders: ${mc.topSector} (${mc.topSectorChange > 0 ? '+' : ''}${mc.topSectorChange}%)`
+    : '';
+  const worstSectorLine = mc.worstSector && mc.worstSector !== 'N/A'
+    ? `\nSector laggards: ${mc.worstSector} (${mc.worstSectorChange}%)`
+    : '';
+
+  return `MARKET RIGHT NOW:
+Regime: ${mc.regime} — ${mc.regimeDetail}
+${spyLine}${volLine}
+Breadth: ${mc.breadthTier}${mc.breadthDetail ? ` — ${mc.breadthDetail}` : ''}${topSectorLine}${worstSectorLine}
+Yields: ${mc.yieldRegime}`;
+}
+
+const DATA_CONFIDENCE_RULE = `DATA CONFIDENCE:
+Portfolio data refreshes every 15 minutes. Frame prices as trends, not exact current values. Say "CF is up solidly today" not "CF is at $78.42." If data feels stale, acknowledge it: "as of last check." Never invent numbers — if a field is missing, skip it entirely.`;
+
 // ==================== EXPORTED FUNCTION ====================
 
-export function buildVoiceLayerPrompt({ agent, battle, elicitationTarget, conversationHistory, anchorContext }) {
+export function buildVoiceLayerPrompt({ agent, battle, elicitationTarget, conversationHistory, anchorContext, marketSnapshot }) {
   const stats = agent.stats || {};
   const gamesPlayed = stats.gamesPlayed || 0;
   const wins = stats.wins || 0;
@@ -295,6 +349,15 @@ You've been working together for ${gamesPlayed} games (${wins}W-${losses}L). You
   // Block 3.5: Anchor (MIDDLE — low attention)
   const anchor = anchorContext || 'No market data available. Focus on game state and partner preferences.';
 
+  // Block 4A: Portfolio Briefs from voiceLayerCache (MIDDLE — reference material)
+  const portfolioBriefs = buildPortfolioBriefsBlock(marketSnapshot);
+
+  // Block 4B: Scout Alerts from voiceLayerCache (MIDDLE — reference material)
+  const scoutAlerts = buildScoutAlertsBlock(marketSnapshot);
+
+  // Block 4C: Enhanced Market Context from voiceLayerCache (MIDDLE — reference material)
+  const marketContext = buildMarketSnapshotContext(marketSnapshot);
+
   // Block 5: Battle State (BOTTOM — high attention)
   const battleState = buildBattleState(battle);
 
@@ -308,16 +371,27 @@ You've been working together for ${gamesPlayed} games (${wins}W-${losses}L). You
   const phaseRules = PHASE_RULES[phase];
 
   // Assemble in U-shaped attention order
-  return [
-    identity,        // Block 1  (TOP)
+  const blocks = [
+    identity,        // Block 1   (TOP)
     GAME_MECHANICS,  // Block 1.5 (TOP)
-    OUTPUT_FORMAT,   // Block 7  (TOP)
-    partnerModel,    // Block 2  (MIDDLE)
-    convictions,     // Block 3  (MIDDLE)
+    OUTPUT_FORMAT,   // Block 7   (TOP)
+    partnerModel,    // Block 2   (MIDDLE)
+    convictions,     // Block 3   (MIDDLE)
     anchor,          // Block 3.5 (MIDDLE)
-    battleState,     // Block 5  (BOTTOM)
-    fewShot,         // Few-Shot (BOTTOM)
+  ];
+
+  // Blocks 4A-4C: Market snapshot data (MIDDLE — only if cache exists)
+  if (portfolioBriefs) blocks.push(portfolioBriefs);
+  if (scoutAlerts) blocks.push(scoutAlerts);
+  if (marketContext) blocks.push(marketContext);
+  if (marketSnapshot) blocks.push(DATA_CONFIDENCE_RULE);
+
+  blocks.push(
+    battleState,     // Block 5   (BOTTOM)
+    fewShot,         // Few-Shot  (BOTTOM)
     elicitation,     // Elicitation (BOTTOM)
-    phaseRules,      // Block 6  (BOTTOM — LAST)
-  ].join('\n\n');
+    phaseRules,      // Block 6   (BOTTOM — LAST)
+  );
+
+  return blocks.join('\n\n');
 }
