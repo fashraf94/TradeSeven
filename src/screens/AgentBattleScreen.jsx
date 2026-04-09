@@ -605,6 +605,18 @@ export default function AgentBattleScreen({ battle, user, onBack }) {
     };
   }, [battle?.opponent?.portfolio, enrichAsset]);
 
+  // ── Known tickers for chat ticker linking ─────────────────────────────────
+
+  const knownTickers = useMemo(() => {
+    const tickers = new Set();
+    ['star', 'core', 'support'].forEach(tier => {
+      (enrichedPlayerPortfolio[tier] || []).forEach(a => {
+        if (a?.symbol) tickers.add(a.symbol);
+      });
+    });
+    return tickers;
+  }, [enrichedPlayerPortfolio]);
+
   // ── Computed scores ───────────────────────────────────────────────────────
 
   const sumPortfolioPoints = (portfolio) => {
@@ -860,6 +872,8 @@ export default function AgentBattleScreen({ battle, user, onBack }) {
                 chatExchanges={chatExchanges}
                 battleStatus={agentBattle?.status}
                 statusFeed={statusFeed}
+                onSymbolClick={handleSymbolClick}
+                knownTickers={knownTickers}
               />
             </motion.div>
           )}
