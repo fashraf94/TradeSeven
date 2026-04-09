@@ -1,31 +1,139 @@
-import Anthropic from '@anthropic-ai/sdk';
 import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
 import { applySecurityMiddleware } from '../_utils/security.js';
 import { requireAuth } from '../_utils/authMiddleware.js';
-import { isMarketOpen } from '../_utils/marketSchedule.js';
-import { getCurrentTradingDayServer } from '../_utils/agentEvalPromptAssembly.js';
+import { buildVoiceLayerPrompt } from '../_utils/voiceLayerPrompt.js';
+import { FieldValue } from 'firebase-admin/firestore';
 
 export const config = { maxDuration: 15 };
 
-// Lazy singleton Anthropic client
-let anthropicClient = null;
-function getAnthropicClient() {
-  if (!anthropicClient) {
-    anthropicClient = new Anthropic({ apiKey: process.env.CLAUDE_API_KEY });
-  }
-  return anthropicClient;
+// ==================== ELICITATION TARGET ====================
+
+const ELICITATION_INSTRUCTIONS = {
+  risk_appetite: "Create an opening for the user to reveal their comfort with risk. Present options that range from safe to aggressive.",
+  concentration_tolerance: "Present a concentrated vs diversified choice. The user's preference reveals their position-sizing philosophy.",
+  sector_convictions: "Mention 2-3 different sectors in your options. Note which sector the user gravitates toward or avoids.",
+  loss_reaction: "Reference a position that's losing. The user's response reveals whether they cut or hold.",
+  win_reaction: "Reference a position that's winning. The user's response reveals whether they take profit or let it ride.",
+  tier_philosophy: "Frame a decision around tier placement. Which tier the user prioritizes reveals their scoring strategy.",
+  momentum_vs_value: "Present a momentum play alongside a value/contrarian play. The user's choice reveals their market philosophy.",
+  news_sensitivity: "Reference a news catalyst. Whether the user engages or dismisses it reveals their news sensitivity.",
+  time_of_day_preference: "Include a time element in your options (e.g., 'act now at open' vs 'wait for confirmation'). Reveals urgency preference.",
+  macro_awareness: "Mention a macro factor (regime, yields, breadth). Whether the user engages or ignores reveals their macro awareness.",
+  communication_frequency: "Note whether the user seems to want more or less detail in your updates.",
+  autonomy_preference: "Present a decision the agent could make independently. Whether the user engages or defers reveals autonomy preference.",
+  feedback_style: "Pay attention to HOW the user responds — do they explain their reasoning or just give a direction?",
+  competitive_focus: "Reference the score differential. Whether the user focuses on the opponent or their own portfolio reveals competitive focus.",
+  learning_orientation: "Include a brief educational note. Whether the user engages with it reveals learning orientation.",
+};
+
+const DIMENSIONS = [
+  'risk_appetite', 'concentration_tolerance', 'sector_convictions',
+  'loss_reaction', 'win_reaction', 'tier_philosophy', 'momentum_vs_value',
+  'news_sensitivity', 'time_of_day_preference', 'macro_awareness',
+  'communication_frequency', 'autonomy_preference', 'feedback_style',
+  'competitive_focus', 'learning_orientation',
+];
+
+function selectElicitationTarget(partnerProfile, recentTargets = []) {
+  const candidates = DIMENSIONS
+    .filter(d => !recentTargets.includes(d))
+    .map(d => ({
+      dimension: d,
+      confidence: partnerProfile?.[d]?.confidence ?? 0,
+    }))
+    .sort((a, b) => a.confidence - b.confidence);
+
+  const target = candidates[0] || { dimension: DIMENSIONS[0] };
+
+  return {
+    dimension: target.dimension,
+    instruction: ELICITATION_INSTRUCTIONS[target.dimension],
+  };
 }
 
-// Thresholds mirrored from src/constants/agentProgression.js — keep in sync
-function getChatBudget(gamesPlayed) {
-  if (gamesPlayed >= 15) return 6;  // Partner
-  if (gamesPlayed >= 5) return 4;   // Starter
-  return 2;                          // Rookie
+// ==================== OPENROUTER CALL ====================
+
+async function callOpenRouter(systemPrompt, conversationHistory, userMessage) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15000);
+
+  try {
+    const messages = [
+      { role: 'system', content: systemPrompt },
+      ...conversationHistory,
+      { role: 'user', content: userMessage },
+    ];
+
+    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
+        'Content-Type': 'application/json',
+        'HTTP-Referer': 'https://fantasytrades.io',
+        'X-Title': 'FantasyTrades Voice Layer',
+      },
+      body: JSON.stringify({
+        model: 'google/gemma-4-26b-a4b-it',
+        messages,
+        temperature: 0.7,
+        max_tokens: 800,
+        response_format: { type: 'json_object' },
+      }),
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => 'unknown');
+      throw new Error(`OpenRouter ${response.status}: ${errorText}`);
+    }
+
+    const data = await response.json();
+    return data.choices[0].message.content;
+  } finally {
+    clearTimeout(timeout);
+  }
 }
+
+// ==================== RESPONSE PARSER ====================
+
+function parseVoiceLayerResponse(rawText) {
+  // Try direct JSON parse
+  try {
+    return JSON.parse(rawText);
+  } catch (_) { /* fall through */ }
+
+  // Try extracting from ```json ... ``` blocks
+  const fencedMatch = rawText.match(/```json\s*([\s\S]*?)```/);
+  if (fencedMatch) {
+    try {
+      return JSON.parse(fencedMatch[1]);
+    } catch (_) { /* fall through */ }
+  }
+
+  // Try extracting any {...} object
+  const objectMatch = rawText.match(/\{[\s\S]*\}/);
+  if (objectMatch) {
+    try {
+      return JSON.parse(objectMatch[0]);
+    } catch (_) { /* fall through */ }
+  }
+
+  // Final fallback — treat raw text as response
+  const cleanedText = rawText.replace(/```[\s\S]*?```/g, '').trim();
+  return {
+    _scratchpad: null,
+    response: cleanedText || 'I had trouble forming a response. Can you try again?',
+    hasDirective: false,
+    directive: null,
+    suggestedActions: null,
+  };
+}
+
+// ==================== HANDLER ====================
 
 export default async function handler(req, res) {
   // 1. Security middleware
-  if (applySecurityMiddleware(req, res, { rateLimit: { limit: 3, windowMs: 60000 } })) {
+  if (applySecurityMiddleware(req, res, { rateLimit: { limit: 10, windowMs: 60000 } })) {
     return;
   }
 
@@ -46,7 +154,7 @@ export default async function handler(req, res) {
   }
 
   // 5. Sanitize message
-  const sanitizedMessage = String(message).slice(0, 500).replace(/[\n\r\t]/g, ' ').replace(/[<>{}]/g, '').trim();
+  const sanitizedMessage = String(message).slice(0, 2000).replace(/[\n\r\t]/g, ' ').replace(/[<>{}]/g, '').trim();
 
   if (!sanitizedMessage) {
     return res.status(400).json({ error: 'Message cannot be empty' });
@@ -76,151 +184,118 @@ export default async function handler(req, res) {
       });
     }
 
-    // 9. Market phase check
-    if (isMarketOpen()) {
-      return res.status(403).json({
-        error: 'market_hours',
-        message: 'Strategy chat is available before and after market hours. During live trading, use the Co-Pilot controls.',
-      });
-    }
-
-    // 10. Read agent doc
+    // 9. Read agent doc
     const agentDoc = await db.collection('agents').doc(agentId).get();
     if (!agentDoc.exists) {
       return res.status(404).json({ error: 'Agent not found' });
     }
     const agent = agentDoc.data();
 
-    // 11. Budget check
-    const chatBudget = getChatBudget(agent.stats?.gamesPlayed || 0);
+    // 10. Budget check — flat 10 per battle
+    const chatBudget = 10;
     if ((battle.chatBudgetUsed || 0) >= chatBudget) {
       return res.status(403).json({
         error: 'chat_budget_exceeded',
-        message: "I've given this a lot of thought today, Coach. Let's revisit in the Film Room — I want to process today's action before we dig deeper.",
+        message: "We've had a solid session. Let's let things play out and regroup later.",
       });
     }
 
-    // 12. Build conversation history (last 5)
-    const previousExchanges = (battle.chatExchanges || []).slice(-5);
-    const historyLines = previousExchanges.map(e => `Coach: "${e.userMessage}"\nAgent: "${e.agentMessage}"`).join('\n');
+    // 11. Fetch market context for anchor
+    let anchorContext = null;
+    try {
+      const marketCtxDoc = await db.collection('indexIntelligence').doc('marketContext').get();
+      if (marketCtxDoc.exists) {
+        const ctx = marketCtxDoc.data();
+        anchorContext = `Regime: ${ctx.regime}. ${ctx.regimeDetail || ''}`.trim();
+      }
+    } catch (err) {
+      console.error('[VoiceLayer] Failed to fetch market context:', err.message);
+    }
 
-    // 13. Build prompt
-    const agentName = agent.name || 'Agent';
-    const archetype = agent.archetype || 'balanced';
-
-    const directives = agent.directives?.length
-      ? agent.directives.map(d => `- ${d}`).join('\n')
-      : 'No active directives';
-
-    const tradingDays = battle.tradingDays || [];
-    const currentDay = getCurrentTradingDayServer(tradingDays);
-    const totalDays = tradingDays.length || 0;
-
-    const scoreState = battle.scoreState || {};
-
-    // Last 2-3 evaluations
-    const evaluations = battle.evaluations || [];
-    const recentEvals = evaluations.slice(-3);
-    const evalLines = recentEvals.length > 0
-      ? recentEvals.map(e => `- [${e.evalId || 'eval'}] ${e.decision || 'unknown'}: ${e.rationale || 'N/A'} (conviction: ${e.conviction ?? 'N/A'})`).join('\n')
-      : 'No evaluations yet';
-
-    const systemPrompt = `You are ${agentName}, a ${archetype} trading agent having a strategy conversation with your Coach.
-${agent.consolidatedInsight ? `Your strategic wisdom: ${agent.consolidatedInsight}` : ''}
-
-RULE EXTRACTION GUIDANCE:
-- Extract a rule ONLY when the Coach explicitly states a preference, philosophy, or constraint
-- Examples that SHOULD produce a rule:
-  - "I never want to hold biotech over earnings" → Rule: "Never hold biotech over earnings"
-  - "When VIX is high, go defensive" → Rule: "When VIX > 25, shift to defensive preset"
-- Examples that should NOT produce a rule:
-  - "How are we doing today?" → No rule (just a question)
-  - "That last trade was rough" → No rule (expression, not a directive)
-- When in doubt, do NOT extract. Better to miss a rule than create noise.
-- Extracted rules should be concise (under 15 words) and actionable.
-
-Respond naturally in 2-4 sentences. Be a strategic partner, not a yes-man. If the Coach shares a thesis, engage — push back with data if you disagree, build on it if you agree.
-
-Return ONLY valid JSON (no markdown, no backticks):
-{
-  "agentMessage": "your 2-4 sentence response",
-  "extractedRule": null or { "text": "rule text", "targetType": null|"strategy"|"indicator"|"risk"|"tier", "targetValue": "specific target or null", "rationale": "why this rule" }
-}`;
-
-    const userMessage = `BATTLE SUMMARY: Day ${currentDay} of ${totalDays}, Score ${scoreState.currentScore}, ${scoreState.tradeCount} trades
-YOUR PLAYBOOK: ${directives}
-RECENT DECISIONS: ${evalLines}
-
-${historyLines.length > 0 ? `CONVERSATION HISTORY:\n${historyLines}\n` : ''}Coach's new message: "${sanitizedMessage}"`;
-
-    // 14. Call Haiku with 10s timeout
-    const anthropic = getAnthropicClient();
-
-    const haikuPromise = anthropic.messages.create({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 512,
-      temperature: 0.5,
-      system: systemPrompt,
-      messages: [{ role: 'user', content: userMessage }],
-    });
-
-    const timeoutPromise = new Promise((_, reject) =>
-      setTimeout(() => reject(new Error('Haiku call timed out after 10s')), 10000)
+    // 12. Compute elicitation target
+    const elicitationTarget = selectElicitationTarget(
+      agent.partnerProfile,
+      battle.recentElicitationTargets || [],
     );
 
-    let haikuResponse;
-    try {
-      haikuResponse = await Promise.race([haikuPromise, timeoutPromise]);
-    } catch (err) {
-      console.error('[agent/chat] Haiku call failed:', err.message);
-      return res.status(500).json({ error: 'Agent unavailable. Try again.' });
-    }
+    // 13. Build conversation history — last 10 exchanges as messages
+    const previousExchanges = (battle.chatExchanges || []).slice(-10);
+    const conversationHistory = previousExchanges.flatMap(ex => [
+      { role: 'user', content: ex.userMessage },
+      { role: 'assistant', content: ex.agentResponse || ex.agentMessage || '' },
+    ]);
 
-    // 15. Parse JSON from response text
-    const responseText = haikuResponse.content?.[0]?.text || '';
-    let result = null;
-
-    try {
-      // Try direct parse first
-      result = JSON.parse(responseText);
-    } catch (_) {
-      // Try to extract JSON from the text
-      const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        try {
-          result = JSON.parse(jsonMatch[0]);
-        } catch (__) {
-          console.error('[agent/chat] Failed to parse JSON from response:', responseText);
-          return res.status(500).json({ error: 'Agent unavailable. Try again.' });
-        }
-      } else {
-        console.error('[agent/chat] No JSON found in response:', responseText);
-        return res.status(500).json({ error: 'Agent unavailable. Try again.' });
-      }
-    }
-
-    // 16. Write to battle doc (only on success)
-    const exchange = {
-      userMessage: sanitizedMessage,
-      agentMessage: result.agentMessage,
-      extractedRule: result.extractedRule || null,
-      timestamp: new Date().toISOString(),
-    };
-    const updatedExchanges = [...(battle.chatExchanges || []), exchange];
-    await battleRef.update({
-      chatExchanges: updatedExchanges,
-      chatBudgetUsed: (battle.chatBudgetUsed || 0) + 1,
+    // 14. Build system prompt
+    const systemPrompt = buildVoiceLayerPrompt({
+      agent,
+      battle,
+      elicitationTarget,
+      conversationHistory,
+      anchorContext,
     });
 
-    // 17. Return response
-    return res.status(200).json({
-      agentMessage: result.agentMessage,
-      extractedRule: result.extractedRule || null,
+    // 15. Call OpenRouter (Gemma 4)
+    const rawResponse = await callOpenRouter(systemPrompt, conversationHistory, sanitizedMessage);
+
+    // 16. Parse response
+    const parsed = parseVoiceLayerResponse(rawResponse);
+
+    // 17. Map to client contract
+    const clientResponse = {
+      agentMessage: parsed.response,
+      extractedRule: parsed.hasDirective && parsed.directive
+        ? { text: parsed.directive.text, targetType: 'general', targetValue: null, rationale: parsed.directive.text }
+        : null,
+      suggestedActions: parsed.suggestedActions || null,
       exchangeNumber: (battle.chatBudgetUsed || 0) + 1,
       budgetTotal: chatBudget,
+    };
+
+    // 18. Write exchange to battle doc
+    const exchange = {
+      userMessage: sanitizedMessage,
+      agentResponse: parsed.response,
+      scratchpad: parsed._scratchpad || null,
+      hasDirective: parsed.hasDirective || false,
+      directive: parsed.directive || null,
+      suggestedActions: parsed.suggestedActions || null,
+      elicitationTarget: elicitationTarget.dimension,
+      timestamp: new Date().toISOString(),
+    };
+
+    const recentTargets = [...(battle.recentElicitationTargets || []), elicitationTarget.dimension].slice(-3);
+
+    await battleRef.update({
+      chatExchanges: FieldValue.arrayUnion(exchange),
+      chatBudgetUsed: FieldValue.increment(1),
+      recentElicitationTargets: recentTargets,
     });
+
+    // 19. Write directive to agent doc (only if hasDirective)
+    if (parsed.hasDirective && parsed.directive) {
+      const directive = {
+        id: `voice_${Date.now()}`,
+        text: parsed.directive.text,
+        source: 'voice_layer',
+        expiry: parsed.directive.expiry || 'end_of_battle',
+        battleId,
+        isActive: true,
+        createdAt: new Date().toISOString(),
+      };
+
+      await db.collection('agents').doc(agentId).update({
+        directives: FieldValue.arrayUnion(directive),
+      });
+    }
+
+    // 20. Return response
+    return res.status(200).json(clientResponse);
   } catch (error) {
-    console.error('[agent/chat] Error:', error);
-    return res.status(500).json({ error: 'Agent unavailable. Try again.' });
+    if (error.name === 'AbortError') {
+      console.error('[VoiceLayer] Request timed out');
+      return res.status(504).json({ error: 'Agent response timed out. Try again.' });
+    }
+    console.error('[VoiceLayer] Error:', error);
+    return res.status(500).json({ error: 'Agent unavailable. Try again in a moment.' });
   }
 }
