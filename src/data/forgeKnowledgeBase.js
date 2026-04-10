@@ -12,6 +12,10 @@ export const FORGE_CATEGORIES = [
   { id: 'threshold', label: 'Threshold Strategy', color: '#f472b6', description: 'Scoring threshold proximity and bonus optimization', mode: 'clash' },
   { id: 'tier_strategy', label: 'Tier Strategy', color: '#34d399', description: 'Dynamic tier allocation and multiplier management', mode: 'clash' },
   { id: 'institutional', label: 'Institutional', color: '#06b6d4', description: 'Institutional ownership signals, conviction scoring, and smart-money flow analysis', mode: 'both' },
+  { id: 'entry_criteria', label: 'Entry Criteria', color: '#F0C75E', description: 'Position entry filters and quality gates', mode: 'season', icon: 'DoorOpen' },
+  { id: 'exit_stops', label: 'Exit & Stops', color: '#E8927C', description: 'Exit triggers, stop-losses, and profit targets', mode: 'season', icon: 'ShieldOff' },
+  { id: 'rebalancing', label: 'Rebalancing', color: '#E8927C', description: 'Portfolio rebalancing, position sizing, and rotation', mode: 'season', icon: 'Scale' },
+  { id: 'season_state', label: 'Season State', color: '#F0C75E', description: 'Adaptive strategy shifts based on season progress and benchmark performance', mode: 'season', icon: 'Brain' },
 ];
 
 export const FORGE_RULE_TEMPLATES = [
