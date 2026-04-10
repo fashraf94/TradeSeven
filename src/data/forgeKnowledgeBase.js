@@ -3470,6 +3470,144 @@ export const FORGE_RULE_TEMPLATES = [
     tags: ['exit', 'correlation', 'diversification', 'advanced', 'season'],
     agentUseDescription: 'Compares rolling correlation between all position pairs. Sells the weaker of any pair exceeding the threshold. Soft priority.',
   },
+
+  // ══════════════════════════════════════
+  // REBALANCING CATEGORY (Season Mode)
+  // ══════════════════════════════════════
+
+  // SR-01: Position Size Cap
+  {
+    id: 'sr-01',
+    category: 'rebalancing',
+    modes: 'season',
+    headline: 'Position Size Cap',
+    description: 'Trim any position that grows too large — classic rebalancing. The gap between max and target determines how aggressively you sell winners.',
+    hook: 'No single stock should hold your portfolio hostage — cap the concentration',
+    learnMore: 'When a stock rallies hard, it can grow from 10% of your portfolio to 25%+ without you adding a share. That concentration means a single stock\'s reversal can drag down your entire season. This rule automatically trims oversized positions back to a target weight. The gap between max and target is the key lever: a narrow gap (15% max, 13% target) triggers frequent small trims, while a wide gap (25% max, 15% target) allows positions to grow significantly before a larger trim. Pairs naturally with Add to Winners — together they create a "pyramid up to the cap" strategy.',
+    difficulty: 'intermediate',
+    forgeTemplates: [
+      {
+        text: 'Trim any position above {maxPct}% back to {targetPct}%',
+        params: {
+          maxPct: { type: 'number', default: 15, min: 10, max: 30, label: 'Max Weight', hint: 'When a position hits this weight, trimming begins.', unit: '%' },
+          targetPct: { type: 'number', default: 12, min: 8, max: 25, label: 'Target Weight', hint: 'Trim down to this weight. Smaller gap = more frequent trims.', unit: '%' },
+        },
+        category: 'rebalancing',
+        targetType: 'risk_parameter'
+      }
+    ],
+    relatedIndicator: null,
+    kbEntryId: null,
+    tags: ['rebalance', 'position-size', 'concentration', 'trim', 'season'],
+    agentUseDescription: 'Trims positions exceeding the max weight back to the target weight. Hard priority. Prevents single-stock concentration.',
+  },
+
+  // SR-02: Cash Deployment Trigger
+  {
+    id: 'sr-02',
+    category: 'rebalancing',
+    modes: 'season',
+    headline: 'Cash Deployment Trigger',
+    description: 'If cash builds up past a threshold, prioritize finding new entries. Prevents accidentally becoming a cash-heavy portfolio after exits.',
+    hook: 'Cash earns zero in a 4-week sprint — deploy it or lose the race',
+    learnMore: 'After exits fire — stop-losses, profit targets, earnings exits — cash accumulates. In a 4-week season, idle cash is a direct drag on returns. This rule monitors your cash percentage and triggers entry scans when it exceeds the threshold. It also serves a dual role on Day 1: the cron reads this threshold to determine how much cash to reserve during initial portfolio construction. A low threshold (5-10%) keeps you nearly fully invested at all times, while a higher threshold (30-40%) maintains a war chest for opportunistic entries.',
+    difficulty: 'beginner',
+    forgeTemplates: [
+      {
+        text: 'If cash exceeds {pct}%, prioritize deploying into entry candidates',
+        params: {
+          pct: { type: 'number', default: 15, min: 5, max: 40, label: 'Cash Threshold', hint: 'Low (5-10%) = stay fully invested. High (30-40%) = big cash buffer is OK.', unit: '%' },
+        },
+        category: 'rebalancing',
+        targetType: 'strategy_selection'
+      }
+    ],
+    relatedIndicator: null,
+    kbEntryId: null,
+    tags: ['rebalance', 'cash', 'deployment', 'invested', 'season'],
+    agentUseDescription: 'Triggers entry scan when cash exceeds the threshold. Soft priority. Also determines initial cash reserve on Day 1 portfolio construction.',
+  },
+
+  // SR-03: Sector Drift Rebalance
+  {
+    id: 'sr-03',
+    category: 'rebalancing',
+    modes: 'season',
+    headline: 'Sector Drift Rebalance',
+    description: 'If market moves push one sector too far from your starting allocation, rebalance back. Strategic asset allocation vs. letting the market decide.',
+    hook: 'Markets will drift your portfolio into concentration — this rule fights back',
+    learnMore: 'Even a well-diversified portfolio drifts over time as different sectors perform differently. If tech rallies 15% while energy drops 10%, your originally balanced allocation becomes tech-heavy. This rule compares each sector\'s current weight to its initial weight and triggers rebalancing when the drift exceeds the tolerance. Tight tolerance (5%) maintains strict strategic allocation, while loose tolerance (20%) lets market momentum run before correcting. This is the season-mode equivalent of institutional strategic asset allocation.',
+    difficulty: 'intermediate',
+    forgeTemplates: [
+      {
+        text: 'If any sector drifts more than {tolerance}% from initial weight, rebalance',
+        params: {
+          tolerance: { type: 'number', default: 10, min: 5, max: 20, label: 'Drift Tolerance', hint: 'Tight (5%) = strict balance. Loose (20%) = let markets breathe.', unit: '%' },
+        },
+        category: 'rebalancing',
+        targetType: 'risk_parameter'
+      }
+    ],
+    relatedIndicator: null,
+    kbEntryId: null,
+    tags: ['rebalance', 'sector', 'drift', 'allocation', 'season'],
+    agentUseDescription: 'Rebalances when any sector\'s weight drifts beyond tolerance from its initial allocation. Soft priority.',
+  },
+
+  // SR-04: Add to Winners
+  {
+    id: 'sr-04',
+    category: 'rebalancing',
+    modes: 'season',
+    headline: 'Add to Winners',
+    description: 'Increase positions that are working. Direct tension with Position Size Cap — combined strategy: add to winners UP TO the cap.',
+    hook: 'Double down on what\'s working — momentum is real, ride it',
+    learnMore: 'Pyramiding — adding to winning positions — is a core momentum strategy. When a stock is already up significantly, it has demonstrated the thesis is working. Adding more capital to winners and less to losers is how trend-following systems generate outsized returns. The direct tension with Position Size Cap is intentional: Add to Winners pushes position sizes up, while Position Size Cap trims them back down. Together they create a dynamic where winners grow aggressively up to a hard ceiling, preventing any single position from dominating the portfolio.',
+    difficulty: 'advanced',
+    forgeTemplates: [
+      {
+        text: 'Add {addPct}% to holdings up more than {threshold}%',
+        params: {
+          threshold: { type: 'number', default: 10, min: 5, max: 25, label: 'Min Gain to Add', hint: 'Higher = only add to clear winners. Lower = pyramid earlier.', unit: '%' },
+          addPct: { type: 'number', default: 2, min: 1, max: 5, label: 'Add Amount', hint: 'Small (1-2%) = cautious pyramiding. Large (4-5%) = aggressive.', unit: '%' },
+        },
+        category: 'rebalancing',
+        targetType: 'strategy_selection'
+      }
+    ],
+    relatedIndicator: null,
+    kbEntryId: null,
+    tags: ['rebalance', 'pyramid', 'winners', 'add', 'season'],
+    agentUseDescription: 'Adds to winning positions that exceed the gain threshold. Soft priority. Conflicts with Position Size Cap — check thresholds.',
+  },
+
+  // SR-05: Underperformer Reduction
+  {
+    id: 'sr-05',
+    category: 'rebalancing',
+    modes: 'season',
+    headline: 'Underperformer Reduction',
+    description: 'Gradually reduce holdings that are lagging the S&P — softer than a hard stop-loss. Winners grow, losers shrink naturally.',
+    hook: 'Don\'t wait for a stop-loss — start trimming losers before they become catastrophes',
+    learnMore: 'Unlike a hard stop-loss that exits entirely at a fixed level, this rule gradually reduces positions that are underperforming relative to the S&P 500 benchmark. If the S&P is up 3% over 5 days and your holding is down 2%, that\'s a 5% underperformance gap — trimming begins. The gradual approach is less disruptive than a hard exit: a 3% reduction per trigger lets you slowly rotate capital away from laggards without the whipsaw risk of a binary stop-loss. Combined with Add to Winners, this creates a natural Darwinian portfolio: winners grow, losers shrink.',
+    difficulty: 'intermediate',
+    forgeTemplates: [
+      {
+        text: 'Reduce by {reducePct}% any holding underperforming S&P by {threshold}% over {days} days',
+        params: {
+          threshold: { type: 'number', default: 5, min: 2, max: 15, label: 'Underperformance Gap', hint: 'How much worse than S&P before trimming starts.', unit: '%' },
+          days: { type: 'number', default: 5, min: 3, max: 10, label: 'Measurement Window', hint: 'Shorter = react faster. Longer = more forgiving of short dips.', unit: '' },
+          reducePct: { type: 'number', default: 3, min: 1, max: 5, label: 'Reduction Amount', hint: 'Gradual (1-2%) = slow fade. Aggressive (4-5%) = fast rotation.', unit: '%' },
+        },
+        category: 'rebalancing',
+        targetType: 'risk_parameter'
+      }
+    ],
+    relatedIndicator: null,
+    kbEntryId: null,
+    tags: ['rebalance', 'underperformer', 'benchmark', 'reduction', 'season'],
+    agentUseDescription: 'Gradually reduces positions underperforming S&P by the threshold over the measurement window. Soft priority. Benchmark-relative.',
+  },
 ];
 
 export const FORGE_CONFLICT_PAIRS = [
