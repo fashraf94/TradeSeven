@@ -12,10 +12,10 @@ export const FORGE_CATEGORIES = [
   { id: 'threshold', label: 'Threshold Strategy', color: '#f472b6', description: 'Scoring threshold proximity and bonus optimization', mode: 'clash' },
   { id: 'tier_strategy', label: 'Tier Strategy', color: '#34d399', description: 'Dynamic tier allocation and multiplier management', mode: 'clash' },
   { id: 'institutional', label: 'Institutional', color: '#06b6d4', description: 'Institutional ownership signals, conviction scoring, and smart-money flow analysis', mode: 'both' },
-  { id: 'entry_criteria', label: 'Entry Criteria', color: '#F0C75E', description: 'Position entry filters and quality gates', mode: 'season', icon: 'DoorOpen' },
-  { id: 'exit_stops', label: 'Exit & Stops', color: '#E8927C', description: 'Exit triggers, stop-losses, and profit targets', mode: 'season', icon: 'ShieldOff' },
-  { id: 'rebalancing', label: 'Rebalancing', color: '#E8927C', description: 'Portfolio rebalancing, position sizing, and rotation', mode: 'season', icon: 'Scale' },
-  { id: 'season_state', label: 'Season State', color: '#F0C75E', description: 'Adaptive strategy shifts based on season progress and benchmark performance', mode: 'season', icon: 'Brain' },
+  { id: 'entry_criteria', label: 'Entry Criteria', color: '#F0C75E', description: 'Filter chain rules that determine when to buy stocks in Season mode', mode: 'season', icon: 'DoorOpen' },
+  { id: 'exit_stops', label: 'Exit & Stops', color: '#E8927C', description: 'Rules that determine when to sell positions and protect capital', mode: 'season', icon: 'ShieldOff' },
+  { id: 'rebalancing', label: 'Rebalancing', color: '#E8927C', description: 'Portfolio shape management — position sizing, drift correction, cash deployment', mode: 'season', icon: 'Scale' },
+  { id: 'season_state', label: 'Season State', color: '#F0C75E', description: 'Adaptive strategy rules based on season position and upcoming events', mode: 'season', icon: 'Brain' },
 ];
 
 export const FORGE_RULE_TEMPLATES = [
@@ -3064,6 +3064,220 @@ export const FORGE_RULE_TEMPLATES = [
     kbEntryId: null,
     tags: ['institutional', 'breadth', 'momentum', 'ownership-expansion', 'emerging'],
     agentUseDescription: 'Identifies stocks with expanding institutional adoption — a growing number of unique fund holders over consecutive quarters. This "breadth momentum" often precedes significant price re-ratings as the stock moves from niche to mainstream institutional coverage. Applied as a preference during portfolio construction, particularly useful for mid-cap Rockets that are gaining institutional traction.',
+  },
+
+  // ══════════════════════════════════════
+  // ENTRY CRITERIA CATEGORY (Season Mode)
+  // ══════════════════════════════════════
+
+  // SE-01: RSI Entry Gate
+  {
+    id: 'se-01',
+    category: 'entry_criteria',
+    modes: 'season',
+    headline: 'RSI Entry Gate',
+    description: 'Only enter positions where RSI indicates the stock isn\'t overbought — prevents chasing stocks that have already run.',
+    hook: 'Stops you from buying at the top — if everyone\'s already in, you\'re late',
+    learnMore: 'RSI measures momentum on a 0-100 scale. Stocks with high RSI have already rallied hard and are statistically more likely to pull back. By gating entries below a threshold, you avoid buying at the top of a move. In a 4-week season, getting caught in a pullback wastes precious runway. This pairs naturally with the Momentum Entry Threshold — together they define a "sweet spot" where stocks are moving but not overextended.',
+    difficulty: 'beginner',
+    forgeTemplates: [
+      {
+        text: 'Only enter positions where RSI is below {upper}',
+        params: {
+          upper: { type: 'number', default: 65, min: 50, max: 80, label: 'Max RSI', hint: 'Lower = stricter. Below 60 is conservative, 70+ is permissive.', unit: 'RSI' },
+        },
+        category: 'entry_criteria',
+        targetType: 'risk_parameter'
+      }
+    ],
+    relatedIndicator: null,
+    kbEntryId: null,
+    tags: ['entry', 'rsi', 'overbought', 'filter', 'season'],
+    agentUseDescription: 'Blocks entry into stocks with RSI above the threshold. Prevents buying overbought momentum that may reverse.',
+  },
+
+  // SE-02: Volume Confirmation
+  {
+    id: 'se-02',
+    category: 'entry_criteria',
+    modes: 'season',
+    headline: 'Volume Confirmation',
+    description: 'Require meaningful trading volume before entering — ensures the stock has active interest, not a dead drift.',
+    hook: 'Volume is conviction — if nobody\'s trading it, why are you buying it?',
+    learnMore: 'Volume confirms that a price move has institutional participation behind it. Stocks drifting on low volume are prone to sudden reversals when real buyers or sellers arrive. By requiring above-average volume, you filter for stocks where institutions are actively engaged — the moves are more likely to sustain. In a season portfolio, getting stuck in a low-volume name that drifts sideways wastes a roster slot.',
+    difficulty: 'beginner',
+    forgeTemplates: [
+      {
+        text: 'Require volume to be at least {multiplier}x the 20-day average before entering',
+        params: {
+          multiplier: { type: 'number', default: 1.2, min: 0.8, max: 3.0, step: 0.1, label: 'Volume Multiple', hint: '1.0 = average volume. Higher = only buy on strong volume days.', unit: 'x' },
+        },
+        category: 'entry_criteria',
+        targetType: 'risk_parameter'
+      }
+    ],
+    relatedIndicator: null,
+    kbEntryId: null,
+    tags: ['entry', 'volume', 'confirmation', 'filter', 'season'],
+    agentUseDescription: 'Requires relative volume above threshold before entering a position. Filters out low-interest stocks.',
+  },
+
+  // SE-03: Trend Alignment Filter
+  {
+    id: 'se-03',
+    category: 'entry_criteria',
+    modes: 'season',
+    headline: 'Trend Alignment Filter',
+    description: 'Only buy stocks trading above their moving average — the simplest trend-following filter. Below the SMA = downtrend.',
+    hook: 'Don\'t fight the trend — if it\'s below the average, the market is telling you something',
+    learnMore: 'A stock trading above its moving average is in an uptrend — momentum is on your side. A stock below it is fighting gravity. This is the most fundamental trend-following filter and forms the backbone of most systematic strategies. Shorter moving averages (20-day) react faster but produce more false signals. The 50-day is the institutional standard. The 200-day defines the major trend and rarely gives false readings.',
+    difficulty: 'beginner',
+    forgeTemplates: [
+      {
+        text: 'Only enter stocks trading above their {period}-day moving average',
+        params: {
+          period: { type: 'select', default: 50, options: [{ value: 20, label: '20-day (short-term)' }, { value: 50, label: '50-day (medium-term)' }, { value: 100, label: '100-day (long-term)' }, { value: 200, label: '200-day (major trend)' }], label: 'Moving Average Period', hint: 'Shorter periods react faster but give more false signals.' },
+        },
+        category: 'entry_criteria',
+        targetType: 'strategy_selection'
+      }
+    ],
+    relatedIndicator: null,
+    kbEntryId: null,
+    tags: ['entry', 'trend', 'sma', 'moving-average', 'filter', 'season'],
+    agentUseDescription: 'Filters out stocks in downtrends by requiring price above the selected moving average period.',
+  },
+
+  // SE-04: Earnings Avoidance Window
+  {
+    id: 'se-04',
+    category: 'entry_criteria',
+    modes: 'season',
+    headline: 'Earnings Avoidance Window',
+    description: 'Don\'t enter positions right before earnings — overnight gap risk can destroy a position. Huge strategic lever.',
+    hook: 'Earnings are coin flips — great companies miss, bad companies surprise. Avoid the casino.',
+    learnMore: 'Earnings announcements create massive gap risk — stocks can jump or drop 10%+ overnight regardless of quality. In a 4-week season, a single earnings gap against you can wipe out days of careful gains. This rule creates a buffer zone around earnings dates, preventing new entries when the risk/reward is dominated by a binary event. Conservative players use 5-10 day buffers; aggressive players accept 1-2 day windows.',
+    difficulty: 'intermediate',
+    forgeTemplates: [
+      {
+        text: 'Don\'t enter within {days} trading days of an earnings report',
+        params: {
+          days: { type: 'number', default: 3, min: 1, max: 10, label: 'Buffer Days', hint: 'Conservative: 5-10 days. Aggressive: 1-2 days. This is a major risk control.', unit: '' },
+        },
+        category: 'entry_criteria',
+        targetType: 'risk_parameter'
+      }
+    ],
+    relatedIndicator: null,
+    kbEntryId: null,
+    tags: ['entry', 'earnings', 'risk', 'avoidance', 'filter', 'season'],
+    agentUseDescription: 'Blocks entry into stocks with earnings reports within the buffer window. Avoids overnight gap risk.',
+  },
+
+  // SE-05: Fundamental Floor
+  {
+    id: 'se-05',
+    category: 'entry_criteria',
+    modes: 'season',
+    headline: 'Fundamental Floor',
+    description: 'Require a minimum fundamental quality score — prevents chasing technically attractive junk.',
+    hook: 'Charts lie, fundamentals don\'t — make sure the company is actually solid',
+    learnMore: 'Technical signals can make a fundamentally weak stock look attractive — momentum, breakouts, and volume spikes happen in bad companies too. This rule sets a quality floor using the composite fundamental score (0-100), which combines earnings quality, revenue growth, balance sheet strength, and valuation metrics. Stocks below the floor are excluded regardless of how good the chart looks. A score of 50 is median quality; 70+ indicates strong fundamentals.',
+    difficulty: 'beginner',
+    forgeTemplates: [
+      {
+        text: 'Only enter stocks with a Fundamental Score above {minScore}',
+        params: {
+          minScore: { type: 'number', default: 50, min: 20, max: 80, label: 'Minimum Score', hint: 'Our scoring system rates fundamentals 0-100. 50 is median quality.', unit: '' },
+        },
+        category: 'entry_criteria',
+        targetType: 'strategy_selection'
+      }
+    ],
+    relatedIndicator: null,
+    kbEntryId: null,
+    tags: ['entry', 'fundamental', 'quality', 'floor', 'filter', 'season'],
+    agentUseDescription: 'Requires minimum fundamental score before entry. Prevents buying technically attractive but fundamentally weak stocks.',
+  },
+
+  // SE-06: Momentum Entry Threshold
+  {
+    id: 'se-06',
+    category: 'entry_criteria',
+    modes: 'season',
+    headline: 'Momentum Entry Threshold',
+    description: 'Require recent price momentum before entering — no dead money. Creates natural tension with the RSI gate.',
+    hook: 'Money in motion stays in motion — flat stocks waste your limited season runway',
+    learnMore: 'In a 4-week season, every day counts. A stock that isn\'t moving is consuming a roster slot without contributing returns. This rule requires minimum recent price momentum before entry, ensuring your agent only buys stocks that are actively trending. The natural tension with the RSI Entry Gate is intentional — momentum requires the stock to be moving, but RSI caps how far it can have moved. Together they define the optimal entry window: moving but not overextended.',
+    difficulty: 'intermediate',
+    forgeTemplates: [
+      {
+        text: 'Require a minimum {period}-day price change of {pct}%',
+        params: {
+          period: { type: 'select', default: 10, options: [{ value: 5, label: '5-day (fast)' }, { value: 10, label: '10-day (medium)' }, { value: 20, label: '20-day (slow)' }], label: 'Lookback Period', hint: 'Shorter = recent momentum. Longer = sustained trend.' },
+          pct: { type: 'number', default: 2, min: 0.5, max: 10, step: 0.5, label: 'Min Change %', hint: 'Higher = stronger momentum required. Watch for tension with RSI Gate.', unit: '%' },
+        },
+        category: 'entry_criteria',
+        targetType: 'strategy_selection'
+      }
+    ],
+    relatedIndicator: null,
+    kbEntryId: null,
+    tags: ['entry', 'momentum', 'price-change', 'filter', 'season'],
+    agentUseDescription: 'Requires minimum price change over the lookback period. Filters out stagnant stocks wasting season runway.',
+  },
+
+  // SE-07: Sector Freshness Check
+  {
+    id: 'se-07',
+    category: 'entry_criteria',
+    modes: 'season',
+    headline: 'Sector Freshness Check',
+    description: 'Prevents sector concentration at entry time — if you already have 30% tech, don\'t add more tech.',
+    hook: 'Diversification happens at the door, not after the house is on fire',
+    learnMore: 'Sector concentration is one of the biggest portfolio killers in a multi-week season. If three of your positions are tech and tech drops 5%, your whole portfolio suffers. This rule checks sector exposure at entry time and blocks new positions when a sector is already at its weight cap. Unlike rebalancing rules that fix drift after it happens, this prevents concentration from forming in the first place.',
+    difficulty: 'intermediate',
+    forgeTemplates: [
+      {
+        text: 'Don\'t enter if sector already at {maxPct}% or more of portfolio',
+        params: {
+          maxPct: { type: 'number', default: 30, min: 15, max: 50, label: 'Max Sector Weight', hint: 'Lower = more diversified. 25-30% is moderate. 15% is very strict.', unit: '%' },
+        },
+        category: 'entry_criteria',
+        targetType: 'risk_parameter'
+      }
+    ],
+    relatedIndicator: null,
+    kbEntryId: null,
+    tags: ['entry', 'sector', 'diversification', 'concentration', 'filter', 'season'],
+    agentUseDescription: 'Blocks entry when a sector already exceeds the weight cap. Enforces diversification at entry time.',
+  },
+
+  // SE-08: Institutional Sentiment Check
+  {
+    id: 'se-08',
+    category: 'entry_criteria',
+    modes: 'season',
+    headline: 'Institutional Sentiment Check',
+    description: 'Only enter stocks where big institutions are buying, not selling. Leverages 13F data as a leading indicator.',
+    hook: 'Follow the smart money — if BlackRock is buying, they probably know something',
+    learnMore: 'Institutional 13F filings reveal what the biggest money managers are doing with their portfolios. When institutions are increasing their positions, it signals confidence backed by deep research. When they\'re reducing, it often precedes price weakness. This rule checks the direction of institutional ownership over recent quarters — increasing or stable ownership is a green light, while declining ownership is a warning sign. The multi-quarter lookback filters out noise from single-quarter rebalancing.',
+    difficulty: 'advanced',
+    forgeTemplates: [
+      {
+        text: 'Only enter stocks where institutional ownership has {direction} over the last {quarters} quarters',
+        params: {
+          direction: { type: 'select', default: 'stable_or_increased', options: [{ value: 'increased', label: 'Increased' }, { value: 'stable_or_increased', label: 'Stable or Increased' }, { value: 'any', label: 'Any (no filter)' }], label: 'Ownership Direction', hint: 'Increased = bullish institutions. Stable = not bailing. Any = disabled.' },
+          quarters: { type: 'select', default: 2, options: [{ value: 1, label: '1 quarter' }, { value: 2, label: '2 quarters' }, { value: 4, label: '4 quarters' }], label: 'Lookback Quarters', hint: 'More quarters = stronger conviction signal but slower to react.' },
+        },
+        category: 'entry_criteria',
+        targetType: 'strategy_selection'
+      }
+    ],
+    relatedIndicator: null,
+    kbEntryId: null,
+    tags: ['entry', 'institutional', '13f', 'smart-money', 'filter', 'season'],
+    agentUseDescription: 'Requires institutional ownership trending in the specified direction. Uses 13F data as a conviction signal.',
   },
 ];
 
