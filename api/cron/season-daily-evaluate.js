@@ -1,22 +1,48 @@
 // api/cron/season-daily-evaluate.js
 //
-// Daily Evaluation Cron — Part 1 of 2 (Phase B-9a-1)
-// Scaffold + data fetch + season-doc updates. The per-entry evaluation loop
-// is intentionally a commented placeholder — Part 2 (B-9a-2) wires the
-// pipeline, settlement, daily-log builder, and leaderboard rebuild into the
-// marked block below.
+// Daily Evaluation Cron (Phase B-9a)
+// Finds active seasons, fetches shared market data, advances the season
+// trading day, evaluates each active entry (black swan detection → pipeline
+// → Haiku tie-break → settlement → daily log → Firestore transaction), then
+// rebuilds the leaderboard and checks for season completion.
 //
 // Triggered by Vercel Cron twice (UTC 20:30 and 21:30) for DST coverage;
 // the ET time-window guard below rejects whichever invocation falls outside
 // 4:15–5:00 PM America/New_York.
 
 import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
-import { fetchSharedMarketData } from '../_utils/seasonEvalContext.js';
+import { fetchSharedMarketData, buildEvaluationContext } from '../_utils/seasonEvalContext.js';
 import { SEASON_CONFIG, SEASON_STATUS, ENTRY_STATUS } from '../_utils/seasonConfig.js';
-// NOTE: Part 2 will add imports for:
-//   buildEvaluationContext (from ../_utils/seasonEvalContext.js)
-//   pipeline runner, settlement, daily log builder
-//   buildLeaderboard (from ../_utils/seasonLeaderboard.js)
+import { executePipeline } from '../_utils/seasonPipeline.js';
+import { settleDay } from '../_utils/seasonSettlement.js';
+import { buildDailyLog } from '../_utils/seasonDailyLog.js';
+import { buildLeaderboard } from '../_utils/seasonLeaderboard.js';
+import {
+  detectBlackSwanTriggers,
+  buildBlackSwanRequest,
+  parseBlackSwanResponse,
+} from '../_utils/seasonPrompts/blackSwanEscalation.js';
+import {
+  buildEntryTiebreakRequest,
+  parseEntryTiebreakResponse,
+} from '../_utils/seasonPrompts/entryTiebreak.js';
+
+async function callAnthropic(requestBody) {
+  const resp = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': process.env.ANTHROPIC_API_KEY,
+      'anthropic-version': '2023-06-01',
+    },
+    body: JSON.stringify(requestBody),
+  });
+  if (!resp.ok) {
+    const errText = await resp.text().catch(() => 'Unknown error');
+    throw new Error(`Anthropic ${resp.status}: ${errText.slice(0, 200)}`);
+  }
+  return resp.json();
+}
 
 export default async function handler(req, res) {
   // ─── 1. CRON_SECRET guard ────────────────────────────────────
@@ -147,28 +173,254 @@ export default async function handler(req, res) {
         }
 
         // ═══════════════════════════════════════════════════════════
-        // ENTRY EVALUATION LOOP — Added in Part 2 (B-9a-2)
+        // ENTRY EVALUATION LOOP
         // For each entry: build ctx → detect black swan → run pipeline
         //   → settle → build daily log → write transaction
         // ═══════════════════════════════════════════════════════════
         const evaluatedEntries = [];
         const errors = [];
 
-        // TODO: Part 2 adds the evaluation loop here
+        for (const entryDoc of entriesSnap.docs) {
+          try {
+            const entry = { ...entryDoc.data(), id: entryDoc.id };
+
+            // ── Idempotency guard ──
+            if (entry.cronState?.lastEvaluatedDay >= currentTradingDay) {
+              evaluatedEntries.push(entry);
+              continue;
+            }
+
+            // ── Build EvaluationContext ──
+            // buildEvaluationContext reads season.currentTradingDay (updated
+            // in-memory in Step 7). It handles tradingDay, currentWeek,
+            // isFirstDayOfWeek internally — no manual ctx injection needed.
+            const ctx = await buildEvaluationContext(entry, season, sharedMarketData);
+
+            // ── Black swan detection ──
+            // Pass entry.portfolio as previousPortfolio (H2 audit fix —
+            // NOT a dailySnapshot).
+            const previousSnapshot = entry.dailySnapshots?.length > 0
+              ? entry.dailySnapshots[entry.dailySnapshots.length - 1]
+              : null;
+            const triggers = detectBlackSwanTriggers(ctx, entry.portfolio);
+            let blackSwanResult = null;
+
+            if (triggers.length > 0) {
+              try {
+                const riskRules = (entry.algorithm?.rules || []).filter(r =>
+                  r.ruleId?.startsWith('sx-') || r.ruleId?.startsWith('sr-')
+                );
+                const bsRequest = buildBlackSwanRequest(ctx, triggers, riskRules);
+                const bsResponse = await callAnthropic(bsRequest);
+                blackSwanResult = parseBlackSwanResponse(bsResponse);
+              } catch (bsErr) {
+                console.error(
+                  `[SEASON] Black swan Haiku call failed for ${entry.id}:`,
+                  bsErr.message
+                );
+                // Non-fatal: continue with normal evaluation
+              }
+              // NOTE: Black swan actions are LOGGED only — not applied to
+              // pipeline. Applying them to trade ordering needs its own
+              // design phase.
+            }
+
+            // ── Run pipeline ──
+            const activeRules = entry.algorithm?.rules || [];
+            let pipelineResult = executePipeline(ctx, activeRules);
+
+            // ── Day 1: Portfolio construction ──
+            const isDay1 =
+              currentTradingDay === 1 &&
+              (!entry.portfolio?.positions ||
+                Object.keys(entry.portfolio.positions).length === 0);
+
+            if (isDay1) {
+              // Day 1 always fires Haiku for initial construction.
+              const allCandidates = [
+                ...pipelineResult.entryActions.buys,
+                ...pipelineResult.entryActions.tieBreakNeeded,
+              ];
+              if (allCandidates.length > 0) {
+                try {
+                  const tbRequest = buildEntryTiebreakRequest(
+                    ctx,
+                    allCandidates,
+                    activeRules,
+                    ctx.portfolio.cash
+                  );
+                  const tbResponse = await callAnthropic(tbRequest);
+                  const tbResult = parseEntryTiebreakResponse(tbResponse);
+                  if (tbResult.selections.length > 0) {
+                    const targetWeight = 100 / SEASON_CONFIG.TARGET_POSITIONS;
+                    pipelineResult.entryActions.buys = tbResult.selections.map(s => ({
+                      ticker: s.ticker,
+                      weight: s.allocationPct || targetWeight,
+                      dollarAmount:
+                        (ctx.portfolio.cash * (s.allocationPct || targetWeight)) / 100,
+                      reason: s.rationale || 'Haiku initial construction',
+                      citedRules: [],
+                      score: 0,
+                      shortlistBonus: false,
+                    }));
+                    pipelineResult.entryActions.tieBreakNeeded = [];
+                  }
+                } catch (tbErr) {
+                  console.error(
+                    `[SEASON] Day 1 Haiku tie-break failed for ${entry.id}:`,
+                    tbErr.message
+                  );
+                  // Fall through to deterministic buys from pipeline
+                }
+              }
+            } else {
+              // ── Normal day: tie-break handling ──
+              if (pipelineResult.entryActions.tieBreakNeeded?.length >= 2) {
+                try {
+                  const tbRequest = buildEntryTiebreakRequest(
+                    ctx,
+                    pipelineResult.entryActions.tieBreakNeeded,
+                    activeRules,
+                    ctx.portfolio.cash
+                  );
+                  const tbResponse = await callAnthropic(tbRequest);
+                  const tbResult = parseEntryTiebreakResponse(tbResponse);
+                  if (tbResult.selections.length > 0) {
+                    pipelineResult.entryActions.buys = pipelineResult.entryActions.buys.map(
+                      buy => {
+                        const sel = tbResult.selections.find(s => s.ticker === buy.ticker);
+                        return sel
+                          ? { ...buy, reason: `${buy.reason} — Haiku: ${sel.rationale}` }
+                          : buy;
+                      }
+                    );
+                  }
+                } catch (tbErr) {
+                  console.error(
+                    `[SEASON] Tie-break Haiku failed for ${entry.id}:`,
+                    tbErr.message
+                  );
+                  // Fall through to deterministic ranking
+                }
+              }
+            }
+
+            // ── Settle ──
+            const settlementResult = settleDay(ctx, pipelineResult, season, previousSnapshot);
+
+            // ── Build daily log ──
+            const dailyLog = buildDailyLog(ctx, pipelineResult, settlementResult);
+            if (blackSwanResult) {
+              dailyLog.haikuCalls = dailyLog.haikuCalls || [];
+              dailyLog.haikuCalls.push({
+                type: 'black_swan',
+                severity: blackSwanResult.severity,
+                assessment: blackSwanResult.assessment,
+                actions: blackSwanResult.actions,
+                overriddenRules: blackSwanResult.overriddenRules,
+                resumeNormal: blackSwanResult.resumeNormal,
+              });
+            }
+
+            // ── Write to Firestore (transaction) ──
+            await db.runTransaction(async (txn) => {
+              const freshRef = entryDoc.ref;
+              const freshSnap = await txn.get(freshRef);
+              const freshData = freshSnap.data();
+
+              // Idempotency re-check inside transaction
+              if (freshData.cronState?.lastEvaluatedDay >= currentTradingDay) return;
+
+              // Merge rulePerformance deltas
+              const mergedRulePerformance = { ...(freshData.rulePerformance || {}) };
+              for (const [ruleId, delta] of Object.entries(
+                settlementResult.rulePerformanceDeltas || {}
+              )) {
+                const existing = mergedRulePerformance[ruleId] || {};
+                const merged = { ...existing };
+                for (const [key, val] of Object.entries(delta)) {
+                  merged[key] =
+                    typeof val === 'number' ? (existing[key] || 0) + val : val;
+                }
+                mergedRulePerformance[ruleId] = merged;
+              }
+
+              // Build complete seasonState merge
+              const mergedSeasonState = {
+                ...(freshData.seasonState || {}),
+                ...settlementResult.seasonState,
+              };
+
+              // Append daily snapshot
+              const updatedSnapshots = [
+                ...(freshData.dailySnapshots || []),
+                settlementResult.dailySnapshot,
+              ];
+
+              // Write entry doc
+              txn.update(freshRef, {
+                portfolio: settlementResult.portfolio,
+                seasonState: mergedSeasonState,
+                dailySnapshots: updatedSnapshots,
+                recentActivity: settlementResult.recentActivity,
+                rulePerformance: mergedRulePerformance,
+                cronState: {
+                  ...(freshData.cronState || {}),
+                  ...settlementResult.cronStateUpdates,
+                  lastAttemptedDay: currentTradingDay,
+                  lastError: null,
+                },
+                updatedAt: new Date().toISOString(),
+              });
+
+              // Write daily log subcollection
+              const logRef = freshRef.collection('dailyLogs').doc(String(currentTradingDay));
+              txn.set(logRef, dailyLog);
+            });
+
+            // Collect for leaderboard (with updated state)
+            evaluatedEntries.push({
+              ...entry,
+              portfolio: settlementResult.portfolio,
+              seasonState: { ...entry.seasonState, ...settlementResult.seasonState },
+              dailySnapshots: [
+                ...(entry.dailySnapshots || []),
+                settlementResult.dailySnapshot,
+              ],
+            });
+          } catch (err) {
+            console.error(`[SEASON] Entry ${entryDoc.id} failed:`, err.message);
+            errors.push({ entryId: entryDoc.id, error: err.message?.slice(0, 300) });
+
+            // Best-effort error logging to entry cronState
+            try {
+              await entryDoc.ref.update({
+                'cronState.lastAttemptedDay': currentTradingDay,
+                'cronState.lastError': (err.message || 'Unknown error').slice(0, 500),
+                updatedAt: new Date().toISOString(),
+              });
+            } catch (_) {
+              /* swallow */
+            }
+          }
+        }
 
         // ═══════════════════════════════════════════════════════════
         // POST-EVALUATION — Leaderboard + Season Completion
         // ═══════════════════════════════════════════════════════════
 
-        // ─── 9. Rebuild leaderboard (scaffolded, commented until Part 2) ───
-        // Read previous leaderboard for previousRank tracking.
-        const prevDoc = await db.collection('seasonLeaderboard').doc(seasonDoc.id).get();
-        const previousLeaderboard = prevDoc.exists ? prevDoc.data() : null;
-
-        // buildLeaderboard(seasonDoc.id, evaluatedEntries, season, previousLeaderboard)
-        // → write to seasonLeaderboard/{seasonId}
-        // TODO: Uncomment when Part 2 populates evaluatedEntries
-        void previousLeaderboard; // silence unused-var lint in Part 1
+        // ─── 9. Rebuild leaderboard ────────────────────────────
+        if (evaluatedEntries.length > 0) {
+          const prevDoc = await db.collection('seasonLeaderboard').doc(seasonDoc.id).get();
+          const previousLeaderboard = prevDoc.exists ? prevDoc.data() : null;
+          const leaderboard = buildLeaderboard(
+            seasonDoc.id,
+            evaluatedEntries,
+            season,
+            previousLeaderboard
+          );
+          await db.collection('seasonLeaderboard').doc(seasonDoc.id).set(leaderboard);
+        }
 
         // ─── 10. Season completion check ───────────────────────
         // totalTradingDays is derived from the calendar (seasonSettlement.js:590).
