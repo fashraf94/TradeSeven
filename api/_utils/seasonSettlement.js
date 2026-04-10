@@ -481,6 +481,7 @@ function buildRecentActivity(ctx, trades, previousSnapshot) {
     if (trade.type === 'SELL') {
       base.rules = trade.allCitedRules || [trade.triggerRule];
       base.returnAtAction = trade.returnSinceEntry;
+      base.soldPrice = trade.price;
     } else if (trade.type === 'BUY') {
       base.rules = trade.citedRules || [];
       base.entryPrice = trade.price;
@@ -592,8 +593,8 @@ function buildCounterfactualChecks(ctx, seasonDoc, previousSnapshot) {
     if (remainingDays < minDays) continue;
 
     const currentPrice = ctx.marketData[sell.ticker]?.closePrice;
-    const soldPrice = sell.entryPrice || sell.returnAtAction; // entryPrice may not be on sell activity
-    if (!currentPrice || !soldPrice) continue;
+    const soldPrice = sell.soldPrice;
+    if (!currentPrice || typeof soldPrice !== 'number') continue;
 
     const daysSinceSell = ctx.tradingDay - sell.day;
     const returnIfHeld = ((currentPrice - soldPrice) / soldPrice) * 100;
