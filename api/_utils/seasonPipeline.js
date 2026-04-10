@@ -269,6 +269,14 @@ export function executeEntryPhase(ctx, activeRules, exitActions, rebalanceAction
   const entryRules = activeRules.filter(r =>
     r.enabled && registry[r.ruleId]?.phase === 'entry'
   );
+
+  // With no entry rules equipped, every universe ticker would vacuously pass
+  // the empty filter set and the pipeline would buy the top N by generic score.
+  // That's surprising UX — skip the scan entirely instead.
+  if (entryRules.length === 0) {
+    return { buys: [], tieBreakNeeded: [], blocked: false, reason: 'No entry rules equipped', filterResults: {}, candidatesEvaluated: 0, candidatesPassed: 0 };
+  }
+
   const hardEntryRules = entryRules.filter(r => registry[r.ruleId]?.priority === 'hard');
   const softEntryRules = entryRules.filter(r => registry[r.ruleId]?.priority === 'soft');
 

@@ -194,24 +194,32 @@ function validateSingleChange(change, currentRules, ruleSchemaRegistry) {
     return { ok: false, reason: 'Missing required fields' };
   }
 
+  // Cap string lengths to prevent DoS via rejection-reason amplification
+  if (ruleId.length > 64) {
+    return { ok: false, reason: 'Rule ID too long' };
+  }
+  if (field.length > 64) {
+    return { ok: false, reason: 'Field name too long' };
+  }
+
   // 2. RULE EXISTS CHECK (in user's current algorithm)
   const rule = Array.isArray(currentRules)
     ? currentRules.find(r => r && r.ruleId === ruleId)
     : null;
   if (!rule) {
-    return { ok: false, reason: `Rule ${ruleId} not in algorithm` };
+    return { ok: false, reason: `Rule ${truncate(ruleId)} not in algorithm` };
   }
 
   // 3. SCHEMA EXISTS CHECK
   const schemaEntry = ruleSchemaRegistry ? ruleSchemaRegistry[ruleId] : null;
   if (!schemaEntry || !schemaEntry.params) {
-    return { ok: false, reason: `No schema found for ${ruleId}` };
+    return { ok: false, reason: `No schema found for ${truncate(ruleId)}` };
   }
 
   // 4. FIELD EXISTS CHECK
   const paramDef = schemaEntry.params[field];
   if (!paramDef) {
-    return { ok: false, reason: `Field ${field} not in schema for ${ruleId}` };
+    return { ok: false, reason: `Field ${truncate(field)} not in schema for ${truncate(ruleId)}` };
   }
 
   // 5. TYPE VALIDATION
@@ -303,4 +311,13 @@ function formatValue(v) {
   if (v === null) return 'null';
   if (typeof v === 'string') return `"${v}"`;
   return String(v);
+}
+
+/**
+ * Truncates a string for safe inclusion in rejection-reason messages.
+ * Bounds worst-case rejection-doc size when client submits pathological input.
+ */
+function truncate(str, max = 100) {
+  if (typeof str !== 'string') str = String(str);
+  return str.length > max ? str.slice(0, max) + '...' : str;
 }
