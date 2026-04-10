@@ -392,6 +392,7 @@ function buildSeasonState(ctx, portfolio, seasonDoc, pipelineResult, trades) {
 
   const state = {
     alphaVsSpy: portfolio.totalReturn - spyReturn,
+    spyReturn,
     currentWeek: ctx.currentWeek,
     currentTradingDay: ctx.tradingDay,
     totalTradesExecuted: (existingState.totalTradesExecuted || 0) + trades.length,

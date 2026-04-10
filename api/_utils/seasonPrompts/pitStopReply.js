@@ -232,7 +232,9 @@ function buildDebriefSummaryBlock(pitStop) {
 }
 
 function buildActiveRulesBlock(entry) {
-  const rules = Array.isArray(entry?.activeRules) ? entry.activeRules : [];
+  // Canonical path is entry.algorithm.rules (matches seasonValidation.js and
+  // seasonLeaderboard.js). entry.activeRules does not exist on the doc shape.
+  const rules = Array.isArray(entry?.algorithm?.rules) ? entry.algorithm.rules : [];
   const enabled = rules.filter(r => r && r.enabled !== false);
   if (enabled.length === 0) return 'ACTIVE RULES: (none equipped)';
 

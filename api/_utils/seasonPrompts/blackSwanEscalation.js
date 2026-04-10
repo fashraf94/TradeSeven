@@ -87,7 +87,7 @@ const BLACK_SWAN_TOOL = {
 
 /**
  * Detects black swan conditions by comparing today's market data against
- * the previous day's snapshot. Returns an array of trigger objects —
+ * yesterday's portfolio state. Returns an array of trigger objects —
  * empty means no escalation is needed.
  *
  * Three conditions are checked:
@@ -97,17 +97,23 @@ const BLACK_SWAN_TOOL = {
  *      is below BLACK_SWAN.SECTOR_COLLAPSE_PCT.
  *   3. SPY crash: today's SPY daily return is below BLACK_SWAN.SPY_CRASH_PCT.
  *
+ * IMPORTANT: `previousPortfolio` is the entry's saved portfolio from yesterday
+ * (`entry.portfolio`), NOT a `dailySnapshot` object from seasonSettlement. The
+ * `dailySnapshot` written by settlement does not carry per-ticker position data,
+ * so callers must source yesterday's prices from the last-persisted portfolio
+ * state. The cron typically reads this before writing today's settlement.
+ *
  * @param {Object} ctx - EvaluationContext with portfolio, marketData, benchmark.
- * @param {Object} previousSnapshot - Yesterday's snapshot; must contain
- *                                    positions: { [ticker]: { currentPrice } }.
+ * @param {Object} previousPortfolio - Yesterday's entry.portfolio; must contain
+ *                                     positions: { [ticker]: { currentPrice } }.
  * @returns {Array<{ type: string, detail: string, [key: string]: any }>}
  */
-export function detectBlackSwanTriggers(ctx, previousSnapshot) {
+export function detectBlackSwanTriggers(ctx, previousPortfolio) {
   const triggers = [];
   if (!ctx) return triggers;
 
   const positions = ctx.portfolio?.positions || {};
-  const prevPositions = previousSnapshot?.positions || {};
+  const prevPositions = previousPortfolio?.positions || {};
   const marketData = ctx.marketData || {};
 
   // 1. Position gap > BLACK_SWAN.POSITION_GAP_PCT overnight
