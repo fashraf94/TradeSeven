@@ -399,6 +399,59 @@ service cloud.firestore {
     }
 
     // ═══════════════════════════════════════════
+    // SEASON MODE — Rules, Pit Stops, Leaderboard
+    // Read: Owner (entries) / Authenticated (seasons, leaderboard)
+    // Write: Server only, EXCEPT scoped client updates during open pit stop
+    // ═══════════════════════════════════════════
+
+    // Seasons — read-only for authenticated users; server manages lifecycle
+    match /seasons/{seasonId} {
+      allow read: if request.auth != null;
+      allow create, update, delete: if false;
+    }
+
+    // Season entries — owner read; shortlist writable only during open pit stop
+    match /seasonEntries/{entryId} {
+      allow read: if request.auth != null
+                  && resource.data.userId == request.auth.uid;
+
+      allow update: if request.auth != null
+                    && resource.data.userId == request.auth.uid
+                    && resource.data.isPitStopOpen == true
+                    && request.resource.data.diff(resource.data).affectedKeys()
+                       .hasOnly(['seasonState.userShortlist', 'seasonState.shortlistWeek', 'updatedAt']);
+
+      allow create, delete: if false;
+
+      // Daily logs — owner read; server-only writes
+      match /dailyLogs/{day} {
+        allow read: if request.auth != null
+                    && get(/databases/$(database)/documents/seasonEntries/$(entryId)).data.userId == request.auth.uid;
+        allow create, update, delete: if false;
+      }
+
+      // Pit stops — owner read; scoped client writes during open window only
+      match /pitStops/{week} {
+        allow read: if request.auth != null
+                    && get(/databases/$(database)/documents/seasonEntries/$(entryId)).data.userId == request.auth.uid;
+
+        allow update: if request.auth != null
+                      && get(/databases/$(database)/documents/seasonEntries/$(entryId)).data.userId == request.auth.uid
+                      && resource.data.status == 'open'
+                      && request.resource.data.diff(resource.data).affectedKeys()
+                         .hasOnly(['pendingUserMessage', 'shortlist', 'shortlistRationale', 'changes', 'changeCount', 'updatedAt']);
+
+        allow create, delete: if false;
+      }
+    }
+
+    // Season leaderboard — readable by any authenticated user (uses displayId, not raw UIDs)
+    match /seasonLeaderboard/{seasonId} {
+      allow read: if request.auth != null;
+      allow create, update, delete: if false;
+    }
+
+    // ═══════════════════════════════════════════
     // Default deny everything else
     // ═══════════════════════════════════════════
     match /{document=**} {
