@@ -1,7 +1,7 @@
 /**
- * Season Rule Registry — Entry & Exit evaluation functions
+ * Season Rule Registry — Entry, Exit, Rebalancing & Season State evaluation functions
  * Pure functions: no Firestore reads, no side effects, no data fetching.
- * Rebalancing & season-state rules added in B-2b.
+ * 26 rules: 8 entry (se-*) + 7 exit (sx-*) + 5 rebalance (sr-*) + 6 strategy (ss-*)
  */
 
 import { RESULT_TYPES, PRIORITY } from './seasonConfig.js';
@@ -359,6 +359,211 @@ registerRule('sx-07', {
       priority: PRIORITY.SOFT,
       reason: `Correlated ${p.correlation.toFixed(2)} with ${p.pair.find(t => t !== p.ticker)} over ${params.days} days (threshold ${params.threshold})`,
     }));
+  },
+});
+
+// ─── Rebalancing (Phase: 'rebalance') ─────────────────────────
+// Each returns: { type: REBALANCE, action: 'TRIM'|'ADD'|'REDUCE'|'DEPLOY_CASH'|'REBALANCE_SECTOR'|'HOLD', ticker?, targetWeight?, reason }
+
+// SR-01: Position Size Cap
+registerRule('sr-01', {
+  phase: 'rebalance',
+  priority: PRIORITY.HARD,
+  evaluate: (ticker, params, ctx) => {
+    const pos = ctx.portfolio.positions[ticker];
+    if (!pos) return null;
+    if (pos.currentWeight > params.maxPct) {
+      return { type: RESULT_TYPES.REBALANCE, action: 'TRIM', ticker, targetWeight: params.targetPct, reason: `Weight ${pos.currentWeight.toFixed(1)}% exceeds ${params.maxPct}% cap — trimming to ${params.targetPct}%` };
+    }
+    return { type: RESULT_TYPES.REBALANCE, action: 'HOLD', ticker, reason: `Weight ${pos.currentWeight.toFixed(1)}% within ${params.maxPct}% cap` };
+  },
+});
+
+// SR-02: Cash Deployment Trigger
+// NOTE: ticker is null for this rule — it evaluates portfolio-level cash.
+registerRule('sr-02', {
+  phase: 'rebalance',
+  priority: PRIORITY.SOFT,
+  evaluate: (ticker, params, ctx) => {
+    if (ctx.portfolio.cashPct > params.pct) {
+      return { type: RESULT_TYPES.REBALANCE, action: 'DEPLOY_CASH', reason: `Cash at ${ctx.portfolio.cashPct.toFixed(1)}%, above ${params.pct}% threshold — triggering entry scan` };
+    }
+    return { type: RESULT_TYPES.REBALANCE, action: 'HOLD', reason: `Cash at ${ctx.portfolio.cashPct.toFixed(1)}%, within ${params.pct}% threshold` };
+  },
+});
+
+// SR-03: Sector Drift Rebalance
+// NOTE: Evaluates all sectors. Returns an ARRAY of drift actions (like SX-07).
+registerRule('sr-03', {
+  phase: 'rebalance',
+  priority: PRIORITY.SOFT,
+  evaluate: (ticker, params, ctx) => {
+    const drifts = [];
+    const current = ctx.portfolio.sectorWeights || {};
+    const initial = ctx.portfolio.initialSectorWeights || {};
+
+    for (const sector of Object.keys(current)) {
+      const drift = Math.abs((current[sector] || 0) - (initial[sector] || 0));
+      if (drift > params.tolerance) {
+        drifts.push({
+          type: RESULT_TYPES.REBALANCE, action: 'REBALANCE_SECTOR', sector,
+          currentWeight: current[sector], initialWeight: initial[sector] || 0,
+          reason: `${sector} drifted ${drift.toFixed(1)}% from initial (${(initial[sector] || 0).toFixed(1)}% → ${current[sector].toFixed(1)}%), exceeds ${params.tolerance}% tolerance`,
+        });
+      }
+    }
+
+    if (drifts.length === 0) return { type: RESULT_TYPES.REBALANCE, action: 'HOLD', reason: 'All sectors within drift tolerance' };
+    return drifts;
+  },
+});
+
+// SR-04: Add to Winners
+registerRule('sr-04', {
+  phase: 'rebalance',
+  priority: PRIORITY.SOFT,
+  evaluate: (ticker, params, ctx) => {
+    const pos = ctx.portfolio.positions[ticker];
+    if (!pos) return null;
+    if (pos.returnSinceEntry >= params.threshold && ctx.portfolio.cashPct > 5) {
+      const newWeight = Math.min(pos.currentWeight + params.addPct, 30);
+      return { type: RESULT_TYPES.REBALANCE, action: 'ADD', ticker, targetWeight: newWeight, reason: `Up ${pos.returnSinceEntry.toFixed(1)}% (above ${params.threshold}%), adding ${params.addPct}% — cash available at ${ctx.portfolio.cashPct.toFixed(1)}%` };
+    }
+    return {
+      type: RESULT_TYPES.REBALANCE, action: 'HOLD', ticker,
+      reason: pos.returnSinceEntry < params.threshold ? `Up ${pos.returnSinceEntry.toFixed(1)}%, below ${params.threshold}% add threshold` : `Cash too low at ${ctx.portfolio.cashPct.toFixed(1)}%`,
+    };
+  },
+});
+
+// SR-05: Underperformer Reduction
+registerRule('sr-05', {
+  phase: 'rebalance',
+  priority: PRIORITY.SOFT,
+  evaluate: (ticker, params, ctx) => {
+    const pos = ctx.portfolio.positions[ticker];
+    if (!pos) return null;
+
+    const history = ctx.marketData[ticker]?.priceHistory;
+    const spyHistory = ctx.benchmark?.spyPriceHistory;
+    if (!history || !spyHistory || history.length < params.days + 1 || spyHistory.length < params.days + 1) {
+      return { type: RESULT_TYPES.REBALANCE, action: 'HOLD', ticker, reason: 'Insufficient price history for comparison' };
+    }
+
+    const posReturn = ((history[history.length - 1] - history[history.length - 1 - params.days]) / history[history.length - 1 - params.days]) * 100;
+    const spyReturn = ((spyHistory[spyHistory.length - 1] - spyHistory[spyHistory.length - 1 - params.days]) / spyHistory[spyHistory.length - 1 - params.days]) * 100;
+    const relativeReturn = posReturn - spyReturn;
+
+    if (relativeReturn <= -params.threshold) {
+      const newWeight = Math.max(pos.currentWeight - params.reducePct, 0);
+      return { type: RESULT_TYPES.REBALANCE, action: 'REDUCE', ticker, targetWeight: newWeight, reason: `Underperforming S&P by ${Math.abs(relativeReturn).toFixed(1)}% over ${params.days} days (threshold ${params.threshold}%) — reducing ${params.reducePct}%` };
+    }
+    return { type: RESULT_TYPES.REBALANCE, action: 'HOLD', ticker, reason: `Relative to S&P: ${relativeReturn >= 0 ? '+' : ''}${relativeReturn.toFixed(1)}% over ${params.days} days, within tolerance` };
+  },
+});
+
+// ─── Season State (Phase: 'strategy') ─────────────────────────
+// Each returns: { type: STRATEGY_MOD, effect: string|null, active, params?, reason }
+
+// SS-01: Benchmark Gap Aggression
+registerRule('ss-01', {
+  phase: 'strategy',
+  priority: PRIORITY.SOFT,
+  evaluate: (ticker, params, ctx) => {
+    const active = ctx.season.currentWeek >= params.week && ctx.season.alphaVsSpy <= -params.pct;
+    return {
+      type: RESULT_TYPES.STRATEGY_MOD, effect: active ? 'prefer_high_beta' : null, active,
+      reason: active
+        ? `Trailing S&P by ${Math.abs(ctx.season.alphaVsSpy).toFixed(1)}% after Week ${ctx.season.currentWeek} — shifting to high-beta entries`
+        : `Alpha ${ctx.season.alphaVsSpy >= 0 ? '+' : ''}${ctx.season.alphaVsSpy.toFixed(1)}% vs S&P, Week ${ctx.season.currentWeek} — no aggression needed`,
+    };
+  },
+});
+
+// SS-02: Lead Protection Mode
+registerRule('ss-02', {
+  phase: 'strategy',
+  priority: PRIORITY.SOFT,
+  evaluate: (ticker, params, ctx) => {
+    const active = ctx.season.alphaVsSpy >= params.pct;
+    return {
+      type: RESULT_TYPES.STRATEGY_MOD, effect: active ? 'protect_lead' : null, active,
+      params: active ? { tightenTrailingStop: params.tightPct, maxBeta: params.maxBeta } : {},
+      reason: active
+        ? `Leading S&P by +${ctx.season.alphaVsSpy.toFixed(1)}% — tightening trailing stops to ${params.tightPct}%, capping beta at ${params.maxBeta}`
+        : `Alpha ${ctx.season.alphaVsSpy >= 0 ? '+' : ''}${ctx.season.alphaVsSpy.toFixed(1)}% — protection not triggered (needs +${params.pct}%)`,
+    };
+  },
+});
+
+// SS-03: Final Week Lockdown
+registerRule('ss-03', {
+  phase: 'strategy',
+  priority: PRIORITY.HARD,
+  evaluate: (ticker, params, ctx) => {
+    const isFinalWeek = ctx.season.currentWeek === ctx.season.totalWeeks;
+    const active = params.enabled && isFinalWeek;
+    return {
+      type: RESULT_TYPES.STRATEGY_MOD, effect: active ? 'block_entries' : null, active,
+      reason: active
+        ? `Final week (Week ${ctx.season.currentWeek}) — all new entries blocked`
+        : isFinalWeek ? 'Final week but lockdown disabled' : `Week ${ctx.season.currentWeek} of ${ctx.season.totalWeeks} — not final week`,
+    };
+  },
+});
+
+// SS-04: FOMC/CPI Defensive Rotation
+registerRule('ss-04', {
+  phase: 'strategy',
+  priority: PRIORITY.SOFT,
+  evaluate: (ticker, params, ctx) => {
+    const nextEvent = ctx.macro?.nextEvent;
+    if (!nextEvent) return { type: RESULT_TYPES.STRATEGY_MOD, effect: null, active: false, reason: 'No upcoming macro events in calendar' };
+    const active = nextEvent.tradingDaysUntil <= params.days;
+    return {
+      type: RESULT_TYPES.STRATEGY_MOD, effect: active ? 'reduce_beta' : null, active,
+      params: active ? { reducePct: params.reducePct } : {},
+      reason: active
+        ? `${nextEvent.type} in ${nextEvent.tradingDaysUntil} trading days — reducing high-beta exposure by ${params.reducePct}%`
+        : `Next event (${nextEvent.type}) in ${nextEvent.tradingDaysUntil} days — outside ${params.days}-day window`,
+    };
+  },
+});
+
+// SS-05: Weekly Momentum Shift
+registerRule('ss-05', {
+  phase: 'strategy',
+  priority: PRIORITY.SOFT,
+  evaluate: (ticker, params, ctx) => {
+    const active = ctx.season.isFirstDayOfWeek && ctx.season.currentWeek > 1;
+    if (!active) return { type: RESULT_TYPES.STRATEGY_MOD, effect: null, active: false, reason: 'Not first day of a new week — momentum shift skipped' };
+
+    const lastWeek = ctx.season.currentWeek - 1;
+    const sectorReturns = ctx.season.weeklySectorReturns?.[lastWeek] || {};
+    const values = Object.values(sectorReturns);
+    const avgReturn = values.length > 0 ? values.reduce((s, v) => s + v, 0) / values.length : 0;
+    const outperformers = Object.entries(sectorReturns).filter(([_, ret]) => ret > avgReturn).map(([s]) => s);
+
+    return {
+      type: RESULT_TYPES.STRATEGY_MOD, effect: 'tilt_sectors', active: true,
+      params: { shiftPct: params.shiftPct, favorSectors: outperformers },
+      reason: `Week ${lastWeek} outperformers: ${outperformers.join(', ') || 'none'} — tilting ${params.shiftPct}% toward winners`,
+    };
+  },
+});
+
+// SS-06: Pit Stop Suggestion Priority
+registerRule('ss-06', {
+  phase: 'strategy',
+  priority: PRIORITY.SOFT,
+  evaluate: (ticker, params, ctx) => {
+    const shortlist = ctx.season.userShortlist || [];
+    const active = shortlist.length > 0;
+    return {
+      type: RESULT_TYPES.STRATEGY_MOD, effect: active ? 'shortlist_priority' : null, active,
+      params: { priority: params.priority, tickers: shortlist },
+      reason: active ? `User shortlist [${shortlist.join(', ')}] with priority: ${params.priority}` : 'No user shortlist submitted',
+    };
   },
 });
 
