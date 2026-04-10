@@ -3279,6 +3279,197 @@ export const FORGE_RULE_TEMPLATES = [
     tags: ['entry', 'institutional', '13f', 'smart-money', 'filter', 'season'],
     agentUseDescription: 'Requires institutional ownership trending in the specified direction. Uses 13F data as a conviction signal.',
   },
+
+  // ══════════════════════════════════════
+  // EXIT & STOPS CATEGORY (Season Mode)
+  // ══════════════════════════════════════
+
+  // SX-01: Fixed Stop-Loss
+  {
+    id: 'sx-01',
+    category: 'exit_stops',
+    modes: 'season',
+    headline: 'Fixed Stop-Loss',
+    description: 'The most fundamental risk rule. Sell any position that drops a set percentage from entry. Tight stops = quick cuts + frequent re-entry. Wide stops = ride through volatility.',
+    hook: 'The #1 rule in trading: cut your losses. The only question is where.',
+    learnMore: 'Stop-losses are the single most important risk management tool. Without one, a small loss can snowball into a catastrophic one. The tradeoff is between tight and wide: tight stops (3-5%) cut losses quickly but trigger frequently, leading to more re-entry costs and whipsaws. Wide stops (15-20%) give positions room to breathe through normal volatility but expose you to larger drawdowns when the thesis is truly broken. In a 4-week season, a balanced stop around 7-10% gives enough room for daily noise while capping downside.',
+    difficulty: 'beginner',
+    forgeTemplates: [
+      {
+        text: 'Sell any position that drops {pct}% from entry',
+        params: {
+          pct: { type: 'number', default: 8, min: 3, max: 20, label: 'Stop-Loss %', hint: 'Tight (3-5%) = frequent stops. Medium (7-10%) = balanced. Wide (15-20%) = ride volatility.', unit: '%' },
+        },
+        category: 'exit_stops',
+        targetType: 'risk_parameter'
+      }
+    ],
+    relatedIndicator: null,
+    kbEntryId: null,
+    tags: ['exit', 'stop-loss', 'risk', 'capital-protection', 'season'],
+    agentUseDescription: 'Mandatory sell when position drops below stop-loss threshold from entry price. Hard priority — overrides soft holds.',
+  },
+
+  // SX-02: Trailing Stop
+  {
+    id: 'sx-02',
+    category: 'exit_stops',
+    modes: 'season',
+    headline: 'Trailing Stop',
+    description: 'Sell if position drops from its highest price since entry — protects gains by measuring from the peak, not the entry.',
+    hook: 'Lock in gains automatically — you\'ll never give back your entire rally',
+    learnMore: 'A trailing stop ratchets upward with the stock price but never moves down. If a stock rises 20% then pulls back 10% from its peak, the trailing stop triggers — you keep 10% instead of watching all gains evaporate. The key tension is with Profit Target: a profit target sells at a fixed gain (e.g., +15%), while a trailing stop lets winners run indefinitely but gives back some gains on exit. Combining both creates a system where positions either hit the target or get stopped out on a reversal.',
+    difficulty: 'intermediate',
+    forgeTemplates: [
+      {
+        text: 'Sell if position drops {pct}% from its highest closing price since entry',
+        params: {
+          pct: { type: 'number', default: 10, min: 3, max: 25, label: 'Trail Distance %', hint: 'Tighter = protects more gain but exits sooner. Wider = lets winners breathe.', unit: '%' },
+        },
+        category: 'exit_stops',
+        targetType: 'risk_parameter'
+      }
+    ],
+    relatedIndicator: null,
+    kbEntryId: null,
+    tags: ['exit', 'trailing-stop', 'gains', 'peak', 'season'],
+    agentUseDescription: 'Sells when position drops from its high-water mark by the trail percentage. Hard priority. Protects accumulated gains.',
+  },
+
+  // SX-03: Time-Based Exit
+  {
+    id: 'sx-03',
+    category: 'exit_stops',
+    modes: 'season',
+    headline: 'Time-Based Exit',
+    description: 'Close positions that aren\'t working within a time window. Dead money in a 4-week season wastes 25% of your runway per week.',
+    hook: 'Time is money — literally. A flat stock in a 20-day season is an expensive do-nothing.',
+    learnMore: 'In a 4-week season, time is your scarcest resource. A stock that sits flat for a week has consumed 25% of your season runway without contributing returns. This rule sets a performance deadline — if a position hasn\'t gained the minimum within the time window, it gets closed and the capital is redeployed to a better opportunity. The minimum gain threshold is the key lever: 0% means "just don\'t lose money," while 2%+ demands active profit generation.',
+    difficulty: 'intermediate',
+    forgeTemplates: [
+      {
+        text: 'Close any position that hasn\'t gained {pct}% within {days} trading days',
+        params: {
+          days: { type: 'number', default: 5, min: 2, max: 15, label: 'Time Window', hint: 'Shorter = impatient but responsive. Longer = more patient.', unit: '' },
+          pct: { type: 'number', default: 1, min: 0, max: 5, step: 0.5, label: 'Min Gain Required', hint: '0% = must not lose money. 2%+ = must actively profit.', unit: '%' },
+        },
+        category: 'exit_stops',
+        targetType: 'risk_parameter'
+      }
+    ],
+    relatedIndicator: null,
+    kbEntryId: null,
+    tags: ['exit', 'time', 'dead-money', 'patience', 'season'],
+    agentUseDescription: 'Exits positions that fail to achieve minimum gain within the time window. Soft priority. Fights dead money.',
+  },
+
+  // SX-04: Profit Target
+  {
+    id: 'sx-04',
+    category: 'exit_stops',
+    modes: 'season',
+    headline: 'Profit Target',
+    description: 'Sell when a position hits a gain target — birds in the hand. Natural tension with Trailing Stop (lock in now vs. let it run).',
+    hook: 'Nobody went broke taking profits — but leaving money on the table hurts too',
+    learnMore: 'Profit targets create a disciplined exit at a predetermined gain level. The advantage is certainty — you lock in gains without waiting for a reversal signal. The disadvantage is capping upside — a stock that would have gained 40% gets sold at 15%. The key tension is with the Trailing Stop: if both are equipped, the tighter one fires first. A 15% profit target with a 10% trailing stop means the target fires first for a steady rise, but the trailing stop catches a sharp reversal before the target is reached.',
+    difficulty: 'beginner',
+    forgeTemplates: [
+      {
+        text: 'Sell any position that gains {pct}% from entry',
+        params: {
+          pct: { type: 'number', default: 15, min: 5, max: 50, label: 'Profit Target %', hint: 'Low (5-8%) = frequent wins. High (20%+) = fewer but bigger wins.', unit: '%' },
+        },
+        category: 'exit_stops',
+        targetType: 'strategy_selection'
+      }
+    ],
+    relatedIndicator: null,
+    kbEntryId: null,
+    tags: ['exit', 'profit', 'target', 'gains', 'season'],
+    agentUseDescription: 'Sells positions that reach the profit target. Soft priority. Locks in gains at a fixed level.',
+  },
+
+  // SX-05: Technical Exit Signal
+  {
+    id: 'sx-05',
+    category: 'exit_stops',
+    modes: 'season',
+    headline: 'Technical Exit Signal',
+    description: 'Sell on technical breakdown — RSI overbought, MACD crossover, or price dropping below its moving average.',
+    hook: 'Let the charts tell you when the party\'s over, not your gut',
+    learnMore: 'Technical exit signals let the market tell you when a trend is ending rather than guessing. RSI overbought signals momentum exhaustion — the stock has risen too far too fast. MACD bearish crossover detects a shift in trend direction before it becomes obvious on the chart. Price below the moving average confirms the trend has broken. The "RSI OR MACD" option casts the widest net — either signal triggers an exit, making it the most defensive choice.',
+    difficulty: 'intermediate',
+    forgeTemplates: [
+      {
+        text: 'Sell on technical breakdown: {trigger}',
+        params: {
+          trigger: { type: 'select', default: 'rsi_overbought', options: [{ value: 'rsi_overbought', label: 'RSI Overbought' }, { value: 'macd_bearish', label: 'MACD Bearish Crossover' }, { value: 'below_sma', label: 'Below Moving Average' }, { value: 'either_rsi_or_macd', label: 'RSI OR MACD (either triggers)' }], label: 'Exit Trigger', hint: 'RSI = momentum reversal. MACD = trend shift. SMA = trend break.' },
+          rsiThreshold: { type: 'number', default: 75, min: 65, max: 90, label: 'RSI Threshold', hint: 'Only used with RSI trigger. Higher = more permissive.', unit: 'RSI' },
+          smaPeriod: { type: 'select', default: 20, options: [{ value: 20, label: '20-day' }, { value: 50, label: '50-day' }], label: 'SMA Period', hint: 'Only used with SMA trigger. 20-day reacts faster.' },
+        },
+        category: 'exit_stops',
+        targetType: 'indicator_weight'
+      }
+    ],
+    relatedIndicator: null,
+    kbEntryId: null,
+    tags: ['exit', 'technical', 'rsi', 'macd', 'sma', 'breakdown', 'season'],
+    agentUseDescription: 'Exits on selected technical breakdown signal. Soft priority. Pairs with entry criteria for complete technical systems.',
+  },
+
+  // SX-06: Earnings Exit
+  {
+    id: 'sx-06',
+    category: 'exit_stops',
+    modes: 'season',
+    headline: 'Earnings Exit',
+    description: 'Sell positions before earnings to avoid overnight gap risk. The toggle is the key decision: protect all positions or only profitable ones?',
+    hook: 'Take profits before the dice roll — or hold through and hope for the best',
+    learnMore: 'Earnings reports create binary outcomes — stocks can gap 10%+ in either direction overnight. If you\'re sitting on a profitable position, selling before earnings locks in those gains and eliminates the risk of giving them back on a miss. The "Only If Profitable" toggle is the critical decision: ON means you protect gains but hold losers through earnings (hoping for a positive surprise), while OFF means you exit everything approaching earnings regardless of P&L — the more defensive choice.',
+    difficulty: 'intermediate',
+    forgeTemplates: [
+      {
+        text: 'Sell positions {days} days before earnings if profitable',
+        params: {
+          days: { type: 'number', default: 2, min: 1, max: 5, label: 'Days Before Earnings', hint: 'More days = safer but may miss pre-earnings run-up.', unit: '' },
+          onlyIfProfitable: { type: 'toggle', default: true, label: 'Only If Profitable', hint: 'ON = protect gains only. OFF = also cut losers before potential further damage.' },
+        },
+        category: 'exit_stops',
+        targetType: 'risk_parameter'
+      }
+    ],
+    relatedIndicator: null,
+    kbEntryId: null,
+    tags: ['exit', 'earnings', 'risk', 'gap', 'season'],
+    agentUseDescription: 'Exits positions approaching earnings reports. Toggle controls whether only profitable positions are sold or all positions.',
+  },
+
+  // SX-07: Correlation-Based Exit
+  {
+    id: 'sx-07',
+    category: 'exit_stops',
+    modes: 'season',
+    headline: 'Correlation-Based Exit',
+    description: 'If two holdings move together too closely, sell the weaker one. Sector diversity ≠ correlation diversity.',
+    hook: 'Owning 3 tech stocks that move in lockstep isn\'t diversification — it\'s triple exposure',
+    learnMore: 'Two stocks can be in different sectors yet still move in lockstep — for example, a cloud software company and a semiconductor maker might both track the Nasdaq closely. High rolling correlation between holdings means your diversification is illusory — when one drops, the other drops too. This rule computes pairwise correlation over the specified window and sells the weaker performer when two holdings exceed the threshold. True portfolio diversification requires low correlation, not just different ticker symbols.',
+    difficulty: 'advanced',
+    forgeTemplates: [
+      {
+        text: 'If two holdings show {days}-day correlation above {threshold}, sell the weaker one',
+        params: {
+          days: { type: 'select', default: 10, options: [{ value: 5, label: '5-day (recent)' }, { value: 10, label: '10-day (standard)' }, { value: 20, label: '20-day (broad)' }], label: 'Correlation Window', hint: 'Shorter = catches recent convergence. Longer = structural similarity.' },
+          threshold: { type: 'number', default: 0.85, min: 0.7, max: 0.95, step: 0.05, label: 'Correlation Threshold', hint: '0.85 is high correlation. Lower = stricter diversification.', unit: '' },
+        },
+        category: 'exit_stops',
+        targetType: 'risk_parameter'
+      }
+    ],
+    relatedIndicator: null,
+    kbEntryId: null,
+    tags: ['exit', 'correlation', 'diversification', 'advanced', 'season'],
+    agentUseDescription: 'Compares rolling correlation between all position pairs. Sells the weaker of any pair exceeding the threshold. Soft priority.',
+  },
 ];
 
 export const FORGE_CONFLICT_PAIRS = [
