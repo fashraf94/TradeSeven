@@ -3,15 +3,15 @@
 // Zero Firestore reads — bundled with Vite at build time
 
 export const FORGE_CATEGORIES = [
-  { id: 'technical', label: 'Technical', color: '#5eead4', description: 'Price action, indicators, and chart patterns' },
-  { id: 'fundamental', label: 'Fundamental', color: '#a78bfa', description: 'Financial metrics and company valuation' },
-  { id: 'risk', label: 'Risk', color: '#f97066', description: 'Protective constraints and risk management' },
-  { id: 'allocation', label: 'Allocation', color: '#f59e0b', description: 'Portfolio construction and position sizing' },
-  { id: 'mid_battle', label: 'Mid-Battle Trading', color: '#6366F1', description: 'Swap timing, hurdle rates, and mid-game trade management' },
-  { id: 'game_state', label: 'Game State', color: '#94A3B8', description: 'Phase-aware strategy shifts and score-based decisions' },
-  { id: 'threshold', label: 'Threshold Strategy', color: '#f472b6', description: 'Scoring threshold proximity and bonus optimization' },
-  { id: 'tier_strategy', label: 'Tier Strategy', color: '#34d399', description: 'Dynamic tier allocation and multiplier management' },
-  { id: 'institutional', label: 'Institutional', color: '#06b6d4', description: 'Institutional ownership signals, conviction scoring, and smart-money flow analysis' },
+  { id: 'technical', label: 'Technical', color: '#5eead4', description: 'Price action, indicators, and chart patterns', mode: 'both' },
+  { id: 'fundamental', label: 'Fundamental', color: '#a78bfa', description: 'Financial metrics and company valuation', mode: 'both' },
+  { id: 'risk', label: 'Risk', color: '#f97066', description: 'Protective constraints and risk management', mode: 'both' },
+  { id: 'allocation', label: 'Allocation', color: '#f59e0b', description: 'Portfolio construction and position sizing', mode: 'both' },
+  { id: 'mid_battle', label: 'Mid-Battle Trading', color: '#6366F1', description: 'Swap timing, hurdle rates, and mid-game trade management', mode: 'clash' },
+  { id: 'game_state', label: 'Game State', color: '#94A3B8', description: 'Phase-aware strategy shifts and score-based decisions', mode: 'clash' },
+  { id: 'threshold', label: 'Threshold Strategy', color: '#f472b6', description: 'Scoring threshold proximity and bonus optimization', mode: 'clash' },
+  { id: 'tier_strategy', label: 'Tier Strategy', color: '#34d399', description: 'Dynamic tier allocation and multiplier management', mode: 'clash' },
+  { id: 'institutional', label: 'Institutional', color: '#06b6d4', description: 'Institutional ownership signals, conviction scoring, and smart-money flow analysis', mode: 'both' },
 ];
 
 export const FORGE_RULE_TEMPLATES = [
@@ -21,6 +21,7 @@ export const FORGE_RULE_TEMPLATES = [
   {
     id: 'tech-rsi-oversold',
     category: 'technical',
+    modes: 'both',
     headline: 'Buy oversold stocks',
     description: 'Add stocks that have dropped hard and show signs of bouncing back.',
     learnMore: 'RSI (Relative Strength Index) measures momentum on a 0-100 scale. Below 30 means the stock is oversold — it may have fallen too far, too fast. Historically, oversold stocks tend to bounce. This rule tells your agent to look for these opportunities.',
@@ -43,6 +44,7 @@ export const FORGE_RULE_TEMPLATES = [
   {
     id: 'tech-rsi-overbought',
     category: 'technical',
+    modes: 'both',
     headline: 'Avoid overbought stocks',
     description: 'Skip stocks that have run up too fast and may be due for a pullback.',
     learnMore: 'When RSI goes above 70, a stock is considered overbought — it has risen quickly and may pull back. This rule makes your agent cautious about chasing rallies.',
@@ -65,6 +67,7 @@ export const FORGE_RULE_TEMPLATES = [
   {
     id: 'tech-bollinger-squeeze',
     category: 'technical',
+    modes: 'both',
     headline: 'Look for volatility breakouts',
     description: 'Target stocks where price is compressed tight — a big move may be coming.',
     learnMore: 'Bollinger Bands show a stock\'s normal price range. When the bands squeeze tight, the stock is coiled — a breakout (up or down) often follows. Combined with volume confirmation, this can signal the start of a strong move.',
@@ -87,6 +90,7 @@ export const FORGE_RULE_TEMPLATES = [
   {
     id: 'tech-moving-average-trend',
     category: 'technical',
+    modes: 'both',
     headline: 'Follow the trend',
     description: 'Prefer stocks trading above their moving average — the trend is your friend.',
     learnMore: 'A stock above its 50-day moving average is in an uptrend. A stock below it is in a downtrend. This simple filter keeps your agent on the right side of momentum.',
@@ -109,6 +113,7 @@ export const FORGE_RULE_TEMPLATES = [
   {
     id: 'tech-macd-bullish',
     category: 'technical',
+    modes: 'both',
     headline: 'Ride momentum shifts',
     description: 'Look for stocks where trend momentum is turning positive.',
     learnMore: 'MACD tracks the relationship between two moving averages. When the MACD line crosses above the signal line, momentum is shifting bullish. This rule helps your agent catch trend reversals early.',
@@ -131,6 +136,7 @@ export const FORGE_RULE_TEMPLATES = [
   {
     id: 'tech-volume-surge',
     category: 'technical',
+    modes: 'both',
     headline: 'Follow the smart money',
     description: 'Pay attention when trading volume spikes — big players may be moving.',
     learnMore: 'A surge in volume (2x or more above average) often signals institutional interest. Price moves on high volume are more meaningful than moves on low volume. This rule tells your agent to weight volume-confirmed moves more heavily.',
@@ -152,6 +158,7 @@ export const FORGE_RULE_TEMPLATES = [
   {
     id: 'tech-relative-strength',
     category: 'technical',
+    modes: 'both',
     headline: 'Pick sector leaders',
     description: 'Choose stocks that are outperforming their sector peers.',
     learnMore: 'Relative strength compares a stock to its sector. A stock in the top quartile is leading its peers — it has the wind at its back. This rule tells your agent to favor leaders over laggards.',
@@ -173,6 +180,7 @@ export const FORGE_RULE_TEMPLATES = [
   {
     id: 'tech-avoid-declining',
     category: 'technical',
+    modes: 'both',
     headline: 'Don\'t catch falling knives',
     description: 'Avoid stocks in a sustained downtrend — wait for a reversal first.',
     learnMore: 'A stock trading below its 200-day moving average is in a long-term downtrend. Buying into a downtrend is risky — you\'re fighting momentum. This rule keeps your agent from trying to pick bottoms.',
@@ -198,6 +206,7 @@ export const FORGE_RULE_TEMPLATES = [
   {
     id: 'fund-earnings-surprise',
     category: 'fundamental',
+    modes: 'both',
     headline: 'Bet on earnings winners',
     description: 'Favor companies that consistently beat earnings expectations.',
     learnMore: 'Companies that beat earnings estimates tend to continue outperforming. A positive earnings surprise signals strong execution and sometimes conservative guidance — both bullish signs.',
@@ -219,6 +228,7 @@ export const FORGE_RULE_TEMPLATES = [
   {
     id: 'fund-revenue-growth',
     category: 'fundamental',
+    modes: 'both',
     headline: 'Find growing companies',
     description: 'Prefer companies with strong revenue growth — the top line matters most.',
     learnMore: 'Revenue growth shows whether a company is actually expanding its business. Earnings can be managed through cost-cutting, but revenue growth is harder to fake. Companies growing revenue above 10% are typically in a healthy expansion phase.',
@@ -240,6 +250,7 @@ export const FORGE_RULE_TEMPLATES = [
   {
     id: 'fund-value-pe',
     category: 'fundamental',
+    modes: 'both',
     headline: 'Hunt for undervalued stocks',
     description: 'Look for stocks trading at a discount to their sector\'s average valuation.',
     learnMore: 'P/E ratio measures how much you pay per dollar of earnings. A stock with a P/E below its sector median may be undervalued — the market hasn\'t caught up to its true worth. Be careful though: sometimes stocks are cheap for a reason.',
@@ -261,6 +272,7 @@ export const FORGE_RULE_TEMPLATES = [
   {
     id: 'fund-bank-pb',
     category: 'fundamental',
+    modes: 'both',
     headline: 'Value banks the right way',
     description: 'Use P/B ratio instead of P/E for bank stocks — it\'s a better measure.',
     learnMore: 'Banks earn money differently than tech companies. P/E is misleading because bank earnings are heavily cyclical. P/B (price-to-book) measures the stock price against the bank\'s actual asset value — a much better gauge for financials.',
@@ -282,6 +294,7 @@ export const FORGE_RULE_TEMPLATES = [
   {
     id: 'fund-financial-health',
     category: 'fundamental',
+    modes: 'both',
     headline: 'Avoid fragile companies',
     description: 'Skip companies with weak balance sheets — they crack under pressure.',
     learnMore: 'Financial health combines debt levels, cash flow strength, and profit margins into one picture. A company with strong financial health can weather market downturns. A weak one might not survive.',
@@ -303,6 +316,7 @@ export const FORGE_RULE_TEMPLATES = [
   {
     id: 'fund-market-cap',
     category: 'fundamental',
+    modes: 'both',
     headline: 'Pick your weight class',
     description: 'Focus on company size that matches your strategy — big, medium, or small.',
     learnMore: 'Large caps (>$10B) are stable but move slowly. Mid caps ($2-10B) balance growth and stability. Small caps (<$2B) are volatile but can deliver explosive moves. Your choice depends on your game strategy.',
@@ -328,6 +342,7 @@ export const FORGE_RULE_TEMPLATES = [
   {
     id: 'risk-sector-diversification',
     category: 'risk',
+    modes: 'both',
     headline: 'Spread your bets',
     description: 'Don\'t put all your picks in one industry — diversify across sectors.',
     learnMore: 'If all your picks are tech stocks and tech drops, your entire portfolio drops. Spreading across at least 3 sectors means one bad sector won\'t sink your whole game. This is the most fundamental risk rule.',
@@ -349,6 +364,7 @@ export const FORGE_RULE_TEMPLATES = [
   {
     id: 'risk-single-stock-limit',
     category: 'risk',
+    modes: 'both',
     headline: 'Don\'t bet the farm',
     description: 'Cap how much of your portfolio goes into any single stock.',
     learnMore: 'Putting 50%+ into one stock is gambling, not strategy. If that stock tanks, your whole game is over. A reasonable cap forces your agent to spread conviction across multiple picks.',
@@ -370,6 +386,7 @@ export const FORGE_RULE_TEMPLATES = [
   {
     id: 'risk-volatility-avoidance',
     category: 'risk',
+    modes: 'both',
     headline: 'Stay away from wild swings',
     description: 'Avoid stocks that are moving much more than normal for their sector.',
     learnMore: 'ATR (Average True Range) measures how much a stock moves each day. A stock with ATR far above its sector average is unusually volatile — it could move big in either direction. This rule keeps your agent away from unpredictable movers.',
@@ -391,6 +408,7 @@ export const FORGE_RULE_TEMPLATES = [
   {
     id: 'risk-exit-atr-stop',
     category: 'risk',
+    modes: 'both',
     headline: 'Know when to fold',
     description: 'Exit positions that drop too far — cut losses before they get worse.',
     learnMore: 'A stock that drops more than 2x its normal daily range from your entry is telling you something is wrong. Cutting the loss here prevents a small loss from becoming a devastating one. This is a classic stop-loss strategy.',
@@ -412,6 +430,7 @@ export const FORGE_RULE_TEMPLATES = [
   {
     id: 'risk-avoid-declining-trend',
     category: 'risk',
+    modes: 'both',
     headline: 'Don\'t fight the trend',
     description: 'Avoid stocks in a long-term downtrend — the momentum is against you.',
     learnMore: 'Buying a stock that has been falling for months is like swimming upstream. Even if it looks cheap, downtrends persist longer than most people expect. Wait for a confirmed reversal first.',
@@ -437,6 +456,7 @@ export const FORGE_RULE_TEMPLATES = [
   {
     id: 'alloc-sector-cap',
     category: 'allocation',
+    modes: 'both',
     headline: 'Cap your sector exposure',
     description: 'Limit how much of your portfolio goes into any one sector.',
     learnMore: 'Even if you love tech, putting 80% there means you live and die by one sector. A reasonable cap (30-50%) ensures sector-specific bad news doesn\'t wipe out your entire strategy.',
@@ -459,6 +479,7 @@ export const FORGE_RULE_TEMPLATES = [
   {
     id: 'alloc-sector-minimum',
     category: 'allocation',
+    modes: 'both',
     headline: 'Guarantee sector exposure',
     description: 'Make sure your portfolio always includes a certain sector.',
     learnMore: 'If you believe energy stocks are going to outperform, this rule ensures your agent always allocates at least a minimum percentage to that sector — even when other signals are louder.',
@@ -481,6 +502,7 @@ export const FORGE_RULE_TEMPLATES = [
   {
     id: 'alloc-tier-preference',
     category: 'allocation',
+    modes: 'clash',
     headline: 'Control your Star picks',
     description: 'Decide what kind of stocks deserve your highest-scoring Star tier slot.',
     learnMore: 'In BaggerBomb, your Star tier stock gets a 2x score multiplier. This rule tells your agent what type of stock to put in that premium position — momentum leaders, undervalued gems, or something else.',
@@ -502,6 +524,7 @@ export const FORGE_RULE_TEMPLATES = [
   {
     id: 'alloc-even-spread',
     category: 'allocation',
+    modes: 'both',
     headline: 'Keep it balanced',
     description: 'Spread allocation evenly across sectors instead of concentrating.',
     learnMore: 'An even spread means no single sector dominates your portfolio. This is the most defensive allocation strategy — you won\'t have the highest highs but you\'re protected from sector-specific crashes.',
@@ -529,6 +552,7 @@ export const FORGE_RULE_TEMPLATES = [
   {
     id: 'mb-01',
     category: 'mid_battle',
+    modes: 'clash',
     headline: 'Give your pick time to work',
     description: 'Prevents the agent from swapping a recently acquired stock, giving the original thesis time to play out.',
     hook: 'Gives your pick time to work — short-term dips are usually noise, not signal',
@@ -553,6 +577,7 @@ export const FORGE_RULE_TEMPLATES = [
   {
     id: 'mb-03',
     category: 'mid_battle',
+    modes: 'clash',
     headline: 'Replace dead money',
     description: 'Forces the agent to replace a stock that is not moving — dead money in a 1-day battle is a liability.',
     hook: 'A stock that sits still is wasting a roster spot — kick it out and find something alive',
@@ -578,6 +603,7 @@ export const FORGE_RULE_TEMPLATES = [
   {
     id: 'mb-04',
     category: 'mid_battle',
+    modes: 'clash',
     headline: 'Demand proof before swapping',
     description: 'Requires the bench stock to significantly outperform the active stock before a swap is allowed.',
     hook: 'A swap should be a clear upgrade — this rule demands proof, not a guess',
@@ -602,6 +628,7 @@ export const FORGE_RULE_TEMPLATES = [
   {
     id: 'mb-05',
     category: 'mid_battle',
+    modes: 'clash',
     headline: 'Follow the smart money',
     description: 'Only allows swapping INTO a bench stock trading above its VWAP — ensures institutional momentum supports the move.',
     hook: 'If the smart money isn\'t buying it, your agent shouldn\'t either',
@@ -626,6 +653,7 @@ export const FORGE_RULE_TEMPLATES = [
   {
     id: 'mb-06',
     category: 'mid_battle',
+    modes: 'clash',
     headline: 'Protect your best picks',
     description: 'Makes it progressively harder to swap out higher-tier stocks — Star tier needs overwhelming evidence to abandon.',
     hook: 'Your best pick deserves the most protection — Star stocks are harder to give up on',
@@ -651,6 +679,7 @@ export const FORGE_RULE_TEMPLATES = [
   {
     id: 'mb-07',
     category: 'mid_battle',
+    modes: 'clash',
     headline: 'Stop the churn',
     description: 'Hard timeout if the agent trades too frequently — prevents destructive feedback loops in choppy markets.',
     hook: 'Too many swaps in a row means the market is confusing your agent — force a cooldown',
@@ -677,6 +706,7 @@ export const FORGE_RULE_TEMPLATES = [
   {
     id: 'mb-08',
     category: 'mid_battle',
+    modes: 'clash',
     headline: 'Let winners run',
     description: 'Prevents the agent from swapping a winning stock until it reaches a scoring threshold — counteracts the urge to sell winners too early.',
     hook: 'Selling a winner early is the #1 mistake in trading — let profits run',
@@ -701,6 +731,7 @@ export const FORGE_RULE_TEMPLATES = [
   {
     id: 'mb-09',
     category: 'mid_battle',
+    modes: 'clash',
     headline: 'Pull the emergency brake',
     description: 'Hard stop-loss that overrides all holding rules — prevents a position from reaching Crash or Meltdown.',
     hook: 'Some losses are worth cutting immediately — pull the emergency brake',
@@ -725,6 +756,7 @@ export const FORGE_RULE_TEMPLATES = [
   {
     id: 'mb-10',
     category: 'mid_battle',
+    modes: 'clash',
     headline: 'Stay quiet at lunch',
     description: 'Blocks swap evaluations during the lowest-volume lunch hour period.',
     hook: 'The lunch hour is a graveyard for momentum — keep your agent quiet when the market sleeps',
@@ -750,6 +782,7 @@ export const FORGE_RULE_TEMPLATES = [
   {
     id: 'mb-11',
     category: 'mid_battle',
+    modes: 'clash',
     headline: 'Lean in for the final push',
     description: 'Lowers swap hurdle rates in the final hour to capture end-of-day institutional moves.',
     hook: 'The last hour of trading is when the big money moves — let your agent join the party',
@@ -775,6 +808,7 @@ export const FORGE_RULE_TEMPLATES = [
   {
     id: 'mb-12',
     category: 'mid_battle',
+    modes: 'clash',
     headline: 'Use it or lose it',
     description: 'Gradually lowers the swap hurdle rate as the day progresses — bench optionality is worth less as time runs out.',
     hook: 'Swaps get cheaper to justify as the clock ticks — your bench is worth less if you never use it',
@@ -800,6 +834,7 @@ export const FORGE_RULE_TEMPLATES = [
   {
     id: 'mb-13',
     category: 'mid_battle',
+    modes: 'clash',
     headline: 'Wait for the dust to settle',
     description: 'Delays the agent\'s reaction to breaking news to avoid trading into overreactions.',
     hook: 'First reactions to headlines are usually wrong — wait for the dust to settle',
@@ -824,6 +859,7 @@ export const FORGE_RULE_TEMPLATES = [
   {
     id: 'mb-14',
     category: 'mid_battle',
+    modes: 'clash',
     headline: 'Trust price over headlines',
     description: 'Requires FantasyTimes sentiment to match actual price direction before acting.',
     hook: 'Headlines lie sometimes — trust the price, not the story',
@@ -848,6 +884,7 @@ export const FORGE_RULE_TEMPLATES = [
   {
     id: 'mb-15',
     category: 'mid_battle',
+    modes: 'clash',
     headline: 'Exit when the thesis breaks',
     description: 'If a stock stays below VWAP for consecutive intervals, the thesis is broken — force an exit.',
     hook: 'When a stock can\'t hold above its average price, the institutions have given up — so should your agent',
@@ -876,6 +913,7 @@ export const FORGE_RULE_TEMPLATES = [
   {
     id: 'gs-01',
     category: 'game_state',
+    modes: 'clash',
     headline: 'Survive the opening chaos',
     description: 'Restricts offensive swaps in the EARLY phase — agent trusts its initial portfolio.',
     hook: 'The morning is chaos — survive the noise before making moves',
@@ -900,6 +938,7 @@ export const FORGE_RULE_TEMPLATES = [
   {
     id: 'gs-02',
     category: 'game_state',
+    modes: 'clash',
     headline: 'Scale risk by time of day',
     description: 'Widens or tightens stop-loss thresholds based on the current time phase.',
     hook: 'Morning volatility needs a wide leash, but final hour needs a tight one',
@@ -927,6 +966,7 @@ export const FORGE_RULE_TEMPLATES = [
   {
     id: 'gs-03',
     category: 'game_state',
+    modes: 'clash',
     headline: 'Use the bench before it expires',
     description: 'Makes swaps easier to justify as the day progresses.',
     hook: 'An unused bench at the closing bell is a wasted resource',
@@ -951,6 +991,7 @@ export const FORGE_RULE_TEMPLATES = [
   {
     id: 'gs-04',
     category: 'game_state',
+    modes: 'clash',
     headline: 'Set your scoring target',
     description: 'Sets an internal score benchmark that triggers strategy shifts between aggressive and defensive.',
     hook: 'Define what winning means for your agent — everything else adjusts around this number',
@@ -975,6 +1016,7 @@ export const FORGE_RULE_TEMPLATES = [
   {
     id: 'gs-05',
     category: 'game_state',
+    modes: 'clash',
     headline: 'Protect the lead',
     description: 'When score exceeds par target, shifts to capital preservation.',
     hook: 'When you\'re ahead, protect the lead — like running out the clock in football',
@@ -1000,6 +1042,7 @@ export const FORGE_RULE_TEMPLATES = [
   {
     id: 'gs-06',
     category: 'game_state',
+    modes: 'clash',
     headline: 'Play to win from behind',
     description: 'When score falls below par target, increases risk appetite.',
     hook: 'When you\'re behind with time running out, play to win — not to lose slowly',
@@ -1025,6 +1068,7 @@ export const FORGE_RULE_TEMPLATES = [
   {
     id: 'gs-07',
     category: 'game_state',
+    modes: 'clash',
     headline: 'Lock in a great score',
     description: 'When score exceeds a high ceiling, completely disables offensive swaps.',
     hook: 'Sometimes good enough is the smartest play — lock in a great score and stop gambling',
@@ -1050,6 +1094,7 @@ export const FORGE_RULE_TEMPLATES = [
   {
     id: 'gs-08',
     category: 'game_state',
+    modes: 'clash',
     headline: 'Don\'t fix what isn\'t broken',
     description: 'When the portfolio is on a winning streak, locks it to prevent over-managing success.',
     hook: 'Don\'t fix what isn\'t broken — if your portfolio is hitting thresholds, leave it alone',
@@ -1076,6 +1121,7 @@ export const FORGE_RULE_TEMPLATES = [
   {
     id: 'gs-09',
     category: 'game_state',
+    modes: 'clash',
     headline: 'Break the losing streak',
     description: 'If the portfolio bleeds slowly over consecutive cycles, forces a change.',
     hook: 'A slow bleed is worse than a quick cut — break the losing pattern',
@@ -1100,6 +1146,7 @@ export const FORGE_RULE_TEMPLATES = [
   {
     id: 'gs-10',
     category: 'game_state',
+    modes: 'clash',
     headline: 'Don\'t chase afternoon runners',
     description: 'In FINAL_HOUR, prevents swapping INTO stocks that have already run up massively.',
     hook: 'Stocks that ran all day often reverse in the last hour — don\'t chase yesterday\'s winner at 3pm',
@@ -1124,6 +1171,7 @@ export const FORGE_RULE_TEMPLATES = [
   {
     id: 'gs-12',
     category: 'game_state',
+    modes: 'clash',
     headline: 'Position for after-hours moves',
     description: 'In the final evaluation, prioritizes stocks with scheduled post-market catalysts.',
     hook: 'Scoring continues after the bell — position for after-hours earnings moves',
@@ -1152,6 +1200,7 @@ export const FORGE_RULE_TEMPLATES = [
   {
     id: 'th-01',
     category: 'threshold',
+    modes: 'clash',
     headline: 'Hold near the bonus line',
     description: 'The closer a stock is to a positive threshold, the harder it becomes to swap out.',
     hook: 'When your stock is inches from a bonus, hold your nerve — the payoff is worth the wait',
@@ -1178,6 +1227,7 @@ export const FORGE_RULE_TEMPLATES = [
   {
     id: 'th-04',
     category: 'threshold',
+    modes: 'clash',
     headline: 'Chase the next bonus',
     description: 'After hitting a threshold, widens stops to chase the next tier — treats locked-in points as a cushion.',
     hook: 'You already banked the bonus — now play with house money and go for the bigger prize',
@@ -1203,6 +1253,7 @@ export const FORGE_RULE_TEMPLATES = [
   {
     id: 'th-05',
     category: 'threshold',
+    modes: 'clash',
     headline: 'Lock in the win',
     description: 'After hitting a threshold, tightens stops to lock in base P&L — especially in high-multiplier tiers.',
     hook: 'A guaranteed win beats a maybe — lock in your gains before the market takes them back',
@@ -1228,6 +1279,7 @@ export const FORGE_RULE_TEMPLATES = [
   {
     id: 'th-07',
     category: 'threshold',
+    modes: 'clash',
     headline: 'Fear losses more than you love gains',
     description: 'Makes the agent treat negative thresholds as closer than they are — fear of loss should outweigh excitement about gains.',
     hook: 'Losing 35 points hurts way more than gaining 15 feels good — be properly scared of penalties',
@@ -1252,6 +1304,7 @@ export const FORGE_RULE_TEMPLATES = [
   {
     id: 'th-08',
     category: 'threshold',
+    modes: 'clash',
     headline: 'Know when to give up waiting',
     description: 'If a stock hovers near a threshold without crossing it, the agent resets and treats it as swappable.',
     hook: 'Just because a stock is close doesn\'t mean it\'ll get there — know when to give up waiting',
@@ -1277,6 +1330,7 @@ export const FORGE_RULE_TEMPLATES = [
   {
     id: 'th-09',
     category: 'threshold',
+    modes: 'clash',
     headline: 'Replace the weakest link',
     description: 'When swapping, always eject the stock furthest from any positive threshold.',
     hook: 'Every portfolio has a weakest link — make sure that\'s the one that gets replaced',
@@ -1301,6 +1355,7 @@ export const FORGE_RULE_TEMPLATES = [
   {
     id: 'th-10',
     category: 'threshold',
+    modes: 'clash',
     headline: 'Choose your scoring personality',
     description: 'Sets the agent\'s global philosophy — harvest many small bonuses or hunt rare big ones.',
     hook: 'Do you want lots of +15s or one epic +50? This defines your agent\'s scoring personality',
@@ -1329,6 +1384,7 @@ export const FORGE_RULE_TEMPLATES = [
   {
     id: 'ts-01',
     category: 'tier_strategy',
+    modes: 'clash',
     headline: 'Keep wild stocks out of Star',
     description: 'Prevents Star tier from being assigned to erratic, high-volatility stocks.',
     hook: 'The 2x multiplier doubles everything — including losses. Keep wild stocks out of Star',
@@ -1354,6 +1410,7 @@ export const FORGE_RULE_TEMPLATES = [
   {
     id: 'ts-02',
     category: 'tier_strategy',
+    modes: 'clash',
     headline: 'Require multi-timeframe agreement',
     description: 'Star tier requires both daily trend AND intraday momentum to be bullish.',
     hook: 'True conviction means every timeframe agrees — if daily and intraday diverge, demote',
@@ -1379,6 +1436,7 @@ export const FORGE_RULE_TEMPLATES = [
   {
     id: 'ts-03',
     category: 'tier_strategy',
+    modes: 'clash',
     headline: 'Park stalled threshold plays in Support',
     description: 'Stocks near a threshold with stalled momentum are restricted to Support — the bonus is the same regardless of tier.',
     hook: 'Threshold bonuses don\'t care about the multiplier — park stalled stocks in Support and give Star to something moving',
@@ -1403,6 +1461,7 @@ export const FORGE_RULE_TEMPLATES = [
   {
     id: 'ts-04',
     category: 'tier_strategy',
+    modes: 'clash',
     headline: 'Star goes to the hottest stock',
     description: 'Dynamically promotes the highest-velocity stock to Star — the multiplier is earned, not assumed.',
     hook: 'Star tier should go to your hottest stock right now — not the one you liked best this morning',
@@ -1428,6 +1487,7 @@ export const FORGE_RULE_TEMPLATES = [
   {
     id: 'ts-05',
     category: 'tier_strategy',
+    modes: 'clash',
     headline: 'Demote tired Star stocks after a bonus',
     description: 'After a Star stock hits a bonus AND shows overbought signals, demotes it to lock in multiplied gains.',
     hook: 'Your Star stock earned a bonus but looks tired — demote before the reversal eats your 2x gains',
@@ -1452,6 +1512,7 @@ export const FORGE_RULE_TEMPLATES = [
   {
     id: 'ts-06',
     category: 'tier_strategy',
+    modes: 'clash',
     headline: 'Don\'t waste Star on a flatline',
     description: 'Strips the Star multiplier from stocks that have flatlined — the 2x is wasted on a stock that isn\'t moving.',
     hook: 'A 2x multiplier on zero movement is still zero — move the Star to something actually trading',
@@ -1477,6 +1538,7 @@ export const FORGE_RULE_TEMPLATES = [
   {
     id: 'ts-07',
     category: 'tier_strategy',
+    modes: 'clash',
     headline: 'Demote before the penalty hits',
     description: 'When a Star/Core stock approaches a negative threshold, demotes to Support to halve the continuous P&L bleed.',
     hook: 'The penalty is the same in any tier, but the damage on the way down is halved in Support — demote before it hurts',
@@ -1502,6 +1564,7 @@ export const FORGE_RULE_TEMPLATES = [
   {
     id: 'ts-08',
     category: 'tier_strategy',
+    modes: 'clash',
     headline: 'Catch the hidden divergence',
     description: 'Demotes a stock when price and momentum diverge — new highs with fading MACD is a warning sign.',
     hook: 'When the speedometer drops but the car keeps climbing, the hill is about to win',
@@ -1526,6 +1589,7 @@ export const FORGE_RULE_TEMPLATES = [
   {
     id: 'ts-09',
     category: 'tier_strategy',
+    modes: 'clash',
     headline: 'Cap tiers during the morning open',
     description: 'Restricts the Star tier during the first 30-45 minutes to prevent morning whipsaw at 2x.',
     hook: 'The morning open is a guessing game — don\'t let 2x amplify a wrong guess',
@@ -1555,6 +1619,7 @@ export const FORGE_RULE_TEMPLATES = [
   {
     id: 't-09',
     category: 'technical',
+    modes: 'both',
     headline: 'Buy the dip to fair value',
     description: 'Prefer stocks that have pulled back to VWAP in an uptrend — buying at institutional fair value.',
     hook: 'Smart money buys the dip to the average price',
@@ -1579,6 +1644,7 @@ export const FORGE_RULE_TEMPLATES = [
   {
     id: 't-10',
     category: 'technical',
+    modes: 'both',
     headline: 'Avoid overextended stocks',
     description: 'Avoid stocks that have moved more than 2 standard deviations from VWAP.',
     hook: 'When a stock moves too far too fast from its average, it almost always comes back',
@@ -1603,6 +1669,7 @@ export const FORGE_RULE_TEMPLATES = [
   {
     id: 't-11',
     category: 'technical',
+    modes: 'both',
     headline: 'Follow institutional accumulation',
     description: 'Prioritize stocks outperforming SPY — institutional accumulation signal.',
     hook: 'Stocks that hold up when the market drops are being accumulated by institutions',
@@ -1628,6 +1695,7 @@ export const FORGE_RULE_TEMPLATES = [
   {
     id: 't-12',
     category: 'technical',
+    modes: 'both',
     headline: 'Catch the volatility squeeze',
     description: 'Prioritize stocks with extremely narrow Bollinger Bands — about to explode.',
     hook: 'Quiet stocks are loading up energy — when the squeeze breaks, it\'s usually explosive',
@@ -1653,6 +1721,7 @@ export const FORGE_RULE_TEMPLATES = [
   {
     id: 't-13',
     category: 'technical',
+    modes: 'both',
     headline: 'Spot hidden momentum shifts',
     description: 'Flags stocks where price and RSI disagree — momentum fading despite price looking strong.',
     hook: 'When momentum fades but price looks strong, a reversal is coming',
@@ -1677,6 +1746,7 @@ export const FORGE_RULE_TEMPLATES = [
   {
     id: 't-14',
     category: 'technical',
+    modes: 'both',
     headline: 'Demand volume proof on breakouts',
     description: 'Only trust breakouts with a volume spike — moves without volume are fake.',
     hook: 'A breakout without volume is a promise without action — demand proof',
@@ -1701,6 +1771,7 @@ export const FORGE_RULE_TEMPLATES = [
   {
     id: 't-15',
     category: 'technical',
+    modes: 'both',
     headline: 'Catch the narrowest range breakout',
     description: 'Flag stocks with their narrowest daily range in 7 days — maximum energy compression.',
     hook: 'The quietest day in a week is usually followed by one of the loudest',
@@ -1725,6 +1796,7 @@ export const FORGE_RULE_TEMPLATES = [
   {
     id: 't-16',
     category: 'technical',
+    modes: 'both',
     headline: 'Require multiple green lights',
     description: 'Require multiple indicators to agree before the agent acts — reduces false signals.',
     hook: 'One green light could be a fluke — three green lights mean the move is real',
@@ -1753,6 +1825,7 @@ export const FORGE_RULE_TEMPLATES = [
   {
     id: 'f-07',
     category: 'fundamental',
+    modes: 'both',
     headline: 'Ride the earnings surprise wave',
     description: 'Prefer stocks that consistently beat earnings estimates by large margins.',
     hook: 'Companies that keep beating expectations keep surprising the market',
@@ -1778,6 +1851,7 @@ export const FORGE_RULE_TEMPLATES = [
   {
     id: 'f-08',
     category: 'fundamental',
+    modes: 'both',
     headline: 'Trust the cash, not the math',
     description: 'Prefer stocks with positive free cash flow — the real measure of financial health.',
     hook: 'Earnings can be faked with accounting tricks — cash flow can\'t',
@@ -1802,6 +1876,7 @@ export const FORGE_RULE_TEMPLATES = [
   {
     id: 'f-09',
     category: 'fundamental',
+    modes: 'both',
     headline: 'Avoid over-leveraged companies',
     description: 'Avoid over-leveraged companies using sector-relative debt limits.',
     hook: 'A bank with 1.5x debt is normal — a tech company with 1.5x debt is a red flag',
@@ -1827,6 +1902,7 @@ export const FORGE_RULE_TEMPLATES = [
   {
     id: 'f-10',
     category: 'fundamental',
+    modes: 'both',
     headline: 'Use the right valuation yardstick',
     description: 'Uses the right valuation metric for each sector — P/B for banks, P/S for tech, dividend yield for utilities.',
     hook: 'You wouldn\'t judge a fish by how well it climbs a tree — use the right yardstick',
@@ -1851,6 +1927,7 @@ export const FORGE_RULE_TEMPLATES = [
   {
     id: 'f-11',
     category: 'fundamental',
+    modes: 'both',
     headline: 'Chase accelerating growth',
     description: 'Prefer stocks where the growth rate is accelerating, not just high.',
     hook: 'Acceleration beats speed — growing 10% after 8% is better than 15% after 20%',
@@ -1875,6 +1952,7 @@ export const FORGE_RULE_TEMPLATES = [
   {
     id: 'f-12',
     category: 'fundamental',
+    modes: 'both',
     headline: 'Follow the analyst upgrades',
     description: 'Prefer stocks where analyst consensus has improved recently.',
     hook: 'When Wall Street upgrades in unison, they know something the market hasn\'t priced in',
@@ -1899,6 +1977,7 @@ export const FORGE_RULE_TEMPLATES = [
   {
     id: 'f-13',
     category: 'fundamental',
+    modes: 'both',
     headline: 'Manage earnings week risk',
     description: 'Adjusts selection priority based on proximity to earnings dates.',
     hook: 'Earnings week is like a coin flip on steroids',
@@ -1929,6 +2008,7 @@ export const FORGE_RULE_TEMPLATES = [
   {
     id: 'r-06',
     category: 'risk',
+    modes: 'both',
     headline: 'Cap sector exposure',
     description: 'Limits the number of stocks from any single sector.',
     hook: 'When one sector tanks, you don\'t want half your portfolio going with it',
@@ -1953,6 +2033,7 @@ export const FORGE_RULE_TEMPLATES = [
   {
     id: 'r-07',
     category: 'risk',
+    modes: 'both',
     headline: 'Avoid hidden correlation traps',
     description: 'Avoids holding multiple stocks from the same sub-industry.',
     hook: 'Three chip stocks isn\'t diversification — it\'s a triple bet on semiconductors',
@@ -1977,6 +2058,7 @@ export const FORGE_RULE_TEMPLATES = [
   {
     id: 'r-08',
     category: 'risk',
+    modes: 'both',
     headline: 'Mix stability with explosiveness',
     description: 'Ensures mix of large-cap stability and small-cap volatility.',
     hook: 'Big stocks keep you alive, small stocks make you rich — you need both',
@@ -2002,6 +2084,7 @@ export const FORGE_RULE_TEMPLATES = [
   {
     id: 'r-09',
     category: 'risk',
+    modes: 'both',
     headline: 'Switch to survival mode',
     description: 'Shifts to defensive mode if total portfolio drops below a threshold.',
     hook: 'When the whole portfolio is bleeding, stop trying to be a hero',
@@ -2026,6 +2109,7 @@ export const FORGE_RULE_TEMPLATES = [
   {
     id: 'r-10',
     category: 'risk',
+    modes: 'both',
     headline: 'De-risk in volatile markets',
     description: 'Reduces high-ATR exposure when the broad market is in a volatile regime.',
     hook: 'When the whole market is panicking, even good stocks get dragged down',
@@ -2050,6 +2134,7 @@ export const FORGE_RULE_TEMPLATES = [
   {
     id: 'r-11',
     category: 'risk',
+    modes: 'clash',
     headline: 'Keep crypto on a leash',
     description: 'Manages the mandatory crypto asset to prevent portfolio-destroying volatility.',
     hook: 'Crypto can make or break your battle — keep it on a leash',
@@ -2074,6 +2159,7 @@ export const FORGE_RULE_TEMPLATES = [
   {
     id: 'r-12',
     category: 'risk',
+    modes: 'both',
     headline: 'Avoid sectors in the news doghouse',
     description: 'Excludes stocks in sectors with negative FantasyTimes sentiment.',
     hook: 'Don\'t fight the news — if FantasyTimes says a sector is in trouble, listen',
@@ -2102,6 +2188,7 @@ export const FORGE_RULE_TEMPLATES = [
   {
     id: 'a-05',
     category: 'allocation',
+    modes: 'both',
     headline: 'Build a barbell portfolio',
     description: 'Split portfolio between high-ATR explosive stocks and low-ATR anchors — avoid the moderate middle.',
     hook: 'Safe stocks keep you in the game, explosive stocks win it — need both extremes',
@@ -2129,6 +2216,7 @@ export const FORGE_RULE_TEMPLATES = [
   {
     id: 'a-06',
     category: 'allocation',
+    modes: 'both',
     headline: 'Lean into market leaders',
     description: 'Overweight stocks with the highest relative strength — lean into the market leaders.',
     hook: 'Stocks beating the market today tend to keep beating it tomorrow — lean into leaders',
@@ -2154,6 +2242,7 @@ export const FORGE_RULE_TEMPLATES = [
   {
     id: 'a-07',
     category: 'allocation',
+    modes: 'both',
     headline: 'Balance defense and offense',
     description: 'Ensure a mix of high-ATR growth engines and high-fundamental-score defensive anchors.',
     hook: 'Growth stocks chase thresholds, defensive stocks protect the score — balance your appetite',
@@ -2180,6 +2269,7 @@ export const FORGE_RULE_TEMPLATES = [
   {
     id: 'a-08',
     category: 'allocation',
+    modes: 'both',
     headline: 'Ride the sentiment tailwinds',
     description: 'Overweight sectors with positive FantasyTimes sentiment — ride the narrative tailwinds.',
     hook: 'When the news cycle turns on a sector, the smart money moves first — move with it',
@@ -2204,6 +2294,7 @@ export const FORGE_RULE_TEMPLATES = [
   {
     id: 'a-09',
     category: 'allocation',
+    modes: 'clash',
     headline: 'Build a versatile bench',
     description: 'Build the bench to complement the active roster — different sectors, different styles.',
     hook: 'Your bench isn\'t a backup squad — it\'s a toolkit for when the market changes',
@@ -2229,6 +2320,7 @@ export const FORGE_RULE_TEMPLATES = [
   {
     id: 'a-10',
     category: 'allocation',
+    modes: 'both',
     headline: 'Position for economic events',
     description: 'Tilt the portfolio toward event-sensitive sectors ahead of major economic announcements.',
     hook: 'Big economic announcements move entire sectors — be positioned before the news drops',
@@ -2253,6 +2345,7 @@ export const FORGE_RULE_TEMPLATES = [
   {
     id: 'tv-01',
     category: 'technical',
+    modes: 'both',
     headline: 'RSI Momentum Zone',
     description: 'Targets stocks in the RSI sweet spot — strong momentum without overextension. Unlike the oversold bounce, this rule seeks stocks already moving.',
     hook: 'The best stocks aren\'t oversold or overbought — they\'re in the power zone where momentum is building',
@@ -2280,6 +2373,7 @@ export const FORGE_RULE_TEMPLATES = [
   {
     id: 'tv-02',
     category: 'technical',
+    modes: 'both',
     headline: 'MACD Histogram Acceleration',
     description: 'Focuses on whether the MACD histogram is growing or shrinking. A growing histogram means momentum is accelerating — the move is getting stronger.',
     hook: 'A positive MACD is good, but a GROWING MACD is better — acceleration beats direction',
@@ -2308,6 +2402,7 @@ export const FORGE_RULE_TEMPLATES = [
   {
     id: 'tv-03',
     category: 'technical',
+    modes: 'clash',
     headline: 'MACD Zero-Line Bounce',
     description: 'In an uptrend, MACD often pulls back toward zero then bounces. This catches the momentum reset before the next leg up.',
     hook: 'When momentum cools to neutral in an uptrend, the next surge is loading — buy the pause',
@@ -2333,6 +2428,7 @@ export const FORGE_RULE_TEMPLATES = [
   {
     id: 'tv-04',
     category: 'technical',
+    modes: 'clash',
     headline: 'VWAP Reclaim Entry',
     description: 'Targets stocks that dipped below VWAP and recovered back above it. The reclaim signals buyers stepping in at institutional fair value.',
     hook: 'A stock that fights its way back above VWAP just proved the buyers are stronger than the sellers',
@@ -2357,6 +2453,7 @@ export const FORGE_RULE_TEMPLATES = [
   {
     id: 'tv-05',
     category: 'technical',
+    modes: 'both',
     headline: 'Squeeze Direction Filter',
     description: 'When a Bollinger Band squeeze is detected, use MACD histogram direction to predict breakout direction. Positive histogram = likely upward breakout.',
     hook: 'A squeeze tells you WHEN the move is coming — MACD tells you WHICH WAY',
@@ -2386,6 +2483,7 @@ export const FORGE_RULE_TEMPLATES = [
   {
     id: 'tv-06',
     category: 'technical',
+    modes: 'both',
     headline: 'Bollinger Lower Band Entry',
     description: 'When price touches or penetrates the lower Bollinger Band, the stock is stretched below its statistical mean. Expect a bounce back toward the middle band.',
     hook: 'Stocks that touch the lower band are statistically stretched — the rubber band usually snaps back',
@@ -2415,6 +2513,7 @@ export const FORGE_RULE_TEMPLATES = [
   {
     id: 'tv-07',
     category: 'technical',
+    modes: 'clash',
     headline: 'Intraday Range Position',
     description: 'Stocks that close near the low of their intraday range often bounce the next session. This is the IBS (Internal Bar Strength) concept from quantitative research.',
     hook: 'A stock beaten down to its daily low is spring-loaded for a morning bounce — this is one of the most backtested edges in quant trading',
@@ -2440,6 +2539,7 @@ export const FORGE_RULE_TEMPLATES = [
   {
     id: 'tv-08',
     category: 'mid_battle',
+    modes: 'clash',
     headline: 'Low Volume Pullback Hold',
     description: 'In an uptrend, pullbacks on below-average volume are healthy — they show a lack of selling pressure. The trend resumes when volume returns.',
     hook: 'If nobody\'s actually selling, the dip isn\'t real — low volume pullbacks in uptrends are gifts',
@@ -2466,6 +2566,7 @@ export const FORGE_RULE_TEMPLATES = [
   {
     id: 'tv-09',
     category: 'mid_battle',
+    modes: 'clash',
     headline: 'Smart Money Liquidity Sweep',
     description: 'When a stock drops sharply on a volume spike then immediately recovers, institutional players swept stop-losses to accumulate at a lower price. Hold through this pattern.',
     hook: 'That scary drop and instant recovery? That was smart money shaking out weak hands to buy cheaper',
@@ -2492,6 +2593,7 @@ export const FORGE_RULE_TEMPLATES = [
   {
     id: 'tv-10',
     category: 'fundamental',
+    modes: 'both',
     headline: 'Earnings + Technical Confluence',
     description: 'Stocks with both strong earnings history AND bullish technicals have dual confirmation. Fundamental quality backs the technical momentum.',
     hook: 'Great earnings AND great technicals? That\'s the market saying "this stock deserves to be here" — double conviction',
@@ -2521,6 +2623,7 @@ export const FORGE_RULE_TEMPLATES = [
   {
     id: 'tv-11',
     category: 'technical',
+    modes: 'both',
     headline: '52-Week High Breakout Preference',
     description: 'Stocks near their 52-week high are breaking through resistance. This is the Donchian / channel breakout concept — new highs attract momentum buyers.',
     hook: 'Stocks making new highs tend to keep making new highs — resistance becomes support once it breaks',
@@ -2546,6 +2649,7 @@ export const FORGE_RULE_TEMPLATES = [
   {
     id: 'tv-12',
     category: 'tier_strategy',
+    modes: 'clash',
     headline: 'Multi-Factor Tier Assignment',
     description: 'Assigns tiers based on how many independent signals agree. More confirmations = higher tier. Stocks that only pass one check get the lowest tier.',
     hook: 'One green light is a suggestion. Three green lights is conviction — let the evidence decide your tier',
@@ -2573,6 +2677,7 @@ export const FORGE_RULE_TEMPLATES = [
   {
     id: 'tv-13',
     category: 'technical',
+    modes: 'clash',
     headline: 'Volume Spike Institutional Signal',
     description: 'When volume explodes above 2x average on a bullish candle, institutions are taking a position. This is the strongest confirmation signal in technical analysis.',
     hook: 'When the big money shows up, the volume screams it — a 2x spike on a green candle is the loudest buy signal in the market',
@@ -2601,6 +2706,7 @@ export const FORGE_RULE_TEMPLATES = [
   {
     id: 'tv-14',
     category: 'allocation',
+    modes: 'both',
     headline: 'Sector Leader Selection',
     description: 'Instead of picking stocks first, identify the strongest sectors then pick the leader within each one. Ride the sector tide and the stock wave simultaneously.',
     hook: 'A great stock in a bad sector is swimming against the current — find the strongest sector first, then pick its champion',
@@ -2626,6 +2732,7 @@ export const FORGE_RULE_TEMPLATES = [
   {
     id: 'tv-15',
     category: 'threshold',
+    modes: 'clash',
     headline: 'Threshold Harvest Swap',
     description: 'After a stock hits a BaggerBomb threshold bonus, immediately evaluate whether to swap it for a fresh high-ATR candidate. The points are banked — now find the next threshold opportunity.',
     hook: 'You already got the +15. The stock doesn\'t know it owes you another one — swap for a fresh rocket',
@@ -2660,6 +2767,7 @@ export const FORGE_RULE_TEMPLATES = [
   {
     id: 'i-01',
     category: 'institutional',
+    modes: 'both',
     headline: 'Institutional Conviction Filter',
     description: 'Prefer stocks where active institutional holders are net accumulating. Filters out passive index fund noise to focus on informed, high-conviction buying.',
     learnMore: 'Institutional conviction is measured by weighting each holder\'s quarterly change by their portfolio concentration. A stock showing "strong accumulation" means multiple active fund managers are increasing positions as a significant percentage of their portfolios — not just index funds mechanically rebalancing. Research shows that a manager\'s most over-weighted positions outperform the market by 1.6-2.1% per quarter.',
@@ -2690,6 +2798,7 @@ export const FORGE_RULE_TEMPLATES = [
   {
     id: 'i-02',
     category: 'institutional',
+    modes: 'both',
     headline: 'Distribution Avoidance',
     description: 'Strictly avoid stocks where institutions are actively selling. When smart money exits, overhead supply caps intraday upside and increases bust risk.',
     learnMore: 'Institutional distribution creates a "VWAP ceiling" — when large funds are selling, their algorithms feed sell orders into any price rally, suppressing the momentum needed for ATR threshold crossings. Research shows that sell herding has a more persistent negative impact on returns than buy herding has a positive impact. This asymmetry makes distribution avoidance one of the most effective defensive rules.',
@@ -2720,6 +2829,7 @@ export const FORGE_RULE_TEMPLATES = [
   {
     id: 'i-03',
     category: 'institutional',
+    modes: 'both',
     headline: 'Consensus Discovery',
     description: 'Prefer stocks where multiple institutions opened brand new positions this quarter. New money entering a stock signals a fresh catalyst that passed rigorous research filters.',
     learnMore: 'When an institution opens a new position, it means the stock competed for capital against every other opportunity in the manager\'s universe. When two or more do it independently in the same quarter, it signals a "consensus discovery" — multiple professional research teams found the same opportunity. This cluster buying pattern is one of the strongest alpha signals in 13F data.',
@@ -2750,6 +2860,7 @@ export const FORGE_RULE_TEMPLATES = [
   {
     id: 'i-04',
     category: 'institutional',
+    modes: 'both',
     headline: 'Whale Concentration Guard',
     description: 'Avoid stocks where a single institution holds too large a stake. When one whale controls the float, their exit creates outsized price drops and bust risk.',
     learnMore: 'When a single entity controls 20%+ of outstanding shares, the stock\'s liquidity becomes dependent on that fund\'s stability. If the whale faces redemptions, their forced selling overwhelms market depth and triggers cascading price drops. The threshold of 20% accounts for the dominance of passive index providers (Vanguard, BlackRock, State Street), who routinely hold 10-15% of major stocks through mechanical index inclusion.',
@@ -2780,6 +2891,7 @@ export const FORGE_RULE_TEMPLATES = [
   {
     id: 'i-05',
     category: 'institutional',
+    modes: 'both',
     headline: 'Active Fund Overlap Guard',
     description: 'Prevent drafting too many stocks held by the same active mutual fund. High overlap means correlated drawdowns when that fund faces redemptions.',
     learnMore: 'When multiple stocks in your portfolio are top holdings of the same active mutual fund, they become linked through common flow shocks. During market stress, funds facing redemptions liquidate across their entire portfolio simultaneously — creating correlated crashes in seemingly unrelated stocks. This rule targets active fund overlap specifically because passive index funds (Vanguard, BlackRock) hold everything and carry no informational signal.',
@@ -2810,6 +2922,7 @@ export const FORGE_RULE_TEMPLATES = [
   {
     id: 'i-06',
     category: 'institutional',
+    modes: 'clash',
     headline: 'Hedge Fund Favorites',
     description: 'Target stocks widely held by top hedge funds for momentum amplification. Crowded trades provide explosive intraday moves but carry reversal risk.',
     learnMore: 'Stocks held by multiple top hedge funds benefit from persistent buying pressure during momentum phases — the Goldman Sachs "Hedge Fund VIP" index outperforms the S&P 500 in 60% of quarters. However, these crowded positions are fragile: when market stress hits, highly correlated hedge funds unwind simultaneously, causing violent crashes. Use this rule for BaggerBomb momentum plays but pair it with tight technical swap parameters.',
@@ -2840,6 +2953,7 @@ export const FORGE_RULE_TEMPLATES = [
   {
     id: 'i-07',
     category: 'institutional',
+    modes: 'both',
     headline: 'Sector Institutional Flow',
     description: 'Align stock selection with sectors where institutional money is flowing in. Capital rotation at the sector level creates structural tailwinds for individual stocks.',
     learnMore: 'Institutions don\'t just pick stocks — they rotate capital along sector lines. When massive funds rotate into Technology or out of Financials, it creates a rising or falling tide that individual stocks can\'t fight. Sector-level flow has 71% directional accuracy in high-signal sectors like Energy. This rule stacks well with FantasyTimes news sentiment for double confirmation.',
@@ -2870,6 +2984,7 @@ export const FORGE_RULE_TEMPLATES = [
   {
     id: 'i-08',
     category: 'institutional',
+    modes: 'both',
     headline: 'Insider + Institution Confluence',
     description: 'The premium signal: prefer stocks where both institutional holders AND company insiders are buying. Dual confirmation from people with the deepest knowledge.',
     learnMore: 'When corporate insiders (CEOs, CFOs) buy their own stock AND institutional managers are accumulating, it creates the strongest predictive signal in the 13F universe. Insiders know the company\'s immediate prospects; institutions validate the thesis with external analysis. Research shows this confluence yields 12-18% annualized abnormal returns. The 60-day insider lookback captures post-earnings buying windows while keeping the signal timely.',
@@ -2900,6 +3015,7 @@ export const FORGE_RULE_TEMPLATES = [
   {
     id: 'i-09',
     category: 'institutional',
+    modes: 'clash',
     headline: 'Transient Capital Catalyst',
     description: 'Prefer stocks where accumulation is driven by high-turnover, short-horizon institutions. These "transient" funds amplify intraday volatility — exactly what BaggerBomb rewards.',
     learnMore: 'Not all institutional money is equal. "Transient" institutions (high portfolio turnover, short holding periods) create significantly more stock return volatility than "dedicated" long-term holders. Since BaggerBomb rewards ATR threshold crossings, stocks with transient institutional accumulation are structurally more likely to produce the sharp intraday moves needed for Bagger bonuses. Dedicated holders provide stability but suppress the volatility BaggerBomb rewards.',
@@ -2919,6 +3035,7 @@ export const FORGE_RULE_TEMPLATES = [
   {
     id: 'i-10',
     category: 'institutional',
+    modes: 'both',
     headline: 'Institutional Breadth Momentum',
     description: 'Prefer stocks where the number of unique institutional holders is expanding quarter after quarter. A growing investor base often precedes major price re-ratings.',
     learnMore: 'Breadth of ownership — how many unique funds hold a stock — is often more informative than depth (how much they hold). A stock being adopted by 10-20 new funds each quarter for multiple consecutive quarters experiences a "geometric expansion" in its investor base. This expanding breadth typically precedes significant price re-ratings as the stock graduates from niche to mainstream institutional coverage.',
