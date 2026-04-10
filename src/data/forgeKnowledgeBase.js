@@ -18,6 +18,15 @@ export const FORGE_CATEGORIES = [
   { id: 'season_state', label: 'Season State', color: '#F0C75E', description: 'Adaptive strategy rules based on season position and upcoming events', mode: 'season', icon: 'Brain' },
 ];
 
+export const SEASON_CONFLICT_PAIRS = [
+  { ruleA: 'sx-01', ruleB: 'sx-02', warning: 'Fixed Stop-Loss and Trailing Stop can both trigger sells. The tighter one fires first.' },
+  { ruleA: 'sx-04', ruleB: 'sx-02', warning: 'Profit Target sells at a fixed gain. Trailing Stop would let it run further. Opposite philosophies.' },
+  { ruleA: 'sr-01', ruleB: 'sr-04', warning: 'Position Size Cap trims winners. Add to Winners adds to them. Check thresholds don\'t fight.' },
+  { ruleA: 'ss-01', ruleB: 'ss-03', warning: 'Benchmark Gap Aggression wants new entries. Final Week Lockdown blocks them. Lockdown wins in Week 4.' },
+  { ruleA: 'ss-02', ruleB: 'ss-01', warning: 'Lead Protection and Gap Aggression are opposite postures. Verify thresholds don\'t overlap.' },
+  { ruleA: 'se-06', ruleB: 'se-01', warning: 'Momentum Entry requires stocks moving up. RSI Gate may reject overbought. Ensure thresholds allow a sweet spot.' },
+];
+
 export const FORGE_RULE_TEMPLATES = [
   // ══════════════════════════════════════
   // TECHNICAL CATEGORY
@@ -3607,6 +3616,170 @@ export const FORGE_RULE_TEMPLATES = [
     kbEntryId: null,
     tags: ['rebalance', 'underperformer', 'benchmark', 'reduction', 'season'],
     agentUseDescription: 'Gradually reduces positions underperforming S&P by the threshold over the measurement window. Soft priority. Benchmark-relative.',
+  },
+
+  // ══════════════════════════════════════
+  // SEASON STATE CATEGORY (Season Mode)
+  // ══════════════════════════════════════
+
+  // SS-01: Benchmark Gap Aggression
+  {
+    id: 'ss-01',
+    category: 'season_state',
+    modes: 'season',
+    headline: 'Benchmark Gap Aggression',
+    description: 'If you\'re losing the race against the S&P after a certain week, shift to higher-beta entries to catch up. Automated aggression.',
+    hook: 'Losing by 3% in Week 3? Time to swing harder or accept defeat.',
+    learnMore: 'In a competitive season, trailing the S&P benchmark by a meaningful margin means your current strategy isn\'t working. This rule automatically increases risk appetite by shifting entry preferences toward higher-beta stocks — names with more explosive upside potential. The activation week determines when the shift happens: early activation (Week 1) gives you maximum runway to recover, while late activation (Week 3) is a last-ditch effort. Conflicts directly with Final Week Lockdown — if both are equipped, lockdown overrides in Week 4.',
+    difficulty: 'advanced',
+    forgeTemplates: [
+      {
+        text: 'If trailing S&P by {pct}% after Week {week}, shift to higher-beta entries',
+        params: {
+          pct: { type: 'number', default: 3, min: 1, max: 10, label: 'Deficit Trigger', hint: 'How far behind before going aggressive.', unit: '%' },
+          week: { type: 'select', default: 2, options: [{ value: 1, label: 'After Week 1' }, { value: 2, label: 'After Week 2' }, { value: 3, label: 'After Week 3' }], label: 'Activation Week', hint: 'Earlier = more time to recover. Later = last-ditch effort.' },
+        },
+        category: 'season_state',
+        targetType: 'strategy_selection'
+      }
+    ],
+    relatedIndicator: null,
+    kbEntryId: null,
+    tags: ['season', 'benchmark', 'aggression', 'beta', 'comeback'],
+    agentUseDescription: 'Shifts entry preferences toward higher-beta stocks when trailing the S&P benchmark by the threshold after the activation week.',
+  },
+
+  // SS-02: Lead Protection Mode
+  {
+    id: 'ss-02',
+    category: 'season_state',
+    modes: 'season',
+    headline: 'Lead Protection Mode',
+    description: 'When you\'re ahead of the S&P, automatically tighten risk controls — protect the lead. The strategy that builds a lead ≠ the strategy that protects it.',
+    hook: 'You\'ve built a lead — don\'t blow it. Shift from offense to defense.',
+    learnMore: 'Building a lead and protecting a lead require opposite strategies. The aggressive moves that got you ahead — high beta, concentrated positions — become liabilities once you\'re winning. This rule automatically shifts to defensive posture when your portfolio leads the S&P by the trigger amount: trailing stops tighten to lock in gains, and new entries are capped at a maximum beta to prevent volatile additions. The opposite posture from Gap Aggression — verify thresholds don\'t overlap or you\'ll get conflicting signals.',
+    difficulty: 'advanced',
+    forgeTemplates: [
+      {
+        text: 'If leading S&P by {pct}%, tighten trailing stops to {tightPct}% and cap beta at {maxBeta}',
+        params: {
+          pct: { type: 'number', default: 5, min: 2, max: 15, label: 'Lead Trigger', hint: 'How far ahead before switching to defense.', unit: '%' },
+          tightPct: { type: 'number', default: 5, min: 3, max: 10, label: 'Tight Trailing Stop', hint: 'Overrides your normal trailing stop with this tighter value.', unit: '%' },
+          maxBeta: { type: 'number', default: 1.2, min: 0.8, max: 1.5, step: 0.1, label: 'Max Beta', hint: 'Caps how volatile your entries can be. 1.0 = market average.', unit: '' },
+        },
+        category: 'season_state',
+        targetType: 'risk_parameter'
+      }
+    ],
+    relatedIndicator: null,
+    kbEntryId: null,
+    tags: ['season', 'protection', 'defense', 'lead', 'trailing-stop'],
+    agentUseDescription: 'Activates defensive mode when leading S&P. Tightens trailing stops and caps entry beta. Opposite posture from Gap Aggression.',
+  },
+
+  // SS-03: Final Week Lockdown
+  {
+    id: 'ss-03',
+    category: 'season_state',
+    modes: 'season',
+    headline: 'Final Week Lockdown',
+    description: 'In the last week of the season, block all new entries. Prevents desperation plays. Conflicts with Gap Aggression.',
+    hook: 'The last week isn\'t for gambling — protect what you\'ve built',
+    learnMore: 'The final week of a season is when desperation leads to bad decisions. New entries late in the season have minimal time to work and maximum risk of going wrong. This rule blocks all new position entries in Week 4, forcing the portfolio to ride out with its current holdings. The only actions allowed are exits (stop-losses, profit targets) and rebalancing. Directly conflicts with Benchmark Gap Aggression — if both are equipped, lockdown takes hard priority in Week 4.',
+    difficulty: 'beginner',
+    forgeTemplates: [
+      {
+        text: 'In the final week, don\'t open new positions',
+        params: {
+          enabled: { type: 'toggle', default: true, label: 'Enable Lockdown', hint: 'ON = no new positions in Week 4. OFF = trade freely through the end.' },
+        },
+        category: 'season_state',
+        targetType: 'risk_parameter'
+      }
+    ],
+    relatedIndicator: null,
+    kbEntryId: null,
+    tags: ['season', 'lockdown', 'final-week', 'defense'],
+    agentUseDescription: 'Blocks all new entries in the final week. Hard priority — overrides all entry-seeking rules including Gap Aggression.',
+  },
+
+  // SS-04: FOMC/CPI Defensive Rotation
+  {
+    id: 'ss-04',
+    category: 'season_state',
+    modes: 'season',
+    headline: 'FOMC/CPI Defensive Rotation',
+    description: 'Reduce high-beta exposure before major macro events — Fed meetings and CPI reports. Connects FantasyTimes intelligence to portfolio action.',
+    hook: 'The Fed moves markets more than any earnings report — don\'t get caught flat-footed',
+    learnMore: 'FOMC decisions and CPI reports are the highest-impact macro events in the calendar. They can move the entire market 2-3% in minutes, and high-beta stocks amplify that move. This rule uses the season\'s macro calendar to identify upcoming Fed meetings and CPI releases, then automatically reduces high-beta positions in the days before the event. After the event passes and the market digests the news, normal positioning resumes. Think of it as a pre-emptive de-risking around known volatility catalysts.',
+    difficulty: 'intermediate',
+    forgeTemplates: [
+      {
+        text: 'Reduce high-beta exposure by {reducePct}% in the {days} days before Fed/CPI',
+        params: {
+          reducePct: { type: 'number', default: 10, min: 5, max: 25, label: 'Reduction Amount', hint: 'How much to reduce high-beta positions.', unit: '%' },
+          days: { type: 'number', default: 2, min: 1, max: 5, label: 'Days Before Event', hint: 'Start reducing this many trading days before the macro event.', unit: '' },
+        },
+        category: 'season_state',
+        targetType: 'risk_parameter'
+      }
+    ],
+    relatedIndicator: null,
+    kbEntryId: null,
+    tags: ['season', 'macro', 'fomc', 'cpi', 'defensive'],
+    agentUseDescription: 'Reduces high-beta positions ahead of scheduled macro events (FOMC, CPI). Uses macro calendar from season doc.',
+  },
+
+  // SS-05: Weekly Momentum Shift
+  {
+    id: 'ss-05',
+    category: 'season_state',
+    modes: 'season',
+    headline: 'Weekly Momentum Shift',
+    description: 'After each week, automatically tilt toward sectors that are outperforming. Automated sector rotation — winners get more weight.',
+    hook: 'Ride the wave — if energy is ripping and tech is lagging, lean into energy',
+    learnMore: 'Sector momentum tends to persist over multi-week periods — sectors that outperformed last week are statistically more likely to outperform next week. This rule automatically adjusts sector allocations at the start of each week based on the previous week\'s relative performance. Outperforming sectors get increased allocation weight, while underperformers get reduced. The shift amount controls how aggressively the portfolio rotates: subtle (1-2%) creates gentle momentum tilt, while aggressive (6-8%) makes dramatic weekly rotations.',
+    difficulty: 'intermediate',
+    forgeTemplates: [
+      {
+        text: 'After each week, tilt {shiftPct}% toward outperforming sectors',
+        params: {
+          shiftPct: { type: 'number', default: 3, min: 1, max: 8, label: 'Shift Amount', hint: 'Subtle (1-2%) = gentle momentum. Aggressive (6-8%) = hard rotation.', unit: '%' },
+        },
+        category: 'season_state',
+        targetType: 'strategy_selection'
+      }
+    ],
+    relatedIndicator: null,
+    kbEntryId: null,
+    tags: ['season', 'momentum', 'sector-rotation', 'weekly'],
+    agentUseDescription: 'Tilts portfolio weight toward outperforming sectors at the start of each week. Automated momentum rotation.',
+  },
+
+  // SS-06: Pit Stop Suggestion Priority
+  {
+    id: 'ss-06',
+    category: 'season_state',
+    modes: 'season',
+    headline: 'Pit Stop Suggestion Priority',
+    description: 'Controls how much weight your weekend stock suggestions get during entry scans. Meta-strategic: how much do you trust yourself vs. the algorithm?',
+    hook: 'Your agent works for you — but should it listen to your stock picks, or trust its own analysis?',
+    learnMore: 'During the weekend pit stop, you can suggest stocks for your agent to consider. This rule controls how those suggestions are ranked against the agent\'s own candidates during entry scans. "First in Line" means your suggestions get evaluated first and are preferred if they pass entry criteria. "Equal with Others" treats them as normal candidates. "Only if No Better Options" means the agent uses its own analysis first and only falls back to your suggestions when it can\'t find better opportunities. This is a meta-strategic choice about human-AI collaboration.',
+    difficulty: 'beginner',
+    forgeTemplates: [
+      {
+        text: 'Prioritize user-suggested stocks {priority} during entry scans',
+        params: {
+          priority: { type: 'select', default: 'first_in_line', options: [{ value: 'first_in_line', label: 'First in Line' }, { value: 'equal_with_others', label: 'Equal with Others' }, { value: 'only_if_no_better_candidates', label: 'Only if No Better Options' }], label: 'Suggestion Priority', hint: 'First in Line = your picks get priority. Equal = no preference. Only if No Better = agent decides.' },
+        },
+        category: 'season_state',
+        targetType: 'strategy_selection'
+      }
+    ],
+    relatedIndicator: null,
+    kbEntryId: null,
+    tags: ['season', 'pit-stop', 'shortlist', 'user-influence'],
+    agentUseDescription: 'Adjusts entry scan ranking for user-suggested stocks from the weekend pit stop shortlist.',
   },
 ];
 
