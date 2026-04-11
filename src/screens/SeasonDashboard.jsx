@@ -22,6 +22,8 @@ import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import { HOLO_COLORS } from '../constants/holoTheme';
 import SeasonScoreHeader from '../components/Season/SeasonScoreHeader';
+import SeasonPerformanceChart from '../components/Season/SeasonPerformanceChart';
+import SeasonPortfolioStrip from '../components/Season/SeasonPortfolioStrip';
 
 const TROPHY_GOLD = '#F0C75E';
 
@@ -373,11 +375,21 @@ function SeasonDashboard({
                   Check back after 5 PM ET.
                 </PlaceholderPanel>
               ) : (
-                <PlaceholderPanel>
-                  Chart, Portfolio Strip, Activity Feed
-                  <br />
-                  Coming in Phase C-3b / C-3c
-                </PlaceholderPanel>
+                <>
+                  <div style={{ marginTop: 16 }}>
+                    <SeasonPerformanceChart
+                      dailySnapshots={entry.dailySnapshots || []}
+                    />
+                  </div>
+                  <div style={{ marginTop: 16 }}>
+                    <SeasonPortfolioStrip
+                      positions={entry.portfolio?.positions || {}}
+                      cash={entry.portfolio?.cash || 0}
+                      cashPct={entry.portfolio?.cashPct || 0}
+                    />
+                  </div>
+                  {/* Activity feed coming in Phase C-3c */}
+                </>
               )}
             </div>
           )}
