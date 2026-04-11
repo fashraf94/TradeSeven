@@ -85,6 +85,7 @@ import { ProfileScreen, WinsScreen, LossesScreen, DraftHistoryScreen, JoinScreen
 import SeasonHub from './screens/SeasonHub';
 import SeasonDashboard from './screens/SeasonDashboard';
 import PitStopScreen from './screens/PitStopScreen';
+import SeasonReview from './screens/SeasonReview';
 import ActiveSeasonBanner from './components/Season/ActiveSeasonBanner';
 import SeasonEntryModal from './components/Season/SeasonEntryModal';
 import useAgent from './hooks/useAgent';
@@ -2185,6 +2186,10 @@ export default function PortfolioDuel() {
   const [activeSeasonEntry, setActiveSeasonEntry] = useState(null);
   const [seasonEntryModalOpen, setSeasonEntryModalOpen] = useState(false);
   const [seasonToJoin, setSeasonToJoin] = useState(null);
+  // Past-season review state — separate from activeSeason/activeSeasonEntry
+  // because the user can review a completed season while also having an active one.
+  const [reviewSeason, setReviewSeason] = useState(null);
+  const [reviewEntry, setReviewEntry] = useState(null);
 
   const [historyTab, setHistoryTab] = useState('draft'); // 'classic', 'draft', or 'training'
   const [username, setUsername] = useState('');
@@ -8948,7 +8953,11 @@ export default function PortfolioDuel() {
             setSeasonToJoin(season);
             setSeasonEntryModalOpen(true);
           }}
-          onReviewSeason={() => setScreen('dashboard')}
+          onReviewSeason={(s, e) => {
+            setReviewSeason(s);
+            setReviewEntry(e);
+            setScreen('seasonReview');
+          }}
         />
       </ErrorBoundary>
     );
@@ -8968,7 +8977,11 @@ export default function PortfolioDuel() {
               setSeasonToJoin(season);
               setSeasonEntryModalOpen(true);
             }}
-            onReviewSeason={() => setScreen('dashboard')}
+            onReviewSeason={(s, e) => {
+              setReviewSeason(s);
+              setReviewEntry(e);
+              setScreen('seasonReview');
+            }}
           />
         </ErrorBoundary>
       );
@@ -8982,6 +8995,49 @@ export default function PortfolioDuel() {
           onBack={() => setScreen('dashboard')}
           onOpenPitStop={() => setScreen('pitStop')}
           onNavigateHub={() => setScreen('seasonHub')}
+        />
+      </ErrorBoundary>
+    );
+  }
+
+  // SEASON REVIEW SCREEN (post-season)
+  if (screen === 'seasonReview') {
+    // Defensive: if stale state (no review target), fall back to hub
+    if (!reviewSeason || !reviewEntry) {
+      return (
+        <ErrorBoundary name="SeasonReview" onNavigateDashboard={() => setScreen('dashboard')}>
+          <SeasonHub
+            user={user}
+            onBack={() => setScreen('dashboard')}
+            onViewDashboard={() => setScreen('seasonDashboard')}
+            onJoinSeason={(season) => {
+              setSeasonToJoin(season);
+              setSeasonEntryModalOpen(true);
+            }}
+            onReviewSeason={(s, e) => {
+              setReviewSeason(s);
+              setReviewEntry(e);
+              setScreen('seasonReview');
+            }}
+          />
+        </ErrorBoundary>
+      );
+    }
+    return (
+      <ErrorBoundary name="SeasonReview" onNavigateDashboard={() => setScreen('dashboard')}>
+        <SeasonReview
+          user={user}
+          season={reviewSeason}
+          entry={reviewEntry}
+          onBack={() => setScreen('seasonHub')}
+          onNavigateForge={() => {
+            try {
+              localStorage.setItem('forgeMode', 'season');
+            } catch (err) {
+              console.warn('[SeasonReview] localStorage unavailable', err);
+            }
+            setShowForge(true);
+          }}
         />
       </ErrorBoundary>
     );
@@ -9001,7 +9057,11 @@ export default function PortfolioDuel() {
               setSeasonToJoin(season);
               setSeasonEntryModalOpen(true);
             }}
-            onReviewSeason={() => setScreen('dashboard')}
+            onReviewSeason={(s, e) => {
+              setReviewSeason(s);
+              setReviewEntry(e);
+              setScreen('seasonReview');
+            }}
           />
         </ErrorBoundary>
       );

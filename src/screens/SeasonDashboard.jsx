@@ -26,6 +26,7 @@ import SeasonPerformanceChart from '../components/Season/SeasonPerformanceChart'
 import SeasonPortfolioStrip from '../components/Season/SeasonPortfolioStrip';
 import SeasonActivityFeed from '../components/Season/SeasonActivityFeed';
 import SeasonLeaderboard from '../components/Season/SeasonLeaderboard';
+import { FORGE_CATEGORIES, FORGE_RULE_TEMPLATES } from '../data/forgeKnowledgeBase';
 
 const TROPHY_GOLD = '#F0C75E';
 
@@ -107,6 +108,250 @@ function PlaceholderPanel({ children }) {
       }}
     >
       {children}
+    </div>
+  );
+}
+
+// ─── My Algorithm tab ───────────────────────────────────────────
+
+function AlgorithmPanel({ algorithm }) {
+  const rules = Array.isArray(algorithm?.rules) ? algorithm.rules : [];
+  const version = algorithm?.version || 1;
+  const count = algorithm?.ruleCount ?? rules.length;
+
+  if (rules.length === 0) {
+    return (
+      <PlaceholderPanel>
+        No rules equipped. Refine your algorithm in the Forge to start trading.
+      </PlaceholderPanel>
+    );
+  }
+
+  return (
+    <div style={{ padding: 16 }}>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'baseline',
+          justifyContent: 'space-between',
+          marginBottom: 14,
+        }}
+      >
+        <h3
+          style={{
+            margin: 0,
+            fontSize: 16,
+            fontWeight: 700,
+            color: HOLO_COLORS.textPrimary,
+          }}
+        >
+          My Algorithm{' '}
+          <span style={{ color: HOLO_COLORS.textMuted, fontSize: 13, fontWeight: 500 }}>
+            v{version}
+          </span>
+        </h3>
+        <span style={{ fontSize: 12, color: HOLO_COLORS.textMuted }}>
+          {count} rule{count === 1 ? '' : 's'} equipped
+        </span>
+      </div>
+      {rules.map((rule) => {
+        const template = FORGE_RULE_TEMPLATES.find((t) => t.id === rule.ruleId);
+        const name = template?.headline || rule.ruleId;
+        const categoryId = template?.category || rule.category;
+        const cat = FORGE_CATEGORIES.find((c) => c.id === categoryId);
+        const catColor = cat?.color || HOLO_COLORS.textMuted;
+        const catLabel = cat?.label || categoryId || '';
+        const paramSummary = rule.params
+          ? Object.entries(rule.params)
+              .map(([k, v]) => `${k}: ${typeof v === 'number' ? v : JSON.stringify(v)}`)
+              .join(' · ')
+          : '';
+        return (
+          <div
+            key={rule.ruleId}
+            style={{
+              background: HOLO_COLORS.bgElevated,
+              border: `1px solid ${HOLO_COLORS.borderSubtle}`,
+              borderLeft: `3px solid ${catColor}`,
+              borderRadius: 10,
+              padding: '12px 14px',
+              marginBottom: 8,
+            }}
+          >
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'baseline',
+                justifyContent: 'space-between',
+                gap: 8,
+              }}
+            >
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div
+                  style={{
+                    fontSize: 14,
+                    fontWeight: 700,
+                    color: HOLO_COLORS.textPrimary,
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                  }}
+                >
+                  <span
+                    style={{
+                      color: HOLO_COLORS.textMuted,
+                      marginRight: 8,
+                      fontFamily: 'monospace',
+                      fontSize: 11,
+                    }}
+                  >
+                    {rule.ruleId}
+                  </span>
+                  {name}
+                </div>
+              </div>
+              <span
+                style={{
+                  padding: '2px 8px',
+                  borderRadius: 10,
+                  fontSize: 10,
+                  fontWeight: 600,
+                  background: `${catColor}1A`,
+                  color: catColor,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.5px',
+                  flexShrink: 0,
+                }}
+              >
+                {catLabel}
+              </span>
+            </div>
+            {paramSummary && (
+              <div
+                style={{
+                  fontSize: 11,
+                  color: HOLO_COLORS.textMuted,
+                  marginTop: 6,
+                  fontFamily: 'monospace',
+                }}
+              >
+                {paramSummary}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ─── Day-by-Day tab ─────────────────────────────────────────────
+
+function DayByDayPanel({ snapshots }) {
+  const POSITIVE = '#34D399';
+  const NEGATIVE = '#EF4444';
+  const MUTED = '#8B949E';
+  const list = Array.isArray(snapshots) ? snapshots.slice().reverse() : [];
+
+  if (list.length === 0) {
+    return (
+      <PlaceholderPanel>
+        No trading days recorded yet. Day 1 snapshots post after the first evaluation.
+      </PlaceholderPanel>
+    );
+  }
+
+  return (
+    <div style={{ padding: 16 }}>
+      <div
+        style={{
+          fontSize: 11,
+          color: HOLO_COLORS.textMuted,
+          textTransform: 'uppercase',
+          letterSpacing: '0.5px',
+          fontWeight: 600,
+          marginBottom: 10,
+          paddingLeft: 4,
+        }}
+      >
+        {list.length} Trading Day{list.length === 1 ? '' : 's'}
+      </div>
+      {list.map((snap) => {
+        const dailyAlpha = typeof snap?.dailyAlpha === 'number' ? snap.dailyAlpha : null;
+        const cumulativeAlpha = typeof snap?.alpha === 'number' ? snap.alpha : null;
+        const trades = snap?.tradesExecuted ?? 0;
+        const color =
+          dailyAlpha == null
+            ? HOLO_COLORS.textPrimary
+            : dailyAlpha >= 0
+            ? POSITIVE
+            : NEGATIVE;
+        return (
+          <div
+            key={snap?.day ?? snap?.date}
+            style={{
+              background: HOLO_COLORS.bgElevated,
+              border: `1px solid ${HOLO_COLORS.borderSubtle}`,
+              borderRadius: 10,
+              padding: '12px 14px',
+              marginBottom: 8,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 12,
+            }}
+          >
+            <div
+              style={{
+                width: 44,
+                textAlign: 'center',
+                flexShrink: 0,
+              }}
+            >
+              <div style={{ fontSize: 10, color: MUTED, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                Day
+              </div>
+              <div
+                style={{
+                  fontSize: 18,
+                  fontWeight: 700,
+                  color: HOLO_COLORS.textPrimary,
+                  lineHeight: 1.2,
+                }}
+              >
+                {snap?.day ?? '—'}
+              </div>
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 13, color: HOLO_COLORS.textPrimary, fontWeight: 600 }}>
+                {snap?.date || ''}
+              </div>
+              <div style={{ fontSize: 11, color: MUTED, marginTop: 2 }}>
+                {trades} trade{trades === 1 ? '' : 's'} ·{' '}
+                {snap?.positionCount != null ? `${snap.positionCount} positions` : ''}
+              </div>
+            </div>
+            <div style={{ textAlign: 'right', flexShrink: 0 }}>
+              <div
+                style={{
+                  fontSize: 14,
+                  fontWeight: 700,
+                  color,
+                }}
+              >
+                {dailyAlpha != null
+                  ? `${dailyAlpha >= 0 ? '+' : ''}${dailyAlpha.toFixed(2)}%`
+                  : '—'}
+              </div>
+              <div style={{ fontSize: 10, color: MUTED, marginTop: 2 }}>
+                cum{' '}
+                {cumulativeAlpha != null
+                  ? `${cumulativeAlpha >= 0 ? '+' : ''}${cumulativeAlpha.toFixed(2)}%`
+                  : '—'}
+              </div>
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -409,10 +654,10 @@ function SeasonDashboard({
             />
           )}
           {activeTab === 'algorithm' && (
-            <PlaceholderPanel>My Algorithm — Coming in Phase C-5</PlaceholderPanel>
+            <AlgorithmPanel algorithm={entry.algorithm} />
           )}
           {activeTab === 'dayByDay' && (
-            <PlaceholderPanel>Day-by-Day — Coming in Phase C-5</PlaceholderPanel>
+            <DayByDayPanel snapshots={entry.dailySnapshots} />
           )}
         </div>
 
