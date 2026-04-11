@@ -25,6 +25,7 @@ import SeasonScoreHeader from '../components/Season/SeasonScoreHeader';
 import SeasonPerformanceChart from '../components/Season/SeasonPerformanceChart';
 import SeasonPortfolioStrip from '../components/Season/SeasonPortfolioStrip';
 import SeasonActivityFeed from '../components/Season/SeasonActivityFeed';
+import SeasonLeaderboard from '../components/Season/SeasonLeaderboard';
 
 const TROPHY_GOLD = '#F0C75E';
 
@@ -402,7 +403,10 @@ function SeasonDashboard({
           )}
 
           {activeTab === 'leaderboard' && (
-            <PlaceholderPanel>Leaderboard — Coming in Phase C-5</PlaceholderPanel>
+            <SeasonLeaderboard
+              leaderboard={leaderboard}
+              currentEntryId={entry.id}
+            />
           )}
           {activeTab === 'algorithm' && (
             <PlaceholderPanel>My Algorithm — Coming in Phase C-5</PlaceholderPanel>
