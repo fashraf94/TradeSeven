@@ -84,6 +84,7 @@ import { ProfileScreen, WinsScreen, LossesScreen, DraftHistoryScreen, JoinScreen
 // Season Mode screens + components
 import SeasonHub from './screens/SeasonHub';
 import SeasonDashboard from './screens/SeasonDashboard';
+import PitStopScreen from './screens/PitStopScreen';
 import ActiveSeasonBanner from './components/Season/ActiveSeasonBanner';
 import SeasonEntryModal from './components/Season/SeasonEntryModal';
 import useAgent from './hooks/useAgent';
@@ -8979,8 +8980,39 @@ export default function PortfolioDuel() {
           season={activeSeason}
           entry={activeSeasonEntry}
           onBack={() => setScreen('dashboard')}
-          onOpenPitStop={() => setScreen('seasonHub')} // placeholder until C-4
+          onOpenPitStop={() => setScreen('pitStop')}
           onNavigateHub={() => setScreen('seasonHub')}
+        />
+      </ErrorBoundary>
+    );
+  }
+
+  // PIT STOP SCREEN
+  if (screen === 'pitStop') {
+    // Defensive: if stale state (no active season/entry), fall back to hub
+    if (!activeSeason || !activeSeasonEntry) {
+      return (
+        <ErrorBoundary name="PitStop" onNavigateDashboard={() => setScreen('dashboard')}>
+          <SeasonHub
+            user={user}
+            onBack={() => setScreen('dashboard')}
+            onViewDashboard={() => setScreen('seasonDashboard')}
+            onJoinSeason={(season) => {
+              setSeasonToJoin(season);
+              setSeasonEntryModalOpen(true);
+            }}
+            onReviewSeason={() => setScreen('dashboard')}
+          />
+        </ErrorBoundary>
+      );
+    }
+    return (
+      <ErrorBoundary name="PitStop" onNavigateDashboard={() => setScreen('dashboard')}>
+        <PitStopScreen
+          user={user}
+          season={activeSeason}
+          entry={activeSeasonEntry}
+          onBack={() => setScreen('seasonDashboard')}
         />
       </ErrorBoundary>
     );
