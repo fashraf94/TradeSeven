@@ -83,6 +83,7 @@ import { createInitialFreeAgents } from './services/freeAgentRotationService';
 import { ProfileScreen, WinsScreen, LossesScreen, DraftHistoryScreen, JoinScreen, DraftSetupScreen, DraftJoinScreen, DraftTrainingScreen, DraftLobbyScreen, PreviousBattlesScreen, BattleHistoryScreen, FreeAgencyScreen, FreeAgencyScreenV2, DraftResultsScreen, BattleViewScreen, DraftBattleScreen, DraftBattleScreenV2, DraftRoomScreen, HomeScreen, EarningsGameScreen, BuilderScreen } from './screens';
 // Season Mode screens + components
 import SeasonHub from './screens/SeasonHub';
+import SeasonDashboard from './screens/SeasonDashboard';
 import ActiveSeasonBanner from './components/Season/ActiveSeasonBanner';
 import SeasonEntryModal from './components/Season/SeasonEntryModal';
 import useAgent from './hooks/useAgent';
@@ -8941,12 +8942,45 @@ export default function PortfolioDuel() {
         <SeasonHub
           user={user}
           onBack={() => setScreen('dashboard')}
-          onViewDashboard={() => setScreen('dashboard')}
+          onViewDashboard={() => setScreen('seasonDashboard')}
           onJoinSeason={(season) => {
             setSeasonToJoin(season);
             setSeasonEntryModalOpen(true);
           }}
           onReviewSeason={() => setScreen('dashboard')}
+        />
+      </ErrorBoundary>
+    );
+  }
+
+  // SEASON DASHBOARD SCREEN
+  if (screen === 'seasonDashboard') {
+    // Defensive: if stale state (no active season), fall back to hub
+    if (!activeSeason || !activeSeasonEntry) {
+      return (
+        <ErrorBoundary name="SeasonDashboard" onNavigateDashboard={() => setScreen('dashboard')}>
+          <SeasonHub
+            user={user}
+            onBack={() => setScreen('dashboard')}
+            onViewDashboard={() => setScreen('seasonDashboard')}
+            onJoinSeason={(season) => {
+              setSeasonToJoin(season);
+              setSeasonEntryModalOpen(true);
+            }}
+            onReviewSeason={() => setScreen('dashboard')}
+          />
+        </ErrorBoundary>
+      );
+    }
+    return (
+      <ErrorBoundary name="SeasonDashboard" onNavigateDashboard={() => setScreen('dashboard')}>
+        <SeasonDashboard
+          user={user}
+          season={activeSeason}
+          entry={activeSeasonEntry}
+          onBack={() => setScreen('dashboard')}
+          onOpenPitStop={() => setScreen('seasonHub')} // placeholder until C-4
+          onNavigateHub={() => setScreen('seasonHub')}
         />
       </ErrorBoundary>
     );
@@ -11455,7 +11489,7 @@ export default function PortfolioDuel() {
           <ActiveSeasonBanner
             season={activeSeason}
             entry={activeSeasonEntry}
-            onTap={() => setScreen('seasonHub')}
+            onTap={() => setScreen('seasonDashboard')}
             isPitStopOpen={activeSeasonEntry.isPitStopOpen || activeSeason.isPitStopWeekend}
           />
         </div>
