@@ -11451,7 +11451,7 @@ export default function PortfolioDuel() {
 
       {/* ========== ACTIVE SEASON BANNER — above BottomNav, all authenticated screens ========== */}
       {user && isMobile && screen !== 'home' && !GAMEPLAY_SCREENS.includes(screen) && activeSeason && activeSeasonEntry && (
-        <div style={{ position: 'fixed', left: 0, right: 0, bottom: 56, zIndex: 49 }}>
+        <div style={{ position: 'fixed', left: 0, right: 0, bottom: 64, zIndex: 49 }}>
           <ActiveSeasonBanner
             season={activeSeason}
             entry={activeSeasonEntry}

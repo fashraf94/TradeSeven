@@ -674,7 +674,7 @@ export default function SeasonEntryModal({
     return () => {
       cancelled = true;
     };
-  }, [isOpen, step, agent?.id, bundles.length, loadingBundles]);
+  }, [isOpen, step, agent?.id, bundles.length]);
 
   const goNext = useCallback(() => {
     setDirection(1);
