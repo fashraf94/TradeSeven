@@ -24,6 +24,10 @@ import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import { HOLO_COLORS } from '../constants/holoTheme';
 import { fetchWithAuth } from '../utils/fetchWithAuth';
+import PitStopConversation from '../components/Season/PitStopConversation';
+import PitStopShortlist from '../components/Season/PitStopShortlist';
+import PitStopChanges from '../components/Season/PitStopChanges';
+import PitStopLockInBar from '../components/Season/PitStopLockInBar';
 
 const TROPHY_GOLD = '#F0C75E';
 
@@ -574,6 +578,33 @@ export default function PitStopScreen({ user, season, entry, onBack }) {
   // Bump to force a re-run of the load effect after a retry.
   const [reloadKey, setReloadKey] = useState(0);
 
+  // Re-read the pitStop doc without the full loading cycle. Child components
+  // (conversation, shortlist, changes) call this after their own writes so
+  // the screen reflects the latest server-enriched state. Keeping
+  // `loading`/`debrief` untouched prevents the screen from flashing back to
+  // the skeleton between writes.
+  const refreshPitStop = useCallback(async () => {
+    if (!entry?.id) return;
+    try {
+      const pitStopRef = doc(
+        db,
+        'seasonEntries',
+        entry.id,
+        'pitStops',
+        String(currentWeek),
+      );
+      const snap = await getDoc(pitStopRef);
+      if (!snap.exists()) return;
+      const next = { id: snap.id, ...snap.data() };
+      setPitStop(next);
+      if (next.debrief) {
+        setDebrief(next.debrief);
+      }
+    } catch (err) {
+      console.error('[PitStopScreen] refresh failed', err);
+    }
+  }, [entry?.id, currentWeek]);
+
   // Generate debrief via API (lazy path for uncached pit stops).
   const generateDebrief = useCallback(async () => {
     if (!entry?.id) return;
@@ -727,20 +758,53 @@ export default function PitStopScreen({ user, season, entry, onBack }) {
               />
             )}
 
-            {/* ===== C-4b: Conversation ===== */}
-            {/* <ConversationSection pitStop={pitStop} entryId={entry.id} week={currentWeek} /> */}
+            {/* Algorithm changes — open pit stops only */}
+            {pitStop.status === 'open' && (
+              <PitStopChanges
+                entryId={entry.id}
+                week={currentWeek}
+                changes={pitStop.changes || []}
+                algorithmRules={entry.algorithm?.rules || []}
+                isOpen
+                onRefreshPitStop={refreshPitStop}
+              />
+            )}
 
-            {/* ===== C-4b: Action Cards (suggestedChanges) ===== */}
-            {/* <ActionCardsSection debrief={debrief} entryId={entry.id} week={currentWeek} /> */}
+            {/* Conversation — rendered for both open and completed (read-only when closed) */}
+            <PitStopConversation
+              entryId={entry.id}
+              week={currentWeek}
+              conversation={pitStop.conversation || []}
+              conversationCount={pitStop.conversationCount || 0}
+              isOpen={pitStop.status === 'open'}
+              onRefreshPitStop={refreshPitStop}
+            />
 
-            {/* ===== C-4b: Shortlist ===== */}
-            {/* <ShortlistSection pitStop={pitStop} entryId={entry.id} week={currentWeek} /> */}
+            {/* Shortlist — open pit stops only */}
+            {pitStop.status === 'open' && (
+              <PitStopShortlist
+                entryId={entry.id}
+                week={currentWeek}
+                universe={season?.universe || []}
+                currentShortlist={pitStop.shortlist || []}
+                currentPositions={entry.portfolio?.positions || {}}
+                isOpen
+                onRefreshPitStop={refreshPitStop}
+              />
+            )}
+
+            {/* Lock-in bar — open pit stops only, sits at end of content */}
+            {pitStop.status === 'open' && (
+              <PitStopLockInBar
+                week={currentWeek}
+                changes={pitStop.changes || []}
+                shortlist={pitStop.shortlist || []}
+                onLockIn={onBack}
+              />
+            )}
           </>
         )}
       </div>
-
-      {/* ===== C-4b: Lock-In Bar (sticky bottom) ===== */}
-      {/* {pitStop?.status === 'open' && <LockInBar pitStop={pitStop} entryId={entry.id} week={currentWeek} />} */}
     </div>
   );
 }
