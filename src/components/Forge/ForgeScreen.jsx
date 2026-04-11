@@ -49,7 +49,7 @@ function getAgentLevel(agent) {
   return 'rookie';
 }
 
-export default function ForgeScreen({ isMobile: isMobileProp, onClose, user }) {
+export default function ForgeScreen({ isMobile: isMobileProp, onClose, user, onNavigateToSeasonHub }) {
   const { tokens } = useTheme();
   const { isDesktop } = useIsMobile();
   const { agent, hasAgent } = useAgent(user?.uid);
@@ -359,6 +359,28 @@ export default function ForgeScreen({ isMobile: isMobileProp, onClose, user }) {
               The Forge
             </h1>
           </div>
+
+          {/* Season Hub CTA — only visible in season mode */}
+          {forgeMode === 'season' && onNavigateToSeasonHub && (
+            <button
+              onClick={onNavigateToSeasonHub}
+              style={{
+                position: 'absolute',
+                top: 20,
+                right: 24,
+                padding: '8px 14px',
+                background: 'transparent',
+                color: '#F0C75E',
+                border: '1px solid #F0C75E',
+                borderRadius: 8,
+                fontSize: 13,
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
+            >
+              Season Hub →
+            </button>
+          )}
 
           {/* Agent Identity Card — Mech + Class Title + Loadout + DNA Sockets */}
           <AgentIdentityCard
@@ -727,6 +749,24 @@ export default function ForgeScreen({ isMobile: isMobileProp, onClose, user }) {
           <h1 style={{ fontSize: 20, fontWeight: 700, color: tokens.textWhite, margin: 0 }}>
             The Forge
           </h1>
+          {forgeMode === 'season' && onNavigateToSeasonHub && (
+            <button
+              onClick={onNavigateToSeasonHub}
+              style={{
+                marginLeft: 'auto',
+                padding: '6px 12px',
+                background: 'transparent',
+                color: '#F0C75E',
+                border: '1px solid #F0C75E',
+                borderRadius: 8,
+                fontSize: 12,
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
+            >
+              Season Hub →
+            </button>
+          )}
         </div>
 
         {/* Agent Identity Card — Mech + Class Title + Loadout + DNA Sockets */}
