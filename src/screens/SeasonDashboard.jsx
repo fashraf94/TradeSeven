@@ -24,6 +24,7 @@ import { HOLO_COLORS } from '../constants/holoTheme';
 import SeasonScoreHeader from '../components/Season/SeasonScoreHeader';
 import SeasonPerformanceChart from '../components/Season/SeasonPerformanceChart';
 import SeasonPortfolioStrip from '../components/Season/SeasonPortfolioStrip';
+import SeasonActivityFeed from '../components/Season/SeasonActivityFeed';
 
 const TROPHY_GOLD = '#F0C75E';
 
@@ -388,7 +389,13 @@ function SeasonDashboard({
                       cashPct={entry.portfolio?.cashPct || 0}
                     />
                   </div>
-                  {/* Activity feed coming in Phase C-3c */}
+                  <div style={{ marginTop: 16 }}>
+                    <SeasonActivityFeed
+                      recentActivity={entry.recentActivity || []}
+                      dailySnapshots={entry.dailySnapshots || []}
+                      onLoadDayDetail={() => setActiveTab('dayByDay')}
+                    />
+                  </div>
                 </>
               )}
             </div>
