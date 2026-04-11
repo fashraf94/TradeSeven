@@ -81,6 +81,11 @@ import { flattenPortfolio, flattenBench, calculateAssetScoreV3 } from './utils/b
 import { createInitialFreeAgents } from './services/freeAgentRotationService';
 // Extracted Screens - Batch 1
 import { ProfileScreen, WinsScreen, LossesScreen, DraftHistoryScreen, JoinScreen, DraftSetupScreen, DraftJoinScreen, DraftTrainingScreen, DraftLobbyScreen, PreviousBattlesScreen, BattleHistoryScreen, FreeAgencyScreen, FreeAgencyScreenV2, DraftResultsScreen, BattleViewScreen, DraftBattleScreen, DraftBattleScreenV2, DraftRoomScreen, HomeScreen, EarningsGameScreen, BuilderScreen } from './screens';
+// Season Mode screens + components
+import SeasonHub from './screens/SeasonHub';
+import ActiveSeasonBanner from './components/Season/ActiveSeasonBanner';
+import SeasonEntryModal from './components/Season/SeasonEntryModal';
+import useAgent from './hooks/useAgent';
 // Snake Draft Components
 import DraftCompleteScreen from './screens/SnakeDraft/DraftCompleteScreen';
 // Claim-based Free Agency
@@ -2171,6 +2176,14 @@ export default function PortfolioDuel() {
   const isPageVisible = usePageVisibility();
 
   const [screen, setScreen] = useState('home');
+
+  // ── Season Mode state ────────────────────────────────────
+  const { agent: primaryAgent } = useAgent(user?.uid);
+  const [activeSeason, setActiveSeason] = useState(null);
+  const [activeSeasonEntry, setActiveSeasonEntry] = useState(null);
+  const [seasonEntryModalOpen, setSeasonEntryModalOpen] = useState(false);
+  const [seasonToJoin, setSeasonToJoin] = useState(null);
+
   const [historyTab, setHistoryTab] = useState('draft'); // 'classic', 'draft', or 'training'
   const [username, setUsername] = useState('');
   const [portfolioName, setPortfolioName] = useState('');
@@ -3439,6 +3452,54 @@ export default function PortfolioDuel() {
       unsubscribe();
     };
   }, [user, isPageVisible]);
+
+  // ── Active Season: load the user's active seasonEntries doc + season doc ──
+  // Re-runs when the user changes or when the entry modal closes (to pick up
+  // a just-created entry). Feeds the ActiveSeasonBanner above BottomNav.
+  useEffect(() => {
+    let cancelled = false;
+    async function loadActiveSeason() {
+      if (!user?.uid) {
+        setActiveSeason(null);
+        setActiveSeasonEntry(null);
+        return;
+      }
+      try {
+        const { collection, query, where, getDocs, limit, doc, getDoc } = await import('firebase/firestore');
+        const { db } = await import('./firebase/config');
+
+        const entriesSnap = await getDocs(
+          query(
+            collection(db, 'seasonEntries'),
+            where('userId', '==', user.uid),
+            where('status', '==', 'active'),
+            limit(1)
+          )
+        );
+        if (cancelled) return;
+        if (entriesSnap.empty) {
+          setActiveSeason(null);
+          setActiveSeasonEntry(null);
+          return;
+        }
+        const entryDoc = entriesSnap.docs[0];
+        const entry = { id: entryDoc.id, ...entryDoc.data() };
+        const seasonSnap = await getDoc(doc(db, 'seasons', entry.seasonId));
+        if (cancelled) return;
+        if (seasonSnap.exists()) {
+          setActiveSeason({ id: seasonSnap.id, ...seasonSnap.data() });
+          setActiveSeasonEntry(entry);
+        } else {
+          setActiveSeason(null);
+          setActiveSeasonEntry(null);
+        }
+      } catch (err) {
+        if (!cancelled) console.error('[ActiveSeason] Load failed:', err);
+      }
+    }
+    loadActiveSeason();
+    return () => { cancelled = true; };
+  }, [user?.uid, seasonEntryModalOpen]);
 
   // Combined draft poll — single user-scoped query replaces separate draft battles + active draft banner polls
   useEffect(() => {
@@ -8058,6 +8119,10 @@ export default function PortfolioDuel() {
           isMobile={isMobile}
           onClose={() => setShowForge(false)}
           user={user}
+          onNavigateToSeasonHub={() => {
+            setShowForge(false);
+            setScreen('seasonHub');
+          }}
         />
       </div>
     );
@@ -8865,6 +8930,24 @@ export default function PortfolioDuel() {
         onViewBattle={(battle) => { setSelectedPreviousBattle(battle); setScreen('previousBattles'); }}
         onNavigate={setScreen}
       />
+      </ErrorBoundary>
+    );
+  }
+
+  // SEASON HUB SCREEN
+  if (screen === 'seasonHub') {
+    return (
+      <ErrorBoundary name="SeasonHub" onNavigateDashboard={() => setScreen('dashboard')}>
+        <SeasonHub
+          user={user}
+          onBack={() => setScreen('dashboard')}
+          onViewDashboard={() => setScreen('dashboard')}
+          onJoinSeason={(season) => {
+            setSeasonToJoin(season);
+            setSeasonEntryModalOpen(true);
+          }}
+          onReviewSeason={() => setScreen('dashboard')}
+        />
       </ErrorBoundary>
     );
   }
@@ -11366,6 +11449,18 @@ export default function PortfolioDuel() {
       )}
 
 
+      {/* ========== ACTIVE SEASON BANNER — above BottomNav, all authenticated screens ========== */}
+      {user && isMobile && screen !== 'home' && !GAMEPLAY_SCREENS.includes(screen) && activeSeason && activeSeasonEntry && (
+        <div style={{ position: 'fixed', left: 0, right: 0, bottom: 64, zIndex: 49 }}>
+          <ActiveSeasonBanner
+            season={activeSeason}
+            entry={activeSeasonEntry}
+            onTap={() => setScreen('seasonHub')}
+            isPitStopOpen={activeSeasonEntry.isPitStopOpen || activeSeason.isPitStopWeekend}
+          />
+        </div>
+      )}
+
       {/* ========== MOBILE BOTTOM NAV ========== */}
       {user && isMobile && screen !== 'home' && !GAMEPLAY_SCREENS.includes(screen) && (
         <BottomNav
@@ -11373,6 +11468,31 @@ export default function PortfolioDuel() {
           setScreen={setScreen}
           setShowForge={setShowForge}
           showForge={showForge}
+        />
+      )}
+
+      {/* ========== SEASON ENTRY MODAL — mounted when user clicks "Join Season" ========== */}
+      {seasonToJoin && primaryAgent && (
+        <SeasonEntryModal
+          isOpen={seasonEntryModalOpen}
+          onClose={() => {
+            setSeasonEntryModalOpen(false);
+            setSeasonToJoin(null);
+          }}
+          season={seasonToJoin}
+          user={user}
+          agent={primaryAgent}
+          onBuildInForge={() => {
+            setSeasonEntryModalOpen(false);
+            setSeasonToJoin(null);
+            try { localStorage.setItem('forgeMode', 'season'); } catch {}
+            setShowForge(true);
+          }}
+          onSuccess={() => {
+            setSeasonEntryModalOpen(false);
+            setSeasonToJoin(null);
+            setScreen('seasonHub');
+          }}
         />
       )}
 
