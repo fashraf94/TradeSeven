@@ -34,11 +34,15 @@ FORGE_RULE_TEMPLATES.forEach(r => {
 const STRATEGY_CATEGORIES = ['technical', 'fundamental', 'threshold', 'tier_strategy'];
 const CONTROLS_CATEGORIES = ['risk', 'allocation', 'mid_battle', 'game_state'];
 
-// Display order for all 9 categories — familiar first, game-specific last
+// Display order for all 13 categories — universal first, clash next, season last.
+// Universal categories apply to both modes; clash/season categories are mode-scoped.
 export const CATEGORY_ORDER = [
-  'technical', 'fundamental', 'risk', 'allocation',
+  // Universal (both modes)
+  'technical', 'fundamental', 'risk', 'allocation', 'institutional',
+  // Clash-only
   'mid_battle', 'game_state', 'threshold', 'tier_strategy',
-  'institutional',
+  // Season-only
+  'entry_criteria', 'exit_stops', 'rebalancing', 'season_state',
 ];
 
 // Helper to read persisted forge UI state from localStorage

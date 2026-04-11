@@ -4,12 +4,13 @@
 // src/components/Forge/MyBundlesTab.jsx
 // Bundle workbench — draft and forged bundles, forge flow, equip flow.
 
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Package, Plus, Eye, EyeOff, Zap, Edit3, Hammer } from 'lucide-react';
 import { FORGE_LIMITS } from '../../constants/agentProgression';
 import { TRAIT_LIBRARY } from '../../data/traitLibrary';
 import RulePickerModal from './RulePickerModal';
+import RuleModeBadge from './RuleModeBadge';
 
 const TRAIT_BY_ID = {};
 TRAIT_LIBRARY.forEach(t => { TRAIT_BY_ID[t.id] = t; });
@@ -55,7 +56,7 @@ function groupByTrait(items, getRule) {
   return { grouped, ungrouped };
 }
 
-export default function MyBundlesTab({ forge, tokens, isMobile, agent }) {
+export default function MyBundlesTab({ forge, tokens, isMobile, agent, forgeMode = 'clash' }) {
   const [expandedForgedId, setExpandedForgedId] = useState(null);
   const [expandedTraitId, setExpandedTraitId] = useState(null);
   const [forgeSuccessBundle, setForgeSuccessBundle] = useState(null);
@@ -72,6 +73,24 @@ export default function MyBundlesTab({ forge, tokens, isMobile, agent }) {
 
   // Get rule object by ID
   const getRuleById = (ruleId) => forge.rules.find(r => r.id === ruleId);
+
+  // Derive a bundle's overall mode from the union of its rules' modes.
+  // Returns 'clash' | 'season' | 'both'. Rules without a modes field are
+  // treated as 'both' (backwards-compatible with legacy user rules).
+  const getBundleMode = useCallback((ruleList) => {
+    let hasClash = false;
+    let hasSeason = false;
+    for (const r of ruleList || []) {
+      if (!r) continue;
+      const m = r.modes;
+      if (m === 'clash') { hasClash = true; }
+      else if (m === 'season') { hasSeason = true; }
+      else { hasClash = true; hasSeason = true; } // 'both' or missing
+    }
+    if (hasClash && hasSeason) return 'both';
+    if (hasSeason) return 'season';
+    return 'clash';
+  }, []);
 
   // Count equipped bundles from forge state
   const equippedCount = forge.equippedBundles.length;
@@ -260,17 +279,20 @@ export default function MyBundlesTab({ forge, tokens, isMobile, agent }) {
               </button>
             )}
           </div>
-          <span style={{
-            padding: '3px 10px',
-            borderRadius: '8px',
-            fontSize: '10px',
-            fontWeight: 700,
-            color: '#f59e0b',
-            background: 'rgba(245, 158, 11, 0.12)',
-            textTransform: 'uppercase',
-          }}>
-            Draft
-          </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+            <span style={{
+              padding: '3px 10px',
+              borderRadius: '8px',
+              fontSize: '10px',
+              fontWeight: 700,
+              color: '#f59e0b',
+              background: 'rgba(245, 158, 11, 0.12)',
+              textTransform: 'uppercase',
+            }}>
+              Draft
+            </span>
+            <RuleModeBadge mode={getBundleMode((bundle.ruleIds || []).map(getRuleById))} />
+          </div>
         </div>
 
         {/* Rule count */}
@@ -547,17 +569,20 @@ export default function MyBundlesTab({ forge, tokens, isMobile, agent }) {
               {bundle.name} v{bundle.version || 1}
             </span>
           </div>
-          <span style={{
-            padding: '3px 10px',
-            borderRadius: '8px',
-            fontSize: '10px',
-            fontWeight: 700,
-            color: statusColor,
-            background: `${statusColor}15`,
-            textTransform: 'uppercase',
-          }}>
-            {statusLabel}
-          </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+            <span style={{
+              padding: '3px 10px',
+              borderRadius: '8px',
+              fontSize: '10px',
+              fontWeight: 700,
+              color: statusColor,
+              background: `${statusColor}15`,
+              textTransform: 'uppercase',
+            }}>
+              {statusLabel}
+            </span>
+            <RuleModeBadge mode={getBundleMode(bundle.ruleSnapshots)} />
+          </div>
         </div>
 
         {/* Meta */}
@@ -1006,6 +1031,7 @@ export default function MyBundlesTab({ forge, tokens, isMobile, agent }) {
         }
         onAdd={(ruleId) => forge.addRuleToBundleById(forge.showRulePicker, ruleId)}
         tokens={tokens}
+        forgeMode={forgeMode}
       />
     </div>
   );

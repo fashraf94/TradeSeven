@@ -28,7 +28,7 @@ const CATEGORY_FILTERS = [
   { id: 'tier_strategy', label: 'Tier Strategy' },
 ];
 
-export default function RulePickerModal({ isOpen, onClose, rules, bundleRuleIds, onAdd, tokens }) {
+export default function RulePickerModal({ isOpen, onClose, rules, bundleRuleIds, onAdd, tokens, forgeMode = 'all' }) {
   const [catFilter, setCatFilter] = useState('all');
   const [addingId, setAddingId] = useState(null);
 
@@ -38,8 +38,13 @@ export default function RulePickerModal({ isOpen, onClose, rules, bundleRuleIds,
     if (catFilter !== 'all') {
       available = available.filter(r => r.category === catFilter);
     }
+    // Mode filter — fail-open for rules without a modes field (user-created rules
+    // may not carry the template's modes attribute).
+    if (forgeMode && forgeMode !== 'all') {
+      available = available.filter(r => !r.modes || r.modes === forgeMode || r.modes === 'both');
+    }
     return available;
-  }, [rules, bundleRuleIds, catFilter]);
+  }, [rules, bundleRuleIds, catFilter, forgeMode]);
 
   const handleAdd = async (ruleId) => {
     setAddingId(ruleId);

@@ -6,6 +6,7 @@ import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronDown, Plus, Check, Settings2 } from 'lucide-react';
 import RuleConfigDrawer from './RuleConfigDrawer';
+import RuleModeBadge from './RuleModeBadge';
 
 // Reuse color + icon maps from ForgeRuleCard for consistency
 const CATEGORY_COLORS = {
@@ -26,7 +27,7 @@ const DIFFICULTY_COLORS = {
   advanced: '#f97066',
 };
 
-function AccordionRuleCard({ rule, isEquipped, onAdd, onRemove, agentExists, isConfigOpen, onToggleConfig }) {
+function AccordionRuleCard({ rule, isEquipped, onAdd, onRemove, agentExists, isConfigOpen, onToggleConfig, forgeMode }) {
   const catColor = CATEGORY_COLORS[rule.category] || '#5eead4';
   const hasParams = rule.forgeTemplates?.[0]?.params && Object.keys(rule.forgeTemplates[0].params).length > 0;
 
@@ -85,7 +86,7 @@ function AccordionRuleCard({ rule, isEquipped, onAdd, onRemove, agentExists, isC
             </div>
           )}
 
-          {/* Difficulty badge */}
+          {/* Difficulty + (in All mode) mode badge */}
           <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 8 }}>
             <span style={{
               fontSize: 10,
@@ -96,6 +97,7 @@ function AccordionRuleCard({ rule, isEquipped, onAdd, onRemove, agentExists, isC
             }}>
               {rule.difficulty}
             </span>
+            {forgeMode === 'all' && rule.modes && <RuleModeBadge mode={rule.modes} />}
           </div>
         </div>
 
@@ -225,6 +227,7 @@ const CategoryAccordion = React.memo(function CategoryAccordion({
   agentExists,
   expandedRuleId,
   onToggleRuleConfig,
+  forgeMode,
 }) {
   const catColor = category.color || CATEGORY_COLORS[category.id] || '#5eead4';
   const equippedCount = rules.filter(r => equippedRuleIds.has(r.id)).length;
@@ -311,6 +314,7 @@ const CategoryAccordion = React.memo(function CategoryAccordion({
                   agentExists={agentExists}
                   isConfigOpen={expandedRuleId === rule.id}
                   onToggleConfig={onToggleRuleConfig}
+                  forgeMode={forgeMode}
                 />
               ))}
               {rules.length === 0 && (

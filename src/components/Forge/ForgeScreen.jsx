@@ -34,6 +34,7 @@ import MyRulesTab from './MyRulesTab';
 import MyBundlesTab from './MyBundlesTab';
 import DNAGroupCard from './DNAGroupCard';
 import TraitCard from './TraitCard';
+import SeasonModeToggle from './SeasonModeToggle';
 
 const TABS = [
   { id: 'forge', label: 'The Forge', Icon: Hammer },
@@ -67,6 +68,20 @@ export default function ForgeScreen({ isMobile: isMobileProp, onClose, user }) {
   const [configRuleId, setConfigRuleId] = useState(null);
   const [expandedDnaGroup, setExpandedDnaGroup] = useState(null);
   const [showAdvancedFirmware, setShowAdvancedFirmware] = useState(false);
+
+  // Forge mode: 'clash' | 'season' | 'all' — persisted in localStorage
+  const [forgeMode, setForgeMode] = useState(() => {
+    try {
+      const stored = localStorage.getItem('forgeMode');
+      if (stored === 'clash' || stored === 'season' || stored === 'all') return stored;
+    } catch {}
+    return 'clash';
+  });
+
+  const handleModeChange = useCallback((newMode) => {
+    setForgeMode(newMode);
+    try { localStorage.setItem('forgeMode', newMode); } catch {}
+  }, []);
 
   // Scroll-driven mech → visor strip transition (mobile only)
   const { scrollY } = useScroll({ container: isDesktop ? undefined : scrollRef });
@@ -103,14 +118,38 @@ export default function ForgeScreen({ isMobile: isMobileProp, onClose, user }) {
     [forge.rules]
   );
 
-  // All 8 category sections for flat accordion display
+  // Category sections for flat accordion display, filtered by active forge mode.
+  // In 'all' mode: show every category and every rule.
+  // In 'clash' / 'season' mode: hide categories scoped to the other mode, and
+  // within each visible category, only show rules whose modes match or are 'both'.
   const allCategorySections = useMemo(() => {
-    return CATEGORY_ORDER.map(catId => {
-      const catMeta = forge.categories.find(c => c.id === catId);
-      const catRules = forge.templatesByCategory[catId] || [];
-      return { category: catMeta, rules: catRules };
-    });
-  }, [forge.categories, forge.templatesByCategory]);
+    return CATEGORY_ORDER
+      .map(catId => {
+        const catMeta = forge.categories.find(c => c.id === catId);
+        if (!catMeta) return null;
+
+        // Filter category by mode (skip categories exclusive to the other mode)
+        if (forgeMode !== 'all'
+            && catMeta.mode !== forgeMode
+            && catMeta.mode !== 'both') {
+          return null;
+        }
+
+        const allCatRules = forge.templatesByCategory[catId] || [];
+        const catRules = forgeMode === 'all'
+          ? allCatRules
+          : allCatRules.filter(r => !r.modes || r.modes === forgeMode || r.modes === 'both');
+
+        return { category: catMeta, rules: catRules };
+      })
+      .filter(Boolean);
+  }, [forge.categories, forge.templatesByCategory, forgeMode]);
+
+  // Total visible rules across sections (for the "Browse all N rules" label)
+  const visibleRuleCount = useMemo(
+    () => allCategorySections.reduce((sum, s) => sum + s.rules.length, 0),
+    [allCategorySections],
+  );
 
   // Traits grouped by DNA group
   const traitsByGroup = useMemo(() => ({
@@ -498,7 +537,7 @@ export default function ForgeScreen({ isMobile: isMobileProp, onClose, user }) {
                         }}
                       >
                         <Settings size={16} />
-                        Advanced Firmware — Browse all 107 rules
+                        Advanced Firmware — Browse {visibleRuleCount} rules
                       </button>
                     </div>
                     <AgentLearnedSection
@@ -604,11 +643,14 @@ export default function ForgeScreen({ isMobile: isMobileProp, onClose, user }) {
         <AnimatePresence>
           {showMyBundles && (
             <ManagementPanel title="My Bundles" onClose={() => setShowMyBundles(false)}>
-              <MyBundlesTab forge={forge} tokens={tokens} isMobile={false} agent={agent} />
+              <MyBundlesTab forge={forge} tokens={tokens} isMobile={false} agent={agent} forgeMode={forgeMode} />
             </ManagementPanel>
           )}
           {showAdvancedFirmware && (
             <ManagementPanel title="Advanced Firmware" onClose={() => setShowAdvancedFirmware(false)}>
+              <div style={{ padding: '12px 8px 8px' }}>
+                <SeasonModeToggle mode={forgeMode} onModeChange={handleModeChange} />
+              </div>
               <div style={{ padding: '0 8px' }}>
                 {allCategorySections.map(({ category, rules }) => (
                   <CategoryAccordion
@@ -623,6 +665,7 @@ export default function ForgeScreen({ isMobile: isMobileProp, onClose, user }) {
                     agentExists={!!hasAgent}
                     expandedRuleId={configRuleId}
                     onToggleRuleConfig={handleToggleRuleConfig}
+                    forgeMode={forgeMode}
                   />
                 ))}
               </div>
@@ -977,11 +1020,14 @@ export default function ForgeScreen({ isMobile: isMobileProp, onClose, user }) {
       <AnimatePresence>
         {showMyBundles && (
           <ManagementPanel title="My Bundles" onClose={() => setShowMyBundles(false)}>
-            <MyBundlesTab forge={forge} tokens={tokens} isMobile={true} agent={agent} />
+            <MyBundlesTab forge={forge} tokens={tokens} isMobile={true} agent={agent} forgeMode={forgeMode} />
           </ManagementPanel>
         )}
         {showAdvancedFirmware && (
           <ManagementPanel title="Advanced Firmware" onClose={() => setShowAdvancedFirmware(false)}>
+            <div style={{ padding: '12px 8px 8px' }}>
+              <SeasonModeToggle mode={forgeMode} onModeChange={handleModeChange} />
+            </div>
             <div style={{ padding: '0 8px' }}>
               {allCategorySections.map(({ category, rules }) => (
                 <CategoryAccordion
@@ -994,6 +1040,7 @@ export default function ForgeScreen({ isMobile: isMobileProp, onClose, user }) {
                   onAddRule={handleAddRule}
                   onRemoveRule={handleRemoveRule}
                   agentExists={!!hasAgent}
+                  forgeMode={forgeMode}
                 />
               ))}
             </div>
