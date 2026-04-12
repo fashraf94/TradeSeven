@@ -378,7 +378,7 @@ export default function ForgeScreen({ isMobile: isMobileProp, onClose, user, onN
                 cursor: 'pointer',
               }}
             >
-              Season Hub →
+              Proving Ground →
             </button>
           )}
 
@@ -764,7 +764,7 @@ export default function ForgeScreen({ isMobile: isMobileProp, onClose, user, onN
                 cursor: 'pointer',
               }}
             >
-              Season Hub →
+              Proving Ground →
             </button>
           )}
         </div>

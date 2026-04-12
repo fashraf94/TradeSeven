@@ -434,7 +434,7 @@ export default function SeasonLeaderboard({ leaderboard, currentEntryId }) {
           fontSize: 13,
         }}
       >
-        Leaderboard will appear after Day 1 evaluations.
+        Strategy Rankings will appear after Day 1 evaluations.
       </div>
     );
   }

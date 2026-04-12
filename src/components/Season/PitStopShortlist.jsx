@@ -235,7 +235,7 @@ export default function PitStopShortlist({
                     fontStyle: 'italic',
                   }}
                 >
-                  No matches in this season\u2019s universe
+                  No matches in this experiment\u2019s universe
                 </div>
               ) : (
                 matches.map((ticker) => (

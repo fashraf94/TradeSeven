@@ -32,7 +32,7 @@ const TROPHY_GOLD = '#F0C75E';
 
 const TABS = [
   { key: 'overview', label: 'Overview' },
-  { key: 'leaderboard', label: 'Leaderboard' },
+  { key: 'leaderboard', label: 'Strategy Rankings' },
   { key: 'algorithm', label: 'My Algorithm' },
   { key: 'dayByDay', label: 'Day-by-Day' },
 ];
@@ -67,7 +67,7 @@ function LockIcon({ open }) {
         strokeWidth="2"
         strokeLinecap="round"
         strokeLinejoin="round"
-        aria-label="Pit stop open"
+        aria-label="Weekly review open"
       >
         <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
         <path d="M7 11V7a5 5 0 0 1 9.9-1" />
@@ -84,7 +84,7 @@ function LockIcon({ open }) {
       strokeWidth="2"
       strokeLinecap="round"
       strokeLinejoin="round"
-      aria-label="Pit stop closed"
+      aria-label="Weekly review closed"
     >
       <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
       <path d="M7 11V7a5 5 0 0 1 10 0v4" />
@@ -520,7 +520,7 @@ function SeasonDashboard({
                 textOverflow: 'ellipsis',
               }}
             >
-              {season.name || 'Season'}
+              {season.name || 'Experiment'}
             </h1>
             <span
               style={{
@@ -696,7 +696,7 @@ function SeasonDashboard({
                 fontSize: 14,
               }}
             >
-              🏁 Pit Stop Open — Review your week and tune your algorithm
+              🏁 Weekly Review Open — Review your week and tune your algorithm
             </motion.span>
           </motion.div>
         )}

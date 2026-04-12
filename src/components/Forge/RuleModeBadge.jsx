@@ -10,21 +10,25 @@ const BADGE_STYLES = {
     background: 'rgba(0, 217, 255, 0.2)',
     color: '#00D9FF',
     border: 'none',
+    label: 'CLASH',
   },
   season: {
     background: 'rgba(240, 199, 94, 0.2)',
     color: '#F0C75E',
     border: 'none',
+    label: 'EXPERIMENT',
   },
   both: {
     background: 'transparent',
     color: '#8B949E',
     border: '1px solid #8B949E',
+    label: 'BOTH',
   },
 };
 
 export default function RuleModeBadge({ mode = 'both' }) {
-  const style = BADGE_STYLES[mode] || BADGE_STYLES.both;
+  const config = BADGE_STYLES[mode] || BADGE_STYLES.both;
+  const { label, ...style } = config;
 
   return (
     <motion.span
@@ -44,7 +48,7 @@ export default function RuleModeBadge({ mode = 'both' }) {
         ...style,
       }}
     >
-      {mode.toUpperCase()}
+      {label || mode.toUpperCase()}
     </motion.span>
   );
 }

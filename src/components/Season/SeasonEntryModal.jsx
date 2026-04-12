@@ -218,7 +218,7 @@ function StepOverview({ season }) {
           textAlign: 'center',
         }}
       >
-        {season.name || 'Season'}
+        {season.name || 'Experiment'}
       </h2>
       <div
         style={{
@@ -244,12 +244,12 @@ function StepOverview({ season }) {
       <SectionLabel>Weekly Rhythm</SectionLabel>
       <div style={{ fontSize: 13, color: HOLO_COLORS.textSecondary, lineHeight: 1.6 }}>
         <div>Mon–Fri: Algorithm runs autonomously</div>
-        <div>Sat–Sun: Pit Stop (review &amp; tune)</div>
+        <div>Sat–Sun: Weekly Review (review &amp; tune)</div>
       </div>
 
       {macro.length > 0 && (
         <>
-          <SectionLabel>Macro Events This Season</SectionLabel>
+          <SectionLabel>Macro Events This Experiment</SectionLabel>
           <div style={{ fontSize: 13, color: HOLO_COLORS.textSecondary, lineHeight: 1.6 }}>
             {macro.map((ev, i) => (
               <div key={i}>
@@ -386,9 +386,9 @@ function StepAlgorithm({
               lineHeight: 1.5,
             }}
           >
-            Forge a bundle in Season mode to join this season. Any bundle
-            with a season rule (Entry, Exit, Rebalance, or Strategy) will
-            qualify.
+            Forge a bundle for the Proving Ground to launch an experiment.
+            Any bundle with a Proving Ground rule (Entry, Exit, Rebalance,
+            or Strategy) will qualify.
           </div>
         </div>
         <button
@@ -420,7 +420,7 @@ function StepAlgorithm({
           marginBottom: 12,
         }}
       >
-        Select a Season-compatible bundle:
+        Select a Proving Ground-compatible bundle:
       </div>
       <div>
         {bundles.map((b) => (
@@ -532,7 +532,7 @@ function StepConfirm({ season, bundle, submitting, error }) {
           marginBottom: 12,
         }}
       >
-        <SummaryLine label="Season" value={season.name || '—'} />
+        <SummaryLine label="Experiment" value={season.name || '—'} />
         <SummaryLine label="Algorithm" value={bundle?.name || '—'} />
         <SummaryLine
           label="Rules"
@@ -718,7 +718,7 @@ export default function SeasonEntryModal({
     (step === 1 && !selectedBundleId) ||
     (step === 2 && submitting);
 
-  const titleByStep = ['Join Season', 'Choose Algorithm', 'Confirm Entry'];
+  const titleByStep = ['Launch Experiment', 'Choose Algorithm', 'Confirm Entry'];
 
   return (
     <CenteredModal isOpen={isOpen} onClose={onClose} title={titleByStep[step]}>
@@ -830,7 +830,7 @@ export default function SeasonEntryModal({
                 cursor: nextDisabled ? 'not-allowed' : 'pointer',
               }}
             >
-              {submitting ? 'Deploying...' : '🔥 Deploy Algorithm'}
+              {submitting ? 'Deploying...' : '🔥 Deploy to Agent'}
             </button>
           )}
         </div>

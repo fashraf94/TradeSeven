@@ -329,7 +329,7 @@ export default function PitStopLockInBar({ week, changes, shortlist, onLockIn })
               >
                 <LockClosedIcon size={18} />
               </motion.span>
-              Sealing pit stop...
+              Sealing weekly review...
             </motion.div>
           )}
 
