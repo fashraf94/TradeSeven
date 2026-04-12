@@ -15,6 +15,7 @@ import { createAgentBattle } from '../_utils/agentBattleService.js';
 import { getStockAnalysisData } from '../_utils/marketDataCache.js';
 import { generateCPUOpponent } from '../_utils/cpuOpponentGenerator.js';
 import { computeArchetypeRankings, ARCHETYPE_TEMPERATURES } from '../_utils/archetypeScoring.js';
+import { logDecision } from '../_utils/shadowLogger.js';
 
 // Vercel Pro timeout — two-call AI chain needs breathing room
 export const config = { maxDuration: 60 };
@@ -310,6 +311,25 @@ export default async function handler(req, res) {
         // Truly active battle exists — sync activeBattleId and return
         await agentRef.update({ activeBattleId: existingBattleId });
 
+        // Shadow log — portfolio updated, no new battle
+        logDecision({
+          agentId: agentDoc.id,
+          userId: agent.ownerId || null,
+          battleId: existingBattleId,
+          battleCreated: false,
+          archetype: agent.archetype || null,
+          strategyBrief: strategy.brief,
+          shortlistSize: strategy.shortlist?.length || 0,
+          portfolio: enrichedPortfolio.portfolio,
+          bench: enrichedPortfolio.bench,
+          innerMonologue: portfolioResult.innerMonologue || null,
+          duration: req.body.duration || '1d',
+          tokenUsage: {
+            strategy: { input: strategyResponse.usage?.input_tokens || null, output: strategyResponse.usage?.output_tokens || null },
+            portfolio: { input: portfolioResponse.usage?.input_tokens || null, output: portfolioResponse.usage?.output_tokens || null },
+          },
+        }).catch(() => {});
+
         return res.status(200).json({
           success: true,
           portfolioUpdated: true,
@@ -444,6 +464,26 @@ export default async function handler(req, res) {
 
     // 17. Write activeBattleId back to agent doc
     await agentRef.update({ activeBattleId: battleResult.id });
+
+    // Shadow log — full decision + new battle
+    logDecision({
+      agentId: agentDoc.id,
+      userId: agent.ownerId || null,
+      battleId: battleResult.id,
+      battleCreated: true,
+      archetype: agent.archetype || null,
+      strategyBrief: strategy.brief,
+      shortlistSize: strategy.shortlist?.length || 0,
+      portfolio: enrichedPortfolio.portfolio,
+      bench: enrichedPortfolio.bench,
+      innerMonologue: portfolioResult.innerMonologue || null,
+      duration: req.body.duration || '1d',
+      expiresAt: battleResult.expiresAt || null,
+      tokenUsage: {
+        strategy: { input: strategyResponse.usage?.input_tokens || null, output: strategyResponse.usage?.output_tokens || null },
+        portfolio: { input: portfolioResponse.usage?.input_tokens || null, output: portfolioResponse.usage?.output_tokens || null },
+      },
+    }).catch(() => {});
 
     // 18. Return to client
     return res.status(200).json({
