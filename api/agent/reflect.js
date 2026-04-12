@@ -12,6 +12,7 @@ import {
   buildReflectionUserMessage,
 } from '../_utils/agentReflectionUtils.js';
 import { CURRENT_SCHEMA_VERSION, getCategoriesForMode } from '../_utils/gameDesignCategoryConfig.js';
+import { logReflection } from '../_utils/shadowLogger.js';
 import { flattenPortfolioServer } from '../_utils/agentScoring.js';
 
 const LOG_PREFIX = '[REFLECT]';
@@ -76,6 +77,24 @@ export async function generateReflection(db, battleId) {
       gameDesignFeedback: null,
     };
   }
+
+  // Shadow log (fire-and-forget)
+  logReflection({
+    battleId,
+    agentId: battleDoc.agentId,
+    userId: battleDoc.ownerId || null,
+    archetype: agentDoc.archetype || null,
+    gameMode: battleDoc.gameMode || null,
+    score: {
+      current: battleDoc.scoreState?.currentScore || 0,
+      opponent: battleDoc.scoreState?.opponentScore || 0,
+    },
+    turnCount: (battleDoc.chatExchanges || []).length,
+    tradeCount: (battleDoc.trades || []).length,
+    evaluationCount: (battleDoc.evaluations || []).length,
+    selfReflection: reflectionResult.selfReflection || null,
+    gameDesignFeedback: reflectionResult.gameDesignFeedback || null,
+  }).catch(() => {});
 
   // 4. Write self-reflection to agent.memory[] (rolling 5-game window)
   try {

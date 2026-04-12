@@ -31,6 +31,7 @@ import { evaluateRisk, calculate5minSMA20, pickEmergencyReplacement, findPortfol
 import { getPresetConfig } from '../_utils/agentPresetConfig.js';
 import { generateReflection } from '../agent/reflect.js';
 import { logBattlePattern } from '../_utils/battlePatternLogger.js';
+import { logEvaluation } from '../_utils/shadowLogger.js';
 
 export const config = { maxDuration: 60 };
 
@@ -959,6 +960,26 @@ async function processAgentBattle(db, battle, summary) {
       downgraded,
       marketPosture,
     };
+
+    // Shadow log (fire-and-forget)
+    logEvaluation({
+      battleId: battle.id,
+      agentId: battle.agentId,
+      userId: battle.ownerId || null,
+      battlePhase: phase,
+      decision,
+      symbolOut: evaluation.symbolOut,
+      symbolIn: evaluation.symbolIn,
+      tier: evaluation.tier,
+      rationale: evaluation.rationale,
+      hypothesis: evaluation.hypothesis,
+      conviction: evaluation.conviction,
+      triggers: evaluation.triggers,
+      scores: evaluation.scores,
+      marketPosture,
+      downgraded,
+      tokenUsage: { input: inputTokens || null, output: outputTokens || null },
+    }).catch(() => {});
 
     // ---- Write everything ----
     const evaluations = [...(battle.evaluations || []), evaluation].slice(-150);

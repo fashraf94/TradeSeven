@@ -3,6 +3,7 @@ import { applySecurityMiddleware } from '../_utils/security.js';
 import { requireAuth } from '../_utils/authMiddleware.js';
 import { buildVoiceLayerPrompt } from '../_utils/voiceLayerPrompt.js';
 import { FieldValue } from 'firebase-admin/firestore';
+import { logConversation } from '../_utils/shadowLogger.js';
 
 export const config = { maxDuration: 15 };
 
@@ -291,6 +292,25 @@ export default async function handler(req, res) {
       hasDirective: parsed.hasDirective || false,
       directive: normalizedDirective,
     };
+
+    // Shadow log (fire-and-forget)
+    logConversation({
+      userId: user.uid,
+      agentId,
+      battleId,
+      archetype: agent.archetype || null,
+      gameMode: battle.gameMode || null,
+      exchangeNumber: (battle.chatBudgetUsed || 0) + 1,
+      userMessage: sanitizedMessage,
+      agentMessage: parsed.response,
+      scratchpad: cleanScratchpad,
+      directive: normalizedDirective,
+      suggestedActions: parsed.suggestedActions || null,
+      elicitationTarget: elicitationTarget.dimension,
+      anchorContext: anchorContext || null,
+      hasDirective: parsed.hasDirective || false,
+      tokenUsage: null,
+    }).catch(() => {});
 
     // 19. Write exchange to battle doc
     const exchange = {
