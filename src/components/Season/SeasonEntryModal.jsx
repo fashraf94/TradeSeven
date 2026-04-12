@@ -1,36 +1,44 @@
 // src/components/Season/SeasonEntryModal.jsx
 //
-// 3-step flow for joining a season:
+// 3-step flow for launching a Proving Ground experiment:
 //   0. Overview          — season info, dates, universe, macro events
-//   1. Algorithm          — pick a season-compatible bundle
-//   2. Confirm & Deploy   — summary + POST /api/season/create-entry
+//   1. Strategy          — Trading Style Collection picker + 7 Strategy
+//                          Dimension panels (replaces legacy bundle picker)
+//   2. Confirm & Deploy   — dimension summary + POST /api/season/create-entry
 //
 // Mirrors the multi-step pattern from
 // src/components/Agent/AgentCreationFlow.jsx (slideVariants, direction,
 // AnimatePresence mode="wait"). Uses CenteredModal as the shell.
 //
-// The client bundle filter must match the server's filter in
-// api/season/create-entry.js — both drop snapshots whose live rule doc
-// has no sourceRef matching /^s[exrs]-\d+$/. Otherwise users select a
-// bundle only to hit a 400 from the API.
+// Step 1 is the Phase 3 transformation: the raw bundle selector has been
+// replaced with Strategy Dimensions. On Deploy we translate dimension
+// values into a Firestore bundle + rule docs via
+// `materializeDimensionBundle` — the resulting bundleId is passed to the
+// existing (protected) create-entry API.
 //
 // Props:
 //   isOpen, onClose, season, user, agent, onBuildInForge, onSuccess
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { collection, getDocs, doc, getDoc } from 'firebase/firestore';
-import { db } from '../../firebase/config';
 import CenteredModal from '../shared/CenteredModal';
 import { fetchWithAuth } from '../../utils/fetchWithAuth';
 import { SEASON_CONFLICT_PAIRS } from '../../data/forgeKnowledgeBase';
 import { HOLO_COLORS } from '../../constants/holoTheme';
+import StrategyDimensions from '../Forge/StrategyDimensions';
+import CollectionPicker from '../Forge/CollectionPicker';
+import {
+  cloneDefaults,
+  applyCollectionPreset,
+  dimensionsToRuleSnapshots,
+  countPhasesForDimensions,
+  materializeDimensionBundle,
+  COLLECTION_DEFS,
+} from '../../utils/dimensionMapper';
 
 const TROPHY_GOLD = '#F0C75E';
 const POSITIVE = '#34D399';
 const AMBER_WARN = '#F59E0B';
-
-const SEASON_RULE_ID_RE = /^s[exrs]-\d+$/;
 
 // ── Animation ──────────────────────────────────────────────
 
@@ -42,24 +50,6 @@ const slideVariants = {
 const slideTransition = { type: 'spring', stiffness: 300, damping: 28 };
 
 // ── Helpers ────────────────────────────────────────────────
-
-function phaseOfRuleId(ruleId) {
-  if (!ruleId) return null;
-  if (ruleId.startsWith('se-')) return 'entry';
-  if (ruleId.startsWith('sx-')) return 'exit';
-  if (ruleId.startsWith('sr-')) return 'rebalance';
-  if (ruleId.startsWith('ss-')) return 'strategy';
-  return null;
-}
-
-function countPhases(seasonRuleIds) {
-  const counts = { entry: 0, exit: 0, rebalance: 0, strategy: 0 };
-  for (const rid of seasonRuleIds) {
-    const p = phaseOfRuleId(rid);
-    if (p) counts[p]++;
-  }
-  return counts;
-}
 
 function findConflicts(seasonRuleIds) {
   if (!Array.isArray(seasonRuleIds) || seasonRuleIds.length < 2) return [];
@@ -81,56 +71,6 @@ function formatDateRange(startDate, endDate) {
   } catch {
     return '—';
   }
-}
-
-/**
- * Loads the user's bundles and, for each forged/equipped bundle,
- * resolves each rule snapshot's sourceRef by reading the live rule
- * doc. Returns only bundles that contain ≥1 season-compatible rule.
- *
- * Matches api/season/create-entry.js:buildBundleRules exactly so
- * client-side filtering agrees with what the server will accept.
- */
-async function loadSeasonCompatibleBundles(agentId) {
-  if (!agentId) return [];
-  const bundlesSnap = await getDocs(collection(db, 'agents', agentId, 'bundles'));
-  const candidates = bundlesSnap.docs
-    .map((d) => ({ id: d.id, ...d.data() }))
-    .filter((b) => b.status === 'forged' || b.status === 'equipped');
-
-  const results = [];
-  for (const bundle of candidates) {
-    const snapshots = Array.isArray(bundle.ruleSnapshots) ? bundle.ruleSnapshots : [];
-    if (snapshots.length === 0) continue;
-
-    // Read live rule docs in parallel so we can recover sourceRef.
-    const ruleDocs = await Promise.all(
-      snapshots.map((s) => getDoc(doc(db, 'agents', agentId, 'rules', s.id)))
-    );
-
-    const seasonRuleIds = [];
-    for (let i = 0; i < snapshots.length; i++) {
-      const ruleSnap = ruleDocs[i];
-      if (!ruleSnap.exists()) continue;
-      const rule = ruleSnap.data();
-      if (rule.isDeleted) continue;
-      const templateId = rule.sourceRef;
-      if (!templateId || !SEASON_RULE_ID_RE.test(templateId)) continue;
-      seasonRuleIds.push(templateId);
-    }
-
-    if (seasonRuleIds.length === 0) continue;
-
-    results.push({
-      id: bundle.id,
-      name: bundle.name || 'Unnamed Bundle',
-      status: bundle.status,
-      seasonRuleIds,
-      seasonRuleCount: seasonRuleIds.length,
-      phaseCounts: countPhases(seasonRuleIds),
-    });
-  }
-  return results;
 }
 
 // ── Small sub-components ───────────────────────────────────
@@ -264,251 +204,66 @@ function StepOverview({ season }) {
   );
 }
 
-function BundleCard({ bundle, selected, onSelect }) {
-  return (
-    <button
-      onClick={() => onSelect(bundle.id)}
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 12,
-        width: '100%',
-        padding: '12px 14px',
-        marginBottom: 8,
-        background: selected ? 'rgba(240, 199, 94, 0.08)' : HOLO_COLORS.bgElevated,
-        border: `1px solid ${selected ? TROPHY_GOLD : HOLO_COLORS.borderSubtle}`,
-        borderRadius: 10,
-        cursor: 'pointer',
-        textAlign: 'left',
-        transition: 'all 0.15s ease',
-      }}
-    >
-      <div
-        style={{
-          width: 16,
-          height: 16,
-          borderRadius: '50%',
-          border: `2px solid ${selected ? TROPHY_GOLD : HOLO_COLORS.textMuted}`,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          flexShrink: 0,
-        }}
-      >
-        {selected && (
-          <div
-            style={{
-              width: 8,
-              height: 8,
-              borderRadius: '50%',
-              background: TROPHY_GOLD,
-            }}
-          />
-        )}
-      </div>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div
-          style={{
-            fontSize: 14,
-            fontWeight: 600,
-            color: HOLO_COLORS.textPrimary,
-            whiteSpace: 'nowrap',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-          }}
-        >
-          {bundle.name}
-        </div>
-        <div style={{ fontSize: 12, color: HOLO_COLORS.textMuted, marginTop: 2 }}>
-          {bundle.seasonRuleCount} season rule{bundle.seasonRuleCount === 1 ? '' : 's'} • {bundle.status}
-        </div>
-      </div>
-    </button>
-  );
-}
-
-function StepAlgorithm({
-  loadingBundles,
-  bundles,
-  selectedBundleId,
-  onSelectBundle,
-  onBuildInForge,
+function StepStrategy({
+  dimensionValues,
+  selectedCollection,
+  isDirty,
+  onSelectCollection,
+  onParamChange,
+  disabled,
 }) {
-  const selected = bundles.find((b) => b.id === selectedBundleId);
-  const conflicts = useMemo(
-    () => (selected ? findConflicts(selected.seasonRuleIds) : []),
-    [selected]
-  );
-
-  if (loadingBundles) {
-    return (
-      <div
-        style={{
-          textAlign: 'center',
-          padding: 40,
-          color: HOLO_COLORS.textMuted,
-          fontSize: 13,
-        }}
-      >
-        Loading your bundles...
-      </div>
-    );
-  }
-
-  if (bundles.length === 0) {
-    return (
-      <div>
-        <div
-          style={{
-            textAlign: 'center',
-            padding: '24px 12px',
-            background: HOLO_COLORS.bgElevated,
-            border: `1px solid ${HOLO_COLORS.borderSubtle}`,
-            borderRadius: 12,
-            marginBottom: 12,
-          }}
-        >
-          <div style={{ fontSize: 32, marginBottom: 8 }}>🔨</div>
-          <div
-            style={{
-              fontSize: 14,
-              fontWeight: 600,
-              color: HOLO_COLORS.textPrimary,
-              marginBottom: 6,
-            }}
-          >
-            No season-compatible bundles
-          </div>
-          <div
-            style={{
-              fontSize: 12,
-              color: HOLO_COLORS.textMuted,
-              lineHeight: 1.5,
-            }}
-          >
-            Forge a bundle for the Proving Ground to launch an experiment.
-            Any bundle with a Proving Ground rule (Entry, Exit, Rebalance,
-            or Strategy) will qualify.
-          </div>
-        </div>
-        <button
-          onClick={onBuildInForge}
-          style={{
-            width: '100%',
-            padding: '12px 16px',
-            background: TROPHY_GOLD,
-            color: '#0d1117',
-            border: 'none',
-            borderRadius: 8,
-            fontSize: 14,
-            fontWeight: 700,
-            cursor: 'pointer',
-          }}
-        >
-          Build One in the Forge →
-        </button>
-      </div>
-    );
-  }
-
   return (
     <div>
       <div
         style={{
-          fontSize: 13,
+          fontSize: 12,
           color: HOLO_COLORS.textSecondary,
+          lineHeight: 1.45,
           marginBottom: 12,
         }}
       >
-        Select a Proving Ground-compatible bundle:
-      </div>
-      <div>
-        {bundles.map((b) => (
-          <BundleCard
-            key={b.id}
-            bundle={b}
-            selected={b.id === selectedBundleId}
-            onSelect={onSelectBundle}
-          />
-        ))}
+        Pick a Trading Style starting point, then tune the dimensions below
+        until the posture matches your thesis.
       </div>
 
-      {selected && (
-        <>
-          <SectionLabel>Algorithm Preview</SectionLabel>
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(4, 1fr)',
-              gap: 8,
-              padding: '10px 12px',
-              background: HOLO_COLORS.bgElevated,
-              border: `1px solid ${HOLO_COLORS.borderSubtle}`,
-              borderRadius: 8,
-            }}
-          >
-            {[
-              ['Entry', selected.phaseCounts.entry],
-              ['Exit', selected.phaseCounts.exit],
-              ['Rebalance', selected.phaseCounts.rebalance],
-              ['Strategy', selected.phaseCounts.strategy],
-            ].map(([label, count]) => (
-              <div key={label} style={{ textAlign: 'center' }}>
-                <div
-                  style={{
-                    fontSize: 18,
-                    fontWeight: 700,
-                    color: count > 0 ? TROPHY_GOLD : HOLO_COLORS.textMuted,
-                  }}
-                >
-                  {count}
-                </div>
-                <div
-                  style={{
-                    fontSize: 10,
-                    color: HOLO_COLORS.textMuted,
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.5px',
-                  }}
-                >
-                  {label}
-                </div>
-              </div>
-            ))}
-          </div>
+      <CollectionPicker
+        selected={selectedCollection}
+        onSelect={onSelectCollection}
+        isDirty={isDirty}
+      />
 
-          {conflicts.length > 0 && (
-            <>
-              <SectionLabel>Conflict Warnings</SectionLabel>
-              {conflicts.map((c, i) => (
-                <div
-                  key={i}
-                  style={{
-                    padding: '10px 12px',
-                    background: 'rgba(245, 158, 11, 0.08)',
-                    border: `1px solid ${AMBER_WARN}`,
-                    borderRadius: 8,
-                    marginBottom: 6,
-                    fontSize: 12,
-                    color: HOLO_COLORS.textSecondary,
-                    lineHeight: 1.5,
-                  }}
-                >
-                  <div style={{ fontWeight: 600, color: AMBER_WARN, marginBottom: 2 }}>
-                    ⚠️ {c.ruleA.toUpperCase()} &amp; {c.ruleB.toUpperCase()}
-                  </div>
-                  <div>{c.warning}</div>
-                </div>
-              ))}
-            </>
-          )}
-        </>
-      )}
+      <StrategyDimensions
+        values={dimensionValues}
+        onChange={onParamChange}
+        disabled={disabled}
+      />
     </div>
   );
 }
 
-function StepConfirm({ season, bundle, submitting, error }) {
+function StepConfirm({
+  season,
+  dimensionValues,
+  selectedCollection,
+  submitting,
+  error,
+}) {
+  const snapshots = useMemo(
+    () => dimensionsToRuleSnapshots(dimensionValues),
+    [dimensionValues]
+  );
+  const phaseCounts = useMemo(
+    () => countPhasesForDimensions(dimensionValues),
+    [dimensionValues]
+  );
+  const conflicts = useMemo(
+    () => findConflicts(snapshots.map((s) => s.sourceRef)),
+    [snapshots]
+  );
+  const styleLabel =
+    COLLECTION_DEFS.find((c) => c.id === selectedCollection)?.label ||
+    'Custom';
+
   return (
     <div>
       <h3
@@ -533,17 +288,78 @@ function StepConfirm({ season, bundle, submitting, error }) {
         }}
       >
         <SummaryLine label="Experiment" value={season.name || '—'} />
-        <SummaryLine label="Algorithm" value={bundle?.name || '—'} />
-        <SummaryLine
-          label="Rules"
-          value={
-            bundle
-              ? `${bundle.seasonRuleCount} (${bundle.phaseCounts.entry} entry, ${bundle.phaseCounts.exit} exit, ${bundle.phaseCounts.rebalance} rebalance, ${bundle.phaseCounts.strategy} strategy)`
-              : '—'
-          }
-        />
+        <SummaryLine label="Starting Style" value={styleLabel} />
+        <SummaryLine label="Rules Deployed" value={`${snapshots.length}`} />
         <SummaryLine label="Starting Capital" value="$100,000" />
       </div>
+
+      <SectionLabel>Algorithm Preview</SectionLabel>
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(4, 1fr)',
+          gap: 8,
+          padding: '10px 12px',
+          background: HOLO_COLORS.bgElevated,
+          border: `1px solid ${HOLO_COLORS.borderSubtle}`,
+          borderRadius: 8,
+        }}
+      >
+        {[
+          ['Entry', phaseCounts.entry],
+          ['Exit', phaseCounts.exit],
+          ['Rebalance', phaseCounts.rebalance],
+          ['Strategy', phaseCounts.strategy],
+        ].map(([label, count]) => (
+          <div key={label} style={{ textAlign: 'center' }}>
+            <div
+              style={{
+                fontSize: 18,
+                fontWeight: 700,
+                color: count > 0 ? TROPHY_GOLD : HOLO_COLORS.textMuted,
+              }}
+            >
+              {count}
+            </div>
+            <div
+              style={{
+                fontSize: 10,
+                color: HOLO_COLORS.textMuted,
+                textTransform: 'uppercase',
+                letterSpacing: '0.5px',
+              }}
+            >
+              {label}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {conflicts.length > 0 && (
+        <>
+          <SectionLabel>Conflict Warnings</SectionLabel>
+          {conflicts.map((c, i) => (
+            <div
+              key={i}
+              style={{
+                padding: '10px 12px',
+                background: 'rgba(245, 158, 11, 0.08)',
+                border: `1px solid ${AMBER_WARN}`,
+                borderRadius: 8,
+                marginBottom: 6,
+                fontSize: 12,
+                color: HOLO_COLORS.textSecondary,
+                lineHeight: 1.5,
+              }}
+            >
+              <div style={{ fontWeight: 600, color: AMBER_WARN, marginBottom: 2 }}>
+                ⚠️ {c.ruleA.toUpperCase()} &amp; {c.ruleB.toUpperCase()}
+              </div>
+              <div>{c.warning}</div>
+            </div>
+          ))}
+        </>
+      )}
 
       <p
         style={{
@@ -554,7 +370,8 @@ function StepConfirm({ season, bundle, submitting, error }) {
         }}
       >
         Portfolio construction happens automatically at market close on Day
-        1. Your entry rules will scan the universe and build your portfolio.
+        1. Your Strategy Dimensions compile into season rules and scan the
+        universe to build your portfolio.
       </p>
 
       {error && (
@@ -621,16 +438,16 @@ export default function SeasonEntryModal({
   isOpen,
   onClose,
   season,
-  user,
+  user, // eslint-disable-line no-unused-vars
   agent,
-  onBuildInForge,
+  onBuildInForge, // eslint-disable-line no-unused-vars -- kept for API compatibility
   onSuccess,
 }) {
   const [step, setStep] = useState(0);
   const [direction, setDirection] = useState(1);
-  const [bundles, setBundles] = useState([]);
-  const [loadingBundles, setLoadingBundles] = useState(false);
-  const [selectedBundleId, setSelectedBundleId] = useState(null);
+  const [dimensionValues, setDimensionValues] = useState(() => cloneDefaults());
+  const [selectedCollection, setSelectedCollection] = useState(null);
+  const [isDirty, setIsDirty] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
 
@@ -639,42 +456,26 @@ export default function SeasonEntryModal({
     if (!isOpen) return;
     setStep(0);
     setDirection(1);
-    setBundles([]);
-    setLoadingBundles(false);
-    setSelectedBundleId(null);
+    setDimensionValues(cloneDefaults());
+    setSelectedCollection(null);
+    setIsDirty(false);
     setSubmitting(false);
     setError(null);
   }, [isOpen]);
 
-  // Load bundles the first time the user advances to Step 1
-  useEffect(() => {
-    if (!isOpen) return;
-    if (step !== 1) return;
-    if (bundles.length > 0 || loadingBundles) return;
-    if (!agent?.id) return;
+  const handleSelectCollection = useCallback((collectionId) => {
+    setSelectedCollection(collectionId);
+    setDimensionValues(applyCollectionPreset(collectionId));
+    setIsDirty(false);
+  }, []);
 
-    let cancelled = false;
-    async function load() {
-      setLoadingBundles(true);
-      try {
-        const compatible = await loadSeasonCompatibleBundles(agent.id);
-        if (cancelled) return;
-        setBundles(compatible);
-        // Auto-select the first bundle if only one is available
-        if (compatible.length === 1) setSelectedBundleId(compatible[0].id);
-      } catch (err) {
-        if (cancelled) return;
-        console.error('[SeasonEntryModal] Failed to load bundles:', err);
-        setError(err.message || 'Failed to load bundles');
-      } finally {
-        if (!cancelled) setLoadingBundles(false);
-      }
-    }
-    load();
-    return () => {
-      cancelled = true;
-    };
-  }, [isOpen, step, agent?.id, bundles.length]);
+  const handleParamChange = useCallback((dimensionKey, paramKey, newValue) => {
+    setDimensionValues((prev) => ({
+      ...prev,
+      [dimensionKey]: { ...prev[dimensionKey], [paramKey]: newValue },
+    }));
+    setIsDirty(true);
+  }, []);
 
   const goNext = useCallback(() => {
     setDirection(1);
@@ -686,17 +487,42 @@ export default function SeasonEntryModal({
     setStep((s) => s - 1);
   }, []);
 
+  const enabledRuleCount = useMemo(
+    () => dimensionsToRuleSnapshots(dimensionValues).length,
+    [dimensionValues]
+  );
+
   const handleDeploy = useCallback(async () => {
-    if (!season?.id || !agent?.id || !selectedBundleId) return;
+    if (!season?.id || !agent?.id) return;
+    if (enabledRuleCount === 0) {
+      setError('Configure at least one strategy dimension before deploying.');
+      return;
+    }
     setSubmitting(true);
     setError(null);
     try {
+      // Materialize ephemeral bundle + rule docs in Firestore so the
+      // existing create-entry endpoint can consume them via bundleId.
+      // Deterministic id → idempotent on retry.
+      const bundleName = selectedCollection
+        ? `Strategy Dimensions — ${
+            COLLECTION_DEFS.find((c) => c.id === selectedCollection)?.label ||
+            'Custom'
+          }`
+        : 'Strategy Dimensions';
+      const bundleId = await materializeDimensionBundle({
+        agentId: agent.id,
+        seasonId: season.id,
+        dimensionValues,
+        bundleName,
+      });
+
       const response = await fetchWithAuth('/api/season/create-entry', {
         method: 'POST',
         body: JSON.stringify({
           seasonId: season.id,
           agentId: agent.id,
-          bundleId: selectedBundleId,
+          bundleId,
         }),
       });
       const data = await response.json();
@@ -710,15 +536,20 @@ export default function SeasonEntryModal({
     } finally {
       setSubmitting(false);
     }
-  }, [season?.id, agent?.id, selectedBundleId, onSuccess]);
-
-  const selectedBundle = bundles.find((b) => b.id === selectedBundleId);
+  }, [
+    season?.id,
+    agent?.id,
+    dimensionValues,
+    selectedCollection,
+    enabledRuleCount,
+    onSuccess,
+  ]);
 
   const nextDisabled =
-    (step === 1 && !selectedBundleId) ||
+    (step === 1 && enabledRuleCount === 0) ||
     (step === 2 && submitting);
 
-  const titleByStep = ['Launch Experiment', 'Choose Algorithm', 'Confirm Entry'];
+  const titleByStep = ['Launch Experiment', 'Strategy Dimensions', 'Confirm Entry'];
 
   return (
     <CenteredModal isOpen={isOpen} onClose={onClose} title={titleByStep[step]}>
@@ -746,18 +577,20 @@ export default function SeasonEntryModal({
             >
               {step === 0 && <StepOverview season={season} />}
               {step === 1 && (
-                <StepAlgorithm
-                  loadingBundles={loadingBundles}
-                  bundles={bundles}
-                  selectedBundleId={selectedBundleId}
-                  onSelectBundle={setSelectedBundleId}
-                  onBuildInForge={onBuildInForge}
+                <StepStrategy
+                  dimensionValues={dimensionValues}
+                  selectedCollection={selectedCollection}
+                  isDirty={isDirty}
+                  onSelectCollection={handleSelectCollection}
+                  onParamChange={handleParamChange}
+                  disabled={submitting}
                 />
               )}
               {step === 2 && (
                 <StepConfirm
                   season={season}
-                  bundle={selectedBundle}
+                  dimensionValues={dimensionValues}
+                  selectedCollection={selectedCollection}
                   submitting={submitting}
                   error={error}
                 />
@@ -812,7 +645,7 @@ export default function SeasonEntryModal({
                 cursor: nextDisabled ? 'not-allowed' : 'pointer',
               }}
             >
-              {step === 0 ? 'Next: Choose Algorithm →' : 'Next: Confirm →'}
+              {step === 0 ? 'Next: Configure Strategy →' : 'Next: Confirm →'}
             </button>
           ) : (
             <button
