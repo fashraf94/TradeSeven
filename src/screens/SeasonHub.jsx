@@ -116,7 +116,7 @@ function ActiveSeasonHero({ season, entry, onViewDashboard }) {
                 color: HOLO_COLORS.textPrimary,
               }}
             >
-              {season.name || 'Current Season'}
+              {season.name || 'Current Experiment'}
             </h2>
             <p
               style={{
@@ -190,7 +190,7 @@ function ActiveSeasonHero({ season, entry, onViewDashboard }) {
             cursor: 'pointer',
           }}
         >
-          {isPitStopOpen ? 'Pit Stop Open' : 'View Dashboard'}
+          {isPitStopOpen ? 'Weekly Review Open' : 'View Dashboard'}
         </motion.button>
       </HoloCard>
     </motion.div>
@@ -252,7 +252,7 @@ function UpcomingSeasonCard({ season, index, onJoinSeason }) {
               color: HOLO_COLORS.textPrimary,
             }}
           >
-            {season.name || 'Upcoming Season'}
+            {season.name || 'Upcoming Experiment'}
           </h3>
           {countdown && (
             <span
@@ -297,7 +297,7 @@ function UpcomingSeasonCard({ season, index, onJoinSeason }) {
             cursor: 'pointer',
           }}
         >
-          Join Season
+          Launch Experiment
         </button>
       </HoloCard>
     </motion.div>
@@ -336,7 +336,7 @@ function PastSeasonCard({ season, index, onReviewSeason }) {
                 textOverflow: 'ellipsis',
               }}
             >
-              {season.name || 'Past Season'}
+              {season.name || 'Past Experiment'}
             </div>
             <div
               style={{
@@ -515,7 +515,7 @@ const SeasonHub = ({ user, onBack, onViewDashboard, onJoinSeason, onReviewSeason
               margin: 0,
             }}
           >
-            Season Hub
+            Proving Ground
           </h1>
           <div style={{ width: '60px' }} />
         </div>
@@ -550,10 +550,10 @@ const SeasonHub = ({ user, onBack, onViewDashboard, onJoinSeason, onReviewSeason
         {!loading && !error && (
           <>
             {/* Active section */}
-            <SectionHeader>Active Season</SectionHeader>
+            <SectionHeader>Active Experiment</SectionHeader>
             {active.length === 0 ? (
               <EmptyNotice>
-                No active season. Join an upcoming season to compete!
+                No active experiment. Launch an upcoming experiment to compete!
               </EmptyNotice>
             ) : (
               active.map((s) => (
@@ -568,10 +568,10 @@ const SeasonHub = ({ user, onBack, onViewDashboard, onJoinSeason, onReviewSeason
             )}
 
             {/* Upcoming section */}
-            <SectionHeader>Upcoming Seasons</SectionHeader>
+            <SectionHeader>Upcoming Experiments</SectionHeader>
             {upcoming.length === 0 ? (
               <EmptyNotice>
-                No upcoming seasons yet. Check back soon!
+                No upcoming experiments yet. Check back soon!
               </EmptyNotice>
             ) : (
               <div style={{ display: 'grid', gap: '12px' }}>
@@ -625,7 +625,7 @@ const SeasonHub = ({ user, onBack, onViewDashboard, onJoinSeason, onReviewSeason
                       letterSpacing: '0.5px',
                     }}
                   >
-                    Past Seasons ({past.length})
+                    Past Experiments ({past.length})
                   </span>
                 </button>
                 <AnimatePresence initial={false}>

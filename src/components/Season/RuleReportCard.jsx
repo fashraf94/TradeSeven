@@ -91,7 +91,7 @@ function deriveGrade(ruleId, performance) {
 
 function deriveInsight(ruleId, performance) {
   if (!performance || !performance.timesCited) {
-    return 'Never triggered this season — consider loosening conditions if this surprises you.';
+    return 'Never triggered this experiment — consider loosening conditions if this surprises you.';
   }
   const cited = performance.timesCited;
 
@@ -115,12 +115,12 @@ function deriveInsight(ruleId, performance) {
       const r = performance.returnAtSell;
       return `Triggered ${sells} sell${sells === 1 ? '' : 's'}. Most recent exit: ${r >= 0 ? '+' : ''}${r.toFixed(2)}%.`;
     }
-    return `Triggered ${sells} sell${sells === 1 ? '' : 's'} this season.`;
+    return `Triggered ${sells} sell${sells === 1 ? '' : 's'} this experiment.`;
   }
 
   if (typeof ruleId === 'string' && ruleId.startsWith('ss-')) {
     const activated = performance.timesActivated || 0;
-    return `Active on ${activated} day${activated === 1 ? '' : 's'} across the season.`;
+    return `Active on ${activated} day${activated === 1 ? '' : 's'} across the experiment.`;
   }
 
   return `Participated in ${cited} evaluation${cited === 1 ? '' : 's'}.`;

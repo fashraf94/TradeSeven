@@ -254,7 +254,7 @@ export default function PitStopConversation({
   };
 
   const placeholder = !isOpen
-    ? 'Pit stop closed'
+    ? 'Weekly review closed'
     : atCap
     ? 'Conversation limit reached'
     : 'Ask about your strategy...';
@@ -322,7 +322,7 @@ export default function PitStopConversation({
           >
             {isOpen
               ? 'Start a conversation with your agent about this week\u2019s performance.'
-              : 'This pit stop had no conversation.'}
+              : 'This weekly review had no conversation.'}
           </div>
         )}
         {messages.map((m, i) =>

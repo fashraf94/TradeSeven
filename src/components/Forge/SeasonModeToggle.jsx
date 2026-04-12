@@ -7,7 +7,7 @@ import { motion } from 'framer-motion';
 
 const MODES = [
   { key: 'clash', label: 'Clash', activeColor: '#00D9FF' },
-  { key: 'season', label: 'Season', activeColor: '#F0C75E' },
+  { key: 'season', label: 'Experiment', activeColor: '#F0C75E' },
   { key: 'all', label: 'All', activeColor: '#5EEAD4' },
 ];
 

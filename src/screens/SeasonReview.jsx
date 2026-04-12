@@ -296,9 +296,9 @@ export default function SeasonReview({ user: _user, season, entry, onBack, onNav
           Back
         </button>
         <div style={{ flex: 1 }}>
-          <h1 style={{ fontSize: 15, fontWeight: 700, margin: 0 }}>Season Review</h1>
+          <h1 style={{ fontSize: 15, fontWeight: 700, margin: 0 }}>Experiment Report</h1>
           <div style={{ fontSize: 11, color: HOLO_COLORS.textMuted, marginTop: 2 }}>
-            {season.name || 'Season'} · Complete
+            {season.name || 'Experiment'} · Complete
           </div>
         </div>
       </div>
@@ -480,7 +480,7 @@ export default function SeasonReview({ user: _user, season, entry, onBack, onNav
                 border: `1px solid ${HOLO_COLORS.borderSubtle}`,
               }}
             >
-              No rules equipped this season.
+              No rules equipped this experiment.
             </div>
           ) : (
             rules.map((rule, i) => (
@@ -515,7 +515,7 @@ export default function SeasonReview({ user: _user, season, entry, onBack, onNav
               marginBottom: 6,
             }}
           >
-            Ready for Next Season?
+            Ready for Next Experiment?
           </div>
           <div
             style={{

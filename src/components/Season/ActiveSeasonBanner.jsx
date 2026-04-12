@@ -30,8 +30,8 @@ export default function ActiveSeasonBanner({ season, entry, onTap, isPitStopOpen
   const totalWeeks = Array.isArray(season.weeks) ? season.weeks.length : 4;
 
   const labelText = isPitStopOpen
-    ? 'Pit Stop Open — Review your week'
-    : `Season Active — Week ${week} of ${totalWeeks}`;
+    ? 'Weekly Review Open — Review your week'
+    : `Experiment Active — Week ${week} of ${totalWeeks}`;
 
   const alphaText = `${alpha >= 0 ? '+' : ''}${alpha.toFixed(1)}% alpha`;
   const alphaColor = alpha >= 0 ? POSITIVE : NEGATIVE;

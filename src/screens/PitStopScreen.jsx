@@ -113,7 +113,7 @@ function StickyHeader({ onBack, week, totalWeeks }) {
               letterSpacing: 0.3,
             }}
           >
-            Pit Stop
+            Weekly Review
           </h1>
           <span
             style={{
@@ -471,7 +471,7 @@ function CompletedBanner({ pitStop }) {
           letterSpacing: 0.6,
         }}
       >
-        Pit stop completed — changes applied
+        Weekly review completed — changes applied
       </span>
       <span
         style={{
@@ -527,8 +527,8 @@ function CenteredState({ title, message, children }) {
 function NoPitStopState() {
   return (
     <CenteredState
-      title="No pit stop available"
-      message="Your next pit stop window opens over the weekend. Check back Saturday morning for your weekly debrief."
+      title="No weekly review available"
+      message="Your next weekly review window opens over the weekend. Check back Saturday morning for your weekly debrief."
     />
   );
 }
@@ -537,7 +537,7 @@ function ErrorState({ message, onRetry }) {
   return (
     <CenteredState
       title="Something went wrong"
-      message={message || 'We couldn\'t load your pit stop. Please try again.'}
+      message={message || 'We couldn\'t load your weekly review. Please try again.'}
     >
       {onRetry && (
         <button
