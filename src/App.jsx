@@ -108,6 +108,7 @@ import DashboardDesktop from './components/Dashboard/DashboardDesktop';
 import DesktopSidebar from './components/Navigation/DesktopSidebar';
 import { AgentDashboard } from './components/Agent';
 import { ForgeScreen } from './components/Forge';
+import ForgeLanding from './components/Forge/ForgeLanding';
 
 // ============================================
 // LAZY LOADING FALLBACK
@@ -8113,7 +8114,8 @@ export default function PortfolioDuel() {
   };
   const getScreenContent = () => {
 
-  // FORGE SCREEN
+  // FORGE SCREEN — ForgeLanding is the primary Laboratory view; it renders
+  // ForgeScreen internally when the user switches to the Advanced tab.
   if (showForge) {
     return (
       <div style={{
@@ -8122,13 +8124,30 @@ export default function PortfolioDuel() {
         minHeight: '100vh',
         background: isDesktop ? '#111318' : '#0D0E12',
       }}>
-        <ForgeScreen
+        <ForgeLanding
           isMobile={isMobile}
           onClose={() => setShowForge(false)}
           user={user}
           onNavigateToSeasonHub={() => {
             setShowForge(false);
             setScreen('seasonHub');
+          }}
+          activeSeason={activeSeason}
+          activeSeasonEntry={activeSeasonEntry}
+          agent={primaryAgent}
+          onViewDashboard={() => {
+            setShowForge(false);
+            setScreen('seasonDashboard');
+          }}
+          onJoinSeason={(season) => {
+            setSeasonToJoin(season);
+            setSeasonEntryModalOpen(true);
+          }}
+          onReviewSeason={(s, e) => {
+            setReviewSeason(s);
+            setReviewEntry(e);
+            setShowForge(false);
+            setScreen('seasonReview');
           }}
         />
       </div>

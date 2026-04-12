@@ -3,7 +3,7 @@
 
 import React, { useRef, useMemo, useState, useCallback } from 'react';
 import { motion, AnimatePresence, useScroll, useTransform } from 'framer-motion';
-import { ArrowLeft, Hammer, BarChart3, Settings, BookOpen } from 'lucide-react';
+import { ArrowLeft, Hammer, BarChart3, Settings, BookOpen, Info } from 'lucide-react';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useForge, CATEGORY_ORDER } from '../../hooks/useForge';
 import useAgent from '../../hooks/useAgent';
@@ -49,7 +49,7 @@ function getAgentLevel(agent) {
   return 'rookie';
 }
 
-export default function ForgeScreen({ isMobile: isMobileProp, onClose, user, onNavigateToSeasonHub }) {
+export default function ForgeScreen({ isMobile: isMobileProp, onClose, user, onNavigateToSeasonHub, laboratoryOnBack }) {
   const { tokens } = useTheme();
   const { isDesktop } = useIsMobile();
   const { agent, hasAgent } = useAgent(user?.uid);
@@ -427,6 +427,49 @@ export default function ForgeScreen({ isMobile: isMobileProp, onClose, user, onN
           overflowY: 'auto',
           padding: '20px 24px 40px',
         }}>
+          {/* Back to Laboratory (Phase 2 — only shown when launched from ForgeLanding) */}
+          {laboratoryOnBack && (
+            <button
+              onClick={laboratoryOnBack}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                background: 'transparent',
+                border: 'none',
+                color: '#F0C75E',
+                cursor: 'pointer',
+                padding: '4px 0',
+                marginBottom: 12,
+                fontSize: 13,
+                fontWeight: 600,
+              }}
+            >
+              <ArrowLeft size={14} />
+              Back to Laboratory
+            </button>
+          )}
+          {/* Advanced Rules info banner (Phase 2) */}
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'flex-start',
+              gap: 10,
+              background: '#1C1A27',
+              color: '#8B949E',
+              padding: 12,
+              borderRadius: 8,
+              fontSize: 12,
+              lineHeight: 1.5,
+              marginBottom: 16,
+            }}
+          >
+            <Info size={14} style={{ flexShrink: 0, marginTop: 2, color: '#8B949E' }} />
+            <div>
+              <strong style={{ color: '#F1F5F9', fontWeight: 600 }}>Advanced Rules</strong>
+              {' — '}These rules power your Proving Ground simulations.
+            </div>
+          </div>
           {showStarterKit ? (
             <StarterKit
               agentId={agentId} agent={agent} forge={forge} tokens={tokens}
@@ -767,6 +810,52 @@ export default function ForgeScreen({ isMobile: isMobileProp, onClose, user, onN
               Proving Ground →
             </button>
           )}
+        </div>
+
+        {/* Back to Laboratory (Phase 2) */}
+        {laboratoryOnBack && (
+          <div style={{ padding: '0 16px 8px' }}>
+            <button
+              onClick={laboratoryOnBack}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                background: 'transparent',
+                border: 'none',
+                color: '#F0C75E',
+                cursor: 'pointer',
+                padding: '4px 0',
+                fontSize: 13,
+                fontWeight: 600,
+              }}
+            >
+              <ArrowLeft size={14} />
+              Back to Laboratory
+            </button>
+          </div>
+        )}
+
+        {/* Advanced Rules info banner (Phase 2) */}
+        <div
+          style={{
+            margin: '0 16px 12px',
+            display: 'flex',
+            alignItems: 'flex-start',
+            gap: 10,
+            background: '#1C1A27',
+            color: '#8B949E',
+            padding: 12,
+            borderRadius: 8,
+            fontSize: 12,
+            lineHeight: 1.5,
+          }}
+        >
+          <Info size={14} style={{ flexShrink: 0, marginTop: 2, color: '#8B949E' }} />
+          <div>
+            <strong style={{ color: '#F1F5F9', fontWeight: 600 }}>Advanced Rules</strong>
+            {' — '}These rules power your Proving Ground simulations.
+          </div>
         </div>
 
         {/* Agent Identity Card — Mech + Class Title + Loadout + DNA Sockets */}

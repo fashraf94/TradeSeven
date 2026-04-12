@@ -1,5 +1,15 @@
 // src/screens/SeasonHub.jsx
 //
+// DEPRECATED (Phase 2 — April 2026):
+// SeasonHub's content (active experiment, past experiments, launch CTAs)
+// has been absorbed into ForgeLanding's Laboratory view. This screen is
+// retained because it's still reachable via defensive fallbacks in
+// App.jsx (e.g. when seasonDashboard is requested without active state)
+// and as the target of SeasonEntryModal's post-join redirect. It should
+// NOT be linked to from new code — use ForgeLanding or setShowForge(true)
+// instead. Scheduled for removal once all fallbacks migrate to the Forge
+// tab as the single entry point.
+//
 // Season Hub — browse active, upcoming, and past seasons.
 //
 // Loads all seasons + the user's seasonEntries on mount, categorizes
