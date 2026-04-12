@@ -500,23 +500,34 @@ export default function SeasonEntryModal({
     }
     setSubmitting(true);
     setError(null);
+
+    // Step 1: Materialize ephemeral bundle + rule docs in Firestore so the
+    // existing create-entry endpoint can consume them via bundleId.
+    // Deterministic id → idempotent on retry.
+    const bundleName = selectedCollection
+      ? `Strategy Dimensions — ${
+          COLLECTION_DEFS.find((c) => c.id === selectedCollection)?.label ||
+          'Custom'
+        }`
+      : 'Strategy Dimensions';
+
+    let bundleId;
     try {
-      // Materialize ephemeral bundle + rule docs in Firestore so the
-      // existing create-entry endpoint can consume them via bundleId.
-      // Deterministic id → idempotent on retry.
-      const bundleName = selectedCollection
-        ? `Strategy Dimensions — ${
-            COLLECTION_DEFS.find((c) => c.id === selectedCollection)?.label ||
-            'Custom'
-          }`
-        : 'Strategy Dimensions';
-      const bundleId = await materializeDimensionBundle({
+      bundleId = await materializeDimensionBundle({
         agentId: agent.id,
         seasonId: season.id,
         dimensionValues,
         bundleName,
       });
+    } catch (err) {
+      console.error('[SeasonEntryModal] Materialize failed:', err);
+      setError("Couldn't save strategy — please try again");
+      setSubmitting(false);
+      return;
+    }
 
+    // Step 2: Call the existing (protected) create-entry API.
+    try {
       const response = await fetchWithAuth('/api/season/create-entry', {
         method: 'POST',
         body: JSON.stringify({
@@ -527,12 +538,14 @@ export default function SeasonEntryModal({
       });
       const data = await response.json();
       if (!response.ok || !data.success) {
-        throw new Error(data.error || `Request failed (${response.status})`);
+        throw new Error(
+          data.error || `Couldn't create entry — please try again (${response.status})`
+        );
       }
       if (onSuccess) onSuccess(data.entryId);
     } catch (err) {
-      console.error('[SeasonEntryModal] Deploy failed:', err);
-      setError(err.message || 'Failed to create entry');
+      console.error('[SeasonEntryModal] Create-entry failed:', err);
+      setError(err.message || "Couldn't create entry — please try again");
     } finally {
       setSubmitting(false);
     }
