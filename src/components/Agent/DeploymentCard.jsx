@@ -28,16 +28,26 @@ const DeploymentCard = ({ battle, onTap, isDesktop, index = 0 }) => {
     if (onTap) onTap(battle);
   };
 
+  const isInteractive = typeof onTap === 'function';
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ delay: index * 0.08, type: 'spring', stiffness: 300, damping: 24 }}
+      role={isInteractive ? 'button' : undefined}
+      tabIndex={isInteractive ? 0 : undefined}
+      onKeyDown={isInteractive ? (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onTap(battle);
+        }
+      } : undefined}
     >
       <HoloCard
         variant="interactive"
         accentColor="cyan"
-        onClick={onTap ? handleClick : undefined}
+        onClick={isInteractive ? handleClick : undefined}
       >
         <div style={{
           display: 'flex',

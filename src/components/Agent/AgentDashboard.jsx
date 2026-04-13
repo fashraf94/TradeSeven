@@ -137,6 +137,16 @@ const AgentDashboard = ({ user, setScreen, onCreateAgentBattle, setShowForge, on
   };
   const transformedStories = transformStoriesForStrip(rawStories);
 
+  // The strip receives a trimmed story shape (6 display fields). When a tile
+  // is tapped we need to hand the StoryDetail screen the FULL raw story so
+  // body, tickers, visualType, sentiment, etc. are available. Look up the
+  // raw story by id and pass that to onOpenStory instead of the trimmed copy.
+  const handleStoryTap = (transformedStory) => {
+    if (!onOpenStory) return;
+    const fullStory = rawStories?.find(s => s.id === transformedStory?.id) || transformedStory;
+    onOpenStory(fullStory);
+  };
+
   return (
     <div style={{
       minHeight: '100vh',
@@ -276,7 +286,7 @@ const AgentDashboard = ({ user, setScreen, onCreateAgentBattle, setShowForge, on
                     isMobile={isMobile}
                     onNavigateToForge={setShowForge ? () => setShowForge(true) : undefined}
                     onOpenBattle={onOpenAgentBattle}
-                    onOpenStory={onOpenStory}
+                    onOpenStory={handleStoryTap}
                     onViewRankings={() => setActiveTab('leaderboard')}
                     onViewFullInsight={() => setActiveTab('evolution')}
                   />
