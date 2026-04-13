@@ -137,7 +137,7 @@ export function useForge(agentId) {
       const bundlesSnap = await getDocs(bundlesQ);
       const agentBundles = bundlesSnap.docs
         .map(d => ({ id: d.id, ...d.data() }))
-        .filter(b => b.status !== 'archived');
+        .filter(b => b.status !== 'archived' && !b.hiddenFromBundleList);
       setRules(agentRules);
       setBundles(agentBundles);
     } catch (err) {
@@ -165,7 +165,7 @@ export function useForge(agentId) {
         const bundlesSnap = await getDocs(bundlesQ);
         const agentBundles = bundlesSnap.docs
           .map(d => ({ id: d.id, ...d.data() }))
-          .filter(b => b.status !== 'archived');
+          .filter(b => b.status !== 'archived' && !b.hiddenFromBundleList);
         if (!cancelled) {
           setRules(agentRules);
           setBundles(agentBundles);
@@ -192,11 +192,16 @@ export function useForge(agentId) {
     if (!agentId) return;
     setStatsLoading(true);
     try {
-      // Fetch ALL bundles including archived (main loadData filters them out)
+      // Fetch ALL bundles including archived (main loadData filters them out).
+      // Ephemeral dimension-sourced bundles (hiddenFromBundleList) are excluded
+      // from stats + archive views so they don't pollute Forge analytics or the
+      // 5-bundle creation limit (see Phase 3 audit).
       const bundlesRef = collection(db, 'agents', agentId, 'bundles');
       const bundlesQ = query(bundlesRef, orderBy('createdAt', 'desc'));
       const bundlesSnap = await getDocs(bundlesQ);
-      const allBundles = bundlesSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+      const allBundles = bundlesSnap.docs
+        .map(d => ({ id: d.id, ...d.data() }))
+        .filter(b => !b.hiddenFromBundleList);
       setArchivedBundles(allBundles.filter(b => b.status === 'archived'));
 
       const result = await computeForgeStats(agentId, allBundles);
