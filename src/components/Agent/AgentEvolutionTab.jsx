@@ -174,8 +174,9 @@ const AgentEvolutionTab = ({ agent, tokens, isDesktop, isMobile }) => {
       }
     }
 
-    // 3. Directives
+    // 3. Directives (excluding batch_review — those become dedicated LESSON entries below)
     (agent.directives || []).forEach(d => {
+      if (d.source === 'batch_review') return;
       if (d.createdAt) {
         events.push({
           type: 'directive',
@@ -191,6 +192,19 @@ const AgentEvolutionTab = ({ agent, tokens, isDesktop, isMobile }) => {
       }
     });
 
+    // 3b. Lessons — Film Room batch_review directives surface as their own timeline type.
+    (agent.directives || []).forEach(d => {
+      if (d.source !== 'batch_review' || !d.createdAt) return;
+      events.push({
+        type: 'lesson',
+        title: 'Lesson Learned',
+        subtitle: d.text,
+        date: parseDate(d.createdAt),
+        color: '#F0C75E',
+        icon: 'lightbulb',
+      });
+    });
+
     // 4. Archetype drift
     if (agent.archetypeDrift) {
       events.push({
@@ -203,8 +217,9 @@ const AgentEvolutionTab = ({ agent, tokens, isDesktop, isMobile }) => {
       });
     }
 
-    // 5. Recent games from memory
+    // 5. Recent games from memory — only entries with an actual result (win/loss).
     (agent.memory || []).forEach(m => {
+      if (!m.result) return;
       events.push({
         type: 'game',
         title: `${m.gameMode || 'Game'} — ${m.result === 'win' ? 'Win' : 'Loss'} ${m.score > 0 ? '+' : ''}${m.score}`,
@@ -215,6 +230,32 @@ const AgentEvolutionTab = ({ agent, tokens, isDesktop, isMobile }) => {
       });
     });
 
+    // 5b. Debriefs — memory reflections added without a game result (e.g. addMemoryReflection).
+    // Forward-compatible: empty today if all memory entries are games, populated as reflections land.
+    (agent.memory || []).forEach(m => {
+      if (m.result) return;
+      events.push({
+        type: 'debrief',
+        title: 'Film Room debrief',
+        subtitle: m.lesson || m.reflection || m.text || '',
+        date: parseDate(m.date || m.createdAt),
+        color: '#E8927C',
+        icon: 'film',
+      });
+    });
+
+    // 6. Strategy deploy event (single entry from deployedStrategy metadata).
+    if (agent.deployedStrategy?.deployedAt) {
+      events.push({
+        type: 'deploy',
+        title: 'Strategy Deployed',
+        subtitle: `"${agent.deployedStrategy.experimentName || 'Strategy'}" deployed from Forge`,
+        date: parseDate(agent.deployedStrategy.deployedAt),
+        color: '#34D399',
+        icon: 'rocket',
+      });
+    }
+
     // Sort newest first
     return events.sort((a, b) => (b.date?.getTime?.() || 0) - (a.date?.getTime?.() || 0));
   }, [agent, tokens]);
@@ -224,7 +265,33 @@ const AgentEvolutionTab = ({ agent, tokens, isDesktop, isMobile }) => {
   const winRate = gamesPlayed > 0 ? Math.round(((stats.wins || 0) / gamesPlayed) * 100) : 0;
 
   return (
-    <motion.div variants={containerVariants} initial="hidden" animate="visible">
+    <motion.div
+      variants={containerVariants}
+      initial="hidden"
+      animate="visible"
+      style={{ display: 'flex', flexDirection: 'column', gap: 20 }}
+    >
+      {/* Prominent Consolidated Insight — full text, above the timeline */}
+      {agent?.consolidatedInsight && (
+        <motion.div variants={sectionVariants}>
+          <SectionHeader icon={Target} label="Strategic Insight" tokens={tokens} />
+          <div style={{
+            ...cardStyle(tokens),
+            borderLeft: `3px solid ${tokens.teal}`,
+          }}>
+            <p style={{
+              fontSize: 14,
+              color: tokens.textPrimary,
+              lineHeight: 1.65,
+              margin: 0,
+              fontStyle: 'italic',
+            }}>
+              {agent.consolidatedInsight}
+            </p>
+          </div>
+        </motion.div>
+      )}
+
       <div style={{
         display: isDesktop ? 'grid' : 'flex',
         gridTemplateColumns: isDesktop ? '3fr 2fr' : undefined,
@@ -310,29 +377,6 @@ const AgentEvolutionTab = ({ agent, tokens, isDesktop, isMobile }) => {
             </div>
           </div>
 
-          {/* Consolidated Insight */}
-          {agent?.consolidatedInsight && (
-            <div style={{
-              ...cardStyle(tokens),
-              marginTop: 12,
-              borderLeft: `3px solid ${tokens.teal}`,
-              borderRadius: '0 12px 12px 0',
-            }}>
-              <div style={{
-                fontSize: 11, fontWeight: 600, color: tokens.teal,
-                textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6,
-              }}>
-                Latest strategic insight
-              </div>
-              <div style={{
-                fontSize: 12, color: tokens.textSecondary,
-                lineHeight: 1.55, fontStyle: 'italic',
-              }}>
-                {agent.consolidatedInsight.slice(0, 200)}
-                {agent.consolidatedInsight.length > 200 ? '...' : ''}
-              </div>
-            </div>
-          )}
         </motion.div>
       </div>
     </motion.div>

@@ -1,26 +1,25 @@
-import React, { useState, useRef } from 'react';
+import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Bot, Trophy, TrendingUp, Activity } from 'lucide-react';
+import { Bot, TrendingUp } from 'lucide-react';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useIsMobile } from '../../hooks/useIsMobile';
 import useAgent from '../../hooks/useAgent';
-import useAgentBattle from '../../hooks/useAgentBattle';
 import { useFantasyTimes } from '../../hooks/useFantasyTimes';
 import { REPORTER_PROFILES } from '../../prompts/fantasyTimesPrompts';
 import AgentSidebar from './AgentSidebar';
-import AgentMindTab from './AgentMindTab';
+import AgentOverviewTab from './AgentOverviewTab';
 import AgentLeaderboardTab from './AgentLeaderboardTab';
 import AgentEvolutionTab from './AgentEvolutionTab';
-import AgentStrategyTab from './AgentStrategyTab';
 import AgentCreationFlow from './AgentCreationFlow';
 import LevelUpNotification from './LevelUpNotification';
 
 // ── Tabs ──────────────────────────────────────────────────
 
+// Leaderboard is not in the tab bar — it's reached via the "View Rankings →"
+// link on the Overview tab (activeTab === 'leaderboard') and dismissed via a
+// back button rendered alongside the leaderboard content.
 const TABS = [
-  { key: 'mind', label: 'Mind', icon: Bot },
-  { key: 'strategy', label: 'Strategy', icon: Activity },
-  { key: 'leaderboard', label: 'Leaderboard', icon: Trophy },
+  { key: 'overview', label: 'Overview', icon: Bot },
   { key: 'evolution', label: 'Evolution', icon: TrendingUp },
 ];
 
@@ -88,26 +87,15 @@ const buildScoutingReport = (agent, maturityStage) => {
 
 // ── Component ──────────────────────────────────────────────
 
-const AgentDashboard = ({ user, setScreen, onCreateAgentBattle, setShowForge }) => {
+const AgentDashboard = ({ user, setScreen, onCreateAgentBattle, setShowForge, onOpenAgentBattle, onOpenStory }) => {
   const { tokens } = useTheme();
   const { isMobile, isDesktop } = useIsMobile();
-  const [activeTab, setActiveTab] = useState('mind');
+  const [activeTab, setActiveTab] = useState('overview');
   const [deploying, setDeploying] = useState(false);
   const { agent, loading, hasAgent, speech, deployText, maturityStage,
           currentLevel, levelConfig, nextLevelInfo, levelUpEvent, clearLevelUp,
           activeDirectives, groupedDirectives, record } = useAgent(user?.odUserId);
-  const { battle: agentBattle, statusFeed, executionMode, pendingProposal, strategyPreset, gameplanMeeting, loading: battleLoading } = useAgentBattle(agent?.activeBattleId);
   const { stories: rawStories } = useFantasyTimes();
-
-  // Track last-seen feed length for notification dot (avoids re-rendering tab bar)
-  const lastSeenFeedLengthRef = useRef(0);
-  const hasNewFeedEntries = statusFeed.length > lastSeenFeedLengthRef.current;
-  const hasPendingProposal = pendingProposal && !pendingProposal.resolvedAt;
-  const hasGameplanMeeting = gameplanMeeting?.status === 'pending';
-  // Mark as seen when user views the strategy tab
-  if (activeTab === 'strategy') {
-    lastSeenFeedLengthRef.current = statusFeed.length;
-  }
 
   const handleDeploy = async () => {
     if (!agent?.id || deploying) return;
@@ -150,6 +138,16 @@ const AgentDashboard = ({ user, setScreen, onCreateAgentBattle, setShowForge }) 
     setDeploying(false);
   };
   const transformedStories = transformStoriesForStrip(rawStories);
+
+  // The strip receives a trimmed story shape (6 display fields). When a tile
+  // is tapped we need to hand the StoryDetail screen the FULL raw story so
+  // body, tickers, visualType, sentiment, etc. are available. Look up the
+  // raw story by id and pass that to onOpenStory instead of the trimmed copy.
+  const handleStoryTap = (transformedStory) => {
+    if (!onOpenStory) return;
+    const fullStory = rawStories?.find(s => s.id === transformedStory?.id) || transformedStory;
+    onOpenStory(fullStory);
+  };
 
   return (
     <div style={{
@@ -203,6 +201,7 @@ const AgentDashboard = ({ user, setScreen, onCreateAgentBattle, setShowForge }) 
             <AgentSidebar
               agent={agent}
               speech={speech}
+              deployText={deployText}
               currentLevel={currentLevel}
               levelConfig={levelConfig}
               nextLevelInfo={nextLevelInfo}
@@ -251,28 +250,6 @@ const AgentDashboard = ({ user, setScreen, onCreateAgentBattle, setShowForge }) 
                   >
                     <Icon size={16} />
                     {tab.label}
-                    {tab.key === 'strategy' && !isActive && (hasPendingProposal || hasGameplanMeeting) && (
-                      <motion.span
-                        animate={{ scale: [1, 1.4, 1], opacity: [1, 0.7, 1] }}
-                        transition={{ duration: 1.5, repeat: Infinity }}
-                        style={{
-                          width: '7px', height: '7px',
-                          borderRadius: '50%',
-                          background: hasGameplanMeeting ? '#f59e0b' : tokens.amber,
-                          boxShadow: `0 0 8px ${hasGameplanMeeting ? '#f59e0b' : tokens.amber}`,
-                          flexShrink: 0,
-                        }}
-                      />
-                    )}
-                    {tab.key === 'strategy' && !isActive && !hasPendingProposal && !hasGameplanMeeting && hasNewFeedEntries && (
-                      <span style={{
-                        width: '6px', height: '6px',
-                        borderRadius: '50%',
-                        background: tokens.teal,
-                        boxShadow: tokens.glowTealNav,
-                        flexShrink: 0,
-                      }} />
-                    )}
                     {isActive && (
                       <motion.div
                         layoutId="agentTabIndicator"
@@ -300,8 +277,8 @@ const AgentDashboard = ({ user, setScreen, onCreateAgentBattle, setShowForge }) 
                 transition={{ duration: 0.2 }}
                 style={{ padding: isDesktop ? '20px 24px' : '16px' }}
               >
-                {activeTab === 'mind' && (
-                  <AgentMindTab
+                {activeTab === 'overview' && (
+                  <AgentOverviewTab
                     agent={agent}
                     scouting={buildScoutingReport(agent, maturityStage)}
                     battleLog={buildBattleLog(agent)}
@@ -310,31 +287,42 @@ const AgentDashboard = ({ user, setScreen, onCreateAgentBattle, setShowForge }) 
                     isDesktop={isDesktop}
                     isMobile={isMobile}
                     onNavigateToForge={setShowForge ? () => setShowForge(true) : undefined}
-                  />
-                )}
-                {activeTab === 'strategy' && (
-                  <AgentStrategyTab
-                    battle={agentBattle}
-                    statusFeed={statusFeed}
-                    executionMode={executionMode}
-                    pendingProposal={pendingProposal}
-                    strategyPreset={strategyPreset}
-                    gameplanMeeting={gameplanMeeting}
-                    agentId={agent?.id}
-                    agent={agent}
-                    loading={battleLoading}
-                    tokens={tokens}
-                    isDesktop={isDesktop}
-                    isMobile={isMobile}
+                    onOpenBattle={onOpenAgentBattle}
+                    onOpenStory={handleStoryTap}
+                    onViewRankings={() => setActiveTab('leaderboard')}
+                    onViewFullInsight={() => setActiveTab('evolution')}
                   />
                 )}
                 {activeTab === 'leaderboard' && (
-                  <AgentLeaderboardTab
-                    tokens={tokens}
-                    isDesktop={isDesktop}
-                    isMobile={isMobile}
-                    currentUserId={user?.odUserId}
-                  />
+                  <div>
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab('overview')}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 6,
+                        padding: '6px 10px',
+                        marginBottom: 12,
+                        border: `1px solid ${tokens.borderDefault}`,
+                        borderRadius: 8,
+                        background: 'transparent',
+                        color: tokens.teal,
+                        fontSize: 12,
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        fontFamily: 'inherit',
+                      }}
+                    >
+                      ← Back to Overview
+                    </button>
+                    <AgentLeaderboardTab
+                      tokens={tokens}
+                      isDesktop={isDesktop}
+                      isMobile={isMobile}
+                      currentUserId={user?.odUserId}
+                    />
+                  </div>
                 )}
                 {activeTab === 'evolution' && (
                   <AgentEvolutionTab

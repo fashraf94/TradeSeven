@@ -1,9 +1,9 @@
 import React from 'react';
 import { motion } from 'framer-motion';
 import { Zap } from 'lucide-react';
+import MechSVG from '../Forge/MechSVG';
 
-const AgentSidebar = ({ agent, speech, currentLevel, levelConfig, nextLevelInfo, isDesktop, isMobile, tokens, onDeploy, deploying }) => {
-  const avatarSize = isDesktop ? 72 : 56;
+const AgentSidebar = ({ agent, speech, deployText, currentLevel, levelConfig, nextLevelInfo, isDesktop, isMobile, tokens, onDeploy, deploying }) => {
   const nameSize = isDesktop ? '18px' : '16px';
 
   // Null-safe defaults
@@ -18,18 +18,40 @@ const AgentSidebar = ({ agent, speech, currentLevel, levelConfig, nextLevelInfo,
   const avgScore = agent?.stats?.avgScore || 0;
   const evoCycle = agent?.evolutionCycle || 0;
 
-  const Avatar = () => (
-    <div style={{
-      width: `${avatarSize}px`, height: `${avatarSize}px`, borderRadius: '50%',
-      background: `linear-gradient(135deg, ${avatarColors[0]}, ${avatarColors[1]})`,
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-      fontSize: isDesktop ? '28px' : '22px', fontWeight: '700', color: '#fff',
-      boxShadow: '0 0 20px rgba(94,234,212,0.3)',
-      flexShrink: 0,
-    }}>
-      {name.charAt(0)}
-    </div>
-  );
+  // Mech personality for the compact hub avatar.
+  // TODO(phase-3+): Wire getMechColors(slotUsage) via useForge for Forge color parity.
+  const mechPrimaryGlow = avatarColors[0] || '#5EEAD4';
+  const mechVisorColor = avatarColors[1] || mechPrimaryGlow;
+  const hasBundleEquipped = (agent?.equippedBundleIds?.length || 0) > 0;
+  const mechState = hasBundleEquipped ? 'idle' : 'dormant';
+
+  const Avatar = () => {
+    const frameWidth = isDesktop ? 140 : 100;
+    const frameHeight = isDesktop ? 160 : 115;
+    const mechWidth = isDesktop ? 130 : 100;
+    const frameMarginBottom = isDesktop ? 8 : 4;
+    return (
+      <div style={{
+        display: 'flex',
+        justifyContent: 'center',
+        alignItems: 'center',
+        width: frameWidth,
+        height: frameHeight,
+        margin: `0 auto ${frameMarginBottom}px`,
+        flexShrink: 0,
+      }}>
+        <MechSVG
+          size="compact"
+          compactWidth={mechWidth}
+          state={mechState}
+          primaryGlow={mechPrimaryGlow}
+          visorColor={mechVisorColor}
+          mode="active"
+          glowIntensity={1}
+        />
+      </div>
+    );
+  };
 
   const NameBlock = () => (
     <div style={{
@@ -145,7 +167,7 @@ const AgentSidebar = ({ agent, speech, currentLevel, levelConfig, nextLevelInfo,
       }}
     >
       <Zap size={16} />
-      {deploying ? 'Thinking...' : 'Deploy to BaggerBomb'}
+      {deploying ? 'Thinking...' : (deployText || 'Deploy to BaggerBomb')}
     </motion.button>
   );
 
