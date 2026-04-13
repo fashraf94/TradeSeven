@@ -212,20 +212,42 @@ function StepStrategy({
   onSelectCollection,
   onParamChange,
   disabled,
+  fromConversation,
 }) {
   return (
     <div>
-      <div
-        style={{
-          fontSize: 12,
-          color: HOLO_COLORS.textSecondary,
-          lineHeight: 1.45,
-          marginBottom: 12,
-        }}
-      >
-        Pick a Trading Style starting point, then tune the dimensions below
-        until the posture matches your thesis.
-      </div>
+      {fromConversation && selectedCollection === 'from-conversation' ? (
+        <div
+          style={{
+            padding: '10px 12px',
+            background: 'rgba(240, 199, 94, 0.08)',
+            border: `1px solid ${TROPHY_GOLD}`,
+            borderRadius: 8,
+            fontSize: 12,
+            color: HOLO_COLORS.textSecondary,
+            lineHeight: 1.5,
+            marginBottom: 12,
+          }}
+        >
+          <span style={{ fontWeight: 700, color: TROPHY_GOLD }}>
+            From Your Conversation
+          </span>{' '}
+          — these dimensions were pre-filled from your Workshop Mode chat. Review
+          and adjust any slider before launching.
+        </div>
+      ) : (
+        <div
+          style={{
+            fontSize: 12,
+            color: HOLO_COLORS.textSecondary,
+            lineHeight: 1.45,
+            marginBottom: 12,
+          }}
+        >
+          Pick a Trading Style starting point, then tune the dimensions below
+          until the posture matches your thesis.
+        </div>
+      )}
 
       <CollectionPicker
         selected={selectedCollection}
@@ -443,25 +465,45 @@ export default function SeasonEntryModal({
   agent,
   onBuildInForge, // eslint-disable-line no-unused-vars -- kept for API compatibility
   onSuccess,
+  // Phase 5 — Workshop Mode pre-fill. When these are provided, the modal
+  // opens directly on Step 1 (Strategy) with dimensionValues pre-populated
+  // from the Haiku compile endpoint, and the CollectionPicker is flagged
+  // as "From Conversation".
+  initialDimensionValues,
+  initialStep,
+  fromConversation = false,
 }) {
-  const [step, setStep] = useState(0);
+  const startStep = typeof initialStep === 'number' ? initialStep : 0;
+  const startDims = initialDimensionValues
+    ? { ...cloneDefaults(), ...initialDimensionValues }
+    : cloneDefaults();
+  const startCollection = fromConversation ? 'from-conversation' : null;
+
+  const [step, setStep] = useState(startStep);
   const [direction, setDirection] = useState(1);
-  const [dimensionValues, setDimensionValues] = useState(() => cloneDefaults());
-  const [selectedCollection, setSelectedCollection] = useState(null);
-  const [isDirty, setIsDirty] = useState(false);
+  const [dimensionValues, setDimensionValues] = useState(() => startDims);
+  const [selectedCollection, setSelectedCollection] = useState(startCollection);
+  // When prefilled from conversation the values are "dirty" relative to any
+  // preset — surface that in the picker.
+  const [isDirty, setIsDirty] = useState(Boolean(initialDimensionValues));
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
 
   // Reset state when the modal is opened/closed so a second open is clean
   useEffect(() => {
     if (!isOpen) return;
-    setStep(0);
+    setStep(typeof initialStep === 'number' ? initialStep : 0);
     setDirection(1);
-    setDimensionValues(cloneDefaults());
-    setSelectedCollection(null);
-    setIsDirty(false);
+    setDimensionValues(
+      initialDimensionValues
+        ? { ...cloneDefaults(), ...initialDimensionValues }
+        : cloneDefaults()
+    );
+    setSelectedCollection(fromConversation ? 'from-conversation' : null);
+    setIsDirty(Boolean(initialDimensionValues));
     setSubmitting(false);
     setError(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen]);
 
   const handleSelectCollection = useCallback((collectionId) => {
@@ -620,6 +662,7 @@ export default function SeasonEntryModal({
                   onSelectCollection={handleSelectCollection}
                   onParamChange={handleParamChange}
                   disabled={submitting}
+                  fromConversation={fromConversation}
                 />
               )}
               {step === 2 && (
