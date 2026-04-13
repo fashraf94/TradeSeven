@@ -25,7 +25,7 @@ import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
 import { applySecurityMiddleware } from '../_utils/security.js';
 import { requireAuth } from '../_utils/authMiddleware.js';
 import { buildVoiceLayerPrompt } from '../_utils/voiceLayerPrompt.js';
-import { callGemmaVoice, parseVoiceLayerResponse } from '../_utils/gemmaClient.js';
+import { callGemmaVoiceWithRetry, parseVoiceLayerResponse } from '../_utils/gemmaClient.js';
 import { FieldValue } from 'firebase-admin/firestore';
 import { logConversation } from '../_utils/shadowLogger.js';
 
@@ -219,12 +219,14 @@ export default async function handler(req, res) {
       workshopContext,
     });
 
-    // 12. Call Gemma with 15s timeout
+    // 12. Call Gemma with 25s timeout (Vercel's platform timeout is higher;
+    // giving the model room on complex workshop turns prevents the platform
+    // from killing us and returning plaintext HTML to the frontend).
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 15000);
-    let rawResponse;
+    const timeoutId = setTimeout(() => controller.abort(), 25000);
+    let gemmaResult;
     try {
-      rawResponse = await callGemmaVoice({
+      gemmaResult = await callGemmaVoiceWithRetry({
         systemPrompt,
         conversationHistory,
         userMessage: sanitizedMessage,
@@ -234,8 +236,29 @@ export default async function handler(req, res) {
       clearTimeout(timeoutId);
     }
 
+    // 12b. Structured error path — NEVER leak raw strings to the frontend.
+    // Return a 200 with a graceful agent message + the previous thesis so
+    // the sidebar survives and the failed turn doesn't burn budget.
+    if (!gemmaResult.success) {
+      console.error('[WorkshopChat] Gemma call failed:', gemmaResult.error);
+      const previousThesis = session.latestThesis || null;
+      const sessionIdForClient = isNewSession ? null : sessionRef.id;
+      const statusCode = gemmaResult.aborted ? 504 : 200;
+      return res.status(statusCode).json({
+        sessionId: sessionIdForClient,
+        agentMessage:
+          "I hit a snag processing that — could you try that again?",
+        activeThesis: previousThesis,
+        scratchpad: null,
+        messagesUsed: session.messagesUsed || 0, // unchanged — this turn didn't count
+        messageBudget,
+        readyToCompile: Boolean(previousThesis?.readyToCompile),
+        error: true,
+      });
+    }
+
     // 13. Parse
-    const parsed = parseVoiceLayerResponse(rawResponse);
+    const parsed = parseVoiceLayerResponse(gemmaResult.content);
     const cleanScratchpad = sanitizeScratchpad(parsed._scratchpad);
     const activeThesis = normalizeThesis(parsed.activeThesis);
     const agentMessage =
@@ -303,11 +326,23 @@ export default async function handler(req, res) {
       readyToCompile: activeThesis.readyToCompile,
     });
   } catch (error) {
-    if (error.name === 'AbortError') {
-      console.error('[WorkshopChat] Request timed out');
-      return res.status(504).json({ error: 'Agent response timed out. Try again.' });
-    }
+    // Catch-all for anything that escaped the structured gemmaResult path
+    // (e.g., Firestore write failures). Always return valid JSON in the
+    // same shape the frontend expects for a graceful error turn so the
+    // thesis sidebar and chat UI stay consistent.
     console.error('[WorkshopChat] Error:', error);
-    return res.status(500).json({ error: 'Agent unavailable. Try again in a moment.' });
+    const isAbort = error?.name === 'AbortError';
+    return res.status(isAbort ? 504 : 500).json({
+      agentMessage: isAbort
+        ? 'That took too long — could you try sending that again?'
+        : 'Something went wrong on my end. Try again in a moment.',
+      error: true,
+      activeThesis: null,
+      sessionId: null,
+      scratchpad: null,
+      messagesUsed: 0,
+      messageBudget: MESSAGE_BUDGET,
+      readyToCompile: false,
+    });
   }
 }

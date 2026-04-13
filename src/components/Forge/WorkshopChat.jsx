@@ -381,6 +381,18 @@ export default function WorkshopChat({ isOpen, onClose, user, agent, onCompiled 
       };
       setMessages((m) => [...m, userMsg]);
 
+      // Helper: push a graceful fallback bubble into the chat without the
+      // red error banner. Used for retryable hiccups (server returned
+      // non-JSON, transient Gemma/OpenRouter errors, etc.)
+      const pushFallbackBubble = (text) => {
+        const agentMsg = {
+          id: `agent-${Date.now()}`,
+          role: 'agent',
+          text,
+        };
+        setMessages((m) => [...m, agentMsg]);
+      };
+
       try {
         const res = await fetchWithAuth('/api/forge/workshop-chat', {
           method: 'POST',
@@ -390,27 +402,61 @@ export default function WorkshopChat({ isOpen, onClose, user, agent, onCompiled 
             message: trimmed,
           }),
         });
-        const data = await res.json();
+
+        // Isolate JSON parse — if the server (or Vercel's edge) returned
+        // plaintext (e.g. "An error occurred with this application..."),
+        // res.json() throws a syntax error. We must NOT let that parse
+        // error leak into the red toast.
+        let data;
+        try {
+          data = await res.json();
+        } catch {
+          pushFallbackBubble(
+            'Something went wrong — try sending your message again.'
+          );
+          return;
+        }
+
+        // Known-shape error from the server (valid JSON, `error: true`).
+        // Display as a regular agent bubble, preserve thesis, don't burn budget.
+        if (data?.error === true) {
+          pushFallbackBubble(
+            data.agentMessage ||
+              'I hit a snag processing that — could you try that again?'
+          );
+          if (data.activeThesis !== undefined) {
+            setActiveThesis(data.activeThesis);
+          }
+          if (typeof data.messagesUsed === 'number') {
+            setMessagesUsed(data.messagesUsed);
+          }
+          if (typeof data.messageBudget === 'number') {
+            setMessageBudget(data.messageBudget);
+          }
+          return;
+        }
+
+        // Hard failures (budget exceeded, auth problems, session closed, etc.)
+        // These deserve the red banner — the user needs to know the session
+        // state changed, not just that a turn hiccupped.
         if (!res.ok) {
           const msg =
             data?.message ||
             data?.error ||
             `Chat failed (${res.status}). Try again.`;
-          throw new Error(msg);
+          setError(msg);
+          return;
         }
 
+        // Happy path
         if (data.sessionId && !sessionId) setSessionId(data.sessionId);
         setActiveThesis(data.activeThesis || null);
         setMessagesUsed(data.messagesUsed || 0);
         if (typeof data.messageBudget === 'number') setMessageBudget(data.messageBudget);
 
-        const agentMsg = {
-          id: `agent-${Date.now()}`,
-          role: 'agent',
-          text: data.agentMessage || '',
-        };
-        setMessages((m) => [...m, agentMsg]);
+        pushFallbackBubble(data.agentMessage || '');
       } catch (err) {
+        // Network failure, fetchWithAuth rejection, etc. Truly unexpected.
         console.error('[WorkshopChat] send failed:', err);
         setError(err.message || 'Something went wrong. Try again.');
       } finally {
