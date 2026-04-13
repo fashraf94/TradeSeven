@@ -96,11 +96,17 @@ export function applyGuardrails({
   let stopLossBreach = null;
   if (stopLoss && typeof stopLoss.value === 'number') {
     try {
-      stopLossBreach = pickWorstBreach(held, prices, battle, pos => {
-        const pnl = computePnLPct(pos, prices, battle);
-        if (pnl === null) return null;
-        return pnl <= -Math.abs(stopLoss.value) ? pnl : null;
-      });
+      stopLossBreach = pickWorstBreach(
+        held,
+        prices,
+        battle,
+        pos => {
+          const pnl = computePnLPct(pos, prices, battle);
+          if (pnl === null) return null;
+          return pnl <= -Math.abs(stopLoss.value) ? pnl : null;
+        },
+        -Math.abs(stopLoss.value),
+      );
       // Log secondary breaches for training data.
       for (const pos of held) {
         const pnl = computePnLPct(pos, prices, battle);
@@ -130,11 +136,17 @@ export function applyGuardrails({
     // Only run trailing stop if stop-loss didn't already pick a breach — keeps
     // single-swap-per-eval invariant and prefers the more urgent signal.
     try {
-      trailingBreach = pickWorstBreach(held, prices, battle, pos => {
-        const drawdown = computeTrailingDrawdownPct(pos, prices, battle);
-        if (drawdown === null) return null;
-        return drawdown <= -Math.abs(trailingStop.value) ? drawdown : null;
-      });
+      trailingBreach = pickWorstBreach(
+        held,
+        prices,
+        battle,
+        pos => {
+          const drawdown = computeTrailingDrawdownPct(pos, prices, battle);
+          if (drawdown === null) return null;
+          return drawdown <= -Math.abs(trailingStop.value) ? drawdown : null;
+        },
+        -Math.abs(trailingStop.value),
+      );
     } catch (err) {
       console.warn('[Guardrails] trailingStop check failed:', err?.message);
     }
@@ -377,7 +389,7 @@ function computeTrailingDrawdownPct(position, prices, battle) {
   return ((current - impliedPeakPrice) / impliedPeakPrice) * 100;
 }
 
-function pickWorstBreach(positions, prices, battle, evaluatorFn) {
+function pickWorstBreach(positions, prices, battle, evaluatorFn, configuredThreshold) {
   let worst = null;
   for (const pos of positions) {
     let val;
@@ -394,7 +406,7 @@ function pickWorstBreach(positions, prices, battle, evaluatorFn) {
         slotIndex: pos.slotIndex,
         isCrypto: pos.isCrypto === true,
         metric: 'pnlPct',
-        threshold: val, // placeholder overwritten by caller
+        threshold: configuredThreshold,
         actual: val,
       };
     }

@@ -97,6 +97,11 @@ describe('applyGuardrails — stopLoss (hard)', () => {
     expect(forced.type).toBe('stopLoss');
     expect(forced.symbol).toBe('NVDA');
     expect(forced.actual).toBeLessThanOrEqual(-10);
+    // threshold must report the CONFIGURED guardrail value, not the actual P&L.
+    expect(forced.threshold).toBe(-8);
+    expect(forced.threshold).not.toBe(forced.actual);
+    // statusMessage should render configured threshold (8%), not actual P&L.
+    expect(result.statusMessage).toContain('stop-loss at 8%');
     expect(result.sourceNote).toBe('guardrail_stopLoss');
   });
 
@@ -208,6 +213,10 @@ describe('applyGuardrails — trailingStop (hard)', () => {
     expect(result.symbolOut).toBe('NVDA');
     const forced = result.overrides.find(o => o.action === 'forced_exit');
     expect(forced.type).toBe('trailingStop');
+    // threshold must be the CONFIGURED trailing-stop value, not the actual drawdown.
+    expect(forced.threshold).toBe(-10);
+    expect(forced.actual).not.toBe(forced.threshold);
+    expect(result.statusMessage).toContain('trailing stop at 10%');
   });
 
   it('does not trigger when position was never in profit (peak = 0)', () => {
