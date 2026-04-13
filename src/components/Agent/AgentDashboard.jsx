@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Bot, Trophy, TrendingUp } from 'lucide-react';
+import { Bot, TrendingUp } from 'lucide-react';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useIsMobile } from '../../hooks/useIsMobile';
 import useAgent from '../../hooks/useAgent';
@@ -15,9 +15,11 @@ import LevelUpNotification from './LevelUpNotification';
 
 // ── Tabs ──────────────────────────────────────────────────
 
+// Leaderboard is not in the tab bar — it's reached via the "View Rankings →"
+// link on the Overview tab (activeTab === 'leaderboard') and dismissed via a
+// back button rendered alongside the leaderboard content.
 const TABS = [
   { key: 'overview', label: 'Overview', icon: Bot },
-  { key: 'leaderboard', label: 'Leaderboard', icon: Trophy },
   { key: 'evolution', label: 'Evolution', icon: TrendingUp },
 ];
 
@@ -292,12 +294,35 @@ const AgentDashboard = ({ user, setScreen, onCreateAgentBattle, setShowForge, on
                   />
                 )}
                 {activeTab === 'leaderboard' && (
-                  <AgentLeaderboardTab
-                    tokens={tokens}
-                    isDesktop={isDesktop}
-                    isMobile={isMobile}
-                    currentUserId={user?.odUserId}
-                  />
+                  <div>
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab('overview')}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 6,
+                        padding: '6px 10px',
+                        marginBottom: 12,
+                        border: `1px solid ${tokens.borderDefault}`,
+                        borderRadius: 8,
+                        background: 'transparent',
+                        color: tokens.teal,
+                        fontSize: 12,
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        fontFamily: 'inherit',
+                      }}
+                    >
+                      ← Back to Overview
+                    </button>
+                    <AgentLeaderboardTab
+                      tokens={tokens}
+                      isDesktop={isDesktop}
+                      isMobile={isMobile}
+                      currentUserId={user?.odUserId}
+                    />
+                  </div>
                 )}
                 {activeTab === 'evolution' && (
                   <AgentEvolutionTab
