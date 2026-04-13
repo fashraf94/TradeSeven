@@ -32,7 +32,19 @@ import { buildRuleSchemaRegistry } from '../_utils/seasonValidation.js';
 import { SEASON_CONFIG, SEASON_STATUS, ENTRY_STATUS } from '../_utils/seasonConfig.js';
 import { FORGE_RULE_TEMPLATES } from '../../src/data/forgeKnowledgeBase.js';
 import { FieldValue } from 'firebase-admin/firestore';
+import { logStrategyConfig } from '../_utils/shadowLogger.js';
 import { createHash } from 'crypto';
+
+// Phase 6 — Shadow Logger Extension
+// Accepted values for the optional entrySource field on the seasonEntries
+// document. Used by the strategy_configs shadow stream to bucket training
+// examples by creation path.
+const ENTRY_SOURCES = new Set([
+  'direct_join',
+  'manual',
+  'workshop',
+  'refinement_pair',
+]);
 
 export const config = { maxDuration: 15 };
 
@@ -114,7 +126,7 @@ async function buildBundleRules(db, agentId, bundle) {
  * Every field here has at least one reader in the season cron, pipeline,
  * settlement, leaderboard, or pit-stop-manage modules.
  */
-function buildEntryDoc(user, seasonId, season, agentId, bundleId, bundle, bundleRules) {
+function buildEntryDoc(user, seasonId, season, agentId, bundleId, bundle, bundleRules, originMeta) {
   const nowIso = new Date().toISOString();
   const startingCapital = SEASON_CONFIG.STARTING_CAPITAL;
 
@@ -151,6 +163,13 @@ function buildEntryDoc(user, seasonId, season, agentId, bundleId, bundle, bundle
       tradingStyle: null,
       description: bundle.name || null,
     },
+
+    // Phase 6 — origin metadata (shadow logger pickup). All optional.
+    // sourceExperimentId links refinement pairs: Experiment A → Experiment B.
+    entrySource: originMeta?.entrySource || 'direct_join',
+    sourceExperimentId: originMeta?.sourceExperimentId || null,
+    sourceCollection: originMeta?.sourceCollection || null,
+    dimensionValuesAtLaunch: originMeta?.dimensionValues || null,
 
     // Portfolio — empty, populated by Day 1 cron
     portfolio: {
@@ -219,7 +238,18 @@ export default async function handler(req, res) {
   if (!user) return;
 
   // ─── 4. Validate request body ────────────────────────────────
-  const { seasonId, agentId, bundleId } = req.body || {};
+  const {
+    seasonId,
+    agentId,
+    bundleId,
+    // Phase 6 — optional origin metadata (training data capture).
+    // None of these affect launch logic; they are persisted on the
+    // entry doc and forwarded to the strategy_configs shadow stream.
+    sourceExperimentId,
+    entrySource,
+    sourceCollection,
+    dimensionValues,
+  } = req.body || {};
   if (
     typeof seasonId !== 'string' || !seasonId ||
     typeof agentId !== 'string' || !agentId ||
@@ -229,6 +259,27 @@ export default async function handler(req, res) {
       .status(400)
       .json({ error: 'Missing or invalid seasonId, agentId, or bundleId' });
   }
+
+  // Coerce optional origin metadata — unknown / malformed inputs are
+  // silently dropped rather than rejected (non-critical path).
+  const originMeta = {
+    entrySource:
+      typeof entrySource === 'string' && ENTRY_SOURCES.has(entrySource)
+        ? entrySource
+        : 'direct_join',
+    sourceExperimentId:
+      typeof sourceExperimentId === 'string' && sourceExperimentId
+        ? sourceExperimentId
+        : null,
+    sourceCollection:
+      typeof sourceCollection === 'string' && sourceCollection
+        ? sourceCollection
+        : null,
+    dimensionValues:
+      dimensionValues && typeof dimensionValues === 'object'
+        ? dimensionValues
+        : null,
+  };
 
   const db = getFirebaseAdmin();
 
@@ -291,7 +342,8 @@ export default async function handler(req, res) {
       agentId,
       bundleId,
       bundle,
-      bundleRules
+      bundleRules,
+      originMeta
     );
 
     // ─── 10. Transactional commit ──────────────────────────────
@@ -335,7 +387,29 @@ export default async function handler(req, res) {
       });
     });
 
-    // ─── 11. Success ───────────────────────────────────────────
+    // ─── 11. Shadow log (fire-and-forget — NEVER block response) ──
+    // Captures the full launch snapshot for Gemma training. Silent
+    // failure — a GCS outage must not impact experiment creation.
+    logStrategyConfig({
+      userId: user.uid,
+      agentId,
+      seasonId,
+      entryId: entryRef.id,
+      bundleId,
+      entrySource: originMeta.entrySource,
+      sourceExperimentId: originMeta.sourceExperimentId,
+      sourceCollection: originMeta.sourceCollection,
+      dimensionValues: originMeta.dimensionValues,
+      ruleCount: bundleRules.length,
+      ruleIds: bundleRules.map((r) => r.ruleId),
+      algorithmVersion: entryDoc.algorithm.version,
+      bundleName: bundle.name || null,
+      startingCapital: SEASON_CONFIG.STARTING_CAPITAL,
+      createdAt: entryDoc.createdAt,
+      schemaVersion: 1,
+    }).catch(() => {});
+
+    // ─── 12. Success ───────────────────────────────────────────
     return res.status(200).json({ success: true, entryId: entryRef.id });
   } catch (error) {
     if (error && typeof error.status === 'number') {

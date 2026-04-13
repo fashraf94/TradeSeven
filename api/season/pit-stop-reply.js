@@ -24,6 +24,7 @@ import {
   parsePitStopReply,
 } from '../_utils/seasonPrompts/pitStopReply.js';
 import { SEASON_CONFIG, PIT_STOP_STATUS } from '../_utils/seasonConfig.js';
+import { logReviewInteraction } from '../_utils/shadowLogger.js';
 
 export const config = { maxDuration: 15 };
 
@@ -179,6 +180,28 @@ export default async function handler(req, res) {
       conversationCount: currentCount + 1,
       updatedAt: nowIso,
     });
+
+    // ─── 12. Shadow log (fire-and-forget) ─────────────────────
+    // Captures the full Gemma turn (user + assistant) for training.
+    // Silent failure — a GCS outage must not impact chat reply.
+    logReviewInteraction({
+      type: 'conversation',
+      userId: user.uid,
+      entryId,
+      seasonId: entry.seasonId || null,
+      agentId: entry.agentId || null,
+      week,
+      turnNumber: currentCount + 1,
+      maxTurns: SEASON_CONFIG.MAX_CONVERSATION_EXCHANGES,
+      userMessage: truncatedMessage,
+      assistantReply: parsed.reply || null,
+      scratchpad: parsed.scratchpad || null,
+      suggestedAction: parsed.suggestedAction || null,
+      hypothesis: pitStop.hypothesis || null, // May be set client-side at lock-in
+      model: promptContext?.model || null,
+      timestamp: nowIso,
+      schemaVersion: 1,
+    }).catch(() => {});
 
     return res.status(200).json({
       success: true,

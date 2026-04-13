@@ -2190,6 +2190,13 @@ export default function PortfolioDuel() {
   // Phase 5 — Workshop Mode hand-off. When set, SeasonEntryModal opens with
   // these values pre-populated and jumps to the strategy step.
   const [seasonEntryOptions, setSeasonEntryOptions] = useState(null);
+  // Phase 6 — refinement-pair hand-off. Populated when the user taps
+  // "Refine in the Forge" on a completed experiment. It survives the
+  // navigation to SeasonHub and is merged into whatever opts the hub
+  // passes to onJoinSeason, so the next create-entry call records
+  // sourceExperimentId on the strategy_configs shadow stream. Cleared on
+  // modal open/close so it only applies to the next launch.
+  const [pendingRefinementContext, setPendingRefinementContext] = useState(null);
   // Past-season review state — separate from activeSeason/activeSeasonEntry
   // because the user can review a completed season while also having an active one.
   const [reviewSeason, setReviewSeason] = useState(null);
@@ -8144,8 +8151,12 @@ export default function PortfolioDuel() {
           }}
           onJoinSeason={(season, opts) => {
             setSeasonToJoin(season);
-            setSeasonEntryOptions(opts || null);
+            setSeasonEntryOptions({
+              ...(pendingRefinementContext || {}),
+              ...(opts || {}),
+            });
             setSeasonEntryModalOpen(true);
+            setPendingRefinementContext(null);
           }}
           onReviewSeason={(s, e) => {
             setReviewSeason(s);
@@ -8974,8 +8985,12 @@ export default function PortfolioDuel() {
           onViewDashboard={() => setScreen('seasonDashboard')}
           onJoinSeason={(season, opts) => {
             setSeasonToJoin(season);
-            setSeasonEntryOptions(opts || null);
+            setSeasonEntryOptions({
+              ...(pendingRefinementContext || {}),
+              ...(opts || {}),
+            });
             setSeasonEntryModalOpen(true);
+            setPendingRefinementContext(null);
           }}
           onReviewSeason={(s, e) => {
             setReviewSeason(s);
@@ -8999,8 +9014,12 @@ export default function PortfolioDuel() {
             onViewDashboard={() => setScreen('seasonDashboard')}
             onJoinSeason={(season, opts) => {
               setSeasonToJoin(season);
-              setSeasonEntryOptions(opts || null);
+              setSeasonEntryOptions({
+                ...(pendingRefinementContext || {}),
+                ...(opts || {}),
+              });
               setSeasonEntryModalOpen(true);
+              setPendingRefinementContext(null);
             }}
             onReviewSeason={(s, e) => {
               setReviewSeason(s);
@@ -9037,8 +9056,12 @@ export default function PortfolioDuel() {
             onViewDashboard={() => setScreen('seasonDashboard')}
             onJoinSeason={(season, opts) => {
               setSeasonToJoin(season);
-              setSeasonEntryOptions(opts || null);
+              setSeasonEntryOptions({
+                ...(pendingRefinementContext || {}),
+                ...(opts || {}),
+              });
               setSeasonEntryModalOpen(true);
+              setPendingRefinementContext(null);
             }}
             onReviewSeason={(s, e) => {
               setReviewSeason(s);
@@ -9065,6 +9088,20 @@ export default function PortfolioDuel() {
             }
             setShowForge(true);
           }}
+          onRefineAndRetest={(refEntry, resolvedDims) => {
+            // Phase 6 — carry refinement context into the next launch so
+            // the strategy_configs shadow log can record sourceExperimentId.
+            // The user still picks their next season from SeasonHub; the
+            // onJoinSeason handler merges pendingRefinementContext with
+            // whatever opts the hub passes.
+            setPendingRefinementContext({
+              initialDimensionValues: resolvedDims || null,
+              initialStep: resolvedDims ? 1 : 0,
+              sourceExperimentId: refEntry?.id || null,
+              entrySource: 'refinement_pair',
+            });
+            setScreen('seasonHub');
+          }}
         />
       </ErrorBoundary>
     );
@@ -9082,8 +9119,12 @@ export default function PortfolioDuel() {
             onViewDashboard={() => setScreen('seasonDashboard')}
             onJoinSeason={(season, opts) => {
               setSeasonToJoin(season);
-              setSeasonEntryOptions(opts || null);
+              setSeasonEntryOptions({
+                ...(pendingRefinementContext || {}),
+                ...(opts || {}),
+              });
               setSeasonEntryModalOpen(true);
+              setPendingRefinementContext(null);
             }}
             onReviewSeason={(s, e) => {
               setReviewSeason(s);
@@ -11640,6 +11681,8 @@ export default function PortfolioDuel() {
           initialDimensionValues={seasonEntryOptions?.initialDimensionValues}
           initialStep={seasonEntryOptions?.initialStep}
           fromConversation={Boolean(seasonEntryOptions?.initialDimensionValues)}
+          sourceExperimentId={seasonEntryOptions?.sourceExperimentId || null}
+          entrySource={seasonEntryOptions?.entrySource || null}
           onBuildInForge={() => {
             setSeasonEntryModalOpen(false);
             setSeasonToJoin(null);
