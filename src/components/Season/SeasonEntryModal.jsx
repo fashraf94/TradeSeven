@@ -654,7 +654,7 @@ export default function SeasonEntryModal({
     <CenteredModal isOpen={isOpen} onClose={onClose} title={titleByStep[step]}>
       <div
         style={{
-          padding: '4px 20px 20px',
+          padding: '4px 20px 0',
           overflowY: 'auto',
           flex: 1,
           display: 'flex',
@@ -663,7 +663,7 @@ export default function SeasonEntryModal({
       >
         <StepDots current={step} total={3} />
 
-        <div style={{ flex: 1, position: 'relative', minHeight: 240 }}>
+        <div style={{ flex: 1, position: 'relative', minHeight: 240, paddingBottom: 100 }}>
           <AnimatePresence mode="wait" custom={direction}>
             <motion.div
               key={`step-${step}`}
@@ -705,8 +705,14 @@ export default function SeasonEntryModal({
             display: 'flex',
             gap: 10,
             marginTop: 16,
-            paddingTop: 12,
+            padding: '12px 20px 20px',
+            marginLeft: -20,
+            marginRight: -20,
             borderTop: `1px solid ${HOLO_COLORS.borderSubtle}`,
+            position: 'sticky',
+            bottom: 0,
+            zIndex: 10,
+            background: '#0D0E12', // matches tokens.bgApp used by CenteredModal
           }}
         >
           {step > 0 && (
