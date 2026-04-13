@@ -636,25 +636,41 @@ export default function AgentBattleScreen({ battle, user, onBack }) {
     ['star', 'core', 'support'].forEach(tier => {
       (portfolio[tier] || []).forEach(a => { if (a) total += (a.points || 0); });
     });
-    return Math.round(total);
+    return total;
   };
 
+  // Banked score = sum of locked points from closed trades. Swapped-out assets
+  // keep their earned threshold bonuses here; without this the client would
+  // show activeScore only and diverge from server scoreState.currentScore after
+  // any agent swap.
+  const bankedScore = useMemo(() => {
+    return (agentBattle?.trades || []).reduce((sum, t) => {
+      return sum + (Number.isFinite(t?.lockedPoints) ? t.lockedPoints : 0);
+    }, 0);
+  }, [agentBattle?.trades]);
+
   const playerTotalScore = useMemo(
-    () => sumPortfolioPoints(enrichedPlayerPortfolio),
-    [enrichedPlayerPortfolio]
+    () => Math.round(sumPortfolioPoints(enrichedPlayerPortfolio) + bankedScore),
+    [enrichedPlayerPortfolio, bankedScore]
   );
   const opponentTotalScore = useMemo(
-    () => sumPortfolioPoints(enrichedOpponentPortfolio),
+    () => Math.round(sumPortfolioPoints(enrichedOpponentPortfolio)),
     [enrichedOpponentPortfolio]
   );
 
-  // Use live score when prices loaded, fallback to cron score
+  // Use live score when prices loaded, fallback to cron score.
+  // For completed battles, freeze on the server's final currentScore so the
+  // display doesn't drift once prices reload post-market.
   const displayPlayerScore = loadingPrices
     ? (agentBattle?.scoreState?.currentScore || 0)
-    : playerTotalScore;
+    : agentBattle?.status === 'completed'
+      ? (agentBattle?.scoreState?.currentScore ?? playerTotalScore)
+      : playerTotalScore;
   const displayOpponentScore = loadingPrices
     ? (agentBattle?.scoreState?.opponentScore || 0)
-    : opponentTotalScore;
+    : agentBattle?.status === 'completed'
+      ? (agentBattle?.scoreState?.opponentScore ?? opponentTotalScore)
+      : opponentTotalScore;
 
   // ── Notification dots ─────────────────────────────────────────────────────
 

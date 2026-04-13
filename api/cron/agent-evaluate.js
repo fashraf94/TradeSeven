@@ -310,7 +310,9 @@ async function processAgentBattle(db, battle, summary) {
 
     // ---- Update scores (always, even without Haiku) ----
     const activeScore = assetScores.reduce((sum, s) => sum + s.totalPoints, 0);
-    const bankedScore = (battle.trades || []).reduce((sum, t) => sum + (t.lockedPoints || 0), 0);
+    const bankedScore = (battle.trades || []).reduce((sum, t) => {
+      return sum + (Number.isFinite(t?.lockedPoints) ? t.lockedPoints : 0);
+    }, 0);
     const currentScore = activeScore + bankedScore;
 
     const scoreUpdate = {
@@ -331,11 +333,13 @@ async function processAgentBattle(db, battle, summary) {
     const statusFeedEntries = [];
 
     // ---- Update threshold history ----
-    const updatedThresholdHistory = { ...(battle.thresholdHistory || {}) };
+    // Use dot-path updates so we merge per-symbol rather than replacing the
+    // full map. A full-object write here would clobber any thresholdHistory
+    // entry a swap transaction wrote earlier in this cron run (e.g. the
+    // freshly swapped-in symbol's zero-reset).
     for (const score of assetScores) {
-      updatedThresholdHistory[score.symbol] = score.history;
+      scoreUpdate[`thresholdHistory.${score.symbol}`] = score.history;
     }
-    scoreUpdate.thresholdHistory = updatedThresholdHistory;
 
     // ---- Parallel data fetch: intraday + rankings + technicalScores + marketContext ----
     const momentumData = { vwap: {}, rankings: {} };
