@@ -9046,6 +9046,7 @@ export default function PortfolioDuel() {
       <ErrorBoundary name="SeasonReview" onNavigateDashboard={() => setScreen('dashboard')}>
         <SeasonReview
           user={user}
+          agent={primaryAgent}
           season={reviewSeason}
           entry={reviewEntry}
           onBack={() => setScreen('seasonHub')}

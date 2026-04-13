@@ -32,6 +32,7 @@ import {
   ArrowRight,
   TrendingUp,
   TrendingDown,
+  Shield,
 } from 'lucide-react';
 import { collection, getDocs, query, where, doc, getDoc } from 'firebase/firestore';
 import { db } from '../../firebase/config';
@@ -469,7 +470,104 @@ function TalkToAgentCard({ onClick }) {
   );
 }
 
-function DeployedStrategyCard({ equippedBundles }) {
+function DeployedStrategyCard({ agent, equippedBundles }) {
+  const deployed = agent?.deployedStrategy || null;
+
+  // Phase 4A primary path: show metadata from a completed Proving Ground deploy.
+  if (deployed && deployed.bundleId) {
+    const alpha = typeof deployed.alpha === 'number' ? deployed.alpha : null;
+    const rank = deployed.rank || null;
+    const directiveCount = Array.isArray(deployed.directives)
+      ? deployed.directives.length
+      : 0;
+    const guardrails = Array.isArray(deployed.guardrails)
+      ? deployed.guardrails
+      : [];
+    const stopLoss = guardrails.find((g) => g.type === 'stopLoss')?.value;
+    const maxPosition = guardrails.find((g) => g.type === 'maxPosition')?.value;
+
+    const sourceLabel = (() => {
+      const src = deployed.sourceCollection;
+      if (!src) return 'Custom strategy';
+      return src
+        .split('-')
+        .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+        .join(' ');
+    })();
+
+    return (
+      <div
+        style={{
+          background: CARD_BG,
+          border: `1px solid ${TEAL}33`,
+          borderRadius: 12,
+          padding: 14,
+        }}
+      >
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 10,
+            marginBottom: 10,
+          }}
+        >
+          <Rocket size={16} color={TEAL} />
+          <div
+            style={{
+              fontSize: 12,
+              fontWeight: 600,
+              textTransform: 'uppercase',
+              letterSpacing: '0.5px',
+              color: TEAL,
+            }}
+          >
+            Deployed to BaggerBomb
+          </div>
+        </div>
+
+        <div style={{ fontSize: 13, color: TEXT_PRIMARY, fontWeight: 600, marginBottom: 4 }}>
+          {sourceLabel}
+        </div>
+        <div style={{ fontSize: 11, color: TEXT_MUTED, marginBottom: 10, lineHeight: 1.5 }}>
+          {alpha !== null ? `Alpha ${alpha >= 0 ? '+' : ''}${alpha.toFixed(2)}%` : null}
+          {rank ? `${alpha !== null ? ' · ' : ''}Rank #${rank}` : null}
+          {directiveCount > 0
+            ? `${alpha !== null || rank ? ' · ' : ''}${directiveCount} directive${directiveCount === 1 ? '' : 's'}`
+            : null}
+        </div>
+
+        {(typeof stopLoss === 'number' || typeof maxPosition === 'number') && (
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              padding: '6px 8px',
+              background: PAGE_BG,
+              border: `1px solid ${TROPHY_GOLD}33`,
+              borderRadius: 8,
+              fontSize: 11,
+              color: TEXT_PRIMARY,
+              fontWeight: 600,
+            }}
+          >
+            <Shield size={12} color={TROPHY_GOLD} />
+            <span>
+              {typeof stopLoss === 'number' ? `Stop ${stopLoss}%` : ''}
+              {typeof stopLoss === 'number' && typeof maxPosition === 'number'
+                ? ' · '
+                : ''}
+              {typeof maxPosition === 'number' ? `Max position ${maxPosition}%` : ''}
+            </span>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // Legacy fallback: show raw equipped-bundle summary when no Proving Ground
+  // deployment exists yet.
   const bundleCount = Array.isArray(equippedBundles) ? equippedBundles.length : 0;
   const ruleCount = Array.isArray(equippedBundles)
     ? equippedBundles.reduce((n, b) => n + (b?.ruleIds?.length || 0), 0)
@@ -927,7 +1025,7 @@ export default function ForgeLanding({
 
         {/* Section 5: Deployed strategy */}
         <SectionLabel>Live Deployment</SectionLabel>
-        <DeployedStrategyCard equippedBundles={equippedBundles} />
+        <DeployedStrategyCard agent={agent} equippedBundles={equippedBundles} />
 
         {/* Section 6: Past experiments */}
         {!loading && (

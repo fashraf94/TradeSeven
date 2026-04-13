@@ -33,6 +33,7 @@ import {
   dimensionsToRuleSnapshots,
   countPhasesForDimensions,
   materializeDimensionBundle,
+  persistDimensionValuesOnBundle,
   COLLECTION_DEFS,
 } from '../../utils/dimensionMapper';
 
@@ -526,6 +527,14 @@ export default function SeasonEntryModal({
       return;
     }
 
+    // Phase 4A: persist the raw dimensionValues onto the bundle doc so the
+    // Deploy-to-Agent flow (which runs weeks later, after the experiment
+    // completes) can recover the original knob settings. Fire-and-forget —
+    // not part of the critical launch path.
+    persistDimensionValuesOnBundle(agent.id, bundleId, dimensionValues).catch(
+      (err) => console.warn('[SeasonEntryModal] persist dims failed', err)
+    );
+
     // Step 2: Call the existing (protected) create-entry API.
     try {
       const response = await fetchWithAuth('/api/season/create-entry', {
@@ -542,6 +551,20 @@ export default function SeasonEntryModal({
           data.error || `Couldn't create entry — please try again (${response.status})`
         );
       }
+
+      // Phase 4A belt-and-suspenders: cache dimensionValues keyed by entryId
+      // in localStorage so the same device can recover them at Deploy time
+      // if the bundle doc is missing `dimensionValues` (e.g., legacy entries
+      // created before persistDimensionValuesOnBundle shipped).
+      try {
+        const raw = localStorage.getItem('forge.lastEntryDims');
+        const prev = raw ? JSON.parse(raw) : {};
+        prev[data.entryId] = dimensionValues;
+        localStorage.setItem('forge.lastEntryDims', JSON.stringify(prev));
+      } catch (storageErr) {
+        console.warn('[SeasonEntryModal] localStorage write failed', storageErr);
+      }
+
       if (onSuccess) onSuccess(data.entryId);
     } catch (err) {
       console.error('[SeasonEntryModal] Create-entry failed:', err);
