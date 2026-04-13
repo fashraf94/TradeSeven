@@ -465,6 +465,24 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
+    // Phase 5: Workshop Mode — conversational strategy development sessions.
+    // Owner-scoped reads; all writes go through the server (Admin SDK in
+    // /api/forge/workshop-chat.js and /api/forge/compile-dimensions.js).
+    match /workshopSessions/{sessionId} {
+      allow read: if request.auth != null
+                  && resource.data.userId == request.auth.uid;
+      allow create, update, delete: if false;
+    }
+
+    // Phase 5: Workshop Mode — compiled theses produced by
+    // /api/forge/compile-dimensions.js. Immutable audit record of each
+    // successful thesis → dimensions translation. Server-only writes.
+    match /workshopTheses/{thesisId} {
+      allow read: if request.auth != null
+                  && resource.data.userId == request.auth.uid;
+      allow create, update, delete: if false;
+    }
+
     // ═══════════════════════════════════════════
     // Default deny everything else
     // ═══════════════════════════════════════════

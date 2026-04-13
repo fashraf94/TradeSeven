@@ -37,6 +37,7 @@ import {
 import { collection, getDocs, query, where, doc, getDoc } from 'firebase/firestore';
 import { db } from '../../firebase/config';
 import ForgeScreen from './ForgeScreen';
+import WorkshopChat from './WorkshopChat';
 import DailyBriefingCard from '../Season/DailyBriefingCard';
 
 // ── Design tokens ──────────────────────────────────────────────
@@ -777,6 +778,7 @@ export default function ForgeLanding({
   const [dailyLog, setDailyLog] = useState(null);
   const [dailyLogLoading, setDailyLogLoading] = useState(false);
   const [toast, setToast] = useState(null);
+  const [workshopOpen, setWorkshopOpen] = useState(false);
 
   // Fetch all seasons + user's entries (same pattern as SeasonHub:420-451)
   useEffect(() => {
@@ -898,7 +900,36 @@ export default function ForgeLanding({
   };
 
   const handleTalkToAgent = () => {
-    showToast('Workshop Mode coming soon');
+    if (!agent?.id) {
+      showToast('Create an agent first to use Workshop Mode');
+      return;
+    }
+    if (hasActive) {
+      showToast('Finish your current experiment before workshopping a new one');
+      return;
+    }
+    if (!nextUpcoming) {
+      showToast('No upcoming experiment to deploy to — check back soon');
+      return;
+    }
+    setWorkshopOpen(true);
+  };
+
+  const handleWorkshopCompiled = (result) => {
+    // Close workshop and hand off to SeasonEntryModal with dims pre-filled.
+    setWorkshopOpen(false);
+    if (nextUpcoming && onJoinSeason) {
+      onJoinSeason(nextUpcoming, {
+        initialDimensionValues: result.dimensionValues,
+        initialStep: 1,
+        workshopThesisId: result.thesisId,
+        workshopConfidence: result.confidence,
+        workshopMappingNotes: result.mappingNotes,
+        workshopWarnings: result.warnings,
+      });
+    } else {
+      showToast('Strategy compiled — but no experiment to deploy to');
+    }
   };
 
   const handleStartExperiment = () => {
@@ -1044,6 +1075,15 @@ export default function ForgeLanding({
           <PastExperimentsSection past={past} onReviewSeason={onReviewSeason} />
         )}
       </div>
+
+      {/* Workshop Mode — conversational strategy development */}
+      <WorkshopChat
+        isOpen={workshopOpen}
+        onClose={() => setWorkshopOpen(false)}
+        user={user}
+        agent={agent}
+        onCompiled={handleWorkshopCompiled}
+      />
 
       {/* Toast */}
       <AnimatePresence>

@@ -2,6 +2,7 @@ import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
 import { applySecurityMiddleware } from '../_utils/security.js';
 import { requireAuth } from '../_utils/authMiddleware.js';
 import { buildVoiceLayerPrompt } from '../_utils/voiceLayerPrompt.js';
+import { callGemmaVoice, parseVoiceLayerResponse } from '../_utils/gemmaClient.js';
 import { FieldValue } from 'firebase-admin/firestore';
 import { logConversation } from '../_utils/shadowLogger.js';
 
@@ -49,84 +50,6 @@ function selectElicitationTarget(partnerProfile, recentTargets = []) {
   return {
     dimension: target.dimension,
     instruction: ELICITATION_INSTRUCTIONS[target.dimension],
-  };
-}
-
-// ==================== OPENROUTER CALL ====================
-
-async function callOpenRouter(systemPrompt, conversationHistory, userMessage) {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 15000);
-
-  try {
-    const messages = [
-      { role: 'system', content: systemPrompt },
-      ...conversationHistory,
-      { role: 'user', content: userMessage },
-    ];
-
-    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
-        'Content-Type': 'application/json',
-        'HTTP-Referer': 'https://fantasytrades.io',
-        'X-Title': 'FantasyTrades Voice Layer',
-      },
-      body: JSON.stringify({
-        model: 'google/gemma-4-26b-a4b-it',
-        messages,
-        temperature: 0.7,
-        max_tokens: 800,
-        response_format: { type: 'json_object' },
-      }),
-      signal: controller.signal,
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text().catch(() => 'unknown');
-      throw new Error(`OpenRouter ${response.status}: ${errorText}`);
-    }
-
-    const data = await response.json();
-    return data.choices[0].message.content;
-  } finally {
-    clearTimeout(timeout);
-  }
-}
-
-// ==================== RESPONSE PARSER ====================
-
-function parseVoiceLayerResponse(rawText) {
-  // Try direct JSON parse
-  try {
-    return JSON.parse(rawText);
-  } catch (_) { /* fall through */ }
-
-  // Try extracting from ```json ... ``` blocks
-  const fencedMatch = rawText.match(/```json\s*([\s\S]*?)```/);
-  if (fencedMatch) {
-    try {
-      return JSON.parse(fencedMatch[1]);
-    } catch (_) { /* fall through */ }
-  }
-
-  // Try extracting any {...} object
-  const objectMatch = rawText.match(/\{[\s\S]*\}/);
-  if (objectMatch) {
-    try {
-      return JSON.parse(objectMatch[0]);
-    } catch (_) { /* fall through */ }
-  }
-
-  // Final fallback — treat raw text as response
-  const cleanedText = rawText.replace(/```[\s\S]*?```/g, '').trim();
-  return {
-    _scratchpad: null,
-    response: cleanedText || 'I had trouble forming a response. Can you try again?',
-    hasDirective: false,
-    directive: null,
-    suggestedActions: null,
   };
 }
 
@@ -269,8 +192,20 @@ export default async function handler(req, res) {
       marketSnapshot,
     });
 
-    // 15. Call OpenRouter (Gemma 4)
-    const rawResponse = await callOpenRouter(systemPrompt, conversationHistory, sanitizedMessage);
+    // 15. Call OpenRouter (Gemma 4) — with 15s timeout
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 15000);
+    let rawResponse;
+    try {
+      rawResponse = await callGemmaVoice({
+        systemPrompt,
+        conversationHistory,
+        userMessage: sanitizedMessage,
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timeoutId);
+    }
 
     // 16. Parse response
     const parsed = parseVoiceLayerResponse(rawResponse);

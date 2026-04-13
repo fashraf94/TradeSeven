@@ -2187,6 +2187,9 @@ export default function PortfolioDuel() {
   const [activeSeasonEntry, setActiveSeasonEntry] = useState(null);
   const [seasonEntryModalOpen, setSeasonEntryModalOpen] = useState(false);
   const [seasonToJoin, setSeasonToJoin] = useState(null);
+  // Phase 5 — Workshop Mode hand-off. When set, SeasonEntryModal opens with
+  // these values pre-populated and jumps to the strategy step.
+  const [seasonEntryOptions, setSeasonEntryOptions] = useState(null);
   // Past-season review state — separate from activeSeason/activeSeasonEntry
   // because the user can review a completed season while also having an active one.
   const [reviewSeason, setReviewSeason] = useState(null);
@@ -8139,8 +8142,9 @@ export default function PortfolioDuel() {
             setShowForge(false);
             setScreen('seasonDashboard');
           }}
-          onJoinSeason={(season) => {
+          onJoinSeason={(season, opts) => {
             setSeasonToJoin(season);
+            setSeasonEntryOptions(opts || null);
             setSeasonEntryModalOpen(true);
           }}
           onReviewSeason={(s, e) => {
@@ -8968,8 +8972,9 @@ export default function PortfolioDuel() {
           user={user}
           onBack={() => setScreen('dashboard')}
           onViewDashboard={() => setScreen('seasonDashboard')}
-          onJoinSeason={(season) => {
+          onJoinSeason={(season, opts) => {
             setSeasonToJoin(season);
+            setSeasonEntryOptions(opts || null);
             setSeasonEntryModalOpen(true);
           }}
           onReviewSeason={(s, e) => {
@@ -8992,8 +8997,9 @@ export default function PortfolioDuel() {
             user={user}
             onBack={() => setScreen('dashboard')}
             onViewDashboard={() => setScreen('seasonDashboard')}
-            onJoinSeason={(season) => {
+            onJoinSeason={(season, opts) => {
               setSeasonToJoin(season);
+              setSeasonEntryOptions(opts || null);
               setSeasonEntryModalOpen(true);
             }}
             onReviewSeason={(s, e) => {
@@ -9029,8 +9035,9 @@ export default function PortfolioDuel() {
             user={user}
             onBack={() => setScreen('dashboard')}
             onViewDashboard={() => setScreen('seasonDashboard')}
-            onJoinSeason={(season) => {
+            onJoinSeason={(season, opts) => {
               setSeasonToJoin(season);
+              setSeasonEntryOptions(opts || null);
               setSeasonEntryModalOpen(true);
             }}
             onReviewSeason={(s, e) => {
@@ -9073,8 +9080,9 @@ export default function PortfolioDuel() {
             user={user}
             onBack={() => setScreen('dashboard')}
             onViewDashboard={() => setScreen('seasonDashboard')}
-            onJoinSeason={(season) => {
+            onJoinSeason={(season, opts) => {
               setSeasonToJoin(season);
+              setSeasonEntryOptions(opts || null);
               setSeasonEntryModalOpen(true);
             }}
             onReviewSeason={(s, e) => {
@@ -11624,19 +11632,25 @@ export default function PortfolioDuel() {
           onClose={() => {
             setSeasonEntryModalOpen(false);
             setSeasonToJoin(null);
+            setSeasonEntryOptions(null);
           }}
           season={seasonToJoin}
           user={user}
           agent={primaryAgent}
+          initialDimensionValues={seasonEntryOptions?.initialDimensionValues}
+          initialStep={seasonEntryOptions?.initialStep}
+          fromConversation={Boolean(seasonEntryOptions?.initialDimensionValues)}
           onBuildInForge={() => {
             setSeasonEntryModalOpen(false);
             setSeasonToJoin(null);
+            setSeasonEntryOptions(null);
             try { localStorage.setItem('forgeMode', 'season'); } catch {}
             setShowForge(true);
           }}
           onSuccess={() => {
             setSeasonEntryModalOpen(false);
             setSeasonToJoin(null);
+            setSeasonEntryOptions(null);
             setScreen('seasonHub');
           }}
         />
