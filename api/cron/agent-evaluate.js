@@ -26,6 +26,7 @@ import {
 import { TRADE_DECISION_TOOL } from '../_utils/agentEvalToolSchema.js';
 import { evaluateTriggers, fetchRecentNews } from '../_utils/agentTriggerGate.js';
 import { validateTradeDecision, executeSwapServer } from '../_utils/agentSwapExecution.js';
+import { applyGuardrails } from '../_utils/agentGuardrails.js';
 import { classifyStockRegime, classifyMarketPosture, getPresetAdjustedStrategies } from '../_utils/agentRegimeClassifier.js';
 import { evaluateRisk, calculate5minSMA20, pickEmergencyReplacement, findPortfolioSlot } from '../_utils/agentRiskManager.js';
 import { getPresetConfig } from '../_utils/agentPresetConfig.js';
@@ -779,6 +780,62 @@ async function processAgentBattle(db, battle, summary) {
     let decision = haikuResult?.decision || 'HOLD';
     let downgraded = false;
     let validationErrors = [];
+    let guardrailOverrides = [];
+    let guardrailStatusMessage = null;
+    let guardrailSourceNote = null;
+
+    // ---- Phase 4B: Hybrid Execution Guardrails ----
+    // Deterministic override layer. Reads the frozen snapshot of deployed
+    // strategy guardrails from agentContext and may rewrite Haiku's decision
+    // when hard quantitative thresholds are breached. No-op if no strategy
+    // is deployed (empty or undefined array).
+    const deployedGuardrails = battle.agentContext?.deployedGuardrails || [];
+    if (deployedGuardrails.length > 0) {
+      try {
+        const result = applyGuardrails({
+          haikuResult,
+          guardrails: deployedGuardrails,
+          battle,
+          prices,
+          lockedPositions,
+          stockRegimes,
+        });
+        guardrailOverrides = result.overrides || [];
+        guardrailStatusMessage = result.statusMessage;
+        guardrailSourceNote = result.sourceNote;
+
+        const originalDecision = haikuResult?.decision || 'HOLD';
+        if (result.decision !== originalDecision ||
+            result.symbolOut !== (haikuResult?.symbolOut || null) ||
+            result.symbolIn !== (haikuResult?.symbolIn || null)) {
+          // Materialize the override into haikuResult so downstream
+          // validation/execution treats the forced swap as a normal SWAP.
+          if (result.decision === 'SWAP') {
+            const overrideNote = result.statusMessage || 'hard threshold breach';
+            haikuResult = {
+              ...(haikuResult || {}),
+              decision: 'SWAP',
+              symbolOut: result.symbolOut,
+              symbolIn: result.symbolIn,
+              rationale: `Guardrail override (${result.sourceNote || 'hard'}): ${overrideNote}`,
+              hypothesis: `Hypothesis: deterministic guardrail enforcement — ${overrideNote}`,
+              conviction: Math.max(haikuResult?.conviction || 0, 70),
+            };
+            decision = 'SWAP';
+            console.warn(`${LOG_PREFIX} Guardrail forced SWAP ${result.symbolOut}→${result.symbolIn}`);
+          } else if (result.decision === 'HOLD' && originalDecision === 'SWAP') {
+            validationErrors.push(result.statusMessage || 'Guardrail blocked swap');
+            decision = 'HOLD';
+            downgraded = true;
+            console.warn(`${LOG_PREFIX} Guardrail blocked Haiku SWAP: ${result.statusMessage}`);
+          }
+        }
+      } catch (err) {
+        // Never crash a battle on guardrail failure — log and proceed with
+        // Haiku's original decision.
+        console.error(`${LOG_PREFIX} Guardrail evaluation failed (non-fatal):`, err?.message);
+      }
+    }
 
     // Block Haiku from swapping out LOCKED positions
     if (decision === 'SWAP' && haikuResult && lockedPositions.has(haikuResult.symbolOut)) {
@@ -932,6 +989,23 @@ async function processAgentBattle(db, battle, summary) {
       });
     }
 
+    // Phase 4B: surface guardrail override as a distinct statusFeed entry.
+    if (guardrailStatusMessage) {
+      const forcedOverride = guardrailOverrides.find(
+        o => o.action === 'forced_exit' || o.action === 'blocked_swap'
+      );
+      statusFeedEntries.push({
+        timestamp: now,
+        message: guardrailStatusMessage,
+        action: forcedOverride?.action === 'forced_exit' ? 'guardrail_forced_swap' : 'guardrail_block',
+        triggeredBy: guardrailSourceNote || 'guardrail',
+        source: 'guardrail',
+        evalId,
+        symbolOut: forcedOverride?.symbol || null,
+        symbolIn: forcedOverride?.replacementSymbol || null,
+      });
+    }
+
     // ---- Build evaluation record ----
     const isSwapOrProposal = decision === 'SWAP' || decision === 'PROPOSAL';
     const evaluation = {
@@ -959,6 +1033,9 @@ async function processAgentBattle(db, battle, summary) {
       validationErrors,
       downgraded,
       marketPosture,
+      // Phase 4B: guardrail override telemetry for training data + UI.
+      guardrailOverrides,
+      guardrailSourceNote,
     };
 
     // Shadow log (fire-and-forget)

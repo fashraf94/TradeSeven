@@ -119,6 +119,11 @@ export async function createAgentBattle(db, agentData, thresholds, startingPrice
       activeDirectives: filterActiveDirectives(agentData.directives || []),
       activeRules: agentData.activeRules || [],
       equippedBundleIds: agentData.equippedBundleIds || [],
+      // Phase 4B: Snapshot of deployed strategy guardrails. Frozen at battle
+      // creation so mid-battle re-deploys don't whiplash live execution.
+      deployedGuardrails: Array.isArray(agentData.deployedStrategy?.guardrails)
+        ? agentData.deployedStrategy.guardrails
+        : [],
       riskTolerance: agentData.config?.risk || 50,
       evaluationInterval: 15,
       consolidatedInsight: agentData.consolidatedInsight || null,
