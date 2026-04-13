@@ -13,10 +13,14 @@ const STATES = {
 };
 
 export default function MechSVG({
-  state = 'idle', size = 'hero', reducedMotion = false, reactPulse = null,
+  state: stateProp = 'idle', size = 'hero', reducedMotion = false, reactPulse = null,
   primaryGlow = '#5EEAD4', visorColor: visorColorProp = '#5EEAD4',
   mode = 'active', glowIntensity = 1,
+  compactWidth = 130,
 }) {
+  const isCompact = size === 'compact';
+  // Compact mode only supports idle/dormant — clamp any other state to idle.
+  const state = (isCompact && stateProp !== 'dormant') ? 'idle' : stateProp;
   const config = STATES[state] || STATES.idle;
   const prefersReduced = useReducedMotion();
   const noMotion = reducedMotion || prefersReduced;
@@ -217,8 +221,14 @@ export default function MechSVG({
   }
 
   // ── Hero mode: full mech body ──
+  // Compact mode reuses the same SVG but at a fixed smaller width (no maxWidth cap).
   return (
-    <div style={{ width: '100%', maxWidth: 280, margin: '0 auto', ...breathingStyle, ...standbyStyles, ...surgeStyles }}>
+    <div style={{
+      width: isCompact ? `${compactWidth}px` : '100%',
+      ...(isCompact ? {} : { maxWidth: 280 }),
+      margin: '0 auto',
+      ...breathingStyle, ...standbyStyles, ...surgeStyles,
+    }}>
       {!noMotion && animate && <style>{keyframes}</style>}
       <svg
         viewBox="0 0 200 280"

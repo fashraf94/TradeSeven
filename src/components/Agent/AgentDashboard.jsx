@@ -189,6 +189,7 @@ const AgentDashboard = ({ user, setScreen, onCreateAgentBattle, setShowForge }) 
             <AgentSidebar
               agent={agent}
               speech={speech}
+              deployText={deployText}
               currentLevel={currentLevel}
               levelConfig={levelConfig}
               nextLevelInfo={nextLevelInfo}
