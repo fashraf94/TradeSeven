@@ -199,11 +199,48 @@ function ThesisPanel({ thesis, readyToCompile, compileDisabled, onCompile, isCom
 }
 
 // ──────────────────────────────────────────────────────────────
-// Chat bubble (local to this component — keeps AgentChat untouched)
+// Chat bubble + action chips (local — keeps AgentChat untouched)
+// Mirrors the ActionButton pattern from AgentChat.jsx without coupling.
 // ──────────────────────────────────────────────────────────────
 
-function ChatBubble({ message, agentName }) {
+function ActionChip({ text, onClick, disabled }) {
+  const [hovered, setHovered] = useState(false);
+  return (
+    <motion.button
+      initial={{ opacity: 0, scale: 0.9 }}
+      animate={{ opacity: 1, scale: 1 }}
+      transition={{ duration: 0.2 }}
+      whileTap={{ scale: 0.95 }}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      onClick={() => onClick(text)}
+      disabled={disabled}
+      style={{
+        background: hovered ? 'rgba(94, 234, 212, 0.08)' : 'transparent',
+        border: hovered ? `1px solid ${TEAL}` : '1px solid rgba(94, 234, 212, 0.35)',
+        borderRadius: 20,
+        padding: '6px 14px',
+        color: TEAL,
+        fontSize: 13,
+        cursor: disabled ? 'not-allowed' : 'pointer',
+        transition: 'all 0.15s ease',
+        opacity: disabled ? 0.5 : 1,
+      }}
+    >
+      {text}
+    </motion.button>
+  );
+}
+
+function ChatBubble({ message, agentName, isLastAgent, onActionClick, isSending }) {
   const isUser = message.role === 'user';
+  const showActions =
+    !isUser &&
+    isLastAgent &&
+    !isSending &&
+    Array.isArray(message.suggestedActions) &&
+    message.suggestedActions.length > 0;
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 8 }}
@@ -247,6 +284,26 @@ function ChatBubble({ message, agentName }) {
       >
         {message.text}
       </div>
+      {showActions && (
+        <div
+          style={{
+            display: 'flex',
+            flexWrap: 'wrap',
+            gap: 8,
+            marginTop: 8,
+            paddingLeft: 4,
+          }}
+        >
+          {message.suggestedActions.map((action, i) => (
+            <ActionChip
+              key={i}
+              text={action}
+              onClick={onActionClick}
+              disabled={isSending}
+            />
+          ))}
+        </div>
+      )}
     </motion.div>
   );
 }
@@ -379,16 +436,26 @@ export default function WorkshopChat({ isOpen, onClose, user, agent, onCompiled 
         role: 'user',
         text: trimmed,
       };
-      setMessages((m) => [...m, userMsg]);
+      // Push the user msg AND clear any lingering suggestedActions on the
+      // previous agent bubble — once the user responds, the chips are stale.
+      setMessages((prev) => {
+        const cleaned = prev.map((m, i) =>
+          i === prev.length - 1 && m.role === 'agent' && m.suggestedActions
+            ? { ...m, suggestedActions: null }
+            : m
+        );
+        return [...cleaned, userMsg];
+      });
 
       // Helper: push a graceful fallback bubble into the chat without the
       // red error banner. Used for retryable hiccups (server returned
       // non-JSON, transient Gemma/OpenRouter errors, etc.)
-      const pushFallbackBubble = (text) => {
+      const pushFallbackBubble = (text, suggestedActions = null) => {
         const agentMsg = {
           id: `agent-${Date.now()}`,
           role: 'agent',
           text,
+          suggestedActions,
         };
         setMessages((m) => [...m, agentMsg]);
       };
@@ -454,7 +521,12 @@ export default function WorkshopChat({ isOpen, onClose, user, agent, onCompiled 
         setMessagesUsed(data.messagesUsed || 0);
         if (typeof data.messageBudget === 'number') setMessageBudget(data.messageBudget);
 
-        pushFallbackBubble(data.agentMessage || '');
+        pushFallbackBubble(
+          data.agentMessage || '',
+          Array.isArray(data.suggestedActions) && data.suggestedActions.length > 0
+            ? data.suggestedActions
+            : null
+        );
       } catch (err) {
         // Network failure, fetchWithAuth rejection, etc. Truly unexpected.
         console.error('[WorkshopChat] send failed:', err);
@@ -464,6 +536,13 @@ export default function WorkshopChat({ isOpen, onClose, user, agent, onCompiled 
       }
     },
     [agent?.id, sessionId, isSending, isCompiling]
+  );
+
+  const handleActionClick = useCallback(
+    (actionText) => {
+      sendMessage(actionText);
+    },
+    [sendMessage]
   );
 
   const handleCompile = useCallback(async () => {
@@ -719,9 +798,26 @@ export default function WorkshopChat({ isOpen, onClose, user, agent, onCompiled 
                   </div>
                 ) : (
                   <>
-                    {messages.map((m) => (
-                      <ChatBubble key={m.id} message={m} agentName={agent?.name} />
-                    ))}
+                    {(() => {
+                      // Find the last agent message id so only its chips render.
+                      let lastAgentId = null;
+                      for (let i = messages.length - 1; i >= 0; i--) {
+                        if (messages[i].role === 'agent') {
+                          lastAgentId = messages[i].id;
+                          break;
+                        }
+                      }
+                      return messages.map((m) => (
+                        <ChatBubble
+                          key={m.id}
+                          message={m}
+                          agentName={agent?.name}
+                          isLastAgent={m.id === lastAgentId}
+                          onActionClick={handleActionClick}
+                          isSending={isSending}
+                        />
+                      ));
+                    })()}
                     {isSending && <TypingIndicator agentName={agent?.name} />}
                   </>
                 )}

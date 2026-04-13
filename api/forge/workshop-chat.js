@@ -250,6 +250,7 @@ export default async function handler(req, res) {
           "I hit a snag processing that — could you try that again?",
         activeThesis: previousThesis,
         scratchpad: null,
+        suggestedActions: null,
         messagesUsed: session.messagesUsed || 0, // unchanged — this turn didn't count
         messageBudget,
         readyToCompile: Boolean(previousThesis?.readyToCompile),
@@ -260,7 +261,28 @@ export default async function handler(req, res) {
     // 13. Parse
     const parsed = parseVoiceLayerResponse(gemmaResult.content);
     const cleanScratchpad = sanitizeScratchpad(parsed._scratchpad);
-    const activeThesis = normalizeThesis(parsed.activeThesis);
+
+    // Defensive extraction: even though the few-shot example now puts
+    // activeThesis at the top level, Gemma occasionally nests it under
+    // _scratchpad. Also wrap a bare-string `instruments` into an array
+    // so normalizeThesis's asArray() doesn't drop the data.
+    const rawThesis =
+      parsed.activeThesis ||
+      (parsed._scratchpad && typeof parsed._scratchpad === 'object'
+        ? parsed._scratchpad.activeThesis
+        : null) ||
+      null;
+    if (rawThesis && typeof rawThesis.instruments === 'string') {
+      rawThesis.instruments = [rawThesis.instruments];
+    }
+    const activeThesis = normalizeThesis(rawThesis);
+
+    const suggestedActions = Array.isArray(parsed.suggestedActions)
+      ? parsed.suggestedActions
+          .filter((x) => typeof x === 'string' && x.trim())
+          .map((x) => x.slice(0, 120).trim())
+          .slice(0, 4)
+      : null;
     const agentMessage =
       typeof parsed.response === 'string' && parsed.response.trim()
         ? parsed.response.trim()
@@ -272,6 +294,7 @@ export default async function handler(req, res) {
       agentResponse: agentMessage,
       scratchpad: cleanScratchpad,
       activeThesis,
+      suggestedActions,
       timestamp: new Date().toISOString(),
     };
 
@@ -306,7 +329,7 @@ export default async function handler(req, res) {
       agentMessage,
       scratchpad: cleanScratchpad,
       directive: null,
-      suggestedActions: null,
+      suggestedActions,
       elicitationTarget: null,
       anchorContext: null,
       hasDirective: false,
@@ -321,6 +344,7 @@ export default async function handler(req, res) {
       agentMessage,
       activeThesis,
       scratchpad: cleanScratchpad,
+      suggestedActions,
       messagesUsed: messagesUsed + 1,
       messageBudget,
       readyToCompile: activeThesis.readyToCompile,
@@ -340,6 +364,7 @@ export default async function handler(req, res) {
       activeThesis: null,
       sessionId: null,
       scratchpad: null,
+      suggestedActions: null,
       messagesUsed: 0,
       messageBudget: MESSAGE_BUDGET,
       readyToCompile: false,
