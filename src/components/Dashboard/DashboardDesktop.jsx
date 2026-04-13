@@ -465,6 +465,8 @@ export default function DashboardDesktop({
                       battleType={bType}
                       user={user}
                       onPress={() => handleBattlePress(battle, bType)}
+                      overrideMyScore={dashboardScores.get(battle.id)?.myScore}
+                      overrideOppScore={dashboardScores.get(battle.id)?.oppScore}
                     />
                     <div style={{
                       position: 'absolute',

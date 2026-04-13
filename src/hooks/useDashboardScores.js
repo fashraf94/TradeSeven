@@ -1,6 +1,8 @@
 // useDashboardScores — Centralized score polling for dashboard secondary battles.
-// Reads prices from cacheService synchronously (no new API calls per tick).
-// One-time bootstrap fetch seeds the cache for all battle symbols on mount.
+// Reads prices from cacheService synchronously, refreshing them on its own interval
+// so scores stay live even when no other hook is fetching the same symbols.
+// A module-level cache survives navigation — on remount, the hook initializes from
+// the last known scores instead of flashing to 0 while the bootstrap fetch runs.
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import cacheService from '../services/cacheService';
@@ -9,9 +11,17 @@ import { calculateAssetScoreV3, flattenPortfolio } from '../utils/baggerBombUtil
 import { getBankedScoreTotal } from '../services/dailyScoringV4Service';
 import { usePageVisibility } from './usePageVisibility';
 import { buildDraftStandings } from '../components/Dashboard/ClashCard';
+import { isMarketOpen } from '../utils/marketSchedule';
 
-const POLL_INTERVAL = 5000; // 5 seconds
+const POLL_INTERVAL = 5000; // 5 seconds — compute scores from cacheService
+const PRICE_REFRESH_INTERVAL = 15000; // 15 seconds — re-fetch prices into cache
 const LOG_EVERY_N_TICKS = 3; // log every 3rd tick = 15s
+
+// Module-level cache — survives React unmount/remount so navigating away from
+// the dashboard and back doesn't flash secondary battle scores to 0 during the
+// hook's bootstrap window. Keyed by battleId.
+const dashboardScoreCache = new Map(); // battleId → { myScore, oppScore, timestamp }
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
 const CRYPTO_LIST = ['BTC', 'ETH', 'SOL', 'ADA', 'DOT', 'AVAX', 'MATIC', 'LINK', 'UNI', 'XRP', 'DOGE', 'SHIB', 'LTC', 'AAVE', 'ATOM', 'ALGO', 'XLM'];
 const isCrypto = (symbol) =>
@@ -183,7 +193,19 @@ function computeBattleScores(battle, type, userId) {
 // ─── Hook ──────────────────────────────────────────────────────────────────
 
 export function useDashboardScores(activeBattles, userId) {
-  const [scores, setScores] = useState(() => new Map());
+  // Seed initial state from the module-level cache so remounts render the
+  // last known scores immediately instead of flashing to 0 while the new
+  // bootstrap fetch resolves.
+  const [scores, setScores] = useState(() => {
+    const now = Date.now();
+    const seeded = new Map();
+    for (const [id, entry] of dashboardScoreCache) {
+      if (now - entry.timestamp < CACHE_TTL) {
+        seeded.set(id, { myScore: entry.myScore, oppScore: entry.oppScore });
+      }
+    }
+    return seeded;
+  });
   const [bootstrapDone, setBootstrapDone] = useState(false);
   const isVisible = usePageVisibility();
   const tickRef = useRef(0);
@@ -263,6 +285,7 @@ export function useDashboardScores(activeBattles, userId) {
       try {
         const newMap = new Map();
 
+        const now = Date.now();
         activeBattles.forEach(({ battle, type }) => {
           const id = battle?.id;
           if (!id) return;
@@ -270,6 +293,9 @@ export function useDashboardScores(activeBattles, userId) {
           const result = computeBattleScores(battle, type, userId);
           if (result) {
             newMap.set(id, result);
+            // Persist to module cache so navigation away + back can re-seed
+            // immediately instead of flashing to 0.
+            dashboardScoreCache.set(id, { ...result, timestamp: now });
           }
         });
 
@@ -294,6 +320,39 @@ export function useDashboardScores(activeBattles, userId) {
     const interval = setInterval(computeAll, POLL_INTERVAL);
     return () => clearInterval(interval);
   }, [bootstrapDone, activeBattles, userId, isVisible]);
+
+  // ─── Periodic price refresh ────────────────────────────────────────────
+  // The poll above recomputes scores from cacheService synchronously — it
+  // never fetches fresh prices on its own. Without this effect the cache
+  // goes stale after the initial bootstrap unless some other hook happens
+  // to be refreshing the same symbols, and scores visually freeze.
+  useEffect(() => {
+    if (!bootstrapDone || !activeBattles || activeBattles.length === 0) return;
+
+    const refreshPrices = async () => {
+      if (document.hidden) return;
+      if (!isMarketOpen()) return;
+
+      const symbols = collectAllSymbols();
+      if (symbols.length === 0) return;
+
+      const stockSymbols = symbols.filter((s) => !isCrypto(s));
+      const cryptoSymbols = symbols.filter((s) => isCrypto(s));
+
+      try {
+        // Batch into a single call per asset type (Feb 14 N+1 guardrail).
+        await Promise.all([
+          stockSymbols.length > 0 ? stockAPI.getMultipleStockPrices(stockSymbols) : Promise.resolve({}),
+          cryptoSymbols.length > 0 ? stockAPI.getMultipleCryptoPrices(cryptoSymbols) : Promise.resolve({}),
+        ]);
+      } catch (err) {
+        console.warn('[DashboardScores] Price refresh failed:', err.message);
+      }
+    };
+
+    const interval = setInterval(refreshPrices, PRICE_REFRESH_INTERVAL);
+    return () => clearInterval(interval);
+  }, [bootstrapDone, activeBattles, collectAllSymbols, isVisible]);
 
   return scores;
 }
