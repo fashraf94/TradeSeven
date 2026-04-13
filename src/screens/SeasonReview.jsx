@@ -36,6 +36,14 @@ import { db } from '../firebase/config';
 import { HOLO_COLORS } from '../constants/holoTheme';
 import { computeFinalMetrics } from '../../api/_utils/seasonLeaderboard';
 import RuleReportCard from '../components/Season/RuleReportCard';
+import DeployToAgent from '../components/Forge/DeployToAgent';
+import {
+  dimensionsToDirectives,
+  dimensionsToGuardrails,
+  deriveDimensionsFromSnapshots,
+} from '../utils/dimensionMapper';
+
+const TEAL = '#5EEAD4';
 
 const TROPHY_GOLD = '#F0C75E';
 const POSITIVE = '#34D399';
@@ -158,8 +166,100 @@ function BackArrow() {
 
 // ─── Main component ───────────────────────────────────────────
 
-export default function SeasonReview({ user: _user, season, entry, onBack, onNavigateForge }) {
+export default function SeasonReview({
+  user: _user,
+  agent,
+  season,
+  entry,
+  onBack,
+  onNavigateForge,
+}) {
   const [leaderboard, setLeaderboard] = useState(null);
+
+  // Phase 4A: Deploy-to-Agent state + resolved dimensionValues.
+  // Three-tier resolution:
+  //   1. bundle doc's `dimensionValues` field (canonical, persisted at launch)
+  //   2. localStorage['forge.lastEntryDims'][entry.id] (same-device cache)
+  //   3. deriveDimensionsFromSnapshots(entry.algorithm.rules) (best-effort)
+  const [deployOpen, setDeployOpen] = useState(false);
+  const [deployedBanner, setDeployedBanner] = useState(null);
+  const [resolvedDims, setResolvedDims] = useState(null);
+  const [resolvedInferred, setResolvedInferred] = useState(false);
+
+  const deployBundleId =
+    entry?.bundleId || entry?.algorithm?.bundleId || null;
+
+  useEffect(() => {
+    if (!agent?.id || !entry?.id) return undefined;
+    let cancelled = false;
+    (async () => {
+      // Tier 1: canonical bundle doc
+      if (deployBundleId) {
+        try {
+          const bundleSnap = await getDoc(
+            doc(db, 'agents', agent.id, 'bundles', deployBundleId)
+          );
+          if (!cancelled && bundleSnap.exists()) {
+            const bundleData = bundleSnap.data();
+            if (bundleData?.dimensionValues) {
+              setResolvedDims(bundleData.dimensionValues);
+              setResolvedInferred(false);
+              return;
+            }
+          }
+        } catch (err) {
+          console.warn('[SeasonReview] bundle dims fetch failed', err);
+        }
+      }
+
+      // Tier 2: localStorage cache (same-device launch)
+      try {
+        const raw = localStorage.getItem('forge.lastEntryDims');
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (!cancelled && parsed?.[entry.id]) {
+            setResolvedDims(parsed[entry.id]);
+            setResolvedInferred(false);
+            return;
+          }
+        }
+      } catch (err) {
+        console.warn('[SeasonReview] localStorage read failed', err);
+      }
+
+      // Tier 3: best-effort reverse-map from rule snapshots
+      const rules = Array.isArray(entry?.algorithm?.rules)
+        ? entry.algorithm.rules
+        : [];
+      if (rules.length > 0 && !cancelled) {
+        // Build pseudo-snapshots for the reverse mapper — it expects
+        // `{ sourceRef, paramValues }` or `{ id: 'dim-xx', paramValues }`.
+        const pseudoSnaps = rules.map((r) => ({
+          id: `dim-${r.ruleId || ''}`,
+          sourceRef: r.ruleId || '',
+          paramValues: r.params || {},
+        }));
+        setResolvedDims(deriveDimensionsFromSnapshots(pseudoSnaps));
+        setResolvedInferred(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [agent?.id, entry?.id, deployBundleId, entry?.algorithm?.rules]);
+
+  const deployDirectives = useMemo(
+    () => (resolvedDims ? dimensionsToDirectives(resolvedDims) : []),
+    [resolvedDims]
+  );
+  const deployGuardrails = useMemo(
+    () => (resolvedDims ? dimensionsToGuardrails(resolvedDims) : []),
+    [resolvedDims]
+  );
+
+  const canDeploy =
+    Boolean(agent?.id && deployBundleId && resolvedDims) &&
+    !agent?.activeBattleId;
 
   // Load leaderboard for final rank + spy return
   useEffect(() => {
@@ -494,6 +594,96 @@ export default function SeasonReview({ user: _user, season, entry, onBack, onNav
           )}
         </div>
 
+        {/* Phase 4A: Deploy-to-Agent CTA — sits above the refine prompt so
+            users can promote a proven strategy to live battles in one tap. */}
+        {agent?.id && (
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4, delay: 0.5 }}
+            style={{
+              background: HOLO_COLORS.bgElevated,
+              border: `1px solid ${TEAL}44`,
+              borderRadius: 16,
+              padding: 20,
+              marginBottom: 16,
+              textAlign: 'center',
+            }}
+          >
+            {deployedBanner ? (
+              <>
+                <div
+                  style={{
+                    fontSize: 14,
+                    fontWeight: 700,
+                    color: TEAL,
+                    marginBottom: 6,
+                  }}
+                >
+                  Deployed to BaggerBomb ✓
+                </div>
+                <div
+                  style={{
+                    fontSize: 12,
+                    color: HOLO_COLORS.textSecondary,
+                    lineHeight: 1.5,
+                  }}
+                >
+                  Your agent will use this strategy in the next battle.
+                </div>
+              </>
+            ) : (
+              <>
+                <div
+                  style={{
+                    fontSize: 16,
+                    fontWeight: 700,
+                    color: HOLO_COLORS.textPrimary,
+                    marginBottom: 6,
+                  }}
+                >
+                  Ready to go live?
+                </div>
+                <div
+                  style={{
+                    fontSize: 13,
+                    color: HOLO_COLORS.textSecondary,
+                    marginBottom: 16,
+                    lineHeight: 1.5,
+                  }}
+                >
+                  {agent?.activeBattleId
+                    ? 'Your agent is in a battle — deployment resumes once it finishes.'
+                    : canDeploy
+                    ? 'Use this strategy in your agent’s live BaggerBomb battles.'
+                    : 'Strategy data is still loading — hold tight.'}
+                </div>
+                <button
+                  onClick={() => setDeployOpen(true)}
+                  disabled={!canDeploy}
+                  style={{
+                    padding: '12px 24px',
+                    background: canDeploy ? TEAL : 'transparent',
+                    color: canDeploy
+                      ? HOLO_COLORS.bgDeep
+                      : HOLO_COLORS.textSecondary,
+                    border: canDeploy ? 'none' : `1px solid ${HOLO_COLORS.borderSubtle || 'rgba(255,255,255,0.1)'}`,
+                    borderRadius: 10,
+                    fontSize: 14,
+                    fontWeight: 700,
+                    cursor: canDeploy ? 'pointer' : 'not-allowed',
+                    boxShadow: canDeploy ? `0 0 20px ${TEAL}44` : 'none',
+                    opacity: canDeploy ? 1 : 0.7,
+                  }}
+                  type="button"
+                >
+                  Deploy to BaggerBomb →
+                </button>
+              </>
+            )}
+          </motion.div>
+        )}
+
         {/* Re-entry CTA */}
         <motion.div
           initial={{ opacity: 0, y: 10 }}
@@ -545,6 +735,23 @@ export default function SeasonReview({ user: _user, season, entry, onBack, onNav
           </button>
         </motion.div>
       </div>
+
+      {/* Phase 4A: Deploy-to-Agent modal */}
+      {agent?.id && deployBundleId && (
+        <DeployToAgent
+          isOpen={deployOpen}
+          onClose={() => setDeployOpen(false)}
+          agent={agent}
+          season={season}
+          entry={entry}
+          dimensionValues={resolvedDims}
+          bundleId={deployBundleId}
+          directives={deployDirectives}
+          guardrails={deployGuardrails}
+          dimensionsInferred={resolvedInferred}
+          onDeployed={(deployed) => setDeployedBanner(deployed)}
+        />
+      )}
     </div>
   );
 }

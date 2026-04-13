@@ -623,3 +623,348 @@ export async function materializeDimensionBundle({
   await batch.commit();
   return bundleId;
 }
+
+// ─────────────────────────────────────────────────────────────
+// Phase 4A: Deploy-to-Agent support
+// ─────────────────────────────────────────────────────────────
+//
+// The Deploy flow reads a completed experiment's dimensionValues at confirm
+// time so it can generate directives + guardrails to show in the preview and
+// persist on the agent doc. Since dimensionValues are not stored on the
+// entry document, we persist them onto the bundle doc at launch time via
+// `persistDimensionValuesOnBundle`, and provide a best-effort reverse map
+// for any legacy bundles that pre-date this write.
+//
+// All symbols below are APPEND-ONLY additions — no existing code modified.
+
+/**
+ * Merge-write dimensionValues onto an existing bundle doc so the Deploy
+ * flow (which runs weeks later) can recover the original knob settings.
+ *
+ * Fire-and-forget from the caller. Safe to call more than once per bundle
+ * (idempotent under merge). Uses writeBatch so we stay inside the module's
+ * existing imports (append-only constraint).
+ */
+export async function persistDimensionValuesOnBundle(
+  agentId,
+  bundleId,
+  dimensionValues
+) {
+  if (!agentId || !bundleId || !dimensionValues) return;
+  const bundleRef = doc(db, 'agents', agentId, 'bundles', bundleId);
+  const batch = writeBatch(db);
+  batch.set(
+    bundleRef,
+    {
+      dimensionValues,
+      dimensionSchemaVersion: 1,
+      updatedAt: serverTimestamp(),
+    },
+    { merge: true }
+  );
+  await batch.commit();
+}
+
+/**
+ * Translate dimensionValues into BaggerBomb-appropriate natural-language
+ * directives the Haiku prompt can reason about during intraday battles.
+ *
+ * Disabled toggles (`volumeConfirm: false`, `rebalanceOnDrift: false`, etc.)
+ * omit their directive. Returns an array of `{ id, text, category }`.
+ *
+ * NOTE: These are intentionally distinct from the Season-mode rule text —
+ * they are tuned for 1-day intraday context, not 4-week EOD simulation.
+ */
+export function dimensionsToDirectives(dv) {
+  if (!dv) return [];
+  const out = [];
+  const rp = dv.riskPosture || {};
+  const ea = dv.entryAggression || {};
+  const ed = dv.exitDiscipline || {};
+  const ss = dv.sectorStrategy || {};
+  const ms = dv.momentumSensitivity || {};
+  const ma = dv.macroAwareness || {};
+  const ps = dv.positionSizing || {};
+
+  const push = (id, category, text) => out.push({ id, category, text });
+
+  // Risk Posture
+  if (typeof rp.stopLoss === 'number') {
+    push(
+      'dir-stop-loss',
+      'risk',
+      `Stop-loss at ${rp.stopLoss}% — exit any position that drops below entry price by this amount.`
+    );
+  }
+  if (typeof rp.trailingStop === 'number') {
+    push(
+      'dir-trailing-stop',
+      'risk',
+      `Trailing stop at ${rp.trailingStop}% — protect gains by exiting when a position pulls back this much from its high.`
+    );
+  }
+
+  // Entry Aggression
+  if (typeof ea.rsiUpper === 'number' && ea.rsiUpper < 75) {
+    push(
+      'dir-rsi-ceiling',
+      'entry',
+      `Avoid overbought stocks — do not enter positions with RSI above ${ea.rsiUpper}.`
+    );
+  }
+  if (ea.volumeConfirm) {
+    push(
+      'dir-volume-confirm',
+      'entry',
+      'Require volume confirmation — only enter stocks trading above their average volume.'
+    );
+  }
+  if (typeof ea.fundamentalFloor === 'number' && ea.fundamentalFloor >= 30) {
+    push(
+      'dir-fundamental-floor',
+      'entry',
+      `Fundamental quality filter — prefer stocks with composite scores above ${ea.fundamentalFloor}.`
+    );
+  }
+
+  // Exit Discipline
+  if (typeof ed.profitTarget === 'number') {
+    push(
+      'dir-profit-target',
+      'exit',
+      `Profit target at ${ed.profitTarget}% — lock in gains when a position reaches this return.`
+    );
+  }
+  if (typeof ed.timeExit === 'number' && ed.timeExit > 0) {
+    push(
+      'dir-time-exit',
+      'exit',
+      `Time-based exit — close positions that haven't gained meaningfully within ${ed.timeExit} trading days.`
+    );
+  }
+  if (ed.technicalExit) {
+    push(
+      'dir-technical-exit',
+      'exit',
+      'Technical exit enabled — cut positions on RSI overbought breakdowns.'
+    );
+  }
+
+  // Sector Strategy
+  if (typeof ss.maxSectorWeight === 'number') {
+    push(
+      'dir-sector-cap',
+      'allocation',
+      `Sector diversification — no single sector above ${ss.maxSectorWeight}% of the portfolio.`
+    );
+  }
+  if (ss.rebalanceOnDrift && typeof ss.sectorDriftTolerance === 'number') {
+    push(
+      'dir-sector-drift',
+      'allocation',
+      `Rebalance if any sector drifts more than ${ss.sectorDriftTolerance}% from its initial weight.`
+    );
+  }
+
+  // Momentum Sensitivity
+  if (typeof ms.momentumThreshold === 'number') {
+    push(
+      'dir-momentum',
+      'momentum',
+      `Momentum sensitivity — prefer stocks with a ${ms.momentumThreshold}%+ 10-day price change.`
+    );
+  }
+  if (ms.addToWinners) {
+    push(
+      'dir-add-to-winners',
+      'momentum',
+      'Add to winners — scale into positions that continue working in your favor.'
+    );
+  }
+  if (ms.cutUnderperformers) {
+    push(
+      'dir-cut-losers',
+      'momentum',
+      'Cut underperformers — reduce exposure to positions lagging the benchmark.'
+    );
+  }
+
+  // Macro Awareness
+  if (typeof ma.earningsAvoidance === 'number' && ma.earningsAvoidance >= 1) {
+    push(
+      'dir-earnings-avoid',
+      'macro',
+      `Avoid stocks within ${ma.earningsAvoidance} trading days of earnings announcements.`
+    );
+  }
+  if (ma.fomcDefensive) {
+    push(
+      'dir-fomc-defensive',
+      'macro',
+      'Reduce high-beta exposure in the days before Fed / CPI releases.'
+    );
+  }
+  if (ma.benchmarkGapResponse === 'aggressive') {
+    push(
+      'dir-benchmark-gap-aggressive',
+      'macro',
+      'React to benchmark gaps — increase position aggression when trailing the S&P.'
+    );
+  } else if (ma.benchmarkGapResponse === 'react') {
+    push(
+      'dir-benchmark-gap-protect',
+      'macro',
+      'Lead protection — tighten stops and cap beta when leading the S&P.'
+    );
+  }
+
+  // Position Sizing
+  if (typeof ps.maxPosition === 'number') {
+    push(
+      'dir-max-position',
+      'allocation',
+      `Position cap — no single holding above ${ps.maxPosition}% of the portfolio.`
+    );
+  }
+  if (typeof ps.cashDeploymentTrigger === 'number') {
+    push(
+      'dir-cash-deploy',
+      'allocation',
+      `Cash deployment — prioritize entries when cash exceeds ${ps.cashDeploymentTrigger}%.`
+    );
+  }
+
+  return out;
+}
+
+/**
+ * Structured quantitative thresholds to be written onto the agent doc at
+ * Deploy time. Phase 4B will read these in `agentEvalPromptAssembly.js`
+ * and enforce `enforcement: 'hard'` items deterministically.
+ *
+ * Phase 4A only persists them — nothing in the battle path reads them yet.
+ */
+export function dimensionsToGuardrails(dv) {
+  if (!dv) return [];
+  const rp = dv.riskPosture || {};
+  const ss = dv.sectorStrategy || {};
+  const ps = dv.positionSizing || {};
+  const ed = dv.exitDiscipline || {};
+
+  const out = [];
+  if (typeof rp.stopLoss === 'number') {
+    out.push({ type: 'stopLoss', value: rp.stopLoss, unit: '%', enforcement: 'hard' });
+  }
+  if (typeof rp.trailingStop === 'number') {
+    out.push({ type: 'trailingStop', value: rp.trailingStop, unit: '%', enforcement: 'hard' });
+  }
+  if (typeof ss.maxSectorWeight === 'number') {
+    out.push({ type: 'maxSectorWeight', value: ss.maxSectorWeight, unit: '%', enforcement: 'hard' });
+  }
+  if (typeof ps.maxPosition === 'number') {
+    out.push({ type: 'maxPosition', value: ps.maxPosition, unit: '%', enforcement: 'hard' });
+  }
+  if (typeof ed.profitTarget === 'number') {
+    out.push({ type: 'profitTarget', value: ed.profitTarget, unit: '%', enforcement: 'soft' });
+  }
+  return out;
+}
+
+/**
+ * Best-effort reverse map from a bundle's ruleSnapshots array back to a
+ * partial dimensionValues object. Used as a last-resort fallback in the
+ * Deploy flow when the bundle doc pre-dates `persistDimensionValuesOnBundle`
+ * and no localStorage copy exists.
+ *
+ * Inferred values are less reliable than canonical ones — caller may flag
+ * them in the UI. Booleans default to false for off-by-absence semantics,
+ * numeric values fall back to DIMENSION_DEFAULTS where snapshots are absent.
+ */
+export function deriveDimensionsFromSnapshots(snapshots) {
+  const dv = cloneDefaults();
+  if (!Array.isArray(snapshots)) return dv;
+
+  // Start booleans at false — presence of the corresponding snapshot flips on.
+  dv.entryAggression.volumeConfirm = false;
+  dv.exitDiscipline.technicalExit = false;
+  dv.sectorStrategy.rebalanceOnDrift = false;
+  dv.momentumSensitivity.addToWinners = false;
+  dv.momentumSensitivity.cutUnderperformers = false;
+  dv.macroAwareness.fomcDefensive = false;
+  dv.macroAwareness.benchmarkGapResponse = 'off';
+  dv.macroAwareness.earningsAvoidance = 0;
+
+  for (const snap of snapshots) {
+    const templateId = snap?.sourceRef || snap?.id?.replace(/^dim-/, '') || '';
+    const pv = snap?.paramValues || {};
+    switch (templateId) {
+      case 'sx-01':
+        if (typeof pv.pct === 'number') dv.riskPosture.stopLoss = pv.pct;
+        break;
+      case 'sx-02':
+        if (typeof pv.pct === 'number') dv.riskPosture.trailingStop = pv.pct;
+        break;
+      case 'se-01':
+        if (typeof pv.upper === 'number') dv.entryAggression.rsiUpper = pv.upper;
+        break;
+      case 'se-02':
+        dv.entryAggression.volumeConfirm = true;
+        break;
+      case 'se-05':
+        if (typeof pv.minScore === 'number') dv.entryAggression.fundamentalFloor = pv.minScore;
+        break;
+      case 'sx-04':
+        if (typeof pv.pct === 'number') dv.exitDiscipline.profitTarget = pv.pct;
+        break;
+      case 'sx-03':
+        if (typeof pv.days === 'number') dv.exitDiscipline.timeExit = pv.days;
+        break;
+      case 'sx-05':
+        dv.exitDiscipline.technicalExit = true;
+        break;
+      case 'se-07':
+        if (typeof pv.maxPct === 'number') dv.sectorStrategy.maxSectorWeight = pv.maxPct;
+        break;
+      case 'sr-03':
+        dv.sectorStrategy.rebalanceOnDrift = true;
+        if (typeof pv.tolerance === 'number') dv.sectorStrategy.sectorDriftTolerance = pv.tolerance;
+        break;
+      case 'se-06':
+        if (typeof pv.pct === 'number') dv.momentumSensitivity.momentumThreshold = pv.pct;
+        break;
+      case 'sr-04':
+        dv.momentumSensitivity.addToWinners = true;
+        break;
+      case 'sr-05':
+        dv.momentumSensitivity.cutUnderperformers = true;
+        break;
+      case 'se-04':
+        if (typeof pv.days === 'number') dv.macroAwareness.earningsAvoidance = pv.days;
+        break;
+      case 'ss-04':
+        dv.macroAwareness.fomcDefensive = true;
+        break;
+      case 'ss-01':
+        dv.macroAwareness.benchmarkGapResponse = 'aggressive';
+        break;
+      case 'ss-02':
+        dv.macroAwareness.benchmarkGapResponse = 'react';
+        break;
+      case 'sr-01':
+        if (typeof pv.maxPct === 'number') {
+          dv.positionSizing.maxPosition = pv.maxPct;
+          if (typeof pv.targetPct === 'number') {
+            dv.positionSizing.trimThreshold = Math.max(3, pv.maxPct - pv.targetPct);
+          }
+        }
+        break;
+      case 'sr-02':
+        if (typeof pv.pct === 'number') dv.positionSizing.cashDeploymentTrigger = pv.pct;
+        break;
+      default:
+        break;
+    }
+  }
+
+  return dv;
+}
