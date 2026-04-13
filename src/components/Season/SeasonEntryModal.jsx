@@ -23,7 +23,7 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import CenteredModal from '../shared/CenteredModal';
 import { fetchWithAuth } from '../../utils/fetchWithAuth';
-import { SEASON_CONFLICT_PAIRS } from '../../data/forgeKnowledgeBase';
+import { SEASON_CONFLICT_PAIRS, FORGE_RULE_TEMPLATES } from '../../data/forgeKnowledgeBase';
 import { HOLO_COLORS } from '../../constants/holoTheme';
 import StrategyDimensions from '../Forge/StrategyDimensions';
 import CollectionPicker from '../Forge/CollectionPicker';
@@ -60,6 +60,15 @@ function findConflicts(seasonRuleIds) {
     if (set.has(pair.ruleA) && set.has(pair.ruleB)) matches.push(pair);
   }
   return matches;
+}
+
+function getRuleHeadline(ruleId) {
+  if (!ruleId) return '';
+  const lower = String(ruleId).toLowerCase();
+  const tpl = FORGE_RULE_TEMPLATES.find(
+    (t) => String(t.id).toLowerCase() === lower
+  );
+  return tpl?.headline || String(ruleId).toUpperCase();
 }
 
 function formatDateRange(startDate, endDate) {
@@ -376,7 +385,18 @@ function StepConfirm({
               }}
             >
               <div style={{ fontWeight: 600, color: AMBER_WARN, marginBottom: 2 }}>
-                ⚠️ {c.ruleA.toUpperCase()} &amp; {c.ruleB.toUpperCase()}
+                ⚠️ {getRuleHeadline(c.ruleA)} &amp; {getRuleHeadline(c.ruleB)}
+              </div>
+              <div
+                style={{
+                  fontSize: 10,
+                  color: HOLO_COLORS.textMuted,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.5px',
+                  marginBottom: 4,
+                }}
+              >
+                {c.ruleA.toUpperCase()} · {c.ruleB.toUpperCase()}
               </div>
               <div>{c.warning}</div>
             </div>
@@ -663,7 +683,7 @@ export default function SeasonEntryModal({
       >
         <StepDots current={step} total={3} />
 
-        <div style={{ flex: 1, position: 'relative', minHeight: 240, paddingBottom: 100 }}>
+        <div style={{ flex: 1, position: 'relative', minHeight: 240, paddingBottom: 120 }}>
           <AnimatePresence mode="wait" custom={direction}>
             <motion.div
               key={`step-${step}`}
