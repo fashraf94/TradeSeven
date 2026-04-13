@@ -2185,6 +2185,13 @@ export default function PortfolioDuel() {
   const { agent: primaryAgent } = useAgent(user?.uid);
   const [activeSeason, setActiveSeason] = useState(null);
   const [activeSeasonEntry, setActiveSeasonEntry] = useState(null);
+  // All of the user's simultaneously-active (or pending) season entries,
+  // capped at 5 by the create-entry API. `activeSeasonEntry` above stays
+  // as the currently-focused entry (what the dashboard/pit-stop screens
+  // render); this array feeds the ForgeLanding card list and the launch
+  // gate that disables "Start New Experiment" at the cap.
+  const [activeSeasonEntries, setActiveSeasonEntries] = useState([]);
+  const [activeSeasonsById, setActiveSeasonsById] = useState({});
   const [seasonEntryModalOpen, setSeasonEntryModalOpen] = useState(false);
   const [seasonToJoin, setSeasonToJoin] = useState(null);
   // Phase 5 — Workshop Mode hand-off. When set, SeasonEntryModal opens with
@@ -3480,37 +3487,66 @@ export default function PortfolioDuel() {
       if (!user?.uid) {
         setActiveSeason(null);
         setActiveSeasonEntry(null);
+        setActiveSeasonEntries([]);
+        setActiveSeasonsById({});
         return;
       }
       try {
-        const { collection, query, where, getDocs, limit, doc, getDoc } = await import('firebase/firestore');
+        const { collection, query, where, getDocs, doc, getDoc } = await import('firebase/firestore');
         const { db } = await import('./firebase/config');
 
+        // Load up to 5 concurrent active entries. The create-entry API
+        // enforces the cap; this query just mirrors it client-side.
         const entriesSnap = await getDocs(
           query(
             collection(db, 'seasonEntries'),
             where('userId', '==', user.uid),
-            where('status', '==', 'active'),
-            limit(1)
+            where('status', '==', 'active')
           )
         );
         if (cancelled) return;
         if (entriesSnap.empty) {
           setActiveSeason(null);
           setActiveSeasonEntry(null);
+          setActiveSeasonEntries([]);
+          setActiveSeasonsById({});
           return;
         }
-        const entryDoc = entriesSnap.docs[0];
-        const entry = { id: entryDoc.id, ...entryDoc.data() };
-        const seasonSnap = await getDoc(doc(db, 'seasons', entry.seasonId));
+        const entries = entriesSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        // Resolve each unique seasonId to its season doc. All 5 often
+        // share the same season; dedupe before fetching.
+        const seasonIds = Array.from(new Set(entries.map((e) => e.seasonId).filter(Boolean)));
+        const seasonPairs = await Promise.all(
+          seasonIds.map((sid) =>
+            getDoc(doc(db, 'seasons', sid)).then((snap) => [sid, snap])
+          )
+        );
         if (cancelled) return;
-        if (seasonSnap.exists()) {
-          setActiveSeason({ id: seasonSnap.id, ...seasonSnap.data() });
-          setActiveSeasonEntry(entry);
-        } else {
-          setActiveSeason(null);
-          setActiveSeasonEntry(null);
+        const seasonsById = {};
+        for (const [sid, snap] of seasonPairs) {
+          if (snap.exists()) seasonsById[sid] = { id: snap.id, ...snap.data() };
         }
+        // Drop entries whose season doc is missing.
+        const validEntries = entries.filter((e) => seasonsById[e.seasonId]);
+        setActiveSeasonEntries(validEntries);
+        setActiveSeasonsById(seasonsById);
+        // Keep the singular focused entry pointing at something sensible:
+        // preserve the existing selection if it's still active, otherwise
+        // fall back to the first entry.
+        setActiveSeasonEntry((prev) => {
+          const stillActive =
+            prev && validEntries.find((e) => e.id === prev.id);
+          return stillActive || validEntries[0] || null;
+        });
+        setActiveSeason((prev) => {
+          const focused = validEntries[0];
+          if (!focused) return null;
+          // Prefer the prior selection if it's still represented.
+          const prior =
+            prev && validEntries.find((e) => e.seasonId === prev.id);
+          if (prior) return prev;
+          return seasonsById[focused.seasonId] || null;
+        });
       } catch (err) {
         if (!cancelled) console.error('[ActiveSeason] Load failed:', err);
       }
@@ -8144,8 +8180,16 @@ export default function PortfolioDuel() {
           }}
           activeSeason={activeSeason}
           activeSeasonEntry={activeSeasonEntry}
+          activeSeasonEntries={activeSeasonEntries}
+          activeSeasonsById={activeSeasonsById}
           agent={primaryAgent}
-          onViewDashboard={() => {
+          onViewDashboard={(season, entry) => {
+            // When ForgeLanding invokes this with a specific card, focus
+            // the singular state on that entry so SeasonDashboard renders
+            // the right experiment. Fall back to the current selection
+            // if the caller didn't pass args (legacy signature).
+            if (entry) setActiveSeasonEntry(entry);
+            if (season) setActiveSeason(season);
             setShowForge(false);
             setScreen('seasonDashboard');
           }}

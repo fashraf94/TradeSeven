@@ -383,7 +383,7 @@ function StartExperimentHero({ onClick, disabled, disabledReason }) {
             marginBottom: 3,
           }}
         >
-          {disabled ? 'Experiment in Progress' : 'Start New Experiment'}
+          {disabled ? 'Experiment Limit Reached' : 'Start New Experiment'}
         </div>
         <div
           style={{
@@ -393,7 +393,8 @@ function StartExperimentHero({ onClick, disabled, disabledReason }) {
           }}
         >
           {disabled
-            ? disabledReason || 'Complete your current run before launching another.'
+            ? disabledReason ||
+              'Maximum 5 concurrent experiments — complete one to start another.'
             : 'Build and test your trading strategy against 4 weeks of live market data.'}
         </div>
       </div>
@@ -761,9 +762,14 @@ export default function ForgeLanding({
   onClose,
   user,
   onNavigateToSeasonHub,
-  // Active experiment state (from App.jsx)
+  // Active experiment state (from App.jsx). `activeSeasonEntry` is the
+  // currently-focused entry (used for the daily briefing panel and as
+  // the fallback when only one experiment is live). `activeSeasonEntries`
+  // is the full list — up to MAX_CONCURRENT entries — rendered as cards.
   activeSeason,
   activeSeasonEntry,
+  activeSeasonEntries = [],
+  activeSeasonsById = {},
   // Agent
   agent,
   // Season navigation callbacks
@@ -865,11 +871,12 @@ export default function ForgeLanding({
     const pastList = seasons
       .filter((s) => s.status === 'completed' && entryMap.has(s.id))
       .map((s) => ({ ...s, entry: entryMap.get(s.id) }));
-    // Next available to join: upcoming season OR active season not yet joined
+    // Next available to join. With multi-experiment support the user
+    // may launch additional entries into a season they've already
+    // joined, so the "not yet joined" guard is gone — the 5-experiment
+    // cap is enforced separately on the launch button.
     const upcomingList = seasons.filter(
-      (s) =>
-        s.status === 'upcoming' ||
-        (s.status === 'active' && !entryMap.has(s.id))
+      (s) => s.status === 'upcoming' || s.status === 'active'
     );
     upcomingList.sort((a, b) => {
       const aT = a.startDate ? new Date(a.startDate).getTime() : Infinity;
@@ -879,7 +886,21 @@ export default function ForgeLanding({
     return { past: pastList, nextUpcoming: upcomingList[0] || null };
   }, [seasons, entries]);
 
-  const hasActive = Boolean(activeSeason && activeSeasonEntry);
+  // Users can run up to MAX_CONCURRENT_EXPERIMENTS simultaneously. The
+  // server enforces the same cap in api/season/create-entry.js; this
+  // client check just prevents the POST when we know it will 409.
+  const MAX_CONCURRENT_EXPERIMENTS = 5;
+  // Prefer the plural array when App.jsx provides it; fall back to the
+  // singular entry for defensive rendering while state is resolving.
+  const activeEntriesList = useMemo(() => {
+    if (Array.isArray(activeSeasonEntries) && activeSeasonEntries.length > 0) {
+      return activeSeasonEntries;
+    }
+    if (activeSeasonEntry) return [activeSeasonEntry];
+    return [];
+  }, [activeSeasonEntries, activeSeasonEntry]);
+  const hasActive = activeEntriesList.length > 0;
+  const atLaunchCap = activeEntriesList.length >= MAX_CONCURRENT_EXPERIMENTS;
   const tradingDay =
     activeSeasonEntry?.seasonState?.currentDay ??
     activeSeason?.currentDay ??
@@ -904,8 +925,10 @@ export default function ForgeLanding({
       showToast('Create an agent first to use Workshop Mode');
       return;
     }
-    if (hasActive) {
-      showToast('Finish your current experiment before workshopping a new one');
+    if (atLaunchCap) {
+      showToast(
+        `Maximum ${MAX_CONCURRENT_EXPERIMENTS} concurrent experiments — complete one to start another.`
+      );
       return;
     }
     if (!nextUpcoming) {
@@ -1026,19 +1049,32 @@ export default function ForgeLanding({
       </div>
 
       <div style={{ padding: '0 16px', maxWidth: 600, margin: '0 auto' }}>
-        {/* Section 1: Active experiment */}
+        {/* Section 1: Active experiments (up to 5, stacked) */}
         {hasActive ? (
-          <ActiveExperimentCard
-            season={activeSeason}
-            entry={activeSeasonEntry}
-            onViewDashboard={onViewDashboard}
-          />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {activeEntriesList.map((entry) => {
+              const entrySeason =
+                activeSeasonsById[entry.seasonId] ||
+                (activeSeason && activeSeason.id === entry.seasonId
+                  ? activeSeason
+                  : null);
+              if (!entrySeason) return null;
+              return (
+                <ActiveExperimentCard
+                  key={entry.id}
+                  season={entrySeason}
+                  entry={entry}
+                  onViewDashboard={onViewDashboard}
+                />
+              );
+            })}
+          </div>
         ) : (
           <NoActiveExperimentCard />
         )}
 
-        {/* Section 2: Daily briefing (only when an experiment is live) */}
-        {hasActive && (
+        {/* Section 2: Daily briefing for the focused experiment */}
+        {hasActive && activeSeasonEntry && (
           <div style={{ marginTop: 12 }}>
             <DailyBriefingCard
               entry={activeSeasonEntry}
@@ -1049,14 +1085,14 @@ export default function ForgeLanding({
           </div>
         )}
 
-        {/* Section 3: Start New Experiment */}
+        {/* Section 3: Start New Experiment — disabled only at the cap */}
         <SectionLabel>Launch</SectionLabel>
         <StartExperimentHero
           onClick={handleStartExperiment}
-          disabled={hasActive}
+          disabled={atLaunchCap}
           disabledReason={
-            hasActive
-              ? 'Complete or review your current experiment before launching another.'
+            atLaunchCap
+              ? `Maximum ${MAX_CONCURRENT_EXPERIMENTS} concurrent experiments — complete one to start another.`
               : null
           }
         />

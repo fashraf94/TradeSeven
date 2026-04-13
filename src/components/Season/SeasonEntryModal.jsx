@@ -622,6 +622,14 @@ export default function SeasonEntryModal({
               : fromConversation
                 ? 'workshop'
                 : 'manual'),
+          // Forward the picked Collection id (e.g. 'swing_trader',
+          // 'momentum_rider') so the server can populate
+          // creationSource.collectionUsed on the entry doc. Null when
+          // the user built dimensions from scratch without a preset.
+          sourceCollection:
+            selectedCollection && selectedCollection !== 'from-conversation'
+              ? selectedCollection
+              : null,
           dimensionValues,
         }),
       });

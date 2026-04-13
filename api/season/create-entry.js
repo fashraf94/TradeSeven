@@ -46,6 +46,26 @@ const ENTRY_SOURCES = new Set([
   'refinement_pair',
 ]);
 
+// Maximum number of simultaneously-active seasonEntries per user. When
+// a user has N < MAX_CONCURRENT_ACTIVE_ENTRIES entries in status=ACTIVE
+// they may launch a new experiment. Once at the cap, create-entry returns
+// 409 until at least one entry completes.
+const MAX_CONCURRENT_ACTIVE_ENTRIES = 5;
+
+// Maps the wire-format entrySource string onto the creationSource.method
+// enum surfaced on the entry doc. Keeps the two fields aligned without
+// forcing callers to send both.
+function entrySourceToCreationMethod(entrySource) {
+  switch (entrySource) {
+    case 'workshop':
+      return 'workshop';
+    case 'refinement_pair':
+      return 'refine';
+    default:
+      return 'manual';
+  }
+}
+
 export const config = { maxDuration: 15 };
 
 // Built once per cold start. Mirrors api/cron/season-pit-stop-manage.js:42.
@@ -170,6 +190,16 @@ function buildEntryDoc(user, seasonId, season, agentId, bundleId, bundle, bundle
     sourceExperimentId: originMeta?.sourceExperimentId || null,
     sourceCollection: originMeta?.sourceCollection || null,
     dimensionValuesAtLaunch: originMeta?.dimensionValues || null,
+
+    // Structured creation provenance. Mirrors the flat fields above but
+    // shaped for the Forge card UI and future analytics groupings
+    // (manual vs workshop vs refine).
+    creationSource: {
+      method: entrySourceToCreationMethod(originMeta?.entrySource),
+      collectionUsed: originMeta?.sourceCollection || null,
+      sourceExperimentId: originMeta?.sourceExperimentId || null,
+      timestamp: FieldValue.serverTimestamp(),
+    },
 
     // Portfolio — empty, populated by Day 1 cron
     portfolio: {
@@ -368,14 +398,22 @@ export default async function handler(req, res) {
         throw err;
       }
 
-      const dupQuery = db
+      // Cap concurrent active experiments per user. Counts all
+      // live entries (ACTIVE + PENDING) across every season so the
+      // same user can't exceed the limit whether their entries are
+      // already running or still queued against an upcoming season.
+      // Reads happen inside the transaction so two simultaneous POSTs
+      // can't both slip past the limit.
+      const activeQuery = db
         .collection('seasonEntries')
         .where('userId', '==', user.uid)
-        .where('seasonId', '==', seasonId)
-        .limit(1);
-      const dupSnap = await txn.get(dupQuery);
-      if (!dupSnap.empty) {
-        const err = new Error('Already joined this season');
+        .where('status', 'in', [ENTRY_STATUS.ACTIVE, ENTRY_STATUS.PENDING])
+        .limit(MAX_CONCURRENT_ACTIVE_ENTRIES);
+      const activeSnap = await txn.get(activeQuery);
+      if (activeSnap.size >= MAX_CONCURRENT_ACTIVE_ENTRIES) {
+        const err = new Error(
+          `Maximum ${MAX_CONCURRENT_ACTIVE_ENTRIES} concurrent experiments — complete one to start another.`
+        );
         err.status = 409;
         throw err;
       }
