@@ -1,9 +1,10 @@
 import React from 'react';
 
-const FantasyTimesStrip = ({ stories, tokens, isDesktop, isMobile }) => {
+const FantasyTimesStrip = ({ stories, tokens, isDesktop, isMobile, onTileClick }) => {
   if (!stories?.length) return null;
 
   const gridColumns = isDesktop ? 'repeat(4, 1fr)' : isMobile ? undefined : 'repeat(2, 1fr)';
+  const isClickable = typeof onTileClick === 'function';
 
   return (
     <>
@@ -30,6 +31,15 @@ const FantasyTimesStrip = ({ stories, tokens, isDesktop, isMobile }) => {
         {stories.map((story, i) => (
           <div
             key={story.id || i}
+            onClick={isClickable ? () => onTileClick(story) : undefined}
+            role={isClickable ? 'button' : undefined}
+            tabIndex={isClickable ? 0 : undefined}
+            onKeyDown={isClickable ? (e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                onTileClick(story);
+              }
+            } : undefined}
             style={{
               background: tokens.bgCard,
               borderRadius: '12px',
@@ -40,6 +50,8 @@ const FantasyTimesStrip = ({ stories, tokens, isDesktop, isMobile }) => {
               display: 'flex',
               flexDirection: 'column',
               gap: '8px',
+              cursor: isClickable ? 'pointer' : 'default',
+              transition: 'transform 0.15s ease, box-shadow 0.15s ease',
               ...(isMobile ? { minWidth: '240px', maxWidth: '240px', scrollSnapAlign: 'start' } : {}),
             }}
           >

@@ -7,7 +7,7 @@ import useAgent from '../../hooks/useAgent';
 import { useFantasyTimes } from '../../hooks/useFantasyTimes';
 import { REPORTER_PROFILES } from '../../prompts/fantasyTimesPrompts';
 import AgentSidebar from './AgentSidebar';
-import AgentMindTab from './AgentMindTab';
+import AgentOverviewTab from './AgentOverviewTab';
 import AgentLeaderboardTab from './AgentLeaderboardTab';
 import AgentEvolutionTab from './AgentEvolutionTab';
 import AgentCreationFlow from './AgentCreationFlow';
@@ -85,7 +85,7 @@ const buildScoutingReport = (agent, maturityStage) => {
 
 // ── Component ──────────────────────────────────────────────
 
-const AgentDashboard = ({ user, setScreen, onCreateAgentBattle, setShowForge }) => {
+const AgentDashboard = ({ user, setScreen, onCreateAgentBattle, setShowForge, onOpenAgentBattle, onOpenStory }) => {
   const { tokens } = useTheme();
   const { isMobile, isDesktop } = useIsMobile();
   const [activeTab, setActiveTab] = useState('overview');
@@ -266,7 +266,7 @@ const AgentDashboard = ({ user, setScreen, onCreateAgentBattle, setShowForge }) 
                 style={{ padding: isDesktop ? '20px 24px' : '16px' }}
               >
                 {activeTab === 'overview' && (
-                  <AgentMindTab
+                  <AgentOverviewTab
                     agent={agent}
                     scouting={buildScoutingReport(agent, maturityStage)}
                     battleLog={buildBattleLog(agent)}
@@ -275,6 +275,10 @@ const AgentDashboard = ({ user, setScreen, onCreateAgentBattle, setShowForge }) 
                     isDesktop={isDesktop}
                     isMobile={isMobile}
                     onNavigateToForge={setShowForge ? () => setShowForge(true) : undefined}
+                    onOpenBattle={onOpenAgentBattle}
+                    onOpenStory={onOpenStory}
+                    onViewRankings={() => setActiveTab('leaderboard')}
+                    onViewFullInsight={() => setActiveTab('evolution')}
                   />
                 )}
                 {activeTab === 'leaderboard' && (

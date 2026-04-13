@@ -6431,6 +6431,69 @@ export default function PortfolioDuel() {
   };
 
   // ============================================
+  // AGENT HUB: OPEN EXISTING AGENT BATTLE FROM A DEPLOYMENT CARD
+  // Hydrates a currentBattle object from the agentBattles doc so the Battle
+  // View can render. Mirrors handleCreateAgentTrainingBattle's shape but
+  // sources from the Firestore doc instead of the deploy-time metadata.
+  // ============================================
+  const handleOpenAgentBattle = (battle) => {
+    if (!battle?.id) return;
+    const odUserId = user?.odUserId || user?.username;
+    const currentBattleObj = {
+      id: battle.id,
+      _v: 3,
+      type: 'baggerbomb',
+      agentDeployed: true,
+      agentId: battle.agentId,
+      agentBattleId: battle.id,
+      creator: {
+        uid: odUserId,
+        odUserId,
+        username: user?.username,
+        portfolioName: 'Agent Deploy',
+        portfolio: {
+          star: battle.portfolio?.star || [],
+          core: battle.portfolio?.core || [],
+          support: battle.portfolio?.support || [],
+        },
+        bench: battle.portfolio?.bench || null,
+      },
+      opponent: battle.opponent
+        ? {
+            uid: 'cpu',
+            odUserId: 'cpu',
+            username: 'CPU Opponent',
+            portfolioName: 'CPU Strategy',
+            portfolio: battle.opponent.portfolio || battle.opponent,
+            bench: battle.opponent.bench || null,
+          }
+        : null,
+      state: {
+        status: battle.status === 'active' ? 'active' : 'completed',
+        startingPrices: battle.portfolio?.startingPrices || {},
+      },
+      timeline: {
+        createdAt: battle.createdAt || new Date().toISOString(),
+        endDate: battle.expiresAt || new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+      },
+      isTraining: true,
+      isTrainingBattle: true,
+    };
+    setActiveBattleId(currentBattleObj.id);
+    setCurrentBattle(currentBattleObj);
+    setScreen('battle');
+  };
+
+  // ============================================
+  // AGENT HUB: OPEN A FANTASY TIMES STORY FROM A HUB TILE
+  // ============================================
+  const handleOpenAgentStory = (story) => {
+    if (!story) return;
+    setSelectedStory(story);
+    setScreen('storyDetail');
+  };
+
+  // ============================================
   // BAGGERBOMB TRAINING V4: CREATE V4 TRAINING BATTLE (No Bench, 1 Swap, 1 Day)
   // ============================================
   const handleCreateBaggerBombTrainingBattleV4 = async (portfolioData) => {
@@ -9390,6 +9453,8 @@ export default function PortfolioDuel() {
           setScreen={setScreen}
           onCreateAgentBattle={handleCreateAgentTrainingBattle}
           setShowForge={setShowForge}
+          onOpenAgentBattle={handleOpenAgentBattle}
+          onOpenStory={handleOpenAgentStory}
         />
       </ErrorBoundary>
       </div>
