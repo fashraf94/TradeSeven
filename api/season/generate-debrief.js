@@ -26,6 +26,7 @@ import {
   buildDebriefRequest,
   parseDebriefResponse,
 } from '../_utils/seasonPrompts/pitStopDebrief.js';
+import { logReviewInteraction } from '../_utils/shadowLogger.js';
 
 export const config = { maxDuration: 60 };
 
@@ -172,6 +173,39 @@ export default async function handler(req, res) {
       debrief: debriefWithMeta,
       updatedAt: nowIso,
     });
+
+    // ─── 13. Shadow log (fire-and-forget) ─────────────────────
+    // Full Sonnet debrief payload for Gemma training. Silent failure —
+    // a GCS outage must not affect the user-facing response.
+    logReviewInteraction({
+      type: 'debrief',
+      userId: user.uid,
+      entryId,
+      seasonId: entry.seasonId,
+      agentId: entry.agentId || null,
+      week,
+      debrief: {
+        summary: debrief.summary || null,
+        highlights: debrief.highlights || [],
+        ruleInsights: debrief.ruleInsights || [],
+        suggestedChanges: debrief.suggestedChanges || [],
+        upcomingEvents: debrief.upcomingEvents || [],
+        nextWeekPrep: debrief.nextWeekPrep || null,
+      },
+      weeklyAlpha:
+        typeof entry.seasonState?.alphaVsSpy === 'number'
+          ? entry.seasonState.alphaVsSpy
+          : null,
+      ruleInsightsCount: Array.isArray(debrief.ruleInsights)
+        ? debrief.ruleInsights.length
+        : 0,
+      suggestedChangesCount: Array.isArray(debrief.suggestedChanges)
+        ? debrief.suggestedChanges.length
+        : 0,
+      tokensUsed: sonnetResponse.usage?.output_tokens || 0,
+      generatedAt: nowIso,
+      schemaVersion: 1,
+    }).catch(() => {});
 
     return res.status(200).json({
       success: true,

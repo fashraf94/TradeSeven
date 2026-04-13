@@ -797,6 +797,7 @@ export default function PitStopScreen({ user, season, entry, onBack }) {
             {pitStop.status === 'open' && (
               <PitStopLockInBar
                 week={currentWeek}
+                entryId={entry.id}
                 changes={pitStop.changes || []}
                 shortlist={pitStop.shortlist || []}
                 onLockIn={onBack}

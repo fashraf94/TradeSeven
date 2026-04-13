@@ -11,8 +11,18 @@
 // navigates the user back — it's a user experience affordance, not a
 // server-side action.
 //
+// Phase 6 — the confirm stage now also captures an optional free-text
+// hypothesis ("What are you trying to fix?"). On Confirm, the bar fires a
+// fire-and-forget POST to /api/season/log-lockin which persists the
+// hypothesis on the pitStop doc and emits a review_interactions shadow log
+// record. This is additive; the animation and onLockIn callback never wait
+// on the network request (silent-failure contract).
+//
 // Props:
 //   week      - current pit stop week number
+//   entryId   - [Phase 6] parent entry id, required for the hypothesis
+//               POST. When absent, the hypothesis input is hidden and the
+//               bar falls back to the pre-Phase-6 behavior.
 //   changes   - pitStop.changes[] (read-only snapshot for summary counts)
 //   shortlist - pitStop.shortlist[] (read-only snapshot for summary counts)
 //   onLockIn  - () => void; called after the animation finishes
@@ -22,9 +32,11 @@
 
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { fetchWithAuth } from '../../utils/fetchWithAuth';
 
 const TROPHY_GOLD = '#F0C75E';
 const LOCK_IN_SPRING = { type: 'spring', stiffness: 400, damping: 15 };
+const HYPOTHESIS_MAX = 200;
 
 // ─── Inline SVGs ─────────────────────────────────────────────
 
@@ -65,13 +77,21 @@ function CheckIcon({ size = 22 }) {
 
 // ─── Component ───────────────────────────────────────────────
 
-export default function PitStopLockInBar({ week, changes, shortlist, onLockIn }) {
+export default function PitStopLockInBar({
+  week,
+  entryId,
+  changes,
+  shortlist,
+  onLockIn,
+}) {
   const changeCount = Array.isArray(changes) ? changes.length : 0;
   const shortlistCount = Array.isArray(shortlist) ? shortlist.length : 0;
   const hasIntent = changeCount > 0 || shortlistCount > 0;
 
   // Flow: idle -> confirming (summary prompt) -> locking (animation) -> done.
   const [stage, setStage] = useState('idle');
+  // Phase 6 — optional hypothesis text captured in the confirm stage.
+  const [hypothesis, setHypothesis] = useState('');
 
   const handlePrimaryTap = () => {
     if (!hasIntent) return;
@@ -84,6 +104,26 @@ export default function PitStopLockInBar({ week, changes, shortlist, onLockIn })
 
   const handleConfirm = () => {
     setStage('locking');
+
+    // Phase 6 — fire-and-forget lock-in log. Sends the hypothesis (if any)
+    // plus a snapshot of the queued changes/shortlist to GCS for Gemma
+    // training, and persists `hypothesis` on the pitStop doc so the
+    // Sunday cron / debrief pipeline can reference it later. The UX
+    // animation runs in parallel — we never await this.
+    if (entryId && typeof week !== 'undefined' && week !== null) {
+      const trimmed = hypothesis.trim().slice(0, HYPOTHESIS_MAX);
+      fetchWithAuth('/api/season/log-lockin', {
+        method: 'POST',
+        body: JSON.stringify({
+          entryId,
+          week,
+          hypothesis: trimmed.length > 0 ? trimmed : null,
+        }),
+      }).catch(() => {
+        /* silent failure — lock-in UX must never be blocked */
+      });
+    }
+
     // Mech-bay animation runs ~1s, then hand control back to the parent.
     setTimeout(() => {
       setStage('done');
@@ -256,6 +296,71 @@ export default function PitStopLockInBar({ week, changes, shortlist, onLockIn })
                 </strong>
                 ?
               </div>
+
+              {/* Phase 6 — optional hypothesis capture. Hidden when the
+                  parent hasn't supplied entryId (legacy callers). */}
+              {entryId && (
+                <div style={{ marginBottom: 12 }}>
+                  <label
+                    htmlFor="pit-stop-hypothesis"
+                    style={{
+                      display: 'block',
+                      fontSize: 11,
+                      fontWeight: 700,
+                      textTransform: 'uppercase',
+                      letterSpacing: 0.8,
+                      color: 'rgba(255,255,255,0.55)',
+                      marginBottom: 6,
+                    }}
+                  >
+                    What are you trying to fix?{' '}
+                    <span
+                      style={{
+                        fontWeight: 500,
+                        color: 'rgba(255,255,255,0.35)',
+                        textTransform: 'none',
+                        letterSpacing: 0,
+                      }}
+                    >
+                      (optional)
+                    </span>
+                  </label>
+                  <textarea
+                    id="pit-stop-hypothesis"
+                    value={hypothesis}
+                    onChange={(e) =>
+                      setHypothesis(e.target.value.slice(0, HYPOTHESIS_MAX))
+                    }
+                    maxLength={HYPOTHESIS_MAX}
+                    rows={2}
+                    placeholder="e.g., Tightening stop-loss to reduce drawdown"
+                    style={{
+                      width: '100%',
+                      padding: '10px 12px',
+                      borderRadius: 8,
+                      border: '1px solid rgba(255,255,255,0.12)',
+                      background: 'rgba(255,255,255,0.04)',
+                      color: 'rgba(255,255,255,0.9)',
+                      fontSize: 13,
+                      lineHeight: 1.45,
+                      resize: 'none',
+                      fontFamily: 'inherit',
+                      boxSizing: 'border-box',
+                    }}
+                  />
+                  <div
+                    style={{
+                      fontSize: 10,
+                      color: 'rgba(255,255,255,0.35)',
+                      textAlign: 'right',
+                      marginTop: 4,
+                    }}
+                  >
+                    {hypothesis.length} / {HYPOTHESIS_MAX}
+                  </div>
+                </div>
+              )}
+
               <div style={{ display: 'flex', gap: 8 }}>
                 <button
                   onClick={handleCancel}

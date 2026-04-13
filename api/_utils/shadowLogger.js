@@ -56,9 +56,17 @@ async function appendToStream(stream, record) {
   }
 }
 
-export const logConversation  = (r) => appendToStream('conversations', r);
-export const logDecision      = (r) => appendToStream('decisions', r);
-export const logReflection    = (r) => appendToStream('reflections', r);
-export const logEvaluation    = (r) => appendToStream('evaluations', r);
-export const logCompilation   = (r) => appendToStream('compilations', r);
-export const logPartnerSignal = (r) => appendToStream('partner_signals', r);
+export const logConversation      = (r) => appendToStream('conversations', r);
+export const logDecision          = (r) => appendToStream('decisions', r);
+export const logReflection        = (r) => appendToStream('reflections', r);
+export const logEvaluation        = (r) => appendToStream('evaluations', r);
+export const logCompilation       = (r) => appendToStream('compilations', r);
+export const logPartnerSignal     = (r) => appendToStream('partner_signals', r);
+
+// Phase 6 — Shadow Logger Extension (training data pipeline)
+// Fed by create-entry.js, season-daily-evaluate.js, generate-debrief.js,
+// pit-stop-reply.js, and log-lockin.js. All callers must use
+// `.catch(() => {})` to enforce the fire-and-forget contract.
+export const logStrategyConfig    = (r) => appendToStream('strategy_configs', r);
+export const logPipelineDecision  = (r) => appendToStream('pipeline_decisions', r);
+export const logReviewInteraction = (r) => appendToStream('review_interactions', r);

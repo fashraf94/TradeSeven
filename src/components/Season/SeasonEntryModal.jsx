@@ -472,6 +472,11 @@ export default function SeasonEntryModal({
   initialDimensionValues,
   initialStep,
   fromConversation = false,
+  // Phase 6 — optional origin metadata forwarded to create-entry for
+  // the strategy_configs shadow log. When sourceExperimentId is set,
+  // this launch is recorded as the "B" side of a refinement pair.
+  sourceExperimentId = null,
+  entrySource = null,
 }) {
   const startStep = typeof initialStep === 'number' ? initialStep : 0;
   const startDims = initialDimensionValues
@@ -578,6 +583,10 @@ export default function SeasonEntryModal({
     );
 
     // Step 2: Call the existing (protected) create-entry API.
+    // Phase 6 — forward optional origin metadata so the strategy_configs
+    // shadow log captures the creation path (workshop / refinement / etc.)
+    // and the refinement pair's source experiment id. The server treats
+    // all of these as optional; omitting them preserves legacy behavior.
     try {
       const response = await fetchWithAuth('/api/season/create-entry', {
         method: 'POST',
@@ -585,6 +594,15 @@ export default function SeasonEntryModal({
           seasonId: season.id,
           agentId: agent.id,
           bundleId,
+          sourceExperimentId,
+          entrySource:
+            entrySource ||
+            (sourceExperimentId
+              ? 'refinement_pair'
+              : fromConversation
+                ? 'workshop'
+                : 'manual'),
+          dimensionValues,
         }),
       });
       const data = await response.json();
@@ -621,6 +639,9 @@ export default function SeasonEntryModal({
     selectedCollection,
     enabledRuleCount,
     onSuccess,
+    sourceExperimentId,
+    entrySource,
+    fromConversation,
   ]);
 
   const nextDisabled =

@@ -11,6 +11,11 @@
 //   entry             - completed seasonEntry document
 //   onBack            - back to SeasonHub
 //   onNavigateForge   - open the Forge in season mode (App.jsx sets forgeMode)
+//   onRefineAndRetest - (entry, dimensionValues) => void — Phase 6 refinement
+//                       hand-off. When provided, "Refine in the Forge" uses
+//                       this handler to carry dimensionValues + the source
+//                       experiment id into the next launch (shadow logger
+//                       picks up sourceExperimentId on strategy_configs).
 //
 // Data sources (all verified available):
 //   entry.seasonState.alphaVsSpy   — raw percentage
@@ -173,6 +178,7 @@ export default function SeasonReview({
   entry,
   onBack,
   onNavigateForge,
+  onRefineAndRetest,
 }) {
   const [leaderboard, setLeaderboard] = useState(null);
 
@@ -718,7 +724,19 @@ export default function SeasonReview({
             Refine your algorithm in the Forge based on what worked — and what didn't.
           </div>
           <button
-            onClick={onNavigateForge}
+            onClick={() => {
+              // Phase 6: prefer the refinement hand-off (carries dims +
+              // sourceExperimentId through to the next create-entry call).
+              // Fall back to the legacy Forge navigation when the host app
+              // has not wired the new callback.
+              if (typeof onRefineAndRetest === 'function') {
+                onRefineAndRetest(entry, resolvedDims);
+                return;
+              }
+              if (typeof onNavigateForge === 'function') {
+                onNavigateForge();
+              }
+            }}
             style={{
               padding: '12px 24px',
               background: TROPHY_GOLD,

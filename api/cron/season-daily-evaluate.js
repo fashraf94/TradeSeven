@@ -26,6 +26,47 @@ import {
   buildEntryTiebreakRequest,
   parseEntryTiebreakResponse,
 } from '../_utils/seasonPrompts/entryTiebreak.js';
+import { logPipelineDecision } from '../_utils/shadowLogger.js';
+
+// Phase 6 — Shadow Logger Extension
+// Simple SPY-based regime categorization for training data tags. VIX
+// and sector volatility are not plumbed through EvaluationContext today,
+// so those fields stay null and the training pipeline can fall back to
+// SPY-only bucketing for now. When VIX is added, extend here in place
+// without breaking the stream schema (existing nulls become values).
+function categorizeSpyTrend(benchmark) {
+  const history = benchmark?.spyPriceHistory;
+  if (!Array.isArray(history) || history.length < 5) return null;
+  const start = history[history.length - 5];
+  const end = history[history.length - 1];
+  if (typeof start !== 'number' || typeof end !== 'number' || start === 0) return null;
+  const fiveDayReturn = (end - start) / start;
+  if (fiveDayReturn > 0.01) return 'bullish';
+  if (fiveDayReturn < -0.01) return 'bearish';
+  return 'neutral';
+}
+
+// Derive a deduped list of rule IDs that participated in today's decisions.
+// Pulls from strategyMods (strategy-phase rules), exitEvaluations results
+// (exit-phase rules), and per-trade triggerRule/allCitedRules (settlement).
+function collectRulesTriggered(dailyLog) {
+  const set = new Set();
+  for (const mod of dailyLog?.strategyMods || []) {
+    if (mod?.ruleId) set.add(mod.ruleId);
+  }
+  for (const exitEval of dailyLog?.exitEvaluations || []) {
+    for (const r of exitEval?.results || []) {
+      if (r?.ruleId) set.add(r.ruleId);
+    }
+  }
+  for (const trade of dailyLog?.trades || []) {
+    if (trade?.triggerRule) set.add(trade.triggerRule);
+    for (const r of trade?.allCitedRules || []) {
+      if (r) set.add(r);
+    }
+  }
+  return Array.from(set);
+}
 
 async function callAnthropic(requestBody) {
   const resp = await fetch('https://api.anthropic.com/v1/messages', {
@@ -377,6 +418,68 @@ export default async function handler(req, res) {
               const logRef = freshRef.collection('dailyLogs').doc(String(currentTradingDay));
               txn.set(logRef, dailyLog);
             });
+
+            // ── Phase 6: shadow log (fire-and-forget) ──
+            // Runs after the transaction commits. Never blocks the eval
+            // loop; a GCS outage is silently swallowed so the cron always
+            // proceeds to the next entry.
+            const settledPortfolio = settlementResult.portfolio || {};
+            const trades = Array.isArray(dailyLog.trades) ? dailyLog.trades : [];
+            const dailyAlpha =
+              typeof settlementResult.seasonState?.alphaVsSpy === 'number'
+                ? settlementResult.seasonState.alphaVsSpy
+                : null;
+            logPipelineDecision({
+              userId: entry.userId,
+              agentId: entry.agentId,
+              seasonId: entry.seasonId,
+              entryId: entry.id,
+              tradingDay: currentTradingDay,
+              week: currentWeek,
+              date: todayStr,
+              marketRegime: {
+                vixLevel: null, // TODO: populate when VIX is added to EvaluationContext
+                spyTrend: categorizeSpyTrend(ctx?.benchmark),
+                spyDailyReturn: ctx?.benchmark?.spyDailyReturn ?? null,
+                sectorVolatility: null, // TODO: compute from ctx.technicals/sector data
+              },
+              tradesExecuted: trades.length,
+              buys: trades.filter((t) => t?.type === 'BUY').length,
+              sells: trades.filter((t) => t?.type === 'SELL').length,
+              trims: trades.filter(
+                (t) => t?.type === 'TRIM' || t?.type === 'REDUCE'
+              ).length,
+              rulesTriggered: collectRulesTriggered(dailyLog),
+              haikuCalls: Array.isArray(dailyLog.haikuCalls)
+                ? dailyLog.haikuCalls.length
+                : 0,
+              blackSwanTriggered: Boolean(blackSwanResult),
+              entryScan: dailyLog.entryScan
+                ? {
+                    triggered: Boolean(dailyLog.entryScan.triggered),
+                    blocked: Boolean(dailyLog.entryScan.blocked),
+                    blockReason: dailyLog.entryScan.blockReason || null,
+                    candidatesEvaluated:
+                      dailyLog.entryScan.candidatesEvaluated || 0,
+                    candidatesPassed: dailyLog.entryScan.candidatesPassed || 0,
+                  }
+                : null,
+              dailyAlpha,
+              totalReturn:
+                typeof settledPortfolio.totalReturn === 'number'
+                  ? settledPortfolio.totalReturn
+                  : null,
+              positionCount:
+                typeof settledPortfolio.positionCount === 'number'
+                  ? settledPortfolio.positionCount
+                  : null,
+              cashPct:
+                typeof settledPortfolio.cashPct === 'number'
+                  ? settledPortfolio.cashPct
+                  : null,
+              timestamp: new Date().toISOString(),
+              schemaVersion: 1,
+            }).catch(() => {});
 
             // Collect for leaderboard (with updated state)
             evaluatedEntries.push({
