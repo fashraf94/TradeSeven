@@ -473,8 +473,20 @@ function TalkToAgentCard({ onClick }) {
 function DeployedStrategyCard({ agent, equippedBundles }) {
   const deployed = agent?.deployedStrategy || null;
 
+  // Phase 4A guard: if the user manually unequipped the deployed bundle in
+  // the Advanced tab, `activeRules` is already correctly rebuilt (Haiku no
+  // longer sees those rules) but `deployedStrategy.bundleId` points at a
+  // stale reference. Treat that case as "no strategy deployed" so the card
+  // matches actual gameplay state — the user will see the empty-state
+  // prompt to re-deploy instead of a misleading success card.
+  const equippedBundleIds = Array.isArray(agent?.equippedBundleIds)
+    ? agent.equippedBundleIds
+    : [];
+  const deployedStillEquipped =
+    Boolean(deployed?.bundleId) && equippedBundleIds.includes(deployed.bundleId);
+
   // Phase 4A primary path: show metadata from a completed Proving Ground deploy.
-  if (deployed && deployed.bundleId) {
+  if (deployed && deployed.bundleId && deployedStillEquipped) {
     const alpha = typeof deployed.alpha === 'number' ? deployed.alpha : null;
     const rank = deployed.rank || null;
     const directiveCount = Array.isArray(deployed.directives)

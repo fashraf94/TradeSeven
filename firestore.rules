@@ -451,6 +451,20 @@ service cloud.firestore {
       allow create, update, delete: if false;
     }
 
+    // Phase 4A: Deploy-to-Agent shadow log — client-side fallback for the
+    // GCS training-data pipeline. Fire-and-forget writes from
+    // deployStrategyService.logDeployEvent. Owner-scoped reads, owner-only
+    // creates, immutable once written.
+    match /deployEvents/{docId} {
+      allow read: if request.auth != null
+                  && resource.data.userId == request.auth.uid;
+      allow create: if request.auth != null
+                    && request.resource.data.userId == request.auth.uid
+                    && request.resource.data.agentId is string
+                    && request.resource.data.experimentId is string;
+      allow update, delete: if false;
+    }
+
     // ═══════════════════════════════════════════
     // Default deny everything else
     // ═══════════════════════════════════════════

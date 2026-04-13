@@ -76,6 +76,36 @@ export async function deployExperimentToAgent({
   const replacedExperimentId = prev?.experimentId || null;
   const prevBundleId = prev?.bundleId || null;
 
+  // ─────────────────────────────────────────────────────────────
+  // NON-ATOMIC DEPLOY SEQUENCE — read before modifying.
+  //
+  // Steps 2 → 3 → 5 are three separate Firestore writes. They are NOT
+  // wrapped in a transaction / writeBatch because we reuse the protected
+  // `equipBundle` / `unequipBundle` helpers from forgeService.js, each of
+  // which manages its own batch internally.
+  //
+  // Failure modes:
+  //   * Unequip succeeds, equip fails → the agent is left WITHOUT the
+  //     previous bundle's rules AND without the new bundle's rules.
+  //     `activeRules` shrinks; Haiku loses the previously deployed
+  //     directives until the user retries. `deployedStrategy` metadata
+  //     is not updated (still points at the old bundle).
+  //   * Equip succeeds, metadata write (step 5) fails → Haiku correctly
+  //     sees the new rules in `activeRules`, but `deployedStrategy` still
+  //     points at the old experiment. The ForgeLanding card may display
+  //     stale origin info until the next successful deploy.
+  //
+  // Recovery: the whole operation is idempotent. `bundleId` is deterministic
+  // (dimension hash), `equipBundle` short-circuits on an already-equipped
+  // bundle, and the metadata write is a plain overwrite. A user retry from
+  // the DeployToAgent modal will complete the sequence cleanly.
+  //
+  // Follow-up (pre-launch): migrate this orchestration to a single
+  // server-side writeBatch OR a Cloud Function using Admin SDK so the
+  // three writes commit atomically, eliminating the mid-sequence failure
+  // window entirely.
+  // ─────────────────────────────────────────────────────────────
+
   // 2. If there is an existing deployed-strategy bundle AND it differs from
   //    the new one AND it's still equipped, unequip it first. This keeps
   //    the activeRules array focused on the currently-deployed strategy and
