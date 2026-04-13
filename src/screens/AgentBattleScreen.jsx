@@ -548,9 +548,15 @@ export default function AgentBattleScreen({ battle, user, onBack }) {
       priceChange = -priceChange;
     }
 
-    const prevClose = startingPrices[asset.symbol] || previousClosePrices[asset.symbol] || openPrice;
-    let thresholdPriceChange = prevClose > 0
-      ? ((curPrice - prevClose) / prevClose) * 100
+    // Threshold baseline must match the asset's entry into the portfolio.
+    // For swapped-in assets, swapPrice prevents retroactive BaggerBomb credit
+    // for pre-swap moves since previousClose.
+    const thresholdBaseline = asset.swapPrice
+      || previousClosePrices[asset.symbol]
+      || startingPrices[asset.symbol]
+      || openPrice;
+    let thresholdPriceChange = thresholdBaseline > 0
+      ? ((curPrice - thresholdBaseline) / thresholdBaseline) * 100
       : priceChange;
 
     if (asset.direction === 'short') {
@@ -558,9 +564,15 @@ export default function AgentBattleScreen({ battle, user, onBack }) {
     }
 
     const multiplier = baseATR > 0 ? thresholdPriceChange / baseATR : 0;
+
+    // Merge server-persisted peaks (maintained by the agent-evaluate cron) with
+    // the live multiplier so threshold bonus points stay visible when the price
+    // reverses between cron ticks. Core invariant: maxMultiplier monotonically
+    // increases, minMultiplier monotonically decreases.
+    const persistedHistory = agentBattle?.thresholdHistory?.[asset.symbol] || {};
     const history = {
-      maxMultiplier: multiplier > 0 ? multiplier : 0,
-      minMultiplier: multiplier < 0 ? multiplier : 0,
+      maxMultiplier: Math.max(persistedHistory.maxMultiplier || 0, multiplier > 0 ? multiplier : 0),
+      minMultiplier: Math.min(persistedHistory.minMultiplier || 0, multiplier < 0 ? multiplier : 0),
     };
 
     const score = calculateAssetScoreV3(
@@ -581,7 +593,7 @@ export default function AgentBattleScreen({ battle, user, onBack }) {
       history,
       currentPrice: curPrice,
     };
-  }, [effectivePrices, startingPrices, thresholds, previousClosePrices]);
+  }, [effectivePrices, startingPrices, thresholds, previousClosePrices, agentBattle?.thresholdHistory]);
 
   // ── Enriched portfolios ───────────────────────────────────────────────────
 

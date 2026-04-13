@@ -259,8 +259,12 @@ async function processAgentBattle(db, battle, summary) {
 
       let priceChange = ((currentPrice - entryPrice) / entryPrice) * 100;
       const previousClose = prices[asset.symbol]?.previousClose;
-      const thresholdPriceChange = previousClose && previousClose > 0
-        ? ((currentPrice - previousClose) / previousClose) * 100
+      // Threshold baseline must match the asset's entry into the portfolio.
+      // For swapped-in assets, use swapPrice so they don't get retroactive
+      // BaggerBomb credit for pre-swap moves since previousClose.
+      const thresholdBaseline = asset.swapPrice || previousClose;
+      const thresholdPriceChange = thresholdBaseline && thresholdBaseline > 0
+        ? ((currentPrice - thresholdBaseline) / thresholdBaseline) * 100
         : null;
 
       return calculateAssetScoreServer(
@@ -287,8 +291,10 @@ async function processAgentBattle(db, battle, summary) {
 
       const priceChange = ((currentPrice - entryPrice) / entryPrice) * 100;
       const previousClose = prices[asset.symbol]?.previousClose;
-      const thresholdPriceChange = previousClose && previousClose > 0
-        ? ((currentPrice - previousClose) / previousClose) * 100
+      // CPU portfolio has no swaps, but keep the pattern symmetric for future-proofing.
+      const thresholdBaseline = asset.swapPrice || previousClose;
+      const thresholdPriceChange = thresholdBaseline && thresholdBaseline > 0
+        ? ((currentPrice - thresholdBaseline) / thresholdBaseline) * 100
         : null;
 
       return calculateAssetScoreServer(
