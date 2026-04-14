@@ -259,8 +259,12 @@ async function processAgentBattle(db, battle, summary) {
 
       let priceChange = ((currentPrice - entryPrice) / entryPrice) * 100;
       const previousClose = prices[asset.symbol]?.previousClose;
-      const thresholdPriceChange = previousClose && previousClose > 0
-        ? ((currentPrice - previousClose) / previousClose) * 100
+      // Threshold baseline must match the asset's entry into the portfolio.
+      // For swapped-in assets, use swapPrice so they don't get retroactive
+      // BaggerBomb credit for pre-swap moves since previousClose.
+      const thresholdBaseline = asset.swapPrice || previousClose;
+      const thresholdPriceChange = thresholdBaseline && thresholdBaseline > 0
+        ? ((currentPrice - thresholdBaseline) / thresholdBaseline) * 100
         : null;
 
       return calculateAssetScoreServer(
@@ -287,8 +291,10 @@ async function processAgentBattle(db, battle, summary) {
 
       const priceChange = ((currentPrice - entryPrice) / entryPrice) * 100;
       const previousClose = prices[asset.symbol]?.previousClose;
-      const thresholdPriceChange = previousClose && previousClose > 0
-        ? ((currentPrice - previousClose) / previousClose) * 100
+      // CPU portfolio has no swaps, but keep the pattern symmetric for future-proofing.
+      const thresholdBaseline = asset.swapPrice || previousClose;
+      const thresholdPriceChange = thresholdBaseline && thresholdBaseline > 0
+        ? ((currentPrice - thresholdBaseline) / thresholdBaseline) * 100
         : null;
 
       return calculateAssetScoreServer(
@@ -304,7 +310,9 @@ async function processAgentBattle(db, battle, summary) {
 
     // ---- Update scores (always, even without Haiku) ----
     const activeScore = assetScores.reduce((sum, s) => sum + s.totalPoints, 0);
-    const bankedScore = (battle.trades || []).reduce((sum, t) => sum + (t.lockedPoints || 0), 0);
+    const bankedScore = (battle.trades || []).reduce((sum, t) => {
+      return sum + (Number.isFinite(t?.lockedPoints) ? t.lockedPoints : 0);
+    }, 0);
     const currentScore = activeScore + bankedScore;
 
     const scoreUpdate = {
@@ -325,11 +333,13 @@ async function processAgentBattle(db, battle, summary) {
     const statusFeedEntries = [];
 
     // ---- Update threshold history ----
-    const updatedThresholdHistory = { ...(battle.thresholdHistory || {}) };
+    // Use dot-path updates so we merge per-symbol rather than replacing the
+    // full map. A full-object write here would clobber any thresholdHistory
+    // entry a swap transaction wrote earlier in this cron run (e.g. the
+    // freshly swapped-in symbol's zero-reset).
     for (const score of assetScores) {
-      updatedThresholdHistory[score.symbol] = score.history;
+      scoreUpdate[`thresholdHistory.${score.symbol}`] = score.history;
     }
-    scoreUpdate.thresholdHistory = updatedThresholdHistory;
 
     // ---- Parallel data fetch: intraday + rankings + technicalScores + marketContext ----
     const momentumData = { vwap: {}, rankings: {} };
