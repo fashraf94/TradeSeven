@@ -722,7 +722,7 @@ export default function AgentChat({ battleId, agentId, agentName, chatExchanges,
     </>
   );
 
-  const thinkingContent = (
+  const activityContent = (
     <LiveActivityPanel
       messages={messages}
       statusFeed={statusFeed}
@@ -759,7 +759,7 @@ export default function AgentChat({ battleId, agentId, agentName, chatExchanges,
             {chatContent}
           </div>
 
-          {/* ── Right: Agent Thinking ──────────────────────────────────── */}
+          {/* ── Right: Live Activity ───────────────────────────────────── */}
           <div style={{
             width: '380px',
             flexShrink: 0,
@@ -777,9 +777,9 @@ export default function AgentChat({ battleId, agentId, agentName, chatExchanges,
               textTransform: 'uppercase',
               borderBottom: '1px solid rgba(255,255,255,0.06)',
             }}>
-              Agent Thinking
+              Live Activity
             </div>
-            {thinkingContent}
+            {activityContent}
           </div>
         </div>
       </div>
@@ -799,7 +799,7 @@ export default function AgentChat({ battleId, agentId, agentName, chatExchanges,
         display: 'flex',
         borderBottom: '1px solid rgba(255,255,255,0.06)',
       }}>
-        {['chat', 'thinking'].map(tab => (
+        {['chat', 'activity'].map(tab => (
           <button
             key={tab}
             onClick={() => setActiveSubTab(tab)}
@@ -815,12 +815,12 @@ export default function AgentChat({ battleId, agentId, agentName, chatExchanges,
               cursor: 'pointer',
             }}
           >
-            {tab === 'chat' ? 'Chat' : 'Agent Thinking'}
+            {tab === 'chat' ? 'Chat' : 'Live Activity'}
           </button>
         ))}
       </div>
 
-      {activeSubTab === 'chat' ? chatContent : thinkingContent}
+      {activeSubTab === 'chat' ? chatContent : activityContent}
     </div>
   );
 }
