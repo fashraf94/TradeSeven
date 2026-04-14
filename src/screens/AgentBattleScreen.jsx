@@ -898,7 +898,9 @@ export default function AgentBattleScreen({ battle, user, onBack }) {
                 chatExchanges={chatExchanges}
                 battleStatus={agentBattle?.status}
                 statusFeed={statusFeed}
+                trades={agentBattle?.trades || []}
                 onSymbolClick={handleSymbolClick}
+                onCitationTap={handleCitationTap}
                 knownTickers={knownTickers}
               />
             </motion.div>
