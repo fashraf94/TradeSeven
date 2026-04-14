@@ -54,23 +54,13 @@ export function buildStrategyUserPrompt(agent) {
     );
   } else {
     parts.push(
-      "This is your first deployment. No prior game experience yet. Trust your archetype instincts and your user's directives."
+      'This is your first deployment. No prior game experience yet. Trust your archetype instincts.'
     );
   }
 
   // Recent game memory
   if (agent.memory?.length > 0) {
     parts.push(`RECENT GAME MEMORY:\n${formatMemory(agent.memory)}`);
-  }
-
-  // Active directives
-  const activeDirectives = filterActiveDirectives(agent.directives);
-  if (activeDirectives.length > 0) {
-    parts.push(
-      `ACTIVE DIRECTIVES — HARD CONSTRAINTS (follow these even if market data disagrees):\n${formatDirectives(activeDirectives)}`
-    );
-  } else {
-    parts.push('No specific directives from your user yet. Use your best judgment.');
   }
 
   // Forge rules (structured constraint/strategy framework)
@@ -187,62 +177,6 @@ export function formatMemory(memory) {
       return `Game (${result} ${score}): ${m.lesson || 'No lesson recorded.'}${adjustment}`;
     })
     .join('\n');
-}
-
-/**
- * Format active directives grouped by source.
- */
-export function formatDirectives(directives) {
-  if (!directives?.length) return '';
-
-  const groups = {
-    coaching: [],
-    pinned: [],
-    strategy_session: [],
-    system: [],
-  };
-
-  for (const d of directives) {
-    const group = groups[d.source] || groups.system;
-    group.push(d.text);
-  }
-
-  const parts = [];
-
-  if (groups.coaching.length > 0) {
-    parts.push(
-      `COACHING (permanent — from your user):\n${groups.coaching.map((t) => `- ${t}`).join('\n')}`
-    );
-  }
-  if (groups.pinned.length > 0) {
-    parts.push(
-      `PINNED INSIGHTS (from your own experience):\n${groups.pinned.map((t) => `- ${t}`).join('\n')}`
-    );
-  }
-  if (groups.strategy_session.length > 0) {
-    parts.push(
-      `STRATEGY SESSION (temporary):\n${groups.strategy_session.map((t) => `- ${t}`).join('\n')}`
-    );
-  }
-  if (groups.system.length > 0) {
-    parts.push(
-      `SYSTEM:\n${groups.system.map((t) => `- ${t}`).join('\n')}`
-    );
-  }
-
-  return parts.join('\n\n');
-}
-
-/**
- * Filter out expired directives.
- */
-function filterActiveDirectives(directives) {
-  if (!directives?.length) return [];
-  const now = Date.now();
-  return directives.filter((d) => {
-    if (!d.expiresAt) return true;
-    return new Date(d.expiresAt).getTime() > now;
-  });
 }
 
 /**
