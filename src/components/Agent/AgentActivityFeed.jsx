@@ -286,7 +286,7 @@ const Pill = ({ label, color, onClick }) => (
 
 const HighTierCard = ({
   entry, entryId, tokens, feedBookmarks, onBookmark, onUnbookmark,
-  onChallenge, onCitationTap, isOpponent,
+  onChallenge, onCitationTap, isOpponent, readOnly = false,
 }) => {
   const config = getEntryConfig(entry, tokens);
   const Icon = config.icon;
@@ -479,7 +479,7 @@ const HighTierCard = ({
           )}
 
           {/* Challenge */}
-          {!isOpponent && onChallenge && entry.symbolOut && (
+          {!isOpponent && onChallenge && entry.symbolOut && !readOnly && (
             <button
               onClick={(e) => { e.stopPropagation(); onChallenge(entry); }}
               aria-label={`Challenge ${entry.symbolOut} trade`}
@@ -640,6 +640,7 @@ const AgentActivityFeed = ({
   isAgentVsAgent = false,
   gameplanMeeting,
   tokens,
+  readOnly = false,
 }) => {
   const feedRef = useRef(null);
   const [userScrolledUp, setUserScrolledUp] = useState(false);
@@ -780,6 +781,7 @@ const AgentActivityFeed = ({
                   onChallenge={onChallenge}
                   onCitationTap={onCitationTap}
                   isOpponent={isOpponent && isAgentVsAgent}
+                  readOnly={readOnly}
                 />
               );
             }

@@ -2,6 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { Send } from 'lucide-react';
 import { getAuth } from 'firebase/auth';
+import TradeTickerCard from './TradeTickerCard';
+import LiveActivityPanel from './LiveActivityPanel';
 
 // ─── Sub-components ──────────────────────────────────────────────────────────
 
@@ -123,129 +125,6 @@ function ExecutionCard({ directive }) {
           Executing on next evaluation window
         </span>
       </div>
-    </motion.div>
-  );
-}
-
-function ScratchpadCard({ message, index }) {
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      style={{
-        background: 'rgba(94, 234, 212, 0.04)',
-        border: '1px solid rgba(94, 234, 212, 0.1)',
-        borderRadius: 10,
-        padding: '12px 14px',
-      }}
-    >
-      <div style={{
-        display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8,
-      }}>
-        <span style={{
-          fontSize: 10, fontWeight: 700, color: '#5EEAD4',
-          letterSpacing: '0.5px', textTransform: 'uppercase',
-        }}>Scratchpad — msg {index}</span>
-        <span style={{ fontSize: 10, color: '#6B7280' }}>
-          {message.timestamp ? new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
-        </span>
-      </div>
-      <div style={{
-        fontSize: 12, color: '#9CA3AF', lineHeight: '1.6', fontFamily: 'monospace',
-      }}>
-        {message.scratchpad}
-      </div>
-    </motion.div>
-  );
-}
-
-function TradeEventCard({ event }) {
-  return (
-    <div style={{
-      background: 'rgba(94, 234, 212, 0.04)',
-      border: '1px solid rgba(94, 234, 212, 0.12)',
-      borderRadius: 10,
-      padding: '12px 14px',
-    }}>
-      <div style={{
-        display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8,
-      }}>
-        <span style={{
-          fontSize: 10, fontWeight: 700, color: '#5EEAD4',
-          letterSpacing: '0.5px', textTransform: 'uppercase',
-        }}>Trade executed</span>
-        <span style={{ fontSize: 10, color: '#6B7280' }}>
-          {event.timestamp ? new Date(event.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
-        </span>
-      </div>
-      <div style={{ fontSize: 12, color: '#9CA3AF', lineHeight: '1.6' }}>
-        {event.summary || event.description || `${event.action || 'SWAP'}: ${event.details || ''}`}
-      </div>
-    </div>
-  );
-}
-
-function CompactTradeLog({ trades, onSymbolClick }) {
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.25 }}
-      style={{
-        alignSelf: 'center',
-        width: '100%',
-        maxWidth: '340px',
-        background: 'rgba(94, 234, 212, 0.04)',
-        border: '1px solid rgba(94, 234, 212, 0.12)',
-        borderRadius: '10px',
-        padding: '10px 14px',
-        margin: '4px 0',
-      }}
-    >
-      <div style={{
-        fontSize: '10px',
-        fontWeight: 700,
-        color: '#5EEAD4',
-        letterSpacing: '0.5px',
-        textTransform: 'uppercase',
-        marginBottom: '8px',
-      }}>
-        {trades.length} {trades.length === 1 ? 'trade' : 'trades'} executed
-      </div>
-      {trades.map((trade, i) => (
-        <div
-          key={trade.id || i}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            padding: '4px 0',
-            borderTop: i > 0 ? '1px solid rgba(255,255,255,0.04)' : 'none',
-            fontSize: '13px',
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-            <span
-              style={{ color: '#EF4444', cursor: onSymbolClick ? 'pointer' : 'default', borderBottom: onSymbolClick ? '1px dotted rgba(239,68,68,0.4)' : 'none' }}
-              onClick={() => onSymbolClick?.({ symbol: trade.symbolOut })}
-            >
-              {trade.symbolOut || '?'}
-            </span>
-            <span style={{ color: '#6B7280', fontSize: '11px' }}>→</span>
-            <span
-              style={{ color: '#5EEAD4', cursor: onSymbolClick ? 'pointer' : 'default', borderBottom: onSymbolClick ? '1px dotted rgba(94,234,212,0.4)' : 'none' }}
-              onClick={() => onSymbolClick?.({ symbol: trade.symbolIn })}
-            >
-              {trade.symbolIn || '?'}
-            </span>
-          </div>
-          <span style={{ fontSize: '11px', color: '#6B7280' }}>
-            {trade.timestamp instanceof Date
-              ? trade.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-              : ''}
-          </span>
-        </div>
-      ))}
     </motion.div>
   );
 }
@@ -434,7 +313,7 @@ function BudgetPips({ used, total }) {
 
 // ─── Main Component ──────────────────────────────────────────────────────────
 
-export default function AgentChat({ battleId, agentId, agentName, chatExchanges, battleStatus, statusFeed, onSymbolClick, knownTickers }) {
+export default function AgentChat({ battleId, agentId, agentName, chatExchanges, battleStatus, statusFeed, trades = [], onSymbolClick, onSwitchToGameTape, knownTickers }) {
   const [messages, setMessages] = useState([]);
   const [inputText, setInputText] = useState('');
   const [isSending, setIsSending] = useState(false);
@@ -633,11 +512,25 @@ export default function AgentChat({ battleId, agentId, agentName, chatExchanges,
     }
   }
 
-  // ── Extract trade events from statusFeed for inline chat cards ────────────
+  // ── Extract trade events from statusFeed and merge with battle.trades ─────
+  // Reasoning + citations live on statusFeed; prices + P&L live on battle.trades.
+  // Join primarily on evalId/evaluationId; fall back to symbolOut+symbolIn.
 
   const tradeEvents = React.useMemo(() => {
     if (!statusFeed) return [];
     const tradeActions = ['swap', 'emergency_swap', 'trade_executed'];
+
+    // Build lookup maps from battle.trades for O(1) merge.
+    const byEvalId = new Map();
+    const bySymbolPair = new Map();
+    (trades || []).forEach(t => {
+      if (!t) return;
+      if (t.evaluationId) byEvalId.set(t.evaluationId, t);
+      if (t.symbolOut && t.symbolIn) {
+        bySymbolPair.set(`${t.symbolOut}__${t.symbolIn}`, t);
+      }
+    });
+
     return statusFeed
       .filter(entry => tradeActions.includes(entry.action))
       .map(entry => {
@@ -645,18 +538,34 @@ export default function AgentChat({ battleId, agentId, agentName, chatExchanges,
           ? new Date(entry.timestamp)
           : entry.timestamp?.toDate?.()
             || (entry.timestamp?.seconds ? new Date(entry.timestamp.seconds * 1000) : new Date());
+
+        // Find matching trade: evalId first, then symbol pair.
+        const tradeMatch = (entry.evalId && byEvalId.get(entry.evalId))
+          || (entry.symbolOut && entry.symbolIn
+              ? bySymbolPair.get(`${entry.symbolOut}__${entry.symbolIn}`)
+              : null)
+          || null;
+
         return {
-          id: `trade-${ts.getTime()}-${entry.symbolOut || ''}`,
+          id: `trade-${ts.getTime()}-${entry.symbolOut || ''}-${entry.symbolIn || ''}`,
           _type: 'trade',
           timestamp: ts,
           action: entry.action,
-          summary: entry.message || '',
-          symbolOut: entry.symbolOut || null,
-          symbolIn: entry.symbolIn || null,
-          reason: entry.reason || null,
+          symbolOut: entry.symbolOut || tradeMatch?.symbolOut || null,
+          symbolIn: entry.symbolIn || tradeMatch?.symbolIn || null,
+          message: entry.message || entry.rationale || '',
+          citedForgeRules: entry.citedForgeRules || entry.citedRules || [],
+          evalId: entry.evalId || tradeMatch?.evaluationId || null,
+          regime: entry.regime || tradeMatch?.entryRegime || null,
+          // P&L fields from battle.trades (null when no match — open position).
+          tier: tradeMatch?.tier || null,
+          entryPrice: tradeMatch?.entryPrice ?? null,
+          exitPrice: tradeMatch?.exitPrice ?? null,
+          lockedPoints: tradeMatch?.lockedPoints ?? null,
+          lockedGainPct: tradeMatch?.lockedGainPct ?? null,
         };
       });
-  }, [statusFeed]);
+  }, [statusFeed, trades]);
 
   // ── Combined timeline: messages + trade events sorted chronologically ─────
 
@@ -671,59 +580,6 @@ export default function AgentChat({ battleId, agentId, agentName, chatExchanges,
       return timeA - timeB;
     });
   }, [messages, tradeEvents]);
-
-  // ── Group consecutive trades for compact rendering ──────────────────────────
-
-  const renderItems = React.useMemo(() => {
-    const items = [];
-    let tradeBuffer = [];
-
-    combinedTimeline.forEach((item, i) => {
-      if (item._type === 'trade') {
-        tradeBuffer.push(item);
-      } else {
-        if (tradeBuffer.length > 0) {
-          items.push({ _type: 'trade_group', trades: [...tradeBuffer], id: `tg-${i}` });
-          tradeBuffer = [];
-        }
-        items.push(item);
-      }
-    });
-    if (tradeBuffer.length > 0) {
-      items.push({ _type: 'trade_group', trades: [...tradeBuffer], id: 'tg-end' });
-    }
-    return items;
-  }, [combinedTimeline]);
-
-  // ── Build thinking panel entries ────────────────────────────────────────────
-
-  const thinkingEntries = React.useMemo(() => {
-    const entries = [];
-
-    // Scratchpad entries from agent messages
-    let msgIndex = 0;
-    messages.forEach(m => {
-      if (m.role === 'agent' && !m.isTyping) {
-        msgIndex++;
-        if (m.scratchpad) {
-          entries.push({ type: 'scratchpad', message: m, index: msgIndex, timestamp: m.timestamp });
-        }
-      }
-    });
-
-    // Trade events from statusFeed
-    const tradeActions = ['swap', 'emergency_swap', 'trade_executed'];
-    (statusFeed || []).forEach(event => {
-      if (tradeActions.includes(event.action)) {
-        const ts = event.timestamp?.toMillis?.() || (typeof event.timestamp === 'string' ? new Date(event.timestamp).getTime() : event.timestamp) || 0;
-        entries.push({ type: 'trade', event, timestamp: ts });
-      }
-    });
-
-    // Sort newest first
-    entries.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
-    return entries;
-  }, [messages, statusFeed]);
 
   // ── Render ─────────────────────────────────────────────────────────────────
 
@@ -742,9 +598,16 @@ export default function AgentChat({ battleId, agentId, agentName, chatExchanges,
         {messages.length === 0 && tradeEvents.length === 0 ? (
           <EmptyState onQuickStart={handleActionClick} disabled={isDisabled} />
         ) : (
-          renderItems.map((item) => {
-            if (item._type === 'trade_group') {
-              return <CompactTradeLog key={item.id} trades={item.trades} onSymbolClick={onSymbolClick} />;
+          combinedTimeline.map((item) => {
+            if (item._type === 'trade') {
+              return (
+                <TradeTickerCard
+                  key={item.id}
+                  trade={item}
+                  onSymbolClick={onSymbolClick}
+                  onTradeClick={onSwitchToGameTape ? () => onSwitchToGameTape() : undefined}
+                />
+              );
             }
             if (item.isTyping) {
               return <TypingIndicator key={item.id} />;
@@ -859,39 +722,12 @@ export default function AgentChat({ battleId, agentId, agentName, chatExchanges,
     </>
   );
 
-  const thinkingContent = (
-    <div style={{
-      flex: 1,
-      overflowY: 'auto',
-      padding: '12px',
-      display: 'flex',
-      flexDirection: 'column',
-      gap: 10,
-    }}>
-      {thinkingEntries.length === 0 ? (
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          flex: 1,
-          color: '#6B7280',
-          fontSize: 13,
-          textAlign: 'center',
-          padding: '32px 24px',
-          lineHeight: '1.5',
-        }}>
-          No thinking data yet. Start a conversation and your agent's reasoning will appear here.
-        </div>
-      ) : (
-        thinkingEntries.map((entry, i) =>
-          entry.type === 'scratchpad' ? (
-            <ScratchpadCard key={`sp-${entry.index}`} message={entry.message} index={entry.index} />
-          ) : (
-            <TradeEventCard key={`te-${i}`} event={entry.event} />
-          )
-        )
-      )}
-    </div>
+  const activityContent = (
+    <LiveActivityPanel
+      messages={messages}
+      statusFeed={statusFeed}
+      onSwitchToGameTape={onSwitchToGameTape}
+    />
   );
 
   // ── Layout ──────────────────────────────────────────────────────────────────
@@ -923,7 +759,7 @@ export default function AgentChat({ battleId, agentId, agentName, chatExchanges,
             {chatContent}
           </div>
 
-          {/* ── Right: Agent Thinking ──────────────────────────────────── */}
+          {/* ── Right: Live Activity ───────────────────────────────────── */}
           <div style={{
             width: '380px',
             flexShrink: 0,
@@ -941,9 +777,9 @@ export default function AgentChat({ battleId, agentId, agentName, chatExchanges,
               textTransform: 'uppercase',
               borderBottom: '1px solid rgba(255,255,255,0.06)',
             }}>
-              Agent Thinking
+              Live Activity
             </div>
-            {thinkingContent}
+            {activityContent}
           </div>
         </div>
       </div>
@@ -963,7 +799,7 @@ export default function AgentChat({ battleId, agentId, agentName, chatExchanges,
         display: 'flex',
         borderBottom: '1px solid rgba(255,255,255,0.06)',
       }}>
-        {['chat', 'thinking'].map(tab => (
+        {['chat', 'activity'].map(tab => (
           <button
             key={tab}
             onClick={() => setActiveSubTab(tab)}
@@ -979,12 +815,12 @@ export default function AgentChat({ battleId, agentId, agentName, chatExchanges,
               cursor: 'pointer',
             }}
           >
-            {tab === 'chat' ? 'Chat' : 'Agent Thinking'}
+            {tab === 'chat' ? 'Chat' : 'Live Activity'}
           </button>
         ))}
       </div>
 
-      {activeSubTab === 'chat' ? chatContent : thinkingContent}
+      {activeSubTab === 'chat' ? chatContent : activityContent}
     </div>
   );
 }
