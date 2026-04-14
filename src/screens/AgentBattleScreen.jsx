@@ -16,13 +16,11 @@ import AnimatedScore from '../components/shared/AnimatedScore';
 import ExecutionModeToggle from '../components/Agent/ExecutionModeToggle';
 import StrategyPresetBadge from '../components/Agent/StrategyPresetBadge';
 import HypothesisTicker from '../components/Agent/HypothesisTicker';
-import AgentActivityFeed from '../components/Agent/AgentActivityFeed';
-import AgentFilmRoom from '../components/Agent/AgentFilmRoom';
+import GameTapeView from '../components/Agent/GameTapeView';
 import AgentChat from '../components/Agent/AgentChat';
 import ForgeCitationCard from '../components/Agent/ForgeCitationCard';
 import ProposalBanner from '../components/Agent/ProposalBanner';
 import DebateModal from '../components/Agent/DebateModal';
-import { addFeedBookmark, removeFeedBookmark } from '../services/agentService';
 import TacticalRow from '../components/BaggerBomb/TacticalRow';
 import ClosedTradesSection from '../components/BaggerBomb/ClosedTradesSection';
 import { useWebSocketPrices } from '../hooks/useWebSocketPrices';
@@ -52,8 +50,8 @@ const TIER_HEADER_COLORS = {
   support: { color: '#10b981', bg: 'rgba(16, 185, 129, 0.12)' },
 };
 
-const TAB_KEYS = ['matchups', 'command', 'filmroom'];
-const TAB_LABELS = { matchups: 'Matchups', command: 'Command Center', filmroom: 'Film Room' };
+const TAB_KEYS = ['matchups', 'command', 'gametape'];
+const TAB_LABELS = { matchups: 'Matchups', command: 'Command Center', gametape: 'Game Tape' };
 
 const isCryptoSymbol = (symbol) => {
   return POPULAR_CRYPTO.some(c => c.symbol === symbol) || symbol?.endsWith('-USD');
@@ -289,7 +287,7 @@ function ScoreHeader({ agentBattle, tokens, isDesktop, playerScore, opponentScor
 
 // ─── Tab Bar ──────────────────────────────────────────────────────────────────
 
-function TabBar({ activeTab, onTabChange, hasCommandDot, commandDotColor, hasFilmRoomDot, isDesktop }) {
+function TabBar({ activeTab, onTabChange, hasCommandDot, commandDotColor, hasGameTapeDot, isDesktop }) {
   return (
     <div style={{
       display: 'flex',
@@ -299,7 +297,7 @@ function TabBar({ activeTab, onTabChange, hasCommandDot, commandDotColor, hasFil
     }}>
       {TAB_KEYS.map(key => {
         const isActive = activeTab === key;
-        const showDot = (key === 'command' && hasCommandDot) || (key === 'filmroom' && hasFilmRoomDot);
+        const showDot = (key === 'command' && hasCommandDot) || (key === 'gametape' && hasGameTapeDot);
         const dotColor = key === 'command' ? commandDotColor : '#5eead4';
         return (
           <button
@@ -678,7 +676,7 @@ export default function AgentBattleScreen({ battle, user, onBack }) {
   const hasNewFeedEntries = statusFeed.length > lastSeenFeedLengthRef.current;
   const hasCommandDot = hasPendingProposal || hasNewFeedEntries;
   const commandDotColor = hasPendingProposal ? '#f59e0b' : '#5eead4';
-  const hasFilmRoomDot = (feedBookmarks?.length || 0) > 0;
+  const hasGameTapeDot = (feedBookmarks?.length || 0) > 0;
 
   // ── Callbacks ─────────────────────────────────────────────────────────────
 
@@ -823,7 +821,7 @@ export default function AgentBattleScreen({ battle, user, onBack }) {
           onTabChange={setActiveTab}
           hasCommandDot={hasCommandDot}
           commandDotColor={commandDotColor}
-          hasFilmRoomDot={hasFilmRoomDot}
+          hasGameTapeDot={hasGameTapeDot}
           isDesktop={isDesktop}
         />
       </div>
@@ -906,10 +904,10 @@ export default function AgentBattleScreen({ battle, user, onBack }) {
             </motion.div>
           )}
 
-          {/* ── Film Room Tab ─────────────────────────────────────────── */}
-          {activeTab === 'filmroom' && (
+          {/* ── Game Tape Tab ─────────────────────────────────────────── */}
+          {activeTab === 'gametape' && (
             <motion.div
-              key="filmroom"
+              key="gametape"
               initial={{ opacity: 0, x: 20 }}
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: 20 }}
@@ -921,7 +919,7 @@ export default function AgentBattleScreen({ battle, user, onBack }) {
                 flexDirection: 'column',
               }}
             >
-              <AgentFilmRoom
+              <GameTapeView
                 agentBattle={agentBattle}
                 agentBattleId={agentBattleId}
                 statusFeed={statusFeed}
