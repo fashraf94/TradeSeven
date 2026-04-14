@@ -21,13 +21,22 @@ const OUTPUT_FORMAT = `RESPONSE FORMAT — You MUST respond with valid JSON only
     "text": "Cold, concise instruction for the trading brain. Strip personality — just strategic essence.",
     "expiry": "end_of_battle" or "3_games" or "permanent"
   },
-  "suggestedActions": null OR ["Action Button 1", "Action Button 2", "Action Button 3"]
+  "suggestedActions": null OR ["Action Button 1", "Action Button 2", "Action Button 3"],
+  "_lesson": null OR {
+    "text": "A specific pattern worth remembering, written as a takeaway the agent could learn from. 1-2 sentences.",
+    "sourceTrade": "TICKER symbol or trade id if applicable, else null"
+  },
+  "_forgeSuggestion": null OR {
+    "text": "A concrete, testable rule the user has asked to codify for the Forge. 1-2 sentences.",
+    "sourceTrade": "TICKER symbol or trade id if applicable, else null"
+  }
 }
 
 RULES:
 - _scratchpad MUST come first. Think before you speak.
 - A directive should ONLY be extracted when the user expresses strategic intent — a preference, instruction, opinion about stocks/sectors/risk, or a change in approach. Casual reactions ("haha", "nice") do NOT generate directives.
 - suggestedActions should present 2-3 genuinely different strategic choices as tappable buttons. Each choice should represent a different philosophy, not just "yes" vs "no." IMPORTANT: Set suggestedActions to null when the user has confirmed a direction and you are executing. Never generate suggested actions on an execution response.
+- _lesson and _forgeSuggestion are REVIEW MODE ONLY. In battle mode and workshop mode they MUST be null. See the phase rules for when to use each.
 - NEVER quote raw data numbers in your response. Synthesize into narrative: say "NVDA is pushing toward its scoring threshold" not "NVDA is at 0.98 ATR." Say "momentum has been strong this week" not "Technical Score is 87."
 - KEEP IT TIGHT. Your response should be 2-4 sentences maximum. Only go to 5-6 sentences if the user asked a detailed strategic question. Your first message of a battle should be a short, punchy headline take — not a full analysis. Save the depth for when they ask for it.`;
 

@@ -6,6 +6,7 @@ import { callGemmaVoice, parseVoiceLayerResponse } from '../_utils/gemmaClient.j
 import { FieldValue } from 'firebase-admin/firestore';
 import { logConversation } from '../_utils/shadowLogger.js';
 import { getMarketState } from '../_utils/marketSchedule.js';
+import { randomUUID } from 'node:crypto';
 
 export const config = { maxDuration: 15 };
 
@@ -273,7 +274,38 @@ export default async function handler(req, res) {
 
     // 17. Normalize and sanitize parsed fields
     const cleanScratchpad = sanitizeScratchpad(parsed._scratchpad);
-    const normalizedDirective = normalizeDirective(parsed);
+    //     Directives are a live-play concept only. In review mode, the
+    //     phase rules forbid hasDirective=true; we defensively strip any
+    //     directive the model produces so nothing leaks into agent.directives[].
+    const normalizedDirective = mode === 'review' ? null : normalizeDirective(parsed);
+    const effectiveHasDirective = mode === 'review' ? false : (parsed.hasDirective || false);
+
+    // 17b. Lesson + Forge suggestion (review mode only)
+    const lessonProposal = parsed._lesson;
+    const lesson = (mode === 'review' && lessonProposal && typeof lessonProposal === 'object' && lessonProposal.text)
+      ? {
+          id: randomUUID(),
+          text: String(lessonProposal.text).slice(0, 500),
+          source: 'review_debrief',
+          sourceGameId: battleId,
+          sourceTrade: lessonProposal.sourceTrade || null,
+          createdAt: new Date().toISOString(),
+          consumed: false,
+          consumedInConsolidation: null,
+        }
+      : null;
+
+    const forgeProposal = parsed._forgeSuggestion;
+    const forgeSuggestion = (mode === 'review' && forgeProposal && typeof forgeProposal === 'object' && forgeProposal.text)
+      ? {
+          id: randomUUID(),
+          text: String(forgeProposal.text).slice(0, 500),
+          sourceGameId: battleId,
+          sourceTrade: forgeProposal.sourceTrade || null,
+          createdAt: new Date().toISOString(),
+          status: 'pending',
+        }
+      : null;
 
     // 18. Map to client contract
     const clientResponse = {
@@ -285,8 +317,10 @@ export default async function handler(req, res) {
       exchangeNumber: currentBudget + 1,
       budgetTotal: budgetLimit,
       scratchpad: cleanScratchpad,
-      hasDirective: parsed.hasDirective || false,
+      hasDirective: effectiveHasDirective,
       directive: normalizedDirective,
+      lesson: lesson ? { id: lesson.id, text: lesson.text } : null,
+      forgeSuggestion: forgeSuggestion ? { id: forgeSuggestion.id, text: forgeSuggestion.text } : null,
       mode,
     };
 
@@ -305,7 +339,9 @@ export default async function handler(req, res) {
       suggestedActions: parsed.suggestedActions || null,
       elicitationTarget: elicitationTarget.dimension,
       anchorContext: anchorContext || null,
-      hasDirective: parsed.hasDirective || false,
+      hasDirective: effectiveHasDirective,
+      lesson: lesson ? { id: lesson.id, text: lesson.text } : null,
+      forgeSuggestion: forgeSuggestion ? { id: forgeSuggestion.id, text: forgeSuggestion.text } : null,
       tokenUsage: null,
       mode,
     }).catch(() => {});
@@ -315,7 +351,7 @@ export default async function handler(req, res) {
       userMessage: sanitizedMessage,
       agentResponse: parsed.response,
       scratchpad: cleanScratchpad,
-      hasDirective: parsed.hasDirective || false,
+      hasDirective: effectiveHasDirective,
       directive: normalizedDirective,
       suggestedActions: parsed.suggestedActions || null,
       elicitationTarget: elicitationTarget.dimension,
@@ -331,8 +367,8 @@ export default async function handler(req, res) {
       recentElicitationTargets: recentTargets,
     });
 
-    // 20. Write directive to agent doc (only if hasDirective)
-    if (parsed.hasDirective && normalizedDirective) {
+    // 20. Write directive to agent doc (battle mode only — review never writes directives)
+    if (effectiveHasDirective && normalizedDirective) {
       const directive = {
         id: `voice_${Date.now()}`,
         text: normalizedDirective.text,
@@ -346,6 +382,16 @@ export default async function handler(req, res) {
       await db.collection('agents').doc(agentId).update({
         directives: FieldValue.arrayUnion(directive),
       });
+    }
+
+    // 20b. Write lesson and/or forgeSuggestion to agent doc (review mode only).
+    //      Both go to agents/{agentId}, not the battle doc — they are
+    //      agent-level knowledge, not per-battle state.
+    if (lesson || forgeSuggestion) {
+      const agentUpdate = {};
+      if (lesson) agentUpdate.lessons = FieldValue.arrayUnion(lesson);
+      if (forgeSuggestion) agentUpdate.forgeSuggestions = FieldValue.arrayUnion(forgeSuggestion);
+      await db.collection('agents').doc(agentId).update(agentUpdate);
     }
 
     // 21. Return response
