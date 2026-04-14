@@ -900,7 +900,7 @@ export default function AgentBattleScreen({ battle, user, onBack }) {
                 statusFeed={statusFeed}
                 trades={agentBattle?.trades || []}
                 onSymbolClick={handleSymbolClick}
-                onCitationTap={handleCitationTap}
+                onSwitchToGameTape={() => setActiveTab('gametape')}
                 knownTickers={knownTickers}
               />
             </motion.div>

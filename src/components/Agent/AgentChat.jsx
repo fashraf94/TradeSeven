@@ -313,7 +313,7 @@ function BudgetPips({ used, total }) {
 
 // ─── Main Component ──────────────────────────────────────────────────────────
 
-export default function AgentChat({ battleId, agentId, agentName, chatExchanges, battleStatus, statusFeed, trades = [], onSymbolClick, onCitationTap, knownTickers }) {
+export default function AgentChat({ battleId, agentId, agentName, chatExchanges, battleStatus, statusFeed, trades = [], onSymbolClick, onSwitchToGameTape, knownTickers }) {
   const [messages, setMessages] = useState([]);
   const [inputText, setInputText] = useState('');
   const [isSending, setIsSending] = useState(false);
@@ -605,7 +605,7 @@ export default function AgentChat({ battleId, agentId, agentName, chatExchanges,
                   key={item.id}
                   trade={item}
                   onSymbolClick={onSymbolClick}
-                  onCitationTap={onCitationTap}
+                  onTradeClick={onSwitchToGameTape ? () => onSwitchToGameTape() : undefined}
                 />
               );
             }
@@ -726,7 +726,7 @@ export default function AgentChat({ battleId, agentId, agentName, chatExchanges,
     <LiveActivityPanel
       messages={messages}
       statusFeed={statusFeed}
-      onCitationTap={onCitationTap}
+      onSwitchToGameTape={onSwitchToGameTape}
     />
   );
 
