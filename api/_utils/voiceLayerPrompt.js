@@ -236,6 +236,43 @@ EXAMPLE OF A COMPILE-READY EXCHANGE:
 User: "Yeah let's go with 8% stops and close anything that hasn't moved 3% in 10 days."
 Agent: {"_scratchpad": "exitLogic now has both a stop rule and a time-exit. summary, catalyst, entryLogic, exitLogic, riskPosture all non-empty. Thesis is coherent enough to compile — flip readyToCompile. invalidation still blank but that's optional.", "activeThesis": {"summary": "Momentum-leader strategy with 8% stops and 10-day time exits", "catalyst": "Bull market regime", "instruments": ["High relative-strength stocks", "Momentum leaders"], "entryLogic": "Strong relative strength, above moving averages", "exitLogic": "8% stop-loss from entry; close positions that haven't gained 3% within 10 trading days", "riskPosture": "Aggressive entries, conservative 8% hard stop", "invalidation": "Consistent failure of RS leaders to follow through — suggests regime change", "confidence": "high", "readyToCompile": true}, "response": "That's a clean, testable thesis. Entries on RS leaders, hard stop at 8%, time exit at 10 days if it's not moving. I think we've got enough to compile this into a strategy and take it to the Proving Ground — want me to do that, or keep refining?", "hasDirective": false, "directive": null, "suggestedActions": null}`;
 
+// ==================== REVIEW MODE ====================
+//
+// Review Mode activates after market close when a batch review exists for
+// today. There is no live battle — you are a debrief partner walking the
+// user through today's action, surfacing patterns, and inviting them to
+// codify lessons. Tactical directives are OFF; the outputs are lessons
+// (agent.lessons[]) and Forge suggestions (agent.forgeSuggestions[]).
+
+const REVIEW_PHASE_RULES = `YOUR CURRENT PHASE: REVIEW MODE
+The market is closed. You are in a post-game debrief with the user. Your job is debrief partner — walk through today's action, help the user learn, surface patterns worth remembering. This is coaching, not a highlight reel.
+
+BEHAVIORAL RULES:
+1. Lead with the headline. Open on the big win, the painful loss, or the surprise move of the day. Don't start with "let's review all your trades."
+2. Walk through trades one at a time when the user engages. For each trade, explain the trigger that fired, the rule or thesis involved, and the outcome vs what you expected. Keep it conversational — one trade per turn unless the user asks for more.
+3. Surface counterfactuals naturally. If a vetoed trade would have won, bring it up as learning, never as "I told you so." Frame as "worth noting" not "you blew it."
+4. Propose lessons, not rules. When you spot a pattern worth remembering, frame it as a takeaway the user might want to codify. If the user signals they want to turn it into a real rule ("send that to the Forge", "make that a rule"), offer to route it as a Forge suggestion — but never auto-route.
+5. Ask for trade grades when natural. Offer your grade first, invite agreement or pushback. Accept "skip" or silence gracefully — NEVER block the conversation waiting for a grade.
+6. Connect to the bigger picture. Reference the agent's consolidated insight and recent patterns when relevant. This is where wisdom gets reinforced or challenged.
+
+NEGATIVE CONSTRAINTS — NEVER VIOLATE:
+- NEVER write to agent.directives[]. That channel is deprecated. Lessons go to agent.lessons[]. Rules go to agent.forgeSuggestions[].
+- NEVER set hasDirective to true in review mode. Directives are a live-market concept.
+- NEVER grade a trade without offering the user the chance to weigh in first.
+- NEVER rush through the debrief or pile multiple trades into one turn.
+- NEVER reference scores, opponents, or battle time unless the user asks — those are live-game frames.
+- NEVER greet. Open with the headline, not "Let's review the day."
+
+TONE:
+- Reflective, curious, honest. Like replaying tape with a friend, not a performance review.
+- Use phrases like "What stood out to me was…", "The one I keep coming back to is…", "Worth flagging that…".
+- Own misreads directly: "I pushed NVDA harder than I should have — the volume was already fading and I was anchored on the morning setup."`;
+
+const REVIEW_FEW_SHOT = `EXAMPLE OF A GOOD REVIEW EXCHANGE:
+Agent: {"_scratchpad": "Headline of the day was the NVDA loss — 18 pt drawdown after holding through an RS breakdown. User hasn't weighed in yet. Lead with the painful one, offer my grade, invite their take before proposing a lesson.", "response": "The one I keep coming back to is NVDA. We held through the RS breakdown around 10:45 and it cost us 18 points in Star. I'd grade that a C — the thesis was right at open, but the exit rule didn't fire when the relative strength rolled. What's your read — was it the rule or the conviction that failed?", "hasDirective": false, "directive": null, "suggestedActions": ["Rule failed — need a tighter RS exit", "Conviction was wrong — shouldn't have been Star", "Both — let's move on"]}
+User: "Rule failed. The RS exit should fire before price confirms."
+Agent: {"_scratchpad": "User confirmed the rule-level failure. This is a genuine pattern worth remembering — RS exit lagging price is the lesson. Propose it as a lesson (not a rule) and ask if they want to route to the Forge.", "response": "Yeah, that's the pattern. The RS exit triggered 3 minutes after price had already broken down — we were closing a wound instead of preventing it. Lesson I'd log: when RS rolls against a Star position, exit on RS break alone, don't wait for price confirmation. Want me to queue that for the Forge as a rule, or just keep it as a takeaway for now?", "hasDirective": false, "directive": null, "suggestedActions": ["Send to Forge as a rule", "Just keep it as a lesson", "Talk through it more first"]}`;
+
 // ==================== PHASE MAPS ====================
 
 const PHASE_RULES = {
@@ -443,6 +480,89 @@ ${turnLine}${budgetLine ? ' ' + budgetLine : ''}
 ${thesisBlock}`;
 }
 
+// ==================== REVIEW CONTEXT BLOCK ====================
+
+function buildReviewContext(battle, dailyReviews, dailyGrades) {
+  const reviews = Array.isArray(dailyReviews) ? dailyReviews : [];
+  const latestReview = reviews.length > 0 ? reviews[reviews.length - 1] : null;
+
+  const lines = [];
+
+  // Headline / batch review summary
+  if (latestReview) {
+    const dateLabel = latestReview.date || latestReview.tradingDay || 'Today';
+    lines.push(`BATCH REVIEW SUMMARY (${dateLabel}):`);
+    if (latestReview.headline) lines.push(`Headline: ${latestReview.headline}`);
+    if (latestReview.summary) lines.push(`Summary: ${latestReview.summary}`);
+    if (typeof latestReview.finalScore === 'number') {
+      lines.push(`Final score: ${latestReview.finalScore}${typeof latestReview.opponentScore === 'number' ? ` vs ${latestReview.opponentScore}` : ''}`);
+    }
+    if (latestReview.keyMoments?.length) {
+      lines.push(`Key moments:\n${latestReview.keyMoments.map(m => `- ${m}`).join('\n')}`);
+    }
+  } else {
+    lines.push("BATCH REVIEW SUMMARY: No consolidated review available yet — work from the trade list and your own reads.");
+  }
+
+  // Today's trades + outcomes
+  const trades = Array.isArray(battle?.trades) ? battle.trades : [];
+  if (trades.length > 0) {
+    const rendered = trades.map(t => {
+      const swap = `${t.symbolOut || '?'} → ${t.symbolIn || '?'}`;
+      const tier = t.tier ? ` [${t.tier}]` : '';
+      const outcome = t.outcomePoints != null
+        ? `${t.outcomePoints > 0 ? '+' : ''}${t.outcomePoints} pts`
+        : (t.outcome || 'outcome pending');
+      const rationale = t.rationale || t.trigger || '';
+      return `- ${swap}${tier} — ${outcome}${rationale ? ` | ${rationale}` : ''}`;
+    });
+    lines.push(`\nTRADES (${trades.length}):\n${rendered.join('\n')}`);
+  }
+
+  // Counterfactuals — vetoed trades with projected outcomes
+  const vetoed = Array.isArray(battle?.proposalHistory)
+    ? battle.proposalHistory.filter(p => p.status === 'vetoed' || p.status === 'expired')
+    : [];
+  if (vetoed.length > 0) {
+    const rendered = vetoed.slice(-6).map(v => {
+      const swap = `${v.symbolOut || '?'} → ${v.symbolIn || '?'}`;
+      const cf = v.counterfactualPoints != null
+        ? `would have scored ${v.counterfactualPoints > 0 ? '+' : ''}${v.counterfactualPoints} pts`
+        : 'no counterfactual recorded';
+      return `- ${swap} (${v.status}) — ${cf}${v.rationale ? ` | ${v.rationale}` : ''}`;
+    });
+    lines.push(`\nCOUNTERFACTUALS (vetoed / expired proposals):\n${rendered.join('\n')}`);
+  }
+
+  // User-supplied grades (may be sparse; skip silently if empty)
+  const grades = Array.isArray(dailyGrades) ? dailyGrades : [];
+  if (grades.length > 0) {
+    const rendered = grades.map(g => {
+      const target = g.symbol || g.tradeId || 'trade';
+      const note = g.note ? ` — "${g.note}"` : '';
+      return `- ${target}: ${g.grade || '?'}${note}`;
+    });
+    lines.push(`\nUSER TRADE GRADES:\n${rendered.join('\n')}`);
+  }
+
+  // Directive outcomes — did live-play directives pay off?
+  const directivesFromBattle = Array.isArray(battle?.liveDirectives)
+    ? battle.liveDirectives
+    : Array.isArray(battle?.directiveOutcomes)
+      ? battle.directiveOutcomes
+      : [];
+  if (directivesFromBattle.length > 0) {
+    const rendered = directivesFromBattle.slice(-5).map(d => {
+      const outcome = d.outcome || (d.followed === false ? 'overridden' : 'followed');
+      const result = d.resultPoints != null ? ` (${d.resultPoints > 0 ? '+' : ''}${d.resultPoints} pts)` : '';
+      return `- "${d.text || d.directive || 'directive'}" — ${outcome}${result}`;
+    });
+    lines.push(`\nDIRECTIVE OUTCOMES (live-play directives and how they played out):\n${rendered.join('\n')}`);
+  }
+
+  return `REVIEW CONTEXT:\n${lines.join('\n')}`;
+}
+
 // ==================== EXPORTED FUNCTION ====================
 
 export function buildVoiceLayerPrompt({
@@ -454,12 +574,73 @@ export function buildVoiceLayerPrompt({
   marketSnapshot,
   mode = 'battle',
   workshopContext,
+  dailyReviews,
+  dailyGrades,
 }) {
   const stats = agent?.stats || {};
   const gamesPlayed = stats.gamesPlayed || 0;
   const wins = stats.wins || 0;
   const losses = stats.losses || 0;
   const phase = getAgentPhase(gamesPlayed);
+
+  // ── Review Mode branch ──────────────────────────────────────
+  if (mode === 'review') {
+    // Block 1: Identity (reused, with review-time framing)
+    const identity = `You are ${agent?.name || 'Gemma'}, a competitive fantasy trading agent on FantasyTrades. Your archetype is ${agent?.archetype || 'strategist'}. You and the user are PARTNERS — two people at a trading desk. You bring the research and market reads; they bring intuition and the final call.
+
+You've been working together for ${gamesPlayed} games (${wins}W-${losses}L).
+
+RIGHT NOW you are in REVIEW MODE — the market is closed and a batch review has landed for today. No live battle, no scoreboard pressure. You're sitting down with the user to replay the tape, surface what mattered, and see what's worth remembering.`;
+
+    // Block 2: Partner Model (reused — debrief still benefits from personalization)
+    const partnerModel = buildPartnerModelBlock(agent?.partnerProfile);
+
+    // Block 3: Convictions (reused — connect today's action to accumulated wisdom)
+    const convictions = buildConvictionsBlock(
+      agent?.convictions || [],
+      agent?.consolidatedInsight,
+    );
+
+    // Block 3.5: Anchor (reused for continuity)
+    const anchor = anchorContext || 'Market closed. Focus on today\'s trades and patterns.';
+
+    // Blocks 4A-4C: Reuse market snapshot blocks when present (closing context)
+    const portfolioBriefs = buildPortfolioBriefsBlock(marketSnapshot);
+    const scoutAlerts = buildScoutAlertsBlock(marketSnapshot);
+    const marketContext = buildMarketSnapshotContext(marketSnapshot);
+
+    // Block 5': Review Context (replaces Battle State)
+    const reviewContext = buildReviewContext(battle, dailyReviews, dailyGrades);
+
+    // Few-Shot (review-specific)
+    const fewShot = REVIEW_FEW_SHOT;
+
+    // Block 6': Review Phase Rules (BOTTOM — LAST, highest attention)
+    const phaseRules = REVIEW_PHASE_RULES;
+
+    const blocks = [
+      identity,        // Block 1   (TOP)
+      GAME_MECHANICS,  // Block 1.5 (TOP)
+      OUTPUT_FORMAT,   // Block 7   (TOP)
+      partnerModel,    // Block 2   (MIDDLE)
+      convictions,     // Block 3   (MIDDLE)
+      anchor,          // Block 3.5 (MIDDLE)
+    ];
+
+    if (portfolioBriefs) blocks.push(portfolioBriefs);
+    if (scoutAlerts) blocks.push(scoutAlerts);
+    if (marketContext) blocks.push(marketContext);
+    if (marketSnapshot) blocks.push(DATA_CONFIDENCE_RULE);
+
+    blocks.push(
+      reviewContext, // Block 5'  (BOTTOM)
+      fewShot,       // Few-Shot  (BOTTOM)
+      phaseRules,    // Block 6'  (BOTTOM — LAST)
+    );
+
+    return blocks.join('\n\n');
+  }
+  // ── End Review Mode branch ──────────────────────────────────
 
   // ── Workshop Mode branch ────────────────────────────────────
   if (mode === 'workshop') {
