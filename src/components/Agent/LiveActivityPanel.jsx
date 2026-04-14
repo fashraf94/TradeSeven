@@ -1,21 +1,24 @@
-// LiveActivityPanel - Right-side panel in AgentChat.
+// LiveActivityPanel - Agent Pulse
 //
-// Two stacked sections:
-//   1. EVALUATIONS (primary, always visible)
-//      Haiku non-trade event cards from statusFeed with a 4-color semantic
-//      palette: teal=info (evaluation/hold/watchlist), red=risk
-//      (risk_alert/threshold_event), amber=override/exception
-//      (rule_override/catalyst_override/hypothesis_resolved/lock),
-//      purple=opponent (opponent_trade/opponent_threshold/gameplan_meeting).
-//   2. AGENT REASONING (N) (secondary, collapsible, default collapsed)
-//      Gemma scratchpad entries with gray muted styling.
+// A quiet, always-present indicator that the agent is alive and working.
+// Design principle: the chat is the star. This panel supports the
+// conversation; it is not a data dashboard.
 //
-// Trade events (swap/emergency_swap/trade_executed/etc.) are excluded — they
-// now live inline in the chat timeline as TradeTickerCards (Phase 2).
+// Structure (top to bottom):
+//   1. AgentStatusIndicator -- pulsing dot + one-line status from the most
+//      recent statusFeed entry's message. Crossfade when the source changes.
+//   2. BreakthroughAlerts -- compact cards for 5 admitted types
+//      (risk_alert, threshold_event, gameplan_meeting, lock,
+//      hypothesis_resolved). Max 3 visible. Auto-dismiss after 60s OR
+//      tap-to-dismiss-early. Routine evaluations/holds do NOT appear here;
+//      they feed the status indicator only.
+//   3. Agent Reasoning (N) -- collapsible Gemma scratchpad section, gray
+//      and muted, default collapsed. Hidden when no entries exist.
+//   4. View Full Log -- bottom link that calls onSwitchToGameTape.
 
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronDown, ChevronUp } from 'lucide-react';
+import { ChevronDown, ChevronUp, X, Trophy, AlertTriangle, Users, Lightbulb, Lock } from 'lucide-react';
 
 // ─── Palette ──────────────────────────────────────────────────────────────────
 
@@ -23,6 +26,7 @@ const PALETTE = {
   teal:   '#5EEAD4',
   red:    '#EF4444',
   amber:  '#F59E0B',
+  gold:   '#FBBF24',
   purple: '#A78BFA',
   gray:   '#6B7280',
   muted:  '#9CA3AF',
@@ -31,26 +35,22 @@ const PALETTE = {
   border: 'rgba(255,255,255,0.05)',
 };
 
-// Each badge maps to a compact 3-4 char label and a palette color.
-// The card's 3px left border matches the badge color.
-const BADGE_MAP = {
-  evaluation:          { label: 'EVAL',   color: PALETTE.teal },
-  evaluation_summary:  { label: 'EVAL',   color: PALETTE.teal },
-  hold:                { label: 'HOLD',   color: PALETTE.teal },
-  hold_decision:       { label: 'HOLD',   color: PALETTE.teal },
-  watchlist_refresh:   { label: 'WATCH',  color: PALETTE.teal },
-  risk_alert:          { label: 'RISK',   color: PALETTE.red },
-  threshold_event:     { label: 'THRESH', color: PALETTE.red },
-  rule_override:       { label: 'RULE',   color: PALETTE.amber },
-  catalyst_override:   { label: 'CAT',    color: PALETTE.amber },
-  hypothesis_resolved: { label: 'HYPO',   color: PALETTE.amber },
-  lock:                { label: 'LOCK',   color: PALETTE.amber },
-  gameplan_meeting:    { label: 'PLAN',   color: PALETTE.purple },
-  opponent_trade:      { label: 'OPP',    color: PALETTE.purple },
-  opponent_threshold:  { label: 'OPP',    color: PALETTE.purple },
+// Breakthrough types only. Everything else feeds the status indicator text.
+// threshold_event and lock use GOLD (scoring milestones / celebratory),
+// risk_alert uses RED, gameplan_meeting uses PURPLE, hypothesis_resolved
+// uses AMBER (pending outcome).
+const BREAKTHROUGH_MAP = {
+  risk_alert:          { label: 'RISK',   color: PALETTE.red,    Icon: AlertTriangle },
+  threshold_event:     { label: 'SCORE',  color: PALETTE.gold,   Icon: Trophy },
+  lock:                { label: 'LOCK',   color: PALETTE.gold,   Icon: Lock },
+  gameplan_meeting:    { label: 'PLAN',   color: PALETTE.purple, Icon: Users },
+  hypothesis_resolved: { label: 'HYPO',   color: PALETTE.amber,  Icon: Lightbulb },
 };
 
-const FALLBACK_BADGE = { label: 'INFO', color: PALETTE.teal };
+const BREAKTHROUGH_KEYS = new Set(Object.keys(BREAKTHROUGH_MAP));
+const ALERT_TTL_MS = 60_000;
+const MAX_VISIBLE_ALERTS = 3;
+const STATUS_MAX_CHARS = 80;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -78,127 +78,255 @@ const hexToRgba = (hex, alpha) => {
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 };
 
-// ─── Sub-components ───────────────────────────────────────────────────────────
+const extractMessage = (entry) =>
+  (entry?.message || entry?.rationale || entry?.description || entry?.summary || '').toString();
 
-function SectionHeader({ children, color = PALETTE.teal, style }) {
+const truncate = (text, max = STATUS_MAX_CHARS) => {
+  const t = (text || '').trim().replace(/\s+/g, ' ');
+  return t.length <= max ? t : `${t.slice(0, max - 1).trimEnd()}…`;
+};
+
+const entryKey = (entry, fallbackIndex) =>
+  entry?.id || entry?.evalId || `${normalizeTimestamp(entry?.timestamp)}-${fallbackIndex}`;
+
+// ─── AgentStatusIndicator ─────────────────────────────────────────────────────
+
+function AgentStatusIndicator({ latestEntry }) {
+  const isActive = !!latestEntry;
+  const statusText = latestEntry
+    ? truncate(extractMessage(latestEntry)) || 'Agent is active.'
+    : 'Your agent will start analyzing when the market opens.';
+
+  const dotColor = isActive ? PALETTE.teal : PALETTE.gray;
+  const crossfadeKey = latestEntry ? entryKey(latestEntry, 0) : 'idle';
+
   return (
     <div style={{
-      fontSize: 11,
-      fontWeight: 700,
-      color,
-      letterSpacing: '0.08em',
-      textTransform: 'uppercase',
-      margin: '4px 0 2px',
-      ...style,
+      display: 'flex',
+      alignItems: 'flex-start',
+      gap: 10,
+      padding: '14px 12px 12px',
+      borderBottom: `1px solid ${PALETTE.border}`,
     }}>
-      {children}
+      {/* Pulsing dot */}
+      <div style={{
+        position: 'relative',
+        width: 10,
+        height: 10,
+        marginTop: 4,
+        flexShrink: 0,
+      }}>
+        <motion.span
+          animate={isActive
+            ? { scale: [1, 1.9, 1], opacity: [0.45, 0, 0.45] }
+            : { scale: 1, opacity: 0 }}
+          transition={isActive
+            ? { duration: 2.2, ease: 'easeInOut', repeat: Infinity }
+            : { duration: 0 }}
+          style={{
+            position: 'absolute',
+            inset: 0,
+            borderRadius: '50%',
+            background: dotColor,
+          }}
+        />
+        <span style={{
+          position: 'absolute',
+          inset: 0,
+          borderRadius: '50%',
+          background: dotColor,
+          opacity: isActive ? 1 : 0.5,
+        }} />
+      </div>
+
+      {/* Status text with crossfade */}
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{
+          fontSize: 10,
+          fontWeight: 700,
+          color: dotColor,
+          letterSpacing: '0.08em',
+          textTransform: 'uppercase',
+          marginBottom: 4,
+        }}>
+          {isActive ? 'Agent Pulse' : 'Standing by'}
+        </div>
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={crossfadeKey}
+            initial={{ opacity: 0, y: 2 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -2 }}
+            transition={{ duration: 0.25 }}
+            style={{
+              fontSize: 13,
+              color: isActive ? PALETTE.body : PALETTE.gray,
+              lineHeight: 1.45,
+              wordBreak: 'break-word',
+            }}
+          >
+            {statusText}
+          </motion.div>
+        </AnimatePresence>
+      </div>
     </div>
   );
 }
 
-function EvalCard({ event, onCitationTap }) {
-  const key = event.action || event.type;
-  const badge = BADGE_MAP[key] || FALLBACK_BADGE;
-  const ts = normalizeTimestamp(event.timestamp);
-  const body = event.message || event.rationale || event.description || event.summary || '';
-  const citedRules = event.citedForgeRules || event.citedRules || [];
+// ─── BreakthroughAlertCard ────────────────────────────────────────────────────
 
-  const hasSymbolFlow = event.symbolOut && event.symbolIn;
-  const hasMeta = hasSymbolFlow || event.regime;
+function BreakthroughAlertCard({ alert, onDismiss }) {
+  const cfg = BREAKTHROUGH_MAP[alert.key] || BREAKTHROUGH_MAP.risk_alert;
+  const ts = normalizeTimestamp(alert.timestamp);
+  const body = truncate(extractMessage(alert.event), 140);
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.2, ease: 'easeOut' }}
+      layout
+      initial={{ opacity: 0, y: -6, scale: 0.98 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      exit={{ opacity: 0, scale: 0.97, transition: { duration: 0.18 } }}
+      transition={{ duration: 0.22, ease: 'easeOut' }}
       style={{
         background: PALETTE.bgCard,
         border: `1px solid ${PALETTE.border}`,
-        borderLeft: `3px solid ${badge.color}`,
-        borderRadius: 10,
-        padding: '10px 12px 10px 13px',
+        borderLeft: `3px solid ${cfg.color}`,
+        borderRadius: 8,
+        padding: '8px 10px 8px 12px',
         display: 'flex',
         flexDirection: 'column',
-        gap: 6,
+        gap: 4,
       }}
     >
-      {/* Header: badge + timestamp */}
-      <div style={{
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
-      }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <cfg.Icon size={12} color={cfg.color} style={{ flexShrink: 0 }} />
         <span style={{
           fontSize: 10,
           fontWeight: 700,
-          color: badge.color,
-          background: hexToRgba(badge.color, 0.12),
+          color: cfg.color,
+          background: hexToRgba(cfg.color, 0.14),
           padding: '2px 6px',
           borderRadius: 3,
           letterSpacing: '0.04em',
-          textTransform: 'uppercase',
         }}>
-          {badge.label}
+          {cfg.label}
         </span>
-        <span style={{ fontSize: 10, color: PALETTE.gray, whiteSpace: 'nowrap' }}>
+        <span style={{
+          marginLeft: 'auto',
+          fontSize: 10,
+          color: PALETTE.gray,
+          whiteSpace: 'nowrap',
+        }}>
           {formatTime(ts)}
         </span>
+        <button
+          onClick={(e) => { e.stopPropagation(); onDismiss(alert.id); }}
+          aria-label="Dismiss alert"
+          style={{
+            background: 'none',
+            border: 'none',
+            padding: 2,
+            marginLeft: 2,
+            cursor: 'pointer',
+            display: 'inline-flex',
+            color: PALETTE.gray,
+          }}
+        >
+          <X size={12} />
+        </button>
       </div>
-
-      {/* Body text */}
       {body && (
         <div style={{
-          fontSize: 13,
+          fontSize: 12.5,
           color: PALETTE.body,
-          lineHeight: 1.5,
+          lineHeight: 1.45,
           wordBreak: 'break-word',
         }}>
           {body}
         </div>
       )}
-
-      {/* Optional meta row: symbol flow + regime */}
-      {hasMeta && (
-        <div style={{
-          display: 'flex', alignItems: 'center', gap: 8, fontSize: 10, color: PALETTE.gray,
-        }}>
-          {hasSymbolFlow && (
-            <span>
-              <span style={{ color: PALETTE.red }}>{event.symbolOut}</span>
-              {' → '}
-              <span style={{ color: PALETTE.teal }}>{event.symbolIn}</span>
-            </span>
-          )}
-          {event.regime && <span>· {event.regime}</span>}
-        </div>
-      )}
-
-      {/* Forge citation pills */}
-      {citedRules.length > 0 && (
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-          {citedRules.map((rule, i) => (
-            <button
-              key={`${rule}-${i}`}
-              onClick={(e) => { e.stopPropagation(); onCitationTap?.(rule); }}
-              style={{
-                padding: '2px 7px',
-                borderRadius: 6,
-                border: `1px solid rgba(94,234,212,0.25)`,
-                background: 'rgba(94,234,212,0.08)',
-                color: PALETTE.teal,
-                fontSize: 9.5,
-                fontWeight: 600,
-                cursor: onCitationTap ? 'pointer' : 'default',
-                fontFamily: 'inherit',
-                letterSpacing: '0.03em',
-              }}
-            >
-              {rule}
-            </button>
-          ))}
-        </div>
-      )}
     </motion.div>
   );
 }
+
+// ─── BreakthroughAlerts ───────────────────────────────────────────────────────
+// Manages the visible alert list. Each incoming breakthrough entry becomes an
+// alert that auto-dismisses after ALERT_TTL_MS; user can also tap X to
+// dismiss early. Oldest dismissed when a 4th arrives (MAX_VISIBLE_ALERTS=3).
+
+function useBreakthroughAlerts(statusFeed) {
+  const [visible, setVisible] = useState([]); // [{ id, key, event, timestamp }]
+  const seenIdsRef = useRef(new Set());
+  const timersRef = useRef(new Map());
+
+  const dismiss = React.useCallback((id) => {
+    setVisible(prev => prev.filter(a => a.id !== id));
+    const t = timersRef.current.get(id);
+    if (t) { clearTimeout(t); timersRef.current.delete(id); }
+  }, []);
+
+  // Detect new breakthrough entries and push them into the visible list.
+  useEffect(() => {
+    if (!Array.isArray(statusFeed) || statusFeed.length === 0) return;
+    const additions = [];
+    for (let i = 0; i < statusFeed.length; i++) {
+      const entry = statusFeed[i];
+      const key = entry?.action || entry?.type;
+      if (!BREAKTHROUGH_KEYS.has(key)) continue;
+      const id = entryKey(entry, i);
+      if (seenIdsRef.current.has(id)) continue;
+      seenIdsRef.current.add(id);
+      additions.push({
+        id,
+        key,
+        event: entry,
+        timestamp: normalizeTimestamp(entry.timestamp),
+      });
+    }
+    if (additions.length === 0) return;
+
+    setVisible(prev => {
+      // Newest on top, cap at MAX_VISIBLE_ALERTS.
+      const merged = [...additions.reverse(), ...prev];
+      return merged.slice(0, MAX_VISIBLE_ALERTS);
+    });
+
+    // Schedule auto-dismiss for each new alert.
+    additions.forEach(a => {
+      const t = setTimeout(() => dismiss(a.id), ALERT_TTL_MS);
+      timersRef.current.set(a.id, t);
+    });
+  }, [statusFeed, dismiss]);
+
+  // Cleanup any pending timers on unmount.
+  useEffect(() => () => {
+    timersRef.current.forEach(t => clearTimeout(t));
+    timersRef.current.clear();
+  }, []);
+
+  return { visible, dismiss };
+}
+
+function BreakthroughAlerts({ statusFeed }) {
+  const { visible, dismiss } = useBreakthroughAlerts(statusFeed);
+  if (visible.length === 0) return null;
+  return (
+    <div style={{
+      padding: '10px 12px 4px',
+      display: 'flex',
+      flexDirection: 'column',
+      gap: 8,
+    }}>
+      <AnimatePresence initial={false}>
+        {visible.map(alert => (
+          <BreakthroughAlertCard key={alert.id} alert={alert} onDismiss={dismiss} />
+        ))}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+// ─── ScratchpadCard (unchanged from Phase 3) ──────────────────────────────────
 
 function ScratchpadCard({ message, index }) {
   return (
@@ -244,55 +372,29 @@ function ScratchpadCard({ message, index }) {
   );
 }
 
-function InlineEmptyEval() {
-  return (
-    <div style={{
-      fontSize: 13,
-      color: PALETTE.gray,
-      fontStyle: 'italic',
-      padding: '8px 4px',
-      lineHeight: 1.5,
-    }}>
-      No evaluations yet.
-    </div>
-  );
-}
-
-function FullEmptyState() {
-  return (
-    <div style={{
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      flex: 1,
-      color: PALETTE.gray,
-      fontSize: 13,
-      textAlign: 'center',
-      padding: '32px 24px',
-      lineHeight: 1.5,
-    }}>
-      No evaluations yet. Activity will appear here when your agent starts analyzing.
-    </div>
-  );
-}
-
 // ─── Panel ────────────────────────────────────────────────────────────────────
 
-function LiveActivityPanel({ messages = [], statusFeed = [], onCitationTap }) {
+function LiveActivityPanel({
+  messages = [],
+  statusFeed = [],
+  onSwitchToGameTape,
+}) {
   const [reasoningOpen, setReasoningOpen] = useState(false);
 
-  // Primary feed: admit only known eval/hold/risk/override/opponent types.
-  // Key off action || type (backend writes either depending on producer).
-  const evalEntries = useMemo(() => {
-    const keep = new Set(Object.keys(BADGE_MAP));
-    return (statusFeed || [])
-      .filter(e => keep.has(e?.action) || keep.has(e?.type))
-      .map(e => ({ event: e, timestamp: normalizeTimestamp(e.timestamp) }))
-      .sort((a, b) => b.timestamp - a.timestamp);
+  // Latest statusFeed entry (any type) powers the status-indicator text.
+  const latestEntry = useMemo(() => {
+    if (!Array.isArray(statusFeed) || statusFeed.length === 0) return null;
+    let best = null;
+    let bestTs = -Infinity;
+    for (const e of statusFeed) {
+      const ts = normalizeTimestamp(e?.timestamp);
+      if (ts >= bestTs) { best = e; bestTs = ts; }
+    }
+    return best;
   }, [statusFeed]);
 
-  // Scratchpad: compute msgIndex in chat order first so "MSG N" is stable,
-  // then sort newest first for display.
+  // Scratchpad entries for Agent Reasoning section. Chat-ordered msgIndex,
+  // then sorted newest-first for display.
   const scratchpadEntries = useMemo(() => {
     const out = [];
     let msgIndex = 0;
@@ -307,89 +409,104 @@ function LiveActivityPanel({ messages = [], statusFeed = [], onCitationTap }) {
     return out.sort((a, b) => b.timestamp - a.timestamp);
   }, [messages]);
 
-  const bothEmpty = evalEntries.length === 0 && scratchpadEntries.length === 0;
-
   return (
     <div style={{
       flex: 1,
-      overflowY: 'auto',
-      padding: 12,
       display: 'flex',
       flexDirection: 'column',
-      gap: 10,
+      minHeight: 0,
     }}>
-      {bothEmpty ? (
-        <FullEmptyState />
-      ) : (
-        <>
-          {/* ── Primary: EVALUATIONS ──────────────────────────────────── */}
-          <SectionHeader color={PALETTE.teal}>Evaluations</SectionHeader>
-          {evalEntries.length === 0 ? (
-            <InlineEmptyEval />
-          ) : (
-            evalEntries.map((entry, i) => (
-              <EvalCard
-                key={entry.event.id || `${entry.timestamp}-${i}`}
-                event={entry.event}
-                onCitationTap={onCitationTap}
-              />
-            ))
-          )}
+      <AgentStatusIndicator latestEntry={latestEntry} />
 
-          {/* ── Secondary: AGENT REASONING (collapsible) ─────────────── */}
-          {scratchpadEntries.length > 0 && (
-            <>
-              <button
-                type="button"
-                onClick={() => setReasoningOpen(v => !v)}
-                style={{
-                  marginTop: 4,
-                  padding: '8px 4px',
-                  background: 'none',
-                  border: 'none',
-                  borderTop: `1px solid ${PALETTE.border}`,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  cursor: 'pointer',
-                  fontFamily: 'inherit',
-                  color: PALETTE.gray,
-                  fontSize: 11,
-                  fontWeight: 700,
-                  letterSpacing: '0.08em',
-                  textTransform: 'uppercase',
-                }}
-              >
-                <span>Agent Reasoning ({scratchpadEntries.length})</span>
-                {reasoningOpen
-                  ? <ChevronUp size={14} color={PALETTE.gray} />
-                  : <ChevronDown size={14} color={PALETTE.gray} />}
-              </button>
-              <AnimatePresence initial={false}>
-                {reasoningOpen && (
-                  <motion.div
-                    key="reasoning-body"
-                    initial={{ height: 0, opacity: 0 }}
-                    animate={{ height: 'auto', opacity: 1 }}
-                    exit={{ height: 0, opacity: 0 }}
-                    transition={{ duration: 0.2, ease: 'easeOut' }}
-                    style={{ overflow: 'hidden' }}
-                  >
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                      {scratchpadEntries.map(entry => (
-                        <ScratchpadCard
-                          key={`sp-${entry.index}`}
-                          message={entry.message}
-                          index={entry.index}
-                        />
-                      ))}
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </>
-          )}
-        </>
+      <div style={{
+        flex: 1,
+        overflowY: 'auto',
+        display: 'flex',
+        flexDirection: 'column',
+        minHeight: 0,
+      }}>
+        <BreakthroughAlerts statusFeed={statusFeed} />
+
+        {/* Agent Reasoning collapsible (unchanged behavior from Phase 3) */}
+        {scratchpadEntries.length > 0 && (
+          <div style={{ padding: '4px 12px 8px' }}>
+            <button
+              type="button"
+              onClick={() => setReasoningOpen(v => !v)}
+              style={{
+                width: '100%',
+                marginTop: 4,
+                padding: '8px 4px',
+                background: 'none',
+                border: 'none',
+                borderTop: `1px solid ${PALETTE.border}`,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                cursor: 'pointer',
+                fontFamily: 'inherit',
+                color: PALETTE.gray,
+                fontSize: 11,
+                fontWeight: 700,
+                letterSpacing: '0.08em',
+                textTransform: 'uppercase',
+              }}
+            >
+              <span>Agent Reasoning ({scratchpadEntries.length})</span>
+              {reasoningOpen
+                ? <ChevronUp size={14} color={PALETTE.gray} />
+                : <ChevronDown size={14} color={PALETTE.gray} />}
+            </button>
+            <AnimatePresence initial={false}>
+              {reasoningOpen && (
+                <motion.div
+                  key="reasoning-body"
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: 'auto', opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  transition={{ duration: 0.2, ease: 'easeOut' }}
+                  style={{ overflow: 'hidden' }}
+                >
+                  <div style={{
+                    display: 'flex', flexDirection: 'column', gap: 10, paddingTop: 8,
+                  }}>
+                    {scratchpadEntries.map(entry => (
+                      <ScratchpadCard
+                        key={`sp-${entry.index}`}
+                        message={entry.message}
+                        index={entry.index}
+                      />
+                    ))}
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+        )}
+      </div>
+
+      {/* View Full Log link */}
+      {onSwitchToGameTape && (
+        <button
+          type="button"
+          onClick={onSwitchToGameTape}
+          style={{
+            flexShrink: 0,
+            padding: '10px 12px',
+            background: 'none',
+            border: 'none',
+            borderTop: `1px solid ${PALETTE.border}`,
+            textAlign: 'center',
+            cursor: 'pointer',
+            fontFamily: 'inherit',
+            fontSize: 11.5,
+            fontWeight: 600,
+            color: PALETTE.teal,
+            letterSpacing: '0.02em',
+          }}
+        >
+          View full activity log →
+        </button>
       )}
     </div>
   );
