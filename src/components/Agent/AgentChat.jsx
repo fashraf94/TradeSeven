@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { Send } from 'lucide-react';
 import { getAuth } from 'firebase/auth';
+import TradeTickerCard from './TradeTickerCard';
 
 // ─── Sub-components ──────────────────────────────────────────────────────────
 
@@ -182,71 +183,6 @@ function TradeEventCard({ event }) {
         {event.summary || event.description || `${event.action || 'SWAP'}: ${event.details || ''}`}
       </div>
     </div>
-  );
-}
-
-function CompactTradeLog({ trades, onSymbolClick }) {
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.25 }}
-      style={{
-        alignSelf: 'center',
-        width: '100%',
-        maxWidth: '340px',
-        background: 'rgba(94, 234, 212, 0.04)',
-        border: '1px solid rgba(94, 234, 212, 0.12)',
-        borderRadius: '10px',
-        padding: '10px 14px',
-        margin: '4px 0',
-      }}
-    >
-      <div style={{
-        fontSize: '10px',
-        fontWeight: 700,
-        color: '#5EEAD4',
-        letterSpacing: '0.5px',
-        textTransform: 'uppercase',
-        marginBottom: '8px',
-      }}>
-        {trades.length} {trades.length === 1 ? 'trade' : 'trades'} executed
-      </div>
-      {trades.map((trade, i) => (
-        <div
-          key={trade.id || i}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            padding: '4px 0',
-            borderTop: i > 0 ? '1px solid rgba(255,255,255,0.04)' : 'none',
-            fontSize: '13px',
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-            <span
-              style={{ color: '#EF4444', cursor: onSymbolClick ? 'pointer' : 'default', borderBottom: onSymbolClick ? '1px dotted rgba(239,68,68,0.4)' : 'none' }}
-              onClick={() => onSymbolClick?.({ symbol: trade.symbolOut })}
-            >
-              {trade.symbolOut || '?'}
-            </span>
-            <span style={{ color: '#6B7280', fontSize: '11px' }}>→</span>
-            <span
-              style={{ color: '#5EEAD4', cursor: onSymbolClick ? 'pointer' : 'default', borderBottom: onSymbolClick ? '1px dotted rgba(94,234,212,0.4)' : 'none' }}
-              onClick={() => onSymbolClick?.({ symbol: trade.symbolIn })}
-            >
-              {trade.symbolIn || '?'}
-            </span>
-          </div>
-          <span style={{ fontSize: '11px', color: '#6B7280' }}>
-            {trade.timestamp instanceof Date
-              ? trade.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-              : ''}
-          </span>
-        </div>
-      ))}
-    </motion.div>
   );
 }
 
@@ -434,7 +370,7 @@ function BudgetPips({ used, total }) {
 
 // ─── Main Component ──────────────────────────────────────────────────────────
 
-export default function AgentChat({ battleId, agentId, agentName, chatExchanges, battleStatus, statusFeed, onSymbolClick, knownTickers }) {
+export default function AgentChat({ battleId, agentId, agentName, chatExchanges, battleStatus, statusFeed, trades = [], onSymbolClick, onCitationTap, knownTickers }) {
   const [messages, setMessages] = useState([]);
   const [inputText, setInputText] = useState('');
   const [isSending, setIsSending] = useState(false);
@@ -633,11 +569,25 @@ export default function AgentChat({ battleId, agentId, agentName, chatExchanges,
     }
   }
 
-  // ── Extract trade events from statusFeed for inline chat cards ────────────
+  // ── Extract trade events from statusFeed and merge with battle.trades ─────
+  // Reasoning + citations live on statusFeed; prices + P&L live on battle.trades.
+  // Join primarily on evalId/evaluationId; fall back to symbolOut+symbolIn.
 
   const tradeEvents = React.useMemo(() => {
     if (!statusFeed) return [];
     const tradeActions = ['swap', 'emergency_swap', 'trade_executed'];
+
+    // Build lookup maps from battle.trades for O(1) merge.
+    const byEvalId = new Map();
+    const bySymbolPair = new Map();
+    (trades || []).forEach(t => {
+      if (!t) return;
+      if (t.evaluationId) byEvalId.set(t.evaluationId, t);
+      if (t.symbolOut && t.symbolIn) {
+        bySymbolPair.set(`${t.symbolOut}__${t.symbolIn}`, t);
+      }
+    });
+
     return statusFeed
       .filter(entry => tradeActions.includes(entry.action))
       .map(entry => {
@@ -645,18 +595,34 @@ export default function AgentChat({ battleId, agentId, agentName, chatExchanges,
           ? new Date(entry.timestamp)
           : entry.timestamp?.toDate?.()
             || (entry.timestamp?.seconds ? new Date(entry.timestamp.seconds * 1000) : new Date());
+
+        // Find matching trade: evalId first, then symbol pair.
+        const tradeMatch = (entry.evalId && byEvalId.get(entry.evalId))
+          || (entry.symbolOut && entry.symbolIn
+              ? bySymbolPair.get(`${entry.symbolOut}__${entry.symbolIn}`)
+              : null)
+          || null;
+
         return {
-          id: `trade-${ts.getTime()}-${entry.symbolOut || ''}`,
+          id: `trade-${ts.getTime()}-${entry.symbolOut || ''}-${entry.symbolIn || ''}`,
           _type: 'trade',
           timestamp: ts,
           action: entry.action,
-          summary: entry.message || '',
-          symbolOut: entry.symbolOut || null,
-          symbolIn: entry.symbolIn || null,
-          reason: entry.reason || null,
+          symbolOut: entry.symbolOut || tradeMatch?.symbolOut || null,
+          symbolIn: entry.symbolIn || tradeMatch?.symbolIn || null,
+          message: entry.message || entry.rationale || '',
+          citedForgeRules: entry.citedForgeRules || entry.citedRules || [],
+          evalId: entry.evalId || tradeMatch?.evaluationId || null,
+          regime: entry.regime || tradeMatch?.entryRegime || null,
+          // P&L fields from battle.trades (null when no match — open position).
+          tier: tradeMatch?.tier || null,
+          entryPrice: tradeMatch?.entryPrice ?? null,
+          exitPrice: tradeMatch?.exitPrice ?? null,
+          lockedPoints: tradeMatch?.lockedPoints ?? null,
+          lockedGainPct: tradeMatch?.lockedGainPct ?? null,
         };
       });
-  }, [statusFeed]);
+  }, [statusFeed, trades]);
 
   // ── Combined timeline: messages + trade events sorted chronologically ─────
 
@@ -671,29 +637,6 @@ export default function AgentChat({ battleId, agentId, agentName, chatExchanges,
       return timeA - timeB;
     });
   }, [messages, tradeEvents]);
-
-  // ── Group consecutive trades for compact rendering ──────────────────────────
-
-  const renderItems = React.useMemo(() => {
-    const items = [];
-    let tradeBuffer = [];
-
-    combinedTimeline.forEach((item, i) => {
-      if (item._type === 'trade') {
-        tradeBuffer.push(item);
-      } else {
-        if (tradeBuffer.length > 0) {
-          items.push({ _type: 'trade_group', trades: [...tradeBuffer], id: `tg-${i}` });
-          tradeBuffer = [];
-        }
-        items.push(item);
-      }
-    });
-    if (tradeBuffer.length > 0) {
-      items.push({ _type: 'trade_group', trades: [...tradeBuffer], id: 'tg-end' });
-    }
-    return items;
-  }, [combinedTimeline]);
 
   // ── Build thinking panel entries ────────────────────────────────────────────
 
@@ -742,9 +685,16 @@ export default function AgentChat({ battleId, agentId, agentName, chatExchanges,
         {messages.length === 0 && tradeEvents.length === 0 ? (
           <EmptyState onQuickStart={handleActionClick} disabled={isDisabled} />
         ) : (
-          renderItems.map((item) => {
-            if (item._type === 'trade_group') {
-              return <CompactTradeLog key={item.id} trades={item.trades} onSymbolClick={onSymbolClick} />;
+          combinedTimeline.map((item) => {
+            if (item._type === 'trade') {
+              return (
+                <TradeTickerCard
+                  key={item.id}
+                  trade={item}
+                  onSymbolClick={onSymbolClick}
+                  onCitationTap={onCitationTap}
+                />
+              );
             }
             if (item.isTyping) {
               return <TypingIndicator key={item.id} />;
