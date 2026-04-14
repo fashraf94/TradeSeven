@@ -1,5 +1,5 @@
 // AgentBattleScreen - Redesigned with 3-tab layout:
-// Matchups (BaggerBomb matchup rows) | Command Center (agent controls + feed) | Film Room
+// Matchups (BaggerBomb matchup rows) | Command Center (agent controls + feed) | Game Tape (post-review)
 //
 // Data sources:
 //   1. `battle` prop (training battle) — both portfolios + starting prices
