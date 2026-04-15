@@ -116,7 +116,6 @@ export async function createAgentBattle(db, agentData, thresholds, startingPrice
       archetype: agentData.archetype || 'unknown',
       strategyBrief: agentData.lastDecision?.strategyBrief || '',
       innerMonologue: agentData.lastDecision?.innerMonologue || {},
-      activeDirectives: filterActiveDirectives(agentData.directives || []),
       activeRules: agentData.activeRules || [],
       equippedBundleIds: agentData.equippedBundleIds || [],
       // Phase 4B: Snapshot of deployed strategy guardrails. Frozen at battle
