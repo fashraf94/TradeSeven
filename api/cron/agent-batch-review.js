@@ -213,7 +213,7 @@ ${directiveLines}`;
     dailyReviews: [...(battle.dailyReviews || []), reviewEntry],
     statusFeed: [...existingFeed, {
       timestamp: new Date().toISOString(),
-      message: `Film Room: Day ${currentDay} review complete. Grade: ${result.selfGrade}. ${result.lessonLearned}`,
+      message: `Game Tape: Day ${currentDay} review complete. Grade: ${result.selfGrade}. ${result.lessonLearned}`,
       action: 'film_room',
       source: 'batch_review',
     }].slice(-50),

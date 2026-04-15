@@ -116,7 +116,6 @@ export async function createAgentBattle(db, agentData, thresholds, startingPrice
       archetype: agentData.archetype || 'unknown',
       strategyBrief: agentData.lastDecision?.strategyBrief || '',
       innerMonologue: agentData.lastDecision?.innerMonologue || {},
-      activeDirectives: filterActiveDirectives(agentData.directives || []),
       activeRules: agentData.activeRules || [],
       equippedBundleIds: agentData.equippedBundleIds || [],
       // Phase 4B: Snapshot of deployed strategy guardrails. Frozen at battle
@@ -276,18 +275,6 @@ function computeFullDayExpiry(portfolio) {
   const closeUTC = new Date(closeAsUTC.getTime() + etOffsetMs);
 
   return { expiresAt: closeUTC.toISOString(), targetDateStr, effectiveCloseHour };
-}
-
-/**
- * Filter out expired directives.
- * Mirrors pattern from api/_utils/agentPromptAssembly.js:201-208
- */
-function filterActiveDirectives(directives) {
-  const now = Date.now();
-  return (directives || []).filter(d => {
-    if (!d.expiresAt) return true;
-    return new Date(d.expiresAt).getTime() > now;
-  });
 }
 
 function deepCopyArray(arr) {

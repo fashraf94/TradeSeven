@@ -219,7 +219,7 @@ const AgentEvolutionTab = ({ agent, tokens, isDesktop, isMobile }) => {
       if (m.result) return;
       events.push({
         type: 'debrief',
-        title: 'Film Room debrief',
+        title: 'Game Tape debrief',
         subtitle: m.lesson || m.reflection || m.text || '',
         date: parseDate(m.date || m.createdAt),
         color: '#E8927C',

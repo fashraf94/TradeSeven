@@ -89,7 +89,7 @@ export function buildStrategyUserPrompt(agent) {
       );
     }
 
-    parts.push(`FORGE RULES (follow alongside directives):\n${rLines.join('\n')}`);
+    parts.push(`FORGE RULES (your equipped strategy):\n${rLines.join('\n')}`);
   }
 
   parts.push(
