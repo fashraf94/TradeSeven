@@ -38,7 +38,7 @@ const computePnlPct = (entry, exit) => {
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-function TradeTickerCard({ trade, tokens = {}, onSymbolClick, onTradeClick }) {
+function TradeTickerCard({ trade, tokens = {}, onSymbolClick, onTradeClick, isDirectiveLinked = false }) {
   if (!trade) return null;
 
   const tierKey = trade.tier || 'support';
@@ -111,7 +111,7 @@ function TradeTickerCard({ trade, tokens = {}, onSymbolClick, onTradeClick }) {
         padding: '8px 12px',
         minHeight: 36,
         background: 'rgba(94, 234, 212, 0.04)',
-        borderLeft: `2px solid ${teal}`,
+        borderLeft: `${isDirectiveLinked ? 3 : 2}px solid ${teal}`,
         borderRadius: '0 6px 6px 0',
         display: 'flex',
         alignItems: 'center',

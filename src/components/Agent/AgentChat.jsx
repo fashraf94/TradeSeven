@@ -70,6 +70,7 @@ function ActionButton({ text, onClick, disabled }) {
 }
 
 function ExecutionCard({ directive }) {
+  const threadId = directive?.directiveThreadId || null;
   return (
     <motion.div
       initial={{ opacity: 0, y: 6 }}
@@ -127,6 +128,17 @@ function ExecutionCard({ directive }) {
           Executing on next evaluation window
         </span>
       </div>
+      {threadId && (
+        <div style={{
+          fontSize: 10,
+          color: 'rgba(94, 234, 212, 0.5)',
+          fontFamily: 'monospace',
+          marginTop: 6,
+          letterSpacing: '0.04em',
+        }}>
+          thread · {threadId.slice(-6)}
+        </div>
+      )}
     </motion.div>
   );
 }
@@ -458,7 +470,9 @@ export default function AgentChat({
         suggestedActions: isLast ? (ex.suggestedActions || null) : null,
         scratchpad: ex.scratchpad || null,
         hasDirective: ex.hasDirective || false,
-        directive: ex.hasDirective && ex.directive ? { text: ex.directive.text } : null,
+        directive: ex.hasDirective && ex.directive
+          ? { text: ex.directive.text, directiveThreadId: ex.directive.directiveThreadId || null }
+          : null,
         isAutoDebrief: !!ex.isAutoDebrief,
         mode: ex.mode || 'battle',
         timestamp: ts,
@@ -563,6 +577,7 @@ export default function AgentChat({
       }
 
       // 3. Replace typing indicator with real agent message
+      const rawDirective = data.directive || data.extractedRule || null;
       const agentMsg = {
         id: `agent-${Date.now()}`,
         role: 'agent',
@@ -570,7 +585,9 @@ export default function AgentChat({
         suggestedActions: data.suggestedActions || null,
         scratchpad: data.scratchpad || null,
         hasDirective: data.hasDirective || false,
-        directive: data.directive || data.extractedRule || null,
+        directive: rawDirective
+          ? { text: rawDirective.text, directiveThreadId: rawDirective.directiveThreadId || null }
+          : null,
         timestamp: Date.now(),
       };
 
@@ -666,6 +683,8 @@ export default function AgentChat({
           citedForgeRules: entry.citedForgeRules || entry.citedRules || [],
           evalId: entry.evalId || tradeMatch?.evaluationId || null,
           regime: entry.regime || tradeMatch?.entryRegime || null,
+          // Phase 7: link trade notifications back to their originating directive.
+          directiveThreadId: entry.directiveThreadId || null,
           // P&L fields from battle.trades (null when no match — open position).
           tier: tradeMatch?.tier || null,
           entryPrice: tradeMatch?.entryPrice ?? null,
@@ -830,13 +849,31 @@ export default function AgentChat({
 
             let body;
             if (item._type === 'trade') {
+              const isDirectiveLinked = !!item.directiveThreadId;
               body = (
-                <TradeTickerCard
-                  key={item.id}
-                  trade={item}
-                  onSymbolClick={onSymbolClick}
-                  onTradeClick={onSwitchToGameTape ? () => onSwitchToGameTape() : undefined}
-                />
+                <React.Fragment key={item.id}>
+                  {isDirectiveLinked && (
+                    <div
+                      style={{
+                        fontSize: 10.5,
+                        color: '#5EEAD4',
+                        opacity: 0.75,
+                        letterSpacing: '0.04em',
+                        marginLeft: 10,
+                        marginTop: 6,
+                        marginBottom: -2,
+                      }}
+                    >
+                      ↳ from directive
+                    </div>
+                  )}
+                  <TradeTickerCard
+                    trade={item}
+                    onSymbolClick={onSymbolClick}
+                    onTradeClick={onSwitchToGameTape ? () => onSwitchToGameTape() : undefined}
+                    isDirectiveLinked={isDirectiveLinked}
+                  />
+                </React.Fragment>
               );
             } else if (item.isTyping) {
               body = <TypingIndicator key={item.id} />;
