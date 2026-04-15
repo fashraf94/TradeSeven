@@ -33,7 +33,7 @@ function getSourceLabel(rule) {
     case 'forge_discover': return 'From Discover';
     case 'manual': return 'Added manually';
     case 'forge_custom': return 'Custom built';
-    case 'agent_batch_review': return 'From Film Room';
+    case 'agent_batch_review': return 'From Game Tape';
     case 'agent_open_chat': return 'From Chat';
     case 'agent_debate': return 'From Debate';
     case 'agent_reflection': return 'From Reflection';
