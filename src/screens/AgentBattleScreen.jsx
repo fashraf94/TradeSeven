@@ -902,6 +902,12 @@ export default function AgentBattleScreen({ battle, user, onBack }) {
                 onSymbolClick={handleSymbolClick}
                 onSwitchToGameTape={() => setActiveTab('gametape')}
                 knownTickers={knownTickers}
+                // Phase 6: review-mode props
+                dailyGrades={agentBattle?.dailyGrades || {}}
+                chatBudgetUsed={agentBattle?.chatBudgetUsed || 0}
+                reviewBudgetUsed={agentBattle?.reviewBudgetUsed || 0}
+                pendingProposal={pendingProposal}
+                proposalHistory={agentBattle?.proposalHistory || []}
               />
             </motion.div>
           )}
