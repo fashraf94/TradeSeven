@@ -53,6 +53,11 @@ export const TRADE_DECISION_TOOL = {
         description:
           'Array of directive IDs being overridden due to Survival Mode. Empty array if no directives violated. Example: ["d1", "d3"]',
       },
+      directiveThreadId: {
+        type: ['string', 'null'],
+        description:
+          'If this trade was influenced by the ACTIVE DIRECTIVE shown in live context, copy its threadId here verbatim. null if no active directive, or if the trade is independent of the directive.',
+      },
       status_feed_update: {
         type: 'string',
         description:

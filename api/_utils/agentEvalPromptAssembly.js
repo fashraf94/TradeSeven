@@ -546,6 +546,22 @@ ${triggerLines}`);
     if (riskLines) parts.push(riskLines);
   }
 
+  // 3e3b. Active Directive Thread — the tactical directive from the Coach,
+  //       written to battle.directive by api/agent/chat.js on lock-in.
+  //       Haiku echoes the threadId back in submit_trade_decision when it
+  //       acts on the directive, so the UI can link the trade to its
+  //       originating directive execution card. Omit entirely when no
+  //       active directive exists — do not inject an empty block.
+  if (battle?.directive?.directiveThreadId && battle.directive.text) {
+    const d = battle.directive;
+    parts.push(
+`ACTIVE DIRECTIVE (from your Coach):
+"${d.text}"
+threadId: ${d.directiveThreadId}
+If your next trade is influenced by this directive, include directiveThreadId: "${d.directiveThreadId}" in your submit_trade_decision response.`
+    );
+  }
+
   // 3e4. Institutional Intelligence (only if agent has institutional Forge rules)
   const activeRules = battle.agentContext?.activeRules || [];
   try {

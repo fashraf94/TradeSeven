@@ -980,6 +980,8 @@ async function processAgentBattle(db, battle, summary) {
         evalId,
         symbolOut: haikuResult?.symbolOut,
         symbolIn: haikuResult?.symbolIn,
+        // Phase 7: link to the originating directive (if any) for the UI connector.
+        directiveThreadId: haikuResult?.directiveThreadId || null,
       });
     } else if (haikuResult?.status_feed_update || decision === 'SWAP') {
       statusFeedEntries.push({
@@ -996,6 +998,8 @@ async function processAgentBattle(db, battle, summary) {
         evalId,
         symbolOut: decision === 'SWAP' ? haikuResult?.symbolOut : null,
         symbolIn: decision === 'SWAP' ? haikuResult?.symbolIn : null,
+        // Phase 7: link to the originating directive (if any) for the UI connector.
+        directiveThreadId: haikuResult?.directiveThreadId || null,
       });
     }
 
@@ -1032,6 +1036,8 @@ async function processAgentBattle(db, battle, summary) {
       conviction: haikuResult?.conviction || 0,
       riskAssessment: haikuResult?.riskAssessment || 'low',
       ignoredDirectiveIds: haikuResult?.ignoredDirectiveIds || [],
+      // Phase 7: link this evaluation to the originating directive (if any).
+      directiveThreadId: haikuResult?.directiveThreadId || null,
       citedForgeRules: haikuResult?.cited_forge_rules || [],
       overriddenForgeRules: haikuResult?.overridden_forge_rules || [],
       triggers: triggers.map(t => t.type),

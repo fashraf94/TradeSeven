@@ -347,12 +347,22 @@ export default async function handler(req, res) {
     }).catch(() => {});
 
     // 19. Write exchange to battle doc
+    //     When a directive is locked in, generate a threadId (UUID) that links
+    //     this directive to any trades Haiku later executes under it. The
+    //     threadId is stamped on the chat exchange, on the battle's single
+    //     active-directive slot, and eventually flows through Haiku's eval
+    //     tool output → statusFeed entries → the frontend trade card indicator.
+    const directiveThreadId = (effectiveHasDirective && normalizedDirective) ? randomUUID() : null;
+
     const exchange = {
       userMessage: sanitizedMessage,
       agentResponse: parsed.response,
       scratchpad: cleanScratchpad,
       hasDirective: effectiveHasDirective,
-      directive: normalizedDirective,
+      directive: directiveThreadId
+        ? { text: normalizedDirective.text, expiry: normalizedDirective.expiry || 'end_of_battle', directiveThreadId }
+        : null,
+      directiveThreadId,
       suggestedActions: parsed.suggestedActions || null,
       elicitationTarget: elicitationTarget.dimension,
       timestamp: new Date().toISOString(),
@@ -365,24 +375,20 @@ export default async function handler(req, res) {
       chatExchanges: FieldValue.arrayUnion(exchange),
       [budgetField]: FieldValue.increment(1),
       recentElicitationTargets: recentTargets,
+      ...(directiveThreadId ? {
+        directive: {
+          text: normalizedDirective.text,
+          expiry: normalizedDirective.expiry || 'end_of_battle',
+          directiveThreadId,
+          createdAt: new Date().toISOString(),
+        },
+      } : {}),
     });
 
-    // 20. Write directive to agent doc (battle mode only — review never writes directives)
-    if (effectiveHasDirective && normalizedDirective) {
-      const directive = {
-        id: `voice_${Date.now()}`,
-        text: normalizedDirective.text,
-        source: 'voice_layer',
-        expiry: normalizedDirective.expiry || 'end_of_battle',
-        battleId,
-        isActive: true,
-        createdAt: new Date().toISOString(),
-      };
-
-      await db.collection('agents').doc(agentId).update({
-        directives: FieldValue.arrayUnion(directive),
-      });
-    }
+    // 20. (removed) Directives are now battle-scoped only. Previously we
+    //     also appended to `agents/{agentId}.directives[]`, but Phase 4
+    //     deprecated reading that field and Phase 7 stops writing to it —
+    //     directives live and die with the battle via `agentBattle.directive`.
 
     // 20b. Write lesson and/or forgeSuggestion to agent doc (review mode only).
     //      Both go to agents/{agentId}, not the battle doc — they are
