@@ -5,10 +5,14 @@
 // Schedule: 15 21 * * 1-5
 
 import Anthropic from '@anthropic-ai/sdk';
+import { FieldValue } from 'firebase-admin/firestore';
+import { randomUUID } from 'node:crypto';
 import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
 import { findActiveAgentBattles } from '../_utils/agentBattleService.js';
 import { getCurrentTradingDayServer } from '../_utils/agentEvalPromptAssembly.js';
 import { getStockAnalysisData } from '../_utils/marketDataCache.js';
+import { callGemmaVoice, parseVoiceLayerResponse } from '../_utils/gemmaClient.js';
+import { buildVoiceLayerPrompt } from '../_utils/voiceLayerPrompt.js';
 
 export const config = { maxDuration: 60 };
 
@@ -197,6 +201,10 @@ ${directiveLines}`;
     date: todayStr,
     tradingDay: currentDay,
     ...result,
+    // Alias daySummary → summary so buildReviewContext() in voiceLayerPrompt.js
+    // (which reads `summary`) picks up the Haiku day summary. Sonnet also reads
+    // this at battle end for the Battle Report on multi-day battles.
+    summary: result.daySummary,
     counterfactuals,
     createdAt: new Date().toISOString(),
   };
@@ -212,6 +220,132 @@ ${directiveLines}`;
   });
 
   console.log(`${LOG_PREFIX} Battle ${battle.id}: Day ${currentDay} review saved (grade: ${result.selfGrade})`);
+
+  // ── Gemma auto-debrief ───────────────────────────────────────────────
+  // Fire-and-forget: generate a voice-layer debrief message and append it
+  // to chatExchanges[] so the Film Room chat surfaces a post-market message
+  // automatically. Any failure here is logged but MUST NOT fail the cron —
+  // the Haiku review above is the critical path.
+  try {
+    if (!battle.agentId) {
+      console.warn(`${LOG_PREFIX} Battle ${battle.id}: missing agentId, skipping auto-debrief`);
+    } else {
+      const agentDoc = await db.collection('agents').doc(battle.agentId).get();
+      if (!agentDoc.exists) {
+        console.warn(`${LOG_PREFIX} Battle ${battle.id}: agent ${battle.agentId} not found, skipping auto-debrief`);
+      } else {
+        const agent = { id: agentDoc.id, ...agentDoc.data() };
+
+        // Include the freshly-written review in the set passed to the prompt.
+        const updatedDailyReviews = [...(battle.dailyReviews || []), reviewEntry];
+        const updatedBattle = { ...battle, dailyReviews: updatedDailyReviews };
+
+        const systemPrompt = buildVoiceLayerPrompt({
+          agent,
+          battle: updatedBattle,
+          conversationHistory: [],
+          anchorContext: null,
+          marketSnapshot: null,
+          mode: 'review',
+          dailyReviews: updatedDailyReviews,
+          dailyGrades: battle.dailyGrades || {},
+        });
+
+        // 15s timeout via AbortController, matching api/agent/chat.js pattern.
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 15_000);
+        let rawResponse;
+        try {
+          rawResponse = await callGemmaVoice({
+            systemPrompt,
+            conversationHistory: [],
+            userMessage: '__REVIEW_START__',
+            signal: controller.signal,
+          });
+        } finally {
+          clearTimeout(timeoutId);
+        }
+
+        const parsed = parseVoiceLayerResponse(rawResponse);
+        const agentMessage = parsed.response;
+        if (!agentMessage || typeof agentMessage !== 'string') {
+          throw new Error('Gemma returned empty response');
+        }
+
+        // Minimal scratchpad coercion — preserves the internal rationale without
+        // exposing the elicitation scaffolding used in live battle mode (the
+        // debrief has no elicitation target, so this is mostly a length cap).
+        const cleanScratchpad = parsed._scratchpad
+          ? String(parsed._scratchpad).slice(0, 2000).trim() || null
+          : null;
+
+        // Append auto-debrief to chatExchanges[] using the EXISTING schema
+        // (userMessage / agentResponse). The `isAutoDebrief` flag lets the
+        // frontend distinguish system-initiated debriefs from user-prompted
+        // exchanges without breaking AgentChat.jsx's existing loader.
+        const exchange = {
+          userMessage: '__REVIEW_START__',
+          agentResponse: agentMessage,
+          scratchpad: cleanScratchpad,
+          hasDirective: false,
+          directive: null,
+          suggestedActions: parsed.suggestedActions || null,
+          elicitationTarget: 'review_debrief',
+          timestamp: new Date().toISOString(),
+          mode: 'review',
+          isAutoDebrief: true,
+        };
+
+        await battleRef.update({
+          chatExchanges: FieldValue.arrayUnion(exchange),
+        });
+
+        // Persist any lesson / forge suggestion the debrief proposed to the
+        // agent doc, mirroring api/agent/chat.js review-mode writes. These are
+        // agent-level knowledge, not per-battle state.
+        const lessonProposal = parsed._lesson;
+        const lesson = (lessonProposal && typeof lessonProposal === 'object' && lessonProposal.text)
+          ? {
+              id: randomUUID(),
+              text: String(lessonProposal.text).slice(0, 500),
+              source: 'review_debrief',
+              sourceGameId: battle.id,
+              sourceTrade: lessonProposal.sourceTrade || null,
+              createdAt: new Date().toISOString(),
+              consumed: false,
+              consumedInConsolidation: null,
+            }
+          : null;
+
+        const forgeProposal = parsed._forgeSuggestion;
+        const forgeSuggestion = (forgeProposal && typeof forgeProposal === 'object' && forgeProposal.text)
+          ? {
+              id: randomUUID(),
+              text: String(forgeProposal.text).slice(0, 500),
+              sourceGameId: battle.id,
+              sourceTrade: forgeProposal.sourceTrade || null,
+              createdAt: new Date().toISOString(),
+              status: 'pending',
+            }
+          : null;
+
+        if (lesson || forgeSuggestion) {
+          const agentUpdate = {};
+          if (lesson) agentUpdate.lessons = FieldValue.arrayUnion(lesson);
+          if (forgeSuggestion) agentUpdate.forgeSuggestions = FieldValue.arrayUnion(forgeSuggestion);
+          await db.collection('agents').doc(battle.agentId).update(agentUpdate);
+        }
+
+        console.log(`${LOG_PREFIX} Battle ${battle.id}: auto-debrief written to chatExchanges`);
+      }
+    }
+  } catch (debriefErr) {
+    // Non-fatal: Haiku review already persisted. Log and continue.
+    console.warn(
+      `${LOG_PREFIX} Battle ${battle.id}: auto-debrief failed (non-fatal): ${debriefErr?.message || debriefErr}`
+    );
+  }
+
   return { status: 'reviewed', grade: result.selfGrade, tradingDay: currentDay };
 }
 
