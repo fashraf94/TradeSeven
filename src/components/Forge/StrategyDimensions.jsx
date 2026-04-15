@@ -261,14 +261,20 @@ function DimensionCard({
   disabled,
   isExpanded,
   onToggleExpanded,
+  isNarrow,
 }) {
   const posture = getPostureLabel(config.key, values);
   const tone = TONE_STYLES[posture.tone] || TONE_STYLES.neutral;
+  // On narrow viewports (≤420px) force every card to span 3 of the 6-col
+  // grid, giving all 7 dimensions a full half-row so the title + pill are
+  // never starved for width. Desktop keeps the per-config span (2/2/2 row
+  // followed by 3/3 rows).
+  const collapsedSpan = isNarrow ? 3 : config.span;
 
   return (
     <div
       style={{
-        gridColumn: isExpanded ? '1 / -1' : `span ${config.span}`,
+        gridColumn: isExpanded ? '1 / -1' : `span ${collapsedSpan}`,
         background: CARD_BG,
         border: `0.5px solid ${isExpanded ? BORDER_OPEN : BORDER_SUBTLE}`,
         borderRadius: 8,
@@ -468,6 +474,23 @@ export default function StrategyDimensions({
   const [expandedKey, setExpandedKey] = useState(null);
   const reducedMotion = useReducedMotion();
 
+  // Track narrow-viewport state so the dimension grid can switch to a
+  // 2-column layout on mobile (≤420px) — at the default 3-column top row
+  // span-2 cards don't have enough width for their title + pill.
+  const [isNarrow, setIsNarrow] = useState(() =>
+    typeof window !== 'undefined'
+      ? window.matchMedia('(max-width: 420px)').matches
+      : false
+  );
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    const mql = window.matchMedia('(max-width: 420px)');
+    const handler = (e) => setIsNarrow(e.matches);
+    setIsNarrow(mql.matches);
+    mql.addEventListener('change', handler);
+    return () => mql.removeEventListener('change', handler);
+  }, []);
+
   // Radar scores + summary recompute on every value change. Merge each
   // dimension over its defaults so partial inputs (e.g. Workshop Mode
   // prefill supplying only a subset of sub-keys) can't produce NaN in the
@@ -580,6 +603,7 @@ export default function StrategyDimensions({
             onToggleExpanded={() =>
               setExpandedKey((prev) => (prev === config.key ? null : config.key))
             }
+            isNarrow={isNarrow}
           />
         ))}
       </div>

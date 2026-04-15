@@ -39,7 +39,7 @@ export default function CenteredModal({ isOpen, onClose, title, children }) {
             onClick={e => e.stopPropagation()}
             style={{
               width: '100%',
-              maxWidth: '420px',
+              maxWidth: '560px',
               maxHeight: '85vh',
               background: tokens.bgApp,
               borderRadius: '20px',
