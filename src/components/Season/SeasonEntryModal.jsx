@@ -26,7 +26,6 @@ import { fetchWithAuth } from '../../utils/fetchWithAuth';
 import { SEASON_CONFLICT_PAIRS, FORGE_RULE_TEMPLATES } from '../../data/forgeKnowledgeBase';
 import { HOLO_COLORS } from '../../constants/holoTheme';
 import StrategyDimensions from '../Forge/StrategyDimensions';
-import CollectionPicker from '../Forge/CollectionPicker';
 import {
   cloneDefaults,
   applyCollectionPreset,
@@ -253,21 +252,18 @@ function StepStrategy({
             marginBottom: 12,
           }}
         >
-          Pick a Trading Style starting point, then tune the dimensions below
-          until the posture matches your thesis.
+          Pick a Trading Style to set the shape, then tap any dimension to
+          tune it.
         </div>
       )}
-
-      <CollectionPicker
-        selected={selectedCollection}
-        onSelect={onSelectCollection}
-        isDirty={isDirty}
-      />
 
       <StrategyDimensions
         values={dimensionValues}
         onChange={onParamChange}
         disabled={disabled}
+        selectedCollection={selectedCollection}
+        onSelectCollection={onSelectCollection}
+        isDirty={isDirty}
       />
     </div>
   );
@@ -676,7 +672,7 @@ export default function SeasonEntryModal({
     (step === 1 && enabledRuleCount === 0) ||
     (step === 2 && submitting);
 
-  const titleByStep = ['Launch Experiment', 'Strategy Dimensions', 'Confirm Entry'];
+  const titleByStep = ['Launch Experiment', 'Your strategy shape', 'Confirm Entry'];
 
   return (
     <CenteredModal isOpen={isOpen} onClose={onClose} title={titleByStep[step]}>
