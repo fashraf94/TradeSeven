@@ -63,6 +63,39 @@ export const TRADE_DECISION_TOOL = {
         description:
           'A 1-2 sentence status update for the battle dashboard. Reference the active strategy, specific indicators, or risk levels. Be concise and personality-consistent. Only generate when something meaningful happened (trade, threshold crossed, notable move). Omit if nothing noteworthy.',
       },
+      trade_reasoning: {
+        type: ['object', 'null'],
+        description:
+          'Structured breakdown of why this trade was made. Set on swap/hold actions with notable reasoning. null if no trade action taken or routine hold with nothing to say. Supplementary to status_feed_update, not a replacement.',
+        properties: {
+          thesis: {
+            type: 'string',
+            description:
+              'One sentence: the core reason for this trade. Be specific — cite the stock, setup, or catalyst. Example: "INTC showing breakout energy at +4.72% with 5h runway to threshold."',
+          },
+          strategy: {
+            type: 'string',
+            description:
+              'Which strategy drove this decision. Example: "Volatility Squeeze", "Momentum Breakout", "RS Rotation", "Risk Management".',
+          },
+          indicators: {
+            type: 'array',
+            items: { type: 'string' },
+            description:
+              'Key indicators that supported the decision, with values. Example: ["RSI 28 (oversold)", "BB width 5th percentile", "VWAP +0.4%"].',
+          },
+          citedRules: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Forge rule IDs cited in this decision (e.g., ["C1", "S3"]). Empty array if none.',
+          },
+          conviction: {
+            type: 'number',
+            description: 'Conviction score 0-100 for this trade. Higher = more confident.',
+          },
+        },
+        required: ['thesis', 'strategy'],
+      },
       pvp_context: {
         type: 'string',
         description:

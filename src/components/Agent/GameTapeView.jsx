@@ -356,6 +356,76 @@ function TradeRow({ trade, tokens }) {
           </span>
         )}
       </div>
+
+      {/* Phase 8: structured trade reasoning (only when Haiku populated it). */}
+      {trade?.trade_reasoning && (
+        <div style={{
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 5,
+          paddingTop: 6,
+          borderTop: `1px dashed ${tokens.borderDefault || 'rgba(255,255,255,0.05)'}`,
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+            {trade.trade_reasoning.strategy && (
+              <span style={{
+                padding: '2px 7px',
+                borderRadius: 6,
+                background: 'rgba(94, 234, 212, 0.12)',
+                color: tokens.teal || '#5eead4',
+                fontSize: 9,
+                fontWeight: 700,
+                textTransform: 'uppercase',
+                letterSpacing: '0.04em',
+              }}>
+                {trade.trade_reasoning.strategy}
+              </span>
+            )}
+            {typeof trade.trade_reasoning.conviction === 'number' && (
+              <span style={{ fontSize: 10.5, color: tokens.textFaint || '#64748b' }}>
+                Conviction {Math.round(trade.trade_reasoning.conviction)}/100
+              </span>
+            )}
+          </div>
+
+          {trade.trade_reasoning.thesis && (
+            <div style={{
+              fontSize: 11.5,
+              color: tokens.textPrimary || '#e2e8f0',
+              lineHeight: 1.45,
+            }}>
+              {trade.trade_reasoning.thesis}
+            </div>
+          )}
+
+          {Array.isArray(trade.trade_reasoning.indicators) && trade.trade_reasoning.indicators.length > 0 && (
+            <div style={{
+              display: 'flex',
+              flexWrap: 'wrap',
+              gap: 6,
+              fontSize: 10,
+              color: tokens.textMuted || '#94a3b8',
+            }}>
+              {trade.trade_reasoning.indicators.map((indicator, i) => (
+                <span key={i} style={{
+                  padding: '1px 6px',
+                  borderRadius: 4,
+                  background: tokens.bgMuted || 'rgba(255,255,255,0.03)',
+                  border: `1px solid ${tokens.borderDefault || 'rgba(255,255,255,0.05)'}`,
+                }}>
+                  {indicator}
+                </span>
+              ))}
+            </div>
+          )}
+
+          {Array.isArray(trade.trade_reasoning.citedRules) && trade.trade_reasoning.citedRules.length > 0 && (
+            <div style={{ fontSize: 10, color: tokens.textFaint || '#64748b' }}>
+              Rules: {trade.trade_reasoning.citedRules.join(' · ')}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
