@@ -4,6 +4,8 @@ import { Send } from 'lucide-react';
 import { getAuth } from 'firebase/auth';
 import TradeTickerCard from './TradeTickerCard';
 import LiveActivityPanel from './LiveActivityPanel';
+import InlineTradingGradeCard from './InlineTradingGradeCard';
+import { submitDailyGrades } from '../../services/agentService';
 
 // ─── Sub-components ──────────────────────────────────────────────────────────
 
@@ -211,6 +213,8 @@ function MessageBubble({ message, agentName, isLastAgent, onActionClick, isSendi
   }
 
   // Agent message
+  const isAutoDebrief = !!message.isAutoDebrief;
+  const accent = isAutoDebrief ? '#f59e0b' : '#5EEAD4';
   return (
     <motion.div
       initial={{ opacity: 0, y: 8 }}
@@ -218,8 +222,25 @@ function MessageBubble({ message, agentName, isLastAgent, onActionClick, isSendi
       transition={{ duration: 0.2, ease: 'easeOut' }}
       style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', marginBottom: 12 }}
     >
+      {isAutoDebrief ? (
+        <div style={{
+          color: '#f59e0b',
+          fontSize: 10.5,
+          fontWeight: 700,
+          letterSpacing: '0.08em',
+          textTransform: 'uppercase',
+          marginBottom: 4,
+          paddingLeft: 4,
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 6,
+        }}>
+          <span>📋</span>
+          <span>Post-Market Debrief</span>
+        </div>
+      ) : null}
       <div style={{
-        color: '#5EEAD4',
+        color: accent,
         fontSize: 11,
         fontWeight: 600,
         letterSpacing: '0.05em',
@@ -231,7 +252,8 @@ function MessageBubble({ message, agentName, isLastAgent, onActionClick, isSendi
       </div>
       <div style={{
         background: '#15171E',
-        borderLeft: '3px solid #5EEAD4',
+        borderLeft: `3px solid ${accent}`,
+        borderTop: isAutoDebrief ? `1px solid ${accent}` : 'none',
         borderRadius: '0 12px 12px 12px',
         padding: '10px 14px',
         maxWidth: '85%',
@@ -290,6 +312,39 @@ function EmptyState({ onQuickStart, disabled }) {
   );
 }
 
+// ─── Unanswered Proposal Card ────────────────────────────────────────────────
+
+// Rendered at the transition point between live play and the post-market
+// debrief for proposals that expired without a user response. Informational
+// only — no approve/veto buttons (the window is closed).
+function UnansweredProposalCard({ proposal }) {
+  const desc = proposal?.symbolOut && proposal?.symbolIn
+    ? `${proposal.symbolOut} → ${proposal.symbolIn}`
+    : proposal?.description || proposal?.summary || 'an in-flight swap';
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 4 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.2, ease: 'easeOut' }}
+      style={{
+        alignSelf: 'stretch',
+        margin: '6px 0',
+        padding: '10px 12px',
+        background: 'rgba(245, 158, 11, 0.04)',
+        borderLeft: '2px solid #f59e0b',
+        borderRadius: '0 8px 8px 0',
+        fontSize: 12.5,
+        lineHeight: 1.45,
+        color: '#9CA3AF',
+      }}
+    >
+      You didn't respond to this proposal:{' '}
+      <span style={{ color: '#E5E7EB', fontWeight: 600 }}>{desc}</span>
+      . The agent held its position.
+    </motion.div>
+  );
+}
+
 // ─── Budget Pips ─────────────────────────────────────────────────────────────
 
 function BudgetPips({ used, total }) {
@@ -313,16 +368,48 @@ function BudgetPips({ used, total }) {
 
 // ─── Main Component ──────────────────────────────────────────────────────────
 
-export default function AgentChat({ battleId, agentId, agentName, chatExchanges, battleStatus, statusFeed, trades = [], onSymbolClick, onSwitchToGameTape, knownTickers }) {
+export default function AgentChat({
+  battleId,
+  agentId,
+  agentName,
+  chatExchanges,
+  battleStatus,
+  statusFeed,
+  trades = [],
+  onSymbolClick,
+  onSwitchToGameTape,
+  knownTickers,
+  // Phase 6: review-mode props
+  dailyGrades = {},
+  chatBudgetUsed = 0,
+  reviewBudgetUsed = 0,
+  pendingProposal = null,
+  proposalHistory = [],
+}) {
   const [messages, setMessages] = useState([]);
   const [inputText, setInputText] = useState('');
   const [isSending, setIsSending] = useState(false);
-  const [budgetUsed, setBudgetUsed] = useState(0);
   const [error, setError] = useState(null);
   const [activeSubTab, setActiveSubTab] = useState('chat');
   const messagesEndRef = useRef(null);
   const textareaRef = useRef(null);
   const initialLoadRef = useRef(false);
+
+  // Today's date in ET — matches agent-batch-review.js and is the bucket key
+  // for dailyGrades writes. Recomputed each render is fine (cheap).
+  const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+
+  // Current mode inferred from the most recent exchange. In review mode the
+  // budget limit is 5 (vs 10 in battle mode), the send disable logic checks
+  // the review counter, and the timeline gets the grading section.
+  const currentMode = React.useMemo(() => {
+    if (!chatExchanges || chatExchanges.length === 0) return 'battle';
+    const last = chatExchanges[chatExchanges.length - 1];
+    return last?.mode === 'review' ? 'review' : 'battle';
+  }, [chatExchanges]);
+
+  const activeBudgetUsed = currentMode === 'review' ? reviewBudgetUsed : chatBudgetUsed;
+  const activeBudgetLimit = currentMode === 'review' ? 5 : 10;
 
   // Desktop detection (≥768px → side-by-side, <768px → tabs)
   const [isDesktop, setIsDesktop] = useState(
@@ -335,22 +422,33 @@ export default function AgentChat({ battleId, agentId, agentName, chatExchanges,
     return () => mq.removeEventListener('change', handler);
   }, []);
 
-  const isDisabled = isSending || budgetUsed >= 10 || battleStatus === 'completed';
+  const isDisabled = isSending || activeBudgetUsed >= activeBudgetLimit || battleStatus === 'completed';
 
   // ── Load existing history from chatExchanges prop (first mount only) ───────
+  // NOTE: one-shot load by design — local message state owns per-session UI
+  // concerns (typing indicators, optimistic user bubbles). Firestore-initiated
+  // exchanges (e.g., the batch cron's auto-debrief) appear on next mount.
 
   useEffect(() => {
     if (!chatExchanges || initialLoadRef.current) return;
 
     const loaded = [];
     chatExchanges.forEach((ex, i) => {
-      loaded.push({
-        id: `exchange-${i}-user`,
-        role: 'user',
-        text: ex.userMessage,
-        suggestedActions: null,
-        timestamp: ex.timestamp?.toMillis?.() || Date.now(),
-      });
+      const ts = ex.timestamp?.toMillis?.()
+        || (typeof ex.timestamp === 'string' ? new Date(ex.timestamp).getTime() : null)
+        || Date.now();
+
+      // Auto-debrief exchanges are system-initiated — the '__REVIEW_START__'
+      // sentinel must not render as a user bubble.
+      if (!ex.isAutoDebrief) {
+        loaded.push({
+          id: `exchange-${i}-user`,
+          role: 'user',
+          text: ex.userMessage,
+          suggestedActions: null,
+          timestamp: ts,
+        });
+      }
 
       const isLast = i === chatExchanges.length - 1;
       loaded.push({
@@ -361,13 +459,14 @@ export default function AgentChat({ battleId, agentId, agentName, chatExchanges,
         scratchpad: ex.scratchpad || null,
         hasDirective: ex.hasDirective || false,
         directive: ex.hasDirective && ex.directive ? { text: ex.directive.text } : null,
-        timestamp: ex.timestamp?.toMillis?.() || Date.now(),
+        isAutoDebrief: !!ex.isAutoDebrief,
+        mode: ex.mode || 'battle',
+        timestamp: ts,
       });
     });
 
     if (loaded.length > 0) {
       setMessages(loaded);
-      setBudgetUsed(chatExchanges.length);
     }
     initialLoadRef.current = true;
   }, [chatExchanges]);
@@ -390,7 +489,7 @@ export default function AgentChat({ battleId, agentId, agentName, chatExchanges,
   // ── Send message ───────────────────────────────────────────────────────────
 
   async function sendMessage(text) {
-    if (!text.trim() || isSending || budgetUsed >= 10) return;
+    if (!text.trim() || isSending || activeBudgetUsed >= activeBudgetLimit) return;
 
     const trimmed = text.trim();
 
@@ -447,13 +546,16 @@ export default function AgentChat({ battleId, agentId, agentName, chatExchanges,
 
         if (res.status === 401) {
           setError('Session expired. Please refresh.');
+        } else if (data.error === 'budget_exceeded' || data.error === 'chat_budget_exceeded') {
+          // Server-side budget cap — use the message from the server when provided
+          // so the copy matches the current mode (battle vs review).
+          setError(data.message || (currentMode === 'review'
+            ? "You've used all 5 review messages for today."
+            : "You've used all 10 messages for this battle."));
         } else if (res.status === 429) {
           setError('Slow down — too many messages. Try again in a moment.');
         } else if (res.status === 504) {
           setError('Agent took too long. Try again.');
-        } else if (data.error === 'chat_budget_exceeded') {
-          setError("You've used all 10 messages for this battle.");
-          setBudgetUsed(10);
         } else {
           setError('Agent is thinking too hard. Try again.');
         }
@@ -473,7 +575,9 @@ export default function AgentChat({ battleId, agentId, agentName, chatExchanges,
       };
 
       setMessages(prev => prev.map(m => m.id === typingId ? agentMsg : m));
-      setBudgetUsed(prev => data.exchangeNumber || prev + 1);
+      // Budget counters are now prop-driven (chatBudgetUsed / reviewBudgetUsed).
+      // The server write to Firestore will propagate back via the snapshot
+      // listener in useAgentBattle → new props → updated display.
     } catch (err) {
       // Remove typing indicator on network error
       setMessages(prev => prev.filter(m => m.id !== typingId));
@@ -500,7 +604,12 @@ export default function AgentChat({ battleId, agentId, agentName, chatExchanges,
 
   // ── Budget color ───────────────────────────────────────────────────────────
 
-  const budgetColor = budgetUsed >= 10 ? '#EF4444' : budgetUsed >= 8 ? '#F59E0B' : '#6B7280';
+  // Budget color reflects the ACTIVE mode's usage so it stays meaningful
+  // regardless of which mode we're in.
+  const budgetColor =
+    activeBudgetUsed >= activeBudgetLimit ? '#EF4444'
+    : activeBudgetUsed >= activeBudgetLimit * 0.8 ? '#F59E0B'
+    : '#6B7280';
 
   // ── Find last agent message (by id, for combined timeline) ─────────────────
 
@@ -581,6 +690,78 @@ export default function AgentChat({ battleId, agentId, agentName, chatExchanges,
     });
   }, [messages, tradeEvents]);
 
+  // ── Review-mode injection points in the timeline ──────────────────────────
+  // Unanswered proposals render BEFORE the first auto-debrief (transition point
+  // from live play to review). Grading cards render AFTER the last auto-debrief
+  // so the user can tag the day's trades while reading the debrief.
+  const firstAutoDebriefIdx = React.useMemo(() => (
+    combinedTimeline.findIndex(it => it._type === 'message' && it.isAutoDebrief)
+  ), [combinedTimeline]);
+  const lastAutoDebriefIdx = React.useMemo(() => {
+    for (let i = combinedTimeline.length - 1; i >= 0; i--) {
+      if (combinedTimeline[i]._type === 'message' && combinedTimeline[i].isAutoDebrief) return i;
+    }
+    return -1;
+  }, [combinedTimeline]);
+
+  // Expired / unresolved proposals to surface at the transition point.
+  // "Didn't respond" means the proposal hit its deadline without the user
+  // approving or vetoing — in strategist mode agent-evaluate.js sets
+  // resolution='lapsed' (agent held); status='expired' is the general case.
+  const unansweredProposals = React.useMemo(() => {
+    const history = Array.isArray(proposalHistory) ? proposalHistory : [];
+    const unanswered = history.filter(p => {
+      if (!p) return false;
+      if (p.status === 'expired') return true;
+      if (p.resolution === 'expired' || p.resolution === 'lapsed') return true;
+      return false;
+    });
+    const pendingIfExpired = pendingProposal
+      && (pendingProposal.status === 'expired' || pendingProposal.resolution === 'expired')
+      ? [pendingProposal]
+      : [];
+    return [...unanswered, ...pendingIfExpired];
+  }, [proposalHistory, pendingProposal]);
+
+  // Today's grades keyed by tradeIndex for fast lookup when rendering the
+  // inline grading cards.
+  const todayGradesByIndex = React.useMemo(() => {
+    const map = new Map();
+    const todayEntry = dailyGrades?.[todayStr];
+    const list = Array.isArray(todayEntry?.trades) ? todayEntry.trades : [];
+    list.forEach(g => {
+      if (g && typeof g.tradeIndex === 'number') map.set(g.tradeIndex, g.grade);
+    });
+    return map;
+  }, [dailyGrades, todayStr]);
+
+  // Handle a grade tap from InlineTradingGradeCard. Read-merge-write against
+  // the current `dailyGrades[today].trades` array — the service function
+  // overwrites that array, so we need the full merged list.
+  const handleGrade = React.useCallback(async (tradeIndex, grade) => {
+    if (!battleId || typeof tradeIndex !== 'number') return;
+    const trade = trades[tradeIndex] || {};
+    const existing = Array.isArray(dailyGrades?.[todayStr]?.trades)
+      ? dailyGrades[todayStr].trades
+      : [];
+    // Upsert by tradeIndex.
+    const merged = [
+      ...existing.filter(g => g?.tradeIndex !== tradeIndex),
+      {
+        tradeIndex,
+        grade,
+        symbolOut: trade.symbolOut || null,
+        symbolIn: trade.symbolIn || null,
+      },
+    ];
+    try {
+      await submitDailyGrades(battleId, todayStr, merged);
+    } catch (err) {
+      console.error('[AgentChat] Failed to submit grade:', err);
+      setError('Could not save grade. Try again.');
+    }
+  }, [battleId, trades, dailyGrades, todayStr]);
+
   // ── Render ─────────────────────────────────────────────────────────────────
 
   // ── Shared JSX fragments ──────────────────────────────────────────────────
@@ -598,9 +779,58 @@ export default function AgentChat({ battleId, agentId, agentName, chatExchanges,
         {messages.length === 0 && tradeEvents.length === 0 ? (
           <EmptyState onQuickStart={handleActionClick} disabled={isDisabled} />
         ) : (
-          combinedTimeline.map((item) => {
+          combinedTimeline.map((item, idx) => {
+            // Unanswered-proposals block is rendered just BEFORE the first
+            // auto-debrief message in the timeline (the transition point from
+            // live play to review).
+            const leading = (idx === firstAutoDebriefIdx && unansweredProposals.length > 0) ? (
+              <React.Fragment key={`unanswered-before-${idx}`}>
+                {unansweredProposals.map((p, pi) => (
+                  <UnansweredProposalCard
+                    key={`unanswered-${pi}-${p?.proposalId || p?.id || pi}`}
+                    proposal={p}
+                  />
+                ))}
+              </React.Fragment>
+            ) : null;
+
+            // Grading section is rendered just AFTER the last auto-debrief.
+            const trailing = (idx === lastAutoDebriefIdx && (trades?.length || 0) > 0) ? (
+              <div
+                key={`grading-after-${idx}`}
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 2,
+                  marginTop: 4,
+                  marginBottom: 8,
+                }}
+              >
+                <div style={{
+                  color: '#f59e0b',
+                  fontSize: 10.5,
+                  fontWeight: 700,
+                  letterSpacing: '0.08em',
+                  textTransform: 'uppercase',
+                  padding: '4px 2px 6px',
+                }}>
+                  Grade Today's Trades
+                </div>
+                {trades.map((t, ti) => (
+                  <InlineTradingGradeCard
+                    key={`grade-${ti}`}
+                    trade={t}
+                    tradeId={ti}
+                    currentGrade={todayGradesByIndex.get(ti) || null}
+                    onGrade={handleGrade}
+                  />
+                ))}
+              </div>
+            ) : null;
+
+            let body;
             if (item._type === 'trade') {
-              return (
+              body = (
                 <TradeTickerCard
                   key={item.id}
                   trade={item}
@@ -608,21 +838,29 @@ export default function AgentChat({ battleId, agentId, agentName, chatExchanges,
                   onTradeClick={onSwitchToGameTape ? () => onSwitchToGameTape() : undefined}
                 />
               );
+            } else if (item.isTyping) {
+              body = <TypingIndicator key={item.id} />;
+            } else {
+              body = (
+                <MessageBubble
+                  key={item.id}
+                  message={item}
+                  agentName={agentName}
+                  isLastAgent={item.id === lastAgentId}
+                  onActionClick={handleActionClick}
+                  isSending={isSending}
+                  onSymbolClick={onSymbolClick}
+                  knownTickers={knownTickers}
+                />
+              );
             }
-            if (item.isTyping) {
-              return <TypingIndicator key={item.id} />;
-            }
+
             return (
-              <MessageBubble
-                key={item.id}
-                message={item}
-                agentName={agentName}
-                isLastAgent={item.id === lastAgentId}
-                onActionClick={handleActionClick}
-                isSending={isSending}
-                onSymbolClick={onSymbolClick}
-                knownTickers={knownTickers}
-              />
+              <React.Fragment key={`tl-${idx}-${item.id}`}>
+                {leading}
+                {body}
+                {trailing}
+              </React.Fragment>
             );
           })
         )}
@@ -640,17 +878,32 @@ export default function AgentChat({ battleId, agentId, agentName, chatExchanges,
         </div>
       )}
 
-      {/* ── Budget row ───────────────────────────────────────────────── */}
+      {/* ── Budget row (dual counters) ───────────────────────────────── */}
+      {/* Active mode's counter is prominent; inactive is muted.        */}
       <div style={{
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
         padding: '6px 16px 4px',
-        color: budgetColor,
         fontSize: 12,
       }}>
-        <span>Messages: {budgetUsed} / 10</span>
-        <BudgetPips used={budgetUsed} total={10} />
+        <span style={{ color: '#6B7280' }}>
+          <span>Messages: </span>
+          <span style={{
+            color: currentMode === 'battle' ? '#FFFFFF' : '#6B7280',
+            fontWeight: currentMode === 'battle' ? 600 : 400,
+          }}>
+            {chatBudgetUsed}/10 battle
+          </span>
+          <span style={{ color: '#6B7280', margin: '0 6px' }}>·</span>
+          <span style={{
+            color: currentMode === 'review' ? '#FFFFFF' : '#6B7280',
+            fontWeight: currentMode === 'review' ? 600 : 400,
+          }}>
+            {reviewBudgetUsed}/5 review
+          </span>
+        </span>
+        <BudgetPips used={activeBudgetUsed} total={activeBudgetLimit} />
       </div>
 
       {/* ── Input row ────────────────────────────────────────────────── */}
