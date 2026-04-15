@@ -24,14 +24,14 @@
 //   isDirty             — bool, user has edited since last preset apply
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import { ChevronDown } from 'lucide-react';
 import ParamSlider from './ParamControls/ParamSlider';
 import ParamToggle from './ParamControls/ParamToggle';
 import ParamPicker from './ParamControls/ParamPicker';
 import CollectionPicker from './CollectionPicker';
 import RadarChart from './RadarChart';
-import { getPostureLabel } from '../../utils/dimensionMapper';
+import { getPostureLabel, DIMENSION_DEFAULTS } from '../../utils/dimensionMapper';
 
 // ─────────────────────────────────────────────────────────────
 // Design tokens
@@ -324,7 +324,7 @@ function DimensionCard({
         {/* Level pill */}
         <div
           style={{
-            padding: '3px 8px',
+            padding: '3px 6px',
             borderRadius: 5,
             background: tone.bg,
             flexShrink: 0,
@@ -343,7 +343,6 @@ function DimensionCard({
                 color: tone.text,
                 fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
                 textTransform: 'uppercase',
-                letterSpacing: '0.4px',
                 whiteSpace: 'nowrap',
               }}
             >
@@ -467,12 +466,18 @@ export default function StrategyDimensions({
   isDirty,
 }) {
   const [expandedKey, setExpandedKey] = useState(null);
+  const reducedMotion = useReducedMotion();
 
-  // Radar scores + summary recompute on every value change.
+  // Radar scores + summary recompute on every value change. Merge each
+  // dimension over its defaults so partial inputs (e.g. Workshop Mode
+  // prefill supplying only a subset of sub-keys) can't produce NaN in the
+  // formulas — the guard in dimensionToRadarScore only handles a missing
+  // dimension object, not a missing sub-key within one.
   const radarScores = useMemo(() => {
     const out = {};
     DIMENSION_CONFIGS.forEach((c) => {
-      out[c.key] = dimensionToRadarScore(c.key, values[c.key] || {});
+      const merged = { ...DIMENSION_DEFAULTS[c.key], ...(values[c.key] || {}) };
+      out[c.key] = dimensionToRadarScore(c.key, merged);
     });
     return out;
   }, [values]);
@@ -517,9 +522,9 @@ export default function StrategyDimensions({
       >
         <motion.div
           key={pulseTick}
-          initial={{ scale: 0.95 }}
+          initial={{ scale: reducedMotion ? 1 : 0.95 }}
           animate={{ scale: 1 }}
-          transition={{ duration: 0.2 }}
+          transition={{ duration: reducedMotion ? 0 : 0.2 }}
           style={{ transformOrigin: 'center' }}
         >
           <RadarChart mode="dimensions" dimensions={radarScores} size={220} />
