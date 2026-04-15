@@ -277,18 +277,6 @@ function computeFullDayExpiry(portfolio) {
   return { expiresAt: closeUTC.toISOString(), targetDateStr, effectiveCloseHour };
 }
 
-/**
- * Filter out expired directives.
- * Mirrors pattern from api/_utils/agentPromptAssembly.js:201-208
- */
-function filterActiveDirectives(directives) {
-  const now = Date.now();
-  return (directives || []).filter(d => {
-    if (!d.expiresAt) return true;
-    return new Date(d.expiresAt).getTime() > now;
-  });
-}
-
 function deepCopyArray(arr) {
   if (!arr) return [];
   return arr.map(item => item ? { ...item } : null);
