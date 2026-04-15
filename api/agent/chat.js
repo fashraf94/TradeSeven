@@ -5,6 +5,8 @@ import { buildVoiceLayerPrompt } from '../_utils/voiceLayerPrompt.js';
 import { callGemmaVoice, parseVoiceLayerResponse } from '../_utils/gemmaClient.js';
 import { FieldValue } from 'firebase-admin/firestore';
 import { logConversation } from '../_utils/shadowLogger.js';
+import { getMarketState } from '../_utils/marketSchedule.js';
+import { randomUUID } from 'node:crypto';
 
 export const config = { maxDuration: 15 };
 
@@ -79,6 +81,49 @@ function normalizeDirective(parsed) {
   return null;
 }
 
+// ==================== MODE DETECTION ====================
+
+// States from getMarketState(): OPEN, PRE_MARKET, CLOSED_AFTERHOURS,
+// CLOSED_WEEKEND, CLOSED_HOLIDAY. Review mode is valid only when the market
+// is unambiguously closed for new trading (not pre-market).
+const CLOSED_STATES = new Set(['CLOSED_AFTERHOURS', 'CLOSED_WEEKEND', 'CLOSED_HOLIDAY']);
+
+function isReviewForToday(review) {
+  if (!review || typeof review !== 'object') return false;
+
+  // Prefer an explicit trading-day string if the cron writes one.
+  const dateField = review.tradingDay || review.date;
+  if (dateField && typeof dateField === 'string') {
+    const todayET = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+    return dateField === todayET;
+  }
+
+  // Fall back to createdAt recency (within last 20h — covers overnight review runs).
+  const raw = review.createdAt;
+  let ts = null;
+  if (typeof raw === 'string') ts = new Date(raw).getTime();
+  else if (raw && typeof raw.toMillis === 'function') ts = raw.toMillis();
+  else if (raw && typeof raw.seconds === 'number') ts = raw.seconds * 1000;
+  if (ts == null || Number.isNaN(ts)) return false;
+
+  return (Date.now() - ts) < 20 * 60 * 60 * 1000;
+}
+
+function detectMode(battle) {
+  const marketState = getMarketState();
+  const isMarketClosed = CLOSED_STATES.has(marketState.state);
+  if (!isMarketClosed) return 'battle';
+
+  const reviews = Array.isArray(battle?.dailyReviews) ? battle.dailyReviews : [];
+  const latestReview = reviews.length > 0 ? reviews[reviews.length - 1] : null;
+  return isReviewForToday(latestReview) ? 'review' : 'battle';
+}
+
+const MODE_BUDGET = {
+  battle: { field: 'chatBudgetUsed', limit: 10 },
+  review: { field: 'reviewBudgetUsed', limit: 5 },
+};
+
 // ==================== HANDLER ====================
 
 export default async function handler(req, res) {
@@ -141,9 +186,23 @@ export default async function handler(req, res) {
     }
     const agent = agentDoc.data();
 
-    // 10. Budget check — flat 10 per battle
-    const chatBudget = 10;
-    if ((battle.chatBudgetUsed || 0) >= chatBudget) {
+    // 10. Mode detection + budget check
+    //     Review mode activates after market close when today's batch review
+    //     exists on the battle doc. Battle mode is the default for live play.
+    const mode = detectMode(battle);
+    const { field: budgetField, limit: budgetLimit } = MODE_BUDGET[mode];
+    const currentBudget = battle[budgetField] || 0;
+
+    if (currentBudget >= budgetLimit) {
+      if (mode === 'review') {
+        // New error shape for new mode — frontend (Phase 6) will consume this.
+        return res.status(429).json({
+          error: 'budget_exceeded',
+          mode,
+          message: "We've been through the tape thoroughly. Let's pick it back up tomorrow.",
+        });
+      }
+      // Preserve existing battle-mode error shape for frontend backward compat.
       return res.status(403).json({
         error: 'chat_budget_exceeded',
         message: "We've had a solid session. Let's let things play out and regroup later.",
@@ -190,6 +249,9 @@ export default async function handler(req, res) {
       conversationHistory,
       anchorContext,
       marketSnapshot,
+      mode,
+      dailyReviews: battle.dailyReviews || [],
+      dailyGrades: battle.dailyGrades || [],
     });
 
     // 15. Call OpenRouter (Gemma 4) — with 15s timeout
@@ -212,7 +274,38 @@ export default async function handler(req, res) {
 
     // 17. Normalize and sanitize parsed fields
     const cleanScratchpad = sanitizeScratchpad(parsed._scratchpad);
-    const normalizedDirective = normalizeDirective(parsed);
+    //     Directives are a live-play concept only. In review mode, the
+    //     phase rules forbid hasDirective=true; we defensively strip any
+    //     directive the model produces so nothing leaks into agent.directives[].
+    const normalizedDirective = mode === 'review' ? null : normalizeDirective(parsed);
+    const effectiveHasDirective = mode === 'review' ? false : (parsed.hasDirective || false);
+
+    // 17b. Lesson + Forge suggestion (review mode only)
+    const lessonProposal = parsed._lesson;
+    const lesson = (mode === 'review' && lessonProposal && typeof lessonProposal === 'object' && lessonProposal.text)
+      ? {
+          id: randomUUID(),
+          text: String(lessonProposal.text).slice(0, 500),
+          source: 'review_debrief',
+          sourceGameId: battleId,
+          sourceTrade: lessonProposal.sourceTrade || null,
+          createdAt: new Date().toISOString(),
+          consumed: false,
+          consumedInConsolidation: null,
+        }
+      : null;
+
+    const forgeProposal = parsed._forgeSuggestion;
+    const forgeSuggestion = (mode === 'review' && forgeProposal && typeof forgeProposal === 'object' && forgeProposal.text)
+      ? {
+          id: randomUUID(),
+          text: String(forgeProposal.text).slice(0, 500),
+          sourceGameId: battleId,
+          sourceTrade: forgeProposal.sourceTrade || null,
+          createdAt: new Date().toISOString(),
+          status: 'pending',
+        }
+      : null;
 
     // 18. Map to client contract
     const clientResponse = {
@@ -221,11 +314,14 @@ export default async function handler(req, res) {
         ? { text: normalizedDirective.text, targetType: 'general', targetValue: null, rationale: normalizedDirective.text }
         : null,
       suggestedActions: parsed.suggestedActions || null,
-      exchangeNumber: (battle.chatBudgetUsed || 0) + 1,
-      budgetTotal: chatBudget,
+      exchangeNumber: currentBudget + 1,
+      budgetTotal: budgetLimit,
       scratchpad: cleanScratchpad,
-      hasDirective: parsed.hasDirective || false,
+      hasDirective: effectiveHasDirective,
       directive: normalizedDirective,
+      lesson: lesson ? { id: lesson.id, text: lesson.text } : null,
+      forgeSuggestion: forgeSuggestion ? { id: forgeSuggestion.id, text: forgeSuggestion.text } : null,
+      mode,
     };
 
     // Shadow log (fire-and-forget)
@@ -235,7 +331,7 @@ export default async function handler(req, res) {
       battleId,
       archetype: agent.archetype || null,
       gameMode: battle.gameMode || null,
-      exchangeNumber: (battle.chatBudgetUsed || 0) + 1,
+      exchangeNumber: currentBudget + 1,
       userMessage: sanitizedMessage,
       agentMessage: parsed.response,
       scratchpad: cleanScratchpad,
@@ -243,8 +339,11 @@ export default async function handler(req, res) {
       suggestedActions: parsed.suggestedActions || null,
       elicitationTarget: elicitationTarget.dimension,
       anchorContext: anchorContext || null,
-      hasDirective: parsed.hasDirective || false,
+      hasDirective: effectiveHasDirective,
+      lesson: lesson ? { id: lesson.id, text: lesson.text } : null,
+      forgeSuggestion: forgeSuggestion ? { id: forgeSuggestion.id, text: forgeSuggestion.text } : null,
       tokenUsage: null,
+      mode,
     }).catch(() => {});
 
     // 19. Write exchange to battle doc
@@ -252,23 +351,24 @@ export default async function handler(req, res) {
       userMessage: sanitizedMessage,
       agentResponse: parsed.response,
       scratchpad: cleanScratchpad,
-      hasDirective: parsed.hasDirective || false,
+      hasDirective: effectiveHasDirective,
       directive: normalizedDirective,
       suggestedActions: parsed.suggestedActions || null,
       elicitationTarget: elicitationTarget.dimension,
       timestamp: new Date().toISOString(),
+      mode,
     };
 
     const recentTargets = [...(battle.recentElicitationTargets || []), elicitationTarget.dimension].slice(-3);
 
     await battleRef.update({
       chatExchanges: FieldValue.arrayUnion(exchange),
-      chatBudgetUsed: FieldValue.increment(1),
+      [budgetField]: FieldValue.increment(1),
       recentElicitationTargets: recentTargets,
     });
 
-    // 20. Write directive to agent doc (only if hasDirective)
-    if (parsed.hasDirective && normalizedDirective) {
+    // 20. Write directive to agent doc (battle mode only — review never writes directives)
+    if (effectiveHasDirective && normalizedDirective) {
       const directive = {
         id: `voice_${Date.now()}`,
         text: normalizedDirective.text,
@@ -282,6 +382,16 @@ export default async function handler(req, res) {
       await db.collection('agents').doc(agentId).update({
         directives: FieldValue.arrayUnion(directive),
       });
+    }
+
+    // 20b. Write lesson and/or forgeSuggestion to agent doc (review mode only).
+    //      Both go to agents/{agentId}, not the battle doc — they are
+    //      agent-level knowledge, not per-battle state.
+    if (lesson || forgeSuggestion) {
+      const agentUpdate = {};
+      if (lesson) agentUpdate.lessons = FieldValue.arrayUnion(lesson);
+      if (forgeSuggestion) agentUpdate.forgeSuggestions = FieldValue.arrayUnion(forgeSuggestion);
+      await db.collection('agents').doc(agentId).update(agentUpdate);
     }
 
     // 21. Return response
