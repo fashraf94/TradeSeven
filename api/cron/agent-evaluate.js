@@ -893,6 +893,9 @@ async function processAgentBattle(db, battle, summary) {
               entryPreset: battle.strategyPreset || 'balanced',
               entryMode: battle.executionMode || 'copilot',
               exitReason: 'haiku_decision',
+              // Phase 8: structured reasoning carried onto battle.trades[] via
+              // the ...evaluationMetadata spread in executeSwapServer.
+              trade_reasoning: haikuResult?.trade_reasoning || null,
             };
             await executeSwapServer(
               db, battle.id, battle,
@@ -947,6 +950,10 @@ async function processAgentBattle(db, battle, summary) {
               entryPreset: battle.strategyPreset || 'balanced',
               entryMode: mode,
               exitReason: 'haiku_decision',
+              // Phase 8: structured reasoning carried onto battle.trades[] via
+              // the ...evaluationMetadata spread in executeSwapServer (used
+              // when this proposal is later resolved into an executed swap).
+              trade_reasoning: haikuResult?.trade_reasoning || null,
             },
           };
 
@@ -982,6 +989,8 @@ async function processAgentBattle(db, battle, summary) {
         symbolIn: haikuResult?.symbolIn,
         // Phase 7: link to the originating directive (if any) for the UI connector.
         directiveThreadId: haikuResult?.directiveThreadId || null,
+        // Phase 8: structured reasoning for the Game Tape / Film Room UI.
+        trade_reasoning: haikuResult?.trade_reasoning || null,
       });
     } else if (haikuResult?.status_feed_update || decision === 'SWAP') {
       statusFeedEntries.push({
@@ -1000,6 +1009,8 @@ async function processAgentBattle(db, battle, summary) {
         symbolIn: decision === 'SWAP' ? haikuResult?.symbolIn : null,
         // Phase 7: link to the originating directive (if any) for the UI connector.
         directiveThreadId: haikuResult?.directiveThreadId || null,
+        // Phase 8: structured reasoning for the Game Tape / Film Room UI.
+        trade_reasoning: haikuResult?.trade_reasoning || null,
       });
     }
 
@@ -1038,6 +1049,8 @@ async function processAgentBattle(db, battle, summary) {
       ignoredDirectiveIds: haikuResult?.ignoredDirectiveIds || [],
       // Phase 7: link this evaluation to the originating directive (if any).
       directiveThreadId: haikuResult?.directiveThreadId || null,
+      // Phase 8: structured reasoning for historical record + analytics.
+      trade_reasoning: haikuResult?.trade_reasoning || null,
       citedForgeRules: haikuResult?.cited_forge_rules || [],
       overriddenForgeRules: haikuResult?.overridden_forge_rules || [],
       triggers: triggers.map(t => t.type),
