@@ -24,14 +24,14 @@
 //   isDirty             — bool, user has edited since last preset apply
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import { ChevronDown } from 'lucide-react';
 import ParamSlider from './ParamControls/ParamSlider';
 import ParamToggle from './ParamControls/ParamToggle';
 import ParamPicker from './ParamControls/ParamPicker';
 import CollectionPicker from './CollectionPicker';
 import RadarChart from './RadarChart';
-import { getPostureLabel } from '../../utils/dimensionMapper';
+import { getPostureLabel, DIMENSION_DEFAULTS } from '../../utils/dimensionMapper';
 
 // ─────────────────────────────────────────────────────────────
 // Design tokens
@@ -261,14 +261,20 @@ function DimensionCard({
   disabled,
   isExpanded,
   onToggleExpanded,
+  isNarrow,
 }) {
   const posture = getPostureLabel(config.key, values);
   const tone = TONE_STYLES[posture.tone] || TONE_STYLES.neutral;
+  // On narrow viewports (≤420px) force every card to span 3 of the 6-col
+  // grid, giving all 7 dimensions a full half-row so the title + pill are
+  // never starved for width. Desktop keeps the per-config span (2/2/2 row
+  // followed by 3/3 rows).
+  const collapsedSpan = isNarrow ? 3 : config.span;
 
   return (
     <div
       style={{
-        gridColumn: isExpanded ? '1 / -1' : `span ${config.span}`,
+        gridColumn: isExpanded ? '1 / -1' : `span ${collapsedSpan}`,
         background: CARD_BG,
         border: `0.5px solid ${isExpanded ? BORDER_OPEN : BORDER_SUBTLE}`,
         borderRadius: 8,
@@ -324,7 +330,7 @@ function DimensionCard({
         {/* Level pill */}
         <div
           style={{
-            padding: '3px 8px',
+            padding: '3px 6px',
             borderRadius: 5,
             background: tone.bg,
             flexShrink: 0,
@@ -343,7 +349,6 @@ function DimensionCard({
                 color: tone.text,
                 fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
                 textTransform: 'uppercase',
-                letterSpacing: '0.4px',
                 whiteSpace: 'nowrap',
               }}
             >
@@ -467,12 +472,35 @@ export default function StrategyDimensions({
   isDirty,
 }) {
   const [expandedKey, setExpandedKey] = useState(null);
+  const reducedMotion = useReducedMotion();
 
-  // Radar scores + summary recompute on every value change.
+  // Track narrow-viewport state so the dimension grid can switch to a
+  // 2-column layout on mobile (≤420px) — at the default 3-column top row
+  // span-2 cards don't have enough width for their title + pill.
+  const [isNarrow, setIsNarrow] = useState(() =>
+    typeof window !== 'undefined'
+      ? window.matchMedia('(max-width: 420px)').matches
+      : false
+  );
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    const mql = window.matchMedia('(max-width: 420px)');
+    const handler = (e) => setIsNarrow(e.matches);
+    setIsNarrow(mql.matches);
+    mql.addEventListener('change', handler);
+    return () => mql.removeEventListener('change', handler);
+  }, []);
+
+  // Radar scores + summary recompute on every value change. Merge each
+  // dimension over its defaults so partial inputs (e.g. Workshop Mode
+  // prefill supplying only a subset of sub-keys) can't produce NaN in the
+  // formulas — the guard in dimensionToRadarScore only handles a missing
+  // dimension object, not a missing sub-key within one.
   const radarScores = useMemo(() => {
     const out = {};
     DIMENSION_CONFIGS.forEach((c) => {
-      out[c.key] = dimensionToRadarScore(c.key, values[c.key] || {});
+      const merged = { ...DIMENSION_DEFAULTS[c.key], ...(values[c.key] || {}) };
+      out[c.key] = dimensionToRadarScore(c.key, merged);
     });
     return out;
   }, [values]);
@@ -517,9 +545,9 @@ export default function StrategyDimensions({
       >
         <motion.div
           key={pulseTick}
-          initial={{ scale: 0.95 }}
+          initial={{ scale: reducedMotion ? 1 : 0.95 }}
           animate={{ scale: 1 }}
-          transition={{ duration: 0.2 }}
+          transition={{ duration: reducedMotion ? 0 : 0.2 }}
           style={{ transformOrigin: 'center' }}
         >
           <RadarChart mode="dimensions" dimensions={radarScores} size={220} />
@@ -575,6 +603,7 @@ export default function StrategyDimensions({
             onToggleExpanded={() =>
               setExpandedKey((prev) => (prev === config.key ? null : config.key))
             }
+            isNarrow={isNarrow}
           />
         ))}
       </div>

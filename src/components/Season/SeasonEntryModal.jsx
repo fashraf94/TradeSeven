@@ -676,66 +676,75 @@ export default function SeasonEntryModal({
 
   return (
     <CenteredModal isOpen={isOpen} onClose={onClose} title={titleByStep[step]}>
+      {/* Body layout: fixed StepDots + scroll area + fixed footer as
+          three flex-column siblings. Scroll is constrained to the middle
+          region so the footer stays pinned reliably across browsers. */}
       <div
         style={{
-          padding: '4px 20px 0',
-          overflowY: 'auto',
           flex: 1,
+          minHeight: 0,
           display: 'flex',
           flexDirection: 'column',
         }}
       >
-        <StepDots current={step} total={3} />
-
-        <div style={{ flex: 1, position: 'relative', minHeight: 240, paddingBottom: 120 }}>
-          <AnimatePresence mode="wait" custom={direction}>
-            <motion.div
-              key={`step-${step}`}
-              custom={direction}
-              variants={slideVariants}
-              initial="enter"
-              animate="center"
-              exit="exit"
-              transition={slideTransition}
-            >
-              {step === 0 && <StepOverview season={season} />}
-              {step === 1 && (
-                <StepStrategy
-                  dimensionValues={dimensionValues}
-                  selectedCollection={selectedCollection}
-                  isDirty={isDirty}
-                  onSelectCollection={handleSelectCollection}
-                  onParamChange={handleParamChange}
-                  disabled={submitting}
-                  fromConversation={fromConversation}
-                />
-              )}
-              {step === 2 && (
-                <StepConfirm
-                  season={season}
-                  dimensionValues={dimensionValues}
-                  selectedCollection={selectedCollection}
-                  submitting={submitting}
-                  error={error}
-                />
-              )}
-            </motion.div>
-          </AnimatePresence>
+        <div style={{ padding: '4px 20px 0', flex: '0 0 auto' }}>
+          <StepDots current={step} total={3} />
         </div>
 
-        {/* Nav buttons */}
         <div
           style={{
+            flex: 1,
+            minHeight: 0,
+            overflowY: 'auto',
+            padding: '0 20px 20px',
+          }}
+        >
+          <div style={{ position: 'relative', minHeight: 240 }}>
+            <AnimatePresence mode="wait" custom={direction}>
+              <motion.div
+                key={`step-${step}`}
+                custom={direction}
+                variants={slideVariants}
+                initial="enter"
+                animate="center"
+                exit="exit"
+                transition={slideTransition}
+              >
+                {step === 0 && <StepOverview season={season} />}
+                {step === 1 && (
+                  <StepStrategy
+                    dimensionValues={dimensionValues}
+                    selectedCollection={selectedCollection}
+                    isDirty={isDirty}
+                    onSelectCollection={handleSelectCollection}
+                    onParamChange={handleParamChange}
+                    disabled={submitting}
+                    fromConversation={fromConversation}
+                  />
+                )}
+                {step === 2 && (
+                  <StepConfirm
+                    season={season}
+                    dimensionValues={dimensionValues}
+                    selectedCollection={selectedCollection}
+                    submitting={submitting}
+                    error={error}
+                  />
+                )}
+              </motion.div>
+            </AnimatePresence>
+          </div>
+        </div>
+
+        {/* Nav footer — flex-column sibling of the scroll area, so it's
+            always pinned at the bottom of the modal card. */}
+        <div
+          style={{
+            flex: '0 0 auto',
             display: 'flex',
             gap: 10,
-            marginTop: 16,
             padding: '12px 20px 20px',
-            marginLeft: -20,
-            marginRight: -20,
             borderTop: `1px solid ${HOLO_COLORS.borderSubtle}`,
-            position: 'sticky',
-            bottom: 0,
-            zIndex: 10,
             background: '#0D0E12', // matches tokens.bgApp used by CenteredModal
           }}
         >
