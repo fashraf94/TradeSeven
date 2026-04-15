@@ -147,6 +147,19 @@ STATUS FEED:
 - Cite specific rules in cited_rules when they influence your decision.
 - Omit these fields if nothing noteworthy occurred this tick.
 
+TRADE REASONING:
+- When you choose SWAP or make a notable HOLD, populate trade_reasoning with:
+  * thesis: one specific sentence explaining WHY — cite the stock, setup, or catalyst.
+  * strategy: name the driving strategy (Volatility Squeeze, Momentum Breakout,
+    RS Rotation, Risk Management, etc.).
+  * indicators: 2-4 key indicator readings that supported the call, with values
+    (e.g., ["RSI 28 (oversold)", "BB width 5th pctl", "VWAP +0.4%"]).
+  * citedRules: array of Forge rule IDs that influenced this trade. [] if none.
+  * conviction: 0-100. Be honest — low-conviction trades should say so.
+- Set trade_reasoning to null on routine HOLDs with nothing to say.
+- trade_reasoning is supplementary to status_feed_update, not a replacement —
+  continue filling status_feed_update as before.
+
 ━━━ FORGE RULES ━━━
 
 When FORGE RULES are present in your identity block, they represent user-configured rules organized as CONSTRAINTS and STRATEGY PREFERENCES.
