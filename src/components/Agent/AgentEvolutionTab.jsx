@@ -174,32 +174,15 @@ const AgentEvolutionTab = ({ agent, tokens, isDesktop, isMobile }) => {
       }
     }
 
-    // 3. Directives (excluding batch_review — those become dedicated LESSON entries below)
-    (agent.directives || []).forEach(d => {
-      if (d.source === 'batch_review') return;
-      if (d.createdAt) {
-        events.push({
-          type: 'directive',
-          title: `Directive: ${d.text}`,
-          subtitle: `Source: ${d.source.replace(/_/g, ' ')}`,
-          date: parseDate(d.createdAt),
-          color: d.source === 'coaching' ? '#a855f7'
-            : d.source === 'pinned' ? tokens.teal
-            : d.source === 'strategy_session' ? tokens.amber
-            : tokens.textMuted,
-          icon: 'shield',
-        });
-      }
-    });
-
-    // 3b. Lessons — Film Room batch_review directives surface as their own timeline type.
-    (agent.directives || []).forEach(d => {
-      if (d.source !== 'batch_review' || !d.createdAt) return;
+    // 3. Lessons — learnings harvested by Film Room review / pit stops / debriefs.
+    //    Sourced from agent.lessons[] (new-home field post-directive-migration).
+    (agent.lessons || []).forEach(l => {
+      if (!l?.createdAt) return;
       events.push({
         type: 'lesson',
         title: 'Lesson Learned',
-        subtitle: d.text,
-        date: parseDate(d.createdAt),
+        subtitle: l.text,
+        date: parseDate(l.createdAt),
         color: '#F0C75E',
         icon: 'lightbulb',
       });
