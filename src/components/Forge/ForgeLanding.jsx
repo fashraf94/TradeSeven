@@ -24,11 +24,22 @@ import {
   Hammer,
   Beaker,
   ArrowRight,
+  Pencil,
+  Activity,
+  Settings2,
+  Zap,
+  TrendingUp,
+  TrendingDown,
 } from 'lucide-react';
 import { collection, getDocs, query, where, doc, getDoc } from 'firebase/firestore';
 import { db } from '../../firebase/config';
 import ForgeScreen from './ForgeScreen';
 import WorkshopChat from './WorkshopChat';
+import DailyBriefingCard from '../Season/DailyBriefingCard';
+import {
+  DIMENSION_KEYS,
+  computeAllRadarScores,
+} from '../../utils/dimensionRadarScore';
 
 // ── Design tokens (kept in sync with the rest of the Forge palette) ─────
 const TROPHY_GOLD = '#F0C75E';
@@ -80,6 +91,230 @@ function getLandingState({ activeExperiment, completedExperiments, deployedStrat
   if (activeExperiment) return 'testing';
   if (completedExperiments?.length > 0) return 'results';
   return 'new';
+}
+
+// Resolve a strategy's dimensionValues from the cheapest sources we have
+// synchronously. Returns null when nothing is available — callers hide the
+// mini radar in that case rather than rendering a misleading neutral shape.
+//
+// Priority:
+//   1. entry.algorithm.dimensionValues (future-proofing — not always present)
+//   2. localStorage['forge.lastEntryDims'][entryId] (same-device cache
+//      written by SeasonEntryModal at launch)
+function resolveEntryDimensions(entry) {
+  if (!entry) return null;
+  if (entry.algorithm?.dimensionValues) return entry.algorithm.dimensionValues;
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = window.localStorage.getItem('forge.lastEntryDims');
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return parsed?.[entry.id] || null;
+  } catch {
+    return null;
+  }
+}
+
+// ── Shared UI primitives ────────────────────────────────────────────────
+
+// Inline SVG radar, 80x80 viewBox, no axis labels. The shared scoring util
+// normalizes each dimension to [0.05, 1] so the polygon never collapses to a
+// point at extremes. Renders a neutral guide ring even when dims are missing
+// so the card's layout stays stable.
+function MiniRadar({ dimensionValues, size = 80 }) {
+  const scores = useMemo(() => {
+    if (!dimensionValues) return null;
+    return computeAllRadarScores(dimensionValues);
+  }, [dimensionValues]);
+
+  const center = size / 2;
+  const radius = size / 2 - 4;
+
+  const geometry = useMemo(() => {
+    return DIMENSION_KEYS.map((key, i) => {
+      const angle = (Math.PI * 2 * i) / DIMENSION_KEYS.length - Math.PI / 2;
+      const v = scores?.[key] ?? 0.5;
+      return {
+        ox: center + radius * Math.cos(angle),
+        oy: center + radius * Math.sin(angle),
+        vx: center + radius * v * Math.cos(angle),
+        vy: center + radius * v * Math.sin(angle),
+      };
+    });
+  }, [scores, center, radius]);
+
+  const polygon = geometry.map((p) => `${p.vx},${p.vy}`).join(' ');
+
+  return (
+    <svg
+      viewBox={`0 0 ${size} ${size}`}
+      width={size}
+      height={size}
+      style={{ display: 'block', flexShrink: 0 }}
+      aria-hidden="true"
+    >
+      <circle cx={center} cy={center} r={radius} stroke={TEAL} strokeWidth="0.75" fill="none" opacity="0.25" />
+      <circle cx={center} cy={center} r={radius * 0.66} stroke={TEAL} strokeWidth="0.5" fill="none" opacity="0.15" />
+      <circle cx={center} cy={center} r={radius * 0.33} stroke={TEAL} strokeWidth="0.5" fill="none" opacity="0.1" />
+      {geometry.map((p, i) => (
+        <line key={i} x1={center} y1={center} x2={p.ox} y2={p.oy} stroke={TEAL} strokeWidth="0.4" opacity="0.2" />
+      ))}
+      {scores && (
+        <polygon
+          points={polygon}
+          fill="rgba(94,234,212,0.2)"
+          stroke={TEAL}
+          strokeWidth="1.5"
+        />
+      )}
+    </svg>
+  );
+}
+
+// Full-width trophy-gold CTA — single primary color across all states, to
+// match existing "Next: Confirm" button in SeasonEntryModal.
+function PrimaryCTA({ onClick, children, disabled = false }) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      style={{
+        width: '100%',
+        padding: '13px 16px',
+        background: disabled ? SURFACE_BG : TROPHY_GOLD,
+        color: disabled ? TEXT_MUTED : '#0D0E12',
+        border: 'none',
+        borderRadius: 12,
+        fontSize: 15,
+        fontWeight: 700,
+        cursor: disabled ? 'not-allowed' : 'pointer',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 6,
+      }}
+    >
+      {children}
+      <ArrowRight size={16} />
+    </button>
+  );
+}
+
+function SecondaryLink({ onClick, children }) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        width: '100%',
+        background: 'transparent',
+        border: 'none',
+        padding: '10px 8px',
+        color: TEXT_SECONDARY,
+        fontSize: 13,
+        cursor: 'pointer',
+        textAlign: 'center',
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
+// 3-column metric grid used by cards in States 2–4.
+function StatsRow({ items }) {
+  return (
+    <div
+      style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
+        gap: 8,
+        marginTop: 12,
+      }}
+    >
+      {items.map((it, i) => (
+        <div
+          key={i}
+          style={{
+            background: SURFACE_BG,
+            borderRadius: 8,
+            padding: 10,
+            textAlign: 'center',
+            minWidth: 0,
+          }}
+        >
+          <div
+            style={{
+              fontSize: 16,
+              fontWeight: 600,
+              color: it.color || TEXT_PRIMARY,
+              fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+            }}
+          >
+            {it.value}
+          </div>
+          <div style={{ fontSize: 11, color: TEXT_MUTED, marginTop: 2 }}>
+            {it.label}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// Weekend pit-stop banner with pulsing amber dot. Inline in State 2 card.
+function PitStopBanner() {
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 8,
+        padding: '10px 12px',
+        background: 'rgba(240,199,94,0.08)',
+        border: `1px solid rgba(240,199,94,0.35)`,
+        borderRadius: 8,
+        marginBottom: 12,
+      }}
+    >
+      <motion.span
+        animate={{ opacity: [1, 0.4, 1] }}
+        transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
+        style={{
+          width: 8,
+          height: 8,
+          borderRadius: '50%',
+          background: TROPHY_GOLD,
+          flexShrink: 0,
+        }}
+      />
+      <div style={{ fontSize: 13, fontWeight: 600, color: TROPHY_GOLD }}>
+        Weekly review open — tune your strategy
+      </div>
+    </div>
+  );
+}
+
+// Four-pip week-progress indicator for a 4-week experiment.
+function ProgressPips({ currentWeek, totalWeeks = 4 }) {
+  const weeks = Array.from({ length: totalWeeks }, (_, i) => i + 1);
+  return (
+    <div style={{ display: 'flex', gap: 4, marginTop: 6 }}>
+      {weeks.map((w) => (
+        <div
+          key={w}
+          style={{
+            width: 18,
+            height: 4,
+            borderRadius: 2,
+            background: w <= currentWeek ? TEAL : BORDER_SUBTLE,
+          }}
+        />
+      ))}
+    </div>
+  );
 }
 
 // ── Shell: tabs header ──────────────────────────────────────────────────
@@ -144,22 +379,237 @@ function TabPill({ tabs, activeTab, onChange }) {
   );
 }
 
-// ── Placeholder views (filled in Phases 2–5) ────────────────────────────
+// ── State 1 — New User Hero ────────────────────────────────────────────
 
-function NewUserHero(/* props wired in Phase 2 */) {
+// Four-step Build → Test → Refine → Deploy strip shown only to first-time
+// users. Each step has a colored circle + an icon stroked in the same family.
+function LoopStep({ Icon, label, accent }) {
+  // Accent is a [background, stroke] pair drawn from the Lucide 50/800 ramps.
+  const [bg, fg] = accent;
   return (
-    <div style={{ padding: 24, color: TEXT_MUTED, fontSize: 13 }}>
-      {/* Phase 2 fills this in */}
-      New user hero — coming in Phase 2.
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
+      <div
+        style={{
+          width: 34,
+          height: 34,
+          borderRadius: '50%',
+          background: bg,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
+        <Icon size={16} color={fg} strokeWidth={1.75} />
+      </div>
+      <div style={{ fontSize: 10, fontWeight: 600, color: TEXT_SECONDARY, letterSpacing: '0.3px' }}>
+        {label}
+      </div>
     </div>
   );
 }
 
-function TestingView(/* props wired in Phase 3 */) {
+function NewUserHero({ onBuildStrategy, onConfigureManually }) {
+  const LOOP_STEPS = [
+    { Icon: Pencil, label: 'Build', accent: ['rgba(94,234,212,0.15)', TEAL] },
+    { Icon: Activity, label: 'Test', accent: ['rgba(52,211,153,0.15)', POSITIVE] },
+    { Icon: Settings2, label: 'Refine', accent: ['rgba(240,199,94,0.18)', TROPHY_GOLD] },
+    { Icon: Zap, label: 'Deploy', accent: ['rgba(168,85,247,0.18)', '#C4B5FD'] },
+  ];
+
   return (
-    <div style={{ padding: 24, color: TEXT_MUTED, fontSize: 13 }}>
-      {/* Phase 3 fills this in */}
-      Testing view — coming in Phase 3.
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 20, paddingTop: 4 }}>
+      <div style={{ textAlign: 'center', padding: '12px 4px 0' }}>
+        <h2
+          style={{
+            margin: 0,
+            fontSize: 20,
+            fontWeight: 500,
+            color: TEXT_PRIMARY,
+            lineHeight: 1.3,
+          }}
+        >
+          Build a strategy. Test it against the market.
+        </h2>
+        <p
+          style={{
+            margin: '10px 0 0',
+            fontSize: 14,
+            color: TEXT_SECONDARY,
+            lineHeight: 1.5,
+          }}
+        >
+          Your agent needs a game plan. You&apos;ll build one together, prove it
+          works, then send it into battle.
+        </p>
+      </div>
+
+      {/* Loop strip — mobile 360px: 4x34px circles + 3 arrows ≈ 176px,
+          comfortably fits. Uses space-between so it scales up on desktop. */}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '0 4px',
+        }}
+      >
+        {LOOP_STEPS.map((step, i) => (
+          <React.Fragment key={step.label}>
+            <LoopStep {...step} />
+            {i < LOOP_STEPS.length - 1 && (
+              <div style={{ color: TEXT_MUTED, fontSize: 14, paddingBottom: 16 }}>→</div>
+            )}
+          </React.Fragment>
+        ))}
+      </div>
+
+      <div style={{ marginTop: 4 }}>
+        <PrimaryCTA onClick={onBuildStrategy}>Build your first strategy</PrimaryCTA>
+        <SecondaryLink onClick={() => onConfigureManually()}>
+          I know what I&apos;m doing — configure manually
+        </SecondaryLink>
+      </div>
+    </div>
+  );
+}
+
+// ── State 2 — Testing View ─────────────────────────────────────────────
+
+function TestingView({ season, entry, dailyLog, dailyLogLoading, tradingDay, onViewDashboard }) {
+  const alpha = entry?.seasonState?.alphaVsSpy ?? 0;
+  const week = entry?.seasonState?.currentWeek || 1;
+  const totalWeeks = Array.isArray(season?.weeks) ? season.weeks.length : 4;
+  const rank = entry?.seasonState?.rank;
+  const totalEntries = season?.entryCount;
+  const forgeScore =
+    entry?.seasonState?.forgeScore ?? entry?.forgeScore ?? null;
+  const pitStop = isPitStopOpen(season, entry);
+  const alphaColor = alpha >= 0 ? POSITIVE : NEGATIVE;
+
+  // Count today's trades from the dailyLog when available.
+  const tradesToday = Array.isArray(dailyLog?.trades) ? dailyLog.trades.length : null;
+
+  const dims = resolveEntryDimensions(entry);
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12, paddingTop: 4 }}>
+      {/* Experiment card */}
+      <div
+        style={{
+          background: CARD_BG,
+          border: `1px solid ${BORDER_SUBTLE}`,
+          borderRadius: 12,
+          padding: 14,
+        }}
+      >
+        {pitStop && <PitStopBanner />}
+
+        {/* Top row: mini radar + name/week/progress */}
+        <div
+          style={{
+            display: 'flex',
+            gap: 12,
+            alignItems: 'flex-start',
+            minWidth: 0,
+          }}
+        >
+          {dims && <MiniRadar dimensionValues={dims} size={80} />}
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div
+              style={{
+                fontSize: 14,
+                fontWeight: 600,
+                color: TEXT_PRIMARY,
+                lineHeight: 1.3,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+              }}
+            >
+              {season?.name || 'Current experiment'}
+            </div>
+            <div style={{ fontSize: 12, color: TEXT_SECONDARY, marginTop: 4 }}>
+              Week {week} of {totalWeeks}
+            </div>
+            <ProgressPips currentWeek={week} totalWeeks={totalWeeks} />
+          </div>
+        </div>
+
+        {/* Alpha hero */}
+        <div
+          style={{
+            marginTop: 16,
+            paddingTop: 12,
+            borderTop: `1px solid ${BORDER_SUBTLE}`,
+            textAlign: 'center',
+          }}
+        >
+          <div
+            style={{
+              display: 'inline-flex',
+              alignItems: 'baseline',
+              gap: 6,
+              fontSize: 28,
+              fontWeight: 500,
+              color: alphaColor,
+              fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+            }}
+          >
+            {alpha >= 0 ? (
+              <TrendingUp size={20} color={alphaColor} />
+            ) : (
+              <TrendingDown size={20} color={alphaColor} />
+            )}
+            {formatPct(alpha)}
+          </div>
+          <div style={{ fontSize: 12, color: TEXT_SECONDARY, marginTop: 2 }}>
+            alpha vs S&amp;P 500
+          </div>
+        </div>
+
+        <StatsRow
+          items={[
+            {
+              value: forgeScore != null ? Math.round(forgeScore) : '—',
+              label: 'Forge Score',
+            },
+            {
+              value: rank ? `#${rank}${totalEntries ? ` of ${totalEntries}` : ''}` : '—',
+              label: 'Rank',
+            },
+            {
+              value: tradesToday != null ? tradesToday : '—',
+              label: 'Trades today',
+            },
+          ]}
+        />
+      </div>
+
+      {/* Daily briefing — reuses existing component; handles its own empty /
+          loading / expanded states. */}
+      <DailyBriefingCard
+        entry={entry}
+        dailyLog={dailyLog}
+        tradingDay={tradingDay}
+        loading={dailyLogLoading}
+      />
+
+      {/* Contextual CTA — weekend opens the weekly review, weekdays go
+          straight to the dashboard. Both use trophy-gold per product
+          direction (one primary color across all states). */}
+      {pitStop ? (
+        <>
+          <PrimaryCTA onClick={() => onViewDashboard && onViewDashboard(season, entry)}>
+            Open weekly review
+          </PrimaryCTA>
+          <SecondaryLink onClick={() => onViewDashboard && onViewDashboard(season, entry)}>
+            View full dashboard
+          </SecondaryLink>
+        </>
+      ) : (
+        <PrimaryCTA onClick={() => onViewDashboard && onViewDashboard(season, entry)}>
+          View full dashboard
+        </PrimaryCTA>
+      )}
     </div>
   );
 }
