@@ -92,7 +92,8 @@ export default async function handler(req, res) {
         let failures = 0;
         const errors = [];
 
-        for await (const result of anthropic.messages.batches.results(batchId)) {
+        const results = await anthropic.messages.batches.results(batchId);
+        for await (const result of results) {
           if (result.result.type === 'succeeded') {
             try {
               const toolBlock = result.result.message.content.find(
@@ -110,6 +111,12 @@ export default async function handler(req, res) {
               const parts = result.custom_id.split('_');
               const symbol = parts[2] || '';
               const reportDate = parts.slice(3).join('-') || '';
+
+              const today = new Date().toISOString().slice(0, 10);
+              if (reportDate < today) {
+                logInfo(`Skipping stale preview ${result.custom_id} — report date ${reportDate} already passed`);
+                continue;
+              }
 
               const now = new Date();
               const expiresAt = new Date(
