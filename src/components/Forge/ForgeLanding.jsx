@@ -37,6 +37,7 @@ import { db } from '../../firebase/config';
 import ForgeScreen from './ForgeScreen';
 import WorkshopChat from './WorkshopChat';
 import DailyBriefingCard from '../Season/DailyBriefingCard';
+import useIsMobile from '../../hooks/useIsMobile';
 import {
   DIMENSION_KEYS,
   computeAllRadarScores,
@@ -663,8 +664,10 @@ function TestingView({
   dailyLoadingById,
   dimensionsById,
   onViewDashboard,
+  isDesktop,
 }) {
   const multi = experiments.length > 1;
+  const useGrid = isDesktop && multi;
 
   // Single-experiment bottom CTA target: the one and only entry. We
   // compute pitStop here so the bottom CTA text stays consistent with
@@ -673,7 +676,13 @@ function TestingView({
   const focusedPitStop = isPitStopOpen(focused.season, focused.entry);
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 12, paddingTop: 4 }}>
+    <div
+      style={
+        useGrid
+          ? { display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 16, paddingTop: 4 }
+          : { display: 'flex', flexDirection: 'column', gap: 12, paddingTop: 4 }
+      }
+    >
       {experiments.map(({ season, entry }) => (
         <ExperimentCard
           key={entry.id}
@@ -1834,6 +1843,17 @@ export default function ForgeLanding({
     deployedStrategy,
   });
 
+  // ── Desktop layout detection ───────────────────────────────────────
+  // Container widens to 1200px only for the State 2 multi-experiment
+  // grid; all other states cap at 560px so single cards don't stretch.
+  const { width } = useIsMobile();
+  const isDesktop = width >= 1024;
+  const isMultiExperimentTesting =
+    landingState === 'testing' && testingExperiments.length > 1;
+  const containerMaxWidth = isDesktop
+    ? (isMultiExperimentTesting ? 1200 : 560)
+    : 480;
+
   // ── Callbacks ──────────────────────────────────────────────────────
 
   const showToast = (msg) => {
@@ -1975,7 +1995,7 @@ export default function ForgeLanding({
         <TabPill tabs={TABS} activeTab={view} onChange={setView} />
       </div>
 
-      <div style={{ padding: '0 16px', maxWidth: 480, margin: '0 auto' }}>
+      <div style={{ padding: '0 16px', maxWidth: containerMaxWidth, margin: '0 auto' }}>
         {/* ── State-branched body ────────────────────────────────── */}
         {landingState === 'new' && (
           <NewUserHero
@@ -1992,6 +2012,7 @@ export default function ForgeLanding({
             dailyLoadingById={dailyLoadingById}
             dimensionsById={dimensionsById}
             onViewDashboard={onViewDashboard}
+            isDesktop={isDesktop}
           />
         )}
 
@@ -2044,13 +2065,28 @@ export default function ForgeLanding({
           />
         )}
 
-        {/* ── Agent card — always present, voice adapts to state ── */}
-        <AgentCard
-          state={landingState}
-          agent={agent}
-          experiment={focusedExperiment?.entry || latestCompleted?.entry}
-          deployedStrategy={deployedStrategy}
-        />
+        {/* ── Agent card — always present, voice adapts to state ──
+            When the outer container widens to 1200px for the State 2
+            multi-experiment grid, the agent card is a single
+            conversational card and would look stretched — cap it at
+            560px centered in that case. */}
+        {isDesktop && isMultiExperimentTesting ? (
+          <div style={{ maxWidth: 560, margin: '0 auto' }}>
+            <AgentCard
+              state={landingState}
+              agent={agent}
+              experiment={focusedExperiment?.entry || latestCompleted?.entry}
+              deployedStrategy={deployedStrategy}
+            />
+          </div>
+        ) : (
+          <AgentCard
+            state={landingState}
+            agent={agent}
+            experiment={focusedExperiment?.entry || latestCompleted?.entry}
+            deployedStrategy={deployedStrategy}
+          />
+        )}
 
         {loading && landingState === 'new' && (
           // Tiny courtesy indicator for first-time users while seasons load;
