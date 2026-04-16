@@ -8271,6 +8271,31 @@ export default function PortfolioDuel() {
             setShowForge(false);
             setScreen('seasonReview');
           }}
+          onOpenAgentBattle={async (battleId) => {
+            // State 4 "Open command center" hydrates the agentBattles
+            // doc and defers to the existing handleOpenAgentBattle so
+            // the Battle View renders with the same shape as every
+            // other agent-deploy entry point. Falls back silently if
+            // the doc no longer exists — ForgeLanding will route to
+            // the seasonHub in that case.
+            if (!battleId) return;
+            try {
+              const { doc, getDoc } = await import('firebase/firestore');
+              const { db } = await import('./firebase/config');
+              const snap = await getDoc(doc(db, 'agentBattles', battleId));
+              if (!snap.exists()) {
+                setShowForge(false);
+                setScreen('seasonHub');
+                return;
+              }
+              setShowForge(false);
+              handleOpenAgentBattle({ id: snap.id, ...snap.data() });
+            } catch (err) {
+              console.warn('[App] onOpenAgentBattle failed:', err?.message);
+              setShowForge(false);
+              setScreen('seasonHub');
+            }
+          }}
         />
       </div>
     );

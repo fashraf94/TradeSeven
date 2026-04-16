@@ -32,6 +32,7 @@ import ParamPicker from './ParamControls/ParamPicker';
 import CollectionPicker from './CollectionPicker';
 import RadarChart from './RadarChart';
 import { getPostureLabel, DIMENSION_DEFAULTS } from '../../utils/dimensionMapper';
+import { dimensionToRadarScore } from '../../utils/dimensionRadarScore';
 
 // ─────────────────────────────────────────────────────────────
 // Design tokens
@@ -157,63 +158,9 @@ const DIMENSION_CONFIGS = [
   },
 ];
 
-// ─────────────────────────────────────────────────────────────
-// Radar scoring
-// ─────────────────────────────────────────────────────────────
-//
-// Each formula returns a 0-1 float per dimension. Higher = stronger
-// expression of the axis's "character" (tighter risk mgmt, more aggressive
-// entries, quicker exits, more concentrated, more momentum-oriented, more
-// macro-reactive, larger position sizes). Results are clamped to
-// [0.05, 1] so the polygon remains visible even at the extremes.
-
-function clamp(n, lo, hi) {
-  return Math.min(Math.max(n, lo), hi);
-}
-
-function dimensionToRadarScore(key, v) {
-  if (!v) return 0.5;
-  switch (key) {
-    case 'riskPosture':
-      return clamp(1 - (v.stopLoss - 3) / 17, 0.05, 1);
-    case 'entryAggression':
-      return clamp(
-        0.5 * ((v.rsiUpper - 50) / 30) +
-          0.5 * (1 - v.fundamentalFloor / 100),
-        0.05,
-        1
-      );
-    case 'exitDiscipline':
-      return clamp(1 - (v.profitTarget - 5) / 25, 0.05, 1);
-    case 'sectorStrategy':
-      return clamp((v.maxSectorWeight - 10) / 40, 0.05, 1);
-    case 'momentumSensitivity':
-      return clamp(
-        0.5 * (v.momentumThreshold / 6) +
-          0.25 * (v.addToWinners ? 1 : 0) +
-          0.25 * (v.cutUnderperformers ? 1 : 0),
-        0.05,
-        1
-      );
-    case 'macroAwareness':
-      return clamp(
-        0.5 * (v.earningsAvoidance / 7) +
-          0.3 * (v.fomcDefensive ? 1 : 0) +
-          0.2 *
-            (v.benchmarkGapResponse === 'aggressive'
-              ? 1
-              : v.benchmarkGapResponse === 'react'
-              ? 0.5
-              : 0),
-        0.05,
-        1
-      );
-    case 'positionSizing':
-      return clamp((v.maxPosition - 5) / 20, 0.05, 1);
-    default:
-      return 0.5;
-  }
-}
+// Radar scoring formulas live in src/utils/dimensionRadarScore.js so that
+// ForgeLanding's mini radar and StrategyDimensions' full-size radar share
+// the same normalization.
 
 // Short phrase per dimension at each extreme — used in the strategy
 // summary line below the radar. Picked at most 3 dimensions whose score
