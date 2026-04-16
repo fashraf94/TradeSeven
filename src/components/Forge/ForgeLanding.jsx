@@ -2,49 +2,40 @@
 //
 // ForgeLanding — the Strategy Laboratory front door for the Forge tab.
 //
-// This replaces ForgeScreen as the default view when the user taps the Forge
-// tab. The rule browser + Mech Bay (ForgeScreen) is still reachable via the
-// "Advanced" tab.
+// The page tells a story in four chapters keyed off the user's progression:
 //
-// Sections (top to bottom, mobile-first):
-//   1. Header + Laboratory/Advanced pill tabs
-//   2. Active Experiment card (if activeSeasonEntry exists)
-//   3. Daily Briefing card (if active experiment has dailyLog)
-//   4. Start New Experiment hero CTA
-//   5. Talk to Agent placeholder (Phase 5)
-//   6. Deployed Strategy card
-//   7. Past Experiments (collapsible)
+//   State 1 — `new`:       no experiments, no deployed strategy
+//   State 2 — `testing`:   an experiment is running in the Proving Ground
+//   State 3 — `results`:   latest experiment is completed, nothing deployed
+//   State 4 — `deployed`:  agent.deployedStrategy is live in the arena
 //
-// When the Advanced tab is active, renders ForgeScreen full-bleed and shows
-// a floating "← Back to Laboratory" button (the one already injected inside
-// ForgeScreen via the laboratoryOnBack prop).
+// Three design threads connect the four states:
+//   1. Mini radar chart in states 2–4 gives the strategy a visual identity
+//   2. Agent card below each view adapts its tone to the current chapter
+//   3. Exactly one primary CTA per state (teal/trophy-gold button); secondary
+//      actions are always text links, never competing buttons
+//
+// The "Advanced" tab still renders ForgeScreen full-bleed; that path is
+// unchanged — only the Laboratory view has been redesigned.
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Hammer,
-  FlaskConical,
-  MessageSquare,
-  ChevronDown,
-  Rocket,
   Beaker,
-  Activity,
   ArrowRight,
-  TrendingUp,
-  TrendingDown,
-  Shield,
 } from 'lucide-react';
 import { collection, getDocs, query, where, doc, getDoc } from 'firebase/firestore';
 import { db } from '../../firebase/config';
 import ForgeScreen from './ForgeScreen';
 import WorkshopChat from './WorkshopChat';
-import DailyBriefingCard from '../Season/DailyBriefingCard';
 
-// ── Design tokens ──────────────────────────────────────────────
+// ── Design tokens (kept in sync with the rest of the Forge palette) ─────
 const TROPHY_GOLD = '#F0C75E';
 const TEAL = '#5EEAD4';
 const POSITIVE = '#34D399';
 const NEGATIVE = '#EF4444';
+const WARNING = '#F59E0B';
 const PAGE_BG = '#0D0E12';
 const CARD_BG = '#15171E';
 const SURFACE_BG = '#1C1A27';
@@ -53,7 +44,7 @@ const TEXT_SECONDARY = '#8B949E';
 const TEXT_MUTED = '#6E7681';
 const BORDER_SUBTLE = '#21262D';
 
-// ── Helpers ────────────────────────────────────────────────────
+// ── Helpers ─────────────────────────────────────────────────────────────
 
 function formatPct(value, withSign = true) {
   if (typeof value !== 'number' || Number.isNaN(value)) return '—';
@@ -66,25 +57,32 @@ function isPitStopOpen(season, entry) {
   return Boolean(entry.isPitStopOpen || season?.isPitStopWeekend);
 }
 
-// ── Sub-components ─────────────────────────────────────────────
-
-function SectionLabel({ children, style }) {
-  return (
-    <div
-      style={{
-        fontSize: 11,
-        fontWeight: 600,
-        color: TEXT_MUTED,
-        textTransform: 'uppercase',
-        letterSpacing: '0.6px',
-        margin: '20px 0 10px',
-        ...style,
-      }}
-    >
-      {children}
-    </div>
-  );
+// v1 grade formula — pending Forge Score integration. Mapped from alpha:
+//   A ≥ +5%, B ≥ +2%, C ≥ 0%, D ≥ -3%, F < -3%
+function computeGrade(alpha) {
+  if (typeof alpha !== 'number' || Number.isNaN(alpha)) return null;
+  if (alpha >= 5) return 'A';
+  if (alpha >= 2) return 'B';
+  if (alpha >= 0) return 'C';
+  if (alpha >= -3) return 'D';
+  return 'F';
 }
+
+function gradeColor(grade) {
+  if (grade === 'A' || grade === 'B') return POSITIVE;
+  if (grade === 'C') return WARNING;
+  return NEGATIVE;
+}
+
+// State detection — priority order: deployed > testing > results > new.
+function getLandingState({ activeExperiment, completedExperiments, deployedStrategy }) {
+  if (deployedStrategy) return 'deployed';
+  if (activeExperiment) return 'testing';
+  if (completedExperiments?.length > 0) return 'results';
+  return 'new';
+}
+
+// ── Shell: tabs header ──────────────────────────────────────────────────
 
 function TabPill({ tabs, activeTab, onChange }) {
   return (
@@ -146,615 +144,54 @@ function TabPill({ tabs, activeTab, onChange }) {
   );
 }
 
-function ActiveExperimentCard({ season, entry, onViewDashboard }) {
-  const alpha = entry?.seasonState?.alphaVsSpy ?? 0;
-  const week = entry?.seasonState?.currentWeek || 1;
-  const totalWeeks = Array.isArray(season?.weeks) ? season.weeks.length : 4;
-  const rank = entry?.seasonState?.rank;
-  const totalEntries = season?.entryCount;
-  const pitStop = isPitStopOpen(season, entry);
-  const alphaColor = alpha >= 0 ? POSITIVE : NEGATIVE;
+// ── Placeholder views (filled in Phases 2–5) ────────────────────────────
 
+function NewUserHero(/* props wired in Phase 2 */) {
   return (
-    <motion.div
-      initial={{ y: 12, opacity: 0 }}
-      animate={{ y: 0, opacity: 1 }}
-      transition={{ duration: 0.35 }}
-      onClick={() => onViewDashboard && onViewDashboard(season, entry)}
-      style={{
-        background: CARD_BG,
-        borderRadius: 14,
-        borderTop: `3px solid ${TROPHY_GOLD}`,
-        border: `1px solid ${BORDER_SUBTLE}`,
-        borderTopWidth: 3,
-        borderTopColor: TROPHY_GOLD,
-        padding: 16,
-        cursor: 'pointer',
-      }}
-    >
-      {pitStop && (
-        <motion.div
-          animate={{ opacity: [1, 0.7, 1] }}
-          transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
-          style={{
-            display: 'inline-block',
-            padding: '3px 8px',
-            background: TROPHY_GOLD,
-            color: '#0D0E12',
-            borderRadius: 4,
-            fontSize: 10,
-            fontWeight: 700,
-            textTransform: 'uppercase',
-            letterSpacing: '0.5px',
-            marginBottom: 10,
-          }}
-        >
-          Weekly Review Open
-        </motion.div>
-      )}
-
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'flex-start',
-          gap: 12,
-          marginBottom: 12,
-        }}
-      >
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <h3
-            style={{
-              margin: 0,
-              fontSize: 18,
-              fontWeight: 700,
-              color: TEXT_PRIMARY,
-              lineHeight: 1.3,
-            }}
-          >
-            {season?.name || 'Current Experiment'}
-          </h3>
-          <div
-            style={{
-              fontSize: 12,
-              color: TEXT_SECONDARY,
-              marginTop: 4,
-            }}
-          >
-            Week {week} of {totalWeeks}
-            {rank ? ` • Rank #${rank}${totalEntries ? `/${totalEntries}` : ''}` : ''}
-          </div>
-        </div>
-        <div
-          style={{
-            fontSize: 10,
-            fontWeight: 700,
-            textTransform: 'uppercase',
-            letterSpacing: '0.5px',
-            color: TROPHY_GOLD,
-            padding: '3px 8px',
-            border: `1px solid ${TROPHY_GOLD}`,
-            borderRadius: 4,
-            whiteSpace: 'nowrap',
-          }}
-        >
-          Active
-        </div>
-      </div>
-
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 12,
-          padding: '10px 0',
-          borderTop: `1px solid ${BORDER_SUBTLE}`,
-          marginBottom: 12,
-        }}
-      >
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 6,
-            fontSize: 14,
-            fontWeight: 700,
-            color: alphaColor,
-          }}
-        >
-          {alpha >= 0 ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
-          {formatPct(alpha)}
-          <span
-            style={{
-              fontSize: 11,
-              fontWeight: 500,
-              color: TEXT_MUTED,
-              marginLeft: 2,
-            }}
-          >
-            vs S&amp;P
-          </span>
-        </div>
-      </div>
-
-      <button
-        onClick={(e) => {
-          e.stopPropagation();
-          if (onViewDashboard) onViewDashboard(season, entry);
-        }}
-        style={{
-          width: '100%',
-          padding: '10px 14px',
-          background: pitStop ? TROPHY_GOLD : TEAL,
-          color: '#0D0E12',
-          border: 'none',
-          borderRadius: 8,
-          fontSize: 13,
-          fontWeight: 700,
-          cursor: 'pointer',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          gap: 6,
-        }}
-      >
-        {pitStop ? 'Open Weekly Review' : 'View Dashboard'}
-        <ArrowRight size={14} />
-      </button>
-    </motion.div>
-  );
-}
-
-function NoActiveExperimentCard() {
-  return (
-    <div
-      style={{
-        background: CARD_BG,
-        border: `1px dashed ${BORDER_SUBTLE}`,
-        borderRadius: 14,
-        padding: 20,
-        textAlign: 'center',
-      }}
-    >
-      <Activity size={24} color={TEXT_MUTED} style={{ marginBottom: 8 }} />
-      <div style={{ fontSize: 14, color: TEXT_SECONDARY, marginBottom: 4 }}>
-        No active experiment
-      </div>
-      <div style={{ fontSize: 12, color: TEXT_MUTED }}>
-        Launch one below to test your strategy against 4 weeks of live market data.
-      </div>
+    <div style={{ padding: 24, color: TEXT_MUTED, fontSize: 13 }}>
+      {/* Phase 2 fills this in */}
+      New user hero — coming in Phase 2.
     </div>
   );
 }
 
-function StartExperimentHero({ onClick, disabled, disabledReason }) {
+function TestingView(/* props wired in Phase 3 */) {
   return (
-    <motion.button
-      whileHover={disabled ? {} : { scale: 1.01 }}
-      whileTap={disabled ? {} : { scale: 0.99 }}
-      onClick={disabled ? undefined : onClick}
-      style={{
-        width: '100%',
-        background: CARD_BG,
-        border: `1px solid ${disabled ? BORDER_SUBTLE : TROPHY_GOLD}`,
-        borderRadius: 14,
-        padding: 18,
-        cursor: disabled ? 'default' : 'pointer',
-        opacity: disabled ? 0.7 : 1,
-        display: 'flex',
-        alignItems: 'center',
-        gap: 14,
-        textAlign: 'left',
-        position: 'relative',
-        overflow: 'hidden',
-      }}
-    >
-      {!disabled && (
-        <div
-          style={{
-            position: 'absolute',
-            inset: 0,
-            background: `linear-gradient(135deg, ${TROPHY_GOLD}14 0%, transparent 60%)`,
-            pointerEvents: 'none',
-          }}
-        />
-      )}
-      <div
-        style={{
-          width: 44,
-          height: 44,
-          borderRadius: 12,
-          background: disabled ? SURFACE_BG : `${TROPHY_GOLD}22`,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          flexShrink: 0,
-          zIndex: 1,
-        }}
-      >
-        <FlaskConical size={22} color={disabled ? TEXT_MUTED : TROPHY_GOLD} />
-      </div>
-      <div style={{ flex: 1, minWidth: 0, zIndex: 1 }}>
-        <div
-          style={{
-            fontSize: 15,
-            fontWeight: 700,
-            color: TEXT_PRIMARY,
-            marginBottom: 3,
-          }}
-        >
-          {disabled ? 'Experiment Limit Reached' : 'Start New Experiment'}
-        </div>
-        <div
-          style={{
-            fontSize: 12,
-            color: TEXT_SECONDARY,
-            lineHeight: 1.4,
-          }}
-        >
-          {disabled
-            ? disabledReason ||
-              'Maximum 5 concurrent experiments — complete one to start another.'
-            : 'Build and test your trading strategy against 4 weeks of live market data.'}
-        </div>
-      </div>
-      {!disabled && (
-        <ArrowRight size={18} color={TROPHY_GOLD} style={{ flexShrink: 0, zIndex: 1 }} />
-      )}
-    </motion.button>
-  );
-}
-
-function TalkToAgentCard({ onClick }) {
-  return (
-    <button
-      onClick={onClick}
-      style={{
-        width: '100%',
-        background: CARD_BG,
-        border: `1px solid ${BORDER_SUBTLE}`,
-        borderRadius: 12,
-        padding: 14,
-        cursor: 'pointer',
-        display: 'flex',
-        alignItems: 'center',
-        gap: 12,
-        textAlign: 'left',
-      }}
-    >
-      <div
-        style={{
-          width: 36,
-          height: 36,
-          borderRadius: 10,
-          background: SURFACE_BG,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          flexShrink: 0,
-        }}
-      >
-        <MessageSquare size={18} color={TEXT_SECONDARY} />
-      </div>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8,
-            marginBottom: 2,
-          }}
-        >
-          <div style={{ fontSize: 14, fontWeight: 600, color: TEXT_PRIMARY }}>
-            Talk to Agent
-          </div>
-          <span
-            style={{
-              fontSize: 9,
-              fontWeight: 700,
-              textTransform: 'uppercase',
-              letterSpacing: '0.5px',
-              color: TEXT_MUTED,
-              padding: '2px 6px',
-              background: SURFACE_BG,
-              border: `1px solid ${BORDER_SUBTLE}`,
-              borderRadius: 4,
-            }}
-          >
-            Coming Soon
-          </span>
-        </div>
-        <div style={{ fontSize: 12, color: TEXT_MUTED, lineHeight: 1.4 }}>
-          Develop your strategy through conversation.
-        </div>
-      </div>
-    </button>
-  );
-}
-
-function DeployedStrategyCard({ agent, equippedBundles }) {
-  const deployed = agent?.deployedStrategy || null;
-
-  // Phase 4A guard: if the user manually unequipped the deployed bundle in
-  // the Advanced tab, `activeRules` is already correctly rebuilt (Haiku no
-  // longer sees those rules) but `deployedStrategy.bundleId` points at a
-  // stale reference. Treat that case as "no strategy deployed" so the card
-  // matches actual gameplay state — the user will see the empty-state
-  // prompt to re-deploy instead of a misleading success card.
-  const equippedBundleIds = Array.isArray(agent?.equippedBundleIds)
-    ? agent.equippedBundleIds
-    : [];
-  const deployedStillEquipped =
-    Boolean(deployed?.bundleId) && equippedBundleIds.includes(deployed.bundleId);
-
-  // Phase 4A primary path: show metadata from a completed Proving Ground deploy.
-  if (deployed && deployed.bundleId && deployedStillEquipped) {
-    const alpha = typeof deployed.alpha === 'number' ? deployed.alpha : null;
-    const rank = deployed.rank || null;
-    const directiveCount = Array.isArray(deployed.directives)
-      ? deployed.directives.length
-      : 0;
-    const guardrails = Array.isArray(deployed.guardrails)
-      ? deployed.guardrails
-      : [];
-    const stopLoss = guardrails.find((g) => g.type === 'stopLoss')?.value;
-    const maxPosition = guardrails.find((g) => g.type === 'maxPosition')?.value;
-
-    const sourceLabel = (() => {
-      const src = deployed.sourceCollection;
-      if (!src) return 'Custom strategy';
-      return src
-        .split('-')
-        .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-        .join(' ');
-    })();
-
-    return (
-      <div
-        style={{
-          background: CARD_BG,
-          border: `1px solid ${TEAL}33`,
-          borderRadius: 12,
-          padding: 14,
-        }}
-      >
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 10,
-            marginBottom: 10,
-          }}
-        >
-          <Rocket size={16} color={TEAL} />
-          <div
-            style={{
-              fontSize: 12,
-              fontWeight: 600,
-              textTransform: 'uppercase',
-              letterSpacing: '0.5px',
-              color: TEAL,
-            }}
-          >
-            Deployed to BaggerBomb
-          </div>
-        </div>
-
-        <div style={{ fontSize: 13, color: TEXT_PRIMARY, fontWeight: 600, marginBottom: 4 }}>
-          {sourceLabel}
-        </div>
-        <div style={{ fontSize: 11, color: TEXT_MUTED, marginBottom: 10, lineHeight: 1.5 }}>
-          {alpha !== null ? `Alpha ${alpha >= 0 ? '+' : ''}${alpha.toFixed(2)}%` : null}
-          {rank ? `${alpha !== null ? ' · ' : ''}Rank #${rank}` : null}
-          {directiveCount > 0
-            ? `${alpha !== null || rank ? ' · ' : ''}${directiveCount} directive${directiveCount === 1 ? '' : 's'}`
-            : null}
-        </div>
-
-        {(typeof stopLoss === 'number' || typeof maxPosition === 'number') && (
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 6,
-              padding: '6px 8px',
-              background: PAGE_BG,
-              border: `1px solid ${TROPHY_GOLD}33`,
-              borderRadius: 8,
-              fontSize: 11,
-              color: TEXT_PRIMARY,
-              fontWeight: 600,
-            }}
-          >
-            <Shield size={12} color={TROPHY_GOLD} />
-            <span>
-              {typeof stopLoss === 'number' ? `Stop ${stopLoss}%` : ''}
-              {typeof stopLoss === 'number' && typeof maxPosition === 'number'
-                ? ' · '
-                : ''}
-              {typeof maxPosition === 'number' ? `Max position ${maxPosition}%` : ''}
-            </span>
-          </div>
-        )}
-      </div>
-    );
-  }
-
-  // Legacy fallback: show raw equipped-bundle summary when no Proving Ground
-  // deployment exists yet.
-  const bundleCount = Array.isArray(equippedBundles) ? equippedBundles.length : 0;
-  const ruleCount = Array.isArray(equippedBundles)
-    ? equippedBundles.reduce((n, b) => n + (b?.ruleIds?.length || 0), 0)
-    : 0;
-  const hasDeployed = bundleCount > 0 && ruleCount > 0;
-
-  return (
-    <div
-      style={{
-        background: CARD_BG,
-        border: `1px solid ${BORDER_SUBTLE}`,
-        borderRadius: 12,
-        padding: 14,
-      }}
-    >
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 10,
-          marginBottom: hasDeployed ? 10 : 6,
-        }}
-      >
-        <Rocket size={16} color={hasDeployed ? TEAL : TEXT_MUTED} />
-        <div
-          style={{
-            fontSize: 12,
-            fontWeight: 600,
-            textTransform: 'uppercase',
-            letterSpacing: '0.5px',
-            color: hasDeployed ? TEAL : TEXT_MUTED,
-          }}
-        >
-          Deployed to BaggerBomb
-        </div>
-      </div>
-      {hasDeployed ? (
-        <>
-          <div style={{ fontSize: 13, color: TEXT_PRIMARY, marginBottom: 6 }}>
-            {bundleCount} {bundleCount === 1 ? 'bundle' : 'bundles'} equipped • {ruleCount}{' '}
-            {ruleCount === 1 ? 'rule' : 'rules'} active
-          </div>
-          <div style={{ fontSize: 11, color: TEXT_MUTED, lineHeight: 1.5 }}>
-            {equippedBundles.slice(0, 3).map((b) => b?.name).filter(Boolean).join(' • ') ||
-              'Custom configuration'}
-          </div>
-        </>
-      ) : (
-        <div style={{ fontSize: 12, color: TEXT_MUTED, lineHeight: 1.5 }}>
-          No strategy deployed to BaggerBomb yet. Equip a bundle from the Advanced tab
-          or complete an experiment to deploy a proven strategy.
-        </div>
-      )}
+    <div style={{ padding: 24, color: TEXT_MUTED, fontSize: 13 }}>
+      {/* Phase 3 fills this in */}
+      Testing view — coming in Phase 3.
     </div>
   );
 }
 
-function PastExperimentRow({ season, entry, onReview, delay }) {
-  const alpha = entry?.seasonState?.alphaVsSpy ?? 0;
-  const rank = entry?.seasonState?.finalRank || entry?.seasonState?.rank;
-  const alphaColor = alpha >= 0 ? POSITIVE : NEGATIVE;
-
+function ResultsView(/* props wired in Phase 4 */) {
   return (
-    <motion.button
-      initial={{ y: 8, opacity: 0 }}
-      animate={{ y: 0, opacity: 1 }}
-      transition={{ duration: 0.25, delay }}
-      onClick={() => onReview && onReview(season, entry)}
-      style={{
-        width: '100%',
-        background: CARD_BG,
-        border: `1px solid ${BORDER_SUBTLE}`,
-        borderRadius: 10,
-        padding: '12px 14px',
-        display: 'flex',
-        alignItems: 'center',
-        gap: 12,
-        cursor: 'pointer',
-        textAlign: 'left',
-      }}
-    >
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div
-          style={{
-            fontSize: 13,
-            fontWeight: 600,
-            color: TEXT_PRIMARY,
-            whiteSpace: 'nowrap',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-          }}
-        >
-          {season?.name || 'Past Experiment'}
-        </div>
-        <div style={{ fontSize: 11, color: TEXT_MUTED, marginTop: 2 }}>
-          Alpha{' '}
-          <span style={{ color: alphaColor, fontWeight: 600 }}>{formatPct(alpha)}</span>
-          {rank ? ` • Rank #${rank}` : ''}
-        </div>
-      </div>
-      <ArrowRight size={14} color={TEXT_MUTED} />
-    </motion.button>
+    <div style={{ padding: 24, color: TEXT_MUTED, fontSize: 13 }}>
+      {/* Phase 4 fills this in */}
+      Results view — coming in Phase 4.
+    </div>
   );
 }
 
-// ── Past-experiments collapsible section ───────────────────────
-function PastExperimentsSection({ past, onReviewSeason }) {
-  const [expanded, setExpanded] = useState(past.length <= 3);
-  if (past.length === 0) return null;
-
+function DeployedView(/* props wired in Phase 5 */) {
   return (
-    <>
-      <button
-        onClick={() => setExpanded((v) => !v)}
-        style={{
-          background: 'transparent',
-          border: 'none',
-          padding: '20px 0 10px',
-          display: 'flex',
-          alignItems: 'center',
-          gap: 6,
-          cursor: 'pointer',
-          width: '100%',
-        }}
-      >
-        <motion.span
-          animate={{ rotate: expanded ? 180 : 0 }}
-          transition={{ duration: 0.2 }}
-          style={{ display: 'flex' }}
-        >
-          <ChevronDown size={14} color={TEXT_MUTED} />
-        </motion.span>
-        <span
-          style={{
-            fontSize: 11,
-            fontWeight: 600,
-            color: TEXT_MUTED,
-            textTransform: 'uppercase',
-            letterSpacing: '0.6px',
-          }}
-        >
-          Past Experiments ({past.length})
-        </span>
-      </button>
-      <AnimatePresence initial={false}>
-        {expanded && (
-          <motion.div
-            key="past-list"
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: 'auto', opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.25 }}
-            style={{ overflow: 'hidden' }}
-          >
-            <div style={{ display: 'grid', gap: 8 }}>
-              {past.map((s, i) => (
-                <PastExperimentRow
-                  key={s.id}
-                  season={s}
-                  entry={s.entry}
-                  onReview={onReviewSeason}
-                  delay={0.03 * i}
-                />
-              ))}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </>
+    <div style={{ padding: 24, color: TEXT_MUTED, fontSize: 13 }}>
+      {/* Phase 5 fills this in */}
+      Deployed view — coming in Phase 5.
+    </div>
   );
 }
 
-// ── Main component ─────────────────────────────────────────────
+function AgentCard(/* props wired in Phase 6 */) {
+  return (
+    <div style={{ padding: 14, marginTop: 16, color: TEXT_MUTED, fontSize: 13 }}>
+      {/* Phase 6 fills this in */}
+      Agent card — coming in Phase 6.
+    </div>
+  );
+}
+
+// ── Main component ──────────────────────────────────────────────────────
 
 export default function ForgeLanding({
   // ForgeScreen pass-through props
@@ -765,7 +202,7 @@ export default function ForgeLanding({
   // Active experiment state (from App.jsx). `activeSeasonEntry` is the
   // currently-focused entry (used for the daily briefing panel and as
   // the fallback when only one experiment is live). `activeSeasonEntries`
-  // is the full list — up to MAX_CONCURRENT entries — rendered as cards.
+  // is the full list — up to MAX_CONCURRENT entries.
   activeSeason,
   activeSeasonEntry,
   activeSeasonEntries = [],
@@ -786,7 +223,7 @@ export default function ForgeLanding({
   const [toast, setToast] = useState(null);
   const [workshopOpen, setWorkshopOpen] = useState(false);
 
-  // Fetch all seasons + user's entries (same pattern as SeasonHub:420-451)
+  // Fetch all seasons + user's entries
   useEffect(() => {
     let cancelled = false;
     async function load() {
@@ -815,7 +252,7 @@ export default function ForgeLanding({
     };
   }, [user?.uid]);
 
-  // Fetch the most recent dailyLog for the active experiment
+  // Fetch the most recent dailyLog for the active experiment (used by State 2)
   useEffect(() => {
     let cancelled = false;
     async function loadDailyLog() {
@@ -825,13 +262,10 @@ export default function ForgeLanding({
       }
       setDailyLogLoading(true);
       try {
-        // currentDay may be 1-indexed; fall back to 0 if missing
         const currentDay =
           activeSeasonEntry?.seasonState?.currentDay ??
           activeSeason?.currentDay ??
           0;
-        // Probe currentDay, then currentDay-1 as a fallback (evaluation may
-        // lag the state update by a tick).
         const candidates = [currentDay, currentDay - 1].filter((d) => d >= 0);
         let found = null;
         for (const dayNum of candidates) {
@@ -865,16 +299,28 @@ export default function ForgeLanding({
     };
   }, [activeSeasonEntry?.id, activeSeasonEntry?.seasonState?.currentDay, activeSeason?.currentDay]);
 
-  // Categorize past experiments from loaded seasons + entries
+  // Build categorized experiment lists: completed (for State 3 / past-rows)
+  // and the next upcoming season (for launch callbacks).
   const { past, nextUpcoming } = useMemo(() => {
     const entryMap = new Map(entries.map((e) => [e.seasonId, e]));
     const pastList = seasons
       .filter((s) => s.status === 'completed' && entryMap.has(s.id))
       .map((s) => ({ ...s, entry: entryMap.get(s.id) }));
-    // Next available to join. With multi-experiment support the user
-    // may launch additional entries into a season they've already
-    // joined, so the "not yet joined" guard is gone — the 5-experiment
-    // cap is enforced separately on the launch button.
+    // Sort completed with most-recent first — SeasonEntry.completedAt if
+    // present, otherwise fall back to the season's end/start date.
+    pastList.sort((a, b) => {
+      const aT = a.entry?.completedAt
+        ? new Date(a.entry.completedAt).getTime()
+        : a.endDate
+        ? new Date(a.endDate).getTime()
+        : 0;
+      const bT = b.entry?.completedAt
+        ? new Date(b.entry.completedAt).getTime()
+        : b.endDate
+        ? new Date(b.endDate).getTime()
+        : 0;
+      return bT - aT;
+    });
     const upcomingList = seasons.filter(
       (s) => s.status === 'upcoming' || s.status === 'active'
     );
@@ -886,12 +332,9 @@ export default function ForgeLanding({
     return { past: pastList, nextUpcoming: upcomingList[0] || null };
   }, [seasons, entries]);
 
-  // Users can run up to MAX_CONCURRENT_EXPERIMENTS simultaneously. The
-  // server enforces the same cap in api/season/create-entry.js; this
-  // client check just prevents the POST when we know it will 409.
+  // Users can run up to MAX_CONCURRENT_EXPERIMENTS simultaneously (the server
+  // enforces the same cap in api/season/create-entry.js).
   const MAX_CONCURRENT_EXPERIMENTS = 5;
-  // Prefer the plural array when App.jsx provides it; fall back to the
-  // singular entry for defensive rendering while state is resolving.
   const activeEntriesList = useMemo(() => {
     if (Array.isArray(activeSeasonEntries) && activeSeasonEntries.length > 0) {
       return activeSeasonEntries;
@@ -899,7 +342,6 @@ export default function ForgeLanding({
     if (activeSeasonEntry) return [activeSeasonEntry];
     return [];
   }, [activeSeasonEntries, activeSeasonEntry]);
-  const hasActive = activeEntriesList.length > 0;
   const atLaunchCap = activeEntriesList.length >= MAX_CONCURRENT_EXPERIMENTS;
   const tradingDay =
     activeSeasonEntry?.seasonState?.currentDay ??
@@ -907,20 +349,51 @@ export default function ForgeLanding({
     dailyLog?.day ??
     0;
 
-  // Bundles for deployed-strategy summary. We don't fetch bundle docs here —
-  // we just use whatever is on the agent object. Phase 4 will build out
-  // DeployToAgent proper.
-  const equippedBundles = useMemo(() => {
-    const ids = Array.isArray(agent?.equippedBundleIds) ? agent.equippedBundleIds : [];
-    return ids.map((id) => ({ id, ruleIds: [], name: null }));
-  }, [agent?.equippedBundleIds]);
+  // ── State detection inputs ─────────────────────────────────────────
+  //
+  // `activeExperiment` is the focused active entry (fallback to first).
+  // `completedExperiments` is the sorted `past` list — latest first.
+  // `deployedStrategy` lives on the agent doc (see deployStrategyService).
+  // A deployed strategy whose bundle the user manually unequipped in the
+  // Advanced tab is treated as not-deployed, matching prior card logic.
+  const deployedStrategy = useMemo(() => {
+    const ds = agent?.deployedStrategy || null;
+    if (!ds || !ds.bundleId) return null;
+    const equipped = Array.isArray(agent?.equippedBundleIds)
+      ? agent.equippedBundleIds
+      : [];
+    if (!equipped.includes(ds.bundleId)) return null;
+    return ds;
+  }, [agent?.deployedStrategy, agent?.equippedBundleIds]);
+
+  const activeExperiment = useMemo(() => {
+    if (activeEntriesList.length === 0) return null;
+    const focused =
+      activeEntriesList.find((e) => e.id === activeSeasonEntry?.id) ||
+      activeEntriesList[0];
+    const season =
+      activeSeasonsById[focused.seasonId] ||
+      (activeSeason && activeSeason.id === focused.seasonId ? activeSeason : null);
+    return { entry: focused, season };
+  }, [activeEntriesList, activeSeasonEntry?.id, activeSeason, activeSeasonsById]);
+
+  const latestCompleted = past[0] || null;
+
+  const landingState = getLandingState({
+    activeExperiment,
+    completedExperiments: past,
+    deployedStrategy,
+  });
+
+  // ── Callbacks ──────────────────────────────────────────────────────
 
   const showToast = (msg) => {
     setToast(msg);
     setTimeout(() => setToast((prev) => (prev === msg ? null : prev)), 2500);
   };
 
-  const handleTalkToAgent = () => {
+  const handleBuildStrategy = () => {
+    // Workshop Mode — conversational strategy development
     if (!agent?.id) {
       showToast('Create an agent first to use Workshop Mode');
       return;
@@ -939,7 +412,6 @@ export default function ForgeLanding({
   };
 
   const handleWorkshopCompiled = (result) => {
-    // Close workshop and hand off to SeasonEntryModal with dims pre-filled.
     setWorkshopOpen(false);
     if (nextUpcoming && onJoinSeason) {
       onJoinSeason(nextUpcoming, {
@@ -955,15 +427,21 @@ export default function ForgeLanding({
     }
   };
 
-  const handleStartExperiment = () => {
+  const handleConfigureManually = (opts) => {
+    if (atLaunchCap) {
+      showToast(
+        `Maximum ${MAX_CONCURRENT_EXPERIMENTS} concurrent experiments — complete one to start another.`
+      );
+      return;
+    }
     if (nextUpcoming && onJoinSeason) {
-      onJoinSeason(nextUpcoming);
+      onJoinSeason(nextUpcoming, opts);
     } else {
       showToast('No upcoming experiments available');
     }
   };
 
-  // ── Advanced view: render ForgeScreen full-bleed ──────────────
+  // ── Advanced view: render ForgeScreen full-bleed ──────────────────
   if (view === 'advanced') {
     return (
       <ForgeScreen
@@ -976,7 +454,7 @@ export default function ForgeLanding({
     );
   }
 
-  // ── Laboratory view ───────────────────────────────────────────
+  // ── Laboratory view ───────────────────────────────────────────────
   const TABS = [
     { id: 'laboratory', label: 'Laboratory', Icon: Beaker },
     { id: 'advanced', label: 'Advanced', Icon: Hammer },
@@ -1048,67 +526,73 @@ export default function ForgeLanding({
         <TabPill tabs={TABS} activeTab={view} onChange={setView} />
       </div>
 
-      <div style={{ padding: '0 16px', maxWidth: 600, margin: '0 auto' }}>
-        {/* Section 1: Active experiments (up to 5, stacked) */}
-        {hasActive ? (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {activeEntriesList.map((entry) => {
-              const entrySeason =
-                activeSeasonsById[entry.seasonId] ||
-                (activeSeason && activeSeason.id === entry.seasonId
-                  ? activeSeason
-                  : null);
-              if (!entrySeason) return null;
-              return (
-                <ActiveExperimentCard
-                  key={entry.id}
-                  season={entrySeason}
-                  entry={entry}
-                  onViewDashboard={onViewDashboard}
-                />
-              );
-            })}
-          </div>
-        ) : (
-          <NoActiveExperimentCard />
+      <div style={{ padding: '0 16px', maxWidth: 480, margin: '0 auto' }}>
+        {/* ── State-branched body ────────────────────────────────── */}
+        {landingState === 'new' && (
+          <NewUserHero
+            onBuildStrategy={handleBuildStrategy}
+            onConfigureManually={handleConfigureManually}
+          />
         )}
 
-        {/* Section 2: Daily briefing for the focused experiment */}
-        {hasActive && activeSeasonEntry && (
-          <div style={{ marginTop: 12 }}>
-            <DailyBriefingCard
-              entry={activeSeasonEntry}
-              dailyLog={dailyLog}
-              tradingDay={tradingDay}
-              loading={dailyLogLoading}
-            />
-          </div>
+        {landingState === 'testing' && activeExperiment && (
+          <TestingView
+            season={activeExperiment.season}
+            entry={activeExperiment.entry}
+            dailyLog={dailyLog}
+            dailyLogLoading={dailyLogLoading}
+            tradingDay={tradingDay}
+            onViewDashboard={onViewDashboard}
+          />
         )}
 
-        {/* Section 3: Start New Experiment — disabled only at the cap */}
-        <SectionLabel>Launch</SectionLabel>
-        <StartExperimentHero
-          onClick={handleStartExperiment}
-          disabled={atLaunchCap}
-          disabledReason={
-            atLaunchCap
-              ? `Maximum ${MAX_CONCURRENT_EXPERIMENTS} concurrent experiments — complete one to start another.`
-              : null
-          }
+        {landingState === 'results' && latestCompleted && (
+          <ResultsView
+            season={latestCompleted}
+            entry={latestCompleted.entry}
+            past={past}
+            onDeploy={() => onViewDashboard && onViewDashboard(latestCompleted, latestCompleted.entry)}
+            onRefine={() =>
+              handleConfigureManually({
+                initialDimensionValues: latestCompleted.entry?.algorithm?.dimensionValues,
+                initialStep: 1,
+                sourceExperimentId: latestCompleted.entry?.id,
+              })
+            }
+            onReviewReport={() => onReviewSeason && onReviewSeason(latestCompleted, latestCompleted.entry)}
+          />
+        )}
+
+        {landingState === 'deployed' && (
+          <DeployedView
+            user={user}
+            agent={agent}
+            deployedStrategy={deployedStrategy}
+            activeExperiment={activeExperiment}
+            onOpenCommandCenter={() => onNavigateToSeasonHub && onNavigateToSeasonHub()}
+            onStartNewExperiment={() => handleConfigureManually()}
+            onViewActiveDashboard={() =>
+              activeExperiment &&
+              onViewDashboard &&
+              onViewDashboard(activeExperiment.season, activeExperiment.entry)
+            }
+          />
+        )}
+
+        {/* ── Agent card — always present, voice adapts to state ── */}
+        <AgentCard
+          state={landingState}
+          agent={agent}
+          experiment={activeExperiment?.entry || latestCompleted?.entry}
+          deployedStrategy={deployedStrategy}
         />
 
-        {/* Section 4: Talk to Agent (Workshop Mode placeholder) */}
-        <div style={{ marginTop: 12 }}>
-          <TalkToAgentCard onClick={handleTalkToAgent} />
-        </div>
-
-        {/* Section 5: Deployed strategy */}
-        <SectionLabel>Live Deployment</SectionLabel>
-        <DeployedStrategyCard agent={agent} equippedBundles={equippedBundles} />
-
-        {/* Section 6: Past experiments */}
-        {!loading && (
-          <PastExperimentsSection past={past} onReviewSeason={onReviewSeason} />
+        {loading && landingState === 'new' && (
+          // Tiny courtesy indicator for first-time users while seasons load;
+          // everything else renders immediately from props.
+          <div style={{ fontSize: 11, color: TEXT_MUTED, textAlign: 'center', marginTop: 12 }}>
+            Loading…
+          </div>
         )}
       </div>
 
@@ -1155,3 +639,24 @@ export default function ForgeLanding({
   );
 }
 
+// Re-export helpers so views built in later phases can share them without
+// import churn. `dimensionToRadarScore` comes from the shared util and isn't
+// re-exported here — import it directly from `src/utils/dimensionRadarScore`.
+export {
+  TROPHY_GOLD,
+  TEAL,
+  POSITIVE,
+  NEGATIVE,
+  WARNING,
+  CARD_BG,
+  SURFACE_BG,
+  TEXT_PRIMARY,
+  TEXT_SECONDARY,
+  TEXT_MUTED,
+  BORDER_SUBTLE,
+  formatPct,
+  isPitStopOpen,
+  computeGrade,
+  gradeColor,
+  getLandingState,
+};
