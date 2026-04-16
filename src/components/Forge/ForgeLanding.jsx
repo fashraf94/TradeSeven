@@ -474,8 +474,16 @@ function NewUserHero({ onBuildStrategy, onConfigureManually }) {
 }
 
 // ── State 2 — Testing View ─────────────────────────────────────────────
+//
+// Known follow-up (Stage 2 audit): once a user has an active experiment,
+// State 2 currently provides no path to create a new experiment. A
+// "Start new experiment" affordance will be designed properly in the
+// next pass — not added here because its placement interacts with the
+// single-primary-CTA rule and the multi-experiment stack.
 
-function TestingView({ season, entry, dailyLog, dailyLogLoading, tradingDay, onViewDashboard }) {
+// Full-size experiment card — used when exactly one active experiment.
+// Keeps the mini radar + alpha hero + stats row + pit-stop banner layout.
+function FullExperimentCard({ season, entry, pitStop, dailyLog, dims }) {
   const alpha = entry?.seasonState?.alphaVsSpy ?? 0;
   const week = entry?.seasonState?.currentWeek || 1;
   const totalWeeks = Array.isArray(season?.weeks) ? season.weeks.length : 4;
@@ -483,132 +491,304 @@ function TestingView({ season, entry, dailyLog, dailyLogLoading, tradingDay, onV
   const totalEntries = season?.entryCount;
   const forgeScore =
     entry?.seasonState?.forgeScore ?? entry?.forgeScore ?? null;
-  const pitStop = isPitStopOpen(season, entry);
   const alphaColor = alpha >= 0 ? POSITIVE : NEGATIVE;
-
-  // Count today's trades from the dailyLog when available.
   const tradesToday = Array.isArray(dailyLog?.trades) ? dailyLog.trades.length : null;
 
+  return (
+    <div
+      style={{
+        background: CARD_BG,
+        border: `1px solid ${BORDER_SUBTLE}`,
+        borderRadius: 12,
+        padding: 14,
+      }}
+    >
+      {pitStop && <PitStopBanner />}
+
+      <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start', minWidth: 0 }}>
+        {dims && <MiniRadar dimensionValues={dims} size={80} />}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div
+            style={{
+              fontSize: 14,
+              fontWeight: 600,
+              color: TEXT_PRIMARY,
+              lineHeight: 1.3,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+            }}
+          >
+            {season?.name || 'Current experiment'}
+          </div>
+          <div style={{ fontSize: 12, color: TEXT_SECONDARY, marginTop: 4 }}>
+            Week {week} of {totalWeeks}
+          </div>
+          <ProgressPips currentWeek={week} totalWeeks={totalWeeks} />
+        </div>
+      </div>
+
+      <div
+        style={{
+          marginTop: 16,
+          paddingTop: 12,
+          borderTop: `1px solid ${BORDER_SUBTLE}`,
+          textAlign: 'center',
+        }}
+      >
+        <div
+          style={{
+            display: 'inline-flex',
+            alignItems: 'baseline',
+            gap: 6,
+            fontSize: 28,
+            fontWeight: 500,
+            color: alphaColor,
+            fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+          }}
+        >
+          {alpha >= 0 ? (
+            <TrendingUp size={20} color={alphaColor} />
+          ) : (
+            <TrendingDown size={20} color={alphaColor} />
+          )}
+          {formatPct(alpha)}
+        </div>
+        <div style={{ fontSize: 12, color: TEXT_SECONDARY, marginTop: 2 }}>
+          alpha vs S&amp;P 500
+        </div>
+      </div>
+
+      <StatsRow
+        items={[
+          {
+            value: forgeScore != null ? Math.round(forgeScore) : '—',
+            label: 'Forge Score',
+          },
+          {
+            value: rank ? `#${rank}${totalEntries ? ` of ${totalEntries}` : ''}` : '—',
+            label: 'Rank',
+          },
+          {
+            value: tradesToday != null ? tradesToday : '—',
+            label: 'Trades today',
+          },
+        ]}
+      />
+    </div>
+  );
+}
+
+// Compact variant used when 2+ experiments are stacked. Single-row layout:
+// small radar + name/week on the left, alpha on the right. Tappable.
+function CompactExperimentCard({ season, entry, focused, onTap }) {
+  const alpha = entry?.seasonState?.alphaVsSpy ?? 0;
+  const week = entry?.seasonState?.currentWeek || 1;
+  const totalWeeks = Array.isArray(season?.weeks) ? season.weeks.length : 4;
+  const rank = entry?.seasonState?.rank;
+  const forgeScore =
+    entry?.seasonState?.forgeScore ?? entry?.forgeScore ?? null;
+  const alphaColor = alpha >= 0 ? POSITIVE : NEGATIVE;
   const dims = resolveEntryDimensions(entry);
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 12, paddingTop: 4 }}>
-      {/* Experiment card */}
+    <button
+      onClick={onTap}
+      style={{
+        width: '100%',
+        background: CARD_BG,
+        border: `1px solid ${focused ? 'rgba(240,199,94,0.35)' : BORDER_SUBTLE}`,
+        borderRadius: 12,
+        padding: 12,
+        display: 'flex',
+        alignItems: 'center',
+        gap: 12,
+        cursor: 'pointer',
+        textAlign: 'left',
+        minWidth: 0,
+      }}
+    >
+      {dims ? (
+        <MiniRadar dimensionValues={dims} size={56} />
+      ) : (
+        <div style={{ width: 56, height: 56, flexShrink: 0 }} />
+      )}
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div
+          style={{
+            fontSize: 13,
+            fontWeight: 600,
+            color: TEXT_PRIMARY,
+            lineHeight: 1.3,
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {season?.name || 'Experiment'}
+        </div>
+        <div
+          style={{
+            fontSize: 11,
+            color: TEXT_SECONDARY,
+            marginTop: 3,
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+          }}
+        >
+          Week {week} of {totalWeeks}
+          {rank ? ` · #${rank}` : ''}
+          {forgeScore != null ? ` · FS ${Math.round(forgeScore)}` : ''}
+        </div>
+      </div>
       <div
         style={{
-          background: CARD_BG,
-          border: `1px solid ${BORDER_SUBTLE}`,
-          borderRadius: 12,
-          padding: 14,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 4,
+          fontSize: 16,
+          fontWeight: 600,
+          color: alphaColor,
+          fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+          flexShrink: 0,
         }}
       >
-        {pitStop && <PitStopBanner />}
+        {alpha >= 0 ? (
+          <TrendingUp size={14} color={alphaColor} />
+        ) : (
+          <TrendingDown size={14} color={alphaColor} />
+        )}
+        {formatPct(alpha)}
+      </div>
+    </button>
+  );
+}
 
-        {/* Top row: mini radar + name/week/progress */}
+function TestingView({
+  experiments,
+  focusedExperiment,
+  dailyLog,
+  dailyLogLoading,
+  tradingDay,
+  onViewDashboard,
+}) {
+  const multi = experiments.length > 1;
+
+  // Pit stop CTA should act on the experiment whose pit stop is actually
+  // open (not necessarily the focused one). Banner names that experiment
+  // when there are 2+ so the user knows which dashboard they're opening.
+  const pitStopExperiment =
+    experiments.find((e) => isPitStopOpen(e.season, e.entry)) || null;
+  const anyPitStopOpen = Boolean(pitStopExperiment);
+  const focusedPitStop = isPitStopOpen(focusedExperiment.season, focusedExperiment.entry);
+  const focusedDims = resolveEntryDimensions(focusedExperiment.entry);
+
+  const handleCta = () => {
+    if (!onViewDashboard) return;
+    if (anyPitStopOpen) {
+      onViewDashboard(pitStopExperiment.season, pitStopExperiment.entry);
+    } else {
+      onViewDashboard(focusedExperiment.season, focusedExperiment.entry);
+    }
+  };
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12, paddingTop: 4 }}>
+      {/* Multi-experiment shared pit-stop banner — names the specific
+          experiment so a tap on the CTA lands on the right dashboard. */}
+      {multi && anyPitStopOpen && (
         <div
           style={{
             display: 'flex',
-            gap: 12,
-            alignItems: 'flex-start',
-            minWidth: 0,
+            alignItems: 'center',
+            gap: 8,
+            padding: '10px 12px',
+            background: 'rgba(240,199,94,0.08)',
+            border: `1px solid rgba(240,199,94,0.35)`,
+            borderRadius: 8,
           }}
         >
-          {dims && <MiniRadar dimensionValues={dims} size={80} />}
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div
-              style={{
-                fontSize: 14,
-                fontWeight: 600,
-                color: TEXT_PRIMARY,
-                lineHeight: 1.3,
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-              }}
-            >
-              {season?.name || 'Current experiment'}
-            </div>
-            <div style={{ fontSize: 12, color: TEXT_SECONDARY, marginTop: 4 }}>
-              Week {week} of {totalWeeks}
-            </div>
-            <ProgressPips currentWeek={week} totalWeeks={totalWeeks} />
-          </div>
-        </div>
-
-        {/* Alpha hero */}
-        <div
-          style={{
-            marginTop: 16,
-            paddingTop: 12,
-            borderTop: `1px solid ${BORDER_SUBTLE}`,
-            textAlign: 'center',
-          }}
-        >
+          <motion.span
+            animate={{ opacity: [1, 0.4, 1] }}
+            transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
+            style={{
+              width: 8,
+              height: 8,
+              borderRadius: '50%',
+              background: TROPHY_GOLD,
+              flexShrink: 0,
+            }}
+          />
           <div
             style={{
-              display: 'inline-flex',
-              alignItems: 'baseline',
-              gap: 6,
-              fontSize: 28,
-              fontWeight: 500,
-              color: alphaColor,
-              fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+              fontSize: 13,
+              fontWeight: 600,
+              color: TROPHY_GOLD,
+              minWidth: 0,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
             }}
           >
-            {alpha >= 0 ? (
-              <TrendingUp size={20} color={alphaColor} />
-            ) : (
-              <TrendingDown size={20} color={alphaColor} />
-            )}
-            {formatPct(alpha)}
-          </div>
-          <div style={{ fontSize: 12, color: TEXT_SECONDARY, marginTop: 2 }}>
-            alpha vs S&amp;P 500
+            Weekly review open for {pitStopExperiment.season?.name || 'an experiment'}
           </div>
         </div>
+      )}
 
-        <StatsRow
-          items={[
-            {
-              value: forgeScore != null ? Math.round(forgeScore) : '—',
-              label: 'Forge Score',
-            },
-            {
-              value: rank ? `#${rank}${totalEntries ? ` of ${totalEntries}` : ''}` : '—',
-              label: 'Rank',
-            },
-            {
-              value: tradesToday != null ? tradesToday : '—',
-              label: 'Trades today',
-            },
-          ]}
+      {/* Card layout — full for 1, compact stacked for 2+. */}
+      {multi ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {experiments.map(({ season, entry }) => (
+            <CompactExperimentCard
+              key={entry.id}
+              season={season}
+              entry={entry}
+              focused={entry.id === focusedExperiment.entry.id}
+              onTap={() => onViewDashboard && onViewDashboard(season, entry)}
+            />
+          ))}
+        </div>
+      ) : (
+        <FullExperimentCard
+          season={focusedExperiment.season}
+          entry={focusedExperiment.entry}
+          pitStop={focusedPitStop}
+          dailyLog={dailyLog}
+          dims={focusedDims}
         />
-      </div>
+      )}
 
-      {/* Daily briefing — reuses existing component; handles its own empty /
-          loading / expanded states. */}
+      {/* Daily briefing — rendered once for the focused entry. When there
+          are 2+ experiments we add a helper line so users know per-
+          experiment briefings are still reachable from each dashboard. */}
       <DailyBriefingCard
-        entry={entry}
+        entry={focusedExperiment.entry}
         dailyLog={dailyLog}
         tradingDay={tradingDay}
         loading={dailyLogLoading}
       />
+      {multi && (
+        <div style={{ fontSize: 11, color: TEXT_MUTED, textAlign: 'center', marginTop: -4 }}>
+          Showing {focusedExperiment.season?.name || 'the focused experiment'}. Tap any card for its own briefing.
+        </div>
+      )}
 
-      {/* Contextual CTA — weekend opens the weekly review, weekdays go
-          straight to the dashboard. Both use trophy-gold per product
-          direction (one primary color across all states). */}
-      {pitStop ? (
+      {/* Contextual CTA — weekend variant when any experiment has pit
+          stop open; otherwise weekday. Trophy-gold across all states. */}
+      {anyPitStopOpen ? (
         <>
-          <PrimaryCTA onClick={() => onViewDashboard && onViewDashboard(season, entry)}>
-            Open weekly review
-          </PrimaryCTA>
-          <SecondaryLink onClick={() => onViewDashboard && onViewDashboard(season, entry)}>
+          <PrimaryCTA onClick={handleCta}>Open weekly review</PrimaryCTA>
+          <SecondaryLink
+            onClick={() =>
+              onViewDashboard &&
+              onViewDashboard(focusedExperiment.season, focusedExperiment.entry)
+            }
+          >
             View full dashboard
           </SecondaryLink>
         </>
       ) : (
-        <PrimaryCTA onClick={() => onViewDashboard && onViewDashboard(season, entry)}>
-          View full dashboard
-        </PrimaryCTA>
+        <PrimaryCTA onClick={handleCta}>View full dashboard</PrimaryCTA>
       )}
     </div>
   );
@@ -801,7 +981,9 @@ export default function ForgeLanding({
 
   // ── State detection inputs ─────────────────────────────────────────
   //
-  // `activeExperiment` is the focused active entry (fallback to first).
+  // State 2's presence is driven by `focusedExperiment`, but the testing
+  // view itself renders the full `testingExperiments[]` so users with
+  // 2+ active experiments see every card stacked.
   // `completedExperiments` is the sorted `past` list — latest first.
   // `deployedStrategy` lives on the agent doc (see deployStrategyService).
   // A deployed strategy whose bundle the user manually unequipped in the
@@ -816,21 +998,36 @@ export default function ForgeLanding({
     return ds;
   }, [agent?.deployedStrategy, agent?.equippedBundleIds]);
 
-  const activeExperiment = useMemo(() => {
-    if (activeEntriesList.length === 0) return null;
-    const focused =
-      activeEntriesList.find((e) => e.id === activeSeasonEntry?.id) ||
-      activeEntriesList[0];
-    const season =
-      activeSeasonsById[focused.seasonId] ||
-      (activeSeason && activeSeason.id === focused.seasonId ? activeSeason : null);
-    return { entry: focused, season };
-  }, [activeEntriesList, activeSeasonEntry?.id, activeSeason, activeSeasonsById]);
+  // All active experiments paired with their season docs, preserving the
+  // order from activeSeasonEntries. Any entry whose season doc hasn't
+  // loaded is dropped so the card list never renders an orphan.
+  const testingExperiments = useMemo(() => {
+    return activeEntriesList
+      .map((entry) => {
+        const season =
+          activeSeasonsById[entry.seasonId] ||
+          (activeSeason && activeSeason.id === entry.seasonId ? activeSeason : null);
+        return { entry, season };
+      })
+      .filter((e) => e.season);
+  }, [activeEntriesList, activeSeason, activeSeasonsById]);
+
+  // Focused experiment — the one whose daily briefing is shown and the
+  // default target for the weekday CTA. Matches App.jsx's `activeSeasonEntry`
+  // (which is what powers dailyLog fetching) so the briefing and the
+  // highlighted card line up.
+  const focusedExperiment = useMemo(() => {
+    if (testingExperiments.length === 0) return null;
+    return (
+      testingExperiments.find((e) => e.entry.id === activeSeasonEntry?.id) ||
+      testingExperiments[0]
+    );
+  }, [testingExperiments, activeSeasonEntry?.id]);
 
   const latestCompleted = past[0] || null;
 
   const landingState = getLandingState({
-    activeExperiment,
+    activeExperiment: focusedExperiment,
     completedExperiments: past,
     deployedStrategy,
   });
@@ -985,10 +1182,10 @@ export default function ForgeLanding({
           />
         )}
 
-        {landingState === 'testing' && activeExperiment && (
+        {landingState === 'testing' && focusedExperiment && (
           <TestingView
-            season={activeExperiment.season}
-            entry={activeExperiment.entry}
+            experiments={testingExperiments}
+            focusedExperiment={focusedExperiment}
             dailyLog={dailyLog}
             dailyLogLoading={dailyLogLoading}
             tradingDay={tradingDay}
@@ -1018,13 +1215,13 @@ export default function ForgeLanding({
             user={user}
             agent={agent}
             deployedStrategy={deployedStrategy}
-            activeExperiment={activeExperiment}
+            activeExperiment={focusedExperiment}
             onOpenCommandCenter={() => onNavigateToSeasonHub && onNavigateToSeasonHub()}
             onStartNewExperiment={() => handleConfigureManually()}
             onViewActiveDashboard={() =>
-              activeExperiment &&
+              focusedExperiment &&
               onViewDashboard &&
-              onViewDashboard(activeExperiment.season, activeExperiment.entry)
+              onViewDashboard(focusedExperiment.season, focusedExperiment.entry)
             }
           />
         )}
@@ -1033,7 +1230,7 @@ export default function ForgeLanding({
         <AgentCard
           state={landingState}
           agent={agent}
-          experiment={activeExperiment?.entry || latestCompleted?.entry}
+          experiment={focusedExperiment?.entry || latestCompleted?.entry}
           deployedStrategy={deployedStrategy}
         />
 
