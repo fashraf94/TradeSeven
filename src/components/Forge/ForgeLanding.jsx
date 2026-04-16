@@ -1331,23 +1331,183 @@ function DeployedView({
   );
 }
 
-function AgentCard(/* props wired in Phase 6 */) {
+// ── Agent card (Phase 6) ───────────────────────────────────────────────
+//
+// Always-present companion card whose tone adapts to the landing state.
+// The agent is the user's partner across every chapter — waiting at the
+// start, commenting while testing, advising on results, and celebrating
+// in deployment. Dark-mode palette translation of the spec's light
+// tokens: each state has a low-alpha tinted background + the matching
+// brand stroke color, matching the LoopStep pattern used on State 1.
+//
+// Messages are template-only (no additional Firestore reads). If richer
+// data (topHolding, weakDimension, etc.) becomes available in a later
+// pass we can enrich the testing/deployed branches without changing
+// the component shape.
+
+function getAgentAccent(state) {
+  switch (state) {
+    case 'testing':
+      return { bg: 'rgba(94,234,212,0.15)', stroke: TEAL };
+    case 'results':
+      return { bg: 'rgba(240,199,94,0.18)', stroke: TROPHY_GOLD };
+    case 'deployed':
+      return { bg: 'rgba(168,85,247,0.22)', stroke: '#C4B5FD' };
+    case 'new':
+    default:
+      return { bg: SURFACE_BG, stroke: TEXT_MUTED };
+  }
+}
+
+// Mouth path swaps by state — neutral in `new`, slight smile while
+// testing, bigger smile once there are results to celebrate and once
+// the agent is in the arena. Same face silhouette across all states
+// so users recognize it as the same character.
+function getAgentMouth(state) {
+  switch (state) {
+    case 'testing':
+      return 'M8 15c1 1 3 1.5 4 1.5s3-.5 4-1.5';
+    case 'results':
+    case 'deployed':
+      return 'M8 14c1 2 3 2.5 4 2.5s3-.5 4-2.5';
+    case 'new':
+    default:
+      return 'M9 15h6';
+  }
+}
+
+function getAgentMessage({ state, agent, experiment, deployedStrategy }) {
+  if (state === 'new') {
+    return "Waiting for a strategy. Build one and I'll test it for 4 weeks against the S&P 500.";
+  }
+
+  if (state === 'testing') {
+    const alpha = experiment?.seasonState?.alphaVsSpy;
+    const pitStop = Boolean(experiment?.isPitStopOpen);
+    if (pitStop) {
+      return "Weekly review is open. I've got some ideas on what to tweak — come take a look.";
+    }
+    if (typeof alpha === 'number' && alpha >= 1) {
+      return `Up ${formatPct(alpha)} against the S&P. The strategy is working — let's keep feeding it data.`;
+    }
+    if (typeof alpha === 'number' && alpha <= -1) {
+      return `Down ${formatPct(alpha, false)} this week. Stop-losses are doing their job. We'll see what the weekend review turns up.`;
+    }
+    return 'Testing in progress. Check the dashboard for today\u2019s moves.';
+  }
+
+  if (state === 'results') {
+    const alpha = experiment?.seasonState?.alphaVsSpy;
+    const grade = computeGrade(typeof alpha === 'number' ? alpha : NaN);
+    if (grade === 'A' || grade === 'B') {
+      return `Grade ${grade} is strong. Ready to deploy, or want to refine it first?`;
+    }
+    if (grade === 'C') {
+      return `A ${grade} means there's room to improve. I'd suggest refining before deploying.`;
+    }
+    if (grade === 'D' || grade === 'F') {
+      return `Honest take — a ${grade} means this one needs rework. Let's refine and try again.`;
+    }
+    return 'Experiment complete. Deploy it, refine it, or walk away — your call.';
+  }
+
+  if (state === 'deployed') {
+    // Use lifetime stats from the agent doc rather than re-running the
+    // recent-battles query. Keeps the card stateless.
+    const wins = agent?.stats?.wins || 0;
+    const losses = agent?.stats?.losses || 0;
+    const gamesPlayed = agent?.stats?.gamesPlayed || 0;
+    if (gamesPlayed === 0) {
+      return "In the arena. I'll take the field on the next battle — check the command center to follow along.";
+    }
+    const winRate = Math.round((wins / gamesPlayed) * 100);
+    const record = `${wins}-${losses}`;
+    if (winRate >= 60) {
+      return `${record} and climbing. The strategy is doing the heavy lifting out there.`;
+    }
+    if (winRate <= 40) {
+      return `Rough stretch at ${record}. Might be time for a new experiment to find what's not working.`;
+    }
+    return `${record} on the board. Steady work — check the command center to see me in action.`;
+  }
+
+  // Defensive fallback — getLandingState only returns the four values above.
+  return deployedStrategy ? 'In the arena.' : '';
+}
+
+function AgentCard({ state, agent, experiment, deployedStrategy }) {
+  const accent = getAgentAccent(state);
+  const mouthPath = getAgentMouth(state);
+  const message = getAgentMessage({ state, agent, experiment, deployedStrategy });
+  const name = agent?.name || 'Agent';
+
   return (
     <div
       style={{
+        display: 'flex',
+        alignItems: 'flex-start',
+        gap: 12,
         padding: 14,
         marginTop: 16,
-        border: `1px dashed ${BORDER_SUBTLE}`,
+        border: `1px solid ${BORDER_SUBTLE}`,
         borderRadius: 12,
-        color: TEXT_MUTED,
-        fontSize: 13,
-        textAlign: 'center',
+        background: CARD_BG,
       }}
     >
-      {/* Phase 6 fills this in — the agent avatar + state-adaptive message
-          lives here. The dashed border is a visual marker so the card's
-          position is obvious while the content is still a placeholder. */}
-      Agent card — coming in Phase 6.
+      <div
+        style={{
+          width: 44,
+          height: 44,
+          borderRadius: '50%',
+          background: accent.bg,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          flexShrink: 0,
+        }}
+      >
+        <svg
+          viewBox="0 0 24 24"
+          width="24"
+          height="24"
+          fill="none"
+          stroke={accent.stroke}
+          strokeWidth="1.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
+          <rect x="4" y="4" width="16" height="16" rx="2" />
+          <circle cx="9" cy="10" r="1.5" fill={accent.stroke} stroke="none" />
+          <circle cx="15" cy="10" r="1.5" fill={accent.stroke} stroke="none" />
+          <path d={mouthPath} />
+        </svg>
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div
+          style={{
+            fontSize: 14,
+            fontWeight: 500,
+            color: TEXT_PRIMARY,
+            lineHeight: 1.3,
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+          }}
+        >
+          {name}
+        </div>
+        <div
+          style={{
+            fontSize: 13,
+            color: TEXT_SECONDARY,
+            lineHeight: 1.4,
+            marginTop: 4,
+          }}
+        >
+          {message}
+        </div>
+      </div>
     </div>
   );
 }
