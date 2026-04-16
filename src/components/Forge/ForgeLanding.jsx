@@ -30,8 +30,9 @@ import {
   Zap,
   TrendingUp,
   TrendingDown,
+  ChevronDown,
 } from 'lucide-react';
-import { collection, getDocs, query, where, doc, getDoc } from 'firebase/firestore';
+import { collection, getDocs, query, where, orderBy, limit, doc, getDoc } from 'firebase/firestore';
 import { db } from '../../firebase/config';
 import ForgeScreen from './ForgeScreen';
 import WorkshopChat from './WorkshopChat';
@@ -83,6 +84,23 @@ function gradeColor(grade) {
   if (grade === 'A' || grade === 'B') return POSITIVE;
   if (grade === 'C') return WARNING;
   return NEGATIVE;
+}
+
+// Human-readable relative time used by the deployed-strategy "LIVE" badge.
+// Deliberately coarse — the card doesn't need minute-level resolution.
+function daysAgoLabel(isoString) {
+  if (!isoString) return null;
+  const then = new Date(isoString).getTime();
+  if (!Number.isFinite(then)) return null;
+  const diffMs = Date.now() - then;
+  if (diffMs < 0) return 'Deployed today';
+  const days = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+  if (days === 0) return 'Deployed today';
+  if (days === 1) return 'Deployed 1 day ago';
+  if (days < 7) return `Deployed ${days} days ago`;
+  const weeks = Math.floor(days / 7);
+  if (weeks === 1) return 'Deployed 1 week ago';
+  return `Deployed ${weeks} weeks ago`;
 }
 
 // State detection — priority order: deployed > testing > results > new.
@@ -794,20 +812,595 @@ function TestingView({
   );
 }
 
-function ResultsView(/* props wired in Phase 4 */) {
+// ── State 3 — Results View ─────────────────────────────────────────────
+
+function PastExperimentRow({ season, entry, onReview }) {
+  const alpha = entry?.seasonState?.alphaVsSpy ?? 0;
+  const rank = entry?.seasonState?.finalRank || entry?.seasonState?.rank;
+  const grade = computeGrade(alpha);
+  const alphaColor = alpha >= 0 ? POSITIVE : NEGATIVE;
   return (
-    <div style={{ padding: 24, color: TEXT_MUTED, fontSize: 13 }}>
-      {/* Phase 4 fills this in */}
-      Results view — coming in Phase 4.
+    <button
+      onClick={() => onReview && onReview(season, entry)}
+      style={{
+        width: '100%',
+        background: CARD_BG,
+        border: `1px solid ${BORDER_SUBTLE}`,
+        borderRadius: 10,
+        padding: '10px 12px',
+        display: 'flex',
+        alignItems: 'center',
+        gap: 10,
+        cursor: 'pointer',
+        textAlign: 'left',
+        minWidth: 0,
+      }}
+    >
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div
+          style={{
+            fontSize: 13,
+            fontWeight: 600,
+            color: TEXT_PRIMARY,
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+          }}
+        >
+          {season?.name || 'Past experiment'}
+        </div>
+        <div style={{ fontSize: 11, color: TEXT_MUTED, marginTop: 2 }}>
+          <span style={{ color: alphaColor, fontWeight: 600 }}>{formatPct(alpha)}</span>
+          {rank ? ` · Rank #${rank}` : ''}
+        </div>
+      </div>
+      {grade && (
+        <div
+          style={{
+            fontSize: 14,
+            fontWeight: 600,
+            color: gradeColor(grade),
+            fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+            flexShrink: 0,
+          }}
+        >
+          {grade}
+        </div>
+      )}
+      <ArrowRight size={14} color={TEXT_MUTED} style={{ flexShrink: 0 }} />
+    </button>
+  );
+}
+
+function PastExperimentsSection({ past, onReview }) {
+  // Expanded by default for a short list; collapsed when the past pile
+  // grows so the State 3 hero card stays the center of attention.
+  const [expanded, setExpanded] = useState(past.length <= 3);
+  if (past.length === 0) return null;
+  return (
+    <div style={{ marginTop: 16 }}>
+      <button
+        onClick={() => setExpanded((v) => !v)}
+        style={{
+          background: 'transparent',
+          border: 'none',
+          padding: '6px 0',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 6,
+          cursor: 'pointer',
+          width: '100%',
+        }}
+      >
+        <motion.span
+          animate={{ rotate: expanded ? 180 : 0 }}
+          transition={{ duration: 0.2 }}
+          style={{ display: 'flex' }}
+        >
+          <ChevronDown size={14} color={TEXT_MUTED} />
+        </motion.span>
+        <span
+          style={{
+            fontSize: 11,
+            fontWeight: 600,
+            color: TEXT_MUTED,
+            textTransform: 'uppercase',
+            letterSpacing: '0.6px',
+          }}
+        >
+          Past experiments ({past.length})
+        </span>
+      </button>
+      <AnimatePresence initial={false}>
+        {expanded && (
+          <motion.div
+            key="past-list"
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.25 }}
+            style={{ overflow: 'hidden' }}
+          >
+            <div style={{ display: 'grid', gap: 8, paddingTop: 8 }}>
+              {past.map((s) => (
+                <PastExperimentRow
+                  key={s.id}
+                  season={s}
+                  entry={s.entry}
+                  onReview={onReview}
+                />
+              ))}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
 
-function DeployedView(/* props wired in Phase 5 */) {
+function ResultsView({ season, entry, past, onDeploy, onRefine, onReviewReport, onReviewPast }) {
+  const alpha = entry?.seasonState?.alphaVsSpy ?? 0;
+  const rank = entry?.seasonState?.finalRank || entry?.seasonState?.rank;
+  const totalEntries = season?.entryCount;
+  const forgeScore =
+    entry?.seasonState?.forgeScore ?? entry?.forgeScore ?? null;
+  const grade = computeGrade(alpha);
+  const dims = resolveEntryDimensions(entry);
+  // Older experiments shown as collapsed rows below the hero — skip the
+  // hero itself so we don't list it twice.
+  const olderPast = past.filter((s) => s.id !== season.id);
+
   return (
-    <div style={{ padding: 24, color: TEXT_MUTED, fontSize: 13 }}>
-      {/* Phase 5 fills this in */}
-      Deployed view — coming in Phase 5.
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12, paddingTop: 4 }}>
+      <div
+        style={{
+          background: CARD_BG,
+          border: `1px solid rgba(255,255,255,0.12)`,
+          borderRadius: 12,
+          padding: 14,
+        }}
+      >
+        <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start', minWidth: 0 }}>
+          {dims && <MiniRadar dimensionValues={dims} size={80} />}
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div
+              style={{
+                fontSize: 14,
+                fontWeight: 600,
+                color: TEXT_PRIMARY,
+                lineHeight: 1.3,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+              }}
+            >
+              {season?.name || 'Completed experiment'}
+            </div>
+            <div
+              style={{
+                fontSize: 12,
+                color: POSITIVE,
+                marginTop: 4,
+                fontWeight: 600,
+              }}
+            >
+              Completed — 4 weeks
+            </div>
+          </div>
+        </div>
+
+        {/* Grade hero — centered, large. Color maps A/B→green, C→amber,
+            D/F→red per gradeColor(). Formula is v1 alpha-based pending
+            Forge Score integration. */}
+        <div
+          style={{
+            marginTop: 16,
+            paddingTop: 12,
+            borderTop: `1px solid ${BORDER_SUBTLE}`,
+            textAlign: 'center',
+          }}
+        >
+          <div
+            style={{
+              fontSize: 48,
+              fontWeight: 500,
+              color: gradeColor(grade),
+              fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+              lineHeight: 1,
+            }}
+          >
+            {grade || '—'}
+          </div>
+          <div style={{ fontSize: 13, color: TEXT_SECONDARY, marginTop: 6 }}>
+            Final strategy grade
+          </div>
+        </div>
+
+        <StatsRow
+          items={[
+            {
+              value: formatPct(alpha),
+              label: 'Final alpha',
+              color: alpha >= 0 ? POSITIVE : NEGATIVE,
+            },
+            {
+              value: forgeScore != null ? Math.round(forgeScore) : '—',
+              label: 'Forge Score',
+            },
+            {
+              value: rank ? `#${rank}${totalEntries ? ` of ${totalEntries}` : ''}` : '—',
+              label: 'Final rank',
+            },
+          ]}
+        />
+      </div>
+
+      {/* Primary: Deploy to agent — navigates to the completed
+          experiment's dashboard where the existing deploy flow lives.
+          Avoids duplicating DeployToAgent's bundle / dim resolution. */}
+      <PrimaryCTA onClick={onDeploy}>Deploy to agent</PrimaryCTA>
+      <SecondaryLink onClick={onRefine}>Refine and retest</SecondaryLink>
+      <button
+        onClick={onReviewReport}
+        style={{
+          background: 'transparent',
+          border: 'none',
+          color: TEXT_MUTED,
+          fontSize: 12,
+          cursor: 'pointer',
+          padding: '4px 8px',
+          textAlign: 'center',
+          marginTop: -6,
+        }}
+      >
+        View full experiment report
+      </button>
+
+      <PastExperimentsSection past={olderPast} onReview={onReviewPast} />
+    </div>
+  );
+}
+
+// ── State 4 — Deployed View ────────────────────────────────────────────
+
+function BattleDot({ result }) {
+  const isWin = result === 'win';
+  const isLoss = result === 'loss';
+  const bg = isWin
+    ? 'rgba(52,211,153,0.18)'
+    : isLoss
+    ? 'rgba(239,68,68,0.18)'
+    : SURFACE_BG;
+  const color = isWin ? POSITIVE : isLoss ? NEGATIVE : TEXT_MUTED;
+  return (
+    <div
+      style={{
+        width: 24,
+        height: 24,
+        borderRadius: '50%',
+        background: bg,
+        color,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        fontSize: 11,
+        fontWeight: 700,
+        flexShrink: 0,
+      }}
+    >
+      {isWin ? 'W' : isLoss ? 'L' : '·'}
+    </div>
+  );
+}
+
+// Compact status line for the edge case where a user has both a
+// deployed strategy and an active experiment — experiment sits below
+// the deployed card as a one-line card, not the full State 2 layout.
+function ActiveExperimentMiniCard({ season, entry, onViewDashboard }) {
+  const alpha = entry?.seasonState?.alphaVsSpy ?? 0;
+  const week = entry?.seasonState?.currentWeek || 1;
+  const totalWeeks = Array.isArray(season?.weeks) ? season.weeks.length : 4;
+  const alphaColor = alpha >= 0 ? POSITIVE : NEGATIVE;
+  return (
+    <div
+      style={{
+        background: CARD_BG,
+        border: `1px solid ${BORDER_SUBTLE}`,
+        borderRadius: 10,
+        padding: '10px 12px',
+        display: 'flex',
+        alignItems: 'center',
+        gap: 10,
+        minWidth: 0,
+      }}
+    >
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div
+          style={{
+            fontSize: 12,
+            fontWeight: 600,
+            color: TEXT_PRIMARY,
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+          }}
+        >
+          Experiment in progress — {season?.name || 'current'}
+        </div>
+        <div style={{ fontSize: 11, color: TEXT_MUTED, marginTop: 2 }}>
+          Week {week} of {totalWeeks} ·{' '}
+          <span style={{ color: alphaColor, fontWeight: 600 }}>{formatPct(alpha)}</span>
+        </div>
+      </div>
+      <button
+        onClick={onViewDashboard}
+        style={{
+          background: 'transparent',
+          border: 'none',
+          color: TEAL,
+          fontSize: 12,
+          fontWeight: 600,
+          cursor: 'pointer',
+          flexShrink: 0,
+          padding: 4,
+        }}
+      >
+        View Dashboard
+      </button>
+    </div>
+  );
+}
+
+function DeployedView({
+  user,
+  agent,
+  deployedStrategy,
+  activeExperiment,
+  onOpenCommandCenter,
+  onStartNewExperiment,
+  onViewActiveDashboard,
+}) {
+  const [recentBattles, setRecentBattles] = useState(null); // null = loading
+  const [tradesPerGame, setTradesPerGame] = useState(null);
+
+  // Fetch last 5 completed agentBattles for this agent. Filter on
+  // state.status === 'completed' client-side — battles in this codebase
+  // live under `state.status` rather than a top-level status field (see
+  // existing queries in App.jsx).
+  useEffect(() => {
+    let cancelled = false;
+    async function loadBattles() {
+      if (!user?.uid || !agent?.id) {
+        setRecentBattles([]);
+        return;
+      }
+      try {
+        const q = query(
+          collection(db, 'agentBattles'),
+          where('ownerId', '==', user.uid),
+          where('agentId', '==', agent.id),
+          orderBy('createdAt', 'desc'),
+          limit(15)
+        );
+        const snap = await getDocs(q);
+        if (cancelled) return;
+        const all = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        const completed = all
+          .filter(
+            (b) =>
+              b.state?.status === 'completed' || b.status === 'completed'
+          )
+          .slice(0, 5);
+
+        const username = user?.username || user?.odUserId || null;
+        const withResult = completed.map((b) => {
+          const winner = b.result?.winner;
+          let result = null;
+          if (winner === 'tie') result = 'tie';
+          else if (typeof winner === 'string' && username && winner === username) result = 'win';
+          else if (winner === 'creator') {
+            // Agent deploys are created by the user — treat creator win as user win.
+            result = 'win';
+          } else if (winner === 'opponent') result = 'loss';
+          else if (winner) result = 'loss';
+          return { id: b.id, result, trades: b.trades?.length ?? b.tradeCount ?? null };
+        });
+        setRecentBattles(withResult);
+
+        const tradeCounts = withResult
+          .map((b) => b.trades)
+          .filter((n) => typeof n === 'number');
+        if (tradeCounts.length > 0) {
+          const avg =
+            tradeCounts.reduce((s, n) => s + n, 0) / tradeCounts.length;
+          setTradesPerGame(Math.round(avg * 10) / 10);
+        } else {
+          setTradesPerGame(null);
+        }
+      } catch (err) {
+        console.warn('[ForgeLanding] recent battles fetch failed:', err?.message);
+        if (!cancelled) setRecentBattles([]);
+      }
+    }
+    loadBattles();
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.uid, user?.username, user?.odUserId, agent?.id]);
+
+  const wins = (recentBattles || []).filter((b) => b.result === 'win').length;
+  const losses = (recentBattles || []).filter((b) => b.result === 'loss').length;
+  const determined = wins + losses;
+  const winRate = determined > 0 ? Math.round((wins / determined) * 100) : null;
+  const recordText = determined > 0 ? `${wins}-${losses} record` : 'No battles yet';
+
+  const deployedAtLabel = daysAgoLabel(deployedStrategy?.deployedAt);
+  const strategyName =
+    deployedStrategy?.experimentName || 'Deployed strategy';
+  const grade = computeGrade(
+    typeof deployedStrategy?.alpha === 'number' ? deployedStrategy.alpha : NaN
+  );
+  const fs =
+    typeof deployedStrategy?.forgeScore === 'number'
+      ? Math.round(deployedStrategy.forgeScore)
+      : null;
+
+  // Lifetime avg score from agent stats (more stable than recent-5).
+  const avgScore =
+    typeof agent?.stats?.avgScore === 'number'
+      ? Math.round(agent.stats.avgScore)
+      : null;
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12, paddingTop: 4 }}>
+      <div
+        style={{
+          background: CARD_BG,
+          border: `1px solid rgba(94,234,212,0.4)`,
+          borderRadius: 12,
+          padding: 14,
+        }}
+      >
+        {/* LIVE badge row */}
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            marginBottom: 10,
+          }}
+        >
+          <span
+            style={{
+              fontSize: 10,
+              fontWeight: 700,
+              letterSpacing: '0.6px',
+              background: 'rgba(94,234,212,0.18)',
+              color: TEAL,
+              padding: '3px 8px',
+              borderRadius: 12,
+            }}
+          >
+            LIVE
+          </span>
+          {deployedAtLabel && (
+            <span style={{ fontSize: 11, color: TEXT_MUTED }}>
+              {deployedAtLabel}
+            </span>
+          )}
+        </div>
+
+        {/* Strategy identity row */}
+        <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start', minWidth: 0 }}>
+          {deployedStrategy?.dimensionValues && (
+            <MiniRadar
+              dimensionValues={deployedStrategy.dimensionValues}
+              size={80}
+            />
+          )}
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div
+              style={{
+                fontSize: 14,
+                fontWeight: 600,
+                color: TEXT_PRIMARY,
+                lineHeight: 1.3,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+              }}
+            >
+              {strategyName}
+            </div>
+            <div
+              style={{
+                fontSize: 12,
+                color: TEXT_SECONDARY,
+                marginTop: 4,
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+              }}
+            >
+              {fs != null ? `Forge Score: ${fs}` : 'Forge Score: —'}
+              {grade ? (
+                <>
+                  {' · '}
+                  <span style={{ color: gradeColor(grade), fontWeight: 600 }}>
+                    Grade {grade}
+                  </span>
+                </>
+              ) : null}
+            </div>
+          </div>
+        </div>
+
+        {/* Recent battles */}
+        <div
+          style={{
+            marginTop: 14,
+            paddingTop: 12,
+            borderTop: `1px solid ${BORDER_SUBTLE}`,
+          }}
+        >
+          <div
+            style={{
+              fontSize: 12,
+              fontWeight: 600,
+              color: TEXT_SECONDARY,
+              marginBottom: 8,
+            }}
+          >
+            Recent battles
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            {recentBattles === null ? (
+              <span style={{ fontSize: 12, color: TEXT_MUTED }}>Loading…</span>
+            ) : recentBattles.length === 0 ? (
+              <span style={{ fontSize: 12, color: TEXT_MUTED }}>
+                No battles yet — your agent will take the field on its next deploy.
+              </span>
+            ) : (
+              <>
+                {recentBattles.map((b) => (
+                  <BattleDot key={b.id} result={b.result} />
+                ))}
+                <span style={{ fontSize: 12, color: TEXT_SECONDARY, marginLeft: 4 }}>
+                  {recordText}
+                </span>
+              </>
+            )}
+          </div>
+        </div>
+
+        <StatsRow
+          items={[
+            {
+              value: avgScore != null ? avgScore : '—',
+              label: 'Avg score',
+            },
+            {
+              value: winRate != null ? `${winRate}%` : '—',
+              label: 'Win rate',
+            },
+            {
+              value: tradesPerGame != null ? tradesPerGame : '—',
+              label: 'Trades / game',
+            },
+          ]}
+        />
+      </div>
+
+      {activeExperiment && (
+        <ActiveExperimentMiniCard
+          season={activeExperiment.season}
+          entry={activeExperiment.entry}
+          onViewDashboard={onViewActiveDashboard}
+        />
+      )}
+
+      <PrimaryCTA onClick={onOpenCommandCenter}>Open command center</PrimaryCTA>
+      <SecondaryLink onClick={onStartNewExperiment}>
+        Start a new experiment to improve
+      </SecondaryLink>
     </div>
   );
 }
@@ -1199,14 +1792,18 @@ export default function ForgeLanding({
             entry={latestCompleted.entry}
             past={past}
             onDeploy={() => onViewDashboard && onViewDashboard(latestCompleted, latestCompleted.entry)}
-            onRefine={() =>
+            onRefine={() => {
+              const dims = resolveEntryDimensions(latestCompleted.entry);
               handleConfigureManually({
-                initialDimensionValues: latestCompleted.entry?.algorithm?.dimensionValues,
+                ...(dims ? { initialDimensionValues: dims } : {}),
                 initialStep: 1,
                 sourceExperimentId: latestCompleted.entry?.id,
-              })
+              });
+            }}
+            onReviewReport={() =>
+              onReviewSeason && onReviewSeason(latestCompleted, latestCompleted.entry)
             }
-            onReviewReport={() => onReviewSeason && onReviewSeason(latestCompleted, latestCompleted.entry)}
+            onReviewPast={(s, e) => onReviewSeason && onReviewSeason(s, e)}
           />
         )}
 
