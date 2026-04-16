@@ -1534,6 +1534,11 @@ export default function ForgeLanding({
   onViewDashboard,
   onJoinSeason,
   onReviewSeason,
+  // Agent battle callback — State 4 uses this to route "Open command
+  // center" to the active battle instead of the Season Hub fallback.
+  // Optional; when absent or when agent.activeBattleId is empty, State
+  // 4's CTA still falls back to onNavigateToSeasonHub.
+  onOpenAgentBattle,
 }) {
   const [view, setView] = useState('laboratory');
   const [seasons, setSeasons] = useState([]);
@@ -2017,7 +2022,19 @@ export default function ForgeLanding({
             agent={agent}
             deployedStrategy={deployedStrategy}
             activeExperiment={focusedExperiment}
-            onOpenCommandCenter={() => onNavigateToSeasonHub && onNavigateToSeasonHub()}
+            onOpenCommandCenter={() => {
+              // Prefer routing to the agent's active battle when one
+              // exists — the button text promises the command center,
+              // not a hub screen. Fall back to Season Hub when the
+              // agent has no active battle or the callback wasn't
+              // wired through by the parent.
+              const activeBattleId = agent?.activeBattleId;
+              if (activeBattleId && onOpenAgentBattle) {
+                onOpenAgentBattle(activeBattleId);
+                return;
+              }
+              if (onNavigateToSeasonHub) onNavigateToSeasonHub();
+            }}
             onStartNewExperiment={() => handleConfigureManually()}
             onViewActiveDashboard={() =>
               focusedExperiment &&
