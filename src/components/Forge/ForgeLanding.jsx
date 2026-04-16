@@ -499,9 +499,27 @@ function NewUserHero({ onBuildStrategy, onConfigureManually }) {
 // next pass — not added here because its placement interacts with the
 // single-primary-CTA rule and the multi-experiment stack.
 
-// Full-size experiment card — used when exactly one active experiment.
-// Keeps the mini radar + alpha hero + stats row + pit-stop banner layout.
-function FullExperimentCard({ season, entry, pitStop, dailyLog, dims }) {
+// Full-layout experiment card. Content is identical whether one or
+// many experiments are active; `compact` only tightens padding/margins
+// so a 2+ stack doesn't scroll excessively. Every card contains the
+// five specified elements: mini radar + name/pips + alpha hero + stats
+// row + daily briefing, plus a pit-stop banner when applicable.
+//
+// When `onOpen` is provided, the card renders an inline "Open" button
+// at the bottom. This only fires in the multi-experiment case — in
+// single-experiment mode, navigation lives in TestingView's bottom
+// PrimaryCTA instead.
+function ExperimentCard({
+  season,
+  entry,
+  pitStop,
+  dailyLog,
+  dailyLogLoading,
+  tradingDay,
+  dims,
+  compact = false,
+  onOpen,
+}) {
   const alpha = entry?.seasonState?.alphaVsSpy ?? 0;
   const week = entry?.seasonState?.currentWeek || 1;
   const totalWeeks = Array.isArray(season?.weeks) ? season.weeks.length : 4;
@@ -512,13 +530,17 @@ function FullExperimentCard({ season, entry, pitStop, dailyLog, dims }) {
   const alphaColor = alpha >= 0 ? POSITIVE : NEGATIVE;
   const tradesToday = Array.isArray(dailyLog?.trades) ? dailyLog.trades.length : null;
 
+  const cardPadding = compact ? 12 : 14;
+  const alphaHeroMarginTop = compact ? 12 : 16;
+  const alphaHeroPaddingTop = compact ? 10 : 12;
+
   return (
     <div
       style={{
         background: CARD_BG,
         border: `1px solid ${BORDER_SUBTLE}`,
         borderRadius: 12,
-        padding: 14,
+        padding: cardPadding,
       }}
     >
       {pitStop && <PitStopBanner />}
@@ -547,8 +569,8 @@ function FullExperimentCard({ season, entry, pitStop, dailyLog, dims }) {
 
       <div
         style={{
-          marginTop: 16,
-          paddingTop: 12,
+          marginTop: alphaHeroMarginTop,
+          paddingTop: alphaHeroPaddingTop,
           borderTop: `1px solid ${BORDER_SUBTLE}`,
           textAlign: 'center',
         }}
@@ -592,222 +614,122 @@ function FullExperimentCard({ season, entry, pitStop, dailyLog, dims }) {
           },
         ]}
       />
-    </div>
-  );
-}
 
-// Compact variant used when 2+ experiments are stacked. Single-row layout:
-// small radar + name/week on the left, alpha on the right. Tappable.
-function CompactExperimentCard({ season, entry, focused, onTap }) {
-  const alpha = entry?.seasonState?.alphaVsSpy ?? 0;
-  const week = entry?.seasonState?.currentWeek || 1;
-  const totalWeeks = Array.isArray(season?.weeks) ? season.weeks.length : 4;
-  const rank = entry?.seasonState?.rank;
-  const forgeScore =
-    entry?.seasonState?.forgeScore ?? entry?.forgeScore ?? null;
-  const alphaColor = alpha >= 0 ? POSITIVE : NEGATIVE;
-  const dims = resolveEntryDimensions(entry);
+      {/* Per-card daily briefing — each active experiment gets its own. */}
+      <div style={{ marginTop: 12 }}>
+        <DailyBriefingCard
+          entry={entry}
+          dailyLog={dailyLog}
+          tradingDay={tradingDay}
+          loading={dailyLogLoading}
+        />
+      </div>
 
-  return (
-    <button
-      onClick={onTap}
-      style={{
-        width: '100%',
-        background: CARD_BG,
-        border: `1px solid ${focused ? 'rgba(240,199,94,0.35)' : BORDER_SUBTLE}`,
-        borderRadius: 12,
-        padding: 12,
-        display: 'flex',
-        alignItems: 'center',
-        gap: 12,
-        cursor: 'pointer',
-        textAlign: 'left',
-        minWidth: 0,
-      }}
-    >
-      {dims ? (
-        <MiniRadar dimensionValues={dims} size={56} />
-      ) : (
-        <div style={{ width: 56, height: 56, flexShrink: 0 }} />
-      )}
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div
+      {/* Inline "Open" affordance — only present in the multi-experiment
+          case where the bottom CTA is removed. Text swaps for weekend
+          pit stop so the action word matches the destination. */}
+      {onOpen && (
+        <button
+          onClick={onOpen}
           style={{
+            marginTop: 12,
+            width: '100%',
+            background: 'transparent',
+            border: `1px solid ${BORDER_SUBTLE}`,
+            borderRadius: 10,
+            padding: '9px 12px',
+            color: pitStop ? TROPHY_GOLD : TEAL,
             fontSize: 13,
             fontWeight: 600,
-            color: TEXT_PRIMARY,
-            lineHeight: 1.3,
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 6,
           }}
         >
-          {season?.name || 'Experiment'}
-        </div>
-        <div
-          style={{
-            fontSize: 11,
-            color: TEXT_SECONDARY,
-            marginTop: 3,
-            whiteSpace: 'nowrap',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-          }}
-        >
-          Week {week} of {totalWeeks}
-          {rank ? ` · #${rank}` : ''}
-          {forgeScore != null ? ` · FS ${Math.round(forgeScore)}` : ''}
-        </div>
-      </div>
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 4,
-          fontSize: 16,
-          fontWeight: 600,
-          color: alphaColor,
-          fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
-          flexShrink: 0,
-        }}
-      >
-        {alpha >= 0 ? (
-          <TrendingUp size={14} color={alphaColor} />
-        ) : (
-          <TrendingDown size={14} color={alphaColor} />
-        )}
-        {formatPct(alpha)}
-      </div>
-    </button>
+          {pitStop ? 'Open weekly review' : 'Open dashboard'}
+          <ArrowRight size={14} />
+        </button>
+      )}
+    </div>
   );
 }
 
 function TestingView({
   experiments,
   focusedExperiment,
-  dailyLog,
-  dailyLogLoading,
-  tradingDay,
+  dailyLogsById,
+  dailyLoadingById,
   onViewDashboard,
 }) {
   const multi = experiments.length > 1;
 
-  // Pit stop CTA should act on the experiment whose pit stop is actually
-  // open (not necessarily the focused one). Banner names that experiment
-  // when there are 2+ so the user knows which dashboard they're opening.
-  const pitStopExperiment =
-    experiments.find((e) => isPitStopOpen(e.season, e.entry)) || null;
-  const anyPitStopOpen = Boolean(pitStopExperiment);
-  const focusedPitStop = isPitStopOpen(focusedExperiment.season, focusedExperiment.entry);
-  const focusedDims = resolveEntryDimensions(focusedExperiment.entry);
-
-  const handleCta = () => {
-    if (!onViewDashboard) return;
-    if (anyPitStopOpen) {
-      onViewDashboard(pitStopExperiment.season, pitStopExperiment.entry);
-    } else {
-      onViewDashboard(focusedExperiment.season, focusedExperiment.entry);
-    }
-  };
+  // Single-experiment bottom CTA target: the one and only entry. We
+  // compute pitStop here so the bottom CTA text stays consistent with
+  // the inline pit-stop banner on the single card.
+  const focused = focusedExperiment;
+  const focusedPitStop = isPitStopOpen(focused.season, focused.entry);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12, paddingTop: 4 }}>
-      {/* Multi-experiment shared pit-stop banner — names the specific
-          experiment so a tap on the CTA lands on the right dashboard. */}
-      {multi && anyPitStopOpen && (
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8,
-            padding: '10px 12px',
-            background: 'rgba(240,199,94,0.08)',
-            border: `1px solid rgba(240,199,94,0.35)`,
-            borderRadius: 8,
-          }}
-        >
-          <motion.span
-            animate={{ opacity: [1, 0.4, 1] }}
-            transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
-            style={{
-              width: 8,
-              height: 8,
-              borderRadius: '50%',
-              background: TROPHY_GOLD,
-              flexShrink: 0,
-            }}
-          />
-          <div
-            style={{
-              fontSize: 13,
-              fontWeight: 600,
-              color: TROPHY_GOLD,
-              minWidth: 0,
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-            }}
-          >
-            Weekly review open for {pitStopExperiment.season?.name || 'an experiment'}
-          </div>
-        </div>
-      )}
-
-      {/* Card layout — full for 1, compact stacked for 2+. */}
-      {multi ? (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {experiments.map(({ season, entry }) => (
-            <CompactExperimentCard
-              key={entry.id}
-              season={season}
-              entry={entry}
-              focused={entry.id === focusedExperiment.entry.id}
-              onTap={() => onViewDashboard && onViewDashboard(season, entry)}
-            />
-          ))}
-        </div>
-      ) : (
-        <FullExperimentCard
-          season={focusedExperiment.season}
-          entry={focusedExperiment.entry}
-          pitStop={focusedPitStop}
-          dailyLog={dailyLog}
-          dims={focusedDims}
+      {experiments.map(({ season, entry }) => (
+        <ExperimentCard
+          key={entry.id}
+          season={season}
+          entry={entry}
+          pitStop={isPitStopOpen(season, entry)}
+          dailyLog={dailyLogsById[entry.id] || null}
+          dailyLogLoading={Boolean(dailyLoadingById[entry.id])}
+          tradingDay={
+            entry?.seasonState?.currentDay ??
+            season?.currentDay ??
+            dailyLogsById[entry.id]?.day ??
+            0
+          }
+          dims={resolveEntryDimensions(entry)}
+          compact={multi}
+          // Inline per-card "Open" button only when 2+ experiments are
+          // stacked. In single-experiment mode the bottom PrimaryCTA
+          // owns navigation so the card stays chrome-free.
+          onOpen={
+            multi
+              ? () => onViewDashboard && onViewDashboard(season, entry)
+              : undefined
+          }
         />
-      )}
+      ))}
 
-      {/* Daily briefing — rendered once for the focused entry. When there
-          are 2+ experiments we add a helper line so users know per-
-          experiment briefings are still reachable from each dashboard. */}
-      <DailyBriefingCard
-        entry={focusedExperiment.entry}
-        dailyLog={dailyLog}
-        tradingDay={tradingDay}
-        loading={dailyLogLoading}
-      />
-      {multi && (
-        <div style={{ fontSize: 11, color: TEXT_MUTED, textAlign: 'center', marginTop: -4 }}>
-          Showing {focusedExperiment.season?.name || 'the focused experiment'}. Tap any card for its own briefing.
-        </div>
-      )}
-
-      {/* Contextual CTA — weekend variant when any experiment has pit
-          stop open; otherwise weekday. Trophy-gold across all states. */}
-      {anyPitStopOpen ? (
-        <>
-          <PrimaryCTA onClick={handleCta}>Open weekly review</PrimaryCTA>
-          <SecondaryLink
+      {/* Bottom PrimaryCTA only renders when there is a single,
+          unambiguous target. With 2+ experiments the per-card "Open"
+          buttons replace it — no shared CTA below the stack. */}
+      {!multi &&
+        (focusedPitStop ? (
+          <>
+            <PrimaryCTA
+              onClick={() =>
+                onViewDashboard && onViewDashboard(focused.season, focused.entry)
+              }
+            >
+              Open weekly review
+            </PrimaryCTA>
+            <SecondaryLink
+              onClick={() =>
+                onViewDashboard && onViewDashboard(focused.season, focused.entry)
+              }
+            >
+              View full dashboard
+            </SecondaryLink>
+          </>
+        ) : (
+          <PrimaryCTA
             onClick={() =>
-              onViewDashboard &&
-              onViewDashboard(focusedExperiment.season, focusedExperiment.entry)
+              onViewDashboard && onViewDashboard(focused.season, focused.entry)
             }
           >
             View full dashboard
-          </SecondaryLink>
-        </>
-      ) : (
-        <PrimaryCTA onClick={handleCta}>View full dashboard</PrimaryCTA>
-      )}
+          </PrimaryCTA>
+        ))}
     </div>
   );
 }
@@ -1441,8 +1363,11 @@ export default function ForgeLanding({
   const [seasons, setSeasons] = useState([]);
   const [entries, setEntries] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [dailyLog, setDailyLog] = useState(null);
-  const [dailyLogLoading, setDailyLogLoading] = useState(false);
+  // Per-entry dailyLog maps so State 2 can render one briefing per
+  // active experiment. Keyed by entry id; each value is the full
+  // dailyLog doc (or null if not yet written).
+  const [dailyLogsById, setDailyLogsById] = useState({});
+  const [dailyLoadingById, setDailyLoadingById] = useState({});
   const [toast, setToast] = useState(null);
   const [workshopOpen, setWorkshopOpen] = useState(false);
 
@@ -1475,52 +1400,88 @@ export default function ForgeLanding({
     };
   }, [user?.uid]);
 
-  // Fetch the most recent dailyLog for the active experiment (used by State 2)
+  // Fetch the most recent dailyLog for each active experiment, in
+  // parallel. Each card in State 2 renders its own briefing — capped
+  // at 5 entries by MAX_CONCURRENT_EXPERIMENTS on the server, so this
+  // fires at most 10 Firestore reads on mount (5 entries × 2-day
+  // fallback). Serializing a list of { id, currentDay } values in the
+  // dep keeps the effect stable when identity-equal parent arrays
+  // rebuild on render.
+  const dailyLogEntriesKey = useMemo(() => {
+    const list = Array.isArray(activeSeasonEntries) && activeSeasonEntries.length > 0
+      ? activeSeasonEntries
+      : activeSeasonEntry
+      ? [activeSeasonEntry]
+      : [];
+    return list
+      .map((e) => `${e.id}:${e?.seasonState?.currentDay ?? ''}`)
+      .join('|');
+  }, [activeSeasonEntries, activeSeasonEntry]);
+
   useEffect(() => {
     let cancelled = false;
-    async function loadDailyLog() {
-      if (!activeSeasonEntry?.id) {
-        setDailyLog(null);
-        return;
-      }
-      setDailyLogLoading(true);
-      try {
-        const currentDay =
-          activeSeasonEntry?.seasonState?.currentDay ??
-          activeSeason?.currentDay ??
-          0;
-        const candidates = [currentDay, currentDay - 1].filter((d) => d >= 0);
-        let found = null;
-        for (const dayNum of candidates) {
+    const list =
+      Array.isArray(activeSeasonEntries) && activeSeasonEntries.length > 0
+        ? activeSeasonEntries
+        : activeSeasonEntry
+        ? [activeSeasonEntry]
+        : [];
+
+    if (list.length === 0) {
+      setDailyLogsById({});
+      setDailyLoadingById({});
+      return undefined;
+    }
+
+    // Start everyone loading at once so the cards don't flicker between
+    // "loading" and "waiting for first evaluation" on each resolve.
+    const loadingFlags = Object.fromEntries(list.map((e) => [e.id, true]));
+    setDailyLoadingById(loadingFlags);
+
+    async function loadOne(entry) {
+      const currentDay =
+        entry?.seasonState?.currentDay ?? activeSeason?.currentDay ?? 0;
+      const candidates = [currentDay, currentDay - 1].filter((d) => d >= 0);
+      for (const dayNum of candidates) {
+        try {
           const ref = doc(
             db,
             'seasonEntries',
-            activeSeasonEntry.id,
+            entry.id,
             'dailyLogs',
             String(dayNum)
           );
           const snap = await getDoc(ref);
-          if (cancelled) return;
           if (snap.exists()) {
-            found = { id: snap.id, ...snap.data() };
-            break;
+            return { id: snap.id, ...snap.data() };
           }
+        } catch (err) {
+          console.warn('[ForgeLanding] dailyLog fetch failed:', entry.id, err?.message);
+          return null;
         }
-        if (!cancelled) setDailyLog(found);
-      } catch (err) {
-        if (!cancelled) {
-          console.error('[ForgeLanding] Failed to load dailyLog:', err);
-          setDailyLog(null);
-        }
-      } finally {
-        if (!cancelled) setDailyLogLoading(false);
       }
+      return null;
     }
-    loadDailyLog();
+
+    Promise.all(list.map((e) => loadOne(e).then((log) => [e.id, log]))).then(
+      (pairs) => {
+        if (cancelled) return;
+        const nextLogs = {};
+        const nextLoading = {};
+        for (const [id, log] of pairs) {
+          nextLogs[id] = log;
+          nextLoading[id] = false;
+        }
+        setDailyLogsById(nextLogs);
+        setDailyLoadingById(nextLoading);
+      }
+    );
+
     return () => {
       cancelled = true;
     };
-  }, [activeSeasonEntry?.id, activeSeasonEntry?.seasonState?.currentDay, activeSeason?.currentDay]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dailyLogEntriesKey, activeSeason?.currentDay]);
 
   // Build categorized experiment lists: completed (for State 3 / past-rows)
   // and the next upcoming season (for launch callbacks).
@@ -1566,11 +1527,6 @@ export default function ForgeLanding({
     return [];
   }, [activeSeasonEntries, activeSeasonEntry]);
   const atLaunchCap = activeEntriesList.length >= MAX_CONCURRENT_EXPERIMENTS;
-  const tradingDay =
-    activeSeasonEntry?.seasonState?.currentDay ??
-    activeSeason?.currentDay ??
-    dailyLog?.day ??
-    0;
 
   // ── State detection inputs ─────────────────────────────────────────
   //
@@ -1779,9 +1735,8 @@ export default function ForgeLanding({
           <TestingView
             experiments={testingExperiments}
             focusedExperiment={focusedExperiment}
-            dailyLog={dailyLog}
-            dailyLogLoading={dailyLogLoading}
-            tradingDay={tradingDay}
+            dailyLogsById={dailyLogsById}
+            dailyLoadingById={dailyLoadingById}
             onViewDashboard={onViewDashboard}
           />
         )}
