@@ -661,6 +661,7 @@ function TestingView({
   focusedExperiment,
   dailyLogsById,
   dailyLoadingById,
+  dimensionsById,
   onViewDashboard,
 }) {
   const multi = experiments.length > 1;
@@ -687,7 +688,10 @@ function TestingView({
             dailyLogsById[entry.id]?.day ??
             0
           }
-          dims={resolveEntryDimensions(entry)}
+          // Prefer the async-resolved bundle dims when present; fall
+          // back to the sync resolver while the fetch is in flight so
+          // the radar can still appear on same-device launches.
+          dims={dimensionsById[entry.id] ?? resolveEntryDimensions(entry)}
           compact={multi}
           // Inline per-card "Open" button only when 2+ experiments are
           // stacked. In single-experiment mode the bottom PrimaryCTA
@@ -1329,8 +1333,20 @@ function DeployedView({
 
 function AgentCard(/* props wired in Phase 6 */) {
   return (
-    <div style={{ padding: 14, marginTop: 16, color: TEXT_MUTED, fontSize: 13 }}>
-      {/* Phase 6 fills this in */}
+    <div
+      style={{
+        padding: 14,
+        marginTop: 16,
+        border: `1px dashed ${BORDER_SUBTLE}`,
+        borderRadius: 12,
+        color: TEXT_MUTED,
+        fontSize: 13,
+        textAlign: 'center',
+      }}
+    >
+      {/* Phase 6 fills this in — the agent avatar + state-adaptive message
+          lives here. The dashed border is a visual marker so the card's
+          position is obvious while the content is still a placeholder. */}
       Agent card — coming in Phase 6.
     </div>
   );
@@ -1368,6 +1384,15 @@ export default function ForgeLanding({
   // dailyLog doc (or null if not yet written).
   const [dailyLogsById, setDailyLogsById] = useState({});
   const [dailyLoadingById, setDailyLoadingById] = useState({});
+
+  // Per-entry dimensionValues map. Populated async because the canonical
+  // dimensions live on the bundle doc (written at launch via
+  // SeasonEntryModal / Workshop Mode), not on the entry itself.
+  // resolveEntryDimensions covers the cheap sync paths (entry.algorithm,
+  // localStorage cache) but on other devices those return null and the
+  // mini radar would stay hidden without this bundle fallback. Mirrors
+  // the same three-tier resolution SeasonReview.jsx uses.
+  const [dimensionsById, setDimensionsById] = useState({});
   const [toast, setToast] = useState(null);
   const [workshopOpen, setWorkshopOpen] = useState(false);
 
@@ -1482,6 +1507,69 @@ export default function ForgeLanding({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dailyLogEntriesKey, activeSeason?.currentDay]);
+
+  // Resolve dimensionValues for each active entry. Three-tier lookup,
+  // mirroring SeasonReview.jsx:195-230:
+  //   1. resolveEntryDimensions() — sync (entry.algorithm, localStorage)
+  //   2. bundle doc at agents/{agentId}/bundles/{bundleId} — canonical
+  //   3. null — MiniRadar self-hides
+  //
+  // Rerun when the set of active entry IDs changes. Bundle dims are
+  // immutable once written, so we don't need to refetch on other fields.
+  const activeEntryIdsKey = useMemo(() => {
+    const list =
+      Array.isArray(activeSeasonEntries) && activeSeasonEntries.length > 0
+        ? activeSeasonEntries
+        : activeSeasonEntry
+        ? [activeSeasonEntry]
+        : [];
+    return list.map((e) => e.id).join('|');
+  }, [activeSeasonEntries, activeSeasonEntry]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const list =
+      Array.isArray(activeSeasonEntries) && activeSeasonEntries.length > 0
+        ? activeSeasonEntries
+        : activeSeasonEntry
+        ? [activeSeasonEntry]
+        : [];
+
+    if (!agent?.id || list.length === 0) {
+      setDimensionsById({});
+      return undefined;
+    }
+
+    async function resolveOne(entry) {
+      const sync = resolveEntryDimensions(entry);
+      if (sync) return sync;
+      const bundleId = entry.bundleId || entry.algorithm?.bundleId || null;
+      if (!bundleId) return null;
+      try {
+        const snap = await getDoc(
+          doc(db, 'agents', agent.id, 'bundles', bundleId)
+        );
+        if (snap.exists()) {
+          return snap.data()?.dimensionValues || null;
+        }
+      } catch (err) {
+        console.warn('[ForgeLanding] bundle dims fetch failed:', entry.id, err?.message);
+      }
+      return null;
+    }
+
+    Promise.all(list.map((e) => resolveOne(e).then((dims) => [e.id, dims]))).then(
+      (pairs) => {
+        if (cancelled) return;
+        setDimensionsById(Object.fromEntries(pairs));
+      }
+    );
+
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeEntryIdsKey, agent?.id]);
 
   // Build categorized experiment lists: completed (for State 3 / past-rows)
   // and the next upcoming season (for launch callbacks).
@@ -1737,6 +1825,7 @@ export default function ForgeLanding({
             focusedExperiment={focusedExperiment}
             dailyLogsById={dailyLogsById}
             dailyLoadingById={dailyLoadingById}
+            dimensionsById={dimensionsById}
             onViewDashboard={onViewDashboard}
           />
         )}
