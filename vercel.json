@@ -140,11 +140,7 @@
     },
     {
       "path": "/api/cron/compute-index-intelligence",
-      "schedule": "30 10 * * 1-5"
-    },
-    {
-      "path": "/api/cron/compute-index-intelligence",
-      "schedule": "30 11 * * 1-5"
+      "schedule": "30 10,11 * * 1-5"
     },
     {
       "path": "/api/cron/agent-evaluate",
@@ -160,11 +156,7 @@
     },
     {
       "path": "/api/cron/compute-institutional-intelligence",
-      "schedule": "0 1 * * 1"
-    },
-    {
-      "path": "/api/cron/compute-institutional-intelligence",
-      "schedule": "0 2 * * 1"
+      "schedule": "0 1,2 * * 1"
     },
     {
       "path": "/api/cron/season-daily-evaluate",
