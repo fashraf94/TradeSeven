@@ -26,6 +26,7 @@ import {
   DAILY_REGIME_BRIEF_TOOL,
   buildDailyRegimeBriefPrompt,
 } from '../_utils/dailyRegimeBriefPrompt.js';
+import { logDailyRegimeBrief } from '../_utils/shadowLogger.js';
 
 export const config = { maxDuration: 60 };
 
@@ -215,6 +216,22 @@ export default async function handler(req, res) {
       sourceFailures,
       duration,
     });
+
+    // Shadow log — fire-and-forget, silent-fail (belt-and-suspenders).
+    logDailyRegimeBrief({
+      forDate: today,
+      inputContext: {
+        regime: marketContext.regime ?? null,
+        breadthTier: marketContext.breadthTier ?? null,
+        volatilityRegime: marketContext.volatilityRegime ?? null,
+        econEventsCount: thisWeekEvents.length + nextWeekEvents.length,
+        earningsCount: thisWeekEarnings.length + nextWeekEarnings.length,
+        sourceFailures,
+      },
+      output: { brief, keyEvents, themes },
+      tokenUsage,
+      duration,
+    }).catch(() => {});
 
     return res.status(200).json({
       success: true,
