@@ -169,6 +169,10 @@
     {
       "path": "/api/cron/season-pit-stop-manage?action=lockin",
       "schedule": "0 3,4 * * 1"
+    },
+    {
+      "path": "/api/cron/compute-daily-regime-brief",
+      "schedule": "30 12 * * 1-5"
     }
   ]
 }

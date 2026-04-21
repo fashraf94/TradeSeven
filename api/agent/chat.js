@@ -213,13 +213,20 @@ export default async function handler(req, res) {
     let anchorContext = null;
     let marketSnapshot = null;
     try {
-      const [marketCtxDoc, cacheDoc] = await Promise.all([
+      const today = new Date().toISOString().split('T')[0];
+      const [marketCtxDoc, drbDoc, cacheDoc] = await Promise.all([
         db.collection('indexIntelligence').doc('marketContext').get(),
+        db.collection('indexIntelligence').doc('dailyRegimeBrief').get(),
         db.collection('voiceLayerCache').doc(battleId).get(),
       ]);
       if (marketCtxDoc.exists) {
         const ctx = marketCtxDoc.data();
-        anchorContext = `Regime: ${ctx.regime}. ${ctx.regimeDetail || ''}`.trim();
+        const regimeLine = `Regime: ${ctx.regime}. ${ctx.regimeDetail || ''}`.trim();
+        const drb = drbDoc.exists ? drbDoc.data() : null;
+        const briefLine = drb && drb.forDate === today && typeof drb.dailyBrief === 'string'
+          ? drb.dailyBrief
+          : null;
+        anchorContext = [regimeLine, briefLine].filter(Boolean).join(' ');
       }
       if (cacheDoc.exists) {
         marketSnapshot = cacheDoc.data();
