@@ -1,0 +1,128 @@
+# DRB Audit — Part 2: Data Sources + Cron Infrastructure
+
+## Section C — Data Sources
+
+### C.1 indexIntelligence collection
+Populated by `api/cron/compute-index-intelligence.js` (dual cron, 30 10 and 30 11 UTC weekdays for DST coverage). Docs written (`compute-index-intelligence.js:563-763`):
+- `SPY`, `QQQ`, `DIA`, `IWM`, `RSP` — per-index technicals (price, change, ytdReturn, sma20/50/200 with position+distance, rsi, macd signal, atr regime, volumeRatio, range52w). (`compute-index-intelligence.js:204-222`, `:560-566`)
+- `marketContext` — `regime`, `regimeDetail`, per-index snapshots, `leadership`, `divergence`, `breadthQuality`, `yields` (from TNX), `breadthComposite` (0-100), `breadthTier` (healthy|moderate|thinning|weak), `volatilityRegime`, `sectorSnapshot[]`, `topSectorToday/Change`, `worstSectorToday/Change`, `technicalLeaders[5]`, `technicalLaggards[5]`, `updatedAt`. VIX is explicitly not tracked; `volatilityRegime` from SPY ATR is the proxy. (`compute-index-intelligence.js:569-593`, `voice-layer-cache.js:269`)
+- `stockRankings` — `{ stocks[], totalTechStocks, sectors{}, updatedAt }`. Each stock has symbol, sectorId/Name, fundamentalRank/Score/TotalPeers, technicalRank/Score, sectorTechnicalRank/Total, compositeScore, baggerBombFit+rank, atrPercentile, dailyRange, nr7Flag, bBandwidthPercentile, momentumScore/Rank/Factors. (`compute-index-intelligence.js:698-762`)
+
+Freshness: overwritten daily (idempotent) ~6:30 AM ET weekdays (`compute-index-intelligence.js:4-5`). Already consumed by voice layer: `api/agent/chat.js:217` reads `marketContext`; `api/agent/decide.js:80` reads `stockRankings`; `api/cron/voice-layer-cache.js:342-344` reads both plus `stockTechnicalScores`.
+
+### C.2 economic-events-sonar.js
+GET endpoint (`api/economic-events-sonar.js`). Input: none (auth + server-side date). Calls Perplexity Sonar with `searchRecencyFilter: 'week'`, maxTokens 2000 (`:84-88`). Output: `{ success, data: { thisWeek[], nextWeek[], highlight, cachedAt, citations[] } }`; event shape `{ date, day, time, event, previous, estimate, actual, impact: high|medium|low, category, brief }` (`:18-45`). Cache TTL: 1 hour in `serverCache` (`CACHE_KEY: 'economic_events_sonar'`, `:50-51`); module-level `lastSuccessfulResponse` serves as stale fallback (`:48`, `:123-129`). Lookahead: this week + next week; Fed events are explicitly requested (`:42`, `:79`). Not consumed by voice layer — only a direct UI endpoint (grep hit: UpcomingEventsPanel area, no agent reads).
+
+### C.3 earnings-calendar-sonar.js
+GET endpoint (`api/earnings-calendar-sonar.js`). Sonar call with `searchRecencyFilter: 'week'`, maxTokens 2000 (`:84-88`). Output: `{ thisWeek[], nextWeek[], spotlight, cachedAt, citations[] }`; per-entry `{ date, day, timing: AMC|BMO, symbol, name, significance: high|medium|low, watchFor, sectorImpact }` (`:18-45`). Cache TTL: 4 hours (`CACHE_KEY: 'earnings_calendar_sonar_v2'`, `:50-51`); stale fallback via `lastSuccessfulResponse`. Ranking: prompt enforces S&P 500 / large-cap only, >$10B mkt cap unless exceptional, 8-15 per week, mega-cap = high significance (`:36-45`). Lookahead: this + next week. Not consumed by voice layer.
+
+### C.4 why-moving.js
+POST endpoint, per-ticker only (`api/why-moving.js:104-108`). Takes `{ symbol, name?, change?, price?, open?, high?, low?, close?, peerMoves? }`, calls Sonar with `searchRecencyFilter: 'day'` and pinned domain list (reuters/cnbc/bloomberg/wsj/etc, `:181-199`). Cache: 30-min NEWS tier keyed `why_moving_{SYMBOL}_{YYYY-MM-DD}` (`:120-126`). Also short-circuits on `validatedCatalystCache` shared with Alex/FantasyTimes (`:128-155`). No aggregated "today's biggest movers" output from this endpoint. The aggregate equivalent is `api/fantasytimes/scan-movers.js` (cron every 15 min market hours; triggers Alex stories at >=3% intraday via `MOVE_THRESHOLD_PCT = 3`, `scan-movers.js:17`) — writes stories, not a consolidated movers list. Consumed by `src/components/Research/WhyMovingPopup.jsx`, not the voice layer.
+
+### C.5 Trend ledger (stockIntelligenceData.js)
+Auto-generated file, 20 tickers (`api/_utils/stockIntelligenceData.js:1-15`). Per-ticker, `STOCK_DATA[SYM]` has fields `name, shortName, sector, fyEnd, ticker, knowledgePackage, ledgerExtract, deepResearch` (`:17-20`, `:253`). `ledgerExtract` is markdown extracted from external `TREND_CONNECTIONS_LEDGER.md` (cited in each extract header, source file not present in repo — see Flags). Themes are embedded per-stock as `## THEME N: TITLE` sections; theme count per ticker ranges 3-7, not 17 per stock. Across all 20 tickers there are 17 distinct theme titles (deduped): AI Infrastructure Tax, AI Revenue Monetization, China Factor, Margin Architecture, One-Time Items, Revenue Diversification, Cash Flow Quality, Geographic Transformation, Management Tone, Private Credit, Vintage/Credit Mechanics, Consumer Credit Spectrum, Rate Cycle, M&A/Deal Cycle, Wealth Management War, Payments, Digital Disruption — BNPL. Static: file is auto-generated by a `buildStockData.js` script (`:1`), not a runtime-writable Firestore collection. Exports: `TICKERS`, `STOCK_DATA`, `getStockContext(ticker, realtimeData, {mode})`, `getStockMeta`, `getTokenEstimate` (`:15`, `:223-265`). Consumed by voice layer via `getStockContext` — quick mode appends `ledgerExtract` after `knowledgePackage` (`:230-234`); `api/fantasytimes/scan-movers.js:9` also imports `STOCK_DATA`.
+
+### C.6 stockTechnicalScores
+Per-stock docs only (one doc per symbol, `compute-index-intelligence.js:596-603`). Per-doc fields: `symbol, rs20, rs50, rsTrend, atrPercent, dailyRange, nr7Flag, bBandwidth, technicalScore, technicalRank, sectorTechnicalRank, sectorTechnicalTotal, factors{rsPercentile, sectorRSPercentile, aboveSMA20/50/200, upDayVolRatio...}, smaScore, macdScore, highProximity, volumeConfirmation, rsiContext, updatedAt` (`:478-523`). No aggregated "% of S&P above 50SMA" document exists — grep for `aboveSMA|percentAbove|stocksAbove` returns only `compute-index-intelligence.js`. Closest aggregate is `marketContext.breadthComposite`/`breadthTier` (`:344-363`), a 0-100 composite derived from regime, breadthQuality, leadership, and divergence — not a literal SMA-participation count. Cross-sectional aggregates are achievable client-side by iterating `stockRankings.stocks[]`. Consumed by voice layer: `voice-layer-cache.js:338-363` batch-reads all portfolio/watchlist tickers.
+
+## Section D — Cron Infrastructure
+
+**Total slots: 40 / 40** (confirmed by `grep -c "\"path\":" vercel.json` = 40).
+
+### Cron inventory
+
+| Schedule | Path | Purpose |
+|---|---|---|
+| `0 3,14,23 * * 1-6` | `/api/earnings/resolve-tournament` | Earnings-tournament resolution |
+| `0 9 * * 1-5` | `/api/earnings/sync-queue?days=7` | Sync upcoming earnings queue |
+| `0 10,14,18,22 * * 1-5` | `/api/earnings/verify-batch` | Batch-verify earnings data |
+| `*/15 9-23 * * 1-5` | `/api/lobbies/cleanup-expired` | Expire stale lobbies |
+| `15 21 * * 1-5` | `/api/cron/snake-draft-daily-scores` | Snake-draft EOD scoring |
+| `*/10 * * * *` | `/api/cron/snake-draft-autopick` | Snake-draft autopick |
+| `15 1 * * 2-6` | `/api/cron/baggerbomb-v4-daily-scores` | BaggerBomb daily scoring |
+| `30 1 * * 2-6` | `/api/cron/compute-daily-baggerbomb-levels` | BaggerBomb levels |
+| `*/30 14-21 * * 1-5` | `/api/read-across-check` | Read-across signal check |
+| `25 13,14 * * 1-5` | `/api/cron/pre-market-warmup` | Pre-market data warmup |
+| `0 11 * * 1-5` | `/api/cron/compute-rankings` | Fundamental peer rankings |
+| `25 14 * * 1-5` | `/api/cron/process-draft-claims` | Draft claim processing |
+| `0 1 * * 0` | `/api/cron/compute-briefs` | Weekly Tier-2 stock briefs (Sonar) |
+| `0 10 * * 6` | `/api/cron/compute-estimates` | Weekly estimates refresh |
+| `30 13,14 * * 1-5` | `/api/fantasytimes/generate-pulse?period=pre_market` | FT pulse pre-market |
+| `0 16,17 * * 1-5` | `/api/fantasytimes/generate-pulse?period=midday` | FT pulse midday |
+| `15 20,21 * * 1-5` | `/api/fantasytimes/generate-pulse?period=post_close` | FT pulse post-close |
+| `0,30 13-21 * * 1-5` | `/api/fantasytimes/generate-econ?mode=recap` | FT econ recap |
+| `0 1 * * 1` | `/api/fantasytimes/generate-econ?mode=preview` | FT econ weekly preview |
+| `0 5 * * 1-5` | `/api/fantasytimes/submit-earnings-batch` | Submit earnings batch |
+| `0 20,21,22,23,0 * * 1-5` | `/api/fantasytimes/generate-recap` | FT daily recap |
+| `*/15 * * * 1-5` | `/api/fantasytimes/poll-batch` | Poll batch jobs |
+| `0 10,11 * * 1` | `/api/fantasytimes/generate-column?type=preview` | FT column: weekly preview |
+| `0 21,22 * * 5` | `/api/fantasytimes/generate-column?type=wrap` | FT column: weekly wrap |
+| `0 7 * * 1,4` | `/api/fantasytimes/cleanup` | FT cleanup |
+| `*/15 13-20 * * 1-5` | `/api/fantasytimes/scan-movers` | Server-side mover scan (>=3%) |
+| `30 23 * * 1-5` | `/api/fantasytimes/ingest-earnings` | Ingest earnings (evening) |
+| `30 3 * * 2-6` | `/api/fantasytimes/ingest-earnings` | Ingest earnings (overnight, DST pair) |
+| `45 14,18,22 * * 1-5` | `/api/fantasytimes/ingest-econ` | Ingest econ events |
+| `0 8 * * 0` | `/api/fantasytimes/ingest-cleanup` | Weekly ingest cleanup |
+| `30 10 * * 1-5` | `/api/cron/compute-index-intelligence` | Index intelligence (UTC 10) |
+| `30 11 * * 1-5` | `/api/cron/compute-index-intelligence` | Index intelligence (UTC 11, DST pair) |
+| `*/15 13-21 * * 1-5` | `/api/cron/agent-evaluate` | Voice-layer agent evaluation |
+| `*/15 13-20 * * 1-5` | `/api/cron/voice-layer-cache` | Pre-compute voice layer cache |
+| `25 20,21 * * 1-5` | `/api/cron/agent-batch-review` | Agent batch review |
+| `0 1 * * 1` | `/api/cron/compute-institutional-intelligence` | Institutional intel (UTC 1) |
+| `0 2 * * 1` | `/api/cron/compute-institutional-intelligence` | Institutional intel (UTC 2, DST pair) |
+| `30 20,21 * * 1-5` | `/api/cron/season-daily-evaluate` | Season daily evaluate |
+| `0 13,14 * * 6` | `/api/cron/season-pit-stop-manage?action=open` | Season pit-stop open |
+| `0 3,4 * * 1` | `/api/cron/season-pit-stop-manage?action=lockin` | Season pit-stop lockin |
+
+### Auth pattern
+Standard two-path check on every cron endpoint: accept `x-vercel-cron: 1` header (native Vercel cron) OR `Authorization: Bearer ${CRON_SECRET}`; else 401. Canonical form (`compute-briefs.js:71-76`, `compute-index-intelligence.js:231-237`, `voice-layer-cache.js:287-291`, `scan-movers.js:50-54`, `agent-batch-review.js`):
+
+```js
+const isVercelCron = req.headers['x-vercel-cron'] === '1';
+const authHeader = req.headers.authorization;
+if (!isVercelCron && authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+  return res.status(401).json({ error: 'Unauthorized' });
+}
+```
+
+49 endpoints reference `CRON_SECRET`/`x-vercel-cron`. Env var for Anthropic key is `CLAUDE_API_KEY` (per pre-loaded context).
+
+### Example LLM cron — `api/cron/compute-briefs.js` (124 LOC)
+Cleanest LLM-calling cron in the tree.
+- **Imports** (`:13-20`): firebase-admin, `briefGenerator` utilities (`TIER_1_STOCKS`, `getAllDraftStocks`, `getNonTier1Stocks`, `generateBrief` — `generateBrief` wraps Sonar).
+- **Config** (`:23`): `export const config = { maxDuration: 300 }` (5 min).
+- **Auth** (`:71-76`): standard CRON_SECRET / x-vercel-cron pair.
+- **Main logic** (`:78-117`): load non-Tier-1 stock list → for each, `generateBrief(symbol, name, category)` → write to `stockBriefs/{SYMBOL}` with `{ symbol, name, category, brief, generatedAt, expiresAt: now+7d, tier: 2, model: 'sonar' }` → sleep 500ms between calls for rate-limit courtesy.
+- **Errors**: per-stock try/catch aggregates to `failures[]` (`:108-112`); top-level exception bubbles to Vercel (no try/catch wrap around the loop).
+- **Response** (`:120-123`): `{ success, failed, skipped, total, failures: failures.slice(0,10) }`, HTTP 200.
+- Pattern: iterate → call Sonar → write per-symbol Firestore doc → summarize. Matches the shape a DRB-like Sonnet-calling cron would take.
+
+### Consolidation candidates
+Identification only; no merge proposal.
+1. **DST duplicate pairs** (6 slots → could become 3 with one multi-hour cron expression each):
+   - `cron/compute-index-intelligence` at `30 10` + `30 11` (`vercel.json:141-148`).
+   - `cron/compute-institutional-intelligence` at `0 1` + `0 2` (`:161-168`).
+   - `fantasytimes/ingest-earnings` at `30 23 * * 1-5` + `30 3 * * 2-6` (`:125-132`) — technically different weekday masks but same handler.
+2. **Single-endpoint/multi-query-param triples/pairs** (theoretically one cron + router-by-timestamp; currently distinct slots):
+   - `fantasytimes/generate-pulse?period=pre_market|midday|post_close` — 3 slots (`:77-88`).
+   - `fantasytimes/generate-econ?mode=recap|preview` — 2 slots (`:89-96`).
+   - `fantasytimes/generate-column?type=preview|wrap` — 2 slots (`:109-116`).
+   - `cron/season-pit-stop-manage?action=open|lockin` — 2 slots (`:173-180`).
+3. **Earnings pipeline cluster** — `earnings/resolve-tournament`, `earnings/sync-queue`, `earnings/verify-batch` (3 slots, `:21-32`) all operate on the same earnings-tournament pipeline; candidates for a single dispatcher cron.
+4. **FantasyTimes ingest cluster** — `ingest-earnings` (x2), `ingest-econ`, `ingest-cleanup` (4 slots, `:125-140`) share the ingest worker family.
+
+The most mechanical reclaim is category 1 (DST pairs), worth ~3 slots with no handler changes.
+
+## Unknowns
+- `TREND_CONNECTIONS_LEDGER.md` — referenced inside each `ledgerExtract` header (`stockIntelligenceData.js:25` etc.) as the source of truth but not present in the repo. Where it lives (separate repo? external doc?) is unclear; only the auto-generated extracts are checked in.
+- Whether `buildStockData.js` (generator script referenced at `stockIntelligenceData.js:1`) exists in-repo — not located in this session.
+- `read-across-check` purpose beyond the filename; cron file not opened.
+- `voiceLayerCache` doc reader on the Gemma/chat side not traced end-to-end this session (only `agent/chat.js:217` marketContext read and `voice-layer-cache.js` writer side confirmed).
+
+## Flags
+- `stockIntelligenceData.js` is **537 KB / 266 lines** with very long embedded string fields; dominantly data. Any grep-heavy audit against it hits pagination limits — treat as blob.
+- `scan-movers` threshold `MOVE_THRESHOLD_PCT = 3` is hardcoded (`scan-movers.js:17`), not env-tuned.
+- `volatilityRegime` is SPY-ATR derived; explicit comment in `voice-layer-cache.js:269` states "No VIX data in codebase — volatilityRegime used as proxy." Any Sonnet synthesis assuming real VIX levels will be wrong.
+- `economic-events-sonar` and `earnings-calendar-sonar` are NOT wired into the voice layer today — any DRB synthesis needing their outputs must fetch fresh or refactor them into a cached collection.
+- `why-moving.js` is POST-only and per-ticker; there is no "today's movers with reasons" bundle — `scan-movers` triggers Alex stories but does not produce a consolidated list document.
+- Cron slots at 40/40 — no headroom. Any new DRB cron requires reclaiming a slot first.
