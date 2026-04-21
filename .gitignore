@@ -34,3 +34,6 @@ scripts/output/
 
 # Local audit/discovery artifacts — not pushed by default
 discovery/
+
+# DKB batch staging — per-entry files used during batch assembly, not committed
+batches/.staging/
