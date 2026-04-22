@@ -33,6 +33,7 @@ import {
   countPhasesForDimensions,
   materializeDimensionBundle,
   persistDimensionValuesOnBundle,
+  persistCompileTransparencyOnBundle,
   COLLECTION_DEFS,
 } from '../../utils/dimensionMapper';
 
@@ -221,6 +222,16 @@ function StepStrategy({
   onParamChange,
   disabled,
   fromConversation,
+  // Phase 2 — compile transparency props. Threaded in but not yet rendered;
+  // Phase 3 wires the expandable panel into the banner region below.
+  // eslint-disable-next-line no-unused-vars
+  compileConfidence = null,
+  // eslint-disable-next-line no-unused-vars
+  compileWarnings = [],
+  // eslint-disable-next-line no-unused-vars
+  compileMappingNotes = [],
+  // eslint-disable-next-line no-unused-vars
+  compileAppliedClamps = [],
 }) {
   return (
     <div>
@@ -493,6 +504,12 @@ export default function SeasonEntryModal({
   // this launch is recorded as the "B" side of a refinement pair.
   sourceExperimentId = null,
   entrySource = null,
+  // Compile transparency — populated by the Workshop compile flow.
+  // Defaults make the manual-configure path render identically to today.
+  compileConfidence = null,
+  compileWarnings = [],
+  compileMappingNotes = [],
+  compileAppliedClamps = [],
 }) {
   const startStep = typeof initialStep === 'number' ? initialStep : 0;
   const startDims = initialDimensionValues
@@ -598,6 +615,17 @@ export default function SeasonEntryModal({
       (err) => console.warn('[SeasonEntryModal] persist dims failed', err)
     );
 
+    // Persist Workshop compile transparency onto the bundle doc for later
+    // confidence-vs-outcome auditing. No-ops on manual-configure launches.
+    persistCompileTransparencyOnBundle(agent.id, bundleId, {
+      confidence: compileConfidence,
+      warnings: compileWarnings,
+      mappingNotes: compileMappingNotes,
+      appliedClamps: compileAppliedClamps,
+    }).catch((err) =>
+      console.warn('[SeasonEntryModal] persist compile transparency failed', err)
+    );
+
     // Step 2: Call the existing (protected) create-entry API.
     // Phase 6 — forward optional origin metadata so the strategy_configs
     // shadow log captures the creation path (workshop / refinement / etc.)
@@ -666,6 +694,10 @@ export default function SeasonEntryModal({
     sourceExperimentId,
     entrySource,
     fromConversation,
+    compileConfidence,
+    compileWarnings,
+    compileMappingNotes,
+    compileAppliedClamps,
   ]);
 
   const nextDisabled =
@@ -720,6 +752,10 @@ export default function SeasonEntryModal({
                     onParamChange={handleParamChange}
                     disabled={submitting}
                     fromConversation={fromConversation}
+                    compileConfidence={compileConfidence}
+                    compileWarnings={compileWarnings}
+                    compileMappingNotes={compileMappingNotes}
+                    compileAppliedClamps={compileAppliedClamps}
                   />
                 )}
                 {step === 2 && (

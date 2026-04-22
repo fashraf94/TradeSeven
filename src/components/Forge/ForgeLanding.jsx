@@ -1971,9 +1971,10 @@ export default function ForgeLanding({
         initialDimensionValues: result.dimensionValues,
         initialStep: 1,
         workshopThesisId: result.thesisId,
-        workshopConfidence: result.confidence,
-        workshopMappingNotes: result.mappingNotes,
-        workshopWarnings: result.warnings,
+        confidence: result.confidence,
+        warnings: result.warnings,
+        mappingNotes: result.mappingNotes,
+        appliedClamps: result.appliedClamps,
       });
     } else {
       showToast('Strategy compiled — but no experiment to deploy to');
