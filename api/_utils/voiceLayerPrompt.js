@@ -207,7 +207,7 @@ BEHAVIORAL RULES:
 - Ask ONE focused question per turn. Resist the urge to pile on — let the user breathe and answer.
 - Probe the dimensions that are still empty in activeThesis. If entryLogic is filled but exitLogic is not, ask about exits.
 - Push back on vague statements. "I like tech" is a starting point, not a thesis — ask which tech, why, when.
-- Reference DKB patterns and market history when relevant to ground the conversation in evidence.
+- Reference the daily regime brief (DRB) in your context when relevant — it carries today's regime, this-week / next-week calendar events, and macro themes. Do NOT invent historical statistics, win rates, or pattern frequencies. If you need data you don't have, say you don't have it rather than guessing a number.
 - When the user gives you new information, update the relevant activeThesis field immediately in your scratchpad.
 - Only set readyToCompile: true when entryLogic, exitLogic, AND riskPosture are all non-empty AND the summary is coherent. Then offer to compile: "I think we've got enough here to compile into a strategy — want me to do it, or keep refining?"
 - If the user goes off-topic (markets in general, personal finance, etc.), gently redirect: "That's a whole other conversation — for now let's stay on this strategy. What we still need to nail down is..."
@@ -235,7 +235,7 @@ CONFIDENCE HANDLING:
 
 const WORKSHOP_FEW_SHOT = `EXAMPLE OF AN EXPERT BUILDER EXCHANGE (user lacks technical knowledge — you lead with a specific proposal, not a choice between concepts):
 User: "I want to trade around earnings season but I don't really know the technical side"
-Agent: {"_scratchpad": "User has a clear catalyst (earnings) but needs me to build the technical framework. I'll propose a specific entry/exit strategy rather than asking them to choose between concepts they don't know.", "activeThesis": {"summary": "Earnings momentum strategy — buy strong reporters on post-earnings breakouts", "catalyst": "Earnings season", "instruments": ["Stocks with upcoming earnings reports"], "entryLogic": "Buy when stock gaps up >3% on earnings beat with above-average volume", "exitLogic": "", "riskPosture": "", "invalidation": "", "confidence": "low", "readyToCompile": false}, "response": "Earnings season is a great catalyst — there's a reliable pattern where stocks that beat expectations by a wide margin tend to keep running for days after. Here's what I'd build: we buy stocks that gap up more than 3% on an earnings beat with heavy volume — that filters out the weak reactions and catches genuine momentum. For the exit side, we need to decide how tight to play it. Do you want to ride winners for a week or two, or lock in quick profits within a few days?", "hasDirective": false, "directive": null, "suggestedActions": ["Ride it — hold 1-2 weeks", "Quick flip — 2-3 days", "Let's discuss risk first"]}
+Agent: {"_scratchpad": "User has a clear catalyst (earnings) but needs me to build the technical framework. I'll propose a specific entry/exit strategy rather than asking them to choose between concepts they don't know.", "activeThesis": {"summary": "Earnings momentum strategy — buy strong reporters on post-earnings breakouts", "catalyst": "Earnings season", "instruments": ["Stocks with upcoming earnings reports"], "entryLogic": "Buy when stock gaps up >3% on earnings beat with above-average volume", "exitLogic": "", "riskPosture": "", "invalidation": "", "confidence": "low", "readyToCompile": false}, "response": "Earnings season is a catalyst worth building around. Here's what I'd build: we buy stocks that gap up more than 3% on an earnings beat with heavy volume — that filters out the weak reactions and catches genuine momentum. For the exit side, we need to decide how tight to play it. Do you want to ride winners for a week or two, or lock in quick profits within a few days?", "hasDirective": false, "directive": null, "suggestedActions": ["Ride it — hold 1-2 weeks", "Quick flip — 2-3 days", "Let's discuss risk first"]}
 
 EXAMPLE OF A GOOD WORKSHOP EXCHANGE:
 User: "I think momentum stocks outperform in bull markets but I want tight downside protection."
@@ -466,6 +466,24 @@ Yields: ${mc.yieldRegime}`;
 const DATA_CONFIDENCE_RULE = `DATA CONFIDENCE:
 Portfolio data refreshes every 15 minutes. Frame prices as trends, not exact current values. Say "CF is up solidly today" not "CF is at $78.42." If data feels stale, acknowledge it: "as of last check." Never invent numbers — if a field is missing, skip it entirely.`;
 
+// ==================== WORKSHOP ANCHOR BLOCK ====================
+
+// Renders today's Daily Regime Brief (DRB) as a workshop-facing context
+// header. The DRB is fetched by the endpoint and passed through as a
+// pre-assembled `anchorContext` string (same contract battle mode uses).
+// Returns an empty string when no DRB is available, so the caller can
+// conditionally skip-push rather than emitting an empty heading.
+function buildWorkshopAnchorBlock(anchorContext) {
+  if (!anchorContext || typeof anchorContext !== 'string') return '';
+  const trimmed = anchorContext.trim();
+  if (!trimmed) return '';
+
+  return `TODAY'S MARKET CONTEXT (from the Daily Regime Brief):
+${trimmed}
+
+Use this to ground your strategy discussion in current conditions. Cite it naturally when relevant to the user's thesis — don't force it.`;
+}
+
 // ==================== WORKSHOP CONTEXT BLOCK ====================
 
 function buildWorkshopContextBlock(workshopContext) {
@@ -681,6 +699,11 @@ RIGHT NOW you are in WORKSHOP MODE — there is no active battle. You are helpin
       agent?.consolidatedInsight
     );
 
+    // Block 3.5': Workshop Anchor (today's DRB). Rendered only when the
+    // endpoint supplied a non-empty anchorContext — otherwise omitted so
+    // weekends / stale-DRB days don't inject an empty header.
+    const workshopAnchor = buildWorkshopAnchorBlock(anchorContext);
+
     // Block 5': Workshop Context (replaces Battle State)
     const workshopBlock = buildWorkshopContextBlock(workshopContext);
 
@@ -695,10 +718,13 @@ RIGHT NOW you are in WORKSHOP MODE — there is no active battle. You are helpin
       outputFormat,
       partnerModel,
       convictions,
+    ];
+    if (workshopAnchor) blocks.push(workshopAnchor);
+    blocks.push(
       workshopBlock,
       fewShot,
       phaseRules,
-    ];
+    );
 
     return blocks.join('\n\n');
   }
