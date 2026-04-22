@@ -29,7 +29,7 @@ import { callGemmaVoiceWithRetry, parseVoiceLayerResponse } from '../_utils/gemm
 import { FieldValue } from 'firebase-admin/firestore';
 import { logConversation } from '../_utils/shadowLogger.js';
 
-export const config = { maxDuration: 15 };
+export const config = { maxDuration: 30 };
 
 const MESSAGE_BUDGET = 25;
 const HISTORY_WINDOW = 10; // max turns fed back into the model
