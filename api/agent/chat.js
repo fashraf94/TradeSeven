@@ -8,7 +8,7 @@ import { logConversation } from '../_utils/shadowLogger.js';
 import { getMarketState } from '../_utils/marketSchedule.js';
 import { randomUUID } from 'node:crypto';
 
-export const config = { maxDuration: 15 };
+export const config = { maxDuration: 30 };
 
 // ==================== ELICITATION TARGET ====================
 
