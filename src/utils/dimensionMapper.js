@@ -666,6 +666,51 @@ export async function persistDimensionValuesOnBundle(
 }
 
 /**
+ * Merge-write Workshop compile transparency outputs onto an existing bundle
+ * doc. Sibling to `persistDimensionValuesOnBundle` — same fire-and-forget
+ * contract, same merge-write pattern, same idempotency guarantees.
+ *
+ * Persists:
+ *   compileConfidence       — top-level scalar for query-friendly auditing
+ *                             of confidence-vs-outcome correlations
+ *   compileTransparency     — sub-object holding warnings / mappingNotes /
+ *                             appliedClamps verbatim from the compile endpoint
+ *
+ * No-ops when the launch did not originate from Workshop (all inputs empty
+ * / null), so manual-configure launches never write these fields.
+ */
+export async function persistCompileTransparencyOnBundle(
+  agentId,
+  bundleId,
+  { confidence = null, warnings = [], mappingNotes = [], appliedClamps = [] } = {}
+) {
+  if (!agentId || !bundleId) return;
+  const hasConfidence = typeof confidence === 'number';
+  const hasArrays =
+    (Array.isArray(warnings) && warnings.length > 0) ||
+    (Array.isArray(mappingNotes) && mappingNotes.length > 0) ||
+    (Array.isArray(appliedClamps) && appliedClamps.length > 0);
+  if (!hasConfidence && !hasArrays) return;
+
+  const bundleRef = doc(db, 'agents', agentId, 'bundles', bundleId);
+  const batch = writeBatch(db);
+  batch.set(
+    bundleRef,
+    {
+      compileConfidence: hasConfidence ? confidence : null,
+      compileTransparency: {
+        warnings: Array.isArray(warnings) ? warnings : [],
+        mappingNotes: Array.isArray(mappingNotes) ? mappingNotes : [],
+        appliedClamps: Array.isArray(appliedClamps) ? appliedClamps : [],
+      },
+      updatedAt: serverTimestamp(),
+    },
+    { merge: true }
+  );
+  await batch.commit();
+}
+
+/**
  * Translate dimensionValues into BaggerBomb-appropriate natural-language
  * directives the Haiku prompt can reason about during intraday battles.
  *

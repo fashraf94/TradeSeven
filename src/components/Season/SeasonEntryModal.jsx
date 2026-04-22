@@ -26,6 +26,7 @@ import { fetchWithAuth } from '../../utils/fetchWithAuth';
 import { SEASON_CONFLICT_PAIRS, FORGE_RULE_TEMPLATES } from '../../data/forgeKnowledgeBase';
 import { HOLO_COLORS } from '../../constants/holoTheme';
 import StrategyDimensions from '../Forge/StrategyDimensions';
+import CompileTransparencyPanel from './CompileTransparencyPanel';
 import {
   cloneDefaults,
   applyCollectionPreset,
@@ -33,6 +34,7 @@ import {
   countPhasesForDimensions,
   materializeDimensionBundle,
   persistDimensionValuesOnBundle,
+  persistCompileTransparencyOnBundle,
   COLLECTION_DEFS,
 } from '../../utils/dimensionMapper';
 
@@ -221,28 +223,20 @@ function StepStrategy({
   onParamChange,
   disabled,
   fromConversation,
+  compileConfidence = null,
+  compileWarnings = [],
+  compileMappingNotes = [],
+  compileAppliedClamps = [],
 }) {
   return (
     <div>
       {fromConversation && selectedCollection === 'from-conversation' ? (
-        <div
-          style={{
-            padding: '10px 12px',
-            background: 'rgba(240, 199, 94, 0.08)',
-            border: `1px solid ${TROPHY_GOLD}`,
-            borderRadius: 8,
-            fontSize: 12,
-            color: HOLO_COLORS.textSecondary,
-            lineHeight: 1.5,
-            marginBottom: 12,
-          }}
-        >
-          <span style={{ fontWeight: 700, color: TROPHY_GOLD }}>
-            From Your Conversation
-          </span>{' '}
-          — these dimensions were pre-filled from your Workshop Mode chat. Review
-          and adjust any slider before launching.
-        </div>
+        <CompileTransparencyPanel
+          confidence={compileConfidence}
+          warnings={compileWarnings}
+          mappingNotes={compileMappingNotes}
+          appliedClamps={compileAppliedClamps}
+        />
       ) : (
         <div
           style={{
@@ -493,6 +487,12 @@ export default function SeasonEntryModal({
   // this launch is recorded as the "B" side of a refinement pair.
   sourceExperimentId = null,
   entrySource = null,
+  // Compile transparency — populated by the Workshop compile flow.
+  // Defaults make the manual-configure path render identically to today.
+  compileConfidence = null,
+  compileWarnings = [],
+  compileMappingNotes = [],
+  compileAppliedClamps = [],
 }) {
   const startStep = typeof initialStep === 'number' ? initialStep : 0;
   const startDims = initialDimensionValues
@@ -598,6 +598,17 @@ export default function SeasonEntryModal({
       (err) => console.warn('[SeasonEntryModal] persist dims failed', err)
     );
 
+    // Persist Workshop compile transparency onto the bundle doc for later
+    // confidence-vs-outcome auditing. No-ops on manual-configure launches.
+    persistCompileTransparencyOnBundle(agent.id, bundleId, {
+      confidence: compileConfidence,
+      warnings: compileWarnings,
+      mappingNotes: compileMappingNotes,
+      appliedClamps: compileAppliedClamps,
+    }).catch((err) =>
+      console.warn('[SeasonEntryModal] persist compile transparency failed', err)
+    );
+
     // Step 2: Call the existing (protected) create-entry API.
     // Phase 6 — forward optional origin metadata so the strategy_configs
     // shadow log captures the creation path (workshop / refinement / etc.)
@@ -666,6 +677,10 @@ export default function SeasonEntryModal({
     sourceExperimentId,
     entrySource,
     fromConversation,
+    compileConfidence,
+    compileWarnings,
+    compileMappingNotes,
+    compileAppliedClamps,
   ]);
 
   const nextDisabled =
@@ -720,6 +735,10 @@ export default function SeasonEntryModal({
                     onParamChange={handleParamChange}
                     disabled={submitting}
                     fromConversation={fromConversation}
+                    compileConfidence={compileConfidence}
+                    compileWarnings={compileWarnings}
+                    compileMappingNotes={compileMappingNotes}
+                    compileAppliedClamps={compileAppliedClamps}
                   />
                 )}
                 {step === 2 && (
