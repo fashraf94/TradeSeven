@@ -211,12 +211,39 @@ export default async function handler(req, res) {
       messageBudget,
     };
 
+    // 10b. Fetch today's market context for the workshop anchor block.
+    // Mirrors the pattern in api/agent/chat.js — regime line from
+    // marketContext, DRB narrative appended only when fresh (forDate ===
+    // today). Any failure leaves anchorContext = null; the prompt builder
+    // then omits the block entirely.
+    let anchorContext = null;
+    try {
+      const today = new Date().toISOString().split('T')[0];
+      const [marketCtxDoc, drbDoc] = await Promise.all([
+        db.collection('indexIntelligence').doc('marketContext').get(),
+        db.collection('indexIntelligence').doc('dailyRegimeBrief').get(),
+      ]);
+      if (marketCtxDoc.exists) {
+        const ctx = marketCtxDoc.data();
+        const regimeLine = `Regime: ${ctx.regime}. ${ctx.regimeDetail || ''}`.trim();
+        const drb = drbDoc.exists ? drbDoc.data() : null;
+        const briefLine = drb && drb.forDate === today && typeof drb.dailyBrief === 'string'
+          ? drb.dailyBrief
+          : null;
+        const joined = [regimeLine, briefLine].filter(Boolean).join(' ');
+        anchorContext = joined || null;
+      }
+    } catch (err) {
+      console.error('[WorkshopChat] Failed to fetch market context:', err.message);
+    }
+
     // 11. Assemble system prompt
     const systemPrompt = buildVoiceLayerPrompt({
       agent,
       mode: 'workshop',
       conversationHistory,
       workshopContext,
+      anchorContext,
     });
 
     // 12. Call Gemma with 25s timeout (Vercel's platform timeout is higher;
