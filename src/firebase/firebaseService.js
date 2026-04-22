@@ -45,6 +45,7 @@ import {
 import { createInitialFreeAgents } from '../services/freeAgentRotationService.js';
 import { toISOString as dateToISO } from '../utils/dateUtils.js';
 import { trackRead } from '../utils/firestoreReadCounter';
+import { createInitialVision } from '../types/vision/visionFactory.js';
 
 // =====================================================
 // HMR GUARD: prevent rapid re-subscription to the same listeners
@@ -229,7 +230,14 @@ export async function createBattle(battleData) {
       },
 
       archived: false,
-      updatedAt: new Date().toISOString()
+      updatedAt: new Date().toISOString(),
+
+      // Spec A Phase 1: initialize Vision at battle creation.
+      // conditionSnapshot is null at this point per FLAG C — Layer 1 is not
+      // running synchronously here and pointDifferential has no meaning before
+      // an opponent joins. Phase 2 writers populate it on transition out of
+      // 'unformed'.
+      vision: createInitialVision(null, Timestamp.now())
     };
 
     const battleRef = await addDoc(collection(db, 'battles'), battle);
