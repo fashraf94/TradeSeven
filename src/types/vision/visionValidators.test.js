@@ -16,6 +16,7 @@ import {
   VISION_LIFECYCLE_STATES,
   VISION_TRANSITION_CAUSES,
   VISION_TRANSITION_ACTORS,
+  CONSTRAINT_MUTATION_STATES,
   confidenceToFloat,
   CONFIDENCE_FLOAT_MAP,
 } from '../../constants/visionEnums.js';
@@ -284,6 +285,59 @@ describe('validateTransition — initial (battle creation)', () => {
   });
 });
 
+describe('validateTransition — battle creation (cause, actor) gating (V3)', () => {
+  const v = createInitialVision(null, T0);
+
+  it('passes with actor=battle_creation, cause=battle_start', () => {
+    const r = validateTransition(null, v, 'battle_creation', 'battle_start');
+    expect(r).toEqual({ valid: true, errors: [] });
+  });
+
+  it('passes with actor=layer1, cause=battle_start', () => {
+    const r = validateTransition(null, v, 'layer1', 'battle_start');
+    expect(r).toEqual({ valid: true, errors: [] });
+  });
+
+  it('fails with actor=gemma, cause=user_input', () => {
+    const r = validateTransition(null, v, 'gemma', 'user_input');
+    expect(r.valid).toBe(false);
+    expect(
+      r.errors.some(
+        (e) =>
+          e.includes('invalid initial transition') &&
+          e.includes('"gemma"') &&
+          e.includes('"user_input"'),
+      ),
+    ).toBe(true);
+  });
+
+  it('fails with actor=battle_creation, cause=directional_trigger', () => {
+    const r = validateTransition(null, v, 'battle_creation', 'directional_trigger');
+    expect(r.valid).toBe(false);
+    expect(
+      r.errors.some(
+        (e) =>
+          e.includes('invalid initial transition') &&
+          e.includes('"battle_creation"') &&
+          e.includes('"directional_trigger"'),
+      ),
+    ).toBe(true);
+  });
+
+  it('fails with actor=cron, cause=battle_start', () => {
+    const r = validateTransition(null, v, 'cron', 'battle_start');
+    expect(r.valid).toBe(false);
+    expect(
+      r.errors.some(
+        (e) =>
+          e.includes('invalid initial transition') &&
+          e.includes('"cron"') &&
+          e.includes('"battle_start"'),
+      ),
+    ).toBe(true);
+  });
+});
+
 describe('validateTransition — table coverage', () => {
   it('every entry in VALID_TRANSITIONS admits a synthetic valid tuple', () => {
     for (const edge of VALID_TRANSITIONS) {
@@ -463,6 +517,81 @@ describe('validateConstraintMutation', () => {
   });
 });
 
+describe('validateConstraintMutation — 9-cell state×type matrix (C5)', () => {
+  // State-by-state base Vision builder. 'unformed' requires null snapshot and
+  // empty history; all other states use the buildVision default shape.
+  function baseFor(state) {
+    if (state === 'unformed') {
+      return buildVision({
+        state: 'unformed',
+        conditionSnapshot: null,
+        transitionHistory: [],
+        lastTransitionAt: T0,
+      });
+    }
+    return buildVision({ state });
+  }
+
+  // Per-type constraint builder.
+  function constraintFor(type, idSuffix) {
+    if (type === 'user_carveout') return validUserCarveout(idSuffix);
+    if (type === 'category_b_forge') return validCategoryB(idSuffix);
+    if (type === 'system_injected') return validSystemInjected(idSuffix);
+    throw new Error(`unknown constraint type ${type}`);
+  }
+
+  // Expected-pass lookup derived from the rules:
+  //   - system_injected: allowed in any non-retired state (retired is excluded from this matrix)
+  //   - user_carveout / category_b_forge: allowed only in CONSTRAINT_MUTATION_STATES
+  function shouldPass(state, type) {
+    if (type === 'system_injected') return true;
+    return CONSTRAINT_MUTATION_STATES.includes(state);
+  }
+
+  const states = ['unformed', 'proposed', 'active', 'under_debate', 'stale'];
+  const types = ['user_carveout', 'category_b_forge', 'system_injected'];
+
+  for (const state of states) {
+    for (const type of types) {
+      const expected = shouldPass(state, type);
+      const label = expected ? 'passes' : 'fails';
+
+      it(`${label}: add ${type} in ${state}`, () => {
+        const prev = baseFor(state);
+        const next = { ...prev, constraints: [constraintFor(type, `${state}-${type}-add`)] };
+        const r = validateConstraintMutation(prev, next);
+        expect(r.valid).toBe(expected);
+        if (!expected) {
+          expect(
+            r.errors.some(
+              (e) =>
+                e.includes('non-system-injected') &&
+                e.includes(JSON.stringify(state)),
+            ),
+          ).toBe(true);
+        }
+      });
+
+      it(`${label}: remove ${type} in ${state}`, () => {
+        const c = constraintFor(type, `${state}-${type}-rm`);
+        const prev = { ...baseFor(state), constraints: [c] };
+        const next = { ...prev, constraints: [] };
+        const r = validateConstraintMutation(prev, next);
+        expect(r.valid).toBe(expected);
+        if (!expected) {
+          expect(
+            r.errors.some(
+              (e) =>
+                e.includes('non-system-injected') &&
+                e.includes(JSON.stringify(state)),
+            ),
+          ).toBe(true);
+        }
+      });
+    }
+  }
+});
+
 // ---------------------------------------------------------------------------
 // validateVisionInvariants
 // ---------------------------------------------------------------------------
@@ -492,6 +621,37 @@ describe('validateVisionInvariants', () => {
     expect(r.valid).toBe(false);
     expect(r.errors.some((e) => e.includes('invariant 8'))).toBe(true);
   });
+});
+
+describe('validateVisionInvariants — invariant 6 read-side (V5)', () => {
+  it('passes: state=unformed with empty history', () => {
+    const v = createInitialVision(null, T0);
+    const r = validateVisionInvariants(v);
+    expect(r).toEqual({ valid: true, errors: [] });
+  });
+
+  it('passes: state=active with non-empty history', () => {
+    const r = validateVisionInvariants(buildVision());
+    expect(r).toEqual({ valid: true, errors: [] });
+  });
+
+  for (const state of ['proposed', 'active', 'under_debate', 'stale', 'retired']) {
+    it(`fails: state=${state} with empty history`, () => {
+      const v = buildVision({
+        state,
+        transitionHistory: [],
+        lastTransitionAt: T0,
+        createdAt: T0,
+      });
+      const r = validateVisionInvariants(v);
+      expect(r.valid).toBe(false);
+      expect(
+        r.errors.some(
+          (e) => e.includes('invariant 6') && e.includes(JSON.stringify(state)),
+        ),
+      ).toBe(true);
+    });
+  }
 });
 
 // ---------------------------------------------------------------------------

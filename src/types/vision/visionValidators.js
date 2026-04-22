@@ -44,6 +44,7 @@ import {
   VISION_SYSTEM_INJECTED_SCOPES,
   VISION_CONFLICT_WINNERS,
   VISION_CONFLICT_ARBITERS,
+  CONSTRAINT_MUTATION_STATES,
 } from '../../constants/visionEnums.js';
 import { isValidTransition } from './visionTransitions.js';
 
@@ -415,6 +416,13 @@ export function validateTransition(prevVision, nextVision, actor, cause) {
         }`,
       );
     }
+    // V3: the initial edge must also match VALID_TRANSITIONS on (cause, actor).
+    // Only 'battle_creation'/'layer1' actors + 'battle_start' cause are allowed.
+    if (!isValidTransition(null, 'unformed', cause, actor)) {
+      errors.push(
+        `invalid initial transition: (actor=${JSON.stringify(actor)}, cause=${JSON.stringify(cause)}) is not allowed on the battle-creation edge`,
+      );
+    }
     return { valid: errors.length === 0, errors };
   }
 
@@ -552,10 +560,9 @@ export function validateConstraintMutation(prevVision, nextVision) {
   }
 
   if (nonSystemChanged) {
-    const allowed = ['proposed', 'active', 'under_debate'];
-    if (!allowed.includes(prevVision.state)) {
+    if (!CONSTRAINT_MUTATION_STATES.includes(prevVision.state)) {
       errors.push(
-        `non-system-injected constraint mutations require state in [${allowed.join(', ')}], got ${JSON.stringify(prevVision.state)}`,
+        `non-system-injected constraint mutations require state in [${CONSTRAINT_MUTATION_STATES.join(', ')}], got ${JSON.stringify(prevVision.state)}`,
       );
     }
   }
@@ -599,6 +606,12 @@ export function validateVisionInvariants(vision) {
         );
       }
     }
+  } else if (vision.state !== 'unformed') {
+    // Invariant 6 (read-side): every state transition writes a history entry,
+    // so reaching any non-'unformed' state requires a non-empty history.
+    errors.push(
+      `invariant 6: state=${JSON.stringify(vision.state)} requires non-empty transitionHistory`,
+    );
   }
 
   if (isTimestampLike(vision.createdAt) && isTimestampLike(vision.lastTransitionAt)) {

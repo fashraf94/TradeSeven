@@ -28,6 +28,15 @@ export const VISION_LIFECYCLE_STATES = Object.freeze([
   'retired',
 ]);
 
+// States in which user_carveout and category_b_forge constraints may be added
+// or removed. system_injected may be mutated in any non-retired state.
+/** @type {readonly ['proposed','active','under_debate']} */
+export const CONSTRAINT_MUTATION_STATES = Object.freeze([
+  'proposed',
+  'active',
+  'under_debate',
+]);
+
 /** @type {readonly ['user_input','scheduled_check_in','directional_trigger','staleness_detected','battle_start','battle_end','autopilot_fallback']} */
 export const VISION_TRANSITION_CAUSES = Object.freeze([
   'user_input',
