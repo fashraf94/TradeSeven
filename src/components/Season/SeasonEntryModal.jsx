@@ -33,6 +33,7 @@ import {
   countPhasesForDimensions,
   materializeDimensionBundle,
   persistDimensionValuesOnBundle,
+  persistCompileMetadataOnBundle,
   COLLECTION_DEFS,
 } from '../../utils/dimensionMapper';
 
@@ -493,6 +494,15 @@ export default function SeasonEntryModal({
   // this launch is recorded as the "B" side of a refinement pair.
   sourceExperimentId = null,
   entrySource = null,
+  // Workshop compile transparency — pass-through from the Haiku compile
+  // endpoint. Feeds the Step 2 transparency panel and persists onto the
+  // bundle metadata at launch for post-hoc auditing. All optional; defaults
+  // preserve identical behavior on manual / refinement launches.
+  compileThesisId = null,
+  compileConfidence = null,
+  compileWarnings = [],
+  compileMappingNotes = [],
+  compileAppliedClamps = [],
 }) {
   const startStep = typeof initialStep === 'number' ? initialStep : 0;
   const startDims = initialDimensionValues
@@ -596,6 +606,20 @@ export default function SeasonEntryModal({
     // not part of the critical launch path.
     persistDimensionValuesOnBundle(agent.id, bundleId, dimensionValues).catch(
       (err) => console.warn('[SeasonEntryModal] persist dims failed', err)
+    );
+
+    // Workshop compile transparency: persist the Haiku compile metadata onto
+    // the same bundle doc for post-launch audits (confidence ↔ outcome,
+    // clamp frequency, warning distribution). Fire-and-forget and no-ops
+    // cleanly for manual / refinement launches where these fields are empty.
+    persistCompileMetadataOnBundle(agent.id, bundleId, {
+      thesisId: compileThesisId,
+      confidence: compileConfidence,
+      warnings: compileWarnings,
+      mappingNotes: compileMappingNotes,
+      appliedClamps: compileAppliedClamps,
+    }).catch((err) =>
+      console.warn('[SeasonEntryModal] persist compile metadata failed', err)
     );
 
     // Step 2: Call the existing (protected) create-entry API.

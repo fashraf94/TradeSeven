@@ -666,6 +666,54 @@ export async function persistDimensionValuesOnBundle(
 }
 
 /**
+ * Merge-write Workshop Mode compile metadata onto an existing bundle doc so
+ * post-launch audits can correlate Haiku's confidence / warnings / clamps /
+ * mapping-notes with the experiment's real-world outcome. Append-only sibling
+ * of `persistDimensionValuesOnBundle` — same fire-and-forget, idempotent-
+ * under-merge pattern.
+ *
+ * `metadata` is the structured transparency bag from /api/forge/compile-
+ * dimensions: { thesisId, confidence, warnings, mappingNotes, appliedClamps }.
+ * Any subset is acceptable — missing/nullish fields are simply skipped. No-ops
+ * when the call would write nothing meaningful, to avoid padding non-workshop
+ * bundles with empty fields.
+ */
+export async function persistCompileMetadataOnBundle(
+  agentId,
+  bundleId,
+  metadata
+) {
+  if (!agentId || !bundleId || !metadata || typeof metadata !== 'object') return;
+
+  const payload = {};
+  if (typeof metadata.thesisId === 'string' && metadata.thesisId) {
+    payload.compileThesisId = metadata.thesisId;
+  }
+  if (typeof metadata.confidence === 'number' && !Number.isNaN(metadata.confidence)) {
+    payload.compileConfidence = metadata.confidence;
+  }
+  if (Array.isArray(metadata.warnings)) {
+    payload.compileWarnings = metadata.warnings.filter((s) => typeof s === 'string');
+  }
+  if (Array.isArray(metadata.mappingNotes)) {
+    payload.compileMappingNotes = metadata.mappingNotes.filter((s) => typeof s === 'string');
+  }
+  if (Array.isArray(metadata.appliedClamps)) {
+    payload.compileAppliedClamps = metadata.appliedClamps.filter((s) => typeof s === 'string');
+  }
+
+  if (Object.keys(payload).length === 0) return;
+
+  payload.compileMetadataAt = serverTimestamp();
+  payload.updatedAt = serverTimestamp();
+
+  const bundleRef = doc(db, 'agents', agentId, 'bundles', bundleId);
+  const batch = writeBatch(db);
+  batch.set(bundleRef, payload, { merge: true });
+  await batch.commit();
+}
+
+/**
  * Translate dimensionValues into BaggerBomb-appropriate natural-language
  * directives the Haiku prompt can reason about during intraday battles.
  *

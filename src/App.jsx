@@ -11817,6 +11817,27 @@ export default function PortfolioDuel() {
           fromConversation={Boolean(seasonEntryOptions?.initialDimensionValues)}
           sourceExperimentId={seasonEntryOptions?.sourceExperimentId || null}
           entrySource={seasonEntryOptions?.entrySource || null}
+          compileThesisId={seasonEntryOptions?.workshopThesisId || null}
+          compileConfidence={
+            typeof seasonEntryOptions?.workshopConfidence === 'number'
+              ? seasonEntryOptions.workshopConfidence
+              : null
+          }
+          compileWarnings={
+            Array.isArray(seasonEntryOptions?.workshopWarnings)
+              ? seasonEntryOptions.workshopWarnings
+              : []
+          }
+          compileMappingNotes={
+            Array.isArray(seasonEntryOptions?.workshopMappingNotes)
+              ? seasonEntryOptions.workshopMappingNotes
+              : []
+          }
+          compileAppliedClamps={
+            Array.isArray(seasonEntryOptions?.workshopAppliedClamps)
+              ? seasonEntryOptions.workshopAppliedClamps
+              : []
+          }
           onBuildInForge={() => {
             setSeasonEntryModalOpen(false);
             setSeasonToJoin(null);

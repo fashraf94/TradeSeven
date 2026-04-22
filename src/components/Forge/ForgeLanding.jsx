@@ -1890,6 +1890,7 @@ export default function ForgeLanding({
         workshopConfidence: result.confidence,
         workshopMappingNotes: result.mappingNotes,
         workshopWarnings: result.warnings,
+        workshopAppliedClamps: result.appliedClamps,
       });
     } else {
       showToast('Strategy compiled — but no experiment to deploy to');
