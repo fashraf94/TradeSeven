@@ -31,6 +31,7 @@ import {
   TrendingUp,
   TrendingDown,
   ChevronDown,
+  MessageSquare,
 } from 'lucide-react';
 import { collection, getDocs, query, where, orderBy, limit, doc, getDoc } from 'firebase/firestore';
 import { db } from '../../firebase/config';
@@ -235,6 +236,89 @@ function SecondaryLink({ onClick, children }) {
       }}
     >
       {children}
+    </button>
+  );
+}
+
+// Launch entry card — the two-card "LAUNCH" surface in State 2 below the
+// experiment grid. `accent='gold'` is the primary (trophy-gold border,
+// right-arrow affordance); `accent='muted'` is the secondary (subtle
+// surface border, no arrow). Matches the visual weight of ExperimentCard
+// without recreating its data chrome.
+function LaunchCard({
+  icon: Icon,
+  title,
+  subtitle,
+  accent = 'muted',
+  showArrow = false,
+  onClick,
+}) {
+  const isGold = accent === 'gold';
+  const borderColor = isGold ? TROPHY_GOLD : BORDER_SUBTLE;
+  const bg = isGold ? CARD_BG : SURFACE_BG;
+  const iconColor = isGold ? TROPHY_GOLD : TEXT_SECONDARY;
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 12,
+        width: '100%',
+        padding: 14,
+        background: bg,
+        border: `1px solid ${borderColor}`,
+        borderRadius: 12,
+        cursor: 'pointer',
+        textAlign: 'left',
+        color: 'inherit',
+        font: 'inherit',
+      }}
+    >
+      <div
+        style={{
+          flex: '0 0 auto',
+          width: 36,
+          height: 36,
+          borderRadius: 8,
+          background: isGold ? 'rgba(240, 199, 94, 0.12)' : 'rgba(139, 148, 158, 0.08)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          color: iconColor,
+        }}
+      >
+        <Icon size={18} />
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div
+          style={{
+            fontSize: 14,
+            fontWeight: 600,
+            color: TEXT_PRIMARY,
+            lineHeight: 1.3,
+          }}
+        >
+          {title}
+        </div>
+        <div
+          style={{
+            fontSize: 12,
+            color: TEXT_SECONDARY,
+            lineHeight: 1.4,
+            marginTop: 2,
+          }}
+        >
+          {subtitle}
+        </div>
+      </div>
+      {showArrow && (
+        <ArrowRight
+          size={16}
+          color={TEXT_SECONDARY}
+          style={{ flexShrink: 0 }}
+        />
+      )}
     </button>
   );
 }
@@ -2015,6 +2099,50 @@ export default function ForgeLanding({
             isDesktop={isDesktop}
           />
         )}
+
+        {/* LAUNCH section — restored below the experiment grid in State 2.
+            Provides the two entry points (manual config, Workshop chat)
+            the multi-experiment view has been missing. Mirrors the
+            AgentCard 560px inner rail in wide multi-experiment mode so the
+            two stacked conversational cards don't stretch to 1200px. */}
+        {landingState === 'testing' && (() => {
+          const section = (
+            <div style={{ marginTop: 16, display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <div
+                style={{
+                  fontSize: 11,
+                  fontWeight: 700,
+                  letterSpacing: '0.8px',
+                  textTransform: 'uppercase',
+                  color: TEXT_MUTED,
+                  paddingLeft: 2,
+                }}
+              >
+                Launch
+              </div>
+              <LaunchCard
+                icon={Beaker}
+                title="Start New Experiment"
+                subtitle="Build and test your trading strategy against 4 weeks of live market data."
+                accent="gold"
+                showArrow
+                onClick={() => handleConfigureManually()}
+              />
+              <LaunchCard
+                icon={MessageSquare}
+                title="Talk to Agent"
+                subtitle="Develop your strategy through conversation."
+                accent="muted"
+                onClick={handleBuildStrategy}
+              />
+            </div>
+          );
+          return isDesktop && isMultiExperimentTesting ? (
+            <div style={{ maxWidth: 560, margin: '0 auto' }}>{section}</div>
+          ) : (
+            section
+          );
+        })()}
 
         {landingState === 'results' && latestCompleted && (
           <ResultsView
