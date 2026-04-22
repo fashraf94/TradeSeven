@@ -26,6 +26,7 @@ import { fetchWithAuth } from '../../utils/fetchWithAuth';
 import { SEASON_CONFLICT_PAIRS, FORGE_RULE_TEMPLATES } from '../../data/forgeKnowledgeBase';
 import { HOLO_COLORS } from '../../constants/holoTheme';
 import StrategyDimensions from '../Forge/StrategyDimensions';
+import CompileTransparencyPanel from './CompileTransparencyPanel';
 import {
   cloneDefaults,
   applyCollectionPreset,
@@ -222,38 +223,20 @@ function StepStrategy({
   onParamChange,
   disabled,
   fromConversation,
-  // Phase 2 — compile transparency props. Threaded in but not yet rendered;
-  // Phase 3 wires the expandable panel into the banner region below.
-  // eslint-disable-next-line no-unused-vars
   compileConfidence = null,
-  // eslint-disable-next-line no-unused-vars
   compileWarnings = [],
-  // eslint-disable-next-line no-unused-vars
   compileMappingNotes = [],
-  // eslint-disable-next-line no-unused-vars
   compileAppliedClamps = [],
 }) {
   return (
     <div>
       {fromConversation && selectedCollection === 'from-conversation' ? (
-        <div
-          style={{
-            padding: '10px 12px',
-            background: 'rgba(240, 199, 94, 0.08)',
-            border: `1px solid ${TROPHY_GOLD}`,
-            borderRadius: 8,
-            fontSize: 12,
-            color: HOLO_COLORS.textSecondary,
-            lineHeight: 1.5,
-            marginBottom: 12,
-          }}
-        >
-          <span style={{ fontWeight: 700, color: TROPHY_GOLD }}>
-            From Your Conversation
-          </span>{' '}
-          — these dimensions were pre-filled from your Workshop Mode chat. Review
-          and adjust any slider before launching.
-        </div>
+        <CompileTransparencyPanel
+          confidence={compileConfidence}
+          warnings={compileWarnings}
+          mappingNotes={compileMappingNotes}
+          appliedClamps={compileAppliedClamps}
+        />
       ) : (
         <div
           style={{
