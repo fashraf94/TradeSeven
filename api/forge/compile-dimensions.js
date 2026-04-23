@@ -32,103 +32,163 @@ const HAIKU_MODEL = 'claude-haiku-4-5-20251001';
 
 // ==================== DIMENSION SCHEMA ====================
 //
-// Mirrors src/utils/dimensionMapper.js:DIMENSION_DEFAULTS and the ranges
-// declared in src/components/Forge/StrategyDimensions.jsx. Kept as a
-// server-local copy so this module can run without pulling React modules.
-// Any schema change in dimensionMapper must be reflected here.
+// Mirrors src/utils/dimensionMapper.js:DIMENSION_DEFAULTS (new-shape keys)
+// and the ranges declared in spec Section 3.1. Kept as a server-local copy
+// so this module can run without pulling React modules. Any schema change
+// in dimensionMapper must be reflected here.
+//
+// Phase 2 (Forge Expansion Sprint v3): expanded to carry the full rule
+// palette — per-param `rule` annotation, `enumNumber` / `stringArray` types,
+// and `requires` gating for conditional sub-params (sx-05 trigger branches,
+// sx-06 gating, se-09 mode branching, etc.).
+
+const DURATION_OPTIONS = [5, 10, 15, 20];
+const DEFAULT_DURATION = 20;
+
+const SECTOR_UNIVERSE = [
+  'Technology', 'Healthcare', 'Financials', 'Energy',
+  'Consumer Discretionary', 'Consumer Staples', 'Industrials',
+  'Materials', 'Utilities', 'Real Estate', 'Communication Services',
+];
 
 const DIMENSION_SCHEMA = {
   riskPosture: {
     description: 'Drawdown tolerance.',
     params: {
-      stopLoss: { type: 'number', min: 3, max: 20, default: 8, unit: '%' },
-      trailingStop: { type: 'number', min: 3, max: 25, default: 10, unit: '%' },
+      stopLossPct:     { rule: 'sx-01', type: 'number', min: 3, max: 20, default: 8,  unit: '%' },
+      trailingStopPct: { rule: 'sx-02', type: 'number', min: 3, max: 25, default: 10, unit: '%' },
     },
   },
   entryAggression: {
     description: 'How selective the entry filter is.',
     params: {
-      rsiUpper: { type: 'number', min: 50, max: 80, default: 65, unit: 'RSI' },
-      volumeConfirm: { type: 'boolean', default: true },
-      fundamentalFloor: { type: 'number', min: 20, max: 80, default: 45, unit: 'score' },
+      rsiCeiling:              { rule: 'se-01', type: 'integer', min: 50, max: 80, default: 65, unit: 'RSI' },
+      volumeConfirmEnabled:    { rule: 'se-02', type: 'boolean', default: true },
+      volumeMultiplier:        { rule: 'se-02', type: 'enumNumber', options: [1.2, 1.5, 2.0, 3.0], default: 1.5, unit: 'x', requires: { volumeConfirmEnabled: true } },
+      trendAlignmentEnabled:   { rule: 'se-03', type: 'boolean', default: false },
+      trendAlignmentSmaPeriod: { rule: 'se-03', type: 'enumNumber', options: [20, 50, 100, 200], default: 50, unit: 'days', requires: { trendAlignmentEnabled: true } },
+      fundamentalFloor:        { rule: 'se-05', type: 'integer', min: 20, max: 80, default: 45, unit: 'score' },
+      momentumThresholdPct:    { rule: 'se-06', type: 'number', min: 0.5, max: 10, default: 2, unit: '%' },
+      momentumLookbackDays:    { rule: 'se-06', type: 'enumNumber', options: [5, 10, 20], default: 10, unit: 'days' },
+      institutionalEnabled:    { rule: 'se-08', type: 'boolean', default: false },
+      institutionalDirection:  { rule: 'se-08', type: 'enum', stringOptions: ['any', 'increased', 'stable_or_increased'], default: 'increased', requires: { institutionalEnabled: true } },
+      institutionalQuarters:   { rule: 'se-08', type: 'enumNumber', options: [1, 2, 4], default: 2, unit: 'Q', requires: { institutionalEnabled: true } },
     },
   },
   exitDiscipline: {
     description: 'Profit-taking and cut-loss discipline.',
     params: {
-      profitTarget: { type: 'number', min: 5, max: 50, default: 15, unit: '%' },
-      timeExit: { type: 'number', min: 2, max: 15, default: 5, unit: 'days' },
-      technicalExit: { type: 'boolean', default: false },
+      profitTargetPct:              { rule: 'sx-04', type: 'number', min: 5, max: 50, default: 15, unit: '%' },
+      timeExitDays:                 { rule: 'sx-03', type: 'integer', min: 2, max: 15, default: 5, unit: 'days' },
+      timeExitMinGainPct:           { rule: 'sx-03', type: 'enumNumber', options: [0, 1, 3, 5], default: 1, unit: '%' },
+      technicalExitEnabled:         { rule: 'sx-05', type: 'boolean', default: false },
+      technicalExitTrigger:         { rule: 'sx-05', type: 'enum', stringOptions: ['rsi_overbought', 'macd_bearish', 'either_rsi_or_macd', 'below_sma'], default: 'rsi_overbought', requires: { technicalExitEnabled: true } },
+      technicalExitRsiThreshold:    { rule: 'sx-05', type: 'enumNumber', options: [65, 70, 75, 80, 85], default: 75, unit: 'RSI', requires: { technicalExitEnabled: true, technicalExitTrigger: ['rsi_overbought', 'either_rsi_or_macd'] } },
+      technicalExitSmaPeriod:       { rule: 'sx-05', type: 'enumNumber', options: [20, 50, 100, 200], default: 50, unit: 'days', requires: { technicalExitEnabled: true, technicalExitTrigger: 'below_sma' } },
+      earningsExitEnabled:          { rule: 'sx-06', type: 'boolean', default: false },
+      earningsExitDays:             { rule: 'sx-06', type: 'enumNumber', options: [1, 2, 3, 5], default: 2, unit: 'days', requires: { earningsExitEnabled: true } },
+      earningsExitOnlyIfProfitable: { rule: 'sx-06', type: 'boolean', default: true, requires: { earningsExitEnabled: true } },
     },
   },
   sectorStrategy: {
-    description: 'Concentration vs diversification posture.',
+    description: 'Concentration vs diversification posture + sector universe filter.',
     params: {
-      maxSectorWeight: { type: 'number', min: 15, max: 50, default: 30, unit: '%' },
-      sectorDriftTolerance: { type: 'number', min: 5, max: 20, default: 10, unit: '%' },
-      rebalanceOnDrift: { type: 'boolean', default: true },
+      maxSectorWeightPct:      { rule: 'se-07', type: 'integer', min: 15, max: 50, default: 30, unit: '%' },
+      sectorDriftTolerancePct: { rule: 'sr-03', type: 'integer', min: 5, max: 20, default: 10, unit: '%' },
+      rebalanceOnDrift:        { rule: 'sr-03', type: 'boolean', default: true },
+      sectorFilterEnabled:     { rule: 'se-09', type: 'boolean', default: false },
+      sectorFilterMode:        { rule: 'se-09', type: 'enum', stringOptions: ['top_n', 'specific_sectors'], default: 'top_n', requires: { sectorFilterEnabled: true } },
+      sectorFilterTimeframe:   { rule: 'se-09', type: 'enum', stringOptions: ['1D', '1W', '1M'], default: '1W', requires: { sectorFilterEnabled: true, sectorFilterMode: 'top_n' } },
+      sectorFilterTopN:        { rule: 'se-09', type: 'enumNumber', options: [1, 2, 3, 5], default: 3, requires: { sectorFilterEnabled: true, sectorFilterMode: 'top_n' } },
+      sectorFilterSelected:    { rule: 'se-09', type: 'stringArray', itemOptions: SECTOR_UNIVERSE, minItems: 1, maxItems: 5, default: [], requires: { sectorFilterEnabled: true, sectorFilterMode: 'specific_sectors' } },
     },
   },
   momentumSensitivity: {
-    description: 'Momentum chasing vs contrarian posture.',
+    description: 'Vestigial — momentum posture. Retained for radar-chart continuity (spec §4.5).',
     params: {
-      momentumThreshold: { type: 'number', min: 0.5, max: 10, default: 2, unit: '%' },
-      addToWinners: { type: 'boolean', default: true },
-      cutUnderperformers: { type: 'boolean', default: true },
+      momentumThresholdPct: { rule: 'se-06', type: 'number', min: 0.5, max: 10, default: 2, unit: '%' },
     },
   },
-  macroAwareness: {
-    description: 'How much macro/calendar events change behavior.',
+  eventRisk: {
+    description: 'Event-driven entry blocking (earnings). Renamed from macroAwareness (spec §4.6).',
     params: {
-      earningsAvoidance: { type: 'number', min: 0, max: 10, default: 3, unit: 'days' },
-      fomcDefensive: { type: 'boolean', default: false },
-      benchmarkGapResponse: {
-        type: 'enum',
-        options: ['off', 'react', 'aggressive'],
-        default: 'react',
-      },
+      earningsAvoidanceDays: { rule: 'se-04', type: 'integer', min: 0, max: 10, default: 3, unit: 'days' },
     },
   },
   positionSizing: {
-    description: 'Position sizing and cash-deployment posture.',
+    description: 'Position sizing, cash deployment, active management, and correlation discipline.',
     params: {
-      maxPosition: { type: 'number', min: 10, max: 30, default: 15, unit: '%' },
-      cashDeploymentTrigger: { type: 'number', min: 5, max: 40, default: 15, unit: '%' },
-      trimThreshold: { type: 'number', min: 3, max: 20, default: 3, unit: '%' },
+      maxPositionWeightPct:           { rule: 'sr-01', type: 'integer', min: 10, max: 30, default: 15, unit: '%' },
+      cashDeploymentTriggerPct:       { rule: 'sr-02', type: 'integer', min: 5, max: 40, default: 15, unit: '%' },
+      addToWinnersEnabled:            { rule: 'sr-04', type: 'boolean', default: false },
+      winnerReturnTrigger:            { rule: 'sr-04', type: 'enumNumber', options: [5, 10, 15, 20], default: 10, unit: '%', requires: { addToWinnersEnabled: true } },
+      winnerAddWeight:                { rule: 'sr-04', type: 'enumNumber', options: [1, 2, 3, 5], default: 2, unit: '%', requires: { addToWinnersEnabled: true } },
+      cutUnderperformersEnabled:      { rule: 'sr-05', type: 'boolean', default: false },
+      loserUnderperformanceTrigger:   { rule: 'sr-05', type: 'enumNumber', options: [3, 5, 8, 10], default: 5, unit: '%', requires: { cutUnderperformersEnabled: true } },
+      loserLookbackDays:              { rule: 'sr-05', type: 'enumNumber', options: [3, 5, 10, 15], default: 5, unit: 'days', requires: { cutUnderperformersEnabled: true } },
+      loserReduceWeight:              { rule: 'sr-05', type: 'enumNumber', options: [1, 2, 3, 5], default: 3, unit: '%', requires: { cutUnderperformersEnabled: true } },
+      correlationExitEnabled:         { rule: 'sx-07', type: 'boolean', default: false },
+      correlationThreshold:           { rule: 'sx-07', type: 'enumNumber', options: [0.7, 0.8, 0.9], default: 0.8, requires: { correlationExitEnabled: true } },
+      correlationLookbackDays:        { rule: 'sx-07', type: 'enumNumber', options: [20, 30, 60, 90], default: 30, unit: 'days', requires: { correlationExitEnabled: true } },
     },
   },
 };
 
-function buildSchemaDescriptionForPrompt() {
+function formatParamConstraints(p) {
+  if (p.type === 'number' || p.type === 'integer') {
+    return `${p.type} in [${p.min}, ${p.max}]${p.unit ? ' (' + p.unit + ')' : ''}, default ${p.default}`;
+  }
+  if (p.type === 'boolean') {
+    return `boolean, default ${p.default}`;
+  }
+  if (p.type === 'enum') {
+    return `one of [${p.stringOptions.map((o) => `"${o}"`).join(', ')}], default "${p.default}"`;
+  }
+  if (p.type === 'enumNumber') {
+    return `one of [${p.options.join(', ')}]${p.unit ? ' (' + p.unit + ')' : ''}, default ${p.default}`;
+  }
+  if (p.type === 'stringArray') {
+    const examples = p.itemOptions.slice(0, 3).map((s) => `"${s}"`).join(', ');
+    return `array of ${p.minItems}-${p.maxItems} strings from the 11-sector universe (e.g. [${examples}, ...])`;
+  }
+  return '';
+}
+
+function formatRequires(req) {
+  if (!req) return '';
+  const parts = Object.entries(req).map(([k, v]) => {
+    const arr = Array.isArray(v) ? v : [v];
+    const values = arr.map((x) => (typeof x === 'string' ? `"${x}"` : String(x))).join(' | ');
+    return `${k}=${values}`;
+  });
+  return ` — only when ${parts.join(', ')}`;
+}
+
+function buildRulePaletteSection() {
   const lines = [];
   for (const [dimKey, dim] of Object.entries(DIMENSION_SCHEMA)) {
     lines.push(`${dimKey} — ${dim.description}`);
     for (const [paramKey, p] of Object.entries(dim.params)) {
-      if (p.type === 'number') {
-        lines.push(
-          `  ${paramKey}: number in [${p.min}, ${p.max}]${p.unit ? ' (' + p.unit + ')' : ''}, default ${p.default}`
-        );
-      } else if (p.type === 'boolean') {
-        lines.push(`  ${paramKey}: boolean, default ${p.default}`);
-      } else if (p.type === 'enum') {
-        lines.push(
-          `  ${paramKey}: one of [${p.options.map((o) => `"${o}"`).join(', ')}], default "${p.default}"`
-        );
-      }
+      const prefix = p.rule ? `(${p.rule}) ` : '';
+      lines.push(`  ${prefix}${paramKey}: ${formatParamConstraints(p)}${formatRequires(p.requires)}`);
     }
   }
   return lines.join('\n');
 }
 
-function buildSchemaDefaults() {
+export function buildSchemaDefaults() {
   const out = {};
   for (const [dimKey, dim] of Object.entries(DIMENSION_SCHEMA)) {
     out[dimKey] = {};
     for (const [paramKey, p] of Object.entries(dim.params)) {
-      out[dimKey][paramKey] = p.default;
+      out[dimKey][paramKey] = Array.isArray(p.default) ? [...p.default] : p.default;
     }
   }
   return out;
+}
+
+function buildOutputSchemaExample() {
+  return JSON.stringify(buildSchemaDefaults(), null, 2);
 }
 
 // ==================== VALIDATION ====================
@@ -137,11 +197,124 @@ function clampNumber(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }
 
+function nearestAllowed(value, options) {
+  return options.reduce(
+    (best, opt) => (Math.abs(opt - value) < Math.abs(best - value) ? opt : best),
+    options[0]
+  );
+}
+
+// Evaluate a param's `requires` clause against ALREADY-sanitized sibling
+// values. Single value and array-of-allowed are both supported, so both
+// string enums (technicalExitTrigger === 'below_sma') and boolean gates
+// (earningsExitEnabled === true) fall through the same resolver.
+function requirementsMet(requires, sanitizedDim) {
+  if (!requires) return true;
+  for (const [siblingKey, expected] of Object.entries(requires)) {
+    const allowed = Array.isArray(expected) ? expected : [expected];
+    if (!allowed.includes(sanitizedDim[siblingKey])) return false;
+  }
+  return true;
+}
+
+function sanitizeParam(p, incoming, dimKey, paramKey, appliedClamps) {
+  // number / integer
+  if (p.type === 'number' || p.type === 'integer') {
+    if (typeof incoming !== 'number' || Number.isNaN(incoming)) {
+      appliedClamps.push(`${dimKey}.${paramKey}: not a number — default ${p.default} applied.`);
+      return p.default;
+    }
+    let v = clampNumber(incoming, p.min, p.max);
+    if (p.type === 'integer') v = Math.round(v);
+    if (v !== incoming) {
+      appliedClamps.push(
+        `${dimKey}.${paramKey}: ${incoming} out of [${p.min}, ${p.max}] — clamped to ${v}.`
+      );
+    }
+    return v;
+  }
+
+  // boolean
+  if (p.type === 'boolean') {
+    if (typeof incoming !== 'boolean') {
+      appliedClamps.push(`${dimKey}.${paramKey}: not a boolean — default ${p.default} applied.`);
+      return p.default;
+    }
+    return incoming;
+  }
+
+  // string enum
+  if (p.type === 'enum') {
+    if (!p.stringOptions.includes(incoming)) {
+      appliedClamps.push(
+        `${dimKey}.${paramKey}: "${incoming}" not in [${p.stringOptions.join(', ')}] — default "${p.default}" applied.`
+      );
+      return p.default;
+    }
+    return incoming;
+  }
+
+  // numeric enum — coerce "1.5" → 1.5, exact-match first, nearest on miss
+  if (p.type === 'enumNumber') {
+    const num = typeof incoming === 'number' ? incoming : Number(incoming);
+    if (!Number.isFinite(num)) {
+      appliedClamps.push(`${dimKey}.${paramKey}: not a number — default ${p.default} applied.`);
+      return p.default;
+    }
+    if (p.options.includes(num)) return num;
+    const nearest = nearestAllowed(num, p.options);
+    appliedClamps.push(
+      `${dimKey}.${paramKey}: ${num} not in [${p.options.join(', ')}] — snapped to ${nearest}.`
+    );
+    return nearest;
+  }
+
+  // string array (se-09 sectorFilterSelected)
+  if (p.type === 'stringArray') {
+    if (!Array.isArray(incoming)) {
+      appliedClamps.push(`${dimKey}.${paramKey}: not an array — default [] applied.`);
+      return [];
+    }
+    const cleaned = incoming.filter((s) => typeof s === 'string' && p.itemOptions.includes(s));
+    const rejected = incoming.filter((s) => !(typeof s === 'string' && p.itemOptions.includes(s)));
+    if (rejected.length > 0) {
+      appliedClamps.push(
+        `${dimKey}.${paramKey}: rejected ${rejected.length} item(s) not in the 11-sector universe.`
+      );
+    }
+    // Per Phase 2 clarification: when result is below minItems, sanitize to
+    // [] and surface in appliedClamps. Do NOT force the rule off — let the
+    // SE-09 evaluator's existing "no sectors selected" fail-closed behavior
+    // handle user error, and let the transparency panel surface the clamp.
+    if (cleaned.length < (p.minItems ?? 0)) {
+      appliedClamps.push(
+        `${dimKey}.${paramKey}: no valid sectors remained after filtering (min ${p.minItems}) — empty list will fail SE-09 at evaluation.`
+      );
+      return [];
+    }
+    if (cleaned.length > (p.maxItems ?? Infinity)) {
+      const trimmed = cleaned.slice(0, p.maxItems);
+      appliedClamps.push(
+        `${dimKey}.${paramKey}: ${cleaned.length} items exceeds max ${p.maxItems} — trimmed to first ${p.maxItems}.`
+      );
+      return trimmed;
+    }
+    return cleaned;
+  }
+
+  return p.default;
+}
+
 /**
  * Walk Haiku's dimensionValues and enforce schema compliance.
  * Returns { sanitized, appliedClamps[] } — sanitized always matches the schema.
+ *
+ * Two-pass per dimension: first sanitize gate-defining params (those that
+ * appear in another param's `requires` clause), then sanitize gated params.
+ * This avoids false-zero on a legitimate sub-param when the gate happens to
+ * sit later in iteration order.
  */
-function validateAndClamp(raw) {
+export function validateAndClamp(raw) {
   const sanitized = buildSchemaDefaults();
   const appliedClamps = [];
 
@@ -157,40 +330,44 @@ function validateAndClamp(raw) {
       continue;
     }
 
-    for (const [paramKey, p] of Object.entries(dim.params)) {
-      const v = incoming[paramKey];
+    // Pass 1: identify gate-defining params (referenced by any sibling's
+    // `requires`) and sanitize them first. Non-gate params that have no
+    // `requires` clause are also safe to sanitize here — they don't depend
+    // on any gate.
+    const paramEntries = Object.entries(dim.params);
+    const gateKeys = new Set();
+    for (const [, p] of paramEntries) {
+      if (p.requires) Object.keys(p.requires).forEach((k) => gateKeys.add(k));
+    }
 
-      if (p.type === 'number') {
-        if (typeof v !== 'number' || Number.isNaN(v)) {
-          appliedClamps.push(`${dimKey}.${paramKey}: not a number — default ${p.default} applied.`);
-        } else {
-          const clamped = clampNumber(v, p.min, p.max);
-          if (clamped !== v) {
-            appliedClamps.push(
-              `${dimKey}.${paramKey}: ${v} out of [${p.min}, ${p.max}] — clamped to ${clamped}.`
-            );
-          }
-          sanitized[dimKey][paramKey] = clamped;
-        }
-      } else if (p.type === 'boolean') {
-        if (typeof v !== 'boolean') {
-          appliedClamps.push(`${dimKey}.${paramKey}: not a boolean — default ${p.default} applied.`);
-        } else {
-          sanitized[dimKey][paramKey] = v;
-        }
-      } else if (p.type === 'enum') {
-        if (!p.options.includes(v)) {
-          appliedClamps.push(
-            `${dimKey}.${paramKey}: "${v}" not in [${p.options.join(', ')}] — default "${p.default}" applied.`
-          );
-        } else {
-          sanitized[dimKey][paramKey] = v;
-        }
+    const pass1 = paramEntries.filter(([key, p]) => gateKeys.has(key) || !p.requires);
+    const pass2 = paramEntries.filter(([key, p]) => !gateKeys.has(key) && p.requires);
+
+    for (const [paramKey, p] of pass1) {
+      sanitized[dimKey][paramKey] = sanitizeParam(p, incoming[paramKey], dimKey, paramKey, appliedClamps);
+    }
+
+    // Pass 2: gated params. If gate unmet, force default WITHOUT logging a
+    // clamp (the field is meaningless when the gate is off).
+    for (const [paramKey, p] of pass2) {
+      if (!requirementsMet(p.requires, sanitized[dimKey])) {
+        sanitized[dimKey][paramKey] = Array.isArray(p.default) ? [...p.default] : p.default;
+        continue;
       }
+      sanitized[dimKey][paramKey] = sanitizeParam(p, incoming[paramKey], dimKey, paramKey, appliedClamps);
     }
   }
 
   return { sanitized, appliedClamps };
+}
+
+export function validateRecommendedDuration(raw, appliedClamps) {
+  if (raw === null || raw === undefined) return null;
+  if (DURATION_OPTIONS.includes(raw)) return raw;
+  appliedClamps.push(
+    `recommendedDurationDays: ${JSON.stringify(raw)} not in [${DURATION_OPTIONS.join(', ')}] — ignored.`
+  );
+  return null;
 }
 
 // ==================== HAIKU CLIENT ====================
@@ -203,35 +380,51 @@ function getAnthropicClient() {
   return anthropicClient;
 }
 
-function buildSystemPrompt() {
-  return `You are a strategy compiler for FantasyTrades, a skill-based fantasy trading game. The user has developed a trading thesis through conversation with their agent. Your job is to map this thesis to specific parameter values across 7 strategy dimensions.
+const DURATION_GUIDANCE = `Duration-rule fit guidance:
+- Short durations (5-10 trading days): favor catalyst-driven rules and tight time exits. Earnings exits become relevant (any earnings within the window are nearly guaranteed events). Trend alignment with long SMAs (100, 200) is nonsensical — prefer 20 or 50. Profit targets default lower; 15% in 5 days is aggressive. For sector_momentum_filter top_n mode, bias timeframe to 1W.
+- Medium durations (15 trading days): balanced posture. Moderate trend filters (SMA 50 is a good default), moderate time exits, moderate profit targets. Either 1W or 1M sector timeframe is reasonable.
+- Long durations (20 trading days): favor trend alignment (SMA 50 or 100), patient exits, fundamental floors, and sector rotation themes. Sector timeframe biases toward 1M.`;
 
-STRATEGY DIMENSIONS SCHEMA (use EXACTLY these keys and ranges):
-${buildSchemaDescriptionForPrompt()}
+const SYSTEM_INSTRUCTIONS = `Instructions:
+1. Map every concrete claim in the thesis to one or more rules and parameters.
+2. For any claim you cannot map to an available rule, add a short description to \`warnings\`. Example: "User requested VWAP-based entry; no rule supports this."
+3. For any rule you enabled with a non-default parameter, add a brief note to \`mappingNotes\`. Example: "Mapped 'tight stops' to 5% stopLossPct."
+4. For any parameter the user requested that falls outside the valid range, clamp to the nearest valid value and describe in \`appliedClamps\`. Example: "User requested 1% stop; clamped to 3% minimum."
+5. If the thesis strongly implies a duration different from the user's selection, populate \`recommendedDurationDays\` with your suggested value (5, 10, 15, or 20). Otherwise null.
+6. Sector momentum mapping: if the user mentions "top sectors", sector rotation, or timeframe-specific sector strength — enable sectorFilterEnabled with sectorFilterMode "top_n" and pick a sensible timeframe/topN. If the user names specific sectors explicitly — use "specific_sectors" mode with those sector names from the 11-sector universe.
+7. \`confidence\` is your self-assessment of how cleanly the thesis mapped. 0.9+ for clean mappings, 0.5-0.75 for moderate ambiguity, below 0.5 when the thesis has significant unmappable content.
+8. Output ONLY valid JSON matching the schema — no markdown, no commentary, no leading/trailing prose.`;
 
-Rules:
-- Choose numeric values that best represent the thesis intent. If the thesis implies "tight stops" pick a low stopLoss; "patient exits" pick a high profitTarget and timeExit; etc.
-- For booleans and enums, pick the option that most faithfully represents the user's stated approach.
-- If the thesis does not address a dimension, use the listed default.
-- All numeric values MUST fall within their stated ranges. Do not invent keys outside the schema.
+export function buildSystemPrompt(userSelectedDurationDays) {
+  const weeks = userSelectedDurationDays / 5;
+  return `You are a strategy compiler for FantasyTrades, a skill-based fantasy trading game. The user developed a trading thesis through conversation with their agent. Your job is to map this thesis to specific parameter values across the expanded strategy dimension schema below.
 
-Output requirements — respond with ONLY a single JSON object, no markdown, no commentary:
+[CONTEXT]
+Selected backtest duration: ${userSelectedDurationDays} trading days (${weeks} week${weeks === 1 ? '' : 's'}).
+
+${DURATION_GUIDANCE}
+
+[AVAILABLE RULE PALETTE]
+Use EXACTLY these keys and constraints. Rule IDs are annotated in parentheses. Params marked "only when ..." should only be populated when the gating condition is met; when the gate is off, you may omit the param or emit the default.
+
+${buildRulePaletteSection()}
+
+Sector universe (for sectorFilterSelected): ${SECTOR_UNIVERSE.map((s) => `"${s}"`).join(', ')}.
+
+[OUTPUT SCHEMA]
+Produce a single JSON object with this exact shape (defaults shown for reference — replace with thesis-driven values):
+
 {
-  "dimensionValues": {
-    "riskPosture": { "stopLoss": 8, "trailingStop": 10 },
-    "entryAggression": { "rsiUpper": 65, "volumeConfirm": true, "fundamentalFloor": 45 },
-    "exitDiscipline": { "profitTarget": 15, "timeExit": 5, "technicalExit": false },
-    "sectorStrategy": { "maxSectorWeight": 30, "sectorDriftTolerance": 10, "rebalanceOnDrift": true },
-    "momentumSensitivity": { "momentumThreshold": 2, "addToWinners": true, "cutUnderperformers": true },
-    "macroAwareness": { "earningsAvoidance": 3, "fomcDefensive": false, "benchmarkGapResponse": "react" },
-    "positionSizing": { "maxPosition": 15, "cashDeploymentTrigger": 15, "trimThreshold": 3 }
-  },
-  "confidence": 0.0-1.0,
-  "warnings": ["Short strings flagging gaps between the thesis and the chosen values. Empty array if none."],
-  "mappingNotes": ["Short strings explaining key mapping choices. e.g. 'Mapped tight downside protection to 6% stopLoss, 8% trailingStop.'"]
+  "dimensionValues": ${buildOutputSchemaExample()},
+  "recommendedDurationDays": null,
+  "confidence": 0.0,
+  "warnings": [],
+  "mappingNotes": [],
+  "appliedClamps": []
 }
 
-Keep the response as compact valid JSON.`;
+[INSTRUCTIONS]
+${SYSTEM_INSTRUCTIONS}`;
 }
 
 function buildUserMessage(thesis) {
@@ -242,9 +435,9 @@ ${JSON.stringify(thesis, null, 2)}
 Produce the JSON response now.`;
 }
 
-async function callHaikuCompile(thesis) {
+async function callHaikuCompile(thesis, userSelectedDurationDays) {
   const anthropic = getAnthropicClient();
-  const systemPrompt = buildSystemPrompt();
+  const systemPrompt = buildSystemPrompt(userSelectedDurationDays);
   const userMessage = buildUserMessage(thesis);
 
   const response = await Promise.race([
@@ -300,10 +493,26 @@ export default async function handler(req, res) {
   const user = await requireAuth(req, res);
   if (!user) return;
 
-  const { sessionId } = req.body || {};
+  const body = req.body || {};
+  const { sessionId } = body;
 
   if (!sessionId) {
     return res.status(400).json({ error: 'sessionId is required' });
+  }
+
+  // Phase 2: optional user-selected backtest duration. Default to 20 trading
+  // days (4 weeks, today's fixed behavior). Reject explicitly-provided
+  // out-of-range values with 400 so the client knows to correct before retry.
+  let userSelectedDurationDays = DEFAULT_DURATION;
+  if ('userSelectedDurationDays' in body) {
+    const d = body.userSelectedDurationDays;
+    if (!DURATION_OPTIONS.includes(d)) {
+      return res.status(400).json({
+        error: 'invalid_duration',
+        message: `userSelectedDurationDays must be one of ${DURATION_OPTIONS.join(', ')}.`,
+      });
+    }
+    userSelectedDurationDays = d;
   }
 
   const db = getFirebaseAdmin();
@@ -335,6 +544,7 @@ export default async function handler(req, res) {
           warnings: t.warnings || [],
           mappingNotes: t.mappingNotes || [],
           appliedClamps: t.appliedClamps || [],
+          recommendedDurationDays: t.recommendedDurationDays ?? null,
           alreadyCompiled: true,
         });
       }
@@ -352,7 +562,7 @@ export default async function handler(req, res) {
     // Call Haiku
     let haikuResult;
     try {
-      haikuResult = await callHaikuCompile(thesis);
+      haikuResult = await callHaikuCompile(thesis, userSelectedDurationDays);
     } catch (err) {
       console.error('[compile-dimensions] Haiku call failed:', err.message);
       return res.status(502).json({
@@ -374,6 +584,10 @@ export default async function handler(req, res) {
     }
 
     const { sanitized, appliedClamps } = validateAndClamp(parsed.dimensionValues);
+    const recommendedDurationDays = validateRecommendedDuration(
+      parsed.recommendedDurationDays,
+      appliedClamps
+    );
 
     const confidenceRaw = typeof parsed.confidence === 'number' ? parsed.confidence : 0.6;
     const confidence = clampNumber(confidenceRaw, 0, 1);
@@ -399,6 +613,8 @@ export default async function handler(req, res) {
       warnings,
       mappingNotes,
       appliedClamps,
+      recommendedDurationDays,
+      userSelectedDurationDays,
       haikuRawText: haikuResult.rawText.slice(0, 4000), // bound for safety
       haikuModel: haikuResult.model,
       createdAt: nowIso,
@@ -423,6 +639,8 @@ export default async function handler(req, res) {
       warnings,
       mappingNotes,
       appliedClamps,
+      recommendedDurationDays,
+      userSelectedDurationDays,
       turnCount: Array.isArray(session.exchanges) ? session.exchanges.length : 0,
     }).catch(() => {});
 
@@ -433,6 +651,7 @@ export default async function handler(req, res) {
       warnings,
       mappingNotes,
       appliedClamps,
+      recommendedDurationDays,
       alreadyCompiled: false,
     });
   } catch (error) {
