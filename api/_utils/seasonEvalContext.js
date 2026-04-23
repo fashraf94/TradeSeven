@@ -178,7 +178,47 @@ export async function fetchSharedMarketData(universe, seasonDoc) {
     console.warn('[SeasonEvalCtx] Failed to fetch institutional holdings:', err.message);
   }
 
-  return { marketData, technicals, fundamentals, earnings, institutional, errors };
+  // Enrich with sector performance for SE-09 Sector Momentum Filter.
+  // Read indexIntelligence/marketContext.sectorSnapshot once per cron run
+  // and transpose into { '1D': {sector:ret}, '1W': {...}, '1M': {...} }.
+  // Note: 3M timeframe not yet emitted by compute-index-intelligence — add
+  // back when that cron ships quarterChange.
+  let sectorPerformance = null;
+  try {
+    const db = getFirebaseAdmin();
+    const mcDoc = await db.collection('indexIntelligence').doc('marketContext').get();
+    const snap = mcDoc.exists ? mcDoc.data()?.sectorSnapshot : null;
+    if (Array.isArray(snap) && snap.length > 0) {
+      const oneD = {}, oneW = {}, oneM = {};
+      for (const row of snap) {
+        if (!row || typeof row.sector !== 'string') continue;
+        if (typeof row.changePercent === 'number') oneD[row.sector] = row.changePercent;
+        if (typeof row.weekChange === 'number') oneW[row.sector] = row.weekChange;
+        if (typeof row.monthChange === 'number') oneM[row.sector] = row.monthChange;
+      }
+      const missing = [];
+      if (Object.keys(oneD).length === 0) missing.push('1D');
+      if (Object.keys(oneW).length === 0) missing.push('1W');
+      if (Object.keys(oneM).length === 0) missing.push('1M');
+      // If every timeframe is empty we leave sectorPerformance=null so the
+      // evaluator's silent-pass policy triggers. Partial coverage still
+      // populates; missing timeframes emit a one-time warn.
+      if (missing.length < 3) {
+        sectorPerformance = { '1D': oneD, '1W': oneW, '1M': oneM };
+        if (missing.length > 0) {
+          console.warn(`[SeasonEvalCtx] sectorPerformance partial coverage — missing timeframes: ${missing.join(', ')}`);
+        }
+      } else {
+        console.warn('[SeasonEvalCtx] sectorPerformance unavailable — indexIntelligence/marketContext.sectorSnapshot empty or malformed');
+      }
+    } else {
+      console.warn('[SeasonEvalCtx] sectorPerformance unavailable — indexIntelligence/marketContext.sectorSnapshot missing');
+    }
+  } catch (err) {
+    console.warn('[SeasonEvalCtx] Failed to fetch sector performance:', err.message);
+  }
+
+  return { marketData, technicals, fundamentals, earnings, institutional, sectorPerformance, errors };
 }
 
 // ─── Per-Entry Context Builder ────────────────────────────────
@@ -193,7 +233,7 @@ export async function fetchSharedMarketData(universe, seasonDoc) {
  * @returns {Object} EvaluationContext
  */
 export function buildEvaluationContext(entryDoc, seasonDoc, sharedMarketData) {
-  const { marketData, technicals, fundamentals, earnings, institutional } = sharedMarketData;
+  const { marketData, technicals, fundamentals, earnings, institutional, sectorPerformance } = sharedMarketData;
 
   // ─── Date / Season Info ───────────────────────────────────
   const tradingDay = seasonDoc.currentTradingDay || 1;
@@ -244,6 +284,7 @@ export function buildEvaluationContext(entryDoc, seasonDoc, sharedMarketData) {
     fundamentals: fundamentals || {},
     earnings: earnings || {},
     institutional: institutional || {},
+    sectorPerformance: sectorPerformance || null,
     macro,
     season,
     benchmark,

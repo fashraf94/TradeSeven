@@ -386,6 +386,12 @@ const TEMPLATE_CATALOG = {
     category: 'entry_criteria',
     textTemplate: 'Require institutional ownership to be {direction} over the last {quarters} quarters',
   },
+  'se-09': {
+    category: 'entry_criteria',
+    // Base template covers top_n mode. specific_sectors mode uses a text
+    // override from emitRule_se09 since the parameter shape differs.
+    textTemplate: 'Only enter stocks from the top {topN} momentum sectors on the {timeframe} timeframe',
+  },
   'sx-01': {
     category: 'exit_stops',
     textTemplate: 'Sell any position that drops {pct}% from entry',
@@ -693,6 +699,37 @@ function emitRule_sr03(dv) {
   return buildSnapshot('sr-03', { tolerance: clamp(tol, 5, 20) });
 }
 
+// SE-09 Sector Momentum Filter. Two modes (top_n | specific_sectors) with
+// mutually-exclusive parameter shapes — text template swaps to match.
+// 3M timeframe intentionally omitted from the accepted enum until
+// compute-index-intelligence emits quarterChange.
+function emitRule_se09(dv) {
+  const ss = dv.sectorStrategy || {};
+  if (!ss.sectorFilterEnabled) return null;
+
+  const rawMode = ss.sectorFilterMode ?? 'top_n';
+  const mode = rawMode === 'specific_sectors' ? 'specific_sectors' : 'top_n';
+
+  if (mode === 'specific_sectors') {
+    const selected = Array.isArray(ss.sectorFilterSelected) ? ss.sectorFilterSelected : [];
+    const label = selected.length > 0 ? selected.join(', ') : '(none selected)';
+    return buildSnapshot(
+      'se-09',
+      { mode, selectedSectors: selected },
+      `Only enter stocks from selected sectors: ${label}`
+    );
+  }
+
+  // mode === 'top_n'
+  const rawTf = ss.sectorFilterTimeframe ?? '1W';
+  const allowedTf = ['1D', '1W', '1M'];
+  const timeframe = allowedTf.includes(rawTf) ? rawTf : '1W';
+  const rawN = ss.sectorFilterTopN ?? 3;
+  const allowedN = [1, 2, 3, 5];
+  const topN = allowedN.includes(rawN) ? rawN : 3;
+  return buildSnapshot('se-09', { mode, timeframe, topN });
+}
+
 // Event Risk / Macro Awareness
 function emitRule_se04(dv) {
   // Relocated: macroAwareness.earningsAvoidance → eventRisk.earningsAvoidanceDays
@@ -810,6 +847,7 @@ export function dimensionsToRuleSnapshots(values) {
   push(emitRule_sx07(values));
 
   push(emitRule_sr03(values));
+  push(emitRule_se09(values));
 
   push(emitRule_ss04(values));
   push(emitRule_benchmarkGap(values));
@@ -1287,6 +1325,7 @@ export function deriveDimensionsFromSnapshots(snapshots) {
   dv.exitDiscipline.technicalExitEnabled = false;
   dv.exitDiscipline.earningsExitEnabled = false;
   dv.sectorStrategy.rebalanceOnDrift = false;
+  dv.sectorStrategy.sectorFilterEnabled = false;
   dv.momentumSensitivity.addToWinners = false;
   dv.momentumSensitivity.cutUnderperformers = false;
   dv.positionSizing.addToWinnersEnabled = false;
@@ -1412,6 +1451,21 @@ export function deriveDimensionsFromSnapshots(snapshots) {
         if (typeof pv.tolerance === 'number') {
           dv.sectorStrategy.sectorDriftTolerance = pv.tolerance;
           dv.sectorStrategy.sectorDriftTolerancePct = pv.tolerance;
+        }
+        break;
+      case 'se-09':
+        dv.sectorStrategy.sectorFilterEnabled = true;
+        if (typeof pv.mode === 'string') {
+          dv.sectorStrategy.sectorFilterMode = pv.mode;
+        }
+        if (typeof pv.timeframe === 'string') {
+          dv.sectorStrategy.sectorFilterTimeframe = pv.timeframe;
+        }
+        if (typeof pv.topN === 'number') {
+          dv.sectorStrategy.sectorFilterTopN = pv.topN;
+        }
+        if (Array.isArray(pv.selectedSectors)) {
+          dv.sectorStrategy.sectorFilterSelected = pv.selectedSectors;
         }
         break;
       case 'sr-04':
