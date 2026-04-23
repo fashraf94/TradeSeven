@@ -65,9 +65,26 @@ const TONE_STYLES = {
 // Dimension configuration
 // ─────────────────────────────────────────────────────────────
 //
-// paramKey names match the keys in DIMENSION_DEFAULTS in
-// src/utils/dimensionMapper.js. `span` controls the card's grid-column
-// span in its collapsed state (in a 6-col grid).
+// Per control:
+//   paramKey         — matches a key in dimensionValues (new or legacy schema)
+//   legacyKey        — legacy paramKey read for backward-compat on old bundles
+//   type             — 'slider' | 'toggle' | 'segmented' | 'chipPicker'
+//                      | 'select' | 'multiSelect'
+//   tier             — 'baseline' (default visible) | 'advanced' (behind toggle)
+//   requires         — { [siblingKey]: value | value[] } — render only when
+//                      the sibling's current value matches
+//   options          — enum/segmented/chipPicker option list
+//   itemOptions      — multiSelect allowed values
+//   min/max/maxItems — slider / multiSelect constraints
+//
+// The control dispatcher (`DimensionControl`) reads `type` and routes to
+// ParamSlider / ParamToggle / ParamPicker / new inline components.
+
+const SECTOR_UNIVERSE = [
+  'Technology', 'Healthcare', 'Financials', 'Energy',
+  'Consumer Discretionary', 'Consumer Staples', 'Industrials',
+  'Materials', 'Utilities', 'Real Estate', 'Communication Services',
+];
 
 const DIMENSION_CONFIGS = [
   {
@@ -76,8 +93,8 @@ const DIMENSION_CONFIGS = [
     question: 'How much drawdown can you stomach?',
     span: 2,
     controls: [
-      { paramKey: 'stopLoss', type: 'slider', label: 'Stop-loss', min: 3, max: 20, step: 1, unit: '%', hint: 'Exit a position once it drops this far below entry.' },
-      { paramKey: 'trailingStop', type: 'slider', label: 'Trailing stop', min: 3, max: 25, step: 1, unit: '%', hint: 'Lock gains — sell when price drops this far from peak.' },
+      { paramKey: 'stopLossPct', legacyKey: 'stopLoss', type: 'slider', tier: 'baseline', label: 'Stop-loss', min: 3, max: 20, step: 1, unit: '%', hint: 'Exit a position once it drops this far below entry.' },
+      { paramKey: 'trailingStopPct', legacyKey: 'trailingStop', type: 'slider', tier: 'baseline', label: 'Trailing stop', min: 3, max: 25, step: 1, unit: '%', hint: 'Lock gains — sell when price drops this far from peak.' },
     ],
   },
   {
@@ -86,9 +103,26 @@ const DIMENSION_CONFIGS = [
     question: 'How picky are your filters?',
     span: 2,
     controls: [
-      { paramKey: 'rsiUpper', type: 'slider', label: 'Max RSI', min: 50, max: 80, step: 1, unit: 'RSI', hint: 'Skip stocks that are already overbought.' },
-      { paramKey: 'volumeConfirm', type: 'toggle', label: 'Volume confirmation', hint: 'Require ≥1.2× average 20-day volume before entry.' },
-      { paramKey: 'fundamentalFloor', type: 'slider', label: 'Fundamental floor', min: 20, max: 80, step: 5, unit: '', hint: 'Minimum composite fundamental score (0–100 scale).' },
+      { paramKey: 'rsiCeiling', legacyKey: 'rsiUpper', type: 'slider', tier: 'baseline', label: 'Max RSI', min: 50, max: 80, step: 1, unit: 'RSI', hint: 'Skip stocks that are already overbought.' },
+      { paramKey: 'volumeConfirmEnabled', legacyKey: 'volumeConfirm', type: 'toggle', tier: 'baseline', label: 'Volume confirmation', hint: 'Require volume above the multiplier × 20-day average before entry.' },
+      { paramKey: 'volumeMultiplier', type: 'chipPicker', tier: 'advanced', label: 'Volume multiplier', options: [1.2, 1.5, 2.0, 3.0], formatChip: (v) => `${v}×`, requires: { volumeConfirmEnabled: true }, hint: 'How much above average volume the entry requires.' },
+      { paramKey: 'trendAlignmentEnabled', type: 'toggle', tier: 'baseline', label: 'Trend alignment', hint: 'Require price above a moving average before entry.' },
+      { paramKey: 'trendAlignmentSmaPeriod', type: 'chipPicker', tier: 'baseline', label: 'SMA period', options: [20, 50, 100, 200], formatChip: (v) => `${v}`, requires: { trendAlignmentEnabled: true }, hint: 'Which moving average defines "the trend."' },
+      { paramKey: 'momentumThresholdPct', legacyKey: 'momentumThreshold', type: 'slider', tier: 'baseline', label: 'Momentum threshold', min: 0.5, max: 10, step: 0.5, unit: '%', hint: 'Minimum price change over the lookback window required before entry.' },
+      { paramKey: 'momentumLookbackDays', type: 'chipPicker', tier: 'advanced', label: 'Momentum lookback', options: [5, 10, 20], formatChip: (v) => `${v}d`, hint: 'Days over which the momentum threshold is measured.' },
+      { paramKey: 'fundamentalFloor', type: 'slider', tier: 'baseline', label: 'Fundamental floor', min: 20, max: 80, step: 5, unit: '', hint: 'Minimum composite fundamental score (0–100 scale).' },
+      { paramKey: 'institutionalEnabled', type: 'toggle', tier: 'advanced', label: 'Institutional sentiment filter', hint: 'Only enter when institutional ownership is moving the right way.' },
+      {
+        paramKey: 'institutionalDirection', type: 'segmented', tier: 'advanced', label: 'Ownership direction',
+        options: [
+          { value: 'any', label: 'Any' },
+          { value: 'increased', label: 'Increased' },
+          { value: 'stable_or_increased', label: 'Stable+' },
+        ],
+        requires: { institutionalEnabled: true },
+        hint: 'Required direction of institutional ownership change.',
+      },
+      { paramKey: 'institutionalQuarters', type: 'chipPicker', tier: 'advanced', label: 'Lookback quarters', options: [1, 2, 4], formatChip: (v) => `${v}Q`, requires: { institutionalEnabled: true }, hint: 'How many quarters of ownership history to consider.' },
     ],
   },
   {
@@ -97,9 +131,26 @@ const DIMENSION_CONFIGS = [
     question: 'When do you take profits or cut?',
     span: 2,
     controls: [
-      { paramKey: 'profitTarget', type: 'slider', label: 'Profit target', min: 5, max: 50, step: 1, unit: '%', hint: 'Lock in gains once a position reaches this return.' },
-      { paramKey: 'timeExit', type: 'slider', label: 'Time-based exit', min: 2, max: 15, step: 1, unit: 'days', hint: 'Close flat positions that haven’t moved within this window.' },
-      { paramKey: 'technicalExit', type: 'toggle', label: 'Technical exit signals', hint: 'Exit on RSI-overbought breakdown (default trigger).' },
+      { paramKey: 'profitTargetPct', legacyKey: 'profitTarget', type: 'slider', tier: 'baseline', label: 'Profit target', min: 5, max: 50, step: 1, unit: '%', hint: 'Lock in gains once a position reaches this return.' },
+      { paramKey: 'timeExitDays', legacyKey: 'timeExit', type: 'slider', tier: 'baseline', label: 'Time-based exit', min: 2, max: 15, step: 1, unit: 'days', hint: 'Close flat positions that haven’t moved within this window.' },
+      { paramKey: 'timeExitMinGainPct', type: 'chipPicker', tier: 'advanced', label: 'Time-exit minimum gain', options: [0, 1, 3, 5], formatChip: (v) => `${v}%`, hint: 'Minimum gain to count as a successful hold — below this, the position is closed.' },
+      { paramKey: 'technicalExitEnabled', legacyKey: 'technicalExit', type: 'toggle', tier: 'baseline', label: 'Technical exit signal', hint: 'Exit on a chart-based breakdown signal.' },
+      {
+        paramKey: 'technicalExitTrigger', type: 'segmented', tier: 'baseline', label: 'Exit trigger',
+        options: [
+          { value: 'rsi_overbought', label: 'RSI' },
+          { value: 'macd_bearish', label: 'MACD' },
+          { value: 'either_rsi_or_macd', label: 'Either' },
+          { value: 'below_sma', label: 'Below SMA' },
+        ],
+        requires: { technicalExitEnabled: true },
+        hint: 'Which technical breakdown signals an exit.',
+      },
+      { paramKey: 'technicalExitRsiThreshold', type: 'chipPicker', tier: 'baseline', label: 'RSI threshold', options: [65, 70, 75, 80, 85], formatChip: (v) => `${v}`, requires: { technicalExitEnabled: true, technicalExitTrigger: ['rsi_overbought', 'either_rsi_or_macd'] }, hint: 'RSI value that fires the exit.' },
+      { paramKey: 'technicalExitSmaPeriod', type: 'chipPicker', tier: 'advanced', label: 'SMA period', options: [20, 50, 100, 200], formatChip: (v) => `${v}`, requires: { technicalExitEnabled: true, technicalExitTrigger: 'below_sma' }, hint: 'Moving average whose breach fires the exit.' },
+      { paramKey: 'earningsExitEnabled', type: 'toggle', tier: 'baseline', label: 'Earnings exit', hint: 'Close positions ahead of earnings announcements.' },
+      { paramKey: 'earningsExitDays', type: 'chipPicker', tier: 'baseline', label: 'Days before earnings', options: [1, 2, 3, 5], formatChip: (v) => `${v}d`, requires: { earningsExitEnabled: true }, hint: 'How many trading days before the event to close.' },
+      { paramKey: 'earningsExitOnlyIfProfitable', type: 'toggle', tier: 'advanced', label: 'Only if profitable', requires: { earningsExitEnabled: true }, hint: 'Skip the exit when the position is still at a loss.' },
     ],
   },
   {
@@ -108,9 +159,31 @@ const DIMENSION_CONFIGS = [
     question: 'Concentrate or diversify?',
     span: 3,
     controls: [
-      { paramKey: 'maxSectorWeight', type: 'slider', label: 'Max sector weight', min: 15, max: 50, step: 5, unit: '%', hint: 'Block entries into sectors already at this weight.' },
-      { paramKey: 'sectorDriftTolerance', type: 'slider', label: 'Sector drift tolerance', min: 5, max: 20, step: 1, unit: '%', hint: 'Rebalance when a sector drifts this far from initial weight.' },
-      { paramKey: 'rebalanceOnDrift', type: 'toggle', label: 'Rebalance on drift', hint: 'Off = accept market-driven drift without rebalancing.' },
+      { paramKey: 'maxSectorWeightPct', legacyKey: 'maxSectorWeight', type: 'slider', tier: 'baseline', label: 'Max sector weight', min: 15, max: 50, step: 5, unit: '%', hint: 'Block entries into sectors already at this weight.' },
+      { paramKey: 'sectorDriftTolerancePct', legacyKey: 'sectorDriftTolerance', type: 'slider', tier: 'baseline', label: 'Sector drift tolerance', min: 5, max: 20, step: 1, unit: '%', hint: 'Rebalance when a sector drifts this far from initial weight.' },
+      { paramKey: 'rebalanceOnDrift', type: 'toggle', tier: 'baseline', label: 'Rebalance on drift', hint: 'Off = accept market-driven drift without rebalancing.' },
+      { paramKey: 'sectorFilterEnabled', type: 'toggle', tier: 'baseline', label: 'Sector universe filter', hint: 'Narrow the tradable universe to specific sectors.' },
+      {
+        paramKey: 'sectorFilterMode', type: 'segmented', tier: 'baseline', label: 'Filter mode',
+        options: [
+          { value: 'top_n', label: 'Top N momentum' },
+          { value: 'specific_sectors', label: 'Specific sectors' },
+        ],
+        requires: { sectorFilterEnabled: true },
+        hint: 'Dynamic top-N ranking or an explicit sector list.',
+      },
+      {
+        paramKey: 'sectorFilterTimeframe', type: 'segmented', tier: 'baseline', label: 'Ranking timeframe',
+        options: [
+          { value: '1D', label: '1D' },
+          { value: '1W', label: '1W' },
+          { value: '1M', label: '1M' },
+        ],
+        requires: { sectorFilterEnabled: true, sectorFilterMode: 'top_n' },
+        hint: 'Momentum timeframe used to rank sectors.',
+      },
+      { paramKey: 'sectorFilterTopN', type: 'chipPicker', tier: 'baseline', label: 'Top sectors', options: [1, 2, 3, 5], formatChip: (v) => `${v}`, requires: { sectorFilterEnabled: true, sectorFilterMode: 'top_n' }, hint: 'How many top-ranked sectors to include.' },
+      { paramKey: 'sectorFilterSelected', type: 'multiSelect', tier: 'baseline', label: 'Allowed sectors', itemOptions: SECTOR_UNIVERSE, minItems: 1, maxItems: 5, requires: { sectorFilterEnabled: true, sectorFilterMode: 'specific_sectors' }, hint: 'Pick 1–5 sectors to trade.' },
     ],
   },
   {
@@ -118,31 +191,18 @@ const DIMENSION_CONFIGS = [
     title: 'Momentum Sensitivity',
     question: 'Chase momentum or buy dips?',
     span: 3,
-    controls: [
-      { paramKey: 'momentumThreshold', type: 'slider', label: 'Momentum threshold', min: 0.5, max: 10, step: 0.5, unit: '%', hint: 'Minimum 10-day price change required before entry.' },
-      { paramKey: 'addToWinners', type: 'toggle', label: 'Add to winners', hint: 'Pyramid into positions already up ≥10%.' },
-      { paramKey: 'cutUnderperformers', type: 'toggle', label: 'Cut underperformers', hint: 'Trim positions lagging the benchmark.' },
-    ],
+    // Vestigial per spec §4.5 — kept in the radar for visual continuity
+    // but its only active control (momentumThresholdPct) duplicates the
+    // same value under entryAggression, so the card exposes no controls.
+    controls: [],
   },
   {
-    key: 'macroAwareness',
-    title: 'Macro Awareness',
+    key: 'eventRisk',
+    title: 'Event Risk',
     question: 'How much do events change behavior?',
     span: 3,
     controls: [
-      { paramKey: 'earningsAvoidance', type: 'slider', label: 'Earnings avoidance window', min: 0, max: 10, step: 1, unit: 'days', hint: 'Skip entries this many days before earnings (0 = ignore).' },
-      { paramKey: 'fomcDefensive', type: 'toggle', label: 'FOMC defensive rotation', hint: 'Reduce high-beta exposure ahead of Fed / CPI events.' },
-      {
-        paramKey: 'benchmarkGapResponse',
-        type: 'select',
-        label: 'Benchmark gap response',
-        hint: 'How to react when trailing or leading the S&P benchmark.',
-        options: [
-          { value: 'off', label: 'Ignore' },
-          { value: 'react', label: 'React' },
-          { value: 'aggressive', label: 'Aggressive' },
-        ],
-      },
+      { paramKey: 'earningsAvoidanceDays', legacyKey: 'earningsAvoidance', legacyDim: 'macroAwareness', type: 'slider', tier: 'baseline', label: 'Earnings avoidance window', min: 0, max: 10, step: 1, unit: 'days', hint: 'Skip entries this many days before earnings (0 = ignore).' },
     ],
   },
   {
@@ -151,12 +211,61 @@ const DIMENSION_CONFIGS = [
     question: 'Equal weight or conviction?',
     span: 3,
     controls: [
-      { paramKey: 'maxPosition', type: 'slider', label: 'Max single position', min: 10, max: 30, step: 1, unit: '%', hint: 'Hard cap on any one holding.' },
-      { paramKey: 'cashDeploymentTrigger', type: 'slider', label: 'Cash deployment trigger', min: 5, max: 40, step: 5, unit: '%', hint: 'Deploy cash once idle balance exceeds this.' },
-      { paramKey: 'trimThreshold', type: 'slider', label: 'Trim threshold', min: 3, max: 20, step: 1, unit: '%', hint: 'Target trim back this far below the max position cap.' },
+      { paramKey: 'maxPositionWeightPct', legacyKey: 'maxPosition', type: 'slider', tier: 'baseline', label: 'Max single position', min: 10, max: 30, step: 1, unit: '%', hint: 'Hard cap on any one holding.' },
+      { paramKey: 'cashDeploymentTriggerPct', legacyKey: 'cashDeploymentTrigger', type: 'slider', tier: 'baseline', label: 'Cash deployment trigger', min: 5, max: 40, step: 5, unit: '%', hint: 'Deploy cash once idle balance exceeds this.' },
+      { paramKey: 'trimThreshold', type: 'slider', tier: 'baseline', label: 'Trim threshold', min: 3, max: 20, step: 1, unit: '%', hint: 'Target trim back this far below the max position cap.' },
+      { paramKey: 'addToWinnersEnabled', legacyKey: 'addToWinners', legacyDim: 'momentumSensitivity', type: 'toggle', tier: 'baseline', label: 'Add to winners', hint: 'Pyramid into positions that keep running.' },
+      { paramKey: 'winnerReturnTrigger', type: 'chipPicker', tier: 'advanced', label: 'Winner return trigger', options: [5, 10, 15, 20], formatChip: (v) => `${v}%`, requires: { addToWinnersEnabled: true }, hint: 'Return % that triggers adding to a winner.' },
+      { paramKey: 'winnerAddWeight', type: 'chipPicker', tier: 'advanced', label: 'Weight per add', options: [1, 2, 3, 5], formatChip: (v) => `${v}%`, requires: { addToWinnersEnabled: true }, hint: 'Weight increment per add-to-winner event.' },
+      { paramKey: 'cutUnderperformersEnabled', legacyKey: 'cutUnderperformers', legacyDim: 'momentumSensitivity', type: 'toggle', tier: 'baseline', label: 'Cut underperformers', hint: 'Trim positions lagging the benchmark.' },
+      { paramKey: 'loserUnderperformanceTrigger', type: 'chipPicker', tier: 'advanced', label: 'Underperformance trigger', options: [3, 5, 8, 10], formatChip: (v) => `${v}%`, requires: { cutUnderperformersEnabled: true }, hint: 'Alpha gap vs. SPY that triggers a cut.' },
+      { paramKey: 'loserLookbackDays', type: 'chipPicker', tier: 'advanced', label: 'Lookback window', options: [3, 5, 10, 15], formatChip: (v) => `${v}d`, requires: { cutUnderperformersEnabled: true }, hint: 'Days over which the underperformance is measured.' },
+      { paramKey: 'loserReduceWeight', type: 'chipPicker', tier: 'advanced', label: 'Weight per reduction', options: [1, 2, 3, 5], formatChip: (v) => `${v}%`, requires: { cutUnderperformersEnabled: true }, hint: 'Weight decrement per cut event.' },
+      { paramKey: 'correlationExitEnabled', type: 'toggle', tier: 'advanced', label: 'Correlation exit', hint: 'Trim one of any pair of holdings whose prices move too closely together.' },
+      { paramKey: 'correlationThreshold', type: 'chipPicker', tier: 'advanced', label: 'Correlation threshold', options: [0.7, 0.8, 0.9], formatChip: (v) => v.toFixed(1), requires: { correlationExitEnabled: true }, hint: 'Pair correlation above this triggers the trim.' },
+      { paramKey: 'correlationLookbackDays', type: 'chipPicker', tier: 'advanced', label: 'Correlation window', options: [20, 30, 60, 90], formatChip: (v) => `${v}d`, requires: { correlationExitEnabled: true }, hint: 'Days of price history used to compute the correlation.' },
     ],
   },
 ];
+
+// Resolve a control's currently-displayed value from dimensionValues, with
+// legacy-key + legacy-dimension fallbacks so old bundles keep rendering.
+function readControlValue(dimensionValues, dimKey, control) {
+  const dim = dimensionValues[dimKey] || {};
+  if (dim[control.paramKey] !== undefined) return dim[control.paramKey];
+  if (control.legacyKey && dim[control.legacyKey] !== undefined) return dim[control.legacyKey];
+  if (control.legacyDim) {
+    const legacyDim = dimensionValues[control.legacyDim] || {};
+    if (legacyDim[control.paramKey] !== undefined) return legacyDim[control.paramKey];
+    if (control.legacyKey && legacyDim[control.legacyKey] !== undefined) return legacyDim[control.legacyKey];
+  }
+  return undefined;
+}
+
+function requirementsMet(requires, dimensionValues, dimKey) {
+  if (!requires) return true;
+  const dim = dimensionValues[dimKey] || {};
+  for (const [siblingKey, expected] of Object.entries(requires)) {
+    const allowed = Array.isArray(expected) ? expected : [expected];
+    let siblingValue = dim[siblingKey];
+    // Cross-dimension sibling fallback (addToWinners lives on legacy
+    // momentumSensitivity but gates new positionSizing params).
+    if (siblingValue === undefined) {
+      for (const c of (DIMENSION_CONFIGS.find((d) => d.key === dimKey)?.controls || [])) {
+        if (c.paramKey === siblingKey && c.legacyKey) {
+          siblingValue = dim[c.legacyKey];
+          if (siblingValue === undefined && c.legacyDim) {
+            siblingValue = (dimensionValues[c.legacyDim] || {})[siblingKey]
+              ?? (dimensionValues[c.legacyDim] || {})[c.legacyKey];
+          }
+          break;
+        }
+      }
+    }
+    if (!allowed.includes(siblingValue)) return false;
+  }
+  return true;
+}
 
 // Radar scoring formulas live in src/utils/dimensionRadarScore.js so that
 // ForgeLanding's mini radar and StrategyDimensions' full-size radar share
@@ -171,7 +280,7 @@ const SUMMARY_PHRASES = {
   exitDiscipline: { high: 'quick exits', low: 'patient exits' },
   sectorStrategy: { high: 'concentrated sectors', low: 'diversified sectors' },
   momentumSensitivity: { high: 'momentum-heavy', low: 'contrarian' },
-  macroAwareness: { high: 'macro-reactive', low: 'macro-agnostic' },
+  eventRisk: { high: 'event-aware', low: 'event-agnostic' },
   positionSizing: { high: 'concentrated sizing', low: 'spread thin' },
 };
 
@@ -203,13 +312,15 @@ function summarizeStrategy(values, scores) {
 
 function DimensionCard({
   config,
-  values,
+  dimensionValues,
   onParamChange,
   disabled,
   isExpanded,
   onToggleExpanded,
   isNarrow,
+  showAdvanced,
 }) {
+  const values = dimensionValues[config.key] || {};
   const posture = getPostureLabel(config.key, values);
   const tone = TONE_STYLES[posture.tone] || TONE_STYLES.neutral;
   // On narrow viewports (≤420px) force every card to span 3 of the 6-col
@@ -332,21 +443,188 @@ function DimensionCard({
                 borderTop: `0.5px solid ${BORDER_SUBTLE}`,
               }}
             >
-              {config.controls.map((control) => (
-                <DimensionControl
-                  key={control.paramKey}
-                  control={control}
-                  value={values[control.paramKey]}
-                  disabled={disabled}
-                  onChange={(newValue) =>
-                    onParamChange(config.key, control.paramKey, newValue)
-                  }
-                />
-              ))}
+              <DimensionBody
+                config={config}
+                dimensionValues={dimensionValues}
+                onParamChange={onParamChange}
+                disabled={disabled}
+                showAdvanced={showAdvanced}
+              />
             </div>
           </motion.div>
         )}
       </AnimatePresence>
+    </div>
+  );
+}
+
+// Splits a dimension's controls into baseline + advanced tiers, filters both
+// by `requires` gating against current values, and renders each list with
+// a subtle divider between tiers when `showAdvanced` is on. Vestigial
+// dimensions (no controls) render a short note.
+function DimensionBody({ config, dimensionValues, onParamChange, disabled, showAdvanced }) {
+  if (!config.controls || config.controls.length === 0) {
+    return (
+      <div style={{ fontSize: 12, color: TEXT_MUTED, padding: '8px 0', lineHeight: 1.5 }}>
+        This dimension has no user-configurable controls right now — its
+        signal lives under other dimensions. Shape shown in the radar for
+        visual continuity.
+      </div>
+    );
+  }
+
+  const baseline = config.controls.filter(
+    (c) => c.tier !== 'advanced' && requirementsMet(c.requires, dimensionValues, config.key)
+  );
+  const advanced = showAdvanced
+    ? config.controls.filter(
+        (c) => c.tier === 'advanced' && requirementsMet(c.requires, dimensionValues, config.key)
+      )
+    : [];
+
+  return (
+    <>
+      {baseline.map((control) => (
+        <DimensionControl
+          key={control.paramKey}
+          control={control}
+          value={readControlValue(dimensionValues, config.key, control)}
+          disabled={disabled}
+          onChange={(newValue) => onParamChange(config.key, control.paramKey, newValue)}
+        />
+      ))}
+
+      {advanced.length > 0 && (
+        <div
+          style={{
+            marginTop: 8,
+            paddingTop: 10,
+            borderTop: `0.5px dashed ${BORDER_SUBTLE}`,
+          }}
+        >
+          <div
+            style={{
+              fontSize: 10,
+              fontWeight: 600,
+              textTransform: 'uppercase',
+              letterSpacing: '0.05em',
+              color: TEXT_MUTED,
+              marginBottom: 8,
+              fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+            }}
+          >
+            Advanced
+          </div>
+          {advanced.map((control) => (
+            <DimensionControl
+              key={control.paramKey}
+              control={control}
+              value={readControlValue(dimensionValues, config.key, control)}
+              disabled={disabled}
+              onChange={(newValue) => onParamChange(config.key, control.paramKey, newValue)}
+            />
+          ))}
+        </div>
+      )}
+    </>
+  );
+}
+
+// ─── Inline control primitives ──────────────────────────────
+// These complement ParamSlider / ParamToggle / ParamPicker for the new
+// Phase 4 control types (enumNumber chip picker and stringArray multi-
+// select checkbox grid). They match the tight visual style of the
+// existing Forge controls.
+
+function ChipPicker({ label, hint, options, value, formatChip, onChange, disabled }) {
+  return (
+    <div style={{ marginBottom: 14, opacity: disabled ? 0.55 : 1, pointerEvents: disabled ? 'none' : undefined }}>
+      <div style={{ fontSize: 12, fontWeight: 600, color: TEXT_PRIMARY, marginBottom: 6 }}>{label}</div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+        {options.map((opt) => {
+          const selected = opt === value;
+          return (
+            <button
+              key={String(opt)}
+              onClick={(e) => { e.stopPropagation(); onChange(opt); }}
+              style={{
+                fontSize: 11,
+                fontWeight: 500,
+                color: selected ? ACCENT_TEAL : TEXT_SECONDARY,
+                background: selected ? `${ACCENT_TEAL}1A` : '#15171E',
+                border: `1px solid ${selected ? ACCENT_TEAL : '#2A2D35'}`,
+                borderRadius: 8,
+                padding: '5px 10px',
+                cursor: 'pointer',
+                transition: 'all 0.15s ease',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {formatChip ? formatChip(opt) : String(opt)}
+            </button>
+          );
+        })}
+      </div>
+      {hint && (
+        <div style={{ fontSize: 11, color: TEXT_MUTED, marginTop: 6, lineHeight: 1.4 }}>{hint}</div>
+      )}
+    </div>
+  );
+}
+
+function MultiSelectChips({
+  label, hint, itemOptions, value, onChange, disabled, minItems = 0, maxItems = Infinity,
+}) {
+  const selected = Array.isArray(value) ? value : [];
+  const atMax = selected.length >= maxItems;
+  const toggle = (item) => {
+    if (selected.includes(item)) {
+      if (selected.length <= minItems) return;  // floor — don't drop below min via UI
+      onChange(selected.filter((s) => s !== item));
+    } else {
+      if (atMax) return;
+      onChange([...selected, item]);
+    }
+  };
+  return (
+    <div style={{ marginBottom: 14, opacity: disabled ? 0.55 : 1, pointerEvents: disabled ? 'none' : undefined }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 6 }}>
+        <div style={{ fontSize: 12, fontWeight: 600, color: TEXT_PRIMARY }}>{label}</div>
+        <div style={{ fontSize: 10, color: TEXT_MUTED, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }}>
+          {selected.length} / {Math.min(maxItems, itemOptions.length)}
+        </div>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 6 }}>
+        {itemOptions.map((item) => {
+          const isSel = selected.includes(item);
+          const isDisabled = !isSel && atMax;
+          return (
+            <button
+              key={item}
+              onClick={(e) => { e.stopPropagation(); toggle(item); }}
+              disabled={isDisabled}
+              style={{
+                fontSize: 11,
+                fontWeight: 500,
+                color: isSel ? ACCENT_TEAL : (isDisabled ? TEXT_MUTED : TEXT_SECONDARY),
+                background: isSel ? `${ACCENT_TEAL}1A` : '#15171E',
+                border: `1px solid ${isSel ? ACCENT_TEAL : '#2A2D35'}`,
+                borderRadius: 6,
+                padding: '6px 8px',
+                cursor: isDisabled ? 'not-allowed' : 'pointer',
+                textAlign: 'left',
+                transition: 'all 0.15s ease',
+                opacity: isDisabled ? 0.55 : 1,
+              }}
+            >
+              {isSel ? '✓ ' : ''}{item}
+            </button>
+          );
+        })}
+      </div>
+      {hint && (
+        <div style={{ fontSize: 11, color: TEXT_MUTED, marginTop: 6, lineHeight: 1.4 }}>{hint}</div>
+      )}
     </div>
   );
 }
@@ -357,6 +635,7 @@ function DimensionControl({ control, value, onChange, disabled }) {
     : undefined;
 
   if (control.type === 'slider') {
+    const effective = typeof value === 'number' ? value : control.min;
     return (
       <div style={wrapperStyle}>
         <ParamSlider
@@ -368,7 +647,7 @@ function DimensionControl({ control, value, onChange, disabled }) {
             unit: control.unit || '',
             hint: control.hint,
           }}
-          value={value}
+          value={effective}
           onChange={onChange}
           categoryColor={ACCENT_TEAL}
         />
@@ -387,7 +666,7 @@ function DimensionControl({ control, value, onChange, disabled }) {
       </div>
     );
   }
-  if (control.type === 'select') {
+  if (control.type === 'select' || control.type === 'segmented') {
     return (
       <div style={wrapperStyle}>
         <ParamPicker
@@ -401,6 +680,33 @@ function DimensionControl({ control, value, onChange, disabled }) {
           categoryColor={ACCENT_TEAL}
         />
       </div>
+    );
+  }
+  if (control.type === 'chipPicker') {
+    return (
+      <ChipPicker
+        label={control.label}
+        hint={control.hint}
+        options={control.options}
+        value={value}
+        formatChip={control.formatChip}
+        onChange={onChange}
+        disabled={disabled}
+      />
+    );
+  }
+  if (control.type === 'multiSelect') {
+    return (
+      <MultiSelectChips
+        label={control.label}
+        hint={control.hint}
+        itemOptions={control.itemOptions}
+        value={value}
+        onChange={onChange}
+        disabled={disabled}
+        minItems={control.minItems}
+        maxItems={control.maxItems}
+      />
     );
   }
   return null;
@@ -417,6 +723,8 @@ export default function StrategyDimensions({
   selectedCollection,
   onSelectCollection,
   isDirty,
+  showAdvanced = false,
+  onToggleAdvanced,
 }) {
   const [expandedKey, setExpandedKey] = useState(null);
   const reducedMotion = useReducedMotion();
@@ -515,19 +823,43 @@ export default function StrategyDimensions({
         {summary}
       </div>
 
-      {/* Hint — only when nothing is expanded */}
-      {expandedKey === null && (
-        <div
-          style={{
-            fontSize: 12,
-            color: TEXT_MUTED,
-            textAlign: 'center',
-            marginBottom: 10,
-          }}
-        >
-          Tap any dimension to tune it
+      {/* Hint + Show-advanced toggle row */}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 10,
+          marginBottom: 10,
+        }}
+      >
+        <div style={{ fontSize: 12, color: TEXT_MUTED }}>
+          {expandedKey === null ? 'Tap any dimension to tune it' : ''}
         </div>
-      )}
+        {onToggleAdvanced && (
+          <button
+            type="button"
+            onClick={() => onToggleAdvanced(!showAdvanced)}
+            disabled={disabled}
+            style={{
+              fontSize: 11,
+              fontWeight: 600,
+              color: showAdvanced ? ACCENT_TEAL : TEXT_SECONDARY,
+              background: showAdvanced ? `${ACCENT_TEAL}1A` : 'transparent',
+              border: `1px solid ${showAdvanced ? ACCENT_TEAL : BORDER_SUBTLE}`,
+              borderRadius: 6,
+              padding: '4px 10px',
+              cursor: disabled ? 'not-allowed' : 'pointer',
+              fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+              textTransform: 'uppercase',
+              letterSpacing: '0.04em',
+              flexShrink: 0,
+            }}
+          >
+            {showAdvanced ? '◉ Advanced on' : '◯ Show advanced'}
+          </button>
+        )}
+      </div>
 
       {/* Dimension grid */}
       <div
@@ -543,7 +875,7 @@ export default function StrategyDimensions({
           <DimensionCard
             key={config.key}
             config={config}
-            values={values[config.key] || {}}
+            dimensionValues={values}
             onParamChange={onChange}
             disabled={disabled}
             isExpanded={expandedKey === config.key}
@@ -551,6 +883,7 @@ export default function StrategyDimensions({
               setExpandedKey((prev) => (prev === config.key ? null : config.key))
             }
             isNarrow={isNarrow}
+            showAdvanced={showAdvanced}
           />
         ))}
       </div>

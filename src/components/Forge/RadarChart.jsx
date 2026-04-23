@@ -38,7 +38,7 @@ const DIMENSION_AXES = [
   { id: 'exitDiscipline', label: 'Exit' },
   { id: 'sectorStrategy', label: 'Sector' },
   { id: 'momentumSensitivity', label: 'Momentum' },
-  { id: 'macroAwareness', label: 'Macro' },
+  { id: 'eventRisk', label: 'Events' },
   { id: 'positionSizing', label: 'Sizing' },
 ];
 

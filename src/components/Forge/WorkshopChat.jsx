@@ -571,6 +571,11 @@ export default function WorkshopChat({ isOpen, onClose, user, agent, onCompiled 
           warnings: data.warnings || [],
           mappingNotes: data.mappingNotes || [],
           appliedClamps: data.appliedClamps || [],
+          // Phase 4 — thread Gemma's duration recommendation through so
+          // SeasonEntryModal can pre-select the duration chip and show
+          // the "From Workshop" badge. Null when the compile response
+          // didn't include a recommendation.
+          recommendedDurationDays: data.recommendedDurationDays ?? null,
         });
       }
     } catch (err) {

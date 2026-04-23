@@ -215,6 +215,90 @@ function StepOverview({ season }) {
   );
 }
 
+// Phase 4 — solo-session duration picker. Chips in a compact row at the
+// top of StepStrategy. `fromWorkshop` displays a subtle "From Workshop"
+// badge when the value came from Gemma's recommendation; user overriding
+// the chip clears the badge via state in the parent.
+const DURATION_OPTIONS = [5, 10, 15, 20];
+
+function DurationPicker({ value, onChange, fromWorkshop, disabled }) {
+  return (
+    <div
+      style={{
+        padding: '10px 12px',
+        marginBottom: 12,
+        background: 'rgba(240,199,94,0.04)',
+        border: `1px solid ${HOLO_COLORS.borderSubtle}`,
+        borderRadius: 8,
+      }}
+    >
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 10,
+          marginBottom: 8,
+        }}
+      >
+        <div style={{ fontSize: 12, fontWeight: 600, color: HOLO_COLORS.textPrimary }}>
+          Test duration
+        </div>
+        {fromWorkshop && (
+          <span
+            style={{
+              fontSize: 10,
+              fontWeight: 600,
+              color: '#F0C75E',
+              background: 'rgba(240,199,94,0.12)',
+              border: '1px solid rgba(240,199,94,0.4)',
+              borderRadius: 4,
+              padding: '2px 6px',
+              fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+              textTransform: 'uppercase',
+              letterSpacing: '0.04em',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            From Workshop
+          </span>
+        )}
+      </div>
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+        {DURATION_OPTIONS.map((days) => {
+          const weeks = days / 5;
+          const selected = value === days;
+          return (
+            <button
+              key={days}
+              type="button"
+              onClick={() => !disabled && onChange(days)}
+              disabled={disabled}
+              style={{
+                flex: '1 1 auto',
+                minWidth: 68,
+                fontSize: 12,
+                fontWeight: 600,
+                color: selected ? '#F0C75E' : HOLO_COLORS.textSecondary,
+                background: selected ? 'rgba(240,199,94,0.14)' : '#15171E',
+                border: `1px solid ${selected ? '#F0C75E' : '#2A2D35'}`,
+                borderRadius: 6,
+                padding: '8px 10px',
+                cursor: disabled ? 'not-allowed' : 'pointer',
+                textAlign: 'center',
+                transition: 'all 0.15s ease',
+              }}
+            >
+              <div style={{ lineHeight: 1.2 }}>{weeks} {weeks === 1 ? 'week' : 'weeks'}</div>
+              <div style={{ fontSize: 10, color: HOLO_COLORS.textMuted, marginTop: 2 }}>{days} days</div>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function StepStrategy({
   dimensionValues,
   selectedCollection,
@@ -227,9 +311,21 @@ function StepStrategy({
   compileWarnings = [],
   compileMappingNotes = [],
   compileAppliedClamps = [],
+  selectedDurationDays,
+  onChangeDuration,
+  durationFromWorkshop,
+  showAdvanced,
+  onToggleAdvanced,
 }) {
   return (
     <div>
+      <DurationPicker
+        value={selectedDurationDays}
+        onChange={onChangeDuration}
+        fromWorkshop={durationFromWorkshop}
+        disabled={disabled}
+      />
+
       {fromConversation && selectedCollection === 'from-conversation' ? (
         <CompileTransparencyPanel
           confidence={compileConfidence}
@@ -258,6 +354,8 @@ function StepStrategy({
         selectedCollection={selectedCollection}
         onSelectCollection={onSelectCollection}
         isDirty={isDirty}
+        showAdvanced={showAdvanced}
+        onToggleAdvanced={onToggleAdvanced}
       />
     </div>
   );
@@ -493,12 +591,23 @@ export default function SeasonEntryModal({
   compileWarnings = [],
   compileMappingNotes = [],
   compileAppliedClamps = [],
+  // Phase 4 — Gemma's recommended backtest duration (null when the launch
+  // didn't come from Workshop, or when Haiku didn't emit a recommendation).
+  // Pre-selects the duration picker; manual override clears the
+  // "From Workshop" badge.
+  recommendedDurationDays = null,
 }) {
   const startStep = typeof initialStep === 'number' ? initialStep : 0;
   const startDims = initialDimensionValues
     ? { ...cloneDefaults(), ...initialDimensionValues }
     : cloneDefaults();
   const startCollection = fromConversation ? 'from-conversation' : null;
+
+  const VALID_DURATIONS = [5, 10, 15, 20];
+  const DEFAULT_DURATION = 20;
+  const initialDuration = VALID_DURATIONS.includes(recommendedDurationDays)
+    ? recommendedDurationDays
+    : DEFAULT_DURATION;
 
   const [step, setStep] = useState(startStep);
   const [direction, setDirection] = useState(1);
@@ -509,6 +618,14 @@ export default function SeasonEntryModal({
   const [isDirty, setIsDirty] = useState(Boolean(initialDimensionValues));
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
+  // Phase 4 — duration picker + advanced toggle. `durationFromWorkshop`
+  // tracks whether the current picker value equals the recommendation;
+  // user override flips it off, which removes the "From Workshop" badge.
+  const [selectedDurationDays, setSelectedDurationDays] = useState(initialDuration);
+  const [durationFromWorkshop, setDurationFromWorkshop] = useState(
+    VALID_DURATIONS.includes(recommendedDurationDays)
+  );
+  const [showAdvanced, setShowAdvanced] = useState(false);
 
   // Reset state when the modal is opened/closed so a second open is clean
   useEffect(() => {
@@ -524,8 +641,22 @@ export default function SeasonEntryModal({
     setIsDirty(Boolean(initialDimensionValues));
     setSubmitting(false);
     setError(null);
+    const resetDuration = VALID_DURATIONS.includes(recommendedDurationDays)
+      ? recommendedDurationDays
+      : DEFAULT_DURATION;
+    setSelectedDurationDays(resetDuration);
+    setDurationFromWorkshop(VALID_DURATIONS.includes(recommendedDurationDays));
+    setShowAdvanced(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen]);
+
+  const handleDurationChange = useCallback((days) => {
+    setSelectedDurationDays(days);
+    // Any user-selected value that disagrees with the recommendation flips
+    // off the "From Workshop" badge. Selecting the same value as the
+    // recommendation preserves the badge.
+    setDurationFromWorkshop(days === recommendedDurationDays);
+  }, [recommendedDurationDays]);
 
   const handleSelectCollection = useCallback((collectionId) => {
     setSelectedCollection(collectionId);
@@ -618,9 +749,18 @@ export default function SeasonEntryModal({
       const response = await fetchWithAuth('/api/season/create-entry', {
         method: 'POST',
         body: JSON.stringify({
-          seasonId: season.id,
+          // Phase 3 — solo sessions ignore season.id; the server creates
+          // a private per-user season on the fly. Tournament path still
+          // sends seasonId for explicit season joins (deferred Phase).
+          seasonId: season?.id ?? null,
           agentId: agent.id,
           bundleId,
+          // Phase 3 — solo mode + user-selected duration. Phase 4 always
+          // ships with mode='solo' from the UI; tournament launches still
+          // route through this endpoint in future sprints via a separate
+          // entry point that overrides mode.
+          mode: 'solo',
+          durationDays: selectedDurationDays,
           sourceExperimentId,
           entrySource:
             entrySource ||
@@ -677,6 +817,7 @@ export default function SeasonEntryModal({
     sourceExperimentId,
     entrySource,
     fromConversation,
+    selectedDurationDays,
     compileConfidence,
     compileWarnings,
     compileMappingNotes,
@@ -739,6 +880,11 @@ export default function SeasonEntryModal({
                     compileWarnings={compileWarnings}
                     compileMappingNotes={compileMappingNotes}
                     compileAppliedClamps={compileAppliedClamps}
+                    selectedDurationDays={selectedDurationDays}
+                    onChangeDuration={handleDurationChange}
+                    durationFromWorkshop={durationFromWorkshop}
+                    showAdvanced={showAdvanced}
+                    onToggleAdvanced={setShowAdvanced}
                   />
                 )}
                 {step === 2 && (

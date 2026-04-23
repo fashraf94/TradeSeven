@@ -1975,6 +1975,9 @@ export default function ForgeLanding({
         warnings: result.warnings,
         mappingNotes: result.mappingNotes,
         appliedClamps: result.appliedClamps,
+        // Phase 4 — forward Gemma's duration recommendation so the modal
+        // can pre-select the duration chip and show "From Workshop".
+        recommendedDurationDays: result.recommendedDurationDays ?? null,
       });
     } else {
       showToast('Strategy compiled — but no experiment to deploy to');

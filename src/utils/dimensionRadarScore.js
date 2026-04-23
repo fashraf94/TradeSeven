@@ -16,7 +16,7 @@ export const DIMENSION_KEYS = [
   'exitDiscipline',
   'sectorStrategy',
   'momentumSensitivity',
-  'macroAwareness',
+  'eventRisk',
   'positionSizing',
 ];
 
@@ -48,19 +48,19 @@ export function dimensionToRadarScore(key, v) {
         0.05,
         1
       );
-    case 'macroAwareness':
-      return clamp(
-        0.5 * (v.earningsAvoidance / 7) +
-          0.3 * (v.fomcDefensive ? 1 : 0) +
-          0.2 *
-            (v.benchmarkGapResponse === 'aggressive'
-              ? 1
-              : v.benchmarkGapResponse === 'react'
-              ? 0.5
-              : 0),
-        0.05,
-        1
-      );
+    case 'eventRisk': {
+      // Phase 4 (spec §4.6): dimension renamed from macroAwareness to
+      // eventRisk and narrowed to a single surface control
+      // (earningsAvoidanceDays). Single-signal radar formula keeps the axis
+      // responsive to the one control the user can actually move. Legacy
+      // fomcDefensive / benchmarkGapResponse stay in DIMENSION_DEFAULTS
+      // for data continuity but no longer contribute to the radar until
+      // Season Mode tournament rules return and expose UI for them again.
+      const days = typeof v.earningsAvoidanceDays === 'number'
+        ? v.earningsAvoidanceDays
+        : (typeof v.earningsAvoidance === 'number' ? v.earningsAvoidance : 0);
+      return clamp(days / 10, 0.05, 1);
+    }
     case 'positionSizing':
       return clamp((v.maxPosition - 5) / 20, 0.05, 1);
     default:
