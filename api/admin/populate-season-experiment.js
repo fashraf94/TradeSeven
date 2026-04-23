@@ -26,65 +26,20 @@
 //                          (season-daily-evaluate.js:152)
 
 import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
+import { buildTradingCalendar, DEFAULT_SESSION_UNIVERSE } from '../_utils/seasonCalendar.js';
 
 const DEFAULT_SEASON_ID = 'experiment-2026-04-13';
+const EXPERIMENT_START_DATE = '2026-04-13';
+const EXPERIMENT_DURATION_DAYS = 20;
 
-const TRADING_CALENDAR = [
-  { day: 1,  week: 1, date: '2026-04-13' },
-  { day: 2,  week: 1, date: '2026-04-14' },
-  { day: 3,  week: 1, date: '2026-04-15' },
-  { day: 4,  week: 1, date: '2026-04-16' },
-  { day: 5,  week: 1, date: '2026-04-17' },
-  { day: 6,  week: 2, date: '2026-04-20' },
-  { day: 7,  week: 2, date: '2026-04-21' },
-  { day: 8,  week: 2, date: '2026-04-22' },
-  { day: 9,  week: 2, date: '2026-04-23' },
-  { day: 10, week: 2, date: '2026-04-24' },
-  { day: 11, week: 3, date: '2026-04-27' },
-  { day: 12, week: 3, date: '2026-04-28' },
-  { day: 13, week: 3, date: '2026-04-29' },
-  { day: 14, week: 3, date: '2026-04-30' },
-  { day: 15, week: 3, date: '2026-05-01' },
-  { day: 16, week: 4, date: '2026-05-04' },
-  { day: 17, week: 4, date: '2026-05-05' },
-  { day: 18, week: 4, date: '2026-05-06' },
-  { day: 19, week: 4, date: '2026-05-07' },
-  { day: 20, week: 4, date: '2026-05-08' },
-];
-
-// Weeks 1–3 have a pit stop window (Sat–Sun between that week's Friday and
-// the next week's Monday). Week 4 is the final week — no pit stop, because
-// there's no subsequent week to apply changes to (mirrors the guard in
-// season-pit-stop-manage.js:115).
-const WEEKS = [
-  {
-    weekNumber: 1,
-    tradingDays: [1, 2, 3, 4, 5],
-    startDate: '2026-04-13',
-    endDate: '2026-04-17',
-    pitStopWindow: { start: '2026-04-18', end: '2026-04-19' },
-  },
-  {
-    weekNumber: 2,
-    tradingDays: [6, 7, 8, 9, 10],
-    startDate: '2026-04-20',
-    endDate: '2026-04-24',
-    pitStopWindow: { start: '2026-04-25', end: '2026-04-26' },
-  },
-  {
-    weekNumber: 3,
-    tradingDays: [11, 12, 13, 14, 15],
-    startDate: '2026-04-27',
-    endDate: '2026-05-01',
-    pitStopWindow: { start: '2026-05-02', end: '2026-05-03' },
-  },
-  {
-    weekNumber: 4,
-    tradingDays: [16, 17, 18, 19, 20],
-    startDate: '2026-05-04',
-    endDate: '2026-05-08',
-  },
-];
+// tradingCalendar + weeks are built from the shared helper so the solo-mode
+// create-entry flow (api/season/create-entry.js) can produce variable-length
+// calendars of the same shape. Tournament-style: no final-week pit stop.
+const { tradingCalendar: TRADING_CALENDAR, weeks: WEEKS } = buildTradingCalendar({
+  startDate: EXPERIMENT_START_DATE,
+  durationDays: EXPERIMENT_DURATION_DAYS,
+  includeFinalPitStop: false,
+});
 
 const BENCHMARK = {
   spyStartPrice: 0,
@@ -93,13 +48,7 @@ const BENCHMARK = {
   dailyReturns: [],
 };
 
-const UNIVERSE = [
-  'AAPL', 'MSFT', 'NVDA', 'GOOGL', 'AMZN', 'META', 'TSLA', 'AVGO', 'AMD', 'CRM',
-  'BRK.B', 'JPM', 'V', 'MA', 'BAC', 'WFC', 'GS', 'AXP', 'UNH', 'LLY',
-  'JNJ', 'ABBV', 'MRK', 'PFE', 'HD', 'MCD', 'NKE', 'SBUX', 'TGT', 'WMT',
-  'PG', 'KO', 'PEP', 'COST', 'XOM', 'CVX', 'COP', 'SLB', 'EOG', 'CAT',
-  'RTX', 'UPS', 'HON', 'NEE', 'DUK', 'SO', 'D', 'AMT', 'PLD', 'CCI',
-];
+const UNIVERSE = DEFAULT_SESSION_UNIVERSE;
 
 const MACRO_EVENTS = [
   { type: 'FOMC', date: '2026-05-06', tradingDay: 18 },

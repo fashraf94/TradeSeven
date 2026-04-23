@@ -30,10 +30,16 @@ import { applySecurityMiddleware } from '../_utils/security.js';
 import { requireAuth } from '../_utils/authMiddleware.js';
 import { buildRuleSchemaRegistry } from '../_utils/seasonValidation.js';
 import { SEASON_CONFIG, SEASON_STATUS, ENTRY_STATUS } from '../_utils/seasonConfig.js';
+import { buildTradingCalendar, DEFAULT_SESSION_UNIVERSE } from '../_utils/seasonCalendar.js';
 import { FORGE_RULE_TEMPLATES } from '../../src/data/forgeKnowledgeBase.js';
 import { FieldValue } from 'firebase-admin/firestore';
 import { logStrategyConfig } from '../_utils/shadowLogger.js';
 import { createHash } from 'crypto';
+
+// Phase 3 — variable duration
+const VALID_DURATIONS_DAYS = [5, 10, 15, 20];
+const DEFAULT_DURATION_DAYS = 20;
+const VALID_ENTRY_MODES = new Set(['solo', 'tournament']);
 
 // Phase 6 — Shadow Logger Extension
 // Accepted values for the optional entrySource field on the seasonEntries
@@ -55,6 +61,51 @@ const MAX_CONCURRENT_ACTIVE_ENTRIES = 5;
 // Maps the wire-format entrySource string onto the creationSource.method
 // enum surfaced on the entry doc. Keeps the two fields aligned without
 // forcing callers to send both.
+// Deterministic ID for a user's solo season in a given day + duration.
+// Multiple retries on the same day with the same duration produce the
+// same season doc (idempotent creation); same-day launches with different
+// durations produce separate seasons.
+function buildSoloSeasonId(userId, startDate, durationDays) {
+  const hash = createHash('sha256')
+    .update(`${userId}|${startDate}|${durationDays}`)
+    .digest('hex')
+    .slice(0, 12);
+  return `solo-${hash}`;
+}
+
+// Construct the private season doc that a solo entry joins. Shape mirrors
+// what downstream readers expect from shared tournament seasons, so no
+// pipeline change is needed for solo to work end-to-end.
+function buildSoloSeasonDoc({ seasonId, userId, startDate, durationDays, durationWeeks }) {
+  const { tradingCalendar, weeks } = buildTradingCalendar({
+    startDate,
+    durationDays,
+    includeFinalPitStop: true,  // solo: reuse pit stop as end-of-session debrief
+  });
+  const nowIso = new Date().toISOString();
+  return {
+    seasonId,
+    ownerId: userId,
+    mode: 'solo',
+    status: SEASON_STATUS.ACTIVE,
+    durationDays,
+    durationWeeks,
+    tradingCalendar,
+    weeks,
+    totalWeeks: durationWeeks,
+    currentTradingDay: 0,
+    currentWeek: 0,
+    benchmark: { spyStartPrice: 0, spyCurrentPrice: 0, spyReturn: 0, dailyReturns: [] },
+    spyStartPrice: 0,
+    universe: DEFAULT_SESSION_UNIVERSE,
+    macroEvents: [],
+    missedDays: {},
+    entryCount: 0,
+    createdAt: nowIso,
+    updatedAt: nowIso,
+  };
+}
+
 function entrySourceToCreationMethod(entrySource) {
   switch (entrySource) {
     case 'workshop':
@@ -146,7 +197,7 @@ async function buildBundleRules(db, agentId, bundle) {
  * Every field here has at least one reader in the season cron, pipeline,
  * settlement, leaderboard, or pit-stop-manage modules.
  */
-function buildEntryDoc(user, seasonId, season, agentId, bundleId, bundle, bundleRules, originMeta) {
+function buildEntryDoc(user, seasonId, season, agentId, bundleId, bundle, bundleRules, originMeta, lifecycle) {
   const nowIso = new Date().toISOString();
   const startingCapital = SEASON_CONFIG.STARTING_CAPITAL;
 
@@ -173,6 +224,18 @@ function buildEntryDoc(user, seasonId, season, agentId, bundleId, bundle, bundle
     entryType: 'human',
     status: entryStatus,
     isPitStopOpen: false,
+
+    // Phase 3 — variable duration / mode
+    //   mode: 'solo' runs on a per-user private season built at create time
+    //         with a calendar matching durationDays. 'tournament' joins a
+    //         shared multi-user season (legacy behavior).
+    //   durationDays: 5 | 10 | 15 | 20 — source of truth for session length.
+    //   durationWeeks: derived (durationDays / 5) — convenience for readers.
+    // Old entries without these fields are read as {solo, 20, 4} via the
+    // same fallback pattern Phase 1 and Phase 2 used.
+    mode: lifecycle.mode,
+    durationDays: lifecycle.durationDays,
+    durationWeeks: lifecycle.durationWeeks,
 
     // Algorithm snapshot from the selected bundle
     algorithm: {
@@ -269,9 +332,12 @@ export default async function handler(req, res) {
 
   // ─── 4. Validate request body ────────────────────────────────
   const {
-    seasonId,
+    seasonId: bodySeasonId,
     agentId,
     bundleId,
+    // Phase 3 — variable duration / mode
+    mode: bodyMode,
+    durationDays: bodyDurationDays,
     // Phase 6 — optional origin metadata (training data capture).
     // None of these affect launch logic; they are persisted on the
     // entry doc and forwarded to the strategy_configs shadow stream.
@@ -280,14 +346,47 @@ export default async function handler(req, res) {
     sourceCollection,
     dimensionValues,
   } = req.body || {};
+
+  const mode = VALID_ENTRY_MODES.has(bodyMode) ? bodyMode : 'solo';
+
+  // Solo: durationDays is user-controlled, defaults to 20, must be in the
+  // valid enum when explicitly provided. Tournament: always 20, silently
+  // overriding any user-supplied value (Phase 4 UI may send both naively).
+  let durationDays;
+  if (mode === 'tournament') {
+    durationDays = DEFAULT_DURATION_DAYS;
+  } else if (bodyDurationDays === undefined || bodyDurationDays === null) {
+    durationDays = DEFAULT_DURATION_DAYS;
+  } else if (VALID_DURATIONS_DAYS.includes(bodyDurationDays)) {
+    durationDays = bodyDurationDays;
+  } else {
+    return res.status(400).json({
+      error: 'invalid_duration',
+      message: `durationDays must be one of ${VALID_DURATIONS_DAYS.join(', ')}.`,
+    });
+  }
+  const durationWeeks = durationDays / 5;
+  const lifecycle = { mode, durationDays, durationWeeks };
+
+  // Tournament flow requires an existing seasonId on the body; solo mode
+  // creates a per-user private season below, so seasonId is optional there.
   if (
-    typeof seasonId !== 'string' || !seasonId ||
     typeof agentId !== 'string' || !agentId ||
     typeof bundleId !== 'string' || !bundleId
   ) {
     return res
       .status(400)
-      .json({ error: 'Missing or invalid seasonId, agentId, or bundleId' });
+      .json({ error: 'Missing or invalid agentId or bundleId' });
+  }
+  if (mode === 'tournament' && (typeof bodySeasonId !== 'string' || !bodySeasonId)) {
+    return res
+      .status(400)
+      .json({ error: 'Missing or invalid seasonId (required for tournament entries)' });
+  }
+  if (mode === 'solo' && bodySeasonId && typeof bodySeasonId !== 'string') {
+    return res
+      .status(400)
+      .json({ error: 'Invalid seasonId' });
   }
 
   // Coerce optional origin metadata — unknown / malformed inputs are
@@ -314,20 +413,51 @@ export default async function handler(req, res) {
   const db = getFirebaseAdmin();
 
   try {
-    // ─── 5. Load season ────────────────────────────────────────
-    const seasonRef = db.collection('seasons').doc(seasonId);
-    const seasonSnap = await seasonRef.get();
-    if (!seasonSnap.exists) {
-      return res.status(404).json({ error: 'Season not found' });
-    }
-    const season = seasonSnap.data();
-    if (
-      season.status !== SEASON_STATUS.UPCOMING &&
-      season.status !== SEASON_STATUS.ACTIVE
-    ) {
-      return res
-        .status(400)
-        .json({ error: `Season is ${season.status}; cannot join` });
+    // ─── 5. Load or create season ──────────────────────────────
+    // Solo entries get a per-user private season with a synthetic trading
+    // calendar sized to durationDays. Tournament entries join an existing
+    // shared season doc (unchanged legacy flow).
+    let seasonId;
+    let seasonRef;
+    let season;
+    let seasonJustCreated = false;
+
+    if (mode === 'solo') {
+      // Private season doc, keyed by a deterministic ID so retries produce
+      // the same doc rather than leaking seasons on each attempt.
+      const soloStart = new Date().toISOString().slice(0, 10);
+      seasonId = buildSoloSeasonId(user.uid, soloStart, durationDays);
+      seasonRef = db.collection('seasons').doc(seasonId);
+      const existing = await seasonRef.get();
+      if (existing.exists) {
+        season = existing.data();
+      } else {
+        season = buildSoloSeasonDoc({
+          seasonId,
+          userId: user.uid,
+          startDate: soloStart,
+          durationDays,
+          durationWeeks,
+        });
+        await seasonRef.set(season);
+        seasonJustCreated = true;
+      }
+    } else {
+      seasonId = bodySeasonId;
+      seasonRef = db.collection('seasons').doc(seasonId);
+      const seasonSnap = await seasonRef.get();
+      if (!seasonSnap.exists) {
+        return res.status(404).json({ error: 'Season not found' });
+      }
+      season = seasonSnap.data();
+      if (
+        season.status !== SEASON_STATUS.UPCOMING &&
+        season.status !== SEASON_STATUS.ACTIVE
+      ) {
+        return res
+          .status(400)
+          .json({ error: `Season is ${season.status}; cannot join` });
+      }
     }
 
     // ─── 6. Load agent + ownership check ───────────────────────
@@ -373,7 +503,8 @@ export default async function handler(req, res) {
       bundleId,
       bundle,
       bundleRules,
-      originMeta
+      originMeta,
+      lifecycle
     );
 
     // ─── 10. Transactional commit ──────────────────────────────
