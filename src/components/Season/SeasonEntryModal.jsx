@@ -37,6 +37,7 @@ import {
   persistCompileTransparencyOnBundle,
   COLLECTION_DEFS,
 } from '../../utils/dimensionMapper';
+import { writeDimensionField } from '../../utils/dimensionFieldAccess';
 
 const TROPHY_GOLD = '#F0C75E';
 const POSITIVE = '#34D399';
@@ -664,11 +665,12 @@ export default function SeasonEntryModal({
     setIsDirty(false);
   }, []);
 
-  const handleParamChange = useCallback((dimensionKey, paramKey, newValue) => {
-    setDimensionValues((prev) => ({
-      ...prev,
-      [dimensionKey]: { ...prev[dimensionKey], [paramKey]: newValue },
-    }));
+  const handleParamChange = useCallback((_dimensionKey, paramKey, newValue) => {
+    // Phase 4.5: writes land at the canonical location via the registry.
+    // `_dimensionKey` is ignored — the registry resolves the correct
+    // destination for the given `paramKey`. Kept in the signature for
+    // backward compatibility with existing call sites.
+    setDimensionValues((prev) => writeDimensionField(prev, paramKey, newValue));
     setIsDirty(true);
   }, []);
 

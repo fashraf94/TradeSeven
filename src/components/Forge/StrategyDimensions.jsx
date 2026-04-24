@@ -33,6 +33,7 @@ import CollectionPicker from './CollectionPicker';
 import RadarChart from './RadarChart';
 import { getPostureLabel, DIMENSION_DEFAULTS } from '../../utils/dimensionMapper';
 import { dimensionToRadarScore } from '../../utils/dimensionRadarScore';
+import { readDimensionField } from '../../utils/dimensionFieldAccess';
 
 // ─────────────────────────────────────────────────────────────
 // Design tokens
@@ -228,40 +229,18 @@ const DIMENSION_CONFIGS = [
   },
 ];
 
-// Resolve a control's currently-displayed value from dimensionValues, with
-// legacy-key + legacy-dimension fallbacks so old bundles keep rendering.
-function readControlValue(dimensionValues, dimKey, control) {
-  const dim = dimensionValues[dimKey] || {};
-  if (dim[control.paramKey] !== undefined) return dim[control.paramKey];
-  if (control.legacyKey && dim[control.legacyKey] !== undefined) return dim[control.legacyKey];
-  if (control.legacyDim) {
-    const legacyDim = dimensionValues[control.legacyDim] || {};
-    if (legacyDim[control.paramKey] !== undefined) return legacyDim[control.paramKey];
-    if (control.legacyKey && legacyDim[control.legacyKey] !== undefined) return legacyDim[control.legacyKey];
-  }
-  return undefined;
+// Phase 4.5: both resolve via the canonical reader. The per-control
+// `legacyKey` / `legacyDim` hints in DIMENSION_CONFIGS are retained for
+// DOC purposes only — FIELD_REGISTRY is the authoritative legacy map.
+function readControlValue(dimensionValues, _dimKey, control) {
+  return readDimensionField(dimensionValues, control.paramKey);
 }
 
-function requirementsMet(requires, dimensionValues, dimKey) {
+function requirementsMet(requires, dimensionValues /*, _dimKey */) {
   if (!requires) return true;
-  const dim = dimensionValues[dimKey] || {};
   for (const [siblingKey, expected] of Object.entries(requires)) {
     const allowed = Array.isArray(expected) ? expected : [expected];
-    let siblingValue = dim[siblingKey];
-    // Cross-dimension sibling fallback (addToWinners lives on legacy
-    // momentumSensitivity but gates new positionSizing params).
-    if (siblingValue === undefined) {
-      for (const c of (DIMENSION_CONFIGS.find((d) => d.key === dimKey)?.controls || [])) {
-        if (c.paramKey === siblingKey && c.legacyKey) {
-          siblingValue = dim[c.legacyKey];
-          if (siblingValue === undefined && c.legacyDim) {
-            siblingValue = (dimensionValues[c.legacyDim] || {})[siblingKey]
-              ?? (dimensionValues[c.legacyDim] || {})[c.legacyKey];
-          }
-          break;
-        }
-      }
-    }
+    const siblingValue = readDimensionField(dimensionValues, siblingKey);
     if (!allowed.includes(siblingValue)) return false;
   }
   return true;
@@ -320,8 +299,10 @@ function DimensionCard({
   isNarrow,
   showAdvanced,
 }) {
-  const values = dimensionValues[config.key] || {};
-  const posture = getPostureLabel(config.key, values);
+  // Phase 4.5: getPostureLabel now takes the full dimensionValues blob so
+  // posture functions can use the canonical reader (legacy fallback +
+  // cross-dimension reads for relocated fields like eventRisk).
+  const posture = getPostureLabel(config.key, dimensionValues);
   const tone = TONE_STYLES[posture.tone] || TONE_STYLES.neutral;
   // On narrow viewports (≤420px) force every card to span 3 of the 6-col
   // grid, giving all 7 dimensions a full half-row so the title + pill are
@@ -746,16 +727,21 @@ export default function StrategyDimensions({
     return () => mql.removeEventListener('change', handler);
   }, []);
 
-  // Radar scores + summary recompute on every value change. Merge each
-  // dimension over its defaults so partial inputs (e.g. Workshop Mode
-  // prefill supplying only a subset of sub-keys) can't produce NaN in the
-  // formulas — the guard in dimensionToRadarScore only handles a missing
-  // dimension object, not a missing sub-key within one.
+  // Radar scores + summary recompute on every value change. Phase 4.5:
+  // dimensionToRadarScore now takes the full dv blob and reads via the
+  // canonical layer, which handles legacy fallback + cross-dim reads
+  // transparently. We merge over DIMENSION_DEFAULTS once so partial
+  // Workshop prefill can't leave required fields undefined.
   const radarScores = useMemo(() => {
+    // Merge defaults under values at the dimension level so every
+    // dimension is present in the blob passed to the scorer.
+    const hydrated = {};
+    for (const [dimKey, defaults] of Object.entries(DIMENSION_DEFAULTS)) {
+      hydrated[dimKey] = { ...defaults, ...(values?.[dimKey] || {}) };
+    }
     const out = {};
     DIMENSION_CONFIGS.forEach((c) => {
-      const merged = { ...DIMENSION_DEFAULTS[c.key], ...(values[c.key] || {}) };
-      out[c.key] = dimensionToRadarScore(c.key, merged);
+      out[c.key] = dimensionToRadarScore(c.key, hydrated);
     });
     return out;
   }, [values]);
