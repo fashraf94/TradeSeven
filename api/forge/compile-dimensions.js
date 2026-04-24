@@ -370,6 +370,41 @@ export function validateRecommendedDuration(raw, appliedClamps) {
   return null;
 }
 
+/**
+ * Phase 5.5 — enforce Gemma's duration recommendation as authoritative.
+ *
+ * When the input thesis carries a valid `recommendedDurationDays` (5/10/15/20),
+ * it represents the Workshop conversation's recommendation — collaboratively
+ * established with the user. Haiku is instructed (SYSTEM_INSTRUCTIONS item 5)
+ * to echo that value in its output; this helper is the server-side backstop
+ * when the model ignores or contradicts the instruction.
+ *
+ * `mappingNotes` surfaces the override only when Haiku emitted a *different
+ * valid* duration. Silent restore when Haiku punted with null — the common
+ * post-prompt-change case, not worth cluttering the transparency panel.
+ *
+ * @param {*} thesisRecommended - `thesis.recommendedDurationDays` from the
+ *   Workshop conversation state. Any non-enum value is treated as absent.
+ * @param {number|null} haikuRecommended - already normalized by
+ *   validateRecommendedDuration (null when Haiku output was null/invalid).
+ * @param {string[]} mappingNotes - mutable accumulator. Only appended to
+ *   when a visible override occurred.
+ * @returns {number|null} the duration the client should see.
+ */
+export function applyDurationAuthority(thesisRecommended, haikuRecommended, mappingNotes) {
+  const gemmaHadOpinion = DURATION_OPTIONS.includes(thesisRecommended);
+  if (!gemmaHadOpinion) return haikuRecommended;
+
+  if (haikuRecommended !== null && haikuRecommended !== thesisRecommended) {
+    // Haiku emitted a different valid duration — user-visible override.
+    mappingNotes.push(
+      `Preserved Workshop duration recommendation (${thesisRecommended} days); compile model suggested ${haikuRecommended} days.`
+    );
+  }
+  // Silent restore when Haiku null or already agreed.
+  return thesisRecommended;
+}
+
 // ==================== HAIKU CLIENT ====================
 
 let anthropicClient = null;
@@ -390,7 +425,9 @@ const SYSTEM_INSTRUCTIONS = `Instructions:
 2. For any claim you cannot map to an available rule, add a short description to \`warnings\`. Example: "User requested VWAP-based entry; no rule supports this."
 3. For any rule you enabled with a non-default parameter, add a brief note to \`mappingNotes\`. Example: "Mapped 'tight stops' to 5% stopLossPct."
 4. For any parameter the user requested that falls outside the valid range, clamp to the nearest valid value and describe in \`appliedClamps\`. Example: "User requested 1% stop; clamped to 3% minimum."
-5. If the thesis strongly implies a duration different from the user's selection, populate \`recommendedDurationDays\` with your suggested value (5, 10, 15, or 20). Otherwise null.
+5. recommendedDurationDays handling — IMPORTANT:
+   - If the input thesis contains a \`recommendedDurationDays\` field with a value of 5, 10, 15, or 20, your output MUST set \`recommendedDurationDays\` to the same value. This represents a Workshop conversation's recommendation established collaboratively with the user — overriding it breaks trust.
+   - If the input thesis's \`recommendedDurationDays\` is null, absent, or any other value (invalid): assess the thesis yourself and emit your best recommendation (5, 10, 15, or 20), or null if the thesis is genuinely timeframe-agnostic.
 6. Sector momentum mapping: if the user mentions "top sectors", sector rotation, or timeframe-specific sector strength — enable sectorFilterEnabled with sectorFilterMode "top_n" and pick a sensible timeframe/topN. If the user names specific sectors explicitly — use "specific_sectors" mode with those sector names from the 11-sector universe.
 7. \`confidence\` is your self-assessment of how cleanly the thesis mapped. 0.9+ for clean mappings, 0.5-0.75 for moderate ambiguity, below 0.5 when the thesis has significant unmappable content.
 8. Output ONLY valid JSON matching the schema — no markdown, no commentary, no leading/trailing prose.`;
@@ -584,7 +621,7 @@ export default async function handler(req, res) {
     }
 
     const { sanitized, appliedClamps } = validateAndClamp(parsed.dimensionValues);
-    const recommendedDurationDays = validateRecommendedDuration(
+    const validatedHaikuDuration = validateRecommendedDuration(
       parsed.recommendedDurationDays,
       appliedClamps
     );
@@ -598,6 +635,17 @@ export default async function handler(req, res) {
     const mappingNotes = Array.isArray(parsed.mappingNotes)
       ? parsed.mappingNotes.filter((m) => typeof m === 'string').slice(0, 8).map((m) => m.slice(0, 300))
       : [];
+
+    // Phase 5.5 — Gemma duration authority. If the thesis carries a valid
+    // recommendedDurationDays from the Workshop conversation, it wins over
+    // Haiku's output. The helper pushes a mappingNotes entry only when an
+    // override was visible to the user (Haiku emitted a different valid
+    // duration, not the silent Haiku-null case).
+    const recommendedDurationDays = applyDurationAuthority(
+      thesis?.recommendedDurationDays,
+      validatedHaikuDuration,
+      mappingNotes
+    );
 
     // Persist compiled thesis
     const thesisRef = db.collection('workshopTheses').doc();
