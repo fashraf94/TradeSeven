@@ -46,7 +46,17 @@ const EMPTY_THESIS = Object.freeze({
   invalidation: '',
   confidence: 'low',
   readyToCompile: false,
+  // Phase 5: Gemma's backtest-duration recommendation. Null when the
+  // thesis is timeframe-agnostic and Gemma hasn't inferred nor asked.
+  // Flows through latestThesis → compile-dimensions via JSON.stringify
+  // → Haiku prompt context → Haiku output `recommendedDurationDays`
+  // → modal "From Workshop" badge (Phase 4 wiring). Two-stage path.
+  recommendedDurationDays: null,
 });
+
+// Phase 5: valid backtest durations (symmetric with Phase 2's
+// validateRecommendedDuration on the compile-output side).
+const VALID_RECOMMENDED_DURATIONS = [5, 10, 15, 20];
 
 function normalizeThesis(raw) {
   if (!raw || typeof raw !== 'object') return { ...EMPTY_THESIS };
@@ -77,6 +87,17 @@ function normalizeThesis(raw) {
     Boolean(riskPosture) &&
     Boolean(summary);
 
+  // Phase 5: validate recommendedDurationDays. Accept null or one of the
+  // four valid enum values. Coerce off-grid numbers (e.g., 7) to null
+  // rather than snapping — off-grid values signal Gemma confusion, not
+  // user intent, and null is a cleaner failure mode (modal defaults to
+  // 20 days, no "From Workshop" badge). Mirrors Phase 2's
+  // validateRecommendedDuration on the compile-output side.
+  const recommendedDurationDays =
+    VALID_RECOMMENDED_DURATIONS.includes(raw.recommendedDurationDays)
+      ? raw.recommendedDurationDays
+      : null;
+
   return {
     summary,
     catalyst: asString(raw.catalyst),
@@ -87,6 +108,7 @@ function normalizeThesis(raw) {
     invalidation: asString(raw.invalidation),
     confidence,
     readyToCompile: serverReady,
+    recommendedDurationDays,
   };
 }
 
