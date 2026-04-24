@@ -109,10 +109,17 @@ async function handleOpen(db, res) {
       const season = seasonDoc.data();
       const currentWeek = season.currentWeek || 0;
       const totalWeeks = season.weeks?.length || SEASON_CONFIG.TOTAL_WEEKS;
+      const isSolo = season.mode === 'solo';
 
-      // No pit stop after the final week — there's no next week to apply
-      // changes to.
-      if (currentWeek >= totalWeeks) {
+      // Tournaments: no pit stop at or beyond the final week — there's no
+      // subsequent week to apply changes to, and the end-of-tournament
+      // debrief path is a future-sprint concern.
+      // Solo (Phase 3 spec §8, option f): fire a pit stop in the final
+      // week as well — it doubles as the end-of-session debrief surface.
+      const pastFinalWeek = isSolo
+        ? currentWeek > totalWeeks
+        : currentWeek >= totalWeeks;
+      if (pastFinalWeek) {
         summaries.push({ seasonId: seasonDoc.id, skipped: true, reason: 'final week' });
         continue;
       }

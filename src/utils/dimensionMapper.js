@@ -33,6 +33,11 @@ import {
   serverTimestamp,
 } from 'firebase/firestore';
 import { db } from '../firebase/config';
+import {
+  readDimensionField,
+  writeDimensionField,
+  FIELD_REGISTRY,
+} from './dimensionFieldAccess';
 
 // ─────────────────────────────────────────────────────────────
 // Dimension defaults
@@ -43,40 +48,119 @@ import { db } from '../firebase/config';
 // produces rule params identical to clicking "use defaults" in the rule
 // config drawer.
 
+// Phase 1 (Forge Expansion Sprint v3): defaults carry BOTH the legacy shape
+// (old field names, old dimension locations) AND the new semantic schema
+// names. Keeping both keyed alongside each other is deliberate:
+//   * downstream consumers (RadarChart, StrategyDimensions card config,
+//     compile-dimensions prompt, dimensionRadarScore) still read the legacy
+//     keys. They get migrated in later phases of this sprint.
+//   * emit helpers in this file prefer the NEW field names and fall back to
+//     legacy names, so freshly-compiled bundles + old bundles both work.
 export const DIMENSION_DEFAULTS = Object.freeze({
   riskPosture: {
-    stopLoss: 8,         // sx-01.pct
-    trailingStop: 10,    // sx-02.pct (% trail distance, NOT ATR)
+    // Legacy
+    stopLoss: 8,               // sx-01.pct
+    trailingStop: 10,          // sx-02.pct (% trail distance, NOT ATR)
+    // New
+    stopLossPct: 8,
+    trailingStopPct: 10,
   },
   entryAggression: {
-    rsiUpper: 65,        // se-01.upper
-    volumeConfirm: true, // se-02 on/off; multiplier fixed at 1.2 when on
-    fundamentalFloor: 45, // se-05.minScore
+    // Legacy
+    rsiUpper: 65,              // se-01.upper
+    volumeConfirm: true,       // se-02 toggle (was: multiplier fixed at 1.2)
+    fundamentalFloor: 45,      // se-05.minScore
+    // New
+    rsiCeiling: 65,
+    volumeConfirmEnabled: true,
+    volumeMultiplier: 1.5,     // se-02 param: 1.2 | 1.5 | 2.0 | 3.0
+    trendAlignmentEnabled: false,  // se-03 toggle
+    trendAlignmentSmaPeriod: 50,   // se-03: 20 | 50 | 100 | 200
+    momentumThresholdPct: 2,       // se-06.pct
+    momentumLookbackDays: 10,      // se-06.period: 5 | 10 | 20
+    institutionalEnabled: false,   // se-08 toggle
+    institutionalDirection: 'increased', // 'any'|'increased'|'stable_or_increased'
+    institutionalQuarters: 2,      // 1 | 2 | 4
   },
   exitDiscipline: {
-    profitTarget: 15,    // sx-04.pct
-    timeExit: 5,         // sx-03.days (pct fixed at 1)
-    technicalExit: false, // sx-05 on/off; defaults rsi_overbought @ 75
+    // Legacy
+    profitTarget: 15,          // sx-04.pct
+    timeExit: 5,               // sx-03.days
+    technicalExit: false,      // sx-05 toggle
+    // New
+    profitTargetPct: 15,
+    timeExitDays: 5,
+    timeExitMinGainPct: 1,     // sx-03 min gain: 0 | 1 | 3 | 5
+    technicalExitEnabled: false,
+    technicalExitTrigger: 'rsi_overbought', // rsi_overbought|macd_bearish|either_rsi_or_macd|below_sma
+    technicalExitRsiThreshold: 75, // 65 | 70 | 75 | 80 | 85
+    technicalExitSmaPeriod: 50,    // 20 | 50 | 100 | 200
+    earningsExitEnabled: false,    // sx-06 toggle
+    earningsExitDays: 2,           // 1 | 2 | 3 | 5
+    earningsExitOnlyIfProfitable: true,
   },
   sectorStrategy: {
+    // Legacy
     maxSectorWeight: 30,       // se-07.maxPct
     sectorDriftTolerance: 10,  // sr-03.tolerance
-    rebalanceOnDrift: true,    // sr-03 on/off
+    rebalanceOnDrift: true,    // sr-03 toggle
+    // New
+    maxSectorWeightPct: 30,
+    sectorDriftTolerancePct: 10,
+    // NOTE: se-09 Sector Momentum Filter defaults live here in the schema
+    // but emission is deferred to Phase 1.5 (evaluator doesn't exist yet).
+    sectorFilterEnabled: false,
+    sectorFilterMode: 'top_n',
+    sectorFilterTimeframe: '1W',
+    sectorFilterTopN: 3,
+    sectorFilterSelected: [],
   },
   momentumSensitivity: {
-    momentumThreshold: 2,      // se-06.pct (lookback period fixed at 10)
-    addToWinners: true,        // sr-04 on/off
-    cutUnderperformers: true,  // sr-05 on/off
+    // Legacy dimension, retained for Phase 4 visual continuity. Holds
+    // legacy copies of sr-04/sr-05 toggles; emit helpers prefer the new
+    // positionSizing location and fall back here.
+    momentumThreshold: 2,      // se-06.pct (legacy name for momentumThresholdPct)
+    addToWinners: true,        // legacy sr-04 toggle
+    cutUnderperformers: true,  // legacy sr-05 toggle
   },
   macroAwareness: {
-    earningsAvoidance: 3,      // se-04.days (0 = omit rule)
-    fomcDefensive: false,      // ss-04 on/off
-    benchmarkGapResponse: 'react', // 'off' | 'react' | 'aggressive'
+    // Legacy dimension, renamed to eventRisk. Retained so legacy consumers
+    // keep reading. New bundles populate `eventRisk` below.
+    earningsAvoidance: 3,              // se-04.days (legacy name)
+    fomcDefensive: false,              // ss-04 toggle
+    // Mid-sprint audit S1: default flipped from 'react' to 'off'. Phase 4
+    // removed the UI control for this field while emitRule_benchmarkGap
+    // still emits ss-02 when the value is 'react'. The old default caused
+    // every fresh bundle to silently carry ss-02 (Lead Protection) that
+    // users could neither see nor disable. Legacy bundles that carry
+    // 'react' or 'aggressive' continue to emit the same rules as before.
+    benchmarkGapResponse: 'off',       // 'off' | 'react' | 'aggressive'
+  },
+  eventRisk: {
+    // New dimension. Sole rule today is se-04.
+    earningsAvoidanceDays: 3,
   },
   positionSizing: {
+    // Legacy
     maxPosition: 15,           // sr-01.maxPct
     cashDeploymentTrigger: 15, // sr-02.pct
     trimThreshold: 3,          // sr-01 gap: targetPct = maxPct - trimThreshold
+    // New
+    maxPositionWeightPct: 15,
+    cashDeploymentTriggerPct: 15,
+    // sr-04 relocated here from momentumSensitivity
+    addToWinnersEnabled: true,
+    winnerReturnTrigger: 10,   // 5 | 10 | 15 | 20
+    winnerAddWeight: 2,        // 1 | 2 | 3 | 5
+    // sr-05 relocated here from momentumSensitivity
+    cutUnderperformersEnabled: true,
+    loserUnderperformanceTrigger: 5,  // 3 | 5 | 8 | 10
+    loserLookbackDays: 5,             // 3 | 5 | 10 | 15
+    loserReduceWeight: 3,             // 1 | 2 | 3 | 5
+    // sx-07 correlation exit (portfolio-level)
+    correlationExitEnabled: false,
+    correlationThreshold: 0.8,        // 0.7 | 0.8 | 0.9
+    correlationLookbackDays: 30,      // 20 | 30 | 60 | 90
   },
 });
 
@@ -103,45 +187,73 @@ function bucket(low, high, conservative, moderate, aggressive) {
   return { label: moderate, tone: 'neutral' };
 }
 
-function posture_riskPosture(v) {
-  const tight = v.stopLoss <= 5 && v.trailingStop <= 6;
-  const loose = v.stopLoss > 12 || v.trailingStop > 15;
+// Posture functions receive the full `dimensionValues` object and read
+// fields through the canonical access layer. Pre-Phase-4.5 the API was
+// `fn(values[dimensionKey])` with legacy-name reads inline; post-refactor
+// every read goes through `readDimensionField` so legacy and canonical
+// bundles produce identical postures.
+function posture_riskPosture(dv) {
+  const stop = readDimensionField(dv, 'stopLossPct');
+  const trail = readDimensionField(dv, 'trailingStopPct');
+  const tight = stop <= 5 && trail <= 6;
+  const loose = stop > 12 || trail > 15;
   return bucket(tight, loose, 'Conservative', 'Moderate', 'Aggressive');
 }
 
-function posture_entryAggression(v) {
-  const strict = v.rsiUpper <= 55 && v.fundamentalFloor >= 60;
-  const wide = v.rsiUpper > 70 || v.fundamentalFloor < 35;
+function posture_entryAggression(dv) {
+  const rsi = readDimensionField(dv, 'rsiCeiling');
+  const floor = readDimensionField(dv, 'fundamentalFloor');
+  const strict = rsi <= 55 && floor >= 60;
+  const wide = rsi > 70 || floor < 35;
   return bucket(strict, wide, 'Strict', 'Moderate', 'Wide open');
 }
 
-function posture_exitDiscipline(v) {
-  const patient = v.profitTarget >= 20 && v.timeExit >= 10;
-  const quick = v.profitTarget < 10 || v.timeExit < 5;
+function posture_exitDiscipline(dv) {
+  const profit = readDimensionField(dv, 'profitTargetPct');
+  const time = readDimensionField(dv, 'timeExitDays');
+  const patient = profit >= 20 && time >= 10;
+  const quick = profit < 10 || time < 5;
   return bucket(patient, quick, 'Patient', 'Balanced', 'Quick');
 }
 
-function posture_sectorStrategy(v) {
-  const concentrated = v.maxSectorWeight >= 40;
-  const diversified = v.maxSectorWeight < 25;
+function posture_sectorStrategy(dv) {
+  const maxWeight = readDimensionField(dv, 'maxSectorWeightPct');
+  const concentrated = maxWeight >= 40;
+  const diversified = maxWeight < 25;
   return bucket(diversified, concentrated, 'Diversified', 'Balanced', 'Concentrated');
 }
 
-function posture_momentumSensitivity(v) {
-  const chaser = v.momentumThreshold >= 5 && v.addToWinners;
-  const contrarian = v.momentumThreshold < 2 || !v.addToWinners;
+function posture_momentumSensitivity(dv) {
+  const threshold = readDimensionField(dv, 'momentumThresholdPct');
+  const addToWinners = readDimensionField(dv, 'addToWinnersEnabled');
+  const chaser = threshold >= 5 && addToWinners;
+  const contrarian = threshold < 2 || !addToWinners;
   return bucket(contrarian, chaser, 'Contrarian', 'Balanced', 'Momentum chaser');
 }
 
-function posture_macroAwareness(v) {
-  const reactive = v.earningsAvoidance >= 5 && v.fomcDefensive;
-  const ignore = v.earningsAvoidance <= 1 && !v.fomcDefensive;
+// Legacy macroAwareness dimension — kept so legacy bundles that still
+// render under `macroAwareness` in the UI (shouldn't happen post-Phase-4
+// but defensive) produce a sensible label. Reads via canonical helper so
+// the legacy earningsAvoidance fallback path resolves identically.
+function posture_macroAwareness(dv) {
+  const days = readDimensionField(dv, 'earningsAvoidanceDays') ?? 0;
+  const fomc = readDimensionField(dv, 'fomcDefensive');
+  const reactive = days >= 5 && fomc;
+  const ignore = days <= 1 && !fomc;
   return bucket(ignore, reactive, 'Ignore', 'Moderate', 'Reactive');
 }
 
-function posture_positionSizing(v) {
-  const concentrated = v.maxPosition >= 20;
-  const spread = v.maxPosition < 12;
+function posture_eventRisk(dv) {
+  const days = readDimensionField(dv, 'earningsAvoidanceDays') ?? 0;
+  const reactive = days >= 5;
+  const ignore = days <= 1;
+  return bucket(ignore, reactive, 'Ignore', 'Moderate', 'Reactive');
+}
+
+function posture_positionSizing(dv) {
+  const maxPos = readDimensionField(dv, 'maxPositionWeightPct');
+  const concentrated = maxPos >= 20;
+  const spread = maxPos < 12;
   return bucket(spread, concentrated, 'Spread thin', 'Equal weight', 'Concentrated');
 }
 
@@ -152,14 +264,20 @@ const POSTURE_FNS = {
   sectorStrategy: posture_sectorStrategy,
   momentumSensitivity: posture_momentumSensitivity,
   macroAwareness: posture_macroAwareness,
+  eventRisk: posture_eventRisk,
   positionSizing: posture_positionSizing,
 };
 
-export function getPostureLabel(dimensionKey, values) {
+// Phase 4.5: signature changed from `(dimensionKey, subDimensionValues)`
+// to `(dimensionKey, fullDimensionValues)` so posture functions can use
+// the canonical reader, which needs cross-dimension visibility (e.g.
+// eventRisk's earningsAvoidanceDays with fallback to
+// macroAwareness.earningsAvoidance). Callers pass the whole dv blob.
+export function getPostureLabel(dimensionKey, dimensionValues) {
   const fn = POSTURE_FNS[dimensionKey];
-  if (!fn || !values) return { label: '—', tone: 'neutral' };
+  if (!fn || !dimensionValues) return { label: '—', tone: 'neutral' };
   try {
-    return fn(values);
+    return fn(dimensionValues);
   } catch {
     return { label: '—', tone: 'neutral' };
   }
@@ -212,42 +330,93 @@ export const COLLECTION_DEFS = [
 ];
 
 // Partial preset objects, merged over DIMENSION_DEFAULTS in applyPreset.
+// Phase 4.5 (audit B2 pulled in): migrated from legacy field names to
+// canonical schema so the canonical-wins reader in `dimensionFieldAccess`
+// sees preset values, not stale defaults. Relocated fields land in their
+// new dimensions:
+//   momentumSensitivity.addToWinners → positionSizing.addToWinnersEnabled
+//   momentumSensitivity.cutUnderperformers → positionSizing.cutUnderperformersEnabled
+//   macroAwareness.earningsAvoidance → eventRisk.earningsAvoidanceDays
+// Legacy macroAwareness.fomcDefensive and .benchmarkGapResponse are
+// dropped from presets — their UI controls are gone and their defaults
+// are now 'off'/false per audit S1, so emitting them from presets would
+// re-introduce the silent-rule-emission bug.
 const COLLECTION_DELTAS = {
   'momentum-rider': {
-    riskPosture: { stopLoss: 12, trailingStop: 15 },
-    entryAggression: { rsiUpper: 72, volumeConfirm: true, fundamentalFloor: 30 },
-    exitDiscipline: { profitTarget: 25, timeExit: 7, technicalExit: false },
-    sectorStrategy: { maxSectorWeight: 40, sectorDriftTolerance: 15, rebalanceOnDrift: false },
-    momentumSensitivity: { momentumThreshold: 5, addToWinners: true, cutUnderperformers: true },
-    macroAwareness: { earningsAvoidance: 2, fomcDefensive: false, benchmarkGapResponse: 'aggressive' },
-    positionSizing: { maxPosition: 20, cashDeploymentTrigger: 10, trimThreshold: 5 },
+    riskPosture: { stopLossPct: 12, trailingStopPct: 15 },
+    entryAggression: {
+      rsiCeiling: 72,
+      volumeConfirmEnabled: true,
+      fundamentalFloor: 30,
+      momentumThresholdPct: 5,
+    },
+    exitDiscipline: { profitTargetPct: 25, timeExitDays: 7, technicalExitEnabled: false },
+    sectorStrategy: { maxSectorWeightPct: 40, sectorDriftTolerancePct: 15, rebalanceOnDrift: false },
+    eventRisk: { earningsAvoidanceDays: 2 },
+    positionSizing: {
+      maxPositionWeightPct: 20,
+      cashDeploymentTriggerPct: 10,
+      trimThreshold: 5,
+      addToWinnersEnabled: true,
+      cutUnderperformersEnabled: true,
+    },
   },
   'swing-trader': {
-    riskPosture: { stopLoss: 8, trailingStop: 10 },
-    entryAggression: { rsiUpper: 65, volumeConfirm: true, fundamentalFloor: 50 },
-    exitDiscipline: { profitTarget: 15, timeExit: 8, technicalExit: true },
-    sectorStrategy: { maxSectorWeight: 30, sectorDriftTolerance: 10, rebalanceOnDrift: true },
-    momentumSensitivity: { momentumThreshold: 2, addToWinners: false, cutUnderperformers: true },
-    macroAwareness: { earningsAvoidance: 3, fomcDefensive: true, benchmarkGapResponse: 'react' },
-    positionSizing: { maxPosition: 15, cashDeploymentTrigger: 15, trimThreshold: 3 },
+    riskPosture: { stopLossPct: 8, trailingStopPct: 10 },
+    entryAggression: {
+      rsiCeiling: 65,
+      volumeConfirmEnabled: true,
+      fundamentalFloor: 50,
+      momentumThresholdPct: 2,
+    },
+    exitDiscipline: { profitTargetPct: 15, timeExitDays: 8, technicalExitEnabled: true },
+    sectorStrategy: { maxSectorWeightPct: 30, sectorDriftTolerancePct: 10, rebalanceOnDrift: true },
+    eventRisk: { earningsAvoidanceDays: 3 },
+    positionSizing: {
+      maxPositionWeightPct: 15,
+      cashDeploymentTriggerPct: 15,
+      trimThreshold: 3,
+      addToWinnersEnabled: false,
+      cutUnderperformersEnabled: true,
+    },
   },
   'day-trader': {
-    riskPosture: { stopLoss: 4, trailingStop: 5 },
-    entryAggression: { rsiUpper: 60, volumeConfirm: true, fundamentalFloor: 35 },
-    exitDiscipline: { profitTarget: 8, timeExit: 3, technicalExit: true },
-    sectorStrategy: { maxSectorWeight: 35, sectorDriftTolerance: 15, rebalanceOnDrift: false },
-    momentumSensitivity: { momentumThreshold: 4, addToWinners: true, cutUnderperformers: false },
-    macroAwareness: { earningsAvoidance: 1, fomcDefensive: false, benchmarkGapResponse: 'off' },
-    positionSizing: { maxPosition: 12, cashDeploymentTrigger: 8, trimThreshold: 3 },
+    riskPosture: { stopLossPct: 4, trailingStopPct: 5 },
+    entryAggression: {
+      rsiCeiling: 60,
+      volumeConfirmEnabled: true,
+      fundamentalFloor: 35,
+      momentumThresholdPct: 4,
+    },
+    exitDiscipline: { profitTargetPct: 8, timeExitDays: 3, technicalExitEnabled: true },
+    sectorStrategy: { maxSectorWeightPct: 35, sectorDriftTolerancePct: 15, rebalanceOnDrift: false },
+    eventRisk: { earningsAvoidanceDays: 1 },
+    positionSizing: {
+      maxPositionWeightPct: 12,
+      cashDeploymentTriggerPct: 8,
+      trimThreshold: 3,
+      addToWinnersEnabled: true,
+      cutUnderperformersEnabled: false,
+    },
   },
   'defensive-fortress': {
-    riskPosture: { stopLoss: 5, trailingStop: 6 },
-    entryAggression: { rsiUpper: 55, volumeConfirm: true, fundamentalFloor: 65 },
-    exitDiscipline: { profitTarget: 20, timeExit: 10, technicalExit: true },
-    sectorStrategy: { maxSectorWeight: 20, sectorDriftTolerance: 7, rebalanceOnDrift: true },
-    momentumSensitivity: { momentumThreshold: 1, addToWinners: false, cutUnderperformers: true },
-    macroAwareness: { earningsAvoidance: 5, fomcDefensive: true, benchmarkGapResponse: 'react' },
-    positionSizing: { maxPosition: 10, cashDeploymentTrigger: 25, trimThreshold: 3 },
+    riskPosture: { stopLossPct: 5, trailingStopPct: 6 },
+    entryAggression: {
+      rsiCeiling: 55,
+      volumeConfirmEnabled: true,
+      fundamentalFloor: 65,
+      momentumThresholdPct: 1,
+    },
+    exitDiscipline: { profitTargetPct: 20, timeExitDays: 10, technicalExitEnabled: true },
+    sectorStrategy: { maxSectorWeightPct: 20, sectorDriftTolerancePct: 7, rebalanceOnDrift: true },
+    eventRisk: { earningsAvoidanceDays: 5 },
+    positionSizing: {
+      maxPositionWeightPct: 10,
+      cashDeploymentTriggerPct: 25,
+      trimThreshold: 3,
+      addToWinnersEnabled: false,
+      cutUnderperformersEnabled: true,
+    },
   },
   'custom': {}, // blank slate uses defaults
 };
@@ -289,6 +458,10 @@ const TEMPLATE_CATALOG = {
     category: 'entry_criteria',
     textTemplate: 'Require volume to be at least {multiplier}x the 20-day average before entering',
   },
+  'se-03': {
+    category: 'entry_criteria',
+    textTemplate: 'Only enter stocks trading above their {period}-day SMA',
+  },
   'se-04': {
     category: 'entry_criteria',
     textTemplate: "Don't enter within {days} trading days of an earnings report",
@@ -304,6 +477,16 @@ const TEMPLATE_CATALOG = {
   'se-07': {
     category: 'entry_criteria',
     textTemplate: "Don't enter if sector already at {maxPct}% or more of portfolio",
+  },
+  'se-08': {
+    category: 'entry_criteria',
+    textTemplate: 'Require institutional ownership to be {direction} over the last {quarters} quarters',
+  },
+  'se-09': {
+    category: 'entry_criteria',
+    // Base template covers top_n mode. specific_sectors mode uses a text
+    // override from emitRule_se09 since the parameter shape differs.
+    textTemplate: 'Only enter stocks from the top {topN} momentum sectors on the {timeframe} timeframe',
   },
   'sx-01': {
     category: 'exit_stops',
@@ -324,6 +507,14 @@ const TEMPLATE_CATALOG = {
   'sx-05': {
     category: 'exit_stops',
     textTemplate: 'Sell on technical breakdown: {trigger}',
+  },
+  'sx-06': {
+    category: 'exit_stops',
+    textTemplate: 'Close positions {days} trading days before earnings',
+  },
+  'sx-07': {
+    category: 'exit_stops',
+    textTemplate: 'Trim one position from any holdings pair whose {days}-day correlation exceeds {threshold}',
   },
   'sr-01': {
     category: 'rebalancing',
@@ -371,10 +562,12 @@ function clamp(n, min, max) {
   return Math.max(min, Math.min(max, n));
 }
 
-function buildSnapshot(templateId, paramValues) {
+function buildSnapshot(templateId, paramValues, textOverride) {
   const meta = TEMPLATE_CATALOG[templateId];
   if (!meta) return null;
-  const text = renderTemplate(meta.textTemplate, paramValues);
+  const text = textOverride != null
+    ? textOverride
+    : renderTemplate(meta.textTemplate, paramValues);
   return {
     id: `dim-${templateId}`,
     text,
@@ -388,91 +581,322 @@ function buildSnapshot(templateId, paramValues) {
   };
 }
 
+// ─── Per-rule emit helpers ──────────────────────────────────
+//
+// Each helper returns a snapshot or null. The orchestrator `dimensionsToRuleSnapshots`
+// composes them and drops nulls. Rules with toggles check the toggle first;
+// rules without toggles (sx-01, se-01, etc.) always emit.
+//
+// Phase 4.5: every field read goes through `readDimensionField`. The
+// canonical reader handles legacy fallback (pre-Phase-2 bundles,
+// cached data, relocated fields) via FIELD_REGISTRY — no inline
+// readField/firstDefined helpers remain.
+
+function nearestAllowed(value, allowed) {
+  return allowed.reduce(
+    (best, v) => (Math.abs(v - value) < Math.abs(best - value) ? v : best),
+    allowed[0]
+  );
+}
+
+// Risk Posture
+function emitRule_sx01(dv) {
+  const pct = readDimensionField(dv, 'stopLossPct') ?? 8;
+  return buildSnapshot('sx-01', { pct: clamp(pct, 3, 20) });
+}
+
+function emitRule_sx02(dv) {
+  const pct = readDimensionField(dv, 'trailingStopPct') ?? 10;
+  return buildSnapshot('sx-02', { pct: clamp(pct, 3, 25) });
+}
+
+// Entry Aggression
+function emitRule_se01(dv) {
+  const upper = readDimensionField(dv, 'rsiCeiling') ?? 65;
+  return buildSnapshot('se-01', { upper: clamp(upper, 50, 80) });
+}
+
+function emitRule_se02(dv) {
+  if (!readDimensionField(dv, 'volumeConfirmEnabled')) return null;
+  const raw = readDimensionField(dv, 'volumeMultiplier');
+  // Snap to the nearest allowed enum value (1.2, 1.5, 2.0, 3.0) so users who
+  // drift off-grid via the compile prompt still land on a valid choice.
+  const allowed = [1.2, 1.5, 2.0, 3.0];
+  const m = typeof raw === 'number' ? nearestAllowed(raw, allowed) : 1.5;
+  return buildSnapshot('se-02', { multiplier: m });
+}
+
+function emitRule_se03(dv) {
+  if (!readDimensionField(dv, 'trendAlignmentEnabled')) return null;
+  const rawPeriod = readDimensionField(dv, 'trendAlignmentSmaPeriod') ?? 50;
+  const allowed = [20, 50, 100, 200];
+  const period = allowed.includes(rawPeriod) ? rawPeriod : 50;
+  return buildSnapshot('se-03', { period });
+}
+
+function emitRule_se05(dv) {
+  // fundamentalFloor 0 = omit (below schema min of 20)
+  const floor = readDimensionField(dv, 'fundamentalFloor');
+  if (typeof floor !== 'number' || floor < 20) return null;
+  return buildSnapshot('se-05', { minScore: clamp(floor, 20, 80) });
+}
+
+function emitRule_se06(dv) {
+  const pct = readDimensionField(dv, 'momentumThresholdPct') ?? 2;
+  const rawPeriod = readDimensionField(dv, 'momentumLookbackDays') ?? 10;
+  const allowed = [5, 10, 20];
+  const period = allowed.includes(rawPeriod) ? rawPeriod : 10;
+  return buildSnapshot('se-06', {
+    period,
+    pct: clamp(pct, 0.5, 10),
+  });
+}
+
+function emitRule_se07(dv) {
+  const maxPct = readDimensionField(dv, 'maxSectorWeightPct') ?? 30;
+  return buildSnapshot('se-07', { maxPct: clamp(maxPct, 15, 50) });
+}
+
+function emitRule_se08(dv) {
+  if (!readDimensionField(dv, 'institutionalEnabled')) return null;
+  const rawDir = readDimensionField(dv, 'institutionalDirection') ?? 'increased';
+  const allowedDirs = ['any', 'increased', 'stable_or_increased'];
+  const direction = allowedDirs.includes(rawDir) ? rawDir : 'increased';
+  const rawQ = readDimensionField(dv, 'institutionalQuarters') ?? 2;
+  const allowedQ = [1, 2, 4];
+  const quarters = allowedQ.includes(rawQ) ? rawQ : 2;
+
+  // Custom text for the 'any' pass-through case — the generic template
+  // reads awkwardly ("Require institutional ownership to be any...").
+  const textOverride = direction === 'any'
+    ? 'Allow entries regardless of institutional ownership trend'
+    : null;
+
+  return buildSnapshot('se-08', { direction, quarters }, textOverride);
+}
+
+// Exit Discipline
+function emitRule_sx03(dv) {
+  const days = readDimensionField(dv, 'timeExitDays') ?? 5;
+  const rawMin = readDimensionField(dv, 'timeExitMinGainPct');
+  const allowedMin = [0, 1, 3, 5];
+  const minGain = typeof rawMin === 'number' && allowedMin.includes(rawMin) ? rawMin : 1;
+  // Evaluator still expects `params.pct`; only the schema-side name changed.
+  return buildSnapshot('sx-03', {
+    days: clamp(days, 2, 15),
+    pct: minGain,
+  });
+}
+
+function emitRule_sx04(dv) {
+  const pct = readDimensionField(dv, 'profitTargetPct') ?? 15;
+  return buildSnapshot('sx-04', { pct: clamp(pct, 5, 50) });
+}
+
+function emitRule_sx05(dv) {
+  if (!readDimensionField(dv, 'technicalExitEnabled')) return null;
+
+  const rawTrigger = readDimensionField(dv, 'technicalExitTrigger') ?? 'rsi_overbought';
+  const allowedTriggers = [
+    'rsi_overbought', 'macd_bearish', 'either_rsi_or_macd', 'below_sma',
+  ];
+  const trigger = allowedTriggers.includes(rawTrigger) ? rawTrigger : 'rsi_overbought';
+
+  const params = { trigger };
+
+  // Conditional sub-params based on the selected trigger. macd_bearish uses
+  // no sub-params (precomputed MACD line/signal fields drive it directly).
+  if (trigger === 'rsi_overbought' || trigger === 'either_rsi_or_macd') {
+    const rawR = readDimensionField(dv, 'technicalExitRsiThreshold') ?? 75;
+    params.rsiThreshold = clamp(rawR, 65, 85);
+  }
+  if (trigger === 'below_sma') {
+    const rawP = readDimensionField(dv, 'technicalExitSmaPeriod') ?? 50;
+    const allowedP = [20, 50, 100, 200];
+    params.smaPeriod = allowedP.includes(rawP) ? rawP : 50;
+  }
+
+  return buildSnapshot('sx-05', params);
+}
+
+function emitRule_sx06(dv) {
+  if (!readDimensionField(dv, 'earningsExitEnabled')) return null;
+  const rawDays = readDimensionField(dv, 'earningsExitDays') ?? 2;
+  const allowed = [1, 2, 3, 5];
+  const days = allowed.includes(rawDays) ? rawDays : 2;
+  const onlyIfProfitable = readDimensionField(dv, 'earningsExitOnlyIfProfitable') !== false;
+
+  // Template wording shifts with the profitable-only gate.
+  const textOverride = onlyIfProfitable
+    ? `Close profitable positions ${days} trading days before earnings`
+    : `Close positions ${days} trading days before earnings`;
+
+  return buildSnapshot('sx-06', { days, onlyIfProfitable }, textOverride);
+}
+
+function emitRule_sx07(dv) {
+  if (!readDimensionField(dv, 'correlationExitEnabled')) return null;
+  const rawT = readDimensionField(dv, 'correlationThreshold') ?? 0.8;
+  const allowedT = [0.7, 0.8, 0.9];
+  const threshold = nearestAllowed(rawT, allowedT);
+  const rawD = readDimensionField(dv, 'correlationLookbackDays') ?? 30;
+  const allowedD = [20, 30, 60, 90];
+  const days = allowedD.includes(rawD) ? rawD : 30;
+  return buildSnapshot('sx-07', { threshold, days });
+}
+
+// Sector Strategy
+function emitRule_sr03(dv) {
+  if (!readDimensionField(dv, 'rebalanceOnDrift')) return null;
+  const tol = readDimensionField(dv, 'sectorDriftTolerancePct') ?? 10;
+  return buildSnapshot('sr-03', { tolerance: clamp(tol, 5, 20) });
+}
+
+// SE-09 Sector Momentum Filter. Two modes (top_n | specific_sectors) with
+// mutually-exclusive parameter shapes — text template swaps to match.
+// 3M timeframe intentionally omitted from the accepted enum until
+// compute-index-intelligence emits quarterChange.
+function emitRule_se09(dv) {
+  if (!readDimensionField(dv, 'sectorFilterEnabled')) return null;
+
+  const rawMode = readDimensionField(dv, 'sectorFilterMode') ?? 'top_n';
+  const mode = rawMode === 'specific_sectors' ? 'specific_sectors' : 'top_n';
+
+  if (mode === 'specific_sectors') {
+    const raw = readDimensionField(dv, 'sectorFilterSelected');
+    const selected = Array.isArray(raw) ? raw : [];
+    const label = selected.length > 0 ? selected.join(', ') : '(none selected)';
+    return buildSnapshot(
+      'se-09',
+      { mode, selectedSectors: selected },
+      `Only enter stocks from selected sectors: ${label}`
+    );
+  }
+
+  // mode === 'top_n'
+  const rawTf = readDimensionField(dv, 'sectorFilterTimeframe') ?? '1W';
+  const allowedTf = ['1D', '1W', '1M'];
+  const timeframe = allowedTf.includes(rawTf) ? rawTf : '1W';
+  const rawN = readDimensionField(dv, 'sectorFilterTopN') ?? 3;
+  const allowedN = [1, 2, 3, 5];
+  const topN = allowedN.includes(rawN) ? rawN : 3;
+  return buildSnapshot('se-09', { mode, timeframe, topN });
+}
+
+// Event Risk / Macro Awareness
+function emitRule_se04(dv) {
+  // Relocated: macroAwareness.earningsAvoidance → eventRisk.earningsAvoidanceDays.
+  // Registry handles the cross-dimension legacy fallback transparently.
+  const days = readDimensionField(dv, 'earningsAvoidanceDays');
+  if (typeof days !== 'number' || days < 1) return null;
+  return buildSnapshot('se-04', { days: clamp(days, 1, 10) });
+}
+
+function emitRule_ss04(dv) {
+  if (!readDimensionField(dv, 'fomcDefensive')) return null;
+  return buildSnapshot('ss-04', { reducePct: 10, days: 2 });
+}
+
+function emitRule_benchmarkGap(dv) {
+  const resp = readDimensionField(dv, 'benchmarkGapResponse');
+  if (resp === 'aggressive') {
+    return buildSnapshot('ss-01', { pct: 3, week: 2 });
+  }
+  if (resp === 'react') {
+    return buildSnapshot('ss-02', { pct: 5, tightPct: 5, maxBeta: 1.2 });
+  }
+  return null;
+}
+
+// Position Sizing
+function emitRule_sr01(dv) {
+  const rawMax = readDimensionField(dv, 'maxPositionWeightPct') ?? 15;
+  const maxPct = clamp(rawMax, 10, 30);
+  const trimGap = clamp(readDimensionField(dv, 'trimThreshold') ?? 3, 3, 20);
+  const targetPct = clamp(maxPct - trimGap, 8, 25);
+  return buildSnapshot('sr-01', { maxPct, targetPct });
+}
+
+function emitRule_sr02(dv) {
+  const pct = readDimensionField(dv, 'cashDeploymentTriggerPct') ?? 15;
+  return buildSnapshot('sr-02', { pct: clamp(pct, 5, 40) });
+}
+
+function emitRule_sr04(dv) {
+  // Relocated: momentumSensitivity.addToWinners → positionSizing.addToWinnersEnabled.
+  // Registry legacy fallback handles the cross-dimension read.
+  if (!readDimensionField(dv, 'addToWinnersEnabled')) return null;
+  const rawT = readDimensionField(dv, 'winnerReturnTrigger') ?? 10;
+  const allowedT = [5, 10, 15, 20];
+  const threshold = allowedT.includes(rawT) ? rawT : 10;
+  const rawA = readDimensionField(dv, 'winnerAddWeight') ?? 2;
+  const allowedA = [1, 2, 3, 5];
+  const addPct = allowedA.includes(rawA) ? rawA : 2;
+  return buildSnapshot('sr-04', { threshold, addPct });
+}
+
+function emitRule_sr05(dv) {
+  // Relocated: momentumSensitivity.cutUnderperformers → positionSizing.cutUnderperformersEnabled.
+  if (!readDimensionField(dv, 'cutUnderperformersEnabled')) return null;
+  const rawT = readDimensionField(dv, 'loserUnderperformanceTrigger') ?? 5;
+  const allowedT = [3, 5, 8, 10];
+  const threshold = allowedT.includes(rawT) ? rawT : 5;
+  const rawD = readDimensionField(dv, 'loserLookbackDays') ?? 5;
+  const allowedD = [3, 5, 10, 15];
+  const days = allowedD.includes(rawD) ? rawD : 5;
+  const rawR = readDimensionField(dv, 'loserReduceWeight') ?? 3;
+  const allowedR = [1, 2, 3, 5];
+  const reducePct = allowedR.includes(rawR) ? rawR : 3;
+  return buildSnapshot('sr-05', { threshold, days, reducePct });
+}
+
 /**
  * Translate dimensionValues → array of rule snapshots ready to be written
  * into a bundle's `ruleSnapshots` field AND used to upsert rule docs.
  *
  * Returns an empty array if every dimension toggle is off — caller should
  * treat that as "select at least one rule" and block deploy.
+ *
+ * Phase 1 rewrite: previously hardcoded params for se-02, se-06, sx-03,
+ * sx-05, sr-04, sr-05 now flow through from schema fields. Newly emits
+ * se-03, se-08, sx-06, sx-07. se-09 (sector momentum filter) is deferred
+ * to Phase 1.5 pending evaluator.
  */
 export function dimensionsToRuleSnapshots(values) {
   if (!values) return [];
-  const out = [];
+  const snapshots = [];
+  const push = (snap) => { if (snap) snapshots.push(snap); };
 
-  // ── Risk Posture ────────────────────────────────────────
-  const rp = values.riskPosture || {};
-  out.push(buildSnapshot('sx-01', { pct: clamp(rp.stopLoss, 3, 20) }));
-  out.push(buildSnapshot('sx-02', { pct: clamp(rp.trailingStop, 3, 25) }));
+  push(emitRule_sx01(values));
+  push(emitRule_sx02(values));
 
-  // ── Entry Aggression ────────────────────────────────────
-  const ea = values.entryAggression || {};
-  out.push(buildSnapshot('se-01', { upper: clamp(ea.rsiUpper, 50, 80) }));
-  if (ea.volumeConfirm) {
-    out.push(buildSnapshot('se-02', { multiplier: 1.2 }));
-  }
-  // fundamentalFloor 0 = omit (below schema min of 20)
-  if (typeof ea.fundamentalFloor === 'number' && ea.fundamentalFloor >= 20) {
-    out.push(buildSnapshot('se-05', { minScore: clamp(ea.fundamentalFloor, 20, 80) }));
-  }
+  push(emitRule_se01(values));
+  push(emitRule_se02(values));
+  push(emitRule_se03(values));
+  push(emitRule_se04(values));
+  push(emitRule_se05(values));
+  push(emitRule_se06(values));
+  push(emitRule_se07(values));
+  push(emitRule_se08(values));
 
-  // ── Exit Discipline ─────────────────────────────────────
-  const ed = values.exitDiscipline || {};
-  out.push(buildSnapshot('sx-04', { pct: clamp(ed.profitTarget, 5, 50) }));
-  out.push(buildSnapshot('sx-03', {
-    days: clamp(ed.timeExit, 2, 15),
-    pct: 1,
-  }));
-  if (ed.technicalExit) {
-    out.push(buildSnapshot('sx-05', {
-      trigger: 'rsi_overbought',
-      rsiThreshold: 75,
-      smaPeriod: 20,
-    }));
-  }
+  push(emitRule_sx03(values));
+  push(emitRule_sx04(values));
+  push(emitRule_sx05(values));
+  push(emitRule_sx06(values));
+  push(emitRule_sx07(values));
 
-  // ── Sector Strategy ─────────────────────────────────────
-  const ss = values.sectorStrategy || {};
-  out.push(buildSnapshot('se-07', { maxPct: clamp(ss.maxSectorWeight, 15, 50) }));
-  if (ss.rebalanceOnDrift) {
-    out.push(buildSnapshot('sr-03', { tolerance: clamp(ss.sectorDriftTolerance, 5, 20) }));
-  }
+  push(emitRule_sr03(values));
+  push(emitRule_se09(values));
 
-  // ── Momentum Sensitivity ────────────────────────────────
-  const ms = values.momentumSensitivity || {};
-  out.push(buildSnapshot('se-06', {
-    period: 10,
-    pct: clamp(ms.momentumThreshold, 0.5, 10),
-  }));
-  if (ms.addToWinners) {
-    out.push(buildSnapshot('sr-04', { threshold: 10, addPct: 2 }));
-  }
-  if (ms.cutUnderperformers) {
-    out.push(buildSnapshot('sr-05', { threshold: 5, days: 5, reducePct: 3 }));
-  }
+  push(emitRule_ss04(values));
+  push(emitRule_benchmarkGap(values));
 
-  // ── Macro Awareness ─────────────────────────────────────
-  const ma = values.macroAwareness || {};
-  if (typeof ma.earningsAvoidance === 'number' && ma.earningsAvoidance >= 1) {
-    out.push(buildSnapshot('se-04', { days: clamp(ma.earningsAvoidance, 1, 10) }));
-  }
-  if (ma.fomcDefensive) {
-    out.push(buildSnapshot('ss-04', { reducePct: 10, days: 2 }));
-  }
-  if (ma.benchmarkGapResponse === 'aggressive') {
-    out.push(buildSnapshot('ss-01', { pct: 3, week: 2 }));
-  } else if (ma.benchmarkGapResponse === 'react') {
-    out.push(buildSnapshot('ss-02', { pct: 5, tightPct: 5, maxBeta: 1.2 }));
-  }
+  push(emitRule_sr01(values));
+  push(emitRule_sr02(values));
+  push(emitRule_sr04(values));
+  push(emitRule_sr05(values));
 
-  // ── Position Sizing ─────────────────────────────────────
-  const ps = values.positionSizing || {};
-  const maxPct = clamp(ps.maxPosition, 10, 30);
-  const trimGap = clamp(ps.trimThreshold, 3, 20);
-  const targetPct = clamp(maxPct - trimGap, 8, 25);
-  out.push(buildSnapshot('sr-01', { maxPct, targetPct }));
-  out.push(buildSnapshot('sr-02', { pct: clamp(ps.cashDeploymentTrigger, 5, 40) }));
-
-  return out.filter(Boolean);
+  return snapshots;
 }
 
 // Phase-count summary for UI — reuses server's phaseOfRuleId logic.
@@ -723,160 +1147,113 @@ export async function persistCompileTransparencyOnBundle(
 export function dimensionsToDirectives(dv) {
   if (!dv) return [];
   const out = [];
-  const rp = dv.riskPosture || {};
-  const ea = dv.entryAggression || {};
-  const ed = dv.exitDiscipline || {};
-  const ss = dv.sectorStrategy || {};
-  const ms = dv.momentumSensitivity || {};
-  const ma = dv.macroAwareness || {};
-  const ps = dv.positionSizing || {};
-
   const push = (id, category, text) => out.push({ id, category, text });
 
+  // Phase 4.5: every field read goes through the canonical reader so
+  // new-schema writes from the Phase 4 UI are honored here. Pre-Phase-4.5
+  // this function read legacy-only keys, silently returning defaults
+  // when the UI wrote canonical names (mid-sprint audit M2).
+
   // Risk Posture
-  if (typeof rp.stopLoss === 'number') {
-    push(
-      'dir-stop-loss',
-      'risk',
-      `Stop-loss at ${rp.stopLoss}% — exit any position that drops below entry price by this amount.`
-    );
+  const stopLoss = readDimensionField(dv, 'stopLossPct');
+  if (typeof stopLoss === 'number') {
+    push('dir-stop-loss', 'risk',
+      `Stop-loss at ${stopLoss}% — exit any position that drops below entry price by this amount.`);
   }
-  if (typeof rp.trailingStop === 'number') {
-    push(
-      'dir-trailing-stop',
-      'risk',
-      `Trailing stop at ${rp.trailingStop}% — protect gains by exiting when a position pulls back this much from its high.`
-    );
+  const trailingStop = readDimensionField(dv, 'trailingStopPct');
+  if (typeof trailingStop === 'number') {
+    push('dir-trailing-stop', 'risk',
+      `Trailing stop at ${trailingStop}% — protect gains by exiting when a position pulls back this much from its high.`);
   }
 
   // Entry Aggression
-  if (typeof ea.rsiUpper === 'number' && ea.rsiUpper < 75) {
-    push(
-      'dir-rsi-ceiling',
-      'entry',
-      `Avoid overbought stocks — do not enter positions with RSI above ${ea.rsiUpper}.`
-    );
+  const rsiCeiling = readDimensionField(dv, 'rsiCeiling');
+  if (typeof rsiCeiling === 'number' && rsiCeiling < 75) {
+    push('dir-rsi-ceiling', 'entry',
+      `Avoid overbought stocks — do not enter positions with RSI above ${rsiCeiling}.`);
   }
-  if (ea.volumeConfirm) {
-    push(
-      'dir-volume-confirm',
-      'entry',
-      'Require volume confirmation — only enter stocks trading above their average volume.'
-    );
+  if (readDimensionField(dv, 'volumeConfirmEnabled')) {
+    push('dir-volume-confirm', 'entry',
+      'Require volume confirmation — only enter stocks trading above their average volume.');
   }
-  if (typeof ea.fundamentalFloor === 'number' && ea.fundamentalFloor >= 30) {
-    push(
-      'dir-fundamental-floor',
-      'entry',
-      `Fundamental quality filter — prefer stocks with composite scores above ${ea.fundamentalFloor}.`
-    );
+  const fundamentalFloor = readDimensionField(dv, 'fundamentalFloor');
+  if (typeof fundamentalFloor === 'number' && fundamentalFloor >= 30) {
+    push('dir-fundamental-floor', 'entry',
+      `Fundamental quality filter — prefer stocks with composite scores above ${fundamentalFloor}.`);
   }
 
   // Exit Discipline
-  if (typeof ed.profitTarget === 'number') {
-    push(
-      'dir-profit-target',
-      'exit',
-      `Profit target at ${ed.profitTarget}% — lock in gains when a position reaches this return.`
-    );
+  const profitTarget = readDimensionField(dv, 'profitTargetPct');
+  if (typeof profitTarget === 'number') {
+    push('dir-profit-target', 'exit',
+      `Profit target at ${profitTarget}% — lock in gains when a position reaches this return.`);
   }
-  if (typeof ed.timeExit === 'number' && ed.timeExit > 0) {
-    push(
-      'dir-time-exit',
-      'exit',
-      `Time-based exit — close positions that haven't gained meaningfully within ${ed.timeExit} trading days.`
-    );
+  const timeExit = readDimensionField(dv, 'timeExitDays');
+  if (typeof timeExit === 'number' && timeExit > 0) {
+    push('dir-time-exit', 'exit',
+      `Time-based exit — close positions that haven't gained meaningfully within ${timeExit} trading days.`);
   }
-  if (ed.technicalExit) {
-    push(
-      'dir-technical-exit',
-      'exit',
-      'Technical exit enabled — cut positions on RSI overbought breakdowns.'
-    );
+  if (readDimensionField(dv, 'technicalExitEnabled')) {
+    push('dir-technical-exit', 'exit',
+      'Technical exit enabled — cut positions on RSI overbought breakdowns.');
   }
 
   // Sector Strategy
-  if (typeof ss.maxSectorWeight === 'number') {
-    push(
-      'dir-sector-cap',
-      'allocation',
-      `Sector diversification — no single sector above ${ss.maxSectorWeight}% of the portfolio.`
-    );
+  const maxSectorWeight = readDimensionField(dv, 'maxSectorWeightPct');
+  if (typeof maxSectorWeight === 'number') {
+    push('dir-sector-cap', 'allocation',
+      `Sector diversification — no single sector above ${maxSectorWeight}% of the portfolio.`);
   }
-  if (ss.rebalanceOnDrift && typeof ss.sectorDriftTolerance === 'number') {
-    push(
-      'dir-sector-drift',
-      'allocation',
-      `Rebalance if any sector drifts more than ${ss.sectorDriftTolerance}% from its initial weight.`
-    );
+  const sectorDriftTolerance = readDimensionField(dv, 'sectorDriftTolerancePct');
+  if (readDimensionField(dv, 'rebalanceOnDrift') && typeof sectorDriftTolerance === 'number') {
+    push('dir-sector-drift', 'allocation',
+      `Rebalance if any sector drifts more than ${sectorDriftTolerance}% from its initial weight.`);
   }
 
-  // Momentum Sensitivity
-  if (typeof ms.momentumThreshold === 'number') {
-    push(
-      'dir-momentum',
-      'momentum',
-      `Momentum sensitivity — prefer stocks with a ${ms.momentumThreshold}%+ 10-day price change.`
-    );
+  // Momentum
+  const momentumThreshold = readDimensionField(dv, 'momentumThresholdPct');
+  if (typeof momentumThreshold === 'number') {
+    push('dir-momentum', 'momentum',
+      `Momentum sensitivity — prefer stocks with a ${momentumThreshold}%+ lookback-period price change.`);
   }
-  if (ms.addToWinners) {
-    push(
-      'dir-add-to-winners',
-      'momentum',
-      'Add to winners — scale into positions that continue working in your favor.'
-    );
+  if (readDimensionField(dv, 'addToWinnersEnabled')) {
+    push('dir-add-to-winners', 'momentum',
+      'Add to winners — scale into positions that continue working in your favor.');
   }
-  if (ms.cutUnderperformers) {
-    push(
-      'dir-cut-losers',
-      'momentum',
-      'Cut underperformers — reduce exposure to positions lagging the benchmark.'
-    );
+  if (readDimensionField(dv, 'cutUnderperformersEnabled')) {
+    push('dir-cut-losers', 'momentum',
+      'Cut underperformers — reduce exposure to positions lagging the benchmark.');
   }
 
-  // Macro Awareness
-  if (typeof ma.earningsAvoidance === 'number' && ma.earningsAvoidance >= 1) {
-    push(
-      'dir-earnings-avoid',
-      'macro',
-      `Avoid stocks within ${ma.earningsAvoidance} trading days of earnings announcements.`
-    );
+  // Event Risk (renamed from macroAwareness)
+  const earningsAvoidance = readDimensionField(dv, 'earningsAvoidanceDays');
+  if (typeof earningsAvoidance === 'number' && earningsAvoidance >= 1) {
+    push('dir-earnings-avoid', 'macro',
+      `Avoid stocks within ${earningsAvoidance} trading days of earnings announcements.`);
   }
-  if (ma.fomcDefensive) {
-    push(
-      'dir-fomc-defensive',
-      'macro',
-      'Reduce high-beta exposure in the days before Fed / CPI releases.'
-    );
+  if (readDimensionField(dv, 'fomcDefensive')) {
+    push('dir-fomc-defensive', 'macro',
+      'Reduce high-beta exposure in the days before Fed / CPI releases.');
   }
-  if (ma.benchmarkGapResponse === 'aggressive') {
-    push(
-      'dir-benchmark-gap-aggressive',
-      'macro',
-      'React to benchmark gaps — increase position aggression when trailing the S&P.'
-    );
-  } else if (ma.benchmarkGapResponse === 'react') {
-    push(
-      'dir-benchmark-gap-protect',
-      'macro',
-      'Lead protection — tighten stops and cap beta when leading the S&P.'
-    );
+  const benchmarkGap = readDimensionField(dv, 'benchmarkGapResponse');
+  if (benchmarkGap === 'aggressive') {
+    push('dir-benchmark-gap-aggressive', 'macro',
+      'React to benchmark gaps — increase position aggression when trailing the S&P.');
+  } else if (benchmarkGap === 'react') {
+    push('dir-benchmark-gap-protect', 'macro',
+      'Lead protection — tighten stops and cap beta when leading the S&P.');
   }
 
   // Position Sizing
-  if (typeof ps.maxPosition === 'number') {
-    push(
-      'dir-max-position',
-      'allocation',
-      `Position cap — no single holding above ${ps.maxPosition}% of the portfolio.`
-    );
+  const maxPosition = readDimensionField(dv, 'maxPositionWeightPct');
+  if (typeof maxPosition === 'number') {
+    push('dir-max-position', 'allocation',
+      `Position cap — no single holding above ${maxPosition}% of the portfolio.`);
   }
-  if (typeof ps.cashDeploymentTrigger === 'number') {
-    push(
-      'dir-cash-deploy',
-      'allocation',
-      `Cash deployment — prioritize entries when cash exceeds ${ps.cashDeploymentTrigger}%.`
-    );
+  const cashDeployment = readDimensionField(dv, 'cashDeploymentTriggerPct');
+  if (typeof cashDeployment === 'number') {
+    push('dir-cash-deploy', 'allocation',
+      `Cash deployment — prioritize entries when cash exceeds ${cashDeployment}%.`);
   }
 
   return out;
@@ -891,26 +1268,32 @@ export function dimensionsToDirectives(dv) {
  */
 export function dimensionsToGuardrails(dv) {
   if (!dv) return [];
-  const rp = dv.riskPosture || {};
-  const ss = dv.sectorStrategy || {};
-  const ps = dv.positionSizing || {};
-  const ed = dv.exitDiscipline || {};
-
+  // Phase 4.5: canonical reader honors Phase 4 UI writes (M2 fix).
+  // Pre-Phase-4.5 this function read legacy-only keys and silently
+  // deployed stale default guardrails to the agent. Guardrail `type`
+  // strings (stopLoss, trailingStop, etc.) are the downstream-consumer
+  // contract with agentGuardrails.js and are NOT canonical field names
+  // — they're guardrail-record identifiers, unchanged.
   const out = [];
-  if (typeof rp.stopLoss === 'number') {
-    out.push({ type: 'stopLoss', value: rp.stopLoss, unit: '%', enforcement: 'hard' });
+  const stopLoss = readDimensionField(dv, 'stopLossPct');
+  if (typeof stopLoss === 'number') {
+    out.push({ type: 'stopLoss', value: stopLoss, unit: '%', enforcement: 'hard' });
   }
-  if (typeof rp.trailingStop === 'number') {
-    out.push({ type: 'trailingStop', value: rp.trailingStop, unit: '%', enforcement: 'hard' });
+  const trailingStop = readDimensionField(dv, 'trailingStopPct');
+  if (typeof trailingStop === 'number') {
+    out.push({ type: 'trailingStop', value: trailingStop, unit: '%', enforcement: 'hard' });
   }
-  if (typeof ss.maxSectorWeight === 'number') {
-    out.push({ type: 'maxSectorWeight', value: ss.maxSectorWeight, unit: '%', enforcement: 'hard' });
+  const maxSectorWeight = readDimensionField(dv, 'maxSectorWeightPct');
+  if (typeof maxSectorWeight === 'number') {
+    out.push({ type: 'maxSectorWeight', value: maxSectorWeight, unit: '%', enforcement: 'hard' });
   }
-  if (typeof ps.maxPosition === 'number') {
-    out.push({ type: 'maxPosition', value: ps.maxPosition, unit: '%', enforcement: 'hard' });
+  const maxPosition = readDimensionField(dv, 'maxPositionWeightPct');
+  if (typeof maxPosition === 'number') {
+    out.push({ type: 'maxPosition', value: maxPosition, unit: '%', enforcement: 'hard' });
   }
-  if (typeof ed.profitTarget === 'number') {
-    out.push({ type: 'profitTarget', value: ed.profitTarget, unit: '%', enforcement: 'soft' });
+  const profitTarget = readDimensionField(dv, 'profitTargetPct');
+  if (typeof profitTarget === 'number') {
+    out.push({ type: 'profitTarget', value: profitTarget, unit: '%', enforcement: 'soft' });
   }
   return out;
 }
@@ -926,85 +1309,187 @@ export function dimensionsToGuardrails(dv) {
  * numeric values fall back to DIMENSION_DEFAULTS where snapshots are absent.
  */
 export function deriveDimensionsFromSnapshots(snapshots) {
-  const dv = cloneDefaults();
+  let dv = cloneDefaults();
   if (!Array.isArray(snapshots)) return dv;
 
-  // Start booleans at false — presence of the corresponding snapshot flips on.
-  dv.entryAggression.volumeConfirm = false;
-  dv.exitDiscipline.technicalExit = false;
-  dv.sectorStrategy.rebalanceOnDrift = false;
-  dv.momentumSensitivity.addToWinners = false;
-  dv.momentumSensitivity.cutUnderperformers = false;
-  dv.macroAwareness.fomcDefensive = false;
-  dv.macroAwareness.benchmarkGapResponse = 'off';
-  dv.macroAwareness.earningsAvoidance = 0;
+  // Phase 4.5: canonical-only writes via `writeDimensionField`. Legacy
+  // readers (dimensionsToDirectives, posture functions, radar score)
+  // were migrated to go through `readDimensionField`, so the registry's
+  // canonical-wins-else-legacy-fallback contract keeps both schemas
+  // consistent without duplicated writes. Booleans are pre-flipped to
+  // false so absent-snapshot = disabled; other fields inherit defaults.
+  const toggleFalse = [
+    'volumeConfirmEnabled',
+    'trendAlignmentEnabled',
+    'institutionalEnabled',
+    'technicalExitEnabled',
+    'earningsExitEnabled',
+    'rebalanceOnDrift',
+    'sectorFilterEnabled',
+    'addToWinnersEnabled',
+    'cutUnderperformersEnabled',
+    'correlationExitEnabled',
+    'fomcDefensive',
+  ];
+  for (const t of toggleFalse) dv = writeDimensionField(dv, t, false);
+  dv = writeDimensionField(dv, 'benchmarkGapResponse', 'off');
+  dv = writeDimensionField(dv, 'earningsAvoidanceDays', 0);
 
   for (const snap of snapshots) {
     const templateId = snap?.sourceRef || snap?.id?.replace(/^dim-/, '') || '';
     const pv = snap?.paramValues || {};
     switch (templateId) {
       case 'sx-01':
-        if (typeof pv.pct === 'number') dv.riskPosture.stopLoss = pv.pct;
+        if (typeof pv.pct === 'number') dv = writeDimensionField(dv, 'stopLossPct', pv.pct);
         break;
       case 'sx-02':
-        if (typeof pv.pct === 'number') dv.riskPosture.trailingStop = pv.pct;
+        if (typeof pv.pct === 'number') dv = writeDimensionField(dv, 'trailingStopPct', pv.pct);
         break;
       case 'se-01':
-        if (typeof pv.upper === 'number') dv.entryAggression.rsiUpper = pv.upper;
+        if (typeof pv.upper === 'number') dv = writeDimensionField(dv, 'rsiCeiling', pv.upper);
         break;
       case 'se-02':
-        dv.entryAggression.volumeConfirm = true;
+        dv = writeDimensionField(dv, 'volumeConfirmEnabled', true);
+        if (typeof pv.multiplier === 'number') {
+          dv = writeDimensionField(dv, 'volumeMultiplier', pv.multiplier);
+        }
+        break;
+      case 'se-03':
+        dv = writeDimensionField(dv, 'trendAlignmentEnabled', true);
+        if (typeof pv.period === 'number') {
+          dv = writeDimensionField(dv, 'trendAlignmentSmaPeriod', pv.period);
+        }
         break;
       case 'se-05':
-        if (typeof pv.minScore === 'number') dv.entryAggression.fundamentalFloor = pv.minScore;
-        break;
-      case 'sx-04':
-        if (typeof pv.pct === 'number') dv.exitDiscipline.profitTarget = pv.pct;
-        break;
-      case 'sx-03':
-        if (typeof pv.days === 'number') dv.exitDiscipline.timeExit = pv.days;
-        break;
-      case 'sx-05':
-        dv.exitDiscipline.technicalExit = true;
-        break;
-      case 'se-07':
-        if (typeof pv.maxPct === 'number') dv.sectorStrategy.maxSectorWeight = pv.maxPct;
-        break;
-      case 'sr-03':
-        dv.sectorStrategy.rebalanceOnDrift = true;
-        if (typeof pv.tolerance === 'number') dv.sectorStrategy.sectorDriftTolerance = pv.tolerance;
+        if (typeof pv.minScore === 'number') {
+          dv = writeDimensionField(dv, 'fundamentalFloor', pv.minScore);
+        }
         break;
       case 'se-06':
-        if (typeof pv.pct === 'number') dv.momentumSensitivity.momentumThreshold = pv.pct;
+        if (typeof pv.pct === 'number') dv = writeDimensionField(dv, 'momentumThresholdPct', pv.pct);
+        if (typeof pv.period === 'number') {
+          dv = writeDimensionField(dv, 'momentumLookbackDays', pv.period);
+        }
+        break;
+      case 'se-08':
+        dv = writeDimensionField(dv, 'institutionalEnabled', true);
+        if (typeof pv.direction === 'string') {
+          dv = writeDimensionField(dv, 'institutionalDirection', pv.direction);
+        }
+        if (typeof pv.quarters === 'number') {
+          dv = writeDimensionField(dv, 'institutionalQuarters', pv.quarters);
+        }
+        break;
+      case 'sx-04':
+        if (typeof pv.pct === 'number') dv = writeDimensionField(dv, 'profitTargetPct', pv.pct);
+        break;
+      case 'sx-03':
+        if (typeof pv.days === 'number') dv = writeDimensionField(dv, 'timeExitDays', pv.days);
+        if (typeof pv.pct === 'number') dv = writeDimensionField(dv, 'timeExitMinGainPct', pv.pct);
+        break;
+      case 'sx-05':
+        dv = writeDimensionField(dv, 'technicalExitEnabled', true);
+        if (typeof pv.trigger === 'string') {
+          dv = writeDimensionField(dv, 'technicalExitTrigger', pv.trigger);
+        }
+        if (typeof pv.rsiThreshold === 'number') {
+          dv = writeDimensionField(dv, 'technicalExitRsiThreshold', pv.rsiThreshold);
+        }
+        if (typeof pv.smaPeriod === 'number') {
+          dv = writeDimensionField(dv, 'technicalExitSmaPeriod', pv.smaPeriod);
+        }
+        break;
+      case 'sx-06':
+        dv = writeDimensionField(dv, 'earningsExitEnabled', true);
+        if (typeof pv.days === 'number') {
+          dv = writeDimensionField(dv, 'earningsExitDays', pv.days);
+        }
+        if (typeof pv.onlyIfProfitable === 'boolean') {
+          dv = writeDimensionField(dv, 'earningsExitOnlyIfProfitable', pv.onlyIfProfitable);
+        }
+        break;
+      case 'sx-07':
+        dv = writeDimensionField(dv, 'correlationExitEnabled', true);
+        if (typeof pv.threshold === 'number') {
+          dv = writeDimensionField(dv, 'correlationThreshold', pv.threshold);
+        }
+        if (typeof pv.days === 'number') {
+          dv = writeDimensionField(dv, 'correlationLookbackDays', pv.days);
+        }
+        break;
+      case 'se-07':
+        if (typeof pv.maxPct === 'number') {
+          dv = writeDimensionField(dv, 'maxSectorWeightPct', pv.maxPct);
+        }
+        break;
+      case 'sr-03':
+        dv = writeDimensionField(dv, 'rebalanceOnDrift', true);
+        if (typeof pv.tolerance === 'number') {
+          dv = writeDimensionField(dv, 'sectorDriftTolerancePct', pv.tolerance);
+        }
+        break;
+      case 'se-09':
+        dv = writeDimensionField(dv, 'sectorFilterEnabled', true);
+        if (typeof pv.mode === 'string') {
+          dv = writeDimensionField(dv, 'sectorFilterMode', pv.mode);
+        }
+        if (typeof pv.timeframe === 'string') {
+          dv = writeDimensionField(dv, 'sectorFilterTimeframe', pv.timeframe);
+        }
+        if (typeof pv.topN === 'number') {
+          dv = writeDimensionField(dv, 'sectorFilterTopN', pv.topN);
+        }
+        if (Array.isArray(pv.selectedSectors)) {
+          dv = writeDimensionField(dv, 'sectorFilterSelected', pv.selectedSectors);
+        }
         break;
       case 'sr-04':
-        dv.momentumSensitivity.addToWinners = true;
+        dv = writeDimensionField(dv, 'addToWinnersEnabled', true);
+        if (typeof pv.threshold === 'number') {
+          dv = writeDimensionField(dv, 'winnerReturnTrigger', pv.threshold);
+        }
+        if (typeof pv.addPct === 'number') {
+          dv = writeDimensionField(dv, 'winnerAddWeight', pv.addPct);
+        }
         break;
       case 'sr-05':
-        dv.momentumSensitivity.cutUnderperformers = true;
+        dv = writeDimensionField(dv, 'cutUnderperformersEnabled', true);
+        if (typeof pv.threshold === 'number') {
+          dv = writeDimensionField(dv, 'loserUnderperformanceTrigger', pv.threshold);
+        }
+        if (typeof pv.days === 'number') {
+          dv = writeDimensionField(dv, 'loserLookbackDays', pv.days);
+        }
+        if (typeof pv.reducePct === 'number') {
+          dv = writeDimensionField(dv, 'loserReduceWeight', pv.reducePct);
+        }
         break;
       case 'se-04':
-        if (typeof pv.days === 'number') dv.macroAwareness.earningsAvoidance = pv.days;
+        if (typeof pv.days === 'number') {
+          dv = writeDimensionField(dv, 'earningsAvoidanceDays', pv.days);
+        }
         break;
       case 'ss-04':
-        dv.macroAwareness.fomcDefensive = true;
+        dv = writeDimensionField(dv, 'fomcDefensive', true);
         break;
       case 'ss-01':
-        dv.macroAwareness.benchmarkGapResponse = 'aggressive';
+        dv = writeDimensionField(dv, 'benchmarkGapResponse', 'aggressive');
         break;
       case 'ss-02':
-        dv.macroAwareness.benchmarkGapResponse = 'react';
+        dv = writeDimensionField(dv, 'benchmarkGapResponse', 'react');
         break;
       case 'sr-01':
         if (typeof pv.maxPct === 'number') {
-          dv.positionSizing.maxPosition = pv.maxPct;
+          dv = writeDimensionField(dv, 'maxPositionWeightPct', pv.maxPct);
           if (typeof pv.targetPct === 'number') {
-            dv.positionSizing.trimThreshold = Math.max(3, pv.maxPct - pv.targetPct);
+            dv = writeDimensionField(dv, 'trimThreshold', Math.max(3, pv.maxPct - pv.targetPct));
           }
         }
         break;
       case 'sr-02':
-        if (typeof pv.pct === 'number') dv.positionSizing.cashDeploymentTrigger = pv.pct;
+        if (typeof pv.pct === 'number') {
+          dv = writeDimensionField(dv, 'cashDeploymentTriggerPct', pv.pct);
+        }
         break;
       default:
         break;

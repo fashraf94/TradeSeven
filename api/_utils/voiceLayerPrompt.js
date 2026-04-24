@@ -179,7 +179,8 @@ const WORKSHOP_OUTPUT_FORMAT = `RESPONSE FORMAT — You MUST respond with valid 
     "riskPosture": "risk tolerance in the user's own framing (string)",
     "invalidation": "what would prove this thesis wrong (string)",
     "confidence": "low | medium | high",
-    "readyToCompile": true or false
+    "readyToCompile": true or false,
+    "recommendedDurationDays": 5 | 10 | 15 | 20 | null
   },
   "response": "Your conversational message to the user. 2-4 sentences. One focused follow-up question per turn.",
   "hasDirective": false,
@@ -192,6 +193,7 @@ RULES:
 - activeThesis is your EVOLVING synthesis. Update it EVERY turn. Do NOT blindly copy the previousThesis — incorporate what the user just said.
 - Empty/unknown fields in activeThesis should be empty strings (""). Use empty arrays for instruments when unknown.
 - readyToCompile MUST be false until entryLogic, exitLogic, AND riskPosture are all non-empty AND the summary captures a coherent thesis. Do not flip it true prematurely.
+- recommendedDurationDays MUST be one of: 5, 10, 15, 20, or null. See the BACKTEST DURATION section below for when to populate it. Null is acceptable when the thesis is genuinely timeframe-agnostic — the user can pick a duration in the next step.
 - hasDirective is ALWAYS false in Workshop Mode. directive is ALWAYS null. The compile step, not a directive, is how we "execute" a workshop conversation.
 - suggestedActions: provide 2-3 short, plain-language options when you're asking the user to choose a direction. Each option should represent a genuinely different strategic choice. Set to null when you're making a statement or proposal that doesn't require a choice.
 - NEVER reference scores, opponents, battle time, tiers, or BaggerBomb mechanics — there is no active battle.
@@ -233,17 +235,85 @@ CONFIDENCE HANDLING:
 - Set activeThesis.confidence based on how well the user has justified their view. Strong reasoning + clear triggers = high. Hand-wavy gestures = low.
 - Your confidence in the thesis is different from the user's — both matter, but the logged value reflects structural completeness, not market prediction.`;
 
-const WORKSHOP_FEW_SHOT = `EXAMPLE OF AN EXPERT BUILDER EXCHANGE (user lacks technical knowledge — you lead with a specific proposal, not a choice between concepts):
+// Mid-prompt reference material Gemma consults while building a thesis.
+// Placed between the Workshop Context block and the few-shot so the
+// few-shot can demonstrate the patterns (duration inference, duration
+// question, rule-palette-aware recommendations) without bloating
+// WORKSHOP_PHASE_RULES. Reference slot — low attention — which is fine:
+// Gemma doesn't need to recite any of this verbatim, just consult it
+// when shaping proposals.
+const WORKSHOP_REFERENCE = `## Available strategy rules
+
+When proposing strategy elements, draw from this palette. Don't recite IDs or mention "available rules" to the user — pick the rule that fits their thesis and frame it in plain language, with one-sentence translations for any technical term you use.
+
+ENTRY RULES
+- RSI ceiling — refuse to enter overbought stocks. Adjustable max RSI (50-80).
+- Volume confirmation — require entries to coincide with above-average volume. Multiplier options: 1.2x, 1.5x, 2x, 3x.
+- Trend alignment — require price above a moving average. SMA period: 20, 50, 100, or 200.
+- Earnings avoidance — block entries within N days before earnings (1-10).
+- Fundamental floor — require a minimum composite fundamental score (20-80).
+- Momentum entry — require a lookback-period price change above a threshold. Lookback: 5, 10, or 20 days; threshold 0.5-10%.
+- Sector freshness — block entries into sectors already over a max weight (15-50%).
+- Institutional sentiment — filter by ownership trend (any / increased / stable_or_increased) over 1, 2, or 4 quarters.
+- Sector momentum filter — narrow the tradable universe by sector. Two modes: top-N by recent performance (1D/1W/1M timeframe, top 1/2/3/5), or an explicit user-picked sector list.
+
+EXIT RULES
+- Stop loss (3-20%), trailing stop (3-25%), profit target (5-50%) — the standards.
+- Time exit — close after N days if gain below threshold. Days 2-15, minimum gain threshold 0-5%.
+- Technical exit — four trigger choices: RSI overbought (with threshold 65-85), MACD bearish crossover (no sub-params), either RSI or MACD, or a drop below a moving average (SMA period 20/50/100/200). The trigger choice matters — RSI and SMA break react to different market conditions.
+- Earnings exit — close positions N days before earnings (1, 2, 3, or 5). Optional: only if profitable (banks the gain and lets losers ride the event).
+- Correlation exit — trim one position from any pair whose correlation exceeds a threshold (0.7, 0.8, 0.9) over 20-90 days. Useful for portfolios that are nominally diversified but load up on one factor.
+
+POSITION SIZING & REBALANCING
+- Max position weight (10-30%), cash deployment trigger (5-40%) — standard.
+- Add to winners — boost weight on positions gaining over a trigger %. Trigger 5-20%, weight increment 1-5%.
+- Cut underperformers — reduce weight on losers. Underperformance trigger 3-10%, lookback 3/5/10/15 days, reduction 1-5%.
+- Sector drift rebalance — rebalance when a sector drifts beyond tolerance (5-20%).
+
+## Backtest duration
+
+Strategies run for a chosen duration: 5 days (1 week), 10 days (2 weeks), 15 days (3 weeks), or 20 days (4 weeks). Different durations favor different rule choices. Populate \`recommendedDurationDays\` in activeThesis using one of two patterns:
+
+INFERENCE PATTERN — when the user's thesis text implies a timeframe, infer silently and set recommendedDurationDays accordingly. Do NOT call it out in conversation. Just populate the field and keep building the thesis.
+- "Catch this earnings reaction" / "this week's setup" / "Friday breakout" / "next week's CPI print" → 5
+- "Quick momentum trade" / "next 1-2 weeks" / "bi-weekly rotation" → 10
+- "Multi-week swing" / "few weeks of follow-through" → 15
+- "Ride the trend for a month" / "monthly rotation" / "let this play out" → 20
+
+ASK PATTERN — when the thesis is genuinely timeframe-agnostic (describes a setup or preference without implying when to test it), ask once, naturally, with brief reasoning. Example phrasing:
+  "How long do you want to test this idea? A 5-day run catches a single catalyst event; 20 days gives a trend room to play out."
+
+After the user answers, populate recommendedDurationDays. Do NOT re-ask once you've set a value. If the user later says "actually let's do 5 instead", update the field silently and keep building — no re-asking, no apologizing for the prior suggestion.
+
+IF STILL UNCLEAR — leave recommendedDurationDays as null. The user will pick a duration in the next step. Better null than a confident-but-wrong guess.
+
+## Duration-rule fit
+
+Bias your rule recommendations to what fits the duration:
+
+SHORT (5-10 days): catalyst-driven entries (earnings reactions, breakouts), tight time exits (2-5 days, low gain threshold), short SMA periods (20 if trend alignment matters at all), volume confirmation, earnings exits. Avoid: long SMA trend alignment (50-200), patient profit targets >20%, sector drift rebalancing (won't trigger in a week), add-to-winners (no time to compound).
+
+MEDIUM (15 days): balanced. Trend filters help but use 20-50 SMAs not 100-200. Moderate time exits (5-7 days). Moderate profit targets (10-20%). Sector momentum filter useful here — 1W timeframe fits naturally.
+
+LONG (20 days): trend alignment with 50 or 100-day SMAs, fundamental floor, sector momentum filter (1M timeframe), patient profit targets (15-30%), add-to-winners, sector drift rebalancing. Avoid: tight 2-day time exits (they cut off the trend you want to ride), aggressive earnings exits unless the thesis is explicitly anti-volatility.
+
+These are biases, not hard rules. If the user's thesis explicitly contradicts a bias ("I want a 20-day test of a daily catalyst trade"), respect their intent — they're the trader.`;
+
+const WORKSHOP_FEW_SHOT = `EXAMPLE OF AN EXPERT BUILDER EXCHANGE (user lacks technical knowledge — you lead with a specific proposal, not a choice between concepts; catalyst implies short duration, so recommendedDurationDays inferred silently):
 User: "I want to trade around earnings season but I don't really know the technical side"
-Agent: {"_scratchpad": "User has a clear catalyst (earnings) but needs me to build the technical framework. I'll propose a specific entry/exit strategy rather than asking them to choose between concepts they don't know.", "activeThesis": {"summary": "Earnings momentum strategy — buy strong reporters on post-earnings breakouts", "catalyst": "Earnings season", "instruments": ["Stocks with upcoming earnings reports"], "entryLogic": "Buy when stock gaps up >3% on earnings beat with above-average volume", "exitLogic": "", "riskPosture": "", "invalidation": "", "confidence": "low", "readyToCompile": false}, "response": "Earnings season is a catalyst worth building around. Here's what I'd build: we buy stocks that gap up more than 3% on an earnings beat with heavy volume — that filters out the weak reactions and catches genuine momentum. For the exit side, we need to decide how tight to play it. Do you want to ride winners for a week or two, or lock in quick profits within a few days?", "hasDirective": false, "directive": null, "suggestedActions": ["Ride it — hold 1-2 weeks", "Quick flip — 2-3 days", "Let's discuss risk first"]}
+Agent: {"_scratchpad": "User has a clear catalyst (earnings) but needs me to build the technical framework. Earnings plays imply short duration — infer 5 days silently, don't call it out. I'll propose a specific entry/exit strategy rather than asking them to choose between concepts they don't know.", "activeThesis": {"summary": "Earnings momentum strategy — buy strong reporters on post-earnings breakouts", "catalyst": "Earnings season", "instruments": ["Stocks with upcoming earnings reports"], "entryLogic": "Buy when stock gaps up >3% on earnings beat with above-average volume", "exitLogic": "", "riskPosture": "", "invalidation": "", "confidence": "low", "readyToCompile": false, "recommendedDurationDays": 5}, "response": "Earnings season is a catalyst worth building around. Here's what I'd build: we buy stocks that gap up more than 3% on an earnings beat with heavy volume — that filters out the weak reactions and catches genuine momentum. For the exit side, we need to decide how tight to play it. Do you want to ride winners for a week or two, or lock in quick profits within a few days?", "hasDirective": false, "directive": null, "suggestedActions": ["Ride it — hold 1-2 weeks", "Quick flip — 2-3 days", "Let's discuss risk first"]}
 
-EXAMPLE OF A GOOD WORKSHOP EXCHANGE:
+EXAMPLE OF A GOOD WORKSHOP EXCHANGE (user thesis is timeframe-agnostic — ask once, naturally, then populate the field):
 User: "I think momentum stocks outperform in bull markets but I want tight downside protection."
-Agent: {"_scratchpad": "User gave a two-part thesis: momentum preference + risk constraint. summary, catalyst, entryLogic, and riskPosture are partly filled but exitLogic and invalidation are blank. Probe on exits — tight protection is vague without a concrete rule.", "activeThesis": {"summary": "Momentum-leader strategy with tight downside protection", "catalyst": "Bull market regime", "instruments": ["High relative-strength stocks", "Momentum leaders"], "entryLogic": "Strong relative strength, likely above moving averages", "exitLogic": "", "riskPosture": "Aggressive on entry, conservative on exit — tight stops", "invalidation": "", "confidence": "medium", "readyToCompile": false}, "response": "OK so aggressive entries with a safety net — that's a real trade-off to thread. For the stops: a 5-6% stop is tight but you'll get shaken out by normal volatility. 8-10% gives the thesis room to breathe. Where's your pain threshold when a good setup pulls back?", "hasDirective": false, "directive": null, "suggestedActions": null}
+Agent: {"_scratchpad": "User gave a two-part thesis: momentum preference + risk constraint. Nothing implies duration. Since I need it for the compile step and the thesis is ambiguous, I'll ask naturally while also probing on the exit side. recommendedDurationDays stays null until they answer.", "activeThesis": {"summary": "Momentum-leader strategy with tight downside protection", "catalyst": "Bull market regime", "instruments": ["High relative-strength stocks", "Momentum leaders"], "entryLogic": "Strong relative strength, likely above moving averages", "exitLogic": "", "riskPosture": "Aggressive on entry, conservative on exit — tight stops", "invalidation": "", "confidence": "medium", "readyToCompile": false, "recommendedDurationDays": null}, "response": "OK so aggressive entries with a safety net — that's a real trade-off to thread. Quick question before we get into stop sizing: how long do you want to test this? A 1-week run stress-tests whether your entries fire at all; a 4-week run gives the trend room to play out.", "hasDirective": false, "directive": null, "suggestedActions": ["1 week — fast feedback", "2 weeks — balanced", "4 weeks — let it breathe"]}
 
-EXAMPLE OF A COMPILE-READY EXCHANGE:
+EXAMPLE OF A DURATION FOLLOWUP (user picks from the ask, Gemma updates the field and moves on):
+User: "2 weeks works."
+Agent: {"_scratchpad": "User picked 10 days. Populate recommendedDurationDays and pivot back to exit rules. Don't re-ask, don't apologize for having asked. At 10 days, bias exits toward medium-horizon — 8-10% stops rather than 5%.", "activeThesis": {"summary": "Momentum-leader strategy with tight downside protection", "catalyst": "Bull market regime", "instruments": ["High relative-strength stocks", "Momentum leaders"], "entryLogic": "Strong relative strength, likely above moving averages", "exitLogic": "", "riskPosture": "Aggressive on entry, conservative on exit — tight stops", "invalidation": "", "confidence": "medium", "readyToCompile": false, "recommendedDurationDays": 10}, "response": "Got it. For a 2-week test, a 5-6% stop is going to get shaken out by normal volatility on most momentum names — 8-10% gives the thesis room to breathe. Where's your pain threshold when a good setup pulls back?", "hasDirective": false, "directive": null, "suggestedActions": null}
+
+EXAMPLE OF A COMPILE-READY EXCHANGE (all load-bearing fields set, recommendedDurationDays populated from prior turn):
 User: "Yeah let's go with 8% stops and close anything that hasn't moved 3% in 10 days."
-Agent: {"_scratchpad": "exitLogic now has both a stop rule and a time-exit. summary, catalyst, entryLogic, exitLogic, riskPosture all non-empty. Thesis is coherent enough to compile — flip readyToCompile. invalidation still blank but that's optional.", "activeThesis": {"summary": "Momentum-leader strategy with 8% stops and 10-day time exits", "catalyst": "Bull market regime", "instruments": ["High relative-strength stocks", "Momentum leaders"], "entryLogic": "Strong relative strength, above moving averages", "exitLogic": "8% stop-loss from entry; close positions that haven't gained 3% within 10 trading days", "riskPosture": "Aggressive entries, conservative 8% hard stop", "invalidation": "Consistent failure of RS leaders to follow through — suggests regime change", "confidence": "high", "readyToCompile": true}, "response": "That's a clean, testable thesis. Entries on RS leaders, hard stop at 8%, time exit at 10 days if it's not moving. I think we've got enough to compile this into a strategy and take it to the Proving Ground — want me to do that, or keep refining?", "hasDirective": false, "directive": null, "suggestedActions": null}`;
+Agent: {"_scratchpad": "exitLogic now has both a stop rule and a time-exit. summary, catalyst, entryLogic, exitLogic, riskPosture all non-empty. recommendedDurationDays still 10 from the earlier turn. Thesis is coherent enough to compile — flip readyToCompile. invalidation still blank but that's optional.", "activeThesis": {"summary": "Momentum-leader strategy with 8% stops and 10-day time exits", "catalyst": "Bull market regime", "instruments": ["High relative-strength stocks", "Momentum leaders"], "entryLogic": "Strong relative strength, above moving averages", "exitLogic": "8% stop-loss from entry; close positions that haven't gained 3% within 10 trading days", "riskPosture": "Aggressive entries, conservative 8% hard stop", "invalidation": "Consistent failure of RS leaders to follow through — suggests regime change", "confidence": "high", "readyToCompile": true, "recommendedDurationDays": 10}, "response": "That's a clean, testable thesis. Entries on RS leaders, hard stop at 8%, time exit at 10 days if it's not moving. I think we've got enough to compile this into a strategy and take it to the Proving Ground — want me to do that, or keep refining?", "hasDirective": false, "directive": null, "suggestedActions": null}`;
 
 // ==================== REVIEW MODE ====================
 //
@@ -707,6 +777,13 @@ RIGHT NOW you are in WORKSHOP MODE — there is no active battle. You are helpin
     // Block 5': Workshop Context (replaces Battle State)
     const workshopBlock = buildWorkshopContextBlock(workshopContext);
 
+    // Block 5.5': Workshop Reference — rule palette + duration handling +
+    // duration-rule fit. Reference material Gemma consults while building
+    // proposals. Placed before the few-shot so examples can demonstrate
+    // the patterns. Low-attention slot is fine — Gemma doesn't recite
+    // any of this, just draws from it.
+    const workshopReference = WORKSHOP_REFERENCE;
+
     // Workshop Few-Shot (BOTTOM — high attention)
     const fewShot = WORKSHOP_FEW_SHOT;
 
@@ -722,6 +799,7 @@ RIGHT NOW you are in WORKSHOP MODE — there is no active battle. You are helpin
     if (workshopAnchor) blocks.push(workshopAnchor);
     blocks.push(
       workshopBlock,
+      workshopReference,
       fewShot,
       phaseRules,
     );

@@ -64,9 +64,24 @@ export default async function handler(req, res) {
   if (!user) return;
 
   // ─── 4. Validate request body ────────────────────────────────
+  // Mid-sprint audit S2: integer range guard on `week` so a malformed
+  // client body can't produce oddly-named pit-stop subcollection docs
+  // via the `String(week)` coercion at :87. 1..8 bounds a 1-4-week
+  // tournament + 1-4-week solo session; anything else is an error.
   const { entryId, week } = req.body || {};
-  if (!entryId || week == null) {
-    return res.status(400).json({ error: 'Missing entryId or week' });
+  if (!entryId) {
+    return res.status(400).json({ error: 'Missing entryId' });
+  }
+  if (
+    typeof week !== 'number' ||
+    !Number.isInteger(week) ||
+    week < 1 ||
+    week > 8
+  ) {
+    return res.status(400).json({
+      error: 'invalid_week',
+      message: 'week must be an integer between 1 and 8.',
+    });
   }
 
   const db = getFirebaseAdmin();
@@ -110,13 +125,31 @@ export default async function handler(req, res) {
     }
     const season = seasonSnap.data();
 
-    // ─── 9. Load this week's daily logs ────────────────────────
-    // season.weeks is indexed by array position (resolveCurrentWeek in
-    // seasonEvalContext.js:335-345 derives week number from index+1);
-    // each week object has a `tradingDays` array but no `week` field.
-    // Look up by (week - 1) to get the current week's trading days.
-    const weekInfo = season.weeks?.[Number(week) - 1];
-    const tradingDays = Array.isArray(weekInfo?.tradingDays) ? weekInfo.tradingDays : [];
+    // ─── 9. Load daily logs ────────────────────────────────────
+    // Per-week scoping by default: season.weeks is indexed by array position
+    // (resolveCurrentWeek in seasonEvalContext.js:335-345 derives week from
+    // index+1); each week has a tradingDays array. Look up (week - 1).
+    //
+    // Phase 3 (solo final-week debrief, spec §8 option f): when this is a
+    // solo session's final week, pull every dailyLog across the entry so
+    // the debrief reflects the whole run rather than just the final 5 days.
+    // The existing pit-stop-debrief prompt is week-scoped by default; for
+    // full-entry mode we thread `isSoloFinalWeek` + `durationWeeks` into
+    // the prompt builder so it can adjust framing (see pitStopDebrief.js).
+    const totalWeeks = season.weeks?.length || 0;
+    const isSolo = (entry.mode ?? season.mode) === 'solo';
+    const isSoloFinalWeek = isSolo && totalWeeks > 0 && Number(week) === totalWeeks;
+
+    let tradingDays;
+    if (isSoloFinalWeek) {
+      // Full-entry aggregation — all trading days in the season calendar.
+      tradingDays = Array.isArray(season.tradingCalendar)
+        ? season.tradingCalendar.map((d) => d.day).filter((d) => typeof d === 'number')
+        : [];
+    } else {
+      const weekInfo = season.weeks?.[Number(week) - 1];
+      tradingDays = Array.isArray(weekInfo?.tradingDays) ? weekInfo.tradingDays : [];
+    }
 
     const weekDailyLogs = [];
     for (const day of tradingDays) {
@@ -155,7 +188,8 @@ export default async function handler(req, res) {
       season,
       weekDailyLogs,
       sharedMarketData,
-      activeRules
+      activeRules,
+      { isSoloFinalWeek, durationWeeks: totalWeeks }
     );
 
     const sonnetResponse = await callAnthropic(debriefRequest);

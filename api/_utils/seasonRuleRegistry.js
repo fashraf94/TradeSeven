@@ -5,6 +5,21 @@
  */
 
 import { RESULT_TYPES, PRIORITY } from './seasonConfig.js';
+import { TICKER_TO_SECTOR, STOCK_UNIVERSE } from './rankingConfig.js';
+
+// SE-09 sector-name resolution: prefer the canonical path
+// TICKER_TO_SECTOR → STOCK_UNIVERSE[id].name so values match the sector
+// performance feed. EODHD's fund.sector uses Morningstar-flavored names
+// (e.g., "Financial Services" vs GICS "Financials") which would silently
+// miss ~40% of the universe. Falls back to fund.sector only when the
+// canonical mapping has no entry for the ticker.
+function resolveSectorName(ticker, ctx) {
+  const sectorId = TICKER_TO_SECTOR[ticker];
+  if (sectorId && STOCK_UNIVERSE[sectorId]?.name) {
+    return STOCK_UNIVERSE[sectorId].name;
+  }
+  return ctx?.fundamentals?.[ticker]?.sector ?? null;
+}
 
 // ─── Registry ─────────────────────────────────────────────────
 
@@ -194,6 +209,65 @@ registerRule('se-08', {
     return {
       type: RESULT_TYPES.ENTRY_FILTER, ticker, pass,
       reason: pass ? `Institutional ownership ${trend} over ${params.quarters}Q — matches ${params.direction}` : `Institutional ownership ${trend} — does not match ${params.direction}`,
+    };
+  },
+});
+
+// SE-09: Sector Momentum Filter
+// Narrows the tradable universe by sector. Two modes:
+//   top_n             — only enter stocks whose sector is in the top N on a
+//                       given timeframe (1D/1W/1M). Ranking comes from
+//                       ctx.sectorPerformance (populated from
+//                       indexIntelligence/marketContext.sectorSnapshot).
+//   specific_sectors  — only enter stocks in a user-selected sector list.
+// Data-freshness policy (per design spec 11.G): if sector performance data
+// is unavailable for the selected timeframe, silently pass — better to run
+// a backtest without the filter than to exclude every ticker.
+registerRule('se-09', {
+  phase: 'entry',
+  priority: PRIORITY.HARD,
+  evaluate: (ticker, params, ctx) => {
+    const sector = resolveSectorName(ticker, ctx);
+    if (!sector) {
+      return { type: RESULT_TYPES.ENTRY_FILTER, ticker, pass: false, reason: 'No sector data for ticker' };
+    }
+
+    const mode = params?.mode ?? 'top_n';
+
+    if (mode === 'specific_sectors') {
+      const allowed = Array.isArray(params?.selectedSectors) ? params.selectedSectors : [];
+      if (allowed.length === 0) {
+        return { type: RESULT_TYPES.ENTRY_FILTER, ticker, pass: false, reason: 'Sector filter enabled but no sectors selected' };
+      }
+      const pass = allowed.includes(sector);
+      return {
+        type: RESULT_TYPES.ENTRY_FILTER, ticker, pass,
+        reason: pass ? `Sector ${sector} in selected list` : `Sector ${sector} not in selected list`,
+      };
+    }
+
+    // mode === 'top_n'
+    const timeframe = params?.timeframe ?? '1W';
+    const topN = params?.topN ?? 3;
+    const sectorPerf = ctx?.sectorPerformance?.[timeframe];
+    if (!sectorPerf || Object.keys(sectorPerf).length === 0) {
+      return {
+        type: RESULT_TYPES.ENTRY_FILTER, ticker, pass: true,
+        reason: 'Sector performance data unavailable — filter skipped',
+      };
+    }
+
+    const topSectors = Object.entries(sectorPerf)
+      .sort(([, a], [, b]) => b - a)
+      .slice(0, topN)
+      .map(([s]) => s);
+
+    const pass = topSectors.includes(sector);
+    return {
+      type: RESULT_TYPES.ENTRY_FILTER, ticker, pass,
+      reason: pass
+        ? `Sector ${sector} in top ${topN} on ${timeframe}`
+        : `Sector ${sector} not in top ${topN} on ${timeframe}`,
     };
   },
 });

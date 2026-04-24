@@ -14,41 +14,10 @@
 
 import { evaluateRule, getRule } from '../seasonRuleRegistry.js';
 
-// ─── System Prompt (static, cacheable) ───────────────────────────────
-
-const PIT_STOP_DEBRIEF_SYSTEM_PROMPT = `You are a trading partner delivering a weekend pit stop debrief for a 4-week competitive
-stock trading season. The user's algorithm has been running autonomously all week.
-This is your chance to review what happened and prepare for next week.
-
-Your debrief has TWO ACTS:
-
-ACT 1 — THE REVIEW
-- Start with a 2-3 sentence narrative summary of the week. Was it good, bad, or mixed?
-  Reference specific numbers (alpha change, key trades).
-- List highlights: 1-3 wins and 1-3 losses. Each with ticker, what happened, and which
-  rules were involved.
-- Rule insights: For the 2-3 most impactful rules this week, provide specific observations.
-  Did a stop-loss fire correctly? Did an entry rule block something it shouldn't have?
-  Give concrete parameter change suggestions where warranted.
-- Upcoming events: What macro events (Fed, CPI, earnings) are coming next week and how
-  they might affect the portfolio.
-- Suggested parameter changes: 0-3 specific changes with ruleId, param name, current
-  value, suggested value, and rationale. Be concrete — "widen trailing stop from 10%
-  to 12% because X" not "consider adjusting risk parameters."
-
-ACT 2 — NEXT WEEK PREP
-- Lessons into action: What did we learn this week that changes how we approach next week?
-- Momentum watchlist: Stocks near our entry thresholds (from the near-miss data).
-  These are "one good day away" from qualifying.
-- Thematic opportunities: Sector rotations, macro themes, or portfolio gaps to exploit.
-- Risk radar: What could hurt us next week? Specific threats.
-- Shortlist candidates: Suggest 3-5 stocks ranked by your conviction. Include rationale
-  and which theme/opportunity each connects to.
-
-TONE: Warm, direct, collaborative. Use "we" and "our." Have opinions — don't hedge.
-Reference specific data. If a rule is hurting performance, say so directly.
-
-You MUST use the generate_pit_stop_debrief tool to return your response.`;
+// ─── System Prompt ──────────────────────────────────────────────
+// Built at request time by `buildDebriefSystemPrompt` (below) so the
+// framing ("N-week session", "next week" vs "next session") adapts to
+// duration + solo-final-week context from the caller.
 
 // ─── Tool Schema ─────────────────────────────────────────────────────
 
@@ -290,9 +259,18 @@ export function findNearMissCandidates(ctx, activeRules) {
  * @param {Object[]} weekDailyLogs - dailyLog docs for the current week.
  * @param {Object} sharedMarketData - market data blob (marketData, technicals, etc.).
  * @param {Object[]} activeRules - equipped rules with current param values.
+ * @param {Object} [options] - additional context.
+ * @param {boolean} [options.isSoloFinalWeek=false] - Phase 3: when true,
+ *   the debrief is an end-of-session summary for a solo run. The user
+ *   message is preceded by a context note so Sonnet reframes the
+ *   "next week prep" act as a closing reflection over the full session.
+ * @param {number} [options.durationWeeks] - total duration in weeks,
+ *   used to swap the hardcoded "4-week" framing in the system prompt.
  * @returns {Object} Request body: { model, max_tokens, temperature, system, messages, tools }.
  */
-export function buildDebriefRequest(entry, seasonDoc, weekDailyLogs, sharedMarketData, activeRules) {
+export function buildDebriefRequest(entry, seasonDoc, weekDailyLogs, sharedMarketData, activeRules, options = {}) {
+  const { isSoloFinalWeek = false, durationWeeks } = options;
+
   // Build a lightweight ctx-like object so findNearMissCandidates and the rule
   // registry evaluators (which expect a ctx shape) can run against the inputs.
   const ctx = {
@@ -310,15 +288,68 @@ export function buildDebriefRequest(entry, seasonDoc, weekDailyLogs, sharedMarke
     model: 'claude-sonnet-4-20250514',
     max_tokens: 2000,
     temperature: 0.7,
-    system: PIT_STOP_DEBRIEF_SYSTEM_PROMPT,
+    system: buildDebriefSystemPrompt({ durationWeeks, isSoloFinalWeek }),
     messages: [
       {
         role: 'user',
-        content: buildDebriefUserMessage(entry, seasonDoc, weekDailyLogs, activeRules, nearMisses),
+        content: buildDebriefUserMessage(entry, seasonDoc, weekDailyLogs, activeRules, nearMisses, { isSoloFinalWeek, durationWeeks }),
       },
     ],
     tools: [PIT_STOP_DEBRIEF_TOOL],
   };
+}
+
+// System-prompt builder that adapts framing to the caller's session shape.
+// Without options, it matches the legacy 4-week tournament framing verbatim
+// so existing tournament callers see no behavior change.
+function buildDebriefSystemPrompt({ durationWeeks, isSoloFinalWeek }) {
+  const weeksLabel = typeof durationWeeks === 'number' && durationWeeks > 0
+    ? `${durationWeeks}-week`
+    : '4-week';
+  const baseHeader = `You are a trading partner delivering a weekend pit stop debrief for a ${weeksLabel} competitive
+stock trading session. The user's algorithm has been running autonomously all week.
+This is your chance to review what happened and prepare for next week.`;
+
+  const finalHeader = `You are a trading partner delivering the END-OF-SESSION debrief for a ${weeksLabel} solo
+backtest. The user's algorithm has been running autonomously across the full session. This is
+the closing review — there is no "next week," so your job is to summarize the entire run and
+pull out lessons the user can take into their next strategy.`;
+
+  const header = isSoloFinalWeek ? finalHeader : baseHeader;
+
+  // Reuse the two-act scaffolding verbatim; for final-week solo, Act 2's
+  // "next week prep" is reinterpreted as "lessons for the next session."
+  return `${header}
+
+Your debrief has TWO ACTS:
+
+ACT 1 — THE REVIEW
+- Start with a 2-3 sentence narrative summary${isSoloFinalWeek ? ' of the full session' : ' of the week'}. Was it good, bad, or mixed?
+  Reference specific numbers (alpha change, key trades).
+- List highlights: 1-3 wins and 1-3 losses. Each with ticker, what happened, and which
+  rules were involved.
+- Rule insights: For the 2-3 most impactful rules${isSoloFinalWeek ? ' across the session' : ' this week'}, provide specific observations.
+  Did a stop-loss fire correctly? Did an entry rule block something it shouldn't have?
+  Give concrete parameter change suggestions where warranted.
+- Upcoming events: What macro events (Fed, CPI, earnings) are coming ${isSoloFinalWeek ? 'soon' : 'next week'} and how
+  they might affect the portfolio.
+- Suggested parameter changes: 0-3 specific changes with ruleId, param name, current
+  value, suggested value, and rationale. Be concrete — "widen trailing stop from 10%
+  to 12% because X" not "consider adjusting risk parameters."
+
+ACT 2 — ${isSoloFinalWeek ? 'NEXT-SESSION LESSONS' : 'NEXT WEEK PREP'}
+- Lessons into action: What did we learn ${isSoloFinalWeek ? 'across this session' : 'this week'} that changes how we approach ${isSoloFinalWeek ? 'the next one' : 'next week'}?
+- Momentum watchlist: Stocks near our entry thresholds (from the near-miss data).
+  These are "one good day away" from qualifying.
+- Thematic opportunities: Sector rotations, macro themes, or portfolio gaps to exploit.
+- Risk radar: What could hurt us ${isSoloFinalWeek ? 'in the next session' : 'next week'}? Specific threats.
+- Shortlist candidates: Suggest 3-5 stocks ranked by your conviction. Include rationale
+  and which theme/opportunity each connects to.
+
+TONE: Warm, direct, collaborative. Use "we" and "our." Have opinions — don't hedge.
+Reference specific data. If a rule is hurting performance, say so directly.
+
+You MUST use the generate_pit_stop_debrief tool to return your response.`;
 }
 
 // ─── Main Export: Response Parser ────────────────────────────────────
@@ -369,19 +400,26 @@ export function parseDebriefResponse(response) {
  * Assembles the user message body. Target ≤ ~6400 chars (~1600 tokens).
  * Keeps data dense via CSV and single-line summaries.
  */
-function buildDebriefUserMessage(entry, seasonDoc, weekDailyLogs, activeRules, nearMisses) {
+function buildDebriefUserMessage(entry, seasonDoc, weekDailyLogs, activeRules, nearMisses, options = {}) {
+  const { isSoloFinalWeek = false, durationWeeks } = options;
   const logs = Array.isArray(weekDailyLogs) ? weekDailyLogs : [];
   const state = entry?.seasonState || {};
   const portfolio = entry?.portfolio || {};
   const lines = [];
 
-  // 1. Season overview
+  // 1. Season overview — duration-aware framing so the overview line
+  //    matches solo sessions' variable length. Default falls back to the
+  //    legacy "4" literal for tournaments with no durationWeeks supplied.
+  const totalWeeksLabel = typeof durationWeeks === 'number' && durationWeeks > 0 ? durationWeeks : 4;
   const currentWeek = state.currentWeek || state.currentTradingDay != null ? state.currentWeek ?? '?' : '?';
   const alpha = typeof state.alphaVsSpy === 'number' ? state.alphaVsSpy.toFixed(2) : '0.00';
   const totalRet = typeof portfolio.totalReturn === 'number' ? portfolio.totalReturn.toFixed(2) : '0.00';
   const spyRet = typeof state.spyReturn === 'number' ? state.spyReturn.toFixed(2) : '?';
   const rank = state.currentRank != null ? `, Rank: ${state.currentRank}` : '';
-  lines.push(`SEASON OVERVIEW: Week ${currentWeek} of 4, Alpha ${alpha}%, Total ${totalRet}%, SPY ${spyRet}%${rank}`);
+  const overviewPrefix = isSoloFinalWeek
+    ? `END-OF-SESSION OVERVIEW (${totalWeeksLabel}-week solo)`
+    : `SESSION OVERVIEW: Week ${currentWeek} of ${totalWeeksLabel}`;
+  lines.push(`${overviewPrefix}, Alpha ${alpha}%, Total ${totalRet}%, SPY ${spyRet}%${rank}`);
   lines.push('');
 
   // 2. Daily log summary (one line per day)
