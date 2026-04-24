@@ -420,7 +420,8 @@ export default async function handler(req, res) {
     let seasonId;
     let seasonRef;
     let season;
-    let seasonJustCreated = false;
+    // Mid-sprint audit N1: `seasonJustCreated` was declared here and set
+    // inside the solo branch below but never read. Removed.
 
     if (mode === 'solo') {
       // Private season doc, keyed by a deterministic ID so retries produce
@@ -440,7 +441,6 @@ export default async function handler(req, res) {
           durationWeeks,
         });
         await seasonRef.set(season);
-        seasonJustCreated = true;
       }
     } else {
       seasonId = bodySeasonId;

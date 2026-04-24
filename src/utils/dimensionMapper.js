@@ -123,7 +123,13 @@ export const DIMENSION_DEFAULTS = Object.freeze({
     // keep reading. New bundles populate `eventRisk` below.
     earningsAvoidance: 3,              // se-04.days (legacy name)
     fomcDefensive: false,              // ss-04 toggle
-    benchmarkGapResponse: 'react',     // 'off' | 'react' | 'aggressive'
+    // Mid-sprint audit S1: default flipped from 'react' to 'off'. Phase 4
+    // removed the UI control for this field while emitRule_benchmarkGap
+    // still emits ss-02 when the value is 'react'. The old default caused
+    // every fresh bundle to silently carry ss-02 (Lead Protection) that
+    // users could neither see nor disable. Legacy bundles that carry
+    // 'react' or 'aggressive' continue to emit the same rules as before.
+    benchmarkGapResponse: 'off',       // 'off' | 'react' | 'aggressive'
   },
   eventRisk: {
     // New dimension. Sole rule today is se-04.
@@ -212,6 +218,20 @@ function posture_macroAwareness(v) {
   return bucket(ignore, reactive, 'Ignore', 'Moderate', 'Reactive');
 }
 
+// Phase 4 renamed macroAwareness → eventRisk. Reads the new
+// earningsAvoidanceDays field first, falls back to the legacy
+// earningsAvoidance key for pre-Phase-2 bundles still carrying the old
+// shape. Thresholds preserved from posture_macroAwareness so the tone
+// pill transitions match user expectations.
+function posture_eventRisk(v) {
+  const days = typeof v.earningsAvoidanceDays === 'number'
+    ? v.earningsAvoidanceDays
+    : (typeof v.earningsAvoidance === 'number' ? v.earningsAvoidance : 0);
+  const reactive = days >= 5;
+  const ignore = days <= 1;
+  return bucket(ignore, reactive, 'Ignore', 'Moderate', 'Reactive');
+}
+
 function posture_positionSizing(v) {
   const concentrated = v.maxPosition >= 20;
   const spread = v.maxPosition < 12;
@@ -225,6 +245,7 @@ const POSTURE_FNS = {
   sectorStrategy: posture_sectorStrategy,
   momentumSensitivity: posture_momentumSensitivity,
   macroAwareness: posture_macroAwareness,
+  eventRisk: posture_eventRisk,
   positionSizing: posture_positionSizing,
 };
 

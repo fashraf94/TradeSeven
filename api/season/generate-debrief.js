@@ -64,9 +64,24 @@ export default async function handler(req, res) {
   if (!user) return;
 
   // ─── 4. Validate request body ────────────────────────────────
+  // Mid-sprint audit S2: integer range guard on `week` so a malformed
+  // client body can't produce oddly-named pit-stop subcollection docs
+  // via the `String(week)` coercion at :87. 1..8 bounds a 1-4-week
+  // tournament + 1-4-week solo session; anything else is an error.
   const { entryId, week } = req.body || {};
-  if (!entryId || week == null) {
-    return res.status(400).json({ error: 'Missing entryId or week' });
+  if (!entryId) {
+    return res.status(400).json({ error: 'Missing entryId' });
+  }
+  if (
+    typeof week !== 'number' ||
+    !Number.isInteger(week) ||
+    week < 1 ||
+    week > 8
+  ) {
+    return res.status(400).json({
+      error: 'invalid_week',
+      message: 'week must be an integer between 1 and 8.',
+    });
   }
 
   const db = getFirebaseAdmin();
