@@ -34,18 +34,33 @@ export function detectInjectionAttempts(text) {
   return INJECTION_PATTERNS.some((re) => re.test(text));
 }
 
-// Conservative congruity check: every related ticker in the expansion must
-// either appear in the parsed signal's tickers/impliedTickers OR share a
-// sector with one of them. Anything outside that set is treated as a
-// hallucination and the expansion is rejected.
+// Validation contract: warning + passthrough by default, hard-rejection only
+// for the "complete hallucination" case (every expansion ticker has zero
+// relationship to any parsed ticker — neither literal nor sector-adjacent).
+//
+// Cross-sector incongruities (e.g., AAPL anchor + GOOGL/META expansion, where
+// XLK and XLC are technically different sectors but conceptually one cluster)
+// surface as a warning rather than a rejection. The expand endpoint passes
+// these through with `validationWarning` attached so the harness summary.json
+// and quality review can spot patterns. Phase 2 polish will likely add a
+// thematic-cluster whitelist (Big Tech → [XLK, XLC, XLY], AI Infra → [XLK,
+// XLI, XLU], etc.) once we've seen what Gemma actually produces.
+//
+// Return shape:
+//   { valid: boolean, hardRejection: boolean, reason: string|null, warning: string|null }
 export function validateExpansionOutput(expansion, parsedSignal) {
   if (!expansion || typeof expansion !== 'object') {
-    return { valid: false, reason: 'expansion is missing or not an object' };
+    return {
+      valid: false,
+      hardRejection: true,
+      reason: 'expansion is missing or not an object',
+      warning: null,
+    };
   }
 
   const related = Array.isArray(expansion.relatedTickers) ? expansion.relatedTickers : [];
   if (related.length === 0) {
-    return { valid: true };
+    return { valid: true, hardRejection: false, reason: null, warning: null };
   }
 
   const parsedTickers = [
@@ -55,33 +70,69 @@ export function validateExpansionOutput(expansion, parsedSignal) {
     .map(normalizeTicker)
     .filter(Boolean);
 
-  const allowedSectors = new Set();
-  const allowedTickers = new Set(parsedTickers);
+  const parsedTickerSet = new Set(parsedTickers);
+  const parsedSectors = new Set();
   for (const t of parsedTickers) {
     const sector = TICKER_TO_SECTOR[t];
-    if (sector) allowedSectors.add(sector);
+    if (sector) parsedSectors.add(sector);
   }
 
-  // If the parsed signal has zero anchor tickers, we cannot do a sector check.
-  // Fall back to allowing the expansion through — the parse-side bailout
-  // logic should already have caught zero-ticker junk.
-  if (allowedTickers.size === 0) {
-    return { valid: true };
+  // Defensive passthrough: if the parsed signal has zero anchor tickers, we
+  // can't do any congruity check. Parse-side bailout should have caught the
+  // junk-input case already; we don't second-guess it here.
+  if (parsedTickerSet.size === 0) {
+    return { valid: true, hardRejection: false, reason: null, warning: null };
   }
+
+  const directOverlap = [];
+  const sectorMatches = [];
+  const crossSectorOrUnknown = [];
 
   for (const item of related) {
     const symbol = normalizeTicker(item?.symbol);
     if (!symbol) {
-      return { valid: false, reason: `expansion.relatedTickers contains invalid symbol` };
+      // A missing symbol is malformed expansion output, not a hallucination —
+      // treat as a warning and let downstream filter the bad row.
+      crossSectorOrUnknown.push('(missing-symbol)');
+      continue;
     }
-    if (allowedTickers.has(symbol)) continue;
+    if (parsedTickerSet.has(symbol)) {
+      directOverlap.push(symbol);
+      continue;
+    }
     const sector = TICKER_TO_SECTOR[symbol];
-    if (sector && allowedSectors.has(sector)) continue;
+    if (sector && parsedSectors.has(sector)) {
+      sectorMatches.push(symbol);
+    } else {
+      crossSectorOrUnknown.push(symbol);
+    }
+  }
+
+  // Hard rejection: every expansion ticker missed both the literal-overlap and
+  // the sector-overlap check, AND we had parsed tickers to anchor against.
+  // This is the "Gemma recommended JNJ + KO when the signal was about
+  // semis" case — a complete topical disconnect.
+  if (directOverlap.length === 0 && sectorMatches.length === 0) {
     return {
       valid: false,
-      reason: `relatedTicker ${symbol} is not in parsed signal and not in any anchored sector`,
+      hardRejection: true,
+      reason: `expansion tickers [${crossSectorOrUnknown.join(', ')}] have no literal or sector overlap with parsed tickers [${parsedTickers.join(', ')}]`,
+      warning: null,
     };
   }
 
-  return { valid: true };
+  // Some matched, some didn't — surface the cross-sector ones as a warning
+  // but pass the expansion through. Quality review uses these to spot
+  // legitimate cross-sector clusters (Big Tech, AI infra, energy transition).
+  if (crossSectorOrUnknown.length > 0) {
+    const parsedSectorList = [...parsedSectors].sort().join(', ') || '(no sector for parsed tickers)';
+    return {
+      valid: true,
+      hardRejection: false,
+      reason: null,
+      warning: `cross-sector or unknown tickers in expansion: ${crossSectorOrUnknown.join(', ')} (parsed sectors: ${parsedSectorList})`,
+    };
+  }
+
+  return { valid: true, hardRejection: false, reason: null, warning: null };
 }
