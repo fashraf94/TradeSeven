@@ -71,3 +71,4 @@ export const logStrategyConfig    = (r) => appendToStream('strategy_configs', r)
 export const logPipelineDecision  = (r) => appendToStream('pipeline_decisions', r);
 export const logReviewInteraction = (r) => appendToStream('review_interactions', r);
 export const logDailyRegimeBrief  = (r) => appendToStream('daily_regime_brief', r);
+export const logSignalDrops       = (r) => appendToStream('signal_drops', r);
