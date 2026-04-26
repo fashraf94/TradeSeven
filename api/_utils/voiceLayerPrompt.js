@@ -391,7 +391,7 @@ const SIGNAL_EXPANSION_OUTPUT_FORMAT = `RESPONSE FORMAT — You MUST respond wit
 
 RULES:
 - Output JSON only — no markdown, no backticks, no preamble, no trailing notes.
-- relatedTickers MUST have at least 1 entry; ideally 3-7. Use canonical symbols (BRK-B not BRK.B).
+- relatedTickers MUST have at least 3 entries; ideally 5-7. Use canonical symbols (BRK-B not BRK.B).
 - The "role" field describes how each ticker relates to the thesis:
     anchor = the primary ticker the signal is about
     comparable = a peer with the same exposure
@@ -431,7 +431,7 @@ NEGATIVE CONSTRAINTS — NEVER VIOLATE:
 OUTPUT TIGHTNESS:
 - thesisSummary: 15-30 words.
 - apparentDriver: one sentence, ≤25 words.
-- relatedTickers: 3-7 entries.
+- relatedTickers: 3-7 entries minimum, 5-7 typical.
 - invalidationConditions: 2-4 entries, each ≤15 words.
 - suggestedWatchlistName: 3-6 words. Evoke the thesis, not just a ticker.`;
 
