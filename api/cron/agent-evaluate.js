@@ -32,7 +32,11 @@ import { evaluateRisk, calculate5minSMA20, pickEmergencyReplacement, findPortfol
 import { getPresetConfig } from '../_utils/agentPresetConfig.js';
 import { generateReflection } from '../agent/reflect.js';
 import { logBattlePattern } from '../_utils/battlePatternLogger.js';
-import { logEvaluation } from '../_utils/shadowLogger.js';
+import { logEvaluation, logVisionTransition } from '../_utils/shadowLogger.js';
+import { filterActiveConstraints } from '../_utils/visionRuntime.js';
+import { confidenceToFloat } from '../../src/constants/visionEnums.js';
+import { validateTransition } from '../../src/types/vision/visionValidators.js';
+import { Timestamp } from 'firebase-admin/firestore';
 
 export const config = { maxDuration: 60 };
 
@@ -498,6 +502,41 @@ async function processAgentBattle(db, battle, summary) {
 
     momentumData.regimes = stockRegimes;
     momentumData.marketPosture = marketPosture;
+
+    // ---- Vision state read (Spec A Phase 2a + fix-up) ----
+    // No new Firestore I/O — battle.vision is already in scope from the
+    // active-battles fetch. Defensive on two axes:
+    //   1. Pre-Spec-A battles without a `vision` field → { present: false }
+    //   2. Corrupted Vision (e.g., non-enum confidence value would make
+    //      confidenceToFloat throw) → swallow + warn + { present: false }
+    //      so a single bad row doesn't abort the cron tick for that battle.
+    let visionState;
+    try {
+      const vision = battle?.vision ?? null;
+      visionState = vision
+        ? {
+            present: true,
+            state: vision.state,
+            thesis: vision.thesis,
+            confidence: vision.confidence,
+            confidenceFloat: confidenceToFloat(vision.confidence),
+            source: vision.source,
+            constraints: vision.constraints,
+            activeConstraints: filterActiveConstraints(vision.constraints, vision.state, Date.now()),
+            evidenceTrail: vision.evidenceTrail,
+            lastUserTouchAt: vision.lastUserTouchAt,
+            conditionSnapshot: vision.conditionSnapshot,
+            transitionHistory: vision.transitionHistory,
+          }
+        : { present: false };
+    } catch (err) {
+      console.warn(
+        `${LOG_PREFIX} Failed to build visionState for battle ${battle?.id} — falling back to present:false`,
+        { error: err?.message }
+      );
+      visionState = { present: false };
+    }
+    momentumData.visionState = visionState;
 
     // ---- Risk evaluation layer (runs BEFORE trigger gate) ----
     const riskStatus = {};
@@ -1556,10 +1595,60 @@ async function completeBattle(db, battle, summary) {
   const opponentScore = scoreState.opponentScore || 0;
   const result = currentScore > opponentScore ? 'win' : (currentScore < opponentScore ? 'loss' : 'draw');
 
+  // ---- Vision retired transition (Spec A Phase 2a + fix-up) ----
+  // Build the retired Vision (if applicable) so it can be written atomically
+  // with status='completed'. The cron is the proximate writer; the schema
+  // (visionTransitions.js) admits actor='cron' on battle_end -> retired
+  // alongside 'sonnet' (reserved for future Sonnet-authored retirement
+  // paths). Using 'cron' here distinguishes infrastructure-driven retirement
+  // from AI-reasoning-driven retirement in the shadow log.
+  let retiredVisionForWrite = null;
+  let visionTransitionLogPayload = null;
+  const prevVision = battle?.vision ?? null;
+  if (prevVision && prevVision.state !== 'retired') {
+    const transitionTs = Timestamp.now();
+    const newEntry = {
+      fromState: prevVision.state,
+      toState: 'retired',
+      timestamp: transitionTs,
+      actor: 'cron',
+      cause: 'battle_end',
+    };
+    const nextVision = {
+      ...prevVision,
+      state: 'retired',
+      transitionHistory: [...(prevVision.transitionHistory || []), newEntry],
+      lastTransitionAt: transitionTs,
+    };
+    const validation = validateTransition(prevVision, nextVision, 'cron', 'battle_end');
+    if (validation.valid) {
+      retiredVisionForWrite = nextVision;
+      visionTransitionLogPayload = {
+        battleId: battle.id,
+        visionSnapshot: nextVision,
+        transition: {
+          fromState: prevVision.state,
+          toState: 'retired',
+          actor: 'cron',
+          cause: 'battle_end',
+          timestamp: transitionTs,
+        },
+        triggerContext: null,
+        userInput: null,
+      };
+    } else {
+      console.error(
+        `${LOG_PREFIX} Vision retire validation failed for battle ${battle.id}:`,
+        validation.errors.join('; ')
+      );
+      // Fall through: status='completed' still writes; Vision stays as-is.
+    }
+  }
+
   // Update battle status
   const existingFeed = battle.statusFeed || [];
   const resultLabel = result === 'win' ? 'Win' : result === 'loss' ? 'Loss' : 'Draw';
-  await battleRef.update({
+  const updatePayload = {
     status: 'completed',
     completedAt: now,
     'cronState.evaluatingAt': null,
@@ -1570,7 +1659,16 @@ async function completeBattle(db, battle, summary) {
       source: 'system',
       score: Math.round(currentScore * 100) / 100,
     }].slice(-50),
-  });
+  };
+  if (retiredVisionForWrite) {
+    updatePayload.vision = retiredVisionForWrite;
+  }
+  await battleRef.update(updatePayload);
+
+  // Fire-and-forget shadow log of the retired transition (after Firestore write succeeds).
+  if (visionTransitionLogPayload) {
+    logVisionTransition(visionTransitionLogPayload).catch(() => {});
+  }
 
   // Update agent stats (server-side equivalent of client updateAgentStats)
   const agentRef = db.collection('agents').doc(battle.agentId);

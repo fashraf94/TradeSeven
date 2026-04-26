@@ -456,6 +456,91 @@ describe('validateTransition — housekeeping', () => {
 });
 
 // ---------------------------------------------------------------------------
+// validateTransition — battle_end retirement actor expansion (cron + sonnet)
+// ---------------------------------------------------------------------------
+
+describe('validateTransition — battle_end retirement actor expansion', () => {
+  function makeRetirementCase(fromState, actor) {
+    const baseHistory = [
+      { fromState: 'unformed', toState: 'proposed', timestamp: T0, actor: 'gemma', cause: 'user_input' },
+      { fromState: 'proposed', toState: 'active',   timestamp: T1, actor: 'gemma', cause: 'user_input' },
+    ];
+    const prev = buildVision({ state: fromState, transitionHistory: baseHistory, lastTransitionAt: T1 });
+    const newEntry = validTransitionEntry({
+      fromState,
+      toState: 'retired',
+      timestamp: T2,
+      actor,
+      cause: 'battle_end',
+    });
+    const next = {
+      ...prev,
+      state: 'retired',
+      transitionHistory: [...baseHistory, newEntry],
+      lastTransitionAt: T2,
+    };
+    return { prev, next };
+  }
+
+  it('accepts actor=cron on active -> retired', () => {
+    const { prev, next } = makeRetirementCase('active', 'cron');
+    const r = validateTransition(prev, next, 'cron', 'battle_end');
+    expect(r).toEqual({ valid: true, errors: [] });
+  });
+
+  it('accepts actor=sonnet on active -> retired', () => {
+    const { prev, next } = makeRetirementCase('active', 'sonnet');
+    const r = validateTransition(prev, next, 'sonnet', 'battle_end');
+    expect(r).toEqual({ valid: true, errors: [] });
+  });
+
+  it('accepts actor=cron on stale -> retired', () => {
+    const { prev, next } = makeRetirementCase('stale', 'cron');
+    const r = validateTransition(prev, next, 'cron', 'battle_end');
+    expect(r).toEqual({ valid: true, errors: [] });
+  });
+
+  it('accepts actor=cron on under_debate -> retired', () => {
+    const { prev, next } = makeRetirementCase('under_debate', 'cron');
+    const r = validateTransition(prev, next, 'cron', 'battle_end');
+    expect(r).toEqual({ valid: true, errors: [] });
+  });
+
+  it('accepts actor=cron on proposed -> retired', () => {
+    const { prev, next } = makeRetirementCase('proposed', 'cron');
+    const r = validateTransition(prev, next, 'cron', 'battle_end');
+    expect(r).toEqual({ valid: true, errors: [] });
+  });
+
+  it('accepts actor=cron on unformed -> retired', () => {
+    const { prev, next } = makeRetirementCase('unformed', 'cron');
+    const r = validateTransition(prev, next, 'cron', 'battle_end');
+    expect(r).toEqual({ valid: true, errors: [] });
+  });
+
+  it('rejects actor=gemma on battle_end -> retired', () => {
+    const { prev, next } = makeRetirementCase('active', 'gemma');
+    const r = validateTransition(prev, next, 'gemma', 'battle_end');
+    expect(r.valid).toBe(false);
+    expect(r.errors.some((e) => e.includes('actor=gemma'))).toBe(true);
+  });
+
+  it('rejects actor=risk_manager on battle_end -> retired', () => {
+    const { prev, next } = makeRetirementCase('active', 'risk_manager');
+    const r = validateTransition(prev, next, 'risk_manager', 'battle_end');
+    expect(r.valid).toBe(false);
+    expect(r.errors.some((e) => e.includes('actor=risk_manager'))).toBe(true);
+  });
+
+  it('rejects actor=layer1 on battle_end -> retired', () => {
+    const { prev, next } = makeRetirementCase('active', 'layer1');
+    const r = validateTransition(prev, next, 'layer1', 'battle_end');
+    expect(r.valid).toBe(false);
+    expect(r.errors.some((e) => e.includes('actor=layer1'))).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // validateConstraintMutation
 // ---------------------------------------------------------------------------
 
