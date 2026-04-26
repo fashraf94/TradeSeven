@@ -503,27 +503,40 @@ async function processAgentBattle(db, battle, summary) {
     momentumData.regimes = stockRegimes;
     momentumData.marketPosture = marketPosture;
 
-    // ---- Vision state read (Spec A Phase 2a) ----
+    // ---- Vision state read (Spec A Phase 2a + fix-up) ----
     // No new Firestore I/O — battle.vision is already in scope from the
-    // active-battles fetch. Defensive: pre-Spec-A battles may lack `vision`,
-    // in which case downstream consumers see { present: false } and skip.
-    const vision = battle?.vision ?? null;
-    momentumData.visionState = vision
-      ? {
-          present: true,
-          state: vision.state,
-          thesis: vision.thesis,
-          confidence: vision.confidence,
-          confidenceFloat: confidenceToFloat(vision.confidence),
-          source: vision.source,
-          constraints: vision.constraints,
-          activeConstraints: filterActiveConstraints(vision.constraints, vision.state, Date.now()),
-          evidenceTrail: vision.evidenceTrail,
-          lastUserTouchAt: vision.lastUserTouchAt,
-          conditionSnapshot: vision.conditionSnapshot,
-          transitionHistory: vision.transitionHistory,
-        }
-      : { present: false };
+    // active-battles fetch. Defensive on two axes:
+    //   1. Pre-Spec-A battles without a `vision` field → { present: false }
+    //   2. Corrupted Vision (e.g., non-enum confidence value would make
+    //      confidenceToFloat throw) → swallow + warn + { present: false }
+    //      so a single bad row doesn't abort the cron tick for that battle.
+    let visionState;
+    try {
+      const vision = battle?.vision ?? null;
+      visionState = vision
+        ? {
+            present: true,
+            state: vision.state,
+            thesis: vision.thesis,
+            confidence: vision.confidence,
+            confidenceFloat: confidenceToFloat(vision.confidence),
+            source: vision.source,
+            constraints: vision.constraints,
+            activeConstraints: filterActiveConstraints(vision.constraints, vision.state, Date.now()),
+            evidenceTrail: vision.evidenceTrail,
+            lastUserTouchAt: vision.lastUserTouchAt,
+            conditionSnapshot: vision.conditionSnapshot,
+            transitionHistory: vision.transitionHistory,
+          }
+        : { present: false };
+    } catch (err) {
+      console.warn(
+        `${LOG_PREFIX} Failed to build visionState for battle ${battle?.id} — falling back to present:false`,
+        { error: err?.message }
+      );
+      visionState = { present: false };
+    }
+    momentumData.visionState = visionState;
 
     // ---- Risk evaluation layer (runs BEFORE trigger gate) ----
     const riskStatus = {};
@@ -1582,11 +1595,13 @@ async function completeBattle(db, battle, summary) {
   const opponentScore = scoreState.opponentScore || 0;
   const result = currentScore > opponentScore ? 'win' : (currentScore < opponentScore ? 'loss' : 'draw');
 
-  // ---- Vision retired transition (Spec A Phase 2a) ----
+  // ---- Vision retired transition (Spec A Phase 2a + fix-up) ----
   // Build the retired Vision (if applicable) so it can be written atomically
-  // with status='completed'. Schema-locked actor for battle_end -> retired is
-  // 'sonnet' per visionTransitions.js (Phase 1). The cron is the proximate
-  // writer; Sonnet later reads the retired Vision in generateReflection.
+  // with status='completed'. The cron is the proximate writer; the schema
+  // (visionTransitions.js) admits actor='cron' on battle_end -> retired
+  // alongside 'sonnet' (reserved for future Sonnet-authored retirement
+  // paths). Using 'cron' here distinguishes infrastructure-driven retirement
+  // from AI-reasoning-driven retirement in the shadow log.
   let retiredVisionForWrite = null;
   let visionTransitionLogPayload = null;
   const prevVision = battle?.vision ?? null;
@@ -1596,7 +1611,7 @@ async function completeBattle(db, battle, summary) {
       fromState: prevVision.state,
       toState: 'retired',
       timestamp: transitionTs,
-      actor: 'sonnet',
+      actor: 'cron',
       cause: 'battle_end',
     };
     const nextVision = {
@@ -1605,7 +1620,7 @@ async function completeBattle(db, battle, summary) {
       transitionHistory: [...(prevVision.transitionHistory || []), newEntry],
       lastTransitionAt: transitionTs,
     };
-    const validation = validateTransition(prevVision, nextVision, 'sonnet', 'battle_end');
+    const validation = validateTransition(prevVision, nextVision, 'cron', 'battle_end');
     if (validation.valid) {
       retiredVisionForWrite = nextVision;
       visionTransitionLogPayload = {
@@ -1614,7 +1629,7 @@ async function completeBattle(db, battle, summary) {
         transition: {
           fromState: prevVision.state,
           toState: 'retired',
-          actor: 'sonnet',
+          actor: 'cron',
           cause: 'battle_end',
           timestamp: transitionTs,
         },

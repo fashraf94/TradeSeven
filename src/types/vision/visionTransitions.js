@@ -102,35 +102,45 @@ export const VALID_TRANSITIONS = Object.freeze([
   },
 
   // To retired (from any non-retired state) --------------------------------
+  // Battle-end retirement transitions accept two actors:
+  //   - 'cron': the scheduled task in api/cron/agent-evaluate.js writes this
+  //     transition synchronously inside completeBattle(). This is the dominant
+  //     case — the cron retires Visions on battle expiry.
+  //   - 'sonnet': reserved for future Sonnet-authored retirement paths
+  //     (e.g., user-triggered early-end flows where Sonnet authors the
+  //     retirement decision rather than just consuming a retired Vision).
+  // The two actors distinguish "infrastructure-driven retirement" from
+  // "AI-reasoning-driven retirement" in the shadow log, which matters for
+  // training data slicing and ops debugging.
   {
     from: 'unformed',
     to: 'retired',
     allowedCauses: Object.freeze(['battle_end']),
-    allowedActors: Object.freeze(['sonnet']),
+    allowedActors: Object.freeze(['sonnet', 'cron']),
   },
   {
     from: 'proposed',
     to: 'retired',
     allowedCauses: Object.freeze(['battle_end']),
-    allowedActors: Object.freeze(['sonnet']),
+    allowedActors: Object.freeze(['sonnet', 'cron']),
   },
   {
     from: 'active',
     to: 'retired',
     allowedCauses: Object.freeze(['battle_end']),
-    allowedActors: Object.freeze(['sonnet']),
+    allowedActors: Object.freeze(['sonnet', 'cron']),
   },
   {
     from: 'under_debate',
     to: 'retired',
     allowedCauses: Object.freeze(['battle_end']),
-    allowedActors: Object.freeze(['sonnet']),
+    allowedActors: Object.freeze(['sonnet', 'cron']),
   },
   {
     from: 'stale',
     to: 'retired',
     allowedCauses: Object.freeze(['battle_end']),
-    allowedActors: Object.freeze(['sonnet']),
+    allowedActors: Object.freeze(['sonnet', 'cron']),
   },
 ]);
 
