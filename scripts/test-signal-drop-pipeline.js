@@ -11,6 +11,7 @@
 //
 //   node scripts/test-signal-drop-pipeline.js
 //   node scripts/test-signal-drop-pipeline.js --cleanup      # purge test user's signalDrops first
+//   node scripts/test-signal-drop-pipeline.js --delay-ms 3000  # custom inter-input delay (default 1500)
 //
 // Cross-platform Node.js — works on Windows PowerShell, macOS, Linux.
 // Reads env vars from .env.local at the project root via a simple
@@ -112,16 +113,43 @@ function die(message) {
 // ──────────────────────────────────────────────────────────────────────
 // CLI flags
 // ──────────────────────────────────────────────────────────────────────
+const DEFAULT_INTER_INPUT_DELAY_MS = 1500;
+
 function parseCliFlags(argv) {
-  const flags = { cleanup: false };
-  for (const arg of argv.slice(2)) {
-    if (arg === '--cleanup') flags.cleanup = true;
-    else if (arg === '--help' || arg === '-h') {
-      console.log('Usage: node scripts/test-signal-drop-pipeline.js [--cleanup]');
+  const flags = { cleanup: false, delayMs: DEFAULT_INTER_INPUT_DELAY_MS };
+  const args = argv.slice(2);
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (arg === '--cleanup') {
+      flags.cleanup = true;
+    } else if (arg === '--help' || arg === '-h') {
+      console.log('Usage: node scripts/test-signal-drop-pipeline.js [--cleanup] [--delay-ms N]');
       process.exit(0);
+    } else if (arg.startsWith('--delay-ms=')) {
+      const n = Number.parseInt(arg.slice('--delay-ms='.length), 10);
+      if (Number.isFinite(n) && n >= 0) flags.delayMs = n;
+      else die(`--delay-ms value must be a non-negative integer; got "${arg.slice('--delay-ms='.length)}"`);
+    } else if (arg === '--delay-ms') {
+      const next = args[i + 1];
+      const n = Number.parseInt(next, 10);
+      if (Number.isFinite(n) && n >= 0) {
+        flags.delayMs = n;
+        i += 1;
+      } else {
+        die(`--delay-ms value must be a non-negative integer; got "${next}"`);
+      }
     }
   }
   return flags;
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Sleep helper — used by the 429-retry path inside postJson and the
+// inter-input delay loop inside main. Tests can pass a no-op sleep
+// to avoid waiting through real timers.
+// ──────────────────────────────────────────────────────────────────────
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
 }
 
 // ──────────────────────────────────────────────────────────────────────
@@ -380,35 +408,77 @@ function average(nums) {
 }
 
 // ──────────────────────────────────────────────────────────────────────
-// HTTP helpers — postJson with latency measurement
+// HTTP helpers — postJson with latency measurement and one-shot 429
+// retry. When a call returns HTTP 429, we read body.retryAfter (default
+// 30 if missing/unparseable), sleep retryAfter+2 seconds, and retry
+// the same call once. If the retry also 429s we surface that status to
+// the caller (the existing classifyParsePath / classifyExpansionPath
+// helpers map status:429 to parse_error / expansion_error correctly).
+//
+// `label` (optional) is prefixed to the rate-limit log line so the
+// orchestrator's "[N/M] inputName" context survives the line break.
+// `_sleep` is a hidden testing hook — tests pass a no-op so unit tests
+// don't actually wait through the real retryAfter window.
 // ──────────────────────────────────────────────────────────────────────
-async function postJson({ apiUrl, idToken, endpoint, body }) {
+const DEFAULT_RETRY_AFTER_SECONDS = 30;
+const RETRY_BUFFER_SECONDS = 2;
+
+function readRetryAfter(body) {
+  const raw = body?.retryAfter;
+  if (typeof raw === 'number' && Number.isFinite(raw) && raw > 0) return Math.floor(raw);
+  if (typeof raw === 'string') {
+    const n = Number.parseInt(raw, 10);
+    if (Number.isFinite(n) && n > 0) return n;
+  }
+  return DEFAULT_RETRY_AFTER_SECONDS;
+}
+
+async function postJson({ apiUrl, idToken, endpoint, body, label, _sleep = sleep }) {
   const url = `${apiUrl.replace(/\/$/, '')}${endpoint}`;
   const t0 = Date.now();
-  let status;
-  let bodyJson;
-  try {
-    const resp = await fetch(url, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${idToken}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(body),
-    });
-    status = resp.status;
-    const text = await resp.text();
+
+  async function attempt() {
+    let status;
+    let bodyJson;
     try {
-      bodyJson = JSON.parse(text);
-    } catch {
-      bodyJson = { _rawText: text };
+      const resp = await fetch(url, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${idToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(body),
+      });
+      status = resp.status;
+      const text = await resp.text();
+      try {
+        bodyJson = JSON.parse(text);
+      } catch {
+        bodyJson = { _rawText: text };
+      }
+    } catch (err) {
+      status = 0;
+      bodyJson = { _fetchError: err.message };
     }
-  } catch (err) {
-    status = 0;
-    bodyJson = { _fetchError: err.message };
+    return { status, body: bodyJson };
   }
+
+  let result = await attempt();
+
+  if (result.status === 429) {
+    const retryAfter = readRetryAfter(result.body);
+    const sleepSeconds = retryAfter + RETRY_BUFFER_SECONDS;
+    const prefix = label ? `${label} ` : '';
+    console.log(`\n${prefix}rate-limited, sleeping ${sleepSeconds}s before retry`);
+    await _sleep(sleepSeconds * 1000);
+    result = await attempt();
+    if (result.status === 429) {
+      console.log(`${prefix}rate limit persisted after retry; skipping`);
+    }
+  }
+
   const latencyMs = Date.now() - t0;
-  return { status, body: bodyJson, latencyMs };
+  return { ...result, latencyMs };
 }
 
 // ──────────────────────────────────────────────────────────────────────
@@ -441,7 +511,7 @@ async function mintIdToken({ serviceAccount, testUserUid, firebaseApiKey }) {
 // expand-signal → build the row + meta object. Returns
 // { row, meta, parseResp, expandResp }.
 // ──────────────────────────────────────────────────────────────────────
-async function runOneInput(input, ctx) {
+async function runOneInput(input, ctx, label) {
   const { apiUrl, idToken, agentId, testInputsRoot } = ctx;
 
   let prepared;
@@ -478,12 +548,13 @@ async function runOneInput(input, ctx) {
 
   const { body, inputType, category, inputName, expectedBehavior } = prepared;
 
-  // Parse-signal call
+  // Parse-signal call (postJson handles 429-retry once internally)
   const parseResp = await postJson({
     apiUrl,
     idToken,
     endpoint: '/api/forge/parse-signal',
     body,
+    label: `${label || ''} ${inputName} parse`.trim(),
   });
   const parsePath = classifyParsePath(parseResp);
 
@@ -509,6 +580,7 @@ async function runOneInput(input, ctx) {
         dropId: body.dropId,
         agentId,
       },
+      label: `${label || ''} ${inputName} expand`.trim(),
     });
   }
   const expansionPath = classifyExpansionPath(parsePath, expandResp, expandWasCalled);
@@ -638,7 +710,8 @@ async function main() {
   const runTimestamp = formatRunTimestamp(new Date());
   const runRoot = path.join(TEST_RESULTS_DIR, runTimestamp);
   mkdirSync(runRoot, { recursive: true });
-  console.log(`Run root: ${path.relative(PROJECT_ROOT, runRoot)}/\n`);
+  console.log(`Run root: ${path.relative(PROJECT_ROOT, runRoot)}/`);
+  console.log(`Inter-input delay: ${flags.delayMs}ms (override with --delay-ms N)\n`);
 
   // Per-input loop (serial — preserves cache-hit determinism)
   const ctx = {
@@ -660,7 +733,7 @@ async function main() {
     const label = `[${i + 1}/${inputs.length}]`;
     process.stdout.write(`${label} ${inputName}… `);
 
-    const { row, meta, parseResp, expandResp } = await runOneInput(input, ctx);
+    const { row, meta, parseResp, expandResp } = await runOneInput(input, ctx, label);
 
     // Save per-input artifacts
     writeFileSync(path.join(inputDir, 'parsed.json'), JSON.stringify(parseResp?.body ?? null, null, 2));
@@ -673,6 +746,11 @@ async function main() {
     metas.push(meta);
 
     process.stdout.write(`parse=${row.parsePath}, expand=${row.expansionPath}\n`);
+
+    // Inter-input pacing — skip the trailing wait after the last input
+    if (i < inputs.length - 1 && flags.delayMs > 0) {
+      await sleep(flags.delayMs);
+    }
   }
 
   // Write summary.json
@@ -803,6 +881,10 @@ export {
   average,
   postJson,
   mintIdToken,
+  sleep,
+  readRetryAfter,
+  DEFAULT_INTER_INPUT_DELAY_MS,
+  DEFAULT_RETRY_AFTER_SECONDS,
   runOneInput,
   main,
   PROJECT_ROOT,
