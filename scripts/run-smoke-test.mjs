@@ -1,10 +1,13 @@
-// scripts/run-step-3-smoke-test.mjs
+// scripts/run-smoke-test.mjs
 //
-// Step 3 deployed-curl smoke test runner for /api/forge/parse-signal.
+// Deployed-curl smoke test runner for the Signal Drop pipeline.
+// Runs the Step 3 parse-signal curls, then the Step 4 expand-signal
+// curls (using parses from Step 3 as input). Same `node` invocation,
+// no flags — every run exercises both pipelines end-to-end.
 //
 // HOW TO RUN (from project root):
 //
-//   node scripts/run-step-3-smoke-test.mjs
+//   node scripts/run-smoke-test.mjs
 //
 // Cross-platform Node.js — works on Windows PowerShell, macOS, Linux.
 // Reads env vars from .env.local at the project root via a simple
@@ -14,9 +17,12 @@
 //   FIREBASE_ADMIN_CREDENTIALS — JSON service account creds (single-line stringified)
 //   FIREBASE_API_KEY            — Firebase web API key for the tradeseven project
 //   TEST_USER_UID               — UID of the dedicated Firebase Auth test user
+//   TEST_USER_AGENT_ID          — agentId of an agent owned by TEST_USER_UID
+//                                 (required for expand-signal personalization)
 //   SIGNAL_DROP_API_URL         — Vercel preview URL of the current branch
 // Optional:
-//   SAVE_RESPONSE_DIR           — defaults to scripts/test-results/step-3-smoke/
+//   SAVE_RESPONSE_DIR_STEP_3    — defaults to scripts/test-results/step-3-smoke/
+//   SAVE_RESPONSE_DIR_STEP_4    — defaults to scripts/test-results/step-4-smoke/
 
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -72,14 +78,19 @@ const env = parseEnvFile(path.join(PROJECT_ROOT, '.env.local'));
 const FIREBASE_ADMIN_CREDENTIALS = env.FIREBASE_ADMIN_CREDENTIALS || process.env.FIREBASE_ADMIN_CREDENTIALS;
 const FIREBASE_API_KEY = env.FIREBASE_API_KEY || process.env.FIREBASE_API_KEY;
 const TEST_USER_UID = env.TEST_USER_UID || process.env.TEST_USER_UID;
+const TEST_USER_AGENT_ID = env.TEST_USER_AGENT_ID || process.env.TEST_USER_AGENT_ID;
 const SIGNAL_DROP_API_URL = env.SIGNAL_DROP_API_URL || process.env.SIGNAL_DROP_API_URL;
-const SAVE_RESPONSE_DIR = env.SAVE_RESPONSE_DIR
-  || process.env.SAVE_RESPONSE_DIR
+const SAVE_RESPONSE_DIR_STEP_3 = env.SAVE_RESPONSE_DIR_STEP_3
+  || process.env.SAVE_RESPONSE_DIR_STEP_3
   || path.join(PROJECT_ROOT, 'scripts', 'test-results', 'step-3-smoke');
+const SAVE_RESPONSE_DIR_STEP_4 = env.SAVE_RESPONSE_DIR_STEP_4
+  || process.env.SAVE_RESPONSE_DIR_STEP_4
+  || path.join(PROJECT_ROOT, 'scripts', 'test-results', 'step-4-smoke');
 
 if (!FIREBASE_ADMIN_CREDENTIALS) die('FIREBASE_ADMIN_CREDENTIALS not found in .env.local');
 if (!FIREBASE_API_KEY) die('FIREBASE_API_KEY not found in .env.local');
 if (!TEST_USER_UID) die('TEST_USER_UID not found in .env.local');
+if (!TEST_USER_AGENT_ID) die('TEST_USER_AGENT_ID not found in .env.local (required for expand-signal personalization)');
 if (!SIGNAL_DROP_API_URL) die('SIGNAL_DROP_API_URL not found in .env.local');
 
 let serviceAccount;
@@ -89,7 +100,8 @@ try {
   die(`FIREBASE_ADMIN_CREDENTIALS is not valid JSON: ${err.message}`);
 }
 
-mkdirSync(SAVE_RESPONSE_DIR, { recursive: true });
+mkdirSync(SAVE_RESPONSE_DIR_STEP_3, { recursive: true });
+mkdirSync(SAVE_RESPONSE_DIR_STEP_4, { recursive: true });
 
 console.log('Initializing firebase-admin and minting test-user ID token…');
 if (getApps().length === 0) {
@@ -132,7 +144,7 @@ try {
 console.log(`ID token minted (length: ${idToken.length}). Starting curls…\n`);
 
 // ──────────────────────────────────────────────────────────────────────
-// Curl helper
+// Curl helpers (parse-signal + expand-signal)
 // ──────────────────────────────────────────────────────────────────────
 const FIXTURE_DIR = path.join(PROJECT_ROOT, 'scripts', 'test-results', 'step-3-smoke');
 
@@ -141,14 +153,8 @@ function loadFixture(name) {
   return JSON.parse(readFileSync(filePath, 'utf8'));
 }
 
-async function postParseSignal(label, fixtureName, responseName) {
-  const fixture = loadFixture(fixtureName);
-  const body = { ...fixture, dropId: crypto.randomUUID() };
-  const url = `${SIGNAL_DROP_API_URL.replace(/\/$/, '')}/api/forge/parse-signal`;
-
-  let status;
-  let json;
-  let text;
+async function postJson(endpoint, body) {
+  const url = `${SIGNAL_DROP_API_URL.replace(/\/$/, '')}${endpoint}`;
   try {
     const resp = await fetch(url, {
       method: 'POST',
@@ -158,28 +164,46 @@ async function postParseSignal(label, fixtureName, responseName) {
       },
       body: JSON.stringify(body),
     });
-    status = resp.status;
-    text = await resp.text();
+    const text = await resp.text();
+    let json;
     try {
       json = JSON.parse(text);
     } catch {
       json = { _rawText: text };
     }
+    return { status: resp.status, body: json };
   } catch (err) {
-    status = 0;
-    json = { _fetchError: err.message };
+    return { status: 0, body: { _fetchError: err.message } };
   }
+}
 
-  const savePath = path.join(SAVE_RESPONSE_DIR, `response-${responseName}.json`);
+async function postParseSignal(label, fixtureName, responseName) {
+  const fixture = loadFixture(fixtureName);
+  const body = { ...fixture, dropId: crypto.randomUUID() };
+  const { status, body: json } = await postJson('/api/forge/parse-signal', body);
+  const savePath = path.join(SAVE_RESPONSE_DIR_STEP_3, `response-${responseName}.json`);
   writeFileSync(savePath, JSON.stringify(json, null, 2));
-
   console.log(`Curl ${label}: HTTP ${status} → ${path.relative(PROJECT_ROOT, savePath)}`);
   return { status, body: json, dropId: body.dropId };
 }
 
+async function postExpandSignal(label, parsedSignal, dropId, responseName, { isRecompute = false } = {}) {
+  const body = {
+    parsedSignal,
+    dropId,
+    agentId: TEST_USER_AGENT_ID,
+    ...(isRecompute ? { isRecompute: true } : {}),
+  };
+  const { status, body: json } = await postJson('/api/forge/expand-signal', body);
+  const savePath = path.join(SAVE_RESPONSE_DIR_STEP_4, `response-${responseName}.json`);
+  writeFileSync(savePath, JSON.stringify(json, null, 2));
+  console.log(`Expand ${label}: HTTP ${status} → ${path.relative(PROJECT_ROOT, savePath)}`);
+  return { status, body: json };
+}
+
 // ──────────────────────────────────────────────────────────────────────
-// Run the five curls in sequence (no parallelism — we want clean cache
-// ordering for Curl 5 to actually be a hit, not a race)
+// Run the parse-signal curls in sequence (no parallelism — we want clean
+// cache ordering for Curl 5 to actually be a hit, not a race)
 // ──────────────────────────────────────────────────────────────────────
 const results = {
   text:      await postParseSignal('1 (text)',      'text',      'text'),
@@ -188,6 +212,74 @@ const results = {
   injection: await postParseSignal('4 (injection)', 'injection', 'injection'),
   cached:    await postParseSignal('5 (cache)',     'text',      'text-cached'),
 };
+
+// ──────────────────────────────────────────────────────────────────────
+// Run the expand-signal curls. We use Curl 1's parse output for the
+// happy-path expansion (Expand 1, 3, 4) and Curl 2's parse for the
+// low-confidence case. Skip junk and injection — they correctly
+// shouldBailout / shouldHardCheckpoint and the UI flow would never
+// call expand-signal on them. Phase 4+ enforces this in code.
+// ──────────────────────────────────────────────────────────────────────
+const textParse = results.text.body?.parse || null;
+const urlParse = results.url.body?.parse || null;
+
+const expandResults = {};
+
+if (results.text.status === 200 && textParse) {
+  expandResults.aapl = await postExpandSignal(
+    '1 (aapl)',
+    textParse,
+    results.text.dropId,
+    'expand-1-aapl',
+  );
+} else {
+  console.log('Expand 1 (aapl): SKIPPED — text parse did not return 200');
+  expandResults.aapl = { status: 0, body: { _skipped: true } };
+}
+
+if (results.url.status === 200 && urlParse) {
+  expandResults.urlLowConf = await postExpandSignal(
+    '2 (url-low-conf)',
+    urlParse,
+    results.url.dropId,
+    'expand-2-url-low-conf',
+  );
+} else {
+  console.log('Expand 2 (url-low-conf): SKIPPED — url parse did not return 200');
+  expandResults.urlLowConf = { status: 0, body: { _skipped: true } };
+}
+
+// Expand 3: re-run Expand 1 — expect cached:true on the expansion cache.
+// Same parsedSignal, same dropId, same day → same cache key.
+if (results.text.status === 200 && textParse) {
+  expandResults.cacheHit = await postExpandSignal(
+    '3 (cache-hit)',
+    textParse,
+    results.text.dropId,
+    'expand-3-cache-hit',
+  );
+} else {
+  console.log('Expand 3 (cache-hit): SKIPPED — text parse did not return 200');
+  expandResults.cacheHit = { status: 0, body: { _skipped: true } };
+}
+
+// Expand 4: same parse but referencedDate flipped to a clearly past date,
+// with isRecompute:true to bypass the cache. Tests the date-aware
+// grounding rule in SIGNAL_EXPANSION_PHASE_RULES — Gemma should frame
+// the expansion historically.
+if (results.text.status === 200 && textParse) {
+  const pastDateParse = { ...textParse, referencedDate: '2024-01-15' };
+  expandResults.pastDate = await postExpandSignal(
+    '4 (past-date)',
+    pastDateParse,
+    results.text.dropId,
+    'expand-4-past-date',
+    { isRecompute: true },
+  );
+} else {
+  console.log('Expand 4 (past-date): SKIPPED — text parse did not return 200');
+  expandResults.pastDate = { status: 0, body: { _skipped: true } };
+}
 
 // ──────────────────────────────────────────────────────────────────────
 // Summary
@@ -251,19 +343,84 @@ const p3 = summarize('Curl 3 (junk)',      results.junk,      { bailout: true })
 const p4 = summarize('Curl 4 (injection)', results.injection, { injection: true });
 const p5 = summarize('Curl 5 (cache)',     results.cached,    { cached: true, matchTextResult: results.text });
 
-const allPassed = p1 && p2 && p3 && p4 && p5;
+const step3Passed = p1 && p2 && p3 && p4 && p5;
+
+// ──────────────────────────────────────────────────────────────────────
+// Step 4 summary helper — formats expansion shape (relatedTickers,
+// confidence, validationWarning, cached, historical-tone match)
+// ──────────────────────────────────────────────────────────────────────
+function fmtRelatedTickers(expansion) {
+  if (!expansion || !Array.isArray(expansion.relatedTickers)) return '[]';
+  return '[' + expansion.relatedTickers.map(t => t.symbol).join(',') + ']';
+}
+
+function fmtWarning(warning) {
+  if (!warning) return 'null';
+  const trimmed = String(warning);
+  return trimmed.length > 80 ? trimmed.slice(0, 77) + '...' : trimmed;
+}
+
+const HISTORICAL_TONE_RE = /\b(was|were|had|did|historical|previously|back\s+in|in\s+\d{4}|since\s+\d{4}|formerly|earlier|prior)\b/i;
+
+function summarizeExpand(label, result, expected) {
+  if (result.body?._skipped) {
+    console.log(`${label}: SKIPPED`);
+    return false;
+  }
+  if (result.status !== 200) {
+    console.log(`${label}: HTTP ${result.status} ✗ (non-200)`);
+    console.log(`           body: ${JSON.stringify(result.body).slice(0, 500)}`);
+    return false;
+  }
+  const b = result.body || {};
+  const expansion = b.expansion || {};
+  const tickers = fmtRelatedTickers(expansion);
+  const conf = expansion.confidence || 'n/a';
+  const warn = fmtWarning(b.validationWarning);
+
+  let suffix = '';
+  let pass = true;
+
+  if (expected.cached) {
+    const ok = b.cached === true;
+    suffix += ` cached=${b.cached ? 'TRUE' : 'FALSE'} ${ok ? '✓' : '✗'}`;
+    pass = pass && ok;
+  }
+  if (expected.historicalTone) {
+    const summary = expansion.thesisSummary || '';
+    const ok = HISTORICAL_TONE_RE.test(summary);
+    suffix += ` historicalTone=${ok ? 'TRUE' : 'FALSE'} ${ok ? '✓' : '✗'}`;
+    pass = pass && ok;
+  }
+
+  console.log(`${label}: 200 OK, relatedTickers=${tickers}, confidence=${conf}, validationWarning=${warn}${suffix}`);
+  return pass;
+}
+
+console.log('\n=== Step 4 Smoke Test Results ===');
+const e1 = summarizeExpand('Expand 1 (aapl)',         expandResults.aapl,        {});
+const e2 = summarizeExpand('Expand 2 (url-low-conf)', expandResults.urlLowConf,  {});
+const e3 = summarizeExpand('Expand 3 (cache-hit)',    expandResults.cacheHit,    { cached: true });
+const e4 = summarizeExpand('Expand 4 (past-date)',    expandResults.pastDate,    { historicalTone: true });
+
+const step4Passed = e1 && e2 && e3 && e4;
+const allPassed = step3Passed && step4Passed;
 
 console.log('\nResponses saved under:');
-console.log(`  ${path.relative(PROJECT_ROOT, SAVE_RESPONSE_DIR)}/`);
+console.log(`  ${path.relative(PROJECT_ROOT, SAVE_RESPONSE_DIR_STEP_3)}/`);
+console.log(`  ${path.relative(PROJECT_ROOT, SAVE_RESPONSE_DIR_STEP_4)}/`);
 
 console.log('\nSide effects to verify manually:');
 console.log(`- Firestore: 5 records under users/${TEST_USER_UID}/signalDrops/`);
 console.log(`  (one per dropId — Curls 1+5 share contentHash but produce 2 separate drop records)`);
-console.log('- Firestore: 1-4 records under signalDropCache/ (one per unique contentHash)');
-console.log('- GCS shadow log: 5 records under shadow/signal_drops/<today>/');
+console.log(`- Firestore: drop records for the AAPL dropId now have an "expansion" field`);
+console.log(`  (Expands 1+3+4 all target the same dropId — the field reflects the latest expansion)`);
+console.log('- Firestore: cache rows under signalDropCache/');
+console.log('  (parse: doc id = contentHash; expand: doc id = "expand:" + contentHash + ":" + day)');
+console.log('- GCS shadow log: 5 stage:"parse" + 4 stage:"expand" records under shadow/signal_drops/<today>/');
 
 if (!allPassed) {
   console.log('\n⚠  One or more expectations did not match. Inspect the response-*.json files.');
   process.exit(1);
 }
-console.log('\nAll five curls returned 200 with expected flags. Ready for spot-check.');
+console.log('\nAll parse + expand curls returned 200 with expected flags. Ready for spot-check.');
