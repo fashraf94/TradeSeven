@@ -71,4 +71,41 @@ export const logStrategyConfig    = (r) => appendToStream('strategy_configs', r)
 export const logPipelineDecision  = (r) => appendToStream('pipeline_decisions', r);
 export const logReviewInteraction = (r) => appendToStream('review_interactions', r);
 export const logDailyRegimeBrief  = (r) => appendToStream('daily_regime_brief', r);
-export const logSignalDrops       = (r) => appendToStream('signal_drops', r);
+
+// Spec A Phase 2a — Vision object events.
+// See SPEC_A_VISION_REFERENCE_V1.md §2.5 (transitions) and §2.8 (constraints).
+// Emission sites: completeBattle (Phase 2a, retirement); Gemma authoring,
+// confirmation flows, Risk Manager constraint injection (Phase 2b).
+//
+// Vision transition event payload:
+// {
+//   battleId: string,
+//   visionSnapshot: Vision,            // Full post-transition Vision object
+//   transition: {
+//     fromState: LifecycleState | null,  // null for initial creation
+//     toState: LifecycleState,
+//     actor: TransitionActor,
+//     cause: TransitionCause,
+//     timestamp: Timestamp
+//   },
+//   triggerContext: object | null,     // Trigger-gate context if applicable (Phase 2b for Gemma)
+//   userInput: string | null,          // User utterance if user-caused (Phase 2b)
+// }
+//
+// Vision constraint change event payload:
+// {
+//   battleId: string,
+//   visionState: LifecycleState,       // Current state at time of change
+//   change: {
+//     operation: 'add' | 'remove' | 'modify',
+//     constraintId: string,
+//     constraintType: ConstraintType,
+//     actor: 'gemma' | 'risk_manager' | 'forge',
+//     cause: string,
+//     timestamp: Timestamp
+//   },
+//   constraintSnapshot: Constraint,
+// }
+export const logVisionTransition       = (r) => appendToStream('vision_transitions', r);
+export const logVisionConstraintChange = (r) => appendToStream('vision_constraint_changes', r);
+export const logSignalDrops            = (r) => appendToStream('signal_drops', r);

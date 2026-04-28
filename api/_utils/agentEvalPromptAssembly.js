@@ -478,6 +478,112 @@ function formatInstitutionalBlock(instContext) {
   return lines.join('\n');
 }
 
+// ==================== VISION STATE BLOCK ====================
+// Spec A Phase 2a — Vision Consumers.
+// Renders a per-state preamble inside the Live Context Block so Haiku sees
+// the active thesis (and its constraints) before regime/portfolio context.
+
+function truncate(s, max) {
+  if (!s || s.length <= max) return s || '';
+  return s.slice(0, max) + '…';
+}
+
+function summarizeConstraint(c) {
+  switch (c.type) {
+    case 'user_carveout':
+      return c.payload?.statement || '(no statement)';
+    case 'category_b_forge':
+      return `${c.payload?.ruleKind || 'forge_rule'}: ${c.payload?.ruleId || ''}`;
+    case 'system_injected':
+      return `${c.payload?.scope || 'scoped'}: ${c.payload?.eventCause || c.payload?.reason || ''}`;
+    default:
+      return '(unknown constraint type)';
+  }
+}
+
+function renderActiveConstraints(constraints) {
+  if (!constraints || constraints.length === 0) return '  (none)';
+  const max = 10;
+  const lines = constraints.slice(0, max).map((c) => {
+    const summary = summarizeConstraint(c);
+    return `  - [${c.type}] ${summary}`;
+  });
+  if (constraints.length > max) {
+    lines.push(`  (${constraints.length - max} additional constraints not shown)`);
+  }
+  return lines.join('\n');
+}
+
+/**
+ * Render the Vision state block for the Haiku prompt.
+ * Returns '' when no Vision is present (or unknown state) so the caller can skip cleanly.
+ *
+ * @param {Object} [visionState] - Shape produced by Layer 1 wiring in agent-evaluate.js
+ *   (see momentumData.visionState construction). Either { present: false } or
+ *   { present: true, state, thesis, confidence, confidenceFloat, activeConstraints, ... }.
+ */
+export function buildVisionStateBlock(visionState) {
+  if (!visionState || !visionState.present) return '';
+
+  switch (visionState.state) {
+    case 'unformed':
+      return `## Vision State
+
+No active Vision. Awaiting user thesis or autopilot fallback. Trade conservatively; prefer holds over swaps unless a tactical trigger clearly justifies action.`;
+
+    case 'proposed':
+      return `## Vision State
+
+PROPOSED (awaiting user confirmation). Thesis: ${truncate(visionState.thesis?.statement, 500)}
+Do not trade against the proposed thesis while it is awaiting confirmation. Hold positions or execute only conservative maintenance trades.`;
+
+    case 'active': {
+      const summary = visionState.thesis?.structuredSummary || {};
+      const scope = Array.isArray(summary.scope) ? summary.scope : [];
+      const drivers = Array.isArray(summary.drivers) ? summary.drivers : [];
+      const constraints = visionState.activeConstraints || [];
+      const constraintLines = renderActiveConstraints(constraints);
+      const confidenceFloat = typeof visionState.confidenceFloat === 'number'
+        ? visionState.confidenceFloat.toFixed(2)
+        : '—';
+      return `## Vision State
+
+ACTIVE thesis (confidence: ${visionState.confidence} / ${confidenceFloat}).
+Thesis: ${truncate(visionState.thesis?.statement, 500)}
+Direction: ${summary.direction || '(unspecified)'}
+Scope: ${scope.join(', ') || '(unscoped)'}
+Drivers: ${drivers.join(', ') || '(no named drivers)'}
+
+Active constraints (${constraints.length}):
+${constraintLines}
+
+Your tactical decisions must be coherent with this Vision. Cite it in your reason codes when applicable.`;
+    }
+
+    case 'under_debate':
+      return `## Vision State
+
+UNDER DEBATE — active thesis is being challenged by new information. Continue trading against the active Vision, but raise conviction floors and defer swaps that depend heavily on the contested thesis.
+Thesis: ${truncate(visionState.thesis?.statement, 500)}
+Direction: ${visionState.thesis?.structuredSummary?.direction || '(unspecified)'}`;
+
+    case 'stale':
+      return `## Vision State
+
+STALE — Vision has not been touched recently. Trade conservatively. Prefer maintenance over directional swaps until re-affirmation occurs.
+Thesis (pre-staleness): ${truncate(visionState.thesis?.statement, 500)}`;
+
+    case 'retired':
+      // Should not normally appear in a live Haiku prompt; defensive fallback.
+      return `## Vision State
+
+Battle is ending. No new directional decisions should be made.`;
+
+    default:
+      return '';
+  }
+}
+
 // ==================== LIVE BATTLE CONTEXT (Fresh) ====================
 
 /**
@@ -513,6 +619,14 @@ Trades executed: ${scoreState.tradeCount || 0} | Evaluations: ${scoreState.evalu
 
 MACRO BENCHMARKS TODAY:
 SPY (S&P 500): ${formatPct(macroPrices?.SPY)}% | QQQ (Nasdaq): ${formatPct(macroPrices?.QQQ)}% | BTC: ${formatPct(macroPrices?.BTC)}%`);
+
+  // 3a1. Vision State (Spec A Phase 2a) — precedes regime/market context so the
+  // model anchors tactical decisions on the active thesis. Cache structure on
+  // the Identity prefix is preserved by keeping this inside Live Context.
+  const visionBlock = buildVisionStateBlock(momentumData?.visionState);
+  if (visionBlock) {
+    parts.push(visionBlock);
+  }
 
   // 3a2. Regime Context
   if (momentumData?.marketPosture || momentumData?.regimes) {
