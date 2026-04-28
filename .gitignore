@@ -31,6 +31,5 @@ dist-ssr
 
 # Refresh script output
 scripts/output/
-
-# Local audit/discovery artifacts — not pushed by default
-discovery/
+scripts/test-results/
+.vercel

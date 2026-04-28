@@ -1,0 +1,5 @@
+{
+  "category": "text_analyst_note",
+  "note": "Northland analyst note downgrading AMD to Market Perform with $260 PT. References AMD margins, Intel competitive position, NVDA/TSMC supply chain advantage, CY27 AI capex outlook.",
+  "expectedBehavior": "High confidence parse. Multi-ticker thesis (AMD primary, NVDA + INTC + TSMC secondary). Expansion likely to focus on semis ecosystem. Watch whether Gemma correctly identifies AMD as anchor (the downgrade target) vs. getting confused by the AMD-bearish-but-NVDA-bullish split thesis. Cross-sector warning unlikely (all semis = XLK)."
+}
