@@ -1,0 +1,34 @@
+{
+  "dropId": "cfd24349-2eb5-437e-844c-4a3514cb6ee2",
+  "parse": {
+    "extractedText": "AAPL is breaking out above $250 on Vision Pro 2 hype. Volume is huge — institutional buying, not retail FOMO. Watch for follow-through into earnings.",
+    "topic": "AAPL Vision Pro 2 breakout and earnings",
+    "keyClaim": "AAPL is breaking out above $250 on Vision Pro 2 momentum with institutional volume, with potential for follow-through into earnings.",
+    "tickers": [
+      "AAPL"
+    ],
+    "impliedTickers": [],
+    "confidence": 0.82,
+    "contentType": "tweet",
+    "signalDirection": "bullish",
+    "timeHorizon": "swing",
+    "referencedDate": "earnings (unspecified date)",
+    "dataPoints": [
+      "breaking out above $250",
+      "large institutional volume"
+    ],
+    "suspectedInjection": false
+  },
+  "validation": {
+    "validated": [
+      {
+        "symbol": "AAPL",
+        "sectorId": "XLK"
+      }
+    ],
+    "unsupported": []
+  },
+  "shouldBailout": false,
+  "shouldHardCheckpoint": false,
+  "cached": true
+}

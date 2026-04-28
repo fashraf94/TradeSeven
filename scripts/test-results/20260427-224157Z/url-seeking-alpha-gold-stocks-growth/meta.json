@@ -1,0 +1,113 @@
+{
+  "row": {
+    "inputName": "url-seeking-alpha-gold-stocks-growth.txt",
+    "inputType": "url",
+    "category": "uncategorized",
+    "parsePath": "happy",
+    "expansionPath": "ran",
+    "parseConfidence": 0.72,
+    "tickersFound": 0,
+    "unsupportedTickers": 2,
+    "suspectedInjection": false,
+    "expansionTickerCount": 7,
+    "expansionConfidence": "high",
+    "validationWarnings": "cross-sector or unknown tickers in expansion: GOLD, NEM, GDX, GLD, UUP (parsed sectors: (no sector for parsed tickers))",
+    "hardRejected": false,
+    "manualRating": "",
+    "manualNotes": ""
+  },
+  "expectedBehavior": null,
+  "parseLatencyMs": 337,
+  "expandLatencyMs": 411,
+  "parseStatus": 200,
+  "expandStatus": 200,
+  "parseResp": {
+    "dropId": "e82aaa85-ca30-4de1-9654-b12aca1b11ce",
+    "parse": {
+      "extractedText": "3 Best Gold Stocks With 110%+ Forward Growth For The Next Leg Up\n\nGold Stocks Primed for a Post-Iran Macro Backdrop\n\nGold's recent price movements have been influenced less by its traditional drivers and more by the shifting headlines around the Iran conflict. In the near term, escalation has lifted oil, pushing inflation expectations and real rates. However, the recent divergence between gold's traditional drivers and its price movement on Iran conflict headlines has created a compelling setup for gold miners. As geopolitical tensions resolve, investor attention is likely to shift back to the pre-conflict macro conditions, including Fed rate cuts, a weaker U.S. dollar, and sustained demand from central banks. In that environment, gold stocks offer leveraged exposure through strong forward earnings and expanding profit margins. These three stocks all have forward EBIT growth measures above 110%, setting them up for outperformance as the Iran conflict de-escalates.\n\nTickers mentioned: SSRM, CGAU, CG:CA",
+      "topic": "Gold mining stocks forward growth thesis",
+      "keyClaim": "Gold stocks with 110%+ forward EBIT growth are positioned to outperform as geopolitical tensions resolve and macro conditions (Fed rate cuts, weaker dollar, central bank demand) favor precious metals.",
+      "tickers": [
+        "SSRM",
+        "CGAU"
+      ],
+      "impliedTickers": [],
+      "confidence": 0.72,
+      "contentType": "news_article",
+      "signalDirection": "bullish",
+      "timeHorizon": "positional",
+      "referencedDate": "2026-04-26",
+      "dataPoints": [
+        "forward EBIT growth above 110%",
+        "Iran conflict de-escalation backdrop",
+        "Fed rate cuts expected",
+        "weaker U.S. dollar expected",
+        "central bank gold demand sustained"
+      ],
+      "suspectedInjection": false
+    },
+    "validation": {
+      "validated": [],
+      "unsupported": [
+        "SSRM",
+        "CGAU"
+      ]
+    },
+    "shouldBailout": false,
+    "shouldHardCheckpoint": false,
+    "cached": true
+  },
+  "expandResp": {
+    "expansion": {
+      "thesisSummary": "High-growth gold miners with over 110% forward EBIT growth are poised to outperform as geopolitical tensions ease and macro drivers like rate cuts return.",
+      "apparentDriver": "A transition from geopolitical conflict-driven pricing to traditional macro tailwinds including Fed easing and a weaker dollar.",
+      "relatedTickers": [
+        {
+          "symbol": "SSRM",
+          "role": "anchor"
+        },
+        {
+          "symbol": "CGAU",
+          "role": "anchor"
+        },
+        {
+          "symbol": "GOLD",
+          "role": "comparable"
+        },
+        {
+          "symbol": "NEM",
+          "role": "comparable"
+        },
+        {
+          "symbol": "GDX",
+          "role": "derivative"
+        },
+        {
+          "symbol": "GLD",
+          "role": "exposed"
+        },
+        {
+          "symbol": "UUP",
+          "role": "hedge"
+        }
+      ],
+      "invalidationConditions": [
+        "US Dollar Index (DXY) breaks above 105 level",
+        "Fed pivots to hawkish stance or delays rate cuts",
+        "Gold spot price closes below 50-day SMA"
+      ],
+      "suggestedWatchlistName": "High Growth Gold Leveraged Plays",
+      "confidence": "high",
+      "validationWarning": "cross-sector or unknown tickers in expansion: GOLD, NEM, GDX, GLD, UUP (parsed sectors: (no sector for parsed tickers))"
+    },
+    "validationWarning": "cross-sector or unknown tickers in expansion: GOLD, NEM, GDX, GLD, UUP (parsed sectors: (no sector for parsed tickers))",
+    "expandedAt": "2026-04-27T22:44:14.722Z",
+    "cached": true,
+    "tokenUsage": null
+  },
+  "requestBody": {
+    "type": "url",
+    "url": "https://seekingalpha.com/article/4894067-3-best-gold-stocks-with-110-percent-plus-forward-growth-for-the-next-leg-up",
+    "dropId": "e82aaa85-ca30-4de1-9654-b12aca1b11ce"
+  }
+}

@@ -1,0 +1,108 @@
+{
+  "row": {
+    "inputName": "nvidia-top-in.txt",
+    "inputType": "text",
+    "category": "uncategorized",
+    "parsePath": "happy",
+    "expansionPath": "ran",
+    "parseConfidence": 0.72,
+    "tickersFound": 1,
+    "unsupportedTickers": 0,
+    "suspectedInjection": false,
+    "expansionTickerCount": 7,
+    "expansionConfidence": "medium",
+    "validationWarnings": "cross-sector or unknown tickers in expansion: TSM, SMH, SOXL, QQQ (parsed sectors: XLK)",
+    "hardRejected": false,
+    "manualRating": "",
+    "manualNotes": ""
+  },
+  "expectedBehavior": null,
+  "parseLatencyMs": 2475,
+  "expandLatencyMs": 5378,
+  "parseStatus": 200,
+  "expandStatus": 200,
+  "parseResp": {
+    "dropId": "96956e71-4637-477d-a6c4-48fccb72899c",
+    "parse": {
+      "extractedText": "Nvda top is in. Going to start buying puts now",
+      "topic": "NVIDIA bearish call",
+      "keyClaim": "NVIDIA's top is in, bearish reversal expected; author intends to trade puts",
+      "tickers": [
+        "NVDA"
+      ],
+      "impliedTickers": [],
+      "confidence": 0.72,
+      "contentType": "casual_text",
+      "signalDirection": "bearish",
+      "timeHorizon": "swing",
+      "referencedDate": "",
+      "dataPoints": [],
+      "suspectedInjection": false
+    },
+    "validation": {
+      "validated": [
+        {
+          "symbol": "NVDA",
+          "sectorId": "XLK"
+        }
+      ],
+      "unsupported": []
+    },
+    "shouldBailout": false,
+    "shouldHardCheckpoint": false,
+    "cached": false
+  },
+  "expandResp": {
+    "expansion": {
+      "thesisSummary": "A bearish pivot on NVIDIA suggests a potential exhaustion of the current AI-driven rally, favoring short positions via puts to capture a swing reversal.",
+      "apparentDriver": "Anticipated price exhaustion and a shift in momentum from the primary semiconductor leader.",
+      "relatedTickers": [
+        {
+          "symbol": "NVDA",
+          "role": "anchor"
+        },
+        {
+          "symbol": "AMD",
+          "role": "comparable"
+        },
+        {
+          "symbol": "AVGO",
+          "role": "comparable"
+        },
+        {
+          "symbol": "TSM",
+          "role": "derivative"
+        },
+        {
+          "symbol": "SMH",
+          "role": "derivative"
+        },
+        {
+          "symbol": "SOXL",
+          "role": "derivative"
+        },
+        {
+          "symbol": "QQQ",
+          "role": "hedge"
+        }
+      ],
+      "invalidationConditions": [
+        "NVDA closes above its 20-day EMA on heavy volume",
+        "Semiconductor sector ETF (SMH) breaks recent swing highs",
+        "Positive earnings surprise from major AI infrastructure peers"
+      ],
+      "suggestedWatchlistName": "Semiconductor Momentum Exhaustion",
+      "confidence": "medium",
+      "validationWarning": "cross-sector or unknown tickers in expansion: TSM, SMH, SOXL, QQQ (parsed sectors: XLK)"
+    },
+    "validationWarning": "cross-sector or unknown tickers in expansion: TSM, SMH, SOXL, QQQ (parsed sectors: XLK)",
+    "expandedAt": "2026-04-27T22:43:24.566Z",
+    "cached": false,
+    "tokenUsage": null
+  },
+  "requestBody": {
+    "type": "text",
+    "text": "\"Nvda top is in. Going to start buying puts now\"",
+    "dropId": "96956e71-4637-477d-a6c4-48fccb72899c"
+  }
+}

@@ -1,0 +1,112 @@
+{
+  "row": {
+    "inputName": "_baseline/sample-request-text.json",
+    "inputType": "text",
+    "category": "baseline",
+    "parsePath": "happy",
+    "expansionPath": "ran",
+    "parseConfidence": 0.82,
+    "tickersFound": 1,
+    "unsupportedTickers": 0,
+    "suspectedInjection": false,
+    "expansionTickerCount": 7,
+    "expansionConfidence": "high",
+    "validationWarnings": "cross-sector or unknown tickers in expansion: GOOGL, TSM, QQQ, SMH (parsed sectors: XLK)",
+    "hardRejected": false,
+    "manualRating": "",
+    "manualNotes": ""
+  },
+  "expectedBehavior": null,
+  "parseLatencyMs": 435,
+  "expandLatencyMs": 2770,
+  "parseStatus": 200,
+  "expandStatus": 200,
+  "parseResp": {
+    "dropId": "cfd24349-2eb5-437e-844c-4a3514cb6ee2",
+    "parse": {
+      "extractedText": "AAPL is breaking out above $250 on Vision Pro 2 hype. Volume is huge — institutional buying, not retail FOMO. Watch for follow-through into earnings.",
+      "topic": "AAPL Vision Pro 2 breakout and earnings",
+      "keyClaim": "AAPL is breaking out above $250 on Vision Pro 2 momentum with institutional volume, with potential for follow-through into earnings.",
+      "tickers": [
+        "AAPL"
+      ],
+      "impliedTickers": [],
+      "confidence": 0.82,
+      "contentType": "tweet",
+      "signalDirection": "bullish",
+      "timeHorizon": "swing",
+      "referencedDate": "earnings (unspecified date)",
+      "dataPoints": [
+        "breaking out above $250",
+        "large institutional volume"
+      ],
+      "suspectedInjection": false
+    },
+    "validation": {
+      "validated": [
+        {
+          "symbol": "AAPL",
+          "sectorId": "XLK"
+        }
+      ],
+      "unsupported": []
+    },
+    "shouldBailout": false,
+    "shouldHardCheckpoint": false,
+    "cached": true
+  },
+  "expandResp": {
+    "expansion": {
+      "thesisSummary": "Apple is demonstrating bullish momentum through a technical breakout above $250, driven by institutional accumulation and anticipation surrounding the Vision Pro 2 product cycle.",
+      "apparentDriver": "Institutional buying volume and product cycle hype ahead of the upcoming quarterly earnings release.",
+      "relatedTickers": [
+        {
+          "symbol": "AAPL",
+          "role": "anchor"
+        },
+        {
+          "symbol": "MSFT",
+          "role": "comparable"
+        },
+        {
+          "symbol": "GOOGL",
+          "role": "comparable"
+        },
+        {
+          "symbol": "TSM",
+          "role": "derivative"
+        },
+        {
+          "symbol": "AVGO",
+          "role": "derivative"
+        },
+        {
+          "symbol": "QQQ",
+          "role": "exposed"
+        },
+        {
+          "symbol": "SMH",
+          "role": "hedge"
+        }
+      ],
+      "invalidationConditions": [
+        "AAPL closes below $245 on heavy volume",
+        "Vision Pro 2 demand metrics miss consensus",
+        "Earnings report shows declining services revenue"
+      ],
+      "suggestedWatchlistName": "Apple Vision Breakout Momentum",
+      "confidence": "high",
+      "validationWarning": "cross-sector or unknown tickers in expansion: GOOGL, TSM, QQQ, SMH (parsed sectors: XLK)"
+    },
+    "validationWarning": "cross-sector or unknown tickers in expansion: GOOGL, TSM, QQQ, SMH (parsed sectors: XLK)",
+    "expandedAt": "2026-04-27T22:42:06.377Z",
+    "cached": true,
+    "tokenUsage": null
+  },
+  "requestBody": {
+    "type": "text",
+    "text": "AAPL is breaking out above $250 on Vision Pro 2 hype. Volume is huge — institutional buying, not retail FOMO. Watch for follow-through into earnings.",
+    "note": "Cuban quote-tweet thread — high signal historically",
+    "dropId": "cfd24349-2eb5-437e-844c-4a3514cb6ee2"
+  }
+}

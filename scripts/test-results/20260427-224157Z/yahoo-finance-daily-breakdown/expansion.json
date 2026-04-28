@@ -1,0 +1,48 @@
+{
+  "expansion": {
+    "thesisSummary": "The intersection of Big Tech earnings and the shift toward edge-AI smartphone processors creates a bifurcated landscape of infrastructure winners and restructuring laggards.",
+    "apparentDriver": "OpenAI's pivot to mobile-specific hardware partnerships and the upcoming Mag 7 earnings cycle testing AI capital expenditure efficiency.",
+    "relatedTickers": [
+      {
+        "symbol": "QCOM",
+        "role": "anchor"
+      },
+      {
+        "symbol": "NVDA",
+        "role": "comparable"
+      },
+      {
+        "symbol": "MSFT",
+        "role": "exposed"
+      },
+      {
+        "symbol": "AAPL",
+        "role": "beneficiary"
+      },
+      {
+        "symbol": "META",
+        "role": "comparable"
+      },
+      {
+        "symbol": "AVGO",
+        "role": "derivative"
+      },
+      {
+        "symbol": "ARM",
+        "role": "derivative"
+      }
+    ],
+    "invalidationConditions": [
+      "QCOM fails to maintain support above 20-day EMA post-rally",
+      "Mag 7 earnings report significant downward guidance on AI CapEx",
+      "OpenAI announces exclusive hardware partnership with a competitor"
+    ],
+    "suggestedWatchlistName": "Edge AI and Big Tech Pivot",
+    "confidence": "high",
+    "validationWarning": "cross-sector or unknown tickers in expansion: ARM (parsed sectors: XLC, XLK, XLY)"
+  },
+  "validationWarning": "cross-sector or unknown tickers in expansion: ARM (parsed sectors: XLC, XLK, XLY)",
+  "expandedAt": "2026-04-27T22:44:28.292Z",
+  "cached": false,
+  "tokenUsage": null
+}

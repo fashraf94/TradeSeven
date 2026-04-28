@@ -1,0 +1,48 @@
+{
+  "expansion": {
+    "thesisSummary": "AMD faces margin compression and growth headwinds due to intensifying Intel competition, TSMC supply prioritization for Nvidia, and an anticipated deceleration in AI capital expenditures by 2027.",
+    "apparentDriver": "A projected peak in hyperscaler AI capex and shifting competitive dynamics within the semiconductor supply chain.",
+    "relatedTickers": [
+      {
+        "symbol": "AMD",
+        "role": "anchor"
+      },
+      {
+        "symbol": "INTC",
+        "role": "comparable"
+      },
+      {
+        "symbol": "NVDA",
+        "role": "beneficiary"
+      },
+      {
+        "symbol": "TSM",
+        "role": "derivative"
+      },
+      {
+        "symbol": "MSFT",
+        "role": "derivative"
+      },
+      {
+        "symbol": "GOOGL",
+        "role": "derivative"
+      },
+      {
+        "symbol": "SMH",
+        "role": "hedge"
+      }
+    ],
+    "invalidationConditions": [
+      "AMD gross margins exceed 55% in upcoming earnings",
+      "Hyperscaler capex guidance for 2027 is revised upward",
+      "TSMC allocation shifts significantly toward non-Nvidia customers"
+    ],
+    "suggestedWatchlistName": "AI Capex Deceleration Thesis",
+    "confidence": "high",
+    "validationWarning": "cross-sector or unknown tickers in expansion: TSM, GOOGL, SMH (parsed sectors: XLK)"
+  },
+  "validationWarning": "cross-sector or unknown tickers in expansion: TSM, GOOGL, SMH (parsed sectors: XLK)",
+  "expandedAt": "2026-04-27T22:43:36.369Z",
+  "cached": true,
+  "tokenUsage": null
+}

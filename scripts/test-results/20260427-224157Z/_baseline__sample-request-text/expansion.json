@@ -1,0 +1,48 @@
+{
+  "expansion": {
+    "thesisSummary": "Apple is demonstrating bullish momentum through a technical breakout above $250, driven by institutional accumulation and anticipation surrounding the Vision Pro 2 product cycle.",
+    "apparentDriver": "Institutional buying volume and product cycle hype ahead of the upcoming quarterly earnings release.",
+    "relatedTickers": [
+      {
+        "symbol": "AAPL",
+        "role": "anchor"
+      },
+      {
+        "symbol": "MSFT",
+        "role": "comparable"
+      },
+      {
+        "symbol": "GOOGL",
+        "role": "comparable"
+      },
+      {
+        "symbol": "TSM",
+        "role": "derivative"
+      },
+      {
+        "symbol": "AVGO",
+        "role": "derivative"
+      },
+      {
+        "symbol": "QQQ",
+        "role": "exposed"
+      },
+      {
+        "symbol": "SMH",
+        "role": "hedge"
+      }
+    ],
+    "invalidationConditions": [
+      "AAPL closes below $245 on heavy volume",
+      "Vision Pro 2 demand metrics miss consensus",
+      "Earnings report shows declining services revenue"
+    ],
+    "suggestedWatchlistName": "Apple Vision Breakout Momentum",
+    "confidence": "high",
+    "validationWarning": "cross-sector or unknown tickers in expansion: GOOGL, TSM, QQQ, SMH (parsed sectors: XLK)"
+  },
+  "validationWarning": "cross-sector or unknown tickers in expansion: GOOGL, TSM, QQQ, SMH (parsed sectors: XLK)",
+  "expandedAt": "2026-04-27T22:42:06.377Z",
+  "cached": true,
+  "tokenUsage": null
+}

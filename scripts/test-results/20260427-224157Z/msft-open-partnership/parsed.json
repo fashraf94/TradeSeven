@@ -1,0 +1,35 @@
+{
+  "dropId": "e8d35726-b924-4ea9-976c-edae5928c19a",
+  "parse": {
+    "extractedText": "Microsoft (MSFT) shares rose fractionally on Monday as the tech giant and OpenAI said their partnership has continued to evolve, and OpenAI's license will become non-exclusive.\n\nKey points from the amended agreement:\n- OpenAI's license becomes non-exclusive (was exclusive)\n- Microsoft secures primary cloud partner status for OpenAI\n- Microsoft secures 20% revenue share from OpenAI through 2030 regardless of reaching AGI\n- Microsoft maintains major shareholder status\n- Long-term rights to OpenAI's IP secured\n- OpenAI can now work with other cloud providers (e.g., AWS)\n\nFinancial implications:\n- Microsoft secures a 20% revenue share from OpenAI through 2030 regardless of reaching AGI\n- Maintains major shareholder status\n- Gets long-term rights to OpenAI's IP\n- OpenAI can work with rivals like AWS\n\nRisks identified:\n- 45% of AI business backlog linked to OpenAI\n- Any shift by OpenAI to other cloud providers could impact Microsoft's growth prospects\n- Analysts believe these risks are reflected in the share price",
+    "topic": "Microsoft-OpenAI partnership restructure non-exclusive",
+    "keyClaim": "Microsoft's OpenAI partnership evolves to non-exclusive license with 20% revenue share secured through 2030, though OpenAI gains cloud provider flexibility creating competition risk for Azure.",
+    "tickers": [
+      "MSFT"
+    ],
+    "impliedTickers": [],
+    "confidence": 0.72,
+    "contentType": "news_article",
+    "signalDirection": "mixed",
+    "timeHorizon": "positional",
+    "referencedDate": "2026-04-27",
+    "dataPoints": [
+      "20% revenue share through 2030",
+      "45% AI business backlog linked to OpenAI",
+      "non-exclusive license"
+    ],
+    "suspectedInjection": false
+  },
+  "validation": {
+    "validated": [
+      {
+        "symbol": "MSFT",
+        "sectorId": "XLK"
+      }
+    ],
+    "unsupported": []
+  },
+  "shouldBailout": false,
+  "shouldHardCheckpoint": false,
+  "cached": false
+}

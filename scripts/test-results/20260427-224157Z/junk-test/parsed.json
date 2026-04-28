@@ -1,0 +1,24 @@
+{
+  "dropId": "d4081d95-5fc4-487b-b0fc-172d089e1dc2",
+  "parse": {
+    "extractedText": "I was walking my dog today and saw a butterfly that was green and gold",
+    "topic": "",
+    "keyClaim": "",
+    "tickers": [],
+    "impliedTickers": [],
+    "confidence": 0,
+    "contentType": "casual_text",
+    "signalDirection": "neutral",
+    "timeHorizon": "unspecified",
+    "referencedDate": "",
+    "dataPoints": [],
+    "suspectedInjection": false
+  },
+  "validation": {
+    "validated": [],
+    "unsupported": []
+  },
+  "shouldBailout": true,
+  "shouldHardCheckpoint": false,
+  "cached": true
+}

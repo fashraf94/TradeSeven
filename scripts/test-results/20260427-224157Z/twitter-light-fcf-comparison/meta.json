@@ -1,0 +1,147 @@
+{
+  "row": {
+    "inputName": "twitter-light-fcf-comparison.png",
+    "inputType": "image",
+    "category": "uncategorized",
+    "parsePath": "happy",
+    "expansionPath": "ran",
+    "parseConfidence": 0.72,
+    "tickersFound": 7,
+    "unsupportedTickers": 0,
+    "suspectedInjection": false,
+    "expansionTickerCount": 7,
+    "expansionConfidence": "high",
+    "validationWarnings": "",
+    "hardRejected": false,
+    "manualRating": "",
+    "manualNotes": ""
+  },
+  "expectedBehavior": null,
+  "parseLatencyMs": 10059,
+  "expandLatencyMs": 508,
+  "parseStatus": 200,
+  "expandStatus": 200,
+  "parseResp": {
+    "dropId": "bec4aedb-641b-4a8c-b2a4-bb22c539d853",
+    "parse": {
+      "extractedText": "Magnificent 7 Expected 5-Year FCF Growth:\n\nApple $AAPL: +90%\nMicrosoft $MSFT: +145%\nGoogle $GOOGL: +164%\nMeta $META: +185%\nTesla $TSLA: +254%\nNvidia $NVDA: +327%\nAmazon $AMZN: +1162%\n\nPost from @patientinvestor on X.com at 8:20 AM 4/27/26\n\nReply from @Foxdyx2 (2h): \"So you are saying Amazon will be 32 trillion market cap? Thats a low chance. Thats a current national debt Sir\"\n\nReply from @analyskitnews (4h): \"GOOGL at +164% FCF growth over 5 years requires roughly 21% annual compounding.\"",
+      "topic": "Magnificent 7 five-year FCF growth projections",
+      "keyClaim": "The Magnificent 7 tech stocks (AAPL, MSFT, GOOGL, META, TSLA, NVDA, AMZN) are expected to deliver strong 5-year free cash flow growth, ranging from +90% (Apple) to +1162% (Amazon).",
+      "tickers": [
+        "AAPL",
+        "MSFT",
+        "GOOGL",
+        "META",
+        "TSLA",
+        "NVDA",
+        "AMZN"
+      ],
+      "impliedTickers": [],
+      "confidence": 0.72,
+      "contentType": "tweet",
+      "signalDirection": "bullish",
+      "timeHorizon": "longterm",
+      "referencedDate": "2026-04-27",
+      "dataPoints": [
+        "AAPL +90% FCF growth",
+        "MSFT +145% FCF growth",
+        "GOOGL +164% FCF growth",
+        "META +185% FCF growth",
+        "TSLA +254% FCF growth",
+        "NVDA +327% FCF growth",
+        "AMZN +1162% FCF growth"
+      ],
+      "suspectedInjection": false
+    },
+    "validation": {
+      "validated": [
+        {
+          "symbol": "AAPL",
+          "sectorId": "XLK"
+        },
+        {
+          "symbol": "MSFT",
+          "sectorId": "XLK"
+        },
+        {
+          "symbol": "GOOGL",
+          "sectorId": "XLC"
+        },
+        {
+          "symbol": "META",
+          "sectorId": "XLC"
+        },
+        {
+          "symbol": "TSLA",
+          "sectorId": "XLY"
+        },
+        {
+          "symbol": "NVDA",
+          "sectorId": "XLK"
+        },
+        {
+          "symbol": "AMZN",
+          "sectorId": "XLY"
+        }
+      ],
+      "unsupported": []
+    },
+    "shouldBailout": false,
+    "shouldHardCheckpoint": false,
+    "cached": true
+  },
+  "expandResp": {
+    "expansion": {
+      "thesisSummary": "The Magnificent 7 tech giants are projected to experience massive free cash flow expansion over the next five years, driven by dominant market positions and scaling efficiencies.",
+      "apparentDriver": "Expected long-term compounding of free cash flow through structural growth in AI, cloud, and digital advertising ecosystems.",
+      "relatedTickers": [
+        {
+          "symbol": "AMZN",
+          "role": "anchor"
+        },
+        {
+          "symbol": "NVDA",
+          "role": "anchor"
+        },
+        {
+          "symbol": "MSFT",
+          "role": "anchor"
+        },
+        {
+          "symbol": "AAPL",
+          "role": "anchor"
+        },
+        {
+          "symbol": "META",
+          "role": "anchor"
+        },
+        {
+          "symbol": "TSLA",
+          "role": "anchor"
+        },
+        {
+          "symbol": "GOOGL",
+          "role": "anchor"
+        }
+      ],
+      "invalidationConditions": [
+        "Aggregate Mag 7 FCF margins decline for two consecutive quarters",
+        "US 10-Year Treasury yield breaks above 5% sustained",
+        "Regulatory antitrust rulings force structural divestitures of core segments"
+      ],
+      "suggestedWatchlistName": "Mag 7 Cash Flow Compounders",
+      "confidence": "high",
+      "validationWarning": null
+    },
+    "validationWarning": null,
+    "expandedAt": "2026-04-27T22:44:07.479Z",
+    "cached": true,
+    "tokenUsage": null
+  },
+  "requestBody": {
+    "type": "image",
+    "imageMime": "image/png",
+    "dropId": "bec4aedb-641b-4a8c-b2a4-bb22c539d853",
+    "imageBase64": "[redacted 610148 chars]"
+  }
+}

@@ -1,0 +1,44 @@
+{
+  "expansion": {
+    "thesisSummary": "Microsoft's evolving OpenAI partnership shifts from exclusive to non-exclusive, securing long-term revenue through 2030 while introducing competitive cloud infrastructure risks via OpenAI's multi-cloud flexibility.",
+    "apparentDriver": "The restructuring of the OpenAI license agreement which balances guaranteed revenue shares against increased cloud provider competition risk.",
+    "relatedTickers": [
+      {
+        "symbol": "MSFT",
+        "role": "anchor"
+      },
+      {
+        "symbol": "AMZN",
+        "role": "comparable"
+      },
+      {
+        "symbol": "GOOGL",
+        "role": "comparable"
+      },
+      {
+        "symbol": "NVDA",
+        "role": "beneficiary"
+      },
+      {
+        "symbol": "ORCL",
+        "role": "beneficiary"
+      },
+      {
+        "symbol": "TSLA",
+        "role": "hedge"
+      }
+    ],
+    "invalidationConditions": [
+      "MSFT AI business backlog growth decelerates below 40%",
+      "OpenAI announces primary cloud partnership with AWS or GCP",
+      "MSFT Azure cloud revenue growth misses quarterly consensus"
+    ],
+    "suggestedWatchlistName": "AI Cloud Partnership Evolution",
+    "confidence": "high",
+    "validationWarning": "cross-sector or unknown tickers in expansion: AMZN, GOOGL, TSLA (parsed sectors: XLK)"
+  },
+  "validationWarning": "cross-sector or unknown tickers in expansion: AMZN, GOOGL, TSLA (parsed sectors: XLK)",
+  "expandedAt": "2026-04-27T22:43:14.494Z",
+  "cached": false,
+  "tokenUsage": null
+}

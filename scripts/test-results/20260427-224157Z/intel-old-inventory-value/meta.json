@@ -1,0 +1,61 @@
+{
+  "row": {
+    "inputName": "intel-old-inventory-value.txt",
+    "inputType": "text",
+    "category": "uncategorized",
+    "parsePath": "low_confidence_checkpoint",
+    "expansionPath": "skipped_checkpoint",
+    "parseConfidence": 0.45,
+    "tickersFound": 1,
+    "unsupportedTickers": 0,
+    "suspectedInjection": false,
+    "expansionTickerCount": null,
+    "expansionConfidence": null,
+    "validationWarnings": "",
+    "hardRejected": false,
+    "manualRating": "",
+    "manualNotes": ""
+  },
+  "expectedBehavior": null,
+  "parseLatencyMs": 2562,
+  "expandLatencyMs": null,
+  "parseStatus": 200,
+  "expandStatus": null,
+  "parseResp": {
+    "dropId": "3e3e83e5-742d-46ba-9090-53fa86b65974",
+    "parse": {
+      "extractedText": "I saw a video where people were discussing how Intels old inventory used to be worthless and now it seems to be selling very well. If AI growth has been happening for a while, why is it just starting to pick up traction now?",
+      "topic": "Intel inventory demand surge amid AI cycle",
+      "keyClaim": "Intel's previously worthless old inventory is now selling well, suggesting a shift in AI hardware demand dynamics",
+      "tickers": [
+        "INTC"
+      ],
+      "impliedTickers": [],
+      "confidence": 0.45,
+      "contentType": "casual_text",
+      "signalDirection": "bullish",
+      "timeHorizon": "unspecified",
+      "referencedDate": "",
+      "dataPoints": [],
+      "suspectedInjection": false
+    },
+    "validation": {
+      "validated": [
+        {
+          "symbol": "INTC",
+          "sectorId": "XLK"
+        }
+      ],
+      "unsupported": []
+    },
+    "shouldBailout": false,
+    "shouldHardCheckpoint": true,
+    "cached": false
+  },
+  "expandResp": null,
+  "requestBody": {
+    "type": "text",
+    "text": "I saw a video where people were discussing how Intels old inventory used to be worthless and now it seems to be selling very well. If AI growth has been happening for a while, why is it just starting to pick up traction now?",
+    "dropId": "3e3e83e5-742d-46ba-9090-53fa86b65974"
+  }
+}

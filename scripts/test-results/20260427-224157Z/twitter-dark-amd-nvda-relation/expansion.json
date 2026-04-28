@@ -1,0 +1,48 @@
+{
+  "expansion": {
+    "thesisSummary": "AMD stands to capture massive revenue growth by 2030 if agentic AI shifts the data center hardware balance from GPUs toward high-value CPUs.",
+    "apparentDriver": "A structural shift in the GPU-to-CPU ratio driven by the massive compute requirements of autonomous AI agents.",
+    "relatedTickers": [
+      {
+        "symbol": "AMD",
+        "role": "anchor"
+      },
+      {
+        "symbol": "NVDA",
+        "role": "comparable"
+      },
+      {
+        "symbol": "ARM",
+        "role": "comparable"
+      },
+      {
+        "symbol": "INTC",
+        "role": "comparable"
+      },
+      {
+        "symbol": "AVGO",
+        "role": "beneficiary"
+      },
+      {
+        "symbol": "MSFT",
+        "role": "derivative"
+      },
+      {
+        "symbol": "TSM",
+        "role": "derivative"
+      }
+    ],
+    "invalidationConditions": [
+      "GPU-to-CPU ratio remains stagnant at 8:1 or higher",
+      "ARM architecture captures >35% of the data center CPU market",
+      "AMD data center revenue growth decelerates below 15% YoY"
+    ],
+    "suggestedWatchlistName": "Agentic AI CPU Expansion",
+    "confidence": "medium",
+    "validationWarning": "cross-sector or unknown tickers in expansion: TSM (parsed sectors: XLK)"
+  },
+  "validationWarning": "cross-sector or unknown tickers in expansion: TSM (parsed sectors: XLK)",
+  "expandedAt": "2026-04-27T22:43:41.734Z",
+  "cached": true,
+  "tokenUsage": null
+}

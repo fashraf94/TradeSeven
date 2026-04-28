@@ -1,0 +1,24 @@
+{
+  "dropId": "b33a8547-9030-461b-9be5-f70a1a702d88",
+  "parse": {
+    "extractedText": "Industrial and Material stocks have gone up tremendously but have they reached their peak?",
+    "topic": "Industrial and materials sector peak question",
+    "keyClaim": "Industrial and material stocks have rallied significantly but may be approaching a peak.",
+    "tickers": [],
+    "impliedTickers": [],
+    "confidence": 0.35,
+    "contentType": "casual_text",
+    "signalDirection": "uncertain",
+    "timeHorizon": "unspecified",
+    "referencedDate": "",
+    "dataPoints": [],
+    "suspectedInjection": false
+  },
+  "validation": {
+    "validated": [],
+    "unsupported": []
+  },
+  "shouldBailout": false,
+  "shouldHardCheckpoint": true,
+  "cached": false
+}

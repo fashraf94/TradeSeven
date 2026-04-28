@@ -1,0 +1,48 @@
+{
+  "expansion": {
+    "thesisSummary": "Diminishing put/call ratios alongside broad index uptrends suggest a significant reduction in downside hedging and a prevailing bullish sentiment across large-cap and small-cap equities.",
+    "apparentDriver": "A decline in the put/call ratio to 0.6941 indicates investors are aggressively favoring call options over protective puts.",
+    "relatedTickers": [
+      {
+        "symbol": "SPY",
+        "role": "anchor"
+      },
+      {
+        "symbol": "QQQ",
+        "role": "anchor"
+      },
+      {
+        "symbol": "IWM",
+        "role": "anchor"
+      },
+      {
+        "symbol": "VIX",
+        "role": "hedge"
+      },
+      {
+        "symbol": "XLK",
+        "role": "beneficiary"
+      },
+      {
+        "symbol": "XLY",
+        "role": "beneficiary"
+      },
+      {
+        "symbol": "SH",
+        "role": "exposed"
+      }
+    ],
+    "invalidationConditions": [
+      "Put/call ratio reverses above 0.85",
+      "SPY closes below its 50-day moving average",
+      "VIX spikes above 20% in a single session"
+    ],
+    "suggestedWatchlistName": "Broad Market Sentiment Expansion",
+    "confidence": "high",
+    "validationWarning": "cross-sector or unknown tickers in expansion: VIX, XLK, XLY, SH (parsed sectors: (no sector for parsed tickers))"
+  },
+  "validationWarning": "cross-sector or unknown tickers in expansion: VIX, XLK, XLY, SH (parsed sectors: (no sector for parsed tickers))",
+  "expandedAt": "2026-04-27T22:42:14.277Z",
+  "cached": true,
+  "tokenUsage": null
+}

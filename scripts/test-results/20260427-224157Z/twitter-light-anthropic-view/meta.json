@@ -1,0 +1,60 @@
+{
+  "row": {
+    "inputName": "twitter-light-anthropic-view.png",
+    "inputType": "image",
+    "category": "uncategorized",
+    "parsePath": "low_confidence_checkpoint",
+    "expansionPath": "skipped_checkpoint",
+    "parseConfidence": 0.55,
+    "tickersFound": 0,
+    "unsupportedTickers": 0,
+    "suspectedInjection": false,
+    "expansionTickerCount": null,
+    "expansionConfidence": null,
+    "validationWarnings": "",
+    "hardRejected": false,
+    "manualRating": "",
+    "manualNotes": ""
+  },
+  "expectedBehavior": null,
+  "parseLatencyMs": 682,
+  "expandLatencyMs": null,
+  "parseStatus": 200,
+  "expandStatus": null,
+  "parseResp": {
+    "dropId": "a756681b-9a8b-43aa-b653-a4a9ae0e2075",
+    "parse": {
+      "extractedText": "BREAKING: Anthropic's pre-IPO valuation has officially hit a record $1 trillion.\n\nAnthropic's implied valuation is now up +733% since October 2025, per onchain pre-IPO trading data.\n\nPre-IPO instruments trading onchain, backed 1:1 by SPV exposure on Jupiter, are providing a real-time proxy for the company's implied IPO valuation.\n\nAnthropic has now become the third company to exceed $1 trillion in implied valuation, joining OpenAI and SpaceX.\n\nThe implied market cap of these 3 companies alone is now up to $3.7 TRILLION.\n\nWe are about to witness a historic IPO run.\n\n[Chart showing Anthropic's pre-IPO valuation trajectory from October 2025 to May 2026, with annotations: \"ANTHROPIC HITS RECORD $1 TRILLION IMPLIED MARKET CAP\", \"SPACEX RUMORED TO BE SEEKING $1.7 TRILLION IPO\", \"ANTHROPIC IMPLIED MARKET CAP HITS $120 BILLION\"]",
+      "topic": "Anthropic pre-IPO valuation milestone record",
+      "keyClaim": "Anthropic's pre-IPO valuation has reached a record $1 trillion, up 733% since October 2025, signaling an imminent historic IPO run alongside OpenAI and SpaceX.",
+      "tickers": [],
+      "impliedTickers": [],
+      "confidence": 0.55,
+      "contentType": "tweet",
+      "signalDirection": "bullish",
+      "timeHorizon": "positional",
+      "referencedDate": "October 2025",
+      "dataPoints": [
+        "pre-IPO valuation $1 trillion",
+        "implied valuation up +733% since October 2025",
+        "combined market cap of Anthropic, OpenAI, SpaceX = $3.7 trillion",
+        "SpaceX rumored seeking $1.7 trillion IPO"
+      ],
+      "suspectedInjection": false
+    },
+    "validation": {
+      "validated": [],
+      "unsupported": []
+    },
+    "shouldBailout": false,
+    "shouldHardCheckpoint": true,
+    "cached": true
+  },
+  "expandResp": null,
+  "requestBody": {
+    "type": "image",
+    "imageMime": "image/png",
+    "dropId": "a756681b-9a8b-43aa-b653-a4a9ae0e2075",
+    "imageBase64": "[redacted 806936 chars]"
+  }
+}

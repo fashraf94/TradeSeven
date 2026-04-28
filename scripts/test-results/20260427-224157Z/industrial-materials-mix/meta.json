@@ -1,0 +1,54 @@
+{
+  "row": {
+    "inputName": "industrial-materials-mix.txt",
+    "inputType": "text",
+    "category": "uncategorized",
+    "parsePath": "low_confidence_checkpoint",
+    "expansionPath": "skipped_checkpoint",
+    "parseConfidence": 0.35,
+    "tickersFound": 0,
+    "unsupportedTickers": 0,
+    "suspectedInjection": false,
+    "expansionTickerCount": null,
+    "expansionConfidence": null,
+    "validationWarnings": "",
+    "hardRejected": false,
+    "manualRating": "",
+    "manualNotes": ""
+  },
+  "expectedBehavior": null,
+  "parseLatencyMs": 2293,
+  "expandLatencyMs": null,
+  "parseStatus": 200,
+  "expandStatus": null,
+  "parseResp": {
+    "dropId": "b33a8547-9030-461b-9be5-f70a1a702d88",
+    "parse": {
+      "extractedText": "Industrial and Material stocks have gone up tremendously but have they reached their peak?",
+      "topic": "Industrial and materials sector peak question",
+      "keyClaim": "Industrial and material stocks have rallied significantly but may be approaching a peak.",
+      "tickers": [],
+      "impliedTickers": [],
+      "confidence": 0.35,
+      "contentType": "casual_text",
+      "signalDirection": "uncertain",
+      "timeHorizon": "unspecified",
+      "referencedDate": "",
+      "dataPoints": [],
+      "suspectedInjection": false
+    },
+    "validation": {
+      "validated": [],
+      "unsupported": []
+    },
+    "shouldBailout": false,
+    "shouldHardCheckpoint": true,
+    "cached": false
+  },
+  "expandResp": null,
+  "requestBody": {
+    "type": "text",
+    "text": "Industrial and Material stocks have gone up tremendously but have they reached their peak?",
+    "dropId": "b33a8547-9030-461b-9be5-f70a1a702d88"
+  }
+}

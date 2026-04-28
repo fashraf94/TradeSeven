@@ -1,0 +1,24 @@
+{
+  "dropId": "62841781-e897-4e67-b882-db46f2ee5a6a",
+  "parse": {
+    "extractedText": "lol just look at this dog",
+    "topic": "",
+    "keyClaim": "",
+    "tickers": [],
+    "impliedTickers": [],
+    "confidence": 0.05,
+    "contentType": "casual_text",
+    "signalDirection": "neutral",
+    "timeHorizon": "unspecified",
+    "referencedDate": "",
+    "dataPoints": [],
+    "suspectedInjection": false
+  },
+  "validation": {
+    "validated": [],
+    "unsupported": []
+  },
+  "shouldBailout": true,
+  "shouldHardCheckpoint": false,
+  "cached": true
+}
