@@ -46,6 +46,29 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // ═══════════════════════════════════════════
+    // Signal Drop (Phase 1)
+    // Per-user drop records under users/{uid}/signalDrops/{dropId}.
+    // Cache rows under signalDropCache/ — both the parse-cache
+    // (doc id = contentHash) and expand-cache (doc id =
+    // "expand:contentHash:YYYY-MM-DD") share this single block;
+    // Firestore matches by collection path only, not by doc-id
+    // shape, so the {contentHash} wildcard name is just a label.
+    // Both writes go through Admin SDK only; client reads are
+    // blocked entirely on the cache, allowed for the user's own
+    // drop records.
+    // ═══════════════════════════════════════════
+
+    match /users/{userId}/signalDrops/{dropId} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      allow write: if false;  // Admin SDK only
+    }
+
+    match /signalDropCache/{contentHash} {
+      allow read: if false;   // Admin SDK only
+      allow write: if false;  // Admin SDK only
+    }
+
     // Draft aggregates — system-generated global stats
     match /draftAggregates/{doc} {
       allow read: if request.auth != null;

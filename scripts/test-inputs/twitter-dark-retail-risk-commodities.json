@@ -1,0 +1,5 @@
+{
+  "category": "twitter_dark",
+  "note": "Macro thesis tweet — retail piling into high-risk stocks at top of multi-decade bubble while commodities form generational bottom. References SPGSCI/SPX ratio chart.",
+  "expectedBehavior": "Low-to-medium confidence parse expected (no specific tradeable tickers, just indexes/ratios). Expansion should suggest commodity ETFs (DBC, GSG, USO) or commodity producers (XOM, FCX, NEM, MOS) rather than individual stocks. Cross-sector warning likely to fire."
+}

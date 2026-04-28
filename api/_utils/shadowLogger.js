@@ -108,3 +108,4 @@ export const logDailyRegimeBrief  = (r) => appendToStream('daily_regime_brief', 
 // }
 export const logVisionTransition       = (r) => appendToStream('vision_transitions', r);
 export const logVisionConstraintChange = (r) => appendToStream('vision_constraint_changes', r);
+export const logSignalDrops            = (r) => appendToStream('signal_drops', r);
