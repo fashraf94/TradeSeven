@@ -1,0 +1,50 @@
+{
+  "dropId": "9ab8b0b9-0b3e-423d-a2f6-769e7ad2c4a3",
+  "parse": {
+    "extractedText": "Northland Downgrades $AMD to Market Perform, PT $260\n\nAnalyst comments: \"We initiated coverage of AMD 11 years ago with an Outperform rating, and people thought we were clueless. At the time, AMD was catching up to Intel, and Intel was falling behind TSMC. Now Intel is catching up to AMD, and TSMC is partnering with NVDA in AI infrastructure and PCs. We think this limits AMD's gross margin expansion, and R&D spending will likely remain elevated. \n\nWhile AMD is a phenomenal company, the CY27 consensus is likely too high. Downgrading to Market Perform. \n\nWe expect AMD to beat and raise estimates when it reports next week, but the results will likely not be as robust as Intel's. While AMD will benefit from price increases, we believe AMD needs to continue spending heavily on R&D to catch up with NVDA. \n\nAMD's non-GAAP gross margin is currently in the mid-50% range, whereas INTC is high 30% to low 40%. Intel is becoming more competitive, and while INTC likely has a higher cost structure, AMD's price premium relative to Intel's is likely to decline. AMD is a fabless company and dependent on TSMC. \n\nNVDA is TSMC's largest customer and is likely to receive favorable allocation amid very tight supply. Moreover, NVDA uses the supply chain as a competitive weapon, buying up capacity ahead of its competitors and constraining their growth. Our conclusion is that AMD results and outlook are going to be good, just not as good as INTC's last week. \n\nWe believe the CY27 consensus needs to come down, as we expect AI infrastructure spending to decline in CY27. We believe that capex/cash flow of the hyperscalers is maxed out, and as OpenAI and Anthropic go public this year, they will demonstrate greater financial discipline. They are already moving away from unlimited free usage toward strict usage caps, token-volume-based pricing, and higher-tier subscriptions. We think this slows AI demand growth. At the same time, construction delays are affecting data center facilities.\n\nAnalyst: Gus Richard",
+    "topic": "AMD downgrade; AI capex peak thesis; competitive pressure",
+    "keyClaim": "Northland downgrades AMD to Market Perform from Outperform with $260 PT because CY27 consensus is too high due to expected AI capex deceleration, rising Intel competition, and NVDA/TSMC supply chain dynamics limiting AMD margin expansion.",
+    "tickers": [
+      "AMD",
+      "INTC",
+      "NVDA",
+      "TSMC"
+    ],
+    "impliedTickers": [],
+    "confidence": 0.88,
+    "contentType": "research_note",
+    "signalDirection": "bearish",
+    "timeHorizon": "positional",
+    "referencedDate": "next week",
+    "dataPoints": [
+      "Price target $260",
+      "AMD non-GAAP gross margin mid-50% range",
+      "INTC gross margin high 30% to low 40%",
+      "Downgrade from Outperform to Market Perform",
+      "CY27 AI capex expected to decline"
+    ],
+    "suspectedInjection": false
+  },
+  "validation": {
+    "validated": [
+      {
+        "symbol": "AMD",
+        "sectorId": "XLK"
+      },
+      {
+        "symbol": "INTC",
+        "sectorId": "XLK"
+      },
+      {
+        "symbol": "NVDA",
+        "sectorId": "XLK"
+      }
+    ],
+    "unsupported": [
+      "TSMC"
+    ]
+  },
+  "shouldBailout": false,
+  "shouldHardCheckpoint": false,
+  "cached": true
+}

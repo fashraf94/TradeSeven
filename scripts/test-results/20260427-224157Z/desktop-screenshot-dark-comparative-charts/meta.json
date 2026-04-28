@@ -1,0 +1,118 @@
+{
+  "row": {
+    "inputName": "desktop-screenshot-dark-comparative-charts.png",
+    "inputType": "image",
+    "category": "uncategorized",
+    "parsePath": "happy",
+    "expansionPath": "ran",
+    "parseConfidence": 0.72,
+    "tickersFound": 0,
+    "unsupportedTickers": 3,
+    "suspectedInjection": false,
+    "expansionTickerCount": 7,
+    "expansionConfidence": "high",
+    "validationWarnings": "cross-sector or unknown tickers in expansion: VIX, XLK, XLY, SH (parsed sectors: (no sector for parsed tickers))",
+    "hardRejected": false,
+    "manualRating": "",
+    "manualNotes": ""
+  },
+  "expectedBehavior": null,
+  "parseLatencyMs": 947,
+  "expandLatencyMs": 410,
+  "parseStatus": 200,
+  "expandStatus": 200,
+  "parseResp": {
+    "dropId": "05708948-8a14-4a1c-bcce-07729f175f45",
+    "parse": {
+      "extractedText": "$PCALL 1 Y TD chart showing Put/Call ratio for all OCC options at 0.6941 (change -0134, B/N/A indicator). 1-year daily chart from June 2025 to April 2026 displaying options volume with green and red bars, extreme low at 0 marked. Accompanying three 1-year daily charts shown:\n\nSPY (S&P 500): Trading at 714.89 (as of 4/27/26), Hi: 715.24, Lo: 541.52. Chart shows uptrend from Jun 2025 baseline ~550 to current level. Volume: 22,212,257. Multiple bullish signals marked (+$1.83, +$1.89, +$1.00).\n\nQQQ (Nasdaq-100): Trading at 663.03 (as of 4/27/26), Hi: 664.51, Lo: 462.43. Chart shows uptrend from Jun 2025 baseline ~500 to current level. Volume: 25,409,311. Multiple bullish signals marked (+$0.69, +$0.79, +$0.73).\n\nIWM (Russell 2000): Trading at 276.73 (as of 4/27/26), Hi: 279.79, Lo: 190.72. Chart shows uptrend from Jun 2025 baseline ~200 to current level. Volume: 18,648,608. Multiple bullish signals marked (+$0.68, +$0.84, +$0.44).",
+      "topic": "Put/Call ratio decline with broad market strength",
+      "keyClaim": "Put/Call ratio has declined to 0.6941, indicating reduced hedging demand and elevated bullish sentiment across broad equities (SPY, QQQ, IWM all in uptrends).",
+      "tickers": [
+        "SPY",
+        "QQQ",
+        "IWM"
+      ],
+      "impliedTickers": [],
+      "confidence": 0.72,
+      "contentType": "chart",
+      "signalDirection": "bullish",
+      "timeHorizon": "positional",
+      "referencedDate": "2026-04-27",
+      "dataPoints": [
+        "SPY 714.89",
+        "QQQ 663.03",
+        "IWM 276.73",
+        "Put/Call ratio 0.6941",
+        "SPY volume 22.2M",
+        "QQQ volume 25.4M",
+        "IWM volume 18.6M"
+      ],
+      "suspectedInjection": false
+    },
+    "validation": {
+      "validated": [],
+      "unsupported": [
+        "SPY",
+        "QQQ",
+        "IWM"
+      ]
+    },
+    "shouldBailout": false,
+    "shouldHardCheckpoint": false,
+    "cached": true
+  },
+  "expandResp": {
+    "expansion": {
+      "thesisSummary": "Diminishing put/call ratios alongside broad index uptrends suggest a significant reduction in downside hedging and a prevailing bullish sentiment across large-cap and small-cap equities.",
+      "apparentDriver": "A decline in the put/call ratio to 0.6941 indicates investors are aggressively favoring call options over protective puts.",
+      "relatedTickers": [
+        {
+          "symbol": "SPY",
+          "role": "anchor"
+        },
+        {
+          "symbol": "QQQ",
+          "role": "anchor"
+        },
+        {
+          "symbol": "IWM",
+          "role": "anchor"
+        },
+        {
+          "symbol": "VIX",
+          "role": "hedge"
+        },
+        {
+          "symbol": "XLK",
+          "role": "beneficiary"
+        },
+        {
+          "symbol": "XLY",
+          "role": "beneficiary"
+        },
+        {
+          "symbol": "SH",
+          "role": "exposed"
+        }
+      ],
+      "invalidationConditions": [
+        "Put/call ratio reverses above 0.85",
+        "SPY closes below its 50-day moving average",
+        "VIX spikes above 20% in a single session"
+      ],
+      "suggestedWatchlistName": "Broad Market Sentiment Expansion",
+      "confidence": "high",
+      "validationWarning": "cross-sector or unknown tickers in expansion: VIX, XLK, XLY, SH (parsed sectors: (no sector for parsed tickers))"
+    },
+    "validationWarning": "cross-sector or unknown tickers in expansion: VIX, XLK, XLY, SH (parsed sectors: (no sector for parsed tickers))",
+    "expandedAt": "2026-04-27T22:42:14.277Z",
+    "cached": true,
+    "tokenUsage": null
+  },
+  "requestBody": {
+    "type": "image",
+    "imageMime": "image/png",
+    "dropId": "05708948-8a14-4a1c-bcce-07729f175f45",
+    "imageBase64": "[redacted 1410700 chars]"
+  }
+}

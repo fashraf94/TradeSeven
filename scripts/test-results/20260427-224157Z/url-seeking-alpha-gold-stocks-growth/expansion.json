@@ -1,0 +1,48 @@
+{
+  "expansion": {
+    "thesisSummary": "High-growth gold miners with over 110% forward EBIT growth are poised to outperform as geopolitical tensions ease and macro drivers like rate cuts return.",
+    "apparentDriver": "A transition from geopolitical conflict-driven pricing to traditional macro tailwinds including Fed easing and a weaker dollar.",
+    "relatedTickers": [
+      {
+        "symbol": "SSRM",
+        "role": "anchor"
+      },
+      {
+        "symbol": "CGAU",
+        "role": "anchor"
+      },
+      {
+        "symbol": "GOLD",
+        "role": "comparable"
+      },
+      {
+        "symbol": "NEM",
+        "role": "comparable"
+      },
+      {
+        "symbol": "GDX",
+        "role": "derivative"
+      },
+      {
+        "symbol": "GLD",
+        "role": "exposed"
+      },
+      {
+        "symbol": "UUP",
+        "role": "hedge"
+      }
+    ],
+    "invalidationConditions": [
+      "US Dollar Index (DXY) breaks above 105 level",
+      "Fed pivots to hawkish stance or delays rate cuts",
+      "Gold spot price closes below 50-day SMA"
+    ],
+    "suggestedWatchlistName": "High Growth Gold Leveraged Plays",
+    "confidence": "high",
+    "validationWarning": "cross-sector or unknown tickers in expansion: GOLD, NEM, GDX, GLD, UUP (parsed sectors: (no sector for parsed tickers))"
+  },
+  "validationWarning": "cross-sector or unknown tickers in expansion: GOLD, NEM, GDX, GLD, UUP (parsed sectors: (no sector for parsed tickers))",
+  "expandedAt": "2026-04-27T22:44:14.722Z",
+  "cached": true,
+  "tokenUsage": null
+}

@@ -1,0 +1,33 @@
+{
+  "dropId": "441ddf93-7575-4660-99c7-e85fbf1338ee",
+  "parse": {
+    "extractedText": "It's so funny watching retail pile into high-risk stocks right at the top of a multi-decade bubble.\n\nMeanwhile commodities are putting in a generational bottom and starting a multi-decade secular bull run.\n\n[Chart shows SPGSCI/SPX ratio from 1980 to present, displaying a sharp decline from ~15.00 in the 1980s to current levels around 0.10, with historical support around 0.08.]",
+    "topic": "Retail overextension vs commodities secular bull cycle",
+    "keyClaim": "Retail is piling into high-risk stocks at a multi-decade market top while commodities are forming a generational bottom poised for a secular bull run.",
+    "tickers": [
+      "SPGSCI",
+      "SPX"
+    ],
+    "impliedTickers": [],
+    "confidence": 0.72,
+    "contentType": "dm_screenshot",
+    "signalDirection": "mixed",
+    "timeHorizon": "longterm",
+    "referencedDate": "",
+    "dataPoints": [
+      "SPGSCI/SPX ratio at 0.10",
+      "historical support level around 0.08"
+    ],
+    "suspectedInjection": false
+  },
+  "validation": {
+    "validated": [],
+    "unsupported": [
+      "SPGSCI",
+      "SPX"
+    ]
+  },
+  "shouldBailout": false,
+  "shouldHardCheckpoint": false,
+  "cached": true
+}

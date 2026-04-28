@@ -1,0 +1,48 @@
+{
+  "expansion": {
+    "thesisSummary": "Intraday volatility in NASDAQ 100 E-mini futures suggests a battle between momentum spikes and established support/resistance zones near key moving averages.",
+    "apparentDriver": "Short-term price fluctuations around critical technical levels and moving average confluence during active trading hours.",
+    "relatedTickers": [
+      {
+        "symbol": "NQ",
+        "role": "anchor"
+      },
+      {
+        "symbol": "QQQ",
+        "role": "comparable"
+      },
+      {
+        "symbol": "TQQQ",
+        "role": "derivative"
+      },
+      {
+        "symbol": "SQQQ",
+        "role": "hedge"
+      },
+      {
+        "symbol": "XLK",
+        "role": "exposed"
+      },
+      {
+        "symbol": "MSFT",
+        "role": "comparable"
+      },
+      {
+        "symbol": "AAPL",
+        "role": "comparable"
+      }
+    ],
+    "invalidationConditions": [
+      "NQ breaks below 27,100 support on high volume",
+      "Price fails to breach 27,091 resistance zone",
+      "NQ closes below the primary green moving average"
+    ],
+    "suggestedWatchlistName": "Nasdaq Intraday Volatility Zones",
+    "confidence": "medium",
+    "validationWarning": "cross-sector or unknown tickers in expansion: QQQ, TQQQ, SQQQ, XLK, MSFT, AAPL (parsed sectors: (no sector for parsed tickers))"
+  },
+  "validationWarning": "cross-sector or unknown tickers in expansion: QQQ, TQQQ, SQQQ, XLK, MSFT, AAPL (parsed sectors: (no sector for parsed tickers))",
+  "expandedAt": "2026-04-27T22:43:39.181Z",
+  "cached": true,
+  "tokenUsage": null
+}

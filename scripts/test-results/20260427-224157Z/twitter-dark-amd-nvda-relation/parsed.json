@@ -1,0 +1,50 @@
+{
+  "dropId": "9252547f-9840-41ea-bdc2-2fc89e14129a",
+  "parse": {
+    "extractedText": "$AMD is nearing its $NVDA moment..\n\nDigitimes saw data center AI chip shipments at 53 million units in 2030.\n\nThey estimated that 10% of this would be data center CPUs, 13% would be networking processors. This comes up to roughly 8:1 GPU-to-CPU ratio.\n\nIf this balance shifts to 2:1 due to agentic AI, we'll need to ship 15 million more CPUs in 2030.\n\nAt an average price of $10,000, we are looking at an additional $150 billion in CPU revenue in 2030.\n\nAssuming 75%-25% mix of x86 and $ARM, and 40% revenue share for $AMD in the x86 segment, $AMD will generate $45 billion in revenue from data center CPUs in 2030.\n\nFor reference, its full-year revenue last year was just $35 billion.\n\nCouldn't be more bullish on $AMD.",
+    "topic": "AMD data center CPU growth opportunity from agentic AI",
+    "keyClaim": "AMD could generate $45 billion in revenue from data center CPUs in 2030 due to a potential shift in GPU-to-CPU ratio driven by agentic AI, representing ~29% upside vs. 2025 total revenue of $35 billion.",
+    "tickers": [
+      "AMD",
+      "NVDA",
+      "ARM"
+    ],
+    "impliedTickers": [],
+    "signalDirection": "bullish",
+    "confidence": 0.75,
+    "contentType": "dm_screenshot",
+    "timeHorizon": "longterm",
+    "referencedDate": "2030",
+    "dataPoints": [
+      "53 million AI chip shipments in 2030",
+      "8:1 GPU-to-CPU ratio current",
+      "2:1 GPU-to-CPU ratio potential due to agentic AI",
+      "15 million additional CPUs needed",
+      "$10,000 average price per CPU",
+      "$150 billion additional CPU revenue potential",
+      "75%-25% x86-ARM mix assumption",
+      "40% AMD revenue share in x86",
+      "$45 billion AMD revenue from data center CPUs in 2030",
+      "$35 billion AMD full-year revenue 2025"
+    ],
+    "suspectedInjection": false
+  },
+  "validation": {
+    "validated": [
+      {
+        "symbol": "AMD",
+        "sectorId": "XLK"
+      },
+      {
+        "symbol": "NVDA",
+        "sectorId": "XLK"
+      }
+    ],
+    "unsupported": [
+      "ARM"
+    ]
+  },
+  "shouldBailout": false,
+  "shouldHardCheckpoint": false,
+  "cached": true
+}

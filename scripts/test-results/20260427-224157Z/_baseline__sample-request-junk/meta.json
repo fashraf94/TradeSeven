@@ -1,0 +1,54 @@
+{
+  "row": {
+    "inputName": "_baseline/sample-request-junk.json",
+    "inputType": "text",
+    "category": "baseline",
+    "parsePath": "bailout",
+    "expansionPath": "skipped_bailout",
+    "parseConfidence": 0.05,
+    "tickersFound": 0,
+    "unsupportedTickers": 0,
+    "suspectedInjection": false,
+    "expansionTickerCount": null,
+    "expansionConfidence": null,
+    "validationWarnings": "",
+    "hardRejected": false,
+    "manualRating": "",
+    "manualNotes": ""
+  },
+  "expectedBehavior": null,
+  "parseLatencyMs": 400,
+  "expandLatencyMs": null,
+  "parseStatus": 200,
+  "expandStatus": null,
+  "parseResp": {
+    "dropId": "62841781-e897-4e67-b882-db46f2ee5a6a",
+    "parse": {
+      "extractedText": "lol just look at this dog",
+      "topic": "",
+      "keyClaim": "",
+      "tickers": [],
+      "impliedTickers": [],
+      "confidence": 0.05,
+      "contentType": "casual_text",
+      "signalDirection": "neutral",
+      "timeHorizon": "unspecified",
+      "referencedDate": "",
+      "dataPoints": [],
+      "suspectedInjection": false
+    },
+    "validation": {
+      "validated": [],
+      "unsupported": []
+    },
+    "shouldBailout": true,
+    "shouldHardCheckpoint": false,
+    "cached": true
+  },
+  "expandResp": null,
+  "requestBody": {
+    "type": "text",
+    "text": "lol just look at this dog",
+    "dropId": "62841781-e897-4e67-b882-db46f2ee5a6a"
+  }
+}

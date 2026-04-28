@@ -1,0 +1,126 @@
+{
+  "row": {
+    "inputName": "twitter-light-amd-cpu-analysis.png",
+    "inputType": "image",
+    "category": "uncategorized",
+    "parsePath": "happy",
+    "expansionPath": "ran",
+    "parseConfidence": 0.72,
+    "tickersFound": 3,
+    "unsupportedTickers": 1,
+    "suspectedInjection": false,
+    "expansionTickerCount": 7,
+    "expansionConfidence": "high",
+    "validationWarnings": "cross-sector or unknown tickers in expansion: TSM, ASML (parsed sectors: XLK)",
+    "hardRejected": false,
+    "manualRating": "",
+    "manualNotes": ""
+  },
+  "expectedBehavior": null,
+  "parseLatencyMs": 625,
+  "expandLatencyMs": 6708,
+  "parseStatus": 200,
+  "expandStatus": 200,
+  "parseResp": {
+    "dropId": "6137e54a-52f4-453f-817b-e96d07d3efba",
+    "parse": {
+      "extractedText": "I didn't realize this before. I naturally assumed Intel would have a supply advantage over AMD in CPUs.\n\nBut Qualcomm and MediaTek apparently cut their TSMC 4/5nm orders because mid- to low-end smartphone shipments literally collapsed. AMD seems to have taken over that capacity.\n\nRight now, even CPUs produced on older nodes are being bought up by customers lining up for supply. AMD's earnings could be worth getting excited about.",
+      "topic": "AMD supply capacity gains in chip manufacturing",
+      "keyClaim": "AMD has captured TSMC 4/5nm capacity vacated by Qualcomm and MediaTek due to smartphone shipment collapse, positioning AMD for stronger earnings.",
+      "tickers": [
+        "AMD",
+        "INTC",
+        "QCOM",
+        "MTK"
+      ],
+      "impliedTickers": [],
+      "confidence": 0.72,
+      "contentType": "tweet",
+      "signalDirection": "bullish",
+      "timeHorizon": "positional",
+      "referencedDate": "2026-04-27",
+      "dataPoints": [
+        "Qualcomm and MediaTek cut TSMC 4/5nm orders",
+        "mid- to low-end smartphone shipments collapsed",
+        "AMD took over TSMC capacity"
+      ],
+      "suspectedInjection": false
+    },
+    "validation": {
+      "validated": [
+        {
+          "symbol": "AMD",
+          "sectorId": "XLK"
+        },
+        {
+          "symbol": "INTC",
+          "sectorId": "XLK"
+        },
+        {
+          "symbol": "QCOM",
+          "sectorId": "XLK"
+        }
+      ],
+      "unsupported": [
+        "MTK"
+      ]
+    },
+    "shouldBailout": false,
+    "shouldHardCheckpoint": false,
+    "cached": true
+  },
+  "expandResp": {
+    "expansion": {
+      "thesisSummary": "AMD is poised to capture significant earnings upside by absorbing high-end TSMC 4/5nm manufacturing capacity vacated by declining smartphone chip demand from Qualcomm and MediaTek.",
+      "apparentDriver": "A structural shift in TSMC capacity allocation from mobile chipmakers to high-performance computing demand.",
+      "relatedTickers": [
+        {
+          "symbol": "AMD",
+          "role": "anchor"
+        },
+        {
+          "symbol": "TSM",
+          "role": "derivative"
+        },
+        {
+          "symbol": "QCOM",
+          "role": "exposed"
+        },
+        {
+          "symbol": "MTK",
+          "role": "exposed"
+        },
+        {
+          "symbol": "INTC",
+          "role": "comparable"
+        },
+        {
+          "symbol": "NVDA",
+          "role": "comparable"
+        },
+        {
+          "symbol": "ASML",
+          "role": "derivative"
+        }
+      ],
+      "invalidationConditions": [
+        "AMD gross margins compress below previous quarter levels",
+        "TSMC reports unexpected capacity expansion for mobile nodes",
+        "AMD quarterly revenue misses consensus due to supply constraints"
+      ],
+      "suggestedWatchlistName": "AMD Capacity Capture Play",
+      "confidence": "high",
+      "validationWarning": "cross-sector or unknown tickers in expansion: TSM, ASML (parsed sectors: XLK)"
+    },
+    "validationWarning": "cross-sector or unknown tickers in expansion: TSM, ASML (parsed sectors: XLK)",
+    "expandedAt": "2026-04-27T22:43:46.947Z",
+    "cached": false,
+    "tokenUsage": null
+  },
+  "requestBody": {
+    "type": "image",
+    "imageMime": "image/png",
+    "dropId": "6137e54a-52f4-453f-817b-e96d07d3efba",
+    "imageBase64": "[redacted 593536 chars]"
+  }
+}

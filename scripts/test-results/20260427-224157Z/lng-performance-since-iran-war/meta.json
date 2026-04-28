@@ -1,0 +1,58 @@
+{
+  "row": {
+    "inputName": "lng-performance-since-iran-war.txt",
+    "inputType": "text",
+    "category": "uncategorized",
+    "parsePath": "low_confidence_checkpoint",
+    "expansionPath": "skipped_checkpoint",
+    "parseConfidence": 0.45,
+    "tickersFound": 0,
+    "unsupportedTickers": 1,
+    "suspectedInjection": false,
+    "expansionTickerCount": null,
+    "expansionConfidence": null,
+    "validationWarnings": "",
+    "hardRejected": false,
+    "manualRating": "",
+    "manualNotes": ""
+  },
+  "expectedBehavior": null,
+  "parseLatencyMs": 34870,
+  "expandLatencyMs": null,
+  "parseStatus": 200,
+  "expandStatus": null,
+  "parseResp": {
+    "dropId": "9d16eb3c-38c0-45b8-ac52-792bfe6620ac",
+    "parse": {
+      "extractedText": "Natural gas stocks have gone up tremendously since the iran war but I think LNG is still positioned the best long term. How does LNG compare to other natural gas companies and is there a reason why natural gas prices continues to stay surpressed?",
+      "topic": "Natural gas sector positioning and LNG outlook",
+      "keyClaim": "LNG is positioned best long-term compared to other natural gas companies despite recent sector gains.",
+      "tickers": [
+        "LNG"
+      ],
+      "impliedTickers": [],
+      "confidence": 0.45,
+      "contentType": "casual_text",
+      "signalDirection": "bullish",
+      "timeHorizon": "longterm",
+      "referencedDate": "iran war",
+      "dataPoints": [],
+      "suspectedInjection": false
+    },
+    "validation": {
+      "validated": [],
+      "unsupported": [
+        "LNG"
+      ]
+    },
+    "shouldBailout": false,
+    "shouldHardCheckpoint": true,
+    "cached": false
+  },
+  "expandResp": null,
+  "requestBody": {
+    "type": "text",
+    "text": "Natural gas stocks have gone up tremendously since the iran war but I think LNG is still positioned the best long term. How does LNG compare to other natural gas companies and is there a reason why natural gas prices continues to stay surpressed?",
+    "dropId": "9d16eb3c-38c0-45b8-ac52-792bfe6620ac"
+  }
+}

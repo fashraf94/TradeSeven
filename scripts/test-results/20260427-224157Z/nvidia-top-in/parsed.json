@@ -1,0 +1,31 @@
+{
+  "dropId": "96956e71-4637-477d-a6c4-48fccb72899c",
+  "parse": {
+    "extractedText": "Nvda top is in. Going to start buying puts now",
+    "topic": "NVIDIA bearish call",
+    "keyClaim": "NVIDIA's top is in, bearish reversal expected; author intends to trade puts",
+    "tickers": [
+      "NVDA"
+    ],
+    "impliedTickers": [],
+    "confidence": 0.72,
+    "contentType": "casual_text",
+    "signalDirection": "bearish",
+    "timeHorizon": "swing",
+    "referencedDate": "",
+    "dataPoints": [],
+    "suspectedInjection": false
+  },
+  "validation": {
+    "validated": [
+      {
+        "symbol": "NVDA",
+        "sectorId": "XLK"
+      }
+    ],
+    "unsupported": []
+  },
+  "shouldBailout": false,
+  "shouldHardCheckpoint": false,
+  "cached": false
+}

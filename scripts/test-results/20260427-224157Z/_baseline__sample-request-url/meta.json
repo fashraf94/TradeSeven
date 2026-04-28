@@ -1,0 +1,80 @@
+{
+  "row": {
+    "inputName": "_baseline/sample-request-url.json",
+    "inputType": "url",
+    "category": "baseline",
+    "parsePath": "low_confidence_checkpoint",
+    "expansionPath": "skipped_checkpoint",
+    "parseConfidence": 0.35,
+    "tickersFound": 4,
+    "unsupportedTickers": 1,
+    "suspectedInjection": false,
+    "expansionTickerCount": null,
+    "expansionConfidence": null,
+    "validationWarnings": "",
+    "hardRejected": false,
+    "manualRating": "",
+    "manualNotes": ""
+  },
+  "expectedBehavior": null,
+  "parseLatencyMs": 533,
+  "expandLatencyMs": null,
+  "parseStatus": 200,
+  "expandStatus": null,
+  "parseResp": {
+    "dropId": "00645ef1-3944-4663-9068-98b3b9552228",
+    "parse": {
+      "extractedText": "URL dropped: https://example.com/news/semis-2026-outlook. User noted this is a thread on AI infra spending related to semiconductors 2026 outlook.",
+      "topic": "Semiconductors 2026 AI infrastructure spending outlook",
+      "keyClaim": "AI infrastructure spending is expected to drive semiconductor sector dynamics in 2026.",
+      "tickers": [],
+      "impliedTickers": [
+        "NVDA",
+        "AMD",
+        "AVGO",
+        "QCOM",
+        "ASML"
+      ],
+      "confidence": 0.35,
+      "contentType": "news_article",
+      "signalDirection": "uncertain",
+      "timeHorizon": "longterm",
+      "referencedDate": "2026",
+      "dataPoints": [],
+      "suspectedInjection": false
+    },
+    "validation": {
+      "validated": [
+        {
+          "symbol": "NVDA",
+          "sectorId": "XLK"
+        },
+        {
+          "symbol": "AMD",
+          "sectorId": "XLK"
+        },
+        {
+          "symbol": "AVGO",
+          "sectorId": "XLK"
+        },
+        {
+          "symbol": "QCOM",
+          "sectorId": "XLK"
+        }
+      ],
+      "unsupported": [
+        "ASML"
+      ]
+    },
+    "shouldBailout": false,
+    "shouldHardCheckpoint": true,
+    "cached": true
+  },
+  "expandResp": null,
+  "requestBody": {
+    "type": "url",
+    "url": "https://example.com/news/semis-2026-outlook",
+    "note": "thread on AI infra spending",
+    "dropId": "00645ef1-3944-4663-9068-98b3b9552228"
+  }
+}

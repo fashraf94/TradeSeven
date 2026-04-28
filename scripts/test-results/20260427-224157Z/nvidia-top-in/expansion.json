@@ -1,0 +1,48 @@
+{
+  "expansion": {
+    "thesisSummary": "A bearish pivot on NVIDIA suggests a potential exhaustion of the current AI-driven rally, favoring short positions via puts to capture a swing reversal.",
+    "apparentDriver": "Anticipated price exhaustion and a shift in momentum from the primary semiconductor leader.",
+    "relatedTickers": [
+      {
+        "symbol": "NVDA",
+        "role": "anchor"
+      },
+      {
+        "symbol": "AMD",
+        "role": "comparable"
+      },
+      {
+        "symbol": "AVGO",
+        "role": "comparable"
+      },
+      {
+        "symbol": "TSM",
+        "role": "derivative"
+      },
+      {
+        "symbol": "SMH",
+        "role": "derivative"
+      },
+      {
+        "symbol": "SOXL",
+        "role": "derivative"
+      },
+      {
+        "symbol": "QQQ",
+        "role": "hedge"
+      }
+    ],
+    "invalidationConditions": [
+      "NVDA closes above its 20-day EMA on heavy volume",
+      "Semiconductor sector ETF (SMH) breaks recent swing highs",
+      "Positive earnings surprise from major AI infrastructure peers"
+    ],
+    "suggestedWatchlistName": "Semiconductor Momentum Exhaustion",
+    "confidence": "medium",
+    "validationWarning": "cross-sector or unknown tickers in expansion: TSM, SMH, SOXL, QQQ (parsed sectors: XLK)"
+  },
+  "validationWarning": "cross-sector or unknown tickers in expansion: TSM, SMH, SOXL, QQQ (parsed sectors: XLK)",
+  "expandedAt": "2026-04-27T22:43:24.566Z",
+  "cached": false,
+  "tokenUsage": null
+}

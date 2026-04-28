@@ -1,0 +1,53 @@
+{
+  "row": {
+    "inputName": "energy-stock-forecast.txt",
+    "inputType": "text",
+    "category": "uncategorized",
+    "parsePath": "low_confidence_checkpoint",
+    "expansionPath": "skipped_checkpoint",
+    "parseConfidence": 0.35,
+    "tickersFound": 0,
+    "unsupportedTickers": 0,
+    "suspectedInjection": false,
+    "expansionTickerCount": null,
+    "expansionConfidence": null,
+    "validationWarnings": "",
+    "hardRejected": false,
+    "manualRating": "",
+    "manualNotes": ""
+  },
+  "expectedBehavior": null,
+  "parseLatencyMs": 2861,
+  "expandLatencyMs": null,
+  "parseStatus": 200,
+  "expandStatus": null,
+  "parseResp": {
+    "dropId": "ee3b0a6a-2bd1-4f22-88da-6582f020212b",
+    "parse": {
+      "extractedText": "Energy stocks have had a good run and are going to start reporting this week. Which energy companies are positioned the best?",
+      "topic": "Energy sector earnings season outlook",
+      "keyClaim": "Energy stocks have had a strong run and will begin reporting earnings this week; the questioner seeks identification of best-positioned energy companies.</anyClaim>\n<parameter name=\"tickers\">[]",
+      "impliedTickers": [],
+      "confidence": 0.35,
+      "contentType": "casual_text",
+      "signalDirection": "uncertain",
+      "timeHorizon": "swing",
+      "referencedDate": "this week",
+      "dataPoints": [],
+      "suspectedInjection": false
+    },
+    "validation": {
+      "validated": [],
+      "unsupported": []
+    },
+    "shouldBailout": false,
+    "shouldHardCheckpoint": true,
+    "cached": false
+  },
+  "expandResp": null,
+  "requestBody": {
+    "type": "text",
+    "text": "Energy stocks have had a good run and are going to start reporting this week. Which eergy companies are positioned the best?",
+    "dropId": "ee3b0a6a-2bd1-4f22-88da-6582f020212b"
+  }
+}

@@ -1,0 +1,78 @@
+{
+  "dropId": "d9f2b694-ca19-4dff-aa27-c4396495e236",
+  "parse": {
+    "extractedText": "Spending On AI Infrastructure Has Exploded. Demand for accelerated compute has exploded in the three years since the launch of ChatGPT. Nvidia's annual revenue has soared nearly 8-fold, from $27 billion in 2022 to $216 billion in 2025, with consensus estimates up another 62% to $350 billion in 2026. Global growth in data center systems investment has accelerated from 5% at an annual rate in the ten years ended 2022 to 30% in the last three years, and is likely to increase more than 30% to $653 billion in 2026. ARK's research suggests that accelerated computing—powered by graphic processing units (GPUs) and AI application-specific integrated circuits (ASICs)—now dominates server investment, representing 86% of compute server sales. Rapidly falling costs are turbocharging the demand. AI training costs have been falling 75% per year. Inference costs are falling faster, as the median cost decline for models that score better than 50% on benchmarks has been 95% at an annual rate. AMD and Others Emerge As Credible Challengers To Nvidia. AMD GPUs now are competitive with Nvidia on small model inference based on performance relative to total cost of ownership (TCO). While AMD has \"caught up\" in small model performance, Nvidia maintains a significant lead in large model performance. Hyperscalers Have Launched The Custom Silicon Revolution. Google has designed its own AI ASIC, the tensor processing unit (TPU), and SemiAnalysis estimates that Google could cut its cost per computation relative to Nvidia by 62% with its own TPU for internal workloads. Amazon's Trainium chips are the next most advanced solutions. Microsoft announced its AI accelerator Maia 100 and is just now rolling out its second version, focused on AI inference. Broadcom Is Dominating Custom Silicon Enablement. Broadcom has become the leading back-end design partner for Google's TPU, Meta's MTIA, and OpenAI's upcoming custom chip in 2026. Citi suggests that Broadcom's AI revenue could grow five-fold in the next two years, from $20 billion in 2025 to $100 billion in 2027. Chip Startup Activity Is Heating Up. Cerebras offers the fastest tokens-per-second on the market and is looking to go public this year. Groq recently signed a $20 billion non-exclusive licensing deal for its intellectual property with Nvidia. Looking Ahead: $1.4 Trillion By 2030. AI infrastructure spending will triple from $500 billion in 2025 to nearly $1.5 trillion in 2030. Custom ASICs could grow to over a third of the compute market by 2030.",
+    "topic": "AI infrastructure demand, costs, and custom silicon evolution",
+    "keyClaim": "AI infrastructure spending will triple from $500 billion in 2025 to nearly $1.5 trillion in 2030, driven by accelerating demand from consumers and enterprises, falling costs, and the rise of custom silicon competing with Nvidia.",
+    "tickers": [
+      "NVDA",
+      "AMD",
+      "GOOGL",
+      "AMZN",
+      "META",
+      "MSFT",
+      "AVGO"
+    ],
+    "impliedTickers": [
+      "TSMC",
+      "CEREBRAS"
+    ],
+    "confidence": 0.85,
+    "contentType": "research_note",
+    "signalDirection": "mixed",
+    "timeHorizon": "longterm",
+    "referencedDate": "2030",
+    "dataPoints": [
+      "Nvidia revenue $27B in 2022 to $216B in 2025",
+      "Consensus estimates $350B in 2026",
+      "Data center systems investment growing 30% YoY, reaching $653B in 2026",
+      "Accelerated compute now 86% of compute server sales",
+      "AI training costs falling 75% per year",
+      "Inference costs falling 95% per year",
+      "Google TPU could cut costs 62% vs Nvidia",
+      "Broadcom AI revenue forecast $20B in 2025 to $100B in 2027",
+      "AI infrastructure $500B in 2025 to $1.5T in 2030",
+      "Custom ASICs could reach 33% of compute market by 2030"
+    ],
+    "suspectedInjection": false
+  },
+  "validation": {
+    "validated": [
+      {
+        "symbol": "NVDA",
+        "sectorId": "XLK"
+      },
+      {
+        "symbol": "AMD",
+        "sectorId": "XLK"
+      },
+      {
+        "symbol": "GOOGL",
+        "sectorId": "XLC"
+      },
+      {
+        "symbol": "AMZN",
+        "sectorId": "XLY"
+      },
+      {
+        "symbol": "META",
+        "sectorId": "XLC"
+      },
+      {
+        "symbol": "MSFT",
+        "sectorId": "XLK"
+      },
+      {
+        "symbol": "AVGO",
+        "sectorId": "XLK"
+      }
+    ],
+    "unsupported": [
+      "TSMC",
+      "CEREBRAS"
+    ]
+  },
+  "shouldBailout": false,
+  "shouldHardCheckpoint": false,
+  "cached": true
+}

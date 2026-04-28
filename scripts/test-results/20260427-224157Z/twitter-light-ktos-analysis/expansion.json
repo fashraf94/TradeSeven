@@ -1,0 +1,48 @@
+{
+  "expansion": {
+    "thesisSummary": "Kratos Defense is positioned to capture significant upside from shifting Department of Defense priorities toward affordable, expendable drone systems and massive upcoming budget appropriations.",
+    "apparentDriver": "A projected $75B DoD drone spending allocation for FY2027 and supplemental defense funding mark a pivot toward autonomous airpower.",
+    "relatedTickers": [
+      {
+        "symbol": "KTOS",
+        "role": "anchor"
+      },
+      {
+        "symbol": "LMT",
+        "role": "comparable"
+      },
+      {
+        "symbol": "NOC",
+        "role": "comparable"
+      },
+      {
+        "symbol": "AVAV",
+        "role": "beneficiary"
+      },
+      {
+        "symbol": "RTX",
+        "role": "comparable"
+      },
+      {
+        "symbol": "PLTR",
+        "role": "derivative"
+      },
+      {
+        "symbol": "ITA",
+        "role": "hedge"
+      }
+    ],
+    "invalidationConditions": [
+      "KTOS closes below its 50-day moving average on heavy volume",
+      "FY2027 DoD budget proposal excludes drone-specific funding increases",
+      "Loss of major CCA Increment follow-on contracts"
+    ],
+    "suggestedWatchlistName": "Autonomous Defense and Drone Appropriations",
+    "confidence": "high",
+    "validationWarning": "cross-sector or unknown tickers in expansion: LMT, NOC, AVAV, RTX, PLTR, ITA (parsed sectors: (no sector for parsed tickers))"
+  },
+  "validationWarning": "cross-sector or unknown tickers in expansion: LMT, NOC, AVAV, RTX, PLTR, ITA (parsed sectors: (no sector for parsed tickers))",
+  "expandedAt": "2026-04-27T22:44:10.416Z",
+  "cached": true,
+  "tokenUsage": null
+}

@@ -31,5 +31,7 @@ dist-ssr
 
 # Refresh script output
 scripts/output/
-scripts/test-results/
+scripts/test-results/*
+!scripts/test-results/20260427-224157Z/
+!scripts/test-results/20260427-224157Z/**
 .vercel

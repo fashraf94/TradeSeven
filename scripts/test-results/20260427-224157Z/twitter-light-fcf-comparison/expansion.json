@@ -1,0 +1,48 @@
+{
+  "expansion": {
+    "thesisSummary": "The Magnificent 7 tech giants are projected to experience massive free cash flow expansion over the next five years, driven by dominant market positions and scaling efficiencies.",
+    "apparentDriver": "Expected long-term compounding of free cash flow through structural growth in AI, cloud, and digital advertising ecosystems.",
+    "relatedTickers": [
+      {
+        "symbol": "AMZN",
+        "role": "anchor"
+      },
+      {
+        "symbol": "NVDA",
+        "role": "anchor"
+      },
+      {
+        "symbol": "MSFT",
+        "role": "anchor"
+      },
+      {
+        "symbol": "AAPL",
+        "role": "anchor"
+      },
+      {
+        "symbol": "META",
+        "role": "anchor"
+      },
+      {
+        "symbol": "TSLA",
+        "role": "anchor"
+      },
+      {
+        "symbol": "GOOGL",
+        "role": "anchor"
+      }
+    ],
+    "invalidationConditions": [
+      "Aggregate Mag 7 FCF margins decline for two consecutive quarters",
+      "US 10-Year Treasury yield breaks above 5% sustained",
+      "Regulatory antitrust rulings force structural divestitures of core segments"
+    ],
+    "suggestedWatchlistName": "Mag 7 Cash Flow Compounders",
+    "confidence": "high",
+    "validationWarning": null
+  },
+  "validationWarning": null,
+  "expandedAt": "2026-04-27T22:44:07.479Z",
+  "cached": true,
+  "tokenUsage": null
+}

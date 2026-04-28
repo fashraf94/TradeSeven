@@ -1,0 +1,48 @@
+{
+  "expansion": {
+    "thesisSummary": "AMD is poised to capture significant earnings upside by absorbing high-end TSMC 4/5nm manufacturing capacity vacated by declining smartphone chip demand from Qualcomm and MediaTek.",
+    "apparentDriver": "A structural shift in TSMC capacity allocation from mobile chipmakers to high-performance computing demand.",
+    "relatedTickers": [
+      {
+        "symbol": "AMD",
+        "role": "anchor"
+      },
+      {
+        "symbol": "TSM",
+        "role": "derivative"
+      },
+      {
+        "symbol": "QCOM",
+        "role": "exposed"
+      },
+      {
+        "symbol": "MTK",
+        "role": "exposed"
+      },
+      {
+        "symbol": "INTC",
+        "role": "comparable"
+      },
+      {
+        "symbol": "NVDA",
+        "role": "comparable"
+      },
+      {
+        "symbol": "ASML",
+        "role": "derivative"
+      }
+    ],
+    "invalidationConditions": [
+      "AMD gross margins compress below previous quarter levels",
+      "TSMC reports unexpected capacity expansion for mobile nodes",
+      "AMD quarterly revenue misses consensus due to supply constraints"
+    ],
+    "suggestedWatchlistName": "AMD Capacity Capture Play",
+    "confidence": "high",
+    "validationWarning": "cross-sector or unknown tickers in expansion: TSM, ASML (parsed sectors: XLK)"
+  },
+  "validationWarning": "cross-sector or unknown tickers in expansion: TSM, ASML (parsed sectors: XLK)",
+  "expandedAt": "2026-04-27T22:43:46.947Z",
+  "cached": false,
+  "tokenUsage": null
+}

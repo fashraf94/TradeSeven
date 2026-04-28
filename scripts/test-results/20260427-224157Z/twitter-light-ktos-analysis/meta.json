@@ -1,0 +1,112 @@
+{
+  "row": {
+    "inputName": "twitter-light-ktos-analysis.png",
+    "inputType": "image",
+    "category": "uncategorized",
+    "parsePath": "happy",
+    "expansionPath": "ran",
+    "parseConfidence": 0.82,
+    "tickersFound": 0,
+    "unsupportedTickers": 1,
+    "suspectedInjection": false,
+    "expansionTickerCount": 7,
+    "expansionConfidence": "high",
+    "validationWarnings": "cross-sector or unknown tickers in expansion: LMT, NOC, AVAV, RTX, PLTR, ITA (parsed sectors: (no sector for parsed tickers))",
+    "hardRejected": false,
+    "manualRating": "",
+    "manualNotes": ""
+  },
+  "expectedBehavior": null,
+  "parseLatencyMs": 940,
+  "expandLatencyMs": 514,
+  "parseStatus": 200,
+  "expandStatus": 200,
+  "parseResp": {
+    "dropId": "acdf3322-bd74-4de7-b8ad-9304c60d47d1",
+    "parse": {
+      "extractedText": "New: On Friday, Claude bought the dip on defense stocks by adding Kratos Defense to the portfolio.\n\nIt gave $KTOS a one month price target of $70.65\n\nToday it's already up 4%\n\nHere's the reasoning on why it bought:\n\n\"I added Kratos Defense at 6% as a new position and a deliberate sector diversification. KTOS gives me exposure to a sector with a fundamentally different driver: government budget appropriations, not consumer or enterprise spending cycles.\n\nThe thesis has two layers. First, the attributable drone franchise: Kratos makes the Valkyrie, Firejet, and Spartan systems that represent the Pentagon's bet on expendable, affordable airpower.\n\nThe FY2027 DoD budget proposes $75B in drone spending, and the $200B Iran supplemental markup working through Congress adds to that. KTOS lost CCA Increment 1 to Anduril and General Atomics earlier this year\"",
+      "topic": "Kratos Defense sector rotation and DoD drone spending thesis",
+      "keyClaim": "Kratos Defense is positioned to benefit from $75B FY2027 DoD drone spending and government budget appropriations as a diversification away from consumer/enterprise spending cycles.",
+      "tickers": [
+        "KTOS"
+      ],
+      "impliedTickers": [],
+      "confidence": 0.82,
+      "contentType": "tweet",
+      "signalDirection": "bullish",
+      "timeHorizon": "positional",
+      "referencedDate": "FY2027",
+      "dataPoints": [
+        "one month price target $70.65",
+        "up 4% today",
+        "FY2027 DoD budget proposes $75B in drone spending",
+        "$200B Iran supplemental markup",
+        "position size 6%"
+      ],
+      "suspectedInjection": false
+    },
+    "validation": {
+      "validated": [],
+      "unsupported": [
+        "KTOS"
+      ]
+    },
+    "shouldBailout": false,
+    "shouldHardCheckpoint": false,
+    "cached": true
+  },
+  "expandResp": {
+    "expansion": {
+      "thesisSummary": "Kratos Defense is positioned to capture significant upside from shifting Department of Defense priorities toward affordable, expendable drone systems and massive upcoming budget appropriations.",
+      "apparentDriver": "A projected $75B DoD drone spending allocation for FY2027 and supplemental defense funding mark a pivot toward autonomous airpower.",
+      "relatedTickers": [
+        {
+          "symbol": "KTOS",
+          "role": "anchor"
+        },
+        {
+          "symbol": "LMT",
+          "role": "comparable"
+        },
+        {
+          "symbol": "NOC",
+          "role": "comparable"
+        },
+        {
+          "symbol": "AVAV",
+          "role": "beneficiary"
+        },
+        {
+          "symbol": "RTX",
+          "role": "comparable"
+        },
+        {
+          "symbol": "PLTR",
+          "role": "derivative"
+        },
+        {
+          "symbol": "ITA",
+          "role": "hedge"
+        }
+      ],
+      "invalidationConditions": [
+        "KTOS closes below its 50-day moving average on heavy volume",
+        "FY2027 DoD budget proposal excludes drone-specific funding increases",
+        "Loss of major CCA Increment follow-on contracts"
+      ],
+      "suggestedWatchlistName": "Autonomous Defense and Drone Appropriations",
+      "confidence": "high",
+      "validationWarning": "cross-sector or unknown tickers in expansion: LMT, NOC, AVAV, RTX, PLTR, ITA (parsed sectors: (no sector for parsed tickers))"
+    },
+    "validationWarning": "cross-sector or unknown tickers in expansion: LMT, NOC, AVAV, RTX, PLTR, ITA (parsed sectors: (no sector for parsed tickers))",
+    "expandedAt": "2026-04-27T22:44:10.416Z",
+    "cached": true,
+    "tokenUsage": null
+  },
+  "requestBody": {
+    "type": "image",
+    "imageMime": "image/png",
+    "dropId": "acdf3322-bd74-4de7-b8ad-9304c60d47d1",
+    "imageBase64": "[redacted 599452 chars]"
+  }
+}

@@ -1,0 +1,34 @@
+{
+  "dropId": "e2d799ff-2178-4eb9-b2c9-0d3bd6f5bd33",
+  "parse": {
+    "extractedText": "NASDAQ 100 E-mini Futures chart on TradingView showing 1-minute candlestick data. Current price 27,170.00 with +317.75 (+1.18%) gain. Chart displays intraday price action from 09:00 to ~10:40 ET with multiple support/resistance levels marked by colored bands (teal/green support zone ~27,100, dark red/maroon resistance zone ~27,084-27,091, blue support at ~27,079). Price shows recent spike to ~27,150 with pullback to current levels. Moving averages (green, blue, yellow curves) visible on chart with price currently near the green MA. Red and green candlesticks indicate volatility with wicks extending both above and below key levels.",
+    "topic": "NQ E-mini intraday price action and support/resistance",
+    "keyClaim": "NQ 100 E-mini futures showing intraday volatility with defined support and resistance zones; current price at 27,170 near key moving averages after early spike to 27,150.",
+    "tickers": [
+      "NQ"
+    ],
+    "impliedTickers": [],
+    "confidence": 0.65,
+    "contentType": "chart",
+    "signalDirection": "uncertain",
+    "timeHorizon": "intraday",
+    "referencedDate": "2026-04-27",
+    "dataPoints": [
+      "current price 27,170.00",
+      "gain +317.75 (+1.18%)",
+      "intraday high ~27,150",
+      "support zone ~27,100",
+      "resistance zone ~27,084-27,091"
+    ],
+    "suspectedInjection": false
+  },
+  "validation": {
+    "validated": [],
+    "unsupported": [
+      "NQ"
+    ]
+  },
+  "shouldBailout": false,
+  "shouldHardCheckpoint": false,
+  "cached": true
+}

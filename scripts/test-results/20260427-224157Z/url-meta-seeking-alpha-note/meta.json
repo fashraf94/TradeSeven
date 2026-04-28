@@ -1,0 +1,61 @@
+{
+  "row": {
+    "inputName": "url-meta-seeking-alpha-note.txt",
+    "inputType": "url",
+    "category": "uncategorized",
+    "parsePath": "low_confidence_checkpoint",
+    "expansionPath": "skipped_checkpoint",
+    "parseConfidence": 0.45,
+    "tickersFound": 1,
+    "unsupportedTickers": 0,
+    "suspectedInjection": false,
+    "expansionTickerCount": null,
+    "expansionConfidence": null,
+    "validationWarnings": "",
+    "hardRejected": false,
+    "manualRating": "",
+    "manualNotes": ""
+  },
+  "expectedBehavior": null,
+  "parseLatencyMs": 427,
+  "expandLatencyMs": null,
+  "parseStatus": 200,
+  "expandStatus": null,
+  "parseResp": {
+    "dropId": "16e07416-6884-4ea6-92a5-875e5824fa1e",
+    "parse": {
+      "extractedText": "URL from Seeking Alpha article titled \"Meta Q1 AI Ad Thesis Getting Stronger\". The URL structure suggests content analyzing Meta's Q1 results in the context of AI advertising capabilities and a strengthening investment thesis around AI-driven ad products.",
+      "topic": "Meta Q1 AI advertising thesis",
+      "keyClaim": "Meta's Q1 AI advertising thesis is getting stronger, suggesting improving fundamentals or market positioning in AI-driven ad products.",
+      "tickers": [
+        "META"
+      ],
+      "impliedTickers": [],
+      "confidence": 0.45,
+      "contentType": "news_article",
+      "signalDirection": "bullish",
+      "timeHorizon": "positional",
+      "referencedDate": "Q1 2026",
+      "dataPoints": [],
+      "suspectedInjection": false
+    },
+    "validation": {
+      "validated": [
+        {
+          "symbol": "META",
+          "sectorId": "XLC"
+        }
+      ],
+      "unsupported": []
+    },
+    "shouldBailout": false,
+    "shouldHardCheckpoint": true,
+    "cached": true
+  },
+  "expandResp": null,
+  "requestBody": {
+    "type": "url",
+    "url": "https://seekingalpha.com/article/4894676-meta-q1-ai-ad-thesis-getting-stronger",
+    "dropId": "16e07416-6884-4ea6-92a5-875e5824fa1e"
+  }
+}

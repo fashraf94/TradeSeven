@@ -1,0 +1,48 @@
+{
+  "expansion": {
+    "thesisSummary": "A massive regime shift is occurring as equity valuations reach exhaustion while commodity assets hit generational support levels, signaling a long-term rotation into real assets.",
+    "apparentDriver": "Extreme divergence in the SPGSCI/SPX ratio approaching historical support levels, suggesting a transition from speculative growth to commodity-driven cycles.",
+    "relatedTickers": [
+      {
+        "symbol": "SPGSCI",
+        "role": "anchor"
+      },
+      {
+        "symbol": "SPX",
+        "role": "exposed"
+      },
+      {
+        "symbol": "GSG",
+        "role": "comparable"
+      },
+      {
+        "symbol": "XLE",
+        "role": "beneficiary"
+      },
+      {
+        "symbol": "DBC",
+        "role": "beneficiary"
+      },
+      {
+        "symbol": "GLD",
+        "role": "beneficiary"
+      },
+      {
+        "symbol": "QQQ",
+        "role": "hedge"
+      }
+    ],
+    "invalidationConditions": [
+      "SPGSCI/SPX ratio breaks below 0.08 support",
+      "SPX maintains 50-day SMA support on high volume",
+      "Real yields surge significantly higher"
+    ],
+    "suggestedWatchlistName": "Commodity Secular Bull Rotation",
+    "confidence": "medium",
+    "validationWarning": "cross-sector or unknown tickers in expansion: GSG, XLE, DBC, GLD, QQQ (parsed sectors: (no sector for parsed tickers))"
+  },
+  "validationWarning": "cross-sector or unknown tickers in expansion: GSG, XLE, DBC, GLD, QQQ (parsed sectors: (no sector for parsed tickers))",
+  "expandedAt": "2026-04-27T22:43:44.380Z",
+  "cached": true,
+  "tokenUsage": null
+}

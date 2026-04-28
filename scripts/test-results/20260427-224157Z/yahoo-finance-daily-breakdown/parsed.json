@@ -1,0 +1,76 @@
+{
+  "dropId": "4935a4ca-1d36-45c1-8489-30141575d515",
+  "parse": {
+    "extractedText": "Tech stocks rose on Monday, led by a 13% gain premarket in Qualcomm (QCOM) and an extended gain for Nvidia (NVDA), which hit a record high on Friday. Microsoft's (MSFT) stock declined after the company announced an amended long-term agreement with OpenAI (OPAI.PVT) that will no longer give it exclusive access to the AI startup's intellectual property and AI models. The agreement also altered its revenue-sharing deal with OpenAI. The news came ahead of Microsoft's Q1 update this week, along with results from four other \"Magnificent Seven\" Big Tech companies — Meta (META), Amazon (AMZN), Alphabet (GOOG, GOOGL), and Apple (AAPL). The quarterly results mark the first true test of investor appetite for the tech sector and its massive AI spending since the war in Iran began. Also raising the stakes are recent moves by these companies: Meta has announced it will lay off 10% of its workforce, or about 8,000 roles; Microsoft said it will offer certain US employees voluntary buyouts; and Apple's leadership is undergoing a transformation after CEO Tim Cook announced he will step down on Sept. 1 and be replaced by senior vice president of hardware John Ternus. Tech companies are increasingly looking for ways to save cash, as they spend billions constructing data centers and developing AI models. Qualcomm (QCOM) stock jumped more than 11% on Monday, extending Friday's 11% jump. Tech analyst Ming-Chi Kuo from TF International Securities posted on X that OpenAI (OPAI.PVT) is working with Qualcomm and Taiwanese semiconductor designer MediaTek (2454.TW) to develop smartphone processors. The social media post reinforced optimism that artificial intelligence could kick off a new wave of smartphone upgrades, a big win for chipmakers focused on mobile processors. Qualcomm is best known for its chips that power smartphones. Mass production of the processors is expected in 2028.",
+    "topic": "Magnificent Seven tech earnings, QCOM AI smartphone chips",
+    "keyClaim": "Qualcomm surges 13% on OpenAI smartphone AI processor partnership, while Microsoft/OpenAI deal restructure and Mag 7 earnings set tone for Big Tech investor sentiment this week.",
+    "tickers": [
+      "QCOM",
+      "NVDA",
+      "MSFT",
+      "META",
+      "AMZN",
+      "GOOG",
+      "GOOGL",
+      "AAPL"
+    ],
+    "impliedTickers": [],
+    "confidence": 0.78,
+    "contentType": "news_article",
+    "signalDirection": "mixed",
+    "timeHorizon": "swing",
+    "referencedDate": "2026-04-27",
+    "dataPoints": [
+      "QCOM +13% premarket",
+      "QCOM extended +11% from Friday",
+      "NVDA hit record high Friday",
+      "MSFT stock declined on OpenAI deal restructure",
+      "OpenAI working with QCOM and MediaTek on smartphone processors",
+      "Smartphone AI processor mass production expected in 2028",
+      "Meta laying off 10% workforce (~8,000 roles)",
+      "Apple CEO Tim Cook stepping down Sept. 1",
+      "Microsoft offering voluntary buyouts to US employees"
+    ],
+    "suspectedInjection": false
+  },
+  "validation": {
+    "validated": [
+      {
+        "symbol": "QCOM",
+        "sectorId": "XLK"
+      },
+      {
+        "symbol": "NVDA",
+        "sectorId": "XLK"
+      },
+      {
+        "symbol": "MSFT",
+        "sectorId": "XLK"
+      },
+      {
+        "symbol": "META",
+        "sectorId": "XLC"
+      },
+      {
+        "symbol": "AMZN",
+        "sectorId": "XLY"
+      },
+      {
+        "symbol": "GOOG",
+        "sectorId": "XLC"
+      },
+      {
+        "symbol": "GOOGL",
+        "sectorId": "XLC"
+      },
+      {
+        "symbol": "AAPL",
+        "sectorId": "XLK"
+      }
+    ],
+    "unsupported": []
+  },
+  "shouldBailout": false,
+  "shouldHardCheckpoint": false,
+  "cached": false
+}

@@ -1,0 +1,48 @@
+{
+  "expansion": {
+    "thesisSummary": "Accelerating AI infrastructure spending and falling compute costs are driving a shift from general-purpose GPUs toward a massive custom silicon and ASIC-driven market ecosystem.",
+    "apparentDriver": "The transition from massive GPU training workloads to cost-efficient inference and hyperscaler-led custom chip development.",
+    "relatedTickers": [
+      {
+        "symbol": "NVDA",
+        "role": "anchor"
+      },
+      {
+        "symbol": "AVGO",
+        "role": "beneficiary"
+      },
+      {
+        "symbol": "AMD",
+        "role": "comparable"
+      },
+      {
+        "symbol": "TSM",
+        "role": "derivative"
+      },
+      {
+        "symbol": "GOOGL",
+        "role": "beneficiary"
+      },
+      {
+        "symbol": "AMZN",
+        "role": "beneficiary"
+      },
+      {
+        "symbol": "MSFT",
+        "role": "beneficiary"
+      }
+    ],
+    "invalidationConditions": [
+      "Hyperscaler CapEx growth decelerates below 20% YoY",
+      "ASIC market share remains below 20% by 2030",
+      "Nvidia gross margins compress significantly due to custom chip competition"
+    ],
+    "suggestedWatchlistName": "The Custom Silicon Revolution",
+    "confidence": "high",
+    "validationWarning": "cross-sector or unknown tickers in expansion: TSM (parsed sectors: XLC, XLK, XLY)"
+  },
+  "validationWarning": "cross-sector or unknown tickers in expansion: TSM (parsed sectors: XLC, XLK, XLY)",
+  "expandedAt": "2026-04-27T22:42:11.333Z",
+  "cached": true,
+  "tokenUsage": null
+}

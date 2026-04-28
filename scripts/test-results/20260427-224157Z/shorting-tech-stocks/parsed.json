@@ -1,0 +1,24 @@
+{
+  "dropId": "8b17fc8c-9458-4ae3-8416-a0b4c56e6af6",
+  "parse": {
+    "extractedText": "Shorting tech stocks here is the greatest opportunity I have seen in a decade. AI is going to kill all SaaS companies and they will all go to zero. Stock based comp will dilute share price to infinity. AI kills per-seating pricing and revenues will crater. it is the most obvious trader of the decade. People will look back at 2026 Saas multiples the way we look back at Cisco in 2000. Short tech.",
+    "topic": "SaaS and tech decline due to AI disruption",
+    "keyClaim": "SaaS companies face existential threats from AI disruption, making broad tech shorting the best risk-reward opportunity of the decade.",
+    "tickers": [],
+    "impliedTickers": [],
+    "confidence": 0.45,
+    "contentType": "casual_text",
+    "signalDirection": "bearish",
+    "timeHorizon": "longterm",
+    "referencedDate": "2026",
+    "dataPoints": [],
+    "suspectedInjection": false
+  },
+  "validation": {
+    "validated": [],
+    "unsupported": []
+  },
+  "shouldBailout": false,
+  "shouldHardCheckpoint": true,
+  "cached": false
+}
