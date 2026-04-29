@@ -109,6 +109,23 @@ function todayKey() {
   return new Date().toISOString().slice(0, 10);
 }
 
+// Compute temporal relation between parsedSignal.referencedDate and today.
+// Returns null when referencedDate is absent, malformed, or non-ISO. The
+// downstream prompt builder injects an explicit REFERENCED EVENT TIMING flag
+// only when this returns a non-null value; non-ISO values fall through to
+// model inference under the CURRENT DATE anchor.
+function computeTemporalRelation(referencedDate, today = new Date()) {
+  if (!referencedDate || typeof referencedDate !== 'string') return null;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(referencedDate)) return null;
+  const refTime = Date.parse(referencedDate);
+  if (isNaN(refTime)) return null;
+  const diffMs = refTime - today.getTime();
+  const diffDays = Math.round(diffMs / (24 * 60 * 60 * 1000));
+  if (diffDays < -1) return { relation: 'past', diffDays: Math.abs(diffDays) };
+  if (diffDays > 1) return { relation: 'future', diffDays };
+  return { relation: 'current', diffDays: 0 };
+}
+
 // Builds the signalMarketContext string passed into buildExpansionInputs.
 // Mirrors workshop-chat's joined regime-line + DRB-narrative pattern.
 async function fetchMarketContextString(db) {
@@ -267,6 +284,9 @@ export default async function handler(req, res) {
       marketContextString,
     );
 
+    // Compute temporal relation for date-aware framing in the prompt
+    const temporalRelation = computeTemporalRelation(parsedSignal.referencedDate);
+
     // 9. Assemble system prompt for the signal_expansion branch
     const systemPrompt = buildVoiceLayerPrompt({
       agent,
@@ -274,6 +294,7 @@ export default async function handler(req, res) {
       anchorContext,
       parsedSignal: parsedSignalBlock,
       signalMarketContext: signalMarketContextBlock,
+      temporalRelation,
     });
 
     // 10. Call Gemma with 25s abort
