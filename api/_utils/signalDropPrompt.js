@@ -42,11 +42,6 @@ export const SUBMIT_PARSED_SIGNAL_TOOL = {
         description:
           'Short topic descriptor of what the signal is about. 3-8 words. E.g. "Apple AI strategy shift", "Fed rate cut speculation", "Chip sector rotation". Empty string if the input has no identifiable financial topic.',
       },
-      keyClaim: {
-        type: 'string',
-        description:
-          'The single most important claim, prediction, or observation in the content — the thesis candidate. One sentence. E.g. "AAPL is undervalued because Vision Pro 2 will reignite hardware growth". Empty string if no clear claim exists.',
-      },
       tickers: {
         type: 'array',
         items: { type: 'string' },
@@ -105,7 +100,6 @@ export const SUBMIT_PARSED_SIGNAL_TOOL = {
     required: [
       'extractedText',
       'topic',
-      'keyClaim',
       'tickers',
       'impliedTickers',
       'confidence',
@@ -265,7 +259,6 @@ export function buildExpansionInputs(parsedSignal, marketContext) {
   const parsedSignalBlock = {
     extractedText: wrapWithDelimiters(parsedSignal.extractedText || ''),
     topic: parsedSignal.topic || '',
-    keyClaim: parsedSignal.keyClaim || '',
     tickers: Array.isArray(parsedSignal.tickers) ? parsedSignal.tickers : [],
     impliedTickers: Array.isArray(parsedSignal.impliedTickers)
       ? parsedSignal.impliedTickers

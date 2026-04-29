@@ -15,6 +15,7 @@
 
 import { TICKER_TO_SECTOR } from './rankingConfig.js';
 import { normalizeTicker } from './tickerValidation.js';
+import { logSignalDrops } from './shadowLogger.js';
 
 export function wrapWithDelimiters(text) {
   const safe = typeof text === 'string' ? text : '';
@@ -75,6 +76,32 @@ export function validateExpansionOutput(expansion, parsedSignal) {
   for (const t of parsedTickers) {
     const sector = TICKER_TO_SECTOR[t];
     if (sector) parsedSectors.add(sector);
+  }
+
+  // Off-universe guard: parsed tickers exist but none are in our universe.
+  // Sector congruity check is mathematically meaningless against an empty
+  // baseline. Skip the check, log the off-universe tickers for future
+  // Universe Intelligence sprint to consume, and pass the expansion through.
+  // Closes both Mode A (latent hard-rejection) and Mode B (spurious warning)
+  // from Sprint A audit D2.3.
+  if (parsedSectors.size === 0) {
+    // Fire-and-forget: capture off-universe tickers for future universe expansion.
+    // Failure here must NEVER block validation — wrap in catch.
+    logSignalDrops({
+      event: 'off_universe_ticker_seen',
+      tickers: parsedTickers,
+      contentType: parsedSignal?.contentType || 'unknown',
+      signalDirection: parsedSignal?.signalDirection || 'uncertain',
+      topic: parsedSignal?.topic || '',
+      capturedAt: new Date().toISOString(),
+    }).catch(() => {});
+
+    return {
+      valid: true,
+      hardRejection: false,
+      reason: null,
+      warning: 'sector congruity check skipped: parsed tickers outside supported universe',
+    };
   }
 
   // Defensive passthrough: if the parsed signal has zero anchor tickers, we
