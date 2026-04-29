@@ -1,0 +1,155 @@
+{
+  "id": "aging-demographics",
+  "type": "thematic",
+  "status": "draft",
+  "version": 1,
+  "dkbVersion": "v3.1",
+  "fullEntry": {
+    "theme": "Aging Demographics",
+    "tagline": "The Silver Renaissance — how capital flows through pharma, devices, managed care, senior housing, and wealth decumulation as the global 65+ cohort doubles toward 1.6 billion by 2050.",
+    "category": "demographics",
+    "narrative": {
+      "coreThesis": "The global population aged 65+ is expanding from approximately 10.3% (2024) to a projected 16-22% by 2050, representing a multi-decade compounding tailwind that fundamentally reorganizes capital flows away from youth-centric accumulation toward longevity preservation, chronic disease management, and retirement decumulation. This is a structural compounding force — not a healthcare cycle — because the absolute growth of the elderly population is mathematically guaranteed by demographic data already in place. In 2026, the catalyst accelerating this theme is the convergence of the Peak Boomer cohort crossing the retirement threshold, the rapid expansion of GLP-1 receptor agonists from glycemic control into broad cardiometabolic care, the commercial inflection of amyloid-clearing Alzheimer's therapies, and the implementation of Medicare drug price negotiations.",
+      "whyNow": "GLP-1 global market expanded from $13.4B (2022) to $54.8B (2024) with projections to $139-200B by 2030. US Medicare enrollment crossed 68M in 2024 and projects to 80M by 2030. Medicare Advantage penetration climbed to 54% (2024) and projects to 60% by 2030. The Peak Baby Boomer cohort — those born around 1960 — is moving through retirement age between 2024 and 2026, marking the maximum velocity of retail assets transitioning from accumulation to decumulation architectures.",
+      "horizon": "Multi-decade (through 2050)",
+      "currentPhase": "early-to-mid-cycle"
+    },
+    "chain": {
+      "description": "Capital flows through five distinct layers serving the structurally aging population: pharmaceutical innovation addressing chronic disease, medical devices restoring mechanical function, managed care organizations gating government healthcare spending, specialized real estate housing the high-acuity elderly, and financial services managing the great wealth transfer from accumulation to decumulation. Each layer operates on different cycles with distinct risk profiles. Critical non-obvious dynamic: success in Layer 1 (GLP-1s reducing obesity systemically) creates long-tail downside risk to Layer 2 (reduced demand for joint replacement and cardiac intervention) over a 10-15 year horizon.",
+    "layers": [
+        {
+          "order": 1,
+          "label": "Longevity Pharmaceuticals",
+          "description": "Biopharmaceutical conglomerates developing disease-modifying therapies for chronic conditions endemic to aging — obesity, cardiovascular disease, neurodegeneration",
+          "tickers": ["LLY", "ABBV", "AMGN", "PFE", "MRK"],
+          "subThesis": "Comorbidity multiplier bet — GLP-1 agonists evolved from diabetes drugs into systemic metabolic interventions reducing major adverse cardiovascular events, sleep apnea, and potentially neuroinflammation. Amyloid-clearing antibodies (Leqembi, Kisunla) introduced first true disease-modifying agents for Alzheimer's. NOTE: Layer 1 has a critical universe gap — NVO (Novo Nordisk), the GLP-1 duopoly partner with LLY, is out-of-universe. Cannot trade the metabolic theme comprehensively without it.",
+          "riskProfile": "High beta. IRA Medicare drug price negotiation structurally caps pricing power for blockbuster franchises. Patent cliffs and biosimilar competition pose existential revenue threats. Long-duration clinical trial risk."
+        },
+        {
+          "order": 2,
+          "label": "Medical Devices & Mobility",
+          "description": "Manufacturers of orthopedic implants, cardiovascular devices, and surgical robotics addressing the mechanical wear-and-tear of aging human bodies",
+          "tickers": ["SYK", "MDT", "ISRG", "BSX"],
+          "subThesis": "Active aging volume bet — total knee/hip arthroplasty procedures projected to grow from ~1.5M/yr to 3.5M/yr by 2030 as Boomers refuse end-of-life decline. Robotic platforms (Mako, da Vinci) create razor-and-blade economics with high switching costs through proprietary consumables.",
+          "riskProfile": "Moderate-to-high beta. Long-tail downside risk from systemic GLP-1 adoption — if obesity rates fall 20-30% over 15 years, downstream osteoarthritis, cardiovascular disease, and renal failure incidence drops, structurally reducing procedure volumes. Hospital staffing shortages limit elective surgery throughput. Sensitive to bundled payment models."
+        },
+        {
+          "order": 3,
+          "label": "Managed Care & Services Gateway",
+          "description": "Health insurance providers, pharmacy benefit managers, and value-based care networks aggregating capital from government capitation rates and managing utilization",
+          "tickers": ["UNH", "ELV", "CVS", "CI"],
+          "subThesis": "Arbitrage of outcomes bet — Medicare Advantage privatized 54% of eligible US elderly healthcare spending by 2024, projected to reach 60% by 2030. Value-based integration model where insurers vertically integrate into PBM, data analytics, and direct care delivery captures spread between government payments and actual medical outlays. NOTE: HUM (Humana), the pure-play Medicare Advantage juggernaut, is out-of-universe — the in-universe options are diversified giants that dilute MA exposure.",
+          "riskProfile": "High. Acute regulatory and legislative scrutiny. Profitability sensitive to annual CMS rate-setting, tightening risk-adjustment coding restrictions, and unforeseen utilization spikes. Star Ratings adjustments materially impact bonus payments."
+        },
+        {
+          "order": 4,
+          "label": "Senior Housing & Healthcare REITs",
+          "description": "REITs and operators owning specialized facilities — independent living, assisted living, memory care, skilled nursing, medical office buildings",
+          "tickers": ["WELL", "VTR"],
+          "subThesis": "Acuity-based pricing power bet — high interest rates and construction costs limited new supply just as Peak Boomer cohort enters age range requiring assisted living and memory care. The 80+ demographic is projected to triple by 2050. Operators with high-acuity assets command unprecedented rent increases. NOTE: Layer 4 is universe-thin — pure-play operators (BKD, ENSG) and additional REITs (CTRE, OHI, DOC) are out-of-universe.",
+          "riskProfile": "Moderate. Real estate rate-sensitive. Operational margin compressed by severe nursing/caregiver labor shortages. Construction pipeline constrained, which is bullish for occupancy but limits growth ceiling."
+        },
+        {
+          "order": 5,
+          "label": "Wealth Decumulation",
+          "description": "Asset managers, brokerages, and life insurance conglomerates managing the transition of peak demographic wealth from accumulation to sustainable income generation",
+          "tickers": ["MS", "SCHW", "BLK"],
+          "subThesis": "Institutionalization of the retirement check bet — the aging cohort controls the majority of global wealth, and the Great Wealth Transfer (estimated $84T) is now in motion. Decumulation strategies (annuities, target-date funds with embedded insurance, private market allocations) capture sticky long-term AUM at higher fees than passive accumulation. Average retirement nest egg expectation rose to $1.46M (2024).",
+          "riskProfile": "Moderate. Revenue correlated with equity/fixed-income market beta — prolonged downturn crushes asset-based fees. Persistent fee compression from passive indexing and robo-advisory. Sequence-of-returns risk for retirees triggers defensive flows."
+        }
+      ]
+    },
+    "tickerEcosystem": {
+      "primary": ["LLY", "UNH", "SYK", "WELL", "MS"],
+      "secondary": ["ABBV", "AMGN", "MDT", "ISRG", "ELV", "CVS", "CI", "VTR", "SCHW", "BLK", "BSX"],
+      "adjacent": ["NVDA", "AAPL", "WMT", "PFE", "MRK", "BMY", "GILD"],
+      "noteOnInclusion": "Primary = purest in-universe plays across the chain's five most distinct layers (GLP-1 + Alzheimer's leader, dominant managed care, orthopedic robotics leader, premier senior housing REIT, wealth management leader). Secondary = strong demographic exposure with diversified business lines, including pharma franchises serving chronic disease, broader med device portfolios, hybrid managed care/PBM/retail health, diversified healthcare REIT, and asset management. Adjacent = meaningful tailwind but other core drivers — NVDA powers AI drug discovery, AAPL captures consumer health tracking spend, WMT serves cost-conscious senior pharmacy demand, traditional pharma serving chronic conditions. CRITICAL UNIVERSE GAPS: NVO (GLP-1 duopoly partner) and HUM (pure-play Medicare Advantage) are the two highest-priority single additions."
+    },
+    "subAngles": [
+      {
+        "angle": "The Incretin Paradigm",
+        "thesis": "Bet on GLP-1s expanding from diabetes/obesity into systemic metabolic intervention — cardiovascular, sleep apnea, neuroinflammation — transforming the drug class into foundational global public health infrastructure",
+        "tickers": ["LLY", "AMGN", "PFE"],
+        "idealFor": "Growth-oriented biotech investors seeking high-momentum pharmaceutical disruptors with compounding TAM expansion; high risk tolerance, 5-10 year horizon",
+        "risks": ["Manufacturing bottlenecks in sterile fill-finish capacity limiting near-term revenue", "Generic and compounded competition eroding pricing power post-patent cliff", "IRA expansion negotiating GLP-1 prices structurally"]
+      },
+      {
+        "angle": "The Bionic Boomer",
+        "thesis": "Bet on industrialized surgery — as procedure volumes grow, robotic platforms standardize delivery, integrate into hospital workflows, and generate recurring consumable revenue. Active aging refuses physical decline.",
+        "tickers": ["SYK", "ISRG", "MDT"],
+        "idealFor": "GARP investors wanting predictable, demographically-driven volume growth backed by hard population data; medium beta, 5-10 year horizon",
+        "risks": ["The GLP-1 reverse-tail risk — systemic obesity reduction over 10-15 years could materially reduce demand for joint replacement and cardiac intervention", "Hospital staffing shortages limiting elective surgery throughput", "Capital budget cycles and bundled payment pressure"]
+      },
+      {
+        "angle": "The Decumulation Engine",
+        "thesis": "Bet on the Great Wealth Transfer — financial industry pivots from asset accumulation to decumulation, steering retiree capital into yielding portfolios, structured annuities, and higher-margin private market alternatives",
+        "tickers": ["MS", "BLK", "SCHW"],
+        "idealFor": "Dividend and value-focused investors seeking stable fee-based revenue streams correlated with structural wealth shifts; defensive income profile",
+        "risks": ["Aggressive fee compression from passive ETFs and automated advisory platforms", "Prolonged equity bear market crushing AUM-based fees", "Regulatory tightening on retirement product fees in 401(k) plans"]
+      }
+    ],
+    "supportingData": {
+      "marketSize": "Total US National Health Expenditures reached $5.3T in 2024 (18% of GDP). US Medicare spending projected from $1.0T (2024) to ~$2.0T by 2036. Global GLP-1 market: $13.4B (2022) → $54.8B (2024) → VERIFY: $100-200B by 2030. US retirement assets total $45.8T (2024).",
+      "growthRate": "GLP-1 market CAGR estimated 12-30% through 2030 (wide range across sources). Joint replacement procedures growing 4.5-4.8% CAGR. Medicare Advantage enrollment growth decelerating to 3-4% as it approaches saturation. Global healthcare consulting: 9.33% CAGR through 2030. Global annuity market: 6.1% CAGR through 2030.",
+      "keyMetrics": [
+        { "metric": "Global Population 65+ (% of total)", "baseline": "~9.3% (2020)", "current": "10.3% (2024)", "projected": "16-22% (1.6-2.1B people) by 2050" },
+        { "metric": "US Medicare Enrollment (count)", "baseline": "61.4M (2020)", "current": "68M (2024)", "projected": "76-80M by 2030; 65+ population reaches 73M by 2030" },
+        { "metric": "Medicare Advantage Penetration (% of eligible)", "baseline": "40-42% (2020)", "current": "54% (2024)", "projected": "60% by 2030; 64% by 2034" },
+        { "metric": "Global GLP-1 Market Size ($B)", "baseline": "$13.4B (2022)", "current": "$54.8B (2024)", "projected": "VERIFY: $100-200B by 2030 (sources disagree)" },
+        { "metric": "US Joint Replacement Procedures (count/yr)", "baseline": "~1.1M (2020-2021)", "current": "VERIFY: ~1.4-2.0M estimated", "projected": "~3.5M procedures/yr by 2030 (THA 635K + TKA 1.26M plus revisions)" },
+        { "metric": "US Retirement Assets ($T)", "baseline": "VERIFY: ~$30T (2015)", "current": "$45.8T (2024)", "projected": "$55T+ by 2030; Great Wealth Transfer of ~$84T over coming decades" }
+      ],
+      "catalysts": [
+        "Near-term (6mo): GLP-1 indication expansion (cardiovascular risk reduction, sleep apnea, MASH); Medicare Advantage 2027 rate decisions from CMS; commercial scaling of Leqembi and Kisunla with Medicare coverage determinations; first negotiated drug prices under IRA effective Jan 2026",
+        "Medium-term (1-2yr): Major patent cliffs (Eliquis, Keytruda biosimilar wave, Humira biosimilar maturation); Peak Boomer cohort retirement velocity through 2027-2028; surgical robotics adoption curve maturation transitioning to recurring consumable revenue; second wave of IRA negotiation (15 drugs in 2027/2028)"
+      ]
+    },
+    "inflectionPoints": [
+      { "date": "2023-08", "event": "SELECT trial data — Wegovy (semaglutide) demonstrated 20% reduction in major adverse cardiovascular events in non-diabetic overweight patients", "significance": "Transformed GLP-1s from perceived 'vanity' weight-loss drugs into medically essential, life-saving cardiovascular interventions. Forced commercial insurer coverage decisions and paved the way for Medicare coverage. The single event that re-rated the entire metabolic care thesis from lifestyle drug to systemic public health infrastructure.", "narrativeHandle": "The Cardiometabolic Pivot" },
+      { "date": "2023-08", "event": "CMS announced first 10 drugs selected for Medicare price negotiation under the Inflation Reduction Act, with discounts of 38-79% effective January 2026", "significance": "Shattered the long-standing paradigm of unchecked pharmaceutical pricing power in the US. Structurally capped terminal value of blockbuster drugs, forcing biopharma to accelerate M&A to refill pipelines. Removed a major sector overhang while permanently changing pharma's revenue architecture.", "narrativeHandle": "The Margin Squeeze" },
+      { "date": "2023-01-to-2024-07", "event": "FDA approvals for Leqembi (Eisai/Biogen, January 2023) and Kisunla (Eli Lilly, July 2024) — first amyloid-clearing antibodies proven to slow Alzheimer's progression", "significance": "After decades of catastrophic clinical failures and symptom-only treatments, these approvals proved that Alzheimer's underlying pathophysiology could actually be modified. Opened a multi-billion-dollar frontier in neurodegenerative pharmacology and validated the broader thesis that age-related diseases are addressable, not just manageable.", "narrativeHandle": "The Plaque Clearers" },
+      { "date": "2024-to-2026", "event": "Peak Baby Boomer cohort (born around 1960) crossing age 65, the largest single demographic cohort moving through the retirement threshold", "significance": "Marks the maximum velocity of retail assets transitioning from accumulation to decumulation architectures. Drives a structural rotation in capital toward Medicare Advantage providers, high-acuity senior real estate, and decumulation-focused asset managers. The demographic 'bulge' that has driven equity markets as savers now drives the healthcare and retirement services economies as consumers.", "narrativeHandle": "The Peak Boomer Transition" }
+    ],
+    "whatBreaksTheThesis": [
+      { "risk": "Medicare Advantage Profitability Collapse. The managed care layer's business model depends on the spread between government capitation and actual medical outlays. If CMS aggressively cuts base rates, penalizes risk-adjustment coding intensity, or if utilization spikes (GLP-1 prescriptions, elective surgeries) outpace reimbursement growth, MA profitability evaporates and the layer's valuation multiples collapse.", "signalsToWatch": ["Sustained Medical Loss Ratio (MLR) above reimbursement growth for 2+ quarters", "CMS proposing flat or near-flat (<1%) base rate increases for 2+ consecutive years", "Major insurers exiting >10-15% of MA membership counties in a single year", "UNH or ELV reporting Star Ratings downgrades affecting >20% of plans"] },
+      { "risk": "GLP-1 Downstream Destruction (the Bionic Boomer reverse-tail). If universal GLP-1 adoption succeeds in structurally lowering global obesity by 20-30% over the next 15 years, downstream incidence of osteoarthritis, cardiovascular disease, and renal failure drops materially. This shatters the volume thesis for orthopedic device makers (SYK, ZBH), cardiac stent providers (MDT, BSX), and dialysis providers, eroding decades of projected procedure growth.", "signalsToWatch": ["Multi-quarter slowdown in primary knee and hip replacement volumes that cannot be explained by macro factors", "BMI distribution shifts in CDC data showing meaningful obesity reduction in 50-70 cohort", "Cardiac intervention volume decline at major hospital systems despite aging demographic", "GLP-1 prescriptions reaching 25-30M Americans (vs current 6-7M) sustained for 5+ years"] },
+      { "risk": "Aggressive Expansion of Drug Pricing Legislation. Current IRA negotiation targets 10 drugs in 2026, expanding to 15 in 2027/2028. If future legislation expands negotiation to all drugs with >5 years exclusivity, or shortens biologic negotiation-free windows from 13 years to 9 years or less, the innovation premium for the entire biopharmaceutical industry collapses, stalling R&D and breaking the Longevity Innovators layer.", "signalsToWatch": ["Bipartisan legislation moving to expand IRA negotiation list beyond 20 drugs/yr", "Reduction in negotiation-free exclusivity period for biologics", "Pharma industry R&D spending guidance cuts of >15% YoY", "Major pharma CEO public commentary on stalling US pipeline investment"] }
+    ],
+    "relatedThemes": ["ai-infrastructure-buildout", "reshoring", "consumer-bifurcation"],
+    "relatedQuantPatterns": ["mega-cap-beat-sector-lift"],
+    "forgeRuleConnections": ["f-11 (chase accelerating growth — GLP-1 and Alzheimer's commercialization)", "f-08 (trust the cash — managed care free cash flow discipline)", "sr-03 (sector drift rebalance — cap exposure to any one healthcare layer)", "f-07 (earnings surprise wave — pharma quarterly beat patterns)", "ss-04 (FOMC defensive rotation — REITs in Layer 4 are rate-sensitive)", "f-13 (manage earnings week risk — managed care quarterly utilization disclosures)"]
+  },
+  "injection": "THEME: Aging Demographics\nCORE: The Silver Renaissance — global 65+ cohort doubling from 850M (2024) to 1.6-2.1B by 2050. Multi-decade compounding force, mathematically guaranteed. 2026 catalysts: GLP-1 cardiometabolic expansion, Alzheimer's commercialization, Peak Boomer cohort, IRA drug pricing effective Jan 2026.\nCHAIN: Pharma (LLY/ABBV/AMGN/PFE/MRK) → Med Devices (SYK/MDT/ISRG/BSX) → Managed Care (UNH/ELV/CVS/CI) → Senior Housing REITs (WELL/VTR) → Wealth Decumulation (MS/SCHW/BLK). Each layer different cycle and risk profile.\nCURRENT PHASE: Early-to-mid cycle. GLP-1 market $13.4B (2022) → $54.8B (2024) → $100-200B by 2030. Medicare enrollment 68M (2024) → 80M by 2030. Medicare Advantage at 54% penetration → 60% by 2030. US retirement assets $45.8T with $84T Great Wealth Transfer in motion.\nPRIMARY TICKERS: LLY, UNH, SYK, WELL, MS.\nSUB-ANGLES: Incretin Paradigm (LLY/AMGN) — GLP-1s expanding into systemic care; high beta. Bionic Boomer (SYK/ISRG/MDT) — industrialized surgery on aging cohort; medium beta. Decumulation Engine (MS/BLK/SCHW) — Great Wealth Transfer fee capture; defensive income.\nBREAKS WHEN: (1) Medicare Advantage profitability collapse — MLR exceeds reimbursement, signaled by CMS rate cuts + utilization spikes. (2) GLP-1 downstream destruction — systemic obesity reduction kills joint replacement and cardiac volumes 10-15yr horizon. (3) IRA expansion — drug negotiation widens to all drugs with >5yr exclusivity.\nDIRECTIVE: [Battle] If user holds chain ticker, frame by layer + watch for cross-layer dynamics — GLP-1 success is a long-tail risk to med devices. [Workshop] Present layer choice + surface the non-obvious GLP-1 reverse-tail. Universe gaps: NVO (GLP-1 duopoly partner) and HUM (pure-play MA) critical. Connects to f-11, f-08, sr-03.",
+  "injectionTokenCount": 338,
+  "gemmaDirective": {
+    "battle": "If user holds any ticker in the aging demographics chain (LLY, ABBV, AMGN, PFE, MRK, BMY, GILD, SYK, MDT, ISRG, BSX, UNH, ELV, CVS, CI, WELL, VTR, MS, SCHW, BLK), frame their position by which layer they're playing. Critical non-obvious dynamic to surface: success in Layer 1 (GLP-1s reducing systemic obesity) is a long-tail downside risk to Layer 2 (joint replacement and cardiac intervention volumes) over 10-15 years. If user holds SYK/MDT/ISRG/BSX as 'aging demographics play,' explain the Bionic Boomer reverse-tail — the very thing driving their thesis (active aging needing surgery) is being eroded by the very thing driving the rest of the theme (GLP-1 success). Surface UNH/ELV regulatory sensitivity to CMS rate decisions before earnings.",
+    "workshop": "If user's thesis touches aging, healthcare, retirement, or longevity, present the sub-angle choice explicitly AND introduce the non-obvious cross-layer dynamic. Ask: 'Aging demographics is the rare theme that's mathematically guaranteed by data already in place — but the layers don't all win together. Where do you want to play? The Incretin Paradigm bets on GLP-1s expanding into systemic metabolic care (LLY, AMGN — high beta, big TAM). The Bionic Boomer bets on industrialized surgery for the active aging cohort (SYK, ISRG, MDT — medium beta) — but here's the catch: if GLP-1s succeed at scale, joint replacement and cardiac volumes could decline over 15 years. The Decumulation Engine plays the Great Wealth Transfer (MS, BLK — defensive income).' Propose entry criteria: f-11 for accelerating pharma franchises, f-08 for managed care cash discipline, sr-03 to cap any single layer."
+  },
+  "triggerKeywords": ["aging", "demographics", "longevity", "Boomer", "Baby Boomer", "Peak Boomer", "GLP-1", "Ozempic", "Wegovy", "Mounjaro", "Zepbound", "obesity", "Alzheimer's", "Leqembi", "Kisunla", "Medicare", "Medicare Advantage", "managed care", "joint replacement", "knee replacement", "hip replacement", "surgical robotics", "senior housing", "assisted living", "memory care", "retirement", "decumulation", "Great Wealth Transfer", "annuity", "IRA drug pricing", "patent cliff", "biosimilar"],
+  "holdingsTrigger": ["LLY", "ABBV", "AMGN", "PFE", "MRK", "BMY", "GILD", "JNJ", "SYK", "MDT", "ISRG", "BSX", "UNH", "ELV", "CVS", "CI", "WELL", "VTR", "MS", "SCHW", "BLK"],
+  "calendarTrigger": null,
+  "workshopSeedPrompt": "The user tapped into Aging Demographics from Discover. Open by acknowledging the theme's mathematical certainty AND immediately presenting the layer choice with the non-obvious cross-layer dynamic. Example: 'Aging demographics is unique — it's one of the few themes where the underlying driver (the global 65+ population doubling by 2050) is guaranteed by data already in place. But the layers don't all win together, and there's a critical non-obvious dynamic. You've got pharmaceuticals at the top (LLY — the GLP-1 leader, plus the Alzheimer's pipeline), then medical devices (SYK, ISRG, MDT — joint replacements, surgical robotics), then managed care (UNH, ELV — Medicare Advantage), then senior housing REITs (WELL, VTR), and finally wealth decumulation (MS, BLK — the Great Wealth Transfer). The catch: if GLP-1s succeed at scale and reduce obesity systemically, joint replacement and cardiac intervention volumes could actually decline over 10-15 years. So pharma success is a tail risk to devices. Where do you want to start: the GLP-1 expansion bet, the surgical volumes bet (with the reverse-tail in mind), or the wealth decumulation play?'",
+  "universeExpansionCandidates": [
+    { "ticker": "NVO", "company": "Novo Nordisk", "layer": "Longevity Pharmaceuticals", "rationale": "Co-leader with LLY in GLP-1 incretin market (Ozempic, Wegovy). Cannot trade the metabolic theme comprehensively without it. Cited at unanimous High priority across all three Gemini reports — the single highest-priority single-theme universe gap identified across all themes built.", "priority": "Critical", "themeFrequency": 1 },
+    { "ticker": "HUM", "company": "Humana", "layer": "Managed Care & Services Gateway", "rationale": "Pure-play Medicare Advantage juggernaut providing direct concentrated exposure to government-funded managed care. The diversified giants (UNH, CVS) inherently dilute MA exposure through other operational arms.", "priority": "Critical", "themeFrequency": 1 },
+    { "ticker": "ZBH", "company": "Zimmer Biomet", "layer": "Medical Devices & Mobility", "rationale": "Leader in large joint reconstruction; pure-play exposure to orthopedic procedure volume narrative", "priority": "Medium-High", "themeFrequency": 1 },
+    { "ticker": "BIIB", "company": "Biogen", "layer": "Longevity Pharmaceuticals", "rationale": "Key player in nascent Alzheimer's market via Leqembi franchise; pure-play neurodegenerative exposure", "priority": "Medium-High", "themeFrequency": 1 },
+    { "ticker": "AMP", "company": "Ameriprise Financial", "layer": "Wealth Decumulation", "rationale": "Dominant force in retiree wealth management and advice; captures the financial decumulation layer more purely than diversified banks", "priority": "Medium", "themeFrequency": 1 },
+    { "ticker": "PRU", "company": "Prudential Financial", "layer": "Wealth Decumulation", "rationale": "Leader in life insurance and annuities; pure-play exposure to longevity risk protection and guaranteed retirement income", "priority": "Medium", "themeFrequency": 1 },
+    { "ticker": "CTRE", "company": "CareTrust REIT", "layer": "Senior Housing & Healthcare REITs", "rationale": "Focused exposure to skilled nursing real estate super-cycle; aggressive operational acquisition strategy", "priority": "Medium", "themeFrequency": 1 },
+    { "ticker": "BKD", "company": "Brookdale Senior Living", "layer": "Senior Housing & Healthcare REITs", "rationale": "Largest US operator of senior housing; pure-play operational leverage to rising occupancy and rent pricing power", "priority": "Medium", "themeFrequency": 1 },
+    { "ticker": "ENSG", "company": "The Ensign Group", "layer": "Senior Housing & Healthcare REITs", "rationale": "High-quality operator of skilled nursing and post-acute facilities; non-REIT way to play physical infrastructure layer", "priority": "Medium", "themeFrequency": 1 },
+    { "ticker": "OHI", "company": "Omega Healthcare Investors", "layer": "Senior Housing & Healthcare REITs", "rationale": "Skilled nursing-focused REIT; income-oriented exposure to high-acuity senior care real estate", "priority": "Low-Medium", "themeFrequency": 1 },
+    { "ticker": "DOC", "company": "Healthpeak Properties", "layer": "Senior Housing & Healthcare REITs", "rationale": "Diversified healthcare REIT with medical office building focus", "priority": "Low-Medium", "themeFrequency": 1 },
+    { "ticker": "ZTS", "company": "Zoetis", "layer": "Adjacent / Pet Longevity", "rationale": "Animal health leader capturing the adjacent 'pet longevity' sub-theme as aging consumers increase reliance on companion animals", "priority": "Low", "themeFrequency": 1 }
+  ],
+  "platformValidation": {
+    "userEngagement": 0,
+    "strategiesBuilt": 0,
+    "lastValidated": "2026-04-16",
+    "platformNote": "TWO CRITICAL UNIVERSE GAPS: (1) NVO (Novo Nordisk) — the GLP-1 duopoly partner with LLY. Without it, users cannot trade the metabolic theme comprehensively; effectively cuts Layer 1 in half. Cited unanimous High across all three Gemini reports. (2) HUM (Humana) — the pure-play Medicare Advantage juggernaut. Layer 3 in-universe options (UNH, CVS, ELV, CI) are all diversified giants that dilute MA exposure. Both NVO and HUM are top-priority single additions across all themes built so far. Layer 4 (Senior Housing REITs) is also universe-thin with only WELL and VTR — pure-play operators (BKD, ENSG) and additional REITs (CTRE, OHI, DOC) would meaningfully strengthen that sub-angle. The 2026 IRA drug price negotiation effective date and Medicare Advantage rate decisions are ongoing regulatory events — entry should be reviewed quarterly for material changes. All forward-looking projections prefixed VERIFY: are subject to revision."
+  },
+  "createdAt": "2026-04-16T00:00:00Z",
+  "updatedAt": "2026-04-16T00:00:00Z",
+  "createdBy": "flash"
+}

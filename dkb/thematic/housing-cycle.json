@@ -1,0 +1,163 @@
+{
+  "id": "housing-cycle",
+  "type": "thematic",
+  "status": "draft",
+  "version": 1,
+  "dkbVersion": "v3.1",
+  "fullEntry": {
+    "theme": "Housing Cycle",
+    "tagline": "The multi-decade structural deficit — how capital flows through builders, materials, renovation, rental, and housing finance as the US works through a 4-million-unit shortage that the rate cycle can't solve.",
+    "category": "housing",
+    "narrative": {
+      "coreThesis": "The US housing market has shifted from a cyclical industry into a multi-year structural rebuild defined by a 4 million-unit shortage accumulated since the 2008 GFC, colliding with peak millennial household formation and the mortgage lock-in effect that paralyzes existing supply. This is a structural rebuild rather than a rate cycle because overcoming the deficit requires physical capital, skilled labor, and multi-year construction timelines that no Fed decision can accelerate. In 2026, the catalyst accelerating the theme is the emergence of state-level zoning reform (California, Texas, Florida) overriding local NIMBY restrictions for the first time, combined with stabilizing mortgage rates near 6% and 1.8 million 'missing' Gen Z/millennial households representing pent-up demand.",
+      "whyNow": "US manufacturing construction spending patterns have shifted capital into production homebuilders who have captured ~15% of total home sales (vs historical 10% norm). 51% of existing US mortgages hold rates below 4%, effectively removing millions of homes from liquid market supply. Remodeling spending projected to reach $520-526B in 2026 (Harvard JCHS). Median age of US owner-occupied homes now ~40-42 years, driving non-discretionary system replacement cycles. CBO projects housing starts must average 1.6M/yr through 2035 to accommodate demand — well above the 40-year average of 1.37M.",
+      "horizon": "5-15 years",
+      "currentPhase": "early-to-mid cycle"
+    },
+    "chain": {
+      "description": "Capital flows through five distinct layers of the housing ecosystem: production homebuilders creating net-new supply, materials providers with local-monopoly pricing power, home improvement retailers benefiting from the anti-cyclical 'Improve-in-Place' feedback loop, institutional rental and manufactured housing serving the affordability gap, and housing finance infrastructure awaiting volume normalization. CRITICAL non-obvious dynamic: Layer 3 (Home Improvement) operates INVERSELY to Layer 1 (Builders) — when high rates slow new construction, the lock-in effect strengthens and forces trapped home equity into renovation spending, creating a structural hedge within the theme.",
+      "layers": [
+        {
+          "order": 1,
+          "label": "Production Homebuilders",
+          "description": "Scaled national builders creating net-new housing inventory, using land-light strategies and internal mortgage arms to buy down rates for buyers",
+          "tickers": ["DHI", "LEN"],
+          "subThesis": "Structural supply vacuum bet — builders have captured ~15% of total home sales (historical norm 10%) because existing inventory is locked up. DHI/LEN use mortgage rate buydowns to combat affordability, sacrificing controlled gross margin for high inventory turnover and operating leverage. NOTE: Layer 1 is universe-thin — PHM, TOL, NVR are all out-of-universe, limiting segmentation across entry-level, luxury, and active-adult categories.",
+          "riskProfile": "Moderate. Structurally supported by deficit but carries high operational leverage. Vulnerable to 10-year Treasury yield spikes (immediately increasing cost of funding rate buydowns) and geographic concentration risk — overexposed Sun Belt markets (parts of Austin, Florida) face emerging oversupply."
+        },
+        {
+          "order": 2,
+          "label": "Building Materials & Aggregates",
+          "description": "Heavy materials (aggregates, cement, paint, specialty chemicals) and structural products serving both new construction AND the massive renovation market",
+          "tickers": ["VMC", "MLM", "SHW", "PPG", "NUE", "WY"],
+          "subThesis": "Local-monopoly picks-and-shovels bet — aggregates have weight-to-value ratios that make long-distance transport uneconomical, creating localized oligopolies with immense pricing power. VMC/MLM dominate Sun Belt migration corridors where housing demand is concentrated. SHW captures both new construction and renovation refresh cycles. NUE benefits from tariff regime plus domestic manufacturing buildout.",
+          "riskProfile": "Low-to-moderate beta. Capital-intensive with high barriers to entry. Diversified revenue stream includes non-residential and infrastructure projects, making it less sensitive to short-term housing permit volatility. Commodity deflation risk for lumber-exposed distributors."
+        },
+        {
+          "order": 3,
+          "label": "Home Improvement & Renovation (Anti-Cyclical)",
+          "description": "Retailers and product manufacturers serving the $520B+ annual maintenance, repair, and upgrade market for aging US housing stock",
+          "tickers": ["HD", "LOW"],
+          "subThesis": "The Improve-in-Place feedback loop — this layer operates INVERSELY to Layer 1. Elevated mortgage rates → lock-in effect → restricted existing inventory → trapped home equity → forced renovation spending. With median home age 40+ years, system replacements (roofing, HVAC, electrical) are non-discretionary. Represents a structural hedge within the theme. NOTE: FND (Floor & Decor), MHK (Mohawk flooring), MAS (Masco), AOS (water heaters) are all out-of-universe — meaningful gap for pure-play renovation exposure.",
+          "riskProfile": "Low. Counter-cyclical to new construction. When starts slow, renovation remains resilient as homeowners prioritize asset preservation. Primary risk: HELOC rates sustaining above 7% suppressing high-ticket debt-financed projects."
+        },
+        {
+          "order": 4,
+          "label": "Institutional Rental & Manufactured Housing",
+          "description": "REITs and manufacturers serving households priced out of the purchase market — single-family rentals, manufactured housing communities, modular housing",
+          "tickers": ["AVB", "EQR", "MAA", "UDR"],
+          "subThesis": "Affordability arbitrage bet — the supply-demand imbalance that rewards builders ALSO benefits rental platforms serving priced-out families. Apartment REITs (AVB, EQR, MAA, UDR) capture the professionalization of rental, though the purest-play single-family rental (INVH, AMH) and manufactured housing (SUI, SKY, CVCO) are out-of-universe. NOTE: Layer 4 is the universe-thinnest layer in the theme — pure-play SFR REITs, manufactured housing operators, and modular builders are all unavailable.",
+          "riskProfile": "Moderate. Rate-sensitive (REIT structure) and exposed to regulatory risk on rent control. Operational margin compressed by insurance premium surges in climate-risk markets (Florida, California). Demand floor supported by extreme affordability gap."
+        },
+        {
+          "order": 5,
+          "label": "Housing Finance & Transactional Infrastructure",
+          "description": "Major mortgage lenders, digital origination platforms, title insurers, and the transactional toll bridges of real estate transfer",
+          "tickers": ["JPM", "WFC", "BAC", "USB", "ICE"],
+          "subThesis": "Volume recovery bet — existing home sales collapsed to multi-decade lows during 2023-2025 lock-in paralysis. As mortgage rates stabilize and life events force deferred transactions (marriages, expanding families, retirements, deaths), transaction volumes tend to mean-revert. ICE (mortgage tech) captures the digitization margin expansion. NOTE: Pure-play digital originator RKT and title insurers FNF/STC are out-of-universe.",
+          "riskProfile": "High beta to rate volatility. Refinancing TAM structurally capped — overwhelming majority of existing mortgages secured at unrepeatable sub-4% rates. Title insurers are consolidated (FTC blocked FNF/STC merger) and margin-expanding via digitization."
+        }
+      ]
+    },
+    "tickerEcosystem": {
+      "primary": ["DHI", "LEN", "HD", "VMC", "SHW"],
+      "secondary": ["LOW", "MLM", "PPG", "NUE", "WY", "JPM", "WFC", "ICE"],
+      "adjacent": ["AVB", "EQR", "MAA", "UDR", "USB", "BAC", "PKG", "WELL", "VTR"],
+      "noteOnInclusion": "Primary = purest in-universe plays across the chain's most distinct layers (dominant homebuilder, co-leader builder, renovation leader, aggregates monopolist, coatings essential). Secondary = strong exposure with diversified business lines — materials names serving multiple end markets, major mortgage lenders with broader banking exposure. Adjacent = apartment REITs as closest in-universe exposure to the affordability arbitrage layer (pure-play SFR and manufactured housing REITs are out-of-universe), other banks with mortgage exposure, and healthcare REITs (WELL/VTR) that overlap with Aging Demographics for senior housing transition inventory. CRITICAL UNIVERSE GAPS: Layer 1 (PHM, TOL, NVR), Layer 3 pure-plays (FND, MHK, AOS, MAS), Layer 4 almost entirely (SUI, INVH, AMH, ELS, SKY, CVCO), Layer 5 (RKT, FNF, STC, BLDR in materials)."
+    },
+    "subAngles": [
+      {
+        "angle": "The Structural Supply Vacuum Angle",
+        "thesis": "Bet on scaled production homebuilders who have captured near-monopoly supply of move-in-ready inventory as lock-in effect restricts existing home sales",
+        "tickers": ["DHI", "LEN", "VMC", "SHW"],
+        "idealFor": "Growth-oriented investors with 5-15 year horizon seeking exposure to the structural rebuild; medium-high risk tolerance, comfortable with rate volatility",
+        "risks": ["10-year Treasury yield spike above 5.5% crushing mortgage rate buydown economics", "Rapid rate collapse unlocking the lock-in effect and flooding market with existing inventory (paradoxically bad for builders)", "Sun Belt oversupply in overbuilt metros (Austin, parts of Florida) compressing margins"]
+      },
+      {
+        "angle": "The Improve-in-Place Angle (Anti-Cyclical)",
+        "thesis": "Bet on the $520B+ renovation market structurally supported by aging housing stock AND the lock-in effect that forces trapped home equity into upgrades — INVERSE correlation with builder cycle",
+        "tickers": ["HD", "LOW", "SHW", "PPG"],
+        "idealFor": "Defensive, long-term investors seeking counter-cyclical exposure to the housing theme; lower beta, dividend-oriented",
+        "risks": ["HELOC rates sustaining above 7% suppressing high-ticket debt-financed projects", "Skilled trade labor shortages structurally capping Do-It-For-Me market capacity", "Rapid mortgage rate normalization unlocking inventory and releasing the trapped renovation demand"]
+      },
+      {
+        "angle": "The Regulatory Unlock Angle",
+        "thesis": "Bet on state-level zoning reform overriding local NIMBY restrictions — 2025-2026 legislative unlocks in CA/TX/FL/MN/BC legalizing 'missing middle' density and ADUs, re-valuing suburban land",
+        "tickers": ["DHI", "LEN"],
+        "idealFor": "Policy-aware investors seeking to front-run regulatory shifts; medium-high risk tolerance with longer time horizon for implementation",
+        "risks": ["Protracted litigation from municipalities blocking state-level density mandates", "Infrastructure bottlenecks (water, sewer, electrical grid) unable to support mandated density without massive public capex", "Implementation delays pushing realization timelines into 2028+"]
+      }
+    ],
+    "supportingData": {
+      "marketSize": "US home improvement spending: $404B (2020) → $503B (2024) → $520-526B projected (2026) per Harvard JCHS. US housing starts: 1.38M (2020) → ~1.36M (2025) → CBO projects 1.6M/yr average through 2035. Manufacturing construction spending tangentially supporting workforce housing demand in Sun Belt.",
+      "growthRate": "Remodeling spending growth decelerating to ~1.6% YoY (normalization phase). Production builder market share growing from 10% historical to ~15% of total home sales. CBO baseline household formation: 1.5M/yr driven by millennial cohort entering peak formation years.",
+      "keyMetrics": [
+        { "metric": "US Housing Shortage (millions of units)", "baseline": "~2-3M (post-GFC, 2015)", "current": "VERIFY: 3.7-7.2M range cited across sources; 4.03M used as central estimate", "projected": "Structural deficit persists without sustained 1.6M+ annual starts" },
+        { "metric": "% of Existing US Mortgages Below 4%", "baseline": "<5% (historical normal)", "current": "~51% (Q1 2025); 81% below 6%", "projected": "Gradually decays but remains structural governor on existing inventory for years" },
+        { "metric": "US Housing Starts (annualized)", "baseline": "1.37M (40-year avg); 1.38M (2020)", "current": "~1.36M (2025)", "projected": "CBO projects 1.6M/yr average through 2035 to meet demand" },
+        { "metric": "Median Age of US Owner-Occupied Housing", "baseline": "33 years (2005)", "current": "40-42 years (2024)", "projected": "Continues increasing; drives non-discretionary renovation" },
+        { "metric": "US Home Improvement Spending ($B/yr)", "baseline": "~$300B (pre-COVID)", "current": "$503B (2024)", "projected": "$520-526B (2026) per Harvard JCHS" },
+        { "metric": "30-Year Fixed Mortgage Rate", "baseline": "2.65% (Jan 2021 trough); ~4.1% (2010s avg)", "current": "~6.20% (April 2026)", "projected": "~5.9% (Fannie Mae end-2026 forecast)" },
+        { "metric": "Missing Household Formations (Gen Z + millennials)", "baseline": "Normal demographic baseline", "current": "1.8M 'missing' households living with family/roommates", "projected": "Forms rapidly upon affordability improvement" }
+      ],
+      "catalysts": [
+        "Near-term (6mo): Q2-Q3 2026 homebuilder earnings disclosing backlog and rate buydown trends; state zoning reform implementation milestones in CA/TX/FL; mortgage rate stabilization signaling; Harvard JCHS LIRA (Leading Indicator of Remodeling Activity) quarterly updates",
+        "Medium-term (1-2yr): Fed rate normalization trajectory toward 5.5-6% mortgage range; first major manufactured housing/3D printing breakthrough announcements; permanent zoning reform legal challenges resolved; infrastructure capacity expansion in high-density corridors"
+      ]
+    },
+    "inflectionPoints": [
+      { "date": "2008-to-2011", "event": "Great Financial Crisis housing collapse — thousands of regional homebuilders exited market, skilled trades workforce contracted >20%, residential development credit evaporated", "significance": "The origin of the structural deficit. Dismantled the homebuilding apparatus for over a decade. US produced fewer homes than household formations for ~10 consecutive years, creating the 4M+ unit cumulative deficit that defines the current market.", "narrativeHandle": "The Great Scarring" },
+      { "date": "2020-to-2021", "event": "COVID-era remote work enabling Sun Belt migration collided with millennial peak household formation against GFC-induced supply deficit", "significance": "Triggered historic home price appreciation and absorbed virtually all excess inventory nationwide. The catalyst that turned a dormant structural shortage into an acute crisis. Remote work permanently decoupled housing demand from traditional employment corridors.", "narrativeHandle": "The Demographic Collision" },
+      { "date": "2022-to-2024", "event": "Federal Reserve aggressive hiking cycle pushed 30-year fixed mortgages from sub-3% to 7%+, creating the defining lock-in effect where 51% of mortgages remain below 4%", "significance": "Mathematically trapped millions of homeowners who could not afford to trade 3% mortgages for 7% mortgages. Withheld existing inventory and structurally shifted the burden of supply onto new construction homebuilders, granting them near-monopoly on move-in-ready inventory at historical share highs (~15% vs 10% norm).", "narrativeHandle": "The Golden Handcuffs" },
+      { "date": "2025-to-2026", "event": "State-level zoning reform waves — California, Texas, Florida, Minnesota, British Columbia implementing by-right development, eliminating parking minimums, legalizing ADUs and 'missing middle' housing", "significance": "Regulatory power shifting from hyper-local NIMBY councils to state-level authorities. Re-values suburban land by increasing permissible density. The first meaningful erosion of the regulatory barriers that protected the housing deficit since 2008.", "narrativeHandle": "The Zoning Dam Break" }
+    ],
+    "whatBreaksTheThesis": [
+      { "risk": "Demographic Reversal / Permanent Household Consolidation. The thesis assumes millennial and Gen Z household formation will continue at projected rates. Prolonged stagflation or cultural shifts toward multi-generational living could cause the 1.8M 'missing' households to evaporate as pent-up demand rather than release. Headship rates permanently falling would mean the 4M-unit deficit is actually a balanced market.", "signalsToWatch": ["Headship rates for 25-34 cohort declining for 3+ consecutive years", "Average household size increasing for 2+ consecutive census surveys", "Multi-generational living share exceeding 20% of US households (vs current 18%)", "Rental household formation decelerating even as purchase affordability improves"] },
+      { "risk": "Rate Cycle Extreme (either direction). The thesis relies on rates stabilizing in 5.5-6.5% range. SUSTAINED 7%+ mortgages would trigger mass foreclosure or builder margin collapse no rate buydown could fix. PARADOXICALLY, a rapid return to 3% would break the builder monopoly by unlocking 50%+ of existing mortgages flooding the market with cheaper listings — existing inventory surge would crush DHI/LEN pricing power.", "signalsToWatch": ["30-year mortgage rate sustaining above 7.5% for 6+ months with homebuilder margin guidance cuts", "Rapid rate decline below 4.5% triggering >25% surge in existing home listings within 6 months", "Builder cancellation rates rising above 20%", "MBA Purchase Index collapsing >30% QoQ"] },
+      { "risk": "Technology Disruption in Construction / Manufactured Housing Breakthrough. A scalable breakthrough in 3D-printed housing (projected $2.2B market growing 35% CAGR) or modular assembly robotics could collapse the cost-per-square-foot baseline. While this would solve the societal crisis, it would systematically destroy margins, land valuations, and protective moats of incumbent site-built homebuilders.", "signalsToWatch": ["Major builder announcing 3D printing or modular production scaling to >10% of starts", "Unit cost of factory-built homes falling below 60% of equivalent site-built cost", "Mass adoption announcements from DHI/LEN of factory-based production", "VC/PE capital flows into construction technology exceeding $5B/yr"] }
+    ],
+    "relatedThemes": ["consumer-bifurcation", "reshoring", "aging-demographics", "dollar-strength-regimes"],
+    "relatedQuantPatterns": ["jobs-report-beat-rate-fear", "rate-hike-sector-rotation"],
+    "forgeRuleConnections": ["f-11 (chase accelerating growth — builder backlog acceleration)", "f-08 (trust the cash — builder balance sheet discipline through cycle)", "sr-03 (sector drift rebalance — cap exposure to any one housing layer given Layer 1 vs Layer 3 inverse correlation)", "ss-04 (FOMC defensive rotation — Layer 4 REITs and Layer 5 finance are rate-sensitive)", "tv-13 (volume spike institutional signal — homebuilder earnings reactions)"]
+  },
+  "injection": "THEME: Housing Cycle\nCORE: Multi-year STRUCTURAL rebuild, NOT a rate cycle — 4M-unit shortage from 2008 GFC underbuilding, peak millennial household formation, mortgage lock-in effect paralyzing existing supply. 2026 catalyst: state-level zoning reform overriding NIMBY for first time, rates stabilizing near 6%, 1.8M 'missing' Gen Z/millennial households.\nCHAIN: Production Builders (DHI/LEN) → Materials (VMC/MLM/SHW/PPG/NUE/WY) → Home Improvement (HD/LOW) → Institutional Rental (AVB/EQR/MAA/UDR) → Housing Finance (JPM/WFC/ICE). Non-obvious dynamic: Layer 3 operates INVERSELY to Layer 1 — when high rates crush builders, lock-in effect forces trapped equity into renovation.\nCURRENT PHASE: Early-to-mid cycle. US housing starts 1.36M (2025) vs 1.6M CBO projection through 2035. 51% of existing mortgages below 4%. Median home age 40+ years. Builders captured ~15% of total home sales (historical norm 10%). Remodeling spending $520B+ in 2026.\nPRIMARY TICKERS: DHI, LEN, HD, VMC, SHW.\nSUB-ANGLES: Structural Supply Vacuum (DHI/LEN/VMC) — builder monopoly on inventory; medium-high beta. Improve-in-Place Anti-Cyclical (HD/LOW/SHW) — renovation as structural hedge when builders struggle; defensive. Regulatory Unlock (DHI/LEN) — zoning reform unlocking suburban density.\nBREAKS WHEN: (1) Demographic reversal — missing households never form, headship rates permanently decline. (2) Rate extremes — sustained 7.5%+ crushes builders OR rapid drop to 3% unlocks inventory flood. (3) Construction tech disruption — 3D printing/modular scaling collapses cost curve.\nDIRECTIVE: [Battle] If user holds any chain ticker, frame by layer AND surface the inverse correlation — Layer 1 and Layer 3 are natural hedges. [Workshop] Present 3 sub-angles + emphasize Improve-in-Place as anti-cyclical option. Universe gaps: PHM, BLDR, SUI, INVH, FND critical for pure-play exposure. Connects to f-11, sr-03, ss-04.",
+  "injectionTokenCount": 345,
+  "gemmaDirective": {
+    "battle": "If user holds any ticker in the housing chain (DHI, LEN, HD, LOW, VMC, MLM, SHW, PPG, NUE, WY, AVB, EQR, MAA, UDR, JPM, WFC, BAC, USB, ICE), frame their position by which layer they're playing. Critical non-obvious dynamic to surface: Layer 1 (builders like DHI/LEN) and Layer 3 (renovation like HD/LOW) operate INVERSELY. When rates spike and builders struggle, the lock-in effect tightens and forces trapped home equity into renovation spending — HD/LOW become defensive hedges within the same theme. If user is concentrated in builders only, explain the inverse renovation hedge. Surface rate-cycle dual risk: sustained 7%+ crushes builders, but rapid drop to 3% would UNLOCK existing inventory and also crush builders via supply flood. This is a theme where 'be careful what you wish for' on rates applies.",
+    "workshop": "If user's thesis touches housing, homebuilders, real estate, or mortgage rates, present the sub-angle choice AND introduce the non-obvious inverse correlation between Layer 1 and Layer 3. Ask: 'Housing isn't a single trade — it's five layers with a unique structural feature: the builder layer and the renovation layer are INVERSELY correlated. Where do you want to play? The Structural Supply Vacuum bets on production builders (DHI, LEN) who've captured monopoly supply — high beta, rate-sensitive. The Improve-in-Place angle (HD, LOW, SHW) plays the anti-cyclical renovation market — when builders struggle, the lock-in effect strengthens and trapped equity forces renovation spending. These two angles naturally hedge each other within the same theme. The Regulatory Unlock (DHI, LEN) plays the 2025-2026 zoning reform wave.' Propose entry criteria: f-11 for builder backlog acceleration, f-08 for materials providers with multi-year contracts, sr-03 to balance Layer 1 vs Layer 3 exposure."
+  },
+  "triggerKeywords": ["housing", "homebuilder", "housing shortage", "housing starts", "mortgage rates", "lock-in effect", "millennial household formation", "housing affordability", "renovation", "home improvement", "zoning reform", "NIMBY", "missing middle", "ADU", "Sun Belt migration", "single-family rental", "SFR", "manufactured housing", "aging housing stock", "home equity", "HELOC", "mortgage origination", "title insurance", "refinancing", "housing deficit"],
+  "holdingsTrigger": ["DHI", "LEN", "HD", "LOW", "VMC", "MLM", "SHW", "PPG", "NUE", "WY", "AVB", "EQR", "MAA", "UDR", "JPM", "WFC", "BAC", "USB", "ICE", "PKG", "WELL", "VTR"],
+  "calendarTrigger": null,
+  "workshopSeedPrompt": "The user tapped into Housing Cycle from Discover. Open by acknowledging the structural (not cyclical) nature of the theme AND the unique inverse correlation between layers. Example: 'Housing isn't the rate cycle most people think it is — it's a multi-decade structural rebuild. We've underbuilt by 4 million units since 2008, millennials are finally entering peak household formation, and 51% of existing mortgages are locked at sub-4% rates, keeping those homes off the market. But here is the non-obvious dynamic — two of the layers within this theme are INVERSELY correlated. You have got production builders at the top (DHI, LEN — they have captured monopoly supply because existing inventory is locked up), then materials (VMC, SHW, MLM — local-monopoly picks-and-shovels), then home improvement (HD, LOW — the anti-cyclical hedge because when builders struggle, trapped equity forces renovation spending), then institutional rentals (AVB, EQR — the affordability arbitrage), and finally housing finance (JPM, WFC, ICE — the volume recovery toll bridge). The rate cycle hurts builders but HELPS renovation. Which part fits your view — the supply vacuum bet, the anti-cyclical renovation play, or the regulatory unlock from state zoning reform?'",
+  "universeExpansionCandidates": [
+    { "ticker": "PHM", "company": "PulteGroup", "layer": "Production Homebuilders", "rationale": "Diversified builder across first-time, move-up, and active-adult segments. Adds important demographic segmentation (55+ active adult) not covered by DHI/LEN. Cited High priority in both Gemini reports.", "priority": "High", "themeFrequency": 1 },
+    { "ticker": "BLDR", "company": "Builders FirstSource", "layer": "Building Materials & Aggregates", "rationale": "Premier distributor of lumber and structural components directly to professional builders. Pure-play on new construction volume with productivity software integration. Linchpin of the supply chain for Layer 2.", "priority": "High", "themeFrequency": 1 },
+    { "ticker": "TOL", "company": "Toll Brothers", "layer": "Production Homebuilders", "rationale": "Premier luxury homebuilder. Provides specific exposure to the high-net-worth buyer who is less sensitive to mortgage rate fluctuations and more correlated to overall equity market wealth.", "priority": "High", "themeFrequency": 1 },
+    { "ticker": "NVR", "company": "NVR Inc", "layer": "Production Homebuilders", "rationale": "Uniquely structured land-light builder (options-only land acquisition). Highly defensive, high-ROIC alternative to heavy-asset builders. Best-in-class operating model.", "priority": "High", "themeFrequency": 1 },
+    { "ticker": "SUI", "company": "Sun Communities", "layer": "Institutional Rental & Manufactured Housing", "rationale": "Most sophisticated operator in manufactured housing and RV community space. Key play on affordability gap. Layer 4 is the universe-thinnest layer — SUI would meaningfully strengthen exposure.", "priority": "High", "themeFrequency": 1 },
+    { "ticker": "INVH", "company": "Invitation Homes", "layer": "Institutional Rental & Manufactured Housing", "rationale": "Premier institutional operator of single-family rentals. Captures demographic demand from cohorts priced out of homeownership. Essential for Layer 4 affordability arbitrage angle.", "priority": "High", "themeFrequency": 1 },
+    { "ticker": "FND", "company": "Floor & Decor", "layer": "Home Improvement & Renovation", "rationale": "Hyper-growth category-killer retailer focused on hard-surface flooring. Stronger fundamental revenue growth (+5.5% YoY) than structural suppliers. Critical bellwether for high-margin aesthetic renovation spend.", "priority": "Medium-High", "themeFrequency": 1 },
+    { "ticker": "MHK", "company": "Mohawk Industries", "layer": "Home Improvement & Renovation", "rationale": "Global leader in flooring; high sensitivity to both new starts and renovation activity. Pure-play Layer 3 exposure with international diversification.", "priority": "Medium-High", "themeFrequency": 1 },
+    { "ticker": "SKY", "company": "Skyline Champion", "layer": "Institutional Rental & Manufactured Housing", "rationale": "Leading manufacturer of factory-built homes. Primary technological and process-driven solution to entry-level housing deficit. Affordability arbitrage pure-play.", "priority": "Medium", "themeFrequency": 1 },
+    { "ticker": "CVCO", "company": "Cavco Industries", "layer": "Institutional Rental & Manufactured Housing", "rationale": "Premier designer and builder of manufactured homes, park model RVs, and modular housing. Concentrated exposure to factory-built housing shift.", "priority": "Medium", "themeFrequency": 1 },
+    { "ticker": "RKT", "company": "Rocket Companies", "layer": "Housing Finance & Transactional Infrastructure", "rationale": "Pure-play digital mortgage originator. High-beta play on eventual transaction volume recovery and refinancing cycle.", "priority": "Medium", "themeFrequency": 1 },
+    { "ticker": "FNF", "company": "Fidelity National Financial", "layer": "Housing Finance & Transactional Infrastructure", "rationale": "Largest US title insurance company. Asset-light pure play on transaction velocity recovery. High-margin digitization tailwind (90bp margin expansion from inHere platform).", "priority": "Medium", "themeFrequency": 1 },
+    { "ticker": "AMH", "company": "American Homes 4 Rent", "layer": "Institutional Rental & Manufactured Housing", "rationale": "Second-largest institutional SFR operator. Pure-play alongside INVH for single-family rental exposure.", "priority": "Medium", "themeFrequency": 1 },
+    { "ticker": "ELS", "company": "Equity LifeStyle Properties", "layer": "Institutional Rental & Manufactured Housing", "rationale": "Manufactured housing community operator with extreme zoning scarcity moat. Limited new permitting creates structural rent-rolling power.", "priority": "Medium", "themeFrequency": 1 },
+    { "ticker": "MAS", "company": "Masco Corporation", "layer": "Home Improvement & Renovation", "rationale": "Supply chain industrialization play with diversified building products (plumbing, cabinets, paints). Pure Layer 3 exposure.", "priority": "Medium", "themeFrequency": 1 },
+    { "ticker": "AOS", "company": "A.O. Smith", "layer": "Home Improvement & Renovation", "rationale": "Direct play on replacement cycle for water heaters in aging US housing stock. Non-discretionary system replacement exposure.", "priority": "Medium", "themeFrequency": 1 },
+    { "ticker": "SSD", "company": "Simpson Manufacturing", "layer": "Building Materials & Aggregates", "rationale": "Structural connectors and framing components. Captures supply chain industrialization angle.", "priority": "Low-Medium", "themeFrequency": 1 },
+    { "ticker": "KBH", "company": "KB Home", "layer": "Production Homebuilders", "rationale": "Builder with high-density expertise particularly well-positioned for zoning reform unlock.", "priority": "Low-Medium", "themeFrequency": 1 },
+    { "ticker": "STC", "company": "Stewart Information Services", "layer": "Housing Finance & Transactional Infrastructure", "rationale": "Major title insurance provider. Would complement FNF for consolidated closing infrastructure exposure.", "priority": "Low", "themeFrequency": 1 }
+  ],
+  "platformValidation": {
+    "userEngagement": 0,
+    "strategiesBuilt": 0,
+    "lastValidated": "2026-04-16",
+    "platformNote": "Layer 4 (Institutional Rental & Manufactured Housing) is the universe-thinnest layer in the entire theme — pure-play operators (SUI, INVH, AMH, ELS, SKY, CVCO) are all out-of-universe. In-universe apartment REITs (AVB, EQR, MAA, UDR) provide tangential exposure but lean multifamily rather than single-family or manufactured housing. Layer 1 also has universe gaps — PHM, TOL, NVR would add important segmentation (active-adult, luxury, land-light). Layer 3 pure-plays (FND, MHK, AOS, MAS) would strengthen renovation angle. BLDR is a high-priority Layer 2 gap for framing and structural components. The state zoning reform narrative is an active 2025-2026 regulatory story — specific implementation timelines in CA/TX/FL may shift. CBO housing start projections assume sustained immigration-driven household formation; this assumption may require recalibration if immigration policy shifts materially. All VERIFY: flagged claims subject to revision."
+  },
+  "createdAt": "2026-04-16T00:00:00Z",
+  "updatedAt": "2026-04-16T00:00:00Z",
+  "createdBy": "flash"
+}

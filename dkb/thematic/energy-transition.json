@@ -1,0 +1,149 @@
+{
+  "id": "energy-transition",
+  "type": "thematic",
+  "status": "draft",
+  "version": 1,
+  "dkbVersion": "v3.1",
+  "fullEntry": {
+    "theme": "Energy Transition",
+    "tagline": "The decarbonization industrial complex — how capital flows from firm generation through grid modernization, storage, critical minerals, and the transition majors as $4T+ of US energy infrastructure rebuilds itself.",
+    "category": "energy",
+    "narrative": {
+      "coreThesis": "The US is undergoing a multi-decade rebuild of its energy infrastructure to electrify transportation, decarbonize industrial heat, and serve unprecedented AI-driven electricity demand. This is structurally distinct from prior energy cycles because BOTH renewables AND firm baseload (especially nuclear) are growing simultaneously rather than substituting for each other — driven by AI data center 24/7 demand, EV adoption, electrification of heating, and reshoring industrial loads. In 2026, the catalyst accelerating this theme is the OBBBA (One Big Beautiful Bill Act, July 2025) preserving energy transition tax credits while adding tariff protections for domestic supply chains, combined with grid interconnection queues exceeding 2,600 GW.",
+      "whyNow": "OBBBA preserved IRA energy transition tax credits while adding tariffs on Chinese solar/battery imports. Grid interconnection queue: ~2,600 GW (2024) vs ~1,400 GW (2020). Nuclear renaissance with multiple plant restarts (Three Mile Island, Palisades, planned Diablo Canyon extension). AI data center power demand projected to consume 12%+ of US electricity by 2030. Critical minerals onshoring accelerating with $7B+ in lithium and rare earth domestic production investments.",
+      "horizon": "10-15 years",
+      "currentPhase": "mid-cycle"
+    },
+    "chain": {
+      "description": "Capital flows through five distinct layers of the energy transition: firm generation providing 24/7 baseload, grid modernization enabling renewable integration, storage and enabling technologies bridging intermittency, critical minerals supplying the physical inputs, and the transition majors managing legacy energy assets while pivoting to lower-carbon. CRITICAL non-obvious dynamic: pure-transition utilities (NEE, CEG) and hybrid utilities (SO, DUK) carry materially different multiples — pure plays trade at 22-28x earnings while hybrids trade at 16-20x, despite serving the same end markets.",
+      "layers": [
+        {
+          "order": 1,
+          "label": "Firm Generation (Nuclear + Natural Gas)",
+          "description": "Utilities and IPPs operating 24/7 baseload generation — the layer benefiting from AI data center demand for firm power",
+          "tickers": ["NEE", "CEG", "SO", "DUK"],
+          "subThesis": "AI data centers and reshoring industrial loads require 24/7 firm power that intermittent renewables cannot provide alone. NEE largest renewables developer with grid connection priority + Florida regulated utility. CEG dominant nuclear fleet with hyperscaler PPAs (MSFT Three Mile Island, AMZN Talen). SO and DUK regulated Southeastern utilities with growing data center backlogs. NOTE: VST and TLN (independent power producers with significant data center exposure) are out-of-universe.",
+          "riskProfile": "Moderate. Regulatory risk from PUC rate decisions. Long permitting timelines for new nuclear (5-10 years) and gas (3-5 years). Data center demand concentration risk — top 5 hyperscalers drive most new capacity demand."
+        },
+        {
+          "order": 2,
+          "label": "Grid Modernization",
+          "description": "Transmission and distribution equipment manufacturers, electrical equipment, power management, and grid construction contractors",
+          "tickers": ["GEV", "ETN", "PWR", "EMR"],
+          "subThesis": "Grid is the new bottleneck bet — interconnection queues exceeding 2,600 GW require massive expansion in transmission and distribution. GEV gas turbine + grid solutions backlog at multi-year highs. ETN power management critical for data centers, factories, and EV charging. PWR transmission construction backlog accelerating. EMR thermal expertise + automation for grid edge.",
+          "riskProfile": "Moderate-to-high. Long lead times on transformers and HV equipment (multi-year). Skilled labor shortages limit construction throughput. Permitting and right-of-way disputes for transmission lines."
+        },
+        {
+          "order": 3,
+          "label": "Storage & Enabling Technologies",
+          "description": "Battery storage, EVs, hydrogen, fuel cells, and the technologies that enable intermittent renewables to serve grid-scale demand",
+          "tickers": ["TSLA", "BE"],
+          "subThesis": "Storage bridges renewable intermittency bet — utility-scale battery deployments growing 50%+ annually. TSLA Megapack + Powerwall captures storage build-out. BE fuel cells for distributed firm power. NOTE: FLNC (Fluence Energy pure-play storage) and ALB (Albemarle lithium) are out-of-universe — meaningful gaps for storage angle.",
+          "riskProfile": "High beta. Battery cost decline trajectory critical to thesis. Hydrogen economy still uncertain timing. EV adoption sensitive to consumer credit, charging infrastructure, and tariff dynamics."
+        },
+        {
+          "order": 4,
+          "label": "Critical Minerals & Materials",
+          "description": "Mining, refining, and processing of copper, lithium, nickel, cobalt, rare earths, and other critical inputs to the transition",
+          "tickers": ["FCX", "ALB"],
+          "subThesis": "Onshored critical minerals bet — OBBBA tariffs and IRA domestic content requirements force supply chain reshoring. FCX dominant copper producer (electrification's most critical metal). ALB largest lithium producer with US footprint. Copper has -0.81 correlation with DXY, making this layer highly sensitive to dollar regime. NOTE: MP (rare earths magnets) is out-of-universe — critical for EV motors and grid components.",
+          "riskProfile": "High beta. Commodity price cyclicality. Geopolitical concentration risk (China dominates rare earths processing, Indonesia for nickel, Chile/Australia for lithium). Capital-intensive multi-year mine developments."
+        },
+        {
+          "order": 5,
+          "label": "Transition Majors (Legacy Pivoting)",
+          "description": "Integrated oil and gas companies managing the legacy energy book while pivoting to lower-carbon investments — refining, petrochemicals, LNG, hydrogen, and CCUS",
+          "tickers": ["XOM", "CVX", "PSX", "SLB"],
+          "subThesis": "Cash flow management bet — these companies generate massive cash flows from legacy assets while making selective lower-carbon investments. XOM CCUS + lithium production + Pioneer integration. CVX hydrogen + biofuels + CCUS. PSX refining + biofuels conversion. SLB digital + carbon capture services. Defensive complement to growth-oriented Layers 1-4.",
+          "riskProfile": "Low-to-moderate. Cash flow profile defensive. Risk of oil demand decline accelerating faster than transition investments mature. Stranded asset risk in 10-15 year horizon."
+        }
+      ]
+    },
+    "tickerEcosystem": {
+      "primary": ["NEE", "CEG", "GEV", "FCX", "XOM"],
+      "secondary": ["SO", "DUK", "ETN", "PWR", "EMR", "TSLA", "BE", "ALB", "CVX", "PSX", "SLB"],
+      "adjacent": ["LIN", "APD", "DOW", "DD", "CTVA", "NUE", "NVDA", "EQIX", "DLR", "AEP", "D", "PCG", "EXC", "XEL", "PEG"],
+      "noteOnInclusion": "Primary = purest in-universe plays across the chain's most distinct layers (largest renewables developer, nuclear fleet leader, grid solutions and gas turbines, copper producer, transition major with most aggressive lower-carbon investment). Secondary = strong exposure with diversified business. Adjacent = industrial gases, materials, and infrastructure that enable the transition but have other primary drivers. CRITICAL UNIVERSE GAPS: VST, TLN (IPPs with data center exposure), FLNC (pure-play storage), MP (rare earths), CCJ (uranium)."
+    },
+    "subAngles": [
+      {
+        "angle": "The Nuclear Renaissance Angle",
+        "thesis": "Bet on nuclear baseload as the only firm zero-carbon power source that can serve AI data center 24/7 demand — restart cycle plus license extensions creating multi-year tailwind",
+        "tickers": ["CEG", "NEE", "DUK"],
+        "idealFor": "Defensive growth investors with 5-10 year horizon seeking exposure to AI without high-beta semis; medium beta, dividend-supportive",
+        "risks": ["Nuclear restart projects technical failures (Palisades has had delays)", "PUC rejection of nuclear-data-center-specific rate structures", "Long lead times for new build (5-10 years) limit near-term throughput"]
+      },
+      {
+        "angle": "The Grid Modernization Angle",
+        "thesis": "Bet on transmission and distribution buildout — interconnection queue exceeding 2,600 GW requires massive infrastructure investment with multi-decade tailwind",
+        "tickers": ["GEV", "ETN", "PWR"],
+        "idealFor": "Industrial growth investors with 5-10 year horizon comfortable with cyclical exposure; medium-high beta",
+        "risks": ["Skilled labor shortages limiting throughput", "Permitting and right-of-way disputes delaying transmission projects", "Hyperscaler self-build of distribution infrastructure compressing third-party demand"]
+      },
+      {
+        "angle": "The Critical Minerals Angle",
+        "thesis": "Bet on commodity producers benefiting from electrification demand AND OBBBA-driven supply chain reshoring — copper, lithium, rare earths face structural demand growth with constrained supply",
+        "tickers": ["FCX", "ALB"],
+        "idealFor": "High-beta commodity investors comfortable with cyclical volatility; 5-15 year horizon; high risk tolerance",
+        "risks": ["Commodity price collapse from global recession", "Geopolitical concentration risk (China rare earths, Indonesia nickel)", "Substitution technologies reducing demand intensity"]
+      }
+    ],
+    "supportingData": {
+      "marketSize": "Total US energy transition capex estimated at $4T+ cumulative through 2035. Grid investment alone projected at $1T+ over the next decade. Critical minerals onshoring investments: $7B+ committed since IRA passage. Hyperscaler PPAs for nuclear: $20B+ in committed contracts since 2024.",
+      "growthRate": "US battery storage deployment growing ~50% annually. Grid interconnection queue growing ~30% annually. Nuclear restart pipeline: 4 plants under active restart consideration as of 2026. Transmission line construction backlog at multi-year highs.",
+      "keyMetrics": [
+        { "metric": "US Grid Interconnection Queue (GW)", "baseline": "1,400 GW (2020)", "current": "~2,600 GW (2024)", "projected": "Continues growing as data center and renewables demand accelerates" },
+        { "metric": "Hyperscaler Nuclear PPA Volume ($B)", "baseline": "<$1B (pre-2024)", "current": "$20B+ (2024-2026 cumulative)", "projected": "Continued growth as more nuclear plants enter service" },
+        { "metric": "US Battery Storage Deployment (GW annual)", "baseline": "~3 GW (2020)", "current": "VERIFY: ~25 GW (2024)", "projected": "50+ GW annual by 2027-2028" },
+        { "metric": "US EV Sales (% of new vehicle sales)", "baseline": "2% (2020)", "current": "VERIFY: ~9% (2025)", "projected": "15-25% range by 2030 (wide range due to tariff/credit uncertainty)" },
+        { "metric": "Critical Minerals Domestic Investment ($B)", "baseline": "<$1B (pre-IRA)", "current": "$7B+ committed (2024-2026)", "projected": "Continued acceleration with OBBBA tariff protection" }
+      ],
+      "catalysts": [
+        "Near-term (6mo): Q2-Q3 2026 hyperscaler PPA announcements; new nuclear restart project announcements; Q2 2026 OBBBA implementation milestones for tariff schedules; state PUC decisions on AI data center rate structures",
+        "Medium-term (1-2yr): First major nuclear restart coming online (Palisades target 2026); battery storage cost decline trajectory; EV sales inflection points; critical minerals project completions (Thacker Pass lithium, MP Materials magnetics)"
+      ]
+    },
+    "inflectionPoints": [
+      { "date": "2022-08", "event": "Inflation Reduction Act (IRA) signed — $370B in clean energy tax credits and incentives", "significance": "Largest climate investment in US history. Catalyzed massive capex commitments across renewables, storage, EVs, and critical minerals. Established the policy framework that 2025 OBBBA preserved and extended.", "narrativeHandle": "The IRA Moment" },
+      { "date": "2024-09", "event": "Microsoft 20-year PPA to restart Three Mile Island nuclear plant for AI data center power", "significance": "First mainstream signal of the AI-power demand collision. Triggered cascade of similar deals (AMZN-Talen, GOOGL-Kairos). Re-rated nuclear utilities (CEG, VST, TLN). Validated nuclear renaissance thesis.", "narrativeHandle": "The Nuclear Pivot" },
+      { "date": "2025-07", "event": "OBBBA (One Big Beautiful Bill Act) signed — preserved IRA energy transition credits while adding tariffs on Chinese solar/battery imports", "significance": "Removed major policy uncertainty overhang. Confirmed bipartisan structural commitment to energy transition while adding domestic supply chain protection. Catalyzed second wave of capex commitments and accelerated critical minerals onshoring.", "narrativeHandle": "The Bipartisan Confirmation" },
+      { "date": "2025-to-2026", "event": "Grid interconnection queue exceeded 2,600 GW — nearly double 2020 levels", "significance": "Quantitative signal that grid capacity has become the binding constraint on energy transition speed. Shifted investor attention from generation (long-running theme) to transmission and distribution (newer theme). Validated PWR, GEV, ETN as critical multi-year compounders.", "narrativeHandle": "The Grid Bottleneck" }
+    ],
+    "whatBreaksTheThesis": [
+      { "risk": "Federal Policy Reversal. Despite OBBBA confirmation, future administrations could roll back IRA tax credits, kill EV mandates, or reverse OBBBA tariffs. Without policy support, much of the layer 3 (storage, EVs) and layer 4 (critical minerals onshoring) economics would compress materially. Layer 1 (firm generation) is more insulated due to data center demand independence from policy.", "signalsToWatch": ["Bipartisan legislation rolling back >25% of IRA energy tax credits", "OBBBA tariffs reduced or eliminated", "EV mandates rolled back at federal or major state levels (CA, NY)", "Grid interconnection rule changes favoring fossil over renewables"] },
+      { "risk": "Battery Cost Plateau. The thesis assumes battery costs continue declining 5-10% annually, enabling storage deployment to bridge intermittency. If lithium-ion learning curves plateau OR critical material constraints prevent further cost reduction, storage layer (TSLA Megapack, BE) thesis breaks. Renewables become economically uncompetitive without affordable storage.", "signalsToWatch": ["Battery cell costs flat or rising for 2+ consecutive years", "Lithium prices sustaining above $25K/ton", "Major battery storage project cancellations from cost overruns", "Alternative storage (sodium-ion, iron-air, flow) failing to commercialize at scale"] },
+      { "risk": "Demand Shock — Recession or AI Capex Digestion. The thesis relies on continued growth in electricity demand from AI data centers, EVs, electrification, and reshoring. A severe recession compressing all four simultaneously OR an AI capex digestion phase could dramatically slow the data center growth that has reframed the entire generation thesis.", "signalsToWatch": ["Hyperscaler capex flat or declining for 2+ consecutive quarters", "EV sales declining year-over-year in major markets", "Industrial electricity demand declining in major reshoring states", "Major utility revising load growth forecasts down materially"] }
+    ],
+    "relatedThemes": ["ai-infrastructure-buildout", "reshoring", "dollar-strength-regimes"],
+    "relatedQuantPatterns": ["mega-cap-beat-sector-lift"],
+    "forgeRuleConnections": ["f-11 (chase accelerating growth — grid modernization, nuclear demand)", "f-08 (trust the cash — utility cash flow stability)", "sr-03 (sector drift rebalance — cap exposure to any one transition layer)", "ss-04 (FOMC defensive rotation — utilities are rate-sensitive)"]
+  },
+  "injection": "THEME: Energy Transition\nCORE: Multi-decade $4T+ rebuild — BOTH renewables AND firm baseload growing simultaneously (not substituting). Driven by AI 24/7 demand, EVs, electrification, reshoring. 2026 catalyst: OBBBA preserved IRA credits + added tariffs on Chinese imports. Grid interconnection queue 2,600 GW (vs 1,400 GW 2020).\nCHAIN: Firm Generation (NEE/CEG/SO/DUK) → Grid Modernization (GEV/ETN/PWR/EMR) → Storage & Enablers (TSLA/BE) → Critical Minerals (FCX/ALB) → Transition Majors (XOM/CVX/PSX/SLB).\nCURRENT PHASE: Mid-cycle. Pure-transition utilities (NEE, CEG) trade 22-28x earnings vs hybrids (SO, DUK) at 16-20x. Hyperscaler nuclear PPAs $20B+ committed. Grid is now the binding constraint.\nPRIMARY TICKERS: NEE, CEG, GEV, FCX, XOM.\nSUB-ANGLES: Nuclear Renaissance (CEG/NEE/DUK) — defensive growth via AI firm power. Grid Modernization (GEV/ETN/PWR) — multi-decade infrastructure tailwind. Critical Minerals (FCX/ALB) — high-beta commodity + onshoring.\nBREAKS WHEN: (1) Federal policy reversal — IRA rollback or OBBBA tariff elimination. (2) Battery cost plateau — storage thesis breaks if costs flat. (3) Demand shock — recession or AI capex digestion compresses all 4 demand drivers.\nDIRECTIVE: [Battle] Frame by layer + surface the firm-vs-intermittent dynamic. Pure-transition vs hybrid utility multiples carry different risk profiles. [Workshop] Present 3 angles + emphasize grid as new binding constraint. Universe gaps: VST, CCJ, MP, FLNC critical. Connects to f-11, f-08, sr-03, ss-04.",
+  "injectionTokenCount": 348,
+  "gemmaDirective": {
+    "battle": "If user holds any ticker in the energy transition chain (NEE, CEG, SO, DUK, GEV, ETN, PWR, EMR, TSLA, BE, FCX, ALB, XOM, CVX, PSX, SLB), frame their position by which layer they're playing. Critical non-obvious dynamics to surface: (1) Pure-transition utilities (NEE, CEG) trade at 22-28x earnings while hybrid utilities (SO, DUK) trade at 16-20x — this multiple gap reflects pure-play vs diversified exposure. (2) Grid is now the binding constraint, not generation — interconnection queue >2,600 GW means GEV/PWR/ETN may be more capacity-constrained than NEE/CEG. (3) Critical minerals (FCX, ALB) have high cross-theme exposure with Reshoring AND Dollar Strength Regimes (FCX has -0.81 correlation with DXY). Surface OBBBA implementation milestones and PUC decisions before utility earnings.",
+    "workshop": "If user's thesis touches energy, utilities, EVs, batteries, nuclear, or critical minerals, present the sub-angle choice AND introduce the firm-vs-intermittent insight. Ask: 'Energy Transition is unique among themes — both renewables AND firm baseload are growing simultaneously rather than substituting for each other. AI data center 24/7 demand has reframed the entire generation thesis. Where do you want to play? The Nuclear Renaissance bets on firm zero-carbon power — CEG, NEE, DUK with hyperscaler PPAs. The Grid Modernization angle plays the new binding constraint — GEV, ETN, PWR with multi-year backlogs. The Critical Minerals angle plays the high-beta commodity layer — FCX (-0.81 DXY correlation) and ALB.' Propose entry criteria: f-11 for accelerating utility data center backlog, f-08 for utility cash flow discipline, sr-03 to balance generation vs grid vs minerals exposure, ss-04 for FOMC-driven utility rotation."
+  },
+  "triggerKeywords": ["energy transition", "decarbonization", "renewables", "solar", "wind", "nuclear", "nuclear renaissance", "battery storage", "EV", "electric vehicle", "grid modernization", "transmission", "interconnection", "IRA", "Inflation Reduction Act", "OBBBA", "critical minerals", "lithium", "copper", "rare earths", "hydrogen", "CCUS", "carbon capture", "data center power", "Three Mile Island", "Palisades", "PPA", "utility"],
+  "holdingsTrigger": ["NEE", "CEG", "SO", "DUK", "GEV", "ETN", "PWR", "EMR", "TSLA", "BE", "FCX", "ALB", "XOM", "CVX", "PSX", "SLB", "AEP", "D", "PCG", "EXC", "XEL", "PEG"],
+  "calendarTrigger": null,
+  "workshopSeedPrompt": "The user tapped into Energy Transition from Discover. Open by acknowledging the multi-layer structure AND the unique firm-vs-intermittent dynamic. Example: 'Energy Transition is structurally different from past energy cycles — it's not renewables substituting for fossil. Both are growing simultaneously because AI data centers need 24/7 firm power, EVs need clean electricity, and reshoring industrial loads need both. You've got firm generation at the top (NEE, CEG, SO, DUK — including the nuclear renaissance), then grid modernization (GEV, ETN, PWR — increasingly the binding constraint with interconnection queues over 2,600 GW), then storage and enablers (TSLA, BE), then critical minerals (FCX, ALB — onshoring story plus -0.81 DXY correlation for copper), and finally the transition majors managing legacy assets while pivoting (XOM, CVX, PSX, SLB). Three angles: Nuclear Renaissance (defensive growth via AI firm power), Grid Modernization (multi-decade infrastructure tailwind), or Critical Minerals (high-beta commodity plus onshoring). Where do you want to play?'",
+  "universeExpansionCandidates": [
+    { "ticker": "VST", "company": "Vistra Corp", "layer": "Firm Generation (Nuclear IPP)", "rationale": "Independent power producer with nuclear fleet; serves both data center power demand AND firming generation layer. Cross-theme with AI Infrastructure.", "priority": "High", "themeFrequency": 2 },
+    { "ticker": "CCJ", "company": "Cameco", "layer": "Firm Generation (Uranium Fuel Cycle)", "rationale": "Uranium miner; nuclear fuel supply chain for both data center power demand AND energy transition baseload. Cross-theme.", "priority": "High", "themeFrequency": 2 },
+    { "ticker": "TLN", "company": "Talen Energy", "layer": "Firm Generation (Nuclear IPP)", "rationale": "Nuclear power producer; similar dual role to VST at smaller scale. Cross-theme.", "priority": "Medium", "themeFrequency": 2 },
+    { "ticker": "MP", "company": "MP Materials", "layer": "Critical Minerals & Materials", "rationale": "Rare earth magnets; critical for EV motors AND grid components. Cross-theme with Reshoring.", "priority": "High", "themeFrequency": 2 },
+    { "ticker": "FLNC", "company": "Fluence Energy", "layer": "Storage & Enabling Technologies", "rationale": "Pure-play battery storage; grid-scale storage layer. Essential for storage sub-angle.", "priority": "High", "themeFrequency": 1 },
+    { "ticker": "BLDP", "company": "Ballard Power", "layer": "Storage & Enabling Technologies (Hydrogen)", "rationale": "Fuel cell pure-play for hydrogen economy; high-beta hydrogen exposure", "priority": "Low-Medium", "themeFrequency": 1 },
+    { "ticker": "NEM", "company": "Newmont Corporation", "layer": "Critical Minerals (Gold/Precious)", "rationale": "Gold producer benefiting from regime hedges; cross-theme with Dollar Strength Regimes", "priority": "Medium", "themeFrequency": 2 }
+  ],
+  "platformValidation": {
+    "userEngagement": 0,
+    "strategiesBuilt": 0,
+    "lastValidated": "2026-04-16",
+    "platformNote": "Layer 1 (Firm Generation) and Layer 4 (Critical Minerals) have meaningful cross-theme universe gaps. VST and TLN for IPPs with data center exposure, CCJ for uranium fuel cycle, MP for rare earths — all multi-theme tickers (cross with AI Infrastructure and Reshoring). FLNC for pure-play storage. The OBBBA preservation of IRA credits + tariff additions (July 2025) and hyperscaler nuclear PPA cascade (Three Mile Island Sept 2024, Talen 2024, Kairos 2024) define the current 'Bipartisan Confirmation' phase. Entry should be reviewed quarterly for material policy changes from new administrations. All forward-looking projections prefixed VERIFY: are subject to revision."
+  },
+  "createdAt": "2026-04-16T00:00:00Z",
+  "updatedAt": "2026-04-16T00:00:00Z",
+  "createdBy": "flash"
+}

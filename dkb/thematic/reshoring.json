@@ -1,0 +1,148 @@
+{
+  "id": "reshoring",
+  "type": "thematic",
+  "status": "draft",
+  "version": 1,
+  "dkbVersion": "v3.1",
+  "fullEntry": {
+    "theme": "Reshoring",
+    "tagline": "The great industrial buildback — how capital flows through heavy construction, materials, semiconductor manufacturing, logistics, and automation as $1.2T+ of US manufacturing capacity rebuilds itself.",
+    "category": "industrial",
+    "narrative": {
+      "coreThesis": "The reshoring of US manufacturing represents a multi-decade structural rebuild driven by the convergence of CHIPS Act semiconductor incentives, IRA clean energy manufacturing credits, OBBBA tariff regime, geopolitical supply chain de-risking, and the strategic recognition that critical industries (chips, batteries, pharmaceuticals, defense) cannot remain dependent on foreign supply. This is structurally distinct from past industrial cycles because it is policy-mandated rather than market-driven, with $1.2T+ in committed investments creating a multi-year capex backlog that cannot be unwound by recession alone. In 2026, the catalyst accelerating this theme is the OBBBA implementation creating the highest US tariff regime in 90 years, combined with $400B+ already-deployed CHIPS and IRA capex now entering the mid-cycle materials and equipment phase.",
+      "whyNow": "OBBBA (July 2025) implemented effective tariff rate of 9.8% by December 2025 — highest in 90 years. CHIPS Act has committed $52B+ with private investment commitments exceeding $400B. IRA clean energy manufacturing has driven $7B+ in critical minerals investments. Major fab construction projects in Arizona (TSM, INTC), Ohio (INTC), New York (Micron), Texas (Samsung) entering peak capex phase. Battery manufacturing investments in Georgia, Tennessee, Michigan ramping to commercial production.",
+      "horizon": "10+ years",
+      "currentPhase": "early-to-mid cycle"
+    },
+    "chain": {
+      "description": "Capital flows through five distinct layers of the reshoring buildout, sequenced by capital cycle position: heavy construction and EPC services (early-cycle), materials and aggregates (mid-cycle), semiconductor manufacturing equipment and capacity (mid-cycle), logistics and rail (late-cycle as production ramps), and finally robotics and industrial automation (late-cycle as labor productivity becomes binding constraint). CRITICAL non-obvious dynamic: capital sequencing matters — early-cycle EPC contractors (PWR, CAT) face peak demand 2024-2026, mid-cycle materials and equipment providers (LIN, AMAT, LRCX) face peak demand 2026-2028, and late-cycle logistics/automation (UNP, NSC, ROK, EMR) face peak demand 2027-2030+.",
+      "layers": [
+        {
+          "order": 1,
+          "label": "Heavy Construction & EPC",
+          "description": "Engineering, procurement, and construction firms building factories, semiconductor fabs, and industrial mega-projects",
+          "tickers": ["PWR", "CAT", "GEV"],
+          "subThesis": "Early-cycle capex bet — these companies are the first to see revenue from reshoring as new fabs and factories require massive construction. PWR transmission and substation construction. CAT heavy equipment for site preparation. GEV power infrastructure for new fabs. Peak demand 2024-2026 with backlog visibility into 2027. NOTE: FLR (Fluor) and ACM (AECOM), the purest EPC pure-plays, are out-of-universe.",
+          "riskProfile": "Moderate beta. Cyclical exposure to commercial construction. Skilled labor shortages limiting throughput. Project completion risk from materials cost overruns. Backlog provides 2-3 year revenue visibility."
+        },
+        {
+          "order": 2,
+          "label": "Materials & Aggregates",
+          "description": "Industrial gases, steel, copper, specialty chemicals, aggregates, and the heavy materials required for fab and factory construction and operation",
+          "tickers": ["LIN", "APD", "VMC", "MLM", "FCX", "NUE"],
+          "subThesis": "Mid-cycle materials bet — once construction is underway, massive volumes of materials are consumed. LIN and APD industrial gases critical for semiconductor fabrication AND construction welding. VMC and MLM aggregates for new fabs and factories (and the surrounding infrastructure). FCX copper for electrification. NUE steel for construction with US-made tariff advantage.",
+          "riskProfile": "Moderate. Commodity price exposure. Local-monopoly aggregates have strong pricing power. Industrial gases have multi-decade contracts insulating from cyclicality."
+        },
+        {
+          "order": 3,
+          "label": "Semiconductor Manufacturing",
+          "description": "US semiconductor manufacturers and the equipment makers that supply them — the highest-profile beneficiaries of CHIPS Act capital",
+          "tickers": ["INTC", "TXN", "MU", "AMAT", "LRCX", "KLAC"],
+          "subThesis": "CHIPS Act capital deployment bet — INTC Ohio fabs (anchored by Intel Foundry Services), MU memory fabs in NY/Idaho, TXN Texas/Utah expansion. AMAT, LRCX, KLAC are the equipment monopolies — these companies sell to every fab regardless of who builds it, making them the purest CHIPS Act beneficiaries. NOTE: TSM (foundry monopoly building Arizona fabs) and ASML (EUV monopoly) are out-of-universe.",
+          "riskProfile": "High beta. Memory cyclicality (MU). Foundry execution risk (INTC). Equipment makers are most insulated from individual customer execution risk."
+        },
+        {
+          "order": 4,
+          "label": "Logistics & Rail",
+          "description": "Class I railroads, freight transportation, and the logistics infrastructure required to move materials to new factories and finished goods to market",
+          "tickers": ["UNP", "NSC", "CSX"],
+          "subThesis": "Late-cycle logistics bet — as new fabs and factories ramp to commercial production, freight volumes accelerate. UNP and NSC dominate East-West and Midwest-to-coast routes. CSX serves the eastern seaboard with reshoring concentration. Peak demand 2027-2030 as production volumes ramp.",
+          "riskProfile": "Low-to-moderate beta. Defensive cash flow profile. Risk of trucking competition or autonomous trucking disruption over 10+ year horizon. Sensitive to commodity volume cyclicality."
+        },
+        {
+          "order": 5,
+          "label": "Robotics & Industrial Automation",
+          "description": "Industrial automation systems, robotics, and the factory-floor productivity technologies that enable US manufacturers to compete with lower-labor-cost alternatives",
+          "tickers": ["EMR", "NVDA"],
+          "subThesis": "Late-cycle productivity bet — once factories are built and ramping, labor costs become binding constraint. EMR factory automation and process controls. NVDA emerging robotics and factory AI applications (Isaac platform, factory digital twins). NOTE: ROK (Rockwell Automation) and TER (Teradyne) are out-of-universe — both are pure-play industrial automation.",
+          "riskProfile": "Moderate-to-high beta. Adoption curve uncertainty. Labor contract negotiations could delay automation deployment. Capital-intensive investments require multi-year ROI horizon."
+        }
+      ]
+    },
+    "tickerEcosystem": {
+      "primary": ["CAT", "PWR", "LIN", "NUE", "UNP"],
+      "secondary": ["GEV", "APD", "VMC", "MLM", "FCX", "INTC", "TXN", "MU", "AMAT", "LRCX", "KLAC", "NSC", "CSX", "EMR", "NVDA"],
+      "adjacent": ["DE", "HON", "RTX", "GE", "ITW", "MMM", "WM", "FDX", "UPS", "ETN"],
+      "noteOnInclusion": "Primary = purest in-universe plays across the chain's most distinct layers (heavy equipment for early-cycle, transmission for early-cycle, industrial gases for mid-cycle, US steel for mid-cycle, dominant rail for late-cycle). Secondary = strong exposure with diversified business. Adjacent = industrials benefiting but with other primary drivers. CRITICAL UNIVERSE GAPS: TSM (foundry monopoly), ASML (EUV monopoly), MP (rare earths), FLR (Fluor EPC), ACM (AECOM EPC), ROK (Rockwell automation), TER (Teradyne robotics)."
+    },
+    "subAngles": [
+      {
+        "angle": "The CHIPS Act Capex Angle",
+        "thesis": "Bet on the equipment makers that sell to every semiconductor fab regardless of who builds it — AMAT, LRCX, KLAC face peak demand 2026-2028 as deployed CHIPS Act capital flows into fab equipment",
+        "tickers": ["AMAT", "LRCX", "KLAC"],
+        "idealFor": "Growth investors with 3-7 year horizon comfortable with semiconductor cyclicality; medium-high beta",
+        "risks": ["Memory or logic cycle downturn compressing all fab capex", "China tightening export controls on specific equipment", "ASML EUV bottleneck constraining advanced node throughput regardless of equipment makers"]
+      },
+      {
+        "angle": "The Construction Capital Cycle Angle",
+        "thesis": "Bet on early-cycle EPC and heavy construction companies seeing peak revenue as fab and factory construction accelerates — PWR, CAT, GEV with 2-3 year backlog visibility",
+        "tickers": ["PWR", "CAT", "GEV"],
+        "idealFor": "Industrial growth investors with 3-5 year horizon comfortable with construction cyclicality; medium beta",
+        "risks": ["Project cancellations from materials cost overruns", "Skilled labor shortages limiting throughput", "Mid-cycle slowdown if construction phase peaks before logistics phase ramps"]
+      },
+      {
+        "angle": "The Tariff Beneficiary Angle",
+        "thesis": "Bet on US-domestic producers benefiting from OBBBA tariff regime — NUE steel, US chemicals, US-made industrial inputs face structural tailwind from 9.8% effective tariff rate (highest in 90 years)",
+        "tickers": ["NUE", "LIN", "APD"],
+        "idealFor": "Defensive industrial investors seeking tariff-protected domestic exposure; medium beta",
+        "risks": ["Tariff regime reversal from new administration", "Foreign retaliation tariffs hurting US export-dependent firms", "Customer demand destruction from price increases"]
+      }
+    ],
+    "supportingData": {
+      "marketSize": "Total committed reshoring investment: $1.2T+ cumulative through 2025. CHIPS Act: $52B in federal subsidies catalyzing $400B+ in private investment. IRA clean manufacturing: $250B+ in committed investments. OBBBA effective tariff rate: 9.8% (highest in 90 years).",
+      "growthRate": "US manufacturing construction spending growing ~30% annually since 2022. Semiconductor fab construction backlog at multi-year highs. Industrial automation deployment accelerating ~15-20% annually. Class I rail volumes expected to grow 3-5% annually as production ramps.",
+      "keyMetrics": [
+        { "metric": "US Manufacturing Construction Spending ($B annual)", "baseline": "$80B (2020)", "current": "VERIFY: $230B+ (2024)", "projected": "Continues growing through peak fab construction 2026-2027" },
+        { "metric": "CHIPS Act Committed Capital ($B)", "baseline": "$0 (pre-2022)", "current": "$52B federal + $400B+ private", "projected": "Full deployment through 2030" },
+        { "metric": "OBBBA Effective Tariff Rate", "baseline": "<3% (pre-2024)", "current": "9.8% (Dec 2025)", "projected": "Stabilizing around 9.1% — highest in 90 years" },
+        { "metric": "US Battery Manufacturing Capacity (GWh)", "baseline": "~50 GWh (2020)", "current": "VERIFY: ~250 GWh (2024)", "projected": "1,000+ GWh by 2030 if commitments fully execute" }
+      ],
+      "catalysts": [
+        "Near-term (6mo): Q2-Q3 2026 fab construction milestones (TSM Arizona, INTC Ohio, MU New York, Samsung Texas); semiconductor equipment maker quarterly bookings; Q1-Q2 2026 OBBBA tariff schedule full implementation; industrial automation backlog updates",
+        "Medium-term (1-2yr): First major reshoring fab production starts (TSM Arizona, INTC Ohio); battery manufacturing capacity ramps to commercial volumes; rail volume inflection as production scales; potential tariff escalation from current 9.8% to higher levels"
+      ]
+    },
+    "inflectionPoints": [
+      { "date": "2022-08", "event": "CHIPS and Science Act signed — $52B in federal subsidies for US semiconductor manufacturing", "significance": "Largest industrial policy intervention in US since post-WWII era. Catalyzed $400B+ in committed private investment. Established the policy framework that subsequent administrations preserved and extended via OBBBA.", "narrativeHandle": "The Industrial Policy Pivot" },
+      { "date": "2022-08", "event": "Inflation Reduction Act (IRA) signed — $370B in clean energy and manufacturing tax credits", "significance": "Companion legislation to CHIPS Act focused on clean manufacturing. Catalyzed battery, EV, and critical minerals investments concentrated in Sun Belt and Midwest. Combined with CHIPS Act to create a $400B+ multi-year capex backlog.", "narrativeHandle": "The Clean Manufacturing Catalyst" },
+      { "date": "2024-to-2025", "event": "Major fab construction projects entered peak capex phase — TSM Arizona, INTC Ohio, MU New York, Samsung Texas", "significance": "Transitioned the theme from 'announced commitments' to 'visible construction'. Validated the multi-year capex backlog thesis and triggered the early-cycle EPC and materials demand surge.", "narrativeHandle": "The Construction Phase" },
+      { "date": "2025-07", "event": "OBBBA (One Big Beautiful Bill Act) signed — preserved CHIPS and IRA tax credits while implementing 9.8% effective tariff rate (highest in 90 years)", "significance": "Removed major policy uncertainty overhang. Confirmed bipartisan structural commitment to reshoring while adding tariff protection for domestic producers. Made the reshoring thesis policy-mandated rather than market-driven, providing multi-decade visibility.", "narrativeHandle": "The Tariff Wall" }
+    ],
+    "whatBreaksTheThesis": [
+      { "risk": "CHIPS Act Execution Failure. The thesis assumes major fab projects (INTC Ohio, MU New York, Samsung Texas) successfully execute at scale. If projects experience massive cost overruns, multi-year delays, or technical failures, the entire reshoring thesis loses credibility. INTC foundry execution is the single biggest risk — INTC Ohio is the lynchpin project.", "signalsToWatch": ["INTC announcing Ohio fab cost overruns >25% or delays >2 years", "Samsung Texas fab abandonment or major delay", "MU New York fab production yield failures", "TSM Arizona fab production starting >12 months behind schedule"] },
+      { "risk": "Tariff Reversal or Retaliation Spiral. The thesis relies on OBBBA tariff regime persisting. A new administration rolling back tariffs OR foreign retaliation creating an escalating trade war that destroys US exports could compress the entire thesis. NUE and tariff-protected layer 2 materials would be hit hardest.", "signalsToWatch": ["Bipartisan legislation rolling back OBBBA tariffs >50%", "Major US export markets (EU, Mexico, Japan) imposing retaliatory tariffs >15%", "Currency manipulation in major trading partners offsetting US tariffs", "Trade war escalation cycle producing recession-level demand destruction"] },
+      { "risk": "Recession Demand Destruction. Despite policy support, the thesis ultimately requires end-customer demand for the products being manufactured. A severe recession compressing semiconductor demand, EV demand, and industrial production simultaneously could leave the new capacity stranded with low utilization rates.", "signalsToWatch": ["US manufacturing PMI <45 sustained for 6+ months", "Fab utilization rates <70% across major US facilities", "Major reshoring project announcement of cancellation or pause", "Industrial production declining year-over-year for 4+ consecutive quarters"] }
+    ],
+    "relatedThemes": ["ai-infrastructure-buildout", "energy-transition", "dollar-strength-regimes"],
+    "relatedQuantPatterns": ["mega-cap-beat-sector-lift"],
+    "forgeRuleConnections": ["f-11 (chase accelerating growth — fab construction backlog)", "f-08 (trust the cash — equipment makers' contract visibility)", "sr-03 (sector drift rebalance — cap exposure to any one capital cycle position)", "tv-13 (volume spike institutional signal — semiconductor equipment maker bookings)"]
+  },
+  "injection": "THEME: Reshoring\nCORE: Multi-decade $1.2T+ structural rebuild — policy-mandated rather than market-driven. CHIPS Act + IRA + OBBBA tariffs (9.8% effective rate, highest in 90 years) create multi-year capex backlog that recession alone cannot unwind. 5 layers sequenced by capital cycle position.\nCHAIN: Heavy Construction (PWR/CAT/GEV) → Materials (LIN/APD/VMC/MLM/FCX/NUE) → Semiconductor Mfg (INTC/TXN/MU/AMAT/LRCX/KLAC) → Logistics & Rail (UNP/NSC/CSX) → Robotics & Automation (EMR/NVDA).\nCURRENT PHASE: Early-to-mid cycle. EPC peak 2024-2026, materials peak 2026-2028, logistics/automation peak 2027-2030+. INTC Ohio is lynchpin project. Equipment makers (AMAT/LRCX/KLAC) are purest CHIPS Act plays.\nPRIMARY TICKERS: CAT, PWR, LIN, NUE, UNP.\nSUB-ANGLES: CHIPS Act Capex (AMAT/LRCX/KLAC) — sell to every fab regardless of operator. Construction Cycle (PWR/CAT/GEV) — early-cycle with 2-3yr backlog visibility. Tariff Beneficiary (NUE/LIN/APD) — domestic producers protected by 9.8% tariff wall.\nBREAKS WHEN: (1) CHIPS Act execution failure — INTC Ohio fab delays/cost overruns. (2) Tariff reversal or retaliation spiral. (3) Recession demand destruction leaving capacity stranded.\nDIRECTIVE: [Battle] Frame by layer + surface capital sequencing — different layers face different peak years. [Workshop] Present 3 angles + emphasize policy-mandated nature creating multi-decade visibility. Universe gaps: TSM, ASML, MP, FLR, ACM, ROK, TER critical. Connects to f-11, f-08, sr-03, tv-13.",
+  "injectionTokenCount": 346,
+  "gemmaDirective": {
+    "battle": "If user holds any ticker in the reshoring chain (CAT, PWR, GEV, LIN, APD, VMC, MLM, FCX, NUE, INTC, TXN, MU, AMAT, LRCX, KLAC, UNP, NSC, CSX, EMR, NVDA), frame their position by which layer they're playing AND their capital cycle position. Critical non-obvious dynamic to surface: capital sequencing matters — early-cycle EPC (PWR, CAT) face peak demand 2024-2026, mid-cycle materials and equipment (LIN, AMAT, LRCX) face peak 2026-2028, late-cycle logistics and automation (UNP, NSC, EMR) face peak 2027-2030+. If user is concentrated in early-cycle only, surface late-cycle complement. Surface OBBBA tariff implementation milestones and INTC Ohio fab execution risk. Watch for cross-theme dynamics — FCX (Energy Transition + Reshoring), NVDA (AI Infrastructure + Reshoring) face dual demand drivers.",
+    "workshop": "If user's thesis touches manufacturing, semiconductors, factories, tariffs, or industrial buildout, present the sub-angle choice AND introduce the capital sequencing insight. Ask: 'Reshoring isn't a single trade — it's five layers sequenced by capital cycle position. Heavy construction and EPC peak first (2024-2026), materials and equipment peak next (2026-2028), and logistics plus automation peak last (2027-2030+). Where do you want to play? The CHIPS Act Capex angle bets on equipment makers (AMAT, LRCX, KLAC) that sell to every fab regardless of who builds it — purest deployment of CHIPS capital. The Construction Cycle angle plays early-cycle EPC and heavy equipment (PWR, CAT, GEV) with 2-3 year backlog visibility. The Tariff Beneficiary angle plays domestic producers protected by the 9.8% OBBBA tariff wall (NUE, LIN, APD).' Propose entry criteria: f-11 for fab construction backlog acceleration, f-08 for equipment maker contract visibility, sr-03 to balance capital cycle exposure, tv-13 for semiconductor bookings."
+  },
+  "triggerKeywords": ["reshoring", "onshoring", "CHIPS Act", "IRA", "OBBBA", "tariffs", "industrial policy", "fab construction", "semiconductor manufacturing", "Intel Ohio", "TSM Arizona", "Samsung Texas", "Micron New York", "battery manufacturing", "industrial automation", "robotics", "factory automation", "rail volumes", "Class I railroad", "industrial gases", "US steel", "domestic manufacturing", "supply chain de-risking"],
+  "holdingsTrigger": ["CAT", "PWR", "GEV", "LIN", "APD", "VMC", "MLM", "FCX", "NUE", "INTC", "TXN", "MU", "AMAT", "LRCX", "KLAC", "UNP", "NSC", "CSX", "EMR", "NVDA", "DE", "HON", "RTX", "GE", "ITW", "MMM"],
+  "calendarTrigger": null,
+  "workshopSeedPrompt": "The user tapped into Reshoring from Discover. Open by acknowledging the multi-layer structure AND the capital sequencing insight. Example: 'Reshoring is a multi-decade industrial buildback driven by policy more than market — CHIPS Act ($52B federal + $400B private), IRA, and now OBBBA tariffs at 9.8% (highest in 90 years) create a multi-year capex backlog that even a recession cannot fully unwind. But here is the non-obvious dynamic — the layers peak at different times. You have got heavy construction at the top (PWR, CAT, GEV — peaking 2024-2026), then materials (LIN, APD, VMC, MLM, FCX, NUE — peaking 2026-2028), then semiconductor manufacturing (INTC, TXN, MU plus equipment makers AMAT, LRCX, KLAC — also 2026-2028), then logistics and rail (UNP, NSC, CSX — peaking 2027-2030 as production ramps), and finally robotics and automation (EMR, NVDA — late-cycle as labor productivity becomes binding). Three angles: CHIPS Act Capex (equipment makers — purest deployment), Construction Cycle (early-cycle EPC), or Tariff Beneficiary (domestic producers protected by tariff wall). Where do you want to start?'",
+  "universeExpansionCandidates": [
+    { "ticker": "TSM", "company": "Taiwan Semiconductor", "layer": "Semiconductor Manufacturing", "rationale": "Foundry monopoly building Arizona fabs; serves AI Infrastructure AND Reshoring. Cross-theme.", "priority": "High", "themeFrequency": 2 },
+    { "ticker": "ASML", "company": "ASML Holding", "layer": "Semiconductor Manufacturing (EUV)", "rationale": "EUV lithography monopoly; essential for advanced node fabrication regardless of fab operator", "priority": "High", "themeFrequency": 1 },
+    { "ticker": "MP", "company": "MP Materials", "layer": "Materials & Aggregates (Rare Earths)", "rationale": "Rare earth magnets; critical for EV motors AND grid components. Cross-theme.", "priority": "High", "themeFrequency": 2 },
+    { "ticker": "FLR", "company": "Fluor Corporation", "layer": "Heavy Construction & EPC", "rationale": "Heavy EPC contractor for semiconductor fabs and industrial mega-projects. Essential Layer 1 addition.", "priority": "High", "themeFrequency": 1 },
+    { "ticker": "ACM", "company": "AECOM", "layer": "Heavy Construction & EPC", "rationale": "Engineering and construction services; partner layer. Complements PWR for Layer 1 EPC coverage.", "priority": "High", "themeFrequency": 1 },
+    { "ticker": "ROK", "company": "Rockwell Automation", "layer": "Robotics & Industrial Automation", "rationale": "Industrial automation leader; critical for manufacturing productivity layer. Layer 5 pure-play.", "priority": "High", "themeFrequency": 1 },
+    { "ticker": "TER", "company": "Teradyne", "layer": "Robotics & Industrial Automation", "rationale": "Automated test equipment and industrial robotics. Layer 5 automation exposure.", "priority": "High", "themeFrequency": 1 }
+  ],
+  "platformValidation": {
+    "userEngagement": 0,
+    "strategiesBuilt": 0,
+    "lastValidated": "2026-04-16",
+    "platformNote": "Layer 1 (Heavy Construction & EPC) and Layer 5 (Robotics & Industrial Automation) are universe-thin — pure-play EPC firms (FLR, ACM) and pure-play automation (ROK, TER) all out-of-universe. Layer 3 has critical TSM and ASML gaps for foundry and lithography monopolies. INTC Ohio fab execution is the lynchpin risk for the entire theme — quarterly tracking required. OBBBA tariff implementation (July 2025, 9.8% effective rate) defines current 'Tariff Wall' phase. Entry should be reviewed quarterly for material policy changes from new administrations and major project execution updates. All forward-looking projections prefixed VERIFY: are subject to revision."
+  },
+  "createdAt": "2026-04-16T00:00:00Z",
+  "updatedAt": "2026-04-16T00:00:00Z",
+  "createdBy": "flash"
+}

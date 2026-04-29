@@ -1,0 +1,151 @@
+{
+  "id": "ai-infrastructure-buildout",
+  "type": "thematic",
+  "status": "draft",
+  "version": 1,
+  "dkbVersion": "v3.1",
+  "fullEntry": {
+    "theme": "AI Infrastructure Buildout",
+    "tagline": "The picks-and-shovels of the AI revolution — how capital flows from silicon through cooling, networking, data centers, power, and finally to the hyperscalers monetizing it all.",
+    "category": "ai_infrastructure",
+    "narrative": {
+      "coreThesis": "The buildout of physical AI infrastructure (chips, cooling systems, networking gear, data centers, power generation, and grid components) represents a multi-year structural capital expenditure cycle, where the bottleneck has shifted from compute (chips) to power and cooling. Capital flows through five distinct layers, each with different risk profiles and timelines, ultimately enabling hyperscalers to monetize AI services at scale. In 2026, the catalyst accelerating this theme is the convergence of frontier model training requirements, sovereign AI initiatives globally, and enterprise AI adoption forcing hyperscaler capex above $400B annually.",
+      "whyNow": "Hyperscaler capex (MSFT, GOOGL, META, AMZN combined) projected to exceed $400B in 2026, up from $230B in 2024. Power demand from US data centers projected to grow from 4% of total electricity consumption (2024) to 9-12% by 2030, creating acute power infrastructure shortages. NVDA Blackwell architecture shipping at scale; cooling and networking now represent 30-35% of data center capex (vs ~15% in 2022).",
+      "horizon": "5-10 years",
+      "currentPhase": "mid-cycle"
+    },
+    "chain": {
+      "description": "Capital flows through five distinct layers serving the AI infrastructure buildout: silicon and compute, thermal management and networking, physical data center real estate, power generation and grid, and finally the hyperscaler monetization layer. Each layer captures different points in the value chain with distinct cycles. CRITICAL non-obvious dynamic: the bottleneck has shifted from chips (the 2023 thesis) to power (the 2026 thesis), making CEG, GEV, NEE, and PWR potentially more capacity-constrained than NVDA itself.",
+      "layers": [
+        {
+          "order": 1,
+          "label": "Compute & Silicon",
+          "description": "GPUs, CPUs, custom AI accelerators, networking silicon, and the foundries that produce them",
+          "tickers": ["NVDA", "AMD", "AVGO", "MU"],
+          "subThesis": "AI training compute demand growing 4-5x annually. NVDA Blackwell + future Rubin generation drive multi-year revenue acceleration. AVGO custom silicon for hyperscalers represents 25%+ of revenue. MU HBM memory critical for AI accelerator performance. NOTE: Layer 1 has critical universe gaps — TSM (foundry monopoly) and ASML (EUV monopoly) are out-of-universe.",
+          "riskProfile": "High beta. Customer concentration risk (top 5 hyperscalers = 50%+ of revenue for NVDA/AVGO). Cyclical exposure to enterprise IT spending. Geopolitical risk from Taiwan concentration."
+        },
+        {
+          "order": 2,
+          "label": "Thermal & Networking",
+          "description": "Liquid cooling systems, chillers, switches, optical transceivers, and the increasingly complex thermal/networking infrastructure of modern AI clusters",
+          "tickers": ["CSCO", "ETN", "EMR"],
+          "subThesis": "AI clusters generate 4-7x the heat density of traditional data centers, forcing transition from air to liquid cooling. CSCO networking (post-Splunk) captures the AI cluster networking layer. ETN power management and EMR thermal expertise are picks-and-shovels. NOTE: The purest plays — VRT (Vertiv cooling), ANET (Arista networking), MOD (Modine cooling) — are out-of-universe.",
+          "riskProfile": "Moderate-to-high. Lower beta than chips but rapid technology evolution risk. Liquid cooling adoption curve still uncertain — some hyperscalers may delay transitions."
+        },
+        {
+          "order": 3,
+          "label": "Data Centers (Physical Real Estate)",
+          "description": "REITs and operators owning the physical buildings, land, and power infrastructure that house compute clusters",
+          "tickers": ["EQIX", "DLR"],
+          "subThesis": "Power-constrained land scarcity bet — meaningful new data center supply requires multi-year permitting + interconnection queues. Existing operators with secured power allocations (especially in Northern Virginia, Phoenix, Dallas, Atlanta) command premium pricing. EQIX colocation for enterprise AI; DLR hyperscale focus.",
+          "riskProfile": "Moderate. Rate-sensitive (REIT structure). Risk of supply ramp from 2027+ as new builds complete. Hyperscaler self-build trend could compress third-party demand."
+        },
+        {
+          "order": 4,
+          "label": "Power Generation & Grid",
+          "description": "Utilities, power generation IPPs, transmission and distribution equipment manufacturers, and the entire grid infrastructure required to deliver AI's power demand",
+          "tickers": ["CEG", "GEV", "NEE", "PWR"],
+          "subThesis": "Grid is the new bottleneck bet — AI data center power demand is causing utilities to defer retirement of coal plants AND restart nuclear (Three Mile Island, Palisades). CEG nuclear fleet directly benefits from MSFT/AMZN data center PPAs. GEV gas turbine backlog at multi-year highs. PWR transmission construction backlog accelerating. NEE largest renewables developer with grid connection priority. NOTE: VST (Vistra), TLN (Talen) are out-of-universe — both are independent power producers with significant data center exposure.",
+          "riskProfile": "Moderate. Regulatory risk from PUCs on rate increases. Long lead times on new generation (5-10 years for nuclear, 3-5 for gas). Grid interconnection queue bottlenecks limit near-term growth even with demand."
+        },
+        {
+          "order": 5,
+          "label": "Hyperscalers & AI Monetization",
+          "description": "The cloud and platform giants that monetize AI infrastructure through cloud services, AI APIs, advertising, and enterprise software",
+          "tickers": ["MSFT", "AMZN", "GOOGL", "META", "ORCL"],
+          "subThesis": "Cloud capacity monetization bet — these companies are spending the capex (~$400B/yr collectively) but also collecting the revenue. Azure, AWS, GCP capacity-constrained for AI workloads. Margin compression in the near-term from heavy capex but operating leverage builds as utilization rises. MSFT OpenAI relationship + Copilot adoption. META Llama strategy + first-party AI in apps. ORCL cloud growth from AI-specific deployments.",
+          "riskProfile": "Moderate. Capex digestion risk if AI revenue growth fails to materialize matching the buildout. Antitrust scrutiny across all four. AI commoditization could compress margins faster than expected."
+        }
+      ]
+    },
+    "tickerEcosystem": {
+      "primary": ["NVDA", "MSFT", "AVGO", "CEG", "EQIX"],
+      "secondary": ["AMD", "GOOGL", "AMZN", "META", "MU", "CSCO", "ETN", "EMR", "DLR", "GEV", "NEE", "PWR", "ORCL"],
+      "adjacent": ["IBM", "ACN", "CRM", "ADBE", "INTU", "NOW", "PLTR", "SNOW", "CRWV"],
+      "noteOnInclusion": "Primary = purest in-universe plays across the chain's most distinct layers (chip leader, hyperscaler leader, custom silicon, nuclear power leader, premier data center REIT). Secondary = strong AI exposure with diversified business lines. Adjacent = enterprise software benefiting from AI but with other primary drivers. CRITICAL UNIVERSE GAPS: VRT (Vertiv cooling — pure-play on cooling-bottleneck), ANET (Arista AI networking), TSM (foundry monopoly), ASML (EUV lithography monopoly), VST (Vistra IPP with data center PPAs), CCJ (uranium for nuclear), MP (rare earths for grid)."
+    },
+    "subAngles": [
+      {
+        "angle": "The Power Bottleneck Angle",
+        "thesis": "Bet on power infrastructure as the new AI bottleneck — utilities, IPPs, gas turbine manufacturers, and transmission contractors face multi-year demand acceleration with limited capacity expansion options",
+        "tickers": ["CEG", "GEV", "NEE", "PWR"],
+        "idealFor": "Defensive growth investors with 5-10 year horizon seeking exposure to AI without high-beta tech valuations; medium beta, dividend-supportive profile",
+        "risks": ["Hyperscaler self-build of power generation (BTM solar, gas peaker plants)", "PUC regulatory pushback on rate increases for AI data centers shifting cost to residential", "Long permitting timelines limiting near-term throughput"]
+      },
+      {
+        "angle": "The Compute Cycle Angle",
+        "thesis": "Bet on the chip and silicon cycle — NVDA dominance plus the picks-and-shovels of memory, custom silicon, and foundry capacity",
+        "tickers": ["NVDA", "AMD", "AVGO", "MU"],
+        "idealFor": "Growth investors comfortable with high-beta semiconductor cyclicality; 3-5 year horizon; high risk tolerance",
+        "risks": ["Hyperscaler internal silicon (Trillium, Maia, Trainium) compressing NVDA market share over 3-5 years", "AI capex digestion phase as enterprises absorb existing capacity", "Geopolitical Taiwan/China escalation"]
+      },
+      {
+        "angle": "The Hyperscaler Monetization Angle",
+        "thesis": "Bet on the platform companies that own the cloud capacity, API monetization, and embedded AI in productivity software — the businesses that capture revenue from the entire infrastructure stack below",
+        "tickers": ["MSFT", "GOOGL", "META", "AMZN"],
+        "idealFor": "GARP investors seeking quality compounders with multi-decade moats; 5-10 year horizon; medium beta",
+        "risks": ["Capex digestion if AI revenue growth disappoints", "Antitrust regulatory action", "AI commoditization compressing margins faster than expected"]
+      }
+    ],
+    "supportingData": {
+      "marketSize": "Total AI infrastructure capex estimated at $1.4-1.8T globally over 2024-2028 cumulative. US data center electricity consumption: 176 TWh (2023, ~4% of US total) → projected 580 TWh (2028, 12%+). Hyperscaler combined capex: $230B (2024) → $400B+ projected (2026).",
+      "growthRate": "AI training compute demand growing 4-5x annually. Liquid cooling market: $4B (2024) → $25B+ projected (2030), CAGR ~30%. Data center construction backlog at multi-year highs across all major US markets.",
+      "keyMetrics": [
+        { "metric": "US Data Center Power Demand (TWh)", "baseline": "176 TWh (2023, ~4% US total)", "current": "VERIFY: ~220-260 TWh (2025)", "projected": "580 TWh (2028, 12%+ of US total)" },
+        { "metric": "Combined Hyperscaler Capex ($B annual)", "baseline": "$135B (2022)", "current": "~$320B (2025)", "projected": "$400B+ (2026), $500B+ (2027)" },
+        { "metric": "Liquid Cooling Market Size ($B)", "baseline": "$2B (2022)", "current": "$4B (2024)", "projected": "$25B+ (2030), CAGR ~30%" },
+        { "metric": "NVDA Data Center Revenue ($B annual)", "baseline": "$15B (FY23)", "current": "VERIFY: ~$130B (FY26 trajectory)", "projected": "Continued acceleration tied to Blackwell + Rubin" },
+        { "metric": "US Grid Interconnection Queue (GW)", "baseline": "1,400 GW (2020)", "current": "VERIFY: ~2,600 GW (2024)", "projected": "Bottleneck constraining near-term capacity additions" }
+      ],
+      "catalysts": [
+        "Near-term (6mo): Q2-Q3 2026 hyperscaler capex guidance updates; NVDA Blackwell ramp continuation; new nuclear restart announcements (similar to Three Mile Island, Palisades); state PUC decisions on AI data center rate structures",
+        "Medium-term (1-2yr): NVDA Rubin architecture launch (2027); first major AI data center power constraint events forcing curtailment; sovereign AI capacity announcements (UAE, Saudi Arabia, India); enterprise AI revenue inflection at hyperscalers"
+      ]
+    },
+    "inflectionPoints": [
+      { "date": "2022-11", "event": "ChatGPT public launch by OpenAI — first mainstream demonstration of generative AI capabilities", "significance": "Catalyzed the 'AI capex arms race' among hyperscalers. Within 18 months, MSFT/GOOGL/META/AMZN collectively committed to >$200B in additional AI infrastructure spending. Transformed NVDA from gaming chip company to AI infrastructure backbone. The single event that defined the entire theme.", "narrativeHandle": "The ChatGPT Moment" },
+      { "date": "2024-09", "event": "Microsoft announced 20-year PPA to restart Three Mile Island nuclear plant for AI data center power", "significance": "First mainstream signal that AI power demand had outstripped grid supply. Triggered cascade of similar deals (AMZN-Talen, GOOGL-Kairos). Re-rated nuclear utilities (CEG, VST, TLN) and signaled the structural shift from 'chip bottleneck' to 'power bottleneck'.", "narrativeHandle": "The Nuclear Pivot" },
+      { "date": "2025-01", "event": "DeepSeek R1 model released by Chinese AI lab — comparable performance to leading US frontier models at fraction of training cost", "significance": "Briefly created panic about AI capex efficiency and necessity. NVDA experienced 17% single-day drop. Ultimately reinforced rather than undermined infrastructure thesis as efficiency gains expanded inference deployment economics. Tested the 'pick-and-shovel' thesis and validated it.", "narrativeHandle": "The Efficiency Test" },
+      { "date": "2025-to-2026", "event": "Hyperscaler capex guidance crossed $400B annually — combined MSFT, GOOGL, META, AMZN, ORCL", "significance": "Signal that AI infrastructure buildout is moving from 'aggressive' to 'industrial-scale'. Validates multi-year structural capex thesis vs cyclical bet. Forces traditional utilities and grid operators into multi-decade planning cycles.", "narrativeHandle": "The $400B Threshold" }
+    ],
+    "whatBreaksTheThesis": [
+      { "risk": "Hyperscaler Capex Digestion Phase. The AI thesis assumes capex continues to accelerate through 2027-2028. If hyperscalers signal capex flat or declining as they 'digest' existing capacity, the entire infrastructure ecosystem (NVDA, AVGO, CEG, EQIX, PWR) faces simultaneous multiple compression. Q1 2026 enterprise AI revenue disappointments could trigger this scenario.", "signalsToWatch": ["MSFT/GOOGL/META/AMZN guiding capex flat or down YoY for 2+ consecutive quarters", "Enterprise AI software revenue (Copilot, Gemini, etc.) growth decelerating below 30% YoY", "Cloud gross margin compression accelerating beyond capex digestion expectations", "NVDA quarterly data center revenue growth decelerating to <30% QoQ"] },
+      { "risk": "Power Grid Inability to Scale. The thesis requires power generation and grid capacity to expand fast enough to serve AI demand. If state PUCs deny AI-specific rate structures, OR if interconnection queues create multi-year delays, OR if nuclear restart projects fail technically, hyperscalers may shift workloads internationally (where power is available), breaking the US infrastructure thesis.", "signalsToWatch": ["Major state PUC denying AI data center rate structures (Virginia, Texas, Arizona)", "Interconnection queue wait times exceeding 7 years for new generation", "Major nuclear restart project announcement of cancellation or major delay", "Hyperscaler announcing significant international AI data center buildout shift"] },
+      { "risk": "AI Architecture Disruption. NVDA's dominance relies on the GPU paradigm continuing to scale. A breakthrough in AI architectures that dramatically reduces compute requirements (analog computing, neuromorphic, photonic, or radically more efficient model architectures beyond DeepSeek-style efficiency) could compress the entire infrastructure thesis as efficiency gains exceed demand growth.", "signalsToWatch": ["Major frontier model achieving leading benchmarks on materially less compute (10x+ efficiency)", "Hyperscaler committing significant capex to non-NVDA architectures (MSFT Maia 2, GOOGL TPU v6, AMZN Trainium 3)", "NVDA gross margin compression below 70% sustained for 2+ quarters", "Memory or networking constraints becoming new bottleneck reducing chip demand growth"] }
+    ],
+    "relatedThemes": ["energy-transition", "reshoring", "cybersecurity-buildout"],
+    "relatedQuantPatterns": ["mega-cap-beat-sector-lift"],
+    "forgeRuleConnections": ["f-11 (chase accelerating growth — NVDA, hyperscaler capex)", "f-08 (trust the cash — hyperscaler FCF supporting capex)", "sr-03 (sector drift rebalance — cap exposure to any one AI layer)", "ss-04 (FOMC defensive rotation — REITs and utilities are rate-sensitive)", "tv-13 (volume spike institutional signal — NVDA earnings reactions)"]
+  },
+  "injection": "THEME: AI Infrastructure Buildout\nCORE: Multi-year capex cycle, bottleneck shifted from chips (2023) to power (2026). Hyperscaler capex >$400B annually. US data center power 4% of grid (2024) → 12%+ by 2030. 5 layers, distinct cycles.\nCHAIN: Compute (NVDA/AMD/AVGO/MU) → Thermal+Networking (CSCO/ETN/EMR) → Data Centers (EQIX/DLR) → Power+Grid (CEG/GEV/NEE/PWR) → Hyperscalers (MSFT/AMZN/GOOGL/META/ORCL).\nCURRENT PHASE: Mid-cycle. NVDA Blackwell shipping at scale. Liquid cooling adoption curve early. Power constraints emerging as primary bottleneck. Three Mile Island restart (Sept 2024) signaled the Nuclear Pivot.\nPRIMARY TICKERS: NVDA, MSFT, AVGO, CEG, EQIX.\nSUB-ANGLES: Power Bottleneck (CEG/GEV/NEE/PWR) — defensive growth. Compute Cycle (NVDA/AMD/AVGO/MU) — high-beta semis. Hyperscaler Monetization (MSFT/GOOGL/META) — quality compounders.\nBREAKS WHEN: (1) Hyperscaler capex digestion — flat/declining capex 2+ qtrs. (2) Power grid scaling failure — PUC denials, interconnection delays. (3) AI architecture disruption — efficiency breakthrough beyond DeepSeek-style.\nDIRECTIVE: [Battle] If user holds chain ticker, frame by layer + watch for cross-layer dynamics — power bottleneck shifts capital from chips. [Workshop] Present 3 sub-angles + emphasize the power-not-chips reframe. Universe gaps: VRT, ANET, TSM, ASML, VST critical. Connects to f-11, f-08, sr-03.",
+  "injectionTokenCount": 342,
+  "gemmaDirective": {
+    "battle": "If user holds any ticker in the AI infrastructure chain (NVDA, AMD, AVGO, MU, CSCO, ETN, EMR, EQIX, DLR, CEG, GEV, NEE, PWR, MSFT, AMZN, GOOGL, META, ORCL), frame their position by which layer they're playing. Critical non-obvious dynamic to surface: the bottleneck has shifted from chips (2023 thesis) to power (2026 thesis) — CEG, GEV, NEE, PWR may be more capacity-constrained than NVDA itself. If user is concentrated in chips only (NVDA, AMD, AVGO), surface the power layer as defensive complement. Surface hyperscaler capex digestion risk before earnings. Watch for the inverse dynamic — chip ramp is fast, power infrastructure ramp is multi-year, creating bottleneck shifts.",
+    "workshop": "If user's thesis touches AI, semiconductors, data centers, hyperscalers, or AI infrastructure, present the sub-angle choice AND introduce the bottleneck-shift insight. Ask: 'AI Infrastructure isn't a single trade — it's five layers with the bottleneck shifting over time. The 2023 thesis was chips (NVDA dominance). The 2026 thesis is power (CEG, GEV, NEE, PWR). Where do you want to play? The Power Bottleneck angle bets on utilities and grid contractors capturing the new constraint — defensive growth profile. The Compute Cycle angle plays the chip and silicon dominance (NVDA, AMD, AVGO, MU) — high-beta semi exposure. The Hyperscaler Monetization angle plays the cloud platforms collecting AI revenue (MSFT, GOOGL, META, AMZN) — quality compounders.' Propose entry criteria: f-11 for accelerating chip cycle, f-08 for hyperscaler cash discipline, sr-03 to balance layer exposure."
+  },
+  "triggerKeywords": ["AI infrastructure", "AI capex", "data center", "hyperscaler", "GPU", "AI training", "AI inference", "Nvidia", "Blackwell", "Rubin", "liquid cooling", "AI networking", "data center REIT", "AI power", "nuclear restart", "Three Mile Island", "grid interconnection", "AI compute", "Azure", "AWS", "GCP", "AI chip", "custom silicon", "HBM memory", "AI bottleneck", "power bottleneck"],
+  "holdingsTrigger": ["NVDA", "AMD", "AVGO", "MU", "CSCO", "ETN", "EMR", "EQIX", "DLR", "CEG", "GEV", "NEE", "PWR", "MSFT", "AMZN", "GOOGL", "META", "ORCL", "IBM", "ACN", "CRM", "ADBE", "INTU", "NOW", "PLTR", "SNOW", "CRWV"],
+  "calendarTrigger": null,
+  "workshopSeedPrompt": "The user tapped into AI Infrastructure Buildout from Discover. Open by acknowledging the multi-layer structure AND introducing the bottleneck-shift insight. Example: 'AI Infrastructure is the picks-and-shovels of the AI revolution, but here's the thing — the bottleneck has shifted. In 2023, the constraint was chips (NVDA dominance). In 2026, the constraint is power. You've got compute and silicon at the top (NVDA, AMD, AVGO, MU), then thermal and networking (CSCO, ETN, EMR), then physical data centers (EQIX, DLR), then power and grid (CEG, GEV, NEE, PWR — increasingly the most capacity-constrained layer), and finally the hyperscalers monetizing it all (MSFT, GOOGL, META, AMZN, ORCL). Three ways to play: the Power Bottleneck angle (defensive growth), the Compute Cycle angle (high-beta chips), or the Hyperscaler Monetization angle (quality compounders). Where do you want to start?'",
+  "universeExpansionCandidates": [
+    { "ticker": "VRT", "company": "Vertiv Holdings", "layer": "Thermal & Networking", "rationale": "Pure-play on AI data center cooling and thermal management. Only pure-play on cooling-bottleneck narrative. Unanimous High priority across reports.", "priority": "High", "themeFrequency": 1 },
+    { "ticker": "ANET", "company": "Arista Networks", "layer": "Thermal & Networking", "rationale": "AI data center networking; the Ethernet backbone for hyperscaler AI clusters. Purer play than CSCO for AI networking.", "priority": "High", "themeFrequency": 1 },
+    { "ticker": "TSM", "company": "Taiwan Semiconductor", "layer": "Compute & Silicon", "rationale": "Foundry monopoly; serves the silicon layer of AI AND the onshoring-to-US story via Arizona fabs. Cross-theme with Reshoring.", "priority": "High", "themeFrequency": 2 },
+    { "ticker": "ASML", "company": "ASML Holding", "layer": "Compute & Silicon Supply Chain", "rationale": "EUV lithography monopoly; essential supplier to TSM and INTC. Structural moat on advanced node fabrication.", "priority": "High", "themeFrequency": 1 },
+    { "ticker": "VST", "company": "Vistra Corp", "layer": "Power Generation & Grid", "rationale": "Independent power producer with nuclear fleet; serves both data center power demand AND firming generation layer of Energy Transition. Cross-theme.", "priority": "High", "themeFrequency": 2 },
+    { "ticker": "CCJ", "company": "Cameco", "layer": "Power Generation & Grid", "rationale": "Uranium miner; nuclear fuel supply chain for both data center power demand AND energy transition baseload. Cross-theme.", "priority": "High", "themeFrequency": 2 },
+    { "ticker": "TLN", "company": "Talen Energy", "layer": "Power Generation & Grid", "rationale": "Nuclear power producer; similar dual role to VST at smaller scale. Cross-theme.", "priority": "Medium", "themeFrequency": 2 },
+    { "ticker": "MOD", "company": "Modine Manufacturing", "layer": "Thermal & Networking", "rationale": "AI data center cooling secondary play behind VRT. Industrial thermal management with AI tailwind exposure.", "priority": "Medium", "themeFrequency": 1 },
+    { "ticker": "MP", "company": "MP Materials", "layer": "Power Generation & Grid (Critical Minerals)", "rationale": "Rare earth magnets; critical for grid components and EV motors. Cross-theme with Energy Transition and Reshoring.", "priority": "High", "themeFrequency": 2 }
+  ],
+  "platformValidation": {
+    "userEngagement": 0,
+    "strategiesBuilt": 0,
+    "lastValidated": "2026-04-16",
+    "platformNote": "Layer 2 (Thermal & Networking) and Layer 4 (Power Generation & Grid) have meaningful universe gaps. VRT, ANET, MOD for thermal/networking pure-plays. VST, CCJ, TLN for power/nuclear pure-plays. TSM and ASML for silicon supply chain monopolies. Most are multi-theme tickers (cross with Energy Transition, Reshoring) making them efficient additions. The 2024 Three Mile Island restart announcement validated the 'Nuclear Pivot' narrative — entry should be reviewed quarterly for material capex guidance changes from MSFT, GOOGL, META, AMZN. All forward-looking projections prefixed VERIFY: are subject to revision."
+  },
+  "createdAt": "2026-04-16T00:00:00Z",
+  "updatedAt": "2026-04-16T00:00:00Z",
+  "createdBy": "flash"
+}
