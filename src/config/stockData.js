@@ -102,7 +102,7 @@ export const COMPANY_NAMES = {
   'MRK': 'Merck', 'ABBV': 'AbbVie', 'LLY': 'Eli Lilly', 'TMO': 'Thermo Fisher',
   'DHR': 'Danaher', 'ABT': 'Abbott Labs', 'BMY': 'Bristol-Myers Squibb',
   'AMGN': 'Amgen', 'GILD': 'Gilead Sciences', 'CVS': 'CVS Health',
-  'CI': 'Cigna', 'HUM': 'Humana', 'ELV': 'Elevance Health',
+  'CI': 'Cigna', 'HUM': 'Humana', 'ELV': 'Elevance Health', 'NVO': 'Novo Nordisk',
   // Energy
   'XOM': 'Exxon Mobil', 'CVX': 'Chevron', 'COP': 'ConocoPhillips',
   'SLB': 'Schlumberger', 'EOG': 'EOG Resources', 'MPC': 'Marathon Petroleum',
@@ -174,7 +174,7 @@ export const COMPANY_SECTORS = {
   'JNJ': 'healthcare', 'UNH': 'healthcare', 'PFE': 'healthcare', 'MRK': 'healthcare',
   'ABBV': 'healthcare', 'LLY': 'healthcare', 'TMO': 'healthcare', 'DHR': 'healthcare',
   'ABT': 'healthcare', 'BMY': 'healthcare', 'AMGN': 'healthcare', 'GILD': 'healthcare',
-  'CVS': 'healthcare', 'CI': 'healthcare', 'HUM': 'healthcare', 'ELV': 'healthcare',
+  'CVS': 'healthcare', 'CI': 'healthcare', 'HUM': 'healthcare', 'ELV': 'healthcare', 'NVO': 'healthcare',
   // Energy
   'XOM': 'energy', 'CVX': 'energy', 'COP': 'energy', 'SLB': 'energy',
   'EOG': 'energy', 'MPC': 'energy', 'PSX': 'energy', 'VLO': 'energy', 'OXY': 'energy',
