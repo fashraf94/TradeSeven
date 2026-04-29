@@ -1971,13 +1971,18 @@ export default function ForgeLanding({
   // ── Desktop layout detection ───────────────────────────────────────
   // Container widens to 1200px only for the State 2 multi-experiment
   // grid; all other states cap at 560px so single cards don't stretch.
+  // Discover overrides both: it owns its own grid layout and widens to
+  // 1200px at every viewport so the 1/2/3-column responsive grid can
+  // breathe past the laboratory tab's 480/560 caps.
   const { width } = useIsMobile();
   const isDesktop = width >= 1024;
   const isMultiExperimentTesting =
     landingState === 'testing' && testingExperiments.length > 1;
-  const containerMaxWidth = isDesktop
-    ? (isMultiExperimentTesting ? 1200 : 560)
-    : 480;
+  const containerMaxWidth = view === 'discover'
+    ? 1200
+    : isDesktop
+      ? (isMultiExperimentTesting ? 1200 : 560)
+      : 480;
 
   // ── Callbacks ──────────────────────────────────────────────────────
 
