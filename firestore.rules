@@ -401,7 +401,7 @@ service cloud.firestore {
     }
 
     match /fantasyTimesSuppressions/{date} {
-      allow read: if true;
+      allow read: if false;
       allow create, update, delete: if false;
     }
 

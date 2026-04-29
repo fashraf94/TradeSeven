@@ -12,7 +12,7 @@ import {
   REPORTER_PROFILES,
 } from '../_utils/fantasyTimesPrompts.js';
 import { getDefaultVisual, shouldOverrideVisual, callArtDirector } from '../_utils/fantasyTimesVisuals.js';
-import { checkEarningsAttribution } from '../_utils/fantasyTimesConsensus.js';
+import { appendCatalyst, checkEarningsAttribution } from '../_utils/fantasyTimesConsensus.js';
 import { fetchMarketCatalysts } from '../_utils/sonarCatalystFetch.js';
 
 export const config = { maxDuration: 30 };
@@ -212,6 +212,27 @@ export default async function handler(req, res) {
       headline: storyDoc.headline,
       tickers: allTickers,
     });
+
+    // ── Append macro catalyst to consensus for each triggered ticker ──
+    try {
+      const todayStr = new Date().toISOString().split('T')[0];
+      const macroCatalyst = storyDoc.headline || storyDoc.subheadline || 'Macro market move';
+      for (const trigger of triggers) {
+        const symbol = String(trigger.symbol).toUpperCase();
+        await appendCatalyst(todayStr, symbol, {
+          direction: trigger.direction || (Number(trigger.percentChange) >= 0 ? 'up' : 'down'),
+          percentChange: Number(trigger.percentChange),
+          atrMultiple: Number(trigger.atrMultiple) || 1.5,
+          catalyst: macroCatalyst,
+          source: 'alex_macro',
+          confidence: 'high',
+          reporter: 'alex_macro',
+        });
+        console.log(`[CONSENSUS] appendCatalyst fired for ${symbol} (Alex macro story ${docRef.id})`);
+      }
+    } catch (err) {
+      console.error('[CONSENSUS] Failed to append macro catalysts:', err.message);
+    }
 
     // Art Director override for edge-case story types
     if (shouldOverrideVisual(storyDoc.reporter, storyDoc.type)) {

@@ -14,7 +14,7 @@ import {
 import { getDefaultVisual, shouldOverrideVisual, callArtDirector } from '../_utils/fantasyTimesVisuals.js';
 import { STOCK_DATA, TICKERS } from '../_utils/stockIntelligenceData.js';
 import { getClaimsForReporter, formatClaimsForPrompt } from '../_utils/ingestedClaims.js';
-import { buildConsensusBlock } from '../_utils/fantasyTimesConsensus.js';
+import { buildConsensusBlock, checkEarningsAttribution } from '../_utils/fantasyTimesConsensus.js';
 
 export const config = { maxDuration: 60 };
 
@@ -302,6 +302,44 @@ export default async function handler(req, res) {
     }
 
     const storyData = toolBlock.input;
+
+    // ── Publish interceptor — check earnings attribution ──────────────
+    const today = new Date().toISOString().split('T')[0];
+    try {
+      const consensusDoc = await db.collection('fantasyTimesConsensus').doc(today).get();
+      const earnings = consensusDoc.exists ? consensusDoc.data()?.earnings : {};
+      const earningsValid = [
+        ...(earnings?.reportingToday || []),
+        ...(earnings?.reportedYesterdayAfterClose || []),
+      ];
+      const check = checkEarningsAttribution(storyData.body, earningsValid);
+      console.log(`[CONSENSUS] checkEarningsAttribution: ${check.passed ? 'PASS' : 'BLOCKED'} for Kim ${columnType}`);
+      if (!check.passed) {
+        console.warn(`[CONSENSUS] BLOCKED Kim column: earnings attribution for ${check.violations.join(', ')}`);
+        try {
+          await db.collection('fantasyTimesSuppressions').doc(today).set({
+            [String(Date.now())]: {
+              reporter: 'kim',
+              columnType,
+              violations: check.violations,
+              headline: storyData.headline,
+              body: storyData.body,
+              suppressedAt: new Date().toISOString(),
+            },
+          }, { merge: true });
+        } catch (suppErr) {
+          console.error('[CONSENSUS] Failed to log suppression:', suppErr.message);
+        }
+        return res.status(200).json({
+          success: false,
+          reason: 'earnings_attribution_blocked',
+          violations: check.violations,
+        });
+      }
+    } catch (err) {
+      console.error('[CONSENSUS] Interceptor error (non-blocking):', err.message);
+    }
+
     const now = new Date();
     const expiresAt = new Date(now.getTime() + REPORTER_PROFILES.kim.expiryHours * 60 * 60 * 1000);
 
