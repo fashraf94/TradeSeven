@@ -8,7 +8,7 @@ export const SECTORS = {
     emoji: '💻',
     color: '#3b82f6',
     description: 'Software, hardware, semiconductors, IT services',
-    topHoldings: ['AAPL', 'MSFT', 'NVDA', 'AVGO', 'ORCL', 'CRM', 'AMD', 'ADBE', 'CSCO', 'ACN', 'IBM', 'INTC', 'QCOM', 'TXN', 'NOW', 'INTU', 'AMAT', 'MU', 'LRCX', 'KLAC']
+    topHoldings: ['AAPL', 'MSFT', 'NVDA', 'AVGO', 'ORCL', 'CRM', 'AMD', 'ADBE', 'CSCO', 'ACN', 'IBM', 'INTC', 'QCOM', 'TXN', 'NOW', 'INTU', 'AMAT', 'MU', 'LRCX', 'KLAC', 'CRWD', 'PANW', 'ZS']
   },
   XLV: {
     id: 'XLV',
@@ -16,7 +16,7 @@ export const SECTORS = {
     emoji: '🏥',
     color: '#10b981',
     description: 'Pharmaceuticals, biotech, medical devices, healthcare providers',
-    topHoldings: ['LLY', 'UNH', 'JNJ', 'ABBV', 'MRK', 'TMO', 'ABT', 'PFE', 'AMGN', 'DHR', 'ISRG', 'MDT', 'BMY', 'VRTX', 'SYK', 'GILD', 'CVS', 'ELV', 'CI', 'BSX']
+    topHoldings: ['LLY', 'UNH', 'JNJ', 'ABBV', 'MRK', 'TMO', 'ABT', 'PFE', 'AMGN', 'DHR', 'ISRG', 'MDT', 'BMY', 'VRTX', 'SYK', 'GILD', 'CVS', 'ELV', 'CI', 'BSX', 'HUM', 'NVO']
   },
   XLF: {
     id: 'XLF',
@@ -32,7 +32,7 @@ export const SECTORS = {
     emoji: '⛽',
     color: '#ef4444',
     description: 'Oil & gas, energy equipment, renewable energy',
-    topHoldings: ['XOM', 'CVX', 'COP', 'SLB', 'EOG', 'MPC', 'PXD', 'PSX', 'VLO', 'OXY', 'WMB', 'KMI', 'HES', 'HAL', 'DVN', 'BKR', 'FANG', 'TRGP', 'OKE', 'CTRA']
+    topHoldings: ['XOM', 'CVX', 'COP', 'SLB', 'EOG', 'MPC', 'PSX', 'VLO', 'OXY', 'WMB', 'KMI', 'HES', 'HAL', 'DVN', 'BKR', 'FANG', 'TRGP', 'OKE', 'CTRA']
   },
   XLY: {
     id: 'XLY',
@@ -48,7 +48,7 @@ export const SECTORS = {
     emoji: '🛒',
     color: '#06b6d4',
     description: 'Food, beverages, household products, retail staples',
-    topHoldings: ['PG', 'COST', 'WMT', 'KO', 'PEP', 'PM', 'MDLZ', 'MO', 'CL', 'KMB', 'GIS', 'STZ', 'SYY', 'KHC', 'HSY', 'K', 'KR', 'WBA', 'TSN', 'CAG']
+    topHoldings: ['PG', 'COST', 'WMT', 'KO', 'PEP', 'PM', 'MDLZ', 'MO', 'CL', 'KMB', 'GIS', 'STZ', 'SYY', 'KHC', 'HSY', 'K', 'KR', 'WBA', 'TSN', 'CAG', 'DG', 'DLTR']
   },
   XLI: {
     id: 'XLI',

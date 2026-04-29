@@ -9,7 +9,7 @@
  */
 
 // ---------------------------------------------------------------------------
-// Stock Universe — 11 GICS sectors, 20 stocks each (220 total)
+// Stock Universe — 11 GICS sectors, 239 tickers total
 // ---------------------------------------------------------------------------
 
 export const STOCK_UNIVERSE = {
@@ -17,13 +17,13 @@ export const STOCK_UNIVERSE = {
     name: 'Technology',
     etf: 'XLK',
     color: '#3b82f6',
-    stocks: ['AAPL','MSFT','NVDA','AVGO','ORCL','CRM','AMD','ADBE','CSCO','ACN','IBM','INTC','QCOM','TXN','NOW','INTU','AMAT','MU','LRCX','KLAC','SHOP','PLTR','SNOW','BE','CRWV'],
+    stocks: ['AAPL','MSFT','NVDA','AVGO','ORCL','CRM','AMD','ADBE','CSCO','ACN','IBM','INTC','QCOM','TXN','NOW','INTU','AMAT','MU','LRCX','KLAC','SHOP','PLTR','SNOW','BE','CRWV','CRWD','PANW','ZS'],
   },
   XLV: {
     name: 'Healthcare',
     etf: 'XLV',
     color: '#10b981',
-    stocks: ['LLY','UNH','JNJ','ABBV','MRK','TMO','ABT','PFE','AMGN','DHR','ISRG','MDT','BMY','VRTX','SYK','GILD','CVS','ELV','CI','BSX'],
+    stocks: ['LLY','UNH','JNJ','ABBV','MRK','TMO','ABT','PFE','AMGN','DHR','ISRG','MDT','BMY','VRTX','SYK','GILD','CVS','ELV','CI','BSX','HUM','NVO'],
   },
   XLF: {
     name: 'Financials',
@@ -47,7 +47,7 @@ export const STOCK_UNIVERSE = {
     name: 'Consumer Staples',
     etf: 'XLP',
     color: '#06b6d4',
-    stocks: ['PG','COST','WMT','KO','PEP','PM','MDLZ','MO','CL','KMB','GIS','STZ','SYY','KHC','HSY','K','KR','WBA','TSN','CAG'],
+    stocks: ['PG','COST','WMT','KO','PEP','PM','MDLZ','MO','CL','KMB','GIS','STZ','SYY','KHC','HSY','K','KR','WBA','TSN','CAG','DG','DLTR'],
   },
   XLI: {
     name: 'Industrials',
