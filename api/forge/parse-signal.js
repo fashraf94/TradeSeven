@@ -29,6 +29,7 @@ import { buildParsePromptInputs } from '../_utils/signalDropPrompt.js';
 import { validateTickers } from '../_utils/tickerValidation.js';
 import { hashText, hashUrl, hashImage } from '../_utils/contentHash.js';
 import { detectInjectionAttempts } from '../_utils/injectionGuard.js';
+import { sanitizeParsedOutput } from '../_utils/sanitizeParsedOutput.js';
 import { logSignalDrops } from '../_utils/shadowLogger.js';
 
 export const config = { maxDuration: 30 };
@@ -245,6 +246,10 @@ export default async function handler(req, res) {
       throw new Error('Haiku did not use submit_parsed_signal tool');
     }
     const parsed = toolUse.input;
+
+    // Defensive sanitizer: strip vendor-side decoder regression artifacts and
+    // coerce missing required fields. Fire-and-forget logs every modification.
+    sanitizeParsedOutput(parsed, { dropId, userId, contentHash });
 
     // 9. Validate tickers (canonical-symbol normalization, against the
     // 232-symbol universe). Validation runs against the union of
