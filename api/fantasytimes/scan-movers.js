@@ -15,6 +15,39 @@ export const config = { maxDuration: 60 };
 
 const LOG_PREFIX = '[FantasyTimes:ScanMovers]';
 const MOVE_THRESHOLD_PCT = 3; // 3% intraday move triggers a story
+const QUOTE_FETCH_TIMEOUT_MS = 5000;
+const QUOTE_FETCH_CONCURRENCY = 8;
+
+async function fetchQuote(symbol) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), QUOTE_FETCH_TIMEOUT_MS);
+  try {
+    const url = `https://eodhd.com/api/real-time/${symbol}.US?api_token=${process.env.EODHD_API_KEY}&fmt=json`;
+    const resp = await fetch(url, { signal: controller.signal });
+    if (!resp.ok) {
+      return { symbol, ok: false, error: `HTTP ${resp.status}` };
+    }
+    const data = await resp.json();
+    return { symbol, ok: true, data };
+  } catch (err) {
+    return { symbol, ok: false, error: err.name === 'AbortError' ? 'timeout' : err.message };
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+async function fetchAllQuotes(symbols) {
+  const out = [];
+  for (let i = 0; i < symbols.length; i += QUOTE_FETCH_CONCURRENCY) {
+    const chunk = symbols.slice(i, i + QUOTE_FETCH_CONCURRENCY);
+    const settled = await Promise.allSettled(chunk.map(fetchQuote));
+    for (const r of settled) {
+      if (r.status === 'fulfilled') out.push(r.value);
+      else out.push({ symbol: 'unknown', ok: false, error: r.reason?.message || 'rejected' });
+    }
+  }
+  return out;
+}
 
 function logInfo(msg, data = null) {
   const ts = new Date().toISOString();
@@ -73,27 +106,30 @@ export default async function handler(req, res) {
     // Fetch real-time quotes for all tracked symbols
     logInfo(`Scanning ${FANTASYTIMES_TICKERS.length} symbols for big movers (>=${MOVE_THRESHOLD_PCT}%)`);
 
-    for (const symbol of FANTASYTIMES_TICKERS) {
+    const quoteFetchStart = Date.now();
+    const quotes = await fetchAllQuotes(FANTASYTIMES_TICKERS);
+    console.log(`[SCAN:TIMING] Quote fetch took ${Date.now() - quoteFetchStart}ms (${FANTASYTIMES_TICKERS.length} symbols)`);
+
+    const detectedMovers = [];
+    for (const q of quotes) {
+      if (!q.ok) {
+        logError(`Failed to fetch ${q.symbol}: ${q.error}`);
+        results.errors.push(`${q.symbol}: ${q.error}`);
+        continue;
+      }
+      results.scanned++;
+      const changeP = parseFloat(q.data.change_p);
+      if (isNaN(changeP) || Math.abs(changeP) < MOVE_THRESHOLD_PCT) {
+        continue;
+      }
+      logInfo(`Big mover detected: ${q.symbol} ${changeP >= 0 ? '+' : ''}${changeP.toFixed(2)}%`);
+      results.movers.push({ symbol: q.symbol, changeP });
+      detectedMovers.push({ symbol: q.symbol, changeP, data: q.data });
+    }
+
+    const moverProcessingStart = Date.now();
+    for (const { symbol, changeP, data } of detectedMovers) {
       try {
-        const url = `https://eodhd.com/api/real-time/${symbol}.US?api_token=${process.env.EODHD_API_KEY}&fmt=json`;
-        const resp = await fetch(url);
-        if (!resp.ok) {
-          logError(`Failed to fetch ${symbol}: HTTP ${resp.status}`);
-          results.errors.push(`${symbol}: HTTP ${resp.status}`);
-          continue;
-        }
-
-        const data = await resp.json();
-        results.scanned++;
-
-        const changeP = parseFloat(data.change_p);
-        if (isNaN(changeP) || Math.abs(changeP) < MOVE_THRESHOLD_PCT) {
-          continue;
-        }
-
-        logInfo(`Big mover detected: ${symbol} ${changeP >= 0 ? '+' : ''}${changeP.toFixed(2)}%`);
-        results.movers.push({ symbol, changeP });
-
         // Write early catalyst to consensus (before Alex's full story)
         try {
           const today = new Date().toISOString().split('T')[0];
@@ -152,6 +188,9 @@ export default async function handler(req, res) {
         logError(`Error processing ${symbol}`, { error: err.message });
         results.errors.push(`${symbol}: ${err.message}`);
       }
+    }
+    if (detectedMovers.length > 0) {
+      console.log(`[SCAN:TIMING] Mover processing took ${Date.now() - moverProcessingStart}ms (${detectedMovers.length} movers)`);
     }
 
     logInfo('Scan complete', {

@@ -52,14 +52,15 @@ function getTodayET() {
   return new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
 }
 
-/**
- * Fetch real-time price from EODHD for a single symbol.
- * Returns { symbol, price, change, changePercent, previousClose } or null.
- */
+const PRICE_FETCH_TIMEOUT_MS = 5000;
+const PRICE_FETCH_CONCURRENCY = 8;
+
 async function fetchRealTimePrice(symbol) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), PRICE_FETCH_TIMEOUT_MS);
   try {
     const url = `https://eodhd.com/api/real-time/${symbol}.US?api_token=${process.env.EODHD_API_KEY}&fmt=json`;
-    const res = await fetch(url);
+    const res = await fetch(url, { signal: controller.signal });
     if (!res.ok) return null;
     const data = await res.json();
     return {
@@ -71,19 +72,20 @@ async function fetchRealTimePrice(symbol) {
     };
   } catch {
     return null;
+  } finally {
+    clearTimeout(timeoutId);
   }
 }
 
-/**
- * Batch fetch real-time prices for multiple symbols.
- * Sequential calls with small delay to avoid rate limits.
- */
 async function fetchBatchPrices(symbols) {
   const results = [];
-  for (const symbol of symbols) {
-    const data = await fetchRealTimePrice(symbol);
-    if (data && data.price > 0) {
-      results.push(data);
+  for (let i = 0; i < symbols.length; i += PRICE_FETCH_CONCURRENCY) {
+    const chunk = symbols.slice(i, i + PRICE_FETCH_CONCURRENCY);
+    const settled = await Promise.allSettled(chunk.map(fetchRealTimePrice));
+    for (const r of settled) {
+      if (r.status === 'fulfilled' && r.value && r.value.price > 0) {
+        results.push(r.value);
+      }
     }
   }
   return results;
@@ -175,12 +177,16 @@ export default async function handler(req, res) {
 
     // ── Fetch index prices (SPY, QQQ, DIA, IWM) ──────────────────────
     logInfo('Fetching index prices...');
+    const indexFetchStart = Date.now();
     const indexPrices = await fetchBatchPrices(INDEX_SYMBOLS);
+    console.log(`[KAI:TIMING] Index price fetch took ${Date.now() - indexFetchStart}ms (${indexPrices.length}/${INDEX_SYMBOLS.length} symbols)`);
     logInfo('Index prices fetched', { count: indexPrices.length });
 
     // ── Fetch all tracked stock prices ─────────────────────────────────
     logInfo('Fetching tracked stock prices...');
+    const stockFetchStart = Date.now();
     const stockPrices = await fetchBatchPrices(FANTASYTIMES_TICKERS);
+    console.log(`[KAI:TIMING] Stock price fetch took ${Date.now() - stockFetchStart}ms (${stockPrices.length}/${FANTASYTIMES_TICKERS.length} symbols)`);
     logInfo('Stock prices fetched', { count: stockPrices.length });
 
     // Sort by absolute % change, take top 5
