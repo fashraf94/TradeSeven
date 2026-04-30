@@ -115,9 +115,21 @@ Expected wall time after fix: index fetch under 2 seconds, ticker fetch under 10
 
 Convert the `for (const symbol of FANTASYTIMES_TICKERS)` loop into a chunked-`Promise.allSettled` with concurrency 5 or 10, and add an `AbortController` 5-second timeout on the EODHD fetch. The mover-detection branch (consensus write + dedup + Alex story) can stay sequential per detected mover — those are rare enough that they don't blow the budget, and serializing the Alex story generation avoids hammering Anthropic with parallel calls.
 
-### 3. Use the cached index prices in Kai pulse (optional cleanup, real but smaller win)
+### 3. Use the cached index prices in Kai pulse — **NOT APPLIED THIS SESSION**
 
-`getMarketContextBlock()` already returns cached SPY/QQQ/DIA/IWM data from Firestore. Kai could read those instead of calling EODHD live for the same four symbols. Saves roughly 4 seconds and removes a redundancy that already has a fallback path acknowledging the cache is trustworthy. Not strictly required if fix #1 lands, but cheap to do alongside it.
+`getMarketContextBlock()` returns cached SPY/QQQ/DIA/IWM data from Firestore. On paper this could replace the live index fetch in Kai. **In practice the cache is too stale to use as the primary index price source.**
+
+The only writer to `indexIntelligence/marketContext` that populates SPY/QQQ/DIA/IWM is the `compute-index-intelligence` cron, scheduled in `vercel.json` as `30 10,11 * * 1-5` (UTC). That's 6:30 AM and 7:30 AM ET during EDT. The cron runs twice in pre-market and never refreshes during market hours.
+
+Effective staleness when Kai reads the cache:
+
+- **Pre-market pulse** (cron path `?period=pre_market`, ~9:30/10:30 AM ET): cache is 2–3 hours old. Borderline acceptable for a pre-market summary.
+- **Midday pulse** (~12:00/1:00 PM ET): cache is 4–6 hours old. The cached `changePercent` values reflect pre-market state, not current intraday action. Using these would silently feed Kai wrong numbers.
+- **Post-close pulse** (~4:15/5:15 PM ET): cache is 8–10 hours old. Useless for an end-of-day pulse.
+
+Cache staleness is therefore **unbounded for the use case** — well beyond the 60-second freshness window we'd want before reading it as primary source. Flash's instruction was to skip Fix 3 in this scenario and flag it separately.
+
+**Flagged for a separate session:** decide between (a) tightening the `compute-index-intelligence` cron to refresh `marketContext` every 5–15 minutes during market hours, or (b) leaving the cache as-is and accepting that Kai's index prices must come from a live fetch. After Fix 1 lands, the live-fetch path takes under 2 seconds in parallel — small enough that the cache may not be worth the trouble.
 
 ### 4. Add timing log lines
 
