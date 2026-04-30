@@ -384,6 +384,18 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Discover engagement telemetry — user-write-only, server-read.
+    // Each doc records a single tap (card open or Start-in-Workshop
+    // click). Rule mirrors the gamePlanNotes user-create pattern but
+    // forbids reads from clients (server-only via Admin SDK) and
+    // forbids updates/deletes (immutable interaction log).
+    match /discoverInteractions/{interactionId} {
+      allow read: if false;
+      allow create: if request.auth != null
+                    && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if false;
+    }
+
     // Institutional holdings — public read, server-only write (Admin SDK)
     match /institutionalHoldings/{symbol} {
       allow read: if true;
