@@ -5,23 +5,56 @@
 // by scripts/seed-discover-themes.js) and renders each as a
 // ThemeCard in a responsive grid.
 //
-// Sprint 1 Phase 2 scope: card grid + tap stub. Phase 3 wires the
-// modal and analytics writes; Sprint 3 reorganizes the layout into
-// horizontal-scrolling rails (Sectors, Themes, Current Events,
-// Recent Drops). For now, a single grid of 8 cards is the entire
-// panel.
+// Phase 3 wires the rich-detail modal + analytics:
+//   - Tap card → write 'tap_card' interaction + open ThemeDetailModal
+//   - Modal "Start in Workshop" → write 'tap_start_workshop'
+//     interaction + show toast (Sprint 6 will replace the toast with
+//     the real Workshop seed-context handoff)
+//
+// Sprint 3 will reorganize this single grid into horizontal-scrolling
+// rails (Sectors, Themes, Current Events, Recent Drops).
 
 import React, { useEffect, useState } from 'react';
-import { collection, getDocs, orderBy, query, where } from 'firebase/firestore';
-import { db } from '../../firebase/config';
+import {
+  addDoc,
+  collection,
+  getDocs,
+  orderBy,
+  query,
+  serverTimestamp,
+  where,
+} from 'firebase/firestore';
+import { auth, db } from '../../firebase/config';
 import { useTheme } from '../../contexts/ThemeContext';
 import ThemeCard from './ThemeCard';
+import ThemeDetailModal from './ThemeDetailModal';
 
-export default function DiscoverPanel() {
+// Fire-and-forget analytics write. We never want the UX to wait on
+// the round-trip and we never want a logging failure to surface to
+// the user. The discoverInteractions rules block (manual deploy) is
+// scoped to allow only authenticated user-owned creates.
+async function logInteraction({ themeId, action }) {
+  try {
+    const uid = auth?.currentUser?.uid;
+    if (!uid || !themeId || !action) return;
+    await addDoc(collection(db, 'discoverInteractions'), {
+      userId: uid,
+      themeId,
+      action,
+      timestamp: serverTimestamp(),
+      source: 'discoverThemes',
+    });
+  } catch (err) {
+    console.error('[DiscoverPanel] Failed to log interaction:', err);
+  }
+}
+
+export default function DiscoverPanel({ showToast }) {
   const { tokens } = useTheme();
   const [themes, setThemes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [selectedTheme, setSelectedTheme] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -49,11 +82,22 @@ export default function DiscoverPanel() {
     };
   }, []);
 
-  // Phase 3 will wire this to open ThemeDetailModal and write a
-  // discoverInteractions row. For now, log so a smoke test confirms
-  // the click handler is reachable.
   const handleTap = (theme) => {
-    console.log('[DiscoverPanel] tap card:', theme?.id, theme?.title);
+    if (!theme) return;
+    logInteraction({ themeId: theme.id, action: 'tap_card' });
+    setSelectedTheme(theme);
+  };
+
+  const handleCloseModal = () => {
+    setSelectedTheme(null);
+  };
+
+  const handleStartWorkshop = (theme) => {
+    if (!theme) return;
+    logInteraction({ themeId: theme.id, action: 'tap_start_workshop' });
+    if (typeof showToast === 'function') {
+      showToast('Workshop integration ships in Sprint 6.');
+    }
   };
 
   return (
@@ -134,6 +178,13 @@ export default function DiscoverPanel() {
           </div>
         )}
       </div>
+
+      <ThemeDetailModal
+        isOpen={Boolean(selectedTheme)}
+        theme={selectedTheme}
+        onClose={handleCloseModal}
+        onStartWorkshop={handleStartWorkshop}
+      />
     </div>
   );
 }

@@ -2131,7 +2131,7 @@ export default function ForgeLanding({
       </div>
 
       <div style={{ padding: '0 16px', maxWidth: containerMaxWidth, margin: '0 auto' }}>
-        {view === 'discover' && <DiscoverPanel />}
+        {view === 'discover' && <DiscoverPanel showToast={showToast} />}
 
         {view === 'laboratory' && (
           <>
