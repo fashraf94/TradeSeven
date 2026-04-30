@@ -23,6 +23,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Hammer,
   Beaker,
+  Compass,
   ArrowRight,
   Pencil,
   Activity,
@@ -37,6 +38,7 @@ import { collection, getDocs, query, where, orderBy, limit, doc, getDoc } from '
 import { db } from '../../firebase/config';
 import ForgeScreen from './ForgeScreen';
 import WorkshopChat from './WorkshopChat';
+import DiscoverPanel from '../discover/DiscoverPanel';
 import DailyBriefingCard from '../Season/DailyBriefingCard';
 import useIsMobile from '../../hooks/useIsMobile';
 import {
@@ -1633,7 +1635,11 @@ export default function ForgeLanding({
   // 4's CTA still falls back to onNavigateToSeasonHub.
   onOpenAgentBattle,
 }) {
-  const [view, setView] = useState('laboratory');
+  // Default tab is 'discover' for users with no agents, 'laboratory'
+  // otherwise. We boot to 'discover' as the loading-state fallback per
+  // FORGE_DISCOVER_TAB_SPEC §2; a one-shot existence check below flips
+  // returning users with at least one agent over to 'laboratory'.
+  const [view, setView] = useState('discover');
   const [seasons, setSeasons] = useState([]);
   const [entries, setEntries] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -1653,6 +1659,41 @@ export default function ForgeLanding({
   const [dimensionsById, setDimensionsById] = useState({});
   const [toast, setToast] = useState(null);
   const [workshopOpen, setWorkshopOpen] = useState(false);
+
+  // Resolve default tab. Discover stays selected for users with no
+  // agents (the loading-state initial value); returning users with at
+  // least one agent flip over to 'laboratory'. The functional update
+  // guards against clobbering a tab the user clicked while the read
+  // was in-flight.
+  //
+  // Mirrors the canonical "this user's agents" query pattern from
+  // services/agentService.js (subscribeToUserAgent): top-level
+  // 'agents' collection filtered by ownerId, limit(1) for an
+  // existence check. No users/{uid}/agents subcollection exists.
+  useEffect(() => {
+    if (!user?.uid) return;
+    let cancelled = false;
+    async function resolveDefaultTab() {
+      try {
+        const agentsQ = query(
+          collection(db, 'agents'),
+          where('ownerId', '==', user.uid),
+          limit(1)
+        );
+        const snap = await getDocs(agentsQ);
+        if (cancelled) return;
+        if (!snap.empty) {
+          setView((prev) => (prev === 'discover' ? 'laboratory' : prev));
+        }
+      } catch (err) {
+        if (!cancelled) console.error('[ForgeLanding] Failed to resolve default tab:', err);
+      }
+    }
+    resolveDefaultTab();
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.uid]);
 
   // Fetch all seasons + user's entries
   useEffect(() => {
@@ -1930,13 +1971,18 @@ export default function ForgeLanding({
   // ── Desktop layout detection ───────────────────────────────────────
   // Container widens to 1200px only for the State 2 multi-experiment
   // grid; all other states cap at 560px so single cards don't stretch.
+  // Discover overrides both: it owns its own grid layout and widens to
+  // 1200px at every viewport so the 1/2/3-column responsive grid can
+  // breathe past the laboratory tab's 480/560 caps.
   const { width } = useIsMobile();
   const isDesktop = width >= 1024;
   const isMultiExperimentTesting =
     landingState === 'testing' && testingExperiments.length > 1;
-  const containerMaxWidth = isDesktop
-    ? (isMultiExperimentTesting ? 1200 : 560)
-    : 480;
+  const containerMaxWidth = view === 'discover'
+    ? 1200
+    : isDesktop
+      ? (isMultiExperimentTesting ? 1200 : 560)
+      : 480;
 
   // ── Callbacks ──────────────────────────────────────────────────────
 
@@ -2011,8 +2057,9 @@ export default function ForgeLanding({
     );
   }
 
-  // ── Laboratory view ───────────────────────────────────────────────
+  // ── Forge shell + active panel ────────────────────────────────────
   const TABS = [
+    { id: 'discover', label: 'Discover', Icon: Compass },
     { id: 'laboratory', label: 'Laboratory', Icon: Beaker },
     { id: 'advanced', label: 'Advanced', Icon: Hammer },
   ];
@@ -2084,6 +2131,10 @@ export default function ForgeLanding({
       </div>
 
       <div style={{ padding: '0 16px', maxWidth: containerMaxWidth, margin: '0 auto' }}>
+        {view === 'discover' && <DiscoverPanel showToast={showToast} />}
+
+        {view === 'laboratory' && (
+          <>
         {/* ── State-branched body ────────────────────────────────── */}
         {landingState === 'new' && (
           <NewUserHero
@@ -2226,6 +2277,8 @@ export default function ForgeLanding({
           <div style={{ fontSize: 11, color: TEXT_MUTED, textAlign: 'center', marginTop: 12 }}>
             Loading…
           </div>
+        )}
+          </>
         )}
       </div>
 
