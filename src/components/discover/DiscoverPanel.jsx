@@ -1,18 +1,24 @@
 // src/components/discover/DiscoverPanel.jsx
 //
-// Discover panel — the inspiration surface of the Forge. Fetches all
-// active themes from the discoverThemes Firestore collection (seeded
-// by scripts/seed-discover-themes.js) and renders each as a
-// ThemeCard in a responsive grid.
+// Discover panel — the inspiration surface of the Forge. Owns the
+// single discoverThemes fetch for the page and routes themes into
+// three surfaces:
+//   1. FeaturedThemesShowcase — three editorial cards at the top
+//      (filtered by isLiveThisWeek; cold-start fallback to first 3 by
+//      displayOrder)
+//   2. AllThemesShowcase — the full catalog (mobile carousel /
+//      desktop grid)
+//   3. SectorRail — the macro-lens rail at the bottom; needs themes
+//      for the sector → linked-theme cross-modal handoff
 //
-// Phase 3 wires the rich-detail modal + analytics:
-//   - Tap card → write 'tap_card' interaction + open ThemeDetailModal
-//   - Modal "Start in Workshop" → write 'tap_start_workshop'
-//     interaction + show toast (Sprint 6 will replace the toast with
-//     the real Workshop seed-context handoff)
-//
-// Sprint 3 will reorganize this single grid into horizontal-scrolling
-// rails (Sectors, Themes, Current Events, Recent Drops).
+// Modal handoffs:
+//   - Tap any theme card → write 'tap_card' interaction + open
+//     ThemeDetailModal (analytics action is single-path, source is
+//     'discoverThemes' for both featured and All Themes taps)
+//   - ThemeDetailModal "Start in Workshop" → write 'tap_start_workshop'
+//     + show toast (Sprint 6 wires the real Workshop handoff)
+//   - Sector → linked theme: handleOpenThemeById looks up by id and
+//     routes through the same ThemeDetailModal
 
 import React, { useEffect, useState } from 'react';
 import {
@@ -26,9 +32,9 @@ import {
 } from 'firebase/firestore';
 import { auth, db } from '../../firebase/config';
 import { useTheme } from '../../contexts/ThemeContext';
-import ThemeCard from './ThemeCard';
 import ThemeDetailModal from './ThemeDetailModal';
-import ThemesRail from './ThemesRail';
+import FeaturedThemesShowcase from './FeaturedThemesShowcase';
+import AllThemesShowcase from './AllThemesShowcase';
 import SectorRail from './SectorRail';
 import AssetResearchModal from '../draft/AssetResearchModal';
 import { getSectorContent } from './sectorContent';
@@ -161,85 +167,14 @@ export default function DiscoverPanel({ showToast }) {
       </p>
 
       <div style={{ marginTop: 24 }}>
-        {loading && (
-          <div
-            style={{
-              color: tokens.textMuted,
-              fontSize: 13,
-              textAlign: 'center',
-              padding: '32px 0',
-            }}
-          >
-            Loading themes…
-          </div>
-        )}
+        <FeaturedThemesShowcase
+          themes={themes}
+          loading={loading}
+          error={error}
+          onCardTap={handleTap}
+        />
 
-        {!loading && error && (
-          <div
-            style={{
-              color: tokens.red,
-              fontSize: 13,
-              textAlign: 'center',
-              padding: '32px 0',
-            }}
-          >
-            Couldn&apos;t load themes. Refresh to try again.
-          </div>
-        )}
-
-        {!loading && !error && themes.length === 0 && (
-          <div
-            style={{
-              color: tokens.textMuted,
-              fontSize: 13,
-              textAlign: 'center',
-              padding: '32px 0',
-            }}
-          >
-            No themes available.
-          </div>
-        )}
-
-        <ThemesRail onCardTap={handleTap} />
-
-        {!loading && !error && themes.length > 0 && (
-          <div style={{ marginBottom: 32 }}>
-            <div style={{ marginBottom: 12 }}>
-              <h3
-                style={{
-                  margin: 0,
-                  fontSize: 18,
-                  fontWeight: 700,
-                  color: tokens.textPrimary,
-                  lineHeight: 1.2,
-                }}
-              >
-                All Themes
-              </h3>
-              <p
-                style={{
-                  margin: '4px 0 0',
-                  fontSize: 12,
-                  color: tokens.textMuted,
-                  lineHeight: 1.5,
-                }}
-              >
-                Full catalog — every active theme.
-              </p>
-            </div>
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))',
-                gap: 16,
-              }}
-            >
-              {themes.map((theme) => (
-                <ThemeCard key={theme.id} theme={theme} onTap={handleTap} />
-              ))}
-            </div>
-          </div>
-        )}
+        <AllThemesShowcase themes={themes} onCardTap={handleTap} />
 
         <SectorRail
           showToast={showToast}
