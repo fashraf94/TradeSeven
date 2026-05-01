@@ -28,6 +28,7 @@ import { auth, db } from '../../firebase/config';
 import { useTheme } from '../../contexts/ThemeContext';
 import ThemeCard from './ThemeCard';
 import ThemeDetailModal from './ThemeDetailModal';
+import ThemesRail from './ThemesRail';
 import SectorRail from './SectorRail';
 import AssetResearchModal from '../draft/AssetResearchModal';
 import { getSectorContent } from './sectorContent';
@@ -199,17 +200,44 @@ export default function DiscoverPanel({ showToast }) {
           </div>
         )}
 
+        <ThemesRail onCardTap={handleTap} />
+
         {!loading && !error && themes.length > 0 && (
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))',
-              gap: 16,
-            }}
-          >
-            {themes.map((theme) => (
-              <ThemeCard key={theme.id} theme={theme} onTap={handleTap} />
-            ))}
+          <div style={{ marginBottom: 32 }}>
+            <div style={{ marginBottom: 12 }}>
+              <h3
+                style={{
+                  margin: 0,
+                  fontSize: 18,
+                  fontWeight: 700,
+                  color: tokens.textPrimary,
+                  lineHeight: 1.2,
+                }}
+              >
+                All Themes
+              </h3>
+              <p
+                style={{
+                  margin: '4px 0 0',
+                  fontSize: 12,
+                  color: tokens.textMuted,
+                  lineHeight: 1.5,
+                }}
+              >
+                Full catalog — every active theme.
+              </p>
+            </div>
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))',
+                gap: 16,
+              }}
+            >
+              {themes.map((theme) => (
+                <ThemeCard key={theme.id} theme={theme} onTap={handleTap} />
+              ))}
+            </div>
           </div>
         )}
 
