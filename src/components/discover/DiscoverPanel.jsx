@@ -218,6 +218,7 @@ export default function DiscoverPanel({ showToast }) {
           themes={themes}
           onLinkedThemeTap={handleOpenThemeById}
           onViewChartTap={handleViewChartTap}
+          onHoldingChipTap={handleViewChartTap}
         />
       </div>
 

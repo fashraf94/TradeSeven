@@ -100,6 +100,7 @@ export default function SectorDetailModal({
   onClose,
   onLinkedThemeTap,
   onViewChartTap,
+  onHoldingChipTap,
   showToast,
 }) {
   const { tokens } = useTheme();
@@ -162,12 +163,10 @@ export default function SectorDetailModal({
     if (!holdingTicker) return;
     logSectorInteraction({
       themeId: holdingTicker,
-      action: 'tap_top_holding',
+      action: 'tap_holding_chip_from_sector',
       extra: { sourceSectorTicker: ticker },
     });
-    if (typeof showToast === 'function') {
-      showToast('Stock detail view coming in a future update.');
-    }
+    onHoldingChipTap?.(holdingTicker);
   };
 
   const handleLinkedThemeTap = (theme) => {
@@ -290,6 +289,13 @@ export default function SectorDetailModal({
                         type="button"
                         onClick={() => handleHoldingTap(h)}
                         style={tickerChipStyle(tokens)}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.borderColor = tokens.teal;
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.borderColor =
+                            tokens.borderDefault;
+                        }}
                       >
                         {h}
                       </button>
