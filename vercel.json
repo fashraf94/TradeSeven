@@ -173,6 +173,10 @@
     {
       "path": "/api/cron/compute-daily-regime-brief",
       "schedule": "30 12 * * 1-5"
+    },
+    {
+      "path": "/api/cron/promote-discover-themes",
+      "schedule": "0 10,11 * * 1"
     }
   ]
 }
