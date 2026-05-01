@@ -375,11 +375,17 @@ service cloud.firestore {
 
     // ═══════════════════════════════════════════
     // Discover — Thematic content for Discover tab
-    // Authenticated read, server-only writes (Admin SDK via seed script)
-    // Populated by scripts/seed-discover-themes.js
+    // Authenticated read, server-only writes (Admin SDK via seed scripts)
+    // Populated by scripts/seed-discover-themes.js and
+    // scripts/seed-discover-sectors.js
     // ═══════════════════════════════════════════
 
     match /discoverThemes/{themeId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+
+    match /discoverSectors/{sectorId} {
       allow read: if request.auth != null;
       allow write: if false;
     }
