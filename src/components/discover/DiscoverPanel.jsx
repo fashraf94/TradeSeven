@@ -29,6 +29,8 @@ import { useTheme } from '../../contexts/ThemeContext';
 import ThemeCard from './ThemeCard';
 import ThemeDetailModal from './ThemeDetailModal';
 import SectorRail from './SectorRail';
+import AssetResearchModal from '../draft/AssetResearchModal';
+import { getSectorContent } from './sectorContent';
 
 // Fire-and-forget analytics write. We never want the UX to wait on
 // the round-trip and we never want a logging failure to surface to
@@ -56,6 +58,7 @@ export default function DiscoverPanel({ showToast }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [selectedTheme, setSelectedTheme] = useState(null);
+  const [viewChartTicker, setViewChartTicker] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -99,6 +102,20 @@ export default function DiscoverPanel({ showToast }) {
     if (typeof showToast === 'function') {
       showToast('Workshop integration ships in Sprint 6.');
     }
+  };
+
+  // Sprint 2.6 cross-modal handoff target for SectorDetailModal: open
+  // the AssetResearchModal for a sector ETF ticker. SectorRail closes
+  // its own modal before invoking this. Closing the research modal
+  // afterwards returns the user to the bare Discover surface (NOT
+  // auto-restored), matching the sector → theme handoff pattern.
+  const handleViewChartTap = (ticker) => {
+    if (!ticker) return;
+    setViewChartTicker(ticker);
+  };
+
+  const handleCloseViewChart = () => {
+    setViewChartTicker(null);
   };
 
   // Cross-modal handoff target for SectorDetailModal: open the theme
@@ -200,6 +217,7 @@ export default function DiscoverPanel({ showToast }) {
           showToast={showToast}
           themes={themes}
           onLinkedThemeTap={handleOpenThemeById}
+          onViewChartTap={handleViewChartTap}
         />
       </div>
 
@@ -209,6 +227,18 @@ export default function DiscoverPanel({ showToast }) {
         onClose={handleCloseModal}
         onStartWorkshop={handleStartWorkshop}
       />
+
+      {viewChartTicker && (
+        <AssetResearchModal
+          asset={{
+            symbol: viewChartTicker,
+            name: getSectorContent(viewChartTicker)?.name || viewChartTicker,
+          }}
+          onClose={handleCloseViewChart}
+          showActionButton={false}
+          version={2}
+        />
+      )}
     </div>
   );
 }

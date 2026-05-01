@@ -31,7 +31,7 @@
 
 import React, { useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Medal } from 'lucide-react';
+import { X, Medal, LineChart } from 'lucide-react';
 import {
   addDoc,
   collection,
@@ -99,6 +99,7 @@ export default function SectorDetailModal({
   themes,
   onClose,
   onLinkedThemeTap,
+  onViewChartTap,
   showToast,
 }) {
   const { tokens } = useTheme();
@@ -179,6 +180,19 @@ export default function SectorDetailModal({
     onLinkedThemeTap?.(theme.id);
   };
 
+  // Sprint 2.6 cross-modal handoff: SectorDetailModal → AssetResearchModal.
+  // SectorRail closes its own modal first, then DiscoverPanel opens the
+  // research modal. Mirrors the sector → theme handoff pattern.
+  const handleViewChartTap = () => {
+    if (!ticker) return;
+    logSectorInteraction({
+      themeId: ticker,
+      action: 'tap_view_chart_from_sector',
+      extra: { sourceSectorTicker: ticker },
+    });
+    onViewChartTap?.(ticker);
+  };
+
   const badgeColor = medalColor(medalRank, tokens);
 
   return (
@@ -251,6 +265,11 @@ export default function SectorDetailModal({
               <Section label="What this sector reflects" tokens={tokens}>
                 <p style={bodyParagraph(tokens)}>{content.body}</p>
               </Section>
+
+              <ViewChartCTA
+                tokens={tokens}
+                onClick={handleViewChartTap}
+              />
 
               <Section
                 label="Top Holdings"
@@ -573,6 +592,48 @@ function tickerChipStyle(tokens) {
     letterSpacing: '0.3px',
     cursor: 'pointer',
     transition: 'border-color 0.15s ease',
+  };
+}
+
+function ViewChartCTA({ tokens, onClick }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      style={viewChartButtonStyle(tokens)}
+      onMouseEnter={(e) => {
+        e.currentTarget.style.borderColor = tokens.teal;
+        e.currentTarget.style.background = tokens.bgCard;
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.borderColor = tokens.borderDefault;
+        e.currentTarget.style.background = tokens.bgIcon;
+      }}
+    >
+      <LineChart size={16} strokeWidth={2.25} />
+      <span>Open Chart View</span>
+    </button>
+  );
+}
+
+function viewChartButtonStyle(tokens) {
+  return {
+    appearance: 'none',
+    width: '100%',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    background: tokens.bgIcon,
+    border: `1px solid ${tokens.borderDefault}`,
+    color: tokens.teal,
+    padding: '12px 16px',
+    borderRadius: 999,
+    fontSize: 13,
+    fontWeight: 600,
+    letterSpacing: '0.3px',
+    cursor: 'pointer',
+    transition: 'border-color 0.15s ease, background 0.15s ease',
   };
 }
 

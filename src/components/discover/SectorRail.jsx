@@ -150,7 +150,7 @@ export function computeRenderOrder(sectors, sectorSnapshot, freshPrices) {
   return [...hot3, ...remaining];
 }
 
-export default function SectorRail({ showToast, themes, onLinkedThemeTap }) {
+export default function SectorRail({ showToast, themes, onLinkedThemeTap, onViewChartTap }) {
   const { tokens } = useTheme();
   const [sectors, setSectors] = useState([]);
   const [sectorsLoading, setSectorsLoading] = useState(true);
@@ -277,6 +277,16 @@ export default function SectorRail({ showToast, themes, onLinkedThemeTap }) {
     onLinkedThemeTap?.(themeId);
   };
 
+  // Sprint 2.6 cross-modal handoff: SectorDetailModal → AssetResearchModal.
+  // Close the sector modal first, then ask DiscoverPanel to open the
+  // research modal. Same close-source-first pattern as the theme handoff
+  // above. Analytics + sourceSectorTicker are written by SectorDetailModal
+  // before this callback fires.
+  const handleViewChartTap = (ticker) => {
+    setSelectedSectorTicker(null);
+    onViewChartTap?.(ticker);
+  };
+
   return (
     <div style={{ marginTop: 32 }}>
       <div style={{ marginBottom: 12 }}>
@@ -369,6 +379,7 @@ export default function SectorRail({ showToast, themes, onLinkedThemeTap }) {
         themes={themes}
         onClose={handleCloseSectorModal}
         onLinkedThemeTap={handleLinkedThemeTap}
+        onViewChartTap={handleViewChartTap}
         showToast={showToast}
       />
     </div>
