@@ -35,6 +35,12 @@ export const DARK_TOKENS = {
   textMuted: '#94a3b8',
   textFaint: '#64748b',
   textFaintest: '#475569',
+
+  // Medal palette — Discover Sectors rail "What's Hot This Week" badges.
+  // medalGold mirrors the existing TROPHY_GOLD constant used in Season Mode.
+  medalGold: '#F0C75E',
+  medalSilver: '#C0C0C0',
+  medalBronze: '#CD7F32',
 };
 
 // Light mode tokens — secondary priority, placeholders for now
@@ -65,4 +71,9 @@ export const LIGHT_TOKENS = {
   textMuted: '#64748b',
   textFaint: '#94a3b8',
   textFaintest: '#cbd5e1',
+
+  // Medal palette — Discover Sectors rail "What's Hot This Week" badges.
+  medalGold: '#F0C75E',
+  medalSilver: '#C0C0C0',
+  medalBronze: '#CD7F32',
 };

@@ -28,6 +28,7 @@ import { auth, db } from '../../firebase/config';
 import { useTheme } from '../../contexts/ThemeContext';
 import ThemeCard from './ThemeCard';
 import ThemeDetailModal from './ThemeDetailModal';
+import SectorRail from './SectorRail';
 
 // Fire-and-forget analytics write. We never want the UX to wait on
 // the round-trip and we never want a logging failure to surface to
@@ -98,6 +99,23 @@ export default function DiscoverPanel({ showToast }) {
     if (typeof showToast === 'function') {
       showToast('Workshop integration ships in Sprint 6.');
     }
+  };
+
+  // Cross-modal handoff target for SectorDetailModal: open the theme
+  // modal for a given themeId. SectorRail will have already closed its
+  // own modal before invoking this. If the themeId no longer resolves
+  // to an active theme (data drift), warn and no-op rather than render
+  // an empty modal.
+  const handleOpenThemeById = (themeId) => {
+    if (!themeId) return;
+    const theme = themes.find((t) => t.id === themeId);
+    if (!theme) {
+      console.warn(
+        `[DiscoverPanel] openThemeById: "${themeId}" not in active themes — ignoring.`
+      );
+      return;
+    }
+    setSelectedTheme(theme);
   };
 
   return (
@@ -177,6 +195,12 @@ export default function DiscoverPanel({ showToast }) {
             ))}
           </div>
         )}
+
+        <SectorRail
+          showToast={showToast}
+          themes={themes}
+          onLinkedThemeTap={handleOpenThemeById}
+        />
       </div>
 
       <ThemeDetailModal
