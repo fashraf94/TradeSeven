@@ -7,9 +7,26 @@
 //   - discoverSectors Firestore collection (registry: ticker, name,
 //     status, displayOrder) — auth-gated read, ordered by displayOrder
 //   - indexIntelligence/marketContext Firestore doc — sectorSnapshot
-//     array provides 1d (changePercent) and 5d (weekChange) per ETF.
-//     Single doc read returns all 11 sectors. Refresh cadence: daily
-//     cron via api/cron/compute-index-intelligence.js.
+//     array provides 5d (weekChange) per ETF. Source of truth for
+//     hot-3 ranking. Single doc read returns all 11 sectors. Refresh
+//     cadence: daily cron via api/cron/compute-index-intelligence.js.
+//     Snapshot's changePercent (1d) is used only as a fallback when
+//     the fresh-price overlay is unavailable (see below).
+//   - getMultipleStockPrices via /api/stocks/prices (EODHD real-time)
+//     — fresh-price overlay providing intraday 1d (percentChange) per
+//     ETF. Avoids Sprint 2's stale-1d bug where the cron's 6:30am ET
+//     run reflected yesterday's session-close return rather than
+//     today's session-in-progress. Fetched once on mount after the
+//     registry resolves; no polling. Cache is shared with the Search
+//     Sector Performance widget via cacheService singleton (LIGHT
+//     tier, 2-min TTL), so back-to-back surface visits coalesce.
+//     Fallback chain for 1d:
+//       fresh.percentChange (when fresh.timestamp != null)
+//         → snap.changePercent
+//         → null
+//     The timestamp guard distinguishes real EODHD responses from the
+//     FALLBACK_STOCK_PRICES path inside getMultipleStockPrices, which
+//     returns percentChange: 0 with no timestamp on outage.
 //   - SECTOR_CONTENT in sectorContent.js — editorial content (used by
 //     SectorDetailModal in Phase 3; in Phase 2 only used as a parity
 //     check to detect drift between Firestore registry and constants)
@@ -48,6 +65,7 @@ import {
 import { auth, db } from '../../firebase/config';
 import { useTheme } from '../../contexts/ThemeContext';
 import { SECTORS as SECTOR_HOLDINGS_MAP } from '../../constants/sectors';
+import { getMultipleStockPrices } from '../../services/eodhdAPI';
 import { SECTOR_CONTENT } from './sectorContent';
 import SectorCard from './SectorCard';
 import SectorDetailModal from './SectorDetailModal';
@@ -76,9 +94,16 @@ async function logSectorInteraction({ themeId, action, extra }) {
 }
 
 // Reorder logic. Pure function so it stays unit-testable.
+// Exported (named) for SectorRail.test.js — the component itself
+// remains the default export.
 // `sectors` is the Firestore registry, already in displayOrder asc.
 // `sectorSnapshot` is the indexIntelligence sectorSnapshot array (or null).
-function computeRenderOrder(sectors, sectorSnapshot) {
+// `freshPrices` is the getMultipleStockPrices result keyed by ticker
+// (or null while pending / on failure). The timestamp guard skips
+// FALLBACK_STOCK_PRICES entries (no timestamp field) so an EODHD
+// outage degrades to the snapshot's changePercent rather than
+// painting +0.00% across all sectors.
+export function computeRenderOrder(sectors, sectorSnapshot, freshPrices) {
   const snapshotByTicker =
     sectorSnapshot && Array.isArray(sectorSnapshot)
       ? Object.fromEntries(sectorSnapshot.map((s) => [s.etf, s]))
@@ -86,9 +111,14 @@ function computeRenderOrder(sectors, sectorSnapshot) {
 
   const enriched = sectors.map((s) => {
     const snap = snapshotByTicker[s.ticker];
+    const fresh = freshPrices?.[s.ticker];
+    const hasValidFresh = fresh?.timestamp != null;
+    const oneDayPct = hasValidFresh
+      ? fresh.percentChange
+      : (snap?.changePercent ?? null);
     return {
       ...s,
-      oneDayPct: snap?.changePercent ?? null,
+      oneDayPct,
       fiveDayPct: snap?.weekChange ?? null,
       medalRank: null,
     };
@@ -126,6 +156,7 @@ export default function SectorRail({ showToast, themes, onLinkedThemeTap }) {
   const [sectorsLoading, setSectorsLoading] = useState(true);
   const [sectorsError, setSectorsError] = useState(null);
   const [sectorSnapshot, setSectorSnapshot] = useState(null);
+  const [freshPrices, setFreshPrices] = useState(null);
   const [selectedSectorTicker, setSelectedSectorTicker] = useState(null);
 
   useEffect(() => {
@@ -191,9 +222,31 @@ export default function SectorRail({ showToast, themes, onLinkedThemeTap }) {
     };
   }, []);
 
+  // Fresh-price overlay for 1d (see comment block at top of file).
+  // Triggers after the registry resolves so we know which tickers to
+  // request. Mirrors ExploreView.jsx's pattern: fetch-on-mount, no
+  // polling. The cacheService LIGHT tier (2-min TTL) coalesces this
+  // call with the Search Sector Performance widget when the user
+  // visits both surfaces in quick succession.
+  useEffect(() => {
+    if (sectors.length === 0) return;
+    let cancelled = false;
+    const symbols = sectors.map((s) => s.ticker);
+    getMultipleStockPrices(symbols)
+      .then((prices) => {
+        if (!cancelled) setFreshPrices(prices);
+      })
+      .catch(() => {
+        console.warn('[SectorRail] Fresh price fetch failed, using cached data');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [sectors]);
+
   const renderItems = useMemo(
-    () => computeRenderOrder(sectors, sectorSnapshot),
-    [sectors, sectorSnapshot]
+    () => computeRenderOrder(sectors, sectorSnapshot, freshPrices),
+    [sectors, sectorSnapshot, freshPrices]
   );
 
   const selectedItem = useMemo(
