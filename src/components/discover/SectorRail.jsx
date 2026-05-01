@@ -50,6 +50,7 @@ import { useTheme } from '../../contexts/ThemeContext';
 import { SECTORS as SECTOR_HOLDINGS_MAP } from '../../constants/sectors';
 import { SECTOR_CONTENT } from './sectorContent';
 import SectorCard from './SectorCard';
+import SectorDetailModal from './SectorDetailModal';
 
 // Fire-and-forget analytics write. Mirrors DiscoverPanel.jsx
 // logInteraction. The `themeId` field name is preserved from Sprint 1
@@ -119,12 +120,13 @@ function computeRenderOrder(sectors, sectorSnapshot) {
   return [...hot3, ...remaining];
 }
 
-export default function SectorRail({ showToast }) {
+export default function SectorRail({ showToast, themes, onLinkedThemeTap }) {
   const { tokens } = useTheme();
   const [sectors, setSectors] = useState([]);
   const [sectorsLoading, setSectorsLoading] = useState(true);
   const [sectorsError, setSectorsError] = useState(null);
   const [sectorSnapshot, setSectorSnapshot] = useState(null);
+  const [selectedSectorTicker, setSelectedSectorTicker] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -194,12 +196,32 @@ export default function SectorRail({ showToast }) {
     [sectors, sectorSnapshot]
   );
 
+  const selectedItem = useMemo(
+    () =>
+      selectedSectorTicker
+        ? renderItems.find((i) => i.ticker === selectedSectorTicker) || null
+        : null,
+    [renderItems, selectedSectorTicker]
+  );
+
   const handleCardTap = (ticker) => {
     if (!ticker) return;
     logSectorInteraction({ themeId: ticker, action: 'tap_sector_card' });
-    if (typeof showToast === 'function') {
-      showToast('Sector detail modal ships in Phase 3.');
-    }
+    setSelectedSectorTicker(ticker);
+  };
+
+  const handleCloseSectorModal = () => {
+    setSelectedSectorTicker(null);
+  };
+
+  // Cross-modal handoff: SectorDetailModal → ThemeDetailModal. Close
+  // the sector modal first, then ask DiscoverPanel to open the theme
+  // modal. Both happen in the same render cycle so there's no
+  // dual-modal flash. Analytics + sourceSectorTicker are written by
+  // SectorDetailModal before this callback fires.
+  const handleLinkedThemeTap = (themeId) => {
+    setSelectedSectorTicker(null);
+    onLinkedThemeTap?.(themeId);
   };
 
   return (
@@ -284,6 +306,18 @@ export default function SectorRail({ showToast }) {
           })}
         </div>
       )}
+
+      <SectorDetailModal
+        ticker={selectedItem?.ticker || null}
+        isOpen={Boolean(selectedItem)}
+        oneDayPct={selectedItem?.oneDayPct ?? null}
+        fiveDayPct={selectedItem?.fiveDayPct ?? null}
+        medalRank={selectedItem?.medalRank ?? null}
+        themes={themes}
+        onClose={handleCloseSectorModal}
+        onLinkedThemeTap={handleLinkedThemeTap}
+        showToast={showToast}
+      />
     </div>
   );
 }

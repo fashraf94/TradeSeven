@@ -101,6 +101,23 @@ export default function DiscoverPanel({ showToast }) {
     }
   };
 
+  // Cross-modal handoff target for SectorDetailModal: open the theme
+  // modal for a given themeId. SectorRail will have already closed its
+  // own modal before invoking this. If the themeId no longer resolves
+  // to an active theme (data drift), warn and no-op rather than render
+  // an empty modal.
+  const handleOpenThemeById = (themeId) => {
+    if (!themeId) return;
+    const theme = themes.find((t) => t.id === themeId);
+    if (!theme) {
+      console.warn(
+        `[DiscoverPanel] openThemeById: "${themeId}" not in active themes — ignoring.`
+      );
+      return;
+    }
+    setSelectedTheme(theme);
+  };
+
   return (
     <div style={{ padding: '24px 4px' }}>
       <h2
@@ -179,7 +196,11 @@ export default function DiscoverPanel({ showToast }) {
           </div>
         )}
 
-        <SectorRail showToast={showToast} />
+        <SectorRail
+          showToast={showToast}
+          themes={themes}
+          onLinkedThemeTap={handleOpenThemeById}
+        />
       </div>
 
       <ThemeDetailModal
