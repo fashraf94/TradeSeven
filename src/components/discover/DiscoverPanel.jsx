@@ -28,6 +28,7 @@ import { auth, db } from '../../firebase/config';
 import { useTheme } from '../../contexts/ThemeContext';
 import ThemeCard from './ThemeCard';
 import ThemeDetailModal from './ThemeDetailModal';
+import SectorRail from './SectorRail';
 
 // Fire-and-forget analytics write. We never want the UX to wait on
 // the round-trip and we never want a logging failure to surface to
@@ -177,6 +178,8 @@ export default function DiscoverPanel({ showToast }) {
             ))}
           </div>
         )}
+
+        <SectorRail showToast={showToast} />
       </div>
 
       <ThemeDetailModal
