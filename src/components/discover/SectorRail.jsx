@@ -150,7 +150,7 @@ export function computeRenderOrder(sectors, sectorSnapshot, freshPrices) {
   return [...hot3, ...remaining];
 }
 
-export default function SectorRail({ showToast, themes, onLinkedThemeTap, onViewChartTap }) {
+export default function SectorRail({ showToast, themes, onLinkedThemeTap, onViewChartTap, onHoldingChipTap }) {
   const { tokens } = useTheme();
   const [sectors, setSectors] = useState([]);
   const [sectorsLoading, setSectorsLoading] = useState(true);
@@ -287,6 +287,15 @@ export default function SectorRail({ showToast, themes, onLinkedThemeTap, onView
     onViewChartTap?.(ticker);
   };
 
+  // Sprint 2.7 cross-modal handoff: top-holdings chip → AssetResearchModal
+  // for the holding's equity ticker. Same close-source-first pattern as
+  // the sector ETF handoff above. DiscoverPanel routes this to the same
+  // viewChartTicker state slot — both flows converge on AssetResearchModal.
+  const handleHoldingChipTap = (holdingTicker) => {
+    setSelectedSectorTicker(null);
+    onHoldingChipTap?.(holdingTicker);
+  };
+
   return (
     <div style={{ marginTop: 32 }}>
       <div style={{ marginBottom: 12 }}>
@@ -380,6 +389,7 @@ export default function SectorRail({ showToast, themes, onLinkedThemeTap, onView
         onClose={handleCloseSectorModal}
         onLinkedThemeTap={handleLinkedThemeTap}
         onViewChartTap={handleViewChartTap}
+        onHoldingChipTap={handleHoldingChipTap}
         showToast={showToast}
       />
     </div>
