@@ -23,9 +23,39 @@ export const DAILY_REGIME_BRIEF_TOOL = {
       },
       keyEvents: {
         type: 'array',
-        items: { type: 'string' },
-        description:
-          'Short list (3-6 items) of the most consequential scheduled events this week — Fed prints, earnings, macro releases. Each item one short phrase, e.g. "Wed FOMC decision" or "Thu NVDA earnings AMC".',
+        description: '3-6 most consequential scheduled events this week. Pick from the calendars provided in user prompt; do not invent events.',
+        items: {
+          type: 'object',
+          required: ['label', 'eventDate', 'kind', 'whyItMatters', 'tickers'],
+          properties: {
+            label: {
+              type: 'string',
+              description: 'Short event name. Examples: "Fed rate decision", "NVDA earnings", "CPI release", "Q1 GDP advance". 3-6 words.',
+            },
+            eventDate: {
+              type: 'string',
+              description: 'YYYY-MM-DD date of the event, copied directly from the calendar input.',
+            },
+            eventTime: {
+              type: 'string',
+              description: 'Time of day. Examples: "2:00 PM ET", "AMC", "BMO", "8:30 AM ET". Empty string if not applicable.',
+            },
+            kind: {
+              type: 'string',
+              enum: ['macro', 'earnings', 'fed', 'speech', 'auction'],
+              description: 'Event category. macro = CPI/GDP/PMI/etc. earnings = company earnings. fed = FOMC decisions. speech = Fed/policymaker speeches. auction = Treasury auctions.',
+            },
+            whyItMatters: {
+              type: 'string',
+              description: '1-2 sentences explaining what to watch and why it matters for positioning. Desk-briefing voice. ~140 characters max.',
+            },
+            tickers: {
+              type: 'array',
+              items: { type: 'string' },
+              description: '2-3 affected tickers. For earnings, the company itself. For macro/fed events, broad-market tickers most reactive (SPY, TLT, GLD, DXY, XLE, etc.). Pick from US-listed names.',
+            },
+          },
+        },
       },
       themes: {
         type: 'array',
@@ -51,6 +81,8 @@ MANDATORY CONSTRAINTS:
 - Desk-briefing voice: direct, specific, informed. Not marketing copy. Not a news summary.
 - Keep the brief 150-300 tokens. Tight is better than long.
 - Your output will be injected verbatim into another model's context. Help the agent sound sharper, not longer.
+- For each keyEvent, copy the eventDate verbatim from the calendar input. Do not infer or guess dates.
+- Tickers must be US-listed and trade-able. For macro/fed events, pick the 2-3 most reactive broad-market or sector ETFs (SPY, TLT, GLD, DXY, XLE, XLF, etc.).
 
 You MUST respond via the submit_daily_regime_brief tool. No prose responses outside the tool call.`;
 

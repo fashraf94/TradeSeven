@@ -167,7 +167,7 @@ export default async function handler(req, res) {
     const client = getAnthropicClient();
     const callPromise = client.messages.create({
       model: SONNET_MODEL,
-      max_tokens: 1500,
+      max_tokens: 2500,
       system: systemPrompt,
       messages: [{ role: 'user', content: userPrompt }],
       tools: [DAILY_REGIME_BRIEF_TOOL],
