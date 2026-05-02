@@ -117,7 +117,12 @@ export async function generateReflection(db, battleId) {
   //    consolidation is the ONLY writer of agent.disciplines. The driver re-reads
   //    the agent doc internally so it sees the just-written memory entry, then
   //    calls Sonnet, validates, and applies via a single atomic update.
-  //    Fire-and-forget: the cron caller must not be delayed by consolidation.
+  //    Awaited (post-Sprint-1-fix): generateReflection itself is now invoked
+  //    from the process-pending-reflections cron, which awaits this function
+  //    on its own maxDuration budget. Awaiting consolidation here keeps the
+  //    full reflection→consolidation chain inside one cron iteration, so the
+  //    funnel writes are not subject to the same lambda-freeze race that
+  //    motivated the cron split.
   try {
     const stats = agentDoc.stats || {};
     const gamesPlayed = stats.gamesPlayed || 0;
@@ -125,12 +130,18 @@ export async function generateReflection(db, battleId) {
       await agentRef.update({ pendingConsolidation: true });
       console.log(`${LOG_PREFIX} Flagged agent ${battleDoc.agentId} for consolidation (game ${gamesPlayed})`);
 
-      consolidateAgentEvolution(db, agentRef).catch(err => {
+      try {
+        await consolidateAgentEvolution(db, agentRef);
+      } catch (consolidationErr) {
+        // Consolidation failure must not propagate up — reflection itself
+        // already succeeded (memory and gameDesignFeedback are written by
+        // this point). pendingConsolidation stays true; the next 5-game gate
+        // will retry. Logged for shadow-trace visibility.
         console.error(
-          `${LOG_PREFIX} Unexpected consolidation failure for agent ${battleDoc.agentId}:`,
-          err?.message || err,
+          `${LOG_PREFIX} Consolidation failed for agent ${battleDoc.agentId}:`,
+          consolidationErr?.message || consolidationErr,
         );
-      });
+      }
     }
   } catch (err) {
     console.error(`${LOG_PREFIX} Failed to check consolidation for agent ${battleDoc.agentId}:`, err.message);
