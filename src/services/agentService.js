@@ -234,6 +234,18 @@ export const updateConsolidatedInsight = async (agentId, insight, newCycle) => {
   });
 };
 
+// Sprint 1 — Dossier evolution timeline. Marks the latest evolution cycle as
+// viewed by the user so the "Cycle N complete" indicator on the Evolution tab
+// clears. NOT a dossier-funnel writer — purely a UX read-state marker.
+export const markEvolutionCycleViewed = async (agentId, cycle) => {
+  if (!agentId || typeof cycle !== 'number') return;
+  const docRef = doc(db, AGENTS_COLLECTION, agentId);
+  await updateDoc(docRef, {
+    lastViewedEvolutionCycle: cycle,
+    updatedAt: serverTimestamp(),
+  });
+};
+
 export const updateAgentStats = async (agentId, result, score) => {
   const agent = await getAgentById(agentId);
   if (!agent) throw new Error('Agent not found');

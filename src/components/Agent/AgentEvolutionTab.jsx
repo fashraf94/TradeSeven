@@ -1,6 +1,6 @@
-import React, { useMemo } from 'react';
-import { motion } from 'framer-motion';
-import { TrendingUp, GitBranch, Shield, Target, Zap, Clock, Award } from 'lucide-react';
+import React, { useMemo, useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { TrendingUp, GitBranch, Shield, Target, Zap, Clock, Award, ChevronDown, ChevronUp } from 'lucide-react';
 
 // ── Animation variants ──────────────────────────────────────
 
@@ -74,50 +74,137 @@ const formatDate = (date) => {
   return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 };
 
+// ── Metadata badges (consolidation events) ─────────────────
+
+const MetaBadge = ({ children, color }) => (
+  <span style={{
+    fontSize: 10, fontWeight: 600,
+    padding: '3px 8px', borderRadius: 999,
+    background: `${color}22`, color, border: `1px solid ${color}55`,
+    whiteSpace: 'nowrap',
+  }}>
+    {children}
+  </span>
+);
+
 // ── Timeline Item ───────────────────────────────────────────
 
-const TimelineItem = ({ event, isLast, tokens }) => (
-  <div style={{ display: 'flex', gap: 12 }}>
-    {/* Dot + connecting line */}
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flexShrink: 0 }}>
-      <div style={{
-        width: 10, height: 10, borderRadius: '50%',
-        background: event.color, marginTop: 5, flexShrink: 0,
-      }} />
-      {!isLast && (
+const TimelineItem = ({ event, isLast, tokens, isExpanded, onToggleExpand }) => {
+  const isExpandable = Boolean(event.narrative);
+  return (
+    <div style={{ display: 'flex', gap: 12 }}>
+      {/* Dot + connecting line */}
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flexShrink: 0 }}>
         <div style={{
-          width: 1, flexGrow: 1, minHeight: 20,
-          background: tokens.borderDefault,
+          width: 10, height: 10, borderRadius: '50%',
+          background: event.color, marginTop: 5, flexShrink: 0,
+          boxShadow: event.isConsolidation ? `0 0 0 3px ${event.color}33` : 'none',
         }} />
-      )}
-    </div>
-
-    {/* Content */}
-    <div style={{ flex: 1, paddingBottom: isLast ? 0 : 12, minWidth: 0 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
-        <div style={{
-          fontSize: 13, fontWeight: event.type === 'evolution' ? 600 : 500,
-          color: event.type === 'drift' ? tokens.amber : tokens.textWhite,
-          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1,
-        }}>
-          {event.title}
-        </div>
-        <div style={{ fontSize: 11, color: tokens.textMuted, flexShrink: 0 }}>
-          {formatDate(event.date)}
-        </div>
+        {!isLast && (
+          <div style={{
+            width: 1, flexGrow: 1, minHeight: 20,
+            background: tokens.borderDefault,
+          }} />
+        )}
       </div>
-      {event.subtitle && (
-        <div style={{
-          fontSize: 11, color: tokens.textMuted, marginTop: 2,
-          lineHeight: 1.4, overflow: 'hidden', textOverflow: 'ellipsis',
-          display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
-        }}>
-          {event.subtitle}
+
+      {/* Content */}
+      <div
+        style={{
+          flex: 1, paddingBottom: isLast ? 0 : 12, minWidth: 0,
+          cursor: isExpandable ? 'pointer' : 'default',
+        }}
+        onClick={isExpandable ? onToggleExpand : undefined}
+      >
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
+          <div style={{
+            fontSize: 13,
+            fontWeight: event.type === 'evolution' ? 600 : 500,
+            color: event.type === 'drift'
+              ? tokens.amber
+              : event.isConsolidation ? tokens.purpleText || tokens.purple : tokens.textWhite,
+            overflow: 'hidden', textOverflow: 'ellipsis',
+            whiteSpace: isExpanded ? 'normal' : 'nowrap', flex: 1,
+          }}>
+            {event.title}
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+            <div style={{ fontSize: 11, color: tokens.textMuted }}>
+              {formatDate(event.date)}
+            </div>
+            {isExpandable && (
+              isExpanded
+                ? <ChevronUp size={12} color={tokens.textMuted} />
+                : <ChevronDown size={12} color={tokens.textMuted} />
+            )}
+          </div>
         </div>
-      )}
+        {event.subtitle && (
+          <div style={{
+            fontSize: 11, color: tokens.textMuted, marginTop: 2,
+            lineHeight: 1.4,
+            ...(isExpanded ? {} : {
+              overflow: 'hidden', textOverflow: 'ellipsis',
+              display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
+            }),
+          }}>
+            {event.subtitle}
+          </div>
+        )}
+
+        {/* Expanded consolidation detail */}
+        <AnimatePresence initial={false}>
+          {isExpanded && event.isConsolidation && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              transition={{ duration: 0.2 }}
+              style={{ overflow: 'hidden' }}
+            >
+              <div style={{ marginTop: 10, paddingLeft: 0 }}>
+                {event.narrative && (
+                  <div style={{
+                    fontSize: 12, color: tokens.textPrimary, lineHeight: 1.55,
+                    marginBottom: 10, fontStyle: 'italic',
+                  }}>
+                    {event.narrative}
+                  </div>
+                )}
+                {event.metadata && (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                    {event.metadata.confidenceLevel && (
+                      <MetaBadge color={tokens.purple}>
+                        {event.metadata.confidenceLevel}
+                      </MetaBadge>
+                    )}
+                    {Number.isFinite(event.metadata.lessonsAbsorbedCount) && (
+                      <MetaBadge color={tokens.emerald}>
+                        {event.metadata.lessonsAbsorbedCount} absorbed
+                      </MetaBadge>
+                    )}
+                    {Number.isFinite(event.metadata.lessonsCarriedForwardCount) &&
+                      event.metadata.lessonsCarriedForwardCount > 0 && (
+                        <MetaBadge color={tokens.amber}>
+                          {event.metadata.lessonsCarriedForwardCount} carried
+                        </MetaBadge>
+                      )}
+                    {event.metadata.disciplinesCount && (
+                      <MetaBadge color={tokens.teal}>
+                        {event.metadata.disciplinesCount.selection || 0} sel /{' '}
+                        {event.metadata.disciplinesCount.execution || 0} exec
+                      </MetaBadge>
+                    )}
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
     </div>
-  </div>
-);
+  );
+};
 
 // ── Stat Box ────────────────────────────────────────────────
 
@@ -142,6 +229,8 @@ const StatBox = ({ value, label, color, tokens }) => (
 // ── Main Component ──────────────────────────────────────────
 
 const AgentEvolutionTab = ({ agent, tokens, isDesktop, isMobile }) => {
+  const [expandedEventId, setExpandedEventId] = useState(null);
+
   const timelineEvents = useMemo(() => {
     if (!agent) return [];
     const events = [];
@@ -158,19 +247,48 @@ const AgentEvolutionTab = ({ agent, tokens, isDesktop, isMobile }) => {
       });
     }
 
-    // 2. Evolution cycles
+    // 2. Evolution cycles. Sprint 1 — Consolidation Writer:
+    //    Prefer real entries from agent.evolutionTimeline[] (each is a rich
+    //    EvolutionEvent emitted by the consolidation Sonnet). Fall back to a
+    //    muted synthesized entry only for cycles that predate Sprint 1, when
+    //    evolutionCycle was advanced without an evolutionTimeline record.
     if (agent.evolutionCycle > 0) {
+      const realByCycle = new Map();
+      (agent.evolutionTimeline || []).forEach(ev => {
+        if (ev?.type === 'consolidation' && Number.isInteger(ev?.cycle)) {
+          realByCycle.set(ev.cycle, ev);
+        }
+      });
+
       for (let i = 1; i <= agent.evolutionCycle; i++) {
-        events.push({
-          type: 'evolution',
-          title: `Evolution cycle ${i} complete`,
-          subtitle: i === agent.evolutionCycle && agent.consolidatedInsight
-            ? agent.consolidatedInsight.slice(0, 80) + '...'
-            : 'Consolidated 5 games into strategic insight',
-          date: estimateCycleDate(agent.createdAt, i, agent.evolutionCycle),
-          color: tokens.teal,
-          icon: 'target',
-        });
+        const realEvent = realByCycle.get(i);
+        if (realEvent) {
+          events.push({
+            type: 'evolution',
+            isConsolidation: true,
+            eventId: realEvent.id || `evo_cycle_${i}`,
+            title: realEvent.headline || `Evolution cycle ${i} complete`,
+            subtitle: realEvent.metadata?.keyShift || '',
+            narrative: realEvent.narrative || null,
+            metadata: realEvent.metadata || null,
+            date: parseDate(realEvent.timestamp),
+            color: tokens.purple,
+            icon: 'target',
+          });
+        } else {
+          events.push({
+            type: 'evolution',
+            isConsolidation: false,
+            eventId: `evo_cycle_${i}_legacy`,
+            title: `Evolution cycle ${i} complete`,
+            subtitle: i === agent.evolutionCycle && agent.consolidatedInsight
+              ? agent.consolidatedInsight.slice(0, 80) + '...'
+              : 'Consolidated 5 games into strategic insight',
+            date: estimateCycleDate(agent.createdAt, i, agent.evolutionCycle),
+            color: tokens.teal,
+            icon: 'target',
+          });
+        }
       }
     }
 
@@ -294,14 +412,21 @@ const AgentEvolutionTab = ({ agent, tokens, isDesktop, isMobile }) => {
             </div>
           ) : (
             <div style={{ ...cardStyle(tokens) }}>
-              {timelineEvents.map((event, i) => (
-                <TimelineItem
-                  key={`${event.type}_${i}`}
-                  event={event}
-                  isLast={i === timelineEvents.length - 1}
-                  tokens={tokens}
-                />
-              ))}
+              {timelineEvents.map((event, i) => {
+                const key = event.eventId || `${event.type}_${i}`;
+                return (
+                  <TimelineItem
+                    key={key}
+                    event={event}
+                    isLast={i === timelineEvents.length - 1}
+                    tokens={tokens}
+                    isExpanded={expandedEventId === key}
+                    onToggleExpand={() =>
+                      setExpandedEventId(expandedEventId === key ? null : key)
+                    }
+                  />
+                );
+              })}
             </div>
           )}
         </motion.div>
