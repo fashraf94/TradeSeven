@@ -34,4 +34,7 @@ scripts/output/
 scripts/test-results/*
 !scripts/test-results/20260427-224157Z/
 !scripts/test-results/20260427-224157Z/**
+
+# Sprint 1 — local-only verification utility (do not commit)
+scripts/preview-consolidation-prompt.js
 .vercel
