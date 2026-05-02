@@ -12,6 +12,7 @@ import AgentLeaderboardTab from './AgentLeaderboardTab';
 import AgentEvolutionTab from './AgentEvolutionTab';
 import AgentCreationFlow from './AgentCreationFlow';
 import LevelUpNotification from './LevelUpNotification';
+import { markEvolutionCycleViewed } from '../../services/agentService';
 
 // ── Tabs ──────────────────────────────────────────────────
 
@@ -139,6 +140,22 @@ const AgentDashboard = ({ user, setScreen, onCreateAgentBattle, setShowForge, on
   };
   const transformedStories = transformStoriesForStrip(rawStories);
 
+  // Sprint 1 — Dossier evolution timeline. The Evolution tab shows a small
+  // "Cycle N complete" indicator dot when the agent has consolidated since
+  // the user last opened the tab. Tapping the tab clears it (fire-and-forget).
+  const evolutionCycle = agent?.evolutionCycle || 0;
+  const lastViewedCycle = agent?.lastViewedEvolutionCycle || 0;
+  const hasUnreadEvolution = evolutionCycle > lastViewedCycle;
+
+  const handleSelectTab = (tabKey) => {
+    setActiveTab(tabKey);
+    if (tabKey === 'evolution' && hasUnreadEvolution && agent?.id) {
+      markEvolutionCycleViewed(agent.id, evolutionCycle).catch(err => {
+        console.error('[AgentDashboard] markEvolutionCycleViewed failed:', err?.message || err);
+      });
+    }
+  };
+
   // The strip receives a trimmed story shape (6 display fields). When a tile
   // is tapped we need to hand the StoryDetail screen the FULL raw story so
   // body, tickers, visualType, sentiment, etc. are available. Look up the
@@ -231,11 +248,17 @@ const AgentDashboard = ({ user, setScreen, onCreateAgentBattle, setShowForge, on
               {TABS.map(tab => {
                 const Icon = tab.icon;
                 const isActive = activeTab === tab.key;
+                const showUnreadDot = tab.key === 'evolution' && hasUnreadEvolution;
                 return (
                   <motion.button
                     key={tab.key}
-                    onClick={() => setActiveTab(tab.key)}
+                    onClick={() => handleSelectTab(tab.key)}
                     whileTap={{ scale: 0.97 }}
+                    aria-label={
+                      showUnreadDot
+                        ? `${tab.label} — Cycle ${evolutionCycle} complete`
+                        : tab.label
+                    }
                     style={{
                       position: 'relative',
                       flex: 1,
@@ -250,6 +273,21 @@ const AgentDashboard = ({ user, setScreen, onCreateAgentBattle, setShowForge, on
                   >
                     <Icon size={16} />
                     {tab.label}
+                    {showUnreadDot && (
+                      <motion.span
+                        initial={{ scale: 0, opacity: 0 }}
+                        animate={{ scale: 1, opacity: 1 }}
+                        transition={{ type: 'spring', stiffness: 400, damping: 22 }}
+                        title={`Cycle ${evolutionCycle} complete`}
+                        style={{
+                          width: 7, height: 7, borderRadius: '50%',
+                          background: tokens.purple,
+                          boxShadow: `0 0 8px ${tokens.purple}aa`,
+                          marginLeft: 2,
+                          flexShrink: 0,
+                        }}
+                      />
+                    )}
                     {isActive && (
                       <motion.div
                         layoutId="agentTabIndicator"
@@ -290,7 +328,7 @@ const AgentDashboard = ({ user, setScreen, onCreateAgentBattle, setShowForge, on
                     onOpenBattle={onOpenAgentBattle}
                     onOpenStory={handleStoryTap}
                     onViewRankings={() => setActiveTab('leaderboard')}
-                    onViewFullInsight={() => setActiveTab('evolution')}
+                    onViewFullInsight={() => handleSelectTab('evolution')}
                   />
                 )}
                 {activeTab === 'leaderboard' && (

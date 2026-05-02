@@ -19,18 +19,6 @@
   ],
   "crons": [
     {
-      "path": "/api/earnings/resolve-tournament",
-      "schedule": "0 3,14,23 * * 1-6"
-    },
-    {
-      "path": "/api/earnings/sync-queue?days=7",
-      "schedule": "0 9 * * 1-5"
-    },
-    {
-      "path": "/api/earnings/verify-batch",
-      "schedule": "0 10,14,18,22 * * 1-5"
-    },
-    {
       "path": "/api/lobbies/cleanup-expired",
       "schedule": "*/15 9-23 * * 1-5"
     },
@@ -145,6 +133,10 @@
     {
       "path": "/api/cron/agent-evaluate",
       "schedule": "*/15 13,14,15,16,17,18,19,20,21 * * 1-5"
+    },
+    {
+      "path": "/api/cron/process-pending-reflections",
+      "schedule": "*/15 13,14,15,16,17,18,19,20,21,22,23,0 * * *"
     },
     {
       "path": "/api/cron/voice-layer-cache",

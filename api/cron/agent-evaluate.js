@@ -30,7 +30,6 @@ import { applyGuardrails } from '../_utils/agentGuardrails.js';
 import { classifyStockRegime, classifyMarketPosture, getPresetAdjustedStrategies } from '../_utils/agentRegimeClassifier.js';
 import { evaluateRisk, calculate5minSMA20, pickEmergencyReplacement, findPortfolioSlot } from '../_utils/agentRiskManager.js';
 import { getPresetConfig } from '../_utils/agentPresetConfig.js';
-import { generateReflection } from '../agent/reflect.js';
 import { logBattlePattern } from '../_utils/battlePatternLogger.js';
 import { logEvaluation, logVisionTransition } from '../_utils/shadowLogger.js';
 import { filterActiveConstraints } from '../_utils/visionRuntime.js';
@@ -77,10 +76,8 @@ export default async function handler(req, res) {
           logBattlePattern(battle.agentId, battle.id, battle).catch(err => {
             console.error(`${LOG_PREFIX} Pattern logging failed for battle ${battle.id}:`, err.message);
           });
-          // Trigger post-battle reflection (non-blocking)
-          generateReflection(db, battle.id).catch(err => {
-            console.error(`${LOG_PREFIX} Reflection failed for battle ${battle.id}:`, err.message);
-          });
+          // Reflection is handled by the dedicated process-pending-reflections cron,
+          // gated by the pendingReflection flag set inside completeBattle().
           summary.expired++;
         } catch (err) {
           console.error(`${LOG_PREFIX} Error completing expired battle ${battle.id}:`, err.message);
@@ -1651,6 +1648,11 @@ async function completeBattle(db, battle, summary) {
   const updatePayload = {
     status: 'completed',
     completedAt: now,
+    // Sprint 1 fix: gate reflection on a queue flag so the dedicated
+    // process-pending-reflections cron can pick it up on its own
+    // maxDuration budget. Lands in the same atomic update as status.
+    pendingReflection: true,
+    reflectedAt: null,
     'cronState.evaluatingAt': null,
     statusFeed: [...existingFeed, {
       timestamp: now,

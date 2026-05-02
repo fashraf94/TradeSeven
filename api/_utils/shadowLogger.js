@@ -109,3 +109,8 @@ export const logDailyRegimeBrief  = (r) => appendToStream('daily_regime_brief', 
 export const logVisionTransition       = (r) => appendToStream('vision_transitions', r);
 export const logVisionConstraintChange = (r) => appendToStream('vision_constraint_changes', r);
 export const logSignalDrops            = (r) => appendToStream('signal_drops', r);
+
+// Sprint 1 — Consolidation writer events. Emitted from agentConsolidationApply.js
+// for both success and failure (failure records include reason + errors/output
+// for replay). Caller must use `.catch(() => {})` to enforce fire-and-forget.
+export const logConsolidation          = (r) => appendToStream('agent_consolidation', r);
