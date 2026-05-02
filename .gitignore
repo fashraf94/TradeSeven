@@ -45,4 +45,7 @@ scripts/test-results/*
 
 # Sprint 1 — local-only verification utility (do not commit)
 scripts/preview-consolidation-prompt.js
+
+# Sprint 1 — local-only investigation report (do not commit)
+REFLECTION_WRITER_INVESTIGATION.md
 .vercel
