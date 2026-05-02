@@ -14,6 +14,7 @@ import {
 import { CURRENT_SCHEMA_VERSION, getCategoriesForMode } from '../_utils/gameDesignCategoryConfig.js';
 import { logReflection } from '../_utils/shadowLogger.js';
 import { flattenPortfolioServer } from '../_utils/agentScoring.js';
+import { consolidateAgentEvolution } from '../_utils/agentConsolidationApply.js';
 
 const LOG_PREFIX = '[REFLECT]';
 
@@ -112,13 +113,24 @@ export async function generateReflection(db, battleId) {
     }
   }
 
-  // 6. Check if consolidation is due (every 5 games)
+  // 6. Check if consolidation is due (every 5 games). Sprint 1 — Dossier funnel:
+  //    consolidation is the ONLY writer of agent.disciplines. The driver re-reads
+  //    the agent doc internally so it sees the just-written memory entry, then
+  //    calls Sonnet, validates, and applies via a single atomic update.
+  //    Fire-and-forget: the cron caller must not be delayed by consolidation.
   try {
     const stats = agentDoc.stats || {};
     const gamesPlayed = stats.gamesPlayed || 0;
     if (gamesPlayed > 0 && gamesPlayed % 5 === 0) {
       await agentRef.update({ pendingConsolidation: true });
       console.log(`${LOG_PREFIX} Flagged agent ${battleDoc.agentId} for consolidation (game ${gamesPlayed})`);
+
+      consolidateAgentEvolution(db, agentRef).catch(err => {
+        console.error(
+          `${LOG_PREFIX} Unexpected consolidation failure for agent ${battleDoc.agentId}:`,
+          err?.message || err,
+        );
+      });
     }
   } catch (err) {
     console.error(`${LOG_PREFIX} Failed to check consolidation for agent ${battleDoc.agentId}:`, err.message);
