@@ -157,6 +157,8 @@ Sprint cadence: ~1 sprint = 1 focused build session + audit + ship cycle. Estima
 
 **Goal:** Build production writers for `agent.partnerProfile` (15 dimensions) and `agent.convictions[]`. Voice Layer Blocks 2 and 3 currently read these fields and operate on empty data. After this sprint, the agent demonstrably knows who its user is and what beliefs the user holds.
 
+**Hard dependency:** Sprint 2 depends on veto event capture + battle-pattern aggregator landing first per `docs/audits/VOICE_LAYER_TOOL_READINESS_AUDIT_PART3.md` Section 8.4. Estimated half-sprint of cross-cutting work before Sprint 2 implementation can begin.
+
 **Likely architecture:** Gemma extends its chat output JSON with `_partnerProfileUpdate` and `_convictionUpdate` fields. `chat.js` applies them to `agents/{id}` using the same writer pattern as `_lesson` and `_forgeSuggestion`. Per the funnel principle, these updates land in pending queues that consolidation Sonnet curates — they don't directly mutate the dossier fields.
 
 **Pre-design questions to settle:**

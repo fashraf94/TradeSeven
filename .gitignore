@@ -50,9 +50,4 @@ scripts/preview-consolidation-prompt.js
 REFLECTION_WRITER_INVESTIGATION.md
 REFLECTION_WRITER_INVESTIGATION_V2.md
 
-# Sprint 2 prep — local-only Voice Layer readiness audit (do not commit)
-VOICE_LAYER_TOOL_READINESS_AUDIT_PART1.md
-VOICE_LAYER_TOOL_READINESS_AUDIT_PART2.md
-VOICE_LAYER_TOOL_READINESS_AUDIT_PART3.md
-
 .vercel
