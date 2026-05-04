@@ -50,4 +50,7 @@ scripts/preview-consolidation-prompt.js
 REFLECTION_WRITER_INVESTIGATION.md
 REFLECTION_WRITER_INVESTIGATION_V2.md
 
+# Sprint 2 — local-only film room audit (do not commit)
+FILM_ROOM_AUDIT.md
+
 .vercel
