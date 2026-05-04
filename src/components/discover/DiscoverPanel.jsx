@@ -36,6 +36,7 @@ import ThemeDetailModal from './ThemeDetailModal';
 import FeaturedThemesShowcase from './FeaturedThemesShowcase';
 import AllThemesShowcase from './AllThemesShowcase';
 import SectorRail from './SectorRail';
+import WatchListRail from './WatchListRail';
 import AssetResearchModal from '../draft/AssetResearchModal';
 import { getSectorContent } from './sectorContent';
 
@@ -167,6 +168,8 @@ export default function DiscoverPanel({ showToast }) {
       </p>
 
       <div style={{ marginTop: 24 }}>
+        <WatchListRail onTickerTap={handleViewChartTap} />
+
         <FeaturedThemesShowcase
           themes={themes}
           loading={loading}
