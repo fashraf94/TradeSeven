@@ -13,6 +13,7 @@ import {
   calculateATR,
   calculateBollingerBands,
   calculateNR7,
+  calculateVolumeProfile,
 } from '../_utils/technicalCalculations.js';
 import {
   classifyRegime,
@@ -473,6 +474,10 @@ export default async function handler(req, res) {
         // Bollinger bandwidth (raw value — percentile computed after loop)
         const bbResult = calculateBollingerBands(closes, 20, 2);
 
+        // Volume profile (RVOL: today vs 20-day avg). Distinct from
+        // factors.upDayVolRatio (up-day vs down-day directional bias).
+        const vp = calculateVolumeProfile(volumes, 20);
+
         const rsPercentile = rsPercentileMap[d.sym] ?? 50;
         const sectorRSPercentile = sectorRSMap[d.sym] ?? null;
         const scoreResult = computeTechnicalScore({
@@ -496,6 +501,10 @@ export default async function handler(req, res) {
           dailyRange: nr7Result?.dailyRange ?? null,
           nr7Flag: nr7Result?.nr7 ?? false,
           bBandwidth: bbResult?.bandwidth ?? null,
+          bbPercentB: bbResult?.percentB ?? null,
+          bbUpper: bbResult?.upper ?? null,
+          bbLower: bbResult?.lower ?? null,
+          volumeProfile: vp ? { ratio: vp.ratio, avgVolume: vp.avgVolume, tier: vp.tier } : null,
           ...scoreResult,
         });
       }
