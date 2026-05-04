@@ -595,6 +595,29 @@ function buildPortfolioBriefsBlock(marketSnapshot) {
   return `YOUR PORTFOLIO${freshnessNote}\n${lines.join('\n\n')}`;
 }
 
+export function buildBenchBriefsBlock(marketSnapshot) {
+  if (!marketSnapshot?.benchBriefs?.length) return null;
+
+  const lines = marketSnapshot.benchBriefs.map(b => {
+    let header = `${b.symbol} (${b.assetClass}, ${b.sector})`;
+    if (typeof b.changePercent === 'number') {
+      const sign = b.changePercent > 0 ? '+' : '';
+      header += ` — ${sign}${b.changePercent}%`;
+    }
+    if (b.cooldownActive && b.cooldownUntil) {
+      header += ` — locked until ${b.cooldownUntil}`;
+    }
+
+    const extra = [];
+    if (b.trendSummary) extra.push(`Trend: ${b.trendSummary}`);
+    if (b.momentumSummary) extra.push(`Momentum: ${b.momentumSummary}`);
+
+    return extra.length ? `${header}\n${extra.join('\n')}` : header;
+  });
+
+  return `YOUR BENCH (available for swap):\n${lines.join('\n\n')}`;
+}
+
 function buildScoutAlertsBlock(marketSnapshot) {
   if (!marketSnapshot?.scoutAlerts?.length) return null;
 
@@ -863,6 +886,7 @@ RIGHT NOW you are in REVIEW MODE — the market is closed and a batch review has
 
     // Blocks 4A-4C: Reuse market snapshot blocks when present (closing context)
     const portfolioBriefs = buildPortfolioBriefsBlock(marketSnapshot);
+    const benchBriefs = buildBenchBriefsBlock(marketSnapshot);
     const scoutAlerts = buildScoutAlertsBlock(marketSnapshot);
     const marketContext = buildMarketSnapshotContext(marketSnapshot);
 
@@ -885,6 +909,7 @@ RIGHT NOW you are in REVIEW MODE — the market is closed and a batch review has
     ];
 
     if (portfolioBriefs) blocks.push(portfolioBriefs);
+    if (benchBriefs) blocks.push(benchBriefs);
     if (scoutAlerts) blocks.push(scoutAlerts);
     if (marketContext) blocks.push(marketContext);
     if (marketSnapshot) blocks.push(DATA_CONFIDENCE_RULE);
@@ -1026,6 +1051,9 @@ You've been working together for ${gamesPlayed} games (${wins}W-${losses}L). You
   // Block 4A: Portfolio Briefs from voiceLayerCache (MIDDLE — reference material)
   const portfolioBriefs = buildPortfolioBriefsBlock(marketSnapshot);
 
+  // Block 4A-bench: Bench Briefs from voiceLayerCache (MIDDLE — reference material)
+  const benchBriefs = buildBenchBriefsBlock(marketSnapshot);
+
   // Block 4B: Scout Alerts from voiceLayerCache (MIDDLE — reference material)
   const scoutAlerts = buildScoutAlertsBlock(marketSnapshot);
 
@@ -1056,6 +1084,7 @@ You've been working together for ${gamesPlayed} games (${wins}W-${losses}L). You
 
   // Blocks 4A-4C: Market snapshot data (MIDDLE — only if cache exists)
   if (portfolioBriefs) blocks.push(portfolioBriefs);
+  if (benchBriefs) blocks.push(benchBriefs);
   if (scoutAlerts) blocks.push(scoutAlerts);
   if (marketContext) blocks.push(marketContext);
   if (marketSnapshot) blocks.push(DATA_CONFIDENCE_RULE);

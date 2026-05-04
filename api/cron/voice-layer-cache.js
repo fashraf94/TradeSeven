@@ -175,6 +175,133 @@ function buildPortfolioBriefs(portfolio, priceMap, rankingsMap, techScoresMap) {
 }
 
 // ============================================
+// BENCH BRIEFS BUILDER
+// ============================================
+
+// Bench briefs differ from portfolio briefs: bench positions aren't actively
+// scoring, so we drop `tier` (use assetClass instead), drop `thresholdNote`,
+// and surface `cooldownUntil`/`cooldownActive` for revolving-door swap-readiness.
+// We also retain entries when priceMap data is missing (degraded brief with
+// price: null) — relevant for crypto bench, where EODHD US-equity feed has no
+// data, and for newly-warm symbols not yet covered by today's bulk pull.
+export function buildBenchBriefs(portfolio, priceMap, rankingsMap, techScoresMap, now = new Date()) {
+  const bench = portfolio?.bench;
+  if (!bench) return [];
+
+  const briefs = [];
+  const positions = [
+    ...(bench.stocks || []).map(s => ({ asset: s, assetClass: 'stock' })),
+    ...(bench.crypto ? [{ asset: bench.crypto, assetClass: 'crypto' }] : []),
+  ];
+
+  for (const { asset, assetClass } of positions) {
+    if (!asset?.symbol) continue;
+
+    const symbol = asset.symbol;
+    const price = priceMap[symbol] || null;
+    const ranking = rankingsMap[symbol] || null;
+    const techScore = techScoresMap[symbol] || null;
+    const factors = techScore?.factors || null;
+
+    const changePercentRaw = price?.change_p;
+    const priceValue = price ? (price.close ?? price.previousClose ?? null) : null;
+
+    const technicalScore = ranking?.technicalScore ?? techScore?.technicalScore ?? null;
+    const technicalRank = ranking?.technicalRank ?? null;
+    const rsPercentileRaw = factors?.rsPercentile;
+    const atrPercentileRaw = ranking?.atrPercentile;
+
+    // Trend summary: emit only when factors carry SMA flags
+    let trendSummary;
+    if (factors && (
+      typeof factors.aboveSMA200 === 'boolean' ||
+      typeof factors.aboveSMA50 === 'boolean' ||
+      typeof factors.aboveSMA20 === 'boolean'
+    )) {
+      const aboveSMA200 = factors.aboveSMA200 === true;
+      const aboveSMA50 = factors.aboveSMA50 === true;
+      const aboveSMA20 = factors.aboveSMA20 === true;
+      if (aboveSMA200 && aboveSMA50 && aboveSMA20) {
+        trendSummary = 'Strong uptrend. Above all major SMAs.';
+      } else if (aboveSMA50 && aboveSMA20) {
+        trendSummary = 'Moderate uptrend. Above 20 and 50-day SMAs.';
+      } else if (aboveSMA20) {
+        trendSummary = 'Short-term bounce. Above 20-day SMA only.';
+      } else {
+        trendSummary = 'Downtrend. Below major SMAs.';
+      }
+      const rs = factors.rsPercentile;
+      if (typeof rs === 'number') {
+        if (rs >= 75) trendSummary += ' RS vs SPY rising.';
+        else if (rs <= 25) trendSummary += ' RS vs SPY declining.';
+      }
+    }
+
+    // Momentum summary: emit only when techScore carries the underlying scores
+    let momentumSummary;
+    if (techScore && (
+      techScore.rsiContext != null ||
+      techScore.macdScore != null ||
+      techScore.volumeConfirmation != null
+    )) {
+      const parts = [];
+      const rsiContext = techScore.rsiContext;
+      if (typeof rsiContext === 'number') {
+        if (rsiContext >= 7) parts.push('RSI healthy, not extended.');
+        else if (rsiContext <= 3) parts.push('RSI weak or overbought.');
+      }
+      const macdScore = techScore.macdScore;
+      if (typeof macdScore === 'number') {
+        if (macdScore >= 8) parts.push('MACD expanding.');
+        else if (macdScore <= 4) parts.push('MACD contracting.');
+      }
+      const volumeConfirmation = techScore.volumeConfirmation;
+      if (typeof volumeConfirmation === 'number') {
+        if (volumeConfirmation >= 8) {
+          const volRatio = factors?.upDayVolRatio;
+          if (volRatio != null) parts.push(`Volume ${volRatio.toFixed(1)}x avg.`);
+          else parts.push('Volume confirming.');
+        } else {
+          parts.push('Volume subdued.');
+        }
+      }
+      if (parts.length > 0) momentumSummary = parts.join(' ');
+    }
+
+    const cooldownUntil = asset.cooldownUntil || null;
+    const cooldownActive = cooldownUntil ? new Date(cooldownUntil) > now : false;
+
+    const sector = asset.sector || (assetClass === 'crypto' ? 'Crypto' : 'Unknown');
+
+    const brief = {
+      symbol,
+      assetClass,
+      price: priceValue,
+      changePercent: typeof changePercentRaw === 'number'
+        ? Math.round(changePercentRaw * 100) / 100
+        : null,
+      technicalScore,
+      technicalRank,
+      rsPercentile: typeof rsPercentileRaw === 'number'
+        ? Math.round(rsPercentileRaw)
+        : null,
+      sector,
+      cooldownUntil,
+      cooldownActive,
+      atrPercent: typeof atrPercentileRaw === 'number'
+        ? Math.round(atrPercentileRaw * 100) / 100
+        : null,
+    };
+    if (trendSummary) brief.trendSummary = trendSummary;
+    if (momentumSummary) brief.momentumSummary = momentumSummary;
+
+    briefs.push(brief);
+  }
+
+  return briefs;
+}
+
+// ============================================
 // SCOUT ALERTS BUILDER
 // ============================================
 
@@ -309,8 +436,13 @@ export default async function handler(req, res) {
     log(`Found ${activeBattles.length} active battle(s)`);
 
     // 4. Collect all unique symbols across all battles
+    // allSymbols is the stock-only set used for EODHD price fetch + techScores getAll.
+    // Bench crypto symbols are intentionally excluded — EODHD US-equity feed cannot
+    // resolve them, and stockTechnicalScores docs don't exist for crypto. Crypto
+    // bench positions are still surfaced in benchBriefs[] via degraded briefs.
     const allSymbols = new Set();
     const battlePortfolioSymbols = new Map();
+    const benchStockSymbols = new Set();
 
     activeBattles.forEach(battle => {
       const portfolioSyms = new Set();
@@ -329,9 +461,17 @@ export default async function handler(req, res) {
         const sym = entry?.symbol || entry;
         if (sym && typeof sym === 'string') allSymbols.add(sym);
       });
+
+      // Bench stocks join the EODHD/techScores fetch; crypto bench is skipped.
+      (portfolio.bench?.stocks || []).forEach(s => {
+        if (s?.symbol) {
+          allSymbols.add(s.symbol);
+          benchStockSymbols.add(s.symbol);
+        }
+      });
     });
 
-    log(`Collected ${allSymbols.size} unique symbols`);
+    log(`Collected ${allSymbols.size} unique symbols (${benchStockSymbols.size} from bench)`);
 
     // 5. Parallel data fetching: EODHD prices + Firestore reads
     const symbolArray = [...allSymbols];
@@ -371,6 +511,7 @@ export default async function handler(req, res) {
       const portfolioSyms = battlePortfolioSymbols.get(battle.id) || new Set();
 
       const portfolioBriefs = buildPortfolioBriefs(battle.portfolio, priceMap, rankingsMap, techScoresMap);
+      const benchBriefs = buildBenchBriefs(battle.portfolio, priceMap, rankingsMap, techScoresMap);
       const scoutAlerts = buildScoutAlerts(battle.watchlist, rankingsMap, techScoresMap, archetype, portfolioSyms);
       const mcBlock = buildMarketContextBlock(marketContext);
 
@@ -379,6 +520,7 @@ export default async function handler(req, res) {
         battleId: battle.id,
         agentId: battle.agentId || null,
         portfolioBriefs,
+        benchBriefs,
         scoutAlerts,
         marketContext: mcBlock,
         dataFreshness: {
