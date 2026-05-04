@@ -39,6 +39,7 @@ import SectorRail from './SectorRail';
 import WatchListRail from './WatchListRail';
 import AssetResearchModal from '../draft/AssetResearchModal';
 import { getSectorContent } from './sectorContent';
+import { WATCH_LIST_RAIL_ENABLED } from '../../config/featureFlags';
 
 // Fire-and-forget analytics write. We never want the UX to wait on
 // the round-trip and we never want a logging failure to surface to
@@ -168,7 +169,7 @@ export default function DiscoverPanel({ showToast }) {
       </p>
 
       <div style={{ marginTop: 24 }}>
-        <WatchListRail onTickerTap={handleViewChartTap} />
+        {WATCH_LIST_RAIL_ENABLED && <WatchListRail onTickerTap={handleViewChartTap} />}
 
         <FeaturedThemesShowcase
           themes={themes}
