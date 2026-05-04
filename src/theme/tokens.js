@@ -20,6 +20,7 @@ export const DARK_TOKENS = {
   purpleText: '#a78bfa',
   red: '#ef4444',
   amber: '#f59e0b',
+  warmCopper: '#E8927C',
 
   // Glows
   glowPurpleCard: '0 0 20px rgba(168,85,247,0.05)',
