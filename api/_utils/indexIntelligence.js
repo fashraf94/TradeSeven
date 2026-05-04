@@ -390,11 +390,16 @@ export function computeTechnicalScore({
       aboveSMA20,
       aboveSMA50,
       aboveSMA200,
+      sma20: technicals.sma20 ?? null,
+      sma50: technicals.sma50 ?? null,
+      sma200: technicals.sma200 ?? null,
       distTo52wkHigh: Number(distToHigh.toFixed(1)),
       upDayVolRatio: Number(upDayVolRatio.toFixed(2)),
       rsi: rsiValue,
       macdHistogram: macd?.histogram ?? null,
       macdAboveSignal: macd ? macd.macd > macd.signal : null,
+      macdFreshBullishCross: macd?.freshBullishCross ?? false,
+      macdFreshBearishCross: macd?.freshBearishCross ?? false,
     },
   };
 }
