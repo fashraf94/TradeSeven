@@ -95,16 +95,25 @@ function renderSymbols(arr) {
   return arr.map((s) => `- ${s}`).join('\n');
 }
 
+// 3-letter weekday abbreviation. Sonnet's tool schema instructs it to copy
+// eventDate verbatim from the calendar input — the YYYY-MM-DD anchors the
+// copy; the day abbreviation is a sanity-check tag for the model.
+function formatDayShort(dayName) {
+  if (typeof dayName !== 'string' || dayName.length < 3) return '';
+  return dayName.charAt(0).toUpperCase() + dayName.slice(1, 3).toLowerCase();
+}
+
 function renderEconEvents(events, limit = null) {
   if (!Array.isArray(events) || events.length === 0) return '(none)';
   const slice = limit ? events.slice(0, limit) : events;
   return slice
     .map((e) => {
-      const day = e?.day || e?.date || '???';
+      const date = e?.date || '????-??-??';
+      const day = e?.day ? ` (${formatDayShort(e.day)})` : '';
       const time = e?.time ? ` ${e.time}` : '';
       const name = e?.event || 'event';
       const flag = e?.impact === 'high' ? ' [HIGH]' : '';
-      return `- ${day}${time} — ${name}${flag}`;
+      return `- ${date}${day}${time} — ${name}${flag}`;
     })
     .join('\n');
 }
@@ -114,9 +123,10 @@ function renderEconEventsPreview(events, limit = 5) {
   return events
     .slice(0, limit)
     .map((e) => {
-      const day = e?.day || e?.date || '???';
+      const date = e?.date || '????-??-??';
+      const day = e?.day ? ` (${formatDayShort(e.day)})` : '';
       const name = e?.event || 'event';
-      return `- ${day} — ${name}`;
+      return `- ${date}${day} — ${name}`;
     })
     .join('\n');
 }
@@ -128,11 +138,12 @@ function renderEarnings(entries, limit = null) {
   const slice = limit ? filtered.slice(0, limit) : filtered;
   return slice
     .map((e) => {
-      const day = e?.day || e?.date || '???';
+      const date = e?.date || '????-??-??';
+      const day = e?.day ? ` (${formatDayShort(e.day)})` : '';
       const timing = e?.timing || '??';
       const symbol = e?.symbol || '???';
       const name = e?.name ? ` (${e.name})` : '';
-      return `- ${day} ${timing} — ${symbol}${name}`;
+      return `- ${date}${day} ${timing} — ${symbol}${name}`;
     })
     .join('\n');
 }
@@ -144,10 +155,11 @@ function renderEarningsPreview(entries, limit = 5) {
   return filtered
     .slice(0, limit)
     .map((e) => {
-      const day = e?.day || e?.date || '???';
+      const date = e?.date || '????-??-??';
+      const day = e?.day ? ` (${formatDayShort(e.day)})` : '';
       const timing = e?.timing || '??';
       const symbol = e?.symbol || '???';
-      return `- ${day} ${timing} — ${symbol}`;
+      return `- ${date}${day} ${timing} — ${symbol}`;
     })
     .join('\n');
 }

@@ -7,6 +7,7 @@
 // decide how to handle (stale fallback, empty data, etc).
 
 import { querySonar } from '../helpers/sonar.js';
+import { getETDate, formatDateString } from './marketSchedule.js';
 
 const SYSTEM_PROMPT = `You are an earnings calendar analyst for FantasyTrades. Generate a structured earnings calendar for the most important upcoming reports as JSON.
 
@@ -41,6 +42,38 @@ CRITICAL RULES FOR STOCK SELECTION:
 - Order by date, then by significance (high first) within each day
 - Double-check that every symbol you include is actually reporting earnings in the specified week`;
 
+// Sonar occasionally returns content-level garbage (e.g., Saturday earnings,
+// internally-inconsistent day/date pairs, items from prior weeks). Drop any
+// item that fails the five checks below. Silent on rejection — logging
+// every drop would create noise from routine vendor mistakes.
+function dayOfWeekUTC(dateStr) {
+  return new Date(`${dateStr}T00:00:00Z`)
+    .toLocaleDateString('en-US', { weekday: 'long', timeZone: 'UTC' })
+    .toLowerCase();
+}
+
+function validateEarningsEvent(item, todayET) {
+  if (!item || typeof item !== 'object') return false;
+  // (a) date format regex
+  if (typeof item.date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(item.date)) return false;
+  // (b) parses to a real date
+  const parsed = new Date(`${item.date}T00:00:00Z`);
+  if (Number.isNaN(parsed.getTime())) return false;
+  // (c) ±14-day window from today (ET)
+  const todayMs = new Date(`${todayET}T00:00:00Z`).getTime();
+  if (Number.isNaN(todayMs)) return false;
+  const diffDays = Math.abs(parsed.getTime() - todayMs) / 86_400_000;
+  if (diffDays > 14) return false;
+  // (d) day-of-week consistency, only if `day` is present
+  if (typeof item.day === 'string' && item.day.trim() !== '') {
+    if (dayOfWeekUTC(item.date) !== item.day.trim().toLowerCase()) return false;
+  }
+  // (e) weekend rejection — US companies don't report on Sat/Sun
+  const dow = parsed.getUTCDay();
+  if (dow === 0 || dow === 6) return false;
+  return true;
+}
+
 export async function fetchEarningsCalendar() {
   const dateStr = new Date().toLocaleDateString('en-US', {
     weekday: 'long', month: 'long', day: 'numeric', year: 'numeric',
@@ -67,9 +100,14 @@ export async function fetchEarningsCalendar() {
     };
   }
 
+  const todayET = formatDateString(getETDate());
   return {
-    thisWeek: Array.isArray(parsed.thisWeek) ? parsed.thisWeek : [],
-    nextWeek: Array.isArray(parsed.nextWeek) ? parsed.nextWeek : [],
+    thisWeek: Array.isArray(parsed.thisWeek)
+      ? parsed.thisWeek.filter((e) => validateEarningsEvent(e, todayET))
+      : [],
+    nextWeek: Array.isArray(parsed.nextWeek)
+      ? parsed.nextWeek.filter((e) => validateEarningsEvent(e, todayET))
+      : [],
     spotlight: parsed.spotlight || null,
     cachedAt: Date.now(),
     citations: citations || [],
