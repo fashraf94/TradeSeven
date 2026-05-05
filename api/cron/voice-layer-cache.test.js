@@ -2,7 +2,7 @@
 // Tier 0 Item 1: bench data exposure — buildBenchBriefs unit tests.
 
 import { describe, it, expect } from 'vitest';
-import { buildBenchBriefs } from './voice-layer-cache.js';
+import { buildBenchBriefs, buildMarketContextBlock } from './voice-layer-cache.js';
 
 // ==================== FIXTURES ====================
 
@@ -217,5 +217,124 @@ describe('buildBenchBriefs — partial techScore data', () => {
     const techScoresMap = { AMD: { volumeConfirmation: 9, factors: {} } };
     const briefs = buildBenchBriefs(portfolio, priceMap, {}, techScoresMap, FROZEN_NOW);
     expect(briefs[0].momentumSummary).toContain('Volume confirming');
+  });
+});
+
+// ==================== MARKET CONTEXT BLOCK — SECTOR RS PASS-THROUGH ====================
+
+// Tier 0 Item 5: pass-through tests for the four new sector-RS classifier signals
+// surfaced from the indexIntelligence/marketContext Firestore doc into the cache.
+
+function fullMarketContextDoc(overrides = {}) {
+  return {
+    regime: 'bull',
+    regimeDetail: 'SPY above 50-day MA and 50-day above 200-day MA. Strong uptrend.',
+    spy: { price: 580.5, change: 2.34, changePercent: 0.41 },
+    qqq: { price: 510.2, change: 4.1, changePercent: 0.81 },
+    dia: { price: 440.0, change: 0.5, changePercent: 0.11 },
+    iwm: { price: 220.3, change: -0.8, changePercent: -0.36 },
+    leadership: 'tech_leads',
+    divergence: { active: true, type: 'rotation', detail: 'QQQ +0.81% vs IWM -0.36% — rotation into tech.' },
+    breadthQuality: {
+      spyVsRsp: 0.6,
+      signal: 'narrow_leadership',
+      detail: 'SPY +0.41% but RSP -0.19% — rally driven by mega-caps.',
+    },
+    yields: { tnx: 4.25, tnxChange: 0.02, regime: 'neutral', detail: '10Y at 4.25%, +0.02bps — neutral zone.' },
+    breadthComposite: 60,
+    breadthTier: 'moderate',
+    volatilityRegime: 'normal',
+    topSectorToday: 'Technology',
+    topSectorChange: 1.49,
+    worstSectorToday: 'Energy',
+    worstSectorChange: -1.34,
+    ...overrides,
+  };
+}
+
+describe('buildMarketContextBlock — sector RS pass-through', () => {
+  it('passes through all four new sector-RS fields from a complete Firestore doc', () => {
+    const out = buildMarketContextBlock(fullMarketContextDoc());
+    expect(out.leadershipSignal).toBe('tech_leads');
+    expect(out.divergenceSignal).toBe('rotation');
+    expect(out.breadthQualitySignal).toBe('narrow_leadership');
+    expect(out.breadthSpyVsRspGap).toBe(0.6);
+  });
+
+  it('defaults leadershipSignal to "mixed" when mc.leadership is missing', () => {
+    const out = buildMarketContextBlock(fullMarketContextDoc({ leadership: undefined }));
+    expect(out.leadershipSignal).toBe('mixed');
+  });
+
+  it('defaults divergenceSignal to "none" when mc.divergence is missing', () => {
+    const out = buildMarketContextBlock(fullMarketContextDoc({ divergence: undefined }));
+    expect(out.divergenceSignal).toBe('none');
+  });
+
+  it('defaults divergenceSignal to "none" when mc.divergence.type is missing', () => {
+    const out = buildMarketContextBlock(fullMarketContextDoc({ divergence: { active: false } }));
+    expect(out.divergenceSignal).toBe('none');
+  });
+
+  it('breadthQualitySignal is null when mc.breadthQuality.signal is missing', () => {
+    const out = buildMarketContextBlock(fullMarketContextDoc({
+      breadthQuality: { spyVsRsp: 0.3, detail: 'foo' },
+    }));
+    expect(out.breadthQualitySignal).toBeNull();
+  });
+
+  it('breadthSpyVsRspGap is null when mc.breadthQuality.spyVsRsp is missing', () => {
+    const out = buildMarketContextBlock(fullMarketContextDoc({
+      breadthQuality: { signal: 'broad_participation', detail: 'foo' },
+    }));
+    expect(out.breadthSpyVsRspGap).toBeNull();
+  });
+
+  it('breadthSpyVsRspGap is null when mc.breadthQuality.spyVsRsp is non-numeric', () => {
+    const out = buildMarketContextBlock(fullMarketContextDoc({
+      breadthQuality: { spyVsRsp: 'oops', signal: 'narrow_leadership', detail: '' },
+    }));
+    expect(out.breadthSpyVsRspGap).toBeNull();
+  });
+
+  it('preserves breadthSpyVsRspGap of 0 (does not coerce zero to null)', () => {
+    const out = buildMarketContextBlock(fullMarketContextDoc({
+      breadthQuality: { spyVsRsp: 0, signal: 'broad_participation', detail: '' },
+    }));
+    expect(out.breadthSpyVsRspGap).toBe(0);
+  });
+
+  it('returns the four new fields with safe defaults when mc is null', () => {
+    const out = buildMarketContextBlock(null);
+    expect(out.leadershipSignal).toBe('mixed');
+    expect(out.divergenceSignal).toBe('none');
+    expect(out.breadthQualitySignal).toBeNull();
+    expect(out.breadthSpyVsRspGap).toBeNull();
+  });
+
+  it('regression guard: existing 12 fields produce expected output for a complete doc', () => {
+    const out = buildMarketContextBlock(fullMarketContextDoc());
+    expect(out.regime).toBe('bull');
+    expect(out.regimeDetail).toContain('Strong uptrend');
+    expect(out.spyChange).toBe(0.41);
+    expect(out.vixLevel).toBeNull();
+    expect(out.volatilityRegime).toBe('normal');
+    expect(out.breadthTier).toBe('moderate');
+    expect(out.breadthDetail).toContain('mega-caps');
+    expect(out.topSector).toBe('Technology');
+    expect(out.topSectorChange).toBe(1.49);
+    expect(out.worstSector).toBe('Energy');
+    expect(out.worstSectorChange).toBe(-1.34);
+    expect(out.yieldRegime).toBe('neutral');
+  });
+
+  it('regression guard: null mc still emits the existing default field set', () => {
+    const out = buildMarketContextBlock(null);
+    expect(out.regime).toBe('unknown');
+    expect(out.regimeDetail).toBe('Market context unavailable');
+    expect(out.spyChange).toBeNull();
+    expect(out.breadthTier).toBe('unknown');
+    expect(out.topSector).toBe('N/A');
+    expect(out.yieldRegime).toBe('unknown');
   });
 });
