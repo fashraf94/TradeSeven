@@ -1,7 +1,29 @@
 // api/_utils/voiceLayerPrompt.test.js
 // Tier 0 Item 1: bench data exposure — buildBenchBriefsBlock unit tests.
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
+// Mutable holder so individual tests can set the market state returned by the
+// mocked getMarketState() before exercising buildBattleState. Default to OPEN
+// so existing Item 7 tests (which don't assert on Market:) keep working.
+// Use vi.hoisted so the variable exists when the hoisted vi.mock factory runs.
+const { mockMarketState } = vi.hoisted(() => ({
+  mockMarketState: {
+    isOpen: true,
+    state: 'OPEN',
+    nextOpenTime: new Date('2099-12-31T14:30:00Z'),
+    isEarlyClose: false,
+  },
+}));
+
+vi.mock('./marketSchedule.js', async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    getMarketState: () => ({ ...mockMarketState }),
+  };
+});
+
 import { buildBenchBriefsBlock, buildBattleState, buildMarketSnapshotContext, buildPortfolioBriefsBlock } from './voiceLayerPrompt.js';
 import { getETDate, formatDateString } from './marketSchedule.js';
 
@@ -296,8 +318,6 @@ describe('buildBattleState — score-line shape fix (Phase 1.5 regression guard)
   });
 
   it('never emits "undefined" or "NaN" on the Score line', () => {
-    // Scoped to the Score line specifically — Time remaining: and Market:
-    // remain broken in this PR by design (separate-item territory).
     const out = buildBattleState(makeBattle({
       scoreState: { currentScore: 4, opponentScore: 4 },
     }));
@@ -410,6 +430,122 @@ describe('buildBattleState — null-battle fallback (regression guard)', () => {
 
   it('returns the strategy-session string when battle is undefined', () => {
     expect(buildBattleState(undefined)).toBe('No active battle. This is a strategy session.');
+  });
+});
+
+// ==================== MARKET STATE + TIME REMAINING (phantom-field fix) ====================
+
+// Pre-launch backlog item: marketOpen / timeRemaining were phantom fields on the
+// battle doc — never written by any cron/handler — so buildBattleState rendered
+// `Market: CLOSED` (always, since `undefined` is falsy) and `Time remaining: undefined`
+// every turn. Fix derives both at prompt-assembly time: market state from
+// getMarketState() (mocked here for determinism), time remaining from
+// computeTimeRemaining(battle) (real implementation against fixture timing).
+
+const MARKET_STATES = ['OPEN', 'PRE_MARKET', 'CLOSED_AFTERHOURS', 'CLOSED_WEEKEND', 'CLOSED_HOLIDAY'];
+
+describe('buildBattleState — market state rendering', () => {
+  beforeEach(() => {
+    // Reset to OPEN between tests so a previous test's mutation doesn't leak.
+    mockMarketState.state = 'OPEN';
+    mockMarketState.isOpen = true;
+  });
+
+  for (const state of MARKET_STATES) {
+    it(`renders the full state token for ${state}`, () => {
+      mockMarketState.state = state;
+      mockMarketState.isOpen = state === 'OPEN';
+      const out = buildBattleState(makeBattle());
+      expect(out).toContain(`- Market: ${state}`);
+    });
+  }
+
+  it('never renders the bare "Market: CLOSED" bug signature when market is OPEN', () => {
+    mockMarketState.state = 'OPEN';
+    mockMarketState.isOpen = true;
+    const out = buildBattleState(makeBattle());
+    // Bug previously rendered `- Market: CLOSED` for every battle (because
+    // battle.marketOpen was undefined → falsy). The line is now strictly
+    // `- Market: ${marketState.state}`. The bare `CLOSED` token is never the
+    // valid output of getMarketState(); only its CLOSED_* variants are.
+    expect(out).not.toMatch(/^- Market: CLOSED$/m);
+  });
+});
+
+describe('buildBattleState — time remaining rendering', () => {
+  it('renders multi-day duration when battle has multiple trading days remaining', () => {
+    const todayET = formatDateString(getETDate());
+    const out = buildBattleState(makeBattle({
+      timing: {
+        tradingDays: [todayET, '2099-12-30', '2099-12-31'],
+        localOpen: '09:30',
+        localClose: '16:00',
+      },
+    }));
+    // computeTimeRemaining returns "Nd Hh Mm" when remainingFullDays > 0.
+    expect(out).toMatch(/- Time remaining: \d+d \d+h \d+m/);
+    expect(out).not.toMatch(/Time remaining: undefined/);
+  });
+
+  it('renders intraday duration on the last trading day', () => {
+    const todayET = formatDateString(getETDate());
+    const out = buildBattleState(makeBattle({
+      timing: {
+        tradingDays: [todayET],
+        localOpen: '09:30',
+        localClose: '16:00',
+      },
+    }));
+    // computeTimeRemaining returns "Hh Mm" or "Mm" (no day suffix) on the last
+    // day. Either form is acceptable; just assert the bug signature is gone
+    // and the line is non-empty.
+    const line = out.split('\n').find(l => l.startsWith('- Time remaining:'));
+    expect(line).toBeDefined();
+    expect(line).not.toMatch(/Time remaining: undefined/);
+    expect(line).not.toMatch(/Time remaining:\s*$/);
+  });
+
+  it('renders "unknown" when battle.timing is missing entirely', () => {
+    const out = buildBattleState(makeBattle({ timing: undefined }));
+    expect(out).toContain('- Time remaining: unknown');
+    expect(out).not.toMatch(/Time remaining: undefined/);
+  });
+
+  it('renders "unknown" when battle.timing.tradingDays is empty', () => {
+    const out = buildBattleState(makeBattle({
+      timing: { tradingDays: [], localOpen: '09:30', localClose: '16:00' },
+    }));
+    expect(out).toContain('- Time remaining: unknown');
+    expect(out).not.toMatch(/Time remaining: undefined/);
+  });
+
+  it('renders "unknown" when battle.timing.tradingDays is missing from a populated timing object', () => {
+    const out = buildBattleState(makeBattle({
+      timing: { localOpen: '09:30', localClose: '16:00' },
+    }));
+    expect(out).toContain('- Time remaining: unknown');
+    expect(out).not.toMatch(/Time remaining: undefined/);
+  });
+});
+
+describe('buildBattleState — phantom-field regression guard', () => {
+  beforeEach(() => {
+    mockMarketState.state = 'OPEN';
+    mockMarketState.isOpen = true;
+  });
+
+  it('never renders "Market: CLOSED" (bare) or "Time remaining: undefined" with valid timing', () => {
+    const todayET = formatDateString(getETDate());
+    const out = buildBattleState(makeBattle({
+      timing: { tradingDays: [todayET], localOpen: '09:30', localClose: '16:00' },
+    }));
+    expect(out).not.toMatch(/^- Market: CLOSED$/m);
+    expect(out).not.toMatch(/Time remaining: undefined/);
+  });
+
+  it('never renders "Time remaining: undefined" even when timing data is missing', () => {
+    const out = buildBattleState(makeBattle({ timing: undefined }));
+    expect(out).not.toMatch(/Time remaining: undefined/);
   });
 });
 
