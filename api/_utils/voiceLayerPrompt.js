@@ -2,6 +2,8 @@
 // Voice Layer prompt assembly — builds the system prompt for agent-user chat.
 // Exports buildVoiceLayerPrompt(). All other helpers/constants are internal.
 
+import { computeGameContext } from './agentNewsContext.js';
+
 // ==================== STATIC CONSTANTS ====================
 
 const GAME_MECHANICS = `BAGGERBOMB RULES (permanent):
@@ -551,7 +553,7 @@ function buildConvictionsBlock(convictions, consolidatedInsight) {
   return block;
 }
 
-function buildBattleState(battle) {
+export function buildBattleState(battle) {
   if (!battle) return 'No active battle. This is a strategy session.';
 
   const portfolioDisplay = []
@@ -569,11 +571,17 @@ function buildBattleState(battle) {
     ).join('\n');
   }
 
+  const currentScore = battle.scoreState?.currentScore ?? 0;
+  const opponentScore = battle.scoreState?.opponentScore ?? 0;
+  const { gameState, urgency } = computeGameContext(battle);
+
   return `CURRENT BATTLE:
 - Mode: ${battle.gameMode}
-- Score: You ${battle.currentScore} — Opponent ${battle.opponentScore} (${battle.currentScore > battle.opponentScore ? 'LEADING' : battle.currentScore < battle.opponentScore ? 'TRAILING' : 'TIED'} by ${Math.abs(battle.currentScore - battle.opponentScore)} pts)
+- Score: You ${currentScore} — Opponent ${opponentScore} (${currentScore > opponentScore ? 'LEADING' : currentScore < opponentScore ? 'TRAILING' : 'TIED'} by ${Math.abs(currentScore - opponentScore)} pts)
 - Market: ${battle.marketOpen ? 'OPEN' : 'CLOSED'}
 - Time remaining: ${battle.timeRemaining}
+- Game state: ${gameState}
+- Urgency: ${urgency}
 - Your portfolio: ${portfolioDisplay}${tradeBlock}`;
 }
 
