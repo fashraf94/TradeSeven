@@ -628,7 +628,7 @@ function buildScoutAlertsBlock(marketSnapshot) {
   return `OPPORTUNITIES ON YOUR WATCHLIST:\n${lines.join('\n\n')}`;
 }
 
-function buildMarketSnapshotContext(marketSnapshot) {
+export function buildMarketSnapshotContext(marketSnapshot) {
   const mc = marketSnapshot?.marketContext;
   if (!mc) return null;
 
@@ -636,6 +636,20 @@ function buildMarketSnapshotContext(marketSnapshot) {
     ? `SPY: ${mc.spyChange > 0 ? '+' : ''}${mc.spyChange}%`
     : 'SPY: N/A';
   const volLine = mc.volatilityRegime ? ` | Volatility: ${mc.volatilityRegime}` : '';
+
+  let breadthQualityLine = '';
+  if (mc.breadthQualitySignal) {
+    const gapSegment = typeof mc.breadthSpyVsRspGap === 'number'
+      ? ` (SPY vs RSP: ${mc.breadthSpyVsRspGap > 0 ? '+' : ''}${mc.breadthSpyVsRspGap.toFixed(1)}%)`
+      : '';
+    breadthQualityLine = `\nBreadth quality: ${mc.breadthQualitySignal}${gapSegment}`;
+  }
+
+  const leadershipLine = `\nLeadership: ${mc.leadershipSignal || 'mixed'}`;
+
+  const divergenceLine = mc.divergenceSignal && mc.divergenceSignal !== 'none'
+    ? `\nDivergence: ${mc.divergenceSignal}`
+    : '';
 
   const topSectorLine = mc.topSector && mc.topSector !== 'N/A'
     ? `\nSector leaders: ${mc.topSector} (${mc.topSectorChange > 0 ? '+' : ''}${mc.topSectorChange}%)`
@@ -647,7 +661,7 @@ function buildMarketSnapshotContext(marketSnapshot) {
   return `MARKET RIGHT NOW:
 Regime: ${mc.regime} — ${mc.regimeDetail}
 ${spyLine}${volLine}
-Breadth: ${mc.breadthTier}${mc.breadthDetail ? ` — ${mc.breadthDetail}` : ''}${topSectorLine}${worstSectorLine}
+Breadth: ${mc.breadthTier}${mc.breadthDetail ? ` — ${mc.breadthDetail}` : ''}${breadthQualityLine}${leadershipLine}${divergenceLine}${topSectorLine}${worstSectorLine}
 Yields: ${mc.yieldRegime}`;
 }
 

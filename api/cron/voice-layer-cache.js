@@ -371,7 +371,7 @@ function buildScoutAlerts(watchlist, rankingsMap, techScoresMap, archetype, port
 // MARKET CONTEXT BUILDER
 // ============================================
 
-function buildMarketContextBlock(mc) {
+export function buildMarketContextBlock(mc) {
   if (!mc) {
     return {
       regime: 'unknown',
@@ -386,6 +386,10 @@ function buildMarketContextBlock(mc) {
       worstSector: 'N/A',
       worstSectorChange: null,
       yieldRegime: 'unknown',
+      leadershipSignal: 'mixed',
+      divergenceSignal: 'none',
+      breadthQualitySignal: null,
+      breadthSpyVsRspGap: null,
     };
   }
 
@@ -402,6 +406,12 @@ function buildMarketContextBlock(mc) {
     worstSector: mc.worstSectorToday || 'N/A',
     worstSectorChange: mc.worstSectorChange ?? null,
     yieldRegime: mc.yields?.regime || 'unknown',
+    leadershipSignal: mc.leadership || 'mixed',
+    divergenceSignal: mc.divergence?.type || 'none',
+    breadthQualitySignal: mc.breadthQuality?.signal || null,
+    breadthSpyVsRspGap: typeof mc.breadthQuality?.spyVsRsp === 'number'
+      ? mc.breadthQuality.spyVsRsp
+      : null,
   };
 }
 
