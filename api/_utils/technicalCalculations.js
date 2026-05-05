@@ -379,6 +379,50 @@ export function calculateNR7(highs, lows) {
 }
 
 // ============================================
+// PIVOT POINTS
+// ============================================
+
+/**
+ * Calculate Standard (Floor Trader) pivot levels from prior-day OHLC.
+ * @param {number|null} prevHigh - Prior session high
+ * @param {number|null} prevLow - Prior session low
+ * @param {number|null} prevClose - Prior session close
+ * @returns {{ pivotPP: number, pivotR1: number, pivotR2: number, pivotS1: number, pivotS2: number }|null}
+ */
+export function calculatePivotLevels(prevHigh, prevLow, prevClose) {
+  if (prevHigh == null || prevLow == null || prevClose == null) return null;
+
+  const pp = (prevHigh + prevLow + prevClose) / 3;
+  const range = prevHigh - prevLow;
+
+  return {
+    pivotPP: Number(pp.toFixed(2)),
+    pivotR1: Number((2 * pp - prevLow).toFixed(2)),
+    pivotR2: Number((pp + range).toFixed(2)),
+    pivotS1: Number((2 * pp - prevHigh).toFixed(2)),
+    pivotS2: Number((pp - range).toFixed(2)),
+  };
+}
+
+// ============================================
+// TREND CLASSIFICATION
+// ============================================
+
+/**
+ * Classify a single timeframe's trend by current price vs SMA.
+ * Returns null when SMA is unavailable (insufficient history).
+ * @param {number|null} currentPrice
+ * @param {number|null} smaValue
+ * @returns {'up'|'down'|null}
+ */
+export function classifyTrend(currentPrice, smaValue) {
+  if (smaValue == null || currentPrice == null) return null;
+  // Strict greater-than for 'up' matches the existing aboveSMA* convention
+  // in computeTechnicalScore (price === sma counts as not-above → 'down').
+  return currentPrice > smaValue ? 'up' : 'down';
+}
+
+// ============================================
 // CONVENIENCE: ALL INDICATORS
 // ============================================
 

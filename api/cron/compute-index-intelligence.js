@@ -14,7 +14,13 @@ import {
   calculateBollingerBands,
   calculateNR7,
   calculateVolumeProfile,
+  calculatePivotLevels,
+  classifyTrend,
 } from '../_utils/technicalCalculations.js';
+import {
+  findSwingHighsLows,
+  findNearestLevels,
+} from '../_utils/analyticalPrimitives.js';
 import {
   classifyRegime,
   detectLeadership,
@@ -500,6 +506,26 @@ export default async function handler(req, res) {
           ? Number((((currentPrice - sma200) / sma200) * 100).toFixed(2))
           : null;
 
+        // Phase 2A — pivot levels from prior-day OHLC (index 1 = yesterday in
+        // newest-first arrays). Returns null sub-object if any input missing.
+        const pivots = calculatePivotLevels(highs[1] ?? null, lows[1] ?? null, closes[1] ?? null);
+
+        // Phase 2A — multi-timeframe trend classification from existing daily
+        // SMAs. Each field is 'up' | 'down' | null (null when SMA unavailable).
+        const trend = {
+          shortTerm: classifyTrend(currentPrice, sma20),
+          intermediate: classifyTrend(currentPrice, sma50),
+          longTerm: classifyTrend(currentPrice, sma200),
+        };
+
+        // Phase 2A — swing high/low detection + nearest S/R cluster derivation.
+        // Both default to lookback=20. levels falls back to a null-filled
+        // shape when there's insufficient history for swing detection.
+        const swings = findSwingHighsLows(closes, highs, lows, 20);
+        const levels = swings
+          ? findNearestLevels(currentPrice, swings.swingHighs, swings.swingLows, 20)
+          : { nearestResistance: null, nearestSupport: null, distanceToResistancePct: null, distanceToSupportPct: null };
+
         stockScores.push({
           symbol: d.sym,
           rs20: d.rs20 ? { value: d.rs20.value, change: d.rs20.change, percentile: rsPercentile } : null,
@@ -514,6 +540,9 @@ export default async function handler(req, res) {
           bbLower: bbResult?.lower ?? null,
           volumeProfile: vp ? { ratio: vp.ratio, avgVolume: vp.avgVolume, tier: vp.tier } : null,
           sma200_position,
+          trend,
+          pivots,
+          levels,
           ...scoreResult,
         });
       }
@@ -738,6 +767,12 @@ export default async function handler(req, res) {
           momentumFactors: mom?.momentumFactors ?? null,
           // Tier 0 Item 6: % distance from 200-day SMA (signed; null if insufficient history)
           sma200_position: tech.sma200_position ?? null,
+          // Phase 2A — multi-timeframe trend, pivot levels, nearest S/R levels.
+          // Mirrored from stockTechnicalScores so the voice layer can read
+          // them off the rankings doc directly (matches Item 6 precedent).
+          trend: tech.trend ?? null,
+          pivots: tech.pivots ?? null,
+          levels: tech.levels ?? null,
         };
 
         rankingStocks.push(stockEntry);
