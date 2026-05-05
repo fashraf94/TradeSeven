@@ -28,6 +28,9 @@ import {
 import { STOCK_UNIVERSE, ALL_TICKERS, TICKER_TO_SECTOR, TECHNICAL_FACTOR_WEIGHTS } from '../_utils/rankingConfig.js';
 import { computeGameModeFits, assignGameModeRanks } from '../_utils/gameModeScoring.js';
 import { computeMomentumRankings } from '../_utils/momentumScoring.js';
+import { computeArchetypeRankings } from '../_utils/archetypeScoring.js';
+
+const ARCHETYPES = ['momentum_chaser', 'contrarian', 'diversifier', 'degen', 'analyst', 'guardian'];
 
 export const config = { maxDuration: 300 };
 
@@ -492,6 +495,11 @@ export default async function handler(req, res) {
           sectorRSPercentile,
         });
 
+        const currentPrice = closes[0];
+        const sma200_position = (sma200 !== null && currentPrice != null)
+          ? Number((((currentPrice - sma200) / sma200) * 100).toFixed(2))
+          : null;
+
         stockScores.push({
           symbol: d.sym,
           rs20: d.rs20 ? { value: d.rs20.value, change: d.rs20.change, percentile: rsPercentile } : null,
@@ -505,6 +513,7 @@ export default async function handler(req, res) {
           bbUpper: bbResult?.upper ?? null,
           bbLower: bbResult?.lower ?? null,
           volumeProfile: vp ? { ratio: vp.ratio, avgVolume: vp.avgVolume, tier: vp.tier } : null,
+          sma200_position,
           ...scoreResult,
         });
       }
@@ -727,6 +736,8 @@ export default async function handler(req, res) {
           momentumScore: mom?.momentumScore ?? null,
           momentumRank: mom?.momentumRank ?? null,
           momentumFactors: mom?.momentumFactors ?? null,
+          // Tier 0 Item 6: % distance from 200-day SMA (signed; null if insufficient history)
+          sma200_position: tech.sma200_position ?? null,
         };
 
         rankingStocks.push(stockEntry);
@@ -742,6 +753,21 @@ export default async function handler(req, res) {
         if (b.compositeScore == null) return -1;
         return b.compositeScore - a.compositeScore;
       });
+
+      // Tier 0 Item 6: persist per-archetype ARCH scores for the universe screener.
+      // Must run against the FULL rankingStocks array — sectorDiversity depends on
+      // the input universe, so a filtered subset would yield different scores.
+      const archScoresBySymbol = {};
+      for (const archetype of ARCHETYPES) {
+        const ranked = computeArchetypeRankings(rankingStocks, archetype);
+        for (const s of ranked) {
+          if (!archScoresBySymbol[s.symbol]) archScoresBySymbol[s.symbol] = {};
+          archScoresBySymbol[s.symbol][archetype] = s.archetypeScore;
+        }
+      }
+      for (const stock of rankingStocks) {
+        stock.arch_scores = archScoresBySymbol[stock.symbol] || {};
+      }
 
       // Build sectors lookup for efficient frontend leaderboard rendering
       const sectorGroupsLocal = {};
