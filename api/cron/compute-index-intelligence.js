@@ -9,6 +9,7 @@ import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import {
   calculateSMA,
   calculateRSI,
+  calculateRSISeries,
   calculateMACD,
   calculateATR,
   calculateBollingerBands,
@@ -20,6 +21,8 @@ import {
 import {
   findSwingHighsLows,
   findNearestLevels,
+  detectRSIDivergence,
+  detectCandlePattern,
 } from '../_utils/analyticalPrimitives.js';
 import {
   classifyRegime,
@@ -440,6 +443,7 @@ export default async function handler(req, res) {
         const closes = d.closes;
         const highs = d.ohlcv.map(o => o.high);
         const lows = d.ohlcv.map(o => o.low);
+        const opens = d.ohlcv.map(o => o.open);
         const volumes = d.ohlcv.map(o => o.volume);
 
         const sma20 = calculateSMA(closes, 20);
@@ -526,6 +530,22 @@ export default async function handler(req, res) {
           ? findNearestLevels(currentPrice, swings.swingHighs, swings.swingLows, 20)
           : { nearestResistance: null, nearestSupport: null, distanceToResistancePct: null, distanceToSupportPct: null };
 
+        // Phase 2B — RSI divergence (price vs RSI series swing comparison).
+        // calculateRSISeries returns null when closes.length < period+1; in
+        // practice every retained stock has ≥50 bars so this rarely fires.
+        const rsiSeries = calculateRSISeries(closes, 14);
+        const momentum = {
+          divergence: rsiSeries ? detectRSIDivergence(closes, rsiSeries, 20) : null,
+        };
+
+        // Phase 2B — recent candle pattern. Suspicious-candle filter inside
+        // detectCandlePattern guards against split-day false positives caused
+        // by EODHD returning adjusted close + unadjusted O/H/L. avgVolume comes
+        // from the volumeProfile already computed above.
+        const recentAction = {
+          lastCandlePattern: detectCandlePattern(opens, highs, lows, closes, volumes, vp?.avgVolume ?? null),
+        };
+
         stockScores.push({
           symbol: d.sym,
           rs20: d.rs20 ? { value: d.rs20.value, change: d.rs20.change, percentile: rsPercentile } : null,
@@ -543,6 +563,8 @@ export default async function handler(req, res) {
           trend,
           pivots,
           levels,
+          momentum,
+          recentAction,
           ...scoreResult,
         });
       }
@@ -773,6 +795,10 @@ export default async function handler(req, res) {
           trend: tech.trend ?? null,
           pivots: tech.pivots ?? null,
           levels: tech.levels ?? null,
+          // Phase 2B — RSI divergence + recent candle pattern. Mirrored for
+          // the same reason.
+          momentum: tech.momentum ?? null,
+          recentAction: tech.recentAction ?? null,
         };
 
         rankingStocks.push(stockEntry);

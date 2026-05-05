@@ -9,8 +9,13 @@
 
 import { describe, it, expect } from 'vitest';
 import { computeArchetypeRankings } from '../_utils/archetypeScoring.js';
-import { calculatePivotLevels, classifyTrend } from '../_utils/technicalCalculations.js';
-import { findSwingHighsLows, findNearestLevels } from '../_utils/analyticalPrimitives.js';
+import { calculatePivotLevels, classifyTrend, calculateRSI, calculateRSISeries } from '../_utils/technicalCalculations.js';
+import {
+  findSwingHighsLows,
+  findNearestLevels,
+  detectRSIDivergence,
+  detectCandlePattern,
+} from '../_utils/analyticalPrimitives.js';
 
 const ARCHETYPES = ['momentum_chaser', 'contrarian', 'diversifier', 'degen', 'analyst', 'guardian'];
 
@@ -598,5 +603,281 @@ describe('compute-index-intelligence Phase 2A — regression guards on existing 
     expect(stock.trend).toHaveProperty('shortTerm');
     expect(stock.levels).toHaveProperty('nearestResistance');
     expect(stock.pivots).toHaveProperty('pivotPP');
+  });
+});
+
+// ==================== PHASE 2B — calculateRSISeries ====================
+
+describe('compute-index-intelligence Phase 2B — calculateRSISeries', () => {
+  // 30-bar oscillating series — produces a real RSI series with non-trivial values.
+  function syntheticCloses(n = 30) {
+    return Array.from({ length: n }, (_, i) => 100 + Math.sin(i * 0.6) * 5);
+  }
+
+  it('returns null when input is too short', () => {
+    expect(calculateRSISeries(null, 14)).toBe(null);
+    expect(calculateRSISeries([100, 101, 102], 14)).toBe(null);
+  });
+
+  it("series[0] (newest) matches calculateRSI(closes).value byte-identically", () => {
+    const closes = syntheticCloses(40);
+    const single = calculateRSI(closes, 14);
+    const series = calculateRSISeries(closes, 14);
+    expect(series).not.toBe(null);
+    expect(series[0]).toBe(single.value);
+  });
+
+  it('returns a series of the same length as input', () => {
+    const closes = syntheticCloses(40);
+    const series = calculateRSISeries(closes, 14);
+    expect(series.length).toBe(closes.length);
+  });
+
+  it('the oldest `period` entries are null (insufficient seed data)', () => {
+    const closes = syntheticCloses(40);
+    const series = calculateRSISeries(closes, 14);
+    // Newest-first: the LAST `period` entries (oldest end) should be null.
+    for (let i = closes.length - 14; i < closes.length; i++) {
+      expect(series[i]).toBe(null);
+    }
+    // And the next-older entry just before the null tail should NOT be null.
+    expect(series[closes.length - 14 - 1]).not.toBe(null);
+  });
+});
+
+// ==================== PHASE 2B — RSI DIVERGENCE ====================
+
+describe('compute-index-intelligence Phase 2B — detectRSIDivergence', () => {
+  it('detects bullish divergence (price lower-low + RSI higher-low)', () => {
+    // Newer trough at i=3 (price 90, RSI 35); older trough at i=11 (price 92, RSI 30).
+    // Price made a LOWER low (90 < 92) while RSI made a HIGHER low (35 > 30) — bullish.
+    const closes = [105, 102, 95, 90, 95, 99, 102, 104, 103, 102, 95, 92, 95, 99, 101, 103, 104, 103, 105, 105, 105, 105, 105, 105, 105];
+    const rsi    = [55, 50, 40, 35, 40, 45, 50, 52, 51, 45, 35, 30, 35, 45, 50, 52, 53, 52, 55, 55, 55, 55, 55, 55, 55];
+    expect(detectRSIDivergence(closes, rsi, 20)).toBe('bullish');
+  });
+
+  it('detects bearish divergence (price higher-high + RSI lower-high)', () => {
+    // Newer peak at i=3 (price 100, RSI 65); older peak at i=11 (price 98, RSI 70).
+    // Price made a HIGHER high (100 > 98) while RSI made a LOWER high (65 < 70) — bearish.
+    const closes = [85, 88, 95, 100, 95, 91, 88, 86, 87, 88, 95, 98, 95, 91, 89, 87, 85, 86, 85, 85, 85, 85, 85, 85, 85];
+    const rsi    = [45, 50, 60, 65, 60, 55, 50, 48, 49, 50, 60, 70, 60, 55, 51, 49, 47, 48, 47, 47, 47, 47, 47, 47, 47];
+    expect(detectRSIDivergence(closes, rsi, 20)).toBe('bearish');
+  });
+
+  it("returns 'none' when swing structure exists but the divergence rule isn't satisfied", () => {
+    // Price made a HIGHER low (no lower-low → no bullish), RSI tracking same.
+    // Price swing highs trend up too (no bearish either).
+    const closes = [115, 110, 102, 100, 102, 105, 108, 110, 112, 110, 105, 90, 100, 110, 113, 115, 117, 116, 115, 115, 115, 115, 115, 115, 115];
+    const rsi    = [60, 55, 45, 35, 45, 50, 55, 60, 65, 60, 50, 25, 35, 50, 55, 60, 65, 60, 60, 60, 60, 60, 60, 60, 60];
+    expect(detectRSIDivergence(closes, rsi, 20)).toBe('none');
+  });
+
+  it('returns null when input arrays are too short for swing detection', () => {
+    const closes = new Array(20).fill(100);
+    const rsi = new Array(20).fill(50);
+    expect(detectRSIDivergence(closes, rsi, 20)).toBe(null);
+  });
+
+  it('window-matches RSI swings within ±2 bars of price swings (offset by 1 bar still divergent)', () => {
+    // Price troughs at i=3 (90), i=11 (92). RSI troughs at i=4 (35), i=13 (30).
+    // RSI swing offsets are +1 and +2 from price — both within ±2 tolerance.
+    const closes = [105, 102, 95, 90, 95, 99, 102, 104, 103, 102, 95, 92, 95, 99, 101, 103, 104, 103, 105, 105, 105, 105, 105, 105, 105];
+    const rsi    = [60, 50, 45, 38, 35, 40, 45, 50, 55, 50, 40, 35, 32, 30, 35, 45, 50, 55, 55, 55, 55, 55, 55, 55, 55];
+    expect(detectRSIDivergence(closes, rsi, 20)).toBe('bullish');
+  });
+});
+
+// ==================== PHASE 2B — CANDLE PATTERN RECOGNITION ====================
+
+describe('compute-index-intelligence Phase 2B — detectCandlePattern', () => {
+  // Helper: build a single-candle input for 1-candle pattern tests.
+  function singleCandle(open, high, low, close, volume = 1e6, avgVolume = 1e6) {
+    return {
+      opens: [open], highs: [high], lows: [low], closes: [close],
+      volumes: [volume], avgVolume,
+    };
+  }
+
+  it('detects bullish_engulfing (today bullish body engulfs yesterday bearish body)', () => {
+    // Yesterday bearish: open 105, close 100. Today bullish: open 99 (< 100), close 106 (> 105).
+    const opens   = [99, 105];
+    const closes  = [106, 100];
+    const highs   = [107, 106];
+    const lows    = [98, 99];
+    const volumes = [1e6, 1e6];
+    expect(detectCandlePattern(opens, highs, lows, closes, volumes, 1e6)).toBe('bullish_engulfing');
+  });
+
+  it('detects bearish_engulfing (today bearish body engulfs yesterday bullish body)', () => {
+    const opens   = [106, 100];
+    const closes  = [99, 105];
+    const highs   = [107, 106];
+    const lows    = [98, 99];
+    const volumes = [1e6, 1e6];
+    expect(detectCandlePattern(opens, highs, lows, closes, volumes, 1e6)).toBe('bearish_engulfing');
+  });
+
+  it('detects hammer (small body, long lower wick, short upper wick)', () => {
+    // Body 1 (open 100, close 101). Lower wick 5 (low 95). Upper wick 0.2 (high 101.2).
+    const c = singleCandle(100, 101.2, 95, 101);
+    expect(detectCandlePattern(c.opens, c.highs, c.lows, c.closes, c.volumes, c.avgVolume)).toBe('hammer');
+  });
+
+  it('detects shooting_star (small body, long upper wick, short lower wick)', () => {
+    // Body 1 (open 100, close 99). Upper wick 5 (high 105). Lower wick 0.3 (low 98.7).
+    const c = singleCandle(100, 105, 98.7, 99);
+    expect(detectCandlePattern(c.opens, c.highs, c.lows, c.closes, c.volumes, c.avgVolume)).toBe('shooting_star');
+  });
+
+  it('detects doji (body is < 10% of total range, no wick requirement)', () => {
+    // Body 0.05 (open 100, close 100.05). Range 5 (high 102.5, low 97.5). 0.05 / 5 = 0.01 < 0.1.
+    const c = singleCandle(100, 102.5, 97.5, 100.05);
+    expect(detectCandlePattern(c.opens, c.highs, c.lows, c.closes, c.volumes, c.avgVolume)).toBe('doji');
+  });
+
+  it('returns null when no pattern matches (boring candle)', () => {
+    // Body 1, range 2 → 0.5 (not doji). Wicks 0.5 each (not hammer/star).
+    const c = singleCandle(100, 101.5, 99.5, 101);
+    expect(detectCandlePattern(c.opens, c.highs, c.lows, c.closes, c.volumes, c.avgVolume)).toBe(null);
+  });
+
+  it('returns null when input arrays are missing or empty', () => {
+    expect(detectCandlePattern(null, [], [], [], [], 1e6)).toBe(null);
+    expect(detectCandlePattern([], [], [], [], [], 1e6)).toBe(null);
+  });
+});
+
+// ==================== PHASE 2B — SUSPICIOUS-CANDLE FILTER ====================
+
+describe('compute-index-intelligence Phase 2B — isSuspiciousCandle filter (via detectCandlePattern)', () => {
+  it('blocks pattern detection when today is suspicious (>25% body, <10x volume)', () => {
+    // Engulfing-shaped candles — but today is a 31% body on normal volume.
+    // That looks like a stock-split day, not a real engulfing.
+    const opens   = [99, 105];
+    const closes  = [130, 100];   // today body = 31/99 ≈ 31% of open
+    const highs   = [131, 106];
+    const lows    = [98, 99];
+    const volumes = [1e6, 1e6];   // volumeRatio = 1, < 10 → suspicious
+    expect(detectCandlePattern(opens, highs, lows, closes, volumes, 1e6)).toBe(null);
+  });
+
+  it('admits pattern detection when extreme body comes with extreme volume (real news)', () => {
+    // Same engulfing geometry, but today's volume is 12x average — passes through.
+    const opens   = [99, 105];
+    const closes  = [130, 100];
+    const highs   = [131, 106];
+    const lows    = [98, 99];
+    const volumes = [12e6, 1e6];  // volumeRatio = 12, ≥ 10 → not suspicious
+    expect(detectCandlePattern(opens, highs, lows, closes, volumes, 1e6)).toBe('bullish_engulfing');
+  });
+
+  it('does not flag normal-body candles as suspicious regardless of volume', () => {
+    // Normal hammer body — should always pass through.
+    const c = { opens: [100], highs: [101.2], lows: [95], closes: [101], volumes: [1e6] };
+    expect(detectCandlePattern(c.opens, c.highs, c.lows, c.closes, c.volumes, 1e6)).toBe('hammer');
+  });
+
+  it('treats null avgVolume as not-suspicious (cannot assess → default pass-through)', () => {
+    const c = { opens: [100], highs: [101.2], lows: [95], closes: [101], volumes: [1e6] };
+    expect(detectCandlePattern(c.opens, c.highs, c.lows, c.closes, c.volumes, null)).toBe('hammer');
+  });
+});
+
+// ==================== PHASE 2B — CRON WIRING (BYTE-IDENTICAL PORT) ====================
+
+// Reproduces the cron's per-stock loop wiring for Phase 2B primitives so a
+// drift in either the cron or the helper functions trips this test.
+function reproducePhase2BWiring({ closes, opens, highs, lows, volumes, avgVolume }) {
+  const rsiSeries = calculateRSISeries(closes, 14);
+  const momentum = {
+    divergence: rsiSeries ? detectRSIDivergence(closes, rsiSeries, 20) : null,
+  };
+  const recentAction = {
+    lastCandlePattern: detectCandlePattern(opens, highs, lows, closes, volumes, avgVolume),
+  };
+  return { momentum, recentAction };
+}
+
+describe('compute-index-intelligence Phase 2B — combined output shape', () => {
+  it('produces a populated record with momentum and recentAction sub-objects', () => {
+    // Build a 40-bar OHLCV series with a hammer on the latest bar.
+    const N = 40;
+    const baseCloses = Array.from({ length: N }, (_, i) => 100 + Math.sin(i * 0.5) * 4);
+    const opens = baseCloses.map((c, i) => i === 0 ? 100 : c - 0.3);
+    const closes = baseCloses.map((c, i) => i === 0 ? 101 : c);
+    const highs = baseCloses.map((c, i) => i === 0 ? 101.2 : c + 1);
+    const lows = baseCloses.map((c, i) => i === 0 ? 95 : c - 1);
+    const volumes = new Array(N).fill(1e6);
+    const out = reproducePhase2BWiring({ closes, opens, highs, lows, volumes, avgVolume: 1e6 });
+
+    expect(out.momentum).toBeDefined();
+    expect(out.momentum).toHaveProperty('divergence');
+    expect(['bullish', 'bearish', 'none', null]).toContain(out.momentum.divergence);
+
+    expect(out.recentAction).toBeDefined();
+    expect(out.recentAction).toHaveProperty('lastCandlePattern');
+    expect(out.recentAction.lastCandlePattern).toBe('hammer');
+  });
+
+  it('returns momentum.divergence = null when input series is too short for RSI', () => {
+    const closes = new Array(10).fill(100);
+    const opens = new Array(10).fill(100);
+    const highs = new Array(10).fill(101);
+    const lows = new Array(10).fill(99);
+    const volumes = new Array(10).fill(1e6);
+    const out = reproducePhase2BWiring({ closes, opens, highs, lows, volumes, avgVolume: 1e6 });
+    expect(out.momentum.divergence).toBe(null);
+  });
+});
+
+// ==================== PHASE 2B — REGRESSION GUARDS ====================
+
+describe('compute-index-intelligence Phase 2B — regression guards on Phase 2A and earlier fields', () => {
+  it('Phase 2B additions do NOT displace Phase 2A or earlier sub-objects', () => {
+    // A complete stock entry with both Phase 2A and Phase 2B fields populated.
+    const stock = {
+      symbol: 'AAPL',
+      // Phase 1 / Tier 0
+      bbPercentB: 0.62,
+      volumeProfile: { ratio: 1.2, avgVolume: 50_000_000, tier: 'ELEVATED' },
+      sma200_position: 5.7,
+      factors: { rsi: 55, macdHistogram: 0.42, aboveSMA200: true },
+      // Phase 2A
+      trend: { shortTerm: 'up', intermediate: 'up', longTerm: 'up' },
+      pivots: { pivotPP: 100, pivotR1: 110, pivotR2: 120, pivotS1: 90, pivotS2: 80 },
+      levels: {
+        nearestResistance: 110.25, nearestSupport: 89.75,
+        distanceToResistancePct: 10.25, distanceToSupportPct: -10.25,
+      },
+      // Phase 2B
+      momentum: { divergence: 'bullish' },
+      recentAction: { lastCandlePattern: 'hammer' },
+    };
+
+    // Phase 2A intact
+    expect(stock.trend.shortTerm).toBe('up');
+    expect(stock.pivots.pivotPP).toBe(100);
+    expect(stock.levels.nearestResistance).toBe(110.25);
+
+    // Phase 1 / Tier 0 intact
+    expect(stock.bbPercentB).toBe(0.62);
+    expect(stock.volumeProfile.tier).toBe('ELEVATED');
+    expect(stock.sma200_position).toBe(5.7);
+    expect(stock.factors.macdHistogram).toBe(0.42);
+
+    // Phase 2B at top-level, NOT inside factors / momentumFactors / etc.
+    expect(stock.factors).not.toHaveProperty('momentum');
+    expect(stock.factors).not.toHaveProperty('recentAction');
+    expect(stock.factors).not.toHaveProperty('divergence');
+    expect(stock.factors).not.toHaveProperty('lastCandlePattern');
+    expect(stock).toHaveProperty('momentum');
+    expect(stock).toHaveProperty('recentAction');
+
+    // Phase 2B nested fields use the locked names (drop redundant prefix in
+    // momentum.divergence; lastCandlePattern as camelCase).
+    expect(stock.momentum).toHaveProperty('divergence');
+    expect(stock.momentum).not.toHaveProperty('momentumDivergence');
+    expect(stock.recentAction).toHaveProperty('lastCandlePattern');
+    expect(stock.recentAction).not.toHaveProperty('last_candle_pattern');
   });
 });

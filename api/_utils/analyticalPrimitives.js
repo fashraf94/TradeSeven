@@ -23,9 +23,18 @@
  * A swing low is a bar whose low is <= the lows of the 2 bars on each side.
  * (Ties are allowed — matches the client-side technicalUtils convention.)
  *
- * @param {number[]} closes - Stock closes (newest-first; reserved for Phase 2B divergence)
- * @param {number[]} highs - Stock highs (newest-first)
- * @param {number[]} lows - Stock lows (newest-first)
+ * SINGLE-SERIES MODE (Phase 2B): when both `highs` and `lows` are null, the
+ * function falls back to using `closes` as both. This is how RSI divergence
+ * detection runs swing analysis on a single indicator series. Null entries
+ * within the scanned window are treated as disqualifying — a candidate or
+ * its neighbors cannot be null for that index to count as a swing.
+ *
+ * @param {(number|null)[]} closes - Stock closes (newest-first); also used as
+ *   highs/lows when those args are null.
+ * @param {(number|null)[]|null} highs - Stock highs (newest-first), or null
+ *   for single-series mode.
+ * @param {(number|null)[]|null} lows - Stock lows (newest-first), or null
+ *   for single-series mode.
  * @param {number} lookback - Max bars back to scan as candidates (default 20)
  * @returns {{ swingHighs: Array<{ index: number, price: number }>,
  *             swingLows:  Array<{ index: number, price: number }> }|null}
@@ -33,6 +42,13 @@
  *   Returns null when input arrays are too short (need at least lookback + 5 bars).
  */
 export function findSwingHighsLows(closes, highs, lows, lookback = 20) {
+  // Single-series fallback for indicator-only divergence checks.
+  if (highs == null && lows == null) {
+    if (!closes) return null;
+    highs = closes;
+    lows = closes;
+  }
+
   if (!highs || !lows) return null;
   const minLen = lookback + 5;
   if (highs.length < minLen || lows.length < minLen) return null;
@@ -47,13 +63,23 @@ export function findSwingHighsLows(closes, highs, lows, lookback = 20) {
   for (let i = WINDOW; i <= lookback; i++) {
     const candHigh = highs[i];
     const candLow = lows[i];
+    if (candHigh == null || candLow == null) continue;
+
     let isSwingHigh = true;
     let isSwingLow = true;
 
     for (let offset = -WINDOW; offset <= WINDOW; offset++) {
       if (offset === 0) continue;
-      if (highs[i + offset] > candHigh) isSwingHigh = false;
-      if (lows[i + offset] < candLow) isSwingLow = false;
+      const neighborHigh = highs[i + offset];
+      const neighborLow = lows[i + offset];
+      if (neighborHigh == null || neighborLow == null) {
+        // Can't validate with missing data — disqualify this candidate.
+        isSwingHigh = false;
+        isSwingLow = false;
+        break;
+      }
+      if (neighborHigh > candHigh) isSwingHigh = false;
+      if (neighborLow < candLow) isSwingLow = false;
       if (!isSwingHigh && !isSwingLow) break;
     }
 
@@ -147,4 +173,176 @@ export function findNearestLevels(currentPrice, swingHighs, swingLows, lookback 
   }
 
   return result;
+}
+
+// ============================================
+// RSI DIVERGENCE DETECTION
+// ============================================
+
+/**
+ * Find the swing whose index is closest to targetIndex within ±tolerance bars.
+ * Returns null when no swing is within tolerance.
+ */
+function findClosestSwing(swings, targetIndex, tolerance) {
+  let best = null;
+  let bestDist = Infinity;
+  for (const swing of swings) {
+    const dist = Math.abs(swing.index - targetIndex);
+    if (dist <= tolerance && dist < bestDist) {
+      best = swing;
+      bestDist = dist;
+    }
+  }
+  return best;
+}
+
+/**
+ * Detect bullish or bearish divergence between price (closes) and RSI.
+ *
+ * Bullish divergence: price prints a lower low while RSI prints a higher low —
+ * the down-move is losing momentum. Bearish divergence is the inverse on highs.
+ *
+ * Swings on the two series rarely align exactly to the same bar, so each
+ * price swing is matched to the closest RSI swing within ±2 bars (standard
+ * professional convention).
+ *
+ * @param {number[]} closes - Closing prices, newest-first
+ * @param {(number|null)[]} rsiValues - RSI series, newest-first (from
+ *   calculateRSISeries — older bars may be null where RSI couldn't seed)
+ * @param {number} lookback - Bars-back window (default 20)
+ * @returns {'bullish'|'bearish'|'none'|null}
+ *   null when there is insufficient swing structure to assess.
+ */
+export function detectRSIDivergence(closes, rsiValues, lookback = 20) {
+  if (!closes || !rsiValues) return null;
+
+  const priceSwings = findSwingHighsLows(closes, null, null, lookback);
+  const rsiSwings = findSwingHighsLows(rsiValues, null, null, lookback);
+
+  if (!priceSwings || !rsiSwings) return null;
+
+  const enoughLowStructure = priceSwings.swingLows.length >= 2 && rsiSwings.swingLows.length >= 1;
+  const enoughHighStructure = priceSwings.swingHighs.length >= 2 && rsiSwings.swingHighs.length >= 1;
+
+  if (!enoughLowStructure && !enoughHighStructure) return null;
+
+  // Bullish divergence on the two most recent price swing lows.
+  // priceSwings is most-recent-first, so [0] is newer than [1].
+  if (enoughLowStructure) {
+    const [pLowNewer, pLowOlder] = priceSwings.swingLows;
+    const rNewer = findClosestSwing(rsiSwings.swingLows, pLowNewer.index, 2);
+    const rOlder = findClosestSwing(rsiSwings.swingLows, pLowOlder.index, 2);
+    if (rNewer && rOlder &&
+        pLowNewer.price < pLowOlder.price &&  // price made a LOWER low
+        rNewer.price > rOlder.price) {        // RSI made a HIGHER low
+      return 'bullish';
+    }
+  }
+
+  // Bearish divergence on the two most recent price swing highs.
+  if (enoughHighStructure) {
+    const [pHighNewer, pHighOlder] = priceSwings.swingHighs;
+    const rNewer = findClosestSwing(rsiSwings.swingHighs, pHighNewer.index, 2);
+    const rOlder = findClosestSwing(rsiSwings.swingHighs, pHighOlder.index, 2);
+    if (rNewer && rOlder &&
+        pHighNewer.price > pHighOlder.price &&  // price made a HIGHER high
+        rNewer.price < rOlder.price) {          // RSI made a LOWER high
+      return 'bearish';
+    }
+  }
+
+  return 'none';
+}
+
+// ============================================
+// CANDLE PATTERN RECOGNITION
+// ============================================
+
+/**
+ * Flag candles that look like split-day artifacts or other non-market
+ * price moves: a 25%+ body without correspondingly extreme volume (10x+)
+ * is almost certainly an administrative price adjustment, not real action.
+ *
+ * Real 25%+ moves (earnings shocks, FDA decisions, M&A) come with massive
+ * volume — those candles pass through and pattern detection runs normally.
+ */
+function isSuspiciousCandle(open, high, low, close, volume, avgVolume) {
+  if (avgVolume == null || avgVolume <= 0) return false;
+  if (open == null || close == null || open <= 0) return false;
+  if (volume == null) return false;
+
+  const bodyRatio = Math.abs(close - open) / open;
+  const volumeRatio = volume / avgVolume;
+  return bodyRatio > 0.25 && volumeRatio < 10;
+}
+
+/**
+ * Detect a single-candle or two-candle pattern on the most recent bar(s).
+ * Returns the first match in priority order:
+ *   bullish_engulfing → bearish_engulfing → hammer → shooting_star → doji
+ * Or null if no pattern matches (or if the input candles are flagged as
+ * suspicious by isSuspiciousCandle, which guards against split-day false
+ * positives caused by mixed adjusted/unadjusted OHLC).
+ *
+ * Geometry mirrors the client-side confluenceDetection.js implementation.
+ *
+ * @param {number[]} opens   - Open prices, newest-first
+ * @param {number[]} highs   - High prices, newest-first
+ * @param {number[]} lows    - Low prices, newest-first
+ * @param {number[]} closes  - Close prices, newest-first
+ * @param {number[]} volumes - Volumes, newest-first
+ * @param {number|null} avgVolume - Average volume (e.g., volumeProfile.avgVolume)
+ * @returns {'bullish_engulfing'|'bearish_engulfing'|'hammer'|'shooting_star'|'doji'|null}
+ */
+export function detectCandlePattern(opens, highs, lows, closes, volumes, avgVolume) {
+  if (!opens || !highs || !lows || !closes) return null;
+  if (opens.length < 1) return null;
+
+  const o0 = opens[0], h0 = highs[0], l0 = lows[0], c0 = closes[0];
+  if (o0 == null || h0 == null || l0 == null || c0 == null) return null;
+
+  const v0 = volumes ? volumes[0] : null;
+  const has2 = opens.length >= 2 && closes.length >= 2;
+  const o1 = has2 ? opens[1] : null;
+  const c1 = has2 ? closes[1] : null;
+  const h1 = has2 ? highs[1] : null;
+  const l1 = has2 ? lows[1] : null;
+  const v1 = has2 && volumes ? volumes[1] : null;
+
+  const todaySuspicious = isSuspiciousCandle(o0, h0, l0, c0, v0, avgVolume);
+  const yesterdaySuspicious = has2 && isSuspiciousCandle(o1, h1, l1, c1, v1, avgVolume);
+
+  // Two-candle patterns: skipped if EITHER candle is suspicious.
+  if (has2 && !todaySuspicious && !yesterdaySuspicious) {
+    // Bullish Engulfing
+    if (c1 < o1 && c0 > o0 && o0 < c1 && c0 > o1) return 'bullish_engulfing';
+    // Bearish Engulfing
+    if (c1 > o1 && c0 < o0 && o0 > c1 && c0 < o1) return 'bearish_engulfing';
+  }
+
+  // One-candle patterns: skipped if today is suspicious. (Yesterday being
+  // suspicious doesn't disqualify a today-only pattern.)
+  if (todaySuspicious) return null;
+
+  const bodySize = Math.abs(c0 - o0);
+  const upperWick = h0 - Math.max(o0, c0);
+  const lowerWick = Math.min(o0, c0) - l0;
+  const range = h0 - l0;
+
+  // Hammer — small body, long lower wick (≥ 2× body), short upper wick (< 0.5× body)
+  if (bodySize > 0 && lowerWick > bodySize * 2 && upperWick < bodySize * 0.5) {
+    return 'hammer';
+  }
+
+  // Shooting Star — small body, long upper wick (≥ 2× body), short lower wick (< 0.5× body)
+  if (bodySize > 0 && upperWick > bodySize * 2 && lowerWick < bodySize * 0.5) {
+    return 'shooting_star';
+  }
+
+  // Doji — body is < 10% of total range
+  if (range > 0 && bodySize / range < 0.1) {
+    return 'doji';
+  }
+
+  return null;
 }
