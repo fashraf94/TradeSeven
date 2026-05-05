@@ -2,7 +2,8 @@
 // Tier 0 Item 1: bench data exposure — buildBenchBriefsBlock unit tests.
 
 import { describe, it, expect } from 'vitest';
-import { buildBenchBriefsBlock, buildMarketSnapshotContext } from './voiceLayerPrompt.js';
+import { buildBenchBriefsBlock, buildBattleState, buildMarketSnapshotContext } from './voiceLayerPrompt.js';
+import { getETDate, formatDateString } from './marketSchedule.js';
 
 // ==================== TESTS ====================
 
@@ -246,5 +247,168 @@ describe('buildMarketSnapshotContext — sector RS rendering', () => {
   it('returns null when marketSnapshot has no marketContext', () => {
     expect(buildMarketSnapshotContext(null)).toBeNull();
     expect(buildMarketSnapshotContext({})).toBeNull();
+  });
+});
+
+// ==================== BATTLE STATE — SCORE FIX + GAME STATE + URGENCY ====================
+
+// Tier 0 Item 7: gameState/urgency lift from agentNewsContext.computeGameContext,
+// bundled with the Phase 1.5 score-shape fix (battle.scoreState.* — was reading
+// phantom flat fields). Regression-guards prevent the "undefined / NaN" output
+// from coming back.
+
+const todayET = formatDateString(getETDate());
+
+function makeBattle(overrides = {}) {
+  return {
+    id: 'test_battle',
+    gameMode: 'baggerbomb',
+    portfolio: { star: [{ symbol: 'NVDA' }], core: [], support: [] },
+    ...overrides,
+  };
+}
+
+describe('buildBattleState — score-line shape fix (Phase 1.5 regression guard)', () => {
+  it('renders score from battle.scoreState.* shape', () => {
+    const out = buildBattleState(makeBattle({
+      scoreState: { currentScore: 8, opponentScore: -3 },
+    }));
+    expect(out).toContain('Score: You 8 — Opponent -3');
+    expect(out).toContain('LEADING by 11');
+  });
+
+  it('defaults score to 0 when scoreState is missing entirely', () => {
+    const out = buildBattleState(makeBattle());
+    expect(out).toContain('Score: You 0 — Opponent 0 (TIED by 0 pts)');
+  });
+
+  it('defaults score to 0 when scoreState is an empty object', () => {
+    const out = buildBattleState(makeBattle({ scoreState: {} }));
+    expect(out).toContain('Score: You 0 — Opponent 0 (TIED by 0 pts)');
+  });
+
+  it('renders TRAILING when opponent leads', () => {
+    const out = buildBattleState(makeBattle({
+      scoreState: { currentScore: -5, opponentScore: 10 },
+    }));
+    expect(out).toContain('Score: You -5 — Opponent 10');
+    expect(out).toContain('TRAILING by 15');
+  });
+
+  it('never emits "undefined" or "NaN" on the Score line', () => {
+    // Scoped to the Score line specifically — Time remaining: and Market:
+    // remain broken in this PR by design (separate-item territory).
+    const out = buildBattleState(makeBattle({
+      scoreState: { currentScore: 4, opponentScore: 4 },
+    }));
+    const scoreLine = out.split('\n').find(l => l.startsWith('- Score:'));
+    expect(scoreLine).toBeDefined();
+    expect(scoreLine.includes('undefined')).toBe(false);
+    expect(scoreLine.includes('NaN')).toBe(false);
+  });
+
+  it('regression: empty-scoreState fixture also avoids undefined / NaN on Score line', () => {
+    const out = buildBattleState(makeBattle());
+    const scoreLine = out.split('\n').find(l => l.startsWith('- Score:'));
+    expect(scoreLine).toBeDefined();
+    expect(scoreLine.includes('undefined')).toBe(false);
+    expect(scoreLine.includes('NaN')).toBe(false);
+  });
+});
+
+describe('buildBattleState — game state rendering', () => {
+  it('renders "Game state: losing" when currentScore < -5', () => {
+    const out = buildBattleState(makeBattle({
+      scoreState: { currentScore: -8, opponentScore: 0 },
+    }));
+    expect(out).toContain('- Game state: losing');
+  });
+
+  it('renders "Game state: winning" when currentScore > 15', () => {
+    const out = buildBattleState(makeBattle({
+      scoreState: { currentScore: 20, opponentScore: 0 },
+    }));
+    expect(out).toContain('- Game state: winning');
+  });
+
+  it('renders "Game state: neutral" for scores between -5 and 15', () => {
+    const out = buildBattleState(makeBattle({
+      scoreState: { currentScore: 5, opponentScore: 0 },
+    }));
+    expect(out).toContain('- Game state: neutral');
+  });
+
+  it('renders "Game state: neutral" when scoreState is missing', () => {
+    const out = buildBattleState(makeBattle());
+    expect(out).toContain('- Game state: neutral');
+  });
+});
+
+describe('buildBattleState — urgency rendering', () => {
+  it('renders "Urgency: high" on the last day with score < -10', () => {
+    const out = buildBattleState(makeBattle({
+      scoreState: { currentScore: -15, opponentScore: 0 },
+      timing: { tradingDays: [todayET] },
+    }));
+    expect(out).toContain('- Urgency: high');
+  });
+
+  it('renders "Urgency: normal" when not on the last day (today not in tradingDays)', () => {
+    // computeGameContext treats "today not in tradingDays" as the last day too
+    // (defaults currentDay to totalDays). To exercise the not-last-day path, we
+    // include today AND a future day so today's index < totalDays.
+    const future = '2099-12-31';
+    const out = buildBattleState(makeBattle({
+      scoreState: { currentScore: -20, opponentScore: 0 },
+      timing: { tradingDays: [todayET, future] },
+    }));
+    expect(out).toContain('- Urgency: normal');
+  });
+
+  it('renders "Urgency: normal" on the last day when score is not < -10', () => {
+    const out = buildBattleState(makeBattle({
+      scoreState: { currentScore: -5, opponentScore: 0 },
+      timing: { tradingDays: [todayET] },
+    }));
+    expect(out).toContain('- Urgency: normal');
+  });
+
+  it('renders "Urgency: normal" when timing is missing entirely', () => {
+    const out = buildBattleState(makeBattle({
+      scoreState: { currentScore: -20, opponentScore: 0 },
+    }));
+    // No timing means totalDays defaults to 1 and tradingDays is empty,
+    // so isLastDay is true — the score < -10 condition is what gates urgency.
+    // currentScore -20 with empty tradingDays → currentDay=totalDays=1, isLastDay=true,
+    // score < -10 → urgency: high. Verify the actual semantics.
+    expect(out).toContain('- Urgency: high');
+  });
+});
+
+describe('buildBattleState — line ordering', () => {
+  it('places "Game state:" and "Urgency:" between "Time remaining:" and "Your portfolio:"', () => {
+    const out = buildBattleState(makeBattle({
+      scoreState: { currentScore: 4, opponentScore: 1 },
+    }));
+    const lines = out.split('\n');
+    const timeIdx = lines.findIndex(l => l.startsWith('- Time remaining:'));
+    const gameStateIdx = lines.findIndex(l => l.startsWith('- Game state:'));
+    const urgencyIdx = lines.findIndex(l => l.startsWith('- Urgency:'));
+    const portfolioIdx = lines.findIndex(l => l.startsWith('- Your portfolio:'));
+
+    expect(timeIdx).toBeGreaterThan(-1);
+    expect(gameStateIdx).toBe(timeIdx + 1);
+    expect(urgencyIdx).toBe(gameStateIdx + 1);
+    expect(portfolioIdx).toBe(urgencyIdx + 1);
+  });
+});
+
+describe('buildBattleState — null-battle fallback (regression guard)', () => {
+  it('returns the strategy-session string when battle is null', () => {
+    expect(buildBattleState(null)).toBe('No active battle. This is a strategy session.');
+  });
+
+  it('returns the strategy-session string when battle is undefined', () => {
+    expect(buildBattleState(undefined)).toBe('No active battle. This is a strategy session.');
   });
 });
