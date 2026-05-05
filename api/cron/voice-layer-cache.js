@@ -9,6 +9,11 @@ import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
 import { FieldValue } from 'firebase-admin/firestore';
 import { getMarketState } from '../_utils/marketSchedule.js';
 import { findActiveAgentBattles } from '../_utils/agentBattleService.js';
+import {
+  detectRedZone,
+  isSwapLocked,
+  getBadgesFromHistoryServer,
+} from '../_utils/agentScoring.js';
 
 export const config = { maxDuration: 60 };
 
@@ -82,7 +87,22 @@ async function fetchBulkPrices(symbols) {
 // PORTFOLIO BRIEFS BUILDER
 // ============================================
 
-function buildPortfolioBriefs(portfolio, priceMap, rankingsMap, techScoresMap) {
+// Tier 0 Item 4: threshold proximity wrapper.
+// Active positions receive a `thresholdProximity` sub-field exposing
+// detectRedZone / isSwapLocked output, plus an `existingBadges` sibling field.
+// Bench positions are intentionally excluded (no scoring semantics).
+//
+// `thresholdProximity` is OMITTED entirely (graceful degradation) when baseATR
+// is missing or invalid — matches Item 1's prose-omission convention.
+// `existingBadges` is ALWAYS emitted (defaults to []) so the agent can always
+// reason about already-earned badges.
+//
+// Multiplier formula uses thresholdPriceChange (close vs previousClose)
+// preference per canonical agentScoring.js:148-152 — the cache cron's
+// price.change_p IS thresholdPriceChange, so this is zero-cost. Falls back to
+// entry-relative change when thresholdPriceChange is unavailable. Short
+// positions negate the multiplier (matches canonical lines 117-129).
+export function buildPortfolioBriefs(portfolio, priceMap, rankingsMap, techScoresMap, thresholdHistory = {}, startingPrices = {}) {
   if (!portfolio) return [];
   const briefs = [];
 
@@ -146,14 +166,15 @@ function buildPortfolioBriefs(portfolio, priceMap, rankingsMap, techScoresMap) {
 
       const momentumSummary = momentumParts.join(' ');
 
-      // Threshold proximity note
+      // Threshold proximity note (qualitative, ATR-rank-based — distinct from
+      // quantitative thresholdProximity below)
       const atrPercentile = ranking?.atrPercentile ?? 0;
       let thresholdNote = null;
       if (atrPercentile > 0.7) {
         thresholdNote = 'High ATR — volatile, could hit thresholds quickly';
       }
 
-      briefs.push({
+      const brief = {
         symbol,
         tier,
         price: price.close || price.previousClose,
@@ -167,7 +188,52 @@ function buildPortfolioBriefs(portfolio, priceMap, rankingsMap, techScoresMap) {
         resistanceLevel: null,
         thresholdNote,
         atrPercent: Math.round(atrPercentile * 100) / 100,
-      });
+      };
+
+      // Tier 0 Item 4: thresholdProximity + existingBadges
+      const baseATR = stock.baseATR;
+      const history = thresholdHistory[symbol] || {};
+      brief.existingBadges = getBadgesFromHistoryServer(history);
+
+      if (baseATR && baseATR > 0) {
+        // Canonical formula (agentScoring.js:148-152): prefer thresholdPriceChange
+        // (close vs previousClose) over priceChange (close vs entry).
+        const thresholdPriceChange = (typeof price.change_p === 'number' && isFinite(price.change_p))
+          ? price.change_p
+          : null;
+        const entryPrice = stock.swapPrice ?? startingPrices[symbol];
+        const currentPrice = price.close ?? price.previousClose;
+        const priceChangeFromEntry = (entryPrice && currentPrice)
+          ? ((currentPrice - entryPrice) / entryPrice) * 100
+          : null;
+        const effectiveThresholdChange = thresholdPriceChange != null
+          ? thresholdPriceChange
+          : priceChangeFromEntry;
+
+        if (effectiveThresholdChange != null && isFinite(effectiveThresholdChange)) {
+          // Short positions negate the multiplier (canonical lines 117-129).
+          const isShort = stock.direction === 'short';
+          const signedChange = isShort ? -effectiveThresholdChange : effectiveThresholdChange;
+          const currentMultiplier = signedChange / baseATR;
+
+          const redZoneRaw = detectRedZone(currentMultiplier, brief.existingBadges);
+          const swapLock = isSwapLocked(currentMultiplier, baseATR);
+
+          brief.thresholdProximity = {
+            currentMultiplier,
+            baseATR,
+            redZone: redZoneRaw ? {
+              targetThreshold: redZoneRaw.targetThreshold,
+              targetMultiple: redZoneRaw.targetMultiple,
+              direction: redZoneRaw.direction,
+              zoneProgressPercent: redZoneRaw.progress, // RENAMED for prompt clarity
+            } : null,
+            swapLock,
+          };
+        }
+      }
+
+      briefs.push(brief);
     });
   });
 
@@ -520,7 +586,14 @@ export default async function handler(req, res) {
       const archetype = battle.agentContext?.archetype || 'unknown';
       const portfolioSyms = battlePortfolioSymbols.get(battle.id) || new Set();
 
-      const portfolioBriefs = buildPortfolioBriefs(battle.portfolio, priceMap, rankingsMap, techScoresMap);
+      const portfolioBriefs = buildPortfolioBriefs(
+        battle.portfolio,
+        priceMap,
+        rankingsMap,
+        techScoresMap,
+        battle.thresholdHistory || {},
+        battle.startingPrices || {},
+      );
       const benchBriefs = buildBenchBriefs(battle.portfolio, priceMap, rankingsMap, techScoresMap);
       const scoutAlerts = buildScoutAlerts(battle.watchlist, rankingsMap, techScoresMap, archetype, portfolioSyms);
       const mcBlock = buildMarketContextBlock(marketContext);

@@ -2,7 +2,7 @@
 // Tier 0 Item 1: bench data exposure — buildBenchBriefs unit tests.
 
 import { describe, it, expect } from 'vitest';
-import { buildBenchBriefs, buildMarketContextBlock } from './voice-layer-cache.js';
+import { buildBenchBriefs, buildMarketContextBlock, buildPortfolioBriefs } from './voice-layer-cache.js';
 
 // ==================== FIXTURES ====================
 
@@ -336,5 +336,207 @@ describe('buildMarketContextBlock — sector RS pass-through', () => {
     expect(out.breadthTier).toBe('unknown');
     expect(out.topSector).toBe('N/A');
     expect(out.yieldRegime).toBe('unknown');
+  });
+});
+
+// ==================== PORTFOLIO BRIEFS — THRESHOLD PROXIMITY (Tier 0 Item 4) ====================
+
+// `buildPortfolioBriefs` attaches a quantitative `thresholdProximity` sub-field
+// and an `existingBadges` sibling to each active position, derived from the
+// ported detectRedZone / isSwapLocked / getBadgesFromHistoryServer helpers.
+// `thresholdProximity` is omitted (graceful degradation) on missing baseATR.
+// `existingBadges` is always emitted (defaults to []).
+
+function activeStock({ symbol = 'AAPL', baseATR = 2.5, swapPrice = null, direction = 'long' } = {}) {
+  const stock = { symbol, name: symbol, baseATR, isCrypto: false, sector: 'Technology', direction };
+  if (swapPrice != null) stock.swapPrice = swapPrice;
+  return stock;
+}
+
+function activePortfolio(stock) {
+  return { star: [stock], core: [], support: [] };
+}
+
+function priceFromMultiplier(multiplier, baseATR) {
+  // Reverse-engineer change_p from multiplier so detectRedZone/isSwapLocked see
+  // the requested input. close is arbitrary — change_p (= thresholdPriceChange)
+  // drives the canonical formula.
+  const change_p = multiplier * baseATR;
+  return {
+    close: 100,
+    previousClose: 100 / (1 + change_p / 100),
+    change: change_p,
+    change_p,
+    volume: 1_000_000,
+    open: 99.5,
+    high: 100.3,
+    low: 99.7,
+    timestamp: 0,
+  };
+}
+
+describe('buildPortfolioBriefs — threshold proximity (Tier 0 Item 4)', () => {
+  it('emits thresholdProximity with redZone: null and swapLock unlocked when far from any threshold', () => {
+    const stock = activeStock({ symbol: 'AAPL', baseATR: 2.5 });
+    const priceMap = { AAPL: priceFromMultiplier(0.5, 2.5) };
+    const briefs = buildPortfolioBriefs(activePortfolio(stock), priceMap, {}, {}, {}, {});
+
+    expect(briefs).toHaveLength(1);
+    const tp = briefs[0].thresholdProximity;
+    expect(tp).toBeDefined();
+    expect(tp.currentMultiplier).toBeCloseTo(0.5, 5);
+    expect(tp.baseATR).toBe(2.5);
+    expect(tp.redZone).toBeNull();
+    expect(tp.swapLock).toEqual({ locked: false, direction: null, distancePercent: null, message: null });
+    expect(briefs[0].existingBadges).toEqual([]);
+  });
+
+  it('detects upside red zone when multiplier is in the 25% band before bagger', () => {
+    const stock = activeStock({ symbol: 'NVDA', baseATR: 2.0 });
+    const priceMap = { NVDA: priceFromMultiplier(0.85, 2.0) };
+    const briefs = buildPortfolioBriefs(activePortfolio(stock), priceMap, {}, {}, {}, {});
+
+    const tp = briefs[0].thresholdProximity;
+    expect(tp.redZone).not.toBeNull();
+    expect(tp.redZone.targetThreshold).toBe('bagger');
+    expect(tp.redZone.targetMultiple).toBe(1.0);
+    expect(tp.redZone.direction).toBe('positive');
+    // zone is [0.75, 1.0]; progress = (0.85 - 0.75) / 0.25 * 100 = 40
+    expect(tp.redZone.zoneProgressPercent).toBe(40);
+  });
+
+  it('detects swap-lock when multiplier is within 0.5pp of a threshold', () => {
+    const stock = activeStock({ symbol: 'TSLA', baseATR: 2.5 });
+    const priceMap = { TSLA: priceFromMultiplier(0.95, 2.5) };
+    const briefs = buildPortfolioBriefs(activePortfolio(stock), priceMap, {}, {}, {}, {});
+
+    const tp = briefs[0].thresholdProximity;
+    expect(tp.swapLock.locked).toBe(true);
+    expect(tp.swapLock.direction).toBe('positive');
+    // distPct = (1.0 - 0.95) * 2.5 = 0.125
+    expect(tp.swapLock.distancePercent).toBeCloseTo(0.125, 5);
+    expect(tp.swapLock.message).toBe('approaching BaggerBomb');
+  });
+
+  it('redirects target to next uncrossed threshold when an earlier badge is already earned', () => {
+    const stock = activeStock({ symbol: 'AMD', baseATR: 2.0 });
+    // multiplier 1.20: bagger (1.0) already earned → look at doubleBagger (1.5)
+    // doubleBagger zone = [1.125, 1.5], progress = (1.20 - 1.125) / 0.375 * 100 = 20
+    const priceMap = { AMD: priceFromMultiplier(1.20, 2.0) };
+    const thresholdHistory = { AMD: { maxMultiplier: 1.05, minMultiplier: 0 } };
+    const briefs = buildPortfolioBriefs(activePortfolio(stock), priceMap, {}, {}, thresholdHistory, {});
+
+    expect(briefs[0].existingBadges).toEqual(['bagger']);
+    const tp = briefs[0].thresholdProximity;
+    expect(tp.redZone).not.toBeNull();
+    expect(tp.redZone.targetThreshold).toBe('doubleBagger');
+    expect(tp.redZone.targetMultiple).toBe(1.5);
+    expect(tp.redZone.zoneProgressPercent).toBe(20);
+  });
+
+  it('detects downside red zone with direction: negative for negative multiplier', () => {
+    const stock = activeStock({ symbol: 'GME', baseATR: 4.0 });
+    const priceMap = { GME: priceFromMultiplier(-0.85, 4.0) };
+    const briefs = buildPortfolioBriefs(activePortfolio(stock), priceMap, {}, {}, {}, {});
+
+    const tp = briefs[0].thresholdProximity;
+    expect(tp.redZone).not.toBeNull();
+    expect(tp.redZone.targetThreshold).toBe('bust');
+    expect(tp.redZone.targetMultiple).toBe(-1.0);
+    expect(tp.redZone.direction).toBe('negative');
+  });
+
+  it('omits thresholdProximity entirely when baseATR is missing (graceful degradation)', () => {
+    // Build the stock manually so baseATR is genuinely absent (the activeStock
+    // helper's destructuring default would otherwise replace undefined with 2.5).
+    const stock = { symbol: 'XYZ', name: 'XYZ', isCrypto: false, sector: 'Technology', direction: 'long' };
+    const priceMap = { XYZ: priceFromMultiplier(0.85, 2.5) };
+    const briefs = buildPortfolioBriefs(activePortfolio(stock), priceMap, {}, {}, {}, {});
+
+    expect(briefs).toHaveLength(1);
+    expect(briefs[0]).not.toHaveProperty('thresholdProximity');
+    // existingBadges always emitted
+    expect(briefs[0].existingBadges).toEqual([]);
+  });
+
+  it('omits thresholdProximity when baseATR is 0', () => {
+    const stock = activeStock({ symbol: 'XYZ', baseATR: 0 });
+    const priceMap = { XYZ: priceFromMultiplier(0.85, 2.5) };
+    const briefs = buildPortfolioBriefs(activePortfolio(stock), priceMap, {}, {}, {}, {});
+
+    expect(briefs[0]).not.toHaveProperty('thresholdProximity');
+    expect(briefs[0].existingBadges).toEqual([]);
+  });
+
+  it('omits thresholdProximity when both change_p and entryPrice are unavailable', () => {
+    const stock = activeStock({ symbol: 'XYZ', baseATR: 2.5 });
+    // No change_p, no swapPrice, no startingPrices entry
+    const priceMap = { XYZ: { close: 100, previousClose: 100, change_p: null, change: 0, volume: 0, open: 100, high: 100, low: 100, timestamp: 0 } };
+    const briefs = buildPortfolioBriefs(activePortfolio(stock), priceMap, {}, {}, {}, {});
+
+    expect(briefs[0]).not.toHaveProperty('thresholdProximity');
+    expect(briefs[0].existingBadges).toEqual([]);
+  });
+
+  it('falls back to entry-price-based multiplier when change_p is unavailable', () => {
+    const stock = activeStock({ symbol: 'XYZ', baseATR: 2.5, swapPrice: 50 });
+    // close=53.125, swapPrice=50 → change=6.25%, mult=6.25/2.5=2.5 (past tenBagger)
+    // No badges yet, all thresholds < 2.5 → no nextPositive → redZone null
+    const priceMap = { XYZ: { close: 53.125, previousClose: 53.125, change_p: null, change: 0, volume: 0, open: 50, high: 53.125, low: 50, timestamp: 0 } };
+    const briefs = buildPortfolioBriefs(activePortfolio(stock), priceMap, {}, {}, {}, {});
+
+    expect(briefs[0]).toHaveProperty('thresholdProximity');
+    expect(briefs[0].thresholdProximity.currentMultiplier).toBeCloseTo(2.5, 5);
+    expect(briefs[0].thresholdProximity.redZone).toBeNull();
+  });
+
+  it('derives existingBadges from thresholdHistory entries', () => {
+    const stock = activeStock({ symbol: 'COIN', baseATR: 5.0 });
+    const priceMap = { COIN: priceFromMultiplier(0.0, 5.0) };
+    const thresholdHistory = { COIN: { maxMultiplier: 1.6, minMultiplier: -1.1 } };
+    const briefs = buildPortfolioBriefs(activePortfolio(stock), priceMap, {}, {}, thresholdHistory, {});
+
+    expect(briefs[0].existingBadges).toEqual(expect.arrayContaining(['bagger', 'doubleBagger', 'bust']));
+    expect(briefs[0].existingBadges).not.toContain('tenBagger');
+    expect(briefs[0].existingBadges).not.toContain('crash');
+  });
+
+  it('negates the multiplier for short positions (canonical short-handling parity)', () => {
+    const stock = activeStock({ symbol: 'SHRT', baseATR: 2.0, direction: 'short' });
+    // Short position: a -1.7% price move is favorable. priceFromMultiplier(-0.85, 2.0)
+    // sets change_p = -1.7. Internal raw multiplier = -1.7 / 2.0 = -0.85. The short
+    // negation flips the sign → effective currentMultiplier = +0.85, which lands
+    // inside the upside red zone toward bagger.
+    const priceMap = { SHRT: priceFromMultiplier(-0.85, 2.0) };
+    const briefs = buildPortfolioBriefs(activePortfolio(stock), priceMap, {}, {}, {}, {});
+
+    const tp = briefs[0].thresholdProximity;
+    expect(tp.currentMultiplier).toBeCloseTo(0.85, 5);
+    expect(tp.redZone).not.toBeNull();
+    expect(tp.redZone.targetThreshold).toBe('bagger');
+    expect(tp.redZone.direction).toBe('positive');
+  });
+
+  it('regression guard: existing portfolioBriefs fields (tier, price, trendSummary, thresholdNote) are preserved', () => {
+    const stock = activeStock({ symbol: 'AAPL', baseATR: 2.5 });
+    const priceMap = { AAPL: priceFromMultiplier(0.5, 2.5) };
+    const rankingsMap = { AAPL: { technicalScore: 75, technicalRank: 12, atrPercentile: 0.8 } };
+    const techScoresMap = { AAPL: {
+      technicalScore: 75,
+      rsiContext: 8,
+      macdScore: 9,
+      volumeConfirmation: 9,
+      factors: { aboveSMA200: true, aboveSMA50: true, aboveSMA20: true, rsPercentile: 80, upDayVolRatio: 1.8 },
+    } };
+    const briefs = buildPortfolioBriefs(activePortfolio(stock), priceMap, rankingsMap, techScoresMap, {}, {});
+
+    expect(briefs[0].symbol).toBe('AAPL');
+    expect(briefs[0].tier).toBe('star');
+    expect(briefs[0].technicalScore).toBe(75);
+    expect(briefs[0].thresholdNote).toBe('High ATR — volatile, could hit thresholds quickly');
+    expect(briefs[0].trendSummary).toContain('Strong uptrend');
+    // New fields coexist with old
+    expect(briefs[0]).toHaveProperty('thresholdProximity');
+    expect(briefs[0]).toHaveProperty('existingBadges');
   });
 });
