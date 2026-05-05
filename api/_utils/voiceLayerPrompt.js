@@ -3,6 +3,8 @@
 // Exports buildVoiceLayerPrompt(). All other helpers/constants are internal.
 
 import { computeGameContext } from './agentNewsContext.js';
+import { getMarketState } from './marketSchedule.js';
+import { computeTimeRemaining } from './agentEvalPromptAssembly.js';
 
 // ==================== STATIC CONSTANTS ====================
 
@@ -556,6 +558,9 @@ function buildConvictionsBlock(convictions, consolidatedInsight) {
 export function buildBattleState(battle) {
   if (!battle) return 'No active battle. This is a strategy session.';
 
+  const marketState = getMarketState();
+  const timeRemaining = computeTimeRemaining(battle);
+
   const portfolioDisplay = []
     .concat((battle.portfolio?.star || []).map(p => `${p.symbol} (Star)`))
     .concat((battle.portfolio?.core || []).map(p => `${p.symbol} (Core)`))
@@ -578,8 +583,8 @@ export function buildBattleState(battle) {
   return `CURRENT BATTLE:
 - Mode: ${battle.gameMode}
 - Score: You ${currentScore} — Opponent ${opponentScore} (${currentScore > opponentScore ? 'LEADING' : currentScore < opponentScore ? 'TRAILING' : 'TIED'} by ${Math.abs(currentScore - opponentScore)} pts)
-- Market: ${battle.marketOpen ? 'OPEN' : 'CLOSED'}
-- Time remaining: ${battle.timeRemaining}
+- Market: ${marketState.state}
+- Time remaining: ${timeRemaining}
 - Game state: ${gameState}
 - Urgency: ${urgency}
 - Your portfolio: ${portfolioDisplay}${tradeBlock}`;
