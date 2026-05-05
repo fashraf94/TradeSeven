@@ -96,6 +96,57 @@ export function calculateRSI(closes, period = 14) {
   };
 }
 
+/**
+ * Calculate RSI as a series — one value per bar, newest-first.
+ * The first `period` bars (oldest end of the newest-first array) are null
+ * because Wilder's smoothed RSI requires `period` prior changes to seed.
+ *
+ * The latest value (index 0) matches calculateRSI(closes, period).value
+ * exactly — they share the same Wilder running-average implementation.
+ *
+ * @param {number[]} closes - Closing prices (newest-first)
+ * @param {number} period - Lookback period (default 14)
+ * @returns {(number|null)[]|null} RSI series newest-first, or null when input
+ *   is missing / too short.
+ */
+export function calculateRSISeries(closes, period = 14) {
+  if (!closes || closes.length < period + 1) return null;
+
+  const N = closes.length;
+  // Reverse to oldest-first for streaming computation.
+  const chronological = [...closes].reverse();
+
+  const changes = new Array(N - 1);
+  for (let i = 1; i < N; i++) {
+    changes[i - 1] = chronological[i] - chronological[i - 1];
+  }
+
+  // Initial Wilder averages over the first `period` changes.
+  let avgGain = 0, avgLoss = 0;
+  for (let i = 0; i < period; i++) {
+    if (changes[i] > 0) avgGain += changes[i];
+    else avgLoss += Math.abs(changes[i]);
+  }
+  avgGain /= period;
+  avgLoss /= period;
+
+  // RSI values, oldest-first. First valid index is `period` (the bar whose
+  // window of `period` changes ends at it).
+  const rsiOldestFirst = new Array(N).fill(null);
+  rsiOldestFirst[period] = avgLoss === 0 ? 100 : 100 - (100 / (1 + avgGain / avgLoss));
+
+  for (let i = period; i < changes.length; i++) {
+    const gain = changes[i] > 0 ? changes[i] : 0;
+    const loss = changes[i] < 0 ? Math.abs(changes[i]) : 0;
+    avgGain = (avgGain * (period - 1) + gain) / period;
+    avgLoss = (avgLoss * (period - 1) + loss) / period;
+    rsiOldestFirst[i + 1] = avgLoss === 0 ? 100 : 100 - (100 / (1 + avgGain / avgLoss));
+  }
+
+  // Reverse to newest-first and round each non-null value.
+  return rsiOldestFirst.reverse().map(v => v == null ? null : Number(v.toFixed(2)));
+}
+
 // ============================================
 // MACD
 // ============================================
@@ -376,6 +427,50 @@ export function calculateNR7(highs, lows) {
     dailyRange: Number(todayRange.toFixed(4)),
     ranges: ranges.map(r => Number(r.toFixed(4))),
   };
+}
+
+// ============================================
+// PIVOT POINTS
+// ============================================
+
+/**
+ * Calculate Standard (Floor Trader) pivot levels from prior-day OHLC.
+ * @param {number|null} prevHigh - Prior session high
+ * @param {number|null} prevLow - Prior session low
+ * @param {number|null} prevClose - Prior session close
+ * @returns {{ pivotPP: number, pivotR1: number, pivotR2: number, pivotS1: number, pivotS2: number }|null}
+ */
+export function calculatePivotLevels(prevHigh, prevLow, prevClose) {
+  if (prevHigh == null || prevLow == null || prevClose == null) return null;
+
+  const pp = (prevHigh + prevLow + prevClose) / 3;
+  const range = prevHigh - prevLow;
+
+  return {
+    pivotPP: Number(pp.toFixed(2)),
+    pivotR1: Number((2 * pp - prevLow).toFixed(2)),
+    pivotR2: Number((pp + range).toFixed(2)),
+    pivotS1: Number((2 * pp - prevHigh).toFixed(2)),
+    pivotS2: Number((pp - range).toFixed(2)),
+  };
+}
+
+// ============================================
+// TREND CLASSIFICATION
+// ============================================
+
+/**
+ * Classify a single timeframe's trend by current price vs SMA.
+ * Returns null when SMA is unavailable (insufficient history).
+ * @param {number|null} currentPrice
+ * @param {number|null} smaValue
+ * @returns {'up'|'down'|null}
+ */
+export function classifyTrend(currentPrice, smaValue) {
+  if (smaValue == null || currentPrice == null) return null;
+  // Strict greater-than for 'up' matches the existing aboveSMA* convention
+  // in computeTechnicalScore (price === sma counts as not-above → 'down').
+  return currentPrice > smaValue ? 'up' : 'down';
 }
 
 // ============================================
