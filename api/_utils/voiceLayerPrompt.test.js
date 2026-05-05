@@ -2,7 +2,7 @@
 // Tier 0 Item 1: bench data exposure — buildBenchBriefsBlock unit tests.
 
 import { describe, it, expect } from 'vitest';
-import { buildBenchBriefsBlock, buildBattleState, buildMarketSnapshotContext } from './voiceLayerPrompt.js';
+import { buildBenchBriefsBlock, buildBattleState, buildMarketSnapshotContext, buildPortfolioBriefsBlock } from './voiceLayerPrompt.js';
 import { getETDate, formatDateString } from './marketSchedule.js';
 
 // ==================== TESTS ====================
@@ -410,5 +410,230 @@ describe('buildBattleState — null-battle fallback (regression guard)', () => {
 
   it('returns the strategy-session string when battle is undefined', () => {
     expect(buildBattleState(undefined)).toBe('No active battle. This is a strategy session.');
+  });
+});
+
+// ==================== PORTFOLIO BRIEFS BLOCK — THRESHOLD PROXIMITY (Tier 0 Item 4) ====================
+
+// Render rules:
+// - Threshold: line: ALWAYS render when thresholdProximity is present.
+//   Format: "Threshold: {currentMultiplier}x (baseATR {baseATR}%)" + optional " — red zone toward {targetThreshold} ({zoneProgressPercent}% of zone)".
+// - Swap-lock: line: ONLY when swapLock.locked === true. "Swap-lock: locked, {distancePercent}pp to {targetName}"
+// - Badges earned: line: ONLY when existingBadges.length > 0.
+
+function basePortfolioBrief(overrides = {}) {
+  return {
+    symbol: 'AAPL',
+    tier: 'star',
+    price: 200,
+    changePercent: 1.5,
+    technicalScore: 75,
+    technicalRank: 12,
+    rsPercentile: 80,
+    trendSummary: 'Strong uptrend. Above all major SMAs.',
+    momentumSummary: 'RSI healthy, not extended. MACD expanding.',
+    supportLevel: null,
+    resistanceLevel: null,
+    thresholdNote: null,
+    atrPercent: 0.55,
+    ...overrides,
+  };
+}
+
+describe('buildPortfolioBriefsBlock — threshold proximity rendering (Tier 0 Item 4)', () => {
+  it('renders Threshold: line with red-zone suffix when redZone is non-null', () => {
+    const out = buildPortfolioBriefsBlock({
+      portfolioBriefs: [basePortfolioBrief({
+        thresholdProximity: {
+          currentMultiplier: 0.93,
+          baseATR: 2.5,
+          redZone: {
+            targetThreshold: 'bagger',
+            targetMultiple: 1.0,
+            direction: 'positive',
+            zoneProgressPercent: 72,
+          },
+          swapLock: { locked: false, direction: null, distancePercent: null, message: null },
+        },
+        existingBadges: [],
+      })],
+    });
+
+    expect(out).toContain('Threshold: 0.9x (baseATR 2.5%) — red zone toward bagger (72% of zone)');
+  });
+
+  it('renders Threshold: line without red-zone suffix when redZone is null', () => {
+    const out = buildPortfolioBriefsBlock({
+      portfolioBriefs: [basePortfolioBrief({
+        thresholdProximity: {
+          currentMultiplier: 0.42,
+          baseATR: 2.5,
+          redZone: null,
+          swapLock: { locked: false, direction: null, distancePercent: null, message: null },
+        },
+        existingBadges: [],
+      })],
+    });
+
+    expect(out).toContain('Threshold: 0.4x (baseATR 2.5%)');
+    expect(out).not.toContain('red zone toward');
+  });
+
+  it('renders Swap-lock: line when swapLock.locked is true', () => {
+    const out = buildPortfolioBriefsBlock({
+      portfolioBriefs: [basePortfolioBrief({
+        thresholdProximity: {
+          currentMultiplier: 0.93,
+          baseATR: 2.5,
+          redZone: null,
+          swapLock: { locked: true, direction: 'positive', distancePercent: 0.18, message: 'approaching BaggerBomb' },
+        },
+        existingBadges: [],
+      })],
+    });
+
+    expect(out).toContain('Swap-lock: locked, 0.2pp to BaggerBomb');
+  });
+
+  it('omits Swap-lock: line when swapLock.locked is false', () => {
+    const out = buildPortfolioBriefsBlock({
+      portfolioBriefs: [basePortfolioBrief({
+        thresholdProximity: {
+          currentMultiplier: 0.5,
+          baseATR: 2.5,
+          redZone: null,
+          swapLock: { locked: false, direction: null, distancePercent: null, message: null },
+        },
+        existingBadges: [],
+      })],
+    });
+
+    expect(out).not.toContain('Swap-lock:');
+  });
+
+  it('renders Swap-lock: with Bust target name on negative direction', () => {
+    const out = buildPortfolioBriefsBlock({
+      portfolioBriefs: [basePortfolioBrief({
+        thresholdProximity: {
+          currentMultiplier: -0.93,
+          baseATR: 2.5,
+          redZone: null,
+          swapLock: { locked: true, direction: 'negative', distancePercent: 0.175, message: 'approaching Bust' },
+        },
+        existingBadges: [],
+      })],
+    });
+
+    expect(out).toContain('Swap-lock: locked, 0.2pp to Bust');
+  });
+
+  it('renders Badges earned: line with comma-separated list when badges present', () => {
+    const out = buildPortfolioBriefsBlock({
+      portfolioBriefs: [basePortfolioBrief({
+        thresholdProximity: {
+          currentMultiplier: 1.2,
+          baseATR: 2.5,
+          redZone: null,
+          swapLock: { locked: false, direction: null, distancePercent: null, message: null },
+        },
+        existingBadges: ['bagger', 'doubleBagger'],
+      })],
+    });
+
+    expect(out).toContain('Badges earned: bagger, doubleBagger');
+  });
+
+  it('omits Badges earned: line when existingBadges is empty', () => {
+    const out = buildPortfolioBriefsBlock({
+      portfolioBriefs: [basePortfolioBrief({
+        thresholdProximity: {
+          currentMultiplier: 0.5,
+          baseATR: 2.5,
+          redZone: null,
+          swapLock: { locked: false, direction: null, distancePercent: null, message: null },
+        },
+        existingBadges: [],
+      })],
+    });
+
+    expect(out).not.toContain('Badges earned:');
+  });
+
+  it('omits Threshold: line entirely when thresholdProximity is undefined (graceful degradation)', () => {
+    const out = buildPortfolioBriefsBlock({
+      portfolioBriefs: [basePortfolioBrief({ existingBadges: [] })],
+    });
+
+    expect(out).not.toContain('Threshold:');
+    expect(out).not.toContain('Swap-lock:');
+  });
+
+  it('preserves existing thresholdNote (BaggerBomb:) line alongside new Threshold: line', () => {
+    const out = buildPortfolioBriefsBlock({
+      portfolioBriefs: [basePortfolioBrief({
+        thresholdNote: 'High ATR — volatile, could hit thresholds quickly',
+        thresholdProximity: {
+          currentMultiplier: 0.5,
+          baseATR: 3.0,
+          redZone: null,
+          swapLock: { locked: false, direction: null, distancePercent: null, message: null },
+        },
+        existingBadges: [],
+      })],
+    });
+
+    expect(out).toContain('BaggerBomb: High ATR — volatile, could hit thresholds quickly');
+    expect(out).toContain('Threshold: 0.5x (baseATR 3.0%)');
+  });
+
+  it('renders the full feature stack in the locked order: existing → BaggerBomb: → Threshold: → Swap-lock: → Badges earned:', () => {
+    const out = buildPortfolioBriefsBlock({
+      portfolioBriefs: [basePortfolioBrief({
+        thresholdNote: 'High ATR — volatile, could hit thresholds quickly',
+        thresholdProximity: {
+          currentMultiplier: 0.93,
+          baseATR: 2.5,
+          redZone: { targetThreshold: 'bagger', targetMultiple: 1.0, direction: 'positive', zoneProgressPercent: 72 },
+          swapLock: { locked: true, direction: 'positive', distancePercent: 0.18, message: 'approaching BaggerBomb' },
+        },
+        existingBadges: ['bagger'],
+      })],
+    });
+
+    const lines = out.split('\n');
+    const baggerBombIdx = lines.findIndex(l => l.startsWith('BaggerBomb:'));
+    const thresholdIdx = lines.findIndex(l => l.startsWith('Threshold:'));
+    const swapLockIdx = lines.findIndex(l => l.startsWith('Swap-lock:'));
+    const badgesIdx = lines.findIndex(l => l.startsWith('Badges earned:'));
+
+    expect(baggerBombIdx).toBeGreaterThan(-1);
+    expect(thresholdIdx).toBe(baggerBombIdx + 1);
+    expect(swapLockIdx).toBe(thresholdIdx + 1);
+    expect(badgesIdx).toBe(swapLockIdx + 1);
+  });
+
+  it('regression guard: existing render unchanged when no thresholdProximity / existingBadges fields present', () => {
+    const out = buildPortfolioBriefsBlock({
+      portfolioBriefs: [{
+        symbol: 'AAPL',
+        tier: 'star',
+        changePercent: 1.5,
+        trendSummary: 'Strong uptrend.',
+        momentumSummary: 'MACD expanding.',
+      }],
+    });
+
+    expect(out).toContain('AAPL (star tier) — +1.5%');
+    expect(out).toContain('Trend: Strong uptrend.');
+    expect(out).toContain('Momentum: MACD expanding.');
+    expect(out).not.toContain('Threshold:');
+    expect(out).not.toContain('Swap-lock:');
+    expect(out).not.toContain('Badges earned:');
+  });
+
+  it('returns null when portfolioBriefs is missing or empty', () => {
+    expect(buildPortfolioBriefsBlock(null)).toBeNull();
+    expect(buildPortfolioBriefsBlock({})).toBeNull();
+    expect(buildPortfolioBriefsBlock({ portfolioBriefs: [] })).toBeNull();
   });
 });

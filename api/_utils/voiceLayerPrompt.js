@@ -587,7 +587,7 @@ export function buildBattleState(battle) {
 
 // ==================== MARKET SNAPSHOT BLOCKS ====================
 
-function buildPortfolioBriefsBlock(marketSnapshot) {
+export function buildPortfolioBriefsBlock(marketSnapshot) {
   if (!marketSnapshot?.portfolioBriefs?.length) return null;
 
   const freshnessNote = marketSnapshot.dataFreshness?.prices === 'websocket'
@@ -597,6 +597,31 @@ function buildPortfolioBriefsBlock(marketSnapshot) {
     const sign = b.changePercent > 0 ? '+' : '';
     let entry = `${b.symbol} (${b.tier} tier) — ${sign}${b.changePercent}%\nTrend: ${b.trendSummary}\nMomentum: ${b.momentumSummary}`;
     if (b.thresholdNote) entry += `\nBaggerBomb: ${b.thresholdNote}`;
+
+    // Tier 0 Item 4: threshold proximity render lines.
+    // Order: Threshold: → Swap-lock: (conditional) → Badges earned: (conditional)
+    if (b.thresholdProximity) {
+      const tp = b.thresholdProximity;
+      const multStr = tp.currentMultiplier.toFixed(1);
+      const atrStr = tp.baseATR.toFixed(1);
+      let thresholdLine = `Threshold: ${multStr}x (baseATR ${atrStr}%)`;
+      if (tp.redZone) {
+        thresholdLine += ` — red zone toward ${tp.redZone.targetThreshold} (${tp.redZone.zoneProgressPercent}% of zone)`;
+      }
+      entry += `\n${thresholdLine}`;
+
+      if (tp.swapLock?.locked === true) {
+        const distStr = (tp.swapLock.distancePercent ?? 0).toFixed(1);
+        // swapLock.message is always 'approaching X' — strip the prefix.
+        const targetName = (tp.swapLock.message || '').replace(/^approaching\s+/, '') || 'threshold';
+        entry += `\nSwap-lock: locked, ${distStr}pp to ${targetName}`;
+      }
+    }
+
+    if (Array.isArray(b.existingBadges) && b.existingBadges.length > 0) {
+      entry += `\nBadges earned: ${b.existingBadges.join(', ')}`;
+    }
+
     return entry;
   });
 

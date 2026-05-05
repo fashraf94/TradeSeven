@@ -2,6 +2,11 @@
 // Server-side scoring functions for agent mid-battle evaluations.
 // Duplicated from src/utils/baggerBombUtils.js and src/constants/baggerBombScoring.js
 // because server-side code (api/) cannot import from src/.
+//
+// Ports below are BYTE-IDENTICAL to the canonical source. The math-consistency
+// test in api/_utils/agentScoring.consistency.test.js asserts that this
+// duplication never drifts. If you modify any port, update the canonical source
+// (src/utils/baggerBombUtils.js) in the same change.
 
 // ==================== CONSTANTS ====================
 
@@ -96,6 +101,115 @@ export function getBadgesFromHistoryServer(history) {
  */
 export function calculatePointsServer(badges) {
   return badges.reduce((total, badge) => total + (THRESHOLD_POINTS[badge] || 0), 0);
+}
+
+// ==================== THRESHOLD PROXIMITY (Tier 0 Item 4) ====================
+
+/**
+ * Detect if a stock is in the "Red Zone" — within 25% of its next uncrossed threshold.
+ * Byte-identical port of src/utils/baggerBombUtils.js:182-233.
+ * @param {number} currentMultiplier - Current price multiplier (priceChange / baseATR)
+ * @param {string[]} existingBadges - Badges already earned for this asset
+ * @returns {Object|null} { targetThreshold, targetMultiple, direction, progress } or null
+ */
+export function detectRedZone(currentMultiplier, existingBadges = []) {
+  const POSITIVE_THRESHOLDS = [
+    { name: 'bagger', mult: THRESHOLD_MULTIPLIERS.bagger },
+    { name: 'doubleBagger', mult: THRESHOLD_MULTIPLIERS.doubleBagger },
+    { name: 'tenBagger', mult: THRESHOLD_MULTIPLIERS.tenBagger },
+  ];
+  const NEGATIVE_THRESHOLDS = [
+    { name: 'bust', mult: THRESHOLD_MULTIPLIERS.bust },
+    { name: 'crash', mult: THRESHOLD_MULTIPLIERS.crash },
+    { name: 'meltdown', mult: THRESHOLD_MULTIPLIERS.meltdown },
+  ];
+
+  // Check positive direction — find the next uncrossed positive threshold
+  if (currentMultiplier > 0) {
+    const nextPositive = POSITIVE_THRESHOLDS.find(
+      t => !existingBadges.includes(t.name) && currentMultiplier < t.mult
+    );
+    if (nextPositive) {
+      const zoneStart = nextPositive.mult * 0.75;
+      if (currentMultiplier >= zoneStart) {
+        const progress = ((currentMultiplier - zoneStart) / (nextPositive.mult * 0.25)) * 100;
+        return {
+          targetThreshold: nextPositive.name,
+          targetMultiple: nextPositive.mult,
+          direction: 'positive',
+          progress: Math.min(Math.round(progress), 100),
+        };
+      }
+    }
+  }
+
+  // Check negative direction — find the next uncrossed negative threshold
+  if (currentMultiplier < 0) {
+    const nextNegative = NEGATIVE_THRESHOLDS.find(
+      t => !existingBadges.includes(t.name) && currentMultiplier > t.mult
+    );
+    if (nextNegative) {
+      const zoneStart = nextNegative.mult * 0.75; // e.g., -0.75 for bust at -1.0
+      if (currentMultiplier <= zoneStart) {
+        const progress = ((zoneStart - currentMultiplier) / (Math.abs(nextNegative.mult) * 0.25)) * 100;
+        return {
+          targetThreshold: nextNegative.name,
+          targetMultiple: nextNegative.mult,
+          direction: 'negative',
+          progress: Math.min(Math.round(progress), 100),
+        };
+      }
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Check if a stock is in the Orange Zone — too close to a threshold to swap.
+ * A stock is locked when it's within 0.5 percentage points of its next threshold
+ * in either direction (positive or negative).
+ *
+ * Byte-identical port of src/utils/baggerBombUtils.js:244-278.
+ *
+ * @param {number} currentMultiplier - priceChange / baseATR
+ * @param {number} baseATR - The asset's volatility threshold (percentage)
+ * @returns {{ locked: boolean, direction: string|null, distancePercent: number|null, message: string|null }}
+ */
+export function isSwapLocked(currentMultiplier, baseATR) {
+  const ORANGE_ZONE_PCT = 0.5;
+  if (!baseATR || baseATR <= 0) return { locked: false, direction: null, distancePercent: null, message: null };
+
+  const POSITIVE_THRESHOLDS = [
+    THRESHOLD_MULTIPLIERS.bagger,       // 1.0
+    THRESHOLD_MULTIPLIERS.doubleBagger,  // 1.5
+    THRESHOLD_MULTIPLIERS.tenBagger,     // 2.0
+  ];
+  const NEGATIVE_THRESHOLDS = [
+    THRESHOLD_MULTIPLIERS.bust,      // -1.0
+    THRESHOLD_MULTIPLIERS.crash,     // -1.5
+    THRESHOLD_MULTIPLIERS.meltdown,  // -2.0
+  ];
+
+  // Check positive direction: find next threshold above current multiplier
+  const nextPositive = POSITIVE_THRESHOLDS.find(t => currentMultiplier < t);
+  if (nextPositive != null) {
+    const distPct = (nextPositive - currentMultiplier) * baseATR;
+    if (distPct <= ORANGE_ZONE_PCT && distPct > 0) {
+      return { locked: true, direction: 'positive', distancePercent: distPct, message: 'approaching BaggerBomb' };
+    }
+  }
+
+  // Check negative direction: find next threshold below current multiplier
+  const nextNegative = NEGATIVE_THRESHOLDS.find(t => currentMultiplier > t);
+  if (nextNegative != null) {
+    const distPct = (currentMultiplier - nextNegative) * baseATR;
+    if (distPct <= ORANGE_ZONE_PCT && distPct > 0) {
+      return { locked: true, direction: 'negative', distancePercent: distPct, message: 'approaching Bust' };
+    }
+  }
+
+  return { locked: false, direction: null, distancePercent: null, message: null };
 }
 
 // ==================== MAIN SCORING ====================
