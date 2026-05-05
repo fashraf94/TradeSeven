@@ -8,8 +8,8 @@
  * All array inputs follow the established server convention: NEWEST-FIRST
  * (index 0 = most recent bar).
  *
- * Phase 2A primitives live here; Phase 2B will add divergence + candle
- * pattern detection using the same module.
+ * Phase 2A primitives (swings, S/R levels) and Phase 2B primitives
+ * (RSI divergence, candle patterns) all live here.
  */
 
 // ============================================
