@@ -500,6 +500,16 @@ async function processAgentBattle(db, battle, summary) {
     momentumData.regimes = stockRegimes;
     momentumData.marketPosture = marketPosture;
 
+    // Bench data-parity: expose full per-symbol rankings + tech scores for
+    // bench candidates so buildBenchTechnicalBlock can render the same
+    // daily-grain technicals the chat agent already sees. Both maps are
+    // already populated above (rankings via stockRankingsArray, tech via
+    // technicalScoresMap); this is pure exposure, no extra I/O.
+    momentumData.rankingsMap = Object.fromEntries(
+      stockRankingsArray.map(s => [s.symbol, s])
+    );
+    momentumData.techScoresMap = technicalScoresMap;
+
     // ---- Vision state read (Spec A Phase 2a + fix-up) ----
     // No new Firestore I/O — battle.vision is already in scope from the
     // active-battles fetch. Defensive on two axes:
