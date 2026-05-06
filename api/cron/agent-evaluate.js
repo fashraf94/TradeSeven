@@ -51,16 +51,6 @@ function getAnthropicClient() {
   return anthropicClient;
 }
 
-// [Phase3Debug] TEMPORARY — remove after one production cron cycle has been
-// inspected. Logs the state of momentumData.vwap immediately before each of
-// the 5 cronState.intradayMomentum persistence sites so we can pinpoint where
-// values are being lost between fetch and persist.
-function debugLogMomentumState(siteLabel, momentumData) {
-  const vwapKeys = Object.keys(momentumData.vwap || {});
-  const sample = vwapKeys.length > 0 ? momentumData.vwap[vwapKeys[0]] : null;
-  console.log(`[Phase3Debug] persistence at ${siteLabel}: vwap has ${vwapKeys.length} symbols, sample=${sample ? JSON.stringify(sample) : 'EMPTY'}`);
-}
-
 export default async function handler(req, res) {
   // ---- 1. Auth ----
   const isVercelCron = req.headers['x-vercel-cron'] === '1';
@@ -371,26 +361,13 @@ async function processAgentBattle(db, battle, summary) {
       ),
     ]);
 
-    // [Phase3Debug] LOG 1 — intraday fetch result status
-    console.log('[Phase3Debug] intradayResult.status:', intradayResult.status);
-    if (intradayResult.status === 'rejected') {
-      console.log('[Phase3Debug] intradayResult.reason:', intradayResult.reason?.message || intradayResult.reason);
-    }
-
     // Process intraday candles → VWAP + 5min SMA20
     if (intradayResult.status === 'fulfilled') {
       const intradayMap = intradayResult.value;
-      // [Phase3Debug] LOG 2a — what symbols arrived from the fetch vs what we will iterate
-      console.log('[Phase3Debug] intradayMap symbols available:', Object.keys(intradayResult.value || {}));
-      console.log('[Phase3Debug] portfolioSymbols processed:', portfolioSymbols);
       for (const symbol of portfolioSymbols) {
         const candles = intradayMap[symbol];
-        // [Phase3Debug] LOG 2b — per-symbol candle count
-        console.log(`[Phase3Debug] ${symbol}: candles=${candles ? `array(${candles.length})` : 'null/undefined'}`);
         if (candles && candles.length > 0) {
           const vwapResult = calculateVWAP(candles);
-          // [Phase3Debug] LOG 3 — VWAP computation result
-          console.log(`[Phase3Debug] ${symbol}: vwapResult=`, vwapResult ? `{vwap: ${vwapResult.vwap}, currentPrice: ${vwapResult.currentPrice}, vwapDeviation: ${vwapResult.vwapDeviation}}` : 'null');
           if (vwapResult) {
             const sma20_5m = calculate5minSMA20(candles);
             momentumData.vwap[symbol] = { ...vwapResult, sma20_5m };
@@ -685,7 +662,6 @@ async function processAgentBattle(db, battle, summary) {
       scoreUpdate['cronState.lastEvaluatedAt'] = new Date().toISOString();
       scoreUpdate['cronState.evaluatingAt'] = null;
       scoreUpdate['cronState.vwapTicks'] = vwapTicks;
-      debugLogMomentumState('site-1-proposalHandled', momentumData);
       scoreUpdate['cronState.intradayMomentum'] = momentumData.vwap;
       const existingFeed = battle.statusFeed || [];
       scoreUpdate.statusFeed = [...existingFeed, ...statusFeedEntries].slice(-STATUS_FEED_CAP);
@@ -701,7 +677,6 @@ async function processAgentBattle(db, battle, summary) {
       scoreUpdate['cronState.lastEvaluatedAt'] = new Date().toISOString();
       scoreUpdate['cronState.evaluatingAt'] = null;
       scoreUpdate['cronState.vwapTicks'] = vwapTicks;
-      debugLogMomentumState('site-2-gameplanHandled', momentumData);
       scoreUpdate['cronState.intradayMomentum'] = momentumData.vwap;
       const existingFeed = battle.statusFeed || [];
       scoreUpdate.statusFeed = [...existingFeed, ...statusFeedEntries].slice(-STATUS_FEED_CAP);
@@ -727,7 +702,6 @@ async function processAgentBattle(db, battle, summary) {
         scoreUpdate['cronState.lastEvaluatedAt'] = new Date().toISOString();
         scoreUpdate['cronState.evaluatingAt'] = null;
         scoreUpdate['cronState.vwapTicks'] = vwapTicks;
-        debugLogMomentumState('site-3-gameplanTrigger', momentumData);
         scoreUpdate['cronState.intradayMomentum'] = momentumData.vwap;
         const existingFeed = battle.statusFeed || [];
         scoreUpdate.statusFeed = [...existingFeed, ...statusFeedEntries].slice(-STATUS_FEED_CAP);
@@ -800,7 +774,6 @@ async function processAgentBattle(db, battle, summary) {
       scoreUpdate['cronState.triggerGatePassCount'] = (battle.cronState?.triggerGatePassCount || 0) + 1;
       scoreUpdate['cronState.evaluatingAt'] = null;
       scoreUpdate['cronState.vwapTicks'] = vwapTicks;
-      debugLogMomentumState('site-4-noTrigger', momentumData);
       scoreUpdate['cronState.intradayMomentum'] = momentumData.vwap;
       if (statusFeedEntries.length > 0) {
         const existingFeed = battle.statusFeed || [];
@@ -1174,7 +1147,6 @@ async function processAgentBattle(db, battle, summary) {
     const existingFeed = battle.statusFeed || [];
     const updatedFeed = [...existingFeed, ...statusFeedEntries].slice(-STATUS_FEED_CAP);
 
-    debugLogMomentumState('site-5-haikuFinalUpdate', momentumData);
     const finalUpdate = {
       ...scoreUpdate,
       evaluations,
