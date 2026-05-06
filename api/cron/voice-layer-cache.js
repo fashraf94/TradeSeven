@@ -102,7 +102,7 @@ async function fetchBulkPrices(symbols) {
 // price.change_p IS thresholdPriceChange, so this is zero-cost. Falls back to
 // entry-relative change when thresholdPriceChange is unavailable. Short
 // positions negate the multiplier (matches canonical lines 117-129).
-export function buildPortfolioBriefs(portfolio, priceMap, rankingsMap, techScoresMap, thresholdHistory = {}, startingPrices = {}) {
+export function buildPortfolioBriefs(portfolio, priceMap, rankingsMap, techScoresMap, thresholdHistory = {}, startingPrices = {}, intradayMomentumMap = {}) {
   if (!portfolio) return [];
   const briefs = [];
 
@@ -232,6 +232,18 @@ export function buildPortfolioBriefs(portfolio, priceMap, rankingsMap, techScore
           };
         }
       }
+
+      // Phase 3: intraday momentum overlay (VWAP, 5m SMA20).
+      // Sourced from agent-evaluate cron, which fetches intraday 5m candles for
+      // active-portfolio symbols only (star/core/support — NOT bench), computes
+      // VWAP + 5m-SMA20, and persists to cronState.intradayMomentum on every
+      // flush. fetchIntradayBatch routes crypto correctly via formatEODHDSymbol
+      // (`-USD.CC` endpoint) when crypto sits in an active tier; bench crypto
+      // is handled by buildBenchBriefs separately and is unaffected here.
+      // Symbols absent from the map (e.g., crypto bench placeholders, fetch
+      // failures) get an explicit null sentinel so downstream readers can
+      // distinguish "no data this cycle" from "field missing".
+      brief.intraday = intradayMomentumMap[symbol] || null;
 
       briefs.push(brief);
     });
@@ -586,6 +598,7 @@ export default async function handler(req, res) {
       const archetype = battle.agentContext?.archetype || 'unknown';
       const portfolioSyms = battlePortfolioSymbols.get(battle.id) || new Set();
 
+      const intradayMomentumMap = battle.cronState?.intradayMomentum || {};
       const portfolioBriefs = buildPortfolioBriefs(
         battle.portfolio,
         priceMap,
@@ -593,6 +606,7 @@ export default async function handler(req, res) {
         techScoresMap,
         battle.thresholdHistory || {},
         battle.startingPrices || {},
+        intradayMomentumMap,
       );
       const benchBriefs = buildBenchBriefs(battle.portfolio, priceMap, rankingsMap, techScoresMap);
       const scoutAlerts = buildScoutAlerts(battle.watchlist, rankingsMap, techScoresMap, archetype, portfolioSyms);
