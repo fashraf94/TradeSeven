@@ -3,7 +3,7 @@
 // Pure logic — no API calls, no Firestore, no side effects.
 
 // ATR regime thresholds (mirrored from technicalCalculations.js)
-function getATRRegime(atrPercent) {
+export function getATRRegime(atrPercent) {
   if (atrPercent == null) return 'normal';
   if (atrPercent > 4) return 'extreme';
   if (atrPercent > 3) return 'high';

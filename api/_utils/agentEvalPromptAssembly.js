@@ -4,6 +4,7 @@
 
 import { getETDate, formatDateString } from './marketSchedule.js';
 import { flattenPortfolioServer, flattenBenchServer } from './agentScoring.js';
+import { getATRRegime } from './agentRegimeClassifier.js';
 import { getFirebaseAdmin } from './firebaseAdmin.js';
 import {
   computeGameContext,
@@ -600,6 +601,8 @@ Battle is ending. No new directional decisions should be made.`;
  * @param {Object} [momentumData] - Optional intraday momentum data
  * @param {Object} [momentumData.vwap] - { symbol: { vwap, currentPrice, vwapDeviation } }
  * @param {Object} [momentumData.rankings] - { symbol: { bBandwidthPercentile, nr7Flag, dailyRange } }
+ * @param {Object} [momentumData.rankingsMap] - { symbol: full stockRankings.stocks[i] entry } for bench technical context
+ * @param {Object} [momentumData.techScoresMap] - { symbol: stockTechnicalScores doc } for bench technical context
  * @param {Object} [presetConfig] - Optional strategy preset config from agentPresetConfig.js
  */
 export async function buildLiveContextBlock(battle, prices, macroPrices, assetScores, triggers, news, recentEvals, momentumData, presetConfig) {
@@ -647,6 +650,14 @@ ${portfolioCSV}`);
   // 3c. Bench CSV
   const benchCSV = buildBenchCSV(battle.portfolio?.bench, prices);
   parts.push(benchCSV);
+
+  // 3c1. Bench Technical Context (Workstream B — data parity with chat agent)
+  const benchTechBlock = buildBenchTechnicalBlock(
+    battle.portfolio?.bench,
+    momentumData?.rankingsMap || {},
+    momentumData?.techScoresMap || {}
+  );
+  if (benchTechBlock) parts.push(benchTechBlock);
 
   // 3d. Closed Trades with Ghost Prices
   const closedCSV = buildClosedTradesCSV(battle.trades, prices);
@@ -898,6 +909,214 @@ function buildBenchCSV(bench, prices) {
   });
 
   return [header, ...rows].join('\n');
+}
+
+/**
+ * Bench data-parity (Workstream B): supplementary block giving Haiku the same
+ * daily-grain technical context the chat agent already sees for bench
+ * candidates. Reads from per-symbol stockRankings and stockTechnicalScores
+ * lookups (already populated by Phase 1/2A/2B mirroring) and renders a
+ * human-readable per-symbol layout. Sits next to the existing buildBenchCSV
+ * output (CSV stays the at-a-glance overview; this adds depth).
+ *
+ * Crypto bench symbols are excluded — they have no rankings/tech docs and
+ * their price/daily-change is already in the CSV.
+ *
+ * @param {Object|null} bench - battle.portfolio.bench (object with stocks[]/crypto)
+ * @param {Object} rankingsMap - { [symbol]: stockRankings.stocks[i] entry }
+ * @param {Object} techScoresMap - { [symbol]: stockTechnicalScores doc }
+ * @returns {string|null} multi-line block, or null when there is nothing to render
+ */
+export function buildBenchTechnicalBlock(bench, rankingsMap, techScoresMap) {
+  if (!bench) return null;
+
+  const allBench = flattenBenchServer(bench);
+  if (allBench.length === 0) return null;
+
+  const blocks = [];
+
+  for (const asset of allBench) {
+    if (asset.benchType === 'crypto') continue;
+
+    const ranking = rankingsMap?.[asset.symbol] || null;
+    const tech = techScoresMap?.[asset.symbol] || null;
+    if (!ranking && !tech) continue;
+
+    const sector = asset.sector || ranking?.sectorName || 'Unknown';
+    const sectionLines = [];
+
+    const trendLine = renderBenchTrendLine(ranking);
+    if (trendLine) sectionLines.push(trendLine);
+
+    const momentumLine = renderBenchMomentumLine(ranking, tech);
+    if (momentumLine) sectionLines.push(momentumLine);
+
+    const volatilityLine = renderBenchVolatilityLine(tech);
+    if (volatilityLine) sectionLines.push(volatilityLine);
+
+    const volumeLine = renderBenchVolumeLine(tech);
+    if (volumeLine) sectionLines.push(volumeLine);
+
+    const rsLine = renderBenchRSLine(tech);
+    if (rsLine) sectionLines.push(rsLine);
+
+    const levelsLine = renderBenchLevelsLine(ranking);
+    if (levelsLine) sectionLines.push(levelsLine);
+
+    const recentLine = renderBenchRecentActionLine(ranking);
+    if (recentLine) sectionLines.push(recentLine);
+
+    const compositeLine = renderBenchCompositeLine(ranking);
+    if (compositeLine) sectionLines.push(compositeLine);
+
+    if (sectionLines.length === 0) continue;
+
+    const header = `${asset.symbol} (${sector}):`;
+    blocks.push([header, ...sectionLines.map(l => `  ${l}`)].join('\n'));
+  }
+
+  if (blocks.length === 0) return null;
+
+  return `BENCH TECHNICAL CONTEXT:\n\n${blocks.join('\n\n')}`;
+}
+
+function renderBenchTrendLine(ranking) {
+  if (!ranking?.trend) return null;
+  const t = ranking.trend;
+  if (t.shortTerm == null && t.intermediate == null && t.longTerm == null) return null;
+
+  const parts = [
+    `short=${t.shortTerm ?? 'n/a'}`,
+    `intermediate=${t.intermediate ?? 'n/a'}`,
+    `long=${t.longTerm ?? 'n/a'}`,
+  ];
+  let line = `Trend: ${parts.join(', ')}`;
+  if (ranking.sma200_position != null) {
+    const sign = ranking.sma200_position >= 0 ? '+' : '';
+    line += ` | sma200_position=${sign}${ranking.sma200_position.toFixed(2)}%`;
+  }
+  return line;
+}
+
+function renderBenchMomentumLine(ranking, tech) {
+  const factors = tech?.factors;
+  const parts = [];
+
+  if (factors?.rsi != null) {
+    parts.push(`RSI=${Math.round(factors.rsi)}`);
+  }
+
+  if (factors?.macdAboveSignal != null) {
+    let macdPhrase = `MACD ${factors.macdAboveSignal ? 'above' : 'below'} signal`;
+    if (factors.macdFreshBullishCross) macdPhrase += ' (fresh bullish cross)';
+    else if (factors.macdFreshBearishCross) macdPhrase += ' (fresh bearish cross)';
+    else macdPhrase += ' (no fresh cross)';
+    parts.push(macdPhrase);
+  }
+
+  const div = ranking?.momentum?.divergence;
+  if (div != null) {
+    parts.push(`divergence=${div}`);
+  }
+
+  if (parts.length === 0) return null;
+  return `Momentum: ${parts.join(', ')}`;
+}
+
+function renderBenchVolatilityLine(tech) {
+  const parts = [];
+
+  if (tech?.bbPercentB != null) {
+    const val = tech.bbPercentB;
+    let band;
+    if (val < 0.2) band = 'lower band';
+    else if (val < 0.5) band = 'lower-middle';
+    else if (val < 0.8) band = 'upper-middle';
+    else band = 'upper band';
+    parts.push(`BB %B=${val.toFixed(2)} (${band})`);
+  }
+
+  if (tech?.atrPercent != null) {
+    parts.push(`ATR regime: ${getATRRegime(tech.atrPercent)}`);
+  }
+
+  if (parts.length === 0) return null;
+  return `Volatility: ${parts.join(' | ')}`;
+}
+
+function renderBenchVolumeLine(tech) {
+  const vp = tech?.volumeProfile;
+  if (!vp) return null;
+
+  const parts = [];
+  if (vp.tier) parts.push(`${vp.tier} tier`);
+  if (vp.ratio != null) parts.push(`RVOL=${vp.ratio.toFixed(2)}`);
+
+  if (parts.length === 0) return null;
+  return `Volume: ${parts.join(' | ')}`;
+}
+
+function renderBenchRSLine(tech) {
+  const factors = tech?.factors;
+  const parts = [];
+
+  if (factors?.rsPercentile != null) {
+    const val = factors.rsPercentile;
+    let label;
+    if (val < 30) label = 'lagging';
+    else if (val < 50) label = 'neutral';
+    else if (val < 70) label = 'outperforming';
+    else label = 'leading';
+    parts.push(`rsPercentile=${val} (${label})`);
+  }
+
+  if (factors?.sectorRSPercentile != null) {
+    parts.push(`sector RS=${factors.sectorRSPercentile}`);
+  }
+
+  if (parts.length === 0) return null;
+  return `Relative strength: ${parts.join(' | ')}`;
+}
+
+function renderBenchLevelsLine(ranking) {
+  const lvls = ranking?.levels;
+  if (!lvls) return null;
+
+  const parts = [];
+  if (lvls.nearestSupport != null) {
+    let phrase = `support ${lvls.nearestSupport.toFixed(2)}`;
+    if (lvls.distanceToSupportPct != null) {
+      const sign = lvls.distanceToSupportPct >= 0 ? '+' : '';
+      phrase += ` (${sign}${lvls.distanceToSupportPct.toFixed(2)}%)`;
+    }
+    parts.push(phrase);
+  }
+  if (lvls.nearestResistance != null) {
+    let phrase = `resistance ${lvls.nearestResistance.toFixed(2)}`;
+    if (lvls.distanceToResistancePct != null) {
+      const sign = lvls.distanceToResistancePct >= 0 ? '+' : '';
+      phrase += ` (${sign}${lvls.distanceToResistancePct.toFixed(2)}%)`;
+    }
+    parts.push(phrase);
+  }
+
+  if (parts.length === 0) return null;
+  return `Levels: ${parts.join(', ')}`;
+}
+
+function renderBenchRecentActionLine(ranking) {
+  const pattern = ranking?.recentAction?.lastCandlePattern;
+  if (!pattern) return null;
+  return `Recent action: ${pattern}`;
+}
+
+function renderBenchCompositeLine(ranking) {
+  if (!ranking) return null;
+  const parts = [];
+  if (ranking.technicalScore != null) parts.push(`technicalScore=${ranking.technicalScore}`);
+  if (ranking.technicalRank != null) parts.push(`technicalRank=${ranking.technicalRank}`);
+  if (parts.length === 0) return null;
+  return `Composite: ${parts.join(', ')}`;
 }
 
 function buildClosedTradesCSV(trades, prices) {

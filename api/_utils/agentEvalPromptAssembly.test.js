@@ -2,7 +2,7 @@
 // Spec A Phase 2a: tests for buildVisionStateBlock.
 
 import { describe, it, expect } from 'vitest';
-import { buildVisionStateBlock } from './agentEvalPromptAssembly.js';
+import { buildVisionStateBlock, buildBenchTechnicalBlock } from './agentEvalPromptAssembly.js';
 
 // ==================== FIXTURES ====================
 
@@ -165,5 +165,227 @@ describe('buildVisionStateBlock', () => {
     const out = buildVisionStateBlock(vs);
     expect(out).toContain('Scope: (unscoped)');
     expect(out).toContain('Drivers: (no named drivers)');
+  });
+});
+
+// ==================== buildBenchTechnicalBlock — Workstream B ====================
+
+function makeRanking({
+  symbol = 'NVDA',
+  sectorName = 'Technology',
+  trend = { shortTerm: 'up', intermediate: 'up', longTerm: 'up' },
+  sma200_position = 5.4,
+  momentum = { divergence: 'none' },
+  levels = { nearestSupport: 89.2, nearestResistance: 97.8, distanceToSupportPct: -4.5, distanceToResistancePct: 4.6 },
+  recentAction = { lastCandlePattern: null },
+  technicalScore = 78,
+  technicalRank = 23,
+} = {}) {
+  return {
+    symbol,
+    sectorName,
+    trend,
+    sma200_position,
+    momentum,
+    levels,
+    recentAction,
+    technicalScore,
+    technicalRank,
+  };
+}
+
+function makeTech({
+  factors = {
+    rsi: 58,
+    macdAboveSignal: true,
+    macdFreshBullishCross: false,
+    macdFreshBearishCross: false,
+    rsPercentile: 72,
+    sectorRSPercentile: 85,
+  },
+  bbPercentB = 0.65,
+  atrPercent = 2.5,
+  volumeProfile = { tier: 'NORMAL', ratio: 1.1, avgVolume: 50000000 },
+} = {}) {
+  return { factors, bbPercentB, atrPercent, volumeProfile };
+}
+
+function makeBench({ stocks = [], crypto = null } = {}) {
+  return { stocks, crypto };
+}
+
+describe('buildBenchTechnicalBlock', () => {
+  it('returns null for null bench', () => {
+    expect(buildBenchTechnicalBlock(null, {}, {})).toBeNull();
+  });
+
+  it('returns null for empty bench', () => {
+    expect(buildBenchTechnicalBlock(makeBench(), {}, {})).toBeNull();
+  });
+
+  it('returns null when bench has only a crypto entry (no rankings/tech to render)', () => {
+    const bench = makeBench({ crypto: { symbol: 'BTC-USD', sector: 'Crypto', isCrypto: true } });
+    expect(buildBenchTechnicalBlock(bench, {}, {})).toBeNull();
+  });
+
+  it('renders a single stock with full data — all eight sections present', () => {
+    const bench = makeBench({
+      stocks: [{ symbol: 'NVDA', sector: 'Technology', baseATR: 3.5 }],
+    });
+    const rankingsMap = {
+      NVDA: makeRanking({
+        symbol: 'NVDA',
+        recentAction: { lastCandlePattern: 'hammer' },
+        momentum: { divergence: 'bullish' },
+      }),
+    };
+    const techScoresMap = { NVDA: makeTech() };
+
+    const out = buildBenchTechnicalBlock(bench, rankingsMap, techScoresMap);
+
+    expect(out).toContain('BENCH TECHNICAL CONTEXT:');
+    expect(out).toContain('NVDA (Technology):');
+    expect(out).toContain('Trend: short=up, intermediate=up, long=up | sma200_position=+5.40%');
+    expect(out).toContain('Momentum: RSI=58, MACD above signal (no fresh cross), divergence=bullish');
+    expect(out).toContain('Volatility: BB %B=0.65 (upper-middle) | ATR regime: normal');
+    expect(out).toContain('Volume: NORMAL tier | RVOL=1.10');
+    expect(out).toContain('Relative strength: rsPercentile=72 (leading) | sector RS=85');
+    expect(out).toContain('Levels: support 89.20 (-4.50%), resistance 97.80 (+4.60%)');
+    expect(out).toContain('Recent action: hammer');
+    expect(out).toContain('Composite: technicalScore=78, technicalRank=23');
+  });
+
+  it('omits per-section lines when their source data is null', () => {
+    const bench = makeBench({
+      stocks: [{ symbol: 'AMD', sector: 'Technology', baseATR: 4.2 }],
+    });
+    const rankingsMap = {
+      AMD: makeRanking({
+        symbol: 'AMD',
+        sectorName: 'Technology',
+        momentum: { divergence: null },
+        levels: { nearestSupport: null, nearestResistance: null, distanceToSupportPct: null, distanceToResistancePct: null },
+        recentAction: { lastCandlePattern: null },
+      }),
+    };
+    const techScoresMap = { AMD: makeTech() };
+
+    const out = buildBenchTechnicalBlock(bench, rankingsMap, techScoresMap);
+
+    expect(out).toContain('AMD (Technology):');
+    expect(out).toContain('Trend:');
+    expect(out).toContain('Momentum: RSI=58, MACD above signal');
+    // Divergence omitted entirely from the momentum line when null
+    expect(out).not.toContain('divergence=');
+    // Levels block omitted entirely when both endpoints null
+    expect(out).not.toContain('Levels:');
+    // Recent action omitted when no pattern
+    expect(out).not.toContain('Recent action:');
+  });
+
+  it('renders ranking-only data when techScores entry is missing', () => {
+    const bench = makeBench({
+      stocks: [{ symbol: 'TSLA', sector: 'Consumer Cyclical', baseATR: 5.0 }],
+    });
+    const rankingsMap = {
+      TSLA: makeRanking({
+        symbol: 'TSLA',
+        sectorName: 'Consumer Cyclical',
+        // null divergence so Momentum line is purely tech-driven (and therefore absent)
+        momentum: { divergence: null },
+        recentAction: { lastCandlePattern: 'doji' },
+      }),
+    };
+    const techScoresMap = {}; // no tech entry for TSLA
+
+    const out = buildBenchTechnicalBlock(bench, rankingsMap, techScoresMap);
+
+    expect(out).toContain('TSLA (Consumer Cyclical):');
+    expect(out).toContain('Trend:');
+    expect(out).toContain('Levels:');
+    expect(out).toContain('Recent action: doji');
+    expect(out).toContain('Composite: technicalScore=78');
+    // tech-derived lines must be absent
+    expect(out).not.toContain('Momentum:');
+    expect(out).not.toContain('Volatility:');
+    expect(out).not.toContain('Volume:');
+    expect(out).not.toContain('Relative strength:');
+  });
+
+  it('renders Momentum line with only divergence when tech is missing but ranking.momentum has data', () => {
+    const bench = makeBench({ stocks: [{ symbol: 'AAPL', sector: 'Technology' }] });
+    const rankingsMap = {
+      AAPL: makeRanking({ symbol: 'AAPL', momentum: { divergence: 'bearish' } }),
+    };
+    const out = buildBenchTechnicalBlock(bench, rankingsMap, {});
+    expect(out).toContain('Momentum: divergence=bearish');
+  });
+
+  it('skips a symbol entirely when both ranking and tech are missing', () => {
+    const bench = makeBench({
+      stocks: [
+        { symbol: 'NVDA', sector: 'Technology' },
+        { symbol: 'GHOST', sector: 'Unknown' },
+      ],
+    });
+    const rankingsMap = { NVDA: makeRanking() };
+    const techScoresMap = { NVDA: makeTech() };
+
+    const out = buildBenchTechnicalBlock(bench, rankingsMap, techScoresMap);
+
+    expect(out).toContain('NVDA (Technology):');
+    expect(out).not.toContain('GHOST');
+  });
+
+  it('renders multiple stocks separated by blank lines and excludes crypto', () => {
+    const bench = makeBench({
+      stocks: [
+        { symbol: 'NVDA', sector: 'Technology', baseATR: 3.5 },
+        { symbol: 'NEE', sector: 'Utilities', baseATR: 1.8 },
+      ],
+      crypto: { symbol: 'BTC-USD', sector: 'Crypto', isCrypto: true },
+    });
+    const rankingsMap = {
+      NVDA: makeRanking({ symbol: 'NVDA' }),
+      NEE: makeRanking({ symbol: 'NEE', sectorName: 'Utilities', sma200_position: 12.5, technicalScore: 65, technicalRank: 40 }),
+    };
+    const techScoresMap = { NVDA: makeTech(), NEE: makeTech() };
+
+    const out = buildBenchTechnicalBlock(bench, rankingsMap, techScoresMap);
+
+    expect(out).toContain('NVDA (Technology):');
+    expect(out).toContain('NEE (Utilities):');
+    // Crypto must NOT appear
+    expect(out).not.toContain('BTC-USD');
+    // Two blocks separated by a blank line
+    const nvdaIdx = out.indexOf('NVDA (Technology):');
+    const neeIdx = out.indexOf('NEE (Utilities):');
+    expect(nvdaIdx).toBeGreaterThanOrEqual(0);
+    expect(neeIdx).toBeGreaterThan(nvdaIdx);
+    expect(out.slice(nvdaIdx, neeIdx)).toContain('\n\n');
+  });
+
+  it('renders fresh-cross MACD phrase and rsPercentile leading/lagging labels', () => {
+    const bench = makeBench({ stocks: [{ symbol: 'PLTR', sector: 'Technology' }] });
+    const rankingsMap = { PLTR: makeRanking({ symbol: 'PLTR' }) };
+    const techScoresMap = {
+      PLTR: makeTech({
+        factors: {
+          rsi: 28,
+          macdAboveSignal: false,
+          macdFreshBullishCross: false,
+          macdFreshBearishCross: true,
+          rsPercentile: 18,
+          sectorRSPercentile: 30,
+        },
+        bbPercentB: 0.05,
+        atrPercent: 4.5,
+      }),
+    };
+    const out = buildBenchTechnicalBlock(bench, rankingsMap, techScoresMap);
+    expect(out).toContain('MACD below signal (fresh bearish cross)');
+    expect(out).toContain('rsPercentile=18 (lagging)');
+    expect(out).toContain('BB %B=0.05 (lower band)');
+    expect(out).toContain('ATR regime: extreme');
   });
 });
