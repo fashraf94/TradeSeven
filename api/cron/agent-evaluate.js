@@ -662,6 +662,7 @@ async function processAgentBattle(db, battle, summary) {
       scoreUpdate['cronState.lastEvaluatedAt'] = new Date().toISOString();
       scoreUpdate['cronState.evaluatingAt'] = null;
       scoreUpdate['cronState.vwapTicks'] = vwapTicks;
+      scoreUpdate['cronState.intradayMomentum'] = momentumData.vwap;
       const existingFeed = battle.statusFeed || [];
       scoreUpdate.statusFeed = [...existingFeed, ...statusFeedEntries].slice(-STATUS_FEED_CAP);
       await battleRef.update(scoreUpdate);
@@ -676,6 +677,7 @@ async function processAgentBattle(db, battle, summary) {
       scoreUpdate['cronState.lastEvaluatedAt'] = new Date().toISOString();
       scoreUpdate['cronState.evaluatingAt'] = null;
       scoreUpdate['cronState.vwapTicks'] = vwapTicks;
+      scoreUpdate['cronState.intradayMomentum'] = momentumData.vwap;
       const existingFeed = battle.statusFeed || [];
       scoreUpdate.statusFeed = [...existingFeed, ...statusFeedEntries].slice(-STATUS_FEED_CAP);
       await battleRef.update(scoreUpdate);
@@ -700,6 +702,7 @@ async function processAgentBattle(db, battle, summary) {
         scoreUpdate['cronState.lastEvaluatedAt'] = new Date().toISOString();
         scoreUpdate['cronState.evaluatingAt'] = null;
         scoreUpdate['cronState.vwapTicks'] = vwapTicks;
+        scoreUpdate['cronState.intradayMomentum'] = momentumData.vwap;
         const existingFeed = battle.statusFeed || [];
         scoreUpdate.statusFeed = [...existingFeed, ...statusFeedEntries].slice(-STATUS_FEED_CAP);
         await battleRef.update(scoreUpdate);
@@ -771,6 +774,7 @@ async function processAgentBattle(db, battle, summary) {
       scoreUpdate['cronState.triggerGatePassCount'] = (battle.cronState?.triggerGatePassCount || 0) + 1;
       scoreUpdate['cronState.evaluatingAt'] = null;
       scoreUpdate['cronState.vwapTicks'] = vwapTicks;
+      scoreUpdate['cronState.intradayMomentum'] = momentumData.vwap;
       if (statusFeedEntries.length > 0) {
         const existingFeed = battle.statusFeed || [];
         scoreUpdate.statusFeed = [...existingFeed, ...statusFeedEntries].slice(-STATUS_FEED_CAP);
@@ -1158,6 +1162,7 @@ async function processAgentBattle(db, battle, summary) {
       'cronState.totalTokens.output': (battle.cronState?.totalTokens?.output || 0) + outputTokens,
       'cronState.consecutiveHolds': consecutiveHolds,
       'cronState.vwapTicks': vwapTicks,
+      'cronState.intradayMomentum': momentumData.vwap,
       'cronState.evaluatingAt': null,
     };
 

@@ -624,19 +624,24 @@ async function fetchRealTimePrice(eohdSymbol, apiKey, result) {
  * @param {string} symbol - Stock or crypto symbol (e.g., 'AAPL', 'BTC-USD.CC')
  * @param {object} options
  * @param {string} options.interval - Candle interval: '5m' (default), '1m', '1h'
- * @param {number} options.hoursBack - How many hours of data to fetch (default: 8, covers full trading day)
+ * @param {number} [options.hoursBack] - Optional explicit lookback window. When omitted,
+ *   EODHD's default response window is used (recommended — sidesteps feed-delay edge cases
+ *   where a NOW-relative window can fall entirely outside published candles).
  * @returns {Array<{ datetime: string, open: number, high: number, low: number, close: number, volume: number }>}
  */
 export async function fetchIntradayCandles(symbol, options = {}) {
-  const { interval = '5m', hoursBack = 8 } = options;
+  const { interval = '5m', hoursBack } = options;
   const apiKey = getApiKey();
   const clean = getCleanSymbol(symbol);
   const isCrypto = isCryptoSymbol(symbol);
   const eohdSymbol = formatEODHDSymbol(clean, isCrypto);
 
-  const fromTs = Math.floor((Date.now() - hoursBack * 60 * 60 * 1000) / 1000);
-  const toTs = Math.floor(Date.now() / 1000);
-  const url = `${API_BASE}/intraday/${eohdSymbol}?api_token=${apiKey}&fmt=json&interval=${interval}&from=${fromTs}&to=${toTs}`;
+  let url = `${API_BASE}/intraday/${eohdSymbol}?api_token=${apiKey}&fmt=json&interval=${interval}`;
+  if (hoursBack) {
+    const fromTs = Math.floor((Date.now() - hoursBack * 60 * 60 * 1000) / 1000);
+    const toTs = Math.floor(Date.now() / 1000);
+    url += `&from=${fromTs}&to=${toTs}`;
+  }
 
   console.log(`[MarketDataCache] Fetching intraday ${interval} for ${eohdSymbol}`);
   const response = await fetch(url);
@@ -646,7 +651,14 @@ export async function fetchIntradayCandles(symbol, options = {}) {
   }
 
   const data = await response.json();
-  if (!Array.isArray(data) || data.length === 0) return [];
+  if (!Array.isArray(data)) {
+    console.warn(`[MarketDataCache] Intraday response was not an array for ${eohdSymbol}`);
+    return [];
+  }
+  if (data.length === 0) {
+    console.warn(`[MarketDataCache] Intraday response was empty for ${eohdSymbol}`);
+    return [];
+  }
 
   // EODHD returns oldest-first (chronological) — keep that order for VWAP
   return data.map(d => ({

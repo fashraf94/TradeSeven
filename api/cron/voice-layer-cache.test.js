@@ -538,5 +538,167 @@ describe('buildPortfolioBriefs — threshold proximity (Tier 0 Item 4)', () => {
     // New fields coexist with old
     expect(briefs[0]).toHaveProperty('thresholdProximity');
     expect(briefs[0]).toHaveProperty('existingBadges');
+    // Phase 3 sibling: always emitted (null when omitted by caller)
+    expect(briefs[0]).toHaveProperty('intraday');
+    expect(briefs[0].intraday).toBeNull();
+  });
+});
+
+// ==================== PORTFOLIO BRIEFS — INTRADAY MOMENTUM (Phase 3) ====================
+
+// `buildPortfolioBriefs` accepts an optional 7th positional parameter
+// `intradayMomentumMap` that overlays per-symbol VWAP / 5m-SMA20 onto each
+// brief as `brief.intraday`. The map is sourced from the eval cron's
+// `cronState.intradayMomentum` write (see agent-evaluate.test.js for the
+// write-side guard). Symbols absent from the map get an explicit `null` so
+// downstream readers can distinguish "no data this cycle" from a malformed
+// brief. The shape `{ vwap, currentPrice, vwapDeviation, sma20_5m }` is
+// passed through verbatim — no transformation in the read path either.
+
+function intradayPayload({ vwap, currentPrice, vwapDeviation, sma20_5m }) {
+  return { vwap, currentPrice, vwapDeviation, sma20_5m };
+}
+
+describe('buildPortfolioBriefs — intraday momentum overlay (Phase 3)', () => {
+  it('attaches brief.intraday with passthrough shape when intradayMomentumMap has the symbol', () => {
+    const stock = activeStock({ symbol: 'NVDA', baseATR: 2.0 });
+    const priceMap = { NVDA: priceFromMultiplier(0.4, 2.0) };
+    const intradayMap = {
+      NVDA: intradayPayload({ vwap: 145.50, currentPrice: 146.08, vwapDeviation: 0.40, sma20_5m: 145.92 }),
+    };
+
+    const briefs = buildPortfolioBriefs(activePortfolio(stock), priceMap, {}, {}, {}, {}, intradayMap);
+
+    expect(briefs).toHaveLength(1);
+    expect(briefs[0].intraday).toEqual({
+      vwap: 145.50,
+      currentPrice: 146.08,
+      vwapDeviation: 0.40,
+      sma20_5m: 145.92,
+    });
+  });
+
+  it('sets brief.intraday to null when the symbol is absent from intradayMomentumMap', () => {
+    const stock = activeStock({ symbol: 'PLTR', baseATR: 3.0 });
+    const priceMap = { PLTR: priceFromMultiplier(0.2, 3.0) };
+    // Map has data for a different symbol — PLTR's slot is genuinely absent.
+    const intradayMap = {
+      AMD: intradayPayload({ vwap: 100.0, currentPrice: 100.5, vwapDeviation: 0.5, sma20_5m: 100.2 }),
+    };
+
+    const briefs = buildPortfolioBriefs(activePortfolio(stock), priceMap, {}, {}, {}, {}, intradayMap);
+
+    expect(briefs[0].intraday).toBeNull();
+  });
+
+  it('sets brief.intraday to null for every brief when intradayMomentumMap is empty {}', () => {
+    const stock = activeStock({ symbol: 'AAPL', baseATR: 2.5 });
+    const priceMap = { AAPL: priceFromMultiplier(0.3, 2.5) };
+
+    const briefs = buildPortfolioBriefs(activePortfolio(stock), priceMap, {}, {}, {}, {}, {});
+
+    expect(briefs[0].intraday).toBeNull();
+  });
+
+  it('sets brief.intraday to null when intradayMomentumMap is omitted (default param applies)', () => {
+    // Backwards-compat path: callers that have not yet been updated to pass
+    // the 7th argument should still produce well-formed briefs with
+    // brief.intraday === null (not undefined, not a thrown error).
+    const stock = activeStock({ symbol: 'MSFT', baseATR: 2.0 });
+    const priceMap = { MSFT: priceFromMultiplier(0.1, 2.0) };
+
+    const briefs = buildPortfolioBriefs(activePortfolio(stock), priceMap, {}, {}, {}, {});
+
+    expect(briefs[0]).toHaveProperty('intraday');
+    expect(briefs[0].intraday).toBeNull();
+  });
+
+  it('handles a multi-position portfolio with a mix of populated and absent intraday entries', () => {
+    const portfolio = {
+      star: [activeStock({ symbol: 'NVDA', baseATR: 2.0 })],
+      core: [activeStock({ symbol: 'AMD', baseATR: 3.0 })],
+      support: [activeStock({ symbol: 'PLTR', baseATR: 4.0 })],
+    };
+    const priceMap = {
+      NVDA: priceFromMultiplier(0.4, 2.0),
+      AMD: priceFromMultiplier(0.3, 3.0),
+      PLTR: priceFromMultiplier(0.2, 4.0),
+    };
+    // NVDA + AMD populated; PLTR's intraday computation didn't run this cycle.
+    const intradayMap = {
+      NVDA: intradayPayload({ vwap: 145.5, currentPrice: 146.1, vwapDeviation: 0.41, sma20_5m: 145.9 }),
+      AMD: intradayPayload({ vwap: 152.0, currentPrice: 151.4, vwapDeviation: -0.39, sma20_5m: 151.7 }),
+    };
+
+    const briefs = buildPortfolioBriefs(portfolio, priceMap, {}, {}, {}, {}, intradayMap);
+
+    expect(briefs).toHaveLength(3);
+    const bySymbol = Object.fromEntries(briefs.map(b => [b.symbol, b]));
+    expect(bySymbol.NVDA.intraday).toEqual(intradayMap.NVDA);
+    expect(bySymbol.AMD.intraday).toEqual(intradayMap.AMD);
+    expect(bySymbol.PLTR.intraday).toBeNull();
+  });
+
+  it('preserves all existing brief fields when intradayMomentumMap is provided (additive, non-mutating)', () => {
+    const stock = activeStock({ symbol: 'AAPL', baseATR: 2.5 });
+    const priceMap = { AAPL: priceFromMultiplier(0.5, 2.5) };
+    const rankingsMap = { AAPL: { technicalScore: 75, technicalRank: 12, atrPercentile: 0.8 } };
+    const techScoresMap = { AAPL: {
+      technicalScore: 75,
+      rsiContext: 8,
+      macdScore: 9,
+      volumeConfirmation: 9,
+      factors: { aboveSMA200: true, aboveSMA50: true, aboveSMA20: true, rsPercentile: 80, upDayVolRatio: 1.8 },
+    } };
+    const intradayMap = {
+      AAPL: intradayPayload({ vwap: 200.0, currentPrice: 201.0, vwapDeviation: 0.5, sma20_5m: 200.5 }),
+    };
+
+    const briefs = buildPortfolioBriefs(
+      activePortfolio(stock), priceMap, rankingsMap, techScoresMap, {}, {}, intradayMap,
+    );
+
+    expect(briefs[0].symbol).toBe('AAPL');
+    expect(briefs[0].tier).toBe('star');
+    expect(briefs[0].technicalScore).toBe(75);
+    expect(briefs[0].thresholdNote).toBe('High ATR — volatile, could hit thresholds quickly');
+    expect(briefs[0].trendSummary).toContain('Strong uptrend');
+    expect(briefs[0]).toHaveProperty('thresholdProximity');
+    expect(briefs[0]).toHaveProperty('existingBadges');
+    expect(briefs[0].intraday).toEqual(intradayMap.AAPL);
+  });
+
+  it('handles crypto in active tier when intraday data is present (fetchIntradayBatch routes via formatEODHDSymbol)', () => {
+    // CRYPTO BEHAVIOUR: fetchIntradayBatch in marketDataCache.js detects
+    // crypto via isCryptoSymbol and routes to the `-USD.CC` EODHD endpoint.
+    // If a battle places crypto in an active tier (rare but possible),
+    // momentumData.vwap[BTC] will be populated and brief.intraday flows
+    // through normally. Bench crypto is handled by buildBenchBriefs and is
+    // outside this test's scope.
+    const cryptoActive = { symbol: 'BTC', name: 'Bitcoin', baseATR: 5.0, isCrypto: true, sector: 'Crypto', direction: 'long' };
+    const priceMap = { BTC: priceFromMultiplier(0.3, 5.0) };
+    const intradayMap = {
+      BTC: intradayPayload({ vwap: 67500.0, currentPrice: 67700.0, vwapDeviation: 0.30, sma20_5m: 67620.0 }),
+    };
+
+    const briefs = buildPortfolioBriefs(activePortfolio(cryptoActive), priceMap, {}, {}, {}, {}, intradayMap);
+
+    expect(briefs[0].symbol).toBe('BTC');
+    expect(briefs[0].intraday).toEqual(intradayMap.BTC);
+  });
+
+  it('handles crypto in active tier when intraday data is absent (graceful null, no throw)', () => {
+    // If crypto intraday fetch fails (EODHD outage, unsupported symbol, etc.),
+    // momentumData.vwap[BTC] never gets populated and the symbol is absent
+    // from the persisted map. The read path must produce a well-formed brief
+    // with intraday: null — not throw.
+    const cryptoActive = { symbol: 'BTC', name: 'Bitcoin', baseATR: 5.0, isCrypto: true, sector: 'Crypto', direction: 'long' };
+    const priceMap = { BTC: priceFromMultiplier(0.3, 5.0) };
+
+    expect(() => {
+      const briefs = buildPortfolioBriefs(activePortfolio(cryptoActive), priceMap, {}, {}, {}, {}, {});
+      expect(briefs[0].symbol).toBe('BTC');
+      expect(briefs[0].intraday).toBeNull();
+    }).not.toThrow();
   });
 });
