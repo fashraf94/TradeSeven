@@ -70,3 +70,81 @@ describe('agent-evaluate cron — Phase 3 intraday momentum persistence', () => 
     }
   });
 });
+
+// Phase 4 — technical snapshot writes at trade decision time.
+//
+// The snapshot helper is exhaustively unit-tested in
+// buildTechnicalSnapshot.test.js. These guards ensure the cron actually
+// invokes it at the right sites and threads the result through the swap
+// pipeline. Same static-source rationale as Phase 3 above: the surrounding
+// handler is too entangled to behaviourally test, but the surface where
+// snapshots attach is small and regex-checkable.
+describe('agent-evaluate cron — Phase 4 technical snapshot writes', () => {
+  const source = readFileSync(SOURCE_PATH, 'utf-8');
+
+  it('imports buildTechnicalSnapshot from the shared helper', () => {
+    expect(source).toMatch(/import\s*\{\s*buildTechnicalSnapshot\s*\}\s*from\s*'\.\.\/_utils\/buildTechnicalSnapshot\.js'/);
+  });
+
+  it('builds a {symbolOut, symbolIn} snapshot at exactly 3 decision sites (proposal-create, autopilot, risk-triggered)', () => {
+    // Each site builds a snapshot via two buildTechnicalSnapshot calls inside
+    // an object literal containing both symbolOut and symbolIn keys. We count
+    // the symbolOut: buildTechnicalSnapshot(...) opener as a stable marker.
+    const builderOpenings = source.match(/symbolOut:\s*buildTechnicalSnapshot\(/g) || [];
+    const builderClosings = source.match(/symbolIn:\s*buildTechnicalSnapshot\(/g) || [];
+
+    expect(builderOpenings.length).toBe(3);
+    expect(builderClosings.length).toBe(3);
+  });
+
+  it('attaches snapshot onto pendingProposalUpdate at the proposal-creation site', () => {
+    // The proposal lives inside pendingProposalUpdate which already has fields
+    // like proposalId, evalId, evaluationMetadata. Snapshot must be in there.
+    expect(source).toMatch(/pendingProposalUpdate\s*=\s*\{[^}]*?snapshot:\s*proposalSnapshot/s);
+  });
+
+  it('passes the snapshot as the 10th positional arg through every executeSwapServer call site that the cron creates', () => {
+    // 5 call sites total in agent-evaluate.js:
+    //   - autopilot direct                (in scope: snapshot built inline, passed)
+    //   - risk-triggered swap             (in scope: snapshot built inline, passed)
+    //   - copilot-approved-execute        (in scope: forwards proposal.snapshot)
+    //   - copilot-expired-auto-execute    (in scope: forwards proposal.snapshot)
+    //   - gameplan-rotation               (out of scope per Phase 4 plan)
+    const inScopeSites = source.match(/executeSwapServer\([\s\S]+?(snapshot|proposal\.snapshot \|\| null)\s*\)/g) || [];
+    expect(inScopeSites.length).toBe(4);
+  });
+
+  it('forwards proposal.snapshot through the copilot-approved and expired-auto-execute paths', () => {
+    const forwardingPattern = /proposal\.snapshot \|\| null/g;
+    const matches = source.match(forwardingPattern) || [];
+    expect(matches.length).toBe(2);
+  });
+
+  it('threads currentScore into handlePendingProposal and captures scoreAtVeto / scoreAtResolution', () => {
+    // Function signature receives currentScore
+    expect(source).toMatch(/async function handlePendingProposal\([^)]*currentScore[^)]*\)/);
+    // Call site passes it
+    expect(source).toMatch(/handlePendingProposal\([^)]*currentScore\)/);
+
+    // Veto site captures scoreAtVeto
+    expect(source).toMatch(/scoreAtVeto:\s*typeof currentScore === 'number'/);
+    // Auto-execute / lapse site captures scoreAtResolution
+    expect(source).toMatch(/scoreAtResolution:\s*typeof currentScore === 'number'/);
+  });
+
+  it('skips HOLD decisions and the gameplan-rotation execution (out of Phase 4 scope)', () => {
+    // HOLD branch must not contain a snapshot build. The HOLD increment is at
+    // `summary.held++;` — search the surrounding 200 chars for accidental snapshot work.
+    const holdMatches = source.match(/if \(decision === 'HOLD'\) \{[\s\S]{0,200}\}/g) || [];
+    for (const block of holdMatches) {
+      expect(block).not.toContain('buildTechnicalSnapshot');
+    }
+
+    // Gameplan-rotation is identified by handleGameplanMeeting; the snapshot
+    // builder must not be invoked inside that helper either.
+    const gameplanFn = source.match(/async function handleGameplanMeeting\([\s\S]+?\n\}/);
+    if (gameplanFn) {
+      expect(gameplanFn[0]).not.toContain('buildTechnicalSnapshot');
+    }
+  });
+});

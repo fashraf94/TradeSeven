@@ -26,6 +26,7 @@ import {
 import { TRADE_DECISION_TOOL } from '../_utils/agentEvalToolSchema.js';
 import { evaluateTriggers, fetchRecentNews } from '../_utils/agentTriggerGate.js';
 import { validateTradeDecision, executeSwapServer } from '../_utils/agentSwapExecution.js';
+import { buildTechnicalSnapshot } from '../_utils/buildTechnicalSnapshot.js';
 import { applyGuardrails } from '../_utils/agentGuardrails.js';
 import { classifyStockRegime, classifyMarketPosture, getPresetAdjustedStrategies } from '../_utils/agentRegimeClassifier.js';
 import { evaluateRisk, calculate5minSMA20, pickEmergencyReplacement, findPortfolioSlot } from '../_utils/agentRiskManager.js';
@@ -624,10 +625,26 @@ async function processAgentBattle(db, battle, summary) {
           exitReason: riskResult.reason,
         };
 
+        // Phase 4: snapshot risk-triggered swaps onto trades[i]. Replacement
+        // bench symbols may not have full data — buildTechnicalSnapshot
+        // null-fills missing leaves.
+        const snapshot = {
+          symbolOut: buildTechnicalSnapshot(score.symbol, {
+            momentumData,
+            technicalScoresMap,
+            rankingsMap: momentumData.rankingsMap,
+          }),
+          symbolIn: buildTechnicalSnapshot(replacement.symbol, {
+            momentumData,
+            technicalScoresMap,
+            rankingsMap: momentumData.rankingsMap,
+          }),
+        };
+
         await executeSwapServer(
           db, battle.id, battle,
           slot.tier, slot.slotIndex,
-          replacement, currentDay, prices, evaluationMetadata
+          replacement, currentDay, prices, evaluationMetadata, snapshot
         );
 
         statusFeedEntries.push({
@@ -656,7 +673,7 @@ async function processAgentBattle(db, battle, summary) {
     }
 
     // ---- Proposal lifecycle check (after risk evaluation, before triggers/Haiku) ----
-    const proposalHandled = await handlePendingProposal(db, battleRef, battle, prices, statusFeedEntries, summary);
+    const proposalHandled = await handlePendingProposal(db, battleRef, battle, prices, statusFeedEntries, summary, currentScore);
     if (proposalHandled === 'skip_haiku') {
       // Proposal is pending and not expired — write scores/risk but skip trigger gate + Haiku
       scoreUpdate['cronState.lastEvaluatedAt'] = new Date().toISOString();
@@ -947,10 +964,24 @@ async function processAgentBattle(db, battle, summary) {
               // the ...evaluationMetadata spread in executeSwapServer.
               trade_reasoning: haikuResult?.trade_reasoning || null,
             };
+            // Phase 4: snapshot autopilot decisions onto trades[i] for parity
+            // with co-pilot/manual proposalHistory[i].snapshot.
+            const snapshot = {
+              symbolOut: buildTechnicalSnapshot(haikuResult.symbolOut, {
+                momentumData,
+                technicalScoresMap,
+                rankingsMap: momentumData.rankingsMap,
+              }),
+              symbolIn: buildTechnicalSnapshot(haikuResult.symbolIn, {
+                momentumData,
+                technicalScoresMap,
+                rankingsMap: momentumData.rankingsMap,
+              }),
+            };
             await executeSwapServer(
               db, battle.id, battle,
               validation.resolvedTier, validation.resolvedSlotIndex,
-              benchAsset, currentDay, prices, evaluationMetadata
+              benchAsset, currentDay, prices, evaluationMetadata, snapshot
             );
             summary.swapped++;
           } catch (swapErr) {
@@ -963,6 +994,24 @@ async function processAgentBattle(db, battle, summary) {
           // Co-Pilot or Manual: write proposal instead of executing
           const ttlMinutes = mode === 'copilot' ? 10 : 15;
           const proposalId = `prop_${String((battle.proposalHistory || []).length + 1).padStart(3, '0')}`;
+
+          // Phase 4: Capture lossless raw-fields technical snapshot at proposal-
+          // creation time. Rides on proposalHistory[i].snapshot through the
+          // existing spread-based history-write paths and is forwarded onto
+          // trades[i].snapshot via executeSwapServer when the proposal is later
+          // approved or auto-executed at expiry.
+          const proposalSnapshot = {
+            symbolOut: buildTechnicalSnapshot(haikuResult.symbolOut, {
+              momentumData,
+              technicalScoresMap,
+              rankingsMap: momentumData.rankingsMap,
+            }),
+            symbolIn: buildTechnicalSnapshot(haikuResult.symbolIn, {
+              momentumData,
+              technicalScoresMap,
+              rankingsMap: momentumData.rankingsMap,
+            }),
+          };
 
           pendingProposalUpdate = {
             proposalId,
@@ -986,6 +1035,7 @@ async function processAgentBattle(db, battle, summary) {
             resolution: null,
             resolvedBy: null,
             benchAsset: findBenchAsset(battle.portfolio?.bench, haikuResult.symbolIn),
+            snapshot: proposalSnapshot,
             evaluationMetadata: {
               id: `trade_${String((battle.scoreState?.tradeCount || 0) + 1).padStart(3, '0')}`,
               action: 'SWAP',
@@ -1211,8 +1261,12 @@ async function fetchPricesForProposal(proposal) {
  * Handle pending proposal lifecycle: expiry, approved, vetoed.
  * Runs AFTER risk evaluation, BEFORE trigger gate/Haiku.
  * Returns 'skip_haiku' if a pending proposal is still active, 'continue' otherwise.
+ *
+ * @param {number} currentScore - Phase 4: live score at evaluation time, captured
+ *   onto resolved proposals as scoreAtVeto (vetoed) or scoreAtResolution
+ *   (auto_executed / lapsed) for Sprint 2 conviction analysis.
  */
-async function handlePendingProposal(db, battleRef, battle, prices, statusFeedEntries, summary) {
+async function handlePendingProposal(db, battleRef, battle, prices, statusFeedEntries, summary, currentScore) {
   const proposal = battle.pendingProposal;
   if (!proposal) return 'continue';
 
@@ -1237,7 +1291,8 @@ async function handlePendingProposal(db, battleRef, battle, prices, statusFeedEn
             db, battle.id, battle,
             proposal.tier, proposal.slotIndex,
             benchAsset, proposal.evaluationMetadata?.tradingDay || 1,
-            freshPrices, proposal.evaluationMetadata || {}
+            freshPrices, proposal.evaluationMetadata || {},
+            proposal.snapshot || null
           );
           statusFeedEntries.push({
             timestamp: new Date().toISOString(),
@@ -1278,6 +1333,8 @@ async function handlePendingProposal(db, battleRef, battle, prices, statusFeedEn
           [proposal.symbolOut]: prices[proposal.symbolOut]?.current || null,
         },
         vetoedAtTimestamp: new Date().toISOString(),
+        // Phase 4: numeric resolution-time score for Sprint 2 conviction analysis
+        scoreAtVeto: typeof currentScore === 'number' ? Math.round(currentScore * 100) / 100 : null,
       };
       const history = [...(battle.proposalHistory || []), vetoEnriched].slice(-50);
       await battleRef.update({ pendingProposal: null, proposalHistory: history });
@@ -1316,7 +1373,8 @@ async function handlePendingProposal(db, battleRef, battle, prices, statusFeedEn
           db, battle.id, battle,
           proposal.tier, proposal.slotIndex,
           benchAsset, proposal.evaluationMetadata?.tradingDay || 1,
-          freshPrices, proposal.evaluationMetadata || {}
+          freshPrices, proposal.evaluationMetadata || {},
+          proposal.snapshot || null
         );
         statusFeedEntries.push({
           timestamp: new Date().toISOString(),
@@ -1346,6 +1404,8 @@ async function handlePendingProposal(db, battleRef, battle, prices, statusFeedEn
     resolvedAt: new Date().toISOString(),
     resolution: proposal.mode === 'copilot' ? 'auto_executed' : 'lapsed',
     resolvedBy: 'system',
+    // Phase 4: numeric resolution-time score for Sprint 2 conviction analysis
+    scoreAtResolution: typeof currentScore === 'number' ? Math.round(currentScore * 100) / 100 : null,
   };
   const history = [...(battle.proposalHistory || []), resolvedProposal].slice(-50);
   await battleRef.update({ pendingProposal: null, proposalHistory: history });
