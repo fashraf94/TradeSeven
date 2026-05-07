@@ -31,7 +31,7 @@
 
 import React, { useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Medal, LineChart } from 'lucide-react';
+import { X, Medal, LineChart, Sparkles, ArrowRight } from 'lucide-react';
 import {
   addDoc,
   collection,
@@ -101,6 +101,7 @@ export default function SectorDetailModal({
   onLinkedThemeTap,
   onViewChartTap,
   onHoldingChipTap,
+  onStartWorkshop,
   showToast,
 }) {
   const { tokens } = useTheme();
@@ -190,6 +191,17 @@ export default function SectorDetailModal({
       extra: { sourceSectorTicker: ticker },
     });
     onViewChartTap?.(ticker);
+  };
+
+  // Sprint 5 Phase 1: discover-to-workshop bridge for the sector path.
+  // Mirrors ThemeDetailModal's footer CTA. SectorRail closes its own
+  // modal before invoking the callback; DiscoverPanel logs the
+  // analytics row with source 'discoverSectors' and asks ForgeLanding
+  // to open Workshop with a sector seedContext. Pre-flight gates
+  // (agent?.id, atLaunchCap, nextUpcoming) are owned by ForgeLanding.
+  const handleStartWorkshopTap = () => {
+    if (!ticker) return;
+    onStartWorkshop?.(ticker);
   };
 
   const badgeColor = medalColor(medalRank, tokens);
@@ -358,6 +370,11 @@ export default function SectorDetailModal({
                 )}
               </Section>
             </div>
+
+            <ModalFooter
+              tokens={tokens}
+              onStartWorkshop={handleStartWorkshopTap}
+            />
           </motion.div>
         </motion.div>
       )}
@@ -658,4 +675,52 @@ function themeChipStyle(tokens) {
     textAlign: 'left',
     transition: 'border-color 0.15s ease',
   };
+}
+
+// Sprint 5 Phase 1: Workshop handoff footer. Same visual treatment as
+// ThemeDetailModal's footer so the affordance reads consistently across
+// both Discover entry points.
+function ModalFooter({ tokens, onStartWorkshop }) {
+  return (
+    <div
+      style={{
+        padding: '16px 28px',
+        borderTop: `1px solid ${tokens.borderDefault}`,
+        background: tokens.bgApp,
+      }}
+    >
+      <button
+        type="button"
+        onClick={onStartWorkshop}
+        style={{
+          width: '100%',
+          appearance: 'none',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: 8,
+          padding: '12px 18px',
+          background: tokens.teal,
+          border: 'none',
+          borderRadius: 10,
+          color: tokens.bgApp,
+          fontSize: 14,
+          fontWeight: 700,
+          letterSpacing: '0.3px',
+          cursor: 'pointer',
+          transition: 'transform 0.15s ease, box-shadow 0.15s ease',
+        }}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.boxShadow = tokens.glowTealNav;
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.boxShadow = 'none';
+        }}
+      >
+        <Sparkles size={16} />
+        Start in Workshop
+        <ArrowRight size={16} />
+      </button>
+    </div>
+  );
 }

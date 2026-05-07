@@ -1658,7 +1658,14 @@ export default function ForgeLanding({
   // the same three-tier resolution SeasonReview.jsx uses.
   const [dimensionsById, setDimensionsById] = useState({});
   const [toast, setToast] = useState(null);
-  const [workshopOpen, setWorkshopOpen] = useState(false);
+  // Sprint 5 Phase 1: discover-to-workshop bridge. The seed-context slot
+  // primes Gemma when the user opened Workshop from a Discover card.
+  // Cold-start opens (the "Build Strategy" CTA) leave it null and the
+  // chat behaves identically to pre-Sprint-5.
+  const [workshopState, setWorkshopState] = useState({
+    open: false,
+    seedContext: null,
+  });
 
   // Resolve default tab. Discover stays selected for users with no
   // agents (the loading-state initial value); returning users with at
@@ -1991,27 +1998,40 @@ export default function ForgeLanding({
     setTimeout(() => setToast((prev) => (prev === msg ? null : prev)), 2500);
   };
 
-  const handleBuildStrategy = () => {
-    // Workshop Mode — conversational strategy development
+  // Single chokepoint for opening Workshop. Runs the agent / capacity
+  // gates once, then either opens with the seedContext (Discover handoff)
+  // or with null (cold-start "Build Strategy"). Returns true when the
+  // open succeeded — useful for callers that want to bail out of further
+  // UI work (e.g., closing a parent modal) when a gate fired the toast.
+  const requestWorkshopOpen = (seedContext = null) => {
     if (!agent?.id) {
       showToast('Create an agent first to use Workshop Mode');
-      return;
+      return false;
     }
     if (atLaunchCap) {
       showToast(
         `Maximum ${MAX_CONCURRENT_EXPERIMENTS} concurrent experiments — complete one to start another.`
       );
-      return;
+      return false;
     }
     if (!nextUpcoming) {
       showToast('No upcoming experiment to deploy to — check back soon');
-      return;
+      return false;
     }
-    setWorkshopOpen(true);
+    setWorkshopState({ open: true, seedContext: seedContext || null });
+    return true;
+  };
+
+  const handleBuildStrategy = () => {
+    requestWorkshopOpen(null);
+  };
+
+  const closeWorkshop = () => {
+    setWorkshopState({ open: false, seedContext: null });
   };
 
   const handleWorkshopCompiled = (result) => {
-    setWorkshopOpen(false);
+    closeWorkshop();
     if (nextUpcoming && onJoinSeason) {
       onJoinSeason(nextUpcoming, {
         initialDimensionValues: result.dimensionValues,
@@ -2131,7 +2151,12 @@ export default function ForgeLanding({
       </div>
 
       <div style={{ padding: '0 16px', maxWidth: containerMaxWidth, margin: '0 auto' }}>
-        {view === 'discover' && <DiscoverPanel showToast={showToast} />}
+        {view === 'discover' && (
+          <DiscoverPanel
+            showToast={showToast}
+            requestWorkshopOpen={requestWorkshopOpen}
+          />
+        )}
 
         {view === 'laboratory' && (
           <>
@@ -2284,11 +2309,12 @@ export default function ForgeLanding({
 
       {/* Workshop Mode — conversational strategy development */}
       <WorkshopChat
-        isOpen={workshopOpen}
-        onClose={() => setWorkshopOpen(false)}
+        isOpen={workshopState.open}
+        onClose={closeWorkshop}
         user={user}
         agent={agent}
         onCompiled={handleWorkshopCompiled}
+        seedContext={workshopState.seedContext}
       />
 
       {/* Toast */}
