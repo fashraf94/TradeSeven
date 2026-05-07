@@ -217,8 +217,9 @@ export default async function handler(req, res) {
       duration,
     });
 
-    // Shadow log — fire-and-forget, silent-fail (belt-and-suspenders).
-    logDailyRegimeBrief({
+    // Shadow log — awaited so Vercel doesn't freeze the function before
+    // the GCS write completes. Silent-fail contract preserved by .catch.
+    await logDailyRegimeBrief({
       forDate: today,
       inputContext: {
         regime: marketContext.regime ?? null,

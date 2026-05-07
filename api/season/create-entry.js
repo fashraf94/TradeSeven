@@ -34,6 +34,7 @@ import { buildTradingCalendar, DEFAULT_SESSION_UNIVERSE } from '../_utils/season
 import { FORGE_RULE_TEMPLATES } from '../../src/data/forgeKnowledgeBase.js';
 import { FieldValue } from 'firebase-admin/firestore';
 import { logStrategyConfig } from '../_utils/shadowLogger.js';
+import { waitUntil } from '@vercel/functions';
 import { createHash } from 'crypto';
 
 // Phase 3 — variable duration
@@ -559,7 +560,10 @@ export default async function handler(req, res) {
     // ─── 11. Shadow log (fire-and-forget — NEVER block response) ──
     // Captures the full launch snapshot for Gemma training. Silent
     // failure — a GCS outage must not impact experiment creation.
-    logStrategyConfig({
+    // waitUntil registers the GCS write as background work so Vercel
+    // keeps the function instance alive until it completes, without
+    // adding latency to the user-facing response.
+    waitUntil(logStrategyConfig({
       userId: user.uid,
       agentId,
       seasonId,
@@ -576,7 +580,7 @@ export default async function handler(req, res) {
       startingCapital: SEASON_CONFIG.STARTING_CAPITAL,
       createdAt: entryDoc.createdAt,
       schemaVersion: 1,
-    }).catch(() => {});
+    }).catch(() => {}));
 
     // ─── 12. Success ───────────────────────────────────────────
     return res.status(200).json({ success: true, entryId: entryRef.id });
