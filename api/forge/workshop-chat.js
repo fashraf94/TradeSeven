@@ -34,6 +34,74 @@ export const config = { maxDuration: 30 };
 const MESSAGE_BUDGET = 25;
 const HISTORY_WINDOW = 10; // max turns fed back into the model
 
+// ==================== SEED CONTEXT VALIDATION ====================
+
+// Sprint 5 Phase 1: discover-to-workshop bridge. The client sends a
+// seedContext only on the first turn (sessionId === null). Validation
+// here is forgiving — bad shape returns null and we log, never reject
+// the request. The bridge is additive: a missing seed reproduces the
+// pre-Sprint-5 cold-start behavior identically.
+const VALID_SEED_KINDS = ['theme', 'sector'];
+
+function asTrimmedString(v, max) {
+  if (typeof v !== 'string') return '';
+  const t = v.trim();
+  if (!t) return '';
+  return typeof max === 'number' ? t.slice(0, max) : t;
+}
+
+function asTickerArray(v, cap) {
+  if (!Array.isArray(v)) return [];
+  return v
+    .filter((x) => typeof x === 'string' && x.trim())
+    .map((x) => x.trim().toUpperCase().slice(0, 12))
+    .slice(0, cap);
+}
+
+function asStringArray(v, cap, maxLen) {
+  if (!Array.isArray(v)) return [];
+  return v
+    .filter((x) => typeof x === 'string' && x.trim())
+    .map((x) => x.trim().slice(0, maxLen))
+    .slice(0, cap);
+}
+
+function validateSeedContext(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  if (!VALID_SEED_KINDS.includes(raw.kind)) return null;
+
+  if (raw.kind === 'theme') {
+    const themeId = asTrimmedString(raw.themeId, 120);
+    const title = asTrimmedString(raw.title, 200);
+    if (!themeId || !title) return null;
+    return {
+      kind: 'theme',
+      themeId,
+      title,
+      thesisSummary: asTrimmedString(raw.thesisSummary, 2000),
+      anchorTickers: asTickerArray(raw.anchorTickers, 6),
+      subAngles: asStringArray(raw.subAngles, 4, 200),
+    };
+  }
+
+  if (raw.kind === 'sector') {
+    const ticker = asTrimmedString(raw.ticker, 12).toUpperCase();
+    const name = asTrimmedString(raw.name, 80);
+    if (!ticker || !name) return null;
+    return {
+      kind: 'sector',
+      ticker,
+      name,
+      regimeTag: asTrimmedString(raw.regimeTag, 200),
+      body: asTrimmedString(raw.body, 2000),
+      anchorTickers: asTickerArray(raw.anchorTickers, 6),
+      linkedThemeIds: asStringArray(raw.linkedThemeIds, 8, 120),
+    };
+  }
+
+  return null;
+}
+
 // ==================== THESIS HELPERS ====================
 
 const EMPTY_THESIS = Object.freeze({
@@ -135,10 +203,26 @@ export default async function handler(req, res) {
   if (!user) return;
 
   // 4. Validate body
-  const { agentId, sessionId: providedSessionId, message } = req.body || {};
+  const {
+    agentId,
+    sessionId: providedSessionId,
+    message,
+    seedContext: rawSeedContext,
+  } = req.body || {};
 
   if (!agentId || !message) {
     return res.status(400).json({ error: 'agentId and message are required' });
+  }
+
+  // seedContext is only honored on the first turn. After that, the seed
+  // persisted on the session doc is the source of truth — late-injection
+  // attempts are ignored. Bad shape downgrades to null silently.
+  const incomingSeedContext =
+    !providedSessionId && rawSeedContext
+      ? validateSeedContext(rawSeedContext)
+      : null;
+  if (!providedSessionId && rawSeedContext && !incomingSeedContext) {
+    console.warn('[WorkshopChat] Dropped malformed seedContext on new session.');
   }
 
   // 5. Sanitize message
@@ -203,6 +287,9 @@ export default async function handler(req, res) {
         latestThesis: null,
         status: 'active',
         compiledThesisId: null,
+        // Sprint 5 Phase 1: discover-to-workshop bridge. Persisted only on
+        // first turn; subsequent turns rehydrate it from this field.
+        seedContext: incomingSeedContext,
       };
       isNewSession = true;
     }
@@ -226,11 +313,19 @@ export default async function handler(req, res) {
     // 10. Build workshop context
     const messagesUsed = session.messagesUsed || 0;
     const messageBudget = session.messageBudget || MESSAGE_BUDGET;
+    // Sprint 5 Phase 1: rehydrate seed from the session doc on continuing
+    // turns; fall back to the freshly-validated incoming seed for new
+    // sessions. Either branch may be null — buildWorkshopContextBlock
+    // skips the PRELOADED CONTEXT sub-block in that case.
+    const activeSeedContext = isNewSession
+      ? incomingSeedContext
+      : session.seedContext || null;
     const workshopContext = {
       previousThesis: session.latestThesis || null,
       sessionTurnCount: previousExchanges.length,
       messagesRemaining: Math.max(0, messageBudget - messagesUsed - 1),
       messageBudget,
+      seedContext: activeSeedContext,
     };
 
     // 10b. Fetch today's market context for the workshop anchor block.

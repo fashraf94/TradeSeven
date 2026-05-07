@@ -13,11 +13,9 @@
 //     renders the layer with description and sub-thesis; ticker row
 //     replaced by an italic note instead of an empty chip row
 //
-// The "Start in Workshop" button is a Sprint 1 stub: it logs a
-// discoverInteractions row with action 'tap_start_workshop' and
-// shows a toast informing the user that real Workshop integration
-// ships in Sprint 6. It does NOT navigate, mutate Workshop state,
-// or call any Workshop APIs.
+// The "Start in Workshop" CTA invokes the onStartWorkshop callback
+// supplied by DiscoverPanel, which logs analytics and asks
+// ForgeLanding to open Workshop with a theme seedContext.
 
 import React, { useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';

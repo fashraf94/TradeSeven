@@ -150,7 +150,7 @@ export function computeRenderOrder(sectors, sectorSnapshot, freshPrices) {
   return [...hot3, ...remaining];
 }
 
-export default function SectorRail({ showToast, themes, onLinkedThemeTap, onViewChartTap, onHoldingChipTap }) {
+export default function SectorRail({ showToast, themes, onLinkedThemeTap, onViewChartTap, onHoldingChipTap, onStartWorkshop }) {
   const { tokens } = useTheme();
   const [sectors, setSectors] = useState([]);
   const [sectorsLoading, setSectorsLoading] = useState(true);
@@ -296,6 +296,15 @@ export default function SectorRail({ showToast, themes, onLinkedThemeTap, onView
     onHoldingChipTap?.(holdingTicker);
   };
 
+  // Sprint 5 Phase 1: discover-to-workshop bridge for the sector path.
+  // Close the sector modal first so DiscoverPanel's requestWorkshopOpen
+  // can fire toasts (gates) or open Workshop without a modal stack
+  // collision. Analytics and seed assembly are owned by DiscoverPanel.
+  const handleStartWorkshop = (ticker) => {
+    setSelectedSectorTicker(null);
+    onStartWorkshop?.(ticker);
+  };
+
   return (
     <div style={{ marginTop: 32 }}>
       <div style={{ marginBottom: 12 }}>
@@ -390,6 +399,7 @@ export default function SectorRail({ showToast, themes, onLinkedThemeTap, onView
         onLinkedThemeTap={handleLinkedThemeTap}
         onViewChartTap={handleViewChartTap}
         onHoldingChipTap={handleHoldingChipTap}
+        onStartWorkshop={handleStartWorkshop}
         showToast={showToast}
       />
     </div>

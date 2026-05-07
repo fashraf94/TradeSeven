@@ -352,10 +352,71 @@ function TypingIndicator({ agentName }) {
 }
 
 // ──────────────────────────────────────────────────────────────
+// Empty state — seed-aware. Generic copy for the cold-start
+// "Build Strategy" path; theme/sector framing when the user
+// arrived from a Discover card. Does not pre-fill activeThesis;
+// just sets the stage for the first turn.
+// ──────────────────────────────────────────────────────────────
+
+function EmptyState({ seedContext, agentName }) {
+  let primary = 'Tell your agent what kind of strategy you want to test.';
+  let secondary =
+    "What conditions should your algorithm exploit? When do you enter, and when do you cut? Start with a rough idea — we'll shape it together.";
+
+  if (seedContext?.kind === 'theme' && seedContext.title) {
+    primary = `${agentName || 'Gemma'} is ready to dig into ${seedContext.title}.`;
+    secondary =
+      'What angle of this theme do you want to test, or what specifically caught your eye? Start anywhere — we shape it from your first idea.';
+  } else if (seedContext?.kind === 'sector' && seedContext.ticker && seedContext.name) {
+    primary = `${agentName || 'Gemma'} is ready to dig into ${seedContext.ticker} — ${seedContext.name}.`;
+    secondary =
+      'What about this sector do you want to test — a regime read, a specific holding, a rotation idea? Start with whatever drew you in.';
+  }
+
+  return (
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        height: '100%',
+        padding: '24px 16px',
+        textAlign: 'center',
+        gap: 12,
+      }}
+    >
+      <Sparkles size={28} color={TROPHY_GOLD} />
+      <div
+        style={{
+          fontSize: 15,
+          fontWeight: 600,
+          color: TEXT_PRIMARY,
+          maxWidth: 360,
+          lineHeight: 1.5,
+        }}
+      >
+        {primary}
+      </div>
+      <div
+        style={{
+          fontSize: 12,
+          color: TEXT_MUTED,
+          maxWidth: 360,
+          lineHeight: 1.6,
+        }}
+      >
+        {secondary}
+      </div>
+    </div>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────
 // Main
 // ──────────────────────────────────────────────────────────────
 
-export default function WorkshopChat({ isOpen, onClose, user, agent, onCompiled }) { // eslint-disable-line no-unused-vars -- user prop kept for future personalization
+export default function WorkshopChat({ isOpen, onClose, user, agent, onCompiled, seedContext = null }) { // eslint-disable-line no-unused-vars -- user prop kept for future personalization
   const [sessionId, setSessionId] = useState(null);
   const [messages, setMessages] = useState([]);
   const [activeThesis, setActiveThesis] = useState(null);
@@ -467,6 +528,10 @@ export default function WorkshopChat({ isOpen, onClose, user, agent, onCompiled 
             agentId: agent.id,
             sessionId,
             message: trimmed,
+            // Sprint 5 Phase 1: discover-to-workshop bridge. Sent only on
+            // the opening turn; the server persists it on the session doc
+            // and rehydrates it for subsequent turns.
+            ...(sessionId || !seedContext ? {} : { seedContext }),
           }),
         });
 
@@ -535,7 +600,7 @@ export default function WorkshopChat({ isOpen, onClose, user, agent, onCompiled 
         setIsSending(false);
       }
     },
-    [agent?.id, sessionId, isSending, isCompiling]
+    [agent?.id, sessionId, isSending, isCompiling, seedContext]
   );
 
   const handleActionClick = useCallback(
@@ -764,43 +829,10 @@ export default function WorkshopChat({ isOpen, onClose, user, agent, onCompiled 
                 }}
               >
                 {messages.length === 0 && !isSending ? (
-                  <div
-                    style={{
-                      display: 'flex',
-                      flexDirection: 'column',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      height: '100%',
-                      padding: '24px 16px',
-                      textAlign: 'center',
-                      gap: 12,
-                    }}
-                  >
-                    <Sparkles size={28} color={TROPHY_GOLD} />
-                    <div
-                      style={{
-                        fontSize: 15,
-                        fontWeight: 600,
-                        color: TEXT_PRIMARY,
-                        maxWidth: 360,
-                        lineHeight: 1.5,
-                      }}
-                    >
-                      Tell your agent what kind of strategy you want to test.
-                    </div>
-                    <div
-                      style={{
-                        fontSize: 12,
-                        color: TEXT_MUTED,
-                        maxWidth: 360,
-                        lineHeight: 1.6,
-                      }}
-                    >
-                      What conditions should your algorithm exploit? When do
-                      you enter, and when do you cut? Start with a rough idea
-                      — we'll shape it together.
-                    </div>
-                  </div>
+                  <EmptyState
+                    seedContext={seedContext}
+                    agentName={agent?.name}
+                  />
                 ) : (
                   <>
                     {(() => {

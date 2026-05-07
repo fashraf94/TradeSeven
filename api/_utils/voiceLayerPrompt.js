@@ -732,6 +732,7 @@ function buildWorkshopContextBlock(workshopContext) {
     sessionTurnCount = 0,
     messagesRemaining,
     messageBudget,
+    seedContext,
   } = workshopContext || {};
 
   const turnLine = `This is turn ${sessionTurnCount + 1} of the workshop conversation.`;
@@ -750,10 +751,78 @@ function buildWorkshopContextBlock(workshopContext) {
       'No prior thesis yet — this is the opening turn. Your first activeThesis may have several empty fields; that is fine. Probe the user for the most important missing piece first.';
   }
 
-  return `WORKSHOP CONTEXT:
-${turnLine}${budgetLine ? ' ' + budgetLine : ''}
+  const preloadedBlock = renderPreloadedContextBlock(seedContext);
 
-${thesisBlock}`;
+  const sections = [`${turnLine}${budgetLine ? ' ' + budgetLine : ''}`];
+  if (preloadedBlock) sections.push(preloadedBlock);
+  sections.push(thesisBlock);
+
+  return `WORKSHOP CONTEXT:\n${sections.join('\n\n')}`;
+}
+
+// Renders the PRELOADED CONTEXT sub-block. The user arrived from a Discover
+// theme card or sector card — Gemma should be aware of that context but
+// must NOT pre-fill activeThesis. The user still drives the dialogue.
+// Discriminated on `kind`; forward-compatible with future `signal` seeds.
+function renderPreloadedContextBlock(seedContext) {
+  if (!seedContext || typeof seedContext !== 'object') return '';
+
+  if (seedContext.kind === 'theme') {
+    const title = typeof seedContext.title === 'string' ? seedContext.title.trim() : '';
+    if (!title) return '';
+    const summary =
+      typeof seedContext.thesisSummary === 'string' && seedContext.thesisSummary.trim()
+        ? seedContext.thesisSummary.trim()
+        : null;
+    const tickers =
+      Array.isArray(seedContext.anchorTickers) && seedContext.anchorTickers.length > 0
+        ? seedContext.anchorTickers.filter((t) => typeof t === 'string' && t.trim()).slice(0, 6)
+        : [];
+    const subAngles =
+      Array.isArray(seedContext.subAngles) && seedContext.subAngles.length > 0
+        ? seedContext.subAngles.filter((a) => typeof a === 'string' && a.trim()).slice(0, 4)
+        : [];
+
+    const lines = [`PRELOADED CONTEXT — the user opened Workshop from the Discover theme card "${title}".`];
+    if (summary) lines.push(`Theme thesis: ${summary}`);
+    if (tickers.length > 0) lines.push(`Anchor tickers in this theme: ${tickers.join(', ')}.`);
+    if (subAngles.length > 0) lines.push(`Sub-angles available to discuss: ${subAngles.join(' | ')}.`);
+    lines.push(
+      'Use this as background only. Do NOT pre-fill activeThesis — the user still drives the dialogue. Open by asking which angle of this theme they want to test, or what specifically drew them in.'
+    );
+    return lines.join('\n');
+  }
+
+  if (seedContext.kind === 'sector') {
+    const ticker = typeof seedContext.ticker === 'string' ? seedContext.ticker.trim() : '';
+    const name = typeof seedContext.name === 'string' ? seedContext.name.trim() : '';
+    if (!ticker || !name) return '';
+    const regimeTag =
+      typeof seedContext.regimeTag === 'string' && seedContext.regimeTag.trim()
+        ? seedContext.regimeTag.trim()
+        : null;
+    const body =
+      typeof seedContext.body === 'string' && seedContext.body.trim()
+        ? seedContext.body.trim()
+        : null;
+    const tickers =
+      Array.isArray(seedContext.anchorTickers) && seedContext.anchorTickers.length > 0
+        ? seedContext.anchorTickers.filter((t) => typeof t === 'string' && t.trim()).slice(0, 6)
+        : [];
+
+    const lines = [
+      `PRELOADED CONTEXT — the user opened Workshop from the Discover sector card "${ticker} — ${name}".`,
+    ];
+    if (regimeTag) lines.push(`Regime tag: ${regimeTag}.`);
+    if (body) lines.push(`Editorial framing: ${body}`);
+    if (tickers.length > 0) lines.push(`Top holdings (by ETF weight): ${tickers.join(', ')}.`);
+    lines.push(
+      'Use this as background only. Do NOT pre-fill activeThesis — the user still drives the dialogue. Open by asking what specifically about this sector they want to test, or which angle of the regime framing interests them.'
+    );
+    return lines.join('\n');
+  }
+
+  return '';
 }
 
 // ==================== REVIEW CONTEXT BLOCK ====================

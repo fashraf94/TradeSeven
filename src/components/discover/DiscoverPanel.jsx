@@ -13,10 +13,12 @@
 //
 // Modal handoffs:
 //   - Tap any theme card → write 'tap_card' interaction + open
-//     ThemeDetailModal (analytics action is single-path, source is
-//     'discoverThemes' for both featured and All Themes taps)
+//     ThemeDetailModal
 //   - ThemeDetailModal "Start in Workshop" → write 'tap_start_workshop'
-//     + show toast (Sprint 6 wires the real Workshop handoff)
+//     + open Workshop with a theme seedContext (Sprint 5 Phase 1)
+//   - SectorDetailModal "Start in Workshop" → write 'tap_start_workshop'
+//     with source 'discoverSectors' + open Workshop with a sector
+//     seedContext (Sprint 5 Phase 1)
 //   - Sector → linked theme: handleOpenThemeById looks up by id and
 //     routes through the same ThemeDetailModal
 
@@ -39,13 +41,69 @@ import SectorRail from './SectorRail';
 import WatchListRail from './WatchListRail';
 import AssetResearchModal from '../draft/AssetResearchModal';
 import { getSectorContent } from './sectorContent';
+import { getThemeRichEntry } from './themesDkb';
+import { SECTORS as SECTOR_HOLDINGS_MAP } from '../../constants/sectors';
 import { WATCH_LIST_RAIL_ENABLED } from '../../config/featureFlags';
+
+// Build the workshop seedContext for a Discover theme. Pulls rich content
+// from the build-time DKB bundle when available; falls back to the thinner
+// Firestore-registered fields (title + tagline) if the rich entry is
+// missing (data drift between the registry and dkb/thematic/*.json).
+function themeToSeed(theme) {
+  if (!theme?.id || !theme?.title) return null;
+  const rich = getThemeRichEntry(theme.id);
+  const fe = rich?.fullEntry || null;
+  const primaryTickers = Array.isArray(fe?.tickerEcosystem?.primary)
+    ? fe.tickerEcosystem.primary.slice(0, 6)
+    : [];
+  const subAngles = Array.isArray(fe?.subAngles)
+    ? fe.subAngles
+        .map((sa) => (typeof sa?.angle === 'string' ? sa.angle : null))
+        .filter(Boolean)
+        .slice(0, 4)
+    : [];
+  return {
+    kind: 'theme',
+    themeId: theme.id,
+    title: theme.title,
+    thesisSummary:
+      (typeof fe?.narrative?.coreThesis === 'string' && fe.narrative.coreThesis) ||
+      (typeof theme.narrative === 'string' && theme.narrative) ||
+      '',
+    anchorTickers: primaryTickers,
+    subAngles,
+  };
+}
+
+// Build the workshop seedContext for a Discover sector. Editorial body +
+// regime tag come from sectorContent.js; anchor tickers come from the
+// SECTORS holdings map (top 5 by ETF weight).
+function sectorToSeed(ticker) {
+  if (!ticker) return null;
+  const content = getSectorContent(ticker);
+  if (!content) return null;
+  const holdings = SECTOR_HOLDINGS_MAP[ticker]?.topHoldings?.slice(0, 5) || [];
+  return {
+    kind: 'sector',
+    ticker,
+    name: content.name,
+    regimeTag: content.regimeTag || '',
+    body: content.body || '',
+    anchorTickers: holdings,
+    linkedThemeIds: Array.isArray(content.linkedThemes) ? content.linkedThemes : [],
+  };
+}
 
 // Fire-and-forget analytics write. We never want the UX to wait on
 // the round-trip and we never want a logging failure to surface to
 // the user. The discoverInteractions rules block (manual deploy) is
 // scoped to allow only authenticated user-owned creates.
-async function logInteraction({ themeId, action }) {
+//
+// Source is parameterized: theme-tab interactions write
+// 'discoverThemes' (the default, preserving the Sprint 1 schema),
+// sector-tab interactions write 'discoverSectors' (matching the
+// existing logSectorInteraction in SectorDetailModal).
+async function logInteraction({ themeId, action, source = 'discoverThemes' }) {
   try {
     const uid = auth?.currentUser?.uid;
     if (!uid || !themeId || !action) return;
@@ -54,14 +112,14 @@ async function logInteraction({ themeId, action }) {
       themeId,
       action,
       timestamp: serverTimestamp(),
-      source: 'discoverThemes',
+      source,
     });
   } catch (err) {
     console.error('[DiscoverPanel] Failed to log interaction:', err);
   }
 }
 
-export default function DiscoverPanel({ showToast }) {
+export default function DiscoverPanel({ showToast, requestWorkshopOpen }) {
   const { tokens } = useTheme();
   const [themes, setThemes] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -105,11 +163,37 @@ export default function DiscoverPanel({ showToast }) {
     setSelectedTheme(null);
   };
 
+  // Sprint 5 Phase 1: real Workshop handoff for theme cards. Logs the
+  // tap_start_workshop analytics row, builds a theme seedContext, and
+  // asks ForgeLanding to open Workshop. ForgeLanding owns the agent /
+  // capacity gates — if any gate fires, requestWorkshopOpen returns
+  // false and shows the appropriate toast itself; we close the source
+  // modal regardless so the user isn't trapped behind a gated CTA.
   const handleStartWorkshop = (theme) => {
     if (!theme) return;
     logInteraction({ themeId: theme.id, action: 'tap_start_workshop' });
-    if (typeof showToast === 'function') {
-      showToast('Workshop integration ships in Sprint 6.');
+    const seed = themeToSeed(theme);
+    setSelectedTheme(null);
+    if (typeof requestWorkshopOpen === 'function') {
+      requestWorkshopOpen(seed);
+    }
+  };
+
+  // Sprint 5 Phase 1: real Workshop handoff for sector cards. Symmetric
+  // with the theme path; the only differences are the analytics source
+  // tag and the seed shape. Closing the sector modal is owned by
+  // SectorRail, not us — it closes its own modal before invoking this
+  // callback (close-source-first pattern).
+  const handleStartSectorWorkshop = (ticker) => {
+    if (!ticker) return;
+    logInteraction({
+      themeId: ticker,
+      action: 'tap_start_workshop',
+      source: 'discoverSectors',
+    });
+    const seed = sectorToSeed(ticker);
+    if (typeof requestWorkshopOpen === 'function') {
+      requestWorkshopOpen(seed);
     }
   };
 
@@ -186,6 +270,7 @@ export default function DiscoverPanel({ showToast }) {
           onLinkedThemeTap={handleOpenThemeById}
           onViewChartTap={handleViewChartTap}
           onHoldingChipTap={handleViewChartTap}
+          onStartWorkshop={handleStartSectorWorkshop}
         />
       </div>
 
