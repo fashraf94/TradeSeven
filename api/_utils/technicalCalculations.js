@@ -392,6 +392,14 @@ export function calculateVWAP(intradayCandles) {
 
   const vwap = cumulativeTPV / cumulativeVolume;
   const currentPrice = intradayCandles[intradayCandles.length - 1].close;
+
+  // Defense-in-depth: even if a partial candle slipped past source
+  // normalization, don't crash on null/non-finite values. Match existing
+  // early-exit pattern at lines 379 and 391.
+  if (!Number.isFinite(vwap) || !Number.isFinite(currentPrice)) {
+    return null;
+  }
+
   const vwapDeviation = ((currentPrice - vwap) / vwap) * 100;
 
   return {

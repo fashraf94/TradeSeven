@@ -150,4 +150,46 @@ describe('fetchIntradayCandles', () => {
 
     await expect(fetchIntradayCandles('MU')).rejects.toThrow(/500/);
   });
+
+  it('Test 7 — drops the in-progress trailing candle when close is null (May 7 market-open failure mode)', async () => {
+    const synthetic = [
+      { datetime: '2026-05-07 13:20:00', open: 100, high: 101, low: 99.5, close: 100.5, volume: 12000 },
+      { datetime: '2026-05-07 13:25:00', open: 100.5, high: 102, low: 100.2, close: 101.8, volume: 15000 },
+      // The forming 9:30 ET / 13:30 UTC bar — EODHD returns close=null
+      { datetime: '2026-05-07 13:30:00', open: 101.8, high: 101.9, low: 101.5, close: null, volume: 0 },
+    ];
+    mockFetchOk(synthetic);
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    const candles = await fetchIntradayCandles('MU');
+
+    expect(candles).toHaveLength(2);
+    expect(candles[1].close).toBe(101.8);
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    const msg = warnSpy.mock.calls[0][0];
+    expect(msg).toContain('partial candle');
+    expect(msg).toContain('MU');
+    expect(msg).toContain('1');
+  });
+
+  it('Test 8 — drops multiple partial candles with mixed null OHLC fields', async () => {
+    const synthetic = [
+      { datetime: '2026-05-07 13:20:00', open: 100, high: 101, low: 99.5, close: 100.5, volume: 12000 },
+      { datetime: '2026-05-07 13:25:00', open: null, high: 102, low: 100.2, close: 101.8, volume: 15000 }, // null open
+      { datetime: '2026-05-07 13:30:00', open: 101.8, high: 102.5, low: 101.3, close: 101.9, volume: 9000 },
+      { datetime: '2026-05-07 13:35:00', open: 101.9, high: undefined, low: 101.5, close: 102.0, volume: 8000 }, // undefined high
+      { datetime: '2026-05-07 13:40:00', open: 102.0, high: 102.5, low: 101.8, close: 102.3, volume: 11000 },
+    ];
+    mockFetchOk(synthetic);
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    const candles = await fetchIntradayCandles('MU');
+
+    expect(candles).toHaveLength(3);
+    expect(candles.map(c => c.close)).toEqual([100.5, 101.9, 102.3]);
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    const msg = warnSpy.mock.calls[0][0];
+    expect(msg).toContain('Dropped 2 partial candle');
+    expect(msg).toContain('MU');
+  });
 });
