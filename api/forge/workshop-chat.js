@@ -41,7 +41,7 @@ const HISTORY_WINDOW = 10; // max turns fed back into the model
 // here is forgiving — bad shape returns null and we log, never reject
 // the request. The bridge is additive: a missing seed reproduces the
 // pre-Sprint-5 cold-start behavior identically.
-const VALID_SEED_KINDS = ['theme', 'sector'];
+const VALID_SEED_KINDS = ['theme', 'sector', 'watchlist'];
 
 function asTrimmedString(v, max) {
   if (typeof v !== 'string') return '';
@@ -97,6 +97,29 @@ function validateSeedContext(raw) {
       anchorTickers: asTickerArray(raw.anchorTickers, 6),
       linkedThemeIds: asStringArray(raw.linkedThemeIds, 8, 120),
     };
+  }
+
+  if (raw.kind === 'watchlist') {
+    const dropListId = asTrimmedString(raw.dropListId, 200);
+    const title = asTrimmedString(raw.title, 200);
+    if (!dropListId || !title) return null;
+
+    if (!Array.isArray(raw.tickers) || raw.tickers.length === 0) return null;
+    const tickers = raw.tickers
+      .slice(0, 10)
+      .map((t) => {
+        if (!t || typeof t !== 'object') return null;
+        const symbol = asTrimmedString(t.symbol, 12).toUpperCase();
+        const reasoning = asTrimmedString(t.reasoning, 500);
+        if (!symbol || !reasoning) return null;
+        return { symbol, reasoning };
+      })
+      .filter(Boolean);
+    if (tickers.length === 0) return null;
+
+    const sourceContent = asTrimmedString(raw.sourceContent, 2000) || null;
+
+    return { kind: 'watchlist', dropListId, title, tickers, sourceContent };
   }
 
   return null;

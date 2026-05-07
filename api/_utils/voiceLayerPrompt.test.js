@@ -24,7 +24,7 @@ vi.mock('./marketSchedule.js', async (importOriginal) => {
   };
 });
 
-import { buildBenchBriefsBlock, buildBattleState, buildMarketSnapshotContext, buildPortfolioBriefsBlock } from './voiceLayerPrompt.js';
+import { buildBenchBriefsBlock, buildBattleState, buildMarketSnapshotContext, buildPortfolioBriefsBlock, buildVoiceLayerPrompt } from './voiceLayerPrompt.js';
 import { getETDate, formatDateString } from './marketSchedule.js';
 
 // ==================== TESTS ====================
@@ -771,5 +771,182 @@ describe('buildPortfolioBriefsBlock — threshold proximity rendering (Tier 0 It
     expect(buildPortfolioBriefsBlock(null)).toBeNull();
     expect(buildPortfolioBriefsBlock({})).toBeNull();
     expect(buildPortfolioBriefsBlock({ portfolioBriefs: [] })).toBeNull();
+  });
+});
+
+// =============================================================================
+// Sprint 6 Phase 1 — workshop seedContext kind: 'watchlist'
+//
+// Sprint 5 shipped the seedContext discriminated union (theme + sector branches)
+// without unit tests for renderPreloadedContextBlock. Phase 1 adds the
+// watchlist branch and lands its tests here. renderPreloadedContextBlock is
+// internal (not exported); these tests exercise it through the exported
+// buildVoiceLayerPrompt({ mode: 'workshop' }) entry point and substring-match
+// against the assembled prompt. Theme + sector substring coverage is a real
+// remaining test debt from Sprint 5 — recommended as a small follow-up.
+// =============================================================================
+
+describe('buildVoiceLayerPrompt — workshop seedContext (Sprint 6 Phase 1)', () => {
+  const minimalAgent = { name: 'Gemma', archetype: 'strategist' };
+
+  function workshopContextWithSeed(seedContext) {
+    return {
+      previousThesis: null,
+      sessionTurnCount: 0,
+      messagesRemaining: 24,
+      messageBudget: 25,
+      seedContext,
+    };
+  }
+
+  it('renders watchlist seedContext header, ticker list, and closing instruction', () => {
+    const seed = {
+      kind: 'watchlist',
+      dropListId: 'wl_abc123',
+      title: 'AI Infrastructure Plays — May 7',
+      tickers: [
+        { symbol: 'NVDA', reasoning: 'GPU monopoly; data-center capex tailwind.' },
+        { symbol: 'TSM', reasoning: 'Foundry choke point; pricing power on leading nodes.' },
+      ],
+      sourceContent: null,
+    };
+    const out = buildVoiceLayerPrompt({
+      agent: minimalAgent,
+      mode: 'workshop',
+      workshopContext: workshopContextWithSeed(seed),
+      anchorContext: null,
+    });
+
+    expect(out).toContain('PRELOADED CONTEXT');
+    expect(out).toContain('"AI Infrastructure Plays — May 7"');
+    expect(out).toContain('Tickers in this watchlist:');
+    expect(out).toContain('- NVDA: GPU monopoly; data-center capex tailwind.');
+    expect(out).toContain('- TSM: Foundry choke point; pricing power on leading nodes.');
+    expect(out).toContain('Do NOT pre-fill activeThesis');
+  });
+
+  it('includes Origin context line when sourceContent is provided', () => {
+    const seed = {
+      kind: 'watchlist',
+      dropListId: 'wl_abc123',
+      title: 'Reshoring Beneficiaries',
+      tickers: [{ symbol: 'CAT', reasoning: 'Industrial bellwether for capex cycle.' }],
+      sourceContent: 'Posts about CHIPS Act funded fabs and US semi capex.',
+    };
+    const out = buildVoiceLayerPrompt({
+      agent: minimalAgent,
+      mode: 'workshop',
+      workshopContext: workshopContextWithSeed(seed),
+      anchorContext: null,
+    });
+
+    expect(out).toContain('Origin context');
+    expect(out).toContain('CHIPS Act funded fabs');
+  });
+
+  it('omits Origin context line when sourceContent is null', () => {
+    const seed = {
+      kind: 'watchlist',
+      dropListId: 'wl_abc123',
+      title: 'Test List',
+      tickers: [{ symbol: 'MSFT', reasoning: 'Azure + Copilot run-rate.' }],
+      sourceContent: null,
+    };
+    const out = buildVoiceLayerPrompt({
+      agent: minimalAgent,
+      mode: 'workshop',
+      workshopContext: workshopContextWithSeed(seed),
+      anchorContext: null,
+    });
+
+    expect(out).not.toContain('Origin context');
+  });
+
+  it('omits the PRELOADED CONTEXT block entirely when tickers array is empty', () => {
+    const seed = {
+      kind: 'watchlist',
+      dropListId: 'wl_abc123',
+      title: 'Empty List',
+      tickers: [],
+      sourceContent: null,
+    };
+    const out = buildVoiceLayerPrompt({
+      agent: minimalAgent,
+      mode: 'workshop',
+      workshopContext: workshopContextWithSeed(seed),
+      anchorContext: null,
+    });
+
+    expect(out).not.toContain('PRELOADED CONTEXT');
+  });
+
+  it('omits the PRELOADED CONTEXT block when title is missing', () => {
+    const seed = {
+      kind: 'watchlist',
+      dropListId: 'wl_abc123',
+      title: '',
+      tickers: [{ symbol: 'AAPL', reasoning: 'iPhone cycle.' }],
+      sourceContent: null,
+    };
+    const out = buildVoiceLayerPrompt({
+      agent: minimalAgent,
+      mode: 'workshop',
+      workshopContext: workshopContextWithSeed(seed),
+      anchorContext: null,
+    });
+
+    expect(out).not.toContain('PRELOADED CONTEXT');
+  });
+
+  it('caps the rendered tickers list at 10 entries (defensive slice)', () => {
+    const tickers = Array.from({ length: 12 }, (_, i) => ({
+      symbol: `TKR${i.toString().padStart(2, '0')}`,
+      reasoning: `Reasoning for ticker ${i}.`,
+    }));
+    const seed = {
+      kind: 'watchlist',
+      dropListId: 'wl_abc123',
+      title: 'Twelve Tickers',
+      tickers,
+      sourceContent: null,
+    };
+    const out = buildVoiceLayerPrompt({
+      agent: minimalAgent,
+      mode: 'workshop',
+      workshopContext: workshopContextWithSeed(seed),
+      anchorContext: null,
+    });
+
+    for (let i = 0; i < 10; i++) {
+      expect(out).toContain(`- TKR${i.toString().padStart(2, '0')}:`);
+    }
+    expect(out).not.toContain('- TKR10:');
+    expect(out).not.toContain('- TKR11:');
+  });
+
+  it('drops malformed ticker entries (missing symbol or reasoning)', () => {
+    const seed = {
+      kind: 'watchlist',
+      dropListId: 'wl_abc123',
+      title: 'Mixed-Validity List',
+      tickers: [
+        { symbol: 'NVDA', reasoning: 'GPU monopoly.' },
+        { symbol: '', reasoning: 'No symbol.' },
+        { symbol: 'TSM', reasoning: '' },
+        { symbol: 'AMD', reasoning: 'Datacenter share gain.' },
+      ],
+      sourceContent: null,
+    };
+    const out = buildVoiceLayerPrompt({
+      agent: minimalAgent,
+      mode: 'workshop',
+      workshopContext: workshopContextWithSeed(seed),
+      anchorContext: null,
+    });
+
+    expect(out).toContain('- NVDA: GPU monopoly.');
+    expect(out).toContain('- AMD: Datacenter share gain.');
+    expect(out).not.toContain('No symbol.');
+    expect(out).not.toContain('- TSM:');
   });
 });

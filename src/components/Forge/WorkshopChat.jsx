@@ -371,6 +371,10 @@ function EmptyState({ seedContext, agentName }) {
     primary = `${agentName || 'Gemma'} is ready to dig into ${seedContext.ticker} — ${seedContext.name}.`;
     secondary =
       'What about this sector do you want to test — a regime read, a specific holding, a rotation idea? Start with whatever drew you in.';
+  } else if (seedContext?.kind === 'watchlist' && seedContext.title) {
+    primary = `${agentName || 'Gemma'} is ready to dig into your watchlist "${seedContext.title}".`;
+    secondary =
+      'Which ticker or angle from this list do you want to test? Start anywhere — we shape it from your first idea.';
   }
 
   return (
