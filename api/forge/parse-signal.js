@@ -31,6 +31,7 @@ import { hashText, hashUrl, hashImage } from '../_utils/contentHash.js';
 import { detectInjectionAttempts } from '../_utils/injectionGuard.js';
 import { sanitizeParsedOutput } from '../_utils/sanitizeParsedOutput.js';
 import { logSignalDrops } from '../_utils/shadowLogger.js';
+import { waitUntil } from '@vercel/functions';
 
 export const config = { maxDuration: 30 };
 
@@ -195,10 +196,10 @@ export default async function handler(req, res) {
           cacheHit: true,
         };
         await db.collection('users').doc(userId).collection('signalDrops').doc(dropId).set(dropRecord);
-        logSignalDrops({
+        waitUntil(logSignalDrops({
           ...dropRecord,
           loggedAt: droppedAt,
-        }).catch(() => {});
+        }).catch(() => {}));
         return res.status(200).json({
           dropId,
           parse: cached.parse,
@@ -302,7 +303,7 @@ export default async function handler(req, res) {
     await db.collection('users').doc(userId).collection('signalDrops').doc(dropId).set(dropRecord);
 
     // 14. Shadow log (fire-and-forget — must NOT block the response)
-    logSignalDrops({
+    waitUntil(logSignalDrops({
       dropId,
       userId,
       contentHash,
@@ -316,7 +317,7 @@ export default async function handler(req, res) {
       droppedAt,
       cacheHit: false,
       stage: 'parse',
-    }).catch(() => {});
+    }).catch(() => {}));
 
     // 15. Respond
     return res.status(200).json({
