@@ -867,7 +867,7 @@ function renderPreloadedContextBlock(seedContext) {
 
 // ==================== REVIEW CONTEXT BLOCK ====================
 
-function buildReviewContext(battle, dailyReviews, dailyGrades) {
+export function buildReviewContext(battle, dailyReviews, dailyGrades) {
   const reviews = Array.isArray(dailyReviews) ? dailyReviews : [];
   const latestReview = reviews.length > 0 ? reviews[reviews.length - 1] : null;
 
@@ -906,7 +906,7 @@ function buildReviewContext(battle, dailyReviews, dailyGrades) {
 
   // Counterfactuals — vetoed trades with projected outcomes
   const vetoed = Array.isArray(battle?.proposalHistory)
-    ? battle.proposalHistory.filter(p => p.status === 'vetoed' || p.status === 'expired')
+    ? battle.proposalHistory.filter(p => p.resolution === 'vetoed' || p.resolution === 'lapsed')
     : [];
   if (vetoed.length > 0) {
     const rendered = vetoed.slice(-6).map(v => {
@@ -914,7 +914,7 @@ function buildReviewContext(battle, dailyReviews, dailyGrades) {
       const cf = v.counterfactualPoints != null
         ? `would have scored ${v.counterfactualPoints > 0 ? '+' : ''}${v.counterfactualPoints} pts`
         : 'no counterfactual recorded';
-      return `- ${swap} (${v.status}) — ${cf}${v.rationale ? ` | ${v.rationale}` : ''}`;
+      return `- ${swap} (${v.resolution}) — ${cf}${v.rationale ? ` | ${v.rationale}` : ''}`;
     });
     lines.push(`\nCOUNTERFACTUALS (vetoed / expired proposals):\n${rendered.join('\n')}`);
   }
