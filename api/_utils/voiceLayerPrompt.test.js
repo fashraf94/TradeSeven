@@ -24,7 +24,7 @@ vi.mock('./marketSchedule.js', async (importOriginal) => {
   };
 });
 
-import { buildBenchBriefsBlock, buildBattleState, buildMarketSnapshotContext, buildPortfolioBriefsBlock, buildVoiceLayerPrompt } from './voiceLayerPrompt.js';
+import { buildBenchBriefsBlock, buildBattleState, buildMarketSnapshotContext, buildPortfolioBriefsBlock, buildVoiceLayerPrompt, buildReviewContext } from './voiceLayerPrompt.js';
 import { getETDate, formatDateString } from './marketSchedule.js';
 
 // ==================== TESTS ====================
@@ -948,5 +948,88 @@ describe('buildVoiceLayerPrompt — workshop seedContext (Sprint 6 Phase 1)', ()
     expect(out).toContain('- AMD: Datacenter share gain.');
     expect(out).not.toContain('No symbol.');
     expect(out).not.toContain('- TSM:');
+  });
+});
+
+describe('buildReviewContext — counterfactuals filter (regression)', () => {
+  // Minimum-viable battle scaffold so non-counterfactual paths stay quiet.
+  const battleWith = (proposalHistory) => ({ proposalHistory, trades: [] });
+
+  it('Test 1: includes proposals with resolution === "vetoed"', () => {
+    const out = buildReviewContext(
+      battleWith([{ resolution: 'vetoed', symbolOut: 'AAPL', symbolIn: 'MSFT' }]),
+      [],
+      [],
+    );
+    expect(out).toContain('COUNTERFACTUALS');
+    expect(out).toContain('AAPL → MSFT');
+    expect(out).toContain('(vetoed)');
+  });
+
+  it('Test 2: includes proposals with resolution === "lapsed"', () => {
+    const out = buildReviewContext(
+      battleWith([{ resolution: 'lapsed', symbolOut: 'NVDA', symbolIn: 'AMD' }]),
+      [],
+      [],
+    );
+    expect(out).toContain('COUNTERFACTUALS');
+    expect(out).toContain('NVDA → AMD');
+    expect(out).toContain('(lapsed)');
+  });
+
+  it('Test 3: excludes proposals with resolution === "auto_executed"', () => {
+    const out = buildReviewContext(
+      battleWith([{ resolution: 'auto_executed', symbolOut: 'TSLA', symbolIn: 'F' }]),
+      [],
+      [],
+    );
+    expect(out).not.toContain('COUNTERFACTUALS');
+    expect(out).not.toContain('TSLA → F');
+  });
+
+  it('Test 4: excludes proposals with no resolution (still pending)', () => {
+    const out = buildReviewContext(
+      battleWith([{ symbolOut: 'GOOG', symbolIn: 'META' }]),
+      [],
+      [],
+    );
+    expect(out).not.toContain('COUNTERFACTUALS');
+    expect(out).not.toContain('GOOG → META');
+  });
+
+  it('Test 5: mixed dataset returns only vetoed and lapsed', () => {
+    const out = buildReviewContext(
+      battleWith([
+        { resolution: 'vetoed',        symbolOut: 'AAPL', symbolIn: 'MSFT' },
+        { resolution: 'lapsed',        symbolOut: 'NVDA', symbolIn: 'AMD'  },
+        { resolution: 'auto_executed', symbolOut: 'TSLA', symbolIn: 'F'    },
+        {                              symbolOut: 'GOOG', symbolIn: 'META' },
+      ]),
+      [],
+      [],
+    );
+    expect(out).toContain('COUNTERFACTUALS');
+    expect(out).toContain('AAPL → MSFT');
+    expect(out).toContain('NVDA → AMD');
+    expect(out).not.toContain('TSLA → F');
+    expect(out).not.toContain('GOOG → META');
+  });
+
+  it('Test 6: regression guard — entry with status:"vetoed" and resolution:"auto_executed" is excluded', () => {
+    // The pre-fix buggy filter matched on p.status === 'vetoed' and would have
+    // included this entry. The fixed filter checks p.resolution, sees
+    // 'auto_executed', and excludes.
+    const out = buildReviewContext(
+      battleWith([{
+        status: 'vetoed',
+        resolution: 'auto_executed',
+        symbolOut: 'COIN',
+        symbolIn: 'HOOD',
+      }]),
+      [],
+      [],
+    );
+    expect(out).not.toContain('COUNTERFACTUALS');
+    expect(out).not.toContain('COIN → HOOD');
   });
 });
