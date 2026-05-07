@@ -7,6 +7,17 @@ import LiveActivityPanel from './LiveActivityPanel';
 import InlineTradingGradeCard from './InlineTradingGradeCard';
 import { submitDailyGrades } from '../../services/agentService';
 
+// "Didn't respond" means the proposal hit its deadline without the user
+// approving or vetoing. In strategist mode, agent-evaluate.js writes
+// resolution='lapsed' on the resolved entry (the agent held its position).
+// Copilot mode auto-executes on expiry (resolution='auto_executed'), which
+// we exclude because the agent didn't hold — it traded. Vetoed proposals
+// are also excluded because a veto IS a response.
+export function filterUnansweredProposals(proposalHistory) {
+  if (!Array.isArray(proposalHistory)) return [];
+  return proposalHistory.filter(p => p && p.resolution === 'lapsed');
+}
+
 // ─── Sub-components ──────────────────────────────────────────────────────────
 
 function TypingIndicator() {
@@ -395,7 +406,6 @@ export default function AgentChat({
   dailyGrades = {},
   chatBudgetUsed = 0,
   reviewBudgetUsed = 0,
-  pendingProposal = null,
   proposalHistory = [],
 }) {
   const [messages, setMessages] = useState([]);
@@ -723,24 +733,10 @@ export default function AgentChat({
     return -1;
   }, [combinedTimeline]);
 
-  // Expired / unresolved proposals to surface at the transition point.
-  // "Didn't respond" means the proposal hit its deadline without the user
-  // approving or vetoing — in strategist mode agent-evaluate.js sets
-  // resolution='lapsed' (agent held); status='expired' is the general case.
-  const unansweredProposals = React.useMemo(() => {
-    const history = Array.isArray(proposalHistory) ? proposalHistory : [];
-    const unanswered = history.filter(p => {
-      if (!p) return false;
-      if (p.status === 'expired') return true;
-      if (p.resolution === 'expired' || p.resolution === 'lapsed') return true;
-      return false;
-    });
-    const pendingIfExpired = pendingProposal
-      && (pendingProposal.status === 'expired' || pendingProposal.resolution === 'expired')
-      ? [pendingProposal]
-      : [];
-    return [...unanswered, ...pendingIfExpired];
-  }, [proposalHistory, pendingProposal]);
+  const unansweredProposals = React.useMemo(
+    () => filterUnansweredProposals(proposalHistory),
+    [proposalHistory],
+  );
 
   // Today's grades keyed by tradeIndex for fast lookup when rendering the
   // inline grading cards.
