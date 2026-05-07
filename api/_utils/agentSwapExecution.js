@@ -96,9 +96,10 @@ export function validateTradeDecision(decision, battle) {
  * @param {number} currentDay - Current trading day (1-indexed)
  * @param {Object} currentPrices - { symbol: { current, previousClose, ... } }
  * @param {Object} evaluationMetadata - { id, action, trigger, rationale, hypothesis, evaluationId, tradingDay }
+ * @param {Object|null} snapshot - Phase 4: per-symbol technical snapshot { symbolOut, symbolIn }, persisted on trades[i].snapshot for Sprint 2 replay. Null when not provided.
  * @returns {Object} { closedTrade, incomingAsset }
  */
-export async function executeSwapServer(db, battleId, battle, resolvedTier, resolvedSlotIndex, benchAsset, currentDay, currentPrices, evaluationMetadata = {}) {
+export async function executeSwapServer(db, battleId, battle, resolvedTier, resolvedSlotIndex, benchAsset, currentDay, currentPrices, evaluationMetadata = {}, snapshot = null) {
   const battleRef = db.collection('agentBattles').doc(battleId);
 
   return await db.runTransaction(async (transaction) => {
@@ -174,6 +175,8 @@ export async function executeSwapServer(db, battleId, battle, resolvedTier, reso
       direction: outAsset.direction || null,
       // Evaluation metadata (enrichment fields from the cron)
       ...evaluationMetadata,
+      // Phase 4: per-symbol technical snapshot at decision time (null if caller did not provide one)
+      snapshot,
     };
 
     // ---- Build incoming asset ----
