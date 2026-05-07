@@ -761,9 +761,12 @@ function buildWorkshopContextBlock(workshopContext) {
 }
 
 // Renders the PRELOADED CONTEXT sub-block. The user arrived from a Discover
-// theme card or sector card — Gemma should be aware of that context but
-// must NOT pre-fill activeThesis. The user still drives the dialogue.
-// Discriminated on `kind`; forward-compatible with future `signal` seeds.
+// theme card, sector card, or saved Signal Drop watchlist — Gemma should be
+// aware of that context but must NOT pre-fill activeThesis. The user still
+// drives the dialogue.
+// Discriminated on `kind`; new branches can be added below additively.
+// Returns empty string for unknown kinds so that future seedContext kinds
+// land without breaking the workshop context block on first deploy.
 function renderPreloadedContextBlock(seedContext) {
   if (!seedContext || typeof seedContext !== 'object') return '';
 
@@ -818,6 +821,43 @@ function renderPreloadedContextBlock(seedContext) {
     if (tickers.length > 0) lines.push(`Top holdings (by ETF weight): ${tickers.join(', ')}.`);
     lines.push(
       'Use this as background only. Do NOT pre-fill activeThesis — the user still drives the dialogue. Open by asking what specifically about this sector they want to test, or which angle of the regime framing interests them.'
+    );
+    return lines.join('\n');
+  }
+
+  if (seedContext.kind === 'watchlist') {
+    const title = typeof seedContext.title === 'string' ? seedContext.title.trim() : '';
+    if (!title) return '';
+    const tickers =
+      Array.isArray(seedContext.tickers) && seedContext.tickers.length > 0
+        ? seedContext.tickers
+            .filter(
+              (t) =>
+                t &&
+                typeof t === 'object' &&
+                typeof t.symbol === 'string' &&
+                t.symbol.trim() &&
+                typeof t.reasoning === 'string' &&
+                t.reasoning.trim()
+            )
+            .slice(0, 10)
+        : [];
+    if (tickers.length === 0) return '';
+    const sourceContent =
+      typeof seedContext.sourceContent === 'string' && seedContext.sourceContent.trim()
+        ? seedContext.sourceContent.trim()
+        : null;
+
+    const lines = [
+      `PRELOADED CONTEXT — the user opened Workshop from their saved Signal Drop watchlist "${title}".`,
+      'Tickers in this watchlist:',
+      ...tickers.map((t) => `- ${t.symbol.trim().toUpperCase()}: ${t.reasoning.trim()}`),
+    ];
+    if (sourceContent) {
+      lines.push(`Origin context (from the source content the user dropped): ${sourceContent}`);
+    }
+    lines.push(
+      "Use this as background only. Do NOT pre-fill activeThesis — the watchlist is the user's expressed area of interest, not a finished strategy. Open by asking which ticker or angle from this list they want to test, or what specifically drew them to build this list."
     );
     return lines.join('\n');
   }
