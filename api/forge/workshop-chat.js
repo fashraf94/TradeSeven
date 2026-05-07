@@ -476,12 +476,60 @@ export default async function handler(req, res) {
         updatedAt: nowIso,
       });
     } else {
-      await sessionRef.update({
-        exchanges: FieldValue.arrayUnion(exchange),
-        latestThesis: activeThesis,
-        messagesUsed: FieldValue.increment(1),
-        updatedAt: nowIso,
-      });
+      // Phase 2.5 Fix 4 (audit D1, D2): wrap the continuing-turn write in
+      // a transaction so concurrent turns can't lose latestThesis updates
+      // or interleave their messagesUsed increments past the budget. The
+      // transaction re-reads fresh state, re-validates status + budget,
+      // and rejects with 409 concurrent_modification if any check fails.
+      try {
+        await db.runTransaction(async (tx) => {
+          const freshSnap = await tx.get(sessionRef);
+          if (!freshSnap.exists) {
+            throw new Error('__concurrency:session_disappeared');
+          }
+          const freshSession = freshSnap.data();
+          if (freshSession.status !== 'active') {
+            throw new Error('__concurrency:session_closed');
+          }
+          if (
+            (freshSession.messagesUsed || 0) >=
+            (freshSession.messageBudget || MESSAGE_BUDGET)
+          ) {
+            throw new Error('__concurrency:budget_consumed');
+          }
+          tx.update(sessionRef, {
+            exchanges: FieldValue.arrayUnion(exchange),
+            latestThesis: activeThesis,
+            messagesUsed: FieldValue.increment(1),
+            updatedAt: nowIso,
+          });
+        });
+      } catch (txErr) {
+        if (
+          typeof txErr?.message === 'string' &&
+          txErr.message.startsWith('__concurrency:')
+        ) {
+          const reason = txErr.message.split(':')[1];
+          console.warn(
+            `[WorkshopChat] concurrent_modification: ${reason} (session ${sessionRef.id})`,
+          );
+          return res.status(409).json({
+            sessionId: sessionRef.id,
+            agentMessage:
+              'Your session was modified by another request. Please try again.',
+            activeThesis: session.latestThesis || null,
+            scratchpad: null,
+            suggestedActions: null,
+            messagesUsed: messagesUsed,
+            messageBudget,
+            readyToCompile: Boolean(session.latestThesis?.readyToCompile),
+            error: true,
+            errorReason: 'concurrent_modification',
+            concurrencyReason: reason,
+          });
+        }
+        throw txErr;
+      }
     }
 
     // 15. Shadow log (fire-and-forget)

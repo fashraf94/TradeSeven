@@ -57,21 +57,154 @@ const PHASE_ORDER = Object.freeze(['explore', 'propose', 'refine', 'finalize']);
 const VALID_PHASES = new Set(PHASE_ORDER);
 const VALID_TICKER_ACTIONS = new Set(['propose', 'keep', 'remove', 'reorder']);
 
+// Phase 2.5 Fix 2 (audit B1): field caps for the parseResult.parse envelope.
+// Source of truth for enum values: the SUBMIT_PARSED_SIGNAL_TOOL schema in
+// api/_utils/signalDropPrompt.js. If parse-signal evolves its tool schema,
+// this validator may drift — accepted risk for Phase 2.5; long-term
+// candidate for a shared schema-constants module.
+const PARSE_FIELD_CAPS = Object.freeze({
+  EXTRACTED_TEXT: 2000,
+  TOPIC: 200,
+  TICKER_SYMBOL: 12,
+  TICKERS_MAX: 20,
+  IMPLIED_TICKERS_MAX: 20,
+  DATA_POINTS_MAX: 20,
+  DATA_POINT_LEN: 500,
+  REFERENCED_DATE_LEN: 30,
+});
+
+const VALID_CONTENT_TYPES = new Set([
+  'tweet',
+  'news_article',
+  'blog_post',
+  'research_note',
+  'chart',
+  'dm_screenshot',
+  'casual_text',
+  'unknown',
+]);
+
+const VALID_SIGNAL_DIRECTIONS = new Set([
+  'bullish',
+  'bearish',
+  'neutral',
+  'mixed',
+  'uncertain',
+]);
+
+const VALID_TIME_HORIZONS = new Set([
+  'intraday',
+  'swing',
+  'positional',
+  'longterm',
+  'unspecified',
+]);
+
+// Strict ISO date — mirrors expand-signal's computeTemporalRelation regex.
+// parse-signal allows free-form values too (e.g. "next week", "Q2 2026")
+// but those have no server-side dependent logic in the dialogue prompt;
+// dropping them here is a conservative cap. Future cleanup could allow
+// free-form up to 50 chars — backlog item, not Phase 2.5 scope.
+const ISO_DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
+
+// Phase 2.5 Fix 1 (audit B2): dropId character validation. Defense-in-depth
+// against Firestore path injection (slashes resolving to sub-collection
+// paths). Same shape parse-signal uses for the client-supplied dropId.
+const DROP_ID_REGEX = /^[A-Za-z0-9_-]+$/;
+const DROP_ID_MAX_LEN = 200;
+
+function capString(v, max) {
+  if (typeof v !== 'string') return '';
+  return v.slice(0, max);
+}
+
+function capTickerArray(v, cap, perItemCap) {
+  if (!Array.isArray(v)) return [];
+  return v
+    .filter((x) => typeof x === 'string' && x.trim())
+    .map((x) => x.trim().toUpperCase().slice(0, perItemCap))
+    .slice(0, cap);
+}
+
+function capStringArray(v, cap, perItemCap) {
+  if (!Array.isArray(v)) return [];
+  return v
+    .filter((x) => typeof x === 'string' && x.trim())
+    .map((x) => x.slice(0, perItemCap).trim())
+    .filter((x) => x)
+    .slice(0, cap);
+}
+
+function clampConfidence(v) {
+  if (typeof v !== 'number' || Number.isNaN(v)) return 0;
+  if (v < 0) return 0;
+  if (v > 1) return 1;
+  return v;
+}
+
+// Cap every field of a parseResult.parse object. Returns null if the
+// critical extractedText is missing or empty post-cap; otherwise returns
+// a fully-capped parse object. Non-critical fields that fail validation
+// are dropped (set to empty string / null) but don't fail the validation.
+function capParseFields(rawParse) {
+  const extractedText = capString(rawParse.extractedText, PARSE_FIELD_CAPS.EXTRACTED_TEXT).trim();
+  if (!extractedText) return null;
+
+  const referencedDateRaw = capString(rawParse.referencedDate, PARSE_FIELD_CAPS.REFERENCED_DATE_LEN);
+  const referencedDate = ISO_DATE_REGEX.test(referencedDateRaw) ? referencedDateRaw : '';
+
+  return {
+    extractedText,
+    topic: capString(rawParse.topic, PARSE_FIELD_CAPS.TOPIC).trim(),
+    tickers: capTickerArray(
+      rawParse.tickers,
+      PARSE_FIELD_CAPS.TICKERS_MAX,
+      PARSE_FIELD_CAPS.TICKER_SYMBOL,
+    ),
+    impliedTickers: capTickerArray(
+      rawParse.impliedTickers,
+      PARSE_FIELD_CAPS.IMPLIED_TICKERS_MAX,
+      PARSE_FIELD_CAPS.TICKER_SYMBOL,
+    ),
+    confidence: clampConfidence(rawParse.confidence),
+    contentType: VALID_CONTENT_TYPES.has(rawParse.contentType) ? rawParse.contentType : 'unknown',
+    signalDirection: VALID_SIGNAL_DIRECTIONS.has(rawParse.signalDirection)
+      ? rawParse.signalDirection
+      : 'uncertain',
+    timeHorizon: VALID_TIME_HORIZONS.has(rawParse.timeHorizon)
+      ? rawParse.timeHorizon
+      : 'unspecified',
+    referencedDate,
+    dataPoints: capStringArray(
+      rawParse.dataPoints,
+      PARSE_FIELD_CAPS.DATA_POINTS_MAX,
+      PARSE_FIELD_CAPS.DATA_POINT_LEN,
+    ),
+    suspectedInjection: !!rawParse.suspectedInjection,
+  };
+}
+
 // ==================== PURE HELPERS (exported for tests) ====================
 
-// Forgiving structural validator for the parseResult payload the client
-// sends on first turn. Returns the persisted shape on success, null on
-// failure. We trust parse-signal's output — the only rejection criterion
-// is "is this even shaped like a parse-signal response?".
+// Structural validator for the parseResult payload the client sends on
+// first turn. Returns the capped shape on success, null on failure.
+//
+// Phase 2.5 Fix 2 (audit B1): every field inside `parse` is now capped to
+// bounded sizes matching parse-signal's tool schema. Critical field
+// extractedText is required non-empty post-cap; non-critical fields are
+// dropped to safe defaults if they fail validation but don't fail the
+// overall result.
 export function validateParseResult(raw) {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
   const parse = raw.parse;
   if (!parse || typeof parse !== 'object' || Array.isArray(parse)) return null;
-  if (typeof parse.extractedText !== 'string' || !parse.extractedText.trim()) return null;
+
+  const cappedParse = capParseFields(parse);
+  if (!cappedParse) return null;
 
   return {
     contentHash: typeof raw.contentHash === 'string' ? raw.contentHash : null,
-    parse,
+    parse: cappedParse,
     validation:
       raw.validation && typeof raw.validation === 'object' && !Array.isArray(raw.validation)
         ? raw.validation
@@ -268,6 +401,7 @@ export default async function handler(req, res) {
     message,
     parseResult: rawParseResult,
     phaseRequest: rawPhaseRequest,
+    dropId: rawDropId,
   } = req.body || {};
 
   if (!agentId || typeof agentId !== 'string' || !agentId.trim()) {
@@ -278,12 +412,35 @@ export default async function handler(req, res) {
   }
   const phaseRequest = rawPhaseRequest === 'advance' ? 'advance' : null;
 
-  // First-turn callers MUST supply parseResult; subsequent-turn callers
-  // MUST supply sessionId. Both at once is fine — sessionId wins.
+  // First-turn callers MUST supply parseResult AND dropId; subsequent-turn
+  // callers MUST supply sessionId. Both at once is fine — sessionId wins
+  // (dropId is silently ignored on continuing turns since the session doc
+  // already binds the verified dropId).
   if (!providedSessionId && !rawParseResult) {
     return res.status(400).json({
       error: 'parseResult is required on the first turn (no sessionId)',
     });
+  }
+
+  // Phase 2.5 Fix 1 (audit B2): dropId is required on the first turn so we
+  // can verify the parseResult actually came from a real parse-signal call
+  // by this user. Character-validated against a strict regex to defend
+  // against Firestore path injection.
+  let dropId = null;
+  if (!providedSessionId) {
+    if (typeof rawDropId !== 'string' || !rawDropId.trim()) {
+      return res.status(400).json({
+        error: 'dropId is required on the first turn',
+      });
+    }
+    const trimmedDropId = rawDropId.trim();
+    if (trimmedDropId.length > DROP_ID_MAX_LEN || !DROP_ID_REGEX.test(trimmedDropId)) {
+      return res.status(400).json({
+        error: 'dropId is malformed',
+        message: `dropId must match ${DROP_ID_REGEX} and be ≤${DROP_ID_MAX_LEN} chars`,
+      });
+    }
+    dropId = trimmedDropId;
   }
 
   // 4. Sanitize message — same shape as workshop-chat (cap, strip newlines / brackets)
@@ -331,6 +488,16 @@ export default async function handler(req, res) {
           .status(403)
           .json({ error: 'Not authorized for this session' });
       }
+      // Phase 2.5 Fix 5 (audit A1): reject if the request's agentId doesn't
+      // match the session's persisted agentId. Prevents accidental client
+      // bugs from mixing one agent's profile into another agent's session.
+      if (session.agentId !== agentId) {
+        return res.status(400).json({
+          error: 'agent_session_mismatch',
+          message:
+            'The agent for this session does not match the agent in the request.',
+        });
+      }
       // Per Q3 override: 400 (matching workshop-chat precedent), not 410.
       if (session.status !== 'active') {
         return res.status(400).json({
@@ -348,11 +515,43 @@ export default async function handler(req, res) {
             'Expected the verbatim response from /api/forge/parse-signal: { contentHash, parse, validation, shouldBailout, shouldHardCheckpoint }.',
         });
       }
+
+      // Phase 2.5 Fix 1 (audit B2): verify parseResult against the per-user
+      // signalDrops record. The doc lives at users/{userId}/signalDrops/{dropId}
+      // and persists indefinitely (no TTL), unlike the global signalDropCache.
+      // Closes the prompt-injection root cause where a client could fabricate
+      // parseResult envelopes without going through parse-signal.
+      const dropRef = db
+        .collection('users')
+        .doc(user.uid)
+        .collection('signalDrops')
+        .doc(dropId);
+      const dropSnap = await dropRef.get();
+      if (!dropSnap.exists) {
+        return res.status(400).json({
+          error: 'unknown_drop',
+          message:
+            'No signal drop found for this dropId. Call /api/forge/parse-signal first.',
+        });
+      }
+      const dropRecord = dropSnap.data();
+      if (
+        typeof dropRecord.contentHash !== 'string' ||
+        dropRecord.contentHash !== validatedParseResult.contentHash
+      ) {
+        return res.status(400).json({
+          error: 'parse_result_mismatch',
+          message:
+            "The parseResult contentHash doesn't match the recorded drop. Re-call parse-signal to get a fresh parseResult.",
+        });
+      }
+
       sessionRef = sessionsCol.doc();
       const nowIso = new Date().toISOString();
       session = {
         userId: user.uid,
         agentId,
+        dropId,
         startedAt: nowIso,
         updatedAt: nowIso,
         status: 'active',
@@ -530,16 +729,9 @@ export default async function handler(req, res) {
       );
     }
 
-    // 17. Apply candidateTicker updates atomically (whole-array write)
+    // 17. Build per-message exchange records (pre-transaction — these
+    // don't depend on fresh state).
     const nowIso = new Date().toISOString();
-    const updatedCandidateTickers = applyCandidateTickerUpdates(
-      session.candidateTickers || [],
-      normalized.candidateTickerUpdates,
-      transition.newPhase,
-      nowIso,
-    );
-
-    // 18. Build per-message exchange records
     const userExchange = {
       role: 'user',
       content: sanitizedMessage,
@@ -554,8 +746,26 @@ export default async function handler(req, res) {
       suggestedActions: normalized.suggestedActions,
     };
 
-    // 19. Persist
+    // 18. Apply ticker updates + persist.
+    //
+    // Phase 2.5 Fix 4 (audit D1, D2): the continuing-turn write is wrapped
+    // in db.runTransaction. The transaction re-reads fresh session state,
+    // re-validates budget / status / phase, and applies candidateTicker
+    // updates against the FRESH list (not the pre-Gemma snapshot). Closes
+    // the lost-update race on candidateTickers and the rollback race on
+    // phase. If any concurrency check fails, throw a sentinel error caught
+    // below and translated into a 409 concurrent_modification response.
+    //
+    // First-turn writes use set() directly — no transaction needed because
+    // the doc doesn't exist yet and the auto-allocated session ID is unique.
+    let updatedCandidateTickers;
     if (isNewSession) {
+      updatedCandidateTickers = applyCandidateTickerUpdates(
+        [],
+        normalized.candidateTickerUpdates,
+        transition.newPhase,
+        nowIso,
+      );
       await sessionRef.set({
         ...session,
         phase: transition.newPhase,
@@ -565,13 +775,69 @@ export default async function handler(req, res) {
         updatedAt: nowIso,
       });
     } else {
-      await sessionRef.update({
-        phase: transition.newPhase,
-        exchanges: FieldValue.arrayUnion(userExchange, agentExchange),
-        candidateTickers: updatedCandidateTickers,
-        messagesUsed: FieldValue.increment(1),
-        updatedAt: nowIso,
-      });
+      try {
+        const txResult = await db.runTransaction(async (tx) => {
+          const freshSnap = await tx.get(sessionRef);
+          if (!freshSnap.exists) {
+            throw new Error('__concurrency:session_disappeared');
+          }
+          const freshSession = freshSnap.data();
+          if (freshSession.status !== 'active') {
+            throw new Error('__concurrency:session_closed');
+          }
+          if (
+            (freshSession.messagesUsed || 0) >=
+            (freshSession.messageBudget || MESSAGE_BUDGET)
+          ) {
+            throw new Error('__concurrency:budget_consumed');
+          }
+          if (freshSession.phase !== currentPhase) {
+            throw new Error('__concurrency:phase_advanced');
+          }
+
+          const freshList = applyCandidateTickerUpdates(
+            freshSession.candidateTickers || [],
+            normalized.candidateTickerUpdates,
+            transition.newPhase,
+            nowIso,
+          );
+
+          tx.update(sessionRef, {
+            phase: transition.newPhase,
+            exchanges: FieldValue.arrayUnion(userExchange, agentExchange),
+            candidateTickers: freshList,
+            messagesUsed: FieldValue.increment(1),
+            updatedAt: nowIso,
+          });
+
+          return { freshList };
+        });
+        updatedCandidateTickers = txResult.freshList;
+      } catch (txErr) {
+        if (
+          typeof txErr?.message === 'string' &&
+          txErr.message.startsWith('__concurrency:')
+        ) {
+          const reason = txErr.message.split(':')[1];
+          console.warn(
+            `[watchlist-dialogue] concurrent_modification: ${reason} (session ${sessionRef.id})`,
+          );
+          return res.status(409).json({
+            error: 'concurrent_modification',
+            errorReason: reason,
+            message:
+              'Your session was modified by another request. Please try again.',
+            sessionId: sessionRef.id,
+            phase: currentPhase,
+            candidateTickers: session.candidateTickers || [],
+            suggestedActions: ['retry'],
+            messagesUsed: currentMessagesUsed,
+            messageBudget,
+            readyToFinalize: false,
+          });
+        }
+        throw txErr;
+      }
     }
 
     // 20. Shadow log (fire-and-forget)

@@ -17,9 +17,18 @@ import { TICKER_TO_SECTOR } from './rankingConfig.js';
 import { normalizeTicker } from './tickerValidation.js';
 import { logSignalDrops } from './shadowLogger.js';
 
-export function wrapWithDelimiters(text) {
+// Wraps untrusted text in delimiter tags so the LLM treats the content as
+// data, not instructions. Default tag name preserves the existing
+// USER_SIGNAL_CONTENT contract for parse-signal / expand-signal callers.
+//
+// Phase 2.5 Fix 3 (audit C1): the tag name is now a parameter so the
+// dialogue endpoint and signal_expansion mode can wrap each parse
+// metadata field in its own <PARSED_*> envelope (e.g. <PARSED_TOPIC>).
+// The defensive prompt instruction in WATCHLIST_PHASE_RULES tells Gemma
+// to treat content inside any <PARSED_*> tag as untrusted user data.
+export function wrapWithDelimiters(text, tagName = 'USER_SIGNAL_CONTENT') {
   const safe = typeof text === 'string' ? text : '';
-  return `<USER_SIGNAL_CONTENT>\n${safe}\n</USER_SIGNAL_CONTENT>`;
+  return `<${tagName}>\n${safe}\n</${tagName}>`;
 }
 
 const INJECTION_PATTERNS = [
