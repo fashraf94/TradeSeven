@@ -526,6 +526,17 @@ service cloud.firestore {
       allow create, update, delete: if false;
     }
 
+    // Sprint 6 Phase 2: Signal Drop V2 watchlist dialogue sessions.
+    // Mirrors the workshopSessions pattern: owner-scoped reads, all writes
+    // through the server (Admin SDK in /api/forge/watchlist-dialogue.js
+    // and the Phase 4 save endpoint). Manual deploy via Firebase Console
+    // required after merge — Firestore rules don't auto-deploy from code.
+    match /watchlistSessions/{sessionId} {
+      allow read: if request.auth != null
+                  && resource.data.userId == request.auth.uid;
+      allow create, update, delete: if false;
+    }
+
     // Phase 5: Workshop Mode — compiled theses produced by
     // /api/forge/compile-dimensions.js. Immutable audit record of each
     // successful thesis → dimensions translation. Server-only writes.
