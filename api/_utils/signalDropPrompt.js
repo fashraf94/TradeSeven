@@ -245,6 +245,48 @@ export function buildParsePromptInputs(input) {
 }
 
 // =============================================================================
+// Public: buildDialogueInputs(parseResult)
+//   → { parsedSignalBlock }
+//
+// Sprint 6 Phase 2 — Signal Drop V2 watchlist dialogue. Thin block prep,
+// mirrors buildExpansionInputs's split: this builder normalizes the parse
+// payload into the same parsedSignalBlock shape that voiceLayerPrompt's
+// buildParsedSignalBlock renderer already consumes. All multi-turn state
+// (recent exchanges, candidate tickers, current phase, phase-advance
+// request) is passed directly to buildVoiceLayerPrompt by the endpoint —
+// no need to round-trip it through this helper.
+//
+// Accepts the verbatim shape persisted on session.parseResult by
+// /api/forge/watchlist-dialogue.js: { contentHash, parse, validation,
+// shouldBailout, shouldHardCheckpoint }. Reads parse.* and ignores the
+// envelope fields, which the dialogue prompt does not surface.
+// =============================================================================
+
+export function buildDialogueInputs(parseResult) {
+  if (!parseResult || typeof parseResult !== 'object') {
+    throw new Error('buildDialogueInputs: parseResult is required');
+  }
+  const parse = parseResult.parse && typeof parseResult.parse === 'object'
+    ? parseResult.parse
+    : {};
+
+  const parsedSignalBlock = {
+    extractedText: wrapWithDelimiters(parse.extractedText || ''),
+    topic: parse.topic || '',
+    tickers: Array.isArray(parse.tickers) ? parse.tickers : [],
+    impliedTickers: Array.isArray(parse.impliedTickers) ? parse.impliedTickers : [],
+    contentType: parse.contentType || 'unknown',
+    signalDirection: parse.signalDirection || 'uncertain',
+    timeHorizon: parse.timeHorizon || 'unspecified',
+    referencedDate: parse.referencedDate || '',
+    dataPoints: Array.isArray(parse.dataPoints) ? parse.dataPoints : [],
+    confidence: typeof parse.confidence === 'number' ? parse.confidence : null,
+  };
+
+  return { parsedSignalBlock };
+}
+
+// =============================================================================
 // Public: buildExpansionInputs(parsedSignal, marketContext)
 //   → { parsedSignalBlock, signalMarketContextBlock }
 // =============================================================================
