@@ -33,6 +33,7 @@ import { callGemmaVoiceWithRetry, parseVoiceLayerResponse } from '../_utils/gemm
 import { buildExpansionInputs } from '../_utils/signalDropPrompt.js';
 import { validateExpansionOutput } from '../_utils/injectionGuard.js';
 import { logSignalDrops } from '../_utils/shadowLogger.js';
+import { waitUntil } from '@vercel/functions';
 
 export const config = { maxDuration: 30 };
 
@@ -248,7 +249,7 @@ export default async function handler(req, res) {
             expansion: cached.expansion,
             expansionExpandedAt: expandedAt,
           });
-          logSignalDrops({
+          waitUntil(logSignalDrops({
             stage: 'expand',
             dropId,
             userId,
@@ -260,7 +261,7 @@ export default async function handler(req, res) {
             cacheHit: true,
             tokenUsage: null,
             isRecompute: false,
-          }).catch(() => {});
+          }).catch(() => {}));
           return res.status(200).json({
             expansion: cached.expansion,
             validationWarning: cached.validationWarning || null,
@@ -362,7 +363,7 @@ export default async function handler(req, res) {
     });
 
     // 15. Shadow log (fire-and-forget)
-    logSignalDrops({
+    waitUntil(logSignalDrops({
       stage: 'expand',
       dropId,
       userId,
@@ -374,7 +375,7 @@ export default async function handler(req, res) {
       cacheHit: false,
       tokenUsage: null,
       isRecompute: recompute,
-    }).catch(() => {});
+    }).catch(() => {}));
 
     // 16. Respond
     return res.status(200).json({
