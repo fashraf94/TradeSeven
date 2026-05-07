@@ -660,8 +660,26 @@ export async function fetchIntradayCandles(symbol, options = {}) {
     return [];
   }
 
-  // EODHD returns oldest-first (chronological) — keep that order for VWAP
-  return data.map(d => ({
+  // EODHD returns oldest-first (chronological) — keep that order for VWAP.
+  // Drop in-progress / partial candles where any OHLC field is null/undefined/
+  // non-finite. At market open the most recent 5-min bar is still forming and
+  // EODHD returns close=null (and sometimes the rest of OHLC too); letting
+  // those reach calculateVWAP crashes the whole eval cron with a null toFixed.
+  const validCandles = data.filter(d => {
+    const ohlcValid =
+      Number.isFinite(d.open) &&
+      Number.isFinite(d.high) &&
+      Number.isFinite(d.low) &&
+      Number.isFinite(d.close);
+    return ohlcValid;
+  });
+
+  const droppedCount = data.length - validCandles.length;
+  if (droppedCount > 0) {
+    console.warn(`[MarketDataCache] Dropped ${droppedCount} partial candle(s) for ${eohdSymbol} (incomplete OHLC, likely in-progress)`);
+  }
+
+  return validCandles.map(d => ({
     datetime: d.datetime || new Date(d.timestamp * 1000).toISOString(),
     open: d.open,
     high: d.high,
