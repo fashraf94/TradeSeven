@@ -20,11 +20,14 @@
 //
 // dropId is generated client-side via crypto.randomUUID (with a
 // Math.random fallback for the few browsers without it). The same
-// id flows into the watchlist-dialogue session in Phase 3B.
+// id flows into the watchlist-dialogue session.
 //
-// In Phase 3A the "Start dialogue" CTA invokes onStartDialogue with
-// { parseResult, dropId } — Phase 3A's parent placeholder logs and
-// closes; Phase 3B replaces it with the actual WatchlistChat hand-off.
+// The "Start dialogue" CTA invokes onStartDialogue with
+// { parseResult, dropId }. As of Phase 3B the parent (DiscoverPanel)
+// composes the full chat-state payload with agentId from its own
+// props and hands off to WatchlistChat — this component stays
+// agent-agnostic so it can be repurposed for non-dialogue flows
+// (e.g. a future "log a signal without dialogue" CTA).
 
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
