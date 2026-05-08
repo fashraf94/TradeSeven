@@ -26,8 +26,9 @@
 // another first-turn POST (parseResult + dropId, no sessionId). Caching a
 // null sessionId would break the retry path.
 //
-// Sidebar in 3B is a temporary slot-grouped ticker list. Phase 3C
-// replaces with WatchlistAnatomyPanel.
+// Phase 3C: sidebar is the full WatchlistAnatomyPanel — six sections
+// (thesis, activation/invalidation conditions, core/discovery/cross-
+// current plays). Phase 3B's temporary slot-grouped ticker list is gone.
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -36,6 +37,7 @@ import { useTheme } from '../../contexts/ThemeContext';
 import { useIsMobile } from '../../hooks/useIsMobile';
 import { fetchWithAuth } from '../../utils/fetchWithAuth';
 import PhaseIndicator from './PhaseIndicator';
+import WatchlistAnatomyPanel from './WatchlistAnatomyPanel';
 import ChatBubble from './components/ChatBubble';
 import ActionChip from './components/ActionChip';
 import TypingIndicator from './components/TypingIndicator';
@@ -44,13 +46,6 @@ const REQUEST_TIMEOUT_MS = 25_000;
 const CONCURRENT_RETRY_DELAY_MS = 500;
 const MESSAGE_CHAR_CAP = 2000;
 const DEFAULT_MESSAGE_BUDGET = 20;
-
-const SLOT_GROUPS = [
-  { key: 'core', label: 'Core Plays' },
-  { key: 'discovery', label: 'Discovery Plays' },
-  { key: 'cross_current', label: 'Cross-Currents' },
-  { key: 'unassigned', label: 'Unassigned' },
-];
 
 const PHASE_ADVANCE_MARKERS = ['advance', 'move to next phase', 'next phase'];
 
@@ -86,17 +81,6 @@ function makeId(prefix) {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-function groupTickersBySlot(tickers) {
-  const groups = { core: [], discovery: [], cross_current: [], unassigned: [] };
-  if (!Array.isArray(tickers)) return groups;
-  for (const t of tickers) {
-    if (!t?.symbol) continue;
-    const slot = t.slot && groups[t.slot] !== undefined ? t.slot : 'unassigned';
-    groups[slot].push(t);
-  }
-  return groups;
-}
-
 export default function WatchlistChat({
   isOpen,
   onClose,
@@ -113,11 +97,10 @@ export default function WatchlistChat({
   const [sessionId, setSessionId] = useState(null);
   const [exchanges, setExchanges] = useState([]);
   const [candidateTickers, setCandidateTickers] = useState([]);
-  // Anatomy is captured here so the value is updated each turn — Phase
-  // 3C reads it via the WatchlistAnatomyPanel. 3B only renders the
-  // slot-grouped ticker list, so the read-side of the destructure is
-  // intentionally omitted.
-  const [, setAnatomy] = useState({
+  // Phase 3C: anatomy is consumed by WatchlistAnatomyPanel, which renders
+  // thesis + activation/invalidation conditions alongside the slot-tagged
+  // ticker groups.
+  const [anatomy, setAnatomy] = useState({
     thesis: null,
     activationConditions: [],
     invalidationConditions: [],
@@ -524,7 +507,6 @@ export default function WatchlistChat({
   }
 
   const tickerCount = candidateTickers.length;
-  const grouped = groupTickersBySlot(candidateTickers);
   const topic =
     typeof parseResult?.parse?.topic === 'string'
       ? parseResult.parse.topic.trim()
@@ -849,30 +831,11 @@ export default function WatchlistChat({
                 <ChevronDown size={14} /> Back to chat
               </button>
             )}
-            <SidebarHeader tokens={tokens} count={tickerCount} />
-            <div style={{ flex: 1, overflowY: 'auto', padding: '12px 16px' }}>
-              {SLOT_GROUPS.map((g) => (
-                <SlotGroup
-                  key={g.key}
-                  label={g.label}
-                  tickers={grouped[g.key]}
-                  tokens={tokens}
-                />
-              ))}
-              <div
-                style={{
-                  marginTop: 12,
-                  fontSize: 10,
-                  color: tokens.textFaint,
-                  fontStyle: 'italic',
-                  lineHeight: 1.5,
-                }}
-              >
-                Phase 3C will replace this list with the full watchlist
-                anatomy panel — thesis, activation conditions, and
-                invalidation signals per slot.
-              </div>
-            </div>
+            <WatchlistAnatomyPanel
+              anatomy={anatomy}
+              candidateTickers={candidateTickers}
+              agentName={agentName}
+            />
           </div>
         </div>
 
@@ -984,154 +947,6 @@ function EmptyState({ topic, parsedTickers, agentName, tokens }) {
             ))}
           </div>
         </div>
-      )}
-    </div>
-  );
-}
-
-function SidebarHeader({ tokens, count }) {
-  return (
-    <div
-      style={{
-        padding: '12px 16px',
-        borderBottom: `1px solid ${tokens.borderDefault}`,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        gap: 8,
-      }}
-    >
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 8,
-          color: tokens.textPrimary,
-          fontSize: 12,
-          fontWeight: 700,
-          letterSpacing: '0.5px',
-          textTransform: 'uppercase',
-        }}
-      >
-        <ListTree size={14} color={tokens.teal} />
-        Candidate Tickers
-      </div>
-      <span
-        style={{
-          fontSize: 11,
-          fontWeight: 700,
-          padding: '2px 8px',
-          borderRadius: 999,
-          background: tokens.bgIcon,
-          color: count > 0 ? tokens.teal : tokens.textMuted,
-        }}
-      >
-        {count}
-      </span>
-    </div>
-  );
-}
-
-function SlotGroup({ label, tickers, tokens }) {
-  const list = Array.isArray(tickers) ? tickers : [];
-  return (
-    <div style={{ marginBottom: 14 }}>
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'baseline',
-          gap: 6,
-          marginBottom: 6,
-        }}
-      >
-        <span
-          style={{
-            fontSize: 10,
-            fontWeight: 700,
-            letterSpacing: '0.6px',
-            textTransform: 'uppercase',
-            color: tokens.textMuted,
-          }}
-        >
-          {label}
-        </span>
-        <span
-          style={{
-            fontSize: 10,
-            fontWeight: 700,
-            color: tokens.textFaint,
-          }}
-        >
-          ({list.length})
-        </span>
-      </div>
-      {list.length === 0 ? (
-        <div
-          style={{
-            fontSize: 11,
-            color: tokens.textFaint,
-            fontStyle: 'italic',
-            paddingLeft: 2,
-          }}
-        >
-          (none yet)
-        </div>
-      ) : (
-        <ul
-          style={{
-            listStyle: 'none',
-            padding: 0,
-            margin: 0,
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 6,
-          }}
-        >
-          {list.map((t) => (
-            <li
-              key={t.symbol}
-              style={{
-                display: 'flex',
-                alignItems: 'flex-start',
-                gap: 8,
-                padding: '6px 8px',
-                background: tokens.bgApp,
-                border: `1px solid ${tokens.borderDefault}`,
-                borderRadius: 6,
-              }}
-            >
-              <span
-                style={{
-                  color: tokens.teal,
-                  fontSize: 12,
-                  fontWeight: 700,
-                  fontFamily:
-                    'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
-                  letterSpacing: '0.3px',
-                  flexShrink: 0,
-                  minWidth: 48,
-                }}
-              >
-                {t.symbol}
-              </span>
-              <span
-                style={{
-                  fontSize: 11,
-                  color: tokens.textSecondary,
-                  lineHeight: 1.4,
-                  flex: 1,
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  display: '-webkit-box',
-                  WebkitLineClamp: 2,
-                  WebkitBoxOrient: 'vertical',
-                }}
-              >
-                {t.reasoning || t.category || '—'}
-              </span>
-            </li>
-          ))}
-        </ul>
       )}
     </div>
   );
