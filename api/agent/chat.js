@@ -451,11 +451,43 @@ export default async function handler(req, res) {
     // 21. Return response
     return res.status(200).json(clientResponse);
   } catch (error) {
-    if (error.name === 'AbortError') {
+    const isAbort = error?.name === 'AbortError';
+    if (isAbort) {
       console.error('[VoiceLayer] Request timed out');
+    } else {
+      console.error('[VoiceLayer] Error:', error);
+    }
+
+    // Shadow log the failure (closes the diagnostic gap identified in the
+    // snag-bug investigation). Best-effort — never blocks the response.
+    // Captures the user message, error reason, abort flag, and a truncated
+    // error message so production can correlate first-message failure
+    // patterns to specific Gemma / OpenRouter / Firestore failures.
+    logConversation({
+      userId: user.uid,
+      agentId,
+      battleId,
+      archetype: null,
+      gameMode: null,
+      exchangeNumber: null,
+      userMessage: sanitizedMessage,
+      agentMessage: null,
+      scratchpad: null,
+      directive: null,
+      suggestedActions: null,
+      elicitationTarget: null,
+      anchorContext: null,
+      hasDirective: false,
+      tokenUsage: null,
+      mode: null,
+      turnError: true,
+      errorReason: isAbort ? 'gemma_timeout' : 'handler_exception',
+      errorMessage: String(error?.message || error || '').slice(0, 500),
+    }).catch(() => {});
+
+    if (isAbort) {
       return res.status(504).json({ error: 'Agent response timed out. Try again.' });
     }
-    console.error('[VoiceLayer] Error:', error);
     return res.status(500).json({ error: 'Agent unavailable. Try again in a moment.' });
   }
 }

@@ -658,6 +658,25 @@ export default async function handler(req, res) {
         // First-turn failure: don't materialize the session doc — the
         // client will retry with the same parseResult and we'll allocate
         // a fresh ID. Avoids leaving abandoned shells in Firestore.
+        // Shadow log the failure so first-turn HTTP/timeout patterns are
+        // queryable (parity with the continuing-turn branch below).
+        waitUntil(
+          logSignalDrops({
+            stage: 'dialogue',
+            dropId: session.parseResult?.contentHash || null,
+            contentHash: session.parseResult?.contentHash || null,
+            userId: user.uid,
+            agentId,
+            sessionId: null,
+            phase: 'explore',
+            messagesUsed: 0,
+            turnError: true,
+            errorReason: gemmaResult.aborted ? 'gemma_timeout' : 'gemma_invalid_shape',
+            errorMessage: String(gemmaResult.error || '').slice(0, 500),
+            loggedAt: new Date().toISOString(),
+          }).catch(() => {}),
+        );
+
         const statusCode = gemmaResult.aborted ? 504 : 200;
         return res.status(statusCode).json({
           sessionId: null,

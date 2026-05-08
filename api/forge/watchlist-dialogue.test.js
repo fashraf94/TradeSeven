@@ -1148,6 +1148,64 @@ describe('handler — structured-error path', () => {
     expect(shadowLogCalls.current[0].errorReason).toBe('parse_plaintext_passthrough');
   });
 
+  it('first-turn gemmaResult.success=false now shadow-logs (gap closure)', async () => {
+    // Gap closure: previously the first-turn failure path returned
+    // without calling logSignalDrops. Production lost visibility into
+    // first-turn HTTP/timeout failures — the most diagnostic case.
+    const fixture = makeFakeFirestore({
+      agent: VALID_AGENT,
+      sessionDocs: {},
+      signalDrops: standardSignalDrops(),
+    });
+    activeFirestore = fixture.db;
+
+    gemmaResult.current = {
+      success: false,
+      error: 'OpenRouter 502: gateway down',
+      fallbackResponse: null,
+    };
+
+    const { req, res } = makeReqRes({
+      agentId: 'agent-1',
+      message: 'hi',
+      parseResult: VALID_PARSE_RESULT,
+      dropId: VALID_DROP_ID,
+    });
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body.error).toBe(true);
+    expect(res.body.errorReason).toBe('gemma_invalid_shape');
+    expect(res.body.sessionId).toBeNull();
+    // The fix: shadow log fires on first-turn failures too.
+    expect(shadowLogCalls.current).toHaveLength(1);
+    expect(shadowLogCalls.current[0].turnError).toBe(true);
+    expect(shadowLogCalls.current[0].errorReason).toBe('gemma_invalid_shape');
+    expect(shadowLogCalls.current[0].sessionId).toBeNull();
+    expect(shadowLogCalls.current[0].errorMessage).toContain('OpenRouter 502');
+  });
+
+  it('first-turn timeout (aborted=true) shadow-logs with gemma_timeout', async () => {
+    activeFirestore = makeFakeFirestore({
+      agent: VALID_AGENT,
+      sessionDocs: {},
+      signalDrops: standardSignalDrops(),
+    }).db;
+    gemmaResult.current = { success: false, error: 'aborted', aborted: true };
+
+    const { req, res } = makeReqRes({
+      agentId: 'agent-1',
+      message: 'hi',
+      parseResult: VALID_PARSE_RESULT,
+      dropId: VALID_DROP_ID,
+    });
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(504);
+    expect(shadowLogCalls.current).toHaveLength(1);
+    expect(shadowLogCalls.current[0].errorReason).toBe('gemma_timeout');
+  });
+
   it('parseError with empty_content uses the same path with errorReason=parse_empty_content', async () => {
     const sessionDocs = {
       'sess-y': {

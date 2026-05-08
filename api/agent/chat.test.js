@@ -225,3 +225,79 @@ describe('agent/chat — parseError 502 banner path', () => {
   });
 });
 
+describe('agent/chat — catch-block shadow logging (gap closure)', () => {
+  // Gap closure: previously the catch block returned 500/504 without
+  // calling logConversation. Production lost visibility into AbortError
+  // timeouts and other handler exceptions.
+
+  it('AbortError → 504 + shadow logs gemma_timeout', async () => {
+    const fixture = makeFakeFirestore({ agent: VALID_AGENT, battle: VALID_BATTLE });
+    activeFirestore = fixture.db;
+
+    callGemmaVoiceImpl.current = async () => {
+      const err = new Error('aborted');
+      err.name = 'AbortError';
+      throw err;
+    };
+
+    const { req, res } = makeReqRes({
+      agentId: 'agent-1',
+      battleId: 'battle-1',
+      message: 'hi',
+    });
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(504);
+    expect(res.body.error).toBe('Agent response timed out. Try again.');
+    expect(shadowLogCalls.current).toHaveLength(1);
+    expect(shadowLogCalls.current[0].turnError).toBe(true);
+    expect(shadowLogCalls.current[0].errorReason).toBe('gemma_timeout');
+    expect(shadowLogCalls.current[0].userMessage).toBe('hi');
+    expect(shadowLogCalls.current[0].agentId).toBe('agent-1');
+    expect(shadowLogCalls.current[0].battleId).toBe('battle-1');
+  });
+
+  it('non-Abort error → 500 + shadow logs handler_exception with errorMessage', async () => {
+    const fixture = makeFakeFirestore({ agent: VALID_AGENT, battle: VALID_BATTLE });
+    activeFirestore = fixture.db;
+
+    callGemmaVoiceImpl.current = async () => {
+      throw new Error('OpenRouter 502: gateway down');
+    };
+
+    const { req, res } = makeReqRes({
+      agentId: 'agent-1',
+      battleId: 'battle-1',
+      message: 'hi',
+    });
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(500);
+    expect(res.body.error).toBe('Agent unavailable. Try again in a moment.');
+    expect(shadowLogCalls.current).toHaveLength(1);
+    expect(shadowLogCalls.current[0].turnError).toBe(true);
+    expect(shadowLogCalls.current[0].errorReason).toBe('handler_exception');
+    expect(shadowLogCalls.current[0].errorMessage).toContain('OpenRouter 502');
+  });
+
+  it('error message is truncated to 500 chars in shadow log', async () => {
+    const fixture = makeFakeFirestore({ agent: VALID_AGENT, battle: VALID_BATTLE });
+    activeFirestore = fixture.db;
+
+    const longMessage = 'x'.repeat(900);
+    callGemmaVoiceImpl.current = async () => {
+      throw new Error(longMessage);
+    };
+
+    const { req, res } = makeReqRes({
+      agentId: 'agent-1',
+      battleId: 'battle-1',
+      message: 'hi',
+    });
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(500);
+    expect(shadowLogCalls.current[0].errorMessage).toHaveLength(500);
+  });
+});
+
