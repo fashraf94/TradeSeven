@@ -427,6 +427,60 @@ export default async function handler(req, res) {
 
     // 13. Parse
     const parsed = parseVoiceLayerResponse(gemmaResult.content);
+
+    // 13b. Structured parse failure (tier-4). Gemma returned plaintext or
+    //      empty content instead of JSON — route through the same
+    //      structured-error path the gemmaResult.success === false branch
+    //      uses, and shadow log the raw text for diagnostics. Never echo
+    //      rawText back as agentMessage (it's typically Gemma's own
+    //      "I have hit a snag…" plaintext).
+    if (parsed?.parseError === true) {
+      console.error(
+        '[WorkshopChat] parseVoiceLayerResponse failed:',
+        parsed.errorReason,
+        '| raw:',
+        String(parsed.rawText || '').slice(0, 300),
+      );
+      logConversation({
+        userId: user.uid,
+        agentId,
+        battleId: null,
+        archetype: agent.archetype || null,
+        gameMode: 'workshop',
+        exchangeNumber: messagesUsed + 1,
+        userMessage: sanitizedMessage,
+        agentMessage: null,
+        scratchpad: null,
+        directive: null,
+        suggestedActions: null,
+        elicitationTarget: null,
+        anchorContext: null,
+        hasDirective: false,
+        tokenUsage: null,
+        workshopSessionId: isNewSession ? null : sessionRef.id,
+        activeThesis: null,
+        turnError: true,
+        errorReason: `parse_${parsed.errorReason}`,
+        rawGemmaContent: String(parsed.rawText || '').slice(0, 2000),
+      }).catch(() => {});
+
+      const previousThesis = session.latestThesis || null;
+      const sessionIdForClient = isNewSession ? null : sessionRef.id;
+      return res.status(200).json({
+        sessionId: sessionIdForClient,
+        agentMessage:
+          "I hit a snag processing that — could you try that again?",
+        activeThesis: previousThesis,
+        scratchpad: null,
+        suggestedActions: null,
+        messagesUsed: session.messagesUsed || 0, // unchanged — this turn didn't count
+        messageBudget,
+        readyToCompile: Boolean(previousThesis?.readyToCompile),
+        error: true,
+        errorReason: `parse_${parsed.errorReason}`,
+      });
+    }
+
     const cleanScratchpad = sanitizeScratchpad(parsed._scratchpad);
 
     // Defensive extraction: even though the few-shot example now puts

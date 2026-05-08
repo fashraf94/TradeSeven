@@ -658,6 +658,25 @@ export default async function handler(req, res) {
         // First-turn failure: don't materialize the session doc — the
         // client will retry with the same parseResult and we'll allocate
         // a fresh ID. Avoids leaving abandoned shells in Firestore.
+        // Shadow log the failure so first-turn HTTP/timeout patterns are
+        // queryable (parity with the continuing-turn branch below).
+        waitUntil(
+          logSignalDrops({
+            stage: 'dialogue',
+            dropId: session.parseResult?.contentHash || null,
+            contentHash: session.parseResult?.contentHash || null,
+            userId: user.uid,
+            agentId,
+            sessionId: null,
+            phase: 'explore',
+            messagesUsed: 0,
+            turnError: true,
+            errorReason: gemmaResult.aborted ? 'gemma_timeout' : 'gemma_invalid_shape',
+            errorMessage: String(gemmaResult.error || '').slice(0, 500),
+            loggedAt: new Date().toISOString(),
+          }).catch(() => {}),
+        );
+
         const statusCode = gemmaResult.aborted ? 504 : 200;
         return res.status(statusCode).json({
           sessionId: null,
@@ -709,6 +728,69 @@ export default async function handler(req, res) {
 
     // 15. Parse + normalize Gemma's output
     const rawParsed = parseVoiceLayerResponse(gemmaResult.content);
+
+    // 15b. Structured parse failure (tier-4). Gemma returned plaintext or
+    //      empty content instead of JSON — route through the same
+    //      structured-error path the gemmaResult.success === false branch
+    //      uses (first-turn vs continuing-turn copy mirrored), and shadow
+    //      log the raw text for diagnostics. Never echo rawText back as
+    //      agentMessage.
+    if (rawParsed?.parseError === true) {
+      console.error(
+        '[watchlist-dialogue] parseVoiceLayerResponse failed:',
+        rawParsed.errorReason,
+        '| raw:',
+        String(rawParsed.rawText || '').slice(0, 300),
+      );
+
+      waitUntil(
+        logSignalDrops({
+          stage: 'dialogue',
+          dropId: session.parseResult?.contentHash || null,
+          contentHash: session.parseResult?.contentHash || null,
+          userId: user.uid,
+          agentId,
+          sessionId: isNewSession ? null : sessionRef.id,
+          phase: currentPhase,
+          messagesUsed: currentMessagesUsed,
+          turnError: true,
+          errorReason: `parse_${rawParsed.errorReason}`,
+          rawGemmaContent: String(rawParsed.rawText || '').slice(0, 2000),
+          loggedAt: new Date().toISOString(),
+        }).catch(() => {}),
+      );
+
+      if (isNewSession) {
+        return res.status(200).json({
+          sessionId: null,
+          error: true,
+          errorReason: `parse_${rawParsed.errorReason}`,
+          agentMessage:
+            "I hit a snag opening this conversation — could you send that again?",
+          candidateTickers: [],
+          phase: 'explore',
+          suggestedActions: ['retry'],
+          messagesUsed: 0,
+          messageBudget,
+          readyToFinalize: false,
+        });
+      }
+
+      return res.status(200).json({
+        sessionId: sessionRef.id,
+        error: true,
+        errorReason: `parse_${rawParsed.errorReason}`,
+        agentMessage:
+          "I hit a snag processing that — could you try that again?",
+        candidateTickers: session.candidateTickers || [],
+        phase: currentPhase,
+        suggestedActions: ['retry'],
+        messagesUsed: currentMessagesUsed,
+        messageBudget,
+        readyToFinalize: false,
+      });
+    }
+
     const normalized = normalizeDialogueOutput(rawParsed);
 
     // Defensive fallback for empty agentMessage — never echo Gemma's raw

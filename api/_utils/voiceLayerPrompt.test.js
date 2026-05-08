@@ -1033,3 +1033,61 @@ describe('buildReviewContext — counterfactuals filter (regression)', () => {
     expect(out).not.toContain('COIN → HOOD');
   });
 });
+
+// =============================================================================
+// Voice Layer Snag Bug Fix — battle-mode OUTPUT_FORMAT confusion handler.
+//
+// Background: investigation report (claude/investigate-gemma-snag-bug-GBzfi)
+// found that battle-mode OUTPUT_FORMAT lacked the "if confused, still return
+// JSON" instruction that Workshop has. This let Gemma fall back to plain-text
+// "I have hit a snag…" responses on first turns when the prompt was sparse.
+// These tests pin the new instruction to the assembled battle-mode prompt.
+// =============================================================================
+
+describe('buildVoiceLayerPrompt — battle-mode confusion handler', () => {
+  const minimalAgent = {
+    name: 'Gemma',
+    archetype: 'strategist',
+    stats: { gamesPlayed: 1, wins: 0, losses: 0 },
+  };
+  const minimalBattle = {
+    gameMode: 'standard',
+    portfolio: { star: [], core: [], support: [] },
+    scoreState: { currentScore: 0, opponentScore: 0 },
+  };
+  const minimalElicitation = {
+    dimension: 'risk_appetite',
+    instruction: 'probe risk appetite',
+  };
+
+  it('battle prompt embeds the JSON-on-confusion instruction', () => {
+    const out = buildVoiceLayerPrompt({
+      agent: minimalAgent,
+      battle: minimalBattle,
+      elicitationTarget: minimalElicitation,
+      conversationHistory: [],
+      anchorContext: null,
+      marketSnapshot: null,
+      mode: 'battle',
+    });
+
+    expect(out).toContain('You MUST return valid JSON in every response, no exceptions.');
+    expect(out).toContain('NEVER output plain text outside the JSON structure.');
+    expect(out).toMatch(/clarifying question.*in the `response` field/);
+  });
+
+  it('battle prompt still embeds the original strict-JSON header', () => {
+    const out = buildVoiceLayerPrompt({
+      agent: minimalAgent,
+      battle: minimalBattle,
+      elicitationTarget: minimalElicitation,
+      conversationHistory: [],
+      anchorContext: null,
+      marketSnapshot: null,
+      mode: 'battle',
+    });
+
+    // Existing header rule must remain — confusion handler is additive.
+    expect(out).toContain('RESPONSE FORMAT — You MUST respond with valid JSON only.');
+  });
+});

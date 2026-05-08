@@ -251,14 +251,37 @@ function _delay(ms, signal) {
  *   1. Direct JSON.parse
  *   2. Extract fenced ```json ... ``` block
  *   3. Extract the first {...} block
- *   4. Fall back to plain-text wrapping
+ *   4. Structured parse failure
  *
- * ALWAYS returns an object with a `response` string — never throws.
+ * Tiers 1-3 return Gemma's parsed JSON object. Tier 4 returns a structured
+ * parse-failure shape: `{ parseError: true, errorReason, rawText }`. Callers
+ * MUST detect `parseError === true` and route to their own structured-error
+ * path — never trust top-level fields when parseError is set, and never echo
+ * `rawText` back to the user (Gemma's plain-text failure modes leak otherwise).
+ *
+ * Background: previously this returned `{ response: cleanedText || '...' }`
+ * which let Gemma's natural-language failure responses flow through verbatim
+ * as agentMessage in callers that didn't shape-check. See
+ * api/forge/expand-signal.js:isExpansionShape for the original defensive
+ * pattern; this contract change generalizes that defense to all callers.
+ *
+ * Never throws.
  *
  * @param {string} rawText
- * @returns {Object} parsed response object
+ * @returns {Object} parsed Gemma JSON OR { parseError: true, errorReason, rawText }
  */
 export function parseVoiceLayerResponse(rawText) {
+  // Guard against non-string inputs. JSON.parse(null) returns null without
+  // throwing (null coerces to "null"), which would skip the tier-4 fallback
+  // and leak a null reference to callers. Force the empty_content path here.
+  if (typeof rawText !== 'string') {
+    return {
+      parseError: true,
+      errorReason: 'empty_content',
+      rawText: '',
+    };
+  }
+
   // Try direct JSON parse
   try {
     return JSON.parse(rawText);
@@ -280,13 +303,13 @@ export function parseVoiceLayerResponse(rawText) {
     } catch { /* fall through */ }
   }
 
-  // Final fallback — treat raw text as response
-  const cleanedText = (rawText || '').replace(/```[\s\S]*?```/g, '').trim();
+  // Tier 4: structured parse failure. Distinguish empty content from
+  // plain-text passthrough so callers and shadow logs can tell whether
+  // Gemma returned nothing vs. returned natural language outside JSON.
+  const cleanedText = rawText.replace(/```[\s\S]*?```/g, '').trim();
   return {
-    _scratchpad: null,
-    response: cleanedText || 'I had trouble forming a response. Can you try again?',
-    hasDirective: false,
-    directive: null,
-    suggestedActions: null,
+    parseError: true,
+    errorReason: cleanedText ? 'plaintext_passthrough' : 'empty_content',
+    rawText,
   };
 }
