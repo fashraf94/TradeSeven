@@ -32,6 +32,7 @@ import {
   serverTimestamp,
   where,
 } from 'firebase/firestore';
+import { ArrowRight, Sparkles } from 'lucide-react';
 import { auth, db } from '../../firebase/config';
 import { useTheme } from '../../contexts/ThemeContext';
 import ThemeDetailModal from './ThemeDetailModal';
@@ -40,6 +41,7 @@ import AllThemesShowcase from './AllThemesShowcase';
 import SectorRail from './SectorRail';
 import WatchListRail from './WatchListRail';
 import AssetResearchModal from '../draft/AssetResearchModal';
+import { SignalDropEntry } from '../SignalDrop';
 import { getSectorContent } from './sectorContent';
 import { getThemeRichEntry } from './themesDkb';
 import { SECTORS as SECTOR_HOLDINGS_MAP } from '../../constants/sectors';
@@ -126,6 +128,12 @@ export default function DiscoverPanel({ showToast, requestWorkshopOpen }) {
   const [error, setError] = useState(null);
   const [selectedTheme, setSelectedTheme] = useState(null);
   const [viewChartTicker, setViewChartTicker] = useState(null);
+  // Sprint 6 Phase 3A: Signal Drop entry modal. Lives here alongside
+  // the other Discover modals (ThemeDetailModal, AssetResearchModal)
+  // because it's a Discover-surface CTA with no agent/capacity gate.
+  // The 3A "Start dialogue" handler is a placeholder — Phase 3B
+  // replaces it with the WatchlistChat hand-off.
+  const [signalDropOpen, setSignalDropOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -211,6 +219,35 @@ export default function DiscoverPanel({ showToast, requestWorkshopOpen }) {
     setViewChartTicker(null);
   };
 
+  // Sprint 6 Phase 3A: open the Signal Drop entry modal. Logged
+  // through the same fire-and-forget interaction writer used by theme
+  // and sector taps; we use a sentinel themeId of '__signal_drop__'
+  // because the schema requires one and we don't have a theme here.
+  const handleOpenSignalDrop = () => {
+    logInteraction({
+      themeId: '__signal_drop__',
+      action: 'tap_drop_signal',
+      source: 'discoverSignalDrop',
+    });
+    setSignalDropOpen(true);
+  };
+
+  const handleCloseSignalDrop = () => {
+    setSignalDropOpen(false);
+  };
+
+  // Phase 3A placeholder. Phase 3B replaces this with the actual
+  // WatchlistChat hand-off — for now we log the parseResult/dropId
+  // and close the modal so the surface can be tested end-to-end
+  // without a dialogue UI yet.
+  const handleStartSignalDialogue = ({ parseResult, dropId }) => {
+    console.log('[SignalDrop] Start dialogue (Phase 3A placeholder)', {
+      dropId,
+      parseResult,
+    });
+    setSignalDropOpen(false);
+  };
+
   // Cross-modal handoff target for SectorDetailModal: open the theme
   // modal for a given themeId. SectorRail will have already closed its
   // own modal before invoking this. If the themeId no longer resolves
@@ -255,6 +292,8 @@ export default function DiscoverPanel({ showToast, requestWorkshopOpen }) {
       <div style={{ marginTop: 24 }}>
         {WATCH_LIST_RAIL_ENABLED && <WatchListRail onTickerTap={handleViewChartTap} />}
 
+        <DropSignalCard tokens={tokens} onTap={handleOpenSignalDrop} />
+
         <FeaturedThemesShowcase
           themes={themes}
           loading={loading}
@@ -292,6 +331,104 @@ export default function DiscoverPanel({ showToast, requestWorkshopOpen }) {
           version={2}
         />
       )}
+
+      <SignalDropEntry
+        open={signalDropOpen}
+        onClose={handleCloseSignalDrop}
+        onStartDialogue={handleStartSignalDialogue}
+      />
     </div>
+  );
+}
+
+// "Drop a Signal" card — first-class entry point at the top of the
+// Discover surface (Sprint 6 Phase 3A). Visually distinct from theme/
+// sector cards via teal accent border + sparkles icon, mirroring the
+// Discovery taxonomy framing.
+function DropSignalCard({ tokens, onTap }) {
+  return (
+    <button
+      type="button"
+      onClick={onTap}
+      style={{
+        appearance: 'none',
+        width: '100%',
+        display: 'flex',
+        alignItems: 'center',
+        gap: 14,
+        padding: '14px 16px',
+        marginBottom: 16,
+        background: `linear-gradient(135deg, ${tokens.bgCard} 0%, ${tokens.bgAgent} 100%)`,
+        border: `1px solid ${tokens.teal}55`,
+        borderRadius: 14,
+        color: 'inherit',
+        textAlign: 'left',
+        cursor: 'pointer',
+        fontFamily: 'inherit',
+        boxShadow: `0 0 0 1px ${tokens.teal}10 inset`,
+        transition: 'transform 0.15s ease, border-color 0.15s ease',
+      }}
+      onMouseEnter={(e) => {
+        e.currentTarget.style.borderColor = `${tokens.teal}99`;
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.borderColor = `${tokens.teal}55`;
+      }}
+    >
+      <div
+        style={{
+          width: 40,
+          height: 40,
+          flexShrink: 0,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          background: `${tokens.teal}1a`,
+          border: `1px solid ${tokens.teal}40`,
+          borderRadius: 10,
+          color: tokens.teal,
+        }}
+      >
+        <Sparkles size={18} />
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div
+          style={{
+            fontSize: 15,
+            fontWeight: 700,
+            color: tokens.textPrimary,
+            lineHeight: 1.25,
+          }}
+        >
+          Drop a Signal
+        </div>
+        <div
+          style={{
+            marginTop: 2,
+            fontSize: 12,
+            color: tokens.textMuted,
+            lineHeight: 1.45,
+          }}
+        >
+          Paste a tweet, article, or news clip — build a curated watchlist
+          together.
+        </div>
+      </div>
+      <div
+        style={{
+          flexShrink: 0,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 4,
+          color: tokens.teal,
+          fontSize: 12,
+          fontWeight: 700,
+          letterSpacing: '0.3px',
+        }}
+      >
+        Start
+        <ArrowRight size={14} />
+      </div>
+    </button>
   );
 }
