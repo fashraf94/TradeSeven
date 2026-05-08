@@ -81,6 +81,7 @@ const {
   default: handler,
   validateParseResult,
   applyCandidateTickerUpdates,
+  applyAnatomyUpdates,
   validatePhaseTransition,
   normalizeDialogueOutput,
 } = await import('./watchlist-dialogue.js');
@@ -543,11 +544,13 @@ describe('normalizeDialogueOutput', () => {
       agentMessage: '',
       proposedPhase: null,
       candidateTickerUpdates: [],
+      anatomyUpdates: [],
       suggestedActions: [],
       readyToFinalize: false,
     });
     expect(normalizeDialogueOutput('string').agentMessage).toBe('');
     expect(normalizeDialogueOutput([]).candidateTickerUpdates).toEqual([]);
+    expect(normalizeDialogueOutput([]).anatomyUpdates).toEqual([]);
   });
 
   it('drops invalid proposedPhase values', () => {
@@ -774,7 +777,13 @@ describe('handler — subsequent-turn happy path', () => {
     expect(res.statusCode).toBe(200);
     expect(res.body.phase).toBe('propose');
     expect(res.body.candidateTickers).toEqual([
-      { symbol: 'AAPL', reasoning: 'direct', category: 'core', status: 'proposed' },
+      {
+        symbol: 'AAPL',
+        reasoning: 'direct',
+        category: 'core',
+        slot: null,
+        status: 'proposed',
+      },
     ]);
 
     const updateCall = fixture.written.updateCalls[0];
@@ -1604,5 +1613,401 @@ describe('handler — parse metadata sanitization (Phase 2.5 Fix 3 smoke)', () =
     );
     // The wrapper at render time will frame this as <PARSED_TOPIC> data,
     // not authoritative metadata. See voiceLayerPrompt.buildParsedSignalBlock.
+  });
+});
+
+// ==================== Phase 2.6 — applyAnatomyUpdates ====================
+
+describe('applyAnatomyUpdates', () => {
+  const EMPTY = {
+    thesis: null,
+    activationConditions: [],
+    invalidationConditions: [],
+  };
+
+  it('sets the thesis via field="thesis" action="set" and clamps at 1000 chars', () => {
+    const out = applyAnatomyUpdates(EMPTY, [
+      { field: 'thesis', action: 'set', value: 'Apple supply chain story' },
+    ]);
+    expect(out.thesis).toBe('Apple supply chain story');
+
+    const longValue = 'x'.repeat(1500);
+    const capped = applyAnatomyUpdates(EMPTY, [
+      { field: 'thesis', action: 'set', value: longValue },
+    ]);
+    expect(capped.thesis).toHaveLength(1000);
+  });
+
+  it('adds activation/invalidation conditions and clamps each at 200 chars', () => {
+    const out = applyAnatomyUpdates(EMPTY, [
+      { field: 'activation_condition', action: 'add', value: 'Apple confirms ramp' },
+      { field: 'invalidation_condition', action: 'add', value: 'TSM guides AI capex down' },
+    ]);
+    expect(out.activationConditions).toEqual(['Apple confirms ramp']);
+    expect(out.invalidationConditions).toEqual(['TSM guides AI capex down']);
+
+    const longValue = 'y'.repeat(500);
+    const capped = applyAnatomyUpdates(EMPTY, [
+      { field: 'activation_condition', action: 'add', value: longValue },
+    ]);
+    expect(capped.activationConditions[0]).toHaveLength(200);
+  });
+
+  it('caps each condition list at 3 entries; further adds are silently dropped', () => {
+    const start = {
+      thesis: null,
+      activationConditions: ['c1', 'c2', 'c3'],
+      invalidationConditions: [],
+    };
+    const out = applyAnatomyUpdates(start, [
+      { field: 'activation_condition', action: 'add', value: 'overflow' },
+    ]);
+    expect(out.activationConditions).toEqual(['c1', 'c2', 'c3']);
+  });
+
+  it('removes a condition by 0-based index; out-of-range indices silent-skip', () => {
+    const start = {
+      thesis: null,
+      activationConditions: ['a', 'b', 'c'],
+      invalidationConditions: [],
+    };
+    const out = applyAnatomyUpdates(start, [
+      { field: 'activation_condition', action: 'remove', index: 1 },
+    ]);
+    expect(out.activationConditions).toEqual(['a', 'c']);
+
+    // Out-of-range: silent skip — list unchanged
+    const skipped = applyAnatomyUpdates(start, [
+      { field: 'activation_condition', action: 'remove', index: 99 },
+      { field: 'activation_condition', action: 'remove', index: -1 },
+    ]);
+    expect(skipped.activationConditions).toEqual(['a', 'b', 'c']);
+  });
+
+  it('replaces a condition by index; clamps replacement at 200 chars', () => {
+    const start = {
+      thesis: null,
+      activationConditions: ['old-1', 'old-2'],
+      invalidationConditions: [],
+    };
+    const out = applyAnatomyUpdates(start, [
+      {
+        field: 'activation_condition',
+        action: 'replace',
+        index: 0,
+        value: 'new-1',
+      },
+    ]);
+    expect(out.activationConditions).toEqual(['new-1', 'old-2']);
+
+    const longValue = 'z'.repeat(400);
+    const capped = applyAnatomyUpdates(start, [
+      { field: 'activation_condition', action: 'replace', index: 1, value: longValue },
+    ]);
+    expect(capped.activationConditions[1]).toHaveLength(200);
+  });
+
+  it('silently skips malformed updates and unknown fields/actions', () => {
+    const out = applyAnatomyUpdates(EMPTY, [
+      null,
+      'not-an-object',
+      { field: 'unknown_field', action: 'set', value: 'x' },
+      { field: 'thesis', action: 'lol', value: 'x' },
+      { field: 'thesis', action: 'set' }, // value missing
+      { field: 'thesis', action: 'set', value: '   ' }, // empty after trim
+      { field: 'activation_condition', action: 'add' }, // value missing
+      // 'set' on a condition field is a no-op (only 'add'/'remove'/'replace' apply)
+      { field: 'activation_condition', action: 'set', value: 'x' },
+    ]);
+    expect(out).toEqual(EMPTY);
+  });
+});
+
+// ==================== Phase 2.6 — slot field on applyCandidateTickerUpdates ====================
+
+describe('applyCandidateTickerUpdates — Phase 2.6 slot extensions', () => {
+  const NOW = '2026-05-08T12:00:00.000Z';
+
+  it('records slot when propose includes a valid slot value', () => {
+    const out = applyCandidateTickerUpdates(
+      [],
+      [
+        {
+          action: 'propose',
+          symbol: 'AAPL',
+          reasoning: 'r',
+          category: 'c',
+          slot: 'core',
+        },
+      ],
+      'propose',
+      NOW,
+    );
+    expect(out[0].slot).toBe('core');
+  });
+
+  it('falls back to slot=null when slot is missing or invalid', () => {
+    const out = applyCandidateTickerUpdates(
+      [],
+      [
+        { action: 'propose', symbol: 'AAPL', reasoning: 'r', category: 'c' },
+        {
+          action: 'propose',
+          symbol: 'NVDA',
+          reasoning: 'r',
+          category: 'c',
+          slot: 'invalid_bucket',
+        },
+      ],
+      'propose',
+      NOW,
+    );
+    expect(out.map((t) => [t.symbol, t.slot])).toEqual([
+      ['AAPL', null],
+      ['NVDA', null],
+    ]);
+  });
+
+  it('reslot mutates the slot of an existing ticker; ignores invalid/missing slot values', () => {
+    const existing = [
+      { symbol: 'AAPL', status: 'proposed', slot: 'core' },
+      { symbol: 'NVDA', status: 'proposed', slot: 'core' },
+    ];
+    const out = applyCandidateTickerUpdates(
+      existing,
+      [
+        { action: 'reslot', symbol: 'AAPL', slot: 'cross_current' },
+        { action: 'reslot', symbol: 'NVDA', slot: 'garbage' },
+        { action: 'reslot', symbol: 'TSLA', slot: 'core' }, // unknown symbol
+        { action: 'reslot', symbol: 'AAPL' }, // missing slot
+      ],
+      'refine',
+      NOW,
+    );
+    const bySymbol = Object.fromEntries(out.map((t) => [t.symbol, t.slot]));
+    expect(bySymbol).toEqual({ AAPL: 'cross_current', NVDA: 'core' });
+    expect(out).toHaveLength(2); // TSLA wasn't added
+  });
+});
+
+// ==================== Phase 2.6 — anatomyUpdates in normalizeDialogueOutput ====================
+
+describe('normalizeDialogueOutput — Phase 2.6 anatomyUpdates filter', () => {
+  it('caps anatomyUpdates at 4 entries and drops non-objects', () => {
+    const out = normalizeDialogueOutput({
+      anatomyUpdates: [
+        { field: 'thesis', action: 'set', value: 'a' },
+        { field: 'activation_condition', action: 'add', value: 'a1' },
+        { field: 'activation_condition', action: 'add', value: 'a2' },
+        { field: 'invalidation_condition', action: 'add', value: 'i1' },
+        { field: 'invalidation_condition', action: 'add', value: 'i2' }, // beyond cap
+        'not an object',
+        null,
+      ],
+    });
+    expect(out.anatomyUpdates).toHaveLength(4);
+    expect(out.anatomyUpdates.every((u) => u && typeof u === 'object')).toBe(true);
+  });
+});
+
+// ==================== Phase 2.6 — handler-level: anatomy lifecycle ====================
+
+describe('handler — Phase 2.6 anatomy lifecycle', () => {
+  it('initializes anatomy on first-turn session and persists thesis-set + condition-add', async () => {
+    const fixture = makeFakeFirestore({
+      agent: VALID_AGENT,
+      sessionDocs: {},
+      signalDrops: standardSignalDrops(),
+    });
+    activeFirestore = fixture.db;
+
+    gemmaResult.current = {
+      success: true,
+      content: JSON.stringify({
+        agentMessage: 'Setting the thesis based on what you said.',
+        proposedPhase: 'explore',
+        candidateTickerUpdates: [],
+        anatomyUpdates: [
+          {
+            field: 'thesis',
+            action: 'set',
+            value: 'Apple AI inference is a supply-chain story.',
+          },
+          {
+            field: 'activation_condition',
+            action: 'add',
+            value: 'Apple confirms multi-year silicon ramp',
+          },
+        ],
+        suggestedActions: [],
+        readyToFinalize: false,
+      }),
+    };
+
+    const { req, res } = makeReqRes({
+      agentId: 'agent-1',
+      message: 'I see this as a supply-chain story',
+      parseResult: VALID_PARSE_RESULT,
+      dropId: VALID_DROP_ID,
+    });
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body.anatomy).toBeDefined();
+    expect(res.body.anatomy.thesis).toBe('Apple AI inference is a supply-chain story.');
+    expect(res.body.anatomy.activationConditions).toEqual([
+      'Apple confirms multi-year silicon ramp',
+    ]);
+    expect(res.body.anatomy.invalidationConditions).toEqual([]);
+
+    // Persisted shape on the new session doc
+    const stored = fixture.written.setCalls[0]?.data;
+    expect(stored.anatomy.thesis).toBe('Apple AI inference is a supply-chain story.');
+    expect(stored.anatomy.activationConditions).toHaveLength(1);
+    expect(stored.anatomy.invalidationConditions).toEqual([]);
+  });
+
+  it('threads slot + anatomy through a continuing-turn transaction (atomic with ticker updates)', async () => {
+    const sessionDocs = {
+      'sess-anatomy': {
+        userId: 'test-user',
+        agentId: 'agent-1',
+        status: 'active',
+        phase: 'propose',
+        parseResult: VALID_PARSE_RESULT,
+        exchanges: [],
+        candidateTickers: [],
+        anatomy: {
+          thesis: 'Apple AI inference is a supply-chain story.',
+          activationConditions: ['Apple confirms ramp'],
+          invalidationConditions: [],
+        },
+        messagesUsed: 2,
+        messageBudget: 20,
+      },
+    };
+    const fixture = makeFakeFirestore({ agent: VALID_AGENT, sessionDocs });
+    activeFirestore = fixture.db;
+
+    gemmaResult.current = {
+      success: true,
+      content: JSON.stringify({
+        agentMessage: 'Here are core picks and an invalidation.',
+        proposedPhase: 'propose',
+        candidateTickerUpdates: [
+          {
+            action: 'propose',
+            symbol: 'AAPL',
+            reasoning: 'core play',
+            category: 'direct play',
+            slot: 'core',
+          },
+          {
+            action: 'propose',
+            symbol: 'NVDA',
+            reasoning: 'discovery',
+            category: 'supplier',
+            slot: 'discovery',
+          },
+        ],
+        anatomyUpdates: [
+          {
+            field: 'invalidation_condition',
+            action: 'add',
+            value: 'TSM guides AI capex down',
+          },
+        ],
+        suggestedActions: [],
+        readyToFinalize: false,
+      }),
+    };
+
+    const { req, res } = makeReqRes({
+      agentId: 'agent-1',
+      sessionId: 'sess-anatomy',
+      message: 'show me names',
+    });
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    // Public response surfaces slot on each ticker
+    expect(res.body.candidateTickers.map((t) => [t.symbol, t.slot])).toEqual([
+      ['AAPL', 'core'],
+      ['NVDA', 'discovery'],
+    ]);
+    // Anatomy mutated atomically alongside tickers
+    expect(res.body.anatomy.invalidationConditions).toEqual(['TSM guides AI capex down']);
+    expect(res.body.anatomy.activationConditions).toEqual(['Apple confirms ramp']);
+
+    // Persisted update wrote BOTH new fields in the same transaction call
+    const update = fixture.written.updateCalls[0];
+    expect(update).toBeDefined();
+    expect(update.updates.candidateTickers).toHaveLength(2);
+    expect(update.updates.anatomy.invalidationConditions).toEqual([
+      'TSM guides AI capex down',
+    ]);
+  });
+
+  it('back-compat: a session with no anatomy field (pre-Phase-2.6) processes without crashing and gets anatomy backfilled', async () => {
+    const sessionDocs = {
+      'sess-old': {
+        userId: 'test-user',
+        agentId: 'agent-1',
+        status: 'active',
+        phase: 'explore',
+        parseResult: VALID_PARSE_RESULT,
+        exchanges: [],
+        // Pre-Phase-2.6 ticker — no slot field
+        candidateTickers: [
+          { symbol: 'AAPL', status: 'proposed', reasoning: 'old', category: 'core' },
+        ],
+        // Note: NO anatomy field — simulates a session created before Phase 2.6
+        messagesUsed: 1,
+        messageBudget: 20,
+      },
+    };
+    const fixture = makeFakeFirestore({ agent: VALID_AGENT, sessionDocs });
+    activeFirestore = fixture.db;
+
+    gemmaResult.current = {
+      success: true,
+      content: JSON.stringify({
+        agentMessage: 'Got it.',
+        proposedPhase: 'explore',
+        candidateTickerUpdates: [],
+        anatomyUpdates: [
+          {
+            field: 'thesis',
+            action: 'set',
+            value: 'Backfilled thesis after Phase 2.6 ships.',
+          },
+        ],
+        suggestedActions: [],
+        readyToFinalize: false,
+      }),
+    };
+
+    const { req, res } = makeReqRes({
+      agentId: 'agent-1',
+      sessionId: 'sess-old',
+      message: 'hi',
+    });
+    await handler(req, res);
+
+    // Did NOT crash; pre-existing ticker without slot survives in the response
+    expect(res.statusCode).toBe(200);
+    expect(res.body.candidateTickers).toEqual([
+      {
+        symbol: 'AAPL',
+        reasoning: 'old',
+        category: 'core',
+        slot: null,
+        status: 'proposed',
+      },
+    ]);
+    // Anatomy was synthesized from the empty-default and the thesis-set update applied
+    expect(res.body.anatomy.thesis).toBe('Backfilled thesis after Phase 2.6 ships.');
+    expect(res.body.anatomy.activationConditions).toEqual([]);
+    expect(res.body.anatomy.invalidationConditions).toEqual([]);
   });
 });
