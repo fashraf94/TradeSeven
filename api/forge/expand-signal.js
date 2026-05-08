@@ -54,10 +54,11 @@ function isNonEmptyString(v, max) {
   return typeof v === 'string' && v.trim().length > 0 && v.length <= max;
 }
 
-// Tier-4 detection: parseVoiceLayerResponse falls back to a Voice-Layer-
-// shaped object {_scratchpad, response, hasDirective, ...} when JSON
-// parsing fails three different ways. Expansion outputs have a different
-// shape, so we explicitly verify the shape before trusting it.
+// Tier-4 detection: parseVoiceLayerResponse returns a structured failure
+// shape ({ parseError, errorReason, rawText }) when JSON parsing fails
+// three different ways. Expansion outputs have their own shape, so we
+// explicitly verify the shape before trusting it — this also catches
+// the parse-failure shape since it lacks thesisSummary / relatedTickers.
 function isExpansionShape(obj) {
   if (!obj || typeof obj !== 'object') return false;
   if (typeof obj.thesisSummary !== 'string' || !obj.thesisSummary.trim()) return false;

@@ -279,6 +279,47 @@ export default async function handler(req, res) {
     // 16. Parse response
     const parsed = parseVoiceLayerResponse(rawResponse);
 
+    // 16b. Structured parse failure (tier-4). Gemma returned plaintext or
+    //      empty content instead of JSON — never echo rawText back to the
+    //      user (it's typically natural-language failure speech like
+    //      "I have hit a snag…"). Shadow log the raw text so production
+    //      diagnostics catch the failure mode, and surface a banner via
+    //      the same 502 path the catch block uses for other Gemma misfires.
+    if (parsed?.parseError === true) {
+      console.error(
+        '[VoiceLayer] parseVoiceLayerResponse failed:',
+        parsed.errorReason,
+        '| raw:',
+        String(parsed.rawText || '').slice(0, 300),
+      );
+      logConversation({
+        userId: user.uid,
+        agentId,
+        battleId,
+        archetype: agent.archetype || null,
+        gameMode: battle.gameMode || null,
+        exchangeNumber: currentBudget + 1,
+        userMessage: sanitizedMessage,
+        agentMessage: null,
+        scratchpad: null,
+        directive: null,
+        suggestedActions: null,
+        elicitationTarget: elicitationTarget.dimension,
+        anchorContext: anchorContext || null,
+        hasDirective: false,
+        tokenUsage: null,
+        mode,
+        turnError: true,
+        errorReason: `parse_${parsed.errorReason}`,
+        rawGemmaContent: String(parsed.rawText || '').slice(0, 2000),
+      }).catch(() => {});
+      return res.status(502).json({
+        error: 'gemma_invalid_shape',
+        errorReason: parsed.errorReason,
+        message: 'Agent returned an unexpected response. Try again.',
+      });
+    }
+
     // 17. Normalize and sanitize parsed fields
     const cleanScratchpad = sanitizeScratchpad(parsed._scratchpad);
     //     Directives are a live-play concept only. In review mode, the

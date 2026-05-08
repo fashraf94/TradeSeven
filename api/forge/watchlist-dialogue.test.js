@@ -1044,6 +1044,143 @@ describe('handler — structured-error path', () => {
     expect(res.body.error).toBe(true);
     expect(res.body.errorReason).toBe('gemma_timeout');
   });
+
+  // ==================== Voice Layer Snag Bug Fix ====================
+  //
+  // parseVoiceLayerResponse now returns a structured parse-failure shape
+  // when Gemma's content isn't JSON. The handler must detect that, route
+  // through the same first-turn vs continuing-turn copy as the
+  // gemmaResult.success === false branch, and shadow log the raw text.
+
+  it('first turn: routes parseError to first-turn snag fallback + shadow logs raw', async () => {
+    const fixture = makeFakeFirestore({
+      agent: VALID_AGENT,
+      sessionDocs: {},
+      signalDrops: standardSignalDrops(),
+    });
+    activeFirestore = fixture.db;
+
+    // Gemma "succeeded" at the HTTP layer but returned plain text.
+    gemmaResult.current = {
+      success: true,
+      content: 'I have hit a snag, could you repeat the question?',
+    };
+    parseVoiceLayerResponseImpl.current = (c) => ({
+      parseError: true,
+      errorReason: 'plaintext_passthrough',
+      rawText: c,
+    });
+
+    const { req, res } = makeReqRes({
+      agentId: 'agent-1',
+      message: 'hi',
+      parseResult: VALID_PARSE_RESULT,
+      dropId: VALID_DROP_ID,
+    });
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body.error).toBe(true);
+    expect(res.body.errorReason).toBe('parse_plaintext_passthrough');
+    expect(res.body.sessionId).toBeNull();
+    expect(res.body.agentMessage).toBe(
+      'I hit a snag opening this conversation — could you send that again?',
+    );
+    // Session NOT materialized — first-turn failure is non-burning.
+    expect(fixture.written.updateCalls).toHaveLength(0);
+    // Shadow log captured the raw plain text for diagnostics.
+    expect(shadowLogCalls.current).toHaveLength(1);
+    expect(shadowLogCalls.current[0].turnError).toBe(true);
+    expect(shadowLogCalls.current[0].errorReason).toBe('parse_plaintext_passthrough');
+    expect(shadowLogCalls.current[0].rawGemmaContent).toContain('I have hit a snag');
+  });
+
+  it('continuing turn: routes parseError to continuing-turn snag fallback + shadow logs raw', async () => {
+    const sessionDocs = {
+      'sess-x': {
+        userId: 'test-user',
+        agentId: 'agent-1',
+        status: 'active',
+        phase: 'propose',
+        parseResult: VALID_PARSE_RESULT,
+        exchanges: [],
+        candidateTickers: [{ symbol: 'AAPL', status: 'proposed', reasoning: 'r', category: 'c' }],
+        messagesUsed: 5,
+        messageBudget: 20,
+      },
+    };
+    const fixture = makeFakeFirestore({ agent: VALID_AGENT, sessionDocs });
+    activeFirestore = fixture.db;
+
+    gemmaResult.current = {
+      success: true,
+      content: 'I have hit a snag.',
+    };
+    parseVoiceLayerResponseImpl.current = (c) => ({
+      parseError: true,
+      errorReason: 'plaintext_passthrough',
+      rawText: c,
+    });
+
+    const { req, res } = makeReqRes({
+      agentId: 'agent-1',
+      sessionId: 'sess-x',
+      message: 'hi',
+    });
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body.error).toBe(true);
+    expect(res.body.errorReason).toBe('parse_plaintext_passthrough');
+    expect(res.body.sessionId).toBe('sess-x');
+    expect(res.body.agentMessage).toBe(
+      'I hit a snag processing that — could you try that again?',
+    );
+    // Continuing turn preserves the previous candidateTickers.
+    expect(res.body.candidateTickers).toHaveLength(1);
+    expect(res.body.phase).toBe('propose');
+    // No write — failed turn doesn't burn budget.
+    expect(fixture.written.updateCalls).toHaveLength(0);
+    // Shadow log captured raw text + session context.
+    expect(shadowLogCalls.current).toHaveLength(1);
+    expect(shadowLogCalls.current[0].sessionId).toBe('sess-x');
+    expect(shadowLogCalls.current[0].turnError).toBe(true);
+    expect(shadowLogCalls.current[0].errorReason).toBe('parse_plaintext_passthrough');
+  });
+
+  it('parseError with empty_content uses the same path with errorReason=parse_empty_content', async () => {
+    const sessionDocs = {
+      'sess-y': {
+        userId: 'test-user',
+        agentId: 'agent-1',
+        status: 'active',
+        phase: 'explore',
+        parseResult: VALID_PARSE_RESULT,
+        exchanges: [],
+        candidateTickers: [],
+        messagesUsed: 0,
+        messageBudget: 20,
+      },
+    };
+    activeFirestore = makeFakeFirestore({ agent: VALID_AGENT, sessionDocs }).db;
+    gemmaResult.current = { success: true, content: '' };
+    parseVoiceLayerResponseImpl.current = () => ({
+      parseError: true,
+      errorReason: 'empty_content',
+      rawText: '',
+    });
+
+    const { req, res } = makeReqRes({
+      agentId: 'agent-1',
+      sessionId: 'sess-y',
+      message: 'hi',
+    });
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body.errorReason).toBe('parse_empty_content');
+    expect(shadowLogCalls.current[0].errorReason).toBe('parse_empty_content');
+  });
 });
 
 // ==================== HANDLER: ticker validation defense ====================
