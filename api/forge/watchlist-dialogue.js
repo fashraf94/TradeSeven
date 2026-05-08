@@ -55,7 +55,33 @@ const PROMPT_EXCHANGES_WINDOW = 6;    // last 6 messages = ~3 turns
 
 const PHASE_ORDER = Object.freeze(['explore', 'propose', 'refine', 'finalize']);
 const VALID_PHASES = new Set(PHASE_ORDER);
-const VALID_TICKER_ACTIONS = new Set(['propose', 'keep', 'remove', 'reorder']);
+const VALID_TICKER_ACTIONS = new Set(['propose', 'keep', 'remove', 'reorder', 'reslot']);
+
+// Phase 2.6: ticker slot enum. Slots are STRUCTURAL placement in the watchlist
+// anatomy ('where does this ticker fit'); the existing `category` field stays
+// as free-form descriptive text ('how is it exposed'). Both have value.
+const VALID_TICKER_SLOTS = new Set(['core', 'discovery', 'cross_current']);
+
+// Phase 2.6: anatomy field enum + per-field action constraints. Thesis is
+// idempotent-overwrite (single string); conditions are append-only arrays
+// with replace/remove by 0-based index.
+const VALID_ANATOMY_FIELDS = new Set([
+  'thesis',
+  'activation_condition',
+  'invalidation_condition',
+]);
+const VALID_ANATOMY_ACTIONS = new Set(['set', 'add', 'remove', 'replace']);
+
+// Phase 2.6: cap enforcement for anatomy values. Server-side enforced — the
+// schema/prompt advertises these caps to Gemma but we re-clamp defensively.
+const ANATOMY_THESIS_MAX_LEN = 1000;
+const ANATOMY_CONDITION_MAX_LEN = 200;
+const ANATOMY_CONDITIONS_MAX_COUNT = 3;
+
+// Phase 2.6: per-turn anatomyUpdates cap. Max 1 thesis update + max 3
+// condition updates per turn. Higher caps would let Gemma over-mutate
+// the anatomy in a single response, which feels disorienting to the user.
+const ANATOMY_UPDATES_PER_TURN_CAP = 4;
 
 // Phase 2.5 Fix 2 (audit B1): field caps for the parseResult.parse envelope.
 // Source of truth for enum values: the SUBMIT_PARSED_SIGNAL_TOOL schema in
@@ -266,10 +292,13 @@ export function validatePhaseTransition(currentPhase, proposedPhase, phaseReques
 // list. Returns a NEW array — does not mutate the input. Each update is
 // validated defensively:
 //   - propose: ticker must pass tickerValidation.validateTickers; duplicates
-//     by symbol are no-ops; reasoning/category are clamped.
+//     by symbol are no-ops; reasoning/category are clamped; slot is read
+//     and validated against VALID_TICKER_SLOTS (defaults to null).
 //   - keep: existing ticker → status='kept'. Missing ticker → silent skip.
 //   - remove: existing ticker → status='removed'. Missing ticker → silent skip.
 //   - reorder: existing ticker → proposedAt updated to nowIso. Missing → skip.
+//   - reslot: existing ticker → slot field rewritten to a valid value.
+//             Missing ticker or invalid/missing slot value → silent skip.
 //
 // Same forgiving-validation pattern as parse-signal: malformed updates
 // are dropped silently (no errors, no bailout).
@@ -305,11 +334,13 @@ export function applyCandidateTickerUpdates(currentList, updates, currentPhase, 
         typeof update.reasoning === 'string' ? update.reasoning.slice(0, 500).trim() : '';
       const category =
         typeof update.category === 'string' ? update.category.slice(0, 30).trim() : '';
+      const slot = VALID_TICKER_SLOTS.has(update.slot) ? update.slot : null;
 
       list.push({
         symbol: canonical,
         reasoning,
         category,
+        slot,
         status: 'proposed',
         proposedAt: nowIso,
         proposedAtPhase: phaseTag,
@@ -331,10 +362,100 @@ export function applyCandidateTickerUpdates(currentList, updates, currentPhase, 
       list[idx].status = 'removed';
     } else if (action === 'reorder') {
       list[idx].proposedAt = nowIso;
+    } else if (action === 'reslot') {
+      // Slot mutation only. Invalid/missing slot → silent skip (preserves
+      // existing slot). Valid value → overwrite the slot field.
+      if (VALID_TICKER_SLOTS.has(update.slot)) {
+        list[idx].slot = update.slot;
+      }
     }
   }
 
   return list;
+}
+
+// Apply Gemma's anatomyUpdates to the existing session.anatomy struct.
+// Returns a NEW object — does not mutate input. Defensive against
+// malformed updates (silent skip), enforces caps:
+//   - thesis: action="set" only; ≤1000 chars; idempotent overwrite
+//   - activation_condition / invalidation_condition:
+//       - "add": append; cap at 3 entries; ≤200 chars per entry; empty-after-trim skipped
+//       - "remove": delete by 0-based index; out-of-range silent skip
+//       - "replace": rewrite by 0-based index; ≤200 chars; out-of-range silent skip
+//
+// All cap enforcement is server-side defensive (the schema/prompt
+// advertise the same caps to Gemma but we re-clamp on entry).
+export function applyAnatomyUpdates(currentAnatomy, updates) {
+  const safeCurrent =
+    currentAnatomy && typeof currentAnatomy === 'object' && !Array.isArray(currentAnatomy)
+      ? currentAnatomy
+      : {};
+  const next = {
+    thesis: typeof safeCurrent.thesis === 'string' ? safeCurrent.thesis : null,
+    activationConditions: Array.isArray(safeCurrent.activationConditions)
+      ? safeCurrent.activationConditions
+          .filter((c) => typeof c === 'string')
+          .map((c) => c.slice(0, ANATOMY_CONDITION_MAX_LEN))
+      : [],
+    invalidationConditions: Array.isArray(safeCurrent.invalidationConditions)
+      ? safeCurrent.invalidationConditions
+          .filter((c) => typeof c === 'string')
+          .map((c) => c.slice(0, ANATOMY_CONDITION_MAX_LEN))
+      : [],
+  };
+
+  if (!Array.isArray(updates) || updates.length === 0) return next;
+
+  const conditionFieldMap = {
+    activation_condition: 'activationConditions',
+    invalidation_condition: 'invalidationConditions',
+  };
+
+  for (const update of updates) {
+    if (!update || typeof update !== 'object') continue;
+    const field = update.field;
+    const action = update.action;
+    if (!VALID_ANATOMY_FIELDS.has(field)) continue;
+    if (!VALID_ANATOMY_ACTIONS.has(action)) continue;
+
+    if (field === 'thesis') {
+      // Thesis only supports 'set'. Other actions are silent no-ops.
+      if (action !== 'set') continue;
+      if (typeof update.value !== 'string') continue;
+      const trimmed = update.value.slice(0, ANATOMY_THESIS_MAX_LEN).trim();
+      if (!trimmed) continue;
+      next.thesis = trimmed;
+      continue;
+    }
+
+    // Conditions: action ∈ {add, remove, replace}; 'set' is silent no-op.
+    const key = conditionFieldMap[field];
+    const list = next[key];
+
+    if (action === 'add') {
+      if (typeof update.value !== 'string') continue;
+      const trimmed = update.value.slice(0, ANATOMY_CONDITION_MAX_LEN).trim();
+      if (!trimmed) continue;
+      if (list.length >= ANATOMY_CONDITIONS_MAX_COUNT) continue;
+      list.push(trimmed);
+    } else if (action === 'remove') {
+      const idx = update.index;
+      if (typeof idx !== 'number' || !Number.isInteger(idx)) continue;
+      if (idx < 0 || idx >= list.length) continue;
+      list.splice(idx, 1);
+    } else if (action === 'replace') {
+      const idx = update.index;
+      if (typeof idx !== 'number' || !Number.isInteger(idx)) continue;
+      if (idx < 0 || idx >= list.length) continue;
+      if (typeof update.value !== 'string') continue;
+      const trimmed = update.value.slice(0, ANATOMY_CONDITION_MAX_LEN).trim();
+      if (!trimmed) continue;
+      list[idx] = trimmed;
+    }
+    // action === 'set' on a condition field falls through as a silent no-op.
+  }
+
+  return next;
 }
 
 // Normalize Gemma's parsed JSON output into the shape the rest of the
@@ -347,6 +468,7 @@ export function normalizeDialogueOutput(raw) {
       agentMessage: '',
       proposedPhase: null,
       candidateTickerUpdates: [],
+      anatomyUpdates: [],
       suggestedActions: [],
       readyToFinalize: false,
     };
@@ -363,6 +485,17 @@ export function normalizeDialogueOutput(raw) {
         .slice(0, 8)
     : [];
 
+  // Phase 2.6: anatomyUpdates filter. Per-turn cap is 4 (max 1 thesis +
+  // max 3 conditions). The cap is structural — applyAnatomyUpdates also
+  // enforces per-field semantics (max 3 conditions per type total, no
+  // multiple thesis-set in one turn since action='set' is idempotent
+  // overwrite — last write wins). We just shape-validate + length-cap here.
+  const anatomyUpdates = Array.isArray(raw.anatomyUpdates)
+    ? raw.anatomyUpdates
+        .filter((u) => u && typeof u === 'object' && !Array.isArray(u))
+        .slice(0, ANATOMY_UPDATES_PER_TURN_CAP)
+    : [];
+
   const suggestedActions = Array.isArray(raw.suggestedActions)
     ? raw.suggestedActions
         .filter((s) => typeof s === 'string' && s.trim())
@@ -374,6 +507,7 @@ export function normalizeDialogueOutput(raw) {
     agentMessage,
     proposedPhase,
     candidateTickerUpdates,
+    anatomyUpdates,
     suggestedActions,
     readyToFinalize: !!raw.readyToFinalize,
   };
@@ -559,6 +693,15 @@ export default async function handler(req, res) {
         parseResult: validatedParseResult,
         exchanges: [],
         candidateTickers: [],
+        // Phase 2.6: watchlist anatomy state. Thesis set during 'explore';
+        // conditions added/refined across 'explore' + 'refine'. Slot-tagged
+        // tickers (core/discovery/cross_current) are derived from
+        // candidateTickers — NOT separate session fields.
+        anatomy: {
+          thesis: null,
+          activationConditions: [],
+          invalidationConditions: [],
+        },
         messagesUsed: 0,
         messageBudget: MESSAGE_BUDGET,
         dropListId: null,
@@ -567,6 +710,23 @@ export default async function handler(req, res) {
         },
       };
       isNewSession = true;
+    }
+
+    // Phase 2.6 backwards compat: sessions started before Phase 2.6 ships
+    // have no `anatomy` field on the persisted doc. Defensively backfill so
+    // the prompt rendering and transaction body can read it uniformly.
+    // No data migration — this synthesizes the empty-anatomy default
+    // in-memory only; the next write persists it alongside other updates.
+    if (
+      !session.anatomy ||
+      typeof session.anatomy !== 'object' ||
+      Array.isArray(session.anatomy)
+    ) {
+      session.anatomy = {
+        thesis: null,
+        activationConditions: [],
+        invalidationConditions: [],
+      };
     }
 
     // 7. Budget check — happens BEFORE we count this turn
@@ -623,6 +783,7 @@ export default async function handler(req, res) {
       currentPhase,
       recentExchanges,
       candidateTickers: session.candidateTickers || [],
+      anatomy: session.anatomy,
       phaseRequest,
     });
 
@@ -828,19 +989,24 @@ export default async function handler(req, res) {
       suggestedActions: normalized.suggestedActions,
     };
 
-    // 18. Apply ticker updates + persist.
+    // 18. Apply ticker + anatomy updates + persist.
     //
     // Phase 2.5 Fix 4 (audit D1, D2): the continuing-turn write is wrapped
     // in db.runTransaction. The transaction re-reads fresh session state,
-    // re-validates budget / status / phase, and applies candidateTicker
-    // updates against the FRESH list (not the pre-Gemma snapshot). Closes
-    // the lost-update race on candidateTickers and the rollback race on
-    // phase. If any concurrency check fails, throw a sentinel error caught
-    // below and translated into a 409 concurrent_modification response.
+    // re-validates budget / status / phase, and applies candidateTicker AND
+    // anatomy updates against the FRESH state (not the pre-Gemma snapshot).
+    // Closes the lost-update race on candidateTickers/anatomy and the
+    // rollback race on phase. If any concurrency check fails, throw a
+    // sentinel error caught below and translated into a 409
+    // concurrent_modification response.
+    //
+    // Phase 2.6: anatomy mutations apply atomically alongside ticker
+    // mutations inside the same transaction (single doc update).
     //
     // First-turn writes use set() directly — no transaction needed because
     // the doc doesn't exist yet and the auto-allocated session ID is unique.
     let updatedCandidateTickers;
+    let updatedAnatomy;
     if (isNewSession) {
       updatedCandidateTickers = applyCandidateTickerUpdates(
         [],
@@ -848,11 +1014,13 @@ export default async function handler(req, res) {
         transition.newPhase,
         nowIso,
       );
+      updatedAnatomy = applyAnatomyUpdates(session.anatomy, normalized.anatomyUpdates);
       await sessionRef.set({
         ...session,
         phase: transition.newPhase,
         exchanges: [userExchange, agentExchange],
         candidateTickers: updatedCandidateTickers,
+        anatomy: updatedAnatomy,
         messagesUsed: 1,
         updatedAt: nowIso,
       });
@@ -883,18 +1051,24 @@ export default async function handler(req, res) {
             transition.newPhase,
             nowIso,
           );
+          const freshAnatomy = applyAnatomyUpdates(
+            freshSession.anatomy,
+            normalized.anatomyUpdates,
+          );
 
           tx.update(sessionRef, {
             phase: transition.newPhase,
             exchanges: FieldValue.arrayUnion(userExchange, agentExchange),
             candidateTickers: freshList,
+            anatomy: freshAnatomy,
             messagesUsed: FieldValue.increment(1),
             updatedAt: nowIso,
           });
 
-          return { freshList };
+          return { freshList, freshAnatomy };
         });
         updatedCandidateTickers = txResult.freshList;
+        updatedAnatomy = txResult.freshAnatomy;
       } catch (txErr) {
         if (
           typeof txErr?.message === 'string' &&
@@ -941,6 +1115,13 @@ export default async function handler(req, res) {
         agentMessage,
         candidateTickerCount: updatedCandidateTickers.length,
         candidateTickerUpdates: normalized.candidateTickerUpdates,
+        // Phase 2.6: log anatomy mutations alongside ticker mutations so
+        // shadow-log queries can correlate slot/anatomy evolution with
+        // dialogue health.
+        anatomyUpdates: normalized.anatomyUpdates,
+        anatomyThesisSet: !!updatedAnatomy?.thesis,
+        anatomyActivationCount: updatedAnatomy?.activationConditions?.length || 0,
+        anatomyInvalidationCount: updatedAnatomy?.invalidationConditions?.length || 0,
         suggestedActions: normalized.suggestedActions,
         readyToFinalize: normalized.readyToFinalize,
         turnError: false,
@@ -948,11 +1129,14 @@ export default async function handler(req, res) {
       }).catch(() => {}),
     );
 
-    // 21. Respond — public-shape candidateTickers (drop server-internal fields)
+    // 21. Respond — public-shape candidateTickers (drop server-internal fields).
+    // Phase 2.6: include `slot` so the Phase 3 UI can group the sidebar
+    // by Core / Discovery / Cross-Currents without a second roundtrip.
     const publicCandidateTickers = updatedCandidateTickers.map((t) => ({
       symbol: t.symbol,
       reasoning: t.reasoning || '',
       category: t.category || '',
+      slot: VALID_TICKER_SLOTS.has(t.slot) ? t.slot : null,
       status: t.status || 'proposed',
     }));
 
@@ -960,6 +1144,9 @@ export default async function handler(req, res) {
       sessionId: sessionRef.id,
       agentMessage,
       candidateTickers: publicCandidateTickers,
+      // Phase 2.6: surface anatomy on the response so Phase 3 UI can render
+      // the sidebar (thesis + conditions) without re-reading the session doc.
+      anatomy: updatedAnatomy,
       phase: transition.newPhase,
       suggestedActions: normalized.suggestedActions,
       messagesUsed: currentMessagesUsed + 1,
