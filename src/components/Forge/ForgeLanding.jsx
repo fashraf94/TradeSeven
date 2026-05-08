@@ -2155,6 +2155,7 @@ export default function ForgeLanding({
           <DiscoverPanel
             showToast={showToast}
             requestWorkshopOpen={requestWorkshopOpen}
+            agent={agent}
           />
         )}
 

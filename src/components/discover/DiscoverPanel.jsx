@@ -41,7 +41,7 @@ import AllThemesShowcase from './AllThemesShowcase';
 import SectorRail from './SectorRail';
 import WatchListRail from './WatchListRail';
 import AssetResearchModal from '../draft/AssetResearchModal';
-import { SignalDropEntry } from '../SignalDrop';
+import { SignalDropEntry, WatchlistChat } from '../SignalDrop';
 import { getSectorContent } from './sectorContent';
 import { getThemeRichEntry } from './themesDkb';
 import { SECTORS as SECTOR_HOLDINGS_MAP } from '../../constants/sectors';
@@ -121,19 +121,24 @@ async function logInteraction({ themeId, action, source = 'discoverThemes' }) {
   }
 }
 
-export default function DiscoverPanel({ showToast, requestWorkshopOpen }) {
+export default function DiscoverPanel({ showToast, requestWorkshopOpen, agent }) {
   const { tokens } = useTheme();
   const [themes, setThemes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [selectedTheme, setSelectedTheme] = useState(null);
   const [viewChartTicker, setViewChartTicker] = useState(null);
-  // Sprint 6 Phase 3A: Signal Drop entry modal. Lives here alongside
-  // the other Discover modals (ThemeDetailModal, AssetResearchModal)
-  // because it's a Discover-surface CTA with no agent/capacity gate.
-  // The 3A "Start dialogue" handler is a placeholder — Phase 3B
-  // replaces it with the WatchlistChat hand-off.
-  const [signalDropOpen, setSignalDropOpen] = useState(false);
+  // Sprint 6 Phase 3B: Signal Drop modal flow. State machine across
+  // entry (parse-signal) → chat (watchlist-dialogue). Mode is null when
+  // no Signal Drop modal is open. Entry stays ungated (parsing works
+  // without an agent); the entry → chat transition gates on agent?.id
+  // and toasts if the user has no agent yet.
+  const [signalDropState, setSignalDropState] = useState({
+    mode: null, // null | 'entry' | 'chat'
+    parseResult: null,
+    dropId: null,
+    agentId: null,
+  });
 
   useEffect(() => {
     let cancelled = false;
@@ -229,23 +234,37 @@ export default function DiscoverPanel({ showToast, requestWorkshopOpen }) {
       action: 'tap_drop_signal',
       source: 'discoverSignalDrop',
     });
-    setSignalDropOpen(true);
+    setSignalDropState({ mode: 'entry', parseResult: null, dropId: null, agentId: null });
   };
 
-  const handleCloseSignalDrop = () => {
-    setSignalDropOpen(false);
+  const handleCloseSignalDropEntry = () => {
+    setSignalDropState({ mode: null, parseResult: null, dropId: null, agentId: null });
   };
 
-  // Phase 3A placeholder. Phase 3B replaces this with the actual
-  // WatchlistChat hand-off — for now we log the parseResult/dropId
-  // and close the modal so the surface can be tested end-to-end
-  // without a dialogue UI yet.
+  const handleCloseSignalDropChat = () => {
+    setSignalDropState({ mode: null, parseResult: null, dropId: null, agentId: null });
+  };
+
+  // Sprint 6 Phase 3B: transition from entry modal to WatchlistChat.
+  // SignalDropEntry stays agent-agnostic — DiscoverPanel composes the
+  // full chat-state object with agentId from its own props. Per locked
+  // decision, the agent gate fires here (not at entry-open): no agent
+  // → toast + close entry. The entry modal still produced a useful
+  // parse, so the user isn't stranded on an error state.
   const handleStartSignalDialogue = ({ parseResult, dropId }) => {
-    console.log('[SignalDrop] Start dialogue (Phase 3A placeholder)', {
-      dropId,
+    if (!agent?.id) {
+      if (typeof showToast === 'function') {
+        showToast('Create an agent first to start a Signal Drop dialogue');
+      }
+      setSignalDropState({ mode: null, parseResult: null, dropId: null, agentId: null });
+      return;
+    }
+    setSignalDropState({
+      mode: 'chat',
       parseResult,
+      dropId,
+      agentId: agent.id,
     });
-    setSignalDropOpen(false);
   };
 
   // Cross-modal handoff target for SectorDetailModal: open the theme
@@ -333,9 +352,19 @@ export default function DiscoverPanel({ showToast, requestWorkshopOpen }) {
       )}
 
       <SignalDropEntry
-        open={signalDropOpen}
-        onClose={handleCloseSignalDrop}
+        open={signalDropState.mode === 'entry'}
+        onClose={handleCloseSignalDropEntry}
         onStartDialogue={handleStartSignalDialogue}
+      />
+
+      <WatchlistChat
+        isOpen={signalDropState.mode === 'chat'}
+        onClose={handleCloseSignalDropChat}
+        parseResult={signalDropState.parseResult}
+        dropId={signalDropState.dropId}
+        agentId={signalDropState.agentId}
+        agentName={agent?.name}
+        showToast={showToast}
       />
     </div>
   );
