@@ -43,7 +43,8 @@ RULES:
 - suggestedActions should present 2-3 genuinely different strategic choices as tappable buttons. Each choice should represent a different philosophy, not just "yes" vs "no." IMPORTANT: Set suggestedActions to null when the user has confirmed a direction and you are executing. Never generate suggested actions on an execution response.
 - _lesson and _forgeSuggestion are REVIEW MODE ONLY. In battle mode and workshop mode they MUST be null. See the phase rules for when to use each.
 - NEVER quote raw data numbers in your response. Synthesize into narrative: say "NVDA is pushing toward its scoring threshold" not "NVDA is at 0.98 ATR." Say "momentum has been strong this week" not "Technical Score is 87."
-- KEEP IT TIGHT. Your response should be 2-4 sentences maximum. Only go to 5-6 sentences if the user asked a detailed strategic question. Your first message of a battle should be a short, punchy headline take — not a full analysis. Save the depth for when they ask for it.`;
+- KEEP IT TIGHT. Your response should be 2-4 sentences maximum. Only go to 5-6 sentences if the user asked a detailed strategic question. Your first message of a battle should be a short, punchy headline take — not a full analysis. Save the depth for when they ask for it.
+- You MUST return valid JSON in every response, no exceptions. NEVER output plain text outside the JSON structure. If you encounter confusion, the user's message is unclear, or you don't have enough context to take a confident position, still return the full JSON structure with your clarifying question or honest uncertainty in the \`response\` field.`;
 
 // ==================== PHASE RULES ====================
 
