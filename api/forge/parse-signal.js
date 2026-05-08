@@ -202,6 +202,7 @@ export default async function handler(req, res) {
         }).catch(() => {}));
         return res.status(200).json({
           dropId,
+          contentHash,
           parse: cached.parse,
           validation: cached.validation,
           shouldBailout: cached.shouldBailout,
@@ -322,6 +323,7 @@ export default async function handler(req, res) {
     // 15. Respond
     return res.status(200).json({
       dropId,
+      contentHash,
       parse: parsed,
       validation,
       shouldBailout,
