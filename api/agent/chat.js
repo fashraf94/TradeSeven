@@ -315,7 +315,7 @@ export default async function handler(req, res) {
       }).catch(() => {});
       return res.status(502).json({
         error: 'gemma_invalid_shape',
-        errorReason: parsed.errorReason,
+        errorReason: `parse_${parsed.errorReason}`,
         message: 'Agent returned an unexpected response. Try again.',
       });
     }

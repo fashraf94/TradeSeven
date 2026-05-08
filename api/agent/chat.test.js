@@ -168,7 +168,10 @@ describe('agent/chat — parseError 502 banner path', () => {
 
     expect(res.statusCode).toBe(502);
     expect(res.body.error).toBe('gemma_invalid_shape');
-    expect(res.body.errorReason).toBe('plaintext_passthrough');
+    // Prefixed errorReason matches workshop-chat / watchlist-dialogue so a
+    // single dashboard query (`errorReason LIKE 'parse_%'`) catches every
+    // surface's parser failures (Q4-1 standardization).
+    expect(res.body.errorReason).toBe('parse_plaintext_passthrough');
     expect(res.body.message).toBe('Agent returned an unexpected response. Try again.');
 
     // No write to the battle doc — failed turn doesn't burn budget.
@@ -201,7 +204,7 @@ describe('agent/chat — parseError 502 banner path', () => {
     await handler(req, res);
 
     expect(res.statusCode).toBe(502);
-    expect(res.body.errorReason).toBe('empty_content');
+    expect(res.body.errorReason).toBe('parse_empty_content');
     expect(shadowLogCalls.current[0].errorReason).toBe('parse_empty_content');
   });
 
