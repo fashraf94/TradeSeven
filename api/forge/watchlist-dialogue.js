@@ -88,8 +88,13 @@ const ANATOMY_UPDATES_PER_TURN_CAP = 4;
 // api/_utils/signalDropPrompt.js. If parse-signal evolves its tool schema,
 // this validator may drift — accepted risk for Phase 2.5; long-term
 // candidate for a shared schema-constants module.
+//
+// Phase 3.6 Session 2 (Finding 10): EXTRACTED_TEXT raised from 2000 to
+// 5000 to keep all four layers (UI input cap / API input cap / Haiku tool
+// schema description / this defensive cap) consistent. Same field name,
+// same meaning across boundaries.
 const PARSE_FIELD_CAPS = Object.freeze({
-  EXTRACTED_TEXT: 2000,
+  EXTRACTED_TEXT: 5000,
   TOPIC: 200,
   TICKER_SYMBOL: 12,
   TICKERS_MAX: 20,

@@ -1312,13 +1312,15 @@ describe('validateParseResult — Phase 2.5 Fix 2 field caps', () => {
     expect(out.parse.topic).toHaveLength(200);
   });
 
-  it('caps extractedText at 2000 chars and survives', () => {
+  // Phase 3.6 Session 2 (Finding 10): cap raised from 2000 → 5000 to align
+  // with the UI input cap, parse-signal API cap, and Haiku tool schema.
+  it('caps extractedText at 5000 chars and survives', () => {
     const out = validateParseResult({
       contentHash: 'h',
-      parse: { extractedText: 'A'.repeat(5000) },
+      parse: { extractedText: 'A'.repeat(8000) },
     });
     expect(out).not.toBeNull();
-    expect(out.parse.extractedText).toHaveLength(2000);
+    expect(out.parse.extractedText).toHaveLength(5000);
   });
 
   it('rejects when extractedText is empty after trim', () => {

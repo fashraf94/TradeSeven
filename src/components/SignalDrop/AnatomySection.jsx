@@ -43,6 +43,16 @@ export default function AnatomySection({
   const [showTooltip, setShowTooltip] = useState(false);
   const tooltipTimerRef = useRef(null);
 
+  // Phase 3.6 Session 2 (Finding 13): when defaultExpanded changes (e.g.,
+  // dialogue advances from explore/propose into refine and condition
+  // sections should now be expanded), reflect the change in the open
+  // state. Trade-off: a manual collapse during a pre-refine phase is
+  // overridden when the phase advances. Acceptable edge case — most users
+  // don't manually collapse already-collapsed sections.
+  useEffect(() => {
+    setIsOpen(defaultExpanded);
+  }, [defaultExpanded]);
+
   // Pulse the section background + left border whenever pulseKey changes
   // (skip the first mount — we don't want a flash on initial render).
   // The pulse is a one-shot ~300ms transient: highlight ON, then back

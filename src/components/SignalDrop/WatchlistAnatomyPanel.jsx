@@ -69,6 +69,7 @@ export default function WatchlistAnatomyPanel({
   anatomy,
   candidateTickers,
   agentName,
+  phase,
 }) {
   const { tokens } = useTheme();
 
@@ -76,6 +77,14 @@ export default function WatchlistAnatomyPanel({
     anatomy && typeof anatomy === 'object' && !Array.isArray(anatomy)
       ? anatomy
       : { thesis: null, activationConditions: [], invalidationConditions: [] };
+
+  // Phase 3.6 Session 2 (Finding 13): during the pre-refine phases the
+  // condition sections default to collapsed so they don't compete with
+  // the plays sections for visual hierarchy. Once the dialogue reaches
+  // refine or finalize, sections with content auto-expand. The user's
+  // manual chevron toggle still works at any phase.
+  const conditionsCollapsedByDefault =
+    phase === 'explore' || phase === 'propose';
 
   const thesis = typeof safeAnatomy.thesis === 'string' ? safeAnatomy.thesis : '';
   const activationConditions = Array.isArray(safeAnatomy.activationConditions)
@@ -88,16 +97,16 @@ export default function WatchlistAnatomyPanel({
   const grouped = useMemo(() => groupTickersBySlot(candidateTickers), [candidateTickers]);
 
   // Pulse keys — change when content changes so AnatomySection can
-  // trigger its one-shot highlight animation.
-  const thesisPulseKey = thesis ? thesis.length : 0;
-  const activationPulseKey = activationConditions.join('§').length + activationConditions.length;
-  const invalidationPulseKey =
-    invalidationConditions.join('§').length + invalidationConditions.length;
-  const corePulseKey = tickersSignature(grouped.core).length + grouped.core.length;
-  const discoveryPulseKey =
-    tickersSignature(grouped.discovery).length + grouped.discovery.length;
-  const crossCurrentPulseKey =
-    tickersSignature(grouped.cross_current).length + grouped.cross_current.length;
+  // trigger its one-shot highlight animation. Phase 3.6 Session 2 (Finding 12):
+  // content-based hashing (was length-based, which missed same-length
+  // mutations like a thesis/condition replace with equal-length text or a
+  // ticker swap with a same-length symbol+reasoning).
+  const thesisPulseKey = thesis || '';
+  const activationPulseKey = activationConditions.join('§');
+  const invalidationPulseKey = invalidationConditions.join('§');
+  const corePulseKey = tickersSignature(grouped.core);
+  const discoveryPulseKey = tickersSignature(grouped.discovery);
+  const crossCurrentPulseKey = tickersSignature(grouped.cross_current);
 
   const totalTickers =
     grouped.core.length + grouped.discovery.length + grouped.cross_current.length;
@@ -184,7 +193,9 @@ export default function WatchlistAnatomyPanel({
         <AnatomySection
           title="Activation Conditions"
           count={activationConditions.length}
-          defaultExpanded={activationConditions.length > 0}
+          defaultExpanded={
+            !conditionsCollapsedByDefault && activationConditions.length > 0
+          }
           pulseKey={activationPulseKey}
           hasContent={activationConditions.length > 0}
           emptyMessage="No activation conditions discussed yet."
@@ -196,7 +207,9 @@ export default function WatchlistAnatomyPanel({
         <AnatomySection
           title="Invalidation Conditions"
           count={invalidationConditions.length}
-          defaultExpanded={invalidationConditions.length > 0}
+          defaultExpanded={
+            !conditionsCollapsedByDefault && invalidationConditions.length > 0
+          }
           pulseKey={invalidationPulseKey}
           hasContent={invalidationConditions.length > 0}
           emptyMessage="No invalidation conditions discussed yet."

@@ -31,10 +31,11 @@
 // current plays). Phase 3B's temporary slot-grouped ticker list is gone.
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, MotionConfig, useReducedMotion } from 'framer-motion';
 import { X, Send, Sparkles, ListTree, ChevronDown, AlertCircle } from 'lucide-react';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useIsMobile } from '../../hooks/useIsMobile';
+import { useModalFocus } from '../../hooks/useModalFocus';
 import { fetchWithAuth } from '../../utils/fetchWithAuth';
 import PhaseIndicator from './PhaseIndicator';
 import WatchlistAnatomyPanel from './WatchlistAnatomyPanel';
@@ -92,6 +93,11 @@ export default function WatchlistChat({
 }) {
   const { tokens } = useTheme();
   const { isDesktop } = useIsMobile();
+  // Phase 3.6 Session 2 (Finding 8): respect prefers-reduced-motion for
+  // the smooth-scroll on new messages. Framer-motion's MotionConfig wrap
+  // below the return covers the JS-driven animations; this hook covers
+  // the imperative scrollTo call that bypasses both.
+  const shouldReduceMotion = useReducedMotion();
 
   // ── Session / dialogue state ──────────────────────────────────────
   const [sessionId, setSessionId] = useState(null);
@@ -124,6 +130,16 @@ export default function WatchlistChat({
   const scrollRef = useRef(null);
   const textareaRef = useRef(null);
   const abortRef = useRef(null);
+  // Phase 3.6 Session 2 (Finding 9): focus management. dialogRef is the
+  // focus-trap boundary (the outer dialog motion.div); textareaRef
+  // (already declared above) receives auto-focus on open.
+  const dialogRef = useRef(null);
+
+  useModalFocus({
+    isOpen,
+    autoFocusRef: textareaRef,
+    containerRef: dialogRef,
+  });
 
   // Reset everything when (re-)opening.
   useEffect(() => {
@@ -167,15 +183,18 @@ export default function WatchlistChat({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, isSending, exchanges.length, budgetExceeded]);
 
-  // Auto-scroll on new messages / typing flips.
+  // Auto-scroll on new messages / typing flips. Phase 3.6 Session 2
+  // (Finding 8): respect prefers-reduced-motion — smooth scroll bypasses
+  // the global CSS reduce-motion rule, so we explicitly switch to 'auto'
+  // (instant) when the user has the preference set.
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTo({
         top: scrollRef.current.scrollHeight,
-        behavior: 'smooth',
+        behavior: shouldReduceMotion ? 'auto' : 'smooth',
       });
     }
-  }, [exchanges.length, isSending]);
+  }, [exchanges.length, isSending, shouldReduceMotion]);
 
   // Auto-resize textarea.
   useEffect(() => {
@@ -538,9 +557,17 @@ export default function WatchlistChat({
     budgetExceeded || (readyToFinalize && phase === 'finalize');
 
   return (
-    <AnimatePresence>
-      <motion.div
+    // Phase 3.6 Session 2 (Finding 8): MotionConfig with reducedMotion="user"
+    // honors prefers-reduced-motion for every framer-motion animation in
+    // the dialogue tree (modal entry, phase-dot pulses, anatomy section
+    // pulses, condition slide-ins, chat-bubble fades, typing indicator,
+    // close-confirm transitions). The global CSS reduce-motion rule
+    // strips CSS transitions but doesn't reach JS-driven animations.
+    <MotionConfig reducedMotion="user">
+      <AnimatePresence>
+        <motion.div
         key="watchlist-chat-overlay"
+        ref={dialogRef}
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
@@ -853,6 +880,7 @@ export default function WatchlistChat({
               anatomy={anatomy}
               candidateTickers={candidateTickers}
               agentName={agentName}
+              phase={phase}
             />
           </div>
         </div>
@@ -868,7 +896,8 @@ export default function WatchlistChat({
           )}
         </AnimatePresence>
       </motion.div>
-    </AnimatePresence>
+      </AnimatePresence>
+    </MotionConfig>
   );
 }
 
