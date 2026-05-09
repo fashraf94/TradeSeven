@@ -436,6 +436,13 @@ export function applyAnatomyUpdates(currentAnatomy, updates) {
       if (typeof update.value !== 'string') continue;
       const trimmed = update.value.slice(0, ANATOMY_CONDITION_MAX_LEN).trim();
       if (!trimmed) continue;
+      // Phase 3.6 PR 2 (Finding 3): per-list case-insensitive dedup. Smoke-test
+      // surfaced Gemma re-emitting an existing condition as a fresh `add`,
+      // which slipped past the cap-only check. Dedup goes BEFORE the length
+      // check so silent-skip on duplicates is the correct conceptual reason
+      // even when the list is also full.
+      const trimmedLower = trimmed.toLowerCase();
+      if (list.some((c) => c.toLowerCase().trim() === trimmedLower)) continue;
       if (list.length >= ANATOMY_CONDITIONS_MAX_COUNT) continue;
       list.push(trimmed);
     } else if (action === 'remove') {
@@ -450,6 +457,20 @@ export function applyAnatomyUpdates(currentAnatomy, updates) {
       if (typeof update.value !== 'string') continue;
       const trimmed = update.value.slice(0, ANATOMY_CONDITION_MAX_LEN).trim();
       if (!trimmed) continue;
+      // Phase 3.6 PR 2 (Finding 3): per-list dedup applies to `replace` too,
+      // with same-index exception. Idempotent self-replace (replacing index
+      // i with the value already at i, possibly differently cased) is
+      // allowed — the trimmed value still writes through. Cross-index
+      // duplicate replace (replacing index 1 with the value already at
+      // index 0) is silently skipped to preserve the no-duplicates invariant.
+      const trimmedLower = trimmed.toLowerCase();
+      if (
+        list.some(
+          (c, i) => i !== idx && c.toLowerCase().trim() === trimmedLower,
+        )
+      ) {
+        continue;
+      }
       list[idx] = trimmed;
     }
     // action === 'set' on a condition field falls through as a silent no-op.

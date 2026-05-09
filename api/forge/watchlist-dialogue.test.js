@@ -1721,6 +1721,113 @@ describe('applyAnatomyUpdates', () => {
     ]);
     expect(out).toEqual(EMPTY);
   });
+
+  // Phase 3.6 PR 2 (Finding 3) — per-list case-insensitive dedup. Smoke-test
+  // surfaced Gemma re-emitting an existing condition as a fresh `add`. The
+  // dedup goes BEFORE the length cap so silent-skip on duplicates is the
+  // correct conceptual reason even when the list is also full.
+  it('silently skips an exact-match duplicate add (Phase 3.6 PR 2)', () => {
+    const start = {
+      thesis: null,
+      activationConditions: ['Apple confirms multi-year silicon ramp'],
+      invalidationConditions: [],
+    };
+    const out = applyAnatomyUpdates(start, [
+      {
+        field: 'activation_condition',
+        action: 'add',
+        value: 'Apple confirms multi-year silicon ramp',
+      },
+    ]);
+    expect(out.activationConditions).toEqual([
+      'Apple confirms multi-year silicon ramp',
+    ]);
+  });
+
+  it('silently skips a case-insensitive duplicate add (Phase 3.6 PR 2)', () => {
+    const start = {
+      thesis: null,
+      activationConditions: ['Apple confirms multi-year silicon ramp'],
+      invalidationConditions: [],
+    };
+    const out = applyAnatomyUpdates(start, [
+      {
+        field: 'activation_condition',
+        action: 'add',
+        value: 'APPLE CONFIRMS MULTI-YEAR SILICON RAMP',
+      },
+    ]);
+    expect(out.activationConditions).toEqual([
+      'Apple confirms multi-year silicon ramp',
+    ]);
+  });
+
+  it('does NOT dedup across activation/invalidation lists (Phase 3.6 PR 2)', () => {
+    // Activation and invalidation are semantically opposite; the same text
+    // can legitimately appear in both with different framing context.
+    const start = {
+      thesis: null,
+      activationConditions: ['Apple announces $X capex'],
+      invalidationConditions: [],
+    };
+    const out = applyAnatomyUpdates(start, [
+      {
+        field: 'invalidation_condition',
+        action: 'add',
+        value: 'Apple announces $X capex',
+      },
+    ]);
+    expect(out.activationConditions).toEqual(['Apple announces $X capex']);
+    expect(out.invalidationConditions).toEqual(['Apple announces $X capex']);
+  });
+
+  it('silently skips replace when the new value duplicates a different index (Phase 3.6 PR 2)', () => {
+    const start = {
+      thesis: null,
+      activationConditions: [
+        'Apple confirms multi-year silicon ramp',
+        'TSM AI capex guides up',
+      ],
+      invalidationConditions: [],
+    };
+    const out = applyAnatomyUpdates(start, [
+      {
+        field: 'activation_condition',
+        action: 'replace',
+        index: 1,
+        value: 'apple confirms multi-year silicon ramp', // case-collision with index 0
+      },
+    ]);
+    // Index 1 stays unchanged; the replace is silently skipped.
+    expect(out.activationConditions).toEqual([
+      'Apple confirms multi-year silicon ramp',
+      'TSM AI capex guides up',
+    ]);
+  });
+
+  it('allows idempotent self-replace (same index, possibly differently cased) (Phase 3.6 PR 2)', () => {
+    const start = {
+      thesis: null,
+      activationConditions: [
+        'Apple confirms ramp',
+        'TSM capex up',
+      ],
+      invalidationConditions: [],
+    };
+    const out = applyAnatomyUpdates(start, [
+      {
+        field: 'activation_condition',
+        action: 'replace',
+        index: 0,
+        value: 'APPLE CONFIRMS RAMP', // same index, different casing
+      },
+    ]);
+    // Same-index replace is allowed; the trimmed (uppercase) value writes through.
+    expect(out.activationConditions).toEqual([
+      'APPLE CONFIRMS RAMP',
+      'TSM capex up',
+    ]);
+  });
 });
 
 // ==================== Phase 2.6 — slot field on applyCandidateTickerUpdates ====================
