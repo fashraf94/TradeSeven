@@ -464,11 +464,28 @@ export default function WatchlistChat({
     sendMessage(label);
   }
 
+  // Phase 3.6 PR 1 — fire-and-forget abandon. Flips the session out of
+  // 'active' so shadow logs can distinguish abandoned vs finalize-intent vs
+  // (eventually) completed. Per audit decision D: don't await before onClose,
+  // don't surface failures to the user. Skip if there's no sessionId (user
+  // closed before the first turn — nothing to abandon yet).
+  function fireAbandon(reason) {
+    if (!sessionId || !agentId) return;
+    fetchWithAuth('/api/forge/watchlist-dialogue-abandon', {
+      method: 'POST',
+      body: JSON.stringify({ sessionId, agentId, reason }),
+    }).catch((err) => {
+      console.warn('[WatchlistChat] abandon fire-and-forget failed:', err?.message || err);
+    });
+  }
+
   function handleFinalizeClose() {
-    // Phase 4 will replace this with the WatchlistEditor handoff. For
-    // 3B, finalize-and-close just dismisses the dialogue with a toast.
+    // Phase 3.6 PR 1: honest copy + abandon-with-finalize-intent. Phase 4 will
+    // replace this with a real save endpoint that creates a watchlists/{id}
+    // doc and flips status to 'completed'.
+    fireAbandon('finalize_intent');
     if (typeof showToast === 'function') {
-      showToast('Watchlist saved as a draft. (Editor lands in Phase 4.)');
+      showToast('Dialogue captured — editor coming soon to save your watchlist.');
     }
     onClose?.();
   }
@@ -484,6 +501,7 @@ export default function WatchlistChat({
   }
 
   function handleConfirmClose() {
+    fireAbandon('user_close');
     setCloseConfirmOpen(false);
     onClose?.();
   }
@@ -1139,8 +1157,7 @@ function CloseConfirm({ tokens, onCancel, onConfirm }) {
             lineHeight: 1.5,
           }}
         >
-          Your progress isn&apos;t saved yet. Closing now drops what you&apos;ve
-          built so far.
+          Your work won&apos;t be saved.
         </div>
         <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
           <button
