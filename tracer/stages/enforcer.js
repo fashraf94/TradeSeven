@@ -33,9 +33,28 @@ export function enforce(sized, constraints, agentState, marketState) {
       contributingSkills: candidate.contributingSkills,
     };
 
-    // Skip-signal candidates pass through with no constraint evaluation other than
-    // an optional liquidity check (when appliesTo='all'). Per Constraint Set §6.4.
+    // Skip-signal candidates skip most constraints, but per Constraint Set §6.4
+    // (Errata 2 Implementation Followup) still evaluate liquidityFloor when
+    // appliesTo === 'all' — liquidity is a property of the ticker, not the action.
     if (candidate.signal === 'skip') {
+      if (
+        constraints.liquidityFloor.enabled &&
+        constraints.liquidityFloor.appliesTo === 'all'
+      ) {
+        const snapshot = marketState.tickerSnapshots[candidate.ticker];
+        const dollarVolume = (snapshot?.price ?? 0) * (snapshot?.averageVolume30d ?? 0);
+        if (dollarVolume < constraints.liquidityFloor.minDollarVolume30d) {
+          rejectDecision(decision, `ticker below liquidity floor: $${dollarVolume.toLocaleString()} 30d avg volume vs $${constraints.liquidityFloor.minDollarVolume30d.toLocaleString()} archetype minimum`);
+          enforcerLog.push({
+            constraintName: 'liquidityFloor',
+            constraintType: 'reject',
+            appliedTo: candidate.ticker,
+            effect: decision.rejectionReason,
+          });
+        } else {
+          decision.passedConstraints.push('liquidityFloor');
+        }
+      }
       decisions.push(decision);
       continue;
     }

@@ -227,6 +227,10 @@ function printScenarioSummary(result) {
     stage4Summary = `${enforced.decisions.length} decisions, ${clampedCount} clamped${clampStr}, ${rejectedCount} rejected`;
   }
   console.log(`Stage 4: ${stage4Summary}`);
+  for (const d of enforced.decisions) {
+    const tag = d.rejected ? 'reject' : d.clamped ? 'clamp' : d.finalAction;
+    console.log(`  - ${d.ticker} [${tag}] passedConstraints: [${d.passedConstraints.join(', ')}]`);
+  }
 
   console.log(`Stage 5: ${receipts.length} receipt${receipts.length === 1 ? '' : 's'} assembled${receipts.length === 0 ? ' (no executed trades)' : ''}`);
   for (const r of receipts) {
