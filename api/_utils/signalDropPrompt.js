@@ -35,7 +35,7 @@ export const SUBMIT_PARSED_SIGNAL_TOOL = {
       extractedText: {
         type: 'string',
         description:
-          'Cleaned text of the signal as it appeared in the input. For images, this is your OCR + interpretation of any text/chart labels visible. For URLs, this is the article/post content (you may receive it pre-fetched in the user message). Strip boilerplate like "Sign up to read more" or footer junk. Keep it faithful — do NOT summarize or rephrase. Max 2000 characters.',
+          'Cleaned text of the signal as it appeared in the input. For images, this is your OCR + interpretation of any text/chart labels visible. For URLs, this is the article/post content (you may receive it pre-fetched in the user message). Strip boilerplate like "Sign up to read more" or footer junk. Keep it faithful — do NOT summarize or rephrase. Max 5000 characters.',
       },
       topic: {
         type: 'string',

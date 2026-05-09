@@ -30,7 +30,7 @@
 // (e.g. a future "log a signal without dialogue" CTA).
 
 import React, { useState, useEffect, useRef } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, MotionConfig } from 'framer-motion';
 import {
   X,
   ArrowRight,
@@ -48,11 +48,15 @@ import {
 import { useTheme } from '../../contexts/ThemeContext';
 import { fetchWithAuth } from '../../utils/fetchWithAuth';
 import { useIsMobile } from '../../hooks/useIsMobile';
+import { useModalFocus } from '../../hooks/useModalFocus';
 
 // ── Constants ─────────────────────────────────────────────────────────
 
-const TEXT_MAX = 2000;
-const TEXT_WARN_THRESHOLD = 1500;
+// Phase 3.6 Session 2 (Finding 10): unified to 5000 across UI / API / tool
+// schema / dialogue PARSE_FIELD_CAPS. parse-signal already accepted 5000;
+// this brings the UI in line. Warn-counter at 4000 gives a last-1000 band.
+const TEXT_MAX = 5000;
+const TEXT_WARN_THRESHOLD = 4000;
 const URL_MAX = 1000;
 const IMAGE_MAX_BYTES = 4 * 1024 * 1024; // 4 MB raw cap
 const ACCEPTED_MIME = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp'];
@@ -148,6 +152,16 @@ export default function SignalDropEntry({ open, onClose, onStartDialogue }) {
   const fileInputRef = useRef(null);
   const cameraInputRef = useRef(null);
   const dragCounterRef = useRef(0);
+  // Phase 3.6 Session 2 (Finding 9): refs for focus management. dialogRef
+  // is the focus-trap boundary; textareaRef receives auto-focus on open.
+  const dialogRef = useRef(null);
+  const textareaRef = useRef(null);
+
+  useModalFocus({
+    isOpen: open,
+    autoFocusRef: textareaRef,
+    containerRef: dialogRef,
+  });
 
   // Reset state when the modal closes. Defer slightly so the exit
   // animation runs against the populated state instead of an empty
@@ -350,115 +364,124 @@ export default function SignalDropEntry({ open, onClose, onStartDialogue }) {
   }
 
   return (
-    <AnimatePresence>
-      {open && (
-        <motion.div
-          key="signal-drop-overlay"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          transition={{ duration: 0.2 }}
-          onClick={handleOverlayClick}
-          style={{
-            position: 'fixed',
-            inset: 0,
-            zIndex: 250,
-            background: isDesktop ? 'rgba(0,0,0,0.75)' : tokens.bgApp,
-            backdropFilter: isDesktop ? 'blur(8px)' : 'none',
-            WebkitBackdropFilter: isDesktop ? 'blur(8px)' : 'none',
-            display: 'flex',
-            alignItems: isDesktop ? 'center' : 'stretch',
-            justifyContent: 'center',
-            padding: isDesktop ? 20 : 0,
-          }}
-        >
+    // Phase 3.6 Session 2 (Finding 8): MotionConfig with reducedMotion="user"
+    // honors prefers-reduced-motion for every framer-motion animation
+    // inside the modal. The global CSS reduce-motion rule strips CSS
+    // transitions but doesn't reach framer-motion's JS-driven animations;
+    // this is the framework-level fix.
+    <MotionConfig reducedMotion="user">
+      <AnimatePresence>
+        {open && (
           <motion.div
-            key="signal-drop-card"
-            initial={{ opacity: 0, scale: 0.97, y: isDesktop ? 12 : 0 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.97, y: isDesktop ? 12 : 0 }}
-            transition={{ type: 'spring', stiffness: 300, damping: 28 }}
-            onClick={(e) => e.stopPropagation()}
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="signal-drop-title"
+            key="signal-drop-overlay"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            onClick={handleOverlayClick}
             style={{
-              width: '100%',
-              maxWidth: isDesktop ? 640 : '100%',
-              height: isDesktop ? 'auto' : '100%',
-              maxHeight: isDesktop ? '85vh' : '100%',
-              background: tokens.bgApp,
-              borderRadius: isDesktop ? 20 : 0,
-              border: isDesktop ? `1px solid ${tokens.borderDefault}` : 'none',
-              boxShadow: isDesktop ? '0 25px 60px rgba(0,0,0,0.5)' : 'none',
-              overflow: 'hidden',
+              position: 'fixed',
+              inset: 0,
+              zIndex: 250,
+              background: isDesktop ? 'rgba(0,0,0,0.75)' : tokens.bgApp,
+              backdropFilter: isDesktop ? 'blur(8px)' : 'none',
+              WebkitBackdropFilter: isDesktop ? 'blur(8px)' : 'none',
               display: 'flex',
-              flexDirection: 'column',
+              alignItems: isDesktop ? 'center' : 'stretch',
+              justifyContent: 'center',
+              padding: isDesktop ? 20 : 0,
             }}
           >
-            <ModalHeader
-              tokens={tokens}
-              isDesktop={isDesktop}
-              isSubmitting={isSubmitting}
-              phase={phase}
-              onClose={onClose}
-              onBackToInput={phase === 'confirming' ? handleTryAgain : null}
-            />
-
-            <div
+            <motion.div
+              key="signal-drop-card"
+              ref={dialogRef}
+              initial={{ opacity: 0, scale: 0.97, y: isDesktop ? 12 : 0 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.97, y: isDesktop ? 12 : 0 }}
+              transition={{ type: 'spring', stiffness: 300, damping: 28 }}
+              onClick={(e) => e.stopPropagation()}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="signal-drop-title"
               style={{
-                flex: 1,
-                overflowY: 'auto',
-                padding: isDesktop ? '20px 24px 24px' : '16px 16px 24px',
+                width: '100%',
+                maxWidth: isDesktop ? 640 : '100%',
+                height: isDesktop ? 'auto' : '100%',
+                maxHeight: isDesktop ? '85vh' : '100%',
+                background: tokens.bgApp,
+                borderRadius: isDesktop ? 20 : 0,
+                border: isDesktop ? `1px solid ${tokens.borderDefault}` : 'none',
+                boxShadow: isDesktop ? '0 25px 60px rgba(0,0,0,0.5)' : 'none',
+                overflow: 'hidden',
                 display: 'flex',
                 flexDirection: 'column',
-                gap: 18,
               }}
             >
-              {phase === 'confirming' && parseResult ? (
-                <ConfirmView parseResult={parseResult} tokens={tokens} />
-              ) : (
-                <InputView
-                  tokens={tokens}
-                  isDesktop={isDesktop}
-                  text={text}
-                  setText={setText}
-                  url={url}
-                  setUrl={setUrl}
-                  urlError={urlError}
-                  validateUrlOnBlur={validateUrlOnBlur}
-                  imageFile={imageFile}
-                  imagePreviewUrl={imagePreviewUrl}
-                  imageError={imageError}
-                  onFileSelect={handleFileSelect}
-                  onRemoveImage={handleRemoveImage}
-                  isDragging={isDragging}
-                  onDragEnter={onDragEnter}
-                  onDragOver={onDragOver}
-                  onDragLeave={onDragLeave}
-                  onDrop={onDrop}
-                  fileInputRef={fileInputRef}
-                  cameraInputRef={cameraInputRef}
-                  submitError={submitError}
-                  isSubmitting={isSubmitting}
-                />
-              )}
-            </div>
+              <ModalHeader
+                tokens={tokens}
+                isDesktop={isDesktop}
+                isSubmitting={isSubmitting}
+                phase={phase}
+                onClose={onClose}
+                onBackToInput={phase === 'confirming' ? handleTryAgain : null}
+              />
 
-            <ModalFooter
-              tokens={tokens}
-              phase={phase}
-              parseResult={parseResult}
-              ctaDisabled={ctaDisabled}
-              isSubmitting={isSubmitting}
-              onSubmit={handleSubmit}
-              onTryAgain={handleTryAgain}
-              onStartDialogue={handleStartDialogue}
-            />
+              <div
+                style={{
+                  flex: 1,
+                  overflowY: 'auto',
+                  padding: isDesktop ? '20px 24px 24px' : '16px 16px 24px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 18,
+                }}
+              >
+                {phase === 'confirming' && parseResult ? (
+                  <ConfirmView parseResult={parseResult} tokens={tokens} />
+                ) : (
+                  <InputView
+                    tokens={tokens}
+                    isDesktop={isDesktop}
+                    text={text}
+                    setText={setText}
+                    url={url}
+                    setUrl={setUrl}
+                    urlError={urlError}
+                    validateUrlOnBlur={validateUrlOnBlur}
+                    imageFile={imageFile}
+                    imagePreviewUrl={imagePreviewUrl}
+                    imageError={imageError}
+                    onFileSelect={handleFileSelect}
+                    onRemoveImage={handleRemoveImage}
+                    isDragging={isDragging}
+                    onDragEnter={onDragEnter}
+                    onDragOver={onDragOver}
+                    onDragLeave={onDragLeave}
+                    onDrop={onDrop}
+                    fileInputRef={fileInputRef}
+                    cameraInputRef={cameraInputRef}
+                    textareaRef={textareaRef}
+                    submitError={submitError}
+                    isSubmitting={isSubmitting}
+                  />
+                )}
+              </div>
+
+              <ModalFooter
+                tokens={tokens}
+                phase={phase}
+                parseResult={parseResult}
+                ctaDisabled={ctaDisabled}
+                isSubmitting={isSubmitting}
+                onSubmit={handleSubmit}
+                onTryAgain={handleTryAgain}
+                onStartDialogue={handleStartDialogue}
+              />
+            </motion.div>
           </motion.div>
-        </motion.div>
-      )}
-    </AnimatePresence>
+        )}
+      </AnimatePresence>
+    </MotionConfig>
   );
 }
 
@@ -585,6 +608,7 @@ function InputView(props) {
     onDrop,
     fileInputRef,
     cameraInputRef,
+    textareaRef,
     submitError,
     isSubmitting,
   } = props;
@@ -609,6 +633,7 @@ function InputView(props) {
       >
         <div style={{ position: 'relative' }}>
           <textarea
+            ref={textareaRef}
             value={text}
             onChange={(e) => setText(e.target.value.slice(0, TEXT_MAX))}
             placeholder="Tweet, article, news clip, transcript — anything you want to dig into"

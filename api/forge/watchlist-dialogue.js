@@ -88,8 +88,13 @@ const ANATOMY_UPDATES_PER_TURN_CAP = 4;
 // api/_utils/signalDropPrompt.js. If parse-signal evolves its tool schema,
 // this validator may drift — accepted risk for Phase 2.5; long-term
 // candidate for a shared schema-constants module.
+//
+// Phase 3.6 Session 2 (Finding 10): EXTRACTED_TEXT raised from 2000 to
+// 5000 to keep all four layers (UI input cap / API input cap / Haiku tool
+// schema description / this defensive cap) consistent. Same field name,
+// same meaning across boundaries.
 const PARSE_FIELD_CAPS = Object.freeze({
-  EXTRACTED_TEXT: 2000,
+  EXTRACTED_TEXT: 5000,
   TOPIC: 200,
   TICKER_SYMBOL: 12,
   TICKERS_MAX: 20,
@@ -436,6 +441,13 @@ export function applyAnatomyUpdates(currentAnatomy, updates) {
       if (typeof update.value !== 'string') continue;
       const trimmed = update.value.slice(0, ANATOMY_CONDITION_MAX_LEN).trim();
       if (!trimmed) continue;
+      // Phase 3.6 PR 2 (Finding 3): per-list case-insensitive dedup. Smoke-test
+      // surfaced Gemma re-emitting an existing condition as a fresh `add`,
+      // which slipped past the cap-only check. Dedup goes BEFORE the length
+      // check so silent-skip on duplicates is the correct conceptual reason
+      // even when the list is also full.
+      const trimmedLower = trimmed.toLowerCase();
+      if (list.some((c) => c.toLowerCase().trim() === trimmedLower)) continue;
       if (list.length >= ANATOMY_CONDITIONS_MAX_COUNT) continue;
       list.push(trimmed);
     } else if (action === 'remove') {
@@ -450,6 +462,20 @@ export function applyAnatomyUpdates(currentAnatomy, updates) {
       if (typeof update.value !== 'string') continue;
       const trimmed = update.value.slice(0, ANATOMY_CONDITION_MAX_LEN).trim();
       if (!trimmed) continue;
+      // Phase 3.6 PR 2 (Finding 3): per-list dedup applies to `replace` too,
+      // with same-index exception. Idempotent self-replace (replacing index
+      // i with the value already at i, possibly differently cased) is
+      // allowed — the trimmed value still writes through. Cross-index
+      // duplicate replace (replacing index 1 with the value already at
+      // index 0) is silently skipped to preserve the no-duplicates invariant.
+      const trimmedLower = trimmed.toLowerCase();
+      if (
+        list.some(
+          (c, i) => i !== idx && c.toLowerCase().trim() === trimmedLower,
+        )
+      ) {
+        continue;
+      }
       list[idx] = trimmed;
     }
     // action === 'set' on a condition field falls through as a silent no-op.

@@ -31,10 +31,11 @@
 // current plays). Phase 3B's temporary slot-grouped ticker list is gone.
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, MotionConfig, useReducedMotion } from 'framer-motion';
 import { X, Send, Sparkles, ListTree, ChevronDown, AlertCircle } from 'lucide-react';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useIsMobile } from '../../hooks/useIsMobile';
+import { useModalFocus } from '../../hooks/useModalFocus';
 import { fetchWithAuth } from '../../utils/fetchWithAuth';
 import PhaseIndicator from './PhaseIndicator';
 import WatchlistAnatomyPanel from './WatchlistAnatomyPanel';
@@ -92,6 +93,11 @@ export default function WatchlistChat({
 }) {
   const { tokens } = useTheme();
   const { isDesktop } = useIsMobile();
+  // Phase 3.6 Session 2 (Finding 8): respect prefers-reduced-motion for
+  // the smooth-scroll on new messages. Framer-motion's MotionConfig wrap
+  // below the return covers the JS-driven animations; this hook covers
+  // the imperative scrollTo call that bypasses both.
+  const shouldReduceMotion = useReducedMotion();
 
   // ── Session / dialogue state ──────────────────────────────────────
   const [sessionId, setSessionId] = useState(null);
@@ -124,6 +130,16 @@ export default function WatchlistChat({
   const scrollRef = useRef(null);
   const textareaRef = useRef(null);
   const abortRef = useRef(null);
+  // Phase 3.6 Session 2 (Finding 9): focus management. dialogRef is the
+  // focus-trap boundary (the outer dialog motion.div); textareaRef
+  // (already declared above) receives auto-focus on open.
+  const dialogRef = useRef(null);
+
+  useModalFocus({
+    isOpen,
+    autoFocusRef: textareaRef,
+    containerRef: dialogRef,
+  });
 
   // Reset everything when (re-)opening.
   useEffect(() => {
@@ -167,15 +183,18 @@ export default function WatchlistChat({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, isSending, exchanges.length, budgetExceeded]);
 
-  // Auto-scroll on new messages / typing flips.
+  // Auto-scroll on new messages / typing flips. Phase 3.6 Session 2
+  // (Finding 8): respect prefers-reduced-motion — smooth scroll bypasses
+  // the global CSS reduce-motion rule, so we explicitly switch to 'auto'
+  // (instant) when the user has the preference set.
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTo({
         top: scrollRef.current.scrollHeight,
-        behavior: 'smooth',
+        behavior: shouldReduceMotion ? 'auto' : 'smooth',
       });
     }
-  }, [exchanges.length, isSending]);
+  }, [exchanges.length, isSending, shouldReduceMotion]);
 
   // Auto-resize textarea.
   useEffect(() => {
@@ -464,11 +483,28 @@ export default function WatchlistChat({
     sendMessage(label);
   }
 
+  // Phase 3.6 PR 1 — fire-and-forget abandon. Flips the session out of
+  // 'active' so shadow logs can distinguish abandoned vs finalize-intent vs
+  // (eventually) completed. Per audit decision D: don't await before onClose,
+  // don't surface failures to the user. Skip if there's no sessionId (user
+  // closed before the first turn — nothing to abandon yet).
+  function fireAbandon(reason) {
+    if (!sessionId || !agentId) return;
+    fetchWithAuth('/api/forge/watchlist-dialogue-abandon', {
+      method: 'POST',
+      body: JSON.stringify({ sessionId, agentId, reason }),
+    }).catch((err) => {
+      console.warn('[WatchlistChat] abandon fire-and-forget failed:', err?.message || err);
+    });
+  }
+
   function handleFinalizeClose() {
-    // Phase 4 will replace this with the WatchlistEditor handoff. For
-    // 3B, finalize-and-close just dismisses the dialogue with a toast.
+    // Phase 3.6 PR 1: honest copy + abandon-with-finalize-intent. Phase 4 will
+    // replace this with a real save endpoint that creates a watchlists/{id}
+    // doc and flips status to 'completed'.
+    fireAbandon('finalize_intent');
     if (typeof showToast === 'function') {
-      showToast('Watchlist saved as a draft. (Editor lands in Phase 4.)');
+      showToast('Dialogue captured — editor coming soon to save your watchlist.');
     }
     onClose?.();
   }
@@ -484,6 +520,7 @@ export default function WatchlistChat({
   }
 
   function handleConfirmClose() {
+    fireAbandon('user_close');
     setCloseConfirmOpen(false);
     onClose?.();
   }
@@ -520,9 +557,17 @@ export default function WatchlistChat({
     budgetExceeded || (readyToFinalize && phase === 'finalize');
 
   return (
-    <AnimatePresence>
-      <motion.div
+    // Phase 3.6 Session 2 (Finding 8): MotionConfig with reducedMotion="user"
+    // honors prefers-reduced-motion for every framer-motion animation in
+    // the dialogue tree (modal entry, phase-dot pulses, anatomy section
+    // pulses, condition slide-ins, chat-bubble fades, typing indicator,
+    // close-confirm transitions). The global CSS reduce-motion rule
+    // strips CSS transitions but doesn't reach JS-driven animations.
+    <MotionConfig reducedMotion="user">
+      <AnimatePresence>
+        <motion.div
         key="watchlist-chat-overlay"
+        ref={dialogRef}
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
@@ -835,6 +880,7 @@ export default function WatchlistChat({
               anatomy={anatomy}
               candidateTickers={candidateTickers}
               agentName={agentName}
+              phase={phase}
             />
           </div>
         </div>
@@ -850,7 +896,8 @@ export default function WatchlistChat({
           )}
         </AnimatePresence>
       </motion.div>
-    </AnimatePresence>
+      </AnimatePresence>
+    </MotionConfig>
   );
 }
 
@@ -1139,8 +1186,7 @@ function CloseConfirm({ tokens, onCancel, onConfirm }) {
             lineHeight: 1.5,
           }}
         >
-          Your progress isn&apos;t saved yet. Closing now drops what you&apos;ve
-          built so far.
+          Your work won&apos;t be saved.
         </div>
         <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
           <button
