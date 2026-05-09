@@ -110,12 +110,31 @@ function makeFakeFirestore({ agent, sessionDocs = {} }) {
     },
   });
 
+  // Phase 3.6 PR 3: freshness-override mechanism. When `hasOverride` is
+  // true, the next tx.get inside a transaction returns the override state
+  // instead of the real doc — simulates concurrent modification between
+  // the pre-transaction read and the transaction's freshness re-read.
+  // The hasOverride flag (not just a null check on the value) lets tests
+  // simulate the session-disappeared case by setting override to null.
+  // Existing tests don't set the override, so default behavior
+  // (passthrough) is unchanged.
+  const txState = { hasOverride: false, freshSessionOverride: null };
+
   return {
     db: {
       collection,
       runTransaction: async (fn) => {
         return fn({
-          get: async (ref) => ref.get(),
+          get: async (ref) => {
+            if (txState.hasOverride) {
+              const override = txState.freshSessionOverride;
+              return {
+                exists: !!override,
+                data: () => override,
+              };
+            }
+            return ref.get();
+          },
           update: async (ref, u) => {
             written.updateCalls.push({ id: ref.id, updates: u });
             docs[ref.id] = { ...docs[ref.id], ...u };
@@ -125,6 +144,10 @@ function makeFakeFirestore({ agent, sessionDocs = {} }) {
     },
     written,
     docs,
+    setFreshSessionOverride(state) {
+      txState.hasOverride = true;
+      txState.freshSessionOverride = state;
+    },
   };
 }
 
@@ -260,5 +283,104 @@ describe('workshop-chat — parseError snag fallback', () => {
     expect(res.body.error).toBeUndefined();
     expect(res.body.agentMessage).toBe('hi');
     expect(res.body.activeThesis).toBeDefined();
+  });
+});
+
+// Phase 3.6 PR 3 (Phase 3.5 Finding 5) — concurrent_modification handler
+// coverage. workshop-chat has 3 sentinels (no phase tracking, so no
+// phase_advanced equivalent): session_disappeared, session_closed,
+// budget_consumed. Mirrors the pattern in watchlist-dialogue.test.js.
+describe('workshop-chat — concurrent_modification (Phase 2.5 Fix 4)', () => {
+  function makeBaselineSession(overrides = {}) {
+    return {
+      userId: 'test-user',
+      agentId: 'agent-1',
+      status: 'active',
+      messagesUsed: 5,
+      messageBudget: 25,
+      exchanges: [],
+      latestThesis: null,
+      seedContext: null,
+      ...overrides,
+    };
+  }
+
+  it('returns 409 when session was closed concurrently', async () => {
+    const fixture = makeFakeFirestore({
+      agent: VALID_AGENT,
+      sessionDocs: { 'sess-c': makeBaselineSession() },
+    });
+    activeFirestore = fixture.db;
+    // Inside the transaction, freshly-read session shows status='compiled'
+    fixture.setFreshSessionOverride(
+      makeBaselineSession({ status: 'compiled' }),
+    );
+
+    const { req, res } = makeReqRes({
+      agentId: 'agent-1',
+      sessionId: 'sess-c',
+      message: 'hi',
+    });
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(409);
+    expect(res.body.error).toBe(true);
+    expect(res.body.errorReason).toBe('concurrent_modification');
+    expect(res.body.concurrencyReason).toBe('session_closed');
+    // No update was committed — fresh-state check fired before the write.
+    expect(fixture.written.updateCalls).toHaveLength(0);
+  });
+
+  it('returns 409 when budget was consumed concurrently', async () => {
+    const fixture = makeFakeFirestore({
+      agent: VALID_AGENT,
+      sessionDocs: { 'sess-c': makeBaselineSession({ messagesUsed: 5 }) },
+    });
+    activeFirestore = fixture.db;
+    // Inside the transaction, freshly-read session shows messagesUsed=25
+    // (at budget). Pre-transaction read passed the budget gate at 5.
+    fixture.setFreshSessionOverride(
+      makeBaselineSession({ messagesUsed: 25 }),
+    );
+
+    const { req, res } = makeReqRes({
+      agentId: 'agent-1',
+      sessionId: 'sess-c',
+      message: 'hi',
+    });
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(409);
+    expect(res.body.errorReason).toBe('concurrent_modification');
+    expect(res.body.concurrencyReason).toBe('budget_consumed');
+    expect(fixture.written.updateCalls).toHaveLength(0);
+  });
+
+  it('returns 409 when session disappeared concurrently', async () => {
+    const fixture = makeFakeFirestore({
+      agent: VALID_AGENT,
+      sessionDocs: { 'sess-c': makeBaselineSession() },
+    });
+    activeFirestore = fixture.db;
+    // Override resolves to a non-existent doc inside the transaction —
+    // simulates the session being deleted between pre-read and transaction.
+    fixture.setFreshSessionOverride(null);
+
+    // The pre-transaction read still finds the session (no override yet
+    // applied at that point — it's only applied when tx.get fires). But
+    // with our mock, the override is checked on EVERY tx.get. The pre-read
+    // happens via ref.get() (no tx involved), so it sees the original
+    // session. Then inside the tx, tx.get returns the override (null).
+    const { req, res } = makeReqRes({
+      agentId: 'agent-1',
+      sessionId: 'sess-c',
+      message: 'hi',
+    });
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(409);
+    expect(res.body.errorReason).toBe('concurrent_modification');
+    expect(res.body.concurrencyReason).toBe('session_disappeared');
+    expect(fixture.written.updateCalls).toHaveLength(0);
   });
 });
