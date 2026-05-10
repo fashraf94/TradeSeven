@@ -57,6 +57,13 @@ const PHASE_ORDER = Object.freeze(['explore', 'propose', 'refine', 'finalize']);
 const VALID_PHASES = new Set(PHASE_ORDER);
 const VALID_TICKER_ACTIONS = new Set(['propose', 'keep', 'remove', 'reorder', 'reslot']);
 
+// Phase 3.7: chip intent enum. Drives the chip-tap → phaseRequest mapping
+// on the FE. 'advance' and 'finalize' are user-override pathways validated
+// here in addition to the existing rawPhaseRequest gate; 'none' is the
+// default no-op intent (chip tap sends as a normal user message).
+const VALID_CHIP_INTENTS = new Set(['advance', 'finalize', 'none']);
+const VALID_PHASE_REQUESTS = new Set(['advance', 'finalize']);
+
 // Phase 2.6: ticker slot enum. Slots are STRUCTURAL placement in the watchlist
 // anatomy ('where does this ticker fit'); the existing `category` field stays
 // as free-form descriptive text ('how is it exposed'). Both have value.
@@ -262,6 +269,19 @@ export function validatePhaseTransition(currentPhase, proposedPhase, phaseReques
   const currentIdx = PHASE_ORDER.indexOf(currentPhase);
   const safeCurrentIdx = currentIdx >= 0 ? currentIdx : 0;
   const safeCurrent = PHASE_ORDER[safeCurrentIdx];
+
+  // Phase 3.7: user finalize-intent override. Jumps straight to 'finalize'
+  // from any earlier phase; no-op (no rejection) if already in 'finalize'.
+  // Honored regardless of Gemma's proposedPhase so a "Ship it" chip tap
+  // always lands the dialogue in the finalize phase.
+  if (phaseRequest === 'finalize') {
+    const finalizeIdx = PHASE_ORDER.length - 1;
+    return {
+      newPhase: PHASE_ORDER[finalizeIdx],
+      didAdvance: safeCurrentIdx < finalizeIdx,
+      didReject: false,
+    };
+  }
 
   // User force-advance (locked decision D3 hybrid model)
   if (phaseRequest === 'advance' && safeCurrentIdx < PHASE_ORDER.length - 1) {
@@ -522,11 +542,35 @@ export function normalizeDialogueOutput(raw) {
         .slice(0, ANATOMY_UPDATES_PER_TURN_CAP)
     : [];
 
+  // Phase 3.7: chip schema is { label: string, intent: 'advance' | 'finalize'
+  // | 'none' }. Defensive coercion mirrors the same forgiving-validation
+  // stance as applyCandidateTickerUpdates — drop unrecoverable entries,
+  // coerce salvageable ones to safe defaults, never reject the whole
+  // response. Per audit D1:
+  //   * Object with valid label + valid intent → pass through (label sliced
+  //     to 60 chars, label trimmed).
+  //   * Object with valid label, missing/invalid intent → coerce intent='none'.
+  //   * Object with missing/empty/non-string label → drop.
+  //   * Bare string entry (legacy or FE retry-emit) → coerce to
+  //     { label: <string>, intent: 'none' } so display still works.
+  //   * Anything else (number, null, array, object missing fields) → drop.
+  // Cap at 3 chips total (mirrors prior cap).
   const suggestedActions = Array.isArray(raw.suggestedActions)
-    ? raw.suggestedActions
-        .filter((s) => typeof s === 'string' && s.trim())
-        .map((s) => s.slice(0, 60).trim())
-        .slice(0, 3)
+    ? raw.suggestedActions.reduce((acc, entry) => {
+        if (acc.length >= 3) return acc;
+        if (typeof entry === 'string') {
+          const label = entry.slice(0, 60).trim();
+          if (label) acc.push({ label, intent: 'none' });
+          return acc;
+        }
+        if (entry && typeof entry === 'object' && !Array.isArray(entry)) {
+          const rawLabel = typeof entry.label === 'string' ? entry.label.slice(0, 60).trim() : '';
+          if (!rawLabel) return acc;
+          const intent = VALID_CHIP_INTENTS.has(entry.intent) ? entry.intent : 'none';
+          acc.push({ label: rawLabel, intent });
+        }
+        return acc;
+      }, [])
     : [];
 
   return {
@@ -570,7 +614,10 @@ export default async function handler(req, res) {
   if (!message || typeof message !== 'string' || !message.trim()) {
     return res.status(400).json({ error: 'message is required' });
   }
-  const phaseRequest = rawPhaseRequest === 'advance' ? 'advance' : null;
+  // Phase 3.7: phaseRequest enum extended with 'finalize' to support the
+  // chip-tap → finalize-intent pathway. Anything else (including the
+  // unspecified default) is null.
+  const phaseRequest = VALID_PHASE_REQUESTS.has(rawPhaseRequest) ? rawPhaseRequest : null;
 
   // First-turn callers MUST supply parseResult AND dropId; subsequent-turn
   // callers MUST supply sessionId. Both at once is fine — sessionId wins
@@ -813,11 +860,17 @@ export default async function handler(req, res) {
       phaseRequest,
     });
 
-    // 12. Decorate user message with phase-advance annotation if requested
-    const userMessage =
-      phaseRequest === 'advance'
-        ? `[User has requested to advance to the next phase]\nUser: ${sanitizedMessage}`
-        : sanitizedMessage;
+    // 12. Decorate user message with phase-intent annotation if requested.
+    // Phase 3.7: 'finalize' carries a stronger user-override meaning ("ship
+    // the watchlist") and gets its own annotation so Gemma can frame the
+    // turn appropriately. The corresponding USER FINALIZE-INTENT REQUEST
+    // block in buildDialoguePhaseRules still fires regardless of currentPhase.
+    let userMessage = sanitizedMessage;
+    if (phaseRequest === 'advance') {
+      userMessage = `[User has requested to advance to the next phase]\nUser: ${sanitizedMessage}`;
+    } else if (phaseRequest === 'finalize') {
+      userMessage = `[User has explicitly requested to finalize this watchlist]\nUser: ${sanitizedMessage}`;
+    }
 
     // 13. Call Gemma with abort
     const controller = new AbortController();
@@ -873,7 +926,7 @@ export default async function handler(req, res) {
             "I hit a snag opening this conversation — could you send that again?",
           candidateTickers: [],
           phase: 'explore',
-          suggestedActions: ['retry'],
+          suggestedActions: [{ label: 'retry', intent: 'none' }],
           messagesUsed: 0,
           messageBudget,
           readyToFinalize: false,
@@ -906,7 +959,7 @@ export default async function handler(req, res) {
           "I hit a snag processing that — could you try that again?",
         candidateTickers: session.candidateTickers || [],
         phase: currentPhase,
-        suggestedActions: ['retry'],
+        suggestedActions: [{ label: 'retry', intent: 'none' }],
         messagesUsed: currentMessagesUsed,
         messageBudget,
         readyToFinalize: false,
@@ -956,7 +1009,7 @@ export default async function handler(req, res) {
             "I hit a snag opening this conversation — could you send that again?",
           candidateTickers: [],
           phase: 'explore',
-          suggestedActions: ['retry'],
+          suggestedActions: [{ label: 'retry', intent: 'none' }],
           messagesUsed: 0,
           messageBudget,
           readyToFinalize: false,
@@ -971,7 +1024,7 @@ export default async function handler(req, res) {
           "I hit a snag processing that — could you try that again?",
         candidateTickers: session.candidateTickers || [],
         phase: currentPhase,
-        suggestedActions: ['retry'],
+        suggestedActions: [{ label: 'retry', intent: 'none' }],
         messagesUsed: currentMessagesUsed,
         messageBudget,
         readyToFinalize: false,
@@ -1112,7 +1165,7 @@ export default async function handler(req, res) {
             sessionId: sessionRef.id,
             phase: currentPhase,
             candidateTickers: session.candidateTickers || [],
-            suggestedActions: ['retry'],
+            suggestedActions: [{ label: 'retry', intent: 'none' }],
             messagesUsed: currentMessagesUsed,
             messageBudget,
             readyToFinalize: false,
@@ -1191,7 +1244,7 @@ export default async function handler(req, res) {
       sessionId: null,
       candidateTickers: [],
       phase: 'explore',
-      suggestedActions: ['retry'],
+      suggestedActions: [{ label: 'retry', intent: 'none' }],
       messagesUsed: 0,
       messageBudget: MESSAGE_BUDGET,
       readyToFinalize: false,

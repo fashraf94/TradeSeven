@@ -497,7 +497,9 @@ const DIALOGUE_OUTPUT_FORMAT = `RESPONSE FORMAT — You MUST respond with valid 
       "index": 0
     }
   ],
-  "suggestedActions": ["short button labels", "max 3", "≤60 chars each"],
+  "suggestedActions": [
+    { "label": "short button label ≤60 chars", "intent": "advance" | "finalize" | "none" }
+  ],
   "readyToFinalize": true | false
 }
 
@@ -509,7 +511,7 @@ RULES:
 - proposedPhase tells the server what phase YOU want the dialogue to be in NEXT. The server validates forward-only — backward jumps are rejected and the previous phase is preserved.
 - readyToFinalize: only true once the user has explicitly signalled satisfaction with the list ("yes, ship it", "looks good", "I'm done"). Don't flip it true prematurely or speculatively.
 - agentMessage: keep tight — 2-4 sentences, one focus per turn. No greetings, no sign-offs, no markdown.
-- suggestedActions: 1-3 short button labels when you're inviting a choice. Empty array when you're not.
+- suggestedActions: 1-3 short tappable chips when you're inviting a choice; empty array when you're not. Each chip is an OBJECT with a "label" string (≤60 chars) and an "intent" string. Intent semantics: "advance" = a tap should move the dialogue to the next phase (use for "Show me candidates", "I think this is enough", "Let's lock these in"); "finalize" = a tap should jump straight to the finalize phase and signal the user is ready to ship the watchlist (use for "Ship it", "Lock it in", "Looks good"); "none" = a tap is a normal user message that doesn't change the phase (use for branching follow-up prompts, mid-phase steering, alternatives). Pick the most specific intent that fits — when in doubt, use "none".
 - NEVER output anything outside the JSON object.
 - NEVER recommend a specific buy/sell action with a price target or timing. This is watchlist construction, not trade execution.
 - NEVER output an activeThesis structure — that's Workshop Mode, not this mode.`;
@@ -533,7 +535,7 @@ ANATOMY DIRECTION — Build the THESIS in this phase:
 - You may also begin proposing 1-2 ACTIVATION CONDITIONS via anatomyUpdates: [{field:"activation_condition", action:"add", value:"..."}] if the user signals what they're watching for ("I'm watching for hyperscaler capex confirmation"). Conditions should be specific and observable.
 
 TRANSITION TO 'propose':
-- When the user signals readiness ("OK let's see some names", "what fits this?", clicks a "Show me tickers" suggestedAction)
+- When the user signals readiness ("OK let's see some names", "what fits this?", or taps a chip whose intent is "advance" — typically a "Show me candidates" / "Let's see tickers" chip)
 - OR after 2-3 exchanges if you have enough understanding — advance proactively rather than asking permission
 - Don't advance until the thesis is set; the propose phase needs that anchor.
 
@@ -622,7 +624,7 @@ BEHAVIORS:
 - Optional: flag any obvious gap warnings ("Note: nothing in second-order beneficiaries — that may or may not be a feature.")
 - Don't propose major changes in this phase. The user is reviewing.
 - If the user says "looks good" / "ship it" / "let's do it" — set readyToFinalize: true.
-- If the user wants to keep editing, you can still do small keep/remove tweaks, but the suggestedActions should hint at "I think we're done."
+- If the user wants to keep editing, you can still do small keep/remove tweaks, but at least one chip in suggestedActions should hint at "I think we're done" with intent="finalize" (e.g., "Ship it", "Lock it in").
 - Do NOT transition to 'completed' via proposedPhase — that's reserved for the save endpoint.
 
 ANATOMY RECAP — Frame the recap as the package the user is about to equip an agent with:
@@ -651,19 +653,19 @@ const DIALOGUE_FEW_SHOT = `EXAMPLES — these illustrate the JSON shape and per-
 
 EXAMPLE — explore phase, locking in a thesis after the user reveals their angle:
 User: "I'm reading this as Apple ramping AI inference silicon — that pulls forward the foundry cycle for TSM and the partners. The consumer side feels priced already."
-You: {"agentMessage":"That tracks — and it's a cleaner read than the consumer angle, which always tangles up with ad cycles. So we anchor on supply chain, with maybe one or two consumer-AI hedges in case Apple's silicon ramp slips. What would invalidate this for you — Apple slipping the silicon ramp, foundry capacity getting reallocated?","proposedPhase":"explore","candidateTickerUpdates":[],"anatomyUpdates":[{"field":"thesis","action":"set","value":"Apple's AI inference push is primarily a supply-chain story — the foundries and custom-silicon partners scaling with Apple's volume ramp see the cleanest read-through. Consumer-AI exposure is already discounted and acts as a hedge, not the thesis."},{"field":"activation_condition","action":"add","value":"Apple confirms multi-year silicon ramp on next earnings call"}],"suggestedActions":["Apple slipping the ramp","Foundry capacity reallocation","Show me candidates"],"readyToFinalize":false}
+You: {"agentMessage":"That tracks — and it's a cleaner read than the consumer angle, which always tangles up with ad cycles. So we anchor on supply chain, with maybe one or two consumer-AI hedges in case Apple's silicon ramp slips. What would invalidate this for you — Apple slipping the silicon ramp, foundry capacity getting reallocated?","proposedPhase":"explore","candidateTickerUpdates":[],"anatomyUpdates":[{"field":"thesis","action":"set","value":"Apple's AI inference push is primarily a supply-chain story — the foundries and custom-silicon partners scaling with Apple's volume ramp see the cleanest read-through. Consumer-AI exposure is already discounted and acts as a hedge, not the thesis."},{"field":"activation_condition","action":"add","value":"Apple confirms multi-year silicon ramp on next earnings call"}],"suggestedActions":[{"label":"Apple slipping the ramp","intent":"none"},{"label":"Foundry capacity reallocation","intent":"none"},{"label":"Show me candidates","intent":"advance"}],"readyToFinalize":false}
 
 EXAMPLE — propose phase, a slotted batch of 4 covering both angles:
 User: "OK both angles, let's see what you've got"
-You: {"agentMessage":"Here's a starting cluster. Core supply-chain: TSM and AVGO. Cross-currents on the consumer-AI side as hedges: GOOGL and META. Want me to keep going on either side?","proposedPhase":"propose","candidateTickerUpdates":[{"action":"propose","symbol":"TSM","reasoning":"primary chip foundry — direct beneficiary if Apple ramps","category":"supplier","slot":"core"},{"action":"propose","symbol":"AVGO","reasoning":"custom-silicon partner; levered to Apple's silicon roadmap","category":"supplier","slot":"core"},{"action":"propose","symbol":"GOOGL","reasoning":"consumer-AI distribution; defensive vs Apple's on-device push","category":"comparable","slot":"cross_current"},{"action":"propose","symbol":"META","reasoning":"consumer-AI ad-cycle beneficiary if Apple's push expands the surface","category":"beneficiary","slot":"cross_current"}],"anatomyUpdates":[],"suggestedActions":["More supply-chain","More consumer-AI","I think this is enough"],"readyToFinalize":false}
+You: {"agentMessage":"Here's a starting cluster. Core supply-chain: TSM and AVGO. Cross-currents on the consumer-AI side as hedges: GOOGL and META. Want me to keep going on either side?","proposedPhase":"propose","candidateTickerUpdates":[{"action":"propose","symbol":"TSM","reasoning":"primary chip foundry — direct beneficiary if Apple ramps","category":"supplier","slot":"core"},{"action":"propose","symbol":"AVGO","reasoning":"custom-silicon partner; levered to Apple's silicon roadmap","category":"supplier","slot":"core"},{"action":"propose","symbol":"GOOGL","reasoning":"consumer-AI distribution; defensive vs Apple's on-device push","category":"comparable","slot":"cross_current"},{"action":"propose","symbol":"META","reasoning":"consumer-AI ad-cycle beneficiary if Apple's push expands the surface","category":"beneficiary","slot":"cross_current"}],"anatomyUpdates":[],"suggestedActions":[{"label":"More supply-chain","intent":"none"},{"label":"More consumer-AI","intent":"none"},{"label":"I think this is enough","intent":"advance"}],"readyToFinalize":false}
 
 EXAMPLE — refine phase, inviting Discovery Plays + tightening an invalidation:
 User: "OK the core list feels set — TSM, AVGO, ASML for supply chain, GOOGL as the hedge."
-You: {"agentMessage":"Tight core. Before we lock it: any niche names you've come across that fit this thesis? Less-covered foundry-equipment plays, custom silicon designers, off-consensus picks the agent wouldn't surface on its own — those Discovery Plays are often where the real edge is. Also tightening the invalidation: if TSM specifically guides AI capex DOWN on the next call, that's a much sharper signal than 'AI weakness'.","proposedPhase":"refine","candidateTickerUpdates":[],"anatomyUpdates":[{"field":"invalidation_condition","action":"add","value":"TSM guides AI-driven capex down on next quarterly earnings call"}],"suggestedActions":["I have a few names to add","Core list is enough","Tell me what'd qualify"],"readyToFinalize":false}
+You: {"agentMessage":"Tight core. Before we lock it: any niche names you've come across that fit this thesis? Less-covered foundry-equipment plays, custom silicon designers, off-consensus picks the agent wouldn't surface on its own — those Discovery Plays are often where the real edge is. Also tightening the invalidation: if TSM specifically guides AI capex DOWN on the next call, that's a much sharper signal than 'AI weakness'.","proposedPhase":"refine","candidateTickerUpdates":[],"anatomyUpdates":[{"field":"invalidation_condition","action":"add","value":"TSM guides AI-driven capex down on next quarterly earnings call"}],"suggestedActions":[{"label":"I have a few names to add","intent":"none"},{"label":"Core list is enough","intent":"advance"},{"label":"Tell me what'd qualify","intent":"none"}],"readyToFinalize":false}
 
 EXAMPLE — finalize phase, recap framed as the BaggerBomb agent package:
 User: "I think we're done"
-You: {"agentMessage":"Here's the package — 4 core supply-chain plays, 2 Discovery names you brought (CDNS and the smaller foundry-equipment pick — your asymmetric edge, names the agent wouldn't have considered on its own), GOOGL as a cross-current hedge. Activation: Apple confirms multi-year silicon ramp. Invalidation: TSM guides AI capex down on next call. When you save this, you can equip your BaggerBomb agent with it for an upcoming battle — the agent will know to weight these tickers when activation hits and stand down when invalidation shows up. Looks shippable to me.","proposedPhase":"finalize","candidateTickerUpdates":[],"anatomyUpdates":[],"suggestedActions":["Ship it","Tweak a couple more"],"readyToFinalize":true}`;
+You: {"agentMessage":"Here's the package — 4 core supply-chain plays, 2 Discovery names you brought (CDNS and the smaller foundry-equipment pick — your asymmetric edge, names the agent wouldn't have considered on its own), GOOGL as a cross-current hedge. Activation: Apple confirms multi-year silicon ramp. Invalidation: TSM guides AI capex down on next call. When you save this, you can equip your BaggerBomb agent with it for an upcoming battle — the agent will know to weight these tickers when activation hits and stand down when invalidation shows up. Looks shippable to me.","proposedPhase":"finalize","candidateTickerUpdates":[],"anatomyUpdates":[],"suggestedActions":[{"label":"Ship it","intent":"finalize"},{"label":"Tweak a couple more","intent":"none"}],"readyToFinalize":true}`;
 
 function buildDialoguePhaseRules(currentPhase, phaseRequest) {
   const block = WATCHLIST_PHASE_RULES[currentPhase] || WATCHLIST_PHASE_RULES.explore;
@@ -672,6 +674,12 @@ function buildDialoguePhaseRules(currentPhase, phaseRequest) {
 
 USER PHASE-ADVANCE REQUEST:
 The user has explicitly asked to advance to the next phase this turn. If their reasoning is sound and the dialogue has produced enough context, advance via proposedPhase. If you genuinely need another beat in the current phase, briefly explain why staying makes sense — but lean toward honoring the request.`;
+  }
+  if (phaseRequest === 'finalize') {
+    return `${block}
+
+USER FINALIZE-INTENT REQUEST:
+The user has explicitly asked to finalize this watchlist this turn (e.g., they tapped a "Ship it" / "Lock it in" chip). The server is jumping the dialogue straight to the FINALIZE phase regardless of the current phase. Set proposedPhase="finalize" and lean toward readyToFinalize=true unless the candidate list or anatomy is genuinely too thin to ship — in which case briefly name what's missing and ask one focused question, but still keep proposedPhase="finalize" to honor the user's intent.`;
   }
   return block;
 }
