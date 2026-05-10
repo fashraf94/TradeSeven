@@ -377,6 +377,52 @@ describe('validatePhaseTransition', () => {
     expect(out.newPhase).toBe('propose');
     expect(out.didReject).toBe(false);
   });
+
+  // ==================== Phase 3.7 — phaseRequest=finalize ====================
+
+  it('phaseRequest=finalize jumps from explore straight to finalize', () => {
+    const out = validatePhaseTransition('explore', 'explore', 'finalize');
+    expect(out.newPhase).toBe('finalize');
+    expect(out.didAdvance).toBe(true);
+    expect(out.didReject).toBe(false);
+  });
+
+  it('phaseRequest=finalize jumps from propose straight to finalize', () => {
+    const out = validatePhaseTransition('propose', 'propose', 'finalize');
+    expect(out.newPhase).toBe('finalize');
+    expect(out.didAdvance).toBe(true);
+    expect(out.didReject).toBe(false);
+  });
+
+  it('phaseRequest=finalize jumps from refine straight to finalize', () => {
+    const out = validatePhaseTransition('refine', 'refine', 'finalize');
+    expect(out.newPhase).toBe('finalize');
+    expect(out.didAdvance).toBe(true);
+    expect(out.didReject).toBe(false);
+  });
+
+  it('phaseRequest=finalize is a no-op (no rejection) when already at finalize', () => {
+    const out = validatePhaseTransition('finalize', 'finalize', 'finalize');
+    expect(out.newPhase).toBe('finalize');
+    expect(out.didAdvance).toBe(false);
+    expect(out.didReject).toBe(false);
+  });
+
+  it("phaseRequest=finalize overrides Gemma's backward proposedPhase", () => {
+    // Even if Gemma proposes a backward jump, the user's explicit finalize
+    // intent wins. The proposedPhase is irrelevant to the override branch.
+    const out = validatePhaseTransition('refine', 'explore', 'finalize');
+    expect(out.newPhase).toBe('finalize');
+    expect(out.didAdvance).toBe(true);
+    expect(out.didReject).toBe(false);
+  });
+
+  it('phaseRequest=finalize with unknown current phase still lands at finalize', () => {
+    const out = validatePhaseTransition('garbage', 'explore', 'finalize');
+    expect(out.newPhase).toBe('finalize');
+    expect(out.didAdvance).toBe(true);
+    expect(out.didReject).toBe(false);
+  });
 });
 
 // ==================== applyCandidateTickerUpdates ====================
@@ -523,18 +569,24 @@ describe('applyCandidateTickerUpdates', () => {
 // ==================== normalizeDialogueOutput ====================
 
 describe('normalizeDialogueOutput', () => {
-  it('passes through a fully-shaped object', () => {
+  it('passes through a fully-shaped object (chip schema = { label, intent })', () => {
     const out = normalizeDialogueOutput({
       agentMessage: 'hello',
       proposedPhase: 'propose',
       candidateTickerUpdates: [{ action: 'propose', symbol: 'AAPL' }],
-      suggestedActions: ['a', 'b'],
+      suggestedActions: [
+        { label: 'Show me candidates', intent: 'advance' },
+        { label: 'Dig deeper', intent: 'none' },
+      ],
       readyToFinalize: true,
     });
     expect(out.agentMessage).toBe('hello');
     expect(out.proposedPhase).toBe('propose');
     expect(out.candidateTickerUpdates).toHaveLength(1);
-    expect(out.suggestedActions).toEqual(['a', 'b']);
+    expect(out.suggestedActions).toEqual([
+      { label: 'Show me candidates', intent: 'advance' },
+      { label: 'Dig deeper', intent: 'none' },
+    ]);
     expect(out.readyToFinalize).toBe(true);
   });
 
@@ -559,12 +611,146 @@ describe('normalizeDialogueOutput', () => {
     expect(normalizeDialogueOutput({}).proposedPhase).toBeNull();
   });
 
-  it('clamps suggestedActions to 3 items and 60 chars each', () => {
+  // ==================== Phase 3.7 — chip schema coercion ====================
+
+  it('coerces chip with valid label + valid intent', () => {
     const out = normalizeDialogueOutput({
-      suggestedActions: ['one', 'two', 'three', 'four', 'a'.repeat(120)],
+      suggestedActions: [
+        { label: 'Ship it', intent: 'finalize' },
+        { label: 'Tweak more', intent: 'none' },
+        { label: 'Advance now', intent: 'advance' },
+      ],
+    });
+    expect(out.suggestedActions).toEqual([
+      { label: 'Ship it', intent: 'finalize' },
+      { label: 'Tweak more', intent: 'none' },
+      { label: 'Advance now', intent: 'advance' },
+    ]);
+  });
+
+  it('coerces chip with valid label but missing intent to intent="none"', () => {
+    const out = normalizeDialogueOutput({
+      suggestedActions: [{ label: 'Ship it' }],
+    });
+    expect(out.suggestedActions).toEqual([{ label: 'Ship it', intent: 'none' }]);
+  });
+
+  it('coerces chip with invalid intent values to intent="none"', () => {
+    const out = normalizeDialogueOutput({
+      suggestedActions: [
+        { label: 'A', intent: 'reset' },
+        { label: 'B', intent: 42 },
+        { label: 'C', intent: null },
+      ],
+    });
+    expect(out.suggestedActions).toEqual([
+      { label: 'A', intent: 'none' },
+      { label: 'B', intent: 'none' },
+      { label: 'C', intent: 'none' },
+    ]);
+  });
+
+  it('coerces empty-string intent to "none" (boundary case)', () => {
+    const out = normalizeDialogueOutput({
+      suggestedActions: [{ label: 'X', intent: '' }],
+    });
+    expect(out.suggestedActions).toEqual([{ label: 'X', intent: 'none' }]);
+  });
+
+  it('drops chips with missing / empty / non-string label', () => {
+    const out = normalizeDialogueOutput({
+      suggestedActions: [
+        { intent: 'advance' },
+        { label: '', intent: 'advance' },
+        { label: '   ', intent: 'advance' },
+        { label: 42, intent: 'advance' },
+        { label: null, intent: 'advance' },
+        { label: 'Survivor', intent: 'advance' },
+      ],
+    });
+    expect(out.suggestedActions).toEqual([{ label: 'Survivor', intent: 'advance' }]);
+  });
+
+  it('coerces a bare string entry to { label, intent: "none" } (legacy shape)', () => {
+    const out = normalizeDialogueOutput({
+      suggestedActions: ['legacy chip', '  trimmed  '],
+    });
+    expect(out.suggestedActions).toEqual([
+      { label: 'legacy chip', intent: 'none' },
+      { label: 'trimmed', intent: 'none' },
+    ]);
+  });
+
+  it('drops empty / whitespace-only strings', () => {
+    const out = normalizeDialogueOutput({
+      suggestedActions: ['', '   ', 'kept'],
+    });
+    expect(out.suggestedActions).toEqual([{ label: 'kept', intent: 'none' }]);
+  });
+
+  it('drops non-object non-string entries (numbers, null, arrays)', () => {
+    const out = normalizeDialogueOutput({
+      suggestedActions: [42, null, ['nested'], { label: 'kept', intent: 'none' }],
+    });
+    expect(out.suggestedActions).toEqual([{ label: 'kept', intent: 'none' }]);
+  });
+
+  it('preserves order across mixed valid + malformed entries', () => {
+    const out = normalizeDialogueOutput({
+      suggestedActions: [
+        { label: 'first', intent: 'advance' },
+        null,
+        'second',
+        { label: '', intent: 'finalize' },
+        { label: 'third', intent: 'finalize' },
+      ],
+    });
+    expect(out.suggestedActions).toEqual([
+      { label: 'first', intent: 'advance' },
+      { label: 'second', intent: 'none' },
+      { label: 'third', intent: 'finalize' },
+    ]);
+  });
+
+  it('clamps suggestedActions to 3 items and 60 chars per label', () => {
+    const longLabel = 'a'.repeat(120);
+    const out = normalizeDialogueOutput({
+      suggestedActions: [
+        { label: 'one', intent: 'none' },
+        { label: 'two', intent: 'none' },
+        { label: 'three', intent: 'advance' },
+        { label: 'four', intent: 'none' },
+        { label: longLabel, intent: 'none' },
+      ],
     });
     expect(out.suggestedActions).toHaveLength(3);
-    expect(out.suggestedActions[0]).toBe('one');
+    expect(out.suggestedActions[0]).toEqual({ label: 'one', intent: 'none' });
+    expect(out.suggestedActions[2]).toEqual({ label: 'three', intent: 'advance' });
+  });
+
+  it('slices long labels to 60 chars on object chips and string chips alike', () => {
+    const longLabel = 'a'.repeat(120);
+    const out = normalizeDialogueOutput({
+      suggestedActions: [{ label: longLabel, intent: 'advance' }, longLabel],
+    });
+    expect(out.suggestedActions[0].label).toHaveLength(60);
+    expect(out.suggestedActions[0].intent).toBe('advance');
+    expect(out.suggestedActions[1].label).toHaveLength(60);
+    expect(out.suggestedActions[1].intent).toBe('none');
+  });
+
+  it('returns [] when suggestedActions is non-array', () => {
+    expect(normalizeDialogueOutput({ suggestedActions: null }).suggestedActions).toEqual([]);
+    expect(normalizeDialogueOutput({ suggestedActions: 'oops' }).suggestedActions).toEqual([]);
+    expect(normalizeDialogueOutput({ suggestedActions: 42 }).suggestedActions).toEqual([]);
+    expect(normalizeDialogueOutput({}).suggestedActions).toEqual([]);
+  });
+
+  it('returns [] when every chip is malformed', () => {
+    const out = normalizeDialogueOutput({
+      suggestedActions: [42, null, { intent: 'advance' }, ''],
+    });
+    expect(out.suggestedActions).toEqual([]);
   });
 
   it('clamps agentMessage to 2000 chars', () => {
@@ -978,6 +1164,42 @@ describe('handler — phase advancement', () => {
     expect(res.statusCode).toBe(200);
     expect(res.body.phase).toBe('propose');
   });
+
+  // Phase 3.7 — phaseRequest='finalize' jumps from explore straight to finalize.
+  it('honors phaseRequest=finalize from an early phase, jumping straight to finalize', async () => {
+    const sessionDocs = makeActiveSession('explore');
+    const fixture = makeFakeFirestore({ agent: VALID_AGENT, sessionDocs });
+    activeFirestore = fixture.db;
+
+    gemmaResult.current = {
+      success: true,
+      content: JSON.stringify({
+        agentMessage: 'shipping it',
+        proposedPhase: 'finalize',
+        candidateTickerUpdates: [],
+        suggestedActions: [],
+        readyToFinalize: true,
+      }),
+    };
+
+    const { req, res } = makeReqRes({
+      agentId: 'agent-1',
+      sessionId: 'sess-x',
+      message: 'lock it in',
+      phaseRequest: 'finalize',
+    });
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body.phase).toBe('finalize');
+    expect(res.body.readyToFinalize).toBe(true);
+
+    // Shadow log captures the phaseRequest the user asked for.
+    const log = shadowLogCalls.current.find((r) => r.stage === 'dialogue');
+    expect(log.phaseRequest).toBe('finalize');
+    expect(log.phase).toBe('finalize');
+    expect(log.previousPhase).toBe('explore');
+  });
 });
 
 // ==================== HANDLER: structured-error path ====================
@@ -1019,7 +1241,7 @@ describe('handler — structured-error path', () => {
     expect(res.body.phase).toBe('propose');
     expect(res.body.messagesUsed).toBe(5);
     expect(res.body.candidateTickers).toHaveLength(1);
-    expect(res.body.suggestedActions).toEqual(['retry']);
+    expect(res.body.suggestedActions).toEqual([{ label: 'retry', intent: 'none' }]);
 
     // No write should have occurred — failed turn doesn't burn budget.
     expect(fixture.written.updateCalls).toHaveLength(0);

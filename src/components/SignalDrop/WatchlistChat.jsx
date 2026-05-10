@@ -48,18 +48,53 @@ const CONCURRENT_RETRY_DELAY_MS = 500;
 const MESSAGE_CHAR_CAP = 2000;
 const DEFAULT_MESSAGE_BUDGET = 20;
 
-const PHASE_ADVANCE_MARKERS = ['advance', 'move to next phase', 'next phase'];
+// Phase 3.7: chip intent enum mirrors VALID_CHIP_INTENTS in
+// api/forge/watchlist-dialogue.js. The server normalizer guarantees every
+// chip on a happy-path response carries one of these values; FE-emitted
+// chips (retry / finalize-CTA on budget exhaust) also conform.
+const VALID_CHIP_INTENTS = new Set(['advance', 'finalize', 'none']);
 
-function isPhaseAdvanceLabel(label) {
-  if (typeof label !== 'string') return false;
-  const lc = label.toLowerCase();
-  return PHASE_ADVANCE_MARKERS.some((m) => lc.includes(m));
+// Map a chip's intent to the phaseRequest value sent on the next POST.
+// Exported for unit tests. Returns null for the no-op default ('none' or
+// any garbage value); the request-builder translates null into omitting
+// the phaseRequest field entirely.
+export function chipIntentToPhaseRequest(intent) {
+  if (intent === 'advance' || intent === 'finalize') return intent;
+  return null;
 }
 
-function isFinalizeLabel(label) {
-  if (typeof label !== 'string') return false;
-  const lc = label.toLowerCase();
-  return lc.includes('finalize') || lc.includes('looks good') || lc.includes('lock in');
+// Defensive normalizer for an inbound chip. Accepts the canonical
+// { label, intent } object, a bare string (legacy or FE retry-emit), or
+// anything else and folds them to a uniform render-safe shape. Returns
+// null when the chip cannot be displayed (no usable label). Exported for
+// unit tests + reused everywhere the FE materializes chips into state, so
+// the rendering loop never has to guess the shape.
+export function normalizeChipForRender(chip) {
+  if (typeof chip === 'string') {
+    const label = chip.trim();
+    if (!label) return null;
+    return { label, intent: 'none' };
+  }
+  if (chip && typeof chip === 'object' && !Array.isArray(chip)) {
+    const label = typeof chip.label === 'string' ? chip.label.trim() : '';
+    if (!label) return null;
+    const intent = VALID_CHIP_INTENTS.has(chip.intent) ? chip.intent : 'none';
+    return { label, intent };
+  }
+  return null;
+}
+
+// Materialize a server/FE-emitted suggestedActions array into render-ready
+// chip objects. Bad entries are dropped silently so a single malformed chip
+// doesn't blank the whole row.
+function normalizeChipsForRender(chips) {
+  if (!Array.isArray(chips)) return [];
+  const out = [];
+  for (const c of chips) {
+    const n = normalizeChipForRender(c);
+    if (n) out.push(n);
+  }
+  return out;
 }
 
 function isRetryLabel(label) {
@@ -67,11 +102,11 @@ function isRetryLabel(label) {
   return label.trim().toLowerCase() === 'retry';
 }
 
-function variantForChip(label, currentPhase) {
-  if (isFinalizeLabel(label) || isPhaseAdvanceLabel(label)) {
+function variantForChip(chip, currentPhase) {
+  if (chip?.intent === 'advance' || chip?.intent === 'finalize') {
     return 'phase-advance';
   }
-  if (isRetryLabel(label)) {
+  if (isRetryLabel(chip?.label)) {
     return 'secondary';
   }
   if (currentPhase === 'finalize') return 'phase-advance';
@@ -308,17 +343,18 @@ export default function WatchlistChat({
         return retryResult;
       }
       // Retry also failed — surface a manual retry chip.
+      const retryChips = [{ label: 'Retry', intent: 'none' }];
       pushAgentExchange({
         content:
           'Still hitting a hiccup on my side — try sending that again in a moment.',
         phase: data.phase || phase,
-        suggestedActions: ['Retry'],
+        suggestedActions: retryChips,
       });
       if (Array.isArray(data.candidateTickers)) setCandidateTickers(data.candidateTickers);
       if (typeof data.messagesUsed === 'number') setMessagesUsed(data.messagesUsed);
       if (typeof data.messageBudget === 'number') setMessageBudget(data.messageBudget);
       if (data.phase) setPhase(data.phase);
-      setSuggestedActions(['Retry']);
+      setSuggestedActions(retryChips);
       return { ok: false, kind: 'concurrent' };
     }
 
@@ -328,13 +364,17 @@ export default function WatchlistChat({
       if (typeof data.messageBudget === 'number') setMessageBudget(data.messageBudget);
       // We weren't able to send, so the optimistic user bubble is now
       // stale advice. Push a guidance bubble explaining the state.
+      // Phase 3.7: the budget-exhausted CTA carries intent='finalize' so a
+      // tap routes through the same chip-tap → phaseRequest pathway as a
+      // normal in-dialogue "Ship it" tap.
+      const budgetChips = [{ label: 'Finalize watchlist', intent: 'finalize' }];
       pushAgentExchange({
         content:
           "We've covered a lot of ground here. Want to lock in the list as it stands?",
         phase: 'finalize',
-        suggestedActions: ['Finalize watchlist'],
+        suggestedActions: budgetChips,
       });
-      setSuggestedActions(['Finalize watchlist']);
+      setSuggestedActions(budgetChips);
       return { ok: false, kind: 'budget' };
     }
 
@@ -375,9 +415,16 @@ export default function WatchlistChat({
       if (data.phase) setPhase(data.phase);
       if (typeof data.messagesUsed === 'number') setMessagesUsed(data.messagesUsed);
       if (typeof data.messageBudget === 'number') setMessageBudget(data.messageBudget);
-      const fallbackActions = Array.isArray(data.suggestedActions)
-        ? data.suggestedActions.map((a) => (a === 'retry' ? 'Retry' : a))
-        : ['Retry'];
+      // Phase 3.7: server-emitted retry chips are { label: 'retry', intent:
+      // 'none' }. Title-case the visible label for the user-facing fallback
+      // bubble; default to a single Retry chip when the response doesn't
+      // carry suggestedActions at all.
+      const normalizedFromServer = normalizeChipsForRender(data.suggestedActions);
+      const fallbackActions = normalizedFromServer.length > 0
+        ? normalizedFromServer.map((c) =>
+            c.label === 'retry' ? { ...c, label: 'Retry' } : c,
+          )
+        : [{ label: 'Retry', intent: 'none' }];
       pushAgentExchange({
         content:
           data.agentMessage ||
@@ -397,7 +444,11 @@ export default function WatchlistChat({
     if (typeof data.messagesUsed === 'number') setMessagesUsed(data.messagesUsed);
     if (typeof data.messageBudget === 'number') setMessageBudget(data.messageBudget);
     setReadyToFinalize(Boolean(data.readyToFinalize));
-    const nextActions = Array.isArray(data.suggestedActions) ? data.suggestedActions : [];
+    // Phase 3.7: server normalizer guarantees object-shape chips on the
+    // happy path, but we run them through normalizeChipsForRender too for
+    // belt-and-suspenders defense (e.g., a stale Gemma response slipping
+    // through with legacy strings would still render).
+    const nextActions = normalizeChipsForRender(data.suggestedActions);
     setSuggestedActions(nextActions);
     pushAgentExchange({
       content: data.agentMessage || '',
@@ -466,21 +517,25 @@ export default function WatchlistChat({
     [isSending, budgetExceeded, phase, sessionId, agentId, parseResult, dropId],
   );
 
-  function handleActionChipClick(label) {
-    if (isRetryLabel(label)) {
-      // Re-send the most recent user message verbatim. If we can't find
-      // one (shouldn't happen post-first-turn), fall through to typing.
+  function handleActionChipClick(chip) {
+    // Phase 3.7: chips are always { label, intent } at this point — the
+    // rendering loop only emits normalized chips (legacy strings get folded
+    // upstream). Retry behavior is orthogonal to phase intent: a 'retry'
+    // label re-sends the last user message regardless of intent.
+    if (!chip || typeof chip !== 'object') return;
+    if (isRetryLabel(chip.label)) {
       const lastUser = [...exchanges].reverse().find((e) => e.role === 'user');
       if (lastUser?.content) {
         sendMessage(lastUser.content);
         return;
       }
     }
-    if (isPhaseAdvanceLabel(label) || isFinalizeLabel(label)) {
-      sendMessage(label, { phaseRequest: 'advance' });
+    const phaseRequest = chipIntentToPhaseRequest(chip.intent);
+    if (phaseRequest) {
+      sendMessage(chip.label, { phaseRequest });
       return;
     }
-    sendMessage(label);
+    sendMessage(chip.label);
   }
 
   // Phase 3.6 PR 1 — fire-and-forget abandon. Flips the session out of
@@ -773,12 +828,12 @@ export default function WatchlistChat({
                     paddingLeft: 4,
                   }}
                 >
-                  {suggestedActions.map((label, i) => (
+                  {suggestedActions.map((chip, i) => (
                     <ActionChip
                       key={`${lastAgentId}-action-${i}`}
-                      label={label}
-                      onClick={handleActionChipClick}
-                      variant={variantForChip(label, phase)}
+                      label={chip.label}
+                      onClick={() => handleActionChipClick(chip)}
+                      variant={variantForChip(chip, phase)}
                       disabled={isSending}
                     />
                   ))}
