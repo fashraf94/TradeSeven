@@ -514,7 +514,14 @@ RULES:
 - suggestedActions: 1-3 short tappable chips when you're inviting a choice; empty array when you're not. Each chip is an OBJECT with a "label" string (≤60 chars) and an "intent" string. Intent semantics: "advance" = a tap should move the dialogue to the next phase (use for "Show me candidates", "I think this is enough", "Let's lock these in"); "finalize" = a tap should jump straight to the finalize phase and signal the user is ready to ship the watchlist (use for "Ship it", "Lock it in", "Looks good"); "none" = a tap is a normal user message that doesn't change the phase (use for branching follow-up prompts, mid-phase steering, alternatives). Pick the most specific intent that fits — when in doubt, use "none".
 - NEVER output anything outside the JSON object.
 - NEVER recommend a specific buy/sell action with a price target or timing. This is watchlist construction, not trade execution.
-- NEVER output an activeThesis structure — that's Workshop Mode, not this mode.`;
+- NEVER output an activeThesis structure — that's Workshop Mode, not this mode.
+
+NARRATIVE-ACTION CONSISTENCY (READ CAREFULLY — this is the most common failure mode):
+- Your agentMessage and your structured fields (candidateTickerUpdates, anatomyUpdates) MUST tell the SAME STORY in every turn. They go to the same user; if they disagree, the user reads your text saying "I've added X" while the watchlist anatomy in their UI shows no X. That is a user-facing hallucination and it destroys trust.
+- If your agentMessage uses PAST or PRESENT-tense completion language about tickers — "I've added", "I added", "I've slotted in", "I've placed X on the list", "Here is the updated list", "I've identified N plays", "I've replaced X with Y", "X is now on the watchlist" — then your candidateTickerUpdates MUST contain the corresponding entries this turn (action="propose" for adds, action="reslot" for slot moves, action="remove" for removals). No exceptions.
+- If your agentMessage uses similar completion language about the THESIS or a CONDITION — "I've added an activation condition", "I've tightened the invalidation" — then your anatomyUpdates MUST contain the corresponding entries this turn.
+- If you haven't yet decided on the specific tickers/conditions, use FUTURE-tense narrative ("I'll scout for...", "Let me find...", "I'll bring those forward in a moment", "Let me think through...") and leave candidateTickerUpdates/anatomyUpdates empty for this turn. The next turn fires the actual action. This is the correct way to defer.
+- Recap/summary narrative in finalize ("Here's the package — N core plays, M Discovery names...") is NOT a completion claim — it's describing the existing list and does not require new structured updates.`;
 
 const WATCHLIST_PHASE_RULES_EXPLORE = `YOUR CURRENT PHASE: EXPLORE
 
@@ -666,6 +673,31 @@ You: {"agentMessage":"Tight core. Before we lock it: any niche names you've come
 EXAMPLE — finalize phase, recap framed as the BaggerBomb agent package:
 User: "I think we're done"
 You: {"agentMessage":"Here's the package — 4 core supply-chain plays, 2 Discovery names you brought (CDNS and the smaller foundry-equipment pick — your asymmetric edge, names the agent wouldn't have considered on its own), GOOGL as a cross-current hedge. Activation: Apple confirms multi-year silicon ramp. Invalidation: TSM guides AI capex down on next call. When you save this, you can equip your BaggerBomb agent with it for an upcoming battle — the agent will know to weight these tickers when activation hits and stand down when invalidation shows up. Looks shippable to me.","proposedPhase":"finalize","candidateTickerUpdates":[],"anatomyUpdates":[],"suggestedActions":[{"label":"Ship it","intent":"finalize"},{"label":"Tweak a couple more","intent":"none"}],"readyToFinalize":true}`;
+
+// Phase 3.8: failure-mode few-shot. The four examples above all show
+// SUCCESS patterns (narrative + structured output cohering). This block
+// shows the WRONG pattern (narrative claims completion, no structured
+// action fires) explicitly contrasted with two RIGHT options. Modeled
+// on the 2026-05-10 session where five separate refine-phase turns
+// claimed Discovery-slot adds in narrative without firing any
+// candidateTickerUpdates entries.
+const DIALOGUE_NARRATIVE_ACTION_FEW_SHOT = `FAILURE-MODE EXAMPLE — narrative-action drift. Study this carefully; it is the most common way the dialogue breaks.
+
+CONTEXT: refine phase. User asks for small-cap Discovery names in the advanced-packaging space.
+User: "Got any small-cap discovery names in the advanced packaging niche?"
+
+WRONG — narrative claims completion but no structured action fires (THIS IS A HALLUCINATION — do NOT do this):
+You: {"agentMessage":"I've added 3 high-beta Discovery names in the micro-cap advanced packaging space — they fit the thesis and round out the slot. Here is the updated list with those specific names slotted in.","proposedPhase":"refine","candidateTickerUpdates":[],"anatomyUpdates":[],"suggestedActions":[{"label":"Tell me more","intent":"none"}],"readyToFinalize":false}
+WHY THIS IS WRONG: The user's UI reads "I've added 3 high-beta Discovery names" but their watchlist anatomy shows zero new tickers. The narrative made a claim the structured payload didn't back. The user loses trust in the agent.
+
+RIGHT — Option A — claim completion AND fire the structured action in the same turn:
+You: {"agentMessage":"I've added three Discovery names in micro-cap advanced packaging — ACMR (wafer-clean equipment, off-consensus), CAMT (process control, levered to advanced-node ramps), and ICHR (gas-delivery subsystems, niche but exposed). All three fit the thesis and round out the Discovery slot.","proposedPhase":"refine","candidateTickerUpdates":[{"action":"propose","symbol":"ACMR","reasoning":"wafer-clean equipment, off-consensus advanced-packaging exposure","category":"supplier","slot":"discovery"},{"action":"propose","symbol":"CAMT","reasoning":"process control levered to advanced-node ramps","category":"supplier","slot":"discovery"},{"action":"propose","symbol":"ICHR","reasoning":"gas-delivery subsystems for advanced packaging","category":"supplier","slot":"discovery"}],"anatomyUpdates":[],"suggestedActions":[{"label":"Swap one out","intent":"none"},{"label":"Looks good","intent":"advance"}],"readyToFinalize":false}
+
+RIGHT — Option B — defer with FUTURE-tense narrative, no structured action this turn:
+You: {"agentMessage":"Let me scout for some high-growth, lower-cap players in the advanced-packaging space — wafer-clean, process control, gas-delivery subsystems are where the niche names live. I'll bring three forward next turn with reasoning.","proposedPhase":"refine","candidateTickerUpdates":[],"anatomyUpdates":[],"suggestedActions":[{"label":"Sounds good","intent":"none"}],"readyToFinalize":false}
+WHY THIS IS RIGHT: The narrative uses "Let me scout" / "I'll bring three forward" — explicitly future-tense. Empty candidateTickerUpdates is internally consistent because no completion was claimed. The actual adds fire on the NEXT turn.
+
+CRITICAL DISTINCTION: Past/present-tense completion language ("I've added", "I added", "Here is the updated list", "I've slotted in", "I've identified N", "I've placed", "I've replaced X with Y") REQUIRES the matching structured action this turn. Future-tense intent language ("I'll find", "Let me scout", "I'll bring forward", "Let me think") does NOT require the structured action this turn — it explicitly defers.`;
 
 function buildDialoguePhaseRules(currentPhase, phaseRequest) {
   const block = WATCHLIST_PHASE_RULES[currentPhase] || WATCHLIST_PHASE_RULES.explore;
@@ -1563,6 +1595,10 @@ RIGHT NOW you are in WATCHLIST DIALOGUE MODE — there is no active battle, no W
 
     // Few-shot (BOTTOM)
     const fewShot = DIALOGUE_FEW_SHOT;
+    // Phase 3.8: failure-mode few-shot (narrative-action drift). Placed
+    // immediately after the success-pattern few-shot so the WRONG/RIGHT
+    // contrast lands while the existing examples are still in attention.
+    const narrativeActionFewShot = DIALOGUE_NARRATIVE_ACTION_FEW_SHOT;
 
     // Block 6': Phase Rules (BOTTOM — LAST, highest attention)
     const phaseRules = buildDialoguePhaseRules(currentPhase, phaseRequest);
@@ -1576,12 +1612,13 @@ RIGHT NOW you are in WATCHLIST DIALOGUE MODE — there is no active battle, no W
     ];
     if (parsedSignalBlock) blocks.push(parsedSignalBlock); // Block 7-payload (MIDDLE)
     blocks.push(
-      negativeConstraints,  //          (MIDDLE)
-      exchangesBlock,       // Block 5a (BOTTOM)
-      anatomyBlock,         // Block 5b (BOTTOM) — Phase 2.6 anatomy framing
-      candidateBlock,       // Block 5c (BOTTOM)
-      fewShot,              // Few-shot (BOTTOM)
-      phaseRules,           // Block 6' (BOTTOM — LAST)
+      negativeConstraints,    //          (MIDDLE)
+      exchangesBlock,         // Block 5a (BOTTOM)
+      anatomyBlock,           // Block 5b (BOTTOM) — Phase 2.6 anatomy framing
+      candidateBlock,         // Block 5c (BOTTOM)
+      fewShot,                // Few-shot (BOTTOM)
+      narrativeActionFewShot, // Phase 3.8 failure-mode few-shot (BOTTOM)
+      phaseRules,             // Block 6' (BOTTOM — LAST)
     );
 
     return blocks.join('\n\n');

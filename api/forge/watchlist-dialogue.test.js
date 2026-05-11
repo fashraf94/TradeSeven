@@ -84,6 +84,7 @@ const {
   applyAnatomyUpdates,
   validatePhaseTransition,
   normalizeDialogueOutput,
+  detectNarrativeActionDrift,
 } = await import('./watchlist-dialogue.js');
 
 // ==================== TEST FIXTURES ====================
@@ -2340,5 +2341,164 @@ describe('handler — Phase 2.6 anatomy lifecycle', () => {
     expect(res.body.anatomy.thesis).toBe('Backfilled thesis after Phase 2.6 ships.');
     expect(res.body.anatomy.activationConditions).toEqual([]);
     expect(res.body.anatomy.invalidationConditions).toEqual([]);
+  });
+});
+
+// ==================== Phase 3.8 — detectNarrativeActionDrift ====================
+
+describe('detectNarrativeActionDrift — Phase 3.8', () => {
+  it('flags drift when narrative claims "I\'ve added" but no ticker action fires', () => {
+    const result = detectNarrativeActionDrift(
+      "I've added 3 high-beta Discovery names in the micro-cap space.",
+      [],
+      [],
+    );
+    expect(result.drift).toBe(true);
+    expect(result.matchedPatterns.length).toBeGreaterThan(0);
+  });
+
+  it('does NOT flag drift when narrative claims completion AND a propose action fires', () => {
+    const result = detectNarrativeActionDrift(
+      "I've added ACMR to the Discovery slot.",
+      [{ action: 'propose', symbol: 'ACMR', slot: 'discovery' }],
+      [],
+    );
+    expect(result.drift).toBe(false);
+  });
+
+  it('does NOT flag drift when narrative claims completion AND a reslot action fires', () => {
+    const result = detectNarrativeActionDrift(
+      "I've placed NVDA on the cross-current side instead.",
+      [{ action: 'reslot', symbol: 'NVDA', slot: 'cross_current' }],
+      [],
+    );
+    expect(result.drift).toBe(false);
+  });
+
+  it('does NOT flag drift when narrative claims completion AND a remove action fires', () => {
+    const result = detectNarrativeActionDrift(
+      "I've replaced MSFT with AVGO — cleaner read.",
+      [
+        { action: 'remove', symbol: 'MSFT' },
+        { action: 'propose', symbol: 'AVGO', slot: 'core' },
+      ],
+      [],
+    );
+    expect(result.drift).toBe(false);
+  });
+
+  it('does NOT flag drift for future-tense narrative with empty updates', () => {
+    const result = detectNarrativeActionDrift(
+      "Let me scout for some high-growth, lower-cap players and bring them next turn.",
+      [],
+      [],
+    );
+    expect(result.drift).toBe(false);
+    expect(result.matchedPatterns).toEqual([]);
+  });
+
+  it('does NOT flag drift for progress narrative ("I\'ve narrowed", "I\'ve ruled out")', () => {
+    const result = detectNarrativeActionDrift(
+      "I've narrowed the search to advanced packaging and ruled out the legacy fab names.",
+      [],
+      [],
+    );
+    expect(result.drift).toBe(false);
+  });
+
+  it('does NOT flag drift for finalize-phase recap narrative', () => {
+    const result = detectNarrativeActionDrift(
+      "Here's the package — 4 core supply-chain plays, 2 Discovery names you brought, GOOGL as a cross-current hedge.",
+      [],
+      [],
+    );
+    expect(result.drift).toBe(false);
+  });
+
+  it('does NOT flag drift when anatomy-claim narrative is backed by an anatomyUpdates action', () => {
+    const result = detectNarrativeActionDrift(
+      "I've added an activation condition tied to TSM's next capex guide.",
+      [],
+      [
+        {
+          field: 'activation_condition',
+          action: 'add',
+          value: "TSM guides AI capex up on next earnings call",
+        },
+      ],
+    );
+    expect(result.drift).toBe(false);
+  });
+
+  it('does NOT flag drift when thesis-claim narrative is backed by a thesis-set action', () => {
+    const result = detectNarrativeActionDrift(
+      "I've replaced the thesis framing — now it's a supply-chain story rather than a consumer story.",
+      [],
+      [{ field: 'thesis', action: 'set', value: 'Supply-chain story...' }],
+    );
+    expect(result.drift).toBe(false);
+  });
+
+  it('flags drift across the full pattern catalog when no action fires', () => {
+    const phrases = [
+      "I've added AMAT to the Discovery slot.",
+      "I added LRCX yesterday — see the list.",
+      "I've slotted in three names this round.",
+      "I've identified 3 plays for our Discovery slot.",
+      "Here is the updated list with those specific names slotted in.",
+      "Here are the new picks — give them a look.",
+      "I've placed CDNS on the core side.",
+      "I've included MU as a beneficiary.",
+      "I've put ICHR on the watchlist as a discovery name.",
+      "ICHR is now on the watchlist.",
+      "Just added ACMR — small-cap niche play.",
+      "I've replaced KLAC with CAMT — better fit.",
+    ];
+    for (const phrase of phrases) {
+      const result = detectNarrativeActionDrift(phrase, [], []);
+      expect(result.drift, `phrase: ${phrase}`).toBe(true);
+      expect(result.matchedPatterns.length).toBeGreaterThan(0);
+    }
+  });
+
+  it('handles non-string / empty agentMessage defensively', () => {
+    expect(detectNarrativeActionDrift('', [], []).drift).toBe(false);
+    expect(detectNarrativeActionDrift(null, [], []).drift).toBe(false);
+    expect(detectNarrativeActionDrift(undefined, [], []).drift).toBe(false);
+    expect(detectNarrativeActionDrift(42, [], []).drift).toBe(false);
+  });
+
+  it('handles malformed candidateTickerUpdates / anatomyUpdates defensively', () => {
+    const completionPhrase = "I've added ACMR to the Discovery slot.";
+    // Non-array inputs — drift falls through to true because no action is fired
+    expect(detectNarrativeActionDrift(completionPhrase, null, null).drift).toBe(true);
+    expect(detectNarrativeActionDrift(completionPhrase, undefined, undefined).drift).toBe(true);
+    // Array with non-object entries — drift falls through to true (the guards
+    // only consider valid object entries with a matching action)
+    expect(
+      detectNarrativeActionDrift(completionPhrase, ['propose', null, 42], []).drift,
+    ).toBe(true);
+    // Array with object entries whose action is wrong — drift remains true
+    expect(
+      detectNarrativeActionDrift(
+        completionPhrase,
+        [{ action: 'keep', symbol: 'ACMR' }],
+        [],
+      ).drift,
+    ).toBe(true);
+  });
+
+  it('keep/reorder actions on candidateTickerUpdates do NOT satisfy a completion claim', () => {
+    // 'keep' and 'reorder' are status mutations, not adds. If Gemma claims
+    // "I've added X" and only fires keep/reorder, that's still drift.
+    const result = detectNarrativeActionDrift(
+      "I've added ACMR to the Discovery slot.",
+      [
+        { action: 'keep', symbol: 'AAPL' },
+        { action: 'reorder', symbol: 'TSM' },
+      ],
+      [],
+    );
+    expect(result.drift).toBe(true);
   });
 });
