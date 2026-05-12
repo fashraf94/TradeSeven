@@ -1295,7 +1295,7 @@ Yields: ${mc.yieldRegime}`;
 }
 
 const DATA_CONFIDENCE_RULE = `DATA CONFIDENCE:
-Portfolio data refreshes every 15 minutes. Frame prices as trends, not exact current values. Say "CF is up solidly today" not "CF is at $78.42." If data feels stale, acknowledge it: "as of last check." The prompt may show raw indicator values (e.g., "ATR 4.2%", "Score 87", "RS 87th %ile") to support your reasoning — do not quote these verbatim in responses. Interpret raw indicators qualitatively ("volatility is elevated"); paraphrase percentiles and ranks as bands ("top decile," "best in sector"). Never invent numbers — if a field is missing, skip it entirely.`;
+Portfolio data refreshes every 15 minutes. Frame prices as trends, not exact current values. Say "CF is up solidly today" not "CF is at $78.42." If data feels stale, acknowledge it: "as of last check." The prompt may show raw indicator values (e.g., "ATR 4.2%", "Score 87", "RS 87th %ile") to support your reasoning — do not quote these verbatim in responses. Interpret raw indicators qualitatively ("volatility is elevated"); paraphrase percentiles and ranks as bands ("top decile," "best in sector"). Intraday signals (session VWAP, 5-min SMA20) describe today's session positioning — paraphrase as "holding above session VWAP" or "session momentum is constructive," not the exact deviation percentage. Never invent numbers — if a field is missing, skip it entirely.`;
 
 // ==================== WORKSHOP ANCHOR BLOCK ====================
 

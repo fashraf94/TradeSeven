@@ -1730,6 +1730,44 @@ describe('DATA_CONFIDENCE_RULE — Phase 5A prompt-vs-response framing', () => {
     expect(out).not.toContain('raw indicator values (RSI, ATR%, BB%B) should not appear verbatim');
     expect(out).not.toContain('Percentile and rank values may be paraphrased as bands ("top decile," "best in sector") in responses; raw indicator values');
   });
+
+  // Phase 5B-main — intraday clause locks. The new sentence sits between
+  // the percentile-bands clause and the "Never invent numbers" closer.
+  it('battle prompt embeds the Phase 5B intraday clause', () => {
+    const out = buildVoiceLayerPrompt({
+      agent: minimalAgent,
+      battle: minimalBattle,
+      elicitationTarget: minimalElicitation,
+      conversationHistory: [],
+      anchorContext: null,
+      marketSnapshot: { portfolioBriefs: [], benchBriefs: [], scoutAlerts: [] },
+      mode: 'battle',
+    });
+
+    expect(out).toContain('Intraday signals (session VWAP, 5-min SMA20)');
+    expect(out).toContain("paraphrase as \"holding above session VWAP\"");
+    expect(out).toContain('"session momentum is constructive,"');
+    expect(out).toContain('not the exact deviation percentage');
+  });
+
+  it('intraday clause sits between percentile-bands and "Never invent numbers" (order lock)', () => {
+    const out = buildVoiceLayerPrompt({
+      agent: minimalAgent,
+      battle: minimalBattle,
+      elicitationTarget: minimalElicitation,
+      conversationHistory: [],
+      anchorContext: null,
+      marketSnapshot: { portfolioBriefs: [], benchBriefs: [], scoutAlerts: [] },
+      mode: 'battle',
+    });
+
+    const bandsIdx = out.indexOf('"best in sector"');
+    const intradayIdx = out.indexOf('Intraday signals');
+    const neverIdx = out.indexOf('Never invent numbers');
+    expect(bandsIdx).toBeGreaterThan(-1);
+    expect(intradayIdx).toBeGreaterThan(bandsIdx);
+    expect(neverIdx).toBeGreaterThan(intradayIdx);
+  });
 });
 
 // ==================== PHASE 5B-PREP — INTEGRATION ====================
