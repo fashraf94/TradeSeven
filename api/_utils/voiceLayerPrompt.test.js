@@ -24,7 +24,7 @@ vi.mock('./marketSchedule.js', async (importOriginal) => {
   };
 });
 
-import { buildBenchBriefsBlock, buildBattleState, buildMarketSnapshotContext, buildPortfolioBriefsBlock, buildVoiceLayerPrompt, buildReviewContext, buildHeaderLine, buildLevelsLine, buildSignalsLine } from './voiceLayerPrompt.js';
+import { buildBenchBriefsBlock, buildBattleState, buildMarketSnapshotContext, buildPortfolioBriefsBlock, buildVoiceLayerPrompt, buildReviewContext, buildHeaderLine, buildLevelsLine, buildSignalsLine, buildIntradayLine } from './voiceLayerPrompt.js';
 import { getETDate, formatDateString } from './marketSchedule.js';
 
 // ==================== TESTS ====================
@@ -1158,6 +1158,101 @@ describe('buildSignalsLine — Phase 5A', () => {
   });
 });
 
+describe('buildIntradayLine — Phase 5B', () => {
+  it('returns null when brief is null or undefined', () => {
+    expect(buildIntradayLine(null)).toBeNull();
+    expect(buildIntradayLine(undefined)).toBeNull();
+  });
+
+  it('returns null when brief.intraday is null', () => {
+    expect(buildIntradayLine({ intraday: null })).toBeNull();
+  });
+
+  it('returns null when brief.intraday is an empty object (no numeric fields)', () => {
+    expect(buildIntradayLine({ intraday: {} })).toBeNull();
+  });
+
+  it('renders VWAP segment with "above" when vwapDeviation is positive', () => {
+    const out = buildIntradayLine({
+      intraday: { vwap: 145.5, currentPrice: 146.5, vwapDeviation: 0.7, sma20_5m: null },
+    });
+    expect(out).toBe('Intraday: 0.7% above session VWAP.');
+  });
+
+  it('renders VWAP segment with "below" when vwapDeviation is negative', () => {
+    const out = buildIntradayLine({
+      intraday: { vwap: 145.5, currentPrice: 144.5, vwapDeviation: -0.7, sma20_5m: null },
+    });
+    expect(out).toBe('Intraday: 0.7% below session VWAP.');
+  });
+
+  it('renders VWAP segment as "at" when |vwapDeviation| < 0.05 (positive near-zero)', () => {
+    const out = buildIntradayLine({
+      intraday: { vwap: 145.5, currentPrice: 145.55, vwapDeviation: 0.03, sma20_5m: null },
+    });
+    expect(out).toBe('Intraday: at session VWAP.');
+  });
+
+  it('renders VWAP segment as "at" when |vwapDeviation| < 0.05 (negative near-zero)', () => {
+    const out = buildIntradayLine({
+      intraday: { vwap: 145.5, currentPrice: 145.44, vwapDeviation: -0.04, sma20_5m: null },
+    });
+    expect(out).toBe('Intraday: at session VWAP.');
+  });
+
+  it('renders VWAP segment as "above" (not "at") when vwapDeviation === 0.05 exactly (strict-< boundary)', () => {
+    const out = buildIntradayLine({
+      intraday: { vwap: 145.5, currentPrice: 145.57, vwapDeviation: 0.05, sma20_5m: null },
+    });
+    expect(out).toBe('Intraday: 0.1% above session VWAP.');
+  });
+
+  it('renders SMA20 segment when currentPrice and sma20_5m are both numeric', () => {
+    const out = buildIntradayLine({
+      intraday: { vwap: null, currentPrice: 146.08, vwapDeviation: null, sma20_5m: 145.92 },
+    });
+    // (146.08 - 145.92) / 145.92 = 0.1097% → 0.1% above
+    expect(out).toBe('Intraday: 0.1% above 5m SMA20.');
+  });
+
+  it('skips SMA20 segment when sma20_5m is present but currentPrice is not', () => {
+    const out = buildIntradayLine({
+      intraday: { vwap: null, currentPrice: null, vwapDeviation: null, sma20_5m: 145.92 },
+    });
+    expect(out).toBeNull();
+  });
+
+  it('renders both VWAP and SMA20 segments combined when both are present', () => {
+    const out = buildIntradayLine({
+      intraday: { vwap: 145.5, currentPrice: 146.08, vwapDeviation: 0.7, sma20_5m: 145.92 },
+    });
+    expect(out).toBe('Intraday: 0.7% above session VWAP, 0.1% above 5m SMA20.');
+  });
+
+  it('rounds via toFixed(1) — 0.756 → "0.8% above"', () => {
+    const out = buildIntradayLine({
+      intraday: { vwap: 100, currentPrice: 100.756, vwapDeviation: 0.756, sma20_5m: null },
+    });
+    expect(out).toBe('Intraday: 0.8% above session VWAP.');
+  });
+
+  it('renders SMA20 with "below" when currentPrice is below sma20_5m', () => {
+    const out = buildIntradayLine({
+      intraday: { vwap: null, currentPrice: 145.0, vwapDeviation: null, sma20_5m: 145.5 },
+    });
+    // (145.0 - 145.5) / 145.5 = -0.3436% → 0.3% below
+    expect(out).toBe('Intraday: 0.3% below 5m SMA20.');
+  });
+
+  it('renders SMA20 as "at" when price within 0.05% of sma20_5m', () => {
+    const out = buildIntradayLine({
+      intraday: { vwap: null, currentPrice: 145.5, vwapDeviation: null, sma20_5m: 145.53 },
+    });
+    // (145.5 - 145.53) / 145.53 = -0.0206% → "at"
+    expect(out).toBe('Intraday: at 5m SMA20.');
+  });
+});
+
 describe('buildPortfolioBriefsBlock — Phase 5A integration', () => {
   it('renders header + trend + momentum + levels + signals + threshold stack when all data present', () => {
     const out = buildPortfolioBriefsBlock({
@@ -1635,6 +1730,44 @@ describe('DATA_CONFIDENCE_RULE — Phase 5A prompt-vs-response framing', () => {
     expect(out).not.toContain('raw indicator values (RSI, ATR%, BB%B) should not appear verbatim');
     expect(out).not.toContain('Percentile and rank values may be paraphrased as bands ("top decile," "best in sector") in responses; raw indicator values');
   });
+
+  // Phase 5B-main — intraday clause locks. The new sentence sits between
+  // the percentile-bands clause and the "Never invent numbers" closer.
+  it('battle prompt embeds the Phase 5B intraday clause', () => {
+    const out = buildVoiceLayerPrompt({
+      agent: minimalAgent,
+      battle: minimalBattle,
+      elicitationTarget: minimalElicitation,
+      conversationHistory: [],
+      anchorContext: null,
+      marketSnapshot: { portfolioBriefs: [], benchBriefs: [], scoutAlerts: [] },
+      mode: 'battle',
+    });
+
+    expect(out).toContain('Intraday signals (session VWAP, 5-min SMA20)');
+    expect(out).toContain("paraphrase as \"holding above session VWAP\"");
+    expect(out).toContain('"session momentum is constructive,"');
+    expect(out).toContain('not the exact deviation percentage');
+  });
+
+  it('intraday clause sits between percentile-bands and "Never invent numbers" (order lock)', () => {
+    const out = buildVoiceLayerPrompt({
+      agent: minimalAgent,
+      battle: minimalBattle,
+      elicitationTarget: minimalElicitation,
+      conversationHistory: [],
+      anchorContext: null,
+      marketSnapshot: { portfolioBriefs: [], benchBriefs: [], scoutAlerts: [] },
+      mode: 'battle',
+    });
+
+    const bandsIdx = out.indexOf('"best in sector"');
+    const intradayIdx = out.indexOf('Intraday signals');
+    const neverIdx = out.indexOf('Never invent numbers');
+    expect(bandsIdx).toBeGreaterThan(-1);
+    expect(intradayIdx).toBeGreaterThan(bandsIdx);
+    expect(neverIdx).toBeGreaterThan(intradayIdx);
+  });
 });
 
 // ==================== PHASE 5B-PREP — INTEGRATION ====================
@@ -1873,5 +2006,88 @@ describe('Phase 5B-prep integration — buildBenchBriefsBlock parity with portfo
     expect(out).toContain(`locked until ${future}`);
     expect(out).not.toContain('Levels:');
     expect(out).not.toContain('Signals:');
+  });
+});
+
+describe('Phase 5B-main integration — buildPortfolioBriefsBlock wires Intraday line', () => {
+  it('includes the Intraday line when brief.intraday has VWAP + SMA20 data', () => {
+    const out = buildPortfolioBriefsBlock({
+      portfolioBriefs: [realisticPortfolioBrief({
+        intraday: { vwap: 422.5, currentPrice: 425.5, vwapDeviation: 0.7, sma20_5m: 425.1 },
+        macdFreshBullishCross: false,
+        divergence: 'none',
+        nr7Flag: false,
+        lastCandlePattern: null,
+        nearestSupport: null,
+        nearestResistance: null,
+        distanceToSupportPct: null,
+        distanceToResistancePct: null,
+        distTo52wkHigh: null,
+      })],
+    });
+    expect(out).toContain('Intraday: 0.7% above session VWAP, 0.1% above 5m SMA20.');
+  });
+
+  it('omits the Intraday line when brief.intraday is null', () => {
+    const out = buildPortfolioBriefsBlock({
+      portfolioBriefs: [realisticPortfolioBrief({ intraday: null })],
+    });
+    expect(out).not.toContain('Intraday:');
+  });
+
+  it('omits the Intraday line when brief.intraday has no numeric components', () => {
+    const out = buildPortfolioBriefsBlock({
+      portfolioBriefs: [realisticPortfolioBrief({
+        intraday: { vwap: null, currentPrice: null, vwapDeviation: null, sma20_5m: null },
+      })],
+    });
+    expect(out).not.toContain('Intraday:');
+  });
+
+  it('places Intraday line AFTER Signals and BEFORE BaggerBomb/threshold section', () => {
+    const out = buildPortfolioBriefsBlock({
+      portfolioBriefs: [realisticPortfolioBrief({
+        intraday: { vwap: 422.5, currentPrice: 425.5, vwapDeviation: 0.7, sma20_5m: 425.1 },
+        macdFreshBullishCross: true,
+        divergence: 'none',
+        nr7Flag: false,
+        lastCandlePattern: null,
+        thresholdNote: 'High ATR — volatile, could hit thresholds quickly',
+      })],
+    });
+    const signalsIdx = out.indexOf('Signals:');
+    const intradayIdx = out.indexOf('Intraday:');
+    const baggerIdx = out.indexOf('BaggerBomb:');
+    expect(signalsIdx).toBeGreaterThan(-1);
+    expect(intradayIdx).toBeGreaterThan(signalsIdx);
+    expect(baggerIdx).toBeGreaterThan(intradayIdx);
+  });
+
+  it('renders Intraday line even when Signals line is absent (independent gating)', () => {
+    const out = buildPortfolioBriefsBlock({
+      portfolioBriefs: [realisticPortfolioBrief({
+        intraday: { vwap: 422.5, currentPrice: 425.5, vwapDeviation: 0.7, sma20_5m: null },
+        macdFreshBullishCross: false,
+        macdFreshBearishCross: false,
+        divergence: 'none',
+        nr7Flag: false,
+        lastCandlePattern: null,
+      })],
+    });
+    expect(out).not.toContain('Signals:');
+    expect(out).toContain('Intraday: 0.7% above session VWAP.');
+  });
+
+  it('buildBenchBriefsBlock does NOT render an Intraday line (bench has no intraday data)', () => {
+    // Even if someone hand-crafts an intraday object on a bench brief, the
+    // bench renderer doesn't call buildIntradayLine — bench-side intraday
+    // is intentionally out of scope (cron doesn't compute it).
+    const out = buildBenchBriefsBlock({
+      benchBriefs: [{
+        ...realisticBenchBrief(),
+        intraday: { vwap: 150, currentPrice: 151, vwapDeviation: 0.67, sma20_5m: 150.5 },
+      }],
+    });
+    expect(out).not.toContain('Intraday:');
   });
 });
