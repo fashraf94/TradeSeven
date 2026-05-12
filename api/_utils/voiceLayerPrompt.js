@@ -972,6 +972,17 @@ function ordinalSuffix(n) {
 //     renderer normalizes via PATTERN_DISPLAY_NAMES for display.
 //   - Numeric metrics (technicalScore, atrPercent, rsPercentile) are null
 //     when missing — never 0-as-sentinel.
+//
+// Brief vs. Snapshot schema (forward-compat note for Phase 5C):
+//   - Briefs (this file's helpers) read flat field paths: brief.nr7Flag,
+//     brief.divergence, brief.lastCandlePattern, brief.distanceToSupportPct.
+//   - Snapshots (Phase 4 — proposalHistory[i].snapshot, trades[i].snapshot)
+//     use nested categories: snapshot.momentum.macdFreshBullishCross,
+//     snapshot.levels.distanceToSupportPct, snapshot.recentAction.lastCandlePattern.
+//   - Phase 5C helpers reading snapshots cannot reuse buildHeaderLine,
+//     buildLevelsLine, buildSignalsLine directly. They must traverse the
+//     nested structure or use a separate buildSnapshotLeg helper.
+//   - See api/_utils/buildTechnicalSnapshot.js for the snapshot schema.
 // =============================================================================
 
 // Phase 5A — per-symbol header line for portfolio and bench briefs.
