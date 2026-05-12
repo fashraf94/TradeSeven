@@ -944,6 +944,35 @@ function ordinalSuffix(n) {
   }
 }
 
+// ==================== PER-SYMBOL LINE HELPERS — CONTRACT ====================
+//
+// Three per-symbol line helpers exist for portfolio & bench briefs:
+//
+//   buildHeaderLine(brief)  → string         ALWAYS-EMIT
+//   buildLevelsLine(brief)  → string | null  CONDITIONAL
+//   buildSignalsLine(brief) → string | null  CONDITIONAL
+//
+// ALWAYS-EMIT helpers (return string):
+//   - Caller inlines unconditionally
+//   - Defensive null brief → returns ''; never throws, never null
+//   - At minimum returns the symbol token; segments degrade independently
+//
+// CONDITIONAL helpers (return string | null):
+//   - Caller branches: if (line) entry += `\n${line}`
+//   - Returns null when no segment predicate fires
+//   - Order within a line is fixed and locked in tests
+//
+// Key input invariants (from voice-layer-cache.js cron):
+//   - Boolean flags (nr7Flag, macdFresh*Cross) are LITERAL boolean (or
+//     undefined). Renderers use `=== true` strict identity so cron-side
+//     type drift surfaces rather than gets masked.
+//   - `divergence` is one of 'bullish' | 'bearish' | 'none' | null.
+//   - `lastCandlePattern` is a snake_case key (e.g. 'bullish_engulfing');
+//     renderer normalizes via PATTERN_DISPLAY_NAMES for display.
+//   - Numeric metrics (technicalScore, atrPercent, rsPercentile) are null
+//     when missing — never 0-as-sentinel.
+// =============================================================================
+
 // Phase 5A — per-symbol header line for portfolio and bench briefs.
 //
 // Format: "SYMBOL [tier-or-assetClass] +N.N% — Score X (rank #N/total in Sector), RS Nth %ile, ATR N.N%"
