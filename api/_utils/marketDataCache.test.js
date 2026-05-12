@@ -10,6 +10,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { fetchIntradayCandles, filterToCurrentSession } from './marketDataCache.js';
+import { calculateVWAP } from './technicalCalculations.js';
 
 const ORIGINAL_API_KEY = process.env.EODHD_API_KEY;
 
@@ -411,5 +412,145 @@ describe('filterToCurrentSession — RTH session boundary', () => {
     ];
     const out = filterToCurrentSession(candles, now);
     expect(out.map(c => c.close)).toEqual([100, 101, 102, 103]);
+  });
+});
+
+// ==================== filterToCurrentSession + calculateVWAP — integration ====================
+//
+// End-to-end shape: realistic multi-session candle arrays (mirroring what
+// EODHD currently returns by default) → filter → calculateVWAP. These tests
+// pin the behavior the production bug surfaced:
+//   - Without the filter, calculateVWAP produces a multi-day window VWAP
+//     (the cause of MU's 67% deviation in voiceLayerCache on May 12).
+//   - With the filter, calculateVWAP produces a true session VWAP with
+//     small, plausible deviation magnitudes.
+
+describe('filterToCurrentSession + calculateVWAP — session VWAP integration', () => {
+  // Build N synthetic 5-minute candles for one ET trading session at a
+  // given price level. Volume is constant per candle so the VWAP weights
+  // each session equally.
+  function buildSessionCandles({ dateStr, priceLevel, count = 78, volumePerBar = 10000, etOffset }) {
+    // dateStr: 'YYYY-MM-DD' (ET trading date)
+    // We emit candles starting at 9:30 ET. UTC = ET + offset.
+    const [y, mo, d] = dateStr.split('-').map(Number);
+    const startUtcMinutes = (9 * 60 + 30) + etOffset * 60;
+    const candles = [];
+    for (let i = 0; i < count; i++) {
+      const minutesFromStart = i * 5;
+      const totalMinutes = startUtcMinutes + minutesFromStart;
+      const hh = Math.floor(totalMinutes / 60);
+      const mm = totalMinutes % 60;
+      const hhStr = String(hh).padStart(2, '0');
+      const mmStr = String(mm).padStart(2, '0');
+      // Wave around the price level for variation.
+      const tickJitter = ((i % 5) - 2) * 0.1;
+      const close = priceLevel + tickJitter;
+      candles.push({
+        datetime: `${dateStr} ${hhStr}:${mmStr}:00`,
+        open: close - 0.05,
+        high: close + 0.2,
+        low: close - 0.2,
+        close,
+        volume: volumePerBar,
+      });
+    }
+    return candles;
+  }
+
+  it('Test 11 — with realistic multi-session candles, session VWAP differs sharply from raw multi-day VWAP', () => {
+    // Scenario reproduces the MU-style production data: a stock that's
+    // climbed substantially. Without the session filter, the multi-day
+    // VWAP anchors near the historical low; with the filter, it anchors
+    // at today's session.
+    //
+    // 2026-05-11 (Mon, DST UTC-4): full session at $100 (78 bars)
+    // 2026-05-12 (Tue, DST UTC-4): half session at $200, now = 13:00 ET
+    const yesterday = buildSessionCandles({
+      dateStr: '2026-05-11', priceLevel: 100, count: 78, etOffset: 4,
+    });
+    const today = buildSessionCandles({
+      dateStr: '2026-05-12', priceLevel: 200, count: 42, etOffset: 4, // 9:30 + 42×5 = 13:00 ET
+    });
+    const allCandles = [...yesterday, ...today];
+    const now = utcFromEt(2026, 5, 12, 13, 0, 4);
+
+    // Raw multi-day VWAP — drags the average toward yesterday's price.
+    const rawResult = calculateVWAP(allCandles);
+    expect(rawResult).not.toBeNull();
+    // Combined volume-weighted average of $100 (78 bars) and $200 (42 bars)
+    // ≈ (100*78 + 200*42) / 120 ≈ 135 — extreme deviation from current ~$200.
+    expect(Math.abs(rawResult.vwapDeviation)).toBeGreaterThan(20);
+
+    // Session-filtered VWAP — anchors today only.
+    const sessionCandles = filterToCurrentSession(allCandles, now);
+    expect(sessionCandles).toHaveLength(today.length);
+    const sessionResult = calculateVWAP(sessionCandles);
+    expect(sessionResult).not.toBeNull();
+    // Session VWAP ≈ $200 (today's tight band around $200), current price ≈ $200,
+    // deviation should be near zero.
+    expect(Math.abs(sessionResult.vwapDeviation)).toBeLessThan(0.5);
+  });
+
+  it('Test 12 — vwapDeviation reflects session-only price action after filtering', () => {
+    // 2026-05-12 mid-session. Today's session opens at $100 and drifts to
+    // $102 by the time of the snapshot — a +0.5% session deviation, which
+    // is a plausible single-session signal.
+    const todayBars = [];
+    for (let i = 0; i < 20; i++) {
+      const close = 100 + i * 0.1; // climbs from 100 to 101.9
+      const minutesFromOpen = i * 5;
+      const totalMinutes = (9 * 60 + 30) + 4 * 60 + minutesFromOpen; // 9:30 ET + UTC offset
+      const hh = String(Math.floor(totalMinutes / 60)).padStart(2, '0');
+      const mm = String(totalMinutes % 60).padStart(2, '0');
+      todayBars.push({
+        datetime: `2026-05-12 ${hh}:${mm}:00`,
+        open: close - 0.05, high: close + 0.05, low: close - 0.05, close, volume: 10000,
+      });
+    }
+    // Add a few stale yesterday bars at $50 that the filter should exclude.
+    const yesterdayStale = buildSessionCandles({
+      dateStr: '2026-05-11', priceLevel: 50, count: 10, etOffset: 4,
+    });
+
+    const now = utcFromEt(2026, 5, 12, 11, 30, 4); // After all 20 today-bars (last bar at 11:05 ET)
+    const all = [...yesterdayStale, ...todayBars];
+    const filtered = filterToCurrentSession(all, now);
+    const result = calculateVWAP(filtered);
+
+    expect(result).not.toBeNull();
+    expect(filtered).toHaveLength(20); // stale yesterday bars dropped
+    expect(result.currentPrice).toBeCloseTo(101.9, 1);
+    // Session VWAP is the volume-weighted mean ≈ 100.95; deviation ≈ +0.94%.
+    expect(result.vwapDeviation).toBeGreaterThan(0);
+    expect(result.vwapDeviation).toBeLessThan(2);
+  });
+
+  it('Test 13 — typical-stock session deviation lands in plausible <±5% range', () => {
+    // Walks the price up 3% across one session — a "moved more than usual"
+    // single-session day. Verifies the final deviation is meaningful but
+    // bounded (within the documented session-realistic range of <±10%).
+    const today = [];
+    const startPrice = 100;
+    const endPrice = 103;
+    const count = 50;
+    for (let i = 0; i < count; i++) {
+      const t = i / (count - 1);
+      const close = startPrice + (endPrice - startPrice) * t;
+      const minutesFromOpen = i * 5;
+      const totalMinutes = (9 * 60 + 30) + 4 * 60 + minutesFromOpen;
+      const hh = String(Math.floor(totalMinutes / 60)).padStart(2, '0');
+      const mm = String(totalMinutes % 60).padStart(2, '0');
+      today.push({
+        datetime: `2026-05-12 ${hh}:${mm}:00`,
+        open: close, high: close + 0.1, low: close - 0.1, close, volume: 12000,
+      });
+    }
+    const now = utcFromEt(2026, 5, 12, 13, 30, 4); // far enough into the session
+    const filtered = filterToCurrentSession(today, now);
+    const result = calculateVWAP(filtered);
+
+    expect(result).not.toBeNull();
+    expect(result.vwapDeviation).toBeGreaterThan(0);     // price closed up vs session VWAP
+    expect(Math.abs(result.vwapDeviation)).toBeLessThan(5); // within session-plausible range
   });
 });
