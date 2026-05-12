@@ -1128,11 +1128,10 @@ export function buildBenchBriefsBlock(marketSnapshot) {
   if (!marketSnapshot?.benchBriefs?.length) return null;
 
   const lines = marketSnapshot.benchBriefs.map(b => {
-    let header = `${b.symbol} (${b.assetClass}, ${b.sector})`;
-    if (typeof b.changePercent === 'number') {
-      const sign = b.changePercent > 0 ? '+' : '';
-      header += ` — ${sign}${b.changePercent}%`;
-    }
+    // Phase 5A: shared header line (assetClass appears in the tag position
+    // where tier would for portfolio briefs). Metrics bundle degrades
+    // gracefully — bench briefs commonly have null score/rank/rs/atr.
+    let header = buildHeaderLine(b);
     if (b.cooldownActive && b.cooldownUntil) {
       header += ` — locked until ${b.cooldownUntil}`;
     }
@@ -1140,6 +1139,14 @@ export function buildBenchBriefsBlock(marketSnapshot) {
     const extra = [];
     if (b.trendSummary) extra.push(`Trend: ${b.trendSummary}`);
     if (b.momentumSummary) extra.push(`Momentum: ${b.momentumSummary}`);
+
+    // Phase 5A: conditional levels and signals lines (same helpers as
+    // portfolio briefs; emit only when their predicates hold).
+    const levelsLine = buildLevelsLine(b);
+    if (levelsLine) extra.push(levelsLine);
+
+    const signalsLine = buildSignalsLine(b);
+    if (signalsLine) extra.push(signalsLine);
 
     return extra.length ? `${header}\n${extra.join('\n')}` : header;
   });

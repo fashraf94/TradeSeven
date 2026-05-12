@@ -61,7 +61,10 @@ describe('buildBenchBriefsBlock — render shapes', () => {
     });
 
     expect(out).toContain('YOUR BENCH (available for swap):');
-    expect(out).toContain('AMD (stock, Technology) — +2.34%');
+    // Phase 5A: bench header uses square-bracket assetClass tag (sector
+    // moves into the rank parenthetical when present; otherwise omitted
+    // from the header tag).
+    expect(out).toContain('AMD [stock] +2.34%');
     expect(out).toContain('Trend: Strong uptrend. Above all major SMAs.');
     expect(out).toContain('Momentum: RSI healthy, not extended. MACD expanding.');
     expect(out).not.toContain('locked until');
@@ -80,7 +83,9 @@ describe('buildBenchBriefsBlock — render shapes', () => {
       }],
     });
 
-    expect(out).toContain('BTC-USD (crypto, Crypto)');
+    // Phase 5A: bench header is "SYMBOL [assetClass]" with no change% when
+    // changePercent is null (crypto bench).
+    expect(out).toContain('BTC-USD [crypto]');
     expect(out).not.toMatch(/BTC-USD.*%/);
     expect(out).not.toContain('Trend:');
     expect(out).not.toContain('Momentum:');
@@ -100,7 +105,7 @@ describe('buildBenchBriefsBlock — render shapes', () => {
       }],
     });
 
-    expect(out).toContain('PLTR (stock, Technology) — -1.2%');
+    expect(out).toContain('PLTR [stock] -1.2%');
     expect(out).toContain(`locked until ${future}`);
   });
 
@@ -133,7 +138,7 @@ describe('buildBenchBriefsBlock — render shapes', () => {
       }],
     });
 
-    expect(out).toContain('XYZ (stock, Unknown) — +1%');
+    expect(out).toContain('XYZ [stock] +1%');
     expect(out).not.toContain('Trend:');
     expect(out).not.toContain('Momentum:');
   });
@@ -148,6 +153,60 @@ describe('buildBenchBriefsBlock — render shapes', () => {
     expect(out.split('\n\n').length).toBeGreaterThanOrEqual(2);
     expect(out).toContain('AMD');
     expect(out).toContain('BTC-USD');
+  });
+});
+
+describe('buildBenchBriefsBlock — Phase 5A integration', () => {
+  it('renders the full stack (header + metrics + trend + momentum + levels + signals) for a fully-populated stock bench brief', () => {
+    const out = buildBenchBriefsBlock({
+      benchBriefs: [{
+        symbol: 'AMD',
+        assetClass: 'stock',
+        sector: 'Technology',
+        changePercent: 2.34,
+        price: 150.5,
+        cooldownActive: false,
+        cooldownUntil: null,
+        technicalScore: 75,
+        technicalRank: 4,
+        rsPercentile: 80,
+        atrPercent: 4.2,
+        trendSummary: 'Strong uptrend. Above all major SMAs.',
+        momentumSummary: 'RSI healthy. MACD expanding.',
+        nearestSupport: 145,
+        distanceToSupportPct: -3.7,
+        macdFreshBullishCross: true,
+      }],
+    });
+
+    expect(out).toContain('AMD [stock] +2.34% — Score 75 (rank #4 in Technology), RS 80th %ile, ATR 4.2%');
+    expect(out).toContain('Trend: Strong uptrend. Above all major SMAs.');
+    expect(out).toContain('Momentum: RSI healthy. MACD expanding.');
+    expect(out).toContain('Levels: Support $145 (-3.7%).');
+    expect(out).toContain('Signals: Fresh MACD bullish cross.');
+  });
+
+  it('cooldown-only brief: renders header + cooldown segment, no levels/signals/threshold sections', () => {
+    const future = '2026-05-13T15:00:00.000Z';
+    const out = buildBenchBriefsBlock({
+      benchBriefs: [{
+        symbol: 'PLTR',
+        assetClass: 'stock',
+        sector: 'Technology',
+        changePercent: -1.2,
+        cooldownActive: true,
+        cooldownUntil: future,
+        // No technical score data, no levels, no signals
+      }],
+    });
+
+    expect(out).toContain('PLTR [stock] -1.2%');
+    expect(out).toContain(`locked until ${future}`);
+    expect(out).not.toContain('Score');
+    expect(out).not.toContain('Levels:');
+    expect(out).not.toContain('Signals:');
+    expect(out).not.toContain('Threshold:'); // bench has no scoring section
+    expect(out).not.toContain('Badges earned:');
   });
 });
 
