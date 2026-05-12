@@ -24,7 +24,7 @@ vi.mock('./marketSchedule.js', async (importOriginal) => {
   };
 });
 
-import { buildBenchBriefsBlock, buildBattleState, buildMarketSnapshotContext, buildPortfolioBriefsBlock, buildVoiceLayerPrompt, buildReviewContext } from './voiceLayerPrompt.js';
+import { buildBenchBriefsBlock, buildBattleState, buildMarketSnapshotContext, buildPortfolioBriefsBlock, buildVoiceLayerPrompt, buildReviewContext, buildHeaderLine, buildLevelsLine, buildSignalsLine } from './voiceLayerPrompt.js';
 import { getETDate, formatDateString } from './marketSchedule.js';
 
 // ==================== TESTS ====================
@@ -748,7 +748,7 @@ describe('buildPortfolioBriefsBlock — threshold proximity rendering (Tier 0 It
     expect(badgesIdx).toBe(swapLockIdx + 1);
   });
 
-  it('regression guard: existing render unchanged when no thresholdProximity / existingBadges fields present', () => {
+  it('regression guard: thresholdProximity/badges still omitted when not present (Phase 5A new header format)', () => {
     const out = buildPortfolioBriefsBlock({
       portfolioBriefs: [{
         symbol: 'AAPL',
@@ -759,18 +759,356 @@ describe('buildPortfolioBriefsBlock — threshold proximity rendering (Tier 0 It
       }],
     });
 
-    expect(out).toContain('AAPL (star tier) — +1.5%');
+    // Phase 5A: header tag uses brackets, no metrics segment when none present.
+    expect(out).toContain('AAPL [star] +1.5%');
     expect(out).toContain('Trend: Strong uptrend.');
     expect(out).toContain('Momentum: MACD expanding.');
     expect(out).not.toContain('Threshold:');
     expect(out).not.toContain('Swap-lock:');
     expect(out).not.toContain('Badges earned:');
+    // No metrics in fixture → no em-dash separator after change%.
+    expect(out).not.toContain('+1.5% —');
   });
 
   it('returns null when portfolioBriefs is missing or empty', () => {
     expect(buildPortfolioBriefsBlock(null)).toBeNull();
     expect(buildPortfolioBriefsBlock({})).toBeNull();
     expect(buildPortfolioBriefsBlock({ portfolioBriefs: [] })).toBeNull();
+  });
+});
+
+// =============================================================================
+// Phase 5A — Per-symbol header + conditional lines (buildHeaderLine,
+// buildLevelsLine, buildSignalsLine). These are pure helpers consumed by
+// buildPortfolioBriefsBlock and buildBenchBriefsBlock. The pure-function
+// tests below pin the format contract; integration tests further down
+// confirm the wiring into the brief blocks.
+// =============================================================================
+
+describe('buildHeaderLine — Phase 5A', () => {
+  it('renders the full bundle with all metric segments when every field is present (portfolio brief)', () => {
+    const out = buildHeaderLine({
+      symbol: 'NVDA',
+      tier: 'star',
+      changePercent: 2.43,
+      technicalScore: 87,
+      technicalRank: 4,
+      sectorTechnicalTotal: 28,
+      sector: 'Tech',
+      rsPercentile: 87,
+      atrPercent: 4.2,
+    });
+    expect(out).toBe('NVDA [star] +2.43% — Score 87 (rank #4/28 in Tech), RS 87th %ile, ATR 4.2%');
+  });
+
+  it('skips the Score (rank) bundle when technicalScore is missing', () => {
+    const out = buildHeaderLine({
+      symbol: 'NVDA',
+      tier: 'star',
+      changePercent: 2.43,
+      // technicalScore missing
+      technicalRank: 4,
+      sectorTechnicalTotal: 28,
+      sector: 'Tech',
+      rsPercentile: 87,
+      atrPercent: 4.2,
+    });
+    expect(out).toContain('NVDA [star] +2.43%');
+    expect(out).not.toContain('Score');
+    expect(out).not.toContain('rank #');
+    expect(out).toContain('RS 87th %ile');
+    expect(out).toContain('ATR 4.2%');
+  });
+
+  it('skips the RS %ile segment when rsPercentile is missing', () => {
+    const out = buildHeaderLine({
+      symbol: 'NVDA',
+      tier: 'star',
+      changePercent: 2.43,
+      technicalScore: 87,
+      technicalRank: 4,
+      sectorTechnicalTotal: 28,
+      sector: 'Tech',
+      // rsPercentile missing
+      atrPercent: 4.2,
+    });
+    expect(out).toContain('Score 87 (rank #4/28 in Tech)');
+    expect(out).not.toContain('RS ');
+    expect(out).toContain('ATR 4.2%');
+  });
+
+  it('skips the ATR segment when atrPercent is missing or zero', () => {
+    const out = buildHeaderLine({
+      symbol: 'NVDA',
+      tier: 'star',
+      changePercent: 2.43,
+      technicalScore: 87,
+      rsPercentile: 87,
+      atrPercent: 0,
+    });
+    expect(out).toContain('Score 87');
+    expect(out).toContain('RS 87th %ile');
+    expect(out).not.toContain('ATR');
+  });
+
+  it('returns just SYMBOL [tier] +N% with no em-dash when all metrics are null', () => {
+    const out = buildHeaderLine({
+      symbol: 'AAPL',
+      tier: 'star',
+      changePercent: 1.5,
+    });
+    expect(out).toBe('AAPL [star] +1.5%');
+    expect(out).not.toContain(' — ');
+  });
+
+  it('renders assetClass in the tier position for bench briefs', () => {
+    const out = buildHeaderLine({
+      symbol: 'AMD',
+      assetClass: 'stock',
+      changePercent: 2.34,
+    });
+    expect(out).toBe('AMD [stock] +2.34%');
+  });
+
+  it('preserves the negative sign on changePercent without an extra "+"', () => {
+    const out = buildHeaderLine({
+      symbol: 'PLTR',
+      tier: 'core',
+      changePercent: -1.85,
+    });
+    expect(out).toBe('PLTR [core] -1.85%');
+  });
+
+  it('renders zero changePercent with no sign prefix (stable convention)', () => {
+    const out = buildHeaderLine({
+      symbol: 'XYZ',
+      tier: 'support',
+      changePercent: 0,
+    });
+    expect(out).toBe('XYZ [support] 0%');
+  });
+
+  it('drops the /total suffix when sectorTechnicalTotal is null but keeps "in Sector"', () => {
+    const out = buildHeaderLine({
+      symbol: 'NVDA',
+      tier: 'star',
+      changePercent: 2.43,
+      technicalScore: 87,
+      technicalRank: 4,
+      sector: 'Tech',
+      // sectorTechnicalTotal missing
+    });
+    expect(out).toContain('Score 87 (rank #4 in Tech)');
+    expect(out).not.toContain('rank #4/');
+  });
+});
+
+describe('buildLevelsLine — Phase 5A', () => {
+  it('renders all three segments when each is within its threshold', () => {
+    const out = buildLevelsLine({
+      nearestSupport: 418,
+      distanceToSupportPct: -3.5,
+      nearestResistance: 432,
+      distanceToResistancePct: 1.8,
+      distTo52wkHigh: -3.1,
+    });
+    expect(out).toBe('Levels: Support $418 (-3.5%), Resistance $432 (+1.8%), 52wk high -3.1% away.');
+  });
+
+  it('renders only the Support segment when only support is within threshold', () => {
+    const out = buildLevelsLine({
+      nearestSupport: 418,
+      distanceToSupportPct: -3.5,
+      // resistance and 52wk omitted
+    });
+    expect(out).toBe('Levels: Support $418 (-3.5%).');
+  });
+
+  it('renders only the Resistance segment when only resistance is within threshold', () => {
+    const out = buildLevelsLine({
+      nearestResistance: 432,
+      distanceToResistancePct: 1.8,
+    });
+    expect(out).toBe('Levels: Resistance $432 (+1.8%).');
+  });
+
+  it('renders only the 52wk segment when only 52wk high is within threshold', () => {
+    const out = buildLevelsLine({
+      distTo52wkHigh: 2,
+    });
+    expect(out).toBe('Levels: 52wk high +2.0% away.');
+  });
+
+  it('returns null when no segment qualifies (all distant)', () => {
+    const out = buildLevelsLine({
+      nearestSupport: 100,
+      distanceToSupportPct: -25,      // outside 10% gate
+      nearestResistance: 200,
+      distanceToResistancePct: 30,    // outside 10% gate
+      distTo52wkHigh: -12,            // outside 5% gate
+    });
+    expect(out).toBeNull();
+  });
+
+  it('includes the Support segment at the |distanceToSupportPct| === 10 boundary', () => {
+    const out = buildLevelsLine({
+      nearestSupport: 100,
+      distanceToSupportPct: -10,
+    });
+    expect(out).toBe('Levels: Support $100 (-10.0%).');
+  });
+
+  it('excludes the Support segment when |distanceToSupportPct| === 11 (just outside boundary)', () => {
+    const out = buildLevelsLine({
+      nearestSupport: 100,
+      distanceToSupportPct: -11,
+    });
+    expect(out).toBeNull();
+  });
+
+  it('includes 52wk at distTo52wkHigh === 5 boundary and excludes at distTo52wkHigh === 6', () => {
+    expect(buildLevelsLine({ distTo52wkHigh: 5 })).toBe('Levels: 52wk high +5.0% away.');
+    expect(buildLevelsLine({ distTo52wkHigh: -5 })).toBe('Levels: 52wk high -5.0% away.');
+    expect(buildLevelsLine({ distTo52wkHigh: 6 })).toBeNull();
+    expect(buildLevelsLine({ distTo52wkHigh: -6 })).toBeNull();
+  });
+});
+
+describe('buildSignalsLine — Phase 5A', () => {
+  it('renders only Fresh MACD bullish cross when that flag fires alone', () => {
+    const out = buildSignalsLine({ macdFreshBullishCross: true });
+    expect(out).toBe('Signals: Fresh MACD bullish cross.');
+  });
+
+  it('renders only Fresh MACD bearish cross when that flag fires alone', () => {
+    const out = buildSignalsLine({ macdFreshBearishCross: true });
+    expect(out).toBe('Signals: Fresh MACD bearish cross.');
+  });
+
+  it('renders Bullish divergence forming when divergence is "bullish"', () => {
+    const out = buildSignalsLine({ divergence: 'bullish' });
+    expect(out).toBe('Signals: Bullish divergence forming.');
+  });
+
+  it('renders Bearish divergence forming when divergence is "bearish"', () => {
+    const out = buildSignalsLine({ divergence: 'bearish' });
+    expect(out).toBe('Signals: Bearish divergence forming.');
+  });
+
+  it('renders NR7 contraction line when nr7Flag is true', () => {
+    const out = buildSignalsLine({ nr7Flag: true });
+    expect(out).toBe('Signals: NR7 contraction — breakout pending.');
+  });
+
+  it('renders the Recent candle clause when lastCandlePattern is a non-empty string', () => {
+    const out = buildSignalsLine({ lastCandlePattern: 'hammer' });
+    expect(out).toBe('Signals: Recent candle: hammer.');
+  });
+
+  it('combines multiple flags in the specified order (MACD, divergence, NR7, candle)', () => {
+    const out = buildSignalsLine({
+      macdFreshBullishCross: true,
+      divergence: 'bullish',
+      nr7Flag: true,
+      lastCandlePattern: 'engulfing',
+    });
+    expect(out).toBe('Signals: Fresh MACD bullish cross. Bullish divergence forming. NR7 contraction — breakout pending. Recent candle: engulfing.');
+  });
+
+  it('returns null when no flags fire (including divergence === "none")', () => {
+    expect(buildSignalsLine({})).toBeNull();
+    expect(buildSignalsLine({
+      macdFreshBullishCross: false,
+      macdFreshBearishCross: false,
+      divergence: 'none',
+      nr7Flag: false,
+      lastCandlePattern: null,
+    })).toBeNull();
+  });
+});
+
+describe('buildPortfolioBriefsBlock — Phase 5A integration', () => {
+  it('renders header + trend + momentum + levels + signals + threshold stack when all data present', () => {
+    const out = buildPortfolioBriefsBlock({
+      portfolioBriefs: [{
+        symbol: 'NVDA',
+        tier: 'star',
+        changePercent: 2.43,
+        technicalScore: 87,
+        technicalRank: 4,
+        sectorTechnicalTotal: 28,
+        sector: 'Tech',
+        rsPercentile: 87,
+        atrPercent: 4.2,
+        trendSummary: 'Strong uptrend. Above all major SMAs.',
+        momentumSummary: 'RSI healthy, not extended. MACD expanding.',
+        nearestSupport: 418,
+        distanceToSupportPct: -3.5,
+        nearestResistance: 432,
+        distanceToResistancePct: 1.8,
+        distTo52wkHigh: -3.1,
+        macdFreshBullishCross: true,
+        divergence: 'bullish',
+        thresholdNote: 'High ATR — volatile, could hit thresholds quickly',
+        thresholdProximity: {
+          currentMultiplier: 0.93,
+          baseATR: 2.5,
+          redZone: { targetThreshold: 'bagger', targetMultiple: 1.0, direction: 'positive', zoneProgressPercent: 72 },
+          swapLock: { locked: true, direction: 'positive', distancePercent: 0.18, message: 'approaching BaggerBomb' },
+        },
+        existingBadges: ['bagger'],
+      }],
+    });
+
+    expect(out).toContain('NVDA [star] +2.43% — Score 87 (rank #4/28 in Tech), RS 87th %ile, ATR 4.2%');
+    expect(out).toContain('Trend: Strong uptrend. Above all major SMAs.');
+    expect(out).toContain('Momentum: RSI healthy, not extended. MACD expanding.');
+    expect(out).toContain('Levels: Support $418 (-3.5%), Resistance $432 (+1.8%), 52wk high -3.1% away.');
+    expect(out).toContain('Signals: Fresh MACD bullish cross. Bullish divergence forming.');
+    expect(out).toContain('BaggerBomb: High ATR — volatile, could hit thresholds quickly');
+    expect(out).toContain('Threshold: 0.9x (baseATR 2.5%) — red zone toward bagger (72% of zone)');
+    expect(out).toContain('Swap-lock: locked, 0.2pp to BaggerBomb');
+    expect(out).toContain('Badges earned: bagger');
+  });
+
+  it('quiet position: renders header + trend + momentum + threshold stack only (no levels/signals lines)', () => {
+    const out = buildPortfolioBriefsBlock({
+      portfolioBriefs: [{
+        symbol: 'AAPL',
+        tier: 'core',
+        changePercent: 0.5,
+        technicalScore: 60,
+        rsPercentile: 50,
+        atrPercent: 1.2,
+        trendSummary: 'Choppy. Above SMA50, below SMA20.',
+        momentumSummary: 'RSI neutral. MACD flat.',
+        // No support/resistance proximity, no fresh signals
+      }],
+    });
+
+    expect(out).toContain('AAPL [core] +0.5% — Score 60, RS 50th %ile, ATR 1.2%');
+    expect(out).toContain('Trend: Choppy.');
+    expect(out).toContain('Momentum: RSI neutral.');
+    expect(out).not.toContain('Levels:');
+    expect(out).not.toContain('Signals:');
+  });
+
+  it('preserves the existing thresholdProximity rendering (redZone + swapLock + badges intact)', () => {
+    const out = buildPortfolioBriefsBlock({
+      portfolioBriefs: [basePortfolioBrief({
+        thresholdProximity: {
+          currentMultiplier: 0.93,
+          baseATR: 2.5,
+          redZone: { targetThreshold: 'bagger', targetMultiple: 1.0, direction: 'positive', zoneProgressPercent: 72 },
+          swapLock: { locked: true, direction: 'positive', distancePercent: 0.18, message: 'approaching BaggerBomb' },
+        },
+        existingBadges: ['bagger', 'doubleBagger'],
+      })],
+    });
+
+    expect(out).toContain('Threshold: 0.9x (baseATR 2.5%) — red zone toward bagger (72% of zone)');
+    expect(out).toContain('Swap-lock: locked, 0.2pp to BaggerBomb');
+    expect(out).toContain('Badges earned: bagger, doubleBagger');
   });
 });
 

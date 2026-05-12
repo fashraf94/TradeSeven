@@ -930,6 +930,153 @@ export function buildBattleState(battle) {
 
 // ==================== MARKET SNAPSHOT BLOCKS ====================
 
+// Ordinal suffix for percentile values: 1 → "1st", 22 → "22nd", 87 → "87th".
+// Internal helper for buildHeaderLine; values come in as integers per
+// voice-layer-cache.js (rsPercentile is rounded to integer at write time).
+function ordinalSuffix(n) {
+  const mod100 = ((n % 100) + 100) % 100;
+  if (mod100 >= 11 && mod100 <= 13) return `${n}th`;
+  switch (((n % 10) + 10) % 10) {
+    case 1: return `${n}st`;
+    case 2: return `${n}nd`;
+    case 3: return `${n}rd`;
+    default: return `${n}th`;
+  }
+}
+
+// Phase 5A — per-symbol header line for portfolio and bench briefs.
+//
+// Format: "SYMBOL [tier-or-assetClass] +N.N% — Score X (rank #N/total in Sector), RS Nth %ile, ATR N.N%"
+// Each metric segment is independently gated; if all metrics are null, the
+// em-dash + metrics segment is omitted entirely and the header is just
+// "SYMBOL [tier-or-assetClass] +N.N%". Returns a string (never null).
+export function buildHeaderLine(brief) {
+  if (!brief) return '';
+
+  // Tier tag: tier (portfolio) or assetClass (bench). Whichever is present.
+  const tierTag = brief.tier ?? brief.assetClass;
+  const tagSegment = tierTag ? ` [${tierTag}]` : '';
+
+  // Change% segment — only when changePercent is a number. Convention from
+  // the prior renderer: positive values prefixed with "+", zero and negative
+  // values render with their natural sign (no prefix).
+  let changeSegment = '';
+  if (typeof brief.changePercent === 'number') {
+    const sign = brief.changePercent > 0 ? '+' : '';
+    changeSegment = ` ${sign}${brief.changePercent}%`;
+  }
+
+  const baseHeader = `${brief.symbol}${tagSegment}${changeSegment}`;
+
+  // Metrics bundle: skip-when-null per segment. Order is fixed (Score+rank,
+  // RS, ATR) so the line reads the same every time when fields are present.
+  const metricsParts = [];
+
+  // Score (rank #N/total in Sector) — gated on technicalScore. The rank
+  // parenthetical is appended only when technicalRank is also present; the
+  // /total suffix and "in Sector" qualifier degrade independently.
+  if (brief.technicalScore != null && brief.technicalScore !== 0) {
+    let scoreSeg = `Score ${brief.technicalScore}`;
+    if (brief.technicalRank != null && brief.technicalRank !== 0) {
+      let rankStr = `rank #${brief.technicalRank}`;
+      if (brief.sectorTechnicalTotal != null && brief.sectorTechnicalTotal !== 0) {
+        rankStr += `/${brief.sectorTechnicalTotal}`;
+      }
+      if (typeof brief.sector === 'string' && brief.sector.trim()) {
+        rankStr += ` in ${brief.sector}`;
+      }
+      scoreSeg += ` (${rankStr})`;
+    }
+    metricsParts.push(scoreSeg);
+  }
+
+  // RS percentile — render with ordinal suffix ("RS 87th %ile").
+  if (typeof brief.rsPercentile === 'number') {
+    metricsParts.push(`RS ${ordinalSuffix(brief.rsPercentile)} %ile`);
+  }
+
+  // ATR% — render as-is (already rounded to 2 decimals at write time).
+  if (brief.atrPercent != null && brief.atrPercent !== 0) {
+    metricsParts.push(`ATR ${brief.atrPercent}%`);
+  }
+
+  if (metricsParts.length === 0) return baseHeader;
+  return `${baseHeader} — ${metricsParts.join(', ')}`;
+}
+
+// Phase 5A — per-symbol levels line. Renders the price's proximity to
+// nearest support, nearest resistance, and 52-week high when each is
+// within its action threshold. Conditional: returns null when no segments
+// qualify (Gemma sees nothing instead of a useless "Levels:" stub).
+export function buildLevelsLine(brief) {
+  if (!brief) return null;
+
+  const segments = [];
+
+  // Support — within 10% (absolute) of price. Sign of distanceToSupportPct
+  // is preserved in the parenthetical so "-3.5%" reads as "below price."
+  if (
+    brief.nearestSupport != null &&
+    typeof brief.distanceToSupportPct === 'number' &&
+    Math.abs(brief.distanceToSupportPct) <= 10
+  ) {
+    const v = brief.distanceToSupportPct;
+    const sign = v > 0 ? '+' : '';
+    segments.push(`Support $${brief.nearestSupport} (${sign}${v.toFixed(1)}%)`);
+  }
+
+  // Resistance — within 10% (absolute) of price. Same sign convention.
+  if (
+    brief.nearestResistance != null &&
+    typeof brief.distanceToResistancePct === 'number' &&
+    Math.abs(brief.distanceToResistancePct) <= 10
+  ) {
+    const v = brief.distanceToResistancePct;
+    const sign = v > 0 ? '+' : '';
+    segments.push(`Resistance $${brief.nearestResistance} (${sign}${v.toFixed(1)}%)`);
+  }
+
+  // 52wk high — within 5% (absolute). Signed value preserved; "away" word
+  // makes both "above" and "below" framings legible.
+  if (
+    typeof brief.distTo52wkHigh === 'number' &&
+    Math.abs(brief.distTo52wkHigh) <= 5
+  ) {
+    const v = brief.distTo52wkHigh;
+    const sign = v > 0 ? '+' : '';
+    segments.push(`52wk high ${sign}${v.toFixed(1)}% away`);
+  }
+
+  if (segments.length === 0) return null;
+  return `Levels: ${segments.join(', ')}.`;
+}
+
+// Phase 5A — per-symbol situational signals line. Aggregates fresh-cross
+// flags, divergence direction, NR7 contraction, and the most recent
+// candle pattern. Each clause appears only when its predicate fires
+// (no "false / none / null" noise). Order: MACD → divergence → NR7 →
+// candle pattern. Returns null when nothing fires.
+export function buildSignalsLine(brief) {
+  if (!brief) return null;
+
+  const flags = [];
+
+  if (brief.macdFreshBullishCross === true) flags.push('Fresh MACD bullish cross.');
+  if (brief.macdFreshBearishCross === true) flags.push('Fresh MACD bearish cross.');
+
+  if (brief.divergence === 'bullish') flags.push('Bullish divergence forming.');
+  if (brief.divergence === 'bearish') flags.push('Bearish divergence forming.');
+
+  if (brief.nr7Flag === true) flags.push('NR7 contraction — breakout pending.');
+
+  if (typeof brief.lastCandlePattern === 'string' && brief.lastCandlePattern.trim()) {
+    flags.push(`Recent candle: ${brief.lastCandlePattern.trim()}.`);
+  }
+
+  if (flags.length === 0) return null;
+  return `Signals: ${flags.join(' ')}`;
+}
+
 export function buildPortfolioBriefsBlock(marketSnapshot) {
   if (!marketSnapshot?.portfolioBriefs?.length) return null;
 
@@ -937,8 +1084,14 @@ export function buildPortfolioBriefsBlock(marketSnapshot) {
     ? '' : ' (Prices as of last cache refresh, not real-time.)';
 
   const lines = marketSnapshot.portfolioBriefs.map(b => {
-    const sign = b.changePercent > 0 ? '+' : '';
-    let entry = `${b.symbol} (${b.tier} tier) — ${sign}${b.changePercent}%\nTrend: ${b.trendSummary}\nMomentum: ${b.momentumSummary}`;
+    let entry = `${buildHeaderLine(b)}\nTrend: ${b.trendSummary}\nMomentum: ${b.momentumSummary}`;
+
+    const levelsLine = buildLevelsLine(b);
+    if (levelsLine) entry += `\n${levelsLine}`;
+
+    const signalsLine = buildSignalsLine(b);
+    if (signalsLine) entry += `\n${signalsLine}`;
+
     if (b.thresholdNote) entry += `\nBaggerBomb: ${b.thresholdNote}`;
 
     // Tier 0 Item 4: threshold proximity render lines.
