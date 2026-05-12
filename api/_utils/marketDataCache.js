@@ -17,7 +17,7 @@ import { initializeApp, getApps, cert } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 import { getFromCache, setInCache } from './serverCache.js';
 import { calculateAllIndicators } from './technicalCalculations.js';
-import { isMarketOpen, isPreMarketWindow, getEffectiveTTLMs, getMarketState } from './marketSchedule.js';
+import { isMarketOpen, isPreMarketWindow, getEffectiveTTLMs, getMarketState, isEarlyCloseDay } from './marketSchedule.js';
 import { VALID_CRYPTO_SYMBOLS } from './agentCryptoAssets.js';
 
 // ============================================
@@ -727,6 +727,111 @@ export async function fetchIntradayBatch(symbols, options = {}) {
   }
 
   return results;
+}
+
+// ============================================
+// EXPORT: filterToCurrentSession
+// ============================================
+
+// RTH session boundaries in ET (matches marketSchedule.js constants).
+const RTH_OPEN_HOUR_ET = 9;
+const RTH_OPEN_MIN_ET = 30;
+const RTH_CLOSE_HOUR_ET = 16;
+const EARLY_CLOSE_HOUR_ET = 13;
+
+/**
+ * Parse an EODHD intraday candle datetime to a JS Date (treated as UTC).
+ *
+ * EODHD returns one of two formats:
+ *   - 'YYYY-MM-DD HH:mm:ss' (space-separated, no offset — UTC per EODHD docs)
+ *   - 'YYYY-MM-DDTHH:mm:ss.sssZ' (ISO 8601 with Z — emitted by fetchIntradayCandles's
+ *     fallback path when only a Unix `timestamp` is present)
+ *
+ * Returns null for malformed input. The native `new Date('YYYY-MM-DD HH:mm:ss')`
+ * constructor is locale/host-dependent (Node interprets it as local time, which
+ * would be wrong here), so the bare form is parsed manually via Date.UTC.
+ */
+function parseEodhdDatetime(s) {
+  if (!s || typeof s !== 'string') return null;
+  if (s.endsWith('Z')) {
+    const d = new Date(s);
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2}):(\d{2})/);
+  if (!m) return null;
+  return new Date(Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]));
+}
+
+/**
+ * Extract ET date/hour/minute components from a UTC Date.
+ * Uses Intl.DateTimeFormat so DST transitions are handled automatically
+ * (no manual UTC-5 vs UTC-4 offset bookkeeping).
+ */
+function toEtParts(utcDate) {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/New_York',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit',
+    hour12: false,
+  }).formatToParts(utcDate);
+  const get = type => parts.find(p => p.type === type)?.value;
+  let hour = parseInt(get('hour'), 10);
+  // Some locales/runtimes return hour=24 for midnight; normalize to 0.
+  if (hour === 24) hour = 0;
+  return {
+    dateStr: `${get('year')}-${get('month')}-${get('day')}`,
+    hour,
+    minute: parseInt(get('minute'), 10),
+  };
+}
+
+/**
+ * Filter intraday candles to those within the current US RTH session
+ * (9:30 AM - 4:00 PM ET, or 9:30 AM - 1:00 PM ET on early-close days).
+ *
+ * Returns an empty array when:
+ *   - Called before 9:30 AM ET (no current session yet)
+ *   - Called on a weekend or NYSE holiday (no candles will match today's
+ *     ET date, so the filter naturally returns [])
+ *   - The candles array is empty or missing
+ *
+ * Future candles (timestamp > now) are excluded as a safety guard, though
+ * EODHD shouldn't publish them in practice.
+ *
+ * Caller (e.g. calculateVWAP) is expected to return null on empty input,
+ * which is the correct behavior for "no session data yet" at market open.
+ *
+ * @param {Array<{ datetime: string }>} candles - EODHD intraday candles
+ * @param {Date} [now] - Override for current time (testing only)
+ * @returns {Array} Candles within the current RTH session (oldest-first order preserved)
+ */
+export function filterToCurrentSession(candles, now = new Date()) {
+  if (!Array.isArray(candles) || candles.length === 0) return [];
+
+  const nowParts = toEtParts(now);
+  const nowMinutes = nowParts.hour * 60 + nowParts.minute;
+  const openMinutes = RTH_OPEN_HOUR_ET * 60 + RTH_OPEN_MIN_ET;
+
+  // Pre-9:30 AM ET — no session has opened yet today.
+  if (nowMinutes < openMinutes) return [];
+
+  // Cap the upper bound at the smaller of (today's close, current ET time).
+  // The close cap excludes after-hours/extended-session candles that EODHD
+  // sometimes includes; the now cap excludes any defensive future-dated
+  // candles. Early-close days (e.g., Black Friday, Christmas Eve) close at
+  // 1:00 PM ET — covered by isEarlyCloseDay.
+  const earlyClose = isEarlyCloseDay(nowParts.dateStr);
+  const closeMinutes = (earlyClose ? EARLY_CLOSE_HOUR_ET : RTH_CLOSE_HOUR_ET) * 60;
+  const upperBoundMinutes = Math.min(closeMinutes, nowMinutes);
+
+  return candles.filter(c => {
+    const d = parseEodhdDatetime(c.datetime);
+    if (!d) return false;
+    const cParts = toEtParts(d);
+    if (cParts.dateStr !== nowParts.dateStr) return false;
+    const cMinutes = cParts.hour * 60 + cParts.minute;
+    return cMinutes >= openMinutes && cMinutes <= upperBoundMinutes;
+  });
 }
 
 // ============================================

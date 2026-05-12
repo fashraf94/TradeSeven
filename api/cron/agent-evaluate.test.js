@@ -148,3 +148,50 @@ describe('agent-evaluate cron — Phase 4 technical snapshot writes', () => {
     }
   });
 });
+
+// VWAP session-boundary fix — pre-merge guard.
+//
+// Discovery (discovery/vwap-semantics-investigation.md) found that since
+// commit 330b5fa removed the default from/to window from
+// fetchIntradayCandles, EODHD returns weeks-to-months of candles per call.
+// calculateVWAP has no session reset, so the persisted "VWAP" became a
+// multi-day window VWAP mislabeled as session VWAP for 5 downstream
+// consumers (risk manager SWAP_OUT, Haiku prompt, Phase 4 snapshots,
+// Phase 5B-main brief line, voiceLayerCache).
+//
+// Fix: introduce filterToCurrentSession (marketDataCache.js) and apply it
+// BEFORE calculateVWAP at the single agent-evaluate call site. SMA20
+// intentionally keeps the full candle array (it's a 20-bar-by-index
+// calculation — already within-session by construction).
+//
+// These are static-source guards in the same style as Phase 3/4 above:
+// the handler is monolithic and the assertions belong on the wire shape.
+describe('agent-evaluate cron — VWAP session-boundary filter (post-fix)', () => {
+  const source = readFileSync(SOURCE_PATH, 'utf-8');
+
+  it('imports filterToCurrentSession from marketDataCache.js', () => {
+    expect(source).toMatch(
+      /import\s*\{[^}]*\bfilterToCurrentSession\b[^}]*\}\s*from\s*'\.\.\/_utils\/marketDataCache\.js'/,
+    );
+  });
+
+  it('passes session-filtered candles to calculateVWAP (not the raw fetcher output)', () => {
+    // The filter must run between the EODHD response and calculateVWAP.
+    // We pin the wire shape: `calculateVWAP(sessionCandles)` with
+    // `sessionCandles` derived from `filterToCurrentSession(candles)`.
+    expect(source).toMatch(/const\s+sessionCandles\s*=\s*filterToCurrentSession\s*\(\s*candles\s*\)/);
+    expect(source).toMatch(/calculateVWAP\s*\(\s*sessionCandles\s*\)/);
+    // And the bug-state (raw passthrough) is gone.
+    expect(source).not.toMatch(/calculateVWAP\s*\(\s*candles\s*\)/);
+  });
+
+  it('continues to pass the full candle array to calculate5minSMA20 (asymmetry by design)', () => {
+    // SMA20 reads the last 20 candles by index. 20×5min = 100 minutes is
+    // within-session by construction; filtering would unnecessarily produce
+    // null near market open when fewer than 20 session bars have closed.
+    // This guard locks the asymmetric handling so a future refactor doesn't
+    // accidentally apply the session filter to the SMA20 input too.
+    expect(source).toMatch(/calculate5minSMA20\s*\(\s*candles\s*\)/);
+    expect(source).not.toMatch(/calculate5minSMA20\s*\(\s*sessionCandles\s*\)/);
+  });
+});

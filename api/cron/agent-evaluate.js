@@ -8,7 +8,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
 import { isMarketOpen } from '../_utils/marketSchedule.js';
-import { getStockAnalysisData, fetchIntradayBatch } from '../_utils/marketDataCache.js';
+import { getStockAnalysisData, fetchIntradayBatch, filterToCurrentSession } from '../_utils/marketDataCache.js';
 import { findActiveAgentBattles } from '../_utils/agentBattleService.js';
 import {
   calculateAssetScoreServer,
@@ -362,13 +362,23 @@ async function processAgentBattle(db, battle, summary) {
       ),
     ]);
 
-    // Process intraday candles → VWAP + 5min SMA20
+    // Process intraday candles → VWAP + 5min SMA20.
+    //
+    // Asymmetric handling, deliberate:
+    //   - calculateVWAP receives candles filtered to the current RTH session
+    //     so the cumulative TPV/volume is bounded to today (proper session
+    //     VWAP semantics — discovery/vwap-semantics-investigation.md).
+    //   - calculate5minSMA20 receives ALL candles because it slices the last
+    //     20 by index. 20 × 5min = 100 minutes is within-session by
+    //     construction and would degrade unnecessarily near market open if
+    //     the session filter were applied (fewer than 20 candles available).
     if (intradayResult.status === 'fulfilled') {
       const intradayMap = intradayResult.value;
       for (const symbol of portfolioSymbols) {
         const candles = intradayMap[symbol];
         if (candles && candles.length > 0) {
-          const vwapResult = calculateVWAP(candles);
+          const sessionCandles = filterToCurrentSession(candles);
+          const vwapResult = calculateVWAP(sessionCandles);
           if (vwapResult) {
             const sma20_5m = calculate5minSMA20(candles);
             momentumData.vwap[symbol] = { ...vwapResult, sma20_5m };
