@@ -504,6 +504,77 @@ export function applyAnatomyUpdates(currentAnatomy, updates) {
   return next;
 }
 
+// Phase 3.8: narrative-action drift detector. Observability-only — flags
+// when Gemma's agentMessage claims completion ("I've added X to Discovery")
+// but no corresponding structured action fires in the same turn. This is
+// the hallucination class diagnosed on 2026-05-10 where five separate
+// turns claimed ticker adds in narrative while candidateTickerUpdates was
+// empty. The detector does NOT block or rewrite — the user still sees the
+// (potentially hallucinating) response; the shadow log lets us monitor
+// residual drift after the prompt-level fix lands.
+//
+// Drift condition (per Phase 3.8 audit D6):
+//   claimsCompletion === true
+//     AND no candidateTickerUpdates action in {propose, reslot, remove}
+//     AND no anatomyUpdates action in {add, replace, remove, set}
+//
+// The anatomy guard exists because Gemma legitimately says "I've added an
+// activation condition" when firing an anatomy add — that's not a ticker
+// hallucination and the regex catalog above can't disambiguate without
+// help from the structured payload.
+const TICKER_ADD_COMPLETION_PATTERNS = Object.freeze([
+  /\bI(?:'ve| have)\s+added\b/i,
+  /\bI\s+added\b/i,
+  /\bI(?:'ve| have)\s+slotted\s+in\b/i,
+  /\bI(?:'ve| have)\s+identified\s+\d+\b/i,
+  /\bHere\s+(?:is|are)\s+the\s+(?:new|updated)\b/i,
+  /\bI(?:'ve| have)\s+placed\b/i,
+  /\bI(?:'ve| have)\s+included\b/i,
+  /\bI(?:'ve| have)\s+put\s+(?:\S+\s+){0,3}(?:in|on)\b/i,
+  /\bnow\s+on\s+the\s+(?:list|watchlist)\b/i,
+  /\bjust\s+added\b/i,
+  /\bI(?:'ve| have)\s+replaced\b/i,
+]);
+
+const TICKER_DRIFT_TICKER_ACTIONS = new Set(['propose', 'reslot', 'remove']);
+const TICKER_DRIFT_ANATOMY_ACTIONS = new Set(['add', 'replace', 'remove', 'set']);
+
+export function detectNarrativeActionDrift(
+  agentMessage,
+  candidateTickerUpdates,
+  anatomyUpdates,
+) {
+  if (typeof agentMessage !== 'string' || agentMessage.length === 0) {
+    return { drift: false, matchedPatterns: [] };
+  }
+
+  const matchedPatterns = [];
+  for (const pattern of TICKER_ADD_COMPLETION_PATTERNS) {
+    if (pattern.test(agentMessage)) matchedPatterns.push(pattern.source);
+  }
+  if (matchedPatterns.length === 0) {
+    return { drift: false, matchedPatterns: [] };
+  }
+
+  const tickerActionFired = Array.isArray(candidateTickerUpdates)
+    && candidateTickerUpdates.some(
+      (u) => u && typeof u === 'object' && TICKER_DRIFT_TICKER_ACTIONS.has(u.action),
+    );
+  if (tickerActionFired) {
+    return { drift: false, matchedPatterns };
+  }
+
+  const anatomyActionFired = Array.isArray(anatomyUpdates)
+    && anatomyUpdates.some(
+      (u) => u && typeof u === 'object' && TICKER_DRIFT_ANATOMY_ACTIONS.has(u.action),
+    );
+  if (anatomyActionFired) {
+    return { drift: false, matchedPatterns };
+  }
+
+  return { drift: true, matchedPatterns };
+}
+
 // Normalize Gemma's parsed JSON output into the shape the rest of the
 // pipeline expects. ALWAYS returns a fully-shaped object — caller gets
 // safe defaults even on garbage input, mirroring parseVoiceLayerResponse's
@@ -1038,6 +1109,41 @@ export default async function handler(req, res) {
     const agentMessage =
       normalized.agentMessage ||
       "Let me think again — can you rephrase that for me?";
+
+    // Phase 3.8: narrative-action drift detector (observability-only). Runs
+    // post-normalize, pre-persist per audit D2 — sees the canonical normalized
+    // payload before applyCandidateTickerUpdates silently drops invalid/dup
+    // entries (a different bug class out of scope here). Fire-and-forget log
+    // via waitUntil, same pattern as the dialogue stage below.
+    const driftResult = detectNarrativeActionDrift(
+      normalized.agentMessage,
+      normalized.candidateTickerUpdates,
+      normalized.anatomyUpdates,
+    );
+    if (driftResult.drift) {
+      waitUntil(
+        logSignalDrops({
+          stage: 'narrative_action_drift',
+          dropId: session.parseResult?.contentHash || null,
+          contentHash: session.parseResult?.contentHash || null,
+          userId: user.uid,
+          agentId,
+          sessionId: sessionRef.id,
+          phase: currentPhase,
+          proposedPhase: normalized.proposedPhase,
+          narrativeSnippet: normalized.agentMessage.slice(0, 200),
+          matchedPatterns: driftResult.matchedPatterns,
+          candidateTickerActions: (normalized.candidateTickerUpdates || []).map(
+            (u) => `${u?.action || 'unknown'}:${u?.symbol || ''}`,
+          ),
+          anatomyActions: (normalized.anatomyUpdates || []).map(
+            (u) => `${u?.field || 'unknown'}:${u?.action || 'unknown'}`,
+          ),
+          turn: currentMessagesUsed + 1,
+          loggedAt: new Date().toISOString(),
+        }).catch(() => {}),
+      );
+    }
 
     // 16. Validate phase transition (server-authoritative per D3)
     const transition = validatePhaseTransition(
