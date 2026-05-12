@@ -1636,3 +1636,242 @@ describe('DATA_CONFIDENCE_RULE — Phase 5A prompt-vs-response framing', () => {
     expect(out).not.toContain('Percentile and rank values may be paraphrased as bands ("top decile," "best in sector") in responses; raw indicator values');
   });
 });
+
+// ==================== PHASE 5B-PREP — INTEGRATION ====================
+
+// End-to-end: verify the full pipeline from realistic cron-produced briefs
+// (i.e., briefs that match what voice-layer-cache.js writes after Phase 5B-prep)
+// through buildPortfolioBriefsBlock / buildBenchBriefsBlock. These tests
+// resolve the Phase 5A buildSignalsLine / buildLevelsLine dormancy: with
+// the propagated fields present, the helpers now fire on real data.
+
+// Realistic portfolio brief shape, mirroring voice-layer-cache.js's brief
+// object literal after Commits 3 and 4.
+function realisticPortfolioBrief(overrides = {}) {
+  return {
+    symbol: 'NVDA',
+    tier: 'star',
+    price: 425.5,
+    changePercent: 2.43,
+    technicalScore: 87,
+    technicalRank: 4,
+    rsPercentile: 87,
+    trendSummary: 'Strong uptrend. Above all major SMAs. RS vs SPY rising.',
+    momentumSummary: 'RSI healthy, not extended. MACD expanding. Volume 1.8x avg.',
+    supportLevel: null,
+    resistanceLevel: null,
+    thresholdNote: null,
+    atrPercent: 4.2,
+    sector: 'Technology',
+    sectorTechnicalTotal: 28,
+    nearestSupport: 418,
+    nearestResistance: 432,
+    distanceToSupportPct: -1.76,
+    distanceToResistancePct: 1.53,
+    distTo52wkHigh: -3.1,
+    nr7Flag: false,
+    macdFreshBullishCross: true,
+    macdFreshBearishCross: false,
+    divergence: 'bullish',
+    lastCandlePattern: 'bullish_engulfing',
+    existingBadges: [],
+    intraday: null,
+    ...overrides,
+  };
+}
+
+function realisticBenchBrief(overrides = {}) {
+  return {
+    symbol: 'AMD',
+    assetClass: 'stock',
+    price: 150.5,
+    changePercent: 2.34,
+    technicalScore: 72,
+    technicalRank: 18,
+    rsPercentile: 80,
+    sector: 'Technology',
+    cooldownUntil: null,
+    cooldownActive: false,
+    atrPercent: 0.55,
+    sectorTechnicalTotal: 28,
+    trendSummary: 'Strong uptrend. Above all major SMAs. RS vs SPY rising.',
+    momentumSummary: 'RSI healthy, not extended. MACD expanding.',
+    nearestSupport: 145,
+    nearestResistance: 155,
+    distanceToSupportPct: -3.65,
+    distanceToResistancePct: 2.99,
+    distTo52wkHigh: -4.1,
+    nr7Flag: true,
+    macdFreshBullishCross: true,
+    macdFreshBearishCross: false,
+    divergence: 'bearish',
+    lastCandlePattern: 'shooting_star',
+    ...overrides,
+  };
+}
+
+describe('Phase 5B-prep integration — buildPortfolioBriefsBlock fires Levels and Signals', () => {
+  it('renders the Signals line with Fresh MACD bullish cross when propagated', () => {
+    const out = buildPortfolioBriefsBlock({
+      portfolioBriefs: [realisticPortfolioBrief({
+        macdFreshBullishCross: true,
+        divergence: 'none',
+        nr7Flag: false,
+        lastCandlePattern: null,
+      })],
+    });
+    expect(out).toContain('Signals: Fresh MACD bullish cross.');
+  });
+
+  it('renders the Levels line with all three segments when propagated and within thresholds', () => {
+    const out = buildPortfolioBriefsBlock({
+      portfolioBriefs: [realisticPortfolioBrief({
+        nearestSupport: 418,
+        distanceToSupportPct: -3.5,
+        nearestResistance: 432,
+        distanceToResistancePct: 1.8,
+        distTo52wkHigh: -3.1,
+      })],
+    });
+    expect(out).toContain('Levels: Support $418 (-3.5%), Resistance $432 (+1.8%), 52wk high -3.1% away.');
+  });
+
+  it('renders the normalized candle pattern in the Signals line (snake_case → human-readable)', () => {
+    const out = buildPortfolioBriefsBlock({
+      portfolioBriefs: [realisticPortfolioBrief({
+        macdFreshBullishCross: false,
+        macdFreshBearishCross: false,
+        divergence: 'none',
+        nr7Flag: false,
+        lastCandlePattern: 'bullish_engulfing',
+      })],
+    });
+    expect(out).toContain('Signals: Recent candle: bullish engulfing.');
+    expect(out).not.toContain('bullish_engulfing');
+  });
+
+  it('renders both Levels and Signals when all propagated fields are present and active', () => {
+    const out = buildPortfolioBriefsBlock({
+      portfolioBriefs: [realisticPortfolioBrief({
+        nearestSupport: 418,
+        distanceToSupportPct: -3.5,
+        nearestResistance: 432,
+        distanceToResistancePct: 1.8,
+        distTo52wkHigh: -3.1,
+        macdFreshBullishCross: true,
+        divergence: 'bullish',
+        nr7Flag: true,
+        lastCandlePattern: 'shooting_star',
+      })],
+    });
+    expect(out).toContain('Levels:');
+    expect(out).toContain('Signals:');
+    expect(out).toContain('Fresh MACD bullish cross.');
+    expect(out).toContain('Bullish divergence forming.');
+    expect(out).toContain('NR7 contraction');
+    expect(out).toContain('Recent candle: shooting star.');
+  });
+
+  it('renders the header sector context (Score (rank #N/M in Sector)) when propagated', () => {
+    const out = buildPortfolioBriefsBlock({
+      portfolioBriefs: [realisticPortfolioBrief({
+        technicalScore: 87,
+        technicalRank: 4,
+        sectorTechnicalTotal: 28,
+        sector: 'Technology',
+      })],
+    });
+    expect(out).toContain('Score 87 (rank #4/28 in Technology)');
+  });
+
+  it('header degrades when ranking lacks sector context (minimum: SYMBOL [tier] +N%)', () => {
+    const out = buildPortfolioBriefsBlock({
+      portfolioBriefs: [realisticPortfolioBrief({
+        technicalScore: null,
+        technicalRank: null,
+        rsPercentile: null,
+        atrPercent: null,
+        sector: null,
+        sectorTechnicalTotal: null,
+        trendSummary: '—',
+        momentumSummary: '—',
+      })],
+    });
+    // First line is the header — assert on the header alone, since the
+    // trendSummary/momentumSummary may contain incidental tokens like "RS".
+    const headerLine = out.split('\n').find(l => l.startsWith('NVDA'));
+    expect(headerLine).toBe('NVDA [star] +2.43%');
+    expect(headerLine).not.toContain('Score');
+    expect(headerLine).not.toContain('RS ');
+    expect(headerLine).not.toContain('ATR');
+  });
+});
+
+describe('Phase 5B-prep integration — buildBenchBriefsBlock parity with portfolio', () => {
+  it('renders Signals on bench briefs when propagated', () => {
+    const out = buildBenchBriefsBlock({
+      benchBriefs: [realisticBenchBrief({
+        macdFreshBullishCross: true,
+        nr7Flag: false,
+        divergence: 'none',
+        lastCandlePattern: null,
+      })],
+    });
+    expect(out).toContain('Signals: Fresh MACD bullish cross.');
+  });
+
+  it('renders Levels on bench briefs when propagated', () => {
+    const out = buildBenchBriefsBlock({
+      benchBriefs: [realisticBenchBrief({
+        nearestSupport: 145,
+        distanceToSupportPct: -3.7,
+        nearestResistance: 155,
+        distanceToResistancePct: 2.99,
+        distTo52wkHigh: -4.1,
+      })],
+    });
+    expect(out).toContain('Levels: Support $145 (-3.7%), Resistance $155 (+3.0%), 52wk high -4.1% away.');
+  });
+
+  it('renders both Levels and Signals with normalized candle pattern on a fully-populated bench brief', () => {
+    const out = buildBenchBriefsBlock({
+      benchBriefs: [realisticBenchBrief({
+        nearestSupport: 145,
+        distanceToSupportPct: -3.7,
+        macdFreshBullishCross: false,
+        macdFreshBearishCross: true,
+        nr7Flag: false,
+        divergence: 'bearish',
+        lastCandlePattern: 'shooting_star',
+      })],
+    });
+    expect(out).toContain('Levels:');
+    expect(out).toContain('Signals: Fresh MACD bearish cross. Bearish divergence forming. Recent candle: shooting star.');
+  });
+
+  it('quiet bench brief (cooldown only, no signals/levels) renders only header + cooldown', () => {
+    const future = '2026-05-13T15:00:00.000Z';
+    const out = buildBenchBriefsBlock({
+      benchBriefs: [realisticBenchBrief({
+        symbol: 'PLTR',
+        cooldownActive: true,
+        cooldownUntil: future,
+        trendSummary: undefined,
+        momentumSummary: undefined,
+        nearestSupport: null,
+        nearestResistance: null,
+        distanceToSupportPct: null,
+        distanceToResistancePct: null,
+        distTo52wkHigh: null,
+        nr7Flag: false,
+        macdFreshBullishCross: false,
+        macdFreshBearishCross: false,
+        divergence: 'none',
+        lastCandlePattern: null,
+      })],
+    });
+    expect(out).toContain(`locked until ${future}`);
+    expect(out).not.toContain('Levels:');
+    expect(out).not.toContain('Signals:');
+  });
+});
