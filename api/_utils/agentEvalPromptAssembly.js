@@ -12,6 +12,7 @@ import {
   buildNewsIntelligenceBlock,
   buildBareNewsBlock,
 } from './agentNewsContext.js';
+import { PATTERN_DISPLAY_NAMES } from './analyticalPrimitives.js';
 
 // ==================== SYSTEM PROMPT ====================
 
@@ -1107,7 +1108,8 @@ function renderBenchLevelsLine(ranking) {
 function renderBenchRecentActionLine(ranking) {
   const pattern = ranking?.recentAction?.lastCandlePattern;
   if (!pattern) return null;
-  return `Recent action: ${pattern}`;
+  const displayName = PATTERN_DISPLAY_NAMES[pattern] || pattern.replace(/_/g, ' ');
+  return `Recent action: ${displayName}`;
 }
 
 function renderBenchCompositeLine(ranking) {

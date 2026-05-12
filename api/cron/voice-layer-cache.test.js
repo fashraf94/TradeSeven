@@ -2,7 +2,7 @@
 // Tier 0 Item 1: bench data exposure — buildBenchBriefs unit tests.
 
 import { describe, it, expect } from 'vitest';
-import { buildBenchBriefs, buildMarketContextBlock, buildPortfolioBriefs } from './voice-layer-cache.js';
+import { buildBenchBriefs, buildMarketContextBlock, buildPortfolioBriefs, buildScoutAlerts } from './voice-layer-cache.js';
 
 // ==================== FIXTURES ====================
 
@@ -700,5 +700,337 @@ describe('buildPortfolioBriefs — intraday momentum overlay (Phase 3)', () => {
       expect(briefs[0].symbol).toBe('BTC');
       expect(briefs[0].intraday).toBeNull();
     }).not.toThrow();
+  });
+});
+
+// ==================== F3.1 — SENTINEL-ZERO CLEANUP ====================
+
+// Portfolio and bench writers must agree on the missing-data sentinel.
+// Cron writes explicit null for missing technicalScore / atrPercent so
+// renderers can distinguish "no data" from legitimate bottom-decile values.
+
+describe('buildPortfolioBriefs — null sentinel for missing technicalScore / atrPercent (F3.1)', () => {
+  it('writes null technicalScore when both ranking and techScore are missing', () => {
+    const stock = activeStock({ symbol: 'AAPL' });
+    const priceMap = { AAPL: priceFromMultiplier(0.3, 2.5) };
+    const briefs = buildPortfolioBriefs(activePortfolio(stock), priceMap, {}, {}, {}, {});
+
+    expect(briefs).toHaveLength(1);
+    expect(briefs[0].technicalScore).toBeNull();
+  });
+
+  it('writes null atrPercent when ranking lacks atrPercentile', () => {
+    const stock = activeStock({ symbol: 'AAPL' });
+    const priceMap = { AAPL: priceFromMultiplier(0.3, 2.5) };
+    const briefs = buildPortfolioBriefs(activePortfolio(stock), priceMap, {}, {}, {}, {});
+
+    expect(briefs[0].atrPercent).toBeNull();
+  });
+
+  it('preserves legitimate technicalScore: 0 (does not coerce to null)', () => {
+    const stock = activeStock({ symbol: 'AAPL' });
+    const priceMap = { AAPL: priceFromMultiplier(0.3, 2.5) };
+    const rankingsMap = { AAPL: { technicalScore: 0, technicalRank: 500, atrPercentile: 0.55 } };
+    const briefs = buildPortfolioBriefs(activePortfolio(stock), priceMap, rankingsMap, {}, {}, {});
+
+    expect(briefs[0].technicalScore).toBe(0);
+  });
+
+  it('preserves legitimate atrPercentile: 0 (rounded to atrPercent: 0, not null)', () => {
+    const stock = activeStock({ symbol: 'AAPL' });
+    const priceMap = { AAPL: priceFromMultiplier(0.3, 2.5) };
+    const rankingsMap = { AAPL: { technicalScore: 50, technicalRank: 100, atrPercentile: 0 } };
+    const briefs = buildPortfolioBriefs(activePortfolio(stock), priceMap, rankingsMap, {}, {}, {});
+
+    expect(briefs[0].atrPercent).toBe(0);
+  });
+
+  it('matches bench-brief writer convention: same input → same null vs value output', () => {
+    // Active (portfolio) brief with missing data
+    const activeStockObj = activeStock({ symbol: 'AAPL' });
+    const priceMap = { AAPL: priceFromMultiplier(0.3, 2.5) };
+    const portfolioBriefs = buildPortfolioBriefs(activePortfolio(activeStockObj), priceMap, {}, {}, {}, {});
+
+    // Bench brief with the same shape — also missing data
+    const benchStock = { symbol: 'AAPL', name: 'Apple', baseATR: 2.5, isCrypto: false, sector: 'Technology' };
+    const benchPortfolio = { bench: { stocks: [benchStock], crypto: null } };
+    const benchBriefs = buildBenchBriefs(benchPortfolio, priceMap, {}, {}, FROZEN_NOW);
+
+    expect(portfolioBriefs[0].technicalScore).toBeNull();
+    expect(benchBriefs[0].technicalScore).toBeNull();
+    expect(portfolioBriefs[0].atrPercent).toBeNull();
+    expect(benchBriefs[0].atrPercent).toBeNull();
+  });
+
+  it('does not emit thresholdNote when atrPercentile is null', () => {
+    const stock = activeStock({ symbol: 'AAPL' });
+    const priceMap = { AAPL: priceFromMultiplier(0.3, 2.5) };
+    const briefs = buildPortfolioBriefs(activePortfolio(stock), priceMap, {}, {}, {}, {});
+
+    expect(briefs[0].thresholdNote).toBeNull();
+  });
+});
+
+describe('buildScoutAlerts — null-safe technicalScore predicate (F3.1)', () => {
+  function watchlist(symbols) {
+    return { active: symbols.map(s => ({ symbol: s })) };
+  }
+
+  it('excludes a watchlist symbol from rs_breakout when technicalScore is null', () => {
+    const techScoresMap = {
+      XYZ: { factors: { rsPercentile: 90 } },
+    };
+    const rankingsMap = {}; // no ranking entry → technicalScore resolves to null
+    const alerts = buildScoutAlerts(watchlist(['XYZ']), rankingsMap, techScoresMap, 'momentum_chaser', new Set());
+
+    const rsAlerts = alerts.filter(a => a.type === 'rs_breakout');
+    expect(rsAlerts).toHaveLength(0);
+  });
+
+  it('admits an rs_breakout when technicalScore is a legitimate number >= 75', () => {
+    const techScoresMap = {
+      XYZ: { factors: { rsPercentile: 90 }, volumeConfirmation: 6 },
+    };
+    const rankingsMap = { XYZ: { technicalScore: 82, technicalRank: 4 } };
+    const alerts = buildScoutAlerts(watchlist(['XYZ']), rankingsMap, techScoresMap, 'momentum_chaser', new Set());
+
+    const rsAlerts = alerts.filter(a => a.type === 'rs_breakout');
+    expect(rsAlerts).toHaveLength(1);
+    expect(rsAlerts[0].detail).toContain('Technical score 82');
+  });
+
+  it('volume_surge alert omits the "Technical score" clause when technicalScore is null', () => {
+    const techScoresMap = {
+      XYZ: { factors: { rsPercentile: 50 }, volumeConfirmation: 11 },
+    };
+    const rankingsMap = {};
+    const alerts = buildScoutAlerts(watchlist(['XYZ']), rankingsMap, techScoresMap, 'all', new Set());
+
+    const surge = alerts.find(a => a.type === 'volume_surge');
+    expect(surge).toBeDefined();
+    expect(surge.detail).not.toContain('Technical score');
+    expect(surge.detail).not.toContain('null');
+  });
+
+  it('game_fit alert reads "ATR percentile N/A." when atrPercentile is missing', () => {
+    const rankingsMap = {
+      XYZ: { baggerBombFit: 90, baggerBombRank: 5, compositeScore: 75 },
+    };
+    const alerts = buildScoutAlerts(watchlist(['XYZ']), rankingsMap, {}, 'all', new Set());
+
+    const fit = alerts.find(a => a.type === 'game_fit');
+    expect(fit).toBeDefined();
+    expect(fit.detail).toContain('ATR percentile N/A.');
+  });
+
+  it('game_fit alert shows 0% when atrPercentile is the legitimate value 0', () => {
+    const rankingsMap = {
+      XYZ: { baggerBombFit: 90, baggerBombRank: 5, compositeScore: 75, atrPercentile: 0 },
+    };
+    const alerts = buildScoutAlerts(watchlist(['XYZ']), rankingsMap, {}, 'all', new Set());
+
+    const fit = alerts.find(a => a.type === 'game_fit');
+    expect(fit).toBeDefined();
+    expect(fit.detail).toContain('ATR percentile 0%.');
+  });
+});
+
+// ==================== PHASE 5A FIELD PROPAGATION ====================
+
+// The brief object literal must surface the fields that Phase 5A's
+// buildLevelsLine and buildSignalsLine helpers read from. Without this
+// propagation, those helpers return null for every brief in production.
+// Source paths are verified against compute-index-intelligence.js:
+//   - ranking.sectorName / sectorTechnicalTotal
+//   - ranking.levels.{nearestSupport,nearestResistance,distance*Pct}
+//   - ranking.nr7Flag (mirrored from techScore.nr7Flag)
+//   - techScore.factors.{macdFreshBullishCross,macdFreshBearishCross,distTo52wkHigh}
+//   - ranking.momentum.divergence
+//   - ranking.recentAction.lastCandlePattern
+
+describe('buildPortfolioBriefs — Phase 5A field propagation (signals)', () => {
+  it('propagates nr7Flag from ranking', () => {
+    const stock = activeStock({ symbol: 'AAPL' });
+    const priceMap = { AAPL: priceFromMultiplier(0.3, 2.5) };
+    const rankingsMap = { AAPL: { nr7Flag: true } };
+    const briefs = buildPortfolioBriefs(activePortfolio(stock), priceMap, rankingsMap, {}, {}, {});
+
+    expect(briefs[0].nr7Flag).toBe(true);
+  });
+
+  it('falls back to techScore.nr7Flag when ranking lacks it', () => {
+    const stock = activeStock({ symbol: 'AAPL' });
+    const priceMap = { AAPL: priceFromMultiplier(0.3, 2.5) };
+    const techScoresMap = { AAPL: { nr7Flag: true } };
+    const briefs = buildPortfolioBriefs(activePortfolio(stock), priceMap, {}, techScoresMap, {}, {});
+
+    expect(briefs[0].nr7Flag).toBe(true);
+  });
+
+  it('defaults nr7Flag to false when neither source carries the flag', () => {
+    const stock = activeStock({ symbol: 'AAPL' });
+    const priceMap = { AAPL: priceFromMultiplier(0.3, 2.5) };
+    const briefs = buildPortfolioBriefs(activePortfolio(stock), priceMap, {}, {}, {}, {});
+
+    expect(briefs[0].nr7Flag).toBe(false);
+  });
+
+  it('propagates macdFreshBullishCross from techScore.factors', () => {
+    const stock = activeStock({ symbol: 'AAPL' });
+    const priceMap = { AAPL: priceFromMultiplier(0.3, 2.5) };
+    const techScoresMap = { AAPL: { factors: { macdFreshBullishCross: true } } };
+    const briefs = buildPortfolioBriefs(activePortfolio(stock), priceMap, {}, techScoresMap, {}, {});
+
+    expect(briefs[0].macdFreshBullishCross).toBe(true);
+    expect(briefs[0].macdFreshBearishCross).toBe(false);
+  });
+
+  it('propagates divergence from ranking.momentum', () => {
+    const stock = activeStock({ symbol: 'AAPL' });
+    const priceMap = { AAPL: priceFromMultiplier(0.3, 2.5) };
+    const rankingsMap = { AAPL: { momentum: { divergence: 'bullish' } } };
+    const briefs = buildPortfolioBriefs(activePortfolio(stock), priceMap, rankingsMap, {}, {}, {});
+
+    expect(briefs[0].divergence).toBe('bullish');
+  });
+
+  it('propagates lastCandlePattern from ranking.recentAction', () => {
+    const stock = activeStock({ symbol: 'AAPL' });
+    const priceMap = { AAPL: priceFromMultiplier(0.3, 2.5) };
+    const rankingsMap = { AAPL: { recentAction: { lastCandlePattern: 'shooting_star' } } };
+    const briefs = buildPortfolioBriefs(activePortfolio(stock), priceMap, rankingsMap, {}, {}, {});
+
+    expect(briefs[0].lastCandlePattern).toBe('shooting_star');
+  });
+});
+
+describe('buildPortfolioBriefs — Phase 5A field propagation (levels)', () => {
+  it('propagates levels object from ranking', () => {
+    const stock = activeStock({ symbol: 'AAPL' });
+    const priceMap = { AAPL: priceFromMultiplier(0.3, 2.5) };
+    const rankingsMap = {
+      AAPL: {
+        levels: {
+          nearestSupport: 95,
+          nearestResistance: 105,
+          distanceToSupportPct: -4.2,
+          distanceToResistancePct: 5.6,
+        },
+      },
+    };
+    const briefs = buildPortfolioBriefs(activePortfolio(stock), priceMap, rankingsMap, {}, {}, {});
+
+    expect(briefs[0].nearestSupport).toBe(95);
+    expect(briefs[0].nearestResistance).toBe(105);
+    expect(briefs[0].distanceToSupportPct).toBe(-4.2);
+    expect(briefs[0].distanceToResistancePct).toBe(5.6);
+  });
+
+  it('propagates distTo52wkHigh from techScore.factors', () => {
+    const stock = activeStock({ symbol: 'AAPL' });
+    const priceMap = { AAPL: priceFromMultiplier(0.3, 2.5) };
+    const techScoresMap = { AAPL: { factors: { distTo52wkHigh: -3.5 } } };
+    const briefs = buildPortfolioBriefs(activePortfolio(stock), priceMap, {}, techScoresMap, {}, {});
+
+    expect(briefs[0].distTo52wkHigh).toBe(-3.5);
+  });
+
+  it('defaults all level fields to null when sources lack them', () => {
+    const stock = activeStock({ symbol: 'AAPL' });
+    const priceMap = { AAPL: priceFromMultiplier(0.3, 2.5) };
+    const briefs = buildPortfolioBriefs(activePortfolio(stock), priceMap, {}, {}, {}, {});
+
+    expect(briefs[0].nearestSupport).toBeNull();
+    expect(briefs[0].nearestResistance).toBeNull();
+    expect(briefs[0].distanceToSupportPct).toBeNull();
+    expect(briefs[0].distanceToResistancePct).toBeNull();
+    expect(briefs[0].distTo52wkHigh).toBeNull();
+  });
+});
+
+describe('buildPortfolioBriefs — Phase 5A field propagation (header sector context)', () => {
+  it('propagates sectorName as brief.sector from ranking', () => {
+    const stock = activeStock({ symbol: 'AAPL' });
+    const priceMap = { AAPL: priceFromMultiplier(0.3, 2.5) };
+    const rankingsMap = { AAPL: { sectorName: 'Technology', sectorTechnicalTotal: 28 } };
+    const briefs = buildPortfolioBriefs(activePortfolio(stock), priceMap, rankingsMap, {}, {}, {});
+
+    expect(briefs[0].sector).toBe('Technology');
+    expect(briefs[0].sectorTechnicalTotal).toBe(28);
+  });
+
+  it('falls back to stock.sector when ranking lacks sectorName', () => {
+    const stock = activeStock({ symbol: 'AAPL' });
+    const priceMap = { AAPL: priceFromMultiplier(0.3, 2.5) };
+    const briefs = buildPortfolioBriefs(activePortfolio(stock), priceMap, {}, {}, {}, {});
+
+    expect(briefs[0].sector).toBe('Technology'); // from activeStock default
+    expect(briefs[0].sectorTechnicalTotal).toBeNull();
+  });
+});
+
+describe('buildBenchBriefs — Phase 5A field propagation', () => {
+  it('propagates signals and levels onto bench briefs', () => {
+    const portfolio = { bench: { stocks: [STOCK_AMD], crypto: null } };
+    const priceMap = { AMD: fullPrice(150.5, 2.34) };
+    const rankingsMap = {
+      AMD: {
+        ...fullRanking({ technicalScore: 72 }),
+        sectorName: 'Technology',
+        sectorTechnicalTotal: 28,
+        nr7Flag: true,
+        momentum: { divergence: 'bearish' },
+        recentAction: { lastCandlePattern: 'bullish_engulfing' },
+        levels: {
+          nearestSupport: 145,
+          nearestResistance: 155,
+          distanceToSupportPct: -3.65,
+          distanceToResistancePct: 2.99,
+        },
+      },
+    };
+    const techScoresMap = {
+      AMD: {
+        factors: {
+          aboveSMA200: true,
+          aboveSMA50: true,
+          aboveSMA20: true,
+          rsPercentile: 80,
+          upDayVolRatio: 1.8,
+          macdFreshBullishCross: true,
+          distTo52wkHigh: -4.1,
+        },
+      },
+    };
+    const briefs = buildBenchBriefs(portfolio, priceMap, rankingsMap, techScoresMap, FROZEN_NOW);
+
+    expect(briefs[0].nr7Flag).toBe(true);
+    expect(briefs[0].macdFreshBullishCross).toBe(true);
+    expect(briefs[0].macdFreshBearishCross).toBe(false);
+    expect(briefs[0].divergence).toBe('bearish');
+    expect(briefs[0].lastCandlePattern).toBe('bullish_engulfing');
+    expect(briefs[0].nearestSupport).toBe(145);
+    expect(briefs[0].nearestResistance).toBe(155);
+    expect(briefs[0].distanceToSupportPct).toBeCloseTo(-3.65, 5);
+    expect(briefs[0].distanceToResistancePct).toBeCloseTo(2.99, 5);
+    expect(briefs[0].distTo52wkHigh).toBe(-4.1);
+    expect(briefs[0].sectorTechnicalTotal).toBe(28);
+  });
+
+  it('defaults propagated fields to null/false on a degraded bench brief', () => {
+    const portfolio = { bench: { stocks: [STOCK_AMD], crypto: null } };
+    const briefs = buildBenchBriefs(portfolio, {}, {}, {}, FROZEN_NOW);
+
+    expect(briefs[0].nr7Flag).toBe(false);
+    expect(briefs[0].macdFreshBullishCross).toBe(false);
+    expect(briefs[0].macdFreshBearishCross).toBe(false);
+    expect(briefs[0].divergence).toBeNull();
+    expect(briefs[0].lastCandlePattern).toBeNull();
+    expect(briefs[0].nearestSupport).toBeNull();
+    expect(briefs[0].nearestResistance).toBeNull();
+    expect(briefs[0].distanceToSupportPct).toBeNull();
+    expect(briefs[0].distanceToResistancePct).toBeNull();
+    expect(briefs[0].distTo52wkHigh).toBeNull();
+    expect(briefs[0].sectorTechnicalTotal).toBeNull();
   });
 });

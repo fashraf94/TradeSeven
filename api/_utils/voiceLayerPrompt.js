@@ -6,6 +6,7 @@ import { computeGameContext } from './agentNewsContext.js';
 import { getMarketState } from './marketSchedule.js';
 import { computeTimeRemaining } from './agentEvalPromptAssembly.js';
 import { wrapWithDelimiters } from './injectionGuard.js';
+import { PATTERN_DISPLAY_NAMES } from './analyticalPrimitives.js';
 
 // ==================== STATIC CONSTANTS ====================
 
@@ -944,6 +945,46 @@ function ordinalSuffix(n) {
   }
 }
 
+// ==================== PER-SYMBOL LINE HELPERS — CONTRACT ====================
+//
+// Three per-symbol line helpers exist for portfolio & bench briefs:
+//
+//   buildHeaderLine(brief)  → string         ALWAYS-EMIT
+//   buildLevelsLine(brief)  → string | null  CONDITIONAL
+//   buildSignalsLine(brief) → string | null  CONDITIONAL
+//
+// ALWAYS-EMIT helpers (return string):
+//   - Caller inlines unconditionally
+//   - Defensive null brief → returns ''; never throws, never null
+//   - At minimum returns the symbol token; segments degrade independently
+//
+// CONDITIONAL helpers (return string | null):
+//   - Caller branches: if (line) entry += `\n${line}`
+//   - Returns null when no segment predicate fires
+//   - Order within a line is fixed and locked in tests
+//
+// Key input invariants (from voice-layer-cache.js cron):
+//   - Boolean flags (nr7Flag, macdFresh*Cross) are LITERAL boolean (or
+//     undefined). Renderers use `=== true` strict identity so cron-side
+//     type drift surfaces rather than gets masked.
+//   - `divergence` is one of 'bullish' | 'bearish' | 'none' | null.
+//   - `lastCandlePattern` is a snake_case key (e.g. 'bullish_engulfing');
+//     renderer normalizes via PATTERN_DISPLAY_NAMES for display.
+//   - Numeric metrics (technicalScore, atrPercent, rsPercentile) are null
+//     when missing — never 0-as-sentinel.
+//
+// Brief vs. Snapshot schema (forward-compat note for Phase 5C):
+//   - Briefs (this file's helpers) read flat field paths: brief.nr7Flag,
+//     brief.divergence, brief.lastCandlePattern, brief.distanceToSupportPct.
+//   - Snapshots (Phase 4 — proposalHistory[i].snapshot, trades[i].snapshot)
+//     use nested categories: snapshot.momentum.macdFreshBullishCross,
+//     snapshot.levels.distanceToSupportPct, snapshot.recentAction.lastCandlePattern.
+//   - Phase 5C helpers reading snapshots cannot reuse buildHeaderLine,
+//     buildLevelsLine, buildSignalsLine directly. They must traverse the
+//     nested structure or use a separate buildSnapshotLeg helper.
+//   - See api/_utils/buildTechnicalSnapshot.js for the snapshot schema.
+// =============================================================================
+
 // Phase 5A — per-symbol header line for portfolio and bench briefs.
 //
 // Format: "SYMBOL [tier-or-assetClass] +N.N% — Score X (rank #N/total in Sector), RS Nth %ile, ATR N.N%"
@@ -975,7 +1016,8 @@ export function buildHeaderLine(brief) {
   // Score (rank #N/total in Sector) — gated on technicalScore. The rank
   // parenthetical is appended only when technicalRank is also present; the
   // /total suffix and "in Sector" qualifier degrade independently.
-  if (brief.technicalScore != null && brief.technicalScore !== 0) {
+  // F3.1: cron writes null for missing; legitimate 0 renders as "Score 0".
+  if (brief.technicalScore != null) {
     let scoreSeg = `Score ${brief.technicalScore}`;
     if (brief.technicalRank != null && brief.technicalRank !== 0) {
       let rankStr = `rank #${brief.technicalRank}`;
@@ -996,7 +1038,8 @@ export function buildHeaderLine(brief) {
   }
 
   // ATR% — render as-is (already rounded to 2 decimals at write time).
-  if (brief.atrPercent != null && brief.atrPercent !== 0) {
+  // F3.1: cron writes null for missing; legitimate 0 renders as "ATR 0%".
+  if (brief.atrPercent != null) {
     metricsParts.push(`ATR ${brief.atrPercent}%`);
   }
 
@@ -1070,7 +1113,9 @@ export function buildSignalsLine(brief) {
   if (brief.nr7Flag === true) flags.push('NR7 contraction — breakout pending.');
 
   if (typeof brief.lastCandlePattern === 'string' && brief.lastCandlePattern.trim()) {
-    flags.push(`Recent candle: ${brief.lastCandlePattern.trim()}.`);
+    const key = brief.lastCandlePattern.trim();
+    const displayName = PATTERN_DISPLAY_NAMES[key] || key.replace(/_/g, ' ');
+    flags.push(`Recent candle: ${displayName}.`);
   }
 
   if (flags.length === 0) return null;

@@ -117,7 +117,11 @@ export function buildPortfolioBriefs(portfolio, priceMap, rankingsMap, techScore
       if (!price) return;
 
       const changePercent = price.change_p || 0;
-      const technicalScore = ranking?.technicalScore ?? techScore?.technicalScore ?? 0;
+      // F3.1: null (not 0) is the missing-data sentinel for numeric metrics
+      // so renderers can distinguish "no data" from legitimate bottom-decile
+      // values. Matches the bench-brief writer convention (see line ~287)
+      // and buildTechnicalSnapshot.
+      const technicalScore = ranking?.technicalScore ?? techScore?.technicalScore ?? null;
       const technicalRank = ranking?.technicalRank ?? 0;
       const factors = techScore?.factors || {};
       const rsPercentile = factors.rsPercentile ?? 50;
@@ -167,12 +171,24 @@ export function buildPortfolioBriefs(portfolio, priceMap, rankingsMap, techScore
       const momentumSummary = momentumParts.join(' ');
 
       // Threshold proximity note (qualitative, ATR-rank-based — distinct from
-      // quantitative thresholdProximity below)
-      const atrPercentile = ranking?.atrPercentile ?? 0;
+      // quantitative thresholdProximity below). F3.1: null sentinel — the
+      // `> 0.7` predicate is false for null, so the note correctly omits.
+      const atrPercentile = ranking?.atrPercentile ?? null;
       let thresholdNote = null;
-      if (atrPercentile > 0.7) {
+      if (atrPercentile != null && atrPercentile > 0.7) {
         thresholdNote = 'High ATR — volatile, could hit thresholds quickly';
       }
+
+      // Phase 5A field propagation: surface sector context, levels, and
+      // signals into the brief so buildHeaderLine / buildLevelsLine /
+      // buildSignalsLine fire. Boolean flags use ?? false to match the
+      // upstream writer (factors.macdFresh*Cross / ranking.nr7Flag), keeping
+      // the renderer's strict `=== true` semantics defended. Source paths
+      // verified against compute-index-intelligence.js stockRankings and
+      // stockTechnicalScores writers (see Phase 5B-prep discovery report).
+      const rankingLevels = ranking?.levels || techScore?.levels || null;
+      const rankingMomentum = ranking?.momentum || techScore?.momentum || null;
+      const rankingRecent = ranking?.recentAction || techScore?.recentAction || null;
 
       const brief = {
         symbol,
@@ -187,7 +203,24 @@ export function buildPortfolioBriefs(portfolio, priceMap, rankingsMap, techScore
         supportLevel: null,
         resistanceLevel: null,
         thresholdNote,
-        atrPercent: Math.round(atrPercentile * 100) / 100,
+        atrPercent: typeof atrPercentile === 'number'
+          ? Math.round(atrPercentile * 100) / 100
+          : null,
+        // Header sector context (buildHeaderLine reads brief.sector / sectorTechnicalTotal)
+        sector: ranking?.sectorName ?? stock.sector ?? null,
+        sectorTechnicalTotal: ranking?.sectorTechnicalTotal ?? null,
+        // Levels (buildLevelsLine — gated on ±10% / ±5% thresholds in the helper)
+        nearestSupport: rankingLevels?.nearestSupport ?? null,
+        nearestResistance: rankingLevels?.nearestResistance ?? null,
+        distanceToSupportPct: rankingLevels?.distanceToSupportPct ?? null,
+        distanceToResistancePct: rankingLevels?.distanceToResistancePct ?? null,
+        distTo52wkHigh: factors?.distTo52wkHigh ?? null,
+        // Signals (buildSignalsLine — strict-bool flags; divergence is string-union)
+        nr7Flag: ranking?.nr7Flag ?? techScore?.nr7Flag ?? false,
+        macdFreshBullishCross: factors?.macdFreshBullishCross ?? false,
+        macdFreshBearishCross: factors?.macdFreshBearishCross ?? false,
+        divergence: rankingMomentum?.divergence ?? null,
+        lastCandlePattern: rankingRecent?.lastCandlePattern ?? null,
       };
 
       // Tier 0 Item 4: thresholdProximity + existingBadges
@@ -351,6 +384,13 @@ export function buildBenchBriefs(portfolio, priceMap, rankingsMap, techScoresMap
 
     const sector = asset.sector || (assetClass === 'crypto' ? 'Crypto' : 'Unknown');
 
+    // Phase 5A field propagation — same shape as portfolio brief so the
+    // shared helpers (buildLevelsLine, buildSignalsLine, buildHeaderLine
+    // sector context) fire identically for both brief types.
+    const rankingLevels = ranking?.levels || techScore?.levels || null;
+    const rankingMomentum = ranking?.momentum || techScore?.momentum || null;
+    const rankingRecent = ranking?.recentAction || techScore?.recentAction || null;
+
     const brief = {
       symbol,
       assetClass,
@@ -369,6 +409,22 @@ export function buildBenchBriefs(portfolio, priceMap, rankingsMap, techScoresMap
       atrPercent: typeof atrPercentileRaw === 'number'
         ? Math.round(atrPercentileRaw * 100) / 100
         : null,
+      // Header sector context (buildHeaderLine).
+      // `sector` is already populated from asset.sector above; sectorTechnicalTotal
+      // comes from the rankings doc.
+      sectorTechnicalTotal: ranking?.sectorTechnicalTotal ?? null,
+      // Levels (buildLevelsLine).
+      nearestSupport: rankingLevels?.nearestSupport ?? null,
+      nearestResistance: rankingLevels?.nearestResistance ?? null,
+      distanceToSupportPct: rankingLevels?.distanceToSupportPct ?? null,
+      distanceToResistancePct: rankingLevels?.distanceToResistancePct ?? null,
+      distTo52wkHigh: factors?.distTo52wkHigh ?? null,
+      // Signals (buildSignalsLine).
+      nr7Flag: ranking?.nr7Flag ?? techScore?.nr7Flag ?? false,
+      macdFreshBullishCross: factors?.macdFreshBullishCross ?? false,
+      macdFreshBearishCross: factors?.macdFreshBearishCross ?? false,
+      divergence: rankingMomentum?.divergence ?? null,
+      lastCandlePattern: rankingRecent?.lastCandlePattern ?? null,
     };
     if (trendSummary) brief.trendSummary = trendSummary;
     if (momentumSummary) brief.momentumSummary = momentumSummary;
@@ -383,7 +439,7 @@ export function buildBenchBriefs(portfolio, priceMap, rankingsMap, techScoresMap
 // SCOUT ALERTS BUILDER
 // ============================================
 
-function buildScoutAlerts(watchlist, rankingsMap, techScoresMap, archetype, portfolioSymbols) {
+export function buildScoutAlerts(watchlist, rankingsMap, techScoresMap, archetype, portfolioSymbols) {
   if (!watchlist?.active) return [];
 
   const alerts = [];
@@ -399,11 +455,15 @@ function buildScoutAlerts(watchlist, rankingsMap, techScoresMap, archetype, port
 
     const factors = techScore?.factors || {};
     const rsPercentile = factors.rsPercentile ?? 50;
-    const technicalScore = ranking?.technicalScore ?? techScore?.technicalScore ?? 0;
+    // F3.1: null sentinel for missing technical score (matches portfolio
+    // brief writer). Filter predicates use `typeof === 'number'` to
+    // explicitly exclude null rather than relying on `>= 75` being false
+    // for null.
+    const technicalScore = ranking?.technicalScore ?? techScore?.technicalScore ?? null;
     const volumeConfirmation = techScore?.volumeConfirmation ?? 0;
 
     // RS breakout: high RS + high technical score
-    if (rsPercentile >= 85 && technicalScore >= 75) {
+    if (rsPercentile >= 85 && typeof technicalScore === 'number' && technicalScore >= 75) {
       alerts.push({
         symbol,
         type: 'rs_breakout',
@@ -415,22 +475,28 @@ function buildScoutAlerts(watchlist, rankingsMap, techScoresMap, archetype, port
 
     // Volume surge
     if (volumeConfirmation >= 10) {
+      const scoreClause = typeof technicalScore === 'number'
+        ? `Technical score ${technicalScore}. `
+        : '';
       alerts.push({
         symbol,
         type: 'volume_surge',
         headline: `${symbol} unusual volume — volume score ${volumeConfirmation}/12`,
-        detail: `Technical score ${technicalScore}. ${rsPercentile >= 60 ? 'RS supportive.' : 'RS neutral or weak.'} ${(techScore?.macdScore ?? 0) >= 8 ? 'MACD expanding.' : ''}`.trim(),
+        detail: `${scoreClause}${rsPercentile >= 60 ? 'RS supportive.' : 'RS neutral or weak.'} ${(techScore?.macdScore ?? 0) >= 8 ? 'MACD expanding.' : ''}`.trim(),
         relevance: 'all',
       });
     }
 
     // Game fit: high BaggerBomb fit
     if (ranking?.baggerBombFit >= 85 && ranking?.baggerBombRank <= 15) {
+      const atrClause = typeof ranking?.atrPercentile === 'number'
+        ? `ATR percentile ${Math.round(ranking.atrPercentile * 100)}%.`
+        : 'ATR percentile N/A.';
       alerts.push({
         symbol,
         type: 'game_fit',
         headline: `${symbol} BaggerBomb Fit #${ranking.baggerBombRank} — high scoring potential`,
-        detail: `Composite score ${ranking.compositeScore ?? 'N/A'}. ATR percentile ${Math.round((ranking.atrPercentile || 0) * 100)}%.`,
+        detail: `Composite score ${ranking.compositeScore ?? 'N/A'}. ${atrClause}`,
         relevance: 'all',
       });
     }

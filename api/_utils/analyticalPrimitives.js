@@ -346,3 +346,16 @@ export function detectCandlePattern(opens, highs, lows, closes, volumes, avgVolu
 
   return null;
 }
+
+/**
+ * Display names for candle pattern keys returned by detectCandlePattern.
+ * snake_case keys map to lowercase human-readable names. Renderers consume
+ * this map so snake_case identifiers don't bleed into LLM prompts.
+ */
+export const PATTERN_DISPLAY_NAMES = {
+  bullish_engulfing: 'bullish engulfing',
+  bearish_engulfing: 'bearish engulfing',
+  hammer: 'hammer',
+  shooting_star: 'shooting star',
+  doji: 'doji',
+};
