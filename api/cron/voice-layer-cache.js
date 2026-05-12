@@ -179,6 +179,17 @@ export function buildPortfolioBriefs(portfolio, priceMap, rankingsMap, techScore
         thresholdNote = 'High ATR — volatile, could hit thresholds quickly';
       }
 
+      // Phase 5A field propagation: surface sector context, levels, and
+      // signals into the brief so buildHeaderLine / buildLevelsLine /
+      // buildSignalsLine fire. Boolean flags use ?? false to match the
+      // upstream writer (factors.macdFresh*Cross / ranking.nr7Flag), keeping
+      // the renderer's strict `=== true` semantics defended. Source paths
+      // verified against compute-index-intelligence.js stockRankings and
+      // stockTechnicalScores writers (see Phase 5B-prep discovery report).
+      const rankingLevels = ranking?.levels || techScore?.levels || null;
+      const rankingMomentum = ranking?.momentum || techScore?.momentum || null;
+      const rankingRecent = ranking?.recentAction || techScore?.recentAction || null;
+
       const brief = {
         symbol,
         tier,
@@ -195,6 +206,21 @@ export function buildPortfolioBriefs(portfolio, priceMap, rankingsMap, techScore
         atrPercent: typeof atrPercentile === 'number'
           ? Math.round(atrPercentile * 100) / 100
           : null,
+        // Header sector context (buildHeaderLine reads brief.sector / sectorTechnicalTotal)
+        sector: ranking?.sectorName ?? stock.sector ?? null,
+        sectorTechnicalTotal: ranking?.sectorTechnicalTotal ?? null,
+        // Levels (buildLevelsLine — gated on ±10% / ±5% thresholds in the helper)
+        nearestSupport: rankingLevels?.nearestSupport ?? null,
+        nearestResistance: rankingLevels?.nearestResistance ?? null,
+        distanceToSupportPct: rankingLevels?.distanceToSupportPct ?? null,
+        distanceToResistancePct: rankingLevels?.distanceToResistancePct ?? null,
+        distTo52wkHigh: factors?.distTo52wkHigh ?? null,
+        // Signals (buildSignalsLine — strict-bool flags; divergence is string-union)
+        nr7Flag: ranking?.nr7Flag ?? techScore?.nr7Flag ?? false,
+        macdFreshBullishCross: factors?.macdFreshBullishCross ?? false,
+        macdFreshBearishCross: factors?.macdFreshBearishCross ?? false,
+        divergence: rankingMomentum?.divergence ?? null,
+        lastCandlePattern: rankingRecent?.lastCandlePattern ?? null,
       };
 
       // Tier 0 Item 4: thresholdProximity + existingBadges
@@ -358,6 +384,13 @@ export function buildBenchBriefs(portfolio, priceMap, rankingsMap, techScoresMap
 
     const sector = asset.sector || (assetClass === 'crypto' ? 'Crypto' : 'Unknown');
 
+    // Phase 5A field propagation — same shape as portfolio brief so the
+    // shared helpers (buildLevelsLine, buildSignalsLine, buildHeaderLine
+    // sector context) fire identically for both brief types.
+    const rankingLevels = ranking?.levels || techScore?.levels || null;
+    const rankingMomentum = ranking?.momentum || techScore?.momentum || null;
+    const rankingRecent = ranking?.recentAction || techScore?.recentAction || null;
+
     const brief = {
       symbol,
       assetClass,
@@ -376,6 +409,22 @@ export function buildBenchBriefs(portfolio, priceMap, rankingsMap, techScoresMap
       atrPercent: typeof atrPercentileRaw === 'number'
         ? Math.round(atrPercentileRaw * 100) / 100
         : null,
+      // Header sector context (buildHeaderLine).
+      // `sector` is already populated from asset.sector above; sectorTechnicalTotal
+      // comes from the rankings doc.
+      sectorTechnicalTotal: ranking?.sectorTechnicalTotal ?? null,
+      // Levels (buildLevelsLine).
+      nearestSupport: rankingLevels?.nearestSupport ?? null,
+      nearestResistance: rankingLevels?.nearestResistance ?? null,
+      distanceToSupportPct: rankingLevels?.distanceToSupportPct ?? null,
+      distanceToResistancePct: rankingLevels?.distanceToResistancePct ?? null,
+      distTo52wkHigh: factors?.distTo52wkHigh ?? null,
+      // Signals (buildSignalsLine).
+      nr7Flag: ranking?.nr7Flag ?? techScore?.nr7Flag ?? false,
+      macdFreshBullishCross: factors?.macdFreshBullishCross ?? false,
+      macdFreshBearishCross: factors?.macdFreshBearishCross ?? false,
+      divergence: rankingMomentum?.divergence ?? null,
+      lastCandlePattern: rankingRecent?.lastCandlePattern ?? null,
     };
     if (trendSummary) brief.trendSummary = trendSummary;
     if (momentumSummary) brief.momentumSummary = momentumSummary;
