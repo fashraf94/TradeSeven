@@ -947,11 +947,12 @@ function ordinalSuffix(n) {
 
 // ==================== PER-SYMBOL LINE HELPERS — CONTRACT ====================
 //
-// Three per-symbol line helpers exist for portfolio & bench briefs:
+// Four per-symbol line helpers exist for portfolio & bench briefs:
 //
-//   buildHeaderLine(brief)  → string         ALWAYS-EMIT
-//   buildLevelsLine(brief)  → string | null  CONDITIONAL
-//   buildSignalsLine(brief) → string | null  CONDITIONAL
+//   buildHeaderLine(brief)   → string         ALWAYS-EMIT
+//   buildLevelsLine(brief)   → string | null  CONDITIONAL
+//   buildSignalsLine(brief)  → string | null  CONDITIONAL
+//   buildIntradayLine(brief) → string | null  CONDITIONAL  (portfolio-only)
 //
 // ALWAYS-EMIT helpers (return string):
 //   - Caller inlines unconditionally
@@ -1120,6 +1121,50 @@ export function buildSignalsLine(brief) {
 
   if (flags.length === 0) return null;
   return `Signals: ${flags.join(' ')}`;
+}
+
+// Phase 5B — per-symbol intraday line. Renders session VWAP and 5-min SMA20
+// positioning as deviation prose ("0.7% above session VWAP"). Each segment
+// self-gates on `typeof === 'number'`; near-zero (|deviation| < 0.05)
+// collapses to "at <reference>" so 0.04% doesn't read as "0.0% above".
+// Returns null when neither segment fires (e.g., bench briefs, or the
+// portfolio brief's first 100 minutes of trading before sma20_5m is
+// available AND the intraday fetch failed for vwap).
+//
+// Brief input invariant (from voice-layer-cache.js cron):
+//   - brief.intraday is { vwap, currentPrice, vwapDeviation, sma20_5m } or null.
+//     vwap/currentPrice/vwapDeviation travel together (atomic from
+//     calculateVWAP). sma20_5m is independently nullable when <20 5m candles
+//     have closed for the session.
+export function buildIntradayLine(brief) {
+  if (!brief?.intraday) return null;
+  const intraday = brief.intraday;
+  const segments = [];
+
+  if (typeof intraday.vwapDeviation === 'number') {
+    const dev = intraday.vwapDeviation;
+    if (Math.abs(dev) < 0.05) {
+      segments.push('at session VWAP');
+    } else if (dev > 0) {
+      segments.push(`${dev.toFixed(1)}% above session VWAP`);
+    } else {
+      segments.push(`${Math.abs(dev).toFixed(1)}% below session VWAP`);
+    }
+  }
+
+  if (typeof intraday.sma20_5m === 'number' && typeof intraday.currentPrice === 'number') {
+    const dev = ((intraday.currentPrice - intraday.sma20_5m) / intraday.sma20_5m) * 100;
+    if (Math.abs(dev) < 0.05) {
+      segments.push('at 5m SMA20');
+    } else if (dev > 0) {
+      segments.push(`${dev.toFixed(1)}% above 5m SMA20`);
+    } else {
+      segments.push(`${Math.abs(dev).toFixed(1)}% below 5m SMA20`);
+    }
+  }
+
+  if (segments.length === 0) return null;
+  return `Intraday: ${segments.join(', ')}.`;
 }
 
 export function buildPortfolioBriefsBlock(marketSnapshot) {
