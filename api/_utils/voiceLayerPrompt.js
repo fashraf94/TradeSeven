@@ -1182,6 +1182,9 @@ export function buildPortfolioBriefsBlock(marketSnapshot) {
     const signalsLine = buildSignalsLine(b);
     if (signalsLine) entry += `\n${signalsLine}`;
 
+    const intradayLine = buildIntradayLine(b);
+    if (intradayLine) entry += `\n${intradayLine}`;
+
     if (b.thresholdNote) entry += `\nBaggerBomb: ${b.thresholdNote}`;
 
     // Tier 0 Item 4: threshold proximity render lines.

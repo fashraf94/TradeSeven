@@ -1970,3 +1970,86 @@ describe('Phase 5B-prep integration — buildBenchBriefsBlock parity with portfo
     expect(out).not.toContain('Signals:');
   });
 });
+
+describe('Phase 5B-main integration — buildPortfolioBriefsBlock wires Intraday line', () => {
+  it('includes the Intraday line when brief.intraday has VWAP + SMA20 data', () => {
+    const out = buildPortfolioBriefsBlock({
+      portfolioBriefs: [realisticPortfolioBrief({
+        intraday: { vwap: 422.5, currentPrice: 425.5, vwapDeviation: 0.7, sma20_5m: 425.1 },
+        macdFreshBullishCross: false,
+        divergence: 'none',
+        nr7Flag: false,
+        lastCandlePattern: null,
+        nearestSupport: null,
+        nearestResistance: null,
+        distanceToSupportPct: null,
+        distanceToResistancePct: null,
+        distTo52wkHigh: null,
+      })],
+    });
+    expect(out).toContain('Intraday: 0.7% above session VWAP, 0.1% above 5m SMA20.');
+  });
+
+  it('omits the Intraday line when brief.intraday is null', () => {
+    const out = buildPortfolioBriefsBlock({
+      portfolioBriefs: [realisticPortfolioBrief({ intraday: null })],
+    });
+    expect(out).not.toContain('Intraday:');
+  });
+
+  it('omits the Intraday line when brief.intraday has no numeric components', () => {
+    const out = buildPortfolioBriefsBlock({
+      portfolioBriefs: [realisticPortfolioBrief({
+        intraday: { vwap: null, currentPrice: null, vwapDeviation: null, sma20_5m: null },
+      })],
+    });
+    expect(out).not.toContain('Intraday:');
+  });
+
+  it('places Intraday line AFTER Signals and BEFORE BaggerBomb/threshold section', () => {
+    const out = buildPortfolioBriefsBlock({
+      portfolioBriefs: [realisticPortfolioBrief({
+        intraday: { vwap: 422.5, currentPrice: 425.5, vwapDeviation: 0.7, sma20_5m: 425.1 },
+        macdFreshBullishCross: true,
+        divergence: 'none',
+        nr7Flag: false,
+        lastCandlePattern: null,
+        thresholdNote: 'High ATR — volatile, could hit thresholds quickly',
+      })],
+    });
+    const signalsIdx = out.indexOf('Signals:');
+    const intradayIdx = out.indexOf('Intraday:');
+    const baggerIdx = out.indexOf('BaggerBomb:');
+    expect(signalsIdx).toBeGreaterThan(-1);
+    expect(intradayIdx).toBeGreaterThan(signalsIdx);
+    expect(baggerIdx).toBeGreaterThan(intradayIdx);
+  });
+
+  it('renders Intraday line even when Signals line is absent (independent gating)', () => {
+    const out = buildPortfolioBriefsBlock({
+      portfolioBriefs: [realisticPortfolioBrief({
+        intraday: { vwap: 422.5, currentPrice: 425.5, vwapDeviation: 0.7, sma20_5m: null },
+        macdFreshBullishCross: false,
+        macdFreshBearishCross: false,
+        divergence: 'none',
+        nr7Flag: false,
+        lastCandlePattern: null,
+      })],
+    });
+    expect(out).not.toContain('Signals:');
+    expect(out).toContain('Intraday: 0.7% above session VWAP.');
+  });
+
+  it('buildBenchBriefsBlock does NOT render an Intraday line (bench has no intraday data)', () => {
+    // Even if someone hand-crafts an intraday object on a bench brief, the
+    // bench renderer doesn't call buildIntradayLine — bench-side intraday
+    // is intentionally out of scope (cron doesn't compute it).
+    const out = buildBenchBriefsBlock({
+      benchBriefs: [{
+        ...realisticBenchBrief(),
+        intraday: { vwap: 150, currentPrice: 151, vwapDeviation: 0.67, sma20_5m: 150.5 },
+      }],
+    });
+    expect(out).not.toContain('Intraday:');
+  });
+});
