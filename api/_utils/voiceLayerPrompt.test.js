@@ -896,7 +896,9 @@ describe('buildHeaderLine — Phase 5A', () => {
     expect(out).toContain('ATR 4.2%');
   });
 
-  it('skips the ATR segment when atrPercent is missing or zero', () => {
+  // F3.1: atrPercent === 0 is a legitimate value (lowest-decile ATR) and must
+  // render. Missing data is null at the cron layer, not 0. Same for technicalScore.
+  it('renders "ATR 0%" when atrPercent is the legitimate value 0', () => {
     const out = buildHeaderLine({
       symbol: 'NVDA',
       tier: 'star',
@@ -907,7 +909,45 @@ describe('buildHeaderLine — Phase 5A', () => {
     });
     expect(out).toContain('Score 87');
     expect(out).toContain('RS 87th %ile');
+    expect(out).toContain('ATR 0%');
+  });
+
+  it('omits the ATR segment when atrPercent is null (missing)', () => {
+    const out = buildHeaderLine({
+      symbol: 'NVDA',
+      tier: 'star',
+      changePercent: 2.43,
+      technicalScore: 87,
+      rsPercentile: 87,
+      atrPercent: null,
+    });
+    expect(out).toContain('Score 87');
+    expect(out).toContain('RS 87th %ile');
     expect(out).not.toContain('ATR');
+  });
+
+  it('renders "Score 0" when technicalScore is the legitimate value 0', () => {
+    const out = buildHeaderLine({
+      symbol: 'XYZ',
+      tier: 'support',
+      changePercent: -3.2,
+      technicalScore: 0,
+      rsPercentile: 12,
+    });
+    expect(out).toContain('Score 0');
+    expect(out).toContain('RS 12th %ile');
+  });
+
+  it('omits the Score segment when technicalScore is null (missing)', () => {
+    const out = buildHeaderLine({
+      symbol: 'XYZ',
+      tier: 'support',
+      changePercent: -3.2,
+      technicalScore: null,
+      rsPercentile: 12,
+    });
+    expect(out).not.toContain('Score');
+    expect(out).toContain('RS 12th %ile');
   });
 
   it('returns just SYMBOL [tier] +N% with no em-dash when all metrics are null', () => {

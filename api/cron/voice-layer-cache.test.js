@@ -2,7 +2,7 @@
 // Tier 0 Item 1: bench data exposure — buildBenchBriefs unit tests.
 
 import { describe, it, expect } from 'vitest';
-import { buildBenchBriefs, buildMarketContextBlock, buildPortfolioBriefs } from './voice-layer-cache.js';
+import { buildBenchBriefs, buildMarketContextBlock, buildPortfolioBriefs, buildScoutAlerts } from './voice-layer-cache.js';
 
 // ==================== FIXTURES ====================
 
@@ -700,5 +700,137 @@ describe('buildPortfolioBriefs — intraday momentum overlay (Phase 3)', () => {
       expect(briefs[0].symbol).toBe('BTC');
       expect(briefs[0].intraday).toBeNull();
     }).not.toThrow();
+  });
+});
+
+// ==================== F3.1 — SENTINEL-ZERO CLEANUP ====================
+
+// Portfolio and bench writers must agree on the missing-data sentinel.
+// Cron writes explicit null for missing technicalScore / atrPercent so
+// renderers can distinguish "no data" from legitimate bottom-decile values.
+
+describe('buildPortfolioBriefs — null sentinel for missing technicalScore / atrPercent (F3.1)', () => {
+  it('writes null technicalScore when both ranking and techScore are missing', () => {
+    const stock = activeStock({ symbol: 'AAPL' });
+    const priceMap = { AAPL: priceFromMultiplier(0.3, 2.5) };
+    const briefs = buildPortfolioBriefs(activePortfolio(stock), priceMap, {}, {}, {}, {});
+
+    expect(briefs).toHaveLength(1);
+    expect(briefs[0].technicalScore).toBeNull();
+  });
+
+  it('writes null atrPercent when ranking lacks atrPercentile', () => {
+    const stock = activeStock({ symbol: 'AAPL' });
+    const priceMap = { AAPL: priceFromMultiplier(0.3, 2.5) };
+    const briefs = buildPortfolioBriefs(activePortfolio(stock), priceMap, {}, {}, {}, {});
+
+    expect(briefs[0].atrPercent).toBeNull();
+  });
+
+  it('preserves legitimate technicalScore: 0 (does not coerce to null)', () => {
+    const stock = activeStock({ symbol: 'AAPL' });
+    const priceMap = { AAPL: priceFromMultiplier(0.3, 2.5) };
+    const rankingsMap = { AAPL: { technicalScore: 0, technicalRank: 500, atrPercentile: 0.55 } };
+    const briefs = buildPortfolioBriefs(activePortfolio(stock), priceMap, rankingsMap, {}, {}, {});
+
+    expect(briefs[0].technicalScore).toBe(0);
+  });
+
+  it('preserves legitimate atrPercentile: 0 (rounded to atrPercent: 0, not null)', () => {
+    const stock = activeStock({ symbol: 'AAPL' });
+    const priceMap = { AAPL: priceFromMultiplier(0.3, 2.5) };
+    const rankingsMap = { AAPL: { technicalScore: 50, technicalRank: 100, atrPercentile: 0 } };
+    const briefs = buildPortfolioBriefs(activePortfolio(stock), priceMap, rankingsMap, {}, {}, {});
+
+    expect(briefs[0].atrPercent).toBe(0);
+  });
+
+  it('matches bench-brief writer convention: same input → same null vs value output', () => {
+    // Active (portfolio) brief with missing data
+    const activeStockObj = activeStock({ symbol: 'AAPL' });
+    const priceMap = { AAPL: priceFromMultiplier(0.3, 2.5) };
+    const portfolioBriefs = buildPortfolioBriefs(activePortfolio(activeStockObj), priceMap, {}, {}, {}, {});
+
+    // Bench brief with the same shape — also missing data
+    const benchStock = { symbol: 'AAPL', name: 'Apple', baseATR: 2.5, isCrypto: false, sector: 'Technology' };
+    const benchPortfolio = { bench: { stocks: [benchStock], crypto: null } };
+    const benchBriefs = buildBenchBriefs(benchPortfolio, priceMap, {}, {}, FROZEN_NOW);
+
+    expect(portfolioBriefs[0].technicalScore).toBeNull();
+    expect(benchBriefs[0].technicalScore).toBeNull();
+    expect(portfolioBriefs[0].atrPercent).toBeNull();
+    expect(benchBriefs[0].atrPercent).toBeNull();
+  });
+
+  it('does not emit thresholdNote when atrPercentile is null', () => {
+    const stock = activeStock({ symbol: 'AAPL' });
+    const priceMap = { AAPL: priceFromMultiplier(0.3, 2.5) };
+    const briefs = buildPortfolioBriefs(activePortfolio(stock), priceMap, {}, {}, {}, {});
+
+    expect(briefs[0].thresholdNote).toBeNull();
+  });
+});
+
+describe('buildScoutAlerts — null-safe technicalScore predicate (F3.1)', () => {
+  function watchlist(symbols) {
+    return { active: symbols.map(s => ({ symbol: s })) };
+  }
+
+  it('excludes a watchlist symbol from rs_breakout when technicalScore is null', () => {
+    const techScoresMap = {
+      XYZ: { factors: { rsPercentile: 90 } },
+    };
+    const rankingsMap = {}; // no ranking entry → technicalScore resolves to null
+    const alerts = buildScoutAlerts(watchlist(['XYZ']), rankingsMap, techScoresMap, 'momentum_chaser', new Set());
+
+    const rsAlerts = alerts.filter(a => a.type === 'rs_breakout');
+    expect(rsAlerts).toHaveLength(0);
+  });
+
+  it('admits an rs_breakout when technicalScore is a legitimate number >= 75', () => {
+    const techScoresMap = {
+      XYZ: { factors: { rsPercentile: 90 }, volumeConfirmation: 6 },
+    };
+    const rankingsMap = { XYZ: { technicalScore: 82, technicalRank: 4 } };
+    const alerts = buildScoutAlerts(watchlist(['XYZ']), rankingsMap, techScoresMap, 'momentum_chaser', new Set());
+
+    const rsAlerts = alerts.filter(a => a.type === 'rs_breakout');
+    expect(rsAlerts).toHaveLength(1);
+    expect(rsAlerts[0].detail).toContain('Technical score 82');
+  });
+
+  it('volume_surge alert omits the "Technical score" clause when technicalScore is null', () => {
+    const techScoresMap = {
+      XYZ: { factors: { rsPercentile: 50 }, volumeConfirmation: 11 },
+    };
+    const rankingsMap = {};
+    const alerts = buildScoutAlerts(watchlist(['XYZ']), rankingsMap, techScoresMap, 'all', new Set());
+
+    const surge = alerts.find(a => a.type === 'volume_surge');
+    expect(surge).toBeDefined();
+    expect(surge.detail).not.toContain('Technical score');
+    expect(surge.detail).not.toContain('null');
+  });
+
+  it('game_fit alert reads "ATR percentile N/A." when atrPercentile is missing', () => {
+    const rankingsMap = {
+      XYZ: { baggerBombFit: 90, baggerBombRank: 5, compositeScore: 75 },
+    };
+    const alerts = buildScoutAlerts(watchlist(['XYZ']), rankingsMap, {}, 'all', new Set());
+
+    const fit = alerts.find(a => a.type === 'game_fit');
+    expect(fit).toBeDefined();
+    expect(fit.detail).toContain('ATR percentile N/A.');
+  });
+
+  it('game_fit alert shows 0% when atrPercentile is the legitimate value 0', () => {
+    const rankingsMap = {
+      XYZ: { baggerBombFit: 90, baggerBombRank: 5, compositeScore: 75, atrPercentile: 0 },
+    };
+    const alerts = buildScoutAlerts(watchlist(['XYZ']), rankingsMap, {}, 'all', new Set());
+
+    const fit = alerts.find(a => a.type === 'game_fit');
+    expect(fit).toBeDefined();
+    expect(fit.detail).toContain('ATR percentile 0%.');
   });
 });

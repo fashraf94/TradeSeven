@@ -1005,7 +1005,8 @@ export function buildHeaderLine(brief) {
   // Score (rank #N/total in Sector) — gated on technicalScore. The rank
   // parenthetical is appended only when technicalRank is also present; the
   // /total suffix and "in Sector" qualifier degrade independently.
-  if (brief.technicalScore != null && brief.technicalScore !== 0) {
+  // F3.1: cron writes null for missing; legitimate 0 renders as "Score 0".
+  if (brief.technicalScore != null) {
     let scoreSeg = `Score ${brief.technicalScore}`;
     if (brief.technicalRank != null && brief.technicalRank !== 0) {
       let rankStr = `rank #${brief.technicalRank}`;
@@ -1026,7 +1027,8 @@ export function buildHeaderLine(brief) {
   }
 
   // ATR% — render as-is (already rounded to 2 decimals at write time).
-  if (brief.atrPercent != null && brief.atrPercent !== 0) {
+  // F3.1: cron writes null for missing; legitimate 0 renders as "ATR 0%".
+  if (brief.atrPercent != null) {
     metricsParts.push(`ATR ${brief.atrPercent}%`);
   }
 
