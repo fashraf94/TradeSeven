@@ -321,6 +321,27 @@ describe('buildBenchTechnicalBlock', () => {
     expect(out).toContain('Momentum: divergence=bearish');
   });
 
+  // F3.4 — compound snake_case pattern names are normalized via PATTERN_DISPLAY_NAMES.
+  it('renders "Recent action: bullish engulfing" for snake_case bullish_engulfing', () => {
+    const bench = makeBench({ stocks: [{ symbol: 'NVDA', sector: 'Technology' }] });
+    const rankingsMap = {
+      NVDA: makeRanking({ symbol: 'NVDA', recentAction: { lastCandlePattern: 'bullish_engulfing' } }),
+    };
+    const out = buildBenchTechnicalBlock(bench, rankingsMap, {});
+    expect(out).toContain('Recent action: bullish engulfing');
+    expect(out).not.toContain('bullish_engulfing');
+  });
+
+  it('renders "Recent action: shooting star" for snake_case shooting_star', () => {
+    const bench = makeBench({ stocks: [{ symbol: 'NVDA', sector: 'Technology' }] });
+    const rankingsMap = {
+      NVDA: makeRanking({ symbol: 'NVDA', recentAction: { lastCandlePattern: 'shooting_star' } }),
+    };
+    const out = buildBenchTechnicalBlock(bench, rankingsMap, {});
+    expect(out).toContain('Recent action: shooting star');
+    expect(out).not.toContain('shooting_star');
+  });
+
   it('skips a symbol entirely when both ranking and tech are missing', () => {
     const bench = makeBench({
       stocks: [

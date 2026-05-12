@@ -1084,6 +1084,38 @@ describe('buildSignalsLine — Phase 5A', () => {
       lastCandlePattern: null,
     })).toBeNull();
   });
+
+  // F3.4 — lastCandlePattern display normalization via PATTERN_DISPLAY_NAMES.
+  it('renders "Recent candle: bullish engulfing." for snake_case bullish_engulfing', () => {
+    const out = buildSignalsLine({ lastCandlePattern: 'bullish_engulfing' });
+    expect(out).toBe('Signals: Recent candle: bullish engulfing.');
+  });
+
+  it('renders "Recent candle: bearish engulfing." for snake_case bearish_engulfing', () => {
+    const out = buildSignalsLine({ lastCandlePattern: 'bearish_engulfing' });
+    expect(out).toBe('Signals: Recent candle: bearish engulfing.');
+  });
+
+  it('renders "Recent candle: shooting star." for snake_case shooting_star', () => {
+    const out = buildSignalsLine({ lastCandlePattern: 'shooting_star' });
+    expect(out).toBe('Signals: Recent candle: shooting star.');
+  });
+
+  it('renders single-word patterns unchanged (doji, hammer)', () => {
+    expect(buildSignalsLine({ lastCandlePattern: 'doji' })).toBe('Signals: Recent candle: doji.');
+    expect(buildSignalsLine({ lastCandlePattern: 'hammer' })).toBe('Signals: Recent candle: hammer.');
+  });
+
+  it('falls back to underscore-replaced display for keys not in PATTERN_DISPLAY_NAMES', () => {
+    const out = buildSignalsLine({ lastCandlePattern: 'morning_star' });
+    expect(out).toBe('Signals: Recent candle: morning star.');
+  });
+
+  // F3.3 — strict-boolean contract for nr7Flag (locks the renderer behavior).
+  it('does NOT render NR7 line when nr7Flag is a truthy non-boolean (e.g. 1)', () => {
+    expect(buildSignalsLine({ nr7Flag: 1 })).toBeNull();
+    expect(buildSignalsLine({ nr7Flag: 'true' })).toBeNull();
+  });
 });
 
 describe('buildPortfolioBriefsBlock — Phase 5A integration', () => {

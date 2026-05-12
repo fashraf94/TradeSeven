@@ -6,6 +6,7 @@ import { computeGameContext } from './agentNewsContext.js';
 import { getMarketState } from './marketSchedule.js';
 import { computeTimeRemaining } from './agentEvalPromptAssembly.js';
 import { wrapWithDelimiters } from './injectionGuard.js';
+import { PATTERN_DISPLAY_NAMES } from './analyticalPrimitives.js';
 
 // ==================== STATIC CONSTANTS ====================
 
@@ -1099,7 +1100,9 @@ export function buildSignalsLine(brief) {
   if (brief.nr7Flag === true) flags.push('NR7 contraction — breakout pending.');
 
   if (typeof brief.lastCandlePattern === 'string' && brief.lastCandlePattern.trim()) {
-    flags.push(`Recent candle: ${brief.lastCandlePattern.trim()}.`);
+    const key = brief.lastCandlePattern.trim();
+    const displayName = PATTERN_DISPLAY_NAMES[key] || key.replace(/_/g, ' ');
+    flags.push(`Recent candle: ${displayName}.`);
   }
 
   if (flags.length === 0) return null;
