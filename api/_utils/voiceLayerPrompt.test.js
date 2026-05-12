@@ -1488,3 +1488,48 @@ describe('buildVoiceLayerPrompt — battle-mode confusion handler', () => {
     expect(out).toContain('RESPONSE FORMAT — You MUST respond with valid JSON only.');
   });
 });
+
+// =============================================================================
+// Phase 5A — DATA_CONFIDENCE_RULE percentile-bands carve-out.
+// The rule is internal-only (not exported) so we assert via the assembled
+// prompt. The rule is pushed into battle mode when marketSnapshot is truthy.
+// =============================================================================
+
+describe('DATA_CONFIDENCE_RULE — Phase 5A percentile-bands carve-out', () => {
+  const minimalAgent = {
+    name: 'Gemma',
+    archetype: 'strategist',
+    stats: { gamesPlayed: 1, wins: 0, losses: 0 },
+  };
+  const minimalBattle = {
+    gameMode: 'standard',
+    portfolio: { star: [], core: [], support: [] },
+    scoreState: { currentScore: 0, opponentScore: 0 },
+  };
+  const minimalElicitation = {
+    dimension: 'risk_appetite',
+    instruction: 'probe risk appetite',
+  };
+
+  it('battle prompt embeds the new percentile-bands carve-out sentence when marketSnapshot is present', () => {
+    const out = buildVoiceLayerPrompt({
+      agent: minimalAgent,
+      battle: minimalBattle,
+      elicitationTarget: minimalElicitation,
+      conversationHistory: [],
+      anchorContext: null,
+      marketSnapshot: { portfolioBriefs: [], benchBriefs: [], scoutAlerts: [] },
+      mode: 'battle',
+    });
+
+    // New Phase 5A clause — percentile/rank paraphrasing allowed; raw
+    // indicator values still forbidden.
+    expect(out).toContain('Percentile and rank values may be paraphrased as bands');
+    expect(out).toContain('"top decile,"');
+    expect(out).toContain('"best in sector"');
+    expect(out).toContain('raw indicator values (RSI, ATR%, BB%B) should not appear verbatim');
+    // Existing clauses preserved.
+    expect(out).toContain('Portfolio data refreshes every 15 minutes.');
+    expect(out).toContain('Never invent numbers — if a field is missing, skip it entirely.');
+  });
+});

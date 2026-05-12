@@ -1202,7 +1202,7 @@ Yields: ${mc.yieldRegime}`;
 }
 
 const DATA_CONFIDENCE_RULE = `DATA CONFIDENCE:
-Portfolio data refreshes every 15 minutes. Frame prices as trends, not exact current values. Say "CF is up solidly today" not "CF is at $78.42." If data feels stale, acknowledge it: "as of last check." Never invent numbers — if a field is missing, skip it entirely.`;
+Portfolio data refreshes every 15 minutes. Frame prices as trends, not exact current values. Say "CF is up solidly today" not "CF is at $78.42." If data feels stale, acknowledge it: "as of last check." Percentile and rank values may be paraphrased as bands ("top decile," "best in sector") in responses; raw indicator values (RSI, ATR%, BB%B) should not appear verbatim. Never invent numbers — if a field is missing, skip it entirely.`;
 
 // ==================== WORKSHOP ANCHOR BLOCK ====================
 
