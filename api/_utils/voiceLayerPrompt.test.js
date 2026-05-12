@@ -1490,12 +1490,15 @@ describe('buildVoiceLayerPrompt — battle-mode confusion handler', () => {
 });
 
 // =============================================================================
-// Phase 5A — DATA_CONFIDENCE_RULE percentile-bands carve-out.
+// Phase 5A — DATA_CONFIDENCE_RULE prompt-vs-response framing.
 // The rule is internal-only (not exported) so we assert via the assembled
 // prompt. The rule is pushed into battle mode when marketSnapshot is truthy.
+// Pre-merge refinement (audit F4.1, F4.2): the rule now explicitly frames
+// the show-in-prompt-vs-quote-in-response distinction and uses illustrative
+// (not exhaustive) examples.
 // =============================================================================
 
-describe('DATA_CONFIDENCE_RULE — Phase 5A percentile-bands carve-out', () => {
+describe('DATA_CONFIDENCE_RULE — Phase 5A prompt-vs-response framing', () => {
   const minimalAgent = {
     name: 'Gemma',
     archetype: 'strategist',
@@ -1511,7 +1514,7 @@ describe('DATA_CONFIDENCE_RULE — Phase 5A percentile-bands carve-out', () => {
     instruction: 'probe risk appetite',
   };
 
-  it('battle prompt embeds the new percentile-bands carve-out sentence when marketSnapshot is present', () => {
+  it('battle prompt embeds the prompt-vs-response framing sentence and positive examples', () => {
     const out = buildVoiceLayerPrompt({
       agent: minimalAgent,
       battle: minimalBattle,
@@ -1522,14 +1525,42 @@ describe('DATA_CONFIDENCE_RULE — Phase 5A percentile-bands carve-out', () => {
       mode: 'battle',
     });
 
-    // New Phase 5A clause — percentile/rank paraphrasing allowed; raw
-    // indicator values still forbidden.
-    expect(out).toContain('Percentile and rank values may be paraphrased as bands');
+    // New framing sentence — addresses audit F4.1 (show in prompt ≠ quote
+    // in response) and F4.2 (illustrative examples covering Score, RS, ATR).
+    expect(out).toContain('show raw indicator values');
+    expect(out).toContain('"ATR 4.2%"');
+    expect(out).toContain('"Score 87"');
+    expect(out).toContain('"RS 87th %ile"');
+    expect(out).toContain('do not quote these verbatim in responses');
+
+    // Positive paraphrase guidance — raw indicators qualitative; percentiles
+    // and ranks as bands.
+    expect(out).toContain('Interpret raw indicators qualitatively');
+    expect(out).toContain('"volatility is elevated"');
+    expect(out).toContain('paraphrase percentiles and ranks as bands');
     expect(out).toContain('"top decile,"');
     expect(out).toContain('"best in sector"');
-    expect(out).toContain('raw indicator values (RSI, ATR%, BB%B) should not appear verbatim');
+
     // Existing clauses preserved.
     expect(out).toContain('Portfolio data refreshes every 15 minutes.');
     expect(out).toContain('Never invent numbers — if a field is missing, skip it entirely.');
+  });
+
+  it('exhaustive-looking parenthetical list is gone (audit F4.2 lock-in)', () => {
+    const out = buildVoiceLayerPrompt({
+      agent: minimalAgent,
+      battle: minimalBattle,
+      elicitationTarget: minimalElicitation,
+      conversationHistory: [],
+      anchorContext: null,
+      marketSnapshot: { portfolioBriefs: [], benchBriefs: [], scoutAlerts: [] },
+      mode: 'battle',
+    });
+
+    // Old wording listed three indicators as if exhaustive — Technical
+    // Score wasn't on that list, which invited misinterpretation. The
+    // refined rule uses "e.g." with broader coverage instead.
+    expect(out).not.toContain('raw indicator values (RSI, ATR%, BB%B) should not appear verbatim');
+    expect(out).not.toContain('Percentile and rank values may be paraphrased as bands ("top decile," "best in sector") in responses; raw indicator values');
   });
 });
