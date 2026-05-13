@@ -987,6 +987,31 @@ function ordinalSuffix(n) {
 //   - See api/_utils/buildTechnicalSnapshot.js for the snapshot schema.
 // =============================================================================
 
+// ==================== SNAPSHOT REGIME DETECTOR (PHASE 5C) ====================
+//
+// Phase 4 snapshots ride on proposalHistory[i].snapshot and trades[i].snapshot.
+// The intraday sub-block was captured under three different regimes:
+//
+//   Pre-Fix-v1   (capturedAt <  2026-05-12 17:39 UTC) — intraday.vwap is a
+//                multi-month aggregate mislabeled as session. Suppress.
+//   Fix-v1-era   (2026-05-12 17:39 UTC ≤ capturedAt < 2026-05-13 04:04 UTC) —
+//                intraday.vwap is typically null (over-filtered). Suppress.
+//   Post-Fix-v2  (capturedAt ≥ 2026-05-13 04:04 UTC) — true session VWAP,
+//                intraday.sessionDate populated. Render.
+//
+// Detection is field-presence-primary (sessionDate ⇒ post-fixv2) with the
+// Fix v1 merge timestamp as the A-vs-B fallback. capturedAt is always present
+// per buildTechnicalSnapshot.js, but defensive null handling defaults to
+// 'fixv1-era' so the intraday suppression path runs and the renderer stays safe.
+const FIX_V1_MERGE_UTC = Date.parse('2026-05-12T17:39:00Z');
+
+export function detectSnapshotRegime(snapshot) {
+  if (snapshot?.intraday?.sessionDate != null) return 'post-fixv2';
+  const capturedAt = snapshot?.capturedAt ? Date.parse(snapshot.capturedAt) : NaN;
+  if (Number.isFinite(capturedAt) && capturedAt < FIX_V1_MERGE_UTC) return 'pre-fixv1';
+  return 'fixv1-era';
+}
+
 // Phase 5A — per-symbol header line for portfolio and bench briefs.
 //
 // Format: "SYMBOL [tier-or-assetClass] +N.N% — Score X (rank #N/total in Sector), RS Nth %ile, ATR N.N%"

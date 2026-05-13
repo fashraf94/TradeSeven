@@ -24,10 +24,57 @@ vi.mock('./marketSchedule.js', async (importOriginal) => {
   };
 });
 
-import { buildBenchBriefsBlock, buildBattleState, buildMarketSnapshotContext, buildPortfolioBriefsBlock, buildVoiceLayerPrompt, buildReviewContext, buildHeaderLine, buildLevelsLine, buildSignalsLine, buildIntradayLine } from './voiceLayerPrompt.js';
+import { buildBenchBriefsBlock, buildBattleState, buildMarketSnapshotContext, buildPortfolioBriefsBlock, buildVoiceLayerPrompt, buildReviewContext, buildHeaderLine, buildLevelsLine, buildSignalsLine, buildIntradayLine, detectSnapshotRegime } from './voiceLayerPrompt.js';
 import { getETDate, formatDateString } from './marketSchedule.js';
 
 // ==================== TESTS ====================
+
+// ==================== PHASE 5C — SNAPSHOT REGIME DETECTOR ====================
+
+describe('detectSnapshotRegime — Phase 5C', () => {
+  it('returns post-fixv2 when intraday.sessionDate is present', () => {
+    const snap = { capturedAt: '2026-05-15T15:00:00Z', intraday: { sessionDate: '2026-05-15' } };
+    expect(detectSnapshotRegime(snap)).toBe('post-fixv2');
+  });
+
+  it('returns pre-fixv1 when capturedAt is before 2026-05-12 17:39 UTC and no sessionDate', () => {
+    const snap = { capturedAt: '2026-05-08T14:00:00Z', intraday: { sessionDate: null, vwap: 100 } };
+    expect(detectSnapshotRegime(snap)).toBe('pre-fixv1');
+  });
+
+  it('returns fixv1-era when capturedAt is between fix v1 and fix v2 dates and no sessionDate', () => {
+    const snap = { capturedAt: '2026-05-12T20:00:00Z', intraday: { sessionDate: null, vwap: null } };
+    expect(detectSnapshotRegime(snap)).toBe('fixv1-era');
+  });
+
+  it('returns fixv1-era defensively when snapshot is null', () => {
+    expect(detectSnapshotRegime(null)).toBe('fixv1-era');
+    expect(detectSnapshotRegime(undefined)).toBe('fixv1-era');
+  });
+
+  it('returns fixv1-era defensively when capturedAt is missing', () => {
+    expect(detectSnapshotRegime({ intraday: { sessionDate: null } })).toBe('fixv1-era');
+    expect(detectSnapshotRegime({})).toBe('fixv1-era');
+  });
+
+  it('returns fixv1-era defensively when capturedAt is malformed', () => {
+    expect(detectSnapshotRegime({ capturedAt: 'not-a-date', intraday: {} })).toBe('fixv1-era');
+    expect(detectSnapshotRegime({ capturedAt: '' })).toBe('fixv1-era');
+  });
+
+  it('post-fixv2 wins even when capturedAt is technically before the boundary (defensive)', () => {
+    // sessionDate presence is the authoritative signal — even an out-of-band old
+    // capturedAt with sessionDate present still routes to post-fixv2.
+    const snap = { capturedAt: '2026-05-01T00:00:00Z', intraday: { sessionDate: '2026-05-15' } };
+    expect(detectSnapshotRegime(snap)).toBe('post-fixv2');
+  });
+
+  it('exact-boundary capturedAt at FIX_V1_MERGE_UTC routes to fixv1-era (not pre-fixv1)', () => {
+    // 2026-05-12T17:39:00Z is the boundary; >= boundary is fix v1 era.
+    const snap = { capturedAt: '2026-05-12T17:39:00Z', intraday: { sessionDate: null } };
+    expect(detectSnapshotRegime(snap)).toBe('fixv1-era');
+  });
+});
 
 describe('buildBenchBriefsBlock — empty / missing', () => {
   it('returns null when marketSnapshot is missing', () => {
