@@ -2,17 +2,23 @@
 //
 // Deterministic source of truth for US macro economic event dates.
 //
-// PR 2 lands the architecture: empty hardcoded arrays, stubbed computed
-// helpers, and a unified getMacroEventsInWindow query. Phase 2 of PR 2
-// implements the computed helpers and populates FOMC. PR 3 populates the
-// remaining hardcoded arrays from agency annual schedules and wires this
-// module into the DRB cron (replacing fetchEconomicEvents.js).
+// ARCHITECTURE
+// ------------
+// Three layers feed the unified getMacroEventsInWindow query:
 //
-// Category vocabulary uses specific release identifiers (FOMC / NFP / CPI / …),
-// which differs from the Sonar fetcher's thematic vocabulary (manufacturing /
-// employment / inflation / …). The DRB prompt renderer reads neither category
-// field, so the divergence is internal to macroCalendar consumers — not a
-// contract break.
+//   1. Hardcoded arrays (7 categories: FOMC, CPI, PPI, PCE, Retail Sales,
+//      GDP, Productivity). Releases that follow agency-published annual
+//      calendars. Each array holds 2026 entries in MacroEvent shape;
+//      refresh annually from the source URLs in the table below.
+//
+//   2. Computed helpers (5 categories: NFP, JOLTS, ISM Manufacturing,
+//      ISM Services, Consumer Confidence). Releases that follow
+//      deterministic monthly patterns (first Friday, Nth business day,
+//      last Tuesday). Compiled at call time for the year(s) the window
+//      touches, so they need no annual refresh.
+//
+//   3. getMacroEventsInWindow({ fromDate, toDate }) — concatenates every
+//      source, filters inclusively by date, returns sorted ascending.
 //
 // MacroEvent shape (matches what the DRB renderer in dailyRegimeBriefPrompt.js
 // reads — fields `date`, `day`, `time`, `event`, `impact`. `category` is
@@ -27,6 +33,46 @@
 //     impact:   "high" | "medium",
 //     event:    string,
 //   }
+//
+// SOURCES (hardcoded arrays — refresh annually, typically in December for
+// the next year). Computed-helper categories don't appear here; the rule
+// itself is the schedule.
+//
+//   FOMC          https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm
+//                 Fed; 8 meetings/year. Schedule published years in advance.
+//   CPI           https://www.bls.gov/schedule/news_release/cpi.htm
+//                 BLS; monthly.
+//   PPI           https://www.bls.gov/schedule/news_release/ppi.htm
+//                 BLS; monthly.
+//   PCE           https://www.bea.gov/news/schedule
+//                 BEA; monthly (Personal Income & Outlays release).
+//   Retail Sales  https://www.census.gov/economic-indicators/calendar-listview.html
+//                 Census; monthly (Advance Monthly Retail Trade).
+//   GDP           https://www.bea.gov/news/schedule
+//                 BEA; 3 releases per quarter (advance / second / third).
+//   Productivity  https://www.bls.gov/schedule/news_release/prod2.htm
+//                 BLS; quarterly (Productivity and Costs).
+//
+// When a computed rule diverges from agency reality for a specific month
+// (e.g. an NFP holiday shift where BLS actually publishes earlier rather
+// than later), the lightweight fix is a small per-category override array
+// consulted before the computed result. None are needed for 2026 as of PR 2;
+// PR 3 will add overrides surgically only where cross-referencing the
+// hardcoded sources surfaces a real divergence.
+//
+// PR 3 WIRING
+// -----------
+// This module is not consumed by anything in PR 2. PR 3 introduces
+// fetchMacroEvents.js (replacing fetchEconomicEvents.js), which calls
+// getMacroEventsInWindow, partitions the result into thisWeek/nextWeek,
+// and feeds dailyRegimeBriefPrompt.js. The DRB cron continues running on
+// the Sonar fetcher until then.
+//
+// Category vocabulary uses specific release identifiers (FOMC / NFP / CPI / …),
+// which differs from the Sonar fetcher's thematic vocabulary (manufacturing /
+// employment / inflation / …). The DRB prompt renderer reads neither category
+// field, so the divergence is internal to macroCalendar consumers — not a
+// contract break.
 
 import { isMarketHoliday, formatDateString } from './marketSchedule.js';
 
