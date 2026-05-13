@@ -289,36 +289,55 @@ describe('fetchEarningsCalendarEODHD', () => {
     expect(result.thisWeek[0].date).toBe('2026-05-13');
   });
 
-  it('returns the empty fallback on HTTP error', async () => {
+  it('throws on HTTP non-2xx so the DRB cron sourceFailures branch fires', async () => {
     stubFetchHttpError(500);
-    const result = await fetchEarningsCalendarEODHD();
-    expect(result.thisWeek).toEqual([]);
-    expect(result.nextWeek).toEqual([]);
-    expect(result.spotlight).toBe('Earnings calendar temporarily unavailable');
+    await expect(fetchEarningsCalendarEODHD()).rejects.toThrow('EODHD responded with HTTP 500');
   });
 
-  it('returns the empty fallback when fetch throws', async () => {
+  it('propagates network errors when fetch itself throws', async () => {
     stubFetchThrows();
-    const result = await fetchEarningsCalendarEODHD();
-    expect(result.thisWeek).toEqual([]);
-    expect(result.nextWeek).toEqual([]);
-    expect(result.spotlight).toBe('Earnings calendar temporarily unavailable');
+    await expect(fetchEarningsCalendarEODHD()).rejects.toThrow('network down');
   });
 
-  it('returns the empty fallback when EODHD response has no earnings array', async () => {
+  it('throws when EODHD response has no earnings array', async () => {
     stubFetchOk({});
-    const result = await fetchEarningsCalendarEODHD();
-    expect(result.thisWeek).toEqual([]);
-    expect(result.nextWeek).toEqual([]);
-    expect(result.spotlight).toBe('Earnings calendar temporarily unavailable');
+    await expect(fetchEarningsCalendarEODHD()).rejects.toThrow('missing earnings array');
   });
 
-  it('returns the empty fallback when EODHD_API_KEY is missing', async () => {
+  it('throws on JSON parse failure', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({
+        ok: true,
+        status: 200,
+        json: async () => {
+          throw new SyntaxError('Unexpected token < in JSON at position 0');
+        },
+      })),
+    );
+    await expect(fetchEarningsCalendarEODHD()).rejects.toThrow();
+  });
+
+  it('throws when EODHD_API_KEY is missing', async () => {
     delete process.env.EODHD_API_KEY;
+    await expect(fetchEarningsCalendarEODHD()).rejects.toThrow('EODHD_API_KEY not configured');
+  });
+
+  it('returns empty arrays (no throw) on a legitimate quiet week — valid response, all items filtered out', async () => {
+    // Real response from EODHD, but every row is sub-threshold and not in
+    // PRIORITY_STOCKS. Distinct from a hard failure: nothing to surface in
+    // sourceFailures, the brief just has no earnings to render.
+    stubFetchOk({
+      earnings: [
+        { code: 'TINYA.US', name: 'Tiny A',  report_date: '2026-05-13', before_after_market: 'AfterMarket',  market_cap: 1e9 },
+        { code: 'TINYB.US', name: 'Tiny B',  report_date: '2026-05-14', before_after_market: 'BeforeMarket', market_cap: 5e9 },
+      ],
+    });
     const result = await fetchEarningsCalendarEODHD();
     expect(result.thisWeek).toEqual([]);
     expect(result.nextWeek).toEqual([]);
-    expect(result.spotlight).toBe('Earnings calendar temporarily unavailable');
+    expect(result.spotlight).toBeNull();
+    expect(result.citations).toEqual([]);
   });
 
   it('calls EODHD with a Mon-of-thisWeek to Sun-of-nextWeek window', async () => {

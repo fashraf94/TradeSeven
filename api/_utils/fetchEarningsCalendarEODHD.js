@@ -176,21 +176,15 @@ function normalizeRow(row, todayET) {
   return item;
 }
 
-function emptyResult(spotlight) {
-  return {
-    thisWeek: [],
-    nextWeek: [],
-    spotlight,
-    cachedAt: Date.now(),
-    citations: [],
-  };
-}
-
 export async function fetchEarningsCalendarEODHD() {
+  // Hard failures throw — the DRB cron wraps this call in
+  // .then(ok→{ok:true}, err→{ok:false,err}) and uses the err branch to
+  // populate sourceFailures with 'earnings-calendar-eodhd'. A legitimate
+  // quiet week (zero items pass the filter) returns empty arrays normally
+  // and is not flagged as a failure.
   const apiKey = process.env.EODHD_API_KEY;
   if (!apiKey) {
-    console.error(`${LOG_PREFIX} EODHD_API_KEY not configured — returning empty fallback`);
-    return emptyResult('Earnings calendar temporarily unavailable');
+    throw new Error('EODHD_API_KEY not configured');
   }
 
   // ET-anchored today + calendar-week windows (Mon-Sun for both buckets).
@@ -204,22 +198,14 @@ export async function fetchEarningsCalendarEODHD() {
   // Single EODHD call spans both weeks; partition client-side.
   const url = `https://eodhd.com/api/calendar/earnings?api_token=${apiKey}&fmt=json&from=${thisMondayET}&to=${nextSundayET}`;
 
-  let rows;
-  try {
-    const response = await fetch(url);
-    if (!response.ok) {
-      console.error(`${LOG_PREFIX} EODHD responded with ${response.status}`);
-      return emptyResult('Earnings calendar temporarily unavailable');
-    }
-    const data = await response.json();
-    rows = Array.isArray(data?.earnings) ? data.earnings : null;
-    if (!rows) {
-      console.error(`${LOG_PREFIX} EODHD response missing earnings array`);
-      return emptyResult('Earnings calendar temporarily unavailable');
-    }
-  } catch (err) {
-    console.error(`${LOG_PREFIX} fetch failed: ${err?.message || 'unknown error'}`);
-    return emptyResult('Earnings calendar temporarily unavailable');
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`EODHD responded with HTTP ${response.status}`);
+  }
+  const data = await response.json();
+  const rows = data?.earnings;
+  if (!Array.isArray(rows)) {
+    throw new Error('EODHD response missing earnings array');
   }
 
   const thisWeek = [];
