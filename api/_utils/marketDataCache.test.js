@@ -193,6 +193,89 @@ describe('fetchIntradayCandles', () => {
     expect(msg).toContain('Dropped 2 partial candle');
     expect(msg).toContain('MU');
   });
+
+  // ---- Synthetic close-print bar strip (Fix v2) ---------------------------
+  // EODHD appends a synthetic last bar at session close with volume === null
+  // AND O===H===L===C (zero range). Discovery verified the pattern across
+  // 4 sessions. It pollutes session VWAP because calculateVWAP treats the
+  // zero-range "tick" as real volume-weighted price action. Strict quad-
+  // condition filter; legitimate zero-range bars with real volume, or
+  // null-volume bars with a real range, must pass through.
+
+  it('Test 9 — strips synthetic close-print bar (volume null AND O===H===L===C)', async () => {
+    const synthetic = [
+      { datetime: '2026-05-11 13:30:00', open: 290, high: 291, low: 289.5, close: 290.8, volume: 12000 },
+      { datetime: '2026-05-11 19:55:00', open: 290.8, high: 292.5, low: 290.5, close: 292.68, volume: 9000 },
+      // Synthetic close-print bar: O==H==L==C, volume null
+      { datetime: '2026-05-11 20:00:00', open: 292.68, high: 292.68, low: 292.68, close: 292.68, volume: null },
+    ];
+    mockFetchOk(synthetic);
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    const candles = await fetchIntradayCandles('MU');
+
+    expect(candles).toHaveLength(2);
+    expect(candles.map(c => c.datetime)).toEqual([
+      '2026-05-11 13:30:00',
+      '2026-05-11 19:55:00',
+    ]);
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    expect(warnSpy.mock.calls[0][0]).toContain('synthetic close-print bar');
+    expect(warnSpy.mock.calls[0][0]).toContain('MU');
+  });
+
+  it('Test 10 — preserves real zero-range bar with non-null volume (defensive)', async () => {
+    // A real bar can occasionally have OHLC all equal if no ticks moved during
+    // the interval — but it still has real volume. Must NOT be stripped.
+    const synthetic = [
+      { datetime: '2026-05-11 13:30:00', open: 290, high: 291, low: 289.5, close: 290.8, volume: 12000 },
+      // Legitimate zero-range bar: O==H==L==C, but volume is real (8000)
+      { datetime: '2026-05-11 13:35:00', open: 290.8, high: 290.8, low: 290.8, close: 290.8, volume: 8000 },
+      { datetime: '2026-05-11 13:40:00', open: 290.8, high: 291.5, low: 290.6, close: 291.2, volume: 11000 },
+    ];
+    mockFetchOk(synthetic);
+
+    const candles = await fetchIntradayCandles('MU');
+
+    expect(candles).toHaveLength(3);
+    expect(candles[1].volume).toBe(8000);
+  });
+
+  it('Test 11 — preserves null-volume bar with non-zero range (defensive)', async () => {
+    // EODHD occasionally returns volume:null on bars with real OHLC movement
+    // (typically thin-liquidity stocks). These should NOT be stripped — the
+    // synthetic-bar pattern requires BOTH null volume AND zero range.
+    const synthetic = [
+      { datetime: '2026-05-11 13:30:00', open: 290, high: 291, low: 289.5, close: 290.8, volume: 12000 },
+      // null volume but H > L (real range) — keep
+      { datetime: '2026-05-11 13:35:00', open: 290.8, high: 291.5, low: 290.6, close: 291.2, volume: null },
+      { datetime: '2026-05-11 13:40:00', open: 291.2, high: 292.0, low: 291.0, close: 291.8, volume: 9000 },
+    ];
+    mockFetchOk(synthetic);
+
+    const candles = await fetchIntradayCandles('MU');
+
+    expect(candles).toHaveLength(3);
+    // null volume gets coerced to 0 by the `d.volume || 0` projection — that's
+    // pre-existing behavior, separate from this filter.
+    expect(candles[1].volume).toBe(0);
+  });
+
+  it('Test 12 — does not strip when volume is 0 (vs null) with O===H===L===C', async () => {
+    // The strict pattern requires `volume === null || volume === undefined`,
+    // not `volume === 0`. A 0-volume legit bar (unlikely but possible) still
+    // passes through. This pins the strictness of the filter.
+    const synthetic = [
+      { datetime: '2026-05-11 13:30:00', open: 290, high: 291, low: 289.5, close: 290.8, volume: 12000 },
+      // O==H==L==C with volume:0 (not null) — should pass through
+      { datetime: '2026-05-11 13:35:00', open: 290.8, high: 290.8, low: 290.8, close: 290.8, volume: 0 },
+    ];
+    mockFetchOk(synthetic);
+
+    const candles = await fetchIntradayCandles('MU');
+
+    expect(candles).toHaveLength(2);
+  });
 });
 
 // ==================== filterToLatestSession — RTH session boundary ====================

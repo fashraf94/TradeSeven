@@ -674,12 +674,35 @@ export async function fetchIntradayCandles(symbol, options = {}) {
     return ohlcValid;
   });
 
-  const droppedCount = data.length - validCandles.length;
-  if (droppedCount > 0) {
-    console.warn(`[MarketDataCache] Dropped ${droppedCount} partial candle(s) for ${eohdSymbol} (incomplete OHLC, likely in-progress)`);
+  const partialDropped = data.length - validCandles.length;
+  if (partialDropped > 0) {
+    console.warn(`[MarketDataCache] Dropped ${partialDropped} partial candle(s) for ${eohdSymbol} (incomplete OHLC, likely in-progress)`);
   }
 
-  return validCandles.map(d => ({
+  // Strip the synthetic close-print bar EODHD appends at RTH close.
+  // Verified empirically across 4 sessions (discovery/eodhd-session-boundary-
+  // analysis.md): the last bar of each session has `volume === null` AND
+  // O === H === L === C (zero range). It pollutes session VWAP because
+  // calculateVWAP treats the zero-range close as a real tick. Strict
+  // quad-condition match — a legitimate zero-range bar with non-null volume
+  // OR a null-volume bar with a real range will pass through untouched.
+  // Runs on RAW EODHD shape (pre output map) so we can detect `volume === null`
+  // before it's coerced to `0` by the `d.volume || 0` projection below.
+  const nonSynthetic = validCandles.filter(d => {
+    const isSynthetic =
+      (d.volume === null || d.volume === undefined) &&
+      d.open === d.high &&
+      d.high === d.low &&
+      d.low === d.close;
+    return !isSynthetic;
+  });
+
+  const syntheticDropped = validCandles.length - nonSynthetic.length;
+  if (syntheticDropped > 0) {
+    console.warn(`[MarketDataCache] Dropped ${syntheticDropped} synthetic close-print bar(s) for ${eohdSymbol} (null volume + zero range)`);
+  }
+
+  return nonSynthetic.map(d => ({
     datetime: d.datetime || new Date(d.timestamp * 1000).toISOString(),
     open: d.open,
     high: d.high,
