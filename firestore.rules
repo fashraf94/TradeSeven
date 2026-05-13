@@ -537,6 +537,16 @@ service cloud.firestore {
       allow create, update, delete: if false;
     }
 
+    // Sprint 6 Phase 4A: persisted watchlists. Created by /api/forge/watchlists
+    // (POST) when a dialogue finalizes; updated by PATCH/commit endpoints in
+    // Phase 4B. Owner-scoped reads, server-only writes — same shape as the
+    // watchlistSessions block above. Manual deploy via Firebase Console.
+    match /watchlists/{watchlistId} {
+      allow read: if request.auth != null
+                  && resource.data.userId == request.auth.uid;
+      allow create, update, delete: if false;
+    }
+
     // Phase 5: Workshop Mode — compiled theses produced by
     // /api/forge/compile-dimensions.js. Immutable audit record of each
     // successful thesis → dimensions translation. Server-only writes.

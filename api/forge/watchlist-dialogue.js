@@ -34,6 +34,7 @@ import { callGemmaVoiceWithRetry, parseVoiceLayerResponse } from '../_utils/gemm
 import { buildDialogueInputs } from '../_utils/signalDropPrompt.js';
 import { validateTickers } from '../_utils/tickerValidation.js';
 import { logSignalDrops } from '../_utils/shadowLogger.js';
+import { FORGE_ID_REGEX, FORGE_ID_MAX_LEN, isValidForgeId } from '../_utils/idValidation.js';
 import { FieldValue } from 'firebase-admin/firestore';
 import { waitUntil } from '@vercel/functions';
 
@@ -148,8 +149,8 @@ const ISO_DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
 // Phase 2.5 Fix 1 (audit B2): dropId character validation. Defense-in-depth
 // against Firestore path injection (slashes resolving to sub-collection
 // paths). Same shape parse-signal uses for the client-supplied dropId.
-const DROP_ID_REGEX = /^[A-Za-z0-9_-]+$/;
-const DROP_ID_MAX_LEN = 200;
+// Phase 4A: regex + cap moved to api/_utils/idValidation.js (shared with
+// abandon endpoint and the new watchlist endpoints).
 
 function capString(v, max) {
   if (typeof v !== 'string') return '';
@@ -712,10 +713,10 @@ export default async function handler(req, res) {
       });
     }
     const trimmedDropId = rawDropId.trim();
-    if (trimmedDropId.length > DROP_ID_MAX_LEN || !DROP_ID_REGEX.test(trimmedDropId)) {
+    if (!isValidForgeId(trimmedDropId)) {
       return res.status(400).json({
         error: 'dropId is malformed',
-        message: `dropId must match ${DROP_ID_REGEX} and be ≤${DROP_ID_MAX_LEN} chars`,
+        message: `dropId must match ${FORGE_ID_REGEX} and be ≤${FORGE_ID_MAX_LEN} chars`,
       });
     }
     dropId = trimmedDropId;

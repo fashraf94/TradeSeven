@@ -63,6 +63,20 @@ export function chipIntentToPhaseRequest(intent) {
   return null;
 }
 
+// Phase 4A: build the request body for POST /api/forge/watchlists from the
+// component's session/agent/drop state. Exported as a named helper (mirroring
+// the chipIntentToPhaseRequest extraction precedent) so the request-shape
+// logic is unit-testable without a jsdom + RTL setup. Returns null when any
+// required id is missing — caller branches on null to take the safety-net
+// abandon path so a malformed save attempt doesn't strand the session in
+// 'active'.
+export function buildSaveRequest(sessionId, agentId, dropId) {
+  if (typeof sessionId !== 'string' || !sessionId) return null;
+  if (typeof agentId !== 'string' || !agentId) return null;
+  if (typeof dropId !== 'string' || !dropId) return null;
+  return { sessionId, agentId, dropId };
+}
+
 // Defensive normalizer for an inbound chip. Accepts the canonical
 // { label, intent } object, a bare string (legacy or FE retry-emit), or
 // anything else and folds them to a uniform render-safe shape. Returns
@@ -553,14 +567,46 @@ export default function WatchlistChat({
     });
   }
 
-  function handleFinalizeClose() {
-    // Phase 3.6 PR 1: honest copy + abandon-with-finalize-intent. Phase 4 will
-    // replace this with a real save endpoint that creates a watchlists/{id}
-    // doc and flips status to 'completed'.
-    fireAbandon('finalize_intent');
-    if (typeof showToast === 'function') {
-      showToast('Dialogue captured — editor coming soon to save your watchlist.');
+  async function handleFinalizeClose() {
+    // Phase 4A: real save — POST /api/forge/watchlists creates a draft
+    // watchlist from the dialogue's anatomy + candidateTickers and flips
+    // session status to 'completed' atomically. On failure, fall back to
+    // firing abandon('finalize_intent') so the session doesn't strand in
+    // 'active'/'finalize_intent' state — preserves the Phase 3.6 safety net.
+    const requestBody = buildSaveRequest(sessionId, agentId, dropId);
+
+    if (!requestBody) {
+      if (typeof showToast === 'function') {
+        showToast('Could not save watchlist — please try again.');
+      }
+      onClose?.();
+      return;
     }
+
+    try {
+      const response = await fetchWithAuth('/api/forge/watchlists', {
+        method: 'POST',
+        body: JSON.stringify(requestBody),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Save failed: ${response.status}`);
+      }
+
+      if (typeof showToast === 'function') {
+        showToast('Watchlist saved — editor coming soon to refine it.');
+      }
+    } catch (err) {
+      console.warn(
+        '[WatchlistChat] save failed, falling back to abandon:',
+        err?.message || err,
+      );
+      fireAbandon('finalize_intent');
+      if (typeof showToast === 'function') {
+        showToast('Could not save watchlist — your dialogue was captured.');
+      }
+    }
+
     onClose?.();
   }
 
