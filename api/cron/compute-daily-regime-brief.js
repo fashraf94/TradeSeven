@@ -20,7 +20,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { FieldValue } from 'firebase-admin/firestore';
 import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
-import { fetchEconomicEvents } from '../_utils/fetchEconomicEvents.js';
+import { fetchMacroEvents } from '../_utils/fetchMacroEvents.js';
 import { fetchEarningsCalendarEODHD } from '../_utils/fetchEarningsCalendarEODHD.js';
 import {
   DAILY_REGIME_BRIEF_TOOL,
@@ -108,7 +108,7 @@ export default async function handler(req, res) {
 
     const [marketCtxDoc, econResult, earnResult] = await Promise.all([
       marketContextRef.get(),
-      fetchEconomicEvents().then(
+      fetchMacroEvents().then(
         (data) => ({ ok: true, data }),
         (err) => ({ ok: false, err }),
       ),
@@ -129,8 +129,8 @@ export default async function handler(req, res) {
       thisWeekEvents = econResult.data.thisWeek || [];
       nextWeekEvents = econResult.data.nextWeek || [];
     } else {
-      sourceFailures.push('economic-events-sonar');
-      logError('fetchEconomicEvents failed', { message: econResult.err?.message });
+      sourceFailures.push('macro-events');
+      logError('fetchMacroEvents failed', { message: econResult.err?.message });
     }
 
     let thisWeekEarnings = [];
