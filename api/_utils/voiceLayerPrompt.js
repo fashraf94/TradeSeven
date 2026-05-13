@@ -1916,34 +1916,80 @@ export function buildReviewContext(battle, dailyReviews, dailyGrades) {
     lines.push("BATCH REVIEW SUMMARY: No consolidated review available yet — work from the trade list and your own reads.");
   }
 
-  // Today's trades + outcomes
+  // ---- Trades (Phase 5C: last 3 render with compact snapshot blocks) ----
+  // Pre-Phase-4 entries (no snapshot) and entries beyond the recent cap fall
+  // back to the legacy one-line format. proposalHistory is needed for
+  // provenance detection (approved-by-Coach vs autopilot).
   const trades = Array.isArray(battle?.trades) ? battle.trades : [];
+  const proposalHistory = Array.isArray(battle?.proposalHistory) ? battle.proposalHistory : [];
+  const renderTradeOneLiner = (t) => {
+    const swap = `${t.symbolOut || '?'} → ${t.symbolIn || '?'}`;
+    const tier = t.tier ? ` [${t.tier}]` : '';
+    const outcome = t.outcomePoints != null
+      ? `${t.outcomePoints > 0 ? '+' : ''}${t.outcomePoints} pts`
+      : (t.outcome || 'outcome pending');
+    const rationale = t.rationale || t.trigger || '';
+    return `- ${swap}${tier} — ${outcome}${rationale ? ` | ${rationale}` : ''}`;
+  };
+
   if (trades.length > 0) {
-    const rendered = trades.map(t => {
-      const swap = `${t.symbolOut || '?'} → ${t.symbolIn || '?'}`;
-      const tier = t.tier ? ` [${t.tier}]` : '';
-      const outcome = t.outcomePoints != null
-        ? `${t.outcomePoints > 0 ? '+' : ''}${t.outcomePoints} pts`
-        : (t.outcome || 'outcome pending');
-      const rationale = t.rationale || t.trigger || '';
-      return `- ${swap}${tier} — ${outcome}${rationale ? ` | ${rationale}` : ''}`;
-    });
-    lines.push(`\nTRADES (${trades.length}):\n${rendered.join('\n')}`);
+    const recentTrades = trades.slice(-3);
+    const earlierTrades = trades.slice(0, Math.max(0, trades.length - 3));
+
+    const tradeSections = [`\nTRADES (${trades.length}):`];
+
+    if (recentTrades.length > 0) {
+      tradeSections.push(`\nRECENT TRADES (${recentTrades.length} most recent with snapshot rendering):`);
+      const renderedRecent = recentTrades.map(t => {
+        const provenance = detectTradeProvenance(t, proposalHistory);
+        const block = buildSwapEntryBlock(t, 'trade', { provenance });
+        return block || renderTradeOneLiner(t);
+      });
+      tradeSections.push(renderedRecent.join('\n\n'));
+    }
+
+    if (earlierTrades.length > 0) {
+      tradeSections.push(`\nEARLIER TRADES:\n${earlierTrades.map(renderTradeOneLiner).join('\n')}`);
+    }
+
+    lines.push(tradeSections.join('\n'));
   }
 
-  // Counterfactuals — vetoed trades with projected outcomes
+  // ---- Counterfactuals (Phase 5C: last 5 render with full snapshot blocks) ----
+  // Existing slice(-6) cap retained — within that 6, the last 5 are rendered as
+  // snapshot blocks and the 6th (if present) falls back to the one-liner.
+  const renderCounterfactualOneLiner = (v) => {
+    const swap = `${v.symbolOut || '?'} → ${v.symbolIn || '?'}`;
+    const cf = v.counterfactualPoints != null
+      ? `would have scored ${v.counterfactualPoints > 0 ? '+' : ''}${v.counterfactualPoints} pts`
+      : 'no counterfactual recorded';
+    return `- ${swap} (${v.resolution}) — ${cf}${v.rationale ? ` | ${v.rationale}` : ''}`;
+  };
+
   const vetoed = Array.isArray(battle?.proposalHistory)
     ? battle.proposalHistory.filter(p => p.resolution === 'vetoed' || p.resolution === 'lapsed')
     : [];
   if (vetoed.length > 0) {
-    const rendered = vetoed.slice(-6).map(v => {
-      const swap = `${v.symbolOut || '?'} → ${v.symbolIn || '?'}`;
-      const cf = v.counterfactualPoints != null
-        ? `would have scored ${v.counterfactualPoints > 0 ? '+' : ''}${v.counterfactualPoints} pts`
-        : 'no counterfactual recorded';
-      return `- ${swap} (${v.resolution}) — ${cf}${v.rationale ? ` | ${v.rationale}` : ''}`;
-    });
-    lines.push(`\nCOUNTERFACTUALS (vetoed / expired proposals):\n${rendered.join('\n')}`);
+    const cappedVetoed = vetoed.slice(-6);
+    const recentCounterfactuals = cappedVetoed.slice(-5);
+    const earlierCounterfactuals = cappedVetoed.slice(0, Math.max(0, cappedVetoed.length - 5));
+
+    const cfSections = [`\nCOUNTERFACTUALS (vetoed / expired proposals):`];
+
+    if (recentCounterfactuals.length > 0) {
+      cfSections.push(`\nRECENT COUNTERFACTUALS (${recentCounterfactuals.length} most recent with snapshot rendering):`);
+      const renderedRecent = recentCounterfactuals.map(v => {
+        const block = buildSwapEntryBlock(v, 'counterfactual');
+        return block || renderCounterfactualOneLiner(v);
+      });
+      cfSections.push(renderedRecent.join('\n\n'));
+    }
+
+    if (earlierCounterfactuals.length > 0) {
+      cfSections.push(`\nEARLIER COUNTERFACTUALS:\n${earlierCounterfactuals.map(renderCounterfactualOneLiner).join('\n')}`);
+    }
+
+    lines.push(cfSections.join('\n'));
   }
 
   // User-supplied grades (may be sparse; skip silently if empty)

@@ -2451,6 +2451,181 @@ describe('buildReviewContext — counterfactuals filter (regression)', () => {
   });
 });
 
+// ==================== PHASE 5C — buildReviewContext INTEGRATION ====================
+
+describe('buildReviewContext — Phase 5C snapshot rendering integration', () => {
+  const snapWithSymbol = (sym, overrides = {}) => ({
+    symbol: sym,
+    sectorName: 'Technology',
+    capturedAt: '2026-05-15T15:30:00Z',
+    trend: { shortTerm: 'up', intermediate: 'up', longTerm: 'down' },
+    momentum: { macdFreshBullishCross: true, divergence: 'bullish' },
+    volatility: { atrPercent: 2.1 },
+    volume: { nr7Flag: true },
+    smaStack: { distTo52wkHigh: -1.8 },
+    rs: { rsPercentile: 76 },
+    levels: { nearestSupport: 880, nearestResistance: 905, distanceToSupportPct: -1.4, distanceToResistancePct: 1.3 },
+    recentAction: { lastCandlePattern: null },
+    intraday: { vwap: 893.5, currentPrice: 895.2, vwapDeviation: 0.7, sma20_5m: 894.0, sessionDate: '2026-05-15' },
+    composite: { technicalScore: 81, sectorTechnicalRank: 4, sectorTechnicalTotal: 28 },
+    ...overrides,
+  });
+
+  const cf = (n, overrides = {}) => ({
+    symbolOut: `OUT${n}`,
+    symbolIn: `IN${n}`,
+    tier: 'star',
+    resolution: 'vetoed',
+    scoreAtProposal: 70,
+    scoreAtVeto: 65,
+    counterfactualPoints: 2.0 + n,
+    snapshot: { symbolOut: snapWithSymbol(`OUT${n}`), symbolIn: snapWithSymbol(`IN${n}`) },
+    ...overrides,
+  });
+
+  const tr = (n, overrides = {}) => ({
+    symbolOut: `TOUT${n}`,
+    symbolIn: `TIN${n}`,
+    tier: 'core',
+    lockedPoints: n,
+    trigger: 'rs_rotation',
+    swappedOutAt: '2026-05-15T15:30:00Z',
+    evaluationId: `eval_${n}`,
+    snapshot: { symbolOut: snapWithSymbol(`TOUT${n}`), symbolIn: snapWithSymbol(`TIN${n}`) },
+    ...overrides,
+  });
+
+  it('renders RECENT TRADES section with snapshot blocks for last 3 trades', () => {
+    const battle = { trades: [tr(1), tr(2), tr(3)], proposalHistory: [] };
+    const out = buildReviewContext(battle, [], []);
+    expect(out).toContain('RECENT TRADES (3 most recent with snapshot rendering)');
+    expect(out).toContain('TRADE — executed (autopilot)');
+    expect(out).toContain('TOUT1 leg:');
+    expect(out).toContain('TOUT2 leg:');
+    expect(out).toContain('TOUT3 leg:');
+    expect(out).toContain('Signals:');
+    // No EARLIER TRADES section when <=3 trades total
+    expect(out).not.toContain('EARLIER TRADES');
+  });
+
+  it('renders RECENT COUNTERFACTUALS section with full-depth blocks for last 5 vetoed/lapsed', () => {
+    const battle = {
+      trades: [],
+      proposalHistory: [cf(1), cf(2), cf(3), cf(4), cf(5)],
+    };
+    const out = buildReviewContext(battle, [], []);
+    expect(out).toContain('RECENT COUNTERFACTUALS (5 most recent with snapshot rendering)');
+    expect(out).toContain('COUNTERFACTUAL — vetoed by Coach');
+    expect(out).toContain('OUT1 leg:');
+    expect(out).toContain('OUT5 leg:');
+    expect(out).toContain('Trend: up/up/down');
+    expect(out).toContain('Levels: Support $880');
+    expect(out).toContain("Today's session:");
+    expect(out).not.toContain('EARLIER COUNTERFACTUALS');
+  });
+
+  it('caps RECENT TRADES at 3 and bumps remaining into EARLIER TRADES one-liners', () => {
+    const battle = { trades: [tr(1), tr(2), tr(3), tr(4), tr(5)], proposalHistory: [] };
+    const out = buildReviewContext(battle, [], []);
+    expect(out).toContain('RECENT TRADES (3 most recent with snapshot rendering)');
+    expect(out).toContain('EARLIER TRADES:');
+    expect(out).toContain('- TOUT1 → TIN1 [core]');
+    expect(out).toContain('- TOUT2 → TIN2 [core]');
+    // tr3, tr4, tr5 are in the recent block (last 3), so EARLIER contains 1,2
+    expect(out).toContain('TOUT3 leg:');
+    expect(out).toContain('TOUT4 leg:');
+    expect(out).toContain('TOUT5 leg:');
+    // EARLIER TRADES should NOT include the snapshot-rendered ones
+    const earlierSection = out.slice(out.indexOf('EARLIER TRADES:'));
+    expect(earlierSection).not.toContain('TOUT3 leg:');
+  });
+
+  it('caps COUNTERFACTUALS via slice(-6) and renders most recent 5 with snapshots, 6th as one-liner', () => {
+    // 7 entries → slice(-6) keeps last 6 → last 5 render as blocks, 1 as one-liner
+    const battle = {
+      trades: [],
+      proposalHistory: [cf(1), cf(2), cf(3), cf(4), cf(5), cf(6), cf(7)],
+    };
+    const out = buildReviewContext(battle, [], []);
+    expect(out).toContain('RECENT COUNTERFACTUALS (5 most recent with snapshot rendering)');
+    expect(out).toContain('EARLIER COUNTERFACTUALS:');
+    // cf(1) was filtered out by slice(-6) entirely
+    expect(out).not.toContain('OUT1 leg:');
+    expect(out).not.toContain('OUT1 → IN1');
+    // cf(2) is the 6th-most-recent within the kept window → one-liner
+    expect(out).toContain('- OUT2 → IN2 (vetoed)');
+    // cf(3) through cf(7) render as snapshot blocks
+    expect(out).toContain('OUT3 leg:');
+    expect(out).toContain('OUT7 leg:');
+  });
+
+  it('falls back to one-liner for pre-Phase-4 entries (no snapshot)', () => {
+    // Pre-Phase-4 trades use the legacy renderer's field set (outcomePoints).
+    const preTrade = { symbolOut: 'OLD', symbolIn: 'NEW', tier: 'support', outcomePoints: 1.2, trigger: 'macd' };
+    const battle = { trades: [preTrade], proposalHistory: [] };
+    const out = buildReviewContext(battle, [], []);
+    expect(out).toContain('RECENT TRADES (1 most recent with snapshot rendering)');
+    // No snapshot block, falls through to legacy one-liner inside the section
+    expect(out).toContain('- OLD → NEW [support] — +1.2 pts | macd');
+    expect(out).not.toContain('OLD leg:');
+  });
+
+  it('renders empty trades/counterfactuals gracefully with no empty sections', () => {
+    const battle = { trades: [], proposalHistory: [] };
+    const out = buildReviewContext(battle, [], []);
+    expect(out).toContain('REVIEW CONTEXT:');
+    expect(out).not.toContain('RECENT TRADES');
+    expect(out).not.toContain('RECENT COUNTERFACTUALS');
+    expect(out).not.toContain('EARLIER TRADES');
+    expect(out).not.toContain('EARLIER COUNTERFACTUALS');
+  });
+
+  it('routes approved-proposal trades through provenance detection to "approved by Coach" header', () => {
+    const matchingProposal = {
+      symbolOut: 'TOUT1',
+      symbolIn: 'TIN1',
+      resolution: 'approved',
+      resolvedAt: '2026-05-15T15:29:00Z',
+    };
+    const battle = {
+      trades: [tr(1)],
+      proposalHistory: [matchingProposal],
+    };
+    const out = buildReviewContext(battle, [], []);
+    expect(out).toContain('TRADE — approved by Coach');
+    expect(out).not.toContain('TRADE — executed (autopilot)');
+  });
+
+  it('routes risk-triggered trades through provenance detection to "(risk-triggered)" header', () => {
+    const riskTrade = tr(1, { evaluationId: 'risk_drawdown_TOUT1' });
+    const battle = { trades: [riskTrade], proposalHistory: [] };
+    const out = buildReviewContext(battle, [], []);
+    expect(out).toContain('TRADE — executed (risk-triggered)');
+  });
+
+  it('renders mixed regime entries correctly (intraday only for post-fixv2)', () => {
+    const preFixCf = cf(1, {
+      snapshot: {
+        symbolOut: snapWithSymbol('OUT1', {
+          capturedAt: '2026-05-08T15:00:00Z',
+          intraday: { vwap: 100, currentPrice: 101, vwapDeviation: 1, sma20_5m: null, sessionDate: null },
+        }),
+        symbolIn: snapWithSymbol('IN1', {
+          capturedAt: '2026-05-08T15:00:00Z',
+          intraday: { vwap: 200, currentPrice: 200, vwapDeviation: 0, sma20_5m: null, sessionDate: null },
+        }),
+      },
+    });
+    const postFixCf = cf(2); // default fixture is post-fixv2
+    const battle = { trades: [], proposalHistory: [preFixCf, postFixCf] };
+    const out = buildReviewContext(battle, [], []);
+    const out1Section = out.slice(out.indexOf('OUT1 leg:'), out.indexOf('IN1 leg:'));
+    const out2Section = out.slice(out.indexOf('OUT2 leg:'), out.indexOf('IN2 leg:'));
+    expect(out1Section).not.toContain('session:');
+    expect(out2Section).toContain("Today's session:");
+  });
+});
+
 // =============================================================================
 // Voice Layer Snag Bug Fix — battle-mode OUTPUT_FORMAT confusion handler.
 //
