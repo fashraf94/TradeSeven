@@ -24,7 +24,7 @@ vi.mock('./marketSchedule.js', async (importOriginal) => {
   };
 });
 
-import { buildBenchBriefsBlock, buildBattleState, buildMarketSnapshotContext, buildPortfolioBriefsBlock, buildVoiceLayerPrompt, buildReviewContext, buildHeaderLine, buildLevelsLine, buildSignalsLine, buildIntradayLine, detectSnapshotRegime, buildSnapshotHeader, buildSnapshotTrend, buildSnapshotSignals, buildSnapshotLevels, buildSnapshotIntraday } from './voiceLayerPrompt.js';
+import { buildBenchBriefsBlock, buildBattleState, buildMarketSnapshotContext, buildPortfolioBriefsBlock, buildVoiceLayerPrompt, buildReviewContext, buildHeaderLine, buildLevelsLine, buildSignalsLine, buildIntradayLine, detectSnapshotRegime, buildSnapshotHeader, buildSnapshotTrend, buildSnapshotSignals, buildSnapshotLevels, buildSnapshotIntraday, buildSwapEntryBlock } from './voiceLayerPrompt.js';
 import { getETDate, formatDateString } from './marketSchedule.js';
 
 // ==================== TESTS ====================
@@ -365,6 +365,248 @@ describe('buildSnapshotIntraday — Phase 5C', () => {
     // decision, but sessionDate presence still routes us to post-fixv2 and the
     // helper falls back to "Prior session" rather than failing.
     expect(buildSnapshotIntraday(snap)).toBe('Prior session: 1.0% above session VWAP.');
+  });
+});
+
+// ==================== PHASE 5C — SWAP ENTRY BLOCK ====================
+
+// Snapshot fixture builders for entry-block tests.
+const legSnapshot = (symbol, overrides = {}) => ({
+  symbol,
+  sectorName: 'Technology',
+  capturedAt: '2026-05-15T15:30:00Z',
+  trend: { shortTerm: 'up', intermediate: 'up', longTerm: 'down' },
+  momentum: { macdFreshBullishCross: true, macdFreshBearishCross: false, divergence: 'bullish' },
+  volatility: { atrPercent: 2.1 },
+  volume: { nr7Flag: true },
+  smaStack: { distTo52wkHigh: -1.8 },
+  rs: { rsPercentile: 76 },
+  levels: { nearestSupport: 880, nearestResistance: 905, distanceToSupportPct: -1.4, distanceToResistancePct: 1.3 },
+  recentAction: { lastCandlePattern: null },
+  intraday: { vwap: 893.5, currentPrice: 895.2, vwapDeviation: 0.7, sma20_5m: 894.0, sessionDate: '2026-05-15' },
+  composite: { technicalScore: 81, sectorTechnicalRank: 4, sectorTechnicalTotal: 28 },
+  ...overrides,
+});
+
+const counterfactualEntry = (overrides = {}) => ({
+  symbolOut: 'AAPL',
+  symbolIn: 'MSFT',
+  tier: 'star',
+  resolution: 'vetoed',
+  scoreAtProposal: 72.4,
+  scoreAtVeto: 68.1,
+  counterfactualPoints: 4.2,
+  rationale: 'rotation into stronger sector RS',
+  snapshot: {
+    symbolOut: legSnapshot('AAPL', { composite: { technicalScore: 64, sectorTechnicalRank: 18, sectorTechnicalTotal: 28 }, rs: { rsPercentile: 52 }, volatility: { atrPercent: 1.8 } }),
+    symbolIn: legSnapshot('MSFT'),
+  },
+  ...overrides,
+});
+
+const tradeEntry = (overrides = {}) => ({
+  symbolOut: 'COIN',
+  symbolIn: 'HOOD',
+  tier: 'core',
+  lockedPoints: 3.5,
+  trigger: 'rs_rotation',
+  swappedOutAt: '2026-05-15T15:30:00Z',
+  evaluationId: 'eval_abc123',
+  snapshot: {
+    symbolOut: legSnapshot('COIN'),
+    symbolIn: legSnapshot('HOOD'),
+  },
+  ...overrides,
+});
+
+describe('buildSwapEntryBlock — counterfactual rendering', () => {
+  it('renders full structure for a vetoed counterfactual', () => {
+    const out = buildSwapEntryBlock(counterfactualEntry(), 'counterfactual');
+    expect(out).toContain('COUNTERFACTUAL — vetoed by Coach');
+    expect(out).toContain('Captured: 2026-05-15 11:30 ET');
+    expect(out).toContain('Score at proposal: 72.4 → at veto: 68.1 (Δ -4.3)');
+    expect(out).toContain('AAPL → MSFT (star tier)');
+    expect(out).toContain('| Counterfactual: would have scored +4.2 pts');
+    expect(out).toContain('AAPL leg:');
+    expect(out).toContain('MSFT leg:');
+    // Full depth = trend + levels + intraday lines present
+    expect(out).toContain('Trend: up/up/down (short/int/long)');
+    expect(out).toContain('Levels:');
+    expect(out).toContain("Today's session:");
+  });
+
+  it('renders correct header for a lapsed counterfactual', () => {
+    const entry = counterfactualEntry({ resolution: 'lapsed', scoreAtVeto: undefined, scoreAtResolution: 70.2 });
+    const out = buildSwapEntryBlock(entry, 'counterfactual');
+    expect(out).toContain('COUNTERFACTUAL — lapsed (no Coach action)');
+    expect(out).toContain('Score at proposal: 72.4 → at lapse: 70.2 (Δ -2.2)');
+  });
+
+  it('omits score line when scores are missing', () => {
+    const entry = counterfactualEntry({ scoreAtProposal: undefined, scoreAtVeto: undefined });
+    const out = buildSwapEntryBlock(entry, 'counterfactual');
+    expect(out).not.toContain('Score at proposal');
+    expect(out).toContain('Captured:');
+  });
+
+  it('omits counterfactual points clause when counterfactualPoints is null', () => {
+    const entry = counterfactualEntry({ counterfactualPoints: null });
+    const out = buildSwapEntryBlock(entry, 'counterfactual');
+    expect(out).toContain('AAPL → MSFT (star tier)');
+    expect(out).not.toContain('Counterfactual: would have');
+  });
+
+  it('shows positive delta correctly when score improved', () => {
+    const entry = counterfactualEntry({ scoreAtProposal: 60, scoreAtVeto: 65 });
+    const out = buildSwapEntryBlock(entry, 'counterfactual');
+    expect(out).toContain('Score at proposal: 60 → at veto: 65 (Δ +5)');
+  });
+
+  it('shows positive counterfactualPoints with + prefix', () => {
+    const out = buildSwapEntryBlock(counterfactualEntry(), 'counterfactual');
+    expect(out).toContain('+4.2 pts');
+  });
+
+  it('shows negative counterfactualPoints without extra prefix', () => {
+    const entry = counterfactualEntry({ counterfactualPoints: -2.7 });
+    const out = buildSwapEntryBlock(entry, 'counterfactual');
+    expect(out).toContain('-2.7 pts');
+  });
+});
+
+describe('buildSwapEntryBlock — trade rendering (compact depth)', () => {
+  it('renders compact structure with default header when no provenance is passed', () => {
+    const out = buildSwapEntryBlock(tradeEntry(), 'trade');
+    expect(out).toContain('TRADE — executed');
+    expect(out).toContain('COIN → HOOD (core tier)');
+    expect(out).toContain('| Outcome: +3.5 pts');
+    expect(out).toContain('COIN leg:');
+    expect(out).toContain('HOOD leg:');
+    // Compact depth omits trend, levels, intraday
+    expect(out).not.toContain('Trend:');
+    expect(out).not.toContain('Levels:');
+    expect(out).not.toContain("Today's session:");
+    // Signals still render in compact mode
+    expect(out).toContain('Signals:');
+  });
+
+  it('renders "approved by Coach" header for provenance=approved', () => {
+    const out = buildSwapEntryBlock(tradeEntry(), 'trade', { provenance: 'approved' });
+    expect(out).toContain('TRADE — approved by Coach');
+  });
+
+  it('renders "auto-executed at expiry" for provenance=auto_executed_proposal', () => {
+    const out = buildSwapEntryBlock(tradeEntry(), 'trade', { provenance: 'auto_executed_proposal' });
+    expect(out).toContain('TRADE — auto-executed at expiry');
+  });
+
+  it('renders "(autopilot)" for provenance=autopilot', () => {
+    const out = buildSwapEntryBlock(tradeEntry(), 'trade', { provenance: 'autopilot' });
+    expect(out).toContain('TRADE — executed (autopilot)');
+  });
+
+  it('renders "(risk-triggered)" for provenance=risk_triggered', () => {
+    const out = buildSwapEntryBlock(tradeEntry(), 'trade', { provenance: 'risk_triggered' });
+    expect(out).toContain('TRADE — executed (risk-triggered)');
+  });
+
+  it('renders Outcome line from lockedPoints when outcomePoints is absent', () => {
+    const entry = tradeEntry({ lockedPoints: -1.5 });
+    const out = buildSwapEntryBlock(entry, 'trade');
+    expect(out).toContain('| Outcome: -1.5 pts');
+  });
+
+  it('renders Outcome line from outcomePoints when both present (outcomePoints wins)', () => {
+    const entry = tradeEntry({ lockedPoints: 1.0, outcomePoints: 2.5 });
+    const out = buildSwapEntryBlock(entry, 'trade');
+    expect(out).toContain('| Outcome: +2.5 pts');
+  });
+
+  it('omits Outcome clause when no point fields are present', () => {
+    const entry = tradeEntry({ lockedPoints: null, outcomePoints: null });
+    const out = buildSwapEntryBlock(entry, 'trade');
+    expect(out).toContain('COIN → HOOD (core tier)');
+    expect(out).not.toContain('Outcome:');
+  });
+});
+
+describe('buildSwapEntryBlock — defensive handling', () => {
+  it('returns null when entry is null or missing snapshot (pre-Phase-4 entry)', () => {
+    expect(buildSwapEntryBlock(null, 'counterfactual')).toBeNull();
+    expect(buildSwapEntryBlock({}, 'counterfactual')).toBeNull();
+    expect(buildSwapEntryBlock({ symbolOut: 'A', symbolIn: 'B' }, 'trade')).toBeNull();
+  });
+
+  it('returns null when snapshot has neither leg', () => {
+    expect(buildSwapEntryBlock({ snapshot: {} }, 'counterfactual')).toBeNull();
+    expect(buildSwapEntryBlock({ snapshot: { symbolOut: null, symbolIn: null } }, 'trade')).toBeNull();
+  });
+
+  it('renders only the symbolIn leg when symbolOut leg is missing', () => {
+    const entry = counterfactualEntry();
+    entry.snapshot.symbolOut = null;
+    const out = buildSwapEntryBlock(entry, 'counterfactual');
+    expect(out).not.toContain('AAPL leg:');
+    expect(out).toContain('MSFT leg:');
+  });
+
+  it('renders only the symbolOut leg when symbolIn leg is missing', () => {
+    const entry = counterfactualEntry();
+    entry.snapshot.symbolIn = null;
+    const out = buildSwapEntryBlock(entry, 'counterfactual');
+    expect(out).toContain('AAPL leg:');
+    expect(out).not.toContain('MSFT leg:');
+  });
+
+  it('handles missing tier gracefully', () => {
+    const entry = counterfactualEntry({ tier: null });
+    const out = buildSwapEntryBlock(entry, 'counterfactual');
+    expect(out).toContain('AAPL → MSFT');
+    expect(out).not.toContain(' tier)');
+  });
+});
+
+describe('buildSwapEntryBlock — regime gating', () => {
+  it('renders intraday line for post-fixv2 leg in a counterfactual', () => {
+    const out = buildSwapEntryBlock(counterfactualEntry(), 'counterfactual');
+    expect(out).toContain("Today's session:");
+  });
+
+  it('suppresses intraday line for pre-fixv1 leg even in counterfactual full depth', () => {
+    const entry = counterfactualEntry();
+    entry.snapshot.symbolOut = legSnapshot('AAPL', {
+      capturedAt: '2026-05-08T15:00:00Z',
+      intraday: { vwap: 100, currentPrice: 100.5, vwapDeviation: 0.5, sma20_5m: null, sessionDate: null },
+    });
+    entry.snapshot.symbolIn = legSnapshot('MSFT', {
+      capturedAt: '2026-05-08T15:00:00Z',
+      intraday: { vwap: 200, currentPrice: 200.5, vwapDeviation: 0.25, sma20_5m: null, sessionDate: null },
+    });
+    const out = buildSwapEntryBlock(entry, 'counterfactual');
+    expect(out).not.toContain("Today's session:");
+    expect(out).not.toContain('Prior session:');
+  });
+
+  it('suppresses intraday line for fixv1-era leg', () => {
+    const entry = counterfactualEntry();
+    entry.snapshot.symbolOut = legSnapshot('AAPL', {
+      capturedAt: '2026-05-12T20:00:00Z',
+      intraday: { vwap: null, currentPrice: null, vwapDeviation: null, sma20_5m: null, sessionDate: null },
+    });
+    entry.snapshot.symbolIn = legSnapshot('MSFT', {
+      capturedAt: '2026-05-12T20:00:00Z',
+      intraday: { vwap: null, currentPrice: null, vwapDeviation: null, sma20_5m: null, sessionDate: null },
+    });
+    const out = buildSwapEntryBlock(entry, 'counterfactual');
+    expect(out).not.toContain('session:');
+  });
+
+  it('compact-depth trades never render intraday or levels regardless of regime', () => {
+    const entry = tradeEntry();
+    const out = buildSwapEntryBlock(entry, 'trade', { provenance: 'autopilot' });
+    expect(out).not.toContain("Today's session:");
+    expect(out).not.toContain('Levels:');
+    expect(out).not.toContain('Trend:');
   });
 });
 

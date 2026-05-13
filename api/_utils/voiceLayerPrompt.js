@@ -1401,6 +1401,161 @@ export function buildSnapshotIntraday(snapshot) {
   return `${prefix}: ${segments.join(', ')}.`;
 }
 
+// ==================== PHASE 5C — SWAP ENTRY BLOCK ====================
+//
+// Renders a single proposalHistory / trades entry as a multi-line block with
+// a wrapper header, capture-time + score line, swap-pair + outcome line, and
+// two per-leg sub-blocks (symbolOut and symbolIn). Counterfactuals render at
+// full depth (header + trend + signals + levels + intraday); trades render at
+// compact depth (header + signals only) because their outcome already speaks.
+//
+// Returns null when entry.snapshot is missing entirely (pre-Phase-4 entries),
+// which signals the caller to fall back to the one-line legacy format.
+
+function formatEtTimestamp(capturedAt) {
+  if (!capturedAt) return null;
+  const ms = Date.parse(capturedAt);
+  if (!Number.isFinite(ms)) return null;
+  const parts = toEtParts(new Date(ms));
+  const hh = String(parts.hour).padStart(2, '0');
+  const mm = String(parts.minute).padStart(2, '0');
+  return `${parts.dateStr} ${hh}:${mm} ET`;
+}
+
+function formatPointsDelta(n) {
+  return `${n > 0 ? '+' : ''}${n}`;
+}
+
+// Maps (kind, resolutionOrProvenance) → wrapper-header clause.
+// `provenance` for trades is one of 'approved' | 'auto_executed_proposal' |
+// 'autopilot' | 'risk_triggered' | null. Null defaults to a generic
+// "TRADE — executed" header — Commit 4 introduces the actual detector.
+function buildEntryHeader(kind, entry, provenance) {
+  if (kind === 'counterfactual') {
+    if (entry.resolution === 'vetoed') return 'COUNTERFACTUAL — vetoed by Coach';
+    if (entry.resolution === 'lapsed') return 'COUNTERFACTUAL — lapsed (no Coach action)';
+    return `COUNTERFACTUAL — ${entry.resolution || 'unresolved'}`;
+  }
+  // kind === 'trade'
+  if (provenance === 'approved') return 'TRADE — approved by Coach';
+  if (provenance === 'auto_executed_proposal') return 'TRADE — auto-executed at expiry';
+  if (provenance === 'autopilot') return 'TRADE — executed (autopilot)';
+  if (provenance === 'risk_triggered') return 'TRADE — executed (risk-triggered)';
+  return 'TRADE — executed';
+}
+
+// Builds the "Captured: <time> | Score at X: A → at Y: B (Δ Z)" line.
+// Counterfactuals show proposal → veto/lapse trajectory when both scores exist.
+// Trades show "Score at execution" when scoreAtResolution is present.
+// Returns null when no timestamp AND no score data are available.
+function buildEntryCaptureLine(kind, entry, snapshotLeg) {
+  const timestamp = formatEtTimestamp(snapshotLeg?.capturedAt ?? entry.capturedAt);
+  const parts = [];
+  if (timestamp) parts.push(`Captured: ${timestamp}`);
+
+  if (kind === 'counterfactual') {
+    const sP = entry.scoreAtProposal;
+    const sV = entry.scoreAtVeto;
+    const sR = entry.scoreAtResolution;
+    if (typeof sP === 'number' && typeof sV === 'number') {
+      const delta = Math.round((sV - sP) * 10) / 10;
+      parts.push(`Score at proposal: ${sP} → at veto: ${sV} (Δ ${formatPointsDelta(delta)})`);
+    } else if (typeof sP === 'number' && typeof sR === 'number') {
+      const delta = Math.round((sR - sP) * 10) / 10;
+      parts.push(`Score at proposal: ${sP} → at lapse: ${sR} (Δ ${formatPointsDelta(delta)})`);
+    } else if (typeof sP === 'number') {
+      parts.push(`Score at proposal: ${sP}`);
+    }
+  } else {
+    if (typeof entry.scoreAtResolution === 'number') {
+      parts.push(`Score at execution: ${entry.scoreAtResolution}`);
+    }
+  }
+
+  if (parts.length === 0) return null;
+  return parts.join(' | ');
+}
+
+// Builds the "SYM_OUT → SYM_IN (tier) | <outcome clause>" line.
+function buildEntryPairLine(kind, entry) {
+  const swap = `${entry.symbolOut || '?'} → ${entry.symbolIn || '?'}`;
+  const tier = entry.tier ? ` (${entry.tier} tier)` : '';
+  let outcomeClause = '';
+  if (kind === 'counterfactual') {
+    const cf = entry.counterfactualPoints;
+    if (typeof cf === 'number') {
+      outcomeClause = ` | Counterfactual: would have scored ${formatPointsDelta(cf)} pts`;
+    }
+  } else {
+    const pts = entry.outcomePoints ?? entry.lockedPoints;
+    if (typeof pts === 'number') {
+      outcomeClause = ` | Outcome: ${formatPointsDelta(pts)} pts`;
+    }
+  }
+  return `${swap}${tier}${outcomeClause}`;
+}
+
+// Renders a single per-symbol leg block: "SYMBOL leg:" header line followed
+// by the relevant snapshot helper outputs, each indented 2 spaces.
+// Depth: 'full' (counterfactuals) → header + trend + signals + levels + intraday.
+// Depth: 'compact' (trades) → header + signals only.
+function buildLegBlock(legSnapshot, depth) {
+  if (!legSnapshot) return null;
+  const symbol = legSnapshot.symbol || '?';
+  const header = buildSnapshotHeader(legSnapshot);
+  const lines = [`${symbol} leg:`];
+  if (header) lines.push(`  ${header}`);
+
+  if (depth === 'full') {
+    const trend = buildSnapshotTrend(legSnapshot);
+    if (trend) lines.push(`  ${trend}`);
+  }
+
+  const signals = buildSnapshotSignals(legSnapshot);
+  if (signals) lines.push(`  ${signals}`);
+
+  if (depth === 'full') {
+    const levels = buildSnapshotLevels(legSnapshot);
+    if (levels) lines.push(`  ${levels}`);
+
+    const intraday = buildSnapshotIntraday(legSnapshot);
+    if (intraday) lines.push(`  ${intraday}`);
+  }
+
+  return lines.join('\n');
+}
+
+export function buildSwapEntryBlock(entry, kind, options = {}) {
+  if (!entry || typeof entry !== 'object') return null;
+
+  const snapshot = entry.snapshot;
+  if (!snapshot || typeof snapshot !== 'object') return null;
+
+  const outLeg = snapshot.symbolOut || null;
+  const inLeg = snapshot.symbolIn || null;
+  if (!outLeg && !inLeg) return null;
+
+  const depth = kind === 'counterfactual' ? 'full' : 'compact';
+  const provenance = options.provenance ?? null;
+
+  const header = buildEntryHeader(kind, entry, provenance);
+  // Prefer the outgoing leg's capturedAt; both legs are captured in the same
+  // call so timestamps match, but defensively use whichever is available.
+  const captureLine = buildEntryCaptureLine(kind, entry, outLeg || inLeg);
+  const pairLine = buildEntryPairLine(kind, entry);
+
+  const sections = [header];
+  if (captureLine) sections.push(captureLine);
+  sections.push(pairLine);
+
+  const outBlock = outLeg ? buildLegBlock(outLeg, depth) : null;
+  const inBlock = inLeg ? buildLegBlock(inLeg, depth) : null;
+  if (outBlock) sections.push(outBlock);
+  if (inBlock) sections.push(inBlock);
+
+  return sections.join('\n');
+}
+
 export function buildPortfolioBriefsBlock(marketSnapshot) {
   if (!marketSnapshot?.portfolioBriefs?.length) return null;
 
