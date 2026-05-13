@@ -24,6 +24,7 @@ import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
 import { applySecurityMiddleware } from '../_utils/security.js';
 import { requireAuth } from '../_utils/authMiddleware.js';
 import { logSignalDrops } from '../_utils/shadowLogger.js';
+import { FORGE_ID_REGEX, FORGE_ID_MAX_LEN, isValidForgeId } from '../_utils/idValidation.js';
 import { waitUntil } from '@vercel/functions';
 
 export const config = { maxDuration: 10 };
@@ -43,18 +44,8 @@ const REASON_TO_STATUS = Object.freeze({
 // Defense-in-depth char validation — same regex as the dropId hardening in
 // watchlist-dialogue.js (Phase 2.5 Fix 1). Firestore rejects path-shaped
 // slashes at the SDK level, but validating at the boundary surfaces the 400
-// before any read.
-const ID_REGEX = /^[A-Za-z0-9_-]+$/;
-const ID_MAX_LEN = 200;
-
-function isValidId(v) {
-  return (
-    typeof v === 'string' &&
-    v.length > 0 &&
-    v.length <= ID_MAX_LEN &&
-    ID_REGEX.test(v)
-  );
-}
+// before any read. Phase 4A: validator moved to api/_utils/idValidation.js
+// (shared with watchlist-dialogue.js and the new watchlist endpoints).
 
 export default async function handler(req, res) {
   if (applySecurityMiddleware(req, res, { rateLimit: { limit: 10, windowMs: 60_000 } })) {
@@ -69,16 +60,16 @@ export default async function handler(req, res) {
 
   const { sessionId, agentId, reason } = req.body || {};
 
-  if (!isValidId(sessionId)) {
+  if (!isValidForgeId(sessionId)) {
     return res.status(400).json({
       error: 'invalid_session_id',
-      message: `sessionId must match ${ID_REGEX} and be ≤${ID_MAX_LEN} chars`,
+      message: `sessionId must match ${FORGE_ID_REGEX} and be ≤${FORGE_ID_MAX_LEN} chars`,
     });
   }
-  if (!isValidId(agentId)) {
+  if (!isValidForgeId(agentId)) {
     return res.status(400).json({
       error: 'invalid_agent_id',
-      message: `agentId must match ${ID_REGEX} and be ≤${ID_MAX_LEN} chars`,
+      message: `agentId must match ${FORGE_ID_REGEX} and be ≤${FORGE_ID_MAX_LEN} chars`,
     });
   }
   if (typeof reason !== 'string' || !VALID_REASONS.has(reason)) {

@@ -22,7 +22,11 @@ vi.mock('../../firebase/authService', () => ({
   getIdToken: vi.fn(async () => null),
 }));
 
-import { chipIntentToPhaseRequest, normalizeChipForRender } from './WatchlistChat';
+import {
+  chipIntentToPhaseRequest,
+  normalizeChipForRender,
+  buildSaveRequest,
+} from './WatchlistChat';
 
 describe('chipIntentToPhaseRequest', () => {
   it("returns 'advance' for intent='advance'", () => {
@@ -160,5 +164,50 @@ describe('chipIntentToPhaseRequest + normalizeChipForRender (composed pipeline)'
     const chip = normalizeChipForRender('Retry');
     expect(chip).toEqual({ label: 'Retry', intent: 'none' });
     expect(chipIntentToPhaseRequest(chip.intent)).toBeNull();
+  });
+});
+
+// Phase 4A: buildSaveRequest is the request-shape helper extracted from
+// handleFinalizeClose so the save-call payload is unit-testable without a
+// jsdom + RTL setup. Mirrors the chipIntentToPhaseRequest extraction
+// precedent.
+describe('buildSaveRequest', () => {
+  it('returns the request body when all three ids are present', () => {
+    expect(buildSaveRequest('session-1', 'agent-1', 'drop-1')).toEqual({
+      sessionId: 'session-1',
+      agentId: 'agent-1',
+      dropId: 'drop-1',
+    });
+  });
+
+  it('returns null when sessionId is missing or empty', () => {
+    expect(buildSaveRequest(null, 'agent-1', 'drop-1')).toBeNull();
+    expect(buildSaveRequest(undefined, 'agent-1', 'drop-1')).toBeNull();
+    expect(buildSaveRequest('', 'agent-1', 'drop-1')).toBeNull();
+  });
+
+  it('returns null when agentId is missing or empty', () => {
+    expect(buildSaveRequest('session-1', null, 'drop-1')).toBeNull();
+    expect(buildSaveRequest('session-1', undefined, 'drop-1')).toBeNull();
+    expect(buildSaveRequest('session-1', '', 'drop-1')).toBeNull();
+  });
+
+  it('returns null when dropId is missing or empty', () => {
+    expect(buildSaveRequest('session-1', 'agent-1', null)).toBeNull();
+    expect(buildSaveRequest('session-1', 'agent-1', undefined)).toBeNull();
+    expect(buildSaveRequest('session-1', 'agent-1', '')).toBeNull();
+  });
+
+  it('returns null for non-string inputs', () => {
+    expect(buildSaveRequest(42, 'agent-1', 'drop-1')).toBeNull();
+    expect(buildSaveRequest('session-1', {}, 'drop-1')).toBeNull();
+    expect(buildSaveRequest('session-1', 'agent-1', [])).toBeNull();
+  });
+
+  it('does not leak extra properties from the call site', () => {
+    // Defensive: even if the caller spreads in extra metadata, the
+    // helper only returns the documented three-field shape.
+    const result = buildSaveRequest('session-1', 'agent-1', 'drop-1');
+    expect(Object.keys(result).sort()).toEqual(['agentId', 'dropId', 'sessionId']);
   });
 });
