@@ -730,7 +730,7 @@ export async function fetchIntradayBatch(symbols, options = {}) {
 }
 
 // ============================================
-// EXPORT: filterToCurrentSession
+// EXPORT: filterToLatestSession
 // ============================================
 
 // RTH session boundaries in ET (matches marketSchedule.js constants).
@@ -766,8 +766,12 @@ function parseEodhdDatetime(s) {
  * Extract ET date/hour/minute components from a UTC Date.
  * Uses Intl.DateTimeFormat so DST transitions are handled automatically
  * (no manual UTC-5 vs UTC-4 offset bookkeeping).
+ *
+ * Exported so callers (e.g. voiceLayerPrompt.buildIntradayLine) can compute
+ * today's ET date without round-tripping through toLocaleString — Fix v1
+ * deliberately moved away from that pattern.
  */
-function toEtParts(utcDate) {
+export function toEtParts(utcDate) {
   const parts = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'America/New_York',
     year: 'numeric', month: '2-digit', day: '2-digit',
@@ -786,52 +790,67 @@ function toEtParts(utcDate) {
 }
 
 /**
- * Filter intraday candles to those within the current US RTH session
- * (9:30 AM - 4:00 PM ET, or 9:30 AM - 1:00 PM ET on early-close days).
+ * Filter intraday candles to those within the latest available US RTH session
+ * present in the candles array (9:30 AM - 4:00 PM ET, or 9:30 AM - 1:00 PM ET
+ * on early-close days). Anchors on the latest ET date discovered in the data
+ * — NOT today's ET date — so it gracefully handles EODHD's ~1-trading-day lag
+ * on the /intraday endpoint (the production failure mode of Fix v1).
  *
- * Returns an empty array when:
- *   - Called before 9:30 AM ET (no current session yet)
- *   - Called on a weekend or NYSE holiday (no candles will match today's
- *     ET date, so the filter naturally returns [])
- *   - The candles array is empty or missing
+ * Returns `{ candles: [], sessionDate: null }` when:
+ *   - The candles array is empty, null, or missing
+ *   - Every candle parses as an invalid datetime
  *
- * Future candles (timestamp > now) are excluded as a safety guard, though
- * EODHD shouldn't publish them in practice.
+ * Returns the latest session even if it's partial (early-session render, or
+ * EODHD only shipped a few bars). No minimum-candle gate.
  *
- * Caller (e.g. calculateVWAP) is expected to return null on empty input,
- * which is the correct behavior for "no session data yet" at market open.
+ * `now` is retained in the signature for future "freshness gating" use
+ * (e.g., refusing data that's more than N trading days stale) but is
+ * currently unused — session anchoring is driven entirely by the data.
  *
  * @param {Array<{ datetime: string }>} candles - EODHD intraday candles
- * @param {Date} [now] - Override for current time (testing only)
- * @returns {Array} Candles within the current RTH session (oldest-first order preserved)
+ * @param {Date} [now] - Reserved for future freshness gating; currently unused
+ * @returns {{ candles: Array, sessionDate: string|null }} sessionDate is YYYY-MM-DD in ET, or null on empty
  */
-export function filterToCurrentSession(candles, now = new Date()) {
-  if (!Array.isArray(candles) || candles.length === 0) return [];
+export function filterToLatestSession(candles, now = new Date()) { // eslint-disable-line no-unused-vars
+  if (!Array.isArray(candles) || candles.length === 0) {
+    return { candles: [], sessionDate: null };
+  }
 
-  const nowParts = toEtParts(now);
-  const nowMinutes = nowParts.hour * 60 + nowParts.minute;
+  const parsed = candles
+    .map(c => {
+      const utc = parseEodhdDatetime(c.datetime);
+      if (!utc) return null;
+      const p = toEtParts(utc);
+      return { candle: c, etDate: p.dateStr, etHour: p.hour, etMinute: p.minute };
+    })
+    .filter(Boolean);
+
+  if (parsed.length === 0) {
+    return { candles: [], sessionDate: null };
+  }
+
+  // Anchor on the latest ET date present in the data. Lexicographic compare
+  // works because dateStr is fixed-width YYYY-MM-DD.
+  const latestEtDate = parsed.reduce(
+    (max, p) => (p.etDate > max ? p.etDate : max),
+    parsed[0].etDate,
+  );
+
+  // RTH window for the anchor date. Early-close days end at 1 PM ET; regular
+  // sessions end at 4 PM ET. Both bounds inclusive on minutes.
+  const closeHour = isEarlyCloseDay(latestEtDate) ? EARLY_CLOSE_HOUR_ET : RTH_CLOSE_HOUR_ET;
   const openMinutes = RTH_OPEN_HOUR_ET * 60 + RTH_OPEN_MIN_ET;
+  const closeMinutes = closeHour * 60;
 
-  // Pre-9:30 AM ET — no session has opened yet today.
-  if (nowMinutes < openMinutes) return [];
+  const sessionCandles = parsed
+    .filter(p => p.etDate === latestEtDate)
+    .filter(p => {
+      const m = p.etHour * 60 + p.etMinute;
+      return m >= openMinutes && m <= closeMinutes;
+    })
+    .map(p => p.candle);
 
-  // Cap the upper bound at the smaller of (today's close, current ET time).
-  // The close cap excludes after-hours/extended-session candles that EODHD
-  // sometimes includes; the now cap excludes any defensive future-dated
-  // candles. Early-close days (e.g., Black Friday, Christmas Eve) close at
-  // 1:00 PM ET — covered by isEarlyCloseDay.
-  const earlyClose = isEarlyCloseDay(nowParts.dateStr);
-  const closeMinutes = (earlyClose ? EARLY_CLOSE_HOUR_ET : RTH_CLOSE_HOUR_ET) * 60;
-  const upperBoundMinutes = Math.min(closeMinutes, nowMinutes);
-
-  return candles.filter(c => {
-    const d = parseEodhdDatetime(c.datetime);
-    if (!d) return false;
-    const cParts = toEtParts(d);
-    if (cParts.dateStr !== nowParts.dateStr) return false;
-    const cMinutes = cParts.hour * 60 + cParts.minute;
-    return cMinutes >= openMinutes && cMinutes <= upperBoundMinutes;
-  });
+  return { candles: sessionCandles, sessionDate: latestEtDate };
 }
 
 // ============================================
