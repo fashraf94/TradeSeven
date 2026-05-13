@@ -1556,6 +1556,53 @@ export function buildSwapEntryBlock(entry, kind, options = {}) {
   return sections.join('\n');
 }
 
+// ==================== PHASE 5C — TRADE PROVENANCE DETECTION ====================
+//
+// Determines how a trade was created so buildSwapEntryBlock can render the
+// wrapper header accurately ("approved by Coach" vs "executed (autopilot)"
+// vs "executed (risk-triggered)" vs "auto-executed at expiry").
+//
+// Distinguishing markers (verified against agent-evaluate.js write paths):
+//   - Risk-triggered (path A, :620-657): evaluationMetadata.evaluationId is set
+//     to `risk_${reason}_${symbol}`. evaluationId.startsWith('risk_') is the
+//     authoritative discriminator.
+//   - Approved / auto-executed proposal (path C, :1300-1305 / :1382-1388):
+//     trades are produced by forwarding proposalHistory[i] through
+//     executeSwapServer, so the originating proposal still lives in
+//     proposalHistory with resolution='approved' or 'auto_executed'. Match by
+//     symbol pair + time proximity (proposal.resolvedAt ↔ trade.swappedOutAt).
+//   - Autopilot Haiku (path B, :977-995): the default — no risk marker, no
+//     matching resolved proposal.
+const PROVENANCE_MATCH_WINDOW_MS = 5 * 60 * 1000;
+
+export function detectTradeProvenance(trade, proposalHistory) {
+  if (!trade || typeof trade !== 'object') return 'unknown';
+
+  if (typeof trade.evaluationId === 'string' && trade.evaluationId.startsWith('risk_')) {
+    return 'risk_triggered';
+  }
+
+  const tradeTimeMs = trade.swappedOutAt ? Date.parse(trade.swappedOutAt) : NaN;
+  const history = Array.isArray(proposalHistory) ? proposalHistory : [];
+
+  for (const proposal of history) {
+    if (!proposal || typeof proposal !== 'object') continue;
+    if (proposal.symbolOut !== trade.symbolOut) continue;
+    if (proposal.symbolIn !== trade.symbolIn) continue;
+    if (proposal.resolution !== 'approved' && proposal.resolution !== 'auto_executed') continue;
+
+    if (Number.isFinite(tradeTimeMs) && proposal.resolvedAt) {
+      const proposalTimeMs = Date.parse(proposal.resolvedAt);
+      if (!Number.isFinite(proposalTimeMs)) continue;
+      if (Math.abs(tradeTimeMs - proposalTimeMs) > PROVENANCE_MATCH_WINDOW_MS) continue;
+    }
+
+    return proposal.resolution === 'approved' ? 'approved' : 'auto_executed_proposal';
+  }
+
+  return 'autopilot';
+}
+
 export function buildPortfolioBriefsBlock(marketSnapshot) {
   if (!marketSnapshot?.portfolioBriefs?.length) return null;
 

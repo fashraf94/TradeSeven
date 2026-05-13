@@ -24,7 +24,7 @@ vi.mock('./marketSchedule.js', async (importOriginal) => {
   };
 });
 
-import { buildBenchBriefsBlock, buildBattleState, buildMarketSnapshotContext, buildPortfolioBriefsBlock, buildVoiceLayerPrompt, buildReviewContext, buildHeaderLine, buildLevelsLine, buildSignalsLine, buildIntradayLine, detectSnapshotRegime, buildSnapshotHeader, buildSnapshotTrend, buildSnapshotSignals, buildSnapshotLevels, buildSnapshotIntraday, buildSwapEntryBlock } from './voiceLayerPrompt.js';
+import { buildBenchBriefsBlock, buildBattleState, buildMarketSnapshotContext, buildPortfolioBriefsBlock, buildVoiceLayerPrompt, buildReviewContext, buildHeaderLine, buildLevelsLine, buildSignalsLine, buildIntradayLine, detectSnapshotRegime, buildSnapshotHeader, buildSnapshotTrend, buildSnapshotSignals, buildSnapshotLevels, buildSnapshotIntraday, buildSwapEntryBlock, detectTradeProvenance } from './voiceLayerPrompt.js';
 import { getETDate, formatDateString } from './marketSchedule.js';
 
 // ==================== TESTS ====================
@@ -607,6 +607,146 @@ describe('buildSwapEntryBlock — regime gating', () => {
     expect(out).not.toContain("Today's session:");
     expect(out).not.toContain('Levels:');
     expect(out).not.toContain('Trend:');
+  });
+});
+
+// ==================== PHASE 5C — TRADE PROVENANCE DETECTION ====================
+
+describe('detectTradeProvenance — Phase 5C', () => {
+  it('returns risk_triggered when evaluationId starts with "risk_"', () => {
+    const trade = { evaluationId: 'risk_stop_out_NVDA', symbolOut: 'NVDA', symbolIn: 'AAPL' };
+    expect(detectTradeProvenance(trade, [])).toBe('risk_triggered');
+  });
+
+  it('returns approved when a matching approved proposal exists within the time window', () => {
+    const trade = {
+      symbolOut: 'COIN',
+      symbolIn: 'HOOD',
+      swappedOutAt: '2026-05-15T15:30:00Z',
+      evaluationId: 'eval_abc',
+    };
+    const proposalHistory = [
+      {
+        symbolOut: 'COIN',
+        symbolIn: 'HOOD',
+        resolution: 'approved',
+        resolvedAt: '2026-05-15T15:28:30Z',
+      },
+    ];
+    expect(detectTradeProvenance(trade, proposalHistory)).toBe('approved');
+  });
+
+  it('returns auto_executed_proposal when a matching auto_executed proposal exists', () => {
+    const trade = {
+      symbolOut: 'TSLA',
+      symbolIn: 'F',
+      swappedOutAt: '2026-05-15T15:30:00Z',
+      evaluationId: 'eval_def',
+    };
+    const proposalHistory = [
+      {
+        symbolOut: 'TSLA',
+        symbolIn: 'F',
+        resolution: 'auto_executed',
+        resolvedAt: '2026-05-15T15:29:00Z',
+      },
+    ];
+    expect(detectTradeProvenance(trade, proposalHistory)).toBe('auto_executed_proposal');
+  });
+
+  it('returns autopilot when no matching proposal and no risk marker', () => {
+    const trade = {
+      symbolOut: 'AAPL',
+      symbolIn: 'MSFT',
+      swappedOutAt: '2026-05-15T15:30:00Z',
+      evaluationId: 'eval_haiku',
+    };
+    expect(detectTradeProvenance(trade, [])).toBe('autopilot');
+    expect(detectTradeProvenance(trade, null)).toBe('autopilot');
+    expect(detectTradeProvenance(trade, undefined)).toBe('autopilot');
+  });
+
+  it('returns autopilot when symbol pair does not match any proposal', () => {
+    const trade = {
+      symbolOut: 'AAPL',
+      symbolIn: 'MSFT',
+      swappedOutAt: '2026-05-15T15:30:00Z',
+    };
+    const proposalHistory = [
+      { symbolOut: 'NVDA', symbolIn: 'AMD', resolution: 'approved', resolvedAt: '2026-05-15T15:29:00Z' },
+    ];
+    expect(detectTradeProvenance(trade, proposalHistory)).toBe('autopilot');
+  });
+
+  it('returns autopilot when matching proposal but resolution is vetoed/lapsed (those are counterfactuals, not trades)', () => {
+    const trade = {
+      symbolOut: 'AAPL',
+      symbolIn: 'MSFT',
+      swappedOutAt: '2026-05-15T15:30:00Z',
+    };
+    const proposalHistory = [
+      { symbolOut: 'AAPL', symbolIn: 'MSFT', resolution: 'vetoed', resolvedAt: '2026-05-15T15:29:00Z' },
+      { symbolOut: 'AAPL', symbolIn: 'MSFT', resolution: 'lapsed', resolvedAt: '2026-05-15T15:29:30Z' },
+    ];
+    expect(detectTradeProvenance(trade, proposalHistory)).toBe('autopilot');
+  });
+
+  it('returns autopilot when matching proposal is outside the 5-minute window', () => {
+    const trade = {
+      symbolOut: 'COIN',
+      symbolIn: 'HOOD',
+      swappedOutAt: '2026-05-15T15:30:00Z',
+    };
+    const proposalHistory = [
+      // 10 minutes earlier — outside window
+      { symbolOut: 'COIN', symbolIn: 'HOOD', resolution: 'approved', resolvedAt: '2026-05-15T15:20:00Z' },
+    ];
+    expect(detectTradeProvenance(trade, proposalHistory)).toBe('autopilot');
+  });
+
+  it('matches within window edge (4:59 elapsed = match, 5:01 = no match)', () => {
+    const trade = {
+      symbolOut: 'COIN',
+      symbolIn: 'HOOD',
+      swappedOutAt: '2026-05-15T15:30:00Z',
+    };
+    const insideWindow = [
+      { symbolOut: 'COIN', symbolIn: 'HOOD', resolution: 'approved', resolvedAt: '2026-05-15T15:25:01Z' },
+    ];
+    const outsideWindow = [
+      { symbolOut: 'COIN', symbolIn: 'HOOD', resolution: 'approved', resolvedAt: '2026-05-15T15:24:59Z' },
+    ];
+    expect(detectTradeProvenance(trade, insideWindow)).toBe('approved');
+    expect(detectTradeProvenance(trade, outsideWindow)).toBe('autopilot');
+  });
+
+  it('matches even without timestamps when symbol pair + resolution align', () => {
+    // Defensive: if either side lacks a usable timestamp, fall through to a
+    // symbol-pair-only match so trades from legacy data still get the right
+    // provenance.
+    const trade = { symbolOut: 'AAPL', symbolIn: 'MSFT' };
+    const proposalHistory = [
+      { symbolOut: 'AAPL', symbolIn: 'MSFT', resolution: 'approved' },
+    ];
+    expect(detectTradeProvenance(trade, proposalHistory)).toBe('approved');
+  });
+
+  it('returns unknown when trade is null or not an object', () => {
+    expect(detectTradeProvenance(null, [])).toBe('unknown');
+    expect(detectTradeProvenance(undefined, [])).toBe('unknown');
+  });
+
+  it('risk_ marker on evaluationId wins over a coincidentally matching proposal', () => {
+    const trade = {
+      symbolOut: 'NVDA',
+      symbolIn: 'AAPL',
+      swappedOutAt: '2026-05-15T15:30:00Z',
+      evaluationId: 'risk_drawdown_NVDA',
+    };
+    const proposalHistory = [
+      { symbolOut: 'NVDA', symbolIn: 'AAPL', resolution: 'approved', resolvedAt: '2026-05-15T15:29:00Z' },
+    ];
+    expect(detectTradeProvenance(trade, proposalHistory)).toBe('risk_triggered');
   });
 });
 
