@@ -1,11 +1,12 @@
 // api/_utils/macroCalendar.test.js
 //
-// Phase 1 baseline: hardcoded arrays are empty and computed helpers return [].
 // Tests stub data by mutating the exported arrays in place — the ESM `const`
 // binding prevents reassignment, but the underlying array contents are mutable.
-// afterEach drains every array we touched so tests stay independent.
+// afterEach restores every hardcoded array from its module-load snapshot so
+// tests stay independent. Stub-only tests that rely on empty arrays drain
+// explicitly via beforeEach inside their describe block.
 
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, beforeEach } from 'vitest';
 import {
   FOMC_DECISIONS_2026,
   CPI_RELEASES_2026,
@@ -22,9 +23,6 @@ import {
   getConsumerConfidenceDates,
 } from './macroCalendar.js';
 
-// Snapshot of FOMC 2026 dates so tests that mutate the array (the
-// multi-source/filter/sort tests) can restore it instead of draining it.
-const FOMC_SNAPSHOT = FOMC_DECISIONS_2026.slice();
 const ALL_HARDCODED_ARRAYS = [
   FOMC_DECISIONS_2026,
   CPI_RELEASES_2026,
@@ -34,15 +32,17 @@ const ALL_HARDCODED_ARRAYS = [
   GDP_RELEASES_2026,
   PRODUCTIVITY_RELEASES_2026,
 ];
+const SNAPSHOTS = ALL_HARDCODED_ARRAYS.map((arr) => arr.slice());
 
 function makeEvent({ date, category = 'FOMC', impact = 'high', time = '2:00 PM ET', day = 'Wednesday', event = 'stub' }) {
   return { date, day, time, category, impact, event };
 }
 
 afterEach(() => {
-  for (const arr of ALL_HARDCODED_ARRAYS) arr.length = 0;
-  // Restore real FOMC data for tests that depend on it
-  FOMC_DECISIONS_2026.push(...FOMC_SNAPSHOT);
+  ALL_HARDCODED_ARRAYS.forEach((arr, i) => {
+    arr.length = 0;
+    arr.push(...SNAPSHOTS[i]);
+  });
 });
 
 describe('getMacroEventsInWindow — empty-source baseline', () => {
@@ -55,6 +55,13 @@ describe('getMacroEventsInWindow — empty-source baseline', () => {
 });
 
 describe('getMacroEventsInWindow — window filtering (inclusive bounds)', () => {
+  // These tests exercise the filter logic with stub data only. Drain every
+  // hardcoded array first so the published 2026 calendar doesn't leak into
+  // the window. afterEach (at file scope) re-populates from snapshots.
+  beforeEach(() => {
+    for (const arr of ALL_HARDCODED_ARRAYS) arr.length = 0;
+  });
+
   it('excludes events strictly before fromDate', () => {
     FOMC_DECISIONS_2026.push(makeEvent({ date: '2026-05-10', event: 'Pre-window' }));
     expect(getMacroEventsInWindow({ fromDate: '2026-05-11', toDate: '2026-05-22' })).toEqual([]);
@@ -292,6 +299,119 @@ describe('FOMC_DECISIONS_2026', () => {
       .filter((e) => e.event.includes('Summary of Economic Projections'))
       .map((e) => e.date);
     expect(sepDates).toEqual(['2026-06-17', '2026-09-16', '2026-12-09']);
+  });
+});
+
+// =============================================================================
+// Phase 3 — populated 2026 release arrays (CPI / PPI / PCE / Retail Sales /
+// GDP / Productivity)
+// =============================================================================
+
+// 2026-05-13's Wikipedia/Zeller-fingerprint reference for the day-of-week
+// check: Jan 1 2026 is a Thursday. The MacroEvent `day` field is rendered
+// downstream by the DRB prompt builder; an off-by-one would surface in the
+// formatted brief as e.g. "May 12 (Wed) 8:30 AM ET — CPI (April)" when the
+// actual weekday is Tuesday.
+function expectedWeekday(dateStr) {
+  return new Date(`${dateStr}T00:00:00Z`)
+    .toLocaleDateString('en-US', { weekday: 'long', timeZone: 'UTC' });
+}
+
+const POPULATED_2026_ARRAYS = [
+  ['CPI', CPI_RELEASES_2026, 12],
+  ['PPI', PPI_RELEASES_2026, 13],            // +1 carryover: Nov-2025 release on Jan 14, 2026
+  ['PCE', PCE_RELEASES_2026, 13],            // +1 carryover: combined Oct/Nov-2025 release on Jan 22, 2026
+  ['Retail Sales', RETAIL_SALES_RELEASES_2026, 10],  // 5 confirmed + 5 forecast; Nov/Dec omitted
+  ['GDP', GDP_RELEASES_2026, 13],            // +1 carryover: Q3-2025 updated estimate on Jan 22, 2026
+  ['Productivity', PRODUCTIVITY_RELEASES_2026, 10],  // 5 quarters × 2 stages (Q3-2025 through Q3-2026)
+];
+
+describe('populated 2026 release arrays — counts', () => {
+  for (const [name, arr, count] of POPULATED_2026_ARRAYS) {
+    it(`${name} has ${count} entries`, () => {
+      expect(arr).toHaveLength(count);
+    });
+  }
+});
+
+describe('populated 2026 release arrays — shape', () => {
+  const requiredFields = ['date', 'day', 'time', 'category', 'impact', 'event'];
+  const allEntries = POPULATED_2026_ARRAYS.flatMap(([, arr]) => arr);
+
+  it('aggregate count across all 6 populated arrays is 71', () => {
+    expect(allEntries).toHaveLength(71);
+  });
+
+  it('every entry has all 6 required MacroEvent fields populated', () => {
+    for (const entry of allEntries) {
+      for (const field of requiredFields) {
+        expect(
+          entry[field],
+          `entry ${JSON.stringify(entry)} missing field "${field}"`,
+        ).toBeTruthy();
+      }
+    }
+  });
+
+  it('every entry`s `day` is consistent with its `date`', () => {
+    for (const entry of allEntries) {
+      expect(
+        entry.day,
+        `day/date mismatch on ${entry.date}: array says ${entry.day}, calendar says ${expectedWeekday(entry.date)}`,
+      ).toBe(expectedWeekday(entry.date));
+    }
+  });
+});
+
+describe('populated 2026 release arrays — spot checks', () => {
+  it('CPI April release (2026-05-12) is present — the verified date that triggered PR 3', () => {
+    const found = CPI_RELEASES_2026.find((e) => e.date === '2026-05-12');
+    expect(found).toBeDefined();
+    expect(found.event).toBe('CPI (April)');
+    expect(found.day).toBe('Tuesday');
+    expect(found.time).toBe('8:30 AM ET');
+    expect(found.impact).toBe('high');
+  });
+
+  it('PPI April release falls on 2026-05-13 (today)', () => {
+    const found = PPI_RELEASES_2026.find((e) => e.date === '2026-05-13');
+    expect(found).toBeDefined();
+    expect(found.event).toBe('PPI (April)');
+  });
+
+  it('PCE includes the combined Oct/Nov-2025 release as a single Jan 22 entry', () => {
+    const jan22 = PCE_RELEASES_2026.filter((e) => e.date === '2026-01-22');
+    expect(jan22).toHaveLength(1);
+    expect(jan22[0].event).toBe('PCE (October & November combined)');
+  });
+
+  it('GDP includes the Q3-2025 updated estimate on Jan 22', () => {
+    const found = GDP_RELEASES_2026.find((e) => e.event.includes('Q3 2025 updated estimate'));
+    expect(found).toBeDefined();
+    expect(found.date).toBe('2026-01-22');
+  });
+});
+
+describe('populated 2026 release arrays — getMacroEventsInWindow over a real week', () => {
+  it('window 2026-05-13 → 2026-05-22 returns exactly PPI on 5/13 and Retail Sales on 5/14', () => {
+    const events = getMacroEventsInWindow({ fromDate: '2026-05-13', toDate: '2026-05-22' });
+    expect(events).toHaveLength(2);
+    expect(events[0]).toMatchObject({
+      date: '2026-05-13',
+      day: 'Wednesday',
+      time: '8:30 AM ET',
+      category: 'PPI',
+      impact: 'medium',
+      event: 'PPI (April)',
+    });
+    expect(events[1]).toMatchObject({
+      date: '2026-05-14',
+      day: 'Thursday',
+      time: '8:30 AM ET',
+      category: 'Retail Sales',
+      impact: 'high',
+      event: 'Retail Sales (March)',
+    });
   });
 });
 
