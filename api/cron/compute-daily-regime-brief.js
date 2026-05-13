@@ -21,7 +21,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { FieldValue } from 'firebase-admin/firestore';
 import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
 import { fetchEconomicEvents } from '../_utils/fetchEconomicEvents.js';
-import { fetchEarningsCalendar } from '../_utils/fetchEarningsCalendar.js';
+import { fetchEarningsCalendarEODHD } from '../_utils/fetchEarningsCalendarEODHD.js';
 import {
   DAILY_REGIME_BRIEF_TOOL,
   buildDailyRegimeBriefPrompt,
@@ -112,7 +112,7 @@ export default async function handler(req, res) {
         (data) => ({ ok: true, data }),
         (err) => ({ ok: false, err }),
       ),
-      fetchEarningsCalendar().then(
+      fetchEarningsCalendarEODHD().then(
         (data) => ({ ok: true, data }),
         (err) => ({ ok: false, err }),
       ),
@@ -139,8 +139,8 @@ export default async function handler(req, res) {
       thisWeekEarnings = earnResult.data.thisWeek || [];
       nextWeekEarnings = earnResult.data.nextWeek || [];
     } else {
-      sourceFailures.push('earnings-calendar-sonar');
-      logError('fetchEarningsCalendar failed', { message: earnResult.err?.message });
+      sourceFailures.push('earnings-calendar-eodhd');
+      logError('fetchEarningsCalendarEODHD failed', { message: earnResult.err?.message });
     }
 
     // -------------------------------------------------------------------
