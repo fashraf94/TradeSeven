@@ -57,7 +57,7 @@ function makeTechScores(overrides = {}) {
 
 function makeMomentumData(symbol = 'MU', vwapEntry = null) {
   const entry = vwapEntry === null
-    ? { vwap: 433.57, currentPrice: 640.20, vwapDeviation: 47.66, sma20_5m: 641.22 }
+    ? { vwap: 433.57, currentPrice: 640.20, vwapDeviation: 47.66, sma20_5m: 641.22, sessionDate: '2026-05-12' }
     : vwapEntry;
   return {
     vwap: entry === undefined ? {} : { [symbol]: entry },
@@ -131,6 +131,7 @@ describe('buildTechnicalSnapshot', () => {
       currentPrice: 640.20,
       vwapDeviation: 47.66,
       sma20_5m: 641.22,
+      sessionDate: '2026-05-12',
     });
 
     expect(snap.composite).toEqual({
@@ -154,6 +155,7 @@ describe('buildTechnicalSnapshot', () => {
       currentPrice: null,
       vwapDeviation: null,
       sma20_5m: null,
+      sessionDate: null,
     });
 
     // Other fields remain populated
@@ -198,7 +200,7 @@ describe('buildTechnicalSnapshot', () => {
     expect(snap.pivots).toBeNull();
     expect(snap.recentAction).toEqual({ lastCandlePattern: null });
     expect(snap.intraday).toEqual({
-      vwap: null, currentPrice: null, vwapDeviation: null, sma20_5m: null,
+      vwap: null, currentPrice: null, vwapDeviation: null, sma20_5m: null, sessionDate: null,
     });
     expect(snap.composite).toEqual({
       technicalScore: null, technicalRank: null,
@@ -243,5 +245,67 @@ describe('buildTechnicalSnapshot', () => {
     expect(Number.isFinite(parsed)).toBe(true);
     expect(parsed).toBeGreaterThanOrEqual(before);
     expect(parsed).toBeLessThanOrEqual(after);
+  });
+
+  // ---- Fix v2: sessionDate capture ----------------------------------------
+  // momentumData.vwap[symbol] carries sessionDate (Fix v2 spread in
+  // agent-evaluate.js:384). The snapshot writer must propagate it so Phase 5C
+  // can disambiguate "today's session" vs "prior session" briefs on archived
+  // proposalHistory[i].snapshot / trades[i].snapshot records.
+
+  it('captures sessionDate from momentum data when present', () => {
+    const symbol = 'NVDA';
+    const snap = buildTechnicalSnapshot(symbol, {
+      momentumData: {
+        vwap: {
+          [symbol]: {
+            vwap: 145.5, currentPrice: 146.08, vwapDeviation: 0.40, sma20_5m: 145.92,
+            sessionDate: '2026-05-12',
+          },
+        },
+      },
+      technicalScoresMap: {},
+      rankingsMap: {},
+    });
+    expect(snap.intraday.sessionDate).toBe('2026-05-12');
+  });
+
+  it('defaults sessionDate to null when momentum entry omits the field (legacy data, pre-Fix v2)', () => {
+    // A momentumData payload written by a Fix-v1-era cron flush wouldn't have
+    // sessionDate at all. The `?? null` fallback keeps the snapshot schema
+    // shape-stable for Phase 5C readers.
+    const symbol = 'AMD';
+    const snap = buildTechnicalSnapshot(symbol, {
+      momentumData: {
+        vwap: {
+          [symbol]: {
+            vwap: 152.0, currentPrice: 151.4, vwapDeviation: -0.39, sma20_5m: 151.7,
+            // no sessionDate field
+          },
+        },
+      },
+      technicalScoresMap: {},
+      rankingsMap: {},
+    });
+    expect(snap.intraday.sessionDate).toBeNull();
+  });
+
+  it('preserves null sessionDate when momentum.sessionDate is explicitly null (filter returned empty session)', () => {
+    // filterToLatestSession returns sessionDate: null when the candles array
+    // is empty / all malformed (api/_utils/marketDataCache.js:839, 852).
+    const symbol = 'PLTR';
+    const snap = buildTechnicalSnapshot(symbol, {
+      momentumData: {
+        vwap: {
+          [symbol]: {
+            vwap: 35.0, currentPrice: 35.5, vwapDeviation: 1.4, sma20_5m: 35.2,
+            sessionDate: null,
+          },
+        },
+      },
+      technicalScoresMap: {},
+      rankingsMap: {},
+    });
+    expect(snap.intraday.sessionDate).toBeNull();
   });
 });

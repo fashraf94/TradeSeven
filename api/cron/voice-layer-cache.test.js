@@ -220,6 +220,38 @@ describe('buildBenchBriefs — partial techScore data', () => {
   });
 });
 
+// Fix v2 regression guard — bench briefs must NOT carry an intraday field.
+// Intraday momentum (VWAP, 5m SMA20) is intentionally portfolio-only (the
+// agent-evaluate cron skips intradayFetch for bench symbols by design).
+// If a future refactor accidentally adds `brief.intraday = ...` to the
+// bench loop in buildBenchBriefs, this test catches it before the
+// contaminated payload reaches voiceLayerCache and downstream readers.
+describe('buildBenchBriefs — intraday absence regression (Fix v2)', () => {
+  it('never sets intraday field on bench briefs (full-data stock path)', () => {
+    const portfolio = { bench: { stocks: [STOCK_AMD], crypto: null } };
+    const priceMap = { AMD: fullPrice(150.5, 2.34) };
+    const rankingsMap = { AMD: fullRanking({ technicalScore: 72, technicalRank: 18, atrPercentile: 0.55 }) };
+    const techScoresMap = { AMD: fullTechScore() };
+    const briefs = buildBenchBriefs(portfolio, priceMap, rankingsMap, techScoresMap, FROZEN_NOW);
+    expect(briefs).toHaveLength(1);
+    expect(briefs[0]).not.toHaveProperty('intraday');
+  });
+
+  it('never sets intraday field on bench briefs (degraded stock path)', () => {
+    const portfolio = { bench: { stocks: [STOCK_AMD], crypto: null } };
+    const briefs = buildBenchBriefs(portfolio, {}, {}, {}, FROZEN_NOW);
+    expect(briefs).toHaveLength(1);
+    expect(briefs[0]).not.toHaveProperty('intraday');
+  });
+
+  it('never sets intraday field on bench briefs (crypto path)', () => {
+    const portfolio = { bench: { stocks: [], crypto: CRYPTO_BTC } };
+    const briefs = buildBenchBriefs(portfolio, {}, {}, {}, FROZEN_NOW);
+    expect(briefs).toHaveLength(1);
+    expect(briefs[0]).not.toHaveProperty('intraday');
+  });
+});
+
 // ==================== MARKET CONTEXT BLOCK — SECTOR RS PASS-THROUGH ====================
 
 // Tier 0 Item 5: pass-through tests for the four new sector-RS classifier signals

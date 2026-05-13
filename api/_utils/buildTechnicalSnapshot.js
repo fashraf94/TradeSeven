@@ -15,7 +15,7 @@
  *
  * @param {string} symbol - Ticker
  * @param {Object} maps
- * @param {Object} [maps.momentumData] - { vwap: { [symbol]: { vwap, currentPrice, vwapDeviation, sma20_5m } } }
+ * @param {Object} [maps.momentumData] - { vwap: { [symbol]: { vwap, currentPrice, vwapDeviation, sma20_5m, sessionDate } } }
  * @param {Object} [maps.technicalScoresMap] - stockTechnicalScores doc data keyed by symbol
  * @param {Object} [maps.rankingsMap] - stockRankings entry keyed by symbol
  * @returns {Object} Structured snapshot with all sub-objects present; missing leaves null.
@@ -101,6 +101,7 @@ export function buildTechnicalSnapshot(symbol, { momentumData = {}, technicalSco
       currentPrice: intradayEntry.currentPrice ?? null,
       vwapDeviation: intradayEntry.vwapDeviation ?? null,
       sma20_5m: intradayEntry.sma20_5m ?? null,
+      sessionDate: intradayEntry.sessionDate ?? null,
     },
 
     composite: {
