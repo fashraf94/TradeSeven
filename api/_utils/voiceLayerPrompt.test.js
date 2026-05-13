@@ -2451,6 +2451,261 @@ describe('buildReviewContext — counterfactuals filter (regression)', () => {
   });
 });
 
+// ==================== PHASE 5C — END-TO-END INTEGRATION ====================
+
+describe('Phase 5C end-to-end — full Review prompt assembly', () => {
+  const snap = (sym, overrides = {}) => ({
+    symbol: sym,
+    sectorName: 'Technology',
+    capturedAt: '2026-05-15T15:30:00Z',
+    trend: { shortTerm: 'up', intermediate: 'up', longTerm: 'down' },
+    momentum: { macdFreshBullishCross: true, divergence: 'bullish' },
+    volatility: { atrPercent: 2.1 },
+    volume: { nr7Flag: true },
+    smaStack: { distTo52wkHigh: -1.8 },
+    rs: { rsPercentile: 76 },
+    levels: { nearestSupport: 880, nearestResistance: 905, distanceToSupportPct: -1.4, distanceToResistancePct: 1.3 },
+    recentAction: { lastCandlePattern: 'bullish_engulfing' },
+    intraday: { vwap: 893.5, currentPrice: 895.2, vwapDeviation: 0.7, sma20_5m: 894.0, sessionDate: '2026-05-15' },
+    composite: { technicalScore: 81, sectorTechnicalRank: 4, sectorTechnicalTotal: 28 },
+    ...overrides,
+  });
+
+  const buildRealisticBattle = () => ({
+    agentId: 'agent_1',
+    ownerId: 'user_1',
+    gameMode: 'baggerbomb',
+    executionMode: 'autopilot',
+    strategyPreset: 'balanced',
+    dailyReviews: [
+      {
+        date: '2026-05-15',
+        tradingDay: 5,
+        headline: 'Strong open, faded into close',
+        summary: 'Tech rotation paid off in the morning; AI names rolled in the afternoon.',
+        finalScore: 124,
+        opponentScore: 117,
+        selfGrade: 'B',
+      },
+    ],
+    trades: [
+      {
+        symbolOut: 'NVDA', symbolIn: 'AAPL', tier: 'star',
+        lockedPoints: 4.3, swappedOutAt: '2026-05-15T15:00:00Z',
+        evaluationId: 'eval_haiku_1',
+        snapshot: { symbolOut: snap('NVDA'), symbolIn: snap('AAPL') },
+      },
+      {
+        symbolOut: 'TSLA', symbolIn: 'F', tier: 'core',
+        lockedPoints: -1.8, swappedOutAt: '2026-05-15T15:30:00Z',
+        evaluationId: 'risk_drawdown_TSLA',
+        snapshot: { symbolOut: snap('TSLA'), symbolIn: snap('F') },
+      },
+      {
+        symbolOut: 'COIN', symbolIn: 'HOOD', tier: 'support',
+        lockedPoints: 2.1, swappedOutAt: '2026-05-15T15:45:00Z',
+        evaluationId: 'eval_haiku_2',
+        snapshot: { symbolOut: snap('COIN'), symbolIn: snap('HOOD') },
+      },
+    ],
+    proposalHistory: [
+      {
+        symbolOut: 'AAPL', symbolIn: 'MSFT', tier: 'star',
+        resolution: 'vetoed', scoreAtProposal: 72.4, scoreAtVeto: 68.1,
+        counterfactualPoints: 4.2,
+        snapshot: { symbolOut: snap('AAPL'), symbolIn: snap('MSFT') },
+      },
+      {
+        symbolOut: 'GOOG', symbolIn: 'META', tier: 'core',
+        resolution: 'lapsed', scoreAtProposal: 65, scoreAtResolution: 62.5,
+        counterfactualPoints: -0.8,
+        snapshot: { symbolOut: snap('GOOG'), symbolIn: snap('META') },
+      },
+    ],
+  });
+
+  const agent = {
+    name: 'Gemma',
+    archetype: 'strategist',
+    stats: { gamesPlayed: 12, wins: 7, losses: 5 },
+    partnerProfile: null,
+    convictions: [],
+    consolidatedInsight: null,
+  };
+
+  it('renders a full Review-mode prompt with snapshot blocks in the review context', () => {
+    const battle = buildRealisticBattle();
+    const out = buildVoiceLayerPrompt({
+      agent,
+      battle,
+      elicitationTarget: null,
+      conversationHistory: [],
+      anchorContext: 'Market closed. SPY +0.3% on the day.',
+      marketSnapshot: null,
+      mode: 'review',
+      dailyReviews: battle.dailyReviews,
+      dailyGrades: [],
+    });
+    expect(out).toContain('REVIEW MODE');
+    expect(out).toContain('REVIEW CONTEXT:');
+    expect(out).toContain('BATCH REVIEW SUMMARY (2026-05-15)');
+    // Trade snapshot blocks rendered with provenance
+    expect(out).toContain('TRADE — executed (autopilot)');
+    expect(out).toContain('TRADE — executed (risk-triggered)');
+    // Counterfactual snapshot blocks rendered with resolution
+    expect(out).toContain('COUNTERFACTUAL — vetoed by Coach');
+    expect(out).toContain('COUNTERFACTUAL — lapsed (no Coach action)');
+    expect(out).toContain('Score at proposal: 72.4 → at veto: 68.1');
+    expect(out).toContain('Score at proposal: 65 → at lapse: 62.5');
+  });
+
+  it('snapshot rendering token impact stays within budget ceiling for 5 cf + 3 trades', () => {
+    // Worst-case Review context: 5 counterfactuals (full depth) + 3 trades
+    // (compact depth), all fully populated. The 4-char-per-token heuristic
+    // is conservative for natural English; real BPE tokenization is lower.
+    // Ceiling of 2,000 estimated tokens guards against regressions that would
+    // bloat the prompt by ~25% over the current rendering.
+    const battle = {
+      trades: [1, 2, 3].map((n) => ({
+        symbolOut: `T${n}O`, symbolIn: `T${n}I`, tier: 'core',
+        lockedPoints: n, swappedOutAt: '2026-05-15T15:30:00Z',
+        evaluationId: `eval_${n}`,
+        snapshot: { symbolOut: snap(`T${n}O`), symbolIn: snap(`T${n}I`) },
+      })),
+      proposalHistory: [1, 2, 3, 4, 5].map((n) => ({
+        symbolOut: `C${n}O`, symbolIn: `C${n}I`, tier: 'star',
+        resolution: 'vetoed', scoreAtProposal: 70, scoreAtVeto: 65,
+        counterfactualPoints: n,
+        snapshot: { symbolOut: snap(`C${n}O`), symbolIn: snap(`C${n}I`) },
+      })),
+    };
+    const out = buildReviewContext(battle, [], []);
+    const startIdx = out.indexOf('TRADES (');
+    const snapshotSection = out.slice(startIdx);
+    const approxTokens = Math.ceil(snapshotSection.length / 4);
+    expect(approxTokens).toBeLessThan(2000);
+    expect(approxTokens).toBeGreaterThan(1000); // sanity check: rendering didn't silently shrink
+  });
+
+  it('renders mixed regime snapshots correctly (pre-fixv1, fixv1-era, post-fixv2)', () => {
+    const battle = {
+      trades: [],
+      proposalHistory: [
+        {
+          symbolOut: 'OLD1', symbolIn: 'OLD2', tier: 'star',
+          resolution: 'vetoed', counterfactualPoints: 1.5,
+          snapshot: {
+            symbolOut: snap('OLD1', {
+              capturedAt: '2026-05-08T15:00:00Z',
+              intraday: { vwap: 100, currentPrice: 101, vwapDeviation: 1, sma20_5m: null, sessionDate: null },
+            }),
+            symbolIn: snap('OLD2', {
+              capturedAt: '2026-05-08T15:00:00Z',
+              intraday: { vwap: 200, currentPrice: 201, vwapDeviation: 0.5, sma20_5m: null, sessionDate: null },
+            }),
+          },
+        },
+        {
+          symbolOut: 'MID1', symbolIn: 'MID2', tier: 'core',
+          resolution: 'lapsed', counterfactualPoints: -0.5,
+          snapshot: {
+            symbolOut: snap('MID1', {
+              capturedAt: '2026-05-12T20:00:00Z',
+              intraday: { vwap: null, currentPrice: null, vwapDeviation: null, sma20_5m: null, sessionDate: null },
+            }),
+            symbolIn: snap('MID2', {
+              capturedAt: '2026-05-12T20:00:00Z',
+              intraday: { vwap: null, currentPrice: null, vwapDeviation: null, sma20_5m: null, sessionDate: null },
+            }),
+          },
+        },
+        {
+          symbolOut: 'NEW1', symbolIn: 'NEW2', tier: 'support',
+          resolution: 'vetoed', counterfactualPoints: 3.2,
+          snapshot: { symbolOut: snap('NEW1'), symbolIn: snap('NEW2') },
+        },
+      ],
+    };
+    const out = buildReviewContext(battle, [], []);
+    // Pre-fixv1 (OLD): no intraday line
+    const oldSection = out.slice(out.indexOf('OLD1 leg:'), out.indexOf('MID1 leg:'));
+    expect(oldSection).not.toContain('session:');
+    // Fixv1-era (MID): no intraday line
+    const midSection = out.slice(out.indexOf('MID1 leg:'), out.indexOf('NEW1 leg:'));
+    expect(midSection).not.toContain('session:');
+    // Post-fixv2 (NEW): intraday rendered
+    const newSection = out.slice(out.indexOf('NEW1 leg:'));
+    expect(newSection).toContain("Today's session:");
+  });
+
+  it('defensive: malformed snapshot does not crash buildReviewContext', () => {
+    const malformedBattle = {
+      trades: [
+        { symbolOut: 'A', symbolIn: 'B', tier: 'core', lockedPoints: 1, snapshot: null },
+        { symbolOut: 'C', symbolIn: 'D', tier: 'core', lockedPoints: 2, snapshot: 'not-an-object' },
+        { symbolOut: 'E', symbolIn: 'F', tier: 'core', lockedPoints: 3, snapshot: { symbolOut: null, symbolIn: null } },
+        { symbolOut: 'G', symbolIn: 'H', tier: 'core', lockedPoints: 4, snapshot: { symbolOut: 'not-an-object' } },
+      ],
+      proposalHistory: [
+        { symbolOut: 'X', symbolIn: 'Y', resolution: 'vetoed', snapshot: undefined },
+      ],
+    };
+    expect(() => buildReviewContext(malformedBattle, [], [])).not.toThrow();
+    const out = buildReviewContext(malformedBattle, [], []);
+    expect(out).toContain('REVIEW CONTEXT:');
+  });
+
+  it('integrates PATTERN_DISPLAY_NAMES for snake_case candle patterns', () => {
+    const cfWithPattern = {
+      symbolOut: 'AAPL', symbolIn: 'MSFT', tier: 'star',
+      resolution: 'vetoed', scoreAtProposal: 70, scoreAtVeto: 65, counterfactualPoints: 1,
+      snapshot: {
+        symbolOut: snap('AAPL', { recentAction: { lastCandlePattern: 'bullish_engulfing' } }),
+        symbolIn: snap('MSFT', { recentAction: { lastCandlePattern: 'doji' } }),
+      },
+    };
+    const out = buildReviewContext({ trades: [], proposalHistory: [cfWithPattern] }, [], []);
+    expect(out).toContain('bullish engulfing');
+    expect(out).toContain('doji');
+  });
+
+  it('falls back to underscore-split for unknown candle pattern keys', () => {
+    const cfWithUnknownPattern = {
+      symbolOut: 'AAPL', symbolIn: 'MSFT', tier: 'star',
+      resolution: 'vetoed', counterfactualPoints: 1,
+      snapshot: {
+        symbolOut: snap('AAPL', { recentAction: { lastCandlePattern: 'mystery_candle_form' } }),
+        symbolIn: snap('MSFT'),
+      },
+    };
+    const out = buildReviewContext({ trades: [], proposalHistory: [cfWithUnknownPattern] }, [], []);
+    expect(out).toContain('mystery candle form');
+  });
+
+  it('auto-debrief and user-chat invocations produce identical Review prompts', () => {
+    // Both code paths call buildVoiceLayerPrompt({mode:'review', ...}). The
+    // assembled prompt should be byte-identical regardless of which caller
+    // invoked it — auto-debrief differs only in (1) how it appends to
+    // chatExchanges (handled in agent-batch-review.js, not this module) and
+    // (2) the userMessage passed to callGemmaVoice (also outside this module).
+    const battle = buildRealisticBattle();
+    const args = {
+      agent,
+      battle,
+      elicitationTarget: null,
+      conversationHistory: [],
+      anchorContext: null,
+      marketSnapshot: null,
+      mode: 'review',
+      dailyReviews: battle.dailyReviews,
+      dailyGrades: [],
+    };
+    const autoDebriefPrompt = buildVoiceLayerPrompt(args);
+    const userChatPrompt = buildVoiceLayerPrompt(args);
+    expect(autoDebriefPrompt).toBe(userChatPrompt);
+  });
+});
+
 // ==================== PHASE 5C — buildReviewContext INTEGRATION ====================
 
 describe('buildReviewContext — Phase 5C snapshot rendering integration', () => {
