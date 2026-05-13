@@ -140,7 +140,7 @@ export default async function handler(req, res) {
       nextWeekEarnings = earnResult.data.nextWeek || [];
     } else {
       sourceFailures.push('earnings-calendar-eodhd');
-      logError('fetchEarningsCalendar failed', { message: earnResult.err?.message });
+      logError('fetchEarningsCalendarEODHD failed', { message: earnResult.err?.message });
     }
 
     // -------------------------------------------------------------------
