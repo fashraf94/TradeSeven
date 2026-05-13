@@ -159,30 +159,47 @@ describe('agent-evaluate cron — Phase 4 technical snapshot writes', () => {
 // consumers (risk manager SWAP_OUT, Haiku prompt, Phase 4 snapshots,
 // Phase 5B-main brief line, voiceLayerCache).
 //
-// Fix: introduce filterToCurrentSession (marketDataCache.js) and apply it
-// BEFORE calculateVWAP at the single agent-evaluate call site. SMA20
-// intentionally keeps the full candle array (it's a 20-bar-by-index
+// Fix v1 introduced filterToCurrentSession which anchored on today's ET
+// date — broken under EODHD's ~1-trading-day lag on /intraday. Fix v2
+// renames to filterToLatestSession and anchors on the latest ET date in
+// the candle array (handles the lag). The function returns
+// `{candles, sessionDate}` so downstream can render today/prior prefixes.
+//
+// SMA20 intentionally keeps the full candle array (it's a 20-bar-by-index
 // calculation — already within-session by construction).
 //
 // These are static-source guards in the same style as Phase 3/4 above:
 // the handler is monolithic and the assertions belong on the wire shape.
-describe('agent-evaluate cron — VWAP session-boundary filter (post-fix)', () => {
+describe('agent-evaluate cron — VWAP session-boundary filter (post-fix v2)', () => {
   const source = readFileSync(SOURCE_PATH, 'utf-8');
 
-  it('imports filterToCurrentSession from marketDataCache.js', () => {
+  it('imports filterToLatestSession from marketDataCache.js', () => {
     expect(source).toMatch(
-      /import\s*\{[^}]*\bfilterToCurrentSession\b[^}]*\}\s*from\s*'\.\.\/_utils\/marketDataCache\.js'/,
+      /import\s*\{[^}]*\bfilterToLatestSession\b[^}]*\}\s*from\s*'\.\.\/_utils\/marketDataCache\.js'/,
     );
+    // Fix v1 name is gone.
+    expect(source).not.toMatch(/\bfilterToCurrentSession\b/);
   });
 
-  it('passes session-filtered candles to calculateVWAP (not the raw fetcher output)', () => {
-    // The filter must run between the EODHD response and calculateVWAP.
-    // We pin the wire shape: `calculateVWAP(sessionCandles)` with
-    // `sessionCandles` derived from `filterToCurrentSession(candles)`.
-    expect(source).toMatch(/const\s+sessionCandles\s*=\s*filterToCurrentSession\s*\(\s*candles\s*\)/);
+  it('destructures {candles, sessionDate} from filterToLatestSession and passes filtered candles to calculateVWAP', () => {
+    // Wire shape: `const { candles: sessionCandles, sessionDate } = filterToLatestSession(candles);`
+    // followed by `calculateVWAP(sessionCandles)`. The destructure is the
+    // contract that lets sessionDate flow into momentumData.vwap[symbol].
+    expect(source).toMatch(
+      /const\s*\{\s*candles\s*:\s*sessionCandles\s*,\s*sessionDate\s*\}\s*=\s*filterToLatestSession\s*\(\s*candles\s*\)/,
+    );
     expect(source).toMatch(/calculateVWAP\s*\(\s*sessionCandles\s*\)/);
     // And the bug-state (raw passthrough) is gone.
     expect(source).not.toMatch(/calculateVWAP\s*\(\s*candles\s*\)/);
+  });
+
+  it('persists sessionDate into momentumData.vwap[symbol] alongside vwapResult and sma20_5m', () => {
+    // sessionDate must travel with the rest of the intraday payload so that
+    // brief.intraday (voice-layer-cache.js:279 passthrough) carries it to
+    // buildIntradayLine for today/prior prefix selection.
+    expect(source).toMatch(
+      /momentumData\.vwap\[symbol\]\s*=\s*\{\s*\.\.\.\s*vwapResult\s*,\s*sma20_5m\s*,\s*sessionDate\s*\}/,
+    );
   });
 
   it('continues to pass the full candle array to calculate5minSMA20 (asymmetry by design)', () => {

@@ -7,6 +7,7 @@ import { getMarketState } from './marketSchedule.js';
 import { computeTimeRemaining } from './agentEvalPromptAssembly.js';
 import { wrapWithDelimiters } from './injectionGuard.js';
 import { PATTERN_DISPLAY_NAMES } from './analyticalPrimitives.js';
+import { toEtParts } from './marketDataCache.js';
 
 // ==================== STATIC CONSTANTS ====================
 
@@ -1132,13 +1133,26 @@ export function buildSignalsLine(brief) {
 // available AND the intraday fetch failed for vwap).
 //
 // Brief input invariant (from voice-layer-cache.js cron):
-//   - brief.intraday is { vwap, currentPrice, vwapDeviation, sma20_5m } or null.
+//   - brief.intraday is { vwap, currentPrice, vwapDeviation, sma20_5m, sessionDate } or null.
 //     vwap/currentPrice/vwapDeviation travel together (atomic from
 //     calculateVWAP). sma20_5m is independently nullable when <20 5m candles
-//     have closed for the session.
-export function buildIntradayLine(brief) {
+//     have closed for the session. sessionDate (Fix v2) is the latest ET
+//     date present in the EODHD response — used to pick the today/prior
+//     prefix below.
+//
+// Prefix: "Today's session" when sessionDate matches today's ET date;
+// "Prior session" otherwise. The prior fallback also covers the legacy/null
+// sessionDate path (e.g., briefs cached before Fix v2 deployed) — under
+// EODHD's typical ~1-trading-day lag, those briefs are almost certainly
+// from a prior session anyway.
+export function buildIntradayLine(brief, now = new Date()) {
   if (!brief?.intraday) return null;
   const intraday = brief.intraday;
+
+  const todayEt = toEtParts(now).dateStr;
+  const isToday = intraday.sessionDate === todayEt;
+  const prefix = isToday ? "Today's session" : 'Prior session';
+
   const segments = [];
 
   if (typeof intraday.vwapDeviation === 'number') {
@@ -1164,7 +1178,7 @@ export function buildIntradayLine(brief) {
   }
 
   if (segments.length === 0) return null;
-  return `Intraday: ${segments.join(', ')}.`;
+  return `${prefix}: ${segments.join(', ')}.`;
 }
 
 export function buildPortfolioBriefsBlock(marketSnapshot) {
@@ -1295,7 +1309,7 @@ Yields: ${mc.yieldRegime}`;
 }
 
 const DATA_CONFIDENCE_RULE = `DATA CONFIDENCE:
-Portfolio data refreshes every 15 minutes. Frame prices as trends, not exact current values. Say "CF is up solidly today" not "CF is at $78.42." If data feels stale, acknowledge it: "as of last check." The prompt may show raw indicator values (e.g., "ATR 4.2%", "Score 87", "RS 87th %ile") to support your reasoning — do not quote these verbatim in responses. Interpret raw indicators qualitatively ("volatility is elevated"); paraphrase percentiles and ranks as bands ("top decile," "best in sector"). Intraday signals (session VWAP, 5-min SMA20) describe today's session positioning — paraphrase as "holding above session VWAP" or "session momentum is constructive," not the exact deviation percentage. Never invent numbers — if a field is missing, skip it entirely.`;
+Portfolio data refreshes every 15 minutes. Frame prices as trends, not exact current values. Say "CF is up solidly today" not "CF is at $78.42." If data feels stale, acknowledge it: "as of last check." The prompt may show raw indicator values (e.g., "ATR 4.2%", "Score 87", "RS 87th %ile") to support your reasoning — do not quote these verbatim in responses. Interpret raw indicators qualitatively ("volatility is elevated"); paraphrase percentiles and ranks as bands ("top decile," "best in sector"). Intraday signals (session VWAP, 5-min SMA20) describe the latest available session — typically today during market hours, or the prior session when EODHD's data hasn't refreshed. Paraphrase as "holding above session VWAP" or "session momentum is constructive," not the exact deviation percentage. Never invent numbers — if a field is missing, skip it entirely.`;
 
 // ==================== WORKSHOP ANCHOR BLOCK ====================
 

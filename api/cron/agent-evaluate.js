@@ -8,7 +8,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
 import { isMarketOpen } from '../_utils/marketSchedule.js';
-import { getStockAnalysisData, fetchIntradayBatch, filterToCurrentSession } from '../_utils/marketDataCache.js';
+import { getStockAnalysisData, fetchIntradayBatch, filterToLatestSession } from '../_utils/marketDataCache.js';
 import { findActiveAgentBattles } from '../_utils/agentBattleService.js';
 import {
   calculateAssetScoreServer,
@@ -377,11 +377,11 @@ async function processAgentBattle(db, battle, summary) {
       for (const symbol of portfolioSymbols) {
         const candles = intradayMap[symbol];
         if (candles && candles.length > 0) {
-          const sessionCandles = filterToCurrentSession(candles);
+          const { candles: sessionCandles, sessionDate } = filterToLatestSession(candles);
           const vwapResult = calculateVWAP(sessionCandles);
           if (vwapResult) {
             const sma20_5m = calculate5minSMA20(candles);
-            momentumData.vwap[symbol] = { ...vwapResult, sma20_5m };
+            momentumData.vwap[symbol] = { ...vwapResult, sma20_5m, sessionDate };
           }
         }
       }

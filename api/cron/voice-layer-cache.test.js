@@ -220,6 +220,38 @@ describe('buildBenchBriefs — partial techScore data', () => {
   });
 });
 
+// Fix v2 regression guard — bench briefs must NOT carry an intraday field.
+// Intraday momentum (VWAP, 5m SMA20) is intentionally portfolio-only (the
+// agent-evaluate cron skips intradayFetch for bench symbols by design).
+// If a future refactor accidentally adds `brief.intraday = ...` to the
+// bench loop in buildBenchBriefs, this test catches it before the
+// contaminated payload reaches voiceLayerCache and downstream readers.
+describe('buildBenchBriefs — intraday absence regression (Fix v2)', () => {
+  it('never sets intraday field on bench briefs (full-data stock path)', () => {
+    const portfolio = { bench: { stocks: [STOCK_AMD], crypto: null } };
+    const priceMap = { AMD: fullPrice(150.5, 2.34) };
+    const rankingsMap = { AMD: fullRanking({ technicalScore: 72, technicalRank: 18, atrPercentile: 0.55 }) };
+    const techScoresMap = { AMD: fullTechScore() };
+    const briefs = buildBenchBriefs(portfolio, priceMap, rankingsMap, techScoresMap, FROZEN_NOW);
+    expect(briefs).toHaveLength(1);
+    expect(briefs[0]).not.toHaveProperty('intraday');
+  });
+
+  it('never sets intraday field on bench briefs (degraded stock path)', () => {
+    const portfolio = { bench: { stocks: [STOCK_AMD], crypto: null } };
+    const briefs = buildBenchBriefs(portfolio, {}, {}, {}, FROZEN_NOW);
+    expect(briefs).toHaveLength(1);
+    expect(briefs[0]).not.toHaveProperty('intraday');
+  });
+
+  it('never sets intraday field on bench briefs (crypto path)', () => {
+    const portfolio = { bench: { stocks: [], crypto: CRYPTO_BTC } };
+    const briefs = buildBenchBriefs(portfolio, {}, {}, {}, FROZEN_NOW);
+    expect(briefs).toHaveLength(1);
+    expect(briefs[0]).not.toHaveProperty('intraday');
+  });
+});
+
 // ==================== MARKET CONTEXT BLOCK — SECTOR RS PASS-THROUGH ====================
 
 // Tier 0 Item 5: pass-through tests for the four new sector-RS classifier signals
@@ -700,6 +732,124 @@ describe('buildPortfolioBriefs — intraday momentum overlay (Phase 3)', () => {
       expect(briefs[0].symbol).toBe('BTC');
       expect(briefs[0].intraday).toBeNull();
     }).not.toThrow();
+  });
+});
+
+// ==================== Fix v2 — sessionDate propagation ====================
+//
+// Fix v2 introduces a `sessionDate` field on momentumData.vwap[symbol]
+// (sourced from filterToLatestSession's return shape). The voice-layer-cache
+// passthrough at the brief assembly site is `brief.intraday = intradayMomentumMap[symbol] || null`,
+// so any new field added upstream must flow through verbatim. These tests
+// pin that behavior — they would fail if a future refactor introduced field
+// whitelisting or projection.
+
+function intradayPayloadWithSession({ vwap, currentPrice, vwapDeviation, sma20_5m, sessionDate }) {
+  return { vwap, currentPrice, vwapDeviation, sma20_5m, sessionDate };
+}
+
+describe('buildPortfolioBriefs — sessionDate propagation (Fix v2)', () => {
+  it('passes sessionDate through to brief.intraday when present in the momentum map', () => {
+    const stock = activeStock({ symbol: 'AAPL', baseATR: 2.5 });
+    const priceMap = { AAPL: priceFromMultiplier(0.3, 2.5) };
+    const intradayMap = {
+      AAPL: intradayPayloadWithSession({
+        vwap: 200.0,
+        currentPrice: 201.0,
+        vwapDeviation: 0.5,
+        sma20_5m: 200.5,
+        sessionDate: '2026-05-12',
+      }),
+    };
+
+    const briefs = buildPortfolioBriefs(activePortfolio(stock), priceMap, {}, {}, {}, {}, intradayMap);
+
+    expect(briefs[0].intraday).toEqual({
+      vwap: 200.0,
+      currentPrice: 201.0,
+      vwapDeviation: 0.5,
+      sma20_5m: 200.5,
+      sessionDate: '2026-05-12',
+    });
+    expect(briefs[0].intraday.sessionDate).toBe('2026-05-12');
+  });
+
+  it('passes sessionDate through even when it is from a prior trading day (EODHD lag case)', () => {
+    // Production failure mode: EODHD's /intraday lags, so sessionDate is
+    // yesterday's date even when the cron runs today. The brief must still
+    // carry the field — the renderer uses it to pick the "Prior session"
+    // prefix.
+    const stock = activeStock({ symbol: 'NVDA', baseATR: 2.0 });
+    const priceMap = { NVDA: priceFromMultiplier(0.4, 2.0) };
+    const intradayMap = {
+      NVDA: intradayPayloadWithSession({
+        vwap: 145.50,
+        currentPrice: 146.08,
+        vwapDeviation: 0.40,
+        sma20_5m: 145.92,
+        sessionDate: '2026-05-11', // yesterday
+      }),
+    };
+
+    const briefs = buildPortfolioBriefs(activePortfolio(stock), priceMap, {}, {}, {}, {}, intradayMap);
+
+    expect(briefs[0].intraday.sessionDate).toBe('2026-05-11');
+  });
+
+  it('brief.intraday remains null when intraday data is missing for the symbol (sessionDate context too)', () => {
+    // No payload for this symbol → brief.intraday is null. There's no
+    // sessionDate to read; downstream renderer short-circuits via
+    // `if (!brief?.intraday) return null` before sessionDate is consulted.
+    const stock = activeStock({ symbol: 'PLTR', baseATR: 3.0 });
+    const priceMap = { PLTR: priceFromMultiplier(0.2, 3.0) };
+    const intradayMap = {};
+
+    const briefs = buildPortfolioBriefs(activePortfolio(stock), priceMap, {}, {}, {}, {}, intradayMap);
+
+    expect(briefs[0].intraday).toBeNull();
+  });
+
+  it('legacy payload without sessionDate still flows through (backwards-compat)', () => {
+    // If a cron flush happens to land mid-deploy and the cached payload
+    // predates the sessionDate field, brief.intraday should still be a
+    // well-formed object — sessionDate just shows up as undefined.
+    // buildIntradayLine's prefix fallback ("Prior session") handles that.
+    const stock = activeStock({ symbol: 'TSLA', baseATR: 3.5 });
+    const priceMap = { TSLA: priceFromMultiplier(0.1, 3.5) };
+    const intradayMap = {
+      TSLA: { vwap: 230.0, currentPrice: 231.2, vwapDeviation: 0.52, sma20_5m: 230.8 },
+    };
+
+    const briefs = buildPortfolioBriefs(activePortfolio(stock), priceMap, {}, {}, {}, {}, intradayMap);
+
+    expect(briefs[0].intraday).toBeDefined();
+    expect(briefs[0].intraday.vwap).toBe(230.0);
+    expect(briefs[0].intraday.sessionDate).toBeUndefined();
+  });
+
+  it('mixed map: some symbols have sessionDate, others legacy — each brief carries its own shape', () => {
+    const portfolio = {
+      star: [activeStock({ symbol: 'NVDA', baseATR: 2.0 })],
+      core: [activeStock({ symbol: 'AMD', baseATR: 3.0 })],
+    };
+    const priceMap = {
+      NVDA: priceFromMultiplier(0.4, 2.0),
+      AMD: priceFromMultiplier(0.3, 3.0),
+    };
+    const intradayMap = {
+      NVDA: intradayPayloadWithSession({
+        vwap: 145.5, currentPrice: 146.1, vwapDeviation: 0.41, sma20_5m: 145.9,
+        sessionDate: '2026-05-12',
+      }),
+      AMD: { vwap: 152.0, currentPrice: 151.4, vwapDeviation: -0.39, sma20_5m: 151.7 }, // no sessionDate
+    };
+
+    const briefs = buildPortfolioBriefs(portfolio, priceMap, {}, {}, {}, {}, intradayMap);
+    const bySymbol = Object.fromEntries(briefs.map(b => [b.symbol, b]));
+
+    expect(bySymbol.NVDA.intraday.sessionDate).toBe('2026-05-12');
+    expect(bySymbol.AMD.intraday.sessionDate).toBeUndefined();
+    expect(bySymbol.AMD.intraday.vwap).toBe(152.0);
   });
 });
 

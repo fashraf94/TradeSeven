@@ -1,7 +1,7 @@
 // api/_utils/voiceLayerPrompt.test.js
 // Tier 0 Item 1: bench data exposure — buildBenchBriefsBlock unit tests.
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 // Mutable holder so individual tests can set the market state returned by the
 // mocked getMarketState() before exercising buildBattleState. Default to OPEN
@@ -1176,35 +1176,35 @@ describe('buildIntradayLine — Phase 5B', () => {
     const out = buildIntradayLine({
       intraday: { vwap: 145.5, currentPrice: 146.5, vwapDeviation: 0.7, sma20_5m: null },
     });
-    expect(out).toBe('Intraday: 0.7% above session VWAP.');
+    expect(out).toBe('Prior session: 0.7% above session VWAP.');
   });
 
   it('renders VWAP segment with "below" when vwapDeviation is negative', () => {
     const out = buildIntradayLine({
       intraday: { vwap: 145.5, currentPrice: 144.5, vwapDeviation: -0.7, sma20_5m: null },
     });
-    expect(out).toBe('Intraday: 0.7% below session VWAP.');
+    expect(out).toBe('Prior session: 0.7% below session VWAP.');
   });
 
   it('renders VWAP segment as "at" when |vwapDeviation| < 0.05 (positive near-zero)', () => {
     const out = buildIntradayLine({
       intraday: { vwap: 145.5, currentPrice: 145.55, vwapDeviation: 0.03, sma20_5m: null },
     });
-    expect(out).toBe('Intraday: at session VWAP.');
+    expect(out).toBe('Prior session: at session VWAP.');
   });
 
   it('renders VWAP segment as "at" when |vwapDeviation| < 0.05 (negative near-zero)', () => {
     const out = buildIntradayLine({
       intraday: { vwap: 145.5, currentPrice: 145.44, vwapDeviation: -0.04, sma20_5m: null },
     });
-    expect(out).toBe('Intraday: at session VWAP.');
+    expect(out).toBe('Prior session: at session VWAP.');
   });
 
   it('renders VWAP segment as "above" (not "at") when vwapDeviation === 0.05 exactly (strict-< boundary)', () => {
     const out = buildIntradayLine({
       intraday: { vwap: 145.5, currentPrice: 145.57, vwapDeviation: 0.05, sma20_5m: null },
     });
-    expect(out).toBe('Intraday: 0.1% above session VWAP.');
+    expect(out).toBe('Prior session: 0.1% above session VWAP.');
   });
 
   it('renders SMA20 segment when currentPrice and sma20_5m are both numeric', () => {
@@ -1212,7 +1212,7 @@ describe('buildIntradayLine — Phase 5B', () => {
       intraday: { vwap: null, currentPrice: 146.08, vwapDeviation: null, sma20_5m: 145.92 },
     });
     // (146.08 - 145.92) / 145.92 = 0.1097% → 0.1% above
-    expect(out).toBe('Intraday: 0.1% above 5m SMA20.');
+    expect(out).toBe('Prior session: 0.1% above 5m SMA20.');
   });
 
   it('skips SMA20 segment when sma20_5m is present but currentPrice is not', () => {
@@ -1226,14 +1226,14 @@ describe('buildIntradayLine — Phase 5B', () => {
     const out = buildIntradayLine({
       intraday: { vwap: 145.5, currentPrice: 146.08, vwapDeviation: 0.7, sma20_5m: 145.92 },
     });
-    expect(out).toBe('Intraday: 0.7% above session VWAP, 0.1% above 5m SMA20.');
+    expect(out).toBe('Prior session: 0.7% above session VWAP, 0.1% above 5m SMA20.');
   });
 
   it('rounds via toFixed(1) — 0.756 → "0.8% above"', () => {
     const out = buildIntradayLine({
       intraday: { vwap: 100, currentPrice: 100.756, vwapDeviation: 0.756, sma20_5m: null },
     });
-    expect(out).toBe('Intraday: 0.8% above session VWAP.');
+    expect(out).toBe('Prior session: 0.8% above session VWAP.');
   });
 
   it('renders SMA20 with "below" when currentPrice is below sma20_5m', () => {
@@ -1241,7 +1241,7 @@ describe('buildIntradayLine — Phase 5B', () => {
       intraday: { vwap: null, currentPrice: 145.0, vwapDeviation: null, sma20_5m: 145.5 },
     });
     // (145.0 - 145.5) / 145.5 = -0.3436% → 0.3% below
-    expect(out).toBe('Intraday: 0.3% below 5m SMA20.');
+    expect(out).toBe('Prior session: 0.3% below 5m SMA20.');
   });
 
   it('renders SMA20 as "at" when price within 0.05% of sma20_5m', () => {
@@ -1249,7 +1249,139 @@ describe('buildIntradayLine — Phase 5B', () => {
       intraday: { vwap: null, currentPrice: 145.5, vwapDeviation: null, sma20_5m: 145.53 },
     });
     // (145.5 - 145.53) / 145.53 = -0.0206% → "at"
-    expect(out).toBe('Intraday: at 5m SMA20.');
+    expect(out).toBe('Prior session: at 5m SMA20.');
+  });
+});
+
+// Fix v2 — dynamic prefix derived from sessionDate. "Today's session" when
+// sessionDate matches today's ET date (passed via `now`); "Prior session"
+// otherwise (including null/undefined sessionDate — the legacy/cached-brief
+// fallback). Anchors on ET, NOT host-local time, via toEtParts.
+describe('buildIntradayLine — Fix v2 dynamic today/prior prefix', () => {
+  // Helper: construct a UTC Date equivalent to a wall-clock ET datetime.
+  // Mirrors marketDataCache.test.js — keeps tests independent of host TZ.
+  function utcFromEt(year, month, day, hourEt, minuteEt, etOffsetHours) {
+    return new Date(Date.UTC(year, month - 1, day, hourEt + etOffsetHours, minuteEt, 0));
+  }
+
+  it('renders "Today\'s session" prefix when sessionDate matches today\'s ET date', () => {
+    // now = 2026-05-12 12:00 ET (DST, UTC-4)
+    const now = utcFromEt(2026, 5, 12, 12, 0, 4);
+    const out = buildIntradayLine({
+      intraday: {
+        vwap: 145.5,
+        currentPrice: 146.5,
+        vwapDeviation: 0.7,
+        sma20_5m: null,
+        sessionDate: '2026-05-12',
+      },
+    }, now);
+    expect(out).toBe("Today's session: 0.7% above session VWAP.");
+  });
+
+  it('renders "Prior session" prefix when sessionDate is from a prior day (the EODHD-lag case)', () => {
+    // now = 2026-05-12 12:00 ET, but EODHD's data only goes through May 11.
+    const now = utcFromEt(2026, 5, 12, 12, 0, 4);
+    const out = buildIntradayLine({
+      intraday: {
+        vwap: 145.5,
+        currentPrice: 146.5,
+        vwapDeviation: 0.7,
+        sma20_5m: null,
+        sessionDate: '2026-05-11',
+      },
+    }, now);
+    expect(out).toBe('Prior session: 0.7% above session VWAP.');
+  });
+
+  it('renders "Prior session" prefix when sessionDate is null (legacy/cached brief fallback)', () => {
+    const now = utcFromEt(2026, 5, 12, 12, 0, 4);
+    const out = buildIntradayLine({
+      intraday: { vwap: 145.5, currentPrice: 146.5, vwapDeviation: 0.7, sma20_5m: null, sessionDate: null },
+    }, now);
+    expect(out).toBe('Prior session: 0.7% above session VWAP.');
+  });
+
+  it('renders "Prior session" prefix when sessionDate is missing entirely (legacy payload)', () => {
+    const now = utcFromEt(2026, 5, 12, 12, 0, 4);
+    const out = buildIntradayLine({
+      // No sessionDate field at all — pre-Fix v2 cached brief.
+      intraday: { vwap: 145.5, currentPrice: 146.5, vwapDeviation: 0.7, sma20_5m: null },
+    }, now);
+    expect(out).toBe('Prior session: 0.7% above session VWAP.');
+  });
+
+  it('anchors on ET, not UTC — late UTC night that\'s still afternoon ET picks the right "today"', () => {
+    // 2026-05-12 23:30 UTC = 2026-05-12 19:30 ET (DST). "Today" in ET is
+    // still May 12, even though host UTC might roll to May 13 first.
+    const now = new Date(Date.UTC(2026, 4, 12, 23, 30, 0));
+    const out = buildIntradayLine({
+      intraday: {
+        vwap: 145.5,
+        currentPrice: 146.5,
+        vwapDeviation: 0.7,
+        sma20_5m: null,
+        sessionDate: '2026-05-12',
+      },
+    }, now);
+    expect(out).toBe("Today's session: 0.7% above session VWAP.");
+  });
+
+  it('anchors on ET, not UTC — early UTC morning that\'s still prior evening ET picks the right "today"', () => {
+    // 2026-05-13 02:00 UTC = 2026-05-12 22:00 ET. "Today" in ET = May 12.
+    const now = new Date(Date.UTC(2026, 4, 13, 2, 0, 0));
+    const out = buildIntradayLine({
+      intraday: {
+        vwap: 145.5,
+        currentPrice: 146.5,
+        vwapDeviation: 0.7,
+        sma20_5m: null,
+        sessionDate: '2026-05-12',
+      },
+    }, now);
+    expect(out).toBe("Today's session: 0.7% above session VWAP.");
+  });
+
+  it('handles DST correctly — winter (standard time, UTC-5) prefix selection', () => {
+    // 2026-01-20 14:00 UTC = 09:00 ET. Today's ET date = Jan 20.
+    const now = new Date(Date.UTC(2026, 0, 20, 14, 0, 0));
+    const out = buildIntradayLine({
+      intraday: {
+        vwap: 145.5, currentPrice: 146.5, vwapDeviation: 0.7, sma20_5m: 145.92,
+        sessionDate: '2026-01-20',
+      },
+    }, now);
+    expect(out).toBe("Today's session: 0.7% above session VWAP, 0.4% above 5m SMA20.");
+  });
+
+  it('combined VWAP + SMA20 segments render with Today\'s session prefix', () => {
+    const now = utcFromEt(2026, 5, 12, 12, 0, 4);
+    const out = buildIntradayLine({
+      intraday: {
+        vwap: 145.5, currentPrice: 146.08, vwapDeviation: 0.7, sma20_5m: 145.92,
+        sessionDate: '2026-05-12',
+      },
+    }, now);
+    expect(out).toBe("Today's session: 0.7% above session VWAP, 0.1% above 5m SMA20.");
+  });
+
+  it('returns null (regardless of prefix) when intraday is missing entirely', () => {
+    const now = utcFromEt(2026, 5, 12, 12, 0, 4);
+    expect(buildIntradayLine({ intraday: null }, now)).toBeNull();
+    expect(buildIntradayLine(null, now)).toBeNull();
+    expect(buildIntradayLine({ intraday: {} }, now)).toBeNull();
+  });
+
+  it('uses real-time new Date() default when now arg is omitted', () => {
+    // Smoke test: no `now` arg, sessionDate intentionally NOT today → Prior.
+    // Doesn't pin the date — just verifies no crash on default-arg path.
+    const out = buildIntradayLine({
+      intraday: {
+        vwap: 100, currentPrice: 101, vwapDeviation: 1.0, sma20_5m: null,
+        sessionDate: '2020-01-01',
+      },
+    });
+    expect(out).toBe('Prior session: 1.0% above session VWAP.');
   });
 });
 
@@ -1731,9 +1863,11 @@ describe('DATA_CONFIDENCE_RULE — Phase 5A prompt-vs-response framing', () => {
     expect(out).not.toContain('Percentile and rank values may be paraphrased as bands ("top decile," "best in sector") in responses; raw indicator values');
   });
 
-  // Phase 5B-main — intraday clause locks. The new sentence sits between
-  // the percentile-bands clause and the "Never invent numbers" closer.
-  it('battle prompt embeds the Phase 5B intraday clause', () => {
+  // Fix v2 — intraday clause updated for latest-session semantics. Fix v1's
+  // wording said "today's session positioning" — incorrect when EODHD's
+  // /intraday lag means the data is from the prior session. Updated wording
+  // covers both regimes explicitly.
+  it('battle prompt embeds the Fix v2 intraday clause with latest-session semantics', () => {
     const out = buildVoiceLayerPrompt({
       agent: minimalAgent,
       battle: minimalBattle,
@@ -1745,9 +1879,27 @@ describe('DATA_CONFIDENCE_RULE — Phase 5A prompt-vs-response framing', () => {
     });
 
     expect(out).toContain('Intraday signals (session VWAP, 5-min SMA20)');
-    expect(out).toContain("paraphrase as \"holding above session VWAP\"");
+    expect(out).toContain('describe the latest available session');
+    expect(out).toContain("typically today during market hours, or the prior session when EODHD's data hasn't refreshed");
+    expect(out).toContain('Paraphrase as "holding above session VWAP"');
     expect(out).toContain('"session momentum is constructive,"');
     expect(out).toContain('not the exact deviation percentage');
+  });
+
+  it('Fix v1 intraday wording is gone (replaced by latest-session phrasing)', () => {
+    const out = buildVoiceLayerPrompt({
+      agent: minimalAgent,
+      battle: minimalBattle,
+      elicitationTarget: minimalElicitation,
+      conversationHistory: [],
+      anchorContext: null,
+      marketSnapshot: { portfolioBriefs: [], benchBriefs: [], scoutAlerts: [] },
+      mode: 'battle',
+    });
+
+    // The exact Fix v1 phrase "today's session positioning" was misleading
+    // under EODHD's lag — assert it's removed.
+    expect(out).not.toContain("today's session positioning");
   });
 
   it('intraday clause sits between percentile-bands and "Never invent numbers" (order lock)', () => {
@@ -2025,14 +2177,18 @@ describe('Phase 5B-main integration — buildPortfolioBriefsBlock wires Intraday
         distTo52wkHigh: null,
       })],
     });
-    expect(out).toContain('Intraday: 0.7% above session VWAP, 0.1% above 5m SMA20.');
+    expect(out).toContain('Prior session: 0.7% above session VWAP, 0.1% above 5m SMA20.');
   });
 
   it('omits the Intraday line when brief.intraday is null', () => {
     const out = buildPortfolioBriefsBlock({
       portfolioBriefs: [realisticPortfolioBrief({ intraday: null })],
     });
-    expect(out).not.toContain('Intraday:');
+    // Fix v2: the intraday line is prefixed with either "Today's session: "
+    // or "Prior session: " depending on sessionDate. Assert both prefixes
+    // are absent to cover both render paths.
+    expect(out).not.toContain('Prior session:');
+    expect(out).not.toContain("Today's session:");
   });
 
   it('omits the Intraday line when brief.intraday has no numeric components', () => {
@@ -2041,7 +2197,8 @@ describe('Phase 5B-main integration — buildPortfolioBriefsBlock wires Intraday
         intraday: { vwap: null, currentPrice: null, vwapDeviation: null, sma20_5m: null },
       })],
     });
-    expect(out).not.toContain('Intraday:');
+    expect(out).not.toContain('Prior session:');
+    expect(out).not.toContain("Today's session:");
   });
 
   it('places Intraday line AFTER Signals and BEFORE BaggerBomb/threshold section', () => {
@@ -2056,7 +2213,8 @@ describe('Phase 5B-main integration — buildPortfolioBriefsBlock wires Intraday
       })],
     });
     const signalsIdx = out.indexOf('Signals:');
-    const intradayIdx = out.indexOf('Intraday:');
+    // No sessionDate in this brief → defaults to "Prior session" prefix.
+    const intradayIdx = out.indexOf('Prior session:');
     const baggerIdx = out.indexOf('BaggerBomb:');
     expect(signalsIdx).toBeGreaterThan(-1);
     expect(intradayIdx).toBeGreaterThan(signalsIdx);
@@ -2075,7 +2233,7 @@ describe('Phase 5B-main integration — buildPortfolioBriefsBlock wires Intraday
       })],
     });
     expect(out).not.toContain('Signals:');
-    expect(out).toContain('Intraday: 0.7% above session VWAP.');
+    expect(out).toContain('Prior session: 0.7% above session VWAP.');
   });
 
   it('buildBenchBriefsBlock does NOT render an Intraday line (bench has no intraday data)', () => {
@@ -2088,6 +2246,134 @@ describe('Phase 5B-main integration — buildPortfolioBriefsBlock wires Intraday
         intraday: { vwap: 150, currentPrice: 151, vwapDeviation: 0.67, sma20_5m: 150.5 },
       }],
     });
-    expect(out).not.toContain('Intraday:');
+    expect(out).not.toContain('Prior session:');
+    expect(out).not.toContain("Today's session:");
+  });
+});
+
+// =============================================================================
+// Fix v2 — end-to-end rendering with sessionDate-driven today/prior prefix.
+// buildPortfolioBriefsBlock doesn't accept `now`, so these tests mock global
+// time via vi.useFakeTimers + setSystemTime. The mocked time is the value
+// buildIntradayLine's `new Date()` default resolves to.
+// =============================================================================
+
+describe('Fix v2 end-to-end — buildPortfolioBriefsBlock renders dynamic intraday prefix', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('renders "Today\'s session: ..." when brief.intraday.sessionDate matches today\'s ET date', () => {
+    // 2026-05-12 16:00 UTC = 12:00 ET (DST). Today's ET date = 2026-05-12.
+    vi.setSystemTime(new Date(Date.UTC(2026, 4, 12, 16, 0, 0)));
+
+    const out = buildPortfolioBriefsBlock({
+      portfolioBriefs: [realisticPortfolioBrief({
+        intraday: {
+          vwap: 422.5,
+          currentPrice: 425.5,
+          vwapDeviation: 0.7,
+          sma20_5m: 425.1,
+          sessionDate: '2026-05-12',
+        },
+        macdFreshBullishCross: false,
+        divergence: 'none',
+        nr7Flag: false,
+        lastCandlePattern: null,
+        nearestSupport: null,
+        nearestResistance: null,
+        distanceToSupportPct: null,
+        distanceToResistancePct: null,
+        distTo52wkHigh: null,
+      })],
+    });
+
+    expect(out).toContain("Today's session: 0.7% above session VWAP, 0.1% above 5m SMA20.");
+    expect(out).not.toContain('Prior session:');
+  });
+
+  it('renders "Prior session: ..." when brief.intraday.sessionDate is yesterday (the EODHD-lag production case)', () => {
+    // 2026-05-12 16:00 UTC = 12:00 ET. Today is May 12, but EODHD's data
+    // only goes through May 11.
+    vi.setSystemTime(new Date(Date.UTC(2026, 4, 12, 16, 0, 0)));
+
+    const out = buildPortfolioBriefsBlock({
+      portfolioBriefs: [realisticPortfolioBrief({
+        intraday: {
+          vwap: 422.5,
+          currentPrice: 425.5,
+          vwapDeviation: 0.7,
+          sma20_5m: 425.1,
+          sessionDate: '2026-05-11',
+        },
+        macdFreshBullishCross: false,
+        divergence: 'none',
+        nr7Flag: false,
+        lastCandlePattern: null,
+        nearestSupport: null,
+        nearestResistance: null,
+        distanceToSupportPct: null,
+        distanceToResistancePct: null,
+        distTo52wkHigh: null,
+      })],
+    });
+
+    expect(out).toContain('Prior session: 0.7% above session VWAP, 0.1% above 5m SMA20.');
+    expect(out).not.toContain("Today's session:");
+  });
+
+  it('renders "Prior session: ..." when sessionDate is missing entirely (legacy cached brief)', () => {
+    vi.setSystemTime(new Date(Date.UTC(2026, 4, 12, 16, 0, 0)));
+
+    const out = buildPortfolioBriefsBlock({
+      portfolioBriefs: [realisticPortfolioBrief({
+        // Pre-Fix v2 cached brief — no sessionDate field at all.
+        intraday: { vwap: 422.5, currentPrice: 425.5, vwapDeviation: 0.7, sma20_5m: 425.1 },
+        macdFreshBullishCross: false,
+        divergence: 'none',
+        nr7Flag: false,
+        lastCandlePattern: null,
+        nearestSupport: null,
+        nearestResistance: null,
+        distanceToSupportPct: null,
+        distanceToResistancePct: null,
+        distTo52wkHigh: null,
+      })],
+    });
+
+    expect(out).toContain('Prior session: 0.7% above session VWAP, 0.1% above 5m SMA20.');
+    expect(out).not.toContain("Today's session:");
+  });
+
+  it('mixed portfolio: today\'s brief and yesterday\'s brief render with their own prefixes', () => {
+    vi.setSystemTime(new Date(Date.UTC(2026, 4, 12, 16, 0, 0)));
+
+    const out = buildPortfolioBriefsBlock({
+      portfolioBriefs: [
+        realisticPortfolioBrief({
+          symbol: 'NVDA',
+          intraday: {
+            vwap: 145.5, currentPrice: 146.1, vwapDeviation: 0.41, sma20_5m: null,
+            sessionDate: '2026-05-12', // today
+          },
+          macdFreshBullishCross: false, divergence: 'none', nr7Flag: false, lastCandlePattern: null,
+        }),
+        realisticPortfolioBrief({
+          symbol: 'AMD',
+          intraday: {
+            vwap: 152.0, currentPrice: 151.4, vwapDeviation: -0.39, sma20_5m: null,
+            sessionDate: '2026-05-11', // yesterday
+          },
+          macdFreshBullishCross: false, divergence: 'none', nr7Flag: false, lastCandlePattern: null,
+        }),
+      ],
+    });
+
+    expect(out).toContain("Today's session: 0.4% above session VWAP.");
+    expect(out).toContain('Prior session: 0.4% below session VWAP.');
   });
 });
