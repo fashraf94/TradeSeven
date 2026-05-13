@@ -24,10 +24,731 @@ vi.mock('./marketSchedule.js', async (importOriginal) => {
   };
 });
 
-import { buildBenchBriefsBlock, buildBattleState, buildMarketSnapshotContext, buildPortfolioBriefsBlock, buildVoiceLayerPrompt, buildReviewContext, buildHeaderLine, buildLevelsLine, buildSignalsLine, buildIntradayLine } from './voiceLayerPrompt.js';
+import { buildBenchBriefsBlock, buildBattleState, buildMarketSnapshotContext, buildPortfolioBriefsBlock, buildVoiceLayerPrompt, buildReviewContext, buildHeaderLine, buildLevelsLine, buildSignalsLine, buildIntradayLine, detectSnapshotRegime, buildSnapshotHeader, buildSnapshotTrend, buildSnapshotSignals, buildSnapshotLevels, buildSnapshotIntraday, buildSwapEntryBlock, detectTradeProvenance } from './voiceLayerPrompt.js';
 import { getETDate, formatDateString } from './marketSchedule.js';
 
 // ==================== TESTS ====================
+
+// ==================== PHASE 5C — SNAPSHOT REGIME DETECTOR ====================
+
+describe('detectSnapshotRegime — Phase 5C', () => {
+  it('returns post-fixv2 when intraday.sessionDate is present', () => {
+    const snap = { capturedAt: '2026-05-15T15:00:00Z', intraday: { sessionDate: '2026-05-15' } };
+    expect(detectSnapshotRegime(snap)).toBe('post-fixv2');
+  });
+
+  it('returns pre-fixv1 when capturedAt is before 2026-05-12 17:39 UTC and no sessionDate', () => {
+    const snap = { capturedAt: '2026-05-08T14:00:00Z', intraday: { sessionDate: null, vwap: 100 } };
+    expect(detectSnapshotRegime(snap)).toBe('pre-fixv1');
+  });
+
+  it('returns fixv1-era when capturedAt is between fix v1 and fix v2 dates and no sessionDate', () => {
+    const snap = { capturedAt: '2026-05-12T20:00:00Z', intraday: { sessionDate: null, vwap: null } };
+    expect(detectSnapshotRegime(snap)).toBe('fixv1-era');
+  });
+
+  it('returns fixv1-era defensively when snapshot is null', () => {
+    expect(detectSnapshotRegime(null)).toBe('fixv1-era');
+    expect(detectSnapshotRegime(undefined)).toBe('fixv1-era');
+  });
+
+  it('returns fixv1-era defensively when capturedAt is missing', () => {
+    expect(detectSnapshotRegime({ intraday: { sessionDate: null } })).toBe('fixv1-era');
+    expect(detectSnapshotRegime({})).toBe('fixv1-era');
+  });
+
+  it('returns fixv1-era defensively when capturedAt is malformed', () => {
+    expect(detectSnapshotRegime({ capturedAt: 'not-a-date', intraday: {} })).toBe('fixv1-era');
+    expect(detectSnapshotRegime({ capturedAt: '' })).toBe('fixv1-era');
+  });
+
+  it('post-fixv2 wins even when capturedAt is technically before the boundary (defensive)', () => {
+    // sessionDate presence is the authoritative signal — even an out-of-band old
+    // capturedAt with sessionDate present still routes to post-fixv2.
+    const snap = { capturedAt: '2026-05-01T00:00:00Z', intraday: { sessionDate: '2026-05-15' } };
+    expect(detectSnapshotRegime(snap)).toBe('post-fixv2');
+  });
+
+  it('exact-boundary capturedAt at FIX_V1_MERGE_UTC routes to fixv1-era (not pre-fixv1)', () => {
+    // 2026-05-12T17:39:00Z is the boundary; >= boundary is fix v1 era.
+    const snap = { capturedAt: '2026-05-12T17:39:00Z', intraday: { sessionDate: null } };
+    expect(detectSnapshotRegime(snap)).toBe('fixv1-era');
+  });
+});
+
+// ==================== PHASE 5C — SNAPSHOT LEG HELPERS ====================
+
+const fullSnapshot = (overrides = {}) => ({
+  symbol: 'NVDA',
+  sectorName: 'Technology',
+  capturedAt: '2026-05-15T15:30:00Z',
+  trend: { shortTerm: 'up', intermediate: 'up', longTerm: 'down' },
+  momentum: {
+    rsi: 64,
+    macdAboveSignal: true,
+    macdFreshBullishCross: true,
+    macdFreshBearishCross: false,
+    macdHistogram: 0.34,
+    divergence: 'bullish',
+    upDayVolRatio: 1.2,
+  },
+  volatility: { bbPercentB: 0.7, bbUpper: 902, bbLower: 875, bBandwidthPercentile: 38, atrPercent: 2.1 },
+  volume: { avgVolume: 50000000, ratio: 1.4, tier: 'high', nr7Flag: true, dailyRange: 14.2 },
+  smaStack: { aboveSMA20: true, aboveSMA50: true, aboveSMA200: true, sma200_position: 'above', distTo52wkHigh: -1.8 },
+  rs: { rsPercentile: 76, sectorRSPercentile: 82 },
+  levels: { nearestSupport: 880, nearestResistance: 905, distanceToSupportPct: -1.4, distanceToResistancePct: 1.3 },
+  pivots: { r1: 905, s1: 880 },
+  recentAction: { lastCandlePattern: 'bullish_engulfing' },
+  intraday: { vwap: 893.5, currentPrice: 895.2, vwapDeviation: 0.19, sma20_5m: 894.0, sessionDate: '2026-05-15' },
+  composite: { technicalScore: 81, technicalRank: 4, sectorTechnicalRank: 4, sectorTechnicalTotal: 28 },
+  ...overrides,
+});
+
+describe('buildSnapshotHeader — Phase 5C', () => {
+  it('emits full header when all fields present', () => {
+    expect(buildSnapshotHeader(fullSnapshot())).toBe(
+      'NVDA — Score 81 (rank #4/28 in Technology), RS 76th %ile, ATR 2.1%',
+    );
+  });
+
+  it('omits score segment when technicalScore is null', () => {
+    const snap = fullSnapshot({ composite: { technicalScore: null, sectorTechnicalRank: 4, sectorTechnicalTotal: 28 } });
+    expect(buildSnapshotHeader(snap)).toBe('NVDA — RS 76th %ile, ATR 2.1%');
+  });
+
+  it('omits rank parenthetical when sectorTechnicalRank is null', () => {
+    const snap = fullSnapshot({ composite: { technicalScore: 81, sectorTechnicalRank: null, sectorTechnicalTotal: 28 } });
+    expect(buildSnapshotHeader(snap)).toBe('NVDA — Score 81, RS 76th %ile, ATR 2.1%');
+  });
+
+  it('drops /total when sectorTechnicalTotal is null but keeps rank', () => {
+    const snap = fullSnapshot({ composite: { technicalScore: 81, sectorTechnicalRank: 4, sectorTechnicalTotal: null } });
+    expect(buildSnapshotHeader(snap)).toBe('NVDA — Score 81 (rank #4 in Technology), RS 76th %ile, ATR 2.1%');
+  });
+
+  it('drops "in Sector" when sectorName is missing', () => {
+    const snap = fullSnapshot({ sectorName: null });
+    expect(buildSnapshotHeader(snap)).toBe('NVDA — Score 81 (rank #4/28), RS 76th %ile, ATR 2.1%');
+  });
+
+  it('omits RS when rsPercentile is null', () => {
+    const snap = fullSnapshot({ rs: { rsPercentile: null, sectorRSPercentile: 82 } });
+    expect(buildSnapshotHeader(snap)).toBe('NVDA — Score 81 (rank #4/28 in Technology), ATR 2.1%');
+  });
+
+  it('omits ATR when atrPercent is null', () => {
+    const snap = fullSnapshot({ volatility: { atrPercent: null } });
+    expect(buildSnapshotHeader(snap)).toBe('NVDA — Score 81 (rank #4/28 in Technology), RS 76th %ile');
+  });
+
+  it('renders just the symbol when all metrics are missing', () => {
+    const sparse = { symbol: 'GHOST', composite: {}, rs: {}, volatility: {} };
+    expect(buildSnapshotHeader(sparse)).toBe('GHOST');
+  });
+
+  it('returns empty string for null/undefined snapshot', () => {
+    expect(buildSnapshotHeader(null)).toBe('');
+    expect(buildSnapshotHeader(undefined)).toBe('');
+    expect(buildSnapshotHeader({})).toBe('');
+  });
+});
+
+describe('buildSnapshotTrend — Phase 5C', () => {
+  it('emits when all three timeframes are present', () => {
+    expect(buildSnapshotTrend(fullSnapshot())).toBe('Trend: up/up/down (short/int/long)');
+  });
+
+  it('returns null when only two timeframes are present', () => {
+    const snap = fullSnapshot({ trend: { shortTerm: 'up', intermediate: 'up', longTerm: null } });
+    expect(buildSnapshotTrend(snap)).toBeNull();
+  });
+
+  it('returns null when only one timeframe is present', () => {
+    const snap = fullSnapshot({ trend: { shortTerm: 'up', intermediate: null, longTerm: null } });
+    expect(buildSnapshotTrend(snap)).toBeNull();
+  });
+
+  it('returns null when all timeframes are null', () => {
+    const snap = fullSnapshot({ trend: { shortTerm: null, intermediate: null, longTerm: null } });
+    expect(buildSnapshotTrend(snap)).toBeNull();
+  });
+
+  it('returns null when trend sub-object is missing', () => {
+    expect(buildSnapshotTrend({})).toBeNull();
+    expect(buildSnapshotTrend(null)).toBeNull();
+  });
+});
+
+describe('buildSnapshotSignals — Phase 5C', () => {
+  it('emits each segment in isolation', () => {
+    expect(buildSnapshotSignals(fullSnapshot({
+      momentum: { macdFreshBullishCross: true, macdFreshBearishCross: false, divergence: null },
+      volume: { nr7Flag: false },
+      recentAction: { lastCandlePattern: null },
+    }))).toBe('Signals: Fresh MACD bullish cross.');
+
+    expect(buildSnapshotSignals(fullSnapshot({
+      momentum: { macdFreshBullishCross: false, macdFreshBearishCross: true, divergence: null },
+      volume: { nr7Flag: false },
+      recentAction: { lastCandlePattern: null },
+    }))).toBe('Signals: Fresh MACD bearish cross.');
+
+    expect(buildSnapshotSignals(fullSnapshot({
+      momentum: { divergence: 'bullish' },
+      volume: { nr7Flag: false },
+      recentAction: { lastCandlePattern: null },
+    }))).toBe('Signals: Bullish divergence forming.');
+
+    expect(buildSnapshotSignals(fullSnapshot({
+      momentum: { divergence: 'bearish' },
+      volume: { nr7Flag: false },
+      recentAction: { lastCandlePattern: null },
+    }))).toBe('Signals: Bearish divergence forming.');
+
+    expect(buildSnapshotSignals(fullSnapshot({
+      momentum: {},
+      volume: { nr7Flag: true },
+      recentAction: { lastCandlePattern: null },
+    }))).toBe('Signals: NR7 contraction — breakout pending.');
+  });
+
+  it('renders lastCandlePattern via PATTERN_DISPLAY_NAMES', () => {
+    const out = buildSnapshotSignals(fullSnapshot({
+      momentum: {},
+      volume: { nr7Flag: false },
+      recentAction: { lastCandlePattern: 'bullish_engulfing' },
+    }));
+    expect(out).toMatch(/^Signals: Recent candle:/);
+    expect(out).toContain('engulfing');
+  });
+
+  it('falls back to underscore-split when key is unknown', () => {
+    const out = buildSnapshotSignals(fullSnapshot({
+      momentum: {},
+      volume: { nr7Flag: false },
+      recentAction: { lastCandlePattern: 'unknown_pattern_key' },
+    }));
+    expect(out).toBe('Signals: Recent candle: unknown pattern key.');
+  });
+
+  it('combines multiple segments in fixed order', () => {
+    const out = buildSnapshotSignals(fullSnapshot());
+    expect(out).toBe(
+      'Signals: Fresh MACD bullish cross. Bullish divergence forming. NR7 contraction — breakout pending. Recent candle: bullish engulfing.',
+    );
+  });
+
+  it('returns null when no segments fire', () => {
+    const snap = fullSnapshot({
+      momentum: { macdFreshBullishCross: false, macdFreshBearishCross: false, divergence: 'none' },
+      volume: { nr7Flag: false },
+      recentAction: { lastCandlePattern: null },
+    });
+    expect(buildSnapshotSignals(snap)).toBeNull();
+  });
+
+  it('strict-bool: null does not fire macd/nr7 flags', () => {
+    const snap = fullSnapshot({
+      momentum: { macdFreshBullishCross: null, macdFreshBearishCross: null, divergence: null },
+      volume: { nr7Flag: null },
+      recentAction: { lastCandlePattern: null },
+    });
+    expect(buildSnapshotSignals(snap)).toBeNull();
+  });
+
+  it('returns null for null snapshot', () => {
+    expect(buildSnapshotSignals(null)).toBeNull();
+  });
+});
+
+describe('buildSnapshotLevels — Phase 5C', () => {
+  it('emits support segment when within ±10%', () => {
+    const snap = fullSnapshot({
+      levels: { nearestSupport: 880, nearestResistance: null, distanceToSupportPct: -2.5, distanceToResistancePct: null },
+      smaStack: { distTo52wkHigh: null },
+    });
+    expect(buildSnapshotLevels(snap)).toBe('Levels: Support $880 (-2.5%).');
+  });
+
+  it('emits resistance segment when within ±10%', () => {
+    const snap = fullSnapshot({
+      levels: { nearestSupport: null, nearestResistance: 905, distanceToSupportPct: null, distanceToResistancePct: 3.4 },
+      smaStack: { distTo52wkHigh: null },
+    });
+    expect(buildSnapshotLevels(snap)).toBe('Levels: Resistance $905 (+3.4%).');
+  });
+
+  it('suppresses segments outside the ±10% gate', () => {
+    const snap = fullSnapshot({
+      levels: { nearestSupport: 800, nearestResistance: 1000, distanceToSupportPct: -15, distanceToResistancePct: 12 },
+      smaStack: { distTo52wkHigh: null },
+    });
+    expect(buildSnapshotLevels(snap)).toBeNull();
+  });
+
+  it('emits 52wk-high segment when within ±5%', () => {
+    const snap = fullSnapshot({
+      levels: { nearestSupport: null, nearestResistance: null, distanceToSupportPct: null, distanceToResistancePct: null },
+      smaStack: { distTo52wkHigh: -2.8 },
+    });
+    expect(buildSnapshotLevels(snap)).toBe('Levels: 52wk high -2.8% away.');
+  });
+
+  it('suppresses 52wk-high segment outside ±5% gate', () => {
+    const snap = fullSnapshot({
+      levels: { nearestSupport: null, nearestResistance: null, distanceToSupportPct: null, distanceToResistancePct: null },
+      smaStack: { distTo52wkHigh: -8.4 },
+    });
+    expect(buildSnapshotLevels(snap)).toBeNull();
+  });
+
+  it('combines all three segments when each fires', () => {
+    const out = buildSnapshotLevels(fullSnapshot());
+    expect(out).toBe('Levels: Support $880 (-1.4%), Resistance $905 (+1.3%), 52wk high -1.8% away.');
+  });
+
+  it('returns null when no segments fire (and for null snapshot)', () => {
+    expect(buildSnapshotLevels(null)).toBeNull();
+    expect(buildSnapshotLevels({})).toBeNull();
+  });
+});
+
+describe('buildSnapshotIntraday — Phase 5C', () => {
+  it('returns null for pre-fixv1 snapshots even when intraday.vwap is present', () => {
+    const snap = fullSnapshot({
+      capturedAt: '2026-05-08T15:00:00Z',
+      intraday: { vwap: 800, currentPrice: 810, vwapDeviation: 1.25, sma20_5m: 808, sessionDate: null },
+    });
+    expect(buildSnapshotIntraday(snap)).toBeNull();
+  });
+
+  it('returns null for fixv1-era snapshots', () => {
+    const snap = fullSnapshot({
+      capturedAt: '2026-05-12T20:00:00Z',
+      intraday: { vwap: null, currentPrice: null, vwapDeviation: null, sma20_5m: null, sessionDate: null },
+    });
+    expect(buildSnapshotIntraday(snap)).toBeNull();
+  });
+
+  it('renders both segments for post-fixv2 snapshot when sessionDate matches capture date', () => {
+    const snap = fullSnapshot({
+      capturedAt: '2026-05-15T15:30:00Z',
+      intraday: { vwap: 893.5, currentPrice: 895.2, vwapDeviation: 0.7, sma20_5m: 894.0, sessionDate: '2026-05-15' },
+    });
+    expect(buildSnapshotIntraday(snap)).toBe(
+      "Today's session: 0.7% above session VWAP, 0.1% above 5m SMA20.",
+    );
+  });
+
+  it('uses "Prior session" prefix when sessionDate differs from capture ET date', () => {
+    const snap = fullSnapshot({
+      capturedAt: '2026-05-16T14:00:00Z',
+      intraday: { vwap: 893.5, currentPrice: 895.2, vwapDeviation: 0.7, sma20_5m: null, sessionDate: '2026-05-15' },
+    });
+    expect(buildSnapshotIntraday(snap)).toBe('Prior session: 0.7% above session VWAP.');
+  });
+
+  it('collapses near-zero deviation to "at session VWAP"', () => {
+    const snap = fullSnapshot({
+      capturedAt: '2026-05-15T15:30:00Z',
+      intraday: { vwap: 100, currentPrice: 100.01, vwapDeviation: 0.01, sma20_5m: null, sessionDate: '2026-05-15' },
+    });
+    expect(buildSnapshotIntraday(snap)).toBe("Today's session: at session VWAP.");
+  });
+
+  it('returns null when capturedAt is null but sessionDate present (defensive)', () => {
+    const snap = fullSnapshot({
+      capturedAt: null,
+      intraday: { vwap: 100, currentPrice: 101, vwapDeviation: 1, sma20_5m: null, sessionDate: '2026-05-15' },
+    });
+    // Without capturedAt we can't compute the ET date for the today/prior
+    // decision, but sessionDate presence still routes us to post-fixv2 and the
+    // helper falls back to "Prior session" rather than failing.
+    expect(buildSnapshotIntraday(snap)).toBe('Prior session: 1.0% above session VWAP.');
+  });
+});
+
+// ==================== PHASE 5C — SWAP ENTRY BLOCK ====================
+
+// Snapshot fixture builders for entry-block tests.
+const legSnapshot = (symbol, overrides = {}) => ({
+  symbol,
+  sectorName: 'Technology',
+  capturedAt: '2026-05-15T15:30:00Z',
+  trend: { shortTerm: 'up', intermediate: 'up', longTerm: 'down' },
+  momentum: { macdFreshBullishCross: true, macdFreshBearishCross: false, divergence: 'bullish' },
+  volatility: { atrPercent: 2.1 },
+  volume: { nr7Flag: true },
+  smaStack: { distTo52wkHigh: -1.8 },
+  rs: { rsPercentile: 76 },
+  levels: { nearestSupport: 880, nearestResistance: 905, distanceToSupportPct: -1.4, distanceToResistancePct: 1.3 },
+  recentAction: { lastCandlePattern: null },
+  intraday: { vwap: 893.5, currentPrice: 895.2, vwapDeviation: 0.7, sma20_5m: 894.0, sessionDate: '2026-05-15' },
+  composite: { technicalScore: 81, sectorTechnicalRank: 4, sectorTechnicalTotal: 28 },
+  ...overrides,
+});
+
+const counterfactualEntry = (overrides = {}) => ({
+  symbolOut: 'AAPL',
+  symbolIn: 'MSFT',
+  tier: 'star',
+  resolution: 'vetoed',
+  scoreAtProposal: 72.4,
+  scoreAtVeto: 68.1,
+  counterfactualPoints: 4.2,
+  rationale: 'rotation into stronger sector RS',
+  snapshot: {
+    symbolOut: legSnapshot('AAPL', { composite: { technicalScore: 64, sectorTechnicalRank: 18, sectorTechnicalTotal: 28 }, rs: { rsPercentile: 52 }, volatility: { atrPercent: 1.8 } }),
+    symbolIn: legSnapshot('MSFT'),
+  },
+  ...overrides,
+});
+
+const tradeEntry = (overrides = {}) => ({
+  symbolOut: 'COIN',
+  symbolIn: 'HOOD',
+  tier: 'core',
+  lockedPoints: 3.5,
+  trigger: 'rs_rotation',
+  swappedOutAt: '2026-05-15T15:30:00Z',
+  evaluationId: 'eval_abc123',
+  snapshot: {
+    symbolOut: legSnapshot('COIN'),
+    symbolIn: legSnapshot('HOOD'),
+  },
+  ...overrides,
+});
+
+describe('buildSwapEntryBlock — counterfactual rendering', () => {
+  it('renders full structure for a vetoed counterfactual', () => {
+    const out = buildSwapEntryBlock(counterfactualEntry(), 'counterfactual');
+    expect(out).toContain('COUNTERFACTUAL — vetoed by Coach');
+    expect(out).toContain('Captured: 2026-05-15 11:30 ET');
+    expect(out).toContain('Score at proposal: 72.4 → at veto: 68.1 (Δ -4.3)');
+    expect(out).toContain('AAPL → MSFT (star tier)');
+    expect(out).toContain('| Counterfactual: would have scored +4.2 pts');
+    expect(out).toContain('AAPL leg:');
+    expect(out).toContain('MSFT leg:');
+    // Full depth = trend + levels + intraday lines present
+    expect(out).toContain('Trend: up/up/down (short/int/long)');
+    expect(out).toContain('Levels:');
+    expect(out).toContain("Today's session:");
+  });
+
+  it('renders correct header for a lapsed counterfactual', () => {
+    const entry = counterfactualEntry({ resolution: 'lapsed', scoreAtVeto: undefined, scoreAtResolution: 70.2 });
+    const out = buildSwapEntryBlock(entry, 'counterfactual');
+    expect(out).toContain('COUNTERFACTUAL — lapsed (no Coach action)');
+    expect(out).toContain('Score at proposal: 72.4 → at lapse: 70.2 (Δ -2.2)');
+  });
+
+  it('omits score line when scores are missing', () => {
+    const entry = counterfactualEntry({ scoreAtProposal: undefined, scoreAtVeto: undefined });
+    const out = buildSwapEntryBlock(entry, 'counterfactual');
+    expect(out).not.toContain('Score at proposal');
+    expect(out).toContain('Captured:');
+  });
+
+  it('omits counterfactual points clause when counterfactualPoints is null', () => {
+    const entry = counterfactualEntry({ counterfactualPoints: null });
+    const out = buildSwapEntryBlock(entry, 'counterfactual');
+    expect(out).toContain('AAPL → MSFT (star tier)');
+    expect(out).not.toContain('Counterfactual: would have');
+  });
+
+  it('shows positive delta correctly when score improved', () => {
+    const entry = counterfactualEntry({ scoreAtProposal: 60, scoreAtVeto: 65 });
+    const out = buildSwapEntryBlock(entry, 'counterfactual');
+    expect(out).toContain('Score at proposal: 60 → at veto: 65 (Δ +5)');
+  });
+
+  it('shows positive counterfactualPoints with + prefix', () => {
+    const out = buildSwapEntryBlock(counterfactualEntry(), 'counterfactual');
+    expect(out).toContain('+4.2 pts');
+  });
+
+  it('shows negative counterfactualPoints without extra prefix', () => {
+    const entry = counterfactualEntry({ counterfactualPoints: -2.7 });
+    const out = buildSwapEntryBlock(entry, 'counterfactual');
+    expect(out).toContain('-2.7 pts');
+  });
+});
+
+describe('buildSwapEntryBlock — trade rendering (compact depth)', () => {
+  it('renders compact structure with default header when no provenance is passed', () => {
+    const out = buildSwapEntryBlock(tradeEntry(), 'trade');
+    expect(out).toContain('TRADE — executed');
+    expect(out).toContain('COIN → HOOD (core tier)');
+    expect(out).toContain('| Outcome: +3.5 pts');
+    expect(out).toContain('COIN leg:');
+    expect(out).toContain('HOOD leg:');
+    // Compact depth omits trend, levels, intraday
+    expect(out).not.toContain('Trend:');
+    expect(out).not.toContain('Levels:');
+    expect(out).not.toContain("Today's session:");
+    // Signals still render in compact mode
+    expect(out).toContain('Signals:');
+  });
+
+  it('renders "approved by Coach" header for provenance=approved', () => {
+    const out = buildSwapEntryBlock(tradeEntry(), 'trade', { provenance: 'approved' });
+    expect(out).toContain('TRADE — approved by Coach');
+  });
+
+  it('renders "auto-executed at expiry" for provenance=auto_executed_proposal', () => {
+    const out = buildSwapEntryBlock(tradeEntry(), 'trade', { provenance: 'auto_executed_proposal' });
+    expect(out).toContain('TRADE — auto-executed at expiry');
+  });
+
+  it('renders "(autopilot)" for provenance=autopilot', () => {
+    const out = buildSwapEntryBlock(tradeEntry(), 'trade', { provenance: 'autopilot' });
+    expect(out).toContain('TRADE — executed (autopilot)');
+  });
+
+  it('renders "(risk-triggered)" for provenance=risk_triggered', () => {
+    const out = buildSwapEntryBlock(tradeEntry(), 'trade', { provenance: 'risk_triggered' });
+    expect(out).toContain('TRADE — executed (risk-triggered)');
+  });
+
+  it('renders Outcome line from lockedPoints when outcomePoints is absent', () => {
+    const entry = tradeEntry({ lockedPoints: -1.5 });
+    const out = buildSwapEntryBlock(entry, 'trade');
+    expect(out).toContain('| Outcome: -1.5 pts');
+  });
+
+  it('renders Outcome line from outcomePoints when both present (outcomePoints wins)', () => {
+    const entry = tradeEntry({ lockedPoints: 1.0, outcomePoints: 2.5 });
+    const out = buildSwapEntryBlock(entry, 'trade');
+    expect(out).toContain('| Outcome: +2.5 pts');
+  });
+
+  it('omits Outcome clause when no point fields are present', () => {
+    const entry = tradeEntry({ lockedPoints: null, outcomePoints: null });
+    const out = buildSwapEntryBlock(entry, 'trade');
+    expect(out).toContain('COIN → HOOD (core tier)');
+    expect(out).not.toContain('Outcome:');
+  });
+});
+
+describe('buildSwapEntryBlock — defensive handling', () => {
+  it('returns null when entry is null or missing snapshot (pre-Phase-4 entry)', () => {
+    expect(buildSwapEntryBlock(null, 'counterfactual')).toBeNull();
+    expect(buildSwapEntryBlock({}, 'counterfactual')).toBeNull();
+    expect(buildSwapEntryBlock({ symbolOut: 'A', symbolIn: 'B' }, 'trade')).toBeNull();
+  });
+
+  it('returns null when snapshot has neither leg', () => {
+    expect(buildSwapEntryBlock({ snapshot: {} }, 'counterfactual')).toBeNull();
+    expect(buildSwapEntryBlock({ snapshot: { symbolOut: null, symbolIn: null } }, 'trade')).toBeNull();
+  });
+
+  it('renders only the symbolIn leg when symbolOut leg is missing', () => {
+    const entry = counterfactualEntry();
+    entry.snapshot.symbolOut = null;
+    const out = buildSwapEntryBlock(entry, 'counterfactual');
+    expect(out).not.toContain('AAPL leg:');
+    expect(out).toContain('MSFT leg:');
+  });
+
+  it('renders only the symbolOut leg when symbolIn leg is missing', () => {
+    const entry = counterfactualEntry();
+    entry.snapshot.symbolIn = null;
+    const out = buildSwapEntryBlock(entry, 'counterfactual');
+    expect(out).toContain('AAPL leg:');
+    expect(out).not.toContain('MSFT leg:');
+  });
+
+  it('handles missing tier gracefully', () => {
+    const entry = counterfactualEntry({ tier: null });
+    const out = buildSwapEntryBlock(entry, 'counterfactual');
+    expect(out).toContain('AAPL → MSFT');
+    expect(out).not.toContain(' tier)');
+  });
+});
+
+describe('buildSwapEntryBlock — regime gating', () => {
+  it('renders intraday line for post-fixv2 leg in a counterfactual', () => {
+    const out = buildSwapEntryBlock(counterfactualEntry(), 'counterfactual');
+    expect(out).toContain("Today's session:");
+  });
+
+  it('suppresses intraday line for pre-fixv1 leg even in counterfactual full depth', () => {
+    const entry = counterfactualEntry();
+    entry.snapshot.symbolOut = legSnapshot('AAPL', {
+      capturedAt: '2026-05-08T15:00:00Z',
+      intraday: { vwap: 100, currentPrice: 100.5, vwapDeviation: 0.5, sma20_5m: null, sessionDate: null },
+    });
+    entry.snapshot.symbolIn = legSnapshot('MSFT', {
+      capturedAt: '2026-05-08T15:00:00Z',
+      intraday: { vwap: 200, currentPrice: 200.5, vwapDeviation: 0.25, sma20_5m: null, sessionDate: null },
+    });
+    const out = buildSwapEntryBlock(entry, 'counterfactual');
+    expect(out).not.toContain("Today's session:");
+    expect(out).not.toContain('Prior session:');
+  });
+
+  it('suppresses intraday line for fixv1-era leg', () => {
+    const entry = counterfactualEntry();
+    entry.snapshot.symbolOut = legSnapshot('AAPL', {
+      capturedAt: '2026-05-12T20:00:00Z',
+      intraday: { vwap: null, currentPrice: null, vwapDeviation: null, sma20_5m: null, sessionDate: null },
+    });
+    entry.snapshot.symbolIn = legSnapshot('MSFT', {
+      capturedAt: '2026-05-12T20:00:00Z',
+      intraday: { vwap: null, currentPrice: null, vwapDeviation: null, sma20_5m: null, sessionDate: null },
+    });
+    const out = buildSwapEntryBlock(entry, 'counterfactual');
+    expect(out).not.toContain('session:');
+  });
+
+  it('compact-depth trades never render intraday or levels regardless of regime', () => {
+    const entry = tradeEntry();
+    const out = buildSwapEntryBlock(entry, 'trade', { provenance: 'autopilot' });
+    expect(out).not.toContain("Today's session:");
+    expect(out).not.toContain('Levels:');
+    expect(out).not.toContain('Trend:');
+  });
+});
+
+// ==================== PHASE 5C — TRADE PROVENANCE DETECTION ====================
+
+describe('detectTradeProvenance — Phase 5C', () => {
+  it('returns risk_triggered when evaluationId starts with "risk_"', () => {
+    const trade = { evaluationId: 'risk_stop_out_NVDA', symbolOut: 'NVDA', symbolIn: 'AAPL' };
+    expect(detectTradeProvenance(trade, [])).toBe('risk_triggered');
+  });
+
+  it('returns approved when a matching approved proposal exists within the time window', () => {
+    const trade = {
+      symbolOut: 'COIN',
+      symbolIn: 'HOOD',
+      swappedOutAt: '2026-05-15T15:30:00Z',
+      evaluationId: 'eval_abc',
+    };
+    const proposalHistory = [
+      {
+        symbolOut: 'COIN',
+        symbolIn: 'HOOD',
+        resolution: 'approved',
+        resolvedAt: '2026-05-15T15:28:30Z',
+      },
+    ];
+    expect(detectTradeProvenance(trade, proposalHistory)).toBe('approved');
+  });
+
+  it('returns auto_executed_proposal when a matching auto_executed proposal exists', () => {
+    const trade = {
+      symbolOut: 'TSLA',
+      symbolIn: 'F',
+      swappedOutAt: '2026-05-15T15:30:00Z',
+      evaluationId: 'eval_def',
+    };
+    const proposalHistory = [
+      {
+        symbolOut: 'TSLA',
+        symbolIn: 'F',
+        resolution: 'auto_executed',
+        resolvedAt: '2026-05-15T15:29:00Z',
+      },
+    ];
+    expect(detectTradeProvenance(trade, proposalHistory)).toBe('auto_executed_proposal');
+  });
+
+  it('returns autopilot when no matching proposal and no risk marker', () => {
+    const trade = {
+      symbolOut: 'AAPL',
+      symbolIn: 'MSFT',
+      swappedOutAt: '2026-05-15T15:30:00Z',
+      evaluationId: 'eval_haiku',
+    };
+    expect(detectTradeProvenance(trade, [])).toBe('autopilot');
+    expect(detectTradeProvenance(trade, null)).toBe('autopilot');
+    expect(detectTradeProvenance(trade, undefined)).toBe('autopilot');
+  });
+
+  it('returns autopilot when symbol pair does not match any proposal', () => {
+    const trade = {
+      symbolOut: 'AAPL',
+      symbolIn: 'MSFT',
+      swappedOutAt: '2026-05-15T15:30:00Z',
+    };
+    const proposalHistory = [
+      { symbolOut: 'NVDA', symbolIn: 'AMD', resolution: 'approved', resolvedAt: '2026-05-15T15:29:00Z' },
+    ];
+    expect(detectTradeProvenance(trade, proposalHistory)).toBe('autopilot');
+  });
+
+  it('returns autopilot when matching proposal but resolution is vetoed/lapsed (those are counterfactuals, not trades)', () => {
+    const trade = {
+      symbolOut: 'AAPL',
+      symbolIn: 'MSFT',
+      swappedOutAt: '2026-05-15T15:30:00Z',
+    };
+    const proposalHistory = [
+      { symbolOut: 'AAPL', symbolIn: 'MSFT', resolution: 'vetoed', resolvedAt: '2026-05-15T15:29:00Z' },
+      { symbolOut: 'AAPL', symbolIn: 'MSFT', resolution: 'lapsed', resolvedAt: '2026-05-15T15:29:30Z' },
+    ];
+    expect(detectTradeProvenance(trade, proposalHistory)).toBe('autopilot');
+  });
+
+  it('returns autopilot when matching proposal is outside the 5-minute window', () => {
+    const trade = {
+      symbolOut: 'COIN',
+      symbolIn: 'HOOD',
+      swappedOutAt: '2026-05-15T15:30:00Z',
+    };
+    const proposalHistory = [
+      // 10 minutes earlier — outside window
+      { symbolOut: 'COIN', symbolIn: 'HOOD', resolution: 'approved', resolvedAt: '2026-05-15T15:20:00Z' },
+    ];
+    expect(detectTradeProvenance(trade, proposalHistory)).toBe('autopilot');
+  });
+
+  it('matches within window edge (4:59 elapsed = match, 5:01 = no match)', () => {
+    const trade = {
+      symbolOut: 'COIN',
+      symbolIn: 'HOOD',
+      swappedOutAt: '2026-05-15T15:30:00Z',
+    };
+    const insideWindow = [
+      { symbolOut: 'COIN', symbolIn: 'HOOD', resolution: 'approved', resolvedAt: '2026-05-15T15:25:01Z' },
+    ];
+    const outsideWindow = [
+      { symbolOut: 'COIN', symbolIn: 'HOOD', resolution: 'approved', resolvedAt: '2026-05-15T15:24:59Z' },
+    ];
+    expect(detectTradeProvenance(trade, insideWindow)).toBe('approved');
+    expect(detectTradeProvenance(trade, outsideWindow)).toBe('autopilot');
+  });
+
+  it('matches even without timestamps when symbol pair + resolution align', () => {
+    // Defensive: if either side lacks a usable timestamp, fall through to a
+    // symbol-pair-only match so trades from legacy data still get the right
+    // provenance.
+    const trade = { symbolOut: 'AAPL', symbolIn: 'MSFT' };
+    const proposalHistory = [
+      { symbolOut: 'AAPL', symbolIn: 'MSFT', resolution: 'approved' },
+    ];
+    expect(detectTradeProvenance(trade, proposalHistory)).toBe('approved');
+  });
+
+  it('returns unknown when trade is null or not an object', () => {
+    expect(detectTradeProvenance(null, [])).toBe('unknown');
+    expect(detectTradeProvenance(undefined, [])).toBe('unknown');
+  });
+
+  it('risk_ marker on evaluationId wins over a coincidentally matching proposal', () => {
+    const trade = {
+      symbolOut: 'NVDA',
+      symbolIn: 'AAPL',
+      swappedOutAt: '2026-05-15T15:30:00Z',
+      evaluationId: 'risk_drawdown_NVDA',
+    };
+    const proposalHistory = [
+      { symbolOut: 'NVDA', symbolIn: 'AAPL', resolution: 'approved', resolvedAt: '2026-05-15T15:29:00Z' },
+    ];
+    expect(detectTradeProvenance(trade, proposalHistory)).toBe('risk_triggered');
+  });
+});
 
 describe('buildBenchBriefsBlock — empty / missing', () => {
   it('returns null when marketSnapshot is missing', () => {
@@ -1727,6 +2448,436 @@ describe('buildReviewContext — counterfactuals filter (regression)', () => {
     );
     expect(out).not.toContain('COUNTERFACTUALS');
     expect(out).not.toContain('COIN → HOOD');
+  });
+});
+
+// ==================== PHASE 5C — END-TO-END INTEGRATION ====================
+
+describe('Phase 5C end-to-end — full Review prompt assembly', () => {
+  const snap = (sym, overrides = {}) => ({
+    symbol: sym,
+    sectorName: 'Technology',
+    capturedAt: '2026-05-15T15:30:00Z',
+    trend: { shortTerm: 'up', intermediate: 'up', longTerm: 'down' },
+    momentum: { macdFreshBullishCross: true, divergence: 'bullish' },
+    volatility: { atrPercent: 2.1 },
+    volume: { nr7Flag: true },
+    smaStack: { distTo52wkHigh: -1.8 },
+    rs: { rsPercentile: 76 },
+    levels: { nearestSupport: 880, nearestResistance: 905, distanceToSupportPct: -1.4, distanceToResistancePct: 1.3 },
+    recentAction: { lastCandlePattern: 'bullish_engulfing' },
+    intraday: { vwap: 893.5, currentPrice: 895.2, vwapDeviation: 0.7, sma20_5m: 894.0, sessionDate: '2026-05-15' },
+    composite: { technicalScore: 81, sectorTechnicalRank: 4, sectorTechnicalTotal: 28 },
+    ...overrides,
+  });
+
+  const buildRealisticBattle = () => ({
+    agentId: 'agent_1',
+    ownerId: 'user_1',
+    gameMode: 'baggerbomb',
+    executionMode: 'autopilot',
+    strategyPreset: 'balanced',
+    dailyReviews: [
+      {
+        date: '2026-05-15',
+        tradingDay: 5,
+        headline: 'Strong open, faded into close',
+        summary: 'Tech rotation paid off in the morning; AI names rolled in the afternoon.',
+        finalScore: 124,
+        opponentScore: 117,
+        selfGrade: 'B',
+      },
+    ],
+    trades: [
+      {
+        symbolOut: 'NVDA', symbolIn: 'AAPL', tier: 'star',
+        lockedPoints: 4.3, swappedOutAt: '2026-05-15T15:00:00Z',
+        evaluationId: 'eval_haiku_1',
+        snapshot: { symbolOut: snap('NVDA'), symbolIn: snap('AAPL') },
+      },
+      {
+        symbolOut: 'TSLA', symbolIn: 'F', tier: 'core',
+        lockedPoints: -1.8, swappedOutAt: '2026-05-15T15:30:00Z',
+        evaluationId: 'risk_drawdown_TSLA',
+        snapshot: { symbolOut: snap('TSLA'), symbolIn: snap('F') },
+      },
+      {
+        symbolOut: 'COIN', symbolIn: 'HOOD', tier: 'support',
+        lockedPoints: 2.1, swappedOutAt: '2026-05-15T15:45:00Z',
+        evaluationId: 'eval_haiku_2',
+        snapshot: { symbolOut: snap('COIN'), symbolIn: snap('HOOD') },
+      },
+    ],
+    proposalHistory: [
+      {
+        symbolOut: 'AAPL', symbolIn: 'MSFT', tier: 'star',
+        resolution: 'vetoed', scoreAtProposal: 72.4, scoreAtVeto: 68.1,
+        counterfactualPoints: 4.2,
+        snapshot: { symbolOut: snap('AAPL'), symbolIn: snap('MSFT') },
+      },
+      {
+        symbolOut: 'GOOG', symbolIn: 'META', tier: 'core',
+        resolution: 'lapsed', scoreAtProposal: 65, scoreAtResolution: 62.5,
+        counterfactualPoints: -0.8,
+        snapshot: { symbolOut: snap('GOOG'), symbolIn: snap('META') },
+      },
+    ],
+  });
+
+  const agent = {
+    name: 'Gemma',
+    archetype: 'strategist',
+    stats: { gamesPlayed: 12, wins: 7, losses: 5 },
+    partnerProfile: null,
+    convictions: [],
+    consolidatedInsight: null,
+  };
+
+  it('renders a full Review-mode prompt with snapshot blocks in the review context', () => {
+    const battle = buildRealisticBattle();
+    const out = buildVoiceLayerPrompt({
+      agent,
+      battle,
+      elicitationTarget: null,
+      conversationHistory: [],
+      anchorContext: 'Market closed. SPY +0.3% on the day.',
+      marketSnapshot: null,
+      mode: 'review',
+      dailyReviews: battle.dailyReviews,
+      dailyGrades: [],
+    });
+    expect(out).toContain('REVIEW MODE');
+    expect(out).toContain('REVIEW CONTEXT:');
+    expect(out).toContain('BATCH REVIEW SUMMARY (2026-05-15)');
+    // Trade snapshot blocks rendered with provenance
+    expect(out).toContain('TRADE — executed (autopilot)');
+    expect(out).toContain('TRADE — executed (risk-triggered)');
+    // Counterfactual snapshot blocks rendered with resolution
+    expect(out).toContain('COUNTERFACTUAL — vetoed by Coach');
+    expect(out).toContain('COUNTERFACTUAL — lapsed (no Coach action)');
+    expect(out).toContain('Score at proposal: 72.4 → at veto: 68.1');
+    expect(out).toContain('Score at proposal: 65 → at lapse: 62.5');
+  });
+
+  it('snapshot rendering token impact stays within budget ceiling for 5 cf + 3 trades', () => {
+    // Worst-case Review context: 5 counterfactuals (full depth) + 3 trades
+    // (compact depth), all fully populated. The 4-char-per-token heuristic
+    // is conservative for natural English; real BPE tokenization is lower.
+    // Ceiling of 2,000 estimated tokens guards against regressions that would
+    // bloat the prompt by ~25% over the current rendering.
+    const battle = {
+      trades: [1, 2, 3].map((n) => ({
+        symbolOut: `T${n}O`, symbolIn: `T${n}I`, tier: 'core',
+        lockedPoints: n, swappedOutAt: '2026-05-15T15:30:00Z',
+        evaluationId: `eval_${n}`,
+        snapshot: { symbolOut: snap(`T${n}O`), symbolIn: snap(`T${n}I`) },
+      })),
+      proposalHistory: [1, 2, 3, 4, 5].map((n) => ({
+        symbolOut: `C${n}O`, symbolIn: `C${n}I`, tier: 'star',
+        resolution: 'vetoed', scoreAtProposal: 70, scoreAtVeto: 65,
+        counterfactualPoints: n,
+        snapshot: { symbolOut: snap(`C${n}O`), symbolIn: snap(`C${n}I`) },
+      })),
+    };
+    const out = buildReviewContext(battle, [], []);
+    const startIdx = out.indexOf('TRADES (');
+    const snapshotSection = out.slice(startIdx);
+    const approxTokens = Math.ceil(snapshotSection.length / 4);
+    expect(approxTokens).toBeLessThan(2000);
+    expect(approxTokens).toBeGreaterThan(1000); // sanity check: rendering didn't silently shrink
+  });
+
+  it('renders mixed regime snapshots correctly (pre-fixv1, fixv1-era, post-fixv2)', () => {
+    const battle = {
+      trades: [],
+      proposalHistory: [
+        {
+          symbolOut: 'OLD1', symbolIn: 'OLD2', tier: 'star',
+          resolution: 'vetoed', counterfactualPoints: 1.5,
+          snapshot: {
+            symbolOut: snap('OLD1', {
+              capturedAt: '2026-05-08T15:00:00Z',
+              intraday: { vwap: 100, currentPrice: 101, vwapDeviation: 1, sma20_5m: null, sessionDate: null },
+            }),
+            symbolIn: snap('OLD2', {
+              capturedAt: '2026-05-08T15:00:00Z',
+              intraday: { vwap: 200, currentPrice: 201, vwapDeviation: 0.5, sma20_5m: null, sessionDate: null },
+            }),
+          },
+        },
+        {
+          symbolOut: 'MID1', symbolIn: 'MID2', tier: 'core',
+          resolution: 'lapsed', counterfactualPoints: -0.5,
+          snapshot: {
+            symbolOut: snap('MID1', {
+              capturedAt: '2026-05-12T20:00:00Z',
+              intraday: { vwap: null, currentPrice: null, vwapDeviation: null, sma20_5m: null, sessionDate: null },
+            }),
+            symbolIn: snap('MID2', {
+              capturedAt: '2026-05-12T20:00:00Z',
+              intraday: { vwap: null, currentPrice: null, vwapDeviation: null, sma20_5m: null, sessionDate: null },
+            }),
+          },
+        },
+        {
+          symbolOut: 'NEW1', symbolIn: 'NEW2', tier: 'support',
+          resolution: 'vetoed', counterfactualPoints: 3.2,
+          snapshot: { symbolOut: snap('NEW1'), symbolIn: snap('NEW2') },
+        },
+      ],
+    };
+    const out = buildReviewContext(battle, [], []);
+    // Pre-fixv1 (OLD): no intraday line
+    const oldSection = out.slice(out.indexOf('OLD1 leg:'), out.indexOf('MID1 leg:'));
+    expect(oldSection).not.toContain('session:');
+    // Fixv1-era (MID): no intraday line
+    const midSection = out.slice(out.indexOf('MID1 leg:'), out.indexOf('NEW1 leg:'));
+    expect(midSection).not.toContain('session:');
+    // Post-fixv2 (NEW): intraday rendered
+    const newSection = out.slice(out.indexOf('NEW1 leg:'));
+    expect(newSection).toContain("Today's session:");
+  });
+
+  it('defensive: malformed snapshot does not crash buildReviewContext', () => {
+    const malformedBattle = {
+      trades: [
+        { symbolOut: 'A', symbolIn: 'B', tier: 'core', lockedPoints: 1, snapshot: null },
+        { symbolOut: 'C', symbolIn: 'D', tier: 'core', lockedPoints: 2, snapshot: 'not-an-object' },
+        { symbolOut: 'E', symbolIn: 'F', tier: 'core', lockedPoints: 3, snapshot: { symbolOut: null, symbolIn: null } },
+        { symbolOut: 'G', symbolIn: 'H', tier: 'core', lockedPoints: 4, snapshot: { symbolOut: 'not-an-object' } },
+      ],
+      proposalHistory: [
+        { symbolOut: 'X', symbolIn: 'Y', resolution: 'vetoed', snapshot: undefined },
+      ],
+    };
+    expect(() => buildReviewContext(malformedBattle, [], [])).not.toThrow();
+    const out = buildReviewContext(malformedBattle, [], []);
+    expect(out).toContain('REVIEW CONTEXT:');
+  });
+
+  it('integrates PATTERN_DISPLAY_NAMES for snake_case candle patterns', () => {
+    const cfWithPattern = {
+      symbolOut: 'AAPL', symbolIn: 'MSFT', tier: 'star',
+      resolution: 'vetoed', scoreAtProposal: 70, scoreAtVeto: 65, counterfactualPoints: 1,
+      snapshot: {
+        symbolOut: snap('AAPL', { recentAction: { lastCandlePattern: 'bullish_engulfing' } }),
+        symbolIn: snap('MSFT', { recentAction: { lastCandlePattern: 'doji' } }),
+      },
+    };
+    const out = buildReviewContext({ trades: [], proposalHistory: [cfWithPattern] }, [], []);
+    expect(out).toContain('bullish engulfing');
+    expect(out).toContain('doji');
+  });
+
+  it('falls back to underscore-split for unknown candle pattern keys', () => {
+    const cfWithUnknownPattern = {
+      symbolOut: 'AAPL', symbolIn: 'MSFT', tier: 'star',
+      resolution: 'vetoed', counterfactualPoints: 1,
+      snapshot: {
+        symbolOut: snap('AAPL', { recentAction: { lastCandlePattern: 'mystery_candle_form' } }),
+        symbolIn: snap('MSFT'),
+      },
+    };
+    const out = buildReviewContext({ trades: [], proposalHistory: [cfWithUnknownPattern] }, [], []);
+    expect(out).toContain('mystery candle form');
+  });
+
+  it('auto-debrief and user-chat invocations produce identical Review prompts', () => {
+    // Both code paths call buildVoiceLayerPrompt({mode:'review', ...}). The
+    // assembled prompt should be byte-identical regardless of which caller
+    // invoked it — auto-debrief differs only in (1) how it appends to
+    // chatExchanges (handled in agent-batch-review.js, not this module) and
+    // (2) the userMessage passed to callGemmaVoice (also outside this module).
+    const battle = buildRealisticBattle();
+    const args = {
+      agent,
+      battle,
+      elicitationTarget: null,
+      conversationHistory: [],
+      anchorContext: null,
+      marketSnapshot: null,
+      mode: 'review',
+      dailyReviews: battle.dailyReviews,
+      dailyGrades: [],
+    };
+    const autoDebriefPrompt = buildVoiceLayerPrompt(args);
+    const userChatPrompt = buildVoiceLayerPrompt(args);
+    expect(autoDebriefPrompt).toBe(userChatPrompt);
+  });
+});
+
+// ==================== PHASE 5C — buildReviewContext INTEGRATION ====================
+
+describe('buildReviewContext — Phase 5C snapshot rendering integration', () => {
+  const snapWithSymbol = (sym, overrides = {}) => ({
+    symbol: sym,
+    sectorName: 'Technology',
+    capturedAt: '2026-05-15T15:30:00Z',
+    trend: { shortTerm: 'up', intermediate: 'up', longTerm: 'down' },
+    momentum: { macdFreshBullishCross: true, divergence: 'bullish' },
+    volatility: { atrPercent: 2.1 },
+    volume: { nr7Flag: true },
+    smaStack: { distTo52wkHigh: -1.8 },
+    rs: { rsPercentile: 76 },
+    levels: { nearestSupport: 880, nearestResistance: 905, distanceToSupportPct: -1.4, distanceToResistancePct: 1.3 },
+    recentAction: { lastCandlePattern: null },
+    intraday: { vwap: 893.5, currentPrice: 895.2, vwapDeviation: 0.7, sma20_5m: 894.0, sessionDate: '2026-05-15' },
+    composite: { technicalScore: 81, sectorTechnicalRank: 4, sectorTechnicalTotal: 28 },
+    ...overrides,
+  });
+
+  const cf = (n, overrides = {}) => ({
+    symbolOut: `OUT${n}`,
+    symbolIn: `IN${n}`,
+    tier: 'star',
+    resolution: 'vetoed',
+    scoreAtProposal: 70,
+    scoreAtVeto: 65,
+    counterfactualPoints: 2.0 + n,
+    snapshot: { symbolOut: snapWithSymbol(`OUT${n}`), symbolIn: snapWithSymbol(`IN${n}`) },
+    ...overrides,
+  });
+
+  const tr = (n, overrides = {}) => ({
+    symbolOut: `TOUT${n}`,
+    symbolIn: `TIN${n}`,
+    tier: 'core',
+    lockedPoints: n,
+    trigger: 'rs_rotation',
+    swappedOutAt: '2026-05-15T15:30:00Z',
+    evaluationId: `eval_${n}`,
+    snapshot: { symbolOut: snapWithSymbol(`TOUT${n}`), symbolIn: snapWithSymbol(`TIN${n}`) },
+    ...overrides,
+  });
+
+  it('renders RECENT TRADES section with snapshot blocks for last 3 trades', () => {
+    const battle = { trades: [tr(1), tr(2), tr(3)], proposalHistory: [] };
+    const out = buildReviewContext(battle, [], []);
+    expect(out).toContain('RECENT TRADES (3 most recent with snapshot rendering)');
+    expect(out).toContain('TRADE — executed (autopilot)');
+    expect(out).toContain('TOUT1 leg:');
+    expect(out).toContain('TOUT2 leg:');
+    expect(out).toContain('TOUT3 leg:');
+    expect(out).toContain('Signals:');
+    // No EARLIER TRADES section when <=3 trades total
+    expect(out).not.toContain('EARLIER TRADES');
+  });
+
+  it('renders RECENT COUNTERFACTUALS section with full-depth blocks for last 5 vetoed/lapsed', () => {
+    const battle = {
+      trades: [],
+      proposalHistory: [cf(1), cf(2), cf(3), cf(4), cf(5)],
+    };
+    const out = buildReviewContext(battle, [], []);
+    expect(out).toContain('RECENT COUNTERFACTUALS (5 most recent with snapshot rendering)');
+    expect(out).toContain('COUNTERFACTUAL — vetoed by Coach');
+    expect(out).toContain('OUT1 leg:');
+    expect(out).toContain('OUT5 leg:');
+    expect(out).toContain('Trend: up/up/down');
+    expect(out).toContain('Levels: Support $880');
+    expect(out).toContain("Today's session:");
+    expect(out).not.toContain('EARLIER COUNTERFACTUALS');
+  });
+
+  it('caps RECENT TRADES at 3 and bumps remaining into EARLIER TRADES one-liners', () => {
+    const battle = { trades: [tr(1), tr(2), tr(3), tr(4), tr(5)], proposalHistory: [] };
+    const out = buildReviewContext(battle, [], []);
+    expect(out).toContain('RECENT TRADES (3 most recent with snapshot rendering)');
+    expect(out).toContain('EARLIER TRADES:');
+    expect(out).toContain('- TOUT1 → TIN1 [core]');
+    expect(out).toContain('- TOUT2 → TIN2 [core]');
+    // tr3, tr4, tr5 are in the recent block (last 3), so EARLIER contains 1,2
+    expect(out).toContain('TOUT3 leg:');
+    expect(out).toContain('TOUT4 leg:');
+    expect(out).toContain('TOUT5 leg:');
+    // EARLIER TRADES should NOT include the snapshot-rendered ones
+    const earlierSection = out.slice(out.indexOf('EARLIER TRADES:'));
+    expect(earlierSection).not.toContain('TOUT3 leg:');
+  });
+
+  it('caps COUNTERFACTUALS via slice(-6) and renders most recent 5 with snapshots, 6th as one-liner', () => {
+    // 7 entries → slice(-6) keeps last 6 → last 5 render as blocks, 1 as one-liner
+    const battle = {
+      trades: [],
+      proposalHistory: [cf(1), cf(2), cf(3), cf(4), cf(5), cf(6), cf(7)],
+    };
+    const out = buildReviewContext(battle, [], []);
+    expect(out).toContain('RECENT COUNTERFACTUALS (5 most recent with snapshot rendering)');
+    expect(out).toContain('EARLIER COUNTERFACTUALS:');
+    // cf(1) was filtered out by slice(-6) entirely
+    expect(out).not.toContain('OUT1 leg:');
+    expect(out).not.toContain('OUT1 → IN1');
+    // cf(2) is the 6th-most-recent within the kept window → one-liner
+    expect(out).toContain('- OUT2 → IN2 (vetoed)');
+    // cf(3) through cf(7) render as snapshot blocks
+    expect(out).toContain('OUT3 leg:');
+    expect(out).toContain('OUT7 leg:');
+  });
+
+  it('falls back to one-liner for pre-Phase-4 entries (no snapshot)', () => {
+    // Pre-Phase-4 trades use the legacy renderer's field set (outcomePoints).
+    const preTrade = { symbolOut: 'OLD', symbolIn: 'NEW', tier: 'support', outcomePoints: 1.2, trigger: 'macd' };
+    const battle = { trades: [preTrade], proposalHistory: [] };
+    const out = buildReviewContext(battle, [], []);
+    expect(out).toContain('RECENT TRADES (1 most recent with snapshot rendering)');
+    // No snapshot block, falls through to legacy one-liner inside the section
+    expect(out).toContain('- OLD → NEW [support] — +1.2 pts | macd');
+    expect(out).not.toContain('OLD leg:');
+  });
+
+  it('renders empty trades/counterfactuals gracefully with no empty sections', () => {
+    const battle = { trades: [], proposalHistory: [] };
+    const out = buildReviewContext(battle, [], []);
+    expect(out).toContain('REVIEW CONTEXT:');
+    expect(out).not.toContain('RECENT TRADES');
+    expect(out).not.toContain('RECENT COUNTERFACTUALS');
+    expect(out).not.toContain('EARLIER TRADES');
+    expect(out).not.toContain('EARLIER COUNTERFACTUALS');
+  });
+
+  it('routes approved-proposal trades through provenance detection to "approved by Coach" header', () => {
+    const matchingProposal = {
+      symbolOut: 'TOUT1',
+      symbolIn: 'TIN1',
+      resolution: 'approved',
+      resolvedAt: '2026-05-15T15:29:00Z',
+    };
+    const battle = {
+      trades: [tr(1)],
+      proposalHistory: [matchingProposal],
+    };
+    const out = buildReviewContext(battle, [], []);
+    expect(out).toContain('TRADE — approved by Coach');
+    expect(out).not.toContain('TRADE — executed (autopilot)');
+  });
+
+  it('routes risk-triggered trades through provenance detection to "(risk-triggered)" header', () => {
+    const riskTrade = tr(1, { evaluationId: 'risk_drawdown_TOUT1' });
+    const battle = { trades: [riskTrade], proposalHistory: [] };
+    const out = buildReviewContext(battle, [], []);
+    expect(out).toContain('TRADE — executed (risk-triggered)');
+  });
+
+  it('renders mixed regime entries correctly (intraday only for post-fixv2)', () => {
+    const preFixCf = cf(1, {
+      snapshot: {
+        symbolOut: snapWithSymbol('OUT1', {
+          capturedAt: '2026-05-08T15:00:00Z',
+          intraday: { vwap: 100, currentPrice: 101, vwapDeviation: 1, sma20_5m: null, sessionDate: null },
+        }),
+        symbolIn: snapWithSymbol('IN1', {
+          capturedAt: '2026-05-08T15:00:00Z',
+          intraday: { vwap: 200, currentPrice: 200, vwapDeviation: 0, sma20_5m: null, sessionDate: null },
+        }),
+      },
+    });
+    const postFixCf = cf(2); // default fixture is post-fixv2
+    const battle = { trades: [], proposalHistory: [preFixCf, postFixCf] };
+    const out = buildReviewContext(battle, [], []);
+    const out1Section = out.slice(out.indexOf('OUT1 leg:'), out.indexOf('IN1 leg:'));
+    const out2Section = out.slice(out.indexOf('OUT2 leg:'), out.indexOf('IN2 leg:'));
+    expect(out1Section).not.toContain('session:');
+    expect(out2Section).toContain("Today's session:");
   });
 });
 

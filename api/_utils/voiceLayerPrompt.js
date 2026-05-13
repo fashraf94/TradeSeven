@@ -987,6 +987,31 @@ function ordinalSuffix(n) {
 //   - See api/_utils/buildTechnicalSnapshot.js for the snapshot schema.
 // =============================================================================
 
+// ==================== SNAPSHOT REGIME DETECTOR (PHASE 5C) ====================
+//
+// Phase 4 snapshots ride on proposalHistory[i].snapshot and trades[i].snapshot.
+// The intraday sub-block was captured under three different regimes:
+//
+//   Pre-Fix-v1   (capturedAt <  2026-05-12 17:39 UTC) — intraday.vwap is a
+//                multi-month aggregate mislabeled as session. Suppress.
+//   Fix-v1-era   (2026-05-12 17:39 UTC ≤ capturedAt < 2026-05-13 04:04 UTC) —
+//                intraday.vwap is typically null (over-filtered). Suppress.
+//   Post-Fix-v2  (capturedAt ≥ 2026-05-13 04:04 UTC) — true session VWAP,
+//                intraday.sessionDate populated. Render.
+//
+// Detection is field-presence-primary (sessionDate ⇒ post-fixv2) with the
+// Fix v1 merge timestamp as the A-vs-B fallback. capturedAt is always present
+// per buildTechnicalSnapshot.js, but defensive null handling defaults to
+// 'fixv1-era' so the intraday suppression path runs and the renderer stays safe.
+const FIX_V1_MERGE_UTC = Date.parse('2026-05-12T17:39:00Z');
+
+export function detectSnapshotRegime(snapshot) {
+  if (snapshot?.intraday?.sessionDate != null) return 'post-fixv2';
+  const capturedAt = snapshot?.capturedAt ? Date.parse(snapshot.capturedAt) : NaN;
+  if (Number.isFinite(capturedAt) && capturedAt < FIX_V1_MERGE_UTC) return 'pre-fixv1';
+  return 'fixv1-era';
+}
+
 // Phase 5A — per-symbol header line for portfolio and bench briefs.
 //
 // Format: "SYMBOL [tier-or-assetClass] +N.N% — Score X (rank #N/total in Sector), RS Nth %ile, ATR N.N%"
@@ -1179,6 +1204,403 @@ export function buildIntradayLine(brief, now = new Date()) {
 
   if (segments.length === 0) return null;
   return `${prefix}: ${segments.join(', ')}.`;
+}
+
+// ==================== PHASE 5C — SNAPSHOT LEG HELPERS ====================
+//
+// Parallel helper family for rendering Phase 4 snapshots from
+// proposalHistory[i].snapshot and trades[i].snapshot inside Review-mode context.
+//
+// Snapshots use a NESTED per-category shape (snapshot.momentum.macdFreshBullishCross,
+// snapshot.levels.distanceToSupportPct, …) vs. the brief helpers' flat shape, so
+// these helpers cannot be unified with buildHeaderLine / buildLevelsLine /
+// buildSignalsLine / buildIntradayLine. Same null-not-zero, strict-boolean,
+// conditional-emit conventions apply.
+//
+// Contract:
+//   buildSnapshotHeader(snap)   → string         ALWAYS-EMIT (returns ''
+//                                                  for null snapshot, but
+//                                                  always returns a string)
+//   buildSnapshotTrend(snap)    → string | null  CONDITIONAL (all 3 timeframes
+//                                                  must be present)
+//   buildSnapshotSignals(snap)  → string | null  CONDITIONAL
+//   buildSnapshotLevels(snap)   → string | null  CONDITIONAL
+//   buildSnapshotIntraday(snap) → string | null  CONDITIONAL + REGIME-GATED
+//                                                  (only renders for post-fixv2)
+
+// Always-emit. Mirrors buildHeaderLine's metrics bundle for snapshots:
+//   "SYMBOL — Score N (rank #N/total in Sector), RS Nth %ile, ATR N.N%"
+// Snapshots have no tier or changePercent (those are live/operational), so the
+// header opens on the symbol token directly. Empty snapshot → ''.
+export function buildSnapshotHeader(snapshot) {
+  if (!snapshot) return '';
+  const symbol = snapshot.symbol || '';
+  if (!symbol) return '';
+
+  const composite = snapshot.composite || {};
+  const rs = snapshot.rs || {};
+  const volatility = snapshot.volatility || {};
+  const sector = snapshot.sectorName;
+
+  const parts = [];
+
+  if (composite.technicalScore != null) {
+    let scoreSeg = `Score ${composite.technicalScore}`;
+    if (composite.sectorTechnicalRank != null && composite.sectorTechnicalRank !== 0) {
+      let rankStr = `rank #${composite.sectorTechnicalRank}`;
+      if (composite.sectorTechnicalTotal != null && composite.sectorTechnicalTotal !== 0) {
+        rankStr += `/${composite.sectorTechnicalTotal}`;
+      }
+      if (typeof sector === 'string' && sector.trim()) {
+        rankStr += ` in ${sector}`;
+      }
+      scoreSeg += ` (${rankStr})`;
+    }
+    parts.push(scoreSeg);
+  }
+
+  if (typeof rs.rsPercentile === 'number') {
+    parts.push(`RS ${ordinalSuffix(rs.rsPercentile)} %ile`);
+  }
+
+  if (volatility.atrPercent != null) {
+    parts.push(`ATR ${volatility.atrPercent}%`);
+  }
+
+  if (parts.length === 0) return symbol;
+  return `${symbol} — ${parts.join(', ')}`;
+}
+
+// Conditional. Returns "Trend: up/up/down (short/int/long)" when ALL three
+// timeframes are present; null otherwise. The parenthetical clarifies field
+// order — without it "up/up/down" is ambiguous.
+export function buildSnapshotTrend(snapshot) {
+  const trend = snapshot?.trend;
+  if (!trend) return null;
+  const { shortTerm, intermediate, longTerm } = trend;
+  if (shortTerm == null || intermediate == null || longTerm == null) return null;
+  return `Trend: ${shortTerm}/${intermediate}/${longTerm} (short/int/long)`;
+}
+
+// Conditional. Aggregates fresh-cross flags, divergence direction, NR7
+// contraction, and the most recent candle pattern. Strict-bool === true to
+// match brief renderer's defensive identity check. Order matches
+// buildSignalsLine for cross-renderer consistency.
+export function buildSnapshotSignals(snapshot) {
+  if (!snapshot) return null;
+
+  const momentum = snapshot.momentum || {};
+  const volume = snapshot.volume || {};
+  const recentAction = snapshot.recentAction || {};
+
+  const flags = [];
+
+  if (momentum.macdFreshBullishCross === true) flags.push('Fresh MACD bullish cross.');
+  if (momentum.macdFreshBearishCross === true) flags.push('Fresh MACD bearish cross.');
+
+  if (momentum.divergence === 'bullish') flags.push('Bullish divergence forming.');
+  if (momentum.divergence === 'bearish') flags.push('Bearish divergence forming.');
+
+  if (volume.nr7Flag === true) flags.push('NR7 contraction — breakout pending.');
+
+  if (typeof recentAction.lastCandlePattern === 'string' && recentAction.lastCandlePattern.trim()) {
+    const key = recentAction.lastCandlePattern.trim();
+    const displayName = PATTERN_DISPLAY_NAMES[key] || key.replace(/_/g, ' ');
+    flags.push(`Recent candle: ${displayName}.`);
+  }
+
+  if (flags.length === 0) return null;
+  return `Signals: ${flags.join(' ')}`;
+}
+
+// Conditional. Same ±10% / ±5% gates as buildLevelsLine. Support and resistance
+// come from snapshot.levels.*; 52wk-high comes from snapshot.smaStack.* (the
+// snapshot writer placed it there; see buildTechnicalSnapshot.js).
+export function buildSnapshotLevels(snapshot) {
+  if (!snapshot) return null;
+
+  const levels = snapshot.levels || {};
+  const smaStack = snapshot.smaStack || {};
+
+  const segments = [];
+
+  if (
+    levels.nearestSupport != null &&
+    typeof levels.distanceToSupportPct === 'number' &&
+    Math.abs(levels.distanceToSupportPct) <= 10
+  ) {
+    const v = levels.distanceToSupportPct;
+    const sign = v > 0 ? '+' : '';
+    segments.push(`Support $${levels.nearestSupport} (${sign}${v.toFixed(1)}%)`);
+  }
+
+  if (
+    levels.nearestResistance != null &&
+    typeof levels.distanceToResistancePct === 'number' &&
+    Math.abs(levels.distanceToResistancePct) <= 10
+  ) {
+    const v = levels.distanceToResistancePct;
+    const sign = v > 0 ? '+' : '';
+    segments.push(`Resistance $${levels.nearestResistance} (${sign}${v.toFixed(1)}%)`);
+  }
+
+  if (typeof smaStack.distTo52wkHigh === 'number' && Math.abs(smaStack.distTo52wkHigh) <= 5) {
+    const v = smaStack.distTo52wkHigh;
+    const sign = v > 0 ? '+' : '';
+    segments.push(`52wk high ${sign}${v.toFixed(1)}% away`);
+  }
+
+  if (segments.length === 0) return null;
+  return `Levels: ${segments.join(', ')}.`;
+}
+
+// Conditional + regime-gated. Suppresses for pre-fixv1 (mislabeled multi-month
+// VWAP) and fixv1-era (typically null vwap) snapshots. For post-fixv2 snapshots,
+// determines the today/prior prefix by comparing snapshot.intraday.sessionDate
+// to the ET date of snapshot.capturedAt — NOT to current wall-clock — because
+// the snapshot is historical context.
+export function buildSnapshotIntraday(snapshot) {
+  if (!snapshot) return null;
+  if (detectSnapshotRegime(snapshot) !== 'post-fixv2') return null;
+
+  const intraday = snapshot.intraday;
+  if (!intraday) return null;
+
+  let prefix = 'Prior session';
+  const capturedAtMs = snapshot.capturedAt ? Date.parse(snapshot.capturedAt) : NaN;
+  if (Number.isFinite(capturedAtMs)) {
+    const captureEt = toEtParts(new Date(capturedAtMs)).dateStr;
+    if (intraday.sessionDate === captureEt) prefix = "Today's session";
+  }
+
+  const segments = [];
+
+  if (typeof intraday.vwapDeviation === 'number') {
+    const dev = intraday.vwapDeviation;
+    if (Math.abs(dev) < 0.05) {
+      segments.push('at session VWAP');
+    } else if (dev > 0) {
+      segments.push(`${dev.toFixed(1)}% above session VWAP`);
+    } else {
+      segments.push(`${Math.abs(dev).toFixed(1)}% below session VWAP`);
+    }
+  }
+
+  if (typeof intraday.sma20_5m === 'number' && typeof intraday.currentPrice === 'number') {
+    const dev = ((intraday.currentPrice - intraday.sma20_5m) / intraday.sma20_5m) * 100;
+    if (Math.abs(dev) < 0.05) {
+      segments.push('at 5m SMA20');
+    } else if (dev > 0) {
+      segments.push(`${dev.toFixed(1)}% above 5m SMA20`);
+    } else {
+      segments.push(`${Math.abs(dev).toFixed(1)}% below 5m SMA20`);
+    }
+  }
+
+  if (segments.length === 0) return null;
+  return `${prefix}: ${segments.join(', ')}.`;
+}
+
+// ==================== PHASE 5C — SWAP ENTRY BLOCK ====================
+//
+// Renders a single proposalHistory / trades entry as a multi-line block with
+// a wrapper header, capture-time + score line, swap-pair + outcome line, and
+// two per-leg sub-blocks (symbolOut and symbolIn). Counterfactuals render at
+// full depth (header + trend + signals + levels + intraday); trades render at
+// compact depth (header + signals only) because their outcome already speaks.
+//
+// Returns null when entry.snapshot is missing entirely (pre-Phase-4 entries),
+// which signals the caller to fall back to the one-line legacy format.
+
+function formatEtTimestamp(capturedAt) {
+  if (!capturedAt) return null;
+  const ms = Date.parse(capturedAt);
+  if (!Number.isFinite(ms)) return null;
+  const parts = toEtParts(new Date(ms));
+  const hh = String(parts.hour).padStart(2, '0');
+  const mm = String(parts.minute).padStart(2, '0');
+  return `${parts.dateStr} ${hh}:${mm} ET`;
+}
+
+function formatPointsDelta(n) {
+  return `${n > 0 ? '+' : ''}${n}`;
+}
+
+// Maps (kind, resolutionOrProvenance) → wrapper-header clause.
+// `provenance` for trades is one of 'approved' | 'auto_executed_proposal' |
+// 'autopilot' | 'risk_triggered' | null. Null defaults to a generic
+// "TRADE — executed" header — Commit 4 introduces the actual detector.
+function buildEntryHeader(kind, entry, provenance) {
+  if (kind === 'counterfactual') {
+    if (entry.resolution === 'vetoed') return 'COUNTERFACTUAL — vetoed by Coach';
+    if (entry.resolution === 'lapsed') return 'COUNTERFACTUAL — lapsed (no Coach action)';
+    return `COUNTERFACTUAL — ${entry.resolution || 'unresolved'}`;
+  }
+  // kind === 'trade'
+  if (provenance === 'approved') return 'TRADE — approved by Coach';
+  if (provenance === 'auto_executed_proposal') return 'TRADE — auto-executed at expiry';
+  if (provenance === 'autopilot') return 'TRADE — executed (autopilot)';
+  if (provenance === 'risk_triggered') return 'TRADE — executed (risk-triggered)';
+  return 'TRADE — executed';
+}
+
+// Builds the "Captured: <time> | Score at X: A → at Y: B (Δ Z)" line.
+// Counterfactuals show proposal → veto/lapse trajectory when both scores exist.
+// Trades show "Score at execution" when scoreAtResolution is present.
+// Returns null when no timestamp AND no score data are available.
+function buildEntryCaptureLine(kind, entry, snapshotLeg) {
+  const timestamp = formatEtTimestamp(snapshotLeg?.capturedAt ?? entry.capturedAt);
+  const parts = [];
+  if (timestamp) parts.push(`Captured: ${timestamp}`);
+
+  if (kind === 'counterfactual') {
+    const sP = entry.scoreAtProposal;
+    const sV = entry.scoreAtVeto;
+    const sR = entry.scoreAtResolution;
+    if (typeof sP === 'number' && typeof sV === 'number') {
+      const delta = Math.round((sV - sP) * 10) / 10;
+      parts.push(`Score at proposal: ${sP} → at veto: ${sV} (Δ ${formatPointsDelta(delta)})`);
+    } else if (typeof sP === 'number' && typeof sR === 'number') {
+      const delta = Math.round((sR - sP) * 10) / 10;
+      parts.push(`Score at proposal: ${sP} → at lapse: ${sR} (Δ ${formatPointsDelta(delta)})`);
+    } else if (typeof sP === 'number') {
+      parts.push(`Score at proposal: ${sP}`);
+    }
+  } else {
+    if (typeof entry.scoreAtResolution === 'number') {
+      parts.push(`Score at execution: ${entry.scoreAtResolution}`);
+    }
+  }
+
+  if (parts.length === 0) return null;
+  return parts.join(' | ');
+}
+
+// Builds the "SYM_OUT → SYM_IN (tier) | <outcome clause>" line.
+function buildEntryPairLine(kind, entry) {
+  const swap = `${entry.symbolOut || '?'} → ${entry.symbolIn || '?'}`;
+  const tier = entry.tier ? ` (${entry.tier} tier)` : '';
+  let outcomeClause = '';
+  if (kind === 'counterfactual') {
+    const cf = entry.counterfactualPoints;
+    if (typeof cf === 'number') {
+      outcomeClause = ` | Counterfactual: would have scored ${formatPointsDelta(cf)} pts`;
+    }
+  } else {
+    const pts = entry.outcomePoints ?? entry.lockedPoints;
+    if (typeof pts === 'number') {
+      outcomeClause = ` | Outcome: ${formatPointsDelta(pts)} pts`;
+    }
+  }
+  return `${swap}${tier}${outcomeClause}`;
+}
+
+// Renders a single per-symbol leg block: "SYMBOL leg:" header line followed
+// by the relevant snapshot helper outputs, each indented 2 spaces.
+// Depth: 'full' (counterfactuals) → header + trend + signals + levels + intraday.
+// Depth: 'compact' (trades) → header + signals only.
+function buildLegBlock(legSnapshot, depth) {
+  if (!legSnapshot) return null;
+  const symbol = legSnapshot.symbol || '?';
+  const header = buildSnapshotHeader(legSnapshot);
+  const lines = [`${symbol} leg:`];
+  if (header) lines.push(`  ${header}`);
+
+  if (depth === 'full') {
+    const trend = buildSnapshotTrend(legSnapshot);
+    if (trend) lines.push(`  ${trend}`);
+  }
+
+  const signals = buildSnapshotSignals(legSnapshot);
+  if (signals) lines.push(`  ${signals}`);
+
+  if (depth === 'full') {
+    const levels = buildSnapshotLevels(legSnapshot);
+    if (levels) lines.push(`  ${levels}`);
+
+    const intraday = buildSnapshotIntraday(legSnapshot);
+    if (intraday) lines.push(`  ${intraday}`);
+  }
+
+  return lines.join('\n');
+}
+
+export function buildSwapEntryBlock(entry, kind, options = {}) {
+  if (!entry || typeof entry !== 'object') return null;
+
+  const snapshot = entry.snapshot;
+  if (!snapshot || typeof snapshot !== 'object') return null;
+
+  const outLeg = snapshot.symbolOut || null;
+  const inLeg = snapshot.symbolIn || null;
+  if (!outLeg && !inLeg) return null;
+
+  const depth = kind === 'counterfactual' ? 'full' : 'compact';
+  const provenance = options.provenance ?? null;
+
+  const header = buildEntryHeader(kind, entry, provenance);
+  // Prefer the outgoing leg's capturedAt; both legs are captured in the same
+  // call so timestamps match, but defensively use whichever is available.
+  const captureLine = buildEntryCaptureLine(kind, entry, outLeg || inLeg);
+  const pairLine = buildEntryPairLine(kind, entry);
+
+  const sections = [header];
+  if (captureLine) sections.push(captureLine);
+  sections.push(pairLine);
+
+  const outBlock = outLeg ? buildLegBlock(outLeg, depth) : null;
+  const inBlock = inLeg ? buildLegBlock(inLeg, depth) : null;
+  if (outBlock) sections.push(outBlock);
+  if (inBlock) sections.push(inBlock);
+
+  return sections.join('\n');
+}
+
+// ==================== PHASE 5C — TRADE PROVENANCE DETECTION ====================
+//
+// Determines how a trade was created so buildSwapEntryBlock can render the
+// wrapper header accurately ("approved by Coach" vs "executed (autopilot)"
+// vs "executed (risk-triggered)" vs "auto-executed at expiry").
+//
+// Distinguishing markers (verified against agent-evaluate.js write paths):
+//   - Risk-triggered (path A, :620-657): evaluationMetadata.evaluationId is set
+//     to `risk_${reason}_${symbol}`. evaluationId.startsWith('risk_') is the
+//     authoritative discriminator.
+//   - Approved / auto-executed proposal (path C, :1300-1305 / :1382-1388):
+//     trades are produced by forwarding proposalHistory[i] through
+//     executeSwapServer, so the originating proposal still lives in
+//     proposalHistory with resolution='approved' or 'auto_executed'. Match by
+//     symbol pair + time proximity (proposal.resolvedAt ↔ trade.swappedOutAt).
+//   - Autopilot Haiku (path B, :977-995): the default — no risk marker, no
+//     matching resolved proposal.
+const PROVENANCE_MATCH_WINDOW_MS = 5 * 60 * 1000;
+
+export function detectTradeProvenance(trade, proposalHistory) {
+  if (!trade || typeof trade !== 'object') return 'unknown';
+
+  if (typeof trade.evaluationId === 'string' && trade.evaluationId.startsWith('risk_')) {
+    return 'risk_triggered';
+  }
+
+  const tradeTimeMs = trade.swappedOutAt ? Date.parse(trade.swappedOutAt) : NaN;
+  const history = Array.isArray(proposalHistory) ? proposalHistory : [];
+
+  for (const proposal of history) {
+    if (!proposal || typeof proposal !== 'object') continue;
+    if (proposal.symbolOut !== trade.symbolOut) continue;
+    if (proposal.symbolIn !== trade.symbolIn) continue;
+    if (proposal.resolution !== 'approved' && proposal.resolution !== 'auto_executed') continue;
+
+    if (Number.isFinite(tradeTimeMs) && proposal.resolvedAt) {
+      const proposalTimeMs = Date.parse(proposal.resolvedAt);
+      if (!Number.isFinite(proposalTimeMs)) continue;
+      if (Math.abs(tradeTimeMs - proposalTimeMs) > PROVENANCE_MATCH_WINDOW_MS) continue;
+    }
+
+    return proposal.resolution === 'approved' ? 'approved' : 'auto_executed_proposal';
+  }
+
+  return 'autopilot';
 }
 
 export function buildPortfolioBriefsBlock(marketSnapshot) {
@@ -1494,34 +1916,80 @@ export function buildReviewContext(battle, dailyReviews, dailyGrades) {
     lines.push("BATCH REVIEW SUMMARY: No consolidated review available yet — work from the trade list and your own reads.");
   }
 
-  // Today's trades + outcomes
+  // ---- Trades (Phase 5C: last 3 render with compact snapshot blocks) ----
+  // Pre-Phase-4 entries (no snapshot) and entries beyond the recent cap fall
+  // back to the legacy one-line format. proposalHistory is needed for
+  // provenance detection (approved-by-Coach vs autopilot).
   const trades = Array.isArray(battle?.trades) ? battle.trades : [];
+  const proposalHistory = Array.isArray(battle?.proposalHistory) ? battle.proposalHistory : [];
+  const renderTradeOneLiner = (t) => {
+    const swap = `${t.symbolOut || '?'} → ${t.symbolIn || '?'}`;
+    const tier = t.tier ? ` [${t.tier}]` : '';
+    const outcome = t.outcomePoints != null
+      ? `${t.outcomePoints > 0 ? '+' : ''}${t.outcomePoints} pts`
+      : (t.outcome || 'outcome pending');
+    const rationale = t.rationale || t.trigger || '';
+    return `- ${swap}${tier} — ${outcome}${rationale ? ` | ${rationale}` : ''}`;
+  };
+
   if (trades.length > 0) {
-    const rendered = trades.map(t => {
-      const swap = `${t.symbolOut || '?'} → ${t.symbolIn || '?'}`;
-      const tier = t.tier ? ` [${t.tier}]` : '';
-      const outcome = t.outcomePoints != null
-        ? `${t.outcomePoints > 0 ? '+' : ''}${t.outcomePoints} pts`
-        : (t.outcome || 'outcome pending');
-      const rationale = t.rationale || t.trigger || '';
-      return `- ${swap}${tier} — ${outcome}${rationale ? ` | ${rationale}` : ''}`;
-    });
-    lines.push(`\nTRADES (${trades.length}):\n${rendered.join('\n')}`);
+    const recentTrades = trades.slice(-3);
+    const earlierTrades = trades.slice(0, Math.max(0, trades.length - 3));
+
+    const tradeSections = [`\nTRADES (${trades.length}):`];
+
+    if (recentTrades.length > 0) {
+      tradeSections.push(`\nRECENT TRADES (${recentTrades.length} most recent with snapshot rendering):`);
+      const renderedRecent = recentTrades.map(t => {
+        const provenance = detectTradeProvenance(t, proposalHistory);
+        const block = buildSwapEntryBlock(t, 'trade', { provenance });
+        return block || renderTradeOneLiner(t);
+      });
+      tradeSections.push(renderedRecent.join('\n\n'));
+    }
+
+    if (earlierTrades.length > 0) {
+      tradeSections.push(`\nEARLIER TRADES:\n${earlierTrades.map(renderTradeOneLiner).join('\n')}`);
+    }
+
+    lines.push(tradeSections.join('\n'));
   }
 
-  // Counterfactuals — vetoed trades with projected outcomes
+  // ---- Counterfactuals (Phase 5C: last 5 render with full snapshot blocks) ----
+  // Existing slice(-6) cap retained — within that 6, the last 5 are rendered as
+  // snapshot blocks and the 6th (if present) falls back to the one-liner.
+  const renderCounterfactualOneLiner = (v) => {
+    const swap = `${v.symbolOut || '?'} → ${v.symbolIn || '?'}`;
+    const cf = v.counterfactualPoints != null
+      ? `would have scored ${v.counterfactualPoints > 0 ? '+' : ''}${v.counterfactualPoints} pts`
+      : 'no counterfactual recorded';
+    return `- ${swap} (${v.resolution}) — ${cf}${v.rationale ? ` | ${v.rationale}` : ''}`;
+  };
+
   const vetoed = Array.isArray(battle?.proposalHistory)
     ? battle.proposalHistory.filter(p => p.resolution === 'vetoed' || p.resolution === 'lapsed')
     : [];
   if (vetoed.length > 0) {
-    const rendered = vetoed.slice(-6).map(v => {
-      const swap = `${v.symbolOut || '?'} → ${v.symbolIn || '?'}`;
-      const cf = v.counterfactualPoints != null
-        ? `would have scored ${v.counterfactualPoints > 0 ? '+' : ''}${v.counterfactualPoints} pts`
-        : 'no counterfactual recorded';
-      return `- ${swap} (${v.resolution}) — ${cf}${v.rationale ? ` | ${v.rationale}` : ''}`;
-    });
-    lines.push(`\nCOUNTERFACTUALS (vetoed / expired proposals):\n${rendered.join('\n')}`);
+    const cappedVetoed = vetoed.slice(-6);
+    const recentCounterfactuals = cappedVetoed.slice(-5);
+    const earlierCounterfactuals = cappedVetoed.slice(0, Math.max(0, cappedVetoed.length - 5));
+
+    const cfSections = [`\nCOUNTERFACTUALS (vetoed / expired proposals):`];
+
+    if (recentCounterfactuals.length > 0) {
+      cfSections.push(`\nRECENT COUNTERFACTUALS (${recentCounterfactuals.length} most recent with snapshot rendering):`);
+      const renderedRecent = recentCounterfactuals.map(v => {
+        const block = buildSwapEntryBlock(v, 'counterfactual');
+        return block || renderCounterfactualOneLiner(v);
+      });
+      cfSections.push(renderedRecent.join('\n\n'));
+    }
+
+    if (earlierCounterfactuals.length > 0) {
+      cfSections.push(`\nEARLIER COUNTERFACTUALS:\n${earlierCounterfactuals.map(renderCounterfactualOneLiner).join('\n')}`);
+    }
+
+    lines.push(cfSections.join('\n'));
   }
 
   // User-supplied grades (may be sparse; skip silently if empty)
