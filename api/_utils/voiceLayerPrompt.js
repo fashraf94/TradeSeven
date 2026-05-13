@@ -1206,6 +1206,201 @@ export function buildIntradayLine(brief, now = new Date()) {
   return `${prefix}: ${segments.join(', ')}.`;
 }
 
+// ==================== PHASE 5C — SNAPSHOT LEG HELPERS ====================
+//
+// Parallel helper family for rendering Phase 4 snapshots from
+// proposalHistory[i].snapshot and trades[i].snapshot inside Review-mode context.
+//
+// Snapshots use a NESTED per-category shape (snapshot.momentum.macdFreshBullishCross,
+// snapshot.levels.distanceToSupportPct, …) vs. the brief helpers' flat shape, so
+// these helpers cannot be unified with buildHeaderLine / buildLevelsLine /
+// buildSignalsLine / buildIntradayLine. Same null-not-zero, strict-boolean,
+// conditional-emit conventions apply.
+//
+// Contract:
+//   buildSnapshotHeader(snap)   → string         ALWAYS-EMIT (returns ''
+//                                                  for null snapshot, but
+//                                                  always returns a string)
+//   buildSnapshotTrend(snap)    → string | null  CONDITIONAL (all 3 timeframes
+//                                                  must be present)
+//   buildSnapshotSignals(snap)  → string | null  CONDITIONAL
+//   buildSnapshotLevels(snap)   → string | null  CONDITIONAL
+//   buildSnapshotIntraday(snap) → string | null  CONDITIONAL + REGIME-GATED
+//                                                  (only renders for post-fixv2)
+
+// Always-emit. Mirrors buildHeaderLine's metrics bundle for snapshots:
+//   "SYMBOL — Score N (rank #N/total in Sector), RS Nth %ile, ATR N.N%"
+// Snapshots have no tier or changePercent (those are live/operational), so the
+// header opens on the symbol token directly. Empty snapshot → ''.
+export function buildSnapshotHeader(snapshot) {
+  if (!snapshot) return '';
+  const symbol = snapshot.symbol || '';
+  if (!symbol) return '';
+
+  const composite = snapshot.composite || {};
+  const rs = snapshot.rs || {};
+  const volatility = snapshot.volatility || {};
+  const sector = snapshot.sectorName;
+
+  const parts = [];
+
+  if (composite.technicalScore != null) {
+    let scoreSeg = `Score ${composite.technicalScore}`;
+    if (composite.sectorTechnicalRank != null && composite.sectorTechnicalRank !== 0) {
+      let rankStr = `rank #${composite.sectorTechnicalRank}`;
+      if (composite.sectorTechnicalTotal != null && composite.sectorTechnicalTotal !== 0) {
+        rankStr += `/${composite.sectorTechnicalTotal}`;
+      }
+      if (typeof sector === 'string' && sector.trim()) {
+        rankStr += ` in ${sector}`;
+      }
+      scoreSeg += ` (${rankStr})`;
+    }
+    parts.push(scoreSeg);
+  }
+
+  if (typeof rs.rsPercentile === 'number') {
+    parts.push(`RS ${ordinalSuffix(rs.rsPercentile)} %ile`);
+  }
+
+  if (volatility.atrPercent != null) {
+    parts.push(`ATR ${volatility.atrPercent}%`);
+  }
+
+  if (parts.length === 0) return symbol;
+  return `${symbol} — ${parts.join(', ')}`;
+}
+
+// Conditional. Returns "Trend: up/up/down (short/int/long)" when ALL three
+// timeframes are present; null otherwise. The parenthetical clarifies field
+// order — without it "up/up/down" is ambiguous.
+export function buildSnapshotTrend(snapshot) {
+  const trend = snapshot?.trend;
+  if (!trend) return null;
+  const { shortTerm, intermediate, longTerm } = trend;
+  if (shortTerm == null || intermediate == null || longTerm == null) return null;
+  return `Trend: ${shortTerm}/${intermediate}/${longTerm} (short/int/long)`;
+}
+
+// Conditional. Aggregates fresh-cross flags, divergence direction, NR7
+// contraction, and the most recent candle pattern. Strict-bool === true to
+// match brief renderer's defensive identity check. Order matches
+// buildSignalsLine for cross-renderer consistency.
+export function buildSnapshotSignals(snapshot) {
+  if (!snapshot) return null;
+
+  const momentum = snapshot.momentum || {};
+  const volume = snapshot.volume || {};
+  const recentAction = snapshot.recentAction || {};
+
+  const flags = [];
+
+  if (momentum.macdFreshBullishCross === true) flags.push('Fresh MACD bullish cross.');
+  if (momentum.macdFreshBearishCross === true) flags.push('Fresh MACD bearish cross.');
+
+  if (momentum.divergence === 'bullish') flags.push('Bullish divergence forming.');
+  if (momentum.divergence === 'bearish') flags.push('Bearish divergence forming.');
+
+  if (volume.nr7Flag === true) flags.push('NR7 contraction — breakout pending.');
+
+  if (typeof recentAction.lastCandlePattern === 'string' && recentAction.lastCandlePattern.trim()) {
+    const key = recentAction.lastCandlePattern.trim();
+    const displayName = PATTERN_DISPLAY_NAMES[key] || key.replace(/_/g, ' ');
+    flags.push(`Recent candle: ${displayName}.`);
+  }
+
+  if (flags.length === 0) return null;
+  return `Signals: ${flags.join(' ')}`;
+}
+
+// Conditional. Same ±10% / ±5% gates as buildLevelsLine. Support and resistance
+// come from snapshot.levels.*; 52wk-high comes from snapshot.smaStack.* (the
+// snapshot writer placed it there; see buildTechnicalSnapshot.js).
+export function buildSnapshotLevels(snapshot) {
+  if (!snapshot) return null;
+
+  const levels = snapshot.levels || {};
+  const smaStack = snapshot.smaStack || {};
+
+  const segments = [];
+
+  if (
+    levels.nearestSupport != null &&
+    typeof levels.distanceToSupportPct === 'number' &&
+    Math.abs(levels.distanceToSupportPct) <= 10
+  ) {
+    const v = levels.distanceToSupportPct;
+    const sign = v > 0 ? '+' : '';
+    segments.push(`Support $${levels.nearestSupport} (${sign}${v.toFixed(1)}%)`);
+  }
+
+  if (
+    levels.nearestResistance != null &&
+    typeof levels.distanceToResistancePct === 'number' &&
+    Math.abs(levels.distanceToResistancePct) <= 10
+  ) {
+    const v = levels.distanceToResistancePct;
+    const sign = v > 0 ? '+' : '';
+    segments.push(`Resistance $${levels.nearestResistance} (${sign}${v.toFixed(1)}%)`);
+  }
+
+  if (typeof smaStack.distTo52wkHigh === 'number' && Math.abs(smaStack.distTo52wkHigh) <= 5) {
+    const v = smaStack.distTo52wkHigh;
+    const sign = v > 0 ? '+' : '';
+    segments.push(`52wk high ${sign}${v.toFixed(1)}% away`);
+  }
+
+  if (segments.length === 0) return null;
+  return `Levels: ${segments.join(', ')}.`;
+}
+
+// Conditional + regime-gated. Suppresses for pre-fixv1 (mislabeled multi-month
+// VWAP) and fixv1-era (typically null vwap) snapshots. For post-fixv2 snapshots,
+// determines the today/prior prefix by comparing snapshot.intraday.sessionDate
+// to the ET date of snapshot.capturedAt — NOT to current wall-clock — because
+// the snapshot is historical context.
+export function buildSnapshotIntraday(snapshot) {
+  if (!snapshot) return null;
+  if (detectSnapshotRegime(snapshot) !== 'post-fixv2') return null;
+
+  const intraday = snapshot.intraday;
+  if (!intraday) return null;
+
+  let prefix = 'Prior session';
+  const capturedAtMs = snapshot.capturedAt ? Date.parse(snapshot.capturedAt) : NaN;
+  if (Number.isFinite(capturedAtMs)) {
+    const captureEt = toEtParts(new Date(capturedAtMs)).dateStr;
+    if (intraday.sessionDate === captureEt) prefix = "Today's session";
+  }
+
+  const segments = [];
+
+  if (typeof intraday.vwapDeviation === 'number') {
+    const dev = intraday.vwapDeviation;
+    if (Math.abs(dev) < 0.05) {
+      segments.push('at session VWAP');
+    } else if (dev > 0) {
+      segments.push(`${dev.toFixed(1)}% above session VWAP`);
+    } else {
+      segments.push(`${Math.abs(dev).toFixed(1)}% below session VWAP`);
+    }
+  }
+
+  if (typeof intraday.sma20_5m === 'number' && typeof intraday.currentPrice === 'number') {
+    const dev = ((intraday.currentPrice - intraday.sma20_5m) / intraday.sma20_5m) * 100;
+    if (Math.abs(dev) < 0.05) {
+      segments.push('at 5m SMA20');
+    } else if (dev > 0) {
+      segments.push(`${dev.toFixed(1)}% above 5m SMA20`);
+    } else {
+      segments.push(`${Math.abs(dev).toFixed(1)}% below 5m SMA20`);
+    }
+  }
+
+  if (segments.length === 0) return null;
+  return `${prefix}: ${segments.join(', ')}.`;
+}
+
 export function buildPortfolioBriefsBlock(marketSnapshot) {
   if (!marketSnapshot?.portfolioBriefs?.length) return null;
 

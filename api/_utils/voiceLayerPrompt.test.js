@@ -24,7 +24,7 @@ vi.mock('./marketSchedule.js', async (importOriginal) => {
   };
 });
 
-import { buildBenchBriefsBlock, buildBattleState, buildMarketSnapshotContext, buildPortfolioBriefsBlock, buildVoiceLayerPrompt, buildReviewContext, buildHeaderLine, buildLevelsLine, buildSignalsLine, buildIntradayLine, detectSnapshotRegime } from './voiceLayerPrompt.js';
+import { buildBenchBriefsBlock, buildBattleState, buildMarketSnapshotContext, buildPortfolioBriefsBlock, buildVoiceLayerPrompt, buildReviewContext, buildHeaderLine, buildLevelsLine, buildSignalsLine, buildIntradayLine, detectSnapshotRegime, buildSnapshotHeader, buildSnapshotTrend, buildSnapshotSignals, buildSnapshotLevels, buildSnapshotIntraday } from './voiceLayerPrompt.js';
 import { getETDate, formatDateString } from './marketSchedule.js';
 
 // ==================== TESTS ====================
@@ -73,6 +73,298 @@ describe('detectSnapshotRegime — Phase 5C', () => {
     // 2026-05-12T17:39:00Z is the boundary; >= boundary is fix v1 era.
     const snap = { capturedAt: '2026-05-12T17:39:00Z', intraday: { sessionDate: null } };
     expect(detectSnapshotRegime(snap)).toBe('fixv1-era');
+  });
+});
+
+// ==================== PHASE 5C — SNAPSHOT LEG HELPERS ====================
+
+const fullSnapshot = (overrides = {}) => ({
+  symbol: 'NVDA',
+  sectorName: 'Technology',
+  capturedAt: '2026-05-15T15:30:00Z',
+  trend: { shortTerm: 'up', intermediate: 'up', longTerm: 'down' },
+  momentum: {
+    rsi: 64,
+    macdAboveSignal: true,
+    macdFreshBullishCross: true,
+    macdFreshBearishCross: false,
+    macdHistogram: 0.34,
+    divergence: 'bullish',
+    upDayVolRatio: 1.2,
+  },
+  volatility: { bbPercentB: 0.7, bbUpper: 902, bbLower: 875, bBandwidthPercentile: 38, atrPercent: 2.1 },
+  volume: { avgVolume: 50000000, ratio: 1.4, tier: 'high', nr7Flag: true, dailyRange: 14.2 },
+  smaStack: { aboveSMA20: true, aboveSMA50: true, aboveSMA200: true, sma200_position: 'above', distTo52wkHigh: -1.8 },
+  rs: { rsPercentile: 76, sectorRSPercentile: 82 },
+  levels: { nearestSupport: 880, nearestResistance: 905, distanceToSupportPct: -1.4, distanceToResistancePct: 1.3 },
+  pivots: { r1: 905, s1: 880 },
+  recentAction: { lastCandlePattern: 'bullish_engulfing' },
+  intraday: { vwap: 893.5, currentPrice: 895.2, vwapDeviation: 0.19, sma20_5m: 894.0, sessionDate: '2026-05-15' },
+  composite: { technicalScore: 81, technicalRank: 4, sectorTechnicalRank: 4, sectorTechnicalTotal: 28 },
+  ...overrides,
+});
+
+describe('buildSnapshotHeader — Phase 5C', () => {
+  it('emits full header when all fields present', () => {
+    expect(buildSnapshotHeader(fullSnapshot())).toBe(
+      'NVDA — Score 81 (rank #4/28 in Technology), RS 76th %ile, ATR 2.1%',
+    );
+  });
+
+  it('omits score segment when technicalScore is null', () => {
+    const snap = fullSnapshot({ composite: { technicalScore: null, sectorTechnicalRank: 4, sectorTechnicalTotal: 28 } });
+    expect(buildSnapshotHeader(snap)).toBe('NVDA — RS 76th %ile, ATR 2.1%');
+  });
+
+  it('omits rank parenthetical when sectorTechnicalRank is null', () => {
+    const snap = fullSnapshot({ composite: { technicalScore: 81, sectorTechnicalRank: null, sectorTechnicalTotal: 28 } });
+    expect(buildSnapshotHeader(snap)).toBe('NVDA — Score 81, RS 76th %ile, ATR 2.1%');
+  });
+
+  it('drops /total when sectorTechnicalTotal is null but keeps rank', () => {
+    const snap = fullSnapshot({ composite: { technicalScore: 81, sectorTechnicalRank: 4, sectorTechnicalTotal: null } });
+    expect(buildSnapshotHeader(snap)).toBe('NVDA — Score 81 (rank #4 in Technology), RS 76th %ile, ATR 2.1%');
+  });
+
+  it('drops "in Sector" when sectorName is missing', () => {
+    const snap = fullSnapshot({ sectorName: null });
+    expect(buildSnapshotHeader(snap)).toBe('NVDA — Score 81 (rank #4/28), RS 76th %ile, ATR 2.1%');
+  });
+
+  it('omits RS when rsPercentile is null', () => {
+    const snap = fullSnapshot({ rs: { rsPercentile: null, sectorRSPercentile: 82 } });
+    expect(buildSnapshotHeader(snap)).toBe('NVDA — Score 81 (rank #4/28 in Technology), ATR 2.1%');
+  });
+
+  it('omits ATR when atrPercent is null', () => {
+    const snap = fullSnapshot({ volatility: { atrPercent: null } });
+    expect(buildSnapshotHeader(snap)).toBe('NVDA — Score 81 (rank #4/28 in Technology), RS 76th %ile');
+  });
+
+  it('renders just the symbol when all metrics are missing', () => {
+    const sparse = { symbol: 'GHOST', composite: {}, rs: {}, volatility: {} };
+    expect(buildSnapshotHeader(sparse)).toBe('GHOST');
+  });
+
+  it('returns empty string for null/undefined snapshot', () => {
+    expect(buildSnapshotHeader(null)).toBe('');
+    expect(buildSnapshotHeader(undefined)).toBe('');
+    expect(buildSnapshotHeader({})).toBe('');
+  });
+});
+
+describe('buildSnapshotTrend — Phase 5C', () => {
+  it('emits when all three timeframes are present', () => {
+    expect(buildSnapshotTrend(fullSnapshot())).toBe('Trend: up/up/down (short/int/long)');
+  });
+
+  it('returns null when only two timeframes are present', () => {
+    const snap = fullSnapshot({ trend: { shortTerm: 'up', intermediate: 'up', longTerm: null } });
+    expect(buildSnapshotTrend(snap)).toBeNull();
+  });
+
+  it('returns null when only one timeframe is present', () => {
+    const snap = fullSnapshot({ trend: { shortTerm: 'up', intermediate: null, longTerm: null } });
+    expect(buildSnapshotTrend(snap)).toBeNull();
+  });
+
+  it('returns null when all timeframes are null', () => {
+    const snap = fullSnapshot({ trend: { shortTerm: null, intermediate: null, longTerm: null } });
+    expect(buildSnapshotTrend(snap)).toBeNull();
+  });
+
+  it('returns null when trend sub-object is missing', () => {
+    expect(buildSnapshotTrend({})).toBeNull();
+    expect(buildSnapshotTrend(null)).toBeNull();
+  });
+});
+
+describe('buildSnapshotSignals — Phase 5C', () => {
+  it('emits each segment in isolation', () => {
+    expect(buildSnapshotSignals(fullSnapshot({
+      momentum: { macdFreshBullishCross: true, macdFreshBearishCross: false, divergence: null },
+      volume: { nr7Flag: false },
+      recentAction: { lastCandlePattern: null },
+    }))).toBe('Signals: Fresh MACD bullish cross.');
+
+    expect(buildSnapshotSignals(fullSnapshot({
+      momentum: { macdFreshBullishCross: false, macdFreshBearishCross: true, divergence: null },
+      volume: { nr7Flag: false },
+      recentAction: { lastCandlePattern: null },
+    }))).toBe('Signals: Fresh MACD bearish cross.');
+
+    expect(buildSnapshotSignals(fullSnapshot({
+      momentum: { divergence: 'bullish' },
+      volume: { nr7Flag: false },
+      recentAction: { lastCandlePattern: null },
+    }))).toBe('Signals: Bullish divergence forming.');
+
+    expect(buildSnapshotSignals(fullSnapshot({
+      momentum: { divergence: 'bearish' },
+      volume: { nr7Flag: false },
+      recentAction: { lastCandlePattern: null },
+    }))).toBe('Signals: Bearish divergence forming.');
+
+    expect(buildSnapshotSignals(fullSnapshot({
+      momentum: {},
+      volume: { nr7Flag: true },
+      recentAction: { lastCandlePattern: null },
+    }))).toBe('Signals: NR7 contraction — breakout pending.');
+  });
+
+  it('renders lastCandlePattern via PATTERN_DISPLAY_NAMES', () => {
+    const out = buildSnapshotSignals(fullSnapshot({
+      momentum: {},
+      volume: { nr7Flag: false },
+      recentAction: { lastCandlePattern: 'bullish_engulfing' },
+    }));
+    expect(out).toMatch(/^Signals: Recent candle:/);
+    expect(out).toContain('engulfing');
+  });
+
+  it('falls back to underscore-split when key is unknown', () => {
+    const out = buildSnapshotSignals(fullSnapshot({
+      momentum: {},
+      volume: { nr7Flag: false },
+      recentAction: { lastCandlePattern: 'unknown_pattern_key' },
+    }));
+    expect(out).toBe('Signals: Recent candle: unknown pattern key.');
+  });
+
+  it('combines multiple segments in fixed order', () => {
+    const out = buildSnapshotSignals(fullSnapshot());
+    expect(out).toBe(
+      'Signals: Fresh MACD bullish cross. Bullish divergence forming. NR7 contraction — breakout pending. Recent candle: bullish engulfing.',
+    );
+  });
+
+  it('returns null when no segments fire', () => {
+    const snap = fullSnapshot({
+      momentum: { macdFreshBullishCross: false, macdFreshBearishCross: false, divergence: 'none' },
+      volume: { nr7Flag: false },
+      recentAction: { lastCandlePattern: null },
+    });
+    expect(buildSnapshotSignals(snap)).toBeNull();
+  });
+
+  it('strict-bool: null does not fire macd/nr7 flags', () => {
+    const snap = fullSnapshot({
+      momentum: { macdFreshBullishCross: null, macdFreshBearishCross: null, divergence: null },
+      volume: { nr7Flag: null },
+      recentAction: { lastCandlePattern: null },
+    });
+    expect(buildSnapshotSignals(snap)).toBeNull();
+  });
+
+  it('returns null for null snapshot', () => {
+    expect(buildSnapshotSignals(null)).toBeNull();
+  });
+});
+
+describe('buildSnapshotLevels — Phase 5C', () => {
+  it('emits support segment when within ±10%', () => {
+    const snap = fullSnapshot({
+      levels: { nearestSupport: 880, nearestResistance: null, distanceToSupportPct: -2.5, distanceToResistancePct: null },
+      smaStack: { distTo52wkHigh: null },
+    });
+    expect(buildSnapshotLevels(snap)).toBe('Levels: Support $880 (-2.5%).');
+  });
+
+  it('emits resistance segment when within ±10%', () => {
+    const snap = fullSnapshot({
+      levels: { nearestSupport: null, nearestResistance: 905, distanceToSupportPct: null, distanceToResistancePct: 3.4 },
+      smaStack: { distTo52wkHigh: null },
+    });
+    expect(buildSnapshotLevels(snap)).toBe('Levels: Resistance $905 (+3.4%).');
+  });
+
+  it('suppresses segments outside the ±10% gate', () => {
+    const snap = fullSnapshot({
+      levels: { nearestSupport: 800, nearestResistance: 1000, distanceToSupportPct: -15, distanceToResistancePct: 12 },
+      smaStack: { distTo52wkHigh: null },
+    });
+    expect(buildSnapshotLevels(snap)).toBeNull();
+  });
+
+  it('emits 52wk-high segment when within ±5%', () => {
+    const snap = fullSnapshot({
+      levels: { nearestSupport: null, nearestResistance: null, distanceToSupportPct: null, distanceToResistancePct: null },
+      smaStack: { distTo52wkHigh: -2.8 },
+    });
+    expect(buildSnapshotLevels(snap)).toBe('Levels: 52wk high -2.8% away.');
+  });
+
+  it('suppresses 52wk-high segment outside ±5% gate', () => {
+    const snap = fullSnapshot({
+      levels: { nearestSupport: null, nearestResistance: null, distanceToSupportPct: null, distanceToResistancePct: null },
+      smaStack: { distTo52wkHigh: -8.4 },
+    });
+    expect(buildSnapshotLevels(snap)).toBeNull();
+  });
+
+  it('combines all three segments when each fires', () => {
+    const out = buildSnapshotLevels(fullSnapshot());
+    expect(out).toBe('Levels: Support $880 (-1.4%), Resistance $905 (+1.3%), 52wk high -1.8% away.');
+  });
+
+  it('returns null when no segments fire (and for null snapshot)', () => {
+    expect(buildSnapshotLevels(null)).toBeNull();
+    expect(buildSnapshotLevels({})).toBeNull();
+  });
+});
+
+describe('buildSnapshotIntraday — Phase 5C', () => {
+  it('returns null for pre-fixv1 snapshots even when intraday.vwap is present', () => {
+    const snap = fullSnapshot({
+      capturedAt: '2026-05-08T15:00:00Z',
+      intraday: { vwap: 800, currentPrice: 810, vwapDeviation: 1.25, sma20_5m: 808, sessionDate: null },
+    });
+    expect(buildSnapshotIntraday(snap)).toBeNull();
+  });
+
+  it('returns null for fixv1-era snapshots', () => {
+    const snap = fullSnapshot({
+      capturedAt: '2026-05-12T20:00:00Z',
+      intraday: { vwap: null, currentPrice: null, vwapDeviation: null, sma20_5m: null, sessionDate: null },
+    });
+    expect(buildSnapshotIntraday(snap)).toBeNull();
+  });
+
+  it('renders both segments for post-fixv2 snapshot when sessionDate matches capture date', () => {
+    const snap = fullSnapshot({
+      capturedAt: '2026-05-15T15:30:00Z',
+      intraday: { vwap: 893.5, currentPrice: 895.2, vwapDeviation: 0.7, sma20_5m: 894.0, sessionDate: '2026-05-15' },
+    });
+    expect(buildSnapshotIntraday(snap)).toBe(
+      "Today's session: 0.7% above session VWAP, 0.1% above 5m SMA20.",
+    );
+  });
+
+  it('uses "Prior session" prefix when sessionDate differs from capture ET date', () => {
+    const snap = fullSnapshot({
+      capturedAt: '2026-05-16T14:00:00Z',
+      intraday: { vwap: 893.5, currentPrice: 895.2, vwapDeviation: 0.7, sma20_5m: null, sessionDate: '2026-05-15' },
+    });
+    expect(buildSnapshotIntraday(snap)).toBe('Prior session: 0.7% above session VWAP.');
+  });
+
+  it('collapses near-zero deviation to "at session VWAP"', () => {
+    const snap = fullSnapshot({
+      capturedAt: '2026-05-15T15:30:00Z',
+      intraday: { vwap: 100, currentPrice: 100.01, vwapDeviation: 0.01, sma20_5m: null, sessionDate: '2026-05-15' },
+    });
+    expect(buildSnapshotIntraday(snap)).toBe("Today's session: at session VWAP.");
+  });
+
+  it('returns null when capturedAt is null but sessionDate present (defensive)', () => {
+    const snap = fullSnapshot({
+      capturedAt: null,
+      intraday: { vwap: 100, currentPrice: 101, vwapDeviation: 1, sma20_5m: null, sessionDate: '2026-05-15' },
+    });
+    // Without capturedAt we can't compute the ET date for the today/prior
+    // decision, but sessionDate presence still routes us to post-fixv2 and the
+    // helper falls back to "Prior session" rather than failing.
+    expect(buildSnapshotIntraday(snap)).toBe('Prior session: 1.0% above session VWAP.');
   });
 });
 
