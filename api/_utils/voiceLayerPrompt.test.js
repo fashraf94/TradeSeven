@@ -1,7 +1,7 @@
 // api/_utils/voiceLayerPrompt.test.js
 // Tier 0 Item 1: bench data exposure — buildBenchBriefsBlock unit tests.
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 // Mutable holder so individual tests can set the market state returned by the
 // mocked getMarketState() before exercising buildBattleState. Default to OPEN
@@ -2248,5 +2248,132 @@ describe('Phase 5B-main integration — buildPortfolioBriefsBlock wires Intraday
     });
     expect(out).not.toContain('Prior session:');
     expect(out).not.toContain("Today's session:");
+  });
+});
+
+// =============================================================================
+// Fix v2 — end-to-end rendering with sessionDate-driven today/prior prefix.
+// buildPortfolioBriefsBlock doesn't accept `now`, so these tests mock global
+// time via vi.useFakeTimers + setSystemTime. The mocked time is the value
+// buildIntradayLine's `new Date()` default resolves to.
+// =============================================================================
+
+describe('Fix v2 end-to-end — buildPortfolioBriefsBlock renders dynamic intraday prefix', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('renders "Today\'s session: ..." when brief.intraday.sessionDate matches today\'s ET date', () => {
+    // 2026-05-12 16:00 UTC = 12:00 ET (DST). Today's ET date = 2026-05-12.
+    vi.setSystemTime(new Date(Date.UTC(2026, 4, 12, 16, 0, 0)));
+
+    const out = buildPortfolioBriefsBlock({
+      portfolioBriefs: [realisticPortfolioBrief({
+        intraday: {
+          vwap: 422.5,
+          currentPrice: 425.5,
+          vwapDeviation: 0.7,
+          sma20_5m: 425.1,
+          sessionDate: '2026-05-12',
+        },
+        macdFreshBullishCross: false,
+        divergence: 'none',
+        nr7Flag: false,
+        lastCandlePattern: null,
+        nearestSupport: null,
+        nearestResistance: null,
+        distanceToSupportPct: null,
+        distanceToResistancePct: null,
+        distTo52wkHigh: null,
+      })],
+    });
+
+    expect(out).toContain("Today's session: 0.7% above session VWAP, 0.1% above 5m SMA20.");
+    expect(out).not.toContain('Prior session:');
+  });
+
+  it('renders "Prior session: ..." when brief.intraday.sessionDate is yesterday (the EODHD-lag production case)', () => {
+    // 2026-05-12 16:00 UTC = 12:00 ET. Today is May 12, but EODHD's data
+    // only goes through May 11.
+    vi.setSystemTime(new Date(Date.UTC(2026, 4, 12, 16, 0, 0)));
+
+    const out = buildPortfolioBriefsBlock({
+      portfolioBriefs: [realisticPortfolioBrief({
+        intraday: {
+          vwap: 422.5,
+          currentPrice: 425.5,
+          vwapDeviation: 0.7,
+          sma20_5m: 425.1,
+          sessionDate: '2026-05-11',
+        },
+        macdFreshBullishCross: false,
+        divergence: 'none',
+        nr7Flag: false,
+        lastCandlePattern: null,
+        nearestSupport: null,
+        nearestResistance: null,
+        distanceToSupportPct: null,
+        distanceToResistancePct: null,
+        distTo52wkHigh: null,
+      })],
+    });
+
+    expect(out).toContain('Prior session: 0.7% above session VWAP, 0.1% above 5m SMA20.');
+    expect(out).not.toContain("Today's session:");
+  });
+
+  it('renders "Prior session: ..." when sessionDate is missing entirely (legacy cached brief)', () => {
+    vi.setSystemTime(new Date(Date.UTC(2026, 4, 12, 16, 0, 0)));
+
+    const out = buildPortfolioBriefsBlock({
+      portfolioBriefs: [realisticPortfolioBrief({
+        // Pre-Fix v2 cached brief — no sessionDate field at all.
+        intraday: { vwap: 422.5, currentPrice: 425.5, vwapDeviation: 0.7, sma20_5m: 425.1 },
+        macdFreshBullishCross: false,
+        divergence: 'none',
+        nr7Flag: false,
+        lastCandlePattern: null,
+        nearestSupport: null,
+        nearestResistance: null,
+        distanceToSupportPct: null,
+        distanceToResistancePct: null,
+        distTo52wkHigh: null,
+      })],
+    });
+
+    expect(out).toContain('Prior session: 0.7% above session VWAP, 0.1% above 5m SMA20.');
+    expect(out).not.toContain("Today's session:");
+  });
+
+  it('mixed portfolio: today\'s brief and yesterday\'s brief render with their own prefixes', () => {
+    vi.setSystemTime(new Date(Date.UTC(2026, 4, 12, 16, 0, 0)));
+
+    const out = buildPortfolioBriefsBlock({
+      portfolioBriefs: [
+        realisticPortfolioBrief({
+          symbol: 'NVDA',
+          intraday: {
+            vwap: 145.5, currentPrice: 146.1, vwapDeviation: 0.41, sma20_5m: null,
+            sessionDate: '2026-05-12', // today
+          },
+          macdFreshBullishCross: false, divergence: 'none', nr7Flag: false, lastCandlePattern: null,
+        }),
+        realisticPortfolioBrief({
+          symbol: 'AMD',
+          intraday: {
+            vwap: 152.0, currentPrice: 151.4, vwapDeviation: -0.39, sma20_5m: null,
+            sessionDate: '2026-05-11', // yesterday
+          },
+          macdFreshBullishCross: false, divergence: 'none', nr7Flag: false, lastCandlePattern: null,
+        }),
+      ],
+    });
+
+    expect(out).toContain("Today's session: 0.4% above session VWAP.");
+    expect(out).toContain('Prior session: 0.4% below session VWAP.');
   });
 });

@@ -703,3 +703,113 @@ describe('filterToLatestSession + calculateVWAP — session VWAP integration', (
     expect(Math.abs(result.vwapDeviation)).toBeLessThan(5); // within session-plausible range
   });
 });
+
+// ==================== Fix v2 — full pipeline (fetch → filter → VWAP) ====================
+//
+// End-to-end: a mocked EODHD response that mirrors the production failure
+// mode — multi-day candles + synthetic close-print bar at session close —
+// passes through fetchIntradayCandles (strips the synthetic bar), then
+// filterToLatestSession (picks the latest ET date), then calculateVWAP
+// (produces a true session VWAP). This is the contract that the eval
+// cron's per-symbol VWAP write depends on; if any link in the chain
+// breaks, intraday: null returns to production.
+
+describe('Fix v2 full pipeline — fetchIntradayCandles → filterToLatestSession → calculateVWAP', () => {
+  it('handles realistic multi-day response with EODHD synthetic close-print bar', async () => {
+    // Build a 3-day response: May 8, May 11, May 12 (skip weekend May 9/10).
+    // Each session has bars at roughly $290; May 12's session has a synthetic
+    // close-print bar appended at 20:00 UTC (16:00 ET) with volume null and
+    // O==H==L==C — the exact pattern Fix v2 strips.
+    const buildSession = (dateStr, priceLevel, etOffset) => {
+      const bars = [];
+      const openMinutes = (9 * 60 + 30) + etOffset * 60;
+      for (let i = 0; i < 78; i++) {
+        const t = openMinutes + i * 5;
+        const hh = String(Math.floor(t / 60)).padStart(2, '0');
+        const mm = String(t % 60).padStart(2, '0');
+        const jitter = ((i % 7) - 3) * 0.05;
+        const close = priceLevel + jitter;
+        bars.push({
+          datetime: `${dateStr} ${hh}:${mm}:00`,
+          open: close - 0.05, high: close + 0.1, low: close - 0.1, close,
+          volume: 10000 + (i % 5) * 200,
+        });
+      }
+      return bars;
+    };
+
+    const may8 = buildSession('2026-05-08', 285, 4);
+    const may11 = buildSession('2026-05-11', 290, 4);
+    const may12 = buildSession('2026-05-12', 295, 4);
+    // Synthetic close-print bar for May 12 session at 20:00 UTC (16:00 ET).
+    const may12LastClose = may12[may12.length - 1].close;
+    const syntheticBar = {
+      datetime: '2026-05-12 20:00:00',
+      open: may12LastClose, high: may12LastClose, low: may12LastClose, close: may12LastClose,
+      volume: null,
+    };
+
+    const eodhdResponse = [...may8, ...may11, ...may12, syntheticBar];
+    mockFetchOk(eodhdResponse);
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    // Step 1: fetch (strips synthetic bar at the boundary)
+    const fetched = await fetchIntradayCandles('AAPL');
+    expect(fetched).toHaveLength(may8.length + may11.length + may12.length); // 234, no synthetic
+    expect(fetched.find(c => c.datetime === '2026-05-12 20:00:00')).toBeUndefined();
+    const synthDrop = warnSpy.mock.calls.find(c => String(c[0]).includes('synthetic close-print bar'));
+    expect(synthDrop).toBeDefined();
+
+    // Step 2: filter to latest session (May 12, anchored on data)
+    const { candles: sessionCandles, sessionDate } = filterToLatestSession(fetched);
+    expect(sessionDate).toBe('2026-05-12');
+    expect(sessionCandles).toHaveLength(may12.length); // 78 bars, no synthetic
+
+    // Step 3: VWAP on session candles → real session VWAP near $295
+    const vwap = calculateVWAP(sessionCandles);
+    expect(vwap).not.toBeNull();
+    expect(vwap.vwap).toBeGreaterThan(294);
+    expect(vwap.vwap).toBeLessThan(296);
+    expect(Math.abs(vwap.vwapDeviation)).toBeLessThan(1); // tight session band
+  });
+
+  it('handles the EODHD-lag production case — latest candles are yesterday only', async () => {
+    // EODHD's /intraday lags ~1 trading day: response has yesterday's bars
+    // but nothing for today. Pipeline must produce a non-null VWAP anchored
+    // on yesterday's session.
+    const yesterdayBars = [];
+    const openMinutes = (9 * 60 + 30) + 4 * 60; // 9:30 ET → UTC (DST)
+    for (let i = 0; i < 50; i++) {
+      const t = openMinutes + i * 5;
+      const hh = String(Math.floor(t / 60)).padStart(2, '0');
+      const mm = String(t % 60).padStart(2, '0');
+      const close = 100 + i * 0.05;
+      yesterdayBars.push({
+        datetime: `2026-05-11 ${hh}:${mm}:00`,
+        open: close - 0.02, high: close + 0.05, low: close - 0.05, close, volume: 12000,
+      });
+    }
+    // Plus the synthetic close-print bar at session close.
+    const lastClose = yesterdayBars[yesterdayBars.length - 1].close;
+    const syntheticBar = {
+      datetime: '2026-05-11 20:00:00',
+      open: lastClose, high: lastClose, low: lastClose, close: lastClose, volume: null,
+    };
+
+    mockFetchOk([...yesterdayBars, syntheticBar]);
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    const fetched = await fetchIntradayCandles('AAPL');
+    const { candles: sessionCandles, sessionDate } = filterToLatestSession(fetched);
+    const vwap = calculateVWAP(sessionCandles);
+
+    expect(sessionDate).toBe('2026-05-11'); // yesterday — the EODHD-lag case
+    expect(sessionCandles).toHaveLength(50);
+    expect(vwap).not.toBeNull();
+    // The full payload that flows into momentumData.vwap[symbol] (see
+    // agent-evaluate.js:384) — sessionDate + vwap fields travel together.
+    const persistedShape = { ...vwap, sessionDate };
+    expect(persistedShape.sessionDate).toBe('2026-05-11');
+    expect(typeof persistedShape.vwapDeviation).toBe('number');
+  });
+});
