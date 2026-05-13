@@ -23,7 +23,8 @@ export const DAILY_REGIME_BRIEF_TOOL = {
       },
       keyEvents: {
         type: 'array',
-        description: '3-6 most consequential scheduled events this week. Pick from the calendars provided in user prompt; do not invent events.',
+        description:
+          'Render every high-impact event from the calendars provided in the user prompt. The calendars are deterministic and pre-curated by impact level — do not invent events, do not omit events, do not substitute events. If the calendar has 2 events this week, return 2. If it has 5, return 5. Typical range: 0-8.',
         items: {
           type: 'object',
           required: ['label', 'eventDate', 'kind', 'whyItMatters', 'tickers'],
@@ -74,6 +75,8 @@ export const DAILY_REGIME_BRIEF_TOOL = {
 
 const SYSTEM_PROMPT = `You are generating a daily regime brief for FantasyTrades, a competitive trading game. The brief will be injected into a trading agent's system prompt. The agent talks casually with users about market strategy and needs forward-looking context about what to watch this week.
 
+The economic and earnings calendars in the user prompt are deterministic and pre-curated — economic events come from agency primary sources (BLS / BEA / Census / the Fed) and earnings from a verified EODHD feed, both filtered by impact level before reaching you. Treat the calendar as ground truth. Your job is to NARRATE it, not curate, select, or second-guess it.
+
 MANDATORY CONSTRAINTS:
 - VIX is not tracked in this system. Refer to volatility tiers only (elevated/normal/compressed). Never cite VIX levels, numbers, or ranges.
 - Do NOT restate current regime data (regime name, breadth tiers, sector movers) — separate systems inject that context elsewhere in the agent's prompt.
@@ -81,6 +84,7 @@ MANDATORY CONSTRAINTS:
 - Desk-briefing voice: direct, specific, informed. Not marketing copy. Not a news summary.
 - Keep the brief 150-300 tokens. Tight is better than long.
 - Your output will be injected verbatim into another model's context. Help the agent sound sharper, not longer.
+- Do NOT invent, omit, or substitute events. Every entry in your keyEvents output must appear verbatim in the calendar I gave you — same date, same event name. If the calendar shows 2 events this week return 2; if 5, return 5; if 0, return an empty array.
 - For each keyEvent, copy the eventDate verbatim from the calendar input. Do not infer or guess dates.
 - Tickers must be US-listed and trade-able. For macro/fed events, pick the 2-3 most reactive broad-market or sector ETFs (SPY, TLT, GLD, DXY, XLE, XLF, etc.).
 
