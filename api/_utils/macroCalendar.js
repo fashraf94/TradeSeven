@@ -105,23 +105,123 @@ export const FOMC_DECISIONS_2026 = [
   { date: '2026-12-09', day: 'Wednesday', time: '2:00 PM ET', category: 'FOMC', impact: 'high', event: 'FOMC rate decision + Summary of Economic Projections' },
 ];
 
-// TODO: populate from https://www.bls.gov/schedule/news_release/cpi.htm
-export const CPI_RELEASES_2026 = [];
+// Source: https://www.bls.gov/schedule/news_release/cpi.htm
+// Verified: 2026-05-13
+export const CPI_RELEASES_2026 = [
+  { date: '2026-01-13', day: 'Tuesday',   time: '8:30 AM ET', category: 'CPI', impact: 'high', event: 'CPI (December)' },
+  { date: '2026-02-13', day: 'Friday',    time: '8:30 AM ET', category: 'CPI', impact: 'high', event: 'CPI (January)' },
+  { date: '2026-03-11', day: 'Wednesday', time: '8:30 AM ET', category: 'CPI', impact: 'high', event: 'CPI (February)' },
+  { date: '2026-04-10', day: 'Friday',    time: '8:30 AM ET', category: 'CPI', impact: 'high', event: 'CPI (March)' },
+  { date: '2026-05-12', day: 'Tuesday',   time: '8:30 AM ET', category: 'CPI', impact: 'high', event: 'CPI (April)' },
+  { date: '2026-06-10', day: 'Wednesday', time: '8:30 AM ET', category: 'CPI', impact: 'high', event: 'CPI (May)' },
+  { date: '2026-07-14', day: 'Tuesday',   time: '8:30 AM ET', category: 'CPI', impact: 'high', event: 'CPI (June)' },
+  { date: '2026-08-12', day: 'Wednesday', time: '8:30 AM ET', category: 'CPI', impact: 'high', event: 'CPI (July)' },
+  { date: '2026-09-11', day: 'Friday',    time: '8:30 AM ET', category: 'CPI', impact: 'high', event: 'CPI (August)' },
+  { date: '2026-10-14', day: 'Wednesday', time: '8:30 AM ET', category: 'CPI', impact: 'high', event: 'CPI (September)' },
+  { date: '2026-11-10', day: 'Tuesday',   time: '8:30 AM ET', category: 'CPI', impact: 'high', event: 'CPI (October)' },
+  { date: '2026-12-10', day: 'Thursday',  time: '8:30 AM ET', category: 'CPI', impact: 'high', event: 'CPI (November)' },
+];
 
-// TODO: populate from https://www.bls.gov/schedule/news_release/ppi.htm
-export const PPI_RELEASES_2026 = [];
+// Source: https://www.bls.gov/schedule/news_release/ppi.htm
+// Verified: 2026-05-13
+// 13 entries: includes the Nov-2025 release on Jan 14, 2026, which falls in the
+// 2026 calendar year despite covering a 2025 reference period.
+export const PPI_RELEASES_2026 = [
+  { date: '2026-01-14', day: 'Wednesday', time: '8:30 AM ET', category: 'PPI', impact: 'medium', event: 'PPI (November)' },
+  { date: '2026-01-30', day: 'Friday',    time: '8:30 AM ET', category: 'PPI', impact: 'medium', event: 'PPI (December)' },
+  { date: '2026-02-27', day: 'Friday',    time: '8:30 AM ET', category: 'PPI', impact: 'medium', event: 'PPI (January)' },
+  { date: '2026-03-18', day: 'Wednesday', time: '8:30 AM ET', category: 'PPI', impact: 'medium', event: 'PPI (February)' },
+  { date: '2026-04-14', day: 'Tuesday',   time: '8:30 AM ET', category: 'PPI', impact: 'medium', event: 'PPI (March)' },
+  { date: '2026-05-13', day: 'Wednesday', time: '8:30 AM ET', category: 'PPI', impact: 'medium', event: 'PPI (April)' },
+  { date: '2026-06-11', day: 'Thursday',  time: '8:30 AM ET', category: 'PPI', impact: 'medium', event: 'PPI (May)' },
+  { date: '2026-07-15', day: 'Wednesday', time: '8:30 AM ET', category: 'PPI', impact: 'medium', event: 'PPI (June)' },
+  { date: '2026-08-13', day: 'Thursday',  time: '8:30 AM ET', category: 'PPI', impact: 'medium', event: 'PPI (July)' },
+  { date: '2026-09-10', day: 'Thursday',  time: '8:30 AM ET', category: 'PPI', impact: 'medium', event: 'PPI (August)' },
+  { date: '2026-10-15', day: 'Thursday',  time: '8:30 AM ET', category: 'PPI', impact: 'medium', event: 'PPI (September)' },
+  { date: '2026-11-13', day: 'Friday',    time: '8:30 AM ET', category: 'PPI', impact: 'medium', event: 'PPI (October)' },
+  { date: '2026-12-15', day: 'Tuesday',   time: '8:30 AM ET', category: 'PPI', impact: 'medium', event: 'PPI (November)' },
+];
 
-// TODO: populate from https://www.bea.gov/news/schedule (Personal Income & Outlays)
-export const PCE_RELEASES_2026 = [];
+// Source: https://www.bea.gov/news/schedule/full (Personal Income & Outlays)
+// Verified: 2026-05-13
+// 13 entries: includes the combined Oct/Nov-2025 release on Jan 22, 2026 (BEA
+// merged the two reports following the 2025 shutdown reschedule).
+export const PCE_RELEASES_2026 = [
+  { date: '2026-01-22', day: 'Thursday',  time: '8:30 AM ET', category: 'PCE', impact: 'high', event: 'PCE (October & November combined)' },
+  { date: '2026-02-20', day: 'Friday',    time: '8:30 AM ET', category: 'PCE', impact: 'high', event: 'PCE (December)' },
+  { date: '2026-03-13', day: 'Friday',    time: '8:30 AM ET', category: 'PCE', impact: 'high', event: 'PCE (January)' },
+  { date: '2026-04-09', day: 'Thursday',  time: '8:30 AM ET', category: 'PCE', impact: 'high', event: 'PCE (February)' },
+  { date: '2026-04-30', day: 'Thursday',  time: '8:30 AM ET', category: 'PCE', impact: 'high', event: 'PCE (March)' },
+  { date: '2026-05-28', day: 'Thursday',  time: '8:30 AM ET', category: 'PCE', impact: 'high', event: 'PCE (April)' },
+  { date: '2026-06-25', day: 'Thursday',  time: '8:30 AM ET', category: 'PCE', impact: 'high', event: 'PCE (May)' },
+  { date: '2026-07-30', day: 'Thursday',  time: '8:30 AM ET', category: 'PCE', impact: 'high', event: 'PCE (June)' },
+  { date: '2026-08-26', day: 'Wednesday', time: '8:30 AM ET', category: 'PCE', impact: 'high', event: 'PCE (July)' },
+  { date: '2026-09-30', day: 'Wednesday', time: '8:30 AM ET', category: 'PCE', impact: 'high', event: 'PCE (August)' },
+  { date: '2026-10-29', day: 'Thursday',  time: '8:30 AM ET', category: 'PCE', impact: 'high', event: 'PCE (September)' },
+  { date: '2026-11-25', day: 'Wednesday', time: '8:30 AM ET', category: 'PCE', impact: 'high', event: 'PCE (October)' },
+  { date: '2026-12-23', day: 'Wednesday', time: '8:30 AM ET', category: 'PCE', impact: 'high', event: 'PCE (November)' },
+];
 
-// TODO: populate from https://www.census.gov/economic-indicators/calendar-listview.html (Advance Monthly Retail Trade)
-export const RETAIL_SALES_RELEASES_2026 = [];
+// Source: https://www.census.gov/economic-indicators/calendar-listview.html
+//   (post-shutdown Census publication for the first 5 entries; pre-shutdown
+//    whitehouse.gov/pfei_schedule_release_dates_cy2026 PDF for the forecast block)
+// Verified: 2026-05-13
+// 10 entries: 5 post-shutdown confirmed + 5 forecast carried forward. Nov/Dec
+// 2026 releases (for Sep/Oct data) are omitted pending Census re-publication.
+export const RETAIL_SALES_RELEASES_2026 = [
+  // Confirmed dates (post-shutdown Census publication):
+  { date: '2026-01-14', day: 'Wednesday', time: '8:30 AM ET', category: 'Retail Sales', impact: 'high', event: 'Retail Sales (November)' },
+  { date: '2026-02-17', day: 'Tuesday',   time: '8:30 AM ET', category: 'Retail Sales', impact: 'high', event: 'Retail Sales (December)' },
+  { date: '2026-04-01', day: 'Wednesday', time: '8:30 AM ET', category: 'Retail Sales', impact: 'high', event: 'Retail Sales (January)' },
+  { date: '2026-04-21', day: 'Tuesday',   time: '8:30 AM ET', category: 'Retail Sales', impact: 'high', event: 'Retail Sales (February)' },
+  { date: '2026-05-14', day: 'Thursday',  time: '8:30 AM ET', category: 'Retail Sales', impact: 'high', event: 'Retail Sales (March)' },
+  // FORECAST dates below — taken from pre-shutdown Census schedule, NOT yet re-verified against post-shutdown publication.
+  // Verify against https://www.census.gov/economic-indicators/calendar-listview.html before relying on these for production.
+  { date: '2026-06-17', day: 'Wednesday', time: '8:30 AM ET', category: 'Retail Sales', impact: 'high', event: 'Retail Sales (April)' },
+  { date: '2026-07-16', day: 'Thursday',  time: '8:30 AM ET', category: 'Retail Sales', impact: 'high', event: 'Retail Sales (May)' },
+  { date: '2026-08-14', day: 'Friday',    time: '8:30 AM ET', category: 'Retail Sales', impact: 'high', event: 'Retail Sales (June)' },
+  { date: '2026-09-16', day: 'Wednesday', time: '8:30 AM ET', category: 'Retail Sales', impact: 'high', event: 'Retail Sales (July)' },
+  { date: '2026-10-15', day: 'Thursday',  time: '8:30 AM ET', category: 'Retail Sales', impact: 'high', event: 'Retail Sales (August)' },
+  // Nov and Dec 2026 Retail Sales releases (for Sep and Oct data) are not yet on the post-shutdown Census schedule.
+  // Update when Census publishes them — typically the 14th-17th of the following month.
+];
 
-// TODO: populate from https://www.bea.gov/news/schedule (GDP — advance / second / third per quarter)
-export const GDP_RELEASES_2026 = [];
+// Source: https://www.bea.gov/news/schedule/full (GDP — advance / second / third per quarter)
+// Verified: 2026-05-13
+// 13 entries: includes the Q3-2025 updated estimate on Jan 22, 2026 (BEA
+// substituted "updated" for the usual third estimate after the 2025 shutdown).
+export const GDP_RELEASES_2026 = [
+  { date: '2026-01-22', day: 'Thursday',  time: '8:30 AM ET', category: 'GDP', impact: 'medium', event: 'GDP Q3 2025 updated estimate' },
+  { date: '2026-02-20', day: 'Friday',    time: '8:30 AM ET', category: 'GDP', impact: 'high',   event: 'GDP Q4 2025 advance estimate' },
+  { date: '2026-03-13', day: 'Friday',    time: '8:30 AM ET', category: 'GDP', impact: 'medium', event: 'GDP Q4 2025 second estimate' },
+  { date: '2026-04-09', day: 'Thursday',  time: '8:30 AM ET', category: 'GDP', impact: 'medium', event: 'GDP Q4 2025 third estimate' },
+  { date: '2026-04-30', day: 'Thursday',  time: '8:30 AM ET', category: 'GDP', impact: 'high',   event: 'GDP Q1 2026 advance estimate' },
+  { date: '2026-05-28', day: 'Thursday',  time: '8:30 AM ET', category: 'GDP', impact: 'medium', event: 'GDP Q1 2026 second estimate' },
+  { date: '2026-06-25', day: 'Thursday',  time: '8:30 AM ET', category: 'GDP', impact: 'medium', event: 'GDP Q1 2026 third estimate' },
+  { date: '2026-07-30', day: 'Thursday',  time: '8:30 AM ET', category: 'GDP', impact: 'high',   event: 'GDP Q2 2026 advance estimate' },
+  { date: '2026-08-26', day: 'Wednesday', time: '8:30 AM ET', category: 'GDP', impact: 'medium', event: 'GDP Q2 2026 second estimate' },
+  { date: '2026-09-30', day: 'Wednesday', time: '8:30 AM ET', category: 'GDP', impact: 'medium', event: 'GDP Q2 2026 third estimate' },
+  { date: '2026-10-29', day: 'Thursday',  time: '8:30 AM ET', category: 'GDP', impact: 'high',   event: 'GDP Q3 2026 advance estimate' },
+  { date: '2026-11-25', day: 'Wednesday', time: '8:30 AM ET', category: 'GDP', impact: 'medium', event: 'GDP Q3 2026 second estimate' },
+  { date: '2026-12-23', day: 'Wednesday', time: '8:30 AM ET', category: 'GDP', impact: 'medium', event: 'GDP Q3 2026 third estimate' },
+];
 
-// TODO: populate from https://www.bls.gov/schedule/news_release/prod2.htm (Productivity and Costs, quarterly)
-export const PRODUCTIVITY_RELEASES_2026 = [];
+// Source: https://www.bls.gov/schedule/news_release/prod2.htm (Productivity and Costs, quarterly)
+// Verified: 2026-05-13
+// 10 entries: 5 quarters covered (Q3-2025 carryover through Q3-2026), each
+// quarter releasing both a preliminary and a revised estimate.
+export const PRODUCTIVITY_RELEASES_2026 = [
+  { date: '2026-01-08', day: 'Thursday',  time: '8:30 AM ET', category: 'Productivity', impact: 'medium', event: 'Productivity Q3 2025 preliminary' },
+  { date: '2026-01-29', day: 'Thursday',  time: '8:30 AM ET', category: 'Productivity', impact: 'medium', event: 'Productivity Q3 2025 revised' },
+  { date: '2026-03-05', day: 'Thursday',  time: '8:30 AM ET', category: 'Productivity', impact: 'medium', event: 'Productivity Q4 2025 preliminary' },
+  { date: '2026-03-24', day: 'Tuesday',   time: '8:30 AM ET', category: 'Productivity', impact: 'medium', event: 'Productivity Q4 2025 revised' },
+  { date: '2026-05-07', day: 'Thursday',  time: '8:30 AM ET', category: 'Productivity', impact: 'medium', event: 'Productivity Q1 2026 preliminary' },
+  { date: '2026-06-04', day: 'Thursday',  time: '8:30 AM ET', category: 'Productivity', impact: 'medium', event: 'Productivity Q1 2026 revised' },
+  { date: '2026-08-06', day: 'Thursday',  time: '8:30 AM ET', category: 'Productivity', impact: 'medium', event: 'Productivity Q2 2026 preliminary' },
+  { date: '2026-09-03', day: 'Thursday',  time: '8:30 AM ET', category: 'Productivity', impact: 'medium', event: 'Productivity Q2 2026 revised' },
+  { date: '2026-11-05', day: 'Thursday',  time: '8:30 AM ET', category: 'Productivity', impact: 'medium', event: 'Productivity Q3 2026 preliminary' },
+  { date: '2026-12-08', day: 'Tuesday',   time: '8:30 AM ET', category: 'Productivity', impact: 'medium', event: 'Productivity Q3 2026 revised' },
+];
 
 // =============================================================================
 // Computed schedule helpers
