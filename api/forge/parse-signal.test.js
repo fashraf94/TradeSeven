@@ -557,6 +557,8 @@ describe('parse-signal — shadow log', () => {
     });
     await handler(req, res);
 
+    // Baseline parse has all-validated tickers (AAPL), so only the parse-stage
+    // log fires (not the off-universe one).
     expect(shadowLogCalls.current).toHaveLength(1);
     const logged = shadowLogCalls.current[0];
     expect(logged.stage).toBe('parse');
@@ -564,6 +566,86 @@ describe('parse-signal — shadow log', () => {
     expect(logged.userId).toBe('test-user');
     expect(logged.cacheHit).toBe(false);
     expect(logged.contentHash).toBe(res.body.contentHash);
+  });
+});
+
+// ==================== OFF-UNIVERSE OBSERVABILITY (PHASE 4.5a) ====================
+
+describe('parse-signal — off-universe shadow log (Phase 4.5a)', () => {
+  it('V-21/22: fires off_universe_ticker_seen event with stage=parse when unsupported.length > 0', async () => {
+    const fixture = makeFakeFirestore();
+    activeFirestore = fixture.db;
+    haikuResult.current = makeHaikuResponse(
+      makeBaselineParse({
+        tickers: ['GK', 'ARKK'],
+        topic: 'Cathie Wood picks',
+        confidence: 0.45,
+      }),
+    );
+
+    const { req, res } = makeReqRes({
+      type: 'text',
+      text: 'Cathie Wood ARKK GK piece',
+      dropId: 'drop-offuniverse',
+    });
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    const offUniverseEvent = shadowLogCalls.current.find(
+      (r) => r.event === 'off_universe_ticker_seen',
+    );
+    expect(offUniverseEvent).toBeDefined();
+    expect(offUniverseEvent.stage).toBe('parse');
+    expect(offUniverseEvent.tickers).toEqual(['GK', 'ARKK']);
+    expect(offUniverseEvent.dropId).toBe('drop-offuniverse');
+    expect(offUniverseEvent.userId).toBe('test-user');
+    expect(offUniverseEvent.contentHash).toBe(res.body.contentHash);
+    expect(offUniverseEvent.topic).toBe('Cathie Wood picks');
+    expect(offUniverseEvent.contentType).toBe('tweet');
+    expect(offUniverseEvent.signalDirection).toBe('bullish');
+    expect(typeof offUniverseEvent.capturedAt).toBe('string');
+  });
+
+  it('V-24: does NOT fire off_universe event when all tickers validate', async () => {
+    const fixture = makeFakeFirestore();
+    activeFirestore = fixture.db;
+    // Baseline parse has tickers=['AAPL'] which validates
+    const { req, res } = makeReqRes({
+      type: 'text',
+      text: 'Apple AI inference',
+      dropId: 'drop-allvalid',
+    });
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    const offUniverseEvent = shadowLogCalls.current.find(
+      (r) => r.event === 'off_universe_ticker_seen',
+    );
+    expect(offUniverseEvent).toBeUndefined();
+  });
+
+  it('V-21 (ETFs validate now): SMH + XLK + GK partition produces off-universe log only for GK', async () => {
+    const fixture = makeFakeFirestore();
+    activeFirestore = fixture.db;
+    haikuResult.current = makeHaikuResponse(
+      makeBaselineParse({
+        tickers: ['SMH', 'XLK', 'GK'],
+        topic: 'Semis + ARK basket',
+      }),
+    );
+
+    const { req, res } = makeReqRes({
+      type: 'text',
+      text: 'semis + GK',
+      dropId: 'drop-mix',
+    });
+    await handler(req, res);
+
+    const offUniverseEvent = shadowLogCalls.current.find(
+      (r) => r.event === 'off_universe_ticker_seen',
+    );
+    expect(offUniverseEvent).toBeDefined();
+    expect(offUniverseEvent.tickers).toEqual(['GK']);
   });
 });
 

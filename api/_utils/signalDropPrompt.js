@@ -20,6 +20,7 @@
 // modes so the U-shaped attention pattern stays in one place.
 
 import { wrapWithDelimiters } from './injectionGuard.js';
+import { normalizeTicker } from './tickerValidation.js';
 
 // =============================================================================
 // Anthropic tool schema — forced structured output for parse-signal
@@ -269,11 +270,31 @@ export function buildDialogueInputs(parseResult) {
   const parse = parseResult.parse && typeof parseResult.parse === 'object'
     ? parseResult.parse
     : {};
+  const validation = parseResult.validation && typeof parseResult.validation === 'object'
+    ? parseResult.validation
+    : {};
+
+  // Phase 4.5a: project parse.tickers to the validation.validated subset so
+  // Gemma only sees in-universe symbols. Off-universe symbols would silently
+  // drop in applyCandidateTickerUpdates anyway — pre-filtering keeps the
+  // dialogue prompt honest. impliedTickers stays raw per locked Decision 4
+  // option A. normalizeTicker canonicalizes parse.tickers entries (which arrive
+  // verbatim from Haiku) against validation.validated[*].symbol (which is
+  // already post-normalization).
+  const validatedSymbolSet = new Set(
+    (Array.isArray(validation.validated) ? validation.validated : [])
+      .map((entry) => (entry && typeof entry.symbol === 'string' ? entry.symbol : null))
+      .filter(Boolean),
+  );
+  const rawTickers = Array.isArray(parse.tickers) ? parse.tickers : [];
+  const filteredTickers = rawTickers
+    .map((sym) => normalizeTicker(sym))
+    .filter((sym) => sym !== null && validatedSymbolSet.has(sym));
 
   const parsedSignalBlock = {
     extractedText: wrapWithDelimiters(parse.extractedText || ''),
     topic: parse.topic || '',
-    tickers: Array.isArray(parse.tickers) ? parse.tickers : [],
+    tickers: filteredTickers,
     impliedTickers: Array.isArray(parse.impliedTickers) ? parse.impliedTickers : [],
     contentType: parse.contentType || 'unknown',
     signalDirection: parse.signalDirection || 'uncertain',

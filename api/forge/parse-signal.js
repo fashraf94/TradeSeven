@@ -254,14 +254,35 @@ export default async function handler(req, res) {
     sanitizeParsedOutput(parsed, { dropId, userId, contentHash });
 
     // 9. Validate tickers (canonical-symbol normalization, against the
-    // 232-symbol universe). Validation runs against the union of
-    // explicit + implied tickers — the bailout check uses raw counts.
+    // universe defined in rankingConfig.js). Validation runs against the
+    // union of explicit + implied tickers — the bailout check uses raw
+    // counts. As of Phase 4.5a the universe includes Tier 1 sector ETFs
+    // and Tier 2 industry ETFs; previously stocks-only.
     const allTickers = [
       ...(Array.isArray(parsed.tickers) ? parsed.tickers : []),
       ...(Array.isArray(parsed.impliedTickers) ? parsed.impliedTickers : []),
     ];
     const validation = validateTickers(allTickers);
     const impliedCount = Array.isArray(parsed.impliedTickers) ? parsed.impliedTickers.length : 0;
+
+    // 9.5 Off-universe observability (Phase 4.5a). Fires when Haiku returned
+    // tickers that fell outside the universe. Mirrors the existing
+    // off_universe_ticker_seen pattern from injectionGuard.js but tags the
+    // parse stage so GCS-NDJSON aggregation can pivot per stage.
+    if (validation.unsupported.length > 0) {
+      waitUntil(logSignalDrops({
+        event: 'off_universe_ticker_seen',
+        stage: 'parse',
+        tickers: validation.unsupported,
+        contentType: parsed.contentType || 'unknown',
+        signalDirection: parsed.signalDirection || 'uncertain',
+        topic: parsed.topic || '',
+        dropId,
+        userId,
+        contentHash,
+        capturedAt: new Date().toISOString(),
+      }).catch(() => {}));
+    }
 
     // 10. Injection-attempt flag (set on the parsed object so downstream
     // shadow logs and the expand endpoint can see it)

@@ -81,19 +81,54 @@ export const STOCK_UNIVERSE = {
   },
 };
 
-// Flat list of all tickers for quick lookup
+// Flat list of all tickers for quick lookup. Stocks-only — sector and industry
+// ETFs live in their own maps so the existing fundamentals-fetch cron paths
+// (which iterate ALL_TICKERS and call EODHD's stock-fundamentals endpoint)
+// keep their current contract.
 export const ALL_TICKERS = Object.values(STOCK_UNIVERSE).flatMap(s => s.stocks);
-
-// Ticker → sectorId lookup
-export const TICKER_TO_SECTOR = {};
-for (const [sectorId, sector] of Object.entries(STOCK_UNIVERSE)) {
-  for (const ticker of sector.stocks) {
-    TICKER_TO_SECTOR[ticker] = sectorId;
-  }
-}
 
 // Sector ETF symbols for historical price fetching
 export const SECTOR_ETFS = Object.values(STOCK_UNIVERSE).map(s => s.etf);
+
+// Industry ETFs (Tier 2) — curated per-sector list, $200M AUM + 100K shares/day
+// volume floors. Coverage gaps for XLP and XLC are intentional (no liquid
+// candidates above both floors as of Phase 4.5a audit, 2026-05-14).
+export const INDUSTRY_ETFS = Object.freeze({
+  XLK: ['SMH', 'SOXX', 'IGV', 'CIBR', 'SKYY'],
+  XLV: ['IBB', 'XBI', 'IHI', 'IHF'],
+  XLF: ['KRE', 'KBE', 'KIE'],
+  XLE: ['XOP', 'OIH', 'ICLN', 'TAN', 'URA', 'URNM'],
+  XLY: ['XRT'],
+  XLP: [],
+  XLI: ['ITA', 'JETS'],
+  XLB: ['GDX', 'GDXJ', 'SIL', 'COPX'],
+  XLU: ['GRID'],
+  XLRE: ['VNQ', 'REM'],
+  XLC: [],
+});
+
+// Ticker → sectorId lookup. Populated in lockstep with TICKER_TO_TYPE so a
+// symbol appears in both maps or neither.
+export const TICKER_TO_SECTOR = {};
+// Ticker → instrument-type lookup. Three values:
+//   'stock'        — individual equity from STOCK_UNIVERSE.<sector>.stocks
+//   'sector_etf'   — the GICS sector SPDR (XLK, XLF, etc.)
+//   'industry_etf' — a Tier 2 industry ETF from INDUSTRY_ETFS
+export const TICKER_TO_TYPE = {};
+for (const [sectorId, sector] of Object.entries(STOCK_UNIVERSE)) {
+  for (const ticker of sector.stocks) {
+    TICKER_TO_SECTOR[ticker] = sectorId;
+    TICKER_TO_TYPE[ticker] = 'stock';
+  }
+  if (sector.etf) {
+    TICKER_TO_SECTOR[sector.etf] = sectorId;
+    TICKER_TO_TYPE[sector.etf] = 'sector_etf';
+  }
+  for (const etfSym of INDUSTRY_ETFS[sectorId] || []) {
+    TICKER_TO_SECTOR[etfSym] = sectorId;
+    TICKER_TO_TYPE[etfSym] = 'industry_etf';
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Ranking Dimensions — 8 pillars, 2-4 dimensions each

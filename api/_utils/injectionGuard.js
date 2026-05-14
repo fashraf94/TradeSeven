@@ -98,6 +98,7 @@ export function validateExpansionOutput(expansion, parsedSignal) {
     // Failure here must NEVER block validation — wrap in catch.
     logSignalDrops({
       event: 'off_universe_ticker_seen',
+      stage: 'expand',
       tickers: parsedTickers,
       contentType: parsedSignal?.contentType || 'unknown',
       signalDirection: parsedSignal?.signalDirection || 'uncertain',

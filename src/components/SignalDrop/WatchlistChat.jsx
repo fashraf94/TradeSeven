@@ -649,8 +649,14 @@ export default function WatchlistChat({
     typeof parseResult?.parse?.topic === 'string'
       ? parseResult.parse.topic.trim()
       : '';
-  const parsedTickers = Array.isArray(parseResult?.parse?.tickers)
-    ? parseResult.parse.tickers
+  // Phase 4.5a (Decision 4): EmptyState's "Tickers we read" chip strip now
+  // reads from validation.validated (post-universe filter) so off-universe
+  // symbols don't leak into the dialogue UI. Mirrors the same divergence
+  // fix applied to buildDialogueInputs on the server side.
+  const parsedTickers = Array.isArray(parseResult?.validation?.validated)
+    ? parseResult.validation.validated
+        .map((v) => (v && typeof v.symbol === 'string' ? v.symbol : null))
+        .filter(Boolean)
     : [];
   const composerDisabled = isSending || budgetExceeded;
   const canSend = !composerDisabled && inputText.trim().length > 0;
