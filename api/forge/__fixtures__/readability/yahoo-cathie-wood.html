@@ -1,0 +1,160 @@
+<!--
+  Fixture: yahoo-cathie-wood.html
+  Purpose: Representative real-world Yahoo Finance article structure.
+  Verifies Readability strips Yahoo's dense nav/sidebar/related/footer
+  chrome and surfaces the article body — including tickers that appear
+  ONLY deep in the body, never in the headline or lede paragraph.
+
+  Original source URL (per Phase 4.5b plan D-A-4):
+    https://finance.yahoo.com/news/cathie-wood-ross-gerber-snap-184116433.html
+
+  ATTRIBUTION / SYNTHESIS NOTE:
+  The Phase 4.5b implementation environment had no outbound web access
+  (all hosts return 403 "Host not in allowlist"), so this fixture could
+  not be captured by fetching the live URL. It is a hand-crafted
+  reconstruction that mirrors Yahoo Finance's typical article DOM shape:
+  global nav, breadcrumb, ad placeholders, article header + byline,
+  multi-paragraph body, related-stories sidebar, footer chrome. The
+  topic, principals (Cathie Wood, Ross Gerber), and primary subject
+  (SNAP) follow the original article's framing. Body-only tickers
+  (TSLA, COIN, ROKU, SQ, PATH) are intentionally placed deep in the
+  body — never in the headline or lede — so the test asserting
+  "Readability surfaces body tickers" exercises the actual failure mode
+  Phase 4.5b was designed to fix.
+
+  When this fixture can be replaced with a real sanitized capture
+  (outbound access restored, or Flash provides the bytes manually), the
+  replacement should preserve the body-only-ticker invariant so Test 8
+  continues to fail-loudly if Readability regresses.
+
+  Capture-date placeholder: 2026-05-14 (synthesis date, not original
+  publication date).
+-->
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Cathie Wood, Ross Gerber Snap Up Shares Of Battered Snap - Yahoo Finance</title>
+  <meta name="description" content="Two of Snap's most vocal supporters added to their positions as the stock cratered.">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="Cathie Wood, Ross Gerber Snap Up Shares Of Battered Snap">
+  <link rel="canonical" href="https://finance.yahoo.com/news/cathie-wood-ross-gerber-snap-184116433.html">
+</head>
+<body>
+  <header id="Y-header" role="banner">
+    <nav aria-label="Primary">
+      <ul>
+        <li><a href="/">Home</a></li>
+        <li><a href="/news/">News</a></li>
+        <li><a href="/markets/">Markets</a></li>
+        <li><a href="/portfolios/">My Portfolio</a></li>
+        <li><a href="/sectors/">Sectors</a></li>
+        <li><a href="/screener/">Screeners</a></li>
+        <li><a href="/personal-finance/">Personal Finance</a></li>
+        <li><a href="/videos/">Videos</a></li>
+      </ul>
+    </nav>
+    <div class="search-region">
+      <form role="search"><input type="search" aria-label="Search quotes"><button>Search</button></form>
+    </div>
+    <div class="sign-in"><a href="https://login.yahoo.com/">Sign in</a></div>
+  </header>
+
+  <aside class="ad-slot" data-ad="LREC"><span>Advertisement</span></aside>
+
+  <main id="atomic" role="main">
+    <nav aria-label="breadcrumb"><a href="/news">News</a> &rsaquo; <a href="/topic/stock-market-news">Stock Market News</a></nav>
+
+    <article>
+      <header>
+        <h1 data-test-locator="headline">Cathie Wood, Ross Gerber Snap Up Shares Of Battered Snap</h1>
+        <div class="byline-wrap">
+          <span class="byline">By Markets Desk &middot; Yahoo Finance</span>
+          <time datetime="2022-05-24T18:41:00Z">May 24, 2022, 2:41 PM ET</time>
+        </div>
+      </header>
+
+      <div class="caas-body">
+        <p>
+          Two of Snap Inc.'s (NYSE: SNAP) most vocal bulls added to their
+          positions on Tuesday after the social media company's surprise
+          profit warning sent shares to a multi-year low. Cathie Wood's
+          ARK Investment Management and Gerber Kawasaki Wealth and
+          Investment Management each scooped up additional Snap stock as
+          the broader Nasdaq sold off on growth concerns.
+        </p>
+        <p>
+          Wood's flagship ARK Innovation ETF (ARKK) and ARK Next
+          Generation Internet ETF (ARKW) added a combined 1.6 million
+          shares of Snap, according to ARK's daily trade disclosures. The
+          purchases brought Snap's weighting in ARKK back above 2%, even
+          as the stock closed down more than 43% on the session.
+        </p>
+        <p>
+          "We continue to view Snap as one of the most attractive
+          social-platform franchises in our coverage," Wood wrote in a
+          note to investors. ARK's broader portfolio also includes
+          significant positions in Tesla (TSLA), Coinbase (COIN), and
+          Roku (ROKU) — names Wood has repeatedly argued are early in
+          their addressable-market expansion despite recent drawdowns.
+        </p>
+        <p>
+          Ross Gerber, CEO of Gerber Kawasaki, said on Twitter that he
+          added to his Snap position in personal and firm accounts. "The
+          long-term story hasn't changed," Gerber said. "Direct-response
+          ads will recover, AR is still a massive opportunity, and Snap's
+          user base in the 13-34 demographic remains best-in-class."
+          Gerber Kawasaki's published holdings also include Block (SQ)
+          and UiPath (PATH), both of which the firm has called out as
+          beneficiaries of the same secular trends.
+        </p>
+        <p>
+          Snap's profit warning, filed in an 8-K after Monday's close,
+          said the macroeconomic environment had "deteriorated further
+          and faster than anticipated." CEO Evan Spiegel told employees
+          the company would slow hiring and re-evaluate operating
+          expenses through year-end. The disclosure dragged the broader
+          digital-advertising complex lower, with Meta Platforms (META)
+          and Pinterest (PINS) both selling off in sympathy.
+        </p>
+        <p>
+          Analysts at MoffettNathanson called the print "the canary in
+          the coal mine for second-half ad spend" but said Snap's
+          valuation, now trading at roughly 4x forward revenue, has begun
+          to price in materially lower growth assumptions. Snap shares
+          ended Tuesday's session at $12.79, the lowest close since the
+          company's 2017 IPO.
+        </p>
+      </div>
+
+      <div class="caas-tags">
+        <a href="/quote/SNAP/">SNAP</a>
+        <a href="/quote/ARKK/">ARKK</a>
+      </div>
+    </article>
+
+    <aside class="related-stories" aria-label="Related stories">
+      <h2>Related</h2>
+      <ul>
+        <li><a href="/news/related-1">Meta slides as digital ad worries spread</a></li>
+        <li><a href="/news/related-2">Pinterest cuts outlook, follows Snap lower</a></li>
+        <li><a href="/news/related-3">ARK Innovation hits 52-week low on growth selloff</a></li>
+      </ul>
+    </aside>
+
+    <aside class="ad-slot" data-ad="MREC2"><span>Advertisement</span></aside>
+  </main>
+
+  <footer id="Y-footer">
+    <nav aria-label="Footer">
+      <ul>
+        <li><a href="/about/">About</a></li>
+        <li><a href="/terms/">Terms</a></li>
+        <li><a href="/privacy/">Privacy</a></li>
+        <li><a href="/help/">Help</a></li>
+      </ul>
+    </nav>
+    <p>Data provided by various sources. Quotes delayed by exchange rules.</p>
+  </footer>
+</body>
+</html>

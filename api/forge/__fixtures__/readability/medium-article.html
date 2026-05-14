@@ -1,0 +1,28 @@
+<!--
+  Fixture: medium-article.html
+  Purpose: Article body ~400 chars — between the N4 charThreshold (200)
+  and Readability's default (500). Verifies the extracted path for
+  smaller-but-substantial articles. NOTE: empirically charThreshold does
+  not gate Readability's output for these inputs (see tiny-article.html);
+  the knob influences internal scoring retries only. This fixture
+  remains useful as positive regression coverage for the extracted path
+  at the lower end of "real" article size.
+  Expected readabilityOutcome: 'extracted'
+-->
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Nvidia Hits New High On AI Demand</title></head>
+<body>
+  <article>
+    <h1>Nvidia Hits New High On AI Demand</h1>
+    <p>
+      Nvidia (NVDA) shares climbed to a fresh record on Tuesday after the
+      chipmaker confirmed that orders for its next-generation Blackwell
+      GPUs are sold out through 2026. CEO Jensen Huang said hyperscalers
+      including AWS, Azure and Google Cloud are placing multi-billion
+      dollar commitments well ahead of typical lead times, underscoring
+      the depth of enterprise AI capex.
+    </p>
+  </article>
+</body>
+</html>

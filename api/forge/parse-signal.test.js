@@ -20,13 +20,47 @@
 // Coverage here targets fetch-throws and HTTP-non-OK only.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import path from 'node:path';
+
+// ==================== FIXTURE LOADER (Phase 4.5b) ====================
+//
+// Loads HTML fixtures from api/forge/__fixtures__/readability/ for the
+// Readability extraction tests. New convention for this repo — see the
+// fixtures directory's individual file headers for purpose + expected
+// readabilityOutcome.
+
+const __testDir = path.dirname(fileURLToPath(import.meta.url));
+function loadFixture(name) {
+  return readFileSync(path.join(__testDir, '__fixtures__', 'readability', name), 'utf-8');
+}
 
 // ==================== HOISTED MOCK STATE ====================
 
-const { authReturnValue, haikuResult, shadowLogCalls } = vi.hoisted(() => ({
+const {
+  authReturnValue,
+  haikuResult,
+  shadowLogCalls,
+  haikuCallArgs,
+  jsdomOverride,
+  readabilityOverride,
+} = vi.hoisted(() => ({
   authReturnValue: { current: { uid: 'test-user' } },
   haikuResult: { current: null },
   shadowLogCalls: { current: [] },
+  // captures every messages.create() call so tests can assert on the
+  // user-message body (e.g. that Readability's extracted text reached
+  // the prompt vs the raw HTML fallback)
+  haikuCallArgs: { current: [] },
+  // jsdomOverride.throwOnConstruct = true forces JSDOM to throw when
+  // production code constructs it; lets tests exercise the
+  // 'fallback_failed' path without crafting truly-broken HTML
+  jsdomOverride: { throwOnConstruct: false },
+  // readabilityOverride.parseResult, when not 'real', short-circuits
+  // Readability.parse() to return the given value. Supports the
+  // 'fallback_empty' and 200KB-truncation tests.
+  readabilityOverride: { parseResult: 'real' },
 }));
 
 // ==================== MOCKS ====================
@@ -64,7 +98,12 @@ vi.mock('@vercel/functions', () => ({
 vi.mock('@anthropic-ai/sdk', () => ({
   default: class Anthropic {
     constructor() {
-      this.messages = { create: async () => haikuResult.current };
+      this.messages = {
+        create: async (args) => {
+          haikuCallArgs.current.push(args);
+          return haikuResult.current;
+        },
+      };
     }
   },
 }));
@@ -74,6 +113,39 @@ vi.mock('firebase-admin/firestore', () => ({
     fromMillis: (ms) => ({ toMillis: () => ms, _ms: ms }),
   },
 }));
+
+// Phase 4.5b — jsdom + @mozilla/readability are dynamically imported
+// inside fetchUrlBody. We wrap each with a passthrough mock so individual
+// tests can opt into specific failure modes (jsdom throw, Readability
+// returns null/empty/oversized) without crafting pathological HTML.
+vi.mock('jsdom', async (importOriginal) => {
+  const actual = await importOriginal();
+  class WrappedJSDOM extends actual.JSDOM {
+    constructor(html, opts) {
+      if (jsdomOverride.throwOnConstruct) {
+        throw new Error('mocked jsdom construction failure');
+      }
+      super(html, opts);
+    }
+  }
+  return { ...actual, JSDOM: WrappedJSDOM };
+});
+
+vi.mock('@mozilla/readability', async (importOriginal) => {
+  const actual = await importOriginal();
+  class WrappedReadability {
+    constructor(doc, opts) {
+      this._real = new actual.Readability(doc, opts);
+    }
+    parse() {
+      if (readabilityOverride.parseResult !== 'real') {
+        return readabilityOverride.parseResult;
+      }
+      return this._real.parse();
+    }
+  }
+  return { ...actual, Readability: WrappedReadability };
+});
 
 const { default: handler } = await import('./parse-signal.js');
 
@@ -179,6 +251,9 @@ beforeEach(() => {
   authReturnValue.current = { uid: 'test-user' };
   haikuResult.current = makeHaikuResponse(makeBaselineParse());
   shadowLogCalls.current = [];
+  haikuCallArgs.current = [];
+  jsdomOverride.throwOnConstruct = false;
+  readabilityOverride.parseResult = 'real';
   activeFirestore = makeFakeFirestore().db;
 });
 
@@ -646,6 +721,309 @@ describe('parse-signal — off-universe shadow log (Phase 4.5a)', () => {
     );
     expect(offUniverseEvent).toBeDefined();
     expect(offUniverseEvent.tickers).toEqual(['GK']);
+  });
+});
+
+// ==================== READABILITY EXTRACTION (PHASE 4.5b) ====================
+//
+// Phase 4.5b wraps fetchUrlBody's HTML output in Mozilla Readability + jsdom
+// to extract the article body before passing it to Haiku. The new
+// readabilityOutcome shadow-log field captures which path the call took:
+//   'extracted'         — Readability returned usable textContent
+//   'fallback_null'     — Readability.parse() returned null
+//   'fallback_failed'   — jsdom or Readability threw
+//   'fallback_empty'    — Readability returned an object with empty textContent
+//   'not_applicable'    — URL fetch failed before Readability could run
+// On non-URL drop types (text, image), readabilityOutcome stays null.
+//
+// Tests 1, 2, 4, 5, 8 use real fixtures from __fixtures__/readability/ and
+// real Readability. Tests 3, 11, 12 use the configurable jsdomOverride /
+// readabilityOverride hooks (set up in HOISTED MOCK STATE) to inject
+// failure modes that would be hard to provoke from HTML alone.
+
+// Helper: pull the main parse shadow log payload (not the off-universe
+// emission, which uses a separate `event` field).
+function getMainParseLog() {
+  return shadowLogCalls.current.find((r) => !r.event);
+}
+
+// Helper: assemble a fetch stub returning a fixture's HTML body.
+function stubFetchWithFixture(fixtureName) {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      text: async () => loadFixture(fixtureName),
+    }),
+  );
+}
+
+// Helper: pull the user-message content the handler passed to Haiku. The
+// content is either a string (text/url paths) or an array (image path).
+function getHaikuUserContent() {
+  return haikuCallArgs.current[0]?.messages?.[0]?.content ?? null;
+}
+
+describe('parse-signal — Readability extraction (Phase 4.5b)', () => {
+  it('R-1: extracts article body for a valid URL drop and logs readabilityOutcome=extracted', async () => {
+    activeFirestore = makeFakeFirestore().db;
+    stubFetchWithFixture('simple-article.html');
+
+    const { req, res } = makeReqRes({
+      type: 'url',
+      url: 'https://example.com/apple-earnings',
+      dropId: 'drop-r1',
+    });
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(getMainParseLog().readabilityOutcome).toBe('extracted');
+    // Readability surfaces the body text and strips boilerplate.
+    // Whitespace inside <p> is preserved as-is, so multi-word matches
+    // need to tolerate the HTML's leading indentation between tokens.
+    const userContent = getHaikuUserContent();
+    expect(userContent).toContain('Apple Inc.');
+    expect(userContent).toMatch(/Services\s+revenue/);
+    // Nav anchors / header chrome do NOT appear in the extracted body
+    expect(userContent).not.toContain('<nav>');
+    expect(userContent).not.toContain('© 2025 Example News');
+  });
+
+  it('R-2: returns readabilityOutcome=fallback_null for an HTML document with no body content', async () => {
+    activeFirestore = makeFakeFirestore().db;
+    stubFetchWithFixture('empty-body.html');
+
+    const { req, res } = makeReqRes({
+      type: 'url',
+      url: 'https://example.com/empty',
+      dropId: 'drop-r2',
+    });
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(getMainParseLog().readabilityOutcome).toBe('fallback_null');
+    // Fallback path passes the raw HTML through to Haiku — the body field
+    // is non-empty even though Readability gave up.
+    const userContent = getHaikuUserContent();
+    expect(userContent).toContain('FETCHED PAGE BODY:');
+  });
+
+  it('R-3: returns readabilityOutcome=fallback_failed when jsdom throws, and falls back to raw HTML', async () => {
+    activeFirestore = makeFakeFirestore().db;
+    jsdomOverride.throwOnConstruct = true;
+    stubFetchWithFixture('malformed.html');
+
+    const { req, res } = makeReqRes({
+      type: 'url',
+      url: 'https://example.com/malformed',
+      dropId: 'drop-r3',
+    });
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(getMainParseLog().readabilityOutcome).toBe('fallback_failed');
+    // Raw fixture content reaches Haiku via the fallback
+    expect(getHaikuUserContent()).toContain('broken');
+  });
+
+  it('R-4: short article still extracts (charThreshold is an internal scoring knob, not a hard output gate)', async () => {
+    activeFirestore = makeFakeFirestore().db;
+    stubFetchWithFixture('tiny-article.html');
+
+    const { req, res } = makeReqRes({
+      type: 'url',
+      url: 'https://example.com/brief',
+      dropId: 'drop-r4',
+    });
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    // Important regression coverage: if Readability ever adds a hard
+    // gate that rejects below-threshold content, this test flips to
+    // fallback_null and forces a deliberate decision about the contract.
+    expect(getMainParseLog().readabilityOutcome).toBe('extracted');
+  });
+
+  it('R-5: extracts a medium-length article (~400 chars body)', async () => {
+    activeFirestore = makeFakeFirestore().db;
+    stubFetchWithFixture('medium-article.html');
+
+    const { req, res } = makeReqRes({
+      type: 'url',
+      url: 'https://example.com/nvda-blackwell',
+      dropId: 'drop-r5',
+    });
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(getMainParseLog().readabilityOutcome).toBe('extracted');
+    expect(getHaikuUserContent()).toContain('Blackwell');
+  });
+
+  it('R-6: URL fetch returns HTTP 404 → readabilityOutcome=not_applicable', async () => {
+    activeFirestore = makeFakeFirestore().db;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({ ok: false, status: 404, text: async () => 'Not Found' }),
+    );
+
+    const { req, res } = makeReqRes({
+      type: 'url',
+      url: 'https://example.com/missing',
+      dropId: 'drop-r6',
+    });
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(getMainParseLog().readabilityOutcome).toBe('not_applicable');
+  });
+
+  it('R-7: URL fetch throws (network error) → readabilityOutcome=not_applicable', async () => {
+    activeFirestore = makeFakeFirestore().db;
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('network unreachable')));
+
+    const { req, res } = makeReqRes({
+      type: 'url',
+      url: 'https://example.com/down',
+      dropId: 'drop-r7',
+    });
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(getMainParseLog().readabilityOutcome).toBe('not_applicable');
+  });
+
+  it('R-8: Yahoo-style fixture surfaces body-only tickers and strips Yahoo chrome', async () => {
+    // This is the regression-anchor test for Phase 4.5b. Pre-fix, the
+    // body tickers (TSLA, COIN, ROKU, SQ, PATH) lived deep in the
+    // article body and Haiku frequently missed them under the raw-HTML
+    // pipeline. Post-fix, Readability hands Haiku a clean text body
+    // where these tickers are first-class content.
+    activeFirestore = makeFakeFirestore().db;
+    stubFetchWithFixture('yahoo-cathie-wood.html');
+
+    const { req, res } = makeReqRes({
+      type: 'url',
+      url: 'https://finance.yahoo.com/news/cathie-wood-ross-gerber-snap-184116433.html',
+      dropId: 'drop-r8',
+    });
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(getMainParseLog().readabilityOutcome).toBe('extracted');
+
+    const userContent = getHaikuUserContent();
+    // Body-only tickers reach Haiku
+    for (const ticker of ['TSLA', 'COIN', 'ROKU', 'SQ', 'PATH', 'META', 'PINS']) {
+      expect(userContent).toContain(ticker);
+    }
+    // Yahoo chrome is stripped
+    expect(userContent).not.toContain('Advertisement');
+    expect(userContent).not.toContain('Sign in');
+    expect(userContent).not.toContain('Y-footer');
+  });
+
+  it('R-9: text drop carries readabilityOutcome=null on the main parse shadow log', async () => {
+    activeFirestore = makeFakeFirestore().db;
+
+    const { req, res } = makeReqRes({
+      type: 'text',
+      text: 'Apple is going hard on AI inference',
+      dropId: 'drop-r9',
+    });
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    const log = getMainParseLog();
+    expect(log).toBeDefined();
+    // Field is present-as-null (the caller block initializes
+    // readabilityOutcome = null and threads it through to the payload).
+    expect(log.readabilityOutcome).toBeNull();
+  });
+
+  it('R-10: image drop carries readabilityOutcome=null on the main parse shadow log', async () => {
+    const tinyPngBase64 =
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
+    activeFirestore = makeFakeFirestore().db;
+
+    const { req, res } = makeReqRes({
+      type: 'image',
+      imageBase64: tinyPngBase64,
+      imageMime: 'image/png',
+      dropId: 'drop-r10',
+    });
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(getMainParseLog().readabilityOutcome).toBeNull();
+  });
+
+  it('R-11: Readability output exceeding 200KB is truncated at the URL_FETCH_BODY_CAP_BYTES boundary', async () => {
+    activeFirestore = makeFakeFirestore().db;
+    const longText = 'x'.repeat(250_000);
+    readabilityOverride.parseResult = {
+      title: 'Long Article',
+      textContent: longText,
+      content: '<p>' + longText + '</p>',
+      length: longText.length,
+      excerpt: '',
+      byline: null,
+      dir: null,
+      siteName: null,
+      lang: null,
+    };
+    stubFetchWithFixture('simple-article.html');
+
+    const { req, res } = makeReqRes({
+      type: 'url',
+      url: 'https://example.com/long-article',
+      dropId: 'drop-r11',
+    });
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(getMainParseLog().readabilityOutcome).toBe('extracted');
+
+    // The handler emits the user prompt as
+    //   "Input type: URL drop\n\nURL: …\n\nFETCHED PAGE BODY:\n<body>\n\nExtract …"
+    // Capture just the body slice and assert its length is exactly 200_000.
+    const userContent = getHaikuUserContent();
+    const marker = 'FETCHED PAGE BODY:\n';
+    const bodyStart = userContent.indexOf(marker) + marker.length;
+    const bodyEnd = userContent.indexOf('\n\nExtract via submit_parsed_signal');
+    const body = userContent.slice(bodyStart, bodyEnd);
+    expect(body.length).toBe(200_000);
+    expect(body).toBe('x'.repeat(200_000));
+  });
+
+  it('R-12: Readability returning empty textContent is classified fallback_empty and triggers raw-HTML fallback', async () => {
+    activeFirestore = makeFakeFirestore().db;
+    readabilityOverride.parseResult = {
+      title: 'Empty',
+      textContent: '',
+      content: '',
+      length: 0,
+      excerpt: '',
+      byline: null,
+      dir: null,
+      siteName: null,
+      lang: null,
+    };
+    stubFetchWithFixture('simple-article.html');
+
+    const { req, res } = makeReqRes({
+      type: 'url',
+      url: 'https://example.com/empty-extract',
+      dropId: 'drop-r12',
+    });
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(getMainParseLog().readabilityOutcome).toBe('fallback_empty');
+    // Raw HTML reached Haiku via the fallback (we know simple-article's
+    // body contains the Apple article copy)
+    expect(getHaikuUserContent()).toContain('Apple Inc.');
   });
 });
 
