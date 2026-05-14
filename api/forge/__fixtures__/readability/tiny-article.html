@@ -1,0 +1,21 @@
+<!--
+  Fixture: tiny-article.html
+  Purpose: Article element with very small body content (~13 chars after
+  Readability extraction). Empirically: Readability's charThreshold knob
+  is an internal scoring heuristic, NOT a hard gate on returned content
+  length, so this fixture STILL extracts even though its body is well
+  below the N4 threshold of 200. The fixture is preserved to document
+  this behavior and to regression-cover a future Readability change
+  that might add a hard gate.
+  Expected readabilityOutcome: 'extracted' (short textContent, ~10-30 chars)
+-->
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Brief</title></head>
+<body>
+  <article>
+    <h1>Brief</h1>
+    <p>AAPL up.</p>
+  </article>
+</body>
+</html>

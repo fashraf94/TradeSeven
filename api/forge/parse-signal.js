@@ -57,9 +57,14 @@ function isNonEmptyString(v, max) {
   return typeof v === 'string' && v.trim().length > 0 && v.length <= max;
 }
 
-// Best-effort body fetch for type=url. Returns { ok, body, error }. The
-// 3-second AbortController hard-cap protects the 30s endpoint budget;
-// the 200KB cap protects against accidentally feeding Haiku a 5MB page.
+// Best-effort body fetch for type=url. Returns { ok, body, error,
+// readabilityOutcome }. The 3-second AbortController hard-cap protects
+// the 30s endpoint budget. After a successful fetch we run the HTML
+// through Mozilla Readability (lazy-imported so the cold-start cost is
+// paid only on URL paths) and hand Haiku the extracted textContent in
+// place of the raw HTML. On any Readability failure we fall back to the
+// raw HTML slice so Haiku still receives content. The 200KB cap applies
+// to both paths.
 async function fetchUrlBody(url) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), URL_FETCH_TIMEOUT_MS);
@@ -69,11 +74,32 @@ async function fetchUrlBody(url) {
       redirect: 'follow',
       headers: { 'User-Agent': 'FantasyTrades-SignalDrop/1.0' },
     });
-    if (!resp.ok) return { ok: false, error: `HTTP ${resp.status}` };
-    const text = await resp.text();
-    return { ok: true, body: text.slice(0, URL_FETCH_BODY_CAP_BYTES) };
+    if (!resp.ok) {
+      return { ok: false, error: `HTTP ${resp.status}`, readabilityOutcome: 'not_applicable' };
+    }
+    const rawHtml = (await resp.text()).slice(0, URL_FETCH_BODY_CAP_BYTES);
+
+    let extractedBody = null;
+    let readabilityOutcome;
+    try {
+      const { JSDOM } = await import('jsdom');
+      const { Readability } = await import('@mozilla/readability');
+      const dom = new JSDOM(rawHtml, { url });
+      const article = new Readability(dom.window.document, { charThreshold: 200 }).parse();
+      if (article === null) {
+        readabilityOutcome = 'fallback_null';
+      } else if (!article.textContent || article.textContent.trim() === '') {
+        readabilityOutcome = 'fallback_empty';
+      } else {
+        extractedBody = article.textContent.slice(0, URL_FETCH_BODY_CAP_BYTES);
+        readabilityOutcome = 'extracted';
+      }
+    } catch {
+      readabilityOutcome = 'fallback_failed';
+    }
+    return { ok: true, body: extractedBody ?? rawHtml, readabilityOutcome };
   } catch (err) {
-    return { ok: false, error: err?.message || 'fetch failed' };
+    return { ok: false, error: err?.message || 'fetch failed', readabilityOutcome: 'not_applicable' };
   } finally {
     clearTimeout(timeout);
   }
@@ -212,13 +238,18 @@ export default async function handler(req, res) {
       }
     }
 
-    // 6. URL fetch (best-effort, only for type=url)
+    // 6. URL fetch (best-effort, only for type=url). readabilityOutcome
+    // stays null on non-URL paths; on URL paths it is one of:
+    // 'extracted' | 'fallback_null' | 'fallback_failed' | 'fallback_empty' |
+    // 'not_applicable' (when fetch fails before Readability runs).
     let urlBody = null;
     let urlFetchSucceeded = null;
+    let readabilityOutcome = null;
     if (type === 'url') {
       const fetchResult = await fetchUrlBody(normalizedUrl);
       urlFetchSucceeded = fetchResult.ok;
       urlBody = fetchResult.body || null;
+      readabilityOutcome = fetchResult.readabilityOutcome;
     }
 
     // 7. Build parse prompt inputs
@@ -335,6 +366,7 @@ export default async function handler(req, res) {
       shouldBailout,
       shouldHardCheckpoint,
       urlFetchSucceeded,
+      readabilityOutcome,
       tokenUsage: haikuResponse.usage || null,
       droppedAt,
       cacheHit: false,

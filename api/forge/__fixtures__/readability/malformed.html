@@ -1,0 +1,14 @@
+<!--
+  Fixture: malformed.html
+  Purpose: Representative malformed input. jsdom is highly tolerant of
+  malformed HTML (it tries to recover rather than throw), so this fixture
+  primarily serves as documentation. The corresponding test forces a
+  jsdom/Readability throw via vi.doMock — see Test 3 in parse-signal.test.js.
+  Real-world content here is mojibake-ish to illustrate intent.
+  Expected readabilityOutcome (when throw is forced via mock): 'fallback_failed'
+-->
+<!doctype html
+<html><<body>><p>broken<script>var x = ;</script>
+&#xfffe;&#xffff;
+<div><span><i></span></div>
+</body
