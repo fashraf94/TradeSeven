@@ -1634,6 +1634,9 @@ export default function ForgeLanding({
   // Optional; when absent or when agent.activeBattleId is empty, State
   // 4's CTA still falls back to onNavigateToSeasonHub.
   onOpenAgentBattle,
+  // Phase 4B — navigate to the watchlist editor after a Signal Drop dialogue
+  // saves a watchlist. Drilled down to DiscoverPanel → WatchlistChat.
+  onViewWatchlist,
 }) {
   // Default tab is 'discover' for users with no agents, 'laboratory'
   // otherwise. We boot to 'discover' as the loading-state fallback per
@@ -2156,6 +2159,7 @@ export default function ForgeLanding({
             showToast={showToast}
             requestWorkshopOpen={requestWorkshopOpen}
             agent={agent}
+            onViewWatchlist={onViewWatchlist}
           />
         )}
 

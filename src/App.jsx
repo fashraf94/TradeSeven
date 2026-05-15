@@ -52,6 +52,7 @@ const StonkOptionsArenaV2 = lazy(() => import('./components/optionsArena/StonkOp
 const FantasyTimesFeed = lazy(() => import('./components/FantasyTimes/FantasyTimesFeed'));
 const StoryDetail = lazy(() => import('./components/FantasyTimes/StoryDetail'));
 const SearchDiscover = lazy(() => import('./components/Search/SearchDiscover'));
+const WatchlistEditor = lazy(() => import('./components/Forge/Watchlist/WatchlistEditor'));
 
 // Legacy aliases for backwards compatibility
 const TDBattleScoreboard = BaggerBombScoreboard;
@@ -2222,6 +2223,11 @@ export default function PortfolioDuel() {
   // FantasyTimes story detail
   const [selectedStory, setSelectedStory] = useState(null);
   const [storyReturnSection, setStoryReturnSection] = useState(null);
+
+  // Forge watchlist editor (Phase 4B) — companion id for the 'watchlistEditor'
+  // screen, mirroring the selectedStory pattern. Set by ForgeLanding's
+  // onViewWatchlist callback once the Signal Drop dialogue saves a watchlist.
+  const [selectedWatchlistId, setSelectedWatchlistId] = useState(null);
 
   // Battle management
   const [battles, setBattles] = useState([]);
@@ -8236,6 +8242,11 @@ export default function PortfolioDuel() {
         <ForgeLanding
           isMobile={isMobile}
           onClose={() => setShowForge(false)}
+          onViewWatchlist={(watchlistId) => {
+            setSelectedWatchlistId(watchlistId);
+            setShowForge(false);
+            setScreen('watchlistEditor');
+          }}
           user={user}
           onNavigateToSeasonHub={() => {
             setShowForge(false);
@@ -9410,6 +9421,22 @@ export default function PortfolioDuel() {
           onClose={() => { setSelectedStory(null); setScreen('fantasytimes'); }}
           isMobile={!isDesktop}
           isDesktop={isDesktop}
+        />
+      </Suspense>
+      </ErrorBoundary>
+      </div>
+    );
+  }
+
+  // FORGE WATCHLIST EDITOR (full page) — Phase 4B
+  if (screen === 'watchlistEditor' && selectedWatchlistId) {
+    return (
+      <div style={{ marginLeft: isDesktop ? (sidebarCollapsed ? '64px' : '220px') : 0, transition: 'margin-left 0.2s ease' }}>
+      <ErrorBoundary name="WatchlistEditor" onNavigateDashboard={() => setScreen('dashboard')}>
+      <Suspense fallback={<LoadingFallback />}>
+        <WatchlistEditor
+          watchlistId={selectedWatchlistId}
+          onClose={() => { setSelectedWatchlistId(null); setScreen('home'); }}
         />
       </Suspense>
       </ErrorBoundary>
