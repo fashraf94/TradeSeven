@@ -48,6 +48,8 @@
  *   2 — invalid CLI flags
  */
 
+/* global process -- Node script; eslint.config.js provides only browser globals */
+
 import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';

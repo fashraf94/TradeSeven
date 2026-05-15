@@ -12,8 +12,10 @@ import {
   ALL_TICKERS,
   TICKER_TO_SECTOR,
   TICKER_TO_TYPE,
+  TICKER_TO_INDUSTRY,
   SECTOR_ETFS,
   INDUSTRY_ETFS,
+  INDUSTRY_ETF_THEMES,
 } from './rankingConfig.js';
 
 describe('rankingConfig — Phase 4.5a universe expansion', () => {
@@ -154,5 +156,93 @@ describe('rankingConfig — Phase 4.5a universe expansion', () => {
       expect(sector).toHaveProperty('stocks');
       expect(Array.isArray(sector.stocks)).toBe(true);
     }
+  });
+
+  // ── Phase 4.6 — Industry taxonomy (V-10 through V-18) ───────────────────
+
+  it('V-10: TICKER_TO_INDUSTRY spot-checks for 10 known stocks', () => {
+    const spotChecks = {
+      AAPL: 'Technology Hardware, Storage & Peripherals',
+      NVDA: 'Semiconductors & Semiconductor Equipment',
+      MSFT: 'Software',
+      JPM: 'Banks',
+      XOM: 'Oil, Gas & Consumable Fuels',
+      LLY: 'Pharmaceuticals',
+      JNJ: 'Pharmaceuticals',
+      KO: 'Beverages',
+      AMZN: 'Broadline Retail',
+      BA: 'Aerospace & Defense',
+    };
+    for (const [ticker, industry] of Object.entries(spotChecks)) {
+      expect(TICKER_TO_INDUSTRY[ticker]).toBe(industry);
+    }
+  });
+
+  it('V-11: all 239 stocks have a non-empty string industry', () => {
+    expect(ALL_TICKERS).toHaveLength(239);
+    for (const ticker of ALL_TICKERS) {
+      expect(typeof TICKER_TO_INDUSTRY[ticker]).toBe('string');
+      expect(TICKER_TO_INDUSTRY[ticker].length).toBeGreaterThan(0);
+    }
+  });
+
+  it('V-12: all 11 sector ETFs have null industry (Phase 4.6 Q3)', () => {
+    const sectorEtfs = ['XLK', 'XLV', 'XLF', 'XLE', 'XLY', 'XLP', 'XLI', 'XLB', 'XLU', 'XLRE', 'XLC'];
+    for (const etf of sectorEtfs) {
+      expect(TICKER_TO_INDUSTRY[etf]).toBeNull();
+    }
+  });
+
+  it('V-13: all 28 industry ETFs have a non-empty string industry', () => {
+    const industryEtfs = Object.values(INDUSTRY_ETFS).flat();
+    expect(industryEtfs).toHaveLength(28);
+    for (const etf of industryEtfs) {
+      expect(typeof TICKER_TO_INDUSTRY[etf]).toBe('string');
+      expect(TICKER_TO_INDUSTRY[etf].length).toBeGreaterThan(0);
+    }
+  });
+
+  it('V-14: industry ETF assignments match INDUSTRY_ETF_THEMES (spot-check 6)', () => {
+    const spotChecks = {
+      SMH: 'Semiconductors & Semiconductor Equipment',
+      IBB: 'Biotechnology',
+      KRE: 'Banks',
+      TAN: 'Solar',
+      GDX: 'Gold Mining',
+      REM: 'Mortgage REITs',
+    };
+    for (const [etf, industry] of Object.entries(spotChecks)) {
+      expect(INDUSTRY_ETF_THEMES[etf]).toBe(industry);
+      expect(TICKER_TO_INDUSTRY[etf]).toBe(industry);
+    }
+  });
+
+  it('V-15: TICKER_TO_INDUSTRY size = 278 (parity with TICKER_TO_SECTOR)', () => {
+    expect(Object.keys(TICKER_TO_INDUSTRY)).toHaveLength(278);
+    expect(Object.keys(TICKER_TO_INDUSTRY)).toHaveLength(Object.keys(TICKER_TO_SECTOR).length);
+  });
+
+  it('V-16 (parity): every TICKER_TO_SECTOR key has a TICKER_TO_INDUSTRY entry', () => {
+    for (const sym of Object.keys(TICKER_TO_SECTOR)) {
+      expect(sym in TICKER_TO_INDUSTRY).toBe(true);
+    }
+    for (const sym of Object.keys(TICKER_TO_INDUSTRY)) {
+      expect(sym in TICKER_TO_SECTOR).toBe(true);
+    }
+  });
+
+  it('V-17: industry names contain only expected characters', () => {
+    const validPattern = /^[A-Za-z0-9 &,-]+$/;
+    const offenders = [];
+    for (const [sym, industry] of Object.entries(TICKER_TO_INDUSTRY)) {
+      if (industry === null) continue;
+      if (!validPattern.test(industry)) offenders.push(`${sym}: "${industry}"`);
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  it('V-18: INDUSTRY_ETF_THEMES is frozen with 28 entries', () => {
+    expect(Object.isFrozen(INDUSTRY_ETF_THEMES)).toBe(true);
+    expect(Object.keys(INDUSTRY_ETF_THEMES)).toHaveLength(28);
   });
 });
