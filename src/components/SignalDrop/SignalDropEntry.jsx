@@ -50,6 +50,8 @@ import { fetchWithAuth } from '../../utils/fetchWithAuth';
 import { useIsMobile } from '../../hooks/useIsMobile';
 import { useModalFocus } from '../../hooks/useModalFocus';
 import { splitTickersByValidation } from '../../../api/_utils/splitTickersByValidation.js';
+import SectionLabel from '../Forge/Watchlist/SectionLabel';
+import OffUniverseSection from '../Forge/Watchlist/OffUniverseSection';
 
 // ── Constants ─────────────────────────────────────────────────────────
 
@@ -1162,61 +1164,6 @@ function BailoutSummary({ parse, tokens }) {
   );
 }
 
-// Phase 4.5a: surface validation.unsupported with constructive copy. Two
-// copy variants depending on whether there's a primary validated set:
-//   - Mix (hasValidated=true): "We also spotted ... as themes."
-//   - Empty validated (Drop 1 case): forward-leaning copy that frames the
-//     dialogue as the path forward.
-// Visual treatment mirrors the implied-ticker chip palette but with a
-// neutral background (tokens.bgIcon + tokens.textSecondary) — informative,
-// not amber-alarm.
-function OffUniverseSection({ unsupported, hasValidated, tokens }) {
-  if (!Array.isArray(unsupported) || unsupported.length === 0) return null;
-
-  const symbolList = unsupported.join(', ');
-  const copy = hasValidated
-    ? `We also spotted ${symbolList} in this article. We don't trade these directly, but the dialogue can incorporate them as themes.`
-    : `We spotted ${symbolList} in this article — these aren't in our coverage universe, but we can still build a watchlist from the underlying theme. Let's explore it together in dialogue.`;
-
-  return (
-    <div>
-      <SectionLabel tokens={tokens}>FOUND BUT NOT IN OUR UNIVERSE</SectionLabel>
-      <div
-        style={{
-          fontSize: 13,
-          color: tokens.textSecondary,
-          lineHeight: 1.5,
-          marginBottom: 8,
-        }}
-      >
-        {copy}
-      </div>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-        {unsupported.map((sym) => (
-          <span
-            key={sym}
-            title="Not in our coverage universe"
-            style={{
-              background: tokens.bgIcon,
-              border: `1px solid ${tokens.borderDefault}`,
-              color: tokens.textSecondary,
-              padding: '4px 9px',
-              borderRadius: 6,
-              fontSize: 12,
-              fontWeight: 700,
-              fontFamily:
-                'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
-              letterSpacing: '0.3px',
-            }}
-          >
-            {sym}
-          </span>
-        ))}
-      </div>
-    </div>
-  );
-}
-
 function SourceAttribution({ parseResult, tokens }) {
   // The dropId record stores the input shape but not the verbatim
   // values back in the response. Show a minimal "source" affordance
@@ -1239,23 +1186,6 @@ function SourceAttribution({ parseResult, tokens }) {
         {contentType && referenced ? ' · ' : ''}
         {referenced ? `Anchored to ${referenced}` : ''}
       </div>
-    </div>
-  );
-}
-
-function SectionLabel({ tokens, children }) {
-  return (
-    <div
-      style={{
-        fontSize: 11,
-        fontWeight: 700,
-        letterSpacing: '0.6px',
-        textTransform: 'uppercase',
-        color: tokens.teal,
-        marginBottom: 6,
-      }}
-    >
-      {children}
     </div>
   );
 }

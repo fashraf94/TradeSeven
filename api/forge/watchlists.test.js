@@ -1,11 +1,12 @@
 // api/forge/watchlists.test.js
 //
 // Sprint 6 Phase 4A — handler-level coverage for the new watchlists
-// endpoints. One unified file covers all three handlers (POST create,
-// GET/PATCH at [id], POST commit at [id]/commit) since they share the
-// same Firestore mock + auth mock + shadow-log mock.
+// endpoints. One unified file covers all four handlers (POST create,
+// GET/PATCH at [id], POST commit + POST uncommit at [id]/...) since they
+// share the same Firestore mock + auth mock + shadow-log mock.
 //
 // Test count target (per Phase 4A audit Section 8): 31 server tests.
+// Phase 4B adds the POST uncommit handler coverage.
 //
 // Pattern reference: api/forge/watchlist-dialogue-abandon.test.js (mock
 // shape, request/response helper, beforeEach reset). The new fixture
@@ -61,6 +62,7 @@ vi.mock('@vercel/functions', () => ({
 const { default: createHandler } = await import('./watchlists.js');
 const { default: itemHandler } = await import('./watchlists/[id].js');
 const { default: commitHandler } = await import('./watchlists/[id]/commit.js');
+const { default: uncommitHandler } = await import('./watchlists/[id]/uncommit.js');
 
 // ==================== FIRESTORE MOCK ====================
 
@@ -792,6 +794,119 @@ describe('POST /api/forge/watchlists/[id]/commit', () => {
     await commitHandler(r2.req, r2.res);
     expect(r2.res.statusCode).toBe(404);
     expect(r2.res.body.error).toBe('not_found');
+  });
+});
+
+// ============================================================
+// POST /api/forge/watchlists/[id]/uncommit
+// ============================================================
+
+describe('POST /api/forge/watchlists/[id]/uncommit', () => {
+  it('happy path: committed → draft, clears committedAt, stamps uncommittedAt', async () => {
+    const fixture = makeFakeFirestore({
+      watchlistDocs: {
+        'wl-1': { ...DRAFT_WATCHLIST, status: 'committed', committedAt: '2026-05-09T12:00:00.000Z' },
+      },
+    });
+    activeFirestore = fixture.db;
+    const { req, res } = makeReqRes({ query: { id: 'wl-1' }, body: {} });
+    await uncommitHandler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body.status).toBe('draft');
+    expect(res.body.idempotent).toBe(false);
+    expect(typeof res.body.uncommittedAt).toBe('string');
+    const after = fixture.state.watchlistDocs['wl-1'];
+    expect(after.status).toBe('draft');
+    expect(after.committedAt).toBe(null);
+    expect(after.uncommittedAt).toBe(res.body.uncommittedAt);
+
+    const log = shadowLogCalls.current.find((r) => r.stage === 'watchlist_uncommit');
+    expect(log).toBeDefined();
+    expect(log.idempotent).toBe(false);
+  });
+
+  it('idempotent: already a draft returns 200 preserving the existing uncommittedAt', async () => {
+    const originalTs = '2026-05-10T08:00:00.000Z';
+    const fixture = makeFakeFirestore({
+      watchlistDocs: { 'wl-1': { ...DRAFT_WATCHLIST, uncommittedAt: originalTs } },
+    });
+    activeFirestore = fixture.db;
+    const { req, res } = makeReqRes({ query: { id: 'wl-1' }, body: {} });
+    await uncommitHandler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body.idempotent).toBe(true);
+    expect(res.body.uncommittedAt).toBe(originalTs);
+  });
+
+  it('idempotent: a never-committed draft returns uncommittedAt null', async () => {
+    const fixture = makeFakeFirestore({
+      watchlistDocs: { 'wl-1': { ...DRAFT_WATCHLIST } }, // no uncommittedAt field
+    });
+    activeFirestore = fixture.db;
+    const { req, res } = makeReqRes({ query: { id: 'wl-1' }, body: {} });
+    await uncommitHandler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body.idempotent).toBe(true);
+    expect(res.body.uncommittedAt).toBe(null);
+  });
+
+  it('still emits a shadow log on the idempotent path', async () => {
+    const fixture = makeFakeFirestore({
+      watchlistDocs: { 'wl-1': { ...DRAFT_WATCHLIST } },
+    });
+    activeFirestore = fixture.db;
+    const { req, res } = makeReqRes({ query: { id: 'wl-1' }, body: {} });
+    await uncommitHandler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    const log = shadowLogCalls.current.find((r) => r.stage === 'watchlist_uncommit');
+    expect(log).toBeDefined();
+    expect(log.idempotent).toBe(true);
+  });
+
+  it('returns 403 wrong owner without mutating the doc; 404 not found', async () => {
+    const fixture403 = makeFakeFirestore({
+      watchlistDocs: {
+        'wl-1': {
+          ...DRAFT_WATCHLIST,
+          status: 'committed',
+          committedAt: '2026-05-09T12:00:00.000Z',
+          userId: 'other-user',
+        },
+      },
+    });
+    activeFirestore = fixture403.db;
+    const r1 = makeReqRes({ query: { id: 'wl-1' }, body: {} });
+    await uncommitHandler(r1.req, r1.res);
+    expect(r1.res.statusCode).toBe(403);
+    expect(r1.res.body.error).toBe('forbidden');
+    expect(fixture403.state.watchlistDocs['wl-1'].status).toBe('committed');
+
+    activeFirestore = makeFakeFirestore({}).db;
+    const r2 = makeReqRes({ query: { id: 'wl-missing' }, body: {} });
+    await uncommitHandler(r2.req, r2.res);
+    expect(r2.res.statusCode).toBe(404);
+    expect(r2.res.body.error).toBe('not_found');
+  });
+
+  it('rejects non-POST methods with 405', async () => {
+    activeFirestore = makeFakeFirestore({
+      watchlistDocs: { 'wl-1': { ...DRAFT_WATCHLIST } },
+    }).db;
+    const { req, res } = makeReqRes({ method: 'GET', query: { id: 'wl-1' } });
+    await uncommitHandler(req, res);
+    expect(res.statusCode).toBe(405);
+  });
+
+  it('rejects a malformed watchlist id with 400 invalid_watchlist_id', async () => {
+    activeFirestore = makeFakeFirestore({}).db;
+    const { req, res } = makeReqRes({ query: { id: '../../../etc/passwd' }, body: {} });
+    await uncommitHandler(req, res);
+    expect(res.statusCode).toBe(400);
+    expect(res.body.error).toBe('invalid_watchlist_id');
   });
 });
 
