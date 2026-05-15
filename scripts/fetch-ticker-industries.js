@@ -166,13 +166,32 @@ function sleep(ms) {
 // EODHD fetch — mirrors api/cron/compute-rankings.js:109-168
 // ---------------------------------------------------------------------
 
-async function fetchSingleFundamental(ticker, apiKey) {
+async function fetchSingleFundamental(ticker, apiKey, debug = false) {
   const eohdTicker = ticker.replace(/\./g, '-');
   const url = `${API_BASE}/fundamentals/${eohdTicker}.US?api_token=${apiKey}&fmt=json&filter=${SCRIPT_FUNDAMENTALS_FILTER}`;
 
+  if (debug) {
+    // TEMPORARY DIAGNOSTIC — remove after B1 dry-run validation
+    console.error('[diag] URL:', url.replace(apiKey, '***'));
+  }
+
   const res = await fetch(url);
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  return res.json();
+  const data = await res.json();
+
+  if (debug) {
+    // TEMPORARY DIAGNOSTIC — remove after B1 dry-run validation
+    const topKeys = Object.keys(data || {}).sort().join(', ') || '<empty>';
+    const generalKeys = data?.General
+      ? Object.keys(data.General).sort().join(', ')
+      : '<General is null/missing>';
+    console.error('[diag] response top-level keys:', topKeys);
+    console.error('[diag] response General keys:  ', generalKeys);
+    console.error('[diag] data.General?.GicIndustry:', JSON.stringify(data?.General?.GicIndustry));
+    console.error('[diag] data.General?.Industry:   ', JSON.stringify(data?.General?.Industry));
+  }
+
+  return data;
 }
 
 async function fetchAllFundamentals(tickers, apiKey) {
@@ -182,8 +201,9 @@ async function fetchAllFundamentals(tickers, apiKey) {
 
   for (let i = 0; i < tickers.length; i += BATCH_SIZE) {
     const batch = tickers.slice(i, i + BATCH_SIZE);
-    const promises = batch.map(ticker =>
-      fetchSingleFundamental(ticker, apiKey).catch(err => {
+    const promises = batch.map((ticker, idx) =>
+      // TEMPORARY DIAGNOSTIC — pass debug=true for first ticker only
+      fetchSingleFundamental(ticker, apiKey, i === 0 && idx === 0).catch(err => {
         failures.push({ ticker, error: err.message });
         return null;
       })
