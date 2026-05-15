@@ -121,7 +121,7 @@ async function logInteraction({ themeId, action, source = 'discoverThemes' }) {
   }
 }
 
-export default function DiscoverPanel({ showToast, requestWorkshopOpen, agent }) {
+export default function DiscoverPanel({ showToast, requestWorkshopOpen, agent, onViewWatchlist }) {
   const { tokens } = useTheme();
   const [themes, setThemes] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -365,6 +365,7 @@ export default function DiscoverPanel({ showToast, requestWorkshopOpen, agent })
         agentId={signalDropState.agentId}
         agentName={agent?.name}
         showToast={showToast}
+        onViewWatchlist={onViewWatchlist}
       />
     </div>
   );

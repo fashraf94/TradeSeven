@@ -2225,20 +2225,9 @@ export default function PortfolioDuel() {
   const [storyReturnSection, setStoryReturnSection] = useState(null);
 
   // Forge watchlist editor (Phase 4B) — companion id for the 'watchlistEditor'
-  // screen, mirroring the selectedStory pattern.
+  // screen, mirroring the selectedStory pattern. Set by ForgeLanding's
+  // onViewWatchlist callback once the Signal Drop dialogue saves a watchlist.
   const [selectedWatchlistId, setSelectedWatchlistId] = useState(null);
-  // TEMP — Phase 4B B1 smoke-test entry. No real entry point exists until B2
-  // wires the Signal Drop confirmation flow, so the editor is reached from the
-  // browser console: __openWatchlistEditor('<watchlistId>'). Removed in B2.
-  useEffect(() => {
-    window.__openWatchlistEditor = (id) => {
-      setSelectedWatchlistId(id);
-      setScreen('watchlistEditor');
-    };
-    return () => {
-      delete window.__openWatchlistEditor;
-    };
-  }, []);
 
   // Battle management
   const [battles, setBattles] = useState([]);
@@ -8253,6 +8242,11 @@ export default function PortfolioDuel() {
         <ForgeLanding
           isMobile={isMobile}
           onClose={() => setShowForge(false)}
+          onViewWatchlist={(watchlistId) => {
+            setSelectedWatchlistId(watchlistId);
+            setShowForge(false);
+            setScreen('watchlistEditor');
+          }}
           user={user}
           onNavigateToSeasonHub={() => {
             setShowForge(false);

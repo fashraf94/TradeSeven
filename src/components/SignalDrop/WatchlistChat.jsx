@@ -139,6 +139,7 @@ export default function WatchlistChat({
   agentId,
   agentName,
   showToast,
+  onViewWatchlist,
 }) {
   const { tokens } = useTheme();
   const { isDesktop } = useIsMobile();
@@ -593,8 +594,16 @@ export default function WatchlistChat({
         throw new Error(`Save failed: ${response.status}`);
       }
 
+      // Phase 4B: navigate straight into the editor to refine the saved
+      // watchlist. This unmounts the dialogue, so skip the onClose() below.
+      const data = await response.json().catch(() => ({}));
+      if (data.watchlistId && typeof onViewWatchlist === 'function') {
+        onViewWatchlist(data.watchlistId);
+        return;
+      }
+
       if (typeof showToast === 'function') {
-        showToast('Watchlist saved — editor coming soon to refine it.');
+        showToast('Watchlist saved.');
       }
     } catch (err) {
       console.warn(
