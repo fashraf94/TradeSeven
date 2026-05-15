@@ -69,21 +69,20 @@ const DELAY_MS = 250;
 const DRY_RUN_LIMIT = 10;
 const MAX_NULL_RATE = 0.10;
 
-// Phase 4.6 OQ-5: script-local broader filter. Do NOT modify the
-// codebase-wide EODHD_FUNDAMENTALS_FILTER in api/_utils/rankingConfig.js
-// (used by compute-rankings cron). Five subfields requested per ticker:
-//   - General::Type           — verify "Common Stock" vs unexpected types
-//   - General::Industry       — fallback display name (plain string)
-//   - General::GicIndustry    — primary field per OQ-1 (authoritative GICS)
-//   - General::Sector         — fallback for cross-check
-//   - General::GicSector      — primary cross-check vs TICKER_TO_SECTOR
+// Phase 4.6 OQ-5: filter to the whole General section. An earlier
+// attempt used a multi-subfield filter
+// ('General::Type,General::Industry,General::GicIndustry,...') but EODHD
+// does not honor comma-separated subfields within a section — diagnostic
+// against AAPL confirmed: no filter returns Industry + GicIndustry
+// populated; multi-subfield filter returns both absent. Whole-section
+// payload is small (no Financials/Earnings/SharesStats), so bandwidth
+// cost is negligible and the EODHD credit cost is unchanged.
 //
-// If EODHD's multi-subfield filter syntax does not honor commas within a
-// section, the dry-run will reveal it (GicIndustry will be missing from
-// the response) — fallback is to drop the filter and accept the full
-// General section payload.
-const SCRIPT_FUNDAMENTALS_FILTER =
-  'General::Type,General::Industry,General::GicIndustry,General::Sector,General::GicSector';
+// Do NOT modify the codebase-wide EODHD_FUNDAMENTALS_FILTER in
+// api/_utils/rankingConfig.js (consumed by compute-rankings cron) — the
+// shared filter's General::Name subselector is acceptable there because
+// it only needs the company name.
+const SCRIPT_FUNDAMENTALS_FILTER = 'General';
 
 // EODHD GicSector / Sector strings → our 11-sector ID space.
 // Source for our IDs: rankingConfig.js STOCK_UNIVERSE keys.
