@@ -37,7 +37,10 @@
  *
  * EXPECTED RUNTIME:
  *   ~60-90 seconds for 239 stocks (BATCH_SIZE=10, DELAY_MS=250).
- *   Cost: ~239 EODHD credits per full run (filter on General section only).
+ *   Cost: ~239 EODHD credits per full run. Unfiltered fetch returns the
+ *   full fundamentals payload per ticker (~30KB), so total bandwidth is
+ *   ~7MB across the run. Filter parameter intentionally omitted — see
+ *   fetchSingleFundamental for rationale.
  *
  * EXIT CODES:
  *   0 — success (STOCK_INDUSTRIES literal printed to stdout)
@@ -68,21 +71,6 @@ const BATCH_SIZE = 10;
 const DELAY_MS = 250;
 const DRY_RUN_LIMIT = 10;
 const MAX_NULL_RATE = 0.10;
-
-// Phase 4.6 OQ-5: filter to the whole General section. An earlier
-// attempt used a multi-subfield filter
-// ('General::Type,General::Industry,General::GicIndustry,...') but EODHD
-// does not honor comma-separated subfields within a section — diagnostic
-// against AAPL confirmed: no filter returns Industry + GicIndustry
-// populated; multi-subfield filter returns both absent. Whole-section
-// payload is small (no Financials/Earnings/SharesStats), so bandwidth
-// cost is negligible and the EODHD credit cost is unchanged.
-//
-// Do NOT modify the codebase-wide EODHD_FUNDAMENTALS_FILTER in
-// api/_utils/rankingConfig.js (consumed by compute-rankings cron) — the
-// shared filter's General::Name subselector is acceptable there because
-// it only needs the company name.
-const SCRIPT_FUNDAMENTALS_FILTER = 'General';
 
 // EODHD GicSector / Sector strings → our 11-sector ID space.
 // Source for our IDs: rankingConfig.js STOCK_UNIVERSE keys.
@@ -166,32 +154,17 @@ function sleep(ms) {
 // EODHD fetch — mirrors api/cron/compute-rankings.js:109-168
 // ---------------------------------------------------------------------
 
-async function fetchSingleFundamental(ticker, apiKey, debug = false) {
+async function fetchSingleFundamental(ticker, apiKey) {
   const eohdTicker = ticker.replace(/\./g, '-');
-  const url = `${API_BASE}/fundamentals/${eohdTicker}.US?api_token=${apiKey}&fmt=json&filter=${SCRIPT_FUNDAMENTALS_FILTER}`;
-
-  if (debug) {
-    // TEMPORARY DIAGNOSTIC — remove after B1 dry-run validation
-    console.error('[diag] URL:', url.replace(apiKey, '***'));
-  }
+  // No filter param: EODHD flattens the response when filtered by section
+  // name (e.g. filter=General returns the General section's contents at
+  // top level, with no wrapper key). The unfiltered fetch preserves the
+  // data.General.GicIndustry path that extractIndustry() reads.
+  const url = `${API_BASE}/fundamentals/${eohdTicker}.US?api_token=${apiKey}&fmt=json`;
 
   const res = await fetch(url);
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  const data = await res.json();
-
-  if (debug) {
-    // TEMPORARY DIAGNOSTIC — remove after B1 dry-run validation
-    const topKeys = Object.keys(data || {}).sort().join(', ') || '<empty>';
-    const generalKeys = data?.General
-      ? Object.keys(data.General).sort().join(', ')
-      : '<General is null/missing>';
-    console.error('[diag] response top-level keys:', topKeys);
-    console.error('[diag] response General keys:  ', generalKeys);
-    console.error('[diag] data.General?.GicIndustry:', JSON.stringify(data?.General?.GicIndustry));
-    console.error('[diag] data.General?.Industry:   ', JSON.stringify(data?.General?.Industry));
-  }
-
-  return data;
+  return res.json();
 }
 
 async function fetchAllFundamentals(tickers, apiKey) {
@@ -201,9 +174,8 @@ async function fetchAllFundamentals(tickers, apiKey) {
 
   for (let i = 0; i < tickers.length; i += BATCH_SIZE) {
     const batch = tickers.slice(i, i + BATCH_SIZE);
-    const promises = batch.map((ticker, idx) =>
-      // TEMPORARY DIAGNOSTIC — pass debug=true for first ticker only
-      fetchSingleFundamental(ticker, apiKey, i === 0 && idx === 0).catch(err => {
+    const promises = batch.map(ticker =>
+      fetchSingleFundamental(ticker, apiKey).catch(err => {
         failures.push({ ticker, error: err.message });
         return null;
       })
