@@ -618,6 +618,122 @@ describe('POST /api/forge/watchlists — observability', () => {
   });
 });
 
+describe('POST /api/forge/watchlists — manual create (Phase 5A)', () => {
+  it('creates an empty draft from an empty body (200)', async () => {
+    const fixture = makeFakeFirestore();
+    activeFirestore = fixture.db;
+
+    const { req, res } = makeReqRes({ method: 'POST', body: {} });
+    await createHandler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body.watchlistId).toBe('new-watchlist-456');
+    expect(res.body.status).toBe('draft');
+    expect(res.body.tickerCount).toBe(0);
+    expect(res.body.idempotent).toBe(false);
+    expect(typeof res.body.createdAt).toBe('string');
+
+    const watchlist = fixture.state.watchlistDocs['new-watchlist-456'];
+    expect(watchlist).toBeDefined();
+    expect(watchlist.userId).toBe('test-user');
+    expect(watchlist.status).toBe('draft');
+  });
+
+  it('does not short-circuit — two consecutive calls each return idempotent:false', async () => {
+    const fixture = makeFakeFirestore();
+    activeFirestore = fixture.db;
+
+    const first = makeReqRes({ method: 'POST', body: {} });
+    await createHandler(first.req, first.res);
+    const second = makeReqRes({ method: 'POST', body: {} });
+    await createHandler(second.req, second.res);
+
+    expect(first.res.statusCode).toBe(200);
+    expect(second.res.statusCode).toBe(200);
+    expect(first.res.body.idempotent).toBe(false);
+    expect(second.res.body.idempotent).toBe(false);
+  });
+
+  it('persists null source fields and a fully empty shape', async () => {
+    const fixture = makeFakeFirestore();
+    activeFirestore = fixture.db;
+
+    const { req, res } = makeReqRes({ method: 'POST', body: {} });
+    await createHandler(req, res);
+
+    const watchlist = fixture.state.watchlistDocs['new-watchlist-456'];
+    expect(watchlist.sourceSessionId).toBeNull();
+    expect(watchlist.sourceDropId).toBeNull();
+    expect(watchlist.agentId).toBeNull();
+    expect(watchlist.tickers).toEqual([]);
+    expect(watchlist.name).toBe('');
+    expect(watchlist.thesis).toBe('');
+    expect(watchlist.notes).toBe('');
+    expect(watchlist.activationConditions).toEqual([]);
+    expect(watchlist.invalidationConditions).toEqual([]);
+    expect(watchlist.status).toBe('draft');
+    expect(watchlist.committedAt).toBeNull();
+  });
+
+  it('emits a shadow log entry with stage=watchlist_manual_create', async () => {
+    const fixture = makeFakeFirestore();
+    activeFirestore = fixture.db;
+
+    const { req, res } = makeReqRes({ method: 'POST', body: {} });
+    await createHandler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    const log = shadowLogCalls.current.find((r) => r.stage === 'watchlist_manual_create');
+    expect(log).toBeDefined();
+    expect(log.userId).toBe('test-user');
+    expect(log.watchlistId).toBe('new-watchlist-456');
+  });
+
+  it('rejects a mixed payload missing dropId (400 invalid_drop_id)', async () => {
+    activeFirestore = makeFakeFirestore().db;
+    const { req, res } = makeReqRes({
+      method: 'POST',
+      body: { sessionId: 'session-1', agentId: 'agent-1' },
+    });
+    await createHandler(req, res);
+    expect(res.statusCode).toBe(400);
+    expect(res.body.error).toBe('invalid_drop_id');
+  });
+
+  it('rejects a mixed payload with only sessionId (400 invalid_agent_id)', async () => {
+    activeFirestore = makeFakeFirestore().db;
+    const { req, res } = makeReqRes({ method: 'POST', body: { sessionId: 'session-1' } });
+    await createHandler(req, res);
+    expect(res.statusCode).toBe(400);
+    expect(res.body.error).toBe('invalid_agent_id');
+  });
+
+  it('returns 401 when no auth token is present', async () => {
+    authReturnValue.current = null;
+    activeFirestore = makeFakeFirestore().db;
+    const { req, res } = makeReqRes({ method: 'POST', body: {} });
+    await createHandler(req, res);
+    expect(res.statusCode).toBe(401);
+  });
+
+  it('produces a watchlist retrievable via GET /[id]', async () => {
+    const fixture = makeFakeFirestore();
+    activeFirestore = fixture.db;
+
+    const create = makeReqRes({ method: 'POST', body: {} });
+    await createHandler(create.req, create.res);
+    expect(create.res.statusCode).toBe(200);
+
+    const get = makeReqRes({ method: 'GET', query: { id: create.res.body.watchlistId } });
+    await itemHandler(get.req, get.res);
+
+    expect(get.res.statusCode).toBe(200);
+    expect(get.res.body.watchlist.watchlistId).toBe('new-watchlist-456');
+    expect(get.res.body.watchlist.status).toBe('draft');
+    expect(get.res.body.watchlist.tickers).toEqual([]);
+  });
+});
+
 // ============================================================
 // PATCH /api/forge/watchlists/[id]
 // ============================================================

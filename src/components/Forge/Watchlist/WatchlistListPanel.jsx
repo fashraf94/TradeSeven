@@ -9,8 +9,13 @@
 // from local state without a refetch.
 
 import React, { useState, useEffect } from 'react';
+import { BookmarkPlus } from 'lucide-react';
 import { useTheme } from '../../../contexts/ThemeContext';
-import { listWatchlists, deleteWatchlist } from '../../../services/forgeWatchlistService';
+import {
+  listWatchlists,
+  deleteWatchlist,
+  createWatchlist,
+} from '../../../services/forgeWatchlistService';
 import {
   filterWatchlistsByStatus,
   countByStatus,
@@ -30,6 +35,8 @@ export default function WatchlistListPanel({ user, onOpenWatchlist, onDropSignal
   const [statusFilter, setStatusFilter] = useState('all');
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState('');
 
   useEffect(() => {
     let cancelled = false;
@@ -57,9 +64,33 @@ export default function WatchlistListPanel({ user, onOpenWatchlist, onDropSignal
     };
   }, [user?.uid]);
 
+  // Phase 5A — auto-dismiss the create-error banner after 5s.
+  useEffect(() => {
+    if (!createError) return undefined;
+    const timer = setTimeout(() => setCreateError(''), 5000);
+    return () => clearTimeout(timer);
+  }, [createError]);
+
   const sorted = sortByUpdatedDesc(watchlists);
   const counts = countByStatus(sorted);
   const visible = filterWatchlistsByStatus(sorted, statusFilter);
+
+  // Phase 5A — manual create: POST an empty draft, then open it in the editor.
+  // On success the panel unmounts via navigation, so `creating` resets only
+  // on the error path.
+  const handleNewWatchlist = async () => {
+    if (creating) return;
+    setCreating(true);
+    setCreateError('');
+    try {
+      const result = await createWatchlist();
+      onOpenWatchlist(result.watchlistId);
+    } catch (err) {
+      console.error('[WatchlistListPanel] create failed:', err?.message || err);
+      setCreateError('Could not create a new watchlist. Try again.');
+      setCreating(false);
+    }
+  };
 
   const handleConfirmDelete = async () => {
     if (!deleteTarget || deleteBusy) return;
@@ -87,27 +118,85 @@ export default function WatchlistListPanel({ user, onOpenWatchlist, onDropSignal
 
   return (
     <div style={{ padding: '24px 4px' }}>
-      <h2
+      <div
         style={{
-          margin: 0,
-          fontSize: 22,
-          fontWeight: 700,
-          color: tokens.textPrimary,
-          lineHeight: 1.2,
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'flex-start',
+          gap: 16,
+          flexWrap: 'wrap',
         }}
       >
-        My Watchlists
-      </h2>
-      <p style={{ margin: '8px 0 0', fontSize: 14, color: tokens.textMuted, lineHeight: 1.5 }}>
-        Every watchlist you&apos;ve built from a signal.
-      </p>
+        <div>
+          <h2
+            style={{
+              margin: 0,
+              fontSize: 22,
+              fontWeight: 700,
+              color: tokens.textPrimary,
+              lineHeight: 1.2,
+            }}
+          >
+            My Watchlists
+          </h2>
+          <p style={{ margin: '8px 0 0', fontSize: 14, color: tokens.textMuted, lineHeight: 1.5 }}>
+            Every watchlist you&apos;ve built.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={handleNewWatchlist}
+          disabled={creating}
+          aria-label="Create a new watchlist"
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 6,
+            flexShrink: 0,
+            padding: '8px 14px',
+            borderRadius: 8,
+            border: `1px solid ${tokens.teal}`,
+            background: 'transparent',
+            color: tokens.teal,
+            fontSize: 13,
+            fontWeight: 600,
+            fontFamily: 'inherit',
+            cursor: creating ? 'not-allowed' : 'pointer',
+            opacity: creating ? 0.5 : 1,
+          }}
+        >
+          <BookmarkPlus size={14} />
+          New Watchlist
+        </button>
+      </div>
+
+      {createError && (
+        <div
+          style={{
+            marginTop: 12,
+            padding: '8px 12px',
+            borderRadius: 8,
+            border: `1px solid ${tokens.red}`,
+            color: tokens.red,
+            fontSize: 12,
+            lineHeight: 1.5,
+          }}
+        >
+          {createError}
+        </div>
+      )}
 
       {loadState === 'loading' && <div style={centerNote}>Loading your watchlists…</div>}
 
       {loadState === 'error' && <div style={{ ...centerNote, color: tokens.red }}>{errorMessage}</div>}
 
       {loadState === 'loaded' && watchlists.length === 0 && (
-        <WatchlistListEmptyState tokens={tokens} onDropSignal={onDropSignal} />
+        <WatchlistListEmptyState
+          tokens={tokens}
+          onDropSignal={onDropSignal}
+          onNewWatchlist={handleNewWatchlist}
+          creating={creating}
+        />
       )}
 
       {loadState === 'loaded' && watchlists.length > 0 && (

@@ -90,6 +90,22 @@ export async function deleteWatchlist(id) {
   return response.json();
 }
 
+/**
+ * Create an empty manual draft watchlist (Phase 5A). Takes no arguments and
+ * posts an empty body — the signal-derived creation path (sessionId/agentId/
+ * dropId) stays wired inline in WatchlistChat. Returns the API response
+ * ({ watchlistId, status, tickerCount, createdAt, idempotent }); the caller
+ * navigates to the editor with the returned watchlistId.
+ */
+export async function createWatchlist() {
+  const response = await fetchWithAuth(BASE, {
+    method: 'POST',
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) throw await toError(response);
+  return response.json();
+}
+
 export default {
   getWatchlist,
   patchWatchlist,
@@ -97,4 +113,5 @@ export default {
   uncommitWatchlist,
   listWatchlists,
   deleteWatchlist,
+  createWatchlist,
 };
