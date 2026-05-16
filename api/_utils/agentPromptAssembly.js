@@ -33,8 +33,15 @@ ${storiesSummary || 'No recent stories available.'}`;
 
 /**
  * Agent-specific user prompt (after cache breakpoint).
+ *
+ * @param {Object} agent
+ * @param {{name?: string, tickers?: string[], thesis?: string}|null} [equippedWatchlist]
+ *   Phase 5B1 — the agent's equipped watchlist, or null. `name` and `thesis`
+ *   are user-authored free text and are sanitized INSIDE this function (via
+ *   sanitizeRuleText, the same guard resolveRuleText uses for Forge rules)
+ *   before interpolation. Callers pass raw values and must not pre-sanitize.
  */
-export function buildStrategyUserPrompt(agent) {
+export function buildStrategyUserPrompt(agent, equippedWatchlist = null) {
   const parts = [];
 
   // Identity
@@ -92,6 +99,37 @@ export function buildStrategyUserPrompt(agent) {
     parts.push(`FORGE RULES (your equipped strategy):\n${rLines.join('\n')}`);
   }
 
+  // Phase 5B1 — user-equipped watchlist. name + thesis are user-authored, so
+  // both are run through sanitizeRuleText before they enter the prompt.
+  if (equippedWatchlist) {
+    const tickerList = (Array.isArray(equippedWatchlist.tickers) ? equippedWatchlist.tickers : [])
+      .filter((t) => typeof t === 'string' && /^[A-Z0-9.-]{1,12}$/.test(t));
+    if (tickerList.length > 0) {
+      const safeName = sanitizeRuleText(equippedWatchlist.name) || 'Untitled watchlist';
+      const safeThesis = equippedWatchlist.thesis ? sanitizeRuleText(equippedWatchlist.thesis) : '';
+      const lines = [
+        'USER-EQUIPPED WATCHLIST',
+        `The user has personally equipped a watchlist titled "${safeName}". They want these`,
+        'tickers given priority consideration:',
+        tickerList.join(', '),
+      ];
+      if (safeThesis) lines.push(`Thesis: "${safeThesis}"`);
+      lines.push(
+        '',
+        'These are user-prioritized opportunities, not mandates. When building your shortlist:',
+        '- Include every user-equipped ticker that has a plausible directional thesis — even',
+        '  if it would not otherwise rank into your 25-35.',
+        '- Where a user-equipped ticker is genuinely competitive, rank it accordingly high.',
+        '- You may still omit a user-equipped ticker with a clearly poor setup; the user',
+        '  trusts your judgment and does not want forced picks.',
+        '- Some user-equipped tickers may not appear in the STOCK UNIVERSE table and will',
+        '  show no FUND/TECH/BB_FIT/ATR/ARCH scores. Evaluate those on sector, thesis, and',
+        '  market knowledge — absence from the table is not a negative signal.'
+      );
+      parts.push(lines.join('\n'));
+    }
+  }
+
   parts.push(
     'Produce your strategic analysis and recommended shortlist of 25-35 tickers using the submit_strategy tool.'
   );
@@ -101,8 +139,26 @@ export function buildStrategyUserPrompt(agent) {
 
 /**
  * System prompt for the Haiku portfolio construction call.
+ *
+ * @param {{tickers?: string[]}|null} [equippedBlock] Phase 5B1 — when present,
+ *   appends a note that some AVAILABLE STOCKS rows are user-equipped tickers
+ *   (possibly off-universe, shown with "-" scores) and should still be
+ *   considered fairly.
  */
-export function buildPortfolioSystemPrompt(strategyBrief, shortlistCSV, cryptoList, institutionalBlock = '') {
+export function buildPortfolioSystemPrompt(strategyBrief, shortlistCSV, cryptoList, institutionalBlock = '', equippedBlock = null) {
+  const equippedTickers = (equippedBlock && Array.isArray(equippedBlock.tickers))
+    ? equippedBlock.tickers.filter((t) => typeof t === 'string' && /^[A-Z0-9.-]{1,12}$/.test(t))
+    : [];
+  const equippedNote = equippedTickers.length > 0
+    ? `\nUSER-EQUIPPED TICKERS:
+These tickers in AVAILABLE STOCKS were equipped by the user from a personal
+watchlist: ${equippedTickers.join(', ')}.
+Rows showing "-" for FUND/TECH/BB_FIT/ATR are user-equipped tickers outside the
+scored universe — expected, not a data error. Evaluate them on price action,
+sector, and the analyst's guidance. Give them fair consideration; do not exclude
+a ticker solely because its scores are unavailable.\n`
+    : '';
+
   return `You are a portfolio builder for BaggerBomb. Build the mathematically optimal portfolio from the pre-approved shortlist below.
 
 TIER RULES:
@@ -118,7 +174,7 @@ ${strategyBrief}
 ${institutionalBlock ? `\n${institutionalBlock}\n` : ''}
 AVAILABLE STOCKS (pre-approved, pick ONLY from these):
 ${shortlistCSV}
-
+${equippedNote}
 AVAILABLE CRYPTO:
 ${cryptoList}
 

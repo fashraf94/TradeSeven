@@ -19,7 +19,7 @@ export const STRATEGY_TOOL = {
         minItems: 20,
         maxItems: 40,
         description:
-          '25-35 recommended ticker symbols ordered by conviction. Must all be from the provided stock universe.',
+          '25-35 recommended ticker symbols ordered by conviction. Pick from the provided stock universe; you may also include tickers from the user-equipped watchlist if one is provided.',
       },
       topConviction: {
         type: 'string',

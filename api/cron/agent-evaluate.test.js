@@ -212,3 +212,32 @@ describe('agent-evaluate cron — VWAP session-boundary filter (post-fix v2)', (
     expect(source).not.toMatch(/calculate5minSMA20\s*\(\s*sessionCandles\s*\)/);
   });
 });
+
+// Phase 5B1 — watchlist equip: daily-refresh hotBench union.
+//
+// The union logic itself is behaviourally unit-tested in
+// api/_utils/watchlistEquip.test.js (unionEquippedIntoHotBench). Same
+// static-source rationale as Phase 3/4 above: the cron handler is monolithic,
+// so these guards only verify the cron wires the helper into the daily
+// watchlist refresh and reads from the frozen battle snapshot.
+describe('agent-evaluate cron — Phase 5B1 equipped-watchlist hotBench union', () => {
+  const source = readFileSync(SOURCE_PATH, 'utf-8');
+
+  it('imports unionEquippedIntoHotBench from the shared helper', () => {
+    expect(source).toMatch(
+      /import\s*\{\s*unionEquippedIntoHotBench\s*\}\s*from\s*'\.\.\/_utils\/watchlistEquip\.js'/,
+    );
+  });
+
+  it('reads equipped tickers from the frozen battle snapshot (agentContext.equippedWatchlist)', () => {
+    expect(source).toMatch(/battle\.agentContext\?\.equippedWatchlist\?\.tickers/);
+  });
+
+  it('reassigns newHotBench from unionEquippedIntoHotBench inside the daily refresh', () => {
+    expect(source).toMatch(/newHotBench\s*=\s*unionEquippedIntoHotBench\(/);
+  });
+
+  it('passes a soft cap of 20 to the union call (Q-A2)', () => {
+    expect(source).toMatch(/unionEquippedIntoHotBench\(\{[\s\S]*?cap:\s*20[\s\S]*?\}\)/);
+  });
+});
