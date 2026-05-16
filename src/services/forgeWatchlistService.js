@@ -69,4 +69,32 @@ export async function uncommitWatchlist(id) {
   return response.json();
 }
 
-export default { getWatchlist, patchWatchlist, commitWatchlist, uncommitWatchlist };
+/**
+ * List the current user's non-deleted watchlists. Returns an array — an
+ * absent `watchlists` field yields []. The caller sorts/filters client-side.
+ */
+export async function listWatchlists() {
+  const response = await fetchWithAuth(BASE, { method: 'GET' });
+  if (!response.ok) throw await toError(response);
+  const data = await response.json();
+  return Array.isArray(data.watchlists) ? data.watchlists : [];
+}
+
+/**
+ * Soft-delete a watchlist. Idempotent server-side — deleting an
+ * already-deleted watchlist resolves with { idempotent: true }.
+ */
+export async function deleteWatchlist(id) {
+  const response = await fetchWithAuth(`${BASE}/${id}/delete`, { method: 'POST' });
+  if (!response.ok) throw await toError(response);
+  return response.json();
+}
+
+export default {
+  getWatchlist,
+  patchWatchlist,
+  commitWatchlist,
+  uncommitWatchlist,
+  listWatchlists,
+  deleteWatchlist,
+};
