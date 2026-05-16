@@ -2355,6 +2355,19 @@ export default function PortfolioDuel() {
   // Forge state (replaces Academy)
   const [showForge, setShowForge] = useState(false);
 
+  // Phase 4D — watchlist editor return-path state.
+  // forgeInitialView: which Forge tab ForgeLanding boots on. 'discover' at
+  // rest; the watchlist editor's onClose sets it to 'watchlists' transiently,
+  // and the effect below resets it the instant Forge re-opens — so the normal
+  // Forge entry points (nav menu, etc.) always land on the default tab.
+  const [forgeInitialView, setForgeInitialView] = useState('discover');
+  // watchlistEditorReturnScreen: where the editor's close routes — 'home'
+  // (the default, used by the Discover → Signal Drop path) or 'watchlists'.
+  const [watchlistEditorReturnScreen, setWatchlistEditorReturnScreen] = useState('home');
+  useEffect(() => {
+    if (showForge) setForgeInitialView('discover');
+  }, [showForge]);
+
   // Desktop background state
   const [isDesktop, setIsDesktop] = useState(typeof window !== 'undefined' && window.innerWidth > 768);
 
@@ -8242,8 +8255,10 @@ export default function PortfolioDuel() {
         <ForgeLanding
           isMobile={isMobile}
           onClose={() => setShowForge(false)}
-          onViewWatchlist={(watchlistId) => {
+          initialView={forgeInitialView}
+          onViewWatchlist={(watchlistId, returnTo = 'home') => {
             setSelectedWatchlistId(watchlistId);
+            setWatchlistEditorReturnScreen(returnTo === 'watchlists' ? 'watchlists' : 'home');
             setShowForge(false);
             setScreen('watchlistEditor');
           }}
@@ -9436,7 +9451,15 @@ export default function PortfolioDuel() {
       <Suspense fallback={<LoadingFallback />}>
         <WatchlistEditor
           watchlistId={selectedWatchlistId}
-          onClose={() => { setSelectedWatchlistId(null); setScreen('home'); }}
+          onClose={() => {
+            setSelectedWatchlistId(null);
+            setScreen('home');
+            if (watchlistEditorReturnScreen === 'watchlists') {
+              setForgeInitialView('watchlists');
+              setWatchlistEditorReturnScreen('home');
+              setShowForge(true);
+            }
+          }}
         />
       </Suspense>
       </ErrorBoundary>

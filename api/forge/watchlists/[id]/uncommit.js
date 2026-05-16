@@ -58,6 +58,8 @@ export default async function handler(req, res) {
       const data = snap.data();
 
       if (data.userId !== user.uid) throw new Error(SENTINEL_PREFIX + 'forbidden');
+      // A soft-deleted watchlist reads as gone everywhere (Phase 4D).
+      if (data.deletedAt) throw new Error(SENTINEL_PREFIX + 'not_found');
 
       // Idempotent: already a draft → preserve the original uncommittedAt
       // (null when the watchlist was never committed in the first place).

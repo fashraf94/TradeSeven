@@ -12,9 +12,14 @@ vi.mock('../utils/fetchWithAuth', () => ({
   fetchWithAuth: fetchMock,
 }));
 
-const { getWatchlist, patchWatchlist, commitWatchlist, uncommitWatchlist } = await import(
-  './forgeWatchlistService.js'
-);
+const {
+  getWatchlist,
+  patchWatchlist,
+  commitWatchlist,
+  uncommitWatchlist,
+  listWatchlists,
+  deleteWatchlist,
+} = await import('./forgeWatchlistService.js');
 
 function jsonResponse(body, { ok = true, status = 200 } = {}) {
   return { ok, status, json: async () => body };
@@ -107,5 +112,59 @@ describe('forgeWatchlistService — commitWatchlist / uncommitWatchlist', () => 
     expect(fetchMock).toHaveBeenCalledWith('/api/forge/watchlists/wl-1/uncommit', {
       method: 'POST',
     });
+  });
+});
+
+describe('forgeWatchlistService — listWatchlists', () => {
+  it('GETs the list endpoint and unwraps the watchlists array', async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse({ watchlists: [{ watchlistId: 'wl-1' }, { watchlistId: 'wl-2' }] }),
+    );
+    const out = await listWatchlists();
+    expect(out).toEqual([{ watchlistId: 'wl-1' }, { watchlistId: 'wl-2' }]);
+    expect(fetchMock).toHaveBeenCalledWith('/api/forge/watchlists', { method: 'GET' });
+  });
+
+  it('returns an empty array when the response has no watchlists field', async () => {
+    fetchMock.mockResolvedValue(jsonResponse({}));
+    const out = await listWatchlists();
+    expect(out).toEqual([]);
+  });
+
+  it('throws an error carrying status and code on a non-2xx response', async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse(
+        { error: 'server_error', message: 'Could not load watchlists.' },
+        { ok: false, status: 500 },
+      ),
+    );
+    await expect(listWatchlists()).rejects.toMatchObject({ status: 500, code: 'server_error' });
+  });
+});
+
+describe('forgeWatchlistService — deleteWatchlist', () => {
+  it('POSTs to the delete endpoint and returns the parsed body', async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse({ watchlistId: 'wl-1', deletedAt: '2026-05-16T00:00:00.000Z', idempotent: false }),
+    );
+    const out = await deleteWatchlist('wl-1');
+    expect(out.deletedAt).toBe('2026-05-16T00:00:00.000Z');
+    expect(out.idempotent).toBe(false);
+    expect(fetchMock).toHaveBeenCalledWith('/api/forge/watchlists/wl-1/delete', { method: 'POST' });
+  });
+
+  it('surfaces the idempotent flag when the watchlist was already deleted', async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse({ watchlistId: 'wl-1', deletedAt: 'orig-ts', idempotent: true }),
+    );
+    const out = await deleteWatchlist('wl-1');
+    expect(out.idempotent).toBe(true);
+  });
+
+  it('throws an error carrying status and code on a 404', async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse({ error: 'not_found', message: 'Watchlist not found.' }, { ok: false, status: 404 }),
+    );
+    await expect(deleteWatchlist('wl-x')).rejects.toMatchObject({ status: 404, code: 'not_found' });
   });
 });

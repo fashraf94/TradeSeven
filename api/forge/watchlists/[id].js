@@ -133,6 +133,9 @@ async function handleGet({ watchlistRef, watchlistId, user, res }) {
     if (data.userId !== user.uid) {
       return res.status(403).json({ error: 'forbidden', message: 'Not authorized for this watchlist.' });
     }
+    if (data.deletedAt) {
+      return res.status(404).json({ error: 'not_found', message: 'Watchlist not found.' });
+    }
     return res.status(200).json({ watchlist: { ...data, watchlistId } });
   } catch (err) {
     console.error('[watchlists:GET] Error:', err);
@@ -249,6 +252,9 @@ async function db_runPatchTx({ db, watchlistRef, user, updates, hasContent }) {
     const data = snap.data();
     if (data.userId !== user.uid) {
       return { error: 'forbidden', statusCode: 403, message: 'Not authorized for this watchlist.' };
+    }
+    if (data.deletedAt) {
+      return { error: 'not_found', statusCode: 404, message: 'Watchlist not found.' };
     }
     if (data.status === 'committed') {
       return {

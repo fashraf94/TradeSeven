@@ -1,21 +1,23 @@
-// api/forge/watchlists/[id]/commit.js
+// api/forge/watchlists/[id]/delete.js
 //
-// Sprint 6 Phase 4A — POST /api/forge/watchlists/{id}/commit. Transitions a
-// draft watchlist to status='committed'. Phase 4A ships the endpoint with no
-// FE consumer; Phase 4B's editor will surface the commit ceremony.
+// Sprint 6 Phase 4D — POST /api/forge/watchlists/{id}/delete. Soft-deletes a
+// watchlist by stamping a `deletedAt` timestamp. The "My Watchlists" list view
+// surfaces the trash action; the list endpoint and the four single-item
+// endpoints (GET, PATCH, commit, uncommit) all treat a deletedAt-set doc as
+// gone.
 //
-// Commit-readiness criteria locked in Phase 4A audit D-A-2: at least one
-// ticker. No thesis requirement (a "watch these names" list is a valid
-// preference signal even without a written thesis). Empty/zero-ticker commits
-// are 400 not_commit_ready — a watchlist with no tickers serves no
-// preference-signal purpose.
+// Soft, not hard: the document is preserved (status, tickers, thesis all
+// intact) so the delete is recoverable by a future surface or by support.
+// `status` is deliberately left untouched — a committed watchlist that is
+// deleted keeps status:'committed'; the deletedAt stamp alone removes it from
+// every read path.
 //
-// Idempotent: if status is already 'committed', return 200 with the existing
-// committedAt timestamp preserved (mirrors the abandon endpoint's
-// already-terminal idempotency pattern).
+// Idempotent: if the watchlist is already soft-deleted, return 200 with the
+// existing deletedAt timestamp preserved. Mirrors the commit/uncommit
+// already-terminal idempotency pattern.
 //
-// Pattern reference: api/forge/watchlist-dialogue-abandon.js (transaction
-// body, sentinel error map, shadow log fire-and-forget).
+// Pattern reference: api/forge/watchlists/[id]/uncommit.js (transaction body,
+// sentinel error map, shadow log fire-and-forget).
 
 import { getFirebaseAdmin } from '../../../_utils/firebaseAdmin.js';
 import { applySecurityMiddleware } from '../../../_utils/security.js';
@@ -26,7 +28,7 @@ import { waitUntil } from '@vercel/functions';
 
 export const config = { maxDuration: 10 };
 
-const SENTINEL_PREFIX = '__watchlist_commit:';
+const SENTINEL_PREFIX = '__watchlist_delete:';
 
 export default async function handler(req, res) {
   if (applySecurityMiddleware(req, res, { rateLimit: { limit: 10, windowMs: 60_000 } })) {
@@ -59,29 +61,20 @@ export default async function handler(req, res) {
       const data = snap.data();
 
       if (data.userId !== user.uid) throw new Error(SENTINEL_PREFIX + 'forbidden');
-      // A soft-deleted watchlist reads as gone everywhere (Phase 4D).
-      if (data.deletedAt) throw new Error(SENTINEL_PREFIX + 'not_found');
 
-      // Idempotent: already committed → preserve original committedAt.
-      if (data.status === 'committed') {
+      // Idempotent: already soft-deleted → preserve the original deletedAt.
+      if (data.deletedAt) {
         return {
           idempotent: true,
-          committedAt: data.committedAt || null,
+          deletedAt: data.deletedAt,
         };
       }
 
-      // Commit-readiness per D-A-2: ≥1 ticker.
-      const tickers = Array.isArray(data.tickers) ? data.tickers : [];
-      if (tickers.length === 0) {
-        throw new Error(SENTINEL_PREFIX + 'not_commit_ready');
-      }
-
       tx.update(watchlistRef, {
-        status: 'committed',
-        committedAt: nowIso,
+        deletedAt: nowIso,
         updatedAt: nowIso,
       });
-      return { idempotent: false, committedAt: nowIso };
+      return { idempotent: false, deletedAt: nowIso };
     });
   } catch (txErr) {
     if (typeof txErr?.message === 'string' && txErr.message.startsWith(SENTINEL_PREFIX)) {
@@ -92,32 +85,25 @@ export default async function handler(req, res) {
       if (code === 'forbidden') {
         return res.status(403).json({ error: 'forbidden', message: 'Not authorized for this watchlist.' });
       }
-      if (code === 'not_commit_ready') {
-        return res.status(400).json({
-          error: 'not_commit_ready',
-          message: 'A watchlist needs at least one ticker before it can be committed.',
-        });
-      }
     }
-    console.error('[watchlists:commit] Error:', txErr);
-    return res.status(500).json({ error: 'server_error', message: 'Could not commit watchlist.' });
+    console.error('[watchlists:delete] Error:', txErr);
+    return res.status(500).json({ error: 'server_error', message: 'Could not delete watchlist.' });
   }
 
   waitUntil(
     logSignalDrops({
-      stage: 'watchlist_commit',
+      stage: 'watchlist_delete',
       userId: user.uid,
       watchlistId,
       idempotent: txResult.idempotent,
-      committedAt: txResult.committedAt,
+      deletedAt: txResult.deletedAt,
       loggedAt: nowIso,
     }).catch(() => {}),
   );
 
   return res.status(200).json({
     watchlistId,
-    status: 'committed',
-    committedAt: txResult.committedAt,
+    deletedAt: txResult.deletedAt,
     idempotent: txResult.idempotent,
   });
 }

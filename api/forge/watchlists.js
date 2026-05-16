@@ -1,12 +1,20 @@
 // api/forge/watchlists.js
 //
-// Sprint 6 Phase 4A — POST /api/forge/watchlists. Replaces the Phase 3.6
-// fireAbandon('finalize_intent') call from WatchlistChat.handleFinalizeClose
-// with a real save: creates a watchlists/{id} doc from the dialogue session's
-// anatomy + candidateTickers, transitions the session to 'completed', and
-// writes the new watchlist's id back to session.dropListId.
+// Sprint 6 Phase 4A — POST /api/forge/watchlists (create).
+// Sprint 6 Phase 4D — GET /api/forge/watchlists (list).
 //
-// The transaction body holds the session-doc read + watchlist-doc write +
+// POST replaces the Phase 3.6 fireAbandon('finalize_intent') call from
+// WatchlistChat.handleFinalizeClose with a real save: creates a
+// watchlists/{id} doc from the dialogue session's anatomy + candidateTickers,
+// transitions the session to 'completed', and writes the new watchlist's id
+// back to session.dropListId.
+//
+// GET lists the authenticated user's non-deleted watchlists for the Phase 4D
+// "My Watchlists" tab. Soft-deleted docs are filtered in memory — a Firestore
+// where('deletedAt','==',null) query would miss pre-Phase-4D docs that have no
+// deletedAt field at all. Results are unordered; the client sorts by updatedAt.
+//
+// The POST transaction body holds the session-doc read + watchlist-doc write +
 // session-doc update atomic. The pre-transaction read is a cheap idempotency
 // shortcut for the common double-tap-save case (skips the whole transaction
 // when the session is already 'completed' with a dropListId set). The
@@ -20,10 +28,6 @@
 //   * Server-trusted sourceDropId derived from session.dropId (not the request
 //     body) per audit A-A-2 — the session's dropId was already verified at
 //     session creation by watchlist-dialogue.js, so we trust the chain.
-//
-// Phase 4A out-of-scope: the editor UI, auto-save mechanics, manual ticker
-// add. PATCH and POST commit endpoints exist (separate files under [id])
-// but have no FE consumer in 4A.
 
 import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
 import { applySecurityMiddleware } from '../_utils/security.js';
@@ -61,16 +65,48 @@ const SENTINEL_HUMAN_COPY = Object.freeze({
 const SESSION_STATUS_SAVEABLE = new Set(['active', 'finalize_intent']);
 
 export default async function handler(req, res) {
-  if (applySecurityMiddleware(req, res, { rateLimit: { limit: 10, windowMs: 60_000 } })) {
-    return;
-  }
-  if (req.method !== 'POST') {
+  const method = req.method;
+  if (method !== 'GET' && method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
+  }
+
+  // applySecurityMiddleware is not method-aware; reads tolerate a higher
+  // cadence than the create transaction, so the limit is picked per method.
+  const rateLimit =
+    method === 'GET' ? { limit: 30, windowMs: 60_000 } : { limit: 10, windowMs: 60_000 };
+  if (applySecurityMiddleware(req, res, { rateLimit })) {
+    return;
   }
 
   const user = await requireAuth(req, res);
   if (!user) return;
 
+  if (method === 'GET') return handleList({ user, res });
+  return handleCreate({ req, res, user });
+}
+
+// ── GET: list the user's non-deleted watchlists (Phase 4D) ────────────
+async function handleList({ user, res }) {
+  try {
+    const db = getFirebaseAdmin();
+    const snap = await db
+      .collection('watchlists')
+      .where('userId', '==', user.uid)
+      .get();
+    const watchlists = snap.docs
+      .map((d) => ({ ...d.data(), watchlistId: d.id }))
+      .filter((doc) => !doc.deletedAt);
+    return res.status(200).json({ watchlists });
+  } catch (err) {
+    console.error('[watchlists:GET] Error:', err);
+    return res
+      .status(500)
+      .json({ error: 'server_error', message: 'Could not load watchlists.' });
+  }
+}
+
+// ── POST: create a watchlist from a finalized dialogue session ────────
+async function handleCreate({ req, res, user }) {
   const { sessionId, agentId, dropId } = req.body || {};
 
   if (!isValidForgeId(sessionId)) {

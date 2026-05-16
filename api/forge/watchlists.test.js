@@ -7,6 +7,7 @@
 //
 // Test count target (per Phase 4A audit Section 8): 31 server tests.
 // Phase 4B adds the POST uncommit handler coverage.
+// Phase 4D adds GET list + POST delete + soft-delete-is-gone coverage.
 //
 // Pattern reference: api/forge/watchlist-dialogue-abandon.test.js (mock
 // shape, request/response helper, beforeEach reset). The new fixture
@@ -63,6 +64,7 @@ const { default: createHandler } = await import('./watchlists.js');
 const { default: itemHandler } = await import('./watchlists/[id].js');
 const { default: commitHandler } = await import('./watchlists/[id]/commit.js');
 const { default: uncommitHandler } = await import('./watchlists/[id]/uncommit.js');
+const { default: deleteHandler } = await import('./watchlists/[id]/delete.js');
 
 // ==================== FIRESTORE MOCK ====================
 
@@ -111,6 +113,16 @@ function makeFakeFirestore({
       return {
         // .doc() with no args → auto-id allocation. .doc(id) → named ref.
         doc: (id) => buildWatchlistRef(id || state.allocatedWatchlistId),
+        // Phase 4D: collection query for the GET list endpoint. Only the
+        // '==' operator is exercised (handleList filters by userId).
+        where: (field, op, value) => ({
+          get: async () => {
+            const docs = Object.entries(state.watchlistDocs)
+              .filter(([, v]) => v && (op === '==' ? v[field] === value : true))
+              .map(([id, v]) => ({ id, exists: true, data: () => v }));
+            return { docs, empty: docs.length === 0 };
+          },
+        }),
       };
     }
     throw new Error(`Unmocked collection: ${name}`);
@@ -942,5 +954,234 @@ describe('GET /api/forge/watchlists/[id]', () => {
     const r2 = makeReqRes({ method: 'GET', query: { id: 'wl-missing' } });
     await itemHandler(r2.req, r2.res);
     expect(r2.res.statusCode).toBe(404);
+  });
+});
+
+// ============================================================
+// GET /api/forge/watchlists — list (Phase 4D)
+// ============================================================
+
+describe('GET /api/forge/watchlists — list', () => {
+  it("returns only the authenticated user's watchlists", async () => {
+    const fixture = makeFakeFirestore({
+      watchlistDocs: {
+        'wl-1': { ...DRAFT_WATCHLIST, watchlistId: 'wl-1' },
+        'wl-2': { ...DRAFT_WATCHLIST, watchlistId: 'wl-2' },
+        'wl-other': { ...DRAFT_WATCHLIST, watchlistId: 'wl-other', userId: 'other-user' },
+      },
+    });
+    activeFirestore = fixture.db;
+    const { req, res } = makeReqRes({ method: 'GET' });
+    await createHandler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(Array.isArray(res.body.watchlists)).toBe(true);
+    const ids = res.body.watchlists.map((w) => w.watchlistId).sort();
+    expect(ids).toEqual(['wl-1', 'wl-2']);
+  });
+
+  it('excludes soft-deleted docs but keeps docs with no deletedAt field', async () => {
+    const fixture = makeFakeFirestore({
+      watchlistDocs: {
+        // No deletedAt field at all — must NOT be filtered out.
+        'wl-live': { ...DRAFT_WATCHLIST, watchlistId: 'wl-live' },
+        'wl-deleted': {
+          ...DRAFT_WATCHLIST,
+          watchlistId: 'wl-deleted',
+          deletedAt: '2026-05-15T10:00:00.000Z',
+        },
+      },
+    });
+    activeFirestore = fixture.db;
+    const { req, res } = makeReqRes({ method: 'GET' });
+    await createHandler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body.watchlists.map((w) => w.watchlistId)).toEqual(['wl-live']);
+  });
+
+  it('attaches watchlistId from the firestore doc id', async () => {
+    const fixture = makeFakeFirestore({
+      watchlistDocs: { 'doc-key-1': { ...DRAFT_WATCHLIST, watchlistId: 'stale-value' } },
+    });
+    activeFirestore = fixture.db;
+    const { req, res } = makeReqRes({ method: 'GET' });
+    await createHandler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body.watchlists[0].watchlistId).toBe('doc-key-1');
+  });
+
+  it('returns an empty array when the user has no watchlists', async () => {
+    activeFirestore = makeFakeFirestore({}).db;
+    const { req, res } = makeReqRes({ method: 'GET' });
+    await createHandler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body.watchlists).toEqual([]);
+  });
+
+  it('returns 401 when no auth token is present', async () => {
+    authReturnValue.current = null;
+    activeFirestore = makeFakeFirestore({}).db;
+    const { req, res } = makeReqRes({ method: 'GET' });
+    await createHandler(req, res);
+    expect(res.statusCode).toBe(401);
+  });
+});
+
+// ============================================================
+// POST /api/forge/watchlists/[id]/delete (Phase 4D)
+// ============================================================
+
+describe('POST /api/forge/watchlists/[id]/delete', () => {
+  it('happy path: stamps deletedAt, bumps updatedAt, preserves status', async () => {
+    const fixture = makeFakeFirestore({
+      watchlistDocs: { 'wl-1': { ...DRAFT_WATCHLIST } },
+    });
+    activeFirestore = fixture.db;
+    const { req, res } = makeReqRes({ query: { id: 'wl-1' }, body: {} });
+    await deleteHandler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body.idempotent).toBe(false);
+    expect(typeof res.body.deletedAt).toBe('string');
+    const after = fixture.state.watchlistDocs['wl-1'];
+    expect(after.deletedAt).toBe(res.body.deletedAt);
+    expect(after.updatedAt).toBe(res.body.deletedAt);
+    expect(after.status).toBe('draft');
+  });
+
+  it('idempotent: re-deleting returns 200 and preserves the original deletedAt', async () => {
+    const originalTs = '2026-05-14T09:00:00.000Z';
+    const fixture = makeFakeFirestore({
+      watchlistDocs: { 'wl-1': { ...DRAFT_WATCHLIST, deletedAt: originalTs } },
+    });
+    activeFirestore = fixture.db;
+    const { req, res } = makeReqRes({ query: { id: 'wl-1' }, body: {} });
+    await deleteHandler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body.idempotent).toBe(true);
+    expect(res.body.deletedAt).toBe(originalTs);
+  });
+
+  it('preserves committed status on a committed watchlist', async () => {
+    const fixture = makeFakeFirestore({
+      watchlistDocs: {
+        'wl-1': { ...DRAFT_WATCHLIST, status: 'committed', committedAt: '2026-05-09T12:00:00.000Z' },
+      },
+    });
+    activeFirestore = fixture.db;
+    const { req, res } = makeReqRes({ query: { id: 'wl-1' }, body: {} });
+    await deleteHandler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    const after = fixture.state.watchlistDocs['wl-1'];
+    expect(after.status).toBe('committed');
+    expect(typeof after.deletedAt).toBe('string');
+  });
+
+  it('returns 403 wrong owner without mutating; 404 not found', async () => {
+    const fixture403 = makeFakeFirestore({
+      watchlistDocs: { 'wl-1': { ...DRAFT_WATCHLIST, userId: 'other-user' } },
+    });
+    activeFirestore = fixture403.db;
+    const r1 = makeReqRes({ query: { id: 'wl-1' }, body: {} });
+    await deleteHandler(r1.req, r1.res);
+    expect(r1.res.statusCode).toBe(403);
+    expect(r1.res.body.error).toBe('forbidden');
+    expect(fixture403.state.watchlistDocs['wl-1'].deletedAt).toBeUndefined();
+
+    activeFirestore = makeFakeFirestore({}).db;
+    const r2 = makeReqRes({ query: { id: 'wl-missing' }, body: {} });
+    await deleteHandler(r2.req, r2.res);
+    expect(r2.res.statusCode).toBe(404);
+    expect(r2.res.body.error).toBe('not_found');
+  });
+
+  it('returns 401 when no auth token is present', async () => {
+    authReturnValue.current = null;
+    activeFirestore = makeFakeFirestore({
+      watchlistDocs: { 'wl-1': { ...DRAFT_WATCHLIST } },
+    }).db;
+    const { req, res } = makeReqRes({ query: { id: 'wl-1' }, body: {} });
+    await deleteHandler(req, res);
+    expect(res.statusCode).toBe(401);
+  });
+
+  it('rejects non-POST methods with 405', async () => {
+    activeFirestore = makeFakeFirestore({
+      watchlistDocs: { 'wl-1': { ...DRAFT_WATCHLIST } },
+    }).db;
+    const { req, res } = makeReqRes({ method: 'GET', query: { id: 'wl-1' } });
+    await deleteHandler(req, res);
+    expect(res.statusCode).toBe(405);
+  });
+
+  it('rejects a malformed watchlist id with 400 invalid_watchlist_id', async () => {
+    activeFirestore = makeFakeFirestore({}).db;
+    const { req, res } = makeReqRes({ query: { id: '../../../etc/passwd' }, body: {} });
+    await deleteHandler(req, res);
+    expect(res.statusCode).toBe(400);
+    expect(res.body.error).toBe('invalid_watchlist_id');
+  });
+
+  it('emits a shadow log entry with stage=watchlist_delete', async () => {
+    activeFirestore = makeFakeFirestore({
+      watchlistDocs: { 'wl-1': { ...DRAFT_WATCHLIST } },
+    }).db;
+    const { req, res } = makeReqRes({ query: { id: 'wl-1' }, body: {} });
+    await deleteHandler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    const log = shadowLogCalls.current.find((r) => r.stage === 'watchlist_delete');
+    expect(log).toBeDefined();
+    expect(log.watchlistId).toBe('wl-1');
+    expect(log.idempotent).toBe(false);
+  });
+});
+
+// ============================================================
+// Soft-deleted watchlists 404 on the single-item endpoints (Phase 4D)
+// ============================================================
+
+describe('soft-deleted watchlists read as gone on every single-item endpoint', () => {
+  const deletedDoc = () => ({ ...DRAFT_WATCHLIST, deletedAt: '2026-05-15T10:00:00.000Z' });
+
+  it('GET /[id] returns 404 for a soft-deleted watchlist', async () => {
+    activeFirestore = makeFakeFirestore({ watchlistDocs: { 'wl-1': deletedDoc() } }).db;
+    const { req, res } = makeReqRes({ method: 'GET', query: { id: 'wl-1' } });
+    await itemHandler(req, res);
+    expect(res.statusCode).toBe(404);
+    expect(res.body.error).toBe('not_found');
+  });
+
+  it('PATCH /[id] returns 404 for a soft-deleted watchlist without mutating it', async () => {
+    const fixture = makeFakeFirestore({ watchlistDocs: { 'wl-1': deletedDoc() } });
+    activeFirestore = fixture.db;
+    const { req, res } = makeReqRes({ method: 'PATCH', query: { id: 'wl-1' }, body: { name: 'x' } });
+    await itemHandler(req, res);
+    expect(res.statusCode).toBe(404);
+    expect(res.body.error).toBe('not_found');
+    expect(fixture.state.watchlistDocs['wl-1'].name).toBe('');
+  });
+
+  it('POST /[id]/commit returns 404 for a soft-deleted watchlist', async () => {
+    activeFirestore = makeFakeFirestore({ watchlistDocs: { 'wl-1': deletedDoc() } }).db;
+    const { req, res } = makeReqRes({ query: { id: 'wl-1' }, body: {} });
+    await commitHandler(req, res);
+    expect(res.statusCode).toBe(404);
+    expect(res.body.error).toBe('not_found');
+  });
+
+  it('POST /[id]/uncommit returns 404 for a soft-deleted watchlist', async () => {
+    activeFirestore = makeFakeFirestore({
+      watchlistDocs: { 'wl-1': { ...deletedDoc(), status: 'committed' } },
+    }).db;
+    const { req, res } = makeReqRes({ query: { id: 'wl-1' }, body: {} });
+    await uncommitHandler(req, res);
+    expect(res.statusCode).toBe(404);
+    expect(res.body.error).toBe('not_found');
   });
 });

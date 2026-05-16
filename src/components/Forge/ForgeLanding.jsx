@@ -33,12 +33,14 @@ import {
   TrendingDown,
   ChevronDown,
   MessageSquare,
+  Bookmark,
 } from 'lucide-react';
 import { collection, getDocs, query, where, orderBy, limit, doc, getDoc } from 'firebase/firestore';
 import { db } from '../../firebase/config';
 import ForgeScreen from './ForgeScreen';
 import WorkshopChat from './WorkshopChat';
 import DiscoverPanel from '../discover/DiscoverPanel';
+import WatchlistListPanel from './Watchlist/WatchlistListPanel';
 import DailyBriefingCard from '../Season/DailyBriefingCard';
 import useIsMobile from '../../hooks/useIsMobile';
 import {
@@ -1637,12 +1639,20 @@ export default function ForgeLanding({
   // Phase 4B — navigate to the watchlist editor after a Signal Drop dialogue
   // saves a watchlist. Drilled down to DiscoverPanel → WatchlistChat.
   onViewWatchlist,
+  // Phase 4D — which Forge tab to boot on. App.jsx passes 'watchlists' when
+  // returning from the watchlist editor; otherwise undefined → 'discover'.
+  initialView,
 }) {
   // Default tab is 'discover' for users with no agents, 'laboratory'
   // otherwise. We boot to 'discover' as the loading-state fallback per
   // FORGE_DISCOVER_TAB_SPEC §2; a one-shot existence check below flips
   // returning users with at least one agent over to 'laboratory'.
-  const [view, setView] = useState('discover');
+  //
+  // `initialView` seeds `view` once, on mount only — useState ignores its
+  // argument on every later render. App.jsx depends on this: it resets the
+  // forgeInitialView prop back to 'discover' immediately after Forge opens,
+  // and that reset must not clobber the tab the user was placed on.
+  const [view, setView] = useState(initialView || 'discover');
   const [seasons, setSeasons] = useState([]);
   const [entries, setEntries] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -2083,6 +2093,7 @@ export default function ForgeLanding({
   // ── Forge shell + active panel ────────────────────────────────────
   const TABS = [
     { id: 'discover', label: 'Discover', Icon: Compass },
+    { id: 'watchlists', label: 'My Watchlists', Icon: Bookmark },
     { id: 'laboratory', label: 'Laboratory', Icon: Beaker },
     { id: 'advanced', label: 'Advanced', Icon: Hammer },
   ];
@@ -2160,6 +2171,14 @@ export default function ForgeLanding({
             requestWorkshopOpen={requestWorkshopOpen}
             agent={agent}
             onViewWatchlist={onViewWatchlist}
+          />
+        )}
+
+        {view === 'watchlists' && (
+          <WatchlistListPanel
+            user={user}
+            onOpenWatchlist={(id) => onViewWatchlist && onViewWatchlist(id, 'watchlists')}
+            onDropSignal={() => setView('discover')}
           />
         )}
 
