@@ -105,9 +105,21 @@ async function handleList({ user, res }) {
   }
 }
 
-// ── POST: create a watchlist from a finalized dialogue session ────────
+// ── POST: create a watchlist ──────────────────────────────────────────
+// Two creation paths share this endpoint (Phase 5A). A signal-derived create
+// carries sessionId + agentId + dropId and seeds the watchlist from the
+// finalized dialogue session. A manual create carries none of the three and
+// produces an empty draft. Presence of any of the three ids routes to the
+// signal path; a mixed (partial) payload is treated as a malformed signal
+// request and rejected by the id-shape checks below.
 async function handleCreate({ req, res, user }) {
   const { sessionId, agentId, dropId } = req.body || {};
+  const isManualCreate =
+    sessionId === undefined && agentId === undefined && dropId === undefined;
+
+  if (isManualCreate) {
+    return handleManualCreate({ res, user });
+  }
 
   if (!isValidForgeId(sessionId)) {
     return res.status(400).json({
@@ -128,6 +140,66 @@ async function handleCreate({ req, res, user }) {
     });
   }
 
+  return handleSignalDerivedCreate({ res, user, sessionId, agentId, dropId });
+}
+
+// ── Manual create (Phase 5A): empty draft, no session ─────────────────
+// A single doc write — no transaction (no cross-doc invariant like the
+// signal path's session.update) and no idempotency (no session anchor to
+// key on; each call yields a fresh draft).
+async function handleManualCreate({ res, user }) {
+  try {
+    const db = getFirebaseAdmin();
+    const watchlistRef = db.collection('watchlists').doc(); // pre-allocate auto-id
+    const nowIso = new Date().toISOString();
+
+    const watchlistDoc = {
+      watchlistId: watchlistRef.id,
+      userId: user.uid,
+      agentId: null,
+      sourceSessionId: null,
+      sourceDropId: null,
+      thesis: '',
+      activationConditions: [],
+      invalidationConditions: [],
+      tickers: [],
+      name: '',
+      notes: '',
+      status: 'draft',
+      createdAt: nowIso,
+      updatedAt: nowIso,
+      committedAt: null,
+    };
+
+    await watchlistRef.set(watchlistDoc);
+
+    waitUntil(
+      logSignalDrops({
+        stage: 'watchlist_manual_create',
+        userId: user.uid,
+        watchlistId: watchlistRef.id,
+        loggedAt: nowIso,
+      }).catch(() => {}),
+    );
+
+    return res.status(200).json({
+      watchlistId: watchlistRef.id,
+      status: 'draft',
+      tickerCount: 0,
+      createdAt: nowIso,
+      idempotent: false,
+    });
+  } catch (err) {
+    console.error('[watchlists:manual-create] Error:', err);
+    return res.status(500).json({
+      error: 'server_error',
+      message: 'Could not create watchlist.',
+    });
+  }
+}
+
+// ── Signal-derived create: seed a watchlist from a finalized session ──
+async function handleSignalDerivedCreate({ res, user, sessionId, agentId, dropId }) {
   const db = getFirebaseAdmin();
   const sessionRef = db.collection('watchlistSessions').doc(sessionId);
   const watchlistRef = db.collection('watchlists').doc(); // pre-allocate auto-id

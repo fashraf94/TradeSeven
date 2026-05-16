@@ -19,6 +19,7 @@ const {
   uncommitWatchlist,
   listWatchlists,
   deleteWatchlist,
+  createWatchlist,
 } = await import('./forgeWatchlistService.js');
 
 function jsonResponse(body, { ok = true, status = 200 } = {}) {
@@ -166,5 +167,41 @@ describe('forgeWatchlistService — deleteWatchlist', () => {
       jsonResponse({ error: 'not_found', message: 'Watchlist not found.' }, { ok: false, status: 404 }),
     );
     await expect(deleteWatchlist('wl-x')).rejects.toMatchObject({ status: 404, code: 'not_found' });
+  });
+});
+
+describe('forgeWatchlistService — createWatchlist', () => {
+  it('POSTs an empty body to the create endpoint', async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse({ watchlistId: 'wl-new', status: 'draft', tickerCount: 0, idempotent: false }),
+    );
+    await createWatchlist();
+    expect(fetchMock).toHaveBeenCalledWith('/api/forge/watchlists', {
+      method: 'POST',
+      body: JSON.stringify({}),
+    });
+  });
+
+  it('returns the parsed create response', async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse({ watchlistId: 'wl-new', status: 'draft', tickerCount: 0, idempotent: false }),
+    );
+    const out = await createWatchlist();
+    expect(out).toEqual({
+      watchlistId: 'wl-new',
+      status: 'draft',
+      tickerCount: 0,
+      idempotent: false,
+    });
+  });
+
+  it('throws an error carrying status and code on a non-2xx response', async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse(
+        { error: 'server_error', message: 'Could not create watchlist.' },
+        { ok: false, status: 500 },
+      ),
+    );
+    await expect(createWatchlist()).rejects.toMatchObject({ status: 500, code: 'server_error' });
   });
 });

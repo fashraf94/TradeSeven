@@ -5,9 +5,9 @@
 // point lives.
 
 import React from 'react';
-import { Bookmark, Sparkles } from 'lucide-react';
+import { Bookmark, BookmarkPlus, Sparkles } from 'lucide-react';
 
-export default function WatchlistListEmptyState({ tokens, onDropSignal }) {
+export default function WatchlistListEmptyState({ tokens, onDropSignal, onNewWatchlist, creating }) {
   return (
     <div
       style={{
@@ -44,8 +44,7 @@ export default function WatchlistListEmptyState({ tokens, onDropSignal }) {
           marginBottom: 20,
         }}
       >
-        Drop a signal to get started — build a curated watchlist from any article, tweet, or
-        transcript.
+        Drop a signal to extract one automatically — or start one from scratch.
       </div>
       <button
         type="button"
@@ -67,6 +66,31 @@ export default function WatchlistListEmptyState({ tokens, onDropSignal }) {
       >
         <Sparkles size={15} />
         Drop a Signal
+      </button>
+      <button
+        type="button"
+        onClick={onNewWatchlist}
+        disabled={creating}
+        aria-label="Create a new watchlist from scratch"
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 6,
+          marginTop: 12,
+          padding: '10px 18px',
+          borderRadius: 10,
+          border: `1px solid ${tokens.teal}`,
+          background: 'transparent',
+          color: tokens.teal,
+          fontSize: 14,
+          fontWeight: 600,
+          cursor: creating ? 'not-allowed' : 'pointer',
+          opacity: creating ? 0.5 : 1,
+          fontFamily: 'inherit',
+        }}
+      >
+        <BookmarkPlus size={15} />
+        New Watchlist
       </button>
     </div>
   );
