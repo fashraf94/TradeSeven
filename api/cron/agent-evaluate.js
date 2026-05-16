@@ -10,6 +10,7 @@ import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
 import { isMarketOpen } from '../_utils/marketSchedule.js';
 import { getStockAnalysisData, fetchIntradayBatch, filterToLatestSession } from '../_utils/marketDataCache.js';
 import { findActiveAgentBattles } from '../_utils/agentBattleService.js';
+import { unionEquippedIntoHotBench } from '../_utils/watchlistEquip.js';
 import {
   calculateAssetScoreServer,
   flattenPortfolioServer,
@@ -406,7 +407,23 @@ async function processAgentBattle(db, battle, summary) {
           .filter(s => !portfolioSet.has(s.symbol) && !benchSet.has(s.symbol))
           .sort((a, b) => (b.baggerBombFit || 0) - (a.baggerBombFit || 0));
 
-        const newHotBench = candidates.slice(0, 15).map(s => s.symbol);
+        let newHotBench = candidates.slice(0, 15).map(s => s.symbol);
+        // [Phase5B1] Union equipped tickers back into the hotBench every
+        // refresh cycle (Q9). The rankings-based rebuild above drops equipped
+        // tickers that aren't top-15 by baggerBombFit; the union re-admits
+        // them. Soft cap 20 — equipped tickers always survive the cap.
+        const equippedTickers = battle.agentContext?.equippedWatchlist?.tickers || [];
+        if (equippedTickers.length > 0) {
+          const beforeLen = newHotBench.length;
+          newHotBench = unionEquippedIntoHotBench({
+            hotBench: newHotBench,
+            equippedTickers,
+            rankings: stockRankingsArray,
+            excludeSymbols: new Set([...portfolioSymbols, ...benchSymbols]),
+            cap: 20,
+          });
+          console.log(`${LOG_PREFIX} [Phase5B1] Daily refresh unioned equipped tickers into hotBench (${beforeLen} → ${newHotBench.length})`);
+        }
         const hotBenchSetRefresh = new Set(newHotBench);
         const newMonitoring = candidates
           .filter(s => !hotBenchSetRefresh.has(s.symbol))

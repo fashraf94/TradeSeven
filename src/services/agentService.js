@@ -4,6 +4,7 @@ import {
   onSnapshot, serverTimestamp, arrayUnion, arrayRemove
 } from 'firebase/firestore';
 import { db } from '../firebase/config';
+import { fetchWithAuth } from '../utils/fetchWithAuth';
 
 const AGENTS_COLLECTION = 'agents';
 
@@ -103,6 +104,11 @@ export const createAgent = async (ownerId, agentData) => {
       directives: [],
       activeRules: [],
       equippedBundleIds: [],
+      // Phase 5B1 — watchlist equip. Nullable; no migration needed (the equip
+      // endpoints treat an absent field as "not equipped").
+      equippedWatchlistId: null,
+      equippedWatchlistName: null,
+      equippedAt: null,
       starterKitCompleted: false,
       stats: {
         wins: 0,
@@ -278,6 +284,54 @@ export const updateAgentStats = async (agentId, result, score) => {
     },
     updatedAt: serverTimestamp(),
   });
+};
+
+// ============================================
+// WATCHLIST EQUIP (Phase 5B1)
+// ============================================
+// Thin clients for the equip endpoints. Unlike the rest of this service
+// (which uses the Firebase client SDK directly), equip/unequip go through
+// authenticated API endpoints so the server can validate watchlist ownership
+// and commit state in a transaction. Each throws on a non-2xx response with an
+// Error carrying `status` + `code`. Modeled on forgeWatchlistService.js.
+
+async function toEquipError(response) {
+  let data = {};
+  try {
+    data = await response.json();
+  } catch {
+    // non-JSON error body — fall back to the status line
+  }
+  const err = new Error(data.message || `Request failed (${response.status})`);
+  err.status = response.status;
+  err.code = data.error || 'request_failed';
+  return err;
+}
+
+/**
+ * Equip a committed watchlist to an agent. Resolves with the API response
+ * ({ agentId, equippedWatchlistId, equippedWatchlistName, equippedAt, idempotent }).
+ */
+export const equipWatchlist = async (agentId, watchlistId) => {
+  const response = await fetchWithAuth('/api/agent/equip-watchlist', {
+    method: 'POST',
+    body: JSON.stringify({ agentId, watchlistId }),
+  });
+  if (!response.ok) throw await toEquipError(response);
+  return response.json();
+};
+
+/**
+ * Clear the agent's equipped watchlist. Resolves with the API response
+ * ({ agentId, equippedWatchlistId: null, idempotent }).
+ */
+export const unequipWatchlist = async (agentId) => {
+  const response = await fetchWithAuth('/api/agent/unequip-watchlist', {
+    method: 'POST',
+    body: JSON.stringify({ agentId }),
+  });
+  if (!response.ok) throw await toEquipError(response);
+  return response.json();
 };
 
 // ============================================

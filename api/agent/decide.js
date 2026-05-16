@@ -16,6 +16,13 @@ import { getStockAnalysisData } from '../_utils/marketDataCache.js';
 import { generateCPUOpponent } from '../_utils/cpuOpponentGenerator.js';
 import { computeArchetypeRankings, ARCHETYPE_TEMPERATURES } from '../_utils/archetypeScoring.js';
 import { logDecision } from '../_utils/shadowLogger.js';
+import {
+  resolveEquippedWatchlist,
+  extractTickerSymbols,
+  foldEquippedTickers,
+  unionEquippedIntoHotBench,
+  buildEquippedSnapshot,
+} from '../_utils/watchlistEquip.js';
 
 // Vercel Pro timeout — two-call AI chain needs breathing room
 export const config = { maxDuration: 60 };
@@ -89,6 +96,35 @@ export default async function handler(req, res) {
     const rankedStocks = computeArchetypeRankings(stockUniverse, archetype);
     const temps = ARCHETYPE_TEMPERATURES[archetype] || ARCHETYPE_TEMPERATURES.analyst;
 
+    // 3c. [Phase5B1] Read the agent's equipped watchlist, if any. A missing,
+    //     soft-deleted, or uncommitted watchlist degrades silently to "no
+    //     equip" (Q3 + Q4 locks) — the agent's equippedWatchlistId field is
+    //     left untouched so a later re-commit resumes the equip. A read
+    //     failure must never break a deploy, so it also degrades.
+    let equippedWatchlistData = null;
+    let equippedSymbols = [];
+    let equippedWatchlistSnapshot = null;
+    if (agent.equippedWatchlistId) {
+      try {
+        const watchlistSnap = await db.collection('watchlists').doc(agent.equippedWatchlistId).get();
+        const resolved = resolveEquippedWatchlist(watchlistSnap.exists ? watchlistSnap.data() : null);
+        if (resolved) {
+          equippedWatchlistData = resolved;
+          const rawCount = Array.isArray(resolved.tickers) ? resolved.tickers.length : 0;
+          equippedSymbols = extractTickerSymbols(resolved.tickers);
+          equippedWatchlistSnapshot = buildEquippedSnapshot(agent.equippedWatchlistId, resolved);
+          if (equippedSymbols.length < rawCount) {
+            console.warn(`[Phase5B1] Stripped ${rawCount - equippedSymbols.length} invalid tickers from equipped watchlist ${agent.equippedWatchlistId}`);
+          }
+          console.log(`[Phase5B1] Equipped watchlist ${agent.equippedWatchlistId} read: ${equippedSymbols.length} tickers`);
+        } else {
+          console.warn(`[Phase5B1] Agent ${agentId} has equippedWatchlistId ${agent.equippedWatchlistId} but the watchlist is missing/deleted/uncommitted — degrading to no equip`);
+        }
+      } catch (wlErr) {
+        console.warn(`[Phase5B1] Equipped watchlist read failed for agent ${agentId}: ${wlErr.message} — degrading to no equip`);
+      }
+    }
+
     // 4. Fetch recent FantasyTimes stories
     const storiesSnap = await db
       .collection('fantasyTimesStories')
@@ -103,7 +139,16 @@ export default async function handler(req, res) {
 
     // 6. SONNET CALL — Strategic Analysis (with Tool Use)
     const strategySystem = buildStrategySystemPrompt(marketCSV, storiesSummary, archetype);
-    const strategyUser = buildStrategyUserPrompt(agent);
+    const strategyUser = buildStrategyUserPrompt(
+      agent,
+      equippedWatchlistData
+        ? {
+            name: equippedWatchlistData.name,
+            tickers: equippedSymbols,
+            thesis: equippedWatchlistData.thesis,
+          }
+        : null
+    );
 
     const strategyResponse = await anthropic.messages.create({
       model: 'claude-sonnet-4-20250514',
@@ -132,7 +177,20 @@ export default async function handler(req, res) {
 
     // Validate shortlist — ensure all tickers exist in universe
     const validSymbols = new Set(stockUniverse.map((s) => s.symbol));
-    strategy.shortlist = strategy.shortlist.filter((t) => validSymbols.has(t));
+    // [Phase5B1] Fold equipped tickers into the shortlist. Equipped tickers
+    // survive the universe filter even when off-universe (Option 8C);
+    // augmentedValidSymbols extends validSymbols so validatePortfolio() below
+    // does not reject an off-universe equipped ticker that Haiku picks.
+    const fold = foldEquippedTickers({
+      shortlist: strategy.shortlist,
+      equippedSymbols,
+      validSymbols,
+    });
+    strategy.shortlist = fold.shortlist;
+    const augmentedValidSymbols = fold.augmentedValidSymbols;
+    if (equippedSymbols.length > 0) {
+      console.log(`[Phase5B1] Shortlist fold: ${fold.elevatedTickers.length} elevated (${fold.offUniverseTickers.length} off-universe)`);
+    }
 
     if (strategy.shortlist.length < 15) {
       // Not enough valid tickers — pad with top archetype-scored stocks
@@ -147,7 +205,13 @@ export default async function handler(req, res) {
     // Get detailed data for shortlisted stocks only (from rankedStocks to preserve archetypeScore)
     const shortlistSet = new Set(strategy.shortlist);
     const shortlistData = rankedStocks.filter((s) => shortlistSet.has(s.symbol));
-    const shortlistCSV = formatMarketCSV(shortlistData);
+    // [Phase5B1] Off-universe equipped tickers have no ranked row — add a
+    // synthetic {symbol} so formatMarketCSV emits SYM|Unknown|-|-|-|-|- and
+    // Haiku can still see (and pick) them.
+    const offUniverseRows = fold.offUniverseTickers
+      .filter((t) => shortlistSet.has(t))
+      .map((symbol) => ({ symbol }));
+    const shortlistCSV = formatMarketCSV([...shortlistData, ...offUniverseRows]);
 
     // Build crypto list string
     const cryptoListStr = CRYPTO_ASSETS.map(
@@ -156,7 +220,10 @@ export default async function handler(req, res) {
 
     // 7. HAIKU CALL — Portfolio Construction (with Tool Use)
     const instBlock = await buildInstitutionalBlock(agent.activeRules || [], strategy.shortlist);
-    const portfolioSystem = buildPortfolioSystemPrompt(strategy.brief, shortlistCSV, cryptoListStr, instBlock);
+    const portfolioSystem = buildPortfolioSystemPrompt(
+      strategy.brief, shortlistCSV, cryptoListStr, instBlock,
+      equippedWatchlistData ? { tickers: equippedSymbols } : null
+    );
 
     const portfolioResponse = await anthropic.messages.create({
       model: 'claude-haiku-4-5-20251001',
@@ -184,7 +251,7 @@ export default async function handler(req, res) {
     }
 
     // 8. Validate portfolio
-    const validation = validatePortfolio(portfolioResult, validSymbols);
+    const validation = validatePortfolio(portfolioResult, augmentedValidSymbols);
 
     if (!validation.valid) {
       console.warn('[agent/decide] Portfolio validation failed:', validation.errors);
@@ -219,7 +286,7 @@ export default async function handler(req, res) {
 
       const retryToolUse = retryResponse.content.find((c) => c.type === 'tool_use');
       if (retryToolUse) {
-        const retryValidation = validatePortfolio(retryToolUse.input, validSymbols);
+        const retryValidation = validatePortfolio(retryToolUse.input, augmentedValidSymbols);
         if (retryValidation.valid) {
           portfolioResult = retryToolUse.input;
           // Normalize crypto fields on retry result too
@@ -251,9 +318,22 @@ export default async function handler(req, res) {
     const selectedSet = new Set([...portfolioTickers, ...benchTickers]);
 
     // HotBench: remaining shortlist tickers not in portfolio or bench (Sonnet conviction order)
-    const hotBench = strategy.shortlist
+    let hotBench = strategy.shortlist
       .filter(t => !selectedSet.has(t))
       .slice(0, 15);
+    // [Phase5B1] Union equipped tickers into the hotBench (soft cap 20) so
+    // equipped tickers not picked into the portfolio stay available as swap
+    // reserves. Equipped tickers always survive the cap.
+    hotBench = unionEquippedIntoHotBench({
+      hotBench,
+      equippedTickers: equippedSymbols,
+      rankings: stockUniverse,
+      excludeSymbols: selectedSet,
+      cap: 20,
+    });
+    if (equippedSymbols.length > 0) {
+      console.log(`[Phase5B1] Initial hotBench after equip union: ${hotBench.length} tickers`);
+    }
 
     // Monitoring: top baggerBombFit stocks not already selected or in hotBench
     const allSelectedSet = new Set([...selectedSet, ...hotBench]);
@@ -459,7 +539,13 @@ export default async function handler(req, res) {
 
     const battleResult = await createAgentBattle(
       db, agentData, thresholds, startingPrices,
-      { duration: req.body.duration || '1d', sectorMap, opponent }
+      {
+        duration: req.body.duration || '1d',
+        sectorMap,
+        opponent,
+        // [Phase5B1] Frozen snapshot of the equipped watchlist (null when none).
+        equippedWatchlist: equippedWatchlistSnapshot,
+      }
     );
 
     // 17. Write activeBattleId back to agent doc

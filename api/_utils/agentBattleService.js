@@ -123,6 +123,14 @@ export async function createAgentBattle(db, agentData, thresholds, startingPrice
       deployedGuardrails: Array.isArray(agentData.deployedStrategy?.guardrails)
         ? agentData.deployedStrategy.guardrails
         : [],
+      // Phase 5B1: Frozen snapshot of the equipped watchlist (mirrors the
+      // deployedGuardrails precedent). decide.js passes {watchlistId, name,
+      // tickers} via options; snapshotAt is stamped here so it reads as
+      // "frozen at battle start" — mid-battle watchlist edits/deletes don't
+      // affect the running battle.
+      equippedWatchlist: options.equippedWatchlist
+        ? { ...options.equippedWatchlist, snapshotAt: now }
+        : null,
       riskTolerance: agentData.config?.risk || 50,
       evaluationInterval: 15,
       consolidatedInsight: agentData.consolidatedInsight || null,
