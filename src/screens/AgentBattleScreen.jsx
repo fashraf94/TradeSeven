@@ -8,7 +8,7 @@
 
 import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronLeft, Activity, Bot } from 'lucide-react';
+import { ChevronLeft, Activity, Bot, Bookmark } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import useAgentBattleId from '../hooks/useAgentBattleId';
 import useAgentBattle from '../hooks/useAgentBattle';
@@ -33,6 +33,7 @@ import { CONVICTION_MULTIPLIERS } from '../constants/baggerBombScoring';
 import { doc, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import { isMarketOpen } from '../utils/marketSchedule';
+import { getEquippedWatchlistLabel } from '../utils/watchlistEquipUI';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -784,26 +785,50 @@ export default function AgentBattleScreen({ battle, user, onBack }) {
             <span>Back</span>
           </button>
 
-          {agentBattle?.status && (
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 5,
-              fontSize: 10,
-              fontWeight: 600,
-              color: agentBattle.status === 'active' ? '#5eead4' : tokens.textFaint,
-              textTransform: 'uppercase',
-              letterSpacing: '0.06em',
-            }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            {/* Phase 5B2 — read-only equipped-watchlist indicator (Q7c).
+                Sourced from the frozen agentContext.equippedWatchlist snapshot. */}
+            {getEquippedWatchlistLabel(agentBattle?.agentContext?.equippedWatchlist) && (
+              <span style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 4,
+                padding: '2px 8px',
+                borderRadius: 6,
+                fontSize: 10,
+                fontWeight: 700,
+                letterSpacing: '0.06em',
+                textTransform: 'uppercase',
+                color: '#5eead4',
+                background: 'rgba(94,234,212,0.12)',
+                border: '1px solid rgba(94,234,212,0.24)',
+              }}>
+                <Bookmark size={10} />
+                {getEquippedWatchlistLabel(agentBattle.agentContext.equippedWatchlist)}
+              </span>
+            )}
+
+            {agentBattle?.status && (
               <div style={{
-                width: 6,
-                height: 6,
-                borderRadius: '50%',
-                background: agentBattle.status === 'active' ? '#5eead4' : tokens.textFaint,
-              }} />
-              {agentBattle.status}
-            </div>
-          )}
+                display: 'flex',
+                alignItems: 'center',
+                gap: 5,
+                fontSize: 10,
+                fontWeight: 600,
+                color: agentBattle.status === 'active' ? '#5eead4' : tokens.textFaint,
+                textTransform: 'uppercase',
+                letterSpacing: '0.06em',
+              }}>
+                <div style={{
+                  width: 6,
+                  height: 6,
+                  borderRadius: '50%',
+                  background: agentBattle.status === 'active' ? '#5eead4' : tokens.textFaint,
+                }} />
+                {agentBattle.status}
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Score header */}

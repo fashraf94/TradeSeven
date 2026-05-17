@@ -4,6 +4,7 @@ import { Eye, Swords, Newspaper } from 'lucide-react';
 import FantasyTimesStrip from './FantasyTimesStrip';
 import ActiveDeployments from './ActiveDeployments';
 import DeployedStrategyCard from './DeployedStrategyCard';
+import EquippedWatchlistCard from './EquippedWatchlistCard';
 import ConsolidatedInsightPreview from './ConsolidatedInsightPreview';
 
 const containerVariants = {
@@ -191,6 +192,12 @@ const AgentOverviewTab = ({
     </motion.div>
   );
 
+  const equippedWatchlistCard = (
+    <motion.div variants={sectionVariants}>
+      <EquippedWatchlistCard agent={agent} onNavigateToForge={onNavigateToForge} />
+    </motion.div>
+  );
+
   const insightPreview = (
     <motion.div variants={sectionVariants}>
       <ConsolidatedInsightPreview
@@ -221,6 +228,7 @@ const AgentOverviewTab = ({
           {/* Right column */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             {deployedStrategyCard}
+            {equippedWatchlistCard}
             {insightPreview}
           </div>
         </div>
@@ -239,6 +247,7 @@ const AgentOverviewTab = ({
       {scoutingReport}
       {activeDeployments}
       {deployedStrategyCard}
+      {equippedWatchlistCard}
       {insightPreview}
       {fantasyTimes}
       {battleLogSection}
