@@ -147,7 +147,10 @@ export async function createAgentBattle(db, agentData, thresholds, startingPrice
     statusFeed: [],
 
     // Execution mode controls (Sprint 3)
-    executionMode: 'copilot',       // 'autopilot' | 'copilot' | 'manual'
+    // LAUNCH DECISION (2026-05-19): Auto-pilot only. Co-pilot and manual modes are
+    // deferred post-launch. See AUTHORITY_MODE_POST_LAUNCH_BACKLOG.md for context.
+    // Do not change this default without revisiting that decision.
+    executionMode: 'autopilot',     // 'autopilot' | 'copilot' | 'manual'
     strategyPreset: 'balanced',     // 'aggressive' | 'balanced' | 'defensive' (Sprint 4)
     pendingProposal: null,          // Set when Haiku proposes a swap in copilot/manual mode
     proposalHistory: [],            // Resolved proposals (approved/vetoed/lapsed/auto_executed)
