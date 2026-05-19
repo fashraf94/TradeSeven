@@ -11,11 +11,14 @@
 import React, { useState, useEffect } from 'react';
 import { BookmarkPlus } from 'lucide-react';
 import { useTheme } from '../../../contexts/ThemeContext';
+import useAgent from '../../../hooks/useAgent';
 import {
   listWatchlists,
   deleteWatchlist,
   createWatchlist,
 } from '../../../services/forgeWatchlistService';
+import { equipWatchlist, unequipWatchlist } from '../../../services/agentService';
+import { getEquipErrorMessage } from '../../../utils/watchlistEquipUI';
 import {
   filterWatchlistsByStatus,
   countByStatus,
@@ -28,6 +31,7 @@ import DeleteWatchlistModal from './DeleteWatchlistModal';
 
 export default function WatchlistListPanel({ user, onOpenWatchlist, onDropSignal }) {
   const { tokens } = useTheme();
+  const { agent } = useAgent(user?.odUserId);
 
   const [watchlists, setWatchlists] = useState([]);
   const [loadState, setLoadState] = useState('loading'); // loading | error | loaded
@@ -37,6 +41,8 @@ export default function WatchlistListPanel({ user, onOpenWatchlist, onDropSignal
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState('');
+  const [working, setWorking] = useState(false);
+  const [equipError, setEquipError] = useState('');
 
   useEffect(() => {
     let cancelled = false;
@@ -70,6 +76,13 @@ export default function WatchlistListPanel({ user, onOpenWatchlist, onDropSignal
     const timer = setTimeout(() => setCreateError(''), 5000);
     return () => clearTimeout(timer);
   }, [createError]);
+
+  // Phase 5B2 — auto-dismiss the equip/unequip error banner after 5s.
+  useEffect(() => {
+    if (!equipError) return undefined;
+    const timer = setTimeout(() => setEquipError(''), 5000);
+    return () => clearTimeout(timer);
+  }, [equipError]);
 
   const sorted = sortByUpdatedDesc(watchlists);
   const counts = countByStatus(sorted);
@@ -106,6 +119,40 @@ export default function WatchlistListPanel({ user, onOpenWatchlist, onDropSignal
     } finally {
       setDeleteTarget(null);
       setDeleteBusy(false);
+    }
+  };
+
+  // Phase 5B2 — equip / unequip the user's agent. The useAgent subscription
+  // auto-refreshes the equipped state across every card on success, so there
+  // is no local list mutation here. `working` disables all card buttons while
+  // a request is in flight (matches Phase 5A's single-flag pattern).
+  const handleEquip = async (watchlistId) => {
+    if (working || !agent?.id) return;
+    setWorking(true);
+    setEquipError('');
+    try {
+      await equipWatchlist(agent.id, watchlistId);
+      console.log('[Phase5B2] WatchlistListPanel equip ok:', { agentId: agent.id, watchlistId });
+    } catch (err) {
+      console.error('[Phase5B2] WatchlistListPanel equip failed:', err);
+      setEquipError(getEquipErrorMessage(err, 'equip'));
+    } finally {
+      setWorking(false);
+    }
+  };
+
+  const handleUnequip = async () => {
+    if (working || !agent?.id) return;
+    setWorking(true);
+    setEquipError('');
+    try {
+      await unequipWatchlist(agent.id);
+      console.log('[Phase5B2] WatchlistListPanel unequip ok:', { agentId: agent.id });
+    } catch (err) {
+      console.error('[Phase5B2] WatchlistListPanel unequip failed:', err);
+      setEquipError(getEquipErrorMessage(err, 'unequip'));
+    } finally {
+      setWorking(false);
     }
   };
 
@@ -186,6 +233,22 @@ export default function WatchlistListPanel({ user, onOpenWatchlist, onDropSignal
         </div>
       )}
 
+      {equipError && (
+        <div
+          style={{
+            marginTop: 12,
+            padding: '8px 12px',
+            borderRadius: 8,
+            border: `1px solid ${tokens.red}`,
+            color: tokens.red,
+            fontSize: 12,
+            lineHeight: 1.5,
+          }}
+        >
+          {equipError}
+        </div>
+      )}
+
       {loadState === 'loading' && <div style={centerNote}>Loading your watchlists…</div>}
 
       {loadState === 'error' && <div style={{ ...centerNote, color: tokens.red }}>{errorMessage}</div>}
@@ -232,6 +295,10 @@ export default function WatchlistListPanel({ user, onOpenWatchlist, onDropSignal
                   key={wl.watchlistId}
                   tokens={tokens}
                   watchlist={wl}
+                  agent={agent}
+                  onEquip={handleEquip}
+                  onUnequip={handleUnequip}
+                  working={working}
                   onOpen={onOpenWatchlist}
                   onDelete={setDeleteTarget}
                 />
