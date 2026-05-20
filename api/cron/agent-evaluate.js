@@ -648,7 +648,7 @@ async function processAgentBattle(db, battle, summary) {
           entryMarketPosture: marketPosture,
           entryConviction: 0,
           entryPreset: battle.strategyPreset || 'balanced',
-          entryMode: battle.executionMode || 'copilot',
+          entryMode: battle.executionMode || 'autopilot',
           exitReason: riskResult.reason,
         };
 
@@ -967,7 +967,15 @@ async function processAgentBattle(db, battle, summary) {
         downgraded = true;
         console.warn(`${LOG_PREFIX} SWAP downgraded to HOLD for battle ${battle.id}:`, validation.errors);
       } else {
-        const mode = battle.executionMode || 'copilot';
+        let mode = battle.executionMode || 'autopilot';
+
+        // LAUNCH GUARD (2026-05-19): Auto-pilot only. See AUTHORITY_MODE_POST_LAUNCH_BACKLOG.md.
+        // This branch should never execute in normal operation. If it does, something
+        // has set a battle's mode to copilot or manual outside the sanctioned flow.
+        if (mode !== 'autopilot') {
+          console.warn(`${LOG_PREFIX} LAUNCH GUARD: battle ${battle.id} has unexpected mode='${mode}'. Forcing autopilot.`);
+          mode = 'autopilot';
+        }
 
         if (mode === 'autopilot') {
           // Autopilot: execute immediately (original behavior)
@@ -985,7 +993,7 @@ async function processAgentBattle(db, battle, summary) {
               entryMarketPosture: marketPosture,
               entryConviction: haikuResult.conviction || 0,
               entryPreset: battle.strategyPreset || 'balanced',
-              entryMode: battle.executionMode || 'copilot',
+              entryMode: battle.executionMode || 'autopilot',
               exitReason: 'haiku_decision',
               // Phase 8: structured reasoning carried onto battle.trades[] via
               // the ...evaluationMetadata spread in executeSwapServer.
@@ -1018,6 +1026,10 @@ async function processAgentBattle(db, battle, summary) {
             downgraded = true;
           }
         } else {
+          // PRESERVED FOR POST-LAUNCH (2026-05-19): copilot/manual proposal-creation path.
+          // See AUTHORITY_MODE_POST_LAUNCH_BACKLOG.md. Unreachable under the launch guard
+          // above; kept for revival.
+          //
           // Co-Pilot or Manual: write proposal instead of executing
           const ttlMinutes = mode === 'copilot' ? 10 : 15;
           const proposalId = `prop_${String((battle.proposalHistory || []).length + 1).padStart(3, '0')}`;
@@ -1098,7 +1110,7 @@ async function processAgentBattle(db, battle, summary) {
 
     // ---- Build status feed entry from Haiku result ----
     if (decision === 'PROPOSAL' && pendingProposalUpdate) {
-      const mode = battle.executionMode || 'copilot';
+      const mode = battle.executionMode || 'autopilot';
       const ttl = mode === 'copilot' ? '10' : '15';
       statusFeedEntries.push({
         timestamp: now,
@@ -1297,6 +1309,31 @@ async function handlePendingProposal(db, battleRef, battle, prices, statusFeedEn
   const proposal = battle.pendingProposal;
   if (!proposal) return 'continue';
 
+  // LAUNCH GUARD (2026-05-19): Auto-pilot only. See AUTHORITY_MODE_POST_LAUNCH_BACKLOG.md.
+  // This branch should never execute in normal operation. If it does, something
+  // has set a battle's mode to copilot or manual outside the sanctioned flow.
+  // Resolve the proposal gracefully as auto_executed (safest non-action) without
+  // running execution, log a warning, and clear pendingProposal.
+  if ((battle.executionMode || 'autopilot') === 'autopilot') {
+    console.warn(`${LOG_PREFIX} LAUNCH GUARD: pendingProposal exists on autopilot battle ${battle.id} (proposalId=${proposal.proposalId}). Resolving as auto_executed without execution.`);
+    const resolvedProposal = {
+      ...proposal,
+      resolvedAt: new Date().toISOString(),
+      resolution: 'auto_executed',
+      resolvedBy: 'system',
+      systemNote: 'launch_guard_clear',
+      scoreAtResolution: typeof currentScore === 'number' ? Math.round(currentScore * 100) / 100 : null,
+    };
+    const history = [...(battle.proposalHistory || []), resolvedProposal].slice(-50);
+    await battleRef.update({ pendingProposal: null, proposalHistory: history });
+    const updatedDoc = await battleRef.get();
+    Object.assign(battle, updatedDoc.data());
+    return 'continue';
+  }
+
+  // PRESERVED FOR POST-LAUNCH (2026-05-19): proposal lifecycle (approved/vetoed/expired).
+  // Unreachable under the launch guard above while modes are autopilot. Kept for revival.
+
   // Already resolved by client — execute or clear
   if (proposal.resolvedAt && proposal.resolution) {
     if (proposal.resolution === 'approved') {
@@ -1477,7 +1514,7 @@ async function handleGameplanMeeting(db, battleRef, battle, prices, statusFeedEn
           benchAsset, currentDay, prices,
           { id: tradeId, action: 'SWAP', trigger: 'gameplan_rotation', rationale: swap.rationale, tradingDay: currentDay,
             entryRegime: null, entryMarketPosture: null, entryConviction: 0,
-            entryPreset: battle.strategyPreset || 'balanced', entryMode: battle.executionMode || 'copilot', exitReason: 'gameplan_rotation' }
+            entryPreset: battle.strategyPreset || 'balanced', entryMode: battle.executionMode || 'autopilot', exitReason: 'gameplan_rotation' }
         );
         statusFeedEntries.push({
           timestamp: new Date().toISOString(),

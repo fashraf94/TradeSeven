@@ -1,3 +1,16 @@
+/**
+ * PRESERVED FOR POST-LAUNCH REVISIT (2026-05-19)
+ *
+ * This component is part of the authority mode UX (auto-pilot / co-pilot / manual)
+ * that was built but archived for launch. The product decision is auto-pilot only
+ * for launch — see AUTHORITY_MODE_POST_LAUNCH_BACKLOG.md.
+ *
+ * This component is production-quality and ready to be remounted when co-pilot
+ * and manual modes are revived. Do NOT delete it during cleanup passes.
+ *
+ * If you are reading this and considering deleting: read the backlog doc first.
+ */
+
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Activity, Zap, Clock } from 'lucide-react';

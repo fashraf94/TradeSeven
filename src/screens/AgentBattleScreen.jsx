@@ -13,13 +13,17 @@ import { useTheme } from '../contexts/ThemeContext';
 import useAgentBattleId from '../hooks/useAgentBattleId';
 import useAgentBattle from '../hooks/useAgentBattle';
 import AnimatedScore from '../components/shared/AnimatedScore';
-import ExecutionModeToggle from '../components/Agent/ExecutionModeToggle';
+// PRESERVED FOR POST-LAUNCH (2026-05-19): authority mode UX is auto-pilot only at launch.
+// See AUTHORITY_MODE_POST_LAUNCH_BACKLOG.md. Uncomment to revive.
+// import ExecutionModeToggle from '../components/Agent/ExecutionModeToggle';
 import StrategyPresetBadge from '../components/Agent/StrategyPresetBadge';
 import HypothesisTicker from '../components/Agent/HypothesisTicker';
 import GameTapeView from '../components/Agent/GameTapeView';
 import AgentChat from '../components/Agent/AgentChat';
 import ForgeCitationCard from '../components/Agent/ForgeCitationCard';
-import ProposalBanner from '../components/Agent/ProposalBanner';
+// PRESERVED FOR POST-LAUNCH (2026-05-19): authority mode UX is auto-pilot only at launch.
+// See AUTHORITY_MODE_POST_LAUNCH_BACKLOG.md. Uncomment to revive.
+// import ProposalBanner from '../components/Agent/ProposalBanner';
 import DebateModal from '../components/Agent/DebateModal';
 import TacticalRow from '../components/BaggerBomb/TacticalRow';
 import ClosedTradesSection from '../components/BaggerBomb/ClosedTradesSection';
@@ -931,7 +935,9 @@ export default function AgentBattleScreen({ battle, user, onBack }) {
                 dailyGrades={agentBattle?.dailyGrades || {}}
                 chatBudgetUsed={agentBattle?.chatBudgetUsed || 0}
                 reviewBudgetUsed={agentBattle?.reviewBudgetUsed || 0}
-                pendingProposal={pendingProposal}
+                // pendingProposal prop removed (2026-05-19): dropped on the floor by
+                // AgentChat pending post-launch revival of the proposal flow.
+                // See AUTHORITY_MODE_POST_LAUNCH_BACKLOG.md.
                 proposalHistory={agentBattle?.proposalHistory || []}
               />
             </motion.div>
