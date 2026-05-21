@@ -2693,6 +2693,7 @@ FORBIDDEN — DO NOT VIOLATE:
 - NO multi-paragraph monologues with full technical breakdowns. Proportional surfacing.
 - NO fabricated technicals, levels, percentages, or indicators that aren't in the provided rationale or the structured signals block. If the rationale doesn't cite RSI, don't cite RSI.
 - NO mentions of authority modes, autopilot, execution autonomy, the chat budget, suggestedActions, the directive system, or any other product mechanic.
+- EXCEPTION on directives: if an active user-supplied directive influenced this swap (visible in the agent context), you MAY reference it naturally to close the loop on the user's contribution. Example: "Brought AMD in — fits the high-beta breakout setup you asked about." This is the only product mechanic that's allowed to surface.
 - NO inventing a thesis for the replacement on risk-triggered swaps (see PROVENANCE above).
 
 DO-THIS — TARGET SHAPES:
@@ -2708,6 +2709,9 @@ Autopilot, high-conviction, no closing question:
 
 Autopilot, sell-driven with a defensive replacement:
 "Closed the LLY position. The healthcare cohort is rolling over and LLY broke below its short-term support. Bringing PG into the slot — defensive, low volatility, holds the portfolio steady."
+
+Directive-influenced swap:
+"Brought MU into Star — fits the high-beta breakout setup you asked about, and the volume profile is confirming. Closed out the JNJ position to make room since defensive ballast isn't the play under this directive."
 
 Risk-triggered, drawdown stop:
 "Stopped out of AAPL — hit the protective threshold at -7 points. The position lost the momentum profile I bought it for. Brought PG in to fill the slot and keep the portfolio's posture intact."
