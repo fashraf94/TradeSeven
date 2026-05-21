@@ -114,3 +114,10 @@ export const logSignalDrops            = (r) => appendToStream('signal_drops', r
 // for both success and failure (failure records include reason + errors/output
 // for replay). Caller must use `.catch(() => {})` to enforce fire-and-forget.
 export const logConsolidation          = (r) => appendToStream('agent_consolidation', r);
+
+// Phase 1 Voice Layer Rework — First-Message-on-Deploy events. Emitted from
+// api/agent/decide.js after createAgentBattle returns. Records both success
+// (prompt + Gemma response + parsed exchange) and failure (errorStep +
+// errorReason) so post-deploy diagnostics can replay the path. Caller must
+// use `.catch(() => {})` to preserve the fire-and-forget contract.
+export const logFirstMessage           = (r) => appendToStream('first_message', r);

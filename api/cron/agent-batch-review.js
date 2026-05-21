@@ -279,12 +279,14 @@ ${directiveLines}`;
           ? String(parsed._scratchpad).slice(0, 2000).trim() || null
           : null;
 
-        // Append auto-debrief to chatExchanges[] using the EXISTING schema
-        // (userMessage / agentResponse). The `isAutoDebrief` flag lets the
-        // frontend distinguish system-initiated debriefs from user-prompted
-        // exchanges without breaking AgentChat.jsx's existing loader.
+        // Append auto-debrief to chatExchanges[] using the typed-message schema
+        // (Phase 1 Voice Layer Rework, spec §4.1). userMessage is null because
+        // this is an agent-initiated exchange; messageType: 'auto_debrief'
+        // identifies the type. isAutoDebrief: true is preserved as a defensive
+        // read-fallback for any frontend path that still reads the legacy flag —
+        // AgentChat.jsx reads messageType first and falls back to isAutoDebrief.
         const exchange = {
-          userMessage: '__REVIEW_START__',
+          userMessage: null,
           agentResponse: agentMessage,
           scratchpad: cleanScratchpad,
           hasDirective: false,
@@ -293,6 +295,7 @@ ${directiveLines}`;
           elicitationTarget: 'review_debrief',
           timestamp: new Date().toISOString(),
           mode: 'review',
+          messageType: 'auto_debrief',
           isAutoDebrief: true,
         };
 
