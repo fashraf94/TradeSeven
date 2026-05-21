@@ -27,6 +27,7 @@ import {
 import { TRADE_DECISION_TOOL } from '../_utils/agentEvalToolSchema.js';
 import { evaluateTriggers, fetchRecentNews } from '../_utils/agentTriggerGate.js';
 import { validateTradeDecision, executeSwapServer } from '../_utils/agentSwapExecution.js';
+import { generateTradeNarration } from '../_utils/voiceLayerTradeNarration.js';
 import { buildTechnicalSnapshot } from '../_utils/buildTechnicalSnapshot.js';
 import { applyGuardrails } from '../_utils/agentGuardrails.js';
 import { classifyStockRegime, classifyMarketPosture, getPresetAdjustedStrategies } from '../_utils/agentRegimeClassifier.js';
@@ -178,6 +179,14 @@ async function processAgentBattle(db, battle, summary) {
     return;
   }
 
+  // Phase 2 Voice Layer Rework — trade narrations queued during this tick.
+  // Declared outside the try so the finally block can dispatch them
+  // regardless of early-return or thrown-error exit path. Each push site
+  // captures the swap's closedTrade + the score immediately before THAT
+  // swap (not the start of the tick), so multi-swap ticks read
+  // chronologically in the chat.
+  const pendingNarrations = [];
+
   try {
     // Migration guard for pre-Sprint 2/3/4 battles
     const migrationFields = {};
@@ -317,6 +326,14 @@ async function processAgentBattle(db, battle, summary) {
       return sum + (Number.isFinite(t?.lockedPoints) ? t.lockedPoints : 0);
     }, 0);
     const currentScore = activeScore + bankedScore;
+
+    // Phase 2 Voice Layer Rework — running score-before tracker for narration.
+    // currentScore is a const computed once at this point in the tick and
+    // does NOT update between swaps. We maintain runningScoreBeforeSwap so
+    // each narration's scoreBeforeSwap reflects the state immediately
+    // before THAT specific swap. After each successful swap we increment
+    // by closedTrade.lockedPoints (the points moved from active to banked).
+    let runningScoreBeforeSwap = currentScore;
 
     const scoreUpdate = {
       'scoreState.activeScore': Math.round(activeScore * 100) / 100,
@@ -668,11 +685,21 @@ async function processAgentBattle(db, battle, summary) {
           }),
         };
 
-        await executeSwapServer(
+        const riskSwapResult = await executeSwapServer(
           db, battle.id, battle,
           slot.tier, slot.slotIndex,
           replacement, currentDay, prices, evaluationMetadata, snapshot
         );
+
+        // Phase 2 Voice Layer Rework — queue narration for this risk swap.
+        // scoreBeforeSwap is per-swap: in a multi-swap tick, swap #2 sees
+        // the post-swap-#1 score, matching the user's chronological read.
+        pendingNarrations.push({
+          closedTrade: riskSwapResult.closedTrade,
+          scoreBeforeSwap: runningScoreBeforeSwap,
+          evalId: null, // risk-triggered swaps don't carry the cron's eval umbrella id
+        });
+        runningScoreBeforeSwap += riskSwapResult.closedTrade?.lockedPoints || 0;
 
         statusFeedEntries.push({
           timestamp: new Date().toISOString(),
@@ -1013,11 +1040,21 @@ async function processAgentBattle(db, battle, summary) {
                 rankingsMap: momentumData.rankingsMap,
               }),
             };
-            await executeSwapServer(
+            const swapResult = await executeSwapServer(
               db, battle.id, battle,
               validation.resolvedTier, validation.resolvedSlotIndex,
               benchAsset, currentDay, prices, evaluationMetadata, snapshot
             );
+
+            // Phase 2 Voice Layer Rework — queue narration for this autopilot swap.
+            // scoreBeforeSwap is per-swap (see note in risk-triggered branch above).
+            pendingNarrations.push({
+              closedTrade: swapResult.closedTrade,
+              scoreBeforeSwap: runningScoreBeforeSwap,
+              evalId,
+            });
+            runningScoreBeforeSwap += swapResult.closedTrade?.lockedPoints || 0;
+
             summary.swapped++;
           } catch (swapErr) {
             console.error(`${LOG_PREFIX} Swap execution failed for battle ${battle.id}:`, swapErr.message);
@@ -1266,6 +1303,28 @@ async function processAgentBattle(db, battle, summary) {
     // Clear lock on any error
     await battleRef.update({ 'cronState.evaluatingAt': null }).catch(() => {});
     throw err;
+  } finally {
+    // Phase 2 Voice Layer Rework — dispatch trade narrations for any swaps
+    // that committed during this tick, regardless of how we exit the try
+    // (normal completion, early-return from a skip-haiku branch, or
+    // thrown error after the swap committed). generateTradeNarration is
+    // fire-and-forget — it never throws — so the loop is safe here.
+    //
+    // Dispatched in push order (risk-triggered swaps first, then the
+    // Haiku swap if any), matching the actual execution order so the
+    // chat reads chronologically.
+    if (pendingNarrations.length > 0) {
+      for (const n of pendingNarrations) {
+        await generateTradeNarration({
+          db,
+          battleId: battle.id,
+          agentId: battle.agentId,
+          closedTrade: n.closedTrade,
+          scoreBeforeSwap: n.scoreBeforeSwap,
+          evalId: n.evalId,
+        });
+      }
+    }
   }
 }
 
