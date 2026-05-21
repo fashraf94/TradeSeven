@@ -1,4 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
+import { FieldValue } from 'firebase-admin/firestore';
 import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
 import { applySecurityMiddleware } from '../_utils/security.js';
 import { STRATEGY_TOOL, PORTFOLIO_TOOL } from '../_utils/agentToolSchema.js';
@@ -15,7 +16,9 @@ import { createAgentBattle } from '../_utils/agentBattleService.js';
 import { getStockAnalysisData } from '../_utils/marketDataCache.js';
 import { generateCPUOpponent } from '../_utils/cpuOpponentGenerator.js';
 import { computeArchetypeRankings, ARCHETYPE_TEMPERATURES } from '../_utils/archetypeScoring.js';
-import { logDecision } from '../_utils/shadowLogger.js';
+import { logDecision, logFirstMessage } from '../_utils/shadowLogger.js';
+import { buildFirstMessagePrompt, getAgentPhase } from '../_utils/voiceLayerPrompt.js';
+import { callGemmaVoice, parseVoiceLayerResponse } from '../_utils/gemmaClient.js';
 import {
   resolveEquippedWatchlist,
   extractTickerSymbols,
@@ -551,6 +554,17 @@ export default async function handler(req, res) {
     // 17. Write activeBattleId back to agent doc
     await agentRef.update({ activeBattleId: battleResult.id });
 
+    // 17b. First-Message-on-Deploy (Phase 1 Voice Layer Rework)
+    // Generate Gemma's opening message to the user, persist it to chatExchanges
+    // + statusFeed, and log the path for diagnostics. NEVER throws — any failure
+    // here leaves the chat empty (legacy behavior) but does not block the deploy.
+    // See FANTASYTRADES_VOICE_LAYER_PHASE_1_SPEC §4.7.
+    await generateFirstMessageOnDeploy({
+      db,
+      agentData,
+      battleId: battleResult.id,
+    });
+
     // Shadow log — full decision + new battle
     logDecision({
       agentId: agentDoc.id,
@@ -727,4 +741,202 @@ function enrichPortfolio(result, stockUniverse) {
       crypto: toAsset(result.bench_crypto),
     },
   };
+}
+
+// ── First-Message-on-Deploy (Phase 1 Voice Layer Rework) ────────────────────
+//
+// Generates Gemma's opening message to the user and writes it to the new
+// battle's chatExchanges + statusFeed. Wraps everything in a single try/catch
+// so the deploy is NEVER blocked by Voice Layer failure. Logs every failure
+// step for post-deploy diagnostics. See spec §4.7.
+//
+// Failure modes (each logged but never thrown):
+//   - read_battle: fresh battle-doc read failed
+//   - context_fetch: anchorContext / marketSnapshot fetch failed
+//   - prompt_build: buildFirstMessagePrompt threw
+//   - gemma_call: callGemmaVoice rejected or aborted
+//   - parse: parseVoiceLayerResponse returned parseError
+//   - empty_response: parsed.response missing/non-string
+//   - firestore_write: battleRef.update() failed
+async function generateFirstMessageOnDeploy({ db, agentData, battleId }) {
+  let errorStep = null;
+  let errorReason = null;
+  let systemPrompt = null;
+  let rawResponse = null;
+  let parsed = null;
+
+  try {
+    const battleRef = db.collection('agentBattles').doc(battleId);
+
+    // Parallel fetch — battle doc, market context, DRB, voice-layer cache.
+    // The cache will typically be absent on a fresh deploy (cron writes every
+    // 15 min); marketSnapshot stays null in that case and the CACHE-COLD RULE
+    // in FIRST_MESSAGE_INSTRUCTIONS forbids fabricating intraday technicals.
+    let battle, anchorContext = null, marketSnapshot = null;
+    try {
+      const today = new Date().toISOString().split('T')[0];
+      const [battleDocSnap, marketCtxDoc, drbDoc, cacheDoc] = await Promise.all([
+        battleRef.get(),
+        db.collection('indexIntelligence').doc('marketContext').get(),
+        db.collection('indexIntelligence').doc('dailyRegimeBrief').get(),
+        db.collection('voiceLayerCache').doc(battleId).get(),
+      ]);
+
+      if (!battleDocSnap.exists) {
+        errorStep = 'read_battle';
+        errorReason = 'battle_not_found';
+        throw new Error(`Battle ${battleId} not found after createAgentBattle`);
+      }
+      battle = battleDocSnap.data();
+
+      if (marketCtxDoc.exists) {
+        const ctx = marketCtxDoc.data();
+        const regimeLine = `Regime: ${ctx.regime}. ${ctx.regimeDetail || ''}`.trim();
+        const drb = drbDoc.exists ? drbDoc.data() : null;
+        const briefLine = drb && drb.forDate === today && typeof drb.dailyBrief === 'string'
+          ? drb.dailyBrief
+          : null;
+        anchorContext = [regimeLine, briefLine].filter(Boolean).join(' ');
+      }
+
+      if (cacheDoc.exists) {
+        marketSnapshot = cacheDoc.data();
+      }
+    } catch (err) {
+      if (!errorStep) {
+        errorStep = 'context_fetch';
+        errorReason = err.message;
+      }
+      throw err;
+    }
+
+    // Build the first-message system prompt.
+    try {
+      const currentPhase = getAgentPhase(agentData?.stats?.gamesPlayed || 0);
+      systemPrompt = buildFirstMessagePrompt({
+        agent: agentData,
+        battle,
+        anchorContext,
+        marketSnapshot,
+        currentPhase,
+        executionMode: battle.executionMode || 'autopilot',
+      });
+    } catch (err) {
+      errorStep = 'prompt_build';
+      errorReason = err.message;
+      throw err;
+    }
+
+    // Call Gemma with the same 15s AbortController pattern used in chat.js
+    // and agent-batch-review.js. '__FIRST_MESSAGE__' is a kickoff sentinel
+    // for Gemma only — it is never persisted to Firestore. The persisted
+    // exchange has userMessage: null + messageType: 'first_message'.
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 15_000);
+    try {
+      rawResponse = await callGemmaVoice({
+        systemPrompt,
+        conversationHistory: [],
+        userMessage: '__FIRST_MESSAGE__',
+        signal: controller.signal,
+      });
+    } catch (err) {
+      errorStep = 'gemma_call';
+      errorReason = err.name === 'AbortError' ? 'timeout' : err.message;
+      throw err;
+    } finally {
+      clearTimeout(timeoutId);
+    }
+
+    // Parse — parseVoiceLayerResponse never throws; it returns
+    // { parseError: true, errorReason, rawText } on failure.
+    parsed = parseVoiceLayerResponse(rawResponse);
+    if (parsed?.parseError === true) {
+      errorStep = 'parse';
+      errorReason = `parse_${parsed.errorReason}`;
+      throw new Error(`Voice Layer parse failed: ${parsed.errorReason}`);
+    }
+
+    const agentMessage = parsed?.response;
+    if (!agentMessage || typeof agentMessage !== 'string') {
+      errorStep = 'empty_response';
+      errorReason = 'missing_or_invalid_response_field';
+      throw new Error('Gemma returned empty or non-string response');
+    }
+
+    const cleanScratchpad = parsed._scratchpad
+      ? String(parsed._scratchpad).slice(0, 2000).trim() || null
+      : null;
+
+    // Build the typed exchange + statusFeed entry per spec §4.1 / §4.2.
+    const exchange = {
+      userMessage: null,
+      agentResponse: agentMessage,
+      scratchpad: cleanScratchpad,
+      hasDirective: false,
+      directive: null,
+      suggestedActions: null,
+      elicitationTarget: 'first_message',
+      timestamp: new Date().toISOString(),
+      mode: 'battle',
+      messageType: 'first_message',
+    };
+
+    const statusEntry = {
+      action: 'first_message',
+      source: 'voice_layer',
+      message: 'Agent opened the conversation.',
+      timestamp: new Date().toISOString(),
+    };
+
+    // Single Firestore update — both writes land together so the command-dot
+    // (driven by statusFeed.length growth) fires when the chat content
+    // arrives. Does NOT touch chatBudgetUsed — agent-initiated messages do
+    // not consume the user's 10-turn budget (spec §2 Decision 4).
+    try {
+      await battleRef.update({
+        chatExchanges: FieldValue.arrayUnion(exchange),
+        statusFeed: FieldValue.arrayUnion(statusEntry),
+      });
+    } catch (err) {
+      errorStep = 'firestore_write';
+      errorReason = err.message;
+      throw err;
+    }
+
+    // Shadow log — success path.
+    logFirstMessage({
+      agentId: agentData?.id || null,
+      battleId,
+      archetype: agentData?.archetype || null,
+      phase: getAgentPhase(agentData?.stats?.gamesPlayed || 0),
+      executionMode: battle.executionMode || 'autopilot',
+      systemPrompt,
+      rawResponse,
+      parsed: {
+        response: agentMessage,
+        scratchpad: cleanScratchpad,
+      },
+      exchange,
+      hadMarketSnapshot: !!marketSnapshot,
+      hadAnchorContext: !!anchorContext,
+      success: true,
+    }).catch(() => {});
+  } catch (err) {
+    console.error(
+      `[VoiceLayer:first_message] Failed at step=${errorStep || 'unknown'} battleId=${battleId}:`,
+      err.message,
+    );
+    logFirstMessage({
+      agentId: agentData?.id || null,
+      battleId,
+      archetype: agentData?.archetype || null,
+      success: false,
+      errorStep: errorStep || 'unknown',
+      errorReason: errorReason || err.message,
+      systemPrompt: systemPrompt ? String(systemPrompt).slice(0, 4000) : null,
+      rawResponse: rawResponse ? String(rawResponse).slice(0, 2000) : null,
+    }).catch(() => {});
+    // Intentionally swallowed — deploy must not be blocked by Voice Layer failure.
+  }
 }

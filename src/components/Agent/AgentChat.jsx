@@ -209,6 +209,21 @@ function renderMessageWithTickers(text, onSymbolClick, knownTickers) {
   return parts;
 }
 
+// Type-driven rendering config (Phase 1 Voice Layer Rework, spec §4.6). Adding
+// a new agent-initiated messageType (trade_narration, anticipation, etc.) only
+// requires extending this map — no MessageBubble branches.
+const RENDER_CONFIG = {
+  user_initiated:    { accent: '#5EEAD4', label: null },
+  auto_debrief:      { accent: '#f59e0b', label: { emoji: '📋', text: 'Post-Market Debrief' } },
+  first_message:     { accent: '#5EEAD4', label: null },
+};
+
+function resolveMessageType(message) {
+  if (message?.messageType && RENDER_CONFIG[message.messageType]) return message.messageType;
+  if (message?.isAutoDebrief) return 'auto_debrief';
+  return 'user_initiated';
+}
+
 function MessageBubble({ message, agentName, isLastAgent, onActionClick, isSending, onSymbolClick, knownTickers }) {
   if (message.role === 'user') {
     return (
@@ -235,9 +250,11 @@ function MessageBubble({ message, agentName, isLastAgent, onActionClick, isSendi
     );
   }
 
-  // Agent message
-  const isAutoDebrief = !!message.isAutoDebrief;
-  const accent = isAutoDebrief ? '#f59e0b' : '#5EEAD4';
+  // Agent message — type-driven accent + label.
+  const messageType = resolveMessageType(message);
+  const cfg = RENDER_CONFIG[messageType] || RENDER_CONFIG.user_initiated;
+  const accent = cfg.accent;
+  const label = cfg.label;
   return (
     <motion.div
       initial={{ opacity: 0, y: 8 }}
@@ -245,9 +262,9 @@ function MessageBubble({ message, agentName, isLastAgent, onActionClick, isSendi
       transition={{ duration: 0.2, ease: 'easeOut' }}
       style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', marginBottom: 12 }}
     >
-      {isAutoDebrief ? (
+      {label ? (
         <div style={{
-          color: '#f59e0b',
+          color: accent,
           fontSize: 10.5,
           fontWeight: 700,
           letterSpacing: '0.08em',
@@ -258,8 +275,8 @@ function MessageBubble({ message, agentName, isLastAgent, onActionClick, isSendi
           alignItems: 'center',
           gap: 6,
         }}>
-          <span>📋</span>
-          <span>Post-Market Debrief</span>
+          <span>{label.emoji}</span>
+          <span>{label.text}</span>
         </div>
       ) : null}
       <div style={{
@@ -276,7 +293,7 @@ function MessageBubble({ message, agentName, isLastAgent, onActionClick, isSendi
       <div style={{
         background: '#15171E',
         borderLeft: `3px solid ${accent}`,
-        borderTop: isAutoDebrief ? `1px solid ${accent}` : 'none',
+        borderTop: label ? `1px solid ${accent}` : 'none',
         borderRadius: '0 12px 12px 12px',
         padding: '10px 14px',
         maxWidth: '85%',
@@ -408,14 +425,19 @@ export default function AgentChat({
   reviewBudgetUsed = 0,
   proposalHistory = [],
 }) {
-  const [messages, setMessages] = useState([]);
+  // Phase 1 Voice Layer Rework (spec §4.5): chat exchanges are now derived
+  // reactively from the chatExchanges prop so Firestore-initiated writes
+  // (first-message-on-deploy, auto-debrief, future Phase 2-6 proactive types)
+  // render in real time without a remount. Local state holds ONLY in-flight
+  // UI items (optimistic user bubbles + typing indicator) that have not yet
+  // been confirmed by the server. The two are merged at render time below.
+  const [inFlightMessages, setInFlightMessages] = useState([]);
   const [inputText, setInputText] = useState('');
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState(null);
   const [activeSubTab, setActiveSubTab] = useState('chat');
   const messagesEndRef = useRef(null);
   const textareaRef = useRef(null);
-  const initialLoadRef = useRef(false);
 
   // Today's date in ET — matches agent-batch-review.js and is the bucket key
   // for dailyGrades writes. Recomputed each render is fine (cheap).
@@ -446,34 +468,45 @@ export default function AgentChat({
 
   const isDisabled = isSending || activeBudgetUsed >= activeBudgetLimit || battleStatus === 'completed';
 
-  // ── Load existing history from chatExchanges prop (first mount only) ───────
-  // NOTE: one-shot load by design — local message state owns per-session UI
-  // concerns (typing indicators, optimistic user bubbles). Firestore-initiated
-  // exchanges (e.g., the batch cron's auto-debrief) appear on next mount.
+  // ── Server-confirmed messages, derived reactively from chatExchanges ──────
+  // Phase 1 Voice Layer Rework (spec §4.5): replaces the prior one-shot mount
+  // hydration. Whenever Firestore pushes a new exchange (first-message,
+  // auto-debrief, user-initiated reply), this useMemo recomputes and the
+  // chat re-renders. Suppression of the user bubble for agent-initiated
+  // messages is type-driven (messageType > isAutoDebrief > userMessage check),
+  // covering both the new typed schema and legacy entries.
 
-  useEffect(() => {
-    if (!chatExchanges || initialLoadRef.current) return;
+  const serverMessages = React.useMemo(() => {
+    if (!chatExchanges || chatExchanges.length === 0) return [];
 
-    const loaded = [];
+    const out = [];
     chatExchanges.forEach((ex, i) => {
       const ts = ex.timestamp?.toMillis?.()
         || (typeof ex.timestamp === 'string' ? new Date(ex.timestamp).getTime() : null)
         || Date.now();
 
-      // Auto-debrief exchanges are system-initiated — the '__REVIEW_START__'
-      // sentinel must not render as a user bubble.
-      if (!ex.isAutoDebrief) {
-        loaded.push({
+      const messageType = ex.messageType
+        || (ex.isAutoDebrief ? 'auto_debrief' : 'user_initiated');
+
+      // Suppress user half for any agent-initiated exchange.
+      const isAgentInitiated =
+        messageType !== 'user_initiated'
+        || ex.userMessage == null
+        || ex.userMessage === '__REVIEW_START__'; // legacy compat
+
+      if (!isAgentInitiated) {
+        out.push({
           id: `exchange-${i}-user`,
           role: 'user',
           text: ex.userMessage,
           suggestedActions: null,
           timestamp: ts,
+          _serverIndex: i,
         });
       }
 
       const isLast = i === chatExchanges.length - 1;
-      loaded.push({
+      out.push({
         id: `exchange-${i}-agent`,
         role: 'agent',
         text: ex.agentResponse,
@@ -484,16 +517,79 @@ export default function AgentChat({
           ? { text: ex.directive.text, directiveThreadId: ex.directive.directiveThreadId || null }
           : null,
         isAutoDebrief: !!ex.isAutoDebrief,
+        messageType,
         mode: ex.mode || 'battle',
         timestamp: ts,
+        _serverIndex: i,
       });
     });
-
-    if (loaded.length > 0) {
-      setMessages(loaded);
-    }
-    initialLoadRef.current = true;
+    return out;
   }, [chatExchanges]);
+
+  // ── Reconcile in-flight optimistic bubbles against server arrivals ────────
+  // When the server confirms a user-initiated exchange whose userMessage
+  // matches a pending optimistic bubble (trimmed text + close timestamp),
+  // drop the in-flight entry so we don't double-render.
+
+  useEffect(() => {
+    if (inFlightMessages.length === 0) return;
+    setInFlightMessages(prev => prev.filter(im => {
+      if (im.role !== 'user') return true; // typing indicators handled elsewhere
+      const imText = String(im.text || '').trim();
+      if (!imText) return true;
+      const matched = (chatExchanges || []).some(ex => {
+        if (ex.userMessage == null) return false;
+        if (String(ex.userMessage).trim() !== imText) return false;
+        const exTs = ex.timestamp?.toMillis?.()
+          || (typeof ex.timestamp === 'string' ? new Date(ex.timestamp).getTime() : 0);
+        const imTs = im.timestamp || 0;
+        return Math.abs(exTs - imTs) < 60_000;
+      });
+      return !matched;
+    }));
+  }, [chatExchanges]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── 30s timeout for in-flight bubbles ─────────────────────────────────────
+  // Per spec §4.5 refinement: if an optimistic user bubble has been pending
+  // for more than 30 seconds without a matching server arrival, drop it and
+  // surface a banner via the existing error UI. Avoids leaving "stuck"
+  // bubbles in the timeline.
+
+  useEffect(() => {
+    if (inFlightMessages.length === 0) return;
+    const interval = setInterval(() => {
+      const now = Date.now();
+      setInFlightMessages(prev => {
+        let timedOut = false;
+        const next = prev.filter(im => {
+          if (im.role === 'user' && (now - (im.timestamp || 0)) > 30_000) {
+            timedOut = true;
+            return false;
+          }
+          // Drop stuck typing indicators that have been live for >30s too.
+          if (im.isTyping && (now - (im._createdAt || 0)) > 30_000) {
+            timedOut = true;
+            return false;
+          }
+          return true;
+        });
+        if (timedOut) {
+          setError(prevErr => prevErr || 'Message timed out. Try again.');
+          setIsSending(false);
+        }
+        return next;
+      });
+    }, 5_000);
+    return () => clearInterval(interval);
+  }, [inFlightMessages.length]);
+
+  // Merged view used by the timeline. Server messages first (chronological),
+  // then in-flight items (always newer than anything in serverMessages because
+  // the server can only confirm in the past).
+  const messages = React.useMemo(
+    () => [...serverMessages, ...inFlightMessages],
+    [serverMessages, inFlightMessages],
+  );
 
   // ── Auto-scroll on new messages ────────────────────────────────────────────
 
@@ -517,7 +613,10 @@ export default function AgentChat({
 
     const trimmed = text.trim();
 
-    // 1. Append user bubble
+    // 1. Append optimistic user bubble + typing indicator to in-flight state.
+    //    The user bubble stays until the Firestore listener confirms the
+    //    matching exchange landed (reconciliation effect above), or until
+    //    the 30s timeout drops it.
     const userMsg = {
       id: `user-${Date.now()}`,
       role: 'user',
@@ -525,30 +624,18 @@ export default function AgentChat({
       suggestedActions: null,
       timestamp: Date.now(),
     };
+    const typingId = `typing-${Date.now()}`;
+    const typingMsg = { id: typingId, role: 'agent', isTyping: true, _createdAt: Date.now() };
 
-    setMessages(prev => {
-      // Clear suggestedActions on the last agent message
-      const updated = prev.map((m, i) => {
-        if (i === prev.length - 1 && m.role === 'agent' && m.suggestedActions) {
-          return { ...m, suggestedActions: null };
-        }
-        return m;
-      });
-      return [...updated, userMsg];
-    });
-
+    setInFlightMessages(prev => [...prev, userMsg, typingMsg]);
     setInputText('');
     setError(null);
     setIsSending(true);
 
-    // 2. Append typing indicator
-    const typingId = `typing-${Date.now()}`;
-    setMessages(prev => [...prev, { id: typingId, role: 'agent', isTyping: true }]);
-
     try {
       const user = getAuth().currentUser;
       if (!user) {
-        setMessages(prev => prev.filter(m => m.id !== typingId));
+        setInFlightMessages(prev => prev.filter(m => m.id !== typingId && m.id !== userMsg.id));
         setError('Session expired. Please refresh.');
         return;
       }
@@ -565,8 +652,9 @@ export default function AgentChat({
       const data = await res.json().catch(() => ({}));
 
       if (!res.ok) {
-        // Remove typing indicator
-        setMessages(prev => prev.filter(m => m.id !== typingId));
+        // Drop both the typing indicator AND the optimistic user bubble — the
+        // exchange didn't land. Server-side error UI takes over via setError.
+        setInFlightMessages(prev => prev.filter(m => m.id !== typingId && m.id !== userMsg.id));
 
         if (res.status === 401) {
           setError('Session expired. Please refresh.');
@@ -586,28 +674,18 @@ export default function AgentChat({
         return;
       }
 
-      // 3. Replace typing indicator with real agent message
-      const rawDirective = data.directive || data.extractedRule || null;
-      const agentMsg = {
-        id: `agent-${Date.now()}`,
-        role: 'agent',
-        text: data.agentMessage,
-        suggestedActions: data.suggestedActions || null,
-        scratchpad: data.scratchpad || null,
-        hasDirective: data.hasDirective || false,
-        directive: rawDirective
-          ? { text: rawDirective.text, directiveThreadId: rawDirective.directiveThreadId || null }
-          : null,
-        timestamp: Date.now(),
-      };
-
-      setMessages(prev => prev.map(m => m.id === typingId ? agentMsg : m));
-      // Budget counters are now prop-driven (chatBudgetUsed / reviewBudgetUsed).
-      // The server write to Firestore will propagate back via the snapshot
-      // listener in useAgentBattle → new props → updated display.
+      // 2. On success: drop only the typing indicator. The user bubble stays
+      //    until reconciliation matches it against the server-written exchange
+      //    (typically within a few hundred ms via the Firestore listener).
+      //    The agent's response renders as soon as the listener pushes the new
+      //    exchange into chatExchanges — no optimistic insert needed.
+      setInFlightMessages(prev => prev.filter(m => m.id !== typingId));
+      // Budget counters are prop-driven (chatBudgetUsed / reviewBudgetUsed) —
+      // the server's Firestore write propagates back via the snapshot listener
+      // in useAgentBattle → new props → updated display.
     } catch (err) {
-      // Remove typing indicator on network error
-      setMessages(prev => prev.filter(m => m.id !== typingId));
+      // Network error — drop both in-flight items so the user can retry.
+      setInFlightMessages(prev => prev.filter(m => m.id !== typingId && m.id !== userMsg.id));
       setError('Agent is thinking too hard. Try again.');
     } finally {
       setIsSending(false);
