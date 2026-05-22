@@ -143,6 +143,42 @@ export const TRADE_DECISION_TOOL = {
         description:
           'Forge rules that were deliberately overridden in this decision, with structured reason.',
       },
+      anticipationCandidates: {
+        type: 'array',
+        description:
+          'Phase 3 Voice Layer Rework. Optional. Bench candidates or current holdings you are watching but have NOT acted on this tick — that warrant being narrated aloud to the user. Populate ONLY when a candidate currently meets watch-worthy signals you can see in your context (RS percentile, threshold proximity, NR7 flag, BB squeeze, current regime favoring action, WARNING risk status). Most evaluations produce ZERO entries — quietness is the default. A typical busy day produces 1-3 entries across all evaluations. If you populate on most ticks, you are over-narrating. See ANTICIPATION CANDIDATES section in the system prompt for full guidance.',
+        items: {
+          type: 'object',
+          required: ['symbol', 'direction', 'signalSummary', 'threshold'],
+          properties: {
+            symbol: {
+              type: 'string',
+              description: 'Ticker symbol of the candidate being watched. Example: "CRWD".',
+            },
+            direction: {
+              type: 'string',
+              enum: ['potential_entry', 'potential_exit'],
+              description: 'potential_entry = bench candidate worth bringing in if it confirms. potential_exit = active holding whose signal profile degraded enough that exit is plausible.',
+            },
+            signalSummary: {
+              type: 'string',
+              description: 'One short sentence on why this candidate just became interesting. Anchor in signals you can see directly (RS percentile, threshold proximity, NR7 / BB squeeze state, regime, risk status). Example: "Relative strength building against XLK and volume is confirming."',
+            },
+            threshold: {
+              type: 'string',
+              description: 'One short sentence stating the specific condition that would make you act. Must be specific. "If it holds above the 20-day on the next test" is specific. "If conditions improve" is too vague. Example: "If it holds above the 20-day on the next test, I would rotate it into Core."',
+            },
+            rationale: {
+              type: 'string',
+              description: 'Optional. Fuller context for the Voice Layer, 1-2 sentences. Omit if signalSummary + threshold already convey the read.',
+            },
+            signalSource: {
+              type: 'string',
+              description: 'Optional category tag for the dominant signal. Examples: "relative_strength", "threshold_proximity", "momentum", "regime", "risk_status".',
+            },
+          },
+        },
+      },
     },
   },
 };
