@@ -174,6 +174,7 @@ export async function createAgentBattle(db, agentData, thresholds, startingPrice
       activeScore: 0,
       bankedScore: 0,
       dailyScores: {},
+      bankedBadgePoints: { total: 0, breakdown: {} },
       tradeCount: 0,
       holdCount: 0,
       evaluationCount: 0,

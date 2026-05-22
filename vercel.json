@@ -39,6 +39,10 @@
       "schedule": "30 1 * * 2-6"
     },
     {
+      "path": "/api/cron/agent-daily-scores",
+      "schedule": "45 1 * * 2-6"
+    },
+    {
       "path": "/api/read-across-check",
       "schedule": "*/30 14-21 * * 1-5"
     },

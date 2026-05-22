@@ -146,8 +146,9 @@ async function processBattleReview(db, battle) {
     ? directives.map(d => `- ${d}`).join('\n')
     : 'No active directives';
 
+  const bankedBadgePoints = scoreState.bankedBadgePoints?.total ?? 0;
   const userMessage = `TODAY'S PERFORMANCE (Day ${currentDay}):
-Score: ${scoreState.currentScore ?? 'N/A'} (Active: ${scoreState.activeScore ?? 'N/A'} + Banked: ${scoreState.bankedScore ?? 'N/A'})
+Score: ${scoreState.currentScore ?? 'N/A'} (Active: ${scoreState.activeScore ?? 'N/A'} + BankedTrades: ${scoreState.bankedScore ?? 'N/A'} + BankedBadges: ${bankedBadgePoints})
 Trades today: ${todayTrades.length}
 ${tradeLines}
 
