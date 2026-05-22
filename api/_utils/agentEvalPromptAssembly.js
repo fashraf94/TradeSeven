@@ -617,9 +617,10 @@ export async function buildLiveContextBlock(battle, prices, macroPrices, assetSc
   const phase = computeBattlePhase(battle);
   const timeRemaining = computeTimeRemaining(battle);
 
+  const bankedBadgePoints = scoreState.bankedBadgePoints?.total ?? 0;
   parts.push(`━━━ LIVE BATTLE STATE ━━━
 Day ${currentDay} of ${totalDays} | ${timeRemaining} remaining | Phase: ${phase}
-Current Score: ${(scoreState.currentScore || 0).toFixed(1)} (Active: ${(scoreState.activeScore || 0).toFixed(1)} + Banked: ${(scoreState.bankedScore || 0).toFixed(1)})
+Current Score: ${(scoreState.currentScore || 0).toFixed(1)} (Active: ${(scoreState.activeScore || 0).toFixed(1)} + BankedTrades: ${(scoreState.bankedScore || 0).toFixed(1)} + BankedBadges: ${bankedBadgePoints.toFixed(1)})
 Trades executed: ${scoreState.tradeCount || 0} | Evaluations: ${scoreState.evaluationCount || 0}
 
 MACRO BENCHMARKS TODAY:

@@ -14,6 +14,7 @@
 
 import { initializeApp, getApps, cert } from 'firebase-admin/app';
 import { getFirestore, FieldPath, FieldValue } from 'firebase-admin/firestore';
+import { isTradingDay } from '../_utils/marketSchedule.js';
 
 const LOG_PREFIX = '[BaggerBombV4Cron]';
 
@@ -50,26 +51,11 @@ function getEasternTime() {
   return new Date(etString);
 }
 
-// 2026 US Stock Market Holidays
-// Duplicated from src/constants/battleTimingV4.js since serverless functions can't import from src/.
-const US_MARKET_HOLIDAYS_2026 = [
-  '2026-01-01', '2026-01-19', '2026-02-16', '2026-04-03',
-  '2026-05-25', '2026-07-03', '2026-09-07',
-  '2026-11-26', '2026-12-25',
-];
-
 function formatDateStr(d) {
   const yyyy = d.getFullYear();
   const mm = String(d.getMonth() + 1).padStart(2, '0');
   const dd = String(d.getDate()).padStart(2, '0');
   return `${yyyy}-${mm}-${dd}`;
-}
-
-function isTradingDay() {
-  const et = getEasternTime();
-  const day = et.getDay();
-  if (day < 1 || day > 5) return false;
-  return !US_MARKET_HOLIDAYS_2026.includes(formatDateStr(et));
 }
 
 // Determine current trading day from tradingDayDates array

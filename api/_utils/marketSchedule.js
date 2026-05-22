@@ -78,6 +78,19 @@ export function isMarketHoliday(dateStr) {
   return NYSE_HOLIDAYS_2026.includes(dateStr);
 }
 
+/**
+ * Check whether a given date (default: today in ET) is a trading day.
+ * Trading day = Mon-Fri AND not a NYSE holiday.
+ * @param {Date|null} date - optional Date to check; null = today in ET
+ * @returns {boolean}
+ */
+export function isTradingDay(date = null) {
+  const d = date || getETDate();
+  const day = d.getDay();
+  if (day < 1 || day > 5) return false;
+  return !isMarketHoliday(formatDateString(d));
+}
+
 export function isEarlyCloseDay(dateStr) {
   const ds = dateStr || formatDateString(getETDate());
   return NYSE_EARLY_CLOSE_2026.includes(ds);

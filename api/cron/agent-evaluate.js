@@ -335,7 +335,11 @@ async function processAgentBattle(db, battle, summary) {
     const bankedScore = (battle.trades || []).reduce((sum, t) => {
       return sum + (Number.isFinite(t?.lockedPoints) ? t.lockedPoints : 0);
     }, 0);
-    const currentScore = activeScore + bankedScore;
+    // Phase 2: bankedBadgePoints persists badge points across days. Held-position
+    // bonusPoints get banked nightly by agent-daily-scores.js, then thresholdHistory
+    // is zeroed. Without this, multi-day battles silently lose all overnight badges.
+    const bankedBadgePoints = battle.scoreState?.bankedBadgePoints?.total ?? 0;
+    const currentScore = activeScore + bankedScore + bankedBadgePoints;
 
     const scoreUpdate = {
       'scoreState.activeScore': Math.round(activeScore * 100) / 100,
