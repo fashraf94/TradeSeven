@@ -20,7 +20,7 @@
 // See FANTASYTRADES_VOICE_LAYER_PHASE_2_SPEC.
 
 import { FieldValue } from 'firebase-admin/firestore';
-import { callGemmaVoice, parseVoiceLayerResponse } from './gemmaClient.js';
+import { callGemmaVoiceWithRetry, parseVoiceLayerResponse } from './gemmaClient.js';
 import { logTradeNarration } from './shadowLogger.js';
 import {
   buildTradeNarrationPrompt,
@@ -29,9 +29,11 @@ import {
 } from './voiceLayerPrompt.js';
 
 // Failure modes (each logged but never thrown):
-//   - read_context: fresh battle / agent / market / DRB / cache fetch failed
+//   - read_context: fresh battle / agent / market / DRB / cache fetch failed,
+//                   OR closedTrade was missing at call time
 //   - prompt_build: buildTradeNarrationPrompt threw
-//   - gemma_call: callGemmaVoice rejected or aborted
+//   - gemma_call: callGemmaVoiceWithRetry returned success=false (transient
+//                 retried once internally; this is the post-retry verdict)
 //   - parse: parseVoiceLayerResponse returned parseError
 //   - empty_response: parsed.response missing/non-string
 //   - firestore_write: battleRef.update() failed
@@ -40,7 +42,6 @@ export async function generateTradeNarration({
   battleId,
   agentId,
   closedTrade,
-  scoreBeforeSwap,
   evalId, // eslint-disable-line no-unused-vars -- captured in shadow log for cross-reference; not required by the prompt
 }) {
   let errorStep = null;
@@ -117,23 +118,17 @@ export async function generateTradeNarration({
       ? closedTrade.rationale
       : null;
 
-    const scoreImpact = {
-      before: typeof scoreBeforeSwap === 'number' ? scoreBeforeSwap : null,
-      locked: typeof closedTrade.lockedPoints === 'number' ? closedTrade.lockedPoints : null,
-    };
-
     // Build the trade-narration system prompt.
     try {
-      const currentPhase = getAgentPhase(agentData?.stats?.gamesPlayed || 0);
       systemPrompt = buildTradeNarrationPrompt({
         agent: agentData,
         anchorContext,
         marketSnapshot,
-        currentPhase,
+        currentPhase: getAgentPhase(agentData?.stats?.gamesPlayed || 0),
         swap: closedTrade,
         rationale,
         provenance,
-        scoreImpact,
+        directive: battle.directive || null,
         executionMode: battle.executionMode || 'autopilot',
       });
     } catch (err) {
@@ -142,25 +137,33 @@ export async function generateTradeNarration({
       throw err;
     }
 
-    // Call Gemma with the same 15s AbortController pattern used in
-    // first-message-on-deploy. '__TRADE_NARRATION__' is a kickoff sentinel
-    // for Gemma only — it is never persisted to Firestore.
+    // Call Gemma via the retry helper. Transient 429/5xx are retried once
+    // internally; we cap total wall time at 10s (vs Phase 1's 15s) to
+    // keep multi-narration ticks inside the cron's 60s maxDuration when
+    // the finally-block dispatch runs Promise.allSettled. The retry
+    // helper never throws — it returns { success, content } or
+    // { success: false, error }.
+    // '__TRADE_NARRATION__' is a kickoff sentinel for Gemma only — it is
+    // never persisted to Firestore.
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 15_000);
+    const timeoutId = setTimeout(() => controller.abort(), 10_000);
+    let gemmaResult;
     try {
-      rawResponse = await callGemmaVoice({
+      gemmaResult = await callGemmaVoiceWithRetry({
         systemPrompt,
         conversationHistory: [],
         userMessage: '__TRADE_NARRATION__',
         signal: controller.signal,
       });
-    } catch (err) {
-      errorStep = 'gemma_call';
-      errorReason = err.name === 'AbortError' ? 'timeout' : err.message;
-      throw err;
     } finally {
       clearTimeout(timeoutId);
     }
+    if (!gemmaResult?.success) {
+      errorStep = 'gemma_call';
+      errorReason = gemmaResult?.aborted ? 'timeout' : (gemmaResult?.error || 'unknown_gemma_failure');
+      throw new Error(`Gemma call failed: ${errorReason}`);
+    }
+    rawResponse = gemmaResult.content;
 
     // Parse — parseVoiceLayerResponse never throws.
     parsed = parseVoiceLayerResponse(rawResponse);
@@ -255,7 +258,6 @@ export async function generateTradeNarration({
         swappedOutAt: closedTrade.swappedOutAt,
       },
       rationale,
-      scoreImpact,
       hadMarketSnapshot: !!marketSnapshot,
       hadAnchorContext: !!anchorContext,
       hadAgentData: !!agentData,

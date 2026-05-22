@@ -381,12 +381,17 @@ function LiveActivityPanel({
 }) {
   const [reasoningOpen, setReasoningOpen] = useState(false);
 
-  // Latest statusFeed entry (any type) powers the status-indicator text.
+  // Latest statusFeed entry powers the status-indicator text. Skip
+  // trade_narration entries here — their generic 'Agent explained the
+  // latest trade.' meta-message would otherwise hijack the pulse after
+  // every swap, masking the actual swap action the user wants to see.
+  // The chat narration itself surfaces the explanation, separately.
   const latestEntry = useMemo(() => {
     if (!Array.isArray(statusFeed) || statusFeed.length === 0) return null;
     let best = null;
     let bestTs = -Infinity;
     for (const e of statusFeed) {
+      if (e?.action === 'trade_narration') continue;
       const ts = normalizeTimestamp(e?.timestamp);
       if (ts >= bestTs) { best = e; bestTs = ts; }
     }

@@ -260,10 +260,14 @@ const FeedEntry = ({ entry, tokens, onChallenge }) => {
 // ── Main Timeline ──────────────────────────────────────────
 
 const StatusFeedTimeline = ({ statusFeed = [], tokens, isDesktop, isMobile, onChallenge }) => {
-  // Reverse to show newest first; filter out empty entries
+  // Reverse to show newest first; filter out empty entries and
+  // trade_narration entries (those are surfaced as Gemma chat messages
+  // in AgentChat — rendering them here too produces duplicate-content
+  // 'Update' cards next to the swap row that already represents the
+  // trade).
   const entries = [...statusFeed]
     .reverse()
-    .filter(e => e.message || e.action);
+    .filter(e => (e.message || e.action) && e.action !== 'trade_narration');
 
   if (entries.length === 0) {
     return (

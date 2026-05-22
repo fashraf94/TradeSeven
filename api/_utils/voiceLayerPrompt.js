@@ -2696,6 +2696,9 @@ FORBIDDEN — DO NOT VIOLATE:
 - EXCEPTION on directives: if an active user-supplied directive influenced this swap (visible in the agent context), you MAY reference it naturally to close the loop on the user's contribution. Example: "Brought AMD in — fits the high-beta breakout setup you asked about." This is the only product mechanic that's allowed to surface.
 - NO inventing a thesis for the replacement on risk-triggered swaps (see PROVENANCE above).
 
+STALE BRIEFS — TRUST THE SWAP CONTEXT:
+The portfolio and bench briefs in your context may not yet reflect the just-completed swap — they were computed by a separate cron that runs every 15 minutes. If a brief still lists a symbol that the swap context above says you just sold, trust the swap context, not the brief. Do NOT acknowledge or work around the staleness in your narration — just narrate the swap as the swap context describes it.
+
 DO-THIS — TARGET SHAPES:
 
 Autopilot, clean technical sell:
@@ -2730,7 +2733,7 @@ Bad — fabricated technicals:
 "Sold AAPL — broke below the 50-day moving average."
 ^ If the rationale didn't cite the 50-day, don't cite the 50-day. Use what was provided.`;
 
-function buildSwapContextBlock({ closedTrade, provenance, rationale, scoreImpact }) {
+function buildSwapContextBlock({ closedTrade, provenance, rationale }) {
   if (!closedTrade) return null;
 
   const sections = [`Provenance: ${provenance || 'autopilot'}`];
@@ -2744,34 +2747,34 @@ function buildSwapContextBlock({ closedTrade, provenance, rationale, scoreImpact
     sections.push('Rationale: (none provided — narrate the action plainly without inventing a thesis)');
   }
 
-  if (scoreImpact && typeof scoreImpact === 'object') {
-    const before = typeof scoreImpact.before === 'number'
-      ? Math.round(scoreImpact.before * 100) / 100
-      : null;
-    const locked = typeof scoreImpact.locked === 'number'
-      ? Math.round(scoreImpact.locked * 100) / 100
-      : null;
-    if (before != null || locked != null) {
-      const beforeStr = before != null ? `before=${before}` : '';
-      const lockedStr = locked != null
-        ? `locked=${locked >= 0 ? '+' : ''}${locked}`
-        : '';
-      sections.push(`Score impact: ${[beforeStr, lockedStr].filter(Boolean).join(', ')}`);
-    }
-  }
-
   return `THE SWAP YOU JUST MADE:\n${sections.join('\n\n')}`;
+}
+
+// Surfaces the active user-supplied directive (the tactical brief the user
+// locked in via chat) into the trade-narration prompt so the EXCEPTION
+// clause in TRADE_NARRATION_INSTRUCTIONS has something to ground a directive
+// callback against. Returns null when no active directive — caller skips
+// the block entirely. Expiry handling is owned upstream: chat.js clears
+// battle.directive when it lapses; we trust whatever is on the doc.
+function buildActiveDirectiveBlock(directive) {
+  if (!directive || typeof directive !== 'object') return null;
+  if (!directive.directiveThreadId || !directive.text) return null;
+
+  return `ACTIVE COACH DIRECTIVE (what the user has you working on right now):
+"${String(directive.text).trim()}"
+
+If this swap was influenced by the directive, you MAY reference it in your narration to close the loop on the user's contribution (see the EXCEPTION clause in your instructions). If the swap was unrelated to the directive, do NOT reference it — fabricating a directive callback breaks trust.`;
 }
 
 export function buildTradeNarrationPrompt({
   agent,
   anchorContext,
   marketSnapshot,
-  currentPhase,
+  currentPhase, // eslint-disable-line no-unused-vars -- accepted for API symmetry; not used today (see note below)
   swap,              // The closedTrade returned by executeSwapServer
   rationale,         // The rationale string (from closedTrade.rationale)
   provenance,        // 'autopilot' | 'risk_triggered' (computed by caller via detectTradeProvenance)
-  scoreImpact,       // { before: number, locked: number }
+  directive,         // battle.directive — surfaced into a MIDDLE block when active
   // Phase 2 Voice Layer Rework — authority-mode plumbing. NOT branched on today.
   executionMode = 'autopilot', // eslint-disable-line no-unused-vars
 }) {
@@ -2779,7 +2782,6 @@ export function buildTradeNarrationPrompt({
   const gamesPlayed = stats.gamesPlayed || 0;
   const wins = stats.wins || 0;
   const losses = stats.losses || 0;
-  const phase = currentPhase || getAgentPhase(gamesPlayed);
 
   // Block 1: Identity (mid-action framing)
   const identity = `You are ${agent?.name || 'Gemma'}, a competitive fantasy trading agent on FantasyTrades. Your archetype is ${agent?.archetype || 'strategist'}. You and the user are PARTNERS — two people at a trading desk. You bring the research and market reads; they bring intuition and the final call.
@@ -2800,13 +2802,18 @@ RIGHT NOW you have JUST executed a swap on this battle. The swap committed secon
   // Block 3.5: Anchor (DRB regime + brief).
   const anchor = anchorContext || 'Daily regime brief unavailable. Lean on portfolio composition only.';
 
+  // Block 3.55: Active directive (when locked-in by the user). Gates the
+  // EXCEPTION clause in TRADE_NARRATION_INSTRUCTIONS — without this block
+  // present, Gemma has no directive text to reference and the exception
+  // would invite fabrication.
+  const activeDirective = buildActiveDirectiveBlock(directive);
+
   // Block 3.6: The swap context — provenance + buildSwapEntryBlock +
-  // rationale + score impact. This is the heart of the narration prompt.
+  // rationale. This is the heart of the narration prompt.
   const swapContext = buildSwapContextBlock({
     closedTrade: swap,
     provenance,
     rationale,
-    scoreImpact,
   });
 
   // Blocks 4A-4D: Market snapshot. By trade-narration time the cache cron
@@ -2817,12 +2824,16 @@ RIGHT NOW you have JUST executed a swap on this battle. The swap committed secon
   const scoutAlerts = buildScoutAlertsBlock(marketSnapshot);
   const marketContext = buildMarketSnapshotContext(marketSnapshot);
 
-  // Block 6: Phase Rules — phase-aware tone calibration. Reused unchanged.
-  const phaseRules = PHASE_RULES[phase] || PHASE_RULES.discovery;
-
   // U-shaped attention order: identity + output format at TOP;
-  // partner/convictions/anchor/swap-context/market in MIDDLE;
-  // narration instructions + phase rules at BOTTOM.
+  // partner/convictions/anchor/directive/swap-context/market in MIDDLE;
+  // narration instructions at BOTTOM. PHASE_RULES are intentionally NOT
+  // placed at BOTTOM here — they were designed for conversational chat
+  // turns (CONFIRMATION→EXECUTION patterns, "set hasDirective:true",
+  // multi-option presentation) and directly contradict trade narration's
+  // structured-output contract (hasDirective MUST be false, 3-4 sentence
+  // reporting register, no question-presenting). The narration
+  // INSTRUCTIONS below carry the full register and shape contract on
+  // their own.
   const blocks = [
     identity,                         // Block 1   (TOP)
     GAME_MECHANICS,                   // Block 1.5 (TOP)
@@ -2832,6 +2843,7 @@ RIGHT NOW you have JUST executed a swap on this battle. The swap committed secon
     anchor,                           // Block 3.5 (MIDDLE)
   ];
 
+  if (activeDirective) blocks.push(activeDirective);  // Block 3.55 (MIDDLE)
   if (swapContext) blocks.push(swapContext);          // Block 3.6 (MIDDLE)
 
   if (portfolioBriefs) blocks.push(portfolioBriefs);
@@ -2840,10 +2852,7 @@ RIGHT NOW you have JUST executed a swap on this battle. The swap committed secon
   if (marketContext) blocks.push(marketContext);
   if (marketSnapshot) blocks.push(DATA_CONFIDENCE_RULE);
 
-  blocks.push(
-    TRADE_NARRATION_INSTRUCTIONS,   // Trade-narration contract (BOTTOM)
-    phaseRules,                     // Phase Rules (BOTTOM — LAST)
-  );
+  blocks.push(TRADE_NARRATION_INSTRUCTIONS); // Trade-narration contract (BOTTOM — LAST)
 
   return blocks.join('\n\n');
 }
