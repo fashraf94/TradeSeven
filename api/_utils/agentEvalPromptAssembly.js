@@ -6,6 +6,7 @@ import { getETDate, formatDateString } from './marketSchedule.js';
 import { flattenPortfolioServer, flattenBenchServer } from './agentScoring.js';
 import { getATRRegime } from './agentRegimeClassifier.js';
 import { getFirebaseAdmin } from './firebaseAdmin.js';
+import { isDirectiveActive } from './directiveUtils.js';
 import {
   computeGameContext,
   rankAndSelectStories,
@@ -690,8 +691,11 @@ ${triggerLines}`);
   //       Haiku echoes the threadId back in submit_trade_decision when it
   //       acts on the directive, so the UI can link the trade to its
   //       originating directive execution card. Omit entirely when no
-  //       active directive exists — do not inject an empty block.
-  if (battle?.directive?.directiveThreadId && battle.directive.text) {
+  //       active directive exists OR the directive has expired per its
+  //       expiry value (Fix #4 — see api/_utils/directiveUtils.js).
+  //       chat.js never clears battle.directive on expiry; this read
+  //       path is the gate.
+  if (isDirectiveActive(battle?.directive, battle)) {
     const d = battle.directive;
     parts.push(
 `ACTIVE DIRECTIVE (from your Coach):

@@ -122,6 +122,7 @@ export async function generateTradeNarration({
     try {
       systemPrompt = buildTradeNarrationPrompt({
         agent: agentData,
+        battle,
         anchorContext,
         marketSnapshot,
         currentPhase: getAgentPhase(agentData?.stats?.gamesPlayed || 0),

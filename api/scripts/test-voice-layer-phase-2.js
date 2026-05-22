@@ -23,6 +23,9 @@
 //        constants exist in voiceLayerPrompt.js.
 //   T8 — generateTradeNarration is exported from voiceLayerTradeNarration.js.
 //   T9 — RENDER_CONFIG in AgentChat.jsx includes a trade_narration entry.
+//   T10 — isDirectiveActiveOnDay (Fix #4) returns the expected verdict
+//         across the full expiry-semantics matrix (end_of_battle,
+//         permanent, 3_games active/expired, defensive fallbacks).
 //
 // All Firestore queries are READ-ONLY.
 //
@@ -38,6 +41,7 @@
 
 import { readFileSync } from 'node:fs';
 import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
+import { isDirectiveActiveOnDay } from '../_utils/directiveUtils.js';
 
 const results = []; // { name, status: 'PASS' | 'FAIL' | 'SKIP' }
 
@@ -449,6 +453,80 @@ function testT9() {
   }
 }
 
+// T10 — Pure unit-style tests for the directive expiry helper (Fix #4).
+// No Firestore, no clock dependency — uses the isDirectiveActiveOnDay
+// pure function with explicit currentDay values.
+function testT10() {
+  const NAME = 'TEST T10: isDirectiveActiveOnDay handles all expiry semantics';
+  header(NAME);
+  try {
+    // A representative tradingDays array. 5-day battle Mon-Fri.
+    const tradingDays = ['2026-05-18', '2026-05-19', '2026-05-20', '2026-05-21', '2026-05-22'];
+
+    const baseDirective = {
+      text: 'rotate to high-beta semis',
+      directiveThreadId: 'dir_abc',
+      createdAt: '2026-05-18T16:30:00Z', // day 1 (Mon at 4:30 PM ET-ish)
+    };
+
+    const cases = [
+      // Always-active expiry values
+      { label: 'end_of_battle active',
+        directive: { ...baseDirective, expiry: 'end_of_battle' }, currentDay: 5, expected: true },
+      { label: 'permanent active',
+        directive: { ...baseDirective, expiry: 'permanent' }, currentDay: 5, expected: true },
+      { label: 'expiry missing defaults to end_of_battle',
+        directive: { text: baseDirective.text, directiveThreadId: 'dir_x', createdAt: '2026-05-18T12:00:00Z' },
+        currentDay: 5, expected: true },
+
+      // 3_games — the load-bearing case
+      { label: '3_games same day (elapsed=0)',
+        directive: { ...baseDirective, expiry: '3_games' }, currentDay: 1, expected: true },
+      { label: '3_games next day (elapsed=1)',
+        directive: { ...baseDirective, expiry: '3_games' }, currentDay: 2, expected: true },
+      { label: '3_games last active day (elapsed=2)',
+        directive: { ...baseDirective, expiry: '3_games' }, currentDay: 3, expected: true },
+      { label: '3_games first expired day (elapsed=3)',
+        directive: { ...baseDirective, expiry: '3_games' }, currentDay: 4, expected: false },
+      { label: '3_games well-expired (elapsed=4)',
+        directive: { ...baseDirective, expiry: '3_games' }, currentDay: 5, expected: false },
+
+      // Defensive fallbacks
+      { label: 'malformed: directive null',
+        directive: null, currentDay: 1, expected: false },
+      { label: 'malformed: directive not object',
+        directive: 'not-an-object', currentDay: 1, expected: false },
+      { label: 'malformed: missing text',
+        directive: { directiveThreadId: 'dir_x', expiry: 'end_of_battle' }, currentDay: 1, expected: false },
+      { label: 'malformed: missing directiveThreadId',
+        directive: { text: 'foo', expiry: 'end_of_battle' }, currentDay: 1, expected: false },
+      { label: 'defensive: 3_games missing createdAt → active',
+        directive: { text: 'foo', directiveThreadId: 'dir_x', expiry: '3_games' }, currentDay: 5, expected: true },
+      { label: 'defensive: 3_games createdAt outside tradingDays → active',
+        directive: { ...baseDirective, expiry: '3_games', createdAt: '2026-05-17T12:00:00Z' },
+        currentDay: 5, expected: true },
+      { label: 'defensive: unknown expiry value → active',
+        directive: { ...baseDirective, expiry: 'forever_and_ever' }, currentDay: 5, expected: true },
+    ];
+
+    let offenders = 0;
+    cases.forEach((c) => {
+      const got = isDirectiveActiveOnDay(c.directive, tradingDays, c.currentDay);
+      const ok = got === c.expected;
+      if (!ok) offenders += 1;
+      console.log(`  ${ok ? 'OK  ' : 'FAIL'} ${c.label}: got=${got} expected=${c.expected}`);
+    });
+
+    const status = offenders === 0 ? 'PASS' : 'FAIL';
+    console.log(`RESULT: ${status} (${cases.length - offenders}/${cases.length} cases passed)`);
+    record(NAME, status);
+  } catch (err) {
+    console.log(`  ERROR: ${err.message}`);
+    console.log('RESULT: FAIL (helper threw)');
+    record(NAME, 'FAIL');
+  }
+}
+
 async function main() {
   const HR = '='.repeat(72);
   console.log(HR);
@@ -468,6 +546,7 @@ async function main() {
   testT7();         console.log();
   testT8();         console.log();
   testT9();         console.log();
+  testT10();        console.log();
 
   const passed = results.filter((r) => r.status === 'PASS').length;
   const failed = results.filter((r) => r.status === 'FAIL').length;

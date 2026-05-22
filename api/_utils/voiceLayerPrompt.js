@@ -10,6 +10,7 @@ import { computeTimeRemaining } from './agentEvalPromptAssembly.js';
 import { wrapWithDelimiters } from './injectionGuard.js';
 import { PATTERN_DISPLAY_NAMES } from './analyticalPrimitives.js';
 import { toEtParts } from './marketDataCache.js';
+import { isDirectiveActive } from './directiveUtils.js';
 
 // ==================== STATIC CONSTANTS ====================
 
@@ -2753,12 +2754,13 @@ function buildSwapContextBlock({ closedTrade, provenance, rationale }) {
 // Surfaces the active user-supplied directive (the tactical brief the user
 // locked in via chat) into the trade-narration prompt so the EXCEPTION
 // clause in TRADE_NARRATION_INSTRUCTIONS has something to ground a directive
-// callback against. Returns null when no active directive — caller skips
-// the block entirely. Expiry handling is owned upstream: chat.js clears
-// battle.directive when it lapses; we trust whatever is on the doc.
-function buildActiveDirectiveBlock(directive) {
-  if (!directive || typeof directive !== 'object') return null;
-  if (!directive.directiveThreadId || !directive.text) return null;
+// callback against. Returns null when no active directive (malformed, or
+// expired per the '3_games' rule) — caller skips the block entirely.
+// Expiry semantics are owned by api/_utils/directiveUtils.js (Fix #4):
+// chat.js does NOT clear battle.directive on expiry; the read path is
+// the gate.
+function buildActiveDirectiveBlock(directive, battle) {
+  if (!isDirectiveActive(directive, battle)) return null;
 
   return `ACTIVE COACH DIRECTIVE (what the user has you working on right now):
 "${String(directive.text).trim()}"
@@ -2768,13 +2770,14 @@ If this swap was influenced by the directive, you MAY reference it in your narra
 
 export function buildTradeNarrationPrompt({
   agent,
+  battle,            // Required for directive expiry checks via isDirectiveActive
   anchorContext,
   marketSnapshot,
   currentPhase, // eslint-disable-line no-unused-vars -- accepted for API symmetry; not used today (see note below)
   swap,              // The closedTrade returned by executeSwapServer
   rationale,         // The rationale string (from closedTrade.rationale)
   provenance,        // 'autopilot' | 'risk_triggered' (computed by caller via detectTradeProvenance)
-  directive,         // battle.directive — surfaced into a MIDDLE block when active
+  directive,         // battle.directive — surfaced into a MIDDLE block when active (expiry-gated)
   // Phase 2 Voice Layer Rework — authority-mode plumbing. NOT branched on today.
   executionMode = 'autopilot', // eslint-disable-line no-unused-vars
 }) {
@@ -2805,8 +2808,9 @@ RIGHT NOW you have JUST executed a swap on this battle. The swap committed secon
   // Block 3.55: Active directive (when locked-in by the user). Gates the
   // EXCEPTION clause in TRADE_NARRATION_INSTRUCTIONS — without this block
   // present, Gemma has no directive text to reference and the exception
-  // would invite fabrication.
-  const activeDirective = buildActiveDirectiveBlock(directive);
+  // would invite fabrication. The expiry check (Fix #4) lives inside
+  // buildActiveDirectiveBlock → isDirectiveActive(directive, battle).
+  const activeDirective = buildActiveDirectiveBlock(directive, battle);
 
   // Block 3.6: The swap context — provenance + buildSwapEntryBlock +
   // rationale. This is the heart of the narration prompt.
