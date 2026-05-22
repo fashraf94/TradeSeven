@@ -32,6 +32,7 @@ import { stockAPI, POPULAR_CRYPTO } from '../services/eodhdAPI';
 import { calculateAssetScoreV3 } from '../utils/baggerBombUtils';
 import { DEFAULT_THRESHOLD, buildResearchAsset } from '../utils/researchAssetBuilder';
 import AssetResearchModal from '../components/draft/AssetResearchModal';
+import TermResearchModal from '../components/shared/TermResearchModal';
 import ScoreBreakdownPopover from '../components/draft/ScoreBreakdownPopover';
 import { CONVICTION_MULTIPLIERS } from '../constants/baggerBombScoring';
 import { doc, updateDoc } from 'firebase/firestore';
@@ -379,6 +380,7 @@ export default function AgentBattleScreen({ battle, user, onBack }) {
   const [citationRuleId, setCitationRuleId] = useState(null);
   const [researchAsset, setResearchAsset] = useState(null);
   const [breakdownAsset, setBreakdownAsset] = useState(null);
+  const [selectedTerm, setSelectedTerm] = useState(null);
 
   // Price state
   const [currentPrices, setCurrentPrices] = useState({});
@@ -699,8 +701,16 @@ export default function AgentBattleScreen({ battle, user, onBack }) {
     setCitationOpen(true);
   }, []);
 
-  const handleSymbolClick = useCallback((asset) => {
-    setResearchAsset(asset);
+  // Phase 2.5 Voice Layer Rework — payload may now be a term descriptor from
+  // the chat highlighter ({ type: 'term', token: 'VWAP' }) in addition to the
+  // existing ticker-asset shapes from TacticalRow, TradeTickerCard, and
+  // AgentChat ticker matches ({ symbol: 'NVDA' } or full asset objects).
+  const handleSymbolClick = useCallback((payload) => {
+    if (payload?.type === 'term') {
+      setSelectedTerm(payload.token);
+      return;
+    }
+    setResearchAsset(payload);
   }, []);
 
   const handlePointsClick = useCallback((asset) => {
@@ -1001,6 +1011,13 @@ export default function AgentBattleScreen({ battle, user, onBack }) {
           wsPrice={effectivePrices[stableResearchAsset?.symbol]}
         />
       )}
+
+      <TermResearchModal
+        termToken={selectedTerm}
+        isOpen={!!selectedTerm}
+        onClose={() => setSelectedTerm(null)}
+      />
+
 
       {breakdownAsset && (
         <ScoreBreakdownPopover

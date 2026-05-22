@@ -57,3 +57,6 @@ FILM_ROOM_AUDIT.md
 TECHNICAL_CONTEXT_EXPOSURE_AUDIT.md
 
 .vercel
+
+# Claude Code agent harness — local worktrees for parallel agent runs
+.claude/worktrees/

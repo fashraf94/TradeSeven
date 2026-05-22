@@ -1736,6 +1736,26 @@ Yields: ${mc.yieldRegime}`;
 const DATA_CONFIDENCE_RULE = `DATA CONFIDENCE:
 Portfolio data refreshes every 15 minutes. Frame prices as trends, not exact current values. Say "CF is up solidly today" not "CF is at $78.42." If data feels stale, acknowledge it: "as of last check." The prompt may show raw indicator values (e.g., "ATR 4.2%", "Score 87", "RS 87th %ile") to support your reasoning — do not quote these verbatim in responses. Interpret raw indicators qualitatively ("volatility is elevated"); paraphrase percentiles and ranks as bands ("top decile," "best in sector"). Intraday signals (session VWAP, 5-min SMA20) describe the latest available session — typically today during market hours, or the prior session when EODHD's data hasn't refreshed. Paraphrase as "holding above session VWAP" or "session momentum is constructive," not the exact deviation percentage. Never invent numbers — if a field is missing, skip it entirely.`;
 
+// ==================== SUPPORTED TERMS BLOCK (Phase 2.5) ====================
+//
+// Lists the financial terms with backing explanatory modals on the chat
+// surface. When Gemma uses one of these in her response, the user can click
+// for a definition. The instruction is permissive ("prefer when relevant")
+// rather than restrictive ("only use these") so the agent's voice isn't
+// over-constrained — terms not in the list still render correctly as plain
+// text, the user just can't click them. Pairs with the
+// FORBIDDEN-fabrication rule in TRADE_NARRATION_INSTRUCTIONS: if a term
+// isn't grounded in the provided rationale or signals, don't shoehorn it
+// in just because it has a modal.
+function buildSupportedTermsBlock(supportedTerms) {
+  if (!supportedTerms || !Array.isArray(supportedTerms) || supportedTerms.length === 0) return null;
+  const list = supportedTerms.join(', ');
+  return `SUPPORTED TERMS:
+The following terms have backing explanatory modals available to the user — when you use them in your response, the user can click for a definition. Prefer these terms over equivalent jargon when relevant, but do not force them in where they don't belong:
+
+${list}`;
+}
+
 // ==================== WORKSHOP ANCHOR BLOCK ====================
 
 // Renders today's Daily Regime Brief (DRB) as a workshop-facing context
@@ -2558,6 +2578,8 @@ export function buildFirstMessagePrompt({
   anchorContext,
   marketSnapshot,
   currentPhase,
+  // Phase 2.5 Voice Layer Rework — token list of terms with backing modals.
+  supportedTerms,
   // Phase 1 Voice Layer Rework — authority-mode plumbing. NOT branched on today.
   executionMode = 'autopilot', // eslint-disable-line no-unused-vars
 }) {
@@ -2623,6 +2645,12 @@ RIGHT NOW you have JUST been deployed — a new battle was created moments ago a
   if (benchBriefs) blocks.push(benchBriefs);
   if (scoutAlerts) blocks.push(scoutAlerts);
   if (marketContext) blocks.push(marketContext);
+
+  // Phase 2.5: SUPPORTED TERMS reference block. Reference data — sits with
+  // other reference blocks (market briefs) before DATA_CONFIDENCE_RULE.
+  const supportedTermsBlock = buildSupportedTermsBlock(supportedTerms);
+  if (supportedTermsBlock) blocks.push(supportedTermsBlock);
+
   if (marketSnapshot) blocks.push(DATA_CONFIDENCE_RULE);
 
   blocks.push(
@@ -2778,6 +2806,8 @@ export function buildTradeNarrationPrompt({
   rationale,         // The rationale string (from closedTrade.rationale)
   provenance,        // 'autopilot' | 'risk_triggered' (computed by caller via detectTradeProvenance)
   directive,         // battle.directive — surfaced into a MIDDLE block when active (expiry-gated)
+  // Phase 2.5 Voice Layer Rework — token list of terms with backing modals.
+  supportedTerms,
   // Phase 2 Voice Layer Rework — authority-mode plumbing. NOT branched on today.
   executionMode = 'autopilot', // eslint-disable-line no-unused-vars
 }) {
@@ -2854,6 +2884,12 @@ RIGHT NOW you have JUST executed a swap on this battle. The swap committed secon
   if (benchBriefs) blocks.push(benchBriefs);
   if (scoutAlerts) blocks.push(scoutAlerts);
   if (marketContext) blocks.push(marketContext);
+
+  // Phase 2.5: SUPPORTED TERMS reference block. Same placement as the
+  // first-message prompt — reference data alongside the market briefs.
+  const supportedTermsBlock = buildSupportedTermsBlock(supportedTerms);
+  if (supportedTermsBlock) blocks.push(supportedTermsBlock);
+
   if (marketSnapshot) blocks.push(DATA_CONFIDENCE_RULE);
 
   blocks.push(TRADE_NARRATION_INSTRUCTIONS); // Trade-narration contract (BOTTOM — LAST)
