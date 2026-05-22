@@ -7,7 +7,7 @@
 
 import Anthropic from '@anthropic-ai/sdk';
 import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
-import { isMarketOpen } from '../_utils/marketSchedule.js';
+import { isMarketOpen, getETDate, formatDateString } from '../_utils/marketSchedule.js';
 import { getStockAnalysisData, fetchIntradayBatch, filterToLatestSession } from '../_utils/marketDataCache.js';
 import { findActiveAgentBattles } from '../_utils/agentBattleService.js';
 import { unionEquippedIntoHotBench } from '../_utils/watchlistEquip.js';
@@ -255,6 +255,15 @@ async function processAgentBattle(db, battle, summary) {
     };
 
     // ---- Compute scores for active positions ----
+    // Day-1 calendar gate: on the activation day, BaggerBomb threshold baseline
+    // is the activation price (portfolio.startingPrices) so pre-activation moves
+    // don't pre-trigger badges. On day 2+, baseline rolls to previousClose for
+    // fresh daily threshold detection — matching V4's daily-reset gameplay.
+    const todayET = formatDateString(getETDate());
+    const activationDateET = battle.activatedAt
+      ? formatDateString(new Date(new Date(battle.activatedAt).toLocaleString('en-US', { timeZone: 'America/New_York' })))
+      : todayET;  // defensive fallback if activatedAt missing (should never happen on new battles)
+    const isActivationDay = todayET === activationDateET;
     const startingPrices = battle.portfolio?.startingPrices || {};
     const assetScores = flatPortfolio.map(asset => {
       const currentPrice = prices[asset.symbol]?.current;
@@ -273,7 +282,8 @@ async function processAgentBattle(db, battle, summary) {
       // Threshold baseline must match the asset's entry into the portfolio.
       // For swapped-in assets, use swapPrice so they don't get retroactive
       // BaggerBomb credit for pre-swap moves since previousClose.
-      const thresholdBaseline = asset.swapPrice || previousClose;
+      const thresholdBaseline = asset.swapPrice
+        || (isActivationDay ? (startingPrices[asset.symbol] || previousClose) : previousClose);
       const thresholdPriceChange = thresholdBaseline && thresholdBaseline > 0
         ? ((currentPrice - thresholdBaseline) / thresholdBaseline) * 100
         : null;
@@ -303,7 +313,8 @@ async function processAgentBattle(db, battle, summary) {
       const priceChange = ((currentPrice - entryPrice) / entryPrice) * 100;
       const previousClose = prices[asset.symbol]?.previousClose;
       // CPU portfolio has no swaps, but keep the pattern symmetric for future-proofing.
-      const thresholdBaseline = asset.swapPrice || previousClose;
+      const thresholdBaseline = asset.swapPrice
+        || (isActivationDay ? (startingPrices[asset.symbol] || previousClose) : previousClose);
       const thresholdPriceChange = thresholdBaseline && thresholdBaseline > 0
         ? ((currentPrice - thresholdBaseline) / thresholdBaseline) * 100
         : null;
