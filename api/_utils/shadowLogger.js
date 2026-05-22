@@ -121,3 +121,12 @@ export const logConsolidation          = (r) => appendToStream('agent_consolidat
 // errorReason) so post-deploy diagnostics can replay the path. Caller must
 // use `.catch(() => {})` to preserve the fire-and-forget contract.
 export const logFirstMessage           = (r) => appendToStream('first_message', r);
+
+// Phase 2 Voice Layer Rework — Trade Narration events. Emitted from
+// api/_utils/voiceLayerTradeNarration.js after each successful
+// executeSwapServer in agent-evaluate.js (both Haiku autopilot and
+// risk-triggered branches). Records both success (prompt + Gemma response
+// + parsed exchange + provenance + swap context) and failure (errorStep +
+// errorReason). Caller must use `.catch(() => {})` to preserve the
+// fire-and-forget contract.
+export const logTradeNarration         = (r) => appendToStream('trade_narration', r);

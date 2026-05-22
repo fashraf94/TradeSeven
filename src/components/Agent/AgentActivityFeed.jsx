@@ -646,9 +646,14 @@ const AgentActivityFeed = ({
   const [userScrolledUp, setUserScrolledUp] = useState(false);
   const prevLengthRef = useRef(statusFeed.length);
 
-  // Reverse feed: newest first
+  // Reverse feed: newest first. Exclude trade_narration entries — they
+  // are rendered as Gemma chat messages in AgentChat. Showing them as
+  // generic 'Update' cards here too duplicates content next to the
+  // existing swap row.
   const reversedFeed = useMemo(() =>
-    [...statusFeed].reverse().filter(e => e.message || e.action || e.type),
+    [...statusFeed]
+      .reverse()
+      .filter(e => (e.message || e.action || e.type) && e.action !== 'trade_narration'),
     [statusFeed]
   );
 

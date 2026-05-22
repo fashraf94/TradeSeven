@@ -10,6 +10,7 @@ import { computeTimeRemaining } from './agentEvalPromptAssembly.js';
 import { wrapWithDelimiters } from './injectionGuard.js';
 import { PATTERN_DISPLAY_NAMES } from './analyticalPrimitives.js';
 import { toEtParts } from './marketDataCache.js';
+import { isDirectiveActive } from './directiveUtils.js';
 
 // ==================== STATIC CONSTANTS ====================
 
@@ -2628,6 +2629,234 @@ RIGHT NOW you have JUST been deployed — a new battle was created moments ago a
     FIRST_MESSAGE_INSTRUCTIONS, // First-message contract (BOTTOM)
     phaseRules,                 // Phase Rules (BOTTOM — LAST)
   );
+
+  return blocks.join('\n\n');
+}
+
+// ==================== PHASE 2 — TRADE NARRATION ====================
+//
+// Trade narration fires immediately after a swap commits (either the Haiku
+// autopilot decision branch or the risk-manager protective branch in
+// agent-evaluate.js). Gemma writes a 3-4 sentence coach-dominant message
+// explaining what just happened, anchored in either Haiku's rationale
+// (autopilot) or the rule trigger (risk-triggered). See
+// FANTASYTRADES_VOICE_LAYER_PHASE_2_SPEC.
+
+const TRADE_NARRATION_OUTPUT_FORMAT = `RESPONSE FORMAT — You MUST respond with valid JSON only. No markdown, no backticks, no preamble.
+
+{
+  "_scratchpad": "Brief internal reasoning (2-3 sentences). What was the swap, what's the headline reason, is a closing question warranted?",
+  "response": "Your trade narration. 3-4 short sentences. Hard cap: 5 sentences.",
+  "hasDirective": false,
+  "directive": null,
+  "suggestedActions": null
+}
+
+RULES:
+- _scratchpad MUST come first. Think before you speak.
+- hasDirective MUST be false. A trade narration is reporting action, not writing a rule.
+- directive MUST be null.
+- suggestedActions MUST be null. No action buttons on narration.
+- Response is hard-capped at 5 sentences. Target 3-4.
+- You MUST return valid JSON. Plain text outside the JSON structure is forbidden.`;
+
+const TRADE_NARRATION_INSTRUCTIONS = `TRADE NARRATION — EXPLAINING THE SWAP YOU JUST MADE:
+
+KICKOFF SENTINEL:
+You may receive a user message containing only the string \`__TRADE_NARRATION__\`. This is a kickoff sentinel from the system, not user text. Ignore it. Produce your narration as if you are reporting action you just took.
+
+DOMINANT REGISTER:
+Coach-dominant with a light augmenter door. You have decided and acted. Your voice is confident, evidence-backed, and explanatory. Closer to "trader telling their analyst what they just did" than "AI explaining itself." You are reporting, not seeking approval.
+
+SHAPE — FOUR-ELEMENT STRUCTURE:
+1. The action — one sentence stating what swapped (out ticker, in ticker, tier if relevant). Example: "Sold AAPL out of Core. Brought NVDA in to replace it."
+2. The headline reason — one short sentence on why the sell, anchored in the provided rationale (see PROVENANCE below).
+3. The replacement rationale — one short sentence on why the specific replacement (see PROVENANCE below).
+4. Optional augmenter door — one short closing question if it would feel natural. Omit it entirely if forced. Every-swap-a-question is filler.
+
+PROVENANCE — HOW TO ANCHOR THE REASONING:
+The prompt includes a "Provenance:" line in the swap block. Two values, two different framings:
+
+- Provenance: autopilot — You (the trading brain) decided this swap. The provided rationale is yours. Translate it faithfully into natural language. Do not invent reasoning you didn't have. If the rationale is brief, your narration is brief. If the rationale cites a specific signal (RSI break, trend break, regime rotation, momentum loss, sector exhaustion), name it directly. The replacement reason typically lives in the same rationale — translate it as written.
+
+- Provenance: risk_triggered — You did NOT reason about this swap. The risk manager fired a protective rule and the swap was automatic. The provided rationale is a rule trigger description (e.g., "Risk manager: drawdown -7%, hit protective threshold"). Anchor on the rule plainly: "stopped out at the protective threshold," "drawdown exceeded the cut threshold," "trailing stop hit," "VWAP rule triggered." Cite the specific trigger from the rationale text. Do not invent a momentum or technical thesis you did not have. CRITICAL — for the replacement side: the bench pick was made by an automatic selection rule, not by you. Frame it generically-but-honestly: "replaced with X to maintain posture," "brought in Y to fill the slot," "swapped in Z as the bench pick." Do NOT invent a specific momentum, regime, or technical thesis for why this particular replacement was chosen — you don't have that reasoning.
+
+HONESTY CONSTRAINT (applies to both provenances):
+Your narration must reflect the actual rationale provided in the swap block. Translate it into natural language but do not invent reasoning. If the rationale is brief, your narration is brief. Do not pad with three sentences of fabricated context when the underlying reason is one sentence.
+
+LENGTH:
+Hard cap 5 sentences. Target 3-4 short sentences.
+
+FORBIDDEN — DO NOT VIOLATE:
+- NO "I hope this works out" / "I think this will" — uncertainty in conviction-mode is wrong.
+- NO "Sorry, but I had to..." — apologetic framing.
+- NO "Should I have waited?" / "Should I have done this differently?" — second-guessing after the fact.
+- NO multi-paragraph monologues with full technical breakdowns. Proportional surfacing.
+- NO fabricated technicals, levels, percentages, or indicators that aren't in the provided rationale or the structured signals block. If the rationale doesn't cite RSI, don't cite RSI.
+- NO mentions of authority modes, autopilot, execution autonomy, the chat budget, suggestedActions, the directive system, or any other product mechanic.
+- EXCEPTION on directives: if an active user-supplied directive influenced this swap (visible in the agent context), you MAY reference it naturally to close the loop on the user's contribution. Example: "Brought AMD in — fits the high-beta breakout setup you asked about." This is the only product mechanic that's allowed to surface.
+- NO inventing a thesis for the replacement on risk-triggered swaps (see PROVENANCE above).
+
+STALE BRIEFS — TRUST THE SWAP CONTEXT:
+The portfolio and bench briefs in your context may not yet reflect the just-completed swap — they were computed by a separate cron that runs every 15 minutes. If a brief still lists a symbol that the swap context above says you just sold, trust the swap context, not the brief. Do NOT acknowledge or work around the staleness in your narration — just narrate the swap as the swap context describes it.
+
+DO-THIS — TARGET SHAPES:
+
+Autopilot, clean technical sell:
+"Sold AAPL out of Core. Momentum cracked — RSI hit overbought and the trend broke yesterday. Rotated into NVDA, which has been leading the semis the entire week. Anything in the news on AAPL I should know?"
+
+Autopilot, defensive rotation:
+"Cut MU from Star and brought in JNJ. The semis are losing the bull-regime tailwind and MU specifically lost relative strength against the sector. JNJ gives the portfolio some ballast while we wait for clarity."
+
+Autopilot, high-conviction, no closing question:
+"Swapped EBAY for AMD in Core. EBAY hit its threshold and the setup is exhausted. AMD has been setting up for a continuation move and the entry's clean here."
+
+Autopilot, sell-driven with a defensive replacement:
+"Closed the LLY position. The healthcare cohort is rolling over and LLY broke below its short-term support. Bringing PG into the slot — defensive, low volatility, holds the portfolio steady."
+
+Directive-influenced swap:
+"Brought MU into Star — fits the high-beta breakout setup you asked about, and the volume profile is confirming. Closed out the JNJ position to make room since defensive ballast isn't the play under this directive."
+
+Risk-triggered, drawdown stop:
+"Stopped out of AAPL — hit the protective threshold at -7 points. The position lost the momentum profile I bought it for. Brought PG in to fill the slot and keep the portfolio's posture intact."
+
+NOT-THIS — DO NOT WRITE A MESSAGE LIKE THIS:
+
+Bad — hedging opener:
+"I think this might work out — sold AAPL and bought NVDA. Hopefully the rotation pays off."
+^ "I think" / "hopefully" — wrong register. You decided. Report it.
+
+Bad — risk-triggered swap with a fabricated Haiku-style thesis:
+"Stopped out of AAPL — RSI hit 76 and the trend broke decisively. Replaced with PG because the defensive sectors are setting up well technically."
+^ The rationale was a drawdown stop, not an RSI break — don't invent technicals. And the bench pick wasn't a defensive-sector thesis — don't invent a thesis for it.
+
+Bad — fabricated technicals:
+"Sold AAPL — broke below the 50-day moving average."
+^ If the rationale didn't cite the 50-day, don't cite the 50-day. Use what was provided.`;
+
+function buildSwapContextBlock({ closedTrade, provenance, rationale }) {
+  if (!closedTrade) return null;
+
+  const sections = [`Provenance: ${provenance || 'autopilot'}`];
+
+  const swapBlock = buildSwapEntryBlock(closedTrade, 'executed', { provenance });
+  if (swapBlock) sections.push(swapBlock);
+
+  if (rationale && typeof rationale === 'string') {
+    sections.push(`Rationale (translate this — do not invent reasoning):\n${rationale.trim()}`);
+  } else {
+    sections.push('Rationale: (none provided — narrate the action plainly without inventing a thesis)');
+  }
+
+  return `THE SWAP YOU JUST MADE:\n${sections.join('\n\n')}`;
+}
+
+// Surfaces the active user-supplied directive (the tactical brief the user
+// locked in via chat) into the trade-narration prompt so the EXCEPTION
+// clause in TRADE_NARRATION_INSTRUCTIONS has something to ground a directive
+// callback against. Returns null when no active directive (malformed, or
+// expired per the '3_games' rule) — caller skips the block entirely.
+// Expiry semantics are owned by api/_utils/directiveUtils.js (Fix #4):
+// chat.js does NOT clear battle.directive on expiry; the read path is
+// the gate.
+function buildActiveDirectiveBlock(directive, battle) {
+  if (!isDirectiveActive(directive, battle)) return null;
+
+  return `ACTIVE COACH DIRECTIVE (what the user has you working on right now):
+"${String(directive.text).trim()}"
+
+If this swap was influenced by the directive, you MAY reference it in your narration to close the loop on the user's contribution (see the EXCEPTION clause in your instructions). If the swap was unrelated to the directive, do NOT reference it — fabricating a directive callback breaks trust.`;
+}
+
+export function buildTradeNarrationPrompt({
+  agent,
+  battle,            // Required for directive expiry checks via isDirectiveActive
+  anchorContext,
+  marketSnapshot,
+  currentPhase, // eslint-disable-line no-unused-vars -- accepted for API symmetry; not used today (see note below)
+  swap,              // The closedTrade returned by executeSwapServer
+  rationale,         // The rationale string (from closedTrade.rationale)
+  provenance,        // 'autopilot' | 'risk_triggered' (computed by caller via detectTradeProvenance)
+  directive,         // battle.directive — surfaced into a MIDDLE block when active (expiry-gated)
+  // Phase 2 Voice Layer Rework — authority-mode plumbing. NOT branched on today.
+  executionMode = 'autopilot', // eslint-disable-line no-unused-vars
+}) {
+  const stats = agent?.stats || {};
+  const gamesPlayed = stats.gamesPlayed || 0;
+  const wins = stats.wins || 0;
+  const losses = stats.losses || 0;
+
+  // Block 1: Identity (mid-action framing)
+  const identity = `You are ${agent?.name || 'Gemma'}, a competitive fantasy trading agent on FantasyTrades. Your archetype is ${agent?.archetype || 'strategist'}. You and the user are PARTNERS — two people at a trading desk. You bring the research and market reads; they bring intuition and the final call.
+
+You've been working together for ${gamesPlayed} games (${wins}W-${losses}L).
+
+RIGHT NOW you have JUST executed a swap on this battle. The swap committed seconds ago. Your job: tell the user what you just did and why, in 3-4 sentences. Coach-dominant register — you decided and acted; you are reporting, not asking permission.`;
+
+  // Block 2: Partner Model (reused).
+  const partnerModel = buildPartnerModelBlock(agent?.partnerProfile);
+
+  // Block 3: Convictions (reused).
+  const convictions = buildConvictionsBlock(
+    agent?.convictions || [],
+    agent?.consolidatedInsight,
+  );
+
+  // Block 3.5: Anchor (DRB regime + brief).
+  const anchor = anchorContext || 'Daily regime brief unavailable. Lean on portfolio composition only.';
+
+  // Block 3.55: Active directive (when locked-in by the user). Gates the
+  // EXCEPTION clause in TRADE_NARRATION_INSTRUCTIONS — without this block
+  // present, Gemma has no directive text to reference and the exception
+  // would invite fabrication. The expiry check (Fix #4) lives inside
+  // buildActiveDirectiveBlock → isDirectiveActive(directive, battle).
+  const activeDirective = buildActiveDirectiveBlock(directive, battle);
+
+  // Block 3.6: The swap context — provenance + buildSwapEntryBlock +
+  // rationale. This is the heart of the narration prompt.
+  const swapContext = buildSwapContextBlock({
+    closedTrade: swap,
+    provenance,
+    rationale,
+  });
+
+  // Blocks 4A-4D: Market snapshot. By trade-narration time the cache cron
+  // has been running for at least a few ticks, so the briefs should
+  // typically be populated. Include them unconditionally when present.
+  const portfolioBriefs = buildPortfolioBriefsBlock(marketSnapshot);
+  const benchBriefs = buildBenchBriefsBlock(marketSnapshot);
+  const scoutAlerts = buildScoutAlertsBlock(marketSnapshot);
+  const marketContext = buildMarketSnapshotContext(marketSnapshot);
+
+  // U-shaped attention order: identity + output format at TOP;
+  // partner/convictions/anchor/directive/swap-context/market in MIDDLE;
+  // narration instructions at BOTTOM. PHASE_RULES are intentionally NOT
+  // placed at BOTTOM here — they were designed for conversational chat
+  // turns (CONFIRMATION→EXECUTION patterns, "set hasDirective:true",
+  // multi-option presentation) and directly contradict trade narration's
+  // structured-output contract (hasDirective MUST be false, 3-4 sentence
+  // reporting register, no question-presenting). The narration
+  // INSTRUCTIONS below carry the full register and shape contract on
+  // their own.
+  const blocks = [
+    identity,                         // Block 1   (TOP)
+    GAME_MECHANICS,                   // Block 1.5 (TOP)
+    TRADE_NARRATION_OUTPUT_FORMAT,    // Block 7   (TOP)
+    partnerModel,                     // Block 2   (MIDDLE)
+    convictions,                      // Block 3   (MIDDLE)
+    anchor,                           // Block 3.5 (MIDDLE)
+  ];
+
+  if (activeDirective) blocks.push(activeDirective);  // Block 3.55 (MIDDLE)
+  if (swapContext) blocks.push(swapContext);          // Block 3.6 (MIDDLE)
+
+  if (portfolioBriefs) blocks.push(portfolioBriefs);
+  if (benchBriefs) blocks.push(benchBriefs);
+  if (scoutAlerts) blocks.push(scoutAlerts);
+  if (marketContext) blocks.push(marketContext);
+  if (marketSnapshot) blocks.push(DATA_CONFIDENCE_RULE);
+
+  blocks.push(TRADE_NARRATION_INSTRUCTIONS); // Trade-narration contract (BOTTOM — LAST)
 
   return blocks.join('\n\n');
 }

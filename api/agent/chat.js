@@ -241,8 +241,20 @@ export default async function handler(req, res) {
       battle.recentElicitationTargets || [],
     );
 
-    // 13. Build conversation history — last 10 exchanges as messages
-    const previousExchanges = (battle.chatExchanges || []).slice(-10);
+    // 13. Build conversation history — last 10 exchanges as messages.
+    // Agent-initiated exchanges (first_message, auto_debrief,
+    // trade_narration) persist with userMessage:null because no user
+    // turn triggered them. Drop the ENTIRE exchange (both user-role
+    // and assistant-role halves) when userMessage is null/empty —
+    // Gemma's chat template requires strictly alternating user/
+    // assistant roles and rejects consecutive same-role messages with
+    // a 400 ("Conversation roles must alternate"). Keeping just the
+    // assistant half would produce assistant→assistant sequences that
+    // crash the chat call. __REVIEW_START__ (Phase 1 auto-debrief
+    // sentinel) is a non-empty string so it survives the filter.
+    const previousExchanges = (battle.chatExchanges || [])
+      .slice(-10)
+      .filter(ex => typeof ex?.userMessage === 'string' && ex.userMessage.length > 0);
     const conversationHistory = previousExchanges.flatMap(ex => [
       { role: 'user', content: ex.userMessage },
       { role: 'assistant', content: ex.agentResponse || ex.agentMessage || '' },

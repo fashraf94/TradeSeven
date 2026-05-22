@@ -27,6 +27,7 @@ import {
 import { TRADE_DECISION_TOOL } from '../_utils/agentEvalToolSchema.js';
 import { evaluateTriggers, fetchRecentNews } from '../_utils/agentTriggerGate.js';
 import { validateTradeDecision, executeSwapServer } from '../_utils/agentSwapExecution.js';
+import { generateTradeNarration } from '../_utils/voiceLayerTradeNarration.js';
 import { buildTechnicalSnapshot } from '../_utils/buildTechnicalSnapshot.js';
 import { applyGuardrails } from '../_utils/agentGuardrails.js';
 import { classifyStockRegime, classifyMarketPosture, getPresetAdjustedStrategies } from '../_utils/agentRegimeClassifier.js';
@@ -177,6 +178,13 @@ async function processAgentBattle(db, battle, summary) {
     summary.skipped++;
     return;
   }
+
+  // Phase 2 Voice Layer Rework — trade narrations queued during this tick.
+  // Declared outside the try so the finally block can dispatch them
+  // regardless of early-return or thrown-error exit path. Each entry is
+  // { closedTrade, evalId }; the dispatch loop in the finally block
+  // calls generateTradeNarration in parallel via Promise.allSettled.
+  const pendingNarrations = [];
 
   try {
     // Migration guard for pre-Sprint 2/3/4 battles
@@ -642,7 +650,13 @@ async function processAgentBattle(db, battle, summary) {
           trigger: riskResult.reason,
           rationale: `Risk manager: ${riskResult.detail}`,
           hypothesis: null,
-          evaluationId: `risk_${riskResult.reason}_${score.symbol}`,
+          // Timestamp suffix ensures evalIds are unique across multiple
+          // risk swaps on the same symbol+reason in a long battle (e.g.,
+          // AAPL stops out twice over a 20-day battle). Without the
+          // suffix, narration tradeContext.evaluationId would collide
+          // and the Phase 4 Film Room lookup would conflate distinct
+          // trades.
+          evaluationId: `risk_${riskResult.reason}_${score.symbol}_${Date.now()}`,
           tradingDay: currentDay,
           entryRegime: stockRegimes[score.symbol] || null,
           entryMarketPosture: marketPosture,
@@ -668,11 +682,21 @@ async function processAgentBattle(db, battle, summary) {
           }),
         };
 
-        await executeSwapServer(
+        const riskSwapResult = await executeSwapServer(
           db, battle.id, battle,
           slot.tier, slot.slotIndex,
           replacement, currentDay, prices, evaluationMetadata, snapshot
         );
+
+        // Phase 2 Voice Layer Rework — queue narration for this risk swap.
+        // The dispatch loop in the finally block at the bottom of this
+        // function calls generateTradeNarration in parallel via
+        // Promise.allSettled, so push order does not affect chat
+        // chronology — Firestore arrayUnion timestamps drive ordering.
+        pendingNarrations.push({
+          closedTrade: riskSwapResult.closedTrade,
+          evalId: null, // risk-triggered swaps don't carry the cron's eval umbrella id
+        });
 
         statusFeedEntries.push({
           timestamp: new Date().toISOString(),
@@ -716,7 +740,7 @@ async function processAgentBattle(db, battle, summary) {
     }
 
     // ---- Gameplan meeting lifecycle check (after proposals, before triggers) ----
-    const gameplanHandled = await handleGameplanMeeting(db, battleRef, battle, prices, statusFeedEntries, summary);
+    const gameplanHandled = await handleGameplanMeeting(db, battleRef, battle, prices, statusFeedEntries, summary, pendingNarrations);
     if (gameplanHandled === 'skip_haiku') {
       scoreUpdate['cronState.lastEvaluatedAt'] = new Date().toISOString();
       scoreUpdate['cronState.evaluatingAt'] = null;
@@ -1013,11 +1037,19 @@ async function processAgentBattle(db, battle, summary) {
                 rankingsMap: momentumData.rankingsMap,
               }),
             };
-            await executeSwapServer(
+            const swapResult = await executeSwapServer(
               db, battle.id, battle,
               validation.resolvedTier, validation.resolvedSlotIndex,
               benchAsset, currentDay, prices, evaluationMetadata, snapshot
             );
+
+            // Phase 2 Voice Layer Rework — queue narration for this autopilot swap.
+            // See note in risk-triggered branch above.
+            pendingNarrations.push({
+              closedTrade: swapResult.closedTrade,
+              evalId,
+            });
+
             summary.swapped++;
           } catch (swapErr) {
             console.error(`${LOG_PREFIX} Swap execution failed for battle ${battle.id}:`, swapErr.message);
@@ -1266,6 +1298,34 @@ async function processAgentBattle(db, battle, summary) {
     // Clear lock on any error
     await battleRef.update({ 'cronState.evaluatingAt': null }).catch(() => {});
     throw err;
+  } finally {
+    // Phase 2 Voice Layer Rework — dispatch trade narrations for any swaps
+    // that committed during this tick, regardless of how we exit the try
+    // (normal completion, early-return from a skip-haiku branch, or
+    // thrown error after the swap committed). generateTradeNarration
+    // never throws (the helper wraps its own try/catch), so
+    // Promise.allSettled is belt-and-suspenders.
+    //
+    // Parallel dispatch (was sequential): a multi-swap tick — risk
+    // cascade + Haiku autopilot, or a gameplan-approved rotation with
+    // multiple swaps — would otherwise serialize N × 10s of Gemma
+    // latency inside this finally and risk blowing past the cron's 60s
+    // maxDuration. Parallel keeps wall time at ~one Gemma call
+    // regardless of N. chatExchanges arrayUnion ordering is driven by
+    // each exchange's own embedded timestamp, not by dispatch order.
+    if (pendingNarrations.length > 0) {
+      await Promise.allSettled(
+        pendingNarrations.map((n) =>
+          generateTradeNarration({
+            db,
+            battleId: battle.id,
+            agentId: battle.agentId,
+            closedTrade: n.closedTrade,
+            evalId: n.evalId,
+          })
+        )
+      );
+    }
   }
 }
 
@@ -1351,6 +1411,11 @@ async function handlePendingProposal(db, battleRef, battle, prices, statusFeedEn
             symbolOut: proposal.symbolOut, symbolIn: proposal.symbolIn,
           });
         } else {
+          // TODO(post-launch authority modes): when co-pilot / manual return,
+          // capture the closedTrade and push to pendingNarrations here so
+          // approved proposals get a Gemma narration in chat. Dormant under
+          // today's autopilot launch guard — handlePendingProposal short-
+          // circuits autopilot mode to auto_executed without execution.
           await executeSwapServer(
             db, battle.id, battle,
             proposal.tier, proposal.slotIndex,
@@ -1433,6 +1498,9 @@ async function handlePendingProposal(db, battleRef, battle, prices, statusFeedEn
           action: 'hold', source: 'proposal_system',
         });
       } else {
+        // TODO(post-launch authority modes): same as the 'approved' branch
+        // above — capture closedTrade + push to pendingNarrations when
+        // co-pilot mode returns. Dormant today under autopilot launch guard.
         await executeSwapServer(
           db, battle.id, battle,
           proposal.tier, proposal.slotIndex,
@@ -1485,7 +1553,7 @@ async function handlePendingProposal(db, battleRef, battle, prices, statusFeedEn
  * Mirrors handlePendingProposal pattern.
  * Returns 'skip_haiku' if a pending meeting blocks evaluation, 'continue' otherwise.
  */
-async function handleGameplanMeeting(db, battleRef, battle, prices, statusFeedEntries, summary) {
+async function handleGameplanMeeting(db, battleRef, battle, prices, statusFeedEntries, summary, pendingNarrations) {
   const meeting = battle.gameplanMeeting;
   if (!meeting) return 'continue';
 
@@ -1508,14 +1576,30 @@ async function handleGameplanMeeting(db, battleRef, battle, prices, statusFeedEn
 
         const currentDay = getCurrentTradingDayServer(battle.timing?.tradingDays);
         const tradeId = `trade_${String((battle.scoreState?.tradeCount || 0) + 1).padStart(3, '0')}`;
-        await executeSwapServer(
+        // Append _${Date.now()} to keep the evaluationId unique across
+        // repeated gameplan swaps on the same symbol pair (mirrors the
+        // risk-triggered evalId suffix pattern).
+        const gameplanEvalId = `gameplan_${swap.symbolOut}_${swap.symbolIn}_${Date.now()}`;
+        const gameplanSwapResult = await executeSwapServer(
           db, battle.id, battle,
           slot.tier, slot.slotIndex,
           benchAsset, currentDay, prices,
           { id: tradeId, action: 'SWAP', trigger: 'gameplan_rotation', rationale: swap.rationale, tradingDay: currentDay,
             entryRegime: null, entryMarketPosture: null, entryConviction: 0,
-            entryPreset: battle.strategyPreset || 'balanced', entryMode: battle.executionMode || 'autopilot', exitReason: 'gameplan_rotation' }
+            entryPreset: battle.strategyPreset || 'balanced', entryMode: battle.executionMode || 'autopilot', exitReason: 'gameplan_rotation',
+            evaluationId: gameplanEvalId }
         );
+        // Phase 2 Voice Layer Rework — queue narration for this
+        // gameplan-approved swap so the user gets a chat message
+        // explaining each rotation step, not just the swap entries in
+        // the timeline. pendingNarrations may be undefined when this
+        // handler is called from a non-cron path (defensive).
+        if (pendingNarrations && gameplanSwapResult?.closedTrade) {
+          pendingNarrations.push({
+            closedTrade: gameplanSwapResult.closedTrade,
+            evalId: gameplanEvalId,
+          });
+        }
         statusFeedEntries.push({
           timestamp: new Date().toISOString(),
           message: `Gameplan approved: ${swap.symbolOut} → ${swap.symbolIn}`,
