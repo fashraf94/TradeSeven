@@ -28,13 +28,14 @@ import { TRADE_DECISION_TOOL } from '../_utils/agentEvalToolSchema.js';
 import { evaluateTriggers, fetchRecentNews } from '../_utils/agentTriggerGate.js';
 import { validateTradeDecision, executeSwapServer } from '../_utils/agentSwapExecution.js';
 import { generateTradeNarration } from '../_utils/voiceLayerTradeNarration.js';
+import { generateAnticipation } from '../_utils/voiceLayerAnticipation.js';
 import { buildTechnicalSnapshot } from '../_utils/buildTechnicalSnapshot.js';
 import { applyGuardrails } from '../_utils/agentGuardrails.js';
 import { classifyStockRegime, classifyMarketPosture, getPresetAdjustedStrategies } from '../_utils/agentRegimeClassifier.js';
 import { evaluateRisk, calculate5minSMA20, pickEmergencyReplacement, findPortfolioSlot } from '../_utils/agentRiskManager.js';
 import { getPresetConfig } from '../_utils/agentPresetConfig.js';
 import { logBattlePattern } from '../_utils/battlePatternLogger.js';
-import { logEvaluation, logVisionTransition } from '../_utils/shadowLogger.js';
+import { logEvaluation, logVisionTransition, logAnticipation } from '../_utils/shadowLogger.js';
 import { filterActiveConstraints } from '../_utils/visionRuntime.js';
 import { confidenceToFloat } from '../../src/constants/visionEnums.js';
 import { validateTransition } from '../../src/types/vision/visionValidators.js';
@@ -114,7 +115,10 @@ export default async function handler(req, res) {
       }
 
       try {
-        await processAgentBattle(db, battle, summary);
+        // Pass startTime so processAgentBattle can budget-gate the Phase 3
+        // anticipation dispatch in its finally block (anticipations skip
+        // gracefully if <12s of cron budget remain; narrations always fire).
+        await processAgentBattle(db, battle, summary, startTime);
       } catch (err) {
         console.error(`${LOG_PREFIX} Error processing battle ${battle.id}:`, err.message);
         summary.errors++;
@@ -150,7 +154,7 @@ export default async function handler(req, res) {
 
 // ==================== CORE PROCESSING ====================
 
-async function processAgentBattle(db, battle, summary) {
+async function processAgentBattle(db, battle, summary, cronStartTime = Date.now()) {
   const battleRef = db.collection('agentBattles').doc(battle.id);
 
   // ---- Idempotency: atomically check and acquire evaluatingAt lock ----
@@ -185,6 +189,15 @@ async function processAgentBattle(db, battle, summary) {
   // { closedTrade, evalId }; the dispatch loop in the finally block
   // calls generateTradeNarration in parallel via Promise.allSettled.
   const pendingNarrations = [];
+
+  // Phase 3 Voice Layer Rework — anticipation candidates Haiku flagged
+  // this tick. Same lifetime as pendingNarrations (declared outside try
+  // so the finally block can dispatch them). Each entry is
+  // { candidate, evalId }; the dispatch loop in the finally block runs
+  // AFTER pendingNarrations have settled (sequential between batches,
+  // parallel within each batch), and is budget-gated to skip gracefully
+  // under cron time pressure.
+  const pendingAnticipations = [];
 
   try {
     // Migration guard for pre-Sprint 2/3/4 battles
@@ -917,6 +930,22 @@ async function processAgentBattle(db, battle, summary) {
 
     // ---- Process decision ----
     const evalId = `eval_${String((battle.evaluations?.length || 0) + 1).padStart(3, '0')}`;
+
+    // Phase 3 Voice Layer Rework — queue anticipation candidates Haiku
+    // flagged on this tick for narration. Fires on HOLD, SWAP, and
+    // PROPOSAL paths alike — anticipation is additive metadata
+    // independent of the trade decision. Dispatched (with budget gate)
+    // in the finally block after pendingNarrations have settled.
+    // evalId is captured here (right after Haiku returned) so each
+    // anticipation message can be cross-referenced back to the
+    // evaluation that flagged it.
+    if (Array.isArray(haikuResult?.anticipationCandidates)) {
+      for (const candidate of haikuResult.anticipationCandidates) {
+        if (candidate && typeof candidate === 'object' && candidate.symbol) {
+          pendingAnticipations.push({ candidate, evalId });
+        }
+      }
+    }
     const now = new Date().toISOString();
     const phase = computeBattlePhase(battle);
 
@@ -1340,6 +1369,59 @@ async function processAgentBattle(db, battle, summary) {
           })
         )
       );
+    }
+
+    // Phase 3 Voice Layer Rework — dispatch anticipations AFTER narrations
+    // have settled (sequential between batches, parallel within each
+    // batch). This keeps chat ordering chronologically coherent: a
+    // narration for a swap that committed during this tick has a
+    // timestamp earlier than an anticipation generated afterward, even
+    // though both fire in the same finally.
+    //
+    // Budget gate: each generateAnticipation call has a 10s
+    // AbortController timeout. We require at least 12s of remaining
+    // cron budget (10s for Gemma + 2s headroom for Firestore write
+    // and shadow log) before invoking. Below that, the entire
+    // anticipation batch is skipped with a shadow-log breadcrumb —
+    // narrations remain higher priority and always fire. This is the
+    // graceful-degradation contract: anticipations are the lowest
+    // priority Voice Layer surface (per spec §2 Decision 2).
+    if (pendingAnticipations.length > 0) {
+      const remainingBudget = TIME_BUDGET_MS - (Date.now() - cronStartTime);
+      if (remainingBudget > 12_000) {
+        await Promise.allSettled(
+          pendingAnticipations.map((a) =>
+            generateAnticipation({
+              db,
+              battleId: battle.id,
+              agentId: battle.agentId,
+              anticipationCandidate: a.candidate,
+              evalId: a.evalId,
+            })
+          )
+        );
+      } else {
+        console.log(
+          `${LOG_PREFIX} Skipped ${pendingAnticipations.length} anticipation dispatch(es) for battle ${battle.id} — cron budget pressure (${remainingBudget}ms remaining)`
+        );
+        for (const a of pendingAnticipations) {
+          logAnticipation({
+            battleId: battle.id,
+            agentId: battle.agentId,
+            anticipationSource: 'haiku',
+            success: false,
+            errorStep: 'cron_budget_skip',
+            errorReason: `remaining_budget_${remainingBudget}ms`,
+            candidate: a.candidate ? {
+              symbol: a.candidate.symbol || null,
+              direction: a.candidate.direction || null,
+              signalSummary: a.candidate.signalSummary || null,
+              threshold: a.candidate.threshold || null,
+            } : null,
+            evalId: a.evalId || null,
+          }).catch(() => {});
+        }
+      }
     }
   }
 }

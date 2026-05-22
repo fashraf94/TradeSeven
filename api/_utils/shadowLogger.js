@@ -130,3 +130,13 @@ export const logFirstMessage           = (r) => appendToStream('first_message', 
 // errorReason). Caller must use `.catch(() => {})` to preserve the
 // fire-and-forget contract.
 export const logTradeNarration         = (r) => appendToStream('trade_narration', r);
+
+// Phase 3 Voice Layer Rework — Anticipation events. Emitted from
+// api/_utils/voiceLayerAnticipation.js whenever Haiku populates
+// anticipationCandidates on its structured output. Records success
+// (prompt + Gemma response + parsed exchange + candidate metadata) and
+// failure (errorStep + errorReason). Also emitted by agent-evaluate.js
+// with errorStep='cron_budget_skip' when graceful degradation skips
+// dispatch under time pressure. Caller must use `.catch(() => {})` to
+// preserve the fire-and-forget contract.
+export const logAnticipation           = (r) => appendToStream('anticipation', r);

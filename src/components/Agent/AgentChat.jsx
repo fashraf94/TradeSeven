@@ -236,6 +236,7 @@ const RENDER_CONFIG = {
   auto_debrief:      { accent: '#f59e0b', label: { emoji: '📋', text: 'Post-Market Debrief' } },
   first_message:     { accent: '#5EEAD4', label: null },
   trade_narration:   { accent: '#5EEAD4', label: null },
+  anticipation:      { accent: '#5EEAD4', label: null },
 };
 
 function resolveMessageType(message) {

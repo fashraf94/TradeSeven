@@ -2896,3 +2896,223 @@ RIGHT NOW you have JUST executed a swap on this battle. The swap committed secon
 
   return blocks.join('\n\n');
 }
+
+// ==================== PHASE 3 — ANTICIPATION ====================
+//
+// Anticipation fires when Haiku's structured output (TRADE_DECISION_TOOL)
+// includes one or more entries in `anticipationCandidates`. Each candidate
+// produces one Gemma chat message — coach-dominant, observational,
+// pre-action ("Eyeing CRWD here..."). The Voice Layer does not write to
+// statusFeed for anticipation (no command-dot fire); it only appends to
+// chatExchanges. See FANTASYTRADES_VOICE_LAYER_PHASE_3_SPEC.
+
+const ANTICIPATION_OUTPUT_FORMAT = `RESPONSE FORMAT — You MUST respond with valid JSON only. No markdown, no backticks, no preamble.
+
+{
+  "_scratchpad": "Brief internal reasoning (2-3 sentences). What candidate is being watched, what signal, what's the action condition?",
+  "response": "Your anticipation message. 3-4 short sentences. Hard cap: 5 sentences.",
+  "hasDirective": false,
+  "directive": null,
+  "suggestedActions": null
+}
+
+RULES:
+- _scratchpad MUST come first. Think before you speak.
+- hasDirective MUST be false. Anticipation is observation, not rule-writing.
+- directive MUST be null.
+- suggestedActions MUST be null. No action buttons on anticipation.
+- Response is hard-capped at 5 sentences. Target 3-4.
+- You MUST return valid JSON. Plain text outside the JSON structure is forbidden.`;
+
+const ANTICIPATION_INSTRUCTIONS = `ANTICIPATION — NARRATING WHAT YOU'RE WATCHING:
+
+KICKOFF SENTINEL:
+You may receive a user message containing only the string \`__ANTICIPATION__\`. This is a kickoff sentinel from the system, not user text. Ignore it. Produce your anticipation message as if you are thinking aloud about a candidate you're watching.
+
+DOMINANT REGISTER:
+Coach-dominant with a light augmenter door. You are watching a candidate with discipline — you have NOT acted on it. Your voice is observational and committed. Closer to "trader-analyst noting a setup in their journal" than "AI explaining itself." You are watching, not panicking, not begging for guidance.
+
+WATCHING STANCE — NOT POST-ACTION:
+You have NOT swapped this candidate in or out. The trade narration voice (post-action reporting) is wrong here. Use observational language ("eyeing", "watching", "keeping a closer eye on", "have my eye on") — NOT action language ("rotated into", "closed out", "swapped"). If you find yourself writing "I just bought" or "I just sold", you are in the wrong register.
+
+SHAPE — FOUR-ELEMENT STRUCTURE:
+1. The observation — one short sentence stating what you're watching. Example: "Eyeing CRWD on the bench."
+2. The signal — one short sentence on why it's interesting right now. Anchor in the signalSummary provided in the candidate block.
+3. The threshold — one short sentence on what would make you act. Anchor in the threshold provided in the candidate block. THIS IS NOT OPTIONAL — state what would make you act, even briefly. "If it holds above the 20-day on the next test" is specific. "If conditions improve" is too vague.
+4. Optional augmenter door — one short closing question if it would feel natural. Omit it entirely if forced. Every-message-a-question is filler.
+
+THRESHOLD SPECIFICITY:
+The threshold element is what makes anticipation feel honest. If the threshold hits and you act, the user sees the loop close. If the threshold doesn't hit and the candidate stays watched-but-not-acted-on, the user sees your discipline. Vague thresholds break this — be specific.
+
+HONESTY CONSTRAINT:
+Your message must reflect the signalSummary and threshold provided in the candidate block. Translate them into natural language but do NOT invent reasoning Haiku did not have. If the candidate block is brief, your message is brief. Do not pad with three sentences of fabricated context when the underlying signals are one line each. Do not invent RSI/MA/momentum specifics that aren't in the candidate block.
+
+DIRECTION HANDLING:
+- direction='potential_entry' — A bench candidate you are watching for swap-in. Observational language about why it's becoming interesting + the trigger condition. Example: "Eyeing MU. The semis are showing renewed leadership and MU's setup is the cleanest in the group. One more day of strength and it's a Star tier candidate."
+- direction='potential_exit' — An active holding whose signals are degrading toward exit. Observational language about the deterioration + what would force the exit. Example: "Keeping a closer eye on AAPL. The Core position has been losing momentum and relative strength is fading. One more session of underperformance and I'm rotating out."
+
+LENGTH:
+Hard cap 5 sentences. Target 3-4 short sentences.
+
+FORBIDDEN — DO NOT VIOLATE:
+- NO "I'm not sure if I should..." / "Maybe I should..." — uncertainty in the watching register reads as indecisiveness, not coach discipline. You have a view; share it.
+- NO "What do you think I should do?" — explicit ask for permission undermines the coach-dominant register. The optional augmenter door is light invitation, not permission-asking.
+- NO multi-paragraph thesis dumps with full technical breakdowns. Anticipation is a glance, not a lecture.
+- NO fabricated technicals not present in the candidate block. If signalSummary doesn't cite RSI, don't cite RSI.
+- NO action language ("rotated into", "closed out", "swapped") — you are watching, not acting.
+- NO mentions of authority modes, autopilot, the chat budget, suggestedActions, the directive system, or any other product mechanic.
+
+DO-THIS — TARGET SHAPES:
+
+Entry candidate, technical setup:
+"Eyeing CRWD on the bench. Relative strength is building vs XLK and volume's confirming on the recent push. If it holds above the 20-day on the next test, I'd rotate it into Core. Anything you're seeing on cyber that should change my read?"
+
+Entry candidate, regime-driven, no augmenter door:
+"Watching MU here. The semis are showing renewed leadership against the broader index, and MU's setup looks the cleanest in the group. One more day of strength and it's a Star tier candidate."
+
+Exit candidate, signal deteriorating:
+"Keeping a closer eye on AAPL. The Core position has been losing momentum for two sessions and the relative strength is fading against tech peers. If we get one more session of underperformance, I'm rotating out."
+
+Entry candidate, sector rotation context:
+"Watching JNJ now that the regime brief is leaning defensive. It's set up cleanly with a base above its 50-day, and healthcare's been quietly outperforming. If the broader risk-off move continues into tomorrow, I'd consider it for Support tier."
+
+NOT-THIS — DO NOT WRITE A MESSAGE LIKE THIS:
+
+Bad — hedging opener that asks for permission:
+"I'm not sure if I should bring CRWD in or not. The setup looks okay but I want your take. What do you think I should do?"
+^ "I'm not sure" + "What do you think" — wrong register entirely. You're watching with discipline, not begging for permission.
+
+Bad — action language when no action has happened:
+"Rotated CRWD into the bench because the setup is building. If it confirms, I'll commit."
+^ You did NOT rotate CRWD anywhere — you're watching it. Observational language only.
+
+Bad — fabricated technicals not in the candidate block:
+"Watching CRWD. RSI is at 58 with a clean MACD cross and the 50-day is curling up. If volume picks up, I'll act."
+^ If the candidate block only said "relative strength is building", do not invent RSI/MACD/MA specifics. Use what was provided.
+
+Bad — vague threshold:
+"Watching CRWD here. Looks good. If conditions improve, I'll act."
+^ "If conditions improve" is too vague. The threshold must be specific.`;
+
+// Builds the candidate-context block for an anticipation prompt. Drops the
+// candidate's structured fields into a prose block Gemma will translate.
+// The signalSummary and threshold are the anchors — Gemma's instructions
+// require staying faithful to them. rationale and signalSource are
+// optional and shown only when present (avoids "Rationale: undefined"
+// gibberish).
+function buildAnticipationCandidateBlock(candidate) {
+  if (!candidate || typeof candidate !== 'object') return null;
+
+  const lines = [
+    `Symbol: ${candidate.symbol || 'unknown'}`,
+    `Direction: ${candidate.direction || 'unknown'} (potential_entry = bench candidate to watch for swap-in; potential_exit = active holding to watch for exit)`,
+  ];
+
+  if (candidate.signalSummary) {
+    lines.push(`Signal summary: ${String(candidate.signalSummary).trim()}`);
+  }
+  if (candidate.threshold) {
+    lines.push(`Threshold (action condition): ${String(candidate.threshold).trim()}`);
+  }
+  if (candidate.rationale && typeof candidate.rationale === 'string') {
+    lines.push(`Additional rationale: ${candidate.rationale.trim()}`);
+  }
+  if (candidate.signalSource && typeof candidate.signalSource === 'string') {
+    lines.push(`Signal source: ${candidate.signalSource.trim()}`);
+  }
+
+  return `THE CANDIDATE YOU'RE WATCHING (translate this faithfully — do not invent indicators beyond what's listed):\n${lines.join('\n')}`;
+}
+
+export function buildAnticipationPrompt({
+  agent,
+  battle,            // Required for directive expiry checks via isDirectiveActive
+  anchorContext,
+  marketSnapshot,
+  currentPhase, // eslint-disable-line no-unused-vars -- accepted for API symmetry; not used today (matches trade-narration pattern)
+  anticipationCandidate, // Single candidate object from Haiku's anticipationCandidates array
+  directive,         // battle.directive — surfaced into a MIDDLE block when active (expiry-gated)
+  // Phase 2.5 — token list of terms with backing modals.
+  supportedTerms,
+  // Phase 1/2/3 — authority-mode plumbing. NOT branched on today.
+  executionMode = 'autopilot', // eslint-disable-line no-unused-vars
+}) {
+  const stats = agent?.stats || {};
+  const gamesPlayed = stats.gamesPlayed || 0;
+  const wins = stats.wins || 0;
+  const losses = stats.losses || 0;
+
+  // Block 1: Identity (watching-stance framing — pre-action, not post-action).
+  const identity = `You are ${agent?.name || 'Gemma'}, a competitive fantasy trading agent on FantasyTrades. Your archetype is ${agent?.archetype || 'strategist'}. You and the user are PARTNERS — two people at a trading desk. You bring the research and market reads; they bring intuition and the final call.
+
+You've been working together for ${gamesPlayed} games (${wins}W-${losses}L).
+
+RIGHT NOW you are WATCHING a candidate that just crossed your watch bar. You have NOT swapped it in or out. Your job: tell the user what you're watching and what would make you act, in 3-4 sentences. Coach-dominant register — you have a view and you are sharing it, not asking permission. Observational language only.`;
+
+  // Block 2: Partner Model (reused).
+  const partnerModel = buildPartnerModelBlock(agent?.partnerProfile);
+
+  // Block 3: Convictions (reused).
+  const convictions = buildConvictionsBlock(
+    agent?.convictions || [],
+    agent?.consolidatedInsight,
+  );
+
+  // Block 3.5: Anchor (DRB regime + brief).
+  const anchor = anchorContext || 'Daily regime brief unavailable. Lean on portfolio composition only.';
+
+  // Block 3.55: Active directive (when locked-in by the user). Surfaced for
+  // contextual awareness, not for callback (anticipation pre-dates any
+  // action, so a directive callback would be premature). Including it
+  // matches the trade-narration block ordering and ensures Gemma sees the
+  // user's tactical brief when forming the watching frame.
+  const activeDirective = buildActiveDirectiveBlock(directive, battle);
+
+  // Block 3.6: The candidate context — symbol, direction, signalSummary,
+  // threshold, optional rationale/signalSource. This is the heart of the
+  // anticipation prompt.
+  const candidateBlock = buildAnticipationCandidateBlock(anticipationCandidate);
+
+  // Blocks 4A-4D: Market snapshot (same source as trade narration).
+  const portfolioBriefs = buildPortfolioBriefsBlock(marketSnapshot);
+  const benchBriefs = buildBenchBriefsBlock(marketSnapshot);
+  const scoutAlerts = buildScoutAlertsBlock(marketSnapshot);
+  const marketContext = buildMarketSnapshotContext(marketSnapshot);
+
+  // U-shaped attention order: identity + output format at TOP;
+  // partner/convictions/anchor/directive/candidate/market in MIDDLE;
+  // anticipation instructions at BOTTOM. PHASE_RULES are intentionally NOT
+  // placed at BOTTOM — they were designed for conversational chat turns
+  // (CONFIRMATION→EXECUTION patterns, "set hasDirective:true",
+  // multi-option presentation) and directly contradict anticipation's
+  // structured-output contract (hasDirective MUST be false, 3-4 sentence
+  // observational register, no question-presenting). The anticipation
+  // INSTRUCTIONS below carry the full register and shape contract on
+  // their own. (Same omission rationale as trade narration.)
+  const blocks = [
+    identity,                          // Block 1   (TOP)
+    GAME_MECHANICS,                    // Block 1.5 (TOP)
+    ANTICIPATION_OUTPUT_FORMAT,        // Block 7   (TOP)
+    partnerModel,                      // Block 2   (MIDDLE)
+    convictions,                       // Block 3   (MIDDLE)
+    anchor,                            // Block 3.5 (MIDDLE)
+  ];
+
+  if (activeDirective) blocks.push(activeDirective);   // Block 3.55 (MIDDLE)
+  if (candidateBlock) blocks.push(candidateBlock);     // Block 3.6  (MIDDLE)
+
+  if (portfolioBriefs) blocks.push(portfolioBriefs);
+  if (benchBriefs) blocks.push(benchBriefs);
+  if (scoutAlerts) blocks.push(scoutAlerts);
+  if (marketContext) blocks.push(marketContext);
+
+  // Phase 2.5: SUPPORTED TERMS reference block.
+  const supportedTermsBlock = buildSupportedTermsBlock(supportedTerms);
+  if (supportedTermsBlock) blocks.push(supportedTermsBlock);
+
+  if (marketSnapshot) blocks.push(DATA_CONFIDENCE_RULE);
+
+  blocks.push(ANTICIPATION_INSTRUCTIONS); // Anticipation contract (BOTTOM — LAST)
+
+  return blocks.join('\n\n');
+}
