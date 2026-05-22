@@ -18,6 +18,7 @@ import { generateCPUOpponent } from '../_utils/cpuOpponentGenerator.js';
 import { computeArchetypeRankings, ARCHETYPE_TEMPERATURES } from '../_utils/archetypeScoring.js';
 import { logDecision, logFirstMessage } from '../_utils/shadowLogger.js';
 import { buildFirstMessagePrompt, getAgentPhase } from '../_utils/voiceLayerPrompt.js';
+import { TERM_TOKENS } from '../_utils/termUniverse.js';
 import { callGemmaVoice, parseVoiceLayerResponse } from '../_utils/gemmaClient.js';
 import {
   resolveEquippedWatchlist,
@@ -819,6 +820,7 @@ async function generateFirstMessageOnDeploy({ db, agentData, battleId }) {
         anchorContext,
         marketSnapshot,
         currentPhase,
+        supportedTerms: TERM_TOKENS,
         executionMode: battle.executionMode || 'autopilot',
       });
     } catch (err) {

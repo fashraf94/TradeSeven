@@ -27,6 +27,7 @@ import {
   detectTradeProvenance,
   getAgentPhase,
 } from './voiceLayerPrompt.js';
+import { TERM_TOKENS } from './termUniverse.js';
 
 // Failure modes (each logged but never thrown):
 //   - read_context: fresh battle / agent / market / DRB / cache fetch failed,
@@ -130,6 +131,7 @@ export async function generateTradeNarration({
         rationale,
         provenance,
         directive: battle.directive || null,
+        supportedTerms: TERM_TOKENS,
         executionMode: battle.executionMode || 'autopilot',
       });
     } catch (err) {

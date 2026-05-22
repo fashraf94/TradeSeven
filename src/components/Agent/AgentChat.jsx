@@ -6,6 +6,7 @@ import TradeTickerCard from './TradeTickerCard';
 import LiveActivityPanel from './LiveActivityPanel';
 import InlineTradingGradeCard from './InlineTradingGradeCard';
 import { submitDailyGrades } from '../../services/agentService';
+import { TERM_TOKENS_SET } from '../../data/termUniverse';
 
 // "Didn't respond" means the proposal hit its deadline without the user
 // approving or vetoing. In strategist mode, agent-evaluate.js writes
@@ -154,21 +155,21 @@ function ExecutionCard({ directive }) {
   );
 }
 
-// ── Ticker detection in chat messages ─────────────────────────────────────────
+// ── Entity detection in chat messages (Phase 2.5 Voice Layer Rework) ─────────
+//
+// Each [A-Z]{1,5} match is resolved against, in order:
+//   1. knownTickers (battle roster) → teal ticker span → opens AssetResearchModal
+//   2. TERM_TOKENS_SET (Phase 2.5)  → amber term span  → opens TermResearchModal
+//   3. fallthrough                  → plain text (no highlight, no broken modal)
+//
+// The previous behavior made every non-excluded 2+ char uppercase token
+// clickable, which routed acronyms like VWAP/PCE/RSI to a broken
+// AssetResearchModal. The fallthrough-to-plain-text branch is the bug fix.
 
-const EXCLUDED_WORDS = new Set([
-  'I', 'A', 'AM', 'PM', 'AT', 'IN', 'ON', 'OR', 'IF', 'IT', 'IS', 'TO',
-  'THE', 'AND', 'BUT', 'FOR', 'NOT', 'YOU', 'ALL', 'CAN', 'HER', 'WAS',
-  'ONE', 'OUR', 'OUT', 'ARE', 'HAS', 'HIS', 'HOW', 'ITS', 'LET', 'MAY',
-  'NEW', 'NOW', 'OLD', 'SEE', 'WAY', 'WHO', 'DID', 'GET', 'HIM', 'GOT',
-  'SAY', 'SHE', 'TOO', 'USE', 'ATR', 'ETF', 'CEO', 'IPO',
-  'HOLD', 'SWAP', 'STAR', 'CORE', 'WITH', 'THAT', 'THIS', 'FROM',
-  'HAVE', 'BEEN', 'WILL', 'YOUR', 'WHAT', 'WHEN', 'MAKE', 'LIKE',
-  'JUST', 'OVER', 'SUCH', 'TAKE', 'THAN', 'THEM', 'VERY', 'SOME',
-  'INTO', 'MOST', 'ALSO', 'DONE', 'WANT', 'GOES', 'MUCH',
-]);
+const TICKER_ACCENT = '#5EEAD4';
+const TERM_ACCENT = '#f59e0b';
 
-function renderMessageWithTickers(text, onSymbolClick, knownTickers) {
+function renderMessageWithEntities(text, onSymbolClick, knownTickers) {
   if (!text || !onSymbolClick) return text;
 
   const parts = [];
@@ -178,19 +179,22 @@ function renderMessageWithTickers(text, onSymbolClick, knownTickers) {
 
   while ((match = regex.exec(text)) !== null) {
     const word = match[1];
-    const isKnown = knownTickers?.has(word);
-    const isExcluded = EXCLUDED_WORDS.has(word);
+    const isTicker = knownTickers?.has(word);
+    const isTerm = !isTicker && TERM_TOKENS_SET.has(word);
 
-    if (isKnown || (!isExcluded && word.length >= 2)) {
-      if (match.index > lastIndex) {
-        parts.push(text.slice(lastIndex, match.index));
-      }
+    if (!isTicker && !isTerm) continue;
+
+    if (match.index > lastIndex) {
+      parts.push(text.slice(lastIndex, match.index));
+    }
+
+    if (isTicker) {
       parts.push(
         <span
           key={match.index}
           onClick={() => onSymbolClick({ symbol: word })}
           style={{
-            color: '#5EEAD4',
+            color: TICKER_ACCENT,
             cursor: 'pointer',
             borderBottom: '1px dotted rgba(94, 234, 212, 0.4)',
           }}
@@ -198,8 +202,23 @@ function renderMessageWithTickers(text, onSymbolClick, knownTickers) {
           {word}
         </span>
       );
-      lastIndex = match.index + word.length;
+    } else {
+      parts.push(
+        <span
+          key={match.index}
+          onClick={() => onSymbolClick({ type: 'term', token: word })}
+          style={{
+            color: TERM_ACCENT,
+            cursor: 'pointer',
+            borderBottom: '1px dotted rgba(245, 158, 11, 0.4)',
+          }}
+        >
+          {word}
+        </span>
+      );
     }
+
+    lastIndex = match.index + word.length;
   }
 
   if (lastIndex === 0) return text;
@@ -304,7 +323,7 @@ function MessageBubble({ message, agentName, isLastAgent, onActionClick, isSendi
         whiteSpace: 'pre-wrap',
         wordBreak: 'break-word',
       }}>
-        {renderMessageWithTickers(message.text, onSymbolClick, knownTickers)}
+        {renderMessageWithEntities(message.text, onSymbolClick, knownTickers)}
       </div>
       {message.hasDirective && message.directive ? (
         <ExecutionCard directive={message.directive} />
