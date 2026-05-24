@@ -186,8 +186,10 @@ const BattleHistoryScreen = ({
 
           {/* Agent Battles section — Voice Layer Phase 4 Film Room entry point.
               Surfaced above the per-tab content so completed agent battles are
-              reachable from anywhere in Battle History. */}
-          {Array.isArray(completedAgentBattles) && completedAgentBattles.length > 0 && (
+              reachable from anywhere in Battle History. The section header
+              renders unconditionally; the card list is swapped for an empty
+              state when no completed agent battles exist yet. */}
+          {Array.isArray(completedAgentBattles) && (
             <div
               style={{
                 background: '#161b22',
@@ -222,7 +224,23 @@ const BattleHistoryScreen = ({
                   ({completedAgentBattles.length})
                 </span>
               </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              {completedAgentBattles.length === 0 ? (
+                <div
+                  style={{
+                    padding: '20px 16px',
+                    borderRadius: '8px',
+                    border: '1px dashed #21262d',
+                    background: '#0d1117',
+                    color: '#6e7681',
+                    fontSize: '12px',
+                    textAlign: 'center',
+                    lineHeight: 1.5,
+                  }}
+                >
+                  No completed agent battles yet — when you complete an agent battle, it'll appear here for review.
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                 {completedAgentBattles.map((b) => {
                   const myScore = b?.scoreState?.currentScore;
                   const oppScore = b?.scoreState?.opponentScore;
@@ -322,7 +340,8 @@ const BattleHistoryScreen = ({
                     </div>
                   );
                 })}
-              </div>
+                </div>
+              )}
             </div>
           )}
 

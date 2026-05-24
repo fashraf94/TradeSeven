@@ -9130,12 +9130,14 @@ export default function PortfolioDuel() {
   // FILM ROOM SCREEN - Phase 4 Voice Layer Rework: post-battle review surface
   if (screen === 'filmRoom' && currentBattle) {
     return (
-      <ErrorBoundary name="Film Room" onNavigateDashboard={() => setScreen('dashboard')}>
-        <FilmRoomScreen
-          battle={currentBattle}
-          onBack={() => setScreen('dashboard')}
-        />
-      </ErrorBoundary>
+      <div style={{ marginLeft: isDesktop ? (sidebarCollapsed ? '64px' : '220px') : 0, transition: 'margin-left 0.2s ease' }}>
+        <ErrorBoundary name="Film Room" onNavigateDashboard={() => setScreen('dashboard')}>
+          <FilmRoomScreen
+            battle={currentBattle}
+            onBack={() => setScreen('dashboard')}
+          />
+        </ErrorBoundary>
+      </div>
     );
   }
 
