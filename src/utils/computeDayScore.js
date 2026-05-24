@@ -1,4 +1,4 @@
-import { dayOf } from './dayOfTimestamp';
+import { dayOf } from './dayOfTimestamp.js';
 
 // Per-day score for the Film Room ScoreSummaryCard.
 //
