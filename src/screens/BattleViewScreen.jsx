@@ -9,6 +9,7 @@ const BattleViewScreen = ({
   battlePrices,
   battleTimer,
   onBack,
+  onOpenFilmRoom,
   ActiveRiskChallengeIndicator,
   LoadingFallback,
   BaggerBombBattleViewRedesign,
@@ -22,7 +23,12 @@ const BattleViewScreen = ({
   if (currentBattle.agentDeployed === true && AgentBattleScreen) {
     return (
       <Suspense fallback={<LoadingFallback />}>
-        <AgentBattleScreen battle={currentBattle} user={user} onBack={onBack} />
+        <AgentBattleScreen
+          battle={currentBattle}
+          user={user}
+          onBack={onBack}
+          onOpenFilmRoom={onOpenFilmRoom}
+        />
       </Suspense>
     );
   }

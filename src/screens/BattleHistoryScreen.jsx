@@ -9,6 +9,7 @@ const BattleHistoryScreen = ({
   completedTrainingBattles,
   completedV4Battles = [],
   completedBaggerBombBattles = [],
+  completedAgentBattles = [],
   historyTab,
   setHistoryTab,
   loadingTrainingBattles,
@@ -16,6 +17,7 @@ const BattleHistoryScreen = ({
   onBack,
   sendRematchRequest,
   BattleHistoryCard,
+  onOpenFilmRoom,
 }) => {
   // Get completed battles based on tab
   // Use previousBattles state (from tradeseven_previous_battles localStorage)
@@ -181,6 +183,148 @@ const BattleHistoryScreen = ({
               Training
             </button>
           </div>
+
+          {/* Agent Battles section — Voice Layer Phase 4 Film Room entry point.
+              Surfaced above the per-tab content so completed agent battles are
+              reachable from anywhere in Battle History. */}
+          {Array.isArray(completedAgentBattles) && completedAgentBattles.length > 0 && (
+            <div
+              style={{
+                background: '#161b22',
+                border: '1px solid #21262d',
+                borderRadius: '12px',
+                padding: '12px',
+                marginBottom: '20px',
+              }}
+            >
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  marginBottom: '8px',
+                  padding: '0 4px',
+                }}
+              >
+                <span style={{ fontSize: '16px' }}>🎬</span>
+                <span
+                  style={{
+                    fontSize: '12px',
+                    fontWeight: 700,
+                    color: '#f59e0b',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.08em',
+                  }}
+                >
+                  Agent Battles
+                </span>
+                <span style={{ fontSize: '11px', color: '#6e7681' }}>
+                  ({completedAgentBattles.length})
+                </span>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                {completedAgentBattles.map((b) => {
+                  const myScore = b?.scoreState?.currentScore;
+                  const oppScore = b?.scoreState?.opponentScore;
+                  const completedAt = b?.completedAt;
+                  let completedLabel = '';
+                  if (completedAt) {
+                    const d = completedAt?.toDate?.() || new Date(completedAt);
+                    if (d && !Number.isNaN(d.getTime())) {
+                      completedLabel = d.toLocaleDateString('en-US', {
+                        month: 'short',
+                        day: 'numeric',
+                        year: 'numeric',
+                      });
+                    }
+                  }
+                  const oppName =
+                    b?.opponent?.username ||
+                    b?.opponent?.displayName ||
+                    'CPU Opponent';
+                  const outcome =
+                    myScore == null || oppScore == null
+                      ? null
+                      : myScore > oppScore
+                      ? 'win'
+                      : myScore < oppScore
+                      ? 'loss'
+                      : 'draw';
+                  const outcomeColor =
+                    outcome === 'win' ? '#10b981' : outcome === 'loss' ? '#ef4444' : '#6e7681';
+                  const outcomeLabel =
+                    outcome === 'win' ? 'W' : outcome === 'loss' ? 'L' : outcome === 'draw' ? 'D' : '·';
+
+                  return (
+                    <div
+                      key={b.id}
+                      style={{
+                        background: '#0d1117',
+                        border: '1px solid #21262d',
+                        borderLeft: `3px solid ${outcomeColor}`,
+                        borderRadius: '8px',
+                        padding: '10px 12px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '12px',
+                      }}
+                    >
+                      <span
+                        style={{
+                          fontSize: '12px',
+                          fontWeight: 800,
+                          color: outcomeColor,
+                          minWidth: 16,
+                          textAlign: 'center',
+                        }}
+                      >
+                        {outcomeLabel}
+                      </span>
+                      <div
+                        style={{
+                          flex: 1,
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: 2,
+                          minWidth: 0,
+                        }}
+                      >
+                        <div style={{ fontSize: '13px', color: '#ffffff', fontWeight: 600 }}>
+                          vs {oppName}
+                        </div>
+                        <div style={{ fontSize: '11px', color: '#8b949e' }}>
+                          {completedLabel}
+                          {myScore != null && oppScore != null && (
+                            <span style={{ marginLeft: 8 }}>
+                              {myScore} – {oppScore} pts
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      {onOpenFilmRoom && (
+                        <button
+                          onClick={() => onOpenFilmRoom(b)}
+                          style={{
+                            background: 'rgba(245, 158, 11, 0.15)',
+                            border: '1px solid rgba(245, 158, 11, 0.35)',
+                            color: '#f59e0b',
+                            padding: '6px 12px',
+                            borderRadius: '6px',
+                            fontSize: '12px',
+                            fontWeight: 700,
+                            cursor: 'pointer',
+                            whiteSpace: 'nowrap',
+                          }}
+                        >
+                          Review →
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           {/* Stats Summary */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(100px, 1fr))', gap: '12px', marginBottom: '24px' }}>
