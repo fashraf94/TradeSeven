@@ -121,3 +121,97 @@ The repo currently emits 1186 lint errors and 107 warnings on a fresh `npm run l
 **Trigger to fix**: Phase 6 polish window, or any time someone is auditing CI health. Until the baseline is clean, individual phase audits have to do "stash → re-lint → unstash" to confirm zero net-new errors, which is fragile.
 
 **Filed**: May 24, 2026 — Phase 4 audit G2 observation. Not Phase 4 scope.
+
+## Filed during Phase 4 code-review (post-audit)
+
+The independent /code-review pass surfaced these items in addition to the
+audit FLAGs above. The blocking and should-fix items from that review were
+addressed inline; the items below were triaged as polish to land later.
+
+### Client-side textarea length cap in FilmRoomChat (S5)
+
+`FilmRoomChat.jsx:385` accepts arbitrary-length input. The server (`api/agent/chat.js:153`) silently truncates to 2000 chars AND strips `\n\r\t<>{}`. Two failure modes: (1) a long paste reaches Haiku with mid-sentence truncation, agent answers based on partial context, user confused; (2) the in-flight reconciliation predicate at `FilmRoomChat.jsx:179` uses trimmed text equality, so if the server-stored userMessage differs from the optimistic bubble, both render — user sees their question twice. AgentChat handles this correctly via `e.target.value.slice(0, 2000)` in onChange and a >1800-char counter at `AgentChat.jsx:966`/`1011`.
+
+**Trigger to fix**: ~10-minute parity port from AgentChat. Pick up before the next user-facing iteration of Film Room chat.
+
+**Filed**: May 24, 2026 — Phase 4 code-review S5.
+
+### Loading vs missing-doc distinction in FilmRoomScreen (S6)
+
+`FilmRoomScreen.jsx:79` collapses `loading=true` and `loading=false && agentBattle==null` into a single "Loading Film Room…" branch. If the agentBattle doc is deleted, owner-rule-denied, or the caller passes a malformed battle object, the user sits on the loading message forever with only the header Back as recourse.
+
+**Trigger to fix**: when the screen sees its first reported "stuck loading" support ticket OR during the next account-deletion / data-rotation pass. Distinguish via `if (loading) return <Loading/>; if (!agentBattle) return <TapeUnavailable/>;`.
+
+**Filed**: May 24, 2026 — Phase 4 code-review S6.
+
+### Clear completedAgentBattles on logout / screen-change (S8)
+
+`App.jsx:4589` early-returns when `!user` or `screen !== 'battleHistory'` without clearing the previously-loaded list. If user A logs out and user B logs in before the new fetch resolves, user B momentarily sees user A's completed battles.
+
+**Trigger to fix**: ~2-line fix (`setCompletedAgentBattles([])` in the early-return). Pick up next time the multi-user privacy boundary is touched. Low-impact for single-tenant founder testing today, real for any shared-device or session-rotation scenario.
+
+**Filed**: May 24, 2026 — Phase 4 code-review S8.
+
+### AutoDebriefHero empty-state copy for past days (S9)
+
+`AutoDebriefHero.jsx:36` shows "Today's debrief will be filed after the close." regardless of which day is selected. For a user viewing a past day on a completed multi-day battle where the auto-debrief failed to write (fire-and-forget per cron), the wording is wrong.
+
+**Trigger to fix**: ~5-line conditional. Differentiate past day vs current day. Compare `selectedDay` against `agentBattle.timing.currentTradingDay` and `agentBattle.status`.
+
+**Filed**: May 24, 2026 — Phase 4 code-review S9.
+
+### FilmRoomChat error toast missing role="alert" (S11)
+
+`FilmRoomChat.jsx:359` renders the `{error}` block inline with no `role="alert"` or `aria-live="assertive"`. SR users get no audible feedback on send failures (budget exceeded, 429, 504, session expired).
+
+**Trigger to fix**: one-attribute change. Pair with the next a11y polish pass on Film Room.
+
+**Filed**: May 24, 2026 — Phase 4 code-review S11.
+
+### FilmRoomChat textarea aria-label + visible focus indicator (S12)
+
+`FilmRoomChat.jsx:382-403` textarea has no `aria-label` and no `<label>` association — SR users hear generic "edit text". Additionally, `outline: 'none'` (line 400) without a `:focus-visible` replacement removes the focus indicator for keyboard users.
+
+**Trigger to fix**: pair with S11 on the same a11y polish pass. Add `aria-label="Review chat message"` and either remove `outline: 'none'` or add a `:focus-visible` box-shadow.
+
+**Filed**: May 24, 2026 — Phase 4 code-review S12.
+
+### FilmRoomScreen back-button hardcoded to dashboard (N1)
+
+`App.jsx:9135` mounts FilmRoomScreen with `onBack={() => setScreen('dashboard')}`. Both entry points (in-battle banner + Battle History Review button) route through this single back-handler. A user in an active multi-day battle who taps the banner to review Day 1, then hits Back, lands on Dashboard rather than the active battle. The banner functions as a one-way trapdoor.
+
+**Trigger to fix**: track `prevScreen` (and optionally `prevBattleId`) before navigating to filmRoom, then route Back to that screen. Worth doing before Phase 5 ships because Phase 5 may add additional Film Room entry points (notifications, agent-identity-evolution surfaces).
+
+**Filed**: May 24, 2026 — Phase 4 code-review N1.
+
+### Optimistic message ID collisions on same-millisecond sends (N2)
+
+`FilmRoomChat.jsx:218` uses `u-${Date.now()}` and `t-${Date.now()}` as React keys. Two rapid sends within the same ms tick (mashed Send, programmatic retry) collide. React logs duplicate-key warnings; the cleanup filter at line 261 drops BOTH typing indicators when the first server response arrives, so the second message's typing dot vanishes prematurely.
+
+**Trigger to fix**: replace with `crypto.randomUUID()` or a monotonically increasing counter ref. ~3-line change.
+
+**Filed**: May 24, 2026 — Phase 4 code-review N2.
+
+### Clock skew >60s breaks user-bubble reconciliation (N3)
+
+`FilmRoomChat.jsx:180` reconciliation predicate requires text match AND `|server_ts - client_ts| < 60_000ms`. A client with significant NTP drift (mobile waking from long sleep, laptop with stale clock) never matches → optimistic bubble persists next to the server-confirmed bubble. Each subsequent send compounds.
+
+**Trigger to fix**: widen tolerance to 10 min OR drop the timestamp check entirely (text match alone is sufficient for a 5-message-budget session). ~1-line change.
+
+**Filed**: May 24, 2026 — Phase 4 code-review N3.
+
+### pickDefaultDay missing the createdAt sort defense (N4)
+
+`FilmRoomScreen.jsx:18` `pickDefaultDay` reads `reviews[reviews.length - 1]` with no sort. The pre-extraction `latestReview` memo in GameTapeView explicitly sorted dailyReviews by createdAt ascending before taking the last entry — comment called it "defensively sorted in case array is out of order." Defense was dropped in the extraction.
+
+**Trigger to fix**: restore the sort. ~3 lines. Pick up next time `pickDefaultDay` is touched OR when any new write path to `dailyReviews[]` is introduced (e.g., admin backfill, batch path).
+
+**Filed**: May 24, 2026 — Phase 4 code-review N4.
+
+### GameTapeView lost the "tape coming after close" signal (N5)
+
+Pre-Phase-4 GameTapeView's DaySummaryCard empty state was the canonical mid-day signal that a Film Room was coming. FilmRoomBanner is conditional on `dailyReviews.length >= 1` — so during a 1-day battle (or pre-close on a multi-day battle), there is NO surface anywhere telling the user a tape is coming. First-time users may never discover Film Room until they happen to browse Battle History later.
+
+**Trigger to fix**: add a single-line `"Today's tape will be filed after the close →"` placeholder in GameTapeView or AgentBattleScreen when `dailyReviews.length === 0`. Likely belongs as part of the discoverability work for Phase 5.
+
+**Filed**: May 24, 2026 — Phase 4 code-review N5.

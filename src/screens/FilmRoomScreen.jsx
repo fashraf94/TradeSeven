@@ -76,7 +76,11 @@ export default function FilmRoomScreen({ battle, onBack }) {
     setResearchAsset(payload);
   }, []);
 
-  if (loading || !agentBattle) {
+  // selectedDay is initialized by the effect above AFTER the first commit
+  // where agentBattle becomes available. Without this check, the body renders
+  // one frame with dayNum=null and every child shows an empty/zero state
+  // ("Day  Score" header, "No review yet" placeholder).
+  if (loading || !agentBattle || selectedDay == null) {
     return (
       <div
         style={{

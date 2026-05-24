@@ -71,7 +71,17 @@ function TradeRow({ trade, tokens, onSymbolClick }) {
           {tierStyle.label}
         </span>
         <span
+          role={trade?.symbolOut ? 'button' : undefined}
+          tabIndex={trade?.symbolOut ? 0 : undefined}
+          aria-label={trade?.symbolOut ? `Open research for ${trade.symbolOut}` : undefined}
           onClick={() => handleSymbolClick(trade?.symbolOut)}
+          onKeyDown={(e) => {
+            if (!trade?.symbolOut) return;
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              handleSymbolClick(trade.symbolOut);
+            }
+          }}
           style={{
             fontSize: 13,
             fontWeight: 700,
@@ -83,7 +93,17 @@ function TradeRow({ trade, tokens, onSymbolClick }) {
         </span>
         <span style={{ color: tokens.textFaint || '#64748b', fontSize: 12 }}>→</span>
         <span
+          role={trade?.symbolIn ? 'button' : undefined}
+          tabIndex={trade?.symbolIn ? 0 : undefined}
+          aria-label={trade?.symbolIn ? `Open research for ${trade.symbolIn}` : undefined}
           onClick={() => handleSymbolClick(trade?.symbolIn)}
+          onKeyDown={(e) => {
+            if (!trade?.symbolIn) return;
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              handleSymbolClick(trade.symbolIn);
+            }
+          }}
           style={{
             fontSize: 13,
             fontWeight: 700,

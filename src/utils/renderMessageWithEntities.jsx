@@ -15,6 +15,11 @@ export const TICKER_ACCENT = '#5EEAD4';
 export const TERM_ACCENT = '#f59e0b';
 
 export function renderMessageWithEntities(text, onSymbolClick, knownTickers) {
+  // Defensive: a malformed agentResponse (e.g., object rather than string from
+  // a server contract violation or legacy doc shape) would otherwise return
+  // through the lastIndex===0 fallthrough and React would throw
+  // "Objects are not valid as a React child" at the call site.
+  if (typeof text !== 'string') return '';
   if (!text || !onSymbolClick) return text;
 
   const parts = [];
@@ -37,7 +42,16 @@ export function renderMessageWithEntities(text, onSymbolClick, knownTickers) {
       parts.push(
         <span
           key={match.index}
+          role="button"
+          tabIndex={0}
+          aria-label={`Open research for ${word}`}
           onClick={() => onSymbolClick({ symbol: word })}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              onSymbolClick({ symbol: word });
+            }
+          }}
           style={{
             color: TICKER_ACCENT,
             cursor: 'pointer',
@@ -51,7 +65,16 @@ export function renderMessageWithEntities(text, onSymbolClick, knownTickers) {
       parts.push(
         <span
           key={match.index}
+          role="button"
+          tabIndex={0}
+          aria-label={`Open glossary for ${word}`}
           onClick={() => onSymbolClick({ type: 'term', token: word })}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              onSymbolClick({ type: 'term', token: word });
+            }
+          }}
           style={{
             color: TERM_ACCENT,
             cursor: 'pointer',

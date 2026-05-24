@@ -137,15 +137,24 @@ export default function FilmRoomChat({
 
   // Build the Q&A timeline from review-mode exchanges. AutoDebriefHero renders
   // the auto_debrief entry separately, so exclude it here to avoid duplication.
+  // Legacy guard: pre-Phase-1 auto-debrief writes (commit 4975126 and earlier)
+  // shipped with isAutoDebrief:true but no messageType field, and a sentinel
+  // userMessage of '__REVIEW_START__'. Both must be filtered out to keep the
+  // debrief from rendering twice and the sentinel from leaking as a UserBubble
+  // (AgentChat.jsx:430 carries the same guard).
   const serverMessages = useMemo(() => {
     const list = Array.isArray(chatExchanges) ? chatExchanges : [];
     const reviewQA = list.filter(
-      (ex) => ex && ex.mode === 'review' && ex.messageType !== 'auto_debrief'
+      (ex) =>
+        ex &&
+        ex.mode === 'review' &&
+        ex.messageType !== 'auto_debrief' &&
+        ex.isAutoDebrief !== true
     );
     const out = [];
     reviewQA.forEach((ex, i) => {
       const ts = tsToMs(ex.timestamp);
-      if (ex.userMessage) {
+      if (ex.userMessage && ex.userMessage !== '__REVIEW_START__') {
         out.push({
           id: `srv-${i}-user`,
           role: 'user',
@@ -189,9 +198,43 @@ export default function FilmRoomChat({
     [serverMessages, inFlight]
   );
 
-  // Auto-scroll to bottom when new messages arrive.
+  // Stuck-bubble sweeper: drop optimistic user bubbles and typing indicators
+  // that have been live > 30s. Without it, a network drop / mobile background /
+  // tab throttle that prevents the fetch from settling would leave the bubble
+  // and disabled input stuck until a full page reload. Mirrors AgentChat.jsx.
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (inFlight.length === 0) return;
+    const interval = setInterval(() => {
+      const now = Date.now();
+      setInFlight((prev) => {
+        let timedOut = false;
+        const next = prev.filter((im) => {
+          if (im.role === 'user' && (now - (im.timestamp || 0)) > 30_000) {
+            timedOut = true;
+            return false;
+          }
+          if (im.isTyping && (now - (im._createdAt || 0)) > 30_000) {
+            timedOut = true;
+            return false;
+          }
+          return true;
+        });
+        if (timedOut) {
+          setError((prevErr) => prevErr || 'Message timed out. Try again.');
+          setIsSending(false);
+        }
+        return next;
+      });
+    }, 5_000);
+    return () => clearInterval(interval);
+  }, [inFlight.length]);
+
+  // Auto-scroll to bottom when new messages arrive. block:'nearest' keeps the
+  // scroll inside the chat panel — without it, scrollIntoView walks up to
+  // FilmRoomScreen's outer overflowY:'auto' container and yanks the entire
+  // page down past AutoDebriefHero / ScoreSummaryCard / DaySummaryCard etc.
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }, [messages.length]);
 
   useEffect(() => {
