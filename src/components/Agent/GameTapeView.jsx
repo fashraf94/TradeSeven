@@ -1,6 +1,7 @@
-// GameTapeView - Pure data reference view (replaces AgentFilmRoom)
-// Shows: day summary, trade history, bookmarked entries, full activity log
-// No interactive mutations beyond bookmark toggles and Forge citation taps.
+// GameTapeView - Pure data reference view
+// Shows: trade history, bookmarked entries, full activity log.
+// Daily review (selfGrade, summary, lesson, proposed rules) lives in the
+// Film Room screen (Voice Layer Phase 4).
 
 import React, { useState, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -38,12 +39,6 @@ const TIER_STYLES = {
   star:    { color: '#fbbf24', bg: 'rgba(251, 191, 36, 0.12)', label: 'Star' },
   core:    { color: '#3b82f6', bg: 'rgba(59, 130, 246, 0.12)', label: 'Core' },
   support: { color: '#10b981', bg: 'rgba(16, 185, 129, 0.12)', label: 'Support' },
-};
-
-const GRADE_COLORS = {
-  A: '#34d399', B: '#34d399',
-  C: '#f59e0b',
-  D: '#ef4444', F: '#ef4444',
 };
 
 const toTime = (value) => {
@@ -115,164 +110,6 @@ function EmptyBlock({ message, tokens }) {
       lineHeight: 1.5,
     }}>
       {message}
-    </div>
-  );
-}
-
-// ─── Day Summary Card ─────────────────────────────────────────────────────────
-
-function DaySummaryCard({ review, tokens }) {
-  if (!review) {
-    return (
-      <EmptyBlock
-        tokens={tokens}
-        message="No review yet. Today's tape will be filed after the close."
-      />
-    );
-  }
-
-  const gradeColor = GRADE_COLORS[String(review.selfGrade || '').toUpperCase()] || tokens.textMuted;
-  const dateStr = review.date || formatTimestamp(review.createdAt);
-
-  return (
-    <div style={{
-      margin: '0 12px',
-      padding: '14px 16px',
-      borderRadius: 12,
-      background: tokens.bgCard || '#15171E',
-      border: `1px solid ${tokens.borderDefault || 'rgba(255,255,255,0.05)'}`,
-      display: 'flex',
-      flexDirection: 'column',
-      gap: 10,
-    }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-          <span style={{
-            fontSize: 10,
-            fontWeight: 600,
-            textTransform: 'uppercase',
-            letterSpacing: '0.06em',
-            color: tokens.textFaint || '#64748b',
-          }}>
-            Day Summary
-            {review.tradingDay != null && ` · Day ${review.tradingDay}`}
-          </span>
-          {dateStr && (
-            <span style={{ fontSize: 11, color: tokens.textMuted || '#94a3b8' }}>
-              {dateStr}
-            </span>
-          )}
-        </div>
-        {review.selfGrade && (
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            minWidth: 36,
-            height: 36,
-            borderRadius: 10,
-            background: hexToRgba(gradeColor, 0.12),
-            border: `1px solid ${hexToRgba(gradeColor, 0.3)}`,
-            color: gradeColor,
-            fontSize: 18,
-            fontWeight: 800,
-            letterSpacing: '0.02em',
-          }}>
-            {review.selfGrade}
-          </div>
-        )}
-      </div>
-
-      {review.daySummary && (
-        <p style={{
-          margin: 0,
-          fontSize: 12.5,
-          lineHeight: 1.55,
-          color: tokens.textSecondary || '#cbd5e1',
-        }}>
-          {review.daySummary}
-        </p>
-      )}
-
-      {review.selfGradeRationale && (
-        <p style={{
-          margin: 0,
-          fontSize: 11.5,
-          fontStyle: 'italic',
-          lineHeight: 1.5,
-          color: tokens.textMuted || '#94a3b8',
-        }}>
-          "{review.selfGradeRationale}"
-        </p>
-      )}
-
-      {review.lessonLearned && (
-        <div style={{
-          padding: '10px 12px',
-          borderRadius: 8,
-          background: hexToRgba(tokens.teal || '#5eead4', 0.06),
-          border: `1px solid ${hexToRgba(tokens.teal || '#5eead4', 0.2)}`,
-        }}>
-          <div style={{
-            fontSize: 9,
-            fontWeight: 700,
-            textTransform: 'uppercase',
-            letterSpacing: '0.08em',
-            color: tokens.teal || '#5eead4',
-            marginBottom: 4,
-          }}>
-            Lesson Learned
-          </div>
-          <p style={{
-            margin: 0,
-            fontSize: 12,
-            lineHeight: 1.5,
-            color: tokens.textSecondary || '#cbd5e1',
-          }}>
-            {review.lessonLearned}
-          </p>
-        </div>
-      )}
-
-      {Array.isArray(review.proposedRules) && review.proposedRules.length > 0 && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          <div style={{
-            fontSize: 9,
-            fontWeight: 700,
-            textTransform: 'uppercase',
-            letterSpacing: '0.08em',
-            color: tokens.purpleText || '#a78bfa',
-          }}>
-            Proposed Rules
-          </div>
-          {review.proposedRules.map((rule, i) => (
-            <div
-              key={i}
-              style={{
-                padding: '8px 10px',
-                borderRadius: 8,
-                background: tokens.bgElevated || 'rgba(255,255,255,0.02)',
-                border: `1px solid ${tokens.borderDefault || 'rgba(255,255,255,0.05)'}`,
-                fontSize: 11.5,
-                lineHeight: 1.45,
-                color: tokens.textSecondary || '#cbd5e1',
-              }}
-            >
-              <div>{rule?.text || '—'}</div>
-              {rule?.rationale && (
-                <div style={{
-                  marginTop: 3,
-                  fontSize: 10.5,
-                  fontStyle: 'italic',
-                  color: tokens.textFaint || '#64748b',
-                }}>
-                  {rule.rationale}
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
     </div>
   );
 }
@@ -646,16 +483,6 @@ const GameTapeView = ({
 }) => {
   const [showFullLog, setShowFullLog] = useState(false);
 
-  // Latest daily review (defensively sorted by createdAt in case array is out of order)
-  const latestReview = useMemo(() => {
-    const reviews = agentBattle?.dailyReviews;
-    if (!reviews || !reviews.length) return null;
-    const sorted = [...reviews].sort(
-      (a, b) => toTime(a?.createdAt) - toTime(b?.createdAt)
-    );
-    return sorted[sorted.length - 1] || null;
-  }, [agentBattle?.dailyReviews]);
-
   const trades = agentBattle?.trades || [];
 
   // Resolve bookmarked entries from statusFeed (match on entry id)
@@ -725,10 +552,6 @@ const GameTapeView = ({
       }}>
         Review today's action
       </p>
-
-      {/* Day Summary */}
-      <SectionHeader title="Day Summary" tokens={tokens} />
-      <DaySummaryCard review={latestReview} tokens={tokens} />
 
       {/* Trade History */}
       <SectionHeader

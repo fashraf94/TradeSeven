@@ -34,6 +34,7 @@ import { DEFAULT_THRESHOLD, buildResearchAsset } from '../utils/researchAssetBui
 import AssetResearchModal from '../components/draft/AssetResearchModal';
 import TermResearchModal from '../components/shared/TermResearchModal';
 import ScoreBreakdownPopover from '../components/draft/ScoreBreakdownPopover';
+import FilmRoomBanner from '../components/FilmRoom/FilmRoomBanner';
 import { CONVICTION_MULTIPLIERS } from '../constants/baggerBombScoring';
 import { doc, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase/config';
@@ -365,7 +366,7 @@ function SectionLabel({ children }) {
 
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 
-export default function AgentBattleScreen({ battle, user, onBack }) {
+export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom }) {
   const { tokens } = useTheme();
   const isDesktop = useIsDesktop();
 
@@ -853,6 +854,16 @@ export default function AgentBattleScreen({ battle, user, onBack }) {
           playerScore={displayPlayerScore}
           opponentScore={displayOpponentScore}
         />
+
+        {/* Film Room banner — appears once the first daily review has been filed */}
+        {onOpenFilmRoom && Array.isArray(agentBattle?.dailyReviews) && agentBattle.dailyReviews.length >= 1 && (
+          <FilmRoomBanner
+            onOpen={() => onOpenFilmRoom(agentBattle)}
+            dailyReviewCount={agentBattle.dailyReviews.length}
+            status={agentBattle.status}
+            tokens={tokens}
+          />
+        )}
 
         {/* Tab bar */}
         <TabBar

@@ -66,17 +66,23 @@ function testTM1() {
   const NAME = 'TEST TM1: Chat highlighter uses distinct accents for tickers and terms';
   header(NAME);
   try {
-    const src = readSource('../../src/components/Agent/AgentChat.jsx');
+    // Phase 4: renderMessageWithEntities + accents + TERM_TOKENS_SET were extracted from
+    // AgentChat.jsx to src/utils/renderMessageWithEntities.jsx for reuse by FilmRoomChat.
+    // The source of truth is now the util; AgentChat is a consumer via import.
+    const utilSrc = readSource('../../src/utils/renderMessageWithEntities.jsx');
+    const consumerSrc = readSource('../../src/components/Agent/AgentChat.jsx');
 
-    const hasTickerAccent = src.includes('#5EEAD4');
-    const hasTermAccent = src.includes('#f59e0b');
-    const hasTermImport = /TERM_TOKENS_SET/.test(src);
+    const hasTickerAccent = utilSrc.includes('#5EEAD4');
+    const hasTermAccent = utilSrc.includes('#f59e0b');
+    const hasTermImport = /TERM_TOKENS_SET/.test(utilSrc);
+    const consumerImports = /renderMessageWithEntities/.test(consumerSrc);
 
-    console.log(`  ticker accent (#5EEAD4): ${hasTickerAccent}`);
-    console.log(`  term accent   (#f59e0b): ${hasTermAccent}`);
-    console.log(`  imports TERM_TOKENS_SET: ${hasTermImport}`);
+    console.log(`  ticker accent (#5EEAD4) in util:    ${hasTickerAccent}`);
+    console.log(`  term accent   (#f59e0b) in util:    ${hasTermAccent}`);
+    console.log(`  util imports TERM_TOKENS_SET:       ${hasTermImport}`);
+    console.log(`  AgentChat imports the util:         ${consumerImports}`);
 
-    const ok = hasTickerAccent && hasTermAccent && hasTermImport;
+    const ok = hasTickerAccent && hasTermAccent && hasTermImport && consumerImports;
     console.log(`RESULT: ${ok ? 'PASS' : 'FAIL'}`);
     record(NAME, ok ? 'PASS' : 'FAIL');
   } catch (err) {

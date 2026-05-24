@@ -232,6 +232,24 @@
       ]
     },
     {
+      "collectionGroup": "agentBattles",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "ownerId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "completedAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
       "collectionGroup": "gameDesignFeedback",
       "queryScope": "COLLECTION",
       "fields": [

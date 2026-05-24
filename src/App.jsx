@@ -81,7 +81,7 @@ import { safePortfolioArray, getUserPortfolioFlat, getOpponentPortfolioFlat, get
 import { flattenPortfolio, flattenBench, calculateAssetScoreV3 } from './utils/baggerBombUtils';
 import { createInitialFreeAgents } from './services/freeAgentRotationService';
 // Extracted Screens - Batch 1
-import { ProfileScreen, WinsScreen, LossesScreen, DraftHistoryScreen, JoinScreen, DraftSetupScreen, DraftJoinScreen, DraftTrainingScreen, DraftLobbyScreen, PreviousBattlesScreen, BattleHistoryScreen, FreeAgencyScreen, FreeAgencyScreenV2, DraftResultsScreen, BattleViewScreen, DraftBattleScreen, DraftBattleScreenV2, DraftRoomScreen, HomeScreen, EarningsGameScreen, BuilderScreen } from './screens';
+import { ProfileScreen, WinsScreen, LossesScreen, DraftHistoryScreen, JoinScreen, DraftSetupScreen, DraftJoinScreen, DraftTrainingScreen, DraftLobbyScreen, PreviousBattlesScreen, BattleHistoryScreen, FreeAgencyScreen, FreeAgencyScreenV2, DraftResultsScreen, BattleViewScreen, DraftBattleScreen, DraftBattleScreenV2, DraftRoomScreen, HomeScreen, EarningsGameScreen, BuilderScreen, FilmRoomScreen } from './screens';
 // Season Mode screens + components
 import SeasonHub from './screens/SeasonHub';
 import SeasonDashboard from './screens/SeasonDashboard';
@@ -2240,6 +2240,7 @@ export default function PortfolioDuel() {
   const [completedTrainingBattles, setCompletedTrainingBattles] = useState([]); // For Battle History training tab
   const [loadingTrainingBattles, setLoadingTrainingBattles] = useState(false);
   const [completedBaggerBombBattles, setCompletedBaggerBombBattles] = useState([]); // For Battle History BaggerBomb tab (Firestore)
+  const [completedAgentBattles, setCompletedAgentBattles] = useState([]); // For Battle History Film Room section (Voice Layer Phase 4)
 
   // Portfolio builder state
   const [assetType, setAssetType] = useState('stocks');
@@ -4579,6 +4580,43 @@ export default function PortfolioDuel() {
 
     fetchCompletedBaggerBombBattles();
   }, [screen, historyTab, user]);
+
+  // Fetch completed agent battles for the Film Room section in Battle History.
+  // Voice Layer Phase 4: completed agentBattles aren't merged into the existing
+  // BaggerBomb history (they live in a separate collection), so we surface them
+  // as their own minimal section with a Review button per battle.
+  useEffect(() => {
+    if (screen !== 'battleHistory' || !user) return;
+
+    let cancelled = false;
+    const fetchCompletedAgentBattles = async () => {
+      try {
+        const { collection, query, where, orderBy, limit, getDocs } = await import('firebase/firestore');
+        const { auth, db } = await import('./firebase/config');
+        const uid = auth.currentUser?.uid;
+        if (!uid) {
+          if (!cancelled) setCompletedAgentBattles([]);
+          return;
+        }
+        const q = query(
+          collection(db, 'agentBattles'),
+          where('ownerId', '==', uid),
+          where('status', '==', 'completed'),
+          orderBy('completedAt', 'desc'),
+          limit(20)
+        );
+        const snap = await getDocs(q);
+        const list = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        if (!cancelled) setCompletedAgentBattles(list);
+      } catch (err) {
+        console.error('[FilmRoom] completed agent battles fetch failed:', err?.message || err);
+        if (!cancelled) setCompletedAgentBattles([]);
+      }
+    };
+
+    fetchCompletedAgentBattles();
+    return () => { cancelled = true; };
+  }, [screen, user]);
 
   // Listen for localStorage changes from other tabs
   useEffect(() => {
@@ -9072,6 +9110,7 @@ export default function PortfolioDuel() {
         battlePrices={battlePrices}
         battleTimer={battleTimer}
         onBack={() => setScreen('dashboard')}
+        onOpenFilmRoom={(b) => { setCurrentBattle(b); setScreen('filmRoom'); }}
         ActiveRiskChallengeIndicator={ActiveRiskChallengeIndicator}
         LoadingFallback={LoadingFallback}
         BaggerBombBattleViewRedesign={BaggerBombBattleViewRedesign}
@@ -9087,6 +9126,20 @@ export default function PortfolioDuel() {
 
 
   // BATTLE VIEW OLD CODE REMOVED - See src/screens/BattleViewScreen.jsx
+
+  // FILM ROOM SCREEN - Phase 4 Voice Layer Rework: post-battle review surface
+  if (screen === 'filmRoom' && currentBattle) {
+    return (
+      <div style={{ marginLeft: isDesktop ? (sidebarCollapsed ? '64px' : '220px') : 0, transition: 'margin-left 0.2s ease' }}>
+        <ErrorBoundary name="Film Room" onNavigateDashboard={() => setScreen('dashboard')}>
+          <FilmRoomScreen
+            battle={currentBattle}
+            onBack={() => setScreen('dashboard')}
+          />
+        </ErrorBoundary>
+      </div>
+    );
+  }
 
   // PREVIOUS BATTLES SCREEN - Extracted to PreviousBattlesScreen component
   if (screen === 'previousBattles') {
@@ -9343,6 +9396,8 @@ export default function PortfolioDuel() {
         BattleHistoryCard={BattleHistoryCard}
         completedV4Battles={completedV4Battles}
         completedBaggerBombBattles={completedBaggerBombBattles}
+        completedAgentBattles={completedAgentBattles}
+        onOpenFilmRoom={(b) => { setCurrentBattle(b); setScreen('filmRoom'); }}
       />
       </ErrorBoundary>
       </div>
