@@ -18,6 +18,26 @@ function findDebriefForDay(chatExchanges, dayNum, battle) {
   return debriefs.find((ex) => dayOf(ex.timestamp, battle) === dayNum) || null;
 }
 
+function formatPostedAt(ts) {
+  if (ts == null) return '';
+  let ms = null;
+  if (typeof ts === 'number') ms = ts;
+  else if (typeof ts === 'string') {
+    const parsed = new Date(ts).getTime();
+    if (!Number.isNaN(parsed)) ms = parsed;
+  } else if (typeof ts === 'object') {
+    if (typeof ts.toMillis === 'function') ms = ts.toMillis();
+    else if (typeof ts.seconds === 'number') ms = ts.seconds * 1000;
+    else if (typeof ts._seconds === 'number') ms = ts._seconds * 1000;
+  }
+  if (ms == null) return '';
+  return new Date(ms).toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+    timeZone: 'America/New_York',
+  });
+}
+
 export default function AutoDebriefHero({ battle, chatExchanges, dayNum, agentName, onSymbolClick, knownTickers, tokens }) {
   const exchange = findDebriefForDay(chatExchanges, dayNum, battle);
   if (!exchange) {
@@ -67,11 +87,25 @@ export default function AutoDebriefHero({ battle, chatExchanges, dayNum, agentNa
       >
         <span style={{ fontSize: 14 }}>📋</span>
         <span>Post-Market Debrief</span>
-        {agentName && (
-          <span style={{ marginLeft: 'auto', color: tokens.textFaint || '#64748b', textTransform: 'none', fontWeight: 500, letterSpacing: 0 }}>
-            {agentName}
-          </span>
-        )}
+        {(() => {
+          const posted = formatPostedAt(exchange.timestamp);
+          if (!posted && !agentName) return null;
+          return (
+            <span
+              style={{
+                marginLeft: 'auto',
+                color: tokens.textFaint || '#64748b',
+                textTransform: 'none',
+                fontWeight: 500,
+                letterSpacing: 0,
+              }}
+            >
+              {posted && `Posted at ${posted} ET`}
+              {posted && agentName && ' · '}
+              {agentName}
+            </span>
+          );
+        })()}
       </div>
 
       <div

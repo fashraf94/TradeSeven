@@ -87,3 +87,37 @@ Phase 4 ships minimal agent-battle cards in `BattleHistoryScreen.jsx` (outcome l
 - Filtering, sorting, archiving
 
 **Filed**: May 24, 2026 — Phase 4 C3 scope refinement after discovery gap surfaced that completed agent battles weren't previously reachable from BattleHistoryScreen at all.
+
+### FilmRoomScreen `user` prop documentation
+
+The Phase 4 spec described the component signature as `{ battle, user, onBack }` but the implementation lands as `{ battle, onBack }` because `useAgentBattle` reads via Firebase Auth context internally and `agentBattle.ownerId` gates server-side writes. The deviation is silent today — a future contributor expecting prop-threaded `user` (for client-side gating, telemetry tagging, or display-name rendering) would be surprised.
+
+**Trigger to fix**: ~2-minute doc fix. Add an inline comment on the component declaration in `src/screens/FilmRoomScreen.jsx` (line 28) noting the auth-context pattern and the deliberate omission of the `user` prop. Pick this up the next time the file is touched for any reason.
+
+**Filed**: May 24, 2026 — Phase 4 post-audit cleanup (FLAG C1).
+
+### DayPicker future-day discipline
+
+Phase 4 ships a DayPicker that shows day-buttons for every entry in `battle.timing.tradingDays[]` and only differentiates reviewed days via a small amber dot indicator. Tapping a future or incomplete day renders the screen with each section in its empty state — functionally correct, but the spec intent was "only completed days are interactive (current/future days disabled or hidden)." Phase 4 test F2 only verified the single-day guard, not this discipline.
+
+**Trigger to fix**: production observation at 48-72 hours. If users tap future days and get visibly confused (support tickets, session-recording dead-ends, drop-offs after the empty state), disable or hide them — disable is preferable because the day-count itself is useful context. If users intuit it correctly via the dot indicator, leave alone. Specifically considered out of scope for the Phase 4 ship: hard-coded UX assertions without real signal.
+
+**Filed**: May 24, 2026 — Phase 4 post-audit cleanup (FLAG C3).
+
+### Consumer-side chat-exchange filter documentation
+
+FilmRoomScreen passes the full `chatExchanges` array to three consumers — AutoDebriefHero, AnticipationLogSection, FilmRoomChat — and each consumer applies its own predicate (`messageType === 'auto_debrief'`, `messageType === 'anticipation'`, `mode === 'review' && messageType !== 'auto_debrief'` respectively). Each predicate is correct in isolation, but the drift risk is real: if the auto_debrief or anticipation predicate is changed in one consumer without a corresponding change in FilmRoomChat's exclusion logic, the auto-debrief or anticipation could surface in two places (or fall out of both).
+
+**Trigger to fix**: ~5-minute doc pass. Add a comment header above each filter declaration in the three files (`AutoDebriefHero.jsx:13`, `AnticipationLogSection.jsx`, `FilmRoomChat.jsx:142`) noting the scope of the filter and cross-linking the other consumers. Pick this up the next time chat-exchange routing is touched (e.g., a new `messageType` is added).
+
+**Filed**: May 24, 2026 — Phase 4 post-audit cleanup (FLAG C1 secondary observation).
+
+## Broader (non-Phase-4-specific) meta-followup
+
+### Repo-wide lint baseline cleanup
+
+The repo currently emits 1186 lint errors and 107 warnings on a fresh `npm run lint` (May 24, 2026 baseline). A large fraction are `'process' is not defined` errors in `api/scripts/*.js` files that run under Node and legitimately use `process.exit`, plus pre-existing `no-unused-vars` errors in older screens. Adding `globals: { process: 'readonly' }` to the ESLint config scoped to `api/scripts/**` would clear most of the `process` errors in one stroke; a broader unused-vars sweep would knock down another large bucket.
+
+**Trigger to fix**: Phase 6 polish window, or any time someone is auditing CI health. Until the baseline is clean, individual phase audits have to do "stash → re-lint → unstash" to confirm zero net-new errors, which is fragile.
+
+**Filed**: May 24, 2026 — Phase 4 audit G2 observation. Not Phase 4 scope.
