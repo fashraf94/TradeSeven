@@ -143,6 +143,7 @@ export default async function handler(req, res) {
 
   // 4. Validate body
   const { agentId, battleId, message } = req.body;
+  const requestedMode = req.body.mode;
 
   if (!agentId || !battleId || !message) {
     return res.status(400).json({ error: 'agentId, battleId, and message are required' });
@@ -171,25 +172,35 @@ export default async function handler(req, res) {
       return res.status(403).json({ error: 'Not authorized to chat in this battle' });
     }
 
-    // 8. Battle status check
-    if (battle.status !== 'active') {
+    // 8. Mode detection (with bounded client override)
+    //     The client may force review mode (Film Room) on a completed battle
+    //     during market hours, where auto-detection would return 'battle'.
+    //     Only the 'review' override is honored — any other value (undefined,
+    //     null, 'battle', invalid) falls through to auto-detection so battle
+    //     mode remains authoritative for live play.
+    let mode;
+    if (requestedMode === 'review') {
+      mode = 'review';
+    } else {
+      mode = detectMode(battle);
+    }
+
+    // 9. Battle status check (mode-aware: review mode is valid on completed battles)
+    if (battle.status !== 'active' && mode !== 'review') {
       return res.status(400).json({
         error: 'battle_not_active',
         message: 'This battle has ended. Start a new battle to chat with your agent.',
       });
     }
 
-    // 9. Read agent doc
+    // 10. Read agent doc
     const agentDoc = await db.collection('agents').doc(agentId).get();
     if (!agentDoc.exists) {
       return res.status(404).json({ error: 'Agent not found' });
     }
     const agent = agentDoc.data();
 
-    // 10. Mode detection + budget check
-    //     Review mode activates after market close when today's batch review
-    //     exists on the battle doc. Battle mode is the default for live play.
-    const mode = detectMode(battle);
+    // 11. Budget check for selected mode
     const { field: budgetField, limit: budgetLimit } = MODE_BUDGET[mode];
     const currentBudget = battle[budgetField] || 0;
 
