@@ -122,6 +122,16 @@ The repo currently emits 1186 lint errors and 107 warnings on a fresh `npm run l
 
 **Filed**: May 24, 2026 — Phase 4 audit G2 observation. Not Phase 4 scope.
 
+### Firestore index source-of-truth drift + malformed `ingestedClaims` entry
+
+During Phase 4 merge prep, the `(ownerId, status, completedAt DESC)` agentBattles index added in commit `4c53c5b` had to be created manually via the Firebase Console because `firebase deploy --only firestore:indexes` is currently unsafe to run: (1) 13+ indexes exist in prod but not in `firestore.indexes.json` (every CLI deploy prompts to delete them), and (2) an `ingestedClaims` entry is malformed and causes HTTP 400 from the Firestore API.
+
+Full workstream documented separately at [`FIRESTORE_INDEX_DRIFT_CLEANUP.md`](./FIRESTORE_INDEX_DRIFT_CLEANUP.md) — inventory + reconciliation + validation in 5 phases. Estimated 30–60 min.
+
+**Trigger to fix**: next time anyone needs to deploy a new Firestore index via CLI, OR during the next pre-launch hygiene pass. Until this cleanup ships, all new indexes must be dual-written (file entry in feature branch + manual console creation at merge prep).
+
+**Filed**: May 24, 2026 — Phase 4 merge-prep deploy attempt. Not Phase 4 scope.
+
 ## Filed during Phase 4 code-review (post-audit)
 
 The independent /code-review pass surfaced these items in addition to the
