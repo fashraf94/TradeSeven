@@ -35,3 +35,6 @@ export { default as BuilderScreen } from './BuilderScreen';
 
 // Screen exports - Batch 8
 export { default as AgentBattleScreen } from './AgentBattleScreen';
+
+// Screen exports - Batch 9 (Voice Layer Phase 4)
+export { default as FilmRoomScreen } from './FilmRoomScreen';

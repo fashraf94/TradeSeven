@@ -81,7 +81,7 @@ import { safePortfolioArray, getUserPortfolioFlat, getOpponentPortfolioFlat, get
 import { flattenPortfolio, flattenBench, calculateAssetScoreV3 } from './utils/baggerBombUtils';
 import { createInitialFreeAgents } from './services/freeAgentRotationService';
 // Extracted Screens - Batch 1
-import { ProfileScreen, WinsScreen, LossesScreen, DraftHistoryScreen, JoinScreen, DraftSetupScreen, DraftJoinScreen, DraftTrainingScreen, DraftLobbyScreen, PreviousBattlesScreen, BattleHistoryScreen, FreeAgencyScreen, FreeAgencyScreenV2, DraftResultsScreen, BattleViewScreen, DraftBattleScreen, DraftBattleScreenV2, DraftRoomScreen, HomeScreen, EarningsGameScreen, BuilderScreen } from './screens';
+import { ProfileScreen, WinsScreen, LossesScreen, DraftHistoryScreen, JoinScreen, DraftSetupScreen, DraftJoinScreen, DraftTrainingScreen, DraftLobbyScreen, PreviousBattlesScreen, BattleHistoryScreen, FreeAgencyScreen, FreeAgencyScreenV2, DraftResultsScreen, BattleViewScreen, DraftBattleScreen, DraftBattleScreenV2, DraftRoomScreen, HomeScreen, EarningsGameScreen, BuilderScreen, FilmRoomScreen } from './screens';
 // Season Mode screens + components
 import SeasonHub from './screens/SeasonHub';
 import SeasonDashboard from './screens/SeasonDashboard';
@@ -9087,6 +9087,18 @@ export default function PortfolioDuel() {
 
 
   // BATTLE VIEW OLD CODE REMOVED - See src/screens/BattleViewScreen.jsx
+
+  // FILM ROOM SCREEN - Phase 4 Voice Layer Rework: post-battle review surface
+  if (screen === 'filmRoom' && currentBattle) {
+    return (
+      <ErrorBoundary name="Film Room" onNavigateDashboard={() => setScreen('dashboard')}>
+        <FilmRoomScreen
+          battle={currentBattle}
+          onBack={() => setScreen('dashboard')}
+        />
+      </ErrorBoundary>
+    );
+  }
 
   // PREVIOUS BATTLES SCREEN - Extracted to PreviousBattlesScreen component
   if (screen === 'previousBattles') {
