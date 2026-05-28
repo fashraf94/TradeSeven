@@ -57,7 +57,7 @@ export const REPORTER_PROFILES = {
     name: 'Vera',
     beat: 'Thematic & Industry Research',
     color: '#1e3a5f',
-    icon: '📚', // placeholder until designer assigns a Lucide icon
+    icon: 'Telescope',
     bio: 'Vera writes deep, multi-thousand-word research deepdives on the themes shaping markets. Where other reporters cover the news of the day, Vera maps the structural forces underneath — the supply chains, the bottlenecks, the obscured exposures that move stocks over quarters and years.',
     model: 'claude-sonnet-4-20250514', // used for summary generation only; full content is externally generated
     expiryHours: 336, // 14 days
