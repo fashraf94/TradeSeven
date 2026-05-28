@@ -61,7 +61,15 @@ export default function FantasyTimesTeaser({ setScreen, onStoryPress }) {
     );
   }
 
-  const stories = (rankedStories || []).slice(0, 5);
+  // Show the 5 freshest, but always pin the latest deepdive — it otherwise sinks
+  // below the recency cut (rankForUser is recency-dominated). Only the single
+  // most-recent deepdive is pinned; Phase 2b replaces this with a real slot.
+  const rankedAll = rankedStories || [];
+  const topFive = rankedAll.slice(0, 5);
+  const latestDeepdive = rankedAll.find(s => s.type === 'deepdive');
+  const stories = (latestDeepdive && !topFive.some(s => s.id === latestDeepdive.id))
+    ? [latestDeepdive, ...topFive].slice(0, 5)
+    : topFive;
   if (stories.length === 0) return null;
 
   return (
@@ -223,6 +231,20 @@ export default function FantasyTimesTeaser({ setScreen, onStoryPress }) {
                   </>
                 )}
               </div>
+
+              {/* Deepdive eyebrow — Phase 2a minimum signal for Vera's cards */}
+              {story.type === 'deepdive' && (
+                <div style={{
+                  padding: '8px 12px 0',
+                  fontSize: 9,
+                  fontWeight: 700,
+                  letterSpacing: '1.5px',
+                  textTransform: 'uppercase',
+                  color: REPORTER_COLORS.vera.primary,
+                }}>
+                  DEEPDIVE
+                </div>
+              )}
 
               {/* Headline */}
               <div style={{

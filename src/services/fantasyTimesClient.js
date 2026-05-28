@@ -29,6 +29,21 @@ export async function fetchStory(id) {
 }
 
 /**
+ * Fetch a single Vera deepdive doc by ID.
+ * The full long-form markdown lives in `fantasyTimesDeepdives`, separate from the
+ * story summary, so the deepdive page fetches it by `visualConfig.fullDeepdiveId`.
+ * @param {string} id - Firestore document ID
+ * @returns {Promise<Object>} Deepdive object (fullMarkdown, extractedRecords, wordCount, …)
+ */
+export async function fetchDeepdive(id) {
+  const res = await fetch(`/api/fantasytimes/deepdive/${encodeURIComponent(id)}`);
+  if (!res.ok) throw new Error(`Deepdive fetch failed: ${res.status}`);
+  const data = await res.json();
+  if (!data.success) throw new Error(data.error || 'Deepdive fetch failed');
+  return data.deepdive;
+}
+
+/**
  * Rank stories for a specific user based on their context.
  *
  * @param {Array} stories - Raw stories from feed

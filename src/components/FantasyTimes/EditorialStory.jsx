@@ -31,9 +31,13 @@ function handleKeyDown(onClick) {
   };
 }
 
-function BeatBadge({ reporter, style: extraStyle }) {
-  const color = REPORTER_COLORS[reporter];
+function BeatBadge({ reporter, type, style: extraStyle }) {
+  // Vera deepdives show a fixed "DEEPDIVE" eyebrow in navy; every other reporter is
+  // unchanged (their beat label in their own color).
+  const isDeepdive = type === 'deepdive';
+  const color = isDeepdive ? REPORTER_COLORS.vera : REPORTER_COLORS[reporter];
   if (!color) return null;
+  const label = isDeepdive ? 'DEEPDIVE' : color.beat;
   return (
     <span style={{
       fontFamily: BROADSHEET_TOKENS.fontMono,
@@ -47,7 +51,7 @@ function BeatBadge({ reporter, style: extraStyle }) {
       display: 'inline-block',
       ...extraStyle,
     }}>
-      {color.beat}
+      {label}
     </span>
   );
 }
@@ -225,7 +229,7 @@ function HeroStory({ story, isDesktop, onClick, showVisual, isExpanded, onCollap
         cursor: 'pointer',
       }}
     >
-      <BeatBadge reporter={story.reporter} style={{ marginBottom: 16 }} />
+      <BeatBadge reporter={story.reporter} type={story.type} style={{ marginBottom: 16 }} />
 
       <h2 style={{
         fontFamily: BROADSHEET_TOKENS.fontHeadline,
@@ -346,7 +350,7 @@ function SecondaryStory({ story, isDesktop, onClick, isExpanded, onCollapse, onR
         transition: 'background-color 0.2s ease',
       }}
     >
-      <BeatBadge reporter={story.reporter} style={{ marginBottom: 12 }} />
+      <BeatBadge reporter={story.reporter} type={story.type} style={{ marginBottom: 12 }} />
 
       <h3 style={{
         fontFamily: BROADSHEET_TOKENS.fontHeadline,
@@ -429,9 +433,10 @@ function CompactStory({ story, onClick, isExpanded, onCollapse, onResearch }) {
       <span style={{
         fontFamily: BROADSHEET_TOKENS.fontMono,
         fontSize: 9, fontWeight: 700, letterSpacing: '0.15em',
-        textTransform: 'uppercase', color: reporterColor?.hex || '#859398',
+        textTransform: 'uppercase',
+        color: story.type === 'deepdive' ? REPORTER_COLORS.vera.hex : (reporterColor?.hex || '#859398'),
       }}>
-        {reporterColor?.name} // {reporterColor?.beat}
+        {story.type === 'deepdive' ? 'DEEPDIVE' : <>{reporterColor?.name} // {reporterColor?.beat}</>}
       </span>
 
       <h4 style={{

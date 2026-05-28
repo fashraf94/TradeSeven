@@ -29,9 +29,6 @@ export default async function handler(req, res) {
       .get();
 
     const stories = snapshot.docs
-      // Phase 1: suppress Vera deepdive stories from the feed until Phase 2
-      // implements the deepdive card render. Single-line revert when Phase 2 ships.
-      .filter((doc) => doc.data().type !== 'deepdive')
       .map((doc) => {
         const data = doc.data();
         return {
