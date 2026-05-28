@@ -12,6 +12,9 @@ const SECTIONS = [
   { key: 'neta', label: 'NETA', color: REPORTER_COLORS.neta.hex },
   { key: 'doug', label: 'DOUG', color: REPORTER_COLORS.doug.hex },
   { key: 'kim', label: 'KIM', color: REPORTER_COLORS.kim.hex },
+  // Vera uses her on-dark accent (not primary navy) so the active tab stays legible as
+  // text on the near-black bar (desktop) and as a pill background (mobile).
+  { key: 'vera', label: 'VERA', color: REPORTER_COLORS.vera.onDarkAccent },
 ];
 
 export default function ReporterNavStrip({ activeSection, onSectionChange, isDesktop }) {

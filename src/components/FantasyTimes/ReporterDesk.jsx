@@ -5,6 +5,7 @@
 import React, { useMemo } from 'react';
 import { REPORTER_COLORS, BROADSHEET_TOKENS, REPORTER_LAYOUTS } from '../../constants/reporterTheme';
 import EditorialStory from './EditorialStory';
+import FeaturedDeepdiveBand from './FeaturedDeepdiveBand';
 import KimDropCapColumn from './KimDropCapColumn';
 import MoverSparkline from './visuals/MoverSparkline';
 
@@ -14,6 +15,7 @@ const BIO_TAGLINES = {
   neta: 'Making sense of the numbers',
   doug: 'Your earnings season guide',
   kim: 'Connecting the dots across markets',
+  vera: 'Deep research on the themes shaping markets',
 };
 
 const EMPTY_HINTS = {
@@ -491,6 +493,41 @@ function KimDesk({ stories, isDesktop, onStoryExpand, onStorySelect, expandedSto
   );
 }
 
+// ── Vera's Desk: stacked full-deepdive bands ──
+
+function VeraDesk({ stories, isDesktop, onStorySelect }) {
+  if (stories.length === 0) {
+    return (
+      <div style={{ padding: '80px 20px', textAlign: 'center' }}>
+        <div style={{
+          fontFamily: BROADSHEET_TOKENS.fontHeadline,
+          fontSize: 18, fontStyle: 'italic', color: '#8b949e', marginBottom: 12,
+        }}>
+          No recent research.
+        </div>
+        <div style={{ fontFamily: BROADSHEET_TOKENS.fontBody, fontSize: 13, color: '#6e7681' }}>
+          Check back soon.
+        </div>
+      </div>
+    );
+  }
+
+  // Vera publishes ≤1/day; within the 14-day window the stack stays short. Each deepdive
+  // reuses the same FeaturedDeepdiveBand as the front page (responsive via isDesktop).
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: isDesktop ? 16 : 12 }}>
+      {stories.map((s) => (
+        <FeaturedDeepdiveBand
+          key={s.id}
+          story={s}
+          isDesktop={isDesktop}
+          onSelect={() => onStorySelect?.(s)}
+        />
+      ))}
+    </div>
+  );
+}
+
 // ── Main Component ──
 
 export default function ReporterDesk({
@@ -536,6 +573,10 @@ export default function ReporterDesk({
       {reporter === 'kim' && (
         <KimDesk stories={sorted} isDesktop={isDesktop} onStoryExpand={onStoryExpand}
           expandedStoryId={expandedStoryId} onResearch={onResearch}
+          onStorySelect={onStorySelect || onStoryExpand} />
+      )}
+      {reporter === 'vera' && (
+        <VeraDesk stories={sorted} isDesktop={isDesktop}
           onStorySelect={onStorySelect || onStoryExpand} />
       )}
     </div>
