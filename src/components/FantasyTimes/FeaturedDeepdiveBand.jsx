@@ -31,7 +31,6 @@ export default function FeaturedDeepdiveBand({ story, onSelect, isDesktop = true
   // fullDeepdiveId is what VeraDeepDive fetches by; if it's missing the tap still navigates
   // and VeraDeepDive shows its "unavailable" state. Warn for observability.
   if (!story.visualConfig?.fullDeepdiveId) {
-    // eslint-disable-next-line no-console
     console.warn('[FeaturedDeepdiveBand] deepdive story missing visualConfig.fullDeepdiveId:', story.id);
   }
 

@@ -20,7 +20,6 @@ export default function VeraMobilePreview({ story, onSelect }) {
   if (!story) return null;
 
   if (!story.visualConfig?.fullDeepdiveId) {
-    // eslint-disable-next-line no-console
     console.warn('[VeraMobilePreview] deepdive story missing visualConfig.fullDeepdiveId:', story.id);
   }
 

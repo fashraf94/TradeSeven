@@ -504,7 +504,7 @@ function SidebarTodaysTickers({ stories, onStorySelect }) {
 
 // ── Desktop Front Page ──
 
-function DesktopFrontPage({ hero, sidebar, belowFold, movers, featuredDeepdive, onStoryExpand, expandedStoryId, onResearch, onStorySelect, edition, sectorData, stories }) {
+function DesktopFrontPage({ hero, sidebar, belowFold, movers, featuredDeepdive, onStoryExpand, expandedStoryId, onResearch, onStorySelect, sectorData, stories }) {
   const aboveFoldColumns = sidebar ? '3fr 1fr' : '1fr';
 
   return (
@@ -865,7 +865,6 @@ export default function BroadsheetFrontPage({ stories, onStoryExpand, isDesktop,
       expandedStoryId={expandedStoryId}
       onResearch={onResearch}
       onStorySelect={onStorySelect}
-      edition={edition}
       sectorData={sectorData}
       stories={stories}
     />
