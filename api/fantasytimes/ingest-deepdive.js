@@ -223,6 +223,11 @@ export default async function handler(req, res) {
     const now = new Date();
     const expiresAt = new Date(now.getTime() + REPORTER_PROFILES.vera.expiryHours * 60 * 60 * 1000);
 
+    // Computed once and mirrored onto BOTH docs in the atomic batch below. The story
+    // doc copy lets the front-page FeaturedDeepdiveBand / VeraMobilePreview render a
+    // read-time without fetching the separate (large) deepdive doc.
+    const wordCount = countWords(fullMarkdown);
+
     const deepdiveDoc = {
       storyId,
       fullMarkdown,
@@ -230,7 +235,7 @@ export default async function handler(req, res) {
       sourceFile: sourceFile || null,
       topicSlug: slug,
       generatedAt: now,
-      wordCount: countWords(fullMarkdown),
+      wordCount,
     };
 
     const storyDoc = {
@@ -242,6 +247,7 @@ export default async function handler(req, res) {
       headline,
       subheadline,
       body: summaryBody,
+      wordCount, // mirrored from deepdiveDoc so the front-page band/card show read-time
       tickers: finalTickers,
       primaryTicker: finalPrimaryTicker,
       sector: finalSector,
