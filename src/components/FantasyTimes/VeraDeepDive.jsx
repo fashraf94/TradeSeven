@@ -17,6 +17,8 @@ import { fetchDeepdive } from '../../services/fantasyTimesClient';
 import DeepdiveMarkdown from './DeepdiveMarkdown';
 
 const NAVY = REPORTER_COLORS.vera?.primary || '#1e3a5f';
+// On-dark accent (lightened navy) for text/links on the dark page — see reporterTheme.js.
+const ACCENT = REPORTER_COLORS.vera?.onDarkAccent || '#7fb0e6';
 
 function formatDate(iso) {
   if (!iso) return '';
@@ -105,7 +107,7 @@ export default function VeraDeepDive({ story, onClose, isDesktop }) {
             fontWeight: 700,
             letterSpacing: '0.2em',
             textTransform: 'uppercase',
-            color: NAVY === '#1e3a5f' ? '#7fb0e6' : NAVY,
+            color: ACCENT,
             display: 'block',
             marginBottom: 14,
           }}>
@@ -160,7 +162,7 @@ export default function VeraDeepDive({ story, onClose, isDesktop }) {
             <div style={{
               width: 28, height: 28, margin: '0 auto 16px',
               border: '2px solid rgba(127,176,230,0.25)',
-              borderTopColor: '#7fb0e6',
+              borderTopColor: ACCENT,
               borderRadius: '50%',
               animation: 'veraSpin 0.8s linear infinite',
             }} />
@@ -183,7 +185,7 @@ export default function VeraDeepDive({ story, onClose, isDesktop }) {
               style={{
                 background: 'none',
                 border: `1px solid ${FEED_TOKENS.bgCardBorder}`,
-                color: '#7fb0e6',
+                color: ACCENT,
                 borderRadius: 6,
                 padding: '8px 18px',
                 cursor: 'pointer',

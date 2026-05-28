@@ -15,12 +15,13 @@ import React from 'react';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeSanitize from 'rehype-sanitize';
-import { BROADSHEET_TOKENS } from '../../constants/reporterTheme';
+import { BROADSHEET_TOKENS, REPORTER_COLORS } from '../../constants/reporterTheme';
 
-const NAVY = '#1e3a5f';
+const NAVY = REPORTER_COLORS.vera.primary;
 // Navy is the brand/accent, but pure navy is unreadable on the dark page background, so
-// links use a lightened navy-family blue for contrast while keeping Vera's identity.
-const LINK = '#7fb0e6';
+// links use the on-dark accent (lightened navy-family blue) for contrast while keeping
+// Vera's identity. See REPORTER_COLORS.vera in reporterTheme.js.
+const LINK = REPORTER_COLORS.vera.onDarkAccent;
 
 export default function DeepdiveMarkdown({ markdown, reporterColor = NAVY }) {
   if (!markdown) return null;
