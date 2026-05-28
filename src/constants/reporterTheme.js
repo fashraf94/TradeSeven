@@ -9,6 +9,18 @@ export const REPORTER_COLORS = {
   neta: { hex: '#F59E0B', rgb: '245, 158, 11', name: 'Neta', beat: 'Economics Desk' },
   doug: { hex: '#FFD700', rgb: '255, 215, 0', name: 'Doug', beat: 'Earnings Analyst' },
   kim:  { hex: '#A78BFA', rgb: '167, 139, 250', name: 'Kim', beat: 'Sector Strategist' },
+  // Vera: backend persona exists in Phase 1; UI render lands in Phase 2.
+  // Both shapes coexist — existing UI consumers read hex/rgb/name/beat;
+  // Phase 2 deepdive card layout will read primary/accent/ambient.
+  vera: {
+    hex: '#1e3a5f',
+    rgb: '30, 58, 95',
+    name: 'Vera',
+    beat: 'Thematic & Industry Research',
+    primary: '#1e3a5f',
+    accent: '#3b6ba5',
+    ambient: 'rgba(30, 58, 95, 0.15)',
+  },
 };
 
 export const SENTIMENT_COLORS = {
@@ -139,5 +151,16 @@ export const REPORTER_LAYOUTS = {
     maxWidth: 860,
     style: 'essay',
     description: 'Single centered column, wide margins, drop cap, muted text',
+  },
+  // Vera: layout shape exists in Phase 1 so backend lookups don't fall through.
+  // Phase 2 implements the deepdive card render across BroadsheetFrontPage,
+  // ReporterDesk, and StoryDetail, plus a dedicated full-deepdive route.
+  vera: {
+    columns: 1,
+    maxWidth: 900,
+    style: 'deepdive-card',
+    layout: 'deepdive-card',
+    feature: 'deepdive-feature',
+    description: 'Single column deepdive card linking to the full research page (Phase 2)',
   },
 };

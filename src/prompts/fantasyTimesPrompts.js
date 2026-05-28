@@ -1,9 +1,12 @@
 // src/prompts/fantasyTimesPrompts.js
 // FantasyTimes Virtual Newsroom — Reporter prompts, tool schemas, and profiles.
-// 5 reporters: Kai (Market Pulse), Alex (Stock Spotlight), Neta, Doug, Kim.
+// 6 reporters: Kai (Market Pulse), Alex (Stock Spotlight), Neta, Doug, Kim,
+// Vera (externally-generated deepdives — see api/fantasytimes/ingest-deepdive.js).
+// NOTE: This is the UI-side mirror of api/_utils/fantasyTimesPrompts.js. Server-only
+// constants (system prompts, tool schemas) live in the api/_utils copy.
 
 // ═══ REPORTER PROFILES ═══════════════════════════════════════════
-// Identity data for all 5 reporters. Used by generation endpoints and feed UI.
+// Identity data for all reporters. Used by generation endpoints and feed UI.
 export const REPORTER_PROFILES = {
   kai: {
     name: 'Kai',
@@ -48,6 +51,15 @@ export const REPORTER_PROFILES = {
     icon: 'Compass',
     bio: 'Connecting the dots across markets',
     model: 'claude-sonnet-4-20250514',
+    expiryHours: 336, // 14 days
+  },
+  vera: {
+    name: 'Vera',
+    beat: 'Thematic & Industry Research',
+    color: '#1e3a5f',
+    icon: '📚', // placeholder until designer assigns a Lucide icon
+    bio: 'Vera writes deep, multi-thousand-word research deepdives on the themes shaping markets. Where other reporters cover the news of the day, Vera maps the structural forces underneath — the supply chains, the bottlenecks, the obscured exposures that move stocks over quarters and years.',
+    model: 'claude-sonnet-4-20250514', // used for summary generation only; full content is externally generated
     expiryHours: 336, // 14 days
   },
 };

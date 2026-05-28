@@ -129,13 +129,19 @@ export default async function handler(req, res) {
       }
     }
 
-    // 4. Fetch recent FantasyTimes stories
+    // 4. Fetch recent FantasyTimes stories.
+    // Fetch 10 and post-filter to drop Vera deepdives — Phase 1 keeps
+    // Vera out of agent decisioning until Phase 2 wires her in intentionally.
+    // Single-line revert when Phase 2 ships (drop the filter, set limit back to 5).
     const storiesSnap = await db
       .collection('fantasyTimesStories')
       .orderBy('publishedAt', 'desc')
-      .limit(5)
+      .limit(10)
       .get();
-    const stories = storiesSnap.docs.map((d) => d.data());
+    const stories = storiesSnap.docs
+      .map((d) => d.data())
+      .filter((s) => s.type !== 'deepdive')
+      .slice(0, 5);
 
     // 5. Build market data
     const marketCSV = formatMarketCSV(rankedStocks);
