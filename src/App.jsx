@@ -51,6 +51,7 @@ const BaggerBombSetupScreen = lazy(() => import('./screens/BaggerBombSetupScreen
 const StonkOptionsArenaV2 = lazy(() => import('./components/optionsArena/StonkOptionsArenaV2'));
 const FantasyTimesFeed = lazy(() => import('./components/FantasyTimes/FantasyTimesFeed'));
 const StoryDetail = lazy(() => import('./components/FantasyTimes/StoryDetail'));
+const VeraDeepDive = lazy(() => import('./components/FantasyTimes/VeraDeepDive'));
 const SearchDiscover = lazy(() => import('./components/Search/SearchDiscover'));
 const WatchlistEditor = lazy(() => import('./components/Forge/Watchlist/WatchlistEditor'));
 
@@ -6542,13 +6543,21 @@ export default function PortfolioDuel() {
   };
 
   // ============================================
-  // AGENT HUB: OPEN A FANTASY TIMES STORY FROM A HUB TILE
+  // FANTASYTIMES: OPEN A STORY (shared router)
+  // Vera deepdives route to the deepdive page; every other reporter routes to the
+  // standard story detail. Shared by the feed, the dashboard teaser, and the agent
+  // hub so Vera is reachable from every surface (incl. desktop, where she has no
+  // front-page slot until Phase 2b).
   // ============================================
-  const handleOpenAgentStory = (story) => {
+  const handleStorySelect = (story, section) => {
     if (!story) return;
     setSelectedStory(story);
-    setScreen('storyDetail');
+    setStoryReturnSection(section || null);
+    setScreen(story.type === 'deepdive' ? 'deepDive' : 'storyDetail');
   };
+
+  // AGENT HUB: OPEN A FANTASY TIMES STORY FROM A HUB TILE
+  const handleOpenAgentStory = (story) => handleStorySelect(story);
 
   // ============================================
   // BAGGERBOMB TRAINING V4: CREATE V4 TRAINING BATTLE (No Bench, 1 Swap, 1 Day)
@@ -8523,7 +8532,7 @@ export default function PortfolioDuel() {
               unreadCount={unreadCount}
               activeDraftBanner={activeDraftBanner}
               setActiveDraftBanner={setActiveDraftBanner}
-              onStoryPress={(story) => { setSelectedStory(story); setScreen('storyDetail'); }}
+              onStoryPress={(story) => handleStorySelect(story)}
             />
           </div>
         </ErrorBoundary>
@@ -8560,7 +8569,7 @@ export default function PortfolioDuel() {
             activeDraftBanner={activeDraftBanner}
             setActiveDraftBanner={setActiveDraftBanner}
             sidebarCollapsed={sidebarCollapsed}
-            onStoryPress={(story) => { setSelectedStory(story); setScreen('storyDetail'); }}
+            onStoryPress={(story) => handleStorySelect(story)}
           />
         </div>
       </ErrorBoundary>
@@ -9498,6 +9507,24 @@ export default function PortfolioDuel() {
     );
   }
 
+  // FANTASYTIMES VERA DEEPDIVE (full page) — fetches full markdown by id on mount
+  if (screen === 'deepDive' && selectedStory) {
+    return (
+      <div style={{ marginLeft: isDesktop ? (sidebarCollapsed ? '64px' : '220px') : 0, transition: 'margin-left 0.2s ease' }}>
+      <ErrorBoundary name="VeraDeepDive" onNavigateDashboard={() => setScreen('dashboard')}>
+      <Suspense fallback={<div style={{ minHeight: '100vh', background: '#0a0e14' }} />}>
+        <VeraDeepDive
+          story={selectedStory}
+          onClose={() => { setSelectedStory(null); setScreen('fantasytimes'); }}
+          isMobile={!isDesktop}
+          isDesktop={isDesktop}
+        />
+      </Suspense>
+      </ErrorBoundary>
+      </div>
+    );
+  }
+
   // FORGE WATCHLIST EDITOR (full page) — Phase 4B
   if (screen === 'watchlistEditor' && selectedWatchlistId) {
     return (
@@ -9563,7 +9590,7 @@ export default function PortfolioDuel() {
           userWatchlist={userWatchlist}
           activeBattleTickers={activeBattleTickers}
           onNavigate={setScreen}
-          onStorySelect={(story, section) => { setSelectedStory(story); setStoryReturnSection(section || null); setScreen('storyDetail'); }}
+          onStorySelect={handleStorySelect}
           returnToSection={storyReturnSection}
           onReturnSectionConsumed={() => setStoryReturnSection(null)}
         />

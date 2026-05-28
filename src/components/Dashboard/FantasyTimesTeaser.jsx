@@ -224,6 +224,20 @@ export default function FantasyTimesTeaser({ setScreen, onStoryPress }) {
                 )}
               </div>
 
+              {/* Deepdive eyebrow — Phase 2a minimum signal for Vera's cards */}
+              {story.type === 'deepdive' && (
+                <div style={{
+                  padding: '8px 12px 0',
+                  fontSize: 9,
+                  fontWeight: 700,
+                  letterSpacing: '1.5px',
+                  textTransform: 'uppercase',
+                  color: REPORTER_COLORS.vera.primary,
+                }}>
+                  DEEPDIVE
+                </div>
+              )}
+
               {/* Headline */}
               <div style={{
                 padding: '10px 12px 0',
