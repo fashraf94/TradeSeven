@@ -218,8 +218,12 @@ export async function fetchRecentNews(db, symbols, options = {}) {
 
       for (const doc of snap.docs) {
         if (!seen.has(doc.id)) {
+          const data = doc.data();
+          // Phase 1: skip Vera deepdives in agent news context until Phase 2
+          // wires Vera into agent decisioning intentionally.
+          if (data.type === 'deepdive') continue;
           seen.add(doc.id);
-          stories.push({ id: doc.id, ...doc.data() });
+          stories.push({ id: doc.id, ...data });
         }
       }
     } catch (err) {

@@ -1,11 +1,12 @@
 // api/_utils/fantasyTimesPrompts.js
 // FantasyTimes Virtual Newsroom — Reporter prompts, tool schemas, and profiles.
-// 5 reporters: Kai (Market Pulse), Alex (Stock Spotlight), Neta, Doug, Kim.
+// 6 reporters: Kai (Market Pulse), Alex (Stock Spotlight), Neta, Doug, Kim,
+// Vera (externally-generated deepdives — see api/fantasytimes/ingest-deepdive.js).
 
 import { getFirebaseAdmin } from './firebaseAdmin.js';
 
 // ═══ REPORTER PROFILES ═══════════════════════════════════════════
-// Identity data for all 5 reporters. Used by generation endpoints and feed UI.
+// Identity data for all reporters. Used by generation endpoints and feed UI.
 export const REPORTER_PROFILES = {
   kai: {
     name: 'Kai',
@@ -50,6 +51,15 @@ export const REPORTER_PROFILES = {
     icon: 'Compass',
     bio: 'Connecting the dots across markets',
     model: 'claude-sonnet-4-20250514',
+    expiryHours: 336, // 14 days
+  },
+  vera: {
+    name: 'Vera',
+    beat: 'Thematic & Industry Research',
+    color: '#1e3a5f',
+    icon: '📚', // placeholder until designer assigns a Lucide icon
+    bio: 'Vera writes deep, multi-thousand-word research deepdives on the themes shaping markets. Where other reporters cover the news of the day, Vera maps the structural forces underneath — the supply chains, the bottlenecks, the obscured exposures that move stocks over quarters and years.',
+    model: 'claude-sonnet-4-20250514', // used for summary generation only; full content is externally generated
     expiryHours: 336, // 14 days
   },
 };
@@ -550,6 +560,81 @@ export const PUBLISH_SECTOR_COLUMN_TOOL = {
         type: 'array',
         items: { type: 'string' },
         description: 'Top 2-3 sectors discussed in the column',
+      },
+      recommended_action: {
+        type: 'string',
+        enum: ['BAGGERBOMB', 'SNAKEDRAFT', 'WATCHLIST', 'RESEARCH'],
+      },
+    },
+    required: ['headline', 'subheadline', 'body', 'sentiment', 'themes', 'topSectors', 'recommended_action'],
+  },
+};
+
+// ═══ VERA — DEEP RESEARCHER ══════════════════════════════════════
+// Vera is unique: her full deepdive content is generated externally
+// by the Forge Research Agent (Codex on VPS), then ingested via
+// /api/fantasytimes/ingest-deepdive. The endpoint uses this prompt
+// to distill the full markdown into a 1,000-1,500 char editorial
+// summary that becomes the story body in fantasyTimesStories.
+export const VERA_SUMMARY_SYSTEM_PROMPT = `You are Vera, FantasyTimes' Deep Researcher. You take long-form research deepdives --- multi-thousand-word analyses on industries, themes, and supply chains --- and distill them into a 1,000-1,500 character editorial summary suitable for the FantasyTimes feed.
+
+VOICE:
+- Flowing paragraphs, no bullet lists or headers in the summary body
+- Em-dashes for emphasis ---
+- Specific, named, dated claims preserved from the source deepdive
+- Editorial framing: tell the reader what the deepdive's thesis is and why it matters
+- Confident, analytical, gravitas without pomposity
+
+OUTPUT REQUIREMENTS (enforced by the publish_deepdive_summary tool):
+- headline: max 120 characters, the deepdive's core thesis in one line
+- subheadline: max 200 characters, the framing tension or asymmetry
+- body: 1,000-1,500 characters, markdown subset (paragraphs separated by \\n\\n, occasional **bold** for emphasis only, no headers, no bullets, no tables, no links)
+- sentiment: one of bullish, bearish, neutral, mixed
+- themes: 2-5 short thematic tags from the deepdive
+- topSectors: 2-3 most relevant sectors
+- recommended_action: BAGGERBOMB | SNAKEDRAFT | WATCHLIST | RESEARCH (default to RESEARCH for deepdives)
+
+WHAT YOU MUST PRESERVE FROM THE FULL DEEPDIVE:
+- Named companies (tickers) and their roles
+- Dated claims (specific months/quarters/years)
+- Editorial position (the thesis and counter-thesis if present)
+- The closing takeaway
+
+WHAT YOU MUST AVOID:
+- Summarizing into vagueness ("AI infrastructure is growing")
+- Tables, lists, or headers in the body
+- Generic financial press tropes
+- Hedging beyond what the source deepdive hedges
+
+${ANTI_SLOP_RULES}
+${FACT_CHECK_RULES}
+`;
+
+export const PUBLISH_DEEPDIVE_SUMMARY_TOOL = {
+  name: 'publish_deepdive_summary',
+  description: "Publish a FantasyTimes Vera-voiced editorial summary of a research deepdive",
+  input_schema: {
+    type: 'object',
+    properties: {
+      headline: { type: 'string', description: 'Max 120 chars, the deepdive\'s core thesis in one line' },
+      subheadline: { type: 'string', description: 'Max 200 chars, the framing tension or asymmetry' },
+      body: {
+        type: 'string',
+        description: '1,000-1,500 chars, markdown subset (paragraphs separated by \\n\\n, occasional **bold**, NO headers, NO bullets, NO tables, NO links)',
+      },
+      sentiment: {
+        type: 'string',
+        enum: ['bullish', 'bearish', 'neutral', 'mixed'],
+      },
+      themes: {
+        type: 'array',
+        items: { type: 'string' },
+        description: '2-5 short thematic tags from the deepdive',
+      },
+      topSectors: {
+        type: 'array',
+        items: { type: 'string' },
+        description: '2-3 most relevant sectors discussed in the deepdive',
       },
       recommended_action: {
         type: 'string',

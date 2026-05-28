@@ -352,6 +352,15 @@ service cloud.firestore {
       allow create, update, delete: if false;
     }
 
+    // FantasyTimes deepdives — full Vera research markdown + structured
+    // extraction records, written by /api/fantasytimes/ingest-deepdive
+    // via Admin SDK. The summary lives in fantasyTimesStories; the full
+    // content lives here.
+    match /fantasyTimesDeepdives/{deepdiveId} {
+      allow read: if true;
+      allow create, update, delete: if false;
+    }
+
     // ═══════════════════════════════════════════
     // Index Intelligence & Stock Technical Scores
     // Public read, server-only writes (Admin SDK)

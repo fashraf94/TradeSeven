@@ -28,20 +28,24 @@ export default async function handler(req, res) {
       .limit(100)
       .get();
 
-    const stories = snapshot.docs.map((doc) => {
-      const data = doc.data();
-      return {
-        id: doc.id,
-        ...data,
-        // Convert Firestore timestamps to ISO strings for JSON serialization
-        publishedAt: data.publishedAt?.toDate?.()
-          ? data.publishedAt.toDate().toISOString()
-          : data.publishedAt,
-        expiresAt: data.expiresAt?.toDate?.()
-          ? data.expiresAt.toDate().toISOString()
-          : data.expiresAt,
-      };
-    });
+    const stories = snapshot.docs
+      // Phase 1: suppress Vera deepdive stories from the feed until Phase 2
+      // implements the deepdive card render. Single-line revert when Phase 2 ships.
+      .filter((doc) => doc.data().type !== 'deepdive')
+      .map((doc) => {
+        const data = doc.data();
+        return {
+          id: doc.id,
+          ...data,
+          // Convert Firestore timestamps to ISO strings for JSON serialization
+          publishedAt: data.publishedAt?.toDate?.()
+            ? data.publishedAt.toDate().toISOString()
+            : data.publishedAt,
+          expiresAt: data.expiresAt?.toDate?.()
+            ? data.expiresAt.toDate().toISOString()
+            : data.expiresAt,
+        };
+      });
 
     // Re-sort by publishedAt desc since Firestore required expiresAt ordering
     stories.sort((a, b) => new Date(b.publishedAt) - new Date(a.publishedAt));
