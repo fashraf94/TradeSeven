@@ -9,6 +9,8 @@ import { db } from '../../firebase/config';
 import EditorialStory from './EditorialStory';
 import StoryVisualSafe from './StoryVisualSafe';
 import SidebarSectorBars from './SidebarSectorBars';
+import FeaturedDeepdiveBand from './FeaturedDeepdiveBand';
+import VeraMobilePreview from './VeraMobilePreview';
 import { toDate } from '../../utils/timeAgo';
 import { ChevronUp } from 'lucide-react';
 
@@ -24,7 +26,7 @@ function getEdition() {
 // ── Story Selection Logic ──
 
 function selectFrontPageStories(stories, edition) {
-  if (!stories || stories.length === 0) return { hero: null, sidebar: null, belowFold: [], movers: [] };
+  if (!stories || stories.length === 0) return { hero: null, sidebar: null, belowFold: [], movers: [], featuredDeepdive: null };
 
   const sorted = [...stories].sort((a, b) => toDate(b.publishedAt).getTime() - toDate(a.publishedAt).getTime());
 
@@ -55,7 +57,11 @@ function selectFrontPageStories(stories, edition) {
     .filter(s => s.type === 'market_mover')
     .sort((a, b) => Math.abs(b.dataSnapshot?.percentChange || 0) - Math.abs(a.dataSnapshot?.percentChange || 0));
 
-  return { hero, sidebar, belowFold, movers };
+  // Featured deepdive: Vera's most recent (sorted is publishedAt-desc). Rendered in its own
+  // below-hero band; it matches no other slot above, so there is no de-dup to do here.
+  const featuredDeepdive = sorted.find(s => s.type === 'deepdive') || null;
+
+  return { hero, sidebar, belowFold, movers, featuredDeepdive };
 }
 
 function isBreakingRecent(story) {
@@ -498,7 +504,7 @@ function SidebarTodaysTickers({ stories, onStorySelect }) {
 
 // ── Desktop Front Page ──
 
-function DesktopFrontPage({ hero, sidebar, belowFold, movers, onStoryExpand, expandedStoryId, onResearch, onStorySelect, edition, sectorData, stories }) {
+function DesktopFrontPage({ hero, sidebar, belowFold, movers, featuredDeepdive, onStoryExpand, expandedStoryId, onResearch, onStorySelect, sectorData, stories }) {
   const aboveFoldColumns = sidebar ? '3fr 1fr' : '1fr';
 
   return (
@@ -587,6 +593,15 @@ function DesktopFrontPage({ hero, sidebar, belowFold, movers, onStoryExpand, exp
         )}
       </div>
 
+      {/* ═══ FEATURED RESEARCH (Vera deepdive) ═══ */}
+      {featuredDeepdive && (
+        <FeaturedDeepdiveBand
+          story={featuredDeepdive}
+          onSelect={() => onStorySelect?.(featuredDeepdive)}
+          isDesktop={true}
+        />
+      )}
+
       {/* ═══ THE FOLD ═══ */}
       {belowFold.length > 0 && (
         <div style={{ height: 1, backgroundColor: BROADSHEET_TOKENS.foldLine }} />
@@ -632,20 +647,15 @@ function DesktopFrontPage({ hero, sidebar, belowFold, movers, onStoryExpand, exp
 
 // ── Mobile Front Page ──
 
-function MobileFrontPage({ hero, stories, movers, isBreaking, onStoryExpand, expandedStoryId, onResearch, onStorySelect }) {
+function MobileFrontPage({ hero, stories, movers, featuredDeepdive, isBreaking, onStoryExpand, expandedStoryId, onResearch, onStorySelect }) {
   const remaining = stories.filter(s => s.id !== hero?.id);
   // Find Kim's story for special treatment
   const kimStory = remaining.find(s => s.reporter === 'kim');
-  const otherStories = remaining.filter(s => s.reporter !== 'kim');
-  // Pin the latest deepdive into the compact list — it otherwise sinks below the
-  // slice by recency. Surface-local: only this mobile compact list reads
-  // compactStories; desktop selection (hero/sidebar/belowFold/movers) comes from
-  // selectFrontPageStories and is untouched. Only the single newest deepdive is pinned.
-  const compactTop = otherStories.slice(0, 6);
-  const latestDeepdive = otherStories.find(s => s.type === 'deepdive');
-  const compactStories = (latestDeepdive && !compactTop.some(s => s.id === latestDeepdive.id))
-    ? [latestDeepdive, ...compactTop].slice(0, 6)
-    : compactTop;
+  // Deepdives now have their own dedicated card (VeraMobilePreview, directly below the hero),
+  // so they're excluded from the compact list to avoid a double-render. This replaces the
+  // Phase 2a pin that force-injected the latest deepdive into the compact slice.
+  const otherStories = remaining.filter(s => s.reporter !== 'kim' && s.type !== 'deepdive');
+  const compactStories = otherStories.slice(0, 6);
 
   return (
     <div>
@@ -655,6 +665,14 @@ function MobileFrontPage({ hero, stories, movers, isBreaking, onStoryExpand, exp
       ) : hero ? (
         <MobileNormalLead hero={hero} onStoryExpand={onStoryExpand} expandedStoryId={expandedStoryId} onResearch={onResearch} />
       ) : null}
+
+      {/* Featured research — Vera deepdive (dedicated card between hero and compact list) */}
+      {featuredDeepdive && (
+        <VeraMobilePreview
+          story={featuredDeepdive}
+          onSelect={() => onStorySelect?.(featuredDeepdive)}
+        />
+      )}
 
       {/* Hairline rule */}
       {remaining.length > 0 && (
@@ -790,7 +808,7 @@ function MoversSection({ movers, onStorySelect }) {
 export default function BroadsheetFrontPage({ stories, onStoryExpand, isDesktop, expandedStoryId, onResearch, onStorySelect }) {
   const edition = useMemo(() => getEdition(), []);
 
-  const { hero, sidebar, belowFold, movers } = useMemo(
+  const { hero, sidebar, belowFold, movers, featuredDeepdive } = useMemo(
     () => selectFrontPageStories(stories, edition),
     [stories, edition]
   );
@@ -823,6 +841,7 @@ export default function BroadsheetFrontPage({ stories, onStoryExpand, isDesktop,
         hero={hero}
         stories={stories}
         movers={movers}
+        featuredDeepdive={featuredDeepdive}
         isBreaking={isBreaking}
         onStoryExpand={onStoryExpand}
         expandedStoryId={expandedStoryId}
@@ -841,11 +860,11 @@ export default function BroadsheetFrontPage({ stories, onStoryExpand, isDesktop,
       sidebar={showSidebar}
       belowFold={storyCount >= 2 ? belowFold : []}
       movers={movers}
+      featuredDeepdive={featuredDeepdive}
       onStoryExpand={onStoryExpand}
       expandedStoryId={expandedStoryId}
       onResearch={onResearch}
       onStorySelect={onStorySelect}
-      edition={edition}
       sectorData={sectorData}
       stories={stories}
     />

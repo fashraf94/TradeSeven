@@ -20,6 +20,12 @@ export const REPORTER_COLORS = {
     primary: '#1e3a5f',
     accent: '#3b6ba5',
     ambient: 'rgba(30, 58, 95, 0.15)',
+    // Contrast-safe variant of `primary` for use ON dark backgrounds (the reporter
+    // tab strip, the deepdive band/card eyebrows + CTAs, and deepdive links). Pure
+    // navy `primary` (#1e3a5f) is unreadable as text on the near-black page, so it
+    // stays reserved for brand-identity surfaces — left-edge stripes, blockquote /
+    // table borders, h1 underlines — where it sits against lighter/other content.
+    onDarkAccent: '#7fb0e6',
   },
 };
 
