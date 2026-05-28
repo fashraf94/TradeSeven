@@ -637,6 +637,15 @@ function MobileFrontPage({ hero, stories, movers, isBreaking, onStoryExpand, exp
   // Find Kim's story for special treatment
   const kimStory = remaining.find(s => s.reporter === 'kim');
   const otherStories = remaining.filter(s => s.reporter !== 'kim');
+  // Pin the latest deepdive into the compact list — it otherwise sinks below the
+  // slice by recency. Surface-local: only this mobile compact list reads
+  // compactStories; desktop selection (hero/sidebar/belowFold/movers) comes from
+  // selectFrontPageStories and is untouched. Only the single newest deepdive is pinned.
+  const compactTop = otherStories.slice(0, 6);
+  const latestDeepdive = otherStories.find(s => s.type === 'deepdive');
+  const compactStories = (latestDeepdive && !compactTop.some(s => s.id === latestDeepdive.id))
+    ? [latestDeepdive, ...compactTop].slice(0, 6)
+    : compactTop;
 
   return (
     <div>
@@ -654,7 +663,7 @@ function MobileFrontPage({ hero, stories, movers, isBreaking, onStoryExpand, exp
 
       {/* Below-fold stories (compact) */}
       <div style={{ padding: '8px 0' }}>
-        {otherStories.slice(0, 6).map((story) => (
+        {compactStories.map((story) => (
           <EditorialStory
             key={story.id}
             story={story}
