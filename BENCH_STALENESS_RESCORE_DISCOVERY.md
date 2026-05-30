@@ -150,7 +150,7 @@ The calibration report's outcome space was about whether calibration data can be
 
 ---
 
-## 5. The three §7 parked findings — located in code `[map; bench report §7]`
+## 5. The three §7 parked findings — located in code `[direct; corroborated by a background code-sweep sub-agent]`
 
 ### §7.1 Dual-slot timing inversion
 - `compute-index-intelligence.js` cron `"30 10,11 * * 1-5"` (`vercel.json:133-136`) → 10:30 **and** 11:30 UTC.
@@ -163,7 +163,10 @@ The calibration report's outcome space was about whether calibration data can be
 - Verified verbatim — the write is `batch.set(rankingsRef, { stocks: rankingStocks, totalTechStocks, sectors, updatedAt: FieldValue.serverTimestamp() })` (`compute-index-intelligence.js`, the `indexIntelligence/stockRankings` block ~`:850-856`): **`updatedAt` only — no `expiresAt`/`ttl`/`computedAt`.** `[direct]` (By contrast `compute-rankings` sets a 26 h `expiresAt` on `peerRankings`.) Consumers cannot detect a stale/mixed-vintage doc. **Prerequisite** for any freshness-gated/staleness-weighted rescore option.
 
 ### §7.3 Crypto-hours blind window
-- Verified — `isMarketOpen()` (`api/_utils/marketSchedule.js:123-141`) returns `minutes >= openMinutes && minutes < closeMinutes` gated on `MARKET_OPEN/CLOSE` constants + weekday + holiday/early-close only: **equity regular session (9:30–16:00 ET), no crypto/24-7 branch.** `[direct]` Crypto battles carry `localClose` 20:00 ET (`agentTriggerGate.js:248` reads `timing.localClose`), so the agent's eval cron does **not** evaluate crypto positions in the **16:00–20:00 ET (~4 h) window** even though the battle is "open" for crypto; the pre-market recompute likewise does not align with 24/7 crypto.
+- **The gap is a mismatch between a crypto-AWARE battle close and a crypto-UNAWARE eval gate** `[direct]`:
+  - **Battle close IS crypto-aware (extends to 8 PM ET):** `agentBattleService.js:264` `hasCryptoInPortfolio()` → `:275-277` `computeFullDayExpiry()` calls `getNextMarketClose({ cryptoExtended: hasCrypto })` → `marketSchedule.js:236-237` `effectiveCloseHour = cryptoExtended && !earlyClose ? 20 : standardCloseHour` (20:00 ET). Doc comment `agentBattleService.js:269-270`: "Stocks only: expires 4 PM ET … With crypto: expires 8 PM ET." So such a battle gets `expiresAt` ≈ 8 PM and `timing.localClose = "20:00"`.
+  - **Eval cron is NOT crypto-aware:** `agent-evaluate.js:98` `if (!isMarketOpen()) return {…'market_closed'}`; `isMarketOpen()` (`marketSchedule.js:124-141`, `MARKET_CLOSE_HOUR = 16` at `:19`) takes no options and never consults `cryptoExtended`.
+  - **→ ~4 h blind window (4:00–8:00 PM ET):** the crypto-holding battle is still open and crypto trades 24/7, but every 15-min tick short-circuits `market_closed`, so no evaluation — and no fresh ranking — exists for crypto in that window. (Crypto-aware *cache-TTL* helpers exist — `marketSchedule.js:281-282,314` "crypto never sleeps" — but they do **not** re-open the eval gate.) Matches `BENCH_STALENESS_VERIFICATION_REPORT.md:220`.
 
 ---
 
@@ -204,7 +207,8 @@ So V1.2 pre-scoped **exactly two** workstreams, and this is the head-start the t
 - **(a) margin normalization** → **already absorbed and SHIPPED by V1.4** as `computeBenchVsActiveMargin` + the hurdle floor (§3.2). The only residual is the **8C coherence** decision (D1) — i.e., whether to extend (a) from the hurdle floor to the trigger gate. *(Note: `KEYSTONE_PRELOCK_FINDINGS.md:431-434,562-566` adds that the V1.2 spec was never on disk as a standalone file — it was reconstructed from the two verification reports — and confirms the inline margin at `agentTriggerGate.js:104` / hardcoded `0.5` at `:106`. The grep finding from the first draft was correct; the **interpretation** ("no head-start exists") was wrong — V1.4 itself is the carrier of the V1.2 decomposition.)* `[direct]`
 - **(b) bench-staleness** → **explicitly left as a separate dependency = THIS workstream.** V1.4 deliberately did *not* solve it.
 
-**Conclusion (replaces the first draft's "no head-start"):** The head-start is the **V1.2 (a)/(b) split itself**, now authoritatively recorded in V1.4. (a) is done; **(b) is ours, and it is pre-scoped as "the bench-staleness rescore," cleanly decoupled from the (already-shipped) margin-normalization half.** The `FORGE_RULES_THESIS_V1_2.md` doc is a *different* "V1.2" (the Voice-Layer/rule-swap thesis, source of the bench report's dual-slot-cadence reference) and is **not** the swap-pipeline spec — do not conflate them. `[direct]`
+**Conclusion (replaces the first draft's "no head-start"):** The head-start is the **V1.2 (a)/(b) split itself**, now authoritatively recorded in V1.4. (a) is done; **(b) is ours, and it is pre-scoped as "the bench-staleness rescore," cleanly decoupled from the (already-shipped) margin-normalization half.** The fullest reconstruction of what V1.2 was (and that it never shipped / was never on disk) is `KEYSTONE_PRELOCK_FINDINGS.md:419-483` (§Q5). `[direct]`
+- **Naming caution (corrected):** `FORGE_RULES_THESIS_V1_2.md` is a **different "V1.2"** — the Forge *rules* taxonomy/Voice-Layer thesis, with **no** swap-pipeline / bench-staleness / mb-04 content — do not conflate it with the "Swap Evaluation Pipeline Refresh." Also: the literal phrase *"per the V1.2 thesis"* does **not** appear in the bench-staleness report (0 grep hits); that report's dual-slot/cadence material is **native to it** (its §1 `:46-50` schedules + the §7.3 orthogonal "dual-slot timing inversion" finding `:219`), not inherited from any V1.2 thesis doc. `[direct]`
 → **No decision needed** — this resolves Part 1 item 4: inherit the V1.2 (b) scope; (a) is settled except for the D1 coherence call.
 
 ---
@@ -224,7 +228,7 @@ So V1.2 pre-scoped **exactly two** workstreams, and this is the head-start the t
 | Hurdle-floor invocation | `agent-evaluate.js:~1148-1154` | `[map]` |
 | Trigger gate (un-normalized, one-sided, 0.5) | `agentTriggerGate.js:102-106` (block `:90-113`) | `[direct]` |
 | Gate 8C tripwire + delete-on-unify framing | `keystoneGate8.test.js:42-58`, `:66`, `:104-133` | `[direct]` |
-| isMarketOpen equity-only (crypto gap) | `marketSchedule.js:123-141` | `[direct]` |
+| Crypto blind window (aware close vs unaware gate) | `agentBattleService.js:264,275-277` + `marketSchedule.js:236-237` vs gate `agent-evaluate.js:98` → `isMarketOpen` `marketSchedule.js:124-141` | `[direct]` |
 | V1.2 spec existed; (a) absorbed, (b)=this work | `FORGE_ENFORCEMENT_KEYSTONE_SPEC_V1_4.md:11,:24,:40` | `[direct]` |
 | Calibration: ranking math already exists | `archetypeScoring.js:107-141`; `decide.js:100` | `[direct: calib report]` |
 | 22 battles source | `agentBattles` via `agentBattleService.js:createAgentBattle` | `[direct: calib report]` |
