@@ -13,7 +13,11 @@
 // the regressions Phase 3 actually cares about:
 //   1. A future flush site added without the intradayMomentum write
 //   2. A refactor that drops the existing writes
-//   3. The dotted-path / object-literal forms drifting apart
+//   3. vwapTicks and intradayMomentum drifting apart
+//
+// Forge Enforcement Keystone Phase 2 (§4.5) centralized those five inline
+// writes into finalizeCronState (agentCronState.js); the guard below now asserts
+// the 5 sites route through that helper and the helper persists fields verbatim.
 //
 // It will NOT catch logic bugs in `momentumData.vwap` construction — those
 // are covered upstream (calculateVWAP / calculate5minSMA20 unit tests in
@@ -27,44 +31,50 @@ import { dirname, resolve } from 'node:path';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const SOURCE_PATH = resolve(__dirname, 'agent-evaluate.js');
 
-describe('agent-evaluate cron — Phase 3 intraday momentum persistence', () => {
+describe('agent-evaluate cron — intraday momentum persistence (Phase 2: via finalizeCronState §4.5)', () => {
   const source = readFileSync(SOURCE_PATH, 'utf-8');
+  const helperSource = readFileSync(resolve(__dirname, '../_utils/agentCronState.js'), 'utf-8');
 
-  it('writes cronState.intradayMomentum at every flush site that writes cronState.vwapTicks', () => {
-    // Both fields are populated from the same `momentumData.vwap` table on
-    // every cron pass. They must flush together — if one is written without
-    // the other, the read side (voice-layer-cache) sees stale or asymmetric
-    // state. Counts must match exactly.
-    const dottedFormVwap = source.match(/scoreUpdate\['cronState\.vwapTicks'\] = vwapTicks;/g) || [];
-    const dottedFormIntraday = source.match(/scoreUpdate\['cronState\.intradayMomentum'\] = momentumData\.vwap;/g) || [];
-
-    const literalFormVwap = source.match(/'cronState\.vwapTicks':\s*vwapTicks,/g) || [];
-    const literalFormIntraday = source.match(/'cronState\.intradayMomentum':\s*momentumData\.vwap,/g) || [];
-
-    expect(dottedFormVwap.length).toBe(dottedFormIntraday.length);
-    expect(literalFormVwap.length).toBe(literalFormIntraday.length);
+  it('imports finalizeCronState from the shared helper', () => {
+    expect(source).toMatch(/import\s*\{\s*finalizeCronState\s*\}\s*from\s*'\.\.\/_utils\/agentCronState\.js'/);
   });
 
-  it('flushes intradayMomentum at exactly 5 sites (4 dotted-path + 1 object-literal — matches discovery report)', () => {
-    const dottedForm = source.match(/scoreUpdate\['cronState\.intradayMomentum'\] = momentumData\.vwap;/g) || [];
-    const literalForm = source.match(/'cronState\.intradayMomentum':\s*momentumData\.vwap,/g) || [];
-
-    expect(dottedForm.length).toBe(4);
-    expect(literalForm.length).toBe(1);
-    expect(dottedForm.length + literalForm.length).toBe(5);
+  it('routes cron-state persistence through finalizeCronState at exactly the 5 flush sites', () => {
+    // Phase 2 (§4.5) consolidated the five inline cron-state writes into one
+    // helper so a new persisted field is a one-line add in agentCronState.js.
+    // The 5 mutually-exclusive return paths (proposal-skip, gameplan-skip,
+    // gameplan-trigger, no-trigger-held, full-Haiku finalUpdate) each call it.
+    const calls = source.match(/finalizeCronState\(/g) || [];
+    expect(calls.length).toBe(5);
   });
 
-  it('persists momentumData.vwap verbatim — no transformation, no field renaming (passthrough contract)', () => {
-    // Phase 3 contract: the persisted shape on cronState.intradayMomentum is
-    // identical to the in-memory momentumData.vwap shape. Phase 5 rendering
-    // (deferred) will consume the same shape on the read side.
+  it('passes vwapTicks AND intradayMomentum together at every flush site (they must never drift apart)', () => {
+    // Both come from the same momentumData.vwap table and must flush together —
+    // if a site is added/changed without the other, the read side
+    // (voice-layer-cache) sees asymmetric state. Each call carries both.
+    const both = source.match(/finalizeCronState\([^;]*?\bvwapTicks\b[^;]*?intradayMomentum:\s*momentumData\.vwap/g) || [];
+    expect(both.length).toBe(5);
+  });
+
+  it('the helper persists cronState fields verbatim and always releases the lock (passthrough contract)', () => {
+    // The actual writes now live in finalizeCronState. intradayMomentum must be
+    // persisted as the raw momentumData.vwap passthrough (no wrapping / subkeying
+    // / serialization) so the read side sees the same shape; evaluatingAt must
+    // always be nulled so no return path leaks the evaluating lock.
+    expect(helperSource).toMatch(/update\['cronState\.intradayMomentum'\]\s*=\s*intradayMomentum;/);
+    expect(helperSource).toMatch(/update\['cronState\.vwapTicks'\]\s*=\s*vwapTicks;/);
+    expect(helperSource).toMatch(/update\['cronState\.evaluatingAt'\]\s*=\s*null;/);
+  });
+
+  it('no flush site transforms momentumData.vwap before persisting (verbatim contract)', () => {
+    // Guard against a call site sub-keying / wrapping / serializing the momentum
+    // table instead of passing it through finalizeCronState verbatim.
     const transformingForms = [
-      /cronState\.intradayMomentum'\] =\s*\{/,            // wrapping in {}
-      /cronState\.intradayMomentum'\] =\s*momentumData\.vwap\.\w+/,  // sub-keying
-      /cronState\.intradayMomentum'\] =\s*Object\./,       // Object.fromEntries / mapping
-      /cronState\.intradayMomentum'\] =\s*JSON\.\w+/,      // JSON serialization
+      /intradayMomentum:\s*\{/,                       // wrapping in {}
+      /intradayMomentum:\s*momentumData\.vwap\.\w+/,  // sub-keying
+      /intradayMomentum:\s*Object\./,                 // Object.fromEntries / mapping
+      /intradayMomentum:\s*JSON\.\w+/,                // JSON serialization
     ];
-
     for (const pattern of transformingForms) {
       expect(source).not.toMatch(pattern);
     }

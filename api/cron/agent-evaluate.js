@@ -35,6 +35,7 @@ import { classifyStockRegime, classifyMarketPosture, getPresetAdjustedStrategies
 import { evaluateRisk, calculate5minSMA20, pickEmergencyReplacement, findPortfolioSlot } from '../_utils/agentRiskManager.js';
 import { getPresetConfig } from '../_utils/agentPresetConfig.js';
 import { getArchetypeConfig } from '../_utils/agentArchetypeConfig.js';
+import { finalizeCronState } from '../_utils/agentCronState.js';
 import { logBattlePattern } from '../_utils/battlePatternLogger.js';
 import { logEvaluation, logVisionTransition, logAnticipation } from '../_utils/shadowLogger.js';
 import { filterActiveConstraints } from '../_utils/visionRuntime.js';
@@ -770,10 +771,7 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
     const proposalHandled = await handlePendingProposal(db, battleRef, battle, prices, statusFeedEntries, summary, currentScore);
     if (proposalHandled === 'skip_haiku') {
       // Proposal is pending and not expired — write scores/risk but skip trigger gate + Haiku
-      scoreUpdate['cronState.lastEvaluatedAt'] = new Date().toISOString();
-      scoreUpdate['cronState.evaluatingAt'] = null;
-      scoreUpdate['cronState.vwapTicks'] = vwapTicks;
-      scoreUpdate['cronState.intradayMomentum'] = momentumData.vwap;
+      finalizeCronState(scoreUpdate, { vwapTicks, intradayMomentum: momentumData.vwap });
       const existingFeed = battle.statusFeed || [];
       scoreUpdate.statusFeed = [...existingFeed, ...statusFeedEntries].slice(-STATUS_FEED_CAP);
       await battleRef.update(scoreUpdate);
@@ -785,10 +783,7 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
     // ---- Gameplan meeting lifecycle check (after proposals, before triggers) ----
     const gameplanHandled = await handleGameplanMeeting(db, battleRef, battle, prices, statusFeedEntries, summary, pendingNarrations);
     if (gameplanHandled === 'skip_haiku') {
-      scoreUpdate['cronState.lastEvaluatedAt'] = new Date().toISOString();
-      scoreUpdate['cronState.evaluatingAt'] = null;
-      scoreUpdate['cronState.vwapTicks'] = vwapTicks;
-      scoreUpdate['cronState.intradayMomentum'] = momentumData.vwap;
+      finalizeCronState(scoreUpdate, { vwapTicks, intradayMomentum: momentumData.vwap });
       const existingFeed = battle.statusFeed || [];
       scoreUpdate.statusFeed = [...existingFeed, ...statusFeedEntries].slice(-STATUS_FEED_CAP);
       await battleRef.update(scoreUpdate);
@@ -810,10 +805,7 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
         scoreUpdate.gameplanMeeting = gameplanTrigger;
         scoreUpdate['cronState.lastGameplanDate'] = todayET;
         // Write and skip Haiku — gameplan IS the evaluation
-        scoreUpdate['cronState.lastEvaluatedAt'] = new Date().toISOString();
-        scoreUpdate['cronState.evaluatingAt'] = null;
-        scoreUpdate['cronState.vwapTicks'] = vwapTicks;
-        scoreUpdate['cronState.intradayMomentum'] = momentumData.vwap;
+        finalizeCronState(scoreUpdate, { vwapTicks, intradayMomentum: momentumData.vwap });
         const existingFeed = battle.statusFeed || [];
         scoreUpdate.statusFeed = [...existingFeed, ...statusFeedEntries].slice(-STATUS_FEED_CAP);
         await battleRef.update(scoreUpdate);
@@ -881,11 +873,8 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
 
     if (!shouldEvaluate) {
       // No triggers — update scores, VWAP ticks, and status feed, then move on
-      scoreUpdate['cronState.lastEvaluatedAt'] = new Date().toISOString();
       scoreUpdate['cronState.triggerGatePassCount'] = (battle.cronState?.triggerGatePassCount || 0) + 1;
-      scoreUpdate['cronState.evaluatingAt'] = null;
-      scoreUpdate['cronState.vwapTicks'] = vwapTicks;
-      scoreUpdate['cronState.intradayMomentum'] = momentumData.vwap;
+      finalizeCronState(scoreUpdate, { vwapTicks, intradayMomentum: momentumData.vwap });
       if (statusFeedEntries.length > 0) {
         const existingFeed = battle.statusFeed || [];
         scoreUpdate.statusFeed = [...existingFeed, ...statusFeedEntries].slice(-STATUS_FEED_CAP);
@@ -1335,16 +1324,16 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
       'scoreState.holdCount': (decision === 'HOLD' || decision === 'PROPOSAL')
         ? (battle.scoreState?.holdCount || 0) + 1
         : (battle.scoreState?.holdCount || 0),
-      'cronState.lastEvaluatedAt': now,
       'cronState.lastTriggeredAt': now,
       'cronState.totalHaikuCalls': (battle.cronState?.totalHaikuCalls || 0) + 1,
       'cronState.totalTokens.input': (battle.cronState?.totalTokens?.input || 0) + inputTokens,
       'cronState.totalTokens.output': (battle.cronState?.totalTokens?.output || 0) + outputTokens,
       'cronState.consecutiveHolds': consecutiveHolds,
-      'cronState.vwapTicks': vwapTicks,
-      'cronState.intradayMomentum': momentumData.vwap,
-      'cronState.evaluatingAt': null,
     };
+    // Shared cron state (lastEvaluatedAt / evaluatingAt / vwapTicks /
+    // intradayMomentum). `now` is passed so lastEvaluatedAt === lastTriggeredAt,
+    // preserving prior behavior exactly.
+    finalizeCronState(finalUpdate, { vwapTicks, intradayMomentum: momentumData.vwap, now });
 
     // Write pending proposal if mode branching created one
     if (pendingProposalUpdate) {
