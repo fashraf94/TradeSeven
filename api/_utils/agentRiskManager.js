@@ -441,3 +441,55 @@ export function findPortfolioSlot(portfolio, symbol) {
 
   return null;
 }
+
+/**
+ * Forge Enforcement Keystone V1.4 §4.4 (Knob C) — rolling-window swap counter for
+ * the circuit breaker. Pure: counts swaps in `trades[]` whose `swappedOutAt` falls
+ * within the last `windowMinutes`, EXCLUDING emergency-reason swaps unless
+ * `countEmergencies` is true. The cron compares the result against
+ * `swapWindow.capPerWindow` to throttle discretionary/forced churn.
+ *
+ * Trap 1 (D4): the swap reason lands TOP-LEVEL as `t.exitReason` (via the
+ * ...evaluationMetadata spread in executeSwapServer), NOT `t.evaluationMetadata
+ * .reason`. Filtering the wrong field would leave every reason undefined →
+ * EMERGENCY_BYPASS_REASONS.has(undefined) always false → emergencies counted.
+ *
+ * Edge handling:
+ *  - `swappedOutAt` is an ISO string → Date.parse + isNaN-guard (legacy/missing → skip).
+ *  - dedupe by `t.id` so a record can never be double-counted.
+ *  - legacy trade missing `exitReason` → undefined → NOT an emergency → COUNTED
+ *    (the conservative side: a swap of unknown origin tightens, never loosens, the cap).
+ *  - non-array trades / windowMinutes<=0 / unparseable `now` → 0 (defensive no-op).
+ *
+ * @param {Array} trades - battle.trades[] (live, post-write within the tick)
+ * @param {number} windowMinutes - rolling window size
+ * @param {number|string} now - epoch ms or ISO string anchoring the window end
+ * @param {Object} [opts]
+ * @param {boolean} [opts.countEmergencies=false] - include emergency-reason swaps
+ * @returns {number} count of in-window swaps subject to the cap
+ */
+export function getRecentSwapCount(trades, windowMinutes, now, { countEmergencies = false } = {}) {
+  if (!Array.isArray(trades) || !(windowMinutes > 0)) return 0;
+  const nowMs = typeof now === 'number' ? now : Date.parse(now);
+  if (Number.isNaN(nowMs)) return 0;
+
+  const cutoff = nowMs - windowMinutes * 60000;
+  const seen = new Set();
+  let count = 0;
+
+  for (const t of trades) {
+    if (!t) continue;
+    const ts = Date.parse(t.swappedOutAt);            // ISO string → ms
+    if (Number.isNaN(ts)) continue;                   // legacy/missing timestamp → not windowable
+    if (ts < cutoff || ts > nowMs) continue;          // outside the window (future-guard too)
+    if (t.id != null) {                               // dedupe by trade id
+      if (seen.has(t.id)) continue;
+      seen.add(t.id);
+    }
+    // exitReason is top-level (Trap 1). Missing → undefined → not an emergency → counted.
+    if (!countEmergencies && EMERGENCY_BYPASS_REASONS.has(t.exitReason)) continue;
+    count++;
+  }
+
+  return count;
+}

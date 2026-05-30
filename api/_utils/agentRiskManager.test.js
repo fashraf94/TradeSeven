@@ -8,7 +8,7 @@
 //     archetypeConfig — independently.
 
 import { describe, it, expect } from 'vitest';
-import { evaluateRisk, updateStagnationCounter, pickSwapReplacementCandidate, clearsHurdleFloor, computeBenchVsActiveMargin, EMERGENCY_BYPASS_REASONS } from './agentRiskManager.js';
+import { evaluateRisk, updateStagnationCounter, pickSwapReplacementCandidate, clearsHurdleFloor, computeBenchVsActiveMargin, EMERGENCY_BYPASS_REASONS, getRecentSwapCount } from './agentRiskManager.js';
 import { getArchetypeConfig } from './agentArchetypeConfig.js';
 
 const POS = { symbol: 'AAPL', tier: 'core', baseATR: 2.5 };
@@ -398,5 +398,106 @@ describe('clearsHurdleFloor — Knob B gate (§4.3)', () => {
     const r = call({ userATR: 0 });
     expect(r.clears).toBe(false);
     expect(r.blockReason).toBe('margin_invalid');
+  });
+});
+
+// ---- Phase 5: Knob C — circuit breaker / swapWindow (§4.4) ----
+
+describe('getRecentSwapCount — rolling-window counter (§4.4)', () => {
+  // Anchor "now" at a fixed epoch; build trades relative to it.
+  const NOW = Date.parse('2026-05-30T16:00:00.000Z');
+  const minAgo = (m) => new Date(NOW - m * 60000).toISOString();
+  const trade = (id, exitReason, minutesAgo) => ({ id, exitReason, swappedOutAt: minAgo(minutesAgo) });
+
+  it('counts non-emergency swaps inside the window', () => {
+    const trades = [
+      trade('t1', 'haiku_decision', 10),
+      trade('t2', 'stagnation', 20),
+      trade('t3', 'gameplan_rotation', 30),
+    ];
+    expect(getRecentSwapCount(trades, 60, NOW)).toBe(3);
+  });
+
+  it('excludes swaps older than the window', () => {
+    const trades = [
+      trade('t1', 'haiku_decision', 10),   // in
+      trade('t2', 'stagnation', 90),       // out (window 60)
+    ];
+    expect(getRecentSwapCount(trades, 60, NOW)).toBe(1);
+  });
+
+  it('window boundary: a swap exactly at the cutoff is included; just past is excluded', () => {
+    expect(getRecentSwapCount([trade('t1', 'haiku_decision', 60)], 60, NOW)).toBe(1);   // ts === cutoff
+    expect(getRecentSwapCount([trade('t1', 'haiku_decision', 61)], 60, NOW)).toBe(0);   // ts < cutoff
+  });
+
+  it('Trap 1 / emergency exclusion: emergency-reason swaps are NOT counted (countEmergencies false)', () => {
+    const trades = [
+      trade('t1', 'bust_avoidance', 5),
+      trade('t2', 'vwap_failure', 5),
+      trade('t3', 'stepped_trail', 5),
+      trade('t4', 'guardrail_stopLoss', 5),
+      trade('t5', 'guardrail_trailingStop', 5),
+      trade('t6', 'haiku_decision', 5),    // the only non-emergency
+      trade('t7', 'stagnation', 5),        // non-emergency
+    ];
+    expect(getRecentSwapCount(trades, 60, NOW)).toBe(2);
+  });
+
+  it('countEmergencies:true includes emergency-reason swaps', () => {
+    const trades = [
+      trade('t1', 'bust_avoidance', 5),
+      trade('t2', 'haiku_decision', 5),
+    ];
+    expect(getRecentSwapCount(trades, 60, NOW, { countEmergencies: true })).toBe(2);
+  });
+
+  it('legacy trade missing exitReason is COUNTED (conservative non-emergency side)', () => {
+    const trades = [
+      { id: 't1', swappedOutAt: minAgo(5) },            // no exitReason
+      trade('t2', 'guardrail_stopLoss', 5),             // emergency → excluded
+    ];
+    expect(getRecentSwapCount(trades, 60, NOW)).toBe(1);
+  });
+
+  it('isNaN-guards a missing / garbage swappedOutAt (skipped, not thrown, not counted)', () => {
+    const trades = [
+      { id: 't1', exitReason: 'haiku_decision' },                       // missing swappedOutAt
+      { id: 't2', exitReason: 'haiku_decision', swappedOutAt: 'not-a-date' },
+      trade('t3', 'haiku_decision', 5),                                 // valid
+    ];
+    expect(getRecentSwapCount(trades, 60, NOW)).toBe(1);
+  });
+
+  it('dedupes by trade id (the same record twice counts once)', () => {
+    const t = trade('dup', 'haiku_decision', 5);
+    expect(getRecentSwapCount([t, t], 60, NOW)).toBe(1);
+  });
+
+  it('accepts an ISO-string now as well as epoch ms', () => {
+    const trades = [trade('t1', 'haiku_decision', 10)];
+    expect(getRecentSwapCount(trades, 60, '2026-05-30T16:00:00.000Z')).toBe(1);
+  });
+
+  it('defensive: non-array / windowMinutes<=0 / unparseable now → 0', () => {
+    expect(getRecentSwapCount(null, 60, NOW)).toBe(0);
+    expect(getRecentSwapCount([trade('t1', 'haiku_decision', 5)], 0, NOW)).toBe(0);
+    expect(getRecentSwapCount([trade('t1', 'haiku_decision', 5)], 60, 'bad-date')).toBe(0);
+  });
+
+  it('mixed realistic tick: only the 2 non-emergency in-window swaps count', () => {
+    const trades = [
+      trade('t1', 'stagnation', 2),          // count
+      trade('t2', 'vwap_failure', 3),        // emergency → skip
+      trade('t3', 'haiku_decision', 4),      // count
+      trade('t4', 'guardrail_stopLoss', 5),  // emergency → skip
+      trade('t5', 'haiku_decision', 200),    // out of window
+    ];
+    expect(getRecentSwapCount(trades, 60, NOW)).toBe(2);
+  });
+
+  it('future-dated swaps (ts > now) are excluded', () => {
+    const future = { id: 'tf', exitReason: 'haiku_decision', swappedOutAt: new Date(NOW + 60000).toISOString() };
+    expect(getRecentSwapCount([future], 60, NOW)).toBe(0);
   });
 });

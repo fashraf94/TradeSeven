@@ -32,7 +32,7 @@ import { generateAnticipation } from '../_utils/voiceLayerAnticipation.js';
 import { buildTechnicalSnapshot } from '../_utils/buildTechnicalSnapshot.js';
 import { applyGuardrails } from '../_utils/agentGuardrails.js';
 import { classifyStockRegime, classifyMarketPosture, getPresetAdjustedStrategies } from '../_utils/agentRegimeClassifier.js';
-import { evaluateRisk, calculate5minSMA20, pickEmergencyReplacement, pickSwapReplacementCandidate, updateStagnationCounter, findPortfolioSlot, clearsHurdleFloor } from '../_utils/agentRiskManager.js';
+import { evaluateRisk, calculate5minSMA20, pickEmergencyReplacement, pickSwapReplacementCandidate, updateStagnationCounter, findPortfolioSlot, clearsHurdleFloor, getRecentSwapCount, EMERGENCY_BYPASS_REASONS } from '../_utils/agentRiskManager.js';
 import { getPresetConfig } from '../_utils/agentPresetConfig.js';
 import { getArchetypeConfig } from '../_utils/agentArchetypeConfig.js';
 import { finalizeCronState } from '../_utils/agentCronState.js';
@@ -698,6 +698,34 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
 
     // ---- Execute risk-triggered swaps (no Haiku needed) ----
     for (const { score, asset, riskResult } of riskSwaps) {
+      // Forge Enforcement Keystone V1.4 §4.4 (Knob C) — circuit breaker on FORCED
+      // ROTATION only. Emergencies (bust/vwap/trail) bypass — never throttle a
+      // protective exit. B1 within-tick binding: count LIVE from battle.trades
+      // (re-read after each swap below), NOT once vs the frozen riskSwaps array, so
+      // the Nth forced rotation in a burst sees the prior N-1 and is capped.
+      const swCfg = archetypeConfig.hftConfig?.swapWindow;
+      if (riskResult.reason === 'stagnation' && swCfg?.enabled) {
+        const used = getRecentSwapCount(battle.trades || [], swCfg.windowMinutes, Date.now(), { countEmergencies: swCfg.countEmergencies });
+        if (used >= swCfg.capPerWindow) {
+          console.log(`${LOG_PREFIX} Knob C cap hit (stagnation) for ${battle.id}: ${used}/${swCfg.capPerWindow} in ${swCfg.windowMinutes}min`);
+          statusFeedEntries.push({
+            timestamp: new Date().toISOString(),
+            message: `Circuit breaker: ${score.symbol} forced rotation skipped — ${used}/${swCfg.capPerWindow} swaps in ${swCfg.windowMinutes}min window.`,
+            pvpContext: null,
+            action: 'hold',
+            regime: stockRegimes[score.symbol] || null,
+            score: Math.round(currentScore * 100) / 100,
+            citedRules: ['swap_window_cap'],
+            triggeredBy: 'risk_stagnation',
+            source: 'archetype',
+            evalId: null,
+            symbolOut: score.symbol,
+            symbolIn: null,
+          });
+          continue; // skip THIS forced rotation; window stays full for the rest of the tick
+        }
+      }
+
       const allBench = flattenBenchServer(battle.portfolio?.bench);
       // Invariant 1 (§3.1) — branch the candidate source on REASON, never action.
       // SWAP_OUT now carries both vwap_failure (emergency, quality-bypass) and
@@ -1120,12 +1148,29 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
           userATR: activeBaseATR,
         });
 
+        // Forge Enforcement Keystone V1.4 §4.4 (Knob C) — circuit breaker on the
+        // Haiku path. Trap 2 / A2: a guardrail-forced exit (haikuSwapReason ∈
+        // EMERGENCY_BYPASS_REASONS) MUST bypass the cap — never throttle a
+        // protective exit because the window filled. battle.trades here already
+        // includes this tick's risk-loop forced rotations (re-read after each), so
+        // both hooks share one consistent window count.
+        const swCfg = archetypeConfig.hftConfig?.swapWindow;
+        const capBlocked = swCfg?.enabled
+          && !EMERGENCY_BYPASS_REASONS.has(haikuSwapReason)
+          && getRecentSwapCount(battle.trades || [], swCfg.windowMinutes, Date.now(), { countEmergencies: swCfg.countEmergencies }) >= swCfg.capPerWindow;
+
         if (!hurdle.clears) {
           // Mirror the LOCKED / distressed downgrade pattern above.
           validationErrors.push(`${haikuResult.symbolIn} below ${haikuSwapReason} hurdle floor (${hurdle.blockReason}) — swap blocked`);
           decision = 'HOLD';
           downgraded = true;
           console.warn(`${LOG_PREFIX} SWAP blocked by hurdle floor: ${haikuResult.symbolOut}→${haikuResult.symbolIn} (${hurdle.blockReason})`);
+        } else if (capBlocked) {
+          // Circuit breaker: discretionary swap throttled. Mirror the hurdle downgrade.
+          validationErrors.push(`Swap cap reached (${swCfg.capPerWindow}/${swCfg.windowMinutes}min) — swap blocked`);
+          decision = 'HOLD';
+          downgraded = true;
+          console.warn(`${LOG_PREFIX} SWAP blocked by Knob C cap for ${battle.id}: ${haikuResult.symbolOut}→${haikuResult.symbolIn}`);
         } else if (mode === 'autopilot') {
           // Autopilot: execute immediately (original behavior)
           try {

@@ -326,3 +326,31 @@ describe('agent-evaluate cron — Knob B hurdle floor wiring (§4.3)', () => {
     expect(source).toMatch(/exitReason:\s*haikuSwapReason/);
   });
 });
+
+// Phase 5 (Knob C — circuit breaker / swapWindow, §4.4) — write-side wiring
+// guards. Behavioral load is carried by the pure getRecentSwapCount tests in
+// agentRiskManager.test.js; these guard the two cron hook sites + the A2 bypass.
+describe('agent-evaluate cron — Knob C circuit breaker wiring (§4.4)', () => {
+  const source = readFileSync(SOURCE_PATH, 'utf-8');
+
+  it('imports getRecentSwapCount and EMERGENCY_BYPASS_REASONS from agentRiskManager', () => {
+    expect(source).toMatch(/import\s*\{[^}]*\bgetRecentSwapCount\b[^}]*\}\s*from\s*'\.\.\/_utils\/agentRiskManager\.js'/s);
+    expect(source).toMatch(/import\s*\{[^}]*\bEMERGENCY_BYPASS_REASONS\b[^}]*\}\s*from\s*'\.\.\/_utils\/agentRiskManager\.js'/s);
+  });
+
+  it('hook 1 (risk loop): caps ONLY stagnation, reads getRecentSwapCount live, and continues when at cap', () => {
+    expect(source).toMatch(/if \(riskResult\.reason === 'stagnation' && swCfg\?\.enabled\) \{/);
+    expect(source).toMatch(/const used = getRecentSwapCount\(battle\.trades \|\| \[\]/);
+    expect(source).toMatch(/if \(used >= swCfg\.capPerWindow\) \{[\s\S]*?continue;/);
+  });
+
+  it('hook 2 (Haiku): cap check bypasses emergencies via EMERGENCY_BYPASS_REASONS and slots into the hurdle chain', () => {
+    expect(source).toMatch(/const capBlocked = swCfg\?\.enabled\s*\n\s*&& !EMERGENCY_BYPASS_REASONS\.has\(haikuSwapReason\)/);
+    expect(source).toMatch(/if \(!hurdle\.clears\) \{[\s\S]*?\} else if \(capBlocked\) \{[\s\S]*?decision = 'HOLD';[\s\S]*?\} else if \(mode === 'autopilot'\) \{/);
+  });
+
+  it('Knob C adds NO new persisted state (finalizeCronState calls unchanged — no swapWindow field)', () => {
+    expect(source).not.toMatch(/finalizeCronState\([^;]*swapWindow/);
+    expect(source).not.toMatch(/cronState\.(swapCount|swapWindow|recentSwaps)/);
+  });
+});
