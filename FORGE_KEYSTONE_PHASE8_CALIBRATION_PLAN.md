@@ -55,7 +55,7 @@ with `forceRefresh: true` (`api/cron/agent-evaluate.js:248-255`). The staleness 
 1. **Candidate-selection rankings.** The `indexIntelligence/stockRankings` doc that
    drives bench candidate selection is computed once daily and never rescored
    intraday (~17.5–24h data age; ~43% selected-candidate change rate under
-   realistic drift — `BENCH_STALENESS_VERIFICATION_REPORT.md:81-90,152-157`).
+   realistic drift — `BENCH_STALENESS_VERIFICATION_REPORT.md:81-90,147-148`).
 2. **Bench `baseATR`.** Set at swap-in and not rescored daily
    (`api/_utils/agentSwapExecution.js:192`). The hurdle floor and the trigger gate
    both divide by this volatility unit, so until it is rescored, hurdle/stagnation

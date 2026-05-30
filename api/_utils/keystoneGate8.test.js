@@ -101,23 +101,28 @@ describe('Gate 8C · margin-coherence characterization — trigger wake vs hurdl
 
   // The finding demonstrated end-to-end with BOTH real functions on ONE market
   // state: "woken by formula X, blocked by formula Y."
-  it('FINDING (real functions): the SAME state WAKES Haiku (bench trigger) yet BLOCKS the swap of a winning active', () => {
+  it('FINDING (real functions): the SAME portfolio state WAKES Haiku (bench trigger) yet BLOCKS the swap of its winning position', () => {
     const battle = {
       evaluations: [{ at: minAgo(30) }],    // not the first eval → no forced_open
       // no `timing` → computePhaseFromBattle returns 'MID' (not FINAL_HOUR)
       portfolio: { bench: { stocks: [{ symbol: 'BENCH', baseATR: 2.5 }] } },
     };
-    // One weak active (priceChange ≤ 0) opens the bench-outperformance check.
-    const assetScores = [{ symbol: 'WEAK', priceChange: -0.2, multiplier: 0, badges: [] }];
+    // ONE portfolio, two positions: a LAGGING name (priceChange ≤ 0) opens the
+    // bench-outperformance wake (hasWeakActive), while a separate WINNING name sits
+    // in the same book — that winner is the rotation candidate the hurdle gates below.
+    const assetScores = [
+      { symbol: 'WEAK', priceChange: -0.2, multiplier: 0, badges: [] }, // opens hasWeakActive → wake
+      { symbol: 'WINNER', priceChange: 1.5, multiplier: 0, badges: [] }, // +1.5% — the rotation candidate
+    ];
     const prices = { BENCH: { changePercent: 2.0 } };  // bench +2% → 2.0/2.5 = 0.8x ATR ≥ 0.5
 
     const woken = evaluateTriggers(battle, assetScores, prices, null, null, []);
     expect(woken.shouldEvaluate).toBe(true);
     expect(woken.triggers.some(t => t.type === 'bench_outperformance')).toBe(true);
 
-    // Same bench as the incoming hurdle candidate, against a WINNING active being
-    // rotated out → the bench-minus-active margin (0.2x) is below the degen
-    // stagnation floor (0.6x), so the swap the wake invited would be BLOCKED.
+    // The WINNER position is the rotation candidate. Against the SAME bench (+2%),
+    // its bench-minus-active margin (0.2x) is below the degen stagnation floor
+    // (0.6x) — so the swap the wake just invited would be BLOCKED.
     const hurdle = clearsHurdleFloor({
       active: { symbol: 'WINNER', dailyPct: 0.015 },
       benchCandidate: { symbol: 'BENCH', dailyPct: 0.02 },
@@ -167,13 +172,19 @@ describe('Gate 8D · within-tick binding — getRecentSwapCount caps a burst as 
     expect(gatedCount).toBe(cap);
   });
 
-  it('a frozen pre-tick count would NOT bind — the sim only caps because it re-reads the growing trades[]', () => {
-    // Control: a pre-tick snapshot (empty trades) is always < cap, so a frozen
-    // reader would let every attempt through. The live reader is what binds.
-    const cap = degen.hftConfig.swapWindow.capPerWindow;
-    expect(getRecentSwapCount([], 60, NOW)).toBe(0);                  // frozen value never reaches cap
-    const { executed } = simulateForcedRotationTick({ cap, windowMinutes: 60, attempts: cap + 5 });
-    expect(executed).toBe(cap);                                      // live re-read still caps at 12, not 17
+  it('the LIVE re-read is what binds — a FROZEN pre-tick count lets the whole burst through (17), the live reader caps it (12)', () => {
+    const cap = degen.hftConfig.swapWindow.capPerWindow; // 12
+    const attempts = cap + 5;                            // 17
+    // FROZEN reader: the count is snapshotted ONCE before the loop (the pre-tick
+    // value) and never re-read, so it stays 0 < cap and every attempt fires.
+    const frozenCount = getRecentSwapCount([], 60, NOW); // 0, captured once
+    let frozenExecuted = 0;
+    for (let i = 0; i < attempts; i++) { if (frozenCount >= cap) continue; frozenExecuted++; }
+    expect(frozenExecuted).toBe(attempts);               // 17 — a frozen count does NOT bind
+    // LIVE reader: re-reads the growing trades[] each iteration → binds at the cap.
+    const { executed } = simulateForcedRotationTick({ cap, windowMinutes: 60, attempts });
+    expect(executed).toBe(cap);                          // 12 — the live re-read is the binding
+    expect(executed).toBeLessThan(frozenExecuted);       // 12 < 17 — the contrast is the whole point
   });
 
   it('8D emergency bypass: an emergency rotation fires even at cap and does NOT consume the window', () => {
