@@ -34,6 +34,7 @@ import { applyGuardrails } from '../_utils/agentGuardrails.js';
 import { classifyStockRegime, classifyMarketPosture, getPresetAdjustedStrategies } from '../_utils/agentRegimeClassifier.js';
 import { evaluateRisk, calculate5minSMA20, pickEmergencyReplacement, findPortfolioSlot } from '../_utils/agentRiskManager.js';
 import { getPresetConfig } from '../_utils/agentPresetConfig.js';
+import { getArchetypeConfig } from '../_utils/agentArchetypeConfig.js';
 import { logBattlePattern } from '../_utils/battlePatternLogger.js';
 import { logEvaluation, logVisionTransition, logAnticipation } from '../_utils/shadowLogger.js';
 import { filterActiveConstraints } from '../_utils/visionRuntime.js';
@@ -615,6 +616,19 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
     const lockedPositions = new Set();
     const vwapTicks = { ...(battle.cronState?.vwapTicks || {}) };
 
+    // Forge Enforcement Keystone V1.4 §4.1 — resolve the archetype→physics knobs
+    // once per battle (archetype is battle-level). getArchetypeConfig falls back
+    // to analyst-default for unset/unknown archetypes (accepted at launch per
+    // Decision 19). Passed into evaluateRisk so Knob A/B (Phase 3/4) read
+    // archetypeConfig.hftConfig regardless of the user-toggleable strategyPreset
+    // (Decision 2); base levers continue to come from presetConfig.risk.
+    const archetypeConfig = getArchetypeConfig(ctx.archetype);
+    // Gate 1 — archetype-distribution + behavioral-differentiation probe. Surfaces
+    // the live archetype mix and confirms non-analyst archetypes resolve to
+    // differentiated knobs (e.g. degen forcedRotation on / cap 12 vs guardian off
+    // / cap 2). Also closes Gate 0c's live-distribution question via logs.
+    console.log(`${LOG_PREFIX} [Gate1] battle=${battle.id} archetype=${ctx.archetype || 'unknown'} resolved=${archetypeConfig.label} forcedRotation=${archetypeConfig.hftConfig?.forcedRotation?.enabled ? 'on' : 'off'} swapCap=${archetypeConfig.hftConfig?.swapWindow?.capPerWindow}`);
+
     for (const score of assetScores) {
       const asset = flatPortfolio.find(a => a.symbol === score.symbol);
       const currentPrice = prices[score.symbol]?.current;
@@ -639,7 +653,8 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
         currentPrice, entryPrice, score.baseATR,
         intradaySnapshot,
         { ticksBelowVwap: vwapTicks[score.symbol] },
-        presetConfig.risk
+        presetConfig.risk,
+        archetypeConfig
       );
 
       riskStatus[score.symbol] = riskResult;

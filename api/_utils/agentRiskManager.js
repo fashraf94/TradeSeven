@@ -8,7 +8,38 @@ const BONUS_THRESHOLDS = [1.0, 1.5, 2.0];
 const LOCK_PROXIMITY = 0.2; // ATR multiples within which to lock
 
 /**
- * Evaluate risk for a single active position.
+ * Evaluate risk for a single active position (archetype-aware entry point).
+ *
+ * Forge Enforcement Keystone V1.4 §4.1 — the archetype→physics wire.
+ * Base levers (bustBuffer / vwapFailureTicks / trailStopATR) stay preset-driven
+ * via `presetOverrides` and are applied by the priority chain in
+ * `evaluateRiskAction`. Archetype-LOCKED HFT knobs arrive via
+ * `archetypeConfig.hftConfig` (§3.3) and are consumed by later phases:
+ *   - Knob A forced rotation (Phase 3, §4.2) — inserted into the priority
+ *     chain after vwap_failure
+ *   - Knob B hurdle floor (Phase 4, §4.3)
+ * In Phase 1 the wire is established and `hftConfig` is echoed on the result so
+ * the cron can pass the resolved knobs downstream and tests can assert the wire
+ * is live (Gate 1). `archetypeConfig` defaults to null → `hftConfig: null`
+ * (backward-compatible with the single existing caller).
+ *
+ * @param {Object} position - { symbol, tier, baseATR }
+ * @param {number} currentPrice - Current market price
+ * @param {number} entryPrice - Entry price (swapPrice or startingPrice)
+ * @param {number} baseATR - ATR as percent of price
+ * @param {Object|null} intradaySnapshot - { vwap, vwapDeviation, sma20_5m } or null
+ * @param {Object} cronMemory - { ticksBelowVwap: number }
+ * @param {Object} [presetOverrides] - preset-driven base levers
+ * @param {Object|null} [archetypeConfig] - archetype config (from getArchetypeConfig)
+ * @returns {{ action: string, reason: string|null, detail: string, hftConfig: Object|null }}
+ */
+export function evaluateRisk(position, currentPrice, entryPrice, baseATR, intradaySnapshot, cronMemory, presetOverrides = {}, archetypeConfig = null) {
+  const base = evaluateRiskAction(position, currentPrice, entryPrice, baseATR, intradaySnapshot, cronMemory, presetOverrides);
+  return { ...base, hftConfig: archetypeConfig?.hftConfig || null };
+}
+
+/**
+ * Preset-driven risk priority chain (internal — wrapped by evaluateRisk).
  * Returns the highest-priority risk action that applies.
  *
  * Priority order:
@@ -27,7 +58,7 @@ const LOCK_PROXIMITY = 0.2; // ATR multiples within which to lock
  * @param {Object} [presetOverrides] - Optional preset risk overrides { bustBuffer, vwapFailureTicks, trailStopATR }
  * @returns {{ action: string, reason: string|null, detail: string }}
  */
-export function evaluateRisk(position, currentPrice, entryPrice, baseATR, intradaySnapshot, cronMemory, presetOverrides = {}) {
+function evaluateRiskAction(position, currentPrice, entryPrice, baseATR, intradaySnapshot, cronMemory, presetOverrides = {}) {
   if (!currentPrice || !entryPrice || entryPrice <= 0 || !baseATR || baseATR <= 0) {
     return { action: 'HOLD', reason: null, detail: '' };
   }
