@@ -344,6 +344,14 @@ describe('agent-evaluate cron — Knob C circuit breaker wiring (§4.4)', () => 
     expect(source).toMatch(/if \(used >= swCfg\.capPerWindow\) \{[\s\S]*?continue;/);
   });
 
+  // B1 within-tick binding (Phase-5 carry-over): the cap MUST read the live
+  // in-loop battle.trades, and the loop MUST re-read battle after each swap, so the
+  // Nth forced rotation in a burst sees the prior N-1 — NOT a frozen pre-tick count.
+  it('B1: the stagnation cap reads live battle.trades INSIDE the riskSwaps loop, which re-reads battle after each swap', () => {
+    // getRecentSwapCount(battle.trades …) appears between the loop head and the post-swap re-read.
+    expect(source).toMatch(/for \(const \{ score, asset, riskResult \} of riskSwaps\) \{[\s\S]*?getRecentSwapCount\(battle\.trades[\s\S]*?const updatedDoc = await battleRef\.get\(\);\s*\n\s*Object\.assign\(battle, updatedDoc\.data\(\)\);/);
+  });
+
   it('hook 2 (Haiku): cap check bypasses emergencies via EMERGENCY_BYPASS_REASONS and slots into the hurdle chain', () => {
     expect(source).toMatch(/const capBlocked = swCfg\?\.enabled\s*\n\s*&& !EMERGENCY_BYPASS_REASONS\.has\(haikuSwapReason\)/);
     expect(source).toMatch(/if \(!hurdle\.clears\) \{[\s\S]*?\} else if \(capBlocked\) \{[\s\S]*?decision = 'HOLD';[\s\S]*?\} else if \(mode === 'autopilot'\) \{/);
@@ -352,5 +360,40 @@ describe('agent-evaluate cron — Knob C circuit breaker wiring (§4.4)', () => 
   it('Knob C adds NO new persisted state (finalizeCronState calls unchanged — no swapWindow field)', () => {
     expect(source).not.toMatch(/finalizeCronState\([^;]*swapWindow/);
     expect(source).not.toMatch(/cronState\.(swapCount|swapWindow|recentSwaps)/);
+  });
+});
+
+// Phase 6 (§4.6 receipt source discriminator) — Gate 7: every swap origin path
+// stamps the right source onto its evaluationMetadata (rides onto trades[] via the
+// ...evaluationMetadata spread). Behavioral load is on buildSwapReceiptSource's
+// unit tests; these guard per-site coverage (a missing/wrong source silently
+// poisons training data + Voice Layer labeling).
+describe('agent-evaluate cron — Knob §4.6 receipt source wiring (Gate 7)', () => {
+  const source = readFileSync(SOURCE_PATH, 'utf-8');
+
+  it('imports buildSwapReceiptSource from agentRiskManager', () => {
+    expect(source).toMatch(/import\s*\{[^}]*\bbuildSwapReceiptSource\b[^}]*\}\s*from\s*'\.\.\/_utils\/agentRiskManager\.js'/s);
+  });
+
+  it('stamps the receipt source at all 4 swap origin paths (spread into evaluationMetadata)', () => {
+    const spreads = source.match(/\.\.\.buildSwapReceiptSource\(\{/g) || [];
+    expect(spreads.length).toBe(4);
+  });
+
+  it('Path A (risk loop): source = archetype for stagnation, else risk_manager (mirrors statusFeed)', () => {
+    expect(source).toMatch(/const swapSource = riskResult\.reason === 'stagnation' \? 'archetype' : 'risk_manager';/);
+    expect(source).toMatch(/\.\.\.buildSwapReceiptSource\(\{ source: swapSource, archetype: ctx\.archetype \}\)/);
+  });
+
+  it('Path B (Haiku): source = haiku for discretionary, guardrail for guardrail-forced', () => {
+    expect(source).toMatch(/const swapSource = haikuSwapReason === 'haiku_decision' \? 'haiku' : 'guardrail';/);
+  });
+
+  it('Path C (proposal, dormant): source = haiku', () => {
+    expect(source).toMatch(/\.\.\.buildSwapReceiptSource\(\{ source: 'haiku', archetype: ctx\.archetype \}\)/);
+  });
+
+  it('Path D (gameplan, dormant): source = gameplan_meeting', () => {
+    expect(source).toMatch(/\.\.\.buildSwapReceiptSource\(\{ source: 'gameplan_meeting', archetype: ctx\.archetype \}\)/);
   });
 });

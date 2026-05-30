@@ -493,3 +493,35 @@ export function getRecentSwapCount(trades, windowMinutes, now, { countEmergencie
 
   return count;
 }
+
+/**
+ * Forge Enforcement Keystone V1.4 §4.6 — swap RECEIPT source discriminator.
+ * Pure: builds the 3 origin-metadata fields that ride onto battle.trades[] via the
+ * ...evaluationMetadata spread in executeSwapServer (the same mechanism exitReason
+ * uses). Additive only — NO behavioral effect; this is provenance for training-data
+ * pipelines and the Voice Layer.
+ *
+ * `source` (WHICH system decided) is orthogonal to `exitReason` (WHY): e.g. a
+ * guardrail-forced exit is source:'guardrail' / exitReason:'guardrail_stopLoss';
+ * a discretionary swap is source:'haiku' / exitReason:'haiku_decision'. The vocab
+ * mirrors the statusFeed `source` values (haiku / archetype / risk_manager /
+ * guardrail / gameplan_meeting) — no third 'haiku_decision' source variant.
+ *
+ * `archetype` is recorded ONLY for archetype-authored swaps (Knob A forced
+ * rotation, source:'archetype'); null otherwise. Coerced to null (never undefined)
+ * because Firestore rejects undefined. `hftKnobsSource` is constant 'archetype' at
+ * launch — the HFT knobs are archetype-locked; Path-1 'user_rule' authority is
+ * post-launch.
+ *
+ * @param {Object} p
+ * @param {string} p.source - origin system (statusFeed source vocabulary)
+ * @param {string} [p.archetype] - ctx.archetype (recorded only when source==='archetype')
+ * @returns {{ source: string, archetype: string|null, hftKnobsSource: 'archetype' }}
+ */
+export function buildSwapReceiptSource({ source, archetype }) {
+  return {
+    source,
+    archetype: source === 'archetype' ? (archetype || null) : null,
+    hftKnobsSource: 'archetype',
+  };
+}

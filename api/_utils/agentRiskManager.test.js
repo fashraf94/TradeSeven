@@ -8,7 +8,7 @@
 //     archetypeConfig — independently.
 
 import { describe, it, expect } from 'vitest';
-import { evaluateRisk, updateStagnationCounter, pickSwapReplacementCandidate, clearsHurdleFloor, computeBenchVsActiveMargin, EMERGENCY_BYPASS_REASONS, getRecentSwapCount } from './agentRiskManager.js';
+import { evaluateRisk, updateStagnationCounter, pickSwapReplacementCandidate, clearsHurdleFloor, computeBenchVsActiveMargin, EMERGENCY_BYPASS_REASONS, getRecentSwapCount, buildSwapReceiptSource } from './agentRiskManager.js';
 import { getArchetypeConfig } from './agentArchetypeConfig.js';
 
 const POS = { symbol: 'AAPL', tier: 'core', baseATR: 2.5 };
@@ -499,5 +499,36 @@ describe('getRecentSwapCount — rolling-window counter (§4.4)', () => {
   it('future-dated swaps (ts > now) are excluded', () => {
     const future = { id: 'tf', exitReason: 'haiku_decision', swappedOutAt: new Date(NOW + 60000).toISOString() };
     expect(getRecentSwapCount([future], 60, NOW)).toBe(0);
+  });
+});
+
+// ---- Phase 6: §4.6 receipt source discriminator ----
+
+describe('buildSwapReceiptSource — receipt origin metadata (§4.6)', () => {
+  it('passes source through unchanged for each vocab value', () => {
+    for (const s of ['haiku', 'risk_manager', 'guardrail', 'gameplan_meeting']) {
+      expect(buildSwapReceiptSource({ source: s }).source).toBe(s);
+    }
+  });
+
+  it('records archetype ONLY when source === "archetype"', () => {
+    expect(buildSwapReceiptSource({ source: 'archetype', archetype: 'degen' }).archetype).toBe('degen');
+    expect(buildSwapReceiptSource({ source: 'haiku', archetype: 'degen' }).archetype).toBeNull();
+    expect(buildSwapReceiptSource({ source: 'risk_manager', archetype: 'guardian' }).archetype).toBeNull();
+  });
+
+  it('coerces a missing archetype to null (never undefined — Firestore safety) even for archetype source', () => {
+    const r = buildSwapReceiptSource({ source: 'archetype' });
+    expect(r.archetype).toBeNull();
+    expect(r.archetype).not.toBeUndefined();
+  });
+
+  it('always sets hftKnobsSource to "archetype" (constant at launch)', () => {
+    expect(buildSwapReceiptSource({ source: 'haiku' }).hftKnobsSource).toBe('archetype');
+    expect(buildSwapReceiptSource({ source: 'archetype', archetype: 'degen' }).hftKnobsSource).toBe('archetype');
+  });
+
+  it('returns exactly the 3 receipt fields (source, archetype, hftKnobsSource)', () => {
+    expect(Object.keys(buildSwapReceiptSource({ source: 'haiku' })).sort()).toEqual(['archetype', 'hftKnobsSource', 'source']);
   });
 });

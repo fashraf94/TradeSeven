@@ -32,7 +32,7 @@ import { generateAnticipation } from '../_utils/voiceLayerAnticipation.js';
 import { buildTechnicalSnapshot } from '../_utils/buildTechnicalSnapshot.js';
 import { applyGuardrails } from '../_utils/agentGuardrails.js';
 import { classifyStockRegime, classifyMarketPosture, getPresetAdjustedStrategies } from '../_utils/agentRegimeClassifier.js';
-import { evaluateRisk, calculate5minSMA20, pickEmergencyReplacement, pickSwapReplacementCandidate, updateStagnationCounter, findPortfolioSlot, clearsHurdleFloor, getRecentSwapCount, EMERGENCY_BYPASS_REASONS } from '../_utils/agentRiskManager.js';
+import { evaluateRisk, calculate5minSMA20, pickEmergencyReplacement, pickSwapReplacementCandidate, updateStagnationCounter, findPortfolioSlot, clearsHurdleFloor, getRecentSwapCount, EMERGENCY_BYPASS_REASONS, buildSwapReceiptSource } from '../_utils/agentRiskManager.js';
 import { getPresetConfig } from '../_utils/agentPresetConfig.js';
 import { getArchetypeConfig } from '../_utils/agentArchetypeConfig.js';
 import { finalizeCronState } from '../_utils/agentCronState.js';
@@ -768,6 +768,10 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
 
       try {
         const riskTradeId = `trade_${String((battle.scoreState?.tradeCount || 0) + 1 + statusFeedEntries.filter(e => e.action !== 'hold').length).padStart(3, '0')}`;
+        // Phase 6 (§4.6) — receipt source: stagnation is archetype-authored (Knob A),
+        // everything else here is a protective risk-manager exit. EXACT same mapping
+        // as the statusFeed push below.
+        const swapSource = riskResult.reason === 'stagnation' ? 'archetype' : 'risk_manager';
         const evaluationMetadata = {
           id: riskTradeId,
           action: 'SWAP',
@@ -788,6 +792,7 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
           entryPreset: battle.strategyPreset || 'balanced',
           entryMode: battle.executionMode || 'autopilot',
           exitReason: riskResult.reason,
+          ...buildSwapReceiptSource({ source: swapSource, archetype: ctx.archetype }),
         };
 
         // Phase 4: snapshot risk-triggered swaps onto trades[i]. Replacement
@@ -1175,6 +1180,11 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
           // Autopilot: execute immediately (original behavior)
           try {
             const benchAsset = findBenchAsset(battle.portfolio?.bench, haikuResult.symbolIn);
+            // Phase 6 (§4.6) — receipt source: a guardrail-forced swap is
+            // source:'guardrail' (its true origin); a discretionary Haiku swap is
+            // source:'haiku'. haikuSwapReason's only non-'haiku_decision' values are
+            // the two guardrail_* reasons (computed above).
+            const swapSource = haikuSwapReason === 'haiku_decision' ? 'haiku' : 'guardrail';
             const evaluationMetadata = {
               id: `trade_${String((battle.scoreState?.tradeCount || 0) + 1).padStart(3, '0')}`,
               action: 'SWAP',
@@ -1192,6 +1202,7 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
               // (computed above), so trades[].exitReason carries the protective
               // origin for Phase 5 Knob C / Phase 7. Discretionary → 'haiku_decision'.
               exitReason: haikuSwapReason,
+              ...buildSwapReceiptSource({ source: swapSource, archetype: ctx.archetype }),
               // Phase 8: structured reasoning carried onto battle.trades[] via
               // the ...evaluationMetadata spread in executeSwapServer.
               trade_reasoning: haikuResult?.trade_reasoning || null,
@@ -1294,6 +1305,11 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
               entryPreset: battle.strategyPreset || 'balanced',
               entryMode: mode,
               exitReason: 'haiku_decision',
+              // Phase 6 (§4.6) — receipt source. Dormant under the autopilot launch
+              // guard; stamped for forward-compat (mirrors how Phase 4 stamped
+              // exitReason here). Rides onto trades[] when the proposal is later
+              // resolved (executeSwapServer is passed proposal.evaluationMetadata).
+              ...buildSwapReceiptSource({ source: 'haiku', archetype: ctx.archetype }),
               // Phase 8: structured reasoning carried onto battle.trades[] via
               // the ...evaluationMetadata spread in executeSwapServer (used
               // when this proposal is later resolved into an executed swap).
@@ -1813,6 +1829,8 @@ async function handleGameplanMeeting(db, battleRef, battle, prices, statusFeedEn
           { id: tradeId, action: 'SWAP', trigger: 'gameplan_rotation', rationale: swap.rationale, tradingDay: currentDay,
             entryRegime: null, entryMarketPosture: null, entryConviction: 0,
             entryPreset: battle.strategyPreset || 'balanced', entryMode: battle.executionMode || 'autopilot', exitReason: 'gameplan_rotation',
+            // Phase 6 (§4.6) — receipt source. Dormant (gameplan approval is launch-guarded).
+            ...buildSwapReceiptSource({ source: 'gameplan_meeting', archetype: ctx.archetype }),
             evaluationId: gameplanEvalId }
         );
         // Phase 2 Voice Layer Rework — queue narration for this
