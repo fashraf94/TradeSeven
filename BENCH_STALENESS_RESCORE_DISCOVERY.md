@@ -34,7 +34,7 @@ All line anchors below are re-derived against current HEAD; treat the prior repo
 
 **Branch discipline.** After `git fetch origin main`, `origin/main` = `102efa2` ("Merge PR #449 … forge-enforcement-keystone-implementation"), i.e. **the V1.4 keystone IS merged to main**; `claude/bench-staleness-rescore` was cut from that HEAD. `[direct]` (The generic task template named a different working branch; the task body's explicit instruction — "create and switch to `claude/bench-staleness-rescore`" — was followed.)
 
-**Parallel work.** A sub-agent was dispatched to deep-sweep for a V1.2 swap-pipeline spec and re-confirm the §7 code lines; its result had not flushed when this report was written. Current evidence for those items is recorded below as `[direct]`/`[map]`/`[confirm]` and does not depend on that agent.
+**Update (post-write, second flush).** A second batch of real tool output landed after the first draft was committed, delivering **direct reads** of `agentTriggerGate.js:1-291`, `keystoneGate8.test.js:1-235`, `agentRiskManager.js:255-345`, the `compute-index-intelligence.js` write block, `vercel.json` crons, and the V1.4 spec header/§0. This **resolved every `[confirm]` flag, upgraded most `[map]` items to `[direct]`, and overturned D5** (a real V1.2 "Swap Evaluation Pipeline Refresh" spec *does* exist — it is named and decomposed in the V1.4 spec header; see the revised §6/D5). Confidence labels below have been updated in place; the appendix reflects the upgrades.
 
 ---
 
@@ -43,7 +43,7 @@ All line anchors below are re-derived against current HEAD; treat the prior repo
 **Outcome: C — real gap** (≥20% behavioral change **and** large staleness window). Reopened the launch-blocker chain. `[direct]`
 
 ### 1.1 How/when `stockRankings` is computed
-- **Producer:** `api/cron/compute-index-intelligence.js` writes the doc the agent actually reads — `indexIntelligence/stockRankings` → `set({ stocks, totalTechStocks, sectors, updatedAt })` (~`:850-856`). `[map; report :850-856]`
+- **Producer:** `api/cron/compute-index-intelligence.js` writes the doc the agent actually reads — `indexIntelligence/stockRankings` → `batch.set(rankingsRef, { stocks, totalTechStocks, sectors, updatedAt: FieldValue.serverTimestamp() })` (~`:850-856`). `[direct]`
 - **Cadence:** once per weekday, **pre-market** — cron `"30 10,11 * * 1-5"` (10:30 **and** 11:30 UTC), `vercel.json:133-136`. The 11:30 run overwrites the 10:30 run (authoritative). **No intraday refresh; the doc is immutable for the whole ~6.5 h session.** `[direct: report]`
 - **Source freshness:** 100% end-of-day. The price-derived dimensions come from EODHD **daily** OHLCV; fundamentals are mirrored from `peerRankings` (written by `compute-rankings.js` at `"0 11 * * 1-5"`). The freshest the rankings can ever be is the **prior session's close**. `[direct: report §3.4]`
 - **Scope:** full equity `STOCK_UNIVERSE` (~239 names / 11 sectors). `[direct: report §1]`
@@ -52,7 +52,8 @@ All line anchors below are re-derived against current HEAD; treat the prior repo
 - Computed by `computeGameModeFits` (`api/_utils/gameModeScoring.js:~91`); baggerBomb weight profile in `src/data/rankingConfig.js:~821`: **fundamental 0.10 / technical 0.70 / momentum 0.20 / atrModifier +0.20 → ~90% price-derived.** All inputs are daily-bar-derived; **no intraday term.** `[map; report rankingConfig.js:821 / gameModeScoring.js:91]`
 
 ### 1.3 hotBench clustering & the 4.7-pt margin
-- hotBench = top-N (≈15) by **stored** `baggerBombFit`, rebuilt each tick by **sorting the stored values — no recompute** (`api/cron/agent-evaluate.js:~442-446`). `[map; report :442-444]`
+- hotBench = top-15 by **stored** `baggerBombFit`, built by **sorting the stored values — no recompute**: `const candidates = stockRankingsArray.filter(…not in portfolio/bench…).sort((a,b)=>(b.baggerBombFit||0)-(a.baggerBombFit||0)); let newHotBench = candidates.slice(0,15)…` (`agent-evaluate.js`, in the watchlist-refresh block ~`:430-450`). `[direct]`
+- **Refinement the direct read surfaced (design-phase input):** that rebuild is gated by **`if (isNewTradingDay && battle.watchlist)`** (`isNewTradingDay = currentDay > lastEvalDay`) — i.e. it is a **once-per-trading-day "lightweight, rankings-based" watchlist refresh, not a per-tick rebuild.** `[direct]` This makes intra-day staleness *worse* than "rebuilt each tick": within a day the candidate menu is fixed at the morning ranking AND only re-derived from the (already stale) pre-market `stockRankings`. The bench report's §4 "rebuilt by sorting stored values — no recompute" is still correct on the load-bearing point (stored values, no rescore); this just adds *when*.
 - The "**4.7-pt #1↔#2 margin**" is the bench report's **measured mean margin in its simulation harness**, not a code threshold — narrow enough that small intraday perturbations reorder the top, changing **which** symbol to swap to, not merely whether. `[direct: report §5.2]`
 
 ### 1.4 Behavioral finding — maps to the **final swap/no-swap** decision
@@ -62,7 +63,7 @@ All line anchors below are re-derived against current HEAD; treat the prior repo
 
 ### 1.5 THE KEY ENABLER (re-derived)
 - The agent **already fetches intraday 5-min bars every tick — but only for HELD positions — and never feeds them into rankings.**
-- Current anchor: `api/cron/agent-evaluate.js` → `fetchIntradayBatch(portfolioSymbols, { interval:'5m' })` at **~`:393-395`** → stored in an in-memory `intradayMap` (~`:414-429`) → consumed for VWAP + 5-min SMA20 used by **exit / trail-stop** logic → **NOT written back to `stockRankings`.** `[map; report :393]` (Prior "~393" anchor is still essentially correct.)
+- Current anchor (direct read): `api/cron/agent-evaluate.js` runs `fetchIntradayBatch(portfolioSymbols, { interval: '5m' })` inside a `Promise.allSettled` alongside the `stockRankings.get()` (~`:394-403`); the result `intradayMap` is processed **only `for (const symbol of portfolioSymbols)`** → `filterToLatestSession` → `calculateVWAP` + `calculate5minSMA20` → `momentumData.vwap[symbol]` (~`:411-429`), used for VWAP-deviation triggers and trail-stop exits. **The bench/hotBench symbols are deliberately excluded from the intraday fetch, and nothing writes intraday data back to `stockRankings`.** `[direct]`
 - **Implication:** a rescore is a **wiring** problem (route the already-fetched bars — extended to bench/hotBench symbols — into the price-derived ~90% of `baggerBombFit`), **not** a data-acquisition problem.
 
 ### 1.6 Mechanism options the bench report *itself* sketched (non-prescriptive)
@@ -112,16 +113,16 @@ The calibration report's outcome space was about whether calibration data can be
 
 ### 3.3 Is the trigger gate's inline math the un-normalized consumer? → **YES**
 - `grep computeBenchVsActiveMargin api/` shows the symbol **only** in `agentRiskManager.js` (def + call) and in tests — **never in `agentTriggerGate.js`**. `[direct: grep]`
-- The trigger gate still uses the raw, **one-sided** `dailyChangePct / benchATR ≥ 0.5` check (`agentTriggerGate.js:~104/106`) — not a same-baseline differential, not the helper. `[map; MB04 report §1.3]` `[confirm: re-read agentTriggerGate.js:90-113]`
+- The trigger gate still uses the raw, **one-sided** check — verified verbatim at `agentTriggerGate.js:102-106`: `const dailyChangePct = benchPrice.changePercent || 0; const benchATR = benchAsset.baseATR || 2.5; const benchATRMult = dailyChangePct / benchATR; if (benchATRMult >= 0.5)`. Not a same-baseline differential, not the helper; `benchPrice` = `prices[benchAsset.symbol]` (`:99`, live prices). `[direct: agentTriggerGate.js:90-113]`
 
 ### 3.4 So is mb-04 Outcome C the SAME issue as the "8C-coherence" finding?
 **CONFIRMED they are the same finding, reached from two directions** (mb-04: "is the baseline normalized?" → the trigger gate isn't; calibration 8C: "what does the trigger gate compute?" → it avoids the helper). Both converge on: *`computeBenchVsActiveMargin` is wired into the hurdle floor only, not the trigger gate.* **Two refinements the pre-merge reports could not fully see:**
 
-1. **The divergence is now deliberate and TESTED — not an oversight.** V1.4 built the helper, wired it to the hurdle floor (Knob B, Phase 4), and added **Gate 8C as a tripwire that LOCKS the trigger gate's non-use of it**: `keystoneGate8.test.js:66` → `expect(triggerSource).not.toMatch(/computeBenchVsActiveMargin/)`, with a comment (`:49`) that the canonical helper "uses a bench-MINUS-active margin". `[direct: grep]` So V1.4 chose to **document/lock** the divergence and **defer the unify decision to exactly this workstream.** "Unify vs document" is therefore a live, owned decision here, not a latent bug. `[confirm: read the Gate 8C test body to see whether it frames the lock as permanent-by-design or deferred-unify]`
+1. **The divergence is deliberate, TESTED, and explicitly framed as DEFERRED-UNIFY (not permanent-by-design).** `[direct]` V1.4 built the helper, wired it to the hurdle floor (Knob B), and added **Gate 8C as a "delete-on-unification tripwire."** The test header (`keystoneGate8.test.js:42-58`) is unambiguous: it "records the 8C margin divergence … §7.1 intended ONE shared formula consumed by both; it is not. This suite asserts the **CURRENT** state, NOT the desired one. **When the two formulas are reconciled, these tests SHOULD FAIL and be DELETED as part of that change.**" The tripwire itself: `:66` `expect(triggerSource).not.toMatch(/computeBenchVsActiveMargin/)`; `:69` asserts the inline `dailyChangePct / benchATR` form is present. A 3rd test (`:104-133`, "woken by formula X, blocked by formula Y") demonstrates end-to-end with **both real functions** that one market state WAKES Haiku (bench-only 0.8×) yet the hurdle BLOCKS the swap (bench-minus-active 0.2× < degen floor 0.6×). **Gate status (`:55-58`): 8C fails the §7.1 cross-component COHERENCE clause ONLY — no safety/knob clause — and is a "known-open coherence finding"; 8D/8E carry the merge-unblock.** So the unify is **deferred to exactly this workstream**, with the tests pre-wired to be deleted when it lands. "Unify vs document" is a live, owned decision here — and the test scaffold already anticipates "unify."
 
-2. **Staleness and normalization do NOT cleanly "meet at one line."** MB-04 §4.2 argued they meet at `agentTriggerGate.js:~104` because the trigger gate is "both un-normalized **and** stale-fed." But the trigger gate's bench input is the **live `prices[symbol].changePercent`** (prev-close-relative), **not** the stale `baggerBombFit` ranking. `[map]` The **staleness** defect lives in a **different path** — the `baggerBombFit`-based candidate selection / hotBench (`agent-evaluate.js:~444-446`) and the hurdle-floor score inputs — while the **normalization/baseline** defect lives in the trigger gate + the prompt CSVs. They are **related** (all swap-evaluation) but touch **different inputs/surfaces.** This **weakens the "must be one workstream because same line" argument** and is a key input to D1 below.
+2. **Staleness and normalization do NOT cleanly "meet at one line."** `[direct]` MB-04 §4.2 argued they meet at `agentTriggerGate.js:~104` because the trigger gate is "both un-normalized **and** stale-fed." But the trigger gate reads bench from the **live `prices[symbol].changePercent`** (`:99,:102` — prev-close-relative), **not** the stale `baggerBombFit` ranking; in fact the trigger gate never imports or touches `stockRankings` at all (it imports only `agentScoring.js`). The **staleness** defect lives in a **different path** — the `baggerBombFit`-based candidate selection / hotBench (`agent-evaluate.js:~444-446`) and the hurdle-floor score inputs — while the **normalization/baseline** defect lives in the trigger gate + the prompt CSVs. They are **related** (all swap-evaluation) but touch **different inputs/surfaces.** This **weakens the "must be one workstream because same line" argument** and is a key input to D1 below.
 
-*(Confidence: §3.2 and §3.4-pt-1 are `[direct]` — grep + the literal test line. §3.3 and §3.4-pt-2 are `[map]` — the full trigger-gate re-read did not flush this session; flagged `[confirm]`.)*
+*(Confidence: §3.1–§3.4 are now all `[direct]` — the second flush delivered full reads of `agentTriggerGate.js`, `keystoneGate8.test.js`, and `agentRiskManager.js:255-345`.)*
 
 ---
 
@@ -131,12 +132,12 @@ The calibration report's outcome space was about whether calibration data can be
 
 | Role | File:anchor (current) | Note | Conf |
 |---|---|---|---|
-| **Rankings producer** | `api/cron/compute-index-intelligence.js` (write ~`:850-856`) | daily pre-market cron; writes `indexIntelligence/stockRankings`; **no `expiresAt`** | `[map]` |
+| **Rankings producer** | `api/cron/compute-index-intelligence.js` (write ~`:850-856`) | daily pre-market cron; writes `indexIntelligence/stockRankings`; **`updatedAt` only, no `expiresAt`** | `[direct]` |
 | **Scoring engine** | `api/_utils/gameModeScoring.js:~91` (`computeGameModeFits`) + `rankingConfig.js:~821` (weights) + `api/_utils/indexIntelligence.js` (technical scoring) | daily-only inputs | `[map]` |
-| **Enabler (intraday fetch)** | `api/cron/agent-evaluate.js:~393-395` (`fetchIntradayBatch …'5m'`) → `intradayMap` ~`:414-429` | held positions only; VWAP/SMA20 for exits; **not** fed to rankings | `[map]` |
-| **Consumer — candidate selection / bench read** | `agent-evaluate.js:~394-396` (read `stockRankings`) → filter/sort by stored `baggerBombFit` → top-15 hotBench ~`:442-446` | **where staleness bites** | `[map]` |
-| **Consumer — hurdle floor** | `clearsHurdleFloor` → `computeBenchVsActiveMargin` (`agentRiskManager.js:260`/`:328`); invoked `agent-evaluate.js:~1148-1154` | **normalized** (post-V1.4) | `[direct]`/`[map]` |
-| **Consumer — wake-up trigger gate** | `agentTriggerGate.js:~90-113` (`bench_outperformance`) | raw one-sided `dailyChangePct/benchATR ≥ 0.5`; **un-normalized**; live-prices input | `[map]` |
+| **Enabler (intraday fetch)** | `api/cron/agent-evaluate.js:~394-403` (`fetchIntradayBatch …'5m'`) → `intradayMap` processed ~`:411-429` | **portfolioSymbols only**; VWAP/SMA20 for exits; **not** fed to rankings | `[direct]` |
+| **Consumer — candidate selection / bench read** | `agent-evaluate.js:~394-403` (read `stockRankings`) → filter/sort by stored `baggerBombFit` → top-15 hotBench ~`:430-450` (gated `isNewTradingDay`) | **where staleness bites** | `[direct]` |
+| **Consumer — hurdle floor** | `clearsHurdleFloor` → `computeBenchVsActiveMargin` (`agentRiskManager.js:260`/`:328`); invoked `agent-evaluate.js:~1148-1154` | **normalized** (post-V1.4) | `[direct]` (def/call) / `[map]` (invocation) |
+| **Consumer — wake-up trigger gate** | `agentTriggerGate.js:102-106` (`bench_outperformance`, block `:90-113`) | raw one-sided `dailyChangePct/benchATR ≥ 0.5`; **un-normalized**; live-prices input | `[direct]` |
 
 ### 4.2 Candidate integration seams (NAMED — not designed, not recommended)
 - **(a)** `agent-evaluate.js:~444-446` — after candidates are read from `stockRankings` and before `slice(top 15)`: a rescore of the price-derived `baggerBombFit` dims using already-in-hand intraday data could re-rank here.
@@ -159,10 +160,10 @@ The calibration report's outcome space was about whether calibration data can be
 - **⚠️ Reconcile with the task's framing:** the task describes "two agent eval slots at 10:30/11:30 UTC." In code, **10:30/11:30 are the two *rankings-recompute* slots**, and the **agent** runs every 15 min during RTH — there is **no** separate morning/afternoon *agent* slot in `vercel.json`. The design phase should reconcile this wording.
 
 ### §7.2 Missing `expiresAt` on `stockRankings`
-- The `compute-index-intelligence.js` write (~`:850-856`) sets `{ stocks, totalTechStocks, sectors, updatedAt }` — **no `expiresAt`/`ttl`.** (By contrast `compute-rankings` sets a 26 h `expiresAt` on `peerRankings`.) Consumers cannot detect a stale/mixed-vintage doc. **Prerequisite** for any freshness-gated/staleness-weighted rescore option. `[confirm: re-read the write block]`
+- Verified verbatim — the write is `batch.set(rankingsRef, { stocks: rankingStocks, totalTechStocks, sectors, updatedAt: FieldValue.serverTimestamp() })` (`compute-index-intelligence.js`, the `indexIntelligence/stockRankings` block ~`:850-856`): **`updatedAt` only — no `expiresAt`/`ttl`/`computedAt`.** `[direct]` (By contrast `compute-rankings` sets a 26 h `expiresAt` on `peerRankings`.) Consumers cannot detect a stale/mixed-vintage doc. **Prerequisite** for any freshness-gated/staleness-weighted rescore option.
 
 ### §7.3 Crypto-hours blind window
-- `isMarketOpen()` (`api/_utils/marketSchedule.js:124-141`) = **equity regular session only** (9:30–16:00 ET). Crypto battles carry `localClose` 20:00 ET, so the agent does **not** evaluate crypto positions in the **16:00–20:00 ET (~4 h) window** even though the battle is "open" for crypto; the pre-market recompute likewise does not align with 24/7 crypto.
+- Verified — `isMarketOpen()` (`api/_utils/marketSchedule.js:123-141`) returns `minutes >= openMinutes && minutes < closeMinutes` gated on `MARKET_OPEN/CLOSE` constants + weekday + holiday/early-close only: **equity regular session (9:30–16:00 ET), no crypto/24-7 branch.** `[direct]` Crypto battles carry `localClose` 20:00 ET (`agentTriggerGate.js:248` reads `timing.localClose`), so the agent's eval cron does **not** evaluate crypto positions in the **16:00–20:00 ET (~4 h) window** even though the battle is "open" for crypto; the pre-market recompute likewise does not align with 24/7 crypto.
 
 ---
 
@@ -192,10 +193,19 @@ The calibration report's outcome space was about whether calibration data can be
 - Option α (calibration-only synthesis on existing infra, anchored to the 22 battles) is the sanctioned way to set rescore tolerances **without** reopening launch or building Stream D.
 → **DECISION NEEDED:** does the rescore design **block** on the α calibration corpus, or ship a **conservative default** tolerance now and calibrate later?
 
-### D5 — V1.2 "Swap Evaluation Pipeline Refresh" spec — **no head-start spec exists**
-- `rg "swap evaluation pipeline"` matches **only** `FORGE_ENFORCEMENT_KEYSTONE_SPEC_V1_4.md` and `KEYSTONE_PRELOCK_FINDINGS.md` (the **V1.4 keystone** docs) — **not** a standalone deferred V1.2 spec. `[direct: grep]`
-- The "**V1.2 thesis**" (`FORGE_RULES_THESIS_V1_2.md`) is the **Voice-Layer / rule-swap** thesis (rules as live instruments, Gemma-proposed rule swaps) and is the source of the bench report's "per the V1.2 thesis" **dual-slot-cadence** reference — **not** a pre-scoped swap-pipeline fix. `[direct: grep of FORGE_RULES_THESIS_V1_2.md]`
-- **Conclusion:** there is **no V1.2 head-start spec to inherit**; this fix must be designed fresh, using the three reports + the V1.4 keystone docs (where "swap evaluation pipeline" is actually mentioned) as inputs. `[confirm: the dispatched sub-agent is deep-sweeping docs/ to rule out any non-obvious head-start spec]`
+### D5 — V1.2 "Swap Evaluation Pipeline Refresh" — it EXISTED, was decomposed, and (a) is already DONE
+**This is the most important correction vs. the first draft.** The V1.2 "Swap Evaluation Pipeline Refresh" **was a real spec** — it is named explicitly in the **V1.4 spec header and §0**, which tell you exactly what happened to it: `[direct: FORGE_ENFORCEMENT_KEYSTONE_SPEC_V1_4.md:11, :24, :40]`
+
+> `:11` **"Supersedes: V1.2 'Swap Evaluation Pipeline Refresh' — V1.4 absorbs V1.2 workstream (a) margin normalization outright; V1.2 workstream (b) bench-staleness remains a separate dependency."**
+> `:24` "Coordinates with V1.2: absorbs workstream (a) (margin normalization); workstream (b) (bench-staleness) **remains separate calibration dependency**."
+> `:40` "V1.2 isn't merged or shipped; V1.4 owns helper extraction outright — single workstream."
+
+So V1.2 pre-scoped **exactly two** workstreams, and this is the head-start the task expected:
+- **(a) margin normalization** → **already absorbed and SHIPPED by V1.4** as `computeBenchVsActiveMargin` + the hurdle floor (§3.2). The only residual is the **8C coherence** decision (D1) — i.e., whether to extend (a) from the hurdle floor to the trigger gate. *(Note: `KEYSTONE_PRELOCK_FINDINGS.md:431-434,562-566` adds that the V1.2 spec was never on disk as a standalone file — it was reconstructed from the two verification reports — and confirms the inline margin at `agentTriggerGate.js:104` / hardcoded `0.5` at `:106`. The grep finding from the first draft was correct; the **interpretation** ("no head-start exists") was wrong — V1.4 itself is the carrier of the V1.2 decomposition.)* `[direct]`
+- **(b) bench-staleness** → **explicitly left as a separate dependency = THIS workstream.** V1.4 deliberately did *not* solve it.
+
+**Conclusion (replaces the first draft's "no head-start"):** The head-start is the **V1.2 (a)/(b) split itself**, now authoritatively recorded in V1.4. (a) is done; **(b) is ours, and it is pre-scoped as "the bench-staleness rescore," cleanly decoupled from the (already-shipped) margin-normalization half.** The `FORGE_RULES_THESIS_V1_2.md` doc is a *different* "V1.2" (the Voice-Layer/rule-swap thesis, source of the bench report's dual-slot-cadence reference) and is **not** the swap-pipeline spec — do not conflate them. `[direct]`
+→ **No decision needed** — this resolves Part 1 item 4: inherit the V1.2 (b) scope; (a) is settled except for the D1 coherence call.
 
 ---
 
@@ -203,19 +213,20 @@ The calibration report's outcome space was about whether calibration data can be
 
 | Claim | Anchor | Conf |
 |---|---|---|
-| Rankings doc write (no expiresAt) | `api/cron/compute-index-intelligence.js:~850-856` | `[map]` |
+| Rankings doc write (no expiresAt; `updatedAt` only) | `compute-index-intelligence.js:~850-856` | `[direct]` |
 | Recompute cron 10:30/11:30 UTC | `vercel.json:133-136` | `[direct]` |
 | Fundamentals cron 11:00 UTC | `vercel.json:53-56` | `[direct]` |
 | Agent loop cron */15 13–21 UTC | `vercel.json:137-140` | `[direct]` |
 | baggerBombFit weights (.10/.70/.20/+.20) | `rankingConfig.js:~821`; `gameModeScoring.js:~91` | `[map]` |
-| Enabler — intraday 5m fetch (held only) | `agent-evaluate.js:~393-395`, map ~`:414-429` | `[map]` |
-| Bench read / hotBench top-15 | `agent-evaluate.js:~394-396`, ~`:442-446` | `[map]` |
+| Enabler — intraday 5m fetch (portfolioSymbols only) | `agent-evaluate.js:~394-403`, processed ~`:411-429` | `[direct]` |
+| Bench read / hotBench top-15 (gated `isNewTradingDay`) | `agent-evaluate.js:~394-403` (read), ~`:430-450` (sort) | `[direct]` |
 | Canonical normalized margin (def/call) | `agentRiskManager.js:260` / `:328` | `[direct]` |
 | Hurdle-floor invocation | `agent-evaluate.js:~1148-1154` | `[map]` |
-| Trigger gate (un-normalized, one-sided, 0.5) | `agentTriggerGate.js:~90-113` (`:104`/`:106`) | `[map]` |
-| Gate 8C tripwire (trigger ≠ helper) | `keystoneGate8.test.js:66` (cmt `:49`) | `[direct]` |
-| isMarketOpen equity-only (crypto gap) | `marketSchedule.js:124-141` | `[map]` |
-| Calibration: ranking math already exists | `archetypeScoring.js:107-141`; `decide.js:100` | `[direct]` |
-| 22 battles source | `agentBattles` via `agentBattleService.js:createAgentBattle` | `[direct]` |
+| Trigger gate (un-normalized, one-sided, 0.5) | `agentTriggerGate.js:102-106` (block `:90-113`) | `[direct]` |
+| Gate 8C tripwire + delete-on-unify framing | `keystoneGate8.test.js:42-58`, `:66`, `:104-133` | `[direct]` |
+| isMarketOpen equity-only (crypto gap) | `marketSchedule.js:123-141` | `[direct]` |
+| V1.2 spec existed; (a) absorbed, (b)=this work | `FORGE_ENFORCEMENT_KEYSTONE_SPEC_V1_4.md:11,:24,:40` | `[direct]` |
+| Calibration: ranking math already exists | `archetypeScoring.js:107-141`; `decide.js:100` | `[direct: calib report]` |
+| 22 battles source | `agentBattles` via `agentBattleService.js:createAgentBattle` | `[direct: calib report]` |
 
 *End of report. (Read-only Phase 0 — no production files modified.)*
