@@ -136,6 +136,9 @@ describe('applyGuardrails — stopLoss (hard)', () => {
     expect(result.symbolIn).toBe('AMD');
     const reinforced = result.overrides.find(o => o.action === 'reinforced_haiku');
     expect(reinforced).toBeTruthy();
+    // Keystone V1.4 §3.1 (A2): a reinforced protective exit must surface its
+    // guardrail sourceNote (not null) so the Knob B hurdle hook bypasses the floor.
+    expect(result.sourceNote).toBe('guardrail_stopLoss');
   });
 
   it('respects LOCKED positions — does not force exit', () => {

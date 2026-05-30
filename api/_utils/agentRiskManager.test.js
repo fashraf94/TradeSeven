@@ -8,7 +8,7 @@
 //     archetypeConfig — independently.
 
 import { describe, it, expect } from 'vitest';
-import { evaluateRisk, updateStagnationCounter, pickSwapReplacementCandidate } from './agentRiskManager.js';
+import { evaluateRisk, updateStagnationCounter, pickSwapReplacementCandidate, clearsHurdleFloor, computeBenchVsActiveMargin, EMERGENCY_BYPASS_REASONS } from './agentRiskManager.js';
 import { getArchetypeConfig } from './agentArchetypeConfig.js';
 
 const POS = { symbol: 'AAPL', tier: 'core', baseATR: 2.5 };
@@ -250,5 +250,153 @@ describe('pickSwapReplacementCandidate — quality-gated wrapper (§4.2)', () =>
   it('excludes cooldown candidates and returns null if all filtered', () => {
     const future = new Date(Date.now() + 3600_000).toISOString();
     expect(pickSwapReplacementCandidate({ benchAssets: [{ symbol: 'AAA', isCrypto: false, cooldownUntil: future }], prices, outgoingIsCrypto: false, clearsQuality: () => true })).toBeNull();
+  });
+});
+
+// ---- Phase 4: Knob B — hurdle floor (§4.3 / §3.1) ----
+
+describe('EMERGENCY_BYPASS_REASONS — single source of truth (§3.1)', () => {
+  it('contains exactly the 5 emergency reasons (3 risk + 2 guardrail)', () => {
+    expect([...EMERGENCY_BYPASS_REASONS].sort()).toEqual(
+      ['bust_avoidance', 'guardrail_stopLoss', 'guardrail_trailingStop', 'stepped_trail', 'vwap_failure'],
+    );
+  });
+
+  it('does NOT contain the gated reasons (stagnation / haiku_decision / gameplan_*)', () => {
+    for (const r of ['stagnation', 'haiku_decision', 'gameplan_proposal', 'gameplan_meeting', 'threshold_proximity']) {
+      expect(EMERGENCY_BYPASS_REASONS.has(r)).toBe(false);
+    }
+  });
+});
+
+describe('computeBenchVsActiveMargin — canonical margin (§4.3)', () => {
+  it('computes rawPctMargin and marginAtrUnits in consistent (fraction) units', () => {
+    // active -1%, bench +2%, ATR 2.5% → all fractions: (0.02 - (-0.01)) / 0.025 = 1.2
+    const m = computeBenchVsActiveMargin({ activeDailyPct: -0.01, benchDailyPct: 0.02, atrValue: 0.025 });
+    expect(m.rawPctMargin).toBeCloseTo(0.03, 10);
+    expect(m.marginAtrUnits).toBeCloseTo(1.2, 10);
+    expect(m.eligibleForComparison).toBe(true);
+    expect(m.reasonIfInvalid).toBeNull();
+  });
+
+  it('flags ineligible (and NaN margin) when atrValue <= 0', () => {
+    const m = computeBenchVsActiveMargin({ activeDailyPct: 0.01, benchDailyPct: 0.02, atrValue: 0 });
+    expect(m.eligibleForComparison).toBe(false);
+    expect(Number.isNaN(m.marginAtrUnits)).toBe(true);
+    expect(m.reasonIfInvalid).toBe('invalid_atr');
+  });
+
+  it('flags ineligible when a dailyPct is non-finite', () => {
+    const m = computeBenchVsActiveMargin({ activeDailyPct: NaN, benchDailyPct: 0.02, atrValue: 0.025 });
+    expect(m.eligibleForComparison).toBe(false);
+    expect(m.reasonIfInvalid).toBe('non_finite_dailyPct');
+  });
+});
+
+describe('clearsHurdleFloor — Knob B gate (§4.3)', () => {
+  const degen = getArchetypeConfig('degen');       // haiku 0.2 / stagnation 0.6 / default 0.2
+  const guardian = getArchetypeConfig('guardian');  // 0.5 across the board
+  // Reusable: outgoing flat (0%), incoming up. With userATR=2.5(%) → atr fraction 0.025.
+  const call = (overrides = {}) => clearsHurdleFloor({
+    active: { symbol: 'OUT', dailyPct: 0 },
+    benchCandidate: { symbol: 'IN', dailyPct: 0.01 }, // +1% → margin 0.01/0.025 = 0.4 ATR
+    reason: 'stagnation',
+    archetypeConfig: degen,
+    userATR: 2.5,
+    ...overrides,
+  });
+
+  // --- LANDMINE-1 unit assertion (the Phase-4 analog of Phase-3's +2% test) ---
+  it('LANDMINE-1: active -1% vs bench +2%, ATR 2.5% → marginAtrUnits 1.2, clears degen stagnation floor 0.6', () => {
+    const r = clearsHurdleFloor({
+      active: { dailyPct: -0.01 }, benchCandidate: { dailyPct: 0.02 },
+      reason: 'stagnation', archetypeConfig: degen, userATR: 2.5,
+    });
+    expect(r.clears).toBe(true);
+    expect(r.margin.marginAtrUnits).toBeCloseTo(1.2, 10);
+    expect(r.required).toBe(0.6);
+  });
+
+  it('LANDMINE-1: a just-missing margin is below_floor (0.4 ATR < degen stagnation 0.6)', () => {
+    const r = call(); // +1% → 0.4 ATR units, degen stagnation requires 0.6
+    expect(r.clears).toBe(false);
+    expect(r.blockReason).toBe('below_floor');
+    expect(r.margin.marginAtrUnits).toBeCloseTo(0.4, 10);
+  });
+
+  it('clears when the margin meets the floor exactly (>=)', () => {
+    // bench +1.5% → 0.015/0.025 = 0.6 ATR == degen stagnation floor 0.6
+    const r = call({ benchCandidate: { symbol: 'IN', dailyPct: 0.015 } });
+    expect(r.clears).toBe(true);
+    expect(r.margin.marginAtrUnits).toBeCloseTo(0.6, 10);
+  });
+
+  // --- A2: emergency bypass (load-bearing safety contract) ---
+  it.each(['bust_avoidance', 'vwap_failure', 'stepped_trail', 'guardrail_stopLoss', 'guardrail_trailingStop'])(
+    'A2: %s bypasses the floor even when bench is negative / margin fails', (reason) => {
+      const r = clearsHurdleFloor({
+        active: { dailyPct: 0.05 },                 // active winning big
+        benchCandidate: { dailyPct: -0.03 },        // bench down 3% — would fail both gates
+        reason, archetypeConfig: degen, userATR: 2.5,
+      });
+      expect(r.clears).toBe(true);
+      expect(r.bypassed).toBe(true);
+      expect(r.reason).toBe(reason);
+    });
+
+  // --- Invariant-1 spot matrix: gated reasons are NOT bypassed ---
+  it.each(['stagnation', 'haiku_decision'])('Invariant-1: %s is gated (not bypassed)', (reason) => {
+    const r = clearsHurdleFloor({
+      active: { dailyPct: 0 }, benchCandidate: { dailyPct: -0.01 }, // negative bench → blocked
+      reason, archetypeConfig: degen, userATR: 2.5,
+    });
+    expect(r.bypassed).toBeUndefined();
+    expect(r.clears).toBe(false);
+  });
+
+  // --- Bench-positive rule (non-emergency) ---
+  it('blocks bench_not_positive even when the ATR margin would clear', () => {
+    // bench 0% but active -10% → huge raw margin, yet bench not positive
+    const r = clearsHurdleFloor({
+      active: { dailyPct: -0.1 }, benchCandidate: { dailyPct: 0 },
+      reason: 'haiku_decision', archetypeConfig: degen, userATR: 2.5,
+    });
+    expect(r.clears).toBe(false);
+    expect(r.blockReason).toBe('bench_not_positive');
+  });
+
+  // --- Shape-B per-reason lookup + default fallback ---
+  it('uses byReason[haiku_decision] (0.2) for a discretionary swap', () => {
+    // +0.6% → 0.006/0.025 = 0.24 ATR ≥ degen haiku 0.2 → clears
+    const r = call({ reason: 'haiku_decision', benchCandidate: { symbol: 'IN', dailyPct: 0.006 } });
+    expect(r.clears).toBe(true);
+    expect(r.required).toBe(0.2);
+  });
+
+  it('falls back to default (0.2) for an unenumerated reason (e.g. gameplan_proposal)', () => {
+    const r = call({ reason: 'gameplan_proposal', benchCandidate: { symbol: 'IN', dailyPct: 0.006 } });
+    expect(r.required).toBe(0.2); // degen.default.atrMultiplier
+    expect(r.clears).toBe(true);
+  });
+
+  it('applies different per-reason floors per archetype (degen stagnation 0.6 vs guardian 0.5)', () => {
+    const bench = { symbol: 'IN', dailyPct: 0.0125 }; // 0.0125/0.025 = 0.5 ATR
+    expect(call({ archetypeConfig: degen, benchCandidate: bench }).clears).toBe(false);   // 0.5 < 0.6
+    expect(call({ archetypeConfig: guardian, benchCandidate: bench }).clears).toBe(true); // 0.5 >= 0.5
+  });
+
+  // --- Disabled floor ---
+  it('clears (disabled) when hurdleFloor.enabled is false', () => {
+    const off = { hftConfig: { hurdleFloor: { enabled: false } } };
+    const r = clearsHurdleFloor({ active: { dailyPct: 0 }, benchCandidate: { dailyPct: -1 }, reason: 'stagnation', archetypeConfig: off, userATR: 2.5 });
+    expect(r.clears).toBe(true);
+    expect(r.disabled).toBe(true);
+  });
+
+  // --- margin_invalid passthrough ---
+  it('blocks margin_invalid when userATR is 0', () => {
+    const r = call({ userATR: 0 });
+    expect(r.clears).toBe(false);
+    expect(r.blockReason).toBe('margin_invalid');
   });
 });

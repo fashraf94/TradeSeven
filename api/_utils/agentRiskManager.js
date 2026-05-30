@@ -8,6 +8,32 @@ const BONUS_THRESHOLDS = [1.0, 1.5, 2.0];
 const LOCK_PROXIMITY = 0.2; // ATR multiples within which to lock
 
 /**
+ * Forge Enforcement Keystone V1.4 §3.1 (Invariant 1) — the single source of
+ * truth for which swap REASONS bypass the quality knobs (Knob B hurdle floor
+ * here in Phase 4; Knob C circuit breaker in Phase 5). A swap is emergency-bypass
+ * IFF its `reason` is in this set; every other swap is gated. Gates consult
+ * `reason`, NEVER the action label — because Knob A's forced rotation reuses the
+ * `SWAP_OUT` action, action-keying would silently bypass the floor for stagnation.
+ *
+ * Members:
+ *  - bust_avoidance / vwap_failure / stepped_trail — protective risk-manager exits
+ *  - guardrail_stopLoss / guardrail_trailingStop — deterministic guardrail exits
+ *    (§3.1 A2: never park the agent in a stop-breaching position because the only
+ *    replacement failed a quality floor). The sector-cap guardrail returns HOLD and
+ *    never reaches execution, so it is intentionally absent.
+ *
+ * Gated (NOT here): stagnation, haiku_decision, gameplan_proposal, gameplan_meeting.
+ * Adding a future emergency type must mean editing ONLY this constant.
+ */
+export const EMERGENCY_BYPASS_REASONS = new Set([
+  'bust_avoidance',
+  'vwap_failure',
+  'stepped_trail',
+  'guardrail_stopLoss',
+  'guardrail_trailingStop',
+]);
+
+/**
  * Evaluate risk for a single active position (archetype-aware entry point).
  *
  * Forge Enforcement Keystone V1.4 §4.1 — the archetype→physics wire.
@@ -212,6 +238,106 @@ export function calculate5minSMA20(candles) {
   const recent = candles.slice(-20);
   const sum = recent.reduce((acc, c) => acc + (c.close || 0), 0);
   return Number((sum / 20).toFixed(4));
+}
+
+/**
+ * Forge Enforcement Keystone V1.4 §4.3 — canonical bench-vs-active margin.
+ * V1.4 owns this extraction outright (V1.2 never shipped it) so there is exactly
+ * ONE margin formula. Pure arithmetic; UNIT-AGNOSTIC — callers MUST pass all three
+ * inputs in consistent units. `clearsHurdleFloor` is the sole caller and converts
+ * the active baseATR (a PERCENT) to a fraction before calling, so here every input
+ * is a fraction and `marginAtrUnits` lands on the archetype floor scale (0.2–0.6).
+ *
+ * @param {Object} p
+ * @param {number} p.activeDailyPct - outgoing position daily move (fraction)
+ * @param {number} p.benchDailyPct  - incoming candidate daily move (fraction)
+ * @param {string} [p.activeSymbol]
+ * @param {string} [p.benchSymbol]
+ * @param {number} p.atrValue       - active volatility unit (fraction, same basis)
+ * @param {string} [p.source]
+ * @returns {{ activeDailyPct, benchDailyPct, rawPctMargin, marginAtrUnits, atrValue, eligibleForComparison, reasonIfInvalid }}
+ */
+export function computeBenchVsActiveMargin({ activeDailyPct, benchDailyPct, activeSymbol, benchSymbol, atrValue, source }) {
+  const eligibleForComparison = (atrValue > 0 && Number.isFinite(activeDailyPct) && Number.isFinite(benchDailyPct));
+  const rawPctMargin = benchDailyPct - activeDailyPct;
+  return {
+    activeDailyPct,
+    benchDailyPct,
+    activeSymbol,
+    benchSymbol,
+    source,
+    rawPctMargin,
+    marginAtrUnits: eligibleForComparison ? rawPctMargin / atrValue : NaN,
+    atrValue,
+    eligibleForComparison,
+    reasonIfInvalid: eligibleForComparison ? null : (atrValue > 0 ? 'non_finite_dailyPct' : 'invalid_atr'),
+  };
+}
+
+/**
+ * Forge Enforcement Keystone V1.4 §4.3 (Knob B) — deterministic quality gate.
+ * Pure function (preserves validateTradeDecision purity); the caller decides what
+ * to do with the verdict. A non-emergency swap must clear an archetype-specific
+ * ATR-margin floor (and, by default, the bench candidate must be up on the day).
+ *
+ * Order is load-bearing (§3.1 / §4.3):
+ *  1. EMERGENCY BYPASS FIRST — reason ∈ EMERGENCY_BYPASS_REASONS → clears, never
+ *     gated. This is the A2 safety contract; it must precede every other check.
+ *  2. Disabled floor → clears (archetype opted out).
+ *  3. Shape-B per-reason lookup: byReason[reason] || default.
+ *  4. Bench-positive rule (non-emergency only — emergencies already returned).
+ *  5. ATR margin vs the per-reason floor.
+ *
+ * LANDMINE-1 (units): `userATR` arrives as a PERCENT (baseATR, e.g. 2.5 = 2.5%),
+ * while dailyPct values are FRACTIONS (changePercent/100). The ONE conversion that
+ * makes marginAtrUnits comparable to the 0.2–0.6 floors is `atrValue = userATR/100`
+ * — isolated to the single commented line below and locked by a unit-assertion test.
+ *
+ * @param {Object} p
+ * @param {{ dailyPct:number, symbol?:string }} p.active        - outgoing position
+ * @param {{ dailyPct:number, symbol?:string }} p.benchCandidate - incoming candidate
+ * @param {string} p.reason            - swap reason (drives bypass + Shape-B lookup)
+ * @param {Object} p.archetypeConfig   - from getArchetypeConfig (reads hftConfig.hurdleFloor)
+ * @param {number} p.userATR           - active baseATR as PERCENT
+ * @returns {{ clears:boolean, bypassed?:boolean, disabled?:boolean, blockReason?:string|null, margin?:Object, required?:number, benchDailyPct?:number, reason?:string }}
+ */
+export function clearsHurdleFloor({ active, benchCandidate, reason, archetypeConfig, userATR }) {
+  // 1. Emergency bypass FIRST (A2 safety contract).
+  if (EMERGENCY_BYPASS_REASONS.has(reason)) {
+    return { clears: true, bypassed: true, reason };
+  }
+
+  // 2. Disabled archetype floor.
+  const floorCfg = archetypeConfig?.hftConfig?.hurdleFloor;
+  if (!floorCfg?.enabled) {
+    return { clears: true, disabled: true };
+  }
+
+  // 3. Per-reason floor (Shape-B) with default fallback for unenumerated reasons.
+  const reasonCfg = floorCfg.byReason?.[reason] || floorCfg.default;
+  const requiredMargin = reasonCfg.atrMultiplier;
+
+  // 4. Non-emergency bench-positive rule (emergencies already returned at step 1).
+  if (floorCfg.requireBenchPositive && benchCandidate.dailyPct <= 0) {
+    return { clears: false, blockReason: 'bench_not_positive', benchDailyPct: benchCandidate.dailyPct };
+  }
+
+  // 5. ATR margin. LANDMINE-1: convert active baseATR (PERCENT) → fraction so the
+  // margin lands on the same 0.2–0.6 scale as the floors.
+  const atrValue = userATR / 100;
+  const margin = computeBenchVsActiveMargin({
+    activeDailyPct: active.dailyPct,
+    benchDailyPct: benchCandidate.dailyPct,
+    activeSymbol: active.symbol,
+    benchSymbol: benchCandidate.symbol,
+    atrValue,
+    source: reason,
+  });
+  if (!margin.eligibleForComparison) {
+    return { clears: false, blockReason: 'margin_invalid', detail: margin.reasonIfInvalid, margin };
+  }
+  const clears = margin.marginAtrUnits >= requiredMargin;
+  return { clears, blockReason: clears ? null : 'below_floor', margin, required: requiredMargin };
 }
 
 /**

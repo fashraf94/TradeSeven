@@ -294,3 +294,35 @@ describe('agent-evaluate cron — Knob A forced rotation wiring (§4.2)', () => 
     expect(withStag.length).toBe(5);
   });
 });
+
+// Phase 4 (Knob B — hurdle floor, §4.3) — write-side wiring guards. Same
+// static-source rationale as the Phase 3 block: the behavioral load is carried by
+// the pure clearsHurdleFloor / computeBenchVsActiveMargin tests in
+// agentRiskManager.test.js; these guard the two cron hook sites + A2 wiring.
+describe('agent-evaluate cron — Knob B hurdle floor wiring (§4.3)', () => {
+  const source = readFileSync(SOURCE_PATH, 'utf-8');
+
+  it('imports clearsHurdleFloor from agentRiskManager', () => {
+    expect(source).toMatch(/import\s*\{[^}]*\bclearsHurdleFloor\b[^}]*\}\s*from\s*'\.\.\/_utils\/agentRiskManager\.js'/s);
+  });
+
+  it('hook 1 (stagnation seam): clearsQuality calls clearsHurdleFloor with reason stagnation', () => {
+    expect(source).toMatch(/clearsQuality:\s*\(candidate\)\s*=>\s*clearsHurdleFloor\(\{/);
+    expect(source).toMatch(/reason:\s*'stagnation',\s*\n\s*archetypeConfig,\s*\n\s*userATR:\s*score\.baseATR/);
+  });
+
+  it('hook 2 (Haiku): gates execution on clearsHurdleFloor before executeSwapServer', () => {
+    expect(source).toMatch(/const hurdle = clearsHurdleFloor\(\{/);
+    // the block downgrades to HOLD on a non-clearing hurdle (mirrors LOCK/distressed)
+    expect(source).toMatch(/if \(!hurdle\.clears\) \{[\s\S]*?decision = 'HOLD';[\s\S]*?\} else if \(mode === 'autopilot'\) \{/);
+  });
+
+  it('A2: maps guardrail_stopLoss / guardrail_trailingStop sourceNote to the bypass reason', () => {
+    expect(source).toMatch(/guardrailSourceNote === 'guardrail_stopLoss' \|\| guardrailSourceNote === 'guardrail_trailingStop'/);
+    expect(source).toMatch(/const haikuSwapReason\s*=/);
+  });
+
+  it('A2 stamp: autopilot exitReason uses the computed reason (not a hardcoded haiku_decision)', () => {
+    expect(source).toMatch(/exitReason:\s*haikuSwapReason/);
+  });
+});

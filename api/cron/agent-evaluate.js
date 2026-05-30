@@ -32,7 +32,7 @@ import { generateAnticipation } from '../_utils/voiceLayerAnticipation.js';
 import { buildTechnicalSnapshot } from '../_utils/buildTechnicalSnapshot.js';
 import { applyGuardrails } from '../_utils/agentGuardrails.js';
 import { classifyStockRegime, classifyMarketPosture, getPresetAdjustedStrategies } from '../_utils/agentRegimeClassifier.js';
-import { evaluateRisk, calculate5minSMA20, pickEmergencyReplacement, pickSwapReplacementCandidate, updateStagnationCounter, findPortfolioSlot } from '../_utils/agentRiskManager.js';
+import { evaluateRisk, calculate5minSMA20, pickEmergencyReplacement, pickSwapReplacementCandidate, updateStagnationCounter, findPortfolioSlot, clearsHurdleFloor } from '../_utils/agentRiskManager.js';
 import { getPresetConfig } from '../_utils/agentPresetConfig.js';
 import { getArchetypeConfig } from '../_utils/agentArchetypeConfig.js';
 import { finalizeCronState } from '../_utils/agentCronState.js';
@@ -701,18 +701,27 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
       const allBench = flattenBenchServer(battle.portfolio?.bench);
       // Invariant 1 (§3.1) — branch the candidate source on REASON, never action.
       // SWAP_OUT now carries both vwap_failure (emergency, quality-bypass) and
-      // stagnation (Knob A, quality-gated). Knob B's hurdle/bench-positive is the
-      // Phase-4 seam: Phase 3 injects a pass-through predicate; the wrapper
-      // returning null is the rotation VETO (§4.2 / D3 detection-vs-execution split).
+      // stagnation (Knob A, quality-gated). Phase 4 (Knob B): the stagnation
+      // candidate must clear the archetype hurdle floor + bench-positive rule via
+      // clearsHurdleFloor; the wrapper returning null (no candidate clears) is the
+      // rotation VETO (§4.2 / D3 detection-vs-execution split). Emergency reasons
+      // bypass the floor (clearsHurdleFloor returns clears:true at step 1).
       let replacement;
       if (riskResult.reason === 'stagnation') {
         const heldSymbols = new Set(flattenPortfolioServer(battle.portfolio).map(a => a.symbol).filter(Boolean));
+        const activeDailyPct = (prices[score.symbol]?.changePercent || 0) / 100;
         replacement = pickSwapReplacementCandidate({
           benchAssets: allBench,
           prices,
           outgoingIsCrypto: asset?.isCrypto === true,
           heldSymbols,
-          clearsQuality: () => true, // Phase 4 seam → clearsHurdleFloor({reason:'stagnation'}) + bench-positive
+          clearsQuality: (candidate) => clearsHurdleFloor({
+            active: { symbol: score.symbol, dailyPct: activeDailyPct },
+            benchCandidate: { symbol: candidate.symbol, dailyPct: (prices[candidate.symbol]?.changePercent || 0) / 100 },
+            reason: 'stagnation',
+            archetypeConfig,
+            userATR: score.baseATR,
+          }).clears,
         });
       } else {
         replacement = pickEmergencyReplacement(allBench, prices, asset?.isCrypto === true);
@@ -1092,7 +1101,32 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
           mode = 'autopilot';
         }
 
-        if (mode === 'autopilot') {
+        // Forge Enforcement Keystone V1.4 §4.3 (Knob B) — hurdle floor on the
+        // Haiku-proposed swap, applied after validation, before execution. A2
+        // (§3.1): a guardrail-forced exit carries a guardrail_* reason via
+        // guardrailSourceNote and BYPASSES the floor (clearsHurdleFloor step 1); a
+        // discretionary Haiku swap is gated by byReason.haiku_decision. Compute the
+        // reason ONCE and reuse it for the gate AND the exitReason stamp below.
+        const haikuSwapReason =
+          (guardrailSourceNote === 'guardrail_stopLoss' || guardrailSourceNote === 'guardrail_trailingStop')
+            ? guardrailSourceNote
+            : 'haiku_decision';
+        const activeBaseATR = assetScores.find(s => s.symbol === haikuResult.symbolOut)?.baseATR ?? 2.5;
+        const hurdle = clearsHurdleFloor({
+          active: { symbol: haikuResult.symbolOut, dailyPct: (prices[haikuResult.symbolOut]?.changePercent || 0) / 100 },
+          benchCandidate: { symbol: haikuResult.symbolIn, dailyPct: (prices[haikuResult.symbolIn]?.changePercent || 0) / 100 },
+          reason: haikuSwapReason,
+          archetypeConfig,
+          userATR: activeBaseATR,
+        });
+
+        if (!hurdle.clears) {
+          // Mirror the LOCKED / distressed downgrade pattern above.
+          validationErrors.push(`${haikuResult.symbolIn} below ${haikuSwapReason} hurdle floor (${hurdle.blockReason}) — swap blocked`);
+          decision = 'HOLD';
+          downgraded = true;
+          console.warn(`${LOG_PREFIX} SWAP blocked by hurdle floor: ${haikuResult.symbolOut}→${haikuResult.symbolIn} (${hurdle.blockReason})`);
+        } else if (mode === 'autopilot') {
           // Autopilot: execute immediately (original behavior)
           try {
             const benchAsset = findBenchAsset(battle.portfolio?.bench, haikuResult.symbolIn);
@@ -1109,7 +1143,10 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
               entryConviction: haikuResult.conviction || 0,
               entryPreset: battle.strategyPreset || 'balanced',
               entryMode: battle.executionMode || 'autopilot',
-              exitReason: 'haiku_decision',
+              // §3.1 A2: guardrail-forced swaps stamp their true guardrail_* reason
+              // (computed above), so trades[].exitReason carries the protective
+              // origin for Phase 5 Knob C / Phase 7. Discretionary → 'haiku_decision'.
+              exitReason: haikuSwapReason,
               // Phase 8: structured reasoning carried onto battle.trades[] via
               // the ...evaluationMetadata spread in executeSwapServer.
               trade_reasoning: haikuResult?.trade_reasoning || null,
