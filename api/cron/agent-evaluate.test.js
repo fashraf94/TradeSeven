@@ -393,7 +393,7 @@ describe('agent-evaluate cron — Knob §4.6 receipt source wiring (Gate 7)', ()
     expect(source).toMatch(/\.\.\.buildSwapReceiptSource\(\{ source: 'haiku', archetype: ctx\.archetype \}\)/);
   });
 
-  it('Path D (gameplan, dormant): source = gameplan_meeting', () => {
-    expect(source).toMatch(/\.\.\.buildSwapReceiptSource\(\{ source: 'gameplan_meeting', archetype: ctx\.archetype \}\)/);
+  it('Path D (gameplan, dormant): source = gameplan_meeting (archetype off battle.agentContext — ctx not in scope in handleGameplanMeeting)', () => {
+    expect(source).toMatch(/\.\.\.buildSwapReceiptSource\(\{ source: 'gameplan_meeting', archetype: battle\.agentContext\?\.archetype \}\)/);
   });
 });

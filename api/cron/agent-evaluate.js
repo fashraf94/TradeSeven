@@ -1830,7 +1830,9 @@ async function handleGameplanMeeting(db, battleRef, battle, prices, statusFeedEn
             entryRegime: null, entryMarketPosture: null, entryConviction: 0,
             entryPreset: battle.strategyPreset || 'balanced', entryMode: battle.executionMode || 'autopilot', exitReason: 'gameplan_rotation',
             // Phase 6 (§4.6) — receipt source. Dormant (gameplan approval is launch-guarded).
-            ...buildSwapReceiptSource({ source: 'gameplan_meeting', archetype: ctx.archetype }),
+            // NB: this is handleGameplanMeeting (separate fn) — `ctx` is not in scope
+            // here; read archetype off battle.agentContext directly.
+            ...buildSwapReceiptSource({ source: 'gameplan_meeting', archetype: battle.agentContext?.archetype }),
             evaluationId: gameplanEvalId }
         );
         // Phase 2 Voice Layer Rework — queue narration for this
