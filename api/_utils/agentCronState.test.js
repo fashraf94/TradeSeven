@@ -91,3 +91,34 @@ describe('finalizeCronState — idempotent / lock-release side benefit', () => {
     expect(u['cronState.vwapTicks']).toBeUndefined();
   });
 });
+
+describe('finalizeCronState — Phase 3 stagnation state (§4.2)', () => {
+  const NOW = '2026-05-30T12:00:00.000Z';
+  const maps = {
+    vwapTicks: { AAPL: 1 },
+    intradayMomentum: { AAPL: { vwap: 1 } },
+    now: NOW,
+    stagnationTicks: { AAPL: 4 },
+    lastTickPrice: { AAPL: 191.2 },
+    lastTickTimestamp: { AAPL: 1748600000000 },
+  };
+
+  it('persists all three stagnation maps (the Phase-2 one-line slot, now filled)', () => {
+    const u = finalizeCronState({}, maps);
+    expect(u['cronState.stagnationTicks']).toBe(maps.stagnationTicks);
+    expect(u['cronState.lastTickPrice']).toBe(maps.lastTickPrice);
+    expect(u['cronState.lastTickTimestamp']).toBe(maps.lastTickTimestamp);
+  });
+
+  it('still stamps the shared subset alongside the stagnation maps', () => {
+    const u = finalizeCronState({}, maps);
+    expect(u['cronState.vwapTicks']).toBe(maps.vwapTicks);
+    expect(u['cronState.evaluatingAt']).toBeNull();
+    expect(u['cronState.lastEvaluatedAt']).toBe(NOW);
+  });
+
+  it('does NOT persist withinAge (transient per-tick fire-gate state)', () => {
+    const u = finalizeCronState({}, maps);
+    expect(u).not.toHaveProperty('cronState.withinAge');
+  });
+});

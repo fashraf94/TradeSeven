@@ -251,3 +251,46 @@ describe('agent-evaluate cron — Phase 5B1 equipped-watchlist hotBench union', 
     expect(source).toMatch(/unionEquippedIntoHotBench\(\{[\s\S]*?cap:\s*20[\s\S]*?\}\)/);
   });
 });
+
+// Phase 3 (Knob A — forced rotation, §4.2) — write-side wiring guards. Same
+// static-source rationale as the Phase 3/4 blocks above: the cron handler is
+// monolithic, so the pure functions (updateStagnationCounter / the detection
+// branch via evaluateRisk / pickSwapReplacementCandidate) carry the behavioral
+// tests in agentRiskManager.test.js; these guard the cron wiring.
+describe('agent-evaluate cron — Knob A forced rotation wiring (§4.2)', () => {
+  const source = readFileSync(SOURCE_PATH, 'utf-8');
+
+  it('imports updateStagnationCounter and pickSwapReplacementCandidate', () => {
+    expect(source).toMatch(/import\s*\{[^}]*\bupdateStagnationCounter\b[^}]*\}\s*from\s*'\.\.\/_utils\/agentRiskManager\.js'/s);
+    expect(source).toMatch(/import\s*\{[^}]*\bpickSwapReplacementCandidate\b[^}]*\}\s*from\s*'\.\.\/_utils\/agentRiskManager\.js'/s);
+  });
+
+  it('seeds the three stagnation maps from cronState (mirrors vwapTicks)', () => {
+    expect(source).toMatch(/const stagnationTicks = \{ \.\.\.\(battle\.cronState\?\.stagnationTicks \|\| \{\}\) \}/);
+    expect(source).toMatch(/const lastTickPrice = \{ \.\.\.\(battle\.cronState\?\.lastTickPrice \|\| \{\}\) \}/);
+    expect(source).toMatch(/const lastTickTimestamp = \{ \.\.\.\(battle\.cronState\?\.lastTickTimestamp \|\| \{\}\) \}/);
+  });
+
+  it('updates the stagnation counter in-loop and threads stagnationTicks + withinAge via cronMemory', () => {
+    expect(source).toMatch(/const stag = updateStagnationCounter\(/);
+    expect(source).toMatch(/stagnationTicks: stagnationTicks\[score\.symbol\], withinAge: stag\.withinAge/);
+  });
+
+  it('normalizes dailyPct to a FRACTION (changePercent / 100) on the position (winner-suppression units)', () => {
+    expect(source).toMatch(/dailyPct: \(prices\[score\.symbol\]\?\.changePercent \|\| 0\) \/ 100/);
+  });
+
+  it('branches the candidate source on REASON (Invariant 1): stagnation → wrapper, else → emergency', () => {
+    expect(source).toMatch(/if \(riskResult\.reason === 'stagnation'\) \{[\s\S]*?pickSwapReplacementCandidate\(/);
+    expect(source).toMatch(/\} else \{[\s\S]*?pickEmergencyReplacement\(allBench/);
+  });
+
+  it('sets statusFeed source to "archetype" for stagnation swaps (reason-aware)', () => {
+    expect(source).toMatch(/source: riskResult\.reason === 'stagnation' \? 'archetype' : 'risk_manager'/);
+  });
+
+  it('all 5 finalizeCronState calls carry the three stagnation maps', () => {
+    const withStag = source.match(/finalizeCronState\([^;]*?stagnationTicks, lastTickPrice, lastTickTimestamp/g) || [];
+    expect(withStag.length).toBe(5);
+  });
+});

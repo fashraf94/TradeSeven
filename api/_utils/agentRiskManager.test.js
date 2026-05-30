@@ -8,7 +8,7 @@
 //     archetypeConfig — independently.
 
 import { describe, it, expect } from 'vitest';
-import { evaluateRisk } from './agentRiskManager.js';
+import { evaluateRisk, updateStagnationCounter, pickSwapReplacementCandidate } from './agentRiskManager.js';
 import { getArchetypeConfig } from './agentArchetypeConfig.js';
 
 const POS = { symbol: 'AAPL', tier: 'core', baseATR: 2.5 };

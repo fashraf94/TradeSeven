@@ -25,16 +25,20 @@
  * @param {string} [state.now] - ISO timestamp for `cronState.lastEvaluatedAt`.
  *   Defaults to the current time. The full Haiku path passes its shared `now`
  *   so `lastEvaluatedAt === lastTriggeredAt` exactly, as before.
+ * @param {Object} [state.stagnationTicks] - per-symbol Knob-A stagnation counters (§4.2)
+ * @param {Object} [state.lastTickPrice] - per-symbol last-tick price (D2 comparison)
+ * @param {Object} [state.lastTickTimestamp] - per-symbol last-tick epoch-ms (tick-age guard)
  * @returns {Object} the same `update` object, with shared cron-state fields set
  */
-export function finalizeCronState(update, { vwapTicks, intradayMomentum, now } = {}) {
+export function finalizeCronState(update, { vwapTicks, intradayMomentum, now, stagnationTicks, lastTickPrice, lastTickTimestamp } = {}) {
   update['cronState.lastEvaluatedAt'] = now || new Date().toISOString();
   update['cronState.evaluatingAt'] = null; // always release the evaluating lock
   update['cronState.vwapTicks'] = vwapTicks;
   update['cronState.intradayMomentum'] = intradayMomentum;
-  // Phase 3 (Knob A, §4.2) adds the stagnation maps HERE in one place:
-  //   update['cronState.stagnationTicks'] = stagnationTicks;
-  //   update['cronState.lastTickPrice'] = lastTickPrice;
-  //   update['cronState.lastTickTimestamp'] = lastTickTimestamp;
+  // Phase 3 (Knob A, §4.2) — stagnation state persisted here in ONE place so all
+  // 5 flush sites carry it automatically. (withinAge is transient — NOT persisted.)
+  update['cronState.stagnationTicks'] = stagnationTicks;
+  update['cronState.lastTickPrice'] = lastTickPrice;
+  update['cronState.lastTickTimestamp'] = lastTickTimestamp;
   return update;
 }

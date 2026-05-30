@@ -32,7 +32,7 @@ import { generateAnticipation } from '../_utils/voiceLayerAnticipation.js';
 import { buildTechnicalSnapshot } from '../_utils/buildTechnicalSnapshot.js';
 import { applyGuardrails } from '../_utils/agentGuardrails.js';
 import { classifyStockRegime, classifyMarketPosture, getPresetAdjustedStrategies } from '../_utils/agentRegimeClassifier.js';
-import { evaluateRisk, calculate5minSMA20, pickEmergencyReplacement, findPortfolioSlot } from '../_utils/agentRiskManager.js';
+import { evaluateRisk, calculate5minSMA20, pickEmergencyReplacement, pickSwapReplacementCandidate, updateStagnationCounter, findPortfolioSlot } from '../_utils/agentRiskManager.js';
 import { getPresetConfig } from '../_utils/agentPresetConfig.js';
 import { getArchetypeConfig } from '../_utils/agentArchetypeConfig.js';
 import { finalizeCronState } from '../_utils/agentCronState.js';
@@ -616,6 +616,14 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
     const riskSwaps = [];
     const lockedPositions = new Set();
     const vwapTicks = { ...(battle.cronState?.vwapTicks || {}) };
+    // Forge Enforcement Keystone V1.4 §4.2 (Knob A) — per-symbol stagnation state,
+    // seeded + persisted exactly like vwapTicks. nowMs anchors the D2 tick-age
+    // guard; `withinAge` (computed per tick below) is transient — threaded via
+    // cronMemory for the fire decision, NOT persisted.
+    const stagnationTicks = { ...(battle.cronState?.stagnationTicks || {}) };
+    const lastTickPrice = { ...(battle.cronState?.lastTickPrice || {}) };
+    const lastTickTimestamp = { ...(battle.cronState?.lastTickTimestamp || {}) };
+    const nowMs = Date.now();
 
     // Forge Enforcement Keystone V1.4 §4.1 — resolve the archetype→physics knobs
     // once per battle (archetype is battle-level). getArchetypeConfig falls back
@@ -643,6 +651,24 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
         vwapTicks[score.symbol] = 0;
       }
 
+      // Knob A (§4.2/§3.4) — update the per-symbol stagnation counter (D2 +
+      // tick-age guard). pctThreshold/maxTickAgeMinutes come from the archetype's
+      // forcedRotation knob (always present per §3.3 schema). stag.withinAge gates
+      // the FIRE decision for THIS tick (threaded via cronMemory below).
+      const frCfg = archetypeConfig.hftConfig?.forcedRotation;
+      const stag = updateStagnationCounter({
+        currentPrice,
+        lastTickPrice: lastTickPrice[score.symbol] ?? null,
+        lastTickTimestamp: lastTickTimestamp[score.symbol] ?? null,
+        now: nowMs,
+        pctThreshold: frCfg?.pctThreshold ?? 0.001,
+        maxTickAgeMinutes: frCfg?.maxTickAgeMinutes ?? 20,
+        stagnationTicks: stagnationTicks[score.symbol],
+      });
+      stagnationTicks[score.symbol] = stag.stagnationTicks;
+      lastTickPrice[score.symbol] = stag.lastTickPrice;
+      lastTickTimestamp[score.symbol] = stag.lastTickTimestamp;
+
       const intradaySnapshot = vwapInfo ? {
         vwap: vwapInfo.vwap,
         vwapDeviation: vwapInfo.vwapDeviation,
@@ -650,10 +676,10 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
       } : null;
 
       const riskResult = evaluateRisk(
-        { symbol: score.symbol, tier: asset?.tier, baseATR: score.baseATR },
+        { symbol: score.symbol, tier: asset?.tier, baseATR: score.baseATR, dailyPct: (prices[score.symbol]?.changePercent || 0) / 100 },
         currentPrice, entryPrice, score.baseATR,
         intradaySnapshot,
-        { ticksBelowVwap: vwapTicks[score.symbol] },
+        { ticksBelowVwap: vwapTicks[score.symbol], stagnationTicks: stagnationTicks[score.symbol], withinAge: stag.withinAge },
         presetConfig.risk,
         archetypeConfig
       );
@@ -673,7 +699,24 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
     // ---- Execute risk-triggered swaps (no Haiku needed) ----
     for (const { score, asset, riskResult } of riskSwaps) {
       const allBench = flattenBenchServer(battle.portfolio?.bench);
-      const replacement = pickEmergencyReplacement(allBench, prices, asset?.isCrypto === true);
+      // Invariant 1 (§3.1) — branch the candidate source on REASON, never action.
+      // SWAP_OUT now carries both vwap_failure (emergency, quality-bypass) and
+      // stagnation (Knob A, quality-gated). Knob B's hurdle/bench-positive is the
+      // Phase-4 seam: Phase 3 injects a pass-through predicate; the wrapper
+      // returning null is the rotation VETO (§4.2 / D3 detection-vs-execution split).
+      let replacement;
+      if (riskResult.reason === 'stagnation') {
+        const heldSymbols = new Set(flattenPortfolioServer(battle.portfolio).map(a => a.symbol).filter(Boolean));
+        replacement = pickSwapReplacementCandidate({
+          benchAssets: allBench,
+          prices,
+          outgoingIsCrypto: asset?.isCrypto === true,
+          heldSymbols,
+          clearsQuality: () => true, // Phase 4 seam → clearsHurdleFloor({reason:'stagnation'}) + bench-positive
+        });
+      } else {
+        replacement = pickEmergencyReplacement(allBench, prices, asset?.isCrypto === true);
+      }
 
       if (!replacement) {
         console.warn(`${LOG_PREFIX} No bench replacement for risk swap of ${score.symbol} — skipping`);
@@ -751,7 +794,7 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
           score: Math.round(currentScore * 100) / 100,
           citedRules: [riskResult.reason],
           triggeredBy: `risk_${riskResult.reason}`,
-          source: 'risk_manager',
+          source: riskResult.reason === 'stagnation' ? 'archetype' : 'risk_manager',
           evalId: null,
           symbolOut: score.symbol,
           symbolIn: replacement.symbol,
@@ -771,7 +814,7 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
     const proposalHandled = await handlePendingProposal(db, battleRef, battle, prices, statusFeedEntries, summary, currentScore);
     if (proposalHandled === 'skip_haiku') {
       // Proposal is pending and not expired — write scores/risk but skip trigger gate + Haiku
-      finalizeCronState(scoreUpdate, { vwapTicks, intradayMomentum: momentumData.vwap });
+      finalizeCronState(scoreUpdate, { vwapTicks, intradayMomentum: momentumData.vwap, stagnationTicks, lastTickPrice, lastTickTimestamp });
       const existingFeed = battle.statusFeed || [];
       scoreUpdate.statusFeed = [...existingFeed, ...statusFeedEntries].slice(-STATUS_FEED_CAP);
       await battleRef.update(scoreUpdate);
@@ -783,7 +826,7 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
     // ---- Gameplan meeting lifecycle check (after proposals, before triggers) ----
     const gameplanHandled = await handleGameplanMeeting(db, battleRef, battle, prices, statusFeedEntries, summary, pendingNarrations);
     if (gameplanHandled === 'skip_haiku') {
-      finalizeCronState(scoreUpdate, { vwapTicks, intradayMomentum: momentumData.vwap });
+      finalizeCronState(scoreUpdate, { vwapTicks, intradayMomentum: momentumData.vwap, stagnationTicks, lastTickPrice, lastTickTimestamp });
       const existingFeed = battle.statusFeed || [];
       scoreUpdate.statusFeed = [...existingFeed, ...statusFeedEntries].slice(-STATUS_FEED_CAP);
       await battleRef.update(scoreUpdate);
@@ -805,7 +848,7 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
         scoreUpdate.gameplanMeeting = gameplanTrigger;
         scoreUpdate['cronState.lastGameplanDate'] = todayET;
         // Write and skip Haiku — gameplan IS the evaluation
-        finalizeCronState(scoreUpdate, { vwapTicks, intradayMomentum: momentumData.vwap });
+        finalizeCronState(scoreUpdate, { vwapTicks, intradayMomentum: momentumData.vwap, stagnationTicks, lastTickPrice, lastTickTimestamp });
         const existingFeed = battle.statusFeed || [];
         scoreUpdate.statusFeed = [...existingFeed, ...statusFeedEntries].slice(-STATUS_FEED_CAP);
         await battleRef.update(scoreUpdate);
@@ -874,7 +917,7 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
     if (!shouldEvaluate) {
       // No triggers — update scores, VWAP ticks, and status feed, then move on
       scoreUpdate['cronState.triggerGatePassCount'] = (battle.cronState?.triggerGatePassCount || 0) + 1;
-      finalizeCronState(scoreUpdate, { vwapTicks, intradayMomentum: momentumData.vwap });
+      finalizeCronState(scoreUpdate, { vwapTicks, intradayMomentum: momentumData.vwap, stagnationTicks, lastTickPrice, lastTickTimestamp });
       if (statusFeedEntries.length > 0) {
         const existingFeed = battle.statusFeed || [];
         scoreUpdate.statusFeed = [...existingFeed, ...statusFeedEntries].slice(-STATUS_FEED_CAP);
@@ -1333,7 +1376,7 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
     // Shared cron state (lastEvaluatedAt / evaluatingAt / vwapTicks /
     // intradayMomentum). `now` is passed so lastEvaluatedAt === lastTriggeredAt,
     // preserving prior behavior exactly.
-    finalizeCronState(finalUpdate, { vwapTicks, intradayMomentum: momentumData.vwap, now });
+    finalizeCronState(finalUpdate, { vwapTicks, intradayMomentum: momentumData.vwap, now, stagnationTicks, lastTickPrice, lastTickTimestamp });
 
     // Write pending proposal if mode branching created one
     if (pendingProposalUpdate) {
