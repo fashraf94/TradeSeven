@@ -13,7 +13,11 @@
 // the regressions Phase 3 actually cares about:
 //   1. A future flush site added without the intradayMomentum write
 //   2. A refactor that drops the existing writes
-//   3. The dotted-path / object-literal forms drifting apart
+//   3. vwapTicks and intradayMomentum drifting apart
+//
+// Forge Enforcement Keystone Phase 2 (§4.5) centralized those five inline
+// writes into finalizeCronState (agentCronState.js); the guard below now asserts
+// the 5 sites route through that helper and the helper persists fields verbatim.
 //
 // It will NOT catch logic bugs in `momentumData.vwap` construction — those
 // are covered upstream (calculateVWAP / calculate5minSMA20 unit tests in
@@ -27,44 +31,50 @@ import { dirname, resolve } from 'node:path';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const SOURCE_PATH = resolve(__dirname, 'agent-evaluate.js');
 
-describe('agent-evaluate cron — Phase 3 intraday momentum persistence', () => {
+describe('agent-evaluate cron — intraday momentum persistence (Phase 2: via finalizeCronState §4.5)', () => {
   const source = readFileSync(SOURCE_PATH, 'utf-8');
+  const helperSource = readFileSync(resolve(__dirname, '../_utils/agentCronState.js'), 'utf-8');
 
-  it('writes cronState.intradayMomentum at every flush site that writes cronState.vwapTicks', () => {
-    // Both fields are populated from the same `momentumData.vwap` table on
-    // every cron pass. They must flush together — if one is written without
-    // the other, the read side (voice-layer-cache) sees stale or asymmetric
-    // state. Counts must match exactly.
-    const dottedFormVwap = source.match(/scoreUpdate\['cronState\.vwapTicks'\] = vwapTicks;/g) || [];
-    const dottedFormIntraday = source.match(/scoreUpdate\['cronState\.intradayMomentum'\] = momentumData\.vwap;/g) || [];
-
-    const literalFormVwap = source.match(/'cronState\.vwapTicks':\s*vwapTicks,/g) || [];
-    const literalFormIntraday = source.match(/'cronState\.intradayMomentum':\s*momentumData\.vwap,/g) || [];
-
-    expect(dottedFormVwap.length).toBe(dottedFormIntraday.length);
-    expect(literalFormVwap.length).toBe(literalFormIntraday.length);
+  it('imports finalizeCronState from the shared helper', () => {
+    expect(source).toMatch(/import\s*\{\s*finalizeCronState\s*\}\s*from\s*'\.\.\/_utils\/agentCronState\.js'/);
   });
 
-  it('flushes intradayMomentum at exactly 5 sites (4 dotted-path + 1 object-literal — matches discovery report)', () => {
-    const dottedForm = source.match(/scoreUpdate\['cronState\.intradayMomentum'\] = momentumData\.vwap;/g) || [];
-    const literalForm = source.match(/'cronState\.intradayMomentum':\s*momentumData\.vwap,/g) || [];
-
-    expect(dottedForm.length).toBe(4);
-    expect(literalForm.length).toBe(1);
-    expect(dottedForm.length + literalForm.length).toBe(5);
+  it('routes cron-state persistence through finalizeCronState at exactly the 5 flush sites', () => {
+    // Phase 2 (§4.5) consolidated the five inline cron-state writes into one
+    // helper so a new persisted field is a one-line add in agentCronState.js.
+    // The 5 mutually-exclusive return paths (proposal-skip, gameplan-skip,
+    // gameplan-trigger, no-trigger-held, full-Haiku finalUpdate) each call it.
+    const calls = source.match(/finalizeCronState\(/g) || [];
+    expect(calls.length).toBe(5);
   });
 
-  it('persists momentumData.vwap verbatim — no transformation, no field renaming (passthrough contract)', () => {
-    // Phase 3 contract: the persisted shape on cronState.intradayMomentum is
-    // identical to the in-memory momentumData.vwap shape. Phase 5 rendering
-    // (deferred) will consume the same shape on the read side.
+  it('passes vwapTicks AND intradayMomentum together at every flush site (they must never drift apart)', () => {
+    // Both come from the same momentumData.vwap table and must flush together —
+    // if a site is added/changed without the other, the read side
+    // (voice-layer-cache) sees asymmetric state. Each call carries both.
+    const both = source.match(/finalizeCronState\([^;]*?\bvwapTicks\b[^;]*?intradayMomentum:\s*momentumData\.vwap/g) || [];
+    expect(both.length).toBe(5);
+  });
+
+  it('the helper persists cronState fields verbatim and always releases the lock (passthrough contract)', () => {
+    // The actual writes now live in finalizeCronState. intradayMomentum must be
+    // persisted as the raw momentumData.vwap passthrough (no wrapping / subkeying
+    // / serialization) so the read side sees the same shape; evaluatingAt must
+    // always be nulled so no return path leaks the evaluating lock.
+    expect(helperSource).toMatch(/update\['cronState\.intradayMomentum'\]\s*=\s*intradayMomentum;/);
+    expect(helperSource).toMatch(/update\['cronState\.vwapTicks'\]\s*=\s*vwapTicks;/);
+    expect(helperSource).toMatch(/update\['cronState\.evaluatingAt'\]\s*=\s*null;/);
+  });
+
+  it('no flush site transforms momentumData.vwap before persisting (verbatim contract)', () => {
+    // Guard against a call site sub-keying / wrapping / serializing the momentum
+    // table instead of passing it through finalizeCronState verbatim.
     const transformingForms = [
-      /cronState\.intradayMomentum'\] =\s*\{/,            // wrapping in {}
-      /cronState\.intradayMomentum'\] =\s*momentumData\.vwap\.\w+/,  // sub-keying
-      /cronState\.intradayMomentum'\] =\s*Object\./,       // Object.fromEntries / mapping
-      /cronState\.intradayMomentum'\] =\s*JSON\.\w+/,      // JSON serialization
+      /intradayMomentum:\s*\{/,                       // wrapping in {}
+      /intradayMomentum:\s*momentumData\.vwap\.\w+/,  // sub-keying
+      /intradayMomentum:\s*Object\./,                 // Object.fromEntries / mapping
+      /intradayMomentum:\s*JSON\.\w+/,                // JSON serialization
     ];
-
     for (const pattern of transformingForms) {
       expect(source).not.toMatch(pattern);
     }
@@ -239,5 +249,151 @@ describe('agent-evaluate cron — Phase 5B1 equipped-watchlist hotBench union', 
 
   it('passes a soft cap of 20 to the union call (Q-A2)', () => {
     expect(source).toMatch(/unionEquippedIntoHotBench\(\{[\s\S]*?cap:\s*20[\s\S]*?\}\)/);
+  });
+});
+
+// Phase 3 (Knob A — forced rotation, §4.2) — write-side wiring guards. Same
+// static-source rationale as the Phase 3/4 blocks above: the cron handler is
+// monolithic, so the pure functions (updateStagnationCounter / the detection
+// branch via evaluateRisk / pickSwapReplacementCandidate) carry the behavioral
+// tests in agentRiskManager.test.js; these guard the cron wiring.
+describe('agent-evaluate cron — Knob A forced rotation wiring (§4.2)', () => {
+  const source = readFileSync(SOURCE_PATH, 'utf-8');
+
+  it('imports updateStagnationCounter and pickSwapReplacementCandidate', () => {
+    expect(source).toMatch(/import\s*\{[^}]*\bupdateStagnationCounter\b[^}]*\}\s*from\s*'\.\.\/_utils\/agentRiskManager\.js'/s);
+    expect(source).toMatch(/import\s*\{[^}]*\bpickSwapReplacementCandidate\b[^}]*\}\s*from\s*'\.\.\/_utils\/agentRiskManager\.js'/s);
+  });
+
+  it('seeds the three stagnation maps from cronState (mirrors vwapTicks)', () => {
+    expect(source).toMatch(/const stagnationTicks = \{ \.\.\.\(battle\.cronState\?\.stagnationTicks \|\| \{\}\) \}/);
+    expect(source).toMatch(/const lastTickPrice = \{ \.\.\.\(battle\.cronState\?\.lastTickPrice \|\| \{\}\) \}/);
+    expect(source).toMatch(/const lastTickTimestamp = \{ \.\.\.\(battle\.cronState\?\.lastTickTimestamp \|\| \{\}\) \}/);
+  });
+
+  it('updates the stagnation counter in-loop and threads stagnationTicks + withinAge via cronMemory', () => {
+    expect(source).toMatch(/const stag = updateStagnationCounter\(/);
+    expect(source).toMatch(/stagnationTicks: stagnationTicks\[score\.symbol\], withinAge: stag\.withinAge/);
+  });
+
+  it('normalizes dailyPct to a FRACTION (changePercent / 100) on the position (winner-suppression units)', () => {
+    expect(source).toMatch(/dailyPct: \(prices\[score\.symbol\]\?\.changePercent \|\| 0\) \/ 100/);
+  });
+
+  it('branches the candidate source on REASON (Invariant 1): stagnation → wrapper, else → emergency', () => {
+    expect(source).toMatch(/if \(riskResult\.reason === 'stagnation'\) \{[\s\S]*?pickSwapReplacementCandidate\(/);
+    expect(source).toMatch(/\} else \{[\s\S]*?pickEmergencyReplacement\(allBench/);
+  });
+
+  it('sets statusFeed source to "archetype" for stagnation swaps (reason-aware)', () => {
+    expect(source).toMatch(/source: riskResult\.reason === 'stagnation' \? 'archetype' : 'risk_manager'/);
+  });
+
+  it('all 5 finalizeCronState calls carry the three stagnation maps', () => {
+    const withStag = source.match(/finalizeCronState\([^;]*?stagnationTicks, lastTickPrice, lastTickTimestamp/g) || [];
+    expect(withStag.length).toBe(5);
+  });
+});
+
+// Phase 4 (Knob B — hurdle floor, §4.3) — write-side wiring guards. Same
+// static-source rationale as the Phase 3 block: the behavioral load is carried by
+// the pure clearsHurdleFloor / computeBenchVsActiveMargin tests in
+// agentRiskManager.test.js; these guard the two cron hook sites + A2 wiring.
+describe('agent-evaluate cron — Knob B hurdle floor wiring (§4.3)', () => {
+  const source = readFileSync(SOURCE_PATH, 'utf-8');
+
+  it('imports clearsHurdleFloor from agentRiskManager', () => {
+    expect(source).toMatch(/import\s*\{[^}]*\bclearsHurdleFloor\b[^}]*\}\s*from\s*'\.\.\/_utils\/agentRiskManager\.js'/s);
+  });
+
+  it('hook 1 (stagnation seam): clearsQuality calls clearsHurdleFloor with reason stagnation', () => {
+    expect(source).toMatch(/clearsQuality:\s*\(candidate\)\s*=>\s*clearsHurdleFloor\(\{/);
+    expect(source).toMatch(/reason:\s*'stagnation',\s*\n\s*archetypeConfig,\s*\n\s*userATR:\s*score\.baseATR/);
+  });
+
+  it('hook 2 (Haiku): gates execution on clearsHurdleFloor before executeSwapServer', () => {
+    expect(source).toMatch(/const hurdle = clearsHurdleFloor\(\{/);
+    // the block downgrades to HOLD on a non-clearing hurdle (mirrors LOCK/distressed)
+    expect(source).toMatch(/if \(!hurdle\.clears\) \{[\s\S]*?decision = 'HOLD';[\s\S]*?\} else if \(mode === 'autopilot'\) \{/);
+  });
+
+  it('A2: maps guardrail_stopLoss / guardrail_trailingStop sourceNote to the bypass reason', () => {
+    expect(source).toMatch(/guardrailSourceNote === 'guardrail_stopLoss' \|\| guardrailSourceNote === 'guardrail_trailingStop'/);
+    expect(source).toMatch(/const haikuSwapReason\s*=/);
+  });
+
+  it('A2 stamp: autopilot exitReason uses the computed reason (not a hardcoded haiku_decision)', () => {
+    expect(source).toMatch(/exitReason:\s*haikuSwapReason/);
+  });
+});
+
+// Phase 5 (Knob C — circuit breaker / swapWindow, §4.4) — write-side wiring
+// guards. Behavioral load is carried by the pure getRecentSwapCount tests in
+// agentRiskManager.test.js; these guard the two cron hook sites + the A2 bypass.
+describe('agent-evaluate cron — Knob C circuit breaker wiring (§4.4)', () => {
+  const source = readFileSync(SOURCE_PATH, 'utf-8');
+
+  it('imports getRecentSwapCount and EMERGENCY_BYPASS_REASONS from agentRiskManager', () => {
+    expect(source).toMatch(/import\s*\{[^}]*\bgetRecentSwapCount\b[^}]*\}\s*from\s*'\.\.\/_utils\/agentRiskManager\.js'/s);
+    expect(source).toMatch(/import\s*\{[^}]*\bEMERGENCY_BYPASS_REASONS\b[^}]*\}\s*from\s*'\.\.\/_utils\/agentRiskManager\.js'/s);
+  });
+
+  it('hook 1 (risk loop): caps ONLY stagnation, reads getRecentSwapCount live, and continues when at cap', () => {
+    expect(source).toMatch(/if \(riskResult\.reason === 'stagnation' && swCfg\?\.enabled\) \{/);
+    expect(source).toMatch(/const used = getRecentSwapCount\(battle\.trades \|\| \[\]/);
+    expect(source).toMatch(/if \(used >= swCfg\.capPerWindow\) \{[\s\S]*?continue;/);
+  });
+
+  // B1 within-tick binding (Phase-5 carry-over): the cap MUST read the live
+  // in-loop battle.trades, and the loop MUST re-read battle after each swap, so the
+  // Nth forced rotation in a burst sees the prior N-1 — NOT a frozen pre-tick count.
+  it('B1: the stagnation cap reads live battle.trades INSIDE the riskSwaps loop, which re-reads battle after each swap', () => {
+    // getRecentSwapCount(battle.trades …) appears between the loop head and the post-swap re-read.
+    expect(source).toMatch(/for \(const \{ score, asset, riskResult \} of riskSwaps\) \{[\s\S]*?getRecentSwapCount\(battle\.trades[\s\S]*?const updatedDoc = await battleRef\.get\(\);\s*\n\s*Object\.assign\(battle, updatedDoc\.data\(\)\);/);
+  });
+
+  it('hook 2 (Haiku): cap check bypasses emergencies via EMERGENCY_BYPASS_REASONS and slots into the hurdle chain', () => {
+    expect(source).toMatch(/const capBlocked = swCfg\?\.enabled\s*\n\s*&& !EMERGENCY_BYPASS_REASONS\.has\(haikuSwapReason\)/);
+    expect(source).toMatch(/if \(!hurdle\.clears\) \{[\s\S]*?\} else if \(capBlocked\) \{[\s\S]*?decision = 'HOLD';[\s\S]*?\} else if \(mode === 'autopilot'\) \{/);
+  });
+
+  it('Knob C adds NO new persisted state (finalizeCronState calls unchanged — no swapWindow field)', () => {
+    expect(source).not.toMatch(/finalizeCronState\([^;]*swapWindow/);
+    expect(source).not.toMatch(/cronState\.(swapCount|swapWindow|recentSwaps)/);
+  });
+});
+
+// Phase 6 (§4.6 receipt source discriminator) — Gate 7: every swap origin path
+// stamps the right source onto its evaluationMetadata (rides onto trades[] via the
+// ...evaluationMetadata spread). Behavioral load is on buildSwapReceiptSource's
+// unit tests; these guard per-site coverage (a missing/wrong source silently
+// poisons training data + Voice Layer labeling).
+describe('agent-evaluate cron — Knob §4.6 receipt source wiring (Gate 7)', () => {
+  const source = readFileSync(SOURCE_PATH, 'utf-8');
+
+  it('imports buildSwapReceiptSource from agentRiskManager', () => {
+    expect(source).toMatch(/import\s*\{[^}]*\bbuildSwapReceiptSource\b[^}]*\}\s*from\s*'\.\.\/_utils\/agentRiskManager\.js'/s);
+  });
+
+  it('stamps the receipt source at all 4 swap origin paths (spread into evaluationMetadata)', () => {
+    const spreads = source.match(/\.\.\.buildSwapReceiptSource\(\{/g) || [];
+    expect(spreads.length).toBe(4);
+  });
+
+  it('Path A (risk loop): source = archetype for stagnation, else risk_manager (mirrors statusFeed)', () => {
+    expect(source).toMatch(/const swapSource = riskResult\.reason === 'stagnation' \? 'archetype' : 'risk_manager';/);
+    expect(source).toMatch(/\.\.\.buildSwapReceiptSource\(\{ source: swapSource, archetype: ctx\.archetype \}\)/);
+  });
+
+  it('Path B (Haiku): source = haiku for discretionary, guardrail for guardrail-forced', () => {
+    expect(source).toMatch(/const swapSource = haikuSwapReason === 'haiku_decision' \? 'haiku' : 'guardrail';/);
+  });
+
+  it('Path C (proposal, dormant): source = haiku', () => {
+    expect(source).toMatch(/\.\.\.buildSwapReceiptSource\(\{ source: 'haiku', archetype: ctx\.archetype \}\)/);
+  });
+
+  it('Path D (gameplan, dormant): source = gameplan_meeting (archetype off battle.agentContext — ctx not in scope in handleGameplanMeeting)', () => {
+    expect(source).toMatch(/\.\.\.buildSwapReceiptSource\(\{ source: 'gameplan_meeting', archetype: battle\.agentContext\?\.archetype \}\)/);
   });
 });

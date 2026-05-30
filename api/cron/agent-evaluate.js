@@ -32,8 +32,10 @@ import { generateAnticipation } from '../_utils/voiceLayerAnticipation.js';
 import { buildTechnicalSnapshot } from '../_utils/buildTechnicalSnapshot.js';
 import { applyGuardrails } from '../_utils/agentGuardrails.js';
 import { classifyStockRegime, classifyMarketPosture, getPresetAdjustedStrategies } from '../_utils/agentRegimeClassifier.js';
-import { evaluateRisk, calculate5minSMA20, pickEmergencyReplacement, findPortfolioSlot } from '../_utils/agentRiskManager.js';
+import { evaluateRisk, calculate5minSMA20, pickEmergencyReplacement, pickSwapReplacementCandidate, updateStagnationCounter, findPortfolioSlot, clearsHurdleFloor, getRecentSwapCount, EMERGENCY_BYPASS_REASONS, buildSwapReceiptSource } from '../_utils/agentRiskManager.js';
 import { getPresetConfig } from '../_utils/agentPresetConfig.js';
+import { getArchetypeConfig } from '../_utils/agentArchetypeConfig.js';
+import { finalizeCronState } from '../_utils/agentCronState.js';
 import { logBattlePattern } from '../_utils/battlePatternLogger.js';
 import { logEvaluation, logVisionTransition, logAnticipation } from '../_utils/shadowLogger.js';
 import { filterActiveConstraints } from '../_utils/visionRuntime.js';
@@ -614,6 +616,27 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
     const riskSwaps = [];
     const lockedPositions = new Set();
     const vwapTicks = { ...(battle.cronState?.vwapTicks || {}) };
+    // Forge Enforcement Keystone V1.4 §4.2 (Knob A) — per-symbol stagnation state,
+    // seeded + persisted exactly like vwapTicks. nowMs anchors the D2 tick-age
+    // guard; `withinAge` (computed per tick below) is transient — threaded via
+    // cronMemory for the fire decision, NOT persisted.
+    const stagnationTicks = { ...(battle.cronState?.stagnationTicks || {}) };
+    const lastTickPrice = { ...(battle.cronState?.lastTickPrice || {}) };
+    const lastTickTimestamp = { ...(battle.cronState?.lastTickTimestamp || {}) };
+    const nowMs = Date.now();
+
+    // Forge Enforcement Keystone V1.4 §4.1 — resolve the archetype→physics knobs
+    // once per battle (archetype is battle-level). getArchetypeConfig falls back
+    // to analyst-default for unset/unknown archetypes (accepted at launch per
+    // Decision 19). Passed into evaluateRisk so Knob A/B (Phase 3/4) read
+    // archetypeConfig.hftConfig regardless of the user-toggleable strategyPreset
+    // (Decision 2); base levers continue to come from presetConfig.risk.
+    const archetypeConfig = getArchetypeConfig(ctx.archetype);
+    // Gate 1 — archetype-distribution + behavioral-differentiation probe. Surfaces
+    // the live archetype mix and confirms non-analyst archetypes resolve to
+    // differentiated knobs (e.g. degen forcedRotation on / cap 12 vs guardian off
+    // / cap 2). Also closes Gate 0c's live-distribution question via logs.
+    console.log(`${LOG_PREFIX} [Gate1] battle=${battle.id} archetype=${ctx.archetype || 'unknown'} resolved=${archetypeConfig.label} forcedRotation=${archetypeConfig.hftConfig?.forcedRotation?.enabled ? 'on' : 'off'} swapCap=${archetypeConfig.hftConfig?.swapWindow?.capPerWindow}`);
 
     for (const score of assetScores) {
       const asset = flatPortfolio.find(a => a.symbol === score.symbol);
@@ -628,6 +651,24 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
         vwapTicks[score.symbol] = 0;
       }
 
+      // Knob A (§4.2/§3.4) — update the per-symbol stagnation counter (D2 +
+      // tick-age guard). pctThreshold/maxTickAgeMinutes come from the archetype's
+      // forcedRotation knob (always present per §3.3 schema). stag.withinAge gates
+      // the FIRE decision for THIS tick (threaded via cronMemory below).
+      const frCfg = archetypeConfig.hftConfig?.forcedRotation;
+      const stag = updateStagnationCounter({
+        currentPrice,
+        lastTickPrice: lastTickPrice[score.symbol] ?? null,
+        lastTickTimestamp: lastTickTimestamp[score.symbol] ?? null,
+        now: nowMs,
+        pctThreshold: frCfg?.pctThreshold ?? 0.001,
+        maxTickAgeMinutes: frCfg?.maxTickAgeMinutes ?? 20,
+        stagnationTicks: stagnationTicks[score.symbol],
+      });
+      stagnationTicks[score.symbol] = stag.stagnationTicks;
+      lastTickPrice[score.symbol] = stag.lastTickPrice;
+      lastTickTimestamp[score.symbol] = stag.lastTickTimestamp;
+
       const intradaySnapshot = vwapInfo ? {
         vwap: vwapInfo.vwap,
         vwapDeviation: vwapInfo.vwapDeviation,
@@ -635,11 +676,12 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
       } : null;
 
       const riskResult = evaluateRisk(
-        { symbol: score.symbol, tier: asset?.tier, baseATR: score.baseATR },
+        { symbol: score.symbol, tier: asset?.tier, baseATR: score.baseATR, dailyPct: (prices[score.symbol]?.changePercent || 0) / 100 },
         currentPrice, entryPrice, score.baseATR,
         intradaySnapshot,
-        { ticksBelowVwap: vwapTicks[score.symbol] },
-        presetConfig.risk
+        { ticksBelowVwap: vwapTicks[score.symbol], stagnationTicks: stagnationTicks[score.symbol], withinAge: stag.withinAge },
+        presetConfig.risk,
+        archetypeConfig
       );
 
       riskStatus[score.symbol] = riskResult;
@@ -656,8 +698,62 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
 
     // ---- Execute risk-triggered swaps (no Haiku needed) ----
     for (const { score, asset, riskResult } of riskSwaps) {
+      // Forge Enforcement Keystone V1.4 §4.4 (Knob C) — circuit breaker on FORCED
+      // ROTATION only. Emergencies (bust/vwap/trail) bypass — never throttle a
+      // protective exit. B1 within-tick binding: count LIVE from battle.trades
+      // (re-read after each swap below), NOT once vs the frozen riskSwaps array, so
+      // the Nth forced rotation in a burst sees the prior N-1 and is capped.
+      const swCfg = archetypeConfig.hftConfig?.swapWindow;
+      if (riskResult.reason === 'stagnation' && swCfg?.enabled) {
+        const used = getRecentSwapCount(battle.trades || [], swCfg.windowMinutes, Date.now(), { countEmergencies: swCfg.countEmergencies });
+        if (used >= swCfg.capPerWindow) {
+          console.log(`${LOG_PREFIX} Knob C cap hit (stagnation) for ${battle.id}: ${used}/${swCfg.capPerWindow} in ${swCfg.windowMinutes}min`);
+          statusFeedEntries.push({
+            timestamp: new Date().toISOString(),
+            message: `Circuit breaker: ${score.symbol} forced rotation skipped — ${used}/${swCfg.capPerWindow} swaps in ${swCfg.windowMinutes}min window.`,
+            pvpContext: null,
+            action: 'hold',
+            regime: stockRegimes[score.symbol] || null,
+            score: Math.round(currentScore * 100) / 100,
+            citedRules: ['swap_window_cap'],
+            triggeredBy: 'risk_stagnation',
+            source: 'archetype',
+            evalId: null,
+            symbolOut: score.symbol,
+            symbolIn: null,
+          });
+          continue; // skip THIS forced rotation; window stays full for the rest of the tick
+        }
+      }
+
       const allBench = flattenBenchServer(battle.portfolio?.bench);
-      const replacement = pickEmergencyReplacement(allBench, prices, asset?.isCrypto === true);
+      // Invariant 1 (§3.1) — branch the candidate source on REASON, never action.
+      // SWAP_OUT now carries both vwap_failure (emergency, quality-bypass) and
+      // stagnation (Knob A, quality-gated). Phase 4 (Knob B): the stagnation
+      // candidate must clear the archetype hurdle floor + bench-positive rule via
+      // clearsHurdleFloor; the wrapper returning null (no candidate clears) is the
+      // rotation VETO (§4.2 / D3 detection-vs-execution split). Emergency reasons
+      // bypass the floor (clearsHurdleFloor returns clears:true at step 1).
+      let replacement;
+      if (riskResult.reason === 'stagnation') {
+        const heldSymbols = new Set(flattenPortfolioServer(battle.portfolio).map(a => a.symbol).filter(Boolean));
+        const activeDailyPct = (prices[score.symbol]?.changePercent || 0) / 100;
+        replacement = pickSwapReplacementCandidate({
+          benchAssets: allBench,
+          prices,
+          outgoingIsCrypto: asset?.isCrypto === true,
+          heldSymbols,
+          clearsQuality: (candidate) => clearsHurdleFloor({
+            active: { symbol: score.symbol, dailyPct: activeDailyPct },
+            benchCandidate: { symbol: candidate.symbol, dailyPct: (prices[candidate.symbol]?.changePercent || 0) / 100 },
+            reason: 'stagnation',
+            archetypeConfig,
+            userATR: score.baseATR,
+          }).clears,
+        });
+      } else {
+        replacement = pickEmergencyReplacement(allBench, prices, asset?.isCrypto === true);
+      }
 
       if (!replacement) {
         console.warn(`${LOG_PREFIX} No bench replacement for risk swap of ${score.symbol} — skipping`);
@@ -672,6 +768,10 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
 
       try {
         const riskTradeId = `trade_${String((battle.scoreState?.tradeCount || 0) + 1 + statusFeedEntries.filter(e => e.action !== 'hold').length).padStart(3, '0')}`;
+        // Phase 6 (§4.6) — receipt source: stagnation is archetype-authored (Knob A),
+        // everything else here is a protective risk-manager exit. EXACT same mapping
+        // as the statusFeed push below.
+        const swapSource = riskResult.reason === 'stagnation' ? 'archetype' : 'risk_manager';
         const evaluationMetadata = {
           id: riskTradeId,
           action: 'SWAP',
@@ -692,6 +792,7 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
           entryPreset: battle.strategyPreset || 'balanced',
           entryMode: battle.executionMode || 'autopilot',
           exitReason: riskResult.reason,
+          ...buildSwapReceiptSource({ source: swapSource, archetype: ctx.archetype }),
         };
 
         // Phase 4: snapshot risk-triggered swaps onto trades[i]. Replacement
@@ -735,7 +836,7 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
           score: Math.round(currentScore * 100) / 100,
           citedRules: [riskResult.reason],
           triggeredBy: `risk_${riskResult.reason}`,
-          source: 'risk_manager',
+          source: riskResult.reason === 'stagnation' ? 'archetype' : 'risk_manager',
           evalId: null,
           symbolOut: score.symbol,
           symbolIn: replacement.symbol,
@@ -755,10 +856,7 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
     const proposalHandled = await handlePendingProposal(db, battleRef, battle, prices, statusFeedEntries, summary, currentScore);
     if (proposalHandled === 'skip_haiku') {
       // Proposal is pending and not expired — write scores/risk but skip trigger gate + Haiku
-      scoreUpdate['cronState.lastEvaluatedAt'] = new Date().toISOString();
-      scoreUpdate['cronState.evaluatingAt'] = null;
-      scoreUpdate['cronState.vwapTicks'] = vwapTicks;
-      scoreUpdate['cronState.intradayMomentum'] = momentumData.vwap;
+      finalizeCronState(scoreUpdate, { vwapTicks, intradayMomentum: momentumData.vwap, stagnationTicks, lastTickPrice, lastTickTimestamp });
       const existingFeed = battle.statusFeed || [];
       scoreUpdate.statusFeed = [...existingFeed, ...statusFeedEntries].slice(-STATUS_FEED_CAP);
       await battleRef.update(scoreUpdate);
@@ -770,10 +868,7 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
     // ---- Gameplan meeting lifecycle check (after proposals, before triggers) ----
     const gameplanHandled = await handleGameplanMeeting(db, battleRef, battle, prices, statusFeedEntries, summary, pendingNarrations);
     if (gameplanHandled === 'skip_haiku') {
-      scoreUpdate['cronState.lastEvaluatedAt'] = new Date().toISOString();
-      scoreUpdate['cronState.evaluatingAt'] = null;
-      scoreUpdate['cronState.vwapTicks'] = vwapTicks;
-      scoreUpdate['cronState.intradayMomentum'] = momentumData.vwap;
+      finalizeCronState(scoreUpdate, { vwapTicks, intradayMomentum: momentumData.vwap, stagnationTicks, lastTickPrice, lastTickTimestamp });
       const existingFeed = battle.statusFeed || [];
       scoreUpdate.statusFeed = [...existingFeed, ...statusFeedEntries].slice(-STATUS_FEED_CAP);
       await battleRef.update(scoreUpdate);
@@ -795,10 +890,7 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
         scoreUpdate.gameplanMeeting = gameplanTrigger;
         scoreUpdate['cronState.lastGameplanDate'] = todayET;
         // Write and skip Haiku — gameplan IS the evaluation
-        scoreUpdate['cronState.lastEvaluatedAt'] = new Date().toISOString();
-        scoreUpdate['cronState.evaluatingAt'] = null;
-        scoreUpdate['cronState.vwapTicks'] = vwapTicks;
-        scoreUpdate['cronState.intradayMomentum'] = momentumData.vwap;
+        finalizeCronState(scoreUpdate, { vwapTicks, intradayMomentum: momentumData.vwap, stagnationTicks, lastTickPrice, lastTickTimestamp });
         const existingFeed = battle.statusFeed || [];
         scoreUpdate.statusFeed = [...existingFeed, ...statusFeedEntries].slice(-STATUS_FEED_CAP);
         await battleRef.update(scoreUpdate);
@@ -866,11 +958,8 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
 
     if (!shouldEvaluate) {
       // No triggers — update scores, VWAP ticks, and status feed, then move on
-      scoreUpdate['cronState.lastEvaluatedAt'] = new Date().toISOString();
       scoreUpdate['cronState.triggerGatePassCount'] = (battle.cronState?.triggerGatePassCount || 0) + 1;
-      scoreUpdate['cronState.evaluatingAt'] = null;
-      scoreUpdate['cronState.vwapTicks'] = vwapTicks;
-      scoreUpdate['cronState.intradayMomentum'] = momentumData.vwap;
+      finalizeCronState(scoreUpdate, { vwapTicks, intradayMomentum: momentumData.vwap, stagnationTicks, lastTickPrice, lastTickTimestamp });
       if (statusFeedEntries.length > 0) {
         const existingFeed = battle.statusFeed || [];
         scoreUpdate.statusFeed = [...existingFeed, ...statusFeedEntries].slice(-STATUS_FEED_CAP);
@@ -1045,10 +1134,57 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
           mode = 'autopilot';
         }
 
-        if (mode === 'autopilot') {
+        // Forge Enforcement Keystone V1.4 §4.3 (Knob B) — hurdle floor on the
+        // Haiku-proposed swap, applied after validation, before execution. A2
+        // (§3.1): a guardrail-forced exit carries a guardrail_* reason via
+        // guardrailSourceNote and BYPASSES the floor (clearsHurdleFloor step 1); a
+        // discretionary Haiku swap is gated by byReason.haiku_decision. Compute the
+        // reason ONCE and reuse it for the gate AND the exitReason stamp below.
+        const haikuSwapReason =
+          (guardrailSourceNote === 'guardrail_stopLoss' || guardrailSourceNote === 'guardrail_trailingStop')
+            ? guardrailSourceNote
+            : 'haiku_decision';
+        const activeBaseATR = assetScores.find(s => s.symbol === haikuResult.symbolOut)?.baseATR ?? 2.5;
+        const hurdle = clearsHurdleFloor({
+          active: { symbol: haikuResult.symbolOut, dailyPct: (prices[haikuResult.symbolOut]?.changePercent || 0) / 100 },
+          benchCandidate: { symbol: haikuResult.symbolIn, dailyPct: (prices[haikuResult.symbolIn]?.changePercent || 0) / 100 },
+          reason: haikuSwapReason,
+          archetypeConfig,
+          userATR: activeBaseATR,
+        });
+
+        // Forge Enforcement Keystone V1.4 §4.4 (Knob C) — circuit breaker on the
+        // Haiku path. Trap 2 / A2: a guardrail-forced exit (haikuSwapReason ∈
+        // EMERGENCY_BYPASS_REASONS) MUST bypass the cap — never throttle a
+        // protective exit because the window filled. battle.trades here already
+        // includes this tick's risk-loop forced rotations (re-read after each), so
+        // both hooks share one consistent window count.
+        const swCfg = archetypeConfig.hftConfig?.swapWindow;
+        const capBlocked = swCfg?.enabled
+          && !EMERGENCY_BYPASS_REASONS.has(haikuSwapReason)
+          && getRecentSwapCount(battle.trades || [], swCfg.windowMinutes, Date.now(), { countEmergencies: swCfg.countEmergencies }) >= swCfg.capPerWindow;
+
+        if (!hurdle.clears) {
+          // Mirror the LOCKED / distressed downgrade pattern above.
+          validationErrors.push(`${haikuResult.symbolIn} below ${haikuSwapReason} hurdle floor (${hurdle.blockReason}) — swap blocked`);
+          decision = 'HOLD';
+          downgraded = true;
+          console.warn(`${LOG_PREFIX} SWAP blocked by hurdle floor: ${haikuResult.symbolOut}→${haikuResult.symbolIn} (${hurdle.blockReason})`);
+        } else if (capBlocked) {
+          // Circuit breaker: discretionary swap throttled. Mirror the hurdle downgrade.
+          validationErrors.push(`Swap cap reached (${swCfg.capPerWindow}/${swCfg.windowMinutes}min) — swap blocked`);
+          decision = 'HOLD';
+          downgraded = true;
+          console.warn(`${LOG_PREFIX} SWAP blocked by Knob C cap for ${battle.id}: ${haikuResult.symbolOut}→${haikuResult.symbolIn}`);
+        } else if (mode === 'autopilot') {
           // Autopilot: execute immediately (original behavior)
           try {
             const benchAsset = findBenchAsset(battle.portfolio?.bench, haikuResult.symbolIn);
+            // Phase 6 (§4.6) — receipt source: a guardrail-forced swap is
+            // source:'guardrail' (its true origin); a discretionary Haiku swap is
+            // source:'haiku'. haikuSwapReason's only non-'haiku_decision' values are
+            // the two guardrail_* reasons (computed above).
+            const swapSource = haikuSwapReason === 'haiku_decision' ? 'haiku' : 'guardrail';
             const evaluationMetadata = {
               id: `trade_${String((battle.scoreState?.tradeCount || 0) + 1).padStart(3, '0')}`,
               action: 'SWAP',
@@ -1062,7 +1198,11 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
               entryConviction: haikuResult.conviction || 0,
               entryPreset: battle.strategyPreset || 'balanced',
               entryMode: battle.executionMode || 'autopilot',
-              exitReason: 'haiku_decision',
+              // §3.1 A2: guardrail-forced swaps stamp their true guardrail_* reason
+              // (computed above), so trades[].exitReason carries the protective
+              // origin for Phase 5 Knob C / Phase 7. Discretionary → 'haiku_decision'.
+              exitReason: haikuSwapReason,
+              ...buildSwapReceiptSource({ source: swapSource, archetype: ctx.archetype }),
               // Phase 8: structured reasoning carried onto battle.trades[] via
               // the ...evaluationMetadata spread in executeSwapServer.
               trade_reasoning: haikuResult?.trade_reasoning || null,
@@ -1165,6 +1305,11 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
               entryPreset: battle.strategyPreset || 'balanced',
               entryMode: mode,
               exitReason: 'haiku_decision',
+              // Phase 6 (§4.6) — receipt source. Dormant under the autopilot launch
+              // guard; stamped for forward-compat (mirrors how Phase 4 stamped
+              // exitReason here). Rides onto trades[] when the proposal is later
+              // resolved (executeSwapServer is passed proposal.evaluationMetadata).
+              ...buildSwapReceiptSource({ source: 'haiku', archetype: ctx.archetype }),
               // Phase 8: structured reasoning carried onto battle.trades[] via
               // the ...evaluationMetadata spread in executeSwapServer (used
               // when this proposal is later resolved into an executed swap).
@@ -1320,16 +1465,16 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
       'scoreState.holdCount': (decision === 'HOLD' || decision === 'PROPOSAL')
         ? (battle.scoreState?.holdCount || 0) + 1
         : (battle.scoreState?.holdCount || 0),
-      'cronState.lastEvaluatedAt': now,
       'cronState.lastTriggeredAt': now,
       'cronState.totalHaikuCalls': (battle.cronState?.totalHaikuCalls || 0) + 1,
       'cronState.totalTokens.input': (battle.cronState?.totalTokens?.input || 0) + inputTokens,
       'cronState.totalTokens.output': (battle.cronState?.totalTokens?.output || 0) + outputTokens,
       'cronState.consecutiveHolds': consecutiveHolds,
-      'cronState.vwapTicks': vwapTicks,
-      'cronState.intradayMomentum': momentumData.vwap,
-      'cronState.evaluatingAt': null,
     };
+    // Shared cron state (lastEvaluatedAt / evaluatingAt / vwapTicks /
+    // intradayMomentum). `now` is passed so lastEvaluatedAt === lastTriggeredAt,
+    // preserving prior behavior exactly.
+    finalizeCronState(finalUpdate, { vwapTicks, intradayMomentum: momentumData.vwap, now, stagnationTicks, lastTickPrice, lastTickTimestamp });
 
     // Write pending proposal if mode branching created one
     if (pendingProposalUpdate) {
@@ -1684,6 +1829,10 @@ async function handleGameplanMeeting(db, battleRef, battle, prices, statusFeedEn
           { id: tradeId, action: 'SWAP', trigger: 'gameplan_rotation', rationale: swap.rationale, tradingDay: currentDay,
             entryRegime: null, entryMarketPosture: null, entryConviction: 0,
             entryPreset: battle.strategyPreset || 'balanced', entryMode: battle.executionMode || 'autopilot', exitReason: 'gameplan_rotation',
+            // Phase 6 (§4.6) — receipt source. Dormant (gameplan approval is launch-guarded).
+            // NB: this is handleGameplanMeeting (separate fn) — `ctx` is not in scope
+            // here; read archetype off battle.agentContext directly.
+            ...buildSwapReceiptSource({ source: 'gameplan_meeting', archetype: battle.agentContext?.archetype }),
             evaluationId: gameplanEvalId }
         );
         // Phase 2 Voice Layer Rework — queue narration for this

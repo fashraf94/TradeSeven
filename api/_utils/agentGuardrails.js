@@ -252,7 +252,12 @@ export function applyGuardrails({
         symbolIn: haikuResult.symbolIn,
         overrides,
         statusMessage: null,
-        sourceNote: null,
+        // Forge Enforcement Keystone V1.4 §3.1 (A2): a stopLoss/trailingStop breach
+        // on the exiting symbol is a PROTECTIVE exit even when Haiku independently
+        // proposed it. Surface the guardrail sourceNote (not null) so the Knob B
+        // hurdle hook bypasses the floor — otherwise a reinforced protective exit
+        // could be gated and leave the agent parked in a breaching position.
+        sourceNote: `guardrail_${forcedType}`,
       };
     }
 

@@ -2,6 +2,22 @@
 // Archetype → strategy engine mapping config.
 // Each archetype has real mechanical effects on the regime router,
 // risk manager, conviction scoring, and trade frequency.
+//
+// Forge Enforcement Keystone V1.4 (§3.2 Decision 2, §3.3 Decision 3, §4.1):
+//   - `hftConfig` carries the archetype-LOCKED HFT knobs that are read by the
+//     risk manager regardless of the user-toggleable `strategyPreset`:
+//       * forcedRotation (Knob A, §4.2)  — active-trading floor
+//       * hurdleFloor    (Knob B, §4.3)  — deterministic quality gate (Shape-B per-reason)
+//       * swapWindow     (Knob C, §4.4)  — circuit-breaker ceiling
+//   - The old `riskOverrides` block was dead and sign-flipped (never read by
+//     evaluateRisk) and is removed per LOCKED Decision 10. Base risk levers
+//     (bustBuffer / vwapFailureTicks / trailStopATR) remain preset-driven via
+//     agentPresetConfig.js — see Decision 2.
+//
+// hftConfig values below are launch-seed and ILLUSTRATIVE (§3.3); calibration
+// (Phase 8 behavioral gates 8A/8B) is post-merge work. They are intentionally
+// differentiated (degen ≠ guardian) so the archetype→physics wire is real at
+// launch (Gate 1).
 
 export const ARCHETYPE_CONFIGS = {
   momentum_chaser: {
@@ -12,10 +28,18 @@ export const ARCHETYPE_CONFIGS = {
       avoidedStrategies: [],
       canEnterDistressed: false,
     },
-    riskOverrides: {
-      bustBuffer: 0.90,
-      vwapFailureTicks: 2,
-      trailStopLevel: 'sma20',
+    hftConfig: {
+      forcedRotation: { enabled: true, pctThreshold: 0.0015, ticksThreshold: 3, maxTickAgeMinutes: 20, winnerThreshold: 0.0015 },
+      hurdleFloor: {
+        enabled: true,
+        byReason: {
+          haiku_decision: { atrMultiplier: 0.3 },
+          stagnation: { atrMultiplier: 0.55 },
+        },
+        default: { atrMultiplier: 0.3 },
+        requireBenchPositive: true,
+      },
+      swapWindow: { enabled: true, capPerWindow: 8, windowMinutes: 60, countEmergencies: false },
     },
     convictionMods: {
       volumeWeight: 1.2,
@@ -35,10 +59,18 @@ export const ARCHETYPE_CONFIGS = {
       avoidedStrategies: [],
       canEnterDistressed: false,
     },
-    riskOverrides: {
-      bustBuffer: 0.85,
-      vwapFailureTicks: 2,
-      trailStopLevel: 'sma20',
+    hftConfig: {
+      forcedRotation: { enabled: true, pctThreshold: 0.003, ticksThreshold: 6, maxTickAgeMinutes: 20, winnerThreshold: 0 },
+      hurdleFloor: {
+        enabled: true,
+        byReason: {
+          haiku_decision: { atrMultiplier: 0.4 },
+          stagnation: { atrMultiplier: 0.5 },
+        },
+        default: { atrMultiplier: 0.4 },
+        requireBenchPositive: true,
+      },
+      swapWindow: { enabled: true, capPerWindow: 4, windowMinutes: 60, countEmergencies: false },
     },
     convictionMods: {
       convictionThreshold: 1.15,
@@ -56,10 +88,18 @@ export const ARCHETYPE_CONFIGS = {
       avoidedStrategies: [],
       canEnterDistressed: false,
     },
-    riskOverrides: {
-      bustBuffer: 0.85,
-      vwapFailureTicks: 2,
-      trailStopLevel: 'sma20',
+    hftConfig: {
+      forcedRotation: { enabled: true, pctThreshold: 0.003, ticksThreshold: 6, maxTickAgeMinutes: 20, winnerThreshold: 0 },
+      hurdleFloor: {
+        enabled: true,
+        byReason: {
+          haiku_decision: { atrMultiplier: 0.4 },
+          stagnation: { atrMultiplier: 0.5 },
+        },
+        default: { atrMultiplier: 0.4 },
+        requireBenchPositive: true,
+      },
+      swapWindow: { enabled: true, capPerWindow: 4, windowMinutes: 60, countEmergencies: false },
     },
     convictionMods: {},
     sectorConcentrationCap: 2,
@@ -75,10 +115,18 @@ export const ARCHETYPE_CONFIGS = {
       avoidedStrategies: [],
       canEnterDistressed: true,
     },
-    riskOverrides: {
-      bustBuffer: 0.85,
-      vwapFailureTicks: 2,
-      trailStopLevel: 'sma20',
+    hftConfig: {
+      forcedRotation: { enabled: true, pctThreshold: 0.003, ticksThreshold: 6, maxTickAgeMinutes: 20, winnerThreshold: 0 },
+      hurdleFloor: {
+        enabled: true,
+        byReason: {
+          haiku_decision: { atrMultiplier: 0.4 },
+          stagnation: { atrMultiplier: 0.5 },
+        },
+        default: { atrMultiplier: 0.4 },
+        requireBenchPositive: true,
+      },
+      swapWindow: { enabled: true, capPerWindow: 4, windowMinutes: 60, countEmergencies: false },
     },
     convictionMods: {
       rsWeight: -0.5,
@@ -96,10 +144,18 @@ export const ARCHETYPE_CONFIGS = {
       avoidedStrategies: [],
       canEnterDistressed: false,
     },
-    riskOverrides: {
-      bustBuffer: 0.90,
-      vwapFailureTicks: 3,
-      trailStopLevel: 'sma9',
+    hftConfig: {
+      forcedRotation: { enabled: true, pctThreshold: 0.001, ticksThreshold: 3, maxTickAgeMinutes: 20, winnerThreshold: 0.002 },
+      hurdleFloor: {
+        enabled: true,
+        byReason: {
+          haiku_decision: { atrMultiplier: 0.2 },
+          stagnation: { atrMultiplier: 0.6 },
+        },
+        default: { atrMultiplier: 0.2 },
+        requireBenchPositive: true,
+      },
+      swapWindow: { enabled: true, capPerWindow: 12, windowMinutes: 60, countEmergencies: false },
     },
     convictionMods: {
       convictionThreshold: 0.85,
@@ -117,10 +173,21 @@ export const ARCHETYPE_CONFIGS = {
       avoidedStrategies: ['volatility_squeeze'],
       canEnterDistressed: false,
     },
-    riskOverrides: {
-      bustBuffer: 0.75,
-      vwapFailureTicks: 1,
-      trailStopLevel: 'sma20',
+    hftConfig: {
+      // Forced rotation DISABLED for guardian (§3.3 / §3.4). The remaining
+      // forcedRotation fields are inert while disabled but kept for schema
+      // uniformity / testability.
+      forcedRotation: { enabled: false, pctThreshold: 0.003, ticksThreshold: 6, maxTickAgeMinutes: 20, winnerThreshold: 0 },
+      hurdleFloor: {
+        enabled: true,
+        byReason: {
+          haiku_decision: { atrMultiplier: 0.5 },
+          stagnation: { atrMultiplier: 0.5 },
+        },
+        default: { atrMultiplier: 0.5 },
+        requireBenchPositive: true,
+      },
+      swapWindow: { enabled: true, capPerWindow: 2, windowMinutes: 120, countEmergencies: false },
     },
     convictionMods: {
       convictionThreshold: 1.2,
