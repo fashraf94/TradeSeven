@@ -57,6 +57,20 @@ function getAnthropicClient() {
   return anthropicClient;
 }
 
+/**
+ * Consumer half of Option B. Decide whether to rebuild the hotBench menu this
+ * tick: on a new trading day (the original once/day cadence) OR when the
+ * producer has published a fresher stockRankings doc since our last rebuild
+ * (an intraday recompute) — so menu membership tracks fresh baggerBombFit
+ * instead of being frozen for the whole day. Pure for unit testing.
+ *
+ * Inert pre-Option-B: when computedAt is absent both ms values are 0, the
+ * intraday clause (0 > 0) is false, and the gate falls back to isNewTradingDay.
+ */
+export function shouldRebuildHotBench({ isNewTradingDay, rankingsComputedMs, lastHotBenchComputedMs }) {
+  return isNewTradingDay || (rankingsComputedMs > lastHotBenchComputedMs);
+}
+
 export default async function handler(req, res) {
   // ---- 1. Auth ----
   const isVercelCron = req.headers['x-vercel-cron'] === '1';
@@ -434,11 +448,18 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
     if (rankingsResult.status === 'fulfilled' && rankingsResult.value.exists) {
       stockRankingsArray = rankingsResult.value.data()?.stocks || [];
 
-      // ---- Daily watchlist refresh (lightweight, rankings-based) ----
+      // ---- Watchlist refresh (rankings-based) ----
       const lastEvalDay = battle.cronState?.lastEvalTradingDay || 0;
       const isNewTradingDay = currentDay > lastEvalDay && currentDay >= 1;
 
-      if (isNewTradingDay && battle.watchlist) {
+      // Consumer half of Option B: also rebuild when the producer published a
+      // fresher stockRankings doc (intraday recompute) since our last rebuild,
+      // so menu membership tracks fresh baggerBombFit — not just once/day.
+      const rankingsComputedMs = rankingsResult.value.data().computedAt?.toMillis?.() ?? 0;
+      const lastHotBenchComputedMs = battle.cronState?.lastHotBenchComputedAt || 0;
+      const rebuildHotBench = shouldRebuildHotBench({ isNewTradingDay, rankingsComputedMs, lastHotBenchComputedMs });
+
+      if (rebuildHotBench && battle.watchlist) {
         const portfolioSet = new Set(portfolioSymbols);
         const benchSet = new Set(benchSymbols);
         const candidates = stockRankingsArray
@@ -481,12 +502,21 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
         // Update hotBenchSymbols for this eval cycle
         hotBenchSymbols = newHotBench;
 
-        statusFeedEntries.push({
-          timestamp: new Date().toISOString(),
-          message: `Daily watchlist refresh: ${newHotBench.length} hotBench, ${newMonitoring.length} monitoring stocks updated`,
-          action: 'watchlist_refresh',
-        });
+        if (isNewTradingDay) {
+          statusFeedEntries.push({
+            timestamp: new Date().toISOString(),
+            message: `Daily watchlist refresh: ${newHotBench.length} hotBench, ${newMonitoring.length} monitoring stocks updated`,
+            action: 'watchlist_refresh',
+          });
+        } else {
+          // Intraday refresh (fresher rankings, same day) — log only, no feed spam.
+          console.log(`${LOG_PREFIX} Intraday hotBench refresh: ${newHotBench.length} hotBench, ${newMonitoring.length} monitoring (rankings computedAt=${rankingsComputedMs})`);
+        }
         scoreUpdate['cronState.lastEvalTradingDay'] = currentDay;
+        // Persist the producer computedAt we just consumed so the next tick only
+        // rebuilds again when a still-fresher doc arrives. Folds into the
+        // battle-doc update this tick already writes — no extra write.
+        scoreUpdate['cronState.lastHotBenchComputedAt'] = rankingsComputedMs;
 
         // Fetch prices for any new hotBench tickers not already fetched
         const newTickersNeedingPrices = newHotBench.filter(t => !prices[t]);
