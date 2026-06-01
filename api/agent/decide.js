@@ -13,6 +13,7 @@ import {
   formatStoriesSummary,
 } from '../_utils/agentPromptAssembly.js';
 import { createAgentBattle } from '../_utils/agentBattleService.js';
+import { projectActiveRules } from '../_utils/projectActiveRules.js';
 import { getStockAnalysisData } from '../_utils/marketDataCache.js';
 import { generateCPUOpponent } from '../_utils/cpuOpponentGenerator.js';
 import { computeArchetypeRankings, ARCHETYPE_TEMPERATURES } from '../_utils/archetypeScoring.js';
@@ -86,6 +87,28 @@ export default async function handler(req, res) {
 
     // Set deploy lock
     await agentRef.update({ deployingAt: new Date().toISOString() });
+
+    // 2b. Commit the live loadout into activeRules (edit→activate fix).
+    // activeRules is re-projected from the CURRENT equipped state at deploy:
+    // trait rules (by equippedTraits) + manual/StarterKit rules (by bundle
+    // membership), read fresh from the rule docs so trait-strength and equip
+    // edits propagate into this battle's snapshot. Prompt assembly
+    // (resolveRuleText) re-interpolates textTemplate+paramValues, so current
+    // strengths take effect. See api/_utils/projectActiveRules.js.
+    // Never blocks deploy — on failure we fall back to the stored activeRules.
+    try {
+      const [rulesSnap, bundlesSnap] = await Promise.all([
+        agentRef.collection('rules').get(),
+        agentRef.collection('bundles').get(),
+      ]);
+      const ruleDocs = rulesSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      const bundleDocs = bundlesSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      const projected = projectActiveRules(agent.equippedTraits, ruleDocs, bundleDocs);
+      agent.activeRules = projected; // used by the prompt (:232) + battle snapshot (:119)
+      await agentRef.update({ activeRules: projected });
+    } catch (projErr) {
+      console.warn('[agent/decide] activeRules projection failed; using stored activeRules:', projErr?.message);
+    }
 
     // 3. Fetch stock universe — ONE Firestore read
     const rankingsDoc = await db.collection('indexIntelligence').doc('stockRankings').get();
