@@ -341,6 +341,23 @@ export const unequipWatchlist = async (agentId) => {
   return response.json();
 };
 
+/**
+ * Emit the `watchlist_equip` shadow log for the onboarding "born-equipped" path.
+ * That path equips the starter watchlist atomically at agent creation (it does
+ * NOT call equipWatchlist), so it bypasses the equip endpoint's shadow-log
+ * emission; this thin client posts to the telemetry-only endpoint that emits
+ * the same entry. Throws on a non-2xx response so the caller can surface (not
+ * swallow) the failure.
+ */
+export const logWatchlistEquip = async ({ agentId, watchlistId, equippedWatchlistName, equippedAt }) => {
+  const response = await fetchWithAuth('/api/agent/log-watchlist-equip', {
+    method: 'POST',
+    body: JSON.stringify({ agentId, watchlistId, equippedWatchlistName, equippedAt }),
+  });
+  if (!response.ok) throw await toEquipError(response);
+  return response.json();
+};
+
 // ============================================
 // SEED / DEV UTILITIES
 // ============================================

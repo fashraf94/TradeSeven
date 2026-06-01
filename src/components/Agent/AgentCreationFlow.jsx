@@ -6,6 +6,7 @@ import useAgent from '../../hooks/useAgent';
 import { getArchetypeDisplayName } from '../../data/archetypeDisplay';
 import { getArchetypeIdentity } from '../../data/archetypeIdentity';
 import { seedDefaultTraits } from '../../services/seedDefaultTraits';
+import { logWatchlistEquip } from '../../services/agentService';
 import { createWatchlist, patchWatchlist, commitWatchlist } from '../../services/forgeWatchlistService';
 import {
   STOCK_TIERS, PICK_MIN, PICK_MAX, deriveSectorAffinity, getPickMeta,
@@ -359,7 +360,24 @@ const AgentCreationFlow = ({ user, tokens, isMobile, onComplete }) => {
         return;
       }
 
-      // 3. Seed the archetype's default trait loadout (draft; goes live via the
+      // 3. Emit the equip shadow log the equip endpoint would have emitted —
+      //    the born-equipped write bypassed that endpoint, so without this the
+      //    onboarding equip never reaches the telemetry/training stream.
+      //    Fire-and-forget so it never blocks reaching home, but surface a
+      //    failure (no silent swallow): silent shadow-log loss is a known
+      //    failure mode in this codebase.
+      if (equip) {
+        logWatchlistEquip({
+          agentId,
+          watchlistId: equip.watchlistId,
+          equippedWatchlistName: equip.name,
+          equippedAt: nowIso,
+        }).catch((logErr) => {
+          console.error('[AgentCreation] equip telemetry emit failed:', logErr);
+        });
+      }
+
+      // 4. Seed the archetype's default trait loadout (draft; goes live via the
       //    deploy-time activeRules projection). Never blocks creation.
       try {
         await seedDefaultTraits(agentId, derivedProfile.archetype);
