@@ -24,6 +24,7 @@ export default function AgentIdentityCard({
   bundles,
   activeBundleId,
   onEquipBundle,
+  locked = false,
   onCreateBundle,
   maxBundles = 5,
   bundleCount = 0,
@@ -82,6 +83,7 @@ export default function AgentIdentityCard({
           bundles={bundles}
           activeBundleId={activeBundleId}
           onEquipBundle={onEquipBundle}
+          locked={locked}
           onCreateBundle={onCreateBundle}
           maxBundles={maxBundles}
           bundleCount={bundleCount}

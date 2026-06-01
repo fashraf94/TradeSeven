@@ -250,7 +250,7 @@ const EquippedWatchlistCard = ({ agent, onNavigateToForge }) => {
 
             {activeBattle && (
               <span style={{ fontSize: 11, color: tokens.textFaint, lineHeight: 1.4 }}>
-                Equip is locked while the agent has an active battle.
+                Changes apply to your next battle.
               </span>
             )}
           </>

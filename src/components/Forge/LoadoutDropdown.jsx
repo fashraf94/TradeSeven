@@ -15,6 +15,7 @@ export default function LoadoutDropdown({
   onCreateBundle,
   maxBundles = 5,
   bundleCount = 0,
+  locked = false,
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef(null);
@@ -102,6 +103,17 @@ export default function LoadoutDropdown({
           overflowY: 'auto',
           zIndex: 20,
         }}>
+          {locked && (
+            <div style={{
+              padding: '8px 14px',
+              fontSize: 11,
+              color: '#718096',
+              fontStyle: 'italic',
+              borderBottom: '1px solid #2A2D35',
+            }}>
+              Changes apply to your next battle.
+            </div>
+          )}
           {/* Bundle rows */}
           {(bundles || [])
             .filter(b => b.status !== 'archived')
@@ -111,6 +123,7 @@ export default function LoadoutDropdown({
                 <div
                   key={bundle.id}
                   onClick={() => {
+                    if (locked) return;
                     onEquipBundle(bundle.id);
                     setIsOpen(false);
                   }}
@@ -119,7 +132,8 @@ export default function LoadoutDropdown({
                     alignItems: 'center',
                     justifyContent: 'space-between',
                     padding: '8px 14px',
-                    cursor: 'pointer',
+                    cursor: locked ? 'not-allowed' : 'pointer',
+                    opacity: locked && !isEquipped ? 0.5 : 1,
                     borderLeft: isEquipped ? '3px solid #5EEAD4' : '3px solid transparent',
                     transition: 'background-color 0.15s ease',
                   }}

@@ -115,6 +115,7 @@ export default function TraitCard({
   onAdvancedOpen,
   canEquip,
   groupColor,
+  locked = false,
 }) {
   const [strength, setStrength] = useState(currentStrength || 'moderate');
   const [showDetails, setShowDetails] = useState(false);
@@ -205,7 +206,7 @@ export default function TraitCard({
           value={isCustom ? 'custom' : (isEquipped ? currentStrength : strength)}
           onChange={handleStrengthChange}
           color={groupColor}
-          disabled={false}
+          disabled={locked}
           showCustom={isCustom}
           onReset={() => handleStrengthChange('moderate')}
         />
@@ -232,9 +233,24 @@ export default function TraitCard({
       )}
 
       {/* Bottom row: action */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
-        {/* Equip / Unequip */}
-        {isEquipped ? (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: isEquipped && locked ? 'space-between' : 'flex-end', gap: 8 }}>
+        {/* Equip / Unequip — locked while a battle is live */}
+        {locked ? (
+          <>
+            {isEquipped && (
+              <span style={{
+                fontSize: 11, fontWeight: 600, color: groupColor,
+                background: `${groupColor}15`, padding: '4px 10px',
+                borderRadius: 6,
+              }}>
+                Equipped ✓
+              </span>
+            )}
+            <span style={{ fontSize: 11, color: '#718096', fontStyle: 'italic' }}>
+              Changes apply to your next battle.
+            </span>
+          </>
+        ) : isEquipped ? (
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <span style={{
               fontSize: 11, fontWeight: 600, color: groupColor,

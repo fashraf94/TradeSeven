@@ -54,6 +54,8 @@ export default function ForgeScreen({ isMobile: isMobileProp, onClose, user, onN
   const { isDesktop } = useIsMobile();
   const { agent, hasAgent } = useAgent(user?.uid);
   const agentId = agent?.id || null;
+  // Loadout edits are locked while a battle is live (UI gate; mirrors MyBundlesTab).
+  const hasActiveBattle = !!agent?.activeBattleId;
   const forge = useForge(agentId);
   const traits = useTraits(agentId, forge);
 
@@ -239,6 +241,10 @@ export default function ForgeScreen({ isMobile: isMobileProp, onClose, user, onN
   }, []);
 
   const handleAddRule = useCallback(async (templateId, paramValues) => {
+    if (hasActiveBattle) {
+      forge.showToast('Changes apply to your next battle.');
+      return;
+    }
     // Check for conflicts
     if (FORGE_CONFLICT_PAIRS) {
       const conflictPair = FORGE_CONFLICT_PAIRS.find(pair => {
@@ -268,14 +274,18 @@ export default function ForgeScreen({ isMobile: isMobileProp, onClose, user, onN
       setMechReactPulse({ type: 'ruleAdd', color: cat?.color || '#5EEAD4', timestamp: Date.now() });
       setConfigRuleId(null);
     }
-  }, [bundleRuleIds, forge]);
+  }, [bundleRuleIds, forge, hasActiveBattle]);
 
   const handleRemoveRule = useCallback(async (ruleId) => {
+    if (hasActiveBattle) {
+      forge.showToast('Changes apply to your next battle.');
+      return;
+    }
     if (activeBundleId) {
       await forge.removeRuleFromBundle(activeBundleId, ruleId);
       setMechReactPulse({ type: 'ruleRemove', color: '#5EEAD4', timestamp: Date.now() });
     }
-  }, [activeBundleId, forge]);
+  }, [activeBundleId, forge, hasActiveBattle]);
 
   // Open Advanced Firmware from a trait card
   const handleAdvancedOpen = useCallback(() => {
@@ -389,6 +399,7 @@ export default function ForgeScreen({ isMobile: isMobileProp, onClose, user, onN
             bundles={forge.bundles}
             activeBundleId={activeBundleId}
             onEquipBundle={forge.equipBundleFn}
+            locked={hasActiveBattle}
             onCreateBundle={handleCreateBundle}
             maxBundles={maxBundles}
             bundleCount={bundleCount}
@@ -560,6 +571,7 @@ export default function ForgeScreen({ isMobile: isMobileProp, onClose, user, onN
                                   onAdvancedOpen={handleAdvancedOpen}
                                   canEquip={traits.canEquip(trait.id)}
                                   groupColor={group.color}
+                                  locked={hasActiveBattle}
                                 />
                               );
                             })}
@@ -872,6 +884,7 @@ export default function ForgeScreen({ isMobile: isMobileProp, onClose, user, onN
             bundles={forge.bundles}
             activeBundleId={activeBundleId}
             onEquipBundle={forge.equipBundleFn}
+            locked={hasActiveBattle}
             onCreateBundle={handleCreateBundle}
             maxBundles={maxBundles}
             bundleCount={bundleCount}
@@ -1026,6 +1039,7 @@ export default function ForgeScreen({ isMobile: isMobileProp, onClose, user, onN
                                 onAdvancedOpen={handleAdvancedOpen}
                                 canEquip={traits.canEquip(trait.id)}
                                 groupColor={group.color}
+                                locked={hasActiveBattle}
                               />
                             );
                           })}
