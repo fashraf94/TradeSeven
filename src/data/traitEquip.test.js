@@ -123,15 +123,28 @@ describe('buildSeedPlan — every archetype default set', () => {
     expect(equippedTraits.every((e) => e.isCustom === false)).toBe(true);
   });
 
-  it('replicates "Last Equipped Wins" for the diversifier tv-14 collision', () => {
-    // smart-money-tracker(tv-14) is overridden by sector-rotator(tv-14): the
-    // earlier trait becomes isCustom:true and the duplicate tv-14 rule doc is
-    // still created — exactly what hand-equipping the three in order produces.
+  it('Broad Market Specialist (diversifier) is collision-free after the de-overlap', () => {
+    // smart-money-tracker no longer claims tv-14 (sector-rotator's core rule), so
+    // nothing is marked isCustom and tv-14 appears exactly once.
     const { ruleSpecs, equippedTraits } = buildSeedPlan(ARCHETYPE_DEFAULT_TRAITS.diversifier, 'moderate');
+    expect(equippedTraits.every((e) => e.isCustom === false)).toBe(true);
+    expect(ruleSpecs.filter((s) => s.sourceRef === 'tv-14').length).toBe(1);
+    expect(
+      expandTraitToRuleSpecs(TRAIT_BY_ID['trait-smart-money-tracker'], 'moderate').map((s) => s.sourceRef)
+    ).toEqual(['tv-04', 'mb-05']);
+  });
+
+  it('still applies "Last Equipped Wins" when traits genuinely share a ruleId (mb-08)', () => {
+    // patient-holder(mb-08) + let-winners-run(mb-08): the earlier trait becomes
+    // isCustom and the shared rule doc is created twice — guards buildSeedPlan's
+    // conflict branch now that no default set triggers it.
+    const { ruleSpecs, equippedTraits } = buildSeedPlan(
+      ['trait-patient-holder', 'trait-let-winners-run'],
+      'moderate'
+    );
     const byId = Object.fromEntries(equippedTraits.map((e) => [e.traitId, e]));
-    expect(byId['trait-smart-money-tracker'].isCustom).toBe(true);
-    expect(byId['trait-sector-rotator'].isCustom).toBe(false);
-    expect(byId['trait-score-adaptor'].isCustom).toBe(false);
-    expect(ruleSpecs.filter((s) => s.sourceRef === 'tv-14').length).toBe(2);
+    expect(byId['trait-patient-holder'].isCustom).toBe(true);
+    expect(byId['trait-let-winners-run'].isCustom).toBe(false);
+    expect(ruleSpecs.filter((s) => s.sourceRef === 'mb-08').length).toBe(2);
   });
 });

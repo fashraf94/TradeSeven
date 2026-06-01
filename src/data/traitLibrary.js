@@ -163,22 +163,19 @@ const INSTINCT_TRAITS = [
     icon: 'Compass',
     source: 'library',
     tags: ['VWAP', 'institutional', 'sector', 'smart-money'],
-    ruleIds: ['tv-04', 'mb-05', 'tv-14'],
+    ruleIds: ['tv-04', 'mb-05'],
     strengthProfiles: {
       subtle: {
         'tv-04': { dev: 0.2 },
         'mb-05': { signal: 'any bullish' },
-        'tv-14': { max_pct: 50 },
       },
       moderate: {
         'tv-04': { dev: 0.3 },
         'mb-05': { signal: 'any bullish' },
-        'tv-14': { max_pct: 40 },
       },
       dominant: {
         'tv-04': { dev: 0.5 },
         'mb-05': { signal: 'bullish crossover' },
-        'tv-14': { max_pct: 30 },
       },
     },
   },
