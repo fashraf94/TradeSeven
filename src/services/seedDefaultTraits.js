@@ -5,18 +5,21 @@
 //   * equippedTraits[] on the agent doc — same entry shape as useTraits.equipTrait
 //   * one rule doc per trait ruleId under agents/{id}/rules — same shape as
 //     useForge.addRuleToBundle
-//   * all funneled into a single lazily-created 'My Strategy' bundle
+//   * all funneled into a single lazily-created draft 'My Strategy' bundle
 //
-// LIVENESS: the BaggerBomb battle snapshot reads agent.activeRules
-// (agentBattleService.js), which is populated ONLY by equipBundle (a forged
-// bundle). A draft bundle's rules are inert. So — unlike the hand-equip path,
-// which leaves the bundle draft — the seeder additionally forges + equips the
-// bundle so the archetype's defaults are actually live in the agent's first
-// battle. The equippedTraits + rule docs remain byte-identical to hand-equip.
+// LIVENESS: defaults go live at DEPLOY, not at seed. decide.js re-projects
+// agent.activeRules from the current equipped state on every deploy
+// (api/_utils/projectActiveRules.js), selecting trait rules by
+// traitId ∈ equippedTraits. So the seeder only writes equippedTraits + the
+// trait rule docs into a single DRAFT bundle — byte-identical to hand-equip,
+// which also leaves the bundle draft — and the deploy projection makes them
+// live on the first battle. (An earlier version forged+equipped the bundle;
+// that's removed now the projection is the commit point, which also keeps a
+// later trait-add appending to this draft instead of spawning a 2nd bundle.)
 //
-// ROBUSTNESS: never throws. Per-rule failures log and continue; a forge/equip
-// failure leaves the traits staged (draft) but does not block agent creation.
-// The caller (AgentCreationFlow) also wraps this in try/catch as defense in depth.
+// ROBUSTNESS: never throws. Per-rule failures log and continue; nothing here
+// can block agent creation. The caller (AgentCreationFlow) also wraps this in
+// try/catch as defense in depth.
 
 import { doc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase/config';
@@ -24,8 +27,6 @@ import {
   createRule,
   createBundle,
   addRuleToBundle,
-  forgeBundle,
-  equipBundle,
 } from './forgeService';
 import { ARCHETYPE_DEFAULT_TRAITS } from '../data/traitLibrary';
 import { buildSeedPlan } from '../data/traitEquip';
@@ -87,14 +88,8 @@ export async function seedDefaultTraits(agentId, archetype, { strength = 'modera
     console.warn('[seedDefaultTraits] equippedTraits write failed:', err);
   }
 
-  // 4. Forge + equip so the defaults reach agent.activeRules (live in battle).
-  try {
-    await forgeBundle(agentId, bundleId);
-    await equipBundle(agentId, bundleId);
-  } catch (err) {
-    console.warn('[seedDefaultTraits] forge/equip failed — defaults staged, not live:', err);
-    return { seeded: true, live: false, bundleId, rulesAdded, traitCount: equippedTraits.length };
-  }
-
-  return { seeded: true, live: true, bundleId, rulesAdded, traitCount: equippedTraits.length };
+  // Defaults go live at DEPLOY via the activeRules projection (see header). The
+  // seeder intentionally leaves the bundle DRAFT — like hand-equip — and does
+  // NOT forge/equip; decide.js selects these by traitId ∈ equippedTraits.
+  return { seeded: true, bundleId, rulesAdded, traitCount: equippedTraits.length };
 }

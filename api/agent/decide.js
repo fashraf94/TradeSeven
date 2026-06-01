@@ -107,7 +107,8 @@ export default async function handler(req, res) {
       agent.activeRules = projected; // used by the prompt (:232) + battle snapshot (:119)
       await agentRef.update({ activeRules: projected });
     } catch (projErr) {
-      console.warn('[agent/decide] activeRules projection failed; using stored activeRules:', projErr?.message);
+      console.error('[agent/decide] activeRules projection FAILED for agent', agentId,
+        '— deploying with stored activeRules (which is empty for a freshly-seeded agent, i.e. an inert loadout):', projErr);
     }
 
     // 3. Fetch stock universe — ONE Firestore read
