@@ -123,7 +123,7 @@ describe('buildSeedPlan — every archetype default set', () => {
     expect(equippedTraits.every((e) => e.isCustom === false)).toBe(true);
   });
 
-  it('Broad Market Specialist (diversifier) is collision-free after the de-overlap', () => {
+  it('Diversifier (diversifier) is collision-free after the de-overlap', () => {
     // smart-money-tracker no longer claims tv-14 (sector-rotator's core rule), so
     // nothing is marked isCustom and tv-14 appears exactly once.
     const { ruleSpecs, equippedTraits } = buildSeedPlan(ARCHETYPE_DEFAULT_TRAITS.diversifier, 'moderate');
