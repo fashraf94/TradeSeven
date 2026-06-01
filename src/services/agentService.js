@@ -99,16 +99,23 @@ export const createAgent = async (ownerId, agentData) => {
       config: agentData.config || { risk: 50, concentration: 50, momentum: 50 },
       personality: agentData.personality || {},
       avatarColors: agentData.avatarColors || ['#5eead4', '#a855f7'],
+      // Single primary color chosen at onboarding; drives avatarColors above
+      // and the dashboard accent downstream. Nullable for legacy/test creates.
+      primaryColor: agentData.primaryColor ?? null,
       memory: [],
       consolidatedInsight: '',
       directives: [],
       activeRules: [],
       equippedBundleIds: [],
-      // Phase 5B1 — watchlist equip. Nullable; no migration needed (the equip
-      // endpoints treat an absent field as "not equipped").
-      equippedWatchlistId: null,
-      equippedWatchlistName: null,
-      equippedAt: null,
+      // Phase 5B1 — watchlist equip slot. Nullable; no migration needed (the
+      // equip endpoints treat an absent field as "not equipped"). Onboarding
+      // creates the agent already equipped to its committed starter watchlist
+      // (atomic, race-free — no post-create equip that the routing gate could
+      // interrupt); other callers leave these null and equip later via
+      // /api/agent/equip-watchlist.
+      equippedWatchlistId: agentData.equippedWatchlistId ?? null,
+      equippedWatchlistName: agentData.equippedWatchlistName ?? null,
+      equippedAt: agentData.equippedAt ?? null,
       starterKitCompleted: false,
       stats: {
         wins: 0,
