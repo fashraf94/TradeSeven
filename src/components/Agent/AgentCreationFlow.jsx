@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Bot, ArrowLeft, Sparkles, Check } from 'lucide-react';
 import { fetchWithAuth } from '../../utils/fetchWithAuth';
@@ -11,7 +11,7 @@ import {
   STOCK_TIERS, PICK_MIN, PICK_MAX, deriveSectorAffinity, getPickMeta,
 } from '../../data/onboardingStockTiers';
 import {
-  AGENT_COLOR_PALETTE, DEFAULT_AGENT_COLOR_ID, getAgentColorById, deriveAvatarColors,
+  AGENT_COLOR_PALETTE, DEFAULT_AGENT_COLOR_ID, getAgentColorById,
 } from '../../data/agentColorPalette';
 
 // ── Flow steps ────────────────────────────────────────────
@@ -149,7 +149,7 @@ const StockChip = ({ pick, selected, disabled, onClick, tokens }) => (
 );
 
 const ColorSwatch = ({ color, selected, onClick, tokens }) => {
-  const [c1, c2] = deriveAvatarColors(color.primary);
+  const [c1, c2] = color.gradient;
   return (
     <motion.button
       whileTap={{ scale: 0.94 }}
@@ -209,6 +209,13 @@ const AgentCreationFlow = ({ user, tokens, isMobile, onComplete }) => {
   const [typedName, setTypedName] = useState('');
   const [placeholderIndex] = useState(() => Math.floor(Math.random() * PLACEHOLDER_NAMES.length));
 
+  // In-flight guard so the derivation fires once per LOADING entry (React
+  // StrictMode double-invokes effects in dev). Cache of the committed starter
+  // watchlist so a createAgent-failure retry reuses it instead of orphaning a
+  // second committed watchlist.
+  const derivingRef = useRef(false);
+  const builtWatchlistRef = useRef(null);
+
   const { createAgent } = useAgent(user?.odUserId);
 
   // Typing animation for the loading screen
@@ -234,6 +241,8 @@ const AgentCreationFlow = ({ user, tokens, isMobile, onComplete }) => {
   }, [step]);
 
   const deriveProfile = async () => {
+    if (derivingRef.current) return; // guard double-fire (StrictMode / re-entry)
+    derivingRef.current = true;
     setCreating(true);
     setError(null);
     try {
@@ -254,14 +263,18 @@ const AgentCreationFlow = ({ user, tokens, isMobile, onComplete }) => {
         setStep(STEP.REVEAL);
       } else {
         setError('Failed to create profile. Try again.');
+        setDirection(-1); // sending the user back, so animate backward
         setStep(STEP.COLOR);
       }
     } catch (err) {
       console.error('[AgentCreation] Profile derivation error:', err);
       setError('Something went wrong. Try again.');
+      setDirection(-1); // sending the user back, so animate backward
       setStep(STEP.COLOR);
+    } finally {
+      derivingRef.current = false;
+      setCreating(false);
     }
-    setCreating(false);
   };
 
   // Build the committed starter watchlist from the picks. Returns the equip
@@ -296,15 +309,21 @@ const AgentCreationFlow = ({ user, tokens, isMobile, onComplete }) => {
     setCreating(true);
     setError(null);
     try {
-      const primaryColor = getAgentColorById(colorId).primary;
-      const avatarColors = deriveAvatarColors(primaryColor);
+      const colorChoice = getAgentColorById(colorId);
+      const primaryColor = colorChoice.primary;
+      const avatarColors = colorChoice.gradient;
       const sectorAffinity = deriveSectorAffinity(picks);
 
       // 1. Build + commit the starter watchlist (best-effort) BEFORE creating
       //    the agent, so the agent can be born already equipped — one atomic
       //    write, no post-create equip that the App routing gate could
-      //    interrupt when `hasAgent` flips true.
-      const equip = await buildStarterWatchlist();
+      //    interrupt when `hasAgent` flips true. Cached in a ref so a
+      //    createAgent-failure retry reuses this committed watchlist instead of
+      //    orphaning a second one.
+      if (!builtWatchlistRef.current) {
+        builtWatchlistRef.current = await buildStarterWatchlist();
+      }
+      const equip = builtWatchlistRef.current;
       const nowIso = new Date().toISOString();
 
       // 2. Create the agent. The chosen color overrides the model's auto-derived
@@ -379,7 +398,7 @@ const AgentCreationFlow = ({ user, tokens, isMobile, onComplete }) => {
       return !!answers[q.key] || !!freeform[q.key]?.trim();
     }
     if (step === STEP.NAME) return !!answers.name?.trim();
-    if (step === STEP.COLOR) return !!colorId;
+    // COLOR has a default selection, so it's always valid → falls through.
     return true;
   };
 
@@ -567,9 +586,11 @@ const AgentCreationFlow = ({ user, tokens, isMobile, onComplete }) => {
               type="text"
               value={freeform[q.key] || ''}
               onChange={(e) => {
-                const val = e.target.value.slice(0, 100);
-                setFreeform((p) => ({ ...p, [q.key]: val }));
-                if (val.trim()) setAnswers((p) => ({ ...p, [q.key]: null }));
+                // Keep the prior option selection intact — freeform takes
+                // precedence while non-empty (see `selected` below and the
+                // `freeform || answers` send), so clearing it cleanly restores
+                // the picked option rather than leaving the step in a dead-end.
+                setFreeform((p) => ({ ...p, [q.key]: e.target.value.slice(0, 100) }));
               }}
               placeholder="Say something else..."
               style={{
@@ -619,7 +640,7 @@ const AgentCreationFlow = ({ user, tokens, isMobile, onComplete }) => {
 
   const renderColor = () => {
     const chosen = getAgentColorById(colorId);
-    const [c1, c2] = deriveAvatarColors(chosen.primary);
+    const [c1, c2] = chosen.gradient;
     return renderStepFrame({
       title: "Pick your agent's color.",
       subtitle: "This is its identity — the avatar gradient and your dashboard accent.",
@@ -696,8 +717,7 @@ const AgentCreationFlow = ({ user, tokens, isMobile, onComplete }) => {
   const renderReveal = () => {
     if (!derivedProfile) return null;
     const { archetype, config: cfg, personality, greeting } = derivedProfile;
-    const primary = getAgentColorById(colorId).primary;
-    const [color1, color2] = deriveAvatarColors(primary);
+    const [color1, color2] = getAgentColorById(colorId).gradient;
     const archetypeLabel = getArchetypeDisplayName(archetype);
     const identity = getArchetypeIdentity(archetype);
     const name = answers.name || 'Agent';

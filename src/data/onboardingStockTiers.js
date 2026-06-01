@@ -13,7 +13,12 @@
 // Every symbol below is a member of the scored DKB universe
 // (DKB_STOCK_UNIVERSE.md) so the committed watchlist round-trips cleanly through
 // decide.js (api/_utils/watchlistEquip.js extractTickerSymbols/foldEquippedTickers).
-// Sector strings mirror the universe's sector names.
+//
+// The `sector` strings are intentionally kept verbatim-equal to the canonical
+// SECTORS[].name in src/constants/sectors.js (consumed via
+// sectorUtils.resolveSectorInfo / findSectorByName, which match by exact name).
+// Keep them in sync if a canonical sector is ever renamed — derived
+// sectorAffinity is only as good as that join.
 
 export const PICK_MIN = 3;
 export const PICK_MAX = 8;

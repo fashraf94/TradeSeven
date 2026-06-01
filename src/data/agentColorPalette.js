@@ -14,20 +14,6 @@
 // and the legibility normalization needed for arbitrary colors on the obsidian
 // background are a separate, out-of-scope workstream.
 
-// On-brand base palette (teal / violet / gold / copper / emerald / azure). The
-// primaries are drawn from the approved token palette (src/theme/tokens.js).
-export const AGENT_COLOR_PALETTE = [
-  { id: 'teal', label: 'Teal', primary: '#5eead4' },
-  { id: 'violet', label: 'Violet', primary: '#a855f7' },
-  { id: 'gold', label: 'Gold', primary: '#f0c75e' },
-  { id: 'copper', label: 'Copper', primary: '#e8927c' },
-  { id: 'emerald', label: 'Emerald', primary: '#34d399' },
-  { id: 'azure', label: 'Azure', primary: '#3b82f6' },
-];
-
-export const DEFAULT_AGENT_COLOR_ID = 'teal';
-export const DEFAULT_AGENT_COLOR = '#5eead4';
-
 const HEX_RE = /^#?([0-9a-f]{6})$/i;
 
 function hexToHsl(hex) {
@@ -75,28 +61,53 @@ function hslToHex({ h, s, l }) {
 
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
+// Core: build the [primary, partner] pair from a parsed HSL. The second stop is
+// a hue-rotated, slightly deeper sibling — enough contrast to read as a
+// gradient, close enough to stay clearly "the same color."
+function buildPair(hsl, primary) {
+  const partner = hslToHex({
+    h: hsl.h + 30,
+    s: clamp(hsl.s + 0.04, 0, 1),
+    l: clamp(hsl.l - 0.12, 0.2, 0.85),
+  });
+  return [primary, partner];
+}
+
+export const DEFAULT_AGENT_COLOR_ID = 'teal';
+export const DEFAULT_AGENT_COLOR = '#5eead4';
+
+// Computed once at module load: the default gradient, reused as the fallback
+// for any unparseable input (no recursion, no per-call recompute).
+const DEFAULT_AVATAR_COLORS = buildPair(hexToHsl(DEFAULT_AGENT_COLOR), DEFAULT_AGENT_COLOR);
+
 /**
- * Derive the two-stop avatar gradient from a single primary color. The second
- * stop is a hue-rotated, slightly deeper sibling — enough contrast to read as a
- * gradient, close enough to stay clearly "the same color." Falls back to the
- * default teal pair for an unparseable input.
+ * Derive the two-stop avatar gradient from a single primary color. Falls back
+ * to the default teal pair for an unparseable input.
  *
  * @param {string} primaryHex e.g. '#5eead4'
  * @returns {[string, string]} [primary, partner]
  */
 export function deriveAvatarColors(primaryHex) {
   const hsl = hexToHsl(primaryHex);
-  if (!hsl) return [DEFAULT_AGENT_COLOR, deriveAvatarColors(DEFAULT_AGENT_COLOR)[1]];
-  const partner = hslToHex({
-    h: hsl.h + 30,
-    s: clamp(hsl.s + 0.04, 0, 1),
-    l: clamp(hsl.l - 0.12, 0.2, 0.85),
-  });
-  const primary = primaryHex.startsWith('#') ? primaryHex : `#${primaryHex}`;
-  return [primary, partner];
+  if (!hsl) return [...DEFAULT_AVATAR_COLORS];
+  const primary = String(primaryHex).startsWith('#') ? primaryHex : `#${primaryHex}`;
+  return buildPair(hsl, primary);
 }
 
-/** Palette entry for an id, or the default (teal) entry. */
+// On-brand base palette (teal / violet / gold / copper / emerald / azure). The
+// primaries are drawn from the approved token palette (src/theme/tokens.js).
+// Each entry carries its two-stop gradient, derived once here so the UI never
+// recomputes it per render.
+export const AGENT_COLOR_PALETTE = [
+  { id: 'teal', label: 'Teal', primary: '#5eead4' },
+  { id: 'violet', label: 'Violet', primary: '#a855f7' },
+  { id: 'gold', label: 'Gold', primary: '#f0c75e' },
+  { id: 'copper', label: 'Copper', primary: '#e8927c' },
+  { id: 'emerald', label: 'Emerald', primary: '#34d399' },
+  { id: 'azure', label: 'Azure', primary: '#3b82f6' },
+].map((c) => ({ ...c, gradient: deriveAvatarColors(c.primary) }));
+
+/** Palette entry for an id, or the default (teal) entry. Carries `.gradient`. */
 export const getAgentColorById = (id) =>
   AGENT_COLOR_PALETTE.find((c) => c.id === id) || AGENT_COLOR_PALETTE[0];
 

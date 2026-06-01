@@ -194,7 +194,6 @@ const AgentDashboard = ({ user, setScreen, onCreateAgentBattle, setShowForge, on
         <AgentCreationFlow
           user={user}
           tokens={tokens}
-          isDesktop={isDesktop}
           isMobile={isMobile}
           onComplete={() => setScreen('dashboard')}
         />

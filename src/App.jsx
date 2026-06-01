@@ -109,6 +109,7 @@ import DashboardLoop from './components/Dashboard/DashboardLoop';
 import DashboardDesktop from './components/Dashboard/DashboardDesktop';
 import DesktopSidebar from './components/Navigation/DesktopSidebar';
 import { AgentDashboard, OnboardingExperience } from './components/Agent';
+import AppLoadingScreen from './components/shared/AppLoadingScreen';
 import { ForgeScreen } from './components/Forge';
 import ForgeLanding from './components/Forge/ForgeLanding';
 
@@ -8376,26 +8377,7 @@ export default function PortfolioDuel() {
 
   // AUTH LOADING - Show loading screen while Firebase Auth checks session
   if (authLoading) {
-    return (
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        height: '100vh',
-        backgroundColor: '#0a0a0f',
-        color: '#00d9ff',
-        fontFamily: 'Inter, system-ui, sans-serif',
-      }}>
-        <div style={{ textAlign: 'center' }}>
-          <div style={{ fontSize: '24px', fontWeight: 700, marginBottom: '12px', background: 'linear-gradient(90deg, #FF8C00, #468CFF)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>
-            FantasyTrades
-          </div>
-          <div style={{ fontSize: '14px', color: 'rgba(255,255,255,0.5)' }}>
-            Loading...
-          </div>
-        </div>
-      </div>
-    );
+    return <AppLoadingScreen />;
   }
 
   // LOGIN SCREEN - Extracted to HomeScreen component
@@ -9622,31 +9604,32 @@ export default function PortfolioDuel() {
   return null;
   }; // end getScreenContent
 
-  const screenContent = getScreenContent();
-
   // ============================================
   // ONBOARDING GATE — new-user "build your agent" experience
   // ============================================
   // An authenticated user with no agent builds one before reaching the rest of
   // the app. We wait for the agent subscription to resolve (agentLoading) before
-  // deciding, so there's no flash of the dashboard followed by a redirect. This
-  // returns ahead of the main shell below, so the flow renders full-screen with
-  // no nav chrome (nothing to tab away into). Once the agent exists, hasAgent
-  // flips true and routing resumes normally (onComplete lands on the dashboard).
-  if (user && !userLoading && !authLoading) {
-    if (agentLoading) {
-      return <OnboardingExperience phase="loading" />;
-    }
-    if (!hasAgent) {
-      return (
-        <OnboardingExperience
-          phase="create"
-          user={user}
-          onComplete={() => setScreen('dashboard')}
-        />
-      );
-    }
+  // deciding, so there's no flash of the dashboard followed by a redirect — and
+  // the wait reuses the app's loading splash so it reads as continuous with
+  // auth-load rather than a second, different splash. These return ahead of the
+  // main shell, so the flow renders full-screen with no nav chrome (nothing to
+  // tab away into) and getScreenContent() isn't computed for an agent-less user.
+  // Once the agent exists, hasAgent flips true and routing resumes normally
+  // (onComplete lands on the dashboard).
+  const onboardingGateReady = user && !userLoading && !authLoading;
+  if (onboardingGateReady && agentLoading) {
+    return <AppLoadingScreen />;
   }
+  if (onboardingGateReady && !hasAgent) {
+    return (
+      <OnboardingExperience
+        user={user}
+        onComplete={() => setScreen('dashboard')}
+      />
+    );
+  }
+
+  const screenContent = getScreenContent();
 
   // ============================================
   // UNIFIED RETURN — EarningsGame (always mounted) + active screen + ClashBot widget
