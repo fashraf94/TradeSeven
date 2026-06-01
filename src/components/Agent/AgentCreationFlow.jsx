@@ -242,8 +242,8 @@ const AgentCreationFlow = ({ user, tokens, isDesktop, isMobile, onComplete }) =>
         avatarColors: derivedProfile.avatarColors,
       });
       if (agentId) {
-        // Seed the archetype's default trait loadout (forged + equipped so the
-        // defaults are live in the agent's first battle). Never blocks creation.
+        // Seed the archetype's default trait loadout (draft, like hand-equip);
+        // it goes live via the deploy-time activeRules projection. Never blocks creation.
         try {
           await seedDefaultTraits(agentId, derivedProfile.archetype);
         } catch (seedErr) {

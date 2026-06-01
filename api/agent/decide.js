@@ -105,7 +105,13 @@ export default async function handler(req, res) {
       const bundleDocs = bundlesSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
       const projected = projectActiveRules(agent.equippedTraits, ruleDocs, bundleDocs);
       agent.activeRules = projected; // used by the prompt (:232) + battle snapshot (:119)
-      await agentRef.update({ activeRules: projected });
+      // Persist for Forge-UI consistency, but skip when an active battle exists:
+      // that deploy early-returns at the existing-battle check (~:390) without
+      // creating a battle, and edits are locked mid-battle, so the write is a
+      // redundant no-op. The in-memory value above still feeds the prompt.
+      if (!agent.activeBattleId) {
+        await agentRef.update({ activeRules: projected });
+      }
     } catch (projErr) {
       console.error('[agent/decide] activeRules projection FAILED for agent', agentId,
         '— deploying with stored activeRules (which is empty for a freshly-seeded agent, i.e. an inert loadout):', projErr);
