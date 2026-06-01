@@ -25,7 +25,7 @@
 // (momentum_chaser, degen, …) are stable identifiers and must NOT change.
 export const ARCHETYPE_CONFIGS = {
   momentum_chaser: {
-    label: 'Momentum Hunter',
+    label: 'Trend Follower',
     defaultPreset: 'aggressive',
     regimePreferences: {
       favoredStrategies: ['volatility_squeeze', '52_week_high'],
@@ -56,7 +56,7 @@ export const ARCHETYPE_CONFIGS = {
     avatarColors: ['#5eead4', '#a855f7'],
   },
   analyst: {
-    label: 'Analyst',
+    label: 'Fundamental Investor',
     defaultPreset: 'balanced',
     regimePreferences: {
       favoredStrategies: [],
@@ -85,7 +85,7 @@ export const ARCHETYPE_CONFIGS = {
     avatarColors: ['#3b82f6', '#5eead4'],
   },
   diversifier: {
-    label: 'Broad Market Specialist',
+    label: 'Diversifier',
     defaultPreset: 'balanced',
     regimePreferences: {
       favoredStrategies: ['rs_momentum'],
@@ -141,7 +141,7 @@ export const ARCHETYPE_CONFIGS = {
     avatarColors: ['#a855f7', '#ef4444'],
   },
   degen: {
-    label: 'Degen',
+    label: 'Speculator',
     defaultPreset: 'aggressive',
     regimePreferences: {
       favoredStrategies: ['volatility_squeeze', '52_week_high', 'news_catalyst'],
@@ -170,7 +170,7 @@ export const ARCHETYPE_CONFIGS = {
     avatarColors: ['#ef4444', '#f59e0b'],
   },
   guardian: {
-    label: 'Guardian',
+    label: 'Capital Preserver',
     defaultPreset: 'defensive',
     regimePreferences: {
       favoredStrategies: ['rs_momentum'],

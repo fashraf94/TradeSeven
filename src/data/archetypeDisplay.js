@@ -12,13 +12,16 @@
 // validators, and the quiz — NEVER rename a key. Only the display strings are
 // user-facing and safe to change.
 
+// Descriptive set per ARCHETYPE_IDENTITY_CONTRACT_V1.md §1 — chosen so a new
+// user reads the name and immediately pictures how the agent operates. Code-ids
+// (the keys) are stable and must NEVER change; only the display strings did.
 export const ARCHETYPE_DISPLAY_NAMES = {
-  momentum_chaser: 'Momentum Hunter',
-  degen: 'Degen',
+  momentum_chaser: 'Trend Follower',
+  degen: 'Speculator',
   contrarian: 'Contrarian',
-  analyst: 'Analyst',
-  guardian: 'Guardian',
-  diversifier: 'Broad Market Specialist',
+  analyst: 'Fundamental Investor',
+  guardian: 'Capital Preserver',
+  diversifier: 'Diversifier',
 };
 
 // Resolve a code-id to its user-facing display name.

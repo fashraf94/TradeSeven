@@ -2,6 +2,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { applySecurityMiddleware } from '../_utils/security.js';
 import { requireAuth } from '../_utils/authMiddleware.js';
 import { VALID_ARCHETYPES, getArchetypeConfig } from '../_utils/agentArchetypeConfig.js';
+import { deriveArchetypeFromAnswers } from '../_utils/archetypeDerivation.js';
 
 export const config = { maxDuration: 30 };
 
@@ -14,43 +15,42 @@ function getAnthropicClient() {
   return anthropicClient;
 }
 
+// Derivation is QUESTION-ONLY (ARCHETYPE_IDENTITY_CONTRACT_V1.md §3): the
+// archetype comes from the three temperament answers alone. The user's stock
+// picks build the starter watchlist and supply personality.sectorAffinity, but
+// they are intentionally NOT sent here and MUST NOT influence the archetype —
+// two users with identical holdings can land on different archetypes. The
+// avatar color is the user's explicit choice (the color step), so it is not
+// derived here either.
 const AGENT_PROFILE_TOOL = {
   name: 'submit_agent_profile',
-  description: 'Submit the derived agent profile based on the user\'s questionnaire answers.',
+  description: 'Submit the derived agent profile based on the user\'s three temperament answers.',
   input_schema: {
     type: 'object',
-    required: ['archetype', 'config', 'personality', 'avatarColors', 'greeting'],
+    required: ['archetype', 'config', 'personality', 'greeting'],
     properties: {
       archetype: {
         type: 'string',
         enum: VALID_ARCHETYPES,
-        description: 'The primary archetype derived from the user\'s answers',
+        description: 'The archetype derived from the three temperament answers (Q1/Q2/Q3 only).',
       },
       config: {
         type: 'object',
         required: ['risk', 'concentration', 'momentum'],
         properties: {
-          risk: { type: 'number', minimum: 0, maximum: 100, description: 'Risk tolerance (0=ultra conservative, 100=maximum risk)' },
-          concentration: { type: 'number', minimum: 0, maximum: 100, description: 'Portfolio concentration (0=max diversification, 100=concentrated bets)' },
-          momentum: { type: 'number', minimum: 0, maximum: 100, description: 'Momentum sensitivity (0=contrarian, 100=pure momentum chaser)' },
+          risk: { type: 'number', minimum: 0, maximum: 100, description: 'Risk tolerance (0=ultra conservative, 100=maximum risk). Reflect Q1.' },
+          concentration: { type: 'number', minimum: 0, maximum: 100, description: 'Portfolio concentration (0=max diversification, 100=concentrated bets). Reflect Q3.' },
+          momentum: { type: 'number', minimum: 0, maximum: 100, description: 'Momentum sensitivity (0=contrarian, 100=pure momentum chaser). Reflect Q2.' },
         },
       },
       personality: {
         type: 'object',
         required: ['traits', 'riskPhilosophy', 'coachingStyle'],
         properties: {
-          traits: { type: 'array', items: { type: 'string' }, minItems: 2, maxItems: 5, description: '2-5 personality trait phrases (e.g., \'aggressive on momentum\', \'cautious during rotations\')' },
-          sectorAffinity: { type: 'array', items: { type: 'string' }, description: 'Sectors the user selected or implied' },
-          riskPhilosophy: { type: 'string', description: 'One-sentence summary of risk approach' },
+          traits: { type: 'array', items: { type: 'string' }, minItems: 2, maxItems: 5, description: '2-5 personality trait phrases (e.g., \'buys strength on volume\', \'cuts losers fast\').' },
+          riskPhilosophy: { type: 'string', description: 'One-sentence summary of risk approach.' },
           coachingStyle: { type: 'string', description: 'How the user wants to interact: hands-on, data-driven, trust-the-agent, etc.' },
         },
-      },
-      avatarColors: {
-        type: 'array',
-        items: { type: 'string' },
-        minItems: 2,
-        maxItems: 2,
-        description: 'Two hex color codes for the agent avatar gradient. Match the archetype energy.',
       },
       greeting: {
         type: 'string',
@@ -60,23 +60,29 @@ const AGENT_PROFILE_TOOL = {
   },
 };
 
-const SYSTEM_PROMPT = `You are a personality analyst for a competitive stock trading game called BaggerBomb.
-A user just answered 5 questions about their trading style. Your job: derive their agent's archetype, personality, and configuration.
+const SYSTEM_PROMPT = `You are a personality analyst for a competitive stock trading game.
+A user answered THREE temperament questions about how they want their trading agent to behave. Derive the agent's archetype, configuration, and personality FROM THESE THREE ANSWERS ONLY. The user also picked some stocks elsewhere, but those are deliberately NOT given to you and must not influence the archetype.
 
-ARCHETYPES:
-- momentum_chaser: Aggressive, chases trends, high trading frequency, loves breakouts
-- analyst: Data-driven, methodical, waits for high-conviction setups, moderate frequency
-- diversifier: Balanced across sectors, steady approach, avoids concentration risk
-- contrarian: Goes against the crowd, buys dips, inverted momentum signals
-- degen: Maximum aggression, concentrated bets, highest frequency, embraces volatility
-- guardian: Defensive, capital preservation, lowest frequency, avoids risky setups
+THE SIX ARCHETYPES:
+- momentum_chaser (Trend Follower): Buys strength, not bargains. Piles into clear uptrends on real volume; cuts the moment the trend breaks. Concentrates in what's hot.
+- contrarian (Contrarian): Moves against the crowd. Buys beaten-down, out-of-favor names; avoids the obvious winner. Patient.
+- analyst (Fundamental Investor): Buys quality businesses — strong balance sheets, real earnings. Slow and deliberate.
+- degen (Speculator): Here for the big moves. Chases the widest swings, mostly ignores fundamentals. Explosive upside, hard hits.
+- diversifier (Diversifier): Spreads across many sectors so no single bet sinks them. Breadth over depth; rarely a single huge winner.
+- guardian (Capital Preserver): First job is not losing money. Moves slowly, trades rarely, leans defensive.
 
-Match the archetype to the overall pattern of answers, not just one question.
-The config sliders (0-100) should reflect the user's specific intensity within the archetype.
-Personality traits should be specific and memorable, not generic.
-The greeting should feel natural for the archetype — a momentum_chaser is eager,
-a guardian is measured, a degen is cocky, an analyst is precise.
-Avatar colors should be two hex codes that match the archetype energy — bold for aggressive types, cool for analytical ones.`;
+THE THREE QUESTIONS:
+- Q1 — Risk posture: aggressive (swing big) / balanced (steady, measured) / protect (avoid big losses).
+- Q2 — Buy signal: trending (clearly trending up) / beaten_down (out of favor) / fundamentals (strong company health) / volatile (moves big) / broad_mix (rather own a broad mix).
+- Q3 — Concentration: concentrate (go big on a few) / spread (spread wide).
+
+DERIVATION PRECEDENCE (apply in order):
+1. If Q1 = protect → guardian. (Protect-first dominates and overrides the buy signal — it's the anchor separating the defensive guardian from the merely-spread diversifier.)
+2. Else if Q2 = broad_mix OR Q3 = spread → diversifier.
+3. Else route by Q2 buy signal: trending → momentum_chaser, beaten_down → contrarian, fundamentals → analyst, volatile → degen.
+4. Q1 (aggressive vs balanced) and Q3 are secondary — use them to set the config sliders' intensity and to resolve contradictory combinations. They do NOT by themselves change the archetype chosen above.
+
+The config sliders (0-100) reflect intensity within the archetype (aggressive pushes risk up; protect pushes it down; concentrate raises concentration; spread lowers it). Personality traits should be specific and memorable, not generic. The greeting should feel natural for the archetype — a Trend Follower is eager, a Capital Preserver is measured, a Speculator is cocky, a Fundamental Investor is precise.`;
 
 function sanitize(str, maxLen = 200) {
   if (!str) return '';
@@ -89,19 +95,26 @@ function clamp(val, min, max) {
   return Math.max(min, Math.min(max, Math.round(val)));
 }
 
-function buildFallbackProfile(name) {
-  const fallback = getArchetypeConfig('analyst');
+const FALLBACK_GREETINGS = {
+  momentum_chaser: "Let's find what's running. Clean uptrend, real volume — that's where I want to be.",
+  contrarian: "I'll be looking where the crowd isn't. The names everyone's given up on are where I start.",
+  analyst: "Let's study the businesses, not the noise. I buy quality and let it work.",
+  degen: "Buckle up. I'm going after the names that actually move.",
+  diversifier: "I'll spread us across the board so no single miss can sink the day.",
+  guardian: "First job: don't lose it. I'll protect what we've got before reaching for any win.",
+};
+
+function buildFallbackProfile(archetype, name) {
+  const cfg = getArchetypeConfig(archetype);
   return {
-    archetype: 'analyst',
-    config: { ...fallback.defaultConfig },
+    archetype,
+    config: { ...cfg.defaultConfig },
     personality: {
-      traits: ['methodical', 'data-driven'],
-      sectorAffinity: [],
-      riskPhilosophy: 'Balanced approach with a focus on high-conviction setups.',
-      coachingStyle: 'data-driven',
+      traits: ['adaptable', 'strategic'],
+      riskPhilosophy: 'Trades to its temperament, sized to the moment.',
+      coachingStyle: 'balanced',
     },
-    avatarColors: [...fallback.avatarColors],
-    greeting: `${name || 'Agent'} online. Let's study the market and find our edge.`,
+    greeting: FALLBACK_GREETINGS[archetype] || `${name || 'Agent'} reporting for duty. Let's make some moves.`,
   };
 }
 
@@ -120,32 +133,30 @@ export default async function handler(req, res) {
   const user = await requireAuth(req, res);
   if (!user) return;
 
-  // 4. Validate body
-  const { q1, q2, q3, q4, name } = req.body;
-
-  if (!q1 && !q2 && !q4) {
-    return res.status(400).json({ error: 'At least q1, q2, and q4 answers are required' });
+  // 4. Validate body — the three temperament answers are required.
+  const { q1, q2, q3, name } = req.body;
+  if (!q1 || !q2 || !q3) {
+    return res.status(400).json({ error: 'q1 (risk posture), q2 (buy signal), and q3 (concentration) answers are required' });
   }
 
   const agentName = sanitize(name || 'Agent', 20);
   const answer1 = sanitize(q1);
   const answer2 = sanitize(q2);
   const answer3 = sanitize(q3);
-  const answer4 = sanitize(q4);
+  const fallbackArchetype = deriveArchetypeFromAnswers(answer1, answer2, answer3);
 
   // 5. Call Haiku to derive profile
   try {
     const anthropic = getAnthropicClient();
 
-    const userPrompt = `Here are the user's answers:
+    const userPrompt = `Here are the user's three temperament answers:
 
-Q1 (Market drops 3% — gut reaction): ${answer1}
-Q2 (Agent lost badly — what to learn): ${answer2}
-Q3 (Sector focus): ${answer3}
-Q4 (Risk approach): ${answer4}
+Q1 (Risk posture): ${answer1}
+Q2 (Buy signal): ${answer2}
+Q3 (Concentration): ${answer3}
 Agent name: ${agentName}
 
-Use the submit_agent_profile tool to submit the derived profile.`;
+Apply the derivation precedence, then use the submit_agent_profile tool to submit the derived profile. Derive from these three answers only.`;
 
     const response = await anthropic.messages.create({
       model: 'claude-haiku-4-5-20251001',
@@ -160,14 +171,16 @@ Use the submit_agent_profile tool to submit the derived profile.`;
 
     if (!toolUse?.input) {
       console.error('[create-profile] No tool_use in Haiku response');
-      return res.status(200).json({ success: true, profile: buildFallbackProfile(agentName), fallback: true });
+      return res.status(200).json({ success: true, profile: buildFallbackProfile(fallbackArchetype, agentName), fallback: true });
     }
 
     const profile = toolUse.input;
 
-    // 6. Validate and sanitize the derived profile
+    // 6. Validate and sanitize the derived profile. The archetype must be one
+    // of the six; an invalid value falls back to the deterministic mapping
+    // (not a blanket 'analyst') so the result still honors the answers.
     if (!VALID_ARCHETYPES.includes(profile.archetype)) {
-      profile.archetype = 'analyst';
+      profile.archetype = fallbackArchetype;
     }
 
     profile.config = {
@@ -175,17 +188,6 @@ Use the submit_agent_profile tool to submit the derived profile.`;
       concentration: clamp(profile.config?.concentration ?? 50, 0, 100),
       momentum: clamp(profile.config?.momentum ?? 50, 0, 100),
     };
-
-    if (!Array.isArray(profile.avatarColors) || profile.avatarColors.length !== 2) {
-      const archetypeDefaults = getArchetypeConfig(profile.archetype);
-      profile.avatarColors = [...archetypeDefaults.avatarColors];
-    } else {
-      const hexRegex = /^#[0-9a-fA-F]{6}$/;
-      if (!hexRegex.test(profile.avatarColors[0]) || !hexRegex.test(profile.avatarColors[1])) {
-        const archetypeDefaults = getArchetypeConfig(profile.archetype);
-        profile.avatarColors = [...archetypeDefaults.avatarColors];
-      }
-    }
 
     if (!profile.personality?.traits || !Array.isArray(profile.personality.traits)) {
       profile.personality = {
@@ -195,12 +197,12 @@ Use the submit_agent_profile tool to submit the derived profile.`;
     }
 
     if (!profile.greeting || typeof profile.greeting !== 'string') {
-      profile.greeting = `${agentName} reporting for duty. Let's make some moves.`;
+      profile.greeting = FALLBACK_GREETINGS[profile.archetype] || `${agentName} reporting for duty. Let's make some moves.`;
     }
 
     return res.status(200).json({ success: true, profile });
   } catch (error) {
     console.error('[create-profile] Error:', error.message);
-    return res.status(200).json({ success: true, profile: buildFallbackProfile(agentName), fallback: true });
+    return res.status(200).json({ success: true, profile: buildFallbackProfile(fallbackArchetype, agentName), fallback: true });
   }
 }
