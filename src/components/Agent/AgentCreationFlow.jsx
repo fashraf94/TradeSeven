@@ -4,6 +4,7 @@ import { Bot, ArrowLeft, Sparkles } from 'lucide-react';
 import { fetchWithAuth } from '../../utils/fetchWithAuth';
 import useAgent from '../../hooks/useAgent';
 import { getArchetypeDisplayName } from '../../data/archetypeDisplay';
+import { seedDefaultTraits } from '../../services/seedDefaultTraits';
 
 // ── Question data ─────────────────────────────────────────
 
@@ -241,6 +242,13 @@ const AgentCreationFlow = ({ user, tokens, isDesktop, isMobile, onComplete }) =>
         avatarColors: derivedProfile.avatarColors,
       });
       if (agentId) {
+        // Seed the archetype's default trait loadout (forged + equipped so the
+        // defaults are live in the agent's first battle). Never blocks creation.
+        try {
+          await seedDefaultTraits(agentId, derivedProfile.archetype);
+        } catch (seedErr) {
+          console.error('[AgentCreation] seedDefaultTraits failed (non-blocking):', seedErr);
+        }
         onComplete(agentId);
       } else {
         setError('Failed to create agent.');

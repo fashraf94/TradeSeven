@@ -470,6 +470,28 @@ export const TRAIT_BY_ID = Object.fromEntries(
   TRAIT_LIBRARY.map(t => [t.id, t])
 );
 
+// ═══════════════════════════════════════════════════════════
+// ARCHETYPE DEFAULT TRAIT SETS
+// ═══════════════════════════════════════════════════════════
+// The three traits each archetype is seeded with at agent creation
+// (src/services/seedDefaultTraits.js). Keys are archetype CODE-IDS (never the
+// display names). Order matters: traits are equipped in array order, so a
+// shared ruleId across two traits marks the EARLIER one isCustom under the
+// "Last Equipped Wins" rule — exactly as in the hand-equip path.
+//
+// Each set is also tuned so its trait pair fires one combo Class Title:
+//   momentum_chaser → Momentum Purist     degen       → Volatility Harvester
+//   contrarian      → Careful Contrarian  analyst     → Conviction Fortress
+//   guardian        → Risk Fortress       diversifier → Flow Rider
+export const ARCHETYPE_DEFAULT_TRAITS = {
+  momentum_chaser: ['trait-trend-rider', 'trait-breakout-chaser', 'trait-let-winners-run'],
+  degen:           ['trait-squeeze-whisperer', 'trait-breakout-chaser', 'trait-active-trader'],
+  contrarian:      ['trait-bargain-hunter', 'trait-iron-discipline', 'trait-penalty-dodger'],
+  analyst:         ['trait-dual-conviction', 'trait-patient-holder', 'trait-iron-discipline'],
+  guardian:        ['trait-diversifier', 'trait-penalty-dodger', 'trait-iron-discipline'],
+  diversifier:     ['trait-smart-money-tracker', 'trait-sector-rotator', 'trait-score-adaptor'],
+};
+
 // Get all traits for a specific DNA group
 export function getTraitsForGroup(groupId) {
   return TRAIT_LIBRARY.filter(t => t.dnaGroup === groupId);
