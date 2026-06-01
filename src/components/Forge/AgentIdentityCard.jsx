@@ -8,6 +8,7 @@
 import React from 'react';
 import LoadoutDropdown from './LoadoutDropdown';
 import DNASocketMatrix from './DNASocketMatrix';
+import { getArchetypeDisplayName } from '../../data/archetypeDisplay';
 
 const COMBO_GRADIENTS = {
   instincts: { start: '#5EEAD4', end: '#ffffff' },
@@ -71,7 +72,7 @@ export default function AgentIdentityCard({
           color: '#718096',
           fontStyle: 'italic',
         }}>
-          {archetype || 'No personality equipped'}
+          {archetype ? getArchetypeDisplayName(archetype) : 'No personality equipped'}
         </div>
       )}
 

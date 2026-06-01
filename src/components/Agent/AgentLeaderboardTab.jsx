@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Trophy, Crown } from 'lucide-react';
 import { getLeaderboard } from '../../services/agentService';
+import { getArchetypeDisplayName } from '../../data/archetypeDisplay';
 
 // ── Animation variants ──────────────────────────────────────
 
@@ -24,14 +25,15 @@ const FILTERS = [
   { key: 'snake_draft', label: 'Snake Draft' },
 ];
 
+// Colors only — user-facing names come from getArchetypeDisplayName (src/data/archetypeDisplay.js).
 const ARCHETYPE_STYLES = {
-  momentum_chaser: { label: 'Momentum', bg: 'rgba(94, 234, 212, 0.12)', color: '#5eead4' },
-  diversifier: { label: 'Diversifier', bg: 'rgba(16, 185, 129, 0.12)', color: '#10b981' },
-  degen: { label: 'Degen', bg: 'rgba(239, 68, 68, 0.12)', color: '#ef4444' },
-  contrarian: { label: 'Contrarian', bg: 'rgba(168, 85, 247, 0.12)', color: '#a855f7' },
-  analyst: { label: 'Analyst', bg: 'rgba(59, 130, 246, 0.12)', color: '#3b82f6' },
-  copycat: { label: 'Copycat', bg: 'rgba(245, 158, 11, 0.12)', color: '#f59e0b' },
-  guardian: { label: 'Guardian', bg: 'rgba(59, 130, 246, 0.12)', color: '#3b82f6' },
+  momentum_chaser: { bg: 'rgba(94, 234, 212, 0.12)', color: '#5eead4' },
+  diversifier: { bg: 'rgba(16, 185, 129, 0.12)', color: '#10b981' },
+  degen: { bg: 'rgba(239, 68, 68, 0.12)', color: '#ef4444' },
+  contrarian: { bg: 'rgba(168, 85, 247, 0.12)', color: '#a855f7' },
+  analyst: { bg: 'rgba(59, 130, 246, 0.12)', color: '#3b82f6' },
+  copycat: { bg: 'rgba(245, 158, 11, 0.12)', color: '#f59e0b' },
+  guardian: { bg: 'rgba(59, 130, 246, 0.12)', color: '#3b82f6' },
 };
 
 const RANK_COLORS = [
@@ -96,14 +98,14 @@ const Avatar = ({ agent, size = 32 }) => (
 );
 
 const ArchetypeBadge = ({ archetype }) => {
-  const style = ARCHETYPE_STYLES[archetype] || { label: archetype || 'Unknown', bg: 'rgba(148,163,184,0.12)', color: '#94a3b8' };
+  const style = ARCHETYPE_STYLES[archetype] || { bg: 'rgba(148,163,184,0.12)', color: '#94a3b8' };
   return (
     <span style={{
       display: 'inline-block', padding: '2px 8px', borderRadius: '10px',
       fontSize: '10px', fontWeight: 600,
       background: style.bg, color: style.color,
     }}>
-      {style.label}
+      {getArchetypeDisplayName(archetype)}
     </span>
   );
 };
@@ -189,7 +191,6 @@ const PodiumCard = ({ agent, rank, tokens, isMobile }) => {
 // ── Table Row ───────────────────────────────────────────────
 
 const TableRow = ({ agent, rank, tokens, isOwn, isDesktop }) => {
-  const archStyle = ARCHETYPE_STYLES[agent.archetype];
   const streakText = agent.stats?.currentStreak
     ? (agent.stats.currentStreak > 0 ? `${agent.stats.currentStreak}W streak` : `${Math.abs(agent.stats.currentStreak)}L streak`)
     : '';
@@ -222,7 +223,7 @@ const TableRow = ({ agent, rank, tokens, isOwn, isDesktop }) => {
           {agent._preBeta && <span style={{ fontSize: 9, color: tokens.amber, fontWeight: 400, marginLeft: 6 }}>{'< 5 games'}</span>}
         </div>
         <div style={{ fontSize: 10, color: tokens.textMuted, marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {archStyle?.label || agent.archetype || ''}
+          {agent.archetype ? getArchetypeDisplayName(agent.archetype) : ''}
           {agent.evolutionCycle ? ` · Evo ${agent.evolutionCycle}` : ''}
           {streakText ? ` · ${streakText}` : ''}
         </div>

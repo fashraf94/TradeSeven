@@ -326,7 +326,7 @@ const DISCIPLINE_TRAITS = [
   {
     id: 'trait-iron-discipline',
     name: 'Iron Discipline',
-    identityStatement: 'Never lets one bad stock ruin the battle',
+    identityStatement: 'Leans toward cutting losers quickly and not chasing a falling position',
     dnaGroup: 'discipline',
     icon: 'Lock',
     source: 'library',
@@ -382,7 +382,7 @@ const DISCIPLINE_TRAITS = [
   {
     id: 'trait-active-trader',
     name: 'Active Trader',
-    identityStatement: 'Rotates fast into what is working right now',
+    identityStatement: 'Leans toward rotating into what is working right now',
     dnaGroup: 'discipline',
     icon: 'Repeat',
     source: 'library',
@@ -432,7 +432,7 @@ const DISCIPLINE_TRAITS = [
   {
     id: 'trait-let-winners-run',
     name: 'Let Winners Run',
-    identityStatement: 'Holds the best picks through scoring thresholds instead of cashing out early',
+    identityStatement: 'Leans toward holding the best picks through scoring thresholds',
     dnaGroup: 'discipline',
     icon: 'Rocket',
     source: 'library',

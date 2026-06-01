@@ -73,24 +73,24 @@ const STRENGTH_DESCRIPTIONS = {
     dominant: 'Aggressive rotation — concentrates in leading sectors, fast response',
   },
   'trait-penalty-dodger': {
-    subtle: 'Moderate protection — caps volatile stocks at Core tier',
-    moderate: 'Strong protection — restricts volatile stocks to Support tier',
-    dominant: 'Maximum protection — tight volatility limits, aggressive demotion',
+    subtle: 'Mild bust-aversion — leans slightly toward safer placements for volatile names',
+    moderate: 'Strong bust-aversion — biases away from putting volatile names in high tiers',
+    dominant: 'Bust-protection first — strongly leans toward safer tiers for volatile names',
   },
   'trait-iron-discipline': {
-    subtle: 'Relaxed stops — wider eject threshold, patient with swaps',
-    moderate: 'Standard discipline — balanced stops and swap hurdles',
-    dominant: 'Tight discipline — aggressive stops, high hurdle for every swap',
+    subtle: 'Light discipline lean — a bit quicker to give up on laggards',
+    moderate: 'Balanced discipline lean — biases toward cutting losers and not chasing falling names',
+    dominant: 'Discipline-first — strongly biases toward cutting losers fast',
   },
   'trait-patient-holder': {
-    subtle: 'Some patience — short hold period, exits at Double Bagger',
-    moderate: 'Standard patience — 90 min holds, exits at BaggerBomb',
-    dominant: 'Maximum patience — long holds, trusts the thesis fully',
+    subtle: 'Light patience lean — slightly slower to react to dips',
+    moderate: 'Balanced patience — biases toward giving picks time over reacting to every dip',
+    dominant: 'Maximum patience — strongly biases toward holding through the noise',
   },
   'trait-active-trader': {
-    subtle: 'Moderate activity — swaps stagnant stocks after 2 hours',
-    moderate: 'Active rotation — swaps stagnant stocks after 90 minutes',
-    dominant: 'Hyper-active — swaps quickly, low tolerance for stagnation',
+    subtle: 'Light rotation lean — slightly quicker to move on from stalled names',
+    moderate: 'Active rotation — biases toward cycling into what is working now',
+    dominant: 'Hyper-active lean — strongly favors rotating out of stagnation',
   },
   'trait-diversifier': {
     subtle: 'Light diversification — minimum sector spread',
@@ -98,9 +98,9 @@ const STRENGTH_DESCRIPTIONS = {
     dominant: 'Maximum diversification — heavy anchors, broad sector spread',
   },
   'trait-let-winners-run': {
-    subtle: 'Holds winners to Double Bagger threshold before considering exit',
-    moderate: 'Holds winners through BaggerBomb — lets scoring thresholds decide',
-    dominant: 'Maximum conviction hold — rides winners through all thresholds',
+    subtle: 'Light hold lean — inclined to hold winners a little longer',
+    moderate: 'Holds winners — biases toward riding the best picks through scoring thresholds',
+    dominant: 'Maximum conviction hold — strongly favors letting winners run',
   },
 };
 
@@ -198,6 +198,9 @@ export default function TraitCard({
 
       {/* Strength toggle */}
       <div style={{ marginBottom: 10 }}>
+        <div style={{ fontSize: 10, color: '#718096', marginBottom: 4 }}>
+          Intensity — how strongly this trait shapes the way the agent thinks
+        </div>
         <TraitStrengthToggle
           value={isCustom ? 'custom' : (isEquipped ? currentStrength : strength)}
           onChange={handleStrengthChange}

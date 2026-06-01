@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Bot, ArrowLeft, Sparkles } from 'lucide-react';
 import { fetchWithAuth } from '../../utils/fetchWithAuth';
 import useAgent from '../../hooks/useAgent';
+import { getArchetypeDisplayName } from '../../data/archetypeDisplay';
 
 // ── Question data ─────────────────────────────────────────
 
@@ -537,7 +538,7 @@ const AgentCreationFlow = ({ user, tokens, isDesktop, isMobile, onComplete }) =>
     if (!derivedProfile) return null;
     const { archetype, config: cfg, personality, avatarColors, greeting } = derivedProfile;
     const [color1, color2] = avatarColors || [tokens.teal, tokens.purple];
-    const archetypeLabel = archetype?.replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase()) || 'Unknown';
+    const archetypeLabel = getArchetypeDisplayName(archetype);
 
     return (
       <motion.div
