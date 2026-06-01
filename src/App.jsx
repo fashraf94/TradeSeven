@@ -108,7 +108,7 @@ import BottomNav from './components/Navigation/BottomNav';
 import DashboardLoop from './components/Dashboard/DashboardLoop';
 import DashboardDesktop from './components/Dashboard/DashboardDesktop';
 import DesktopSidebar from './components/Navigation/DesktopSidebar';
-import { AgentDashboard } from './components/Agent';
+import { AgentDashboard, OnboardingExperience } from './components/Agent';
 import { ForgeScreen } from './components/Forge';
 import ForgeLanding from './components/Forge/ForgeLanding';
 
@@ -2184,7 +2184,7 @@ export default function PortfolioDuel() {
   const [screen, setScreen] = useState('home');
 
   // ── Season Mode state ────────────────────────────────────
-  const { agent: primaryAgent } = useAgent(user?.uid);
+  const { agent: primaryAgent, hasAgent, loading: agentLoading } = useAgent(user?.uid);
   const [activeSeason, setActiveSeason] = useState(null);
   const [activeSeasonEntry, setActiveSeasonEntry] = useState(null);
   // All of the user's simultaneously-active (or pending) season entries,
@@ -9623,6 +9623,30 @@ export default function PortfolioDuel() {
   }; // end getScreenContent
 
   const screenContent = getScreenContent();
+
+  // ============================================
+  // ONBOARDING GATE — new-user "build your agent" experience
+  // ============================================
+  // An authenticated user with no agent builds one before reaching the rest of
+  // the app. We wait for the agent subscription to resolve (agentLoading) before
+  // deciding, so there's no flash of the dashboard followed by a redirect. This
+  // returns ahead of the main shell below, so the flow renders full-screen with
+  // no nav chrome (nothing to tab away into). Once the agent exists, hasAgent
+  // flips true and routing resumes normally (onComplete lands on the dashboard).
+  if (user && !userLoading && !authLoading) {
+    if (agentLoading) {
+      return <OnboardingExperience phase="loading" />;
+    }
+    if (!hasAgent) {
+      return (
+        <OnboardingExperience
+          phase="create"
+          user={user}
+          onComplete={() => setScreen('dashboard')}
+        />
+      );
+    }
+  }
 
   // ============================================
   // UNIFIED RETURN — EarningsGame (always mounted) + active screen + ClashBot widget

@@ -186,16 +186,17 @@ const AgentDashboard = ({ user, setScreen, onCreateAgentBattle, setShowForge, on
         </div>
       )}
 
-      {/* No agent — creation flow */}
+      {/* No agent — creation flow. New users normally hit the App-level
+          onboarding gate before reaching this tab; this mount is the fallback
+          (e.g. an existing user whose agent subscription momentarily resolves
+          empty). On completion, land on the Compete dashboard like the gate. */}
       {!hasAgent && !loading && (
         <AgentCreationFlow
           user={user}
           tokens={tokens}
           isDesktop={isDesktop}
           isMobile={isMobile}
-          onComplete={(agentId) => {
-            console.log('[Agent] Created:', agentId);
-          }}
+          onComplete={() => setScreen('dashboard')}
         />
       )}
 
