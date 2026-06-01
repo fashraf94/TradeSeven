@@ -2,6 +2,7 @@ import React from 'react';
 import { motion } from 'framer-motion';
 import { Zap } from 'lucide-react';
 import MechSVG from '../Forge/MechSVG';
+import { getArchetypeDisplayName } from '../../data/archetypeDisplay';
 
 const AgentSidebar = ({ agent, speech, deployText, currentLevel, levelConfig, nextLevelInfo, isDesktop, isMobile, tokens, onDeploy, deploying }) => {
   const nameSize = isDesktop ? '18px' : '16px';
@@ -9,9 +10,7 @@ const AgentSidebar = ({ agent, speech, deployText, currentLevel, levelConfig, ne
   // Null-safe defaults
   const name = agent?.name || 'Agent';
   const avatarColors = agent?.avatarColors || ['#5eead4', '#a855f7'];
-  const archetype = agent?.archetype
-    ? agent.archetype.replace(/_/g, ' ').replace(/^./, c => c.toUpperCase())
-    : 'Unknown';
+  const archetype = getArchetypeDisplayName(agent?.archetype);
   const drift = agent?.archetypeDrift || null;
   const wins = agent?.stats?.wins || 0;
   const losses = agent?.stats?.losses || 0;

@@ -19,9 +19,13 @@
 // differentiated (degen ≠ guardian) so the archetype→physics wire is real at
 // launch (Gate 1).
 
+// `.label` is the API-side USER-FACING display name (used in prompts/logs).
+// It mirrors the frontend resolver in src/data/archetypeDisplay.js — the
+// canonical source. Keep the two in sync when renaming. The code-id keys
+// (momentum_chaser, degen, …) are stable identifiers and must NOT change.
 export const ARCHETYPE_CONFIGS = {
   momentum_chaser: {
-    label: 'Momentum Chaser',
+    label: 'Momentum Hunter',
     defaultPreset: 'aggressive',
     regimePreferences: {
       favoredStrategies: ['volatility_squeeze', '52_week_high'],
@@ -81,7 +85,7 @@ export const ARCHETYPE_CONFIGS = {
     avatarColors: ['#3b82f6', '#5eead4'],
   },
   diversifier: {
-    label: 'Diversifier',
+    label: 'Broad Market Specialist',
     defaultPreset: 'balanced',
     regimePreferences: {
       favoredStrategies: ['rs_momentum'],
@@ -202,5 +206,15 @@ export const ARCHETYPE_CONFIGS = {
 export const getArchetypeConfig = (archetype) => {
   return ARCHETYPE_CONFIGS[archetype] || ARCHETYPE_CONFIGS.analyst;
 };
+
+// User-facing display label for an archetype, for API-side prompts/logs.
+// Mirrors the frontend resolver in src/data/archetypeDisplay.js.
+//   - known code-id      → its .label
+//   - unknown-but-present → the raw value (legacy behavior)
+//   - missing            → `fallback`
+// Use THIS for display, not getArchetypeConfig(...).label — getArchetypeConfig
+// falls back to the analyst config and would mask a missing archetype.
+export const getArchetypeLabel = (archetype, fallback = 'strategist') =>
+  ARCHETYPE_CONFIGS[archetype]?.label || archetype || fallback;
 
 export const VALID_ARCHETYPES = Object.keys(ARCHETYPE_CONFIGS);

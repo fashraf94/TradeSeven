@@ -2,6 +2,7 @@
 // 48px sticky header showing Class Title + Bundle Name when mech scrolls away (mobile).
 
 import React from 'react';
+import { getArchetypeDisplayName } from '../../data/archetypeDisplay';
 
 export default function MechVisorStrip({ comboLabel, archetype, activeBundleName, onTapToExpand }) {
   return (
@@ -29,7 +30,7 @@ export default function MechVisorStrip({ comboLabel, archetype, activeBundleName
         whiteSpace: 'nowrap',
         maxWidth: '50%',
       }}>
-        {comboLabel ? `The ${comboLabel.label}` : archetype || 'Agent'}
+        {comboLabel ? `The ${comboLabel.label}` : (archetype ? getArchetypeDisplayName(archetype) : 'Agent')}
       </div>
 
       {/* Right: Bundle Name */}

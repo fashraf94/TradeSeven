@@ -3,6 +3,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Bot, ArrowLeft, Sparkles } from 'lucide-react';
 import { fetchWithAuth } from '../../utils/fetchWithAuth';
 import useAgent from '../../hooks/useAgent';
+import { getArchetypeDisplayName } from '../../data/archetypeDisplay';
+import { seedDefaultTraits } from '../../services/seedDefaultTraits';
 
 // ── Question data ─────────────────────────────────────────
 
@@ -240,6 +242,13 @@ const AgentCreationFlow = ({ user, tokens, isDesktop, isMobile, onComplete }) =>
         avatarColors: derivedProfile.avatarColors,
       });
       if (agentId) {
+        // Seed the archetype's default trait loadout (draft, like hand-equip);
+        // it goes live via the deploy-time activeRules projection. Never blocks creation.
+        try {
+          await seedDefaultTraits(agentId, derivedProfile.archetype);
+        } catch (seedErr) {
+          console.error('[AgentCreation] seedDefaultTraits failed (non-blocking):', seedErr);
+        }
         onComplete(agentId);
       } else {
         setError('Failed to create agent.');
@@ -537,7 +546,7 @@ const AgentCreationFlow = ({ user, tokens, isDesktop, isMobile, onComplete }) =>
     if (!derivedProfile) return null;
     const { archetype, config: cfg, personality, avatarColors, greeting } = derivedProfile;
     const [color1, color2] = avatarColors || [tokens.teal, tokens.purple];
-    const archetypeLabel = archetype?.replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase()) || 'Unknown';
+    const archetypeLabel = getArchetypeDisplayName(archetype);
 
     return (
       <motion.div

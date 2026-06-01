@@ -163,22 +163,19 @@ const INSTINCT_TRAITS = [
     icon: 'Compass',
     source: 'library',
     tags: ['VWAP', 'institutional', 'sector', 'smart-money'],
-    ruleIds: ['tv-04', 'mb-05', 'tv-14'],
+    ruleIds: ['tv-04', 'mb-05'],
     strengthProfiles: {
       subtle: {
         'tv-04': { dev: 0.2 },
         'mb-05': { signal: 'any bullish' },
-        'tv-14': { max_pct: 50 },
       },
       moderate: {
         'tv-04': { dev: 0.3 },
         'mb-05': { signal: 'any bullish' },
-        'tv-14': { max_pct: 40 },
       },
       dominant: {
         'tv-04': { dev: 0.5 },
         'mb-05': { signal: 'bullish crossover' },
-        'tv-14': { max_pct: 30 },
       },
     },
   },
@@ -326,7 +323,7 @@ const DISCIPLINE_TRAITS = [
   {
     id: 'trait-iron-discipline',
     name: 'Iron Discipline',
-    identityStatement: 'Never lets one bad stock ruin the battle',
+    identityStatement: 'Leans toward cutting losers quickly and not chasing a falling position',
     dnaGroup: 'discipline',
     icon: 'Lock',
     source: 'library',
@@ -382,7 +379,7 @@ const DISCIPLINE_TRAITS = [
   {
     id: 'trait-active-trader',
     name: 'Active Trader',
-    identityStatement: 'Rotates fast into what is working right now',
+    identityStatement: 'Leans toward rotating into what is working right now',
     dnaGroup: 'discipline',
     icon: 'Repeat',
     source: 'library',
@@ -432,7 +429,7 @@ const DISCIPLINE_TRAITS = [
   {
     id: 'trait-let-winners-run',
     name: 'Let Winners Run',
-    identityStatement: 'Holds the best picks through scoring thresholds instead of cashing out early',
+    identityStatement: 'Leans toward holding the best picks through scoring thresholds',
     dnaGroup: 'discipline',
     icon: 'Rocket',
     source: 'library',
@@ -469,6 +466,28 @@ export const TRAIT_LIBRARY = [
 export const TRAIT_BY_ID = Object.fromEntries(
   TRAIT_LIBRARY.map(t => [t.id, t])
 );
+
+// ═══════════════════════════════════════════════════════════
+// ARCHETYPE DEFAULT TRAIT SETS
+// ═══════════════════════════════════════════════════════════
+// The three traits each archetype is seeded with at agent creation
+// (src/services/seedDefaultTraits.js). Keys are archetype CODE-IDS (never the
+// display names). Order matters: traits are equipped in array order, so a
+// shared ruleId across two traits marks the EARLIER one isCustom under the
+// "Last Equipped Wins" rule — exactly as in the hand-equip path.
+//
+// Each set is also tuned so its trait pair fires one combo Class Title:
+//   momentum_chaser → Momentum Purist     degen       → Volatility Harvester
+//   contrarian      → Careful Contrarian  analyst     → Conviction Fortress
+//   guardian        → Risk Fortress       diversifier → Flow Rider
+export const ARCHETYPE_DEFAULT_TRAITS = {
+  momentum_chaser: ['trait-trend-rider', 'trait-breakout-chaser', 'trait-let-winners-run'],
+  degen:           ['trait-squeeze-whisperer', 'trait-breakout-chaser', 'trait-active-trader'],
+  contrarian:      ['trait-bargain-hunter', 'trait-iron-discipline', 'trait-penalty-dodger'],
+  analyst:         ['trait-dual-conviction', 'trait-patient-holder', 'trait-iron-discipline'],
+  guardian:        ['trait-diversifier', 'trait-penalty-dodger', 'trait-iron-discipline'],
+  diversifier:     ['trait-smart-money-tracker', 'trait-sector-rotator', 'trait-score-adaptor'],
+};
 
 // Get all traits for a specific DNA group
 export function getTraitsForGroup(groupId) {

@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { TrendingUp, GitBranch, Shield, Target, Zap, Clock, Award, ChevronDown, ChevronUp } from 'lucide-react';
+import { getArchetypeDisplayName } from '../../data/archetypeDisplay';
 
 // ── Animation variants ──────────────────────────────────────
 
@@ -58,10 +59,7 @@ const estimateCycleDate = (createdAt, cycleNum, totalCycles) => {
   return new Date(start + span * fraction);
 };
 
-const formatArchetype = (arch) => {
-  if (!arch) return 'Unknown';
-  return arch.replace(/_/g, ' ').replace(/^./, c => c.toUpperCase());
-};
+const formatArchetype = (arch) => getArchetypeDisplayName(arch);
 
 const formatDate = (date) => {
   if (!date || isNaN(date.getTime())) return '';

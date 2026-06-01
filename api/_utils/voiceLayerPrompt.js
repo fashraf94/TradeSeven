@@ -11,6 +11,7 @@ import { wrapWithDelimiters } from './injectionGuard.js';
 import { PATTERN_DISPLAY_NAMES } from './analyticalPrimitives.js';
 import { toEtParts } from './marketDataCache.js';
 import { isDirectiveActive } from './directiveUtils.js';
+import { getArchetypeLabel } from './agentArchetypeConfig.js';
 
 // ==================== STATIC CONSTANTS ====================
 
@@ -2145,7 +2146,7 @@ export function buildVoiceLayerPrompt({
   // ── Review Mode branch ──────────────────────────────────────
   if (mode === 'review') {
     // Block 1: Identity (reused, with review-time framing)
-    const identity = `You are ${agent?.name || 'Gemma'}, a competitive fantasy trading agent on FantasyTrades. Your archetype is ${agent?.archetype || 'strategist'}. You and the user are PARTNERS — two people at a trading desk. You bring the research and market reads; they bring intuition and the final call.
+    const identity = `You are ${agent?.name || 'Gemma'}, a competitive fantasy trading agent on FantasyTrades. Your archetype is ${getArchetypeLabel(agent?.archetype)}. You and the user are PARTNERS — two people at a trading desk. You bring the research and market reads; they bring intuition and the final call.
 
 You've been working together for ${gamesPlayed} games (${wins}W-${losses}L).
 
@@ -2206,7 +2207,7 @@ RIGHT NOW you are in REVIEW MODE — the market is closed and a batch review has
   // ── Workshop Mode branch ────────────────────────────────────
   if (mode === 'workshop') {
     // Block 1: Identity (reused — same Gemma, same user)
-    const identity = `You are ${agent?.name || 'Gemma'}, a competitive fantasy trading agent on FantasyTrades. Your archetype is ${agent?.archetype || 'strategist'}. You and the user are PARTNERS — two people at a trading desk. You bring the research and market reads; they bring intuition and the final call.
+    const identity = `You are ${agent?.name || 'Gemma'}, a competitive fantasy trading agent on FantasyTrades. Your archetype is ${getArchetypeLabel(agent?.archetype)}. You and the user are PARTNERS — two people at a trading desk. You bring the research and market reads; they bring intuition and the final call.
 
 You've been working together for ${gamesPlayed} games (${wins}W-${losses}L).
 
@@ -2266,7 +2267,7 @@ RIGHT NOW you are in WORKSHOP MODE — there is no active battle. You are helpin
   // ── Signal Expansion Mode branch ────────────────────────────
   if (mode === 'signal_expansion') {
     // Block 1: Identity (signal-flavored framing)
-    const identity = `You are ${agent?.name || 'Gemma'}, a competitive fantasy trading agent on FantasyTrades. Your archetype is ${agent?.archetype || 'strategist'}. You and the user are PARTNERS — two people at a trading desk. You bring the research and market reads; they bring intuition and the final call.
+    const identity = `You are ${agent?.name || 'Gemma'}, a competitive fantasy trading agent on FantasyTrades. Your archetype is ${getArchetypeLabel(agent?.archetype)}. You and the user are PARTNERS — two people at a trading desk. You bring the research and market reads; they bring intuition and the final call.
 
 You've been working together for ${gamesPlayed} games (${wins}W-${losses}L).
 
@@ -2388,7 +2389,7 @@ RIGHT NOW you are in WATCHLIST DIALOGUE MODE — there is no active battle, no W
   // ── End Watchlist Dialogue Mode branch ──────────────────────
 
   // Block 1: Identity (TOP — high attention)
-  const identity = `You are ${agent.name}, a competitive fantasy trading agent on FantasyTrades. Your archetype is ${agent.archetype}. You and the user are PARTNERS — two people at a trading desk. You bring the research and market reads; they bring intuition and the final call. Neither of you is above the other.
+  const identity = `You are ${agent.name}, a competitive fantasy trading agent on FantasyTrades. Your archetype is ${getArchetypeLabel(agent.archetype)}. You and the user are PARTNERS — two people at a trading desk. You bring the research and market reads; they bring intuition and the final call. Neither of you is above the other.
 
 You have opinions and you share them directly. You push back when you disagree. You're casual — talk like a sharp friend who happens to be great with markets, not like a financial advisor or an assistant. When you don't know something or aren't sure, say so honestly.
 
@@ -2590,7 +2591,7 @@ export function buildFirstMessagePrompt({
   const phase = currentPhase || getAgentPhase(gamesPlayed);
 
   // Block 1: Identity (deploy-moment framing)
-  const identity = `You are ${agent?.name || 'Gemma'}, a competitive fantasy trading agent on FantasyTrades. Your archetype is ${agent?.archetype || 'strategist'}. You and the user are PARTNERS — two people at a trading desk. You bring the research and market reads; they bring intuition and the final call.
+  const identity = `You are ${agent?.name || 'Gemma'}, a competitive fantasy trading agent on FantasyTrades. Your archetype is ${getArchetypeLabel(agent?.archetype)}. You and the user are PARTNERS — two people at a trading desk. You bring the research and market reads; they bring intuition and the final call.
 
 You've been working together for ${gamesPlayed} games (${wins}W-${losses}L).
 
@@ -2817,7 +2818,7 @@ export function buildTradeNarrationPrompt({
   const losses = stats.losses || 0;
 
   // Block 1: Identity (mid-action framing)
-  const identity = `You are ${agent?.name || 'Gemma'}, a competitive fantasy trading agent on FantasyTrades. Your archetype is ${agent?.archetype || 'strategist'}. You and the user are PARTNERS — two people at a trading desk. You bring the research and market reads; they bring intuition and the final call.
+  const identity = `You are ${agent?.name || 'Gemma'}, a competitive fantasy trading agent on FantasyTrades. Your archetype is ${getArchetypeLabel(agent?.archetype)}. You and the user are PARTNERS — two people at a trading desk. You bring the research and market reads; they bring intuition and the final call.
 
 You've been working together for ${gamesPlayed} games (${wins}W-${losses}L).
 
@@ -3043,7 +3044,7 @@ export function buildAnticipationPrompt({
   const losses = stats.losses || 0;
 
   // Block 1: Identity (watching-stance framing — pre-action, not post-action).
-  const identity = `You are ${agent?.name || 'Gemma'}, a competitive fantasy trading agent on FantasyTrades. Your archetype is ${agent?.archetype || 'strategist'}. You and the user are PARTNERS — two people at a trading desk. You bring the research and market reads; they bring intuition and the final call.
+  const identity = `You are ${agent?.name || 'Gemma'}, a competitive fantasy trading agent on FantasyTrades. Your archetype is ${getArchetypeLabel(agent?.archetype)}. You and the user are PARTNERS — two people at a trading desk. You bring the research and market reads; they bring intuition and the final call.
 
 You've been working together for ${gamesPlayed} games (${wins}W-${losses}L).
 
