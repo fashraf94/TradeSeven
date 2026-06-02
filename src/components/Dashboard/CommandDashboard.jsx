@@ -23,9 +23,14 @@ import { Menu, BookOpen, Boxes, Rocket, Activity, Film, MessageCircle } from 'lu
 import HoloCard from '../shared/HoloCard';
 import AgentOrb from '../shared/AgentOrb';
 import EquipStation from './EquipStation';
+import DeployStation from './DeployStation';
+import ManageStation from './ManageStation';
+import ReviewStation from './ReviewStation';
 import { useTheme } from '../../contexts/ThemeContext';
 import useAgent from '../../hooks/useAgent';
 import useDailyRegimeBrief from '../../hooks/useDailyRegimeBrief';
+import useRecentCompletedAgentBattles from '../../hooks/useRecentCompletedAgentBattles';
+import { deployAgent } from '../../services/agentDeploy';
 import { getArchetypeDisplayName } from '../../data/archetypeDisplay';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -77,13 +82,6 @@ const STAGES = [
   { key: 'review', n: '05', label: 'Review', Icon: Film },
 ];
 
-const STATION_BLURB = {
-  equip: 'Your agent’s bench — archetype, watchlist, and an open rules slot.',
-  deploy: 'Send your agent into a live hour on today’s read.',
-  manage: 'Track your agent while a battle is live.',
-  review: 'Break down the tape after the bell.',
-};
-
 // ─── Motion ──────────────────────────────────────────────────────────────────
 
 const containerVariants = { hidden: {}, visible: { transition: { staggerChildren: 0.06 } } };
@@ -132,6 +130,10 @@ export default function CommandDashboard({
   setSidebarOpen,
   unreadCount,
   setShowForge,
+  setCurrentBattle,
+  activeAgentBattles = [],
+  onCreateAgentBattle,
+  onOpenAgentBattle,
   // The remaining DashboardLoop props (battles, modal setters, etc.) are passed
   // by the same call site and get destructured here as later phases wire
   // Deploy / Manage / Review. Unreferenced for now — harmlessly ignored.
@@ -149,6 +151,31 @@ export default function CommandDashboard({
   const archetype = agent?.archetype ? getArchetypeDisplayName(agent.archetype) : null;
 
   const orbState = drb.loading ? 'reading' : 'ready';
+
+  // ── Deploy / Manage / Review (Phase 3) ────────────────────────────────────
+  const liveBattles = (activeAgentBattles || []).filter(
+    (b) => b.status === 'active' || b.status === 'market_closed'
+  );
+  const liveBattle = liveBattles[0] || null;
+  const isLive = Boolean(liveBattle);
+  const recentCompleted = useRecentCompletedAgentBattles(3);
+
+  const [deploying, setDeploying] = useState(false);
+  const deployDisabled = deploying || isLive || !agent;
+  const handleDeploy = async () => {
+    if (deployDisabled) return;
+    setDeploying(true);
+    try {
+      await deployAgent(agent.id, onCreateAgentBattle);
+    } catch (err) {
+      console.error('[Deploy] Error:', err);
+    }
+    setDeploying(false);
+  };
+  const openFilmRoom = (battle) => {
+    setCurrentBattle?.(battle);
+    setScreen?.('filmRoom');
+  };
 
   // Compact/expandable brief: collapsed shows ~3 clamped lines; tap expands.
   const [expanded, setExpanded] = useState(false);
@@ -370,16 +397,20 @@ export default function CommandDashboard({
             }}>
               <motion.button
                 type="button"
-                whileTap={{ scale: 0.97 }}
+                onClick={handleDeploy}
+                disabled={deployDisabled}
+                whileTap={deployDisabled ? undefined : { scale: 0.97 }}
                 style={{
                   flex: 1.4, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '7px',
-                  padding: '11px 14px', borderRadius: '12px', border: 'none', cursor: 'pointer',
+                  padding: '11px 14px', borderRadius: '12px', border: 'none',
+                  cursor: deployDisabled ? 'default' : 'pointer',
                   background: accent, color: readableText(accent), fontSize: '14px', fontWeight: 700,
                   boxShadow: `0 0 16px ${hexToRgba(accent, 0.30)}`,
+                  opacity: deployDisabled ? 0.55 : 1,
                 }}
               >
                 <Rocket size={16} />
-                Deploy on this read
+                {deploying ? 'Deploying…' : isLive ? 'Battle in progress' : 'Deploy on this read'}
               </motion.button>
               <motion.button
                 type="button"
@@ -403,46 +434,43 @@ export default function CommandDashboard({
           <EquipStation agent={agent} accent={accent} tokens={tokens} setShowForge={setShowForge} />
         </motion.div>
 
-        {/* ── 03–05 · stubs (wired in later phases) ─────────────────────── */}
-        {STAGES.filter((s) => s.key === 'deploy' || s.key === 'manage' || s.key === 'review').map((s) => (
-          <motion.div key={s.key} variants={sectionVariants}>
-            <HoloCard
-              size="lg"
-              style={{
-                background: tokens.bgCard,
-                border: `1px solid ${tokens.borderDefault}`,
-                boxShadow: tokens.obsidianShadow,
-                opacity: 0.7,
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                <div style={{
-                  width: '40px', height: '40px', borderRadius: '10px', flexShrink: 0,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  background: tokens.bgIcon, border: `1px solid ${tokens.borderDefault}`,
-                  color: tokens.textMuted,
-                }}>
-                  <s.Icon size={18} />
-                </div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: '14px', fontWeight: 700, color: tokens.textPrimary }}>
-                    {s.n} · {s.label}
-                  </div>
-                  <div style={{ fontSize: '12px', color: tokens.textMuted, marginTop: '2px' }}>
-                    {STATION_BLURB[s.key]}
-                  </div>
-                </div>
-                <span style={{
-                  fontSize: '9px', fontWeight: 700, letterSpacing: '0.5px', textTransform: 'uppercase',
-                  color: tokens.textFaint, padding: '3px 8px', borderRadius: '20px',
-                  background: tokens.bgIcon, border: `1px solid ${tokens.borderDefault}`,
-                }}>
-                  Soon
-                </span>
-              </div>
-            </HoloCard>
+        {/* ── 03 · Deploy ────────────────────────────────────────────────── */}
+        <motion.div variants={sectionVariants}>
+          <DeployStation
+            agent={agent}
+            accent={accent}
+            tokens={tokens}
+            isLive={isLive}
+            deploying={deploying}
+            onDeploy={handleDeploy}
+          />
+        </motion.div>
+
+        {/* ── 04 · Manage (only when a battle is live) ───────────────────── */}
+        {isLive && (
+          <motion.div variants={sectionVariants}>
+            <ManageStation
+              battle={liveBattle}
+              agent={agent}
+              accent={accent}
+              tokens={tokens}
+              onOpen={onOpenAgentBattle}
+            />
           </motion.div>
-        ))}
+        )}
+
+        {/* ── 05 · Review (only when a recent completed battle exists) ────── */}
+        {recentCompleted.length > 0 && (
+          <motion.div variants={sectionVariants}>
+            <ReviewStation
+              battles={recentCompleted}
+              agent={agent}
+              accent={accent}
+              tokens={tokens}
+              onReview={openFilmRoom}
+            />
+          </motion.div>
+        )}
 
         {/* Footer loop label */}
         <div style={{

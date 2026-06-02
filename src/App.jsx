@@ -8503,6 +8503,8 @@ export default function PortfolioDuel() {
             <DashboardComponent
               user={user}
               setShowForge={setShowForge}
+              onCreateAgentBattle={handleCreateAgentTrainingBattle}
+              onOpenAgentBattle={handleOpenAgentBattle}
               activeBattles={activeBattles}
               activeDraftBattles={activeDraftBattles}
               activeTrainingBattles={activeTrainingBattles}
