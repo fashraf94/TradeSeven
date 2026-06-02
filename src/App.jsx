@@ -107,6 +107,8 @@ import { isMarketOpen } from './utils/marketSchedule';
 import BottomNav from './components/Navigation/BottomNav';
 import DashboardLoop from './components/Dashboard/DashboardLoop';
 import DashboardDesktop from './components/Dashboard/DashboardDesktop';
+import CommandDashboard from './components/Dashboard/CommandDashboard';
+import { COMMAND_DASHBOARD_ENABLED } from './config/featureFlags';
 import DesktopSidebar from './components/Navigation/DesktopSidebar';
 import { AgentDashboard, OnboardingExperience } from './components/Agent';
 import AppLoadingScreen from './components/shared/AppLoadingScreen';
@@ -8487,12 +8489,18 @@ export default function PortfolioDuel() {
     // MOBILE: The Loop — unified battle feed
     // ═══════════════════════════════════════════════════════════
     if (isMobile) {
+      // Flag-gated swap: the new agent-command loop-home vs. the existing feed.
+      // Same props either way; DashboardLoop stays untouched (instant rollback).
+      const DashboardComponent = COMMAND_DASHBOARD_ENABLED ? CommandDashboard : DashboardLoop;
       return (
         <ErrorBoundary name="Dashboard" onNavigateDashboard={() => { setScreen('home'); }}>
           <div style={containerStyle}>
             <DesktopBackground isDesktop={isDesktop} />
-            <DashboardLoop
+            <DashboardComponent
               user={user}
+              setShowForge={setShowForge}
+              onCreateAgentBattle={handleCreateAgentTrainingBattle}
+              onOpenAgentBattle={handleOpenAgentBattle}
               activeBattles={activeBattles}
               activeDraftBattles={activeDraftBattles}
               activeTrainingBattles={activeTrainingBattles}

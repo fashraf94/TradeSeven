@@ -13,6 +13,7 @@ import AgentEvolutionTab from './AgentEvolutionTab';
 import AgentCreationFlow from './AgentCreationFlow';
 import LevelUpNotification from './LevelUpNotification';
 import { markEvolutionCycleViewed } from '../../services/agentService';
+import { deployAgent } from '../../services/agentDeploy';
 
 // ── Tabs ──────────────────────────────────────────────────
 
@@ -102,37 +103,7 @@ const AgentDashboard = ({ user, setScreen, onCreateAgentBattle, setShowForge, on
     if (!agent?.id || deploying) return;
     setDeploying(true);
     try {
-      // Step 1: Generate portfolio via AI
-      const response = await fetch('/api/agent/decide', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ agentId: agent.id }),
-      });
-      const data = await response.json();
-
-      if (!data.success) {
-        console.error('[Deploy] Failed:', data.error);
-        setDeploying(false);
-        return;
-      }
-
-      // Step 2: Navigate to battle view (opponent is now set server-side)
-      console.log('[Deploy] Agent battle created:', data.agentBattleId || '(existing)');
-      if (onCreateAgentBattle) {
-        await onCreateAgentBattle(
-          data.portfolio,
-          data.bench,
-          {
-            agentId: agent.id,
-            agentBattleId: data.agentBattleId || null,
-            innerMonologue: data.innerMonologue || null,
-            strategyBrief: data.strategyBrief || null,
-            expiresAt: data.expiresAt || null,
-            opponent: data.opponent || null,
-            opponentBench: data.opponentBench || null,
-          }
-        );
-      }
+      await deployAgent(agent.id, onCreateAgentBattle);
     } catch (err) {
       console.error('[Deploy] Error:', err);
     }

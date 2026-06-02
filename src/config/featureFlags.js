@@ -11,3 +11,12 @@
  * on what's deferred and the open architecture questions.
  */
 export const WATCH_LIST_RAIL_ENABLED = false;
+
+/**
+ * Command Dashboard — the mobile loop-home (Read → Equip → Deploy → Manage → Review).
+ *
+ * When false, the mobile home renders the existing DashboardLoop unchanged
+ * (instant rollback). When true, it renders the new agent-command surface.
+ * Mobile only — desktop (DashboardDesktop) is unaffected either way.
+ */
+export const COMMAND_DASHBOARD_ENABLED = true;
