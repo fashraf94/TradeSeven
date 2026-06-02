@@ -1,11 +1,13 @@
 // src/components/shared/AgentOrb.jsx
 //
-// The agent-identity motif for the Command Dashboard — a living, breathing orb
-// themed by the agent's avatarColors (the same [primary, secondary] palette
-// AgentSidebar reads). Pure gradient + framer-motion (no asset, no dependency
-// on global keyframes), so it drops in anywhere and respects the obsidian theme.
+// The agent-identity motif for the Command Dashboard — a living presence rather
+// than a solid sphere: a glowing core that breathes, with concentric rings that
+// pulse outward from it. Tinted by the agent's color (primaryColor upstream,
+// passed in as colors[0]). Pure gradient + framer-motion; no asset, no global
+// keyframes. Rings expand only to the container edge, so it never overflows the
+// layout it sits in.
 //
-// states: 'ready' (calm breathe) · 'reading' (quicker shimmer) · 'live' (pulse)
+// states: 'ready' (slow idle breathe) · 'reading' (faster pulse) · 'live'
 
 import React from 'react';
 import { motion } from 'framer-motion';
@@ -23,44 +25,53 @@ export default function AgentOrb({ colors = ['#5eead4', '#a855f7'], size = 76, s
   const c2 = colors?.[1] || c1;
   const reading = state === 'reading';
   const live = state === 'live';
-  const period = live ? 2.2 : reading ? 2.8 : 4.2; // seconds per breath
+
+  // Faster motion while the agent is "reading"; calm idle otherwise.
+  const breath = live ? 1.8 : reading ? 2.0 : 3.6; // core breathe period (s)
+  const ripple = live ? 1.5 : reading ? 1.9 : 3.4; // ring pulse period (s)
+  const rings = [0, 1, 2];
+
+  // Centering: inset:0 + margin:auto centers a fixed-size box in the container,
+  // leaving framer-motion's transform free for scale (origin = center).
+  const layer = (w) => ({
+    position: 'absolute', inset: 0, margin: 'auto',
+    width: w, height: w, borderRadius: '50%',
+  });
 
   return (
     <div style={{ position: 'relative', width: size, height: size, flexShrink: 0 }} aria-hidden="true">
-      {/* Ambient glow halo */}
+      {/* Concentric rings pulsing outward from the core to the edge */}
+      {rings.map((i) => (
+        <motion.div
+          key={i}
+          initial={false}
+          animate={{ scale: [0.4, 1], opacity: [0.55, 0] }}
+          transition={{ duration: ripple, repeat: Infinity, ease: 'easeOut', delay: i * (ripple / rings.length) }}
+          style={{ ...layer(size), border: `1.5px solid ${hexToRgba(c1, 0.6)}` }}
+        />
+      ))}
+
+      {/* Soft aura that breathes with the core */}
       <motion.div
         initial={false}
-        animate={{ opacity: [0.32, 0.58, 0.32], scale: [1, 1.12, 1] }}
-        transition={{ duration: period, repeat: Infinity, ease: 'easeInOut' }}
+        animate={{ opacity: [0.22, 0.46, 0.22], scale: [0.9, 1.06, 0.9] }}
+        transition={{ duration: breath, repeat: Infinity, ease: 'easeInOut' }}
         style={{
-          position: 'absolute', inset: -size * 0.28, borderRadius: '50%',
-          background: `radial-gradient(circle at 50% 50%, ${hexToRgba(c1, 0.45)} 0%, ${hexToRgba(c2, 0.18)} 45%, transparent 70%)`,
-          filter: `blur(${Math.round(size * 0.18)}px)`,
-          pointerEvents: 'none',
+          ...layer(size * 0.82),
+          background: `radial-gradient(circle, ${hexToRgba(c1, 0.4)} 0%, ${hexToRgba(c2, 0.14)} 52%, transparent 72%)`,
+          filter: `blur(${size * 0.07}px)`,
         }}
       />
-      {/* Sphere */}
+
+      {/* Breathing, glowing core */}
       <motion.div
         initial={false}
-        animate={{ scale: [1, 1.03, 1] }}
-        transition={{ duration: period, repeat: Infinity, ease: 'easeInOut' }}
+        animate={{ scale: [1, 1.16, 1], opacity: [0.92, 1, 0.92] }}
+        transition={{ duration: breath, repeat: Infinity, ease: 'easeInOut' }}
         style={{
-          position: 'absolute', inset: 0, borderRadius: '50%',
-          background: `radial-gradient(circle at 32% 28%, rgba(255,255,255,0.92) 0%, ${c1} 30%, ${c2} 78%, #0a0b10 100%)`,
-          boxShadow: `inset 0 ${size * 0.08}px ${size * 0.16}px rgba(255,255,255,0.22), inset 0 -${size * 0.1}px ${size * 0.2}px rgba(0,0,0,0.55), 0 0 ${size * 0.3}px ${hexToRgba(c1, 0.4)}`,
-        }}
-      />
-      {/* Specular highlight */}
-      <motion.div
-        initial={false}
-        animate={{ opacity: reading || live ? [0.5, 0.9, 0.5] : [0.4, 0.62, 0.4] }}
-        transition={{ duration: period * 0.8, repeat: Infinity, ease: 'easeInOut' }}
-        style={{
-          position: 'absolute', top: '18%', left: '24%', width: '30%', height: '24%',
-          borderRadius: '50%',
-          background: 'radial-gradient(circle, rgba(255,255,255,0.85), transparent 70%)',
-          filter: 'blur(2px)',
-          pointerEvents: 'none',
+          ...layer(size * 0.42),
+          background: `radial-gradient(circle at 38% 34%, #ffffff 0%, ${c1} 46%, ${c2} 100%)`,
+          boxShadow: `0 0 ${size * 0.16}px ${hexToRgba(c1, 0.7)}, 0 0 ${size * 0.34}px ${hexToRgba(c1, 0.3)}`,
         }}
       />
     </div>

@@ -2,21 +2,24 @@
 //
 // The mobile loop-home — directing an AI trading agent through the real loop:
 // Read → Equip → Deploy → Manage → Review. Renders behind the
-// COMMAND_DASHBOARD_ENABLED flag in place of DashboardLoop (called with the same
-// props, so it's a drop-in). Desktop is unaffected.
+// COMMAND_DASHBOARD_ENABLED flag (or ?cmd query param) in place of
+// DashboardLoop, called with the same props. Desktop is unaffected.
 //
 // PHASE 1: flag + loop scaffold + the Read station (powered by the net-new
 // useDailyRegimeBrief hook) + the agent-identity Orb. Equip / Deploy / Manage /
-// Review are rendered as visible, labeled stubs so the five-station structure
-// reads end-to-end; they get wired in later phases.
+// Review render as visible, labeled stubs and get wired in later phases.
+//
+// The Read station's two actions ("Deploy on this read", "Talk it over") are
+// presentational only here: Deploy is wired in Phase 3; "Talk it over" is the
+// future entry point for the deferred Voice Layer (no chat/debate is built).
 //
 // Theme: obsidian (DARK_TOKENS) surfaces + each agent's own accent
-// (agent.avatarColors). Glow is restrained; red is reserved for downside only
+// (agent.primaryColor). Glow is restrained; red is reserved for downside only
 // (via GainLossBadge, introduced in a later phase) and never appears here.
 
-import React from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Menu, BookOpen, Boxes, Rocket, Activity, Film, ArrowRight } from 'lucide-react';
+import { Menu, BookOpen, Boxes, Rocket, Activity, Film, MessageCircle } from 'lucide-react';
 import HoloCard from '../shared/HoloCard';
 import AgentOrb from '../shared/AgentOrb';
 import { useTheme } from '../../contexts/ThemeContext';
@@ -39,6 +42,16 @@ function hexToRgba(hex, a) {
   const g = parseInt(hex.slice(3, 5), 16);
   const b = parseInt(hex.slice(5, 7), 16);
   return `rgba(${r},${g},${b},${a})`;
+}
+
+// Pick legible text (near-black or white) for a filled button of any agent hue.
+function readableText(hex) {
+  if (!hex || typeof hex !== 'string' || !hex.startsWith('#')) return '#ffffff';
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  return luminance > 0.6 ? '#0a0b10' : '#ffffff';
 }
 
 function prettyDate(forDate) {
@@ -78,6 +91,38 @@ const sectionVariants = {
   visible: { opacity: 1, y: 0, transition: { type: 'spring', stiffness: 300, damping: 24, mass: 0.8 } },
 };
 
+// ─── Minimal loop rail ───────────────────────────────────────────────────────
+// A thin connecting line with small dots; the current stage (Read) is accented
+// and labeled, the rest are faint dots. Recedes rather than dominates.
+
+function LoopRail({ accent, tokens }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', marginTop: '14px', padding: '0 2px' }}>
+      {/* Current stage: accented dot + label */}
+      <span style={{
+        width: '8px', height: '8px', borderRadius: '50%', flexShrink: 0,
+        background: accent, boxShadow: `0 0 8px ${hexToRgba(accent, 0.7)}`,
+      }} />
+      <span style={{
+        marginLeft: '7px', fontSize: '10px', fontWeight: 700, letterSpacing: '1.5px',
+        textTransform: 'uppercase', color: accent,
+      }}>
+        Read
+      </span>
+      {/* Remaining stages: connecting line + faint dot each */}
+      {STAGES.slice(1).map((s) => (
+        <React.Fragment key={s.key}>
+          <div style={{ flex: 1, height: '1px', background: tokens.borderDefault, margin: '0 8px' }} />
+          <span
+            title={s.label}
+            style={{ width: '5px', height: '5px', borderRadius: '50%', flexShrink: 0, background: tokens.textFaintest }}
+          />
+        </React.Fragment>
+      ))}
+    </div>
+  );
+}
+
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export default function CommandDashboard({
@@ -102,6 +147,26 @@ export default function CommandDashboard({
   const archetype = agent?.archetype ? getArchetypeDisplayName(agent.archetype) : null;
 
   const orbState = drb.loading ? 'reading' : 'ready';
+
+  // Compact/expandable brief: collapsed shows ~3 clamped lines; tap expands.
+  const [expanded, setExpanded] = useState(false);
+  const [isTruncatable, setIsTruncatable] = useState(false);
+  const briefRef = useRef(null);
+
+  useEffect(() => {
+    // Only measure in the collapsed state (when expanded the clamp is removed,
+    // so scrollHeight === clientHeight). Keep the last value while expanded so
+    // the "Show less" affordance stays visible.
+    if (expanded) return;
+    const el = briefRef.current;
+    if (el) setIsTruncatable(el.scrollHeight > el.clientHeight + 1);
+  }, [drb.dailyBrief, expanded]);
+
+  const briefBase = { margin: 0, fontSize: '14.5px', lineHeight: 1.6, color: tokens.textSecondary };
+  const briefStyle = expanded
+    ? briefBase
+    : { ...briefBase, display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' };
+  const canToggle = isTruncatable || expanded;
 
   return (
     <div style={{
@@ -181,42 +246,7 @@ export default function CommandDashboard({
           </div>
         </div>
 
-        {/* Loop rail */}
-        <div style={{
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          gap: '4px', marginTop: '12px',
-        }}>
-          {STAGES.map((s, i) => {
-            const active = s.key === 'read';
-            return (
-              <React.Fragment key={s.key}>
-                <div style={{
-                  display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '3px',
-                  opacity: active ? 1 : 0.42,
-                }}>
-                  <div style={{
-                    width: '30px', height: '30px', borderRadius: '50%',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    background: active ? hexToRgba(accent, 0.14) : tokens.bgIcon,
-                    border: `1px solid ${active ? hexToRgba(accent, 0.4) : tokens.borderDefault}`,
-                    color: active ? accent : tokens.textFaint,
-                  }}>
-                    <s.Icon size={15} />
-                  </div>
-                  <span style={{
-                    fontSize: '9px', fontWeight: 700, letterSpacing: '0.5px',
-                    textTransform: 'uppercase', color: active ? accent : tokens.textFaint,
-                  }}>
-                    {s.label}
-                  </span>
-                </div>
-                {i < STAGES.length - 1 && (
-                  <div style={{ flex: 1, height: '1px', background: tokens.borderDefault, marginTop: '-12px' }} />
-                )}
-              </React.Fragment>
-            );
-          })}
-        </div>
+        <LoopRail accent={accent} tokens={tokens} />
       </header>
 
       {/* ─── Feed ────────────────────────────────────────────────────────── */}
@@ -244,7 +274,7 @@ export default function CommandDashboard({
           >
             {/* Header row: orb + title */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '14px', marginBottom: '14px' }}>
-              <AgentOrb colors={[accent, accent2]} size={64} state={orbState} />
+              <AgentOrb colors={[accent, accent2]} size={60} state={orbState} />
               <div style={{ minWidth: 0 }}>
                 <div style={{
                   fontSize: '10px', fontWeight: 700, letterSpacing: '2px',
@@ -263,7 +293,7 @@ export default function CommandDashboard({
               </div>
             </div>
 
-            {/* Brief body */}
+            {/* Brief body — compact (clamped to ~3 lines) with tap-to-expand */}
             {drb.loading ? (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                 {[0.95, 0.85, 0.6].map((w, i) => (
@@ -274,9 +304,20 @@ export default function CommandDashboard({
                 ))}
               </div>
             ) : drb.dailyBrief ? (
-              <p style={{ margin: 0, fontSize: '14.5px', lineHeight: 1.6, color: tokens.textSecondary }}>
-                {drb.dailyBrief}
-              </p>
+              <div
+                onClick={() => canToggle && setExpanded((e) => !e)}
+                style={{ cursor: canToggle ? 'pointer' : 'default' }}
+              >
+                <p ref={briefRef} style={briefStyle}>{drb.dailyBrief}</p>
+                {canToggle && (
+                  <span style={{
+                    display: 'inline-block', marginTop: '6px',
+                    fontSize: '12px', fontWeight: 700, color: accent,
+                  }}>
+                    {expanded ? 'Show less' : 'More'}
+                  </span>
+                )}
+              </div>
             ) : (
               <p style={{ margin: 0, fontSize: '14px', lineHeight: 1.6, color: tokens.textMuted }}>
                 {drb.error
@@ -285,8 +326,8 @@ export default function CommandDashboard({
               </p>
             )}
 
-            {/* Theme + key-event chips (light supporting context) */}
-            {!drb.loading && (drb.themes.length > 0 || drb.keyEvents.length > 0) && (
+            {/* Theme chips (compact) */}
+            {!drb.loading && drb.themes.length > 0 && (
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '14px' }}>
                 {drb.themes.slice(0, 3).map((t, i) => (
                   <span key={`t-${i}`} style={{
@@ -297,7 +338,13 @@ export default function CommandDashboard({
                     {t}
                   </span>
                 ))}
-                {drb.keyEvents.slice(0, 2).map((e, i) => (
+              </div>
+            )}
+
+            {/* Expanded-only extras: key events + the brief's date/staleness */}
+            {expanded && !drb.loading && drb.keyEvents.length > 0 && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '8px' }}>
+                {drb.keyEvents.slice(0, 4).map((e, i) => (
                   <span key={`e-${i}`} style={{
                     fontSize: '11px', fontWeight: 600, color: tokens.textMuted,
                     padding: '4px 10px', borderRadius: '20px',
@@ -308,30 +355,49 @@ export default function CommandDashboard({
                 ))}
               </div>
             )}
-
-            {/* Meta + tagline */}
-            {!drb.loading && drb.forDate && (
+            {expanded && !drb.loading && drb.forDate && (
               <div style={{ fontSize: '11px', color: tokens.textFaint, marginTop: '12px' }}>
                 Brief for {prettyDate(drb.forDate)}{drb.isStale ? ' · showing the latest available' : ''}
               </div>
             )}
+
+            {/* Actions — Deploy (wired Phase 3) + Talk it over (deferred Voice Layer) */}
             <div style={{
-              display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '6px',
-              marginTop: '14px', paddingTop: '12px',
-              borderTop: `1px solid ${tokens.borderDefault}`,
-              fontSize: '12px', fontWeight: 600, color: tokens.textMuted,
+              display: 'flex', gap: '10px', marginTop: '16px',
+              paddingTop: '14px', borderTop: `1px solid ${tokens.borderDefault}`,
             }}>
-              <span>Read the brief</span>
-              <ArrowRight size={12} color={tokens.textFaint} />
-              <span>equip the open rules slot</span>
-              <ArrowRight size={12} color={tokens.textFaint} />
-              <span style={{ color: accent }}>Deploy</span>
+              <motion.button
+                type="button"
+                whileTap={{ scale: 0.97 }}
+                style={{
+                  flex: 1.4, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '7px',
+                  padding: '11px 14px', borderRadius: '12px', border: 'none', cursor: 'pointer',
+                  background: accent, color: readableText(accent), fontSize: '14px', fontWeight: 700,
+                  boxShadow: `0 0 16px ${hexToRgba(accent, 0.30)}`,
+                }}
+              >
+                <Rocket size={16} />
+                Deploy on this read
+              </motion.button>
+              <motion.button
+                type="button"
+                whileTap={{ scale: 0.97 }}
+                style={{
+                  flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '7px',
+                  padding: '11px 14px', borderRadius: '12px', cursor: 'pointer',
+                  background: 'transparent', border: `1px solid ${hexToRgba(accent, 0.40)}`,
+                  color: tokens.textSecondary, fontSize: '14px', fontWeight: 600,
+                }}
+              >
+                <MessageCircle size={16} />
+                Talk it over
+              </motion.button>
             </div>
           </HoloCard>
         </motion.div>
 
         {/* ── 02–05 · stubs (wired in later phases) ─────────────────────── */}
-        {STAGES.filter(s => s.key !== 'read').map(s => (
+        {STAGES.filter((s) => s.key !== 'read').map((s) => (
           <motion.div key={s.key} variants={sectionVariants}>
             <HoloCard
               size="lg"
