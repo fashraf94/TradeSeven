@@ -95,7 +95,7 @@ function SlotCard({ icon, slotAccent, eyebrow, title, subtitle, onClick, locked,
 
 // ─── Equip station ───────────────────────────────────────────────────────────
 
-export default function EquipStation({ agent, accent, tokens, setShowForge }) {
+export default function EquipStation({ agent, accent, tokens, setShowForge, onOpenAgent }) {
   const agentId = agent?.id;
   const benchLocked = Boolean(agent?.activeBattleId);
 
@@ -217,13 +217,14 @@ export default function EquipStation({ agent, accent, tokens, setShowForge }) {
       </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-        {/* Identity — archetype (filled, non-swappable) */}
+        {/* Identity — archetype (filled, non-swappable); tap to open the agent's profile */}
         <SlotCard
           icon={<Fingerprint size={18} />}
           slotAccent={accent}
           eyebrow="Identity"
           title={archetypeName}
           subtitle={disposition}
+          onClick={onOpenAgent}
           tokens={tokens}
         />
 

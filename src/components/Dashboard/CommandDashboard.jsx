@@ -19,7 +19,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Menu, BookOpen, Boxes, Rocket, Activity, Film, MessageCircle } from 'lucide-react';
+import { Menu, BookOpen, Boxes, Rocket, Activity, Film, MessageCircle, ChevronRight } from 'lucide-react';
 import HoloCard from '../shared/HoloCard';
 import AgentOrb from '../shared/AgentOrb';
 import EquipStation from './EquipStation';
@@ -301,10 +301,15 @@ export default function CommandDashboard({
               borderTop: `2px solid ${hexToRgba(accent, 0.55)}`,
             }}
           >
-            {/* Header row: orb + title */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '14px', marginBottom: '14px' }}>
+            {/* Header row: orb + title — tap to open the agent's full profile */}
+            <div
+              onClick={() => setScreen?.('agent')}
+              role="button"
+              aria-label="Open agent profile"
+              style={{ display: 'flex', alignItems: 'center', gap: '14px', marginBottom: '14px', cursor: 'pointer' }}
+            >
               <AgentOrb colors={[accent, accent2]} size={60} state={orbState} />
-              <div style={{ minWidth: 0 }}>
+              <div style={{ minWidth: 0, flex: 1 }}>
                 <div style={{
                   fontSize: '10px', fontWeight: 700, letterSpacing: '2px',
                   textTransform: 'uppercase', color: accent, marginBottom: '4px',
@@ -320,6 +325,7 @@ export default function CommandDashboard({
                   </div>
                 )}
               </div>
+              <ChevronRight size={18} color={tokens.textFaint} style={{ flexShrink: 0 }} />
             </div>
 
             {/* Brief body — compact (clamped to ~3 lines) with tap-to-expand */}
@@ -431,7 +437,7 @@ export default function CommandDashboard({
 
         {/* ── 02 · Equip ─────────────────────────────────────────────────── */}
         <motion.div variants={sectionVariants}>
-          <EquipStation agent={agent} accent={accent} tokens={tokens} setShowForge={setShowForge} />
+          <EquipStation agent={agent} accent={accent} tokens={tokens} setShowForge={setShowForge} onOpenAgent={() => setScreen?.('agent')} />
         </motion.div>
 
         {/* ── 03 · Deploy ────────────────────────────────────────────────── */}
