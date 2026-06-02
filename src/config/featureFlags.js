@@ -19,4 +19,4 @@ export const WATCH_LIST_RAIL_ENABLED = false;
  * (instant rollback). When true, it renders the new agent-command surface.
  * Mobile only — desktop (DashboardDesktop) is unaffected either way.
  */
-export const COMMAND_DASHBOARD_ENABLED = false;
+export const COMMAND_DASHBOARD_ENABLED = true;

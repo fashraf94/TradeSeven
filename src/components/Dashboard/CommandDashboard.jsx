@@ -2,7 +2,7 @@
 //
 // The mobile loop-home — directing an AI trading agent through the real loop:
 // Read → Equip → Deploy → Manage → Review. Renders behind the
-// COMMAND_DASHBOARD_ENABLED flag (or ?cmd) in place of DashboardLoop, with the
+// COMMAND_DASHBOARD_ENABLED flag in place of DashboardLoop, with the
 // same props. Desktop is unaffected.
 //
 // VISUAL PASS: restyled to the "command bridge" prototype (Command Dashboard.html)
@@ -11,8 +11,8 @@
 // rhythm. Presentation only: all wiring (deploy / manage / review), the
 // collapse-expand brief, and the agent-profile link are unchanged.
 //
-// The Read station's "Talk it over" button is an inert placeholder for the
-// deferred Voice Layer. The brief stays the current DRB text.
+// The Read station's "Talk it over" button carries a "Soon" affordance with a
+// no-op tap (the Voice Layer is deferred). The brief stays the current DRB text.
 
 import React, { useState, useRef, useEffect } from 'react';
 import { motion } from 'framer-motion';
@@ -297,18 +297,23 @@ export default function CommandDashboard({
                 <Zap size={16} color={readableOn(accent)} fill={readableOn(accent)} />
                 <span>{deploying ? 'Deploying…' : isLive ? 'Battle in progress' : 'Deploy on this read'}</span>
               </motion.button>
-              <motion.button
+              {/* Voice Layer deferred — visible "coming soon" entry point, no-op tap */}
+              <button
                 type="button"
-                whileTap={{ scale: 0.985 }}
+                aria-label="Talk it over — coming soon"
                 style={{
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-                  padding: '12px 15px', borderRadius: 12, cursor: 'pointer', fontFamily: 'inherit',
-                  background: 'transparent', border: `1px solid ${alpha(accent, 0.4)}`, color: accent, fontWeight: 600, fontSize: 13.5,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7,
+                  padding: '12px 15px', borderRadius: 12, cursor: 'default', fontFamily: 'inherit',
+                  background: 'transparent', border: `1px solid ${CMD.hair2}`, color: CMD.ink2, fontWeight: 600, fontSize: 13.5,
                 }}
               >
-                <MessageCircle size={16} color={accent} />
+                <MessageCircle size={16} color={CMD.ink3} />
                 <span>Talk it over</span>
-              </motion.button>
+                <Mono style={{
+                  fontSize: 8.5, letterSpacing: '0.12em', textTransform: 'uppercase', fontWeight: 600, color: CMD.ink3,
+                  background: alpha('#FFFFFF', 0.05), border: `1px solid ${CMD.hair}`, padding: '2px 5px', borderRadius: 5,
+                }}>Soon</Mono>
+              </button>
             </div>
           </div>
         </motion.div>
