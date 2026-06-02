@@ -104,7 +104,9 @@ export default function EquipStation({ agent, accent, tokens, setShowForge, onOp
 
   // ── Rules (bundles) via the existing Forge hook ──────────────────────────
   const { forgedBundles, equippedBundles, equipBundleFn, unequipBundleFn, equippingBundleId, loading: forgeLoading } = useForge(agentId);
-  const rulesEquipped = (agent?.equippedBundleIds?.length || 0) > 0 || equippedBundles.length > 0;
+  // Single canonical source (useForge's equippedBundles) for the rules slot so
+  // the filled/open state and the count can't disagree mid-equip.
+  const rulesEquipped = equippedBundles.length > 0;
 
   // ── Watchlist via the existing watchlist services ────────────────────────
   const [committed, setCommitted] = useState([]);
@@ -253,7 +255,7 @@ export default function EquipStation({ agent, accent, tokens, setShowForge, onOp
             title={
               equippedBundles.length === 1
                 ? (equippedBundles[0].name || 'Strategy equipped')
-                : `${equippedBundles.length || agent?.equippedBundleIds?.length || 1} strategies equipped`
+                : `${equippedBundles.length} strategies equipped`
             }
             subtitle="Tap to change your agent's playbook"
             onClick={() => setSheet('rules')}

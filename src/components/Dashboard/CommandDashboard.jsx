@@ -153,9 +153,7 @@ export default function CommandDashboard({
   const orbState = drb.loading ? 'reading' : 'ready';
 
   // ── Deploy / Manage / Review (Phase 3) ────────────────────────────────────
-  const liveBattles = (activeAgentBattles || []).filter(
-    (b) => b.status === 'active' || b.status === 'market_closed'
-  );
+  const liveBattles = (activeAgentBattles || []).filter((b) => b.status === 'active');
   const liveBattle = liveBattles[0] || null;
   const isLive = Boolean(liveBattle);
   const recentCompleted = useRecentCompletedAgentBattles(3);

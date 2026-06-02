@@ -15,13 +15,16 @@ import { db, auth } from '../firebase/config';
 
 export default function useRecentCompletedAgentBattles(max = 3) {
   const [battles, setBattles] = useState([]);
+  // Read uid at render so it's a hook dependency: if Firebase auth hasn't
+  // hydrated at mount, the effect re-runs once it resolves (a later re-render
+  // recomputes uid) instead of leaving Review silently empty for the session.
+  const uid = auth.currentUser?.uid;
 
   useEffect(() => {
+    if (!uid) return undefined;
     let cancelled = false;
     (async () => {
       try {
-        const uid = auth.currentUser?.uid;
-        if (!uid) return;
         const q = query(
           collection(db, 'agentBattles'),
           where('ownerId', '==', uid),
@@ -38,7 +41,7 @@ export default function useRecentCompletedAgentBattles(max = 3) {
       }
     })();
     return () => { cancelled = true; };
-  }, [max]);
+  }, [uid, max]);
 
   return battles;
 }
