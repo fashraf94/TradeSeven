@@ -2,36 +2,31 @@
 //
 // The mobile loop-home — directing an AI trading agent through the real loop:
 // Read → Equip → Deploy → Manage → Review. Renders behind the
-// COMMAND_DASHBOARD_ENABLED flag (or ?cmd query param) in place of
-// DashboardLoop, called with the same props. Desktop is unaffected.
+// COMMAND_DASHBOARD_ENABLED flag (or ?cmd) in place of DashboardLoop, with the
+// same props. Desktop is unaffected.
 //
-// PHASE 1: flag + loop scaffold + the Read station (powered by the net-new
-// useDailyRegimeBrief hook) + the agent-identity Orb. Equip / Deploy / Manage /
-// Review render as visible, labeled stubs and get wired in later phases.
+// VISUAL PASS: restyled to the "command bridge" prototype (Command Dashboard.html)
+// — obsidian CMD palette + agent.primaryColor accent, JetBrains-Mono station
+// labels, the living Orb as a recurring anchor, and a composed top-to-bottom
+// rhythm. Presentation only: all wiring (deploy / manage / review), the
+// collapse-expand brief, and the agent-profile link are unchanged.
 //
-// The Read station's two actions ("Deploy on this read", "Talk it over") are
-// presentational only here: Deploy is wired in Phase 3; "Talk it over" is the
-// future entry point for the deferred Voice Layer (no chat/debate is built).
-//
-// Theme: obsidian (DARK_TOKENS) surfaces + each agent's own accent
-// (agent.primaryColor). Glow is restrained; red is reserved for downside only
-// (via GainLossBadge, introduced in a later phase) and never appears here.
+// The Read station's "Talk it over" button is an inert placeholder for the
+// deferred Voice Layer. The brief stays the current DRB text.
 
 import React, { useState, useRef, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Menu, BookOpen, Boxes, Rocket, Activity, Film, MessageCircle, ChevronRight } from 'lucide-react';
-import HoloCard from '../shared/HoloCard';
+import { Menu, Trophy, Zap, MessageCircle, ChevronRight } from 'lucide-react';
 import AgentOrb from '../shared/AgentOrb';
 import EquipStation from './EquipStation';
 import DeployStation from './DeployStation';
 import ManageStation from './ManageStation';
 import ReviewStation from './ReviewStation';
-import { useTheme } from '../../contexts/ThemeContext';
+import { CMD, alpha, readableOn, Eyebrow, Mono, SectionLabel } from './commandUI';
 import useAgent from '../../hooks/useAgent';
 import useDailyRegimeBrief from '../../hooks/useDailyRegimeBrief';
 import useRecentCompletedAgentBattles from '../../hooks/useRecentCompletedAgentBattles';
 import { deployAgent } from '../../services/agentDeploy';
-import { getArchetypeDisplayName } from '../../data/archetypeDisplay';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -42,28 +37,9 @@ function getGreeting() {
   return 'Good evening';
 }
 
-function hexToRgba(hex, a) {
-  if (!hex || typeof hex !== 'string' || !hex.startsWith('#')) return `rgba(94,234,212,${a})`;
-  const r = parseInt(hex.slice(1, 3), 16);
-  const g = parseInt(hex.slice(3, 5), 16);
-  const b = parseInt(hex.slice(5, 7), 16);
-  return `rgba(${r},${g},${b},${a})`;
-}
-
-// Pick legible text (near-black or white) for a filled button of any agent hue.
-function readableText(hex) {
-  if (!hex || typeof hex !== 'string' || !hex.startsWith('#')) return '#ffffff';
-  const r = parseInt(hex.slice(1, 3), 16);
-  const g = parseInt(hex.slice(3, 5), 16);
-  const b = parseInt(hex.slice(5, 7), 16);
-  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
-  return luminance > 0.6 ? '#0a0b10' : '#ffffff';
-}
-
 function prettyDate(forDate) {
   if (!forDate) return null;
   try {
-    // forDate is YYYY-MM-DD; render without a TZ shift by anchoring to UTC.
     const [y, m, d] = forDate.split('-').map(Number);
     return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString(undefined, {
       weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC',
@@ -73,51 +49,44 @@ function prettyDate(forDate) {
   }
 }
 
-// The five loop stages. `read` is the only active stage in Phase 1.
 const STAGES = [
-  { key: 'read', n: '01', label: 'Read', Icon: BookOpen },
-  { key: 'equip', n: '02', label: 'Equip', Icon: Boxes },
-  { key: 'deploy', n: '03', label: 'Deploy', Icon: Rocket },
-  { key: 'manage', n: '04', label: 'Manage', Icon: Activity },
-  { key: 'review', n: '05', label: 'Review', Icon: Film },
+  { k: 'read', label: 'Read' },
+  { k: 'equip', label: 'Equip' },
+  { k: 'deploy', label: 'Deploy' },
+  { k: 'manage', label: 'Manage' },
+  { k: 'review', label: 'Review' },
 ];
-
-// ─── Motion ──────────────────────────────────────────────────────────────────
 
 const containerVariants = { hidden: {}, visible: { transition: { staggerChildren: 0.06 } } };
 const sectionVariants = {
-  hidden: { opacity: 0, y: 12 },
-  visible: { opacity: 1, y: 0, transition: { type: 'spring', stiffness: 300, damping: 24, mass: 0.8 } },
+  hidden: { opacity: 0, y: 10 },
+  visible: { opacity: 1, y: 0, transition: { type: 'spring', stiffness: 300, damping: 26, mass: 0.8 } },
 };
 
-// ─── Minimal loop rail ───────────────────────────────────────────────────────
-// A thin connecting line with small dots; the current stage (Read) is accented
-// and labeled, the rest are faint dots. Recedes rather than dominates.
+// ─── Loop rail — the cycle at a glance, restrained ───────────────────────────
 
-function LoopRail({ accent, tokens }) {
+function LoopRail({ active, primary }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', marginTop: '14px', padding: '0 2px' }}>
-      {/* Current stage: accented dot + label */}
-      <span style={{
-        width: '8px', height: '8px', borderRadius: '50%', flexShrink: 0,
-        background: accent, boxShadow: `0 0 8px ${hexToRgba(accent, 0.7)}`,
-      }} />
-      <span style={{
-        marginLeft: '7px', fontSize: '10px', fontWeight: 700, letterSpacing: '1.5px',
-        textTransform: 'uppercase', color: accent,
-      }}>
-        Read
-      </span>
-      {/* Remaining stages: connecting line + faint dot each */}
-      {STAGES.slice(1).map((s) => (
-        <React.Fragment key={s.key}>
-          <div style={{ flex: 1, height: '1px', background: tokens.borderDefault, margin: '0 8px' }} />
-          <span
-            title={s.label}
-            style={{ width: '5px', height: '5px', borderRadius: '50%', flexShrink: 0, background: tokens.textFaintest }}
-          />
-        </React.Fragment>
-      ))}
+    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+      {STAGES.map((s, i) => {
+        const on = s.k === active;
+        return (
+          <React.Fragment key={s.k}>
+            {i > 0 && <div style={{ width: 10, height: 1, background: CMD.hair }} />}
+            <div title={s.label} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+              <motion.div
+                animate={on ? { scale: [1, 1.18, 1] } : { scale: 1 }}
+                transition={{ duration: 2.4, repeat: Infinity, ease: 'easeInOut' }}
+                style={{
+                  width: on ? 7 : 5, height: on ? 7 : 5, borderRadius: '50%',
+                  background: on ? primary : CMD.ink3, boxShadow: on ? `0 0 8px ${alpha(primary, 0.7)}` : 'none',
+                }}
+              />
+              {on && <Mono style={{ fontSize: 9.5, letterSpacing: '0.16em', color: CMD.ink2, textTransform: 'uppercase' }}>{s.label}</Mono>}
+            </div>
+          </React.Fragment>
+        );
+      })}
     </div>
   );
 }
@@ -134,29 +103,26 @@ export default function CommandDashboard({
   activeAgentBattles = [],
   onCreateAgentBattle,
   onOpenAgentBattle,
-  // The remaining DashboardLoop props (battles, modal setters, etc.) are passed
-  // by the same call site and get destructured here as later phases wire
-  // Deploy / Manage / Review. Unreferenced for now — harmlessly ignored.
 }) {
-  const { tokens } = useTheme();
-  const { agent, record } = useAgent(user?.odUserId);
+  const { agent } = useAgent(user?.odUserId);
   const drb = useDailyRegimeBrief();
 
-  // The user-picked primaryColor supersedes the Haiku-generated avatarColors
-  // (onboarding rule); fall back to avatarColors only when it's absent (null
-  // on agents created before the color picker).
-  const accent = agent?.primaryColor || agent?.avatarColors?.[0] || tokens.teal;
-  const accent2 = agent?.primaryColor || agent?.avatarColors?.[1] || accent;
+  // The user-picked primaryColor supersedes the Haiku avatarColors.
+  const accent = agent?.primaryColor || agent?.avatarColors?.[0] || CMD.teal;
   const agentName = agent?.name || user?.username || 'your agent';
-  const archetype = agent?.archetype ? getArchetypeDisplayName(agent.archetype) : null;
+  const wins = agent?.stats?.wins ?? 0;
 
-  const orbState = drb.loading ? 'reading' : 'ready';
-
-  // ── Deploy / Manage / Review (Phase 3) ────────────────────────────────────
+  // ── Deploy / Manage / Review ──────────────────────────────────────────────
   const liveBattles = (activeAgentBattles || []).filter((b) => b.status === 'active');
   const liveBattle = liveBattles[0] || null;
   const isLive = Boolean(liveBattle);
   const recentCompleted = useRecentCompletedAgentBattles(3);
+  const activeStage = isLive ? 'manage' : 'read';
+
+  const equippedCount = 1
+    + (agent?.equippedWatchlistId ? 1 : 0)
+    + ((agent?.equippedBundleIds?.length || 0) > 0 ? 1 : 0);
+  const rulesOpen = (agent?.equippedBundleIds?.length || 0) === 0;
 
   const [deploying, setDeploying] = useState(false);
   const deployDisabled = deploying || isLive || !agent;
@@ -170,320 +136,219 @@ export default function CommandDashboard({
     }
     setDeploying(false);
   };
-  const openFilmRoom = (battle) => {
-    setCurrentBattle?.(battle);
-    setScreen?.('filmRoom');
-  };
+  const openFilmRoom = (battle) => { setCurrentBattle?.(battle); setScreen?.('filmRoom'); };
+  const scrollToEquip = () => document.getElementById('cmd-equip')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
-  // Compact/expandable brief: collapsed shows ~3 clamped lines; tap expands.
+  // ── Compact / expandable brief ────────────────────────────────────────────
   const [expanded, setExpanded] = useState(false);
   const [isTruncatable, setIsTruncatable] = useState(false);
   const briefRef = useRef(null);
-
   useEffect(() => {
-    // Only measure in the collapsed state (when expanded the clamp is removed,
-    // so scrollHeight === clientHeight). Keep the last value while expanded so
-    // the "Show less" affordance stays visible.
     if (expanded) return;
     const el = briefRef.current;
     if (el) setIsTruncatable(el.scrollHeight > el.clientHeight + 1);
   }, [drb.dailyBrief, expanded]);
 
-  const briefBase = { margin: 0, fontSize: '14.5px', lineHeight: 1.6, color: tokens.textSecondary };
+  const orbState = drb.loading ? 'reading' : 'ready';
+  const briefBase = { margin: 0, fontSize: 15.5, lineHeight: 1.6, letterSpacing: '-0.005em', color: CMD.ink };
   const briefStyle = expanded
     ? briefBase
-    : { ...briefBase, display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' };
+    : { ...briefBase, display: '-webkit-box', WebkitLineClamp: 4, WebkitBoxOrient: 'vertical', overflow: 'hidden' };
   const canToggle = isTruncatable || expanded;
+  const dateLabel = prettyDate(drb.forDate);
 
   return (
-    <div style={{
-      minHeight: '100vh',
-      display: 'flex',
-      flexDirection: 'column',
-      background: tokens.bgApp,
-      color: tokens.textPrimary,
-      position: 'relative',
-      zIndex: 1,
-    }}>
-      {/* ─── Header ──────────────────────────────────────────────────────── */}
-      <header style={{
-        background: tokens.bgCard,
-        borderBottom: `1px solid ${tokens.borderDefault}`,
-        padding: '12px 16px',
-        position: 'sticky',
-        top: 0,
-        zIndex: 40,
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
-          {/* Left: menu */}
-          <button
-            onClick={() => setSidebarOpen?.(true)}
-            aria-label="Open menu"
-            style={{
-              position: 'relative', minWidth: '44px', minHeight: '44px',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              background: 'transparent', border: 'none', cursor: 'pointer',
-              color: accent, touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent',
-            }}
-          >
-            <Menu size={22} />
-            {unreadCount > 0 && (
-              <span style={{
-                position: 'absolute', top: '6px', right: '6px',
-                minWidth: '18px', height: '18px', padding: '0 5px',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                background: tokens.red, borderRadius: '9px', color: tokens.textWhite,
-                fontSize: '10px', fontWeight: 700, lineHeight: 1, boxShadow: tokens.glowRedDot,
-              }}>
-                {unreadCount > 9 ? '9+' : unreadCount}
-              </span>
-            )}
-          </button>
-
-          {/* Center: title + greeting */}
-          <div style={{ flex: 1, minWidth: 0, textAlign: 'center' }}>
-            <div style={{
-              fontSize: '10px', fontWeight: 700, letterSpacing: '2.5px',
-              textTransform: 'uppercase', color: accent,
-            }}>
-              Command
-            </div>
-            <div style={{
-              fontSize: '13px', color: tokens.textMuted,
-              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-            }}>
-              {getGreeting()}, {user?.username || 'Player'}
-            </div>
-          </div>
-
-          {/* Right: avatar → profile */}
-          <div
-            onClick={() => setScreen?.('profile')}
-            role="button"
-            aria-label="Open profile"
-            style={{
-              width: '38px', height: '38px', borderRadius: '50%',
-              background: tokens.bgCard, border: `2px solid ${accent}`,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              fontSize: '15px', fontWeight: 600, color: tokens.textWhite,
-              cursor: 'pointer', flexShrink: 0,
-            }}
-          >
-            {(user?.username || 'P')[0].toUpperCase()}
-          </div>
-        </div>
-
-        <LoopRail accent={accent} tokens={tokens} />
-      </header>
-
-      {/* ─── Feed ────────────────────────────────────────────────────────── */}
+    <div style={{ minHeight: '100vh', background: CMD.bg, color: CMD.ink, position: 'relative', zIndex: 1 }}>
       <motion.div
         variants={containerVariants}
         initial="hidden"
         animate="visible"
         style={{
-          flex: 1, padding: '20px 16px 130px 16px',
-          display: 'flex', flexDirection: 'column', gap: '16px',
-          maxWidth: '600px', margin: '0 auto', width: '100%', boxSizing: 'border-box',
+          padding: 'calc(env(safe-area-inset-top, 0px) + 16px) 18px 130px',
+          display: 'flex', flexDirection: 'column', gap: 22,
+          maxWidth: 600, margin: '0 auto', width: '100%', boxSizing: 'border-box',
         }}
       >
-        {/* ── 01 · READ ─────────────────────────────────────────────────── */}
+        {/* ── Header ─────────────────────────────────────────────────────── */}
         <motion.div variants={sectionVariants}>
-          <HoloCard
-            accentColor={accent}
-            size="lg"
-            style={{
-              background: tokens.bgCard,
-              border: `1px solid ${tokens.borderDefault}`,
-              boxShadow: `${tokens.obsidianShadow}, 0 0 26px ${hexToRgba(accent, 0.10)}`,
-              borderTop: `2px solid ${hexToRgba(accent, 0.55)}`,
-            }}
-          >
-            {/* Header row: orb + title — tap to open the agent's full profile */}
+          {/* utility row */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+            <button
+              onClick={() => setSidebarOpen?.(true)}
+              aria-label="Open menu"
+              style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', width: 40, height: 40, marginLeft: -8, background: 'transparent', border: 'none', cursor: 'pointer', color: CMD.ink2 }}
+            >
+              <Menu size={22} />
+              {unreadCount > 0 && (
+                <span style={{ position: 'absolute', top: 4, right: 4, minWidth: 16, height: 16, padding: '0 4px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#EF4444', borderRadius: 8, color: '#fff', fontSize: 9, fontWeight: 700, lineHeight: 1 }}>
+                  {unreadCount > 9 ? '9+' : unreadCount}
+                </span>
+              )}
+            </button>
+            <div
+              onClick={() => setScreen?.('profile')}
+              role="button"
+              aria-label="Open profile"
+              style={{ width: 34, height: 34, borderRadius: '50%', background: CMD.surface, border: `1.5px solid ${alpha(accent, 0.6)}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 600, color: CMD.ink, cursor: 'pointer' }}
+            >
+              {(user?.username || 'P')[0].toUpperCase()}
+            </div>
+          </div>
+
+          {/* headline */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+            <div style={{ minWidth: 0 }}>
+              <Eyebrow color={CMD.ink3}>{getGreeting()}, {user?.username || 'Director'}</Eyebrow>
+              <div style={{ fontSize: 25, fontWeight: 700, letterSpacing: '-0.02em', marginTop: 3, color: CMD.ink }}>Command</div>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '6px 11px', borderRadius: 999, background: CMD.surface, border: `1px solid ${CMD.hair}`, flexShrink: 0 }}>
+              <Trophy size={14} color={CMD.gold} />
+              <Mono style={{ fontSize: 12, color: CMD.ink, fontWeight: 600 }}>{wins}</Mono>
+              <span style={{ fontSize: 11, color: CMD.ink3 }}>wins</span>
+            </div>
+          </div>
+
+          {/* divider + rail */}
+          <div style={{ marginTop: 14, paddingTop: 13, borderTop: `1px solid ${CMD.hair}` }}>
+            <LoopRail active={activeStage} primary={accent} />
+          </div>
+        </motion.div>
+
+        {/* ── 01 · READ ──────────────────────────────────────────────────── */}
+        <motion.div variants={sectionVariants}>
+          <SectionLabel
+            n="01"
+            label="Read · today’s read"
+            color={accent}
+            right={dateLabel ? <Mono style={{ fontSize: 10.5, color: CMD.ink3 }}>{dateLabel}</Mono> : null}
+          />
+          <div style={{
+            padding: '16px 17px 15px', borderRadius: 18,
+            background: `linear-gradient(180deg, ${alpha(accent, 0.1)}, ${alpha(accent, 0.02)} 62%, ${CMD.surface})`,
+            border: `1px solid ${alpha(accent, 0.26)}`, boxShadow: `inset 0 1px 0 ${alpha(accent, 0.07)}`,
+          }}>
+            {/* orb anchor + activity label — tap → agent profile */}
             <div
               onClick={() => setScreen?.('agent')}
               role="button"
               aria-label="Open agent profile"
-              style={{ display: 'flex', alignItems: 'center', gap: '14px', marginBottom: '14px', cursor: 'pointer' }}
+              style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12, cursor: 'pointer' }}
             >
-              <AgentOrb colors={[accent, accent2]} size={60} state={orbState} />
-              <div style={{ minWidth: 0, flex: 1 }}>
-                <div style={{
-                  fontSize: '10px', fontWeight: 700, letterSpacing: '2px',
-                  textTransform: 'uppercase', color: accent, marginBottom: '4px',
-                }}>
-                  01 · Read
-                </div>
-                <div style={{ fontSize: '17px', fontWeight: 700, color: tokens.textWhite, lineHeight: 1.25 }}>
-                  {agentName} on today&apos;s read
-                </div>
-                {archetype && (
-                  <div style={{ fontSize: '12px', color: tokens.textMuted, marginTop: '2px' }}>
-                    {archetype}{record ? ` · ${record}` : ''}
-                  </div>
-                )}
+              <AgentOrb state={orbState} size={32} color={accent} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <Mono style={{ fontSize: 9.5, letterSpacing: '0.17em', color: accent, textTransform: 'uppercase', fontWeight: 600, display: 'block', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{agentName} is reading the market</Mono>
+                <Mono style={{ fontSize: 9.5, letterSpacing: '0.04em', color: CMD.ink3, marginTop: 2, display: 'block' }}>Today’s desk brief{dateLabel ? ` · ${dateLabel}` : ''}</Mono>
               </div>
-              <ChevronRight size={18} color={tokens.textFaint} style={{ flexShrink: 0 }} />
+              <ChevronRight size={15} color={CMD.ink3} style={{ flexShrink: 0 }} />
             </div>
 
-            {/* Brief body — compact (clamped to ~3 lines) with tap-to-expand */}
+            {/* narrative */}
             {drb.loading ? (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {[0.95, 0.85, 0.6].map((w, i) => (
-                  <div key={i} style={{
-                    height: '12px', width: `${w * 100}%`, borderRadius: '6px',
-                    background: 'linear-gradient(90deg, rgba(255,255,255,0.06), rgba(255,255,255,0.02))',
-                  }} />
+                  <div key={i} style={{ height: 13, width: `${w * 100}%`, borderRadius: 6, background: 'linear-gradient(90deg, rgba(255,255,255,0.06), rgba(255,255,255,0.02))' }} />
                 ))}
               </div>
             ) : drb.dailyBrief ? (
-              <div
-                onClick={() => canToggle && setExpanded((e) => !e)}
-                style={{ cursor: canToggle ? 'pointer' : 'default' }}
-              >
+              <div onClick={() => canToggle && setExpanded((e) => !e)} style={{ cursor: canToggle ? 'pointer' : 'default' }}>
                 <p ref={briefRef} style={briefStyle}>{drb.dailyBrief}</p>
-                {canToggle && (
-                  <span style={{
-                    display: 'inline-block', marginTop: '6px',
-                    fontSize: '12px', fontWeight: 700, color: accent,
-                  }}>
-                    {expanded ? 'Show less' : 'More'}
-                  </span>
-                )}
+                {canToggle && <span style={{ display: 'inline-block', marginTop: 6, fontSize: 12, fontWeight: 700, color: accent }}>{expanded ? 'Show less' : 'More'}</span>}
               </div>
             ) : (
-              <p style={{ margin: 0, fontSize: '14px', lineHeight: 1.6, color: tokens.textMuted }}>
+              <p style={{ margin: 0, fontSize: 14.5, lineHeight: 1.6, color: CMD.ink2 }}>
                 {drb.error
                   ? 'Couldn’t load today’s brief just now — pull to retry shortly.'
                   : 'Today’s brief isn’t in yet. Your agent will read it the moment it lands.'}
               </p>
             )}
 
-            {/* Theme chips (compact) */}
+            {/* theme chips */}
             {!drb.loading && drb.themes.length > 0 && (
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '14px' }}>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 14 }}>
                 {drb.themes.slice(0, 3).map((t, i) => (
-                  <span key={`t-${i}`} style={{
-                    fontSize: '11px', fontWeight: 600, color: tokens.textSecondary,
-                    padding: '4px 10px', borderRadius: '20px',
-                    background: hexToRgba(accent, 0.10), border: `1px solid ${hexToRgba(accent, 0.20)}`,
-                  }}>
-                    {t}
-                  </span>
+                  <span key={`t-${i}`} style={{ fontSize: 11, fontWeight: 600, color: CMD.ink2, padding: '4px 10px', borderRadius: 20, background: alpha(accent, 0.1), border: `1px solid ${alpha(accent, 0.2)}` }}>{t}</span>
                 ))}
               </div>
             )}
-
-            {/* Expanded-only extras: key events + the brief's date/staleness */}
             {expanded && !drb.loading && drb.keyEvents.length > 0 && (
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '8px' }}>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
                 {drb.keyEvents.slice(0, 4).map((e, i) => (
-                  <span key={`e-${i}`} style={{
-                    fontSize: '11px', fontWeight: 600, color: tokens.textMuted,
-                    padding: '4px 10px', borderRadius: '20px',
-                    background: tokens.bgIcon, border: `1px solid ${tokens.borderDefault}`,
-                  }}>
-                    {e?.label || ''}
-                  </span>
+                  <span key={`e-${i}`} style={{ fontSize: 11, fontWeight: 600, color: CMD.ink3, padding: '4px 10px', borderRadius: 20, background: alpha('#FFFFFF', 0.04), border: `1px solid ${CMD.hair}` }}>{e?.label || ''}</span>
                 ))}
               </div>
             )}
-            {expanded && !drb.loading && drb.forDate && (
-              <div style={{ fontSize: '11px', color: tokens.textFaint, marginTop: '12px' }}>
-                Brief for {prettyDate(drb.forDate)}{drb.isStale ? ' · showing the latest available' : ''}
-              </div>
+            {expanded && !drb.loading && drb.forDate && drb.isStale && (
+              <div style={{ fontSize: 11, color: CMD.ink3, marginTop: 12 }}>Showing the latest available brief ({dateLabel}).</div>
             )}
 
-            {/* Actions — Deploy (wired Phase 3) + Talk it over (deferred Voice Layer) */}
-            <div style={{
-              display: 'flex', gap: '10px', marginTop: '16px',
-              paddingTop: '14px', borderTop: `1px solid ${tokens.borderDefault}`,
-            }}>
+            {/* the read flows into the decision */}
+            <div style={{ display: 'flex', gap: 9, marginTop: 15 }}>
               <motion.button
                 type="button"
                 onClick={handleDeploy}
                 disabled={deployDisabled}
-                whileTap={deployDisabled ? undefined : { scale: 0.97 }}
+                whileTap={deployDisabled ? undefined : { scale: 0.985 }}
                 style={{
-                  flex: 1.4, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '7px',
-                  padding: '11px 14px', borderRadius: '12px', border: 'none',
-                  cursor: deployDisabled ? 'default' : 'pointer',
-                  background: accent, color: readableText(accent), fontSize: '14px', fontWeight: 700,
-                  boxShadow: `0 0 16px ${hexToRgba(accent, 0.30)}`,
-                  opacity: deployDisabled ? 0.55 : 1,
+                  flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                  padding: 12, borderRadius: 12, border: 'none', cursor: deployDisabled ? 'default' : 'pointer', fontFamily: 'inherit',
+                  background: accent, color: readableOn(accent), fontWeight: 700, fontSize: 13.5, opacity: deployDisabled ? 0.55 : 1,
                 }}
               >
-                <Rocket size={16} />
-                {deploying ? 'Deploying…' : isLive ? 'Battle in progress' : 'Deploy on this read'}
+                <Zap size={16} color={readableOn(accent)} fill={readableOn(accent)} />
+                <span>{deploying ? 'Deploying…' : isLive ? 'Battle in progress' : 'Deploy on this read'}</span>
               </motion.button>
               <motion.button
                 type="button"
-                whileTap={{ scale: 0.97 }}
+                whileTap={{ scale: 0.985 }}
                 style={{
-                  flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '7px',
-                  padding: '11px 14px', borderRadius: '12px', cursor: 'pointer',
-                  background: 'transparent', border: `1px solid ${hexToRgba(accent, 0.40)}`,
-                  color: tokens.textSecondary, fontSize: '14px', fontWeight: 600,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                  padding: '12px 15px', borderRadius: 12, cursor: 'pointer', fontFamily: 'inherit',
+                  background: 'transparent', border: `1px solid ${alpha(accent, 0.4)}`, color: accent, fontWeight: 600, fontSize: 13.5,
                 }}
               >
-                <MessageCircle size={16} />
-                Talk it over
+                <MessageCircle size={16} color={accent} />
+                <span>Talk it over</span>
               </motion.button>
             </div>
-          </HoloCard>
+          </div>
         </motion.div>
 
-        {/* ── 02 · Equip ─────────────────────────────────────────────────── */}
-        <motion.div variants={sectionVariants}>
-          <EquipStation agent={agent} accent={accent} tokens={tokens} setShowForge={setShowForge} onOpenAgent={() => setScreen?.('agent')} />
-        </motion.div>
-
-        {/* ── 03 · Deploy ────────────────────────────────────────────────── */}
-        <motion.div variants={sectionVariants}>
-          <DeployStation
-            agent={agent}
-            accent={accent}
-            tokens={tokens}
-            isLive={isLive}
-            deploying={deploying}
-            onDeploy={handleDeploy}
+        {/* ── 02 · EQUIP ─────────────────────────────────────────────────── */}
+        <motion.div variants={sectionVariants} id="cmd-equip">
+          <SectionLabel
+            n="02"
+            label={isLive ? 'Equip · locked in battle' : 'Equip · loadout bench'}
+            color={isLive ? CMD.ink3 : accent}
+            right={<Mono style={{ fontSize: 10.5, color: CMD.ink3 }}>{equippedCount}/3 slots</Mono>}
           />
+          <EquipStation agent={agent} accent={accent} onOpenAgent={() => setScreen?.('agent')} setShowForge={setShowForge} />
         </motion.div>
 
-        {/* ── 04 · Manage (only when a battle is live) ───────────────────── */}
-        {isLive && (
+        {/* ── 03 · DEPLOY  /  04 · MANAGE (when live) ────────────────────── */}
+        {!isLive ? (
           <motion.div variants={sectionVariants}>
-            <ManageStation
-              battle={liveBattle}
-              agent={agent}
-              accent={accent}
-              tokens={tokens}
-              onOpen={onOpenAgentBattle}
-            />
+            <SectionLabel n="03" label="Deploy" color={accent} />
+            <DeployStation agent={agent} accent={accent} deploying={deploying} onDeploy={handleDeploy} onAddRules={scrollToEquip} rulesOpen={rulesOpen} />
+          </motion.div>
+        ) : (
+          <motion.div variants={sectionVariants}>
+            <SectionLabel n="04" label="Manage · live" color={accent} />
+            <ManageStation battle={liveBattle} agent={agent} accent={accent} onOpen={onOpenAgentBattle} />
           </motion.div>
         )}
 
-        {/* ── 05 · Review (only when a recent completed battle exists) ────── */}
+        {/* ── 05 · REVIEW ────────────────────────────────────────────────── */}
         {recentCompleted.length > 0 && (
           <motion.div variants={sectionVariants}>
-            <ReviewStation
-              battles={recentCompleted}
-              agent={agent}
-              accent={accent}
-              tokens={tokens}
-              onReview={openFilmRoom}
-            />
+            <SectionLabel n="05" label="Review · last battle" color={accent} />
+            <ReviewStation battles={recentCompleted} agent={agent} accent={accent} onReview={openFilmRoom} />
           </motion.div>
         )}
 
-        {/* Footer loop label */}
-        <div style={{
-          textAlign: 'center', marginTop: '4px',
-          fontSize: '10px', fontWeight: 600, letterSpacing: '1px',
-          textTransform: 'uppercase', color: tokens.textFaintest,
-        }}>
-          Read → Equip → Deploy → Manage → Review
-        </div>
+        {/* footer */}
+        <motion.div variants={sectionVariants} style={{ textAlign: 'center', paddingTop: 4 }}>
+          <Mono style={{ fontSize: 9.5, letterSpacing: '0.18em', color: CMD.ink3, textTransform: 'uppercase' }}>Read → Equip → Deploy → Manage → Review</Mono>
+        </motion.div>
       </motion.div>
     </div>
   );

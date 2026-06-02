@@ -1,37 +1,27 @@
 // src/components/Dashboard/EquipStation.jsx
 //
-// The "02 · Equip" loadout bench for the Command Dashboard: the agent's identity
-// (archetype) plus the two equip slots (watchlist, rules). Cold-start is
-// archetype + watchlist filled with one open rules slot — framed as a positive,
-// optional CTA, never a validation error. Deploy works regardless.
+// "02 · Equip" loadout bench — the prototype's two-column character-sheet
+// layout: a tall identity panel (orb + agent name + record) on the left, three
+// compact equipment slot rows on the right (Archetype, Watchlist, the open
+// dashed Rules slot). Cold-start = archetype + watchlist filled, one open rules
+// slot framed as a positive optional CTA. Tapping the identity panel or the
+// archetype slot opens the agent's full profile.
 //
-// Reuse, not rebuild:
-//   - watchlist: listWatchlists + filterWatchlistsByStatus('committed') +
-//     equipWatchlist/unequipWatchlist (agentService) — the same path
-//     EquippedWatchlistCard uses, presented here as a compact bench row.
-//   - rules: useForge's forgedBundles / equippedBundles + equipBundleFn /
-//     unequipBundleFn (which call forgeService.equipBundle/unequipBundle).
-//   - lock: agent.activeBattleId (the established equip-lock signal).
+// VISUAL PASS: layout + styling only. Equip logic, data, the watchlist/rule
+// services, the lock (agent.activeBattleId), and the pickers are unchanged.
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { Fingerprint, Bookmark, ScrollText, Plus, ChevronRight, Lock } from 'lucide-react';
-import HoloCard from '../shared/HoloCard';
+import { Sparkles, Target, ScrollText, Plus, ChevronRight, Lock } from 'lucide-react';
+import AgentOrb from '../shared/AgentOrb';
 import EquipSheet from './EquipSheet';
 import RuleBundlePicker from './RuleBundlePicker';
+import { CMD, alpha, Mono } from './commandUI';
 import { useForge } from '../../hooks/useForge';
 import { listWatchlists } from '../../services/forgeWatchlistService';
 import { filterWatchlistsByStatus } from '../Forge/Watchlist/filterWatchlistsByStatus';
 import { equipWatchlist, unequipWatchlist } from '../../services/agentService';
 import { getArchetypeDisplayName } from '../../data/archetypeDisplay';
 import { getArchetypeIdentity } from '../../data/archetypeIdentity';
-
-function hexToRgba(hex, a) {
-  if (!hex || typeof hex !== 'string' || !hex.startsWith('#')) return `rgba(94,234,212,${a})`;
-  const r = parseInt(hex.slice(1, 3), 16);
-  const g = parseInt(hex.slice(3, 5), 16);
-  const b = parseInt(hex.slice(5, 7), 16);
-  return `rgba(${r},${g},${b},${a})`;
-}
 
 function tickerLabel(tickers) {
   const syms = (tickers || [])
@@ -41,61 +31,73 @@ function tickerLabel(tickers) {
   return syms.slice(0, 4).join(' · ') + (syms.length > 4 ? ` +${syms.length - 4}` : '');
 }
 
-// ─── Slot card ───────────────────────────────────────────────────────────────
+// ─── A single equipment slot row ─────────────────────────────────────────────
 
-function SlotCard({ icon, slotAccent, eyebrow, title, subtitle, onClick, locked, dashed, tokens }) {
+function Slot({ filled, icon, catColor, label, name, sub, locked, onClick }) {
   const interactive = Boolean(onClick) && !locked;
+
+  if (!filled) {
+    // empty = an upgrade invitation, never an error
+    return (
+      <div
+        onClick={interactive ? onClick : undefined}
+        style={{
+          display: 'flex', alignItems: 'center', gap: 12, padding: '13px 14px', borderRadius: 14,
+          border: `1.4px dashed ${CMD.hair2}`, background: alpha('#FFFFFF', 0.012),
+          opacity: locked ? 0.4 : 1, cursor: interactive ? 'pointer' : 'default',
+          transition: 'border-color .15s ease, background .15s ease',
+        }}
+      >
+        <div style={{
+          width: 34, height: 34, borderRadius: 9, flexShrink: 0,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          border: `1px dashed ${CMD.hair2}`, color: CMD.ink3,
+        }}>
+          <Plus size={16} color={CMD.ink2} />
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 13.5, color: CMD.ink2, fontWeight: 500 }}>{name}</div>
+          <Mono style={{ fontSize: 9.5, letterSpacing: '0.14em', color: CMD.ink3, textTransform: 'uppercase', display: 'block', marginTop: 3 }}>{sub}</Mono>
+        </div>
+        {interactive && <ChevronRight size={15} color={CMD.ink3} style={{ flexShrink: 0 }} />}
+      </div>
+    );
+  }
+
   return (
-    <HoloCard
-      as={interactive ? 'button' : 'div'}
+    <div
       onClick={interactive ? onClick : undefined}
-      size="lg"
       style={{
-        width: '100%', textAlign: 'left', fontFamily: 'inherit',
-        background: tokens.bgCard,
-        border: dashed
-          ? `1px dashed ${hexToRgba(slotAccent, 0.5)}`
-          : `1px solid ${tokens.borderDefault}`,
-        borderLeft: `3px solid ${slotAccent}`,
-        boxShadow: tokens.obsidianShadow,
+        display: 'flex', alignItems: 'center', gap: 12, padding: '13px 14px', borderRadius: 14,
+        border: `1px solid ${CMD.hair}`, background: CMD.surface, position: 'relative', overflow: 'hidden',
         cursor: interactive ? 'pointer' : 'default',
-        opacity: locked ? 0.75 : 1,
-        display: 'flex', alignItems: 'center', gap: 12,
+        transition: 'border-color .15s ease',
       }}
     >
+      <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 3, background: catColor, opacity: 0.85 }} />
       <div style={{
-        width: 40, height: 40, borderRadius: 10, flexShrink: 0,
+        width: 34, height: 34, borderRadius: 9, flexShrink: 0,
         display: 'flex', alignItems: 'center', justifyContent: 'center',
-        background: hexToRgba(slotAccent, 0.12), border: `1px solid ${hexToRgba(slotAccent, 0.28)}`,
-        color: slotAccent,
+        background: alpha(catColor, 0.13), color: catColor,
       }}>
         {icon}
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
-        {eyebrow && (
-          <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase', color: tokens.textFaint, marginBottom: 3 }}>
-            {eyebrow}
-          </div>
-        )}
-        <div style={{ fontSize: 14, fontWeight: 700, color: tokens.textPrimary, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-          {title}
-        </div>
-        {subtitle && (
-          <div style={{ fontSize: 12, color: tokens.textMuted, marginTop: 2, lineHeight: 1.4 }}>{subtitle}</div>
+        <Mono style={{ fontSize: 9, letterSpacing: '0.16em', color: CMD.ink3, textTransform: 'uppercase' }}>{label}</Mono>
+        <div style={{ fontSize: 13.5, color: CMD.ink, fontWeight: 600, marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{name}</div>
+        {sub != null && (
+          <div style={{ fontSize: 11, color: CMD.ink2, marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{sub}</div>
         )}
       </div>
-      {locked ? (
-        <Lock size={15} color={tokens.textFaint} style={{ flexShrink: 0 }} />
-      ) : interactive ? (
-        <ChevronRight size={18} color={tokens.textFaint} style={{ flexShrink: 0 }} />
-      ) : null}
-    </HoloCard>
+      {(locked ? false : interactive) && <ChevronRight size={15} color={CMD.ink3} style={{ flexShrink: 0 }} />}
+      {locked && <Lock size={14} color={CMD.ink3} style={{ flexShrink: 0 }} />}
+    </div>
   );
 }
 
 // ─── Equip station ───────────────────────────────────────────────────────────
 
-export default function EquipStation({ agent, accent, tokens, setShowForge, onOpenAgent }) {
+export default function EquipStation({ agent, accent, onOpenAgent, setShowForge }) {
   const agentId = agent?.id;
   const benchLocked = Boolean(agent?.activeBattleId);
 
@@ -104,8 +106,7 @@ export default function EquipStation({ agent, accent, tokens, setShowForge, onOp
 
   // ── Rules (bundles) via the existing Forge hook ──────────────────────────
   const { forgedBundles, equippedBundles, equipBundleFn, unequipBundleFn, equippingBundleId, loading: forgeLoading } = useForge(agentId);
-  // Single canonical source (useForge's equippedBundles) for the rules slot so
-  // the filled/open state and the count can't disagree mid-equip.
+  // Single canonical source so the slot can't flicker mid-equip.
   const rulesEquipped = equippedBundles.length > 0;
 
   // ── Watchlist via the existing watchlist services ────────────────────────
@@ -137,12 +138,13 @@ export default function EquipStation({ agent, accent, tokens, setShowForge, onOp
   const watchlistName = equippedWatchlist?.name || agent?.equippedWatchlistName || null;
   const watchlistUnavailable = Boolean(equippedWatchlistId) && listLoaded && !equippedWatchlist;
 
-  // ── Identity (archetype) ─────────────────────────────────────────────────
+  // ── Identity ─────────────────────────────────────────────────────────────
+  const agentName = agent?.name || 'Your agent';
   const archetypeName = getArchetypeDisplayName(agent?.archetype);
   const disposition = getArchetypeIdentity(agent?.archetype).disposition;
-
-  // ── Slot fill count ──────────────────────────────────────────────────────
-  const filled = 1 + (equippedWatchlistId ? 1 : 0) + (rulesEquipped ? 1 : 0);
+  const wins = agent?.stats?.wins ?? 0;
+  const losses = agent?.stats?.losses ?? 0;
+  const tier = (wins || losses) ? `${wins}W · ${losses}L` : 'New agent';
 
   // ── Equip handlers ───────────────────────────────────────────────────────
   const handleEquipWatchlist = async (watchlistId) => {
@@ -158,20 +160,13 @@ export default function EquipStation({ agent, accent, tokens, setShowForge, onOp
       setSheet(null);
     }
   };
-
-  const handleEquipBundle = async (bundleId) => {
-    await equipBundleFn(bundleId);
-    setSheet(null);
-  };
-  const handleUnequipBundle = async (bundleId) => {
-    await unequipBundleFn(bundleId);
-    setSheet(null);
-  };
+  const handleEquipBundle = async (bundleId) => { await equipBundleFn(bundleId); setSheet(null); };
+  const handleUnequipBundle = async (bundleId) => { await unequipBundleFn(bundleId); setSheet(null); };
   const openForge = () => { setSheet(null); setShowForge?.(true); };
 
   // ── Watchlist sheet rows ─────────────────────────────────────────────────
   const watchlistRows = [
-    { id: '__none__', title: 'No watchlist', subtitle: 'Let the agent pick from the full board', selected: !equippedWatchlistId, disabled: wlWorking, onClick: () => handleEquipWatchlist(null) },
+    { id: '__none__', title: 'No watchlist', subtitle: 'Let the agent range the full board', selected: !equippedWatchlistId, disabled: wlWorking, onClick: () => handleEquipWatchlist(null) },
     ...committed.map((w) => ({
       id: w.watchlistId,
       title: w.name || 'Untitled watchlist',
@@ -181,115 +176,86 @@ export default function EquipStation({ agent, accent, tokens, setShowForge, onOp
       onClick: () => handleEquipWatchlist(w.watchlistId),
     })),
   ];
-  const watchlistFooter = (
-    <button
-      type="button"
-      onClick={openForge}
-      style={{
-        width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-        padding: '12px 14px', borderRadius: 12, cursor: 'pointer', fontFamily: 'inherit',
-        background: 'transparent', border: `1px solid ${hexToRgba(tokens.teal, 0.4)}`,
-        color: tokens.teal, fontSize: 14, fontWeight: 700,
-      }}
-    >
-      <Plus size={16} />
-      Create a watchlist in Forge
-    </button>
-  );
+
+  const rulesTitle = equippedBundles.length === 1
+    ? (equippedBundles[0].name || 'Strategy equipped')
+    : `${equippedBundles.length} strategies equipped`;
 
   return (
-    <div>
-      {/* Section header */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12, padding: '0 2px' }}>
-        <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '2px', textTransform: 'uppercase', color: accent }}>
-          02 · Equip
-        </span>
-        <span style={{
-          fontSize: 10, fontWeight: 700, color: tokens.textMuted,
-          background: tokens.bgIcon, border: `1px solid ${tokens.borderDefault}`,
-          padding: '2px 8px', borderRadius: 20,
-        }}>
-          {filled}/3 slots
-        </span>
-        {benchLocked && (
-          <span style={{ fontSize: 11, color: tokens.textFaint, marginLeft: 'auto' }}>
-            Locked — battle live
-          </span>
-        )}
-      </div>
-
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-        {/* Identity — archetype (filled, non-swappable); tap to open the agent's profile */}
-        <SlotCard
-          icon={<Fingerprint size={18} />}
-          slotAccent={accent}
-          eyebrow="Identity"
-          title={archetypeName}
-          subtitle={disposition}
+    <>
+      {/* two-column bench: identity panel + stacked slot rows */}
+      <div style={{ display: 'flex', gap: 14, alignItems: 'stretch' }}>
+        {/* identity panel — tap → agent profile */}
+        <div
           onClick={onOpenAgent}
-          tokens={tokens}
-        />
+          role={onOpenAgent ? 'button' : undefined}
+          aria-label={onOpenAgent ? 'Open agent profile' : undefined}
+          style={{
+            width: 92, flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+            gap: 9, padding: '14px 6px', borderRadius: 16, background: CMD.surface, border: `1px solid ${CMD.hair}`,
+            cursor: onOpenAgent ? 'pointer' : 'default',
+          }}
+        >
+          <AgentOrb state={benchLocked ? 'live' : 'ready'} size={56} color={accent} />
+          <div style={{ textAlign: 'center' }}>
+            <div style={{ fontSize: 13, color: CMD.ink, fontWeight: 700, letterSpacing: '-0.01em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 80 }}>{agentName}</div>
+            <Mono style={{ fontSize: 8.5, letterSpacing: '0.12em', color: CMD.ink3, textTransform: 'uppercase', display: 'block', marginTop: 2 }}>{tier}</Mono>
+          </div>
+        </div>
 
-        {/* Watchlist */}
-        <SlotCard
-          icon={<Bookmark size={18} />}
-          slotAccent={tokens.teal}
-          eyebrow="Watchlist"
-          title={watchlistName ? `${watchlistName}${watchlistUnavailable ? ' (unavailable)' : ''}` : 'Choose a watchlist'}
-          subtitle={
-            equippedWatchlistId && equippedWatchlist
-              ? tickerLabel(equippedWatchlist.tickers)
-              : 'Give your agent priority opportunities'
-          }
-          onClick={() => setSheet('watchlist')}
-          locked={benchLocked}
-          tokens={tokens}
-        />
+        {/* equipment rows */}
+        <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {/* Archetype — identity, non-swappable; tap opens the profile */}
+          <Slot
+            filled
+            icon={<Sparkles size={17} color={accent} />}
+            catColor={accent}
+            label="Archetype"
+            name={archetypeName}
+            sub={disposition}
+            onClick={onOpenAgent}
+          />
 
-        {/* Rules */}
-        {rulesEquipped ? (
-          <SlotCard
-            icon={<ScrollText size={18} />}
-            slotAccent={tokens.emerald}
-            eyebrow="Rules"
-            title={
-              equippedBundles.length === 1
-                ? (equippedBundles[0].name || 'Strategy equipped')
-                : `${equippedBundles.length} strategies equipped`
-            }
-            subtitle="Tap to change your agent's playbook"
-            onClick={() => setSheet('rules')}
+          {/* Watchlist */}
+          <Slot
+            filled={Boolean(equippedWatchlistId)}
+            icon={<Target size={17} color={CMD.teal} />}
+            catColor={CMD.teal}
+            label="Watchlist"
+            name={equippedWatchlistId
+              ? `${watchlistName || 'Watchlist'}${watchlistUnavailable ? ' (unavailable)' : ''}`
+              : 'Add watchlist'}
+            sub={equippedWatchlistId && equippedWatchlist ? tickerLabel(equippedWatchlist.tickers) : 'Optional · priority opportunities'}
             locked={benchLocked}
-            tokens={tokens}
+            onClick={() => setSheet('watchlist')}
           />
-        ) : (
-          <SlotCard
-            icon={<Plus size={18} />}
-            slotAccent={tokens.amber}
-            eyebrow="Rules · optional"
-            title="Add rules"
-            subtitle="Optional — sharpens your agent"
-            onClick={() => setSheet('rules')}
+
+          {/* Rules — the open cold-start slot */}
+          <Slot
+            filled={rulesEquipped}
+            icon={<ScrollText size={17} color={CMD.allocation} />}
+            catColor={CMD.allocation}
+            label="Rule bundle"
+            name={rulesEquipped ? rulesTitle : 'Add rules'}
+            sub={rulesEquipped ? 'Tap to change the playbook' : 'Optional · sharpens your agent'}
             locked={benchLocked}
-            dashed
-            tokens={tokens}
+            onClick={() => setSheet('rules')}
           />
-        )}
+        </div>
       </div>
 
-      {/* Reassurance — never a requirement */}
+      {/* reassurance — never a requirement */}
       {!rulesEquipped && !benchLocked && (
-        <div style={{ fontSize: 11, color: tokens.textFaint, marginTop: 10, padding: '0 2px', lineHeight: 1.5 }}>
-          One open slot — not a requirement. Deploy works now.
+        <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 10 }}>
+          <Sparkles size={12} color={accent} />
+          <div style={{ fontSize: 11.5, color: CMD.ink3 }}>One open slot — a chance to arm {agentName}, not a requirement. Deploy works now.</div>
         </div>
       )}
       {benchLocked && (
-        <div style={{ fontSize: 11, color: tokens.textFaint, marginTop: 10, padding: '0 2px', lineHeight: 1.5 }}>
-          Changes apply to your next battle.
-        </div>
+        <div style={{ fontSize: 11.5, color: CMD.ink3, marginTop: 10 }}>Locked in battle · changes apply to your next deploy.</div>
       )}
 
-      {/* Watchlist picker */}
+      {/* watchlist picker */}
       <EquipSheet
         open={sheet === 'watchlist'}
         onClose={() => setSheet(null)}
@@ -298,12 +264,19 @@ export default function EquipStation({ agent, accent, tokens, setShowForge, onOp
         loading={!listLoaded}
         rows={watchlistRows}
         emptyLabel="No committed watchlists yet. Create one in Forge to focus your agent."
-        footer={watchlistFooter}
-        accent={tokens.teal}
-        tokens={tokens}
+        footer={(
+          <button type="button" onClick={openForge} style={{
+            width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+            padding: '12px 14px', borderRadius: 12, cursor: 'pointer', fontFamily: 'inherit',
+            background: 'transparent', border: `1px solid ${alpha(CMD.teal, 0.4)}`, color: CMD.teal, fontSize: 14, fontWeight: 700,
+          }}>
+            <Plus size={16} /> Create a watchlist in Forge
+          </button>
+        )}
+        accent={CMD.teal}
       />
 
-      {/* Rules picker */}
+      {/* rules picker */}
       <RuleBundlePicker
         open={sheet === 'rules'}
         onClose={() => setSheet(null)}
@@ -314,9 +287,8 @@ export default function EquipStation({ agent, accent, tokens, setShowForge, onOp
         onBuildNew={openForge}
         working={Boolean(equippingBundleId)}
         loading={forgeLoading}
-        accent={tokens.emerald}
-        tokens={tokens}
+        accent={CMD.allocation}
       />
-    </div>
+    </>
   );
 }

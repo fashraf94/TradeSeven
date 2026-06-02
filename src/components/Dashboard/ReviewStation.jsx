@@ -1,24 +1,17 @@
 // src/components/Dashboard/ReviewStation.jsx
 //
 // "05 · Review" — an entry shown only when a recently-completed agent battle
-// exists. Taps through to the Film Room (the post-battle review surface) using
-// the same raw agentBattles doc the battleHistory Review button passes. Empty
-// when there's nothing recent.
+// exists. Taps through to the Film Room (the raw agentBattles doc, same path
+// the battleHistory Review button uses). Empty when there's nothing recent.
+//
+// VISUAL PASS: styling only — onReview + the data read are unchanged.
 
 import React from 'react';
 import { Film, ChevronRight } from 'lucide-react';
-import HoloCard from '../shared/HoloCard';
 import GainLossBadge from '../shared/GainLossBadge';
+import { CMD, alpha } from './commandUI';
 
-function hexToRgba(hex, a) {
-  if (!hex || typeof hex !== 'string' || !hex.startsWith('#')) return `rgba(94,234,212,${a})`;
-  const r = parseInt(hex.slice(1, 3), 16);
-  const g = parseInt(hex.slice(3, 5), 16);
-  const b = parseInt(hex.slice(5, 7), 16);
-  return `rgba(${r},${g},${b},${a})`;
-}
-
-export default function ReviewStation({ battles = [], agent, accent, tokens, onReview }) {
+export default function ReviewStation({ battles = [], agent, accent, onReview }) {
   if (!battles.length) return null;
   const latest = battles[0];
   const agentName = latest.agentContext?.agentName || agent?.name || 'Your agent';
@@ -26,40 +19,30 @@ export default function ReviewStation({ battles = [], agent, accent, tokens, onR
   const more = battles.length - 1;
 
   return (
-    <HoloCard
-      as="button"
+    <div
       onClick={() => onReview?.(latest)}
-      size="lg"
+      role="button"
+      aria-label="Open last battle in Film Room"
       style={{
-        width: '100%', textAlign: 'left', fontFamily: 'inherit', cursor: 'pointer',
-        background: tokens.bgCard,
-        border: `1px solid ${tokens.borderDefault}`,
-        boxShadow: tokens.obsidianShadow,
-        display: 'flex', alignItems: 'center', gap: 12,
+        display: 'flex', alignItems: 'center', gap: 13, padding: '13px 15px', borderRadius: 16,
+        background: CMD.surface, border: `1px solid ${CMD.hair}`, cursor: 'pointer',
       }}
     >
       <div style={{
-        width: 40, height: 40, borderRadius: 10, flexShrink: 0,
+        width: 44, height: 44, borderRadius: 12, flexShrink: 0,
         display: 'flex', alignItems: 'center', justifyContent: 'center',
-        background: hexToRgba(accent, 0.12), border: `1px solid ${hexToRgba(accent, 0.28)}`, color: accent,
+        background: alpha(accent, 0.13), border: `1px solid ${alpha(accent, 0.3)}`, color: accent,
       }}>
         <Film size={18} />
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase', color: tokens.textFaint, marginBottom: 3 }}>
-          05 · Review
-        </div>
-        <div style={{ fontSize: 14, fontWeight: 700, color: tokens.textPrimary, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-          {agentName}’s last battle
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 4 }}>
+        <div style={{ fontSize: 13.5, color: CMD.ink, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{agentName}’s last battle</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginTop: 3 }}>
           <GainLossBadge value={score} variant="text" size="sm" showPercent={false} />
-          <span style={{ fontSize: 12, color: tokens.textMuted }}>
-            Break down the tape{more > 0 ? ` · +${more} more` : ''}
-          </span>
+          <span style={{ fontSize: 11.5, color: CMD.ink2 }}>Break down the tape{more > 0 ? ` · +${more} more` : ''}</span>
         </div>
       </div>
-      <ChevronRight size={20} color={tokens.textFaint} style={{ flexShrink: 0 }} />
-    </HoloCard>
+      <ChevronRight size={16} color={CMD.ink3} style={{ flexShrink: 0 }} />
+    </div>
   );
 }

@@ -1,79 +1,81 @@
 // src/components/shared/AgentOrb.jsx
 //
-// The agent-identity motif for the Command Dashboard — a living presence rather
-// than a solid sphere: a glowing core that breathes, with concentric rings that
-// pulse outward from it. Tinted by the agent's color (primaryColor upstream,
-// passed in as colors[0]). Pure gradient + framer-motion; no asset, no global
-// keyframes. Rings expand only to the container edge, so it never overflows the
-// layout it sits in.
+// The agent-identity Orb — a living state element, ported from the Command
+// Dashboard prototype (components.jsx). Structure: an outer glow, a rotating
+// masked conic-gradient ring, a counter-rotating inner ring, and a luminous
+// core, with a gentle breathing pulse on the whole. CSS gradients + masks for
+// the ring structure; framer-motion drives the rotation and the pulse (so no
+// global keyframes are needed). Tinted by the agent's color.
 //
-// states: 'ready' (slow idle breathe) · 'reading' (faster pulse) · 'live'
+// states: 'ready' (slow) · 'reading' (faster) · 'live' (most intense)
 
 import React from 'react';
 import { motion } from 'framer-motion';
 
-function hexToRgba(hex, a) {
-  if (!hex || typeof hex !== 'string' || !hex.startsWith('#')) return `rgba(94,234,212,${a})`;
-  const r = parseInt(hex.slice(1, 3), 16);
-  const g = parseInt(hex.slice(3, 5), 16);
-  const b = parseInt(hex.slice(5, 7), 16);
-  return `rgba(${r},${g},${b},${a})`;
+function alpha(hex, a) {
+  if (!hex || typeof hex !== 'string') return `rgba(94,234,212,${a})`;
+  const h = hex.replace('#', '');
+  const full = h.length === 3 ? h.split('').map((c) => c + c).join('') : h;
+  const n = parseInt(full, 16);
+  if (Number.isNaN(n)) return `rgba(94,234,212,${a})`;
+  return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${a})`;
 }
 
-export default function AgentOrb({ colors = ['#5eead4', '#a855f7'], size = 76, state = 'ready' }) {
-  const c1 = colors?.[0] || '#5eead4';
-  const c2 = colors?.[1] || c1;
-  const reading = state === 'reading';
+// Mask that keeps only a thin ring at the outer edge of a padded gradient box.
+const ringMask = (outer, inner) =>
+  `radial-gradient(farthest-side, transparent calc(100% - ${outer}px), #000 calc(100% - ${inner}px))`;
+
+export default function AgentOrb({ colors, color, size = 56, state = 'ready' }) {
+  const hue = state === 'review' ? '#F0C75E' : (color || colors?.[0] || '#5EEAD4');
   const live = state === 'live';
-
-  // Faster motion while the agent is "reading"; calm idle otherwise.
-  const breath = live ? 1.8 : reading ? 2.0 : 3.6; // core breathe period (s)
-  const ripple = live ? 1.5 : reading ? 1.9 : 3.4; // ring pulse period (s)
-  const rings = [0, 1, 2];
-
-  // Centering: inset:0 + margin:auto centers a fixed-size box in the container,
-  // leaving framer-motion's transform free for scale (origin = center).
-  const layer = (w) => ({
-    position: 'absolute', inset: 0, margin: 'auto',
-    width: w, height: w, borderRadius: '50%',
-  });
+  const reading = state === 'reading';
+  const intensity = live ? 0.7 : reading ? 0.5 : 0.34;
 
   return (
-    <div style={{ position: 'relative', width: size, height: size, flexShrink: 0 }} aria-hidden="true">
-      {/* Concentric rings pulsing outward from the core to the edge */}
-      {rings.map((i) => (
-        <motion.div
-          key={i}
-          initial={false}
-          animate={{ scale: [0.4, 1], opacity: [0.55, 0] }}
-          transition={{ duration: ripple, repeat: Infinity, ease: 'easeOut', delay: i * (ripple / rings.length) }}
-          style={{ ...layer(size), border: `1.5px solid ${hexToRgba(c1, 0.6)}` }}
-        />
-      ))}
+    <motion.div
+      aria-hidden="true"
+      initial={false}
+      animate={{ scale: [1, 1.06, 1], opacity: [0.9, 1, 0.9] }}
+      transition={{ duration: live ? 2.2 : 3.4, repeat: Infinity, ease: 'easeInOut' }}
+      style={{ width: size, height: size, position: 'relative', flexShrink: 0 }}
+    >
+      {/* outer glow */}
+      <div style={{
+        position: 'absolute', inset: -size * 0.28, borderRadius: '50%',
+        background: `radial-gradient(circle, ${alpha(hue, intensity)} 0%, transparent 68%)`,
+        filter: 'blur(2px)', pointerEvents: 'none',
+      }} />
 
-      {/* Soft aura that breathes with the core */}
+      {/* rotating ring */}
       <motion.div
         initial={false}
-        animate={{ opacity: [0.22, 0.46, 0.22], scale: [0.9, 1.06, 0.9] }}
-        transition={{ duration: breath, repeat: Infinity, ease: 'easeInOut' }}
+        animate={{ rotate: 360 }}
+        transition={{ duration: live ? 4 : reading ? 7 : 14, repeat: Infinity, ease: 'linear' }}
         style={{
-          ...layer(size * 0.82),
-          background: `radial-gradient(circle, ${hexToRgba(c1, 0.4)} 0%, ${hexToRgba(c2, 0.14)} 52%, transparent 72%)`,
-          filter: `blur(${size * 0.07}px)`,
+          position: 'absolute', inset: 0, borderRadius: '50%', padding: Math.max(2, size * 0.05),
+          background: `conic-gradient(from 0deg, ${alpha(hue, 0)}, ${alpha(hue, 0.95)}, ${alpha(hue, 0)} 55%, ${alpha(hue, 0)})`,
+          WebkitMask: ringMask(2.5, 2), mask: ringMask(2.5, 2),
         }}
       />
 
-      {/* Breathing, glowing core */}
+      {/* counter-rotating inner ring */}
       <motion.div
         initial={false}
-        animate={{ scale: [1, 1.16, 1], opacity: [0.92, 1, 0.92] }}
-        transition={{ duration: breath, repeat: Infinity, ease: 'easeInOut' }}
+        animate={{ rotate: -360 }}
+        transition={{ duration: live ? 6 : 10, repeat: Infinity, ease: 'linear' }}
         style={{
-          ...layer(size * 0.42),
-          background: `radial-gradient(circle at 38% 34%, #ffffff 0%, ${c1} 46%, ${c2} 100%)`,
-          boxShadow: `0 0 ${size * 0.16}px ${hexToRgba(c1, 0.7)}, 0 0 ${size * 0.34}px ${hexToRgba(c1, 0.3)}`,
+          position: 'absolute', inset: size * 0.16, borderRadius: '50%', padding: Math.max(1.5, size * 0.03),
+          background: `conic-gradient(from 180deg, ${alpha(hue, 0)}, ${alpha(hue, 0.6)}, ${alpha(hue, 0)} 40%)`,
+          WebkitMask: ringMask(2, 1.5), mask: ringMask(2, 1.5),
         }}
       />
-    </div>
+
+      {/* luminous core */}
+      <div style={{
+        position: 'absolute', inset: size * 0.26, borderRadius: '50%',
+        background: `radial-gradient(circle at 38% 32%, ${alpha(hue, 0.95)}, ${alpha(hue, 0.22)} 70%, ${alpha(hue, 0.08)})`,
+        boxShadow: `inset 0 0 ${size * 0.12}px ${alpha(hue, 0.5)}`,
+      }} />
+    </motion.div>
   );
 }
