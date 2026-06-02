@@ -93,9 +93,11 @@ export default function CommandDashboard({
   const { agent, record } = useAgent(user?.odUserId);
   const drb = useDailyRegimeBrief();
 
-  const avatarColors = agent?.avatarColors || [tokens.teal, tokens.purple];
-  const accent = avatarColors[0] || tokens.teal;
-  const accent2 = avatarColors[1] || accent;
+  // The user-picked primaryColor supersedes the Haiku-generated avatarColors
+  // (onboarding rule); fall back to avatarColors only when it's absent (null
+  // on agents created before the color picker).
+  const accent = agent?.primaryColor || agent?.avatarColors?.[0] || tokens.teal;
+  const accent2 = agent?.primaryColor || agent?.avatarColors?.[1] || accent;
   const agentName = agent?.name || user?.username || 'your agent';
   const archetype = agent?.archetype ? getArchetypeDisplayName(agent.archetype) : null;
 

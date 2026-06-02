@@ -8491,7 +8491,11 @@ export default function PortfolioDuel() {
     if (isMobile) {
       // Flag-gated swap: the new agent-command loop-home vs. the existing feed.
       // Same props either way; DashboardLoop stays untouched (instant rollback).
-      const DashboardComponent = COMMAND_DASHBOARD_ENABLED ? CommandDashboard : DashboardLoop;
+      // Preview toggle: also render it when a ?cmd query param is present, so the
+      // Vercel preview can be smoke-tested without committing the flag on.
+      const commandDashboardOn = COMMAND_DASHBOARD_ENABLED
+        || (typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('cmd'));
+      const DashboardComponent = commandDashboardOn ? CommandDashboard : DashboardLoop;
       return (
         <ErrorBoundary name="Dashboard" onNavigateDashboard={() => { setScreen('home'); }}>
           <div style={containerStyle}>
