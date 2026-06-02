@@ -22,6 +22,7 @@ import { motion } from 'framer-motion';
 import { Menu, BookOpen, Boxes, Rocket, Activity, Film, MessageCircle } from 'lucide-react';
 import HoloCard from '../shared/HoloCard';
 import AgentOrb from '../shared/AgentOrb';
+import EquipStation from './EquipStation';
 import { useTheme } from '../../contexts/ThemeContext';
 import useAgent from '../../hooks/useAgent';
 import useDailyRegimeBrief from '../../hooks/useDailyRegimeBrief';
@@ -130,6 +131,7 @@ export default function CommandDashboard({
   setScreen,
   setSidebarOpen,
   unreadCount,
+  setShowForge,
   // The remaining DashboardLoop props (battles, modal setters, etc.) are passed
   // by the same call site and get destructured here as later phases wire
   // Deploy / Manage / Review. Unreferenced for now — harmlessly ignored.
@@ -396,8 +398,13 @@ export default function CommandDashboard({
           </HoloCard>
         </motion.div>
 
-        {/* ── 02–05 · stubs (wired in later phases) ─────────────────────── */}
-        {STAGES.filter((s) => s.key !== 'read').map((s) => (
+        {/* ── 02 · Equip ─────────────────────────────────────────────────── */}
+        <motion.div variants={sectionVariants}>
+          <EquipStation agent={agent} accent={accent} tokens={tokens} setShowForge={setShowForge} />
+        </motion.div>
+
+        {/* ── 03–05 · stubs (wired in later phases) ─────────────────────── */}
+        {STAGES.filter((s) => s.key === 'deploy' || s.key === 'manage' || s.key === 'review').map((s) => (
           <motion.div key={s.key} variants={sectionVariants}>
             <HoloCard
               size="lg"

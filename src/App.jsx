@@ -8502,6 +8502,7 @@ export default function PortfolioDuel() {
             <DesktopBackground isDesktop={isDesktop} />
             <DashboardComponent
               user={user}
+              setShowForge={setShowForge}
               activeBattles={activeBattles}
               activeDraftBattles={activeDraftBattles}
               activeTrainingBattles={activeTrainingBattles}
