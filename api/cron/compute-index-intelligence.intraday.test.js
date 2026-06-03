@@ -11,7 +11,7 @@
 // can't be exercised here; these lock the deterministic injection contract.
 
 import { describe, it, expect } from 'vitest';
-import { injectIntradayBar } from './compute-index-intelligence.js';
+import { injectIntradayBar, canonicalRtKey } from './compute-index-intelligence.js';
 
 // newest-first bars, mirroring fetchOHLCV's output (index 0 == most recent).
 function bars(n, { startVol = 1000 } = {}) {
@@ -83,5 +83,32 @@ describe('injectIntradayBar', () => {
 
   it('returns an empty array unchanged', () => {
     expect(injectIntradayBar([], { close: 105 }, '2026-05-21')).toEqual([]);
+  });
+});
+
+describe('canonicalRtKey', () => {
+  it('resolves both EODHD code shapes ("AAPL" and "AAPL.US") to the same key', () => {
+    expect(canonicalRtKey('AAPL.US')).toBe('AAPL');
+    expect(canonicalRtKey('AAPL')).toBe('AAPL');
+    expect(canonicalRtKey('AAPL.US')).toBe(canonicalRtKey('AAPL'));
+  });
+
+  it('preserves the class-share dash (BRK-B), stripping only the .US suffix', () => {
+    expect(canonicalRtKey('BRK-B.US')).toBe('BRK-B');
+    expect(canonicalRtKey('BRK-B')).toBe('BRK-B');
+    expect(canonicalRtKey('BRK-B.US')).toBe(canonicalRtKey('BRK-B'));
+  });
+
+  it('uppercases so casing differences still match', () => {
+    expect(canonicalRtKey('aapl.us')).toBe('AAPL');
+    expect(canonicalRtKey('aapl')).toBe(canonicalRtKey('AAPL.US'));
+  });
+
+  it('does not collapse two distinct tickers', () => {
+    expect(canonicalRtKey('AAPL.US')).not.toBe(canonicalRtKey('AMZN.US'));
+  });
+
+  it('leaves a non-US code (TNX.INDX) intact so TNX stays unquoted', () => {
+    expect(canonicalRtKey('TNX.INDX')).toBe('TNX.INDX');
   });
 });

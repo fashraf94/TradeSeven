@@ -136,9 +136,11 @@ async function fetchOHLCV(eohdSymbol, daysBack = 252) {
   // Intraday mode: splice today's live price onto the front so downstream
   // technicals/RS/momentum reflect the current session. No-op (returns the EOD
   // array) for any symbol without a fresh quote — including TNX, which is never
-  // quoted here — so pre-market runs are byte-for-byte unchanged.
-  if (intradayQuotes && intradayQuotes.has(eohdSymbol)) {
-    return injectIntradayBar(ohlcv, intradayQuotes.get(eohdSymbol), formatDate(new Date()));
+  // quoted here — so pre-market runs are byte-for-byte unchanged. The lookup is
+  // canonicalized so it hits whether EODHD returned "AAPL" or "AAPL.US".
+  if (intradayQuotes) {
+    const quote = intradayQuotes.get(canonicalRtKey(eohdSymbol));
+    if (quote) return injectIntradayBar(ohlcv, quote, formatDate(new Date()));
   }
   return ohlcv;
 }
@@ -177,6 +179,19 @@ async function fetchBatch(symbols, batchSize = 10, delayMs = 500) {
 function toNum(v) {
   const n = typeof v === 'string' ? parseFloat(v) : v;
   return Number.isFinite(n) ? n : null;
+}
+
+/**
+ * Canonical key for matching EODHD real-time `code` (which may come back as
+ * "AAPL" or "AAPL.US") against our requested "TICKER.US" symbols. Uppercases and
+ * strips ONLY the trailing .US exchange suffix — applied symmetrically on both
+ * sides (map build + lookup), so injection hits regardless of which shape EODHD
+ * returns. Never collapses two distinct tickers: the class-share dash in e.g.
+ * "BRK-B" is preserved, and non-US codes like "TNX.INDX" are left intact (so TNX
+ * stays unquoted).
+ */
+export function canonicalRtKey(sym) {
+  return String(sym).toUpperCase().replace(/\.US$/, '');
 }
 
 /**
@@ -247,7 +262,7 @@ async function fetchRealtimeQuotes(eodhdSymbols, batchSize = 20, delayMs = 300) 
           // Single-symbol responses may omit `code`; fall back to the requested symbol.
           const code = q.code || (arr.length === 1 ? first : null);
           if (!code) continue;
-          quotes.set(code, {
+          quotes.set(canonicalRtKey(code), {
             close: toNum(q.close),
             open: toNum(q.open),
             high: toNum(q.high),
