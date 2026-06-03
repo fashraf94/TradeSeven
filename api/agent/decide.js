@@ -15,6 +15,7 @@ import {
 import { createAgentBattle } from '../_utils/agentBattleService.js';
 import { projectActiveRules } from '../_utils/projectActiveRules.js';
 import { getStockAnalysisData } from '../_utils/marketDataCache.js';
+import { validateActivationPrice } from '../_utils/baselineValidation.js';
 import { generateCPUOpponent } from '../_utils/cpuOpponentGenerator.js';
 import { computeArchetypeRankings, ARCHETYPE_TEMPERATURES } from '../_utils/archetypeScoring.js';
 import { logDecision, logFirstMessage } from '../_utils/shadowLogger.js';
@@ -502,6 +503,24 @@ export default async function handler(req, res) {
     // 14. Fetch entry prices for all symbols (rate-limited: 5 concurrent, 200ms between batches)
     const allSymbols = [...agentSymbols, ...cpuSymbols];
 
+    // Asset roster (agent + CPU). Drives the baseATR lookup used by the
+    // activation-price guard below, and the threshold build further down.
+    const allAssets = [
+      ...enrichedPortfolio.portfolio.star,
+      ...enrichedPortfolio.portfolio.core,
+      ...enrichedPortfolio.portfolio.support,
+      ...enrichedPortfolio.bench.stocks,
+      ...(enrichedPortfolio.bench.crypto ? [enrichedPortfolio.bench.crypto] : []),
+      ...cpuPortfolioAssets,
+      ...cpuBenchAssets,
+    ].filter(Boolean);
+    const baseATRBySymbol = {};
+    for (const asset of allAssets) {
+      if (asset.symbol && baseATRBySymbol[asset.symbol] == null) {
+        baseATRBySymbol[asset.symbol] = asset.baseATR || (asset.isCrypto ? 5.0 : 2.5);
+      }
+    }
+
     const startingPrices = {};
     const PRICE_CONCURRENCY = 5;
     for (let i = 0; i < allSymbols.length; i += PRICE_CONCURRENCY) {
@@ -509,7 +528,31 @@ export default async function handler(req, res) {
       await Promise.allSettled(batch.map(async (symbol) => {
         try {
           const data = await getStockAnalysisData(symbol, { forceRefresh: true, fields: ['daily', 'price'] });
-          if (data?.price?.current) startingPrices[symbol] = data.price.current;
+          const p = data?.price;
+          if (p?.current) {
+            // Guard 1: validate the activation price against an independent
+            // reference (today's [low, high] + the most recent daily close)
+            // before freezing it as the scoring baseline. Use the UNADJUSTED
+            // rawClose so a split/dividend can't skew the raw-vs-raw comparison
+            // (same basis as Guard 2). data.daily is read here only — it is
+            // never written to the battle doc.
+            const recentClose = Array.isArray(data?.daily) && data.daily.length > 0
+              ? (data.daily[0].rawClose ?? data.daily[0].close)
+              : null;
+            const { value, fired, reason } = validateActivationPrice({
+              current: p.current,
+              high: p.high,
+              low: p.low,
+              fallback: p.fallback === true,
+              recentClose,
+              previousClose: p.previousClose,
+              baseATR: baseATRBySymbol[symbol] || 2.5,
+            });
+            if (fired) {
+              console.warn(`[guard1] ${symbol} rejected activation current=${p.current} (${reason}); ${value == null ? 'skipped' : `substituted ${value}`}`);
+            }
+            if (value != null) startingPrices[symbol] = value;
+          }
         } catch (err) {
           console.warn(`[agent/decide] Price fetch failed for ${symbol}:`, err.message);
         }
@@ -536,17 +579,9 @@ export default async function handler(req, res) {
       cpuOpponent.bench.crypto.price = startingPrices[cpuOpponent.bench.crypto.symbol];
     }
 
-    // 15. Build thresholds from baseATR on ALL assets (agent + CPU)
+    // 15. Build thresholds from baseATR on ALL assets (agent + CPU).
+    // allAssets is constructed above (also feeds the activation-price guard).
     const thresholds = {};
-    const allAssets = [
-      ...enrichedPortfolio.portfolio.star,
-      ...enrichedPortfolio.portfolio.core,
-      ...enrichedPortfolio.portfolio.support,
-      ...enrichedPortfolio.bench.stocks,
-      ...(enrichedPortfolio.bench.crypto ? [enrichedPortfolio.bench.crypto] : []),
-      ...cpuPortfolioAssets,
-      ...cpuBenchAssets,
-    ].filter(Boolean);
     for (const asset of allAssets) {
       const baseATR = asset.baseATR || (asset.isCrypto ? 5.0 : 2.5);
       thresholds[asset.symbol] = {

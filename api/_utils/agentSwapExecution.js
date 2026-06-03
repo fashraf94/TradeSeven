@@ -8,6 +8,9 @@ import {
   flattenPortfolioServer,
   flattenBenchServer,
 } from './agentScoring.js';
+import { resolveThresholdBaseline } from './baselineValidation.js';
+import { getStockAnalysisData } from './marketDataCache.js';
+import { getETDate, formatDateString } from './marketSchedule.js';
 
 // ==================== VALIDATION ====================
 
@@ -102,6 +105,38 @@ export function validateTradeDecision(decision, battle) {
 export async function executeSwapServer(db, battleId, battle, resolvedTier, resolvedSlotIndex, benchAsset, currentDay, currentPrices, evaluationMetadata = {}, snapshot = null) {
   const battleRef = db.collection('agentBattles').doc(battleId);
 
+  // ---- Guard 3 (parity with the live-eval badge baseline) ----
+  // Compute the activation-day gate (same calendar rule as the crons) and, ONLY
+  // when the outgoing asset's badge baseline will fall through to previousClose
+  // (held-from-start position on day 2+, or a day-1 asset whose startingPrice is
+  // missing), pre-fetch its daily series as the Guard 2 reference. swapPrice and
+  // validated day-1 startingPrice need no reference, so those paths fetch nothing.
+  // Fetched here — before the transaction — so no network I/O runs inside it.
+  const todayET = formatDateString(getETDate());
+  const activationDateET = battle?.activatedAt
+    ? formatDateString(new Date(new Date(battle.activatedAt).toLocaleString('en-US', { timeZone: 'America/New_York' })))
+    : todayET;
+  const isActivationDay = todayET === activationDateET;
+  const utcToday = new Date().toISOString().slice(0, 10);
+
+  const preOut = battle?.portfolio?.[resolvedTier]?.[resolvedSlotIndex];
+  const preStartingPrice = battle?.portfolio?.startingPrices?.[preOut?.symbol];
+  const guard3NeedsRef = !!preOut?.symbol
+    && !(preOut.swapPrice > 0)
+    && !(isActivationDay && preStartingPrice > 0);
+  let guard3Symbol = null;
+  let guard3Daily = null;
+  if (guard3NeedsRef) {
+    guard3Symbol = preOut.symbol;
+    try {
+      const refData = await getStockAnalysisData(preOut.symbol, { forceRefresh: true, fields: ['daily', 'price'] });
+      if (Array.isArray(refData?.daily)) guard3Daily = refData.daily;
+    } catch (err) {
+      // No reference → Guard 2 accepts previousClose unchanged (err toward not intervening).
+      console.warn(`[guard3] daily reference fetch failed for ${preOut.symbol}: ${err.message}`);
+    }
+  }
+
   return await db.runTransaction(async (transaction) => {
     const battleSnap = await transaction.get(battleRef);
     if (!battleSnap.exists) {
@@ -139,23 +174,49 @@ export async function executeSwapServer(db, battleId, battle, resolvedTier, reso
     let lockedGainPct = 0;
 
     if (entryPrice > 0) {
-      let rawPctChange = ((exitPrice - entryPrice) / entryPrice) * 100;
-      if (outAsset.direction === 'short') {
-        rawPctChange = -rawPctChange;
-      }
-
       const threshold = liveData.scoring?.thresholds?.[outSymbol];
+      const baseATR = threshold?.threshold || outAsset.baseATR || 2.5;
       const assetObj = {
         symbol: outSymbol,
-        baseATR: threshold?.threshold || outAsset.baseATR || 2.5,
+        baseATR,
         tier: resolvedTier,
         direction: outAsset.direction || null,
       };
+
+      // Guard 3: badge baseline parity with agent-evaluate. Same precedence
+      // (swapPrice -> day-1 startingPrice -> Guard-2-validated previousClose),
+      // then pass thresholdPriceChange so swap-lock badges match the live eval
+      // for the same asset/day/baseline. The pre-fetched daily reference is used
+      // only when the slot symbol is unchanged.
+      const isCryptoAsset = outAsset.isCrypto === true || /\.CC$/i.test(outSymbol || '');
+      const prevClose = currentPrices[outSymbol]?.previousClose;
+      const { baseline: thresholdBaseline, guard2 } = resolveThresholdBaseline({
+        swapPrice: outAsset.swapPrice,
+        isActivationDay,
+        startingPrice: liveData.portfolio?.startingPrices?.[outSymbol],
+        previousClose: prevClose,
+        daily: guard3Symbol === outSymbol ? guard3Daily : null,
+        isCrypto: isCryptoAsset,
+        baseATR,
+        etToday: todayET,
+        utcToday,
+      });
+      if (guard2?.fired) {
+        console.warn(`[guard3]${guard2.corporateActionSuspected ? '[corp-action?]' : ''} ${outSymbol} previousClose=${prevClose} (${guard2.reason}); ${guard2.value === prevClose ? 'accepted+flagged' : `substituted ${guard2.value}`}`);
+      }
+
+      // Non-negated, like the live eval — the scorer negates internally for
+      // shorts (assetObj.direction), avoiding the prior double-negation.
+      const rawPctChange = ((exitPrice - entryPrice) / entryPrice) * 100;
+      const thresholdPriceChange = (thresholdBaseline && thresholdBaseline > 0)
+        ? ((exitPrice - thresholdBaseline) / thresholdBaseline) * 100
+        : null;
+
       const assetHistory = liveData.thresholdHistory?.[outSymbol] || { maxMultiplier: 0, minMultiplier: 0 };
-      const scoreResult = calculateAssetScoreServer(assetObj, rawPctChange, assetHistory);
+      const scoreResult = calculateAssetScoreServer(assetObj, rawPctChange, assetHistory, {}, thresholdPriceChange);
 
       lockedPoints = scoreResult.totalPoints;
-      lockedGainPct = rawPctChange;
+      lockedGainPct = scoreResult.priceChange;
     }
 
     // ---- Build closed trade record ----

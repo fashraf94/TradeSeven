@@ -237,6 +237,11 @@ async function fetchDailyOHLCV(eohdSymbol, apiKey) {
     high: d.high,
     low: d.low,
     close: d.adjusted_close || d.close,
+    // Unadjusted close, preserved alongside the split/dividend-adjusted `close`.
+    // A real-time previousClose is unadjusted, so baseline checks compare it
+    // raw-vs-raw (api/_utils/baselineValidation.js, Guard 2) — splits/dividends
+    // then cannot cause a false fire.
+    rawClose: d.close,
     volume: d.volume,
   }));
 }
