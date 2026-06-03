@@ -20,3 +20,14 @@ export const WATCH_LIST_RAIL_ENABLED = false;
  * Mobile only — desktop (DashboardDesktop) is unaffected either way.
  */
 export const COMMAND_DASHBOARD_ENABLED = true;
+
+/**
+ * Command Dashboard — Desktop (the 3-column command surface that pairs with the
+ * mobile loop-home: Read → Equip → Deploy → Manage → Review).
+ *
+ * When false, desktop renders the existing DashboardDesktop unchanged (instant
+ * rollback). When true (and the viewport is desktop), it renders
+ * CommandDashboardDesktop. Built/merged dark; flip to ship after a preview
+ * smoke test — the same play used for the mobile flag above.
+ */
+export const COMMAND_DASHBOARD_DESKTOP_ENABLED = false;

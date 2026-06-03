@@ -11,7 +11,9 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { X, Check } from 'lucide-react';
 import { CMD, alpha } from './commandUI';
 
-export default function EquipSheet({ open, onClose, title, subtitle, loading, rows = [], emptyLabel, footer, accent }) {
+export default function EquipSheet({ open, onClose, title, subtitle, loading, rows = [], emptyLabel, footer, accent, dock = 'bottom' }) {
+  // 'bottom' = mobile bottom sheet (default, unchanged); 'center' = desktop modal.
+  const center = dock === 'center';
   return (
     <AnimatePresence>
       {open && (
@@ -23,24 +25,30 @@ export default function EquipSheet({ open, onClose, title, subtitle, loading, ro
           style={{
             position: 'fixed', inset: 0, zIndex: 1000,
             background: 'rgba(5,6,9,0.66)', backdropFilter: 'blur(3px)', WebkitBackdropFilter: 'blur(3px)',
-            display: 'flex', flexDirection: 'column', justifyContent: 'flex-end',
+            display: 'flex', flexDirection: 'column',
+            justifyContent: center ? 'center' : 'flex-end', alignItems: center ? 'center' : 'stretch',
           }}
         >
           <motion.div
-            initial={{ y: '100%' }}
-            animate={{ y: 0 }}
-            exit={{ y: '100%' }}
-            transition={{ type: 'spring', stiffness: 320, damping: 32 }}
+            initial={center ? { opacity: 0, scale: 0.96, y: 8 } : { y: '100%' }}
+            animate={center ? { opacity: 1, scale: 1, y: 0 } : { y: 0 }}
+            exit={center ? { opacity: 0, scale: 0.96, y: 8 } : { y: '100%' }}
+            transition={center ? { duration: 0.22, ease: [0.22, 1, 0.36, 1] } : { type: 'spring', stiffness: 320, damping: 32 }}
             onClick={(e) => e.stopPropagation()}
             style={{
               background: CMD.raised, borderTopLeftRadius: 26, borderTopRightRadius: 26,
-              borderTop: `1px solid ${CMD.hair2}`, maxHeight: '82%', display: 'flex', flexDirection: 'column',
-              boxShadow: '0 -20px 60px rgba(0,0,0,0.5)',
+              borderBottomLeftRadius: center ? 26 : 0, borderBottomRightRadius: center ? 26 : 0,
+              border: center ? `1px solid ${CMD.hair2}` : undefined, borderTop: `1px solid ${CMD.hair2}`,
+              width: center ? 460 : undefined, maxWidth: center ? '90%' : undefined,
+              maxHeight: center ? '84%' : '82%', display: 'flex', flexDirection: 'column',
+              boxShadow: center ? '0 30px 80px rgba(0,0,0,0.6)' : '0 -20px 60px rgba(0,0,0,0.5)',
             }}
           >
-            <div style={{ display: 'flex', justifyContent: 'center', paddingTop: 10 }}>
-              <div style={{ width: 38, height: 4.5, borderRadius: 99, background: CMD.hair2 }} />
-            </div>
+            {!center && (
+              <div style={{ display: 'flex', justifyContent: 'center', paddingTop: 10 }}>
+                <div style={{ width: 38, height: 4.5, borderRadius: 99, background: CMD.hair2 }} />
+              </div>
+            )}
 
             <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, padding: '12px 20px 12px', borderBottom: `1px solid ${CMD.hair}` }}>
               <div style={{ minWidth: 0 }}>
@@ -94,7 +102,7 @@ export default function EquipSheet({ open, onClose, title, subtitle, loading, ro
             </div>
 
             {footer && (
-              <div style={{ padding: '8px 18px calc(env(safe-area-inset-bottom, 0px) + 16px)', borderTop: `1px solid ${CMD.hair}` }}>
+              <div style={{ padding: center ? '8px 18px 16px' : '8px 18px calc(env(safe-area-inset-bottom, 0px) + 16px)', borderTop: `1px solid ${CMD.hair}` }}>
                 {footer}
               </div>
             )}

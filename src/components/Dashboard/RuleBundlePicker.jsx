@@ -12,7 +12,7 @@ import { alpha } from './commandUI';
 
 export default function RuleBundlePicker({
   open, onClose, forgedBundles = [], equippedBundles = [],
-  onEquip, onUnequip, onBuildNew, working, loading, accent,
+  onEquip, onUnequip, onBuildNew, working, loading, accent, dock = 'bottom',
 }) {
   const equippedIds = new Set(equippedBundles.map((b) => b.id));
 
@@ -57,6 +57,7 @@ export default function RuleBundlePicker({
     <EquipSheet
       open={open}
       onClose={onClose}
+      dock={dock}
       title="Equip rules"
       subtitle="Equip a forged strategy to sharpen your agent. Optional — Deploy works without it."
       loading={loading}
