@@ -223,7 +223,7 @@ export default function EquipStation({ agent, accent, onOpenAgent, setShowForge 
             catColor={CMD.teal}
             label="Watchlist"
             name={equippedWatchlistId
-              ? `${watchlistName || 'Watchlist'}${watchlistUnavailable ? ' (locked)' : ''}`
+              ? `${watchlistName || 'Watchlist'}${watchlistUnavailable ? ' (unavailable)' : ''}`
               : 'Add watchlist'}
             sub={equippedWatchlistId && equippedWatchlist ? tickerLabel(equippedWatchlist.tickers) : 'Optional · priority opportunities'}
             locked={benchLocked}

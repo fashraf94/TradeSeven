@@ -67,15 +67,37 @@ not introduced by this arc.
 
 **Filed:** Jun 3, 2026.
 
+### Battle-accurate watchlist label (polish — deferred)
+
+The Watchlist slot shows `"(unavailable)"` whenever the equipped watchlist is absent from
+the committed set (`watchlistUnavailable = Boolean(equippedWatchlistId) && listLoaded &&
+!equippedWatchlist`), which conflates a true **mid-battle lock** with a merely
+**uncommitted / archived / deleted** watchlist. To label a real lock distinctly (e.g.
+`"(in battle)"`), the condition must additionally gate on `agent.activeBattleId` (true lock)
+vs. plain committed-set absence, and choose copy per case.
+
+**Why deferred:** this is logic, not copy — it touches the fenced `EquipStation.jsx` (the
+`watchlistUnavailable` derivation and the label expression) and must land on both surfaces
+together. Trigger: when the EquipStation fence lifts, or alongside the `useEquipBench`
+extraction.
+
+**Filed:** Jun 3, 2026.
+
 ## Resolved
 
-### "(unavailable)" → "(locked)" watchlist copy while locked in battle — DONE
+### Watchlist "(locked)" copy — tried, reverted to "(unavailable)"
 
-When an agent has an `equippedWatchlistId` whose watchlist isn't in the committed list
-(e.g. mid-battle / archived), the Watchlist slot rendered `"<name> (unavailable)"`, which
-read like an error rather than the real "locked / mid-battle" state.
+Jun 3, 2026: briefly changed the suffix from `"(unavailable)"` to `"(locked)"` on both
+`EquipStation.jsx` (mobile) and `EquipBench.jsx` (desktop), then **reverted** both back to
+`"(unavailable)"` the same day.
 
-**Resolved Jun 3, 2026:** changed to `"<name> (locked)"` on **both** surfaces —
-`EquipStation.jsx` (mobile) and `EquipBench.jsx` (desktop) — as a founder-approved,
-copy-only exception to the EquipStation fence. ⚠️ The `EquipStation` edit is a **LIVE**
-mobile string (not behind the dark flag); it ships to mobile users when the branch merges.
+**Reason for the revert:** the `watchlistUnavailable` trigger is *committed-set absence*,
+not battle-lock — `Boolean(equippedWatchlistId) && listLoaded && !equippedWatchlist`, where
+`equippedWatchlist` is resolved against `filterWatchlistsByStatus(list, 'committed')`. It
+fires whenever the equipped watchlist is missing from the committed set (non-committed
+status, archived, or deleted), so `"(locked)"` would mislabel those non-battle cases;
+`"(unavailable)"` is accurate for the broad trigger. A truly battle-aware label is filed
+above under Open ("Battle-accurate watchlist label").
+
+**Net effect:** the label is `"(unavailable)"` on both surfaces — unchanged from pre-arc.
+The `EquipStation` edits were copy-only, founder-approved fence exceptions (both directions).
