@@ -30,4 +30,4 @@ export const COMMAND_DASHBOARD_ENABLED = true;
  * CommandDashboardDesktop. Built/merged dark; flip to ship after a preview
  * smoke test — the same play used for the mobile flag above.
  */
-export const COMMAND_DASHBOARD_DESKTOP_ENABLED = false;
+export const COMMAND_DASHBOARD_DESKTOP_ENABLED = true;
