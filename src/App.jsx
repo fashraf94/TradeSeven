@@ -108,7 +108,8 @@ import BottomNav from './components/Navigation/BottomNav';
 import DashboardLoop from './components/Dashboard/DashboardLoop';
 import DashboardDesktop from './components/Dashboard/DashboardDesktop';
 import CommandDashboard from './components/Dashboard/CommandDashboard';
-import { COMMAND_DASHBOARD_ENABLED } from './config/featureFlags';
+import CommandDashboardDesktop from './components/Dashboard/CommandDashboardDesktop';
+import { COMMAND_DASHBOARD_ENABLED, COMMAND_DASHBOARD_DESKTOP_ENABLED } from './config/featureFlags';
 import DesktopSidebar from './components/Navigation/DesktopSidebar';
 import { AgentDashboard, OnboardingExperience } from './components/Agent';
 import AppLoadingScreen from './components/shared/AppLoadingScreen';
@@ -8537,30 +8538,48 @@ export default function PortfolioDuel() {
         <div style={containerStyle}>
           <DesktopBackground isDesktop={isDesktop} />
 
-          <DashboardDesktop
-            user={user}
-            activeBattles={activeBattles}
-            activeDraftBattles={activeDraftBattles}
-            activeTrainingBattles={activeTrainingBattles}
-            activeAgentBattles={activeAgentBattles}
-            lobbyBattles={lobbyBattles}
-            completedBattles={completedBattles}
-            setCurrentBattle={setCurrentBattle}
-            setCurrentDraft={setCurrentDraft}
-            setScreen={setScreen}
-            setActiveBattleId={setActiveBattleId}
-            setBattleToJoin={setBattleToJoin}
-            copyToClipboard={copyToClipboard}
-            setShowBaggerBombModal={setShowBaggerBombModal}
-            setShowSnakeDraftModal={setShowSnakeDraftModal}
-            setShowBaggerBombTrainingConfirm={setShowBaggerBombTrainingConfirm}
-            setShowTrainingConfirmModal={setShowTrainingConfirmModal}
-            setTrainingConfirmType={setTrainingConfirmType}
-            activeDraftBanner={activeDraftBanner}
-            setActiveDraftBanner={setActiveDraftBanner}
-            sidebarCollapsed={sidebarCollapsed}
-            onStoryPress={(story) => handleStorySelect(story)}
-          />
+          {COMMAND_DASHBOARD_DESKTOP_ENABLED ? (
+            // Desktop Command surface (dark behind the flag). Offset for the
+            // persistent fixed sidebar, matching the other desktop screens.
+            <div style={{ marginLeft: sidebarCollapsed ? '64px' : '220px', transition: 'margin-left 0.2s ease' }}>
+              <CommandDashboardDesktop
+                user={user}
+                setScreen={setScreen}
+                setSidebarOpen={setSidebarOpen}
+                unreadCount={unreadCount}
+                setShowForge={setShowForge}
+                setCurrentBattle={setCurrentBattle}
+                activeAgentBattles={activeAgentBattles}
+                onCreateAgentBattle={handleCreateAgentTrainingBattle}
+                onOpenAgentBattle={handleOpenAgentBattle}
+              />
+            </div>
+          ) : (
+            <DashboardDesktop
+              user={user}
+              activeBattles={activeBattles}
+              activeDraftBattles={activeDraftBattles}
+              activeTrainingBattles={activeTrainingBattles}
+              activeAgentBattles={activeAgentBattles}
+              lobbyBattles={lobbyBattles}
+              completedBattles={completedBattles}
+              setCurrentBattle={setCurrentBattle}
+              setCurrentDraft={setCurrentDraft}
+              setScreen={setScreen}
+              setActiveBattleId={setActiveBattleId}
+              setBattleToJoin={setBattleToJoin}
+              copyToClipboard={copyToClipboard}
+              setShowBaggerBombModal={setShowBaggerBombModal}
+              setShowSnakeDraftModal={setShowSnakeDraftModal}
+              setShowBaggerBombTrainingConfirm={setShowBaggerBombTrainingConfirm}
+              setShowTrainingConfirmModal={setShowTrainingConfirmModal}
+              setTrainingConfirmType={setTrainingConfirmType}
+              activeDraftBanner={activeDraftBanner}
+              setActiveDraftBanner={setActiveDraftBanner}
+              sidebarCollapsed={sidebarCollapsed}
+              onStoryPress={(story) => handleStorySelect(story)}
+            />
+          )}
         </div>
       </ErrorBoundary>
     );
