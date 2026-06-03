@@ -121,7 +121,12 @@ export default function EquipBench({ agent, accent, onOpenAgent, setShowForge, i
   const agentName = agent?.name || 'Your agent';
   const archetypeName = getArchetypeDisplayName(agent?.archetype);
   const disposition = getArchetypeIdentity(agent?.archetype).disposition;
-  const equippedCount = 1 + (equippedWatchlistId ? 1 : 0) + (rulesEquipped ? 1 : 0);
+  // Count slots from the agent doc — byte-for-byte the mobile CommandDashboard
+  // equippedCount formula (rules counted from agent.equippedBundleIds, not from
+  // useForge), so the "n/3 slots" reads identically on desktop and mobile.
+  const equippedCount = 1
+    + (agent?.equippedWatchlistId ? 1 : 0)
+    + ((agent?.equippedBundleIds?.length || 0) > 0 ? 1 : 0);
 
   // ── Equip handlers ───────────────────────────────────────────────────────
   const handleEquipWatchlist = async (watchlistId) => {
