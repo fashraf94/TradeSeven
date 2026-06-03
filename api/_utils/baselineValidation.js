@@ -240,3 +240,41 @@ export function resolveBadgeBaseline({ daily, previousClose, isCrypto, baseATR, 
     baseATR,
   });
 }
+
+/**
+ * Resolve the badge THRESHOLD baseline using the same precedence every scoring
+ * path applies, so the live eval, the nightly bank, and the swap-lock all agree
+ * on what a held asset's badges are measured against:
+ *
+ *   swapPrice (asset entered the slot mid-battle)
+ *     -> day-1 activation price (already Guard-1-validated at creation)
+ *     -> Guard-2-validated previousClose (day 2+, or a day-1 asset whose
+ *        startingPrice is missing).
+ *
+ * Mirrors agent-evaluate.js's inline precedence + Guard 2 exactly; the swap path
+ * calls this so its badges match the live eval for the same asset/day/baseline.
+ *
+ * @param {Object}   args
+ * @param {number}  [args.swapPrice]      - the asset's swap-in price, if swapped this battle
+ * @param {boolean}  args.isActivationDay - whether today is the battle's activation day
+ * @param {number}  [args.startingPrice]  - the day-0 activation price for this symbol
+ * @param {number}  [args.previousClose]  - the prior-session close from the feed
+ * @param {Array}   [args.daily]          - newest-first daily OHLCV (Guard 2 reference)
+ * @param {boolean}  args.isCrypto        - UTC vs ET day boundary for the prior-session lookup
+ * @param {number}   args.baseATR         - asset ATR as a percent of price
+ * @param {string}   args.etToday         - today's ET date 'YYYY-MM-DD'
+ * @param {string}   args.utcToday        - today's UTC date 'YYYY-MM-DD'
+ * @returns {{ baseline:(number|undefined), guard2:(Object|null) }}
+ *   baseline: the threshold baseline to use; guard2: the resolveBadgeBaseline
+ *   result when the previousClose branch ran (so the caller can log), else null.
+ */
+export function resolveThresholdBaseline({ swapPrice, isActivationDay, startingPrice, previousClose, daily, isCrypto, baseATR, etToday, utcToday }) {
+  if (Number.isFinite(swapPrice) && swapPrice > 0) {
+    return { baseline: swapPrice, guard2: null };
+  }
+  if (isActivationDay && Number.isFinite(startingPrice) && startingPrice > 0) {
+    return { baseline: startingPrice, guard2: null };
+  }
+  const guard2 = resolveBadgeBaseline({ daily, previousClose, isCrypto, baseATR, etToday, utcToday });
+  return { baseline: guard2.value, guard2 };
+}

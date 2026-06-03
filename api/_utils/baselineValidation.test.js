@@ -20,9 +20,11 @@ import {
   selectPriorSessionBar,
   validateBadgeBaseline,
   resolveBadgeBaseline,
+  resolveThresholdBaseline,
   T1_ACTIVATION_ATR,
   T2_PREVCLOSE_ATR,
 } from './baselineValidation.js';
+import { calculateAssetScoreServer } from './agentScoring.js';
 
 describe('errorATR', () => {
   it('expresses disagreement in ATR units (4% off / 2.5% ATR = 1.6 ATR)', () => {
@@ -281,5 +283,97 @@ describe('resolveBadgeBaseline — stock vs crypto day boundary', () => {
     });
     expect(r.fired).toBe(false);  // ET cutoff -> 2026-06-01 raw close 100
     expect(r.value).toBe(100);
+  });
+});
+
+// ===================== Guard 3 — swap-lock parity =====================
+
+// Inline replica of agent-evaluate.js's badge-baseline precedence + Guard 2,
+// to prove resolveThresholdBaseline (used by the swap path) is byte-equivalent.
+function evalThresholdBaseline(a) {
+  let pc = a.previousClose;
+  if (!a.swapPrice && (!a.isActivationDay || !(a.startingPrice > 0))) {
+    pc = resolveBadgeBaseline({
+      daily: a.daily, previousClose: a.previousClose, isCrypto: a.isCrypto,
+      baseATR: a.baseATR, etToday: a.etToday, utcToday: a.utcToday,
+    }).value;
+  }
+  return a.swapPrice || (a.isActivationDay ? (a.startingPrice || pc) : pc);
+}
+
+describe('resolveThresholdBaseline — parity with agent-evaluate precedence', () => {
+  const daily = [{ date: '2026-06-02', rawClose: 100, close: 100 }];
+  const base = { daily, isCrypto: false, baseATR: 2.5, etToday: '2026-06-03', utcToday: '2026-06-03' };
+
+  const cases = {
+    'swap-day uses swapPrice':                 { ...base, swapPrice: 105, isActivationDay: false, startingPrice: 100, previousClose: 98 },
+    'day-1 held uses startingPrice':           { ...base, swapPrice: undefined, isActivationDay: true, startingPrice: 100, previousClose: 98 },
+    'day-2+ valid prev (silent)':              { ...base, swapPrice: undefined, isActivationDay: false, startingPrice: 100, previousClose: 100 },
+    'day-2+ glitched prev (substituted)':      { ...base, swapPrice: undefined, isActivationDay: false, startingPrice: 100, previousClose: 120 },
+    'day-1 missing startingPrice -> prev':     { ...base, swapPrice: undefined, isActivationDay: true, startingPrice: undefined, previousClose: 100 },
+  };
+
+  for (const [name, args] of Object.entries(cases)) {
+    it(`matches the eval formula: ${name}`, () => {
+      expect(resolveThresholdBaseline(args).baseline).toBe(evalThresholdBaseline(args));
+    });
+  }
+
+  it('swap-day short-circuits without running Guard 2', () => {
+    const r = resolveThresholdBaseline(cases['swap-day uses swapPrice']);
+    expect(r.baseline).toBe(105);
+    expect(r.guard2).toBeNull();
+  });
+
+  it('day-2+ glitched prev substitutes the prior-session raw close (100, not 120)', () => {
+    const r = resolveThresholdBaseline(cases['day-2+ glitched prev (substituted)']);
+    expect(r.baseline).toBe(100);
+    expect(r.guard2.fired).toBe(true);
+  });
+
+  it('crypto uses the UTC cutoff for the prior-session lookup', () => {
+    const cryptoDaily = [
+      { date: '2026-06-02', rawClose: 200, close: 200 }, // just-closed UTC session
+      { date: '2026-06-01', rawClose: 100, close: 100 },
+    ];
+    const r = resolveThresholdBaseline({
+      swapPrice: undefined, isActivationDay: false, startingPrice: 100, previousClose: 200,
+      daily: cryptoDaily, isCrypto: true, baseATR: 5.0, etToday: '2026-06-02', utcToday: '2026-06-03',
+    });
+    expect(r.baseline).toBe(200);  // matches the 2026-06-02 raw close, silent
+    expect(r.guard2.fired).toBe(false);
+  });
+});
+
+describe('Guard 3 badge outcome — a glitched day-2+ previousClose no longer fabricates badges', () => {
+  // Near-flat ticker (exit ~ entry), day 2+, baseATR 2.5%. The feed returns a
+  // stale/high previousClose of 106; the correct prior-session close is 100.
+  const daily = [{ date: '2026-06-02', rawClose: 100, close: 100 }];
+  const exitPrice = 100.03;
+  const baseATR = 2.5;
+
+  it('UNGUARDED baseline (106) fabricates Bust + Crash + Meltdown', () => {
+    const tpc = ((exitPrice - 106) / 106) * 100; // ~ -5.6%
+    const score = calculateAssetScoreServer(
+      { symbol: 'SHOP', baseATR, tier: 'core', direction: null },
+      ((exitPrice - 100) / 100) * 100, {}, {}, tpc,
+    );
+    expect(score.badges).toEqual(expect.arrayContaining(['bust', 'crash', 'meltdown']));
+  });
+
+  it('GUARDED baseline (Guard 3 substitutes 100) fires no negative badges', () => {
+    const { baseline } = resolveThresholdBaseline({
+      swapPrice: undefined, isActivationDay: false, startingPrice: 100, previousClose: 106,
+      daily, isCrypto: false, baseATR, etToday: '2026-06-03', utcToday: '2026-06-03',
+    });
+    expect(baseline).toBe(100); // substituted prior-session raw close
+    const tpc = ((exitPrice - baseline) / baseline) * 100; // ~ +0.03%
+    const score = calculateAssetScoreServer(
+      { symbol: 'SHOP', baseATR, tier: 'core', direction: null },
+      ((exitPrice - 100) / 100) * 100, {}, {}, tpc,
+    );
+    expect(score.badges).not.toContain('bust');
+    expect(score.badges).not.toContain('crash');
+    expect(score.badges).not.toContain('meltdown');
   });
 });
