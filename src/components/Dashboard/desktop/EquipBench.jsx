@@ -189,7 +189,7 @@ export default function EquipBench({ agent, accent, onOpenAgent, setShowForge, i
           catColor={CMD.teal}
           label="Watchlist"
           name={equippedWatchlistId
-            ? `${watchlistName || 'Watchlist'}${watchlistUnavailable ? ' (unavailable)' : ''}`
+            ? `${watchlistName || 'Watchlist'}${watchlistUnavailable ? ' (locked)' : ''}`
             : 'Add watchlist'}
           sub={equippedWatchlistId && equippedWatchlist ? tickerLabel(equippedWatchlist.tickers) : 'Optional · priority opportunities'}
           locked={benchLocked}
