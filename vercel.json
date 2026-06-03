@@ -135,6 +135,10 @@
       "schedule": "30 10,11 * * 1-5"
     },
     {
+      "path": "/api/cron/compute-index-intelligence?mode=intraday",
+      "schedule": "0 14,15,16,17,18,19,20 * * 1-5"
+    },
+    {
       "path": "/api/cron/agent-evaluate",
       "schedule": "*/15 13,14,15,16,17,18,19,20,21 * * 1-5"
     },

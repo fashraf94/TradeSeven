@@ -1,11 +1,16 @@
 // api/cron/compute-index-intelligence.js
-// Daily cron: computes index-level market intelligence + per-stock RS & Technical Scores.
+// Cron: computes index-level market intelligence + per-stock RS & Technical Scores.
 //
-// Schedule: "30 10 * * 1-5" and "30 11 * * 1-5" (dual UTC hours for DST coverage)
-// Runs at ~6:30 AM ET weekdays. Idempotent — running twice overwrites the same Firestore docs.
+// Pre-market baseline: "30 10,11 * * 1-5" (dual UTC hours for DST), ~6:30 AM ET.
+// Intraday recompute: "0 14-20 * * 1-5" via ?mode=intraday — re-runs the SAME
+//   pipeline hourly during RTH, but first splices each symbol's live price onto
+//   its bars (see injectIntradayBar) so the cross-sectional ranks + baggerBombFit
+//   reflect the current session. Without a quote, a symbol falls back to its
+//   prior close, so an intraday run with no quotes == the pre-market baseline.
+// Idempotent — running twice overwrites the same Firestore docs.
 
 import { initializeApp, getApps, cert } from 'firebase-admin/app';
-import { getFirestore, FieldValue } from 'firebase-admin/firestore';
+import { getFirestore, FieldValue, Timestamp } from 'firebase-admin/firestore';
 import {
   calculateSMA,
   calculateRSI,
@@ -59,6 +64,18 @@ const SECTOR_ETFS = Object.entries(STOCK_UNIVERSE).map(([id, s]) => ({
 }));
 
 // ───────────────────────────────────────────────
+// Intraday recompute state
+// ───────────────────────────────────────────────
+// In intraday mode (?mode=intraday) the cron refreshes the universe's
+// price-derived dimensions by splicing today's live price onto each symbol's
+// bars before the (unchanged) scoring pipeline runs — so the cross-sectional
+// RS / sector-RS / ATR / momentum percentiles, and the baggerBombFit derived
+// from them, stay valid intraday instead of reflecting yesterday's close.
+// Map<eodhdSymbol, quote>; null in pre-market mode. Reset every invocation for
+// warm-container safety.
+let intradayQuotes = null;
+
+// ───────────────────────────────────────────────
 // Logging
 // ───────────────────────────────────────────────
 
@@ -107,7 +124,7 @@ async function fetchOHLCV(eohdSymbol, daysBack = 252) {
   }
 
   // EODHD returns oldest-first. Reverse to newest-first for our calculations.
-  return data.reverse().map(d => ({
+  const ohlcv = data.reverse().map(d => ({
     date: d.date,
     open: d.open,
     high: d.high,
@@ -115,6 +132,17 @@ async function fetchOHLCV(eohdSymbol, daysBack = 252) {
     close: d.adjusted_close,
     volume: d.volume || 0,
   }));
+
+  // Intraday mode: splice today's live price onto the front so downstream
+  // technicals/RS/momentum reflect the current session. No-op (returns the EOD
+  // array) for any symbol without a fresh quote — including TNX, which is never
+  // quoted here — so pre-market runs are byte-for-byte unchanged. The lookup is
+  // canonicalized so it hits whether EODHD returned "AAPL" or "AAPL.US".
+  if (intradayQuotes) {
+    const quote = intradayQuotes.get(canonicalRtKey(eohdSymbol));
+    if (quote) return injectIntradayBar(ohlcv, quote, formatDate(new Date()));
+  }
+  return ohlcv;
 }
 
 async function fetchBatch(symbols, batchSize = 10, delayMs = 500) {
@@ -142,6 +170,119 @@ async function fetchBatch(symbols, batchSize = 10, delayMs = 500) {
   }
 
   return { results, errors };
+}
+
+// ───────────────────────────────────────────────
+// Intraday price injection
+// ───────────────────────────────────────────────
+
+function toNum(v) {
+  const n = typeof v === 'string' ? parseFloat(v) : v;
+  return Number.isFinite(n) ? n : null;
+}
+
+/**
+ * Canonical key for matching EODHD real-time `code` (which may come back as
+ * "AAPL" or "AAPL.US") against our requested "TICKER.US" symbols. Uppercases and
+ * strips ONLY the trailing .US exchange suffix — applied symmetrically on both
+ * sides (map build + lookup), so injection hits regardless of which shape EODHD
+ * returns. Never collapses two distinct tickers: the class-share dash in e.g.
+ * "BRK-B" is preserved, and non-US codes like "TNX.INDX" are left intact (so TNX
+ * stays unquoted).
+ */
+export function canonicalRtKey(sym) {
+  return String(sym).toUpperCase().replace(/\.US$/, '');
+}
+
+/**
+ * Splice today's live price onto a newest-first OHLCV array as a synthetic
+ * index-0 bar, so downstream technicals/RS/momentum reflect the current
+ * session rather than yesterday's close. Pure + deterministic for unit testing.
+ *
+ * Volume is deliberately NEUTRALIZED to the trailing average: a partial-day
+ * bar's cumulative volume would otherwise manufacture a fake volume drought in
+ * volumeRatio / the volume profile. Intraday refresh is about price, not volume.
+ *
+ * Dedup: if the EOD feed already returned today's bar (e.g. just after close),
+ * replace index 0 rather than prepend, to avoid a duplicate session.
+ *
+ * Returns the original array unchanged when the quote carries no usable price.
+ */
+export function injectIntradayBar(ohlcv, quote, todayStr) {
+  if (!Array.isArray(ohlcv) || ohlcv.length === 0) return ohlcv;
+  const price = quote ? toNum(quote.close) : null;
+  if (price === null || price <= 0) return ohlcv;
+
+  const prev = ohlcv[0];
+  const lookback = ohlcv.slice(0, Math.min(30, ohlcv.length));
+  const avgVol = Math.round(
+    lookback.reduce((a, d) => a + (d.volume || 0), 0) / lookback.length
+  );
+
+  const qOpen = toNum(quote.open);
+  const qHigh = toNum(quote.high);
+  const qLow = toNum(quote.low);
+  const todayBar = {
+    date: todayStr,
+    open: qOpen !== null && qOpen > 0 ? qOpen : prev.close,
+    high: Math.max(qHigh !== null && qHigh > 0 ? qHigh : price, price),
+    low: Math.min(qLow !== null && qLow > 0 ? qLow : price, price),
+    close: price,
+    volume: avgVol,
+  };
+
+  return prev.date === todayStr
+    ? [todayBar, ...ohlcv.slice(1)]
+    : [todayBar, ...ohlcv];
+}
+
+/**
+ * Batched EODHD real-time quotes for intraday injection. Uses the multi-symbol
+ * real-time endpoint (first symbol in the path, the rest via &s=) to collapse
+ * the ~255-symbol universe into a handful of calls. Best-effort: any symbol
+ * without a quote simply keeps its prior close (no worse than the pre-market
+ * baseline). Returns Map<eodhdSymbol, { close, open, high, low, previousClose }>.
+ */
+async function fetchRealtimeQuotes(eodhdSymbols, batchSize = 20, delayMs = 300) {
+  const quotes = new Map();
+
+  for (let i = 0; i < eodhdSymbols.length; i += batchSize) {
+    const group = eodhdSymbols.slice(i, i + batchSize);
+    const [first, ...rest] = group;
+    const sParam = rest.length ? `&s=${rest.join(',')}` : '';
+    const url = `https://eodhd.com/api/real-time/${first}?api_token=${EODHD_API_KEY}&fmt=json${sParam}`;
+
+    try {
+      const response = await fetch(url);
+      if (response.ok) {
+        const data = await response.json();
+        const arr = Array.isArray(data) ? data : [data];
+        for (const q of arr) {
+          if (!q) continue;
+          // Single-symbol responses may omit `code`; fall back to the requested symbol.
+          const code = q.code || (arr.length === 1 ? first : null);
+          if (!code) continue;
+          quotes.set(canonicalRtKey(code), {
+            close: toNum(q.close),
+            open: toNum(q.open),
+            high: toNum(q.high),
+            low: toNum(q.low),
+            previousClose: toNum(q.previousClose),
+          });
+        }
+      } else {
+        log(`⚠ Real-time batch HTTP ${response.status} for ${group.length} symbols`);
+      }
+    } catch (err) {
+      log(`⚠ Real-time batch failed: ${err.message}`);
+    }
+
+    if (i + batchSize < eodhdSymbols.length) {
+      await new Promise(r => setTimeout(r, delayMs));
+    }
+  }
+
+  return quotes;
 }
 
 // ───────────────────────────────────────────────
@@ -251,10 +392,31 @@ export default async function handler(req, res) {
 
   const startTime = Date.now();
   const errors = [];
-  log('Starting index intelligence computation...');
+  const intraday = req.query?.mode === 'intraday' || req.headers['x-recompute-mode'] === 'intraday';
+  // Reset module-level intraday state every invocation (warm-container safety).
+  intradayQuotes = null;
+  log(`Starting index intelligence computation... (mode=${intraday ? 'intraday' : 'premarket'})`);
 
   try {
     const db = getFirebaseAdmin();
+
+    // Intraday mode: fetch live quotes for the WHOLE universe up-front so
+    // fetchOHLCV can splice today's price onto each symbol's bars. The
+    // cross-sectional ranks only stay coherent if every symbol (stocks +
+    // indices + sector ETFs) is refreshed together, so we quote them all.
+    if (intraday) {
+      const rtSymbols = [
+        ...INDEX_SYMBOLS.map(i => i.eodhd),
+        ...SECTOR_ETFS.map(s => s.eodhd),
+        ...ALL_TICKERS.map(t => t.replace(/\./g, '-') + '.US'),
+      ];
+      log(`Intraday: fetching real-time quotes for ${rtSymbols.length} symbols...`);
+      intradayQuotes = await fetchRealtimeQuotes(rtSymbols);
+      log(`  ✓ Got ${intradayQuotes.size}/${rtSymbols.length} real-time quotes`);
+      if (intradayQuotes.size === 0) {
+        errors.push({ stage: 'intraday-quotes', error: 'no real-time quotes; falling back to prior-close bars' });
+      }
+    }
 
     // Step 2 — Fetch Index OHLCV + TNX + Sector ETFs in parallel
     log('Step 2: Fetching index, TNX, and sector ETF data in parallel...');
@@ -657,6 +819,7 @@ export default async function handler(req, res) {
       worstSectorChange,
       technicalLeaders,
       technicalLaggards,
+      mode: intraday ? 'intraday' : 'premarket',
       updatedAt: FieldValue.serverTimestamp(),
     });
     writeCount++;
@@ -852,6 +1015,11 @@ export default async function handler(req, res) {
         stocks: rankingStocks,
         totalTechStocks,
         sectors,
+        mode: intraday ? 'intraday' : 'premarket',
+        computedAt: FieldValue.serverTimestamp(),
+        // Freshness horizon for consumers: intraday docs go stale within ~75min
+        // (hourly cadence + slack); the pre-market baseline holds for the day.
+        expiresAt: Timestamp.fromMillis(Date.now() + (intraday ? 75 : 24 * 60) * 60 * 1000),
         updatedAt: FieldValue.serverTimestamp(),
       });
       writeCount++;
@@ -867,6 +1035,8 @@ export default async function handler(req, res) {
 
     return res.status(200).json({
       success: true,
+      mode: intraday ? 'intraday' : 'premarket',
+      realtimeQuotes: intradayQuotes ? intradayQuotes.size : 0,
       indexesProcessed: Object.keys(indexTechnicals).length,
       tnxProcessed: tnxData !== null,
       stocksScored: stocksProcessed,
