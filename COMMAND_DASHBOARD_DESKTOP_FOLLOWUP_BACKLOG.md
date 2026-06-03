@@ -67,18 +67,15 @@ not introduced by this arc.
 
 **Filed:** Jun 3, 2026.
 
-## Founder decision needed
+## Resolved
 
-### "(unavailable)" watchlist copy while locked in battle
+### "(unavailable)" → "(locked)" watchlist copy while locked in battle — DONE
 
 When an agent has an `equippedWatchlistId` whose watchlist isn't in the committed list
-(e.g. mid-battle / archived), the Watchlist slot renders `"<name> (unavailable)"`. This
-reads like an error rather than the real "locked / mid-battle" state.
+(e.g. mid-battle / archived), the Watchlist slot rendered `"<name> (unavailable)"`, which
+read like an error rather than the real "locked / mid-battle" state.
 
-**This is NOT desktop-only** — `EquipStation.jsx:226` (mobile) renders the identical copy
-via the same `watchlistUnavailable` logic, and `EquipBench.jsx:187` mirrors it. Softening it
-(e.g. `"(in battle)"` / `"(locked)"`) should be a **cross-surface** copy change applied to
-both, which requires touching the fenced `EquipStation.jsx`. Left to the founder: decide the
-copy, then apply to mobile + desktop together.
-
-**Filed:** Jun 3, 2026.
+**Resolved Jun 3, 2026:** changed to `"<name> (locked)"` on **both** surfaces —
+`EquipStation.jsx` (mobile) and `EquipBench.jsx` (desktop) — as a founder-approved,
+copy-only exception to the EquipStation fence. ⚠️ The `EquipStation` edit is a **LIVE**
+mobile string (not behind the dark flag); it ships to mobile users when the branch merges.
