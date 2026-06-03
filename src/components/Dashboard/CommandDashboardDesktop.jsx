@@ -99,25 +99,50 @@ export default function CommandDashboardDesktop({
   const colScroll = { minHeight: 0, overflowY: 'auto', overflowX: 'hidden' };
 
   return (
-    <div style={{ height: '100vh', overflow: 'hidden', display: 'flex', flexDirection: 'column', background: CMD.bg, color: CMD.ink, position: 'relative', zIndex: 1 }}>
-      {/* hide column scrollbars; interim narrow-desktop stack (full reflow is Phase 4) */}
+    <div className="cmd-desk-root" style={{ height: '100vh', overflow: 'hidden', display: 'flex', flexDirection: 'column', background: CMD.bg, color: CMD.ink, position: 'relative', zIndex: 1 }}>
+      {/* Responsive (spec D2): ≥1200 = 3-col, fixed viewport height, columns scroll
+          independently. 769–1199 = 2-col reflow — left identity rail kept; the
+          right lifecycle (Manage 04 / Review 05) folds beneath the center spine;
+          the surface page-scrolls. ≤768 never reaches here (App.jsx serves the
+          mobile CommandDashboard). */}
       <style>{`
         .cmd-desk-col::-webkit-scrollbar { width: 0; height: 0; }
         .cmd-desk-col { scrollbar-width: none; }
-        @media (max-width: 1199px) { .cmd-desk-grid { grid-template-columns: 1fr !important; } }
+        @media (max-width: 1199px) {
+          .cmd-desk-root { height: auto !important; overflow: visible !important; }
+          .cmd-desk-grid {
+            flex: none !important;
+            grid-template-columns: minmax(220px, 280px) minmax(0, 1fr) !important;
+            grid-template-areas: "identity center" "identity lifecycle" !important;
+            align-items: start !important;
+            gap: 16px !important;
+            padding: 20px 20px 24px !important;
+          }
+          .cmd-desk-col { overflow: visible !important; }
+          .cmd-desk-topbar { flex-wrap: wrap !important; padding: 16px 20px 14px !important; }
+          .cmd-desk-greet, .cmd-desk-wins { min-width: 0 !important; }
+          .cmd-desk-wins { order: 2 !important; }
+          .cmd-desk-railwrap { order: 3 !important; flex-basis: 100% !important; margin-top: 12px !important; }
+          .cmd-loop-pill { padding: 6px 9px !important; gap: 6px !important; }
+          .cmd-loop-label { font-size: 9px !important; letter-spacing: 0.08em !important; }
+          .cmd-loop-conn { width: 16px !important; margin: 0 3px !important; }
+        }
       `}</style>
 
-      {/* top bar */}
-      <div style={{
+
+      {/* top bar — at ≤1199 the rail folds to its own centered row (see <style>) */}
+      <div className="cmd-desk-topbar" style={{
         flexShrink: 0, padding: '20px 30px 18px', borderBottom: `1px solid ${CMD.hair}`,
         display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 24,
       }}>
-        <div style={{ minWidth: 250 }}>
+        <div className="cmd-desk-greet" style={{ minWidth: 250 }}>
           <Eyebrow color={CMD.ink3}>{getGreeting()}, {user?.username || 'Director'}</Eyebrow>
           <div style={{ fontSize: 24, fontWeight: 700, letterSpacing: '-0.02em', marginTop: 2, color: CMD.ink }}>Command Center</div>
         </div>
-        <DeskLoopRail active={activeStage} primary={accent} />
-        <div style={{
+        <div className="cmd-desk-railwrap" style={{ display: 'flex', justifyContent: 'center', flex: '0 1 auto' }}>
+          <DeskLoopRail active={activeStage} primary={accent} />
+        </div>
+        <div className="cmd-desk-wins" style={{
           display: 'flex', alignItems: 'center', gap: 7, padding: '7px 13px', borderRadius: 999,
           background: CMD.surface, border: `1px solid ${CMD.hair}`, minWidth: 250, justifyContent: 'flex-end',
         }}>
@@ -129,10 +154,11 @@ export default function CommandDashboardDesktop({
 
       {/* body — three columns */}
       <div className="cmd-desk-grid" style={{
-        flex: 1, minHeight: 0, display: 'grid', gridTemplateColumns: '300px 1fr 358px', gap: 22, padding: '22px 30px 26px',
+        flex: 1, minHeight: 0, display: 'grid', gridTemplateColumns: '300px 1fr 358px',
+        gridTemplateAreas: '"identity center lifecycle"', gap: 22, padding: '22px 30px 26px',
       }}>
         {/* LEFT — identity */}
-        <div className="cmd-desk-col" style={colScroll}>
+        <div className="cmd-desk-col" style={{ ...colScroll, gridArea: 'identity' }}>
           <IdentityPanel
             agent={agent}
             accent={accent}
@@ -145,7 +171,7 @@ export default function CommandDashboardDesktop({
         </div>
 
         {/* CENTER — the act-now spine: Read → Equip → Deploy */}
-        <div className="cmd-desk-col" style={{ ...colScroll, display: 'flex', flexDirection: 'column', gap: 22 }}>
+        <div className="cmd-desk-col" style={{ ...colScroll, gridArea: 'center', display: 'flex', flexDirection: 'column', gap: 22 }}>
           <ReadColumn
             accent={accent}
             agentName={agentName}
@@ -174,8 +200,8 @@ export default function CommandDashboardDesktop({
           )}
         </div>
 
-        {/* RIGHT — the battle lifecycle */}
-        <div className="cmd-desk-col" style={{ ...colScroll, display: 'flex', flexDirection: 'column', gap: 22 }}>
+        {/* RIGHT — the battle lifecycle (folds beneath center at ≤1199) */}
+        <div className="cmd-desk-col" style={{ ...colScroll, gridArea: 'lifecycle', display: 'flex', flexDirection: 'column', gap: 22 }}>
           <div>
             <SectionLabel n="04" label={isLive ? 'Manage · live' : 'Manage'} color={isLive ? accent : CMD.ink3} />
             {isLive ? (
