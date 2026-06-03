@@ -532,10 +532,12 @@ export default async function handler(req, res) {
           if (p?.current) {
             // Guard 1: validate the activation price against an independent
             // reference (today's [low, high] + the most recent daily close)
-            // before freezing it as the scoring baseline. data.daily is read
-            // here only — it is never written to the battle doc.
+            // before freezing it as the scoring baseline. Use the UNADJUSTED
+            // rawClose so a split/dividend can't skew the raw-vs-raw comparison
+            // (same basis as Guard 2). data.daily is read here only — it is
+            // never written to the battle doc.
             const recentClose = Array.isArray(data?.daily) && data.daily.length > 0
-              ? data.daily[0].close
+              ? (data.daily[0].rawClose ?? data.daily[0].close)
               : null;
             const { value, fired, reason } = validateActivationPrice({
               current: p.current,
