@@ -117,3 +117,126 @@ export function validateActivationPrice({ current, high, low, fallback, recentCl
   // Reject → substitute the most recent sane close; if none exists, omit (value null).
   return { value: saneClose, fired: true, reason };
 }
+
+// ---------- Guard 2 — day-2+ prior-session close ----------
+
+/**
+ * Select the prior trading session's daily bar from a newest-first OHLCV series.
+ *
+ * On day 2+ the badge baseline is the feed's `previousClose` (the prior
+ * session's close); the independent reference is the most recent daily bar
+ * strictly before the current session. EODHD dates are 'YYYY-MM-DD', so a
+ * lexicographic `< cutoffDate` comparison is chronological.
+ *
+ * The caller supplies the cutoff so this stays dependency-free and the
+ * stock-vs-crypto day boundary is decided once, by the caller: ET calendar date
+ * for stocks (daily bars skip weekends/holidays, so the newest bar before today
+ * is the prior trading session) and UTC calendar date for crypto (24/7,
+ * UTC-dated bars — an ET cutoff would mis-bucket the just-closed UTC session
+ * after the ET market close).
+ *
+ * @param {Array<{date:string, rawClose?:number, close?:number}>} daily - newest-first OHLCV
+ * @param {string} cutoffDate - 'YYYY-MM-DD'; bars dated on/after this are excluded
+ * @returns {{date:string, rawClose?:number, close?:number}|null}
+ */
+export function selectPriorSessionBar(daily, cutoffDate) {
+  if (!Array.isArray(daily) || !cutoffDate) return null;
+  for (const bar of daily) {
+    if (bar && typeof bar.date === 'string' && bar.date < cutoffDate) {
+      return bar;
+    }
+  }
+  return null;
+}
+
+/**
+ * Guard 2 — validate the day-2+ badge baseline (`previousClose`) against the
+ * prior session's close.
+ *
+ * `previousClose` and the prior session's close are the SAME quantity, so any
+ * disagreement is a feed glitch, not a real move — there is no gap-day tension
+ * here and the tolerance is tight (T2). The comparison is raw-vs-raw: a
+ * real-time `previousClose` is unadjusted, so it is compared to the daily bar's
+ * unadjusted `refRawClose`, which means splits/dividends never cause a false fire.
+ *
+ * Accept-and-tag fallback (D2): when `refRawClose` is unavailable we can only
+ * compare against the adjusted close, where a corporate action legitimately
+ * diverges. We then do NOT substitute (substituting an adjusted close against a
+ * raw current would itself fabricate a move) — we ACCEPT the original
+ * `previousClose` and flag it (`corporateActionSuspected`) so it stays visible
+ * in the logs without polluting the real-glitch signal.
+ *
+ * @param {Object}  args
+ * @param {number}  args.previousClose - the badge baseline under test (unadjusted)
+ * @param {number} [args.refRawClose]  - prior-session unadjusted close (preferred reference)
+ * @param {number} [args.refAdjClose]  - prior-session adjusted close (fallback reference)
+ * @param {number}  args.baseATR       - asset ATR as a percent of price
+ * @returns {{ value:number, fired:boolean, reason:string|null, corporateActionSuspected:boolean }}
+ *   value: baseline to use (the substituted raw close, or the original
+ *          previousClose when accepted); fired: whether the guard had something
+ *          to log.
+ */
+export function validateBadgeBaseline({ previousClose, refRawClose, refAdjClose, baseATR }) {
+  // No usable baseline to test — leave it to the caller's existing
+  // `thresholdBaseline > 0` guard. Never invent a value.
+  if (!Number.isFinite(previousClose) || previousClose <= 0) {
+    return { value: previousClose, fired: false, reason: null, corporateActionSuspected: false };
+  }
+
+  // Preferred path: raw-vs-raw, so splits/dividends cannot trip a false fire.
+  if (Number.isFinite(refRawClose) && refRawClose > 0) {
+    const err = errorATR(previousClose, refRawClose, baseATR);
+    if (err > T2_PREVCLOSE_ATR) {
+      return {
+        value: refRawClose,
+        fired: true,
+        reason: `previousClose ${previousClose} disagrees with prior-session close ${refRawClose} (${err.toFixed(2)}xATR)`,
+        corporateActionSuspected: false,
+      };
+    }
+    return { value: previousClose, fired: false, reason: null, corporateActionSuspected: false };
+  }
+
+  // Fallback: only the adjusted close is available. Accept-and-tag — flag a
+  // likely corporate action but do not substitute (raw-vs-adjusted is not a
+  // safe substitution).
+  if (Number.isFinite(refAdjClose) && refAdjClose > 0) {
+    const err = errorATR(previousClose, refAdjClose, baseATR);
+    if (err > T2_PREVCLOSE_ATR) {
+      return {
+        value: previousClose,
+        fired: true,
+        reason: `previousClose ${previousClose} vs prior-session adjusted close ${refAdjClose} (${err.toFixed(2)}xATR) — raw close unavailable`,
+        corporateActionSuspected: true,
+      };
+    }
+  }
+
+  // No usable reference, or within tolerance → accept previousClose unchanged.
+  return { value: previousClose, fired: false, reason: null, corporateActionSuspected: false };
+}
+
+/**
+ * Guard 2 wiring — select the prior-session bar (stock = ET cutoff, crypto = UTC
+ * cutoff) and validate the badge baseline against it. Both scoring crons
+ * (agent-evaluate, agent-daily-scores) call this so the rule lives in one place.
+ *
+ * @param {Object}   args
+ * @param {Array}    args.daily         - newest-first daily OHLCV for the symbol (in-memory only)
+ * @param {number}   args.previousClose - the badge baseline under test
+ * @param {boolean}  args.isCrypto      - whether the asset settles on the UTC day boundary
+ * @param {number}   args.baseATR       - asset ATR as a percent of price
+ * @param {string}   args.etToday       - today's ET date 'YYYY-MM-DD'
+ * @param {string}   args.utcToday      - today's UTC date 'YYYY-MM-DD'
+ * @returns {{ value:number, fired:boolean, reason:string|null, corporateActionSuspected:boolean }}
+ */
+export function resolveBadgeBaseline({ daily, previousClose, isCrypto, baseATR, etToday, utcToday }) {
+  const cutoff = isCrypto ? utcToday : etToday;
+  const refBar = selectPriorSessionBar(daily, cutoff);
+  return validateBadgeBaseline({
+    previousClose,
+    refRawClose: refBar?.rawClose,
+    refAdjClose: refBar?.close,
+    baseATR,
+  });
+}

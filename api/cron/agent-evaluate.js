@@ -9,6 +9,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
 import { isMarketOpen, getETDate, formatDateString } from '../_utils/marketSchedule.js';
 import { getStockAnalysisData, fetchIntradayBatch, filterToLatestSession } from '../_utils/marketDataCache.js';
+import { resolveBadgeBaseline } from '../_utils/baselineValidation.js';
 import { findActiveAgentBattles } from '../_utils/agentBattleService.js';
 import { unionEquippedIntoHotBench } from '../_utils/watchlistEquip.js';
 import {
@@ -263,12 +264,19 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
 
     // ---- Fetch prices ----
     const prices = {};
+    // Guard 2: keep the daily series (already fetched) as the independent
+    // reference for the prior-session close. In-memory only — never written to
+    // the battle doc.
+    const dailySeries = {};
     await Promise.all(
       allSymbols.map(async (symbol) => {
         try {
           const data = await getStockAnalysisData(symbol, { forceRefresh: true, fields: ['daily', 'price'] });
           if (data?.price) {
             prices[symbol] = data.price;
+          }
+          if (Array.isArray(data?.daily)) {
+            dailySeries[symbol] = data.daily;
           }
         } catch (err) {
           console.warn(`${LOG_PREFIX} Price fetch failed for ${symbol}:`, err.message);
@@ -293,6 +301,8 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
       ? formatDateString(new Date(new Date(battle.activatedAt).toLocaleString('en-US', { timeZone: 'America/New_York' })))
       : todayET;  // defensive fallback if activatedAt missing (should never happen on new battles)
     const isActivationDay = todayET === activationDateET;
+    // Guard 2 cutoff for crypto (24/7, UTC-dated daily bars).
+    const utcToday = new Date().toISOString().slice(0, 10);
     const startingPrices = battle.portfolio?.startingPrices || {};
     const assetScores = flatPortfolio.map(asset => {
       const currentPrice = prices[asset.symbol]?.current;
@@ -307,7 +317,26 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
       }
 
       let priceChange = ((currentPrice - entryPrice) / entryPrice) * 100;
-      const previousClose = prices[asset.symbol]?.previousClose;
+      let previousClose = prices[asset.symbol]?.previousClose;
+      // Guard 2: when previousClose is the badge baseline (day 2+, or a day-1
+      // asset whose startingPrice is missing), validate it against the prior
+      // session's close first. A stale/wrong-session previousClose would
+      // otherwise fabricate badges on a near-flat ticker.
+      if (!asset.swapPrice && (!isActivationDay || !(startingPrices[asset.symbol] > 0))) {
+        const isCryptoAsset = asset.isCrypto === true || /\.CC$/i.test(asset.symbol || '');
+        const g2 = resolveBadgeBaseline({
+          daily: dailySeries[asset.symbol],
+          previousClose,
+          isCrypto: isCryptoAsset,
+          baseATR: asset.baseATR || (isCryptoAsset ? 5.0 : 2.5),
+          etToday: todayET,
+          utcToday,
+        });
+        if (g2.fired) {
+          console.warn(`${LOG_PREFIX} [guard2]${g2.corporateActionSuspected ? '[corp-action?]' : ''} ${asset.symbol} previousClose=${previousClose} (${g2.reason}); ${g2.value === previousClose ? 'accepted+flagged' : `substituted ${g2.value}`}`);
+        }
+        previousClose = g2.value;
+      }
       // Threshold baseline must match the asset's entry into the portfolio.
       // For swapped-in assets, use swapPrice so they don't get retroactive
       // BaggerBomb credit for pre-swap moves since previousClose.
@@ -340,7 +369,24 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
       }
 
       const priceChange = ((currentPrice - entryPrice) / entryPrice) * 100;
-      const previousClose = prices[asset.symbol]?.previousClose;
+      let previousClose = prices[asset.symbol]?.previousClose;
+      // Guard 2 (same rule as active positions): validate previousClose against
+      // the prior-session close whenever it is the badge baseline.
+      if (!asset.swapPrice && (!isActivationDay || !(startingPrices[asset.symbol] > 0))) {
+        const isCryptoAsset = asset.isCrypto === true || /\.CC$/i.test(asset.symbol || '');
+        const g2 = resolveBadgeBaseline({
+          daily: dailySeries[asset.symbol],
+          previousClose,
+          isCrypto: isCryptoAsset,
+          baseATR: asset.baseATR || (isCryptoAsset ? 5.0 : 2.5),
+          etToday: todayET,
+          utcToday,
+        });
+        if (g2.fired) {
+          console.warn(`${LOG_PREFIX} [guard2]${g2.corporateActionSuspected ? '[corp-action?]' : ''} ${asset.symbol} previousClose=${previousClose} (${g2.reason}); ${g2.value === previousClose ? 'accepted+flagged' : `substituted ${g2.value}`}`);
+        }
+        previousClose = g2.value;
+      }
       // CPU portfolio has no swaps, but keep the pattern symmetric for future-proofing.
       const thresholdBaseline = asset.swapPrice
         || (isActivationDay ? (startingPrices[asset.symbol] || previousClose) : previousClose);

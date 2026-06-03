@@ -23,6 +23,7 @@ import { FieldValue } from 'firebase-admin/firestore';
 import { findActiveAgentBattles } from '../_utils/agentBattleService.js';
 import { getETDate, formatDateString, isTradingDay } from '../_utils/marketSchedule.js';
 import { getStockAnalysisData } from '../_utils/marketDataCache.js';
+import { resolveBadgeBaseline } from '../_utils/baselineValidation.js';
 import {
   flattenPortfolioServer,
   calculateAssetScoreServer,
@@ -41,7 +42,7 @@ function logError(msg, extra = {}) {
  * Bank one battle's daily badge points and reset thresholdHistory.
  * Returns {status: 'recorded' | 'skipped' | 'error', reason?}
  */
-async function resetBattleDaily(db, battleDoc, currentPrices) {
+async function resetBattleDaily(db, battleDoc, currentPrices, dailyBySymbol = {}) {
   const battle = { id: battleDoc.id, ...battleDoc.data() };
   const battleId = battle.id;
 
@@ -61,6 +62,8 @@ async function resetBattleDaily(db, battleDoc, currentPrices) {
     ? formatDateString(new Date(new Date(battle.activatedAt).toLocaleString('en-US', { timeZone: 'America/New_York' })))
     : todayET;
   const isActivationDay = todayET === activationDateET;
+  // Guard 2 cutoff for crypto (24/7, UTC-dated daily bars).
+  const utcToday = new Date().toISOString().slice(0, 10);
 
   const startingPrices = battle.portfolio?.startingPrices || {};
   const flatPortfolio = flattenPortfolioServer(battle.portfolio);
@@ -84,9 +87,28 @@ async function resetBattleDaily(db, battleDoc, currentPrices) {
     if (!priceData?.current) continue;
 
     const currentPrice = priceData.current;
-    const previousClose = priceData.previousClose;
+    let previousClose = priceData.previousClose;
     const entryPrice = asset.swapPrice || startingPrices[symbol] || 0;
     if (entryPrice <= 0) continue;
+
+    // Guard 2 (same rule as agent-evaluate): validate previousClose against the
+    // prior-session close whenever it is the badge baseline (day 2+, or a day-1
+    // asset whose startingPrice is missing).
+    if (!asset.swapPrice && (!isActivationDay || !(startingPrices[symbol] > 0))) {
+      const isCryptoAsset = asset.isCrypto === true || /\.CC$/i.test(symbol || '');
+      const g2 = resolveBadgeBaseline({
+        daily: dailyBySymbol[symbol],
+        previousClose,
+        isCrypto: isCryptoAsset,
+        baseATR: asset.baseATR || (isCryptoAsset ? 5.0 : 2.5),
+        etToday: todayET,
+        utcToday,
+      });
+      if (g2.fired) {
+        logInfo(`[guard2]${g2.corporateActionSuspected ? '[corp-action?]' : ''} ${symbol} previousClose=${previousClose} (${g2.reason}); ${g2.value === previousClose ? 'accepted+flagged' : `substituted ${g2.value}`}`);
+      }
+      previousClose = g2.value;
+    }
 
     const priceChange = ((currentPrice - entryPrice) / entryPrice) * 100;
     const thresholdBaseline = asset.swapPrice
@@ -227,6 +249,9 @@ export default async function handler(req, res) {
     const symbolList = Array.from(allSymbols);
     logInfo(`Fetching prices for ${symbolList.length} unique symbols`);
     const currentPrices = {};
+    // Guard 2: keep the daily series (already fetched) as the independent
+    // reference for the prior-session close. In-memory only — never persisted.
+    const dailyBySymbol = {};
     for (const symbol of symbolList) {
       try {
         const data = await getStockAnalysisData(symbol, {
@@ -234,6 +259,7 @@ export default async function handler(req, res) {
           fields: ['daily', 'price'],
         });
         if (data?.price) currentPrices[symbol] = data.price;
+        if (Array.isArray(data?.daily)) dailyBySymbol[symbol] = data.daily;
       } catch (err) {
         logError(`Failed to fetch price for ${symbol}`, { error: err.message });
       }
@@ -259,7 +285,7 @@ export default async function handler(req, res) {
         },
       };
       try {
-        const result = await resetBattleDaily(db, battleDoc, currentPrices);
+        const result = await resetBattleDaily(db, battleDoc, currentPrices, dailyBySymbol);
         if (result.status === 'recorded') {
           results.processed++;
         } else {

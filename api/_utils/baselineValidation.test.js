@@ -14,7 +14,15 @@
 //    condition and leans on the ATR check.
 
 import { describe, it, expect } from 'vitest';
-import { errorATR, validateActivationPrice, T1_ACTIVATION_ATR } from './baselineValidation.js';
+import {
+  errorATR,
+  validateActivationPrice,
+  selectPriorSessionBar,
+  validateBadgeBaseline,
+  resolveBadgeBaseline,
+  T1_ACTIVATION_ATR,
+  T2_PREVCLOSE_ATR,
+} from './baselineValidation.js';
 
 describe('errorATR', () => {
   it('expresses disagreement in ATR units (4% off / 2.5% ATR = 1.6 ATR)', () => {
@@ -154,5 +162,124 @@ describe('validateActivationPrice — suspect snapshot path (R1)', () => {
     });
     expect(r.fired).toBe(false);
     expect(r.value).toBe(96);
+  });
+});
+
+// ===================== Guard 2 =====================
+
+describe('selectPriorSessionBar', () => {
+  const series = [
+    { date: '2026-06-03', rawClose: 103 },
+    { date: '2026-06-02', rawClose: 102 },
+    { date: '2026-05-29', rawClose: 99 },
+  ];
+
+  it('returns the most recent bar strictly before the cutoff (today excluded)', () => {
+    expect(selectPriorSessionBar(series, '2026-06-03')).toEqual({ date: '2026-06-02', rawClose: 102 });
+  });
+
+  it('returns the newest bar when today has no bar yet', () => {
+    expect(selectPriorSessionBar(series, '2026-06-04')).toEqual({ date: '2026-06-03', rawClose: 103 });
+  });
+
+  it('skips a weekend gap (Monday cutoff -> Friday bar)', () => {
+    // 2026-06-01 is a Monday; the prior session is Friday 2026-05-29.
+    expect(selectPriorSessionBar(series, '2026-06-01')).toEqual({ date: '2026-05-29', rawClose: 99 });
+  });
+
+  it('returns null for empty/missing inputs', () => {
+    expect(selectPriorSessionBar([], '2026-06-03')).toBeNull();
+    expect(selectPriorSessionBar(null, '2026-06-03')).toBeNull();
+    expect(selectPriorSessionBar(series, undefined)).toBeNull();
+  });
+});
+
+describe('validateBadgeBaseline — raw-vs-raw (preferred path)', () => {
+  it('stays silent when previousClose matches the prior-session raw close', () => {
+    const r = validateBadgeBaseline({ previousClose: 100, refRawClose: 100, refAdjClose: 100, baseATR: 2.5 });
+    expect(r.fired).toBe(false);
+    expect(r.value).toBe(100);
+  });
+
+  it('stays silent within T2 (0.2 ATR)', () => {
+    const r = validateBadgeBaseline({ previousClose: 100.5, refRawClose: 100, baseATR: 2.5 });
+    expect(errorATR(100.5, 100, 2.5)).toBeLessThan(T2_PREVCLOSE_ATR);
+    expect(r.fired).toBe(false);
+    expect(r.value).toBe(100.5);
+  });
+
+  it('substitutes the raw close when previousClose disagrees beyond T2', () => {
+    // 102 vs 100 on a 2.5% ATR asset = 0.8 ATR > 0.5 -> stale/wrong-session.
+    const r = validateBadgeBaseline({ previousClose: 102, refRawClose: 100, baseATR: 2.5 });
+    expect(r.fired).toBe(true);
+    expect(r.corporateActionSuspected).toBe(false);
+    expect(r.value).toBe(100);
+  });
+
+  it('raw-vs-raw does NOT fire on a split day (raw closes match)', () => {
+    // A 2:1 split: adjusted close halves, but the raw close still equals the
+    // raw previousClose -> no false fire because we compare raw-vs-raw.
+    const r = validateBadgeBaseline({ previousClose: 100, refRawClose: 100, refAdjClose: 50, baseATR: 2.5 });
+    expect(r.fired).toBe(false);
+    expect(r.value).toBe(100);
+  });
+});
+
+describe('validateBadgeBaseline — accept-and-tag fallback (raw close absent)', () => {
+  it('stays silent when only adjusted is available but it agrees', () => {
+    const r = validateBadgeBaseline({ previousClose: 100, refRawClose: undefined, refAdjClose: 100, baseATR: 2.5 });
+    expect(r.fired).toBe(false);
+    expect(r.value).toBe(100);
+  });
+
+  it('flags a likely corporate action but does NOT substitute (accept-and-tag)', () => {
+    // Only adjusted close available and it diverges (split). We must NOT swap in
+    // the adjusted close (that would fabricate a move vs a raw current); keep
+    // previousClose and tag it.
+    const r = validateBadgeBaseline({ previousClose: 100, refRawClose: undefined, refAdjClose: 50, baseATR: 2.5 });
+    expect(r.fired).toBe(true);
+    expect(r.corporateActionSuspected).toBe(true);
+    expect(r.value).toBe(100); // accepted, not substituted
+  });
+});
+
+describe('validateBadgeBaseline — guards', () => {
+  it('does nothing when previousClose is missing/zero (caller guard owns it)', () => {
+    expect(validateBadgeBaseline({ previousClose: 0, refRawClose: 100, baseATR: 2.5 }).fired).toBe(false);
+    expect(validateBadgeBaseline({ previousClose: undefined, refRawClose: 100, baseATR: 2.5 }).fired).toBe(false);
+  });
+
+  it('accepts (no reference) when neither raw nor adjusted is available', () => {
+    const r = validateBadgeBaseline({ previousClose: 100, refRawClose: undefined, refAdjClose: undefined, baseATR: 2.5 });
+    expect(r.fired).toBe(false);
+    expect(r.value).toBe(100);
+  });
+});
+
+describe('resolveBadgeBaseline — stock vs crypto day boundary', () => {
+  // After the ET close, the just-closed UTC crypto session shares the prior ET
+  // date. A stock (ET) cutoff would mis-select an older bar; the crypto (UTC)
+  // cutoff selects the correct just-closed session.
+  const daily = [
+    { date: '2026-06-02', rawClose: 200, close: 200 }, // just-closed UTC session
+    { date: '2026-06-01', rawClose: 100, close: 100 }, // older session
+  ];
+  const etToday = '2026-06-02';   // ET calendar date at 8:45pm ET
+  const utcToday = '2026-06-03';  // UTC has already rolled over
+
+  it('crypto uses the UTC cutoff and validates against the just-closed session (silent)', () => {
+    const r = resolveBadgeBaseline({
+      daily, previousClose: 200, isCrypto: true, baseATR: 5.0, etToday, utcToday,
+    });
+    expect(r.fired).toBe(false);  // 200 matches the 2026-06-02 raw close
+    expect(r.value).toBe(200);
+  });
+
+  it('stock uses the ET cutoff and selects the prior trading session', () => {
+    const r = resolveBadgeBaseline({
+      daily, previousClose: 100, isCrypto: false, baseATR: 2.5, etToday, utcToday,
+    });
+    expect(r.fired).toBe(false);  // ET cutoff -> 2026-06-01 raw close 100
+    expect(r.value).toBe(100);
   });
 });
