@@ -104,20 +104,26 @@ export async function seedDefaultTraits(agentId, archetype, { strength = 'modera
  * rule docs. Used by the dashboard archetype picker's "Load defaults" offer.
  * (The creation path uses seedDefaultTraits above, which is unchanged.)
  *
- * Write order is NEW-LAYER-FIRST, old cleanup LAST — interruption-safe at every
- * step, because decide.js projects activeRules by `traitId ∈ equippedTraits` and
- * filters `isDeleted` (api/_utils/projectActiveRules.js):
+ * Write order keeps the trait LAYER new-first and the doc SOFT-DELETE last —
+ * interruption-safe at every step, because decide.js projects activeRules by
+ * `traitId ∈ equippedTraits` and filters `isDeleted`, INDEPENDENT of bundle
+ * membership (api/_utils/projectActiveRules.js):
  *   1. Read current equippedTraits + rule docs; capture the OLD trait rule doc
  *      IDs BY ID now, before any writes. Old and new archetypes can SHARE a
  *      trait (e.g. trait-iron-discipline ∈ contrarian/analyst/guardian), so a
  *      post-write `traitId` filter would wrongly delete the freshly-created
  *      shared-trait rules — capturing ids up front avoids that.
  *   2. Reuse the single existing draft 'My Strategy' bundle (find-or-create).
- *   3. Create the new archetype's rule docs into that one bundle.
- *   4. Overwrite equippedTraits with the new set — the new loadout goes live here.
- *   5. LAST: unlink + soft-delete the captured OLD rule docs.
- * Before step 4 the old loadout still projects intact; after it the new loadout
- * projects (old rules ignored — wrong traitId — until step 5 removes them).
+ *   3. UNLINK the old trait rules from that bundle — frees its per-level rule-cap
+ *      room BEFORE the new set is added (addRuleToBundle throws at
+ *      maxRulesPerBundle, so old+new can't coexist in one bundle at low levels).
+ *      Unlink is projection-neutral (trait rules are bundle-independent), and the
+ *      old DOCS still exist + project (equippedTraits still old) until step 6.
+ *   4. Create the new archetype's rule docs into that one bundle.
+ *   5. Overwrite equippedTraits with the new set — the new loadout goes live here.
+ *   6. LAST: soft-delete the captured OLD rule docs.
+ * Before step 5 the old loadout still projects intact; after it the new loadout
+ * projects (old rules ignored — wrong traitId — until step 6 removes them).
  *
  * ROBUSTNESS: never throws. Per-step failures log and degrade.
  *
@@ -183,7 +189,22 @@ export async function reseedDefaultTraits(agentId, archetype, { strength = 'mode
     }
   }
 
-  // 3. Create the NEW archetype's rule docs into that one bundle.
+  // 3. UNLINK the old trait rules from the reused bundle FIRST — frees its
+  //    per-level rule-cap room before the new set is added (addRuleToBundle
+  //    throws at maxRulesPerBundle, so old+new can't coexist in one bundle at low
+  //    levels). Unlink is projection-neutral: trait rules are selected by
+  //    traitId ∈ equippedTraits (still old here) + !isDeleted regardless of bundle
+  //    membership, so the old loadout keeps projecting until step 6.
+  for (const ruleId of oldRuleDocIds) {
+    try {
+      await removeRuleFromBundle(agentId, bundleId, ruleId);
+    } catch {
+      // Rule may live in a different/legacy bundle — the step-6 soft-delete still
+      // removes it from the projection.
+    }
+  }
+
+  // 4. Create the NEW archetype's rule docs into that one bundle.
   let rulesAdded = 0;
   for (const spec of ruleSpecs) {
     try {
@@ -198,7 +219,7 @@ export async function reseedDefaultTraits(agentId, archetype, { strength = 'mode
     return { seeded: false, reason: 'no_rules_added', bundleId };
   }
 
-  // 4. Overwrite the trait layer — the new loadout goes live from here.
+  // 5. Overwrite the trait layer — the new loadout goes live from here.
   try {
     await updateDoc(agentRef, {
       equippedTraits,
@@ -208,16 +229,11 @@ export async function reseedDefaultTraits(agentId, archetype, { strength = 'mode
     console.warn('[reseedDefaultTraits] equippedTraits write failed:', err);
   }
 
-  // 5. LAST: unlink + soft-delete the captured OLD rule docs. Soft-delete is the
-  //    codebase convention and is enough for the projection (isDeleted filtered);
-  //    the unlink just keeps the reused bundle's ruleIds tidy.
+  // 6. LAST: soft-delete the captured OLD rule docs. Soft-delete is the codebase
+  //    convention and is enough for the projection (isDeleted is filtered); the
+  //    unlink in step 3 already removed them from the reused bundle's ruleIds.
   let rulesRemoved = 0;
   for (const ruleId of oldRuleDocIds) {
-    try {
-      await removeRuleFromBundle(agentId, bundleId, ruleId);
-    } catch {
-      // Rule may live in a different/legacy bundle — soft-delete still suffices.
-    }
     try {
       await softDeleteRule(agentId, ruleId);
       rulesRemoved += 1;

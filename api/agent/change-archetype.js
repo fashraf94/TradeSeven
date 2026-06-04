@@ -7,9 +7,11 @@
 //
 // Battle-locked (mirrors equip-watchlist E3 / the equipBundle activeBattleId
 // guard): a change is blocked while the agent has an active battle, so a live
-// battle's frozen archetype can't shift under it. Idempotent: re-selecting the
-// current archetype is a 200 no-op with no write and no shadow log. Atomic: the
-// agent read + write happen in one transaction.
+// battle's frozen archetype can't shift under it (the battle-lock is checked
+// first, mirroring equip-watchlist, so a re-select during a battle still 409s).
+// Idempotent otherwise: re-selecting the current archetype outside a battle is a
+// 200 no-op with no write and no shadow log. Atomic: the agent read + write
+// happen in one transaction.
 //
 // Pattern reference: api/agent/equip-watchlist.js (transaction body, sentinel
 // error map, shadow-log fire-and-forget). Delta: single-doc read+write (agents).
@@ -19,17 +21,13 @@ import { applySecurityMiddleware } from '../_utils/security.js';
 import { requireAuth } from '../_utils/authMiddleware.js';
 import { logSignalDrops } from '../_utils/shadowLogger.js';
 import { isValidForgeId, FORGE_ID_REGEX, FORGE_ID_MAX_LEN } from '../_utils/idValidation.js';
+// VALID_ARCHETYPES is the canonical server-side list (Object.keys of the archetype
+// configs); create-profile.js validates against this same source. Imported, not
+// re-declared, so the picker, seeder, endpoint, and config can't drift apart.
+import { VALID_ARCHETYPES } from '../_utils/agentArchetypeConfig.js';
 import { waitUntil } from '@vercel/functions';
 
 export const config = { maxDuration: 10 };
-
-// The six stable archetype code-ids. The server cannot import from src/, so this
-// mirrors the canonical set (keys of ARCHETYPE_DEFAULT_TRAITS in
-// src/data/traitLibrary.js; also api/_utils/agentArchetypeConfig.js). These ids
-// are contractually locked (ARCHETYPE_IDENTITY_CONTRACT_V1.md §1) — never renamed.
-const VALID_ARCHETYPES = Object.freeze(new Set([
-  'momentum_chaser', 'contrarian', 'diversifier', 'degen', 'analyst', 'guardian',
-]));
 
 const SENTINEL_PREFIX = '__change_archetype:';
 const SENTINEL_TO_HTTP = Object.freeze({
@@ -56,7 +54,7 @@ export default async function handler(req, res) {
       message: `agentId must match ${FORGE_ID_REGEX} and be ≤${FORGE_ID_MAX_LEN} chars`,
     });
   }
-  if (typeof archetype !== 'string' || !VALID_ARCHETYPES.has(archetype)) {
+  if (typeof archetype !== 'string' || !VALID_ARCHETYPES.includes(archetype)) {
     return res.status(400).json({
       error: 'invalid_archetype',
       message: 'Unknown archetype code.',

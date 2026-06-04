@@ -17,7 +17,7 @@
 // traits — the user is the directional authority). Tokens: CMD / alpha (matches
 // the Equip station siblings); red is reserved for downside, so errors use copper.
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Check } from 'lucide-react';
 import EquipSheet from './EquipSheet';
 import { CMD, alpha, Mono, readableOn } from './commandUI';
@@ -128,11 +128,18 @@ export default function ArchetypePicker({ open, onClose, agent, accent, dock = '
   const [offer, setOffer] = useState(null);       // codeId just changed to, awaiting the re-seed decision
   const [reseeding, setReseeding] = useState(false);
   const [error, setError] = useState(null);
+  // Monotonic session token, bumped on close, so an async write that resolves
+  // after the sheet was closed (and maybe reopened) can't setState on it.
+  const sessionRef = useRef(0);
 
   // Clear transient state whenever the sheet closes, so a stale error, offer, or
-  // in-flight flag never leaks into the next open.
+  // in-flight flag never leaks into the next open; bumping the session cancels
+  // any in-flight handler's pending setState.
   useEffect(() => {
-    if (!open) { setWorking(null); setOffer(null); setReseeding(false); setError(null); }
+    if (!open) {
+      sessionRef.current += 1;
+      setWorking(null); setOffer(null); setReseeding(false); setError(null);
+    }
   }, [open]);
 
   // Change the archetype (battle-locked server-side). On success, surface the
@@ -141,31 +148,43 @@ export default function ArchetypePicker({ open, onClose, agent, accent, dock = '
   // current archetype, or any card while a write is in flight, is a no-op.
   const handleSelect = async (codeId) => {
     if (!agent?.id || codeId === current || working) return;
+    const session = sessionRef.current;
     setWorking(codeId);
     setError(null);
     try {
       await changeArchetype(agent.id, codeId);
+      if (sessionRef.current !== session) return; // sheet closed mid-flight — drop the result
       setOffer(codeId);
     } catch (err) {
+      if (sessionRef.current !== session) return;
       setError(err?.message || 'Could not change archetype. Please try again.');
     } finally {
-      setWorking(null);
+      if (sessionRef.current === session) setWorking(null);
     }
   };
 
   // "Load defaults" → clean-replace re-seed of the new archetype's defaults, then
   // close. "Keep my traits" just closes (the archetype change already landed).
+  // reseedDefaultTraits NEVER throws — it reports failure via { seeded:false } —
+  // so we inspect the result rather than relying on a rejection.
   const handleLoadDefaults = async () => {
     if (!agent?.id || !offer || reseeding) return;
+    const session = sessionRef.current;
     setReseeding(true);
     setError(null);
     try {
-      await reseedDefaultTraits(agent.id, offer);
+      const result = await reseedDefaultTraits(agent.id, offer);
+      if (sessionRef.current !== session) return; // sheet closed mid-flight
+      if (!result?.seeded) {
+        setError('Could not load default traits. Please try again.');
+        return; // keep the offer open so the user can retry or keep their traits
+      }
       onClose?.();
     } catch (err) {
+      if (sessionRef.current !== session) return;
       setError(err?.message || 'Could not load default traits. Please try again.');
     } finally {
-      setReseeding(false);
+      if (sessionRef.current === session) setReseeding(false);
     }
   };
 
