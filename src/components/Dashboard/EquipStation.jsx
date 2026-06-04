@@ -4,8 +4,8 @@
 // layout: a tall identity panel (orb + agent name + record) on the left, three
 // compact equipment slot rows on the right (Archetype, Watchlist, the open
 // dashed Rules slot). Cold-start = archetype + watchlist filled, one open rules
-// slot framed as a positive optional CTA. Tapping the identity panel or the
-// archetype slot opens the agent's full profile.
+// slot framed as a positive optional CTA. Tapping the identity panel opens the
+// agent's full profile; the archetype slot opens the six-card archetype picker.
 //
 // VISUAL PASS: layout + styling only. Equip logic, data, the watchlist/rule
 // services, the lock (agent.activeBattleId), and the pickers are unchanged.
@@ -15,6 +15,7 @@ import { Sparkles, Target, ScrollText, Plus, ChevronRight, Lock } from 'lucide-r
 import AgentOrb from '../shared/AgentOrb';
 import EquipSheet from './EquipSheet';
 import RuleBundlePicker from './RuleBundlePicker';
+import ArchetypePicker from './ArchetypePicker';
 import { CMD, alpha, Mono } from './commandUI';
 import { useForge } from '../../hooks/useForge';
 import { listWatchlists } from '../../services/forgeWatchlistService';
@@ -101,7 +102,7 @@ export default function EquipStation({ agent, accent, onOpenAgent, setShowForge 
   const agentId = agent?.id;
   const benchLocked = Boolean(agent?.activeBattleId);
 
-  // Which picker is open: null | 'watchlist' | 'rules'
+  // Which picker is open: null | 'archetype' | 'watchlist' | 'rules'
   const [sheet, setSheet] = useState(null);
 
   // ── Rules (bundles) via the existing Forge hook ──────────────────────────
@@ -205,7 +206,7 @@ export default function EquipStation({ agent, accent, onOpenAgent, setShowForge 
 
         {/* equipment rows */}
         <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {/* Archetype — identity, non-swappable; tap opens the profile */}
+          {/* Archetype — tap opens the six-card picker (battle-locked like the other slots) */}
           <Slot
             filled
             icon={<Sparkles size={17} color={accent} />}
@@ -213,7 +214,8 @@ export default function EquipStation({ agent, accent, onOpenAgent, setShowForge 
             label="Archetype"
             name={archetypeName}
             sub={disposition}
-            onClick={onOpenAgent}
+            locked={benchLocked}
+            onClick={() => setSheet('archetype')}
           />
 
           {/* Watchlist */}
@@ -288,6 +290,14 @@ export default function EquipStation({ agent, accent, onOpenAgent, setShowForge 
         working={Boolean(equippingBundleId)}
         loading={forgeLoading}
         accent={CMD.allocation}
+      />
+
+      {/* archetype picker */}
+      <ArchetypePicker
+        open={sheet === 'archetype'}
+        onClose={() => setSheet(null)}
+        agent={agent}
+        accent={accent}
       />
     </>
   );

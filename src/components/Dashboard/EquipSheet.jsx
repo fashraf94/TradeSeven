@@ -2,7 +2,8 @@
 //
 // Generic bottom-sheet primitive for the Equip station's pickers (watchlist and
 // rule bundles). Dumb/presentational: the caller supplies rows + their onClick
-// semantics, plus an optional footer (a "Build/Create in Forge" CTA). Styled to
+// semantics (or arbitrary `children` for richer pickers like the archetype hero
+// cards), plus an optional footer (a "Build/Create in Forge" CTA). Styled to
 // the prototype's command-bridge sheet (obsidian raised surface, agent-accent
 // selection).
 
@@ -11,7 +12,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { X, Check } from 'lucide-react';
 import { CMD, alpha } from './commandUI';
 
-export default function EquipSheet({ open, onClose, title, subtitle, loading, rows = [], emptyLabel, footer, accent, dock = 'bottom' }) {
+export default function EquipSheet({ open, onClose, title, subtitle, loading, rows = [], emptyLabel, footer, accent, dock = 'bottom', children }) {
   // 'bottom' = mobile bottom sheet (default, unchanged); 'center' = desktop modal.
   const center = dock === 'center';
   return (
@@ -65,7 +66,7 @@ export default function EquipSheet({ open, onClose, title, subtitle, loading, ro
             </div>
 
             <div style={{ overflowY: 'auto', padding: '10px 14px' }}>
-              {loading ? (
+              {children != null ? children : loading ? (
                 <div style={{ padding: '24px', textAlign: 'center', color: CMD.ink2, fontSize: 13 }}>Loading…</div>
               ) : rows.length === 0 ? (
                 <div style={{ padding: '18px 8px', color: CMD.ink2, fontSize: 13, lineHeight: 1.5 }}>{emptyLabel || 'Nothing here yet.'}</div>

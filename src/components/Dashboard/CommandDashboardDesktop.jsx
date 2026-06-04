@@ -182,7 +182,7 @@ export default function CommandDashboardDesktop({
             isLive={isLive}
           />
           <div id="cmd-desk-equip">
-            <EquipBench agent={agent} accent={accent} onOpenAgent={openAgent} setShowForge={setShowForge} isLive={isLive} />
+            <EquipBench agent={agent} accent={accent} setShowForge={setShowForge} isLive={isLive} />
           </div>
           {!isLive && (
             <div style={{ marginTop: 'auto' }}>

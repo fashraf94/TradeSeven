@@ -83,6 +83,39 @@ extraction.
 
 **Filed:** Jun 3, 2026.
 
+### Desktop `IdentityPanel` ignores its `onOpenAgent` prop (dead prop)
+
+`CommandDashboardDesktop.jsx` passes `onOpenAgent={openAgent}` to `<IdentityPanel>`, but
+`desktop/IdentityPanel.jsx`'s signature omits `onOpenAgent` and the panel has no `onClick` —
+so the desktop agent card (orb + name + archetype) is **not** tappable-to-profile the way the
+mobile `EquipStation` identity panel is (`EquipStation.jsx:190`). Pre-existing; surfaced while
+moving the Archetype slot to the picker in the archetype-picker arc. Not urgent — the profile
+stays reachable on desktop via the `ReadColumn` orb (`desktop/ReadColumn.jsx:66`).
+
+**Fix when touched:** either wire `IdentityPanel`'s `onOpenAgent` to the portrait `onClick`
+(mirroring mobile + `ReadColumn`), or drop the unused prop from both the panel and the
+`CommandDashboardDesktop` call site.
+
+**Filed:** Jun 4, 2026 — archetype-picker arc (Phase 0).
+
+### Re-seed soft-deletes accumulate in `agents/{id}/rules` (cleanup — deferred)
+
+`reseedDefaultTraits` (`src/services/seedDefaultTraits.js`) soft-deletes the prior
+archetype's trait rule docs (`isDeleted: true`) rather than hard-deleting them —
+`forgeService` has no hard-delete, and `getRules` (`:157`) reads the whole `rules`
+subcollection then filters `isDeleted` client-side. So every "Load defaults"
+re-seed leaves ~6-8 dead rule docs behind; a user who explores several archetypes
+accumulates them unboundedly. Functionally invisible (the deploy projection filters
+`isDeleted`, and the docs are unlinked from the bundle), but doc count + the
+whole-subcollection `getRules` read grow per agent with no reaper.
+
+**Fix when touched:** either hard-delete the captured old trait-rule docs in the
+re-seed cleanup step (they're seeder-owned, not referenced by forged-bundle
+snapshots the way user rules are), or land a periodic reaper for `isDeleted` rules.
+Pairs with the `useForge`/`getRules`-is-eager efficiency item above.
+
+**Filed:** Jun 4, 2026 — archetype-picker arc (Phase 4 code review).
+
 ## Resolved
 
 ### Watchlist "(locked)" copy — tried, reverted to "(unavailable)"

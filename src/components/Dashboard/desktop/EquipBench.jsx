@@ -6,14 +6,15 @@
 // EquipStation's character-sheet). Wiring is identical to EquipStation: forged
 // bundles via useForge, committed watchlists via the watchlist services,
 // equip/unequip via the existing agentService + forge paths. The pickers
-// center-dock on desktop (EquipSheet/RuleBundlePicker dock="center"). Archetype
-// is a fixed identity slot (no picker) — tapping it opens the agent profile.
+// center-dock on desktop (EquipSheet/RuleBundlePicker/ArchetypePicker
+// dock="center"). The Archetype slot opens the six-card archetype picker.
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { Sparkles, Target, ScrollText, Plus } from 'lucide-react';
 import { CMD, alpha, Mono, SectionLabel } from '../commandUI';
 import EquipSheet from '../EquipSheet';
 import RuleBundlePicker from '../RuleBundlePicker';
+import ArchetypePicker from '../ArchetypePicker';
 import { useForge } from '../../../hooks/useForge';
 import { listWatchlists } from '../../../services/forgeWatchlistService';
 import { filterWatchlistsByStatus } from '../../Forge/Watchlist/filterWatchlistsByStatus';
@@ -77,11 +78,11 @@ function RowSlot({ filled, icon, catColor, label, name, sub, locked, onClick }) 
   );
 }
 
-export default function EquipBench({ agent, accent, onOpenAgent, setShowForge, isLive }) {
+export default function EquipBench({ agent, accent, setShowForge, isLive }) {
   const agentId = agent?.id;
   const benchLocked = Boolean(agent?.activeBattleId);
 
-  // Which picker is open: null | 'watchlist' | 'rules'
+  // Which picker is open: null | 'archetype' | 'watchlist' | 'rules'
   const [sheet, setSheet] = useState(null);
 
   // ── Rules (bundles) via the existing Forge hook ──────────────────────────
@@ -172,7 +173,7 @@ export default function EquipBench({ agent, accent, onOpenAgent, setShowForge, i
       />
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 9 }}>
-        {/* Archetype — fixed identity slot; tap → profile */}
+        {/* Archetype — tap opens the six-card picker (battle-locked like the other slots) */}
         <RowSlot
           filled
           icon={<Sparkles size={17} color={accent} />}
@@ -180,7 +181,8 @@ export default function EquipBench({ agent, accent, onOpenAgent, setShowForge, i
           label="Archetype"
           name={archetypeName}
           sub={disposition}
-          onClick={onOpenAgent}
+          locked={benchLocked}
+          onClick={() => setSheet('archetype')}
         />
         {/* Watchlist */}
         <RowSlot
@@ -254,6 +256,15 @@ export default function EquipBench({ agent, accent, onOpenAgent, setShowForge, i
         working={Boolean(equippingBundleId)}
         loading={forgeLoading}
         accent={CMD.allocation}
+      />
+
+      {/* archetype picker — center-docked on desktop */}
+      <ArchetypePicker
+        open={sheet === 'archetype'}
+        onClose={() => setSheet(null)}
+        agent={agent}
+        accent={accent}
+        dock="center"
       />
     </div>
   );
