@@ -27,6 +27,11 @@ const TEMPLATE_MAP = new Map(
   FORGE_RULE_TEMPLATES.map(t => [t.id, t])
 );
 
+// Client-side battle-lock copy. Exported so the dashboard TraitsSheet's ERROR_COPY
+// reuses the exact same string for its battle_active banner.
+export const BATTLE_LOCK_MSG =
+  "Can't change traits while a battle is live — changes apply to your next deploy.";
+
 /**
  * @param {string} agentId - The agent's Firestore document ID
  * @param {Object} forge - The return value of useForge(agentId) from the parent component
@@ -137,8 +142,31 @@ export function useTraits(agentId, forge) {
     return used < max;
   }, [equippedTraitEntries, getGroupSlotUsage]);
 
+  // ── Battle-lock (defensive) ──────────────────────────────
+  // Refuse trait writes while a battle is live — protects BOTH callers: the
+  // dashboard TraitsSheet (also slot-disabled via benchLocked) and the Forge
+  // trait UI (which had no guard). Fresh getDoc is authoritative (no stale prop);
+  // fail-open on a read error is acceptable for a client-side backstop on a
+  // single-user-per-agent, soon-to-retire mechanism. The Forge path surfaces the
+  // message via forge.showToast; the dashboard reads the returned
+  // { error: 'battle_active' } for its ErrorBanner.
+  const refusedForBattle = useCallback(async () => {
+    if (!agentId) return false;
+    try {
+      const snap = await getDoc(doc(db, 'agents', agentId));
+      if (snap.exists() && snap.data().activeBattleId) {
+        forge?.showToast?.(BATTLE_LOCK_MSG);
+        return true;
+      }
+    } catch (err) {
+      console.error('[useTraits] battle-lock check failed (allowing write):', err);
+    }
+    return false;
+  }, [agentId, forge]);
+
   // ── Equip a trait ────────────────────────────────────────
   const equipTrait = useCallback(async (traitId, strength = 'moderate') => {
+    if (await refusedForBattle()) return { success: false, error: 'battle_active' };
     const def = TRAIT_BY_ID[traitId];
     if (!def) return { success: false, error: 'unknown_trait' };
 
@@ -221,12 +249,13 @@ export function useTraits(agentId, forge) {
       success: true,
       conflictsOverridden: conflictsOverridden.length > 0 ? conflictsOverridden : undefined,
     };
-  }, [equippedTraitEntries, getGroupSlotUsage, forge, persistTraits]);
+  }, [equippedTraitEntries, getGroupSlotUsage, forge, persistTraits, refusedForBattle]);
 
   // ── Unequip a trait ──────────────────────────────────────
   const unequipTrait = useCallback(async (traitId) => {
+    if (await refusedForBattle()) return { success: false, error: 'battle_active' };
     const def = TRAIT_BY_ID[traitId];
-    if (!def) return;
+    if (!def) return { success: false, error: 'unknown_trait' };
 
     // Build set of ruleIds still needed by OTHER equipped traits
     const otherTraitRuleIds = new Set();
@@ -259,15 +288,17 @@ export function useTraits(agentId, forge) {
     const updatedEntries = equippedTraitEntries.filter(e => e.traitId !== traitId);
     setEquippedTraitEntries(updatedEntries);
     await persistTraits(updatedEntries);
-  }, [equippedTraitEntries, forge, persistTraits]);
+    return { success: true };
+  }, [equippedTraitEntries, forge, persistTraits, refusedForBattle]);
 
   // ── Set trait strength ───────────────────────────────────
   const setTraitStrength = useCallback(async (traitId, newStrength) => {
+    if (await refusedForBattle()) return { success: false, error: 'battle_active' };
     const def = TRAIT_BY_ID[traitId];
-    if (!def) return;
+    if (!def) return { success: false, error: 'unknown_trait' };
 
     const profile = def.strengthProfiles[newStrength];
-    if (!profile) return;
+    if (!profile) return { success: false, error: 'invalid_strength' };
 
     // Update paramValues on each bundled rule in Firestore
     if (forge?.rules) {
@@ -299,7 +330,8 @@ export function useTraits(agentId, forge) {
     if (forge?.reloadData) {
       await forge.reloadData();
     }
-  }, [agentId, equippedTraitEntries, forge, persistTraits]);
+    return { success: true };
+  }, [agentId, equippedTraitEntries, forge, persistTraits, refusedForBattle]);
 
   return {
     equippedTraits,

@@ -1,9 +1,8 @@
 // src/components/Dashboard/DeployStation.jsx
 //
 // "03 · Deploy" — the prototype's big filled "Deploy agent" CTA + the binding
-// line + a quieter "or equip a trait first" secondary link (cold-start).
-// Reuses the shared deploy path via onDeploy. Rendered only when nothing is
-// live (CommandDashboard swaps in Manage when a battle is live).
+// line. Reuses the shared deploy path via onDeploy. Rendered only when nothing
+// is live (CommandDashboard swaps in Manage when a battle is live).
 //
 // VISUAL PASS: styling only — onDeploy/binding are unchanged.
 
@@ -13,7 +12,7 @@ import { Zap } from 'lucide-react';
 import { CMD, alpha, readableOn, Mono } from './commandUI';
 import { getArchetypeDisplayName } from '../../data/archetypeDisplay';
 
-export default function DeployStation({ agent, accent, deploying, onDeploy, onShowEquip, traitsOpen }) {
+export default function DeployStation({ agent, accent, deploying, onDeploy }) {
   const archetype = getArchetypeDisplayName(agent?.archetype);
   const watchlist = agent?.equippedWatchlistName;
   const disabled = deploying || !agent;
@@ -42,14 +41,6 @@ export default function DeployStation({ agent, accent, deploying, onDeploy, onSh
           Binds today’s read + {archetype}{watchlist ? ` · ${watchlist}` : ''}
         </Mono>
       </div>
-
-      {traitsOpen && (
-        <div style={{ marginTop: 12, textAlign: 'center' }}>
-          <span onClick={onShowEquip} style={{ fontSize: 12, color: accent, fontWeight: 600, cursor: 'pointer' }}>
-            or equip a trait first →
-          </span>
-        </div>
-      )}
     </>
   );
 }

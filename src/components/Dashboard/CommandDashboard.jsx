@@ -122,7 +122,6 @@ export default function CommandDashboard({
   const equippedCount = 1
     + (agent?.equippedWatchlistId ? 1 : 0)
     + ((agent?.equippedTraits?.length || 0) > 0 ? 1 : 0);
-  const traitsOpen = (agent?.equippedTraits?.length || 0) === 0;
 
   const [deploying, setDeploying] = useState(false);
   const deployDisabled = deploying || isLive || !agent;
@@ -137,7 +136,6 @@ export default function CommandDashboard({
     setDeploying(false);
   };
   const openFilmRoom = (battle) => { setCurrentBattle?.(battle); setScreen?.('filmRoom'); };
-  const scrollToEquip = () => document.getElementById('cmd-equip')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
   // ── Compact / expandable brief ────────────────────────────────────────────
   const [expanded, setExpanded] = useState(false);
@@ -333,7 +331,7 @@ export default function CommandDashboard({
         {!isLive ? (
           <motion.div variants={sectionVariants}>
             <SectionLabel n="03" label="Deploy" color={accent} />
-            <DeployStation agent={agent} accent={accent} deploying={deploying} onDeploy={handleDeploy} onShowEquip={scrollToEquip} traitsOpen={traitsOpen} />
+            <DeployStation agent={agent} accent={accent} deploying={deploying} onDeploy={handleDeploy} />
           </motion.div>
         ) : (
           <motion.div variants={sectionVariants}>

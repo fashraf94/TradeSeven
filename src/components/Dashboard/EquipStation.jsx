@@ -107,6 +107,9 @@ export default function EquipStation({ agent, accent, onOpenAgent, setShowForge 
   // Which picker is open: null | 'archetype' | 'watchlist' | 'traits'
   // ('rules' / RuleBundlePicker is retained but dormant — see below.)
   const [sheet, setSheet] = useState(null);
+  // Bumped each time the Traits sheet opens so it remounts and reloads current
+  // traits + rules fresh — guards against a stale view after an archetype reseed.
+  const [traitsEpoch, setTraitsEpoch] = useState(0);
 
   // ── Forge hook — full object: feeds the dormant RuleBundlePicker AND useTraits
   // (passed into TraitsSheet) so both share one Firestore load. ─────────────
@@ -246,7 +249,7 @@ export default function EquipStation({ agent, accent, onOpenAgent, setShowForge 
             name={traitsEquipped ? `${equippedTraitsList.length} trait${equippedTraitsList.length === 1 ? '' : 's'}` : 'Add traits'}
             sub={traitsEquipped ? traitsSummary : 'Optional · shapes your agent'}
             locked={benchLocked}
-            onClick={() => setSheet('traits')}
+            onClick={() => { setTraitsEpoch((e) => e + 1); setSheet('traits'); }}
           />
         </div>
       </div>
@@ -305,14 +308,19 @@ export default function EquipStation({ agent, accent, onOpenAgent, setShowForge 
         accent={accent}
       />
 
-      {/* traits picker — equip-only DNA surface */}
-      <TraitsSheet
-        open={sheet === 'traits'}
-        onClose={() => setSheet(null)}
-        agent={agent}
-        accent={accent}
-        forge={forge}
-      />
+      {/* traits picker — equip-only DNA surface. Keyed on traitsEpoch + gated on
+          (epoch > 0) so it (re)mounts on each open, reloading current traits/rules
+          fresh; the closed instance stays mounted between opens so the exit
+          animation still plays. */}
+      {traitsEpoch > 0 && (
+        <TraitsSheet
+          key={traitsEpoch}
+          open={sheet === 'traits'}
+          onClose={() => setSheet(null)}
+          agent={agent}
+          accent={accent}
+        />
+      )}
     </>
   );
 }

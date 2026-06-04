@@ -3,8 +3,16 @@
 // Equip-only Traits surface for the Equip station's third slot (replaces the old
 // rule-bundle picker). Opens as an EquipSheet (bottom sheet on mobile, center
 // modal on desktop) via the same children-slot pattern ArchetypePicker uses, so
-// it inherits the dock/motion/backdrop/header. Reads + mutates the agent's traits
-// through the shared useTraits hook, fed the parent's single useForge instance.
+// it inherits the dock/motion/backdrop/header.
+//
+// Freshness: this sheet owns its OWN useForge (not the bench's) and the bench
+// gives it a remount-key that bumps on open — so each open reloads rules/bundles
+// AND equippedTraits fresh-and-consistent, even after an archetype reseed done
+// elsewhere on the dashboard. The forge handed to useTraits is gated on its load
+// (undefined while loading) so useTraits' orphan-cleanup effect can never run
+// against half-loaded (empty) rules and auto-unequip the just-loaded traits. This
+// is scoped to this instance — the shared useTraits hook is untouched (the Forge
+// depends on it).
 //
 // Equip-only by design — NO strength control. Strength is partial (it bakes into
 // paramValues but does not change a rule's hard/soft injection), and the whole
@@ -22,15 +30,16 @@ import React, { useState, useEffect, useRef } from 'react';
 import { ShieldCheck } from 'lucide-react';
 import EquipSheet from './EquipSheet';
 import { CMD, alpha, MONO, Eyebrow, Mono, readableOn, ErrorBanner } from './commandUI';
-import { useTraits } from '../../hooks/useTraits';
+import { useForge } from '../../hooks/useForge';
+import { useTraits, BATTLE_LOCK_MSG } from '../../hooks/useTraits';
 import { DNA_GROUPS } from '../../data/dnaGroups';
 import { getTraitsForGroup } from '../../data/traitLibrary';
 import { getTraitEnforcement } from '../../utils/traitEnforcement';
 
-// equipTrait / unequipTrait error code → copy. `battle_active` is armed in Phase 3
-// (the useTraits battle-lock); the rest are returned by equipTrait today.
+// equipTrait / unequipTrait error code → copy. battle_active reuses the hook's
+// exported BATTLE_LOCK_MSG so the toast (Forge) and this banner read identically.
 const ERROR_COPY = {
-  battle_active: "Can't change traits while a battle is live — changes apply to your next deploy.",
+  battle_active: BATTLE_LOCK_MSG,
   slots_full: 'That DNA group is full (2 max). Unequip one to make room.',
   already_equipped: 'That trait is already equipped.',
   rule_creation_failed: "Couldn't equip that trait. Please try again.",
@@ -106,9 +115,19 @@ function GroupHeader({ name, used, max }) {
   );
 }
 
-export default function TraitsSheet({ open, onClose, agent, accent, dock = 'bottom', forge }) {
+export default function TraitsSheet({ open, onClose, agent, accent, dock = 'bottom' }) {
   const agentId = agent?.id;
-  const { equippedTraits, equipTrait, unequipTrait, getGroupSlotUsage, canEquip } = useTraits(agentId, forge);
+  // Own the Forge hook here (not passed from the bench) so the parent's remount-key
+  // reloads rules/bundles AND equippedTraits fresh-and-consistent on each open.
+  // Gate the forge handed to useTraits on its load: while forge is still loading we
+  // pass undefined, so useTraits' orphan-cleanup effect can't run against half-loaded
+  // (empty) rules. Once loaded, both come from the same Firestore state, so the
+  // effect only ever sees a consistent (traits, rules) pair.
+  const forge = useForge(agentId);
+  const traitsForge = forge.loading ? undefined : forge;
+  const { equippedTraits, equipTrait, unequipTrait, getGroupSlotUsage, canEquip, loading: traitsLoading } =
+    useTraits(agentId, traitsForge);
+  const loading = forge.loading || traitsLoading;
 
   const [error, setError] = useState(null);
   const [working, setWorking] = useState(null); // traitId mid-write, or null
@@ -119,9 +138,9 @@ export default function TraitsSheet({ open, onClose, agent, accent, dock = 'bott
     if (!open) { sessionRef.current += 1; setError(null); setWorking(null); }
   }, [open]);
 
-  // Run an equip/unequip write with single-flight + post-close guards. Handles both
-  // the {success,error} shape (equipTrait, and unequipTrait once Phase 3 lands) and
-  // a void return (unequipTrait today) — a void result simply surfaces no error.
+  // Run an equip/unequip write with single-flight + post-close guards. Handles the
+  // { success, error } shape returned by equipTrait / unequipTrait (incl. the
+  // Phase-3 battle_active refusal).
   const run = async (traitId, fn) => {
     if (working) return;
     const session = sessionRef.current;
@@ -151,49 +170,55 @@ export default function TraitsSheet({ open, onClose, agent, accent, dock = 'bott
       subtitle="Equip traits to shape how your agent reads the market. Changes apply on your next deploy."
       accent={accent}
     >
-      {error && <ErrorBanner style={{ margin: '2px 0 12px' }}>{error}</ErrorBanner>}
+      {loading ? (
+        <div style={{ padding: '24px 8px', textAlign: 'center', color: CMD.ink2, fontSize: 13 }}>Loading traits…</div>
+      ) : (
+        <>
+          {error && <ErrorBanner style={{ margin: '2px 0 12px' }}>{error}</ErrorBanner>}
 
-      {equippedTraits.length > 0 && (
-        <div style={{ marginBottom: 18 }}>
-          <Eyebrow color={CMD.ink3} style={{ margin: '0 2px 9px' }}>Equipped · {equippedTraits.length}</Eyebrow>
-          {equippedTraits.map((t) => (
-            <TraitRow
-              key={t.traitId}
-              trait={t}
-              enforced={getTraitEnforcement(t.traitId).isEnforced}
-              equipped
-              busy={working === t.traitId}
-              disabled={Boolean(working)}
-              accent={accent}
-              onAction={() => run(t.traitId, unequipTrait)}
-            />
-          ))}
-        </div>
+          {equippedTraits.length > 0 && (
+            <div style={{ marginBottom: 18 }}>
+              <Eyebrow color={CMD.ink3} style={{ margin: '0 2px 9px' }}>Equipped · {equippedTraits.length}</Eyebrow>
+              {equippedTraits.map((t) => (
+                <TraitRow
+                  key={t.traitId}
+                  trait={t}
+                  enforced={getTraitEnforcement(t.traitId).isEnforced}
+                  equipped
+                  busy={working === t.traitId}
+                  disabled={Boolean(working)}
+                  accent={accent}
+                  onAction={() => run(t.traitId, unequipTrait)}
+                />
+              ))}
+            </div>
+          )}
+
+          <Eyebrow color={CMD.ink3} style={{ margin: '0 2px 9px' }}>Add a trait</Eyebrow>
+          {Object.values(DNA_GROUPS).map((group) => {
+            const { used, max } = getGroupSlotUsage(group.id);
+            const candidates = getTraitsForGroup(group.id).filter((t) => !equippedIds.has(t.id));
+            if (candidates.length === 0) return null;
+            return (
+              <div key={group.id} style={{ marginBottom: 14 }}>
+                <GroupHeader name={group.name} used={used} max={max} />
+                {candidates.map((t) => (
+                  <TraitRow
+                    key={t.id}
+                    trait={t}
+                    enforced={getTraitEnforcement(t.id).isEnforced}
+                    equipped={false}
+                    busy={working === t.id}
+                    disabled={Boolean(working) || !canEquip(t.id)}
+                    accent={accent}
+                    onAction={() => run(t.id, equipTrait)}
+                  />
+                ))}
+              </div>
+            );
+          })}
+        </>
       )}
-
-      <Eyebrow color={CMD.ink3} style={{ margin: '0 2px 9px' }}>Add a trait</Eyebrow>
-      {Object.values(DNA_GROUPS).map((group) => {
-        const { used, max } = getGroupSlotUsage(group.id);
-        const candidates = getTraitsForGroup(group.id).filter((t) => !equippedIds.has(t.id));
-        if (candidates.length === 0) return null;
-        return (
-          <div key={group.id} style={{ marginBottom: 14 }}>
-            <GroupHeader name={group.name} used={used} max={max} />
-            {candidates.map((t) => (
-              <TraitRow
-                key={t.id}
-                trait={t}
-                enforced={getTraitEnforcement(t.id).isEnforced}
-                equipped={false}
-                busy={working === t.id}
-                disabled={Boolean(working) || !canEquip(t.id)}
-                accent={accent}
-                onAction={() => run(t.id, equipTrait)}
-              />
-            ))}
-          </div>
-        );
-      })}
     </EquipSheet>
   );
 }

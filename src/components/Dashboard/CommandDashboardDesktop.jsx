@@ -78,7 +78,6 @@ export default function CommandDashboardDesktop({
   const isLive = Boolean(liveBattle);
   const recentCompleted = useRecentCompletedAgentBattles(3);
   const activeStage = isLive ? 'manage' : 'read';
-  const traitsOpen = (agent?.equippedTraits?.length || 0) === 0;
 
   const [deploying, setDeploying] = useState(false);
   const deployDisabled = deploying || isLive || !agent;
@@ -94,7 +93,6 @@ export default function CommandDashboardDesktop({
   };
   const openFilmRoom = (battle) => { setCurrentBattle?.(battle); setScreen?.('filmRoom'); };
   const openAgent = () => setScreen?.('agent');
-  const scrollToEquip = () => document.getElementById('cmd-desk-equip')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
   const colScroll = { minHeight: 0, overflowY: 'auto', overflowX: 'hidden' };
 
@@ -192,8 +190,6 @@ export default function CommandDashboardDesktop({
                 accent={accent}
                 deploying={deploying}
                 onDeploy={handleDeploy}
-                onShowEquip={scrollToEquip}
-                traitsOpen={traitsOpen}
                 agentName={agentName}
               />
             </div>
