@@ -83,6 +83,21 @@ extraction.
 
 **Filed:** Jun 3, 2026.
 
+### Desktop `IdentityPanel` ignores its `onOpenAgent` prop (dead prop)
+
+`CommandDashboardDesktop.jsx` passes `onOpenAgent={openAgent}` to `<IdentityPanel>`, but
+`desktop/IdentityPanel.jsx`'s signature omits `onOpenAgent` and the panel has no `onClick` —
+so the desktop agent card (orb + name + archetype) is **not** tappable-to-profile the way the
+mobile `EquipStation` identity panel is (`EquipStation.jsx:190`). Pre-existing; surfaced while
+moving the Archetype slot to the picker in the archetype-picker arc. Not urgent — the profile
+stays reachable on desktop via the `ReadColumn` orb (`desktop/ReadColumn.jsx:66`).
+
+**Fix when touched:** either wire `IdentityPanel`'s `onOpenAgent` to the portrait `onClick`
+(mirroring mobile + `ReadColumn`), or drop the unused prop from both the panel and the
+`CommandDashboardDesktop` call site.
+
+**Filed:** Jun 4, 2026 — archetype-picker arc (Phase 0).
+
 ## Resolved
 
 ### Watchlist "(locked)" copy — tried, reverted to "(unavailable)"
