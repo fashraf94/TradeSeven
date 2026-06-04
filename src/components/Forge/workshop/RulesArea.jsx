@@ -54,7 +54,7 @@ export default function RulesArea({ forge, agent, onBuild, onForgeReady }) {
 
   if (showStarterKit) {
     return (
-      <div className="fw-scroll" style={{ height: '100%', overflowY: 'auto', padding: '12px 4px 30px' }}>
+      <div className="fw-scroll" style={{ height: '100%', overflowY: 'auto', padding: '12px 4px calc(84px + env(safe-area-inset-bottom))' }}>
         <StarterKit
           agentId={agentId}
           agent={agent}
@@ -69,7 +69,7 @@ export default function RulesArea({ forge, agent, onBuild, onForgeReady }) {
   }
 
   return (
-    <div className="fw-scroll" style={{ height: '100%', overflowY: 'auto', padding: '22px 18px 30px' }}>
+    <div className="fw-scroll" style={{ height: '100%', overflowY: 'auto', padding: '22px 18px calc(84px + env(safe-area-inset-bottom))' }}>
       <div style={{ marginBottom: 18 }}>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 9 }}>
           <Mono style={{ fontSize: 12, letterSpacing: '0.14em', color: T.gold, fontWeight: 700 }}>02</Mono>

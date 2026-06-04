@@ -33,7 +33,7 @@ export default function TraitsArea({ agent, agentName, primary, traits, hasActiv
   }), []);
 
   return (
-    <div className="fw-scroll" style={{ height: '100%', overflowY: 'auto', padding: '22px 18px 30px' }}>
+    <div className="fw-scroll" style={{ height: '100%', overflowY: 'auto', padding: '22px 18px calc(84px + env(safe-area-inset-bottom))' }}>
       <AreaHeader n="03" name="Traits" slotLine={`Tune the disposition layered on ${agentName || 'your agent'}'s identity`} accent={accent} />
 
       {/* FIXED archetype — read-only identity context, clearly locked */}

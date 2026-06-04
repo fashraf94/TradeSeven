@@ -18,8 +18,9 @@
 // ForgeLanding to open Workshop with a theme seedContext.
 
 import React, { useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, ArrowRight, Sparkles } from 'lucide-react';
+import { X, Sparkles } from 'lucide-react';
 import { useTheme } from '../../contexts/ThemeContext';
 import { getThemeRichEntry } from './themesDkb';
 
@@ -45,7 +46,11 @@ export default function ThemeDetailModal({ isOpen, theme, onClose, onStartWorksh
   const richEntry = theme?.id ? getThemeRichEntry(theme.id) : null;
   const fe = richEntry?.fullEntry || null;
 
-  return (
+  // Portal to <body> so the overlay reliably covers the whole viewport —
+  // including the Forge's segmented nav and the bottom nav — instead of being
+  // re-based by the scrollable area it's mounted inside (iOS fixed-in-scroll).
+  if (typeof document === 'undefined') return null;
+  return createPortal(
     <AnimatePresence>
       {isOpen && theme && (
         <motion.div
@@ -178,7 +183,8 @@ export default function ThemeDetailModal({ isOpen, theme, onClose, onStartWorksh
           </motion.div>
         </motion.div>
       )}
-    </AnimatePresence>
+    </AnimatePresence>,
+    document.body,
   );
 }
 
@@ -595,8 +601,7 @@ function ModalFooter({ tokens, onStartWorkshop }) {
         }}
       >
         <Sparkles size={16} />
-        Start in Workshop
-        <ArrowRight size={16} />
+        Build a watchlist — coming soon
       </button>
     </div>
   );

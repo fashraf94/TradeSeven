@@ -49,7 +49,7 @@ export default function ForgeOverview({ agentName, primary, watchlists = [], bun
   ];
 
   return (
-    <div className="fw-scroll" style={{ height: '100%', overflowY: 'auto', padding: '22px 18px 30px' }}>
+    <div className="fw-scroll" style={{ height: '100%', overflowY: 'auto', padding: '22px 18px calc(84px + env(safe-area-inset-bottom))' }}>
       <div className="fw-stagger">
         {/* intro */}
         <div style={{ marginBottom: 18 }}>

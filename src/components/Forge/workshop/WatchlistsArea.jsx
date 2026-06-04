@@ -27,7 +27,7 @@ export default function WatchlistsArea({ agentName, primary, user, agent, showTo
   }, [showToast, primary]);
 
   return (
-    <div className="fw-scroll" style={{ height: '100%', overflowY: 'auto', padding: '22px 18px 30px' }}>
+    <div className="fw-scroll" style={{ height: '100%', overflowY: 'auto', padding: '22px 18px calc(84px + env(safe-area-inset-bottom))' }}>
       <AreaHeader n="01" name="Watchlists" slotLine={`The universe ${agentName || 'your agent'} watches`} accent={primary || T.teal} />
 
       {/* Discover lane + Signal Drop — reused leaf, wiring intact */}
