@@ -117,12 +117,30 @@ function GroupHeader({ name, used, max }) {
 
 export default function TraitsSheet({ open, onClose, agent, accent, dock = 'bottom' }) {
   const agentId = agent?.id;
-  // Own the Forge hook here (not passed from the bench) so the parent's remount-key
-  // reloads rules/bundles AND equippedTraits fresh-and-consistent on each open.
-  // Gate the forge handed to useTraits on its load: while forge is still loading we
-  // pass undefined, so useTraits' orphan-cleanup effect can't run against half-loaded
-  // (empty) rules. Once loaded, both come from the same Firestore state, so the
-  // effect only ever sees a consistent (traits, rules) pair.
+  // ───────────────────────────────────────────────────────────────────────────
+  // LOAD-BEARING INVARIANT — do not weaken without re-proving it.
+  //
+  // useTraits runs an orphan-cleanup effect that auto-unequips any equipped trait
+  // whose rules aren't found in the current Forge rules/bundles. It MUST NEVER run
+  // with fresh equippedTraits against stale/empty rules — that mismatch reads the
+  // just-loaded traits as "orphaned" and silently wipes them (e.g. clobbering an
+  // archetype reseed the instant this sheet opens). Two pieces keep it safe:
+  //
+  //   1. Own useForge here (NOT the bench's instance) + the bench's per-open
+  //      remount-key (key={traitsEpoch}). Each open is a fresh mount, so rules,
+  //      bundles, and equippedTraits all (re)load from the SAME Firestore state —
+  //      never one fresh + one stale.
+  //   2. Gate the forge handed to useTraits on its load (loading ? undefined). While
+  //      loading, the orphan effect's `!forge?.bundles` guard short-circuits; the one
+  //      render where loading is false but rules are still [] is also the render where
+  //      equippedTraits is still [] (useTraits' async getDoc can't resolve before
+  //      useForge sets loading=true synchronously), so its `!length` guard short-
+  //      circuits too. So the effect only ever sees a consistent (traits, rules) pair.
+  //
+  // This is a render-lifecycle proof, NOT test-guarded — so this comment is its only
+  // protection. Do NOT: share the bench's forge, drop the loading gate, drop the
+  // remount-key, or make the shared useTraits hook reactive (the Forge depends on it).
+  // ───────────────────────────────────────────────────────────────────────────
   const forge = useForge(agentId);
   const traitsForge = forge.loading ? undefined : forge;
   const { equippedTraits, equipTrait, unequipTrait, getGroupSlotUsage, canEquip, loading: traitsLoading } =

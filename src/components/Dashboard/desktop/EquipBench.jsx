@@ -88,7 +88,8 @@ export default function EquipBench({ agent, accent, setShowForge, isLive }) {
   // ('rules' / RuleBundlePicker is retained but dormant — see below.)
   const [sheet, setSheet] = useState(null);
   // Bumped each time the Traits sheet opens so it remounts and reloads current
-  // traits + rules fresh — guards against a stale view after an archetype reseed.
+  // traits + rules fresh. LOAD-BEARING: half of TraitsSheet's orphan-cleanup safety
+  // invariant (per-open remount) — don't drop the bump or the key. See TraitsSheet.
   const [traitsEpoch, setTraitsEpoch] = useState(0);
 
   // ── Forge hook — full object: feeds the dormant RuleBundlePicker AND useTraits
