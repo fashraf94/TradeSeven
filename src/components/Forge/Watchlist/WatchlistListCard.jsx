@@ -10,19 +10,19 @@
 import React, { useState } from 'react';
 import { Trash2, Bookmark } from 'lucide-react';
 import { timeAgo } from '../../../utils/timeAgo';
-import { getCardEquipState, isWatchlistEquipped } from '../../../utils/watchlistEquipUI';
+import { isWatchlistEquipped } from '../../../utils/watchlistEquipUI';
 import TickerChip from './TickerChip';
 import WatchlistStatusBadge from './WatchlistStatusBadge';
 
 const CHIP_PREVIEW_LIMIT = 6;
 
+// Equip/unequip is intentionally NOT surfaced here — the Forge marks components
+// "ready"; equipping happens on the Home (EquipStation/EquipBench). The
+// read-only "Equipped to" badge below is kept as a quiet "in use" indicator.
 export default function WatchlistListCard({
   tokens,
   watchlist,
   agent,
-  onEquip,
-  onUnequip,
-  working,
   onOpen,
   onDelete,
 }) {
@@ -37,7 +37,6 @@ export default function WatchlistListCard({
   const thesis = watchlist?.thesis?.trim();
 
   const isEquipped = isWatchlistEquipped(agent, watchlist?.watchlistId);
-  const equipState = getCardEquipState({ agent, watchlist, working });
 
   const open = () => onOpen(watchlist.watchlistId);
 
@@ -175,47 +174,6 @@ export default function WatchlistListCard({
         </div>
       )}
 
-      {/* Footer — Equip / Unequip (committed watchlists only) */}
-      {equipState.visible && (
-        <div
-          style={{
-            marginTop: 12,
-            paddingTop: 12,
-            borderTop: `1px solid ${tokens.borderDefault}`,
-            display: 'flex',
-            justifyContent: 'flex-end',
-          }}
-        >
-          <button
-            type="button"
-            aria-label={equipState.label}
-            onClick={(e) => {
-              e.stopPropagation();
-              if (equipState.mode === 'equip') onEquip(watchlist.watchlistId);
-              else onUnequip();
-            }}
-            disabled={equipState.disabled}
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 6,
-              padding: '8px 14px',
-              borderRadius: 8,
-              border: `1px solid ${tokens.teal}`,
-              background: 'transparent',
-              color: tokens.teal,
-              fontSize: 13,
-              fontWeight: 600,
-              fontFamily: 'inherit',
-              cursor: equipState.disabled ? 'not-allowed' : 'pointer',
-              opacity: equipState.disabled ? 0.5 : 1,
-            }}
-          >
-            <Bookmark size={14} />
-            {equipState.label}
-          </button>
-        </div>
-      )}
     </div>
   );
 }

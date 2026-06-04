@@ -159,18 +159,6 @@
       "schedule": "0 1,2 * * 1"
     },
     {
-      "path": "/api/cron/season-daily-evaluate",
-      "schedule": "30 20,21 * * 1-5"
-    },
-    {
-      "path": "/api/cron/season-pit-stop-manage?action=open",
-      "schedule": "0 13,14 * * 6"
-    },
-    {
-      "path": "/api/cron/season-pit-stop-manage?action=lockin",
-      "schedule": "0 3,4 * * 1"
-    },
-    {
       "path": "/api/cron/compute-daily-regime-brief",
       "schedule": "30 12 * * 1-5"
     },
