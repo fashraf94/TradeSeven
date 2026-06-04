@@ -116,6 +116,62 @@ Pairs with the `useForge`/`getRules`-is-eager efficiency item above.
 
 **Filed:** Jun 4, 2026 — archetype-picker arc (Phase 4 code review).
 
+### `useTraits` orphan-cleanup effect is not loading-aware (staleness race — source fix)
+
+`useTraits`' orphan-cleanup effect (`src/hooks/useTraits.js` — the "auto-unequip traits
+whose rules are no longer in any active bundle" effect) auto-unequips + persists based on a
+staleness heuristic that does **not** distinguish "rules not loaded yet" (`forge.rules === []`
+mid-load — the guard `!forge?.rules` treats `[]` as truthy) from "rules genuinely empty." If
+it ever runs with fresh `equippedTraits` against stale/empty `forge.rules`, it reads the
+just-loaded traits as orphaned and silently wipes them. This is a latent race on **both**
+surfaces: the Forge (`ForgeScreen` mounts `useForge` + `useTraits` together and the single
+`getDoc` for `equippedTraits` can resolve before `useForge`'s collection reads) and the
+dashboard.
+
+The dashboard `TraitsSheet` currently **contains** this with a three-part instance-scoped
+guard (own `useForge` + per-open remount-key + a `forge.loading ? undefined : forge` gate)
+whose correctness rests on an **untested render-lifecycle timing argument** (documented in the
+LOAD-BEARING comment block in `TraitsSheet.jsx`). The Forge trait UI has no such guard.
+
+**Deep fix:** make the orphan effect itself loading-aware — bail while `forge.loading` is true
+(or gate the auto-mutation behind an explicit "rules are known-complete" signal both callers
+opt into). This closes the race at the source for both surfaces and removes the fragile
+per-consumer timing dependency, after which the `TraitsSheet` loading-gate becomes belt-and-
+suspenders. It is a guard, **not** reactivity — but it modifies the shared `useTraits` hook the
+Forge depends on, so it was deliberately deferred (this arc scoped the staleness fix to the
+`TraitsSheet` instance only, by founder decision).
+
+**Trigger to fix:** if the trait→rule mechanism's lifespan extends (it is currently slated to
+retire), OR before any future change to `useForge`'s loading model (e.g. seeding rules from
+cache synchronously, an `onSnapshot` listener, or splitting the rules/bundles loads so
+`loading` flips false with rules still partial) — any of which silently breaks the timing
+proof. Land alongside the item below.
+
+**Filed:** Jun 4, 2026 — traits-equip surface arc (Phase 4 code review).
+
+### Localize the per-open remount inside `TraitsSheet` (invariant duplicated across benches)
+
+Half of the orphan-cleanup safety invariant — the per-open remount (`setTraitsEpoch(e => e + 1)`
+in the slot `onClick` + `key={traitsEpoch}` + the `traitsEpoch > 0` render gate) — is
+copy-pasted into both `EquipStation.jsx` (mobile) and `desktop/EquipBench.jsx`, each carrying
+its own LOAD-BEARING comment. The mechanism that keeps `useTraits` from wiping traits lives in
+the **host** components, so `TraitsSheet` cannot guarantee its own correctness, and a
+maintainer touching only one bench (e.g. "simplifying" away the epoch, or moving to a
+controlled-open pattern) breaks the invariant on that surface only — mobile and desktop would
+silently diverge.
+
+**Fix:** localize the per-open remount entirely inside `TraitsSheet` (e.g. an internal
+open-transition epoch keying an inner data-owning component), so the hosts render
+`<TraitsSheet open=… />` like any other sheet with no epoch/key wiring and the invariant lives
+in exactly one place. Mind the entrance-animation timing — the inner remount must happen before
+paint to avoid a one-frame stale flash (`useLayoutEffect`, not `useEffect`).
+
+**Trigger to fix:** land alongside the loading-guard item above — once the orphan effect is
+loading-safe at the source, this remount is a freshness nicety (no longer load-bearing) and the
+localization becomes pure cleanup.
+
+**Filed:** Jun 4, 2026 — traits-equip surface arc (Phase 4 code review).
+
 ## Resolved
 
 ### Watchlist "(locked)" copy — tried, reverted to "(unavailable)"

@@ -24,7 +24,7 @@ import { filterWatchlistsByStatus } from '../Forge/Watchlist/filterWatchlistsByS
 import { equipWatchlist, unequipWatchlist } from '../../services/agentService';
 import { getArchetypeDisplayName } from '../../data/archetypeDisplay';
 import { getArchetypeIdentity } from '../../data/archetypeIdentity';
-import { TRAIT_BY_ID } from '../../data/traitLibrary';
+import { getTraitSlotSummary } from '../../utils/traitSlotSummary';
 
 function tickerLabel(tickers) {
   const syms = (tickers || [])
@@ -117,11 +117,8 @@ export default function EquipStation({ agent, accent, onOpenAgent, setShowForge 
   const forge = useForge(agentId);
   const { forgedBundles, equippedBundles, equipBundleFn, unequipBundleFn, equippingBundleId, loading: forgeLoading } = forge;
 
-  // ── Traits slot display — from the real-time agent doc (equippedTraits). ──
-  const equippedTraitsList = agent?.equippedTraits || [];
-  const traitsEquipped = equippedTraitsList.length > 0;
-  const traitNames = equippedTraitsList.map((t) => TRAIT_BY_ID[t.traitId]?.name).filter(Boolean);
-  const traitsSummary = traitNames.slice(0, 2).join(' · ') + (traitNames.length > 2 ? ` +${traitNames.length - 2}` : '');
+  // ── Traits slot display — derived from the real-time agent doc (shared helper). ──
+  const traitSlot = getTraitSlotSummary(agent);
 
   // ── Watchlist via the existing watchlist services ────────────────────────
   const [committed, setCommitted] = useState([]);
@@ -243,12 +240,12 @@ export default function EquipStation({ agent, accent, onOpenAgent, setShowForge 
 
           {/* Traits — equip-only DNA surface (replaces the old rule-bundle slot) */}
           <Slot
-            filled={traitsEquipped}
+            filled={traitSlot.equipped}
             icon={<Dna size={17} color={CMD.gold} />}
             catColor={CMD.gold}
             label="Traits"
-            name={traitsEquipped ? `${equippedTraitsList.length} trait${equippedTraitsList.length === 1 ? '' : 's'}` : 'Add traits'}
-            sub={traitsEquipped ? traitsSummary : 'Optional · shapes your agent'}
+            name={traitSlot.name}
+            sub={traitSlot.sub}
             locked={benchLocked}
             onClick={() => { setTraitsEpoch((e) => e + 1); setSheet('traits'); }}
           />
@@ -256,7 +253,7 @@ export default function EquipStation({ agent, accent, onOpenAgent, setShowForge 
       </div>
 
       {/* reassurance — never a requirement */}
-      {!traitsEquipped && !benchLocked && (
+      {!traitSlot.equipped && !benchLocked && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 10 }}>
           <Sparkles size={12} color={accent} />
           <div style={{ fontSize: 11.5, color: CMD.ink3 }}>One open slot — a chance to arm {agentName}, not a requirement. Deploy works now.</div>
