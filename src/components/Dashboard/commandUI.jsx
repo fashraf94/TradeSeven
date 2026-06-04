@@ -79,3 +79,22 @@ export function SectionLabel({ n, label, color = CMD.ink3, right }) {
     </div>
   );
 }
+
+// Inline error banner for the dashboard pickers (ArchetypePicker, TraitsSheet).
+// Copper — red is reserved for downside (GainLossBadge) — so equip failures read
+// as a recoverable hiccup, not a loss. Promoted here from a per-picker copy so the
+// equip-station siblings share one banner.
+export function ErrorBanner({ children, style }) {
+  return (
+    <div
+      role="alert"
+      style={{
+        padding: '10px 12px', borderRadius: 11, fontSize: 12.5, lineHeight: 1.45,
+        color: CMD.copper, background: alpha(CMD.copper, 0.1), border: `1px solid ${alpha(CMD.copper, 0.32)}`,
+        ...style,
+      }}
+    >
+      {children}
+    </div>
+  );
+}

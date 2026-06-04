@@ -121,8 +121,8 @@ export default function CommandDashboard({
 
   const equippedCount = 1
     + (agent?.equippedWatchlistId ? 1 : 0)
-    + ((agent?.equippedBundleIds?.length || 0) > 0 ? 1 : 0);
-  const rulesOpen = (agent?.equippedBundleIds?.length || 0) === 0;
+    + ((agent?.equippedTraits?.length || 0) > 0 ? 1 : 0);
+  const traitsOpen = (agent?.equippedTraits?.length || 0) === 0;
 
   const [deploying, setDeploying] = useState(false);
   const deployDisabled = deploying || isLive || !agent;
@@ -333,7 +333,7 @@ export default function CommandDashboard({
         {!isLive ? (
           <motion.div variants={sectionVariants}>
             <SectionLabel n="03" label="Deploy" color={accent} />
-            <DeployStation agent={agent} accent={accent} deploying={deploying} onDeploy={handleDeploy} onAddRules={scrollToEquip} rulesOpen={rulesOpen} />
+            <DeployStation agent={agent} accent={accent} deploying={deploying} onDeploy={handleDeploy} onShowEquip={scrollToEquip} traitsOpen={traitsOpen} />
           </motion.div>
         ) : (
           <motion.div variants={sectionVariants}>

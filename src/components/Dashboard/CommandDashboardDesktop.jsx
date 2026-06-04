@@ -78,7 +78,7 @@ export default function CommandDashboardDesktop({
   const isLive = Boolean(liveBattle);
   const recentCompleted = useRecentCompletedAgentBattles(3);
   const activeStage = isLive ? 'manage' : 'read';
-  const rulesOpen = (agent?.equippedBundleIds?.length || 0) === 0;
+  const traitsOpen = (agent?.equippedTraits?.length || 0) === 0;
 
   const [deploying, setDeploying] = useState(false);
   const deployDisabled = deploying || isLive || !agent;
@@ -192,8 +192,8 @@ export default function CommandDashboardDesktop({
                 accent={accent}
                 deploying={deploying}
                 onDeploy={handleDeploy}
-                onAddRules={scrollToEquip}
-                rulesOpen={rulesOpen}
+                onShowEquip={scrollToEquip}
+                traitsOpen={traitsOpen}
                 agentName={agentName}
               />
             </div>

@@ -12,7 +12,7 @@ import { Zap } from 'lucide-react';
 import { CMD, alpha, readableOn, Mono } from '../commandUI';
 import { getArchetypeDisplayName } from '../../../data/archetypeDisplay';
 
-export default function DeployCard({ agent, accent, deploying, onDeploy, onAddRules, rulesOpen, agentName }) {
+export default function DeployCard({ agent, accent, deploying, onDeploy, onShowEquip, traitsOpen, agentName }) {
   const archetype = getArchetypeDisplayName(agent?.archetype);
   const watchlist = agent?.equippedWatchlistName;
   const disabled = deploying || !agent;
@@ -30,12 +30,12 @@ export default function DeployCard({ agent, accent, deploying, onDeploy, onAddRu
         <Mono style={{ fontSize: 10.5, letterSpacing: '0.04em', color: CMD.ink3, marginTop: 5, display: 'block' }}>
           Binds today’s read + {archetype}{watchlist ? ` · ${watchlist}` : ''}
         </Mono>
-        {rulesOpen && (
+        {traitsOpen && (
           <span
-            onClick={onAddRules}
+            onClick={onShowEquip}
             style={{ fontSize: 12, color: accent, fontWeight: 600, cursor: 'pointer', display: 'inline-block', marginTop: 9 }}
           >
-            or add a rule bundle first — the deeper way in →
+            or equip a trait first →
           </span>
         )}
       </div>

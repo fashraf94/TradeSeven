@@ -1,7 +1,7 @@
 // src/components/Dashboard/DeployStation.jsx
 //
 // "03 · Deploy" — the prototype's big filled "Deploy agent" CTA + the binding
-// line + a quieter "or add a rule bundle first" secondary link (cold-start).
+// line + a quieter "or equip a trait first" secondary link (cold-start).
 // Reuses the shared deploy path via onDeploy. Rendered only when nothing is
 // live (CommandDashboard swaps in Manage when a battle is live).
 //
@@ -13,7 +13,7 @@ import { Zap } from 'lucide-react';
 import { CMD, alpha, readableOn, Mono } from './commandUI';
 import { getArchetypeDisplayName } from '../../data/archetypeDisplay';
 
-export default function DeployStation({ agent, accent, deploying, onDeploy, onAddRules, rulesOpen }) {
+export default function DeployStation({ agent, accent, deploying, onDeploy, onShowEquip, traitsOpen }) {
   const archetype = getArchetypeDisplayName(agent?.archetype);
   const watchlist = agent?.equippedWatchlistName;
   const disabled = deploying || !agent;
@@ -43,10 +43,10 @@ export default function DeployStation({ agent, accent, deploying, onDeploy, onAd
         </Mono>
       </div>
 
-      {rulesOpen && (
+      {traitsOpen && (
         <div style={{ marginTop: 12, textAlign: 'center' }}>
-          <span onClick={onAddRules} style={{ fontSize: 12, color: accent, fontWeight: 600, cursor: 'pointer' }}>
-            or add a rule bundle first — the deeper way in →
+          <span onClick={onShowEquip} style={{ fontSize: 12, color: accent, fontWeight: 600, cursor: 'pointer' }}>
+            or equip a trait first →
           </span>
         </div>
       )}
