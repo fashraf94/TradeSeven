@@ -22,6 +22,14 @@ export function bundleShelfStatus(b) {
   return SHELF_DRAFT;
 }
 
+// Bundle pill tier (draft / ready / equipped) — the shelf chip distinguishes
+// "equipped" (in use) from plain "ready". Single source for the bundle pill.
+export function bundlePillStatus(b) {
+  if (b?.status === 'equipped') return 'equipped';
+  if (b?.status === 'forged') return SHELF_READY;
+  return SHELF_DRAFT;
+}
+
 // Overview tallies — count ready vs draft per area from real data.
 export function countWatchlists(watchlists = []) {
   let ready = 0, draft = 0;

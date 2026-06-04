@@ -47,20 +47,6 @@ export function fkTokens(t) {
   };
 }
 
-// The forge "heat" — warm signature, used ONLY on the brand mark, Build CTAs,
-// "ready" tallies, and the finalize ritual. Never a category fill.
-export const HEAT = (T) => T.copper;   // ember
-export const HEAT2 = (T) => T.gold;    // spark
-
-// Area accents (the workshop benches). `watchlists` is overridden live from the
-// agent's per-user accent in ForgeWorkshop.
-export const areaAccent = (T, primary) => ({
-  overview: T.copper,
-  watchlists: primary || T.teal,
-  rules: T.gold,
-  traits: T.allocation,
-});
-
 // ── token context ───────────────────────────────────────────────────────────
 const ForgeKitContext = createContext(null);
 export function ForgeKitProvider({ tokens, children }) {

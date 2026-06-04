@@ -42,6 +42,7 @@ export default function BundleBuildFlow({ forge, hasActiveBattle, onClose, onFin
   const [workingBundleId, setWorkingBundleId] = useState(null);
   const [name, setName] = useState('');
   const [configRuleId, setConfigRuleId] = useState(null);
+  const [capReached, setCapReached] = useState(false);
   const initRef = useRef(false);
 
   // Ensure a working draft bundle exists (reuse one, else create one).
@@ -55,6 +56,7 @@ export default function BundleBuildFlow({ forge, hasActiveBattle, onClose, onFin
     } else {
       forge.createNewBundle('New Bundle').then((id) => {
         if (id) { setWorkingBundleId(id); setName('New Bundle'); }
+        else { setCapReached(true); } // 5-bundle cap: no working draft available
       });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -98,6 +100,10 @@ export default function BundleBuildFlow({ forge, hasActiveBattle, onClose, onFin
 
   const handleAddRule = async (templateId, paramValues) => {
     if (hasActiveBattle) { showToast?.('Changes apply to your next battle.'); return; }
+    // Guard: without a tracked working bundle, addRuleToBundle would fall through
+    // to its own draft-creating path (which bypasses the 5-bundle cap) and the
+    // result would be invisible/unremovable here.
+    if (!workingBundleId) return;
     const template = FORGE_RULE_TEMPLATES.find((t) => t.id === templateId);
     if (template) { await forge.addRuleToBundle(template, paramValues); setConfigRuleId(null); }
   };
@@ -256,6 +262,25 @@ export default function BundleBuildFlow({ forge, hasActiveBattle, onClose, onFin
       </div>
     </div>
   );
+
+  // At the 5-bundle cap with no draft to continue, there's no working bundle to
+  // build into — show a clear dead-end instead of an empty, broken stepper.
+  if (capReached) {
+    return (
+      <div style={{ position: 'absolute', inset: 0, zIndex: 60, display: 'flex', flexDirection: 'column', background: T.bg, animation: 'fwSheet .3s cubic-bezier(.22,.8,.3,1) both' }}>
+        <div style={{ flexShrink: 0, padding: '16px 18px 14px', borderBottom: `1px solid ${T.hair}`, display: 'flex', alignItems: 'center', gap: 7 }}>
+          <Icon name="rules" size={14} color={accent} />
+          <div style={{ fontFamily: 'var(--fw-ui)', fontSize: 13.5, fontWeight: 700, color: T.ink }}>Forge a rule bundle</div>
+        </div>
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12, padding: '24px 28px', textAlign: 'center' }}>
+          <Icon name="rules" size={28} color={T.ink3} />
+          <div style={{ fontSize: 14, fontWeight: 700, color: T.ink }}>You already have 5 bundles</div>
+          <div style={{ fontSize: 12.5, color: T.ink2, lineHeight: 1.5, maxWidth: 260 }}>Archive a bundle from your shelf to forge a new one.</div>
+          <button className="fw-tap" onClick={onClose} style={{ all: 'unset', cursor: 'pointer', marginTop: 6, padding: '11px 22px', borderRadius: 12, background: T.surface, border: `1px solid ${T.hair2}`, color: T.ink, fontFamily: 'var(--fw-ui)', fontWeight: 700, fontSize: 14 }}>Close</button>
+        </div>
+      </div>
+    );
+  }
 
   const body = [renderBrowse, renderAssemble, renderHardSoft, renderFinalize][stage]();
 

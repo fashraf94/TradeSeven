@@ -42,7 +42,7 @@ export default function WatchlistsArea({ agentName, primary, user, agent, showTo
       <div style={{ marginTop: 8 }}>
         <WatchlistListPanel
           user={user}
-          onOpenWatchlist={onViewWatchlist}
+          onOpenWatchlist={(id) => onViewWatchlist && onViewWatchlist(id, 'watchlists')}
           onDropSignal={() => showToast?.('Use “Drop a Signal” above to paste a signal', primary)}
         />
       </div>

@@ -441,7 +441,7 @@ export default function StarterKit({ agentId, agent, forge, tokens, isMobile, on
       // the command bridge.
       await updateAgent(agentId, { starterKitCompleted: true });
 
-      // 7. Show success briefly, then dismiss
+      // 6. Show success briefly, then dismiss
       setForgingDone(true);
       setTimeout(() => {
         onComplete();

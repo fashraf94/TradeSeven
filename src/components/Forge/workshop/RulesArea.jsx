@@ -9,7 +9,7 @@
 import React, { useMemo } from 'react';
 import { useTheme } from '../../../contexts/ThemeContext';
 import { useFK, alpha, Icon, Mono, BuildEntry, ShelfHeader, ShelfCard, StatusPill, InUseBadge, MixMeter } from './forgeKit';
-import { bundleShelfStatus } from './forgeStatus';
+import { bundleShelfStatus, bundlePillStatus } from './forgeStatus';
 import { bundleHardSoftCounts } from './hardSoftHelper';
 import StarterKit from '../StarterKit';
 
@@ -17,9 +17,9 @@ function BundleCard({ bundle, rulesById, onForgeReady }) {
   const T = useFK();
   const accent = T.gold;
   const counts = bundleHardSoftCounts(bundle, rulesById);
-  const isDraft = bundle.status === 'draft';
-  const isEquipped = bundle.status === 'equipped';
-  const pill = isEquipped ? 'equipped' : isDraft ? 'draft' : 'ready';
+  const pill = bundlePillStatus(bundle);
+  const isDraft = pill === 'draft';
+  const isEquipped = pill === 'equipped';
   return (
     <ShelfCard accent={accent} status={bundleShelfStatus(bundle)}>
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }}>
