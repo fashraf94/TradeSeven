@@ -341,6 +341,26 @@ export const unequipWatchlist = async (agentId) => {
   return response.json();
 };
 
+// ============================================
+// ARCHETYPE CHANGE
+// ============================================
+// Thin client for the change-archetype endpoint — same pattern as the watchlist
+// equips above (authenticated, battle-locked server-side, throws on non-2xx).
+
+/**
+ * Change an agent's archetype (its trading personality). Blocked server-side
+ * (409 battle_active) while the agent has an active battle. Resolves with the
+ * API response ({ agentId, archetype, idempotent }).
+ */
+export const changeArchetype = async (agentId, archetype) => {
+  const response = await fetchWithAuth('/api/agent/change-archetype', {
+    method: 'POST',
+    body: JSON.stringify({ agentId, archetype }),
+  });
+  if (!response.ok) throw await toEquipError(response);
+  return response.json();
+};
+
 /**
  * Emit the `watchlist_equip` shadow log for the onboarding "born-equipped" path.
  * That path equips the starter watchlist atomically at agent creation (it does

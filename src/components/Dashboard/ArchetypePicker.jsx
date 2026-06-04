@@ -9,17 +9,19 @@
 // Cards render in the locked Identity Contract presentation order. The agent's
 // current archetype is marked selected; tapping another card calls handleSelect.
 //
-// Phase 1: handleSelect is a stub (closes the sheet). Phase 2 wires it to
-// agentService.changeArchetype (battle-locked); Phase 3 adds the offer-to-
-// re-seed dialog. Tokens: CMD / alpha (matches the Equip station siblings);
-// red is reserved for downside and is never used here.
+// Selecting a card calls agentService.changeArchetype (battle-locked; 409 mid-
+// battle). Phase 2 closes the sheet on success — the dashboard identity updates
+// live via the agent-doc subscription. Phase 3 will instead follow a successful
+// change with the offer-to-re-seed dialog. Tokens: CMD / alpha (matches the
+// Equip station siblings); red is reserved for downside and is never used here.
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Check } from 'lucide-react';
 import EquipSheet from './EquipSheet';
 import { CMD, alpha, Mono } from './commandUI';
 import { getArchetypeDisplayName } from '../../data/archetypeDisplay';
 import { getArchetypeIdentity } from '../../data/archetypeIdentity';
+import { changeArchetype } from '../../services/agentService';
 
 // Locked Identity Contract presentation order (ARCHETYPE_IDENTITY_CONTRACT_V1.md
 // §1): Trend Follower → Contrarian → Diversifier → Speculator → Fundamental
@@ -27,17 +29,21 @@ import { getArchetypeIdentity } from '../../data/archetypeIdentity';
 // an incidental Object.keys() iteration.
 const ARCHETYPE_ORDER = ['momentum_chaser', 'contrarian', 'diversifier', 'degen', 'analyst', 'guardian'];
 
-function ArchetypeCard({ codeId, selected, accent, onClick }) {
+function ArchetypeCard({ codeId, selected, busy, disabled, accent, onClick }) {
   const name = getArchetypeDisplayName(codeId);
   const { disposition, reveal } = getArchetypeIdentity(codeId);
+  const inert = selected || busy || disabled;
   return (
     <button
       type="button"
-      onClick={onClick}
+      onClick={inert ? undefined : onClick}
+      disabled={inert}
       aria-pressed={selected}
       style={{
         all: 'unset', boxSizing: 'border-box', width: '100%', display: 'block',
-        padding: '14px', marginBottom: 9, borderRadius: 14, cursor: selected ? 'default' : 'pointer',
+        padding: '14px', marginBottom: 9, borderRadius: 14,
+        cursor: selected || busy ? 'default' : disabled ? 'not-allowed' : 'pointer',
+        opacity: disabled ? 0.5 : 1, transition: 'opacity .15s ease',
         background: selected ? alpha(accent, 0.1) : CMD.surface,
         border: `1px solid ${selected ? alpha(accent, 0.45) : CMD.hair}`,
       }}
@@ -50,6 +56,9 @@ function ArchetypeCard({ codeId, selected, accent, onClick }) {
             <Check size={16} color={accent} />
           </span>
         )}
+        {busy && (
+          <Mono style={{ fontSize: 9.5, letterSpacing: '0.12em', color: accent, textTransform: 'uppercase', flexShrink: 0 }}>Switching…</Mono>
+        )}
       </div>
       <div style={{ fontSize: 12.5, color: CMD.ink2, marginTop: 4, fontWeight: 500 }}>{disposition}</div>
       <div style={{ fontSize: 12, color: CMD.ink3, lineHeight: 1.5, marginTop: 8 }}>{reveal}</div>
@@ -59,14 +68,31 @@ function ArchetypeCard({ codeId, selected, accent, onClick }) {
 
 export default function ArchetypePicker({ open, onClose, agent, accent, dock = 'bottom' }) {
   const current = agent?.archetype;
+  const [working, setWorking] = useState(null); // codeId mid-write, or null
+  const [error, setError] = useState(null);
 
-  // Phase 1 stub. Phase 2 wires changeArchetype(agent.id, codeId) (battle-locked)
-  // and Phase 3 follows a successful change with the offer-to-re-seed dialog.
-  // Tapping the current archetype is a no-op.
-  const handleSelect = (codeId) => {
-    if (codeId === current) return;
-    // TODO(Phase 2): await changeArchetype(agent.id, codeId) → then offer re-seed.
-    onClose?.();
+  // Clear transient state whenever the sheet closes, so a stale error or an
+  // in-flight flag never leaks into the next open.
+  useEffect(() => {
+    if (!open) { setWorking(null); setError(null); }
+  }, [open]);
+
+  // Write the new archetype (battle-locked server-side). On success, close the
+  // sheet — the dashboard identity re-renders via the agent-doc subscription.
+  // (Phase 3 will instead surface the offer-to-re-seed dialog here.) Tapping the
+  // current archetype, or any card while a write is in flight, is a no-op.
+  const handleSelect = async (codeId) => {
+    if (!agent?.id || codeId === current || working) return;
+    setWorking(codeId);
+    setError(null);
+    try {
+      await changeArchetype(agent.id, codeId);
+      onClose?.();
+    } catch (err) {
+      setError(err?.message || 'Could not change archetype. Please try again.');
+    } finally {
+      setWorking(null);
+    }
   };
 
   return (
@@ -78,11 +104,24 @@ export default function ArchetypePicker({ open, onClose, agent, accent, dock = '
       subtitle="Your archetype sets how your agent reads the market and picks trades. A change applies on your next deploy."
       accent={accent}
     >
+      {error && (
+        <div
+          role="alert"
+          style={{
+            margin: '2px 0 11px', padding: '10px 12px', borderRadius: 11, fontSize: 12.5, lineHeight: 1.45,
+            color: CMD.copper, background: alpha(CMD.copper, 0.1), border: `1px solid ${alpha(CMD.copper, 0.32)}`,
+          }}
+        >
+          {error}
+        </div>
+      )}
       {ARCHETYPE_ORDER.map((codeId) => (
         <ArchetypeCard
           key={codeId}
           codeId={codeId}
           selected={codeId === current}
+          busy={working === codeId}
+          disabled={Boolean(working) && working !== codeId}
           accent={accent}
           onClick={() => handleSelect(codeId)}
         />
