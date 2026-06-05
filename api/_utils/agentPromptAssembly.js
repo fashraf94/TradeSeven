@@ -74,8 +74,14 @@ export function buildStrategyUserPrompt(agent, equippedWatchlist = null) {
   const activeRules = agent.activeRules || [];
   if (activeRules.length > 0) {
     const constraintCats = new Set(['risk', 'allocation']);
-    const constraints = activeRules.filter(r => constraintCats.has(r.category));
-    const strategies = activeRules.filter(r => !constraintCats.has(r.category));
+    // Phase 3 — an authored per-rule hard/soft override (r.hardness) wins; when
+    // absent (null/undefined) it falls back to the category default, so with no
+    // override this split is byte-identical to pre-Phase-3 (calibration parity).
+    const isHardConstraint = (r) => (r.hardness === 'hard' || r.hardness === 'soft')
+      ? r.hardness === 'hard'
+      : constraintCats.has(r.category);
+    const constraints = activeRules.filter(isHardConstraint);
+    const strategies = activeRules.filter(r => !isHardConstraint(r));
     const rLines = [];
     if (constraints.length > 0) {
       rLines.push(`CONSTRAINTS:\n${constraints.map((r, i) => `C${i + 1}. ${resolveRuleText(r)}`).join('\n')}`);

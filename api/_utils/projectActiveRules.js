@@ -36,7 +36,7 @@ function toMillis(ts) {
 }
 
 // Map a live rule doc → the activeRules item shape produced by equipBundle.
-function toActiveRuleItem(r, ruleIdToBundleName) {
+function toActiveRuleItem(r, ruleIdToBundleName, ruleIdToHardness) {
   return {
     ruleId: r.id,
     text: r.text ?? null,
@@ -45,6 +45,11 @@ function toActiveRuleItem(r, ruleIdToBundleName) {
     paramValues: r.paramValues ?? null,
     category: r.category ?? null,
     bundleName: ruleIdToBundleName[r.id] ?? null,
+    // Phase 3 — authored per-rule hard/soft override: 'hard' | 'soft' | null.
+    // null (the default) means "no override"; the prompt assemblers fall back to
+    // the category-derived value, so a no-override deploy is byte-identical to
+    // pre-Phase-3. Set only when a user explicitly authored a value on the bundle.
+    hardness: ruleIdToHardness?.[r.id] ?? null,
   };
 }
 
@@ -59,14 +64,24 @@ export function projectActiveRules(equippedTraits, ruleDocs, bundles) {
     (equippedTraits || []).map((t) => t && t.traitId).filter(Boolean)
   );
 
-  // Union of ruleIds across non-archived bundles (+ a ruleId → bundleName map).
+  // Union of ruleIds across non-archived bundles (+ a ruleId → bundleName map and
+  // a ruleId → authored hard/soft override map).
   const bundleRuleIds = new Set();
   const ruleIdToBundleName = {};
+  const ruleIdToHardness = {};
   for (const b of bundles || []) {
     if (!b || b.status === 'archived') continue;
+    const hardnessMap = b.ruleHardness || {};
     for (const rid of b.ruleIds || []) {
       bundleRuleIds.add(rid);
       if (!(rid in ruleIdToBundleName)) ruleIdToBundleName[rid] = b.name ?? null;
+      // First non-archived bundle that carries an explicit override for this rule
+      // wins (mirrors bundleName first-wins). Only 'hard'/'soft' are honored;
+      // anything else is ignored so the item's hardness stays null (→ category).
+      if (!(rid in ruleIdToHardness)) {
+        const v = hardnessMap[rid];
+        if (v === 'hard' || v === 'soft') ruleIdToHardness[rid] = v;
+      }
     }
   }
 
@@ -84,12 +99,12 @@ export function projectActiveRules(equippedTraits, ruleDocs, bundles) {
       newestByKey.set(key, r);
     }
   }
-  const traitItems = [...newestByKey.values()].map((r) => toActiveRuleItem(r, ruleIdToBundleName));
+  const traitItems = [...newestByKey.values()].map((r) => toActiveRuleItem(r, ruleIdToBundleName, ruleIdToHardness));
 
   // Non-trait rules — no traitId, currently a member of a non-archived bundle.
   const nonTraitItems = docs
     .filter((r) => !r.traitId && bundleRuleIds.has(r.id))
-    .map((r) => toActiveRuleItem(r, ruleIdToBundleName));
+    .map((r) => toActiveRuleItem(r, ruleIdToBundleName, ruleIdToHardness));
 
   return [...traitItems, ...nonTraitItems];
 }
