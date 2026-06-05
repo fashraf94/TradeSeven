@@ -4,7 +4,7 @@
 
 import {
   collection, doc, addDoc, updateDoc, getDoc, getDocs,
-  query, orderBy, serverTimestamp, writeBatch
+  query, orderBy, serverTimestamp, writeBatch, deleteField
 } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import { getAgentLevel } from '../constants/agentProgression';
@@ -262,6 +262,10 @@ export const createBundle = async (agentId, bundleData) => {
     previousVersionId: null,
     status: 'draft',
     ruleIds: [],
+    // Phase 3 — authored per-rule hard/soft overrides: { [ruleId]: 'hard'|'soft' }.
+    // Empty by default so hard/soft stays category-derived (parity). Consumed by
+    // hardSoftHelper (display) and projectActiveRules (the prompt, once fenced).
+    ruleHardness: {},
     ruleSnapshots: [],
     conflictCheckResult: null,
     createdAt: serverTimestamp(),
@@ -327,6 +331,45 @@ export const removeRuleFromBundle = async (agentId, bundleId, ruleId) => {
 
   await updateDoc(bundleRef, {
     ruleIds: bundle.ruleIds.filter(id => id !== ruleId),
+    // Drop any authored hard/soft override for the removed rule so the map
+    // never accumulates orphans (and a re-add starts from the category default).
+    [`ruleHardness.${ruleId}`]: deleteField(),
+    updatedAt: serverTimestamp(),
+  });
+};
+
+/**
+ * Author a per-rule hard/soft override on a draft bundle (Phase 3).
+ *
+ * Sets bundle.ruleHardness[ruleId]. Pass 'hard' | 'soft' to store an explicit
+ * override, or null to CLEAR it (revert that rule to its category-derived
+ * default). Callers should clear (null) when the chosen value equals the
+ * category default, so a bundle with no genuine overrides keeps an empty map —
+ * that is what makes the assembled prompt byte-identical to today until a user
+ * explicitly authors a value.
+ *
+ * Only draft bundles are editable (Amendment 3), mirroring add/removeRuleToBundle.
+ * The override is consumed by hardSoftHelper (display) and, once the fenced
+ * prompt path honors it, projectActiveRules (the real prompt).
+ *
+ * @param {string} agentId
+ * @param {string} bundleId
+ * @param {string} ruleId
+ * @param {'hard'|'soft'|null} value
+ */
+export const setRuleHardness = async (agentId, bundleId, ruleId, value) => {
+  if (value !== null && value !== 'hard' && value !== 'soft') {
+    throw new Error("Rule hardness must be 'hard', 'soft', or null");
+  }
+  const bundleRef = doc(db, 'agents', agentId, 'bundles', bundleId);
+  const bundleSnap = await getDoc(bundleRef);
+  if (!bundleSnap.exists()) throw new Error('Bundle not found');
+  const bundle = bundleSnap.data();
+  if (bundle.status !== 'draft') throw new Error('Can only edit rules on draft bundles');
+  if (!(bundle.ruleIds || []).includes(ruleId)) throw new Error('Rule is not in this bundle');
+
+  await updateDoc(bundleRef, {
+    [`ruleHardness.${ruleId}`]: value === null ? deleteField() : value,
     updatedAt: serverTimestamp(),
   });
 };
@@ -538,6 +581,8 @@ export const reforgeBundle = async (agentId, bundleId) => {
     previousVersionId: bundleId,
     status: 'draft',
     ruleIds: bundle.ruleIds || [],
+    // Carry authored hard/soft overrides forward to the reforged draft.
+    ruleHardness: bundle.ruleHardness || {},
     ruleSnapshots: [],   // Draft bundles don't have snapshots (Amendment 3)
     conflictCheckResult: null,
     createdAt: serverTimestamp(),

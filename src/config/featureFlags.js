@@ -31,3 +31,21 @@ export const COMMAND_DASHBOARD_ENABLED = true;
  * smoke test — the same play used for the mobile flag above.
  */
 export const COMMAND_DASHBOARD_DESKTOP_ENABLED = true;
+
+/**
+ * Forge — authored per-rule Hard/Soft override (Phase 3).
+ *
+ * When false (default), the bundle build flow's Hard/Soft stage renders the
+ * read-only, category-derived badge — today's behavior, with no way to author
+ * an override. When true, it renders the interactive per-rule SOFT/HARD control
+ * that writes a `ruleHardness` override onto the bundle doc.
+ *
+ * GATED OFF until the FENCED prompt-assembly half lands (projectActiveRules
+ * carrying `hardness`; agentPromptAssembly + agentEvalPromptAssembly honoring
+ * the override) AND a founder sign-off on that fenced commit — so users never
+ * get a "must follow" control the agent silently ignores. The non-fenced
+ * authoring + persistence + display layer is built and merged dark behind this
+ * flag; flip to ship only after the fenced commit is reviewed for prompt parity
+ * and signed off. See FORGE_ENFORCEMENT_KEYSTONE_SPEC and the Phase 3 audit.
+ */
+export const FORGE_HARDSOFT_AUTHORING_ENABLED = false;
