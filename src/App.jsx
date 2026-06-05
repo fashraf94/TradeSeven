@@ -114,7 +114,7 @@ import DesktopSidebar from './components/Navigation/DesktopSidebar';
 import { AgentDashboard, OnboardingExperience } from './components/Agent';
 import AppLoadingScreen from './components/shared/AppLoadingScreen';
 import { ForgeScreen } from './components/Forge';
-import ForgeLanding from './components/Forge/ForgeLanding';
+import ForgeWorkshop from './components/Forge/workshop/ForgeWorkshop';
 
 // ============================================
 // LAZY LOADING FALLBACK
@@ -2371,7 +2371,7 @@ export default function PortfolioDuel() {
   // (the default, used by the Discover → Signal Drop path) or 'watchlists'.
   const [watchlistEditorReturnScreen, setWatchlistEditorReturnScreen] = useState('home');
   useEffect(() => {
-    if (showForge) setForgeInitialView('discover');
+    if (showForge) setForgeInitialView('overview');
   }, [showForge]);
 
   // Desktop background state
@@ -8303,10 +8303,9 @@ export default function PortfolioDuel() {
         minHeight: '100vh',
         background: isDesktop ? '#111318' : '#0D0E12',
       }}>
-        <ForgeLanding
-          isMobile={isMobile}
+        <ForgeWorkshop
           onClose={() => setShowForge(false)}
-          initialView={forgeInitialView}
+          initialArea={forgeInitialView}
           onViewWatchlist={(watchlistId, returnTo = 'home') => {
             setSelectedWatchlistId(watchlistId);
             setWatchlistEditorReturnScreen(returnTo === 'watchlists' ? 'watchlists' : 'home');
@@ -8314,65 +8313,7 @@ export default function PortfolioDuel() {
             setScreen('watchlistEditor');
           }}
           user={user}
-          onNavigateToSeasonHub={() => {
-            setShowForge(false);
-            setScreen('seasonHub');
-          }}
-          activeSeason={activeSeason}
-          activeSeasonEntry={activeSeasonEntry}
-          activeSeasonEntries={activeSeasonEntries}
-          activeSeasonsById={activeSeasonsById}
           agent={primaryAgent}
-          onViewDashboard={(season, entry) => {
-            // When ForgeLanding invokes this with a specific card, focus
-            // the singular state on that entry so SeasonDashboard renders
-            // the right experiment. Fall back to the current selection
-            // if the caller didn't pass args (legacy signature).
-            if (entry) setActiveSeasonEntry(entry);
-            if (season) setActiveSeason(season);
-            setShowForge(false);
-            setScreen('seasonDashboard');
-          }}
-          onJoinSeason={(season, opts) => {
-            setSeasonToJoin(season);
-            setSeasonEntryOptions({
-              ...(pendingRefinementContext || {}),
-              ...(opts || {}),
-            });
-            setSeasonEntryModalOpen(true);
-            setPendingRefinementContext(null);
-          }}
-          onReviewSeason={(s, e) => {
-            setReviewSeason(s);
-            setReviewEntry(e);
-            setShowForge(false);
-            setScreen('seasonReview');
-          }}
-          onOpenAgentBattle={async (battleId) => {
-            // State 4 "Open command center" hydrates the agentBattles
-            // doc and defers to the existing handleOpenAgentBattle so
-            // the Battle View renders with the same shape as every
-            // other agent-deploy entry point. Falls back silently if
-            // the doc no longer exists — ForgeLanding will route to
-            // the seasonHub in that case.
-            if (!battleId) return;
-            try {
-              const { doc, getDoc } = await import('firebase/firestore');
-              const { db } = await import('./firebase/config');
-              const snap = await getDoc(doc(db, 'agentBattles', battleId));
-              if (!snap.exists()) {
-                setShowForge(false);
-                setScreen('seasonHub');
-                return;
-              }
-              setShowForge(false);
-              handleOpenAgentBattle({ id: snap.id, ...snap.data() });
-            } catch (err) {
-              console.warn('[App] onOpenAgentBattle failed:', err?.message);
-              setShowForge(false);
-              setScreen('seasonHub');
-            }
-          }}
         />
       </div>
     );

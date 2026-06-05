@@ -1,13 +1,15 @@
 /**
  * useTraits — Manages trait equip/unequip/strength for the agent.
  *
- * Traits are a UI abstraction over Forge rules. Equipping a trait
- * writes 2-4 rules to the agent's bundle via the existing addRuleToBundle.
+ * Traits are a UI abstraction over Forge rules. Equipping a trait writes 2-4
+ * bundle-independent, traitId-keyed rule docs (via useForge.addTraitRule); the
+ * deploy projection selects them by traitId ∈ equippedTraits, NOT by bundle
+ * membership (api/_utils/projectActiveRules.js).
  *
  * This hook provides:
  * - equippedTraits: array of equipped trait objects with current strength
  * - equipTrait(traitId, strength): equip a trait at a strength level
- * - unequipTrait(traitId): remove a trait and its bundled rules
+ * - unequipTrait(traitId): remove a trait and soft-delete its traitId-keyed rules
  * - setTraitStrength(traitId, strength): change strength (re-writes params)
  * - getGroupSlotUsage(groupId): { used, max } for a DNA group
  * - activeComboLabel: the current combo label or null
@@ -17,6 +19,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { doc, updateDoc, getDoc } from 'firebase/firestore';
 import { db } from '../firebase/config';
+import { softDeleteRule } from '../services/forgeService';
 import { FORGE_RULE_TEMPLATES } from '../data/forgeKnowledgeBase';
 import { DNA_GROUPS } from '../data/dnaGroups';
 import { TRAIT_LIBRARY, TRAIT_BY_ID } from '../data/traitLibrary';
@@ -76,21 +79,18 @@ export function useTraits(agentId, forge) {
     }
   }, [agentId]);
 
-  // ── Auto-unequip traits whose rules are no longer in any active bundle ──
+  // ── Auto-unequip traits whose rule docs no longer exist ──
+  // Trait rules are bundle-independent (projected at deploy by traitId), so a
+  // trait is orphaned only when it has zero surviving (non-deleted) rule docs —
+  // e.g. a rule was deleted, or an archetype reseed removed the old set. The
+  // loading guard avoids judging "orphaned" before forge.rules has loaded.
   useEffect(() => {
-    if (!equippedTraitEntries.length || !forge?.bundles || !forge?.rules) return;
+    if (forge?.loading) return;
+    if (!equippedTraitEntries.length || !forge?.rules) return;
 
-    // Collect all rule IDs present in non-archived bundles
-    // (forge.bundles already excludes archived via loadData filter)
-    const activeBundleRuleIds = new Set(
-      forge.bundles.flatMap(b => b.ruleIds || [])
-    );
-
-    // Find traits with zero rules in active bundles
     const orphaned = equippedTraitEntries.filter(et => {
-      const traitRules = forge.rules.filter(r => r.traitId === et.traitId);
-      if (traitRules.length === 0) return true;
-      return !traitRules.some(r => activeBundleRuleIds.has(r.id));
+      const traitRules = forge.rules.filter(r => r.traitId === et.traitId && !r.isDeleted);
+      return traitRules.length === 0;
     });
 
     if (orphaned.length === 0) return;
@@ -101,7 +101,7 @@ export function useTraits(agentId, forge) {
     );
     setEquippedTraitEntries(cleaned);
     persistTraits(cleaned);
-  }, [forge?.bundles, forge?.rules, equippedTraitEntries, persistTraits]);
+  }, [forge?.loading, forge?.rules, equippedTraitEntries, persistTraits]);
 
   // ── Enriched equipped traits (merge entries with trait definitions) ──
   const equippedTraits = useMemo(() => {
@@ -210,7 +210,7 @@ export function useTraits(agentId, forge) {
           conflictsOverridden.push(ruleId);
         }
 
-        await forge.addRuleToBundle(template, paramOverrides, {
+        await forge.addTraitRule(template, paramOverrides, {
           status: 'active',
           priority: 1,
           traitId: traitId,
@@ -257,39 +257,29 @@ export function useTraits(agentId, forge) {
     const def = TRAIT_BY_ID[traitId];
     if (!def) return { success: false, error: 'unknown_trait' };
 
-    // Build set of ruleIds still needed by OTHER equipped traits
-    const otherTraitRuleIds = new Set();
-    for (const entry of equippedTraitEntries) {
-      if (entry.traitId === traitId) continue;
-      const entryDef = TRAIT_BY_ID[entry.traitId];
-      if (entryDef) {
-        for (const rid of entryDef.ruleIds) otherTraitRuleIds.add(rid);
-      }
-    }
-
-    // Remove only rules NOT needed by another equipped trait
-    if (forge?.rules && forge?.bundles) {
-      const draftBundle = forge.bundles.find(b => b.status === 'draft');
-      if (draftBundle) {
-        for (const ruleId of def.ruleIds) {
-          if (otherTraitRuleIds.has(ruleId)) continue; // shared rule — keep it
-          const rule = forge.rules.find(r => r.sourceRef === ruleId && !r.isDeleted);
-          if (rule) {
-            try {
-              await forge.removeRuleFromBundle(draftBundle.id, rule.id);
-            } catch (err) {
-              console.error(`[useTraits] Failed to remove rule ${ruleId}:`, err);
-            }
-          }
-        }
-      }
-    }
-
+    // Drop the trait LAYER first so it stops projecting at deploy, then clean up
+    // its rule docs. Trait rules are bundle-independent and keyed by traitId, so
+    // soft-deleting this trait's own docs never touches another trait's rules
+    // (cross-trait shared rules live as separate docs under their own traitId).
     const updatedEntries = equippedTraitEntries.filter(e => e.traitId !== traitId);
     setEquippedTraitEntries(updatedEntries);
     await persistTraits(updatedEntries);
+    // Best-effort cleanup — never let a reloadData hiccup mask a completed unequip.
+    try {
+      if (forge?.rules) {
+        const traitRules = forge.rules.filter(r => r.traitId === traitId && !r.isDeleted);
+        for (const rule of traitRules) {
+          try { await softDeleteRule(agentId, rule.id); }
+          catch (err) { console.error(`[useTraits] Failed to soft-delete trait rule ${rule.id}:`, err); }
+        }
+        if (traitRules.length && forge.reloadData) await forge.reloadData();
+      }
+    } catch (err) {
+      console.error('[useTraits] unequip cleanup hiccup (unequip already persisted):', err);
+    }
+
     return { success: true };
-  }, [equippedTraitEntries, forge, persistTraits, refusedForBattle]);
+  }, [agentId, equippedTraitEntries, forge, persistTraits, refusedForBattle]);
 
   // ── Set trait strength ───────────────────────────────────
   const setTraitStrength = useCallback(async (traitId, newStrength) => {
@@ -303,7 +293,7 @@ export function useTraits(agentId, forge) {
     // Update paramValues on each bundled rule in Firestore
     if (forge?.rules) {
       for (const ruleId of def.ruleIds) {
-        const rule = forge.rules.find(r => r.sourceRef === ruleId && !r.isDeleted);
+        const rule = forge.rules.find(r => r.traitId === traitId && r.sourceRef === ruleId && !r.isDeleted);
         if (rule) {
           const paramOverrides = profile[ruleId] || {};
           try {

@@ -3,7 +3,7 @@
 // and all CRUD actions (add, refine, delete, forge, equip, unequip, reforge).
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { collection, query, where, getDocs, orderBy, doc, updateDoc } from 'firebase/firestore';
+import { collection, query, getDocs, orderBy, doc, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import { FORGE_RULE_TEMPLATES, FORGE_CATEGORIES } from '../data/forgeKnowledgeBase';
 import { FORGE_COLLECTIONS } from '../data/forgeCollections';
@@ -375,6 +375,37 @@ export function useForge(agentId) {
     }
   }, [agentId, addingRuleId, bundles, showToast, loadData]);
 
+  // Create a trait-derived rule DOC WITHOUT adding it to any bundle. Trait rules
+  // are an identity layer projected at deploy by `traitId ∈ equippedTraits`
+  // (api/_utils/projectActiveRules.js), independent of bundle membership — so
+  // materializing them into a bundle would wrongly count them against the
+  // per-level bundle rule cap. Used by useTraits.equipTrait.
+  const addTraitRule = useCallback(async (template, paramValues, options = {}) => {
+    if (!agentId) return null;
+    const firstTemplate = template.forgeTemplates[0];
+    let ruleText = firstTemplate.text;
+    if (firstTemplate.params) {
+      for (const [key, config] of Object.entries(firstTemplate.params)) {
+        const val = paramValues?.[key] !== undefined ? paramValues[key] : config.default;
+        ruleText = ruleText.replace(`{${key}}`, val);
+      }
+    }
+    const ruleId = await createRule(agentId, {
+      text: ruleText,
+      textTemplate: firstTemplate.text,
+      source: 'forge_discover',
+      sourceRef: template.id,
+      category: firstTemplate.category || template.category,
+      params: firstTemplate.params || null,
+      paramValues: paramValues || null,
+      ...(options.status && { status: options.status }),
+      ...(options.priority != null && { priority: options.priority }),
+      ...(options.traitId && { traitId: options.traitId }),
+    });
+    await loadData();
+    return ruleId;
+  }, [agentId, loadData]);
+
   // Refine a rule (update text + category)
   const refineRule = useCallback(async (ruleId, updates) => {
     if (!agentId) return;
@@ -604,6 +635,7 @@ export function useForge(agentId) {
 
     // Actions — Discover
     addRuleToBundle,
+    addTraitRule,
     addingRuleId,
 
     // Actions — My Rules

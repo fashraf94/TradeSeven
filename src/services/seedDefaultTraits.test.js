@@ -87,15 +87,6 @@ const callsOf = (fn) => state.calls.filter((c) => c.fn === fn);
 const firstIdx = (fn) => state.calls.findIndex((c) => c.fn === fn);
 const softDeletedIds = () => callsOf('softDeleteRule').map((c) => c.ruleId);
 
-// Build N old rule docs across an archetype's traits and the draft bundle holding them.
-function oldLoadout(codeId, perTrait = 3) {
-  const docs = [];
-  ARCHETYPE_DEFAULT_TRAITS[codeId].forEach((traitId, ti) => {
-    for (let k = 0; k < perTrait; k += 1) docs.push({ id: `old-${ti}-${k}`, traitId, sourceRef: `s-${ti}-${k}` });
-  });
-  return docs;
-}
-
 beforeEach(() => {
   state.calls = [];
   state.ruleSeq = 0;
@@ -106,20 +97,24 @@ beforeEach(() => {
 });
 
 // ============================================================
-// seedDefaultTraits — creation path (must stay unchanged)
+// seedDefaultTraits — creation path (trait rules are NOT bundled)
 // ============================================================
 
 describe('seedDefaultTraits (creation path)', () => {
-  it('creates a fresh bundle + rules + equippedTraits, and never deletes anything', async () => {
+  it('creates trait rule docs + equippedTraits, never bundles or deletes anything', async () => {
     const res = await seedDefaultTraits('agent-1', 'analyst');
 
     expect(res.seeded).toBe(true);
-    expect(callsOf('createBundle')).toHaveLength(1); // unconditional create (documented behavior)
     expect(callsOf('createRule').length).toBeGreaterThan(0);
-    expect(callsOf('addRuleToBundle').length).toBe(callsOf('createRule').length);
+    // Trait rules are an identity layer — never materialized into a bundle.
+    expect(callsOf('createBundle')).toHaveLength(0);
+    expect(callsOf('addRuleToBundle')).toHaveLength(0);
     expect(callsOf('updateDoc').find((c) => c.updates?.equippedTraits)).toBeDefined();
+    // Creation never deletes/unlinks anything.
     expect(callsOf('softDeleteRule')).toHaveLength(0);
     expect(callsOf('removeRuleFromBundle')).toHaveLength(0);
+    // Every created rule carries the traitId (the deploy-projection key).
+    expect(callsOf('createRule').every((c) => Boolean(c.traitId))).toBe(true);
   });
 });
 
@@ -128,49 +123,28 @@ describe('seedDefaultTraits (creation path)', () => {
 // ============================================================
 
 describe('reseedDefaultTraits (clean replace)', () => {
-  it('write order: unlink old → create new → set equippedTraits → soft-delete old (last)', async () => {
+  it('write order: create new → set equippedTraits → soft-delete old (last); never bundles', async () => {
     state.agentData = { equippedTraits: equippedFor('analyst') };
     state.existingRules = [
       { id: 'old-dc', traitId: 'trait-dual-conviction', sourceRef: 'tv-10' },
       { id: 'old-iron', traitId: 'trait-iron-discipline', sourceRef: 'mb-09' },
     ];
-    state.bundles = { 'draft-1': { id: 'draft-1', status: 'draft', ruleIds: ['old-dc', 'old-iron'] } };
 
     const res = await reseedDefaultTraits('agent-1', 'guardian');
     expect(res.seeded).toBe(true);
     expect(res.replaced).toBe(true);
 
-    const firstUnlink = firstIdx('removeRuleFromBundle');
-    const firstAdd = firstIdx('addRuleToBundle');
+    const firstCreate = firstIdx('createRule');
     const equippedWrite = state.calls.findIndex((c) => c.fn === 'updateDoc' && c.updates?.equippedTraits);
     const firstSoftDelete = firstIdx('softDeleteRule');
 
-    expect(firstUnlink).toBeGreaterThanOrEqual(0);
-    expect(firstUnlink).toBeLessThan(firstAdd);          // old unlinked BEFORE new added (frees cap room)
-    expect(firstAdd).toBeLessThan(equippedWrite);        // new rules created before the trait layer flips
+    expect(firstCreate).toBeGreaterThanOrEqual(0);
+    expect(firstCreate).toBeLessThan(equippedWrite);     // new rules created before the trait layer flips
     expect(equippedWrite).toBeLessThan(firstSoftDelete); // old docs soft-deleted LAST
-  });
-
-  it('does not overflow the per-bundle rule cap (old unlinked before new added)', async () => {
-    // Rookie cap = 10; reuse a draft bundle already full of the old loadout.
-    state.maxRulesPerBundle = 10;
-    state.agentData = { equippedTraits: equippedFor('analyst') };
-    const old = oldLoadout('analyst', 3); // 9 old docs
-    state.existingRules = old;
-    state.bundles = { 'draft-1': { id: 'draft-1', status: 'draft', ruleIds: old.map((d) => d.id) } };
-
-    const res = await reseedDefaultTraits('agent-1', 'guardian');
-
-    expect(res.seeded).toBe(true);
-    // Every new rule that was created was also successfully added — nothing got
-    // swallowed by a cap overflow (the pre-fix order dropped most of them).
-    expect(callsOf('addRuleToBundle').length).toBe(callsOf('createRule').length);
-    expect(res.rulesAdded).toBe(callsOf('createRule').length);
-    // The reused bundle ends with ONLY the new rules, within the cap.
-    const finalIds = state.bundles['draft-1'].ruleIds;
-    expect(finalIds.length).toBeLessThanOrEqual(state.maxRulesPerBundle);
-    expect(finalIds.length).toBe(callsOf('createRule').length);
-    expect(finalIds.every((id) => id.startsWith('new-'))).toBe(true);
+    // Trait rules are never bundled or unlinked.
+    expect(callsOf('createBundle')).toHaveLength(0);
+    expect(callsOf('addRuleToBundle')).toHaveLength(0);
+    expect(callsOf('removeRuleFromBundle')).toHaveLength(0);
   });
 
   it('captures OLD rule docs by id — a shared trait\'s new rules survive, old ones are deleted', async () => {
@@ -182,9 +156,6 @@ describe('reseedDefaultTraits (clean replace)', () => {
       { id: 'old-iron-b', traitId: 'trait-iron-discipline', sourceRef: 'mb-04' },
       { id: 'manual-rule', sourceRef: 'x-99' }, // no traitId — a manual rule, must be untouched
     ];
-    state.bundles = {
-      'draft-1': { id: 'draft-1', status: 'draft', ruleIds: ['old-dc', 'old-iron-a', 'old-iron-b', 'manual-rule'] },
-    };
 
     await reseedDefaultTraits('agent-1', 'guardian');
 
@@ -196,25 +167,18 @@ describe('reseedDefaultTraits (clean replace)', () => {
     expect(deleted).not.toContain('manual-rule');                    // non-trait manual rule untouched
   });
 
-  it('reuses the existing draft bundle (no duplicate createBundle)', async () => {
-    state.agentData = { equippedTraits: equippedFor('analyst') };
-    state.bundles = { 'draft-1': { id: 'draft-1', status: 'draft', ruleIds: [] } };
-
-    await reseedDefaultTraits('agent-1', 'guardian');
-
-    expect(callsOf('createBundle')).toHaveLength(0);
-    expect(callsOf('addRuleToBundle').every((c) => c.bundleId === 'draft-1')).toBe(true);
-  });
-
-  it('creates a draft bundle when none exists', async () => {
+  it('with no prior loadout: creates new docs + equippedTraits, deletes nothing, never bundles', async () => {
     state.agentData = { equippedTraits: [] };
-    state.bundles = {};
+    state.existingRules = [];
 
-    await reseedDefaultTraits('agent-1', 'guardian');
+    const res = await reseedDefaultTraits('agent-1', 'guardian');
 
-    expect(callsOf('createBundle')).toHaveLength(1);
-    expect(callsOf('addRuleToBundle').every((c) => c.bundleId === 'new-bundle')).toBe(true);
+    expect(res.seeded).toBe(true);
+    expect(callsOf('createRule').length).toBeGreaterThan(0);
+    expect(callsOf('updateDoc').find((c) => c.updates?.equippedTraits)).toBeDefined();
     expect(callsOf('softDeleteRule')).toHaveLength(0); // nothing to clean up
+    expect(callsOf('createBundle')).toHaveLength(0);
+    expect(callsOf('addRuleToBundle')).toHaveLength(0);
   });
 
   it('unknown archetype → no-op, no writes', async () => {

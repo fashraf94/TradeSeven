@@ -5,7 +5,7 @@
 import React, { useState, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { FORGE_RULE_TEMPLATES, FORGE_CATEGORIES } from '../../data/forgeKnowledgeBase';
-import { createRule, createBundle, addRuleToBundle, forgeBundle, equipBundle, softDeleteRule } from '../../services/forgeService';
+import { createRule, createBundle, addRuleToBundle, forgeBundle, softDeleteRule } from '../../services/forgeService';
 import { updateAgent } from '../../services/agentService';
 
 // ── Question-to-rule mapping ─────────────────────────────────
@@ -436,13 +436,12 @@ export default function StarterKit({ agentId, agent, forge, tokens, isMobile, on
       // 4. Forge
       await forgeBundle(agentId, bundleId);
 
-      // 5. Equip
-      await equipBundle(agentId, bundleId);
-
-      // 6. Mark completed
+      // 5. Mark completed — equipping happens on the Home (EquipStation), not in
+      // the Forge. The starter bundle is forged "ready"; the user equips it on
+      // the command bridge.
       await updateAgent(agentId, { starterKitCompleted: true });
 
-      // 7. Show success briefly, then dismiss
+      // 6. Show success briefly, then dismiss
       setForgingDone(true);
       setTimeout(() => {
         onComplete();
