@@ -34,6 +34,7 @@
 // current plays). Phase 3B's temporary slot-grouped ticker list is gone.
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence, MotionConfig, useReducedMotion } from 'framer-motion';
 import { X, Send, Sparkles, ListTree, ChevronDown, AlertCircle } from 'lucide-react';
 import { useTheme } from '../../contexts/ThemeContext';
@@ -691,7 +692,12 @@ export default function WatchlistChat({
   const showFinalizeCTA =
     budgetExceeded || (readyToFinalize && phase === 'finalize');
 
-  return (
+  // Portal to <body> so this full-screen takeover covers the whole viewport —
+  // including the Forge's segmented nav — instead of being re-based by the
+  // scrollable area it's mounted inside (iOS fixed-in-scroll). Same pattern as
+  // ThemeDetailModal; the overlay keeps its own z-index.
+  if (typeof document === 'undefined') return null;
+  return createPortal(
     // Phase 3.6 Session 2 (Finding 8): MotionConfig with reducedMotion="user"
     // honors prefers-reduced-motion for every framer-motion animation in
     // the dialogue tree (modal entry, phase-dot pulses, anatomy section
@@ -1032,7 +1038,8 @@ export default function WatchlistChat({
         </AnimatePresence>
       </motion.div>
       </AnimatePresence>
-    </MotionConfig>
+    </MotionConfig>,
+    document.body,
   );
 }
 
