@@ -10,7 +10,10 @@
 //   * Composer — textarea + send button, budget-exhausted fallback.
 //
 // API: POST /api/forge/watchlist-dialogue
-//   * First turn: { agentId, parseResult, dropId, message } — no sessionId
+//   * First turn (pasted signal): { agentId, parseResult, dropId, message }
+//   * First turn (theme → Dive in): { agentId, themeId, dropId, message } —
+//     the server synthesizes the parseResult from the theme; dropId is a
+//     client handle that anchors the Phase 4 save. Driven by the seedTheme prop.
 //   * Subsequent turns: { agentId, sessionId, message, phaseRequest? }
 //
 // Error handling matrix:
@@ -31,6 +34,7 @@
 // current plays). Phase 3B's temporary slot-grouped ticker list is gone.
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence, MotionConfig, useReducedMotion } from 'framer-motion';
 import { X, Send, Sparkles, ListTree, ChevronDown, AlertCircle } from 'lucide-react';
 import { useTheme } from '../../contexts/ThemeContext';
@@ -140,6 +144,12 @@ export default function WatchlistChat({
   agentName,
   showToast,
   onViewWatchlist,
+  // Phase 2 (theme → Dive in): when present, the chat is seeded from a
+  // Discover theme instead of a pasted signal. The first turn posts
+  // { agentId, themeId, dropId, message } and the server synthesizes the
+  // parseResult from the theme. `dropId` is still supplied (a client handle
+  // that anchors the Phase 4 save). Shape: { themeId, title, thesis, tickers }.
+  seedTheme = null,
 }) {
   const { tokens } = useTheme();
   const { isDesktop } = useIsMobile();
@@ -304,7 +314,9 @@ export default function WatchlistChat({
 
     const body = sessionId
       ? { agentId, sessionId, message, ...(phaseRequest ? { phaseRequest } : {}) }
-      : { agentId, parseResult, dropId, message };
+      : seedTheme?.themeId
+        ? { agentId, themeId: seedTheme.themeId, dropId, message }
+        : { agentId, parseResult, dropId, message };
 
     const controller = new AbortController();
     abortRef.current = controller;
@@ -529,7 +541,7 @@ export default function WatchlistChat({
     // recreate on every state change. The values it reads (sessionId,
     // phase, etc.) come through state setters which are stable.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [isSending, budgetExceeded, phase, sessionId, agentId, parseResult, dropId],
+    [isSending, budgetExceeded, phase, sessionId, agentId, parseResult, dropId, seedTheme],
   );
 
   function handleActionChipClick(chip) {
@@ -654,25 +666,38 @@ export default function WatchlistChat({
   }
 
   const tickerCount = candidateTickers.length;
+  // Topic + "tickers we read" feed the EmptyState intro. A pasted signal
+  // sources them from parseResult; a theme-seeded chat (Phase 2) sources them
+  // from seedTheme so the intro reads the theme's name + names.
   const topic =
-    typeof parseResult?.parse?.topic === 'string'
-      ? parseResult.parse.topic.trim()
-      : '';
+    (typeof parseResult?.parse?.topic === 'string' && parseResult.parse.topic.trim()) ||
+    (typeof seedTheme?.title === 'string' && seedTheme.title.trim()) ||
+    '';
   // Phase 4.5a (Decision 4): EmptyState's "Tickers we read" chip strip now
   // reads from validation.validated (post-universe filter) so off-universe
   // symbols don't leak into the dialogue UI. Mirrors the same divergence
-  // fix applied to buildDialogueInputs on the server side.
+  // fix applied to buildDialogueInputs on the server side. Theme-seeded chats
+  // fall back to the theme's tickers.
   const parsedTickers = Array.isArray(parseResult?.validation?.validated)
     ? parseResult.validation.validated
         .map((v) => (v && typeof v.symbol === 'string' ? v.symbol : null))
         .filter(Boolean)
-    : [];
+    : Array.isArray(seedTheme?.tickers)
+      ? seedTheme.tickers
+          .filter((s) => typeof s === 'string' && s.trim())
+          .map((s) => s.trim().toUpperCase())
+      : [];
   const composerDisabled = isSending || budgetExceeded;
   const canSend = !composerDisabled && inputText.trim().length > 0;
   const showFinalizeCTA =
     budgetExceeded || (readyToFinalize && phase === 'finalize');
 
-  return (
+  // Portal to <body> so this full-screen takeover covers the whole viewport —
+  // including the Forge's segmented nav — instead of being re-based by the
+  // scrollable area it's mounted inside (iOS fixed-in-scroll). Same pattern as
+  // ThemeDetailModal; the overlay keeps its own z-index.
+  if (typeof document === 'undefined') return null;
+  return createPortal(
     // Phase 3.6 Session 2 (Finding 8): MotionConfig with reducedMotion="user"
     // honors prefers-reduced-motion for every framer-motion animation in
     // the dialogue tree (modal entry, phase-dot pulses, anatomy section
@@ -1013,7 +1038,8 @@ export default function WatchlistChat({
         </AnimatePresence>
       </motion.div>
       </AnimatePresence>
-    </MotionConfig>
+    </MotionConfig>,
+    document.body,
   );
 }
 

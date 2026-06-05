@@ -20,11 +20,11 @@
 import React, { useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Sparkles } from 'lucide-react';
+import { X, Sparkles, MessageSquare } from 'lucide-react';
 import { useTheme } from '../../contexts/ThemeContext';
 import { getThemeRichEntry } from './themesDkb';
 
-export default function ThemeDetailModal({ isOpen, theme, onClose, onStartWorkshop }) {
+export default function ThemeDetailModal({ isOpen, theme, onClose, onStartWorkshop, onDiveIn }) {
   const { tokens } = useTheme();
 
   // Body scroll lock + Esc handler. Both are gated on isOpen so the
@@ -179,6 +179,7 @@ export default function ThemeDetailModal({ isOpen, theme, onClose, onStartWorksh
             <ModalFooter
               tokens={tokens}
               onStartWorkshop={() => onStartWorkshop?.(theme)}
+              onDiveIn={onDiveIn ? () => onDiveIn(theme) : null}
             />
           </motion.div>
         </motion.div>
@@ -563,20 +564,53 @@ function TickerRow({ tickers, tokens }) {
   );
 }
 
-function ModalFooter({ tokens, onStartWorkshop }) {
+// Footer CTAs. With onDiveIn wired (the Forge's Discover surface), it mirrors
+// the design's theme sheet: a secondary "Dive in" (curation chat) beside the
+// primary "Build a watchlist" (seed a draft). Without it, the primary CTA
+// spans full width (legacy callers that don't pass onDiveIn).
+function ModalFooter({ tokens, onStartWorkshop, onDiveIn }) {
   return (
     <div
       style={{
         padding: '16px 28px',
         borderTop: `1px solid ${tokens.borderDefault}`,
         background: tokens.bgApp,
+        display: 'flex',
+        gap: 12,
       }}
     >
+      {onDiveIn && (
+        <button
+          type="button"
+          onClick={onDiveIn}
+          style={{
+            flex: 1,
+            appearance: 'none',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 8,
+            padding: '12px 18px',
+            background: 'transparent',
+            border: `1px solid ${tokens.teal}`,
+            borderRadius: 10,
+            color: tokens.teal,
+            fontSize: 14,
+            fontWeight: 700,
+            letterSpacing: '0.3px',
+            cursor: 'pointer',
+          }}
+        >
+          <MessageSquare size={16} />
+          Dive in
+        </button>
+      )}
       <button
         type="button"
         onClick={onStartWorkshop}
         style={{
-          width: '100%',
+          flex: onDiveIn ? 1.3 : 1,
+          width: onDiveIn ? undefined : '100%',
           appearance: 'none',
           display: 'flex',
           alignItems: 'center',
@@ -601,7 +635,7 @@ function ModalFooter({ tokens, onStartWorkshop }) {
         }}
       >
         <Sparkles size={16} />
-        Build a watchlist — coming soon
+        Build a watchlist
       </button>
     </div>
   );

@@ -80,6 +80,7 @@ vi.mock('firebase-admin/firestore', () => ({
 const {
   default: handler,
   validateParseResult,
+  synthesizeThemeParseResult,
   applyCandidateTickerUpdates,
   applyAnatomyUpdates,
   validatePhaseTransition,
@@ -123,6 +124,7 @@ function makeFakeFirestore({
   sessionDocs = {},
   allocatedSessionId = 'new-session-123',
   signalDrops = {}, // keyed by `${userId}/${dropId}` → drop record
+  discoverThemes = {}, // keyed by themeId → theme doc (Phase 2 theme seed)
 }) {
   const written = { setCalls: [], updateCalls: [], allocatedSessionId };
 
@@ -193,6 +195,15 @@ function makeFakeFirestore({
       return {
         doc: () => ({
           get: async () => ({ exists: false, data: () => null }),
+        }),
+      };
+    }
+    if (name === 'discoverThemes') {
+      // Phase 2 theme seed — load by themeId for the theme-seeded first turn.
+      return {
+        doc: (id) => ({
+          id,
+          get: async () => ({ exists: !!discoverThemes[id], data: () => discoverThemes[id] }),
         }),
       };
     }
@@ -775,6 +786,136 @@ describe('normalizeDialogueOutput', () => {
   });
 });
 
+// ==================== synthesizeThemeParseResult (Phase 2: theme → Dive in) ====================
+
+describe('synthesizeThemeParseResult', () => {
+  const THEME = {
+    title: 'AI Power Buildout',
+    narrative: 'Datacenter power + compute demand',
+    tickers: ['vst', 'SMCI', 'ANET', 'NVDA'],
+    subAngles: ['Pure-play power', 'Grid infrastructure'],
+    status: 'active',
+  };
+
+  it('synthesizes a parseResult that validateParseResult accepts', () => {
+    const out = validateParseResult(synthesizeThemeParseResult(THEME));
+    expect(out).not.toBeNull();
+    expect(out.parse.topic).toBe('AI Power Buildout');
+    expect(out.parse.contentType).toBe('research_note');
+    expect(out.parse.signalDirection).toBe('bullish');
+  });
+
+  it('uppercases tickers and mirrors them into validation.validated (the prompt surfaces these)', () => {
+    const out = synthesizeThemeParseResult(THEME);
+    expect(out.parse.tickers).toEqual(['VST', 'SMCI', 'ANET', 'NVDA']);
+    expect(out.validation.validated.map((v) => v.symbol)).toEqual(['VST', 'SMCI', 'ANET', 'NVDA']);
+  });
+
+  it('builds extractedText from title + narrative + names', () => {
+    const out = synthesizeThemeParseResult(THEME);
+    expect(out.parse.extractedText).toContain('AI Power Buildout');
+    expect(out.parse.extractedText).toContain('Datacenter power');
+    expect(out.parse.extractedText).toContain('VST, SMCI, ANET, NVDA');
+  });
+
+  it('tolerates missing/empty fields and still validates', () => {
+    const out = synthesizeThemeParseResult({});
+    expect(out.parse.topic).toBe('Discover theme');
+    expect(out.parse.tickers).toEqual([]);
+    expect(out.validation.validated).toEqual([]);
+    expect(validateParseResult(out)).not.toBeNull();
+  });
+
+  it('caps tickers at the parse field max (20)', () => {
+    const many = Array.from({ length: 30 }, (_, i) => `T${i}`);
+    const out = synthesizeThemeParseResult({ title: 'X', tickers: many });
+    expect(out.parse.tickers.length).toBe(20);
+  });
+});
+
+// ==================== HANDLER: theme-seeded first turn (Phase 2) ====================
+
+const VALID_THEME_ID = 'theme_ai-power';
+const ACTIVE_THEME = {
+  title: 'AI Power Buildout',
+  narrative: 'Datacenter power + compute demand',
+  tickers: ['VST', 'SMCI', 'ANET'],
+  status: 'active',
+};
+
+describe('handler — theme-seeded first turn (Phase 2: theme → Dive in)', () => {
+  it('seeds a session from a theme: 200, session carries source/themeId/dropId + synthesized parseResult', async () => {
+    const fixture = makeFakeFirestore({
+      agent: VALID_AGENT,
+      discoverThemes: { [VALID_THEME_ID]: ACTIVE_THEME },
+    });
+    activeFirestore = fixture.db;
+
+    const { req, res } = makeReqRes({
+      agentId: 'agent-1',
+      message: 'Let us shape this into a watchlist',
+      themeId: VALID_THEME_ID,
+      dropId: VALID_DROP_ID,
+    });
+
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body.sessionId).toBe('new-session-123');
+    expect(res.body.phase).toBe('explore');
+
+    const setCall = fixture.written.setCalls[0];
+    expect(setCall).toBeDefined();
+    expect(setCall.data.source).toBe('theme');
+    expect(setCall.data.themeId).toBe(VALID_THEME_ID);
+    expect(setCall.data.dropId).toBe(VALID_DROP_ID);
+    expect(setCall.data.parseResult.parse.topic).toBe('AI Power Buildout');
+    expect(setCall.data.parseResult.parse.tickers).toContain('VST');
+  });
+
+  it('rejects a malformed themeId (400) before any read', async () => {
+    activeFirestore = makeFakeFirestore({ agent: VALID_AGENT }).db;
+    const { req, res } = makeReqRes({
+      agentId: 'agent-1',
+      message: 'hi',
+      themeId: 'bad/theme/id',
+      dropId: VALID_DROP_ID,
+    });
+    await handler(req, res);
+    expect(res.statusCode).toBe(400);
+    expect(res.body.error).toMatch(/themeId is malformed/);
+  });
+
+  it('404s when the theme does not exist', async () => {
+    activeFirestore = makeFakeFirestore({ agent: VALID_AGENT, discoverThemes: {} }).db;
+    const { req, res } = makeReqRes({
+      agentId: 'agent-1',
+      message: 'hi',
+      themeId: 'theme_missing',
+      dropId: VALID_DROP_ID,
+    });
+    await handler(req, res);
+    expect(res.statusCode).toBe(404);
+    expect(res.body.error).toBe('theme_not_found');
+  });
+
+  it('400s when the theme is not active', async () => {
+    activeFirestore = makeFakeFirestore({
+      agent: VALID_AGENT,
+      discoverThemes: { [VALID_THEME_ID]: { ...ACTIVE_THEME, status: 'archived' } },
+    }).db;
+    const { req, res } = makeReqRes({
+      agentId: 'agent-1',
+      message: 'hi',
+      themeId: VALID_THEME_ID,
+      dropId: VALID_DROP_ID,
+    });
+    await handler(req, res);
+    expect(res.statusCode).toBe(400);
+    expect(res.body.error).toBe('theme_inactive');
+  });
+});
+
 // ==================== HANDLER: first-turn happy path ====================
 
 describe('handler — first-turn happy path', () => {
@@ -835,12 +976,12 @@ describe('handler — first-turn happy path', () => {
     expect(res.body.error).toMatch(/malformed/);
   });
 
-  it('rejects when neither parseResult nor sessionId is present (400)', async () => {
+  it('rejects when neither parseResult, themeId, nor sessionId is present (400)', async () => {
     activeFirestore = makeFakeFirestore({ agent: VALID_AGENT }).db;
     const { req, res } = makeReqRes({ agentId: 'agent-1', message: 'hi' });
     await handler(req, res);
     expect(res.statusCode).toBe(400);
-    expect(res.body.error).toMatch(/parseResult is required/);
+    expect(res.body.error).toMatch(/parseResult or themeId is required/);
   });
 
   // ----- Phase 2.5 Fix 1 (audit B2): cache verification new tests -----

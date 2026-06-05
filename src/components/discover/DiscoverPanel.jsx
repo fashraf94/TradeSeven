@@ -121,7 +121,23 @@ async function logInteraction({ themeId, action, source = 'discoverThemes' }) {
   }
 }
 
-export default function DiscoverPanel({ showToast, requestWorkshopOpen, agent, onViewWatchlist }) {
+// Client-generated dropId for a theme-seeded dialogue (Phase 2: theme → Dive
+// in). Mirrors SignalDropEntry.generateDropId — an RFC4122 v4 UUID matches the
+// forge-id character class. For a theme seed the dropId is just a session
+// handle (no signalDrops record); it anchors the Phase 4 save the same way the
+// paste path's verified dropId does.
+function makeThemeDropId() {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
+
+export default function DiscoverPanel({ showToast, requestWorkshopOpen, onBuildWatchlistFromTheme, agent, onViewWatchlist }) {
   const { tokens } = useTheme();
   const [themes, setThemes] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -138,6 +154,7 @@ export default function DiscoverPanel({ showToast, requestWorkshopOpen, agent, o
     parseResult: null,
     dropId: null,
     agentId: null,
+    seedTheme: null, // Phase 2: set when the chat is seeded from a theme
   });
 
   useEffect(() => {
@@ -187,6 +204,28 @@ export default function DiscoverPanel({ showToast, requestWorkshopOpen, agent, o
     logInteraction({ themeId: theme.id, action: 'tap_start_workshop' });
     const seed = themeToSeed(theme);
     setSelectedTheme(null);
+    // Phase 2: theme → build a draft watchlist. Seed name/thesis/tickers
+    // from the theme, then route into the Watchlist editor where the user
+    // reviews and commits ("make ready"). anchorTickers come from the rich
+    // DKB entry; fall back to the Firestore-registered `tickers` if the
+    // rich entry is missing (registry/DKB drift). Falls back to the legacy
+    // Workshop handoff when no build handler is wired (shelved ForgeLanding
+    // path), so that surface is unchanged.
+    if (typeof onBuildWatchlistFromTheme === 'function') {
+      const anchorTickers =
+        Array.isArray(seed?.anchorTickers) && seed.anchorTickers.length
+          ? seed.anchorTickers
+          : Array.isArray(theme.tickers)
+            ? theme.tickers
+            : [];
+      onBuildWatchlistFromTheme({
+        themeId: theme.id,
+        title: theme.title,
+        thesis: seed?.thesisSummary || theme.narrative || '',
+        tickers: anchorTickers,
+      });
+      return;
+    }
     if (typeof requestWorkshopOpen === 'function') {
       requestWorkshopOpen(seed);
     }
@@ -234,15 +273,52 @@ export default function DiscoverPanel({ showToast, requestWorkshopOpen, agent, o
       action: 'tap_drop_signal',
       source: 'discoverSignalDrop',
     });
-    setSignalDropState({ mode: 'entry', parseResult: null, dropId: null, agentId: null });
+    setSignalDropState({ mode: 'entry', parseResult: null, dropId: null, agentId: null, seedTheme: null });
   };
 
   const handleCloseSignalDropEntry = () => {
-    setSignalDropState({ mode: null, parseResult: null, dropId: null, agentId: null });
+    setSignalDropState({ mode: null, parseResult: null, dropId: null, agentId: null, seedTheme: null });
   };
 
   const handleCloseSignalDropChat = () => {
-    setSignalDropState({ mode: null, parseResult: null, dropId: null, agentId: null });
+    setSignalDropState({ mode: null, parseResult: null, dropId: null, agentId: null, seedTheme: null });
+  };
+
+  // Phase 2: theme → "Dive in" — open the curation chat seeded from a theme.
+  // Symmetric with handleStartSignalDialogue (the paste path), but the chat is
+  // seeded from a Discover theme instead of a parsed paste: no parseResult, a
+  // freshly minted dropId handle, and a seedTheme the chat sends as a themeId
+  // on the first turn. Gates on agent?.id like the paste path (a dialogue
+  // needs an agent); closes the source theme modal regardless.
+  const handleDiveIntoTheme = (theme) => {
+    if (!theme) return;
+    logInteraction({ themeId: theme.id, action: 'tap_dive_in' });
+    setSelectedTheme(null);
+    if (!agent?.id) {
+      if (typeof showToast === 'function') {
+        showToast('Create an agent first to dive into a theme');
+      }
+      return;
+    }
+    const seed = themeToSeed(theme);
+    const tickers =
+      Array.isArray(seed?.anchorTickers) && seed.anchorTickers.length
+        ? seed.anchorTickers
+        : Array.isArray(theme.tickers)
+          ? theme.tickers
+          : [];
+    setSignalDropState({
+      mode: 'chat',
+      parseResult: null,
+      dropId: makeThemeDropId(),
+      agentId: agent.id,
+      seedTheme: {
+        themeId: theme.id,
+        title: theme.title,
+        thesis: seed?.thesisSummary || theme.narrative || '',
+        tickers,
+      },
+    });
   };
 
   // Sprint 6 Phase 3B: transition from entry modal to WatchlistChat.
@@ -256,7 +332,7 @@ export default function DiscoverPanel({ showToast, requestWorkshopOpen, agent, o
       if (typeof showToast === 'function') {
         showToast('Create an agent first to start a Signal Drop dialogue');
       }
-      setSignalDropState({ mode: null, parseResult: null, dropId: null, agentId: null });
+      setSignalDropState({ mode: null, parseResult: null, dropId: null, agentId: null, seedTheme: null });
       return;
     }
     setSignalDropState({
@@ -264,6 +340,7 @@ export default function DiscoverPanel({ showToast, requestWorkshopOpen, agent, o
       parseResult,
       dropId,
       agentId: agent.id,
+      seedTheme: null,
     });
   };
 
@@ -337,6 +414,7 @@ export default function DiscoverPanel({ showToast, requestWorkshopOpen, agent, o
         theme={selectedTheme}
         onClose={handleCloseModal}
         onStartWorkshop={handleStartWorkshop}
+        onDiveIn={handleDiveIntoTheme}
       />
 
       {viewChartTicker && (
@@ -366,6 +444,7 @@ export default function DiscoverPanel({ showToast, requestWorkshopOpen, agent, o
         agentName={agent?.name}
         showToast={showToast}
         onViewWatchlist={onViewWatchlist}
+        seedTheme={signalDropState.seedTheme}
       />
     </div>
   );

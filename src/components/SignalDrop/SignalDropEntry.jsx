@@ -30,6 +30,7 @@
 // (e.g. a future "log a signal without dialogue" CTA).
 
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence, MotionConfig } from 'framer-motion';
 import {
   X,
@@ -366,7 +367,12 @@ export default function SignalDropEntry({ open, onClose, onStartDialogue }) {
     onClose?.();
   }
 
-  return (
+  // Portal to <body> so this full-screen takeover covers the whole viewport —
+  // including the Forge's segmented nav — instead of being re-based by the
+  // scrollable area it's mounted inside (iOS fixed-in-scroll). Same pattern as
+  // ThemeDetailModal; the overlay keeps its own z-index.
+  if (typeof document === 'undefined') return null;
+  return createPortal(
     // Phase 3.6 Session 2 (Finding 8): MotionConfig with reducedMotion="user"
     // honors prefers-reduced-motion for every framer-motion animation
     // inside the modal. The global CSS reduce-motion rule strips CSS
@@ -484,7 +490,8 @@ export default function SignalDropEntry({ open, onClose, onStartDialogue }) {
           </motion.div>
         )}
       </AnimatePresence>
-    </MotionConfig>
+    </MotionConfig>,
+    document.body,
   );
 }
 

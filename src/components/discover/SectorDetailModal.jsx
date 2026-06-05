@@ -30,6 +30,7 @@
 // logging failure must never surface to the user.
 
 import React, { useEffect, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Medal, LineChart, Sparkles, ArrowRight } from 'lucide-react';
 import {
@@ -206,7 +207,11 @@ export default function SectorDetailModal({
 
   const badgeColor = medalColor(medalRank, tokens);
 
-  return (
+  // Portal to <body> so the overlay covers the whole viewport — including the
+  // Forge's segmented nav — instead of being re-based by the scrollable area
+  // it's mounted inside (iOS fixed-in-scroll). Same pattern as ThemeDetailModal.
+  if (typeof document === 'undefined') return null;
+  return createPortal(
     <AnimatePresence>
       {isOpen && ticker && content && (
         <motion.div
@@ -378,7 +383,8 @@ export default function SectorDetailModal({
           </motion.div>
         </motion.div>
       )}
-    </AnimatePresence>
+    </AnimatePresence>,
+    document.body,
   );
 }
 

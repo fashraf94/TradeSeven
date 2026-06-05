@@ -253,6 +253,56 @@ export function validateParseResult(raw) {
   };
 }
 
+// Phase 2 (theme → Dive in): synthesize a parseResult-shaped envelope from a
+// Discover theme loaded server-side from the trusted `discoverThemes`
+// collection — the theme-seeded analogue of a pasted signal. Mirrors
+// parse-signal's output so the rest of the dialogue (prompt build via
+// buildDialogueInputs, candidate-ticker flow) is identical to the paste path.
+// `validation.validated` carries the theme's names so buildDialogueInputs
+// surfaces them to the agent; the universe gate in applyCandidateTickerUpdates
+// still governs what actually persists. The result is run through
+// validateParseResult by the caller, so caps/enums are enforced uniformly.
+export function synthesizeThemeParseResult(theme) {
+  const t = theme && typeof theme === 'object' ? theme : {};
+  const title = typeof t.title === 'string' && t.title.trim() ? t.title.trim() : 'Discover theme';
+  const narrative = typeof t.narrative === 'string' ? t.narrative.trim() : '';
+  const tickers = (Array.isArray(t.tickers) ? t.tickers : [])
+    .filter((s) => typeof s === 'string' && s.trim())
+    .map((s) => s.trim().toUpperCase())
+    .slice(0, PARSE_FIELD_CAPS.TICKERS_MAX);
+  const subAngles = (Array.isArray(t.subAngles) ? t.subAngles : [])
+    .filter((s) => typeof s === 'string' && s.trim())
+    .map((s) => s.trim())
+    .slice(0, 4);
+  const extractedText = [
+    `Discover theme: ${title}`,
+    narrative,
+    tickers.length ? `Names this theme leans on: ${tickers.join(', ')}.` : '',
+    subAngles.length ? `Ways to play it: ${subAngles.join('; ')}.` : '',
+  ]
+    .filter(Boolean)
+    .join('\n');
+  return {
+    contentHash: null,
+    parse: {
+      extractedText,
+      topic: title,
+      tickers,
+      impliedTickers: [],
+      confidence: 0.9,
+      contentType: 'research_note',
+      signalDirection: 'bullish',
+      timeHorizon: 'unspecified',
+      referencedDate: '',
+      dataPoints: [],
+      suspectedInjection: false,
+    },
+    validation: { validated: tickers.map((symbol) => ({ symbol })) },
+    shouldBailout: false,
+    shouldHardCheckpoint: false,
+  };
+}
+
 // Forward-only phase transition with user-override support. Returns
 // { newPhase, didAdvance, didReject } so the caller can shadow-log the
 // rejection without bouncing the request.
@@ -678,6 +728,7 @@ export default async function handler(req, res) {
     parseResult: rawParseResult,
     phaseRequest: rawPhaseRequest,
     dropId: rawDropId,
+    themeId: rawThemeId,
   } = req.body || {};
 
   if (!agentId || typeof agentId !== 'string' || !agentId.trim()) {
@@ -691,13 +742,15 @@ export default async function handler(req, res) {
   // unspecified default) is null.
   const phaseRequest = VALID_PHASE_REQUESTS.has(rawPhaseRequest) ? rawPhaseRequest : null;
 
-  // First-turn callers MUST supply parseResult AND dropId; subsequent-turn
-  // callers MUST supply sessionId. Both at once is fine — sessionId wins
-  // (dropId is silently ignored on continuing turns since the session doc
-  // already binds the verified dropId).
-  if (!providedSessionId && !rawParseResult) {
+  // First-turn callers MUST supply (parseResult OR themeId) AND dropId;
+  // subsequent-turn callers MUST supply sessionId. Both at once is fine —
+  // sessionId wins (dropId/themeId are silently ignored on continuing turns
+  // since the session doc already binds the verified dropId). A pasted signal
+  // arrives as parseResult (Phase 2.5); a Discover theme arrives as themeId
+  // (Phase 2 theme → Dive in) — see the theme-seeded branch below.
+  if (!providedSessionId && !rawParseResult && !rawThemeId) {
     return res.status(400).json({
-      error: 'parseResult is required on the first turn (no sessionId)',
+      error: 'parseResult or themeId is required on the first turn (no sessionId)',
     });
   }
 
@@ -720,6 +773,22 @@ export default async function handler(req, res) {
       });
     }
     dropId = trimmedDropId;
+  }
+
+  // Phase 2 (theme → Dive in): a theme-seeded first turn carries a themeId
+  // instead of a pasted-signal parseResult. parseResult takes precedence if a
+  // client sends both (the verified path wins). Validated to the same id shape
+  // as dropId to defend against Firestore path injection.
+  let themeId = null;
+  if (!providedSessionId && !rawParseResult && typeof rawThemeId === 'string' && rawThemeId.trim()) {
+    const trimmedThemeId = rawThemeId.trim();
+    if (!isValidForgeId(trimmedThemeId)) {
+      return res.status(400).json({
+        error: 'themeId is malformed',
+        message: `themeId must match ${FORGE_ID_REGEX} and be ≤${FORGE_ID_MAX_LEN} chars`,
+      });
+    }
+    themeId = trimmedThemeId;
   }
 
   // 4. Sanitize message — same shape as workshop-chat (cap, strip newlines / brackets)
@@ -785,6 +854,65 @@ export default async function handler(req, res) {
             'This dialogue is already finalized or abandoned. Drop a new signal to start another.',
         });
       }
+    } else if (themeId) {
+      // ── Theme-seeded first turn (Phase 2: theme → Dive in) ──────────
+      // The "signal" is a Discover theme loaded server-side from the trusted
+      // discoverThemes collection. There is no client-supplied parseResult to
+      // verify — the content originates server-side, so it can't be fabricated
+      // — so the dropId↔signalDrops contentHash check the paste path runs does
+      // not apply here. We synthesize the parseResult from the theme; the
+      // dropId is a session handle (no signalDrops record) that anchors the
+      // Phase 4 save the same way the paste path's verified dropId does.
+      const themeSnap = await db.collection('discoverThemes').doc(themeId).get();
+      if (!themeSnap.exists) {
+        return res.status(404).json({
+          error: 'theme_not_found',
+          message: 'No Discover theme found for this themeId.',
+        });
+      }
+      const themeDoc = themeSnap.data();
+      if (typeof themeDoc.status === 'string' && themeDoc.status !== 'active') {
+        return res.status(400).json({
+          error: 'theme_inactive',
+          message: 'This theme is no longer available to build from.',
+        });
+      }
+      const validatedParseResult = validateParseResult(synthesizeThemeParseResult(themeDoc));
+      if (!validatedParseResult) {
+        return res.status(500).json({
+          error: 'theme_seed_failed',
+          message: 'Could not seed a dialogue from this theme.',
+        });
+      }
+
+      sessionRef = sessionsCol.doc();
+      const nowIso = new Date().toISOString();
+      session = {
+        userId: user.uid,
+        agentId,
+        dropId,
+        themeId,
+        source: 'theme',
+        startedAt: nowIso,
+        updatedAt: nowIso,
+        status: 'active',
+        phase: 'explore',
+        parseResult: validatedParseResult,
+        exchanges: [],
+        candidateTickers: [],
+        anatomy: {
+          thesis: null,
+          activationConditions: [],
+          invalidationConditions: [],
+        },
+        messagesUsed: 0,
+        messageBudget: MESSAGE_BUDGET,
+        dropListId: null,
+        meta: {
+          initialAgentName: typeof agent.name === 'string' ? agent.name : 'Gemma',
+        },
+      };
+      isNewSession = true;
     } else {
       const validatedParseResult = validateParseResult(rawParseResult);
       if (!validatedParseResult) {
