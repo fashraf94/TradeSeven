@@ -20,7 +20,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Check } from 'lucide-react';
 import EquipSheet from './EquipSheet';
-import { CMD, alpha, Mono, readableOn } from './commandUI';
+import { CMD, alpha, Mono, readableOn, ErrorBanner } from './commandUI';
 import { getArchetypeDisplayName } from '../../data/archetypeDisplay';
 import { getArchetypeIdentity } from '../../data/archetypeIdentity';
 import { changeArchetype } from '../../services/agentService';
@@ -31,21 +31,6 @@ import { reseedDefaultTraits } from '../../services/seedDefaultTraits';
 // Investor → Capital Preserver. Pinned here so the picker is never arranged by
 // an incidental Object.keys() iteration.
 const ARCHETYPE_ORDER = ['momentum_chaser', 'contrarian', 'diversifier', 'degen', 'analyst', 'guardian'];
-
-function ErrorBanner({ children, style }) {
-  return (
-    <div
-      role="alert"
-      style={{
-        padding: '10px 12px', borderRadius: 11, fontSize: 12.5, lineHeight: 1.45,
-        color: CMD.copper, background: alpha(CMD.copper, 0.1), border: `1px solid ${alpha(CMD.copper, 0.32)}`,
-        ...style,
-      }}
-    >
-      {children}
-    </div>
-  );
-}
 
 function ArchetypeCard({ codeId, selected, busy, disabled, accent, onClick }) {
   const name = getArchetypeDisplayName(codeId);
