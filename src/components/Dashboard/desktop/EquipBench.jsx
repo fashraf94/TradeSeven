@@ -10,17 +10,19 @@
 // dock="center"). The Archetype slot opens the six-card archetype picker.
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { Sparkles, Target, ScrollText, Plus } from 'lucide-react';
+import { Sparkles, Target, Dna, Plus } from 'lucide-react';
 import { CMD, alpha, Mono, SectionLabel } from '../commandUI';
 import EquipSheet from '../EquipSheet';
 import RuleBundlePicker from '../RuleBundlePicker';
 import ArchetypePicker from '../ArchetypePicker';
+import TraitsSheet from '../TraitsSheet';
 import { useForge } from '../../../hooks/useForge';
 import { listWatchlists } from '../../../services/forgeWatchlistService';
 import { filterWatchlistsByStatus } from '../../Forge/Watchlist/filterWatchlistsByStatus';
 import { equipWatchlist, unequipWatchlist } from '../../../services/agentService';
 import { getArchetypeDisplayName } from '../../../data/archetypeDisplay';
 import { getArchetypeIdentity } from '../../../data/archetypeIdentity';
+import { getTraitSlotSummary } from '../../../utils/traitSlotSummary';
 
 function tickerLabel(tickers) {
   const syms = (tickers || [])
@@ -82,12 +84,21 @@ export default function EquipBench({ agent, accent, setShowForge, isLive }) {
   const agentId = agent?.id;
   const benchLocked = Boolean(agent?.activeBattleId);
 
-  // Which picker is open: null | 'archetype' | 'watchlist' | 'rules'
+  // Which picker is open: null | 'archetype' | 'watchlist' | 'traits'
+  // ('rules' / RuleBundlePicker is retained but dormant — see below.)
   const [sheet, setSheet] = useState(null);
+  // Bumped each time the Traits sheet opens so it remounts and reloads current
+  // traits + rules fresh. LOAD-BEARING: half of TraitsSheet's orphan-cleanup safety
+  // invariant (per-open remount) — don't drop the bump or the key. See TraitsSheet.
+  const [traitsEpoch, setTraitsEpoch] = useState(0);
 
-  // ── Rules (bundles) via the existing Forge hook ──────────────────────────
-  const { forgedBundles, equippedBundles, equipBundleFn, unequipBundleFn, equippingBundleId, loading: forgeLoading } = useForge(agentId);
-  const rulesEquipped = equippedBundles.length > 0;
+  // ── Forge hook — full object: feeds the dormant RuleBundlePicker AND useTraits
+  // (passed into TraitsSheet) so both share one Firestore load. ─────────────
+  const forge = useForge(agentId);
+  const { forgedBundles, equippedBundles, equipBundleFn, unequipBundleFn, equippingBundleId, loading: forgeLoading } = forge;
+
+  // ── Traits slot display — derived from the real-time agent doc (shared helper). ──
+  const traitSlot = getTraitSlotSummary(agent);
 
   // ── Watchlist via the existing watchlist services ────────────────────────
   const [committed, setCommitted] = useState([]);
@@ -123,11 +134,11 @@ export default function EquipBench({ agent, accent, setShowForge, isLive }) {
   const archetypeName = getArchetypeDisplayName(agent?.archetype);
   const disposition = getArchetypeIdentity(agent?.archetype).disposition;
   // Count slots from the agent doc — byte-for-byte the mobile CommandDashboard
-  // equippedCount formula (rules counted from agent.equippedBundleIds, not from
-  // useForge), so the "n/3 slots" reads identically on desktop and mobile.
+  // equippedCount formula (the third slot now counts equipped traits, not bundles),
+  // so the "n/3 slots" reads identically on desktop and mobile.
   const equippedCount = 1
     + (agent?.equippedWatchlistId ? 1 : 0)
-    + ((agent?.equippedBundleIds?.length || 0) > 0 ? 1 : 0);
+    + ((agent?.equippedTraits?.length || 0) > 0 ? 1 : 0);
 
   // ── Equip handlers ───────────────────────────────────────────────────────
   const handleEquipWatchlist = async (watchlistId) => {
@@ -158,10 +169,6 @@ export default function EquipBench({ agent, accent, setShowForge, isLive }) {
       onClick: () => handleEquipWatchlist(w.watchlistId),
     })),
   ];
-
-  const rulesTitle = equippedBundles.length === 1
-    ? (equippedBundles[0].name || 'Strategy equipped')
-    : `${equippedBundles.length} strategies equipped`;
 
   return (
     <div>
@@ -197,21 +204,21 @@ export default function EquipBench({ agent, accent, setShowForge, isLive }) {
           locked={benchLocked}
           onClick={() => setSheet('watchlist')}
         />
-        {/* Rules — the open cold-start slot */}
+        {/* Traits — equip-only DNA surface (replaces the old rule-bundle slot) */}
         <RowSlot
-          filled={rulesEquipped}
-          icon={<ScrollText size={17} color={CMD.allocation} />}
-          catColor={CMD.allocation}
-          label="Rule bundle"
-          name={rulesEquipped ? rulesTitle : 'Add rules'}
-          sub={rulesEquipped ? 'Tap to change the playbook' : 'Optional · sharpens your agent'}
+          filled={traitSlot.equipped}
+          icon={<Dna size={17} color={CMD.gold} />}
+          catColor={CMD.gold}
+          label="Traits"
+          name={traitSlot.name}
+          sub={traitSlot.sub}
           locked={benchLocked}
-          onClick={() => setSheet('rules')}
+          onClick={() => { setTraitsEpoch((e) => e + 1); setSheet('traits'); }}
         />
       </div>
 
       {/* reassurance — never a requirement */}
-      {!rulesEquipped && !benchLocked && (
+      {!traitSlot.equipped && !benchLocked && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 10 }}>
           <Sparkles size={12} color={accent} />
           <div style={{ fontSize: 11.5, color: CMD.ink3 }}>One open slot — a chance to arm {agentName}, not a requirement. Deploy works now.</div>
@@ -266,6 +273,20 @@ export default function EquipBench({ agent, accent, setShowForge, isLive }) {
         accent={accent}
         dock="center"
       />
+
+      {/* traits picker — equip-only DNA surface, center-docked on desktop. Keyed on
+          traitsEpoch + gated on (epoch > 0) so it (re)mounts on each open, reloading
+          current traits/rules fresh. */}
+      {traitsEpoch > 0 && (
+        <TraitsSheet
+          key={traitsEpoch}
+          open={sheet === 'traits'}
+          onClose={() => setSheet(null)}
+          agent={agent}
+          accent={accent}
+          dock="center"
+        />
+      )}
     </div>
   );
 }
