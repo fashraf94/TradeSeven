@@ -32,7 +32,7 @@ import EquipSheet from './EquipSheet';
 import { CMD, alpha, MONO, Eyebrow, Mono, readableOn, ErrorBanner } from './commandUI';
 import { useForge } from '../../hooks/useForge';
 import { useTraits, BATTLE_LOCK_MSG } from '../../hooks/useTraits';
-import { DNA_GROUPS } from '../../data/dnaGroups';
+import { DNA_GROUPS, TOTAL_TRAIT_SLOTS } from '../../data/dnaGroups';
 import { getTraitsForGroup } from '../../data/traitLibrary';
 import { getTraitEnforcement } from '../../utils/traitEnforcement';
 
@@ -188,15 +188,27 @@ export default function TraitsSheet({ open, onClose, agent, accent, dock = 'bott
       subtitle="Equip traits to shape how your agent reads the market. Changes apply on your next deploy."
       accent={accent}
     >
-      {loading ? (
+      {/* Content gate — COLD-LOAD ONLY. Show the placeholder only when loading with no
+          write in flight (the initial/remount load). During an equip/unequip, `working`
+          is set for the whole operation, so the per-rule addRuleToBundle/removeRuleFromBundle
+          reloads (which flip forge.loading repeatedly) no longer blank the sheet — the
+          tapped row's busy state is the in-flight affordance. Distinct from the DATA gate
+          at the top (traitsForge), which stays as the staleness containment wall. */}
+      {loading && !working ? (
         <div style={{ padding: '24px 8px', textAlign: 'center', color: CMD.ink2, fontSize: 13 }}>Loading traits…</div>
       ) : (
         <>
           {error && <ErrorBanner style={{ margin: '2px 0 12px' }}>{error}</ErrorBanner>}
 
+          {/* Honest cap model — overall ceiling (N of 6) + the per-group rule, so a full
+              group never reads as an overall cap. Per-group counts live in each GroupHeader. */}
+          <Mono style={{ display: 'block', fontSize: 10.5, letterSpacing: '0.04em', color: CMD.ink3, margin: '0 2px 13px' }}>
+            {equippedTraits.length} of {TOTAL_TRAIT_SLOTS} equipped · up to 2 per group
+          </Mono>
+
           {equippedTraits.length > 0 && (
             <div style={{ marginBottom: 18 }}>
-              <Eyebrow color={CMD.ink3} style={{ margin: '0 2px 9px' }}>Equipped · {equippedTraits.length}</Eyebrow>
+              <Eyebrow color={CMD.ink3} style={{ margin: '0 2px 9px' }}>Equipped</Eyebrow>
               {equippedTraits.map((t) => (
                 <TraitRow
                   key={t.traitId}
