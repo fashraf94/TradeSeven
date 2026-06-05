@@ -24,6 +24,8 @@
 //                     does not delete the doc) and agent-learned rules (never
 //                     bundled).
 
+import { classifyByCategory } from './ruleHardness.js';
+
 // Normalize any Firestore/JS timestamp representation to epoch millis.
 function toMillis(ts) {
   if (!ts) return 0;
@@ -45,11 +47,13 @@ function toActiveRuleItem(r, ruleIdToBundleName, ruleIdToHardness) {
     paramValues: r.paramValues ?? null,
     category: r.category ?? null,
     bundleName: ruleIdToBundleName[r.id] ?? null,
-    // Phase 3 — authored per-rule hard/soft override: 'hard' | 'soft' | null.
-    // null (the default) means "no override"; the prompt assemblers fall back to
-    // the category-derived value, so a no-override deploy is byte-identical to
-    // pre-Phase-3. Set only when a user explicitly authored a value on the bundle.
-    hardness: ruleIdToHardness?.[r.id] ?? null,
+    // Phase 3 — THE single hard/soft resolution point. Always populated with the
+    // resolved value: an authored per-rule override wins, else the category
+    // default. Every consumer (the strategy/eval/news prompt builders, the
+    // citation stats) reads this carried field and never re-derives from
+    // category. With no override this equals the category-derived value, so the
+    // assembled prompts stay byte-identical to pre-Phase-3.
+    hardness: ruleIdToHardness?.[r.id] ?? classifyByCategory(r.category),
   };
 }
 

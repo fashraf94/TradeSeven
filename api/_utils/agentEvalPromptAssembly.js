@@ -14,6 +14,7 @@ import {
   buildBareNewsBlock,
 } from './agentNewsContext.js';
 import { PATTERN_DISPLAY_NAMES } from './analyticalPrimitives.js';
+import { isHardRule } from './ruleHardness.js';
 
 // ==================== SYSTEM PROMPT ====================
 
@@ -282,15 +283,11 @@ ${ctx.consolidatedInsight}`);
   // Forge Rules (structured constraint/strategy framework)
   const activeRules = ctx.activeRules || [];
   if (activeRules.length > 0) {
-    const constraintCats = new Set(['risk', 'allocation']);
-    // Phase 3 — an authored per-rule hard/soft override (r.hardness) wins; when
-    // absent (null/undefined) it falls back to the category default, so with no
-    // override this split is byte-identical to pre-Phase-3 (calibration parity).
-    const isHardConstraint = (r) => (r.hardness === 'hard' || r.hardness === 'soft')
-      ? r.hardness === 'hard'
-      : constraintCats.has(r.category);
-    const constraints = activeRules.filter(isHardConstraint);
-    const strategies = activeRules.filter(r => !isHardConstraint(r));
+    // Phase 3 — hard/soft is resolved once in projectActiveRules and carried on
+    // each item; read it via the single server source (ruleHardness.js). With no
+    // override this is the category-derived split — byte-identical to pre-Phase-3.
+    const constraints = activeRules.filter(isHardRule);
+    const strategies = activeRules.filter(r => !isHardRule(r));
 
     const ruleLines = [];
     if (constraints.length > 0) {

@@ -6,20 +6,24 @@ import {
   collection, query, where, getDocs, orderBy, limit,
 } from 'firebase/firestore';
 import { db, auth } from '../firebase/config';
+import { resolveRuleHardness } from '../components/Forge/workshop/hardSoftHelper';
 
 /**
  * Reconstruct the C1/S1 positional mapping from a battle's frozen activeRules.
- * Must mirror the algorithm in agentEvalPromptAssembly.js lines 253-269.
+ * MUST mirror the eval prompt's split (agentEvalPromptAssembly.js), because the
+ * model cites rules by these positional labels and this map resolves a cited
+ * label back to a ruleId. Phase 3: read the RESOLVED hard/soft carried on each
+ * snapshot item (override ?? category) — the same single source the eval prompt
+ * reads — so labels stay in lockstep. With no override this is the category
+ * split; for legacy snapshots lacking the field it falls back to category.
+ * (Also corrects a prior drift where mid_battle/game_state were labeled C here
+ * but S in the prompt.)
  */
-function buildPositionalMap(activeRules) {
+export function buildPositionalMap(activeRules) {
   if (!activeRules || activeRules.length === 0) return {};
 
-  const constraints = activeRules.filter(r =>
-    r.category === 'risk' || r.category === 'allocation' || r.category === 'mid_battle' || r.category === 'game_state'
-  );
-  const strategies = activeRules.filter(r =>
-    r.category === 'technical' || r.category === 'fundamental' || r.category === 'threshold' || r.category === 'tier_strategy' || !r.category
-  );
+  const constraints = activeRules.filter(r => resolveRuleHardness(r, r.hardness) === 'hard');
+  const strategies = activeRules.filter(r => resolveRuleHardness(r, r.hardness) !== 'hard');
 
   const map = {};
   constraints.forEach((r, i) => {

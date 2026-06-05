@@ -13,6 +13,7 @@ import { describe, it, expect } from 'vitest';
 import { buildStrategyUserPrompt } from './agentPromptAssembly.js';
 import { buildAgentIdentityBlock } from './agentEvalPromptAssembly.js';
 import { projectActiveRules } from './projectActiveRules.js';
+import { matchStoryToRules } from './agentNewsContext.js';
 
 // A representative loadout spanning both hard categories (risk, allocation) and
 // both soft categories (technical, fundamental), in a fixed order. No hardness
@@ -124,28 +125,29 @@ describe('eval/swap prompt — an authored override moves the rule', () => {
   });
 });
 
-describe('projectActiveRules carries the override (deploy path)', () => {
+describe('projectActiveRules — the single resolution point (override ?? category, always populated)', () => {
   const ruleDocs = [
     { id: 'r-stop', category: 'risk', text: 'Exit a position once it drops past your line.', isDeleted: false },
     { id: 'r-rsi', category: 'technical', text: 'Avoid buying overbought names.', isDeleted: false },
   ];
 
-  it('no ruleHardness on the bundle → every item.hardness is null (parity)', () => {
+  it('no ruleHardness → hardness is the category-derived value (parity; never null)', () => {
     const bundles = [{ id: 'b1', status: 'forged', name: 'B', ruleIds: ['r-stop', 'r-rsi'] }];
-    const items = projectActiveRules([], ruleDocs, bundles);
-    expect(items.every((i) => i.hardness === null)).toBe(true);
+    const byId = Object.fromEntries(projectActiveRules([], ruleDocs, bundles).map((i) => [i.ruleId, i]));
+    expect(byId['r-stop'].hardness).toBe('hard'); // risk → hard
+    expect(byId['r-rsi'].hardness).toBe('soft');  // technical → soft
   });
 
-  it('an authored ruleHardness value rides onto the matching item', () => {
+  it('an authored override wins over the category default', () => {
     const bundles = [{ id: 'b1', status: 'forged', name: 'B', ruleIds: ['r-stop', 'r-rsi'], ruleHardness: { 'r-stop': 'soft' } }];
     const byId = Object.fromEntries(projectActiveRules([], ruleDocs, bundles).map((i) => [i.ruleId, i]));
-    expect(byId['r-stop'].hardness).toBe('soft');
-    expect(byId['r-rsi'].hardness).toBeNull();
+    expect(byId['r-stop'].hardness).toBe('soft'); // override softens the risk rule
+    expect(byId['r-rsi'].hardness).toBe('soft');  // untouched → category (technical → soft)
   });
 
-  it('an unrecognized override value is dropped (item.hardness stays null)', () => {
+  it('an unrecognized override value falls back to the category default', () => {
     const bundles = [{ id: 'b1', status: 'forged', name: 'B', ruleIds: ['r-stop'], ruleHardness: { 'r-stop': 'firm' } }];
-    expect(projectActiveRules([], ruleDocs, bundles)[0].hardness).toBeNull();
+    expect(projectActiveRules([], ruleDocs, bundles)[0].hardness).toBe('hard'); // 'firm' ignored → risk → hard
   });
 
   it('first non-archived bundle with an explicit override wins', () => {
@@ -154,6 +156,39 @@ describe('projectActiveRules carries the override (deploy path)', () => {
       { id: 'b2', status: 'forged', name: 'B2', ruleIds: ['r-stop'], ruleHardness: { 'r-stop': 'soft' } },
     ];
     expect(projectActiveRules([], ruleDocs, bundles)[0].hardness).toBe('soft');
+  });
+});
+
+describe('agentNewsContext — C/S labels read the carried hardness (no C-in-news / S-in-rules split)', () => {
+  // Reporter 'kai' carries affinity for risk+allocation; 'alex' for technical.
+  it('no override: a risk rule is a constraint (C) — byte-identical to the category split', () => {
+    expect(matchStoryToRules({ reporter: 'kai' }, [item('r-stop', 'risk', 'Exit a position.')]))
+      .toEqual([{ label: 'C1', text: 'Exit a position.', category: 'risk' }]);
+  });
+
+  it('softening a risk rule moves its news label C → S (in lockstep with the forge-rules block)', () => {
+    expect(matchStoryToRules({ reporter: 'kai' }, [{ ...item('r-stop', 'risk', 'Exit a position.'), hardness: 'soft' }]))
+      .toEqual([{ label: 'S1', text: 'Exit a position.', category: 'risk' }]);
+  });
+
+  it('hardening a technical rule moves its news label S → C', () => {
+    expect(matchStoryToRules({ reporter: 'alex' }, [item('r-rsi', 'technical', 'Avoid overbought.')]))
+      .toEqual([{ label: 'S1', text: 'Avoid overbought.', category: 'technical' }]);
+    expect(matchStoryToRules({ reporter: 'alex' }, [{ ...item('r-rsi', 'technical', 'Avoid overbought.'), hardness: 'hard' }]))
+      .toEqual([{ label: 'C1', text: 'Avoid overbought.', category: 'technical' }]);
+  });
+});
+
+describe('cross-site agreement: one override resolves the same everywhere', () => {
+  it('a softened risk rule reads SOFT in projection, the strategy prompt, and the news block', () => {
+    const ruleDocs = [{ id: 'r-stop', category: 'risk', text: 'Exit a position.', isDeleted: false }];
+    const bundles = [{ id: 'b1', status: 'forged', name: 'B', ruleIds: ['r-stop'], ruleHardness: { 'r-stop': 'soft' } }];
+    const projected = projectActiveRules([], ruleDocs, bundles);
+    expect(projected[0].hardness).toBe('soft');                                  // projection
+    expect(strategyForgeBlock(projected)).toContain('STRATEGY PREFERENCES:\nS1. Exit a position.');
+    expect(strategyForgeBlock(projected)).not.toContain('CONSTRAINTS:');         // strategy prompt: not hard
+    expect(matchStoryToRules({ reporter: 'kai' }, projected))                    // news block: S, not C
+      .toEqual([{ label: 'S1', text: 'Exit a position.', category: 'risk' }]);
   });
 });
 
