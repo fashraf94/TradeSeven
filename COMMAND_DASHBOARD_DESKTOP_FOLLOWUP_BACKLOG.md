@@ -172,6 +172,68 @@ localization becomes pure cleanup.
 
 **Filed:** Jun 4, 2026 — traits-equip surface arc (Phase 4 code review).
 
+### Batched trait-equip in `addRuleToBundle` (+ the deferred optimistic move)
+
+`useTraits.equipTrait` adds a trait's N rules by awaiting `forge.addRuleToBundle` once per rule
+(`useTraits.js:199-218`), and each `addRuleToBundle` runs an unconditional full `await loadData()`
+(`useForge.js:367` → `setLoading` `:132/:151`) — so an N-rule equip does N full rules+bundles
+re-fetches and flips `forge.loading` N times. The equip-jank Phase 1 fix stopped the **content**
+from blanking on those flips (`TraitsSheet.jsx` content gate is now `loading && !working`), but the
+per-rule reload churn (N reads + N×renders + the orphan effect re-running N times) is still there.
+
+**Fix:** a batched equip path — create all N rules + add them to the draft bundle, then reload
+**once**. Removes the per-rule churn and the mid-loop `forge.loading` flicker at the source.
+
+**Pairs with — the deferred optimistic move (equip-jank Phase 2, skipped):** TraitsSheet does not
+optimistically move a trait Add→Equipped on tap today. A *raw* optimistic append into `useTraits`'
+`equippedTraitEntries` is unsafe (Phase-0 diagnosis): at the instant of append the trait has zero
+written rules, and the orphan-cleanup effect (`useTraits.js:80-104`, criterion = "none of the
+trait's rules are in an active bundle") would fire on the `equippedTraitEntries` change while
+`forge.loading` is still false (before the first `loadData`) and auto-unequip + persist the removal
+— the trait would flash in and vanish. Also, TraitsSheet can't append to `equippedTraitEntries`
+without modifying the shared hook. So the optimistic move must be EITHER a TraitsSheet-local
+**visual-only pending overlay** (separate from `equippedTraitEntries`, so the orphan effect never
+reconciles against it) OR land **with this batched equip** (a single post-batch reload removes the
+mid-write 0-rules windows and makes the move safe). Phase 1 alone already removed the *reported*
+jank, so this is polish.
+
+**Trigger to fix:** when smoothing the equip further, or when the trait→rule mechanism's lifespan
+extends. Touches the Forge-shared `useForge`/`useTraits` → do with Forge regression coverage.
+
+**Filed:** Jun 4, 2026 — equip-jank fix arc (Phase 2 deferred + Phase 4).
+
+### Battle-lock `getDoc` off the dashboard hot path (efficiency)
+
+`useTraits.equipTrait`/`unequipTrait`/`setTraitStrength` each run a fresh `getDoc(agents/{id})`
+before the write (`useTraits.js:153-165`, awaited at `:169` etc.) to refuse mid-battle edits. On
+the **dashboard** this is a near-unreachable backstop — the `TraitsSheet` slot is already
+`benchLocked`-gated (`agent.activeBattleId`), so the sheet can't open during a live battle — yet
+every equip pays the extra round-trip at the start. The real-time `agent.activeBattleId` is already
+in hand (the sheet's `agent` prop / `useAgent` subscription), so the dashboard could check that
+instead of a fresh read.
+
+**Keep the Forge-path guard as-is** — the Forge trait UI (`ForgeScreen`/`TraitCard`) has no
+`benchLocked` gate, so its fresh `getDoc` is the actual protection there.
+
+**Trigger to fix:** efficiency-only once the jank is addressed; fold in with the batched equip / any
+`useTraits` signature touch (e.g. pass `activeBattleId` in rather than re-reading).
+
+**Filed:** Jun 4, 2026 — equip-jank fix arc (Phase 4).
+
+### Forge trait UI equip jank is toast-spam, not content-blank (separate fix)
+
+`ForgeScreen`/`TraitCard` share `useTraits.equipTrait`, so they hit the same per-rule
+`addRuleToBundle` → `loadData` churn — but the Forge has no content gate; instead each
+`addRuleToBundle` fires `forge.showToast(...)` (`useForge.js:369`) which the Forge renders
+(`ForgeScreen` `forge.toast`), so an N-rule equip there shows N toasts in quick succession.
+Different symptom (toast-spam), different fix from the dashboard content gate.
+
+**Fix when touched:** suppress per-rule toasts for the trait-equip path (or emit one summary
+toast), and/or fold into the batched-equip item above (one reload → one toast). Address only if the
+founder reports it in the Forge.
+
+**Filed:** Jun 4, 2026 — equip-jank fix arc (Phase 4).
+
 ## Resolved
 
 ### Watchlist "(locked)" copy — tried, reverted to "(unavailable)"
