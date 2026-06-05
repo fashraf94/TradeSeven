@@ -9,11 +9,13 @@ import AssetResearchModal from '../draft/AssetResearchModal';
 // Lazy load heavier sub-views
 const RankingsView = lazy(() => import('./RankingsView'));
 const InstitutionalView = lazy(() => import('./InstitutionalView'));
+const ScreenerView = lazy(() => import('./ScreenerView'));
 
 const TABS = [
   { id: 'explore', label: 'Explore' },
   { id: 'rankings', label: 'Rankings' },
   { id: 'institutional', label: 'Institutional' },
+  { id: 'screen', label: 'Screen' },
 ];
 
 const SearchDiscover = ({ user, isMobile, isDesktop, setScreen, stocksData }) => {
@@ -176,6 +178,14 @@ const SearchDiscover = ({ user, isMobile, isDesktop, setScreen, stocksData }) =>
               <InstitutionalView
                 onOpenResearch={onOpenResearch}
                 stocksData={stocksData}
+                isMobile={isMobile}
+              />
+            </Suspense>
+          )}
+          {activeTab === 'screen' && (
+            <Suspense fallback={<div style={{ color: tokens.textMuted, padding: '20px', textAlign: 'center', fontSize: '13px' }}>Loading screener...</div>}>
+              <ScreenerView
+                onOpenResearch={onOpenResearch}
                 isMobile={isMobile}
               />
             </Suspense>
