@@ -121,7 +121,7 @@ async function logInteraction({ themeId, action, source = 'discoverThemes' }) {
   }
 }
 
-export default function DiscoverPanel({ showToast, requestWorkshopOpen, agent, onViewWatchlist }) {
+export default function DiscoverPanel({ showToast, requestWorkshopOpen, onBuildWatchlistFromTheme, agent, onViewWatchlist }) {
   const { tokens } = useTheme();
   const [themes, setThemes] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -187,6 +187,28 @@ export default function DiscoverPanel({ showToast, requestWorkshopOpen, agent, o
     logInteraction({ themeId: theme.id, action: 'tap_start_workshop' });
     const seed = themeToSeed(theme);
     setSelectedTheme(null);
+    // Phase 2: theme → build a draft watchlist. Seed name/thesis/tickers
+    // from the theme, then route into the Watchlist editor where the user
+    // reviews and commits ("make ready"). anchorTickers come from the rich
+    // DKB entry; fall back to the Firestore-registered `tickers` if the
+    // rich entry is missing (registry/DKB drift). Falls back to the legacy
+    // Workshop handoff when no build handler is wired (shelved ForgeLanding
+    // path), so that surface is unchanged.
+    if (typeof onBuildWatchlistFromTheme === 'function') {
+      const anchorTickers =
+        Array.isArray(seed?.anchorTickers) && seed.anchorTickers.length
+          ? seed.anchorTickers
+          : Array.isArray(theme.tickers)
+            ? theme.tickers
+            : [];
+      onBuildWatchlistFromTheme({
+        themeId: theme.id,
+        title: theme.title,
+        thesis: seed?.thesisSummary || theme.narrative || '',
+        tickers: anchorTickers,
+      });
+      return;
+    }
     if (typeof requestWorkshopOpen === 'function') {
       requestWorkshopOpen(seed);
     }

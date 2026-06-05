@@ -601,7 +601,7 @@ function ModalFooter({ tokens, onStartWorkshop }) {
         }}
       >
         <Sparkles size={16} />
-        Build a watchlist — coming soon
+        Build a watchlist
       </button>
     </div>
   );
