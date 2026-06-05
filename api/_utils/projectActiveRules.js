@@ -24,6 +24,8 @@
 //                     does not delete the doc) and agent-learned rules (never
 //                     bundled).
 
+import { classifyByCategory } from './ruleHardness.js';
+
 // Normalize any Firestore/JS timestamp representation to epoch millis.
 function toMillis(ts) {
   if (!ts) return 0;
@@ -36,7 +38,7 @@ function toMillis(ts) {
 }
 
 // Map a live rule doc → the activeRules item shape produced by equipBundle.
-function toActiveRuleItem(r, ruleIdToBundleName) {
+function toActiveRuleItem(r, ruleIdToBundleName, ruleIdToHardness) {
   return {
     ruleId: r.id,
     text: r.text ?? null,
@@ -45,6 +47,13 @@ function toActiveRuleItem(r, ruleIdToBundleName) {
     paramValues: r.paramValues ?? null,
     category: r.category ?? null,
     bundleName: ruleIdToBundleName[r.id] ?? null,
+    // Phase 3 — THE single hard/soft resolution point. Always populated with the
+    // resolved value: an authored per-rule override wins, else the category
+    // default. Every consumer (the strategy/eval/news prompt builders, the
+    // citation stats) reads this carried field and never re-derives from
+    // category. With no override this equals the category-derived value, so the
+    // assembled prompts stay byte-identical to pre-Phase-3.
+    hardness: ruleIdToHardness?.[r.id] ?? classifyByCategory(r.category),
   };
 }
 
@@ -59,14 +68,24 @@ export function projectActiveRules(equippedTraits, ruleDocs, bundles) {
     (equippedTraits || []).map((t) => t && t.traitId).filter(Boolean)
   );
 
-  // Union of ruleIds across non-archived bundles (+ a ruleId → bundleName map).
+  // Union of ruleIds across non-archived bundles (+ a ruleId → bundleName map and
+  // a ruleId → authored hard/soft override map).
   const bundleRuleIds = new Set();
   const ruleIdToBundleName = {};
+  const ruleIdToHardness = {};
   for (const b of bundles || []) {
     if (!b || b.status === 'archived') continue;
+    const hardnessMap = b.ruleHardness || {};
     for (const rid of b.ruleIds || []) {
       bundleRuleIds.add(rid);
       if (!(rid in ruleIdToBundleName)) ruleIdToBundleName[rid] = b.name ?? null;
+      // First non-archived bundle that carries an explicit override for this rule
+      // wins (mirrors bundleName first-wins). Only 'hard'/'soft' are honored;
+      // anything else is ignored so the item's hardness stays null (→ category).
+      if (!(rid in ruleIdToHardness)) {
+        const v = hardnessMap[rid];
+        if (v === 'hard' || v === 'soft') ruleIdToHardness[rid] = v;
+      }
     }
   }
 
@@ -84,12 +103,12 @@ export function projectActiveRules(equippedTraits, ruleDocs, bundles) {
       newestByKey.set(key, r);
     }
   }
-  const traitItems = [...newestByKey.values()].map((r) => toActiveRuleItem(r, ruleIdToBundleName));
+  const traitItems = [...newestByKey.values()].map((r) => toActiveRuleItem(r, ruleIdToBundleName, ruleIdToHardness));
 
   // Non-trait rules — no traitId, currently a member of a non-archived bundle.
   const nonTraitItems = docs
     .filter((r) => !r.traitId && bundleRuleIds.has(r.id))
-    .map((r) => toActiveRuleItem(r, ruleIdToBundleName));
+    .map((r) => toActiveRuleItem(r, ruleIdToBundleName, ruleIdToHardness));
 
   return [...traitItems, ...nonTraitItems];
 }

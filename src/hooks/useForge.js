@@ -12,6 +12,7 @@ import {
   createBundle,
   addRuleToBundle as addRuleToBundleSvc,
   removeRuleFromBundle as removeRuleFromBundleSvc,
+  setRuleHardness as setRuleHardnessSvc,
   getRules,
   updateRule,
   softDeleteRule,
@@ -491,6 +492,19 @@ export function useForge(agentId) {
     }
   }, [agentId, showToast, loadData]);
 
+  // Author a per-rule hard/soft override on a draft bundle (Phase 3).
+  // value: 'hard' | 'soft' | null (null clears → reverts to category default).
+  const setRuleHardness = useCallback(async (bundleId, ruleId, value) => {
+    if (!agentId) return;
+    try {
+      await setRuleHardnessSvc(agentId, bundleId, ruleId, value);
+      await loadData();
+    } catch (err) {
+      console.error('[useForge] setRuleHardness failed:', err);
+      showToast(err.message || 'Failed to update rule');
+    }
+  }, [agentId, showToast, loadData]);
+
   // Remove a rule from a bundle
   const removeRuleFromBundle = useCallback(async (bundleId, ruleId) => {
     if (!agentId) return;
@@ -653,6 +667,7 @@ export function useForge(agentId) {
     createNewBundle,
     addRuleToBundleById,
     removeRuleFromBundle,
+    setRuleHardness,
     forgeBundleFn,
     equipBundleFn,
     unequipBundleFn,

@@ -3,6 +3,7 @@
 
 import { getFirebaseAdmin } from './firebaseAdmin.js';
 import { ARCHETYPE_CONSTRAINTS } from './archetypeScoring.js';
+import { isHardRule } from './ruleHardness.js';
 
 /**
  * Cacheable system prompt for the Sonnet strategy call.
@@ -73,9 +74,11 @@ export function buildStrategyUserPrompt(agent, equippedWatchlist = null) {
   // Forge rules (structured constraint/strategy framework)
   const activeRules = agent.activeRules || [];
   if (activeRules.length > 0) {
-    const constraintCats = new Set(['risk', 'allocation']);
-    const constraints = activeRules.filter(r => constraintCats.has(r.category));
-    const strategies = activeRules.filter(r => !constraintCats.has(r.category));
+    // Phase 3 — hard/soft is resolved once in projectActiveRules and carried on
+    // each item; read it via the single server source (ruleHardness.js). With no
+    // override this is the category-derived split — byte-identical to pre-Phase-3.
+    const constraints = activeRules.filter(isHardRule);
+    const strategies = activeRules.filter(r => !isHardRule(r));
     const rLines = [];
     if (constraints.length > 0) {
       rLines.push(`CONSTRAINTS:\n${constraints.map((r, i) => `C${i + 1}. ${resolveRuleText(r)}`).join('\n')}`);

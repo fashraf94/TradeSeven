@@ -3,6 +3,7 @@
 // Connects FantasyTimes stories to equipped Forge rules and game situation.
 
 import { getETDate, formatDateString } from './marketSchedule.js';
+import { isHardRule } from './ruleHardness.js';
 
 // ==================== REPORTER INTELLIGENCE ====================
 
@@ -117,13 +118,23 @@ export function computeGameContext(battle) {
  * Find equipped Forge rules whose category matches a reporter's affinity.
  * Returns matched rules with their labels, or null if no matches.
  */
-function matchStoryToRules(story, activeRules) {
+export function matchStoryToRules(story, activeRules) {
   const reporter = REPORTER_INTELLIGENCE[story.reporter];
   if (!reporter) return null;
 
   const relevantRules = [];
-  const constraints = activeRules.filter(r => r.category === 'risk' || r.category === 'allocation');
-  const strategies = activeRules.filter(r => r.category === 'technical' || r.category === 'fundamental' || !r.category);
+  // Phase 3 — partition by the RESOLVED hard/soft (carried on each item) so an
+  // authored override moves a rule's C#/S# label here in lockstep with the
+  // forge-rules block, instead of re-deriving from category. Restricted to the
+  // affinity universe reporters actually carry (risk/allocation/technical/
+  // fundamental + uncategorized) so the C#/S# indices — and the no-override
+  // output — stay byte-identical to pre-Phase-3.
+  const inAffinityUniverse = (r) =>
+    r.category === 'risk' || r.category === 'allocation' ||
+    r.category === 'technical' || r.category === 'fundamental' || !r.category;
+  const considered = activeRules.filter(inAffinityUniverse);
+  const constraints = considered.filter(isHardRule);
+  const strategies = considered.filter(r => !isHardRule(r));
 
   // Match constraints
   for (let i = 0; i < constraints.length; i++) {
