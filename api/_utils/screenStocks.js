@@ -62,6 +62,11 @@ export const BASELINE_FIELDS = Object.freeze([
 
 export const DEFAULT_LIMIT = 10;
 export const MAX_LIMIT = 25;
+// Defensive bounds on an untrusted (model-emitted) spec — the caller never
+// hand-validates it, so cap the work it can request. Extra filters are
+// truncated (with a report); an `in` list longer than this is rejected.
+export const MAX_FILTERS = 50;
+export const MAX_IN_VALUES = 100;
 
 // ── Pure helpers (exported for direct unit testing) ──────────────────────────────────
 
@@ -179,6 +184,7 @@ function predicateRejectionReason(pred) {
   if (!isAllowedField(pred.field)) return 'field_not_allowed';
   if (typeof pred.op !== 'string' || !SUPPORTED_OPS.has(pred.op)) return 'unsupported_op';
   if (pred.op === 'in' && !Array.isArray(pred.value)) return 'malformed_value';
+  if (pred.op === 'in' && pred.value.length > MAX_IN_VALUES) return 'value_too_large';
   if (pred.op === 'between' && (!Array.isArray(pred.value) || pred.value.length !== 2)) return 'malformed_value';
   return null;
 }
@@ -188,6 +194,8 @@ function rejectionDetail(reason, field, op) {
     case 'field_not_allowed': return `Field '${field}' is not in the screening allowlist`;
     case 'unsupported_op': return `Op '${op}' is not supported`;
     case 'malformed_value': return `Value for op '${op}' is malformed`;
+    case 'value_too_large': return `Value array for op '${op}' exceeds ${MAX_IN_VALUES} entries`;
+    case 'too_many_filters': return `Only the first ${MAX_FILTERS} filters were applied`;
     case 'malformed_predicate': return 'Predicate must be an object with a non-empty string field';
     case 'invalid_rank_field': return `rankBy.field '${field}' is not in the screening allowlist`;
     case 'unsupported_rank_direction': return "rankBy.direction must be 'asc' or 'desc'";
@@ -305,7 +313,18 @@ export function screenStocks(stocks, screenSpec) {
   const rejectedFilters = [];
 
   // 1. Validate filters (in order; first failing check rejects the predicate).
-  const rawFilters = Array.isArray(spec.filters) ? spec.filters : [];
+  const allFilters = Array.isArray(spec.filters) ? spec.filters : [];
+  const rawFilters = allFilters.slice(0, MAX_FILTERS);
+  if (allFilters.length > MAX_FILTERS) {
+    rejectedFilters.push({
+      scope: 'filters',
+      field: null,
+      op: null,
+      value: null,
+      reason: 'too_many_filters',
+      detail: rejectionDetail('too_many_filters'),
+    });
+  }
   const validFilters = [];
   for (const pred of rawFilters) {
     const reason = predicateRejectionReason(pred);

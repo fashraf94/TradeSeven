@@ -19,6 +19,8 @@ import {
   BASELINE_FIELDS,
   DEFAULT_LIMIT,
   MAX_LIMIT,
+  MAX_FILTERS,
+  MAX_IN_VALUES,
 } from './screenStocks.js';
 
 // ==================== FIXTURES ====================
@@ -345,6 +347,24 @@ describe('unsupported op and malformed value rejection', () => {
     const out = screenStocks(makeStocks(), { filters: ['nonsense', null, { op: 'gt', value: 1 }] });
     expect(out.rejectedFilters).toHaveLength(3);
     expect(out.rejectedFilters.every(r => r.reason === 'malformed_predicate')).toBe(true);
+  });
+});
+
+// ==================== 10b. DEFENSIVE INPUT BOUNDS ====================
+
+describe('defensive input bounds (untrusted spec)', () => {
+  it('caps filters at MAX_FILTERS and reports the overflow', () => {
+    const many = Array.from({ length: MAX_FILTERS + 5 }, () => ({ field: 'compositeScore', op: 'gte', value: 0 }));
+    const out = screenStocks(makeStocks(), { filters: many });
+    expect(out.appliedSpec.filters).toHaveLength(MAX_FILTERS);
+    expect(out.rejectedFilters.some((r) => r.reason === 'too_many_filters')).toBe(true);
+  });
+
+  it('rejects an in-list longer than MAX_IN_VALUES', () => {
+    const big = Array.from({ length: MAX_IN_VALUES + 1 }, (_, i) => `S${i}`);
+    const out = screenStocks(makeStocks(), { filters: [{ field: 'sectorId', op: 'in', value: big }] });
+    expect(out.rejectedFilters[0]).toMatchObject({ reason: 'value_too_large', op: 'in' });
+    expect(out.appliedSpec.filters).toHaveLength(0);
   });
 });
 
