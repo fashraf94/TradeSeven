@@ -43,6 +43,7 @@ import { STOCK_UNIVERSE, ALL_TICKERS, TICKER_TO_SECTOR, TECHNICAL_FACTOR_WEIGHTS
 import { computeGameModeFits, assignGameModeRanks } from '../_utils/gameModeScoring.js';
 import { computeMomentumRankings } from '../_utils/momentumScoring.js';
 import { computeArchetypeRankings } from '../_utils/archetypeScoring.js';
+import { computeReturns } from '../_utils/returnCalculations.js';
 
 const ARCHETYPES = ['momentum_chaser', 'contrarian', 'diversifier', 'degen', 'analyst', 'guardian'];
 
@@ -542,6 +543,7 @@ export default async function handler(req, res) {
     let stockScores = [];
     let stocksProcessed = 0;
     const momentumMap = new Map();
+    const returnsMap = new Map();
 
     const spyCloses = indexData.SPY ? indexData.SPY.map(d => d.close) : null;
 
@@ -770,6 +772,15 @@ export default async function handler(req, res) {
       const momentumResults = computeMomentumRankings(stockMomentumData, spyCloses, null);
       momentumResults.forEach(r => momentumMap.set(r.symbol, r));
       log(`  Computed momentum rank for ${momentumResults.length} stocks`);
+
+      // Conversational Performance — realized 1W/1M/3M/YTD/12M returns from the SAME
+      // newest-first adjusted closes momentum already uses (zero new EODHD calls).
+      // Strictly additive: computed into a separate map; momentumMap / momentumScoring
+      // and every existing field are untouched.
+      for (const d of rsData) {
+        returnsMap.set(d.sym, computeReturns(d.closes, d.ohlcv.map(o => o.date)));
+      }
+      log(`  Computed period returns for ${returnsMap.size} stocks`);
     }
 
     // Top/Bottom leaders for marketContext
@@ -927,6 +938,9 @@ export default async function handler(req, res) {
           momentumData,
         });
 
+        // Conversational Performance — realized period returns for this stock.
+        const ret = returnsMap.get(tech.symbol);
+
         const stockEntry = {
           symbol: tech.symbol,
           sectorId: sectorId || null,
@@ -962,6 +976,14 @@ export default async function handler(req, res) {
           // the same reason.
           momentum: tech.momentum ?? null,
           recentAction: tech.recentAction ?? null,
+          // Conversational Performance — realized period returns (signed percent; null
+          // on thin history). Computed fresh from adjusted closes; named fields only,
+          // so inert to decide.js and the calibration fence.
+          return1W: ret?.return1W ?? null,
+          return1M: ret?.return1M ?? null,
+          return3M: ret?.return3M ?? null,
+          returnYTD: ret?.returnYTD ?? null,
+          return12M: ret?.return12M ?? null,
         };
 
         rankingStocks.push(stockEntry);

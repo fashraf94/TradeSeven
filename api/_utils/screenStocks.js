@@ -25,7 +25,7 @@ import { STOCK_UNIVERSE } from './rankingConfig.js';
 // ── Allowlist (inline; mirrors the persisted stock shape) ────────────────────────────
 
 // Top-level scalar / categorical / boolean fields written per stock in
-// api/cron/compute-index-intelligence.js:930-965 (+ baggerBombRank mutated on at :971).
+// api/cron/compute-index-intelligence.js:944-988 (+ baggerBombRank mutated on at :993).
 export const SCALAR_FIELDS = Object.freeze(new Set([
   'symbol', 'sectorId', 'sectorName',
   'fundamentalScore', 'fundamentalRank',
@@ -33,6 +33,8 @@ export const SCALAR_FIELDS = Object.freeze(new Set([
   'compositeScore', 'baggerBombFit', 'baggerBombRank',
   'atrPercentile', 'dailyRange', 'nr7Flag', 'bBandwidthPercentile',
   'momentumScore', 'momentumRank', 'sma200_position', 'trend', 'recentAction',
+  // Conversational Performance — realized period returns (signed percent; null on thin history)
+  'return1W', 'return1M', 'return3M', 'returnYTD', 'return12M',
 ]));
 
 // The 6 archetype keys under `arch_scores` (compute-index-intelligence.js:47).

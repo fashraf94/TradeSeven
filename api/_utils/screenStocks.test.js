@@ -25,8 +25,8 @@ import {
 } from './screenStocks.js';
 
 // ==================== FIXTURES ====================
-// Five stocks shaped like the persisted entry (compute-index-intelligence.js:930-965 +
-// arch_scores at :993). Deliberately includes an "unranked" stock (momentumFactors:null,
+// Five stocks shaped like the persisted entry (compute-index-intelligence.js:944-988 +
+// arch_scores at :1015). Deliberately includes an "unranked" stock (momentumFactors:null,
 // arch_scores:{}) and an all-null stock to exercise the null/missing branches.
 function makeStocks() {
   return [
@@ -37,6 +37,7 @@ function makeStocks() {
       compositeScore: 92, baggerBombFit: 95, baggerBombRank: 1,
       atrPercentile: 0.88, dailyRange: 5.2, nr7Flag: false, bBandwidthPercentile: 0.7,
       momentumScore: 80, momentumRank: 1, sma200_position: 12.5, trend: 'up', recentAction: 'breakout',
+      return1W: 4.2, return1M: 12.4, return3M: 25.0, returnYTD: 40.0, return12M: 80.0,
       momentumFactors: {
         residualMomentum: 1.2, intermediateRS: 0.9, acceleration: 0.5, turnoverMom: 0.3,
         fip: 0.1, ker: 0.6, stability: 70, heat: 85, quality: 75,
@@ -51,6 +52,7 @@ function makeStocks() {
       compositeScore: 78, baggerBombFit: 60, baggerBombRank: 12,
       atrPercentile: 0.45, dailyRange: 2.1, nr7Flag: true, bBandwidthPercentile: 0.3,
       momentumScore: 55, momentumRank: 20, sma200_position: 4.0, trend: 'up', recentAction: 'consolidating',
+      return1W: 1.1, return1M: 3.2, return3M: 8.0, returnYTD: 15.0, return12M: 30.0,
       momentumFactors: {
         residualMomentum: 0.4, intermediateRS: 0.3, acceleration: 0.1, turnoverMom: 0.2,
         fip: 0.05, ker: 0.4, stability: 60, heat: 50, quality: 65,
@@ -66,6 +68,7 @@ function makeStocks() {
       compositeScore: 45, baggerBombFit: null, baggerBombRank: undefined,
       atrPercentile: 0.20, dailyRange: 1.0, nr7Flag: false, bBandwidthPercentile: 0.1,
       momentumScore: null, momentumRank: null, sma200_position: -3.0, trend: 'down', recentAction: 'breakdown',
+      return1W: -2.5, return1M: -8.0, return3M: 5.0, returnYTD: -3.0, return12M: 10.0,
       momentumFactors: null,
       arch_scores: {},
     },
@@ -77,6 +80,7 @@ function makeStocks() {
       compositeScore: null, baggerBombFit: null,
       atrPercentile: null, dailyRange: null, nr7Flag: false, bBandwidthPercentile: null,
       momentumScore: null, momentumRank: null, sma200_position: null, trend: null, recentAction: null,
+      return1W: null, return1M: null, return3M: null, returnYTD: null, return12M: null,
       momentumFactors: null,
       arch_scores: {},
     },
@@ -87,6 +91,7 @@ function makeStocks() {
       compositeScore: 68, baggerBombFit: 72, baggerBombRank: 6,
       atrPercentile: 0.60, dailyRange: 3.0, nr7Flag: true, bBandwidthPercentile: 0.5,
       momentumScore: 62, momentumRank: 9, sma200_position: 8.0, trend: 'up', recentAction: 'pullback',
+      return1W: 0.5, return1M: -1.5, return3M: -10.0, returnYTD: 6.0, return12M: -5.0,
       momentumFactors: {
         residualMomentum: 0.7, intermediateRS: 0.6, acceleration: 0.2, turnoverMom: 0.25,
         fip: 0.08, ker: 0.5, stability: 65, heat: 60, quality: 55,
@@ -387,6 +392,45 @@ describe('archetype rankBy via arch_scores.<key>', () => {
     expect(nvda.arch_scores).toEqual({ degen: 70 });
     const unranked = out.results.find(r => r.symbol === 'XYZ');
     expect(unranked.arch_scores).toEqual({ degen: null });
+  });
+});
+
+// ==================== 7b. RETURN-FIELD rankBy (Conversational Performance) ====================
+
+describe('return-field rankBy', () => {
+  it('ranks by return1W desc ("best this week"), nulls last', () => {
+    const out = screenStocks(makeStocks(), { rankBy: { field: 'return1W', direction: 'desc' } });
+    // 1W: NVDA 4.2, AAPL 1.1, XOM 0.5, XYZ -2.5, then NULLCO (null) last.
+    expect(symbolsOf(out)).toEqual(['NVDA', 'AAPL', 'XOM', 'XYZ', 'NULLCO']);
+  });
+
+  it('ranks by return1M asc ("worst this month") — negatives sort right, nulls last', () => {
+    const out = screenStocks(makeStocks(), { rankBy: { field: 'return1M', direction: 'asc' } });
+    // 1M asc: XYZ -8.0, XOM -1.5, AAPL 3.2, NVDA 12.4, then NULLCO (null) last.
+    expect(symbolsOf(out)).toEqual(['XYZ', 'XOM', 'AAPL', 'NVDA', 'NULLCO']);
+  });
+
+  it('ranks by return3M desc — a negative return sorts below every positive one', () => {
+    const out = screenStocks(makeStocks(), { rankBy: { field: 'return3M', direction: 'desc' } });
+    // 3M desc: NVDA 25, AAPL 8, XYZ 5, XOM -10, then NULLCO (null) last.
+    expect(symbolsOf(out)).toEqual(['NVDA', 'AAPL', 'XYZ', 'XOM', 'NULLCO']);
+  });
+
+  it('"best tech stocks this week" — sector filter + return1W desc, ranked field carried raw', () => {
+    const out = screenStocks(makeStocks(), {
+      filters: [{ field: 'sectorName', op: 'eq', value: 'Technology' }],
+      rankBy: { field: 'return1W', direction: 'desc' },
+    });
+    expect(symbolsOf(out)).toEqual(['NVDA', 'AAPL', 'XYZ']); // the three Tech names; XYZ (-2.5%) last
+    expect(out.results[0].return1W).toBe(4.2);               // signed percent passes through raw
+    expect(out.results.find(r => r.symbol === 'XYZ').return1W).toBe(-2.5);
+  });
+
+  it('a return field is a valid, non-fallback rankBy with nothing rejected', () => {
+    const out = screenStocks(makeStocks(), { rankBy: { field: 'return12M', direction: 'desc' } });
+    expect(out.appliedSpec.rankBy).toEqual({ field: 'return12M', direction: 'desc' });
+    expect(out.appliedSpec.rankByFallback).toBe(false);
+    expect(out.rejectedFilters).toHaveLength(0);
   });
 });
 
