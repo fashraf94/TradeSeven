@@ -45,6 +45,18 @@ const UNIT_INTERVAL_FIELDS = new Set(['atrPercentile', 'bBandwidthPercentile']);
 
 const DEFAULT_RANK_FIELD = 'compositeScore';
 
+// The five realized period-return fields (Conversational Performance). Stored as a
+// signed percent and already human-scaled, so they pass through the value resolver
+// RAW (no ×100). When a screen ranks by one of these, ScreenerView routes it to the
+// directional/diverging ReturnRow instead of RankRow's 0–100 score bar.
+export const RETURN_FIELDS = Object.freeze(new Set([
+  'return1W', 'return1M', 'return3M', 'returnYTD', 'return12M',
+]));
+
+export function isReturnField(field) {
+  return RETURN_FIELDS.has(field);
+}
+
 // Friendly labels for the plain-language spec line. Flat fields only; dot-path
 // fields are humanized in friendlyField below.
 const FIELD_LABELS = Object.freeze({
@@ -65,6 +77,11 @@ const FIELD_LABELS = Object.freeze({
   nr7Flag: 'NR7 (tight) setup',
   trend: 'trend',
   recentAction: 'recent action',
+  return1W: '1-week return',
+  return1M: '1-month return',
+  return3M: '3-month return',
+  returnYTD: 'year-to-date return',
+  return12M: '12-month return',
   sectorName: 'sector',
   sectorId: 'sector',
   symbol: 'ticker',
@@ -112,6 +129,31 @@ export function headlineValue(result, field) {
 }
 
 /**
+ * Signed-percent label for a realized return: "+12.4%" / "-3.1%". One decimal (the
+ * stored value is already a 2-dp percent, so this just trims for the dense list).
+ * null / non-finite → an em dash. These are REALIZED, PAST results — never framed
+ * as a forecast.
+ */
+export function formatSignedPercent(value) {
+  const n = Number(value);
+  if (value == null || !Number.isFinite(n)) return '—';
+  return `${n >= 0 ? '+' : ''}${n.toFixed(1)}%`;
+}
+
+/**
+ * Directional color for a return: emerald when up (>= 0), red when down — distinct
+ * from the teal accent — and a muted token when null/non-finite. Theme-aware via the
+ * passed tokens; falls back to the dark-theme hexes if tokens is absent.
+ */
+export function returnColor(value, tokens) {
+  const n = Number(value);
+  if (value == null || !Number.isFinite(n)) return (tokens && tokens.textFaint) || '#6b7280';
+  return n >= 0
+    ? ((tokens && tokens.emerald) || '#34d399')
+    : ((tokens && tokens.red) || '#ef4444');
+}
+
+/**
  * Build everything RankRow needs for a result set in one pass: per-row
  * { stock, type } props (display-only stock with the headline injected into the
  * type's score key) plus the shared maxScore for bar normalization.
@@ -136,6 +178,38 @@ export function buildRankRows(results, appliedSpec) {
   }));
 
   return { rows, maxScore, type, field };
+}
+
+/**
+ * ReturnRow counterpart to buildRankRows for a return-ranked screen. Resolves each
+ * result's signed return RAW — already a percent, so no ×100 and no rounding; null
+ * stays null so it renders as a dash, not a 0% bar — and computes the shared bar
+ * normalizer as the MAX ABSOLUTE return across the set. Max-abs (not the
+ * `Math.max(...values, 1)` buildRankRows uses) is what lets -3% and -30% render at
+ * different lengths AND keeps an all-negative set diverging correctly — plain max
+ * would collapse to the 1 floor and mis-scale every bar.
+ *
+ * @returns {{ rows: Array<{stock: object, value: number|null}>, maxAbs: number, field: string }}
+ */
+export function buildReturnRows(results, appliedSpec) {
+  const field =
+    (appliedSpec && appliedSpec.rankBy && appliedSpec.rankBy.field) || DEFAULT_RANK_FIELD;
+  const list = Array.isArray(results) ? results : [];
+
+  const rows = list.map((result) => {
+    const raw = resolveRankValue(result, field); // null on a missing / null field
+    const n = Number(raw);
+    // Guard null BEFORE Number() — Number(null) is 0 (finite), which would wrongly
+    // turn a thin-history null into a 0% bar instead of a dash.
+    return { stock: result, value: raw != null && Number.isFinite(n) ? n : null };
+  });
+
+  const maxAbs = rows.reduce(
+    (m, r) => (r.value == null ? m : Math.max(m, Math.abs(r.value))),
+    0,
+  );
+
+  return { rows, maxAbs, field };
 }
 
 // Humanize one filter/rank field for display, including dot-path namespaces.
