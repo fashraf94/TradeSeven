@@ -208,6 +208,10 @@ describe('formatSignedPercent', () => {
     expect(formatSignedPercent(undefined)).toBe('—');
     expect(formatSignedPercent(NaN)).toBe('—');
   });
+  it('never emits a contradictory "-0.0%" for a tiny loss that rounds to zero', () => {
+    expect(formatSignedPercent(-0.04)).toBe('+0.0%');
+    expect(formatSignedPercent(-0)).toBe('+0.0%');
+  });
 });
 
 describe('returnColor', () => {

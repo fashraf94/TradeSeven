@@ -33,11 +33,33 @@ function hexToRgba(hex, alpha) {
 const TRACK_BG = 'rgba(255,255,255,0.06)';
 const CENTER_TICK = 'rgba(255,255,255,0.18)';
 
+// One side of the diverging bar. `filled` draws the colored fill toward the outer edge
+// (the fill is right-aligned on the negative/left half, left-aligned on the positive/
+// right half, both growing outward from the center). A fillPct of 0 renders an invisible
+// strip — no separate "> 0" guard needed.
+function BarHalf({ filled, justify, radius, color, fillPct }) {
+  return (
+    <div style={{
+      flex: 1,
+      height: '100%',
+      display: 'flex',
+      justifyContent: justify,
+      background: TRACK_BG,
+      borderRadius: radius,
+      overflow: 'hidden',
+    }}>
+      {filled && (
+        <div style={{ width: `${fillPct}%`, height: '100%', background: color, transition: 'width 0.3s ease' }} />
+      )}
+    </div>
+  );
+}
+
 const ReturnRow = ({ stock, rank, value, maxAbs, onTap, tokens }) => {
   const sectorInfo = resolveSectorInfo(stock);
   const n = Number(value);
   const hasValue = value != null && Number.isFinite(n);
-  const isPositive = hasValue && n >= 0;
+  const isPositive = n >= 0; // only consulted under hasValue gates below
   const color = returnColor(value, tokens);
 
   // Each half spans the full max-abs range; the fill is |value| / maxAbs of its half.
@@ -104,38 +126,10 @@ const ReturnRow = ({ stock, rank, value, maxAbs, onTap, tokens }) => {
 
       {/* Diverging bar — center zero; fill left (red, down) or right (green, up) */}
       <div style={{ flex: 1, minWidth: '40px', display: 'flex', alignItems: 'center', height: '5px' }}>
-        {/* negative (left) half — fill grows leftward from the center */}
-        <div style={{
-          flex: 1,
-          height: '100%',
-          display: 'flex',
-          justifyContent: 'flex-end',
-          background: TRACK_BG,
-          borderRadius: '3px 0 0 3px',
-          overflow: 'hidden',
-        }}>
-          {hasValue && !isPositive && fillPct > 0 && (
-            <div style={{ width: `${fillPct}%`, height: '100%', background: color, transition: 'width 0.3s ease' }} />
-          )}
-        </div>
-
+        <BarHalf filled={hasValue && !isPositive} justify="flex-end" radius="3px 0 0 3px" color={color} fillPct={fillPct} />
         {/* center zero tick */}
         <div style={{ width: '1px', height: '100%', background: CENTER_TICK, flexShrink: 0 }} />
-
-        {/* positive (right) half — fill grows rightward from the center */}
-        <div style={{
-          flex: 1,
-          height: '100%',
-          display: 'flex',
-          justifyContent: 'flex-start',
-          background: TRACK_BG,
-          borderRadius: '0 3px 3px 0',
-          overflow: 'hidden',
-        }}>
-          {hasValue && isPositive && fillPct > 0 && (
-            <div style={{ width: `${fillPct}%`, height: '100%', background: color, transition: 'width 0.3s ease' }} />
-          )}
-        </div>
+        <BarHalf filled={hasValue && isPositive} justify="flex-start" radius="0 3px 3px 0" color={color} fillPct={fillPct} />
       </div>
 
       {/* Signed-percent label — colored by direction, magnitude-tinted background */}

@@ -128,6 +128,15 @@ export function headlineValue(result, field) {
   return UNIT_INTERVAL_FIELDS.has(field) ? n * 100 : n;
 }
 
+// Coerce to a finite number, or null. Guards the Number(null) === 0 trap (null/undefined
+// must stay null, not become a finite 0) and rejects NaN/Infinity. The shared "is this a
+// real, renderable number?" rule behind the return formatter, color, and row builder.
+function toFiniteOrNull(value) {
+  if (value == null) return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
 /**
  * Signed-percent label for a realized return: "+12.4%" / "-3.1%". One decimal (the
  * stored value is already a 2-dp percent, so this just trims for the dense list).
@@ -135,9 +144,13 @@ export function headlineValue(result, field) {
  * as a forecast.
  */
 export function formatSignedPercent(value) {
-  const n = Number(value);
-  if (value == null || !Number.isFinite(n)) return '—';
-  return `${n >= 0 ? '+' : ''}${n.toFixed(1)}%`;
+  const n = toFiniteOrNull(value);
+  if (n == null) return '—';
+  // Round to the display precision FIRST, then derive the sign — so a tiny loss that
+  // rounds to zero (e.g. -0.04 → "-0.0") never renders the contradictory "-0.0%".
+  const rounded = Number(n.toFixed(1));
+  const shown = rounded === 0 ? 0 : rounded; // normalizes -0 → 0
+  return `${shown >= 0 ? '+' : ''}${shown.toFixed(1)}%`;
 }
 
 /**
@@ -146,8 +159,8 @@ export function formatSignedPercent(value) {
  * passed tokens; falls back to the dark-theme hexes if tokens is absent.
  */
 export function returnColor(value, tokens) {
-  const n = Number(value);
-  if (value == null || !Number.isFinite(n)) return (tokens && tokens.textFaint) || '#6b7280';
+  const n = toFiniteOrNull(value);
+  if (n == null) return (tokens && tokens.textFaint) || '#6b7280';
   return n >= 0
     ? ((tokens && tokens.emerald) || '#34d399')
     : ((tokens && tokens.red) || '#ef4444');
@@ -196,13 +209,12 @@ export function buildReturnRows(results, appliedSpec) {
     (appliedSpec && appliedSpec.rankBy && appliedSpec.rankBy.field) || DEFAULT_RANK_FIELD;
   const list = Array.isArray(results) ? results : [];
 
-  const rows = list.map((result) => {
-    const raw = resolveRankValue(result, field); // null on a missing / null field
-    const n = Number(raw);
-    // Guard null BEFORE Number() — Number(null) is 0 (finite), which would wrongly
-    // turn a thin-history null into a 0% bar instead of a dash.
-    return { stock: result, value: raw != null && Number.isFinite(n) ? n : null };
-  });
+  // toFiniteOrNull keeps a thin-history null as null (it must render as a dash, not a
+  // 0% bar) — Number(null) === 0 would otherwise smuggle a fake zero through.
+  const rows = list.map((result) => ({
+    stock: result,
+    value: toFiniteOrNull(resolveRankValue(result, field)),
+  }));
 
   const maxAbs = rows.reduce(
     (m, r) => (r.value == null ? m : Math.max(m, Math.abs(r.value))),
