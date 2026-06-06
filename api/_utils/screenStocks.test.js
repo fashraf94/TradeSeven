@@ -12,6 +12,7 @@ import {
   isAllowedField,
   resolveField,
   evaluateOp,
+  canonicalizeSector,
   ARCH_KEYS,
   MOMENTUM_KEYS,
   SCALAR_FIELDS,
@@ -212,6 +213,121 @@ describe('evaluateOp', () => {
     expect(evaluateOp('isFalse', undefined)).toBe(false);
     expect(evaluateOp('neq', null, 5)).toBe(false);
     expect(evaluateOp('gt', 'Technology', 3)).toBe(false); // Number('Technology') is NaN
+  });
+});
+
+// ==================== 4b. SECTOR CANONICALIZATION ====================
+// The NL→spec layer can emit a sector variant ("Health Care") that differs from the
+// stored form ("Healthcare"), which a strict compare missed → 0 results. Sector filters
+// now canonicalize BOTH sides; non-sector string fields stay exact. See screenStocks.js.
+
+describe('sector canonicalization', () => {
+  // A small universe spanning the multi-word sectors the bug recurs on plus the
+  // single-word sectors that must keep matching unchanged.
+  const sectorUniverse = () => [
+    { symbol: 'HUM', sectorId: 'XLV', sectorName: 'Healthcare', compositeScore: 70 },
+    { symbol: 'JNJ', sectorId: 'XLV', sectorName: 'Healthcare', compositeScore: 60 },
+    { symbol: 'META', sectorId: 'XLC', sectorName: 'Communication Services', compositeScore: 65 },
+    { symbol: 'NVDA', sectorId: 'XLK', sectorName: 'Technology', compositeScore: 90 },
+    { symbol: 'JPM', sectorId: 'XLF', sectorName: 'Financials', compositeScore: 80 },
+    { symbol: 'XOM', sectorId: 'XLE', sectorName: 'Energy', compositeScore: 50 },
+  ];
+
+  it('canonicalizeSector: stored names pass through; aliases + spacing/case resolve to the stored form', () => {
+    expect(canonicalizeSector('Healthcare')).toBe('Healthcare');
+    expect(canonicalizeSector('Technology')).toBe('Technology');
+    expect(canonicalizeSector('Consumer Discretionary')).toBe('Consumer Discretionary');
+    // spacing / case variants of a stored name resolve to it
+    expect(canonicalizeSector('Health Care')).toBe('Healthcare');
+    expect(canonicalizeSector('HEALTHCARE')).toBe('Healthcare');
+    expect(canonicalizeSector('communication services')).toBe('Communication Services');
+    expect(canonicalizeSector('CommunicationServices')).toBe('Communication Services');
+    // the fixed alias set (GICS-official / provider synonyms — exact equivalences only)
+    expect(canonicalizeSector('Information Technology')).toBe('Technology');
+    expect(canonicalizeSector('Consumer Cyclical')).toBe('Consumer Discretionary');
+    expect(canonicalizeSector('Consumer Defensive')).toBe('Consumer Staples');
+    expect(canonicalizeSector('Financial Services')).toBe('Financials');
+    expect(canonicalizeSector('Basic Materials')).toBe('Materials');
+  });
+
+  it('canonicalizeSector: unknown values fall back to a normalized form; non-strings pass through', () => {
+    expect(canonicalizeSector('Quantum Computing')).toBe('quantumcomputing');
+    expect(canonicalizeSector('quantum computing')).toBe(canonicalizeSector('QuantumComputing'));
+    expect(canonicalizeSector(null)).toBe(null);
+    expect(canonicalizeSector(undefined)).toBe(undefined);
+    expect(canonicalizeSector(123)).toBe(123);
+  });
+
+  it('the reported bug: spec "Health Care" matches the stored "Healthcare" names', () => {
+    const out = screenStocks(sectorUniverse(), {
+      filters: [{ field: 'sectorName', op: 'eq', value: 'Health Care' }],
+      rankBy: { field: 'compositeScore', direction: 'desc' },
+    });
+    expect(symbolsOf(out)).toEqual(['HUM', 'JNJ']);
+    expect(out.matchCount).toBe(2);
+    expect(out.rejectedFilters).toEqual([]);
+  });
+
+  it('every case/space variant of a sectorName eq still matches', () => {
+    for (const value of ['healthcare', 'HEALTHCARE', 'Health Care', ' Healthcare ']) {
+      const out = screenStocks(sectorUniverse(), { filters: [{ field: 'sectorName', op: 'eq', value }] });
+      expect(out.matchCount).toBe(2);
+    }
+  });
+
+  it('a second multi-word sector ("Communication Services") tolerates spacing/case drift', () => {
+    const out = screenStocks(sectorUniverse(), {
+      filters: [{ field: 'sectorName', op: 'eq', value: 'communicationservices' }],
+    });
+    expect(symbolsOf(out)).toEqual(['META']);
+    expect(out.matchCount).toBe(1);
+  });
+
+  it('alias map: spec "Information Technology" matches stored "Technology"', () => {
+    const out = screenStocks(sectorUniverse(), {
+      filters: [{ field: 'sectorName', op: 'eq', value: 'Information Technology' }],
+    });
+    expect(symbolsOf(out)).toEqual(['NVDA']);
+  });
+
+  it('neq with a variant excludes the canonical sector', () => {
+    const out = screenStocks(sectorUniverse(), {
+      filters: [{ field: 'sectorName', op: 'neq', value: 'Health Care' }],
+      rankBy: { field: 'compositeScore', direction: 'desc' },
+    });
+    expect(symbolsOf(out)).toEqual(['NVDA', 'JPM', 'META', 'XOM']); // no HUM / JNJ
+    expect(out.matchCount).toBe(4);
+  });
+
+  it('in with mixed variants matches each canonical sector', () => {
+    const out = screenStocks(sectorUniverse(), {
+      filters: [{ field: 'sectorName', op: 'in', value: ['Health Care', 'ENERGY'] }],
+      rankBy: { field: 'compositeScore', direction: 'desc' },
+    });
+    expect(symbolsOf(out)).toEqual(['HUM', 'JNJ', 'XOM']);
+    expect(out.matchCount).toBe(3);
+  });
+
+  it('regression: exact stored Technology / Financials still match', () => {
+    const tech = screenStocks(sectorUniverse(), { filters: [{ field: 'sectorName', op: 'eq', value: 'Technology' }] });
+    expect(symbolsOf(tech)).toEqual(['NVDA']);
+    const fin = screenStocks(sectorUniverse(), { filters: [{ field: 'sectorName', op: 'eq', value: 'Financials' }] });
+    expect(symbolsOf(fin)).toEqual(['JPM']);
+  });
+
+  it('sectorId compares case-insensitively', () => {
+    const out = screenStocks(sectorUniverse(), { filters: [{ field: 'sectorId', op: 'eq', value: 'xlv' }] });
+    expect(symbolsOf(out).sort()).toEqual(['HUM', 'JNJ']);
+  });
+
+  it('tolerance is scoped to sector fields — other string fields stay an exact compare', () => {
+    const u = [
+      { symbol: 'A', sectorName: 'Technology', trend: 'up', compositeScore: 10 },
+      { symbol: 'B', sectorName: 'Technology', trend: 'up', compositeScore: 20 },
+    ];
+    // 'UP' !== stored 'up' for a non-sector field → no match (proves eq wasn't globally loosened)
+    expect(screenStocks(u, { filters: [{ field: 'trend', op: 'eq', value: 'UP' }] }).matchCount).toBe(0);
+    expect(screenStocks(u, { filters: [{ field: 'trend', op: 'eq', value: 'up' }] }).matchCount).toBe(2);
   });
 });
 
