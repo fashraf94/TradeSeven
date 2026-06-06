@@ -2,10 +2,11 @@
 //
 // Research Engine — Phase 1: deterministic filter core.
 //
-// Pure, dependency-free screening over the daily `indexIntelligence/stockRankings`
-// universe. The caller reads the `stocks[]` array from Firestore and passes it in; this
-// module never touches the network, a model, or Firestore, so it is fully deterministic
-// and unit-testable.
+// Deterministic screening over the daily `indexIntelligence/stockRankings` universe.
+// The caller reads the `stocks[]` array from Firestore and passes it in; this module
+// never touches the network, a model, or Firestore, so it is fully deterministic and
+// unit-testable. Its one import is the static sector vocabulary (STOCK_UNIVERSE from
+// rankingConfig.js, in api/_utils) — pure data, used to canonicalize sector filters.
 //
 // `screenStocks(stocks, screenSpec)` validates the spec against an inline allowlist
 // (api/ cannot import from src/, and the calibration-fence scoring modules are off
@@ -18,6 +19,8 @@
 // Honesty discipline: any predicate naming an absent field, an unsupported op, or a
 // malformed value is DROPPED and reported in `rejectedFilters[]` — never silently
 // applied, never silently ignored.
+
+import { STOCK_UNIVERSE } from './rankingConfig.js';
 
 // ── Allowlist (inline; mirrors the persisted stock shape) ────────────────────────────
 
@@ -158,6 +161,64 @@ function looseEquals(a, b) {
     return na === nb;
   }
   return false;
+}
+
+// ── Sector value canonicalization (scoped to sectorName / sectorId) ───────────────────
+//
+// The model emits a sector string from the research prompt; the stored value comes from
+// STOCK_UNIVERSE[sectorId].name — the same source compute-index-intelligence.js writes.
+// A free-form variant ("Health Care", "HEALTHCARE", "Information Technology") is not ===
+// the stored form ("Healthcare", "Technology"), so a strict compare matched nothing. We
+// canonicalize BOTH sides of a sector comparison so casing/spacing drift and a fixed set
+// of GICS-official / data-provider synonyms resolve to the stored name. Applied ONLY to
+// sector fields — every other string field stays an exact compare.
+
+const SECTOR_FIELDS = Object.freeze(new Set(['sectorName', 'sectorId']));
+
+// Lowercase + strip all whitespace → a normalized lookup key.
+function normalizeSectorKey(value) {
+  return String(value).toLowerCase().replace(/\s+/g, '');
+}
+
+// normalized key → canonical stored sectorName. Seeded from STOCK_UNIVERSE (the stored
+// vocabulary), then a fixed alias set for synonyms that are NOT mere spacing differences.
+// Exact equivalences only — no fuzzy/partial matching.
+const CANONICAL_SECTOR_BY_KEY = (() => {
+  const byKey = new Map();
+  for (const sector of Object.values(STOCK_UNIVERSE)) {
+    if (sector && typeof sector.name === 'string') {
+      byKey.set(normalizeSectorKey(sector.name), sector.name);
+    }
+  }
+  const ALIASES = {
+    'Health Care': 'Healthcare',
+    'Information Technology': 'Technology',
+    'Consumer Cyclical': 'Consumer Discretionary',
+    'Consumer Defensive': 'Consumer Staples',
+    'Financial Services': 'Financials',
+    'Basic Materials': 'Materials',
+  };
+  for (const [alias, canonical] of Object.entries(ALIASES)) {
+    byKey.set(normalizeSectorKey(alias), canonical);
+  }
+  return byKey;
+})();
+
+/**
+ * Canonicalize one sector value for comparison. A known stored name or alias resolves to
+ * the canonical stored name; any other string falls back to its normalized (case/space-
+ * insensitive) form so unknown values still compare tolerantly. Non-strings pass through
+ * untouched (so numeric coercion / null handling in evaluateOp stays unaffected).
+ */
+export function canonicalizeSector(value) {
+  if (typeof value !== 'string') return value;
+  const key = normalizeSectorKey(value);
+  return CANONICAL_SECTOR_BY_KEY.get(key) ?? key;
+}
+
+// Canonicalize a spec value, which may be a scalar (eq / neq) or an array (in / between).
+function canonicalizeSectorSpec(value) {
+  return Array.isArray(value) ? value.map(canonicalizeSector) : canonicalizeSector(value);
 }
 
 // ── Internal validation / sort / projection ──────────────────────────────────────────
@@ -388,7 +449,15 @@ export function screenStocks(stocks, screenSpec) {
 
   // 3. Filter (AND). Zero valid filters ⇒ every stock passes (rank-only).
   const matched = universe.filter(stock =>
-    validFilters.every(f => evaluateOp(f.op, resolveField(stock, f.field), f.value)),
+    validFilters.every((f) => {
+      const fieldValue = resolveField(stock, f.field);
+      // Sector fields compare on canonicalized values (both sides) so a model-emitted
+      // variant resolves to the stored form; every other field stays an exact compare.
+      if (SECTOR_FIELDS.has(f.field)) {
+        return evaluateOp(f.op, canonicalizeSector(fieldValue), canonicalizeSectorSpec(f.value));
+      }
+      return evaluateOp(f.op, fieldValue, f.value);
+    }),
   );
   const matchCount = matched.length;
 

@@ -2144,8 +2144,8 @@ const RESEARCH_FIELD_REFERENCE = `SCREENABLE FIELDS — the ONLY fields you may 
 
 Identity & sector:
 - symbol (string) — ticker
-- sectorId (string) — GICS sector code: XLK Technology, XLF Financials, XLE Energy, XLV Health Care, XLY Consumer Discretionary, XLP Consumer Staples, XLI Industrials, XLB Materials, XLU Utilities, XLRE Real Estate, XLC Communication Services
-- sectorName (string) — the full GICS name, e.g. "Technology", "Financials", "Energy", "Health Care", "Industrials", "Materials", "Utilities", "Real Estate", "Communication Services", "Consumer Discretionary", "Consumer Staples"
+- sectorId (string) — GICS sector ETF code, one of: XLK, XLV, XLF, XLE, XLY, XLP, XLI, XLB, XLU, XLRE, XLC
+- sectorName (string) — the sector's stored name. When you filter by sector, emit one of these EXACT strings VERBATIM (exact spelling, spacing, and case). These are the ONLY valid values — do NOT use GICS-official variants such as "Health Care" (use "Healthcare") or "Information Technology" (use "Technology"): XLK → "Technology", XLV → "Healthcare", XLF → "Financials", XLE → "Energy", XLY → "Consumer Discretionary", XLP → "Consumer Staples", XLI → "Industrials", XLB → "Materials", XLU → "Utilities", XLRE → "Real Estate", XLC → "Communication Services"
 
 Scores (higher = better) and ranks (1 = best):
 - compositeScore — overall blended score
