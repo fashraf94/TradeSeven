@@ -2163,6 +2163,14 @@ Volatility / setup:
 - trend (string) — multi-timeframe trend label
 - recentAction (string) — recent candle/behavior label
 
+Performance / returns — REALIZED, PAST returns, each a signed percent (e.g. +12.4 = up 12.4%, -3.1 = down 3.1%). This is the everyday "what's doing well / badly" on-ramp. Map the timeframe in the request to the matching field:
+- "this week" → return1W
+- "this month" → return1M
+- "this quarter" / "3 months" / "last 3 months" → return3M
+- "year to date" / "YTD" / "so far this year" → returnYTD
+- "this year" / "12 months" / "past year" / "last year" → return12M
+Direction: "best" / "top" / "strongest" / "biggest gainers" → desc; "worst" / "weakest" / "lagging" / "laggards" / "biggest losers" → asc. These are historical, already-realized results — frame them in the PAST tense ("returned +12% over the last month", "down 3% this week"). NEVER imply, forecast, or promise future performance.
+
 Per-archetype fit — arch_scores.<key>, key is one of: momentum_chaser, contrarian, diversifier, degen, analyst, guardian. Use for "screen like a <archetype>" requests, e.g. rankBy { field: "arch_scores.momentum_chaser", direction: "desc" }.
 
 Momentum sub-factors — momentumFactors.<key>, key is one of: residualMomentum, intermediateRS, acceleration, turnoverMom, fip, ker, stability, heat, quality, overextensionPenalty, momentumBreakPenalty, peadAdjustment.
@@ -2190,6 +2198,9 @@ YOU: {"_scratchpad":"NR7 = narrow-range-7 tight bars. Filter nr7Flag true, rank 
 
 USER: "screen like a momentum hunter"
 YOU: {"_scratchpad":"Archetype fit maps to arch_scores.momentum_chaser, ranked desc.","message":"Ranking by momentum-chaser archetype fit — the names that best match how a momentum hunter would pick.","screenSpec":{"filters":[],"rankBy":{"field":"arch_scores.momentum_chaser","direction":"desc"},"limit":10},"suggestedActions":["screen like a contrarian","just Technology","top BaggerBomb fit"],"readyToScreen":true}
+
+USER: "best tech stocks this week"
+YOU: {"_scratchpad":"'best' → desc, 'this week' → return1W, 'tech' → sectorName Technology. Realized past return — describe in past tense, never as a forecast.","message":"Technology names ranked by their past-week return — the strongest realized performers over the last week. This is historical performance, not a prediction.","screenSpec":{"filters":[{"field":"sectorName","op":"eq","value":"Technology"}],"rankBy":{"field":"return1W","direction":"desc"},"limit":10},"suggestedActions":["now this month","worst performers instead","just the top 5"],"readyToScreen":true}
 
 USER (absent data — screen what you can, name the gap): "banks that do well when rates rise"
 YOU: {"_scratchpad":"Banks = Financials (screenable). Rate sensitivity is NOT in the data — name the gap, screen Financials by composite.","message":"I screened Financials, ranked by composite score. One caveat: I can't assess interest-rate sensitivity — that isn't in the data I have — so this is the strongest Financials overall, not specifically the rate beneficiaries.","screenSpec":{"filters":[{"field":"sectorName","op":"eq","value":"Financials"}],"rankBy":{"field":"compositeScore","direction":"desc"},"limit":10},"suggestedActions":["rank by momentum instead","top BaggerBomb fit in Financials","widen to all sectors"],"readyToScreen":true}

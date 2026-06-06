@@ -22,8 +22,11 @@ import { fetchWithAuth } from '../../utils/fetchWithAuth';
 import { STOCKS } from '../../data/assets';
 import { getArchetypeDisplayName } from '../../data/archetypeDisplay';
 import RankRow from './RankRow';
+import ReturnRow from './ReturnRow';
 import {
   buildRankRows,
+  buildReturnRows,
+  isReturnField,
   specToPlainLanguage,
   rejectedFiltersToLines,
 } from './screenerAdapter';
@@ -504,9 +507,14 @@ const ScreenerView = ({ onOpenResearch, isMobile }) => {
   );
 };
 
-// Ranked results rendered through the untouched RankRow via the adapter.
+// Ranked results via the adapter. A return-ranked screen (rankBy ∈ the five return
+// fields) renders through ReturnRow's signed, diverging directional bar; every other
+// screen stays on the untouched RankRow.
 function ResultsList({ results, appliedSpec, onTap, tokens }) {
-  const { rows, maxScore } = buildRankRows(results, appliedSpec);
+  const isReturn = isReturnField(appliedSpec?.rankBy?.field);
+  const rankData = isReturn ? null : buildRankRows(results, appliedSpec);
+  const returnData = isReturn ? buildReturnRows(results, appliedSpec) : null;
+
   return (
     <div
       style={{
@@ -534,19 +542,33 @@ function ResultsList({ results, appliedSpec, onTap, tokens }) {
         <span style={{ width: '48px' }}>Ticker</span>
         <span>Sector</span>
         <span style={{ flex: 1 }} />
-        <span style={{ width: '28px', textAlign: 'right' }}>Score</span>
+        <span style={{ width: isReturn ? '54px' : '28px', textAlign: 'right' }}>
+          {isReturn ? 'Return' : 'Score'}
+        </span>
       </div>
 
-      {rows.map((row, i) => (
-        <RankRow
-          key={row.stock.symbol}
-          stock={row.stock}
-          rank={i + 1}
-          type={row.type}
-          maxScore={maxScore}
-          onTap={onTap}
-        />
-      ))}
+      {isReturn
+        ? returnData.rows.map((row, i) => (
+          <ReturnRow
+            key={row.stock.symbol}
+            stock={row.stock}
+            rank={i + 1}
+            value={row.value}
+            maxAbs={returnData.maxAbs}
+            onTap={onTap}
+            tokens={tokens}
+          />
+        ))
+        : rankData.rows.map((row, i) => (
+          <RankRow
+            key={row.stock.symbol}
+            stock={row.stock}
+            rank={i + 1}
+            type={row.type}
+            maxScore={rankData.maxScore}
+            onTap={onTap}
+          />
+        ))}
     </div>
   );
 }

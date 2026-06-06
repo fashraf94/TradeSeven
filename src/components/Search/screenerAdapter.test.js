@@ -11,6 +11,11 @@ import {
   rankFieldToType,
   headlineValue,
   buildRankRows,
+  buildReturnRows,
+  isReturnField,
+  formatSignedPercent,
+  returnColor,
+  RETURN_FIELDS,
   specToPlainLanguage,
   rejectedFiltersToLines,
   TYPE_TO_SCORE_KEY,
@@ -166,5 +171,108 @@ describe('rejectedFiltersToLines', () => {
   });
   it('returns [] for a non-array', () => {
     expect(rejectedFiltersToLines(undefined)).toEqual([]);
+  });
+});
+
+// ==================== CONVERSATIONAL PERFORMANCE (returns) ====================
+
+describe('isReturnField / RETURN_FIELDS', () => {
+  it('recognizes exactly the five return fields', () => {
+    expect([...RETURN_FIELDS].sort()).toEqual(
+      ['return12M', 'return1M', 'return1W', 'return3M', 'returnYTD'].sort(),
+    );
+    for (const f of ['return1W', 'return1M', 'return3M', 'returnYTD', 'return12M']) {
+      expect(isReturnField(f)).toBe(true);
+    }
+  });
+  it('is false for score fields and dot-paths', () => {
+    expect(isReturnField('compositeScore')).toBe(false);
+    expect(isReturnField('momentumScore')).toBe(false);
+    expect(isReturnField('arch_scores.degen')).toBe(false);
+    expect(isReturnField(undefined)).toBe(false);
+  });
+});
+
+describe('formatSignedPercent', () => {
+  it('prefixes a + on non-negatives and keeps the native sign on negatives, one decimal', () => {
+    expect(formatSignedPercent(12.4)).toBe('+12.4%');
+    expect(formatSignedPercent(-3.1)).toBe('-3.1%');
+    expect(formatSignedPercent(0)).toBe('+0.0%');
+  });
+  it('trims a stored 2-dp value to one decimal', () => {
+    expect(formatSignedPercent(12.44)).toBe('+12.4%');
+    expect(formatSignedPercent(-3.15)).toBe('-3.1%'); // toFixed(1) rounds -3.15 → -3.1
+  });
+  it('renders a dash for null / non-finite', () => {
+    expect(formatSignedPercent(null)).toBe('—');
+    expect(formatSignedPercent(undefined)).toBe('—');
+    expect(formatSignedPercent(NaN)).toBe('—');
+  });
+  it('never emits a contradictory "-0.0%" for a tiny loss that rounds to zero', () => {
+    expect(formatSignedPercent(-0.04)).toBe('+0.0%');
+    expect(formatSignedPercent(-0)).toBe('+0.0%');
+  });
+});
+
+describe('returnColor', () => {
+  const tokens = { emerald: '#34d399', red: '#ef4444', textFaint: '#6b7280' };
+  it('maps up → emerald, down → red, null → muted (theme-aware via tokens)', () => {
+    expect(returnColor(5, tokens)).toBe('#34d399');
+    expect(returnColor(0, tokens)).toBe('#34d399'); // 0 counts as up (>= 0)
+    expect(returnColor(-2, tokens)).toBe('#ef4444');
+    expect(returnColor(null, tokens)).toBe('#6b7280');
+  });
+  it('falls back to dark-theme hexes when tokens is absent', () => {
+    expect(returnColor(5)).toBe('#34d399');
+    expect(returnColor(-5)).toBe('#ef4444');
+  });
+});
+
+describe('buildReturnRows', () => {
+  it('resolves signed returns raw (no scaling), preserves null, and max-abs normalizes', () => {
+    const results = [
+      makeResult({ symbol: 'NVDA', return1W: 4.2 }),
+      makeResult({ symbol: 'XYZ', return1W: -2.5 }),
+      makeResult({ symbol: 'NUL', return1W: null }),
+    ];
+    const spec = { rankBy: { field: 'return1W', direction: 'desc' }, limit: 10 };
+    const { rows, maxAbs, field } = buildReturnRows(results, spec);
+
+    expect(field).toBe('return1W');
+    expect(rows.map((r) => r.value)).toEqual([4.2, -2.5, null]); // raw, null preserved
+    expect(maxAbs).toBe(4.2);
+    // the stock is carried through untouched (no headline injection)
+    expect(rows[0].stock.symbol).toBe('NVDA');
+  });
+
+  it('max-abs comes from the largest magnitude even when it is negative (all-down set)', () => {
+    const results = [
+      makeResult({ symbol: 'A', return1M: -3 }),
+      makeResult({ symbol: 'B', return1M: -30 }),
+    ];
+    const { maxAbs } = buildReturnRows(results, { rankBy: { field: 'return1M', direction: 'asc' } });
+    expect(maxAbs).toBe(30); // not Math.max(-3, -30, 1) === 1
+  });
+
+  it('empty / all-null sets yield maxAbs 0 (caller guards the divide)', () => {
+    expect(buildReturnRows([], { rankBy: { field: 'return3M' } }).maxAbs).toBe(0);
+    const allNull = buildReturnRows(
+      [makeResult({ symbol: 'A', return3M: null })],
+      { rankBy: { field: 'return3M' } },
+    );
+    expect(allNull.maxAbs).toBe(0);
+    expect(allNull.rows[0].value).toBeNull();
+  });
+});
+
+describe('specToPlainLanguage — return label', () => {
+  it('names a return rankBy in plain language', () => {
+    expect(
+      specToPlainLanguage({
+        filters: [{ field: 'sectorName', op: 'eq', value: 'Technology' }],
+        rankBy: { field: 'return1W', direction: 'desc' },
+        limit: 10,
+      }),
+    ).toBe('Technology · ranked by 1-week return · top 10');
   });
 });
