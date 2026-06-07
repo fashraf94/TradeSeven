@@ -18,7 +18,7 @@ const INSTINCT_TRAITS = [
   {
     id: 'trait-trend-rider',
     name: 'Trend Rider',
-    identityStatement: 'Trusts the trend and buys the pullback',
+    identityStatement: 'Hunts established uptrends and leans toward buying the pullback',
     dnaGroup: 'instincts',
     icon: 'TrendingUp',
     source: 'library',
@@ -46,7 +46,7 @@ const INSTINCT_TRAITS = [
   {
     id: 'trait-bargain-hunter',
     name: 'Bargain Hunter',
-    identityStatement: 'Targets stocks that have been beaten down too far',
+    identityStatement: 'Hunts names beaten down far enough to look oversold',
     dnaGroup: 'instincts',
     icon: 'Search',
     source: 'library',
@@ -74,7 +74,7 @@ const INSTINCT_TRAITS = [
   {
     id: 'trait-squeeze-whisperer',
     name: 'Squeeze Whisperer',
-    identityStatement: 'Detects compressed volatility before the explosive move',
+    identityStatement: 'Hunts coiled, compressed volatility ahead of a possible move',
     dnaGroup: 'instincts',
     icon: 'Zap',
     source: 'library',
@@ -102,7 +102,7 @@ const INSTINCT_TRAITS = [
   {
     id: 'trait-volume-believer',
     name: 'Volume Believer',
-    identityStatement: 'Only trusts moves that institutional money confirms',
+    identityStatement: 'Leans toward moves backed by heavier-than-usual volume',
     dnaGroup: 'instincts',
     icon: 'BarChart3',
     source: 'library',
@@ -130,7 +130,7 @@ const INSTINCT_TRAITS = [
   {
     id: 'trait-breakout-chaser',
     name: 'Breakout Chaser',
-    identityStatement: 'Wants stocks making new highs with momentum behind them',
+    identityStatement: 'Hunts names pushing new highs with momentum behind them',
     dnaGroup: 'instincts',
     icon: 'ArrowUpRight',
     source: 'library',
@@ -158,7 +158,7 @@ const INSTINCT_TRAITS = [
   {
     id: 'trait-smart-money-tracker',
     name: 'Smart Money Tracker',
-    identityStatement: 'Follows where institutional capital is flowing',
+    identityStatement: 'Leans toward names trading where institutional flow points',
     dnaGroup: 'instincts',
     icon: 'Compass',
     source: 'library',
@@ -189,7 +189,7 @@ const STRATEGY_TRAITS = [
   {
     id: 'trait-threshold-harvester',
     name: 'Threshold Harvester',
-    identityStatement: 'Banks scoring bonuses and rotates into the next opportunity',
+    identityStatement: 'Leans toward banking scoring bonuses and rotating into the next setup',
     dnaGroup: 'strategy',
     icon: 'Target',
     source: 'library',
@@ -217,7 +217,7 @@ const STRATEGY_TRAITS = [
   {
     id: 'trait-dual-conviction',
     name: 'Dual Conviction',
-    identityStatement: 'Requires both fundamentals and technicals to agree before committing',
+    identityStatement: 'Leans toward names where fundamentals and technicals agree before buying',
     dnaGroup: 'strategy',
     icon: 'CheckCheck',
     source: 'library',
@@ -242,7 +242,7 @@ const STRATEGY_TRAITS = [
   {
     id: 'trait-score-adaptor',
     name: 'Score Adaptor',
-    identityStatement: 'Plays differently when winning than when losing',
+    identityStatement: 'Leans more offensive or defensive depending on the score',
     dnaGroup: 'strategy',
     icon: 'Gauge',
     source: 'library',
@@ -267,7 +267,7 @@ const STRATEGY_TRAITS = [
   {
     id: 'trait-sector-rotator',
     name: 'Sector Rotator',
-    identityStatement: 'Rides the sector wave and picks each sector\'s champion',
+    identityStatement: 'Hunts the leaders in strong sectors and leans toward staying spread across them',
     dnaGroup: 'strategy',
     icon: 'RefreshCw',
     source: 'library',
@@ -292,7 +292,7 @@ const STRATEGY_TRAITS = [
   {
     id: 'trait-penalty-dodger',
     name: 'Penalty Dodger',
-    identityStatement: 'Protects the score from catastrophic damage above all else',
+    identityStatement: 'Leans toward easing volatile names down the tiers to limit downside',
     dnaGroup: 'strategy',
     icon: 'ShieldAlert',
     source: 'library',
@@ -323,7 +323,7 @@ const DISCIPLINE_TRAITS = [
   {
     id: 'trait-iron-discipline',
     name: 'Iron Discipline',
-    identityStatement: 'Leans toward cutting losers quickly and not chasing a falling position',
+    identityStatement: 'Leans toward cutting losers early and not chasing a falling position',
     dnaGroup: 'discipline',
     icon: 'Lock',
     source: 'library',
@@ -351,7 +351,7 @@ const DISCIPLINE_TRAITS = [
   {
     id: 'trait-patient-holder',
     name: 'Patient Holder',
-    identityStatement: 'Gives picks time to work instead of reacting to every dip',
+    identityStatement: 'Leans toward giving picks time to work instead of reacting to every dip',
     dnaGroup: 'discipline',
     icon: 'Clock',
     source: 'library',
@@ -404,7 +404,7 @@ const DISCIPLINE_TRAITS = [
   {
     id: 'trait-diversifier',
     name: 'Diversifier',
-    identityStatement: 'Spreads risk across sectors so no single bet sinks the ship',
+    identityStatement: 'Leans toward spreading exposure across sectors so no single bet dominates',
     dnaGroup: 'discipline',
     icon: 'PieChart',
     source: 'library',

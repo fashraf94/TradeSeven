@@ -104,6 +104,19 @@ const StrategyPresetToggle = ({ battleId, strategyPreset, tokens, disabled = fal
       }}>
         {activeInfo.desc}
       </p>
+
+      {/* Distinct-from-traits clarifier (V2.2 honest copy). The preset is this
+          battle's risk lever; trait cards are the agent's disposition — different knobs. */}
+      <p style={{
+        fontSize: '10px',
+        color: tokens.textFaint,
+        lineHeight: '1.4',
+        margin: 0,
+        paddingLeft: '4px',
+        opacity: 0.85,
+      }}>
+        Per-battle risk levers — separate from your agent's trait cards (its disposition).
+      </p>
     </div>
   );
 };

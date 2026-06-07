@@ -694,8 +694,8 @@ export const FORGE_RULE_TEMPLATES = [
     category: 'mid_battle',
     modes: 'clash',
     headline: 'Stop the churn',
-    description: 'Hard timeout if the agent trades too frequently — prevents destructive feedback loops in choppy markets.',
-    hook: 'Too many swaps in a row means the market is confusing your agent — force a cooldown',
+    description: 'Eases off swapping when trades pile up too fast — helps avoid destructive churn in choppy markets.',
+    hook: 'Too many swaps in a row often means the market is choppy — lean toward a cooldown',
     learnMore: 'In choppy or trendless markets, an agent can enter a destructive cycle of swapping back and forth. This circuit breaker detects excessive swap frequency and forces a cooldown period, giving the market time to establish direction before the agent resumes trading.',
     difficulty: 'beginner',
     forgeTemplates: [
@@ -745,9 +745,9 @@ export const FORGE_RULE_TEMPLATES = [
     id: 'mb-09',
     category: 'mid_battle',
     modes: 'clash',
-    headline: 'Pull the emergency brake',
-    description: 'Hard stop-loss that overrides all holding rules — prevents a position from reaching Crash or Meltdown.',
-    hook: 'Some losses are worth cutting immediately — pull the emergency brake',
+    headline: 'Exit a sharply falling position',
+    description: 'A protective stop that leans toward exiting a sharply falling position before it reaches Crash or Meltdown.',
+    hook: 'Some losses are worth cutting early — lean toward an exit on a sharp drop',
     learnMore: 'Some losses are worth cutting immediately. This is an emergency override that supersedes all other holding rules — if a stock drops below the specified ATR threshold from entry, it gets ejected regardless of tier, hold time, or any other rule. It\'s the last line of defense against catastrophic scoring penalties.',
     difficulty: 'beginner',
     forgeTemplates: [

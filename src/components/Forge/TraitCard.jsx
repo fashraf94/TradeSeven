@@ -26,32 +26,32 @@ const STRENGTH_DESCRIPTIONS = {
   'trait-trend-rider': {
     subtle: 'Follows trends loosely — flexible entry points, wide momentum zone',
     moderate: 'Standard trend following — confirmed setups, balanced filters',
-    dominant: 'Strict trend adherence — only the strongest aligned setups',
+    dominant: 'Strongly favors the cleanest aligned setups',
   },
   'trait-bargain-hunter': {
     subtle: 'Light oversold preference — casts a wide net for dip candidates',
     moderate: 'Standard mean reversion — targets clear oversold signals',
-    dominant: 'Aggressive dip buying — deep oversold only, tight filters',
+    dominant: 'Strongly favors deep-oversold names with tight filters',
   },
   'trait-squeeze-whisperer': {
     subtle: 'Watches for broad volatility compression patterns',
     moderate: 'Targets confirmed squeezes with directional momentum',
-    dominant: 'Only the tightest squeezes with strong breakout signals',
+    dominant: 'Strongly favors the tightest squeezes with clear momentum',
   },
   'trait-volume-believer': {
     subtle: 'Prefers above-average volume — soft confirmation requirement',
-    moderate: 'Requires solid volume spikes — institutional participation',
-    dominant: 'Demands extreme volume — only the clearest institutional signals',
+    moderate: 'Leans toward solid volume spikes for participation',
+    dominant: 'Strongly favors heavy volume before trusting a move',
   },
   'trait-breakout-chaser': {
     subtle: 'Leans toward stocks near highs — moderate RS requirement',
     moderate: 'Targets breakout leaders — strong RS and proximity filters',
-    dominant: 'Only the top breakout candidates — elite RS scores required',
+    dominant: 'Strongly favors top breakout candidates with elite relative strength',
   },
   'trait-smart-money-tracker': {
     subtle: 'Follows VWAP loosely — broad institutional flow preference',
-    moderate: 'Strict VWAP adherence — confirmed institutional support required',
-    dominant: 'Aggressive institutional tracking — tight VWAP with sector rotation',
+    moderate: 'Leans toward confirmed VWAP support',
+    dominant: 'Strongly favors tight VWAP alignment with sector flow',
   },
   'trait-threshold-harvester': {
     subtle: 'Balanced scoring approach — harvests only after Double Bagger',
@@ -61,7 +61,7 @@ const STRENGTH_DESCRIPTIONS = {
   'trait-dual-conviction': {
     subtle: 'Moderate dual-check — both scores above average',
     moderate: 'Standard conviction gate — solid fundamentals AND technicals',
-    dominant: 'Elite dual filter — only top-tier stocks on both dimensions',
+    dominant: 'Strongly favors names that top both dimensions',
   },
   'trait-score-adaptor': {
     subtle: 'Gentle adaptation — small shifts when winning or losing',
@@ -76,7 +76,7 @@ const STRENGTH_DESCRIPTIONS = {
   'trait-penalty-dodger': {
     subtle: 'Mild bust-aversion — leans slightly toward safer placements for volatile names',
     moderate: 'Strong bust-aversion — biases away from putting volatile names in high tiers',
-    dominant: 'Bust-protection first — strongly leans toward safer tiers for volatile names',
+    dominant: 'Strongly leans toward safer tiers for volatile names',
   },
   'trait-iron-discipline': {
     subtle: 'Light discipline lean — a bit quicker to give up on laggards',
@@ -215,6 +215,9 @@ export default function TraitCard({
           marginTop: 6, paddingLeft: 12, marginBottom: 6,
           borderLeft: `2px solid ${groupColor}30`,
         }}>
+          <div style={{ fontSize: 10.5, color: '#718096', marginBottom: 6, lineHeight: 1.35, fontStyle: 'italic' }}>
+            These are the instincts this card leans on — all advisory. Your archetype sets the hard limits.
+          </div>
           {trait.ruleIds.map(ruleId => {
             const rule = ruleMap[ruleId];
             if (!rule) return null;
