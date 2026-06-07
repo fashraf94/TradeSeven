@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import useAgentBattle from '../hooks/useAgentBattle';
 import { useTheme } from '../contexts/ThemeContext';
+import { logTraitEvent } from '../services/agentService';
 import TermResearchModal from '../components/shared/TermResearchModal';
 import AssetResearchModal from '../components/draft/AssetResearchModal';
 import FilmRoomHeader from '../components/FilmRoom/FilmRoomHeader';
@@ -127,7 +128,15 @@ export default function FilmRoomScreen({ battle, onBack }) {
       >
         <ScoreSummaryCard battle={agentBattle} dayNum={selectedDay} tokens={tokens} />
 
-        <TraitAttributionCard battle={agentBattle} tokens={tokens} />
+        <TraitAttributionCard
+          battle={agentBattle}
+          tokens={tokens}
+          onEngage={(traitId) => logTraitEvent({
+            event: 'attribution_tag_engaged',
+            agentId: agentBattle.agentId || battle?.agentId || null,
+            traitId,
+          })}
+        />
 
         <AutoDebriefHero
           battle={agentBattle}

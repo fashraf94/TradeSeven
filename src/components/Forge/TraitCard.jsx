@@ -10,6 +10,7 @@ import {
 import TraitStrengthToggle from './TraitStrengthToggle';
 import { FORGE_RULE_TEMPLATES } from '../../data/forgeKnowledgeBase';
 import { getTraitFamily, getFamilyMeta, isArchetypeAligned } from '../../data/traitFamilies';
+import { logTraitEvent } from '../../services/agentService';
 
 const TRAIT_ICONS = {
   TrendingUp, Search, Zap, BarChart3, ArrowUpRight, Compass,
@@ -203,7 +204,12 @@ export default function TraitCard({
 
       {/* What's inside toggle */}
       <button
-        onClick={() => setShowDetails(!showDetails)}
+        onClick={() => {
+          const next = !showDetails;
+          setShowDetails(next);
+          // Telemetry on expand only (comprehension signal) — fire-and-forget.
+          if (next) logTraitEvent({ event: 'trait_card_viewed', traitId: trait.id, family: getTraitFamily(trait.id), detail: 'expand_rules' });
+        }}
         style={{
           background: 'none', border: 'none', padding: 0, marginTop: 4,
           fontSize: 11, color: '#5EEAD4', cursor: 'pointer',

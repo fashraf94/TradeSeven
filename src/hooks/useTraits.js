@@ -20,6 +20,7 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import { doc, updateDoc, getDoc } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import { softDeleteRule } from '../services/forgeService';
+import { logTraitEvent } from '../services/agentService';
 import { FORGE_RULE_TEMPLATES } from '../data/forgeKnowledgeBase';
 import { DNA_GROUPS } from '../data/dnaGroups';
 import { TRAIT_LIBRARY, TRAIT_BY_ID } from '../data/traitLibrary';
@@ -245,11 +246,14 @@ export function useTraits(agentId, forge) {
     setEquippedTraitEntries(updatedEntries);
     await persistTraits(updatedEntries);
 
+    // Fire-and-forget telemetry (verified Firestore path) — never blocks equip.
+    logTraitEvent({ event: 'trait_equipped', agentId, traitId, detail: strength });
+
     return {
       success: true,
       conflictsOverridden: conflictsOverridden.length > 0 ? conflictsOverridden : undefined,
     };
-  }, [equippedTraitEntries, getGroupSlotUsage, forge, persistTraits, refusedForBattle]);
+  }, [agentId, equippedTraitEntries, getGroupSlotUsage, forge, persistTraits, refusedForBattle]);
 
   // ── Unequip a trait ──────────────────────────────────────
   const unequipTrait = useCallback(async (traitId) => {
@@ -264,6 +268,7 @@ export function useTraits(agentId, forge) {
     const updatedEntries = equippedTraitEntries.filter(e => e.traitId !== traitId);
     setEquippedTraitEntries(updatedEntries);
     await persistTraits(updatedEntries);
+    logTraitEvent({ event: 'trait_unequipped', agentId, traitId }); // fire-and-forget
     // Best-effort cleanup — never let a reloadData hiccup mask a completed unequip.
     try {
       if (forge?.rules) {
@@ -315,6 +320,8 @@ export function useTraits(agentId, forge) {
     });
     setEquippedTraitEntries(updatedEntries);
     await persistTraits(updatedEntries);
+
+    logTraitEvent({ event: 'trait_strength_changed', agentId, traitId, detail: newStrength }); // fire-and-forget
 
     // Reload forge data to reflect param changes
     if (forge?.reloadData) {

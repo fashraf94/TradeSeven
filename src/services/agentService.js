@@ -378,6 +378,18 @@ export const logWatchlistEquip = async ({ agentId, watchlistId, equippedWatchlis
   return response.json();
 };
 
+// Phase 1B — fire-and-forget trait/card telemetry to the VERIFIED Firestore path
+// (POST → /api/agent/log-trait-event, which writes via the Admin SDK; NOT the GCS
+// shadow stream, which silently drops). Self-catches: never throws, never blocks
+// the UI. Callers can ignore the returned promise.
+export const logTraitEvent = (payload) =>
+  fetchWithAuth('/api/agent/log-trait-event', {
+    method: 'POST',
+    body: JSON.stringify(payload || {}),
+  })
+    .then((r) => { if (!r.ok) throw new Error(`log-trait-event ${r.status}`); })
+    .catch((err) => { console.warn('[logTraitEvent] telemetry emit failed (non-blocking):', err?.message || err); });
+
 // ============================================
 // SEED / DEV UTILITIES
 // ============================================
