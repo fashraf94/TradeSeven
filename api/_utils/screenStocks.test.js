@@ -9,6 +9,8 @@
 import { describe, it, expect } from 'vitest';
 import {
   screenStocks,
+  screenIndustries,
+  ROLLUP_RANK_FIELDS,
   isAllowedField,
   resolveField,
   evaluateOp,
@@ -764,5 +766,92 @@ describe('Firestore-safe keys', () => {
         expect(key).not.toContain('.');
       }
     }
+  });
+});
+
+// ==================== screenIndustries (Phase 2 — industry rollup) ====================
+
+describe('screenIndustries', () => {
+  // Mirrors the precomputed `industries` map in stockRankings (keyed by GICS name).
+  const industries = () => ({
+    'Semiconductors & Semiconductor Equipment': {
+      name: 'Semiconductors & Semiconductor Equipment', totalStocks: 10,
+      stocks: ['NVDA', 'AMD'], return1M: 12, return3M: 25, momentumScore: 80,
+    },
+    Software: {
+      name: 'Software', totalStocks: 10,
+      stocks: ['MSFT'], return1M: 8, return3M: 15, momentumScore: 70,
+    },
+    Banks: {
+      name: 'Banks', totalStocks: 5,
+      stocks: ['JPM'], return1M: 3, return3M: 5, momentumScore: 60,
+    },
+    'Oil, Gas & Consumable Fuels': {
+      name: 'Oil, Gas & Consumable Fuels', totalStocks: 16,
+      stocks: ['XOM'], return1M: -2, return3M: null, momentumScore: 50,
+    },
+  });
+  const namesOf = (out) => out.results.map((r) => r.name);
+
+  it('ROLLUP_RANK_FIELDS holds the aggregated metrics only', () => {
+    expect(ROLLUP_RANK_FIELDS.has('return1M')).toBe(true);
+    expect(ROLLUP_RANK_FIELDS.has('return3M')).toBe(true);
+    expect(ROLLUP_RANK_FIELDS.has('momentumScore')).toBe(true);
+    expect(ROLLUP_RANK_FIELDS.has('compositeScore')).toBe(false); // not an industry metric
+    expect(ROLLUP_RANK_FIELDS.has('sectorName')).toBe(false);
+  });
+
+  it('ranks industries by a return horizon (desc) and projects {name,totalStocks,stocks,field,value}', () => {
+    const out = screenIndustries(industries(), { rankBy: { field: 'return1M', direction: 'desc' } });
+    expect(namesOf(out)).toEqual([
+      'Semiconductors & Semiconductor Equipment', 'Software', 'Banks', 'Oil, Gas & Consumable Fuels',
+    ]);
+    expect(out.appliedSpec.screenType).toBe('industries');
+    expect(out.universeSize).toBe(4);
+    expect(out.results[0]).toEqual({
+      name: 'Semiconductors & Semiconductor Equipment', totalStocks: 10,
+      stocks: ['NVDA', 'AMD'], field: 'return1M', value: 12,
+    });
+  });
+
+  it('asc direction reverses the order', () => {
+    const out = screenIndustries(industries(), { rankBy: { field: 'return1M', direction: 'asc' } });
+    expect(namesOf(out)).toEqual([
+      'Oil, Gas & Consumable Fuels', 'Banks', 'Software', 'Semiconductors & Semiconductor Equipment',
+    ]);
+  });
+
+  it('a null metric sorts LAST in either direction', () => {
+    const desc = screenIndustries(industries(), { rankBy: { field: 'return3M', direction: 'desc' } });
+    expect(namesOf(desc)[3]).toBe('Oil, Gas & Consumable Fuels'); // return3M null → last
+    const asc = screenIndustries(industries(), { rankBy: { field: 'return3M', direction: 'asc' } });
+    expect(namesOf(asc)[3]).toBe('Oil, Gas & Consumable Fuels'); // still last
+  });
+
+  it('ranks by momentumScore', () => {
+    const out = screenIndustries(industries(), { rankBy: { field: 'momentumScore', direction: 'desc' } });
+    expect(namesOf(out)[0]).toBe('Semiconductors & Semiconductor Equipment');
+    expect(out.results[0].value).toBe(80);
+  });
+
+  it('rejects a non-rollup rankBy field and falls back to return1M desc', () => {
+    const out = screenIndustries(industries(), { rankBy: { field: 'compositeScore', direction: 'desc' } });
+    expect(out.appliedSpec.rankBy).toEqual({ field: 'return1M', direction: 'desc' });
+    expect(out.appliedSpec.rankByFallback).toBe(true);
+    expect(out.rejectedFilters[0].reason).toBe('invalid_rank_field');
+    expect(namesOf(out)[0]).toBe('Semiconductors & Semiconductor Equipment');
+  });
+
+  it('clamps the limit and slices', () => {
+    const out = screenIndustries(industries(), { rankBy: { field: 'return1M', direction: 'desc' }, limit: 2 });
+    expect(out.results).toHaveLength(2);
+    expect(out.appliedSpec.limit).toBe(2);
+  });
+
+  it('empty / missing rollup → well-formed zero result', () => {
+    const out = screenIndustries({}, { rankBy: { field: 'return1M', direction: 'desc' } });
+    expect(out.results).toEqual([]);
+    expect(out.universeSize).toBe(0);
+    expect(out.appliedSpec.screenType).toBe('industries');
   });
 });

@@ -505,4 +505,104 @@ export function screenStocks(stocks, screenSpec) {
   return { results, appliedSpec, rejectedFilters, matchCount, universeSize, computedAt };
 }
 
+// ── Industry rollup query (Phase 2) ───────────────────────────────────────────────────
+//
+// Ranks the industries THEMSELVES ("top performing industries last month"). The rollup is
+// precomputed in the daily doc (compute-index-intelligence.js buildIndustriesRollup), so
+// this just validates rankBy, sorts (nulls last), slices, and projects industry rows.
+// There are NO per-stock filters in a rollup (V1). It returns the same envelope shape as
+// screenStocks so the endpoint payload stays uniform.
+
+// The only fields an industry rollup can rank by — the aggregated return horizons +
+// momentumScore (compute-index-intelligence.js ROLLUP_METRICS). No string / per-stock fields.
+export const ROLLUP_RANK_FIELDS = Object.freeze(new Set([
+  'return1W', 'return1M', 'return3M', 'returnYTD', 'return12M', 'momentumScore',
+]));
+
+const DEFAULT_ROLLUP_RANK_FIELD = 'return1M';
+
+/**
+ * Deterministically rank the precomputed industry rollup.
+ *
+ * @param {Object<string, object>} industries - the `.industries` map from stockRankings
+ * @param {{rankBy?: object, limit?: number, screenType?: string}} screenSpec
+ * @returns {{ results, appliedSpec, rejectedFilters, matchCount, universeSize, computedAt }}
+ *   results: [{ name, totalStocks, stocks, field, value }] (sorted, limited)
+ */
+export function screenIndustries(industries, screenSpec) {
+  const all = (industries && typeof industries === 'object' && !Array.isArray(industries))
+    ? Object.values(industries)
+    : [];
+  const universeSize = all.length;
+  const spec = (screenSpec && typeof screenSpec === 'object') ? screenSpec : {};
+  const computedAt = new Date().toISOString();
+  const rejectedFilters = [];
+
+  // Validate rankBy — must be one of the aggregated rollup fields. Bad/absent → return1M desc.
+  const rawRank = (spec.rankBy && typeof spec.rankBy === 'object') ? spec.rankBy : null;
+  let rankField;
+  let rankDirection;
+  let rankByFallback = false;
+
+  if (!rawRank || typeof rawRank.field !== 'string' || !ROLLUP_RANK_FIELDS.has(rawRank.field)) {
+    if (rawRank && rawRank.field !== undefined) {
+      rejectedFilters.push({
+        scope: 'rankBy',
+        field: rawRank.field ?? null,
+        op: null,
+        value: null,
+        reason: 'invalid_rank_field',
+        detail: `rankBy.field '${rawRank.field}' can't rank industries — use a return horizon (return1W/1M/3M/YTD/12M) or momentumScore`,
+      });
+      rankByFallback = true;
+    }
+    rankField = DEFAULT_ROLLUP_RANK_FIELD;
+    rankDirection = 'desc';
+  } else {
+    rankField = rawRank.field;
+    if (rawRank.direction === 'asc' || rawRank.direction === 'desc') {
+      rankDirection = rawRank.direction;
+    } else {
+      rankDirection = 'desc';
+      if (rawRank.direction !== undefined && rawRank.direction !== null) {
+        rejectedFilters.push({
+          scope: 'rankBy',
+          field: rankField,
+          op: null,
+          value: rawRank.direction,
+          reason: 'unsupported_rank_direction',
+          detail: rejectionDetail('unsupported_rank_direction'),
+        });
+      }
+    }
+  }
+  const rankBy = { field: rankField, direction: rankDirection };
+
+  // Sort (nulls last via compareValues), deterministic name tiebreak; then slice.
+  const asc = rankDirection === 'asc';
+  const sorted = [...all].sort((a, b) => {
+    const primary = compareValues(a ? a[rankField] : undefined, b ? b[rankField] : undefined, asc);
+    if (primary !== 0) return primary;
+    const na = a && a.name != null ? String(a.name) : '';
+    const nb = b && b.name != null ? String(b.name) : '';
+    return na < nb ? -1 : na > nb ? 1 : 0;
+  });
+  const limit = clampLimit(spec.limit);
+  const limited = sorted.slice(0, limit);
+
+  // Project industry rows: identity + the ranked value (+ its field for the renderer).
+  const results = limited.map((ind) => ({
+    name: ind.name,
+    totalStocks: ind.totalStocks ?? (Array.isArray(ind.stocks) ? ind.stocks.length : null),
+    stocks: Array.isArray(ind.stocks) ? ind.stocks : [],
+    field: rankField,
+    value: ind && ind[rankField] != null ? ind[rankField] : null,
+  }));
+
+  // screenType echoed on appliedSpec so the endpoint persists it (refinement continuity).
+  const appliedSpec = { screenType: 'industries', rankBy, limit, rankByFallback };
+
+  return { results, appliedSpec, rejectedFilters, matchCount: universeSize, universeSize, computedAt };
+}
+
 export default screenStocks;

@@ -12,6 +12,8 @@ import {
   headlineValue,
   buildRankRows,
   buildReturnRows,
+  buildIndustryRows,
+  industryDisplayName,
   isReturnField,
   formatSignedPercent,
   returnColor,
@@ -135,14 +137,14 @@ describe('specToPlainLanguage', () => {
     expect(specToPlainLanguage(spec)).toBe('Financials · ranked by composite score · top 10');
   });
 
-  it('renders an industry filter as the full GICS name (Phase 1 — no short-name alias)', () => {
+  it('renders an industry filter via the short display name (Phase 2)', () => {
     const spec = {
       filters: [{ field: 'industryName', op: 'eq', value: 'Semiconductors & Semiconductor Equipment' }],
       rankBy: { field: 'return3M', direction: 'desc' },
       limit: 10,
     };
     expect(specToPlainLanguage(spec)).toBe(
-      'Semiconductors & Semiconductor Equipment · ranked by 3-month return · top 10',
+      'Semiconductors · ranked by 3-month return · top 10',
     );
   });
 
@@ -285,5 +287,42 @@ describe('specToPlainLanguage — return label', () => {
         limit: 10,
       }),
     ).toBe('Technology · ranked by 1-week return · top 10');
+  });
+});
+
+describe('industryDisplayName', () => {
+  it('maps clunky GICS names to short labels; passes unmapped / non-strings through', () => {
+    expect(industryDisplayName('Semiconductors & Semiconductor Equipment')).toBe('Semiconductors');
+    expect(industryDisplayName('Oil, Gas & Consumable Fuels')).toBe('Oil & Gas');
+    expect(industryDisplayName('Banks')).toBe('Banks'); // unmapped → as-is
+    expect(industryDisplayName(null)).toBe(null);
+  });
+});
+
+describe('buildIndustryRows', () => {
+  it('return field: short displayName, member count, signed value, max-abs normalizer', () => {
+    const results = [
+      { name: 'Semiconductors & Semiconductor Equipment', totalStocks: 10, stocks: [], field: 'return3M', value: 25 },
+      { name: 'Oil, Gas & Consumable Fuels', totalStocks: 16, stocks: [], field: 'return3M', value: -10 },
+      { name: 'Banks', totalStocks: 5, stocks: [], field: 'return3M', value: null },
+    ];
+    const out = buildIndustryRows(results, { rankBy: { field: 'return3M', direction: 'desc' } });
+    expect(out.isReturn).toBe(true);
+    expect(out.field).toBe('return3M');
+    expect(out.maxAbs).toBe(25);
+    expect(out.rows[0]).toMatchObject({ displayName: 'Semiconductors', totalStocks: 10, value: 25 });
+    expect(out.rows[1]).toMatchObject({ displayName: 'Oil & Gas', value: -10 });
+    expect(out.rows[2].value).toBeNull(); // null stays null (renders as a dash, not a 0% bar)
+  });
+
+  it('momentumScore: neutral score bar (isReturn false, maxScore normalizer)', () => {
+    const results = [
+      { name: 'Software', totalStocks: 10, stocks: [], field: 'momentumScore', value: 70 },
+      { name: 'Banks', totalStocks: 5, stocks: [], field: 'momentumScore', value: 60 },
+    ];
+    const out = buildIndustryRows(results, { rankBy: { field: 'momentumScore', direction: 'desc' } });
+    expect(out.isReturn).toBe(false);
+    expect(out.maxScore).toBe(70);
+    expect(out.rows[0]).toMatchObject({ displayName: 'Software', value: 70 });
   });
 });

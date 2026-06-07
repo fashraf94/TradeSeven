@@ -2123,6 +2123,7 @@ const RESEARCH_OUTPUT_FORMAT = `RESPONSE FORMAT — You MUST respond with valid 
   "_scratchpad": "Brief internal reasoning (2-3 sentences). Which SCREENABLE FIELDS does the request map to? Is any part unscreenable with the available data? Logged, never shown to the user.",
   "message": "One short paragraph (2-4 sentences), neutral research-analyst voice, framing what you screened for. If the request implies data you do not have, say plainly what you could not assess. No greeting, no preamble.",
   "screenSpec": {
+    "screenType": "stocks | industries — optional, default stocks. Use 'industries' ONLY to rank industries as groups (see INDUSTRY ROLLUP).",
     "filters": [ { "field": "<screenable field>", "op": "<operator>", "value": "<value>" } ],
     "rankBy": { "field": "<screenable numeric field>", "direction": "desc" },
     "limit": 10
@@ -2184,7 +2185,12 @@ UNAVAILABLE — the engine does NOT carry these, so you CANNOT filter or rank on
 - share price, market cap, P/E, P/B, any valuation multiple
 - interest-rate / macro sensitivity, leverage, debt-to-equity, balance-sheet detail
 - relative-strength percentile, squeeze flags, earnings-game or snake-draft fit
-- analyst targets, news, sentiment, ownership.`;
+- analyst targets, news, sentiment, ownership.
+
+INDUSTRY ROLLUP — ranking the industries THEMSELVES (screenSpec.screenType "industries"):
+- Set screenType "industries" ONLY when the user asks about industries AS GROUPS — "top/best/worst performing industries", "which industries are leading/lagging", "rank the industries". Then emit rankBy = a return horizon (return1W/1M/3M/YTD/12M) or momentumScore, plus direction + limit, and NO filters (V1 ranks all qualifying industries; sector-scoped rollups like "top tech industries" aren't supported yet — screen the closest thing and say so).
+- screenType reflects THIS turn's intent; it is NOT a mode the conversation locks into. The moment the user asks for individual NAMES ("show me the actual semiconductors", "which stocks", "the names in that group"), drop screenType (or set "stocks") and run a normal per-stock screen (e.g. an industryName filter). Re-decide every turn from the new message — do not stay in industries mode just because the prior turn was a rollup.
+- Only industries with enough names are ranked; small ones are excluded. Say so when relevant, and keep the realized/past-tense framing — industries that PERFORMED best over the period, never a forecast.`;
 
 const RESEARCH_FEW_SHOT = `EXAMPLES — these show the JSON shape and the mapping discipline. Adapt to the actual request; do not copy verbatim.
 
@@ -2210,7 +2216,13 @@ USER (absent data — screen what you can, name the gap): "banks that do well wh
 YOU: {"_scratchpad":"Banks = Financials (screenable). Rate sensitivity is NOT in the data — name the gap, screen Financials by composite.","message":"I screened Financials, ranked by composite score. One caveat: I can't assess interest-rate sensitivity — that isn't in the data I have — so this is the strongest Financials overall, not specifically the rate beneficiaries.","screenSpec":{"filters":[{"field":"sectorName","op":"eq","value":"Financials"}],"rankBy":{"field":"compositeScore","direction":"desc"},"limit":10},"suggestedActions":["rank by momentum instead","top BaggerBomb fit in Financials","widen to all sectors"],"readyToScreen":true}
 
 USER (refining a PREVIOUS SCREEN of all names ranked by momentum): "only under $100, and drop energy"
-YOU: {"_scratchpad":"Refinement of the prior momentum screen. 'under $100' is share price — not screenable, name the gap. 'drop energy' excludes the Energy sector.","message":"I dropped the Energy names. I can't filter by share price, though — price isn't in the screening data — so this is the prior momentum screen minus Energy.","screenSpec":{"filters":[{"field":"sectorName","op":"neq","value":"Energy"}],"rankBy":{"field":"momentumScore","direction":"desc"},"limit":10},"suggestedActions":["just Technology","tighter setups (NR7)","top 5 only"],"readyToScreen":true}`;
+YOU: {"_scratchpad":"Refinement of the prior momentum screen. 'under $100' is share price — not screenable, name the gap. 'drop energy' excludes the Energy sector.","message":"I dropped the Energy names. I can't filter by share price, though — price isn't in the screening data — so this is the prior momentum screen minus Energy.","screenSpec":{"filters":[{"field":"sectorName","op":"neq","value":"Energy"}],"rankBy":{"field":"momentumScore","direction":"desc"},"limit":10},"suggestedActions":["just Technology","tighter setups (NR7)","top 5 only"],"readyToScreen":true}
+
+USER: "what were the top performing industries last month"
+YOU: {"_scratchpad":"Industry-rollup intent (industries as groups) → screenType 'industries'; 'last month' → return1M; 'top' → desc; no per-stock filters. Realized past return — past tense. Only industries with enough names are ranked.","message":"Industries ranked by their median 1-month return — the groups that performed best over the last month. Only industries with enough names to be meaningful are included. This is realized past performance, not a forecast.","screenSpec":{"screenType":"industries","rankBy":{"field":"return1M","direction":"desc"},"limit":10},"suggestedActions":["worst industries instead","year to date","by momentum"],"readyToScreen":true}
+
+USER (after that rollup — pivoting to individual names): "ok show me the semiconductor names then"
+YOU: {"_scratchpad":"Pivot from rollup to individual names → screenType back to stocks (current-turn intent, not sticky). 'semiconductor names' → industryName filter; keep the same horizon. Past tense.","message":"Switching from industries to the individual names — semiconductors ranked by their 1-month return.","screenSpec":{"filters":[{"field":"industryName","op":"eq","value":"Semiconductors & Semiconductor Equipment"}],"rankBy":{"field":"return1M","direction":"desc"},"limit":10},"suggestedActions":["back to top industries","worst semis","top 5 only"],"readyToScreen":true}`;
 
 const RESEARCH_PHASE_RULES = `YOUR CURRENT PHASE: RESEARCH MODE
 
@@ -2245,6 +2257,7 @@ function buildResearchPreviousSpecBlock(previousSpec) {
   const spec = { filters };
   if (rankBy) spec.rankBy = rankBy;
   if (Number.isFinite(previousSpec.limit)) spec.limit = previousSpec.limit;
+  if (previousSpec.screenType === 'industries') spec.screenType = 'industries';
   return `PREVIOUS SCREEN (the user is refining this — mutate it, do not start over unless they clearly change topic):
 ${JSON.stringify(spec, null, 2)}`;
 }

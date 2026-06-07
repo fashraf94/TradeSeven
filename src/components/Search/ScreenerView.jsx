@@ -23,9 +23,11 @@ import { STOCKS } from '../../data/assets';
 import { getArchetypeDisplayName } from '../../data/archetypeDisplay';
 import RankRow from './RankRow';
 import ReturnRow from './ReturnRow';
+import IndustryRow from './IndustryRow';
 import {
   buildRankRows,
   buildReturnRows,
+  buildIndustryRows,
   isReturnField,
   specToPlainLanguage,
   rejectedFiltersToLines,
@@ -190,6 +192,7 @@ const ScreenerView = ({ onOpenResearch, isMobile }) => {
         : [],
       screened: data?.screened === true,
       results: Array.isArray(data?.results) ? data.results : [],
+      resultType: typeof data?.resultType === 'string' ? data.resultType : 'stocks',
       appliedSpec: data?.appliedSpec || null,
       rejectedFilters: Array.isArray(data?.rejectedFilters) ? data.rejectedFilters : [],
       matchCount: typeof data?.matchCount === 'number' ? data.matchCount : null,
@@ -447,7 +450,7 @@ const ScreenerView = ({ onOpenResearch, isMobile }) => {
               <span style={{ color: tokens.textSecondary, fontWeight: 600 }}>
                 {specToPlainLanguage(screen.appliedSpec)}
               </span>
-              {typeof screen.matchCount === 'number' && typeof screen.universeSize === 'number' && (
+              {typeof screen.matchCount === 'number' && typeof screen.universeSize === 'number' && screen.resultType !== 'industries' && (
                 <span>· {screen.matchCount} of {screen.universeSize} match</span>
               )}
               {formatAsOf(screen.dataAsOf) && (
@@ -463,6 +466,7 @@ const ScreenerView = ({ onOpenResearch, isMobile }) => {
             <ResultsList
               results={screen.results}
               appliedSpec={screen.appliedSpec}
+              resultType={screen.resultType}
               onTap={handleTap}
               tokens={tokens}
             />
@@ -507,13 +511,16 @@ const ScreenerView = ({ onOpenResearch, isMobile }) => {
   );
 };
 
-// Ranked results via the adapter. A return-ranked screen (rankBy ∈ the five return
-// fields) renders through ReturnRow's signed, diverging directional bar; every other
-// screen stays on the untouched RankRow.
-function ResultsList({ results, appliedSpec, onTap, tokens }) {
+// Ranked results via the adapter. Three shapes: an INDUSTRY rollup (resultType
+// "industries") renders the new IndustryRow; a return-ranked stock screen (rankBy ∈ the
+// five return fields) renders ReturnRow's signed diverging bar; every other stock screen
+// stays on the untouched RankRow.
+function ResultsList({ results, appliedSpec, resultType, onTap, tokens }) {
+  const isIndustries = resultType === 'industries';
   const isReturn = isReturnField(appliedSpec?.rankBy?.field);
-  const rankData = isReturn ? null : buildRankRows(results, appliedSpec);
-  const returnData = isReturn ? buildReturnRows(results, appliedSpec) : null;
+  const industryData = isIndustries ? buildIndustryRows(results, appliedSpec) : null;
+  const rankData = !isIndustries && !isReturn ? buildRankRows(results, appliedSpec) : null;
+  const returnData = !isIndustries && isReturn ? buildReturnRows(results, appliedSpec) : null;
 
   return (
     <div
@@ -539,36 +546,59 @@ function ResultsList({ results, appliedSpec, onTap, tokens }) {
         }}
       >
         <span style={{ width: '24px', textAlign: 'right' }}>#</span>
-        <span style={{ width: '48px' }}>Ticker</span>
-        <span>Sector</span>
-        <span style={{ flex: 1 }} />
-        <span style={{ width: isReturn ? '54px' : '28px', textAlign: 'right' }}>
-          {isReturn ? 'Return' : 'Score'}
-        </span>
+        {isIndustries ? (
+          <>
+            <span style={{ flex: 1 }}>Industry</span>
+            <span style={{ width: '54px', textAlign: 'right' }}>{isReturn ? 'Return' : 'Score'}</span>
+          </>
+        ) : (
+          <>
+            <span style={{ width: '48px' }}>Ticker</span>
+            <span>Sector</span>
+            <span style={{ flex: 1 }} />
+            <span style={{ width: isReturn ? '54px' : '28px', textAlign: 'right' }}>
+              {isReturn ? 'Return' : 'Score'}
+            </span>
+          </>
+        )}
       </div>
 
-      {isReturn
-        ? returnData.rows.map((row, i) => (
-          <ReturnRow
-            key={row.stock.symbol}
-            stock={row.stock}
+      {isIndustries
+        ? industryData.rows.map((row, i) => (
+          <IndustryRow
+            key={row.industry.name}
+            displayName={row.displayName}
+            totalStocks={row.totalStocks}
             rank={i + 1}
             value={row.value}
-            maxAbs={returnData.maxAbs}
-            onTap={onTap}
+            isReturn={industryData.isReturn}
+            maxAbs={industryData.maxAbs}
+            maxScore={industryData.maxScore}
             tokens={tokens}
           />
         ))
-        : rankData.rows.map((row, i) => (
-          <RankRow
-            key={row.stock.symbol}
-            stock={row.stock}
-            rank={i + 1}
-            type={row.type}
-            maxScore={rankData.maxScore}
-            onTap={onTap}
-          />
-        ))}
+        : isReturn
+          ? returnData.rows.map((row, i) => (
+            <ReturnRow
+              key={row.stock.symbol}
+              stock={row.stock}
+              rank={i + 1}
+              value={row.value}
+              maxAbs={returnData.maxAbs}
+              onTap={onTap}
+              tokens={tokens}
+            />
+          ))
+          : rankData.rows.map((row, i) => (
+            <RankRow
+              key={row.stock.symbol}
+              stock={row.stock}
+              rank={i + 1}
+              type={row.type}
+              maxScore={rankData.maxScore}
+              onTap={onTap}
+            />
+          ))}
     </div>
   );
 }
