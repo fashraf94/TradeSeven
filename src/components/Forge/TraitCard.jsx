@@ -45,7 +45,7 @@ const STRENGTH_DESCRIPTIONS = {
   },
   'trait-breakout-chaser': {
     subtle: 'Leans toward stocks near highs — moderate RS requirement',
-    moderate: 'Targets breakout leaders — strong RS and proximity filters',
+    moderate: 'Targets breakout leaders near new highs',
     dominant: 'Strongly favors top breakout candidates with elite relative strength',
   },
   'trait-smart-money-tracker': {
@@ -59,8 +59,8 @@ const STRENGTH_DESCRIPTIONS = {
     dominant: 'Maximum harvest rate — rotates after any positive threshold hit',
   },
   'trait-dual-conviction': {
-    subtle: 'Moderate dual-check — both scores above average',
-    moderate: 'Standard conviction gate — solid fundamentals AND technicals',
+    subtle: 'Both scores a bit above average',
+    moderate: 'Solid on fundamentals and technicals',
     dominant: 'Strongly favors names that top both dimensions',
   },
   'trait-score-adaptor': {
@@ -217,7 +217,7 @@ export default function TraitCard({
           borderLeft: `2px solid ${groupColor}30`,
         }}>
           <div style={{ fontSize: 10.5, color: '#718096', marginBottom: 6, lineHeight: 1.35, fontStyle: 'italic' }}>
-            These are the instincts this card leans on — all advisory. Your archetype sets the hard limits.
+            All advisory — your archetype sets the hard limits.
           </div>
           {trait.ruleIds.map(ruleId => {
             const rule = ruleMap[ruleId];
@@ -236,7 +236,7 @@ export default function TraitCard({
       {/* Strength toggle */}
       <div style={{ marginBottom: 10 }}>
         <div style={{ fontSize: 10, color: '#718096', marginBottom: 4 }}>
-          Intensity — how strongly this trait shapes the way the agent thinks
+          Intensity — how strongly this shapes the agent
         </div>
         <TraitStrengthToggle
           value={isCustom ? 'custom' : (isEquipped ? currentStrength : strength)}
