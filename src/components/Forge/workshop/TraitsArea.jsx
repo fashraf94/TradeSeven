@@ -19,6 +19,7 @@ import { useFK, alpha, AreaHeader, Orb, Mono, Icon, ShelfHeader } from './forgeK
 import { DNA_GROUPS } from '../../../data/dnaGroups';
 import { TRAIT_LIBRARY } from '../../../data/traitLibrary';
 import { groupTraitsByFamily } from '../../../data/traitFamilies';
+import { buildSlotFullMessage } from '../../../utils/traitSlotSummary';
 import { getArchetypeDisplayName } from '../../../data/archetypeDisplay';
 import { getArchetypeIdentity } from '../../../data/archetypeIdentity';
 import TraitCard from '../TraitCard';
@@ -131,6 +132,10 @@ export default function TraitsArea({ agent, agentName, primary, traits, hasActiv
               <div style={{ paddingTop: 8, display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {famTraits.map((trait) => {
                   const equipped = equippedById.get(trait.id);
+                  const canEquipVal = traits.canEquip(trait.id);
+                  const blockedMessage = (!equipped && !canEquipVal)
+                    ? buildSlotFullMessage(trait, traits.equippedTraits)
+                    : null;
                   return (
                     <TraitCard
                       key={trait.id}
@@ -142,9 +147,10 @@ export default function TraitsArea({ agent, agentName, primary, traits, hasActiv
                       onUnequip={traits.unequipTrait}
                       onStrengthChange={traits.setTraitStrength}
                       onAdvancedOpen={() => showToast?.('Advanced rule editing lives in the bundle builder', accent)}
-                      canEquip={traits.canEquip(trait.id)}
+                      canEquip={canEquipVal}
                       groupColor={meta.accent}
                       locked={hasActiveBattle}
+                      blockedMessage={blockedMessage}
                     />
                   );
                 })}

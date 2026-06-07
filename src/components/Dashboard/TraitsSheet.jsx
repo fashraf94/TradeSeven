@@ -35,6 +35,7 @@ import { useTraits, BATTLE_LOCK_MSG } from '../../hooks/useTraits';
 import { DNA_GROUPS, TOTAL_TRAIT_SLOTS } from '../../data/dnaGroups';
 import { TRAIT_LIBRARY } from '../../data/traitLibrary';
 import { groupTraitsByFamily } from '../../data/traitFamilies';
+import { buildSlotFullMessage } from '../../utils/traitSlotSummary';
 import { getTraitEnforcement } from '../../utils/traitEnforcement';
 
 // equipTrait / unequipTrait error code → copy. battle_active reuses the hook's
@@ -68,7 +69,7 @@ function EnforcedPill() {
 
 // One trait row — name + identity statement + optional enforced pill, with a
 // single Equip/Unequip action. Light card (CMD tokens), no strength control.
-function TraitRow({ trait, enforced, equipped, busy, disabled, accent, slot, onAction }) {
+function TraitRow({ trait, enforced, equipped, busy, disabled, accent, slot, blockedMessage, onAction }) {
   const inert = busy || disabled;
   return (
     <div
@@ -85,7 +86,9 @@ function TraitRow({ trait, enforced, equipped, busy, disabled, accent, slot, onA
           {enforced && <EnforcedPill />}
           {slot && <SlotChip name={slot.name} used={slot.used} max={slot.max} />}
         </div>
-        <div style={{ fontSize: 11.5, color: CMD.ink2, marginTop: 3, lineHeight: 1.4 }}>{trait.identityStatement}</div>
+        <div style={{ fontSize: 11.5, color: blockedMessage ? CMD.ink3 : CMD.ink2, marginTop: 3, lineHeight: 1.4 }}>
+          {blockedMessage || trait.identityStatement}
+        </div>
       </div>
       <button
         type="button"
@@ -265,6 +268,7 @@ export default function TraitsSheet({ open, onClose, agent, accent, dock = 'bott
                 <FamilyHeader meta={meta} />
                 {candidates.map((t) => {
                   const usage = slotUsageByGroup[t.dnaGroup] || { used: 0, max: 2 };
+                  const blocked = !canEquip(t.id);
                   return (
                     <TraitRow
                       key={t.id}
@@ -272,9 +276,10 @@ export default function TraitsSheet({ open, onClose, agent, accent, dock = 'bott
                       enforced={getTraitEnforcement(t.id).isEnforced}
                       equipped={false}
                       busy={working === t.id}
-                      disabled={Boolean(working) || !canEquip(t.id)}
+                      disabled={Boolean(working) || blocked}
                       accent={accent}
                       slot={{ name: DNA_GROUPS[t.dnaGroup]?.name || t.dnaGroup, used: usage.used, max: usage.max }}
+                      blockedMessage={blocked ? buildSlotFullMessage(t, equippedTraits) : null}
                       onAction={() => run(t.id, equipTrait)}
                     />
                   );

@@ -34,6 +34,7 @@ import MyRulesTab from './MyRulesTab';
 import MyBundlesTab from './MyBundlesTab';
 import DNAGroupCard from './DNAGroupCard';
 import TraitCard from './TraitCard';
+import { buildSlotFullMessage } from '../../utils/traitSlotSummary';
 import SeasonModeToggle from './SeasonModeToggle';
 
 const TABS = [
@@ -558,6 +559,10 @@ export default function ForgeScreen({ isMobile: isMobileProp, onClose, user, onN
                           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8 }}>
                             {groupTraits.map(trait => {
                               const equipped = traits.equippedTraits.find(e => e.traitId === trait.id);
+                              const canEquipVal = traits.canEquip(trait.id);
+                              const blockedMessage = (!equipped && !canEquipVal)
+                                ? buildSlotFullMessage(trait, traits.equippedTraits)
+                                : null;
                               return (
                                 <TraitCard
                                   key={trait.id}
@@ -569,9 +574,10 @@ export default function ForgeScreen({ isMobile: isMobileProp, onClose, user, onN
                                   onUnequip={traits.unequipTrait}
                                   onStrengthChange={traits.setTraitStrength}
                                   onAdvancedOpen={handleAdvancedOpen}
-                                  canEquip={traits.canEquip(trait.id)}
+                                  canEquip={canEquipVal}
                                   groupColor={group.color}
                                   locked={hasActiveBattle}
+                                  blockedMessage={blockedMessage}
                                 />
                               );
                             })}
@@ -1026,6 +1032,10 @@ export default function ForgeScreen({ isMobile: isMobileProp, onClose, user, onN
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                           {groupTraits.map(trait => {
                             const equipped = traits.equippedTraits.find(e => e.traitId === trait.id);
+                            const canEquipVal = traits.canEquip(trait.id);
+                            const blockedMessage = (!equipped && !canEquipVal)
+                              ? buildSlotFullMessage(trait, traits.equippedTraits)
+                              : null;
                             return (
                               <TraitCard
                                 key={trait.id}
@@ -1037,9 +1047,10 @@ export default function ForgeScreen({ isMobile: isMobileProp, onClose, user, onN
                                 onUnequip={traits.unequipTrait}
                                 onStrengthChange={traits.setTraitStrength}
                                 onAdvancedOpen={handleAdvancedOpen}
-                                canEquip={traits.canEquip(trait.id)}
+                                canEquip={canEquipVal}
                                 groupColor={group.color}
                                 locked={hasActiveBattle}
+                                blockedMessage={blockedMessage}
                               />
                             );
                           })}

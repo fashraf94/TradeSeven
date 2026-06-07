@@ -117,6 +117,7 @@ export default function TraitCard({
   canEquip,
   groupColor,
   locked = false,
+  blockedMessage = null,
 }) {
   const [strength, setStrength] = useState(currentStrength || 'moderate');
   const [showDetails, setShowDetails] = useState(false);
@@ -320,8 +321,8 @@ export default function TraitCard({
             Equip
           </button>
         ) : (
-          <span style={{ fontSize: 11, color: '#4A5568', fontStyle: 'italic' }}>
-            Unequip a trait to make room (max 2 per group)
+          <span style={{ fontSize: 11, color: '#4A5568', fontStyle: 'italic', lineHeight: 1.35, textAlign: 'right' }}>
+            {blockedMessage || 'Unequip a trait to make room (max 2 per group)'}
           </span>
         )}
       </div>
