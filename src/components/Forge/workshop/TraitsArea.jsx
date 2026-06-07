@@ -19,6 +19,7 @@ import { useFK, alpha, AreaHeader, Orb, Mono, Icon, ShelfHeader } from './forgeK
 import { DNA_GROUPS } from '../../../data/dnaGroups';
 import { TRAIT_LIBRARY } from '../../../data/traitLibrary';
 import { groupTraitsByFamily, getSoftConflictCopy } from '../../../data/traitFamilies';
+import { resolveSharedRuleControl } from '../../../data/traitSharedRules';
 import { buildSlotFullMessage } from '../../../utils/traitSlotSummary';
 import { getArchetypeDisplayName } from '../../../data/archetypeDisplay';
 import { getArchetypeIdentity } from '../../../data/archetypeIdentity';
@@ -51,6 +52,12 @@ export default function TraitsArea({ agent, agentName, primary, traits, hasActiv
     for (const e of traits.equippedTraits) m.set(e.traitId, e);
     return m;
   }, [traits.equippedTraits]);
+
+  // Which equipped card controls each live-contended shared rule (presentational).
+  const ruleControl = useMemo(
+    () => resolveSharedRuleControl(traits.equippedTraits),
+    [traits.equippedTraits]
+  );
 
   // Equip, then surface a NON-BLOCKING soft-archetype-conflict heads-up (Phase 1B).
   // The equip is never blocked — this is a toast only.
@@ -162,6 +169,7 @@ export default function TraitsArea({ agent, agentName, primary, traits, hasActiv
                       groupColor={meta.accent}
                       locked={hasActiveBattle}
                       blockedMessage={blockedMessage}
+                      ruleControl={ruleControl}
                     />
                   );
                 })}

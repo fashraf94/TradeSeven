@@ -118,6 +118,7 @@ export default function TraitCard({
   groupColor,
   locked = false,
   blockedMessage = null,
+  ruleControl = null,
 }) {
   const [strength, setStrength] = useState(currentStrength || 'moderate');
   const [showDetails, setShowDetails] = useState(false);
@@ -222,11 +223,20 @@ export default function TraitCard({
           {trait.ruleIds.map(ruleId => {
             const rule = ruleMap[ruleId];
             if (!rule) return null;
+            // Shared-rule "controlled by" note (only when this rule is live-contended
+            // by another equipped card — presentational, via the isCustom flag).
+            const ctrl = ruleControl?.[ruleId];
+            const controlNote = ctrl && ctrl.sharerTraitIds.includes(trait.id)
+              ? (ctrl.controllerTraitId === trait.id
+                  ? ' · controls this shared rule'
+                  : ` · controlled by ${ctrl.controllerName}`)
+              : '';
             return (
               <div key={ruleId} style={{
                 fontSize: 11, color: '#A0AEC0', marginBottom: 3, lineHeight: 1.3,
               }}>
                 • {rule.headline}
+                {controlNote && <span style={{ color: '#718096', fontStyle: 'italic' }}>{controlNote}</span>}
               </div>
             );
           })}

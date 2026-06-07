@@ -35,6 +35,7 @@ import MyBundlesTab from './MyBundlesTab';
 import DNAGroupCard from './DNAGroupCard';
 import TraitCard from './TraitCard';
 import { buildSlotFullMessage } from '../../utils/traitSlotSummary';
+import { resolveSharedRuleControl } from '../../data/traitSharedRules';
 import SeasonModeToggle from './SeasonModeToggle';
 
 const TABS = [
@@ -108,6 +109,12 @@ export default function ForgeScreen({ isMobile: isMobileProp, onClose, user, onN
     strategy: traits.getGroupSlotUsage('strategy'),
     discipline: traits.getGroupSlotUsage('discipline'),
   }), [traits.getGroupSlotUsage]);
+
+  // Which equipped card controls each live-contended shared rule (presentational).
+  const ruleControl = useMemo(
+    () => resolveSharedRuleControl(traits.equippedTraits),
+    [traits.equippedTraits]
+  );
 
   // Mech color personality from DNA distribution
   const mechColors = useMemo(() => getMechColors(slotUsage), [slotUsage]);
@@ -578,6 +585,7 @@ export default function ForgeScreen({ isMobile: isMobileProp, onClose, user, onN
                                   groupColor={group.color}
                                   locked={hasActiveBattle}
                                   blockedMessage={blockedMessage}
+                                  ruleControl={ruleControl}
                                 />
                               );
                             })}
@@ -1051,6 +1059,7 @@ export default function ForgeScreen({ isMobile: isMobileProp, onClose, user, onN
                                 groupColor={group.color}
                                 locked={hasActiveBattle}
                                 blockedMessage={blockedMessage}
+                                ruleControl={ruleControl}
                               />
                             );
                           })}
