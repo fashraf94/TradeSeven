@@ -135,6 +135,17 @@ describe('specToPlainLanguage', () => {
     expect(specToPlainLanguage(spec)).toBe('Financials · ranked by composite score · top 10');
   });
 
+  it('renders an industry filter as the full GICS name (Phase 1 — no short-name alias)', () => {
+    const spec = {
+      filters: [{ field: 'industryName', op: 'eq', value: 'Semiconductors & Semiconductor Equipment' }],
+      rankBy: { field: 'return3M', direction: 'desc' },
+      limit: 10,
+    };
+    expect(specToPlainLanguage(spec)).toBe(
+      'Semiconductors & Semiconductor Equipment · ranked by 3-month return · top 10',
+    );
+  });
+
   it('names an archetype rankBy via the display name and an NR7 flag filter', () => {
     const spec = {
       filters: [{ field: 'nr7Flag', op: 'isTrue' }],

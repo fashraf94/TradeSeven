@@ -39,7 +39,7 @@ import {
   computeRSTrend,
   computeTechnicalScore,
 } from '../_utils/indexIntelligence.js';
-import { STOCK_UNIVERSE, ALL_TICKERS, TICKER_TO_SECTOR, TECHNICAL_FACTOR_WEIGHTS } from '../_utils/rankingConfig.js';
+import { STOCK_UNIVERSE, ALL_TICKERS, TICKER_TO_SECTOR, TICKER_TO_INDUSTRY, TECHNICAL_FACTOR_WEIGHTS } from '../_utils/rankingConfig.js';
 import { computeGameModeFits, assignGameModeRanks } from '../_utils/gameModeScoring.js';
 import { computeMomentumRankings } from '../_utils/momentumScoring.js';
 import { computeArchetypeRankings } from '../_utils/archetypeScoring.js';
@@ -945,6 +945,9 @@ export default async function handler(req, res) {
           symbol: tech.symbol,
           sectorId: sectorId || null,
           sectorName,
+          // Phase 4.6 industry taxonomy, stamped from the committed static map
+          // (TICKER_TO_INDUSTRY). Named-field addition — no EODHD call, inert to decide.js.
+          industryName: TICKER_TO_INDUSTRY[tech.symbol] || null,
           fundamentalRank: fundRank || null,
           fundamentalScore: fundScore || null,
           fundamentalTotalPeers: fundTotalPeers || null,

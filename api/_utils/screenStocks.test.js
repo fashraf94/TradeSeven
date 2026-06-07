@@ -13,6 +13,7 @@ import {
   resolveField,
   evaluateOp,
   canonicalizeSector,
+  canonicalizeIndustry,
   ARCH_KEYS,
   MOMENTUM_KEYS,
   SCALAR_FIELDS,
@@ -126,6 +127,7 @@ describe('allowlist constants', () => {
     expect(SCALAR_FIELDS.has('nr7Flag')).toBe(true);
     expect(SCALAR_FIELDS.has('baggerBombRank')).toBe(true);
     expect(SCALAR_FIELDS.has('compositeScore')).toBe(true);
+    expect(SCALAR_FIELDS.has('industryName')).toBe(true); // Phase 1 — filterable industry dimension
     expect(SCALAR_FIELDS.has('pe_ratio')).toBe(false);
     expect(SCALAR_FIELDS.has('compositeRank')).toBe(false); // explicitly-absent field
     expect(Object.isFrozen(SCALAR_FIELDS)).toBe(true);
@@ -135,7 +137,7 @@ describe('allowlist constants', () => {
     expect([...SUPPORTED_OPS]).toEqual(
       expect.arrayContaining(['gt', 'gte', 'lt', 'lte', 'eq', 'neq', 'in', 'between', 'isTrue', 'isFalse']),
     );
-    expect(BASELINE_FIELDS).toEqual(['symbol', 'sectorName', 'compositeScore', 'baggerBombFit', 'momentumScore']);
+    expect(BASELINE_FIELDS).toEqual(['symbol', 'sectorName', 'industryName', 'compositeScore', 'baggerBombFit', 'momentumScore']);
     expect(DEFAULT_LIMIT).toBe(10);
     expect(MAX_LIMIT).toBe(25);
   });
@@ -333,6 +335,86 @@ describe('sector canonicalization', () => {
     // 'UP' !== stored 'up' for a non-sector field → no match (proves eq wasn't globally loosened)
     expect(screenStocks(u, { filters: [{ field: 'trend', op: 'eq', value: 'UP' }] }).matchCount).toBe(0);
     expect(screenStocks(u, { filters: [{ field: 'trend', op: 'eq', value: 'up' }] }).matchCount).toBe(2);
+  });
+});
+
+// ── Industry canonicalization (Phase 1 — industryName filterable) ─────────────────────
+// Mirrors the sector treatment for case/whitespace drift, but with NO alias table:
+// industryName has a single canonical source (our own GICS strings), so colloquialisms
+// are NOT remapped by the engine. The prompt layer maps "semis" → the GICS string; the
+// engine matches the canonical value only. See screenStocks.js.
+
+describe('industry canonicalization (no alias table)', () => {
+  const industryUniverse = () => [
+    { symbol: 'NVDA', industryName: 'Semiconductors & Semiconductor Equipment', compositeScore: 90, return3M: 25.0 },
+    { symbol: 'AMD',  industryName: 'Semiconductors & Semiconductor Equipment', compositeScore: 70, return3M: 12.0 },
+    { symbol: 'MSFT', industryName: 'Software', compositeScore: 85, return3M: 8.0 },
+    { symbol: 'JPM',  industryName: 'Banks', compositeScore: 80, return3M: 5.0 },
+    { symbol: 'XOM',  industryName: 'Oil, Gas & Consumable Fuels', compositeScore: 50, return3M: -10.0 },
+  ];
+
+  it('canonicalizeIndustry: case/whitespace variants normalize; NO alias remap; non-strings pass through', () => {
+    // case / spacing variants of a stored GICS string collapse to one normalized key
+    expect(canonicalizeIndustry('SEMICONDUCTORS & SEMICONDUCTOR EQUIPMENT'))
+      .toBe(canonicalizeIndustry('semiconductors & semiconductor equipment'));
+    expect(canonicalizeIndustry(' Semiconductors  &  Semiconductor  Equipment '))
+      .toBe(canonicalizeIndustry('Semiconductors & Semiconductor Equipment'));
+    // NO alias table (unlike sector): a colloquialism does NOT resolve to the GICS string
+    expect(canonicalizeIndustry('Semis'))
+      .not.toBe(canonicalizeIndustry('Semiconductors & Semiconductor Equipment'));
+    expect(canonicalizeIndustry('Chips'))
+      .not.toBe(canonicalizeIndustry('Semiconductors & Semiconductor Equipment'));
+    // non-strings pass through untouched
+    expect(canonicalizeIndustry(null)).toBe(null);
+    expect(canonicalizeIndustry(undefined)).toBe(undefined);
+    expect(canonicalizeIndustry(123)).toBe(123);
+  });
+
+  it('industryName eq tolerates case/spacing drift on a multi-word industry', () => {
+    for (const value of [
+      'Semiconductors & Semiconductor Equipment',
+      'semiconductors & semiconductor equipment',
+      'SEMICONDUCTORS & SEMICONDUCTOR EQUIPMENT',
+      ' Semiconductors & Semiconductor Equipment ',
+    ]) {
+      const out = screenStocks(industryUniverse(), {
+        filters: [{ field: 'industryName', op: 'eq', value }],
+        rankBy: { field: 'compositeScore', direction: 'desc' },
+      });
+      expect(symbolsOf(out)).toEqual(['NVDA', 'AMD']);
+      expect(out.matchCount).toBe(2);
+      expect(out.rejectedFilters).toEqual([]);
+    }
+  });
+
+  it('Phase 1 unlock: industryName filter + return3M rank returns the ranked peer list', () => {
+    const out = screenStocks(industryUniverse(), {
+      filters: [{ field: 'industryName', op: 'eq', value: 'semiconductors & semiconductor equipment' }],
+      rankBy: { field: 'return3M', direction: 'desc' },
+    });
+    expect(symbolsOf(out)).toEqual(['NVDA', 'AMD']);
+    // industryName rides along on every projected result (BASELINE_FIELDS)
+    expect(out.results[0].industryName).toBe('Semiconductors & Semiconductor Equipment');
+  });
+
+  it('neq excludes the canonical industry; in matches each (case-insensitive)', () => {
+    const neq = screenStocks(industryUniverse(), {
+      filters: [{ field: 'industryName', op: 'neq', value: 'SEMICONDUCTORS & SEMICONDUCTOR EQUIPMENT' }],
+      rankBy: { field: 'compositeScore', direction: 'desc' },
+    });
+    expect(symbolsOf(neq)).toEqual(['MSFT', 'JPM', 'XOM']); // no NVDA / AMD
+    const inOut = screenStocks(industryUniverse(), {
+      filters: [{ field: 'industryName', op: 'in', value: ['software', 'banks'] }],
+      rankBy: { field: 'compositeScore', direction: 'desc' },
+    });
+    expect(symbolsOf(inOut)).toEqual(['MSFT', 'JPM']);
+  });
+
+  it('an unmatched colloquialism returns nothing (engine matches the canonical value only)', () => {
+    const out = screenStocks(industryUniverse(), {
+      filters: [{ field: 'industryName', op: 'eq', value: 'Semis' }],
+    });
+    expect(out.matchCount).toBe(0);
   });
 });
 
@@ -586,7 +668,7 @@ describe('result projection', () => {
     });
     const nvda = out.results.find(r => r.symbol === 'NVDA');
     expect(Object.keys(nvda).sort()).toEqual(
-      ['arch_scores', 'atrPercentile', 'baggerBombFit', 'compositeScore', 'momentumScore', 'sectorName', 'symbol'].sort(),
+      ['arch_scores', 'atrPercentile', 'baggerBombFit', 'compositeScore', 'industryName', 'momentumScore', 'sectorName', 'symbol'].sort(),
     );
     // compositeScore referenced by a filter but is a baseline ⇒ appears exactly once.
     expect(Object.keys(nvda).filter(k => k === 'compositeScore')).toHaveLength(1);

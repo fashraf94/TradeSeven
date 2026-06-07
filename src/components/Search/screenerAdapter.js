@@ -84,6 +84,7 @@ const FIELD_LABELS = Object.freeze({
   return12M: '12-month return',
   sectorName: 'sector',
   sectorId: 'sector',
+  industryName: 'industry',
   symbol: 'ticker',
 });
 
@@ -243,7 +244,10 @@ function describeFilter(f) {
   const { field, op, value } = f;
   const label = friendlyField(field);
 
-  if (field === 'sectorName' || field === 'sectorId') {
+  // Sector and industry read most naturally as the bare value ("Technology",
+  // "Semiconductors & Semiconductor Equipment", "excluding Energy"). Phase 1 keeps the full
+  // GICS industry string; the short-name alias map (INDUSTRY_DISPLAY_NAMES) arrives in Phase 2.
+  if (field === 'sectorName' || field === 'sectorId' || field === 'industryName') {
     if (op === 'eq') return String(value);
     if (op === 'neq') return `excluding ${value}`;
     if (op === 'in' && Array.isArray(value)) return value.join(', ');

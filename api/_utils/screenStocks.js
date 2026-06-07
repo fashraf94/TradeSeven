@@ -27,7 +27,7 @@ import { STOCK_UNIVERSE } from './rankingConfig.js';
 // Top-level scalar / categorical / boolean fields written per stock in
 // api/cron/compute-index-intelligence.js:944-988 (+ baggerBombRank mutated on at :993).
 export const SCALAR_FIELDS = Object.freeze(new Set([
-  'symbol', 'sectorId', 'sectorName',
+  'symbol', 'sectorId', 'sectorName', 'industryName',
   'fundamentalScore', 'fundamentalRank',
   'technicalScore', 'technicalRank', 'sectorTechnicalRank', 'sectorTechnicalTotal',
   'compositeScore', 'baggerBombFit', 'baggerBombRank',
@@ -62,7 +62,7 @@ export const SUPPORTED_OPS = Object.freeze(new Set([
 // Always carried on every result so the artifact is self-describing even when a query
 // references none of them (spec §5 baseline). All flat scalars.
 export const BASELINE_FIELDS = Object.freeze([
-  'symbol', 'sectorName', 'compositeScore', 'baggerBombFit', 'momentumScore',
+  'symbol', 'sectorName', 'industryName', 'compositeScore', 'baggerBombFit', 'momentumScore',
 ]);
 
 export const DEFAULT_LIMIT = 10;
@@ -221,6 +221,29 @@ export function canonicalizeSector(value) {
 // Canonicalize a spec value, which may be a scalar (eq / neq) or an array (in / between).
 function canonicalizeSectorSpec(value) {
   return Array.isArray(value) ? value.map(canonicalizeSector) : canonicalizeSector(value);
+}
+
+// ── Industry value canonicalization (scoped to industryName) ──────────────────────────
+//
+// Mirrors the sector treatment for case/whitespace drift, but with NO alias table: the
+// industry vocabulary has a single canonical source — the GICS strings in our own
+// STOCK_INDUSTRIES map — so there are no data-provider synonyms to remap. Reuses
+// normalizeSectorKey (lowercase + strip whitespace); a value that isn't a known industry
+// simply stays its normalized self and won't spuriously match. Scoped to industryName only.
+
+const INDUSTRY_FIELDS = Object.freeze(new Set(['industryName']));
+
+/**
+ * Canonicalize one industry value for comparison: case/whitespace-insensitive, no aliasing.
+ * Non-strings pass through untouched (numeric coercion / null handling stays unaffected).
+ */
+export function canonicalizeIndustry(value) {
+  return typeof value === 'string' ? normalizeSectorKey(value) : value;
+}
+
+// Canonicalize a spec value (scalar for eq / neq, array for in / between).
+function canonicalizeIndustrySpec(value) {
+  return Array.isArray(value) ? value.map(canonicalizeIndustry) : canonicalizeIndustry(value);
 }
 
 // ── Internal validation / sort / projection ──────────────────────────────────────────
@@ -457,6 +480,10 @@ export function screenStocks(stocks, screenSpec) {
       // variant resolves to the stored form; every other field stays an exact compare.
       if (SECTOR_FIELDS.has(f.field)) {
         return evaluateOp(f.op, canonicalizeSector(fieldValue), canonicalizeSectorSpec(f.value));
+      }
+      // industryName: same case/whitespace-insensitive matching as sector, no alias table.
+      if (INDUSTRY_FIELDS.has(f.field)) {
+        return evaluateOp(f.op, canonicalizeIndustry(fieldValue), canonicalizeIndustrySpec(f.value));
       }
       return evaluateOp(f.op, fieldValue, f.value);
     }),
