@@ -34,7 +34,15 @@ export default function TraitsArea({ agent, agentName, primary, traits, hasActiv
   const archLine = getArchetypeIdentity(agent?.archetype)?.disposition || '';
 
   // Cards grouped by PUBLIC family (presentation only — never feeds slots/seeding).
-  const families = useMemo(() => groupTraitsByFamily(TRAIT_LIBRARY), []);
+  // Each family also carries the real slot groups its cards draw on (static; honest
+  // about the Sector-Rotator-in-Play wrinkle), derived once here rather than per render.
+  const families = useMemo(
+    () => groupTraitsByFamily(TRAIT_LIBRARY).map((f) => ({
+      ...f,
+      slotGroups: [...new Set(f.traits.map((t) => DNA_GROUPS[t.dnaGroup]?.name).filter(Boolean))],
+    })),
+    []
+  );
 
   // traitId → equipped entry, for per-card state + per-family counts.
   const equippedById = useMemo(() => {
@@ -91,11 +99,9 @@ export default function TraitsArea({ agent, agentName, primary, traits, hasActiv
       <ShelfHeader label="Cards · explore & equip" count={`${TRAIT_LIBRARY.length} cards`} />
 
       {/* Editable trait layer — grouped by public family (TraitCard reused verbatim) */}
-      {families.map(({ family, meta, traits: famTraits }) => {
+      {families.map(({ family, meta, traits: famTraits, slotGroups }) => {
         const isOpen = expandedFamily === family;
         const equippedInFamily = famTraits.filter((t) => equippedById.has(t.id)).length;
-        // Which real slot groups this family's cards draw on (honest about the wrinkle).
-        const slotGroups = [...new Set(famTraits.map((t) => DNA_GROUPS[t.dnaGroup]?.name).filter(Boolean))];
         return (
           <div key={family} style={{ marginBottom: 8 }}>
             <button

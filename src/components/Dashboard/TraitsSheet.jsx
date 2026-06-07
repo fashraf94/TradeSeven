@@ -26,7 +26,7 @@
 // Tokens: CMD / alpha from commandUI (the dashboard subtree's source, mirroring
 // DARK_TOKENS), matching the equip-row siblings + ArchetypePicker — not useTheme().
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { ShieldCheck } from 'lucide-react';
 import EquipSheet from './EquipSheet';
 import { CMD, alpha, MONO, Eyebrow, Mono, readableOn, ErrorBanner } from './commandUI';
@@ -202,6 +202,15 @@ export default function TraitsSheet({ open, onClose, agent, accent, dock = 'bott
 
   const equippedIds = new Set(equippedTraits.map((t) => t.traitId));
 
+  // Static family grouping (memoized once) + per-group slot usage (recomputed only
+  // when the equipped set changes) — avoids re-grouping all 16 cards and re-querying
+  // each group's usage on every working/error/loading flip. Mirrors TraitsArea.
+  const families = useMemo(() => groupTraitsByFamily(TRAIT_LIBRARY), []);
+  const slotUsageByGroup = useMemo(
+    () => Object.fromEntries(Object.keys(DNA_GROUPS).map((g) => [g, getGroupSlotUsage(g)])),
+    [getGroupSlotUsage]
+  );
+
   return (
     <EquipSheet
       open={open}
@@ -248,14 +257,14 @@ export default function TraitsSheet({ open, onClose, agent, accent, dock = 'bott
           )}
 
           <Eyebrow color={CMD.ink3} style={{ margin: '0 2px 9px' }}>Add a trait</Eyebrow>
-          {groupTraitsByFamily(TRAIT_LIBRARY).map(({ family, meta, traits: famTraits }) => {
+          {families.map(({ family, meta, traits: famTraits }) => {
             const candidates = famTraits.filter((t) => !equippedIds.has(t.id));
             if (candidates.length === 0) return null;
             return (
               <div key={family} style={{ marginBottom: 16 }}>
                 <FamilyHeader meta={meta} />
                 {candidates.map((t) => {
-                  const usage = getGroupSlotUsage(t.dnaGroup);
+                  const usage = slotUsageByGroup[t.dnaGroup] || { used: 0, max: 2 };
                   return (
                     <TraitRow
                       key={t.id}
