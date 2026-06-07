@@ -18,7 +18,7 @@ import { ChevronDown } from 'lucide-react';
 import { useFK, alpha, AreaHeader, Orb, Mono, Icon, ShelfHeader } from './forgeKit';
 import { DNA_GROUPS } from '../../../data/dnaGroups';
 import { TRAIT_LIBRARY } from '../../../data/traitLibrary';
-import { groupTraitsByFamily } from '../../../data/traitFamilies';
+import { groupTraitsByFamily, getSoftConflictCopy } from '../../../data/traitFamilies';
 import { buildSlotFullMessage } from '../../../utils/traitSlotSummary';
 import { getArchetypeDisplayName } from '../../../data/archetypeDisplay';
 import { getArchetypeIdentity } from '../../../data/archetypeIdentity';
@@ -51,6 +51,17 @@ export default function TraitsArea({ agent, agentName, primary, traits, hasActiv
     for (const e of traits.equippedTraits) m.set(e.traitId, e);
     return m;
   }, [traits.equippedTraits]);
+
+  // Equip, then surface a NON-BLOCKING soft-archetype-conflict heads-up (Phase 1B).
+  // The equip is never blocked — this is a toast only.
+  const handleEquip = async (traitId, strength) => {
+    const res = await traits.equipTrait(traitId, strength);
+    if (res?.success) {
+      const copy = getSoftConflictCopy(traitId, agent?.archetype);
+      if (copy) showToast?.(copy, accent);
+    }
+    return res;
+  };
 
   return (
     <div className="fw-scroll" style={{ height: '100%', overflowY: 'auto', padding: '22px 18px calc(84px + env(safe-area-inset-bottom))' }}>
@@ -143,7 +154,7 @@ export default function TraitsArea({ agent, agentName, primary, traits, hasActiv
                       isEquipped={!!equipped}
                       currentStrength={equipped?.strength || null}
                       isCustom={equipped?.isCustom || false}
-                      onEquip={traits.equipTrait}
+                      onEquip={handleEquip}
                       onUnequip={traits.unequipTrait}
                       onStrengthChange={traits.setTraitStrength}
                       onAdvancedOpen={() => showToast?.('Advanced rule editing lives in the bundle builder', accent)}

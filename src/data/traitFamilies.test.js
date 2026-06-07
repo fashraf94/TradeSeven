@@ -13,8 +13,15 @@ import {
   isArchetypeAligned,
   getFamilyMeta,
   groupTraitsByFamily,
+  getSoftConflictCopy,
+  getArchetypeFit,
+  PLAY_CARD_ARCHETYPE_FIT,
 } from './traitFamilies';
-import { TRAIT_LIBRARY } from './traitLibrary';
+import { TRAIT_LIBRARY, TRAIT_BY_ID } from './traitLibrary';
+
+// Known archetype CODE-IDs (kept local — not imported from the fenced
+// agentArchetypeConfig). Mirrors ARCHETYPE_DEFAULT_TRAITS keys.
+const KNOWN_ARCHETYPES = ['momentum_chaser', 'degen', 'contrarian', 'analyst', 'guardian', 'diversifier'];
 
 describe('family mapping (locked V2.2)', () => {
   it('every library trait maps to a known family', () => {
@@ -93,5 +100,44 @@ describe('groupTraitsByFamily ordering', () => {
   it('drops a family with no members', () => {
     const groups = groupTraitsByFamily([{ id: 'trait-trend-rider' }]); // play only
     expect(groups.map((g) => g.family)).toEqual(['play']);
+  });
+});
+
+describe('soft archetype-conflict metadata (Phase 1B — non-blocking)', () => {
+  it('matches the starter matrix: Trend Rider/Breakout Chaser ⟂ Contrarian; Bargain Hunter ⟂ Trend Follower', () => {
+    expect(getSoftConflictCopy('trait-trend-rider', 'contrarian')).toBeTruthy();
+    expect(getSoftConflictCopy('trait-breakout-chaser', 'contrarian')).toBeTruthy();
+    expect(getSoftConflictCopy('trait-bargain-hunter', 'momentum_chaser')).toBeTruthy();
+  });
+
+  it('returns null where there is no soft conflict (compatible or neutral archetype)', () => {
+    expect(getSoftConflictCopy('trait-trend-rider', 'momentum_chaser')).toBeNull();
+    expect(getSoftConflictCopy('trait-bargain-hunter', 'contrarian')).toBeNull();
+    expect(getSoftConflictCopy('trait-smart-money-tracker', 'contrarian')).toBeNull();
+  });
+
+  it('returns null for non-Play cards and for a missing archetype', () => {
+    expect(getSoftConflictCopy('trait-iron-discipline', 'momentum_chaser')).toBeNull();
+    expect(getSoftConflictCopy('trait-trend-rider', undefined)).toBeNull();
+    expect(getSoftConflictCopy('trait-trend-rider', null)).toBeNull();
+  });
+
+  it('only the three matrix cards carry fit data; every referenced id/archetype is valid', () => {
+    expect(Object.keys(PLAY_CARD_ARCHETYPE_FIT).sort()).toEqual(
+      ['trait-bargain-hunter', 'trait-breakout-chaser', 'trait-trend-rider'].sort()
+    );
+    for (const [traitId, fit] of Object.entries(PLAY_CARD_ARCHETYPE_FIT)) {
+      expect(TRAIT_BY_ID[traitId], traitId).toBeTruthy();
+      expect(getTraitFamily(traitId)).toBe('play'); // fit data is for Play cards
+      for (const a of [...fit.softConflictArchetypes, ...fit.compatibleArchetypes]) {
+        expect(KNOWN_ARCHETYPES, `${traitId}:${a}`).toContain(a);
+      }
+      expect(typeof fit.conflictCopy).toBe('string');
+    }
+  });
+
+  it('getArchetypeFit returns null for a card with no fit data', () => {
+    expect(getArchetypeFit('trait-iron-discipline')).toBeNull();
+    expect(getArchetypeFit('trait-trend-rider')).toBeTruthy();
   });
 });

@@ -34,7 +34,7 @@ import { useForge } from '../../hooks/useForge';
 import { useTraits, BATTLE_LOCK_MSG } from '../../hooks/useTraits';
 import { DNA_GROUPS, TOTAL_TRAIT_SLOTS } from '../../data/dnaGroups';
 import { TRAIT_LIBRARY } from '../../data/traitLibrary';
-import { groupTraitsByFamily } from '../../data/traitFamilies';
+import { groupTraitsByFamily, getSoftConflictCopy } from '../../data/traitFamilies';
 import { buildSlotFullMessage } from '../../utils/traitSlotSummary';
 import { getTraitEnforcement } from '../../utils/traitEnforcement';
 
@@ -174,12 +174,13 @@ export default function TraitsSheet({ open, onClose, agent, accent, dock = 'bott
   const loading = forge.loading || traitsLoading;
 
   const [error, setError] = useState(null);
+  const [notice, setNotice] = useState(null); // non-blocking heads-up (soft archetype conflict)
   const [working, setWorking] = useState(null); // traitId mid-write, or null
   // Bumped on close so a write that resolves after the sheet closed can't setState
   // a stale error/working flag into the next open (mirrors ArchetypePicker).
   const sessionRef = useRef(0);
   useEffect(() => {
-    if (!open) { sessionRef.current += 1; setError(null); setWorking(null); }
+    if (!open) { sessionRef.current += 1; setError(null); setNotice(null); setWorking(null); }
   }, [open]);
 
   // Run an equip/unequip write with single-flight + post-close guards. Handles the
@@ -189,11 +190,17 @@ export default function TraitsSheet({ open, onClose, agent, accent, dock = 'bott
     if (working) return;
     const session = sessionRef.current;
     setError(null);
+    setNotice(null);
     setWorking(traitId);
     try {
       const result = await fn(traitId);
       if (sessionRef.current !== session) return; // sheet closed mid-flight — drop it
       if (result && result.success === false) setError(errorCopy(result.error));
+      else if (fn === equipTrait) {
+        // Equip succeeded — surface a NON-BLOCKING soft-archetype-conflict heads-up.
+        const conflict = getSoftConflictCopy(traitId, agent?.archetype);
+        if (conflict) setNotice(conflict);
+      }
     } catch (err) {
       if (sessionRef.current !== session) return;
       console.error('[TraitsSheet] trait write failed:', err);
@@ -234,6 +241,18 @@ export default function TraitsSheet({ open, onClose, agent, accent, dock = 'bott
       ) : (
         <>
           {error && <ErrorBanner style={{ margin: '2px 0 12px' }}>{error}</ErrorBanner>}
+
+          {/* Non-blocking soft-conflict heads-up — neutral (amber), never the red
+              ErrorBanner. The trait IS equipped; this is a heads-up, not a failure. */}
+          {notice && (
+            <div style={{
+              margin: '2px 0 12px', padding: '9px 11px', borderRadius: 11,
+              background: alpha('#F59E0B', 0.1), border: `1px solid ${alpha('#F59E0B', 0.4)}`,
+              color: CMD.ink, fontSize: 12, lineHeight: 1.4,
+            }}>
+              {notice}
+            </div>
+          )}
 
           {/* Honest cap model — overall ceiling (N of 6) + the per-group rule, so a full
               group never reads as an overall cap. Per-group counts live in each GroupHeader. */}

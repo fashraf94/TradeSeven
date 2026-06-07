@@ -120,3 +120,52 @@ export function groupTraitsByFamily(traits) {
     .filter((fam) => buckets[fam]?.length)
     .map((fam) => ({ family: fam, meta: TRAIT_FAMILIES[fam], traits: buckets[fam] }));
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Phase 1B — SOFT archetype-compatibility (Play cards). POLICY/DISPLAY ONLY.
+//
+// A Play card whose selection lean pulls against an archetype's edge shows a
+// NON-BLOCKING heads-up on equip — the user can still equip it. There is NO
+// mechanical enforcement and NO "tilt within legal universe" precedence here;
+// that is Phase 2. `hardBlockedArchetypes` is intentionally omitted (no hard
+// blocks in Phase 1). Default seeding is already hand-curated so no conflict
+// card is ever seeded — this metadata is belt-and-suspenders + drives the warning.
+//
+// Archetype keys are CODE-IDs (momentum_chaser, degen, contrarian, …).
+// ─────────────────────────────────────────────────────────────────────────────
+export const PLAY_CARD_ARCHETYPE_FIT = {
+  'trait-trend-rider': {
+    compatibleArchetypes: ['momentum_chaser', 'degen'],
+    softConflictArchetypes: ['contrarian'],
+    conflictCopy: 'Heads up: Trend Rider hunts established uptrends, which leans against a Contrarian agent’s fade-the-crowd edge. You can still equip it.',
+  },
+  'trait-breakout-chaser': {
+    compatibleArchetypes: ['momentum_chaser', 'degen'],
+    softConflictArchetypes: ['contrarian'],
+    conflictCopy: 'Heads up: Breakout Chaser chases new highs, which leans against a Contrarian agent’s fade-the-crowd edge. You can still equip it.',
+  },
+  'trait-bargain-hunter': {
+    compatibleArchetypes: ['contrarian'],
+    softConflictArchetypes: ['momentum_chaser'],
+    conflictCopy: 'Heads up: Bargain Hunter buys beaten-down names, which leans against a Trend Follower agent’s momentum edge. You can still equip it.',
+  },
+};
+
+/** Per-card archetype-fit metadata (or null for cards with no fit data). */
+export function getArchetypeFit(traitId) {
+  return PLAY_CARD_ARCHETYPE_FIT[traitId] || null;
+}
+
+/**
+ * Soft-conflict heads-up copy for equipping `traitId` on an agent of `archetype`,
+ * or null when there's no soft conflict. NON-BLOCKING — callers warn but still
+ * allow the equip.
+ * @param {string} traitId
+ * @param {string} archetype - agent archetype CODE-ID
+ * @returns {string|null}
+ */
+export function getSoftConflictCopy(traitId, archetype) {
+  const fit = PLAY_CARD_ARCHETYPE_FIT[traitId];
+  if (!fit || !archetype) return null;
+  return fit.softConflictArchetypes?.includes(archetype) ? fit.conflictCopy : null;
+}
