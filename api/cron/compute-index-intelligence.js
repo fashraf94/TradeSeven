@@ -39,7 +39,7 @@ import {
   computeRSTrend,
   computeTechnicalScore,
 } from '../_utils/indexIntelligence.js';
-import { STOCK_UNIVERSE, ALL_TICKERS, TICKER_TO_SECTOR, TECHNICAL_FACTOR_WEIGHTS } from '../_utils/rankingConfig.js';
+import { STOCK_UNIVERSE, ALL_TICKERS, TICKER_TO_SECTOR, TICKER_TO_INDUSTRY, TECHNICAL_FACTOR_WEIGHTS } from '../_utils/rankingConfig.js';
 import { computeGameModeFits, assignGameModeRanks } from '../_utils/gameModeScoring.js';
 import { computeMomentumRankings } from '../_utils/momentumScoring.js';
 import { computeArchetypeRankings } from '../_utils/archetypeScoring.js';
@@ -375,6 +375,54 @@ function computeIndexTechnicals(ohlcv, name) {
       position: Number(rangePosition.toFixed(1)),
     },
   };
+}
+
+// ───────────────────────────────────────────────
+// Industry rollup (Phase 2)
+// ───────────────────────────────────────────────
+
+// Minimum members for an industry to be ranked / rolled up. One global knob
+// (trivially bumpable to 5). Used for both the inclusion gate and the per-metric
+// non-null-count gate.
+export const MIN_INDUSTRY_SIZE = 4;
+
+// Null-safe median — mirrors api/cron/compute-rankings.js:97 (sorted, upper-middle
+// element, null on empty). Callers pass only finite numbers.
+function median(arr) {
+  if (!arr || arr.length === 0) return null;
+  const sorted = [...arr].sort((a, b) => a - b);
+  return sorted[Math.floor(sorted.length / 2)];
+}
+
+// Metrics aggregated per industry — the PR #468 realized returns + momentumScore.
+const ROLLUP_METRICS = ['return1W', 'return1M', 'return3M', 'returnYTD', 'return12M', 'momentumScore'];
+
+// Build the per-industry rollup from the already-assembled rankingStocks (which carry
+// industryName + the return/momentum fields). Pure + exported for unit testing. Groups by
+// industryName (skipping null industry), includes an industry only when it has >= minSize
+// members, and stores the MEDIAN of each metric over the members with a non-null value for
+// it — null when fewer than minSize members do, so a thin-history horizon won't rank.
+// Median is robust to a single outlier; a mean would be skewed by one rocket.
+export function buildIndustriesRollup(rankingStocks, minSize = MIN_INDUSTRY_SIZE) {
+  const groups = {};
+  for (const stock of Array.isArray(rankingStocks) ? rankingStocks : []) {
+    const name = stock?.industryName;
+    if (!name) continue;
+    if (!groups[name]) groups[name] = [];
+    groups[name].push(stock);
+  }
+
+  const industries = {};
+  for (const [name, members] of Object.entries(groups)) {
+    if (members.length < minSize) continue; // inclusion gate
+    const entry = { name, stocks: members.map(s => s.symbol), totalStocks: members.length };
+    for (const metric of ROLLUP_METRICS) {
+      const vals = members.map(s => s[metric]).filter(v => typeof v === 'number' && Number.isFinite(v));
+      entry[metric] = vals.length >= minSize ? median(vals) : null; // per-metric non-null gate
+    }
+    industries[name] = entry;
+  }
+  return industries;
 }
 
 // ───────────────────────────────────────────────
@@ -945,6 +993,9 @@ export default async function handler(req, res) {
           symbol: tech.symbol,
           sectorId: sectorId || null,
           sectorName,
+          // Phase 4.6 industry taxonomy, stamped from the committed static map
+          // (TICKER_TO_INDUSTRY). Named-field addition — no EODHD call, inert to decide.js.
+          industryName: TICKER_TO_INDUSTRY[tech.symbol] || null,
           fundamentalRank: fundRank || null,
           fundamentalScore: fundScore || null,
           fundamentalTotalPeers: fundTotalPeers || null,
@@ -1032,11 +1083,16 @@ export default async function handler(req, res) {
         };
       }
 
+      // Phase 2 — per-industry rollup (median aggregates, >= MIN_INDUSTRY_SIZE members).
+      // Reads the assembled rankingStocks; no extra data fetch.
+      const industries = buildIndustriesRollup(rankingStocks);
+
       const rankingsRef = db.collection('indexIntelligence').doc('stockRankings');
       batch.set(rankingsRef, {
         stocks: rankingStocks,
         totalTechStocks,
         sectors,
+        industries,
         mode: intraday ? 'intraday' : 'premarket',
         computedAt: FieldValue.serverTimestamp(),
         // Freshness horizon for consumers: intraday docs go stale within ~75min

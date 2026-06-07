@@ -33,7 +33,7 @@ import { applySecurityMiddleware } from '../_utils/security.js';
 import { requireAuth } from '../_utils/authMiddleware.js';
 import { buildVoiceLayerPrompt } from '../_utils/voiceLayerPrompt.js';
 import { callGemmaVoiceWithRetry, parseVoiceLayerResponse } from '../_utils/gemmaClient.js';
-import { screenStocks } from '../_utils/screenStocks.js';
+import { screenStocks, screenIndustries } from '../_utils/screenStocks.js';
 import { FieldValue } from 'firebase-admin/firestore';
 import { logConversation } from '../_utils/shadowLogger.js';
 
@@ -98,6 +98,9 @@ function sanitizePreviousSpec(raw) {
   const spec = { filters };
   if (rankBy) spec.rankBy = rankBy;
   if (Number.isFinite(raw.limit)) spec.limit = raw.limit;
+  // Carry the industry-rollup discriminator so a rollup refinement stays a rollup
+  // (the model still re-decides per turn — see voiceLayerPrompt rollup rules).
+  if (raw.screenType === 'industries') spec.screenType = 'industries';
   return spec;
 }
 
@@ -285,8 +288,13 @@ export default async function handler(req, res) {
       const dataAsOf = toIso(rankingsData.updatedAt) || toIso(rankingsData.computedAt);
       const dataMode = typeof rankingsData.mode === 'string' ? rankingsData.mode : null;
 
-      // 14. Hand the raw spec straight to the util — it owns all validation.
-      const screen = screenStocks(stocks, rawScreenSpec);
+      // 14. Hand the raw spec straight to the util — it owns all validation. An
+      //     "industries" screenType runs the precomputed-rollup path; anything else
+      //     (including absent) runs the per-stock path, unchanged.
+      const isIndustryRollup = rawScreenSpec.screenType === 'industries';
+      const screen = isIndustryRollup
+        ? screenIndustries(rankingsData.industries || {}, rawScreenSpec)
+        : screenStocks(stocks, rawScreenSpec);
 
       // rejectedFilters and matchCount are ALWAYS present on a screened turn,
       // so an empty (matchCount:0) or partial screen is always explainable.
@@ -295,6 +303,7 @@ export default async function handler(req, res) {
         message,
         suggestedActions,
         screened: true,
+        resultType: isIndustryRollup ? 'industries' : 'stocks',
         appliedSpec: screen.appliedSpec,
         rejectedFilters: screen.rejectedFilters,
         results: screen.results,

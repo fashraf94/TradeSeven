@@ -84,8 +84,38 @@ const FIELD_LABELS = Object.freeze({
   return12M: '12-month return',
   sectorName: 'sector',
   sectorId: 'sector',
+  industryName: 'industry',
   symbol: 'ticker',
 });
+
+// Short display names for the clunkier GICS industry labels (Phase 2). Used for the
+// industry rollup rows AND the transparency strip; unmapped industries render their GICS
+// string as-is. Display polish only — the canonical GICS string stays the data/value.
+const INDUSTRY_DISPLAY_NAMES = Object.freeze({
+  'Semiconductors & Semiconductor Equipment': 'Semiconductors',
+  'Oil, Gas & Consumable Fuels': 'Oil & Gas',
+  'Technology Hardware, Storage & Peripherals': 'Tech Hardware',
+  'Consumer Staples Distribution & Retail': 'Staples Retail',
+  'Health Care Equipment & Supplies': 'Medical Devices',
+  'Health Care Providers & Services': 'Healthcare Providers',
+  'Hotels, Restaurants & Leisure': 'Hotels & Leisure',
+  'Interactive Media & Services': 'Interactive Media',
+  'Independent Power and Renewable Electricity Producers': 'Power Producers',
+  'Diversified Telecommunication Services': 'Diversified Telecom',
+  'Wireless Telecommunication Services': 'Wireless Telecom',
+  'Textiles, Apparel & Luxury Goods': 'Apparel & Luxury',
+  'Commercial Services & Supplies': 'Commercial Services',
+  'Air Freight & Logistics': 'Air Freight',
+  'Containers & Packaging': 'Packaging',
+  'Energy Equipment & Services': 'Energy Equipment',
+  'Life Sciences Tools & Services': 'Life Sciences Tools',
+});
+
+// GICS industry string → short display name (unmapped passes through unchanged).
+export function industryDisplayName(name) {
+  if (typeof name !== 'string') return name;
+  return INDUSTRY_DISPLAY_NAMES[name] || name;
+}
 
 /**
  * Dot-path-aware value read (mirrors screenStocks.resolveField). One hop only —
@@ -224,6 +254,35 @@ export function buildReturnRows(results, appliedSpec) {
   return { rows, maxAbs, field };
 }
 
+/**
+ * Build rows for an INDUSTRY-ROLLUP result. The rollup rows already carry the ranked `value`
+ * (screenStocks.screenIndustries), so this normalizes it, attaches the short display name +
+ * member count, and — like the stock path — computes a return-style max-abs OR a score-style
+ * max for bar normalization, branching on isReturnField.
+ *
+ * @returns {{ rows: Array<{industry, displayName, totalStocks, value: number|null}>,
+ *            isReturn: boolean, maxAbs: number, maxScore: number, field: string }}
+ */
+export function buildIndustryRows(results, appliedSpec) {
+  const field =
+    (appliedSpec && appliedSpec.rankBy && appliedSpec.rankBy.field) || DEFAULT_RANK_FIELD;
+  const list = Array.isArray(results) ? results : [];
+  const isReturn = isReturnField(field);
+
+  const rows = list.map((industry) => ({
+    industry,
+    displayName: industryDisplayName(industry?.name),
+    totalStocks: industry?.totalStocks ?? null,
+    value: toFiniteOrNull(industry?.value != null ? industry.value : resolveRankValue(industry, field)),
+  }));
+
+  // Returns diverge from a center zero (max-abs); momentumScore is a one-directional 0–100 bar.
+  const maxAbs = rows.reduce((m, r) => (r.value == null ? m : Math.max(m, Math.abs(r.value))), 0);
+  const maxScore = Math.max(...rows.map((r) => (r.value == null ? 0 : r.value)), 1);
+
+  return { rows, isReturn, maxAbs, maxScore, field };
+}
+
 // Humanize one filter/rank field for display, including dot-path namespaces.
 function friendlyField(field) {
   if (typeof field !== 'string' || !field) return 'score';
@@ -243,6 +302,14 @@ function describeFilter(f) {
   const { field, op, value } = f;
   const label = friendlyField(field);
 
+  // Sector and industry read most naturally as the bare value ("Technology", "excluding
+  // Energy"). Industry uses its short display name (INDUSTRY_DISPLAY_NAMES) so the strip reads
+  // "Semiconductors", not "Semiconductors & Semiconductor Equipment".
+  if (field === 'industryName') {
+    if (op === 'eq') return industryDisplayName(String(value));
+    if (op === 'neq') return `excluding ${industryDisplayName(String(value))}`;
+    if (op === 'in' && Array.isArray(value)) return value.map((v) => industryDisplayName(String(v))).join(', ');
+  }
   if (field === 'sectorName' || field === 'sectorId') {
     if (op === 'eq') return String(value);
     if (op === 'neq') return `excluding ${value}`;
@@ -276,7 +343,8 @@ export function specToPlainLanguage(appliedSpec) {
 
   const filters = Array.isArray(appliedSpec.filters) ? appliedSpec.filters : [];
   const filterText = filters.map(describeFilter).filter(Boolean);
-  parts.push(filterText.length ? filterText.join(' · ') : 'All stocks');
+  const emptyLead = appliedSpec.screenType === 'industries' ? 'All industries' : 'All stocks';
+  parts.push(filterText.length ? filterText.join(' · ') : emptyLead);
 
   const rankBy = appliedSpec.rankBy;
   if (rankBy && rankBy.field) parts.push(`ranked by ${friendlyField(rankBy.field)}`);

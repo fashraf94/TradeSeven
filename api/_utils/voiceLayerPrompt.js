@@ -2123,6 +2123,7 @@ const RESEARCH_OUTPUT_FORMAT = `RESPONSE FORMAT — You MUST respond with valid 
   "_scratchpad": "Brief internal reasoning (2-3 sentences). Which SCREENABLE FIELDS does the request map to? Is any part unscreenable with the available data? Logged, never shown to the user.",
   "message": "One short paragraph (2-4 sentences), neutral research-analyst voice, framing what you screened for. If the request implies data you do not have, say plainly what you could not assess. No greeting, no preamble.",
   "screenSpec": {
+    "screenType": "stocks | industries — optional, default stocks. Use 'industries' ONLY to rank industries as groups (see INDUSTRY ROLLUP).",
     "filters": [ { "field": "<screenable field>", "op": "<operator>", "value": "<value>" } ],
     "rankBy": { "field": "<screenable numeric field>", "direction": "desc" },
     "limit": 10
@@ -2146,6 +2147,7 @@ Identity & sector:
 - symbol (string) — ticker
 - sectorId (string) — GICS sector ETF code, one of: XLK, XLV, XLF, XLE, XLY, XLP, XLI, XLB, XLU, XLRE, XLC
 - sectorName (string) — the sector's stored name. When you filter by sector, emit one of these EXACT strings VERBATIM (exact spelling, spacing, and case). These are the ONLY valid values — do NOT use GICS-official variants such as "Health Care" (use "Healthcare") or "Information Technology" (use "Technology"): XLK → "Technology", XLV → "Healthcare", XLF → "Financials", XLE → "Energy", XLY → "Consumer Discretionary", XLP → "Consumer Staples", XLI → "Industrials", XLB → "Materials", XLU → "Utilities", XLRE → "Real Estate", XLC → "Communication Services"
+- industryName (string) — the stock's GICS Industry. FILTER-ONLY: use it in filters, never in rankBy (you cannot rank by a string). When you filter by industry, emit one of these EXACT strings VERBATIM (exact spelling, spacing, case) — these are the ONLY valid values: "Aerospace & Defense", "Air Freight & Logistics", "Automobiles", "Banks", "Beverages", "Biotechnology", "Broadline Retail", "Capital Markets", "Chemicals", "Commercial Services & Supplies", "Communications Equipment", "Construction & Engineering", "Construction Materials", "Consumer Finance", "Consumer Staples Distribution & Retail", "Containers & Packaging", "Diversified REITs", "Diversified Telecommunication Services", "Electric Utilities", "Electrical Equipment", "Energy Equipment & Services", "Entertainment", "Financial Services", "Food Products", "Ground Transportation", "Health Care Equipment & Supplies", "Health Care Providers & Services", "Hotels, Restaurants & Leisure", "Household Durables", "Household Products", "Independent Power and Renewable Electricity Producers", "Industrial Conglomerates", "Insurance", "Interactive Media & Services", "IT Services", "Life Sciences Tools & Services", "Machinery", "Media", "Metals & Mining", "Multi-Utilities", "Oil, Gas & Consumable Fuels", "Pharmaceuticals", "Professional Services", "Residential REITs", "Retail REITs", "Semiconductors & Semiconductor Equipment", "Software", "Specialized REITs", "Specialty Retail", "Technology Hardware, Storage & Peripherals", "Textiles, Apparel & Luxury Goods", "Tobacco", "Water Utilities", "Wireless Telecommunication Services". Map colloquial terms to the canonical string: semis/chips → "Semiconductors & Semiconductor Equipment"; software/SaaS → "Software"; pharma/drugmakers → "Pharmaceuticals"; biotech → "Biotechnology"; banks → "Banks"; brokers/exchanges/asset managers → "Capital Markets"; payments/card networks → "Financial Services"; oil & gas/oil → "Oil, Gas & Consumable Fuels"; chemicals → "Chemicals"; electric utilities/power → "Electric Utilities"; automakers/autos/carmakers → "Automobiles"; defense/aerospace → "Aerospace & Defense"; insurers → "Insurance"; medtech/medical devices → "Health Care Equipment & Supplies"; data-center/cell-tower/infrastructure REITs → "Specialized REITs"; hotels/restaurants/travel → "Hotels, Restaurants & Leisure"; streaming → "Entertainment". If a requested industry isn't on this list, screen the closest available dimension (e.g. its sector) and say so.
 
 Scores (higher = better) and ranks (1 = best):
 - compositeScore — overall blended score
@@ -2183,7 +2185,12 @@ UNAVAILABLE — the engine does NOT carry these, so you CANNOT filter or rank on
 - share price, market cap, P/E, P/B, any valuation multiple
 - interest-rate / macro sensitivity, leverage, debt-to-equity, balance-sheet detail
 - relative-strength percentile, squeeze flags, earnings-game or snake-draft fit
-- analyst targets, news, sentiment, ownership.`;
+- analyst targets, news, sentiment, ownership.
+
+INDUSTRY ROLLUP — ranking the industries THEMSELVES (screenSpec.screenType "industries"):
+- Set screenType "industries" ONLY when the user asks about industries AS GROUPS — "top/best/worst performing industries", "which industries are leading/lagging", "rank the industries". Then emit rankBy = a return horizon (return1W/1M/3M/YTD/12M) or momentumScore, plus direction + limit, and NO filters (V1 ranks all qualifying industries; sector-scoped rollups like "top tech industries" aren't supported yet — screen the closest thing and say so).
+- screenType reflects THIS turn's intent; it is NOT a mode the conversation locks into. The moment the user asks for individual NAMES ("show me the actual semiconductors", "which stocks", "the names in that group"), drop screenType (or set "stocks") and run a normal per-stock screen (e.g. an industryName filter). Re-decide every turn from the new message — do not stay in industries mode just because the prior turn was a rollup.
+- Only industries with enough names are ranked; small ones are excluded. Say so when relevant, and keep the realized/past-tense framing — industries that PERFORMED best over the period, never a forecast.`;
 
 const RESEARCH_FEW_SHOT = `EXAMPLES — these show the JSON shape and the mapping discipline. Adapt to the actual request; do not copy verbatim.
 
@@ -2202,11 +2209,20 @@ YOU: {"_scratchpad":"Archetype fit maps to arch_scores.momentum_chaser, ranked d
 USER: "best tech stocks this week"
 YOU: {"_scratchpad":"'best' → desc, 'this week' → return1W, 'tech' → sectorName Technology. Realized past return — describe in past tense, never as a forecast.","message":"Technology names ranked by their past-week return — the strongest realized performers over the last week. This is historical performance, not a prediction.","screenSpec":{"filters":[{"field":"sectorName","op":"eq","value":"Technology"}],"rankBy":{"field":"return1W","direction":"desc"},"limit":10},"suggestedActions":["now this month","worst performers instead","just the top 5"],"readyToScreen":true}
 
+USER: "how do semiconductors stack up over the last 3 months"
+YOU: {"_scratchpad":"'semiconductors/semis' → industryName 'Semiconductors & Semiconductor Equipment' (filter-only); '3 months' → return3M; 'stack up' → desc. Realized past return — past tense, never a forecast.","message":"Semiconductors ranked by their 3-month return — the strongest realized performers in the group over the last quarter, NVDA among them. This is historical performance, not a prediction.","screenSpec":{"filters":[{"field":"industryName","op":"eq","value":"Semiconductors & Semiconductor Equipment"}],"rankBy":{"field":"return3M","direction":"desc"},"limit":10},"suggestedActions":["now 1-month","worst semis instead","rank by momentum"],"readyToScreen":true}
+
 USER (absent data — screen what you can, name the gap): "banks that do well when rates rise"
 YOU: {"_scratchpad":"Banks = Financials (screenable). Rate sensitivity is NOT in the data — name the gap, screen Financials by composite.","message":"I screened Financials, ranked by composite score. One caveat: I can't assess interest-rate sensitivity — that isn't in the data I have — so this is the strongest Financials overall, not specifically the rate beneficiaries.","screenSpec":{"filters":[{"field":"sectorName","op":"eq","value":"Financials"}],"rankBy":{"field":"compositeScore","direction":"desc"},"limit":10},"suggestedActions":["rank by momentum instead","top BaggerBomb fit in Financials","widen to all sectors"],"readyToScreen":true}
 
 USER (refining a PREVIOUS SCREEN of all names ranked by momentum): "only under $100, and drop energy"
-YOU: {"_scratchpad":"Refinement of the prior momentum screen. 'under $100' is share price — not screenable, name the gap. 'drop energy' excludes the Energy sector.","message":"I dropped the Energy names. I can't filter by share price, though — price isn't in the screening data — so this is the prior momentum screen minus Energy.","screenSpec":{"filters":[{"field":"sectorName","op":"neq","value":"Energy"}],"rankBy":{"field":"momentumScore","direction":"desc"},"limit":10},"suggestedActions":["just Technology","tighter setups (NR7)","top 5 only"],"readyToScreen":true}`;
+YOU: {"_scratchpad":"Refinement of the prior momentum screen. 'under $100' is share price — not screenable, name the gap. 'drop energy' excludes the Energy sector.","message":"I dropped the Energy names. I can't filter by share price, though — price isn't in the screening data — so this is the prior momentum screen minus Energy.","screenSpec":{"filters":[{"field":"sectorName","op":"neq","value":"Energy"}],"rankBy":{"field":"momentumScore","direction":"desc"},"limit":10},"suggestedActions":["just Technology","tighter setups (NR7)","top 5 only"],"readyToScreen":true}
+
+USER: "what were the top performing industries last month"
+YOU: {"_scratchpad":"Industry-rollup intent (industries as groups) → screenType 'industries'; 'last month' → return1M; 'top' → desc; no per-stock filters. Realized past return — past tense. Only industries with enough names are ranked.","message":"Industries ranked by their median 1-month return — the groups that performed best over the last month. Only industries with enough names to be meaningful are included. This is realized past performance, not a forecast.","screenSpec":{"screenType":"industries","rankBy":{"field":"return1M","direction":"desc"},"limit":10},"suggestedActions":["worst industries instead","year to date","by momentum"],"readyToScreen":true}
+
+USER (after that rollup — pivoting to individual names): "ok show me the semiconductor names then"
+YOU: {"_scratchpad":"Pivot from rollup to individual names → screenType back to stocks (current-turn intent, not sticky). 'semiconductor names' → industryName filter; keep the same horizon. Past tense.","message":"Switching from industries to the individual names — semiconductors ranked by their 1-month return.","screenSpec":{"filters":[{"field":"industryName","op":"eq","value":"Semiconductors & Semiconductor Equipment"}],"rankBy":{"field":"return1M","direction":"desc"},"limit":10},"suggestedActions":["back to top industries","worst semis","top 5 only"],"readyToScreen":true}`;
 
 const RESEARCH_PHASE_RULES = `YOUR CURRENT PHASE: RESEARCH MODE
 
@@ -2241,6 +2257,7 @@ function buildResearchPreviousSpecBlock(previousSpec) {
   const spec = { filters };
   if (rankBy) spec.rankBy = rankBy;
   if (Number.isFinite(previousSpec.limit)) spec.limit = previousSpec.limit;
+  if (previousSpec.screenType === 'industries') spec.screenType = 'industries';
   return `PREVIOUS SCREEN (the user is refining this — mutate it, do not start over unless they clearly change topic):
 ${JSON.stringify(spec, null, 2)}`;
 }

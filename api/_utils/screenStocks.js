@@ -27,7 +27,7 @@ import { STOCK_UNIVERSE } from './rankingConfig.js';
 // Top-level scalar / categorical / boolean fields written per stock in
 // api/cron/compute-index-intelligence.js:944-988 (+ baggerBombRank mutated on at :993).
 export const SCALAR_FIELDS = Object.freeze(new Set([
-  'symbol', 'sectorId', 'sectorName',
+  'symbol', 'sectorId', 'sectorName', 'industryName',
   'fundamentalScore', 'fundamentalRank',
   'technicalScore', 'technicalRank', 'sectorTechnicalRank', 'sectorTechnicalTotal',
   'compositeScore', 'baggerBombFit', 'baggerBombRank',
@@ -62,7 +62,7 @@ export const SUPPORTED_OPS = Object.freeze(new Set([
 // Always carried on every result so the artifact is self-describing even when a query
 // references none of them (spec §5 baseline). All flat scalars.
 export const BASELINE_FIELDS = Object.freeze([
-  'symbol', 'sectorName', 'compositeScore', 'baggerBombFit', 'momentumScore',
+  'symbol', 'sectorName', 'industryName', 'compositeScore', 'baggerBombFit', 'momentumScore',
 ]);
 
 export const DEFAULT_LIMIT = 10;
@@ -223,6 +223,29 @@ function canonicalizeSectorSpec(value) {
   return Array.isArray(value) ? value.map(canonicalizeSector) : canonicalizeSector(value);
 }
 
+// ── Industry value canonicalization (scoped to industryName) ──────────────────────────
+//
+// Mirrors the sector treatment for case/whitespace drift, but with NO alias table: the
+// industry vocabulary has a single canonical source — the GICS strings in our own
+// STOCK_INDUSTRIES map — so there are no data-provider synonyms to remap. Reuses
+// normalizeSectorKey (lowercase + strip whitespace); a value that isn't a known industry
+// simply stays its normalized self and won't spuriously match. Scoped to industryName only.
+
+const INDUSTRY_FIELDS = Object.freeze(new Set(['industryName']));
+
+/**
+ * Canonicalize one industry value for comparison: case/whitespace-insensitive, no aliasing.
+ * Non-strings pass through untouched (numeric coercion / null handling stays unaffected).
+ */
+export function canonicalizeIndustry(value) {
+  return typeof value === 'string' ? normalizeSectorKey(value) : value;
+}
+
+// Canonicalize a spec value (scalar for eq / neq, array for in / between).
+function canonicalizeIndustrySpec(value) {
+  return Array.isArray(value) ? value.map(canonicalizeIndustry) : canonicalizeIndustry(value);
+}
+
 // ── Internal validation / sort / projection ──────────────────────────────────────────
 
 // `*Rank` fields are 1 = best, so they sort ascending by default; every other numeric
@@ -262,6 +285,9 @@ function rejectionDetail(reason, field, op) {
     case 'malformed_predicate': return 'Predicate must be an object with a non-empty string field';
     case 'invalid_rank_field': return `rankBy.field '${field}' is not in the screening allowlist`;
     case 'unsupported_rank_direction': return "rankBy.direction must be 'asc' or 'desc'";
+    case 'unsupported_in_rollup': return field
+      ? `Filter on '${field}' isn't applied to an industry rollup — rollups rank all qualifying industries`
+      : "Filters aren't applied to an industry rollup — rollups rank all qualifying industries";
     default: return 'Rejected';
   }
 }
@@ -458,6 +484,10 @@ export function screenStocks(stocks, screenSpec) {
       if (SECTOR_FIELDS.has(f.field)) {
         return evaluateOp(f.op, canonicalizeSector(fieldValue), canonicalizeSectorSpec(f.value));
       }
+      // industryName: same case/whitespace-insensitive matching as sector, no alias table.
+      if (INDUSTRY_FIELDS.has(f.field)) {
+        return evaluateOp(f.op, canonicalizeIndustry(fieldValue), canonicalizeIndustrySpec(f.value));
+      }
       return evaluateOp(f.op, fieldValue, f.value);
     }),
   );
@@ -476,6 +506,124 @@ export function screenStocks(stocks, screenSpec) {
   const appliedSpec = { filters: validFilters, rankBy, limit, rankByFallback };
 
   return { results, appliedSpec, rejectedFilters, matchCount, universeSize, computedAt };
+}
+
+// ── Industry rollup query (Phase 2) ───────────────────────────────────────────────────
+//
+// Ranks the industries THEMSELVES ("top performing industries last month"). The rollup is
+// precomputed in the daily doc (compute-index-intelligence.js buildIndustriesRollup), so
+// this just validates rankBy, sorts (nulls last), slices, and projects industry rows.
+// There are NO per-stock filters in a rollup (V1). It returns the same envelope shape as
+// screenStocks so the endpoint payload stays uniform.
+
+// The only fields an industry rollup can rank by — the aggregated return horizons +
+// momentumScore (compute-index-intelligence.js ROLLUP_METRICS). No string / per-stock fields.
+export const ROLLUP_RANK_FIELDS = Object.freeze(new Set([
+  'return1W', 'return1M', 'return3M', 'returnYTD', 'return12M', 'momentumScore',
+]));
+
+const DEFAULT_ROLLUP_RANK_FIELD = 'return1M';
+
+/**
+ * Deterministically rank the precomputed industry rollup.
+ *
+ * @param {Object<string, object>} industries - the `.industries` map from stockRankings
+ * @param {{rankBy?: object, limit?: number, screenType?: string}} screenSpec
+ * @returns {{ results, appliedSpec, rejectedFilters, matchCount, universeSize, computedAt }}
+ *   results: [{ name, totalStocks, stocks, field, value }] (sorted, limited)
+ */
+export function screenIndustries(industries, screenSpec) {
+  const all = (industries && typeof industries === 'object' && !Array.isArray(industries))
+    ? Object.values(industries)
+    : [];
+  const universeSize = all.length;
+  const spec = (screenSpec && typeof screenSpec === 'object') ? screenSpec : {};
+  const computedAt = new Date().toISOString();
+  const rejectedFilters = [];
+
+  // Validate rankBy — must be one of the aggregated rollup fields. Bad/absent → return1M desc.
+  const rawRank = (spec.rankBy && typeof spec.rankBy === 'object') ? spec.rankBy : null;
+  let rankField;
+  let rankDirection;
+  let rankByFallback = false;
+
+  if (!rawRank || typeof rawRank.field !== 'string' || !ROLLUP_RANK_FIELDS.has(rawRank.field)) {
+    if (rawRank && rawRank.field !== undefined) {
+      rejectedFilters.push({
+        scope: 'rankBy',
+        field: rawRank.field ?? null,
+        op: null,
+        value: null,
+        reason: 'invalid_rank_field',
+        detail: `rankBy.field '${rawRank.field}' can't rank industries — use a return horizon (return1W/1M/3M/YTD/12M) or momentumScore`,
+      });
+      rankByFallback = true;
+    }
+    rankField = DEFAULT_ROLLUP_RANK_FIELD;
+    rankDirection = 'desc';
+  } else {
+    rankField = rawRank.field;
+    if (rawRank.direction === 'asc' || rawRank.direction === 'desc') {
+      rankDirection = rawRank.direction;
+    } else {
+      rankDirection = 'desc';
+      if (rawRank.direction !== undefined && rawRank.direction !== null) {
+        rejectedFilters.push({
+          scope: 'rankBy',
+          field: rankField,
+          op: null,
+          value: rawRank.direction,
+          reason: 'unsupported_rank_direction',
+          detail: rejectionDetail('unsupported_rank_direction'),
+        });
+      }
+    }
+  }
+  const rankBy = { field: rankField, direction: rankDirection };
+
+  // Industry rollups rank ALL qualifying industries — per-stock filters are NOT applied in
+  // V1. Report any the model emitted so a dropped filter is never silent (mirrors the
+  // screenStocks "never silently ignored" contract). Capped like the stock path.
+  const specFilters = Array.isArray(spec.filters) ? spec.filters.slice(0, MAX_FILTERS) : [];
+  for (const pred of specFilters) {
+    const isObj = pred != null && typeof pred === 'object';
+    rejectedFilters.push({
+      scope: 'filter',
+      field: isObj ? (pred.field ?? null) : null,
+      op: isObj ? (pred.op ?? null) : null,
+      value: isObj ? (pred.value ?? null) : null,
+      reason: 'unsupported_in_rollup',
+      detail: rejectionDetail('unsupported_in_rollup', isObj ? pred.field : undefined),
+    });
+  }
+
+  // Sort (nulls last via compareValues), deterministic name tiebreak; then slice.
+  const asc = rankDirection === 'asc';
+  const sorted = [...all].sort((a, b) => {
+    const primary = compareValues(a ? a[rankField] : undefined, b ? b[rankField] : undefined, asc);
+    if (primary !== 0) return primary;
+    const na = a && a.name != null ? String(a.name) : '';
+    const nb = b && b.name != null ? String(b.name) : '';
+    return na < nb ? -1 : na > nb ? 1 : 0;
+  });
+  const limit = clampLimit(spec.limit);
+  const limited = sorted.slice(0, limit);
+
+  // Project industry rows: identity + the ranked value (+ its field for the renderer).
+  const results = limited.map((ind) => ({
+    name: ind.name,
+    totalStocks: ind.totalStocks ?? (Array.isArray(ind.stocks) ? ind.stocks.length : null),
+    stocks: Array.isArray(ind.stocks) ? ind.stocks : [],
+    field: rankField,
+    value: ind && ind[rankField] != null ? ind[rankField] : null,
+  }));
+
+  // screenType echoed on appliedSpec so the endpoint persists it (refinement continuity).
+  // filters: [] makes explicit that a rollup applies no per-stock filters (any the model
+  // emitted are surfaced in rejectedFilters above).
+  const appliedSpec = { screenType: 'industries', filters: [], rankBy, limit, rankByFallback };
+
+  return { results, appliedSpec, rejectedFilters, matchCount: universeSize, universeSize, computedAt };
 }
 
 export default screenStocks;

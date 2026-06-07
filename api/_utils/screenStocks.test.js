@@ -9,10 +9,13 @@
 import { describe, it, expect } from 'vitest';
 import {
   screenStocks,
+  screenIndustries,
+  ROLLUP_RANK_FIELDS,
   isAllowedField,
   resolveField,
   evaluateOp,
   canonicalizeSector,
+  canonicalizeIndustry,
   ARCH_KEYS,
   MOMENTUM_KEYS,
   SCALAR_FIELDS,
@@ -126,6 +129,7 @@ describe('allowlist constants', () => {
     expect(SCALAR_FIELDS.has('nr7Flag')).toBe(true);
     expect(SCALAR_FIELDS.has('baggerBombRank')).toBe(true);
     expect(SCALAR_FIELDS.has('compositeScore')).toBe(true);
+    expect(SCALAR_FIELDS.has('industryName')).toBe(true); // Phase 1 — filterable industry dimension
     expect(SCALAR_FIELDS.has('pe_ratio')).toBe(false);
     expect(SCALAR_FIELDS.has('compositeRank')).toBe(false); // explicitly-absent field
     expect(Object.isFrozen(SCALAR_FIELDS)).toBe(true);
@@ -135,7 +139,7 @@ describe('allowlist constants', () => {
     expect([...SUPPORTED_OPS]).toEqual(
       expect.arrayContaining(['gt', 'gte', 'lt', 'lte', 'eq', 'neq', 'in', 'between', 'isTrue', 'isFalse']),
     );
-    expect(BASELINE_FIELDS).toEqual(['symbol', 'sectorName', 'compositeScore', 'baggerBombFit', 'momentumScore']);
+    expect(BASELINE_FIELDS).toEqual(['symbol', 'sectorName', 'industryName', 'compositeScore', 'baggerBombFit', 'momentumScore']);
     expect(DEFAULT_LIMIT).toBe(10);
     expect(MAX_LIMIT).toBe(25);
   });
@@ -333,6 +337,86 @@ describe('sector canonicalization', () => {
     // 'UP' !== stored 'up' for a non-sector field → no match (proves eq wasn't globally loosened)
     expect(screenStocks(u, { filters: [{ field: 'trend', op: 'eq', value: 'UP' }] }).matchCount).toBe(0);
     expect(screenStocks(u, { filters: [{ field: 'trend', op: 'eq', value: 'up' }] }).matchCount).toBe(2);
+  });
+});
+
+// ── Industry canonicalization (Phase 1 — industryName filterable) ─────────────────────
+// Mirrors the sector treatment for case/whitespace drift, but with NO alias table:
+// industryName has a single canonical source (our own GICS strings), so colloquialisms
+// are NOT remapped by the engine. The prompt layer maps "semis" → the GICS string; the
+// engine matches the canonical value only. See screenStocks.js.
+
+describe('industry canonicalization (no alias table)', () => {
+  const industryUniverse = () => [
+    { symbol: 'NVDA', industryName: 'Semiconductors & Semiconductor Equipment', compositeScore: 90, return3M: 25.0 },
+    { symbol: 'AMD',  industryName: 'Semiconductors & Semiconductor Equipment', compositeScore: 70, return3M: 12.0 },
+    { symbol: 'MSFT', industryName: 'Software', compositeScore: 85, return3M: 8.0 },
+    { symbol: 'JPM',  industryName: 'Banks', compositeScore: 80, return3M: 5.0 },
+    { symbol: 'XOM',  industryName: 'Oil, Gas & Consumable Fuels', compositeScore: 50, return3M: -10.0 },
+  ];
+
+  it('canonicalizeIndustry: case/whitespace variants normalize; NO alias remap; non-strings pass through', () => {
+    // case / spacing variants of a stored GICS string collapse to one normalized key
+    expect(canonicalizeIndustry('SEMICONDUCTORS & SEMICONDUCTOR EQUIPMENT'))
+      .toBe(canonicalizeIndustry('semiconductors & semiconductor equipment'));
+    expect(canonicalizeIndustry(' Semiconductors  &  Semiconductor  Equipment '))
+      .toBe(canonicalizeIndustry('Semiconductors & Semiconductor Equipment'));
+    // NO alias table (unlike sector): a colloquialism does NOT resolve to the GICS string
+    expect(canonicalizeIndustry('Semis'))
+      .not.toBe(canonicalizeIndustry('Semiconductors & Semiconductor Equipment'));
+    expect(canonicalizeIndustry('Chips'))
+      .not.toBe(canonicalizeIndustry('Semiconductors & Semiconductor Equipment'));
+    // non-strings pass through untouched
+    expect(canonicalizeIndustry(null)).toBe(null);
+    expect(canonicalizeIndustry(undefined)).toBe(undefined);
+    expect(canonicalizeIndustry(123)).toBe(123);
+  });
+
+  it('industryName eq tolerates case/spacing drift on a multi-word industry', () => {
+    for (const value of [
+      'Semiconductors & Semiconductor Equipment',
+      'semiconductors & semiconductor equipment',
+      'SEMICONDUCTORS & SEMICONDUCTOR EQUIPMENT',
+      ' Semiconductors & Semiconductor Equipment ',
+    ]) {
+      const out = screenStocks(industryUniverse(), {
+        filters: [{ field: 'industryName', op: 'eq', value }],
+        rankBy: { field: 'compositeScore', direction: 'desc' },
+      });
+      expect(symbolsOf(out)).toEqual(['NVDA', 'AMD']);
+      expect(out.matchCount).toBe(2);
+      expect(out.rejectedFilters).toEqual([]);
+    }
+  });
+
+  it('Phase 1 unlock: industryName filter + return3M rank returns the ranked peer list', () => {
+    const out = screenStocks(industryUniverse(), {
+      filters: [{ field: 'industryName', op: 'eq', value: 'semiconductors & semiconductor equipment' }],
+      rankBy: { field: 'return3M', direction: 'desc' },
+    });
+    expect(symbolsOf(out)).toEqual(['NVDA', 'AMD']);
+    // industryName rides along on every projected result (BASELINE_FIELDS)
+    expect(out.results[0].industryName).toBe('Semiconductors & Semiconductor Equipment');
+  });
+
+  it('neq excludes the canonical industry; in matches each (case-insensitive)', () => {
+    const neq = screenStocks(industryUniverse(), {
+      filters: [{ field: 'industryName', op: 'neq', value: 'SEMICONDUCTORS & SEMICONDUCTOR EQUIPMENT' }],
+      rankBy: { field: 'compositeScore', direction: 'desc' },
+    });
+    expect(symbolsOf(neq)).toEqual(['MSFT', 'JPM', 'XOM']); // no NVDA / AMD
+    const inOut = screenStocks(industryUniverse(), {
+      filters: [{ field: 'industryName', op: 'in', value: ['software', 'banks'] }],
+      rankBy: { field: 'compositeScore', direction: 'desc' },
+    });
+    expect(symbolsOf(inOut)).toEqual(['MSFT', 'JPM']);
+  });
+
+  it('an unmatched colloquialism returns nothing (engine matches the canonical value only)', () => {
+    const out = screenStocks(industryUniverse(), {
+      filters: [{ field: 'industryName', op: 'eq', value: 'Semis' }],
+    });
+    expect(out.matchCount).toBe(0);
   });
 });
 
@@ -586,7 +670,7 @@ describe('result projection', () => {
     });
     const nvda = out.results.find(r => r.symbol === 'NVDA');
     expect(Object.keys(nvda).sort()).toEqual(
-      ['arch_scores', 'atrPercentile', 'baggerBombFit', 'compositeScore', 'momentumScore', 'sectorName', 'symbol'].sort(),
+      ['arch_scores', 'atrPercentile', 'baggerBombFit', 'compositeScore', 'industryName', 'momentumScore', 'sectorName', 'symbol'].sort(),
     );
     // compositeScore referenced by a filter but is a baseline ⇒ appears exactly once.
     expect(Object.keys(nvda).filter(k => k === 'compositeScore')).toHaveLength(1);
@@ -682,5 +766,109 @@ describe('Firestore-safe keys', () => {
         expect(key).not.toContain('.');
       }
     }
+  });
+});
+
+// ==================== screenIndustries (Phase 2 — industry rollup) ====================
+
+describe('screenIndustries', () => {
+  // Mirrors the precomputed `industries` map in stockRankings (keyed by GICS name).
+  const industries = () => ({
+    'Semiconductors & Semiconductor Equipment': {
+      name: 'Semiconductors & Semiconductor Equipment', totalStocks: 10,
+      stocks: ['NVDA', 'AMD'], return1M: 12, return3M: 25, momentumScore: 80,
+    },
+    Software: {
+      name: 'Software', totalStocks: 10,
+      stocks: ['MSFT'], return1M: 8, return3M: 15, momentumScore: 70,
+    },
+    Banks: {
+      name: 'Banks', totalStocks: 5,
+      stocks: ['JPM'], return1M: 3, return3M: 5, momentumScore: 60,
+    },
+    'Oil, Gas & Consumable Fuels': {
+      name: 'Oil, Gas & Consumable Fuels', totalStocks: 16,
+      stocks: ['XOM'], return1M: -2, return3M: null, momentumScore: 50,
+    },
+  });
+  const namesOf = (out) => out.results.map((r) => r.name);
+
+  it('ROLLUP_RANK_FIELDS holds the aggregated metrics only', () => {
+    expect(ROLLUP_RANK_FIELDS.has('return1M')).toBe(true);
+    expect(ROLLUP_RANK_FIELDS.has('return3M')).toBe(true);
+    expect(ROLLUP_RANK_FIELDS.has('momentumScore')).toBe(true);
+    expect(ROLLUP_RANK_FIELDS.has('compositeScore')).toBe(false); // not an industry metric
+    expect(ROLLUP_RANK_FIELDS.has('sectorName')).toBe(false);
+  });
+
+  it('ranks industries by a return horizon (desc) and projects {name,totalStocks,stocks,field,value}', () => {
+    const out = screenIndustries(industries(), { rankBy: { field: 'return1M', direction: 'desc' } });
+    expect(namesOf(out)).toEqual([
+      'Semiconductors & Semiconductor Equipment', 'Software', 'Banks', 'Oil, Gas & Consumable Fuels',
+    ]);
+    expect(out.appliedSpec.screenType).toBe('industries');
+    expect(out.universeSize).toBe(4);
+    expect(out.results[0]).toEqual({
+      name: 'Semiconductors & Semiconductor Equipment', totalStocks: 10,
+      stocks: ['NVDA', 'AMD'], field: 'return1M', value: 12,
+    });
+  });
+
+  it('asc direction reverses the order', () => {
+    const out = screenIndustries(industries(), { rankBy: { field: 'return1M', direction: 'asc' } });
+    expect(namesOf(out)).toEqual([
+      'Oil, Gas & Consumable Fuels', 'Banks', 'Software', 'Semiconductors & Semiconductor Equipment',
+    ]);
+  });
+
+  it('a null metric sorts LAST in either direction', () => {
+    const desc = screenIndustries(industries(), { rankBy: { field: 'return3M', direction: 'desc' } });
+    expect(namesOf(desc)[3]).toBe('Oil, Gas & Consumable Fuels'); // return3M null → last
+    const asc = screenIndustries(industries(), { rankBy: { field: 'return3M', direction: 'asc' } });
+    expect(namesOf(asc)[3]).toBe('Oil, Gas & Consumable Fuels'); // still last
+  });
+
+  it('ranks by momentumScore', () => {
+    const out = screenIndustries(industries(), { rankBy: { field: 'momentumScore', direction: 'desc' } });
+    expect(namesOf(out)[0]).toBe('Semiconductors & Semiconductor Equipment');
+    expect(out.results[0].value).toBe(80);
+  });
+
+  it('rejects a non-rollup rankBy field and falls back to return1M desc', () => {
+    const out = screenIndustries(industries(), { rankBy: { field: 'compositeScore', direction: 'desc' } });
+    expect(out.appliedSpec.rankBy).toEqual({ field: 'return1M', direction: 'desc' });
+    expect(out.appliedSpec.rankByFallback).toBe(true);
+    expect(out.rejectedFilters[0].reason).toBe('invalid_rank_field');
+    expect(namesOf(out)[0]).toBe('Semiconductors & Semiconductor Equipment');
+  });
+
+  it('clamps the limit and slices', () => {
+    const out = screenIndustries(industries(), { rankBy: { field: 'return1M', direction: 'desc' }, limit: 2 });
+    expect(out.results).toHaveLength(2);
+    expect(out.appliedSpec.limit).toBe(2);
+  });
+
+  it('reports any per-stock filters as dropped (never silently ignored) and still ranks all industries', () => {
+    const out = screenIndustries(industries(), {
+      filters: [{ field: 'industryName', op: 'eq', value: 'Semiconductors & Semiconductor Equipment' }],
+      rankBy: { field: 'return1M', direction: 'desc' },
+    });
+    // The filter is NOT applied — the full industry leaderboard still comes back...
+    expect(out.results).toHaveLength(4);
+    expect(namesOf(out)[0]).toBe('Semiconductors & Semiconductor Equipment');
+    // ...but the dropped filter is surfaced, mirroring screenStocks' honesty contract.
+    const dropped = out.rejectedFilters.find((r) => r.reason === 'unsupported_in_rollup');
+    expect(dropped).toBeTruthy();
+    expect(dropped).toMatchObject({ scope: 'filter', field: 'industryName', op: 'eq' });
+    expect(typeof dropped.detail).toBe('string');
+    expect(dropped.detail.length).toBeGreaterThan(0);
+    expect(out.appliedSpec.filters).toEqual([]); // no filters applied to a rollup
+  });
+
+  it('empty / missing rollup → well-formed zero result', () => {
+    const out = screenIndustries({}, { rankBy: { field: 'return1M', direction: 'desc' } });
+    expect(out.results).toEqual([]);
+    expect(out.universeSize).toBe(0);
+    expect(out.appliedSpec.screenType).toBe('industries');
   });
 });
