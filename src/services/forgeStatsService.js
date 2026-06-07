@@ -271,9 +271,15 @@ export function computeBattleTraitAttribution(battle) {
   const { tallies } = aggregateBattleCitations(battle, posMap);
 
   // ruleId → bundleName from the frozen snapshot. Trait/identity rules carry no
-  // bundleName; a manual-bundle rule does — we only attribute the former.
+  // bundleName; a manual-bundle rule does — we only attribute the former. STICKY:
+  // if a ruleId appears as a bundle rule in ANY copy (a rule can be both a trait
+  // rule AND a manually-bundled rule, so it projects twice), treat it as bundled
+  // and omit it — staying on the honest side rather than crediting a card for a
+  // citation that may have come from the bundle copy.
   const ruleIdToBundleName = {};
-  for (const mapped of Object.values(posMap)) ruleIdToBundleName[mapped.ruleId] = mapped.bundleName;
+  for (const mapped of Object.values(posMap)) {
+    ruleIdToBundleName[mapped.ruleId] = ruleIdToBundleName[mapped.ruleId] || mapped.bundleName;
+  }
 
   const byTrait = {};
   for (const [ruleId, tally] of Object.entries(tallies)) {

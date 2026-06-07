@@ -57,6 +57,24 @@ describe('computeBattleTraitAttribution', () => {
     expect(rollup.find((r) => r.traitId === 'trait-bargain-hunter')).toBeUndefined();
   });
 
+  it('omits a ruleId that appears as BOTH a trait rule and a manual-bundle rule (sticky bundle, order-independent)', () => {
+    // mb-09 projected twice: once as a trait rule (no bundleName) and once as a
+    // manually-bundled rule (bundleName set). Citations are ambiguous → omit.
+    const b = {
+      agentContext: {
+        activeRules: [
+          { ruleId: 'mb-09', category: 'mid_battle', text: 'trait copy', bundleName: null },     // S1
+          { ruleId: 'mb-09', category: 'mid_battle', text: 'bundle copy', bundleName: 'My Strategy' }, // S2
+        ],
+      },
+      evaluations: [
+        { citedForgeRules: [{ ruleId: 'S1', influence: 'followed' }] },
+        { citedForgeRules: [{ ruleId: 'S2', influence: 'followed' }] },
+      ],
+    };
+    expect(computeBattleTraitAttribution(b)).toEqual([]);
+  });
+
   it('returns [] for a battle with no forge rules / no evaluations', () => {
     expect(computeBattleTraitAttribution({})).toEqual([]);
     expect(computeBattleTraitAttribution({ agentContext: { activeRules: [] }, evaluations: [] })).toEqual([]);
