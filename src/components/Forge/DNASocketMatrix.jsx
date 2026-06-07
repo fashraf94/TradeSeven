@@ -18,16 +18,24 @@ export default function DNASocketMatrix({ slotUsage, equippedTraits }) {
   const [tooltip, setTooltip] = useState(null); // { groupId, pipIndex }
 
   return (
-    <div style={{
-      display: 'flex',
-      justifyContent: 'space-around',
-      alignItems: 'center',
-      width: '100%',
-      background: '#0D0E1280',
-      borderRadius: 8,
-      padding: '8px 12px',
-    }}>
-      {GROUP_ORDER.map(groupId => {
+    <div style={{ width: '100%' }}>
+      {/* Label — this is the REAL slot accounting (3 groups × 2). The public
+          Temperament/Play families are a browse overlay in the equip surfaces;
+          slots stay per-group, so a card's family can differ from its slot. */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 5, padding: '0 2px' }}>
+        <span style={{ fontFamily: 'var(--fw-mono, monospace)', fontSize: 8.5, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#718096' }}>DNA slots</span>
+        <span style={{ fontFamily: 'var(--fw-mono, monospace)', fontSize: 8.5, letterSpacing: '0.08em', color: '#4A5568' }}>up to 2 per group</span>
+      </div>
+      <div style={{
+        display: 'flex',
+        justifyContent: 'space-around',
+        alignItems: 'center',
+        width: '100%',
+        background: '#0D0E1280',
+        borderRadius: 8,
+        padding: '8px 12px',
+      }}>
+        {GROUP_ORDER.map(groupId => {
         const group = DNA_GROUPS[groupId];
         const usage = slotUsage?.[groupId] || { used: 0, max: 2 };
         const Icon = ICON_MAP[group.icon];
@@ -90,7 +98,8 @@ export default function DNASocketMatrix({ slotUsage, equippedTraits }) {
             })}
           </div>
         );
-      })}
+        })}
+      </div>
     </div>
   );
 }

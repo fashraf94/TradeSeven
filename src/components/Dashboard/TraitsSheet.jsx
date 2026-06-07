@@ -33,7 +33,8 @@ import { CMD, alpha, MONO, Eyebrow, Mono, readableOn, ErrorBanner } from './comm
 import { useForge } from '../../hooks/useForge';
 import { useTraits, BATTLE_LOCK_MSG } from '../../hooks/useTraits';
 import { DNA_GROUPS, TOTAL_TRAIT_SLOTS } from '../../data/dnaGroups';
-import { getTraitsForGroup } from '../../data/traitLibrary';
+import { TRAIT_LIBRARY } from '../../data/traitLibrary';
+import { groupTraitsByFamily } from '../../data/traitFamilies';
 import { getTraitEnforcement } from '../../utils/traitEnforcement';
 
 // equipTrait / unequipTrait error code → copy. battle_active reuses the hook's
@@ -67,7 +68,7 @@ function EnforcedPill() {
 
 // One trait row — name + identity statement + optional enforced pill, with a
 // single Equip/Unequip action. Light card (CMD tokens), no strength control.
-function TraitRow({ trait, enforced, equipped, busy, disabled, accent, onAction }) {
+function TraitRow({ trait, enforced, equipped, busy, disabled, accent, slot, onAction }) {
   const inert = busy || disabled;
   return (
     <div
@@ -79,9 +80,10 @@ function TraitRow({ trait, enforced, equipped, busy, disabled, accent, onAction 
       }}
     >
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
           <span style={{ fontSize: 14, fontWeight: 700, color: CMD.ink, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{trait.name}</span>
           {enforced && <EnforcedPill />}
+          {slot && <SlotChip name={slot.name} used={slot.used} max={slot.max} />}
         </div>
         <div style={{ fontSize: 11.5, color: CMD.ink2, marginTop: 3, lineHeight: 1.4 }}>{trait.identityStatement}</div>
       </div>
@@ -104,13 +106,34 @@ function TraitRow({ trait, enforced, equipped, busy, disabled, accent, onAction 
   );
 }
 
-// DNA-group header — surfaces the 2-per-group cap ("1 of 2", "2 of 2 · full").
-function GroupHeader({ name, used, max }) {
+// Per-row slot tag — keeps the REAL per-dnaGroup cap visible inside the family
+// grouping. A card's public family can differ from the slot it fills (e.g. Sector
+// Rotator shows under Play but fills a Strategy slot), so the slot is shown per row.
+function SlotChip({ name, used, max }) {
   const full = used >= max;
   return (
-    <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', margin: '0 2px 8px' }}>
-      <Eyebrow color={CMD.ink2}>{name}</Eyebrow>
-      <Mono style={{ fontSize: 10, color: full ? CMD.ink2 : CMD.ink3 }}>{used} of {max}{full ? ' · full' : ''}</Mono>
+    <span
+      title={`Fills a ${name} slot — ${used} of ${max} used${full ? ' (full)' : ''}`}
+      style={{
+        display: 'inline-flex', alignItems: 'center', gap: 4, flexShrink: 0,
+        padding: '2px 7px', borderRadius: 999,
+        background: alpha('#FFFFFF', 0.04), border: `1px solid ${full ? CMD.ink3 : CMD.hair2}`,
+        color: full ? CMD.ink2 : CMD.ink3, fontFamily: MONO, fontSize: 9, fontWeight: 600,
+        letterSpacing: '0.06em', textTransform: 'uppercase', whiteSpace: 'nowrap',
+      }}
+    >
+      {name} {used}/{max}
+    </span>
+  );
+}
+
+// Public family header for the "Add a trait" shelves (presentation grouping only;
+// the real cap stays per-group via the SlotChip on each row + the line above).
+function FamilyHeader({ meta }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, margin: '0 2px 9px' }}>
+      <span style={{ fontSize: 13, fontWeight: 700, color: CMD.ink }}>{meta.name}</span>
+      <Mono style={{ fontSize: 10, color: CMD.ink3 }}>{meta.tagline}</Mono>
     </div>
   );
 }
@@ -225,25 +248,28 @@ export default function TraitsSheet({ open, onClose, agent, accent, dock = 'bott
           )}
 
           <Eyebrow color={CMD.ink3} style={{ margin: '0 2px 9px' }}>Add a trait</Eyebrow>
-          {Object.values(DNA_GROUPS).map((group) => {
-            const { used, max } = getGroupSlotUsage(group.id);
-            const candidates = getTraitsForGroup(group.id).filter((t) => !equippedIds.has(t.id));
+          {groupTraitsByFamily(TRAIT_LIBRARY).map(({ family, meta, traits: famTraits }) => {
+            const candidates = famTraits.filter((t) => !equippedIds.has(t.id));
             if (candidates.length === 0) return null;
             return (
-              <div key={group.id} style={{ marginBottom: 14 }}>
-                <GroupHeader name={group.name} used={used} max={max} />
-                {candidates.map((t) => (
-                  <TraitRow
-                    key={t.id}
-                    trait={t}
-                    enforced={getTraitEnforcement(t.id).isEnforced}
-                    equipped={false}
-                    busy={working === t.id}
-                    disabled={Boolean(working) || !canEquip(t.id)}
-                    accent={accent}
-                    onAction={() => run(t.id, equipTrait)}
-                  />
-                ))}
+              <div key={family} style={{ marginBottom: 16 }}>
+                <FamilyHeader meta={meta} />
+                {candidates.map((t) => {
+                  const usage = getGroupSlotUsage(t.dnaGroup);
+                  return (
+                    <TraitRow
+                      key={t.id}
+                      trait={t}
+                      enforced={getTraitEnforcement(t.id).isEnforced}
+                      equipped={false}
+                      busy={working === t.id}
+                      disabled={Boolean(working) || !canEquip(t.id)}
+                      accent={accent}
+                      slot={{ name: DNA_GROUPS[t.dnaGroup]?.name || t.dnaGroup, used: usage.used, max: usage.max }}
+                      onAction={() => run(t.id, equipTrait)}
+                    />
+                  );
+                })}
               </div>
             );
           })}

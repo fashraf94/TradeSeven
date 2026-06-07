@@ -2,35 +2,46 @@
 //
 // Traits area (03) — the new frame leads with a READ-ONLY archetype banner
 // (fixed identity context, "Set at creation"), a connector line, then the
-// editable trait layer. The trait layer reuses the existing wired leaves
-// (DNAGroupCard + TraitCard) and the useTraits hook verbatim — browse + equip
-// the 16 library traits. Traits are an identity attribute managed here (they
-// have no Home loadout slot), so trait equip stays in the Forge.
+// editable trait layer.
+//
+// V2.2 Clarity MVP: cards browse by PUBLIC FAMILY (Temperament / Play / Preview)
+// via the presentation overlay in src/data/traitFamilies.js. Families are display
+// ONLY — the real slot machine stays the 3 DNA groups (≤2 each), surfaced in the
+// "Slots" strip below so the family view never hides the accounting. A card's
+// family can differ from the slot it fills (e.g. Sector Rotator → Play family,
+// Strategy slot); each family header lists the slot groups its cards draw on.
 //
 // Trait authoring + a trait "ready" lifecycle are Phase 4.
 
 import React, { useMemo, useState } from 'react';
+import { ChevronDown } from 'lucide-react';
 import { useFK, alpha, AreaHeader, Orb, Mono, Icon, ShelfHeader } from './forgeKit';
 import { DNA_GROUPS } from '../../../data/dnaGroups';
 import { TRAIT_LIBRARY } from '../../../data/traitLibrary';
+import { groupTraitsByFamily } from '../../../data/traitFamilies';
 import { getArchetypeDisplayName } from '../../../data/archetypeDisplay';
 import { getArchetypeIdentity } from '../../../data/archetypeIdentity';
-import DNAGroupCard from '../DNAGroupCard';
 import TraitCard from '../TraitCard';
+
+const GROUP_ORDER = ['instincts', 'strategy', 'discipline'];
 
 export default function TraitsArea({ agent, agentName, primary, traits, hasActiveBattle, showToast }) {
   const T = useFK();
   const accent = T.allocation;
-  const [expandedDnaGroup, setExpandedDnaGroup] = useState(null);
+  const [expandedFamily, setExpandedFamily] = useState(null);
 
   const archName = getArchetypeDisplayName(agent?.archetype);
   const archLine = getArchetypeIdentity(agent?.archetype)?.disposition || '';
 
-  const traitsByGroup = useMemo(() => ({
-    instincts: TRAIT_LIBRARY.filter((t) => t.dnaGroup === 'instincts'),
-    strategy: TRAIT_LIBRARY.filter((t) => t.dnaGroup === 'strategy'),
-    discipline: TRAIT_LIBRARY.filter((t) => t.dnaGroup === 'discipline'),
-  }), []);
+  // Cards grouped by PUBLIC family (presentation only — never feeds slots/seeding).
+  const families = useMemo(() => groupTraitsByFamily(TRAIT_LIBRARY), []);
+
+  // traitId → equipped entry, for per-card state + per-family counts.
+  const equippedById = useMemo(() => {
+    const m = new Map();
+    for (const e of traits.equippedTraits) m.set(e.traitId, e);
+    return m;
+  }, [traits.equippedTraits]);
 
   return (
     <div className="fw-scroll" style={{ height: '100%', overflowY: 'auto', padding: '22px 18px calc(84px + env(safe-area-inset-bottom))' }}>
@@ -52,52 +63,88 @@ export default function TraitsArea({ agent, agentName, primary, traits, hasActiv
       </div>
 
       {/* the relationship — traits sit ON TOP of the locked archetype */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '0 4px', marginBottom: 16 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '0 4px', marginBottom: 14 }}>
         <div style={{ width: 1, height: 14, background: T.hair2, marginLeft: 18 }} />
         <Mono style={{ fontSize: 9, letterSpacing: '0.1em', color: T.ink3, textTransform: 'uppercase' }}>Traits tune emphasis on top — always advisory, never hard</Mono>
       </div>
 
-      <ShelfHeader label="Agent DNA · explore & equip" count={`${TRAIT_LIBRARY.length} traits`} />
+      {/* Slots strip — the REAL accounting (3 groups × 2). Families are display only,
+          so this stays visible: it's why a card may be un-equippable even inside a family. */}
+      <div style={{ padding: '11px 13px', borderRadius: 12, marginBottom: 16, background: T.surface, border: `1px solid ${T.hair}` }}>
+        <Mono style={{ fontSize: 8.5, letterSpacing: '0.12em', color: T.ink3, textTransform: 'uppercase' }}>Slots · up to 2 per group</Mono>
+        <div style={{ display: 'flex', gap: 8, marginTop: 7, flexWrap: 'wrap' }}>
+          {GROUP_ORDER.map((gid) => {
+            const { used, max } = traits.getGroupSlotUsage(gid);
+            const g = DNA_GROUPS[gid];
+            const full = used >= max;
+            return (
+              <div key={gid} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 9px', borderRadius: 999, background: alpha(g.color, 0.08), border: `1px solid ${alpha(g.color, full ? 0.5 : 0.22)}` }}>
+                <span style={{ width: 7, height: 7, borderRadius: '50%', background: g.color, opacity: used > 0 ? 1 : 0.3 }} />
+                <span style={{ fontSize: 11, fontWeight: 600, color: T.ink2 }}>{g.name}</span>
+                <Mono style={{ fontSize: 10, color: full ? T.ink2 : T.ink3 }}>{used}/{max}</Mono>
+              </div>
+            );
+          })}
+        </div>
+      </div>
 
-      {/* editable trait layer — reused wired leaves (DNAGroupCard + TraitCard) */}
-      {Object.entries(DNA_GROUPS).map(([groupId, group]) => {
-        const groupTraits = traitsByGroup[groupId] || [];
-        const equippedInGroup = traits.equippedTraits.filter((t) => t.dnaGroup === groupId);
-        const totalRules = groupTraits.reduce((sum, t) => sum + (t.ruleIds?.length || 0), 0);
-        const equippedRules = equippedInGroup.reduce((sum, t) => sum + (t.ruleIds?.length || 0), 0);
+      <ShelfHeader label="Cards · explore & equip" count={`${TRAIT_LIBRARY.length} cards`} />
+
+      {/* Editable trait layer — grouped by public family (TraitCard reused verbatim) */}
+      {families.map(({ family, meta, traits: famTraits }) => {
+        const isOpen = expandedFamily === family;
+        const equippedInFamily = famTraits.filter((t) => equippedById.has(t.id)).length;
+        // Which real slot groups this family's cards draw on (honest about the wrinkle).
+        const slotGroups = [...new Set(famTraits.map((t) => DNA_GROUPS[t.dnaGroup]?.name).filter(Boolean))];
         return (
-          <DNAGroupCard
-            key={groupId}
-            group={group}
-            equippedTraits={equippedInGroup}
-            slotUsage={traits.getGroupSlotUsage(groupId)}
-            totalRulesInGroup={totalRules}
-            equippedRuleCount={equippedRules}
-            isExpanded={expandedDnaGroup === groupId}
-            onToggle={() => setExpandedDnaGroup((prev) => (prev === groupId ? null : groupId))}
-          >
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {groupTraits.map((trait) => {
-                const equipped = traits.equippedTraits.find((e) => e.traitId === trait.id);
-                return (
-                  <TraitCard
-                    key={trait.id}
-                    trait={trait}
-                    isEquipped={!!equipped}
-                    currentStrength={equipped?.strength || null}
-                    isCustom={equipped?.isCustom || false}
-                    onEquip={traits.equipTrait}
-                    onUnequip={traits.unequipTrait}
-                    onStrengthChange={traits.setTraitStrength}
-                    onAdvancedOpen={() => showToast?.('Advanced rule editing lives in the bundle builder', accent)}
-                    canEquip={traits.canEquip(trait.id)}
-                    groupColor={group.color}
-                    locked={hasActiveBattle}
-                  />
-                );
-              })}
-            </div>
-          </DNAGroupCard>
+          <div key={family} style={{ marginBottom: 8 }}>
+            <button
+              onClick={() => setExpandedFamily((prev) => (prev === family ? null : family))}
+              style={{
+                width: '100%', display: 'flex', alignItems: 'center', gap: 12, textAlign: 'left',
+                background: T.surface, border: 'none', borderLeft: `4px solid ${meta.accent}`,
+                borderRadius: 8, padding: '12px 14px', cursor: 'pointer',
+              }}
+            >
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 15, fontWeight: 700, color: T.ink }}>{meta.name}</div>
+                <div style={{ fontSize: 12, color: T.ink2, marginTop: 1 }}>{meta.tagline}</div>
+                {slotGroups.length > 0 && (
+                  <Mono style={{ fontSize: 8.5, letterSpacing: '0.08em', color: T.ink3, textTransform: 'uppercase', display: 'block', marginTop: 6 }}>
+                    Fills {slotGroups.join(' + ')} slot{slotGroups.length > 1 ? 's' : ''}
+                  </Mono>
+                )}
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, flexShrink: 0 }}>
+                <Mono style={{ fontSize: 11, color: T.ink3 }}>{equippedInFamily}/{famTraits.length}</Mono>
+                <ChevronDown size={16} color={T.ink3} style={{ transform: isOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s ease' }} />
+              </div>
+            </button>
+
+            {isOpen && (
+              <div style={{ paddingTop: 8, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {famTraits.map((trait) => {
+                  const equipped = equippedById.get(trait.id);
+                  return (
+                    <TraitCard
+                      key={trait.id}
+                      trait={trait}
+                      isEquipped={!!equipped}
+                      currentStrength={equipped?.strength || null}
+                      isCustom={equipped?.isCustom || false}
+                      onEquip={traits.equipTrait}
+                      onUnequip={traits.unequipTrait}
+                      onStrengthChange={traits.setTraitStrength}
+                      onAdvancedOpen={() => showToast?.('Advanced rule editing lives in the bundle builder', accent)}
+                      canEquip={traits.canEquip(trait.id)}
+                      groupColor={meta.accent}
+                      locked={hasActiveBattle}
+                    />
+                  );
+                })}
+              </div>
+            )}
+          </div>
         );
       })}
 

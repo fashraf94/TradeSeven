@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import TraitStrengthToggle from './TraitStrengthToggle';
 import { FORGE_RULE_TEMPLATES } from '../../data/forgeKnowledgeBase';
+import { getTraitFamily, getFamilyMeta, isArchetypeAligned } from '../../data/traitFamilies';
 
 const TRAIT_ICONS = {
   TrendingUp, Search, Zap, BarChart3, ArrowUpRight, Compass,
@@ -157,6 +158,37 @@ export default function TraitCard({
         <span style={{ fontSize: 14, fontWeight: 700, color: '#ffffff' }}>
           {trait.name}
         </span>
+      </div>
+
+      {/* Family + alignment chips — presentation overlay (does NOT affect slots/seeding) */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4, flexWrap: 'wrap' }}>
+        {(() => {
+          const fam = getFamilyMeta(getTraitFamily(trait.id));
+          return (
+            <span
+              title={fam.tagline}
+              style={{
+                fontSize: 9.5, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase',
+                color: fam.accent, background: `${fam.accent}1A`, border: `1px solid ${fam.accent}40`,
+                padding: '2px 7px', borderRadius: 999,
+              }}
+            >
+              {fam.short}
+            </span>
+          );
+        })()}
+        {isArchetypeAligned(trait.id) && (
+          <span
+            title="This card's selection lean mirrors an archetype's edge."
+            style={{
+              fontSize: 9.5, fontWeight: 600, letterSpacing: '0.04em',
+              color: '#A0AEC0', background: '#FFFFFF0D', border: '1px solid #2A2D35',
+              padding: '2px 7px', borderRadius: 999,
+            }}
+          >
+            Archetype-aligned
+          </span>
+        )}
       </div>
 
       {/* Identity statement */}
