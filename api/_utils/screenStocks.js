@@ -285,6 +285,9 @@ function rejectionDetail(reason, field, op) {
     case 'malformed_predicate': return 'Predicate must be an object with a non-empty string field';
     case 'invalid_rank_field': return `rankBy.field '${field}' is not in the screening allowlist`;
     case 'unsupported_rank_direction': return "rankBy.direction must be 'asc' or 'desc'";
+    case 'unsupported_in_rollup': return field
+      ? `Filter on '${field}' isn't applied to an industry rollup — rollups rank all qualifying industries`
+      : "Filters aren't applied to an industry rollup — rollups rank all qualifying industries";
     default: return 'Rejected';
   }
 }
@@ -578,6 +581,22 @@ export function screenIndustries(industries, screenSpec) {
   }
   const rankBy = { field: rankField, direction: rankDirection };
 
+  // Industry rollups rank ALL qualifying industries — per-stock filters are NOT applied in
+  // V1. Report any the model emitted so a dropped filter is never silent (mirrors the
+  // screenStocks "never silently ignored" contract). Capped like the stock path.
+  const specFilters = Array.isArray(spec.filters) ? spec.filters.slice(0, MAX_FILTERS) : [];
+  for (const pred of specFilters) {
+    const isObj = pred != null && typeof pred === 'object';
+    rejectedFilters.push({
+      scope: 'filter',
+      field: isObj ? (pred.field ?? null) : null,
+      op: isObj ? (pred.op ?? null) : null,
+      value: isObj ? (pred.value ?? null) : null,
+      reason: 'unsupported_in_rollup',
+      detail: rejectionDetail('unsupported_in_rollup', isObj ? pred.field : undefined),
+    });
+  }
+
   // Sort (nulls last via compareValues), deterministic name tiebreak; then slice.
   const asc = rankDirection === 'asc';
   const sorted = [...all].sort((a, b) => {
@@ -600,7 +619,9 @@ export function screenIndustries(industries, screenSpec) {
   }));
 
   // screenType echoed on appliedSpec so the endpoint persists it (refinement continuity).
-  const appliedSpec = { screenType: 'industries', rankBy, limit, rankByFallback };
+  // filters: [] makes explicit that a rollup applies no per-stock filters (any the model
+  // emitted are surfaced in rejectedFilters above).
+  const appliedSpec = { screenType: 'industries', filters: [], rankBy, limit, rankByFallback };
 
   return { results, appliedSpec, rejectedFilters, matchCount: universeSize, universeSize, computedAt };
 }

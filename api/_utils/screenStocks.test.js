@@ -848,6 +848,23 @@ describe('screenIndustries', () => {
     expect(out.appliedSpec.limit).toBe(2);
   });
 
+  it('reports any per-stock filters as dropped (never silently ignored) and still ranks all industries', () => {
+    const out = screenIndustries(industries(), {
+      filters: [{ field: 'industryName', op: 'eq', value: 'Semiconductors & Semiconductor Equipment' }],
+      rankBy: { field: 'return1M', direction: 'desc' },
+    });
+    // The filter is NOT applied — the full industry leaderboard still comes back...
+    expect(out.results).toHaveLength(4);
+    expect(namesOf(out)[0]).toBe('Semiconductors & Semiconductor Equipment');
+    // ...but the dropped filter is surfaced, mirroring screenStocks' honesty contract.
+    const dropped = out.rejectedFilters.find((r) => r.reason === 'unsupported_in_rollup');
+    expect(dropped).toBeTruthy();
+    expect(dropped).toMatchObject({ scope: 'filter', field: 'industryName', op: 'eq' });
+    expect(typeof dropped.detail).toBe('string');
+    expect(dropped.detail.length).toBeGreaterThan(0);
+    expect(out.appliedSpec.filters).toEqual([]); // no filters applied to a rollup
+  });
+
   it('empty / missing rollup → well-formed zero result', () => {
     const out = screenIndustries({}, { rankBy: { field: 'return1M', direction: 'desc' } });
     expect(out.results).toEqual([]);

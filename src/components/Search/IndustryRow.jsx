@@ -92,7 +92,7 @@ const IndustryRow = ({ displayName, totalStocks, rank, value, isReturn, maxAbs, 
         fontSize: '10px', color: 'rgba(255,255,255,0.4)', flexShrink: 0,
         fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap',
       }}>
-        {totalStocks} {totalStocks === 1 ? 'stock' : 'stocks'}
+        {Number.isFinite(totalStocks) ? `${totalStocks} ${totalStocks === 1 ? 'stock' : 'stocks'}` : null}
       </span>
 
       {/* Bar: diverging for returns, neutral left-fill for momentumScore */}

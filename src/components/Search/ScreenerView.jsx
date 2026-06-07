@@ -485,7 +485,9 @@ const ScreenerView = ({ onOpenResearch, isMobile }) => {
                 lineHeight: 1.6,
               }}
             >
-              No names matched this screen. Try loosening a filter or widening the sector.
+              {screen.resultType === 'industries'
+                ? 'No industry rankings are available yet — the daily rankings may still be updating. Check back shortly.'
+                : 'No names matched this screen. Try loosening a filter or widening the sector.'}
             </div>
           )}
 
