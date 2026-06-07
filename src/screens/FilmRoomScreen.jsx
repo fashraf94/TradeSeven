@@ -6,6 +6,7 @@ import AssetResearchModal from '../components/draft/AssetResearchModal';
 import FilmRoomHeader from '../components/FilmRoom/FilmRoomHeader';
 import DayPicker from '../components/FilmRoom/DayPicker';
 import ScoreSummaryCard from '../components/FilmRoom/ScoreSummaryCard';
+import TraitAttributionCard from '../components/FilmRoom/TraitAttributionCard';
 import AutoDebriefHero from '../components/FilmRoom/AutoDebriefHero';
 import DaySummaryCard from '../components/FilmRoom/DaySummaryCard';
 import TradeHistorySection from '../components/FilmRoom/TradeHistorySection';
@@ -125,6 +126,8 @@ export default function FilmRoomScreen({ battle, onBack }) {
         }}
       >
         <ScoreSummaryCard battle={agentBattle} dayNum={selectedDay} tokens={tokens} />
+
+        <TraitAttributionCard battle={agentBattle} tokens={tokens} />
 
         <AutoDebriefHero
           battle={agentBattle}

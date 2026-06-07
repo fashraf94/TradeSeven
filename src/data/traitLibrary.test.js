@@ -31,6 +31,7 @@ import {
   ARCHETYPE_DEFAULT_TRAITS,
   getTraitsForGroup,
   getAllTraitRuleIds,
+  UNAMBIGUOUS_RULE_TO_TRAIT,
 } from './traitLibrary';
 import { DNA_GROUPS } from './dnaGroups';
 
@@ -164,6 +165,28 @@ describe('ARCHETYPE_DEFAULT_TRAITS — seeding & 2-per-group cap (acceptance #4 
       for (const [g, n] of Object.entries(perGroup)) {
         expect(n, `${code} group ${g}`).toBeLessThanOrEqual(DNA_GROUPS[g].maxTraits);
       }
+    }
+  });
+});
+
+describe('UNAMBIGUOUS_RULE_TO_TRAIT (read-side attribution map — Phase 1B)', () => {
+  it('OMITS the shared ruleIds th-01 and mb-08 (never attribute an ambiguous rule)', () => {
+    expect(UNAMBIGUOUS_RULE_TO_TRAIT['th-01']).toBeUndefined();
+    expect(UNAMBIGUOUS_RULE_TO_TRAIT['mb-08']).toBeUndefined();
+  });
+
+  it('maps a uniquely-owned ruleId to its sole owning trait', () => {
+    expect(UNAMBIGUOUS_RULE_TO_TRAIT['mb-09']).toBe('trait-iron-discipline');
+    expect(UNAMBIGUOUS_RULE_TO_TRAIT['ts-07']).toBe('trait-penalty-dodger');
+    expect(UNAMBIGUOUS_RULE_TO_TRAIT['a-05']).toBe('trait-diversifier');
+  });
+
+  it('every entry points to a trait that actually owns that ruleId, and only one trait does', () => {
+    const ownerCount = {};
+    for (const t of TRAIT_LIBRARY) for (const rid of t.ruleIds) ownerCount[rid] = (ownerCount[rid] || 0) + 1;
+    for (const [ruleId, traitId] of Object.entries(UNAMBIGUOUS_RULE_TO_TRAIT)) {
+      expect(ownerCount[ruleId], ruleId).toBe(1);
+      expect(TRAIT_BY_ID[traitId].ruleIds, `${traitId} owns ${ruleId}`).toContain(ruleId);
     }
   });
 });

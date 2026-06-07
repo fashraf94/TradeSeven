@@ -7,6 +7,7 @@ import {
 } from 'firebase/firestore';
 import { db, auth } from '../firebase/config';
 import { resolveRuleHardness } from '../components/Forge/workshop/hardSoftHelper';
+import { UNAMBIGUOUS_RULE_TO_TRAIT, TRAIT_BY_ID } from '../data/traitLibrary';
 
 /**
  * Reconstruct the C1/S1 positional mapping from a battle's frozen activeRules.
@@ -242,4 +243,49 @@ export async function computeForgeStats(agentId, allBundles) {
     },
     bundles: bundleStats,
   };
+}
+
+/**
+ * Phase 1B — read-side attribution. Roll up a SINGLE battle's cited forge rules
+ * to the trait CARD that owns them, for a post-battle tag like
+ * "Your Iron Discipline shaped 4 decisions this battle."
+ *
+ * Honest + partial by design — a card is credited only when attribution is
+ * CERTAIN:
+ *   - the cited rule maps to exactly one library trait (UNAMBIGUOUS_RULE_TO_TRAIT);
+ *     shared rules (th-01, mb-08) are never attributed.
+ *   - the cited rule was injected as a TRAIT/identity rule (no bundleName in the
+ *     frozen snapshot), so a same-id rule that came from a manual bundle is not
+ *     credited to a card.
+ * Does NOT carry traitId on the snapshot (that would touch the fenced
+ * projectActiveRules — the MEDIUM version we declined).
+ *
+ * @param {Object} battle - an agentBattles doc (reads agentContext.activeRules + evaluations)
+ * @returns {Array<{ traitId:string, traitName:string, decisions:number }>} sorted desc by decisions
+ */
+export function computeBattleTraitAttribution(battle) {
+  const activeRules = battle?.agentContext?.activeRules;
+  const posMap = buildPositionalMap(activeRules);
+  if (Object.keys(posMap).length === 0) return [];
+
+  const { tallies } = aggregateBattleCitations(battle, posMap);
+
+  // ruleId → bundleName from the frozen snapshot. Trait/identity rules carry no
+  // bundleName; a manual-bundle rule does — we only attribute the former.
+  const ruleIdToBundleName = {};
+  for (const mapped of Object.values(posMap)) ruleIdToBundleName[mapped.ruleId] = mapped.bundleName;
+
+  const byTrait = {};
+  for (const [ruleId, tally] of Object.entries(tallies)) {
+    const traitId = UNAMBIGUOUS_RULE_TO_TRAIT[ruleId];
+    if (!traitId) continue;                     // shared / non-trait ruleId → omit
+    if (ruleIdToBundleName[ruleId]) continue;   // originated from a manual bundle → omit
+    const decisions = (tally.followed || 0) + (tally.blocked || 0);
+    if (decisions <= 0) continue;
+    if (!byTrait[traitId]) {
+      byTrait[traitId] = { traitId, traitName: TRAIT_BY_ID[traitId]?.name || traitId, decisions: 0 };
+    }
+    byTrait[traitId].decisions += decisions;
+  }
+  return Object.values(byTrait).sort((a, b) => b.decisions - a.decisions);
 }

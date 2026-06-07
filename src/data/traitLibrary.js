@@ -504,3 +504,20 @@ export function getAllTraitRuleIds() {
   }
   return [...ids];
 }
+
+// ruleId → traitId for rules owned by EXACTLY ONE library trait. Shared ruleIds
+// (th-01, mb-08) are OMITTED, so an ambiguous rule is never attributed to a card.
+// Read-side only (Phase 1B attribution); the frozen battle snapshot doesn't carry
+// traitId, so attribution is derived from this map at read time and stays honest:
+// shared rules — and any rule that originated from a manual bundle — are not claimed.
+export const UNAMBIGUOUS_RULE_TO_TRAIT = (() => {
+  const owners = {};
+  for (const trait of TRAIT_LIBRARY) {
+    for (const ruleId of trait.ruleIds) (owners[ruleId] ||= []).push(trait.id);
+  }
+  const map = {};
+  for (const [ruleId, ids] of Object.entries(owners)) {
+    if (ids.length === 1) map[ruleId] = ids[0];
+  }
+  return map;
+})();
