@@ -571,7 +571,17 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
     // advances with the clock, exactly like the server's authoritative gate.
     // Falls back to "activation day" when no timestamp exists (conservative: entry
     // baseline, never a phantom badge).
-    const toEtDate = (d) => new Date(d).toLocaleDateString('en-US', { timeZone: 'America/New_York' });
+    //
+    // activatedAt/createdAt are ISO strings on the agentBattles doc
+    // (agentBattleService.js:44,75-76), so new Date(it) is correct today. The
+    // .toDate?.() normalization is defensive: were either ever stored as a
+    // Firestore Timestamp, new Date(timestamp) would be Invalid Date and the gate
+    // would silently fall to false → phantom badges return. .toDate?.() is a no-op
+    // for strings/numbers (?. short-circuits) and unwraps a Timestamp if present.
+    const toEtDate = (raw) => {
+      const d = raw?.toDate?.() ?? new Date(raw);
+      return d.toLocaleDateString('en-US', { timeZone: 'America/New_York' });
+    };
     const activationTs = agentBattle?.activatedAt || agentBattle?.createdAt;
     const isActivationDay = activationTs ? toEtDate(Date.now()) === toEtDate(activationTs) : true;
 
