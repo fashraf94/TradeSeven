@@ -565,6 +565,16 @@ service cloud.firestore {
       allow create, update, delete: if false;
     }
 
+    // Analysis sessions — owner-scoped reads, all writes through the server
+    // (Admin SDK). Same shape as the watchlistSessions block above. Manual
+    // deploy via Firebase Console required after merge — Firestore rules
+    // don't auto-deploy from code.
+    match /analysisSessions/{sessionId} {
+      allow read: if request.auth != null
+                  && resource.data.userId == request.auth.uid;
+      allow create, update, delete: if false;
+    }
+
     // ═══════════════════════════════════════════
     // Default deny everything else
     // ═══════════════════════════════════════════
