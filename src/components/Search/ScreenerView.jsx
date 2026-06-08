@@ -16,7 +16,7 @@
 
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Sparkles, Send, AlertCircle, X, Clock } from 'lucide-react';
+import { Sparkles, Send, AlertCircle, X, Clock, Bookmark, Check } from 'lucide-react';
 import { useTheme } from '../../contexts/ThemeContext';
 import { fetchWithAuth } from '../../utils/fetchWithAuth';
 import { STOCKS } from '../../data/assets';
@@ -63,6 +63,13 @@ const ScreenerView = ({ onOpenResearch, isMobile }) => {
   const [isSending, setIsSending] = useState(false);
   const [screen, setScreen] = useState(null); // normalized last response
   const [errorBanner, setErrorBanner] = useState(null);
+
+  // "Save as watchlist" hand-off. saveStatus: 'idle' | 'saving' | 'saved' | 'error'.
+  // The modal collects a name; confirmSave creates a populated draft then commits.
+  const [saveModalOpen, setSaveModalOpen] = useState(false);
+  const [saveName, setSaveName] = useState('');
+  const [saveStatus, setSaveStatus] = useState('idle');
+  const [saveError, setSaveError] = useState(null);
 
   const abortRef = useRef(null);
   const concurrentRetryRef = useRef(false);
@@ -237,7 +244,75 @@ const ScreenerView = ({ onOpenResearch, isMobile }) => {
     });
   };
 
+  // Open the naming modal, seeding the name from the screen's plain-language
+  // spec (capped to the server's 100-char name limit).
+  const openSaveModal = useCallback(() => {
+    if (!screen?.results?.length) return;
+    const seed = specToPlainLanguage(screen.appliedSpec) || 'Screened watchlist';
+    setSaveName(seed.slice(0, 100));
+    setSaveError(null);
+    setSaveStatus('idle');
+    setSaveModalOpen(true);
+  }, [screen]);
+
+  const closeSaveModal = useCallback(() => {
+    if (saveStatus === 'saving') return; // don't drop a request mid-flight
+    setSaveModalOpen(false);
+  }, [saveStatus]);
+
+  // Create a populated draft from the screened set, then commit it. Worst-case
+  // partial state (create ok, commit fails) is a valid populated draft the user
+  // can finalize later — benign, not an orphan. We do NOT auto-equip: equip is
+  // the user's explicit next step on the existing equip surface (and can't run
+  // on a draft or a mid-battle agent).
+  const confirmSave = useCallback(async () => {
+    if (!screen?.results?.length || saveStatus === 'saving') return;
+    setSaveStatus('saving');
+    setSaveError(null);
+
+    // Map screened rows → the watchlist ticker shape. The server re-validates
+    // and caps (≤40, per-field) via capTickersArray and defaults addedBy:'user'.
+    const tickers = screen.results
+      .filter((r) => r && typeof r.symbol === 'string')
+      .map((r) => ({ symbol: r.symbol, reasoning: '', category: r.sectorName || '' }));
+
+    try {
+      const createRes = await fetchWithAuth('/api/forge/watchlists', {
+        method: 'POST',
+        body: JSON.stringify({
+          tickers,
+          name: saveName.trim().slice(0, 100),
+          sourceScreenSpec: screen.appliedSpec || null,
+        }),
+      });
+      const createData = await createRes.json().catch(() => null);
+      if (!createRes.ok || !createData?.watchlistId) {
+        setSaveError(createData?.message || 'Could not save the watchlist. Try again.');
+        setSaveStatus('error');
+        return;
+      }
+
+      const watchlistId = createData.watchlistId;
+      const commitRes = await fetchWithAuth(`/api/forge/watchlists/${watchlistId}/commit`, {
+        method: 'POST',
+      });
+      if (!commitRes.ok) {
+        // The draft exists and is populated — finalizing it later is benign.
+        setSaveError('Saved as a draft, but finalizing failed — you can commit it from your watchlists.');
+        setSaveStatus('error');
+        return;
+      }
+
+      setSaveStatus('saved');
+    } catch {
+      setSaveError('Connection issue — check your network and try again.');
+      setSaveStatus('error');
+    }
+  }, [screen, saveName, saveStatus]);
+
   const canSend = !isSending && inputText.trim().length > 0;
+  const canSaveScreen =
+    !!screen?.screened && (screen?.results?.length || 0) > 0 && screen?.resultType !== 'industries';
 
   // ── styles ────────────────────────────────────────────────────────
   const chipStyle = {
@@ -461,6 +536,36 @@ const ScreenerView = ({ onOpenResearch, isMobile }) => {
             </div>
           )}
 
+          {/* Save-as-watchlist action — turns the screened cohort into a
+              finalized, equippable watchlist (create-from-tickers → commit). */}
+          {canSaveScreen && (
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
+              <button
+                type="button"
+                onClick={openSaveModal}
+                disabled={isSending}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 7,
+                  padding: '8px 14px',
+                  borderRadius: 10,
+                  fontSize: 13,
+                  fontWeight: 600,
+                  background: `${tokens.teal}1a`,
+                  color: tokens.teal,
+                  border: `1px solid ${tokens.teal}66`,
+                  cursor: isSending ? 'not-allowed' : 'pointer',
+                  fontFamily: 'inherit',
+                  opacity: isSending ? 0.5 : 1,
+                  transition: 'all 0.2s ease',
+                }}
+              >
+                <Bookmark size={15} /> Save as watchlist
+              </button>
+            </div>
+          )}
+
           {/* Results list (RankRow) · empty-match note · or nothing (clarifying) */}
           {screen.screened && screen.results.length > 0 && (
             <ResultsList
@@ -509,6 +614,183 @@ const ScreenerView = ({ onOpenResearch, isMobile }) => {
           )}
         </motion.div>
       )}
+
+      {/* Save-as-watchlist modal — name → create-from-tickers → commit */}
+      <AnimatePresence>
+        {saveModalOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.18 }}
+            onClick={closeSaveModal}
+            style={{
+              position: 'fixed',
+              inset: 0,
+              background: 'rgba(0,0,0,0.6)',
+              backdropFilter: 'blur(2px)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              zIndex: 1000,
+              padding: 16,
+            }}
+          >
+            <motion.div
+              initial={{ scale: 0.96, y: 8 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.96, y: 8 }}
+              transition={{ duration: 0.18 }}
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                width: '100%',
+                maxWidth: 420,
+                background: tokens.bgCard,
+                border: `1px solid ${tokens.teal}33`,
+                borderRadius: 16,
+                padding: 20,
+              }}
+            >
+              {saveStatus === 'saved' ? (
+                <div style={{ textAlign: 'center' }}>
+                  <div
+                    style={{
+                      width: 44,
+                      height: 44,
+                      borderRadius: '50%',
+                      background: `${tokens.teal}1a`,
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      marginBottom: 12,
+                    }}
+                  >
+                    <Check size={22} color={tokens.teal} />
+                  </div>
+                  <div style={{ color: tokens.textPrimary, fontSize: 16, fontWeight: 700, marginBottom: 6 }}>
+                    Saved to your watchlists
+                  </div>
+                  <div style={{ color: tokens.textSecondary, fontSize: 13, lineHeight: 1.5, marginBottom: 16 }}>
+                    Finalize and equip it from the Forge when your agent isn’t in a battle.
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setSaveModalOpen(false)}
+                    style={{
+                      padding: '9px 18px',
+                      borderRadius: 10,
+                      border: 'none',
+                      background: tokens.teal,
+                      color: tokens.bgApp,
+                      fontSize: 14,
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      fontFamily: 'inherit',
+                    }}
+                  >
+                    Done
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, color: tokens.textPrimary, fontSize: 16, fontWeight: 700 }}>
+                      <Bookmark size={16} color={tokens.teal} /> Save as watchlist
+                    </div>
+                    <button
+                      type="button"
+                      onClick={closeSaveModal}
+                      aria-label="Close"
+                      style={{ background: 'transparent', border: 'none', color: tokens.textMuted, cursor: 'pointer', padding: 0, display: 'flex' }}
+                    >
+                      <X size={16} />
+                    </button>
+                  </div>
+
+                  <label style={{ display: 'block', fontSize: 11, fontWeight: 700, letterSpacing: '0.5px', textTransform: 'uppercase', color: tokens.textMuted, marginBottom: 6 }}>
+                    Name
+                  </label>
+                  <input
+                    type="text"
+                    value={saveName}
+                    maxLength={100}
+                    autoFocus
+                    onChange={(e) => setSaveName(e.target.value.slice(0, 100))}
+                    onKeyDown={(e) => { if (e.key === 'Enter' && saveName.trim()) confirmSave(); }}
+                    placeholder="Name this watchlist"
+                    style={{
+                      width: '100%',
+                      boxSizing: 'border-box',
+                      background: tokens.bgApp,
+                      border: `1px solid ${tokens.teal}33`,
+                      borderRadius: 10,
+                      color: tokens.textPrimary,
+                      fontSize: 14,
+                      padding: '10px 12px',
+                      outline: 'none',
+                      fontFamily: 'inherit',
+                    }}
+                  />
+
+                  <div style={{ color: tokens.textMuted, fontSize: 12, marginTop: 8 }}>
+                    {(() => {
+                      const n = screen?.results?.length || 0;
+                      return n > 40
+                        ? `Saving the top 40 of ${n} names from this screen.`
+                        : `${n} name${n === 1 ? '' : 's'} from this screen.`;
+                    })()}
+                  </div>
+
+                  {saveError && (
+                    <div style={{ color: tokens.red, fontSize: 12.5, lineHeight: 1.5, marginTop: 10 }}>
+                      {saveError}
+                    </div>
+                  )}
+
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 18 }}>
+                    <button
+                      type="button"
+                      onClick={closeSaveModal}
+                      disabled={saveStatus === 'saving'}
+                      style={{
+                        padding: '9px 16px',
+                        borderRadius: 10,
+                        border: `1px solid ${tokens.borderDefault}`,
+                        background: 'transparent',
+                        color: tokens.textSecondary,
+                        fontSize: 14,
+                        fontWeight: 600,
+                        cursor: saveStatus === 'saving' ? 'not-allowed' : 'pointer',
+                        fontFamily: 'inherit',
+                      }}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={confirmSave}
+                      disabled={saveStatus === 'saving' || !saveName.trim()}
+                      style={{
+                        padding: '9px 18px',
+                        borderRadius: 10,
+                        border: 'none',
+                        background: saveStatus === 'saving' || !saveName.trim() ? `${tokens.teal}40` : tokens.teal,
+                        color: tokens.bgApp,
+                        fontSize: 14,
+                        fontWeight: 600,
+                        cursor: saveStatus === 'saving' || !saveName.trim() ? 'not-allowed' : 'pointer',
+                        fontFamily: 'inherit',
+                      }}
+                    >
+                      {saveStatus === 'saving' ? 'Saving…' : 'Save & finalize'}
+                    </button>
+                  </div>
+                </>
+              )}
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };
