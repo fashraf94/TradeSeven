@@ -555,18 +555,25 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
     }
 
     // Day-1 activation gate — mirrors the server boundary at
-    // api/cron/agent-evaluate.js:303,343-344. On the activation day the
-    // threshold/badge baseline is the ENTRY price (startingPrices), so a stock
-    // that gapped from its prior close and then sat flat from entry can't
+    // api/cron/agent-evaluate.js:303 (and agent-daily-scores.js:60-64): compare
+    // today's ET calendar date to the battle's activation date. On the activation
+    // day the threshold/badge baseline is the ENTRY price (startingPrices), so a
+    // stock that gapped from its prior close and then sat flat from entry can't
     // fabricate Bust/Crash/Meltdown while the display reads +0.00%. previousClose
-    // only takes over on day 2+, matching the server's daily-reset rollover.
+    // only takes over on day 2+.
     //
-    // Reuses the screen's existing day signal (timing.currentTradingDay, also
-    // read at :71-74) — no new timing source. The pre-first-trading-day state can
-    // report day 0, so gate on "not yet day 2" (<= 1), NOT "=== 1" (March Bug 1B):
-    // an === 1 check would let day 0 fall through to the previousClose path.
-    const currentTradingDay = agentBattle?.timing?.currentTradingDay ?? 1;
-    const isActivationDay = currentTradingDay <= 1;
+    // A wall-clock ET-date comparison is used on purpose, NOT timing.currentTradingDay:
+    // currentTradingDay is a denormalized value the daily-scores cron writes only
+    // when it runs (agent-daily-scores.js:51,188 — calendar-derived but
+    // idempotency-gated with no missed-day catch-up), so a skipped nightly run
+    // would leave it stale at 1 while the server's date-based gate had already
+    // rolled to day 2 — a full-day client/server divergence. The date comparison
+    // advances with the clock, exactly like the server's authoritative gate.
+    // Falls back to "activation day" when no timestamp exists (conservative: entry
+    // baseline, never a phantom badge).
+    const toEtDate = (d) => new Date(d).toLocaleDateString('en-US', { timeZone: 'America/New_York' });
+    const activationTs = agentBattle?.activatedAt || agentBattle?.createdAt;
+    const isActivationDay = activationTs ? toEtDate(Date.now()) === toEtDate(activationTs) : true;
 
     // Threshold baseline must match the asset's entry into the portfolio.
     // For swapped-in assets, swapPrice prevents retroactive BaggerBomb credit
@@ -615,7 +622,7 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
       history,
       currentPrice: curPrice,
     };
-  }, [effectivePrices, startingPrices, thresholds, previousClosePrices, agentBattle?.thresholdHistory, agentBattle?.timing?.currentTradingDay]);
+  }, [effectivePrices, startingPrices, thresholds, previousClosePrices, agentBattle?.thresholdHistory, agentBattle?.activatedAt, agentBattle?.createdAt]);
 
   // ── Enriched portfolios ───────────────────────────────────────────────────
 
