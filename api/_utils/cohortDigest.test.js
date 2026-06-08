@@ -4,7 +4,7 @@
 // output; no mocks needed.
 
 import { describe, it, expect } from 'vitest';
-import { buildCohortDigest } from './cohortDigest.js';
+import { buildCohortDigest, buildCohortRows, tagStandouts } from './cohortDigest.js';
 
 const RANKINGS = {
   AAA: { symbol: 'AAA', sectorName: 'Technology', industryName: 'Software', return1M: 10, return3M: 20, momentumScore: 80, sma200_position: 5, baggerBombFit: 70, compositeScore: 60, technicalScore: 65, nr7Flag: true },
@@ -112,5 +112,98 @@ describe('buildCohortDigest — edge cases', () => {
     expect(digest.covered).toBe(0);
     expect(digest.winnersLosers).toBeNull();
     expect(digest.sectors).toEqual([]);
+  });
+});
+
+// ── Per-name layer (A + D): buildCohortRows + tagStandouts ───────────────────
+
+describe('buildCohortRows — Tier-1', () => {
+  const rows = buildCohortRows({
+    symbols: ['AAA', 'BBB', 'CCC', 'DDD', 'ZZZ'],
+    rankingsBySymbol: RANKINGS,
+  });
+
+  it('emits one row per covered symbol (off-universe excluded)', () => {
+    expect(rows.map((r) => r.symbol)).toEqual(['AAA', 'BBB', 'CCC', 'DDD']);
+  });
+
+  it('carries the Tier-1 fields per row', () => {
+    const aaa = rows.find((r) => r.symbol === 'AAA');
+    expect(aaa.sectorName).toBe('Technology');
+    expect(aaa.return1M).toBe(10);
+    expect(aaa.momentumScore).toBe(80);
+    expect(aaa.nr7Flag).toBe(true);
+  });
+
+  it('OMITS Tier-2 keys entirely when no peer metrics (absent ≠ null)', () => {
+    for (const r of rows) {
+      expect(r).not.toHaveProperty('trailingPE');
+      expect(r).not.toHaveProperty('debtToEquity');
+    }
+  });
+
+  it('tags standouts (high/low holders) on each technical dimension', () => {
+    const aaa = rows.find((r) => r.symbol === 'AAA');
+    const ddd = rows.find((r) => r.symbol === 'DDD');
+    expect(aaa.standouts.high).toEqual(expect.arrayContaining(['return1M', 'momentumScore']));
+    expect(ddd.standouts.low).toEqual(expect.arrayContaining(['return1M', 'momentumScore']));
+    // BBB/CCC are neither extreme → no tags.
+    const bbb = rows.find((r) => r.symbol === 'BBB');
+    expect(bbb.standouts.high).toEqual([]);
+    expect(bbb.standouts.low).toEqual([]);
+  });
+});
+
+describe('buildCohortRows — Tier-2', () => {
+  const PEER = {
+    AAA: { trailingPE: 20, debtToEquity: 1, marketCap: 1e11 },
+    BBB: { trailingPE: 30, debtToEquity: 0.5, marketCap: 2e11 },
+    CCC: { trailingPE: 10, debtToEquity: 2, marketCap: 5e10 },
+  };
+  const rows = buildCohortRows({
+    symbols: ['AAA', 'BBB', 'CCC'],
+    rankingsBySymbol: RANKINGS,
+    peerMetricsBySymbol: PEER,
+  });
+
+  it('includes Tier-2 keys with their values when peer metrics are provided', () => {
+    const ccc = rows.find((r) => r.symbol === 'CCC');
+    expect(ccc.trailingPE).toBe(10);
+    expect(ccc.debtToEquity).toBe(2);
+    expect(ccc.marketCap).toBe(5e10);
+  });
+
+  it('a missing Tier-2 field is null (loaded-but-null), not absent', () => {
+    const PARTIAL = { AAA: { trailingPE: 20 }, BBB: { trailingPE: 25 }, CCC: { trailingPE: 15 } };
+    const r = buildCohortRows({ symbols: ['AAA', 'BBB', 'CCC'], rankingsBySymbol: RANKINGS, peerMetricsBySymbol: PARTIAL });
+    expect(r[0]).toHaveProperty('debtToEquity', null);
+  });
+});
+
+describe('tagStandouts — ≥3-finite guard', () => {
+  it('does not tag a dimension with fewer than 3 finite values', () => {
+    const rows = [
+      { symbol: 'A', momentumScore: 90 },
+      { symbol: 'B', momentumScore: 10 },
+      { symbol: 'C', momentumScore: null },
+    ];
+    tagStandouts(rows, { tier2: false });
+    for (const r of rows) {
+      expect(r.standouts.high).not.toContain('momentumScore');
+      expect(r.standouts.low).not.toContain('momentumScore');
+    }
+  });
+
+  it('only tags fundamental dimensions when tier2 is true', () => {
+    const rows = [
+      { symbol: 'A', debtToEquity: 3 },
+      { symbol: 'B', debtToEquity: 2 },
+      { symbol: 'C', debtToEquity: 1 },
+    ];
+    tagStandouts(rows, { tier2: false });
+    expect(rows[0].standouts.high).not.toContain('debtToEquity');
+    tagStandouts(rows, { tier2: true });
+    expect(rows[0].standouts.high).toContain('debtToEquity'); // A is the max holder
+    expect(rows[2].standouts.low).toContain('debtToEquity'); // C is the min holder
   });
 });

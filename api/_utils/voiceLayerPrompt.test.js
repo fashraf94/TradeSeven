@@ -3573,3 +3573,25 @@ describe('buildVoiceLayerPrompt — research mode regression (unchanged by Phase
     expect(prompt).not.toContain('COHORT DIGEST');
   });
 });
+
+describe('buildVoiceLayerPrompt — multi-dimension narration nudge (Per-Name Layer)', () => {
+  const DIGEST = {
+    size: 2, covered: 2, offUniverse: [],
+    sectors: [{ name: 'Technology', count: 2 }], industries: [],
+    returns: {}, momentum: { medianScore: 60, count: 2 },
+    trend: { aboveCount: 2, belowCount: 0, medianSma200Position: 3 },
+    quality: {}, nr7Count: 0, winnersLosers: null, tier2Included: false, fundamentals: null,
+  };
+
+  it('adds the multi-dimension bullet in set_analysis mode', () => {
+    const prompt = buildVoiceLayerPrompt({ mode: 'set_analysis', analysisContext: { digest: DIGEST } });
+    expect(prompt).toContain('MULTI-DIMENSION CHARACTERIZATION');
+    // The no-invent rule must still be intact.
+    expect(prompt).toContain('NEVER invent a number or characteristic not in the COHORT DIGEST');
+  });
+
+  it('does NOT add the bullet in research mode (regression guard)', () => {
+    const prompt = buildVoiceLayerPrompt({ mode: 'research', researchContext: { previousSpec: null } });
+    expect(prompt).not.toContain('MULTI-DIMENSION CHARACTERIZATION');
+  });
+});

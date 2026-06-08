@@ -12,9 +12,11 @@
 // — Gemma only describes it. notes is user-facing; it never reaches the agent.
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { ArrowLeft, Send, AlertCircle, Check, Save, Sparkles } from 'lucide-react';
 import { useTheme } from '../../../contexts/ThemeContext';
 import { postWatchlistAnalysis, saveWatchlistNotes } from '../../../services/forgeWatchlistService';
+import { orderCohortRows } from './cohortRowsView';
 
 const MESSAGE_CHAR_CAP = 2000;
 const REQUEST_TIMEOUT_MS = 28_000;
@@ -44,6 +46,11 @@ export default function WatchlistAnalysisView({ watchlist, onClose }) {
   const [suggested, setSuggested] = useState([]);
   const [sessionId, setSessionId] = useState(null);
   const [tier2Included, setTier2Included] = useState(false);
+  // Per-name layer (A): the visible list + its server-derived sort hint, plus
+  // the user's header-tap override.
+  const [rows, setRows] = useState(null);
+  const [focusDimension, setFocusDimension] = useState(null);
+  const [userSort, setUserSort] = useState(null); // { key, dir } | null
 
   const [input, setInput] = useState('');
   const [opening, setOpening] = useState(true);
@@ -67,6 +74,10 @@ export default function WatchlistAnalysisView({ watchlist, onClose }) {
         if (cancelled) return;
         setSessionId(data.sessionId || null);
         setDigest(data.digest || null);
+        if (Array.isArray(data.rows)) {
+          setRows(data.rows);
+          setFocusDimension(data.focusDimension ?? null);
+        }
         setSuggested(Array.isArray(data.suggestedActions) ? data.suggestedActions : []);
         setTurns(data.message ? [{ role: 'analyst', text: data.message }] : []);
         setOpening(false);
@@ -111,6 +122,14 @@ export default function WatchlistAnalysisView({ watchlist, onClose }) {
         if (typeof data.sessionId === 'string') setSessionId(data.sessionId);
         else if (data.sessionId === null) setSessionId(null); // budget exhausted → fresh thread
         if (data.digest) setDigest(data.digest);
+        // rows is null on a transient error → keep the prior list. On success,
+        // refresh the list + the server's sort hint and clear the user override
+        // so the new question's focus takes effect.
+        if (Array.isArray(data.rows)) {
+          setRows(data.rows);
+          setFocusDimension(data.focusDimension ?? null);
+          setUserSort(null);
+        }
         setTier2Included(data.tier2Included === true);
         setSuggested(Array.isArray(data.suggestedActions) ? data.suggestedActions : []);
         setTurns((prev) => [...prev, { role: 'analyst', text: data.message || '…' }]);
@@ -158,7 +177,18 @@ export default function WatchlistAnalysisView({ watchlist, onClose }) {
 
   const canSend = !sending && !opening && input.trim().length > 0;
 
-  return (
+  const handleSort = useCallback((key) => {
+    setUserSort((prev) => {
+      if (prev?.key === key) return { key, dir: prev.dir === 'desc' ? 'asc' : 'desc' };
+      return { key, dir: 'desc' };
+    });
+  }, []);
+
+  // Portal to document.body so the surface escapes the Forge frame's stacking
+  // context and renders full-surface (back-arrow only, no inherited Forge tab
+  // strip) — the same focused presentation as the watchlist editor. Mirrors the
+  // WatchlistChat portal idiom.
+  return createPortal(
     <div
       style={{
         position: 'fixed',
@@ -201,6 +231,16 @@ export default function WatchlistAnalysisView({ watchlist, onClose }) {
       {/* Scroll region: digest panel + transcript */}
       <div ref={scrollRef} className="fw-scroll" style={{ flex: 1, overflowY: 'auto', padding: '16px' }}>
         <DigestPanel digest={digest} tier2Included={tier2Included} tokens={tokens} />
+
+        <CohortRows
+          rows={rows}
+          digest={digest}
+          tier2Included={tier2Included}
+          focusDimension={focusDimension}
+          userSort={userSort}
+          onSort={handleSort}
+          tokens={tokens}
+        />
 
         {/* Transcript */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 16 }}>
@@ -383,6 +423,161 @@ export default function WatchlistAnalysisView({ watchlist, onClose }) {
           <Send size={18} />
         </button>
       </div>
+    </div>,
+    document.body,
+  );
+}
+
+// ── Per-name list (A + D) — the visible, deterministically-sorted cohort ──────
+// Columns are real per-name values; sort/highlight is driven by focusDimension
+// (server-derived from the question, no model) with a client header-tap override.
+// The standout marker (D) is NEUTRAL — "extreme on this dimension", direction-
+// agnostic — NOT a good/bad tint. Only the return columns keep sign-based
+// green/red (positive/negative), exactly as the digest panel does.
+
+// Column descriptors. `sign` = colour by +/- (returns only). `fmt` picks the
+// formatter. Tier-2 columns render only when the rows carry those keys.
+const T1_COLUMNS = [
+  { key: 'symbol', label: '', fmt: 'text', align: 'left' },
+  { key: 'sectorName', label: 'Sector', fmt: 'sector', align: 'left' },
+  { key: 'return1M', label: '1M', fmt: 'pct', sign: true },
+  { key: 'return3M', label: '3M', fmt: 'pct', sign: true },
+  { key: 'momentumScore', label: 'Mom', fmt: 'num' },
+  { key: 'sma200_position', label: '200d', fmt: 'pct' },
+  { key: 'atrPercentile', label: 'ATR', fmt: 'num' },
+];
+const T2_COLUMNS = [
+  { key: 'trailingPE', label: 'P/E', fmt: 'num' },
+  { key: 'debtToEquity', label: 'D/E', fmt: 'num' },
+  { key: 'revenueGrowthYOY', label: 'Rev gr', fmt: 'pct' },
+  { key: 'profitMarginTTM', label: 'Margin', fmt: 'pct' },
+  { key: 'marketCap', label: 'Mkt cap', fmt: 'money' },
+];
+
+function fmtCell(value, kind) {
+  if (kind === 'pct') return pct(value);
+  if (kind === 'money') return money(value);
+  if (kind === 'num') return num(value);
+  if (kind === 'sector') return typeof value === 'string' && value ? value : '—';
+  return value == null ? '—' : String(value);
+}
+
+function CohortRows({ rows, digest, tier2Included, focusDimension, userSort, onSort, tokens }) {
+  if (!Array.isArray(rows) || rows.length === 0) return null;
+
+  const columns = tier2Included ? [...T1_COLUMNS, ...T2_COLUMNS] : T1_COLUMNS;
+  const { rows: ordered, activeColumn } = orderCohortRows(rows, {
+    focusDimension,
+    userSortKey: userSort?.key || null,
+    userSortDir: userSort?.dir || null,
+  });
+
+  // Off-universe names carry no scored data — list them dimmed so the visible
+  // count reconciles with the header's digest.size (no silent disappearance).
+  const offUniverse = Array.isArray(digest?.offUniverse) ? digest.offUniverse : [];
+
+  const cellPad = '7px 9px';
+  const headStyle = (col) => ({
+    padding: cellPad,
+    textAlign: col.align === 'left' ? 'left' : 'right',
+    fontSize: 10,
+    fontWeight: 700,
+    letterSpacing: '0.4px',
+    textTransform: 'uppercase',
+    color: col.key === activeColumn ? tokens.teal : tokens.textMuted,
+    whiteSpace: 'nowrap',
+    cursor: col.key === 'symbol' || col.key === 'sectorName' ? 'default' : 'pointer',
+    userSelect: 'none',
+    borderBottom: `1px solid ${tokens.borderDefault}`,
+  });
+
+  return (
+    <div
+      style={{
+        marginTop: 14,
+        background: tokens.bgCard,
+        border: `1px solid ${tokens.borderDefault}`,
+        borderRadius: 14,
+        overflowX: 'auto',
+      }}
+    >
+      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+        <thead>
+          <tr>
+            {columns.map((col) => (
+              <th
+                key={col.key}
+                style={headStyle(col)}
+                onClick={col.key === 'symbol' || col.key === 'sectorName' ? undefined : () => onSort(col.key)}
+                title={col.key === 'symbol' || col.key === 'sectorName' ? undefined : 'Sort by this column'}
+              >
+                {col.key === 'symbol' ? `${digest?.size ?? rows.length} names` : col.label}
+                {col.key === activeColumn ? (userSort?.dir === 'asc' ? ' ▲' : ' ▼') : ''}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {ordered.map((row) => (
+            <tr key={row.symbol}>
+              {columns.map((col) => {
+                const isActive = col.key === activeColumn;
+                const isStandout =
+                  !!row.standouts &&
+                  (row.standouts.high?.includes(col.key) || row.standouts.low?.includes(col.key));
+                const raw = row[col.key];
+                let color = tokens.textPrimary;
+                if (col.key === 'symbol') color = tokens.textPrimary;
+                else if (col.fmt === 'sector') color = tokens.textSecondary;
+                else if (col.sign && typeof raw === 'number') color = raw >= 0 ? tokens.green : tokens.red;
+                else if (raw == null) color = tokens.textMuted;
+
+                return (
+                  <td
+                    key={col.key}
+                    style={{
+                      padding: cellPad,
+                      textAlign: col.align === 'left' ? 'left' : 'right',
+                      color,
+                      fontWeight: col.key === 'symbol' ? 700 : isStandout ? 700 : 500,
+                      fontFamily:
+                        col.fmt === 'text' || col.fmt === 'sector'
+                          ? 'inherit'
+                          : "'SF Mono','Monaco','Consolas',monospace",
+                      whiteSpace: 'nowrap',
+                      maxWidth: col.fmt === 'sector' ? 110 : undefined,
+                      overflow: col.fmt === 'sector' ? 'hidden' : undefined,
+                      textOverflow: col.fmt === 'sector' ? 'ellipsis' : undefined,
+                      // Neutral standout marker: a teal underline + weight. Says
+                      // "extreme on this dimension", regardless of direction.
+                      borderBottom: isStandout ? `2px solid ${tokens.teal}` : `1px solid ${tokens.borderDefault}33`,
+                      background: isActive ? `${tokens.teal}0f` : 'transparent',
+                    }}
+                  >
+                    {fmtCell(raw, col.fmt)}
+                  </td>
+                );
+              })}
+            </tr>
+          ))}
+          {offUniverse.map((sym) => (
+            <tr key={`off-${sym}`}>
+              <td
+                colSpan={columns.length}
+                style={{
+                  padding: cellPad,
+                  color: tokens.textFaint,
+                  fontStyle: 'italic',
+                  fontSize: 11,
+                  borderBottom: `1px solid ${tokens.borderDefault}33`,
+                }}
+              >
+                {sym} — not in the scored universe (no data)
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }

@@ -93,7 +93,9 @@ function fundamentalStat(entriesBySymbol, symbols, field) {
 
 const RETURN_FIELDS = ['return1W', 'return1M', 'return3M', 'returnYTD', 'return12M'];
 const QUALITY_FIELDS = ['baggerBombFit', 'compositeScore', 'technicalScore', 'atrPercentile'];
-const FUNDAMENTAL_FIELDS = [
+// Exported so the endpoint's isFundamentalDimension() can test focusDimension
+// membership without re-declaring the list (one source of truth).
+export const FUNDAMENTAL_FIELDS = [
   'trailingPE', 'evEbitda', 'priceSalesTTM', 'priceBookMRQ',
   'revenueGrowthYOY', 'earningsGrowthYOY',
   'grossMargin', 'opMarginTTM', 'profitMarginTTM',
@@ -187,4 +189,87 @@ export function buildCohortDigest({ symbols, rankingsBySymbol, peerMetricsBySymb
     tier2Included,
     fundamentals,
   };
+}
+
+// ── Per-name layer (A + D) — sibling helpers; buildCohortDigest is untouched ──
+//
+// buildCohortRows lets the REAL per-name data through to the UI so the visible
+// list ranks deterministically (no model in the ranking loop). tagStandouts
+// flags the extreme name per dimension for a neutral UI highlight. Both are
+// UI-only: their output is returned to the client, NEVER added to the Gemma
+// prompt (a per-name table in the prompt is sub-capability B, deferred).
+
+// Per-row Tier-1 fields surfaced to the list. nr7Flag is a boolean (defaults
+// false upstream), atrPercentile is pre-rounded — copied as-is.
+const ROW_TIER1_FIELDS = [
+  'sectorName', 'industryName',
+  'return1W', 'return1M', 'return3M', 'returnYTD', 'return12M',
+  'momentumScore', 'sma200_position', 'atrPercentile',
+  'compositeScore', 'technicalScore', 'baggerBombFit', 'nr7Flag',
+];
+
+// Dimensions the standout-tagger flags. Technical always; fundamental only when
+// Tier-2 rows are present.
+const TECHNICAL_OUTLIER_DIMS = ['return1M', 'return3M', 'momentumScore', 'sma200_position', 'atrPercentile'];
+const FUNDAMENTAL_OUTLIER_DIMS = ['trailingPE', 'debtToEquity', 'revenueGrowthYOY', 'profitMarginTTM', 'marketCap'];
+
+// Below this many finite values on a dimension, "the extreme" is not meaningful.
+const MIN_STANDOUT_COUNT = 3;
+
+/**
+ * Tag the extreme (min/max-holder) name per dimension — the same deterministic
+ * pass fundamentalStat already uses (ties resolve to the first symbol). The
+ * marker is DIRECTION-AWARE (high vs low) but VALUE-NEUTRAL: the UI renders an
+ * "extreme on this dimension" marker, not a good/bad tint. Mutates + returns rows.
+ *
+ * @param {Object[]} rows
+ * @param {{ tier2?: boolean }} [opts]
+ */
+export function tagStandouts(rows, { tier2 = false } = {}) {
+  const list = Array.isArray(rows) ? rows : [];
+  for (const r of list) r.standouts = { high: [], low: [] };
+  const dims = tier2 ? [...TECHNICAL_OUTLIER_DIMS, ...FUNDAMENTAL_OUTLIER_DIMS] : TECHNICAL_OUTLIER_DIMS;
+  for (const dim of dims) {
+    const finite = list.filter((r) => typeof r[dim] === 'number' && Number.isFinite(r[dim]));
+    if (finite.length < MIN_STANDOUT_COUNT) continue;
+    let low = finite[0];
+    let high = finite[0];
+    for (const r of finite) {
+      if (r[dim] < low[dim]) low = r;
+      if (r[dim] > high[dim]) high = r;
+    }
+    high.standouts.high.push(dim);
+    low.standouts.low.push(dim);
+  }
+  return list;
+}
+
+/**
+ * Per-name rows for the visible list — one object per COVERED symbol (input
+ * order; the UI owns the sort). Tier-1 fields always; Tier-2 fields present
+ * ONLY when peerMetricsBySymbol is provided, so the client can tell "not loaded"
+ * (key absent) from "loaded-but-null" (key === null) and hide columns. Rows are
+ * standout-tagged before return.
+ *
+ * @returns {Object[]}
+ */
+export function buildCohortRows({ symbols, rankingsBySymbol, peerMetricsBySymbol = null }) {
+  const syms = Array.isArray(symbols) ? symbols : [];
+  const ranks = rankingsBySymbol || {};
+  const tier2 = !!peerMetricsBySymbol;
+
+  const rows = [];
+  for (const s of syms) {
+    const e = ranks[s];
+    if (!e) continue; // off-universe excluded here — the UI lists them from digest.offUniverse
+    const row = { symbol: s };
+    for (const f of ROW_TIER1_FIELDS) row[f] = e[f] ?? null;
+    if (tier2) {
+      const m = peerMetricsBySymbol[s] || null;
+      for (const f of FUNDAMENTAL_FIELDS) row[f] = m?.[f] ?? null;
+    }
+    rows.push(row);
+  }
+  tagStandouts(rows, { tier2 });
+  return rows;
 }

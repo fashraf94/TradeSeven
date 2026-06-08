@@ -30,7 +30,7 @@ import { applySecurityMiddleware } from '../_utils/security.js';
 import { requireAuth } from '../_utils/authMiddleware.js';
 import { buildVoiceLayerPrompt } from '../_utils/voiceLayerPrompt.js';
 import { callGemmaVoiceWithRetry, parseVoiceLayerResponse } from '../_utils/gemmaClient.js';
-import { buildCohortDigest } from '../_utils/cohortDigest.js';
+import { buildCohortDigest, buildCohortRows, FUNDAMENTAL_FIELDS } from '../_utils/cohortDigest.js';
 import { extractTickerSymbols } from '../_utils/watchlistEquip.js';
 import { isValidForgeId, FORGE_ID_REGEX, FORGE_ID_MAX_LEN } from '../_utils/idValidation.js';
 import { FieldValue } from 'firebase-admin/firestore';
@@ -47,6 +47,39 @@ const COHORT_MAX = 40;     // watchlist ticker cap (matches the write path)
 // questions need peerRankings, so the heuristic keeps the common turn Tier-1-only.
 const FUNDAMENTAL_KEYWORDS =
   /\b(p\/?e|valuations?|multiples?|cheap|expensive|margins?|revenues?|sales|growth|debt|leverage|balance\s*sheets?|solvency|liquidity|current\s*ratio|interest\s*coverage|ebitda|market\s*caps?\b|caps?\b|dividends?|roe|roa|book\s*value|fundamentals?|earnings\s*beat|beat\s*rate|profitab)/i;
+
+// Piece C — characterization questions ("which are the outliers / what stands
+// out / what separates them") should pull the fundamental tier too, so both the
+// list and the (aggregate) narration can span technical AND fundamental axes.
+const CHARACTERIZATION_KEYWORDS =
+  /\b(outliers?|stands?\s*out|stand\s*outs?|separates?|set\s*apart|what\s*makes|differ|different|distinct|unusual|stand\s*apart)\b/i;
+
+// Piece A — deterministic question→column map for the visible list's sort/
+// highlight (NO model in the ranking loop). First match wins, most-specific
+// first. Returns a row column key or null.
+const FOCUS_DIMENSION_RULES = [
+  [/\b(leverage|debt[\s/-]*(?:to[\s-]*)?equity|balance\s*sheet|solvency|indebted)/i, 'debtToEquity'],
+  [/\b(200[\s-]?day|sma|trend|above\s+(?:the\s+)?(?:200|line)|below\s+(?:the\s+)?(?:200|line))/i, 'sma200_position'],
+  [/\b(valuations?|p\/?e|multiples?|cheap|expensive)/i, 'trailingPE'],
+  [/\b(margins?|profitab)/i, 'profitMarginTTM'],
+  [/\b(revenue|sales|top[\s-]*line|growth)/i, 'revenueGrowthYOY'],
+  [/\b(volatil|atr|choppy|swing)/i, 'atrPercentile'],
+  [/\b(momentum)/i, 'momentumScore'],
+  [/\b(returns?|performance|gainers?|laggards?|winners?|losers?|best|worst)/i, 'return1M'],
+];
+
+function deriveFocusDimension(message) {
+  for (const [re, dim] of FOCUS_DIMENSION_RULES) {
+    if (re.test(message)) return dim;
+  }
+  return null;
+}
+
+// A focusDimension that is a fundamental field must force the lazy Tier-2 read,
+// or the highlighted column would be all dashes.
+function isFundamentalDimension(dim) {
+  return typeof dim === 'string' && FUNDAMENTAL_FIELDS.includes(dim);
+}
 
 // ==================== HELPERS ====================
 
@@ -236,6 +269,7 @@ export default async function handler(req, res) {
     // ── OPEN turn: deterministic digest + narration, no model call, no budget burn.
     if (isOpen) {
       const digest = buildCohortDigest({ symbols, rankingsBySymbol });
+      const rows = buildCohortRows({ symbols, rankingsBySymbol }); // Tier-1 only on open
       const nowIso = new Date().toISOString();
       if (isNewSession) {
         await sessionRef.set({ ...session, updatedAt: nowIso });
@@ -245,6 +279,8 @@ export default async function handler(req, res) {
         message: buildOpeningMessage(digest),
         suggestedActions: OPENING_ACTIONS,
         digest,
+        rows,
+        focusDimension: null, // no question yet → default sort applies
         tier2Included: false,
         dataAsOf,
       });
@@ -257,16 +293,28 @@ export default async function handler(req, res) {
         message: "We've covered a lot about this set. Start a fresh thread and we'll keep going.",
         suggestedActions: null,
         digest: null,
+        rows: null,
+        focusDimension: null,
         tier2Included: false,
         sessionEnded: true,
       });
     }
 
-    // 5. Lazy Tier-2: only on a fundamentals-flavoured turn.
-    const wantsFundamentals = FUNDAMENTAL_KEYWORDS.test(sanitizedMessage);
+    // 5. Which list column does this question imply (deterministic; no model)?
+    const focusDimension = deriveFocusDimension(sanitizedMessage);
+
+    // 6. Lazy Tier-2: fundamentals-flavoured OR characterization (C) OR a
+    //    fundamental focusDimension (so its highlighted column has data).
+    const wantsFundamentals =
+      FUNDAMENTAL_KEYWORDS.test(sanitizedMessage) ||
+      CHARACTERIZATION_KEYWORDS.test(sanitizedMessage) ||
+      isFundamentalDimension(focusDimension);
     const peerMetricsBySymbol = wantsFundamentals ? await readPeerMetrics(db, symbols) : null;
 
     const digest = buildCohortDigest({ symbols, rankingsBySymbol, peerMetricsBySymbol });
+    // Per-name rows for the visible list (A/D). UI-only — NEVER added to the
+    // prompt (that's B). The prompt below still sees only { digest }.
+    const rows = buildCohortRows({ symbols, rankingsBySymbol, peerMetricsBySymbol });
 
     // 6. Conversation history (last HISTORY_WINDOW exchanges).
     const previousExchanges = (session.exchanges || []).slice(-HISTORY_WINDOW);
@@ -305,6 +353,8 @@ export default async function handler(req, res) {
         message: 'I hit a snag analyzing that — could you ask again?',
         suggestedActions: null,
         digest,
+        rows: null, // keep the prior list on a transient error (client: if (data.rows) …)
+        focusDimension: null,
         tier2Included: digest.tier2Included,
         error: true,
       });
@@ -319,6 +369,8 @@ export default async function handler(req, res) {
         message: 'I hit a snag analyzing that — could you ask again?',
         suggestedActions: null,
         digest,
+        rows: null,
+        focusDimension: null,
         tier2Included: digest.tier2Included,
         error: true,
         errorReason: `parse_${parsed.errorReason}`,
@@ -374,6 +426,8 @@ export default async function handler(req, res) {
             message: 'Your thread was modified by another request — try that again.',
             suggestedActions: null,
             digest,
+            rows: null,
+            focusDimension: null,
             tier2Included: digest.tier2Included,
             error: true,
             errorReason: 'concurrent_modification',
@@ -411,6 +465,8 @@ export default async function handler(req, res) {
       message,
       suggestedActions,
       digest,
+      rows,
+      focusDimension,
       tier2Included: digest.tier2Included,
       dataAsOf,
     });
@@ -424,6 +480,8 @@ export default async function handler(req, res) {
         : 'Something went wrong on my end. Try again in a moment.',
       suggestedActions: null,
       digest: null,
+      rows: null,
+      focusDimension: null,
       tier2Included: false,
       error: true,
     });

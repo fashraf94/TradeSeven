@@ -303,3 +303,75 @@ describe('watchlist-analysis — budget', () => {
     expect(gemmaCalls.current).toBe(0);
   });
 });
+
+// ── Per-name layer (A + C): rows, focusDimension, characterization trigger ────
+
+describe('watchlist-analysis — per-name rows + focusDimension', () => {
+  it('open turn returns a rows array and null focusDimension', async () => {
+    const fx = makeFirestore({ watchlistDocs: { 'wl-1': COMMITTED_WL } });
+    activeFirestore = fx.db;
+    const { req, res } = makeReqRes({ watchlistId: 'wl-1', userMessage: '' });
+    await handler(req, res);
+    expect(Array.isArray(res.body.rows)).toBe(true);
+    expect(res.body.rows).toHaveLength(4);
+    expect(res.body.rows[0]).not.toHaveProperty('trailingPE'); // Tier-1 only on open
+    expect(res.body.focusDimension).toBeNull();
+  });
+
+  it('derives focusDimension=debtToEquity and surfaces the column for "rank by leverage"', async () => {
+    const fx = makeFirestore({ watchlistDocs: { 'wl-1': COMMITTED_WL } });
+    activeFirestore = fx.db;
+    const { req, res } = makeReqRes({ watchlistId: 'wl-1', userMessage: 'rank these by leverage' });
+    await handler(req, res);
+    expect(res.body.focusDimension).toBe('debtToEquity');
+    expect(res.body.tier2Included).toBe(true);
+    expect(res.body.rows[0]).toHaveProperty('debtToEquity');
+  });
+
+  it('a fundamental focusDimension forces the Tier-2 read even without a fundamental keyword (coupling)', async () => {
+    const fx = makeFirestore({ watchlistDocs: { 'wl-1': COMMITTED_WL } });
+    activeFirestore = fx.db;
+    peerQueryCount.current = 0;
+    // "indebted" maps to debtToEquity but is NOT matched by FUNDAMENTAL_KEYWORDS
+    // (\bdebt won't fire inside "indebted") nor by CHARACTERIZATION_KEYWORDS.
+    const { req, res } = makeReqRes({ watchlistId: 'wl-1', userMessage: 'which look the most indebted?' });
+    await handler(req, res);
+    expect(res.body.focusDimension).toBe('debtToEquity');
+    expect(peerQueryCount.current).toBeGreaterThan(0);
+    expect(res.body.tier2Included).toBe(true);
+  });
+
+  it('characterization questions pull Tier-2 (C): "which are the outliers?"', async () => {
+    const fx = makeFirestore({ watchlistDocs: { 'wl-1': COMMITTED_WL } });
+    activeFirestore = fx.db;
+    peerQueryCount.current = 0;
+    const { req, res } = makeReqRes({ watchlistId: 'wl-1', userMessage: 'which are the outliers?' });
+    await handler(req, res);
+    expect(peerQueryCount.current).toBeGreaterThan(0);
+    expect(res.body.tier2Included).toBe(true);
+  });
+
+  it('a non-fundamental focus (momentum) stays Tier-1 only', async () => {
+    const fx = makeFirestore({ watchlistDocs: { 'wl-1': COMMITTED_WL } });
+    activeFirestore = fx.db;
+    peerQueryCount.current = 0;
+    const { req, res } = makeReqRes({ watchlistId: 'wl-1', userMessage: 'which have the strongest momentum?' });
+    await handler(req, res);
+    expect(res.body.focusDimension).toBe('momentumScore');
+    expect(res.body.tier2Included).toBe(false);
+    expect(peerQueryCount.current).toBe(0);
+  });
+
+  it('budget-exhausted turn carries rows:null and focusDimension:null', async () => {
+    const fx = makeFirestore({
+      watchlistDocs: { 'wl-1': COMMITTED_WL },
+      sessionDocs: { 'sess-x': { userId: 'test-user', watchlistId: 'wl-1', messagesUsed: 30, messageBudget: 30, exchanges: [] } },
+    });
+    activeFirestore = fx.db;
+    const { req, res } = makeReqRes({ watchlistId: 'wl-1', userMessage: 'one more', sessionId: 'sess-x' });
+    await handler(req, res);
+    expect(res.body.sessionEnded).toBe(true);
+    expect(res.body.rows).toBeNull();
+    expect(res.body.focusDimension).toBeNull();
+  });
+});
