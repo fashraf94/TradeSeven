@@ -46,7 +46,7 @@ const COHORT_MAX = 40;     // watchlist ticker cap (matches the write path)
 // (sector/return/momentum) answers "what do these share"; only raw-fundamental
 // questions need peerRankings, so the heuristic keeps the common turn Tier-1-only.
 const FUNDAMENTAL_KEYWORDS =
-  /\b(p\/?e|valuation|multiple|cheap|expensive|margin|margins|revenue|sales|growth|debt|leverage|balance\s*sheet|solvency|liquidity|current\s*ratio|interest\s*coverage|ebitda|market\s*cap|cap\b|dividend|roe|roa|book\s*value|fundamental|fundamentals|earnings\s*beat|beat\s*rate|profitab)/i;
+  /\b(p\/?e|valuations?|multiples?|cheap|expensive|margins?|revenues?|sales|growth|debt|leverage|balance\s*sheets?|solvency|liquidity|current\s*ratio|interest\s*coverage|ebitda|market\s*caps?\b|caps?\b|dividends?|roe|roa|book\s*value|fundamentals?|earnings\s*beat|beat\s*rate|profitab)/i;
 
 // ==================== HELPERS ====================
 

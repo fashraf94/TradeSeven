@@ -181,6 +181,27 @@ describe('watchlist-analysis — fundamentals turn (lazy Tier-2)', () => {
     expect(res.body.digest.fundamentals.trailingPE.count).toBe(2);
     expect(res.body.digest.fundamentals.trailingPE.lowName).toBe('AAA');
   });
+
+  it('triggers Tier-2 on plural fundamentals nouns (caps / multiples / valuations)', async () => {
+    for (const q of ['how do the caps compare?', 'are their multiples stretched?', 'compare their valuations']) {
+      const fx = makeFirestore({ watchlistDocs: { 'wl-1': COMMITTED_WL } });
+      activeFirestore = fx.db;
+      peerQueryCount.current = 0;
+      const { req, res } = makeReqRes({ watchlistId: 'wl-1', userMessage: q });
+      await handler(req, res);
+      expect(res.body.tier2Included, `"${q}" should trigger Tier-2`).toBe(true);
+      expect(peerQueryCount.current).toBeGreaterThan(0);
+    }
+  });
+
+  it('stays Tier-1 only for a non-fundamentals turn', async () => {
+    const fx = makeFirestore({ watchlistDocs: { 'wl-1': COMMITTED_WL } });
+    activeFirestore = fx.db;
+    const { req, res } = makeReqRes({ watchlistId: 'wl-1', userMessage: 'what sectors are these in?' });
+    await handler(req, res);
+    expect(res.body.tier2Included).toBe(false);
+    expect(peerQueryCount.current).toBe(0);
+  });
 });
 
 describe('watchlist-analysis — auth + ownership + state', () => {
