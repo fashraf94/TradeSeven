@@ -65,6 +65,7 @@ const { default: itemHandler } = await import('./watchlists/[id].js');
 const { default: commitHandler } = await import('./watchlists/[id]/commit.js');
 const { default: uncommitHandler } = await import('./watchlists/[id]/uncommit.js');
 const { default: deleteHandler } = await import('./watchlists/[id]/delete.js');
+const { default: notesHandler } = await import('./watchlists/[id]/notes.js');
 
 // ==================== FIRESTORE MOCK ====================
 
@@ -735,6 +736,265 @@ describe('POST /api/forge/watchlists — manual create (Phase 5A)', () => {
 });
 
 // ============================================================
+// POST /api/forge/watchlists — create-from-tickers (screener hand-off)
+// ============================================================
+
+describe('POST /api/forge/watchlists — create-from-tickers', () => {
+  const SCREEN_SPEC = {
+    filters: [{ field: 'sectorName', op: 'eq', value: 'Technology' }],
+    rankBy: { field: 'return3M', direction: 'desc' },
+    limit: 20,
+    screenType: 'stocks',
+  };
+
+  it('routes a tickers[] body to a populated draft (not the empty manual path)', async () => {
+    const fixture = makeFakeFirestore();
+    activeFirestore = fixture.db;
+
+    const { req, res } = makeReqRes({
+      method: 'POST',
+      body: {
+        name: 'Top software by 3M return',
+        tickers: [
+          { symbol: 'MSFT', reasoning: '', category: 'Technology' },
+          { symbol: 'NVDA', reasoning: '', category: 'Technology' },
+        ],
+      },
+    });
+    await createHandler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body.watchlistId).toBe('new-watchlist-456');
+    expect(res.body.status).toBe('draft');
+    expect(res.body.tickerCount).toBe(2);
+    expect(res.body.idempotent).toBe(false);
+
+    const wl = fixture.state.watchlistDocs['new-watchlist-456'];
+    expect(wl.tickers).toHaveLength(2);
+    expect(wl.name).toBe('Top software by 3M return');
+    expect(wl.userId).toBe('test-user');
+    expect(wl.status).toBe('draft');
+  });
+
+  it('maps each symbol to the ticker shape with addedBy:user + addedAt', async () => {
+    const fixture = makeFakeFirestore();
+    activeFirestore = fixture.db;
+
+    const { req, res } = makeReqRes({
+      method: 'POST',
+      body: { tickers: [{ symbol: 'aapl', reasoning: '', category: 'Technology' }] },
+    });
+    await createHandler(req, res);
+
+    const t = fixture.state.watchlistDocs['new-watchlist-456'].tickers[0];
+    expect(t.symbol).toBe('AAPL'); // uppercased by capTickersArray
+    expect(t.addedBy).toBe('user');
+    expect(t.category).toBe('Technology');
+    expect(typeof t.addedAt).toBe('string');
+  });
+
+  it('persists null source fields + an empty notes/thesis (draft invariants)', async () => {
+    const fixture = makeFakeFirestore();
+    activeFirestore = fixture.db;
+
+    const { req, res } = makeReqRes({
+      method: 'POST',
+      body: { tickers: [{ symbol: 'AAPL' }] },
+    });
+    await createHandler(req, res);
+
+    const wl = fixture.state.watchlistDocs['new-watchlist-456'];
+    expect(wl.agentId).toBeNull();
+    expect(wl.sourceSessionId).toBeNull();
+    expect(wl.sourceDropId).toBeNull();
+    expect(wl.thesis).toBe('');
+    expect(wl.notes).toBe('');
+    expect(wl.activationConditions).toEqual([]);
+    expect(wl.invalidationConditions).toEqual([]);
+    expect(wl.committedAt).toBeNull();
+    expect(wl.name).toBe('');
+  });
+
+  it('caps the list at 40 tickers (shared capTickersArray)', async () => {
+    const fixture = makeFakeFirestore();
+    activeFirestore = fixture.db;
+
+    const tickers = Array.from({ length: 45 }, (_, i) => ({ symbol: `T${i}` }));
+    const { req, res } = makeReqRes({ method: 'POST', body: { tickers } });
+    await createHandler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body.tickerCount).toBe(40);
+    expect(fixture.state.watchlistDocs['new-watchlist-456'].tickers).toHaveLength(40);
+  });
+
+  it('drops malformed entries and keeps the valid ones', async () => {
+    const fixture = makeFakeFirestore();
+    activeFirestore = fixture.db;
+
+    const { req, res } = makeReqRes({
+      method: 'POST',
+      body: { tickers: [{ symbol: 'AAPL' }, { symbol: '' }, { symbol: 123 }, { foo: 'bar' }, 'nope'] },
+    });
+    await createHandler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body.tickerCount).toBe(1);
+    expect(fixture.state.watchlistDocs['new-watchlist-456'].tickers[0].symbol).toBe('AAPL');
+  });
+
+  it('rejects a tickers list with no valid symbols (400 no_valid_tickers)', async () => {
+    const fixture = makeFakeFirestore();
+    activeFirestore = fixture.db;
+
+    const { req, res } = makeReqRes({
+      method: 'POST',
+      body: { tickers: [{ symbol: '' }, { foo: 'bar' }] },
+    });
+    await createHandler(req, res);
+
+    expect(res.statusCode).toBe(400);
+    expect(res.body.error).toBe('no_valid_tickers');
+    expect(fixture.state.watchlistDocs['new-watchlist-456']).toBeUndefined();
+  });
+
+  it('falls through to the empty manual draft when tickers is an empty array', async () => {
+    const fixture = makeFakeFirestore();
+    activeFirestore = fixture.db;
+
+    const { req, res } = makeReqRes({ method: 'POST', body: { tickers: [] } });
+    await createHandler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body.tickerCount).toBe(0);
+    expect(fixture.state.watchlistDocs['new-watchlist-456'].tickers).toEqual([]);
+  });
+
+  it('caps name (100) and notes (2000)', async () => {
+    const fixture = makeFakeFirestore();
+    activeFirestore = fixture.db;
+
+    const { req, res } = makeReqRes({
+      method: 'POST',
+      body: {
+        name: 'x'.repeat(150),
+        notes: 'y'.repeat(2500),
+        tickers: [{ symbol: 'AAPL' }],
+      },
+    });
+    await createHandler(req, res);
+
+    const wl = fixture.state.watchlistDocs['new-watchlist-456'];
+    expect(wl.name).toHaveLength(100);
+    expect(wl.notes).toHaveLength(2000);
+  });
+
+  it('sanitizes + persists sourceScreenSpec, dropping unknown top-level keys', async () => {
+    const fixture = makeFakeFirestore();
+    activeFirestore = fixture.db;
+
+    const { req, res } = makeReqRes({
+      method: 'POST',
+      body: {
+        tickers: [{ symbol: 'AAPL' }],
+        sourceScreenSpec: { ...SCREEN_SPEC, _evil: 'x'.repeat(10), __proto__hack: 1 },
+      },
+    });
+    await createHandler(req, res);
+
+    const spec = fixture.state.watchlistDocs['new-watchlist-456'].sourceScreenSpec;
+    expect(spec).not.toBeNull();
+    expect(spec.filters).toHaveLength(1);
+    expect(spec.rankBy.field).toBe('return3M');
+    expect(spec.limit).toBe(20);
+    expect(spec.screenType).toBe('stocks');
+    expect(spec._evil).toBeUndefined();
+  });
+
+  it('stores null sourceScreenSpec when absent or oversized/garbage', async () => {
+    const fixture = makeFakeFirestore();
+    activeFirestore = fixture.db;
+
+    // Absent.
+    const a = makeReqRes({ method: 'POST', body: { tickers: [{ symbol: 'AAPL' }] } });
+    await createHandler(a.req, a.res);
+    expect(fixture.state.watchlistDocs['new-watchlist-456'].sourceScreenSpec).toBeNull();
+
+    // Oversized (filter value blows past the size guard) → dropped to null.
+    const fixture2 = makeFakeFirestore({ allocatedWatchlistId: 'wl-big' });
+    activeFirestore = fixture2.db;
+    const b = makeReqRes({
+      method: 'POST',
+      body: {
+        tickers: [{ symbol: 'AAPL' }],
+        sourceScreenSpec: { filters: [{ field: 'x', value: 'z'.repeat(5000) }] },
+      },
+    });
+    await createHandler(b.req, b.res);
+    expect(fixture2.state.watchlistDocs['wl-big'].sourceScreenSpec).toBeNull();
+
+    // Garbage (not an object) → null.
+    const fixture3 = makeFakeFirestore({ allocatedWatchlistId: 'wl-junk' });
+    activeFirestore = fixture3.db;
+    const c = makeReqRes({
+      method: 'POST',
+      body: { tickers: [{ symbol: 'AAPL' }], sourceScreenSpec: 'not-an-object' },
+    });
+    await createHandler(c.req, c.res);
+    expect(fixture3.state.watchlistDocs['wl-junk'].sourceScreenSpec).toBeNull();
+  });
+
+  it('emits a shadow log with stage=watchlist_tickers_create', async () => {
+    const fixture = makeFakeFirestore();
+    activeFirestore = fixture.db;
+
+    const { req, res } = makeReqRes({
+      method: 'POST',
+      body: { tickers: [{ symbol: 'AAPL' }, { symbol: 'MSFT' }], sourceScreenSpec: SCREEN_SPEC },
+    });
+    await createHandler(req, res);
+
+    const log = shadowLogCalls.current.find((r) => r.stage === 'watchlist_tickers_create');
+    expect(log).toBeDefined();
+    expect(log.userId).toBe('test-user');
+    expect(log.watchlistId).toBe('new-watchlist-456');
+    expect(log.tickerCount).toBe(2);
+    expect(log.hasScreenSpec).toBe(true);
+  });
+
+  it('returns 401 when no auth token is present', async () => {
+    authReturnValue.current = null;
+    activeFirestore = makeFakeFirestore().db;
+    const { req, res } = makeReqRes({ method: 'POST', body: { tickers: [{ symbol: 'AAPL' }] } });
+    await createHandler(req, res);
+    expect(res.statusCode).toBe(401);
+  });
+
+  it('produces a draft that commits and is then retrievable via GET', async () => {
+    const fixture = makeFakeFirestore();
+    activeFirestore = fixture.db;
+
+    const create = makeReqRes({
+      method: 'POST',
+      body: { tickers: [{ symbol: 'AAPL' }], name: 'My screen' },
+    });
+    await createHandler(create.req, create.res);
+    const id = create.res.body.watchlistId;
+
+    const commit = makeReqRes({ method: 'POST', query: { id } });
+    await commitHandler(commit.req, commit.res);
+    expect(commit.res.statusCode).toBe(200);
+    expect(commit.res.body.status).toBe('committed');
+
+    const get = makeReqRes({ method: 'GET', query: { id } });
+    await itemHandler(get.req, get.res);
+    expect(get.res.statusCode).toBe(200);
+    expect(get.res.body.watchlist.status).toBe('committed');
+    expect(get.res.body.watchlist.tickers[0].symbol).toBe('AAPL');
+  });
+});
+
+// ============================================================
 // PATCH /api/forge/watchlists/[id]
 // ============================================================
 
@@ -1299,5 +1559,116 @@ describe('soft-deleted watchlists read as gone on every single-item endpoint', (
     await uncommitHandler(req, res);
     expect(res.statusCode).toBe(404);
     expect(res.body.error).toBe('not_found');
+  });
+});
+
+// ============================================================
+// POST /api/forge/watchlists/[id]/notes — notes-only sub-route (Phase 2)
+// ============================================================
+
+const COMMITTED_WL_FOR_NOTES = {
+  watchlistId: 'wl-1',
+  userId: 'test-user',
+  agentId: 'agent-1',
+  sourceSessionId: 'session-1',
+  sourceDropId: 'drop-abc-123',
+  thesis: 'starter thesis',
+  activationConditions: [],
+  invalidationConditions: [],
+  tickers: [{ symbol: 'AAPL', reasoning: '', category: '', addedBy: 'user', addedAt: '2026-05-08T13:00:00.000Z' }],
+  name: 'My set',
+  notes: '',
+  status: 'committed',
+  createdAt: '2026-05-08T13:00:00.000Z',
+  updatedAt: '2026-05-08T13:00:00.000Z',
+  committedAt: '2026-05-08T13:10:00.000Z',
+};
+
+describe('POST /api/forge/watchlists/[id]/notes', () => {
+  it('writes notes on a COMMITTED watchlist (the key divergence from PATCH)', async () => {
+    const fixture = makeFakeFirestore({ watchlistDocs: { 'wl-1': { ...COMMITTED_WL_FOR_NOTES } } });
+    activeFirestore = fixture.db;
+    const { req, res } = makeReqRes({ query: { id: 'wl-1' }, body: { notes: 'These cluster in Technology.' } });
+    await notesHandler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    const wl = fixture.state.watchlistDocs['wl-1'];
+    expect(wl.notes).toBe('These cluster in Technology.');
+    // status + tickers untouched.
+    expect(wl.status).toBe('committed');
+    expect(wl.tickers).toHaveLength(1);
+    expect(wl.thesis).toBe('starter thesis');
+  });
+
+  it('writes ONLY notes — ignores any other fields in the body', async () => {
+    const fixture = makeFakeFirestore({ watchlistDocs: { 'wl-1': { ...COMMITTED_WL_FOR_NOTES } } });
+    activeFirestore = fixture.db;
+    const { req, res } = makeReqRes({
+      query: { id: 'wl-1' },
+      body: { notes: 'summary', tickers: [], thesis: 'HACKED', status: 'draft', name: 'HACKED' },
+    });
+    await notesHandler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    const wl = fixture.state.watchlistDocs['wl-1'];
+    expect(wl.notes).toBe('summary');
+    expect(wl.tickers).toHaveLength(1);
+    expect(wl.thesis).toBe('starter thesis');
+    expect(wl.status).toBe('committed');
+    expect(wl.name).toBe('My set');
+  });
+
+  it('caps notes at 2000 chars', async () => {
+    const fixture = makeFakeFirestore({ watchlistDocs: { 'wl-1': { ...COMMITTED_WL_FOR_NOTES } } });
+    activeFirestore = fixture.db;
+    const { req, res } = makeReqRes({ query: { id: 'wl-1' }, body: { notes: 'y'.repeat(2500) } });
+    await notesHandler(req, res);
+    expect(res.statusCode).toBe(200);
+    expect(fixture.state.watchlistDocs['wl-1'].notes).toHaveLength(2000);
+  });
+
+  it('400 when notes is not a string', async () => {
+    const fixture = makeFakeFirestore({ watchlistDocs: { 'wl-1': { ...COMMITTED_WL_FOR_NOTES } } });
+    activeFirestore = fixture.db;
+    const { req, res } = makeReqRes({ query: { id: 'wl-1' }, body: { notes: 123 } });
+    await notesHandler(req, res);
+    expect(res.statusCode).toBe(400);
+    expect(res.body.error).toBe('invalid_field');
+  });
+
+  it('403 when the watchlist belongs to another user', async () => {
+    const fixture = makeFakeFirestore({ watchlistDocs: { 'wl-1': { ...COMMITTED_WL_FOR_NOTES, userId: 'someone-else' } } });
+    activeFirestore = fixture.db;
+    const { req, res } = makeReqRes({ query: { id: 'wl-1' }, body: { notes: 'x' } });
+    await notesHandler(req, res);
+    expect(res.statusCode).toBe(403);
+  });
+
+  it('404 for a missing watchlist', async () => {
+    activeFirestore = makeFakeFirestore().db;
+    const { req, res } = makeReqRes({ query: { id: 'wl-1' }, body: { notes: 'x' } });
+    await notesHandler(req, res);
+    expect(res.statusCode).toBe(404);
+  });
+
+  it('404 for a soft-deleted watchlist', async () => {
+    const fixture = makeFakeFirestore({
+      watchlistDocs: { 'wl-1': { ...COMMITTED_WL_FOR_NOTES, deletedAt: '2026-05-09T00:00:00.000Z' } },
+    });
+    activeFirestore = fixture.db;
+    const { req, res } = makeReqRes({ query: { id: 'wl-1' }, body: { notes: 'x' } });
+    await notesHandler(req, res);
+    expect(res.statusCode).toBe(404);
+  });
+
+  it('emits a shadow log with stage=watchlist_notes_update', async () => {
+    const fixture = makeFakeFirestore({ watchlistDocs: { 'wl-1': { ...COMMITTED_WL_FOR_NOTES } } });
+    activeFirestore = fixture.db;
+    const { req, res } = makeReqRes({ query: { id: 'wl-1' }, body: { notes: 'hello' } });
+    await notesHandler(req, res);
+    const log = shadowLogCalls.current.find((r) => r.stage === 'watchlist_notes_update');
+    expect(log).toBeDefined();
+    expect(log.watchlistId).toBe('wl-1');
+    expect(log.notesLength).toBe(5);
   });
 });

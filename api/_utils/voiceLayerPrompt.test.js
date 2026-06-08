@@ -3528,3 +3528,70 @@ describe('Fix v2 end-to-end — buildPortfolioBriefsBlock renders dynamic intrad
     expect(out).toContain('Prior session: 0.4% below session VWAP.');
   });
 });
+
+describe('buildVoiceLayerPrompt — set_analysis mode (Analysis Hand-off Phase 2)', () => {
+  const DIGEST = {
+    size: 2, covered: 2, offUniverse: [],
+    sectors: [{ name: 'Technology', count: 2 }],
+    industries: [{ name: 'Software', count: 2 }],
+    returns: { return1M: { median: 5, min: 1, max: 10, count: 2 } },
+    momentum: { medianScore: 60, count: 2 },
+    trend: { aboveCount: 2, belowCount: 0, medianSma200Position: 3 },
+    quality: {},
+    nr7Count: 0,
+    winnersLosers: null,
+    tier2Included: false,
+    fundamentals: null,
+  };
+
+  it('renders the digest facts and the honesty discipline', () => {
+    const prompt = buildVoiceLayerPrompt({ mode: 'set_analysis', analysisContext: { digest: DIGEST } });
+    expect(typeof prompt).toBe('string');
+    expect(prompt).toContain('COHORT DIGEST');
+    expect(prompt).toContain('Technology'); // sector mix from the digest
+    expect(prompt).toContain('SET ANALYST');
+    expect(prompt).toContain('NEVER assert causation');
+    expect(prompt.toLowerCase()).toContain('realized'); // past-tense returns rule
+    expect(prompt).toContain('NEVER forecast');
+  });
+
+  it('degrades gracefully when no digest is supplied (no digest block)', () => {
+    const prompt = buildVoiceLayerPrompt({ mode: 'set_analysis', analysisContext: null });
+    expect(typeof prompt).toBe('string');
+    expect(prompt).toContain('SET ANALYST');
+    // The phase rules still reference "COHORT DIGEST"; the distinctive marker of
+    // the rendered digest BLOCK is its header line — that must be absent.
+    expect(prompt).not.toContain('the ONLY facts you may use');
+  });
+});
+
+describe('buildVoiceLayerPrompt — research mode regression (unchanged by Phase 2)', () => {
+  it('still emits the research prompt and not the set_analysis prompt', () => {
+    const prompt = buildVoiceLayerPrompt({ mode: 'research', researchContext: { previousSpec: null } });
+    expect(prompt).toContain('SCREENABLE FIELDS');   // research marker
+    expect(prompt).not.toContain('SET ANALYST');     // set_analysis must not leak in
+    expect(prompt).not.toContain('COHORT DIGEST');
+  });
+});
+
+describe('buildVoiceLayerPrompt — multi-dimension narration nudge (Per-Name Layer)', () => {
+  const DIGEST = {
+    size: 2, covered: 2, offUniverse: [],
+    sectors: [{ name: 'Technology', count: 2 }], industries: [],
+    returns: {}, momentum: { medianScore: 60, count: 2 },
+    trend: { aboveCount: 2, belowCount: 0, medianSma200Position: 3 },
+    quality: {}, nr7Count: 0, winnersLosers: null, tier2Included: false, fundamentals: null,
+  };
+
+  it('adds the multi-dimension bullet in set_analysis mode', () => {
+    const prompt = buildVoiceLayerPrompt({ mode: 'set_analysis', analysisContext: { digest: DIGEST } });
+    expect(prompt).toContain('MULTI-DIMENSION CHARACTERIZATION');
+    // The no-invent rule must still be intact.
+    expect(prompt).toContain('NEVER invent a number or characteristic not in the COHORT DIGEST');
+  });
+
+  it('does NOT add the bullet in research mode (regression guard)', () => {
+    const prompt = buildVoiceLayerPrompt({ mode: 'research', researchContext: { previousSpec: null } });
+    expect(prompt).not.toContain('MULTI-DIMENSION CHARACTERIZATION');
+  });
+});

@@ -106,6 +106,38 @@ export async function createWatchlist() {
   return response.json();
 }
 
+/**
+ * Save a user-authored analysis summary into a watchlist's `notes` field
+ * (Phase 2). Unlike patchWatchlist, this works on a COMMITTED watchlist —
+ * it hits the notes-only sub-route, which writes only notes regardless of
+ * status. Returns { watchlistId, updatedAt }.
+ */
+export async function saveWatchlistNotes(id, notes) {
+  const response = await fetchWithAuth(`${BASE}/${id}/notes`, {
+    method: 'POST',
+    body: JSON.stringify({ notes }),
+  });
+  if (!response.ok) throw await toError(response);
+  return response.json();
+}
+
+/**
+ * Open / continue a cohort-analysis conversation for a watchlist (Phase 2).
+ * Pass `userMessage: ''` (or omit) on the first call to get the Tier-1 digest
+ * + an opening narration without a model call. Subsequent calls carry the held
+ * sessionId and the user's question. Returns the endpoint payload
+ * ({ sessionId, message, suggestedActions, digest, tier2Included, ... }).
+ */
+export async function postWatchlistAnalysis({ watchlistId, userMessage = '', sessionId = null }, { signal } = {}) {
+  const response = await fetchWithAuth('/api/forge/watchlist-analysis', {
+    method: 'POST',
+    body: JSON.stringify({ watchlistId, userMessage, sessionId }),
+    signal,
+  });
+  if (!response.ok) throw await toError(response);
+  return response.json();
+}
+
 export default {
   getWatchlist,
   patchWatchlist,
@@ -114,4 +146,6 @@ export default {
   listWatchlists,
   deleteWatchlist,
   createWatchlist,
+  saveWatchlistNotes,
+  postWatchlistAnalysis,
 };

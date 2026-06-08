@@ -26,6 +26,7 @@ import WatchlistListCard from './WatchlistListCard';
 import WatchlistStatusFilter from './WatchlistStatusFilter';
 import WatchlistListEmptyState from './WatchlistListEmptyState';
 import DeleteWatchlistModal from './DeleteWatchlistModal';
+import WatchlistAnalysisView from './WatchlistAnalysisView';
 
 export default function WatchlistListPanel({ user, onOpenWatchlist, onDropSignal }) {
   const { tokens } = useTheme();
@@ -39,6 +40,9 @@ export default function WatchlistListPanel({ user, onOpenWatchlist, onDropSignal
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState('');
+  // Phase 2 — the cohort analysis surface opens as a self-contained overlay
+  // (no app-routing changes); both mount points get it for free.
+  const [analyzeTarget, setAnalyzeTarget] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -241,6 +245,7 @@ export default function WatchlistListPanel({ user, onOpenWatchlist, onDropSignal
                   watchlist={wl}
                   agent={agent}
                   onOpen={onOpenWatchlist}
+                  onAnalyze={setAnalyzeTarget}
                   onDelete={setDeleteTarget}
                 />
               ))}
@@ -257,6 +262,13 @@ export default function WatchlistListPanel({ user, onOpenWatchlist, onDropSignal
           if (!deleteBusy) setDeleteTarget(null);
         }}
       />
+
+      {analyzeTarget && (
+        <WatchlistAnalysisView
+          watchlist={analyzeTarget}
+          onClose={() => setAnalyzeTarget(null)}
+        />
+      )}
     </div>
   );
 }

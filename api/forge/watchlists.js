@@ -34,6 +34,12 @@ import { applySecurityMiddleware } from '../_utils/security.js';
 import { requireAuth } from '../_utils/authMiddleware.js';
 import { logSignalDrops } from '../_utils/shadowLogger.js';
 import { isValidForgeId, FORGE_ID_REGEX, FORGE_ID_MAX_LEN } from '../_utils/idValidation.js';
+import {
+  capString,
+  capTickersArray,
+  NAME_MAX_LEN,
+  NOTES_MAX_LEN,
+} from '../_utils/watchlistValidation.js';
 import { waitUntil } from '@vercel/functions';
 
 export const config = { maxDuration: 10 };
@@ -106,18 +112,24 @@ async function handleList({ user, res }) {
 }
 
 // ── POST: create a watchlist ──────────────────────────────────────────
-// Two creation paths share this endpoint (Phase 5A). A signal-derived create
-// carries sessionId + agentId + dropId and seeds the watchlist from the
-// finalized dialogue session. A manual create carries none of the three and
-// produces an empty draft. Presence of any of the three ids routes to the
-// signal path; a mixed (partial) payload is treated as a malformed signal
-// request and rejected by the id-shape checks below.
+// Three creation paths share this endpoint. A signal-derived create carries
+// sessionId + agentId + dropId and seeds the watchlist from the finalized
+// dialogue session (Phase 5A). When none of those three ids are present the
+// request is one of two id-less creates: a create-from-tickers (the screener
+// hand-off — a tickers[] array is present, producing a populated draft in one
+// atomic write) or a manual create (no tickers → empty draft). Presence of any
+// of the three signal ids routes to the signal path; a mixed (partial) payload
+// is treated as a malformed signal request and rejected by the id-shape checks.
 async function handleCreate({ req, res, user }) {
-  const { sessionId, agentId, dropId } = req.body || {};
-  const isManualCreate =
-    sessionId === undefined && agentId === undefined && dropId === undefined;
+  const { sessionId, agentId, dropId, tickers } = req.body || {};
+  const hasSignalIds =
+    sessionId !== undefined || agentId !== undefined || dropId !== undefined;
 
-  if (isManualCreate) {
+  // Id-less create: split between create-from-tickers and manual empty draft.
+  if (!hasSignalIds) {
+    if (Array.isArray(tickers) && tickers.length > 0) {
+      return handleCreateFromTickers({ req, res, user });
+    }
     return handleManualCreate({ res, user });
   }
 
@@ -191,6 +203,118 @@ async function handleManualCreate({ res, user }) {
     });
   } catch (err) {
     console.error('[watchlists:manual-create] Error:', err);
+    return res.status(500).json({
+      error: 'server_error',
+      message: 'Could not create watchlist.',
+    });
+  }
+}
+
+// ── Create-from-tickers (screener hand-off): populated draft ──────────
+// One atomic single-doc write (no transaction — no cross-doc invariant like
+// the signal path's session.update, and no idempotency anchor; each call is a
+// fresh draft, mirroring handleManualCreate). Tickers are re-validated server
+// side with the SHARED capTickersArray (40-ticker + per-field caps) so this
+// branch can never drift from PATCH's caps. Commit stays the separate
+// POST /api/forge/watchlists/{id}/commit step.
+const SCREEN_SPEC_MAX_FILTERS = 30;
+const SCREEN_SPEC_MAX_BYTES = 4000;
+
+// Defensive sanitizer for the client-sent screen provenance. The appliedSpec
+// originates server-side (screener/chat.js), but it arrives here in the request
+// body and is therefore untrusted: pick only known fields, bound the filter
+// count, and drop the whole blob if it serializes past the size guard rather
+// than persist arbitrary nested junk. Returns null when absent/unusable.
+function sanitizeScreenSpec(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const filters = Array.isArray(raw.filters)
+    ? raw.filters
+        .filter((f) => f && typeof f === 'object' && !Array.isArray(f))
+        .slice(0, SCREEN_SPEC_MAX_FILTERS)
+    : [];
+  const spec = { filters };
+  if (raw.rankBy && typeof raw.rankBy === 'object' && !Array.isArray(raw.rankBy)) {
+    spec.rankBy = raw.rankBy;
+  }
+  if (Number.isFinite(raw.limit)) spec.limit = raw.limit;
+  if (typeof raw.screenType === 'string') spec.screenType = raw.screenType.slice(0, 40);
+  // Final size guard — bound the stored provenance blob. Drop (not truncate)
+  // on overflow: a partial spec is worse than no recorded provenance.
+  try {
+    if (JSON.stringify(spec).length > SCREEN_SPEC_MAX_BYTES) return null;
+  } catch {
+    return null;
+  }
+  return spec;
+}
+
+async function handleCreateFromTickers({ req, res, user }) {
+  try {
+    const body = req.body || {};
+    const nowIso = new Date().toISOString();
+
+    // Validate + shape tickers against the shared caps (40 cap, per-field caps).
+    // capTickersArray drops malformed/empty-symbol entries; an all-invalid or
+    // empty list serves no purpose as a watchlist → 400 (no zero-ticker create).
+    const tickers = capTickersArray(body.tickers, nowIso);
+    if (!Array.isArray(tickers) || tickers.length === 0) {
+      return res.status(400).json({
+        error: 'no_valid_tickers',
+        message: 'At least one valid ticker is required to create a watchlist.',
+      });
+    }
+
+    // Strings: capString returns null only when the field isn't a string —
+    // treat absent/non-string as the empty default.
+    const name = capString(body.name, NAME_MAX_LEN) ?? '';
+    const notes = capString(body.notes, NOTES_MAX_LEN) ?? '';
+    const sourceScreenSpec = sanitizeScreenSpec(body.sourceScreenSpec);
+
+    const db = getFirebaseAdmin();
+    const watchlistRef = db.collection('watchlists').doc(); // pre-allocate auto-id
+
+    const watchlistDoc = {
+      watchlistId: watchlistRef.id,
+      userId: user.uid,
+      agentId: null,
+      sourceSessionId: null,
+      sourceDropId: null,
+      // Additive provenance: records "this watchlist came from screen X".
+      sourceScreenSpec,
+      thesis: '',
+      activationConditions: [],
+      invalidationConditions: [],
+      tickers,
+      name,
+      notes,
+      status: 'draft',
+      createdAt: nowIso,
+      updatedAt: nowIso,
+      committedAt: null,
+    };
+
+    await watchlistRef.set(watchlistDoc);
+
+    waitUntil(
+      logSignalDrops({
+        stage: 'watchlist_tickers_create',
+        userId: user.uid,
+        watchlistId: watchlistRef.id,
+        tickerCount: tickers.length,
+        hasScreenSpec: sourceScreenSpec != null,
+        loggedAt: nowIso,
+      }).catch(() => {}),
+    );
+
+    return res.status(200).json({
+      watchlistId: watchlistRef.id,
+      status: 'draft',
+      tickerCount: tickers.length,
+      createdAt: nowIso,
+      idempotent: false,
+    });
+  } catch (err) {
+    console.error('[watchlists:tickers-create] Error:', err);
     return res.status(500).json({
       error: 'server_error',
       message: 'Could not create watchlist.',

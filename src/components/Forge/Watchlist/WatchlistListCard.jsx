@@ -8,7 +8,7 @@
 // deletes without also opening the editor.
 
 import React, { useState } from 'react';
-import { Trash2, Bookmark } from 'lucide-react';
+import { Trash2, Bookmark, BarChart3 } from 'lucide-react';
 import { timeAgo } from '../../../utils/timeAgo';
 import { isWatchlistEquipped } from '../../../utils/watchlistEquipUI';
 import TickerChip from './TickerChip';
@@ -24,6 +24,7 @@ export default function WatchlistListCard({
   watchlist,
   agent,
   onOpen,
+  onAnalyze,
   onDelete,
 }) {
   const [hover, setHover] = useState(false);
@@ -110,6 +111,31 @@ export default function WatchlistListCard({
             {watchlist?.updatedAt ? ` · Updated ${timeAgo(watchlist.updatedAt)}` : ''}
           </div>
         </div>
+        {onAnalyze && (
+          <button
+            type="button"
+            aria-label="Analyze watchlist"
+            onClick={(e) => {
+              e.stopPropagation();
+              onAnalyze(watchlist);
+            }}
+            style={{
+              flexShrink: 0,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              width: 30,
+              height: 30,
+              borderRadius: 8,
+              border: 'none',
+              background: 'transparent',
+              color: tokens.teal,
+              cursor: 'pointer',
+            }}
+          >
+            <BarChart3 size={15} />
+          </button>
+        )}
         <button
           type="button"
           aria-label="Delete watchlist"

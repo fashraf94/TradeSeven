@@ -27,32 +27,23 @@ import { applySecurityMiddleware } from '../../_utils/security.js';
 import { requireAuth } from '../../_utils/authMiddleware.js';
 import { logSignalDrops } from '../../_utils/shadowLogger.js';
 import { isValidForgeId, FORGE_ID_REGEX, FORGE_ID_MAX_LEN } from '../../_utils/idValidation.js';
+import {
+  capString,
+  capTickersArray,
+  NAME_MAX_LEN,
+  NOTES_MAX_LEN,
+} from '../../_utils/watchlistValidation.js';
 import { waitUntil } from '@vercel/functions';
 
 export const config = { maxDuration: 10 };
 
-// Field caps locked in Phase 4A audit Section 9.
-const NAME_MAX_LEN = 100;
-const NOTES_MAX_LEN = 2000;
+// Field caps locked in Phase 4A audit Section 9. NAME_MAX_LEN / NOTES_MAX_LEN
+// and the per-ticker caps now live in ../../_utils/watchlistValidation.js
+// (shared with the create-from-tickers branch); the thesis/condition caps
+// stay here since only PATCH writes those.
 const THESIS_MAX_LEN = 1000;
 const CONDITION_MAX_LEN = 200;
 const CONDITIONS_MAX_COUNT = 3;
-
-// Per-ticker caps mirror Phase 2.6 dialogue caps (so the shapes round-trip
-// cleanly between the dialogue and the persisted watchlist).
-const TICKER_SYMBOL_MAX_LEN = 12;
-const TICKER_REASONING_MAX_LEN = 500;
-const TICKER_CATEGORY_MAX_LEN = 30;
-const TICKERS_MAX_COUNT = 40;
-
-const VALID_ADDED_BY = new Set(['agent', 'user']);
-
-// Capped string trimmer. Returns the trimmed string ≤cap, or null if input
-// isn't a string. Empty strings are preserved (PATCH can clear a field).
-function capString(value, cap) {
-  if (typeof value !== 'string') return null;
-  return value.slice(0, cap).trim();
-}
 
 function capConditionsArray(value) {
   if (!Array.isArray(value)) return null;
@@ -63,32 +54,6 @@ function capConditionsArray(value) {
     if (!trimmed) continue;
     out.push(trimmed);
     if (out.length >= CONDITIONS_MAX_COUNT) break;
-  }
-  return out;
-}
-
-function capTickersArray(value, nowIso) {
-  if (!Array.isArray(value)) return null;
-  const out = [];
-  for (const t of value) {
-    if (!t || typeof t !== 'object' || Array.isArray(t)) continue;
-    const symbol =
-      typeof t.symbol === 'string' ? t.symbol.trim().toUpperCase().slice(0, TICKER_SYMBOL_MAX_LEN) : '';
-    if (!symbol) continue;
-    out.push({
-      symbol,
-      reasoning:
-        typeof t.reasoning === 'string'
-          ? t.reasoning.slice(0, TICKER_REASONING_MAX_LEN).trim()
-          : '',
-      category:
-        typeof t.category === 'string'
-          ? t.category.slice(0, TICKER_CATEGORY_MAX_LEN).trim()
-          : '',
-      addedBy: VALID_ADDED_BY.has(t.addedBy) ? t.addedBy : 'user',
-      addedAt: typeof t.addedAt === 'string' ? t.addedAt : nowIso,
-    });
-    if (out.length >= TICKERS_MAX_COUNT) break;
   }
   return out;
 }
