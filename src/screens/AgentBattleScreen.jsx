@@ -554,13 +554,29 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
       priceChange = -priceChange;
     }
 
+    // Day-1 activation gate — mirrors the server boundary at
+    // api/cron/agent-evaluate.js:303,343-344. On the activation day the
+    // threshold/badge baseline is the ENTRY price (startingPrices), so a stock
+    // that gapped from its prior close and then sat flat from entry can't
+    // fabricate Bust/Crash/Meltdown while the display reads +0.00%. previousClose
+    // only takes over on day 2+, matching the server's daily-reset rollover.
+    //
+    // Reuses the screen's existing day signal (timing.currentTradingDay, also
+    // read at :71-74) — no new timing source. The pre-first-trading-day state can
+    // report day 0, so gate on "not yet day 2" (<= 1), NOT "=== 1" (March Bug 1B):
+    // an === 1 check would let day 0 fall through to the previousClose path.
+    const currentTradingDay = agentBattle?.timing?.currentTradingDay ?? 1;
+    const isActivationDay = currentTradingDay <= 1;
+
     // Threshold baseline must match the asset's entry into the portfolio.
     // For swapped-in assets, swapPrice prevents retroactive BaggerBomb credit
-    // for pre-swap moves since previousClose.
+    // for pre-swap moves since previousClose (first in both branches, regardless
+    // of day). On the activation day entry beats previousClose; on day 2+ the
+    // original previousClose-first order is preserved.
     const thresholdBaseline = asset.swapPrice
-      || previousClosePrices[asset.symbol]
-      || startingPrices[asset.symbol]
-      || openPrice;
+      || (isActivationDay
+        ? (startingPrices[asset.symbol] || previousClosePrices[asset.symbol] || openPrice)
+        : (previousClosePrices[asset.symbol] || startingPrices[asset.symbol] || openPrice));
     let thresholdPriceChange = thresholdBaseline > 0
       ? ((curPrice - thresholdBaseline) / thresholdBaseline) * 100
       : priceChange;
@@ -599,7 +615,7 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
       history,
       currentPrice: curPrice,
     };
-  }, [effectivePrices, startingPrices, thresholds, previousClosePrices, agentBattle?.thresholdHistory]);
+  }, [effectivePrices, startingPrices, thresholds, previousClosePrices, agentBattle?.thresholdHistory, agentBattle?.timing?.currentTradingDay]);
 
   // ── Enriched portfolios ───────────────────────────────────────────────────
 
