@@ -19,6 +19,8 @@ import { postWatchlistAnalysis, saveWatchlistNotes } from '../../../services/for
 import { orderCohortRows } from './cohortRowsView';
 import AssetResearchModal from '../../draft/AssetResearchModal';
 import { STOCKS } from '../../../data/assets';
+import ColumnHelpModal from './ColumnHelpModal';
+import { COLUMN_HELP } from './columnHelp';
 
 const MESSAGE_CHAR_CAP = 2000;
 const REQUEST_TIMEOUT_MS = 28_000;
@@ -48,6 +50,7 @@ export default function WatchlistAnalysisView({ watchlist, onClose }) {
   const [suggested, setSuggested] = useState([]);
   const [sessionId, setSessionId] = useState(null);
   const [tier2Included, setTier2Included] = useState(false);
+  const [tier3Included, setTier3Included] = useState(false);
   // Per-name layer (A): the visible list + its server-derived sort hint, plus
   // the user's header-tap override.
   const [rows, setRows] = useState(null);
@@ -55,6 +58,8 @@ export default function WatchlistAnalysisView({ watchlist, onClose }) {
   const [userSort, setUserSort] = useState(null); // { key, dir } | null
   // Tapping a cohort row opens the shared research modal (UI-only, additive).
   const [researchAsset, setResearchAsset] = useState(null);
+  // Tapping a column header opens the column-help modal (manual sort lives there now).
+  const [helpColumn, setHelpColumn] = useState(null);
 
   const [input, setInput] = useState('');
   const [opening, setOpening] = useState(true);
@@ -135,6 +140,7 @@ export default function WatchlistAnalysisView({ watchlist, onClose }) {
           setUserSort(null);
         }
         setTier2Included(data.tier2Included === true);
+        setTier3Included(data.tier3Included === true);
         setSuggested(Array.isArray(data.suggestedActions) ? data.suggestedActions : []);
         setTurns((prev) => [...prev, { role: 'analyst', text: data.message || '…' }]);
       } catch (err) {
@@ -250,15 +256,16 @@ export default function WatchlistAnalysisView({ watchlist, onClose }) {
 
       {/* Scroll region: digest panel + transcript */}
       <div ref={scrollRef} className="fw-scroll" style={{ flex: 1, overflowY: 'auto', padding: '16px' }}>
-        <DigestPanel digest={digest} tier2Included={tier2Included} tokens={tokens} />
+        <DigestPanel digest={digest} tier2Included={tier2Included} tier3Included={tier3Included} tokens={tokens} />
 
         <CohortRows
           rows={rows}
           digest={digest}
           tier2Included={tier2Included}
+          tier3Included={tier3Included}
           focusDimension={focusDimension}
           userSort={userSort}
-          onSort={handleSort}
+          onHeaderTap={setHelpColumn}
           onRowTap={openResearch}
           tokens={tokens}
         />
@@ -455,6 +462,23 @@ export default function WatchlistAnalysisView({ watchlist, onClose }) {
           version={2}
         />
       )}
+
+      {/* Column help modal — tap a header to learn what the column means; manual
+          sort lives here now (the question-driven focusDimension auto-sort is
+          unchanged and remains primary). */}
+      {helpColumn && (
+        <ColumnHelpModal
+          columnKey={helpColumn}
+          entry={COLUMN_HELP[helpColumn]}
+          // symbol/sectorName headers never open the modal (their onClick is
+          // undefined), so this is effectively always true — kept as a guard in
+          // case one of those headers is ever made tappable.
+          sortable={helpColumn !== 'symbol' && helpColumn !== 'sectorName'}
+          onSort={(key) => { handleSort(key); setHelpColumn(null); }}
+          onClose={() => setHelpColumn(null)}
+          tokens={tokens}
+        />
+      )}
     </div>,
     document.body,
   );
@@ -485,6 +509,14 @@ const T2_COLUMNS = [
   { key: 'profitMarginTTM', label: 'Margin', fmt: 'pct' },
   { key: 'marketCap', label: 'Mkt cap', fmt: 'money' },
 ];
+// Tier-3 forward consensus columns — labels carry the "(Street)" attribution so
+// the column itself signals an ANALYST ESTIMATE, not a fact. Render only when the
+// rows carry these keys (tier3Included).
+const T3_COLUMNS = [
+  { key: 'consensusGrowthNextYear', label: 'Cons gr (Street)', fmt: 'pct' },
+  { key: 'emsPercentile', label: 'Rev mom (Street)', fmt: 'num' },
+  { key: 'estimateSpread', label: 'Est disp (Street)', fmt: 'num' },
+];
 
 function fmtCell(value, kind) {
   if (kind === 'pct') return pct(value);
@@ -494,10 +526,14 @@ function fmtCell(value, kind) {
   return value == null ? '—' : String(value);
 }
 
-function CohortRows({ rows, digest, tier2Included, focusDimension, userSort, onSort, onRowTap, tokens }) {
+function CohortRows({ rows, digest, tier2Included, tier3Included, focusDimension, userSort, onHeaderTap, onRowTap, tokens }) {
   if (!Array.isArray(rows) || rows.length === 0) return null;
 
-  const columns = tier2Included ? [...T1_COLUMNS, ...T2_COLUMNS] : T1_COLUMNS;
+  const columns = [
+    ...T1_COLUMNS,
+    ...(tier2Included ? T2_COLUMNS : []),
+    ...(tier3Included ? T3_COLUMNS : []),
+  ];
   const { rows: ordered, activeColumn } = orderCohortRows(rows, {
     focusDimension,
     userSortKey: userSort?.key || null,
@@ -540,8 +576,8 @@ function CohortRows({ rows, digest, tier2Included, focusDimension, userSort, onS
               <th
                 key={col.key}
                 style={headStyle(col)}
-                onClick={col.key === 'symbol' || col.key === 'sectorName' ? undefined : () => onSort(col.key)}
-                title={col.key === 'symbol' || col.key === 'sectorName' ? undefined : 'Sort by this column'}
+                onClick={col.key === 'symbol' || col.key === 'sectorName' ? undefined : () => onHeaderTap(col.key)}
+                title={col.key === 'symbol' || col.key === 'sectorName' ? undefined : 'What does this column mean?'}
               >
                 {col.key === 'symbol' ? `${digest?.size ?? rows.length} names` : col.label}
                 {col.key === activeColumn ? (userSort?.dir === 'asc' ? ' ▲' : ' ▼') : ''}
@@ -619,7 +655,7 @@ function CohortRows({ rows, digest, tier2Included, focusDimension, userSort, onS
 }
 
 // ── Cohort-at-a-glance panel (the deterministic substrate) ────────────
-function DigestPanel({ digest, tier2Included, tokens }) {
+function DigestPanel({ digest, tier2Included, tier3Included, tokens }) {
   if (!digest || !digest.covered) return null;
   const ret = (f) => digest.returns?.[f];
   const stat = (s, fmt) => (s && s.count ? fmt(s.median) : '—');
@@ -687,6 +723,19 @@ function DigestPanel({ digest, tier2Included, tokens }) {
           {digest.fundamentals.revenueGrowthYOY?.count ? cell('Rev growth', pct(digest.fundamentals.revenueGrowthYOY.median)) : null}
           {digest.fundamentals.profitMarginTTM?.count ? cell('Net margin', pct(digest.fundamentals.profitMarginTTM.median)) : null}
           {digest.fundamentals.marketCap?.count ? cell('Mkt cap (med)', money(digest.fundamentals.marketCap.median)) : null}
+        </div>
+      )}
+
+      {/* Forward consensus (Tier-3, only when loaded) — Street estimates, attributed */}
+      {tier3Included && digest.forward && (
+        <div style={{ marginTop: 14, paddingTop: 12, borderTop: `1px solid ${tokens.borderDefault}`, display: 'flex', flexWrap: 'wrap', gap: 16, rowGap: 12 }}>
+          <div style={{ width: '100%', fontSize: 10, fontWeight: 700, letterSpacing: '0.4px', textTransform: 'uppercase', color: tokens.textMuted }}>
+            Forward consensus · analyst estimates (Street)
+          </div>
+          {digest.forward.consensusGrowthNextYear?.count ? cell('Cons. growth (next yr)', pct(digest.forward.consensusGrowthNextYear.median)) : null}
+          {digest.forward.emsPercentile?.count ? cell('Rev. momentum', num(digest.forward.emsPercentile.median)) : null}
+          {digest.forward.estimateSpread?.count ? cell('Est. dispersion', num(digest.forward.estimateSpread.median)) : null}
+          {digest.forward.numAnalystsNextYear?.count ? cell('Coverage (analysts)', num(digest.forward.numAnalystsNextYear.median)) : null}
         </div>
       )}
     </div>

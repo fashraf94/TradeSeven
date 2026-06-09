@@ -8,13 +8,14 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // ==================== HOISTED MOCK STATE ====================
-const { authReturnValue, gemmaResult, parseImpl, shadowLogCalls, gemmaCalls, peerQueryCount } = vi.hoisted(() => ({
+const { authReturnValue, gemmaResult, parseImpl, shadowLogCalls, gemmaCalls, peerQueryCount, estimatesQueryCount } = vi.hoisted(() => ({
   authReturnValue: { current: { uid: 'test-user' } },
   gemmaResult: { current: { success: true, content: '{"_scratchpad":"reasoning","message":"They cluster in Technology and most are above their 200-day line.","suggestedActions":["how do their P/Es compare"]}' } },
   parseImpl: { current: (c) => JSON.parse(c) },
   shadowLogCalls: { current: [] },
   gemmaCalls: { current: 0 },
   peerQueryCount: { current: 0 },
+  estimatesQueryCount: { current: 0 },
 }));
 
 let activeFirestore = null;
@@ -55,6 +56,32 @@ const PEER = {
   AAA: { ticker: 'AAA', metrics: { trailingPE: 20, debtToEquity: 1, marketCap: 1e11 } },
   BBB: { ticker: 'BBB', metrics: { trailingPE: 30, debtToEquity: 0.5, marketCap: 2e11 } },
 };
+// Forward-estimates cache fixture — the NESTED, raw-EODHD shape (growth as a
+// STRING fraction) so the endpoint's readEstimates flattening + numeric coercion
+// + fraction→percent scaling are all exercised. CCC is the thin / sparse name.
+const ESTIMATES = {
+  AAA: {
+    rsr: 0.8, emsPercentile: 70,
+    estimateSpread: { currentQtr: 5, currentYear: 8 },
+    forwardEstimates: {
+      currentYear: { growth: '0.12', numAnalysts: '18' },
+      nextYear: { growth: '0.18', numAnalysts: '20' },
+    },
+  },
+  BBB: {
+    rsr: 0.6, emsPercentile: 90,
+    estimateSpread: { currentQtr: 9, currentYear: 15 },
+    forwardEstimates: {
+      currentYear: { growth: '0.22', numAnalysts: '24' },
+      nextYear: { growth: '0.30', numAnalysts: '25' },
+    },
+  },
+  CCC: {
+    rsr: null, emsPercentile: null,
+    estimateSpread: { currentQtr: null, currentYear: null },
+    forwardEstimates: { currentYear: null, nextYear: null },
+  },
+};
 
 function makeFirestore({ watchlistDocs = {}, sessionDocs = {}, hasRankings = true, allocatedSessionId = 'sess-new' } = {}) {
   const state = { watchlistDocs, sessionDocs, allocatedSessionId };
@@ -65,6 +92,7 @@ function makeFirestore({ watchlistDocs = {}, sessionDocs = {}, hasRankings = tru
       if (coll === 'watchlists') return { exists: !!state.watchlistDocs[id], data: () => state.watchlistDocs[id] };
       if (coll === 'analysisSessions') return { exists: !!state.sessionDocs[id], data: () => state.sessionDocs[id] };
       if (coll === 'indexIntelligence') return { exists: hasRankings, data: () => ({ stocks: STOCKS, updatedAt: '2026-06-08T00:00:00.000Z' }) };
+      if (coll === 'estimatesCache') { estimatesQueryCount.current += 1; return { exists: true, data: () => ({ stocks: ESTIMATES }) }; }
       return { exists: false, data: () => null };
     },
     set: async (body) => { if (coll === 'analysisSessions') state.sessionDocs[id] = body; },
@@ -116,6 +144,7 @@ beforeEach(() => {
   shadowLogCalls.current = [];
   gemmaCalls.current = 0;
   peerQueryCount.current = 0;
+  estimatesQueryCount.current = 0;
   activeFirestore = null;
 });
 
@@ -201,6 +230,103 @@ describe('watchlist-analysis — fundamentals turn (lazy Tier-2)', () => {
     await handler(req, res);
     expect(res.body.tier2Included).toBe(false);
     expect(peerQueryCount.current).toBe(0);
+  });
+});
+
+describe('watchlist-analysis — Tier-3 forward consensus (lazy)', () => {
+  it('reads estimatesCache and flags tier3 on a forward-flavoured turn', async () => {
+    const fx = makeFirestore({ watchlistDocs: { 'wl-1': COMMITTED_WL } });
+    activeFirestore = fx.db;
+    const { req, res } = makeReqRes({ watchlistId: 'wl-1', userMessage: 'which are expected to grow the most next year?' });
+    await handler(req, res);
+    expect(res.statusCode).toBe(200);
+    expect(estimatesQueryCount.current).toBeGreaterThan(0);
+    expect(res.body.tier3Included).toBe(true);
+  });
+
+  it('flattens + percent-scales the nested cache into the forward digest block', async () => {
+    const fx = makeFirestore({ watchlistDocs: { 'wl-1': COMMITTED_WL } });
+    activeFirestore = fx.db;
+    const { req, res } = makeReqRes({ watchlistId: 'wl-1', userMessage: 'what is the consensus growth outlook next year?' });
+    await handler(req, res);
+    const fwd = res.body.digest.forward;
+    // AAA "0.18", BBB "0.30" → ×100 → 18, 30; CCC null → count 2, range 18..30.
+    expect(fwd.consensusGrowthNextYear.min).toBe(18);
+    expect(fwd.consensusGrowthNextYear.max).toBe(30);
+    expect(fwd.consensusGrowthNextYear.count).toBe(2);
+    expect(fwd.consensusGrowthNextYear.lowName).toBe('AAA');
+    expect(fwd.consensusGrowthNextYear.highName).toBe('BBB');
+    // numAnalysts strings "20"/"25" coerced to numbers.
+    expect(fwd.numAnalystsNextYear.max).toBe(25);
+  });
+
+  it('keeps explicit-null forward fields null (not 0) for thin names', async () => {
+    const fx = makeFirestore({ watchlistDocs: { 'wl-1': COMMITTED_WL } });
+    activeFirestore = fx.db;
+    const { req, res } = makeReqRes({ watchlistId: 'wl-1', userMessage: 'what is the consensus growth outlook next year?' });
+    await handler(req, res);
+    // CCC has rsr / emsPercentile / estimateSpread = null in the cache — they must
+    // stay null, NOT coerce to 0 (Number(null) === 0), which would pollute the
+    // forward stats, mis-mark a standout, and defeat the nulls-last sort.
+    const ccc = res.body.rows.find((r) => r.symbol === 'CCC');
+    expect(ccc.rsr).toBeNull();
+    expect(ccc.emsPercentile).toBeNull();
+    expect(ccc.estimateSpread).toBeNull();
+    expect(ccc.consensusGrowthNextYear).toBeNull();
+    // The digest stats therefore exclude the null name (count 2 of AAA/BBB, not 3).
+    expect(res.body.digest.forward.rsr.count).toBe(2);
+    expect(res.body.digest.forward.emsPercentile.count).toBe(2);
+    expect(res.body.digest.forward.estimateSpread.count).toBe(2);
+  });
+
+  it('sorts the visible list by consensus growth (deterministic forward focus)', async () => {
+    const fx = makeFirestore({ watchlistDocs: { 'wl-1': COMMITTED_WL } });
+    activeFirestore = fx.db;
+    const { req, res } = makeReqRes({ watchlistId: 'wl-1', userMessage: 'which are expected to grow most next year?' });
+    await handler(req, res);
+    expect(res.body.focusDimension).toBe('consensusGrowthNextYear');
+    const bbb = res.body.rows.find((r) => r.symbol === 'BBB');
+    expect(bbb.consensusGrowthNextYear).toBe(30); // real value carried for the UI sort
+  });
+
+  it('a forward focusDimension forces the estimatesCache read without a forward keyword (coupling)', async () => {
+    const fx = makeFirestore({ watchlistDocs: { 'wl-1': COMMITTED_WL } });
+    activeFirestore = fx.db;
+    estimatesQueryCount.current = 0;
+    // "being raised or cut" → emsPercentile (a forward dim) but no FORWARD_KEYWORDS hit.
+    const { req, res } = makeReqRes({ watchlistId: 'wl-1', userMessage: 'whose numbers are being raised or cut?' });
+    await handler(req, res);
+    expect(res.body.focusDimension).toBe('emsPercentile');
+    expect(estimatesQueryCount.current).toBeGreaterThan(0);
+    expect(res.body.tier3Included).toBe(true);
+  });
+
+  it('a bare "revenue growth" question still sorts by trailing revenueGrowthYOY (fence)', async () => {
+    const fx = makeFirestore({ watchlistDocs: { 'wl-1': COMMITTED_WL } });
+    activeFirestore = fx.db;
+    const { req, res } = makeReqRes({ watchlistId: 'wl-1', userMessage: 'how does their revenue growth compare?' });
+    await handler(req, res);
+    expect(res.body.focusDimension).toBe('revenueGrowthYOY'); // trailing dim unchanged
+    expect(res.body.tier2Included).toBe(true);
+  });
+
+  it('a plain sector question reads no estimates and reports tier3Included:false', async () => {
+    const fx = makeFirestore({ watchlistDocs: { 'wl-1': COMMITTED_WL } });
+    activeFirestore = fx.db;
+    const { req, res } = makeReqRes({ watchlistId: 'wl-1', userMessage: 'what sectors are these in?' });
+    await handler(req, res);
+    expect(res.body.tier3Included).toBe(false);
+    expect(estimatesQueryCount.current).toBe(0);
+  });
+
+  it('open turn does not read estimatesCache (tier3Included:false, key absent on rows)', async () => {
+    const fx = makeFirestore({ watchlistDocs: { 'wl-1': COMMITTED_WL } });
+    activeFirestore = fx.db;
+    const { req, res } = makeReqRes({ watchlistId: 'wl-1', userMessage: '' });
+    await handler(req, res);
+    expect(res.body.tier3Included).toBe(false);
+    expect(estimatesQueryCount.current).toBe(0);
+    expect(res.body.rows[0]).not.toHaveProperty('consensusGrowthNextYear');
   });
 });
 

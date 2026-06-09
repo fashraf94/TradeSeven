@@ -4,13 +4,21 @@
 // output; no mocks needed.
 
 import { describe, it, expect } from 'vitest';
-import { buildCohortDigest, buildCohortRows, tagStandouts } from './cohortDigest.js';
+import { buildCohortDigest, buildCohortRows, tagStandouts, forwardStat } from './cohortDigest.js';
 
 const RANKINGS = {
   AAA: { symbol: 'AAA', sectorName: 'Technology', industryName: 'Software', return1M: 10, return3M: 20, momentumScore: 80, sma200_position: 5, baggerBombFit: 70, compositeScore: 60, technicalScore: 65, nr7Flag: true },
   BBB: { symbol: 'BBB', sectorName: 'Technology', industryName: 'Semiconductors & Semiconductor Equipment', return1M: 5, return3M: 8, momentumScore: 60, sma200_position: 2, baggerBombFit: 50, compositeScore: 55, technicalScore: 50, nr7Flag: false },
   CCC: { symbol: 'CCC', sectorName: 'Healthcare', industryName: 'Biotechnology', return1M: -3, return3M: -10, momentumScore: 30, sma200_position: -4, baggerBombFit: 20, compositeScore: 40, technicalScore: 35, nr7Flag: false },
   DDD: { symbol: 'DDD', sectorName: 'Technology', industryName: 'Software', return1M: -8, return3M: -15, momentumScore: 20, sma200_position: -6, baggerBombFit: 10, compositeScore: 30, technicalScore: 25, nr7Flag: false },
+};
+
+// Tier-3 forward consensus fixture (already FLATTENED + percent-scaled, the way
+// the endpoint's readEstimates hands it in). CCC is the thin / low-growth name.
+const FORWARD = {
+  AAA: { consensusGrowthNextYear: 18, consensusGrowthCurrentYear: 12, rsr: 0.8, emsPercentile: 70, estimateSpread: 8, numAnalystsNextYear: 20 },
+  BBB: { consensusGrowthNextYear: 30, consensusGrowthCurrentYear: 22, rsr: 0.6, emsPercentile: 90, estimateSpread: 15, numAnalystsNextYear: 25 },
+  CCC: { consensusGrowthNextYear: 6, consensusGrowthCurrentYear: 4, rsr: 0.3, emsPercentile: 40, estimateSpread: 22, numAnalystsNextYear: 8 },
 };
 
 describe('buildCohortDigest — Tier-1', () => {
@@ -82,6 +90,51 @@ describe('buildCohortDigest — Tier-2', () => {
     expect(digest.fundamentals.trailingPE.lowName).toBe('CCC');
     expect(digest.fundamentals.trailingPE.highName).toBe('BBB');
     expect(digest.fundamentals.marketCap.count).toBe(3);
+  });
+});
+
+describe('buildCohortDigest — Tier-3 (forward consensus)', () => {
+  const digest = buildCohortDigest({
+    symbols: ['AAA', 'BBB', 'CCC'],
+    rankingsBySymbol: RANKINGS,
+    forwardBySymbol: FORWARD,
+  });
+
+  it('flags tier3 and computes per-field median + outlier names', () => {
+    expect(digest.tier3Included).toBe(true);
+    expect(digest.forward.consensusGrowthNextYear.median).toBe(18);
+    expect(digest.forward.consensusGrowthNextYear.min).toBe(6);
+    expect(digest.forward.consensusGrowthNextYear.max).toBe(30);
+    expect(digest.forward.consensusGrowthNextYear.lowName).toBe('CCC');
+    expect(digest.forward.consensusGrowthNextYear.highName).toBe('BBB');
+    expect(digest.forward.numAnalystsNextYear.count).toBe(3);
+  });
+
+  it('stays additive — Tier-2 untouched when only forward metrics are given', () => {
+    expect(digest.tier2Included).toBe(false);
+    expect(digest.fundamentals).toBeNull();
+    expect(digest.returns.return1M.count).toBe(3); // Tier-1 aggregate unchanged
+  });
+
+  it('omits the Tier-3 forward block when no forward metrics are given', () => {
+    const d = buildCohortDigest({ symbols: ['AAA', 'BBB', 'CCC'], rankingsBySymbol: RANKINGS });
+    expect(d.tier3Included).toBe(false);
+    expect(d.forward).toBeNull();
+  });
+});
+
+describe('forwardStat', () => {
+  it('computes median / range / holders over finite values, null-safe', () => {
+    const E = { AAA: { g: 18 }, BBB: { g: 30 }, CCC: { g: 6 }, DDD: { g: null } };
+    expect(forwardStat(E, ['AAA', 'BBB', 'CCC', 'DDD'], 'g')).toEqual({
+      median: 18, min: 6, max: 30, count: 3, lowName: 'CCC', highName: 'BBB',
+    });
+  });
+
+  it('returns an all-null stat when nothing is finite', () => {
+    expect(forwardStat({ AAA: { g: null }, BBB: {} }, ['AAA', 'BBB'], 'g')).toEqual({
+      median: null, min: null, max: null, count: 0, lowName: null, highName: null,
+    });
   });
 });
 
@@ -205,5 +258,69 @@ describe('tagStandouts — ≥3-finite guard', () => {
     tagStandouts(rows, { tier2: true });
     expect(rows[0].standouts.high).toContain('debtToEquity'); // A is the max holder
     expect(rows[2].standouts.low).toContain('debtToEquity'); // C is the min holder
+  });
+});
+
+describe('buildCohortRows — Tier-3', () => {
+  const rows = buildCohortRows({
+    symbols: ['AAA', 'BBB', 'CCC'],
+    rankingsBySymbol: RANKINGS,
+    forwardBySymbol: FORWARD,
+  });
+
+  it('includes Tier-3 keys with their values when forward metrics are provided', () => {
+    const bbb = rows.find((r) => r.symbol === 'BBB');
+    expect(bbb.consensusGrowthNextYear).toBe(30);
+    expect(bbb.emsPercentile).toBe(90);
+    expect(bbb.estimateSpread).toBe(15);
+  });
+
+  it('OMITS Tier-3 keys entirely when no forward metrics (absent ≠ null)', () => {
+    const t1 = buildCohortRows({ symbols: ['AAA', 'BBB', 'CCC'], rankingsBySymbol: RANKINGS });
+    for (const r of t1) {
+      expect(r).not.toHaveProperty('consensusGrowthNextYear');
+      expect(r).not.toHaveProperty('emsPercentile');
+    }
+  });
+
+  it('a missing Tier-3 field is null (loaded-but-null), not absent', () => {
+    const PARTIAL = { AAA: { consensusGrowthNextYear: 18 }, BBB: { consensusGrowthNextYear: 30 }, CCC: { consensusGrowthNextYear: 6 } };
+    const r = buildCohortRows({ symbols: ['AAA', 'BBB', 'CCC'], rankingsBySymbol: RANKINGS, forwardBySymbol: PARTIAL });
+    expect(r[0]).toHaveProperty('emsPercentile', null);
+  });
+
+  it('keeps Tier-2 and Tier-3 independent (both carried when both provided)', () => {
+    const PEER = { AAA: { trailingPE: 20 }, BBB: { trailingPE: 30 }, CCC: { trailingPE: 10 } };
+    const r = buildCohortRows({ symbols: ['AAA', 'BBB', 'CCC'], rankingsBySymbol: RANKINGS, peerMetricsBySymbol: PEER, forwardBySymbol: FORWARD });
+    expect(r[0]).toHaveProperty('trailingPE');
+    expect(r[0]).toHaveProperty('consensusGrowthNextYear');
+  });
+});
+
+describe('tagStandouts — Tier-3 forward dims', () => {
+  it('only tags forward dimensions when tier3 is true', () => {
+    const rows = [
+      { symbol: 'A', consensusGrowthNextYear: 30 },
+      { symbol: 'B', consensusGrowthNextYear: 18 },
+      { symbol: 'C', consensusGrowthNextYear: 6 },
+    ];
+    tagStandouts(rows, { tier3: false });
+    expect(rows[0].standouts.high).not.toContain('consensusGrowthNextYear');
+    tagStandouts(rows, { tier3: true });
+    expect(rows[0].standouts.high).toContain('consensusGrowthNextYear'); // A is the max holder
+    expect(rows[2].standouts.low).toContain('consensusGrowthNextYear');  // C is the min holder
+  });
+
+  it('honors the ≥3-finite guard on forward dims', () => {
+    const rows = [
+      { symbol: 'A', consensusGrowthNextYear: 30 },
+      { symbol: 'B', consensusGrowthNextYear: 18 },
+      { symbol: 'C', consensusGrowthNextYear: null },
+    ];
+    tagStandouts(rows, { tier3: true });
+    for (const r of rows) {
+      expect(r.standouts.high).not.toContain('consensusGrowthNextYear');
+      expect(r.standouts.low).not.toContain('consensusGrowthNextYear');
+    }
   });
 });
