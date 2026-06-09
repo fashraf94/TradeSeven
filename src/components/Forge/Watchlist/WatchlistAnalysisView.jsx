@@ -17,6 +17,8 @@ import { ArrowLeft, Send, AlertCircle, Check, Save, Sparkles } from 'lucide-reac
 import { useTheme } from '../../../contexts/ThemeContext';
 import { postWatchlistAnalysis, saveWatchlistNotes } from '../../../services/forgeWatchlistService';
 import { orderCohortRows } from './cohortRowsView';
+import AssetResearchModal from '../../draft/AssetResearchModal';
+import { STOCKS } from '../../../data/assets';
 
 const MESSAGE_CHAR_CAP = 2000;
 const REQUEST_TIMEOUT_MS = 28_000;
@@ -51,6 +53,8 @@ export default function WatchlistAnalysisView({ watchlist, onClose }) {
   const [rows, setRows] = useState(null);
   const [focusDimension, setFocusDimension] = useState(null);
   const [userSort, setUserSort] = useState(null); // { key, dir } | null
+  // Tapping a cohort row opens the shared research modal (UI-only, additive).
+  const [researchAsset, setResearchAsset] = useState(null);
 
   const [input, setInput] = useState('');
   const [opening, setOpening] = useState(true);
@@ -184,6 +188,22 @@ export default function WatchlistAnalysisView({ watchlist, onClose }) {
     });
   }, []);
 
+  // Tap a cohort row → open the shared AssetResearchModal. Mirrors the
+  // ScreenerView handoff: static STOCKS join for the company name; price/change
+  // fill live inside the modal.
+  const openResearch = useCallback((symbol, sectorName) => {
+    if (!symbol) return;
+    const info = STOCKS.find((s) => s.symbol === symbol);
+    setResearchAsset({
+      symbol,
+      name: info?.name || symbol,
+      sector: info?.sector || sectorName || '',
+      price: 0,
+      percentChange: 0,
+      change: 0,
+    });
+  }, []);
+
   // Portal to document.body so the surface escapes the Forge frame's stacking
   // context and renders full-surface (back-arrow only, no inherited Forge tab
   // strip) — the same focused presentation as the watchlist editor. Mirrors the
@@ -239,6 +259,7 @@ export default function WatchlistAnalysisView({ watchlist, onClose }) {
           focusDimension={focusDimension}
           userSort={userSort}
           onSort={handleSort}
+          onRowTap={openResearch}
           tokens={tokens}
         />
 
@@ -423,6 +444,17 @@ export default function WatchlistAnalysisView({ watchlist, onClose }) {
           <Send size={18} />
         </button>
       </div>
+
+      {/* Shared research modal — self-portals to document.body; research-only
+          (showActionButton={false}, version={2}) so no draft "acquire" UI. */}
+      {researchAsset && (
+        <AssetResearchModal
+          asset={researchAsset}
+          onClose={() => setResearchAsset(null)}
+          showActionButton={false}
+          version={2}
+        />
+      )}
     </div>,
     document.body,
   );
@@ -462,7 +494,7 @@ function fmtCell(value, kind) {
   return value == null ? '—' : String(value);
 }
 
-function CohortRows({ rows, digest, tier2Included, focusDimension, userSort, onSort, tokens }) {
+function CohortRows({ rows, digest, tier2Included, focusDimension, userSort, onSort, onRowTap, tokens }) {
   if (!Array.isArray(rows) || rows.length === 0) return null;
 
   const columns = tier2Included ? [...T1_COLUMNS, ...T2_COLUMNS] : T1_COLUMNS;
@@ -519,7 +551,11 @@ function CohortRows({ rows, digest, tier2Included, focusDimension, userSort, onS
         </thead>
         <tbody>
           {ordered.map((row) => (
-            <tr key={row.symbol}>
+            <tr
+              key={row.symbol}
+              onClick={() => onRowTap?.(row.symbol, row.sectorName)}
+              style={{ cursor: 'pointer' }}
+            >
               {columns.map((col) => {
                 const isActive = col.key === activeColumn;
                 const isStandout =
