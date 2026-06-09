@@ -19,6 +19,8 @@ import { postWatchlistAnalysis, saveWatchlistNotes } from '../../../services/for
 import { orderCohortRows } from './cohortRowsView';
 import AssetResearchModal from '../../draft/AssetResearchModal';
 import { STOCKS } from '../../../data/assets';
+import ColumnHelpModal from './ColumnHelpModal';
+import { COLUMN_HELP } from './columnHelp';
 
 const MESSAGE_CHAR_CAP = 2000;
 const REQUEST_TIMEOUT_MS = 28_000;
@@ -56,6 +58,8 @@ export default function WatchlistAnalysisView({ watchlist, onClose }) {
   const [userSort, setUserSort] = useState(null); // { key, dir } | null
   // Tapping a cohort row opens the shared research modal (UI-only, additive).
   const [researchAsset, setResearchAsset] = useState(null);
+  // Tapping a column header opens the column-help modal (manual sort lives there now).
+  const [helpColumn, setHelpColumn] = useState(null);
 
   const [input, setInput] = useState('');
   const [opening, setOpening] = useState(true);
@@ -261,7 +265,7 @@ export default function WatchlistAnalysisView({ watchlist, onClose }) {
           tier3Included={tier3Included}
           focusDimension={focusDimension}
           userSort={userSort}
-          onSort={handleSort}
+          onHeaderTap={setHelpColumn}
           onRowTap={openResearch}
           tokens={tokens}
         />
@@ -458,6 +462,20 @@ export default function WatchlistAnalysisView({ watchlist, onClose }) {
           version={2}
         />
       )}
+
+      {/* Column help modal — tap a header to learn what the column means; manual
+          sort lives here now (the question-driven focusDimension auto-sort is
+          unchanged and remains primary). */}
+      {helpColumn && (
+        <ColumnHelpModal
+          columnKey={helpColumn}
+          entry={COLUMN_HELP[helpColumn]}
+          sortable={helpColumn !== 'symbol' && helpColumn !== 'sectorName'}
+          onSort={(key) => { handleSort(key); setHelpColumn(null); }}
+          onClose={() => setHelpColumn(null)}
+          tokens={tokens}
+        />
+      )}
     </div>,
     document.body,
   );
@@ -505,7 +523,7 @@ function fmtCell(value, kind) {
   return value == null ? '—' : String(value);
 }
 
-function CohortRows({ rows, digest, tier2Included, tier3Included, focusDimension, userSort, onSort, onRowTap, tokens }) {
+function CohortRows({ rows, digest, tier2Included, tier3Included, focusDimension, userSort, onHeaderTap, onRowTap, tokens }) {
   if (!Array.isArray(rows) || rows.length === 0) return null;
 
   const columns = [
@@ -555,8 +573,8 @@ function CohortRows({ rows, digest, tier2Included, tier3Included, focusDimension
               <th
                 key={col.key}
                 style={headStyle(col)}
-                onClick={col.key === 'symbol' || col.key === 'sectorName' ? undefined : () => onSort(col.key)}
-                title={col.key === 'symbol' || col.key === 'sectorName' ? undefined : 'Sort by this column'}
+                onClick={col.key === 'symbol' || col.key === 'sectorName' ? undefined : () => onHeaderTap(col.key)}
+                title={col.key === 'symbol' || col.key === 'sectorName' ? undefined : 'What does this column mean?'}
               >
                 {col.key === 'symbol' ? `${digest?.size ?? rows.length} names` : col.label}
                 {col.key === activeColumn ? (userSort?.dir === 'asc' ? ' ▲' : ' ▼') : ''}
