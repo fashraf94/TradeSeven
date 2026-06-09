@@ -30,7 +30,7 @@ import { applySecurityMiddleware } from '../_utils/security.js';
 import { requireAuth } from '../_utils/authMiddleware.js';
 import { buildVoiceLayerPrompt } from '../_utils/voiceLayerPrompt.js';
 import { callGemmaVoiceWithRetry, parseVoiceLayerResponse } from '../_utils/gemmaClient.js';
-import { buildCohortDigest, buildCohortRows, FUNDAMENTAL_FIELDS } from '../_utils/cohortDigest.js';
+import { buildCohortDigest, buildCohortRows, FUNDAMENTAL_FIELDS, FORWARD_FIELDS } from '../_utils/cohortDigest.js';
 import { extractTickerSymbols } from '../_utils/watchlistEquip.js';
 import { isValidForgeId, FORGE_ID_REGEX, FORGE_ID_MAX_LEN } from '../_utils/idValidation.js';
 import { FieldValue } from 'firebase-admin/firestore';
@@ -47,6 +47,14 @@ const COHORT_MAX = 40;     // watchlist ticker cap (matches the write path)
 // questions need peerRankings, so the heuristic keeps the common turn Tier-1-only.
 const FUNDAMENTAL_KEYWORDS =
   /\b(p\/?e|valuations?|multiples?|cheap|expensive|margins?|revenues?|sales|growth|debt|leverage|balance\s*sheets?|solvency|liquidity|current\s*ratio|interest\s*coverage|ebitda|market\s*caps?\b|caps?\b|dividends?|roe|roa|book\s*value|fundamentals?|earnings\s*beat|beat\s*rate|profitab)/i;
+
+// A forward-flavoured turn triggers the lazy Tier-3 read (estimatesCache/latest —
+// one Firestore doc). Forward = analyst CONSENSUS only (attributed, never a model
+// forecast). These keywords gate the read the way FUNDAMENTAL_KEYWORDS gates Tier-2;
+// "grow|growth" overlaps Tier-2 intentionally — both tiers may load, but the
+// deterministic SORT is decided by deriveFocusDimension's forward precedence.
+const FORWARD_KEYWORDS =
+  /\b(grow|growth|estimates?|expected|forecasts?|next\s*year|next\s*quarter|forward|consensus|analysts?|revisions?|upgrades?|downgrades?|outlook)\b/i;
 
 // Piece C — characterization questions ("which are the outliers / what stands
 // out / what separates them") should pull the fundamental tier too, so both the
@@ -68,7 +76,23 @@ const FOCUS_DIMENSION_RULES = [
   [/\b(returns?|performance|gainers?|laggards?|winners?|losers?|best|worst)/i, 'return1M'],
 ];
 
+// Piece A (forward) — forward-qualified phrasing routes the list sort to a
+// CONSENSUS column (real estimatesCache values; no model in the ranking loop).
+// Checked BEFORE the trailing rules so "expected to grow next year" sorts by
+// consensus growth, while a bare "growth"/"revenue growth" stays trailing
+// (revenueGrowthYOY) — existing behaviour unchanged.
+const FORWARD_FOCUS_RULES = [
+  [/\b(consensus|forward|estimated|projected|expected|forecast(?:ed)?)\b[^.?!]*\bgrow/i, 'consensusGrowthNextYear'],
+  [/\bgrow\w*\b[^.?!]*\b(next\s*year|next\s*quarter|forward|ahead|going\s*forward)\b/i, 'consensusGrowthNextYear'],
+  [/\b(next\s*year|next\s*quarter)\b[^.?!]*\bgrow/i, 'consensusGrowthNextYear'],
+  [/\b(revisions?|upgrades?|downgrades?|being\s*raised|being\s*cut|raised\s*or\s*cut)\b/i, 'emsPercentile'],
+];
+
 function deriveFocusDimension(message) {
+  // Forward-qualified phrasing wins, so a forward question sorts by consensus.
+  for (const [re, dim] of FORWARD_FOCUS_RULES) {
+    if (re.test(message)) return dim;
+  }
   for (const [re, dim] of FOCUS_DIMENSION_RULES) {
     if (re.test(message)) return dim;
   }
@@ -79,6 +103,12 @@ function deriveFocusDimension(message) {
 // or the highlighted column would be all dashes.
 function isFundamentalDimension(dim) {
   return typeof dim === 'string' && FUNDAMENTAL_FIELDS.includes(dim);
+}
+
+// A forward focusDimension must likewise force the lazy Tier-3 read (same
+// no-empty-column guard) — its consensus column would otherwise be all dashes.
+function isForwardDimension(dim) {
+  return typeof dim === 'string' && FORWARD_FIELDS.includes(dim);
 }
 
 // ==================== HELPERS ====================
@@ -140,6 +170,50 @@ async function readPeerMetrics(db, symbols) {
       const d = doc.data();
       if (d && typeof d.ticker === 'string' && d.metrics) out[d.ticker] = d.metrics;
     });
+  }
+  return out;
+}
+
+// Lazy Tier-3: read estimatesCache/latest ONCE (a single Firestore doc — cheaper
+// than the chunked peerRankings reads) and project each cohort symbol's NESTED
+// forward-consensus record into the FLAT shape FORWARD_FIELDS expects. Forward
+// data is attributed analyst CONSENSUS, never a model forecast. Zero EODHD;
+// read-only consumer of the cache. Returns symbol → flat map, or null when the
+// cache doc is missing (the tier then stays hidden — no empty columns).
+async function readEstimates(db, symbols) {
+  // The cron stores raw EODHD trend fields (forwardEstimates avg/growth/
+  // numAnalysts) un-coerced — they arrive as numeric STRINGS. Coerce to finite
+  // numbers (or null) so the downstream stats/sort stay numeric.
+  const num = (v) => {
+    const n = typeof v === 'number' ? v : Number(v);
+    return Number.isFinite(n) ? n : null;
+  };
+  // EODHD trend growth is a decimal fraction ("0.081" = 8.1%); scale to percent so
+  // consensus growth lands on the same convention as trailing revenueGrowthYOY (the
+  // formatters treat growth values as already-percent).
+  const pct = (v) => {
+    const n = num(v);
+    return n == null ? null : Math.round(n * 1000) / 10; // fraction → % (1 dp; avoids FP noise)
+  };
+
+  const snap = await db.collection('estimatesCache').doc('latest').get();
+  if (!snap.exists) return null;
+  const stocks = snap.data()?.stocks;
+  if (!stocks || typeof stocks !== 'object') return null;
+  const out = {};
+  for (const s of symbols) {
+    const e = stocks[s];
+    if (!e) continue;
+    const fe = e.forwardEstimates || {};
+    const spread = e.estimateSpread || {};
+    out[s] = {
+      consensusGrowthNextYear: pct(fe.nextYear?.growth),
+      consensusGrowthCurrentYear: pct(fe.currentYear?.growth),
+      numAnalystsNextYear: num(fe.nextYear?.numAnalysts),
+      rsr: num(e.rsr),                       // 0..1 — share of 30-day EPS revisions that were UP
+      emsPercentile: num(e.emsPercentile),   // 0..100 — revision-momentum percentile (in-sector)
+      estimateSpread: num(spread.currentYear), // % — (high−low)/|avg| dispersion of estimates
+    };
   }
   return out;
 }
@@ -217,6 +291,7 @@ export default async function handler(req, res) {
         suggestedActions: null,
         digest: null,
         tier2Included: false,
+        tier3Included: false,
       });
     }
 
@@ -282,6 +357,7 @@ export default async function handler(req, res) {
         rows,
         focusDimension: null, // no question yet → default sort applies
         tier2Included: false,
+        tier3Included: false,
         dataAsOf,
       });
     }
@@ -296,6 +372,7 @@ export default async function handler(req, res) {
         rows: null,
         focusDimension: null,
         tier2Included: false,
+        tier3Included: false,
         sessionEnded: true,
       });
     }
@@ -311,10 +388,18 @@ export default async function handler(req, res) {
       isFundamentalDimension(focusDimension);
     const peerMetricsBySymbol = wantsFundamentals ? await readPeerMetrics(db, symbols) : null;
 
-    const digest = buildCohortDigest({ symbols, rankingsBySymbol, peerMetricsBySymbol });
+    // 6b. Lazy Tier-3 (forward analyst consensus): forward-flavoured OR a forward
+    //     focusDimension (same no-empty-column guard). One estimatesCache/latest
+    //     doc read — zero EODHD, read-only consumer of the cache.
+    const wantsForward =
+      FORWARD_KEYWORDS.test(sanitizedMessage) ||
+      isForwardDimension(focusDimension);
+    const forwardBySymbol = wantsForward ? await readEstimates(db, symbols) : null;
+
+    const digest = buildCohortDigest({ symbols, rankingsBySymbol, peerMetricsBySymbol, forwardBySymbol });
     // Per-name rows for the visible list (A/D). UI-only — NEVER added to the
     // prompt (that's B). The prompt below still sees only { digest }.
-    const rows = buildCohortRows({ symbols, rankingsBySymbol, peerMetricsBySymbol });
+    const rows = buildCohortRows({ symbols, rankingsBySymbol, peerMetricsBySymbol, forwardBySymbol });
 
     // 6. Conversation history (last HISTORY_WINDOW exchanges).
     const previousExchanges = (session.exchanges || []).slice(-HISTORY_WINDOW);
@@ -356,6 +441,7 @@ export default async function handler(req, res) {
         rows: null, // keep the prior list on a transient error (client: if (data.rows) …)
         focusDimension: null,
         tier2Included: digest.tier2Included,
+        tier3Included: digest.tier3Included,
         error: true,
       });
     }
@@ -372,6 +458,7 @@ export default async function handler(req, res) {
         rows: null,
         focusDimension: null,
         tier2Included: digest.tier2Included,
+        tier3Included: digest.tier3Included,
         error: true,
         errorReason: `parse_${parsed.errorReason}`,
       });
@@ -388,6 +475,7 @@ export default async function handler(req, res) {
       userMessage: sanitizedMessage,
       message,
       tier2Included: digest.tier2Included,
+      tier3Included: digest.tier3Included,
       timestamp: nowIso,
     };
 
@@ -429,6 +517,7 @@ export default async function handler(req, res) {
             rows: null,
             focusDimension: null,
             tier2Included: digest.tier2Included,
+            tier3Included: digest.tier3Included,
             error: true,
             errorReason: 'concurrent_modification',
           });
@@ -457,6 +546,7 @@ export default async function handler(req, res) {
       watchlistId,
       analysisSessionId: sessionRef.id,
       tier2Included: digest.tier2Included,
+      tier3Included: digest.tier3Included,
     }).catch(() => {});
 
     // 13. Respond.
@@ -468,6 +558,7 @@ export default async function handler(req, res) {
       rows,
       focusDimension,
       tier2Included: digest.tier2Included,
+      tier3Included: digest.tier3Included,
       dataAsOf,
     });
   } catch (error) {
@@ -483,6 +574,7 @@ export default async function handler(req, res) {
       rows: null,
       focusDimension: null,
       tier2Included: false,
+      tier3Included: false,
       error: true,
     });
   }

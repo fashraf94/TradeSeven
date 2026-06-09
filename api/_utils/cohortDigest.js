@@ -91,6 +91,14 @@ function fundamentalStat(entriesBySymbol, symbols, field) {
   };
 }
 
+// Per-forward-field cohort stat — identical min/median/max + outlier-name shape
+// to fundamentalStat (the helper is field-agnostic). Forward fields are
+// pre-flattened in the endpoint's readEstimates, so the same path-free access
+// applies. Exported so the Tier-3 forward block + unit tests can target it.
+export function forwardStat(entriesBySymbol, symbols, field) {
+  return fundamentalStat(entriesBySymbol, symbols, field);
+}
+
 const RETURN_FIELDS = ['return1W', 'return1M', 'return3M', 'returnYTD', 'return12M'];
 const QUALITY_FIELDS = ['baggerBombFit', 'compositeScore', 'technicalScore', 'atrPercentile'];
 // Exported so the endpoint's isFundamentalDimension() can test focusDimension
@@ -101,6 +109,15 @@ export const FUNDAMENTAL_FIELDS = [
   'grossMargin', 'opMarginTTM', 'profitMarginTTM',
   'debtToEquity', 'currentRatio', 'interestCoverage', 'netDebtEbitda',
   'marketCap', 'beatRate',
+];
+
+// Tier-3 forward consensus fields — FLAT keys projected from estimatesCache in the
+// endpoint's readEstimates (the cache stores them nested). Exported so the
+// endpoint's isForwardDimension() shares one source of truth (mirrors
+// FUNDAMENTAL_FIELDS). Null-safe downstream — sparse on thin names.
+export const FORWARD_FIELDS = [
+  'consensusGrowthNextYear', 'consensusGrowthCurrentYear',
+  'rsr', 'emsPercentile', 'estimateSpread', 'numAnalystsNextYear',
 ];
 
 // Minimum covered cohort size for a winners-vs-losers split to be meaningful
@@ -115,9 +132,11 @@ const MIN_SPLIT_SIZE = 4;
  * @param {Object<string,Object>} args.rankingsBySymbol - symbol → stockRankings entry (Tier-1).
  * @param {Object<string,Object>|null} [args.peerMetricsBySymbol] - symbol → peerRankings.metrics (Tier-2),
  *                                                  or null/absent to skip the fundamentals tier.
+ * @param {Object<string,Object>|null} [args.forwardBySymbol] - symbol → flat forward-consensus map (Tier-3),
+ *                                                  or null/absent to skip the forward tier.
  * @returns {Object} digest
  */
-export function buildCohortDigest({ symbols, rankingsBySymbol, peerMetricsBySymbol = null }) {
+export function buildCohortDigest({ symbols, rankingsBySymbol, peerMetricsBySymbol = null, forwardBySymbol = null }) {
   const syms = Array.isArray(symbols) ? symbols : [];
   const ranks = rankingsBySymbol || {};
 
@@ -167,6 +186,17 @@ export function buildCohortDigest({ symbols, rankingsBySymbol, peerMetricsBySymb
     }
   }
 
+  // Tier-3 forward consensus block — sibling to fundamentals; the existing
+  // aggregate output is untouched (additive new fields only).
+  const tier3Included = !!forwardBySymbol;
+  let forward = null;
+  if (tier3Included) {
+    forward = {};
+    for (const f of FORWARD_FIELDS) {
+      forward[f] = forwardStat(forwardBySymbol, syms, f);
+    }
+  }
+
   return {
     size: syms.length,
     covered: covered.length,
@@ -188,6 +218,8 @@ export function buildCohortDigest({ symbols, rankingsBySymbol, peerMetricsBySymb
     winnersLosers,
     tier2Included,
     fundamentals,
+    tier3Included,
+    forward,
   };
 }
 
@@ -212,6 +244,9 @@ const ROW_TIER1_FIELDS = [
 // Tier-2 rows are present.
 const TECHNICAL_OUTLIER_DIMS = ['return1M', 'return3M', 'momentumScore', 'sma200_position', 'atrPercentile'];
 const FUNDAMENTAL_OUTLIER_DIMS = ['trailingPE', 'debtToEquity', 'revenueGrowthYOY', 'profitMarginTTM', 'marketCap'];
+// Tier-3 forward standout dims — NEUTRAL ("most expected to grow" / "most raised,"
+// not "good"). Tagged only when Tier-3 rows are present.
+const FORWARD_OUTLIER_DIMS = ['consensusGrowthNextYear', 'emsPercentile'];
 
 // Below this many finite values on a dimension, "the extreme" is not meaningful.
 const MIN_STANDOUT_COUNT = 3;
@@ -223,12 +258,14 @@ const MIN_STANDOUT_COUNT = 3;
  * "extreme on this dimension" marker, not a good/bad tint. Mutates + returns rows.
  *
  * @param {Object[]} rows
- * @param {{ tier2?: boolean }} [opts]
+ * @param {{ tier2?: boolean, tier3?: boolean }} [opts]
  */
-export function tagStandouts(rows, { tier2 = false } = {}) {
+export function tagStandouts(rows, { tier2 = false, tier3 = false } = {}) {
   const list = Array.isArray(rows) ? rows : [];
   for (const r of list) r.standouts = { high: [], low: [] };
-  const dims = tier2 ? [...TECHNICAL_OUTLIER_DIMS, ...FUNDAMENTAL_OUTLIER_DIMS] : TECHNICAL_OUTLIER_DIMS;
+  const dims = [...TECHNICAL_OUTLIER_DIMS];
+  if (tier2) dims.push(...FUNDAMENTAL_OUTLIER_DIMS);
+  if (tier3) dims.push(...FORWARD_OUTLIER_DIMS);
   for (const dim of dims) {
     const finite = list.filter((r) => typeof r[dim] === 'number' && Number.isFinite(r[dim]));
     if (finite.length < MIN_STANDOUT_COUNT) continue;
@@ -247,16 +284,18 @@ export function tagStandouts(rows, { tier2 = false } = {}) {
 /**
  * Per-name rows for the visible list — one object per COVERED symbol (input
  * order; the UI owns the sort). Tier-1 fields always; Tier-2 fields present
- * ONLY when peerMetricsBySymbol is provided, so the client can tell "not loaded"
- * (key absent) from "loaded-but-null" (key === null) and hide columns. Rows are
- * standout-tagged before return.
+ * ONLY when peerMetricsBySymbol is provided, and Tier-3 forward fields ONLY when
+ * forwardBySymbol is provided, so the client can tell "not loaded" (key absent)
+ * from "loaded-but-null" (key === null) and hide columns. Rows are standout-tagged
+ * before return.
  *
  * @returns {Object[]}
  */
-export function buildCohortRows({ symbols, rankingsBySymbol, peerMetricsBySymbol = null }) {
+export function buildCohortRows({ symbols, rankingsBySymbol, peerMetricsBySymbol = null, forwardBySymbol = null }) {
   const syms = Array.isArray(symbols) ? symbols : [];
   const ranks = rankingsBySymbol || {};
   const tier2 = !!peerMetricsBySymbol;
+  const tier3 = !!forwardBySymbol;
 
   const rows = [];
   for (const s of syms) {
@@ -268,8 +307,12 @@ export function buildCohortRows({ symbols, rankingsBySymbol, peerMetricsBySymbol
       const m = peerMetricsBySymbol[s] || null;
       for (const f of FUNDAMENTAL_FIELDS) row[f] = m?.[f] ?? null;
     }
+    if (tier3) {
+      const m = forwardBySymbol[s] || null;
+      for (const f of FORWARD_FIELDS) row[f] = m?.[f] ?? null;
+    }
     rows.push(row);
   }
-  tagStandouts(rows, { tier2 });
+  tagStandouts(rows, { tier2, tier3 });
   return rows;
 }

@@ -3595,3 +3595,48 @@ describe('buildVoiceLayerPrompt — multi-dimension narration nudge (Per-Name La
     expect(prompt).not.toContain('MULTI-DIMENSION CHARACTERIZATION');
   });
 });
+
+describe('buildVoiceLayerPrompt — Tier-3 forward consensus (additive)', () => {
+  const FWD_DIGEST = {
+    size: 3, covered: 3, offUniverse: [],
+    sectors: [{ name: 'Technology', count: 3 }], industries: [],
+    returns: {}, momentum: { medianScore: 60, count: 3 },
+    trend: { aboveCount: 3, belowCount: 0, medianSma200Position: 3 },
+    quality: {}, nr7Count: 0, winnersLosers: null,
+    tier2Included: false, fundamentals: null,
+    tier3Included: true,
+    forward: {
+      consensusGrowthNextYear: { median: 18, min: 6, max: 30, count: 3, lowName: 'CCC', highName: 'BBB' },
+      consensusGrowthCurrentYear: { median: 12, min: 4, max: 22, count: 3, lowName: 'CCC', highName: 'BBB' },
+      rsr: { median: 0.6, min: 0.3, max: 0.8, count: 3, lowName: 'CCC', highName: 'AAA' },
+      emsPercentile: { median: 70, min: 40, max: 90, count: 3, lowName: 'CCC', highName: 'BBB' },
+      estimateSpread: { median: 15, min: 8, max: 22, count: 3, lowName: 'AAA', highName: 'CCC' },
+      numAnalystsNextYear: { median: 20, min: 8, max: 25, count: 3, lowName: 'CCC', highName: 'BBB' },
+    },
+  };
+
+  it('adds the attributed-consensus rule + negative constraint in set_analysis mode', () => {
+    const prompt = buildVoiceLayerPrompt({ mode: 'set_analysis', analysisContext: { digest: FWD_DIGEST } });
+    expect(prompt).toContain('FORWARD CONSENSUS IS THE STREET'); // new behavioral rule
+    expect(prompt).toContain('NEVER present analyst consensus as your own forecast'); // new negative constraint
+    // The existing realized/no-invent constraints must still be intact.
+    expect(prompt).toContain('NEVER forecast — returns are realized and past');
+    expect(prompt).toContain('NEVER invent a number or characteristic not in the COHORT DIGEST');
+  });
+
+  it('renders the forward digest block ONLY when tier3Included', () => {
+    const withFwd = buildVoiceLayerPrompt({ mode: 'set_analysis', analysisContext: { digest: FWD_DIGEST } });
+    expect(withFwd).toContain('FORWARD CONSENSUS (ANALYST ESTIMATES');
+    expect(withFwd).toContain('consensus EPS growth (next yr)');
+
+    const noFwd = { ...FWD_DIGEST, tier3Included: false, forward: null };
+    const withoutFwd = buildVoiceLayerPrompt({ mode: 'set_analysis', analysisContext: { digest: noFwd } });
+    expect(withoutFwd).not.toContain('FORWARD CONSENSUS (ANALYST ESTIMATES');
+  });
+
+  it('does NOT leak the consensus rule into research mode (regression; battle is structurally excluded)', () => {
+    const research = buildVoiceLayerPrompt({ mode: 'research', researchContext: { previousSpec: null } });
+    expect(research).not.toContain('FORWARD CONSENSUS IS THE STREET');
+    expect(research).not.toContain('NEVER present analyst consensus as your own forecast');
+  });
+});
