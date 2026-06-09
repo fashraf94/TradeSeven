@@ -183,8 +183,12 @@ async function readPeerMetrics(db, symbols) {
 async function readEstimates(db, symbols) {
   // The cron stores raw EODHD trend fields (forwardEstimates avg/growth/
   // numAnalysts) un-coerced — they arrive as numeric STRINGS. Coerce to finite
-  // numbers (or null) so the downstream stats/sort stay numeric.
+  // numbers (or null) so the downstream stats/sort stay numeric. Guard null /
+  // empty FIRST: Number(null) and Number('') are both 0, so without this a thin
+  // name's ABSENT value would become a fake 0 that inflates the forward stats,
+  // mis-marks a standout, and defeats the nulls-last sort.
   const num = (v) => {
+    if (v == null || (typeof v === 'string' && v.trim() === '')) return null;
     const n = typeof v === 'number' ? v : Number(v);
     return Number.isFinite(n) ? n : null;
   };
@@ -380,21 +384,23 @@ export default async function handler(req, res) {
     // 5. Which list column does this question imply (deterministic; no model)?
     const focusDimension = deriveFocusDimension(sanitizedMessage);
 
-    // 6. Lazy Tier-2: fundamentals-flavoured OR characterization (C) OR a
-    //    fundamental focusDimension (so its highlighted column has data).
+    // 6. Lazy Tier-2 (fundamentals-flavoured OR characterization (C) OR a
+    //    fundamental focusDimension) and Tier-3 (forward analyst consensus:
+    //    forward-flavoured OR a forward focusDimension) — both use the same
+    //    no-empty-column guard, and both are independent reads (chunked
+    //    peerRankings / one estimatesCache doc — zero EODHD), so fire them
+    //    concurrently rather than serially.
     const wantsFundamentals =
       FUNDAMENTAL_KEYWORDS.test(sanitizedMessage) ||
       CHARACTERIZATION_KEYWORDS.test(sanitizedMessage) ||
       isFundamentalDimension(focusDimension);
-    const peerMetricsBySymbol = wantsFundamentals ? await readPeerMetrics(db, symbols) : null;
-
-    // 6b. Lazy Tier-3 (forward analyst consensus): forward-flavoured OR a forward
-    //     focusDimension (same no-empty-column guard). One estimatesCache/latest
-    //     doc read — zero EODHD, read-only consumer of the cache.
     const wantsForward =
       FORWARD_KEYWORDS.test(sanitizedMessage) ||
       isForwardDimension(focusDimension);
-    const forwardBySymbol = wantsForward ? await readEstimates(db, symbols) : null;
+    const [peerMetricsBySymbol, forwardBySymbol] = await Promise.all([
+      wantsFundamentals ? readPeerMetrics(db, symbols) : Promise.resolve(null),
+      wantsForward ? readEstimates(db, symbols) : Promise.resolve(null),
+    ]);
 
     const digest = buildCohortDigest({ symbols, rankingsBySymbol, peerMetricsBySymbol, forwardBySymbol });
     // Per-name rows for the visible list (A/D). UI-only — NEVER added to the

@@ -470,6 +470,9 @@ export default function WatchlistAnalysisView({ watchlist, onClose }) {
         <ColumnHelpModal
           columnKey={helpColumn}
           entry={COLUMN_HELP[helpColumn]}
+          // symbol/sectorName headers never open the modal (their onClick is
+          // undefined), so this is effectively always true — kept as a guard in
+          // case one of those headers is ever made tappable.
           sortable={helpColumn !== 'symbol' && helpColumn !== 'sectorName'}
           onSort={(key) => { handleSort(key); setHelpColumn(null); }}
           onClose={() => setHelpColumn(null)}

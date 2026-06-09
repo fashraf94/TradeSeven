@@ -260,6 +260,25 @@ describe('watchlist-analysis — Tier-3 forward consensus (lazy)', () => {
     expect(fwd.numAnalystsNextYear.max).toBe(25);
   });
 
+  it('keeps explicit-null forward fields null (not 0) for thin names', async () => {
+    const fx = makeFirestore({ watchlistDocs: { 'wl-1': COMMITTED_WL } });
+    activeFirestore = fx.db;
+    const { req, res } = makeReqRes({ watchlistId: 'wl-1', userMessage: 'what is the consensus growth outlook next year?' });
+    await handler(req, res);
+    // CCC has rsr / emsPercentile / estimateSpread = null in the cache — they must
+    // stay null, NOT coerce to 0 (Number(null) === 0), which would pollute the
+    // forward stats, mis-mark a standout, and defeat the nulls-last sort.
+    const ccc = res.body.rows.find((r) => r.symbol === 'CCC');
+    expect(ccc.rsr).toBeNull();
+    expect(ccc.emsPercentile).toBeNull();
+    expect(ccc.estimateSpread).toBeNull();
+    expect(ccc.consensusGrowthNextYear).toBeNull();
+    // The digest stats therefore exclude the null name (count 2 of AAA/BBB, not 3).
+    expect(res.body.digest.forward.rsr.count).toBe(2);
+    expect(res.body.digest.forward.emsPercentile.count).toBe(2);
+    expect(res.body.digest.forward.estimateSpread.count).toBe(2);
+  });
+
   it('sorts the visible list by consensus growth (deterministic forward focus)', async () => {
     const fx = makeFirestore({ watchlistDocs: { 'wl-1': COMMITTED_WL } });
     activeFirestore = fx.db;
