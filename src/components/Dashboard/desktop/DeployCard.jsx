@@ -12,7 +12,7 @@ import { Zap } from 'lucide-react';
 import { CMD, alpha, readableOn, Mono } from '../commandUI';
 import { getArchetypeDisplayName } from '../../../data/archetypeDisplay';
 
-export default function DeployCard({ agent, accent, deploying, onDeploy, agentName }) {
+export default function DeployCard({ agent, accent, deploying, onDeploy, agentName, deployText }) {
   const archetype = getArchetypeDisplayName(agent?.archetype);
   const watchlist = agent?.equippedWatchlistName;
   const disabled = deploying || !agent;
@@ -44,7 +44,7 @@ export default function DeployCard({ agent, accent, deploying, onDeploy, agentNa
         }}
       >
         <Zap size={19} color={ink} fill={ink} />
-        <span style={{ letterSpacing: '-0.01em' }}>{deploying ? 'Deploying…' : 'Deploy'}</span>
+        <span style={{ letterSpacing: '-0.01em' }}>{deploying ? 'Deploying…' : deployText}</span>
       </motion.button>
     </div>
   );

@@ -1,11 +1,15 @@
 import React from 'react';
-import { Swords, Newspaper, Bot, Hammer, Search } from 'lucide-react';
+import { Swords, Newspaper, Trophy, Hammer, Search } from 'lucide-react';
 import { useTheme } from '../../contexts/ThemeContext';
+import { TOURNAMENT_TAB_ENABLED } from '../../config/featureFlags';
 
 const NAV_ITEMS = [
   { id: 'compete', label: 'Compete', icon: Swords, screen: 'dashboard', iconSize: 24 },
   { id: 'news', label: 'News', icon: Newspaper, screen: 'fantasytimes', iconSize: 24 },
-  { id: 'agent', label: 'Agent', icon: Bot, screen: 'agent', iconSize: 28 },
+  // The retired Agent Hub's slot — held by the flagged League tab (Closeout Spec §6).
+  ...(TOURNAMENT_TAB_ENABLED
+    ? [{ id: 'league', label: 'League', icon: Trophy, screen: 'league', iconSize: 24 }]
+    : []),
   { id: 'forge', label: 'Forge', icon: Hammer, screen: null, iconSize: 24 },
   { id: 'search', label: 'Search', icon: Search, screen: 'search', iconSize: 24 },
 ];
@@ -29,12 +33,8 @@ export default function BottomNav({ screen, setScreen, setShowForge, showForge }
   }
 
   const isActive = (item) => {
-    if (item.id === 'compete') return screen === 'dashboard';
-    if (item.id === 'news') return screen === 'fantasytimes';
-    if (item.id === 'agent') return screen === 'agent';
     if (item.id === 'forge') return showForge;
-    if (item.id === 'search') return screen === 'search';
-    return false;
+    return screen === item.screen;
   };
 
   const handlePress = (item) => {

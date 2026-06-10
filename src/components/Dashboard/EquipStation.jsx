@@ -1,11 +1,13 @@
 // src/components/Dashboard/EquipStation.jsx
 //
 // "02 · Equip" loadout bench — the prototype's two-column character-sheet
-// layout: a tall identity panel (orb + agent name + record) on the left, three
-// compact equipment slot rows on the right (Archetype, Watchlist, the open
-// dashed Rules slot). Cold-start = archetype + watchlist filled, one open rules
-// slot framed as a positive optional CTA. Tapping the identity panel opens the
-// agent's full profile; the archetype slot opens the six-card archetype picker.
+// layout: a tall identity panel (orb + agent name + record) on the left,
+// compact equipment slot rows on the right. Which slots render comes from the
+// shared getEquipSlots array (Archetype · Watchlist, plus Traits behind
+// TRAIT_SLOT_ENABLED) so the bench and the shell's slot-count label can't
+// disagree. Empty slots are framed as a positive optional CTA. Tapping the
+// identity panel opens the agent record sheet; the archetype slot opens the
+// six-card archetype picker.
 //
 // VISUAL PASS: layout + styling only. Equip logic, data, the watchlist/rule
 // services, the lock (agent.activeBattleId), and the pickers are unchanged.
@@ -25,6 +27,7 @@ import { equipWatchlist, unequipWatchlist } from '../../services/agentService';
 import { getArchetypeDisplayName } from '../../data/archetypeDisplay';
 import { getArchetypeIdentity } from '../../data/archetypeIdentity';
 import { getTraitSlotSummary } from '../../utils/traitSlotSummary';
+import { getEquipSlots } from '../../utils/equipSlots';
 
 function tickerLabel(tickers) {
   const syms = (tickers || [])
@@ -100,9 +103,11 @@ function Slot({ filled, icon, catColor, label, name, sub, locked, onClick }) {
 
 // ─── Equip station ───────────────────────────────────────────────────────────
 
-export default function EquipStation({ agent, accent, onOpenAgent, setShowForge }) {
+export default function EquipStation({ agent, accent, onOpenAgentRecord, setShowForge }) {
   const agentId = agent?.id;
   const benchLocked = Boolean(agent?.activeBattleId);
+  // Which slots render (and the shell's "n/m slots" label) — one shared array.
+  const slots = getEquipSlots(agent);
 
   // Which picker is open: null | 'archetype' | 'watchlist' | 'traits'
   // ('rules' / RuleBundlePicker is retained but dormant — see below.)
@@ -192,15 +197,15 @@ export default function EquipStation({ agent, accent, onOpenAgent, setShowForge 
     <>
       {/* two-column bench: identity panel + stacked slot rows */}
       <div style={{ display: 'flex', gap: 14, alignItems: 'stretch' }}>
-        {/* identity panel — tap → agent profile */}
+        {/* identity panel — tap → agent record sheet */}
         <div
-          onClick={onOpenAgent}
-          role={onOpenAgent ? 'button' : undefined}
-          aria-label={onOpenAgent ? 'Open agent profile' : undefined}
+          onClick={onOpenAgentRecord}
+          role={onOpenAgentRecord ? 'button' : undefined}
+          aria-label={onOpenAgentRecord ? 'Open agent record' : undefined}
           style={{
             width: 92, flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
             gap: 9, padding: '14px 6px', borderRadius: 16, background: CMD.surface, border: `1px solid ${CMD.hair}`,
-            cursor: onOpenAgent ? 'pointer' : 'default',
+            cursor: onOpenAgentRecord ? 'pointer' : 'default',
           }}
         >
           <AgentOrb state={benchLocked ? 'live' : 'ready'} size={56} color={accent} />
@@ -210,50 +215,65 @@ export default function EquipStation({ agent, accent, onOpenAgent, setShowForge 
           </div>
         </div>
 
-        {/* equipment rows */}
+        {/* equipment rows — rendered from the shared slot array */}
         <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {/* Archetype — tap opens the six-card picker (battle-locked like the other slots) */}
-          <Slot
-            filled
-            icon={<Sparkles size={17} color={accent} />}
-            catColor={accent}
-            label="Archetype"
-            name={archetypeName}
-            sub={disposition}
-            locked={benchLocked}
-            onClick={() => setSheet('archetype')}
-          />
-
-          {/* Watchlist */}
-          <Slot
-            filled={Boolean(equippedWatchlistId)}
-            icon={<Target size={17} color={CMD.teal} />}
-            catColor={CMD.teal}
-            label="Watchlist"
-            name={equippedWatchlistId
-              ? `${watchlistName || 'Watchlist'}${watchlistUnavailable ? ' (unavailable)' : ''}`
-              : 'Add watchlist'}
-            sub={equippedWatchlistId && equippedWatchlist ? tickerLabel(equippedWatchlist.tickers) : 'Optional · priority opportunities'}
-            locked={benchLocked}
-            onClick={() => setSheet('watchlist')}
-          />
-
-          {/* Traits — equip-only DNA surface (replaces the old rule-bundle slot) */}
-          <Slot
-            filled={traitSlot.equipped}
-            icon={<Dna size={17} color={CMD.gold} />}
-            catColor={CMD.gold}
-            label="Traits"
-            name={traitSlot.name}
-            sub={traitSlot.sub}
-            locked={benchLocked}
-            onClick={() => { setTraitsEpoch((e) => e + 1); setSheet('traits'); }}
-          />
+          {slots.map((slot) => {
+            switch (slot.id) {
+              case 'archetype':
+                // Archetype — tap opens the six-card picker (battle-locked like the other slots)
+                return (
+                  <Slot
+                    key={slot.id}
+                    filled={slot.filled}
+                    icon={<Sparkles size={17} color={accent} />}
+                    catColor={accent}
+                    label="Archetype"
+                    name={archetypeName}
+                    sub={disposition}
+                    locked={benchLocked}
+                    onClick={() => setSheet('archetype')}
+                  />
+                );
+              case 'watchlist':
+                return (
+                  <Slot
+                    key={slot.id}
+                    filled={slot.filled}
+                    icon={<Target size={17} color={CMD.teal} />}
+                    catColor={CMD.teal}
+                    label="Watchlist"
+                    name={equippedWatchlistId
+                      ? `${watchlistName || 'Watchlist'}${watchlistUnavailable ? ' (unavailable)' : ''}`
+                      : 'Add watchlist'}
+                    sub={equippedWatchlistId && equippedWatchlist ? tickerLabel(equippedWatchlist.tickers) : 'Optional · priority opportunities'}
+                    locked={benchLocked}
+                    onClick={() => setSheet('watchlist')}
+                  />
+                );
+              case 'traits':
+                // Traits — equip-only DNA surface, off at launch (TRAIT_SLOT_ENABLED)
+                return (
+                  <Slot
+                    key={slot.id}
+                    filled={slot.filled}
+                    icon={<Dna size={17} color={CMD.gold} />}
+                    catColor={CMD.gold}
+                    label="Traits"
+                    name={traitSlot.name}
+                    sub={traitSlot.sub}
+                    locked={benchLocked}
+                    onClick={() => { setTraitsEpoch((e) => e + 1); setSheet('traits'); }}
+                  />
+                );
+              default:
+                return null;
+            }
+          })}
         </div>
       </div>
 
       {/* reassurance — never a requirement */}
-      {!traitSlot.equipped && !benchLocked && (
+      {slots.some((s) => !s.filled) && !benchLocked && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 10 }}>
           <Sparkles size={12} color={accent} />
           <div style={{ fontSize: 11.5, color: CMD.ink3 }}>One open slot — a chance to arm {agentName}, not a requirement. Deploy works now.</div>

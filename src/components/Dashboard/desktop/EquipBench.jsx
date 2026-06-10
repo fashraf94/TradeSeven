@@ -1,8 +1,10 @@
 // src/components/Dashboard/desktop/EquipBench.jsx
 //
-// Center column · "02 · Equip" — the desktop loadout bench. Three slots laid out
-// as a horizontal row (Archetype · Watchlist · Rules). Identity lives in the
-// left IdentityPanel, so this bench carries no orb/name (unlike the mobile
+// Center column · "02 · Equip" — the desktop loadout bench. Slots laid out as
+// a horizontal row; which slots render comes from the shared getEquipSlots
+// array (Archetype · Watchlist, plus Traits behind TRAIT_SLOT_ENABLED) so the
+// bench and its slot-count label can't disagree. Identity lives in the left
+// IdentityPanel, so this bench carries no orb/name (unlike the mobile
 // EquipStation's character-sheet). Wiring is identical to EquipStation: forged
 // bundles via useForge, committed watchlists via the watchlist services,
 // equip/unequip via the existing agentService + forge paths. The pickers
@@ -23,6 +25,7 @@ import { equipWatchlist, unequipWatchlist } from '../../../services/agentService
 import { getArchetypeDisplayName } from '../../../data/archetypeDisplay';
 import { getArchetypeIdentity } from '../../../data/archetypeIdentity';
 import { getTraitSlotSummary } from '../../../utils/traitSlotSummary';
+import { getEquipSlots } from '../../../utils/equipSlots';
 
 function tickerLabel(tickers) {
   const syms = (tickers || [])
@@ -83,6 +86,8 @@ function RowSlot({ filled, icon, catColor, label, name, sub, locked, onClick }) 
 export default function EquipBench({ agent, accent, setShowForge, isLive }) {
   const agentId = agent?.id;
   const benchLocked = Boolean(agent?.activeBattleId);
+  // Which slots render (and the "n/m slots" label) — one shared array.
+  const slots = getEquipSlots(agent);
 
   // Which picker is open: null | 'archetype' | 'watchlist' | 'traits'
   // ('rules' / RuleBundlePicker is retained but dormant — see below.)
@@ -133,12 +138,6 @@ export default function EquipBench({ agent, accent, setShowForge, isLive }) {
   const agentName = agent?.name || 'Your agent';
   const archetypeName = getArchetypeDisplayName(agent?.archetype);
   const disposition = getArchetypeIdentity(agent?.archetype).disposition;
-  // Count slots from the agent doc — byte-for-byte the mobile CommandDashboard
-  // equippedCount formula (the third slot now counts equipped traits, not bundles),
-  // so the "n/3 slots" reads identically on desktop and mobile.
-  const equippedCount = 1
-    + (agent?.equippedWatchlistId ? 1 : 0)
-    + ((agent?.equippedTraits?.length || 0) > 0 ? 1 : 0);
 
   // ── Equip handlers ───────────────────────────────────────────────────────
   const handleEquipWatchlist = async (watchlistId) => {
@@ -176,49 +175,66 @@ export default function EquipBench({ agent, accent, setShowForge, isLive }) {
         n="02"
         label={isLive ? 'Equip · locked in battle' : 'Equip · loadout bench'}
         color={isLive ? CMD.ink3 : accent}
-        right={<Mono style={{ fontSize: 10.5, color: CMD.ink3 }}>{equippedCount}/3 slots</Mono>}
+        right={<Mono style={{ fontSize: 10.5, color: CMD.ink3 }}>{slots.filter((s) => s.filled).length}/{slots.length} slots</Mono>}
       />
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 9 }}>
-        {/* Archetype — tap opens the six-card picker (battle-locked like the other slots) */}
-        <RowSlot
-          filled
-          icon={<Sparkles size={17} color={accent} />}
-          catColor={accent}
-          label="Archetype"
-          name={archetypeName}
-          sub={disposition}
-          locked={benchLocked}
-          onClick={() => setSheet('archetype')}
-        />
-        {/* Watchlist */}
-        <RowSlot
-          filled={Boolean(equippedWatchlistId)}
-          icon={<Target size={17} color={CMD.teal} />}
-          catColor={CMD.teal}
-          label="Watchlist"
-          name={equippedWatchlistId
-            ? `${watchlistName || 'Watchlist'}${watchlistUnavailable ? ' (unavailable)' : ''}`
-            : 'Add watchlist'}
-          sub={equippedWatchlistId && equippedWatchlist ? tickerLabel(equippedWatchlist.tickers) : 'Optional · priority opportunities'}
-          locked={benchLocked}
-          onClick={() => setSheet('watchlist')}
-        />
-        {/* Traits — equip-only DNA surface (replaces the old rule-bundle slot) */}
-        <RowSlot
-          filled={traitSlot.equipped}
-          icon={<Dna size={17} color={CMD.gold} />}
-          catColor={CMD.gold}
-          label="Traits"
-          name={traitSlot.name}
-          sub={traitSlot.sub}
-          locked={benchLocked}
-          onClick={() => { setTraitsEpoch((e) => e + 1); setSheet('traits'); }}
-        />
+      <div style={{ display: 'grid', gridTemplateColumns: `repeat(${slots.length}, 1fr)`, gap: 9 }}>
+        {slots.map((slot) => {
+          switch (slot.id) {
+            case 'archetype':
+              // Archetype — tap opens the six-card picker (battle-locked like the other slots)
+              return (
+                <RowSlot
+                  key={slot.id}
+                  filled={slot.filled}
+                  icon={<Sparkles size={17} color={accent} />}
+                  catColor={accent}
+                  label="Archetype"
+                  name={archetypeName}
+                  sub={disposition}
+                  locked={benchLocked}
+                  onClick={() => setSheet('archetype')}
+                />
+              );
+            case 'watchlist':
+              return (
+                <RowSlot
+                  key={slot.id}
+                  filled={slot.filled}
+                  icon={<Target size={17} color={CMD.teal} />}
+                  catColor={CMD.teal}
+                  label="Watchlist"
+                  name={equippedWatchlistId
+                    ? `${watchlistName || 'Watchlist'}${watchlistUnavailable ? ' (unavailable)' : ''}`
+                    : 'Add watchlist'}
+                  sub={equippedWatchlistId && equippedWatchlist ? tickerLabel(equippedWatchlist.tickers) : 'Optional · priority opportunities'}
+                  locked={benchLocked}
+                  onClick={() => setSheet('watchlist')}
+                />
+              );
+            case 'traits':
+              // Traits — equip-only DNA surface, off at launch (TRAIT_SLOT_ENABLED)
+              return (
+                <RowSlot
+                  key={slot.id}
+                  filled={slot.filled}
+                  icon={<Dna size={17} color={CMD.gold} />}
+                  catColor={CMD.gold}
+                  label="Traits"
+                  name={traitSlot.name}
+                  sub={traitSlot.sub}
+                  locked={benchLocked}
+                  onClick={() => { setTraitsEpoch((e) => e + 1); setSheet('traits'); }}
+                />
+              );
+            default:
+              return null;
+          }
+        })}
       </div>
 
       {/* reassurance — never a requirement */}
-      {!traitSlot.equipped && !benchLocked && (
+      {slots.some((s) => !s.filled) && !benchLocked && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 10 }}>
           <Sparkles size={12} color={accent} />
           <div style={{ fontSize: 11.5, color: CMD.ink3 }}>One open slot — a chance to arm {agentName}, not a requirement. Deploy works now.</div>

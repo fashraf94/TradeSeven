@@ -23,6 +23,7 @@ import useRecentCompletedAgentBattles from '../../hooks/useRecentCompletedAgentB
 import { deployAgent } from '../../services/agentDeploy';
 import ManageStation from './ManageStation';
 import ReviewStation from './ReviewStation';
+import AgentRecordSheet from './AgentRecordSheet';
 import DeskLoopRail from './desktop/DeskLoopRail';
 import IdentityPanel from './desktop/IdentityPanel';
 import ReadColumn from './desktop/ReadColumn';
@@ -64,8 +65,8 @@ export default function CommandDashboardDesktop({
   onOpenAgentBattle,
 }) {
   // Resolve the agent by ownerId === odUserId — the same key the mobile
-  // CommandDashboard uses (NOT user.uid, which keys a different path).
-  const { agent, record, winRate, levelConfig, nextLevelInfo } = useAgent(user?.odUserId);
+  // CommandDashboard uses.
+  const { agent, loading: agentLoading, record, winRate, levelConfig, nextLevelInfo, deployText } = useAgent(user?.odUserId);
 
   // The user-picked primaryColor supersedes the Haiku avatarColors.
   const accent = agent?.primaryColor || agent?.avatarColors?.[0] || CMD.teal;
@@ -80,6 +81,7 @@ export default function CommandDashboardDesktop({
   const activeStage = isLive ? 'manage' : 'read';
 
   const [deploying, setDeploying] = useState(false);
+  const [recordOpen, setRecordOpen] = useState(false);
   const deployDisabled = deploying || isLive || !agent;
   const handleDeploy = async () => {
     if (deployDisabled) return;
@@ -92,7 +94,7 @@ export default function CommandDashboardDesktop({
     setDeploying(false);
   };
   const openFilmRoom = (battle) => { setCurrentBattle?.(battle); setScreen?.('filmRoom'); };
-  const openAgent = () => setScreen?.('agent');
+  const openAgentRecord = () => setRecordOpen(true);
 
   const colScroll = { minHeight: 0, overflowY: 'auto', overflowX: 'hidden' };
 
@@ -165,6 +167,7 @@ export default function CommandDashboardDesktop({
             winRate={winRate}
             levelConfig={levelConfig}
             nextLevelInfo={nextLevelInfo}
+            onOpenRecord={openAgentRecord}
           />
         </div>
 
@@ -173,7 +176,7 @@ export default function CommandDashboardDesktop({
           <ReadColumn
             accent={accent}
             agentName={agentName}
-            onOpenAgent={openAgent}
+            onOpenAgentRecord={openAgentRecord}
             onDeploy={handleDeploy}
             deployDisabled={deployDisabled}
             deploying={deploying}
@@ -191,6 +194,7 @@ export default function CommandDashboardDesktop({
                 deploying={deploying}
                 onDeploy={handleDeploy}
                 agentName={agentName}
+                deployText={deployText}
               />
             </div>
           )}
@@ -221,6 +225,17 @@ export default function CommandDashboardDesktop({
           </div>
         </div>
       </div>
+
+      <AgentRecordSheet
+        open={recordOpen}
+        onClose={() => setRecordOpen(false)}
+        agent={agent}
+        loading={agentLoading}
+        accent={accent}
+        levelConfig={levelConfig}
+        nextLevelInfo={nextLevelInfo}
+        dock="center"
+      />
     </div>
   );
 }

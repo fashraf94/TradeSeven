@@ -19,6 +19,8 @@ import { motion } from 'framer-motion';
 import { Menu, Trophy, Zap, MessageCircle, ChevronRight } from 'lucide-react';
 import AgentOrb from '../shared/AgentOrb';
 import EquipStation from './EquipStation';
+import AgentRecordSheet from './AgentRecordSheet';
+import EvolutionPreviewCard from './EvolutionPreviewCard';
 import DeployStation from './DeployStation';
 import ManageStation from './ManageStation';
 import ReviewStation from './ReviewStation';
@@ -27,6 +29,7 @@ import useAgent from '../../hooks/useAgent';
 import useDailyRegimeBrief from '../../hooks/useDailyRegimeBrief';
 import useRecentCompletedAgentBattles from '../../hooks/useRecentCompletedAgentBattles';
 import { deployAgent } from '../../services/agentDeploy';
+import { getEquipSlotCounts } from '../../utils/equipSlots';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -104,7 +107,7 @@ export default function CommandDashboard({
   onCreateAgentBattle,
   onOpenAgentBattle,
 }) {
-  const { agent } = useAgent(user?.odUserId);
+  const { agent, loading: agentLoading, levelConfig, nextLevelInfo, deployText } = useAgent(user?.odUserId);
   const drb = useDailyRegimeBrief();
 
   // The user-picked primaryColor supersedes the Haiku avatarColors.
@@ -119,11 +122,11 @@ export default function CommandDashboard({
   const recentCompleted = useRecentCompletedAgentBattles(3);
   const activeStage = isLive ? 'manage' : 'read';
 
-  const equippedCount = 1
-    + (agent?.equippedWatchlistId ? 1 : 0)
-    + ((agent?.equippedTraits?.length || 0) > 0 ? 1 : 0);
+  // "n/m slots" — derived from the same slot array EquipStation renders.
+  const slotCounts = getEquipSlotCounts(agent);
 
   const [deploying, setDeploying] = useState(false);
+  const [recordOpen, setRecordOpen] = useState(false);
   const deployDisabled = deploying || isLive || !agent;
   const handleDeploy = async () => {
     if (deployDisabled) return;
@@ -225,11 +228,11 @@ export default function CommandDashboard({
             background: `linear-gradient(180deg, ${alpha(accent, 0.1)}, ${alpha(accent, 0.02)} 62%, ${CMD.surface})`,
             border: `1px solid ${alpha(accent, 0.26)}`, boxShadow: `inset 0 1px 0 ${alpha(accent, 0.07)}`,
           }}>
-            {/* orb anchor + activity label — tap → agent profile */}
+            {/* orb anchor + activity label — tap → agent record sheet */}
             <div
-              onClick={() => setScreen?.('agent')}
+              onClick={() => setRecordOpen(true)}
               role="button"
-              aria-label="Open agent profile"
+              aria-label="Open agent record"
               style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12, cursor: 'pointer' }}
             >
               <AgentOrb state={orbState} size={32} color={accent} />
@@ -322,16 +325,16 @@ export default function CommandDashboard({
             n="02"
             label={isLive ? 'Equip · locked in battle' : 'Equip · loadout bench'}
             color={isLive ? CMD.ink3 : accent}
-            right={<Mono style={{ fontSize: 10.5, color: CMD.ink3 }}>{equippedCount}/3 slots</Mono>}
+            right={<Mono style={{ fontSize: 10.5, color: CMD.ink3 }}>{slotCounts.filled}/{slotCounts.total} slots</Mono>}
           />
-          <EquipStation agent={agent} accent={accent} onOpenAgent={() => setScreen?.('agent')} setShowForge={setShowForge} />
+          <EquipStation agent={agent} accent={accent} onOpenAgentRecord={() => setRecordOpen(true)} setShowForge={setShowForge} />
         </motion.div>
 
         {/* ── 03 · DEPLOY  /  04 · MANAGE (when live) ────────────────────── */}
         {!isLive ? (
           <motion.div variants={sectionVariants}>
             <SectionLabel n="03" label="Deploy" color={accent} />
-            <DeployStation agent={agent} accent={accent} deploying={deploying} onDeploy={handleDeploy} />
+            <DeployStation agent={agent} accent={accent} deploying={deploying} onDeploy={handleDeploy} deployText={deployText} />
           </motion.div>
         ) : (
           <motion.div variants={sectionVariants}>
@@ -348,11 +351,26 @@ export default function CommandDashboard({
           </motion.div>
         )}
 
+        {/* ── Evolution preview — the loop's closing beat, after Review ──── */}
+        <motion.div variants={sectionVariants}>
+          <EvolutionPreviewCard agent={agent} accent={accent} onOpenRecord={() => setRecordOpen(true)} />
+        </motion.div>
+
         {/* footer */}
         <motion.div variants={sectionVariants} style={{ textAlign: 'center', paddingTop: 4 }}>
           <Mono style={{ fontSize: 9.5, letterSpacing: '0.18em', color: CMD.ink3, textTransform: 'uppercase' }}>Read → Equip → Deploy → Manage → Review</Mono>
         </motion.div>
       </motion.div>
+
+      <AgentRecordSheet
+        open={recordOpen}
+        onClose={() => setRecordOpen(false)}
+        agent={agent}
+        loading={agentLoading}
+        accent={accent}
+        levelConfig={levelConfig}
+        nextLevelInfo={nextLevelInfo}
+      />
     </div>
   );
 }

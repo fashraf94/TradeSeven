@@ -1,7 +1,7 @@
 // src/services/agentDeploy.js
 //
-// Shared agent-deploy sequence, extracted so the Agent tab (AgentDashboard) and
-// the Command Dashboard call an IDENTICAL path:
+// Shared agent-deploy sequence — every Command Dashboard deploy CTA (mobile
+// and desktop; originally also the retired Agent Hub) calls an IDENTICAL path:
 //   POST /api/agent/decide  →  onCreateAgentBattle(portfolio, bench, meta)
 // where onCreateAgentBattle is App.jsx's handleCreateAgentTrainingBattle, which
 // builds the in-memory battle and routes to the Battle View.

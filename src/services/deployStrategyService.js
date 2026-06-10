@@ -7,7 +7,7 @@
 // BaggerBomb prompt assembly (agentEvalPromptAssembly.js reads
 // ctx.activeRules directly). On top of that, this service writes a
 // `deployedStrategy` metadata object onto the agent doc for:
-//   * UI display (ForgeLanding DeployedStrategyCard)
+//   * UI display (ForgeLanding deployed-strategy banner)
 //   * Phase 4B hybrid-execution guardrail enforcement
 //
 // Fire-and-forget shadow logger writes to the `deployEvents` Firestore

@@ -3,13 +3,17 @@
 // Supports collapsed (64px, icons only) and expanded (220px, full labels) states
 
 import React, { useState } from 'react';
-import { Swords, Newspaper, Hammer, Clock, Settings, Flame, Bot, PanelLeftClose, PanelLeftOpen, LogOut, Search } from 'lucide-react';
+import { Swords, Newspaper, Hammer, Clock, Settings, Flame, Trophy, PanelLeftClose, PanelLeftOpen, LogOut, Search } from 'lucide-react';
 import { useTheme } from '../../contexts/ThemeContext';
+import { TOURNAMENT_TAB_ENABLED } from '../../config/featureFlags';
 
 const NAV_ITEMS = [
   { id: 'compete', label: 'Compete', Icon: Swords, screen: 'dashboard' },
   { id: 'news', label: 'News', Icon: Newspaper, screen: 'fantasytimes' },
-  { id: 'agent', label: 'Agent', Icon: Bot, screen: 'agent' },
+  // The retired Agent Hub's slot — held by the flagged League tab (Closeout Spec §6).
+  ...(TOURNAMENT_TAB_ENABLED
+    ? [{ id: 'league', label: 'League', Icon: Trophy, screen: 'league' }]
+    : []),
   { id: 'forge', label: 'Forge', Icon: Hammer, screen: null },
   { id: 'search', label: 'Search', Icon: Search, screen: 'search' },
   { id: 'history', label: 'History', Icon: Clock, screen: 'battleHistory' },
