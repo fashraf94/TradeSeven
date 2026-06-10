@@ -8,6 +8,7 @@
 // denominators). No React, no Firestore — unit-tested in equipSlots.test.js.
 
 import { TRAIT_SLOT_ENABLED } from '../config/featureFlags';
+import { getTraitSlotSummary } from './traitSlotSummary';
 
 /**
  * @param {Object|null} agent - the agent doc (reads equippedWatchlistId,
@@ -21,7 +22,7 @@ export function getEquipSlots(agent) {
     { id: 'archetype', filled: true },
     { id: 'watchlist', filled: Boolean(agent?.equippedWatchlistId) },
     ...(TRAIT_SLOT_ENABLED
-      ? [{ id: 'traits', filled: (agent?.equippedTraits?.length || 0) > 0 }]
+      ? [{ id: 'traits', filled: getTraitSlotSummary(agent).equipped }]
       : []),
   ];
 }
