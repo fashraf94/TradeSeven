@@ -109,9 +109,10 @@ import DashboardLoop from './components/Dashboard/DashboardLoop';
 import DashboardDesktop from './components/Dashboard/DashboardDesktop';
 import CommandDashboard from './components/Dashboard/CommandDashboard';
 import CommandDashboardDesktop from './components/Dashboard/CommandDashboardDesktop';
-import { COMMAND_DASHBOARD_ENABLED, COMMAND_DASHBOARD_DESKTOP_ENABLED } from './config/featureFlags';
+import { COMMAND_DASHBOARD_ENABLED, COMMAND_DASHBOARD_DESKTOP_ENABLED, TOURNAMENT_TAB_ENABLED } from './config/featureFlags';
 import DesktopSidebar from './components/Navigation/DesktopSidebar';
-import { AgentDashboard, OnboardingExperience } from './components/Agent';
+import { OnboardingExperience } from './components/Agent';
+import LeagueScreen from './screens/LeagueScreen';
 import AppLoadingScreen from './components/shared/AppLoadingScreen';
 import { ForgeScreen } from './components/Forge';
 import ForgeWorkshop from './components/Forge/workshop/ForgeWorkshop';
@@ -6560,9 +6561,6 @@ export default function PortfolioDuel() {
     setScreen(story.type === 'deepdive' ? 'deepDive' : 'storyDetail');
   };
 
-  // AGENT HUB: OPEN A FANTASY TIMES STORY FROM A HUB TILE
-  const handleOpenAgentStory = (story) => handleStorySelect(story);
-
   // ============================================
   // BAGGERBOMB TRAINING V4: CREATE V4 TRAINING BATTLE (No Bench, 1 Swap, 1 Day)
   // ============================================
@@ -9550,19 +9548,13 @@ export default function PortfolioDuel() {
     );
   }
 
-  // AGENT DASHBOARD
-  if (screen === 'agent') {
+  // LEAGUE (provisional) — flag-gated placeholder in the retired Agent Hub's slot.
+  // With the flag off, 'league' is unreachable: the nav items are its only setters.
+  if (TOURNAMENT_TAB_ENABLED && screen === 'league') {
     return (
       <div style={{ marginLeft: isDesktop ? (sidebarCollapsed ? '64px' : '220px') : 0, transition: 'margin-left 0.2s ease' }}>
-      <ErrorBoundary name="Agent Dashboard" onNavigateDashboard={() => setScreen('dashboard')}>
-        <AgentDashboard
-          user={user}
-          setScreen={setScreen}
-          onCreateAgentBattle={handleCreateAgentTrainingBattle}
-          setShowForge={setShowForge}
-          onOpenAgentBattle={handleOpenAgentBattle}
-          onOpenStory={handleOpenAgentStory}
-        />
+      <ErrorBoundary name="League" onNavigateDashboard={() => setScreen('dashboard')}>
+        <LeagueScreen />
       </ErrorBoundary>
       </div>
     );

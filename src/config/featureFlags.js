@@ -49,3 +49,15 @@ export const COMMAND_DASHBOARD_DESKTOP_ENABLED = true;
  * and signed off. See FORGE_ENFORCEMENT_KEYSTONE_SPEC and the Phase 3 audit.
  */
 export const FORGE_HARDSOFT_AUTHORING_ENABLED = false;
+
+/**
+ * League — the provisional tournament tab occupying the retired Agent Hub's
+ * nav slot (Closeout Spec V1.1 §6).
+ *
+ * When false, the slot is hidden entirely (4-item bottom nav, 6-item desktop
+ * sidebar) and the 'league' route is gated away — the screen id is unreachable
+ * since the nav items are its only setters. When true, a provisional "League"
+ * tab (Trophy icon) renders the placeholder LeagueScreen. Flip when the League
+ * Tournament surface is real.
+ */
+export const TOURNAMENT_TAB_ENABLED = false;
