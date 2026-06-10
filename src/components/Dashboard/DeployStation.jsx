@@ -33,7 +33,7 @@ export default function DeployStation({ agent, accent, deploying, onDeploy, depl
         }}
       >
         <Zap size={19} color={ink} fill={ink} />
-        <span style={{ letterSpacing: '-0.01em' }}>{deploying ? 'Deploying…' : (deployText || 'Deploy agent')}</span>
+        <span style={{ letterSpacing: '-0.01em' }}>{deploying ? 'Deploying…' : deployText}</span>
       </motion.button>
 
       <div style={{ display: 'flex', justifyContent: 'center', marginTop: 10 }}>

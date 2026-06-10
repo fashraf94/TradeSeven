@@ -105,7 +105,7 @@ export default function CommandDashboard({
   onCreateAgentBattle,
   onOpenAgentBattle,
 }) {
-  const { agent, levelConfig, nextLevelInfo, deployText } = useAgent(user?.odUserId);
+  const { agent, loading: agentLoading, levelConfig, nextLevelInfo, deployText } = useAgent(user?.odUserId);
   const drb = useDailyRegimeBrief();
 
   // The user-picked primaryColor supersedes the Haiku avatarColors.
@@ -326,7 +326,7 @@ export default function CommandDashboard({
             color={isLive ? CMD.ink3 : accent}
             right={<Mono style={{ fontSize: 10.5, color: CMD.ink3 }}>{equippedCount}/3 slots</Mono>}
           />
-          <EquipStation agent={agent} accent={accent} onOpenAgent={() => setRecordOpen(true)} setShowForge={setShowForge} />
+          <EquipStation agent={agent} accent={accent} onOpenAgentRecord={() => setRecordOpen(true)} setShowForge={setShowForge} />
         </motion.div>
 
         {/* ── 03 · DEPLOY  /  04 · MANAGE (when live) ────────────────────── */}
@@ -360,6 +360,7 @@ export default function CommandDashboard({
         open={recordOpen}
         onClose={() => setRecordOpen(false)}
         agent={agent}
+        loading={agentLoading}
         accent={accent}
         levelConfig={levelConfig}
         nextLevelInfo={nextLevelInfo}

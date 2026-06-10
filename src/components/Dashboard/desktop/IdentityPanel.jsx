@@ -18,6 +18,7 @@ import AgentOrb from '../../shared/AgentOrb';
 import { CMD, alpha, Eyebrow, Mono } from '../commandUI';
 import { getArchetypeDisplayName } from '../../../data/archetypeDisplay';
 import { getArchetypeIdentity } from '../../../data/archetypeIdentity';
+import { getLevelProgressPct } from '../../../constants/agentProgression';
 
 function Tag({ children, color }) {
   return (
@@ -47,13 +48,10 @@ export default function IdentityPanel({ agent, accent, live, record, winRate, le
   ];
 
   // Rank progress = position within the current level's games band.
-  let rankPct = 100;
-  let rankTo = `${levelLabel} · Max level`;
-  if (nextLevelInfo && levelConfig) {
-    const band = (levelConfig.maxGames + 1) - levelConfig.minGames;
-    rankPct = band > 0 ? Math.max(0, Math.min(100, ((games - levelConfig.minGames) / band) * 100)) : 0;
-    rankTo = `${levelLabel} → ${nextLevelInfo.label}`;
-  }
+  const rankPct = getLevelProgressPct(games);
+  const rankTo = nextLevelInfo
+    ? `${levelLabel} → ${nextLevelInfo.label}`
+    : `${levelLabel} · Max level`;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16, height: '100%' }}>

@@ -81,6 +81,18 @@ export function getNextLevelInfo(gamesPlayed) {
   };
 }
 
+// Rank-bar progress: position within the current level's inclusive games band
+// (the +1 keeps the bar short of full on the band's last game). 100 at the top
+// level, where maxGames is Infinity and there is no next level. Shared by the
+// desktop IdentityPanel and the AgentRecordSheet so the two bars can't drift.
+export function getLevelProgressPct(gamesPlayed = 0) {
+  const config = getLevelConfig(gamesPlayed);
+  if (!getNextLevelInfo(gamesPlayed)) return 100;
+  const band = (config.maxGames + 1) - config.minGames;
+  if (band <= 0) return 0;
+  return Math.max(0, Math.min(100, ((gamesPlayed - config.minGames) / band) * 100));
+}
+
 // TODO: Wire this into the level-up notification flow.
 // When agent.stats.gamesPlayed crosses a level threshold:
 // 1. Call getQueuedRulesForPromotion(agentRules, newLevel)

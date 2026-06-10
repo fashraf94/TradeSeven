@@ -9,11 +9,13 @@
 // Data flows entirely from the shell's existing useAgent subscription via
 // props — no queries or subscriptions in here. Timeline entries cover only the
 // event types with live writers: creation, consolidation cycles
-// (agent.evolutionTimeline[] with a legacy synthesized fallback), lessons, and
-// scored games. dock='bottom' renders the mobile spring sheet; dock='center'
-// the desktop modal.
+// (agent.evolutionTimeline[] with a legacy synthesized fallback), lessons,
+// scored games, and Forge strategy deploys. Drift/debrief entries stay out —
+// nothing writes archetypeDrift or result-less memory reflections today.
+// dock='bottom' renders the mobile spring sheet; dock='center' the desktop
+// modal.
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronDown, ChevronUp } from 'lucide-react';
 import AgentOrb from '../shared/AgentOrb';
@@ -21,6 +23,7 @@ import EquipSheet from './EquipSheet';
 import { CMD, alpha, Mono, Eyebrow } from './commandUI';
 import { getArchetypeDisplayName } from '../../data/archetypeDisplay';
 import { getArchetypeIdentity } from '../../data/archetypeIdentity';
+import { getLevelProgressPct } from '../../constants/agentProgression';
 
 // Wins keep the Hub's emerald — CMD reserves its red for downside, and draw
 // stays deliberately neutral so only real losses read as red.
@@ -172,27 +175,42 @@ const TimelineItem = ({ event, isLast, isExpanded, onToggleExpand }) => {
   );
 };
 
+// ── Timeline list — owns the expand state so closing the sheet (which
+// unmounts the body via EquipSheet's AnimatePresence) resets it for free.
+function RecordTimeline({ events }) {
+  const [expandedId, setExpandedId] = useState(null);
+  return (
+    <>
+      {events.map((event, i) => {
+        const key = event.eventId || `${event.type}_${i}`;
+        return (
+          <TimelineItem
+            key={key}
+            event={event}
+            isLast={i === events.length - 1}
+            isExpanded={expandedId === key}
+            onToggleExpand={() => setExpandedId(expandedId === key ? null : key)}
+          />
+        );
+      })}
+    </>
+  );
+}
+
 // ── Sheet ────────────────────────────────────────────────────────────────────
 
-export default function AgentRecordSheet({ open, onClose, agent, accent, levelConfig, nextLevelInfo, dock = 'bottom' }) {
-  const [expandedId, setExpandedId] = useState(null);
-  useEffect(() => { if (open) setExpandedId(null); }, [open]);
-
+export default function AgentRecordSheet({ open, onClose, agent, loading, accent, levelConfig, nextLevelInfo, dock = 'bottom' }) {
   const games = agent?.stats?.gamesPlayed ?? 0;
   const levelLabel = levelConfig?.label || 'Rookie';
   const levelColor = levelConfig?.color || CMD.ink3;
   const disposition = getArchetypeIdentity(agent?.archetype).disposition;
 
-  // Rank progress = position within the current level's games band (same math
-  // as the desktop IdentityPanel — Partner's maxGames is Infinity, so the
-  // no-next-level branch must stay the 100% / "Max level" fallback).
-  let rankPct = 100;
-  let rankLabel = 'Max level';
-  if (nextLevelInfo && levelConfig) {
-    const band = (levelConfig.maxGames + 1) - levelConfig.minGames;
-    rankPct = band > 0 ? Math.max(0, Math.min(100, ((games - levelConfig.minGames) / band) * 100)) : 0;
-    rankLabel = `${nextLevelInfo.gamesNeeded} game${nextLevelInfo.gamesNeeded !== 1 ? 's' : ''} to ${nextLevelInfo.label}`;
-  }
+  // Rank progress = position within the current level's games band (shared
+  // with the desktop IdentityPanel via getLevelProgressPct).
+  const rankPct = getLevelProgressPct(games);
+  const rankLabel = nextLevelInfo
+    ? `${nextLevelInfo.gamesNeeded} game${nextLevelInfo.gamesNeeded !== 1 ? 's' : ''} to ${nextLevelInfo.label}`
+    : 'Max level';
 
   // Timeline — only event types with live writers (Closeout Spec §3.2):
   // creation, consolidation cycles, lessons, scored games. Newest first.
@@ -265,14 +283,27 @@ export default function AgentRecordSheet({ open, onClose, agent, accent, levelCo
     (agent.memory || []).forEach(m => {
       if (!m.result) return;
       const resultLabel = m.result === 'win' ? 'Win' : m.result === 'draw' ? 'Draw' : 'Loss';
+      const scoreLabel = Number.isFinite(m.score) ? ` ${m.score > 0 ? '+' : ''}${m.score}` : '';
       events.push({
         type: 'game',
-        title: `${m.gameMode || 'Game'} — ${resultLabel} ${m.score > 0 ? '+' : ''}${m.score}`,
+        title: `${m.gameMode || 'Game'} — ${resultLabel}${scoreLabel}`,
         subtitle: m.lesson || '',
         date: parseDate(m.date),
         color: m.result === 'win' ? EMERALD : m.result === 'draw' ? CMD.ink2 : CMD.risk,
       });
     });
+
+    // Forge strategy deploy — written live by deployExperimentToAgent
+    // (Forge → DeployToAgent), single entry from deployedStrategy metadata.
+    if (agent.deployedStrategy?.deployedAt) {
+      events.push({
+        type: 'deploy',
+        title: 'Strategy Deployed',
+        subtitle: `"${agent.deployedStrategy.experimentName || 'Strategy'}" deployed from Forge`,
+        date: parseDate(agent.deployedStrategy.deployedAt),
+        color: EMERALD,
+      });
+    }
 
     return events.sort((a, b) => (b.date?.getTime?.() || 0) - (a.date?.getTime?.() || 0));
   }, [agent]);
@@ -289,11 +320,13 @@ export default function AgentRecordSheet({ open, onClose, agent, accent, levelCo
       dock={dock}
       accent={accent}
       title={agent?.name || 'Your agent'}
-      subtitle={`${getArchetypeDisplayName(agent?.archetype)} · ${levelLabel}`}
+      subtitle={agent ? `${getArchetypeDisplayName(agent.archetype)} · ${levelLabel}` : undefined}
     >
       {!agent ? (
         <div style={{ padding: '18px 8px', color: CMD.ink2, fontSize: 13, lineHeight: 1.5 }}>
-          Your agent’s record will appear here once your agent is created.
+          {loading
+            ? 'Loading your agent’s record…'
+            : 'Your agent’s record will appear here once your agent is created.'}
         </div>
       ) : (
         <div style={{
@@ -333,10 +366,19 @@ export default function AgentRecordSheet({ open, onClose, agent, accent, levelCo
                   {agent.consolidatedInsight}
                 </p>
               </div>
+            ) : games >= INSIGHTS_THRESHOLD ? (
+              <div style={card}>
+                <div style={{ fontSize: 13, color: CMD.ink, lineHeight: 1.5 }}>
+                  Consolidating your agent’s first strategic insight…
+                </div>
+                <div style={{ fontSize: 11, color: CMD.ink3, lineHeight: 1.5, marginTop: 7 }}>
+                  It lands after the next evolution cycle completes.
+                </div>
+              </div>
             ) : (
               <div style={card}>
                 <div style={{ fontSize: 13, color: CMD.ink, lineHeight: 1.5 }}>
-                  {Math.min(games, INSIGHTS_THRESHOLD)}/{INSIGHTS_THRESHOLD} games until first strategic insight
+                  {games}/{INSIGHTS_THRESHOLD} games until first strategic insight
                 </div>
                 <div style={{ height: 4, borderRadius: 4, background: CMD.hair, overflow: 'hidden', marginTop: 9 }}>
                   <div style={{
@@ -361,18 +403,7 @@ export default function AgentRecordSheet({ open, onClose, agent, accent, levelCo
               </div>
             ) : (
               <div style={card}>
-                {timelineEvents.map((event, i) => {
-                  const key = event.eventId || `${event.type}_${i}`;
-                  return (
-                    <TimelineItem
-                      key={key}
-                      event={event}
-                      isLast={i === timelineEvents.length - 1}
-                      isExpanded={expandedId === key}
-                      onToggleExpand={() => setExpandedId(expandedId === key ? null : key)}
-                    />
-                  );
-                })}
+                <RecordTimeline events={timelineEvents} />
               </div>
             )}
           </div>

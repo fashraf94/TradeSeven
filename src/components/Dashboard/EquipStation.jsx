@@ -100,7 +100,7 @@ function Slot({ filled, icon, catColor, label, name, sub, locked, onClick }) {
 
 // ─── Equip station ───────────────────────────────────────────────────────────
 
-export default function EquipStation({ agent, accent, onOpenAgent, setShowForge }) {
+export default function EquipStation({ agent, accent, onOpenAgentRecord, setShowForge }) {
   const agentId = agent?.id;
   const benchLocked = Boolean(agent?.activeBattleId);
 
@@ -194,13 +194,13 @@ export default function EquipStation({ agent, accent, onOpenAgent, setShowForge 
       <div style={{ display: 'flex', gap: 14, alignItems: 'stretch' }}>
         {/* identity panel — tap → agent record sheet */}
         <div
-          onClick={onOpenAgent}
-          role={onOpenAgent ? 'button' : undefined}
-          aria-label={onOpenAgent ? 'Open agent record' : undefined}
+          onClick={onOpenAgentRecord}
+          role={onOpenAgentRecord ? 'button' : undefined}
+          aria-label={onOpenAgentRecord ? 'Open agent record' : undefined}
           style={{
             width: 92, flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
             gap: 9, padding: '14px 6px', borderRadius: 16, background: CMD.surface, border: `1px solid ${CMD.hair}`,
-            cursor: onOpenAgent ? 'pointer' : 'default',
+            cursor: onOpenAgentRecord ? 'pointer' : 'default',
           }}
         >
           <AgentOrb state={benchLocked ? 'live' : 'ready'} size={56} color={accent} />

@@ -33,12 +33,8 @@ export default function BottomNav({ screen, setScreen, setShowForge, showForge }
   }
 
   const isActive = (item) => {
-    if (item.id === 'compete') return screen === 'dashboard';
-    if (item.id === 'news') return screen === 'fantasytimes';
-    if (item.id === 'league') return screen === 'league';
     if (item.id === 'forge') return showForge;
-    if (item.id === 'search') return screen === 'search';
-    return false;
+    return screen === item.screen;
   };
 
   const handlePress = (item) => {

@@ -26,7 +26,7 @@ function prettyDate(forDate) {
   }
 }
 
-export default function ReadColumn({ accent, agentName, onOpenAgent, onDeploy, deployDisabled, deploying, isLive }) {
+export default function ReadColumn({ accent, agentName, onOpenAgentRecord, onDeploy, deployDisabled, deploying, isLive }) {
   const drb = useDailyRegimeBrief();
 
   const [expanded, setExpanded] = useState(false);
@@ -63,7 +63,7 @@ export default function ReadColumn({ accent, agentName, onOpenAgent, onDeploy, d
       }}>
         {/* orb + activity — tap → agent record sheet */}
         <div
-          onClick={onOpenAgent}
+          onClick={onOpenAgentRecord}
           role="button"
           aria-label="Open agent record"
           style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12, cursor: 'pointer' }}

@@ -44,7 +44,7 @@ export default function DeployCard({ agent, accent, deploying, onDeploy, agentNa
         }}
       >
         <Zap size={19} color={ink} fill={ink} />
-        <span style={{ letterSpacing: '-0.01em' }}>{deploying ? 'Deploying…' : (deployText || 'Deploy')}</span>
+        <span style={{ letterSpacing: '-0.01em' }}>{deploying ? 'Deploying…' : deployText}</span>
       </motion.button>
     </div>
   );

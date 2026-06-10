@@ -66,7 +66,7 @@ export default function CommandDashboardDesktop({
 }) {
   // Resolve the agent by ownerId === odUserId — the same key the mobile
   // CommandDashboard uses.
-  const { agent, record, winRate, levelConfig, nextLevelInfo, deployText } = useAgent(user?.odUserId);
+  const { agent, loading: agentLoading, record, winRate, levelConfig, nextLevelInfo, deployText } = useAgent(user?.odUserId);
 
   // The user-picked primaryColor supersedes the Haiku avatarColors.
   const accent = agent?.primaryColor || agent?.avatarColors?.[0] || CMD.teal;
@@ -94,7 +94,7 @@ export default function CommandDashboardDesktop({
     setDeploying(false);
   };
   const openFilmRoom = (battle) => { setCurrentBattle?.(battle); setScreen?.('filmRoom'); };
-  const openAgent = () => setRecordOpen(true);
+  const openAgentRecord = () => setRecordOpen(true);
 
   const colScroll = { minHeight: 0, overflowY: 'auto', overflowX: 'hidden' };
 
@@ -175,7 +175,7 @@ export default function CommandDashboardDesktop({
           <ReadColumn
             accent={accent}
             agentName={agentName}
-            onOpenAgent={openAgent}
+            onOpenAgentRecord={openAgentRecord}
             onDeploy={handleDeploy}
             deployDisabled={deployDisabled}
             deploying={deploying}
@@ -229,6 +229,7 @@ export default function CommandDashboardDesktop({
         open={recordOpen}
         onClose={() => setRecordOpen(false)}
         agent={agent}
+        loading={agentLoading}
         accent={accent}
         levelConfig={levelConfig}
         nextLevelInfo={nextLevelInfo}
