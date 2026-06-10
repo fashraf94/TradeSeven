@@ -56,7 +56,7 @@
     },
     {
       "path": "/api/cron/process-draft-claims",
-      "schedule": "25 14 * * 1-5"
+      "schedule": "25 13,14 * * 1-5"
     },
     {
       "path": "/api/cron/compute-briefs",

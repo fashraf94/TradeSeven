@@ -1,8 +1,9 @@
 // api/cron/baggerbomb-v4-daily-scores.js
 // Banks daily scores for all active V4 BaggerBomb battles
-// Called by Vercel cron at 8:15 PM ET (01:15 UTC next day) Monday-Friday
+// Called by Vercel cron at 01:15 UTC Tue-Sat — Mon-Fri 8:15 PM ET during EST,
+// 9:15 PM ET during EDT; after the daily end either way.
 //
-// Schedule: 15 1 * * 2-6 (UTC: Tue-Sat 1:15 AM = Mon-Fri 8:15 PM ET)
+// Schedule: 15 1 * * 2-6 (vercel.json cron schedules are UTC)
 //
 // This cron job serves as a BACKUP to client-side recording:
 //   - Primary: Client detects daily end (8 PM ET) and banks via dailyScoringV4Service

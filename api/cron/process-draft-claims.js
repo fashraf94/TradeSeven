@@ -1,8 +1,14 @@
 // api/cron/process-draft-claims.js
-// Processes pending waiver claims for all active Snake Draft battles
-// Called by Vercel cron at 9:25 AM ET (14:25 UTC) Monday-Friday
+// Processes pending waiver claims for all active Snake Draft battles.
+// Target execution: 9:25 AM ET Mon-Fri — after the 9:24 AM ET client
+// submission cutoff, before the 9:30 AM ET market open.
 //
-// Schedule: 25 14 * * 1-5
+// Schedule: 25 13,14 * * 1-5 — fires at BOTH 13:25 and 14:25 UTC so that
+// exactly one firing lands at 9:25 AM ET under both EDT and EST (same
+// pattern as pre-market-warmup). getClaimProcessingWindow() gates the
+// handler to the 9:20-9:35 AM ET window; the off-DST firing exits early
+// with a skipped response. claimSystem.lastProcessedDay makes processing
+// idempotent per battle trading day.
 //
 // Processing flow:
 //   1. Fetch all battle drafts with claimSystem.enabled
@@ -54,6 +60,57 @@ function getFirebaseAdmin() {
 // ============================================
 // TIMEZONE & TRADING DAY HELPERS
 // ============================================
+
+const CLAIM_WINDOW_START_MIN = 9 * 60 + 20; // 9:20 AM ET
+const MARKET_OPEN_MIN = 9 * 60 + 30;        // 9:30 AM ET
+const CLAIM_WINDOW_END_MIN = 9 * 60 + 35;   // 9:35 AM ET (exclusive)
+
+/**
+ * DST-safe claim-window check. Converts a UTC instant to ET wall-clock via
+ * Intl.DateTimeFormat parts (no offset math, no Date-string re-parsing).
+ *
+ * The cron fires at both 13:25 and 14:25 UTC; exactly one of those lands at
+ * 9:25 AM ET in any season. This guard admits only the in-window firing.
+ *
+ * @param {Date} [now] - UTC instant; injectable for tests.
+ * @returns {{ inWindow: boolean, isPastOpen: boolean, etTime: string }}
+ *   inWindow:   9:20 <= t < 9:35 AM ET
+ *   isPastOpen: t >= 9:30 AM ET — execution still uses the stale pre-open
+ *               snapshot economics, but late landings should be visible
+ *   etTime:     'HH:MM' ET, for logging
+ */
+export function getClaimProcessingWindow(now = new Date()) {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York',
+    hourCycle: 'h23', // not hour12:false — h24 ICU locales render midnight as "24"
+    hour: '2-digit',
+    minute: '2-digit',
+  }).formatToParts(now);
+  const etHour = Number(parts.find(p => p.type === 'hour').value);
+  const etMinute = Number(parts.find(p => p.type === 'minute').value);
+  const minutes = etHour * 60 + etMinute;
+  return {
+    inWindow: minutes >= CLAIM_WINDOW_START_MIN && minutes < CLAIM_WINDOW_END_MIN,
+    isPastOpen: minutes >= MARKET_OPEN_MIN,
+    etTime: `${String(etHour).padStart(2, '0')}:${String(etMinute).padStart(2, '0')}`,
+  };
+}
+
+/**
+ * Idempotency read for claimSystem.lastProcessedDay (written below after each
+ * successful processing batch). claimSystem is initialized WITHOUT this field
+ * (src/services/draftService.js:534-538, api/cron/snake-draft-autopick.js:323-327),
+ * so it only exists once a day has been processed; the >= 1 carve-out is
+ * defensive against future shape changes pre-setting it to 0 (day 0 = battle
+ * not started, when no processing should be skipped on equality).
+ *
+ * @param {Object|undefined} claimSystem - draft.claimSystem
+ * @param {number} currentDay - per-battle trading day (0-5)
+ * @returns {boolean} true if this trading day was already processed
+ */
+export function isAlreadyProcessedForDay(claimSystem, currentDay) {
+  return currentDay >= 1 && claimSystem?.lastProcessedDay === currentDay;
+}
 
 function getEasternTime() {
   const now = new Date();
@@ -228,6 +285,19 @@ function calculateWaiverPriority(draft) {
  */
 async function processClaimsForDraft(db, draft) {
   const draftId = draft.id;
+
+  // Per-battle trading day, computed once — used for the idempotency check
+  // and reused for the processing log + lastProcessedDay write below.
+  const currentDay = getCurrentTradingDay(
+    draft.battleStartTime || draft.createdAt,
+    draft.battleStartDate
+  );
+
+  if (isAlreadyProcessedForDay(draft.claimSystem, currentDay)) {
+    logInfo(`Draft ${draftId}: claims already processed for day ${currentDay} — skipping`);
+    return { status: 'already_processed', day: currentDay, processed: 0 };
+  }
+
   const draftRef = db.collection('drafts').doc(draftId);
   const claimsRef = draftRef.collection('claims');
 
@@ -404,12 +474,6 @@ async function processClaimsForDraft(db, draft) {
     });
   }
 
-  // Determine the day number for the processing log
-  const currentDay = getCurrentTradingDay(
-    draft.battleStartTime || draft.createdAt,
-    draft.battleStartDate
-  );
-
   // Build processing log entry
   const logEntry = {
     day: currentDay,
@@ -457,6 +521,21 @@ export default async function handler(req, res) {
 
   const startTime = Date.now();
   logInfo('Starting claim processing cron job');
+
+  // DST guard: of the two daily firings (13:25 and 14:25 UTC), admit only
+  // the one that lands in the 9:20-9:35 AM ET claim window.
+  const win = getClaimProcessingWindow(new Date());
+  if (!win.inWindow) {
+    logInfo(`Outside 9:20-9:35 AM ET claim window (${win.etTime} ET) — skipping`);
+    return res.status(200).json({
+      skipped: true,
+      reason: 'not_claim_window',
+      etTime: win.etTime,
+    });
+  }
+  if (win.isPastOpen) {
+    logWarn(`Claim processing executing at/after the 9:30 AM ET open (${win.etTime} ET) — prices are the stale pre-open snapshot`);
+  }
 
   // Check if it's a trading day
   if (!isTradingDay()) {
