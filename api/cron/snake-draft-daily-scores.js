@@ -1,8 +1,10 @@
 // api/cron/snake-draft-daily-scores.js
 // Records daily close scores for all active Snake Draft battles
-// Called by Vercel cron at 4:15 PM ET (16:15 Eastern Time) Monday-Friday
+// Called by Vercel cron at 21:15 UTC Monday-Friday — 4:15 PM ET during EST,
+// 5:15 PM ET during EDT. Either way it runs after the 4:00 PM ET close,
+// which is all this backup recorder requires.
 //
-// Schedule: 15 16 * * 1-5 (UTC offset applied in vercel.json)
+// Schedule: 15 21 * * 1-5 (vercel.json cron schedules are UTC)
 //
 // This cron job serves as a BACKUP to client-side recording:
 //   - Primary: Client records scores when user opens app after market close

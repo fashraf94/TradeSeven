@@ -1,8 +1,11 @@
 // api/cron/agent-batch-review.js
 // End-of-day batch review cron for AI trading agents.
-// Fires at 4:15 PM ET to generate daily film-room reviews via Haiku.
+// Generates daily film-room reviews via Haiku around the 4:00 PM ET close.
+// Fires at 20:25 and 21:25 UTC (collapsed pair covering EDT/EST). Both
+// firings run; processBattleReview skips battles that already have a review
+// for today's ET date, so the second firing is a per-battle no-op.
 //
-// Schedule: 15 21 * * 1-5
+// Schedule: 25 20,21 * * 1-5
 
 import Anthropic from '@anthropic-ai/sdk';
 import { FieldValue } from 'firebase-admin/firestore';
