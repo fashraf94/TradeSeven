@@ -237,16 +237,6 @@ export const addMemoryReflection = async (agentId, reflection) => {
   });
 };
 
-export const updateConsolidatedInsight = async (agentId, insight, newCycle) => {
-  const docRef = doc(db, AGENTS_COLLECTION, agentId);
-  await updateDoc(docRef, {
-    consolidatedInsight: insight,
-    evolutionCycle: newCycle,
-    memory: [],
-    updatedAt: serverTimestamp(),
-  });
-};
-
 // Sprint 1 — Dossier evolution timeline. Marks the latest evolution cycle as
 // viewed by the user so the "Cycle N complete" indicator on the Evolution tab
 // clears. NOT a dossier-funnel writer — purely a UX read-state marker.

@@ -9,7 +9,6 @@
 // Consumed by:
 //   * src/components/Forge/Watchlist/WatchlistListCard.jsx   — isWatchlistEquipped, getCardEquipState
 //   * src/components/Forge/Watchlist/WatchlistListPanel.jsx  — getEquipErrorMessage
-//   * src/components/Agent/EquippedWatchlistCard.jsx         — resolveEquippedName, getEquipErrorMessage
 //   * src/screens/AgentBattleScreen.jsx                      — getEquippedWatchlistLabel
 
 /**

@@ -1,3 +1,8 @@
+// ARCHIVED — Agent Hub retired (Closeout Spec V1.1). The surviving read
+// surface (identity, rank, consolidated insight, evolution timeline) lives in
+// src/components/Dashboard/AgentRecordSheet.jsx; the nav slot belongs to the
+// flagged League tab. Kept per the archive-never-delete convention.
+
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Bot, TrendingUp } from 'lucide-react';
