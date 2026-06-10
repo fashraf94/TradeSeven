@@ -33,6 +33,26 @@ const estimateCycleDate = (createdAt, cycleNum, totalCycles) => {
   return new Date(start + span * fraction);
 };
 
+// Friendly display names for the game-mode ids carried by agent.memory[]
+// entries (api/agent/reflect.js writes battleDoc.gameMode — 'baggerbomb_agent'
+// live, 'baggerbomb' legacy). Unknown ids are humanized (underscores stripped,
+// title-cased) so a raw snake_case id never renders in a timeline title.
+const GAME_MODE_LABEL = {
+  baggerbomb_agent: 'BaggerBomb battle',
+  baggerbomb: 'BaggerBomb battle',
+};
+
+const getGameModeDisplayName = (gameMode) => {
+  if (!gameMode) return 'Battle';
+  if (GAME_MODE_LABEL[gameMode]) return GAME_MODE_LABEL[gameMode];
+  const humanized = String(gameMode)
+    .split(/[_\s]+/)
+    .filter(Boolean)
+    .map((w) => w[0].toUpperCase() + w.slice(1).toLowerCase())
+    .join(' ');
+  return `${humanized} battle`;
+};
+
 // "Today" / "Yesterday" / "3d ago" / "Mar 15" — the timeline's relative date.
 export const formatRelativeDate = (date) => {
   if (!date || isNaN(date.getTime())) return '';
@@ -121,10 +141,13 @@ export function buildEvolutionTimeline(agent) {
   (agent.memory || []).forEach(m => {
     if (!m.result) return;
     const resultLabel = m.result === 'win' ? 'Win' : m.result === 'draw' ? 'Draw' : 'Loss';
-    const scoreLabel = Number.isFinite(m.score) ? ` ${m.score > 0 ? '+' : ''}${m.score}` : '';
+    // "· +156" / "· −75" — signed with the typographic minus, dot-separated.
+    const scoreLabel = Number.isFinite(m.score)
+      ? ` · ${m.score > 0 ? '+' : m.score < 0 ? '−' : ''}${Math.abs(m.score)}`
+      : '';
     events.push({
       type: 'game',
-      title: `${m.gameMode || 'Game'} — ${resultLabel}${scoreLabel}`,
+      title: `${getGameModeDisplayName(m.gameMode)} — ${resultLabel}${scoreLabel}`,
       subtitle: m.lesson || '',
       date: parseDate(m.date),
       color: m.result === 'win' ? EMERALD : m.result === 'draw' ? CMD.ink2 : CMD.risk,

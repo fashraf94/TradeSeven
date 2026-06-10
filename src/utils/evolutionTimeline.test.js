@@ -47,9 +47,22 @@ describe('buildEvolutionTimeline', () => {
     });
     expect(events.map((e) => e.type)).toEqual(['deploy', 'game', 'game', 'lesson']);
     expect(events.find((e) => e.type === 'lesson')).toMatchObject({ title: 'Lesson Learned', subtitle: 'Cut losers faster.' });
-    expect(events.find((e) => e.title.includes('Win'))).toMatchObject({ title: 'baggerbomb — Win +156' });
-    expect(events.find((e) => e.title.includes('Loss'))).toMatchObject({ title: 'baggerbomb — Loss' });
+    expect(events.find((e) => e.title.includes('Win'))).toMatchObject({ title: 'BaggerBomb battle — Win · +156' });
+    expect(events.find((e) => e.title.includes('Loss'))).toMatchObject({ title: 'BaggerBomb battle — Loss' });
     expect(events.find((e) => e.type === 'deploy')).toMatchObject({ subtitle: '"Earnings Drift" deployed from Forge' });
+  });
+
+  it('maps game-mode ids to friendly battle titles, never raw snake_case', () => {
+    const title = (memoryEntry) =>
+      buildEvolutionTimeline({ memory: [{ result: 'loss', score: -75, date: '2026-03-02T00:00:00Z', ...memoryEntry }] })[0].title;
+    expect(title({ gameMode: 'baggerbomb_agent' })).toBe('BaggerBomb battle — Loss · −75');
+    expect(title({ gameMode: 'baggerbomb' })).toBe('BaggerBomb battle — Loss · −75');
+    // unknown id → humanized (underscores stripped, title-cased), no raw id
+    expect(title({ gameMode: 'earnings_gauntlet' })).toBe('Earnings Gauntlet battle — Loss · −75');
+    // missing id → plain Battle
+    expect(title({ gameMode: undefined })).toBe('Battle — Loss · −75');
+    // zero score → unsigned
+    expect(title({ gameMode: 'baggerbomb_agent', result: 'draw', score: 0 })).toBe('BaggerBomb battle — Draw · 0');
   });
 
   it('sorts newest first across event types', () => {
