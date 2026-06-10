@@ -51,6 +51,21 @@ export const COMMAND_DASHBOARD_DESKTOP_ENABLED = true;
 export const FORGE_HARDSOFT_AUTHORING_ENABLED = false;
 
 /**
+ * Equip bench — the Traits loadout slot (mobile EquipStation + desktop
+ * EquipBench) and the TraitsSheet behind it.
+ *
+ * OFF at launch: the fixed-library trait surface is retired (Scouting Focus
+ * Build Spec V1.3 §11 — trait surface off, plumbing seeded silently; Closeout
+ * Spec V1.1 §2). When false, both benches render 2 slots (Archetype ·
+ * Watchlist) and the slot-count copy follows the rendered slots. Surface-only:
+ * equippedTraits seeding, trait persistence, and the projectActiveRules
+ * projection are untouched — agents keep their seeded traits invisibly and
+ * battle behavior is unchanged. Flip when the slot returns post-launch as the
+ * earned-trait perk slot.
+ */
+export const TRAIT_SLOT_ENABLED = false;
+
+/**
  * League — the provisional tournament tab occupying the retired Agent Hub's
  * nav slot (Closeout Spec V1.1 §6).
  *

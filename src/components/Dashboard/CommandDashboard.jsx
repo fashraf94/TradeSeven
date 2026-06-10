@@ -29,6 +29,7 @@ import useAgent from '../../hooks/useAgent';
 import useDailyRegimeBrief from '../../hooks/useDailyRegimeBrief';
 import useRecentCompletedAgentBattles from '../../hooks/useRecentCompletedAgentBattles';
 import { deployAgent } from '../../services/agentDeploy';
+import { getEquipSlotCounts } from '../../utils/equipSlots';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -121,9 +122,8 @@ export default function CommandDashboard({
   const recentCompleted = useRecentCompletedAgentBattles(3);
   const activeStage = isLive ? 'manage' : 'read';
 
-  const equippedCount = 1
-    + (agent?.equippedWatchlistId ? 1 : 0)
-    + ((agent?.equippedTraits?.length || 0) > 0 ? 1 : 0);
+  // "n/m slots" — derived from the same slot array EquipStation renders.
+  const slotCounts = getEquipSlotCounts(agent);
 
   const [deploying, setDeploying] = useState(false);
   const [recordOpen, setRecordOpen] = useState(false);
@@ -325,7 +325,7 @@ export default function CommandDashboard({
             n="02"
             label={isLive ? 'Equip · locked in battle' : 'Equip · loadout bench'}
             color={isLive ? CMD.ink3 : accent}
-            right={<Mono style={{ fontSize: 10.5, color: CMD.ink3 }}>{equippedCount}/3 slots</Mono>}
+            right={<Mono style={{ fontSize: 10.5, color: CMD.ink3 }}>{slotCounts.filled}/{slotCounts.total} slots</Mono>}
           />
           <EquipStation agent={agent} accent={accent} onOpenAgentRecord={() => setRecordOpen(true)} setShowForge={setShowForge} />
         </motion.div>
