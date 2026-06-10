@@ -52,9 +52,15 @@ const STOCKS = [
   { symbol: 'CCC', sectorName: 'Healthcare', industryName: 'Biotechnology', return1M: -3, return3M: -10, momentumScore: 30, sma200_position: -4 },
   { symbol: 'DDD', sectorName: 'Technology', industryName: 'Software', return1M: -8, return3M: -15, momentumScore: 20, sma200_position: -6 },
 ];
+// peerRankings.metrics fixture. The five EODHD pass-through fields
+// (revenueGrowthYOY, earningsGrowthYOY, grossMargin, opMarginTTM, profitMarginTTM)
+// are stored as raw decimal FRACTIONS — the endpoint's readPeerMetrics ×100-scales
+// them to percent at the read. BBB.profitMarginTTM is null to exercise null-stays-
+// null; trailingPE / debtToEquity / marketCap are NOT percents and must pass through
+// unscaled.
 const PEER = {
-  AAA: { ticker: 'AAA', metrics: { trailingPE: 20, debtToEquity: 1, marketCap: 1e11 } },
-  BBB: { ticker: 'BBB', metrics: { trailingPE: 30, debtToEquity: 0.5, marketCap: 2e11 } },
+  AAA: { ticker: 'AAA', metrics: { trailingPE: 20, debtToEquity: 1, marketCap: 1e11, revenueGrowthYOY: 0.15, earningsGrowthYOY: 0.08, grossMargin: 0.40, opMarginTTM: 0.25, profitMarginTTM: 0.18 } },
+  BBB: { ticker: 'BBB', metrics: { trailingPE: 30, debtToEquity: 0.5, marketCap: 2e11, revenueGrowthYOY: 0.25, earningsGrowthYOY: 0.30, grossMargin: 0.55, opMarginTTM: 0.35, profitMarginTTM: null } },
 };
 // Forward-estimates cache fixture — the NESTED, raw-EODHD shape (growth as a
 // STRING fraction) so the endpoint's readEstimates flattening + numeric coercion
@@ -230,6 +236,60 @@ describe('watchlist-analysis — fundamentals turn (lazy Tier-2)', () => {
     await handler(req, res);
     expect(res.body.tier2Included).toBe(false);
     expect(peerQueryCount.current).toBe(0);
+  });
+});
+
+describe('watchlist-analysis — Tier-2 fraction→percent scaling (REV_GR / MARGIN fix)', () => {
+  it('×100-scales the five fraction fields at the read; null stays null; non-pct fields unchanged', async () => {
+    const fx = makeFirestore({ watchlistDocs: { 'wl-1': COMMITTED_WL } });
+    activeFirestore = fx.db;
+    const { req, res } = makeReqRes({ watchlistId: 'wl-1', userMessage: 'how do their margins and revenue growth compare?' });
+    await handler(req, res);
+    expect(res.body.tier2Included).toBe(true);
+
+    const aaa = res.body.rows.find((r) => r.symbol === 'AAA');
+    const bbb = res.body.rows.find((r) => r.symbol === 'BBB');
+    // Fraction → percent (×100): the five EODHD pass-through fields.
+    expect(aaa.revenueGrowthYOY).toBe(15);   // 0.15
+    expect(aaa.earningsGrowthYOY).toBe(8);    // 0.08
+    expect(aaa.grossMargin).toBe(40);         // 0.40
+    expect(aaa.opMarginTTM).toBe(25);         // 0.25
+    expect(aaa.profitMarginTTM).toBe(18);     // 0.18
+    expect(bbb.revenueGrowthYOY).toBe(25);    // 0.25
+    // null stays null — NOT 0 (Number(null) === 0 would fabricate a value).
+    expect(bbb.profitMarginTTM).toBeNull();
+    // Non-percent fundamentals pass through UNSCALED (only the five fields scale).
+    expect(aaa.trailingPE).toBe(20);
+    expect(aaa.debtToEquity).toBe(1);
+    expect(aaa.marketCap).toBe(1e11);
+
+    // The digest medians reflect the scaled values and exclude the null name.
+    expect(res.body.digest.fundamentals.revenueGrowthYOY).toMatchObject({ min: 15, max: 25, median: 20, count: 2 });
+    expect(res.body.digest.fundamentals.profitMarginTTM).toMatchObject({ count: 1, median: 18 }); // BBB null excluded
+    // trailingPE median unchanged (NOT ×100) — proves scaling is field-scoped.
+    expect(res.body.digest.fundamentals.trailingPE.median).toBe(25);
+  });
+
+  it('regression: Tier-2 scaling does NOT double-scale Tier-3 forward growth (≈ tens of %, not thousands)', async () => {
+    const fx = makeFirestore({ watchlistDocs: { 'wl-1': COMMITTED_WL } });
+    activeFirestore = fx.db;
+    // A turn that loads BOTH tiers (margins → Tier-2; "grow … next year" → Tier-3),
+    // so the two independent reads run side by side and we prove they don't interfere.
+    const { req, res } = makeReqRes({ watchlistId: 'wl-1', userMessage: 'how do their margins compare, and which grow most next year?' });
+    await handler(req, res);
+    expect(res.body.tier2Included).toBe(true);
+    expect(res.body.tier3Included).toBe(true);
+
+    // Tier-3 growth is scaled EXACTLY ONCE in readEstimates ("0.18"/"0.30" → 18/30).
+    // It must stay tens-of-percent — never ×100 a second time (→ 1800/3000): the
+    // double-scale the audit flagged as "+22.5% → +2250%". readPeerMetrics is Tier-2-only.
+    const fwd = res.body.digest.forward;
+    expect(fwd.consensusGrowthNextYear.min).toBe(18);
+    expect(fwd.consensusGrowthNextYear.max).toBe(30);
+    expect(fwd.consensusGrowthNextYear.max).toBeLessThan(100);
+    // …and the Tier-2 fractions in the SAME response are scaled (both paths ran).
+    const aaa = res.body.rows.find((r) => r.symbol === 'AAA');
+    expect(aaa.profitMarginTTM).toBe(18);
   });
 });
 

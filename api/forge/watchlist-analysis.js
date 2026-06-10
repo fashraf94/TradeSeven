@@ -159,8 +159,36 @@ function indexCohort(stocks, symbolSet) {
   return map;
 }
 
+// EODHD Highlights pass-through ratios that peerRankings.metrics stores as raw
+// decimal FRACTIONS (0.156 = 15.6%): quarterly rev/EPS growth + the three margins.
+// Verified storage type = NUMBER: compute-rankings.js extractMetrics passes these
+// h.* fields through with no parseFloat (only earnings/balance-sheet STRINGS are
+// parsed), and grossMargin is a division — so all five land as finite numbers.
+//
+// The cohort surface's formatters (WatchlistAnalysisView pct() / voiceLayerPrompt
+// fmtNum({pct})) append "%" WITHOUT ×100, so a fraction renders ~100× too low
+// (0.15 → "0.2%"). Scaling here, at the read, lands these on the same
+// already-percent convention as returns / sma200_position / Tier-3 consensus
+// growth, fixing the digest median, the row cells, the standout values, AND the AI
+// narration in ONE place. Display-only / OUTSIDE the scoring fence: the cron
+// computes pillar scores from its own raw copy (rankingConfig DIMENSIONS →
+// extractMetrics), never from this read. Tier-3 forward growth is already
+// ×100-scaled in readEstimates and is deliberately NOT in this list — double-
+// scaling would turn the verified +22.5% into +2250%.
+const PEER_FRACTION_PCT_FIELDS = ['revenueGrowthYOY', 'earningsGrowthYOY', 'grossMargin', 'opMarginTTM', 'profitMarginTTM'];
+
+// Finite number → percent (×100, 1 dp; mirrors readEstimates' pct() precision and
+// avoids FP noise). null / non-finite (incl. an unexpected string) → null, which
+// the downstream stats + formatters already render as "—". Never fabricates a 0
+// from null (Number(null) === 0 would pollute medians and mis-mark a standout).
+function scaleFractionToPct(v) {
+  return typeof v === 'number' && Number.isFinite(v) ? Math.round(v * 1000) / 10 : null;
+}
+
 // Lazy Tier-2: batch-read peerRankings/{ticker} for the cohort. Firestore 'in'
-// caps at 30 per query, so chunk. Returns symbol → metrics object. Zero EODHD.
+// caps at 30 per query, so chunk. Returns symbol → metrics object, with the five
+// fraction fields scaled to percent and every other metric copied through as
+// stored. Zero EODHD.
 async function readPeerMetrics(db, symbols) {
   const out = {};
   for (let i = 0; i < symbols.length; i += 30) {
@@ -168,7 +196,13 @@ async function readPeerMetrics(db, symbols) {
     const snap = await db.collection('peerRankings').where('ticker', 'in', chunk).get();
     snap.forEach((doc) => {
       const d = doc.data();
-      if (d && typeof d.ticker === 'string' && d.metrics) out[d.ticker] = d.metrics;
+      if (d && typeof d.ticker === 'string' && d.metrics) {
+        // Shallow-copy so the Firestore snapshot is never mutated; scale ONLY the
+        // five fraction fields, leave every other metric (P/E, D/E, mkt cap, …) as is.
+        const scaled = { ...d.metrics };
+        for (const f of PEER_FRACTION_PCT_FIELDS) scaled[f] = scaleFractionToPct(scaled[f]);
+        out[d.ticker] = scaled;
+      }
     });
   }
   return out;
