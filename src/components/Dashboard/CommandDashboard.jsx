@@ -105,7 +105,7 @@ export default function CommandDashboard({
   onCreateAgentBattle,
   onOpenAgentBattle,
 }) {
-  const { agent, levelConfig, nextLevelInfo } = useAgent(user?.odUserId);
+  const { agent, levelConfig, nextLevelInfo, deployText } = useAgent(user?.odUserId);
   const drb = useDailyRegimeBrief();
 
   // The user-picked primaryColor supersedes the Haiku avatarColors.
@@ -333,7 +333,7 @@ export default function CommandDashboard({
         {!isLive ? (
           <motion.div variants={sectionVariants}>
             <SectionLabel n="03" label="Deploy" color={accent} />
-            <DeployStation agent={agent} accent={accent} deploying={deploying} onDeploy={handleDeploy} />
+            <DeployStation agent={agent} accent={accent} deploying={deploying} onDeploy={handleDeploy} deployText={deployText} />
           </motion.div>
         ) : (
           <motion.div variants={sectionVariants}>

@@ -66,7 +66,7 @@ export default function CommandDashboardDesktop({
 }) {
   // Resolve the agent by ownerId === odUserId — the same key the mobile
   // CommandDashboard uses (NOT user.uid, which keys a different path).
-  const { agent, record, winRate, levelConfig, nextLevelInfo } = useAgent(user?.odUserId);
+  const { agent, record, winRate, levelConfig, nextLevelInfo, deployText } = useAgent(user?.odUserId);
 
   // The user-picked primaryColor supersedes the Haiku avatarColors.
   const accent = agent?.primaryColor || agent?.avatarColors?.[0] || CMD.teal;
@@ -193,6 +193,7 @@ export default function CommandDashboardDesktop({
                 deploying={deploying}
                 onDeploy={handleDeploy}
                 agentName={agentName}
+                deployText={deployText}
               />
             </div>
           )}
