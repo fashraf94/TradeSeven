@@ -3,9 +3,10 @@
 // Left column of the desktop Command surface — the agent as protagonist (the
 // stats the mobile loop-home had no room for). Orb portrait + identity (name,
 // canonical archetype + disposition, progression level), a career-record block
-// (Record · Win rate · Avg score), a games-to-next-level rank bar, and a
-// battles-won standing. All data flows from useAgent via the shell — no
-// re-derivation here. Desktop-only.
+// (Record · Win rate · Avg score), a games-to-next-level rank bar, an Evolution
+// preview (entry point to the Agent Record sheet), and a battles-won standing.
+// All data flows from useAgent via the shell — no re-derivation here.
+// Desktop-only.
 //
 // Note (spec D1/D3): "tier" shows the games-based progression level (Rookie /
 // Starter / Partner) and the rank bar tracks games-to-next-level — there is no
@@ -15,6 +16,7 @@
 import React from 'react';
 import { Trophy } from 'lucide-react';
 import AgentOrb from '../../shared/AgentOrb';
+import EvolutionPreviewCard from '../EvolutionPreviewCard';
 import { CMD, alpha, Eyebrow, Mono } from '../commandUI';
 import { getArchetypeDisplayName } from '../../../data/archetypeDisplay';
 import { getArchetypeIdentity } from '../../../data/archetypeIdentity';
@@ -30,7 +32,7 @@ function Tag({ children, color }) {
   );
 }
 
-export default function IdentityPanel({ agent, accent, live, record, winRate, levelConfig, nextLevelInfo }) {
+export default function IdentityPanel({ agent, accent, live, record, winRate, levelConfig, nextLevelInfo, onOpenRecord }) {
   const agentName = agent?.name || 'Your agent';
   const archetypeName = getArchetypeDisplayName(agent?.archetype);
   const disposition = getArchetypeIdentity(agent?.archetype).disposition;
@@ -92,6 +94,14 @@ export default function IdentityPanel({ agent, accent, live, record, winRate, le
           </div>
         </div>
       </div>
+
+      {/* evolution preview — entry point to the full Agent Record sheet */}
+      <EvolutionPreviewCard
+        agent={agent}
+        accent={accent}
+        onOpenRecord={onOpenRecord}
+        style={{ padding: '16px 18px', borderRadius: 18 }}
+      />
 
       {/* battles won */}
       <div style={{

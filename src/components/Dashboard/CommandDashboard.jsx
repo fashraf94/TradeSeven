@@ -20,6 +20,7 @@ import { Menu, Trophy, Zap, MessageCircle, ChevronRight } from 'lucide-react';
 import AgentOrb from '../shared/AgentOrb';
 import EquipStation from './EquipStation';
 import AgentRecordSheet from './AgentRecordSheet';
+import EvolutionPreviewCard from './EvolutionPreviewCard';
 import DeployStation from './DeployStation';
 import ManageStation from './ManageStation';
 import ReviewStation from './ReviewStation';
@@ -349,6 +350,11 @@ export default function CommandDashboard({
             <ReviewStation battles={recentCompleted} agent={agent} accent={accent} onReview={openFilmRoom} />
           </motion.div>
         )}
+
+        {/* ── Evolution preview — the loop's closing beat, after Review ──── */}
+        <motion.div variants={sectionVariants}>
+          <EvolutionPreviewCard agent={agent} accent={accent} onOpenRecord={() => setRecordOpen(true)} />
+        </motion.div>
 
         {/* footer */}
         <motion.div variants={sectionVariants} style={{ textAlign: 'center', paddingTop: 4 }}>

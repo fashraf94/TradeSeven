@@ -167,6 +167,7 @@ export default function CommandDashboardDesktop({
             winRate={winRate}
             levelConfig={levelConfig}
             nextLevelInfo={nextLevelInfo}
+            onOpenRecord={openAgentRecord}
           />
         </div>
 
