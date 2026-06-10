@@ -23,6 +23,7 @@ import useRecentCompletedAgentBattles from '../../hooks/useRecentCompletedAgentB
 import { deployAgent } from '../../services/agentDeploy';
 import ManageStation from './ManageStation';
 import ReviewStation from './ReviewStation';
+import AgentRecordSheet from './AgentRecordSheet';
 import DeskLoopRail from './desktop/DeskLoopRail';
 import IdentityPanel from './desktop/IdentityPanel';
 import ReadColumn from './desktop/ReadColumn';
@@ -80,6 +81,7 @@ export default function CommandDashboardDesktop({
   const activeStage = isLive ? 'manage' : 'read';
 
   const [deploying, setDeploying] = useState(false);
+  const [recordOpen, setRecordOpen] = useState(false);
   const deployDisabled = deploying || isLive || !agent;
   const handleDeploy = async () => {
     if (deployDisabled) return;
@@ -92,7 +94,7 @@ export default function CommandDashboardDesktop({
     setDeploying(false);
   };
   const openFilmRoom = (battle) => { setCurrentBattle?.(battle); setScreen?.('filmRoom'); };
-  const openAgent = () => setScreen?.('agent');
+  const openAgent = () => setRecordOpen(true);
 
   const colScroll = { minHeight: 0, overflowY: 'auto', overflowX: 'hidden' };
 
@@ -221,6 +223,16 @@ export default function CommandDashboardDesktop({
           </div>
         </div>
       </div>
+
+      <AgentRecordSheet
+        open={recordOpen}
+        onClose={() => setRecordOpen(false)}
+        agent={agent}
+        accent={accent}
+        levelConfig={levelConfig}
+        nextLevelInfo={nextLevelInfo}
+        dock="center"
+      />
     </div>
   );
 }

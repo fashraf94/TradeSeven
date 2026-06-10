@@ -61,11 +61,11 @@ export default function ReadColumn({ accent, agentName, onOpenAgent, onDeploy, d
         background: `linear-gradient(180deg, ${alpha(accent, 0.1)}, ${alpha(accent, 0.02)} 62%, ${CMD.surface})`,
         border: `1px solid ${alpha(accent, 0.26)}`, boxShadow: `inset 0 1px 0 ${alpha(accent, 0.07)}`,
       }}>
-        {/* orb + activity — tap → agent profile */}
+        {/* orb + activity — tap → agent record sheet */}
         <div
           onClick={onOpenAgent}
           role="button"
-          aria-label="Open agent profile"
+          aria-label="Open agent record"
           style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12, cursor: 'pointer' }}
         >
           <AgentOrb state={orbState} size={32} color={accent} />

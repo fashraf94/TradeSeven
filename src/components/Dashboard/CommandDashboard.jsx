@@ -19,6 +19,7 @@ import { motion } from 'framer-motion';
 import { Menu, Trophy, Zap, MessageCircle, ChevronRight } from 'lucide-react';
 import AgentOrb from '../shared/AgentOrb';
 import EquipStation from './EquipStation';
+import AgentRecordSheet from './AgentRecordSheet';
 import DeployStation from './DeployStation';
 import ManageStation from './ManageStation';
 import ReviewStation from './ReviewStation';
@@ -104,7 +105,7 @@ export default function CommandDashboard({
   onCreateAgentBattle,
   onOpenAgentBattle,
 }) {
-  const { agent } = useAgent(user?.odUserId);
+  const { agent, levelConfig, nextLevelInfo } = useAgent(user?.odUserId);
   const drb = useDailyRegimeBrief();
 
   // The user-picked primaryColor supersedes the Haiku avatarColors.
@@ -124,6 +125,7 @@ export default function CommandDashboard({
     + ((agent?.equippedTraits?.length || 0) > 0 ? 1 : 0);
 
   const [deploying, setDeploying] = useState(false);
+  const [recordOpen, setRecordOpen] = useState(false);
   const deployDisabled = deploying || isLive || !agent;
   const handleDeploy = async () => {
     if (deployDisabled) return;
@@ -225,11 +227,11 @@ export default function CommandDashboard({
             background: `linear-gradient(180deg, ${alpha(accent, 0.1)}, ${alpha(accent, 0.02)} 62%, ${CMD.surface})`,
             border: `1px solid ${alpha(accent, 0.26)}`, boxShadow: `inset 0 1px 0 ${alpha(accent, 0.07)}`,
           }}>
-            {/* orb anchor + activity label — tap → agent profile */}
+            {/* orb anchor + activity label — tap → agent record sheet */}
             <div
-              onClick={() => setScreen?.('agent')}
+              onClick={() => setRecordOpen(true)}
               role="button"
-              aria-label="Open agent profile"
+              aria-label="Open agent record"
               style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12, cursor: 'pointer' }}
             >
               <AgentOrb state={orbState} size={32} color={accent} />
@@ -324,7 +326,7 @@ export default function CommandDashboard({
             color={isLive ? CMD.ink3 : accent}
             right={<Mono style={{ fontSize: 10.5, color: CMD.ink3 }}>{equippedCount}/3 slots</Mono>}
           />
-          <EquipStation agent={agent} accent={accent} onOpenAgent={() => setScreen?.('agent')} setShowForge={setShowForge} />
+          <EquipStation agent={agent} accent={accent} onOpenAgent={() => setRecordOpen(true)} setShowForge={setShowForge} />
         </motion.div>
 
         {/* ── 03 · DEPLOY  /  04 · MANAGE (when live) ────────────────────── */}
@@ -353,6 +355,15 @@ export default function CommandDashboard({
           <Mono style={{ fontSize: 9.5, letterSpacing: '0.18em', color: CMD.ink3, textTransform: 'uppercase' }}>Read → Equip → Deploy → Manage → Review</Mono>
         </motion.div>
       </motion.div>
+
+      <AgentRecordSheet
+        open={recordOpen}
+        onClose={() => setRecordOpen(false)}
+        agent={agent}
+        accent={accent}
+        levelConfig={levelConfig}
+        nextLevelInfo={nextLevelInfo}
+      />
     </div>
   );
 }

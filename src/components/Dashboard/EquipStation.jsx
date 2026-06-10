@@ -5,7 +5,7 @@
 // compact equipment slot rows on the right (Archetype, Watchlist, the open
 // dashed Rules slot). Cold-start = archetype + watchlist filled, one open rules
 // slot framed as a positive optional CTA. Tapping the identity panel opens the
-// agent's full profile; the archetype slot opens the six-card archetype picker.
+// agent record sheet; the archetype slot opens the six-card archetype picker.
 //
 // VISUAL PASS: layout + styling only. Equip logic, data, the watchlist/rule
 // services, the lock (agent.activeBattleId), and the pickers are unchanged.
@@ -192,11 +192,11 @@ export default function EquipStation({ agent, accent, onOpenAgent, setShowForge 
     <>
       {/* two-column bench: identity panel + stacked slot rows */}
       <div style={{ display: 'flex', gap: 14, alignItems: 'stretch' }}>
-        {/* identity panel — tap → agent profile */}
+        {/* identity panel — tap → agent record sheet */}
         <div
           onClick={onOpenAgent}
           role={onOpenAgent ? 'button' : undefined}
-          aria-label={onOpenAgent ? 'Open agent profile' : undefined}
+          aria-label={onOpenAgent ? 'Open agent record' : undefined}
           style={{
             width: 92, flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
             gap: 9, padding: '14px 6px', borderRadius: 16, background: CMD.surface, border: `1px solid ${CMD.hair}`,
