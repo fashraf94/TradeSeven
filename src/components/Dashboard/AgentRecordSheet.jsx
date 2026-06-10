@@ -210,7 +210,8 @@ export default function AgentRecordSheet({ open, onClose, agent, loading, accent
       ) : (
         <div style={{
           display: 'flex', flexDirection: 'column', gap: 16,
-          paddingBottom: dock === 'bottom' ? 'calc(env(safe-area-inset-bottom, 0px) + 14px)' : 4,
+          // Safe-area inset is EquipSheet's (the footerless scroll container pads it).
+          paddingBottom: dock === 'bottom' ? 14 : 4,
         }}>
           {/* rank card */}
           <div style={card}>

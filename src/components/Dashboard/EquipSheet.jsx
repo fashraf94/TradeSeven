@@ -8,6 +8,7 @@
 // selection).
 
 import React from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Check } from 'lucide-react';
 import { CMD, alpha } from './commandUI';
@@ -15,7 +16,11 @@ import { CMD, alpha } from './commandUI';
 export default function EquipSheet({ open, onClose, title, subtitle, loading, rows = [], emptyLabel, footer, accent, dock = 'bottom', children }) {
   // 'bottom' = mobile bottom sheet (default, unchanged); 'center' = desktop modal.
   const center = dock === 'center';
-  return (
+  // Portaled to <body>: the Command Dashboard shells' roots are stacking
+  // contexts (position relative + zIndex 1), which would cap this overlay's
+  // zIndex 1000 at level 1 — below the App-level BottomNav (50) and desktop
+  // sidebar (40). Rendered inline, the nav paints over the sheet's bottom rows.
+  return createPortal(
     <AnimatePresence>
       {open && (
         <motion.div
@@ -65,7 +70,10 @@ export default function EquipSheet({ open, onClose, title, subtitle, loading, ro
               </button>
             </div>
 
-            <div style={{ overflowY: 'auto', padding: '10px 14px' }}>
+            {/* Footerless bottom sheets scroll to the viewport edge — pad the
+                last row clear of the iOS home-indicator inset. (With a footer,
+                the footer carries the inset below the scroll area.) */}
+            <div style={{ overflowY: 'auto', padding: '10px 14px', paddingBottom: !center && !footer ? 'calc(env(safe-area-inset-bottom, 0px) + 10px)' : 10 }}>
               {children != null ? children : loading ? (
                 <div style={{ padding: '24px', textAlign: 'center', color: CMD.ink2, fontSize: 13 }}>Loading…</div>
               ) : rows.length === 0 ? (
@@ -110,6 +118,7 @@ export default function EquipSheet({ open, onClose, title, subtitle, loading, ro
           </motion.div>
         </motion.div>
       )}
-    </AnimatePresence>
+    </AnimatePresence>,
+    document.body
   );
 }
