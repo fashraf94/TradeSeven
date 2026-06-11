@@ -73,17 +73,17 @@ function getFirebaseAdmin() {
 // SYMBOL HELPERS
 // ============================================
 
-function isCryptoSymbol(symbol) {
+export function isCryptoSymbol(symbol) {
   if (!symbol) return false;
   const upper = symbol.toUpperCase();
   return upper.includes('-USD.CC') || upper.endsWith('.CC') || VALID_CRYPTO_SYMBOLS.includes(upper);
 }
 
-function getCleanSymbol(symbol) {
+export function getCleanSymbol(symbol) {
   return symbol.toUpperCase().replace(/\.US$/, '').replace(/-USD\.CC$/, '').replace(/\.CC$/, '');
 }
 
-function formatEODHDSymbol(cleanSymbol, isCrypto) {
+export function formatEODHDSymbol(cleanSymbol, isCrypto) {
   // Normalize dots to hyphens for EODHD (BRK.B → BRK-B)
   const normalized = isCrypto ? cleanSymbol : cleanSymbol.replace(/\./g, '-');
   return isCrypto ? `${normalized}-USD.CC` : `${normalized}.US`;
