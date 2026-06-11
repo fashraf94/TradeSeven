@@ -1116,6 +1116,30 @@ describe('buildBattleState — score-line shape fix (Phase 1.5 regression guard)
   });
 });
 
+describe('buildBattleState — degraded-mode disclosure (Haiku eval reliability fix)', () => {
+  it('renders exactly one EVAL ENGINE HEALTH line when consecutiveEvalFailures > 0', () => {
+    const out = buildBattleState(makeBattle({
+      cronState: { consecutiveEvalFailures: 3 },
+    }));
+    const matches = out.match(/EVAL ENGINE HEALTH/g) || [];
+    expect(matches.length).toBe(1);
+    expect(out).toContain('missed its last 3 evaluation window(s)');
+    expect(out).toContain('Do not claim recent evaluations or engine actions occurred');
+  });
+
+  it('renders no disclosure when the counter is 0', () => {
+    const out = buildBattleState(makeBattle({
+      cronState: { consecutiveEvalFailures: 0 },
+    }));
+    expect(out).not.toContain('EVAL ENGINE HEALTH');
+  });
+
+  it('renders no disclosure when cronState is absent (pre-fix battle docs)', () => {
+    const out = buildBattleState(makeBattle());
+    expect(out).not.toContain('EVAL ENGINE HEALTH');
+  });
+});
+
 describe('buildBattleState — game state rendering', () => {
   it('renders "Game state: losing" when currentScore < -5', () => {
     const out = buildBattleState(makeBattle({

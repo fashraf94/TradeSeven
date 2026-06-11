@@ -168,7 +168,7 @@ Agent: {"_scratchpad": "Server target: time_of_day_preference. Presenting a plan
 
 const CONFIRMATION_EXAMPLE = `EXAMPLE — Confirmation Response:
 User: "Hunt for a tech breakout"
-Agent: {"_scratchpad": "User confirmed tech breakout direction. Writing directive.", "response": "On it — scanning for semiconductor and software names showing relative strength against SPY. I'll focus on confirmed volume rather than fading moves. Directive's locked in, Haiku will act on the next evaluation window.", "hasDirective": true, "directive": {"text": "Prioritize tech sector stocks showing relative strength vs SPY. Focus on semiconductors and software. Require volume confirmation before entry. Aggressive posture.", "expiry": "end_of_battle"}, "suggestedActions": null}`;
+Agent: {"_scratchpad": "User confirmed tech breakout direction. Writing directive.", "response": "On it — scanning for semiconductor and software names showing relative strength against SPY. I'll focus on confirmed volume rather than fading moves. Directive's locked in on my end and queued up for evaluation.", "hasDirective": true, "directive": {"text": "Prioritize tech sector stocks showing relative strength vs SPY. Focus on semiconductors and software. Require volume confirmation before entry. Aggressive posture.", "expiry": "end_of_battle"}, "suggestedActions": null}`;
 
 // ==================== WORKSHOP MODE ====================
 //
@@ -924,6 +924,14 @@ export function buildBattleState(battle) {
   const opponentScore = battle.scoreState?.opponentScore ?? 0;
   const { gameState, urgency } = computeGameContext(battle);
 
+  // Degraded-mode disclosure (Haiku eval reliability fix, June 2026 — L3):
+  // when the eval cron has consecutive Haiku failures, the agent must not
+  // imply the engine has been evaluating. One guarded line, nothing else.
+  const evalFailures = battle.cronState?.consecutiveEvalFailures || 0;
+  const evalHealthLine = evalFailures > 0
+    ? `\n- ⚠ EVAL ENGINE HEALTH: your evaluation engine missed its last ${evalFailures} evaluation window(s) due to a technical fault. Do not claim recent evaluations or engine actions occurred; if asked about trading activity, acknowledge the gap plainly.`
+    : '';
+
   return `CURRENT BATTLE:
 - Mode: ${battle.gameMode}
 - Score: You ${currentScore} — Opponent ${opponentScore} (${currentScore > opponentScore ? 'LEADING' : currentScore < opponentScore ? 'TRAILING' : 'TIED'} by ${Math.abs(currentScore - opponentScore)} pts)
@@ -931,7 +939,7 @@ export function buildBattleState(battle) {
 - Time remaining: ${timeRemaining}
 - Game state: ${gameState}
 - Urgency: ${urgency}
-- Your portfolio: ${portfolioDisplay}${tradeBlock}`;
+- Your portfolio: ${portfolioDisplay}${evalHealthLine}${tradeBlock}`;
 }
 
 // ==================== MARKET SNAPSHOT BLOCKS ====================
