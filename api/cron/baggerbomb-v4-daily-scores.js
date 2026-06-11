@@ -9,6 +9,11 @@
 //   - Primary: Client detects daily end (8 PM ET) and banks via dailyScoringV4Service
 //   - Backup: This cron ensures scores are banked even if no clients are online
 //
+// Scoring is sourced from the canonical scorer (calculateAssetScoreV3 in
+// src/utils/baggerBombUtils.js) — the same function the client-side primary
+// banker uses — so cron-banked days match client-banked days by construction.
+// Threshold baseline mirrors the primary: day-open price (V4 is cumulative).
+//
 // The recording is IDEMPOTENT - safe to run multiple times:
 //   - Already recorded days are skipped via the `recorded` flag
 //   - Training battles are skipped
@@ -16,6 +21,7 @@
 import { initializeApp, getApps, cert } from 'firebase-admin/app';
 import { getFirestore, FieldPath, FieldValue } from 'firebase-admin/firestore';
 import { isTradingDay } from '../_utils/marketSchedule.js';
+import { calculateAssetScoreV3 } from '../../src/utils/baggerBombUtils.js';
 
 const LOG_PREFIX = '[BaggerBombV4Cron]';
 
@@ -86,55 +92,6 @@ function flattenPortfolio(portfolio) {
   return flat;
 }
 
-// Conviction multipliers (duplicated from src/constants/baggerBombScoring.js)
-const CONVICTION_MULTIPLIERS = { star: 2.0, core: 1.5, support: 1.0 };
-
-// Threshold multiplier boundaries for badges
-const THRESHOLD_BADGE_MAP = [
-  { min: 1.0, badge: 'bagger', points: 15 },
-  { min: 2.0, badge: 'doubleBagger', points: 15 },
-  { min: 3.0, badge: 'tenBagger', points: 15 },
-  { max: -1.0, badge: 'bust', points: -7.5 },
-  { max: -2.0, badge: 'crash', points: -7.5 },
-  { max: -3.0, badge: 'meltdown', points: -7.5 },
-];
-
-// Server-side scoring (mirrors calculateAssetScoreV3 logic)
-function calculateAssetScore(asset, priceChange, history) {
-  const baseATR = asset.baseATR || 2.5;
-  const multiplier = priceChange / baseATR;
-  const tierMultiplier = CONVICTION_MULTIPLIERS[asset.tier] || 1.0;
-
-  const basePoints = priceChange * 10 * tierMultiplier;
-
-  // Badges from multiplier
-  const effectiveMax = Math.max(multiplier, history?.maxMultiplier || 0);
-  const effectiveMin = Math.min(multiplier, history?.minMultiplier || 0);
-  const badges = [];
-  let bonusPoints = 0;
-
-  for (const t of THRESHOLD_BADGE_MAP) {
-    if (t.min != null && effectiveMax >= t.min) {
-      badges.push(t.badge);
-      bonusPoints += t.points;
-    }
-    if (t.max != null && effectiveMin <= t.max) {
-      badges.push(t.badge);
-      bonusPoints += t.points;
-    }
-  }
-
-  return {
-    symbol: asset.symbol,
-    tier: asset.tier,
-    basePoints: Math.round(basePoints),
-    bonusPoints,
-    totalPoints: Math.round(basePoints + bonusPoints),
-    priceChange: Math.round(priceChange * 100) / 100,
-    badges,
-  };
-}
-
 // Fetch stock prices from EODHD API
 async function fetchStockPrices(symbols) {
   const apiKey = process.env.EODHD_API_KEY;
@@ -166,7 +123,8 @@ async function fetchStockPrices(symbols) {
 }
 
 // Bank a single battle's daily scores
-async function bankBattleScores(db, battleDoc, currentPrices) {
+// Exported for unit tests (canonical-scorer parity fixtures).
+export async function bankBattleScores(db, battleDoc, currentPrices) {
   const battleId = battleDoc.id;
   const data = battleDoc.data();
 
@@ -215,9 +173,33 @@ async function bankBattleScores(db, battleDoc, currentPrices) {
         const assetHistory = history[asset.symbol] || { maxMultiplier: 0, minMultiplier: 0 };
         const baseATR = thresholds[asset.symbol]?.threshold || asset.baseATR || 2.5;
 
-        const score = calculateAssetScore({ ...asset, baseATR }, priceChange, assetHistory);
+        // Threshold baseline mirrors the client-side primary banker
+        // (dailyScoringV4Service.js bankDailyScores → calculatePlayerActiveScore):
+        // V4 scoring is cumulative — baseline = day-open price, not previous close.
+        const prevClose = openPrices[asset.symbol] || entryPrice;
+        const thresholdPriceChange = prevClose > 0
+          ? ((closePrice - prevClose) / prevClose) * 100
+          : null;
+
+        const score = calculateAssetScoreV3(
+          { ...asset, baseATR },
+          priceChange,
+          assetHistory,
+          {}, // no extremes in daily scoring (matches the client banker)
+          thresholdPriceChange
+        );
         totalActive += score.totalPoints;
-        assetScores.push(score);
+        // Preserve the banked per-asset shape this cron has always written;
+        // priceChange stays the raw price move (the points carry direction).
+        assetScores.push({
+          symbol: score.symbol,
+          tier: asset.tier,
+          basePoints: score.basePoints,
+          bonusPoints: score.bonusPoints,
+          totalPoints: score.totalPoints,
+          priceChange: Math.round(priceChange * 100) / 100,
+          badges: score.badges,
+        });
       }
     }
 
