@@ -1,15 +1,16 @@
-// api/tournament/commit-board.test.js
+// api/_utils/tournamentBoards.test.js
 //
-// Board-commit validation + rider-#1 doc-shape tests over the pure core.
+// Board-commit validation + rider-#1 doc-shape tests over the pure core
+// (shared by the commit-board endpoint and the dev seeder).
 //
 // DEPENDENCY-SURFACE GUARD (BUILD_RULES §4): the import of the REAL
-// commit-board module below is the runtime guard for its api/ -> src/ import
-// chain (src/constants/leagueTournament.js via tournamentGroupService) — it
-// explodes in this Node test environment if a browser-only dependency ever
-// enters the graph. Never mock this import.
+// tournamentBoards module below is the runtime guard for its api/ -> src/
+// import chain (src/constants/leagueTournament.js via tournamentGroupService)
+// — it explodes in this Node test environment if a browser-only dependency
+// ever enters the graph. Never mock this import.
 
 import { describe, it, expect } from 'vitest';
-import { buildBoardCommit, computeBoardDelta } from './commit-board.js';
+import { buildBoardCommit, computeBoardDelta } from './tournamentBoards.js';
 
 const NOW = '2026-06-15T13:30:00.000Z';
 

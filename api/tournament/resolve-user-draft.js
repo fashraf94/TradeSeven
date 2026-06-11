@@ -20,6 +20,7 @@
 // (Spec §1.1), wired in P1b's banking pass.
 
 import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
+import { requireAdminSecret } from '../_utils/adminSecretAuth.js';
 import { isValidForgeId } from '../_utils/idValidation.js';
 import { assertTransition } from '../_utils/tournamentGroupService.js';
 import {
@@ -126,19 +127,7 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed. Use POST.' });
   }
-
-  // Admin/cron secret auth (pattern: api/admin/backfill-snake-draft-day.js).
-  const adminSecret = process.env.ADMIN_SECRET || process.env.CRON_SECRET;
-  const providedSecret =
-    req.headers['x-admin-secret'] ||
-    req.query.secret ||
-    (req.headers.authorization?.startsWith('Bearer ') ? req.headers.authorization.slice(7) : null);
-  if (!adminSecret) {
-    return res.status(500).json({ error: 'Server not configured for admin operations' });
-  }
-  if (providedSecret !== adminSecret) {
-    return res.status(401).json({ error: 'Unauthorized' });
-  }
+  if (!requireAdminSecret(req, res)) return;
 
   const body = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {});
   const { groupId } = body;
@@ -158,9 +147,9 @@ export default async function handler(req, res) {
       if (!group) throw sentinel('group_not_found');
 
       const members = group.groupMembers || [];
-      const boardSnaps = await Promise.all(
-        members.map(id => tx.get(groupRef.collection('boards').doc(id)))
-      );
+      const boardSnaps = members.length > 0
+        ? await tx.getAll(...members.map(id => groupRef.collection('boards').doc(id)))
+        : [];
       const boardsByUser = {};
       boardSnaps.forEach((snap, i) => {
         if (snap.exists) boardsByUser[members[i]] = snap.data();

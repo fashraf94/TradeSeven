@@ -32,15 +32,19 @@ export default function BoardEditor({ groupId, group, uid, onCommitted }) {
   const poolSet = useMemo(() => new Set(group?.userPool || []), [group]);
   const isForming = group?.status === GROUP_STATUS.FORMING;
 
-  // Seed once, when the group (and so its pool) is available. Prefill names
-  // outside the draftable pool are dropped — they couldn't be drafted.
+  // Seed once per group, when the group (and so its pool) is available.
+  // Prefill names outside the draftable pool are dropped — they couldn't be
+  // drafted. Deps are the stable group id, not the group object: live
+  // subscription updates to the same group must neither cancel an in-flight
+  // prefill nor clobber the user's edits with a re-seed.
   useEffect(() => {
-    if (seededRef.current || !group || !uid) return;
+    if (seededRef.current || !group || !uid) return undefined;
     seededRef.current = true;
+    const pool = new Set(group.userPool || []);
     let cancelled = false;
     (async () => {
       const suggested = await assembleBoardPrefill(uid);
-      const inPool = suggested.filter(s => poolSet.has(s));
+      const inPool = suggested.filter(s => pool.has(s));
       if (!cancelled) {
         setPrefill(inPool);
         setBoard(inPool);
@@ -48,7 +52,8 @@ export default function BoardEditor({ groupId, group, uid, onCommitted }) {
       }
     })();
     return () => { cancelled = true; };
-  }, [group, uid, poolSet]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [group?.id, uid]);
 
   function move(index, dir) {
     setBoard(prev => {

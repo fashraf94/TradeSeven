@@ -8,12 +8,12 @@
 // placeholders so the founder can exercise resolution alone on Vercel preview.
 //
 // NOT a production path: the P3 orchestrator owns real group composition.
-// Auth pattern: api/admin/backfill-snake-draft-day.js (ADMIN_SECRET/CRON_SECRET).
 
 import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
+import { requireAdminSecret } from '../_utils/adminSecretAuth.js';
 import { isValidForgeId } from '../_utils/idValidation.js';
 import { createGroup } from '../_utils/tournamentGroupService.js';
-import { buildBoardCommit } from '../tournament/commit-board.js';
+import { buildBoardCommit } from '../_utils/tournamentBoards.js';
 import {
   TOURNAMENT_GROUPS_COLLECTION,
   TOURNAMENT_TUNING,
@@ -38,18 +38,7 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed. Use POST.' });
   }
-
-  const adminSecret = process.env.ADMIN_SECRET || process.env.CRON_SECRET;
-  const providedSecret =
-    req.headers['x-admin-secret'] ||
-    req.query.secret ||
-    (req.headers.authorization?.startsWith('Bearer ') ? req.headers.authorization.slice(7) : null);
-  if (!adminSecret) {
-    return res.status(500).json({ error: 'Server not configured for admin operations' });
-  }
-  if (providedSecret !== adminSecret) {
-    return res.status(401).json({ error: 'Unauthorized' });
-  }
+  if (!requireAdminSecret(req, res)) return;
 
   const body = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {});
   const { founderUserId, autoCommitBoards = true } = body;

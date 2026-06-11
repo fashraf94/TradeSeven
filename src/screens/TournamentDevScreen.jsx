@@ -244,7 +244,13 @@ export default function TournamentDevScreen() {
         )}
 
         {group && (
-          <BoardEditor groupId={group.id} group={group} uid={uid} onCommitted={() => appendLog('board committed')} />
+          <BoardEditor
+            key={group.id}
+            groupId={group.id}
+            group={group}
+            uid={uid}
+            onCommitted={() => appendLog('board committed')}
+          />
         )}
       </div>
     </div>
