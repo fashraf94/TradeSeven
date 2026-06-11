@@ -20,6 +20,13 @@
 
 import { initializeApp, getApps, cert } from 'firebase-admin/app';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
+// P1b tournament claims branch. Benign module cycle: tournamentClaims
+// imports this file's isAlreadyProcessedForDay (the guard is reused as-is);
+// both sides export hoisted function declarations only.
+import {
+  fetchEligibleTournamentGroups,
+  processClaimsForTournamentGroup,
+} from '../_utils/tournamentClaims.js';
 
 // ============================================
 // LOGGING
@@ -547,8 +554,37 @@ export default async function handler(req, res) {
     });
   }
 
+  // Declared above the try so the outer catch can report it too — the
+  // tournament branch's result must never be masked, even by a legacy throw.
+  let tournament = { groups: 0, processed: 0, skipped: 0, errors: 0 };
+
   try {
     const db = getFirebaseAdmin();
+
+    // P1b: tournament claims branch — rides this handler behind the SAME
+    // window + trading-day guards above (zero new cron entries; eligibility
+    // mirrors the legacy checks). It runs FIRST and is fully independent:
+    // zero tournament groups is a clean no-op (the production state until
+    // P3+), and a tournament failure must never block the legacy path — so
+    // it carries its own catch.
+    try {
+      const groups = await fetchEligibleTournamentGroups(db);
+      tournament.groups = groups.length;
+      for (const group of groups) {
+        try {
+          const result = await processClaimsForTournamentGroup(db, group);
+          if (result.status === 'processed') tournament.processed++;
+          else tournament.skipped++;
+        } catch (error) {
+          logError(`Tournament group ${group.id} claims failed`, { error: error.message });
+          tournament.errors++;
+        }
+      }
+      if (tournament.groups > 0) logInfo('Tournament claims branch complete', tournament);
+    } catch (error) {
+      logError('Tournament claims branch failed', { error: error.message });
+      tournament = { ...tournament, errors: tournament.errors + 1, failed: true };
+    }
 
     // Query all active battle drafts
     // We check claimSystem.enabled in code since Firestore doesn't support
@@ -573,6 +609,7 @@ export default async function handler(req, res) {
         success: true,
         message: 'No drafts with claim system enabled',
         processed: 0,
+        tournament,
       });
     }
 
@@ -606,6 +643,7 @@ export default async function handler(req, res) {
     return res.status(200).json({
       success: true,
       ...results,
+      tournament,
       durationMs: duration,
     });
 
@@ -614,6 +652,7 @@ export default async function handler(req, res) {
     return res.status(500).json({
       success: false,
       error: error.message,
+      tournament,
     });
   }
 }
