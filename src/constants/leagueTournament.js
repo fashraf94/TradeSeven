@@ -1,0 +1,236 @@
+// src/constants/leagueTournament.js
+//
+// League Tournament — canonical schema constants and pure doc-shape factories
+// for the `tournamentGroups` collection (Implementation Spec V1 §§1.1–1.2, §5;
+// the spec lives at docs/FANTASYTRADES_LEAGUE_TOURNAMENT_IMPLEMENTATION_SPEC_V1.md).
+//
+// ZERO-IMPORT MODULE, BY RULE. Both the client (draft lobby, battle view) and
+// `api/` consumers (claims branch, orchestrator — revised June 2026 import
+// rule, BUILD_RULES §4) will read this module, so its transitive import
+// surface must stay Node-clean. Zero imports makes that structural: this file
+// can never pull in the client Firebase SDK or firebase-admin — which is also
+// why the factories take timestamps as an opaque caller-supplied `now` (the
+// two SDKs' timestamp sentinels differ). The co-located test enforces the
+// zero-import invariant; do not add an import statement here.
+
+// ==================== IDENTITY ====================
+
+export const TOURNAMENT_GROUPS_COLLECTION = 'tournamentGroups';
+
+/**
+ * Battle-doc discriminator for tournament-mode agent battles (Spec §0.12 —
+ * lets tournament eval ride the shared agent-evaluate cron). Sibling of the
+ * legacy 'baggerbomb_agent' value on agentBattles docs
+ * (api/_utils/agentBattleService.js:73 — fenced; read-only reference).
+ * Consumed at P3/P4. Value ratified by founder, June 11, 2026.
+ *
+ * NOT stamped on tournamentGroups docs — there, the collection name is the
+ * discriminator.
+ */
+export const TOURNAMENT_GAME_MODE = 'baggerbomb_tournament';
+
+// ==================== GROUP SHAPE (Spec §0.9) ====================
+
+export const GROUP_SIZE = 4;
+export const PICKS_PER_PLAYER = 3;
+export const USER_HELD_NAMES_PER_GROUP = GROUP_SIZE * PICKS_PER_PLAYER; // 12
+export const AGENT_PICKS_PER_AGENT = 6; // the flat6 portfolio size (Spec §1.4 mode config)
+export const AGENT_MARKET_SIZE = GROUP_SIZE * AGENT_PICKS_PER_AGENT; // 24
+
+// Provisional status vocabulary — 'battle' mirrors the legacy drafts
+// collection's active-battle status (src/services/draftService.js:525), which
+// the claims cron's eligibility query keys on. P1 ratifies or amends when the
+// group lifecycle is implemented. Ratified as P0 scaffold, June 11, 2026.
+export const GROUP_STATUS = Object.freeze({
+  FORMING: 'forming',
+  DRAFTING: 'drafting',
+  BATTLE: 'battle',
+  COMPLETE: 'complete',
+});
+
+export const LEG_DIRECTION = Object.freeze({
+  LONG: 'long',
+  SHORT: 'short',
+});
+
+// Spec §1.2 — agentLedger entry provenance.
+export const LEDGER_SOURCE = Object.freeze({
+  DRAFT: 'draft',
+  SWAP: 'swap',
+});
+
+// ==================== TUNING LEDGER (Spec §5) ====================
+
+// Founder-set initial values. k (USER_LAYER_K) weights each user-layer point
+// at aggregation: composite = agentScore + k × userScore (Spec §0.10).
+export const TOURNAMENT_TUNING = Object.freeze({
+  USER_LAYER_K: 1.5,
+  FLIP_CAP_PER_DAY: 5,
+  CLAIM_PENDING_CAP_PER_CYCLE: 3,
+  BOARD_DEPTH_MIN: 15,
+  BOARD_DEPTH_MAX: 20,
+  PLAYBACK_MS_PER_PICK: 5000,
+});
+
+// ==================== FACTORIES ====================
+//
+// All factories are pure and deterministic: no I/O, no clock reads, no
+// mutation of inputs. Invalid shapes throw — these guards are shape-level
+// only; business rules (flip caps, claim resolution, scoring) are P1+ scope.
+
+/**
+ * claimSystem initial state — VERBATIM legacy shape (Spec §1.1: "shape
+ * verbatim from the legacy system"). Initializers it mirrors:
+ * src/services/draftService.js:534-538 and api/cron/snake-draft-autopick.js:323-327.
+ *
+ * `lastProcessedDay` is deliberately ABSENT: the legacy contract only writes
+ * it after the first successful processing batch
+ * (api/cron/process-draft-claims.js:99-113 documents the contract; first
+ * write at :496). Pre-setting it would change isAlreadyProcessedForDay
+ * semantics — the co-located test locks this with a real import of that
+ * function.
+ */
+export function createClaimSystemState() {
+  return {
+    enabled: true,
+    currentWaiverPriority: [],
+    processingLog: [],
+  };
+}
+
+/**
+ * One leg of a user-layer pick (Spec §1.1). `closedAt` and `bankedScore` are
+ * OMITTED, not null — they exist only once the leg is closed, matching the
+ * lastProcessedDay only-exists-once-set convention and the removeUndefined
+ * write ecosystem (src/services/draftService.js:544).
+ *
+ * `baselinePrice` may be null when the leg opens while the market is closed
+ * (baseline = next open, Spec §1.1 flip rules); `baselineSource` stays a
+ * free-form string in P0 — the P1 flip endpoint owns its vocabulary.
+ */
+export function createLeg({ direction = LEG_DIRECTION.LONG, baselinePrice = null, baselineSource, openedAt } = {}) {
+  if (!Object.values(LEG_DIRECTION).includes(direction)) {
+    throw new Error(`createLeg: invalid direction "${direction}"`);
+  }
+  if (typeof baselineSource !== 'string' || baselineSource.length === 0) {
+    throw new Error('createLeg: baselineSource is required');
+  }
+  if (openedAt == null) {
+    throw new Error('createLeg: openedAt is required');
+  }
+  if (baselinePrice !== null && !Number.isFinite(baselinePrice)) {
+    throw new Error('createLeg: baselinePrice must be a finite number or null');
+  }
+  return {
+    direction,
+    baselinePrice,
+    baselineSource,
+    openedAt,
+    thresholdHistory: [],
+  };
+}
+
+/**
+ * Per-pick state: symbol + leg list + daily flip counter (Spec §1.1).
+ * Symbol is uppercased on the way in (legacy precedent:
+ * src/services/draftService.js:554).
+ */
+export function createPickState({ symbol, direction, baselinePrice, baselineSource, openedAt } = {}) {
+  if (typeof symbol !== 'string' || symbol.trim().length === 0) {
+    throw new Error('createPickState: symbol is required');
+  }
+  return {
+    symbol: symbol.trim().toUpperCase(),
+    legs: [createLeg({ direction, baselinePrice, baselineSource, openedAt })],
+    flipCountToday: 0,
+  };
+}
+
+/**
+ * One agentLedger entry (Spec §1.2): `{symbol → {heldBy, since, source}}`.
+ */
+export function createAgentLedgerEntry({ heldBy, since, source } = {}) {
+  if (typeof heldBy !== 'string' || heldBy.length === 0) {
+    throw new Error('createAgentLedgerEntry: heldBy is required');
+  }
+  if (since == null) {
+    throw new Error('createAgentLedgerEntry: since is required');
+  }
+  if (!Object.values(LEDGER_SOURCE).includes(source)) {
+    throw new Error(`createAgentLedgerEntry: invalid source "${source}"`);
+  }
+  return { heldBy, since, source };
+}
+
+/**
+ * The tournamentGroups document (Spec §1.1).
+ *
+ * - `players` are mapped to exactly `{odUserId, picks}` — `pickCategories`
+ *   does not exist by construction (Spec §1.1: category system removed end
+ *   to end). Empty `picks` is valid (pre-draft group).
+ * - Exactly one of `bracketGameId` | `baseLayerWeek` must be provided (round
+ *   metadata, Spec §1.1); the unpopulated key is omitted from the output.
+ * - `dailyScores` is initialized empty; its inner keying is P1 scope. (P1
+ *   hazard, recorded in the P0 PR: the legacy waiver fallback reads
+ *   dailyData.day{N}.closeScores — api/cron/process-draft-claims.js:242-258 —
+ *   while Spec §1.1 names this field dailyScores.day{N}.)
+ * - `agentLedger` lives on the group doc per Spec §1.2's primary phrasing
+ *   (ratified June 11, 2026; P2 may relocate to a sibling doc).
+ * - `now` is required and opaque (ISO string or SDK timestamp sentinel) —
+ *   this module never reads a clock.
+ */
+export function createTournamentGroupDoc({
+  players,
+  userPool,
+  roundNumber,
+  bracketGameId = null,
+  baseLayerWeek = null,
+  status = GROUP_STATUS.FORMING,
+  now,
+} = {}) {
+  if (!Array.isArray(players) || players.length !== GROUP_SIZE) {
+    throw new Error(`createTournamentGroupDoc: players must be an array of exactly ${GROUP_SIZE}`);
+  }
+  const ids = players.map(p => p?.odUserId);
+  if (ids.some(id => typeof id !== 'string' || id.length === 0)) {
+    throw new Error('createTournamentGroupDoc: every player needs a non-empty odUserId');
+  }
+  if (new Set(ids).size !== GROUP_SIZE) {
+    throw new Error('createTournamentGroupDoc: player odUserIds must be unique');
+  }
+  for (const p of players) {
+    if (p.picks != null && (!Array.isArray(p.picks) || p.picks.length > PICKS_PER_PLAYER)) {
+      throw new Error(`createTournamentGroupDoc: picks must be an array of at most ${PICKS_PER_PLAYER}`);
+    }
+  }
+  if (!Array.isArray(userPool)) {
+    throw new Error('createTournamentGroupDoc: userPool must be an array');
+  }
+  if (!Number.isInteger(roundNumber) || roundNumber < 1) {
+    throw new Error('createTournamentGroupDoc: roundNumber must be a positive integer');
+  }
+  const hasBracket = bracketGameId != null;
+  const hasBaseWeek = baseLayerWeek != null;
+  if (hasBracket === hasBaseWeek) {
+    throw new Error('createTournamentGroupDoc: provide exactly one of bracketGameId | baseLayerWeek');
+  }
+  if (!Object.values(GROUP_STATUS).includes(status)) {
+    throw new Error(`createTournamentGroupDoc: invalid status "${status}"`);
+  }
+  if (now == null) {
+    throw new Error('createTournamentGroupDoc: now is required (caller supplies the timestamp)');
+  }
+  return {
+    status,
+    roundNumber,
+    ...(hasBracket ? { bracketGameId } : { baseLayerWeek }),
+    groupMembers: ids,
+    players: players.map(p => ({ odUserId: p.odUserId, picks: [...(p.picks ?? [])] })),
+    userPool: [...userPool],
+    claimSystem: createClaimSystemState(),
+    dailyScores: {},
+    agentLedger: {},
+    createdAt: now,
+    updatedAt: now,
+  };
+}
