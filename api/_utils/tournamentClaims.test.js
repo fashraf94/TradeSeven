@@ -26,6 +26,9 @@ import {
   fetchEligibleTournamentGroups,
   processClaimsForTournamentGroup,
 } from './tournamentClaims.js';
+// Real banking module (never mocked — dependency-surface guard applies):
+// the standing-invariant test below runs claims and banking end-to-end.
+import { computeBankingUpdate } from './tournamentBanking.js';
 
 const NOW = new Date('2026-06-10T13:25:00Z'); // 9:25 AM ET Wed → etDate 2026-06-10
 const NOW_ISO = NOW.toISOString();
@@ -246,6 +249,45 @@ describe('processClaimsForTournamentGroup — queue/rotation (legacy algorithm, 
     // session open by the banking pass (the pre-open exit price).
     expect(dropped.legs[1].closedAt).toBe(NOW_ISO);
     expect('bankedScore' in dropped.legs[1]).toBe(false);
+  });
+
+  it('STANDING INVARIANT (end-to-end, ruling #1): with prices held constant, a claim NEVER decreases cumulative standing', async () => {
+    // The only variable between the two banking computations is the claim
+    // itself: every price is identical (and open === current, so the live
+    // leg's accrual converts 1:1 into the exit leg's banked score).
+    const quotes = {
+      NVDA: { open: 104, close: 104, current: 104, previousClose: 100, timestamp: 1 },
+      COIN: { open: 50, close: 50, current: 50, previousClose: 50, timestamp: 1 },
+    };
+    const bankOpts = { nowIso: NOW_ISO, etDate: '2026-06-10', atrPercentiles: null, recordedBy: 'cron' };
+
+    const group = battleGroup();
+    // u1's NVDA carries realized value (+45 banked) AND live accrual (98 → 104).
+    group.players[0].picks[0] = {
+      symbol: 'NVDA',
+      legs: [
+        { direction: 'short', baselinePrice: 90, baselineSource: 'draft_resolution', openedAt: 'T0', thresholdHistory: [], closedAt: 'T1', bankedScore: 45 },
+        { direction: 'long', baselinePrice: 98, baselineSource: 'flip_market_open', openedAt: 'T1', thresholdHistory: [] },
+      ],
+      flipCountToday: 0,
+    };
+
+    const before = computeBankingUpdate(group, quotes, bankOpts)
+      .dayEntry.closeScores.u1.totalPoints;
+    expect(before).toBeGreaterThan(45); // banked + live accrual both present
+
+    // Real claims transaction approves: drop NVDA, add COIN.
+    const { db, captured } = makeDb({ groupDoc: group, claims: [claim('c1', 'u1', 'NVDA', 'COIN')] });
+    const result = await processClaimsForTournamentGroup(db, group, { now: NOW });
+    expect(result.status).toBe('processed');
+    expect(result.approved).toBe(1);
+
+    const groupAfter = { ...group, ...captured.groupUpdates[0] };
+    const after = computeBankingUpdate(groupAfter, quotes, bankOpts)
+      .dayEntry.closeScores.u1.totalPoints;
+
+    expect(after).toBeGreaterThanOrEqual(before); // the invariant
+    expect(after).toBe(before); // and at held prices, exactly: nothing was erased
   });
 
   it('claims_disabled: the pause switch is honored in-transaction (covers the manual trigger path)', async () => {

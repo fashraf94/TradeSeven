@@ -28,8 +28,12 @@ export function isAdminSecretValid(req) {
 /**
  * Returns true if the request carries the admin secret. Otherwise writes the
  * 401/500 response itself and returns false — callers just `if (!ok) return`.
- * Admin-only endpoints additionally accept `?secret=` (the legacy pattern of
- * record, backfill-snake-draft-day.js).
+ *
+ * Header / Bearer only, like isAdminSecretValid: every consumer is a
+ * tournament admin endpoint and none may accept a query-string secret
+ * (founder ruling — URLs persist in request logs and the secret falls back
+ * to CRON_SECRET). Legacy admin endpoints with inline `?secret=` checks are
+ * separate tasking and do not use this module.
  */
 export function requireAdminSecret(req, res) {
   const adminSecret = process.env.ADMIN_SECRET || process.env.CRON_SECRET;
@@ -37,7 +41,7 @@ export function requireAdminSecret(req, res) {
     res.status(500).json({ error: 'Server not configured for admin operations' });
     return false;
   }
-  if (!isAdminSecretValid(req) && req.query?.secret !== adminSecret) {
+  if (!isAdminSecretValid(req)) {
     res.status(401).json({ error: 'Unauthorized' });
     return false;
   }

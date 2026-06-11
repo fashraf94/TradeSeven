@@ -55,11 +55,11 @@ describe('requireAdminSecret (response-writing gate)', () => {
     expect(res.statusCode).toBeNull();
   });
 
-  it('admin-only endpoints still accept ?secret= (legacy pattern of record)', () => {
+  it('rejects ?secret= too — every consumer is a tournament admin endpoint; query secrets land in request logs', () => {
     vi.stubEnv('ADMIN_SECRET', SECRET);
     const res = makeRes();
-    expect(requireAdminSecret({ headers: {}, query: { secret: SECRET } }, res)).toBe(true);
-    expect(res.statusCode).toBeNull();
+    expect(requireAdminSecret({ headers: {}, query: { secret: SECRET } }, res)).toBe(false);
+    expect(res.statusCode).toBe(401);
   });
 
   it('writes 401 and returns false on a bad secret', () => {
