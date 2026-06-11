@@ -220,6 +220,45 @@ describe('processClaimsForTournamentGroup — queue/rotation (legacy algorithm, 
     });
   });
 
+  it('the dropped pick\'s realized value is PRESERVED (ruling #1): banked legs survive, the live leg closes bank-pending', async () => {
+    const group = battleGroup();
+    // u1's NVDA carries +45 banked across a closed leg and a live leg with accrual.
+    group.players[0].picks[0] = {
+      symbol: 'NVDA',
+      legs: [
+        { direction: 'short', baselinePrice: 100, baselineSource: 'draft_resolution', openedAt: 'T0', thresholdHistory: [], closedAt: 'T1', bankedScore: 45 },
+        { direction: 'long', baselinePrice: 98, baselineSource: 'flip_market_open', openedAt: 'T1', thresholdHistory: [] },
+      ],
+      flipCountToday: 1,
+      flipCountDate: '2026-06-09',
+    };
+    const { db, captured } = makeDb({ groupDoc: group, claims: [claim('c1', 'u1', 'NVDA', 'COIN')] });
+    await processClaimsForTournamentGroup(db, group, { now: NOW });
+
+    const u1 = captured.groupUpdates[0].players.find(p => p.odUserId === 'u1');
+    expect(u1.picks[0].symbol).toBe('COIN'); // roster slot holds the won name
+    expect(u1.droppedPicks).toHaveLength(1);
+
+    const dropped = u1.droppedPicks[0];
+    expect(dropped.symbol).toBe('NVDA');
+    expect(dropped.legs[0].bankedScore).toBe(45); // banked value intact
+    // The live leg closed bank-pending at execution — banked at the next
+    // session open by the banking pass (the pre-open exit price).
+    expect(dropped.legs[1].closedAt).toBe(NOW_ISO);
+    expect('bankedScore' in dropped.legs[1]).toBe(false);
+  });
+
+  it('claims_disabled: the pause switch is honored in-transaction (covers the manual trigger path)', async () => {
+    const group = battleGroup({
+      claimSystem: { enabled: false, currentWaiverPriority: [], processingLog: [] },
+    });
+    const { db, captured } = makeDb({ groupDoc: group, claims: [claim('c1', 'u1', 'NVDA', 'COIN')] });
+    const result = await processClaimsForTournamentGroup(db, group, { now: NOW });
+    expect(result).toEqual({ status: 'skipped', reason: 'claims_disabled', processed: 0 });
+    expect(captured.claimUpdates).toHaveLength(0);
+    expect(captured.groupUpdates).toHaveLength(0);
+  });
+
   it('approval rotates the user to the back; denial keeps them at the front', async () => {
     const group = battleGroup({
       claimSystem: { enabled: true, currentWaiverPriority: ['u1', 'u2', 'u3', 'u4'], processingLog: [] },

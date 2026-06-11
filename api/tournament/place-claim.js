@@ -104,25 +104,6 @@ export default async function handler(req, res) {
     }
 
     const claimsRef = groupRef.collection('claims');
-    const pendingSnap = await claimsRef
-      .where('odUserId', '==', odUserId)
-      .where('status', '==', 'pending')
-      .get();
-    if (pendingSnap.size >= TOURNAMENT_TUNING.CLAIM_PENDING_CAP_PER_CYCLE) {
-      return res.status(409).json({
-        error: 'claim_cap_reached',
-        message: `Claim limit reached (${TOURNAMENT_TUNING.CLAIM_PENDING_CAP_PER_CYCLE} pending per cycle).`,
-      });
-    }
-    let duplicate = false;
-    pendingSnap.forEach(doc => {
-      const data = doc.data();
-      if (data.dropSymbol === dropSymbol && data.addSymbol === addSymbol) duplicate = true;
-    });
-    if (duplicate) {
-      return res.status(409).json({ error: 'duplicate_claim', message: 'You already have a pending claim for this exact swap.' });
-    }
-
     const nowIso = now.toISOString();
     const claim = {
       odUserId,
@@ -136,11 +117,42 @@ export default async function handler(req, res) {
       submittedAt: nowIso,
       createdAt: nowIso,
     };
-    // Rider #5 "placed": the awaited write IS the capture.
-    const claimRef = await claimsRef.add(claim);
+
+    // Cap + duplicate check and the write share one transaction — without
+    // it, parallel submissions both read size < cap and both land, making
+    // the 3-pending fairness cap advisory. Rider #5 "placed": the awaited
+    // transactional write IS the capture.
+    const placement = await db.runTransaction(async (tx) => {
+      const pendingSnap = await tx.get(
+        claimsRef.where('odUserId', '==', odUserId).where('status', '==', 'pending')
+      );
+      if (pendingSnap.size >= TOURNAMENT_TUNING.CLAIM_PENDING_CAP_PER_CYCLE) {
+        return { rejected: 'claim_cap_reached' };
+      }
+      let duplicate = false;
+      pendingSnap.forEach(doc => {
+        const data = doc.data();
+        if (data.dropSymbol === dropSymbol && data.addSymbol === addSymbol) duplicate = true;
+      });
+      if (duplicate) return { rejected: 'duplicate_claim' };
+
+      const claimRef = claimsRef.doc();
+      tx.set(claimRef, claim);
+      return { claimId: claimRef.id };
+    });
+
+    if (placement.rejected === 'claim_cap_reached') {
+      return res.status(409).json({
+        error: 'claim_cap_reached',
+        message: `Claim limit reached (${TOURNAMENT_TUNING.CLAIM_PENDING_CAP_PER_CYCLE} pending per cycle).`,
+      });
+    }
+    if (placement.rejected === 'duplicate_claim') {
+      return res.status(409).json({ error: 'duplicate_claim', message: 'You already have a pending claim for this exact swap.' });
+    }
 
     console.log(`[Tournament] place-claim: group ${groupId} ${odUserId} drop ${dropSymbol} add ${addSymbol} rank ${rank}${windowBypassed ? ' (window bypassed)' : ''}`);
-    return res.status(200).json({ claimId: claimRef.id, ...claim });
+    return res.status(200).json({ claimId: placement.claimId, ...claim });
   } catch (err) {
     console.error('[Tournament] place-claim error:', err);
     return res.status(500).json({ error: 'server_error', message: 'Could not place the claim.' });

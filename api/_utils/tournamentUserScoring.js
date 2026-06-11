@@ -46,13 +46,25 @@ export function buildThresholds(assets) {
   return thresholds;
 }
 
+// Warm-invocation cache for the rankings reduction (the doc is large — the
+// full ranked universe — and refreshes once daily). Off by default so tests
+// and the nightly banking pass stay pure; the flip endpoint opts in.
+let atrCache = { at: 0, map: null };
+
 /**
  * One read per banking run: indexIntelligence/stockRankings (the same doc the
  * seed pool comes from — api/admin/seed-tournament-group.js:56-65) reduced to
  * {SYMBOL: atrPercentile}. Null on any failure — callers then fall back to
  * the port-contract default (isCrypto ? 5.0 : 2.5) via resolveBaseATR.
+ *
+ * @param {Object} db
+ * @param {{ cacheMs?: number }} [opts] - serve a warm copy younger than
+ *   cacheMs instead of re-reading (0 = always read).
  */
-export async function loadAtrPercentiles(db) {
+export async function loadAtrPercentiles(db, { cacheMs = 0 } = {}) {
+  if (cacheMs > 0 && atrCache.map && Date.now() - atrCache.at < cacheMs) {
+    return atrCache.map;
+  }
   try {
     const snap = await db.collection('indexIntelligence').doc('stockRankings').get();
     const stocks = snap.exists ? snap.data()?.stocks : null;
@@ -62,6 +74,9 @@ export async function loadAtrPercentiles(db) {
       const symbol = typeof stock?.symbol === 'string' ? stock.symbol.trim().toUpperCase() : '';
       if (symbol) map[symbol] = stock.atrPercentile;
     }
+    // Cache participation is opt-in both ways: non-caching callers (the
+    // nightly banking pass, tests) neither read nor write the warm copy.
+    if (cacheMs > 0) atrCache = { at: Date.now(), map };
     return map;
   } catch (err) {
     console.error('[TournamentScoring] stockRankings read failed:', err.message);
@@ -98,7 +113,11 @@ export function resolveBaseATR(symbol, atrPercentiles) {
  *   the leg has no usable baseline / price (unsettled legs score later).
  */
 export function scoreLeg({ symbol, baseATR, leg, price }) {
-  if (!Number.isFinite(leg?.baselinePrice) || leg.baselinePrice <= 0 || !Number.isFinite(price)) {
+  // price <= 0 is a missing price, never a market price — scoring it would
+  // record a −100% move (tournamentPrices normalizes these to null too;
+  // this is the belt to that suspender).
+  if (!Number.isFinite(leg?.baselinePrice) || leg.baselinePrice <= 0
+    || !Number.isFinite(price) || price <= 0) {
     return null;
   }
   const history = leg.thresholdHistory?.length > 0

@@ -37,6 +37,12 @@
 //     appears; standings move cumulatively; the bank-pending leg from step
 //     6 settles. Day-5 rule note: once 4+ days are banked, place-claim
 //     rejects with battle_last_day — by design, not a bug.
+//
+//  Two operational notes for real (non-dev) groups: banking on a weekend
+//  (the Bank button always sends bypassTradingDay) writes a real day{N} and
+//  advances the derived day clock — fine on a dev group, deliberate-only on
+//  a production one. And "Process claims" is a pre-open action: running it
+//  mid-session backdates the won picks' baselines to that morning's open.
 
 import React, { useEffect, useState } from 'react';
 import { useTheme } from '../contexts/ThemeContext';
@@ -257,6 +263,8 @@ export default function TournamentDevScreen() {
     color: active ? '#082f49' : tokens.textMuted,
   });
 
+  const todayEt = etToday();
+
   if (!uid) {
     return (
       <div style={{ minHeight: '100vh', background: tokens.bgApp, color: tokens.textPrimary, padding: 24 }}>
@@ -385,7 +393,7 @@ export default function TournamentDevScreen() {
                       <span style={{ fontSize: 12, color: tokens.textFaint }}>no picks yet</span>
                     )}
                     {(player.picks || []).map(pick => {
-                      const flipsUsed = pick.flipCountDate === etToday() ? (pick.flipCountToday || 0) : 0;
+                      const flipsUsed = pick.flipCountDate === todayEt ? (pick.flipCountToday || 0) : 0;
                       const mine = player.odUserId === uid;
                       const canFlip = mine && group.status === GROUP_STATUS.BATTLE
                         && flipsUsed < TOURNAMENT_TUNING.FLIP_CAP_PER_DAY && !busy;
@@ -449,9 +457,10 @@ export default function TournamentDevScreen() {
                   </span>
                   <span style={{ fontWeight: 800, width: 64 }}>{score.totalPoints}</span>
                   <span style={{ display: 'flex', gap: 8, flexWrap: 'wrap', color: tokens.textMuted, fontSize: 11 }}>
-                    {(score.picks || []).map(p => (
-                      <span key={p.symbol}>
-                        {p.symbol} {p.totalPoints} <span style={{ color: tokens.textFaint }}>(banked {p.bankedPoints} · live {p.livePoints})</span>
+                    {(score.picks || []).map((p, pi) => (
+                      <span key={`${p.symbol}-${pi}`}>
+                        {p.symbol}{p.dropped ? ' (dropped)' : ''} {p.totalPoints}{' '}
+                        <span style={{ color: tokens.textFaint }}>(banked {p.bankedPoints} · live {p.livePoints})</span>
                       </span>
                     ))}
                   </span>

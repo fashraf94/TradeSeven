@@ -457,6 +457,10 @@ export default async function handler(req, res) {
     });
   }
 
+  // Declared above the try so the outer catch can report it too — the
+  // tournament branch's result must never be masked, even by a legacy throw.
+  let tournament = { groups: 0, processed: 0, skipped: 0, errors: 0 };
+
   try {
     const db = getFirebaseAdmin();
 
@@ -466,7 +470,6 @@ export default async function handler(req, res) {
     // path: zero tournament groups is a clean no-op (the production state
     // until P3+), and a tournament failure must never block the legacy
     // recorder below — so it carries its own catch.
-    let tournament;
     try {
       tournament = await bankAllTournamentGroups(db);
       logInfo('Tournament banking branch complete', tournament);
@@ -565,6 +568,7 @@ export default async function handler(req, res) {
     return res.status(500).json({
       success: false,
       error: error.message,
+      tournament,
     });
   }
 }

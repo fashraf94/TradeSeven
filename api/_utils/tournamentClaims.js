@@ -108,6 +108,11 @@ export async function processClaimsForTournamentGroup(db, group, { now = new Dat
     if (fresh.status !== GROUP_STATUS.BATTLE) {
       return { status: 'skipped', reason: 'not_battle', processed: 0 };
     }
+    // The cron's eligibility mirror checks this pre-query, but the manual
+    // trigger and the in-tx re-read must honor the pause switch too.
+    if (!fresh.claimSystem?.enabled) {
+      return { status: 'skipped', reason: 'claims_disabled', processed: 0 };
+    }
 
     const currentDay = deriveCurrentTradingDay(fresh, etDate);
     if (isAlreadyProcessedForDay(fresh.claimSystem, currentDay)) {
@@ -191,7 +196,21 @@ export async function processClaimsForTournamentGroup(db, group, { now = new Dat
         continue;
       }
 
-      // APPROVE — won name becomes a fresh pick state: long, null baseline,
+      // APPROVE — the dropped pick's realized value is PRESERVED (cumulative
+      // model, founder ruling #1: banked closed-leg scores are part of the
+      // standing). Its live leg closes bank-pending here — the next banking
+      // pass banks it at the session open, the natural price of a pre-open
+      // exit — and the whole pick moves to player.droppedPicks, which the
+      // banking pass keeps scoring. Discarding it would erase banked points
+      // (or launder banked losses) from already-standing totals.
+      const droppedPick = player.picks[dropIdx];
+      const droppedLive = droppedPick.legs?.[droppedPick.legs.length - 1];
+      if (droppedLive && droppedLive.closedAt === undefined) {
+        droppedLive.closedAt = nowIso;
+      }
+      player.droppedPicks = [...(player.droppedPicks || []), droppedPick];
+
+      // The won name becomes a fresh pick state: long, null baseline,
       // claim_execution; settled at the next banking pass.
       player.picks[dropIdx] = createPickState({
         symbol: claim.addSymbol,

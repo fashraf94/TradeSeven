@@ -10,13 +10,17 @@
  * for endpoints that are NOT admin-gated but honor admin-only OPTIONAL flags
  * (P1b's preview time-control bypasses on user-authed endpoints): an invalid
  * or absent secret must silently disable the flag, never 401 a normal user.
+ *
+ * Header / Bearer ONLY — deliberately narrower than requireAdminSecret: this
+ * variant runs on user-facing routes, and a query-string secret would land
+ * in request logs (the secret falls back to CRON_SECRET, the key to every
+ * cron and admin operation).
  */
 export function isAdminSecretValid(req) {
   const adminSecret = process.env.ADMIN_SECRET || process.env.CRON_SECRET;
   if (!adminSecret) return false;
   const providedSecret =
     req.headers['x-admin-secret'] ||
-    req.query?.secret ||
     (req.headers.authorization?.startsWith('Bearer ') ? req.headers.authorization.slice(7) : null);
   return providedSecret === adminSecret;
 }
@@ -24,6 +28,8 @@ export function isAdminSecretValid(req) {
 /**
  * Returns true if the request carries the admin secret. Otherwise writes the
  * 401/500 response itself and returns false — callers just `if (!ok) return`.
+ * Admin-only endpoints additionally accept `?secret=` (the legacy pattern of
+ * record, backfill-snake-draft-day.js).
  */
 export function requireAdminSecret(req, res) {
   const adminSecret = process.env.ADMIN_SECRET || process.env.CRON_SECRET;
@@ -31,7 +37,7 @@ export function requireAdminSecret(req, res) {
     res.status(500).json({ error: 'Server not configured for admin operations' });
     return false;
   }
-  if (!isAdminSecretValid(req)) {
+  if (!isAdminSecretValid(req) && req.query?.secret !== adminSecret) {
     res.status(401).json({ error: 'Unauthorized' });
     return false;
   }

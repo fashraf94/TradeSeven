@@ -20,11 +20,15 @@ function makeRes() {
 afterEach(() => vi.unstubAllEnvs());
 
 describe('isAdminSecretValid (pure — no response writes)', () => {
-  it('accepts the secret via header, query param, or Bearer token', () => {
+  it('accepts the secret via header or Bearer token', () => {
     vi.stubEnv('ADMIN_SECRET', SECRET);
     expect(isAdminSecretValid({ headers: { 'x-admin-secret': SECRET } })).toBe(true);
-    expect(isAdminSecretValid({ headers: {}, query: { secret: SECRET } })).toBe(true);
     expect(isAdminSecretValid({ headers: { authorization: `Bearer ${SECRET}` } })).toBe(true);
+  });
+
+  it('NEVER accepts a query-param secret — this variant runs on user-facing routes and URLs land in request logs', () => {
+    vi.stubEnv('ADMIN_SECRET', SECRET);
+    expect(isAdminSecretValid({ headers: {}, query: { secret: SECRET } })).toBe(false);
   });
 
   it('rejects a wrong or missing secret', () => {
@@ -48,6 +52,13 @@ describe('requireAdminSecret (response-writing gate)', () => {
     vi.stubEnv('ADMIN_SECRET', SECRET);
     const res = makeRes();
     expect(requireAdminSecret({ headers: { 'x-admin-secret': SECRET } }, res)).toBe(true);
+    expect(res.statusCode).toBeNull();
+  });
+
+  it('admin-only endpoints still accept ?secret= (legacy pattern of record)', () => {
+    vi.stubEnv('ADMIN_SECRET', SECRET);
+    const res = makeRes();
+    expect(requireAdminSecret({ headers: {}, query: { secret: SECRET } }, res)).toBe(true);
     expect(res.statusCode).toBeNull();
   });
 

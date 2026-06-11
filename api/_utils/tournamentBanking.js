@@ -68,12 +68,14 @@ export function computeBankingUpdate(group, quotes, { nowIso, etDate, atrPercent
   // Deep-copy players: settlement mutates legs (baselines, banked scores,
   // threshold history) and the whole array is rewritten (Firestore cannot
   // dot-path into arrays).
+  const copyPicks = (picks) => (picks || []).map(pick => ({
+    ...pick,
+    legs: (pick.legs || []).map(leg => ({ ...leg })),
+  }));
   const players = (group.players || []).map(p => ({
     ...p,
-    picks: (p.picks || []).map(pick => ({
-      ...pick,
-      legs: (pick.legs || []).map(leg => ({ ...leg })),
-    })),
+    picks: copyPicks(p.picks),
+    ...(p.droppedPicks ? { droppedPicks: copyPicks(p.droppedPicks) } : {}),
   }));
 
   const closeScores = {};
@@ -81,7 +83,15 @@ export function computeBankingUpdate(group, quotes, { nowIso, etDate, atrPercent
     let playerTotal = 0;
     const pickEntries = [];
 
-    for (const pick of player.picks) {
+    // Dropped picks (claim execution) keep counting: their banked legs are
+    // part of the cumulative standing (ruling #1) and their bank-pending
+    // final leg settles here like any other. They carry no live leg.
+    const scorablePicks = [
+      ...player.picks.map(pick => ({ pick, dropped: false })),
+      ...(player.droppedPicks || []).map(pick => ({ pick, dropped: true })),
+    ];
+
+    for (const { pick, dropped } of scorablePicks) {
       const quote = quotes?.[pick.symbol];
       const open = Number.isFinite(quote?.open) && quote.open > 0 ? quote.open : null;
       const baseATR = resolveBaseATR(pick.symbol, atrPercentiles)
@@ -112,13 +122,19 @@ export function computeBankingUpdate(group, quotes, { nowIso, etDate, atrPercent
       // --- Cumulative scoring pass ---
       const scored = scorePick({ pick, baseATR, quote });
       const liveLeg = pick.legs.length > 0 ? pick.legs[pick.legs.length - 1] : null;
-      if (scored.liveLegResult && liveLeg && liveLeg.closedAt === undefined) {
+      const hasOpenLeg = liveLeg && liveLeg.closedAt === undefined;
+      if (scored.liveLegResult && hasOpenLeg) {
         // The thresholdHistory bridge (see scoreLeg): append today's
         // {maxMultiplier, minMultiplier} so badges survive reversals.
         liveLeg.thresholdHistory = [
           ...(liveLeg.thresholdHistory || []),
           { ...scored.liveLegResult.history, recordedAt: nowIso },
         ];
+      } else if (hasOpenLeg && Number.isFinite(liveLeg.baselinePrice)) {
+        // A settled live leg that could not score (no usable quote)
+        // contributes 0 to TODAY'S snapshot — a visible regression vector,
+        // never silent.
+        warnings.push(`${pick.symbol}: no live quote — settled live leg scored 0 this pass`);
       }
 
       playerTotal += scored.totalPoints;
@@ -128,6 +144,7 @@ export function computeBankingUpdate(group, quotes, { nowIso, etDate, atrPercent
         totalPoints: scored.totalPoints,
         bankedPoints: scored.bankedPoints,
         livePoints: scored.livePoints,
+        ...(dropped ? { dropped: true } : {}),
       });
     }
 

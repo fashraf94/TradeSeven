@@ -214,6 +214,57 @@ describe('computeBankingUpdate — settlement of flip debris', () => {
     expect(update.dayEntry.closeScores.u3.totalPoints).toBe(0);
     expect(update.warnings.some(w => w.includes('TSLA'))).toBe(true);
   });
+
+  it('a SETTLED live leg with no usable quote scores 0 with a warning — a regression vector, never silent', () => {
+    const group = battleGroup({
+      players: [
+        { odUserId: 'u1', picks: [pick('TSLA', [leg({ baselinePrice: 200 })])] },
+        { odUserId: 'u2', picks: [] },
+        { odUserId: 'u3', picks: [] },
+        { odUserId: 'u4', picks: [] },
+      ],
+    });
+    const update = computeBankingUpdate(group, { NVDA: QUOTES.NVDA }, OPTS); // TSLA absent
+    expect(update.dayEntry.closeScores.u1.totalPoints).toBe(0);
+    expect(update.warnings.some(w => w.includes('TSLA') && w.includes('live leg scored 0'))).toBe(true);
+  });
+});
+
+describe('computeBankingUpdate — dropped picks (claim execution) keep counting', () => {
+  it('settles a dropped pick\'s bank-pending exit leg at the open and keeps its banked value in the standing', () => {
+    const quotes = { NVDA: { open: 104, current: 105, previousClose: 100, timestamp: 1 }, COIN: { open: 50, current: 50, previousClose: 50, timestamp: 1 } };
+    const group = battleGroup({
+      players: [
+        {
+          odUserId: 'u1',
+          picks: [pick('COIN', [leg()])], // the won name, unsettled
+          droppedPicks: [{
+            symbol: 'NVDA',
+            legs: [
+              { ...leg({ baselinePrice: 90 }), closedAt: 'T1', bankedScore: 45 },
+              { ...leg({ baselinePrice: 100 }), closedAt: 'T2' }, // exit leg, bank-pending
+            ],
+            flipCountToday: 0,
+          }],
+        },
+        { odUserId: 'u2', picks: [] },
+        { odUserId: 'u3', picks: [] },
+        { odUserId: 'u4', picks: [] },
+      ],
+    });
+
+    const update = computeBankingUpdate(group, quotes, OPTS);
+    const u1 = update.dayEntry.closeScores.u1;
+
+    // The exit leg banked from 100 → 104 (the pre-open exit settles at the open).
+    const exitBanked = calculateAssetScoreV3(
+      { symbol: 'NVDA', baseATR: 2.5, direction: 'long' }, 4, {}, {}, null
+    ).totalPoints;
+    const droppedEntry = u1.picks.find(p => p.dropped);
+    expect(droppedEntry).toMatchObject({ symbol: 'NVDA', bankedPoints: 45 + exitBanked, livePoints: 0, dropped: true });
+    expect(u1.totalPoints).toBe(45 + exitBanked); // COIN just settled, 0 live
+    expect(update.players[0].droppedPicks[0].legs[1].bankedScore).toBe(exitBanked);
+  });
 });
 
 describe('computeBankingUpdate — the cumulative model in motion', () => {

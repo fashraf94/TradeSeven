@@ -21,14 +21,28 @@ function toFiniteOrNull(value) {
 }
 
 /**
+ * Price fields specifically: a zero price is a missing price. Letting 0
+ * through would score a long as −100% (and a flip would mint a permanently
+ * unscoreable 0-baseline leg) — normalize to null so every downstream
+ * guard's "no usable price" path runs instead.
+ */
+function toPositiveOrNull(value) {
+  const n = toFiniteOrNull(value);
+  return n != null && n > 0 ? n : null;
+}
+
+/**
  * Fetch real-time quotes for a symbol list in one batch call.
  *
  * @param {string[]} symbols - plain tickers ('NVDA', 'BRK.B', 'BTC')
  * @param {{ fetchImpl?: typeof fetch, apiKey?: string }} [opts]
- * @returns {Promise<Object<string, {open: number|null, current: number|null,
- *   previousClose: number|null, timestamp: number|null}>>} keyed by the
- *   caller's symbol, uppercased. {} on any transport failure (house
- *   convention: the caller degrades, never throws on price loss).
+ * @returns {Promise<Object<string, {open: number|null, close: number|null,
+ *   current: number|null, previousClose: number|null, timestamp: number|null}>>}
+ *   keyed by the caller's symbol, uppercased. `close` is the RAW last price
+ *   (no fallback) — consumers that must not execute on a stale price (the
+ *   flip endpoint) require it; `current` is the close ?? previousClose
+ *   convenience for close-of-day scoring. {} on any transport failure
+ *   (house convention: the caller degrades, never throws on price loss).
  */
 export async function fetchBatchQuotes(symbols, { fetchImpl = fetch, apiKey = process.env.EODHD_API_KEY } = {}) {
   const unique = [...new Set((symbols || []).map(s => String(s || '').trim().toUpperCase()).filter(Boolean))];
@@ -58,10 +72,13 @@ export async function fetchBatchQuotes(symbols, { fetchImpl = fetch, apiKey = pr
       if (!item?.code) continue;
       const symbol = byEodhd[String(item.code).toUpperCase()];
       if (!symbol) continue;
+      const close = toPositiveOrNull(item.close);
+      const previousClose = toPositiveOrNull(item.previousClose);
       quotes[symbol] = {
-        open: toFiniteOrNull(item.open),
-        current: toFiniteOrNull(item.close) ?? toFiniteOrNull(item.previousClose),
-        previousClose: toFiniteOrNull(item.previousClose),
+        open: toPositiveOrNull(item.open),
+        close,
+        current: close ?? previousClose,
+        previousClose,
         timestamp: toFiniteOrNull(item.timestamp),
       };
     }

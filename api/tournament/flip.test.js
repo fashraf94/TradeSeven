@@ -162,6 +162,21 @@ describe('market-open branch', () => {
     expect(res.statusCode).toBe(502);
     expect(res.body.error).toBe('price_unavailable');
   });
+
+  it('502 when only previousClose is available — a flip never executes at the prior session\'s price', async () => {
+    vi.setSystemTime(MARKET_OPEN_T);
+    vi.stubEnv('EODHD_API_KEY', 'test-key');
+    vi.stubGlobal('fetch', async () => ({
+      ok: true,
+      status: 200,
+      json: async () => [{ code: 'NVDA.US', open: 100, close: 'NA', previousClose: 148.2, timestamp: 1 }],
+    }));
+    h.db = makeDb({ groupDoc: battleGroup() }).db;
+    const { req, res } = makeReqRes();
+    await handler(req, res);
+    expect(res.statusCode).toBe(502);
+    expect(res.body.error).toBe('price_unavailable');
+  });
 });
 
 describe('market-closed branch', () => {

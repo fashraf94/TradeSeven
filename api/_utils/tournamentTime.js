@@ -22,22 +22,27 @@ const CLAIM_WINDOW_CLOSE_MIN = 9 * 60 + 24;  // 9:24 AM ET (inclusive)
 
 const WEEKEND = new Set(['Sat', 'Sun']);
 
+// Module-level: formatter construction is ~100x the cost of formatToParts,
+// and every P1b surface funnels through here (twice per flip/place-claim
+// request, once per group in both cron branches).
+const ET_FORMATTER = new Intl.DateTimeFormat('en-US', {
+  timeZone: 'America/New_York',
+  hourCycle: 'h23', // not hour12:false — h24 ICU locales render midnight as "24"
+  weekday: 'short',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+});
+
 /**
  * ET wall-clock parts for a UTC instant.
  * @returns {{ weekday: string, date: string, minutes: number, etTime: string }}
  *   weekday 'Mon'..'Sun'; date 'YYYY-MM-DD' ET; minutes since ET midnight.
  */
 export function getEtParts(now = new Date()) {
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: 'America/New_York',
-    hourCycle: 'h23', // not hour12:false — h24 ICU locales render midnight as "24"
-    weekday: 'short',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  }).formatToParts(now);
+  const parts = ET_FORMATTER.formatToParts(now);
   const get = (type) => parts.find(p => p.type === type).value;
   const hour = Number(get('hour'));
   const minute = Number(get('minute'));

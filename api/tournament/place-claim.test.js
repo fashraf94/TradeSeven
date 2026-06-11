@@ -55,6 +55,9 @@ function battleGroup(overrides = {}) {
   };
 }
 
+// The cap/duplicate check + write run in a transaction (post-review fix:
+// parallel submissions must not both pass the cap) — the harness routes
+// tx.get(query) and tx.set accordingly.
 function makeDb({ groupDoc = null, pendingClaims = [] } = {}) {
   const captured = { added: [] };
   const claimsQueryable = {
@@ -63,13 +66,19 @@ function makeDb({ groupDoc = null, pendingClaims = [] } = {}) {
       size: pendingClaims.length,
       forEach: (cb) => pendingClaims.forEach(c => cb({ id: c.id ?? 'cx', data: () => c })),
     }),
-    add: async (doc) => { captured.added.push(doc); return { id: 'new-claim-1' }; },
+    doc: () => ({ id: 'new-claim-1' }),
   };
   const groupRef = {
     get: async () => ({ exists: groupDoc != null, data: () => groupDoc }),
     collection: () => claimsQueryable,
   };
-  const db = { collection: () => ({ doc: () => groupRef }) };
+  const db = {
+    collection: () => ({ doc: () => groupRef }),
+    runTransaction: async (fn) => fn({
+      get: async (q) => q.get(),
+      set: (_ref, doc) => { captured.added.push(doc); },
+    }),
+  };
   return { db, captured };
 }
 

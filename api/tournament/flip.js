@@ -93,20 +93,28 @@ export default async function handler(req, res) {
 
     // Open-branch inputs are fetched BEFORE the transaction (no network
     // inside a tx): the flip price and the symbol's baseATR.
-    let quote = null;
+    let flipPrice = null;
+    let quoteOpen = null;
     let baseATR = null;
     if (marketOpen) {
-      const [fetchedQuote, atrPercentiles] = await Promise.all([
+      const [quote, atrPercentiles] = await Promise.all([
         fetchQuoteForSymbol(symbol),
-        loadAtrPercentiles(db),
+        // The rankings doc refreshes once daily — the short cache spares a
+        // large-doc read per flip without risking staleness that matters.
+        loadAtrPercentiles(db, { cacheMs: 10 * 60 * 1000 }),
       ]);
-      quote = fetchedQuote;
-      if (!Number.isFinite(quote?.current)) {
+      // The flip executes AT this price: require the raw close (the live
+      // last price). The current ?? previousClose fallback is fine for
+      // close-of-day scoring but would silently execute a flip at the PRIOR
+      // session's price.
+      if (!Number.isFinite(quote?.close)) {
         return res.status(502).json({
           error: 'price_unavailable',
           message: `No live price for ${symbol} — try again shortly.`,
         });
       }
+      flipPrice = quote.close;
+      quoteOpen = quote.open;
       baseATR = resolveBaseATR(symbol, atrPercentiles) ?? (isCryptoSymbol(symbol) ? 5.0 : 2.5);
     }
 
@@ -140,15 +148,17 @@ export default async function handler(req, res) {
       if (marketOpen) {
         // An intraday flip can precede the leg's first banking pass: settle
         // a null baseline at today's open first, when the feed carries it.
-        if (liveLeg.baselinePrice == null && Number.isFinite(quote.open) && quote.open > 0) {
-          liveLeg.baselinePrice = quote.open;
+        if (liveLeg.baselinePrice == null && Number.isFinite(quoteOpen) && quoteOpen > 0) {
+          liveLeg.baselinePrice = quoteOpen;
         }
         // Close at the live price. A still-unscoreable leg (no usable
         // baseline) closes bank-pending instead — the banking pass owns it.
-        const result = scoreLeg({ symbol, baseATR, leg: liveLeg, price: quote.current });
+        const result = scoreLeg({ symbol, baseATR, leg: liveLeg, price: flipPrice });
         if (result) {
           liveLeg.bankedScore = result.totalPoints;
           bankedLegScore = result.totalPoints;
+        } else {
+          console.warn(`[Tournament] flip: ${symbol} live leg closed bank-pending (no usable baseline)`);
         }
         liveLeg.closedAt = nowIso;
       } else {
@@ -159,7 +169,7 @@ export default async function handler(req, res) {
 
       pick.legs.push(createLeg({
         direction: to,
-        baselinePrice: marketOpen ? quote.current : null,
+        baselinePrice: marketOpen ? flipPrice : null,
         baselineSource: marketOpen ? BASELINE_SOURCE.FLIP_MARKET_OPEN : BASELINE_SOURCE.FLIP_MARKET_CLOSED,
         openedAt: nowIso,
       }));
@@ -176,7 +186,7 @@ export default async function handler(req, res) {
         from,
         to,
         timestamp: nowIso,
-        flipPrice: marketOpen ? quote.current : null,
+        flipPrice: marketOpen ? flipPrice : null,
         bankedLegScore,
         legIndexClosed,
         legIndexOpened,

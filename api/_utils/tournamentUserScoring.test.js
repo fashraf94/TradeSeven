@@ -176,10 +176,11 @@ describe('scoreLeg — identity with the canonical scorer, thresholdPriceChange 
     expect(result.multiplier).not.toBe(contrast.multiplier);
   });
 
-  it('unscoreable legs return null: missing/zero baseline, missing price', () => {
+  it('unscoreable legs return null: missing/zero baseline, missing/zero price (0 would score −100%)', () => {
     expect(scoreLeg({ symbol: 'X', baseATR: 2.5, leg: makeLeg({ baselinePrice: null }), price: 100 })).toBeNull();
     expect(scoreLeg({ symbol: 'X', baseATR: 2.5, leg: { ...makeLeg(), baselinePrice: 0 }, price: 100 })).toBeNull();
     expect(scoreLeg({ symbol: 'X', baseATR: 2.5, leg: makeLeg(), price: undefined })).toBeNull();
+    expect(scoreLeg({ symbol: 'X', baseATR: 2.5, leg: makeLeg(), price: 0 })).toBeNull();
   });
 });
 
@@ -262,5 +263,30 @@ describe('resolveBaseATR / loadAtrPercentiles — input enrichment (decide.js:79
     expect(await loadAtrPercentiles(makeDb(null))).toBeNull();
     expect(await loadAtrPercentiles(makeDb({ stocks: 'not-an-array' }))).toBeNull();
     expect(await loadAtrPercentiles(makeDb(null, { throws: true }))).toBeNull();
+  });
+
+  it('cacheMs > 0 serves a warm copy instead of re-reading; the default (0) always reads', async () => {
+    const makeCounting = (doc) => {
+      let reads = 0;
+      return {
+        db: {
+          collection: () => ({
+            doc: () => ({
+              get: async () => { reads += 1; return { exists: true, data: () => doc }; },
+            }),
+          }),
+        },
+        reads: () => reads,
+      };
+    };
+
+    const warm = makeCounting({ stocks: [{ symbol: 'NVDA', atrPercentile: 0.75 }] });
+    await loadAtrPercentiles(warm.db, { cacheMs: 60_000 }); // populates
+    await loadAtrPercentiles(warm.db, { cacheMs: 60_000 }); // served warm
+    expect(warm.reads()).toBe(1);
+
+    const cold = makeCounting({ stocks: [] });
+    await loadAtrPercentiles(cold.db); // default: always reads
+    expect(cold.reads()).toBe(1);
   });
 });

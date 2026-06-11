@@ -145,6 +145,22 @@ describe('tournament banking branch — no short-circuit', () => {
     expect(res.body.tournament).toEqual({ groups: 0, processed: 0, skipped: 0, errors: 0 });
   });
 
+  it('a legacy throw after the branch still reports the tournament result in the outer-catch 500', async () => {
+    const db = {
+      collection: (name) => {
+        if (name === 'drafts') throw new Error('drafts query exploded');
+        return { where: () => ({ get: async () => ({ forEach: () => {} }) }) };
+      },
+    };
+    h.db = db;
+    const { req, res } = makeReqRes();
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(500);
+    expect(res.body.success).toBe(false);
+    expect(res.body.tournament).toEqual({ groups: 0, processed: 0, skipped: 0, errors: 0 });
+  });
+
   it('a tournament branch crash never breaks the legacy path', async () => {
     const db = {
       collection: (name) => {

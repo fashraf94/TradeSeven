@@ -37,8 +37,8 @@ describe('fetchBatchQuotes', () => {
     expect(calls[0]).toContain('/real-time/NVDA.US,BRK-B.US,BTC-USD.CC?');
     expect(calls[0]).toContain('fmt=json');
 
-    expect(quotes.NVDA).toEqual({ open: 100.5, current: 102.3, previousClose: 99.8, timestamp: 1765467000 });
-    expect(quotes['BRK.B']).toEqual({ open: 412.0, current: 415.2, previousClose: 410.9, timestamp: 1765467000 });
+    expect(quotes.NVDA).toEqual({ open: 100.5, close: 102.3, current: 102.3, previousClose: 99.8, timestamp: 1765467000 });
+    expect(quotes['BRK.B']).toEqual({ open: 412.0, close: 415.2, current: 415.2, previousClose: 410.9, timestamp: 1765467000 });
     expect(quotes.BTC.current).toBe(64550.5);
   });
 
@@ -47,7 +47,17 @@ describe('fetchBatchQuotes', () => {
       { code: 'NVDA.US', open: 'NA', previousClose: 99.8, timestamp: 'NA' },
     ]);
     const quotes = await fetchBatchQuotes(['NVDA'], { fetchImpl, apiKey: API_KEY });
-    expect(quotes.NVDA).toEqual({ open: null, current: 99.8, previousClose: 99.8, timestamp: null });
+    expect(quotes.NVDA).toEqual({ open: null, close: null, current: 99.8, previousClose: 99.8, timestamp: null });
+  });
+
+  it('a ZERO price is a missing price — never −100% downstream: zero close falls back, zero everything nulls out', async () => {
+    const { fetchImpl } = makeFetch([
+      { code: 'NVDA.US', open: 0, close: 0, previousClose: 99.8, timestamp: 1 },
+      { code: 'AMD.US', open: 0, close: 0, previousClose: 0, timestamp: 1 },
+    ]);
+    const quotes = await fetchBatchQuotes(['NVDA', 'AMD'], { fetchImpl, apiKey: API_KEY });
+    expect(quotes.NVDA).toEqual({ open: null, close: null, current: 99.8, previousClose: 99.8, timestamp: 1 });
+    expect(quotes.AMD).toEqual({ open: null, close: null, current: null, previousClose: null, timestamp: 1 });
   });
 
   it('handles a single-object (non-array) response and dedupes/uppercases input', async () => {
@@ -55,6 +65,7 @@ describe('fetchBatchQuotes', () => {
     const quotes = await fetchBatchQuotes(['nvda', 'NVDA '], { fetchImpl, apiKey: API_KEY });
     expect(calls[0]).toContain('/real-time/NVDA.US?');
     expect(quotes.NVDA.current).toBe(2);
+    expect(quotes.NVDA.close).toBe(2);
   });
 
   it('returns {} on transport failure, non-ok status, missing key, or empty input — never throws', async () => {
