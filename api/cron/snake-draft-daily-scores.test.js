@@ -30,12 +30,15 @@ function makeDb({ drafts = [], groups = [], groupDocs = {}, agentBattles = [], l
   const captured = { updates: [], txUpdates: [], txSets: [] };
   const db = {
     collection: (name) => ({
-      where: () => ({
-        get: async () => ({
+      where: () => {
+        const runQuery = async () => ({
           forEach: (cb) => (name === 'drafts' ? drafts : name === 'tournamentGroups' ? groups : name === 'agentBattles' ? agentBattles : [])
             .forEach(d => cb({ id: d.id, data: () => d.data })),
-        }),
-      }),
+        });
+        // select() is a field-mask hint (P2 reconcile projects battle docs);
+        // the fake returns full docs — a superset of any projection.
+        return { get: runQuery, select: () => ({ get: runQuery }) };
+      },
       doc: (id) => ({
         get: async () => ({ exists: groupDocs[id] != null, data: () => groupDocs[id] }),
         update: async (data) => { captured.updates.push({ id, data }); },

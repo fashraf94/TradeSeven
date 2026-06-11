@@ -29,6 +29,7 @@ import {
   isReservationStale,
   buildHeldByOthers,
   excludeHeldByOthers,
+  excludeHeldSymbols,
   getOwnUserPicks,
   detectDoubleDownEvents,
   resolveTournamentContext,
@@ -69,8 +70,8 @@ function makeDb(initial = {}) {
   function makeCollection(prefix) {
     return {
       doc: (id) => makeDocRef(`${prefix}/${id}`),
-      where: (field, op, value) => ({
-        get: async () => {
+      where: (field, op, value) => {
+        const runQuery = async () => {
           const docs = [];
           for (const [path, data] of store.entries()) {
             if (!path.startsWith(`${prefix}/`)) continue;
@@ -81,8 +82,11 @@ function makeDb(initial = {}) {
             }
           }
           return { docs, forEach: (cb) => docs.forEach(cb) };
-        },
-      }),
+        };
+        // select() is a field-mask hint — the fake returns full docs, which
+        // is a superset of any projection and keeps assertions honest.
+        return { get: runQuery, select: () => ({ get: runQuery }) };
+      },
     };
   }
 
@@ -205,6 +209,15 @@ describe('REGULAR-BATTLE INVARIANCE — the P2 governing rule', () => {
     expect(excludeHeldByOthers(notArray, new Set(['NVDA']))).toBe(notArray);
   });
 
+  it('excludeHeldSymbols (the watchlist.hotBench seam) is the same identity contract for string arrays', () => {
+    const symbols = ['AMD', 'TSLA'];
+    expect(excludeHeldSymbols(symbols, null)).toBe(symbols);
+    expect(excludeHeldSymbols(symbols, new Set())).toBe(symbols);
+    expect(excludeHeldSymbols(symbols, new Set(['NVDA']))).toBe(symbols); // no overlap — same reference
+    expect(excludeHeldSymbols(symbols, new Set(['TSLA']))).toEqual(['AMD']);
+    expect(excludeHeldSymbols(undefined, new Set(['TSLA']))).toBeUndefined();
+  });
+
   it('malformed stamps fail SAFE toward regular behavior: missing group / wrong status / non-member owner', async () => {
     const battle = makeTournamentBattle();
 
@@ -245,7 +258,11 @@ describe('resolveTournamentContext — tournament battles', () => {
     expect(ctx.heldByOthers.has('TSLA')).toBe(true);
     expect(ctx.heldByOthers.has('MSFT')).toBe(true);
     expect(ctx.heldByOthers.has('AMD')).toBe(false);
-    expect(ctx.ownUserPicks).toEqual([{ symbol: 'NVDA', direction: 'long' }]);
+    // Shape lock: the group doc and user picks are deliberately NOT on the
+    // context — confirmSwap re-reads picks fresh at confirm time so a
+    // mid-invocation flip can't stamp a stale direction (review fix).
+    expect('group' in ctx).toBe(false);
+    expect('ownUserPicks' in ctx).toBe(false);
   });
 
   it('memoizes the group read per invocation, but reads the ledger fresh per battle', async () => {
@@ -408,7 +425,7 @@ describe('confirmSwap — finalize symbolIn, release symbolOut', () => {
     });
     const result = await confirmSwap(db, {
       groupId: 'g1', symbolIn: 'AMD', symbolOut: 'TSLA', agentId: 'agent-1', battleId: 'b1', now: NOW,
-      ownUserPicks: [], odUserId: 'user-a',
+      odUserId: 'user-a', // no group doc seeded → fresh read yields no picks (clean no-event path)
     });
     expect(result.confirmed).toBe(true);
     const ledger = store.get(LEDGER_PATH);
@@ -417,23 +434,40 @@ describe('confirmSwap — finalize symbolIn, release symbolOut', () => {
     expect(ledger.reservations.AMD).toBeUndefined();
   });
 
-  it('emits + persists double-down events atomically with the held-set change', async () => {
-    const { db, store } = makeDb({ [LEDGER_PATH]: makeLedgerDoc() });
+  it('emits + persists double-down events atomically with the held-set change — picks read FRESH from the group at confirm time', async () => {
+    const { db, store } = makeDb({
+      [LEDGER_PATH]: makeLedgerDoc(),
+      'tournamentGroups/g1': makeGroup({
+        players: [{
+          odUserId: 'user-a',
+          picks: [
+            { symbol: 'NVDA', legs: [makeLeg({ direction: 'long' })], flipCountToday: 0 },
+            // Flipped mid-invocation: closed long leg + live short leg — the
+            // event must carry the CURRENT (short) direction.
+            { symbol: 'COIN', legs: [makeLeg({ direction: 'long', closedAt: NOW_ISO }), makeLeg({ direction: 'short' })], flipCountToday: 1 },
+          ],
+        }],
+      }),
+    });
     const result = await confirmSwap(db, {
       groupId: 'g1', symbolIn: 'NVDA', symbolOut: 'COIN', agentId: 'agent-1', battleId: 'b1', now: NOW,
-      ownUserPicks: [{ symbol: 'NVDA', direction: 'long' }, { symbol: 'COIN', direction: 'short' }],
       odUserId: 'user-a',
     });
     expect(result.events.map(e => e.kind)).toEqual(['formed', 'broken']);
+    expect(result.events[0].userDirection).toBe('long');
+    expect(result.events[1].userDirection).toBe('short'); // the post-flip live leg, not the stale one
     expect(store.get(LEDGER_PATH).doubleDowns).toEqual(result.events);
   });
 
   it('caps the doubleDowns list', async () => {
     const existing = Array.from({ length: DOUBLE_DOWN_EVENTS_CAP }, (_, i) => ({ kind: 'formed', symbol: `S${i}` }));
-    const { db, store } = makeDb({ [LEDGER_PATH]: makeLedgerDoc({ doubleDowns: existing }) });
+    const { db, store } = makeDb({
+      [LEDGER_PATH]: makeLedgerDoc({ doubleDowns: existing }),
+      'tournamentGroups/g1': makeGroup(), // user-a holds NVDA in the default fixture
+    });
     await confirmSwap(db, {
       groupId: 'g1', symbolIn: 'NVDA', symbolOut: 'AMD', agentId: 'agent-1', battleId: 'b1', now: NOW,
-      ownUserPicks: [{ symbol: 'NVDA', direction: 'long' }], odUserId: 'user-a',
+      odUserId: 'user-a',
     });
     const list = store.get(LEDGER_PATH).doubleDowns;
     expect(list).toHaveLength(DOUBLE_DOWN_EVENTS_CAP);
@@ -615,6 +649,54 @@ describe('reconcileGroupLedger — derived rebuild', () => {
     expect(result.divergences).toEqual([
       { type: 'unverifiable_holder', symbol: 'DRAFTED', details: expect.stringContaining('agent-7') },
     ]);
+  });
+
+  it('excludes FOREIGN battles (owner not in groupMembers) from the derivation — same predicate as the eval-cron resolver', async () => {
+    // A dev-seeded battle stamped onto the group but owned by a stranger:
+    // the cron treats it as non-tournament (fail-safe), so the rebuild must
+    // not ingest its portfolio as derived truth either — otherwise the two
+    // directions disagree forever and the 'held' entries block real agents.
+    const { db, store } = makeDb({
+      [LEDGER_PATH]: makeLedgerDoc(),
+      'agentBattles/foreign': {
+        gameMode: TOURNAMENT_GAME_MODE, agentId: 'agent-9', groupId: 'g1', status: 'active',
+        ownerId: 'user-stranger', createdAt: NOW_ISO, portfolio: makePortfolio(['INTRUDER']),
+      },
+      'agentBattles/legit': {
+        gameMode: TOURNAMENT_GAME_MODE, agentId: 'agent-1', groupId: 'g1', status: 'active',
+        ownerId: 'user-a', createdAt: NOW_ISO, portfolio: makePortfolio(['AMD']),
+      },
+    });
+    const result = await reconcileGroupLedger(db, { id: 'g1', ...makeGroup() }, { now: NOW });
+    const held = store.get(LEDGER_PATH).held;
+    expect(held.AMD.heldBy).toBe('agent-1');
+    expect(held.INTRUDER).toBeUndefined();
+    expect(result.divergences).toContainEqual({ type: 'foreign_battle', symbol: null, details: expect.stringContaining('user-stranger') });
+  });
+
+  it('RETRY-SAFE: a transaction retry does not double-count divergences or staleCleared', async () => {
+    const { db } = makeDb({
+      [LEDGER_PATH]: makeLedgerDoc({
+        held: { GHOST: { heldBy: 'agent-1', since: NOW_ISO, source: 'swap' } },
+        reservations: { OLD: { by: 'agent-1', battleId: 'bx', at: STALE_AT } },
+      }),
+      'agentBattles/b1': {
+        gameMode: TOURNAMENT_GAME_MODE, agentId: 'agent-1', groupId: 'g1', status: 'active',
+        ownerId: 'user-a', createdAt: NOW_ISO, portfolio: makePortfolio(['AMD']),
+      },
+    });
+    // Simulate Firestore contention: the Admin SDK re-runs the closure.
+    const original = db.runTransaction;
+    db.runTransaction = async (fn) => {
+      await fn({ get: async (ref) => ref.get(), set: () => {}, update: () => {} }); // aborted attempt
+      return original(fn); // committed attempt
+    };
+    const result = await reconcileGroupLedger(db, { id: 'g1', ...makeGroup() }, { now: NOW });
+    // One missing_in_ledger (AMD), one not_in_portfolio (GHOST), one stale —
+    // each exactly once despite the closure running twice.
+    expect(result.divergences.filter(d => d.type === 'missing_in_ledger')).toHaveLength(1);
+    expect(result.divergences.filter(d => d.type === 'not_in_portfolio')).toHaveLength(1);
+    expect(result.staleCleared).toBe(1);
   });
 
   it('logs duplicate holdings deterministically (sorted agent order wins)', async () => {

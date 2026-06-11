@@ -25,12 +25,14 @@ function makeDb({ groupDoc = null, agentBattles = [], ledgerDocs = {} } = {}) {
   const captured = { txSets: [] };
   const db = {
     collection: (name) => ({
-      where: () => ({
-        get: async () => ({
+      where: () => {
+        const runQuery = async () => ({
           docs: [],
           forEach: (cb) => (name === 'agentBattles' ? agentBattles : []).forEach(d => cb({ id: d.id, data: () => d.data })),
-        }),
-      }),
+        });
+        // select() is a field-mask hint — the fake returns full docs.
+        return { get: runQuery, select: () => ({ get: runQuery }) };
+      },
       doc: (id) => ({
         get: async () => ({ id: 'group-1', exists: groupDoc != null, data: () => groupDoc }),
         collection: (sub) => ({

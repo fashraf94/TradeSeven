@@ -35,6 +35,7 @@ import { validateTradeDecision, executeSwapServer } from '../_utils/agentSwapExe
 import {
   resolveTournamentContext,
   excludeHeldByOthers,
+  excludeHeldSymbols,
   reserveSymbol,
   confirmSwap,
   releaseReservation,
@@ -221,7 +222,6 @@ async function confirmTournamentSwap(db, tournamentCtx, battle, { symbolIn, symb
       agentId: tournamentCtx.agentId,
       battleId: battle.id,
       now: new Date(),
-      ownUserPicks: tournamentCtx.ownUserPicks,
       odUserId: tournamentCtx.odUserId,
     });
     for (const event of events) {
@@ -242,6 +242,76 @@ async function releaseTournamentReservation(db, tournamentCtx, symbol) {
   } catch (releaseErr) {
     console.error(`${LOG_PREFIX} Compensating release failed for ${symbol} — reservation expires by TTL:`, releaseErr.message);
   }
+}
+
+// P2: the tournament candidate filter — held-by-rival symbols removed from
+// this tick's IN-MEMORY bench and watchlist.hotBench (both are swap-in
+// candidate surfaces: the bench feeds benchAssets/allBench/findBenchAsset
+// and prompt assembly; watchlist.hotBench feeds the Haiku prompt and fenced
+// validateTradeDecision's hotBench match). In-memory only — executeSwapServer
+// rebuilds the persisted bench from its own transaction read, and the
+// watchlist is only persisted on rebuild ticks from already-filtered
+// candidates. No-op when tournamentCtx is null (identity helpers), so the
+// regular-battle path is untouched.
+function applyTournamentCandidateFilter(battle, tournamentCtx) {
+  if (!tournamentCtx) return;
+  if (battle.portfolio?.bench?.stocks) {
+    battle.portfolio.bench.stocks = excludeHeldByOthers(battle.portfolio.bench.stocks, tournamentCtx.heldByOthers);
+  }
+  const hotBench = battle.watchlist?.hotBench;
+  if (Array.isArray(hotBench)) {
+    const filtered = excludeHeldSymbols(hotBench, tournamentCtx.heldByOthers);
+    if (filtered !== hotBench) {
+      battle.watchlist = { ...battle.watchlist, hotBench: filtered };
+    }
+  }
+}
+
+// P2: the single battle re-read chokepoint. The persisted doc is UNFILTERED,
+// so every post-swap/post-update refresh must re-apply the tournament
+// candidate filter, or the rest of the tick would re-admit rival-held names
+// to the candidate surfaces (the Spec §1.2 pre-filter invariant).
+async function refreshBattleFromDoc(battleRef, battle, tournamentCtx) {
+  const refreshedDoc = await battleRef.get();
+  Object.assign(battle, refreshedDoc.data());
+  applyTournamentCandidateFilter(battle, tournamentCtx);
+}
+
+// P2: phase 1 of the two-phase swap protocol, shared by all five
+// executeSwapServer call sites. Contract: {reserved: true} WITHOUT any
+// ledger I/O when tournamentCtx is null (regular battles sail through);
+// otherwise a transactional reserve whose failure carries {reason, heldBy}.
+// Each call site owns its failure disposition (skip / HOLD downgrade /
+// lapse) — only the protocol lives here.
+async function reserveTournamentSymbolIn(db, tournamentCtx, battle, symbol) {
+  if (!tournamentCtx) return { reserved: true };
+  return reserveSymbol(db, {
+    groupId: tournamentCtx.groupId,
+    symbol,
+    agentId: tournamentCtx.agentId,
+    battleId: battle.id,
+    now: new Date(),
+  });
+}
+
+// P2: statusFeed entry for the two designed risk-loop exclusivity beats
+// (emptied pool / reserve lost) — one builder so the 'tournament_pool_empty'
+// event shape can't drift between its two sites.
+function buildPoolEmptyFeedEntry({ message, symbolOut, symbolIn = null, regime = null, score, reason }) {
+  return {
+    timestamp: new Date().toISOString(),
+    message,
+    pvpContext: null,
+    action: 'tournament_pool_empty',
+    regime,
+    score,
+    citedRules: [reason],
+    triggeredBy: `risk_${reason}`,
+    source: 'tournament_ledger',
+    evalId: null,
+    symbolOut,
+    symbolIn,
+  };
 }
 
 async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(), tournamentGroupCache = new Map()) {
@@ -317,17 +387,13 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
     // checks, so a non-tournament battle reaches this point and moves on
     // with ZERO ledger I/O. Tournament battles resolve their group + the
     // cross-agent held set here, then have held-by-other symbols removed
-    // from this tick's IN-MEMORY bench before any candidate composition
-    // (benchAssets below, the gameplan trigger, allBench, findBenchAsset,
-    // prompt assembly all read battle.portfolio.bench). In-memory only:
-    // executeSwapServer rebuilds the persisted bench from its own
-    // transaction read, so the filter can never persist. Own player's
-    // user-layer picks are never in the agent ledger (dual markets) and are
-    // therefore never filtered — the double-down stays open.
+    // from this tick's IN-MEMORY candidate surfaces (bench + hotBench — see
+    // applyTournamentCandidateFilter; re-applied after every battle re-read
+    // by refreshBattleFromDoc, because the persisted doc is unfiltered).
+    // Own player's user-layer picks are never in the agent ledger (dual
+    // markets) and are therefore never filtered — the double-down stays open.
     const tournamentCtx = await resolveTournamentContext(db, battle, tournamentGroupCache);
-    if (tournamentCtx && battle.portfolio?.bench?.stocks) {
-      battle.portfolio.bench.stocks = excludeHeldByOthers(battle.portfolio.bench.stocks, tournamentCtx.heldByOthers);
-    }
+    applyTournamentCandidateFilter(battle, tournamentCtx);
 
     const ctx = battle.agentContext || {};
     const currentDay = getCurrentTradingDayServer(battle.timing?.tradingDays);
@@ -945,20 +1011,13 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
           // P2 / Spec §1.2: the emptied-pool emergency skip is DESIGNED
           // behavior, surfaced as a feed event — never a silent log. The
           // agent stays in the position this tick.
-          statusFeedEntries.push({
-            timestamp: new Date().toISOString(),
+          statusFeedEntries.push(buildPoolEmptyFeedEntry({
             message: `Wanted out of ${score.symbol} — no replacement available in the group's agent market.`,
-            pvpContext: null,
-            action: 'tournament_pool_empty',
+            symbolOut: score.symbol,
             regime: stockRegimes[score.symbol] || null,
             score: Math.round(currentScore * 100) / 100,
-            citedRules: [riskResult.reason],
-            triggeredBy: `risk_${riskResult.reason}`,
-            source: 'tournament_ledger',
-            evalId: null,
-            symbolOut: score.symbol,
-            symbolIn: null,
-          });
+            reason: riskResult.reason,
+          }));
         }
         continue;
       }
@@ -1017,37 +1076,24 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
           }),
         };
 
-        if (tournamentCtx) {
-          // P2 phase 1: transactional reserve before the swap — fail means a
-          // rival took the symbol since filtering (or holds it); skip with a
-          // feed event and stay in the position this tick.
-          const reservation = await reserveSymbol(db, {
-            groupId: tournamentCtx.groupId,
-            symbol: replacement.symbol,
-            agentId: tournamentCtx.agentId,
-            battleId: battle.id,
-            now: new Date(),
-          });
-          if (!reservation.reserved) {
-            console.warn(`${LOG_PREFIX} Reserve failed for ${replacement.symbol} (${reservation.reason}) — risk swap of ${score.symbol} skipped`);
-            statusFeedEntries.push({
-              timestamp: new Date().toISOString(),
-              message: `Wanted out of ${score.symbol} — ${replacement.symbol} is already taken in the group's agent market.`,
-              pvpContext: null,
-              action: 'tournament_pool_empty',
-              regime: stockRegimes[score.symbol] || null,
-              score: Math.round(currentScore * 100) / 100,
-              citedRules: [riskResult.reason],
-              triggeredBy: `risk_${riskResult.reason}`,
-              source: 'tournament_ledger',
-              evalId: null,
-              symbolOut: score.symbol,
-              symbolIn: replacement.symbol,
-            });
-            continue;
-          }
-          reservedSymbolIn = replacement.symbol;
+        // P2 phase 1: transactional reserve before the swap — fail means a
+        // rival took the symbol since filtering (or holds it); skip with a
+        // feed event and stay in the position this tick. No-op (always
+        // reserved) for regular battles.
+        const reservation = await reserveTournamentSymbolIn(db, tournamentCtx, battle, replacement.symbol);
+        if (!reservation.reserved) {
+          console.warn(`${LOG_PREFIX} Reserve failed for ${replacement.symbol} (${reservation.reason}) — risk swap of ${score.symbol} skipped`);
+          statusFeedEntries.push(buildPoolEmptyFeedEntry({
+            message: `Wanted out of ${score.symbol} — ${replacement.symbol} is already taken in the group's agent market.`,
+            symbolOut: score.symbol,
+            symbolIn: replacement.symbol,
+            regime: stockRegimes[score.symbol] || null,
+            score: Math.round(currentScore * 100) / 100,
+            reason: riskResult.reason,
+          }));
+          continue;
         }
+        if (tournamentCtx) reservedSymbolIn = replacement.symbol;
 
         const riskSwapResult = await executeSwapServer(
           db, battle.id, battle,
@@ -1056,8 +1102,13 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
         );
 
         // P2 phase 2: the swap landed — finalize symbolIn, release symbolOut,
-        // detect/emit double-down events (no-op for regular battles).
-        await confirmTournamentSwap(db, tournamentCtx, battle, { symbolIn: replacement.symbol, symbolOut: score.symbol }, statusFeedEntries);
+        // detect/emit double-down events (no-op for regular battles). The
+        // ACTUAL outgoing symbol comes from closedTrade: executeSwapServer
+        // swaps whatever occupies the slot at transaction time.
+        await confirmTournamentSwap(db, tournamentCtx, battle, {
+          symbolIn: riskSwapResult.closedTrade?.symbolIn || replacement.symbol,
+          symbolOut: riskSwapResult.closedTrade?.symbolOut || score.symbol,
+        }, statusFeedEntries);
         reservedSymbolIn = null;
 
         // Phase 2 Voice Layer Rework — queue narration for this risk swap.
@@ -1087,9 +1138,10 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
 
         summary.swapped++;
 
-        // Re-read battle doc after swap for accurate state in subsequent processing
-        const updatedDoc = await battleRef.get();
-        Object.assign(battle, updatedDoc.data());
+        // Re-read battle doc after swap for accurate state in subsequent
+        // processing (re-applies the tournament candidate filter — the
+        // persisted doc is unfiltered).
+        await refreshBattleFromDoc(battleRef, battle, tournamentCtx);
       } catch (err) {
         console.error(`${LOG_PREFIX} Risk swap failed for ${score.symbol}:`, err.message);
         // P2: compensating release (the reserve landed but the swap didn't).
@@ -1472,21 +1524,14 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
                 rankingsMap: momentumData.rankingsMap,
               }),
             };
-            if (tournamentCtx) {
-              // P2 phase 1: reserve symbolIn before executing. A reserve
-              // loss downgrades to HOLD exactly like a failed swap.
-              const reservation = await reserveSymbol(db, {
-                groupId: tournamentCtx.groupId,
-                symbol: haikuResult.symbolIn,
-                agentId: tournamentCtx.agentId,
-                battleId: battle.id,
-                now: new Date(),
-              });
-              if (!reservation.reserved) {
-                throw new Error(`${haikuResult.symbolIn} unavailable in the group's agent market (${reservation.reason})`);
-              }
-              reservedSymbolIn = haikuResult.symbolIn;
+            // P2 phase 1: reserve symbolIn before executing. A reserve
+            // loss downgrades to HOLD exactly like a failed swap. No-op
+            // (always reserved) for regular battles.
+            const reservation = await reserveTournamentSymbolIn(db, tournamentCtx, battle, haikuResult.symbolIn);
+            if (!reservation.reserved) {
+              throw new Error(`${haikuResult.symbolIn} unavailable in the group's agent market (${reservation.reason})`);
             }
+            if (tournamentCtx) reservedSymbolIn = haikuResult.symbolIn;
 
             const swapResult = await executeSwapServer(
               db, battle.id, battle,
@@ -1495,8 +1540,11 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
             );
 
             // P2 phase 2: confirm + double-down detection (no-op when
-            // tournamentCtx is null).
-            await confirmTournamentSwap(db, tournamentCtx, battle, { symbolIn: haikuResult.symbolIn, symbolOut: haikuResult.symbolOut }, statusFeedEntries);
+            // tournamentCtx is null). Actual symbols from closedTrade.
+            await confirmTournamentSwap(db, tournamentCtx, battle, {
+              symbolIn: swapResult.closedTrade?.symbolIn || haikuResult.symbolIn,
+              symbolOut: swapResult.closedTrade?.symbolOut || haikuResult.symbolOut,
+            }, statusFeedEntries);
             reservedSymbolIn = null;
 
             // Phase 2 Voice Layer Rework — queue narration for this autopilot swap.
@@ -1902,8 +1950,7 @@ async function handlePendingProposal(db, battleRef, battle, prices, statusFeedEn
     };
     const history = [...(battle.proposalHistory || []), resolvedProposal].slice(-50);
     await battleRef.update({ pendingProposal: null, proposalHistory: history });
-    const updatedDoc = await battleRef.get();
-    Object.assign(battle, updatedDoc.data());
+    await refreshBattleFromDoc(battleRef, battle, tournamentCtx);
     return 'continue';
   }
 
@@ -1920,16 +1967,11 @@ async function handlePendingProposal(db, battleRef, battle, prices, statusFeedEn
         const freshPrices = await fetchPricesForProposal(proposal);
         // Verify bench asset still exists
         const benchAsset = findBenchAsset(battle.portfolio?.bench, proposal.symbolIn);
-        let reservation = { reserved: true };
-        if (benchAsset && tournamentCtx) {
-          reservation = await reserveSymbol(db, {
-            groupId: tournamentCtx.groupId,
-            symbol: proposal.symbolIn,
-            agentId: tournamentCtx.agentId,
-            battleId: battle.id,
-            now: new Date(),
-          });
-          if (reservation.reserved) reservedSymbolIn = proposal.symbolIn;
+        let reservation = null;
+        if (benchAsset) {
+          // P2 phase 1 (no-op for regular battles).
+          reservation = await reserveTournamentSymbolIn(db, tournamentCtx, battle, proposal.symbolIn);
+          if (tournamentCtx && reservation.reserved) reservedSymbolIn = proposal.symbolIn;
         }
         if (!benchAsset) {
           console.warn(`${LOG_PREFIX} Bench asset ${proposal.symbolIn} no longer available — lapsing approved proposal`);
@@ -1939,7 +1981,7 @@ async function handlePendingProposal(db, battleRef, battle, prices, statusFeedEn
             action: 'hold', source: 'proposal_system',
             symbolOut: proposal.symbolOut, symbolIn: proposal.symbolIn,
           });
-        } else if (!reservation.reserved) {
+        } else if (reservation && !reservation.reserved) {
           // P2: reserve lost — lapse exactly like the bench-asset-gone path.
           console.warn(`${LOG_PREFIX} Reserve failed for ${proposal.symbolIn} (${reservation.reason}) — lapsing approved proposal`);
           statusFeedEntries.push({
@@ -1954,14 +1996,17 @@ async function handlePendingProposal(db, battleRef, battle, prices, statusFeedEn
           // approved proposals get a Gemma narration in chat. Dormant under
           // today's autopilot launch guard — handlePendingProposal short-
           // circuits autopilot mode to auto_executed without execution.
-          await executeSwapServer(
+          const approvedSwapResult = await executeSwapServer(
             db, battle.id, battle,
             proposal.tier, proposal.slotIndex,
             benchAsset, proposal.evaluationMetadata?.tradingDay || 1,
             freshPrices, proposal.evaluationMetadata || {},
             proposal.snapshot || null
           );
-          await confirmTournamentSwap(db, tournamentCtx, battle, { symbolIn: proposal.symbolIn, symbolOut: proposal.symbolOut }, statusFeedEntries);
+          await confirmTournamentSwap(db, tournamentCtx, battle, {
+            symbolIn: approvedSwapResult.closedTrade?.symbolIn || proposal.symbolIn,
+            symbolOut: approvedSwapResult.closedTrade?.symbolOut || proposal.symbolOut,
+          }, statusFeedEntries);
           reservedSymbolIn = null;
           statusFeedEntries.push({
             timestamp: new Date().toISOString(),
@@ -1984,8 +2029,7 @@ async function handlePendingProposal(db, battleRef, battle, prices, statusFeedEn
       // Move to history and clear (cap at 50)
       const history = [...(battle.proposalHistory || []), proposal].slice(-50);
       await battleRef.update({ pendingProposal: null, proposalHistory: history });
-      const updatedDoc = await battleRef.get();
-      Object.assign(battle, updatedDoc.data());
+      await refreshBattleFromDoc(battleRef, battle, tournamentCtx);
       return 'continue';
     }
 
@@ -2009,8 +2053,7 @@ async function handlePendingProposal(db, battleRef, battle, prices, statusFeedEn
       };
       const history = [...(battle.proposalHistory || []), vetoEnriched].slice(-50);
       await battleRef.update({ pendingProposal: null, proposalHistory: history });
-      const updatedDoc = await battleRef.get();
-      Object.assign(battle, updatedDoc.data());
+      await refreshBattleFromDoc(battleRef, battle, tournamentCtx);
       summary.held++;
       return 'continue';
     }
@@ -2034,16 +2077,11 @@ async function handlePendingProposal(db, battleRef, battle, prices, statusFeedEn
     try {
       const freshPrices = await fetchPricesForProposal(proposal);
       const benchAsset = findBenchAsset(battle.portfolio?.bench, proposal.symbolIn);
-      let reservation = { reserved: true };
-      if (benchAsset && tournamentCtx) {
-        reservation = await reserveSymbol(db, {
-          groupId: tournamentCtx.groupId,
-          symbol: proposal.symbolIn,
-          agentId: tournamentCtx.agentId,
-          battleId: battle.id,
-          now: new Date(),
-        });
-        if (reservation.reserved) reservedSymbolIn = proposal.symbolIn;
+      let reservation = null;
+      if (benchAsset) {
+        // P2 phase 1 (no-op for regular battles).
+        reservation = await reserveTournamentSymbolIn(db, tournamentCtx, battle, proposal.symbolIn);
+        if (tournamentCtx && reservation.reserved) reservedSymbolIn = proposal.symbolIn;
       }
       if (!benchAsset) {
         console.warn(`${LOG_PREFIX} Bench asset ${proposal.symbolIn} gone — lapsing expired copilot proposal`);
@@ -2052,7 +2090,7 @@ async function handlePendingProposal(db, battleRef, battle, prices, statusFeedEn
           message: `Proposal expired but ${proposal.symbolIn} no longer on bench. Lapsed.`,
           action: 'hold', source: 'proposal_system',
         });
-      } else if (!reservation.reserved) {
+      } else if (reservation && !reservation.reserved) {
         // P2: reserve lost — lapse exactly like the bench-asset-gone path.
         console.warn(`${LOG_PREFIX} Reserve failed for ${proposal.symbolIn} (${reservation.reason}) — lapsing expired copilot proposal`);
         statusFeedEntries.push({
@@ -2064,14 +2102,17 @@ async function handlePendingProposal(db, battleRef, battle, prices, statusFeedEn
         // TODO(post-launch authority modes): same as the 'approved' branch
         // above — capture closedTrade + push to pendingNarrations when
         // co-pilot mode returns. Dormant today under autopilot launch guard.
-        await executeSwapServer(
+        const expiredSwapResult = await executeSwapServer(
           db, battle.id, battle,
           proposal.tier, proposal.slotIndex,
           benchAsset, proposal.evaluationMetadata?.tradingDay || 1,
           freshPrices, proposal.evaluationMetadata || {},
           proposal.snapshot || null
         );
-        await confirmTournamentSwap(db, tournamentCtx, battle, { symbolIn: proposal.symbolIn, symbolOut: proposal.symbolOut }, statusFeedEntries);
+        await confirmTournamentSwap(db, tournamentCtx, battle, {
+          symbolIn: expiredSwapResult.closedTrade?.symbolIn || proposal.symbolIn,
+          symbolOut: expiredSwapResult.closedTrade?.symbolOut || proposal.symbolOut,
+        }, statusFeedEntries);
         reservedSymbolIn = null;
         statusFeedEntries.push({
           timestamp: new Date().toISOString(),
@@ -2108,8 +2149,7 @@ async function handlePendingProposal(db, battleRef, battle, prices, statusFeedEn
   };
   const history = [...(battle.proposalHistory || []), resolvedProposal].slice(-50);
   await battleRef.update({ pendingProposal: null, proposalHistory: history });
-  const updatedDoc = await battleRef.get();
-  Object.assign(battle, updatedDoc.data());
+  await refreshBattleFromDoc(battleRef, battle, tournamentCtx);
   return 'continue';
 }
 
@@ -2144,27 +2184,20 @@ async function handleGameplanMeeting(db, battleRef, battle, prices, statusFeedEn
         const slot = findPortfolioSlot(battle.portfolio, swap.symbolOut);
         if (!slot) continue;
 
-        if (tournamentCtx) {
-          // P2 phase 1: reserve before executing this rotation step.
-          const reservation = await reserveSymbol(db, {
-            groupId: tournamentCtx.groupId,
-            symbol: swap.symbolIn,
-            agentId: tournamentCtx.agentId,
-            battleId: battle.id,
-            now: new Date(),
+        // P2 phase 1: reserve before executing this rotation step. No-op
+        // (always reserved) for regular battles.
+        const reservation = await reserveTournamentSymbolIn(db, tournamentCtx, battle, swap.symbolIn);
+        if (!reservation.reserved) {
+          console.warn(`${LOG_PREFIX} Reserve failed for ${swap.symbolIn} (${reservation.reason}) — gameplan swap skipped`);
+          statusFeedEntries.push({
+            timestamp: new Date().toISOString(),
+            message: `Gameplan swap ${swap.symbolOut} → ${swap.symbolIn} skipped — ${swap.symbolIn} is already taken in the group's agent market.`,
+            action: 'hold', source: 'gameplan_meeting',
+            symbolOut: swap.symbolOut, symbolIn: swap.symbolIn,
           });
-          if (!reservation.reserved) {
-            console.warn(`${LOG_PREFIX} Reserve failed for ${swap.symbolIn} (${reservation.reason}) — gameplan swap skipped`);
-            statusFeedEntries.push({
-              timestamp: new Date().toISOString(),
-              message: `Gameplan swap ${swap.symbolOut} → ${swap.symbolIn} skipped — ${swap.symbolIn} is already taken in the group's agent market.`,
-              action: 'hold', source: 'gameplan_meeting',
-              symbolOut: swap.symbolOut, symbolIn: swap.symbolIn,
-            });
-            continue;
-          }
-          reservedSymbolIn = swap.symbolIn;
+          continue;
         }
+        if (tournamentCtx) reservedSymbolIn = swap.symbolIn;
 
         const currentDay = getCurrentTradingDayServer(battle.timing?.tradingDays);
         const tradeId = `trade_${String((battle.scoreState?.tradeCount || 0) + 1).padStart(3, '0')}`;
@@ -2186,8 +2219,11 @@ async function handleGameplanMeeting(db, battleRef, battle, prices, statusFeedEn
             evaluationId: gameplanEvalId }
         );
         // P2 phase 2: confirm + double-down detection (no-op when
-        // tournamentCtx is null).
-        await confirmTournamentSwap(db, tournamentCtx, battle, { symbolIn: swap.symbolIn, symbolOut: swap.symbolOut }, statusFeedEntries);
+        // tournamentCtx is null). Actual symbols from closedTrade.
+        await confirmTournamentSwap(db, tournamentCtx, battle, {
+          symbolIn: gameplanSwapResult.closedTrade?.symbolIn || swap.symbolIn,
+          symbolOut: gameplanSwapResult.closedTrade?.symbolOut || swap.symbolOut,
+        }, statusFeedEntries);
         reservedSymbolIn = null;
         // Phase 2 Voice Layer Rework — queue narration for this
         // gameplan-approved swap so the user gets a chat message
@@ -2207,9 +2243,8 @@ async function handleGameplanMeeting(db, battleRef, battle, prices, statusFeedEn
           symbolOut: swap.symbolOut, symbolIn: swap.symbolIn,
         });
         summary.swapped++;
-        // Re-read battle after swap
-        const updatedDoc = await battleRef.get();
-        Object.assign(battle, updatedDoc.data());
+        // Re-read battle after swap (re-applies the tournament filter)
+        await refreshBattleFromDoc(battleRef, battle, tournamentCtx);
       } catch (err) {
         console.error(`${LOG_PREFIX} Gameplan swap failed for ${swap.symbolOut}:`, err.message);
         // P2: compensating release (no-op unless the reserve had landed).
@@ -2219,8 +2254,7 @@ async function handleGameplanMeeting(db, battleRef, battle, prices, statusFeedEn
     // Move to history and clear
     const history = [...(battle.gameplanMeetingHistory || []), meeting];
     await battleRef.update({ gameplanMeeting: null, gameplanMeetingHistory: history });
-    const updatedDoc = await battleRef.get();
-    Object.assign(battle, updatedDoc.data());
+    await refreshBattleFromDoc(battleRef, battle, tournamentCtx);
     return 'continue';
   }
 
@@ -2232,8 +2266,7 @@ async function handleGameplanMeeting(db, battleRef, battle, prices, statusFeedEn
     });
     const history = [...(battle.gameplanMeetingHistory || []), meeting];
     await battleRef.update({ gameplanMeeting: null, gameplanMeetingHistory: history });
-    const updatedDoc = await battleRef.get();
-    Object.assign(battle, updatedDoc.data());
+    await refreshBattleFromDoc(battleRef, battle, tournamentCtx);
     return 'continue';
   }
 
@@ -2251,8 +2284,7 @@ async function handleGameplanMeeting(db, battleRef, battle, prices, statusFeedEn
       action: 'hold', source: 'gameplan_meeting',
     });
     await battleRef.update({ gameplanMeeting: null, gameplanMeetingHistory: history });
-    const updatedDoc = await battleRef.get();
-    Object.assign(battle, updatedDoc.data());
+    await refreshBattleFromDoc(battleRef, battle, tournamentCtx);
     return 'continue';
   }
 

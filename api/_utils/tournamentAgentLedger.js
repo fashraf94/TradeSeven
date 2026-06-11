@@ -52,6 +52,7 @@ import {
   createAgentLedgerEntry,
 } from '../../src/constants/leagueTournament.js';
 import { flattenPortfolioServer } from './agentScoring.js';
+import { getGroup, getPlayer } from './tournamentGroupService.js';
 
 const LOG_PREFIX = '[TournamentLedger]';
 
@@ -124,23 +125,36 @@ export function excludeHeldByOthers(assets, heldByOthers) {
 }
 
 /**
+ * String-array sibling of excludeHeldByOthers (e.g. watchlist.hotBench, whose
+ * entries are bare symbols). Same identity contract: the SAME array reference
+ * comes back whenever there is nothing to remove.
+ */
+export function excludeHeldSymbols(symbols, heldByOthers) {
+  if (!Array.isArray(symbols) || !heldByOthers || heldByOthers.size === 0) return symbols;
+  if (!symbols.some(s => heldByOthers.has(s))) return symbols;
+  return symbols.filter(s => !heldByOthers.has(s));
+}
+
+/**
  * Own player's current user-layer picks with the LIVE leg's direction —
  * the double-down detection input (Spec §2, agent half). The live leg is the
  * last leg without `closedAt` (closed legs carry it; the field is omitted
  * until close — P0 leg factory contract). Pure.
  */
 export function getOwnUserPicks(group, odUserId) {
-  const player = (group?.players || []).find(p => p?.odUserId === odUserId);
+  const player = getPlayer(group, odUserId);
   if (!player) return [];
   const picks = [];
   for (const pick of player.picks || []) {
     if (!pick?.symbol) continue;
     const legs = Array.isArray(pick.legs) ? pick.legs : [];
+    // The live leg IS the last leg by construction (flips close the old leg
+    // and open the new one atomically — flip.js), so the last leg's
+    // direction is the pick's current stance.
     const last = legs[legs.length - 1];
-    const live = last && last.closedAt == null ? last : null;
     picks.push({
       symbol: pick.symbol,
-      direction: live?.direction || last?.direction || LEG_DIRECTION.LONG,
+      direction: last?.direction || LEG_DIRECTION.LONG,
     });
   }
   return picks;
@@ -205,8 +219,7 @@ export async function resolveTournamentContext(db, battle, groupCache = new Map(
   const groupId = battle.groupId;
   let group = groupCache.get(groupId);
   if (group === undefined) {
-    const snap = await db.collection(TOURNAMENT_GROUPS_COLLECTION).doc(groupId).get();
-    group = snap.exists ? { id: snap.id, ...snap.data() } : null;
+    group = await getGroup(db, groupId);
     groupCache.set(groupId, group);
   }
 
@@ -226,14 +239,16 @@ export async function resolveTournamentContext(db, battle, groupCache = new Map(
   const ledger = await readLedger(db, groupId);
   return {
     groupId,
-    group,
     agentId: battle.agentId,
     odUserId: battle.ownerId,
     // Symbols held/freshly-reserved by OTHER agents — the candidate filter
     // set. Own player's user-layer picks are never in the agent ledger
     // (dual markets), so they are never filtered: the double-down stays open.
+    // Deliberately NOT on the context: the group doc (memoized per
+    // invocation, can go stale across a mid-invocation flip) and the user
+    // picks — confirmSwap re-reads the group at confirm time so double-down
+    // events record the user leg's direction AT THE TIME (Spec §2).
     heldByOthers: buildHeldByOthers(ledger, battle.agentId),
-    ownUserPicks: getOwnUserPicks(group, battle.ownerId),
   };
 }
 
@@ -308,14 +323,31 @@ export async function reserveSymbol(db, { groupId, symbol, agentId, battleId, no
  * pattern A — awaited in-request), then returned so the caller can mirror
  * them onto the battle's status feed.
  *
+ * The own player's picks are re-read fresh here (a PLAIN read just before
+ * the ledger transaction — never a transactional group-doc read, which
+ * would take the lock the sibling-doc ruling exists to avoid), so the
+ * event's userDirection is the user leg's direction AT CONFIRM TIME — a
+ * mid-invocation flip can't stamp a stale direction onto the Spec §2 record.
+ *
  * Anomalies (symbolIn already held by a rival, symbolOut not ours) are
  * logged loudly and resolved in favor of what actually happened — the swap
  * is already on the battle doc, which is the derived ground truth the
  * nightly reconciliation arbitrates from.
  */
-export async function confirmSwap(db, { groupId, symbolIn, symbolOut, agentId, battleId, now = new Date(), ownUserPicks = [], odUserId = null }) {
+export async function confirmSwap(db, { groupId, symbolIn, symbolOut, agentId, battleId, now = new Date(), odUserId = null }) {
   const nowIso = toIso(now);
   const ref = ledgerRef(db, groupId);
+
+  let ownUserPicks = [];
+  if (odUserId) {
+    try {
+      ownUserPicks = getOwnUserPicks(await getGroup(db, groupId), odUserId);
+    } catch (readErr) {
+      // Detection degrades to "no events" rather than failing the confirm —
+      // the held-set write must land regardless.
+      console.warn(`${LOG_PREFIX} confirm: fresh group read failed for ${groupId} — double-down detection skipped:`, readErr.message);
+    }
+  }
 
   return db.runTransaction(async (tx) => {
     const snap = await tx.get(ref);
@@ -467,13 +499,28 @@ export async function reconcileGroupLedger(db, group, { now = new Date() } = {})
   const nowMs = toMs(now);
   const groupId = group.id;
 
-  const battlesSnap = await db.collection('agentBattles').where('groupId', '==', groupId).get();
+  // Field-mask projection: battle docs are heavyweight (statusFeed, chat,
+  // rankings) and the per-group result set grows daily all season — only
+  // these five fields feed the derivation. select() needs no index.
+  const battlesSnap = await db
+    .collection('agentBattles')
+    .where('groupId', '==', groupId)
+    .select('agentId', 'createdAt', 'gameMode', 'ownerId', 'portfolio')
+    .get();
+  const derivationDivergences = [];
   const battles = [];
   battlesSnap.forEach(doc => {
     const data = doc.data();
-    if (data?.gameMode === TOURNAMENT_GAME_MODE && typeof data?.agentId === 'string') {
-      battles.push({ id: doc.id, ...data });
+    if (data?.gameMode !== TOURNAMENT_GAME_MODE || typeof data?.agentId !== 'string') return;
+    // Same membership predicate the eval-cron resolver applies: a stamped
+    // battle whose owner is not in the group is NOT derived truth (the cron
+    // refuses it too, so ingesting it here would manufacture permanent
+    // wrong_holder noise the cron never repairs).
+    if (Array.isArray(group.groupMembers) && data.ownerId && !group.groupMembers.includes(data.ownerId)) {
+      derivationDivergences.push({ type: 'foreign_battle', symbol: null, details: `battle ${doc.id} owner ${data.ownerId} not in groupMembers — excluded from derivation` });
+      return;
     }
+    battles.push({ id: doc.id, ...data });
   });
 
   // Latest battle per agent (createdAt is ISO — lexicographic order works).
@@ -487,7 +534,6 @@ export async function reconcileGroupLedger(db, group, { now = new Date() } = {})
 
   // Derived held set: symbol → agentId. Agents processed in sorted order so
   // duplicate-holding arbitration is deterministic (first wins, rest logged).
-  const divergences = [];
   const derived = new Map();
   for (const agentId of [...latestByAgent.keys()].sort()) {
     const battle = latestByAgent.get(agentId);
@@ -495,18 +541,22 @@ export async function reconcileGroupLedger(db, group, { now = new Date() } = {})
       const symbol = asset?.symbol;
       if (!symbol) continue;
       if (derived.has(symbol)) {
-        divergences.push({ type: 'duplicate_holding', symbol, details: `held by ${derived.get(symbol)} and ${agentId} (crash-window duplicate)` });
+        derivationDivergences.push({ type: 'duplicate_holding', symbol, details: `held by ${derived.get(symbol)} and ${agentId} (crash-window duplicate)` });
         continue;
       }
       derived.set(symbol, agentId);
     }
   }
 
-  let staleCleared = 0;
+  // All diff accumulators live INSIDE the transaction closure and are
+  // returned from it: Firestore re-runs the closure on contention, so any
+  // outer-scope push/increment would double-count divergences on retry.
   const result = await db.runTransaction(async (tx) => {
     const snap = await tx.get(ledgerRef(db, groupId));
     const ledger = snap.exists ? snap.data() : createAgentLedgerDoc({ now: nowIso });
     const priorHeld = ledger.held || {};
+    const txDivergences = [];
+    let txStaleCleared = 0;
 
     const newHeld = {};
     for (const [symbol, agentId] of derived.entries()) {
@@ -514,7 +564,7 @@ export async function reconcileGroupLedger(db, group, { now = new Date() } = {})
       if (prior?.heldBy === agentId) {
         newHeld[symbol] = prior; // unchanged — keep since/source provenance
       } else {
-        divergences.push({
+        txDivergences.push({
           type: prior ? 'wrong_holder' : 'missing_in_ledger',
           symbol,
           details: prior ? `ledger said ${prior.heldBy}, portfolio says ${agentId}` : `portfolio says ${agentId}`,
@@ -527,16 +577,16 @@ export async function reconcileGroupLedger(db, group, { now = new Date() } = {})
       if (!latestByAgent.has(entry.heldBy)) {
         // No battle evidence either way — preserve (pre-deploy draft state).
         newHeld[symbol] = entry;
-        divergences.push({ type: 'unverifiable_holder', symbol, details: `held by ${entry.heldBy} (no battles in group) — preserved` });
+        txDivergences.push({ type: 'unverifiable_holder', symbol, details: `held by ${entry.heldBy} (no battles in group) — preserved` });
       } else {
-        divergences.push({ type: 'not_in_portfolio', symbol, details: `ledger said ${entry.heldBy}, portfolio disagrees — removed` });
+        txDivergences.push({ type: 'not_in_portfolio', symbol, details: `ledger said ${entry.heldBy}, portfolio disagrees — removed` });
       }
     }
 
     const newReservations = {};
     for (const [symbol, resv] of Object.entries(ledger.reservations || {})) {
       if (isReservationStale(resv, nowMs)) {
-        staleCleared++;
+        txStaleCleared++;
       } else {
         newReservations[symbol] = resv;
       }
@@ -549,11 +599,12 @@ export async function reconcileGroupLedger(db, group, { now = new Date() } = {})
       updatedAt: nowIso,
     });
 
-    return { heldCount: Object.keys(newHeld).length };
+    return { heldCount: Object.keys(newHeld).length, txDivergences, txStaleCleared };
   });
 
+  const divergences = [...derivationDivergences, ...result.txDivergences];
   for (const d of divergences) {
-    console.warn(`${LOG_PREFIX} reconcile ${groupId}: [${d.type}] ${d.symbol} — ${d.details}`);
+    console.warn(`${LOG_PREFIX} reconcile ${groupId}: [${d.type}] ${d.symbol ?? ''} — ${d.details}`);
   }
 
   return {
@@ -562,7 +613,7 @@ export async function reconcileGroupLedger(db, group, { now = new Date() } = {})
     holders: latestByAgent.size,
     heldCount: result.heldCount,
     divergences,
-    staleCleared,
+    staleCleared: result.txStaleCleared,
   };
 }
 
