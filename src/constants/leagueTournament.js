@@ -37,10 +37,13 @@ export const USER_HELD_NAMES_PER_GROUP = GROUP_SIZE * PICKS_PER_PLAYER; // 12
 export const AGENT_PICKS_PER_AGENT = 6; // the flat6 portfolio size (Spec §1.4 mode config)
 export const AGENT_MARKET_SIZE = GROUP_SIZE * AGENT_PICKS_PER_AGENT; // 24
 
-// Provisional status vocabulary — 'battle' mirrors the legacy drafts
-// collection's active-battle status (src/services/draftService.js:525), which
-// the claims cron's eligibility query keys on. P1 ratifies or amends when the
-// group lifecycle is implemented. Ratified as P0 scaffold, June 11, 2026.
+// Status vocabulary — 'battle' mirrors the legacy drafts collection's
+// active-battle status (src/services/draftService.js:525), which the claims
+// cron's eligibility query keys on. RATIFIED UNCHANGED at P1 (founder, June
+// 11, 2026): 'drafting' is reserved for the P3 orchestrator's multi-step
+// Monday sequence; P1's single-shot user-draft resolution transitions
+// forming→battle atomically so a crash can never strand a group mid-state.
+// Legal transitions live in api/_utils/tournamentGroupService.js.
 export const GROUP_STATUS = Object.freeze({
   FORMING: 'forming',
   DRAFTING: 'drafting',
@@ -51,6 +54,23 @@ export const GROUP_STATUS = Object.freeze({
 export const LEG_DIRECTION = Object.freeze({
   LONG: 'long',
   SHORT: 'short',
+});
+
+// Leg baseline provenance — RATIFIED vocabulary (founder, June 11, 2026;
+// closes the P0 free-form-string handoff). How each leg got its baseline:
+// - DRAFT_RESOLUTION:  pick acquired in the Monday user draft; baselinePrice
+//                      null at creation, settled at the next open (Spec §1.1).
+// - CLAIM_EXECUTION:   pick acquired via an approved overnight claim at the
+//                      pre-open pass; baselinePrice null until the open.
+// - FLIP_MARKET_OPEN:  leg opened by a flip while the market was open;
+//                      baselinePrice = the flip price, set immediately.
+// - FLIP_MARKET_CLOSED: leg opened by a flip while the market was closed;
+//                      baselinePrice null, settled at the next open.
+export const BASELINE_SOURCE = Object.freeze({
+  DRAFT_RESOLUTION: 'draft_resolution',
+  CLAIM_EXECUTION: 'claim_execution',
+  FLIP_MARKET_OPEN: 'flip_market_open',
+  FLIP_MARKET_CLOSED: 'flip_market_closed',
 });
 
 // Spec §1.2 — agentLedger entry provenance.
@@ -105,15 +125,15 @@ export function createClaimSystemState() {
  * write ecosystem (src/services/draftService.js:544).
  *
  * `baselinePrice` may be null when the leg opens while the market is closed
- * (baseline = next open, Spec §1.1 flip rules); `baselineSource` stays a
- * free-form string in P0 — the P1 flip endpoint owns its vocabulary.
+ * (baseline = next open, Spec §1.1 flip rules); `baselineSource` must be a
+ * BASELINE_SOURCE value (ratified June 11, 2026 — see that enum's comment).
  */
 export function createLeg({ direction = LEG_DIRECTION.LONG, baselinePrice = null, baselineSource, openedAt } = {}) {
   if (!Object.values(LEG_DIRECTION).includes(direction)) {
     throw new Error(`createLeg: invalid direction "${direction}"`);
   }
-  if (typeof baselineSource !== 'string' || baselineSource.length === 0) {
-    throw new Error('createLeg: baselineSource is required');
+  if (!Object.values(BASELINE_SOURCE).includes(baselineSource)) {
+    throw new Error(`createLeg: invalid baselineSource "${baselineSource}"`);
   }
   if (openedAt == null) {
     throw new Error('createLeg: openedAt is required');
@@ -170,10 +190,16 @@ export function createAgentLedgerEntry({ heldBy, since, source } = {}) {
  *   to end). Empty `picks` is valid (pre-draft group).
  * - Exactly one of `bracketGameId` | `baseLayerWeek` must be provided (round
  *   metadata, Spec §1.1); the unpopulated key is omitted from the output.
- * - `dailyScores` is initialized empty; its inner keying is P1 scope. (P1
- *   hazard, recorded in the P0 PR: the legacy waiver fallback reads
- *   dailyData.day{N}.closeScores — api/cron/process-draft-claims.js:242-258 —
- *   while Spec §1.1 names this field dailyScores.day{N}.)
+ * - `dailyScores` inner keying — RATIFIED (founder, June 11, 2026):
+ *   dailyScores.day{N} = { closeScores: { [odUserId]: { totalPoints, picks } },
+ *   recordedAt, recordedBy } — the legacy day{N} inner shape verbatim
+ *   (api/cron/snake-draft-daily-scores.js:283-297) under the Spec §1.1
+ *   top-level name, so the tournament waiver fallback differs from the legacy
+ *   one (process-draft-claims.js:242-258, which reads dailyData) by exactly
+ *   one field path. SCORING MODEL (founder correction, June 11, 2026 —
+ *   recorded in the P1a PR decisions register): totalPoints is the CUMULATIVE
+ *   standing at that day's close; the weekly score is the FINAL day's
+ *   snapshot, not a sum over days. The P1b banking pass is the only writer.
  * - `agentLedger` lives on the group doc per Spec §1.2's primary phrasing
  *   (ratified June 11, 2026; P2 may relocate to a sibling doc).
  * - `now` is required and opaque (ISO string or SDK timestamp sentinel) —

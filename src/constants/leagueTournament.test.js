@@ -28,6 +28,7 @@ import {
   AGENT_MARKET_SIZE,
   GROUP_STATUS,
   LEG_DIRECTION,
+  BASELINE_SOURCE,
   LEDGER_SOURCE,
   TOURNAMENT_TUNING,
   createClaimSystemState,
@@ -97,7 +98,19 @@ describe('tuning ledger (Spec §5 founder-set values)', () => {
     expect(Object.isFrozen(TOURNAMENT_TUNING)).toBe(true);
     expect(Object.isFrozen(GROUP_STATUS)).toBe(true);
     expect(Object.isFrozen(LEG_DIRECTION)).toBe(true);
+    expect(Object.isFrozen(BASELINE_SOURCE)).toBe(true);
     expect(Object.isFrozen(LEDGER_SOURCE)).toBe(true);
+  });
+});
+
+describe('baselineSource vocabulary (ratified June 11, 2026 — P1 docket #3)', () => {
+  it('exact ratified values', () => {
+    expect(BASELINE_SOURCE).toEqual({
+      DRAFT_RESOLUTION: 'draft_resolution',
+      CLAIM_EXECUTION: 'claim_execution',
+      FLIP_MARKET_OPEN: 'flip_market_open',
+      FLIP_MARKET_CLOSED: 'flip_market_closed',
+    });
   });
 });
 
@@ -145,14 +158,14 @@ describe('claimSystem parity with the legacy snake-draft shape', () => {
 // ==================== LEG / PICK FACTORIES ====================
 
 describe('createLeg', () => {
-  const args = { baselinePrice: 187.5, baselineSource: 'market_open', openedAt: NOW };
+  const args = { baselinePrice: 187.5, baselineSource: BASELINE_SOURCE.FLIP_MARKET_OPEN, openedAt: NOW };
 
   it('defaults long, fresh thresholdHistory, closed-state keys omitted', () => {
     const leg = createLeg(args);
     expect(leg).toEqual({
       direction: 'long',
       baselinePrice: 187.5,
-      baselineSource: 'market_open',
+      baselineSource: 'flip_market_open',
       openedAt: NOW,
       thresholdHistory: [],
     });
@@ -162,7 +175,9 @@ describe('createLeg', () => {
 
   it('accepts short; null baselinePrice (market-closed open) is valid', () => {
     expect(createLeg({ ...args, direction: LEG_DIRECTION.SHORT }).direction).toBe('short');
-    expect(createLeg({ ...args, baselinePrice: null }).baselinePrice).toBeNull();
+    expect(createLeg({
+      ...args, baselinePrice: null, baselineSource: BASELINE_SOURCE.DRAFT_RESOLUTION,
+    }).baselinePrice).toBeNull();
   });
 
   it('rejects invalid shapes', () => {
@@ -171,10 +186,15 @@ describe('createLeg', () => {
     expect(() => createLeg({ ...args, openedAt: undefined })).toThrow(/openedAt/);
     expect(() => createLeg({ ...args, baselinePrice: 'NaN-ish' })).toThrow(/baselinePrice/);
   });
+
+  it('rejects free-form sources — the P0 string era is closed (vocabulary ratified)', () => {
+    expect(() => createLeg({ ...args, baselineSource: 'market_open' })).toThrow(/baselineSource/);
+    expect(() => createLeg({ ...args, baselineSource: 'DRAFT_RESOLUTION' })).toThrow(/baselineSource/);
+  });
 });
 
 describe('createPickState', () => {
-  const args = { symbol: 'nvda', baselineSource: 'market_open', baselinePrice: 187.5, openedAt: NOW };
+  const args = { symbol: 'nvda', baselineSource: BASELINE_SOURCE.DRAFT_RESOLUTION, baselinePrice: 187.5, openedAt: NOW };
 
   it('uppercases the symbol, opens one leg, zero flips', () => {
     const pick = createPickState(args);

@@ -113,6 +113,7 @@ import { COMMAND_DASHBOARD_ENABLED, COMMAND_DASHBOARD_DESKTOP_ENABLED, TOURNAMEN
 import DesktopSidebar from './components/Navigation/DesktopSidebar';
 import { OnboardingExperience } from './components/Agent';
 import LeagueScreen from './screens/LeagueScreen';
+import TournamentDevScreen from './screens/TournamentDevScreen';
 import AppLoadingScreen from './components/shared/AppLoadingScreen';
 import { ForgeScreen } from './components/Forge';
 import ForgeWorkshop from './components/Forge/workshop/ForgeWorkshop';
@@ -2187,6 +2188,15 @@ export default function PortfolioDuel() {
   const isPageVisible = usePageVisibility();
 
   const [screen, setScreen] = useState('home');
+
+  // P1a tournament smoke-test surface — reachable ONLY via ?tournamentDev=1
+  // (founder-ratified gate, June 11, 2026). TOURNAMENT_TAB_ENABLED stays
+  // false; the flag flip remains the last act of the build (P9).
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get('tournamentDev') === '1') {
+      setScreen('tournamentDev');
+    }
+  }, []);
 
   // ── Season Mode state ────────────────────────────────────
   const { agent: primaryAgent, hasAgent, loading: agentLoading } = useAgent(user?.uid);
@@ -9555,6 +9565,19 @@ export default function PortfolioDuel() {
       <div style={{ marginLeft: isDesktop ? (sidebarCollapsed ? '64px' : '220px') : 0, transition: 'margin-left 0.2s ease' }}>
       <ErrorBoundary name="League" onNavigateDashboard={() => setScreen('dashboard')}>
         <LeagueScreen />
+      </ErrorBoundary>
+      </div>
+    );
+  }
+
+  // TOURNAMENT DEV (P1a smoke surface) — no nav setter exists for this id;
+  // the ?tournamentDev=1 mount effect is its only entry. Dev tooling, not
+  // the product surface (battle view is P7; flag flip is P9).
+  if (screen === 'tournamentDev') {
+    return (
+      <div style={{ marginLeft: isDesktop ? (sidebarCollapsed ? '64px' : '220px') : 0, transition: 'margin-left 0.2s ease' }}>
+      <ErrorBoundary name="TournamentDev" onNavigateDashboard={() => setScreen('dashboard')}>
+        <TournamentDevScreen />
       </ErrorBoundary>
       </div>
     );

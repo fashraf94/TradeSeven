@@ -1,0 +1,86 @@
+// api/_utils/tournamentGroupService.js
+//
+// League Tournament — server-side (Admin SDK) service for the
+// `tournamentGroups` collection. P1a scope: creation, reads, and status
+// transitions over the ratified GROUP_STATUS enum. The deployed Firestore
+// rules make this collection client-read-only (firestore.rules
+// tournamentGroups block: write false), so every mutation in the tournament
+// build flows through this module or a sibling using it.
+//
+// Imports the zero-import schema module from src/ under the revised June 2026
+// import rule (BUILD_RULES §4): transitive surface is Node-clean by
+// construction. The co-located test's real import of THIS module is the
+// consumer-side dependency-surface guard.
+
+import {
+  TOURNAMENT_GROUPS_COLLECTION,
+  GROUP_STATUS,
+  createTournamentGroupDoc,
+} from '../../src/constants/leagueTournament.js';
+
+// Forward-only lifecycle (GROUP_STATUS ratified unchanged at P1, founder
+// June 11, 2026). forming→battle is the P1 single-shot resolution path;
+// forming→drafting→battle is reserved for the P3 orchestrator's multi-step
+// Monday sequence. No transition ever moves backward.
+export const LEGAL_TRANSITIONS = Object.freeze({
+  [GROUP_STATUS.FORMING]: Object.freeze([GROUP_STATUS.DRAFTING, GROUP_STATUS.BATTLE]),
+  [GROUP_STATUS.DRAFTING]: Object.freeze([GROUP_STATUS.BATTLE]),
+  [GROUP_STATUS.BATTLE]: Object.freeze([GROUP_STATUS.COMPLETE]),
+  [GROUP_STATUS.COMPLETE]: Object.freeze([]),
+});
+
+export function assertTransition(from, to) {
+  const allowed = LEGAL_TRANSITIONS[from];
+  if (!allowed) {
+    throw new Error(`tournamentGroupService: unknown status "${from}"`);
+  }
+  if (!allowed.includes(to)) {
+    throw new Error(`tournamentGroupService: illegal transition "${from}" -> "${to}"`);
+  }
+}
+
+/**
+ * Create a tournamentGroups document via the canonical P0 factory.
+ * `args` is passed through to createTournamentGroupDoc (which validates
+ * shape and throws on violations). Returns { id, doc }.
+ */
+export async function createGroup(db, args) {
+  const groupDoc = createTournamentGroupDoc(args);
+  const ref = db.collection(TOURNAMENT_GROUPS_COLLECTION).doc();
+  await ref.set(groupDoc);
+  return { id: ref.id, doc: groupDoc };
+}
+
+/** Read one group. Returns { id, ...data } or null. */
+export async function getGroup(db, groupId) {
+  const snap = await db.collection(TOURNAMENT_GROUPS_COLLECTION).doc(groupId).get();
+  if (!snap.exists) return null;
+  return { id: snap.id, ...snap.data() };
+}
+
+/**
+ * Transition a group's status under the legality table, transactionally
+ * (read-check-write, so two racing callers can't both move the same group).
+ * `now` is caller-supplied, consistent with the factory's opaque-timestamp
+ * rule. Returns the new status.
+ */
+export async function transitionStatus(db, groupId, to, now) {
+  if (now == null) {
+    throw new Error('tournamentGroupService.transitionStatus: now is required');
+  }
+  const ref = db.collection(TOURNAMENT_GROUPS_COLLECTION).doc(groupId);
+  await db.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    if (!snap.exists) {
+      throw new Error(`tournamentGroupService: group ${groupId} not found`);
+    }
+    assertTransition(snap.data().status, to);
+    tx.update(ref, { status: to, updatedAt: now });
+  });
+  return to;
+}
+
+/** Membership helper: the player entry for odUserId, or null. */
+export function getPlayer(group, odUserId) {
+  return (group?.players ?? []).find(p => p.odUserId === odUserId) ?? null;
+}

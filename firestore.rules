@@ -304,6 +304,16 @@ service cloud.firestore {
       allow create, update, delete: if false;
     }
 
+    // P1a: tournamentGroups subcollections (boards/{odUserId}, streams/*;
+    // picks/claims surfaces to come) — authenticated reads, never client
+    // writes; all mutation stays Admin SDK. Matches subcollection documents
+    // only, so the group-doc block above is unchanged. Same manual
+    // Console-deploy caveat as above; inert until deployed.
+    match /tournamentGroups/{groupId}/{document=**} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+
     // Snake Draft battles
     match /snakeDraftBattles/{battleId} {
       allow read: if request.auth != null;
