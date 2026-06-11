@@ -133,8 +133,8 @@ describe('agent-evaluate cron — Phase 4 technical snapshot writes', () => {
   it('threads currentScore into handlePendingProposal and captures scoreAtVeto / scoreAtResolution', () => {
     // Function signature receives currentScore
     expect(source).toMatch(/async function handlePendingProposal\([^)]*currentScore[^)]*\)/);
-    // Call site passes it
-    expect(source).toMatch(/handlePendingProposal\([^)]*currentScore\)/);
+    // Call site passes it (P2 appended tournamentCtx after it — lock both)
+    expect(source).toMatch(/handlePendingProposal\([^)]*currentScore, tournamentCtx\)/);
 
     // Veto site captures scoreAtVeto
     expect(source).toMatch(/scoreAtVeto:\s*typeof currentScore === 'number'/);
@@ -395,5 +395,111 @@ describe('agent-evaluate cron — Knob §4.6 receipt source wiring (Gate 7)', ()
 
   it('Path D (gameplan, dormant): source = gameplan_meeting (archetype off battle.agentContext — ctx not in scope in handleGameplanMeeting)', () => {
     expect(source).toMatch(/\.\.\.buildSwapReceiptSource\(\{ source: 'gameplan_meeting', archetype: battle\.agentContext\?\.archetype \}\)/);
+  });
+});
+
+// P2 (League Tournament §1.2) — agent-market exclusivity wiring guards.
+//
+// REGULAR-BATTLE INVARIANCE is the phase's governing rule: every ledger and
+// filter touch in this cron must be tournament-conditional, and the resolver
+// must answer "not a tournament battle" from in-memory fields before any
+// Firestore access. The behavioral half of that proof lives in
+// tournamentAgentLedger.test.js (identity filters, the throwing-db zero-I/O
+// test); these static guards lock the CRON's side: the five
+// executeSwapServer call sites are each wrapped reserve → execute → confirm
+// with a compensating release in their catch, and every insertion is gated
+// on tournamentCtx. Same static-source rationale as every block above.
+describe('agent-evaluate cron — P2 tournament ledger wiring (agent-market exclusivity)', () => {
+  const source = readFileSync(SOURCE_PATH, 'utf-8');
+  const ledgerSource = readFileSync(resolve(__dirname, '../_utils/tournamentAgentLedger.js'), 'utf-8');
+
+  it('imports the ledger surface from tournamentAgentLedger.js', () => {
+    expect(source).toMatch(/import\s*\{[^}]*\bresolveTournamentContext\b[^}]*\}\s*from\s*'\.\.\/_utils\/tournamentAgentLedger\.js'/s);
+    for (const name of ['excludeHeldByOthers', 'reserveSymbol', 'confirmSwap', 'releaseReservation']) {
+      expect(source).toMatch(new RegExp(`import\\s*\\{[^}]*\\b${name}\\b[^}]*\\}\\s*from\\s*'\\.\\./_utils/tournamentAgentLedger\\.js'`, 's'));
+    }
+  });
+
+  it('resolves the tournament context exactly once per battle, with the per-invocation group cache', () => {
+    const calls = source.match(/await resolveTournamentContext\(db, battle, tournamentGroupCache\)/g) || [];
+    expect(calls.length).toBe(1);
+    // The cache is created in the handler loop scope and threaded through.
+    expect(source).toMatch(/const tournamentGroupCache = new Map\(\);/);
+    expect(source).toMatch(/processAgentBattle\(db, battle, summary, startTime, tournamentGroupCache\)/);
+  });
+
+  it('THE RESOLVER DISCRIMINATES BEFORE ANY AWAIT — a regular battle costs zero Firestore I/O (P4 contract: gameMode AND groupId stamped together)', () => {
+    const fnMatch = ledgerSource.match(/export async function resolveTournamentContext\([\s\S]+?\n\}/);
+    expect(fnMatch).not.toBeNull();
+    const body = fnMatch[0];
+    const firstAwait = body.indexOf('await');
+    const gameModeCheck = body.indexOf('battle.gameMode !== TOURNAMENT_GAME_MODE');
+    const groupIdCheck = body.indexOf("typeof battle.groupId !== 'string'");
+    expect(gameModeCheck).toBeGreaterThan(-1);
+    expect(groupIdCheck).toBeGreaterThan(-1);
+    expect(gameModeCheck).toBeLessThan(firstAwait);
+    expect(groupIdCheck).toBeLessThan(firstAwait);
+  });
+
+  it('every one of the 5 executeSwapServer call sites is preceded by a tournamentCtx-gated reserve (two-phase, phase 1)', () => {
+    // Find each call site (the import line has no opening paren on the name).
+    const sites = [...source.matchAll(/executeSwapServer\(\s*\n?\s*db,/g)].map(m => m.index);
+    expect(sites.length).toBe(5);
+    for (const idx of sites) {
+      const windowBefore = source.slice(Math.max(0, idx - 3000), idx);
+      expect(windowBefore).toContain('await reserveSymbol(');
+      expect(windowBefore).toMatch(/if \((benchAsset && )?tournamentCtx\)/);
+    }
+  });
+
+  it('every one of the 5 call sites confirms on success (two-phase, phase 2) and releases in its catch (compensating action)', () => {
+    const sites = [...source.matchAll(/executeSwapServer\(\s*\n?\s*db,/g)].map(m => m.index);
+    for (const idx of sites) {
+      const windowAfter = source.slice(idx, idx + 3000);
+      expect(windowAfter).toContain('await confirmTournamentSwap(db, tournamentCtx, battle,');
+    }
+    const releases = source.match(/await releaseTournamentReservation\(db, tournamentCtx, reservedSymbolIn\);/g) || [];
+    expect(releases.length).toBe(5);
+    const reserveMarkers = source.match(/let reservedSymbolIn = null;/g) || [];
+    expect(reserveMarkers.length).toBe(5);
+  });
+
+  it('the confirm helper never rethrows (the swap already executed; reconciliation repairs) and the release helper never masks the original error', () => {
+    const confirmFn = source.match(/async function confirmTournamentSwap\([\s\S]+?\n\}/)?.[0] || '';
+    expect(confirmFn).toContain('catch (confirmErr)');
+    expect(confirmFn).not.toMatch(/throw/);
+    const releaseFn = source.match(/async function releaseTournamentReservation\([\s\S]+?\n\}/)?.[0] || '';
+    expect(releaseFn).toContain('catch (releaseErr)');
+    expect(releaseFn).not.toMatch(/throw/);
+  });
+
+  it('candidate pre-filtering is wired at every composition point, all gated on tournamentCtx', () => {
+    // In-memory bench filter (covers benchAssets, the gameplan trigger,
+    // allBench, findBenchAsset lookups, prompt assembly).
+    expect(source).toMatch(/if \(tournamentCtx && battle\.portfolio\?\.bench\?\.stocks\) \{\s*\n\s*battle\.portfolio\.bench\.stocks = excludeHeldByOthers\(battle\.portfolio\.bench\.stocks, tournamentCtx\.heldByOthers\);/);
+    // hotBench refresh candidates.
+    expect(source).toMatch(/candidates = excludeHeldByOthers\(candidates, tournamentCtx\.heldByOthers\);/);
+    // Equip-union exclusion set.
+    expect(source).toMatch(/\.\.\.\(tournamentCtx \? tournamentCtx\.heldByOthers : \[\]\)/);
+    // Synthetic hotBench gate (stale persisted hotBench on non-rebuild ticks).
+    expect(source).toMatch(/&& \(!tournamentCtx \|\| !tournamentCtx\.heldByOthers\.has\(stock\.symbol\)\)/);
+    // Catalyst additions gate.
+    expect(source).toMatch(/&& \(!tournamentCtx \|\| !tournamentCtx\.heldByOthers\.has\(ticker\)\)/);
+    // Cross-agent held set into pickSwapReplacementCandidate's heldSymbols.
+    expect(source).toMatch(/for \(const heldSymbol of tournamentCtx\.heldByOthers\) heldSymbols\.add\(heldSymbol\);/);
+  });
+
+  it('the emptied-pool emergency skip emits the designed feed event (never a silent log), tournament-only', () => {
+    const skipBlock = source.match(/if \(!replacement\) \{[\s\S]+?\n {6}\}/)?.[0] || '';
+    expect(skipBlock).toContain("action: 'tournament_pool_empty'");
+    expect(skipBlock).toContain('if (tournamentCtx)');
+    expect(skipBlock).toMatch(/Wanted out of/);
+  });
+
+  it('double-down feed entries carry the spec fields and both event kinds', () => {
+    const builder = source.match(/function buildDoubleDownFeedEntry\([\s\S]+?\n\}/)?.[0] || '';
+    expect(builder).toContain("'double_down_formed'");
+    expect(builder).toContain("'double_down_broken'");
+    expect(builder).toContain("source: 'tournament_ledger'");
   });
 });

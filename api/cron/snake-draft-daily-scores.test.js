@@ -26,24 +26,37 @@ import handler from './snake-draft-daily-scores.js';
 
 const TRADING_DAY = new Date('2026-06-10T21:15:00Z'); // Wed 17:15 ET
 
-function makeDb({ drafts = [], groups = [], groupDocs = {} } = {}) {
-  const captured = { updates: [], txUpdates: [] };
+function makeDb({ drafts = [], groups = [], groupDocs = {}, agentBattles = [], ledgerDocs = {}, ledgerThrows = false } = {}) {
+  const captured = { updates: [], txUpdates: [], txSets: [] };
   const db = {
     collection: (name) => ({
       where: () => ({
         get: async () => ({
-          forEach: (cb) => (name === 'drafts' ? drafts : name === 'tournamentGroups' ? groups : [])
+          forEach: (cb) => (name === 'drafts' ? drafts : name === 'tournamentGroups' ? groups : name === 'agentBattles' ? agentBattles : [])
             .forEach(d => cb({ id: d.id, data: () => d.data })),
         }),
       }),
       doc: (id) => ({
         get: async () => ({ exists: groupDocs[id] != null, data: () => groupDocs[id] }),
         update: async (data) => { captured.updates.push({ id, data }); },
+        // P2: the agent held-set ledger sibling (ledger/agentHeldSet).
+        collection: (sub) => {
+          if (ledgerThrows) throw new Error('ledger subcollection exploded');
+          return {
+            doc: (subId) => ({
+              get: async () => {
+                const key = `${id}/${sub}/${subId}`;
+                return { exists: ledgerDocs[key] != null, data: () => ledgerDocs[key] };
+              },
+            }),
+          };
+        },
       }),
     }),
     runTransaction: async (fn) => fn({
       get: async (ref) => ref.get(),
       update: (_ref, data) => { captured.txUpdates.push(data); },
+      set: (_ref, data) => { captured.txSets.push(data); },
     }),
   };
   return { db, captured };
@@ -96,10 +109,12 @@ describe('tournament banking branch — production inertness', () => {
     expect(res.statusCode).toBe(200);
     // Legacy contract, verbatim:
     expect(res.body).toMatchObject({ success: true, message: 'No active battles', processed: 0 });
-    // Additive branch, no-op:
+    // Additive branches, no-op:
     expect(res.body.tournament).toEqual({ groups: 0, processed: 0, skipped: 0, errors: 0 });
+    expect(res.body.tournamentLedger).toEqual({ groups: 0, reconciled: 0, divergences: 0, staleCleared: 0, errors: 0 });
     expect(captured.updates).toHaveLength(0);
     expect(captured.txUpdates).toHaveLength(0);
+    expect(captured.txSets).toHaveLength(0);
   });
 });
 
@@ -122,6 +137,11 @@ describe('tournament banking branch — no short-circuit', () => {
     expect(res.body.tournament).toMatchObject({ groups: 1, processed: 1, skipped: 0, errors: 0 });
     expect(captured.txUpdates).toHaveLength(1);
     expect(captured.txUpdates[0]['dailyScores.day1'].closeScores.u1.totalPoints).toBe(45);
+    // P2: the ledger reconciliation also ran for the group (one tx.set of
+    // the rebuilt sibling doc — empty here: no agent battles seeded).
+    expect(res.body.tournamentLedger).toMatchObject({ groups: 1, reconciled: 1, errors: 0 });
+    expect(captured.txSets).toHaveLength(1);
+    expect(captured.txSets[0]).toMatchObject({ held: {}, reservations: {} });
   });
 
   it('a legacy price-fetch failure 500 still carries the tournament result (branch ran first)', async () => {
@@ -177,6 +197,33 @@ describe('tournament banking branch — no short-circuit', () => {
     expect(res.statusCode).toBe(200);
     expect(res.body).toMatchObject({ success: true, message: 'No active battles', processed: 0 });
     expect(res.body.tournament).toMatchObject({ errors: 1, failed: true });
+    // The reconciliation branch queries the same collection — it fails
+    // independently and is reported the same way.
+    expect(res.body.tournamentLedger).toMatchObject({ errors: 1, failed: true });
+  });
+
+  it('P2: a ledger-reconciliation crash never breaks banking or the legacy path', async () => {
+    vi.stubEnv('EODHD_API_KEY', 'test-key');
+    vi.stubGlobal('fetch', async () => ({
+      ok: true,
+      status: 200,
+      json: async () => [{ code: 'NVDA.US', open: 100, close: 103, previousClose: 99, timestamp: 1 }],
+    }));
+
+    const group = tournamentGroup();
+    const { db, captured } = makeDb({
+      groups: [{ id: 'g1', data: group }],
+      groupDocs: { g1: group },
+      ledgerThrows: true, // only the ledger sibling access explodes
+    });
+    h.db = db;
+    const { req, res } = makeReqRes();
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body.tournament).toMatchObject({ groups: 1, processed: 1, errors: 0 }); // banking unharmed
+    expect(res.body.tournamentLedger).toMatchObject({ groups: 1, reconciled: 0, errors: 1 });
+    expect(captured.txUpdates).toHaveLength(1); // the banking write still landed
   });
 });
 
