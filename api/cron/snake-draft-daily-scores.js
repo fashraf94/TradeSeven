@@ -17,6 +17,7 @@
 import { initializeApp, getApps, cert } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 import { calculateSnakeDraftAssetScore } from '../../src/services/scoring/baggerBombCalculator.js';
+import { bankAllTournamentGroups } from '../_utils/tournamentBanking.js';
 
 // Structured logging helper
 const LOG_PREFIX = '[SnakeDraftCron]';
@@ -459,6 +460,21 @@ export default async function handler(req, res) {
   try {
     const db = getFirebaseAdmin();
 
+    // P1b: League Tournament user-layer banking rides this nightly handler
+    // (zero new cron entries — BUILD_RULES §6; banking home ratified in the
+    // P1a PR register). It runs FIRST and is fully independent of the legacy
+    // path: zero tournament groups is a clean no-op (the production state
+    // until P3+), and a tournament failure must never block the legacy
+    // recorder below — so it carries its own catch.
+    let tournament;
+    try {
+      tournament = await bankAllTournamentGroups(db);
+      logInfo('Tournament banking branch complete', tournament);
+    } catch (error) {
+      logError('Tournament banking branch failed', { error: error.message });
+      tournament = { groups: 0, processed: 0, skipped: 0, errors: 1, failed: true };
+    }
+
     // Query all active battles
     const battlesSnapshot = await db.collection('drafts')
       .where('status', '==', 'battle')
@@ -480,6 +496,7 @@ export default async function handler(req, res) {
         success: true,
         message: 'No active battles',
         processed: 0,
+        tournament,
       });
     }
 
@@ -503,6 +520,7 @@ export default async function handler(req, res) {
       return res.status(500).json({
         success: false,
         error: 'Failed to fetch prices',
+        tournament, // the tournament branch already ran — never masked by a legacy price failure
       });
     }
 
@@ -538,6 +556,7 @@ export default async function handler(req, res) {
     return res.status(200).json({
       success: true,
       ...results,
+      tournament,
       durationMs: duration,
     });
 
