@@ -290,6 +290,20 @@ service cloud.firestore {
       }
     }
 
+    // League Tournament groups — the drafts-sibling collection for the
+    // per-group-of-four tournament game (Implementation Spec V1 §1.1,
+    // docs/FANTASYTRADES_LEAGUE_TOURNAMENT_IMPLEMENTATION_SPEC_V1.md).
+    // P0 scaffold posture: authenticated reads (spectator surfaces are
+    // read-only by design), NO client writes — all mutation is Admin SDK
+    // (claims cron branch, orchestrator) until P1 defines the client surface
+    // (draft picks, flips, claims subcollection). Manual deploy via Firebase
+    // Console required after merge — Firestore rules don't auto-deploy from
+    // code; nothing reads this collection until P1, so no urgency.
+    match /tournamentGroups/{groupId} {
+      allow read: if request.auth != null;
+      allow create, update, delete: if false;
+    }
+
     // Snake Draft battles
     match /snakeDraftBattles/{battleId} {
       allow read: if request.auth != null;
