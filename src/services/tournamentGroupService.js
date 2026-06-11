@@ -5,7 +5,7 @@
 // collection client-read-only (write: false), so every mutation goes through
 // the api/tournament/* endpoints (Admin SDK). Do not add write calls here.
 
-import { doc, getDoc, onSnapshot, collection, query, where, limit, getDocs } from 'firebase/firestore';
+import { doc, getDoc, onSnapshot, collection, query, where, orderBy, limit, getDocs } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import { TOURNAMENT_GROUPS_COLLECTION, TOURNAMENT_TUNING } from '../constants/leagueTournament';
 
@@ -30,6 +30,27 @@ export function subscribeGroup(groupId, callback) {
   }, (error) => {
     console.error('[TournamentGroupService] Group subscription error:', error);
     callback(null);
+  });
+}
+
+/**
+ * Live claims subscription (P1b) — newest first, capped. Reads are
+ * client-legal under the deployed subcollection rules block
+ * (firestore.rules tournamentGroups/{groupId}/{document=**}); placement
+ * itself goes through POST /api/tournament/place-claim.
+ * Callback receives an array of { id, ...claim }. Returns the unsubscribe fn.
+ */
+export function subscribeClaims(groupId, callback) {
+  const claimsQuery = query(
+    collection(db, TOURNAMENT_GROUPS_COLLECTION, groupId, 'claims'),
+    orderBy('createdAt', 'desc'),
+    limit(20)
+  );
+  return onSnapshot(claimsQuery, (snapshot) => {
+    callback(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
+  }, (error) => {
+    console.error('[TournamentGroupService] Claims subscription error:', error);
+    callback([]);
   });
 }
 
