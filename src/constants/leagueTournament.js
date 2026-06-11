@@ -166,6 +166,60 @@ export function createPickState({ symbol, direction, baselinePrice, baselineSour
   };
 }
 
+// ==================== DAILY-SCORES READ HELPERS (P1b) ====================
+//
+// Pure, zero-import (module rule above). Shared by api/ banking + claims and
+// the client standings surface — the one legal home for both sides.
+
+/**
+ * The latest banked day entry: highest /^day(\d+)$/ key in dailyScores.
+ * @returns {{dayN: number, entry: Object}|null} null before the first banking.
+ */
+export function getLatestDayEntry(group) {
+  const dailyScores = group?.dailyScores || {};
+  let dayN = 0;
+  let entry = null;
+  for (const key of Object.keys(dailyScores)) {
+    const match = /^day(\d+)$/.exec(key);
+    if (!match) continue;
+    const n = Number(match[1]);
+    if (n > dayN) {
+      dayN = n;
+      entry = dailyScores[key];
+    }
+  }
+  return entry ? { dayN, entry } : null;
+}
+
+/**
+ * Weekly score = the FINAL day's snapshot (founder ruling, June 11, 2026 —
+ * P1a PR decisions register): totalPoints is the CUMULATIVE standing at each
+ * close, so the week's result IS the last snapshot — NEVER a sum over days.
+ * The co-located test proves this against the sum.
+ */
+export function getWeeklyScore(group, odUserId) {
+  return getLatestDayEntry(group)?.entry?.closeScores?.[odUserId]?.totalPoints ?? 0;
+}
+
+/**
+ * The group's current trading day (1-based), derived from the banking record
+ * — tournament groups carry no battleStartDate, and the banking pass is
+ * dailyScores' only writer. If the latest entry was banked today (ET), today
+ * IS that day; otherwise today is the next one. This reproduces the legacy
+ * getCurrentTradingDay value in every claim-window case: evenings
+ * post-banking read N, evenings pre-banking and mornings read N(+1).
+ *
+ * @param {Object} group
+ * @param {string} etDate - today's ET calendar date 'YYYY-MM-DD'
+ *   (api/_utils/tournamentTime.js formatEtDate — passed in; this module
+ *   never reads a clock)
+ */
+export function deriveCurrentTradingDay(group, etDate) {
+  const latest = getLatestDayEntry(group);
+  if (!latest) return 1;
+  return latest.entry?.recordedDate === etDate ? latest.dayN : latest.dayN + 1;
+}
+
 /**
  * One agentLedger entry (Spec §1.2): `{symbol → {heldBy, since, source}}`.
  */

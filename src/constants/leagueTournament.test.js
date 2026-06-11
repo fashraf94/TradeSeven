@@ -36,6 +36,9 @@ import {
   createPickState,
   createAgentLedgerEntry,
   createTournamentGroupDoc,
+  getLatestDayEntry,
+  getWeeklyScore,
+  deriveCurrentTradingDay,
 } from './leagueTournament.js';
 // Real import, zero mocks (precedent: api/cron/process-draft-claims.test.js:10).
 // This is the behavioral half of the claimSystem parity guard.
@@ -301,5 +304,62 @@ describe('schema module dependency surface', () => {
   it('has zero imports — keeps the future api/ consumer guard satisfiable by construction', () => {
     expect(moduleSource).not.toMatch(/^\s*import[\s{]/m);
     expect(moduleSource).not.toMatch(/\brequire\s*\(/);
+  });
+});
+
+// ==================== DAILY-SCORES READ HELPERS (P1b) ====================
+
+describe('getLatestDayEntry', () => {
+  it('returns the highest day{N} entry; null before the first banking', () => {
+    const group = {
+      dailyScores: {
+        day1: { closeScores: {}, recordedDate: '2026-06-08' },
+        day2: { closeScores: {}, recordedDate: '2026-06-09' },
+        dayDecoy: { closeScores: {} }, // non-matching keys are ignored
+      },
+    };
+    expect(getLatestDayEntry(group)).toEqual({ dayN: 2, entry: group.dailyScores.day2 });
+    expect(getLatestDayEntry({ dailyScores: {} })).toBeNull();
+    expect(getLatestDayEntry(null)).toBeNull();
+  });
+});
+
+describe('getWeeklyScore — the FINAL snapshot, never a sum (founder ruling #1)', () => {
+  const group = {
+    dailyScores: {
+      day1: { closeScores: { 'user-a': { totalPoints: 10, picks: [] } } },
+      day2: { closeScores: { 'user-a': { totalPoints: 25, picks: [] } } },
+    },
+  };
+
+  it('reads the final day snapshot — 25, where a sum over days would say 35', () => {
+    expect(getWeeklyScore(group, 'user-a')).toBe(25);
+    const wrongSum = Object.values(group.dailyScores)
+      .reduce((sum, day) => sum + day.closeScores['user-a'].totalPoints, 0);
+    expect(wrongSum).toBe(35); // the model this ruling supersedes
+    expect(getWeeklyScore(group, 'user-a')).not.toBe(wrongSum);
+  });
+
+  it('0 for unknown players and unbanked groups', () => {
+    expect(getWeeklyScore(group, 'user-z')).toBe(0);
+    expect(getWeeklyScore({ dailyScores: {} }, 'user-a')).toBe(0);
+  });
+});
+
+describe('deriveCurrentTradingDay — banking-derived day clock', () => {
+  const TODAY = '2026-06-10';
+
+  it('day 1 before any banking', () => {
+    expect(deriveCurrentTradingDay({ dailyScores: {} }, TODAY)).toBe(1);
+  });
+
+  it('today IS day N when day N was banked today (evening, post-banking)', () => {
+    const group = { dailyScores: { day2: { closeScores: {}, recordedDate: TODAY } } };
+    expect(deriveCurrentTradingDay(group, TODAY)).toBe(2);
+  });
+
+  it('today is day N+1 when the latest banking was a prior date (morning / pre-banking)', () => {
+    const group = { dailyScores: { day2: { closeScores: {}, recordedDate: '2026-06-09' } } };
+    expect(deriveCurrentTradingDay(group, TODAY)).toBe(3);
   });
 });
