@@ -8,7 +8,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
 import { isMarketOpen, getETDate, formatDateString } from '../_utils/marketSchedule.js';
-import { getStockAnalysisData, fetchIntradayBatch, filterToLatestSession } from '../_utils/marketDataCache.js';
+import { getStockAnalysisData, fetchIntradayBatch, fetchIntradayCandles, filterToLatestSession } from '../_utils/marketDataCache.js';
 import { resolveBadgeBaseline } from '../_utils/baselineValidation.js';
 import { findActiveAgentBattles } from '../_utils/agentBattleService.js';
 import { unionEquippedIntoHotBench } from '../_utils/watchlistEquip.js';
@@ -47,7 +47,7 @@ import { applyGuardrails } from '../_utils/agentGuardrails.js';
 import { classifyStockRegime, classifyMarketPosture, getPresetAdjustedStrategies } from '../_utils/agentRegimeClassifier.js';
 import { evaluateRisk, calculate5minSMA20, pickSwapReplacementCandidate, updateStagnationCounter, findPortfolioSlot, clearsHurdleFloor, getRecentSwapCount, EMERGENCY_BYPASS_REASONS, buildSwapReceiptSource } from '../_utils/agentRiskManager.js';
 import { getPresetConfig } from '../_utils/agentPresetConfig.js';
-import { isVwapSessionUsable, isVwapStrike, pruneCounterMaps } from '../_utils/agentVwapFloor.js';
+import { isVwapSessionUsable, isVwapStrike, pruneCounterMaps, seedVwapFireGuard, isReplacementQualified, VWAP_CASCADE_GUARD_N, CASCADE_QUALIFY_TIMEOUT_MS } from '../_utils/agentVwapFloor.js';
 import { getArchetypeConfig } from '../_utils/agentArchetypeConfig.js';
 import { finalizeCronState } from '../_utils/agentCronState.js';
 import { classifyHaikuFailure, shouldStartHaikuCall, nextConsecutiveEvalFailures, HAIKU_CALL_CEILING_MS } from '../_utils/agentEvalTransport.js';
@@ -309,6 +309,47 @@ async function reserveTournamentSymbolIn(db, tournamentCtx, battle, symbol) {
 // P2: statusFeed entry for the two designed risk-loop exclusivity beats
 // (emptied pool / reserve lost) — one builder so the 'tournament_pool_empty'
 // event shape can't drift between its two sites.
+// [VWAP Floor B6] Cascade-guard qualification: once the daily fire counter
+// crosses VWAP_CASCADE_GUARD_N, every further vwap_failure replacement must
+// prove on FRESH intraday data that it isn't itself below the dead-band —
+// otherwise the floor is just rotating one weak name into another. Fail-closed:
+// fetch error, timeout, stale session, or thin session all disqualify
+// (skip-and-hold; bust/trail still protect the position). Memoized per tick so
+// re-picks of the same symbol don't re-fetch. Race-without-abort is accepted
+// here (unlike the Haiku hard-abort): an orphaned EODHD GET costs nothing and
+// bills nothing.
+async function qualifyCascadeReplacement(symbol, { todayET, deadBandPct, memo }) {
+  if (memo.has(symbol)) return memo.get(symbol);
+  let qualified = false;
+  let timeoutId = null;
+  try {
+    const candles = await Promise.race([
+      fetchIntradayCandles(symbol, { interval: '5m' }),
+      new Promise((_, reject) => {
+        timeoutId = setTimeout(() => reject(new Error('qualification fetch timeout')), CASCADE_QUALIFY_TIMEOUT_MS);
+      }),
+    ]);
+    if (Array.isArray(candles) && candles.length > 0) {
+      const { candles: sessionCandles, sessionDate } = filterToLatestSession(candles);
+      const vwapResult = calculateVWAP(sessionCandles);
+      qualified = !!vwapResult && isReplacementQualified({
+        sessionDate,
+        sessionCandleCount: sessionCandles.length,
+        vwapDeviation: vwapResult.vwapDeviation,
+        todayET,
+        deadBandPct,
+      });
+    }
+  } catch (err) {
+    console.warn(`${LOG_PREFIX} Cascade qualification failed for ${symbol} (${err.message}) — treating as UNQUALIFIED`);
+    qualified = false;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+  memo.set(symbol, qualified);
+  return qualified;
+}
+
 function buildPoolEmptyFeedEntry({ message, symbolOut, symbolIn = null, regime = null, score, reason }) {
   return {
     timestamp: new Date().toISOString(),
@@ -895,6 +936,10 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
     // Also covers swaps landed outside this loop (proposal approval/expiry,
     // gameplan) by the next tick.
     pruneCounterMaps([vwapTicks, stagnationTicks, lastTickPrice, lastTickTimestamp], new Set(portfolioSymbols));
+    // [VWAP Floor B6] Daily vwap_failure fire counter (resets on ET date
+    // rollover) + this tick's qualification memo.
+    const vwapFireGuard = seedVwapFireGuard(battle.cronState?.vwapFireGuard, todayET);
+    const cascadeQualifyMemo = new Map();
     const nowMs = Date.now();
 
     // Forge Enforcement Keystone V1.4 §4.1 — resolve the archetype→physics knobs
@@ -1087,6 +1132,35 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
         continue;
       }
 
+      // [VWAP Floor B6] Cascade guard: after N vwap_failure fires today, each
+      // further fire must qualify its replacement on fresh intraday data —
+      // otherwise hold. Guard-active only: zero extra fetches on a normal day.
+      if (riskResult.reason === 'vwap_failure' && vwapFireGuard.count >= VWAP_CASCADE_GUARD_N) {
+        const qualified = await qualifyCascadeReplacement(replacement.symbol, {
+          todayET,
+          deadBandPct: presetConfig.risk.vwapDeadBandPct ?? 0.5,
+          memo: cascadeQualifyMemo,
+        });
+        if (!qualified) {
+          console.error(`${LOG_PREFIX} CASCADE GUARD ACTIVE for ${battle.id}: holding ${score.symbol} — ${replacement.symbol} unqualified after ${vwapFireGuard.count} vwap fires today`);
+          statusFeedEntries.push({
+            timestamp: new Date().toISOString(),
+            message: `Cascade guard active — holding ${score.symbol} despite VWAP failure; no qualified replacement.`,
+            pvpContext: null,
+            action: 'cascade_guard_hold',
+            regime: stockRegimes[score.symbol] || null,
+            score: Math.round(currentScore * 100) / 100,
+            citedRules: ['vwap_cascade_guard'],
+            triggeredBy: 'risk_vwap_failure',
+            source: 'risk_manager',
+            evalId: null,
+            symbolOut: score.symbol,
+            symbolIn: replacement.symbol,
+          });
+          continue;
+        }
+      }
+
       // P2: set after a successful reserve so the catch below can run the
       // compensating release (two-phase protocol, Spec §1.2).
       let reservedSymbolIn = null;
@@ -1197,6 +1271,10 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
 
         summary.swapped++;
 
+        // [VWAP Floor B6] Count the fire live within the tick so the Nth fire
+        // of a cascade sees the prior N-1.
+        if (riskResult.reason === 'vwap_failure') vwapFireGuard.count++;
+
         // [VWAP Floor B1b] Reset the incoming symbol's in-memory counters so
         // the finalizeCronState flush later this tick doesn't persist a stale
         // streak onto the fresh position (the transaction's own reset would
@@ -1236,7 +1314,7 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
     const proposalHandled = await handlePendingProposal(db, battleRef, battle, prices, statusFeedEntries, summary, currentScore, tournamentCtx);
     if (proposalHandled === 'skip_haiku') {
       // Proposal is pending and not expired — write scores/risk but skip trigger gate + Haiku
-      finalizeCronState(scoreUpdate, { vwapTicks, intradayMomentum: momentumData.vwap, stagnationTicks, lastTickPrice, lastTickTimestamp });
+      finalizeCronState(scoreUpdate, { vwapTicks, intradayMomentum: momentumData.vwap, stagnationTicks, lastTickPrice, lastTickTimestamp, vwapFireGuard });
       const existingFeed = battle.statusFeed || [];
       scoreUpdate.statusFeed = [...existingFeed, ...statusFeedEntries].slice(-STATUS_FEED_CAP);
       await battleRef.update(scoreUpdate);
@@ -1248,7 +1326,7 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
     // ---- Gameplan meeting lifecycle check (after proposals, before triggers) ----
     const gameplanHandled = await handleGameplanMeeting(db, battleRef, battle, prices, statusFeedEntries, summary, pendingNarrations, tournamentCtx);
     if (gameplanHandled === 'skip_haiku') {
-      finalizeCronState(scoreUpdate, { vwapTicks, intradayMomentum: momentumData.vwap, stagnationTicks, lastTickPrice, lastTickTimestamp });
+      finalizeCronState(scoreUpdate, { vwapTicks, intradayMomentum: momentumData.vwap, stagnationTicks, lastTickPrice, lastTickTimestamp, vwapFireGuard });
       const existingFeed = battle.statusFeed || [];
       scoreUpdate.statusFeed = [...existingFeed, ...statusFeedEntries].slice(-STATUS_FEED_CAP);
       await battleRef.update(scoreUpdate);
@@ -1270,7 +1348,7 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
         scoreUpdate.gameplanMeeting = gameplanTrigger;
         scoreUpdate['cronState.lastGameplanDate'] = todayET;
         // Write and skip Haiku — gameplan IS the evaluation
-        finalizeCronState(scoreUpdate, { vwapTicks, intradayMomentum: momentumData.vwap, stagnationTicks, lastTickPrice, lastTickTimestamp });
+        finalizeCronState(scoreUpdate, { vwapTicks, intradayMomentum: momentumData.vwap, stagnationTicks, lastTickPrice, lastTickTimestamp, vwapFireGuard });
         const existingFeed = battle.statusFeed || [];
         scoreUpdate.statusFeed = [...existingFeed, ...statusFeedEntries].slice(-STATUS_FEED_CAP);
         await battleRef.update(scoreUpdate);
@@ -1347,7 +1425,7 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
       // triggerGateSkipCount is blocked: the field is part of the fenced
       // createAgentBattle doc shape (agentBattleService.js cronState init).
       scoreUpdate['cronState.triggerGatePassCount'] = (battle.cronState?.triggerGatePassCount || 0) + 1;
-      finalizeCronState(scoreUpdate, { vwapTicks, intradayMomentum: momentumData.vwap, stagnationTicks, lastTickPrice, lastTickTimestamp });
+      finalizeCronState(scoreUpdate, { vwapTicks, intradayMomentum: momentumData.vwap, stagnationTicks, lastTickPrice, lastTickTimestamp, vwapFireGuard });
       if (statusFeedEntries.length > 0) {
         const existingFeed = battle.statusFeed || [];
         scoreUpdate.statusFeed = [...existingFeed, ...statusFeedEntries].slice(-STATUS_FEED_CAP);
@@ -1991,7 +2069,7 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
     // Shared cron state (lastEvaluatedAt / evaluatingAt / vwapTicks /
     // intradayMomentum). `now` is passed so lastEvaluatedAt === lastTriggeredAt,
     // preserving prior behavior exactly.
-    finalizeCronState(finalUpdate, { vwapTicks, intradayMomentum: momentumData.vwap, now, stagnationTicks, lastTickPrice, lastTickTimestamp });
+    finalizeCronState(finalUpdate, { vwapTicks, intradayMomentum: momentumData.vwap, now, stagnationTicks, lastTickPrice, lastTickTimestamp, vwapFireGuard });
 
     // Write pending proposal if mode branching created one
     if (pendingProposalUpdate) {
