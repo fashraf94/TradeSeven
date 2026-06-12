@@ -610,6 +610,27 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
       scoreUpdate[`thresholdHistory.${score.symbol}`] = score.history;
     }
 
+    // ---- P4 contract #5 consumer (companion b; founder ruling D8) ----
+    // CPU tournament battles are PASSIVE: scores + threshold history persist
+    // (banking and the group composite stay honest) but everything triggered
+    // is skipped — no momentum fetch, no risk swaps, no trigger gate, no
+    // Haiku, no narrations/anticipations. The marker is stamped only by the
+    // P4 fence entry at tournament deploys, so no regular battle can carry it.
+    if (battle.isCpu === true) {
+      finalizeCronState(scoreUpdate, {
+        vwapTicks: battle.cronState?.vwapTicks || {},
+        intradayMomentum: battle.cronState?.intradayMomentum || {},
+        stagnationTicks: battle.cronState?.stagnationTicks || {},
+        lastTickPrice: battle.cronState?.lastTickPrice || {},
+        lastTickTimestamp: battle.cronState?.lastTickTimestamp || {},
+      });
+      await battleRef.update(scoreUpdate);
+      summary.evaluated++;
+      summary.held++;
+      console.log(`${LOG_PREFIX} battle ${battle.id}: CPU passive battle — scores marked, triggered evaluation skipped (P4 contract #5)`);
+      return;
+    }
+
     // ---- Parallel data fetch: intraday + rankings + technicalScores + marketContext ----
     const momentumData = { vwap: {}, rankings: {} };
     const technicalScoresMap = {};
@@ -2564,6 +2585,43 @@ function detectGameplanMeetingTrigger(battle, assetScores, prices, flatPortfolio
 // ==================== BATTLE COMPLETION ====================
 
 /**
+ * Completion disposition, pure (exported for the P4 flat6 matrix).
+ *
+ * P4 companion (b) — founder scope addition, June 12, 2026: tournament
+ * battles (opponent: null by ruling D4) complete with NO W/L-vs-opponent
+ * semantics — group placement is the outcome (the P6 composite), so the
+ * agent's career W/L/streak stats never move and the feed line names the
+ * composite, not a phantom CPU. CPU system agents additionally skip
+ * reflection (contract #5 passivity — no model calls). Tiered battles keep
+ * today's behavior byte-for-byte, including the exact feed message.
+ */
+export function resolveCompletionDisposition(battle) {
+  const scoreState = battle.scoreState || {};
+  const currentScore = scoreState.currentScore || 0;
+  if (battle.gameMode === 'baggerbomb_tournament') {
+    return {
+      result: null,
+      completionContext: 'tournament_group_scored',
+      statusMessage: `Battle complete. Day banked at ${currentScore >= 0 ? '+' : ''}${currentScore.toFixed(1)} pts for the tournament composite.`,
+      updateAgentStats: false,
+      pendingReflection: battle.isCpu !== true,
+      logLine: `tournament day banked (${currentScore.toFixed(1)} pts, no W/L)`,
+    };
+  }
+  const opponentScore = scoreState.opponentScore || 0;
+  const result = currentScore > opponentScore ? 'win' : (currentScore < opponentScore ? 'loss' : 'draw');
+  const resultLabel = result === 'win' ? 'Win' : result === 'loss' ? 'Loss' : 'Draw';
+  return {
+    result,
+    completionContext: null,
+    statusMessage: `Battle complete. Agent: ${currentScore >= 0 ? '+' : ''}${currentScore.toFixed(1)} pts vs CPU: ${opponentScore >= 0 ? '+' : ''}${opponentScore.toFixed(1)} pts. Result: ${resultLabel}.`,
+    updateAgentStats: true,
+    pendingReflection: true,
+    logLine: `Agent: ${currentScore.toFixed(1)} vs CPU: ${opponentScore.toFixed(1)}, Result: ${result}`,
+  };
+}
+
+/**
  * Complete an expired battle: set status, update agent stats.
  */
 async function completeBattle(db, battle, summary) {
@@ -2571,8 +2629,8 @@ async function completeBattle(db, battle, summary) {
   const now = new Date().toISOString();
   const scoreState = battle.scoreState || {};
   const currentScore = scoreState.currentScore || 0;
-  const opponentScore = scoreState.opponentScore || 0;
-  const result = currentScore > opponentScore ? 'win' : (currentScore < opponentScore ? 'loss' : 'draw');
+  const disposition = resolveCompletionDisposition(battle);
+  const result = disposition.result;
 
   // ---- Vision retired transition (Spec A Phase 2a + fix-up) ----
   // Build the retired Vision (if applicable) so it can be written atomically
@@ -2626,24 +2684,29 @@ async function completeBattle(db, battle, summary) {
 
   // Update battle status
   const existingFeed = battle.statusFeed || [];
-  const resultLabel = result === 'win' ? 'Win' : result === 'loss' ? 'Loss' : 'Draw';
   const updatePayload = {
     status: 'completed',
     completedAt: now,
     // Sprint 1 fix: gate reflection on a queue flag so the dedicated
     // process-pending-reflections cron can pick it up on its own
     // maxDuration budget. Lands in the same atomic update as status.
-    pendingReflection: true,
+    // P4: tournament CPU battles skip reflection (contract #5 passivity).
+    pendingReflection: disposition.pendingReflection,
     reflectedAt: null,
     'cronState.evaluatingAt': null,
     statusFeed: [...existingFeed, {
       timestamp: now,
-      message: `Battle complete. Agent: ${currentScore >= 0 ? '+' : ''}${currentScore.toFixed(1)} pts vs CPU: ${opponentScore >= 0 ? '+' : ''}${opponentScore.toFixed(1)} pts. Result: ${resultLabel}.`,
+      message: disposition.statusMessage,
       action: 'battle_complete',
       source: 'system',
       score: Math.round(currentScore * 100) / 100,
     }].slice(-50),
   };
+  // P4: the tournament terminal state is explicit — completed, context
+  // stamped, no result semantics (founder scope addition, June 12).
+  if (disposition.completionContext) {
+    updatePayload.completionContext = disposition.completionContext;
+  }
   if (retiredVisionForWrite) {
     updatePayload.vision = retiredVisionForWrite;
   }
@@ -2654,10 +2717,15 @@ async function completeBattle(db, battle, summary) {
     logVisionTransition(visionTransitionLogPayload).catch(() => {});
   }
 
-  // Update agent stats (server-side equivalent of client updateAgentStats)
+  // Update agent stats (server-side equivalent of client updateAgentStats).
+  // P4: tournament battles never mutate career W/L/streak stats (group
+  // placement is the outcome; rank/RP is P6's) — only the active-battle
+  // pointer clears so tomorrow's prescribed deploy proceeds.
   const agentRef = db.collection('agents').doc(battle.agentId);
   const agentDoc = await agentRef.get();
-  if (agentDoc.exists) {
+  if (agentDoc.exists && !disposition.updateAgentStats) {
+    await agentRef.update({ activeBattleId: null });
+  } else if (agentDoc.exists) {
     const stats = agentDoc.data().stats || {};
     const newGamesPlayed = (stats.gamesPlayed || 0) + 1;
     const newWins = (stats.wins || 0) + (result === 'win' ? 1 : 0);
@@ -2690,6 +2758,6 @@ async function completeBattle(db, battle, summary) {
     });
   }
 
-  console.log(`${LOG_PREFIX} Battle ${battle.id} completed. Agent: ${currentScore.toFixed(1)} vs CPU: ${opponentScore.toFixed(1)}, Result: ${result}`);
+  console.log(`${LOG_PREFIX} Battle ${battle.id} completed. ${disposition.logLine}`);
   summary.evaluated++;
 }

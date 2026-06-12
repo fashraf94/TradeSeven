@@ -35,7 +35,7 @@ import AssetResearchModal from '../components/draft/AssetResearchModal';
 import TermResearchModal from '../components/shared/TermResearchModal';
 import ScoreBreakdownPopover from '../components/draft/ScoreBreakdownPopover';
 import FilmRoomBanner from '../components/FilmRoom/FilmRoomBanner';
-import { CONVICTION_MULTIPLIERS } from '../constants/baggerBombScoring';
+import { CONVICTION_MULTIPLIERS, THRESHOLD_POINTS } from '../constants/baggerBombScoring';
 import { doc, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import { isMarketOpen } from '../utils/marketSchedule';
@@ -49,6 +49,15 @@ const TIERS = [
   { key: 'star', label: 'Star Picks', emoji: '⭐', allocation: '2x', slots: 2 },
   { key: 'core', label: 'Core Holds', emoji: '💎', allocation: '1.5x', slots: 2 },
   { key: 'support', label: 'Support Plays', emoji: '📊', allocation: '1x', slots: 3, hasCrypto: true },
+];
+
+// P4 flat6 (companion c): tournament battles are six stocks, flat 1x, no
+// crypto slot — the tier rows render as honest lineup slots so the existing
+// screen neither crashes nor lies pre-P7 (the full tournament view).
+const FLAT6_TIERS = [
+  { key: 'star', label: 'Lineup 1–2', emoji: '📈', allocation: '1x', slots: 2 },
+  { key: 'core', label: 'Lineup 3–4', emoji: '📈', allocation: '1x', slots: 2 },
+  { key: 'support', label: 'Lineup 5–6', emoji: '📈', allocation: '1x', slots: 2 },
 ];
 
 const TIER_HEADER_COLORS = {
@@ -933,7 +942,7 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
               exit={{ opacity: 0, x: -20 }}
               transition={{ duration: 0.15 }}
             >
-              {TIERS.map(tier => (
+              {(agentBattle?.gameMode === 'baggerbomb_tournament' ? FLAT6_TIERS : TIERS).map(tier => (
                 <div key={tier.key}>
                   <TierHeader tier={tier} />
                   {Array.from({ length: tier.slots }).map((_, i) => (
@@ -1069,24 +1078,25 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
             symbol: breakdownAsset.symbol,
             gain: breakdownAsset.priceChange || 0,
             threshold: thresholds[breakdownAsset.symbol]?.threshold || breakdownAsset.baseATR || 2.5,
-            tierMultiplier: CONVICTION_MULTIPLIERS[breakdownAsset.tier] || 1.0,
+            // P4 flat6: the per-asset override (tournament docs) wins; tiered
+            // assets never carry it — resolution unchanged for them.
+            tierMultiplier: breakdownAsset.tierMultiplier ?? (CONVICTION_MULTIPLIERS[breakdownAsset.tier] || 1.0),
             baggerBombs: breakdownAsset.badges?.filter(b =>
               b === 'bagger' || b === 'doubleBagger' || b === 'tenBagger'
             ).length || 0,
             busts: breakdownAsset.badges?.filter(b =>
               b === 'bust' || b === 'crash' || b === 'meltdown'
             ).length || 0,
-            basePoints: Math.round((breakdownAsset.priceChange || 0) * 10 * (CONVICTION_MULTIPLIERS[breakdownAsset.tier] || 1.0)),
+            basePoints: Math.round((breakdownAsset.priceChange || 0) * 10 * (breakdownAsset.tierMultiplier ?? (CONVICTION_MULTIPLIERS[breakdownAsset.tier] || 1.0))),
+            // P4 (companion c): badge values sourced from the canonical
+            // constants instead of inline literals — value-identical today,
+            // drift-proof tomorrow (the scoring-copy lesson, BUILD_RULES §4).
             baggerBombPoints: breakdownAsset.badges?.reduce((sum, b) => {
-              if (b === 'bagger') return sum + 15;
-              if (b === 'doubleBagger') return sum + 30;
-              if (b === 'tenBagger') return sum + 50;
+              if (b === 'bagger' || b === 'doubleBagger' || b === 'tenBagger') return sum + THRESHOLD_POINTS[b];
               return sum;
             }, 0) || 0,
             bustPoints: breakdownAsset.badges?.reduce((sum, b) => {
-              if (b === 'bust') return sum - 10;
-              if (b === 'crash') return sum - 20;
-              if (b === 'meltdown') return sum - 35;
+              if (b === 'bust' || b === 'crash' || b === 'meltdown') return sum + THRESHOLD_POINTS[b];
               return sum;
             }, 0) || 0,
             totalScore: breakdownAsset.points || 0,

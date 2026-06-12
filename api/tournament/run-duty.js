@@ -59,6 +59,9 @@ export default async function handler(req, res) {
       anthropic: getAnthropicClient(),
       forceDuty: duty,
       simulated: simulatedNow != null,
+      // P4 companion (a): the dev duty buttons INCLUDE isDev groups — the
+      // production cron tick excludes them by default.
+      includeDevGroups: true,
     });
     console.log(`[Tournament] run-duty: ${result.duty} @ ${result.etDate} ${result.etTime} →`, JSON.stringify(result.status ?? result.complete ?? 'ran'));
     return res.status(200).json(result);

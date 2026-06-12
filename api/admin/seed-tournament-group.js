@@ -71,6 +71,10 @@ export default async function handler(req, res) {
       baseLayerWeek: isoWeekString(),
       now: nowIso,
     });
+    // P4 companion (a): seeded groups are DEV groups — excluded from the
+    // production orchestrator's duties (the dev duty buttons include them).
+    await db.collection(TOURNAMENT_GROUPS_COLLECTION).doc(groupId).update({ isDev: true });
+    groupDoc.isDev = true;
 
     // Optional placeholder boards: staggered top-of-pool slices so the
     // founder's board collides with at least one placeholder (real snipes in

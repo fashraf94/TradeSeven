@@ -282,8 +282,8 @@ describe('duty markers — grain one of the two-grain idempotency', () => {
 // ==================== DEPLOY PLUMBING ====================
 
 describe('deploy plumbing — credentials + ownership assertion from day one', () => {
-  it('the gate is CLOSED at P3b (P4 flips it inside the fence-entry PR)', () => {
-    expect(TOURNAMENT_DEPLOY_ENABLED).toBe(false);
+  it('the gate is OPEN (P4 flipped it inside the fence-entry PR, as contracted at P3b)', () => {
+    expect(TOURNAMENT_DEPLOY_ENABLED).toBe(true);
   });
 
   it('base URL: VERCEL_PROJECT_PRODUCTION_URL with env-var override', () => {
@@ -324,7 +324,7 @@ describe('deploy plumbing — credentials + ownership assertion from day one', (
     expect(bare.userPicks).toEqual([]);
   });
 
-  it('GATED: nothing is fetched, every seat logs a loud "P4 pending" line, no pacing burned', async () => {
+  it('GATED (via injection — the production gate opened at P4): nothing fetched, loud "P4 pending" lines, no pacing burned', async () => {
     const { db } = makeDb();
     const fetchImpl = vi.fn();
     const started = Date.now();
@@ -338,6 +338,7 @@ describe('deploy plumbing — credentials + ownership assertion from day one', (
       state: { duties: {}, deployCooldowns: {} },
       budget: null,
       fetchImpl,
+      deployEnabled: false, // P4 flipped the module gate — the branch stays test-covered by injection
     });
     expect(fetchImpl).not.toHaveBeenCalled();
     expect(out.gated).toBe(2);
@@ -458,15 +459,27 @@ describe('deploy plumbing — the live branch (deployEnabled injection)', () => 
 // ==================== MONDAY PIPELINE ====================
 
 describe('runMondayPipeline — the full Monday arc on an all-CPU group (no model call)', () => {
-  it('resolves the user draft, produces CPU boards, drafts 24 held, gates 4 deploys', async () => {
+  it('resolves the user draft, produces CPU boards, drafts 24 held, deploys 4 live (the P4 gate is open)', async () => {
     const { db, store } = mondayDb();
-    const summary = await runMondayPipeline(db, { now: MON_MORNING_EDT, anthropic: null });
+    const fetchImpl = vi.fn(async () => ({ ok: true }));
+    const summary = await runMondayPipeline(db, { now: MON_MORNING_EDT, anthropic: null, fetchImpl, pacingMs: 0 });
 
     expect(summary).toMatchObject({
       groups: 1, resolved: 1, deferredBoards: 0, refusedSynthetic: 0, drafted: 1, errors: 0,
     });
-    expect(summary.deploys.gated).toBe(4);
-    expect(summary.deploys.deployed).toBe(0);
+    expect(summary.deploys.deployed).toBe(4);
+    expect(summary.deploys.gated).toBe(0);
+    // Every live deploy carries the full P4 intake (joint stamp + rider #6).
+    const bodies = fetchImpl.mock.calls.map(([, opts]) => JSON.parse(opts.body));
+    expect(bodies).toHaveLength(4);
+    for (const body of bodies) {
+      expect(body.gameMode).toBe(TOURNAMENT_GAME_MODE);
+      expect(body.groupId).toBe('b-r1-g2');
+      expect(body.prescribedPortfolio).toHaveLength(6);
+      expect(body.isCpu).toBe(true);
+      expect(Array.isArray(body.userPicksStance)).toBe(true);
+      expect(Array.isArray(body.doubleDownSymbols)).toBe(true);
+    }
 
     const group = store.get('tournamentGroups/b-r1-g2');
     expect(group.status).toBe(GROUP_STATUS.BATTLE);
@@ -485,10 +498,10 @@ describe('runMondayPipeline — the full Monday arc on an all-CPU group (no mode
     expect(Object.keys(ledger.held)).toHaveLength(AGENT_MARKET_SIZE);
   });
 
-  it('re-run resumes idempotently: nothing re-resolves, deploys re-gate', async () => {
+  it('re-run resumes idempotently: nothing re-resolves (gated branch via injection — battle-doc creation is the live guard)', async () => {
     const { db } = mondayDb();
-    await runMondayPipeline(db, { now: MON_MORNING_EDT, anthropic: null });
-    const second = await runMondayPipeline(db, { now: MON_MORNING_EDT, anthropic: null });
+    await runMondayPipeline(db, { now: MON_MORNING_EDT, anthropic: null, deployEnabled: false });
+    const second = await runMondayPipeline(db, { now: MON_MORNING_EDT, anthropic: null, deployEnabled: false });
     expect(second).toMatchObject({ groups: 1, resolved: 0, drafted: 1, errors: 0 });
     expect(second.deploys.gated).toBe(4); // natural guards skip everything durable
   });
@@ -562,17 +575,17 @@ describe('runWeekdayFanout — incumbents via the fenced flattenPortfolioServer 
     return makeDb(initial);
   }
 
-  it('pre-P4 steady state: no battles → one quiet line per group, satisfied (marker-worthy)', async () => {
+  it('gated posture (via injection): no battles → one quiet line per group, satisfied (marker-worthy)', async () => {
     const { db, writeLog } = battleDb({ withBattle: false });
-    const summary = await runWeekdayFanout(db, { now: TUE });
+    const summary = await runWeekdayFanout(db, { now: TUE, deployEnabled: false });
     expect(summary).toMatchObject({ groups: 1, noBattles: 1, errors: 0 });
     expect(isDutySatisfied(DUTY.WEEKDAY_FANOUT, summary)).toBe(true);
     expect(writeLog).toHaveLength(0);
   });
 
-  it("an incumbent battle's six flatten into a gated deploy seat", async () => {
+  it("an incumbent battle's six flatten into a gated deploy seat (gated branch via injection)", async () => {
     const { db } = battleDb();
-    const summary = await runWeekdayFanout(db, { now: TUE });
+    const summary = await runWeekdayFanout(db, { now: TUE, deployEnabled: false });
     expect(summary.deploys.gated).toBe(1);
     const gateLine = logSpy.mock.calls.map(c => c.join(' ')).find(l => l.includes('P4 pending'));
     expect(gateLine).toContain('NVDA, AMD, TSLA, META, AAPL, MSFT'); // tier order — the fenced flatten
@@ -642,12 +655,15 @@ describe('runOrchestratorTick — routing, markers, inertness', () => {
 
   it('a satisfied duty sets the marker; the next tick is an idempotent no-op', async () => {
     const { db, store } = mondayDb();
-    const first = await runOrchestratorTick(db, { now: MON_MORNING_EDT });
+    const fetchImpl = vi.fn(async () => ({ ok: true }));
+    const first = await runOrchestratorTick(db, { now: MON_MORNING_EDT, fetchImpl, pacingMs: 0 });
     expect(first.complete).toBe(true);
+    expect(first.deploys.deployed).toBe(4); // the P4 gate is open — deploys are live
     expect(store.get('tournamentOrchestrator/state').duties[dutyMarkerKey('2026-06-15', DUTY.MONDAY_PIPELINE)]).toBeDefined();
 
-    const second = await runOrchestratorTick(db, { now: new Date('2026-06-15T12:10:00Z') });
+    const second = await runOrchestratorTick(db, { now: new Date('2026-06-15T12:10:00Z'), fetchImpl, pacingMs: 0 });
     expect(second.status).toBe('already_complete');
+    expect(fetchImpl).toHaveBeenCalledTimes(4); // no re-deploys behind the marker
   });
 
   it('forceDuty + injected clock are the dev time controls (run Monday on any instant)', async () => {
@@ -655,6 +671,8 @@ describe('runOrchestratorTick — routing, markers, inertness', () => {
     const result = await runOrchestratorTick(db, {
       now: new Date('2026-06-18T15:00:00Z'), // a Thursday
       forceDuty: DUTY.MONDAY_PIPELINE,
+      fetchImpl: vi.fn(async () => ({ ok: true })),
+      pacingMs: 0,
     });
     expect(result.duty).toBe(DUTY.MONDAY_PIPELINE);
     expect(result.complete).toBe(true);

@@ -90,15 +90,25 @@ export function getPlayer(group, odUserId) {
  * Battle-shaped eligibility query — the house mirror (claims cron :564 /
  * banking :224) given one home for the P3b duty surfaces: status equality +
  * full seat count. Returns [{id, ...data}].
+ *
+ * P4 companion (a) — dev-group exclusion (founder ruling D9): every caller
+ * of this function is an orchestrator dispatcher duty, so the default
+ * EXCLUDES `isDev: true` groups — merging the P4 gate flip can never put the
+ * production orchestrator to work on the founder's smoke-test groups. The
+ * dev duty surface (run-duty) opts in with `includeDev: true`. The nightly
+ * banking/claims mirrors keep their own queries and remain dev-inclusive by
+ * design (the smoke's composite day needs them; cleanup retires the data).
  */
-export async function fetchEligibleGroupsByStatus(db, status) {
+export async function fetchEligibleGroupsByStatus(db, status, { includeDev = false } = {}) {
   const snap = await db.collection(TOURNAMENT_GROUPS_COLLECTION)
     .where('status', '==', status)
     .get();
   const groups = [];
   snap.forEach(doc => {
     const data = doc.data();
-    if (data.players?.length === GROUP_SIZE) groups.push({ id: doc.id, ...data });
+    if (data.players?.length !== GROUP_SIZE) return;
+    if (!includeDev && data.isDev === true) return;
+    groups.push({ id: doc.id, ...data });
   });
   return groups;
 }

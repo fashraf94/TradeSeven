@@ -85,9 +85,12 @@ const LOG_PREFIX = '[Orchestrator]';
 export const ORCHESTRATOR_COLLECTION = 'tournamentOrchestrator';
 export const ORCHESTRATOR_STATE_DOC_ID = 'state';
 
-// THE P4 GATE. P4 flips this to true in the same PR that lands the
-// prescribed-portfolio entry path inside the fence — never earlier.
-export const TOURNAMENT_DEPLOY_ENABLED = false;
+// THE P4 GATE — FLIPPED (founder-approved Fence-Edit Map, June 12, 2026), in
+// the same PR that landed the prescribed-portfolio entry path inside the
+// fence, exactly as contracted. This is the first merge that changes
+// production behavior for real groups; the dev-group exclusion
+// (fetchEligibleGroupsByStatus, companion a) is what makes that safe.
+export const TOURNAMENT_DEPLOY_ENABLED = true;
 
 export const DEPLOY_PACING_MS = 20_000;            // ≥20s between real deploy calls (3/min limit priced)
 export const DUTY_DEADLINE_MS = 270_000;           // defer remainder ~270s into the 300s budget
@@ -411,18 +414,19 @@ async function seatsFromDraftStream(db, group, { onlyAgentIds = null } = {}) {
 export async function runMondayPipeline(db, {
   now = new Date(), anthropic = null, fetchImpl = fetch, budget = null,
   state = null, deployEnabled = TOURNAMENT_DEPLOY_ENABLED, pacingMs = DEPLOY_PACING_MS,
+  includeDevGroups = false,
 } = {}) {
   // Advancement catch-up (ruled): a Friday that crashed or stayed
   // banking-pending finishes here — idempotent, no-op when complete. Its
   // pending/error counts are logged, not folded into the Monday marker.
-  const catchUp = await runFridayAdvancement(db, { now });
+  const catchUp = await runFridayAdvancement(db, { now, includeDevGroups });
   if (catchUp.groups > 0 || catchUp.activeBrackets > 0) {
     console.log(`${LOG_PREFIX} Monday advancement catch-up: ${catchUp.gamesLocked} game(s) locked, ${catchUp.composedGroups.length} group(s) composed, ${catchUp.bankingPending} banking-pending, ${catchUp.errors} error(s)`);
   }
 
   const [forming, battle] = await Promise.all([
-    fetchEligibleGroupsByStatus(db, GROUP_STATUS.FORMING),
-    fetchEligibleGroupsByStatus(db, GROUP_STATUS.BATTLE),
+    fetchEligibleGroupsByStatus(db, GROUP_STATUS.FORMING, { includeDev: includeDevGroups }),
+    fetchEligibleGroupsByStatus(db, GROUP_STATUS.BATTLE, { includeDev: includeDevGroups }),
   ]);
   const groups = [...forming, ...battle];
 
@@ -525,8 +529,9 @@ export async function runMondayPipeline(db, {
 export async function runWeekdayFanout(db, {
   now = new Date(), fetchImpl = fetch, budget = null,
   state = null, deployEnabled = TOURNAMENT_DEPLOY_ENABLED, pacingMs = DEPLOY_PACING_MS,
+  includeDevGroups = false,
 } = {}) {
-  const groups = await fetchEligibleGroupsByStatus(db, GROUP_STATUS.BATTLE);
+  const groups = await fetchEligibleGroupsByStatus(db, GROUP_STATUS.BATTLE, { includeDev: includeDevGroups });
   const summary = {
     groups: groups.length,
     noBattles: 0,
@@ -651,6 +656,8 @@ function markerSummary(duty, summary) {
  */
 export async function runOrchestratorTick(db, {
   now = new Date(), anthropic = null, fetchImpl = fetch, forceDuty = null, simulated = false,
+  includeDevGroups = false,
+  deployEnabled = TOURNAMENT_DEPLOY_ENABLED, pacingMs = DEPLOY_PACING_MS,
 } = {}) {
   const routed = getDutyForInstant(now);
   const duty = forceDuty || routed.duty;
@@ -672,11 +679,11 @@ export async function runOrchestratorTick(db, {
 
   let summary;
   if (duty === DUTY.MONDAY_PIPELINE) {
-    summary = await runMondayPipeline(db, { now, anthropic, fetchImpl, budget, state });
+    summary = await runMondayPipeline(db, { now, anthropic, fetchImpl, budget, state, includeDevGroups, deployEnabled, pacingMs });
   } else if (duty === DUTY.WEEKDAY_FANOUT) {
-    summary = await runWeekdayFanout(db, { now, fetchImpl, budget, state });
+    summary = await runWeekdayFanout(db, { now, fetchImpl, budget, state, includeDevGroups, deployEnabled, pacingMs });
   } else if (duty === DUTY.FRIDAY_ADVANCEMENT) {
-    summary = await runFridayAdvancement(db, { now });
+    summary = await runFridayAdvancement(db, { now, includeDevGroups });
   } else {
     console.error(`${tag} unknown duty '${duty}' — skipped`);
     return { duty: DUTY.SKIP, etDate: routed.etDate, etTime: routed.etTime };

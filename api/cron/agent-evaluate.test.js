@@ -39,21 +39,26 @@ describe('agent-evaluate cron — intraday momentum persistence (Phase 2: via fi
     expect(source).toMatch(/import\s*\{\s*finalizeCronState\s*\}\s*from\s*'\.\.\/_utils\/agentCronState\.js'/);
   });
 
-  it('routes cron-state persistence through finalizeCronState at exactly the 5 flush sites', () => {
+  it('routes cron-state persistence through finalizeCronState at exactly the 6 flush sites', () => {
     // Phase 2 (§4.5) consolidated the five inline cron-state writes into one
     // helper so a new persisted field is a one-line add in agentCronState.js.
     // The 5 mutually-exclusive return paths (proposal-skip, gameplan-skip,
-    // gameplan-trigger, no-trigger-held, full-Haiku finalUpdate) each call it.
+    // gameplan-trigger, no-trigger-held, full-Haiku finalUpdate) each call it;
+    // P4 added a 6th: the CPU passive-battle skip (contract #5 consumer).
     const calls = source.match(/finalizeCronState\(/g) || [];
-    expect(calls.length).toBe(5);
+    expect(calls.length).toBe(6);
   });
 
   it('passes vwapTicks AND intradayMomentum together at every flush site (they must never drift apart)', () => {
     // Both come from the same momentumData.vwap table and must flush together —
     // if a site is added/changed without the other, the read side
-    // (voice-layer-cache) sees asymmetric state. Each call carries both.
+    // (voice-layer-cache) sees asymmetric state. Each call carries both. The
+    // P4 CPU-skip site flushes BEFORE momentumData exists, so it preserves
+    // the battle's persisted counters instead (asserted separately below).
     const both = source.match(/finalizeCronState\([^;]*?\bvwapTicks\b[^;]*?intradayMomentum:\s*momentumData\.vwap/g) || [];
     expect(both.length).toBe(5);
+    const preserved = source.match(/finalizeCronState\([^;]*?vwapTicks: battle\.cronState\?\.vwapTicks \|\| \{\},[^;]*?intradayMomentum: battle\.cronState\?\.intradayMomentum \|\| \{\}/g) || [];
+    expect(preserved.length).toBe(1);
   });
 
   it('the helper persists cronState fields verbatim and always releases the lock (passthrough contract)', () => {
