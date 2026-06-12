@@ -241,6 +241,15 @@ describe('upsertLeaderboardForGroups', () => {
     expect(store.get('tournamentLeaderboards/2026-06')).toBeUndefined();
   });
 
+  it('DEV OVERRIDE (code review): a caller-resolved namespace wins over the group flag — both side-effect halves route from ONE decision', async () => {
+    const { db, store } = makeDb({});
+    // The advancement resolved dev=true (e.g. from the bracket flag) for a
+    // group whose own flag is missing — the override routes it dev-side.
+    await upsertLeaderboardForGroups(db, [group({ scores: SCORES })], { now: NOW, dev: true });
+    expect(store.get('tournamentLeaderboards/dev-2026-06')).toBeDefined();
+    expect(store.get('tournamentLeaderboards/2026-06')).toBeUndefined();
+  });
+
   it('a group with no banked day is skipped (nothing to publish)', async () => {
     const { db, writeLog } = makeDb({});
     const g = group({ scores: SCORES });

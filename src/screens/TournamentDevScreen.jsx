@@ -274,10 +274,10 @@ export default function TournamentDevScreen() {
 
   // P6a — the dev-namespaced leaderboard month doc (ruling A-4: smoke rows
   // land on dev- docs; the month is the attached group's day-1 banking
-  // month per ruling A-3, falling back to the current month pre-banking)
-  // and the founder's dev rank doc.
-  const devMonthKey = monthKeyFromEtDate(group?.dailyScores?.day1?.recordedDate)
-    ?? new Date().toISOString().slice(0, 7);
+  // month per ruling A-3, falling back to the current ET month pre-banking
+  // — the ET clock, never UTC, per BUILD_RULES §6; code-review fix) and the
+  // founder's dev rank doc.
+  const devMonthKey = monthKeyFromEtDate(group?.dailyScores?.day1?.recordedDate ?? etToday());
 
   useEffect(() => {
     return subscribeLeaderboard(leaderboardDocId(devMonthKey, { dev: true }), setLeaderboard);
@@ -878,31 +878,42 @@ export default function TournamentDevScreen() {
 
         {/* P1b — Standings: the cumulative snapshot model rendered straight
             from dailyScores (banked/live per pick; weekly = the latest
-            snapshot, never a sum). */}
+            snapshot, never a sum). P6a (ruling A-1): sorted and led by the
+            COMPOSITE of record — the order Friday's lock advances — with
+            the agent/user split alongside; pre-P6a snapshots (no
+            compositePoints) degrade to the user total. */}
         {group && (() => {
           const latest = getLatestDayEntry(group);
           if (!latest) return null;
           const rows = (group.players || [])
-            .map(p => ({
-              odUserId: p.odUserId,
-              score: latest.entry.closeScores?.[p.odUserId] ?? { totalPoints: 0, picks: [] },
-            }))
-            .sort((a, b) => b.score.totalPoints - a.score.totalPoints);
+            .map(p => {
+              const score = latest.entry.closeScores?.[p.odUserId] ?? { totalPoints: 0, picks: [] };
+              return {
+                odUserId: p.odUserId,
+                score,
+                composite: Number.isFinite(score.compositePoints) ? score.compositePoints : score.totalPoints,
+              };
+            })
+            .sort((a, b) => b.composite - a.composite);
           return (
             <div style={{ ...card, display: 'flex', flexDirection: 'column', gap: 8 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-                <div style={{ fontWeight: 700, fontSize: 14 }}>Standings — cumulative</div>
+                <div style={{ fontWeight: 700, fontSize: 14 }}>Standings — cumulative composite</div>
                 <span style={{ fontSize: 11, color: tokens.textMuted }}>
                   day{latest.dayN} · {latest.entry.recordedDate} · {latest.entry.recordedBy}
+                  {latest.entry.agentScoresCarried ? ' · AGENT LAYER CARRIED' : ''}
                 </span>
               </div>
-              {rows.map(({ odUserId, score }, i) => (
+              {rows.map(({ odUserId, score, composite }, i) => (
                 <div key={odUserId} style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 12 }}>
                   <span style={{ width: 14, color: tokens.textMuted }}>{i + 1}.</span>
                   <span style={{ width: 160, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis' }}>
                     {odUserId === uid ? 'You' : odUserId}
                   </span>
-                  <span style={{ fontWeight: 800, width: 64 }}>{score.totalPoints}</span>
+                  <span style={{ fontWeight: 800, width: 64, color: composite < 0 ? '#ef4444' : tokens.textPrimary }}>{composite}</span>
+                  <span style={{ width: 110, fontSize: 10, color: tokens.textFaint }}>
+                    {Number.isFinite(score.agentPoints) ? `agent ${score.agentPoints} · user ${score.totalPoints}` : `user ${score.totalPoints}`}
+                  </span>
                   <span style={{ display: 'flex', gap: 8, flexWrap: 'wrap', color: tokens.textMuted, fontSize: 11 }}>
                     {(score.picks || []).map((p, pi) => (
                       <span key={`${p.symbol}-${pi}`}>

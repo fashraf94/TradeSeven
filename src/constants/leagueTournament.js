@@ -175,10 +175,14 @@ export function createBracketGame({ bracketGameId, gameIndex, groupId, seats } =
     seats: seats.map(s => ({ odUserId: s.odUserId, isCpu: s.isCpu === true })),
     // P6a ruling A-1: finalScores hold the COMPOSITE weekly snapshots (the
     // score of record); finalUserScores keep the user-layer detail alongside.
+    // sideEffectsAt is the advancement's completion record for the game's
+    // rank/leaderboard finalization — written only after both landed clean;
+    // null/absent means the resume paths still owe work.
     finalScores: null,
     finalUserScores: null,
     advancers: null,
     completedAt: null,
+    sideEffectsAt: null,
   };
 }
 
@@ -202,7 +206,9 @@ export function createBracketRound({ roundNumber, games, composedAt } = {}) {
  * totalRounds = log2(G) + 1 — the terminal round is the round with exactly
  * ONE game (the final four); its top-1 is the champion. No bye concept at
  * V1: under-filled rounds are CPU-padded (Ruling B1), recorded per-seat via
- * seats[].isCpu. `recap.finalComposite` stays null until P6 backfills.
+ * seats[].isCpu. `recap.finalComposite` is the championship week's composite
+ * — computed live by buildChampionRecap since P6a (the P3b backfill
+ * contract, closed); null only on recaps written before P6a (dev data).
  */
 export function createBracketDoc({ bracketId, round1Games, now } = {}) {
   if (typeof bracketId !== 'string' || !bracketId) {
@@ -332,6 +338,12 @@ export const GROUP_FEED_CAP = 50;
 export const TOURNAMENT_LEADERBOARDS_COLLECTION = 'tournamentLeaderboards';
 export const TOURNAMENT_RANKS_COLLECTION = 'tournamentRanks';
 
+/** Two-decimal money-style rounding — ONE home (P6a code review: three
+ * private copies converged; the pre-P6 copies elsewhere are P8-hygiene). */
+export function round2(x) {
+  return parseFloat((Number.isFinite(x) ? x : 0).toFixed(2));
+}
+
 /**
  * THE one home for k (Spec §0.10): composite = agentScore + k × userScore.
  * Every composite in the system — banking snapshots, advancement locks,
@@ -339,6 +351,21 @@ export const TOURNAMENT_RANKS_COLLECTION = 'tournamentRanks';
  */
 export function computeComposite(agentPoints, userPoints) {
   return (agentPoints || 0) + TOURNAMENT_TUNING.USER_LAYER_K * (userPoints || 0);
+}
+
+/**
+ * THE ranking rule (ruling A-1 + the P1a tie-break): score desc, then the
+ * caller-supplied order (draft order / seat order — identical by
+ * construction, createTournamentGroupDoc builds both from one array).
+ * ONE home for the comparator (P6a code review: four parallel copies
+ * converged — lockTopTwo, the champion paths, the rank writer). Missing or
+ * non-finite scores rank as 0 — callers that need stricter handling guard
+ * before ranking (the rank writer refuses incomplete finalScores).
+ */
+export function rankByScores(scores, order) {
+  const value = (id) => (Number.isFinite(scores?.[id]) ? scores[id] : 0);
+  return [...(order || [])].sort((a, b) =>
+    (value(b) - value(a)) || (order.indexOf(a) - order.indexOf(b)));
 }
 
 /** Month key for the seasonal leaderboard (ruling A-3): the ET month of a
@@ -410,16 +437,25 @@ export function cpuFarmGuard(cpuOpponents) {
 }
 
 /**
- * One group-week's RP delta (founder-signed B-2):
+ * One group-week's RP math (founder-signed B-2), returned WITH its audit
+ * breakdown so writers persist exactly what was computed — never a parallel
+ * re-derivation (the BUILD_RULES §4 local-copy bug class):
  *   raw   = weeklyComposite × RP_PER_POINT + PLACEMENT_BONUS[placement]
- *   delta = raw > 0 ? raw × cpuFarmGuard(cpuOpponents) : raw
+ *   guard = cpuFarmGuard(cpuOpponents)
+ *   delta = raw > 0 ? raw × guard : raw
  * The guard discounts GAINS only — CPU padding can never shield a losing
  * week. Placement is 1-based (1..GROUP_SIZE).
  */
-export function computeRankDelta({ weeklyComposite = 0, placement, cpuOpponents = 0 } = {}) {
+export function computeRankBreakdown({ weeklyComposite = 0, placement, cpuOpponents = 0 } = {}) {
   const bonus = RANK_TUNING.PLACEMENT_BONUS[(placement ?? GROUP_SIZE) - 1] ?? 0;
   const raw = weeklyComposite * RANK_TUNING.RP_PER_POINT + bonus;
-  return raw > 0 ? raw * cpuFarmGuard(cpuOpponents) : raw;
+  const guard = cpuFarmGuard(cpuOpponents);
+  return { raw, guard, delta: raw > 0 ? raw * guard : raw };
+}
+
+/** The delta alone (the original signed signature, kept for direct callers). */
+export function computeRankDelta(args) {
+  return computeRankBreakdown(args).delta;
 }
 
 /**
@@ -433,7 +469,6 @@ export function computeRankDelta({ weeklyComposite = 0, placement, cpuOpponents 
  * @returns {{rp, tier, tierName, floorRp, peakRp}}
  */
 export function applyRankWeek(state, delta) {
-  const round2 = (x) => parseFloat(x.toFixed(2));
   const priorFloor = Math.max(state?.floorRp ?? 0, 0);
   const rp = round2(Math.max(priorFloor, 0, (state?.rp ?? 0) + (delta || 0)));
   const tier = tierForRp(rp);

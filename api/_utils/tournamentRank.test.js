@@ -13,7 +13,7 @@
 // stays Node-clean. Never mock that import.
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { applyGroupWeekToRanks, applyLockedGameToRanks, readRank } from './tournamentRank.js';
+import { applyGroupWeekToRanks, applyLockedGameToRanks } from './tournamentRank.js';
 
 const NOW = new Date('2026-06-19T22:30:00.000Z');
 
@@ -212,11 +212,20 @@ describe('applyLockedGameToRanks — the sweep/terminal variant (bracket entry a
   });
 });
 
-describe('readRank', () => {
-  it('returns the stored doc, or the empty Intern shape pre-play', async () => {
-    const { db } = makeDb({ 'tournamentRanks/alice': { odUserId: 'alice', rp: 300, tier: 2 } });
-    expect((await readRank(db, 'alice')).rp).toBe(300);
-    const fresh = await readRank(db, 'nobody');
-    expect(fresh).toMatchObject({ odUserId: 'nobody', rp: 0, tier: 1, tierName: 'Intern', floorRp: 0 });
+describe('applyLockedGameToRanks — completeness guard (code review)', () => {
+  it('REFUSES an entry whose finalScores miss a seat — loud error, zero writes', async () => {
+    const { db, writeLog } = makeDb({});
+    const summary = await applyLockedGameToRanks(db, {
+      entry: {
+        bracketGameId: 'b-r1-g1',
+        groupId: 'b-r1-g1',
+        seats: MIXED_SEATS,
+        finalScores: { alice: 10, bob: 10, 'cpu-1': 50 }, // cpu-2 missing
+        advancers: ['cpu-1', 'alice'],
+      },
+      now: NOW,
+    });
+    expect(summary).toEqual({ applied: 0, skipped: 0, errors: 1 });
+    expect(writeLog).toHaveLength(0);
   });
 });

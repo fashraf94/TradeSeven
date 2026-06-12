@@ -35,6 +35,7 @@ import {
   GROUP_SIZE,
   getLatestDayEntry,
   computeComposite,
+  round2,
 } from '../../src/constants/leagueTournament.js';
 import { scoreLeg, scorePick, resolveBaseATR, loadAtrPercentiles } from './tournamentUserScoring.js';
 import { fetchBatchQuotes } from './tournamentPrices.js';
@@ -53,21 +54,32 @@ const DAY_KEY_RE = /^day\d+$/;
  * every pass — a late completion self-heals on the next snapshot.
  */
 export async function fetchGroupAgentScores(db, groupId) {
+  // Field mask per the ledger's precedent (tournamentAgentLedger.js
+  // reconcile): battle docs are heavyweight (statusFeed, chats, rankings)
+  // and the per-group set grows daily — this read needs three fields.
   const snap = await db.collection('agentBattles')
     .where('groupId', '==', groupId)
+    .select('gameMode', 'ownerId', 'scoreState.currentScore')
     .get();
   const byOwner = {};
-  let battles = 0;
   snap.forEach(doc => {
     const battle = doc.data();
     // Joint-stamp safety (founder ruling B3): a groupId without the
-    // tournament gameMode is malformed — never counted.
+    // tournament gameMode is malformed — never counted. A foreign ownerId
+    // is harmless by construction (computeBankingUpdate only consumes the
+    // group's own player ids).
     if (battle.gameMode !== TOURNAMENT_GAME_MODE) return;
     if (typeof battle.ownerId !== 'string' || battle.ownerId.length === 0) return;
-    battles++;
-    byOwner[battle.ownerId] = (byOwner[battle.ownerId] || 0) + (battle.scoreState?.currentScore || 0);
+    const score = battle.scoreState?.currentScore;
+    if (score !== undefined && !Number.isFinite(score)) {
+      // A poisoned score must degrade, never abort the group's banking
+      // (the module contract below) — skip the value, loudly.
+      console.error(`[TournamentBanking] battle ${doc.id}: non-numeric scoreState.currentScore (${typeof score}) — skipped`);
+      return;
+    }
+    byOwner[battle.ownerId] = (byOwner[battle.ownerId] || 0) + (score || 0);
   });
-  return { byOwner, battles };
+  return byOwner;
 }
 
 /**
@@ -111,12 +123,24 @@ export function computeBankingUpdate(group, quotes, { nowIso, etDate, atrPercent
   const dayKey = `day${dayN}`;
   const warnings = [];
 
-  // P6a carry-forward arm: agentScores === null means the battle read failed
-  // this pass — the prior snapshot's agentPoints stand in (see the doc
-  // comment above). Visible, never silent.
+  // P6a carry-forward arms (code review, June 12, 2026 — two grains):
+  // - agentScores === null (the battle read THREW): every player carries the
+  //   prior snapshot's agentPoints (day 1: nothing to carry — banked 0, said
+  //   plainly, not mislabeled as a carry).
+  // - per-owner hole (the read SUCCEEDED but an owner with a prior non-zero
+  //   standing has no battles in it — vanished/mis-stamped docs): that owner
+  //   carries individually; a cumulative standing never regresses to zero on
+  //   a read artifact.
+  // Either arm stamps agentScoresCarried on the day entry — the durable,
+  // writer-readable degrade signal (warnings alone die with the invocation);
+  // advancement reads it via lockTopTwo's `degraded` flag.
   const priorCloseScores = latest?.entry?.closeScores || null;
+  let agentScoresCarried = false;
   if (agentScores === null) {
-    warnings.push('agent scores unavailable — prior snapshot agentPoints carried forward');
+    agentScoresCarried = true;
+    warnings.push(priorCloseScores
+      ? 'agent scores unavailable — prior snapshot agentPoints carried forward'
+      : 'agent scores unavailable — no prior snapshot, agentPoints banked 0');
   }
 
   // Deep-copy players: settlement mutates legs (baselines, banked scores,
@@ -202,11 +226,22 @@ export function computeBankingUpdate(group, quotes, { nowIso, etDate, atrPercent
       });
     }
 
-    const totalPoints = parseFloat(playerTotal.toFixed(2));
-    const agentPoints = parseFloat((agentScores !== null
-      ? (agentScores[player.odUserId] || 0)
-      : (priorCloseScores?.[player.odUserId]?.agentPoints ?? 0)
-    ).toFixed(2));
+    const totalPoints = round2(playerTotal);
+    const priorAgent = priorCloseScores?.[player.odUserId]?.agentPoints;
+    const carry = Number.isFinite(priorAgent) ? priorAgent : 0; // NaN/absent never perpetuates
+    let agentPoints;
+    if (agentScores === null) {
+      agentPoints = carry;
+    } else if (agentScores[player.odUserId] === undefined && carry !== 0) {
+      // Per-owner hole: battles existed yesterday (non-zero standing), none
+      // today — carry, loudly (see the arms comment above).
+      agentScoresCarried = true;
+      warnings.push(`${player.odUserId}: agent battles missing from read — prior agentPoints carried forward`);
+      agentPoints = carry;
+    } else {
+      agentPoints = agentScores[player.odUserId] || 0;
+    }
+    agentPoints = round2(agentPoints);
     closeScores[player.odUserId] = {
       totalPoints,
       picks: pickEntries,
@@ -214,7 +249,7 @@ export function computeBankingUpdate(group, quotes, { nowIso, etDate, atrPercent
       // totalPoints — the weekly composite IS the final day's value
       // (getWeeklyComposite), never a sum over days.
       agentPoints,
-      compositePoints: parseFloat(computeComposite(agentPoints, totalPoints).toFixed(2)),
+      compositePoints: round2(computeComposite(agentPoints, totalPoints)),
     };
   }
 
@@ -228,7 +263,15 @@ export function computeBankingUpdate(group, quotes, { nowIso, etDate, atrPercent
     skipped: false,
     dayKey,
     dayN,
-    dayEntry: { closeScores, recordedAt: nowIso, recordedBy, recordedDate: etDate },
+    dayEntry: {
+      closeScores,
+      recordedAt: nowIso,
+      recordedBy,
+      recordedDate: etDate,
+      // The durable degrade marker (omitted-when-false idiom): this
+      // snapshot's agent layer is carried/zero, not read fresh.
+      ...(agentScoresCarried ? { agentScoresCarried: true } : {}),
+    },
     players,
     waiverPriority,
     warnings,
@@ -290,7 +333,7 @@ export async function bankAllTournamentGroups(db, { now = new Date() } = {}) {
     }
   });
 
-  const summary = { groups: groups.length, processed: 0, skipped: 0, errors: 0 };
+  const summary = { groups: groups.length, processed: 0, skipped: 0, errors: 0, agentScoreFailures: 0 };
   if (groups.length === 0) return summary;
 
   const symbols = new Set();
@@ -322,13 +365,20 @@ export async function bankAllTournamentGroups(db, { now = new Date() } = {}) {
       // a failure degrades to the carry-forward arm, never aborts banking.
       let agentScores = null;
       try {
-        agentScores = (await fetchGroupAgentScores(db, group.id)).byOwner;
+        agentScores = await fetchGroupAgentScores(db, group.id);
       } catch (err) {
         console.error(`[TournamentBanking] group ${group.id} agent-score read failed — carrying forward:`, err.message);
+        summary.agentScoreFailures++;
       }
       const result = await bankGroup(db, group.id, quotes, { now, atrPercentiles, recordedBy: 'cron', agentScores });
       if (result.skipped) summary.skipped++;
       else summary.processed++;
+      // Warnings die with the invocation unless said here (code review:
+      // the dayEntry carries the durable agentScoresCarried flag; the log
+      // line is for the operator reading tonight's run).
+      if (result.warnings?.length > 0) {
+        console.warn(`[TournamentBanking] group ${group.id} warnings:`, result.warnings.join(' | '));
+      }
     } catch (err) {
       console.error(`[TournamentBanking] group ${group.id} failed:`, err.message);
       summary.errors++;

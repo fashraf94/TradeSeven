@@ -60,6 +60,16 @@ export function formatEtDate(now = new Date()) {
 }
 
 /**
+ * Date|string → ISO string (the injectable-`now` normalization). ONE home —
+ * P6a code review found this inlined in six tournament modules; new code
+ * imports it from here (retrofitting the four pre-P6a private copies is
+ * docketed for the P8 hygiene pass, BUILD_RULES §3 report-don't-fix).
+ */
+export function toIso(now) {
+  return now instanceof Date ? now.toISOString() : new Date(now).toISOString();
+}
+
+/**
  * Is the stock market open at this instant? Regular session only:
  * Mon–Fri, not a NYSE holiday, 9:30 ≤ t < close (16:00, or 13:00 on
  * early-close days). Drives the flip endpoint's two branches.

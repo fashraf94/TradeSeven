@@ -73,7 +73,10 @@ import {
   tierForRp,
   cpuFarmGuard,
   computeRankDelta,
+  computeRankBreakdown,
   applyRankWeek,
+  rankByScores,
+  round2,
 } from './leagueTournament.js';
 // Real import, zero mocks (precedent: api/cron/process-draft-claims.test.js:10).
 // This is the behavioral half of the claimSystem parity guard.
@@ -695,6 +698,33 @@ describe('cpuFarmGuard + computeRankDelta — the founder-signed math (B-2)', ()
     // and then it IS a gain, so the guard applies.
     expect(computeRankDelta({ weeklyComposite: -10, placement: 1, cpuOpponents: 3 })).toBe(0);
     expect(computeRankDelta({ weeklyComposite: -10, placement: 1, cpuOpponents: 0 })).toBe(90);
+  });
+});
+
+describe('computeRankBreakdown — math and audit from ONE computation (code review)', () => {
+  it('returns {raw, guard, delta} consistent with computeRankDelta', () => {
+    const args = { weeklyComposite: 60, placement: 1, cpuOpponents: 1 };
+    const b = computeRankBreakdown(args);
+    expect(b.raw).toBe(160);
+    expect(b.guard).toBeCloseTo(2 / 3, 10);
+    expect(b.delta).toBe(computeRankDelta(args));
+  });
+});
+
+describe('rankByScores — the ONE comparator home (code review)', () => {
+  it('score desc, order-index tie-break; missing/non-finite scores rank as 0', () => {
+    expect(rankByScores({ a: 10, b: 30, c: 10 }, ['a', 'b', 'c'])).toEqual(['b', 'a', 'c']);
+    expect(rankByScores({ a: -5, b: NaN }, ['a', 'b', 'c'])).toEqual(['b', 'c', 'a']); // NaN/missing → 0 > −5
+    expect(rankByScores({}, [])).toEqual([]);
+  });
+});
+
+describe('round2 — the shared rounding home', () => {
+  it('two decimals; NaN/undefined guard to 0', () => {
+    expect(round2(1.005)).toBe(1.0); // toFixed semantics, documented
+    expect(round2(97.499)).toBe(97.5);
+    expect(round2(NaN)).toBe(0);
+    expect(round2(undefined)).toBe(0);
   });
 });
 

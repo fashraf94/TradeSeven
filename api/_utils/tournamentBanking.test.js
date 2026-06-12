@@ -346,7 +346,7 @@ describe('bankAllTournamentGroups', () => {
   it('PRODUCTION INERTNESS: zero tournament groups is a clean no-op — no fetches, no writes', async () => {
     const { db, captured } = makeDb({ queryDocs: [] });
     const summary = await bankAllTournamentGroups(db, { now: NOW });
-    expect(summary).toEqual({ groups: 0, processed: 0, skipped: 0, errors: 0 });
+    expect(summary).toEqual({ groups: 0, processed: 0, skipped: 0, errors: 0, agentScoreFailures: 0 });
     expect(captured.updates).toHaveLength(0);
     expect(captured.queries).toEqual([['tournamentGroups', 'status', '==', 'battle']]);
   });
@@ -409,14 +409,18 @@ describe('computeBankingUpdate — agentPoints + compositePoints (P6a)', () => {
 
 describe('fetchGroupAgentScores — the agent-layer read', () => {
   function battlesDb(docs) {
+    const runQuery = (field, value) => async () => ({
+      forEach: (cb) => docs
+        .filter(d => d[field] === value)
+        .forEach(d => cb({ id: d.id, data: () => d })),
+    });
     return {
       collection: (name) => ({
         where: (field, _op, value) => ({
-          get: async () => ({
-            forEach: (cb) => docs
-              .filter(d => d[field] === value)
-              .forEach(d => cb({ id: d.id, data: () => d })),
-          }),
+          get: runQuery(field, value),
+          // Field mask (the ledger precedent) — the fake returns full docs,
+          // a superset of any projection.
+          select: () => ({ get: runQuery(field, value) }),
         }),
         doc: () => { throw new Error('unused'); },
       }),
@@ -429,8 +433,7 @@ describe('fetchGroupAgentScores — the agent-layer read', () => {
       { id: 'b2', groupId: 'g1', gameMode: 'baggerbomb_tournament', ownerId: 'u1', scoreState: { currentScore: -4 } },
       { id: 'b3', groupId: 'g1', gameMode: 'baggerbomb_tournament', ownerId: 'u2', scoreState: { currentScore: 7 } },
     ]);
-    const { byOwner, battles } = await fetchGroupAgentScores(db, 'g1');
-    expect(battles).toBe(3);
+    const byOwner = await fetchGroupAgentScores(db, 'g1');
     expect(byOwner).toEqual({ u1: 6, u2: 7 });
   });
 
@@ -439,8 +442,58 @@ describe('fetchGroupAgentScores — the agent-layer read', () => {
       { id: 'b1', groupId: 'g1', gameMode: 'baggerbomb_agent', ownerId: 'u1', scoreState: { currentScore: 99 } },
       { id: 'b2', groupId: 'g1', gameMode: 'baggerbomb_tournament', ownerId: 'u2' },
     ]);
-    const { byOwner, battles } = await fetchGroupAgentScores(db, 'g1');
-    expect(battles).toBe(1);
+    const byOwner = await fetchGroupAgentScores(db, 'g1');
     expect(byOwner).toEqual({ u2: 0 });
+  });
+
+  it('a poisoned (non-numeric) currentScore is skipped loudly, never aborts the read', async () => {
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const db = battlesDb([
+      { id: 'b1', groupId: 'g1', gameMode: 'baggerbomb_tournament', ownerId: 'u1', scoreState: { currentScore: '12.5' } },
+      { id: 'b2', groupId: 'g1', gameMode: 'baggerbomb_tournament', ownerId: 'u1', scoreState: { currentScore: 4 } },
+    ]);
+    const byOwner = await fetchGroupAgentScores(db, 'g1');
+    expect(byOwner).toEqual({ u1: 4 });
+    expect(errSpy).toHaveBeenCalled();
+    errSpy.mockRestore();
+  });
+});
+
+describe('computeBankingUpdate — per-owner carry-forward (code review)', () => {
+  it('an owner with a prior NON-ZERO standing missing from a successful read carries, loudly; zero-prior owners bank 0 quietly', () => {
+    const group = battleGroup({
+      dailyScores: {
+        day1: {
+          recordedDate: '2026-06-09',
+          closeScores: {
+            u1: { totalPoints: 10, agentPoints: 25, compositePoints: 40, picks: [] },
+            u2: { totalPoints: 0, agentPoints: 0, compositePoints: 0, picks: [] },
+          },
+        },
+      },
+    });
+    // The read SUCCEEDED but u1's battles vanished (mis-stamp/deletion).
+    const update = computeBankingUpdate(group, QUOTES, { ...OPTS, agentScores: { u2: 7, u3: 1 } });
+    expect(update.dayEntry.closeScores.u1.agentPoints).toBe(25); // carried, never regressed to 0
+    expect(update.dayEntry.closeScores.u2.agentPoints).toBe(7);
+    expect(update.dayEntry.agentScoresCarried).toBe(true);
+    expect(update.warnings.some(w => w.startsWith('u1: agent battles missing'))).toBe(true);
+  });
+
+  it('a NaN prior never perpetuates; the day-1 null-read arm banks 0 and says so', () => {
+    const poisoned = battleGroup({
+      dailyScores: {
+        day1: {
+          recordedDate: '2026-06-09',
+          closeScores: { u1: { totalPoints: 1, agentPoints: NaN, compositePoints: NaN, picks: [] } },
+        },
+      },
+    });
+    const carried = computeBankingUpdate(poisoned, QUOTES, { ...OPTS, agentScores: null });
+    expect(carried.dayEntry.closeScores.u1.agentPoints).toBe(0); // finite-guarded
+
+    const day1 = computeBankingUpdate(battleGroup(), QUOTES, { ...OPTS, agentScores: null });
+    expect(day1.warnings).toContain('agent scores unavailable — no prior snapshot, agentPoints banked 0');
+    expect(day1.dayEntry.agentScoresCarried).toBe(true);
   });
 });

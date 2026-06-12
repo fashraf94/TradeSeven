@@ -32,13 +32,20 @@ function makeDb({ drafts = [], groups = [], groupDocs = {}, agentBattles = [], l
   const captured = { updates: [], txUpdates: [], txSets: [] };
   const db = {
     collection: (name) => ({
-      where: () => {
+      // P6a code review: the fake now honors the equality filter (it
+      // previously returned every seeded doc regardless of field/value, so
+      // a wrong field name or status constant in a query could never fail
+      // this battery — the integration lock it exists to be).
+      where: (field, _op, value) => {
+        const pool = name === 'drafts' ? drafts : name === 'tournamentGroups' ? groups : name === 'agentBattles' ? agentBattles : [];
         const runQuery = async () => ({
-          forEach: (cb) => (name === 'drafts' ? drafts : name === 'tournamentGroups' ? groups : name === 'agentBattles' ? agentBattles : [])
+          forEach: (cb) => pool
+            .filter(d => field === undefined || d.data?.[field] === value)
             .forEach(d => cb({ id: d.id, data: () => d.data })),
         });
-        // select() is a field-mask hint (P2 reconcile projects battle docs);
-        // the fake returns full docs — a superset of any projection.
+        // select() is a field-mask hint (P2 reconcile + P6a agent scores
+        // project battle docs); the fake returns full docs — a superset of
+        // any projection.
         return { get: runQuery, select: () => ({ get: runQuery }) };
       },
       doc: (id) => ({
@@ -115,7 +122,7 @@ describe('tournament banking branch — production inertness', () => {
     // Legacy contract, verbatim:
     expect(res.body).toMatchObject({ success: true, message: 'No active battles', processed: 0 });
     // Additive branches, no-op:
-    expect(res.body.tournament).toEqual({ groups: 0, processed: 0, skipped: 0, errors: 0 });
+    expect(res.body.tournament).toEqual({ groups: 0, processed: 0, skipped: 0, errors: 0, agentScoreFailures: 0 });
     expect(res.body.tournamentLedger).toEqual({ groups: 0, reconciled: 0, divergences: 0, staleCleared: 0, errors: 0 });
     expect(res.body.tournamentLeaderboard).toEqual({ groups: 0, skippedNoBanking: 0, docsWritten: 0, errors: 0 });
     expect(captured.updates).toHaveLength(0);
@@ -168,7 +175,7 @@ describe('tournament banking branch — no short-circuit', () => {
 
     expect(res.statusCode).toBe(500);
     expect(res.body).toMatchObject({ success: false, error: 'Failed to fetch prices' });
-    expect(res.body.tournament).toEqual({ groups: 0, processed: 0, skipped: 0, errors: 0 });
+    expect(res.body.tournament).toEqual({ groups: 0, processed: 0, skipped: 0, errors: 0, agentScoreFailures: 0 });
   });
 
   it('a legacy throw after the branch still reports the tournament result in the outer-catch 500', async () => {
@@ -184,7 +191,7 @@ describe('tournament banking branch — no short-circuit', () => {
 
     expect(res.statusCode).toBe(500);
     expect(res.body.success).toBe(false);
-    expect(res.body.tournament).toEqual({ groups: 0, processed: 0, skipped: 0, errors: 0 });
+    expect(res.body.tournament).toEqual({ groups: 0, processed: 0, skipped: 0, errors: 0, agentScoreFailures: 0 });
   });
 
   it('a tournament branch crash never breaks the legacy path', async () => {

@@ -28,6 +28,14 @@
 // finalization side-effects. The manual bank-daily-scores endpoint upserts
 // its one group for smoke parity.
 //
+// SCALE (priced, June 12, 2026): one whole-doc month board, read-modified-
+// written per upsert — at ~250-400 bytes/entry the Firestore 1 MiB doc cap
+// lands around 3-5k active players in a month, at which point every upsert
+// for that month fails together. A conscious V1-launch-scale call (one
+// bracket + base layer ≈ tens of rows); per-entry subcollection sharding is
+// the designed escape hatch and MUST land before open registration (P6b/P8
+// checklist item — recorded in the P6a phase report).
+//
 // Imports the zero-import schema module from src/ under the revised June
 // 2026 import rule (BUILD_RULES §4); the co-located test's real import of
 // THIS module is the dependency-surface guard. `getArchetypeLabel` is a
@@ -35,10 +43,8 @@
 // (the tournamentCpu.js precedent).
 
 import {
-  TOURNAMENT_GROUPS_COLLECTION,
   TOURNAMENT_LEADERBOARDS_COLLECTION,
   GROUP_STATUS,
-  GROUP_SIZE,
   getWeeklyScore,
   getWeeklyComposite,
   isWeekBanked,
@@ -46,10 +52,11 @@ import {
   leaderboardDocId,
   isCpuUserId,
   cpuNFromUserId,
-  cpuArchetypeForN,
+  round2,
 } from '../../src/constants/leagueTournament.js';
-// Fenced module EXPORT, called read-only — never edited (BUILD_RULES §1).
-import { getArchetypeLabel } from './agentArchetypeConfig.js';
+import { fetchEligibleGroupsByStatus } from './tournamentGroupService.js';
+import { cpuAgentName } from './tournamentCpu.js';
+import { toIso } from './tournamentTime.js';
 
 const LOG_PREFIX = '[TournamentLeaderboard]';
 
@@ -60,12 +67,13 @@ export function monthKeyForGroup(group) {
 }
 
 /** A CPU seat's display name, derived from the id alone (the agents doc is
- * never read here). Falls back to the bare 'CPU' on a malformed id. */
+ * never read here; the label format's ONE home is tournamentCpu.js
+ * cpuAgentName). Falls back to the bare 'CPU' on a malformed id. */
 export function cpuDisplayName(odUserId) {
   const n = cpuNFromUserId(odUserId);
   if (n == null) return 'CPU';
   try {
-    return `CPU — ${getArchetypeLabel(cpuArchetypeForN(n))}`;
+    return cpuAgentName(n);
   } catch {
     return 'CPU';
   }
@@ -120,8 +128,6 @@ export function buildGroupWeekRows(group, nowIso) {
   }));
 }
 
-const round2 = (x) => parseFloat(x.toFixed(2));
-
 /**
  * Upsert the given groups' current week contributions into their month docs.
  * Cohorts by (dev-namespace, month key); one transaction per doc — the
@@ -130,11 +136,14 @@ const round2 = (x) => parseFloat(x.toFixed(2));
  *
  * Returns {groups, skippedNoBanking, docsWritten, errors}.
  */
-export async function upsertLeaderboardForGroups(db, groups, { now = new Date() } = {}) {
-  const nowIso = now instanceof Date ? now.toISOString() : new Date(now).toISOString();
+export async function upsertLeaderboardForGroups(db, groups, { now = new Date(), dev } = {}) {
+  const nowIso = toIso(now);
   const summary = { groups: groups.length, skippedNoBanking: 0, docsWritten: 0, errors: 0 };
 
-  // Cohort groups by target doc id.
+  // Cohort groups by target doc id. `dev` (when the caller resolved the
+  // namespace — the advancement's unified derivation) overrides the
+  // per-group flag so BOTH side-effect halves route from ONE decision
+  // (code review: rank and leaderboard could otherwise split namespaces).
   const cohorts = new Map(); // docId -> { monthKey, groups: [] }
   for (const group of groups) {
     const monthKey = monthKeyForGroup(group);
@@ -142,7 +151,7 @@ export async function upsertLeaderboardForGroups(db, groups, { now = new Date() 
       summary.skippedNoBanking++;
       continue;
     }
-    const docId = leaderboardDocId(monthKey, { dev: group.isDev === true });
+    const docId = leaderboardDocId(monthKey, { dev: dev === undefined ? group.isDev === true : dev === true });
     if (!cohorts.has(docId)) cohorts.set(docId, { monthKey, groups: [] });
     cohorts.get(docId).groups.push(group);
   }
@@ -179,10 +188,12 @@ export async function upsertLeaderboardForGroups(db, groups, { now = new Date() 
               // The month total: Σ over the weeks map, recomputed every
               // write — signed, never floored (re-run = same totals).
               points: round2(Object.values(weeks).reduce((sum, w) => sum + (w.points || 0), 0)),
-              // Tier-2 spectator entry: the latest group this row played.
-              ...(group.status === GROUP_STATUS.BATTLE || prior.currentGroupId == null
-                ? { currentGroupId: row.groupId }
-                : {}),
+              // Tier-2 spectator entry (P6b reads it): the latest group —
+              // an active group always wins; otherwise keep the prior
+              // pointer, defaulting to this group when none exists.
+              currentGroupId: group.status === GROUP_STATUS.BATTLE
+                ? row.groupId
+                : (prior.currentGroupId ?? row.groupId),
               updatedAt: nowIso,
             };
           }
@@ -206,15 +217,9 @@ export async function upsertLeaderboardForGroups(db, groups, { now = new Date() 
  * groups is a clean no-op (the production state until brackets run).
  */
 export async function aggregateTournamentLeaderboards(db, { now = new Date() } = {}) {
-  const snapshot = await db.collection(TOURNAMENT_GROUPS_COLLECTION)
-    .where('status', '==', GROUP_STATUS.BATTLE)
-    .get();
-  const groups = [];
-  snapshot.forEach(doc => {
-    const data = doc.data();
-    // The banking mirror's eligibility check (full seats only).
-    if (data.players?.length === GROUP_SIZE) groups.push({ id: doc.id, ...data });
-  });
+  // The ONE eligibility query home (code review: this was a third copy) —
+  // dev-INCLUSIVE here by design; the A-4 routing namespaces inside.
+  const groups = await fetchEligibleGroupsByStatus(db, GROUP_STATUS.BATTLE, { includeDev: true });
   if (groups.length === 0) {
     return { groups: 0, skippedNoBanking: 0, docsWritten: 0, errors: 0 };
   }

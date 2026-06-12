@@ -46,6 +46,16 @@ import { getArchetypeConfig, getArchetypeLabel } from './agentArchetypeConfig.js
 const LOG_PREFIX = '[TournamentCpu]';
 
 /**
+ * The CPU display label — ONE home for the format (P6a code review: the
+ * leaderboard writer derives the same name for its rows; both sides read
+ * this so a branding change can never split a CPU's identity across
+ * surfaces). Pure.
+ */
+export function cpuAgentName(n) {
+  return `CPU — ${getArchetypeLabel(cpuArchetypeForN(n))}`;
+}
+
+/**
  * The system agents doc for CPU n — the createAgent shape
  * (src/services/agentService.js:92) with neutral values and the two ratified
  * markers: ownerId 'cpu-{n}' and isCpu true. Pure.
@@ -56,7 +66,7 @@ export function buildCpuAgentDoc(n, nowIso) {
   return {
     ownerId: cpuUserId(n),
     isCpu: true,
-    name: `CPU — ${getArchetypeLabel(archetype)}`,
+    name: cpuAgentName(n),
     archetype,
     archetypeDrift: null,
     config: {

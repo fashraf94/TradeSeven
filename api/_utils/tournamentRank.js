@@ -23,18 +23,17 @@
 import {
   TOURNAMENT_RANKS_COLLECTION,
   RANK_TUNING,
-  computeRankDelta,
-  cpuFarmGuard,
+  computeRankBreakdown,
   applyRankWeek,
-  tierForRp,
+  rankByScores,
   rankDocId,
   isCpuUserId,
+  round2,
 } from '../../src/constants/leagueTournament.js';
 import { resolveDisplayNames } from './tournamentLeaderboard.js';
+import { toIso } from './tournamentTime.js';
 
 const LOG_PREFIX = '[TournamentRank]';
-
-const round2 = (x) => parseFloat(x.toFixed(2));
 
 /**
  * Apply one finalized group-week to the four players' rank docs.
@@ -51,7 +50,7 @@ const round2 = (x) => parseFloat(x.toFixed(2));
  * @returns {{applied: number, skipped: number, errors: number}}
  */
 export async function applyGroupWeekToRanks(db, { groupId, seats, compositeByPlayer, ranking, dev = false, now = new Date() }) {
-  const nowIso = now instanceof Date ? now.toISOString() : new Date(now).toISOString();
+  const nowIso = toIso(now);
   const summary = { applied: 0, skipped: 0, errors: 0 };
   const displayNames = await resolveDisplayNames(db, seats.map(s => s.odUserId));
 
@@ -75,9 +74,9 @@ export async function applyGroupWeekToRanks(db, { groupId, seats, compositeByPla
         const prior = snap.exists ? snap.data() : null;
         if (prior?.appliedGroups?.[groupId]) return 'skipped';
 
-        const raw = weeklyComposite * RANK_TUNING.RP_PER_POINT
-          + (RANK_TUNING.PLACEMENT_BONUS[placement - 1] ?? 0);
-        const delta = computeRankDelta({ weeklyComposite, placement, cpuOpponents });
+        // ONE computation for math AND audit (code review: a parallel raw
+        // re-derivation here could drift from the signed function).
+        const { raw, guard, delta } = computeRankBreakdown({ weeklyComposite, placement, cpuOpponents });
         const next = applyRankWeek(prior, delta);
         const event = {
           groupId,
@@ -85,7 +84,7 @@ export async function applyGroupWeekToRanks(db, { groupId, seats, compositeByPla
           placement,
           cpuOpponents,
           raw: round2(raw),
-          guard: round2(cpuFarmGuard(cpuOpponents)),
+          guard: round2(guard),
           delta: round2(delta),
           rpAfter: next.rp,
           appliedAt: nowIso,
@@ -105,7 +104,7 @@ export async function applyGroupWeekToRanks(db, { groupId, seats, compositeByPla
 
       if (result === 'applied') {
         summary.applied++;
-        console.log(`${LOG_PREFIX} ${dev ? '[dev] ' : ''}group ${groupId}: ${odUserId} placement ${placement}, composite ${round2(weeklyComposite)}, guard ${round2(cpuFarmGuard(cpuOpponents))} → applied`);
+        console.log(`${LOG_PREFIX} ${dev ? '[dev] ' : ''}group ${groupId}: ${odUserId} placement ${placement}, composite ${round2(weeklyComposite)}, cpuOpponents ${cpuOpponents} → applied`);
       } else {
         summary.skipped++;
       }
@@ -129,8 +128,15 @@ export async function applyLockedGameToRanks(db, { entry, dev = false, now = new
   }
   const seats = entry.seats || [];
   const seatOrder = seats.map(s => s.odUserId);
-  const ranking = [...seatOrder].sort((a, b) =>
-    (entry.finalScores[b] - entry.finalScores[a]) || (seatOrder.indexOf(a) - seatOrder.indexOf(b)));
+  // Completeness guard (code review): a seat missing from finalScores would
+  // otherwise rank by NaN-falsy comparator luck and apply on composite 0 —
+  // corrupt entries are REFUSED, loudly, for founder attention.
+  const missing = seatOrder.filter(id => !Number.isFinite(entry.finalScores[id]));
+  if (missing.length > 0) {
+    console.error(`${LOG_PREFIX} game ${entry.bracketGameId}: finalScores missing/non-finite for ${missing.join(', ')} — application REFUSED (founder attention)`);
+    return { applied: 0, skipped: 0, errors: 1 };
+  }
+  const ranking = rankByScores(entry.finalScores, seatOrder);
   return applyGroupWeekToRanks(db, {
     groupId: entry.groupId,
     seats,
@@ -141,19 +147,3 @@ export async function applyLockedGameToRanks(db, { entry, dev = false, now = new
   });
 }
 
-/** Read helper for surfaces/tests: the rank doc or the empty pre-play shape. */
-export async function readRank(db, odUserId, { dev = false } = {}) {
-  const snap = await db.collection(TOURNAMENT_RANKS_COLLECTION).doc(rankDocId(odUserId, { dev })).get();
-  if (snap.exists) return snap.data();
-  const tier = tierForRp(0);
-  return {
-    odUserId,
-    rp: 0,
-    tier: tier.tier,
-    tierName: tier.name,
-    floorRp: 0,
-    peakRp: 0,
-    appliedGroups: {},
-    history: [],
-  };
-}

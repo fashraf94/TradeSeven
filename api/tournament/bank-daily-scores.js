@@ -94,7 +94,7 @@ export default async function handler(req, res) {
     // to the carry-forward arm, never blocks banking.
     let agentScores = null;
     try {
-      agentScores = (await fetchGroupAgentScores(db, groupId)).byOwner;
+      agentScores = await fetchGroupAgentScores(db, groupId);
     } catch (err) {
       console.error(`[Tournament] bank-daily-scores: agent-score read failed — carrying forward:`, err.message);
     }
@@ -108,10 +108,13 @@ export default async function handler(req, res) {
 
     // P6a smoke parity: production leaderboard rows ride the nightly cron;
     // this preview path upserts the one group it just banked (dev groups
-    // route to dev- docs inside — ruling A-4). Failure-isolated: the
-    // banking result returns regardless.
+    // route to dev- docs inside — ruling A-4). The upsert also runs on the
+    // already_recorded skip (code review: a failed upsert was otherwise
+    // unrepairable through this endpoint — re-clicking hit the banking
+    // idempotency skip and never retried the idempotent upsert). Failure-
+    // isolated: the banking result returns regardless.
     let leaderboard = null;
-    if (!result.skipped) {
+    if (!result.skipped || result.reason === 'already_recorded') {
       try {
         const fresh = await getGroup(db, groupId);
         if (fresh) leaderboard = await upsertLeaderboardForGroups(db, [fresh], { now });

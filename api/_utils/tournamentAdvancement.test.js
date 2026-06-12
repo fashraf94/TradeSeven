@@ -601,24 +601,146 @@ describe('P6a side-effects — rank apply + leaderboard final upsert ride the Fr
     expect(lb.entries.founder.isCpu).toBe(false);
     expect(lb.entries['cpu-2'].isCpu).toBe(true);
 
-    // Idempotent re-run: every application skips, totals unchanged.
+    // Idempotent re-run: the sideEffectsAt stamp short-circuits every
+    // entry — zero applications AND zero per-seat skip passes (the stamp
+    // is checked on the bracket doc already in hand; no rank-doc reads).
     const again = await runFridayAdvancement(db, { now: NOW });
     expect(again.rankApplied).toBe(0);
-    expect(again.rankSkipped).toBeGreaterThan(0);
+    expect(again.rankSkipped).toBe(0);
     expect(store.get('tournamentRanks/cpu-2').rp).toBeCloseTo(205 / 3, 1);
     expect(store.get('tournamentLeaderboards/2026-06').entries.founder.points).toBe(93);
+
+    // The stamp is durable on the bracket entry.
+    expect(store.get('tournamentBrackets/b').rounds.r1.games['b-r1-g1'].sideEffectsAt).toBe(NOW_ISO);
   });
 
-  it('CRASH RESUME: a rank application lost after the lock is healed by the sweep from the bracket alone', async () => {
+  it('CRASH RESUME: an UNSTAMPED locked entry (crash before sideEffectsAt landed) is healed by the sweep from the bracket alone', async () => {
     const { db, store } = seededBracketDb();
     await runFridayAdvancement(db, { now: NOW });
 
-    // Simulate the orphan: the lock landed but this player's rank write was lost.
+    // Simulate the true crash window: the lock landed, one seat's rank
+    // write was lost, and the stamp never landed (the stamp is written only
+    // after a clean pass — so a crash mid-side-effects leaves it absent).
     store.delete('tournamentRanks/founder');
+    store.get('tournamentBrackets/b').rounds.r1.games['b-r1-g1'].sideEffectsAt = null;
 
     const summary = await runFridayAdvancement(db, { now: NOW });
-    expect(summary.rankApplied).toBe(1); // exactly the orphaned seat
+    expect(summary.rankApplied).toBe(1);  // exactly the orphaned seat
+    expect(summary.rankSkipped).toBe(3);  // the other three skip on appliedGroups
     expect(store.get('tournamentRanks/founder').appliedGroups['b-r1-g1']).toBeDefined();
+    // The resume re-stamps, so the next tick is free again.
+    expect(store.get('tournamentBrackets/b').rounds.r1.games['b-r1-g1'].sideEffectsAt).toBe(NOW_ISO);
+  });
+
+  it('COMPLETION GATE: a failing leaderboard half defers completion; the group stays in the battle query and heals next tick', async () => {
+    const { db, store } = seededBracketDb();
+    // Break the leaderboard upsert for the whole first run (a poisoned
+    // users-collection read cannot do it — names degrade), then heal.
+    const realRunTransaction = db.runTransaction.bind(db);
+    let fail = true;
+    db.runTransaction = async (fn) => realRunTransaction(async (tx) => fn({
+      get: tx.get,
+      update: tx.update,
+      set: (ref, data) => {
+        if (ref.path.startsWith('tournamentLeaderboards/') && fail) {
+          throw new Error('transient month-doc failure');
+        }
+        tx.set(ref, data);
+      },
+    }));
+
+    const first = await runFridayAdvancement(db, { now: NOW });
+    expect(first.errors).toBeGreaterThan(0);
+    // Locks landed, rank applied — but no stamp, no completion.
+    expect(store.get('tournamentBrackets/b').rounds.r1.games['b-r1-g1'].advancers).not.toBeNull();
+    expect(store.get('tournamentBrackets/b').rounds.r1.games['b-r1-g1'].sideEffectsAt).toBeNull();
+    expect(store.get('tournamentGroups/b-r1-g1').status).toBe(GROUP_STATUS.BATTLE);
+
+    fail = false;
+    const second = await runFridayAdvancement(db, { now: NOW });
+    expect(second.errors).toBe(0);
+    expect(store.get('tournamentBrackets/b').rounds.r1.games['b-r1-g1'].sideEffectsAt).toBe(NOW_ISO);
+    expect(store.get('tournamentGroups/b-r1-g1').status).toBe(GROUP_STATUS.COMPLETE);
+    expect(store.get('tournamentLeaderboards/2026-06').entries.founder.weeks['b-r1-g1'].final).toBe(true);
+  });
+
+  it('BASE-LAYER GATE: a failing side-effect withholds completion — the week is never orphaned', async () => {
+    const base = bracketGroup({ id: 'ignored', members: G1_MEMBERS, dailyScores: G1_WEEK });
+    delete base.bracketGameId;
+    base.baseLayerWeek = '2026-W25';
+    const { db, store } = makeDb({
+      'tournamentGroups/base1': base,
+      'indexIntelligence/stockRankings': { stocks: STOCKS },
+    });
+    const realRunTransaction = db.runTransaction.bind(db);
+    let fail = true;
+    db.runTransaction = async (fn) => realRunTransaction(async (tx) => fn({
+      get: tx.get,
+      update: tx.update,
+      set: (ref, data) => {
+        if (ref.path.startsWith('tournamentRanks/') && fail) {
+          throw new Error('transient rank failure');
+        }
+        tx.set(ref, data);
+      },
+    }));
+
+    const first = await runFridayAdvancement(db, { now: NOW });
+    expect(first.errors).toBeGreaterThan(0);
+    expect(first.baseCompleted).toBe(0);
+    expect(store.get('tournamentGroups/base1').status).toBe(GROUP_STATUS.BATTLE); // still visible
+
+    fail = false;
+    const second = await runFridayAdvancement(db, { now: NOW });
+    expect(second.baseCompleted).toBe(1);
+    expect(store.get('tournamentGroups/base1').status).toBe(GROUP_STATUS.COMPLETE);
+    expect(store.get('tournamentRanks/founder').appliedGroups.base1).toBeDefined();
+  });
+
+  it('DEV SWEEP FILTER: production ticks never work dev brackets; the dev duty surface does', async () => {
+    const { db, store } = seededBracketDb();
+    store.get('tournamentBrackets/b').isDev = true;
+    store.get('tournamentGroups/b-r1-g1').isDev = true;
+    store.get('tournamentGroups/b-r1-g2').isDev = true;
+
+    // Production run: the dev groups are excluded by fetchEligibleGroupsByStatus
+    // AND the sweep skips the dev bracket — zero work, zero errors.
+    const prod = await runFridayAdvancement(db, { now: NOW });
+    expect(prod.groups).toBe(0);
+    expect(prod.rankApplied).toBe(0);
+    expect(prod.errors).toBe(0);
+    expect(store.get('tournamentRanks/dev-founder')).toBeUndefined();
+
+    // The dev duty surface opts in and lands the dev-namespaced docs.
+    const dev = await runFridayAdvancement(db, { now: NOW, includeDevGroups: true });
+    expect(dev.rankApplied).toBe(8);
+    expect(store.get('tournamentRanks/dev-founder')).toBeDefined();
+    expect(store.get('tournamentRanks/founder')).toBeUndefined();
+  });
+
+  it('MATERIALIZED dev brackets inherit isDev — smoke side-effects can never route to production docs', async () => {
+    const { db, store } = seededBracketDb();
+    store.get('tournamentGroups/b-r1-g1').isDev = true;
+    store.get('tournamentGroups/b-r1-g2').isDev = true;
+    store.delete('tournamentBrackets/b'); // the lost-bracket recovery window
+
+    await runFridayAdvancement(db, { now: NOW, includeDevGroups: true });
+    expect(store.get('tournamentBrackets/b').isDev).toBe(true); // inherited at materialization
+    expect(store.get('tournamentRanks/dev-founder')).toBeDefined();
+    expect(store.get('tournamentRanks/founder')).toBeUndefined();
+    expect(store.get('tournamentLeaderboards/dev-2026-06')).toBeDefined();
+    expect(store.get('tournamentLeaderboards/2026-06')).toBeUndefined();
+  });
+
+  it('DEGRADED LOCK HONESTY: a week finalized from an agentScoresCarried snapshot counts degradedLocks, loudly, and proceeds', async () => {
+    const { db, store } = seededBracketDb();
+    const g1 = store.get('tournamentGroups/b-r1-g1');
+    g1.dailyScores.day5.agentScoresCarried = true;
+
+    const summary = await runFridayAdvancement(db, { now: NOW });
+    expect(summary.degradedLocks).toBe(1);
+    expect(summary.errors).toBe(0); // proceeds — refusing is a flagged founder decision, not improvised
+    expect(store.get('tournamentGroups/b-r1-g1').status).toBe(GROUP_STATUS.COMPLETE);
   });
 
   it('base-layer completion applies rank + leaderboard BEFORE the transition', async () => {

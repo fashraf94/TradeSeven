@@ -61,6 +61,7 @@ import {
   cpuNFromUserId,
   WEEK_DAYS_REQUIRED,
   isWeekBanked,
+  rankByScores,
   AGENT_LEDGER_SUBCOLLECTION,
   AGENT_LEDGER_DOC_ID,
   STREAMS_SUBCOLLECTION,
@@ -97,9 +98,7 @@ export function lockTopTwo(group) {
     finalScores[odUserId] = getWeeklyComposite(group, odUserId);
     finalUserScores[odUserId] = getWeeklyScore(group, odUserId);
   }
-  const ranking = [...members].sort((a, b) =>
-    (finalScores[b] - finalScores[a]) || (members.indexOf(a) - members.indexOf(b))
-  );
+  const ranking = rankByScores(finalScores, members);
   return { advancers: ranking.slice(0, 2), finalScores, finalUserScores, ranking };
 }
 
@@ -158,8 +157,7 @@ export async function buildChampionRecap(db, bracket, championId) {
       (g.seats || []).some(s => s.odUserId === championId));
     if (!game || !game.finalScores) continue;
     const seatOrder = (game.seats || []).map(s => s.odUserId);
-    const ranking = [...seatOrder].sort((a, b) =>
-      (game.finalScores[b] - game.finalScores[a]) || (seatOrder.indexOf(a) - seatOrder.indexOf(b)));
+    const ranking = rankByScores(game.finalScores, seatOrder);
     bracketPath.push({
       roundNumber: round.roundNumber,
       groupId: game.groupId,
@@ -245,6 +243,7 @@ export async function runFridayAdvancement(db, { now = new Date(), includeDevGro
     rankApplied: 0,
     rankSkipped: 0,
     leaderboardDocs: 0,
+    degradedLocks: 0,
     errors: 0,
   };
 
@@ -262,10 +261,16 @@ export async function runFridayAdvancement(db, { now = new Date(), includeDevGro
         continue;
       }
       // P6a: rank + leaderboard finalization BEFORE the completion
-      // transition — a completed group leaves the battle query, so the
-      // side-effects must land first (idempotent; a crash here retries
-      // next tick with the group still visible).
-      await applyWeekSideEffects(db, { group, entry: null, dev: group.isDev === true, nowIso, summary });
+      // transition, and completion is GATED on a clean pass (code review,
+      // June 12, 2026): base-layer groups have no bracket entry, so a
+      // caught side-effect failure followed by completion would orphan the
+      // week forever — instead the group stays in the battle query and the
+      // withheld duty marker re-ticks it until the idempotent halves land.
+      const clean = await runWeekSideEffects(db, { group, entry: null, dev: group.isDev === true, nowIso, summary });
+      if (!clean) {
+        console.error(`${LOG_PREFIX} base-layer group ${group.id}: side-effects incomplete — completion deferred to next tick`);
+        continue;
+      }
       await transitionStatus(db, group.id, GROUP_STATUS.COMPLETE, nowIso);
       console.log(`${LOG_PREFIX} base-layer group ${group.id}: week banked — completed (no recomposition at V1, ruled)`);
       summary.baseCompleted++;
@@ -312,18 +317,22 @@ export async function runFridayAdvancement(db, { now = new Date(), includeDevGro
   summary.activeBrackets = activeBrackets.length;
 
   for (const { id, bracket } of activeBrackets) {
+    // P4 companion (a), extended at the P6a review: production duty runs
+    // never work dev brackets — the sweep was the one loophole (a wedged
+    // smoke bracket could withhold the production Friday marker forever).
+    // The dev duty surface (run-duty, includeDevGroups: true) owns them.
+    if (bracket.isDev === true && !includeDevGroups) continue;
     try {
       const bracketRef = db.collection(TOURNAMENT_BRACKETS_COLLECTION).doc(id);
-      // P6a: re-apply finalization side-effects for every locked game first
-      // (idempotent skips when the cohort path already ran them this tick) —
-      // a crash between a lock and its side-effects is healed here for as
-      // long as the bracket stays active. Cost: a handful of rank-doc reads
-      // per locked game per evening tick; correctness outranks it.
-      const dev = bracket.isDev === true;
-      for (const round of Object.values(bracket.rounds || {})) {
+      // P6a: resume finalization side-effects for any locked game whose
+      // sideEffectsAt stamp is missing (a crash between a lock and its
+      // side-effects). Stamped entries cost ZERO reads — the stamp is on
+      // the bracket doc already in hand (code review: the unstamped resume
+      // previously re-read 4 rank docs + profiles per locked game per tick).
+      for (const [roundKey, round] of Object.entries(bracket.rounds || {})) {
         for (const entry of Object.values(round.games || {})) {
-          if (entry.advancers == null) continue;
-          await applyEntrySideEffects(db, { entry, dev, nowIso, summary });
+          if (entry.advancers == null || entry.sideEffectsAt != null) continue;
+          await resumeEntrySideEffects(db, { bracketRef, roundKey, bracket, entry, nowIso, summary });
         }
       }
       const roundNumbers = Object.values(bracket.rounds || {})
@@ -343,15 +352,34 @@ export async function runFridayAdvancement(db, { now = new Date(), includeDevGro
 }
 
 /**
- * P6a finalization side-effects for a group whose week is banked: the rank
- * application (founder-signed B-1/B-2 math; idempotent per appliedGroups)
- * and the leaderboard's final upsert (idempotent SET of weeks.{groupId}).
- * Bracket games apply from the locked entry (the resumable-from-the-bracket
- * posture); base-layer groups lock locally with the same pure rule. Each
- * half is error-isolated — a failure counts on summary.errors, which
- * withholds the duty marker so the next tick retries.
+ * P6a finalization side-effects for a group whose week is banked — the ONE
+ * core both paths run (code review, June 12, 2026: the previous split pair
+ * had divergent retry semantics that could orphan a leaderboard row):
+ * - rank application (founder-signed B-1/B-2; idempotent per appliedGroups),
+ *   entry-based when a locked bracket entry is in hand, group-based
+ *   (lockTopTwo) for base-layer groups;
+ * - the leaderboard's final upsert (idempotent SET of weeks.{groupId}),
+ *   UNCONDITIONAL whenever the group doc exists, routed by the SAME dev
+ *   decision as the rank half (the upsert's dev override).
+ * Returns true only when BOTH halves landed clean — callers gate the
+ * irreversible transitions (group completion, the sideEffectsAt stamp, the
+ * champion write) on it; failures count on summary.errors, which withholds
+ * the duty marker so the next tick retries the idempotent halves.
+ *
+ * DEGRADE HONESTY: a week locked from a snapshot carrying the banking
+ * degrade marker (agentScoresCarried — the agent layer was carried/zeroed,
+ * not read) is counted on summary.degradedLocks and logged loudly, but
+ * still proceeds — whether such weeks should REFUSE to lock is a founder
+ * decision flagged in the P6a phase report, not improvised here.
  */
-async function applyWeekSideEffects(db, { group, entry, dev, nowIso, summary }) {
+async function runWeekSideEffects(db, { group, entry, dev, nowIso, summary }) {
+  let clean = true;
+
+  if (group && getLatestDayEntry(group)?.entry?.agentScoresCarried === true) {
+    console.error(`${LOG_PREFIX} group ${group.id}: WEEK FINALIZED FROM A DEGRADED SNAPSHOT (agentScoresCarried) — the composite may be missing agent-layer points (founder attention)`);
+    summary.degradedLocks++;
+  }
+
   try {
     let rank;
     if (entry && entry.advancers != null) {
@@ -370,44 +398,76 @@ async function applyWeekSideEffects(db, { group, entry, dev, nowIso, summary }) 
     summary.rankApplied += rank.applied;
     summary.rankSkipped += rank.skipped;
     summary.errors += rank.errors;
+    if (rank.errors > 0) clean = false;
   } catch (err) {
     console.error(`${LOG_PREFIX} group ${group?.id ?? entry?.groupId}: rank side-effect FAILED:`, err.message);
     summary.errors++;
+    clean = false;
   }
+
   try {
-    const lb = await upsertLeaderboardForGroups(db, [group], { now: new Date(nowIso) });
-    summary.leaderboardDocs += lb.docsWritten;
-    summary.errors += lb.errors;
+    if (group) {
+      const lb = await upsertLeaderboardForGroups(db, [group], { now: new Date(nowIso), dev });
+      summary.leaderboardDocs += lb.docsWritten;
+      summary.errors += lb.errors;
+      if (lb.errors > 0) clean = false;
+    } else {
+      // No group doc (deleted out-of-band): the leaderboard half cannot
+      // run — never stamp, keep retrying loudly.
+      console.error(`${LOG_PREFIX} game ${entry?.bracketGameId}: group doc ${entry?.groupId} missing — leaderboard upsert impossible (founder attention)`);
+      summary.errors++;
+      clean = false;
+    }
   } catch (err) {
     console.error(`${LOG_PREFIX} group ${group?.id}: leaderboard side-effect FAILED:`, err.message);
     summary.errors++;
+    clean = false;
   }
+
+  return clean;
+}
+
+/** The completion record for a bracket game's side-effects: written on the
+ * game entry ONLY after both halves landed clean; absence is what the
+ * resume paths key on. Mirrored in-memory so same-tick consumers see it. */
+async function stampEntrySideEffects(bracketRef, roundKey, entry, nowIso) {
+  await bracketRef.update({
+    [`rounds.${roundKey}.games.${entry.bracketGameId}.sideEffectsAt`]: nowIso,
+    updatedAt: nowIso,
+  });
+  entry.sideEffectsAt = nowIso;
 }
 
 /**
- * Entry-only side-effect resume (the sweep + pre-champion paths): rank from
- * the locked bracket entry alone; the leaderboard half only when the rank
- * apply actually recovered something (the group doc — which persists after
- * completion — is read by id just for that case).
+ * Resume one UNSTAMPED locked entry from the bracket alone (the sweep + the
+ * pre-champion gate): fetch the group doc (it persists after completion),
+ * resolve the dev namespace from BOTH flags (bracket OR group — the
+ * materialization fallback can rebuild a bracket doc, so neither side is
+ * trusted alone), run the core, stamp on clean. Returns true when the entry
+ * is stamped (now or already).
  */
-async function applyEntrySideEffects(db, { entry, dev, nowIso, summary }) {
+async function resumeEntrySideEffects(db, { bracketRef, roundKey, bracket, entry, nowIso, summary }) {
+  if (entry.sideEffectsAt != null) return true;
+  let group = null;
   try {
-    const rank = await applyLockedGameToRanks(db, { entry, dev, now: nowIso });
-    summary.rankApplied += rank.applied;
-    summary.rankSkipped += rank.skipped;
-    summary.errors += rank.errors;
-    if (rank.applied > 0) {
-      const groupSnap = await db.collection(TOURNAMENT_GROUPS_COLLECTION).doc(entry.groupId).get();
-      if (groupSnap.exists) {
-        const lb = await upsertLeaderboardForGroups(db, [{ id: groupSnap.id, ...groupSnap.data() }], { now: new Date(nowIso) });
-        summary.leaderboardDocs += lb.docsWritten;
-        summary.errors += lb.errors;
-      }
-    }
+    const groupSnap = await db.collection(TOURNAMENT_GROUPS_COLLECTION).doc(entry.groupId).get();
+    group = groupSnap.exists ? { id: groupSnap.id, ...groupSnap.data() } : null;
   } catch (err) {
-    console.error(`${LOG_PREFIX} game ${entry?.bracketGameId}: side-effect resume FAILED:`, err.message);
+    console.error(`${LOG_PREFIX} game ${entry.bracketGameId}: group read failed during resume:`, err.message);
     summary.errors++;
+    return false;
   }
+  const dev = bracket.isDev === true || group?.isDev === true;
+  const clean = await runWeekSideEffects(db, { group, entry, dev, nowIso, summary });
+  if (!clean) return false;
+  try {
+    await stampEntrySideEffects(bracketRef, roundKey, entry, nowIso);
+  } catch (err) {
+    console.error(`${LOG_PREFIX} game ${entry.bracketGameId}: side-effects stamp write failed (retries next tick):`, err.message);
+    summary.errors++;
+    return false;
+  }
+  return true;
 }
 
 /**
@@ -441,6 +501,10 @@ async function advanceCohort(db, { bracketId, roundNumber, cohortGroups, nowIso,
     }
     console.warn(`${LOG_PREFIX} bracket ${bracketId}: doc missing — materializing round 1 from ${cohortGroups.length} group(s)`);
     bracket = createBracketDoc({ bracketId, round1Games: games, now: nowIso });
+    // Ruling A-4 integrity (code review): a materialized bracket must carry
+    // the dev flag its groups carry, or the sweep's namespace derivation
+    // could route smoke side-effects at production docs.
+    if (cohortGroups.every(g => g.isDev === true)) bracket = { ...bracket, isDev: true };
     await bracketRef.set(bracket);
   } else {
     bracket = bracketSnap.data();
@@ -498,17 +562,20 @@ async function advanceCohort(db, { bracketId, roundNumber, cohortGroups, nowIso,
         summary.gamesLocked++;
       }
       // P6a finalization side-effects — rank apply + the leaderboard's final
-      // upsert. BEFORE the completion transition (crash order: a group that
-      // completes first would leave the battle query with its week's RP
-      // unapplied; this order plus the sweep makes the window self-healing)
-      // and idempotent at every grain (appliedGroups / weeks.{groupId} sets).
-      await applyWeekSideEffects(db, {
-        group,
-        entry,
-        dev: bracket.isDev === true || group.isDev === true,
-        nowIso,
-        summary,
-      });
+      // upsert, BEFORE the completion transition, with completion GATED on a
+      // clean pass and the sideEffectsAt stamp as the durable record (code
+      // review, June 12, 2026): a caught failure no longer completes the
+      // group — it stays in the battle query and the withheld duty marker
+      // re-ticks it; the stamp makes resumed/repeat ticks free.
+      if (entry.sideEffectsAt == null) {
+        const dev = bracket.isDev === true || group.isDev === true;
+        const clean = await runWeekSideEffects(db, { group, entry, dev, nowIso, summary });
+        if (!clean) {
+          console.error(`${LOG_PREFIX} bracket ${bracketId} game ${group.bracketGameId}: side-effects incomplete — completion deferred to next tick`);
+          continue;
+        }
+        await stampEntrySideEffects(bracketRef, roundKey, entry, nowIso);
+      }
       try {
         await transitionStatus(db, group.id, GROUP_STATUS.COMPLETE, nowIso);
       } catch (err) {
@@ -556,13 +623,19 @@ async function finalizeRound(db, { bracketRef, bracket, roundNumber, nowIso, sum
     // Terminal round — the final four decides the champion (top-1).
     if (bracket.champion == null) {
       const game = games[0];
-      // P6a: the completed bracket leaves the active sweep forever — make
-      // sure the terminal game's rank/leaderboard side-effects landed
-      // before the champion write (idempotent; error-isolated inside).
-      await applyEntrySideEffects(db, { entry: game, dev: bracket.isDev === true, nowIso, summary });
+      // P6a: the completed bracket leaves the active sweep forever, so the
+      // champion write is GATED on the terminal game's side-effects stamp
+      // (code review: error-isolation here previously let the champion land
+      // with the championship week's RP permanently unapplied). Withholding
+      // retries next tick — the bracket stays ACTIVE until it can conclude
+      // with nothing owed.
+      const stamped = await resumeEntrySideEffects(db, { bracketRef, roundKey, bracket, entry: game, nowIso, summary });
+      if (!stamped) {
+        console.error(`${LOG_PREFIX} bracket ${bracketId}: terminal side-effects incomplete — champion write WITHHELD (retries next tick)`);
+        return;
+      }
       const seatOrder = (game.seats || []).map(s => s.odUserId);
-      const ranking = [...seatOrder].sort((a, b) =>
-        (game.finalScores[b] - game.finalScores[a]) || (seatOrder.indexOf(a) - seatOrder.indexOf(b)));
+      const ranking = rankByScores(game.finalScores, seatOrder);
       const championId = ranking[0];
       const champion = {
         odUserId: championId,
