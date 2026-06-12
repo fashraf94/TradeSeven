@@ -33,6 +33,7 @@
 import {
   GROUP_SIZE,
   cpuUserId,
+  cpuNFromUserId,
   cpuAgentDocId,
   cpuArchetypeForN,
   buildCpuUserBoard,
@@ -107,15 +108,28 @@ export async function ensureCpuAgents(db, ns, nowIso) {
 /**
  * Commit the deterministic user boards for every CPU seat of a freshly
  * composed (forming) group — through the real board-commit core, so the
- * rider-#1 doc shape holds; marked isCpu for provenance. Idempotent per
- * member: an existing board doc is left alone. `cpuNByUserId` maps the
- * group's CPU odUserIds to their numbers (the slice offset key).
+ * rider-#1 doc shape holds; marked isCpu for provenance. CPU seats and
+ * their numbers are derived from the group itself (players[].isCpu — the
+ * contract flag — and the one id codec, cpuNFromUserId), so call sites
+ * cannot hand this function a stale or partial map. Idempotent per member:
+ * an existing board doc is left alone. An unparseable CPU id is a LOUD
+ * config error (returned in `failed`), never a silent skip — a silently
+ * boardless CPU would later masquerade as a finding-#5 human deferral.
  */
-export async function commitCpuUserBoards(db, group, cpuNByUserId, nowIso) {
+export async function commitCpuUserBoards(db, group, nowIso) {
   const groupRef = db.collection(TOURNAMENT_GROUPS_COLLECTION).doc(group.id);
   const committed = [];
   const skipped = [];
-  for (const [odUserId, n] of Object.entries(cpuNByUserId)) {
+  const failed = [];
+  for (const player of group.players || []) {
+    if (player.isCpu !== true) continue;
+    const odUserId = player.odUserId;
+    const n = cpuNFromUserId(odUserId);
+    if (n == null) {
+      console.error(`${LOG_PREFIX} group ${group.id}: CPU seat '${odUserId}' has no parseable number — board NOT committed (id-codec drift; founder attention)`);
+      failed.push(odUserId);
+      continue;
+    }
     const boardRef = groupRef.collection('boards').doc(odUserId);
     const snap = await boardRef.get();
     if (snap.exists) {
@@ -132,7 +146,7 @@ export async function commitCpuUserBoards(db, group, cpuNByUserId, nowIso) {
     await boardRef.set({ ...commit, isCpu: true });
     committed.push(odUserId);
   }
-  return { committed, skipped };
+  return { committed, skipped, failed };
 }
 
 /**
@@ -142,23 +156,22 @@ export async function commitCpuUserBoards(db, group, cpuNByUserId, nowIso) {
  * construction (the one-active-battle-per-agent guard); reuse across rounds
  * is safe. Pure.
  *
- * Returns { seatsByGame: [[{odUserId, isCpu}]], cpuNByUserId, cpuNs }.
+ * Returns { seatsByGame: [[{odUserId, isCpu}]], cpuNs }.
  */
 export function padGamesWithCpus(realIdsByGame, { startN = 1 } = {}) {
   let nextN = startN;
-  const cpuNByUserId = {};
+  const cpuNs = [];
   const seatsByGame = realIdsByGame.map((realIds) => {
     if (realIds.length > GROUP_SIZE) {
       throw new Error(`padGamesWithCpus: game has ${realIds.length} real seats (> ${GROUP_SIZE})`);
     }
     const seats = realIds.map(odUserId => ({ odUserId, isCpu: false }));
     while (seats.length < GROUP_SIZE) {
-      const odUserId = cpuUserId(nextN);
-      cpuNByUserId[odUserId] = nextN;
-      seats.push({ odUserId, isCpu: true });
+      seats.push({ odUserId: cpuUserId(nextN), isCpu: true });
+      cpuNs.push(nextN);
       nextN++;
     }
     return seats;
   });
-  return { seatsByGame, cpuNByUserId, cpuNs: Object.values(cpuNByUserId) };
+  return { seatsByGame, cpuNs };
 }

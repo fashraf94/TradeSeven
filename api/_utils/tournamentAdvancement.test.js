@@ -441,6 +441,73 @@ describe('base-layer groups — COMPLETE ONLY (ruled; recomposition docketed)', 
   });
 });
 
+// ==================== ORPHAN RESUME (the active-bracket sweep) ====================
+//
+// Code-review finding (June 12, 2026): a crash after the groups complete
+// but before composition / the champion lands leaves work no battle-group
+// query can see. The sweep resumes it from the bracket doc alone.
+
+describe('active-bracket sweep — finalization resumable from the bracket doc alone', () => {
+  it('round fully locked, groups gone, next round missing → sweep composes it', async () => {
+    const { db, store, writeLog } = seededBracketDb();
+    await runFridayAdvancement(db, { now: NOW });
+
+    // Simulate the crash window: composition's round entry never landed
+    // (groups are complete and invisible to the battle query).
+    const bracket = store.get('tournamentBrackets/b');
+    delete bracket.rounds.r2;
+    bracket.currentRound = 1;
+    store.delete('tournamentGroups/b-r2-g1');
+    store.delete('tournamentGroups/b-r2-g1/boards/cpu-2');
+    store.delete('tournamentGroups/b-r2-g1/boards/cpu-6');
+    store.delete('tournamentGroups/b-r2-g1/boards/cpu-4');
+    const writesBefore = writeLog.length;
+
+    const summary = await runFridayAdvancement(db, { now: NOW });
+    expect(summary.groups).toBe(0);          // nothing in battle…
+    expect(summary.activeBrackets).toBe(1);  // …but the bracket still owes work
+    expect(summary.composedGroups).toEqual(['b-r2-g1']);
+    expect(store.get('tournamentGroups/b-r2-g1').status).toBe(GROUP_STATUS.FORMING);
+    expect(store.get('tournamentBrackets/b').rounds.r2).toBeDefined();
+    expect(store.get('tournamentBrackets/b').currentRound).toBe(2);
+    expect(writeLog.length).toBeGreaterThan(writesBefore);
+  });
+
+  it('terminal round locked, champion missing → sweep writes champion + recap', async () => {
+    const { db, store } = seededBracketDb();
+    await runFridayAdvancement(db, { now: NOW });
+    const final = store.get('tournamentGroups/b-r2-g1');
+    final.status = GROUP_STATUS.BATTLE;
+    final.dailyScores = bankedWeek([{}, {}, {}, {},
+      { founder: 90, 'cpu-2': 50, 'cpu-6': 40, 'cpu-4': 35 }]);
+    await runFridayAdvancement(db, { now: NOW });
+
+    // Simulate the crash window: champion write lost after the round lock.
+    const bracket = store.get('tournamentBrackets/b');
+    bracket.champion = null;
+    bracket.recap = null;
+    bracket.status = 'active';
+
+    const summary = await runFridayAdvancement(db, { now: NOW });
+    expect(summary.groups).toBe(0);
+    expect(summary.champion).toMatchObject({ odUserId: 'founder', weeklyScore: 90 });
+    expect(store.get('tournamentBrackets/b').status).toBe(BRACKET_STATUS.COMPLETE);
+    expect(store.get('tournamentBrackets/b').recap.bracketPath.length).toBeGreaterThan(0);
+  });
+
+  it('a settled bracket sweeps as a pure no-op (zero writes)', async () => {
+    const { db, store, writeLog } = seededBracketDb();
+    await runFridayAdvancement(db, { now: NOW });
+    // Bracket is active with r2 composed and r2 not yet locked — sweep
+    // finds r1 locked+composed (no-op) and r2 unlockable (no advancers).
+    const writesAfterFirst = writeLog.length;
+    const summary = await runFridayAdvancement(db, { now: NOW });
+    expect(summary.activeBrackets).toBe(1);
+    expect(writeLog.length).toBe(writesAfterFirst);
+    expect(store.get('tournamentBrackets/b').currentRound).toBe(2);
+  });
+});
+
 // ==================== RECAP UNIT ====================
 
 describe('buildChampionRecap — degrade posture', () => {

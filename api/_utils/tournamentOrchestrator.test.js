@@ -25,6 +25,7 @@ import {
   isDutyComplete,
   markDutyComplete,
   readOrchestratorState,
+  pruneState,
   deployBaseUrl,
   buildDeployRequest,
   latestTournamentBattlesByAgent,
@@ -222,7 +223,7 @@ describe('getDutyForInstant — the ruled duty table, ET-aware', () => {
 // ==================== STATE MARKERS ====================
 
 describe('duty markers — grain one of the two-grain idempotency', () => {
-  it('marks, reads back, and prunes beyond the retention window', async () => {
+  it('marks transactionally, reads back, and prunes beyond the retention window', async () => {
     const { db, store } = makeDb();
     const stale = dutyMarkerKey('2026-05-01', DUTY.WEEKDAY_FANOUT);
     store.set('tournamentOrchestrator/state', { duties: { [stale]: { completedAt: 'old' } }, deployCooldowns: {} });
@@ -230,10 +231,51 @@ describe('duty markers — grain one of the two-grain idempotency', () => {
     let state = await readOrchestratorState(db);
     expect(isDutyComplete(state, '2026-06-15', DUTY.MONDAY_PIPELINE)).toBe(false);
 
-    await markDutyComplete(db, state, '2026-06-15', DUTY.MONDAY_PIPELINE, { groups: 1 }, '2026-06-15T12:00:00Z');
+    await markDutyComplete(db, '2026-06-15', DUTY.MONDAY_PIPELINE, { groups: 1 }, '2026-06-15T12:00:00Z');
     state = await readOrchestratorState(db);
     expect(isDutyComplete(state, '2026-06-15', DUTY.MONDAY_PIPELINE)).toBe(true);
     expect(state.duties[stale]).toBeUndefined(); // pruned (> 14 days old)
+  });
+
+  it('the write reads the doc FRESH inside the transaction — a concurrent marker is never lost', async () => {
+    const { db, store } = makeDb();
+    // A marker written by "another run" after this run's stale snapshot.
+    store.set('tournamentOrchestrator/state', {
+      duties: { [dutyMarkerKey('2026-06-15', DUTY.WEEKDAY_FANOUT)]: { completedAt: 'other-run' } },
+      deployCooldowns: { 'agent-x': '2026-06-15T12:30:00.000Z' },
+    });
+    await markDutyComplete(db, '2026-06-15', DUTY.MONDAY_PIPELINE, { groups: 1 }, '2026-06-15T12:00:00.000Z');
+    const state = await readOrchestratorState(db);
+    expect(isDutyComplete(state, '2026-06-15', DUTY.WEEKDAY_FANOUT)).toBe(true); // survived
+    expect(state.deployCooldowns['agent-x']).toBe('2026-06-15T12:30:00.000Z');   // survived (unexpired)
+  });
+
+  it('SIMULATED markers live in their own namespace — a smoke run can never pre-satisfy the real cron', async () => {
+    const { db } = makeDb();
+    // Thursday smoke run "for next Monday" (the documented smoke arc).
+    await markDutyComplete(db, '2026-06-15', DUTY.MONDAY_PIPELINE, { groups: 1 }, '2026-06-11T15:00:00.000Z', { simulated: true });
+    const state = await readOrchestratorState(db);
+    expect(isDutyComplete(state, '2026-06-15', DUTY.MONDAY_PIPELINE, { simulated: true })).toBe(true);  // re-click no-ops
+    expect(isDutyComplete(state, '2026-06-15', DUTY.MONDAY_PIPELINE)).toBe(false);                       // real Monday RUNS
+  });
+
+  it('pruneState drops expired cooldowns and dates sim markers by their embedded date', () => {
+    const pruned = pruneState({
+      duties: {
+        'sim:2026-05-01:monday_pipeline': { completedAt: 'old-sim' },
+        'sim:2026-06-15:monday_pipeline': { completedAt: 'fresh-sim' },
+        '2026-06-14:weekday_fanout': { completedAt: 'fresh' },
+      },
+      deployCooldowns: {
+        'agent-old': '2026-06-15T11:00:00.000Z', // expired
+        'agent-hot': '2026-06-15T12:30:00.000Z', // live
+      },
+    }, '2026-06-15', '2026-06-15T12:00:00.000Z');
+    expect(pruned.duties['sim:2026-05-01:monday_pipeline']).toBeUndefined();
+    expect(pruned.duties['sim:2026-06-15:monday_pipeline']).toBeDefined();
+    expect(pruned.duties['2026-06-14:weekday_fanout']).toBeDefined();
+    expect(pruned.deployCooldowns['agent-old']).toBeUndefined();
+    expect(pruned.deployCooldowns['agent-hot']).toBeDefined();
   });
 });
 
@@ -320,6 +362,87 @@ describe('deploy plumbing — credentials + ownership assertion from day one', (
   });
 });
 
+// The LIVE branch (P4-day machinery) — exercised now via the injectable
+// `deployEnabled`; the module const stays the only production gate.
+describe('deploy plumbing — the live branch (deployEnabled injection)', () => {
+  beforeEach(() => {
+    vi.stubEnv('CRON_SECRET', 's3cret');
+    vi.stubEnv('VERCEL_PROJECT_PRODUCTION_URL', 'tradeseven.vercel.app');
+  });
+
+  const seats2 = () => [
+    { agentId: 'a1', odUserId: 'u1', isCpu: false, symbols: ['NVDA'] },
+    { agentId: 'a2', odUserId: 'u2', isCpu: false, symbols: ['AMD'] },
+  ];
+
+  it('successful deploys POST with credentials + assertion and count as deployed', async () => {
+    const { db } = makeDb();
+    const fetchImpl = vi.fn(async () => ({ ok: true }));
+    const out = await fanOutDeploys(db, {
+      groupId: 'g1', seats: seats2(), now: MON_MORNING_EDT,
+      state: { duties: {}, deployCooldowns: {} },
+      fetchImpl, deployEnabled: true, pacingMs: 0,
+    });
+    expect(out.deployed).toBe(2);
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    const [url, opts] = fetchImpl.mock.calls[0];
+    expect(url).toBe('https://tradeseven.vercel.app/api/agent/decide');
+    expect(opts.headers.Authorization).toBe('Bearer s3cret');
+    expect(JSON.parse(opts.body).ownerOdUserId).toBe('u1');
+  });
+
+  it('a failed deploy writes the ≥10-min cooldown (transactionally) and the next pass defers that agent', async () => {
+    const { db, store } = makeDb();
+    const state = { duties: {}, deployCooldowns: {} };
+    const fetchImpl = vi.fn(async () => ({ ok: false, status: 500, text: async () => 'boom' }));
+    const out = await fanOutDeploys(db, {
+      groupId: 'g1', seats: seats2().slice(0, 1), now: MON_MORNING_EDT,
+      state, fetchImpl, deployEnabled: true, pacingMs: 0,
+    });
+    expect(out.failed).toBe(1);
+    const expectedUntil = new Date(MON_MORNING_EDT.getTime() + DEPLOY_FAILURE_COOLDOWN_MS).toISOString();
+    expect(state.deployCooldowns.a1).toBe(expectedUntil);                           // in-memory mirror
+    expect(store.get('tournamentOrchestrator/state').deployCooldowns.a1).toBe(expectedUntil); // durable
+
+    const retry = await fanOutDeploys(db, {
+      groupId: 'g1', seats: seats2().slice(0, 1), now: MON_MORNING_EDT,
+      state, fetchImpl, deployEnabled: true, pacingMs: 0,
+    });
+    expect(retry.cooled).toBe(1);
+    expect(fetchImpl).toHaveBeenCalledTimes(1); // no second POST inside the cooldown
+  });
+
+  it('pacing is DUTY-scoped: the floor holds across group boundaries through a shared pacing object', async () => {
+    const { db } = makeDb();
+    const pacing = { lastSentAt: 0 };
+    const sentAt = [];
+    const fetchImpl = vi.fn(async () => { sentAt.push(Date.now()); return { ok: true }; });
+    const opts = (groupId, seats) => ({
+      groupId, seats, now: MON_MORNING_EDT,
+      state: { duties: {}, deployCooldowns: {} },
+      fetchImpl, deployEnabled: true, pacing, pacingMs: 120,
+    });
+    await fanOutDeploys(db, opts('gA', seats2().slice(0, 1)));
+    await fanOutDeploys(db, opts('gB', [{ agentId: 'a9', odUserId: 'u9', isCpu: false, symbols: ['TSLA'] }]));
+    expect(sentAt).toHaveLength(2);
+    // Group B's first send waited out group A's pacing window.
+    expect(sentAt[1] - sentAt[0]).toBeGreaterThanOrEqual(110);
+  });
+
+  it('the time budget defers the remainder instead of starting a call that cannot fit', async () => {
+    const { db } = makeDb();
+    const fetchImpl = vi.fn(async () => ({ ok: true }));
+    const out = await fanOutDeploys(db, {
+      groupId: 'g1', seats: seats2(), now: MON_MORNING_EDT,
+      state: { duties: {}, deployCooldowns: {} },
+      budget: { startMs: Date.now() - 10_000, deadlineMs: 5_000 }, // already past
+      fetchImpl, deployEnabled: true, pacingMs: 0,
+    });
+    expect(out.deferred).toBe(2);
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+});
+
 // ==================== MONDAY PIPELINE ====================
 
 describe('runMondayPipeline — the full Monday arc on an all-CPU group (no model call)', () => {
@@ -381,6 +504,19 @@ describe('runMondayPipeline — the full Monday arc on an all-CPU group (no mode
     expect(isDutySatisfied(DUTY.MONDAY_PIPELINE, summary)).toBe(false);
   });
 
+  it('SYNTHETIC REFUSAL HOLDS ON EVERY TICK: the persisted synthetic board still refuses on the re-run', async () => {
+    // Code-review finding (June 12, 2026): tick 1 persists the synthetic
+    // board; a one-shot check would count it as a plain skip on tick 2 and
+    // let the configuration error draft. The skip path must classify it.
+    const { db, store } = mondayDb();
+    for (let n = 4; n <= 7; n++) store.delete(`agents/${cpuAgentDocId(n)}`);
+    await runMondayPipeline(db, { now: MON_MORNING_EDT, anthropic: null });   // tick 1: boards persisted
+    const second = await runMondayPipeline(db, { now: MON_MORNING_EDT, anthropic: null }); // tick 2
+    expect(second.refusedSynthetic).toBe(1);
+    expect(second.drafted).toBe(0);
+    expect(store.get('tournamentGroups/b-r1-g2/streams/agentDraft')).toBeUndefined(); // never drafts
+  });
+
   it('zero groups: clean no-op, zero writes (production state at merge)', async () => {
     const { db, writeLog } = makeDb({ 'indexIntelligence/stockRankings': { stocks: STOCKS } });
     const summary = await runMondayPipeline(db, { now: MON_MORNING_EDT, anthropic: null });
@@ -436,6 +572,40 @@ describe('runWeekdayFanout — incumbents via the fenced flattenPortfolioServer 
     const summary = await runWeekdayFanout(db, { now: TUE });
     expect(summary.groups).toBe(0);
     expect(writeLog).toHaveLength(0);
+  });
+
+  it('an empty-portfolio latest battle is a LOUD error, never a silent seat drop — marker withheld', async () => {
+    const { db, store } = battleDb();
+    store.get('agentBattles/bt1').portfolio = {}; // schema drift: flattens to []
+    const summary = await runWeekdayFanout(db, { now: TUE, deployEnabled: true, pacingMs: 0, fetchImpl: vi.fn(async () => ({ ok: true })) });
+    expect(summary.errors).toBeGreaterThan(0);
+    expect(isDutySatisfied(DUTY.WEEKDAY_FANOUT, summary)).toBe(false);
+    expect(console.error.mock.calls.map(c => c.join(' ')).some(l => l.includes('empty portfolio'))).toBe(true);
+  });
+
+  it("Monday-failure catch-up: an agent with NO battle deploys the stream's drafted six instead of vanishing for the week", async () => {
+    // Code-review finding (June 12, 2026): post-P4, an all-morning Monday
+    // failure left the agent with no battle, and the incumbent query alone
+    // would never seat it again until Friday.
+    vi.stubEnv('CRON_SECRET', 's3cret');
+    vi.stubEnv('VERCEL_PROJECT_PRODUCTION_URL', 'tradeseven.vercel.app');
+    const { db, store } = battleDb(); // one battle (cpu-agent-4); three agents battle-less
+    store.set('tournamentGroups/b-r1-g2/streams/agentDraft', {
+      picksByAgent: {
+        [cpuAgentDocId(4)]: ['NVDA', 'AMD', 'TSLA', 'META', 'AAPL', 'MSFT'],
+        [cpuAgentDocId(5)]: ['AMZN', 'GOOG', 'NFLX', 'AVGO', 'CRM', 'ORCL'],
+      },
+      events: [
+        { agentId: cpuAgentDocId(4), odUserId: 'cpu-4' },
+        { agentId: cpuAgentDocId(5), odUserId: 'cpu-5' },
+      ],
+    });
+    const fetchImpl = vi.fn(async () => ({ ok: true }));
+    const summary = await runWeekdayFanout(db, { now: TUE, deployEnabled: true, pacingMs: 0, fetchImpl });
+    expect(summary.mondayCatchupSeats).toBe(1); // cpu-agent-5 seated from the stream
+    expect(summary.deploys.deployed).toBe(2);   // the incumbent AND the catch-up
+    const bodies = fetchImpl.mock.calls.map(([, opts]) => JSON.parse(opts.body));
+    expect(bodies.find(b => b.agentId === cpuAgentDocId(5)).prescribedPortfolio).toEqual(['AMZN', 'GOOG', 'NFLX', 'AVGO', 'CRM', 'ORCL']);
   });
 });
 

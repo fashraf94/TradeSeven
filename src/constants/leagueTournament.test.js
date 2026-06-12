@@ -52,6 +52,7 @@ import {
   createBracketDoc,
   CPU_ARCHETYPE_ORDER,
   cpuUserId,
+  cpuNFromUserId,
   cpuAgentDocId,
   isCpuUserId,
   cpuArchetypeForN,
@@ -489,6 +490,16 @@ describe('CPU identity helpers (Ruling B1)', () => {
     expect(isCpuUserId('cpu-3')).toBe(true);
     expect(isCpuUserId('user-3')).toBe(false);
     expect(() => cpuUserId(0)).toThrow();
+  });
+
+  it('cpuNFromUserId is the exact inverse of cpuUserId and rejects every drift shape', () => {
+    expect(cpuNFromUserId(cpuUserId(7))).toBe(7);
+    expect(cpuNFromUserId('cpu-12')).toBe(12);
+    expect(cpuNFromUserId('user-3')).toBeNull();
+    expect(cpuNFromUserId('cpu-')).toBeNull();
+    expect(cpuNFromUserId('cpu-01')).toBeNull();  // zero-padded = not our codec
+    expect(cpuNFromUserId('cpu-1x')).toBeNull();
+    expect(cpuNFromUserId(null)).toBeNull();
   });
 
   it('archetype round-robin: 4 consecutive CPUs field 4 distinct archetypes, reproducibly', () => {

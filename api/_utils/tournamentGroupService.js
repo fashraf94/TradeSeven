@@ -15,6 +15,7 @@
 import {
   TOURNAMENT_GROUPS_COLLECTION,
   GROUP_STATUS,
+  GROUP_SIZE,
   createTournamentGroupDoc,
 } from '../../src/constants/leagueTournament.js';
 
@@ -83,6 +84,23 @@ export async function transitionStatus(db, groupId, to, now) {
 /** Membership helper: the player entry for odUserId, or null. */
 export function getPlayer(group, odUserId) {
   return (group?.players ?? []).find(p => p.odUserId === odUserId) ?? null;
+}
+
+/**
+ * Battle-shaped eligibility query — the house mirror (claims cron :564 /
+ * banking :224) given one home for the P3b duty surfaces: status equality +
+ * full seat count. Returns [{id, ...data}].
+ */
+export async function fetchEligibleGroupsByStatus(db, status) {
+  const snap = await db.collection(TOURNAMENT_GROUPS_COLLECTION)
+    .where('status', '==', status)
+    .get();
+  const groups = [];
+  snap.forEach(doc => {
+    const data = doc.data();
+    if (data.players?.length === GROUP_SIZE) groups.push({ id: doc.id, ...data });
+  });
+  return groups;
 }
 
 /**

@@ -246,6 +246,18 @@ export function isCpuUserId(odUserId) {
   return typeof odUserId === 'string' && odUserId.startsWith(CPU_USER_ID_PREFIX);
 }
 
+/**
+ * Inverse of cpuUserId — co-located with its builder (the
+ * parseBracketGameId precedent) so the id codec has ONE home.
+ * Returns n, or null for anything that isn't a well-formed CPU id.
+ */
+export function cpuNFromUserId(odUserId) {
+  if (!isCpuUserId(odUserId)) return null;
+  const raw = odUserId.slice(CPU_USER_ID_PREFIX.length);
+  if (!/^[1-9]\d*$/.test(raw)) return null;
+  return Number(raw);
+}
+
 /** The deterministic agents-collection doc id for CPU n. */
 export function cpuAgentDocId(n) {
   if (!Number.isInteger(n) || n < 1) throw new Error('cpuAgentDocId: n must be a positive integer');

@@ -8,9 +8,11 @@
 //
 // Time controls (the P1b idiom — admin-gated by construction):
 // - `simulatedNow` (ISO instant): the injected clock — run "Monday morning"
-//   on a Thursday. Duty markers key off the SIMULATED ET date, so a
-//   re-click shows the idempotent already-complete no-op exactly like a
-//   production re-tick would.
+//   on a Thursday. Simulated runs read and write duty markers in the
+//   'sim:' namespace, keyed by the SIMULATED ET date: a re-click shows the
+//   idempotent already-complete no-op exactly like a production re-tick,
+//   while a smoke run on a future date can NEVER pre-satisfy the real cron
+//   when that date arrives.
 // - `duty`: force a specific duty regardless of the simulated clock
 //   ('monday_pipeline' | 'weekday_fanout' | 'friday_advancement'), or omit
 //   to exercise the real dispatcher routing.
@@ -18,6 +20,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
 import { requireAdminSecret } from '../_utils/adminSecretAuth.js';
+import { parseSimulatedNow } from '../_utils/tournamentTime.js';
 import { runOrchestratorTick, DUTY } from '../_utils/tournamentOrchestrator.js';
 
 export const config = { maxDuration: 300 };
@@ -44,20 +47,18 @@ export default async function handler(req, res) {
   if (duty != null && !FORCEABLE_DUTIES.has(duty)) {
     return res.status(400).json({ error: 'invalid_duty', message: `duty must be one of: ${[...FORCEABLE_DUTIES].join(', ')}` });
   }
-  let now = new Date();
-  if (simulatedNow != null) {
-    now = new Date(simulatedNow);
-    if (Number.isNaN(now.getTime())) {
-      return res.status(400).json({ error: 'invalid_simulated_now', message: 'simulatedNow must be an ISO-8601 instant.' });
-    }
+  const parsed = parseSimulatedNow(simulatedNow);
+  if (parsed.error) {
+    return res.status(400).json({ error: 'invalid_simulated_now', message: parsed.error });
   }
 
   try {
     const db = getFirebaseAdmin();
     const result = await runOrchestratorTick(db, {
-      now,
+      now: parsed.now,
       anthropic: getAnthropicClient(),
       forceDuty: duty,
+      simulated: simulatedNow != null,
     });
     console.log(`[Tournament] run-duty: ${result.duty} @ ${result.etDate} ${result.etTime} →`, JSON.stringify(result.status ?? result.complete ?? 'ran'));
     return res.status(200).json(result);

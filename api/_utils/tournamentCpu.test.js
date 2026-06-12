@@ -31,6 +31,7 @@ const NOW_ISO = '2026-06-15T12:00:00.000Z';
 beforeEach(() => {
   vi.spyOn(console, 'log').mockImplementation(() => {});
   vi.spyOn(console, 'warn').mockImplementation(() => {});
+  vi.spyOn(console, 'error').mockImplementation(() => {});
 });
 afterEach(() => vi.restoreAllMocks());
 
@@ -108,7 +109,7 @@ describe('ensureCpuAgents — lazy get-or-create', () => {
 
 describe('padGamesWithCpus — per-round-unique seat numbering', () => {
   it('pads each game to GROUP_SIZE, numbering sequentially across games', () => {
-    const { seatsByGame, cpuNByUserId, cpuNs } = padGamesWithCpus([['founder'], []]);
+    const { seatsByGame, cpuNs } = padGamesWithCpus([['founder'], []]);
     expect(seatsByGame[0]).toHaveLength(GROUP_SIZE);
     expect(seatsByGame[1]).toHaveLength(GROUP_SIZE);
     expect(seatsByGame[0].map(s => s.odUserId)).toEqual(['founder', 'cpu-1', 'cpu-2', 'cpu-3']);
@@ -116,7 +117,6 @@ describe('padGamesWithCpus — per-round-unique seat numbering', () => {
     expect(seatsByGame[0][0].isCpu).toBe(false);
     expect(seatsByGame[0][1].isCpu).toBe(true);
     expect(cpuNs).toEqual([1, 2, 3, 4, 5, 6, 7]);
-    expect(cpuNByUserId['cpu-5']).toBe(5);
     // Uniqueness within the round — the one-battle-per-agent constraint.
     expect(new Set(seatsByGame.flat().map(s => s.odUserId)).size).toBe(8);
   });
@@ -151,10 +151,12 @@ describe('commitCpuUserBoards — through the REAL board-commit core', () => {
     ],
   };
 
-  it('writes the rider-#1 commit shape + isCpu provenance, the deterministic slice as the board', async () => {
+  it('derives CPU seats from players[].isCpu + the id codec; rider-#1 shape + provenance; deterministic slice', async () => {
     const { db, store } = makeDb();
-    const result = await commitCpuUserBoards(db, group, { 'cpu-1': 1, 'cpu-2': 2 }, NOW_ISO);
-    expect(result.committed).toEqual(['cpu-1', 'cpu-2']);
+    const result = await commitCpuUserBoards(db, group, NOW_ISO);
+    expect(result.committed).toEqual(['cpu-1', 'cpu-2', 'cpu-3']);
+    expect(result.failed).toEqual([]);
+    expect(store.get('tournamentGroups/b-r1-g1/boards/founder')).toBeUndefined(); // humans commit their own
 
     const doc = store.get('tournamentGroups/b-r1-g1/boards/cpu-1');
     expect(doc.isCpu).toBe(true);
@@ -172,16 +174,34 @@ describe('commitCpuUserBoards — through the REAL board-commit core', () => {
     const { db, store, writes } = makeDb({
       'tournamentGroups/b-r1-g1/boards/cpu-1': { odUserId: 'cpu-1', board: ['KEEP'], isCpu: true },
     });
-    const result = await commitCpuUserBoards(db, group, { 'cpu-1': 1, 'cpu-2': 2 }, NOW_ISO);
+    const result = await commitCpuUserBoards(db, group, NOW_ISO);
     expect(result.skipped).toEqual(['cpu-1']);
-    expect(result.committed).toEqual(['cpu-2']);
+    expect(result.committed).toEqual(['cpu-2', 'cpu-3']);
     expect(store.get('tournamentGroups/b-r1-g1/boards/cpu-1').board).toEqual(['KEEP']);
-    expect(writes).toEqual(['tournamentGroups/b-r1-g1/boards/cpu-2']);
+    expect(writes).toEqual(['tournamentGroups/b-r1-g1/boards/cpu-2', 'tournamentGroups/b-r1-g1/boards/cpu-3']);
+  });
+
+  it('an unparseable CPU id is a LOUD failure, never a silent skip (the misdiagnosed-finding-#5 trap)', async () => {
+    const { db, store } = makeDb();
+    const drifted = {
+      ...group,
+      players: [
+        { odUserId: 'founder', picks: [] },
+        { odUserId: 'cpu-zero-pad-01', picks: [], isCpu: true }, // id-codec drift
+        { odUserId: 'cpu-2', picks: [], isCpu: true },
+        { odUserId: 'cpu-3', picks: [], isCpu: true },
+      ],
+    };
+    const result = await commitCpuUserBoards(db, drifted, NOW_ISO);
+    expect(result.failed).toEqual(['cpu-zero-pad-01']);
+    expect(result.committed).toEqual(['cpu-2', 'cpu-3']);
+    expect(store.get('tournamentGroups/b-r1-g1/boards/cpu-zero-pad-01')).toBeUndefined();
+    expect(console.error.mock.calls.map(c => c.join(' ')).some(l => l.includes('id-codec drift'))).toBe(true);
   });
 
   it('refuses a non-forming group (the real core validates — never the seeder path)', async () => {
     const { db } = makeDb();
-    await expect(commitCpuUserBoards(db, { ...group, status: 'battle' }, { 'cpu-1': 1 }, NOW_ISO))
+    await expect(commitCpuUserBoards(db, { ...group, status: 'battle' }, NOW_ISO))
       .rejects.toThrow(/not_forming/);
   });
 });

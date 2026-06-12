@@ -9,12 +9,16 @@
 //                   pipeline: resolve user draft (committed boards required;
 //                   else DEFER + LOUD LOG — finding #5: the deadline
 //                   auto-commit is P5's, pre-launch required) → produce
-//                   boards (REFUSE on synthetic > 0 — the P3a contract) →
-//                   resolve agent draft → verify 24 held → deploy fan-out
-//                   [P4-GATED].
+//                   boards (REFUSE on synthetic > 0 — the P3a contract,
+//                   re-checked EVERY tick: pre-existing synthetic boards
+//                   count) → resolve agent draft → verify 24 held → deploy
+//                   fan-out [P4-GATED].
 //   Tue–Fri morn. → incumbent fan-out [P4-GATED]: the latest tournament
 //                   battle's six via the FENCED-EXPORTED
-//                   flattenPortfolioServer (read-only call, never edited).
+//                   flattenPortfolioServer (read-only call, never edited);
+//                   an agent with NO battle yet falls back to Monday's
+//                   drafted six from the stream record (a failed Monday
+//                   deploy keeps retrying all week, never a one-week gap).
 //   Fri evening   → round advancement + champion (tournamentAdvancement.js);
 //                   a loud "banking pending" no-op until day-5 is banked
 //                   (banking lands ~17:15 ET on the nightly handler).
@@ -25,14 +29,19 @@
 // battle-exists, group status, stream exists, 24 held, bracket fields).
 // Every pipeline step is individually resumable — a mid-duty crash finishes
 // on the next tick; the marker is set only when a duty pass completes with
-// nothing deferred. Zero groups is a clean no-op: one quiet log line, ZERO
-// writes (test-locked, the house pattern).
+// nothing deferred. State-doc writes are TRANSACTIONAL (read-fresh inside)
+// so a concurrent cron tick and dev run-duty click can never lose each
+// other's marker or cooldown. SIMULATED clocks (the dev time control) write
+// markers under a 'sim:' namespace — a smoke run can never pre-satisfy a
+// real future duty (code-review finding, June 12, 2026). Zero groups is a
+// clean no-op: one quiet log line, ZERO writes (test-locked).
 //
 // TIME BUDGET (ruled): sequential with ≥20s pacing between REAL deploy
-// calls (prices the 3/min rate limit until P4's exemption — no pacing burned
-// while the gate holds); the remainder defers to the next tick at ~270s of
-// the handler's 300s; a failed deploy defers that agent ≥10 min (the
-// cooldown is consumed even on failure — priced in).
+// calls — enforced ACROSS group boundaries by duty-scoped pacing state
+// (prices the 3/min rate limit until P4's exemption; no pacing burned while
+// the gate holds); the remainder defers to the next tick at ~270s of the
+// handler's 300s; a failed deploy defers that agent ≥10 min (the cooldown
+// is consumed even on failure — priced in).
 //
 // DEPLOY STEP — BUILT COMPLETE, P4-GATED: the call plumbing targets
 // `https://${VERCEL_PROJECT_PRODUCTION_URL}` (TOURNAMENT_DEPLOY_BASE_URL
@@ -41,8 +50,10 @@
 // portfolio entry path in the fenced deploy, TOURNAMENT_DEPLOY_ENABLED stays
 // false and every would-be call logs a loud "P4 pending" line instead —
 // tournament battles (CPU and human alike) simply don't exist yet, as ruled.
-// The payload fields below are the fence entry's shopping list (see the PR's
-// P4 contract section).
+// The live branch is test-covered via the injectable `deployEnabled` option;
+// the module const remains the only production gate. The payload fields
+// below are the fence entry's shopping list (see the PR's P4 contract
+// section).
 //
 // Imports the zero-import schema module from src/ under the revised June
 // 2026 import rule (BUILD_RULES §4); the co-located test's real import of
@@ -51,13 +62,13 @@
 import {
   TOURNAMENT_GROUPS_COLLECTION,
   GROUP_STATUS,
-  GROUP_SIZE,
   AGENT_MARKET_SIZE,
   TOURNAMENT_GAME_MODE,
   STREAMS_SUBCOLLECTION,
   AGENT_DRAFT_STREAM_DOC_ID,
 } from '../../src/constants/leagueTournament.js';
 import { getEtParts, formatEtDate } from './tournamentTime.js';
+import { fetchEligibleGroupsByStatus } from './tournamentGroupService.js';
 import { produceGroupBoards } from './tournamentAgentBoards.js';
 import { resolveAgentDraftForGroup } from './tournamentAgentDraft.js';
 // Endpoint-module import, the tournamentClaims.js precedent (hoisted
@@ -107,9 +118,17 @@ export function getDutyForInstant(now = new Date()) {
   return { duty, etDate: date, etTime, weekday };
 }
 
-export function dutyMarkerKey(etDate, duty) {
-  return `${etDate}:${duty}`;
+/**
+ * Marker key. A SIMULATED clock (the dev time control) namespaces its
+ * markers so a smoke run on a future date can never pre-satisfy the real
+ * cron when that date arrives — re-click idempotency still works inside the
+ * namespace.
+ */
+export function dutyMarkerKey(etDate, duty, { simulated = false } = {}) {
+  return `${simulated ? 'sim:' : ''}${etDate}:${duty}`;
 }
+
+const MARKER_DATE_RE = /(\d{4}-\d{2}-\d{2})/;
 
 // ==================== STATE DOC ====================
 
@@ -122,38 +141,56 @@ export async function readOrchestratorState(db) {
   return snap.exists ? snap.data() : { duties: {}, deployCooldowns: {} };
 }
 
-export function isDutyComplete(state, etDate, duty) {
-  return state?.duties?.[dutyMarkerKey(etDate, duty)] != null;
+export function isDutyComplete(state, etDate, duty, { simulated = false } = {}) {
+  return state?.duties?.[dutyMarkerKey(etDate, duty, { simulated })] != null;
+}
+
+/** Retention pruning for both state maps: duty markers older than the
+ * window (by the date embedded in the key, real or sim) and cooldowns that
+ * have expired. Pure. */
+export function pruneState({ duties = {}, deployCooldowns = {} }, etDate, nowIso) {
+  const cutoffMs = new Date(`${etDate}T00:00:00Z`).getTime() - STATE_RETENTION_DAYS * 86_400_000;
+  const cutoffDate = new Date(cutoffMs).toISOString().slice(0, 10);
+  const prunedDuties = {};
+  for (const [key, value] of Object.entries(duties)) {
+    const date = MARKER_DATE_RE.exec(key)?.[1];
+    if (date && date >= cutoffDate) prunedDuties[key] = value;
+  }
+  const prunedCooldowns = {};
+  for (const [agentId, untilIso] of Object.entries(deployCooldowns)) {
+    if (untilIso > nowIso) prunedCooldowns[agentId] = untilIso;
+  }
+  return { duties: prunedDuties, deployCooldowns: prunedCooldowns };
 }
 
 /**
- * Set the per-duty/per-ET-date marker (grain one of the two-grain design),
- * pruning entries older than the retention window so the doc never grows
- * unbounded (YYYY-MM-DD prefixes compare lexicographically).
+ * Set the per-duty/per-ET-date marker (grain one of the two-grain design).
+ * TRANSACTIONAL — the doc is re-read fresh inside, so a concurrent writer's
+ * marker or cooldown is never lost to a stale snapshot.
  */
-export async function markDutyComplete(db, state, etDate, duty, summary, nowIso) {
-  const cutoffMs = new Date(`${etDate}T00:00:00Z`).getTime() - STATE_RETENTION_DAYS * 86_400_000;
-  const cutoffDate = new Date(cutoffMs).toISOString().slice(0, 10);
-  const duties = {};
-  for (const [key, value] of Object.entries(state?.duties || {})) {
-    if (key.slice(0, 10) >= cutoffDate) duties[key] = value;
-  }
-  duties[dutyMarkerKey(etDate, duty)] = { completedAt: nowIso, ...summary };
-  await stateRef(db).set({
-    duties,
-    deployCooldowns: state?.deployCooldowns || {},
-    updatedAt: nowIso,
+export async function markDutyComplete(db, etDate, duty, summary, nowIso, { simulated = false } = {}) {
+  const ref = stateRef(db);
+  await db.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    const fresh = snap.exists ? snap.data() : { duties: {}, deployCooldowns: {} };
+    const pruned = pruneState(fresh, etDate, nowIso);
+    pruned.duties[dutyMarkerKey(etDate, duty, { simulated })] = { completedAt: nowIso, ...summary };
+    tx.set(ref, { ...pruned, updatedAt: nowIso });
   });
 }
 
+/** Transactional cooldown write (same lost-update posture); also mirrors
+ * into the caller's in-memory state so the rest of the duty run sees it. */
 async function setDeployCooldown(db, state, agentId, untilIso, nowIso) {
-  const deployCooldowns = { ...(state?.deployCooldowns || {}), [agentId]: untilIso };
-  state.deployCooldowns = deployCooldowns;
-  await stateRef(db).set({
-    duties: state?.duties || {},
-    deployCooldowns,
-    updatedAt: nowIso,
+  const ref = stateRef(db);
+  await db.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    const fresh = snap.exists ? snap.data() : { duties: {}, deployCooldowns: {} };
+    const pruned = pruneState(fresh, nowIso.slice(0, 10), nowIso);
+    pruned.deployCooldowns[agentId] = untilIso;
+    tx.set(ref, { ...pruned, updatedAt: nowIso });
   });
+  state.deployCooldowns = { ...(state.deployCooldowns || {}), [agentId]: untilIso };
 }
 
 // ==================== DEPLOY PLUMBING (built complete, P4-gated) ====================
@@ -216,24 +253,34 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
  * One group's deploy fan-out (Monday: draft-resolved six; Tue–Fri: the
- * incumbents the caller passes). Sequential, ≥20s pacing between REAL calls,
- * budget-deferred, per-agent natural guard (today's battle exists) and the
- * ≥10-min failure cooldown. While the P4 gate holds, every would-be call is
- * one loud "P4 pending" line and nothing is sent (and no pacing is burned).
+ * incumbents the caller passes). Sequential, ≥20s pacing between REAL calls
+ * — `pacing` is DUTY-scoped (one object per duty run), so the floor holds
+ * across group boundaries, not just within one group. Budget-deferred,
+ * per-agent natural guard (today's battle exists) and the ≥10-min failure
+ * cooldown. While the P4 gate holds, every would-be call is one loud "P4
+ * pending" line and nothing is sent (and no pacing is burned).
  *
  * `seats` = [{agentId, odUserId, isCpu, symbols}] in groupMembers order.
+ * `latestBattles` lets the weekday caller pass its already-fetched map.
  * Returns {deployed, gated, skippedExisting, cooled, failed, deferred}.
  */
-export async function fanOutDeploys(db, { groupId, seats, now, state, budget, fetchImpl = fetch }) {
+export async function fanOutDeploys(db, {
+  groupId, seats, now, state, budget,
+  fetchImpl = fetch,
+  deployEnabled = TOURNAMENT_DEPLOY_ENABLED,
+  pacing = { lastSentAt: 0 },
+  pacingMs = DEPLOY_PACING_MS,
+  latestBattles = null,
+}) {
   const nowIso = now.toISOString();
   const etDate = formatEtDate(now);
   const out = { deployed: 0, gated: 0, skippedExisting: 0, cooled: 0, failed: 0, deferred: 0 };
 
-  const latest = await latestTournamentBattlesByAgent(db, groupId, ['agentId', 'createdAt', 'gameMode']);
+  const latest = latestBattles
+    ?? await latestTournamentBattlesByAgent(db, groupId, ['agentId', 'createdAt', 'gameMode']);
 
-  let sentAny = false;
-  for (const seat of seats) {
-    const { agentId, odUserId, isCpu, symbols } = seat;
+  for (let i = 0; i < seats.length; i++) {
+    const { agentId, odUserId, isCpu, symbols } = seats[i];
 
     // Natural guard: today's battle already exists for this agent.
     const battle = latest.get(agentId);
@@ -245,7 +292,7 @@ export async function fanOutDeploys(db, { groupId, seats, now, state, budget, fe
 
     const request = buildDeployRequest({ agentId, odUserId, isCpu, groupId, symbols });
 
-    if (!TOURNAMENT_DEPLOY_ENABLED) {
+    if (!deployEnabled) {
       console.log(`${LOG_PREFIX} group ${groupId} agent ${agentId} (owner ${odUserId}${isCpu ? ', CPU' : ''}): DEPLOY GATED — P4 pending; would send [${symbols.join(', ')}] to ${request.url ?? '(no base URL)'}`);
       out.gated++;
       continue;
@@ -260,20 +307,21 @@ export async function fanOutDeploys(db, { groupId, seats, now, state, budget, fe
     }
 
     // Budget: a deploy call + its pacing must fit; otherwise defer the rest.
-    if (budget && Date.now() - budget.startMs > budget.deadlineMs - DEPLOY_PACING_MS) {
-      console.log(`${LOG_PREFIX} group ${groupId}: time budget reached — ${seats.length - seats.indexOf(seat)} deploy(s) deferred to next tick`);
-      out.deferred += seats.length - seats.indexOf(seat);
+    if (budget && Date.now() - budget.startMs > budget.deadlineMs - pacingMs) {
+      console.log(`${LOG_PREFIX} group ${groupId}: time budget reached — ${seats.length - i} deploy(s) deferred to next tick`);
+      out.deferred += seats.length - i;
       break;
     }
-    if (sentAny) await sleep(DEPLOY_PACING_MS);
+    const wait = pacing.lastSentAt + pacingMs - Date.now();
+    if (wait > 0) await sleep(wait);
 
     try {
+      pacing.lastSentAt = Date.now();
       const response = await fetchImpl(request.url, {
         method: 'POST',
         headers: request.headers,
         body: JSON.stringify(request.body),
       });
-      sentAny = true;
       if (!response.ok) {
         const text = await response.text().catch(() => '');
         throw new Error(`HTTP ${response.status} ${text.slice(0, 200)}`);
@@ -281,7 +329,6 @@ export async function fanOutDeploys(db, { groupId, seats, now, state, budget, fe
       console.log(`${LOG_PREFIX} group ${groupId} agent ${agentId}: deployed [${symbols.join(', ')}]`);
       out.deployed++;
     } catch (err) {
-      sentAny = true;
       const untilIso = new Date(now.getTime() + DEPLOY_FAILURE_COOLDOWN_MS).toISOString();
       console.error(`${LOG_PREFIX} group ${groupId} agent ${agentId}: deploy FAILED (${err.message}) — cooldown until ${untilIso}`);
       await setDeployCooldown(db, state, agentId, untilIso, nowIso);
@@ -291,18 +338,29 @@ export async function fanOutDeploys(db, { groupId, seats, now, state, budget, fe
   return out;
 }
 
-// ==================== GROUP QUERIES ====================
+// ==================== SEAT ASSEMBLY ====================
 
-async function fetchGroupsByStatus(db, status) {
-  const snap = await db.collection(TOURNAMENT_GROUPS_COLLECTION)
-    .where('status', '==', status)
-    .get();
-  const groups = [];
-  snap.forEach(doc => {
-    const data = doc.data();
-    if (data.players?.length === GROUP_SIZE) groups.push({ id: doc.id, ...data });
-  });
-  return groups;
+/** The agent-draft stream's prescribed six per seat, in groupMembers order.
+ * The stream is THE resolution record (P3a) — picksByAgent for the six,
+ * events for the agentId→owner mapping. Returns null when no stream. */
+async function seatsFromDraftStream(db, group, { onlyAgentIds = null } = {}) {
+  const streamSnap = await db.collection(TOURNAMENT_GROUPS_COLLECTION).doc(group.id)
+    .collection(STREAMS_SUBCOLLECTION).doc(AGENT_DRAFT_STREAM_DOC_ID).get();
+  if (!streamSnap.exists) return null;
+  const stream = streamSnap.data();
+  const ownerByAgent = {};
+  for (const event of stream.events || []) ownerByAgent[event.agentId] = event.odUserId;
+  const cpuByUser = new Map((group.players || []).map(p => [p.odUserId, p.isCpu === true]));
+  const memberOrder = group.groupMembers || [];
+  return Object.entries(stream.picksByAgent || {})
+    .filter(([agentId]) => onlyAgentIds == null || onlyAgentIds.has(agentId))
+    .map(([agentId, symbols]) => ({
+      agentId,
+      odUserId: ownerByAgent[agentId],
+      isCpu: cpuByUser.get(ownerByAgent[agentId]) === true,
+      symbols,
+    }))
+    .sort((a, b) => memberOrder.indexOf(a.odUserId) - memberOrder.indexOf(b.odUserId));
 }
 
 // ==================== MONDAY PIPELINE ====================
@@ -312,18 +370,21 @@ async function fetchGroupsByStatus(db, status) {
  * skip resolved drafts (status), existing boards (per-member), existing
  * streams (already_resolved), existing battles (today's-battle guard).
  */
-export async function runMondayPipeline(db, { now = new Date(), anthropic = null, fetchImpl = fetch, budget = null } = {}) {
+export async function runMondayPipeline(db, {
+  now = new Date(), anthropic = null, fetchImpl = fetch, budget = null,
+  state = null, deployEnabled = TOURNAMENT_DEPLOY_ENABLED, pacingMs = DEPLOY_PACING_MS,
+} = {}) {
   // Advancement catch-up (ruled): a Friday that crashed or stayed
   // banking-pending finishes here — idempotent, no-op when complete. Its
   // pending/error counts are logged, not folded into the Monday marker.
   const catchUp = await runFridayAdvancement(db, { now });
-  if (catchUp.groups > 0) {
+  if (catchUp.groups > 0 || catchUp.activeBrackets > 0) {
     console.log(`${LOG_PREFIX} Monday advancement catch-up: ${catchUp.gamesLocked} game(s) locked, ${catchUp.composedGroups.length} group(s) composed, ${catchUp.bankingPending} banking-pending, ${catchUp.errors} error(s)`);
   }
 
   const [forming, battle] = await Promise.all([
-    fetchGroupsByStatus(db, GROUP_STATUS.FORMING),
-    fetchGroupsByStatus(db, GROUP_STATUS.BATTLE),
+    fetchEligibleGroupsByStatus(db, GROUP_STATUS.FORMING),
+    fetchEligibleGroupsByStatus(db, GROUP_STATUS.BATTLE),
   ]);
   const groups = [...forming, ...battle];
 
@@ -338,6 +399,9 @@ export async function runMondayPipeline(db, { now = new Date(), anthropic = null
     errors: 0,
   };
   if (groups.length === 0) return summary;
+
+  const dutyState = state ?? await readOrchestratorState(db);
+  const pacing = { lastSentAt: 0 }; // duty-scoped: the ≥20s floor holds across groups
 
   for (let i = 0; i < groups.length; i++) {
     if (budget && Date.now() - budget.startMs > budget.deadlineMs) {
@@ -368,7 +432,9 @@ export async function runMondayPipeline(db, { now = new Date(), anthropic = null
       }
       if (group.status !== GROUP_STATUS.BATTLE) continue;
 
-      // ---- Step 2: agent boards (refuse synthetic on a real group) ----
+      // ---- Step 2: agent boards (refuse synthetic on a real group —
+      // EVERY tick: produceGroupBoards counts pre-existing synthetic
+      // boards on the skip path, so the refusal can never be one-shot) ----
       const boards = await produceGroupBoards(db, group, { anthropic, now });
       if (boards.synthetic > 0) {
         console.error(`${LOG_PREFIX} group ${group.id}: REFUSING PIPELINE — ${boards.synthetic} SYNTHETIC board(s) on a real group (missing agent registration; P3a contract, tournamentAgentBoards.js). Founder attention required.`);
@@ -396,31 +462,15 @@ export async function runMondayPipeline(db, { now = new Date(), anthropic = null
       summary.drafted++;
 
       // ---- Step 4: deploy fan-out [P4-gated] ----
-      // The stream doc is THE resolution record (P3a): picksByAgent for the
-      // prescribed six, events for the agentId→owner mapping.
-      const streamSnap = await db.collection(TOURNAMENT_GROUPS_COLLECTION).doc(group.id)
-        .collection(STREAMS_SUBCOLLECTION).doc(AGENT_DRAFT_STREAM_DOC_ID).get();
-      if (!streamSnap.exists) {
+      const seats = await seatsFromDraftStream(db, group);
+      if (!seats) {
         console.error(`${LOG_PREFIX} group ${group.id}: agent-draft stream missing after resolution — retrying next tick`);
         summary.errors++;
         continue;
       }
-      const stream = streamSnap.data();
-      const ownerByAgent = {};
-      for (const event of stream.events || []) ownerByAgent[event.agentId] = event.odUserId;
-      const cpuByUser = new Map((group.players || []).map(p => [p.odUserId, p.isCpu === true]));
-      const memberOrder = group.groupMembers || [];
-      const seats = Object.entries(stream.picksByAgent || {})
-        .map(([agentId, symbols]) => ({
-          agentId,
-          odUserId: ownerByAgent[agentId],
-          isCpu: cpuByUser.get(ownerByAgent[agentId]) === true,
-          symbols,
-        }))
-        .sort((a, b) => memberOrder.indexOf(a.odUserId) - memberOrder.indexOf(b.odUserId));
-
-      const state = await readOrchestratorState(db);
-      const fanout = await fanOutDeploys(db, { groupId: group.id, seats, now, state, budget, fetchImpl });
+      const fanout = await fanOutDeploys(db, {
+        groupId: group.id, seats, now, state: dutyState, budget, fetchImpl, deployEnabled, pacing, pacingMs,
+      });
       for (const key of Object.keys(summary.deploys)) summary.deploys[key] += fanout[key];
       console.log(`${LOG_PREFIX} group ${group.id}: Monday pipeline done — drafted six per agent; deploys: ${JSON.stringify(fanout)}`);
     } catch (err) {
@@ -433,16 +483,23 @@ export async function runMondayPipeline(db, { now = new Date(), anthropic = null
 
 // ==================== TUE–FRI INCUMBENT FAN-OUT ====================
 
-export async function runWeekdayFanout(db, { now = new Date(), fetchImpl = fetch, budget = null } = {}) {
-  const groups = await fetchGroupsByStatus(db, GROUP_STATUS.BATTLE);
+export async function runWeekdayFanout(db, {
+  now = new Date(), fetchImpl = fetch, budget = null,
+  state = null, deployEnabled = TOURNAMENT_DEPLOY_ENABLED, pacingMs = DEPLOY_PACING_MS,
+} = {}) {
+  const groups = await fetchEligibleGroupsByStatus(db, GROUP_STATUS.BATTLE);
   const summary = {
     groups: groups.length,
     noBattles: 0,
+    mondayCatchupSeats: 0,
     deploys: { deployed: 0, gated: 0, skippedExisting: 0, cooled: 0, failed: 0, deferred: 0 },
     deferredToNextTick: 0,
     errors: 0,
   };
   if (groups.length === 0) return summary;
+
+  const dutyState = state ?? await readOrchestratorState(db);
+  const pacing = { lastSentAt: 0 };
 
   for (let i = 0; i < groups.length; i++) {
     if (budget && Date.now() - budget.startMs > budget.deadlineMs) {
@@ -453,27 +510,54 @@ export async function runWeekdayFanout(db, { now = new Date(), fetchImpl = fetch
     const group = groups[i];
     try {
       const latest = await latestTournamentBattlesByAgent(db, group.id);
-      if (latest.size === 0) {
+      if (latest.size === 0 && !deployEnabled) {
         // Pre-P4 steady state: tournament battles don't exist yet (ruled).
         console.log(`${LOG_PREFIX} group ${group.id}: no tournament battles yet (P4 pending) — nothing to fan out`);
         summary.noBattles++;
         continue;
       }
+
       const cpuByUser = new Map((group.players || []).map(p => [p.odUserId, p.isCpu === true]));
       const memberOrder = group.groupMembers || [];
-      const seats = [...latest.values()]
-        .map(battle => ({
+      const seats = [];
+      for (const battle of latest.values()) {
+        // The incumbent six — fenced flattenPortfolioServer, read-only.
+        const symbols = flattenPortfolioServer(battle.portfolio).map(a => a.symbol).filter(Boolean);
+        if (symbols.length === 0) {
+          // Never a silent drop: an empty/missing portfolio on the latest
+          // battle is schema drift — loud, counted, marker withheld.
+          console.error(`${LOG_PREFIX} group ${group.id} agent ${battle.agentId}: latest battle ${battle.id} has an empty portfolio — seat skipped LOUDLY (founder attention)`);
+          summary.errors++;
+          continue;
+        }
+        seats.push({
           agentId: battle.agentId,
           odUserId: battle.ownerId,
           isCpu: cpuByUser.get(battle.ownerId) === true,
-          // The incumbent six — fenced flattenPortfolioServer, read-only.
-          symbols: flattenPortfolioServer(battle.portfolio).map(a => a.symbol).filter(Boolean),
-        }))
-        .filter(seat => seat.symbols.length > 0)
-        .sort((a, b) => memberOrder.indexOf(a.odUserId) - memberOrder.indexOf(b.odUserId));
+          symbols,
+        });
+      }
 
-      const state = await readOrchestratorState(db);
-      const fanout = await fanOutDeploys(db, { groupId: group.id, seats, now, state, budget, fetchImpl });
+      // Monday-failure catch-up: an agent with NO battle yet deploys its
+      // drafted six from the stream record — a failed Monday deploy keeps
+      // retrying all week instead of vanishing from the incumbent query.
+      const memberAgentIds = new Set(latest.keys());
+      const draftSeats = await seatsFromDraftStream(db, group);
+      if (draftSeats) {
+        for (const seat of draftSeats) {
+          if (!memberAgentIds.has(seat.agentId)) {
+            console.log(`${LOG_PREFIX} group ${group.id} agent ${seat.agentId}: no battle yet — falling back to Monday's drafted six (catch-up)`);
+            seats.push(seat);
+            summary.mondayCatchupSeats++;
+          }
+        }
+      }
+      seats.sort((a, b) => memberOrder.indexOf(a.odUserId) - memberOrder.indexOf(b.odUserId));
+
+      const fanout = await fanOutDeploys(db, {
+        groupId: group.id, seats, now, state: dutyState, budget, fetchImpl, deployEnabled, pacing, pacingMs,
+        latestBattles: latest,
+      });
       for (const key of Object.keys(summary.deploys)) summary.deploys[key] += fanout[key];
     } catch (err) {
       console.error(`${LOG_PREFIX} group ${group.id}: incumbent fan-out FAILED:`, err.message);
@@ -520,13 +604,17 @@ function markerSummary(duty, summary) {
 
 /**
  * One cron tick: route by ET, honor the duty marker, run the duty, set the
- * marker when satisfied. `forceDuty` + an injected `now` are the dev
- * surface's time controls (the P1b idiom) — production ticks pass neither.
+ * marker when satisfied. `forceDuty` + an injected `now` with
+ * `simulated: true` are the dev surface's time controls (the P1b idiom) —
+ * production ticks pass none of them. Simulated runs read AND write markers
+ * only in the 'sim:' namespace.
  */
-export async function runOrchestratorTick(db, { now = new Date(), anthropic = null, fetchImpl = fetch, forceDuty = null } = {}) {
+export async function runOrchestratorTick(db, {
+  now = new Date(), anthropic = null, fetchImpl = fetch, forceDuty = null, simulated = false,
+} = {}) {
   const routed = getDutyForInstant(now);
   const duty = forceDuty || routed.duty;
-  const tag = `${LOG_PREFIX} ${routed.etDate} ${routed.etTime}`;
+  const tag = `${LOG_PREFIX} ${routed.etDate} ${routed.etTime}${simulated ? ' [SIMULATED]' : ''}`;
 
   if (duty === DUTY.SKIP) {
     console.log(`${tag} duty=skip — outside the duty table (quiet tick)`);
@@ -534,7 +622,7 @@ export async function runOrchestratorTick(db, { now = new Date(), anthropic = nu
   }
 
   const state = await readOrchestratorState(db);
-  if (isDutyComplete(state, routed.etDate, duty)) {
+  if (isDutyComplete(state, routed.etDate, duty, { simulated })) {
     console.log(`${tag} duty=${duty} — already complete for ${routed.etDate} (idempotent no-op)`);
     return { duty, etDate: routed.etDate, etTime: routed.etTime, status: 'already_complete' };
   }
@@ -544,9 +632,9 @@ export async function runOrchestratorTick(db, { now = new Date(), anthropic = nu
 
   let summary;
   if (duty === DUTY.MONDAY_PIPELINE) {
-    summary = await runMondayPipeline(db, { now, anthropic, fetchImpl, budget });
+    summary = await runMondayPipeline(db, { now, anthropic, fetchImpl, budget, state });
   } else if (duty === DUTY.WEEKDAY_FANOUT) {
-    summary = await runWeekdayFanout(db, { now, fetchImpl, budget });
+    summary = await runWeekdayFanout(db, { now, fetchImpl, budget, state });
   } else if (duty === DUTY.FRIDAY_ADVANCEMENT) {
     summary = await runFridayAdvancement(db, { now });
   } else {
@@ -554,7 +642,7 @@ export async function runOrchestratorTick(db, { now = new Date(), anthropic = nu
     return { duty: DUTY.SKIP, etDate: routed.etDate, etTime: routed.etTime };
   }
 
-  if (summary.groups === 0) {
+  if ((summary.groups ?? 0) === 0 && (summary.activeBrackets ?? 0) === 0) {
     // Production inertness: zero groups, zero writes, one quiet line.
     console.log(`${tag} duty=${duty} — zero groups (quiet skip)`);
     return { duty, etDate: routed.etDate, etTime: routed.etTime, ...summary };
@@ -562,7 +650,7 @@ export async function runOrchestratorTick(db, { now = new Date(), anthropic = nu
 
   const satisfied = isDutySatisfied(duty, summary);
   if (satisfied) {
-    await markDutyComplete(db, state, routed.etDate, duty, markerSummary(duty, summary), now.toISOString());
+    await markDutyComplete(db, routed.etDate, duty, markerSummary(duty, summary), now.toISOString(), { simulated });
   }
   console.log(`${tag} duty=${duty} — ${satisfied ? 'COMPLETE (marker set)' : 'incomplete (resumes next tick)'}: ${JSON.stringify(markerSummary(duty, summary))}`);
   return { duty, etDate: routed.etDate, etTime: routed.etTime, complete: satisfied, ...summary };

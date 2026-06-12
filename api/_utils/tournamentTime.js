@@ -73,6 +73,26 @@ export function isMarketOpenAt(now = new Date()) {
 }
 
 /**
+ * Admin time-control parsing (P3b — the P1b injectable-now idiom given one
+ * consumer contract: run-duty and bank-daily-scores both accept a
+ * `simulatedNow` ISO instant, admin-gated by construction). Strings only —
+ * a bare JSON number would silently resolve to a 1970-adjacent instant and
+ * pollute per-ET-date keys. Returns { now: Date } (real clock when absent)
+ * or { error } for the endpoint's 400.
+ */
+export function parseSimulatedNow(value) {
+  if (value == null) return { now: new Date() };
+  if (typeof value !== 'string') {
+    return { error: 'simulatedNow must be an ISO-8601 instant string.' };
+  }
+  const now = new Date(value);
+  if (Number.isNaN(now.getTime())) {
+    return { error: 'simulatedNow must be an ISO-8601 instant string.' };
+  }
+  return { now };
+}
+
+/**
  * Tournament claim placement window — server-side sibling of the legacy
  * client check (claimFreeAgencyService.js:49-82), minus the day-5 rule,
  * which needs group state and therefore lives in place-claim

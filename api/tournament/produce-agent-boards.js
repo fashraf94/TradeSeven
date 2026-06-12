@@ -65,7 +65,7 @@ export default async function handler(req, res) {
       force: force === true,
     });
 
-    console.log(`[Tournament] produce-agent-boards: group ${groupId} → ${summary.produced} produced (${summary.fallbacks} fallback), ${summary.skipped} skipped, ${summary.errors} error(s)`);
+    console.log(`[Tournament] produce-agent-boards: group ${groupId} → ${summary.produced} produced (${summary.fallbacks} fallback, ${summary.cpu} cpu), ${summary.skipped} skipped, ${summary.synthetic} synthetic, ${summary.errors} error(s)`);
     return res.status(200).json({ groupId, ...summary });
   } catch (err) {
     if (typeof err?.message === 'string' && err.message.startsWith(BOARDS_SENTINEL_PREFIX)) {

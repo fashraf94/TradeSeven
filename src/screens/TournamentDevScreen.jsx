@@ -339,7 +339,7 @@ export default function TournamentDevScreen() {
       { groupId: attachedGroupId },
       'boards'
     );
-    if (data) appendLog(`boards OK · ${data.produced} produced (${data.fallbacks} fallback) · ${data.skipped} skipped · ${data.errors} error(s)`);
+    if (data) appendLog(`boards OK · ${data.produced} produced (${data.fallbacks} fallback, ${data.cpu ?? 0} cpu) · ${data.skipped} skipped · ${data.synthetic ?? 0} synthetic · ${data.errors} error(s)`);
   }
 
   async function resolveAgentDraft() {
@@ -564,13 +564,23 @@ export default function TournamentDevScreen() {
               </span>
             </div>
             <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', fontSize: 12, color: tokens.textMuted }}>
-              {['groups', 'resolved', 'deferredBoards', 'refusedSynthetic', 'drafted', 'baseCompleted', 'bankingPending', 'gamesLocked', 'deferredToNextTick', 'errors']
-                .filter(key => lastDuty[key] != null)
-                .map(key => (
-                  <span key={key}><span style={{ fontWeight: 700 }}>{key}</span> {String(lastDuty[key])}</span>
+              {/* Every numeric counter the duty reports, no curated list —
+                  a new server-side counter renders here without a client
+                  change (the hand-kept list was already missing fields). */}
+              {Object.entries(lastDuty)
+                .filter(([, value]) => typeof value === 'number')
+                .map(([key, value]) => (
+                  <span key={key}><span style={{ fontWeight: 700 }}>{key}</span> {value}</span>
                 ))}
               {lastDuty.deploys && (
-                <span><span style={{ fontWeight: 700 }}>deploys</span> {lastDuty.deploys.deployed} sent · {lastDuty.deploys.gated} gated (P4 pending) · {lastDuty.deploys.skippedExisting} existing · {lastDuty.deploys.failed} failed</span>
+                <span>
+                  <span style={{ fontWeight: 700 }}>deploys</span>{' '}
+                  {Object.entries(lastDuty.deploys).map(([k, v]) => `${v} ${k}`).join(' · ')}
+                  {lastDuty.deploys.gated > 0 ? ' (P4 pending)' : ''}
+                </span>
+              )}
+              {lastDuty.roundsLocked?.length > 0 && (
+                <span><span style={{ fontWeight: 700 }}>roundsLocked</span> {lastDuty.roundsLocked.join(', ')}</span>
               )}
               {lastDuty.composedGroups?.length > 0 && (
                 <span><span style={{ fontWeight: 700 }}>composed</span> {lastDuty.composedGroups.join(', ')}</span>

@@ -18,14 +18,17 @@
 // a loud "banking pending" no-op for the tick (banking lands ~17:15 ET via
 // the nightly snake-draft handler); the orchestrator re-ticks.
 //
-// IDEMPOTENT AT EVERY GRAIN (the two-grain design's natural guards):
-// re-locking a locked game skips; re-completing a complete group skips;
-// composition skips when the next round entry exists; next-round group docs
-// use DETERMINISTIC ids (the bracketGameId) so a crash between group
-// creation and the bracket-doc write recomposes nothing. Write order is
-// crash-shaped: bracket lock BEFORE group completion (a completed group
-// leaves the battle query, so its lock must already be durable); group docs
-// + CPU boards BEFORE the round entry (the entry is the composition guard).
+// IDEMPOTENT AT EVERY GRAIN, RESUMABLE FROM THE BRACKET DOC ALONE: locking,
+// completion, composition, and the champion each carry a natural guard
+// (advancers set, status, rounds.r{N+1} exists, champion set), and the
+// round-finalization stage (lock → champion/composition) is driven off the
+// BRACKET DOC, not the battle-group query — so a crash after the groups
+// complete but before composition/champion lands is healed by the
+// active-bracket sweep on the next tick (code-review finding, June 12,
+// 2026: a groups-only retry path orphaned exactly that window). Next-round
+// group docs use DETERMINISTIC ids (the bracketGameId) so recomposition
+// recreates nothing. Write order stays crash-shaped: bracket lock BEFORE
+// group completion; group docs + CPU boards BEFORE the round entry.
 //
 // HOLIDAY-WEEK EDGE (flagged at Stage 0′, implemented as ruled): a 4-day
 // trading week banks only day4, so the ruled day-5 check never satisfies
@@ -40,8 +43,8 @@ import {
   TOURNAMENT_GROUPS_COLLECTION,
   TOURNAMENT_BRACKETS_COLLECTION,
   GROUP_STATUS,
-  GROUP_SIZE,
   BRACKET_STATUS,
+  TOURNAMENT_TUNING,
   bracketRoundKey,
   buildBracketGameId,
   parseBracketGameId,
@@ -52,13 +55,17 @@ import {
   getWeeklyScore,
   getLatestDayEntry,
   isCpuUserId,
-  CPU_USER_ID_PREFIX,
+  cpuNFromUserId,
   AGENT_LEDGER_SUBCOLLECTION,
   AGENT_LEDGER_DOC_ID,
   STREAMS_SUBCOLLECTION,
   AGENT_DRAFT_STREAM_DOC_ID,
 } from '../../src/constants/leagueTournament.js';
-import { transitionStatus, fetchRankedUserPool } from './tournamentGroupService.js';
+import {
+  transitionStatus,
+  fetchRankedUserPool,
+  fetchEligibleGroupsByStatus,
+} from './tournamentGroupService.js';
 import { ensureCpuAgents, commitCpuUserBoards, padGamesWithCpus } from './tournamentCpu.js';
 
 const LOG_PREFIX = '[TournamentAdvancement]';
@@ -88,13 +95,6 @@ export function lockTopTwo(group) {
   return { advancers: ranking.slice(0, 2), finalScores, ranking };
 }
 
-/** cpu-{n} → n, or null for a non-CPU id. */
-function cpuNFromUserId(odUserId) {
-  if (!isCpuUserId(odUserId)) return null;
-  const n = Number(odUserId.slice(CPU_USER_ID_PREFIX.length));
-  return Number.isInteger(n) && n >= 1 ? n : null;
-}
-
 /**
  * Adjacent-game pairing (standard bracket shape): sorted by gameIndex,
  * games 1+2 feed next-round game 1, games 3+4 feed game 2, … Advancers keep
@@ -120,6 +120,15 @@ function gameEntryFromGroup(group) {
     groupId: group.id,
     seats: (group.players || []).map(p => ({ odUserId: p.odUserId, isCpu: p.isCpu === true })),
   });
+}
+
+/** Materialization safety: observed games must be exactly games 1..N — a
+ * gap means a sibling group escaped the battle query (already complete /
+ * still forming) and a doc built from this subset would silently drop its
+ * advancers from the tournament. */
+function gameIndexesContiguous(games) {
+  const idx = games.map(g => g.gameIndex).sort((a, b) => a - b);
+  return idx.length > 0 && idx.every((v, i) => v === i + 1);
 }
 
 /**
@@ -193,25 +202,18 @@ export async function buildChampionRecap(db, bracket, championId) {
 }
 
 /**
- * The Friday duty. Returns a per-step summary; ZERO battle groups is a
- * clean no-op (production state until brackets exist — test-locked, the
- * house pattern): no writes, the caller logs one quiet skip line.
+ * The Friday duty. Returns a per-step summary; ZERO battle groups AND zero
+ * active brackets is a clean no-op (production state until brackets exist —
+ * test-locked, the house pattern): no writes, the caller logs one quiet
+ * skip line.
  */
 export async function runFridayAdvancement(db, { now = new Date() } = {}) {
   const nowIso = now.toISOString();
-
-  const snapshot = await db.collection(TOURNAMENT_GROUPS_COLLECTION)
-    .where('status', '==', GROUP_STATUS.BATTLE)
-    .get();
-  const groups = [];
-  snapshot.forEach(doc => {
-    const data = doc.data();
-    // House eligibility mirror (claims cron :564 / banking :224).
-    if (data.players?.length === GROUP_SIZE) groups.push({ id: doc.id, ...data });
-  });
+  const groups = await fetchEligibleGroupsByStatus(db, GROUP_STATUS.BATTLE);
 
   const summary = {
     groups: groups.length,
+    activeBrackets: 0,
     baseCompleted: 0,
     bankingPending: 0,
     gamesLocked: 0,
@@ -220,7 +222,10 @@ export async function runFridayAdvancement(db, { now = new Date() } = {}) {
     champion: null,
     errors: 0,
   };
-  if (groups.length === 0) return summary;
+
+  // One rankings read per run, fetched lazily (composition may never need it).
+  let poolMemo = null;
+  const getPool = async () => (poolMemo ??= await fetchRankedUserPool(db));
 
   // ---- Base-layer groups: COMPLETE ONLY (ruled; recomposition docketed) ----
   const baseGroups = groups.filter(g => g.bracketGameId == null);
@@ -258,9 +263,36 @@ export async function runFridayAdvancement(db, { now = new Date() } = {}) {
 
   for (const { bracketId, roundNumber, groups: cohortGroups } of cohorts.values()) {
     try {
-      await advanceCohort(db, { bracketId, roundNumber, cohortGroups, nowIso, summary });
+      await advanceCohort(db, { bracketId, roundNumber, cohortGroups, nowIso, summary, getPool });
     } catch (err) {
       console.error(`${LOG_PREFIX} bracket ${bracketId} r${roundNumber} FAILED:`, err.message);
+      summary.errors++;
+    }
+  }
+
+  // ---- Active-bracket sweep: resume any finalization the battle-group
+  // query can no longer see (groups completed, then a crash/shortfall left
+  // composition or the champion unwritten). Read AFTER the cohort pass so
+  // this tick's own writes are visible and just-finished rounds no-op. ----
+  const bracketsSnap = await db.collection(TOURNAMENT_BRACKETS_COLLECTION)
+    .where('status', '==', BRACKET_STATUS.ACTIVE)
+    .get();
+  const activeBrackets = [];
+  bracketsSnap.forEach(doc => activeBrackets.push({ id: doc.id, bracket: doc.data() }));
+  summary.activeBrackets = activeBrackets.length;
+
+  for (const { id, bracket } of activeBrackets) {
+    try {
+      const bracketRef = db.collection(TOURNAMENT_BRACKETS_COLLECTION).doc(id);
+      const roundNumbers = Object.values(bracket.rounds || {})
+        .map(r => r.roundNumber)
+        .sort((a, b) => a - b);
+      for (const roundNumber of roundNumbers) {
+        await finalizeRound(db, { bracketRef, bracket, roundNumber, nowIso, summary, getPool });
+        if (bracket.status === BRACKET_STATUS.COMPLETE) break;
+      }
+    } catch (err) {
+      console.error(`${LOG_PREFIX} bracket ${id} sweep FAILED:`, err.message);
       summary.errors++;
     }
   }
@@ -268,14 +300,22 @@ export async function runFridayAdvancement(db, { now = new Date() } = {}) {
   return summary;
 }
 
-async function advanceCohort(db, { bracketId, roundNumber, cohortGroups, nowIso, summary }) {
+/**
+ * One bracket+round cohort of battle groups: ensure the bracket record
+ * exists (materialization recovery — loud, guarded by game-index
+ * contiguity), lock each banked game, complete its group, then hand the
+ * round to finalizeRound. The in-memory `bracket` object is kept in step
+ * with every write — no re-reads.
+ */
+async function advanceCohort(db, { bracketId, roundNumber, cohortGroups, nowIso, summary, getPool }) {
   const bracketRef = db.collection(TOURNAMENT_BRACKETS_COLLECTION).doc(bracketId);
   const roundKey = bracketRoundKey(roundNumber);
 
   // Materialization fallback: a bracket doc should exist from seeding/
   // composition; reconstruct round 1 from the observed groups if not
   // (production crash recovery — loud, because something skipped a step).
-  let bracketSnap = await bracketRef.get();
+  const bracketSnap = await bracketRef.get();
+  let bracket;
   if (!bracketSnap.exists) {
     if (roundNumber !== 1) {
       console.error(`${LOG_PREFIX} bracket ${bracketId}: doc missing at round ${roundNumber} — cannot materialize past round 1; cohort skipped (founder attention)`);
@@ -284,69 +324,107 @@ async function advanceCohort(db, { bracketId, roundNumber, cohortGroups, nowIso,
     }
     const games = {};
     for (const group of cohortGroups) games[group.bracketGameId] = gameEntryFromGroup(group);
+    if (!gameIndexesContiguous(Object.values(games))) {
+      console.error(`${LOG_PREFIX} bracket ${bracketId}: doc missing and observed games are not 1..N (${Object.values(games).map(g => g.gameIndex).join(',')}) — a sibling group is outside the battle query; materialization REFUSED (founder attention)`);
+      summary.errors++;
+      return;
+    }
     console.warn(`${LOG_PREFIX} bracket ${bracketId}: doc missing — materializing round 1 from ${cohortGroups.length} group(s)`);
-    await bracketRef.set(createBracketDoc({ bracketId, round1Games: games, now: nowIso }));
-    bracketSnap = await bracketRef.get();
+    bracket = createBracketDoc({ bracketId, round1Games: games, now: nowIso });
+    await bracketRef.set(bracket);
+  } else {
+    bracket = bracketSnap.data();
   }
 
-  // Merge any game entries the doc lacks (same recovery posture).
-  let bracket = bracketSnap.data();
-  for (const group of cohortGroups) {
-    if (!bracket.rounds?.[roundKey]) {
-      console.error(`${LOG_PREFIX} bracket ${bracketId}: round entry ${roundKey} missing — merging from observed groups`);
-      await bracketRef.update({
-        [`rounds.${roundKey}`]: createBracketRound({
-          roundNumber,
-          games: Object.fromEntries(cohortGroups.map(g => [g.bracketGameId, gameEntryFromGroup(g)])),
-          composedAt: nowIso,
-        }),
-        updatedAt: nowIso,
-      });
-      bracket = (await bracketRef.get()).data();
-      break;
+  // Round-entry merge (same recovery posture; restores currentRound too —
+  // the happy path sets it at composition, recovery must not leave it stale).
+  if (!bracket.rounds?.[roundKey]) {
+    const games = Object.fromEntries(cohortGroups.map(g => [g.bracketGameId, gameEntryFromGroup(g)]));
+    if (!gameIndexesContiguous(Object.values(games))) {
+      console.error(`${LOG_PREFIX} bracket ${bracketId}: round entry ${roundKey} missing and observed games are not 1..N — merge REFUSED (founder attention)`);
+      summary.errors++;
+      return;
     }
+    console.error(`${LOG_PREFIX} bracket ${bracketId}: round entry ${roundKey} missing — merging from observed groups`);
+    const roundEntry = createBracketRound({ roundNumber, games, composedAt: nowIso });
+    const currentRound = Math.max(bracket.currentRound || 1, roundNumber);
+    await bracketRef.update({ [`rounds.${roundKey}`]: roundEntry, currentRound, updatedAt: nowIso });
+    bracket.rounds = { ...(bracket.rounds || {}), [roundKey]: roundEntry };
+    bracket.currentRound = currentRound;
+  }
+  for (const group of cohortGroups) {
     if (!bracket.rounds[roundKey].games?.[group.bracketGameId]) {
       console.warn(`${LOG_PREFIX} bracket ${bracketId}: game entry ${group.bracketGameId} missing — merging from group ${group.id}`);
-      await bracketRef.update({
-        [`rounds.${roundKey}.games.${group.bracketGameId}`]: gameEntryFromGroup(group),
-        updatedAt: nowIso,
-      });
-      bracket = (await bracketRef.get()).data();
+      const entry = gameEntryFromGroup(group);
+      await bracketRef.update({ [`rounds.${roundKey}.games.${group.bracketGameId}`]: entry, updatedAt: nowIso });
+      bracket.rounds[roundKey].games[group.bracketGameId] = entry;
     }
   }
 
-  // ---- Per-game lock: bracket write FIRST, then group completion ----
+  // ---- Per-game lock: bracket write FIRST, then group completion. One
+  // game's failure never aborts its siblings (per-game catch). ----
   for (const group of cohortGroups) {
-    if (!isWeekBanked(group)) {
-      console.log(`${LOG_PREFIX} bracket ${bracketId} game ${group.bracketGameId}: banking pending (day ${getLatestDayEntry(group)?.dayN || 0}/${WEEK_DAYS_REQUIRED}) — no-op this tick`);
-      summary.bankingPending++;
-      continue;
-    }
-    const entry = bracket.rounds[roundKey].games[group.bracketGameId];
-    if (entry.advancers == null) {
-      const { advancers, finalScores } = lockTopTwo(group);
-      await bracketRef.update({
-        [`rounds.${roundKey}.games.${group.bracketGameId}.advancers`]: advancers,
-        [`rounds.${roundKey}.games.${group.bracketGameId}.finalScores`]: finalScores,
-        [`rounds.${roundKey}.games.${group.bracketGameId}.completedAt`]: nowIso,
-        updatedAt: nowIso,
-      });
-      console.log(`${LOG_PREFIX} bracket ${bracketId} game ${group.bracketGameId}: locked top two ${advancers.join(', ')} (scores ${JSON.stringify(finalScores)})`);
-      summary.gamesLocked++;
-    }
-    if (group.status === GROUP_STATUS.BATTLE) {
-      await transitionStatus(db, group.id, GROUP_STATUS.COMPLETE, nowIso);
+    try {
+      if (!isWeekBanked(group)) {
+        console.log(`${LOG_PREFIX} bracket ${bracketId} game ${group.bracketGameId}: banking pending (day ${getLatestDayEntry(group)?.dayN || 0}/${WEEK_DAYS_REQUIRED}) — no-op this tick`);
+        summary.bankingPending++;
+        continue;
+      }
+      const entry = bracket.rounds[roundKey].games[group.bracketGameId];
+      if (entry.advancers == null) {
+        const { advancers, finalScores } = lockTopTwo(group);
+        await bracketRef.update({
+          [`rounds.${roundKey}.games.${group.bracketGameId}.advancers`]: advancers,
+          [`rounds.${roundKey}.games.${group.bracketGameId}.finalScores`]: finalScores,
+          [`rounds.${roundKey}.games.${group.bracketGameId}.completedAt`]: nowIso,
+          updatedAt: nowIso,
+        });
+        entry.advancers = advancers;
+        entry.finalScores = finalScores;
+        entry.completedAt = nowIso;
+        console.log(`${LOG_PREFIX} bracket ${bracketId} game ${group.bracketGameId}: locked top two ${advancers.join(', ')} (scores ${JSON.stringify(finalScores)})`);
+        summary.gamesLocked++;
+      }
+      try {
+        await transitionStatus(db, group.id, GROUP_STATUS.COMPLETE, nowIso);
+      } catch (err) {
+        // A concurrent duty run (cron tick + dev button) may have completed
+        // the group between our query and this write — benign, the lock
+        // above is idempotent and durable.
+        if (/illegal transition "complete"/.test(err.message)) {
+          console.log(`${LOG_PREFIX} group ${group.id}: already complete (concurrent run) — continuing`);
+        } else {
+          throw err;
+        }
+      }
+    } catch (err) {
+      console.error(`${LOG_PREFIX} bracket ${bracketId} game ${group.bracketGameId} FAILED:`, err.message);
+      summary.errors++;
     }
   }
 
-  // ---- Round lock → terminal champion or next-round composition ----
-  bracket = (await bracketRef.get()).data();
-  const round = bracket.rounds[roundKey];
+  await finalizeRound(db, { bracketRef, bracket, roundNumber, nowIso, summary, getPool });
+}
+
+/**
+ * Round finalization — lock the round, then champion (terminal) or
+ * next-round composition. Driven ENTIRELY off the bracket doc so the
+ * active-bracket sweep can resume it after the source groups have left the
+ * battle query. Every step is naturally guarded (lockedAt, champion,
+ * rounds.r{N+1}); the in-memory `bracket` is kept in step with each write.
+ */
+async function finalizeRound(db, { bracketRef, bracket, roundNumber, nowIso, summary, getPool }) {
+  const roundKey = bracketRoundKey(roundNumber);
+  const round = bracket.rounds?.[roundKey];
+  if (!round) return;
   const games = Object.values(round.games || {});
   if (games.length === 0 || !games.every(g => g.advancers != null)) return;
 
+  const bracketId = bracket.bracketId;
+
   if (round.lockedAt == null) {
     await bracketRef.update({ [`rounds.${roundKey}.lockedAt`]: nowIso, updatedAt: nowIso });
+    round.lockedAt = nowIso;
     summary.roundsLocked.push(`${bracketId}:${roundKey}`);
   }
 
@@ -371,6 +449,9 @@ async function advanceCohort(db, { bracketId, roundNumber, cohortGroups, nowIso,
         status: BRACKET_STATUS.COMPLETE,
         updatedAt: nowIso,
       });
+      bracket.champion = champion;
+      bracket.recap = recap;
+      bracket.status = BRACKET_STATUS.COMPLETE;
       console.log(`${LOG_PREFIX} bracket ${bracketId}: CHAMPION ${championId} (${champion.weeklyScore} pts) — recap written`);
       summary.champion = { bracketId, ...champion };
     }
@@ -387,7 +468,7 @@ async function advanceCohort(db, { bracketId, roundNumber, cohortGroups, nowIso,
   const realIdsByGame = pairAdvancers(games);
   const advancingCpuNs = realIdsByGame.flat().map(cpuNFromUserId).filter(n => n != null);
   const startN = advancingCpuNs.length > 0 ? Math.max(...advancingCpuNs) + 1 : 1;
-  const { seatsByGame: paddedSeats, cpuNByUserId, cpuNs } = padGamesWithCpus(realIdsByGame, { startN });
+  const { seatsByGame: paddedSeats, cpuNs } = padGamesWithCpus(realIdsByGame, { startN });
   // padGamesWithCpus marks only its own padding as CPU; an ADVANCING CPU
   // arrives as a "real" advancer id — restore its flag from the locked
   // round's seat entries (the flag is the contract; prefix is the fallback).
@@ -400,10 +481,12 @@ async function advanceCohort(db, { bracketId, roundNumber, cohortGroups, nowIso,
     isCpu: seat.isCpu || isCpuById.get(seat.odUserId) === true || isCpuUserId(seat.odUserId),
   })));
 
-  // Fresh full-universe pools (Spec §0.11) — one rankings read per cohort.
-  const userPool = await fetchRankedUserPool(db);
-  if (userPool.length < GROUP_SIZE * 3) {
-    console.error(`${LOG_PREFIX} bracket ${bracketId}: stockRankings yielded ${userPool.length} names — composition deferred to next tick`);
+  // Fresh full-universe pool (Spec §0.11) — memoized per run. The floor is
+  // BOARD_DEPTH_MIN, the deepest callee precondition (CPU boards commit
+  // through buildBoardCommit, which rejects boards under 15 names).
+  const userPool = await getPool();
+  if (userPool.length < TOURNAMENT_TUNING.BOARD_DEPTH_MIN) {
+    console.error(`${LOG_PREFIX} bracket ${bracketId}: stockRankings yielded ${userPool.length} names (< ${TOURNAMENT_TUNING.BOARD_DEPTH_MIN}) — composition deferred to next tick`);
     summary.errors++;
     return;
   }
@@ -419,34 +502,34 @@ async function advanceCohort(db, { bracketId, roundNumber, cohortGroups, nowIso,
     // between group creation and the round-entry write recompose nothing.
     const groupRef = db.collection(TOURNAMENT_GROUPS_COLLECTION).doc(bracketGameId);
     const existing = await groupRef.get();
-    if (!existing.exists) {
-      await groupRef.set(createTournamentGroupDoc({
+    let groupDoc;
+    if (existing.exists) {
+      groupDoc = existing.data();
+    } else {
+      groupDoc = createTournamentGroupDoc({
         players: seats.map(s => ({ odUserId: s.odUserId, picks: [], isCpu: s.isCpu })),
         userPool,
         roundNumber: nextRoundNumber,
         bracketGameId,
         status: GROUP_STATUS.FORMING,
         now: nowIso,
-      }));
+      });
+      await groupRef.set(groupDoc);
     }
-    const groupDoc = existing.exists ? existing.data() : (await groupRef.get()).data();
-    const groupCpuNs = Object.fromEntries(
-      seats.filter(s => s.isCpu)
-        .map(s => [s.odUserId, cpuNByUserId[s.odUserId] ?? cpuNFromUserId(s.odUserId)])
-        .filter(([, n]) => n != null)
-    );
-    if (Object.keys(groupCpuNs).length > 0) {
-      await commitCpuUserBoards(db, { id: bracketGameId, ...groupDoc }, groupCpuNs, nowIso);
-    }
+    const boards = await commitCpuUserBoards(db, { id: bracketGameId, ...groupDoc }, nowIso);
+    if (boards.failed.length > 0) summary.errors++;
     nextGames[bracketGameId] = createBracketGame({ bracketGameId, gameIndex, groupId: bracketGameId, seats });
     summary.composedGroups.push(bracketGameId);
     console.log(`${LOG_PREFIX} bracket ${bracketId}: composed ${bracketGameId} — seats ${seats.map(s => s.odUserId).join(', ')}`);
   }
 
+  const nextRoundEntry = createBracketRound({ roundNumber: nextRoundNumber, games: nextGames, composedAt: nowIso });
   await bracketRef.update({
-    [`rounds.${nextKey}`]: createBracketRound({ roundNumber: nextRoundNumber, games: nextGames, composedAt: nowIso }),
+    [`rounds.${nextKey}`]: nextRoundEntry,
     currentRound: nextRoundNumber,
     updatedAt: nowIso,
   });
+  bracket.rounds[nextKey] = nextRoundEntry;
+  bracket.currentRound = nextRoundNumber;
   console.log(`${LOG_PREFIX} bracket ${bracketId}: round ${nextRoundNumber} composed (${seatsByGame.length} game(s), ${cpuNs.length} CPU pad seat(s))`);
 }

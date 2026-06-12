@@ -21,7 +21,7 @@ import { ensureCpuAgents, commitCpuUserBoards, padGamesWithCpus } from '../_util
 import {
   TOURNAMENT_GROUPS_COLLECTION,
   TOURNAMENT_BRACKETS_COLLECTION,
-  USER_HELD_NAMES_PER_GROUP,
+  TOURNAMENT_TUNING,
   GROUP_STATUS,
   buildBracketGameId,
   createBracketGame,
@@ -54,17 +54,19 @@ export default async function handler(req, res) {
     const bracketId = `dev-bracket-${Date.now().toString(36)}`;
 
     const userPool = await fetchRankedUserPool(db);
-    if (userPool.length < USER_HELD_NAMES_PER_GROUP) {
+    // Floor = BOARD_DEPTH_MIN, the deepest callee precondition (CPU boards
+    // commit through buildBoardCommit, which rejects boards under 15 names).
+    if (userPool.length < TOURNAMENT_TUNING.BOARD_DEPTH_MIN) {
       return res.status(503).json({
         error: 'universe_unavailable',
-        message: `stockRankings yielded ${userPool.length} names — rankings cron may not have run.`,
+        message: `stockRankings yielded ${userPool.length} names (< ${TOURNAMENT_TUNING.BOARD_DEPTH_MIN}) — rankings cron may not have run.`,
       });
     }
 
     // Game 1: founder + 3 CPUs; every other game: 4 CPUs. CPU numbering is
     // sequential across the round (per-round uniqueness rule).
     const realIdsByGame = [[founderUserId], ...Array.from({ length: games - 1 }, () => [])];
-    const { seatsByGame, cpuNByUserId, cpuNs } = padGamesWithCpus(realIdsByGame, { startN: 1 });
+    const { seatsByGame, cpuNs } = padGamesWithCpus(realIdsByGame, { startN: 1 });
 
     const cpuAgents = await ensureCpuAgents(db, cpuNs, nowIso);
 
@@ -86,10 +88,12 @@ export default async function handler(req, res) {
       });
       await groupRef.set(groupDoc);
 
-      const groupCpuNs = Object.fromEntries(
-        Object.entries(cpuNByUserId).filter(([odUserId]) => seats.some(s => s.odUserId === odUserId))
-      );
-      await commitCpuUserBoards(db, { id: bracketGameId, ...groupDoc }, groupCpuNs, nowIso);
+      // CPU seats + numbers derive from the group doc itself (the contract
+      // flag and the one id codec) — no map to keep in sync.
+      const boards = await commitCpuUserBoards(db, { id: bracketGameId, ...groupDoc }, nowIso);
+      if (boards.failed.length > 0) {
+        return res.status(500).json({ error: 'cpu_board_commit_failed', message: `CPU boards failed for: ${boards.failed.join(', ')}` });
+      }
 
       round1Games[bracketGameId] = createBracketGame({ bracketGameId, gameIndex, groupId: bracketGameId, seats });
       groupIds.push(bracketGameId);
@@ -98,12 +102,13 @@ export default async function handler(req, res) {
     await db.collection(TOURNAMENT_BRACKETS_COLLECTION).doc(bracketId)
       .set(createBracketDoc({ bracketId, round1Games, now: nowIso }));
 
+    const cpuSeats = seatsByGame.flat().filter(s => s.isCpu).map(s => s.odUserId);
     console.log(`[Tournament] seed-tournament-bracket: ${bracketId} — ${games} game(s), ${cpuNs.length} CPU seat(s) (${cpuAgents.created.length} agent(s) created), pool ${userPool.length}`);
     return res.status(200).json({
       bracketId,
       groupIds,
       founderGroupId: groupIds[0],
-      cpuSeats: Object.keys(cpuNByUserId),
+      cpuSeats,
       cpuAgentsCreated: cpuAgents.created,
       poolSize: userPool.length,
     });

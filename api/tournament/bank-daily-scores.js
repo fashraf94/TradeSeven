@@ -22,6 +22,7 @@ import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
 import { requireAdminSecret } from '../_utils/adminSecretAuth.js';
 import { isValidForgeId } from '../_utils/idValidation.js';
 import { isTradingDay } from '../_utils/marketSchedule.js';
+import { parseSimulatedNow } from '../_utils/tournamentTime.js';
 import { getGroup } from '../_utils/tournamentGroupService.js';
 import { bankGroup } from '../_utils/tournamentBanking.js';
 import { loadAtrPercentiles } from '../_utils/tournamentUserScoring.js';
@@ -41,18 +42,21 @@ export default async function handler(req, res) {
   if (!isValidForgeId(groupId)) {
     return res.status(400).json({ error: 'invalid_group_id', message: 'groupId is malformed.' });
   }
-  let now = new Date();
-  if (simulatedNow != null) {
-    now = new Date(simulatedNow);
-    if (Number.isNaN(now.getTime())) {
-      return res.status(400).json({ error: 'invalid_simulated_now', message: 'simulatedNow must be an ISO-8601 instant.' });
-    }
+  const parsed = parseSimulatedNow(simulatedNow);
+  if (parsed.error) {
+    return res.status(400).json({ error: 'invalid_simulated_now', message: parsed.error });
   }
+  const now = parsed.now;
 
-  if (!isTradingDay() && !bypassTradingDay) {
+  // One clock for guard AND banking: the trading-day check evaluates the
+  // (possibly simulated) instant being banked, ET-shifted per the
+  // marketSchedule getETDate convention — never the real wall clock against
+  // a simulated recordedDate.
+  const etShiftedNow = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
+  if (!isTradingDay(etShiftedNow) && !bypassTradingDay) {
     return res.status(409).json({
       error: 'not_trading_day',
-      message: 'Market is closed today (weekend or holiday). Pass bypassTradingDay: true to bank anyway.',
+      message: 'Market is closed on the banked date (weekend or holiday). Pass bypassTradingDay: true to bank anyway.',
     });
   }
 
