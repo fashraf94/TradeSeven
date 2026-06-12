@@ -78,6 +78,7 @@ import {
   enrichPrescribedPortfolio,
 } from '../agent/decide.js';
 import { resolveModeConfig, FLAT6_GAME_MODE, TIERED_GAME_MODE } from '../../src/constants/agentGameModes.js';
+import { ARCHETYPE_CONFIGS, resolveHftConfig } from './agentArchetypeConfig.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
@@ -369,6 +370,61 @@ describe('P4 battery — tiered prompt text photographed verbatim', () => {
     expect(out).toContain(EVAL_SCORING_RULES_VERBATIM);
     expect(out).toContain(EVAL_TIER_IMPACT_VERBATIM);
     await expect(out).toMatchFileSnapshot('./__p4_snapshots__/buildEvalSystemPrompt.analyst.snap.txt');
+  });
+
+  it('buildEvalSystemPrompt with an explicit tiered/unknown gameMode is byte-identical to the default (invariant)', () => {
+    const def = buildEvalSystemPrompt('TestAgent', 'analyst');
+    expect(buildEvalSystemPrompt('TestAgent', 'analyst', TIERED_GAME_MODE)).toBe(def);
+    expect(buildEvalSystemPrompt('TestAgent', 'analyst', undefined)).toBe(def);
+    expect(buildEvalSystemPrompt('TestAgent', 'analyst', 'something_else')).toBe(def);
+  });
+
+  it('FLAT6 eval prompt: flat scoring framing, no tier multipliers anywhere, threshold bonuses unchanged', async () => {
+    const out = buildEvalSystemPrompt('TestAgent', 'analyst', FLAT6_GAME_MODE);
+    expect(out).toContain('Base points = (currentPrice - entryPrice) / entryPrice × 100 × 10\n'
+      + 'All positions score FLAT — tournament mode has NO tier multipliers.');
+    expect(out).toContain('5. POSITION IMPACT: All six positions carry the same flat weight');
+    // The tier-bound text must NOT leak into the flat6 variant.
+    expect(out).not.toContain('Tier multipliers: Star = 2.0x');
+    expect(out).not.toContain('TIER IMPACT AWARENESS');
+    expect(out).not.toContain('Assign to Star if ATR High/Extreme');
+    expect(out).not.toMatch(/2\.0x multiplier|1\.5x multiplier|Support tier \(1\.0x/);
+    // Threshold economics are mode-independent (never tier-scaled — verified).
+    expect(out).toContain('+1.0x ATR → BaggerBomb: +15 pts');
+    expect(out).toContain('-2.0x ATR → Meltdown: -35 pts');
+    await expect(out).toMatchFileSnapshot('./__p4_snapshots__/buildEvalSystemPrompt.flat6.analyst.snap.txt');
+  });
+});
+
+// ==================== 4b. hftConfig mode resolution — Gate-1 fixtures (P4 §9) ====================
+
+describe('P4 — resolveHftConfig (founder-signed zero-delta table) + Gate-1 differentiation', () => {
+  it('every archetype resolves the SAME knobs in both modes (zero deltas, by reference)', () => {
+    for (const [, cfg] of Object.entries(ARCHETYPE_CONFIGS)) {
+      expect(resolveHftConfig(cfg, TIERED_GAME_MODE)).toBe(cfg.hftConfig);
+      expect(resolveHftConfig(cfg, FLAT6_GAME_MODE)).toBe(cfg.hftConfig);
+    }
+  });
+
+  it('archetype differentiation persists under flat6 (the original Gate-1 spirit)', () => {
+    const degen = resolveHftConfig(ARCHETYPE_CONFIGS.degen, FLAT6_GAME_MODE);
+    const guardian = resolveHftConfig(ARCHETYPE_CONFIGS.guardian, FLAT6_GAME_MODE);
+    expect(degen.forcedRotation.enabled).toBe(true);
+    expect(guardian.forcedRotation.enabled).toBe(false);
+    expect(degen.swapWindow.capPerWindow).toBe(12);
+    expect(guardian.swapWindow.capPerWindow).toBe(2);
+    expect(degen.hurdleFloor.default.atrMultiplier).toBe(0.2);
+    expect(guardian.hurdleFloor.default.atrMultiplier).toBe(0.5);
+  });
+
+  it('a future per-mode override would be honored (the calibration hook), without one the base config rules', () => {
+    const hypothetical = {
+      hftConfig: { swapWindow: { capPerWindow: 4 } },
+      hftConfigByMode: { [FLAT6_GAME_MODE]: { swapWindow: { capPerWindow: 3 } } },
+    };
+    expect(resolveHftConfig(hypothetical, FLAT6_GAME_MODE).swapWindow.capPerWindow).toBe(3);
+    expect(resolveHftConfig(hypothetical, TIERED_GAME_MODE).swapWindow.capPerWindow).toBe(4);
+    expect(resolveHftConfig(null, FLAT6_GAME_MODE)).toBeNull();
   });
 });
 

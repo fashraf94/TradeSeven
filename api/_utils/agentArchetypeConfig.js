@@ -207,6 +207,18 @@ export const getArchetypeConfig = (archetype) => {
   return ARCHETYPE_CONFIGS[archetype] || ARCHETYPE_CONFIGS.analyst;
 };
 
+/**
+ * P4 — hftConfig mode-awareness (Fence-Edit Map §5E; founder-signed
+ * calibration table, June 12, 2026: ZERO deltas at launch). An archetype MAY
+ * carry per-mode overrides under `hftConfigByMode[gameMode]`; none do today,
+ * so every mode resolves to the archetype-locked `hftConfig` — tiered
+ * behavior untouched by construction, and any future flat6 recalibration is
+ * a config entry here, never code.
+ */
+export const resolveHftConfig = (archetypeConfig, gameMode) => {
+  return archetypeConfig?.hftConfigByMode?.[gameMode] ?? archetypeConfig?.hftConfig ?? null;
+};
+
 // User-facing display label for an archetype, for API-side prompts/logs.
 // Mirrors the frontend resolver in src/data/archetypeDisplay.js.
 //   - known code-id      → its .label

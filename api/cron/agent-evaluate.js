@@ -47,7 +47,7 @@ import { applyGuardrails } from '../_utils/agentGuardrails.js';
 import { classifyStockRegime, classifyMarketPosture, getPresetAdjustedStrategies } from '../_utils/agentRegimeClassifier.js';
 import { evaluateRisk, calculate5minSMA20, pickEmergencyReplacement, pickSwapReplacementCandidate, updateStagnationCounter, findPortfolioSlot, clearsHurdleFloor, getRecentSwapCount, EMERGENCY_BYPASS_REASONS, buildSwapReceiptSource } from '../_utils/agentRiskManager.js';
 import { getPresetConfig } from '../_utils/agentPresetConfig.js';
-import { getArchetypeConfig } from '../_utils/agentArchetypeConfig.js';
+import { getArchetypeConfig, resolveHftConfig } from '../_utils/agentArchetypeConfig.js';
 import { finalizeCronState } from '../_utils/agentCronState.js';
 import { classifyHaikuFailure, shouldStartHaikuCall, nextConsecutiveEvalFailures, HAIKU_CALL_CEILING_MS } from '../_utils/agentEvalTransport.js';
 import { logBattlePattern } from '../_utils/battlePatternLogger.js';
@@ -887,12 +887,21 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
     // Decision 19). Passed into evaluateRisk so Knob A/B (Phase 3/4) read
     // archetypeConfig.hftConfig regardless of the user-toggleable strategyPreset
     // (Decision 2); base levers continue to come from presetConfig.risk.
-    const archetypeConfig = getArchetypeConfig(ctx.archetype);
+    const baseArchetypeConfig = getArchetypeConfig(ctx.archetype);
+    // P4: mode-aware knob resolution (Fence-Edit Map §5E). The founder-signed
+    // calibration table is ZERO-delta, so this resolves to the identical
+    // hftConfig object for every mode today — the hook exists so any future
+    // flat6 recalibration is a config entry, never code. Downstream code uses
+    // the mode-resolved view.
+    const archetypeConfig = {
+      ...baseArchetypeConfig,
+      hftConfig: resolveHftConfig(baseArchetypeConfig, battle.gameMode),
+    };
     // Gate 1 — archetype-distribution + behavioral-differentiation probe. Surfaces
     // the live archetype mix and confirms non-analyst archetypes resolve to
     // differentiated knobs (e.g. degen forcedRotation on / cap 12 vs guardian off
     // / cap 2). Also closes Gate 0c's live-distribution question via logs.
-    console.log(`${LOG_PREFIX} [Gate1] battle=${battle.id} archetype=${ctx.archetype || 'unknown'} resolved=${archetypeConfig.label} forcedRotation=${archetypeConfig.hftConfig?.forcedRotation?.enabled ? 'on' : 'off'} swapCap=${archetypeConfig.hftConfig?.swapWindow?.capPerWindow}`);
+    console.log(`${LOG_PREFIX} [Gate1] battle=${battle.id} mode=${battle.gameMode || 'baggerbomb_agent'} archetype=${ctx.archetype || 'unknown'} resolved=${archetypeConfig.label} forcedRotation=${archetypeConfig.hftConfig?.forcedRotation?.enabled ? 'on' : 'off'} swapCap=${archetypeConfig.hftConfig?.swapWindow?.capPerWindow}`);
 
     for (const score of assetScores) {
       const asset = flatPortfolio.find(a => a.symbol === score.symbol);
@@ -1332,7 +1341,7 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
           model: 'claude-haiku-4-5-20251001',
           max_tokens: 1024,
           temperature: 0.4,
-          system: buildEvalSystemPrompt(agentName, archetype),
+          system: buildEvalSystemPrompt(agentName, archetype, battle.gameMode),
           messages: [
             { role: 'user', content: buildAgentIdentityBlock(battle) },
             { role: 'assistant', content: 'I understand my identity and strategic context. Show me the live battle state.' },
