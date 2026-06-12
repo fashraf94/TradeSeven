@@ -2,6 +2,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { FieldValue } from 'firebase-admin/firestore';
 import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
 import { applySecurityMiddleware } from '../_utils/security.js';
+import { requireAuth } from '../_utils/authMiddleware.js';
 import { STRATEGY_TOOL, PORTFOLIO_TOOL } from '../_utils/agentToolSchema.js';
 import { CRYPTO_ASSETS, VALID_CRYPTO_SYMBOLS, getCryptoBySymbol } from '../_utils/agentCryptoAssets.js';
 import {
@@ -37,6 +38,31 @@ import { FLAT6_GAME_MODE, resolveModeConfig } from '../../src/constants/agentGam
 // Vercel Pro timeout — two-call AI chain needs breathing room
 export const config = { maxDuration: 60 };
 
+// ── P4 contract #3: deploy auth (Spec §0.3) ─────────────────────────────────
+
+// Tournament intake fields are INTERNAL-ONLY: a client caller presenting any
+// of them is refused before authentication (prescribed deploys come from the
+// orchestrator with CRON_SECRET, never from browsers).
+export const TOURNAMENT_ONLY_FIELDS = Object.freeze([
+  'ownerOdUserId',
+  'gameMode',
+  'groupId',
+  'prescribedPortfolio',
+  'isCpu',
+  'userPicksStance',
+  'doubleDownSymbols',
+  'userPicks',
+]);
+
+/**
+ * Internal-caller classification: `Authorization: Bearer CRON_SECRET` (the
+ * claims-cron pattern of record). An unset secret can never classify anyone
+ * as internal.
+ */
+export function isInternalDeployCaller(headers, cronSecret = process.env.CRON_SECRET) {
+  return Boolean(cronSecret) && headers?.authorization === `Bearer ${cronSecret}`;
+}
+
 // Lazy singleton Anthropic client
 let anthropicClient = null;
 function getAnthropicClient() {
@@ -47,8 +73,14 @@ function getAnthropicClient() {
 }
 
 export default async function handler(req, res) {
+  // P4 contract #3: classify the caller BEFORE the middleware so internal
+  // orchestrator calls are rate-limit exempt (the 3/min/IP limit would cap
+  // the morning fan-out at ~3 deploys/min). Everything else about the
+  // middleware is unchanged for client callers.
+  const isInternalCaller = isInternalDeployCaller(req.headers);
+
   // 1. Security + method check
-  if (applySecurityMiddleware(req, res, { rateLimit: { limit: 3, windowMs: 60000 } })) {
+  if (applySecurityMiddleware(req, res, { rateLimit: { limit: 3, windowMs: 60000 }, skipRateLimit: isInternalCaller })) {
     return;
   }
   if (req.method !== 'POST') {
@@ -64,6 +96,23 @@ export default async function handler(req, res) {
   const anthropic = getAnthropicClient();
 
   try {
+    // P4 contract #3 — deploy auth (Spec §0.3), enforced before any read or
+    // state change. Client callers: Firebase ID token + ownership; tournament
+    // intake fields refused. Internal callers: CRON_SECRET already verified;
+    // ownership asserted against the explicit ownerOdUserId below.
+    let clientUser = null;
+    if (!isInternalCaller) {
+      const offending = TOURNAMENT_ONLY_FIELDS.filter((f) => req.body[f] !== undefined);
+      if (offending.length > 0) {
+        return res.status(403).json({
+          error: 'internal_only_fields',
+          message: `Internal-caller credentials required for: ${offending.join(', ')}`,
+        });
+      }
+      clientUser = await requireAuth(req, res);
+      if (!clientUser) return; // 401 already sent
+    }
+
     // 2. Idempotency guard — prevent double-deploy
     const agentRef = db.collection('agents').doc(agentId);
     const agentDoc = await agentRef.get();
@@ -72,6 +121,22 @@ export default async function handler(req, res) {
     }
 
     const agent = { id: agentDoc.id, ...agentDoc.data() };
+
+    // P4 contract #3 — the ownership assertion, both caller classes. The
+    // orchestrator must never deploy an agent into the wrong seat (this
+    // defends against its own bugs, not just outsiders); a client may only
+    // deploy their own agent.
+    if (isInternalCaller) {
+      const { ownerOdUserId } = req.body;
+      if (typeof ownerOdUserId !== 'string' || ownerOdUserId.length === 0) {
+        return res.status(400).json({ error: 'ownerOdUserId required for internal deploys' });
+      }
+      if (agent.ownerId !== ownerOdUserId) {
+        return res.status(403).json({ error: 'ownership_mismatch', message: 'agent.ownerId does not match ownerOdUserId' });
+      }
+    } else if (agent.ownerId !== clientUser.uid) {
+      return res.status(403).json({ error: 'ownership_mismatch', message: 'You can only deploy your own agent' });
+    }
 
     // Check for in-progress deploy (lock)
     if (agent.deployingAt) {

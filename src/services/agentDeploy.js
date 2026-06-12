@@ -9,13 +9,23 @@
 // This does NOT modify decide.js or createAgentBattle — it only calls them.
 // UI state (a `deploying` flag) stays with each caller.
 
+import { getIdToken } from '../firebase/authService';
+
 export async function deployAgent(agentId, onCreateAgentBattle) {
   if (!agentId) return { success: false, error: 'no-agent' };
+
+  // P4 contract #3: the deploy endpoint now authenticates client callers
+  // (Firebase ID token + ownership). Same pattern as fetchWithAuth.
+  const token = await getIdToken();
+  if (!token) {
+    console.error('[Deploy] No auth token — sign in required to deploy');
+    return { success: false, error: 'auth-required' };
+  }
 
   // Step 1: generate the portfolio via the AI decision endpoint.
   const response = await fetch('/api/agent/decide', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
     body: JSON.stringify({ agentId }),
   });
   const data = await response.json();
