@@ -23,7 +23,7 @@
 // component is read-only by construction — playback never writes.
 
 import React, { useEffect, useMemo, useReducer, useState } from 'react';
-import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
+import { motion, useReducedMotion } from 'framer-motion';
 import { Play, Pause, FastForward, Swords, Bot, Zap } from 'lucide-react';
 import { useTheme } from '../../contexts/ThemeContext';
 import { HOLO_SWEEP } from '../../constants/animationTokens';
@@ -42,12 +42,6 @@ import {
 import { TOURNAMENT_TUNING } from '../../constants/leagueTournament';
 
 const PACE_MS = TOURNAMENT_TUNING.PLAYBACK_MS_PER_PICK;
-
-function archetypeLabel(archetype) {
-  return typeof archetype === 'string'
-    ? archetype.replace(/_/g, ' ').replace(/^./, c => c.toUpperCase())
-    : null;
-}
 
 export default function DraftPlaybackTheater({ groupId, group, uid, onDone }) {
   const { tokens } = useTheme();
@@ -355,7 +349,7 @@ function EndCard({ tokens, timeline, uid, seatLabel, actorLabel, onDone, onRepla
       {timeline.hasAgentAct && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
           <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.12em', color: tokens.purpleText, textTransform: 'uppercase' }}>Agent layer — 6 picks each · ⚡ double-down</div>
-          {[...agentRosters.entries()].map(([agentId, picks]) => rosterRow(actorLabel(picks[0]), picks, picks[0].odUserId === uid))}
+          {[...agentRosters.values()].map(picks => rosterRow(actorLabel(picks[0]), picks, picks[0].odUserId === uid))}
         </div>
       )}
       <div style={{ display: 'flex', gap: 8 }}>

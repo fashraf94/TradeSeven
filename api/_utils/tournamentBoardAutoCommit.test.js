@@ -18,6 +18,9 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const TEST_DIR = path.dirname(fileURLToPath(import.meta.url));
 import {
   AUTO_COMMIT_FEED_TYPE,
   deriveServerBoardPrefill,
@@ -183,14 +186,14 @@ describe('deriveServerBoardPrefill — the client derivation\'s Admin-SDK twin',
 
   it('STATIC WIRING GUARD: the client service routes through the same composeBoardPrefill core', () => {
     const clientSource = fs.readFileSync(
-      path.resolve(__dirname, '../../src/services/tournamentGroupService.js'), 'utf8'
+      path.resolve(TEST_DIR, '../../src/services/tournamentGroupService.js'), 'utf8'
     );
     expect(clientSource).toContain("from '../utils/boardPrefillCore'");
     expect(clientSource).toContain('composeBoardPrefill({');
     // The editor passes the pool into the derivation (the ∩ pool step moved
     // into the core — no consumer-side re-filter to fork).
     const editorSource = fs.readFileSync(
-      path.resolve(__dirname, '../../src/components/Tournament/BoardEditor.jsx'), 'utf8'
+      path.resolve(TEST_DIR, '../../src/components/Tournament/BoardEditor.jsx'), 'utf8'
     );
     expect(editorSource).toContain('assembleBoardPrefill(uid, { userPool })');
   });
