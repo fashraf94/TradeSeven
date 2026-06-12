@@ -155,11 +155,23 @@ const clamp = (n, lo, hi) => Math.min(Math.max(n, lo), hi);
  * Pure reducer. Actions: PLAY (replays from the start when ended), PAUSE,
  * TICK (the pacing timer's beat — reveals one pick, ends at the boundary),
  * SCRUB {index} (clamps and PAUSES — direct manipulation owns the clock),
- * SKIP_END, RESET.
+ * SKIP_END, RESET, SEED {totalPicks} (a late-arriving or growing stream —
+ * live Monday — re-seats the machine without losing the viewer's place; a
+ * viewer parked at the old end stays paused there as the show grows).
  */
 export function playbackReducer(state, action) {
   const { totalPicks } = state;
   switch (action?.type) {
+    case 'SEED': {
+      const total = Number.isInteger(action.totalPicks) && action.totalPicks > 0 ? action.totalPicks : 0;
+      if (total === totalPicks) return state;
+      if (total === 0) return createPlaybackState(0);
+      const index = clamp(state.index, 0, total);
+      const status = state.status === PLAYBACK_STATUS.PLAYING
+        ? PLAYBACK_STATUS.PLAYING
+        : index >= total ? PLAYBACK_STATUS.ENDED : PLAYBACK_STATUS.PAUSED;
+      return { status, index, totalPicks: total };
+    }
     case 'PLAY': {
       if (totalPicks === 0) return state;
       if (state.status === PLAYBACK_STATUS.ENDED || state.index >= totalPicks) {

@@ -185,4 +185,23 @@ describe('playbackReducer — the theater state machine', () => {
     expect(playbackReducer(empty, { type: 'PLAY' })).toEqual(empty);
     expect(playbackReducer(empty, { type: 'SCRUB', index: 3 })).toEqual(empty);
   });
+
+  it('SEED re-seats a machine born before the streams arrived (async reads)', () => {
+    const empty = createPlaybackState(0);
+    const seeded = playbackReducer(empty, { type: 'SEED', totalPicks: 12 });
+    expect(seeded).toEqual({ status: PLAYBACK_STATUS.PAUSED, index: 0, totalPicks: 12 });
+  });
+
+  it('SEED on a growing live stream keeps the viewer\'s place; a parked viewer un-ends', () => {
+    // Mid-show: place preserved, playback continues.
+    const midShow = { status: PLAYBACK_STATUS.PLAYING, index: 5, totalPicks: 12 };
+    expect(playbackReducer(midShow, { type: 'SEED', totalPicks: 36 }))
+      .toEqual({ status: PLAYBACK_STATUS.PLAYING, index: 5, totalPicks: 36 });
+    // Parked at the old end: the show grew, so ended becomes paused-there.
+    const parked = { status: PLAYBACK_STATUS.ENDED, index: 12, totalPicks: 12 };
+    expect(playbackReducer(parked, { type: 'SEED', totalPicks: 36 }))
+      .toEqual({ status: PLAYBACK_STATUS.PAUSED, index: 12, totalPicks: 36 });
+    // Same size: identity (no spurious re-renders).
+    expect(playbackReducer(midShow, { type: 'SEED', totalPicks: 12 })).toBe(midShow);
+  });
 });

@@ -92,6 +92,7 @@ import React, { useEffect, useState } from 'react';
 import { useTheme } from '../contexts/ThemeContext';
 import { useUser } from '../contexts/UserContext';
 import BoardEditor from '../components/Tournament/BoardEditor';
+import DraftPlaybackTheater from '../components/Tournament/DraftPlaybackTheater';
 import {
   subscribeGroup,
   subscribeClaims,
@@ -879,6 +880,16 @@ export default function TournamentDevScreen() {
                 )}
               </div>
             ))}
+          </div>
+        )}
+
+        {/* P5 — the playback theater on the dev group's REAL streams (the
+            smoke driver; the League tab is the flagged destination). Both
+            acts at the tuning-ledger 5s/pick clock, play/pause/scrub. */}
+        {group && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <div style={{ fontWeight: 700, fontSize: 14, color: tokens.textPrimary }}>Playback theater (P5)</div>
+            <DraftPlaybackTheater key={`theater-${group.id}`} groupId={group.id} group={group} uid={uid} />
           </div>
         )}
 
