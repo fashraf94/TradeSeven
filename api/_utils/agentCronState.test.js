@@ -122,3 +122,17 @@ describe('finalizeCronState — Phase 3 stagnation state (§4.2)', () => {
     expect(u).not.toHaveProperty('cronState.withinAge');
   });
 });
+
+describe('finalizeCronState — VWAP Floor B6 vwapFireGuard', () => {
+  const GUARD = { date: '2026-06-12', count: 3 };
+
+  it('persists the cascade-guard fire counter', () => {
+    const u = finalizeCronState({}, { vwapTicks: VWAP, intradayMomentum: MOM, vwapFireGuard: GUARD });
+    expect(u['cronState.vwapFireGuard']).toBe(GUARD);
+  });
+
+  it('stamps undefined when omitted (back-compat with older callers)', () => {
+    const u = finalizeCronState({}, { vwapTicks: VWAP, intradayMomentum: MOM });
+    expect(u['cronState.vwapFireGuard']).toBeUndefined();
+  });
+});

@@ -521,13 +521,16 @@ describe('agent-evaluate cron — P2 tournament ledger wiring (agent-market excl
     expect(source).toMatch(/for \(const heldSymbol of tournamentCtx\.heldByOthers\) heldSymbols\.add\(heldSymbol\);/);
   });
 
-  it('the emptied-pool emergency skip emits the designed feed event (never a silent log), tournament-only', () => {
+  it('the emptied-pool emergency skip emits the designed feed event (never a silent log), on BOTH battle kinds', () => {
     const skipBlock = source.match(/if \(!replacement\) \{[\s\S]+?\n {6}\}/)?.[0] || '';
     expect(skipBlock).toContain('buildPoolEmptyFeedEntry({');
     expect(skipBlock).toContain('if (tournamentCtx)');
     expect(skipBlock).toMatch(/Wanted out of/);
-    // The event shape lives in ONE builder (it cannot drift between its
-    // two risk-loop sites).
+    // [VWAP Floor B7] Regular battles get their own beat in the else branch.
+    expect(skipBlock).toMatch(/\} else \{[\s\S]*?action: 'pool_empty'/);
+    expect(skipBlock).toMatch(/\} else \{[\s\S]*?source: 'risk_manager'/);
+    // The tournament event shape lives in ONE builder (it cannot drift
+    // between its two risk-loop sites).
     const builder = source.match(/function buildPoolEmptyFeedEntry\([\s\S]+?\n\}/)?.[0] || '';
     expect(builder).toContain("action: 'tournament_pool_empty'");
     expect(builder).toContain("source: 'tournament_ledger'");
@@ -582,5 +585,72 @@ describe('agent-evaluate cron — P2 tournament ledger wiring (agent-market excl
     };
     walk(apiRoot);
     expect(offenders).toEqual([]);
+  });
+});
+
+// VWAP Floor Semantics V1 — write-side wiring guards. Same static-source
+// rationale as the Knob A/B blocks above: the behavioral load is carried by
+// the pure-helper tests in agentVwapFloor.test.js (+ the fenced-change tests
+// in agentRiskManager/agentSwapExecution.test.js and the June-11 replay in
+// agentVwapFloor.replay.test.js); these guard the cron wiring.
+describe('agent-evaluate cron — VWAP floor wiring (A1/B1/B6)', () => {
+  const source = readFileSync(SOURCE_PATH, 'utf-8');
+
+  it('A1: the freshness gate wraps the momentumData.vwap assignment (stale/thin sessions publish nothing)', () => {
+    expect(source).toMatch(/if \(vwapResult && isVwapSessionUsable\(\{ sessionDate, todayET, sessionCandleCount: sessionCandles\.length \}\)\) \{\s*\n\s*const sma20_5m = calculate5minSMA20\(candles\);\s*\n\s*momentumData\.vwap\[symbol\] = \{ \.\.\.vwapResult, sma20_5m, sessionDate \};/);
+  });
+
+  it('A2: the tick counter strikes via the dead-band predicate, preset-driven', () => {
+    expect(source).toMatch(/if \(vwapInfo && isVwapStrike\(vwapInfo\.vwapDeviation, presetConfig\.risk\.vwapDeadBandPct \?\? 0\.5\)\)/);
+  });
+
+  it('B1: all four counter maps are pruned to held symbols after seeding, before the risk loop', () => {
+    const seedIdx = source.indexOf('const lastTickTimestamp = { ...(battle.cronState?.lastTickTimestamp || {}) }');
+    const pruneIdx = source.indexOf('pruneCounterMaps([vwapTicks, stagnationTicks, lastTickPrice, lastTickTimestamp], new Set(portfolioSymbols))');
+    // the counter-update site inside the risk evaluation loop (the earlier
+    // thresholdHistory loop also iterates assetScores — anchor past it)
+    const riskLoopIdx = source.indexOf('const vwapInfo = momentumData.vwap[score.symbol]');
+    expect(seedIdx).toBeGreaterThan(-1);
+    expect(pruneIdx).toBeGreaterThan(seedIdx);
+    expect(riskLoopIdx).toBeGreaterThan(pruneIdx);
+  });
+
+  it('B1b: both LIVE swap sites reset the incoming symbol in-memory counters', () => {
+    expect(source).toMatch(/vwapTicks\[replacement\.symbol\] = 0;\s*\n\s*stagnationTicks\[replacement\.symbol\] = 0;/);
+    expect(source).toMatch(/vwapTicks\[haikuInSymbol\] = 0;\s*\n\s*stagnationTicks\[haikuInSymbol\] = 0;/);
+  });
+
+  it('B3: synthetic hotBench entries exclude actively-held symbols', () => {
+    expect(source).toMatch(/&& !activePortfolioSet\.has\(stock\.symbol\)/);
+  });
+
+  it('B6: the guard is seeded from cronState with ET rollover and carried by all 5 finalize sites', () => {
+    expect(source).toMatch(/const vwapFireGuard = seedVwapFireGuard\(battle\.cronState\?\.vwapFireGuard, todayET\)/);
+    const withGuard = source.match(/finalizeCronState\([^;]*?vwapFireGuard \}\)/g) || [];
+    expect(withGuard.length).toBe(5);
+  });
+
+  it('B6: only vwap_failure fires are counted, live within the tick', () => {
+    expect(source).toMatch(/if \(riskResult\.reason === 'vwap_failure'\) vwapFireGuard\.count\+\+;/);
+  });
+
+  it('B6: the gating block sits between candidate/slot resolution and the reserve, fail-closed via the memoized qualifier', () => {
+    const gateIdx = source.indexOf("riskResult.reason === 'vwap_failure' && vwapFireGuard.count >= VWAP_CASCADE_GUARD_N");
+    const reserveIdx = source.indexOf('const reservation = await reserveTournamentSymbolIn(db, tournamentCtx, battle, replacement.symbol)');
+    expect(gateIdx).toBeGreaterThan(-1);
+    expect(reserveIdx).toBeGreaterThan(gateIdx);
+    const gateBlock = source.slice(gateIdx, reserveIdx);
+    expect(gateBlock).toContain('await qualifyCascadeReplacement(replacement.symbol');
+    expect(gateBlock).toContain("action: 'cascade_guard_hold'");
+    expect(gateBlock).toContain('continue;');
+    // the qualifier itself fails closed and is memoized + time-bounded
+    const qualifier = source.match(/async function qualifyCascadeReplacement\([\s\S]+?\n\}/)?.[0] || '';
+    expect(qualifier).toContain('memo.has(symbol)');
+    expect(qualifier).toContain('CASCADE_QUALIFY_TIMEOUT_MS');
+    expect(qualifier).toContain('qualified = false');
+  });
+
+  it('B7: the risk-loop catch pushes a feed beat (throwing candidates are never silent)', () => {
+    expect(source).toMatch(/Risk swap failed for[\s\S]{0,800}?action: 'risk_swap_failed'/);
   });
 });

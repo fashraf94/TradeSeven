@@ -345,9 +345,10 @@ describe('Gate 6 · §6.2 Knob A × B — a stagnation rotation whose only candi
     expect(r?.symbol).toBe('AAA');
   });
 
-  it('emergency swaps do NOT go through the Knob-B veto path (they use the quality-blind picker) — contract reminder', () => {
+  it('emergency swaps do NOT go through the Knob-B veto path (no quality predicate) — contract reminder', () => {
     // This documents the Invariant-1 boundary: only the stagnation candidate source
-    // is quality-gated; bust/vwap/trail use pickEmergencyReplacement (no floor).
+    // is quality-gated; bust/vwap/trail route through pickSwapReplacementCandidate
+    // WITHOUT clearsQuality (held/self exclusion only — VWAP Floor B2).
     expect(EMERGENCY_BYPASS_REASONS.has('vwap_failure')).toBe(true);
     expect(EMERGENCY_BYPASS_REASONS.has('stagnation')).toBe(false);
   });

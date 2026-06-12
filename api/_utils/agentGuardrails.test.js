@@ -363,3 +363,48 @@ describe('applyGuardrails — profitTarget (soft)', () => {
     expect(result.overrides.filter(o => o.type === 'profitTarget')).toEqual([]);
   });
 });
+
+// ==================== VWAP FLOOR B2 — FORCED-EXIT HELD/SELF EXCLUSION ====================
+// June 11: the forced-exit path used the quality-blind picker, which could
+// return a symbol already occupying another slot (PANW triple-slot shape).
+// The reroute through pickSwapReplacementCandidate must exclude held symbols.
+
+describe('applyGuardrails — VWAP Floor B2 forced-exit held/self exclusion', () => {
+  const MSFT_BENCH = { symbol: 'MSFT', name: 'Microsoft', baseATR: 2.0, isCrypto: false, sector: 'Technology' };
+
+  it('skips a bench candidate that already occupies another active slot', () => {
+    const battle = makeBattle({
+      star: [NVDA_POSITION],
+      core: [{ ...AMD_BENCH, swapPrice: 100 }], // AMD is HELD in core
+      bench: { stocks: [AMD_BENCH, MSFT_BENCH], crypto: null }, // stale bench duplicate
+    });
+    const result = applyGuardrails({
+      haikuResult: { decision: 'HOLD' },
+      guardrails: [{ type: 'stopLoss', value: 8, unit: '%', enforcement: 'hard' }],
+      battle,
+      // AMD has the better momentum — without the exclusion it would win.
+      prices: { NVDA: { current: 90 }, AMD: { current: 110, changePercent: 5 }, MSFT: { current: 105, changePercent: 1 } },
+    });
+    expect(result.decision).toBe('SWAP');
+    expect(result.symbolOut).toBe('NVDA');
+    expect(result.symbolIn).toBe('MSFT'); // AMD excluded as held
+  });
+
+  it('defers the forced exit when every bench candidate is held (no self/dup swap)', () => {
+    const battle = makeBattle({
+      star: [NVDA_POSITION],
+      core: [{ ...AMD_BENCH, swapPrice: 100 }],
+      bench: { stocks: [AMD_BENCH, { ...NVDA_POSITION }], crypto: null }, // only held symbols on bench
+    });
+    const result = applyGuardrails({
+      haikuResult: { decision: 'HOLD' },
+      guardrails: [{ type: 'stopLoss', value: 8, unit: '%', enforcement: 'hard' }],
+      battle,
+      prices: { NVDA: { current: 90 }, AMD: { current: 110, changePercent: 5 } },
+    });
+    expect(result.decision).toBe('HOLD');
+    const deferred = result.overrides.find(o => o.action === 'forced_exit_no_bench');
+    expect(deferred).toBeTruthy();
+    expect(deferred.symbol).toBe('NVDA');
+  });
+});
