@@ -3,14 +3,23 @@
 // P1a — pre-committed draft board editor (Spec §1.5 / V2.1 §3). Built on the
 // Forge watchlist-editor bones (TickerSearchAdd for adds) plus the ranking
 // affordance the legacy editor doesn't have (up/down reorder). Prefill is the
-// player's equipped-watchlist names + latest scout alerts (founder-confirmed
-// June 11, 2026), freely editable; the as-suggested snapshot rides along to
-// the commit endpoint, which computes and stores the rider-#1 delta
-// server-side. All writes go through POST /api/tournament/commit-board — the
-// tournamentGroups rules are client-read-only.
+// player's equipped-watchlist names + latest scout alerts ∩ the group pool
+// (the shared core — src/utils/boardPrefillCore.js), freely editable; the
+// as-suggested snapshot rides along to the commit endpoint, which computes
+// and stores the rider-#1 delta server-side. All writes go through POST
+// /api/tournament/commit-board — the tournamentGroups rules are
+// client-read-only.
+//
+// P5 — the editor graduates into the real user flow (ratified proposal C):
+// a lock-semantics CONFIRMATION sheet gates every commit (the board is
+// binding at Monday's draft; revisable until the draft runs), and re-commit
+// seeding (`initialBoard`/`initialPrefill`) lets the committed-state surface
+// reopen the editor from the committed board while carrying the ORIGINAL
+// prefill snapshot forward — the rider delta keeps measuring against what
+// was suggested, not against the previous commit.
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowUp, ArrowDown, X, ClipboardCheck } from 'lucide-react';
+import { ArrowUp, ArrowDown, X, ClipboardCheck, ShieldCheck } from 'lucide-react';
 import { useTheme } from '../../contexts/ThemeContext';
 import TickerSearchAdd from '../Forge/Watchlist/TickerSearchAdd';
 import { fetchWithAuth } from '../../utils/fetchWithAuth';
@@ -19,15 +28,16 @@ import { TOURNAMENT_TUNING, GROUP_STATUS } from '../../constants/leagueTournamen
 
 const { BOARD_DEPTH_MIN, BOARD_DEPTH_MAX } = TOURNAMENT_TUNING;
 
-export default function BoardEditor({ groupId, group, uid, onCommitted }) {
+export default function BoardEditor({ groupId, group, uid, onCommitted, initialBoard = null, initialPrefill = null }) {
   const { tokens } = useTheme();
-  const [board, setBoard] = useState([]);
-  const [prefill, setPrefill] = useState([]);
-  const [loadingPrefill, setLoadingPrefill] = useState(true);
+  const [board, setBoard] = useState(initialBoard ?? []);
+  const [prefill, setPrefill] = useState(initialPrefill ?? []);
+  const [loadingPrefill, setLoadingPrefill] = useState(initialBoard == null);
   const [committing, setCommitting] = useState(false);
   const [committed, setCommitted] = useState(null);
+  const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState(null);
-  const seededRef = useRef(false);
+  const seededRef = useRef(initialBoard != null);
 
   const poolSet = useMemo(() => new Set(group?.userPool || []), [group]);
   const isForming = group?.status === GROUP_STATUS.FORMING;
@@ -38,7 +48,8 @@ export default function BoardEditor({ groupId, group, uid, onCommitted }) {
   // server auto-commit twin derives the identical suggestion. Deps are the
   // stable group id, not the group object: live subscription updates to the
   // same group must neither cancel an in-flight prefill nor clobber the
-  // user's edits with a re-seed.
+  // user's edits with a re-seed. Re-commit callers seed via initialBoard/
+  // initialPrefill instead and skip the derivation entirely.
   useEffect(() => {
     if (seededRef.current || !group || !uid) return undefined;
     seededRef.current = true;
@@ -82,6 +93,7 @@ export default function BoardEditor({ groupId, group, uid, onCommitted }) {
   }
 
   async function commit() {
+    setConfirming(false);
     setCommitting(true);
     setError(null);
     try {
@@ -124,7 +136,7 @@ export default function BoardEditor({ groupId, group, uid, onCommitted }) {
     <div style={{ ...card, display: 'flex', flexDirection: 'column', gap: 12 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
         <div style={{ fontWeight: 700, color: tokens.textPrimary }}>Your draft board</div>
-        <div style={{ fontSize: 12, color: depthOk ? tokens.textMuted : '#f59e0b' }}>
+        <div style={{ fontSize: 12, color: depthOk ? tokens.textMuted : tokens.amber }}>
           {board.length} ranked · needs {BOARD_DEPTH_MIN}–{BOARD_DEPTH_MAX}
         </div>
       </div>
@@ -164,7 +176,7 @@ export default function BoardEditor({ groupId, group, uid, onCommitted }) {
             <button style={iconBtn} onClick={() => move(i, +1)} disabled={i === board.length - 1} aria-label={`Move ${symbol} down`}>
               <ArrowDown size={14} />
             </button>
-            <button style={{ ...iconBtn, color: '#ef4444' }} onClick={() => remove(i)} aria-label={`Remove ${symbol}`}>
+            <button style={{ ...iconBtn, color: tokens.red }} onClick={() => remove(i)} aria-label={`Remove ${symbol}`}>
               <X size={14} />
             </button>
           </li>
@@ -178,30 +190,61 @@ export default function BoardEditor({ groupId, group, uid, onCommitted }) {
         onAdd={add}
       />
 
-      {error && <div style={{ fontSize: 12, color: '#ef4444' }}>{error}</div>}
+      {error && <div style={{ fontSize: 12, color: tokens.red }}>{error}</div>}
 
       {committed ? (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: '#10b981' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: tokens.emerald }}>
           <ClipboardCheck size={15} />
           Board committed {committed.committedAt} — re-commit while the group is forming to revise.
         </div>
       ) : null}
 
-      <button
-        onClick={commit}
-        disabled={!canCommit}
-        style={{
-          padding: '10px 14px',
-          borderRadius: 8,
-          border: 'none',
-          fontWeight: 700,
-          cursor: canCommit ? 'pointer' : 'not-allowed',
-          background: canCommit ? '#10b981' : tokens.borderInput,
-          color: canCommit ? '#06281e' : tokens.textMuted,
-        }}
-      >
-        {committing ? 'Committing…' : committed ? 'Re-commit board' : 'Commit board'}
-      </button>
+      {confirming ? (
+        // The lock-semantics confirmation (ratified proposal C): honest about
+        // what committing means before the rider-#1 write happens.
+        <div style={{
+          display: 'flex', flexDirection: 'column', gap: 10, padding: 12, borderRadius: 8,
+          background: tokens.bgApp, border: `1px solid ${tokens.borderPurple}`,
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700, fontSize: 13, color: tokens.textPrimary }}>
+            <ShieldCheck size={15} color={tokens.purpleText} /> Your board is binding at Monday's draft
+          </div>
+          <div style={{ fontSize: 12, color: tokens.textMuted, lineHeight: 1.5 }}>
+            Each turn, you automatically take your highest-ranked name still available — rank order is
+            everything. You can revise and re-commit any time until the draft runs; after that, boards lock.
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button
+              onClick={() => setConfirming(false)}
+              style={{ flex: 1, padding: '10px 12px', borderRadius: 8, border: `1px solid ${tokens.borderInput}`, background: 'transparent', color: tokens.textSecondary, fontWeight: 700, cursor: 'pointer' }}
+            >
+              Keep editing
+            </button>
+            <button
+              onClick={commit}
+              style={{ flex: 1, padding: '10px 12px', borderRadius: 8, border: 'none', background: tokens.emerald, color: tokens.bgApp, fontWeight: 700, cursor: 'pointer' }}
+            >
+              Commit {board.length} names
+            </button>
+          </div>
+        </div>
+      ) : (
+        <button
+          onClick={() => setConfirming(true)}
+          disabled={!canCommit}
+          style={{
+            padding: '10px 14px',
+            borderRadius: 8,
+            border: 'none',
+            fontWeight: 700,
+            cursor: canCommit ? 'pointer' : 'not-allowed',
+            background: canCommit ? tokens.emerald : tokens.borderInput,
+            color: canCommit ? tokens.bgApp : tokens.textMuted,
+          }}
+        >
+          {committing ? 'Committing…' : committed ? 'Re-commit board' : 'Commit board'}
+        </button>
+      )}
       {!isForming && (
         <div style={{ fontSize: 12, color: tokens.textMuted }}>
           Boards lock once the group leaves forming.
