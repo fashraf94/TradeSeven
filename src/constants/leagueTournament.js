@@ -29,6 +29,15 @@ export const TOURNAMENT_GROUPS_COLLECTION = 'tournamentGroups';
 export const AGENT_LEDGER_SUBCOLLECTION = 'ledger';
 export const AGENT_LEDGER_DOC_ID = 'agentHeldSet';
 
+// P3a — the agent-board subcollection (rider #2) and the agent-draft stream
+// doc (rider #3, agent side). Agent boards are keyed by agentId in their OWN
+// subcollection — never mixed into the user `boards` subcollection, whose
+// docs are keyed by odUserId (different key-space, different writer). The
+// stream doc is the sibling of the P1a `streams/userDraft` record.
+export const AGENT_BOARDS_SUBCOLLECTION = 'agentBoards';
+export const STREAMS_SUBCOLLECTION = 'streams';
+export const AGENT_DRAFT_STREAM_DOC_ID = 'agentDraft';
+
 /**
  * Battle-doc discriminator for tournament-mode agent battles (Spec §0.12 —
  * lets tournament eval ride the shared agent-evaluate cron). Sibling of the
