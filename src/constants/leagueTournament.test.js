@@ -31,10 +31,13 @@ import {
   BASELINE_SOURCE,
   LEDGER_SOURCE,
   TOURNAMENT_TUNING,
+  AGENT_LEDGER_SUBCOLLECTION,
+  AGENT_LEDGER_DOC_ID,
   createClaimSystemState,
   createLeg,
   createPickState,
   createAgentLedgerEntry,
+  createAgentLedgerDoc,
   createTournamentGroupDoc,
   getLatestDayEntry,
   getWeeklyScore,
@@ -224,6 +227,27 @@ describe('createAgentLedgerEntry', () => {
   });
 });
 
+describe('createAgentLedgerDoc (P2 — sibling-doc ruling)', () => {
+  it('builds the empty sibling-doc shape', () => {
+    expect(createAgentLedgerDoc({ now: NOW })).toEqual({
+      held: {},
+      reservations: {},
+      doubleDowns: [],
+      updatedAt: NOW,
+    });
+  });
+
+  it('requires the opaque caller-supplied timestamp', () => {
+    expect(() => createAgentLedgerDoc()).toThrow(/now/);
+    expect(() => createAgentLedgerDoc({})).toThrow(/now/);
+  });
+
+  it('the sibling path constants are the ratified values', () => {
+    expect(AGENT_LEDGER_SUBCOLLECTION).toBe('ledger');
+    expect(AGENT_LEDGER_DOC_ID).toBe('agentHeldSet');
+  });
+});
+
 // ==================== GROUP DOC FACTORY ====================
 
 describe('createTournamentGroupDoc', () => {
@@ -238,10 +262,14 @@ describe('createTournamentGroupDoc', () => {
       userPool: ['NVDA', 'AMD', 'TSLA'],
       claimSystem: { enabled: true, currentWaiverPriority: [], processingLog: [] },
       dailyScores: {},
-      agentLedger: {},
       createdAt: NOW,
       updatedAt: NOW,
     });
+  });
+
+  it('carries NO agentLedger field — the held-set ledger is the sibling doc (P2 ruling)', () => {
+    const doc = createTournamentGroupDoc(makeGroupArgs());
+    expect('agentLedger' in doc).toBe(false);
   });
 
   it('players carry exactly {odUserId, picks} — no category system, by construction', () => {

@@ -17,6 +17,18 @@
 
 export const TOURNAMENT_GROUPS_COLLECTION = 'tournamentGroups';
 
+// P2 (founder ruling, June 11, 2026): the agent held-set ledger lives in a
+// SIBLING DOC — tournamentGroups/{groupId}/ledger/agentHeldSet — not on the
+// group doc, exercising the relocation license recorded at P0. Rationale: the
+// group doc has three transactional user-layer writers (flips, claims,
+// banking); per-swap reserve/confirm transactions on the same document would
+// contend with every one of them, while the sibling contends with nothing by
+// construction. Server-side mutation only (api/_utils/tournamentAgentLedger.js);
+// the P1a recursive subcollection rule (firestore.rules tournamentGroups
+// {document=**} block) already grants spectators read access.
+export const AGENT_LEDGER_SUBCOLLECTION = 'ledger';
+export const AGENT_LEDGER_DOC_ID = 'agentHeldSet';
+
 /**
  * Battle-doc discriminator for tournament-mode agent battles (Spec §0.12 —
  * lets tournament eval ride the shared agent-evaluate cron). Sibling of the
@@ -221,7 +233,37 @@ export function deriveCurrentTradingDay(group, etDate) {
 }
 
 /**
- * One agentLedger entry (Spec §1.2): `{symbol → {heldBy, since, source}}`.
+ * The agent held-set ledger document (Spec §1.2), at
+ * tournamentGroups/{groupId}/ledger/agentHeldSet (P2 ruling — see the
+ * AGENT_LEDGER_* constants above).
+ *
+ * - `held`: `{symbol → createAgentLedgerEntry}` — the exclusivity ground
+ *   truth, derived-rebuildable from the group's tournament battles (nightly
+ *   reconciliation in api/_utils/tournamentAgentLedger.js).
+ * - `reservations`: `{symbol → {by, battleId, at}}` — the two-phase
+ *   reserve/confirm protocol's in-flight claims. A reservation is STALE once
+ *   older than the TTL exported by tournamentAgentLedger.js; stale
+ *   reservations are claimable and reconciliation-cleared, so a crash
+ *   between reserve and swap can never deadlock a symbol.
+ * - `doubleDowns`: capped event list, written atomically inside the confirm
+ *   transaction (Signal Capture pattern A — awaited in-request; Spec §2's
+ *   derived flag, agent half).
+ * - `now` is required and opaque (this module never reads a clock).
+ */
+export function createAgentLedgerDoc({ now } = {}) {
+  if (now == null) {
+    throw new Error('createAgentLedgerDoc: now is required (caller supplies the timestamp)');
+  }
+  return {
+    held: {},
+    reservations: {},
+    doubleDowns: [],
+    updatedAt: now,
+  };
+}
+
+/**
+ * One held-set entry (Spec §1.2): `{symbol → {heldBy, since, source}}`.
  */
 export function createAgentLedgerEntry({ heldBy, since, source } = {}) {
   if (typeof heldBy !== 'string' || heldBy.length === 0) {
@@ -254,8 +296,12 @@ export function createAgentLedgerEntry({ heldBy, since, source } = {}) {
  *   recorded in the P1a PR decisions register): totalPoints is the CUMULATIVE
  *   standing at that day's close; the weekly score is the FINAL day's
  *   snapshot, not a sum over days. The P1b banking pass is the only writer.
- * - `agentLedger` lives on the group doc per Spec §1.2's primary phrasing
- *   (ratified June 11, 2026; P2 may relocate to a sibling doc).
+ * - The agent held-set ledger does NOT live on this document. P0 placed an
+ *   `agentLedger` field here with an explicit relocation license; P2
+ *   exercised it (founder ruling, June 11, 2026) — the ledger is the sibling
+ *   doc tournamentGroups/{groupId}/ledger/agentHeldSet (createAgentLedgerDoc),
+ *   keeping per-swap reserve/confirm transactions off the user-layer
+ *   writers' document.
  * - `now` is required and opaque (ISO string or SDK timestamp sentinel) —
  *   this module never reads a clock.
  */
@@ -309,7 +355,6 @@ export function createTournamentGroupDoc({
     userPool: [...userPool],
     claimSystem: createClaimSystemState(),
     dailyScores: {},
-    agentLedger: {},
     createdAt: now,
     updatedAt: now,
   };

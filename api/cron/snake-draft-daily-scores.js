@@ -18,6 +18,7 @@ import { initializeApp, getApps, cert } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 import { calculateSnakeDraftAssetScore } from '../../src/services/scoring/baggerBombCalculator.js';
 import { bankAllTournamentGroups } from '../_utils/tournamentBanking.js';
+import { reconcileAllTournamentLedgers } from '../_utils/tournamentAgentLedger.js';
 
 // Structured logging helper
 const LOG_PREFIX = '[SnakeDraftCron]';
@@ -460,6 +461,7 @@ export default async function handler(req, res) {
   // Declared above the try so the outer catch can report it too — the
   // tournament branch's result must never be masked, even by a legacy throw.
   let tournament = { groups: 0, processed: 0, skipped: 0, errors: 0 };
+  let tournamentLedger = { groups: 0, reconciled: 0, divergences: 0, staleCleared: 0, errors: 0 };
 
   try {
     const db = getFirebaseAdmin();
@@ -476,6 +478,18 @@ export default async function handler(req, res) {
     } catch (error) {
       logError('Tournament banking branch failed', { error: error.message });
       tournament = { groups: 0, processed: 0, skipped: 0, errors: 1, failed: true };
+    }
+
+    // P2: nightly derived reconciliation of the agent held-set ledgers
+    // (Spec §1.2) rides the same window — zero new cron entries. Same
+    // independence contract as banking: zero groups is a clean no-op, its
+    // own catch, never blocks banking's result or the legacy path.
+    try {
+      tournamentLedger = await reconcileAllTournamentLedgers(db, { now: new Date() });
+      logInfo('Tournament ledger reconciliation complete', tournamentLedger);
+    } catch (error) {
+      logError('Tournament ledger reconciliation failed', { error: error.message });
+      tournamentLedger = { groups: 0, reconciled: 0, divergences: 0, staleCleared: 0, errors: 1, failed: true };
     }
 
     // Query all active battles
@@ -500,6 +514,7 @@ export default async function handler(req, res) {
         message: 'No active battles',
         processed: 0,
         tournament,
+        tournamentLedger,
       });
     }
 
@@ -523,7 +538,8 @@ export default async function handler(req, res) {
       return res.status(500).json({
         success: false,
         error: 'Failed to fetch prices',
-        tournament, // the tournament branch already ran — never masked by a legacy price failure
+        tournament, // both tournament branches already ran — never masked by a legacy price failure
+        tournamentLedger,
       });
     }
 
@@ -560,6 +576,7 @@ export default async function handler(req, res) {
       success: true,
       ...results,
       tournament,
+      tournamentLedger,
       durationMs: duration,
     });
 
@@ -569,6 +586,7 @@ export default async function handler(req, res) {
       success: false,
       error: error.message,
       tournament,
+      tournamentLedger,
     });
   }
 }
