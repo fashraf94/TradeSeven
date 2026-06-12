@@ -241,8 +241,14 @@ export function formatMemory(memory) {
 /**
  * Sanitize user-authored rule text before injecting into the system prompt.
  * Prevents prompt injection, caps length, strips control characters.
+ *
+ * P4 contract #6 (founder ruling, June 12, 2026): THE canonical sanitizer —
+ * exported from here; agentEvalPromptAssembly.js and the tournament surfaces
+ * (tournamentPromptSanitizer.js re-export) consume this single copy. Zero
+ * copies remain anywhere; the behavioral battery lives in
+ * tournamentPromptSanitizer.test.js.
  */
-function sanitizeRuleText(text) {
+export function sanitizeRuleText(text) {
   if (!text || typeof text !== 'string') return '';
   let cleaned = text.slice(0, 200);
   cleaned = cleaned.replace(/==\s*.*?\s*==/g, '');

@@ -4,6 +4,8 @@
 
 import { getETDate, formatDateString } from './marketSchedule.js';
 import { flattenPortfolioServer, flattenBenchServer } from './agentScoring.js';
+// P4 contract #6: the canonical sanitizer replaces this file's private twin.
+import { sanitizeRuleText } from './agentPromptAssembly.js';
 import { getATRRegime } from './agentRegimeClassifier.js';
 import { getFirebaseAdmin } from './firebaseAdmin.js';
 import { isDirectiveActive } from './directiveUtils.js';
@@ -333,40 +335,11 @@ function capitalize(str) {
   return str.charAt(0).toUpperCase() + str.slice(1);
 }
 
-/**
- * Sanitize user-authored rule text before injecting into the system prompt.
- * Prevents prompt injection, caps length, strips control characters.
- */
-function sanitizeRuleText(text) {
-  if (!text || typeof text !== 'string') return '';
-
-  // Cap length — rules should be concise instructions
-  let cleaned = text.slice(0, 200);
-
-  // Strip patterns that could hijack the prompt structure
-  cleaned = cleaned.replace(/==\s*.*?\s*==/g, '');
-  cleaned = cleaned.replace(/━+/g, '');
-
-  // Remove common injection phrases
-  const injectionPatterns = [
-    /ignore\s+(all\s+)?(previous|above|prior)\s+(instructions?|rules?|constraints?)/gi,
-    /disregard\s+(all\s+)?(previous|above|prior)/gi,
-    /stop\.?\s*(ignore|forget|disregard)/gi,
-    /system\s*prompt/gi,
-    /you\s+are\s+now/gi,
-    /new\s+instructions?:/gi,
-    /override\s+(all|previous|system)/gi,
-  ];
-  for (const pattern of injectionPatterns) {
-    cleaned = cleaned.replace(pattern, '[removed]');
-  }
-
-  // Strip control characters and collapse whitespace
-  cleaned = cleaned.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '');
-  cleaned = cleaned.replace(/\s+/g, ' ').trim();
-
-  return cleaned;
-}
+// P4 contract #6 (founder ruling, June 12, 2026 — amended same day): this
+// file's private sanitizeRuleText twin is REPLACED by the canonical export
+// (see the import at the top of the file). The P3a normalized-equality
+// tripwire proved the twin logic-identical before the swap; zero copies
+// remain anywhere.
 
 /**
  * Interpolates a rule text template with parameter values.
