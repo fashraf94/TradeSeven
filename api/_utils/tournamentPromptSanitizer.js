@@ -15,10 +15,14 @@
 // silently rot (the scoring-copy lesson, BUILD_RULES §4, applied to a
 // security function).
 //
-// P4 CONTRACT (founder ruling, June 12, 2026): P4's fence entry exports
-// sanitizeRuleText canonically from agentPromptAssembly.js, and this module
-// collapses to a re-export — security copies don't live long here. Keeping
-// the port byte-identical makes that collapse a provably-safe one-liner.
+// P4 CONTRACT (founder ruling, June 12, 2026 — amended same day): P4's fence
+// entry exports sanitizeRuleText canonically from agentPromptAssembly.js,
+// REPLACES the private twin in agentEvalPromptAssembly.js with that import
+// (same fence entry), and THIS module collapses to a re-export — zero copies
+// remaining anywhere. Security copies don't live long here. Keeping the port
+// byte-identical makes the collapse a provably-safe one-liner; the tripwire
+// test retires with it (its extraction of the eval twin will rightly stop
+// matching once the twin is an import).
 
 export function sanitizeRuleText(text) {
   if (!text || typeof text !== 'string') return '';
