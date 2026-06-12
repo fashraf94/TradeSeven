@@ -49,6 +49,7 @@ import { evaluateRisk, calculate5minSMA20, pickEmergencyReplacement, pickSwapRep
 import { getPresetConfig } from '../_utils/agentPresetConfig.js';
 import { getArchetypeConfig } from '../_utils/agentArchetypeConfig.js';
 import { finalizeCronState } from '../_utils/agentCronState.js';
+import { classifyHaikuFailure, shouldStartHaikuCall, nextConsecutiveEvalFailures, HAIKU_CALL_CEILING_MS } from '../_utils/agentEvalTransport.js';
 import { logBattlePattern } from '../_utils/battlePatternLogger.js';
 import { logEvaluation, logVisionTransition, logAnticipation } from '../_utils/shadowLogger.js';
 import { filterActiveConstraints } from '../_utils/visionRuntime.js';
@@ -65,7 +66,17 @@ const TIME_BUDGET_MS = 50_000; // 50 seconds — leave 10s buffer for cleanup/re
 let anthropicClient = null;
 function getAnthropicClient() {
   if (!anthropicClient) {
-    anthropicClient = new Anthropic({ apiKey: process.env.CLAUDE_API_KEY });
+    // maxRetries: 0 — deliberate deviation from the codebase's maxRetries: 2
+    // convention (decide.js, reflect.js, compile-dimensions.js, ...). The SDK
+    // retries timeouts and connection errors by default, and this cron cannot
+    // absorb retry multiplication: 2 retries × the 20s per-request timeout at
+    // the call site ≈ 60s ≥ this function's maxDuration, which would kill the
+    // invocation and lose the awaited finalUpdate. Phase 2 failureClass
+    // instrumentation measures whether transient errors (429/5xx) are frequent
+    // enough to justify a budgeted retry later (founder decision L2: measure
+    // first, no retries now). Safe at client level: this file has exactly one
+    // messages.create call site.
+    anthropicClient = new Anthropic({ apiKey: process.env.CLAUDE_API_KEY, maxRetries: 0 });
   }
   return anthropicClient;
 }
@@ -1258,6 +1269,11 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
 
     if (!shouldEvaluate) {
       // No triggers — update scores, VWAP ticks, and status feed, then move on
+      // NOTE (naming): despite the name, this counter tracks ticks where the
+      // trigger gate SKIPPED Haiku ("the gate passed on calling") — it is NOT
+      // a count of successful gate→Haiku handoffs. Renaming to
+      // triggerGateSkipCount is blocked: the field is part of the fenced
+      // createAgentBattle doc shape (agentBattleService.js cronState init).
       scoreUpdate['cronState.triggerGatePassCount'] = (battle.cronState?.triggerGatePassCount || 0) + 1;
       finalizeCronState(scoreUpdate, { vwapTicks, intradayMomentum: momentumData.vwap, stagnationTicks, lastTickPrice, lastTickTimestamp });
       if (statusFeedEntries.length > 0) {
@@ -1279,10 +1295,40 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
     let haikuResult = null;
     let inputTokens = 0;
     let outputTokens = 0;
+    // Transport-failure record for this tick (null on success). failureClass ∈
+    // 'timeout' | 'truncated_response' | 'budget_skipped' | String(status|name).
+    // Consumed below by the evaluation record, cronErrors, the eval_degraded
+    // statusFeed entry, the shadow log, and the disclosure counter.
+    let haikuFailure = null;
+    let haikuAttempted = false;
 
-    try {
-      const response = await Promise.race([
-        anthropic.messages.create({
+    // Pre-call budget guard: a late-run battle must never start a call whose
+    // hard-abort ceiling (22s) plus post-call work (parallel narration dispatch
+    // ≤10s + the awaited finalUpdate — the same 12s allowance the anticipation
+    // gate uses) could push the function past TIME_BUDGET_MS / the 60s kill
+    // window and lose the finalUpdate. The handler-level deferral can't express
+    // this: by now the battle's risk swaps and score writes have already
+    // happened mid-function — we skip only the Haiku call and keep the normal
+    // write path.
+    const budget = shouldStartHaikuCall({ elapsedMs: Date.now() - cronStartTime, timeBudgetMs: TIME_BUDGET_MS });
+    if (!budget.proceed) {
+      haikuFailure = {
+        failureClass: 'budget_skipped',
+        message: `cron budget too low to start Haiku call (${Math.round(budget.remainingMs / 1000)}s remaining, ${Math.round(budget.requiredMs / 1000)}s required)`,
+        timestamp: new Date().toISOString(),
+      };
+      console.warn(`${LOG_PREFIX} Haiku call skipped for battle ${battle.id}: ${haikuFailure.message}`);
+    } else {
+      haikuAttempted = true;
+      // L1 transport: SDK-native per-request timeout (20s) replaces the old
+      // bare Promise.race — the SDK aborts its underlying fetch at `timeout`
+      // (verified v0.71.2 fetchWithTimeout), so the losing request is genuinely
+      // cancelled, never orphaned server-side billing unrecorded tokens. The
+      // AbortController is a defense-in-depth backstop 2s above it.
+      const abortCtrl = new AbortController();
+      const hardAbort = setTimeout(() => abortCtrl.abort(), HAIKU_CALL_CEILING_MS);
+      try {
+        const response = await anthropic.messages.create({
           model: 'claude-haiku-4-5-20251001',
           max_tokens: 1024,
           temperature: 0.4,
@@ -1300,21 +1346,38 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
           ],
           tools: [TRADE_DECISION_TOOL],
           tool_choice: { type: 'tool', name: 'submit_trade_decision' },
-        }),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('Haiku timeout')), 10_000)),
-      ]);
+        }, { timeout: 20_000, signal: abortCtrl.signal });
 
-      inputTokens = response.usage?.input_tokens || 0;
-      outputTokens = response.usage?.output_tokens || 0;
+        inputTokens = response.usage?.input_tokens || 0;
+        outputTokens = response.usage?.output_tokens || 0;
 
-      // Extract tool use block
-      const toolUse = response.content?.find(c => c.type === 'tool_use');
-      if (toolUse?.input) {
-        haikuResult = toolUse.input;
+        // Extract tool use block. tool_choice is forced, so a usable response
+        // carries submit_trade_decision input with a string `decision`;
+        // anything else (max_tokens truncation mid-JSON, absent block) is a
+        // truncated_response — instrumented instead of silently null. Tokens
+        // above stay recorded: a response did arrive.
+        const toolUse = response.content?.find(c => c.type === 'tool_use');
+        if (toolUse?.input && typeof toolUse.input.decision === 'string') {
+          haikuResult = toolUse.input;
+        } else {
+          haikuFailure = {
+            failureClass: 'truncated_response',
+            message: `response received but tool input missing/unusable (stop_reason=${response.stop_reason || 'unknown'})`,
+            timestamp: new Date().toISOString(),
+          };
+          console.warn(`${LOG_PREFIX} Haiku response unusable for battle ${battle.id}: ${haikuFailure.message}`);
+        }
+      } catch (err) {
+        haikuFailure = {
+          failureClass: classifyHaikuFailure(err),
+          message: String(err?.message || '').slice(0, 200),
+          timestamp: new Date().toISOString(),
+        };
+        console.error(`${LOG_PREFIX} Haiku call failed for battle ${battle.id} [${haikuFailure.failureClass}]:`, err.message);
+        // Default to HOLD on timeout or error
+      } finally {
+        clearTimeout(hardAbort);
       }
-    } catch (err) {
-      console.error(`${LOG_PREFIX} Haiku call failed for battle ${battle.id}:`, err.message);
-      // Default to HOLD on timeout or error
     }
 
     // ---- Process decision ----
@@ -1724,7 +1787,10 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
       symbolOut: isSwapOrProposal ? haikuResult?.symbolOut : null,
       symbolIn: isSwapOrProposal ? haikuResult?.symbolIn : null,
       tier: isSwapOrProposal ? validateTradeDecision(haikuResult, battle).resolvedTier : null,
-      rationale: haikuResult?.rationale || (haikuResult ? null : 'Haiku call failed — defaulting to HOLD'),
+      rationale: haikuResult?.rationale || (haikuResult ? null
+        : haikuFailure?.failureClass === 'budget_skipped'
+          ? 'Evaluation skipped — cron budget too low to start Haiku call. Defaulting to HOLD.'
+          : 'Haiku call failed — defaulting to HOLD'),
       hypothesis: haikuResult?.hypothesis || null,
       conviction: haikuResult?.conviction || 0,
       riskAssessment: haikuResult?.riskAssessment || 'low',
@@ -1747,7 +1813,27 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
       // Phase 4B: guardrail override telemetry for training data + UI.
       guardrailOverrides,
       guardrailSourceNote,
+      // Haiku eval reliability fix (June 2026): transport-failure receipt.
+      // null on success; { failureClass, message, timestamp, evalId } when the
+      // tick degraded to a fallback HOLD — distinguishes a deliberate HOLD
+      // from an engine outage in the eval history.
+      haikuError: haikuFailure ? { ...haikuFailure, evalId } : null,
     };
+
+    // Surface the degraded tick on the status feed — a silent fallback HOLD is
+    // indistinguishable from a deliberate one without this. Rides the existing
+    // feed concat below (no new write op); the slice enforces the cap.
+    if (haikuFailure) {
+      statusFeedEntries.push({
+        timestamp: now,
+        message: `Evaluation engine degraded this tick (${haikuFailure.failureClass}) — defaulted to HOLD.`,
+        action: 'eval_degraded',
+        source: 'system',
+        evalId,
+        symbolOut: null,
+        symbolIn: null,
+      });
+    }
 
     // Shadow log (fire-and-forget)
     logEvaluation({
@@ -1767,6 +1853,10 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
       marketPosture,
       downgraded,
       tokenUsage: { input: inputTokens || null, output: outputTokens || null },
+      // Haiku eval reliability fix: failure class for the training/forensics
+      // pipeline (null on success). logEvaluation is a passthrough to the GCS
+      // shadow stream, so no shadowLogger.js change is needed.
+      failureClass: haikuFailure?.failureClass || null,
     }).catch(() => {});
 
     // ---- Write everything ----
@@ -1788,11 +1878,37 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
         ? (battle.scoreState?.holdCount || 0) + 1
         : (battle.scoreState?.holdCount || 0),
       'cronState.lastTriggeredAt': now,
-      'cronState.totalHaikuCalls': (battle.cronState?.totalHaikuCalls || 0) + 1,
+      // totalHaikuCalls counts ATTEMPTS — a budget_skipped tick never started a
+      // call, so it does not increment (semantic fidelity for the token-vs-call
+      // forensics that exposed the June 11 outage).
+      'cronState.totalHaikuCalls': (battle.cronState?.totalHaikuCalls || 0) + (haikuAttempted ? 1 : 0),
       'cronState.totalTokens.input': (battle.cronState?.totalTokens?.input || 0) + inputTokens,
       'cronState.totalTokens.output': (battle.cronState?.totalTokens?.output || 0) + outputTokens,
       'cronState.consecutiveHolds': consecutiveHolds,
+      // Degraded-mode disclosure counter (L3): success resets, real failures
+      // increment, budget_skipped passes through (scheduling choice, not an
+      // engine fault — the helper documents the distinction). Set only on this
+      // full-Haiku path; the other flush sites never attempt Haiku, so the
+      // counter correctly reflects health as of the last attempt.
+      'cronState.consecutiveEvalFailures': nextConsecutiveEvalFailures(
+        battle.cronState?.consecutiveEvalFailures,
+        haikuResult ? 'success' : (haikuFailure?.failureClass === 'budget_skipped' ? 'budget_skipped' : 'failure')
+      ),
     };
+
+    // Durable failure capture (Phase 2): same {timestamp, error} shape and
+    // ≤20-entry cap as the handler-catch writer above, plus additive
+    // failureClass/evalId. Rides this finalUpdate — no new write op.
+    if (haikuFailure) {
+      const cronErrors = (battle.cronState?.cronErrors || []).slice(-19);
+      cronErrors.push({
+        timestamp: haikuFailure.timestamp,
+        error: `haiku_eval ${haikuFailure.failureClass}: ${haikuFailure.message}`,
+        failureClass: haikuFailure.failureClass,
+        evalId,
+      });
+      finalUpdate['cronState.cronErrors'] = cronErrors;
+    }
     // Shared cron state (lastEvaluatedAt / evaluatingAt / vwapTicks /
     // intradayMomentum). `now` is passed so lastEvaluatedAt === lastTriggeredAt,
     // preserving prior behavior exactly.
