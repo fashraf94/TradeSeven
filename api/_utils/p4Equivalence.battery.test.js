@@ -188,6 +188,50 @@ describe('P4 battery — calculateAssetScoreServer vs canonical calculateAssetSc
   });
 });
 
+// ==================== 2b. D2 per-asset tierMultiplier override (P4 slice i) ====================
+
+describe('P4 battery — per-asset tierMultiplier override (flat6 mechanism, D2)', () => {
+  it('an explicit tierMultiplier: 1 yields flat scoring on every tier, identically in both scorers', () => {
+    for (const tier of GRID_TIERS) {
+      const asset = { symbol: 'TEST', baseATR: GRID_BASE_ATR, tier, tierMultiplier: 1 };
+      const server = calculateAssetScoreServer({ ...asset }, 3.2, {}, {}, null);
+      const canonical = calculateAssetScoreV3({ ...asset }, 3.2, {}, {}, null);
+      expect(server).toEqual(canonical);
+      expect(server.tierMultiplier).toBe(1);
+      expect(server.basePoints).toBe(Math.round(3.2 * 10 * 1));
+    }
+  });
+
+  it('the override echoes through the invalid-priceChange guard arm in both scorers', () => {
+    const asset = { symbol: 'TEST', baseATR: GRID_BASE_ATR, tier: 'star', tierMultiplier: 1 };
+    const server = calculateAssetScoreServer({ ...asset }, NaN, {}, {}, null);
+    const canonical = calculateAssetScoreV3({ ...asset }, NaN, {}, {}, null);
+    expect(server).toEqual(canonical);
+    expect(server.tierMultiplier).toBe(1);
+    expect(server.totalPoints).toBe(0);
+  });
+
+  it('absence of the override resolves to the tier lookup exactly as photographed (tiered invariant)', () => {
+    // The same case appears in the frozen grid snapshot; this pins the
+    // override\'s negative space explicitly.
+    const star = calculateAssetScoreServer({ symbol: 'TEST', baseATR: GRID_BASE_ATR, tier: 'star' }, 3.2, {}, {}, null);
+    expect(star.tierMultiplier).toBe(2.0);
+    expect(star.basePoints).toBe(Math.round(3.2 * 10 * 2.0));
+    const none = calculateAssetScoreServer({ symbol: 'TEST', baseATR: GRID_BASE_ATR }, 3.2, {}, {}, null);
+    expect(none.tierMultiplier).toBe(1.0);
+  });
+
+  it('bonus points are never scaled by the override (flat badges, both scorers)', () => {
+    const asset = { symbol: 'TEST', baseATR: 2.5, tier: 'star', tierMultiplier: 1 };
+    // +2.0x ATR move: bagger+doubleBagger+tenBagger = 15+30+50 = 95 flat.
+    const server = calculateAssetScoreServer({ ...asset }, 5.0, {}, {}, null);
+    const canonical = calculateAssetScoreV3({ ...asset }, 5.0, {}, {}, null);
+    expect(server).toEqual(canonical);
+    expect(server.bonusPoints).toBe(95);
+    expect(server.basePoints).toBe(50); // 5.0% × 10 × 1
+  });
+});
+
 // ==================== 3. Flatten parity ====================
 
 const FLATTEN_FIXTURE_PORTFOLIO = {
