@@ -34,20 +34,21 @@ export default function BoardEditor({ groupId, group, uid, onCommitted }) {
 
   // Seed once per group, when the group (and so its pool) is available.
   // Prefill names outside the draftable pool are dropped — they couldn't be
-  // drafted. Deps are the stable group id, not the group object: live
-  // subscription updates to the same group must neither cancel an in-flight
-  // prefill nor clobber the user's edits with a re-seed.
+  // drafted; the ∩ pool step lives in the shared prefill core (P5), so the
+  // server auto-commit twin derives the identical suggestion. Deps are the
+  // stable group id, not the group object: live subscription updates to the
+  // same group must neither cancel an in-flight prefill nor clobber the
+  // user's edits with a re-seed.
   useEffect(() => {
     if (seededRef.current || !group || !uid) return undefined;
     seededRef.current = true;
-    const pool = new Set(group.userPool || []);
+    const userPool = group.userPool || [];
     let cancelled = false;
     (async () => {
-      const suggested = await assembleBoardPrefill(uid);
-      const inPool = suggested.filter(s => pool.has(s));
+      const suggested = await assembleBoardPrefill(uid, { userPool });
       if (!cancelled) {
-        setPrefill(inPool);
-        setBoard(inPool);
+        setPrefill(suggested);
+        setBoard(suggested);
         setLoadingPrefill(false);
       }
     })();

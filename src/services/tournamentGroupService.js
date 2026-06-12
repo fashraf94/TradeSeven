@@ -7,6 +7,7 @@
 
 import { doc, getDoc, onSnapshot, collection, query, where, orderBy, limit, getDocs } from 'firebase/firestore';
 import { db } from '../firebase/config';
+import { cleanSymbols, composeBoardPrefill } from '../utils/boardPrefillCore';
 import {
   TOURNAMENT_GROUPS_COLLECTION,
   TOURNAMENT_BRACKETS_COLLECTION,
@@ -125,30 +126,25 @@ export function subscribeBracket(bracketId, callback) {
   });
 }
 
-function cleanSymbols(values) {
-  const seen = new Set();
-  const out = [];
-  for (const value of values) {
-    const symbol = typeof value === 'string' ? value.trim().toUpperCase() : '';
-    if (!symbol || seen.has(symbol)) continue;
-    seen.add(symbol);
-    out.push(symbol);
-  }
-  return out;
-}
-
 /**
  * Board prefill (Spec §3 default, founder-confirmed June 11, 2026): the
  * player's equipped-watchlist names in their stored order, then the latest
- * scout-alert symbols not already present. Freely editable downstream — this
- * is a suggestion, and the as-suggested snapshot is what the board commit
- * stores for the rider #1 delta.
+ * scout-alert symbols not already present, intersected with the group's
+ * draftable pool. Freely editable downstream — this is a suggestion, and the
+ * as-suggested snapshot is what the board commit stores for the rider #1
+ * delta.
+ *
+ * P5: assembly/intersection/depth live in the shared pure core
+ * (src/utils/boardPrefillCore.js) — the deadline auto-commit's server twin
+ * (api/_utils/tournamentBoardAutoCommit.js) routes its Admin-SDK reads
+ * through the SAME core, so the two derivations cannot fork. This function
+ * owns only the browser-SDK reads.
  *
  * Every source degrades silently to empty (posture precedent: the deploy
  * endpoint's equipped-watchlist read) — a prefill failure must never block
  * board creation.
  */
-export async function assembleBoardPrefill(uid) {
+export async function assembleBoardPrefill(uid, { userPool = null } = {}) {
   let agent = null;
   try {
     const agentSnap = await getDocs(query(
@@ -189,5 +185,10 @@ export async function assembleBoardPrefill(uid) {
     }
   }
 
-  return cleanSymbols([...equipped, ...scoutAlerts]).slice(0, TOURNAMENT_TUNING.BOARD_DEPTH_MAX);
+  return composeBoardPrefill({
+    equippedSymbols: equipped,
+    scoutAlertSymbols: scoutAlerts,
+    userPool,
+    depthMax: TOURNAMENT_TUNING.BOARD_DEPTH_MAX,
+  });
 }
