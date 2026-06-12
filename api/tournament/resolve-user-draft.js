@@ -35,7 +35,8 @@ import {
 
 export const config = { maxDuration: 10 };
 
-const SENTINEL_PREFIX = '__resolve_user_draft:';
+export const USER_DRAFT_SENTINEL_PREFIX = '__resolve_user_draft:';
+const SENTINEL_PREFIX = USER_DRAFT_SENTINEL_PREFIX;
 const SENTINEL_TO_HTTP = Object.freeze({
   group_not_found: [404, 'group_not_found', 'Tournament group not found.'],
   not_forming:     [409, 'not_forming',     'Resolution requires a forming group.'],
@@ -123,6 +124,62 @@ export function resolveSnakeDraft(group, boardsByUser) {
   };
 }
 
+/**
+ * Resolve one group's user draft end-to-end (the handler's former
+ * transaction body, extracted at P3b so the orchestrator's Monday pipeline
+ * calls the SAME code path — one copy). Throws USER_DRAFT_SENTINEL_PREFIX
+ * errors (group_not_found / not_forming / boards_missing / pool_too_small);
+ * `boards_missing` is the finding-#5 defer signal upstream.
+ */
+export async function resolveUserDraftForGroup(db, groupId, { now = new Date() } = {}) {
+  const groupRef = db.collection(TOURNAMENT_GROUPS_COLLECTION).doc(groupId);
+  const nowIso = now.toISOString();
+
+  return db.runTransaction(async (tx) => {
+    const groupSnap = await tx.get(groupRef);
+    const group = groupSnap.exists ? groupSnap.data() : null;
+    if (!group) throw sentinel('group_not_found');
+
+    const members = group.groupMembers || [];
+    const boardSnaps = members.length > 0
+      ? await tx.getAll(...members.map(id => groupRef.collection('boards').doc(id)))
+      : [];
+    const boardsByUser = {};
+    boardSnaps.forEach((snap, i) => {
+      if (snap.exists) boardsByUser[members[i]] = snap.data();
+    });
+
+    const { picksByUser, events, remainingPool } = resolveSnakeDraft(group, boardsByUser);
+
+    const players = (group.players || []).map(p => ({
+      ...p,
+      picks: picksByUser[p.odUserId].map(symbol => createPickState({
+        symbol,
+        baselineSource: BASELINE_SOURCE.DRAFT_RESOLUTION,
+        baselinePrice: null,
+        openedAt: nowIso,
+      })),
+    }));
+
+    assertTransition(group.status, GROUP_STATUS.BATTLE);
+    // Rider #3 (user side): the stream write and the group mutation commit
+    // atomically — awaited in-request via the transaction.
+    tx.update(groupRef, {
+      players,
+      userPool: remainingPool,
+      status: GROUP_STATUS.BATTLE,
+      updatedAt: nowIso,
+    });
+    tx.set(groupRef.collection('streams').doc('userDraft'), {
+      events,
+      roundNumber: group.roundNumber,
+      resolvedAt: nowIso,
+    });
+
+    return { picksByUser, events, remainingPoolSize: remainingPool.length };
+  });
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed. Use POST.' });
@@ -135,55 +192,9 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'invalid_group_id', message: 'groupId is malformed.' });
   }
 
-  const db = getFirebaseAdmin();
-  const groupRef = db.collection(TOURNAMENT_GROUPS_COLLECTION).doc(groupId);
-  const nowIso = new Date().toISOString();
-
   let summary;
   try {
-    summary = await db.runTransaction(async (tx) => {
-      const groupSnap = await tx.get(groupRef);
-      const group = groupSnap.exists ? groupSnap.data() : null;
-      if (!group) throw sentinel('group_not_found');
-
-      const members = group.groupMembers || [];
-      const boardSnaps = members.length > 0
-        ? await tx.getAll(...members.map(id => groupRef.collection('boards').doc(id)))
-        : [];
-      const boardsByUser = {};
-      boardSnaps.forEach((snap, i) => {
-        if (snap.exists) boardsByUser[members[i]] = snap.data();
-      });
-
-      const { picksByUser, events, remainingPool } = resolveSnakeDraft(group, boardsByUser);
-
-      const players = (group.players || []).map(p => ({
-        ...p,
-        picks: picksByUser[p.odUserId].map(symbol => createPickState({
-          symbol,
-          baselineSource: BASELINE_SOURCE.DRAFT_RESOLUTION,
-          baselinePrice: null,
-          openedAt: nowIso,
-        })),
-      }));
-
-      assertTransition(group.status, GROUP_STATUS.BATTLE);
-      // Rider #3 (user side): the stream write and the group mutation commit
-      // atomically — awaited in-request via the transaction.
-      tx.update(groupRef, {
-        players,
-        userPool: remainingPool,
-        status: GROUP_STATUS.BATTLE,
-        updatedAt: nowIso,
-      });
-      tx.set(groupRef.collection('streams').doc('userDraft'), {
-        events,
-        roundNumber: group.roundNumber,
-        resolvedAt: nowIso,
-      });
-
-      return { picksByUser, events, remainingPoolSize: remainingPool.length };
-    });
+    summary = await resolveUserDraftForGroup(getFirebaseAdmin(), groupId, { now: new Date() });
   } catch (err) {
     if (typeof err?.message === 'string' && err.message.startsWith(SENTINEL_PREFIX)) {
       const code = err.message.slice(SENTINEL_PREFIX.length);

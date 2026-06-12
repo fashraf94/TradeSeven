@@ -58,6 +58,35 @@
 //     (the reserveBulk acquisition; reconcile-ledger reports them as
 //     unverifiable_holder until P4 stamps battles — by design). Click
 //     again: `already_resolved` — the stream is never rewritten.
+//
+// P3b FOUNDER SMOKE — THE FULL BRACKET ARC (orchestrator; deploys stay
+// P4-gated throughout — watch for the loud "P4 pending" lines in logs):
+// 10. Click "Seed bracket" (2 games: you + 3 CPUs in game 1, 4 CPUs in
+//     game 2 — all REAL system agents with boards already committed). The
+//     Bracket card appears (round 1, both games, CPU chips); your group is
+//     auto-attached. Commit YOUR board in the Board editor below.
+// 11. Set the duty clock to a MONDAY morning (e.g. next Mon 8:00) and click
+//     "Monday duty". Expect (Duty result card + logs): both groups → user
+//     draft resolved → battle; 8 boards (CPU fallbacks, 0 synthetic); both
+//     agent drafts 24 held; deploy step logs "DEPLOY GATED — P4 pending"
+//     per agent. Re-click: `already_complete` — the per-duty/per-ET-date
+//     marker, visibly. (If your board isn't committed, YOUR group defers
+//     loudly — finding #5 — and the all-CPU group proceeds; commit and
+//     re-click.)
+// 12. Bank five days per group: attach each groupId in turn, step the duty
+//     clock Mon→Fri, and click "Bank scores" once per simulated day (the
+//     clock rides the banking call as simulatedNow). Re-click same day:
+//     `skipped (already_recorded)`.
+// 13. Set the clock to that FRIDAY evening (after 17:15) and click "Friday
+//     duty". Expect: top-two locked per game (final-snapshot scores), both
+//     groups COMPLETE, a fresh round-2 group (forming, advancers + any CPU
+//     identities they carried), bracket card flips to round 2. Re-click:
+//     idempotent no-op. Clicking BEFORE banking day 5 shows the loud
+//     "banking pending" no-op instead — also by design.
+// 14. Round 2 is terminal (one game — the final four). Repeat 11–13 on the
+//     new group (commit your board first if you advanced). The Friday duty
+//     ends with CHAMPION + the one-screen recap on the Bracket card
+//     (bracket path, best week, signature double-down; composite lands P6).
 
 import React, { useEffect, useState } from 'react';
 import { useTheme } from '../contexts/ThemeContext';
@@ -69,8 +98,9 @@ import {
   subscribeAgentBoards,
   subscribeAgentDraftStream,
   subscribeAgentLedger,
+  subscribeBracket,
 } from '../services/tournamentGroupService';
-import { GROUP_STATUS, TOURNAMENT_TUNING, getLatestDayEntry } from '../constants/leagueTournament';
+import { GROUP_STATUS, TOURNAMENT_TUNING, getLatestDayEntry, parseBracketGameId } from '../constants/leagueTournament';
 import { fetchWithAuth } from '../utils/fetchWithAuth';
 
 /** Today's ET calendar date — mirrors the server's flip-cap reset clock. */
@@ -130,6 +160,14 @@ export default function TournamentDevScreen() {
   const [agentBoards, setAgentBoards] = useState([]);
   const [agentDraft, setAgentDraft] = useState(null);
   const [agentLedger, setAgentLedger] = useState(null);
+  // P3b state: duty clock (simulated — the P1b time-control idiom), live
+  // bracket doc (derived from the attached group's bracketGameId), last
+  // duty result for the results card.
+  const [simNow, setSimNow] = useState(''); // datetime-local value; '' = real clock
+  const [bracket, setBracket] = useState(null);
+  const [lastDuty, setLastDuty] = useState(null);
+
+  const derivedBracketId = parseBracketGameId(group?.bracketGameId)?.bracketId ?? null;
 
   useEffect(() => {
     if (!attachedGroupId) return undefined;
@@ -155,6 +193,21 @@ export default function TournamentDevScreen() {
     if (!attachedGroupId) return undefined;
     return subscribeAgentLedger(attachedGroupId, setAgentLedger);
   }, [attachedGroupId]);
+
+  useEffect(() => {
+    if (!derivedBracketId) {
+      setBracket(null);
+      return undefined;
+    }
+    return subscribeBracket(derivedBracketId, setBracket);
+  }, [derivedBracketId]);
+
+  /** The duty clock as an ISO instant, or null for the real clock. */
+  function simulatedNowIso() {
+    if (!simNow) return null;
+    const date = new Date(simNow);
+    return Number.isNaN(date.getTime()) ? null : date.toISOString();
+  }
 
   function appendLog(line) {
     setLog(prev => [...prev.slice(-19), `${new Date().toISOString().slice(11, 19)}  ${line}`]);
@@ -225,13 +278,48 @@ export default function TournamentDevScreen() {
   }
 
   async function bankScores() {
+    // P3b: the duty clock rides the banking call (simulatedNow) so the
+    // smoke arc banks day1..day5 in one session — see steps 12–13 above.
+    const simulated = simulatedNowIso();
     const data = await adminPost(
       '/api/tournament/bank-daily-scores',
-      { groupId: attachedGroupId, bypassTradingDay: true },
+      { groupId: attachedGroupId, bypassTradingDay: true, ...(simulated ? { simulatedNow: simulated } : {}) },
       'bank'
     );
     if (data?.skipped) appendLog(`bank: skipped (${data.reason})`);
     else if (data?.dayKey) appendLog(`bank OK · ${data.dayKey}${data.warnings?.length ? ` · ${data.warnings.length} warning(s)` : ''}`);
+  }
+
+  // P3b — bracket seeding + orchestrator duty buttons (run-duty endpoint;
+  // the cron path is production-only). Deploys are P4-gated server-side.
+  async function seedBracket() {
+    const data = await adminPost(
+      '/api/admin/seed-tournament-bracket',
+      { founderUserId: uid, games: 2 },
+      'seed bracket'
+    );
+    if (data?.bracketId) {
+      setGroupId(data.founderGroupId);
+      setAttachedGroupId(data.founderGroupId);
+      appendLog(`bracket ${data.bracketId} · groups ${data.groupIds.join(', ')} · CPUs ${data.cpuSeats.join(', ')}`);
+    }
+  }
+
+  async function runDuty(duty) {
+    const simulated = simulatedNowIso();
+    const data = await adminPost(
+      '/api/tournament/run-duty',
+      { duty, ...(simulated ? { simulatedNow: simulated } : {}) },
+      duty
+    );
+    if (data) {
+      setLastDuty(data);
+      appendLog(
+        data.status === 'already_complete'
+          ? `${duty} @ ${data.etDate} ${data.etTime}: already complete (idempotent no-op)`
+          : `${duty} @ ${data.etDate} ${data.etTime}: ${data.groups ?? 0} group(s) · ${data.complete ? 'COMPLETE' : 'incomplete (resumes next tick)'}`
+      );
+    }
   }
 
   async function processClaims() {
@@ -337,9 +425,10 @@ export default function TournamentDevScreen() {
     <div style={{ minHeight: '100vh', background: tokens.bgApp, color: tokens.textPrimary, padding: 16 }}>
       <div style={{ maxWidth: 860, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 14 }}>
         <div>
-          <div style={{ fontWeight: 800, fontSize: 18 }}>League Tournament — P1 dev surface</div>
+          <div style={{ fontWeight: 800, fontSize: 18 }}>League Tournament — dev surface</div>
           <div style={{ fontSize: 12, color: tokens.textMuted }}>
-            Smoke-test only. Seed → board → resolve (P1a); bank scores, place/process claims, flip picks (P1b).
+            Smoke-test only. Seed → board → resolve (P1a); bank, claims, flips (P1b); Monday pipeline (P3a);
+            bracket seed, duty dispatch, advancement, champion (P3b — deploys P4-gated).
           </div>
         </div>
 
@@ -355,6 +444,9 @@ export default function TournamentDevScreen() {
             />
             <button style={btn(!!secret && !busy)} disabled={!secret || !!busy} onClick={seed}>
               {busy === 'seed' ? 'Seeding…' : 'Seed dev group'}
+            </button>
+            <button style={btn(!!secret && !busy)} disabled={!secret || !!busy} onClick={seedBracket}>
+              {busy === 'seed bracket' ? 'Seeding…' : 'Seed bracket'}
             </button>
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
@@ -428,12 +520,127 @@ export default function TournamentDevScreen() {
               </select>
             </label>
           </div>
+          {/* P3b — orchestrator dispatch: duty buttons + the simulated duty
+              clock (run "Monday morning" on a Thursday). Empty clock = the
+              real clock; the server's ET dispatcher does the routing either
+              way. Duty markers key off the (simulated) ET date, so re-clicks
+              show the idempotent no-op. */}
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+            <label style={{ fontSize: 11, color: tokens.textMuted, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              duty clock
+              <input
+                type="datetime-local"
+                style={{ ...input, flex: 'none', width: 200, padding: '6px 8px' }}
+                value={simNow}
+                onChange={e => setSimNow(e.target.value)}
+                title="Simulated instant for duties + banking (your local time). Empty = real clock."
+              />
+            </label>
+            <button style={btn(!!secret && !busy)} disabled={!secret || !!busy} onClick={() => runDuty('monday_pipeline')}>
+              {busy === 'monday_pipeline' ? 'Running…' : 'Monday duty'}
+            </button>
+            <button style={btn(!!secret && !busy)} disabled={!secret || !!busy} onClick={() => runDuty('weekday_fanout')}>
+              {busy === 'weekday_fanout' ? 'Running…' : 'Incumbent fan-out'}
+            </button>
+            <button style={btn(!!secret && !busy)} disabled={!secret || !!busy} onClick={() => runDuty('friday_advancement')}>
+              {busy === 'friday_advancement' ? 'Running…' : 'Friday duty'}
+            </button>
+          </div>
           {log.length > 0 && (
             <pre style={{ margin: 0, fontSize: 11, color: tokens.textMuted, whiteSpace: 'pre-wrap' }}>
               {log.join('\n')}
             </pre>
           )}
         </div>
+
+        {/* P3b — last duty result (the advancement-results / pipeline card):
+            the run-duty response rendered as-is, founder-readable. */}
+        {lastDuty && (
+          <div style={{ ...card, display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+              <div style={{ fontWeight: 700, fontSize: 14 }}>Duty result — {lastDuty.duty}</div>
+              <span style={{ fontSize: 11, color: tokens.textMuted }}>
+                {lastDuty.etDate} {lastDuty.etTime} ET · {lastDuty.status === 'already_complete' ? 'already complete' : lastDuty.complete ? 'COMPLETE' : 'incomplete'}
+              </span>
+            </div>
+            <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', fontSize: 12, color: tokens.textMuted }}>
+              {['groups', 'resolved', 'deferredBoards', 'refusedSynthetic', 'drafted', 'baseCompleted', 'bankingPending', 'gamesLocked', 'deferredToNextTick', 'errors']
+                .filter(key => lastDuty[key] != null)
+                .map(key => (
+                  <span key={key}><span style={{ fontWeight: 700 }}>{key}</span> {String(lastDuty[key])}</span>
+                ))}
+              {lastDuty.deploys && (
+                <span><span style={{ fontWeight: 700 }}>deploys</span> {lastDuty.deploys.deployed} sent · {lastDuty.deploys.gated} gated (P4 pending) · {lastDuty.deploys.skippedExisting} existing · {lastDuty.deploys.failed} failed</span>
+              )}
+              {lastDuty.composedGroups?.length > 0 && (
+                <span><span style={{ fontWeight: 700 }}>composed</span> {lastDuty.composedGroups.join(', ')}</span>
+              )}
+              {lastDuty.champion && (
+                <span style={{ color: '#f59e0b', fontWeight: 700 }}>CHAMPION {lastDuty.champion.odUserId} ({lastDuty.champion.weeklyScore} pts)</span>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* P3b — live bracket card (one-doc bracket state; the P6/P7
+            spectator read surface, dev-rendered). */}
+        {bracket && (
+          <div style={{ ...card, display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+              <div style={{ fontWeight: 700, fontSize: 14 }}>Bracket {bracket.bracketId}</div>
+              <span style={{ fontSize: 11, fontWeight: 700, color: bracket.status === 'complete' ? '#a78bfa' : '#10b981' }}>
+                {String(bracket.status).toUpperCase()} · round {bracket.currentRound}/{bracket.totalRounds}
+              </span>
+            </div>
+            {Object.values(bracket.rounds || {})
+              .sort((a, b) => a.roundNumber - b.roundNumber)
+              .map(round => (
+                <div key={round.roundNumber} style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: tokens.textMuted }}>
+                    Round {round.roundNumber}{round.lockedAt ? ' · locked' : ''}
+                  </div>
+                  {Object.values(round.games || {})
+                    .sort((a, b) => a.gameIndex - b.gameIndex)
+                    .map(game => (
+                      <div key={game.bracketGameId} style={{ padding: '8px 10px', borderRadius: 8, background: tokens.bgApp, border: `1px solid ${tokens.borderInput}`, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                        <div style={{ fontSize: 11, color: tokens.textFaint }}>{game.bracketGameId}</div>
+                        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', fontSize: 12 }}>
+                          {(game.seats || []).map(seat => {
+                            const advanced = (game.advancers || []).includes(seat.odUserId);
+                            return (
+                              <span key={seat.odUserId} style={{ fontWeight: advanced ? 800 : 500, color: advanced ? '#10b981' : tokens.textPrimary }}>
+                                {seat.odUserId === uid ? 'You' : seat.odUserId}
+                                {seat.isCpu && <span style={{ fontSize: 9, fontWeight: 700, color: '#94a3b8' }}> CPU</span>}
+                                {game.finalScores && <span style={{ color: tokens.textMuted }}> {game.finalScores[seat.odUserId]}</span>}
+                                {advanced && ' ↑'}
+                              </span>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ))}
+                </div>
+              ))}
+            {bracket.champion && (
+              <div style={{ padding: '10px 12px', borderRadius: 8, background: 'rgba(245,158,11,0.12)', display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <div style={{ fontSize: 13, fontWeight: 800, color: '#f59e0b' }}>
+                  🏆 Champion: {bracket.champion.odUserId === uid ? 'You' : bracket.champion.odUserId}
+                  {bracket.champion.isCpu ? ' (CPU)' : ''} · {bracket.champion.weeklyScore} pts
+                </div>
+                {bracket.recap && (
+                  <div style={{ fontSize: 11, color: tokens.textMuted }}>
+                    Path: {(bracket.recap.bracketPath || []).map(p => `r${p.roundNumber} #${p.placement} (${p.weeklyScore})`).join(' → ')}
+                    {bracket.recap.bestWeek && ` · best week r${bracket.recap.bestWeek.roundNumber} (${bracket.recap.bestWeek.weeklyScore})`}
+                    {bracket.recap.signatureDoubleDown
+                      ? ` · signature double-down ${bracket.recap.signatureDoubleDown.symbol} (r${bracket.recap.signatureDoubleDown.roundNumber}, ${bracket.recap.signatureDoubleDown.kind})`
+                      : ' · no double-down this run'}
+                    {' · composite: P6'}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
 
         {group && (
           <div style={{ ...card, display: 'flex', flexDirection: 'column', gap: 10 }}>

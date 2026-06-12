@@ -407,7 +407,7 @@ export async function produceGroupBoards(db, group, { anthropic, now = new Date(
 
   const members = await resolveGroupAgents(db, group);
   const rankingByArchetype = new Map();
-  const summary = { produced: 0, skipped: 0, fallbacks: 0, synthetic: 0, errors: 0, boards: [] };
+  const summary = { produced: 0, skipped: 0, fallbacks: 0, synthetic: 0, cpu: 0, errors: 0, boards: [] };
 
   for (const { odUserId, agentId, agent, synthetic } of members) {
     const existingDocs = existingDocsByUser.get(odUserId) || [];
@@ -456,9 +456,16 @@ export async function produceGroupBoards(db, group, { anthropic, now = new Date(
         }
       }
 
+      // CPU branch (Ruling B1, ratified June 12, 2026): system-owned agents
+      // get the deterministic fallback board — NO model call — and are NOT
+      // synthetic (real agents on real groups; the synthetic-refusal
+      // contract above stays intact). Counted under fallbacks + cpu.
+      const isCpu = agent?.isCpu === true;
       const result = synthetic
         ? fallbackBoardResult(rankedStocks.map(s => s.symbol), 'synthetic_agent')
-        : await produceBoardForAgent({ anthropic, agent, archetype, rankedStocks, validSymbols, userPicks, equippedWatchlist });
+        : isCpu
+          ? fallbackBoardResult(rankedStocks.map(s => s.symbol), 'cpu_agent')
+          : await produceBoardForAgent({ anthropic, agent, archetype, rankedStocks, validSymbols, userPicks, equippedWatchlist });
 
       const doc = buildAgentBoardDoc({
         agentId, odUserId, archetype, group, now,
@@ -480,6 +487,7 @@ export async function produceGroupBoards(db, group, { anthropic, now = new Date(
       summary.produced++;
       if (result.fallback) summary.fallbacks++;
       if (synthetic) summary.synthetic++;
+      if (isCpu) summary.cpu++;
       summary.boards.push({ agentId, odUserId, fallback: result.fallback, synthetic, top3: result.board.slice(0, 3), stances: result.userPicksStance.length });
       console.log(`${LOG_PREFIX} board persisted for ${agentId} (${odUserId})${result.fallback ? ` [FALLBACK: ${result.fallbackReason}]` : ''}`);
     } catch (err) {

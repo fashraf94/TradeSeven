@@ -84,3 +84,24 @@ export async function transitionStatus(db, groupId, to, now) {
 export function getPlayer(group, odUserId) {
   return (group?.players ?? []).find(p => p.odUserId === odUserId) ?? null;
 }
+
+/**
+ * Ranked universe → fresh user pool (Spec §0.11: full catalog, the same
+ * universe agents see), ranked order preserved, deduped/uppercased. The one
+ * home for pool sourcing (P3b) — the P1a dev seeder, the bracket seeder, and
+ * round composition all draw from here rather than carrying copies.
+ */
+export async function fetchRankedUserPool(db) {
+  const snap = await db.collection('indexIntelligence').doc('stockRankings').get();
+  const stocks = snap.exists ? snap.data().stocks : null;
+  const pool = [];
+  const seen = new Set();
+  for (const stock of Array.isArray(stocks) ? stocks : []) {
+    const symbol = typeof stock?.symbol === 'string' ? stock.symbol.trim().toUpperCase() : '';
+    if (symbol && !seen.has(symbol)) {
+      seen.add(symbol);
+      pool.push(symbol);
+    }
+  }
+  return pool;
+}

@@ -11,6 +11,12 @@
 // admin-gated, so no further secret check is needed): it suppresses only the
 // weekend/holiday guard. The idempotency skip is NEVER bypassable — the
 // smoke script depends on seeing it.
+//
+// `simulatedNow` (P3b, same idiom): an ISO instant injected as the banking
+// clock, so the founder smoke arc banks day1..day5 in one session by
+// stepping the simulated ET date (Mon..Fri). The per-ET-day idempotency
+// applies to the SIMULATED date — re-banking the same simulated day still
+// shows the skip. Quotes are always live; only the clock is simulated.
 
 import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
 import { requireAdminSecret } from '../_utils/adminSecretAuth.js';
@@ -31,9 +37,16 @@ export default async function handler(req, res) {
   if (!requireAdminSecret(req, res)) return;
 
   const body = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {});
-  const { groupId, bypassTradingDay = false } = body;
+  const { groupId, bypassTradingDay = false, simulatedNow = null } = body;
   if (!isValidForgeId(groupId)) {
     return res.status(400).json({ error: 'invalid_group_id', message: 'groupId is malformed.' });
+  }
+  let now = new Date();
+  if (simulatedNow != null) {
+    now = new Date(simulatedNow);
+    if (Number.isNaN(now.getTime())) {
+      return res.status(400).json({ error: 'invalid_simulated_now', message: 'simulatedNow must be an ISO-8601 instant.' });
+    }
   }
 
   if (!isTradingDay() && !bypassTradingDay) {
@@ -73,7 +86,7 @@ export default async function handler(req, res) {
     }
 
     const result = await bankGroup(db, groupId, quotes, {
-      now: new Date(),
+      now,
       atrPercentiles,
       recordedBy: 'manual',
     });

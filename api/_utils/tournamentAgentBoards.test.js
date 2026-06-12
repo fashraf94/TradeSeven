@@ -421,3 +421,45 @@ describe('resolveGroupAgents', () => {
     expect(out[1]).toMatchObject({ odUserId: 'user-b', agentId: 'dev-agent-user-b', agent: null, synthetic: true });
   });
 });
+
+// ==================== P3b — CPU BRANCH (Ruling B1, ratified June 12, 2026) ====================
+
+describe('produceGroupBoards — CPU system agents', () => {
+  function cpuDb() {
+    return makeDb({
+      'indexIntelligence/stockRankings': { stocks: STOCKS },
+      'agents/cpu-agent-1': { ownerId: 'user-a', name: 'CPU', archetype: 'analyst', isCpu: true },
+      'agents/agent-b': { ownerId: 'user-b', name: 'Bob', archetype: 'analyst' },
+      'agents/agent-c': { ownerId: 'user-c', name: 'Cyd', archetype: 'analyst' },
+      'agents/agent-d': { ownerId: 'user-d', name: 'Dee', archetype: 'analyst' },
+    });
+  }
+  const happyAnthropic = () => fakeAnthropic(() => toolResponse({
+    board: SYMBOLS.slice(0, 16).map(s => ({ symbol: s, rationale: 'r' })),
+    userPicksReaction: [],
+  }));
+
+  it('a CPU agent gets the deterministic fallback board with NO model call — and is NOT synthetic', async () => {
+    const { db, store } = cpuDb();
+    const anthropic = happyAnthropic();
+    const summary = await produceGroupBoards(db, makeGroup(), { anthropic, now: NOW });
+
+    expect(summary).toMatchObject({ produced: 4, synthetic: 0, cpu: 1, fallbacks: 1, errors: 0 });
+    expect(anthropic.calls).toHaveLength(3); // the three real agents only
+
+    const doc = store.get('tournamentGroups/g1/agentBoards/cpu-agent-1');
+    expect(doc.fallback).toBe(true);
+    expect(doc.fallbackReason).toBe('cpu_agent');
+    expect(doc.synthetic).toBeUndefined(); // real groups with CPUs must pass the synthetic-0 refusal
+    expect(doc.model).toBeNull();
+    expect(doc.board.length).toBeGreaterThan(0);
+  });
+
+  it('the CPU board is reproducible: two runs (force) yield the identical board', async () => {
+    const { db, store } = cpuDb();
+    await produceGroupBoards(db, makeGroup(), { anthropic: happyAnthropic(), now: NOW });
+    const first = store.get('tournamentGroups/g1/agentBoards/cpu-agent-1').board;
+    await produceGroupBoards(db, makeGroup(), { anthropic: happyAnthropic(), now: NOW, force: true });
+    expect(store.get('tournamentGroups/g1/agentBoards/cpu-agent-1').board).toEqual(first);
+  });
+});

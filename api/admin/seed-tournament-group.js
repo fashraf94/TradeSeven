@@ -12,7 +12,7 @@
 import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
 import { requireAdminSecret } from '../_utils/adminSecretAuth.js';
 import { isValidForgeId } from '../_utils/idValidation.js';
-import { createGroup } from '../_utils/tournamentGroupService.js';
+import { createGroup, fetchRankedUserPool } from '../_utils/tournamentGroupService.js';
 import { buildBoardCommit } from '../_utils/tournamentBoards.js';
 import {
   TOURNAMENT_GROUPS_COLLECTION,
@@ -52,17 +52,9 @@ export default async function handler(req, res) {
   try {
     const db = getFirebaseAdmin();
 
-    // Ranked universe -> user pool, ranked order preserved (Spec §0.11).
-    const rankingsSnap = await db.collection('indexIntelligence').doc('stockRankings').get();
-    const stocks = rankingsSnap.exists ? rankingsSnap.data().stocks : null;
-    const userPool = [];
-    const seen = new Set();
-    for (const stock of Array.isArray(stocks) ? stocks : []) {
-      const symbol = typeof stock?.symbol === 'string' ? stock.symbol.trim().toUpperCase() : '';
-      if (!symbol || seen.has(symbol)) continue;
-      seen.add(symbol);
-      userPool.push(symbol);
-    }
+    // Ranked universe -> user pool, ranked order preserved (Spec §0.11) —
+    // converged onto the shared sourcing helper at P3b.
+    const userPool = await fetchRankedUserPool(db);
     if (userPool.length < USER_HELD_NAMES_PER_GROUP) {
       return res.status(503).json({
         error: 'universe_unavailable',
