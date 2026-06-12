@@ -98,6 +98,7 @@ export default function DraftPlaybackTheater({ groupId, group, uid, onDone }) {
   const revealed = timeline.picks.slice(0, state.index);
   const current = revealed[revealed.length - 1] ?? null;
   const inActTwo = current ? current.act === 2 : state.index > act1Count;
+  const showEndCard = state.status === PLAYBACK_STATUS.ENDED && state.index >= timeline.totalPicks;
 
   if (timeline.totalPicks === 0) {
     return (
@@ -120,7 +121,7 @@ export default function DraftPlaybackTheater({ groupId, group, uid, onDone }) {
 
       {state.index === 0 ? (
         <PosterFrame tokens={tokens} totalPicks={timeline.totalPicks} onPlay={() => dispatch({ type: 'PLAY' })} />
-      ) : state.status === PLAYBACK_STATUS.ENDED && state.index >= timeline.totalPicks ? (
+      ) : showEndCard ? (
         <EndCard tokens={tokens} timeline={timeline} uid={uid} seatLabel={seatLabel} actorLabel={actorLabel} onDone={onDone} onReplay={() => dispatch({ type: 'PLAY' })} />
       ) : current ? (
         <StagePick
@@ -136,7 +137,10 @@ export default function DraftPlaybackTheater({ groupId, group, uid, onDone }) {
         />
       ) : null}
 
-      {state.index > 0 && state.index < timeline.totalPicks + 1 && revealed.length > 1 && (
+      {/* The running log rides under the STAGE only — the end card already
+          shows the full rosters (code-review finding: the old condition's
+          dead `+ 1` let the log render beneath the end card too). */}
+      {state.index > 0 && !showEndCard && revealed.length > 1 && (
         <PickLog tokens={tokens} picks={revealed.slice(0, -1)} uid={uid} actorLabel={actorLabel} />
       )}
 

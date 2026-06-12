@@ -308,6 +308,11 @@ export function buildCpuUserBoard(rankedPool, n) {
   return board;
 }
 
+// The group-doc `feed` array's retention cap, shared by every feed writer
+// (the P1b rider-#4 flip feed and the P5 auto-commit entry) — one home so
+// the writers can never drift (P5 code-review convergence).
+export const GROUP_FEED_CAP = 50;
+
 // ==================== TUNING LEDGER (Spec §5) ====================
 
 // Founder-set initial values. k (USER_LAYER_K) weights each user-layer point

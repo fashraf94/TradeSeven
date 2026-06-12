@@ -408,6 +408,15 @@ async function seatsFromDraftStream(db, group, { onlyAgentIds = null } = {}) {
 
 // ==================== MONDAY PIPELINE ====================
 
+/** Resolve the user draft and re-read the group (status flips to battle) —
+ * the step-1 body, shared by the straight path and the post-auto-commit
+ * retry so the two can never drift. */
+async function resolveUserDraftAndRefresh(db, groupId, now) {
+  await resolveUserDraftForGroup(db, groupId, { now });
+  const fresh = await db.collection(TOURNAMENT_GROUPS_COLLECTION).doc(groupId).get();
+  return { id: groupId, ...fresh.data() };
+}
+
 /**
  * Per-group Monday sequence. Each step is individually resumable: re-runs
  * skip resolved drafts (status), existing boards (per-member), existing
@@ -459,10 +468,8 @@ export async function runMondayPipeline(db, {
       // ---- Step 1: user draft (forming → battle) ----
       if (group.status === GROUP_STATUS.FORMING) {
         try {
-          await resolveUserDraftForGroup(db, group.id, { now });
+          group = await resolveUserDraftAndRefresh(db, group.id, now);
           summary.resolved++;
-          const fresh = await db.collection(TOURNAMENT_GROUPS_COLLECTION).doc(group.id).get();
-          group = { id: group.id, ...fresh.data() };
           console.log(`${LOG_PREFIX} group ${group.id}: user draft resolved → battle`);
         } catch (err) {
           if (err?.message !== `${USER_DRAFT_SENTINEL_PREFIX}boards_missing`) throw err;
@@ -472,19 +479,21 @@ export async function runMondayPipeline(db, {
           // and retry the resolution in the same tick. Finding #5's loud
           // defer remains the fallback when auto-commit cannot produce a
           // valid board (the marker stays withheld; the next tick retries).
+          // A seat covered by a race-window player commit counts toward
+          // coverage but never toward autoCommitted — the corpus signal
+          // stays honest.
           const auto = await autoCommitMissingBoards(db, group, { now });
           summary.autoCommitted += auto.committed;
-          if (auto.errors > 0 || auto.committed < auto.missing) {
-            console.error(`${LOG_PREFIX} group ${group.id}: USER BOARDS NOT COMMITTED and the deadline auto-commit could not heal (${auto.committed}/${auto.missing} committed, ${auto.errors} error(s)) — Monday pipeline DEFERRED for this group (finding #5 fallback).`);
+          const covered = auto.committed + auto.raced;
+          if (auto.errors > 0 || covered < auto.missing) {
+            console.error(`${LOG_PREFIX} group ${group.id}: USER BOARDS NOT COMMITTED and the deadline auto-commit could not heal (${covered}/${auto.missing} covered, ${auto.errors} error(s)) — Monday pipeline DEFERRED for this group (finding #5 fallback).`);
             summary.deferredBoards++;
             continue;
           }
           try {
-            await resolveUserDraftForGroup(db, group.id, { now });
+            group = await resolveUserDraftAndRefresh(db, group.id, now);
             summary.resolved++;
-            const fresh = await db.collection(TOURNAMENT_GROUPS_COLLECTION).doc(group.id).get();
-            group = { id: group.id, ...fresh.data() };
-            console.log(`${LOG_PREFIX} group ${group.id}: user draft resolved → battle after deadline auto-commit (${auto.committed} board(s) defaulted${auto.floored ? `, ${auto.floored} floored` : ''})`);
+            console.log(`${LOG_PREFIX} group ${group.id}: user draft resolved → battle after deadline auto-commit (${auto.committed} board(s) defaulted${auto.floored ? `, ${auto.floored} floored` : ''}${auto.raced ? `, ${auto.raced} raced` : ''})`);
           } catch (retryErr) {
             console.error(`${LOG_PREFIX} group ${group.id}: USER BOARDS NOT COMMITTED — resolution retry after auto-commit FAILED (${retryErr.message}) — Monday pipeline DEFERRED for this group.`);
             summary.deferredBoards++;

@@ -216,7 +216,7 @@ describe('autoCommitMissingBoards — the Monday deadline', () => {
     });
 
     const summary = await autoCommitMissingBoards(db, { ...formingGroup() }, { now: NOW });
-    expect(summary).toEqual({ missing: 1, committed: 1, floored: 0, errors: 0 });
+    expect(summary).toEqual({ missing: 1, committed: 1, raced: 0, floored: 0, errors: 0 });
 
     const board = store.get('tournamentGroups/g1/boards/user-d');
     expect(board.autoCommitted).toBe(true);
@@ -240,7 +240,7 @@ describe('autoCommitMissingBoards — the Monday deadline', () => {
   it('NO-WATCHLIST FLOOR: pads to BOARD_DEPTH_MIN from the archetype ranking ∩ pool, loud + floored', async () => {
     const { db, store } = fixtureDb(); // user-d has no agent doc at all
     const summary = await autoCommitMissingBoards(db, { ...formingGroup() }, { now: NOW });
-    expect(summary).toEqual({ missing: 1, committed: 1, floored: 1, errors: 0 });
+    expect(summary).toEqual({ missing: 1, committed: 1, raced: 0, floored: 1, errors: 0 });
 
     const board = store.get('tournamentGroups/g1/boards/user-d');
     expect(board.board).toHaveLength(BOARD_DEPTH_MIN);
@@ -264,7 +264,7 @@ describe('autoCommitMissingBoards — the Monday deadline', () => {
     const { db, store, writeLog } = fixtureDb();
     store.set('tournamentGroups/g1/boards/user-d', { odUserId: 'user-d', board: POOL.slice(0, BOARD_DEPTH_MIN) });
     const summary = await autoCommitMissingBoards(db, { ...formingGroup() }, { now: NOW });
-    expect(summary).toEqual({ missing: 0, committed: 0, floored: 0, errors: 0 });
+    expect(summary).toEqual({ missing: 0, committed: 0, raced: 0, floored: 0, errors: 0 });
     expect(writeLog).toHaveLength(0);
     expect(store.get('tournamentGroups/g1').feed).toBeUndefined();
   });
@@ -285,7 +285,8 @@ describe('autoCommitMissingBoards — the Monday deadline', () => {
     };
 
     const summary = await autoCommitMissingBoards(db, { ...formingGroup() }, { now: NOW });
-    expect(summary.committed).toBe(1); // the seat is covered…
+    expect(summary.raced).toBe(1);     // the seat is covered…
+    expect(summary.committed).toBe(0); // …but it was never auto-committed
     const board = store.get('tournamentGroups/g1/boards/user-d');
     expect(board).toEqual(playerBoard); // …by the PLAYER's board, untouched
     expect(board.autoCommitted).toBeUndefined();
@@ -296,7 +297,7 @@ describe('autoCommitMissingBoards — the Monday deadline', () => {
     const smallPool = POOL.slice(0, BOARD_DEPTH_MIN - 3); // 12: passes resolution's floor, fails the board's
     const { db, store } = fixtureDb({ pool: smallPool, rankings: STOCKS });
     const summary = await autoCommitMissingBoards(db, { ...formingGroup(), userPool: smallPool }, { now: NOW });
-    expect(summary).toEqual({ missing: 1, committed: 0, floored: 0, errors: 1 });
+    expect(summary).toEqual({ missing: 1, committed: 0, raced: 0, floored: 0, errors: 1 });
     expect(store.get('tournamentGroups/g1/boards/user-d')).toBeUndefined();
     expect(console.error.mock.calls.map(c => c.join(' ')).some(l => l.includes('auto-commit FAILED for user-d'))).toBe(true);
   });

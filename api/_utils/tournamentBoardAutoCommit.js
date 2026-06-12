@@ -42,13 +42,12 @@ import { cleanSymbols, composeBoardPrefill, padBoardToFloor } from '../../src/ut
 import {
   TOURNAMENT_GROUPS_COLLECTION,
   TOURNAMENT_TUNING,
+  GROUP_FEED_CAP,
 } from '../../src/constants/leagueTournament.js';
 
 const LOG_PREFIX = '[TournamentAutoCommit]';
 
 export const AUTO_COMMIT_FEED_TYPE = 'board_auto_commit';
-// The group-feed cap of record (api/tournament/flip.js rider-#4 write).
-const FEED_CAP = 50;
 
 function toIso(now) {
   return now instanceof Date ? now.toISOString() : new Date(now).toISOString();
@@ -110,8 +109,12 @@ export async function deriveServerBoardPrefill(db, { odUserId, userPool }) {
 /**
  * Auto-commit a board for every group member without one. Called by the
  * Monday pipeline when resolution reports boards_missing; the caller retries
- * resolution when committed === missing and falls back to the loud defer
- * otherwise. Returns { missing, committed, floored, errors }.
+ * resolution when every missing seat is covered (committed + raced) and
+ * falls back to the loud defer otherwise. Returns
+ * { missing, committed, raced, floored, errors } — `committed` counts boards
+ * this run actually defaulted (the duty summary's autoCommitted signal);
+ * `raced` counts seats a player covered in the race window (their board, no
+ * flag, no feed entry — never folded into the auto-commit count).
  */
 export async function autoCommitMissingBoards(db, group, { now = new Date() } = {}) {
   const nowIso = toIso(now);
@@ -123,19 +126,26 @@ export async function autoCommitMissingBoards(db, group, { now = new Date() } = 
   boardsSnap.forEach(doc => committed.add(doc.id));
   const missing = members.filter(id => !committed.has(id));
 
-  const summary = { missing: missing.length, committed: 0, floored: 0, errors: 0 };
+  const summary = { missing: missing.length, committed: 0, raced: 0, floored: 0, errors: 0 };
   if (missing.length === 0) return summary;
 
-  // Floor candidates: archetype rankings over the universe. A missing or
-  // degraded rankings doc degrades to ranked-pool padding alone (the pool is
-  // stored in ranked order — resolve-user-draft.js).
-  let stocks = null;
-  try {
-    const rankingsDoc = await db.collection('indexIntelligence').doc('stockRankings').get();
-    stocks = rankingsDoc.exists ? rankingsDoc.data().stocks : null;
-  } catch (error) {
-    console.warn(`${LOG_PREFIX} stockRankings read failed — floor degrades to ranked-pool padding:`, error?.message);
-  }
+  // Floor candidates: archetype rankings over the universe, read LAZILY —
+  // only the first short prefill pays the read (deep-prefill auto-commits
+  // skip it entirely; code-review finding). A missing or degraded rankings
+  // doc degrades to ranked-pool padding alone (the pool is stored in ranked
+  // order — resolve-user-draft.js).
+  let stocks; // undefined = not read yet; null = read failed/absent
+  const readUniverse = async () => {
+    if (stocks !== undefined) return stocks;
+    try {
+      const rankingsDoc = await db.collection('indexIntelligence').doc('stockRankings').get();
+      stocks = rankingsDoc.exists ? rankingsDoc.data().stocks : null;
+    } catch (error) {
+      console.warn(`${LOG_PREFIX} stockRankings read failed — floor degrades to ranked-pool padding:`, error?.message);
+      stocks = null;
+    }
+    return stocks;
+  };
   const rankingByArchetype = new Map();
 
   for (const odUserId of missing) {
@@ -146,8 +156,9 @@ export async function autoCommitMissingBoards(db, group, { now = new Date() } = 
       let board = prefill;
       let floored = false;
       if (board.length < TOURNAMENT_TUNING.BOARD_DEPTH_MIN) {
-        if (Array.isArray(stocks) && stocks.length > 0 && !rankingByArchetype.has(archetype)) {
-          rankingByArchetype.set(archetype, computeArchetypeRankings(stocks, archetype).map(s => s.symbol));
+        const universe = await readUniverse();
+        if (Array.isArray(universe) && universe.length > 0 && !rankingByArchetype.has(archetype)) {
+          rankingByArchetype.set(archetype, computeArchetypeRankings(universe, archetype).map(s => s.symbol));
         }
         const padded = padBoardToFloor({
           board,
@@ -182,7 +193,7 @@ export async function autoCommitMissingBoards(db, group, { now = new Date() } = 
           timestamp: nowIso,
         };
         tx.set(boardRef, { ...commit, autoCommitted: true });
-        tx.update(groupRef, { feed: [...freshFeed, feedEvent].slice(-FEED_CAP), updatedAt: nowIso });
+        tx.update(groupRef, { feed: [...freshFeed, feedEvent].slice(-GROUP_FEED_CAP), updatedAt: nowIso });
         return true;
       });
 
@@ -191,8 +202,10 @@ export async function autoCommitMissingBoards(db, group, { now = new Date() } = 
         if (floored) summary.floored++;
         console.log(`${LOG_PREFIX} group ${group.id}: AUTO-COMMITTED ${odUserId}'s board at the Monday deadline (${board.length} names${floored ? ', FLOORED' : ''}) — rider #1 stamped autoCommitted, feed entry written`);
       } else {
-        // The race-window player commit: count the member as covered.
-        summary.committed++;
+        // The race-window player commit: the seat is covered, but it was
+        // never auto-committed — counted apart so the duty summary's
+        // autoCommitted signal stays honest (code-review finding).
+        summary.raced++;
         console.log(`${LOG_PREFIX} group ${group.id}: ${odUserId} committed in the race window — their board wins, auto-commit skipped`);
       }
     } catch (error) {

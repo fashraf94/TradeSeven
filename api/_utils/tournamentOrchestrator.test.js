@@ -736,7 +736,7 @@ describe('runOrchestratorTick — routing, markers, inertness', () => {
 
 describe('isDutySatisfied — what earns the marker', () => {
   it('gated deploys count as done (the ruled pre-P4 posture); failures and deferrals do not', () => {
-    const base = { groups: 1, resolved: 1, deferredBoards: 0, refusedSynthetic: 0, drafted: 1, deferredToNextTick: 0, errors: 0 };
+    const base = { groups: 1, resolved: 1, autoCommitted: 0, deferredBoards: 0, refusedSynthetic: 0, drafted: 1, deferredToNextTick: 0, errors: 0 };
     const deploys = (over = {}) => ({ deployed: 0, gated: 4, skippedExisting: 0, cooled: 0, failed: 0, deferred: 0, ...over });
     expect(isDutySatisfied(DUTY.MONDAY_PIPELINE, { ...base, deploys: deploys() })).toBe(true);
     expect(isDutySatisfied(DUTY.MONDAY_PIPELINE, { ...base, deploys: deploys({ failed: 1 }) })).toBe(false);
