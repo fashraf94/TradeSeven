@@ -12,9 +12,11 @@ import {
   TOURNAMENT_GROUPS_COLLECTION,
   TOURNAMENT_BRACKETS_COLLECTION,
   TOURNAMENT_TUNING,
+  GROUP_STATUS,
   AGENT_BOARDS_SUBCOLLECTION,
   STREAMS_SUBCOLLECTION,
   AGENT_DRAFT_STREAM_DOC_ID,
+  USER_DRAFT_STREAM_DOC_ID,
   AGENT_LEDGER_SUBCOLLECTION,
   AGENT_LEDGER_DOC_ID,
 } from '../constants/leagueTournament';
@@ -92,6 +94,65 @@ export function subscribeAgentDraftStream(groupId, callback) {
     callback(snapshot.exists() ? snapshot.data() : null);
   }, (error) => {
     console.error('[TournamentGroupService] Agent draft stream subscription error:', error);
+    callback(null);
+  });
+}
+
+/**
+ * Live user-draft stream subscription (P5 — the playback theater's Act 1;
+ * the P1a rider-#3 record at streams/userDraft). Callback receives the
+ * stream doc ({ events, roundNumber, resolvedAt }) or null. Returns the
+ * unsubscribe fn.
+ */
+export function subscribeUserDraftStream(groupId, callback) {
+  const streamDoc = doc(db, TOURNAMENT_GROUPS_COLLECTION, groupId, STREAMS_SUBCOLLECTION, USER_DRAFT_STREAM_DOC_ID);
+  return onSnapshot(streamDoc, (snapshot) => {
+    callback(snapshot.exists() ? snapshot.data() : null);
+  }, (error) => {
+    console.error('[TournamentGroupService] User draft stream subscription error:', error);
+    callback(null);
+  });
+}
+
+/**
+ * Live subscription to the caller's OWN committed board doc (P5 — the
+ * committed-state display: ranked list, committedAt, the autoCommitted
+ * badge). Boards are keyed by odUserId; reads are client-legal under the
+ * deployed recursive subcollection rules block. Callback receives
+ * { id, ...board } or null. Returns the unsubscribe fn.
+ */
+export function subscribeOwnBoard(groupId, odUserId, callback) {
+  const boardDoc = doc(db, TOURNAMENT_GROUPS_COLLECTION, groupId, 'boards', odUserId);
+  return onSnapshot(boardDoc, (snapshot) => {
+    callback(snapshot.exists() ? { id: snapshot.id, ...snapshot.data() } : null);
+  }, (error) => {
+    console.error('[TournamentGroupService] Own board subscription error:', error);
+    callback(null);
+  });
+}
+
+/**
+ * Live "my group" subscription (P5 — the League tab home): the caller's
+ * active tournament group, found by membership. Status is filtered
+ * client-side (a where-in on status would demand a composite index; if the
+ * console still prompts for the array-contains index during smoke, FLAG it
+ * — founder note, never improvise rules/index changes). Picks the most
+ * recently updated active group when several match. Callback receives
+ * { id, ...group } or null. Returns the unsubscribe fn.
+ */
+export function subscribeMyGroup(uid, callback) {
+  const groupsQuery = query(
+    collection(db, TOURNAMENT_GROUPS_COLLECTION),
+    where('groupMembers', 'array-contains', uid)
+  );
+  return onSnapshot(groupsQuery, (snapshot) => {
+    const active = snapshot.docs
+      .map(d => ({ id: d.id, ...d.data() }))
+      .filter(g => g.status === GROUP_STATUS.FORMING || g.status === GROUP_STATUS.BATTLE)
+      .sort((a, b) => String(b.updatedAt ?? '').localeCompare(String(a.updatedAt ?? '')));
+    callback(active[0] ?? null);
+  }, (error) => {
+    console.error('[TournamentGroupService] My-group subscription error:', error);
     callback(null);
   });
 }
