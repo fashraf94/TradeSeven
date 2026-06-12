@@ -49,6 +49,9 @@ import { evaluateRisk, calculate5minSMA20, pickEmergencyReplacement, pickSwapRep
 import { getPresetConfig } from '../_utils/agentPresetConfig.js';
 import { getArchetypeConfig, resolveHftConfig } from '../_utils/agentArchetypeConfig.js';
 import { finalizeCronState } from '../_utils/agentCronState.js';
+// P4 — the tournament discriminator of record (code-review finding: never a
+// string literal). Zero-import schema module, BUILD_RULES §4.
+import { TOURNAMENT_GAME_MODE } from '../../src/constants/leagueTournament.js';
 import { classifyHaikuFailure, shouldStartHaikuCall, nextConsecutiveEvalFailures, HAIKU_CALL_CEILING_MS } from '../_utils/agentEvalTransport.js';
 import { logBattlePattern } from '../_utils/battlePatternLogger.js';
 import { logEvaluation, logVisionTransition, logAnticipation } from '../_utils/shadowLogger.js';
@@ -2598,7 +2601,7 @@ function detectGameplanMeetingTrigger(battle, assetScores, prices, flatPortfolio
 export function resolveCompletionDisposition(battle) {
   const scoreState = battle.scoreState || {};
   const currentScore = scoreState.currentScore || 0;
-  if (battle.gameMode === 'baggerbomb_tournament') {
+  if (battle.gameMode === TOURNAMENT_GAME_MODE) {
     return {
       result: null,
       completionContext: 'tournament_group_scored',

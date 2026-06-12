@@ -900,7 +900,7 @@ ${portfolioCSV}`);
   if (benchTechBlock) parts.push(benchTechBlock);
 
   // 3d. Closed Trades with Ghost Prices
-  const closedCSV = buildClosedTradesCSV(battle.trades, prices);
+  const closedCSV = buildClosedTradesCSV(battle.trades, prices, battle);
   if (closedCSV) parts.push(closedCSV);
 
   // 3e. Trigger Context
@@ -1370,14 +1370,20 @@ function renderBenchCompositeLine(ranking) {
   return `Composite: ${parts.join(', ')}`;
 }
 
-function buildClosedTradesCSV(trades, prices) {
+function buildClosedTradesCSV(trades, prices, battle = null) {
   if (!trades || trades.length === 0) return null;
 
   // Only show swap trades (not holds)
   const swapTrades = trades.filter(t => t.symbolOut && t.exitPrice);
   if (swapTrades.length === 0) return null;
 
-  const header = 'CLOSED TRADES THIS BATTLE:\nSymbol,Tier,Exit Day,Entry→Exit (Now $Ghost),Gain%,Locked Pts';
+  // P4 (code-review finding): flat6 battles drop the Tier column here too —
+  // the system prompt says tournament mode has no tiers, so this table must
+  // not name them. Tiered rows are byte-identical to the pre-P4 format.
+  const isFlat6 = resolveModeConfig(battle?.gameMode).promptVariant === 'flat6';
+  const header = isFlat6
+    ? 'CLOSED TRADES THIS BATTLE:\nSymbol,Exit Day,Entry→Exit (Now $Ghost),Gain%,Locked Pts'
+    : 'CLOSED TRADES THIS BATTLE:\nSymbol,Tier,Exit Day,Entry→Exit (Now $Ghost),Gain%,Locked Pts';
 
   const rows = swapTrades.map(t => {
     const ghostPrice = prices[t.symbolOut]?.current;
@@ -1385,7 +1391,9 @@ function buildClosedTradesCSV(trades, prices) {
     const gainStr = formatPct(t.lockedGainPct);
     const ptsStr = t.lockedPoints >= 0 ? `+${t.lockedPoints.toFixed(1)}` : t.lockedPoints.toFixed(1);
 
-    return `${t.symbolOut},${t.tier},Day${t.swapDay},$${(t.entryPrice || 0).toFixed(2)}→$${(t.exitPrice || 0).toFixed(2)}${ghostStr},${gainStr}%,${ptsStr}`;
+    return isFlat6
+      ? `${t.symbolOut},Day${t.swapDay},$${(t.entryPrice || 0).toFixed(2)}→$${(t.exitPrice || 0).toFixed(2)}${ghostStr},${gainStr}%,${ptsStr}`
+      : `${t.symbolOut},${t.tier},Day${t.swapDay},$${(t.entryPrice || 0).toFixed(2)}→$${(t.exitPrice || 0).toFixed(2)}${ghostStr},${gainStr}%,${ptsStr}`;
   });
 
   return [header, ...rows].join('\n');
