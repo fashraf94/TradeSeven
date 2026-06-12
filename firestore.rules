@@ -324,6 +324,23 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // P6a: the seasonal leaderboard (month-keyed docs, incl. the dev-
+    // namespace — ruling A-4) and career-rank docs — the tournamentGroups
+    // pattern verbatim: authenticated reads for the leaderboard/rank
+    // surfaces; all mutation stays Admin SDK (the nightly aggregation
+    // branch + the Friday advancement). Career rank deliberately does NOT
+    // live on users/{uid} — that doc is owner-writable. Same manual
+    // Console-deploy caveat as above; inert until deployed.
+    match /tournamentLeaderboards/{monthId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+
+    match /tournamentRanks/{rankId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+
     // Snake Draft battles
     match /snakeDraftBattles/{battleId} {
       allow read: if request.auth != null;

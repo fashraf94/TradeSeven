@@ -118,6 +118,29 @@
 //     feed entry. USE THE BRACKET SEEDER for this arc — the group seeder's
 //     placeholder seats have no agent docs and refuse at the synthetic-
 //     board step (by design), so they never reach a full Monday.
+//
+// ── P6a — COMPOSITE · LEADERBOARD · RANK (data layer; surfaces ride P6b) ──
+// 18. COMPOSITE WEEK + LEADERBOARD: run the full bracket arc (steps 10–13).
+//     Each "Bank scores" click now also writes agentPoints/compositePoints
+//     into the day snapshot (the agent layer summed from the group's live
+//     battles) and upserts the DEV month leaderboard doc — the Leaderboard
+//     card fills after the first bank: composite rows, CPU chips, your teal
+//     row. NEGATIVE CASE: flip a winning pick to short (step 5) before
+//     banking a day — the row goes red and stays ranked where it falls,
+//     never hidden (the cautionary-learning ruling). Re-bank the same day:
+//     idempotency skip, leaderboard totals unchanged.
+// 19. RANK RATCHET + CPU-FARM GUARD: the Friday duty (step 13) now applies
+//     career rank at each game lock. The Career rank card shows tier/RP/
+//     floor and per-week audit lines — on the dev bracket your three
+//     opponents are CPUs, so expect raw > 0, guard ×0, Δ +0 (the signed
+//     B-2 ruling: fully-padded weeks earn zero positive RP — the guard
+//     working is the demo; tier crossings are locked by the unit battery
+//     and observable live in the first real-population weeks). Re-run the
+//     Friday duty: rankApplied 0, rankSkipped > 0 — no double application.
+//     The bracket card's champion recap now ends with "final composite N"
+//     (the P3b contract closed). All P6a docs are dev-namespaced
+//     (dev-{month} / dev-{uid}) — production leaderboard and rank docs
+//     never see smoke data (ruling A-4).
 
 import React, { useEffect, useState } from 'react';
 import { useTheme } from '../contexts/ThemeContext';
@@ -131,8 +154,19 @@ import {
   subscribeAgentDraftStream,
   subscribeAgentLedger,
   subscribeBracket,
+  subscribeLeaderboard,
+  subscribeRank,
 } from '../services/tournamentGroupService';
-import { GROUP_STATUS, TOURNAMENT_TUNING, getLatestDayEntry, parseBracketGameId } from '../constants/leagueTournament';
+import {
+  GROUP_STATUS,
+  TOURNAMENT_TUNING,
+  getLatestDayEntry,
+  parseBracketGameId,
+  monthKeyFromEtDate,
+  leaderboardDocId,
+  rankDocId,
+  RANK_TIERS,
+} from '../constants/leagueTournament';
 import { fetchWithAuth } from '../utils/fetchWithAuth';
 
 /** Today's ET calendar date — mirrors the server's flip-cap reset clock. */
@@ -199,6 +233,10 @@ export default function TournamentDevScreen() {
   const [bracket, setBracket] = useState(null);
   const [lastDuty, setLastDuty] = useState(null);
 
+  // P6a — dev-namespaced leaderboard + rank docs (smoke surfaces).
+  const [leaderboard, setLeaderboard] = useState(null);
+  const [rank, setRank] = useState(null);
+
   const derivedBracketId = parseBracketGameId(group?.bracketGameId)?.bracketId ?? null;
 
   useEffect(() => {
@@ -233,6 +271,22 @@ export default function TournamentDevScreen() {
     }
     return subscribeBracket(derivedBracketId, setBracket);
   }, [derivedBracketId]);
+
+  // P6a — the dev-namespaced leaderboard month doc (ruling A-4: smoke rows
+  // land on dev- docs; the month is the attached group's day-1 banking
+  // month per ruling A-3, falling back to the current month pre-banking)
+  // and the founder's dev rank doc.
+  const devMonthKey = monthKeyFromEtDate(group?.dailyScores?.day1?.recordedDate)
+    ?? new Date().toISOString().slice(0, 7);
+
+  useEffect(() => {
+    return subscribeLeaderboard(leaderboardDocId(devMonthKey, { dev: true }), setLeaderboard);
+  }, [devMonthKey]);
+
+  useEffect(() => {
+    if (!uid) return undefined;
+    return subscribeRank(rankDocId(uid, { dev: true }), setRank);
+  }, [uid]);
 
   /** The duty clock as an ISO instant, or null for the real clock. */
   function simulatedNowIso() {
@@ -676,11 +730,78 @@ export default function TournamentDevScreen() {
                     {bracket.recap.signatureDoubleDown
                       ? ` · signature double-down ${bracket.recap.signatureDoubleDown.symbol} (r${bracket.recap.signatureDoubleDown.roundNumber}, ${bracket.recap.signatureDoubleDown.kind})`
                       : ' · no double-down this run'}
-                    {' · composite: P6'}
+                    {bracket.recap.finalComposite != null
+                      ? ` · final composite ${bracket.recap.finalComposite}`
+                      : ' · composite: pre-P6 recap'}
                   </div>
                 )}
               </div>
             )}
+          </div>
+        )}
+
+        {/* P6a — dev leaderboard card (the dev- month doc, ruling A-4):
+            composite rows, signed; CPU chips; teal you-highlight; negative
+            rows red — information, not shame. */}
+        {leaderboard && (
+          <div style={{ ...card, display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+              <div style={{ fontWeight: 700, fontSize: 14 }}>Leaderboard — {leaderboard.monthKey} (dev)</div>
+              <span style={{ fontSize: 11, color: tokens.textMuted }}>
+                {Object.keys(leaderboard.entries || {}).length} rows
+              </span>
+            </div>
+            {Object.values(leaderboard.entries || {})
+              .sort((a, b) => (b.points ?? 0) - (a.points ?? 0))
+              .map((entry, i) => (
+                <div key={entry.odUserId} style={{ display: 'flex', gap: 8, alignItems: 'baseline', fontSize: 12, padding: '4px 8px', borderRadius: 6, background: entry.odUserId === uid ? 'rgba(20,184,166,0.12)' : 'transparent' }}>
+                  <span style={{ color: tokens.textFaint, fontVariantNumeric: 'tabular-nums', width: 22 }}>#{i + 1}</span>
+                  <span style={{ flex: 1, fontWeight: entry.odUserId === uid ? 800 : 500, color: entry.odUserId === uid ? '#14b8a6' : tokens.textPrimary }}>
+                    {entry.odUserId === uid ? 'You' : entry.displayName}
+                    {entry.isCpu && <span style={{ fontSize: 9, fontWeight: 700, color: '#94a3b8' }}> CPU</span>}
+                  </span>
+                  <span style={{ fontSize: 10, color: tokens.textFaint }}>
+                    {Object.keys(entry.weeks || {}).length} wk
+                  </span>
+                  <span style={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: (entry.points ?? 0) < 0 ? '#ef4444' : tokens.textPrimary }}>
+                    {(entry.points ?? 0) >= 0 ? '+' : ''}{entry.points}
+                  </span>
+                </div>
+              ))}
+          </div>
+        )}
+
+        {/* P6a — dev career-rank card (dev-{uid} doc): tier + RP + the
+            ratchet floor + per-week audit lines (raw / guard / delta — the
+            CPU-farm guard made visible). */}
+        {rank && (
+          <div style={{ ...card, display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+              <div style={{ fontWeight: 700, fontSize: 14 }}>Career rank (dev)</div>
+              <span style={{ fontSize: 12, fontWeight: 800, color: '#f59e0b' }}>
+                {rank.tierName} · {rank.rp} RP
+              </span>
+            </div>
+            <div style={{ fontSize: 11, color: tokens.textMuted }}>
+              floor {rank.floorRp} (permanent) · peak {rank.peakRp}
+              {(() => {
+                const next = RANK_TIERS.find(t => t.floor > (rank.rp ?? 0));
+                return next ? ` · next: ${next.name} at ${next.floor}` : ' · top of the ladder';
+              })()}
+            </div>
+            {(rank.history || []).slice(-5).reverse().map((event) => (
+              <div key={`${event.groupId}-${event.appliedAt}`} style={{ fontSize: 11, color: tokens.textMuted, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <span style={{ color: tokens.textFaint }}>{event.groupId}</span>
+                <span>#{event.placement}</span>
+                <span>composite {event.weeklyComposite}</span>
+                <span>raw {event.raw}</span>
+                <span title="CPU-farm guard">guard ×{event.guard}</span>
+                <span style={{ fontWeight: 700, color: event.delta < 0 ? '#ef4444' : event.delta > 0 ? '#10b981' : tokens.textMuted }}>
+                  Δ {event.delta >= 0 ? '+' : ''}{event.delta}
+                </span>
+                <span>→ {event.rpAfter} RP</span>
+              </div>
+            ))}
           </div>
         )}
 
