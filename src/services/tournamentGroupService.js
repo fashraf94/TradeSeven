@@ -7,7 +7,15 @@
 
 import { doc, getDoc, onSnapshot, collection, query, where, orderBy, limit, getDocs } from 'firebase/firestore';
 import { db } from '../firebase/config';
-import { TOURNAMENT_GROUPS_COLLECTION, TOURNAMENT_TUNING } from '../constants/leagueTournament';
+import {
+  TOURNAMENT_GROUPS_COLLECTION,
+  TOURNAMENT_TUNING,
+  AGENT_BOARDS_SUBCOLLECTION,
+  STREAMS_SUBCOLLECTION,
+  AGENT_DRAFT_STREAM_DOC_ID,
+  AGENT_LEDGER_SUBCOLLECTION,
+  AGENT_LEDGER_DOC_ID,
+} from '../constants/leagueTournament';
 
 /** One-shot group read. Returns { id, ...data } or null. */
 export async function getGroup(groupId) {
@@ -51,6 +59,54 @@ export function subscribeClaims(groupId, callback) {
   }, (error) => {
     console.error('[TournamentGroupService] Claims subscription error:', error);
     callback([]);
+  });
+}
+
+/**
+ * Live agent-boards subscription (P3a — rider #2 read surface). One doc per
+ * agent, keyed by agentId; reads are client-legal under the deployed
+ * recursive subcollection rules block. Production writes happen server-side
+ * (produce-agent-boards / the P3b orchestrator).
+ * Callback receives an array of { id, ...board }. Returns the unsubscribe fn.
+ */
+export function subscribeAgentBoards(groupId, callback) {
+  const boardsCol = collection(db, TOURNAMENT_GROUPS_COLLECTION, groupId, AGENT_BOARDS_SUBCOLLECTION);
+  return onSnapshot(boardsCol, (snapshot) => {
+    callback(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
+  }, (error) => {
+    console.error('[TournamentGroupService] Agent boards subscription error:', error);
+    callback([]);
+  });
+}
+
+/**
+ * Live agent-draft stream subscription (P3a — rider #3 playback record; P5
+ * replays it on the ~5s/pick clock). Callback receives the stream doc
+ * ({ events, picksByAgent, ... }) or null. Returns the unsubscribe fn.
+ */
+export function subscribeAgentDraftStream(groupId, callback) {
+  const streamDoc = doc(db, TOURNAMENT_GROUPS_COLLECTION, groupId, STREAMS_SUBCOLLECTION, AGENT_DRAFT_STREAM_DOC_ID);
+  return onSnapshot(streamDoc, (snapshot) => {
+    callback(snapshot.exists() ? snapshot.data() : null);
+  }, (error) => {
+    console.error('[TournamentGroupService] Agent draft stream subscription error:', error);
+    callback(null);
+  });
+}
+
+/**
+ * Live agent held-set ledger subscription (P2 sibling doc; P3a dev surface
+ * watches the draft acquisition land). Callback receives the ledger doc
+ * ({ held, reservations, doubleDowns, ... }) or null. Returns the
+ * unsubscribe fn.
+ */
+export function subscribeAgentLedger(groupId, callback) {
+  const ledgerDoc = doc(db, TOURNAMENT_GROUPS_COLLECTION, groupId, AGENT_LEDGER_SUBCOLLECTION, AGENT_LEDGER_DOC_ID);
+  return onSnapshot(ledgerDoc, (snapshot) => {
+    callback(snapshot.exists() ? snapshot.data() : null);
+  }, (error) => {
+    console.error('[TournamentGroupService] Agent ledger subscription error:', error);
+    callback(null);
   });
 }
 

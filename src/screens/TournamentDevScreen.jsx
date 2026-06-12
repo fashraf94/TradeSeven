@@ -43,12 +43,33 @@
 //  advances the derived day clock — fine on a dev group, deliberate-only on
 //  a production one. And "Process claims" is a pre-open action: running it
 //  mid-session backdates the won picks' baselines to that morning's open.
+//
+// P3a SMOKE EXTENSION (Monday pipeline; group in battle after the P1a
+// resolve; deploys stay P4-gated and are NOT exercised here):
+//  8. Click "Produce boards". Expect: log `boards OK · 4 produced (3
+//     fallback)`; the Agent boards card fills — your real agent's board
+//     carries Sonnet rationale + USER PICKS stance lines, the placeholder
+//     members show FALLBACK/SYNTHETIC badges (deterministic archetype
+//     ranking — no agent doc exists for dev users; loud server log).
+//     Click again: `4 skipped` — per-member idempotency.
+//  9. Click "Resolve agent draft". Expect: log `agent draft OK · resolved ·
+//     24 held`; the Agent draft card lists 24 picks (snake, passedOver on
+//     snipes); the Agent ledger card jumps to 24 held, all source 'draft'
+//     (the reserveBulk acquisition; reconcile-ledger reports them as
+//     unverifiable_holder until P4 stamps battles — by design). Click
+//     again: `already_resolved` — the stream is never rewritten.
 
 import React, { useEffect, useState } from 'react';
 import { useTheme } from '../contexts/ThemeContext';
 import { useUser } from '../contexts/UserContext';
 import BoardEditor from '../components/Tournament/BoardEditor';
-import { subscribeGroup, subscribeClaims } from '../services/tournamentGroupService';
+import {
+  subscribeGroup,
+  subscribeClaims,
+  subscribeAgentBoards,
+  subscribeAgentDraftStream,
+  subscribeAgentLedger,
+} from '../services/tournamentGroupService';
 import { GROUP_STATUS, TOURNAMENT_TUNING, getLatestDayEntry } from '../constants/leagueTournament';
 import { fetchWithAuth } from '../utils/fetchWithAuth';
 
@@ -105,6 +126,10 @@ export default function TournamentDevScreen() {
   const [addSymbol, setAddSymbol] = useState('');
   const [claimRank, setClaimRank] = useState(1);
   const [forceState, setForceState] = useState('auto'); // 'auto' | 'open' | 'closed'
+  // P3a state: agent boards, draft stream, held-set ledger (live).
+  const [agentBoards, setAgentBoards] = useState([]);
+  const [agentDraft, setAgentDraft] = useState(null);
+  const [agentLedger, setAgentLedger] = useState(null);
 
   useEffect(() => {
     if (!attachedGroupId) return undefined;
@@ -114,6 +139,21 @@ export default function TournamentDevScreen() {
   useEffect(() => {
     if (!attachedGroupId) return undefined;
     return subscribeClaims(attachedGroupId, setClaims);
+  }, [attachedGroupId]);
+
+  useEffect(() => {
+    if (!attachedGroupId) return undefined;
+    return subscribeAgentBoards(attachedGroupId, setAgentBoards);
+  }, [attachedGroupId]);
+
+  useEffect(() => {
+    if (!attachedGroupId) return undefined;
+    return subscribeAgentDraftStream(attachedGroupId, setAgentDraft);
+  }, [attachedGroupId]);
+
+  useEffect(() => {
+    if (!attachedGroupId) return undefined;
+    return subscribeAgentLedger(attachedGroupId, setAgentLedger);
   }, [attachedGroupId]);
 
   function appendLog(line) {
@@ -201,6 +241,26 @@ export default function TournamentDevScreen() {
       'claims'
     );
     if (data?.status) appendLog(`claims OK · ${data.status}${data.status === 'processed' ? ` (${data.approved} approved, ${data.denied} denied)` : ''}`);
+  }
+
+  // P3a — Monday pipeline steps (boards → agent draft → acquisition). The
+  // deploy step is P4-gated and has no button here by design.
+  async function produceBoards() {
+    const data = await adminPost(
+      '/api/tournament/produce-agent-boards',
+      { groupId: attachedGroupId },
+      'boards'
+    );
+    if (data) appendLog(`boards OK · ${data.produced} produced (${data.fallbacks} fallback) · ${data.skipped} skipped · ${data.errors} error(s)`);
+  }
+
+  async function resolveAgentDraft() {
+    const data = await adminPost(
+      '/api/tournament/resolve-agent-draft',
+      { groupId: attachedGroupId },
+      'agent draft'
+    );
+    if (data?.status) appendLog(`agent draft OK · ${data.status}${data.heldCount != null ? ` · ${data.heldCount} held` : ''}`);
   }
 
   async function placeClaim() {
@@ -336,6 +396,23 @@ export default function TournamentDevScreen() {
               onClick={processClaims}
             >
               {busy === 'claims' ? 'Processing…' : 'Process claims'}
+            </button>
+            {/* P3a Monday-pipeline steps. Agent draft needs all four boards;
+                the server's boards_missing guard is authoritative — the
+                button gate is UX only. */}
+            <button
+              style={btn(!!secret && group?.status === GROUP_STATUS.BATTLE && !busy)}
+              disabled={!secret || group?.status !== GROUP_STATUS.BATTLE || !!busy}
+              onClick={produceBoards}
+            >
+              {busy === 'boards' ? 'Producing…' : 'Produce boards'}
+            </button>
+            <button
+              style={btn(!!secret && group?.status === GROUP_STATUS.BATTLE && agentBoards.length > 0 && !busy)}
+              disabled={!secret || group?.status !== GROUP_STATUS.BATTLE || agentBoards.length === 0 || !!busy}
+              onClick={resolveAgentDraft}
+            >
+              {busy === 'agent draft' ? 'Resolving…' : 'Resolve agent draft'}
             </button>
             <label style={{ fontSize: 11, color: tokens.textMuted, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
               flip market
@@ -528,6 +605,88 @@ export default function TournamentDevScreen() {
                 </div>
               ))}
             </div>
+          </div>
+        )}
+
+        {/* P3a — Agent boards (rider #2 read surface): full ranking head,
+            rationale presence, USER PICKS stance lines, fallback/synthetic
+            provenance badges. */}
+        {group && agentBoards.length > 0 && (
+          <div style={{ ...card, display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div style={{ fontWeight: 700, fontSize: 14 }}>Agent boards — Monday pipeline</div>
+            {agentBoards.map(b => (
+              <div key={b.agentId} style={{ display: 'flex', flexDirection: 'column', gap: 4, padding: '8px 10px', borderRadius: 8, background: tokens.bgApp, border: `1px solid ${b.odUserId === uid ? '#38bdf8' : tokens.borderInput}` }}>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 12 }}>
+                  <span style={{ fontWeight: 700 }}>{b.odUserId === uid ? 'Your agent' : b.agentId}</span>
+                  <span style={{ color: tokens.textMuted }}>{b.archetype}</span>
+                  {b.fallback && (
+                    <span style={{ fontSize: 10, fontWeight: 700, color: '#f59e0b' }} title={b.fallbackReason || ''}>
+                      FALLBACK{b.synthetic ? ' · SYNTHETIC' : ''}
+                    </span>
+                  )}
+                  <span style={{ marginLeft: 'auto', fontSize: 10, color: tokens.textFaint }}>{b.board?.length ?? 0} names</span>
+                </div>
+                <div style={{ fontSize: 11, color: tokens.textMuted, wordBreak: 'break-word' }}>
+                  {(b.board || []).slice(0, 10).join(' · ')}{(b.board?.length ?? 0) > 10 ? ' · …' : ''}
+                </div>
+                {(b.userPicksStance || []).map(s => (
+                  <div key={s.symbol} style={{ fontSize: 11, color: tokens.textFaint }}>
+                    <span style={{ fontWeight: 700, color: tokens.textMuted }}>{s.symbol}:</span> {s.stance}
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* P3a — Agent draft stream (rider #3 playback record; P5 replays it
+            on the ~5s/pick clock — here it renders instantly). */}
+        {group && agentDraft && (
+          <div style={{ ...card, display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+              <div style={{ fontWeight: 700, fontSize: 14 }}>Agent draft — pick stream</div>
+              <span style={{ fontSize: 11, color: tokens.textMuted }}>
+                round {agentDraft.roundNumber} · resolved {String(agentDraft.resolvedAt).slice(0, 16)}
+              </span>
+            </div>
+            {(agentDraft.events || []).map(e => (
+              <div key={e.pickNumber} style={{ display: 'flex', gap: 8, alignItems: 'baseline', fontSize: 12 }}>
+                <span style={{ width: 22, color: tokens.textMuted }}>{e.pickNumber}.</span>
+                <span style={{ width: 170, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {e.odUserId === uid ? 'Your agent' : e.agentId}
+                </span>
+                <span style={{ fontWeight: 800 }}>{e.symbol}</span>
+                {e.fallback && <span style={{ fontSize: 10, fontWeight: 700, color: '#f59e0b' }}>FALLBACK</span>}
+                {e.passedOver?.length > 0 && (
+                  <span style={{ fontSize: 10, color: tokens.textFaint }}>passed: {e.passedOver.join(', ')}</span>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* P3a — Agent held-set ledger: watch the reserveBulk acquisition
+            land (24 held, source 'draft') and later swaps churn it. */}
+        {group && agentLedger && (
+          <div style={{ ...card, display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+              <div style={{ fontWeight: 700, fontSize: 14 }}>Agent ledger — held set</div>
+              <span style={{ fontSize: 11, color: tokens.textMuted }}>
+                {Object.keys(agentLedger.held || {}).length} held · {Object.keys(agentLedger.reservations || {}).length} reserved · {(agentLedger.doubleDowns || []).length} double-down event(s)
+              </span>
+            </div>
+            {Object.entries(
+              Object.entries(agentLedger.held || {}).reduce((acc, [symbol, entry]) => {
+                const key = entry.heldBy;
+                (acc[key] = acc[key] || []).push(`${symbol}${entry.source === 'draft' ? '' : '*'}`);
+                return acc;
+              }, {})
+            ).map(([agentId, symbols]) => (
+              <div key={agentId} style={{ fontSize: 11, color: tokens.textMuted, wordBreak: 'break-word' }}>
+                <span style={{ fontWeight: 700 }}>{agentId}:</span> {symbols.join(' · ')}
+              </div>
+            ))}
+            <div style={{ fontSize: 10, color: tokens.textFaint }}>* = acquired by swap (not draft)</div>
           </div>
         )}
 
