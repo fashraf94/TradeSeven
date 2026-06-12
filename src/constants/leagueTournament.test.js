@@ -42,10 +42,29 @@ import {
   getLatestDayEntry,
   getWeeklyScore,
   deriveCurrentTradingDay,
+  // P3b — bracket + CPU (ratified June 12, 2026)
+  BRACKET_STATUS,
+  bracketRoundKey,
+  buildBracketGameId,
+  parseBracketGameId,
+  createBracketGame,
+  createBracketRound,
+  createBracketDoc,
+  CPU_ARCHETYPE_ORDER,
+  cpuUserId,
+  cpuNFromUserId,
+  cpuAgentDocId,
+  isCpuUserId,
+  cpuArchetypeForN,
+  buildCpuUserBoard,
 } from './leagueTournament.js';
 // Real import, zero mocks (precedent: api/cron/process-draft-claims.test.js:10).
 // This is the behavioral half of the claimSystem parity guard.
 import { isAlreadyProcessedForDay } from '../../api/cron/process-draft-claims.js';
+// Real import (non-fenced): the CPU_ARCHETYPE_ORDER ↔ live-registry parity
+// lock — the schema module is zero-import, so its archetype names are string
+// literals; THIS test is what keeps them honest.
+import { ARCHETYPE_WEIGHTS } from '../../api/_utils/archetypeScoring.js';
 
 // ==================== FIXTURES ====================
 
@@ -389,5 +408,157 @@ describe('deriveCurrentTradingDay — banking-derived day clock', () => {
   it('today is day N+1 when the latest banking was a prior date (morning / pre-banking)', () => {
     const group = { dailyScores: { day2: { closeScores: {}, recordedDate: '2026-06-09' } } };
     expect(deriveCurrentTradingDay(group, TODAY)).toBe(3);
+  });
+});
+
+// ==================== P3b — BRACKET + CPU (ratified June 12, 2026) ====================
+
+describe('bracketGameId helpers', () => {
+  it('round-trips build → parse', () => {
+    const id = buildBracketGameId('jun-2026', 2, 3);
+    expect(id).toBe('jun-2026-r2-g3');
+    expect(parseBracketGameId(id)).toEqual({ bracketId: 'jun-2026', roundNumber: 2, gameIndex: 3 });
+  });
+
+  it('parse survives dashes inside the bracketId and rejects junk', () => {
+    expect(parseBracketGameId('dev-bracket-abc-r1-g2').bracketId).toBe('dev-bracket-abc');
+    expect(parseBracketGameId('not-a-game-id')).toBeNull();
+    expect(parseBracketGameId(null)).toBeNull();
+  });
+});
+
+describe('createBracketGame / createBracketRound', () => {
+  const seats = [
+    { odUserId: 'u1' }, { odUserId: 'u2' },
+    { odUserId: 'cpu-1', isCpu: true }, { odUserId: 'cpu-2', isCpu: true },
+  ];
+
+  it('normalizes seats to {odUserId, isCpu} and nulls the lock fields', () => {
+    const game = createBracketGame({ bracketGameId: 'b-r1-g1', gameIndex: 1, groupId: 'b-r1-g1', seats });
+    expect(game.seats).toEqual([
+      { odUserId: 'u1', isCpu: false }, { odUserId: 'u2', isCpu: false },
+      { odUserId: 'cpu-1', isCpu: true }, { odUserId: 'cpu-2', isCpu: true },
+    ]);
+    expect(game.finalScores).toBeNull();
+    expect(game.advancers).toBeNull();
+    expect(game.completedAt).toBeNull();
+  });
+
+  it('rejects a non-4 seat count', () => {
+    expect(() => createBracketGame({ bracketGameId: 'x', gameIndex: 1, groupId: 'x', seats: seats.slice(0, 3) }))
+      .toThrow(/exactly 4/);
+  });
+
+  it('round entry carries roundNumber + lockedAt null', () => {
+    const game = createBracketGame({ bracketGameId: 'b-r1-g1', gameIndex: 1, groupId: 'b-r1-g1', seats });
+    const round = createBracketRound({ roundNumber: 1, games: { 'b-r1-g1': game }, composedAt: 'T0' });
+    expect(round.roundNumber).toBe(1);
+    expect(round.lockedAt).toBeNull();
+  });
+});
+
+describe('createBracketDoc', () => {
+  const seats = [
+    { odUserId: 'u1' }, { odUserId: 'u2' },
+    { odUserId: 'cpu-1', isCpu: true }, { odUserId: 'cpu-2', isCpu: true },
+  ];
+  const game = (i) => createBracketGame({ bracketGameId: `b-r1-g${i}`, gameIndex: i, groupId: `b-r1-g${i}`, seats });
+
+  it('derives totalRounds/slots from the round-1 game count (16-slot skeleton: 4 games → 3 rounds)', () => {
+    const doc4 = createBracketDoc({ bracketId: 'b', round1Games: { g1: game(1), g2: game(2), g3: game(3), g4: game(4) }, now: 'T0' });
+    expect(doc4.totalRounds).toBe(3);
+    expect(doc4.slots).toBe(16);
+    const doc2 = createBracketDoc({ bracketId: 'b', round1Games: { g1: game(1), g2: game(2) }, now: 'T0' });
+    expect(doc2.totalRounds).toBe(2);
+    expect(doc2.currentRound).toBe(1);
+    expect(doc2.status).toBe(BRACKET_STATUS.ACTIVE);
+    expect(doc2.champion).toBeNull();
+    expect(doc2.recap).toBeNull();
+    expect(Object.keys(doc2.rounds)).toEqual([bracketRoundKey(1)]);
+  });
+
+  it('rejects a non-power-of-two game count', () => {
+    expect(() => createBracketDoc({ bracketId: 'b', round1Games: { g1: game(1), g2: game(2), g3: game(3) }, now: 'T0' }))
+      .toThrow(/power of two/);
+  });
+});
+
+describe('CPU identity helpers (Ruling B1)', () => {
+  it('cpuUserId / cpuAgentDocId / isCpuUserId are deterministic and prefix-consistent', () => {
+    expect(cpuUserId(3)).toBe('cpu-3');
+    expect(cpuAgentDocId(3)).toBe('cpu-agent-3');
+    expect(isCpuUserId('cpu-3')).toBe(true);
+    expect(isCpuUserId('user-3')).toBe(false);
+    expect(() => cpuUserId(0)).toThrow();
+  });
+
+  it('cpuNFromUserId is the exact inverse of cpuUserId and rejects every drift shape', () => {
+    expect(cpuNFromUserId(cpuUserId(7))).toBe(7);
+    expect(cpuNFromUserId('cpu-12')).toBe(12);
+    expect(cpuNFromUserId('user-3')).toBeNull();
+    expect(cpuNFromUserId('cpu-')).toBeNull();
+    expect(cpuNFromUserId('cpu-01')).toBeNull();  // zero-padded = not our codec
+    expect(cpuNFromUserId('cpu-1x')).toBeNull();
+    expect(cpuNFromUserId(null)).toBeNull();
+  });
+
+  it('archetype round-robin: 4 consecutive CPUs field 4 distinct archetypes, reproducibly', () => {
+    const four = [1, 2, 3, 4].map(cpuArchetypeForN);
+    expect(new Set(four).size).toBe(4);
+    expect(cpuArchetypeForN(7)).toBe(cpuArchetypeForN(1)); // (n-1) % 6
+    expect(cpuArchetypeForN(1)).toBe(CPU_ARCHETYPE_ORDER[0]);
+  });
+
+  it('CPU_ARCHETYPE_ORDER parity with the live archetype registry (zero-import rule: literals here, parity locked)', () => {
+    expect([...CPU_ARCHETYPE_ORDER].sort()).toEqual(Object.keys(ARCHETYPE_WEIGHTS).sort());
+  });
+});
+
+describe('buildCpuUserBoard — deterministic ranked-slice user boards', () => {
+  const pool = Array.from({ length: 40 }, (_, i) => `SYM${i}`);
+
+  it('CPU n slices at offset (n-1)×3, depth BOARD_DEPTH_MIN', () => {
+    const board = buildCpuUserBoard(pool, 2);
+    expect(board).toHaveLength(TOURNAMENT_TUNING.BOARD_DEPTH_MIN);
+    expect(board[0]).toBe('SYM3');
+    expect(buildCpuUserBoard(pool, 1)[0]).toBe('SYM0');
+  });
+
+  it('neighboring CPUs collide by construction (the snipe stagger)', () => {
+    const b1 = new Set(buildCpuUserBoard(pool, 1));
+    const b2 = buildCpuUserBoard(pool, 2);
+    expect(b2.filter(s => b1.has(s)).length).toBeGreaterThan(0);
+  });
+
+  it('wraps modulo the pool and is reproducible', () => {
+    const board = buildCpuUserBoard(pool, 14); // offset 39 → wraps
+    expect(board[0]).toBe('SYM39');
+    expect(board[1]).toBe('SYM0');
+    expect(buildCpuUserBoard(pool, 14)).toEqual(board);
+  });
+});
+
+describe('createTournamentGroupDoc — isCpu passthrough (Ruling B1)', () => {
+  const base = {
+    userPool: ['NVDA', 'AMD'],
+    roundNumber: 1,
+    bracketGameId: 'b-r1-g1',
+    now: 'T0',
+  };
+
+  it('carries isCpu: true on CPU seats and OMITS it elsewhere (the omission idiom)', () => {
+    const doc = createTournamentGroupDoc({
+      ...base,
+      players: [
+        { odUserId: 'u1' },
+        { odUserId: 'u2', isCpu: false },
+        { odUserId: 'cpu-1', isCpu: true },
+        { odUserId: 'cpu-2', isCpu: true },
+      ],
+    });
+    expect(doc.players[0]).not.toHaveProperty('isCpu');
+    expect(doc.players[1]).not.toHaveProperty('isCpu');
+    expect(doc.players[2].isCpu).toBe(true);
+    expect(doc.players[3].isCpu).toBe(true);
   });
 });

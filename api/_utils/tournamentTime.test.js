@@ -16,6 +16,7 @@ import {
   formatEtDate,
   isMarketOpenAt,
   getTournamentClaimWindow,
+  parseSimulatedNow,
 } from './tournamentTime.js';
 
 describe('getEtParts / formatEtDate', () => {
@@ -104,5 +105,21 @@ describe('getTournamentClaimWindow — overnight placement window (legacy semant
   it('DST: 21:00 UTC is in the evening window in EDT (17:00 ET) but not at 20:00 UTC in EST', () => {
     expect(getTournamentClaimWindow(new Date('2026-01-14T21:00:00Z')).isOpen).toBe(true);  // 16:00 EST
     expect(getTournamentClaimWindow(new Date('2026-01-14T20:59:00Z')).isOpen).toBe(false); // 15:59 EST
+  });
+});
+
+describe('parseSimulatedNow — the shared admin time-control contract (P3b)', () => {
+  it('absent → the real clock; a valid ISO string → that instant', () => {
+    const real = parseSimulatedNow(null);
+    expect(real.now).toBeInstanceOf(Date);
+    expect(real.error).toBeUndefined();
+    const sim = parseSimulatedNow('2026-06-15T12:00:00.000Z');
+    expect(sim.now.toISOString()).toBe('2026-06-15T12:00:00.000Z');
+  });
+
+  it('rejects non-strings (a bare JSON number would silently bank against 1970) and junk strings', () => {
+    expect(parseSimulatedNow(123).error).toMatch(/ISO-8601/);
+    expect(parseSimulatedNow('not-a-date').error).toMatch(/ISO-8601/);
+    expect(parseSimulatedNow(123).now).toBeUndefined();
   });
 });

@@ -105,6 +105,205 @@ export const LEDGER_SOURCE = Object.freeze({
   SWAP: 'swap',
 });
 
+// ==================== BRACKET (P3b — founder-ratified June 12, 2026) ====================
+//
+// One document per bracket at tournamentBrackets/{bracketId} — the whole
+// bracket in one read (the P6/P7 spectator surfaces and the P3b dev card
+// subscribe to it). Server-write-only, like tournamentGroups (firestore.rules
+// sibling block). Rounds and games are MAPS, not arrays: Firestore cannot
+// dot-path into arrays, and the Friday advancement locks one game at a time;
+// `roundNumber`/`gameIndex` carry ordering for renderers.
+
+export const TOURNAMENT_BRACKETS_COLLECTION = 'tournamentBrackets';
+
+export const BRACKET_STATUS = Object.freeze({
+  ACTIVE: 'active',
+  COMPLETE: 'complete',
+});
+
+/** Round map key: 'r1', 'r2', … */
+export function bracketRoundKey(roundNumber) {
+  return `r${roundNumber}`;
+}
+
+/**
+ * The bracketGameId stored on BOTH the group doc and the bracket doc's game
+ * entry: `{bracketId}-r{N}-g{M}` — group ↔ bracket navigation is a string
+ * parse in either direction, no join.
+ */
+export function buildBracketGameId(bracketId, roundNumber, gameIndex) {
+  return `${bracketId}-r${roundNumber}-g${gameIndex}`;
+}
+
+/** Inverse of buildBracketGameId. Returns {bracketId, roundNumber, gameIndex} or null. */
+export function parseBracketGameId(bracketGameId) {
+  if (typeof bracketGameId !== 'string') return null;
+  const match = /^(.+)-r(\d+)-g(\d+)$/.exec(bracketGameId);
+  if (!match) return null;
+  return { bracketId: match[1], roundNumber: Number(match[2]), gameIndex: Number(match[3]) };
+}
+
+/**
+ * One game entry (a group of four) in a bracket round. `seats` carry
+ * {odUserId, isCpu} so spectator surfaces mark CPUs without reading group
+ * docs. `finalScores`/`advancers`/`completedAt` are null until the Friday
+ * advancement locks the game (final-snapshot weekly scores — getWeeklyScore).
+ */
+export function createBracketGame({ bracketGameId, gameIndex, groupId, seats } = {}) {
+  if (typeof bracketGameId !== 'string' || !bracketGameId) {
+    throw new Error('createBracketGame: bracketGameId is required');
+  }
+  if (!Number.isInteger(gameIndex) || gameIndex < 1) {
+    throw new Error('createBracketGame: gameIndex must be a positive integer');
+  }
+  if (typeof groupId !== 'string' || !groupId) {
+    throw new Error('createBracketGame: groupId is required');
+  }
+  if (!Array.isArray(seats) || seats.length !== GROUP_SIZE) {
+    throw new Error(`createBracketGame: seats must be an array of exactly ${GROUP_SIZE}`);
+  }
+  return {
+    bracketGameId,
+    gameIndex,
+    groupId,
+    seats: seats.map(s => ({ odUserId: s.odUserId, isCpu: s.isCpu === true })),
+    finalScores: null,
+    advancers: null,
+    completedAt: null,
+  };
+}
+
+/** One round entry. `games` = {bracketGameId → createBracketGame}. */
+export function createBracketRound({ roundNumber, games, composedAt } = {}) {
+  if (!Number.isInteger(roundNumber) || roundNumber < 1) {
+    throw new Error('createBracketRound: roundNumber must be a positive integer');
+  }
+  if (games == null || typeof games !== 'object' || Object.keys(games).length === 0) {
+    throw new Error('createBracketRound: games map is required');
+  }
+  if (composedAt == null) {
+    throw new Error('createBracketRound: composedAt is required');
+  }
+  return { roundNumber, games: { ...games }, composedAt, lockedAt: null };
+}
+
+/**
+ * The tournamentBrackets document. Round-1 game count must be a power of two
+ * (games halve each round: G groups → 2G advancers → G/2 groups), so
+ * totalRounds = log2(G) + 1 — the terminal round is the round with exactly
+ * ONE game (the final four); its top-1 is the champion. No bye concept at
+ * V1: under-filled rounds are CPU-padded (Ruling B1), recorded per-seat via
+ * seats[].isCpu. `recap.finalComposite` stays null until P6 backfills.
+ */
+export function createBracketDoc({ bracketId, round1Games, now } = {}) {
+  if (typeof bracketId !== 'string' || !bracketId) {
+    throw new Error('createBracketDoc: bracketId is required');
+  }
+  if (round1Games == null || typeof round1Games !== 'object') {
+    throw new Error('createBracketDoc: round1Games map is required');
+  }
+  const gameCount = Object.keys(round1Games).length;
+  if (gameCount < 1 || (gameCount & (gameCount - 1)) !== 0) {
+    throw new Error(`createBracketDoc: round-1 game count must be a power of two (got ${gameCount})`);
+  }
+  if (now == null) {
+    throw new Error('createBracketDoc: now is required (caller supplies the timestamp)');
+  }
+  return {
+    bracketId,
+    status: BRACKET_STATUS.ACTIVE,
+    currentRound: 1,
+    totalRounds: Math.log2(gameCount) + 1,
+    slots: gameCount * GROUP_SIZE,
+    rounds: {
+      [bracketRoundKey(1)]: createBracketRound({ roundNumber: 1, games: round1Games, composedAt: now }),
+    },
+    champion: null,
+    recap: null,
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
+// ==================== CPU SYSTEM AGENTS (Ruling B1 — ratified June 12, 2026) ====================
+//
+// CPU seats are REAL system-owned agents (never the synthetic dev
+// affordance): a flagged player entry `cpu-{n}` owning the agents doc
+// `agents/cpu-agent-{n}` (deterministic id → get-or-create is idempotent and
+// race-free; created lazily at group composition). Identity allocation is
+// unique within a round — reusing one cpu-{n} in two concurrent games would
+// trip the one-active-battle-per-agent constraint at P4 deploy time; reuse
+// across rounds is safe (prior-round battles are completed).
+
+export const CPU_USER_ID_PREFIX = 'cpu-';
+
+export function cpuUserId(n) {
+  if (!Number.isInteger(n) || n < 1) throw new Error('cpuUserId: n must be a positive integer');
+  return `${CPU_USER_ID_PREFIX}${n}`;
+}
+
+export function isCpuUserId(odUserId) {
+  return typeof odUserId === 'string' && odUserId.startsWith(CPU_USER_ID_PREFIX);
+}
+
+/**
+ * Inverse of cpuUserId — co-located with its builder (the
+ * parseBracketGameId precedent) so the id codec has ONE home.
+ * Returns n, or null for anything that isn't a well-formed CPU id.
+ */
+export function cpuNFromUserId(odUserId) {
+  if (!isCpuUserId(odUserId)) return null;
+  const raw = odUserId.slice(CPU_USER_ID_PREFIX.length);
+  if (!/^[1-9]\d*$/.test(raw)) return null;
+  return Number(raw);
+}
+
+/** The deterministic agents-collection doc id for CPU n. */
+export function cpuAgentDocId(n) {
+  if (!Number.isInteger(n) || n < 1) throw new Error('cpuAgentDocId: n must be a positive integer');
+  return `cpu-agent-${n}`;
+}
+
+// Fixed assignment order (founder-ratified): any group of ≤4 consecutive
+// CPUs fields four distinct archetypes, reproducible from the id alone.
+// Values mirror api/_utils/archetypeScoring.js ARCHETYPE_WEIGHTS keys —
+// string literals here by the zero-import rule (parity is test-locked).
+export const CPU_ARCHETYPE_ORDER = Object.freeze([
+  'momentum_chaser',
+  'contrarian',
+  'diversifier',
+  'degen',
+  'analyst',
+  'guardian',
+]);
+
+export function cpuArchetypeForN(n) {
+  if (!Number.isInteger(n) || n < 1) throw new Error('cpuArchetypeForN: n must be a positive integer');
+  return CPU_ARCHETYPE_ORDER[(n - 1) % CPU_ARCHETYPE_ORDER.length];
+}
+
+/**
+ * Deterministic CPU user board (the 3-pick layer): a ranked-pool slice at
+ * offset (n-1)×PICKS_PER_PLAYER, depth BOARD_DEPTH_MIN, wrapping modulo pool
+ * length — reproducible from the CPU id + pool alone; the 3-stagger collides
+ * neighboring CPU boards so resolution produces real snipes (the seeder's
+ * stagger precedent). Committed through the REAL board-commit core
+ * (api/_utils/tournamentBoards.js buildBoardCommit), never the seeder path.
+ */
+export function buildCpuUserBoard(rankedPool, n) {
+  if (!Array.isArray(rankedPool) || rankedPool.length === 0) {
+    throw new Error('buildCpuUserBoard: rankedPool is required');
+  }
+  if (!Number.isInteger(n) || n < 1) throw new Error('buildCpuUserBoard: n must be a positive integer');
+  const depth = Math.min(TOURNAMENT_TUNING.BOARD_DEPTH_MIN, rankedPool.length);
+  const offset = ((n - 1) * PICKS_PER_PLAYER) % rankedPool.length;
+  const board = [];
+  for (let i = 0; i < depth; i++) {
+    board.push(rankedPool[(offset + i) % rankedPool.length]);
+  }
+  return board;
+}
+
 // ==================== TUNING LEDGER (Spec §5) ====================
 
 // Founder-set initial values. k (USER_LAYER_K) weights each user-layer point
@@ -295,9 +494,13 @@ export function createAgentLedgerEntry({ heldBy, since, source } = {}) {
 /**
  * The tournamentGroups document (Spec §1.1).
  *
- * - `players` are mapped to exactly `{odUserId, picks}` — `pickCategories`
- *   does not exist by construction (Spec §1.1: category system removed end
- *   to end). Empty `picks` is valid (pre-draft group).
+ * - `players` are mapped to exactly `{odUserId, picks}` (+ `isCpu: true` on
+ *   CPU seats — Ruling B1, ratified June 12, 2026; omitted when false, the
+ *   codebase's omission idiom) — `pickCategories` does not exist by
+ *   construction (Spec §1.1: category system removed end to end). Empty
+ *   `picks` is valid (pre-draft group). The isCpu flag is the contract for
+ *   every downstream row (bracket seats, P6 aggregation/leaderboard); the
+ *   `cpu-` id prefix is a readable secondary signal only.
  * - Exactly one of `bracketGameId` | `baseLayerWeek` must be provided (round
  *   metadata, Spec §1.1); the unpopulated key is omitted from the output.
  * - `dailyScores` inner keying — RATIFIED (founder, June 11, 2026):
@@ -365,7 +568,11 @@ export function createTournamentGroupDoc({
     roundNumber,
     ...(hasBracket ? { bracketGameId } : { baseLayerWeek }),
     groupMembers: ids,
-    players: players.map(p => ({ odUserId: p.odUserId, picks: [...(p.picks ?? [])] })),
+    players: players.map(p => ({
+      odUserId: p.odUserId,
+      picks: [...(p.picks ?? [])],
+      ...(p.isCpu === true ? { isCpu: true } : {}),
+    })),
     userPool: [...userPool],
     claimSystem: createClaimSystemState(),
     dailyScores: {},

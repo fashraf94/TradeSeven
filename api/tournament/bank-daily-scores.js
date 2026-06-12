@@ -11,11 +11,18 @@
 // admin-gated, so no further secret check is needed): it suppresses only the
 // weekend/holiday guard. The idempotency skip is NEVER bypassable — the
 // smoke script depends on seeing it.
+//
+// `simulatedNow` (P3b, same idiom): an ISO instant injected as the banking
+// clock, so the founder smoke arc banks day1..day5 in one session by
+// stepping the simulated ET date (Mon..Fri). The per-ET-day idempotency
+// applies to the SIMULATED date — re-banking the same simulated day still
+// shows the skip. Quotes are always live; only the clock is simulated.
 
 import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
 import { requireAdminSecret } from '../_utils/adminSecretAuth.js';
 import { isValidForgeId } from '../_utils/idValidation.js';
 import { isTradingDay } from '../_utils/marketSchedule.js';
+import { parseSimulatedNow } from '../_utils/tournamentTime.js';
 import { getGroup } from '../_utils/tournamentGroupService.js';
 import { bankGroup } from '../_utils/tournamentBanking.js';
 import { loadAtrPercentiles } from '../_utils/tournamentUserScoring.js';
@@ -31,15 +38,25 @@ export default async function handler(req, res) {
   if (!requireAdminSecret(req, res)) return;
 
   const body = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {});
-  const { groupId, bypassTradingDay = false } = body;
+  const { groupId, bypassTradingDay = false, simulatedNow = null } = body;
   if (!isValidForgeId(groupId)) {
     return res.status(400).json({ error: 'invalid_group_id', message: 'groupId is malformed.' });
   }
+  const parsed = parseSimulatedNow(simulatedNow);
+  if (parsed.error) {
+    return res.status(400).json({ error: 'invalid_simulated_now', message: parsed.error });
+  }
+  const now = parsed.now;
 
-  if (!isTradingDay() && !bypassTradingDay) {
+  // One clock for guard AND banking: the trading-day check evaluates the
+  // (possibly simulated) instant being banked, ET-shifted per the
+  // marketSchedule getETDate convention — never the real wall clock against
+  // a simulated recordedDate.
+  const etShiftedNow = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
+  if (!isTradingDay(etShiftedNow) && !bypassTradingDay) {
     return res.status(409).json({
       error: 'not_trading_day',
-      message: 'Market is closed today (weekend or holiday). Pass bypassTradingDay: true to bank anyway.',
+      message: 'Market is closed on the banked date (weekend or holiday). Pass bypassTradingDay: true to bank anyway.',
     });
   }
 
@@ -73,7 +90,7 @@ export default async function handler(req, res) {
     }
 
     const result = await bankGroup(db, groupId, quotes, {
-      now: new Date(),
+      now,
       atrPercentiles,
       recordedBy: 'manual',
     });

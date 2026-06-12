@@ -421,3 +421,101 @@ describe('resolveGroupAgents', () => {
     expect(out[1]).toMatchObject({ odUserId: 'user-b', agentId: 'dev-agent-user-b', agent: null, synthetic: true });
   });
 });
+
+// ==================== P3b — CPU BRANCH (Ruling B1, ratified June 12, 2026) ====================
+
+describe('produceGroupBoards — CPU system agents', () => {
+  function cpuDb() {
+    return makeDb({
+      'indexIntelligence/stockRankings': { stocks: STOCKS },
+      'agents/cpu-agent-1': { ownerId: 'user-a', name: 'CPU', archetype: 'analyst', isCpu: true },
+      'agents/agent-b': { ownerId: 'user-b', name: 'Bob', archetype: 'analyst' },
+      'agents/agent-c': { ownerId: 'user-c', name: 'Cyd', archetype: 'analyst' },
+      'agents/agent-d': { ownerId: 'user-d', name: 'Dee', archetype: 'analyst' },
+    });
+  }
+  const happyAnthropic = () => fakeAnthropic(() => toolResponse({
+    board: SYMBOLS.slice(0, 16).map(s => ({ symbol: s, rationale: 'r' })),
+    userPicksReaction: [],
+  }));
+
+  it('a CPU agent gets the deterministic fallback board with NO model call — and is NOT synthetic', async () => {
+    const { db, store } = cpuDb();
+    const anthropic = happyAnthropic();
+    const summary = await produceGroupBoards(db, makeGroup(), { anthropic, now: NOW });
+
+    expect(summary).toMatchObject({ produced: 4, synthetic: 0, cpu: 1, fallbacks: 1, errors: 0 });
+    expect(anthropic.calls).toHaveLength(3); // the three real agents only
+
+    const doc = store.get('tournamentGroups/g1/agentBoards/cpu-agent-1');
+    expect(doc.fallback).toBe(true);
+    expect(doc.fallbackReason).toBe('cpu_agent');
+    expect(doc.synthetic).toBeUndefined(); // real groups with CPUs must pass the synthetic-0 refusal
+    expect(doc.model).toBeNull();
+    expect(doc.board.length).toBeGreaterThan(0);
+  });
+
+  it('the CPU board is reproducible: two runs (force) yield the identical board', async () => {
+    const { db, store } = cpuDb();
+    await produceGroupBoards(db, makeGroup(), { anthropic: happyAnthropic(), now: NOW });
+    const first = store.get('tournamentGroups/g1/agentBoards/cpu-agent-1').board;
+    await produceGroupBoards(db, makeGroup(), { anthropic: happyAnthropic(), now: NOW, force: true });
+    expect(store.get('tournamentGroups/g1/agentBoards/cpu-agent-1').board).toEqual(first);
+  });
+});
+
+describe('produceGroupBoards — skip-path classification (P3b refusal persistence)', () => {
+  it('a pre-existing SYNTHETIC board is counted on the skip path — the refusal can never be one-shot', async () => {
+    const { db } = makeDb({
+      'indexIntelligence/stockRankings': { stocks: STOCKS },
+      // No agents docs: all four members are synthetic.
+    });
+    const anthropic = fakeAnthropic(() => { throw new Error('must not be called for synthetic'); });
+    const first = await produceGroupBoards(db, makeGroup(), { anthropic, now: NOW });
+    expect(first.synthetic).toBe(4);
+    // Tick 2: every board exists → all skipped — but still classified.
+    const second = await produceGroupBoards(db, makeGroup(), { anthropic, now: NOW });
+    expect(second.skipped).toBe(4);
+    expect(second.produced).toBe(0);
+    expect(second.synthetic).toBe(4);
+  });
+
+  it('a pre-existing CPU board keeps its cpu count on the skip path', async () => {
+    const { db } = makeDb({
+      'indexIntelligence/stockRankings': { stocks: STOCKS },
+      'agents/cpu-agent-1': { ownerId: 'user-a', archetype: 'analyst', isCpu: true },
+      'agents/agent-b': { ownerId: 'user-b', archetype: 'analyst' },
+      'agents/agent-c': { ownerId: 'user-c', archetype: 'analyst' },
+      'agents/agent-d': { ownerId: 'user-d', archetype: 'analyst' },
+    });
+    const happy = () => fakeAnthropic(() => toolResponse({
+      board: SYMBOLS.slice(0, 16).map(s => ({ symbol: s, rationale: 'r' })),
+      userPicksReaction: [],
+    }));
+    await produceGroupBoards(db, makeGroup(), { anthropic: happy(), now: NOW });
+    const second = await produceGroupBoards(db, makeGroup(), { anthropic: happy(), now: NOW });
+    expect(second.skipped).toBe(4);
+    expect(second.cpu).toBe(1);
+    expect(second.synthetic).toBe(0);
+  });
+
+  it('a player-entry isCpu flag routes the CPU branch even when the agent doc lacks the marker (loud mismatch)', async () => {
+    const { db } = makeDb({
+      'indexIntelligence/stockRankings': { stocks: STOCKS },
+      'agents/cpu-agent-1': { ownerId: 'user-a', archetype: 'analyst' }, // pre-B1 doc: flag missing
+      'agents/agent-b': { ownerId: 'user-b', archetype: 'analyst' },
+      'agents/agent-c': { ownerId: 'user-c', archetype: 'analyst' },
+      'agents/agent-d': { ownerId: 'user-d', archetype: 'analyst' },
+    });
+    const group = makeGroup();
+    group.players[0].isCpu = true; // the contract flag
+    const anthropic = fakeAnthropic(() => toolResponse({
+      board: SYMBOLS.slice(0, 16).map(s => ({ symbol: s, rationale: 'r' })),
+      userPicksReaction: [],
+    }));
+    const summary = await produceGroupBoards(db, group, { anthropic, now: NOW });
+    expect(summary.cpu).toBe(1);                 // CPU branch took it
+    expect(anthropic.calls).toHaveLength(3);     // no model call burned on the CPU seat
+    expect(console.error.mock.calls.map(c => c.join(' ')).some(l => l.includes('isCpu MISMATCH'))).toBe(true);
+  });
+});

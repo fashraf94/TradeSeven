@@ -15,6 +15,7 @@
 import {
   TOURNAMENT_GROUPS_COLLECTION,
   GROUP_STATUS,
+  GROUP_SIZE,
   createTournamentGroupDoc,
 } from '../../src/constants/leagueTournament.js';
 
@@ -83,4 +84,42 @@ export async function transitionStatus(db, groupId, to, now) {
 /** Membership helper: the player entry for odUserId, or null. */
 export function getPlayer(group, odUserId) {
   return (group?.players ?? []).find(p => p.odUserId === odUserId) ?? null;
+}
+
+/**
+ * Battle-shaped eligibility query — the house mirror (claims cron :564 /
+ * banking :224) given one home for the P3b duty surfaces: status equality +
+ * full seat count. Returns [{id, ...data}].
+ */
+export async function fetchEligibleGroupsByStatus(db, status) {
+  const snap = await db.collection(TOURNAMENT_GROUPS_COLLECTION)
+    .where('status', '==', status)
+    .get();
+  const groups = [];
+  snap.forEach(doc => {
+    const data = doc.data();
+    if (data.players?.length === GROUP_SIZE) groups.push({ id: doc.id, ...data });
+  });
+  return groups;
+}
+
+/**
+ * Ranked universe → fresh user pool (Spec §0.11: full catalog, the same
+ * universe agents see), ranked order preserved, deduped/uppercased. The one
+ * home for pool sourcing (P3b) — the P1a dev seeder, the bracket seeder, and
+ * round composition all draw from here rather than carrying copies.
+ */
+export async function fetchRankedUserPool(db) {
+  const snap = await db.collection('indexIntelligence').doc('stockRankings').get();
+  const stocks = snap.exists ? snap.data().stocks : null;
+  const pool = [];
+  const seen = new Set();
+  for (const stock of Array.isArray(stocks) ? stocks : []) {
+    const symbol = typeof stock?.symbol === 'string' ? stock.symbol.trim().toUpperCase() : '';
+    if (symbol && !seen.has(symbol)) {
+      seen.add(symbol);
+      pool.push(symbol);
+    }
+  }
+  return pool;
 }

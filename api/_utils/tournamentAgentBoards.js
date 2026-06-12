@@ -397,24 +397,35 @@ export async function produceGroupBoards(db, group, { anthropic, now = new Date(
 
   const boardsCol = db.collection(TOURNAMENT_GROUPS_COLLECTION).doc(group.id).collection(AGENT_BOARDS_SUBCOLLECTION);
   const existingSnap = await boardsCol.get();
-  const existingDocsByUser = new Map(); // odUserId -> [{docId}]
+  const existingDocsByUser = new Map(); // odUserId -> [{docId, data}]
   existingSnap.forEach(doc => {
-    const odUserId = doc.data()?.odUserId;
-    if (!odUserId) return;
-    if (!existingDocsByUser.has(odUserId)) existingDocsByUser.set(odUserId, []);
-    existingDocsByUser.get(odUserId).push({ docId: doc.id });
+    const data = doc.data();
+    if (!data?.odUserId) return;
+    if (!existingDocsByUser.has(data.odUserId)) existingDocsByUser.set(data.odUserId, []);
+    existingDocsByUser.get(data.odUserId).push({ docId: doc.id, data });
   });
 
   const members = await resolveGroupAgents(db, group);
   const rankingByArchetype = new Map();
-  const summary = { produced: 0, skipped: 0, fallbacks: 0, synthetic: 0, errors: 0, boards: [] };
+  const summary = { produced: 0, skipped: 0, fallbacks: 0, synthetic: 0, cpu: 0, errors: 0, boards: [] };
 
   for (const { odUserId, agentId, agent, synthetic } of members) {
     const existingDocs = existingDocsByUser.get(odUserId) || [];
     const current = existingDocs.find(d => d.docId === agentId);
     const stale = existingDocs.filter(d => d.docId !== agentId);
-    if (current && !force && stale.length === 0) {
+
+    // A skipped member's EXISTING board still counts toward the summary's
+    // synthetic/cpu classification — the P3b synthetic refusal must hold on
+    // every tick, not just the one that produced the board (a one-shot
+    // refusal would let the configuration error draft on the next re-run).
+    const countExisting = () => {
       summary.skipped++;
+      if (current.data?.synthetic === true) summary.synthetic++;
+      if (current.data?.fallbackReason === 'cpu_agent') summary.cpu++;
+    };
+
+    if (current && !force && stale.length === 0) {
+      countExisting();
       continue;
     }
 
@@ -426,7 +437,7 @@ export async function produceGroupBoards(db, group, { anthropic, now = new Date(
         await boardsCol.doc(docId).delete();
       }
       if (current && !force) {
-        summary.skipped++;
+        countExisting();
         continue;
       }
 
@@ -456,9 +467,26 @@ export async function produceGroupBoards(db, group, { anthropic, now = new Date(
         }
       }
 
+      // CPU branch (Ruling B1, ratified June 12, 2026): system-owned agents
+      // get the deterministic fallback board — NO model call — and are NOT
+      // synthetic (real agents on real groups; the synthetic-refusal
+      // contract above stays intact). Counted under fallbacks + cpu.
+      // CPU-ness is sourced from the PLAYER ENTRY's isCpu — the ratified
+      // contract flag — OR'd with the agent doc's marker; a disagreement is
+      // config drift (hand-seeded doc, pre-B1 doc) and is logged loudly so
+      // it can't silently burn model calls on CPUs or starve a human of
+      // model boards.
+      const playerIsCpu = (group.players || []).find(p => p.odUserId === odUserId)?.isCpu === true;
+      const agentIsCpu = agent?.isCpu === true;
+      if (playerIsCpu !== agentIsCpu && !synthetic) {
+        console.error(`${LOG_PREFIX} member ${odUserId}: isCpu MISMATCH — player entry says ${playerIsCpu}, agent doc ${agentId} says ${agentIsCpu} (config drift; founder attention). Treating as CPU.`);
+      }
+      const isCpu = playerIsCpu || agentIsCpu;
       const result = synthetic
         ? fallbackBoardResult(rankedStocks.map(s => s.symbol), 'synthetic_agent')
-        : await produceBoardForAgent({ anthropic, agent, archetype, rankedStocks, validSymbols, userPicks, equippedWatchlist });
+        : isCpu
+          ? fallbackBoardResult(rankedStocks.map(s => s.symbol), 'cpu_agent')
+          : await produceBoardForAgent({ anthropic, agent, archetype, rankedStocks, validSymbols, userPicks, equippedWatchlist });
 
       const doc = buildAgentBoardDoc({
         agentId, odUserId, archetype, group, now,
@@ -480,6 +508,7 @@ export async function produceGroupBoards(db, group, { anthropic, now = new Date(
       summary.produced++;
       if (result.fallback) summary.fallbacks++;
       if (synthetic) summary.synthetic++;
+      if (isCpu) summary.cpu++;
       summary.boards.push({ agentId, odUserId, fallback: result.fallback, synthetic, top3: result.board.slice(0, 3), stances: result.userPicksStance.length });
       console.log(`${LOG_PREFIX} board persisted for ${agentId} (${odUserId})${result.fallback ? ` [FALLBACK: ${result.fallbackReason}]` : ''}`);
     } catch (err) {

@@ -9,6 +9,7 @@ import { doc, getDoc, onSnapshot, collection, query, where, orderBy, limit, getD
 import { db } from '../firebase/config';
 import {
   TOURNAMENT_GROUPS_COLLECTION,
+  TOURNAMENT_BRACKETS_COLLECTION,
   TOURNAMENT_TUNING,
   AGENT_BOARDS_SUBCOLLECTION,
   STREAMS_SUBCOLLECTION,
@@ -106,6 +107,20 @@ export function subscribeAgentLedger(groupId, callback) {
     callback(snapshot.exists() ? snapshot.data() : null);
   }, (error) => {
     console.error('[TournamentGroupService] Agent ledger subscription error:', error);
+    callback(null);
+  });
+}
+
+/**
+ * Live bracket-state subscription (P3b — the dev bracket card now, the
+ * P6/P7 spectator surfaces later). Whole bracket in one doc by design.
+ * Callback receives { id, ...bracket } or null. Returns the unsubscribe fn.
+ */
+export function subscribeBracket(bracketId, callback) {
+  return onSnapshot(doc(db, TOURNAMENT_BRACKETS_COLLECTION, bracketId), (snapshot) => {
+    callback(snapshot.exists() ? { id: snapshot.id, ...snapshot.data() } : null);
+  }, (error) => {
+    console.error('[TournamentGroupService] Bracket subscription error:', error);
     callback(null);
   });
 }
