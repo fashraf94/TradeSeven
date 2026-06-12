@@ -1,0 +1,36 @@
+function enrichPortfolio(result, stockUniverse) {
+  const lookup = {};
+  stockUniverse.forEach((s) => {
+    lookup[s.symbol] = s;
+  });
+
+  const toAsset = (symbol) => {
+    // Check stocks first
+    const stock = lookup[symbol];
+    if (stock) {
+      return {
+        symbol,
+        name: stock.name || symbol,
+        baseATR: (stock.atrPercentile || 0.5) * 8,
+        isCrypto: false,
+      };
+    }
+    // Check crypto
+    const crypto = getCryptoBySymbol(symbol);
+    if (crypto) return { ...crypto };
+    // Unknown — should not happen after validation
+    return { symbol, name: symbol, baseATR: 3.0, isCrypto: false };
+  };
+
+  return {
+    portfolio: {
+      star: result.star.map(toAsset),
+      core: result.core.map(toAsset),
+      support: [...result.support_stocks.map(toAsset), toAsset(result.support_crypto)],
+    },
+    bench: {
+      stocks: result.bench_stocks.map(toAsset),
+      crypto: toAsset(result.bench_crypto),
+    },
+  };
+}

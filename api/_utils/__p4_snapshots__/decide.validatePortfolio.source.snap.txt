@@ -1,0 +1,42 @@
+function validatePortfolio(result, validSymbols) {
+  const errors = [];
+
+  // Check counts
+  if (result.star?.length !== 2) errors.push('Star must have exactly 2 stocks');
+  if (result.core?.length !== 2) errors.push('Core must have exactly 2 stocks');
+  if (result.support_stocks?.length !== 2) errors.push('Support must have exactly 2 stocks');
+  if (result.bench_stocks?.length !== 3) errors.push('Bench must have exactly 3 stocks');
+  if (!result.support_crypto) errors.push('Missing support crypto');
+  if (!result.bench_crypto) errors.push('Missing bench crypto');
+
+  // Check valid stock symbols
+  const allStocks = [
+    ...(result.star || []),
+    ...(result.core || []),
+    ...(result.support_stocks || []),
+    ...(result.bench_stocks || []),
+  ];
+  allStocks.forEach((s) => {
+    if (!validSymbols.has(s)) errors.push(`Unknown stock: ${s}`);
+  });
+
+  // Check valid crypto
+  if (result.support_crypto && !VALID_CRYPTO_SYMBOLS.includes(result.support_crypto)) {
+    errors.push(`Invalid crypto: ${result.support_crypto}`);
+  }
+  if (result.bench_crypto && !VALID_CRYPTO_SYMBOLS.includes(result.bench_crypto)) {
+    errors.push(`Invalid crypto: ${result.bench_crypto}`);
+  }
+
+  // Check duplicates
+  const allSymbols = [...allStocks, result.support_crypto, result.bench_crypto].filter(Boolean);
+  const unique = new Set(allSymbols);
+  if (unique.size !== allSymbols.length) errors.push('Duplicate symbols detected');
+
+  // Check crypto are different
+  if (result.support_crypto && result.support_crypto === result.bench_crypto) {
+    errors.push('Support and bench crypto must be different');
+  }
+
+  return { valid: errors.length === 0, errors };
+}
