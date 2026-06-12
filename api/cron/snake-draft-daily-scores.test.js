@@ -1,7 +1,9 @@
 // api/cron/snake-draft-daily-scores.test.js
 //
 // Handler-level tests for the P1b tournament-banking branch riding this
-// nightly cron (zero new schedule entries). What they lock:
+// nightly cron (zero new schedule entries) — and, at P6a, the third
+// tournament branch (seasonal-leaderboard aggregation, after banking).
+// What they lock:
 //
 // 1. PRODUCTION INERTNESS: zero tournament groups is a clean no-op — the
 //    production state until P3+ — and every legacy response key survives
@@ -115,6 +117,7 @@ describe('tournament banking branch — production inertness', () => {
     // Additive branches, no-op:
     expect(res.body.tournament).toEqual({ groups: 0, processed: 0, skipped: 0, errors: 0 });
     expect(res.body.tournamentLedger).toEqual({ groups: 0, reconciled: 0, divergences: 0, staleCleared: 0, errors: 0 });
+    expect(res.body.tournamentLeaderboard).toEqual({ groups: 0, skippedNoBanking: 0, docsWritten: 0, errors: 0 });
     expect(captured.updates).toHaveLength(0);
     expect(captured.txUpdates).toHaveLength(0);
     expect(captured.txSets).toHaveLength(0);
@@ -251,5 +254,43 @@ describe('handler guards (unchanged by the branch)', () => {
     expect(res.body.message).toMatch(/market closed/);
     expect(res.body.tournament).toBeUndefined(); // the shared guard sits above both branches
     expect(captured.txUpdates).toHaveLength(0);
+  });
+});
+
+describe('P6a — tournament leaderboard branch (third branch, after banking)', () => {
+  it('a banked group lands month-doc writes; the response carries the branch summary', async () => {
+    vi.stubEnv('EODHD_API_KEY', 'test-key');
+    vi.stubGlobal('fetch', async () => ({
+      ok: true,
+      status: 200,
+      json: async () => [{ code: 'NVDA.US', open: 100, close: 103, previousClose: 99, timestamp: 1 }],
+    }));
+
+    // The group already carries a banked day (the static fake never applies
+    // the banking tx), so the leaderboard branch has a month to attribute
+    // (ruling A-3) — today's banking pass skips as already_recorded.
+    const group = tournamentGroup();
+    group.dailyScores = {
+      day1: {
+        recordedDate: '2026-06-10',
+        closeScores: {
+          u1: { totalPoints: 45, agentPoints: 30, compositePoints: 97.5, picks: [] },
+          u2: { totalPoints: -20, agentPoints: 0, compositePoints: -30, picks: [] },
+          u3: { totalPoints: 0, agentPoints: 0, compositePoints: 0, picks: [] },
+          u4: { totalPoints: 0, agentPoints: 0, compositePoints: 0, picks: [] },
+        },
+      },
+    };
+    const { db, captured } = makeDb({ groups: [{ id: 'g1', data: group }], groupDocs: { g1: group } });
+    h.db = db;
+    const { req, res } = makeReqRes();
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body.tournamentLeaderboard).toMatchObject({ groups: 1, docsWritten: 1, errors: 0 });
+    const monthDoc = captured.txSets.find(d => d.monthKey === '2026-06');
+    expect(monthDoc).toBeDefined();
+    expect(monthDoc.entries.u1.weeks.g1).toMatchObject({ points: 97.5, userPoints: 45, final: false });
+    expect(monthDoc.entries.u2.points).toBe(-30); // negative row, first-class
   });
 });
