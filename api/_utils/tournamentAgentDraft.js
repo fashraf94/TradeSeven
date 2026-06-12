@@ -24,6 +24,20 @@
 // healed by the ensure-acquisition path: a re-run finds the stream, re-runs
 // the idempotent reserveBulk from it, and never re-resolves.
 //
+// WHICH RECORD IS CANONICAL FOR WHAT (P3b consumes both — don't conflate):
+// - streams/agentDraft.picksByAgent is THE RESOLUTION RECORD — what the
+//   draft decided; the P3b Monday deploy's prescribed six reads from here.
+// - ledger/agentHeldSet is the AVAILABILITY INDEX — derived-rebuildable,
+//   nightly-reconciled; candidate filtering reads from here.
+// - Once battles exist, BATTLE DOCS are ground truth (P2's reconciliation
+//   arbitrates the ledger from them; the stream is never rewritten).
+//
+// SCOPE OF THE RIVAL-PICK BLOCK (deliberate asymmetry — do not "fix"): a
+// rival player's user picks are blocked AT THE DRAFT only (Spec §1.3).
+// Intraday swaps are NOT cross-checked against user picks — dual markets
+// carry no cross-market checks (V2.1 §2), and a rival agent swapping into
+// your user pick mid-week is the designed cross-layer duel storyline.
+//
 // Imports the zero-import schema module from src/ under the revised June
 // 2026 import rule (BUILD_RULES §4); the co-located test's real import of
 // THIS module is the dependency-surface guard.
@@ -158,6 +172,13 @@ export function toLedgerEntries(picksByAgent) {
  */
 async function ensureAcquisition(db, groupId, picksByAgent, now) {
   const entries = toLedgerEntries(picksByAgent);
+  if (entries.length === 0) {
+    // A stream doc without picks is a corrupted record, not a retryable
+    // state — surface it structurally instead of letting reserveBulk throw
+    // a bare validation error into the 500 handler.
+    console.error(`${LOG_PREFIX} CRITICAL: stream record for group ${groupId} carries no picks — acquisition impossible; the stream doc needs founder attention`);
+    return { acquired: false, conflicts: [{ symbol: null, reason: 'empty_stream_record', heldBy: null }] };
+  }
   const result = await reserveBulk(db, { groupId, entries, now });
   if (!result.reserved) {
     console.error(`${LOG_PREFIX} CRITICAL: acquisition conflict for group ${groupId} —`, JSON.stringify(result.conflicts));
@@ -192,11 +213,21 @@ export async function resolveAgentDraftForGroup(db, group, { now = new Date() } 
   }
 
   // Boards — one per member, keyed by agentId, carrying odUserId + archetype.
+  // produceGroupBoards deletes stale boards on agent churn, so duplicates per
+  // member should not exist — but iteration order must never decide a draft:
+  // if duplicates DO appear, the latest producedAt wins deterministically and
+  // the ambiguity is logged loudly (re-running produce-agent-boards cleans it).
   const boardsSnap = await groupRef.collection(AGENT_BOARDS_SUBCOLLECTION).get();
   const boardByUser = {};
   boardsSnap.forEach(doc => {
     const data = doc.data();
-    if (data?.odUserId) boardByUser[data.odUserId] = { agentId: doc.id, ...data };
+    if (!data?.odUserId) return;
+    const prior = boardByUser[data.odUserId];
+    if (prior) {
+      console.warn(`${LOG_PREFIX} group ${group.id}: member ${data.odUserId} has MULTIPLE board docs (${prior.agentId}, ${doc.id}) — taking the latest producedAt; run produce-agent-boards to clean the stale one`);
+      if (String(prior.producedAt ?? '') >= String(data.producedAt ?? '')) return;
+    }
+    boardByUser[data.odUserId] = { ...data, agentId: doc.id };
   });
   const members = group.groupMembers || [];
   const missing = members.filter(id => !boardByUser[id]);

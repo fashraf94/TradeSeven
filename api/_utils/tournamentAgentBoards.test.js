@@ -65,10 +65,13 @@ function makeGroup(overrides = {}) {
   };
 }
 
-// In-memory Firestore (the P2 makeDb idiom + doc set() + collection get() +
-// where().limit() chains, which this module needs).
+// In-memory Firestore (the P2 makeDb idiom + doc set()/delete() + collection
+// get() + where().limit() chains, which this module needs). `failNextSetOn`
+// makes the next set() to a given path throw once — the write-failure hook
+// for the per-member-failure test.
 function makeDb(initial = {}) {
   const store = new Map(Object.entries(initial));
+  const failNextSetOn = new Set();
 
   function makeDocRef(path) {
     return {
@@ -77,7 +80,14 @@ function makeDb(initial = {}) {
         const data = store.get(path);
         return { exists: data !== undefined, id: path.split('/').pop(), data: () => data };
       },
-      set: async (data) => { store.set(path, data); },
+      set: async (data) => {
+        if (failNextSetOn.has(path)) {
+          failNextSetOn.delete(path);
+          throw new Error('write exploded');
+        }
+        store.set(path, data);
+      },
+      delete: async () => { store.delete(path); },
       collection: (sub) => makeCollection(`${path}/${sub}`),
     };
   }
@@ -108,7 +118,7 @@ function makeDb(initial = {}) {
     };
   }
 
-  return { db: { collection: (name) => makeCollection(name) }, store };
+  return { db: { collection: (name) => makeCollection(name) }, store, failNextSetOn };
 }
 
 function toolResponse(input) {
@@ -337,6 +347,7 @@ describe('produceGroupBoards', () => {
     const summary = await produceGroupBoards(db, makeGroup(), { anthropic, now: NOW });
     expect(summary.produced).toBe(4);
     expect(summary.fallbacks).toBe(3);
+    expect(summary.synthetic).toBe(3); // the P3b orchestrator must refuse this on a real group
     expect(anthropic.calls).toHaveLength(1); // only the real agent
     const synthetic = store.get('tournamentGroups/g1/agentBoards/dev-agent-user-b');
     expect(synthetic).toMatchObject({ synthetic: true, fallback: true, fallbackReason: 'synthetic_agent', model: null });
@@ -352,50 +363,26 @@ describe('produceGroupBoards', () => {
     expect(forced).toMatchObject({ produced: 4, skipped: 0 });
   });
 
-  it('a per-member failure (model + fallback both broken) is counted, not propagated — the rest still produce', async () => {
-    const { db, store } = seededDb();
-    // First call throws OUTSIDE produceBoardForAgent's net by breaking the
-    // write path: make the first board doc set() fail once.
-    const anthropic = happyAnthropic();
-    const groupRef = db.collection('tournamentGroups').doc('g1');
-    const realCollection = groupRef.collection.bind(groupRef);
-    let failedOnce = false;
-    const patchedDb = {
-      collection: (name) => {
-        const col = db.collection(name);
-        if (name !== 'tournamentGroups') return col;
-        return {
-          ...col,
-          doc: (id) => {
-            const ref = col.doc(id);
-            return {
-              ...ref,
-              collection: (sub) => {
-                const subCol = ref.collection(sub);
-                if (sub !== 'agentBoards') return subCol;
-                return {
-                  ...subCol,
-                  doc: (docId) => {
-                    const docRef = subCol.doc(docId);
-                    return {
-                      ...docRef,
-                      set: async (data) => {
-                        if (!failedOnce) { failedOnce = true; throw new Error('write exploded'); }
-                        return docRef.set(data);
-                      },
-                    };
-                  },
-                };
-              },
-            };
-          },
-        };
-      },
-    };
-    const summary = await produceGroupBoards(patchedDb, makeGroup(), { anthropic, now: NOW });
+  it('a per-member failure (the board write throws) is counted, not propagated — the rest still produce', async () => {
+    const { db, failNextSetOn } = seededDb();
+    failNextSetOn.add('tournamentGroups/g1/agentBoards/agent-a');
+    const summary = await produceGroupBoards(db, makeGroup(), { anthropic: happyAnthropic(), now: NOW });
     expect(summary.errors).toBe(1);
     expect(summary.produced).toBe(3);
-    void realCollection; void store;
+  });
+
+  it('agent churn: a board left by a replaced agent is deleted and the member re-produced under the new agentId', async () => {
+    const { db, store } = seededDb();
+    // user-a's board was produced when their agent was 'agent-old'.
+    store.set('tournamentGroups/g1/agentBoards/agent-old', {
+      agentId: 'agent-old', odUserId: 'user-a', archetype: 'analyst',
+      board: SYMBOLS.slice(0, 15), fallback: false, producedAt: '2026-06-14T00:00:00.000Z',
+    });
+    const summary = await produceGroupBoards(db, makeGroup(), { anthropic: happyAnthropic(), now: NOW });
+    expect(store.get('tournamentGroups/g1/agentBoards/agent-old')).toBeUndefined();
+    expect(store.get('tournamentGroups/g1/agentBoards/agent-a')).toMatchObject({ odUserId: 'user-a' });
+    expect(summary.produced).toBe(4);
+    expect(warnSpy.mock.calls.some(args => String(args[0]).includes('stale board'))).toBe(true);
   });
 
   it('sentinels: not_battle and universe_unavailable', async () => {

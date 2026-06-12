@@ -389,6 +389,35 @@ describe('resolveAgentDraftForGroup', () => {
     expect(result.conflicts).toEqual([{ symbol: SYMBOLS[12], reason: 'held', heldBy: 'agent-rival' }]);
   });
 
+  it('duplicate board docs for one member: the latest producedAt wins deterministically, loudly', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { db, store } = seededDraftDb();
+    // A stale board for user-a under a dead agentId, OLDER than the current one.
+    store.set('tournamentGroups/g1/agentBoards/agent-old', {
+      agentId: 'agent-old', odUserId: 'user-a', archetype: 'analyst',
+      board: [SYMBOLS[20]], fallback: false, producedAt: '2026-06-01T00:00:00.000Z',
+    });
+    const current = store.get('tournamentGroups/g1/agentBoards/agent-a');
+    store.set('tournamentGroups/g1/agentBoards/agent-a', { ...current, producedAt: '2026-06-15T00:00:00.000Z' });
+
+    const result = await resolveAgentDraftForGroup(db, makeGroup(), { now: NOW });
+    expect(result.status).toBe('resolved');
+    expect(result.picksByAgent['agent-a']).toBeDefined();   // the current agent drafted
+    expect(result.picksByAgent['agent-old']).toBeUndefined();
+    expect(warnSpy.mock.calls.some(args => String(args[0]).includes('MULTIPLE board docs'))).toBe(true);
+  });
+
+  it('a stream record with no picks surfaces empty_stream_record instead of a raw reserveBulk throw', async () => {
+    const { db, store } = seededDraftDb();
+    store.set(STREAM_PATH, {
+      events: [], picksByAgent: {}, roundNumber: 1,
+      baseLayerWeek: '2026-W25', resolvedAt: NOW.toISOString(),
+    });
+    const result = await resolveAgentDraftForGroup(db, makeGroup(), { now: NOW });
+    expect(result.status).toBe('acquisition_conflict');
+    expect(result.conflicts).toEqual([{ symbol: null, reason: 'empty_stream_record', heldBy: null }]);
+  });
+
   it('throws boards_missing when any member lacks an agent board', async () => {
     const { db, store } = seededDraftDb();
     store.delete('tournamentGroups/g1/agentBoards/agent-c');

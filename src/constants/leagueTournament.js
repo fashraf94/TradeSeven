@@ -34,6 +34,11 @@ export const AGENT_LEDGER_DOC_ID = 'agentHeldSet';
 // subcollection — never mixed into the user `boards` subcollection, whose
 // docs are keyed by odUserId (different key-space, different writer). The
 // stream doc is the sibling of the P1a `streams/userDraft` record.
+//
+// SYNC WARNING: the P1a user-layer files reference 'streams' and 'boards'
+// as string LITERALS (api/tournament/resolve-user-draft.js,
+// api/admin/seed-tournament-group.js) — they predate these constants. A
+// rename here without updating those literals splits the collections.
 export const AGENT_BOARDS_SUBCOLLECTION = 'agentBoards';
 export const STREAMS_SUBCOLLECTION = 'streams';
 export const AGENT_DRAFT_STREAM_DOC_ID = 'agentDraft';

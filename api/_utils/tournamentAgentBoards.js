@@ -295,26 +295,43 @@ export function buildAgentBoardDoc({
 /**
  * Map each group member to their agent (the client prefill precedent:
  * src/services/tournamentGroupService.js assembleBoardPrefill — agents where
- * ownerId == uid, limit 1). A member with NO agent gets a SYNTHETIC identity
- * and will receive the deterministic fallback board — dev/preview affordance
- * only (see the module header); logged loudly every time.
+ * ownerId == uid, limit 1; the four lookups are independent and run in
+ * parallel). A member with NO agent gets a SYNTHETIC identity and will
+ * receive the deterministic fallback board — dev/preview affordance only
+ * (see the module header); logged loudly every time.
  */
 export async function resolveGroupAgents(db, group) {
-  const out = [];
-  for (const odUserId of group.groupMembers || []) {
-    const snap = await db.collection('agents').where('ownerId', '==', odUserId).limit(1).get();
+  const members = group.groupMembers || [];
+  const snaps = await Promise.all(
+    members.map(odUserId => db.collection('agents').where('ownerId', '==', odUserId).limit(1).get())
+  );
+  return members.map((odUserId, i) => {
+    const snap = snaps[i];
     if (!snap.empty) {
       const doc = snap.docs[0];
-      out.push({ odUserId, agentId: doc.id, agent: { id: doc.id, ...doc.data() }, synthetic: false });
-    } else {
-      console.warn(`${LOG_PREFIX} member ${odUserId} has no agent doc — SYNTHETIC identity (dev/preview affordance; production groups must have real agents)`);
-      out.push({ odUserId, agentId: `dev-agent-${odUserId}`, agent: null, synthetic: true });
+      return { odUserId, agentId: doc.id, agent: { id: doc.id, ...doc.data() }, synthetic: false };
     }
-  }
-  return out;
+    console.warn(`${LOG_PREFIX} member ${odUserId} has no agent doc — SYNTHETIC identity (dev/preview affordance; production groups must have real agents)`);
+    return { odUserId, agentId: `dev-agent-${odUserId}`, agent: null, synthetic: true };
+  });
 }
 
 // ==================== PRODUCTION ====================
+
+/** The one fallback-result construction site — the catch branch and the
+ * synthetic branch must never drift in shape. */
+function fallbackBoardResult(fallbackRanking, fallbackReason) {
+  return {
+    board: buildFallbackBoard(fallbackRanking),
+    rationale: {},
+    userPicksStance: [],
+    invalidDropped: 0,
+    padded: [],
+    fallback: true,
+    fallbackReason,
+    model: null,
+  };
+}
 
 /**
  * One agent's board via the Sonnet call; ANY failure (API error, tool miss,
@@ -348,25 +365,24 @@ export async function produceBoardForAgent({
     return { ...normalized, fallback: false, fallbackReason: null, model: AGENT_BOARD_MODEL };
   } catch (err) {
     console.error(`${LOG_PREFIX} board call FAILED for agent ${agent?.id || agent?.name || 'unknown'} — falling back to archetype ranking:`, err.message);
-    return {
-      board: buildFallbackBoard(fallbackRanking),
-      rationale: {},
-      userPicksStance: [],
-      invalidDropped: 0,
-      padded: [],
-      fallback: true,
-      fallbackReason: err.message,
-      model: null,
-    };
+    return fallbackBoardResult(fallbackRanking, err.message);
   }
 }
 
 /**
- * Produce + persist all four agent boards for a group. Idempotent: members
- * whose board doc already exists are skipped unless `force`. Each board
- * write is AWAITED (rider #2); one member's failure never blocks the rest
- * (the banking-loop posture) — but a missing board WILL stop the agent
- * draft, which guards on boards_missing.
+ * Produce + persist all four agent boards for a group. Idempotent PER
+ * CURRENT AGENT: a member is skipped only when a board doc exists for their
+ * CURRENT agentId (unless `force`) — a board left by a since-replaced agent
+ * is stale, never a satisfied state: the member is re-produced and the stale
+ * doc deleted, so the draft's member→board mapping stays single-valued.
+ * Each board write is AWAITED (rider #2); one member's failure never blocks
+ * the rest (the banking-loop posture) — but a missing board WILL stop the
+ * agent draft, which guards on boards_missing.
+ *
+ * P3b CONTRACT: `synthetic` in the summary counts members who fielded a
+ * synthetic dev board. The production orchestrator MUST treat synthetic > 0
+ * on a real group as a configuration error (missing agent registration),
+ * not a satisfied pipeline step.
  */
 export async function produceGroupBoards(db, group, { anthropic, now = new Date(), force = false } = {}) {
   if (!group) throw sentinel('group_not_found');
@@ -381,24 +397,44 @@ export async function produceGroupBoards(db, group, { anthropic, now = new Date(
 
   const boardsCol = db.collection(TOURNAMENT_GROUPS_COLLECTION).doc(group.id).collection(AGENT_BOARDS_SUBCOLLECTION);
   const existingSnap = await boardsCol.get();
-  const existingByUser = new Set();
+  const existingDocsByUser = new Map(); // odUserId -> [{docId}]
   existingSnap.forEach(doc => {
     const odUserId = doc.data()?.odUserId;
-    if (odUserId) existingByUser.add(odUserId);
+    if (!odUserId) return;
+    if (!existingDocsByUser.has(odUserId)) existingDocsByUser.set(odUserId, []);
+    existingDocsByUser.get(odUserId).push({ docId: doc.id });
   });
 
   const members = await resolveGroupAgents(db, group);
-  const summary = { produced: 0, skipped: 0, fallbacks: 0, errors: 0, boards: [] };
+  const rankingByArchetype = new Map();
+  const summary = { produced: 0, skipped: 0, fallbacks: 0, synthetic: 0, errors: 0, boards: [] };
 
   for (const { odUserId, agentId, agent, synthetic } of members) {
-    if (existingByUser.has(odUserId) && !force) {
+    const existingDocs = existingDocsByUser.get(odUserId) || [];
+    const current = existingDocs.find(d => d.docId === agentId);
+    const stale = existingDocs.filter(d => d.docId !== agentId);
+    if (current && !force && stale.length === 0) {
       summary.skipped++;
       continue;
     }
 
     try {
+      // Agent churn: boards keyed by a dead agentId are removed so the
+      // draft's odUserId→board mapping can never be ambiguous.
+      for (const { docId } of stale) {
+        console.warn(`${LOG_PREFIX} member ${odUserId}: stale board for replaced agent ${docId} — deleting (current agent: ${agentId})`);
+        await boardsCol.doc(docId).delete();
+      }
+      if (current && !force) {
+        summary.skipped++;
+        continue;
+      }
+
       const archetype = agent?.archetype || 'analyst';
-      const rankedStocks = computeArchetypeRankings(stocks, archetype);
+      if (!rankingByArchetype.has(archetype)) {
+        rankingByArchetype.set(archetype, computeArchetypeRankings(stocks, archetype));
+      }
+      const rankedStocks = rankingByArchetype.get(archetype);
       const userPicks = getOwnUserPicks(group, odUserId);
 
       // Equipped watchlist — the decide.js degrade posture: any failure
@@ -421,16 +457,7 @@ export async function produceGroupBoards(db, group, { anthropic, now = new Date(
       }
 
       const result = synthetic
-        ? {
-            board: buildFallbackBoard(rankedStocks.map(s => s.symbol)),
-            rationale: {},
-            userPicksStance: [],
-            invalidDropped: 0,
-            padded: [],
-            fallback: true,
-            fallbackReason: 'synthetic_agent',
-            model: null,
-          }
+        ? fallbackBoardResult(rankedStocks.map(s => s.symbol), 'synthetic_agent')
         : await produceBoardForAgent({ anthropic, agent, archetype, rankedStocks, validSymbols, userPicks, equippedWatchlist });
 
       const doc = buildAgentBoardDoc({
@@ -452,7 +479,8 @@ export async function produceGroupBoards(db, group, { anthropic, now = new Date(
 
       summary.produced++;
       if (result.fallback) summary.fallbacks++;
-      summary.boards.push({ agentId, odUserId, fallback: result.fallback, top3: result.board.slice(0, 3), stances: result.userPicksStance.length });
+      if (synthetic) summary.synthetic++;
+      summary.boards.push({ agentId, odUserId, fallback: result.fallback, synthetic, top3: result.board.slice(0, 3), stances: result.userPicksStance.length });
       console.log(`${LOG_PREFIX} board persisted for ${agentId} (${odUserId})${result.fallback ? ` [FALLBACK: ${result.fallbackReason}]` : ''}`);
     } catch (err) {
       console.error(`${LOG_PREFIX} board production FAILED for member ${odUserId} (agent ${agentId}):`, err.message);
