@@ -86,6 +86,9 @@ export default async function handler(req, res) {
         status: GROUP_STATUS.FORMING,
         now: nowIso,
       });
+      // P4 companion (a): seeded groups are DEV groups — excluded from the
+      // production orchestrator's duties (dev duty buttons include them).
+      groupDoc.isDev = true;
       await groupRef.set(groupDoc);
 
       // CPU seats + numbers derive from the group doc itself (the contract
@@ -100,7 +103,9 @@ export default async function handler(req, res) {
     }
 
     await db.collection(TOURNAMENT_BRACKETS_COLLECTION).doc(bracketId)
-      .set(createBracketDoc({ bracketId, round1Games, now: nowIso }));
+      // P4 companion (a): the bracket carries isDev too, so Friday
+      // advancement composes DEV round-2 groups (the flag inherits).
+      .set({ ...createBracketDoc({ bracketId, round1Games, now: nowIso }), isDev: true });
 
     const cpuSeats = seatsByGame.flat().filter(s => s.isCpu).map(s => s.odUserId);
     console.log(`[Tournament] seed-tournament-bracket: ${bracketId} — ${games} game(s), ${cpuNs.length} CPU seat(s) (${cpuAgents.created.length} agent(s) created), pool ${userPool.length}`);

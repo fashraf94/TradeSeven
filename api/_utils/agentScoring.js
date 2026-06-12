@@ -1,38 +1,31 @@
 // api/_utils/agentScoring.js
 // Server-side scoring functions for agent mid-battle evaluations.
-// Duplicated from src/utils/baggerBombUtils.js and src/constants/baggerBombScoring.js
-// because server-side code (api/) cannot import from src/.
 //
-// Ports below are BYTE-IDENTICAL to the canonical source. The math-consistency
-// test in api/_utils/agentScoring.consistency.test.js asserts that this
-// duplication never drifts. If you modify any port, update the canonical source
-// (src/utils/baggerBombUtils.js) in the same change.
+// SCORING CONSTANTS (P4 contract #7 — the Spec §0.6 collapse, founder-
+// ratified): re-exported from the canonical home,
+// src/constants/baggerBombScoring.js (a zero-import, Node-clean module),
+// under the revised June 2026 import rule (BUILD_RULES §4). The local literal
+// blocks this file used to carry are gone — the canonical values are the only
+// live copy. The P4 equivalence battery (p4Equivalence.battery.test.js)
+// asserts cross-copy equality, and its import of THIS module is the
+// dependency-surface guard for the api→src import (it explodes in the Node
+// test env if a browser-only dep ever enters the graph) — never mock it.
+//
+// Function ports below remain BYTE-IDENTICAL to the canonical source
+// (src/utils/baggerBombUtils.js). The math-consistency test in
+// agentScoring.consistency.test.js plus the P4 battery assert the duplication
+// never drifts. If you modify any port, update the canonical source in the
+// same change.
 
-// ==================== CONSTANTS ====================
+import {
+  CONVICTION_MULTIPLIERS,
+  THRESHOLD_POINTS,
+  THRESHOLD_MULTIPLIERS,
+} from '../../src/constants/baggerBombScoring.js';
 
-export const CONVICTION_MULTIPLIERS = {
-  star: 2.0,
-  core: 1.5,
-  support: 1.0,
-};
+// ==================== CONSTANTS (canonical re-exports) ====================
 
-export const THRESHOLD_POINTS = {
-  bagger: 15,
-  doubleBagger: 30,
-  tenBagger: 50,
-  bust: -10,
-  crash: -20,
-  meltdown: -35,
-};
-
-export const THRESHOLD_MULTIPLIERS = {
-  bagger: 1.0,
-  doubleBagger: 1.5,
-  tenBagger: 2.0,
-  bust: -1.0,
-  crash: -1.5,
-  meltdown: -2.0,
-};
+export { CONVICTION_MULTIPLIERS, THRESHOLD_POINTS, THRESHOLD_MULTIPLIERS };
 
 // ==================== PORTFOLIO HELPERS ====================
 
@@ -218,7 +211,10 @@ export function isSwapLocked(currentMultiplier, baseATR) {
  * Calculate asset score with threshold system.
  * Mirrors src/utils/baggerBombUtils.js:535-627 (calculateAssetScoreV3)
  *
- * @param {Object} asset - { symbol, baseATR, tier, direction }
+ * @param {Object} asset - { symbol, baseATR, tier, direction, tierMultiplier? }
+ *   tierMultiplier (P4 flat6): per-asset override stamped on tournament battle
+ *   docs at creation/swap-in. Tiered battles never carry it, so its absence
+ *   resolves to the tier lookup exactly as before.
  * @param {number} priceChange - Percent change from entry price
  * @param {Object} history - { maxMultiplier, minMultiplier }
  * @param {Object} extremes - { highChange?, lowChange? } percent changes at daily high/low
@@ -250,7 +246,7 @@ export function calculateAssetScoreServer(asset, priceChange, history = {}, extr
       priceChange: 0,
       multiplier: 0,
       baseATR,
-      tierMultiplier: CONVICTION_MULTIPLIERS[asset.tier] || CONVICTION_MULTIPLIERS.support,
+      tierMultiplier: asset.tierMultiplier ?? (CONVICTION_MULTIPLIERS[asset.tier] || CONVICTION_MULTIPLIERS.support),
       basePoints: 0,
       bonusPoints: 0,
       totalPoints: 0,
@@ -265,7 +261,10 @@ export function calculateAssetScoreServer(asset, priceChange, history = {}, extr
     : priceChange;
   const multiplier = effectiveThresholdChange / baseATR;
 
-  const tierMultiplier = CONVICTION_MULTIPLIERS[asset.tier] || CONVICTION_MULTIPLIERS.support;
+  // P4 flat6: a per-asset override (stamped on tournament docs at creation and
+  // swap-in) takes precedence; tiered assets never carry the field, so this
+  // resolves exactly as before for every existing battle.
+  const tierMultiplier = asset.tierMultiplier ?? (CONVICTION_MULTIPLIERS[asset.tier] || CONVICTION_MULTIPLIERS.support);
 
   // Base points: 10 per 1% change, scaled by tier
   const basePoints = priceChange * 10 * tierMultiplier;

@@ -8,6 +8,10 @@
 //   3. ownerId ASC, createdAt DESC — dashboard: user's battle history
 
 import { getETDate, formatDateString, isMarketHoliday, isEarlyCloseDay, getNextMarketClose } from './marketSchedule.js';
+// P4 mode config (founder ruling D1) — Node-clean src import under the revised
+// June 2026 import rule (BUILD_RULES §4); the P4 battery's import of this
+// module is the dependency-surface guard.
+import { resolveModeConfig, TIERED_GAME_MODE } from '../../src/constants/agentGameModes.js';
 
 // Duration mode: 'fullday' = single trading day (until market close), 'legacy' = multi-day (1d/3d/5d)
 const AGENT_BATTLE_DURATION_MODE = 'fullday';
@@ -36,13 +40,38 @@ export async function findActiveAgentBattles(db) {
  * @param {Object} agentData - Full agent document (from agents collection)
  * @param {Object} thresholds - { symbol: { threshold, rallyThreshold, moonshotThreshold } }
  * @param {Object} startingPrices - { symbol: currentPrice }
- * @param {Object} options - { duration: '1d'|'3d'|'5d', sectorMap: { symbol: sectorName } }
+ * @param {Object} options - { duration: '1d'|'3d'|'5d', sectorMap: { symbol: sectorName },
+ *   gameMode?, groupId?, isCpu?, tournament? } — the P4 tournament intake
+ *   (contracts #1/#4/#5 + rider #6). Defaults reproduce today's tiered doc
+ *   byte-for-byte (battery photograph).
  * @returns {{ id: string }} Created document reference
  */
 export async function createAgentBattle(db, agentData, thresholds, startingPrices, options = {}) {
   const sectorMap = options.sectorMap || {};
   const now = new Date().toISOString();
   const duration = options.duration || '1d';
+
+  // P4: mode resolution. Unknown modes fail LOUD — a battle doc must never
+  // record a gameMode the engine can't resolve.
+  const gameMode = options.gameMode || TIERED_GAME_MODE;
+  const modeConfig = resolveModeConfig(gameMode);
+  if (modeConfig.gameMode !== gameMode) {
+    throw new Error(`createAgentBattle: unknown gameMode '${gameMode}'`);
+  }
+  const isTournament = modeConfig.flatMultiplier != null;
+  // Joint-stamp contract (founder ruling B3): gameMode and groupId land
+  // together or not at all — the eval resolver treats a half stamp as
+  // malformed, so creating one is a hard error here.
+  if (isTournament && (typeof options.groupId !== 'string' || options.groupId.length === 0)) {
+    throw new Error('createAgentBattle: tournament battles require groupId (joint-stamp contract)');
+  }
+
+  // P4 flat6 (founder ruling D2): stamp the mode's flat multiplier per asset —
+  // the scorers' override expression honors it. Tiered mode stamps nothing
+  // (identity), so existing docs are byte-identical.
+  const stampMode = (arr) => (modeConfig.flatMultiplier == null
+    ? arr
+    : arr.map(a => (a ? { ...a, tierMultiplier: modeConfig.flatMultiplier } : a)));
 
   const portfolio = agentData.lastDecision?.portfolio;
   const bench = agentData.lastDecision?.bench;
@@ -70,7 +99,11 @@ export async function createAgentBattle(db, agentData, thresholds, startingPrice
     agentId: agentData.id,
     ownerId: agentData.ownerId,
     status: 'active',
-    gameMode: 'baggerbomb_agent',
+    gameMode,
+    // P4 contracts #4/#5: the joint tournament stamp + the CPU/passive marker
+    // (stamped at deploy — tournamentCpu.js records the ruling). Tiered docs
+    // carry neither key.
+    ...(isTournament ? { groupId: options.groupId, ...(options.isCpu === true ? { isCpu: true } : {}) } : {}),
     duration: AGENT_BATTLE_DURATION_MODE === 'fullday' ? 'fullday' : duration,
     createdAt: now,
     activatedAt: now,
@@ -88,9 +121,9 @@ export async function createAgentBattle(db, agentData, thresholds, startingPrice
     },
 
     portfolio: {
-      star: deepCopyArrayWithSector(portfolio.star, sectorMap),
-      core: deepCopyArrayWithSector(portfolio.core, sectorMap),
-      support: deepCopyArrayWithSector(portfolio.support, sectorMap),
+      star: stampMode(deepCopyArrayWithSector(portfolio.star, sectorMap)),
+      core: stampMode(deepCopyArrayWithSector(portfolio.core, sectorMap)),
+      support: stampMode(deepCopyArrayWithSector(portfolio.support, sectorMap)),
       // Note: crypto lives inside support[2] (isCrypto: true) — not a separate field.
       // See api/agent/decide.js:368 — support = [...support_stocks, support_crypto]
       bench: {
@@ -104,7 +137,10 @@ export async function createAgentBattle(db, agentData, thresholds, startingPrice
 
     scoring: {
       thresholds: { ...thresholds },
-      tierMultipliers: { star: 2.0, core: 1.5, support: 1.0 },
+      // Written-never-read snapshot (June 10 audit; founder ruling D1: the
+      // dead doc config STAYS dead) — now an honest per-mode record. Tiered
+      // values are byte-identical to the pre-P4 literals.
+      tierMultipliers: { ...modeConfig.scoringSnapshotTierMultipliers },
       pointValues: {
         bagger: 15, doubleBagger: 30, tenBagger: 50,
         bust: -10, crash: -20, meltdown: -35,
@@ -134,11 +170,23 @@ export async function createAgentBattle(db, agentData, thresholds, startingPrice
       riskTolerance: agentData.config?.risk || 50,
       evaluationInterval: 15,
       consolidatedInsight: agentData.consolidatedInsight || null,
+      // P4 rider #6 (deploy-time half, founder ruling D10): the USER PICKS
+      // reaction at deploy — awaited by construction (it rides this single
+      // creation write; Amendment-A pattern A) and writer-readable straight
+      // off the battle doc (P5 playback, P6 feeds, Voice Layer), mirroring
+      // the board-time half's userPicksAtBoardTime rationale.
+      ...(isTournament && options.tournament ? {
+        tournament: {
+          userPicksStance: options.tournament.userPicksStance || [],
+          doubleDownSymbols: options.tournament.doubleDownSymbols || [],
+          userPicksAtDeploy: options.tournament.userPicksAtDeploy || [],
+        },
+      } : {}),
       // Frozen snapshot of the initial portfolio (Amendment 5)
       initialPortfolio: {
-        star: deepCopyArrayWithSector(portfolio.star, sectorMap),
-        core: deepCopyArrayWithSector(portfolio.core, sectorMap),
-        support: deepCopyArrayWithSector(portfolio.support, sectorMap),
+        star: stampMode(deepCopyArrayWithSector(portfolio.star, sectorMap)),
+        core: stampMode(deepCopyArrayWithSector(portfolio.core, sectorMap)),
+        support: stampMode(deepCopyArrayWithSector(portfolio.support, sectorMap)),
       },
     },
 

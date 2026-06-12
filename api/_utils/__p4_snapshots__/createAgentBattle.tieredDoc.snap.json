@@ -1,0 +1,282 @@
+{
+ "agentId": "agent-photo-1",
+ "ownerId": "user-photo-1",
+ "status": "active",
+ "gameMode": "baggerbomb_agent",
+ "duration": "fullday",
+ "createdAt": "2026-06-10T14:00:00.000Z",
+ "activatedAt": "2026-06-10T14:00:00.000Z",
+ "completedAt": null,
+ "expiresAt": "2026-06-11T00:00:00.000Z",
+ "updatedAt": "2026-06-10T14:00:00.000Z",
+ "timing": {
+  "tradingDays": [
+   "2026-06-10"
+  ],
+  "currentTradingDay": 1,
+  "timezone": "America/New_York",
+  "localOpen": "09:30",
+  "localClose": "20:00",
+  "lastDailyResetAt": null
+ },
+ "portfolio": {
+  "star": [
+   {
+    "symbol": "NVDA",
+    "name": "NVIDIA",
+    "baseATR": 3.1,
+    "isCrypto": false,
+    "sector": "Technology"
+   },
+   {
+    "symbol": "TSLA",
+    "name": "Tesla",
+    "baseATR": 4,
+    "isCrypto": false,
+    "sector": "Consumer Cyclical"
+   }
+  ],
+  "core": [
+   {
+    "symbol": "MSFT",
+    "name": "Microsoft",
+    "baseATR": 1.9,
+    "isCrypto": false,
+    "sector": "Technology"
+   },
+   null
+  ],
+  "support": [
+   {
+    "symbol": "KO",
+    "name": "Coca-Cola",
+    "baseATR": 1.1,
+    "isCrypto": false,
+    "sector": "Consumer Defensive"
+   },
+   {
+    "symbol": "PG",
+    "name": "P&G",
+    "baseATR": 1,
+    "isCrypto": false,
+    "sector": "Consumer Defensive"
+   },
+   {
+    "symbol": "BTC",
+    "name": "Bitcoin",
+    "baseATR": 5,
+    "isCrypto": true,
+    "sector": "Crypto"
+   }
+  ],
+  "bench": {
+   "stocks": [
+    {
+     "symbol": "AMD",
+     "name": "AMD",
+     "baseATR": 3.4,
+     "isCrypto": false,
+     "sector": "Technology"
+    },
+    null,
+    {
+     "symbol": "JPM",
+     "name": "JPMorgan",
+     "baseATR": 1.6,
+     "isCrypto": false,
+     "sector": "Financial Services"
+    }
+   ],
+   "crypto": {
+    "symbol": "ETH",
+    "name": "Ethereum",
+    "baseATR": 5,
+    "isCrypto": true,
+    "sector": "Crypto"
+   }
+  },
+  "startingPrices": {
+   "NVDA": 120.5,
+   "TSLA": 250.1,
+   "MSFT": 410,
+   "KO": 62.2,
+   "PG": 165.3,
+   "BTC": 67000,
+   "AMD": 160.4,
+   "JPM": 199.9,
+   "ETH": 3500
+  }
+ },
+ "opponent": {
+  "portfolio": {
+   "star": [],
+   "core": [],
+   "support": []
+  },
+  "bench": {
+   "stocks": [],
+   "crypto": null
+  },
+  "username": "CPU Opponent",
+  "odUserId": "cpu"
+ },
+ "scoring": {
+  "thresholds": {
+   "NVDA": {
+    "threshold": 3.1,
+    "rallyThreshold": 4.65,
+    "moonshotThreshold": 6.2
+   },
+   "BTC": {
+    "threshold": 5,
+    "rallyThreshold": 7.5,
+    "moonshotThreshold": 10
+   }
+  },
+  "tierMultipliers": {
+   "star": 2,
+   "core": 1.5,
+   "support": 1
+  },
+  "pointValues": {
+   "bagger": 15,
+   "doubleBagger": 30,
+   "tenBagger": 50,
+   "bust": -10,
+   "crash": -20,
+   "meltdown": -35
+  }
+ },
+ "agentContext": {
+  "agentName": "Photo Agent",
+  "archetype": "analyst",
+  "strategyBrief": "Photograph brief.",
+  "innerMonologue": {
+   "strategy": "Photograph strategy."
+  },
+  "activeRules": [
+   {
+    "id": "r1",
+    "text": "Stay diversified",
+    "category": "risk"
+   }
+  ],
+  "equippedBundleIds": [
+   "b1"
+  ],
+  "deployedGuardrails": [
+   {
+    "type": "stopLoss",
+    "value": 5
+   }
+  ],
+  "equippedWatchlist": null,
+  "riskTolerance": 60,
+  "evaluationInterval": 15,
+  "consolidatedInsight": "Patience pays.",
+  "initialPortfolio": {
+   "star": [
+    {
+     "symbol": "NVDA",
+     "name": "NVIDIA",
+     "baseATR": 3.1,
+     "isCrypto": false,
+     "sector": "Technology"
+    },
+    {
+     "symbol": "TSLA",
+     "name": "Tesla",
+     "baseATR": 4,
+     "isCrypto": false,
+     "sector": "Consumer Cyclical"
+    }
+   ],
+   "core": [
+    {
+     "symbol": "MSFT",
+     "name": "Microsoft",
+     "baseATR": 1.9,
+     "isCrypto": false,
+     "sector": "Technology"
+    },
+    null
+   ],
+   "support": [
+    {
+     "symbol": "KO",
+     "name": "Coca-Cola",
+     "baseATR": 1.1,
+     "isCrypto": false,
+     "sector": "Consumer Defensive"
+    },
+    {
+     "symbol": "PG",
+     "name": "P&G",
+     "baseATR": 1,
+     "isCrypto": false,
+     "sector": "Consumer Defensive"
+    },
+    {
+     "symbol": "BTC",
+     "name": "Bitcoin",
+     "baseATR": 5,
+     "isCrypto": true,
+     "sector": "Crypto"
+    }
+   ]
+  }
+ },
+ "trades": [],
+ "evaluations": [],
+ "statusFeed": [],
+ "executionMode": "autopilot",
+ "strategyPreset": "balanced",
+ "pendingProposal": null,
+ "proposalHistory": [],
+ "battleLedger": [],
+ "gameplanMeeting": null,
+ "gameplanMeetingHistory": [],
+ "chatExchanges": [],
+ "chatBudgetUsed": 0,
+ "watchlist": {
+  "active": [
+   "NVDA"
+  ],
+  "hotBench": [
+   "AMD"
+  ],
+  "monitoring": [],
+  "lastRefreshed": "2026-06-10T13:00:00.000Z",
+  "totalStocks": 2
+ },
+ "scoreState": {
+  "currentScore": 0,
+  "activeScore": 0,
+  "bankedScore": 0,
+  "dailyScores": {},
+  "bankedBadgePoints": {
+   "total": 0,
+   "breakdown": {}
+  },
+  "tradeCount": 0,
+  "holdCount": 0,
+  "evaluationCount": 0,
+  "lastScoredAt": null,
+  "peakScore": 0,
+  "peakScoreAt": null
+ },
+ "thresholdHistory": {},
+ "cronState": {
+  "lastEvaluatedAt": null,
+  "lastTriggeredAt": null,
+  "triggerGatePassCount": 0,
+  "totalHaikuCalls": 0,
+  "totalTokens": {
+   "input": 0,
+   "output": 0
+  },
+  "consecutiveHolds": 0,
+  "cronErrors": [],
+  "evaluatingAt": null
+ }
+}

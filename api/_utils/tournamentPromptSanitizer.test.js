@@ -1,21 +1,20 @@
 // api/_utils/tournamentPromptSanitizer.test.js
 //
-// P3a — battery for the sanitizeRuleText port (founder ruling C-i).
+// P3a shipped this as the battery + source TRIPWIRE for the sanitizeRuleText
+// port (founder ruling C-i): three copies, byte/normalized-equality asserted
+// so a security copy couldn't silently rot.
 //
-// THE TRIPWIRE (founder-required): the port must never diverge from the
-// fenced originals. Block 1 extracts the function source from this module,
-// from fenced agentPromptAssembly.js, and from fenced
-// agentEvalPromptAssembly.js, then asserts:
-//   (a) port vs agentPromptAssembly.js — BYTE-IDENTICAL (modulo `export `):
-//       that file is the P4 canonical home, so the collapse-to-import is
-//       provably safe;
-//   (b) all three NORMALIZED-identical (comments/blank lines stripped,
-//       whitespace collapsed) — the eval twin carries comments, so byte
-//       equality is too strict there but logic equality is mandatory.
-// If a fenced sanitizer changes, this test fails and the port gets re-synced
-// deliberately — a security copy cannot silently rot.
-//
-// Block 2 is the behavioral battery (injection phrases, caps, control chars).
+// P4 CONTRACT #6 EXECUTED (founder ruling, June 12, 2026): the canonical
+// sanitizeRuleText is now EXPORTED from fenced agentPromptAssembly.js; the
+// eval twin and this module's port are imports of it. The tripwire retired
+// with the copies (its extraction of the eval twin rightly stopped matching
+// once the twin became an import — exactly as the P3a header predicted).
+// What remains, permanently:
+//   1. ZERO-COPY GUARDS: the re-export identity (this module === the fenced
+//      export) and a source assertion that no `function sanitizeRuleText`
+//      body exists outside the canonical home.
+//   2. The BEHAVIORAL BATTERY (injection phrases, caps, control chars),
+//      running against the canonical export — preserved verbatim from P3a.
 
 import { describe, it, expect } from 'vitest';
 import fs from 'node:fs';
@@ -23,42 +22,22 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { sanitizeRuleText } from './tournamentPromptSanitizer.js';
+import { sanitizeRuleText as canonicalSanitizeRuleText } from './agentPromptAssembly.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const read = (rel) => fs.readFileSync(path.join(here, rel), 'utf8');
 
-// First `function sanitizeRuleText(text) {` through the first column-0 `}` —
-// inner braces are indented in every copy, so the non-greedy match lands on
-// the function's own close.
-function extractSanitizer(source, file) {
-  const match = source.match(/(?:export )?function sanitizeRuleText\(text\) \{[\s\S]*?\n\}/);
-  if (!match) throw new Error(`sanitizeRuleText not found in ${file}`);
-  return match[0].replace(/^export /, '');
-}
-
-// Comment/blank-line/whitespace normalization. Safe here: no code line in
-// any copy contains `//` inside a regex or string literal.
-function normalize(fnSource) {
-  return fnSource
-    .split('\n')
-    .map((line) => line.replace(/\/\/.*$/, '').trim())
-    .filter(Boolean)
-    .join(' ')
-    .replace(/\s+/g, ' ');
-}
-
-describe('TRIPWIRE — port vs fenced originals', () => {
-  const port = extractSanitizer(read('./tournamentPromptSanitizer.js'), 'tournamentPromptSanitizer.js');
-  const fencedDeploy = extractSanitizer(read('./agentPromptAssembly.js'), 'agentPromptAssembly.js');
-  const fencedEval = extractSanitizer(read('./agentEvalPromptAssembly.js'), 'agentEvalPromptAssembly.js');
-
-  it('port is BYTE-IDENTICAL to the agentPromptAssembly.js original (the P4 canonical home)', () => {
-    expect(port).toBe(fencedDeploy);
+describe('ZERO-COPY GUARDS — one canonical sanitizer (P4 contract #6)', () => {
+  it('this module re-exports the canonical function (same reference, not a copy)', () => {
+    expect(sanitizeRuleText).toBe(canonicalSanitizeRuleText);
   });
 
-  it('all three copies are logic-identical under comment/whitespace normalization', () => {
-    expect(normalize(port)).toBe(normalize(fencedDeploy));
-    expect(normalize(port)).toBe(normalize(fencedEval));
+  it('no sanitizeRuleText body exists outside the canonical home', () => {
+    const bodyPattern = /function sanitizeRuleText\(text\) \{/;
+    expect(read('./agentPromptAssembly.js')).toMatch(bodyPattern);       // the one home
+    expect(read('./agentEvalPromptAssembly.js')).not.toMatch(bodyPattern); // twin replaced by import
+    expect(read('./tournamentPromptSanitizer.js')).not.toMatch(bodyPattern); // port collapsed to re-export
+    expect(read('./agentEvalPromptAssembly.js')).toMatch(/import \{ sanitizeRuleText \} from '\.\/agentPromptAssembly\.js';/);
   });
 });
 

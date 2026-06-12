@@ -207,9 +207,12 @@ export async function buildChampionRecap(db, bracket, championId) {
  * test-locked, the house pattern): no writes, the caller logs one quiet
  * skip line.
  */
-export async function runFridayAdvancement(db, { now = new Date() } = {}) {
+export async function runFridayAdvancement(db, { now = new Date(), includeDevGroups = false } = {}) {
   const nowIso = now.toISOString();
-  const groups = await fetchEligibleGroupsByStatus(db, GROUP_STATUS.BATTLE);
+  // P4 companion (a): production advancement never touches dev groups (and
+  // therefore never processes dev brackets — they only enter via their
+  // groups); the dev duty surface opts in.
+  const groups = await fetchEligibleGroupsByStatus(db, GROUP_STATUS.BATTLE, { includeDev: includeDevGroups });
 
   const summary = {
     groups: groups.length,
@@ -514,6 +517,9 @@ async function finalizeRound(db, { bracketRef, bracket, roundNumber, nowIso, sum
         status: GROUP_STATUS.FORMING,
         now: nowIso,
       });
+      // P4 companion (a): a dev bracket composes DEV groups — the flag
+      // inherits so a smoke bracket can never launder into production scope.
+      if (bracket.isDev === true) groupDoc = { ...groupDoc, isDev: true };
       await groupRef.set(groupDoc);
     }
     const boards = await commitCpuUserBoards(db, { id: bracketGameId, ...groupDoc }, nowIso);

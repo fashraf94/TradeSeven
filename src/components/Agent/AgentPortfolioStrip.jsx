@@ -1,5 +1,7 @@
-// AgentPortfolioStrip - Horizontal scrollable row of 7 stock pills with tier badges
-// Tiers: 2 Star (2x, gold), 2 Core (1.5x, teal), 3 Support (1x, muted)
+// AgentPortfolioStrip - Horizontal scrollable row of stock pills with tier badges
+// Tiered mode: 7 pills — 2 Star (2x, gold), 2 Core (1.5x, teal), 3 Support (1x, muted).
+// P4 flat6 (tournament): 6 pills — assets carry a per-asset tierMultiplier (1x),
+// rendered with the honest flat label + neutral chrome (companion c).
 
 import React, { useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -11,7 +13,13 @@ const TIER_CONFIG = {
 };
 
 function PillItem({ asset, tier, slotIndex, isFiltered, isDimmed, tokens, onTap, isDesktop }) {
-  const config = TIER_CONFIG[tier];
+  // P4 flat6: tournament assets carry a flat per-asset tierMultiplier — render
+  // the honest flat label and neutral chrome instead of tier visuals. Tiered
+  // assets never carry the field, so their rendering is unchanged.
+  const isFlat = asset?.tierMultiplier != null;
+  const config = isFlat
+    ? { ...TIER_CONFIG.support, label: `${asset.tierMultiplier}x` }
+    : TIER_CONFIG[tier];
   const longPressTimer = useRef(null);
 
   const handlePointerDown = useCallback(() => {
