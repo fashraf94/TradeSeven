@@ -13,6 +13,10 @@ const PRESET_CONFIGS = {
     risk: {
       bustBuffer: -0.90,
       vwapFailureTicks: 3,
+      // [VWAP Floor A2] Dead-band: a tick only counts toward vwapFailureTicks
+      // when deviation < -vwapDeadBandPct (stored positive). Aggressive
+      // tolerates the deepest hover before counting.
+      vwapDeadBandPct: 0.7,
       trailStopATR: 1.5,
     },
     scoring: {
@@ -30,6 +34,7 @@ const PRESET_CONFIGS = {
     risk: {
       bustBuffer: -0.85,
       vwapFailureTicks: 2,
+      vwapDeadBandPct: 0.5,
       trailStopATR: 1.5,
     },
     scoring: {
@@ -47,6 +52,7 @@ const PRESET_CONFIGS = {
     risk: {
       bustBuffer: -0.75,
       vwapFailureTicks: 1,
+      vwapDeadBandPct: 0.3,
       trailStopATR: 1.0,
     },
     scoring: {

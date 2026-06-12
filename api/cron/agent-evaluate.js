@@ -47,6 +47,7 @@ import { applyGuardrails } from '../_utils/agentGuardrails.js';
 import { classifyStockRegime, classifyMarketPosture, getPresetAdjustedStrategies } from '../_utils/agentRegimeClassifier.js';
 import { evaluateRisk, calculate5minSMA20, pickEmergencyReplacement, pickSwapReplacementCandidate, updateStagnationCounter, findPortfolioSlot, clearsHurdleFloor, getRecentSwapCount, EMERGENCY_BYPASS_REASONS, buildSwapReceiptSource } from '../_utils/agentRiskManager.js';
 import { getPresetConfig } from '../_utils/agentPresetConfig.js';
+import { isVwapSessionUsable, isVwapStrike, pruneCounterMaps } from '../_utils/agentVwapFloor.js';
 import { getArchetypeConfig } from '../_utils/agentArchetypeConfig.js';
 import { finalizeCronState } from '../_utils/agentCronState.js';
 import { classifyHaikuFailure, shouldStartHaikuCall, nextConsecutiveEvalFailures, HAIKU_CALL_CEILING_MS } from '../_utils/agentEvalTransport.js';
@@ -646,7 +647,12 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
         if (candles && candles.length > 0) {
           const { candles: sessionCandles, sessionDate } = filterToLatestSession(candles);
           const vwapResult = calculateVWAP(sessionCandles);
-          if (vwapResult) {
+          // [VWAP Floor A1] Freshness/arming gate: a stale session (EODHD
+          // returning yesterday's candles) or an ultra-thin one (<3 candles
+          // at the open) publishes NO vwap entry at all, so the floor cannot
+          // strike and TRAIL_STOP disarms — identical to the existing
+          // missing-intraday path. Bust + guardrails + Haiku still cover.
+          if (vwapResult && isVwapSessionUsable({ sessionDate, todayET, sessionCandleCount: sessionCandles.length })) {
             const sma20_5m = calculate5minSMA20(candles);
             momentumData.vwap[symbol] = { ...vwapResult, sma20_5m, sessionDate };
           }
@@ -879,6 +885,12 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
     const stagnationTicks = { ...(battle.cronState?.stagnationTicks || {}) };
     const lastTickPrice = { ...(battle.cronState?.lastTickPrice || {}) };
     const lastTickTimestamp = { ...(battle.cronState?.lastTickTimestamp || {}) };
+    // [VWAP Floor B1] Counter hygiene: drop keys for symbols no longer held,
+    // so a symbol swapped out and later re-entered starts at zero instead of
+    // inheriting a stale streak (June 11: VLO/XRP counters survived 6 swaps).
+    // Also covers swaps landed outside this loop (proposal approval/expiry,
+    // gameplan) by the next tick.
+    pruneCounterMaps([vwapTicks, stagnationTicks, lastTickPrice, lastTickTimestamp], new Set(portfolioSymbols));
     const nowMs = Date.now();
 
     // Forge Enforcement Keystone V1.4 §4.1 — resolve the archetype→physics knobs
@@ -900,8 +912,10 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
       const entryPrice = asset?.swapPrice || startingPrices[score.symbol] || 0;
       const vwapInfo = momentumData.vwap[score.symbol] || null;
 
-      // Update VWAP tick counter
-      if (vwapInfo && vwapInfo.vwapDeviation < 0) {
+      // Update VWAP tick counter.
+      // [VWAP Floor A2] A strike requires magnitude below the preset
+      // dead-band, not mere negativity — hovering at -0.05% is noise.
+      if (vwapInfo && isVwapStrike(vwapInfo.vwapDeviation, presetConfig.risk.vwapDeadBandPct ?? 0.5)) {
         vwapTicks[score.symbol] = (vwapTicks[score.symbol] || 0) + 1;
       } else {
         vwapTicks[score.symbol] = 0;
@@ -1148,6 +1162,13 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
         });
 
         summary.swapped++;
+
+        // [VWAP Floor B1b] Reset the incoming symbol's in-memory counters so
+        // the finalizeCronState flush later this tick doesn't persist a stale
+        // streak onto the fresh position (the transaction's own reset would
+        // otherwise be overwritten by these working copies).
+        vwapTicks[replacement.symbol] = 0;
+        stagnationTicks[replacement.symbol] = 0;
 
         // Re-read battle doc after swap for accurate state in subsequent
         // processing (re-applies the tournament candidate filter — the
@@ -1618,6 +1639,13 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
             });
 
             summary.swapped++;
+
+            // [VWAP Floor B1b] Same in-memory counter reset as the risk-swap
+            // branch — keep the incoming symbol's streak from being persisted
+            // by this tick's finalizeCronState flush.
+            const haikuInSymbol = swapResult.closedTrade?.symbolIn || haikuResult.symbolIn;
+            vwapTicks[haikuInSymbol] = 0;
+            stagnationTicks[haikuInSymbol] = 0;
           } catch (swapErr) {
             console.error(`${LOG_PREFIX} Swap execution failed for battle ${battle.id}:`, swapErr.message);
             validationErrors.push(`Swap execution failed: ${swapErr.message}`);
@@ -2112,6 +2140,9 @@ async function handlePendingProposal(db, battleRef, battle, prices, statusFeedEn
           // approved proposals get a Gemma narration in chat. Dormant under
           // today's autopilot launch guard — handlePendingProposal short-
           // circuits autopilot mode to auto_executed without execution.
+          // [VWAP Floor B1b] Also dormant: the in-memory counter reset done at
+          // the live swap sites is skipped here (maps live in processAgentBattle
+          // scope); the tick-start prune covers this path by the next tick.
           const approvedSwapResult = await executeSwapServer(
             db, battle.id, battle,
             proposal.tier, proposal.slotIndex,
@@ -2218,6 +2249,8 @@ async function handlePendingProposal(db, battleRef, battle, prices, statusFeedEn
         // TODO(post-launch authority modes): same as the 'approved' branch
         // above — capture closedTrade + push to pendingNarrations when
         // co-pilot mode returns. Dormant today under autopilot launch guard.
+        // [VWAP Floor B1b] In-memory counter reset also skipped here (see
+        // 'approved' branch note) — tick-start prune covers by next tick.
         const expiredSwapResult = await executeSwapServer(
           db, battle.id, battle,
           proposal.tier, proposal.slotIndex,
@@ -2321,6 +2354,8 @@ async function handleGameplanMeeting(db, battleRef, battle, prices, statusFeedEn
         // repeated gameplan swaps on the same symbol pair (mirrors the
         // risk-triggered evalId suffix pattern).
         const gameplanEvalId = `gameplan_${swap.symbolOut}_${swap.symbolIn}_${Date.now()}`;
+        // [VWAP Floor B1b] In-memory counter reset skipped here too (separate
+        // fn, launch-guarded path) — tick-start prune covers by next tick.
         const gameplanSwapResult = await executeSwapServer(
           db, battle.id, battle,
           slot.tier, slot.slotIndex,
