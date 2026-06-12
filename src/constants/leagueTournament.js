@@ -42,6 +42,10 @@ export const AGENT_LEDGER_DOC_ID = 'agentHeldSet';
 export const AGENT_BOARDS_SUBCOLLECTION = 'agentBoards';
 export const STREAMS_SUBCOLLECTION = 'streams';
 export const AGENT_DRAFT_STREAM_DOC_ID = 'agentDraft';
+// P5 — the user-draft stream doc id, value matching the P1a string literals
+// (see the SYNC WARNING above; the literals stay untouched, this constant is
+// additive for the playback readers).
+export const USER_DRAFT_STREAM_DOC_ID = 'userDraft';
 
 /**
  * Battle-doc discriminator for tournament-mode agent battles (Spec §0.12 —
@@ -303,6 +307,11 @@ export function buildCpuUserBoard(rankedPool, n) {
   }
   return board;
 }
+
+// The group-doc `feed` array's retention cap, shared by every feed writer
+// (the P1b rider-#4 flip feed and the P5 auto-commit entry) — one home so
+// the writers can never drift (P5 code-review convergence).
+export const GROUP_FEED_CAP = 50;
 
 // ==================== TUNING LEDGER (Spec §5) ====================
 

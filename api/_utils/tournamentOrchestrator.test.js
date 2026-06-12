@@ -5,8 +5,10 @@
 // per-ET-date markers + natural guards), the deploy plumbing (credentials +
 // ownership assertion on every call; the P4 gate sending NOTHING and logging
 // loudly), the Monday pipeline end-to-end on an all-CPU group (no model
-// call anywhere — Ruling B1's deterministic path), finding-#5 deferral,
-// the synthetic refusal (the P3a contract), the incumbent fan-out via the
+// call anywhere — Ruling B1's deterministic path), the P5 deadline
+// auto-commit (defaulted boards heal the pipeline in-tick; finding #5's loud
+// defer holds as the fallback), the synthetic refusal (the P3a contract),
+// the incumbent fan-out via the
 // fenced flattenPortfolioServer, and zero-group production inertness (the
 // cron is live at merge — this lock IS the safety case).
 //
@@ -506,16 +508,56 @@ describe('runMondayPipeline — the full Monday arc on an all-CPU group (no mode
     expect(second.deploys.gated).toBe(4); // natural guards skip everything durable
   });
 
-  it('FINDING #5: a missing committed board defers the group with a loud log', async () => {
+  it('DEADLINE AUTO-COMMIT (P5, ratified): a missing board is defaulted at the encounter and the pipeline proceeds in the same tick', async () => {
     const { db, store } = mondayDb();
     store.delete('tournamentGroups/b-r1-g2/boards/cpu-7');
-    const errorSpy = console.error;
+    const fetchImpl = vi.fn(async () => ({ ok: true }));
+    const summary = await runMondayPipeline(db, { now: MON_MORNING_EDT, anthropic: null, fetchImpl, pacingMs: 0 });
+
+    expect(summary).toMatchObject({
+      groups: 1, resolved: 1, autoCommitted: 1, deferredBoards: 0, refusedSynthetic: 0, drafted: 1, errors: 0,
+    });
+    expect(summary.deploys.deployed).toBe(4); // the full Monday — nothing deferred
+
+    // Rider #1 fired through the same core, with the corpus flag.
+    const board = store.get('tournamentGroups/b-r1-g2/boards/cpu-7');
+    expect(board.autoCommitted).toBe(true);
+    expect(board.board.length).toBeGreaterThanOrEqual(15); // floored to depth (CPU seat: no watchlist)
+    expect(board.delta.every(d => d.status === 'added')).toBe(true); // honest empty suggestion
+
+    // The player-facing record: one feed entry, atomic with the commit.
+    const feed = store.get('tournamentGroups/b-r1-g2').feed;
+    expect(feed.filter(e => e.type === 'board_auto_commit' && e.odUserId === 'cpu-7')).toHaveLength(1);
+
+    expect(store.get('tournamentGroups/b-r1-g2').status).toBe(GROUP_STATUS.BATTLE);
+    // The loud defer is GONE on the healed path; the duty earns its marker.
+    expect(console.error.mock.calls.map(c => c.join(' ')).some(l => l.includes('USER BOARDS NOT COMMITTED'))).toBe(false);
+    expect(isDutySatisfied(DUTY.MONDAY_PIPELINE, summary)).toBe(true);
+  });
+
+  it('FINDING #5 FALLBACK: when auto-commit cannot produce a valid board, the loud defer holds (no marker)', async () => {
+    const { db, store } = mondayDb();
+    store.delete('tournamentGroups/b-r1-g2/boards/cpu-7');
+    // 12 names passes resolution's pool floor but sits below the board-commit
+    // floor (15) — the floor pads to 12 and buildBoardCommit refuses.
+    store.get('tournamentGroups/b-r1-g2').userPool = SYMBOLS.slice(0, 12);
     const summary = await runMondayPipeline(db, { now: MON_MORNING_EDT, anthropic: null });
+    expect(summary.autoCommitted).toBe(0);
     expect(summary.deferredBoards).toBe(1);
     expect(summary.drafted).toBe(0);
     expect(store.get('tournamentGroups/b-r1-g2').status).toBe(GROUP_STATUS.FORMING);
-    expect(errorSpy.mock.calls.map(c => c.join(' ')).some(l => l.includes('USER BOARDS NOT COMMITTED'))).toBe(true);
+    expect(console.error.mock.calls.map(c => c.join(' ')).some(l => l.includes('USER BOARDS NOT COMMITTED'))).toBe(true);
     expect(isDutySatisfied(DUTY.MONDAY_PIPELINE, summary)).toBe(false); // no marker → next tick retries
+  });
+
+  it('AUTO-COMMIT IDEMPOTENT RE-RUN: a second tick re-resolves nothing and duplicates no feed entries', async () => {
+    const { db, store } = mondayDb();
+    store.delete('tournamentGroups/b-r1-g2/boards/cpu-7');
+    await runMondayPipeline(db, { now: MON_MORNING_EDT, anthropic: null, deployEnabled: false });
+    const second = await runMondayPipeline(db, { now: MON_MORNING_EDT, anthropic: null, deployEnabled: false });
+    expect(second).toMatchObject({ resolved: 0, autoCommitted: 0, drafted: 1, errors: 0 });
+    const feed = store.get('tournamentGroups/b-r1-g2').feed;
+    expect(feed.filter(e => e.type === 'board_auto_commit')).toHaveLength(1);
   });
 
   it('SYNTHETIC REFUSAL: members without agents docs stop the pipeline loudly before the draft', async () => {
@@ -678,9 +720,12 @@ describe('runOrchestratorTick — routing, markers, inertness', () => {
     expect(result.complete).toBe(true);
   });
 
-  it('an unsatisfied duty (finding-#5 deferral) sets NO marker — the next tick retries', async () => {
+  it('an unsatisfied duty (finding-#5 fallback deferral) sets NO marker — the next tick retries', async () => {
     const { db, store } = mondayDb();
     store.delete('tournamentGroups/b-r1-g2/boards/cpu-7');
+    // 12-name pool: the P5 auto-commit cannot reach the board floor, so the
+    // group defers (the pre-P5 fixture now heals and would satisfy the duty).
+    store.get('tournamentGroups/b-r1-g2').userPool = SYMBOLS.slice(0, 12);
     const result = await runOrchestratorTick(db, { now: MON_MORNING_EDT });
     expect(result.complete).toBe(false);
     expect(store.get('tournamentOrchestrator/state')).toBeUndefined();
@@ -691,7 +736,7 @@ describe('runOrchestratorTick — routing, markers, inertness', () => {
 
 describe('isDutySatisfied — what earns the marker', () => {
   it('gated deploys count as done (the ruled pre-P4 posture); failures and deferrals do not', () => {
-    const base = { groups: 1, resolved: 1, deferredBoards: 0, refusedSynthetic: 0, drafted: 1, deferredToNextTick: 0, errors: 0 };
+    const base = { groups: 1, resolved: 1, autoCommitted: 0, deferredBoards: 0, refusedSynthetic: 0, drafted: 1, deferredToNextTick: 0, errors: 0 };
     const deploys = (over = {}) => ({ deployed: 0, gated: 4, skippedExisting: 0, cooled: 0, failed: 0, deferred: 0, ...over });
     expect(isDutySatisfied(DUTY.MONDAY_PIPELINE, { ...base, deploys: deploys() })).toBe(true);
     expect(isDutySatisfied(DUTY.MONDAY_PIPELINE, { ...base, deploys: deploys({ failed: 1 }) })).toBe(false);

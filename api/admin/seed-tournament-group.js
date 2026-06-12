@@ -18,11 +18,21 @@ import {
   TOURNAMENT_GROUPS_COLLECTION,
   TOURNAMENT_TUNING,
   USER_HELD_NAMES_PER_GROUP,
+  PICKS_PER_PLAYER,
 } from '../../src/constants/leagueTournament.js';
 
 export const config = { maxDuration: 10 };
 
 const PLACEHOLDER_IDS = ['dev-user-1', 'dev-user-2', 'dev-user-3'];
+
+// Pool floor when seeding placeholder boards (P3b-reported mismatch, fixed at
+// P5 where the auto-commit smoke made it load-bearing): the deepest staggered
+// slice starts at (placeholders−1)×PICKS_PER_PLAYER and must still yield
+// BOARD_DEPTH_MIN names for buildBoardCommit — 12 alone under-guards it, and
+// so would BOARD_DEPTH_MIN by itself (a 15-name pool leaves slice(3, 18) at
+// 12 names). Without boards, resolution's own floor (12) is the requirement.
+export const SEED_POOL_FLOOR =
+  TOURNAMENT_TUNING.BOARD_DEPTH_MIN + (PLACEHOLDER_IDS.length - 1) * PICKS_PER_PLAYER;
 
 /** ISO-8601 week label (UTC), e.g. '2026-W24' — the baseLayerWeek key. */
 export function isoWeekString(date = new Date()) {
@@ -55,10 +65,11 @@ export default async function handler(req, res) {
     // Ranked universe -> user pool, ranked order preserved (Spec §0.11) —
     // converged onto the shared sourcing helper at P3b.
     const userPool = await fetchRankedUserPool(db);
-    if (userPool.length < USER_HELD_NAMES_PER_GROUP) {
+    const poolFloor = autoCommitBoards ? SEED_POOL_FLOOR : USER_HELD_NAMES_PER_GROUP;
+    if (userPool.length < poolFloor) {
       return res.status(503).json({
         error: 'universe_unavailable',
-        message: `stockRankings yielded ${userPool.length} names — rankings cron may not have run.`,
+        message: `stockRankings yielded ${userPool.length} names (need ${poolFloor}) — rankings cron may not have run.`,
       });
     }
 

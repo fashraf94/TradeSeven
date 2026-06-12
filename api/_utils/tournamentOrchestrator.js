@@ -6,9 +6,10 @@
 // through the ruled duty table:
 //
 //   Mon morning   → advancement catch-up check, then the per-group Monday
-//                   pipeline: resolve user draft (committed boards required;
-//                   else DEFER + LOUD LOG — finding #5: the deadline
-//                   auto-commit is P5's, pre-launch required) → produce
+//                   pipeline: resolve user draft (uncommitted boards are
+//                   AUTO-COMMITTED at the encounter — P5, the ratified
+//                   deadline; finding #5's loud defer remains the fallback
+//                   when auto-commit cannot produce a valid board) → produce
 //                   boards (REFUSE on synthetic > 0 — the P3a contract,
 //                   re-checked EVERY tick: pre-existing synthetic boards
 //                   count) → resolve agent draft → verify 24 held → deploy
@@ -76,6 +77,7 @@ import { resolveAgentDraftForGroup } from './tournamentAgentDraft.js';
 // function declarations both sides; no cycle — the endpoint never imports
 // this module).
 import { resolveUserDraftForGroup, USER_DRAFT_SENTINEL_PREFIX } from '../tournament/resolve-user-draft.js';
+import { autoCommitMissingBoards } from './tournamentBoardAutoCommit.js';
 import { runFridayAdvancement } from './tournamentAdvancement.js';
 // Fenced module EXPORT, called read-only — never edited (BUILD_RULES §1).
 import { flattenPortfolioServer } from './agentScoring.js';
@@ -406,6 +408,15 @@ async function seatsFromDraftStream(db, group, { onlyAgentIds = null } = {}) {
 
 // ==================== MONDAY PIPELINE ====================
 
+/** Resolve the user draft and re-read the group (status flips to battle) —
+ * the step-1 body, shared by the straight path and the post-auto-commit
+ * retry so the two can never drift. */
+async function resolveUserDraftAndRefresh(db, groupId, now) {
+  await resolveUserDraftForGroup(db, groupId, { now });
+  const fresh = await db.collection(TOURNAMENT_GROUPS_COLLECTION).doc(groupId).get();
+  return { id: groupId, ...fresh.data() };
+}
+
 /**
  * Per-group Monday sequence. Each step is individually resumable: re-runs
  * skip resolved drafts (status), existing boards (per-member), existing
@@ -433,7 +444,8 @@ export async function runMondayPipeline(db, {
   const summary = {
     groups: groups.length,
     resolved: 0,
-    deferredBoards: 0,   // finding #5: committed user boards missing
+    autoCommitted: 0,    // P5: boards defaulted at the Monday deadline
+    deferredBoards: 0,   // finding #5 fallback: auto-commit couldn't heal
     refusedSynthetic: 0, // P3a contract: synthetic > 0 on a real group
     drafted: 0,
     deploys: { deployed: 0, gated: 0, skippedExisting: 0, cooled: 0, failed: 0, deferred: 0 },
@@ -456,20 +468,37 @@ export async function runMondayPipeline(db, {
       // ---- Step 1: user draft (forming → battle) ----
       if (group.status === GROUP_STATUS.FORMING) {
         try {
-          await resolveUserDraftForGroup(db, group.id, { now });
+          group = await resolveUserDraftAndRefresh(db, group.id, now);
           summary.resolved++;
-          const fresh = await db.collection(TOURNAMENT_GROUPS_COLLECTION).doc(group.id).get();
-          group = { id: group.id, ...fresh.data() };
           console.log(`${LOG_PREFIX} group ${group.id}: user draft resolved → battle`);
         } catch (err) {
-          if (err?.message === `${USER_DRAFT_SENTINEL_PREFIX}boards_missing`) {
-            // Finding #5 (ruled): defer + LOUD log. The deadline
-            // auto-commit is P5's, pre-launch required.
-            console.error(`${LOG_PREFIX} group ${group.id}: USER BOARDS NOT COMMITTED — Monday pipeline DEFERRED for this group (finding #5; auto-commit lands at P5). ${err.detail ?? ''}`);
+          if (err?.message !== `${USER_DRAFT_SENTINEL_PREFIX}boards_missing`) throw err;
+          // P5 (ratified deadline): encountering an uncommitted board here
+          // IS the deadline — auto-commit the server-derived prefill through
+          // the same commit core (rider #1, autoCommitted flag + feed entry)
+          // and retry the resolution in the same tick. Finding #5's loud
+          // defer remains the fallback when auto-commit cannot produce a
+          // valid board (the marker stays withheld; the next tick retries).
+          // A seat covered by a race-window player commit counts toward
+          // coverage but never toward autoCommitted — the corpus signal
+          // stays honest.
+          const auto = await autoCommitMissingBoards(db, group, { now });
+          summary.autoCommitted += auto.committed;
+          const covered = auto.committed + auto.raced;
+          if (auto.errors > 0 || covered < auto.missing) {
+            console.error(`${LOG_PREFIX} group ${group.id}: USER BOARDS NOT COMMITTED and the deadline auto-commit could not heal (${covered}/${auto.missing} covered, ${auto.errors} error(s)) — Monday pipeline DEFERRED for this group (finding #5 fallback).`);
             summary.deferredBoards++;
             continue;
           }
-          throw err;
+          try {
+            group = await resolveUserDraftAndRefresh(db, group.id, now);
+            summary.resolved++;
+            console.log(`${LOG_PREFIX} group ${group.id}: user draft resolved → battle after deadline auto-commit (${auto.committed} board(s) defaulted${auto.floored ? `, ${auto.floored} floored` : ''}${auto.raced ? `, ${auto.raced} raced` : ''})`);
+          } catch (retryErr) {
+            console.error(`${LOG_PREFIX} group ${group.id}: USER BOARDS NOT COMMITTED — resolution retry after auto-commit FAILED (${retryErr.message}) — Monday pipeline DEFERRED for this group.`);
+            summary.deferredBoards++;
+            continue;
+          }
         }
       }
       if (group.status !== GROUP_STATUS.BATTLE) continue;

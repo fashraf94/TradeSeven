@@ -59,8 +59,10 @@
 //     unverifiable_holder until P4 stamps battles — by design). Click
 //     again: `already_resolved` — the stream is never rewritten.
 //
-// P3b FOUNDER SMOKE — THE FULL BRACKET ARC (orchestrator; deploys stay
-// P4-gated throughout — watch for the loud "P4 pending" lines in logs):
+// P3b FOUNDER SMOKE — THE FULL BRACKET ARC (orchestrator). Written P4-era;
+// the gate has since FLIPPED: the Monday duty now sends REAL deploys on dev
+// groups (preview needs CRON_SECRET + TOURNAMENT_DEPLOY_BASE_URL → the
+// preview URL — the P4 smoke preconditions):
 // 10. Click "Seed bracket" (2 games: you + 3 CPUs in game 1, 4 CPUs in
 //     game 2 — all REAL system agents with boards already committed). The
 //     Bracket card appears (round 1, both games, CPU chips); your group is
@@ -70,9 +72,9 @@
 //     draft resolved → battle; 8 boards (CPU fallbacks, 0 synthetic); both
 //     agent drafts 24 held; deploy step logs "DEPLOY GATED — P4 pending"
 //     per agent. Re-click: `already_complete` — the per-duty/per-ET-date
-//     marker, visibly. (If your board isn't committed, YOUR group defers
-//     loudly — finding #5 — and the all-CPU group proceeds; commit and
-//     re-click.)
+//     marker, visibly. (If your board isn't committed, the P5 deadline
+//     auto-commit defaults it and the pipeline proceeds — step 17 below
+//     exercises this deliberately.)
 // 12. Bank five days per group: attach each groupId in turn, step the duty
 //     clock Mon→Fri, and click "Bank scores" once per simulated day (the
 //     clock rides the banking call as simulatedNow). Re-click same day:
@@ -87,11 +89,41 @@
 //     new group (commit your board first if you advanced). The Friday duty
 //     ends with CHAMPION + the one-screen recap on the Bracket card
 //     (bracket path, best week, signature double-down; composite lands P6).
+//
+// P5 FOUNDER SMOKE — PLAYBACK · BOARD SURFACE · DEADLINE AUTO-COMMIT:
+// 15. PLAYBACK THEATER: attach the P4-smoke group (or any group whose
+//     Monday ran — both streams in Firestore). The "Playback theater" card
+//     opens on the poster frame; press play and watch both acts at the
+//     5s/pick tuning clock: Act 1 the user draft (snipes struck through
+//     with who took the name and when), Act 2 the agent draft (board
+//     rationale lines; the purple DOUBLE-DOWN chip when an agent takes its
+//     own player's pick; muted "ranking auto-pick" fallbacks). Pause, drag
+//     the scrubber, skip to the final rosters. Your seats carry the teal
+//     you-highlight throughout.
+// 16. BOARD SURFACE: on a forming group, the Board editor now confirms the
+//     lock semantics before the commit ("binding at Monday's draft");
+//     confirm → the rider-#1 doc lands exactly as before; re-commit stays
+//     available while forming. (The committed-state card with the
+//     auto-commit badge is the League tab's, behind TOURNAMENT_TAB_ENABLED
+//     — its on-flag smoke rides P9.)
+// 17. DEADLINE AUTO-COMMIT (closes the docketed pre-launch requirement):
+//     "Seed bracket" (step 10) and DO NOT commit your board. Set the duty
+//     clock to a Monday morning, click "Monday duty". Expect: your seat
+//     auto-commits (duty summary autoCommitted: 1; server log
+//     "[TournamentAutoCommit] … AUTO-COMMITTED"), the board doc carries
+//     autoCommitted: true (+ floored when you have no equipped watchlist),
+//     a board_auto_commit feed entry lands on the group doc, and the
+//     pipeline proceeds to the FULL Monday in the same tick (both drafts,
+//     24 held, live deploys). Re-click: `already_complete`, no duplicate
+//     feed entry. USE THE BRACKET SEEDER for this arc — the group seeder's
+//     placeholder seats have no agent docs and refuse at the synthetic-
+//     board step (by design), so they never reach a full Monday.
 
 import React, { useEffect, useState } from 'react';
 import { useTheme } from '../contexts/ThemeContext';
 import { useUser } from '../contexts/UserContext';
 import BoardEditor from '../components/Tournament/BoardEditor';
+import DraftPlaybackTheater from '../components/Tournament/DraftPlaybackTheater';
 import {
   subscribeGroup,
   subscribeClaims,
@@ -879,6 +911,16 @@ export default function TournamentDevScreen() {
                 )}
               </div>
             ))}
+          </div>
+        )}
+
+        {/* P5 — the playback theater on the dev group's REAL streams (the
+            smoke driver; the League tab is the flagged destination). Both
+            acts at the tuning-ledger 5s/pick clock, play/pause/scrub. */}
+        {group && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <div style={{ fontWeight: 700, fontSize: 14, color: tokens.textPrimary }}>Playback theater (P5)</div>
+            <DraftPlaybackTheater key={`theater-${group.id}`} groupId={group.id} group={group} uid={uid} />
           </div>
         )}
 

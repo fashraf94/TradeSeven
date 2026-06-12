@@ -41,6 +41,7 @@ import {
   LEG_DIRECTION,
   BASELINE_SOURCE,
   TOURNAMENT_TUNING,
+  GROUP_FEED_CAP,
   createLeg,
 } from '../../src/constants/leagueTournament.js';
 
@@ -193,7 +194,7 @@ export default async function handler(req, res) {
       };
       tx.update(groupRef, {
         players,
-        feed: [...(group.feed || []), feedEvent].slice(-50),
+        feed: [...(group.feed || []), feedEvent].slice(-GROUP_FEED_CAP),
         updatedAt: nowIso,
       });
 
