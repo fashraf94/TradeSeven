@@ -29,6 +29,10 @@ import {
   unionEquippedIntoHotBench,
   buildEquippedSnapshot,
 } from '../_utils/watchlistEquip.js';
+// P4 mode config (founder ruling D1) — Node-clean src import under the revised
+// June 2026 import rule (BUILD_RULES §4); the P4 battery's import of this
+// module is the dependency-surface guard.
+import { FLAT6_GAME_MODE, resolveModeConfig } from '../../src/constants/agentGameModes.js';
 
 // Vercel Pro timeout — two-call AI chain needs breathing room
 export const config = { maxDuration: 60 };
@@ -116,6 +120,15 @@ export default async function handler(req, res) {
     } catch (projErr) {
       console.error('[agent/decide] activeRules projection FAILED for agent', agentId,
         '— deploying with stored activeRules (which is empty for a freshly-seeded agent, i.e. an inert loadout):', projErr);
+    }
+
+    // === P4: prescribed-portfolio tournament entry (contract #1) ===
+    // Deploys never self-select in tournament mode (BUILD_RULES §7): the
+    // orchestrator prescribes the six and Sonnet/Haiku are skipped entirely.
+    // Any request without the tournament gameMode flows through the legacy
+    // path below untouched.
+    if (req.body.gameMode === FLAT6_GAME_MODE) {
+      return await runPrescribedTournamentDeploy({ db, req, res, agentRef, agent, agentId: agentDoc.id });
     }
 
     // 3. Fetch stock universe — ONE Firestore read
@@ -521,46 +534,7 @@ export default async function handler(req, res) {
       }
     }
 
-    const startingPrices = {};
-    const PRICE_CONCURRENCY = 5;
-    for (let i = 0; i < allSymbols.length; i += PRICE_CONCURRENCY) {
-      const batch = allSymbols.slice(i, i + PRICE_CONCURRENCY);
-      await Promise.allSettled(batch.map(async (symbol) => {
-        try {
-          const data = await getStockAnalysisData(symbol, { forceRefresh: true, fields: ['daily', 'price'] });
-          const p = data?.price;
-          if (p?.current) {
-            // Guard 1: validate the activation price against an independent
-            // reference (today's [low, high] + the most recent daily close)
-            // before freezing it as the scoring baseline. Use the UNADJUSTED
-            // rawClose so a split/dividend can't skew the raw-vs-raw comparison
-            // (same basis as Guard 2). data.daily is read here only — it is
-            // never written to the battle doc.
-            const recentClose = Array.isArray(data?.daily) && data.daily.length > 0
-              ? (data.daily[0].rawClose ?? data.daily[0].close)
-              : null;
-            const { value, fired, reason } = validateActivationPrice({
-              current: p.current,
-              high: p.high,
-              low: p.low,
-              fallback: p.fallback === true,
-              recentClose,
-              previousClose: p.previousClose,
-              baseATR: baseATRBySymbol[symbol] || 2.5,
-            });
-            if (fired) {
-              console.warn(`[guard1] ${symbol} rejected activation current=${p.current} (${reason}); ${value == null ? 'skipped' : `substituted ${value}`}`);
-            }
-            if (value != null) startingPrices[symbol] = value;
-          }
-        } catch (err) {
-          console.warn(`[agent/decide] Price fetch failed for ${symbol}:`, err.message);
-        }
-      }));
-      if (i + PRICE_CONCURRENCY < allSymbols.length) {
-        await new Promise(r => setTimeout(r, 200));
-      }
-    }
+    const startingPrices = await fetchValidatedStartingPrices(allSymbols, baseATRBySymbol);
 
     // Update CPU portfolio assets with fetched prices
     ['star', 'core', 'support'].forEach(tier => {
@@ -581,15 +555,7 @@ export default async function handler(req, res) {
 
     // 15. Build thresholds from baseATR on ALL assets (agent + CPU).
     // allAssets is constructed above (also feeds the activation-price guard).
-    const thresholds = {};
-    for (const asset of allAssets) {
-      const baseATR = asset.baseATR || (asset.isCrypto ? 5.0 : 2.5);
-      thresholds[asset.symbol] = {
-        threshold: baseATR,
-        rallyThreshold: baseATR * 1.5,
-        moonshotThreshold: baseATR * 2.0,
-      };
-    }
+    const thresholds = buildThresholds(allAssets);
 
     // 16. Create agent battle
     const agentData = {
@@ -689,7 +655,75 @@ export default async function handler(req, res) {
 
 // ── Helpers ──────────────────────────────────────────────────
 
-function validatePortfolio(result, validSymbols) {
+/**
+ * Fetch + Guard-1-validate activation prices for a symbol list.
+ * Verbatim move of the handler's step-14 loop (P4 — shared with the
+ * prescribed tournament path); rate-limited 5 concurrent / 200ms between
+ * batches.
+ */
+async function fetchValidatedStartingPrices(allSymbols, baseATRBySymbol) {
+  const startingPrices = {};
+  const PRICE_CONCURRENCY = 5;
+  for (let i = 0; i < allSymbols.length; i += PRICE_CONCURRENCY) {
+    const batch = allSymbols.slice(i, i + PRICE_CONCURRENCY);
+    await Promise.allSettled(batch.map(async (symbol) => {
+      try {
+        const data = await getStockAnalysisData(symbol, { forceRefresh: true, fields: ['daily', 'price'] });
+        const p = data?.price;
+        if (p?.current) {
+          // Guard 1: validate the activation price against an independent
+          // reference (today's [low, high] + the most recent daily close)
+          // before freezing it as the scoring baseline. Use the UNADJUSTED
+          // rawClose so a split/dividend can't skew the raw-vs-raw comparison
+          // (same basis as Guard 2). data.daily is read here only — it is
+          // never written to the battle doc.
+          const recentClose = Array.isArray(data?.daily) && data.daily.length > 0
+            ? (data.daily[0].rawClose ?? data.daily[0].close)
+            : null;
+          const { value, fired, reason } = validateActivationPrice({
+            current: p.current,
+            high: p.high,
+            low: p.low,
+            fallback: p.fallback === true,
+            recentClose,
+            previousClose: p.previousClose,
+            baseATR: baseATRBySymbol[symbol] || 2.5,
+          });
+          if (fired) {
+            console.warn(`[guard1] ${symbol} rejected activation current=${p.current} (${reason}); ${value == null ? 'skipped' : `substituted ${value}`}`);
+          }
+          if (value != null) startingPrices[symbol] = value;
+        }
+      } catch (err) {
+        console.warn(`[agent/decide] Price fetch failed for ${symbol}:`, err.message);
+      }
+    }));
+    if (i + PRICE_CONCURRENCY < allSymbols.length) {
+      await new Promise(r => setTimeout(r, 200));
+    }
+  }
+  return startingPrices;
+}
+
+/**
+ * baseATR → threshold triple per asset. Verbatim move of the handler's
+ * step-15 loop (P4 — shared with the prescribed tournament path). Thresholds
+ * are tier-independent by construction, so flat6 changes nothing here.
+ */
+function buildThresholds(allAssets) {
+  const thresholds = {};
+  for (const asset of allAssets) {
+    const baseATR = asset.baseATR || (asset.isCrypto ? 5.0 : 2.5);
+    thresholds[asset.symbol] = {
+      threshold: baseATR,
+      rallyThreshold: baseATR * 1.5,
+      moonshotThreshold: baseATR * 2.0,
+    };
+  }
+  return thresholds;
+}
+
+export function validatePortfolio(result, validSymbols) {
   const errors = [];
 
   // Check counts
@@ -732,7 +766,7 @@ function validatePortfolio(result, validSymbols) {
   return { valid: errors.length === 0, errors };
 }
 
-function buildFallbackPortfolio(shortlistData) {
+export function buildFallbackPortfolio(shortlistData) {
   // Sort by baggerBombFit descending
   const sorted = shortlistData
     .slice()
@@ -778,29 +812,36 @@ function buildFallbackPortfolio(shortlistData) {
   };
 }
 
-function enrichPortfolio(result, stockUniverse) {
+/**
+ * Ticker → V3 asset object from the ranked universe. Hoisted from
+ * enrichPortfolio's inner closure in P4 so the prescribed tournament path
+ * shares it — output photographed unchanged by the battery.
+ */
+function toAssetFromUniverse(symbol, lookup) {
+  // Check stocks first
+  const stock = lookup[symbol];
+  if (stock) {
+    return {
+      symbol,
+      name: stock.name || symbol,
+      baseATR: (stock.atrPercentile || 0.5) * 8,
+      isCrypto: false,
+    };
+  }
+  // Check crypto
+  const crypto = getCryptoBySymbol(symbol);
+  if (crypto) return { ...crypto };
+  // Unknown — should not happen after validation
+  return { symbol, name: symbol, baseATR: 3.0, isCrypto: false };
+}
+
+export function enrichPortfolio(result, stockUniverse) {
   const lookup = {};
   stockUniverse.forEach((s) => {
     lookup[s.symbol] = s;
   });
 
-  const toAsset = (symbol) => {
-    // Check stocks first
-    const stock = lookup[symbol];
-    if (stock) {
-      return {
-        symbol,
-        name: stock.name || symbol,
-        baseATR: (stock.atrPercentile || 0.5) * 8,
-        isCrypto: false,
-      };
-    }
-    // Check crypto
-    const crypto = getCryptoBySymbol(symbol);
-    if (crypto) return { ...crypto };
-    // Unknown — should not happen after validation
-    return { symbol, name: symbol, baseATR: 3.0, isCrypto: false };
-  };
+  const toAsset = (symbol) => toAssetFromUniverse(symbol, lookup);
 
   return {
     portfolio: {
@@ -813,6 +854,222 @@ function enrichPortfolio(result, stockUniverse) {
       crypto: toAsset(result.bench_crypto),
     },
   };
+}
+
+// ── P4: flat6 prescription validation + enrichment (contract #2) ────────────
+
+/**
+ * The tournament sibling of validatePortfolio: exactly modeConfig.portfolioSize
+ * unique, universe-known stocks; crypto excluded (tournament mode is
+ * stocks-only — V2.1 §7; the mandatory crypto slots are a tiered-mode
+ * property).
+ */
+export function validatePrescribedPortfolio(symbols, validSymbols, modeConfig) {
+  const errors = [];
+  if (!Array.isArray(symbols)) {
+    return { valid: false, errors: ['prescribedPortfolio must be an array of ticker symbols'] };
+  }
+  if (symbols.length !== modeConfig.portfolioSize) {
+    errors.push(`Prescribed portfolio must have exactly ${modeConfig.portfolioSize} stocks`);
+  }
+  symbols.forEach((s) => {
+    if (typeof s !== 'string' || s.length === 0) {
+      errors.push(`Invalid symbol entry: ${s}`);
+    } else if (VALID_CRYPTO_SYMBOLS.includes(s)) {
+      errors.push(`Crypto not allowed in flat6: ${s}`);
+    } else if (!validSymbols.has(s)) {
+      errors.push(`Unknown stock: ${s}`);
+    }
+  });
+  const unique = new Set(symbols);
+  if (Array.isArray(symbols) && unique.size !== symbols.length) {
+    errors.push('Duplicate symbols detected');
+  }
+  return { valid: errors.length === 0, errors };
+}
+
+/**
+ * Prescription → enriched flat6 portfolio. Slot labels follow prescription
+ * order (the draft's conviction order): star[0..1], core[2..3],
+ * support[4..5] — LABELS ONLY, all 1x (createAgentBattle stamps the flat
+ * multiplier per asset from the mode config). Bench starts empty (founder
+ * ruling D5: the eval cron's hotBench refresh populates swap candidates,
+ * ledger-filtered by P2).
+ */
+export function enrichPrescribedPortfolio(symbols, stockUniverse) {
+  const lookup = {};
+  stockUniverse.forEach((s) => { lookup[s.symbol] = s; });
+  const assets = symbols.map((symbol) => toAssetFromUniverse(symbol, lookup));
+  return {
+    portfolio: {
+      star: assets.slice(0, 2),
+      core: assets.slice(2, 4),
+      support: assets.slice(4, 6),
+    },
+    bench: { stocks: [], crypto: null },
+  };
+}
+
+// ── P4: prescribed-portfolio tournament deploy (contract #1) ────────────────
+//
+// The fence entry's tournament path: validate the orchestrator-prescribed six
+// against the flat6 mode config, enrich from the ranked universe, and create
+// the stamped battle (contracts #2/#4/#5 + rider #6). No model calls, no
+// embedded CPU opponent (founder ruling D4), empty bench/hotBench (D5). A bad
+// prescription is a LOUD 4xx, never an improvised portfolio — the orchestrator
+// retries on its failure cooldown. The deploy lock is already held by the
+// caller; every early return clears it.
+async function runPrescribedTournamentDeploy({ db, req, res, agentRef, agent, agentId }) {
+  const clearLock = () => agentRef.update({ deployingAt: null }).catch(() => {});
+  const modeConfig = resolveModeConfig(FLAT6_GAME_MODE);
+  const { groupId, prescribedPortfolio, isCpu, userPicksStance, doubleDownSymbols, userPicks } = req.body;
+
+  // Joint-stamp contract (founder ruling B3): no groupId, no battle.
+  if (typeof groupId !== 'string' || groupId.length === 0) {
+    await clearLock();
+    return res.status(400).json({ error: 'groupId required for tournament deploys (joint-stamp contract)' });
+  }
+
+  // Universe read — same source as the legacy path.
+  const rankingsDoc = await db.collection('indexIntelligence').doc('stockRankings').get();
+  if (!rankingsDoc.exists) {
+    await clearLock();
+    return res.status(503).json({ error: 'Stock rankings not available. Cron may not have run yet.' });
+  }
+  const stockUniverse = rankingsDoc.data().stocks || [];
+  const validSymbols = new Set(stockUniverse.map((s) => s.symbol));
+
+  const validation = validatePrescribedPortfolio(prescribedPortfolio, validSymbols, modeConfig);
+  if (!validation.valid) {
+    console.error(`[agent/decide] Prescribed portfolio rejected for agent ${agentId}:`, validation.errors);
+    await clearLock();
+    return res.status(400).json({ error: 'invalid_prescribed_portfolio', details: validation.errors });
+  }
+
+  const enriched = enrichPrescribedPortfolio(prescribedPortfolio, stockUniverse);
+
+  // Persist the decision onto the agent (the legacy lastDecision shape,
+  // model-free) and release the deploy lock in the same write.
+  const nowIso = new Date().toISOString();
+  const lastDecision = {
+    portfolio: enriched.portfolio,
+    bench: enriched.bench,
+    innerMonologue: { strategy: 'Prescribed tournament deployment — the drafted six.' },
+    strategyBrief: 'Prescribed tournament deployment',
+    shortlist: [...prescribedPortfolio],
+    watchlist: {
+      active: [...prescribedPortfolio],
+      hotBench: [],
+      monitoring: [],
+      lastRefreshed: nowIso,
+      totalStocks: prescribedPortfolio.length,
+    },
+    createdAt: nowIso,
+    models: { strategy: null, portfolio: 'prescribed' },
+  };
+  await agentRef.update({
+    lastDecision,
+    lastDeployedAt: nowIso,
+    deployingAt: null,
+    updatedAt: nowIso,
+  });
+
+  // One active battle per agent — the same check + expiry completion as the
+  // legacy path (duplicated deliberately so the legacy handler body stays
+  // untouched).
+  const activeBattles = await db.collection('agentBattles')
+    .where('agentId', '==', agentId)
+    .where('status', '==', 'active')
+    .limit(1)
+    .get();
+  if (!activeBattles.empty) {
+    const existingBattle = activeBattles.docs[0].data();
+    const existingBattleId = activeBattles.docs[0].id;
+    const expiresAt = existingBattle.expiresAt;
+    const isExpired = expiresAt && (
+      (expiresAt.toDate ? expiresAt.toDate() : new Date(expiresAt)) < new Date()
+    );
+    if (!isExpired) {
+      await agentRef.update({ activeBattleId: existingBattleId });
+      return res.status(200).json({
+        success: true,
+        portfolioUpdated: true,
+        battleCreated: false,
+        reason: 'Agent already has an active battle',
+        existingBattleId,
+        portfolio: enriched.portfolio,
+        bench: enriched.bench,
+      });
+    }
+    await db.collection('agentBattles').doc(existingBattleId).update({
+      status: 'completed',
+      completedAt: new Date().toISOString(),
+      completionReason: 'expired',
+    });
+  }
+
+  // Sector map + prices + thresholds for exactly the six (no CPU opponent).
+  const sectorMap = {};
+  stockUniverse.forEach(s => { sectorMap[s.symbol] = s.sectorName || 'Unknown'; });
+
+  const allAssets = [
+    ...enriched.portfolio.star,
+    ...enriched.portfolio.core,
+    ...enriched.portfolio.support,
+  ].filter(Boolean);
+  const baseATRBySymbol = {};
+  for (const asset of allAssets) {
+    if (asset.symbol && baseATRBySymbol[asset.symbol] == null) {
+      baseATRBySymbol[asset.symbol] = asset.baseATR || 2.5;
+    }
+  }
+  const startingPrices = await fetchValidatedStartingPrices(allAssets.map(a => a.symbol), baseATRBySymbol);
+  const thresholds = buildThresholds(allAssets);
+
+  const agentData = {
+    id: agentId,
+    ...agent,
+    lastDecision,
+  };
+
+  const battleResult = await createAgentBattle(
+    db, agentData, thresholds, startingPrices,
+    {
+      duration: '1d',
+      sectorMap,
+      opponent: null, // founder ruling D4: no embedded CPU opponent in tournament battles
+      equippedWatchlist: null,
+      gameMode: FLAT6_GAME_MODE,
+      groupId,
+      isCpu: isCpu === true,
+      tournament: {
+        userPicksStance: Array.isArray(userPicksStance) ? userPicksStance : [],
+        doubleDownSymbols: Array.isArray(doubleDownSymbols) ? doubleDownSymbols : [],
+        userPicksAtDeploy: Array.isArray(userPicks) ? userPicks : [],
+      },
+    }
+  );
+
+  await agentRef.update({ activeBattleId: battleResult.id });
+
+  // First message: human-owned battles keep the voice-layer opener (it never
+  // blocks); CPU system agents stay silent (contract #5 passivity — founder
+  // ruling D11).
+  if (isCpu !== true) {
+    await generateFirstMessageOnDeploy({ db, agentData, battleId: battleResult.id });
+  }
+
+  return res.status(200).json({
+    success: true,
+    portfolioUpdated: true,
+    battleCreated: true,
+    agentBattleId: battleResult.id,
+    expiresAt: battleResult.expiresAt,
+    gameMode: FLAT6_GAME_MODE,
+    groupId,
+    portfolio: enriched.portfolio,
+    bench: enriched.bench,
+  });
 }
 
 // ── First-Message-on-Deploy (Phase 1 Voice Layer Rework) ────────────────────

@@ -4,23 +4,7 @@ function enrichPortfolio(result, stockUniverse) {
     lookup[s.symbol] = s;
   });
 
-  const toAsset = (symbol) => {
-    // Check stocks first
-    const stock = lookup[symbol];
-    if (stock) {
-      return {
-        symbol,
-        name: stock.name || symbol,
-        baseATR: (stock.atrPercentile || 0.5) * 8,
-        isCrypto: false,
-      };
-    }
-    // Check crypto
-    const crypto = getCryptoBySymbol(symbol);
-    if (crypto) return { ...crypto };
-    // Unknown — should not happen after validation
-    return { symbol, name: symbol, baseATR: 3.0, isCrypto: false };
-  };
+  const toAsset = (symbol) => toAssetFromUniverse(symbol, lookup);
 
   return {
     portfolio: {

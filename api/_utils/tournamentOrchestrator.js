@@ -66,6 +66,7 @@ import {
   TOURNAMENT_GAME_MODE,
   STREAMS_SUBCOLLECTION,
   AGENT_DRAFT_STREAM_DOC_ID,
+  AGENT_BOARDS_SUBCOLLECTION,
 } from '../../src/constants/leagueTournament.js';
 import { getEtParts, formatEtDate } from './tournamentTime.js';
 import { fetchEligibleGroupsByStatus } from './tournamentGroupService.js';
@@ -207,8 +208,11 @@ export function deployBaseUrl() {
  * (`ownerOdUserId`: the deploy must verify agent.ownerId matches) on every
  * call from day one. `prescribedPortfolio` + `gameMode` + `groupId` + the
  * CPU/passive marker are the P4 fence entry's intake (contract items #1/#5).
+ * The rider-#6 deploy-time fields (`userPicksStance` from the agent's board,
+ * `doubleDownSymbols`, `userPicks`) ride the same payload — the fence entry
+ * persists them awaited on the battle doc (founder ruling D10).
  */
-export function buildDeployRequest({ agentId, odUserId, isCpu = false, groupId, symbols }) {
+export function buildDeployRequest({ agentId, odUserId, isCpu = false, groupId, symbols, userPicksStance, doubleDownSymbols, userPicks }) {
   const base = deployBaseUrl();
   return {
     url: base ? `${base}/api/agent/decide` : null,
@@ -222,9 +226,43 @@ export function buildDeployRequest({ agentId, odUserId, isCpu = false, groupId, 
       groupId,
       gameMode: TOURNAMENT_GAME_MODE,
       prescribedPortfolio: symbols,
+      userPicksStance: userPicksStance || [],
+      doubleDownSymbols: doubleDownSymbols || [],
+      userPicks: userPicks || [],
       ...(isCpu ? { isCpu: true } : {}),
     },
   };
+}
+
+/**
+ * Rider #6, deploy-time half (founder ruling D10): attach each seat's USER
+ * PICKS stance (read from its agent board — the board-time record) and the
+ * double-down overlap (prescribed six ∩ own player's CURRENT pick symbols,
+ * from the group doc already in hand). A missing/failed board read degrades
+ * to an empty stance with a loud line — capture must never block a deploy.
+ * Mutates and returns `seats`.
+ */
+export async function attachRiderSix(db, group, seats) {
+  const picksByUser = new Map(
+    (group.players || []).map(p => [p.odUserId, (p.picks || []).map(pk => pk?.symbol).filter(Boolean)])
+  );
+  for (const seat of seats) {
+    try {
+      const boardSnap = await db.collection(TOURNAMENT_GROUPS_COLLECTION).doc(group.id)
+        .collection(AGENT_BOARDS_SUBCOLLECTION).doc(seat.agentId).get();
+      seat.userPicksStance = boardSnap.exists ? (boardSnap.data().userPicksStance || []) : [];
+      if (!boardSnap.exists) {
+        console.error(`${LOG_PREFIX} group ${group.id} agent ${seat.agentId}: agent board missing at deploy — rider-#6 stance empty (capture degraded, deploy proceeds)`);
+      }
+    } catch (err) {
+      console.error(`${LOG_PREFIX} group ${group.id} agent ${seat.agentId}: board read failed (${err.message}) — rider-#6 stance empty (capture degraded, deploy proceeds)`);
+      seat.userPicksStance = [];
+    }
+    const ownPicks = picksByUser.get(seat.odUserId) || [];
+    seat.userPicks = ownPicks;
+    seat.doubleDownSymbols = (seat.symbols || []).filter(s => ownPicks.includes(s));
+  }
+  return seats;
 }
 
 /**
@@ -280,7 +318,7 @@ export async function fanOutDeploys(db, {
     ?? await latestTournamentBattlesByAgent(db, groupId, ['agentId', 'createdAt', 'gameMode']);
 
   for (let i = 0; i < seats.length; i++) {
-    const { agentId, odUserId, isCpu, symbols } = seats[i];
+    const { agentId, odUserId, isCpu, symbols, userPicksStance, doubleDownSymbols, userPicks } = seats[i];
 
     // Natural guard: today's battle already exists for this agent.
     const battle = latest.get(agentId);
@@ -290,7 +328,7 @@ export async function fanOutDeploys(db, {
       continue;
     }
 
-    const request = buildDeployRequest({ agentId, odUserId, isCpu, groupId, symbols });
+    const request = buildDeployRequest({ agentId, odUserId, isCpu, groupId, symbols, userPicksStance, doubleDownSymbols, userPicks });
 
     if (!deployEnabled) {
       console.log(`${LOG_PREFIX} group ${groupId} agent ${agentId} (owner ${odUserId}${isCpu ? ', CPU' : ''}): DEPLOY GATED — P4 pending; would send [${symbols.join(', ')}] to ${request.url ?? '(no base URL)'}`);
@@ -468,6 +506,7 @@ export async function runMondayPipeline(db, {
         summary.errors++;
         continue;
       }
+      await attachRiderSix(db, group, seats);
       const fanout = await fanOutDeploys(db, {
         groupId: group.id, seats, now, state: dutyState, budget, fetchImpl, deployEnabled, pacing, pacingMs,
       });
@@ -553,6 +592,7 @@ export async function runWeekdayFanout(db, {
         }
       }
       seats.sort((a, b) => memberOrder.indexOf(a.odUserId) - memberOrder.indexOf(b.odUserId));
+      await attachRiderSix(db, group, seats);
 
       const fanout = await fanOutDeploys(db, {
         groupId: group.id, seats, now, state: dutyState, budget, fetchImpl, deployEnabled, pacing, pacingMs,

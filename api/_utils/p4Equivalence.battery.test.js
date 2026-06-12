@@ -70,6 +70,14 @@ import { buildStrategySystemPrompt, buildPortfolioSystemPrompt } from './agentPr
 import { buildEvalSystemPrompt } from './agentEvalPromptAssembly.js';
 import { createAgentBattle } from './agentBattleService.js';
 import { PORTFOLIO_TOOL, STRATEGY_TOOL } from './agentToolSchema.js';
+import {
+  validatePortfolio,
+  enrichPortfolio,
+  buildFallbackPortfolio,
+  validatePrescribedPortfolio,
+  enrichPrescribedPortfolio,
+} from '../agent/decide.js';
+import { resolveModeConfig, FLAT6_GAME_MODE, TIERED_GAME_MODE } from '../../src/constants/agentGameModes.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
@@ -490,6 +498,90 @@ describe('P4 battery — createAgentBattle battle-doc photograph (fake clock, ca
     );
   });
 
+  it('FLAT6: a tournament doc carries the joint stamp, the CPU marker, flat per-asset multipliers, the honest scoring snapshot and the rider-#6 block', async () => {
+    const { db, captured } = makeCaptureDb();
+    const flatAgent = {
+      ...PHOTO_AGENT,
+      lastDecision: {
+        ...PHOTO_AGENT.lastDecision,
+        portfolio: {
+          star: [
+            { symbol: 'NVDA', name: 'NVIDIA', baseATR: 3.1, isCrypto: false },
+            { symbol: 'TSLA', name: 'Tesla', baseATR: 4.0, isCrypto: false },
+          ],
+          core: [
+            { symbol: 'MSFT', name: 'Microsoft', baseATR: 1.9, isCrypto: false },
+            { symbol: 'AMD', name: 'AMD', baseATR: 3.4, isCrypto: false },
+          ],
+          support: [
+            { symbol: 'KO', name: 'Coca-Cola', baseATR: 1.1, isCrypto: false },
+            { symbol: 'PG', name: 'P&G', baseATR: 1.0, isCrypto: false },
+          ],
+        },
+        bench: { stocks: [], crypto: null },
+      },
+    };
+    await createAgentBattle(db, flatAgent, {}, {}, {
+      duration: '1d',
+      sectorMap: PHOTO_SECTORS,
+      opponent: null,
+      gameMode: FLAT6_GAME_MODE,
+      groupId: 'group-photo-1',
+      isCpu: true,
+      tournament: {
+        userPicksStance: [{ symbol: 'NVDA', stance: 'Share the conviction — pursuing the double-down.' }],
+        doubleDownSymbols: ['NVDA'],
+        userPicksAtDeploy: ['NVDA', 'KO', 'XOM'],
+      },
+    });
+    const doc = captured.doc;
+
+    // Joint stamp + CPU marker (contracts #4/#5).
+    expect(doc.gameMode).toBe('baggerbomb_tournament');
+    expect(doc.groupId).toBe('group-photo-1');
+    expect(doc.isCpu).toBe(true);
+
+    // Flat per-asset multiplier on every active + initial asset (D2).
+    const active = [...doc.portfolio.star, ...doc.portfolio.core, ...doc.portfolio.support];
+    expect(active).toHaveLength(6);
+    for (const asset of active) expect(asset.tierMultiplier).toBe(1.0);
+    const initial = [
+      ...doc.agentContext.initialPortfolio.star,
+      ...doc.agentContext.initialPortfolio.core,
+      ...doc.agentContext.initialPortfolio.support,
+    ];
+    for (const asset of initial) expect(asset.tierMultiplier).toBe(1.0);
+
+    // Honest (still written-never-read) scoring snapshot.
+    expect(doc.scoring.tierMultipliers).toEqual({ star: 1.0, core: 1.0, support: 1.0 });
+
+    // Rider #6 deploy-time block — awaited by construction (this single write).
+    expect(doc.agentContext.tournament).toEqual({
+      userPicksStance: [{ symbol: 'NVDA', stance: 'Share the conviction — pursuing the double-down.' }],
+      doubleDownSymbols: ['NVDA'],
+      userPicksAtDeploy: ['NVDA', 'KO', 'XOM'],
+    });
+
+    // D4/D5: no opponent, empty bench; no crypto → 16:00 ET close.
+    expect(doc.opponent).toBe(null);
+    expect(doc.portfolio.bench).toEqual({ stocks: [], crypto: null });
+    expect(doc.expiresAt).toBe('2026-06-10T20:00:00.000Z');
+  });
+
+  it('FLAT6: the joint-stamp contract is enforced at creation — tournament without groupId throws', async () => {
+    const { db } = makeCaptureDb();
+    await expect(
+      createAgentBattle(db, PHOTO_AGENT, {}, {}, { gameMode: FLAT6_GAME_MODE })
+    ).rejects.toThrow('joint-stamp contract');
+  });
+
+  it('an unknown gameMode fails LOUD at creation (never recorded on a doc)', async () => {
+    const { db } = makeCaptureDb();
+    await expect(
+      createAgentBattle(db, PHOTO_AGENT, {}, {}, { gameMode: 'not_a_mode' })
+    ).rejects.toThrow("unknown gameMode 'not_a_mode'");
+  });
+
   it('a no-crypto portfolio closes at 16:00 ET (the flat6 expiry path already exists)', async () => {
     const { db, captured } = makeCaptureDb();
     const noCryptoAgent = {
@@ -512,19 +604,22 @@ describe('P4 battery — createAgentBattle battle-doc photograph (fake clock, ca
 
 // ==================== 6. decide.js private portfolio functions — source tripwires ====================
 
-// validatePortfolio / enrichPortfolio / buildFallbackPortfolio are module-
-// private in fenced decide.js (no export), so Commit 1 photographs their
-// SOURCE TEXT (the tournamentPromptSanitizer tripwire pattern). The P4 slice
-// that adds `export` to them updates these snapshots in the SAME commit and
-// adds behavioral photographs alongside — that transition is the one place
-// the before/after proof is source+diff rather than behavior+behavior
-// (recorded in the Fence-Edit Map §10.7).
+// validatePortfolio / enrichPortfolio / buildFallbackPortfolio were module-
+// private in fenced decide.js at Commit 1, so the battery photographed their
+// SOURCE TEXT (the tournamentPromptSanitizer tripwire pattern). Slice (ii)
+// added `export` to them (in-map); the extraction below normalizes the
+// keyword away so the Commit-1 source snapshots remain byte-stable, and the
+// behavioral photographs in the next describe block were verified green
+// against the pre-slice bodies before any other decide.js edit landed.
+// enrichPortfolio's snapshot was deliberately re-pinned in slice (ii) when its
+// inner toAsset hoisted to module scope — the behavioral photograph is the
+// identity proof for that refactor.
 
 function extractDecideFunction(name) {
   const source = fs.readFileSync(path.join(here, '../agent/decide.js'), 'utf8');
   const match = source.match(new RegExp(`(?:export )?function ${name}\\([^)]*\\) \\{[\\s\\S]*?\\n\\}`));
   if (!match) throw new Error(`${name} not found in decide.js`);
-  return match[0];
+  return match[0].replace(/^export /, '');
 }
 
 describe('P4 battery — decide.js portfolio-function source tripwires', () => {
@@ -552,6 +647,172 @@ describe('P4 battery — decide.js portfolio-function source tripwires', () => {
     expect(src).toContain("if (result.bench_stocks?.length !== 3) errors.push('Bench must have exactly 3 stocks');");
     expect(src).toContain("if (!result.support_crypto) errors.push('Missing support crypto');");
     expect(src).toContain("errors.push('Duplicate symbols detected');");
+  });
+});
+
+// ==================== 6b. decide.js portfolio functions — behavioral photographs ====================
+
+// Added in slice (ii) immediately after the `export` keywords landed, and run
+// green against the pre-slice function bodies before any further decide.js
+// edit — these are the behavior-level photographs the source tripwires above
+// bootstrap.
+
+describe('P4 battery — validatePortfolio behavioral photograph (tiered rules of record)', () => {
+  const VALID = new Set(['AAA', 'BBB', 'CCC', 'DDD', 'EEE', 'FFF', 'GGG', 'HHH', 'III']);
+  const good = {
+    star: ['AAA', 'BBB'],
+    core: ['CCC', 'DDD'],
+    support_stocks: ['EEE', 'FFF'],
+    support_crypto: 'BTC',
+    bench_stocks: ['GGG', 'HHH', 'III'],
+    bench_crypto: 'ETH',
+  };
+
+  it('accepts a well-formed tiered portfolio', () => {
+    expect(validatePortfolio(good, VALID)).toEqual({ valid: true, errors: [] });
+  });
+
+  it('rejects with today\'s exact error strings', () => {
+    expect(validatePortfolio({ ...good, star: ['AAA'] }, VALID).errors).toContain('Star must have exactly 2 stocks');
+    expect(validatePortfolio({ ...good, core: [] }, VALID).errors).toContain('Core must have exactly 2 stocks');
+    expect(validatePortfolio({ ...good, support_stocks: ['EEE'] }, VALID).errors).toContain('Support must have exactly 2 stocks');
+    expect(validatePortfolio({ ...good, bench_stocks: ['GGG'] }, VALID).errors).toContain('Bench must have exactly 3 stocks');
+    expect(validatePortfolio({ ...good, support_crypto: undefined }, VALID).errors).toContain('Missing support crypto');
+    expect(validatePortfolio({ ...good, bench_crypto: undefined }, VALID).errors).toContain('Missing bench crypto');
+    expect(validatePortfolio({ ...good, star: ['AAA', 'ZZZ'] }, VALID).errors).toContain('Unknown stock: ZZZ');
+    expect(validatePortfolio({ ...good, support_crypto: 'NOPE' }, VALID).errors).toContain('Invalid crypto: NOPE');
+    expect(validatePortfolio({ ...good, core: ['AAA', 'DDD'] }, VALID).errors).toContain('Duplicate symbols detected');
+    expect(validatePortfolio({ ...good, bench_crypto: 'BTC' }, VALID).errors).toContain('Duplicate symbols detected');
+    expect(validatePortfolio({ ...good, support_crypto: 'ETH' }, VALID).errors).toContain('Support and bench crypto must be different');
+  });
+});
+
+describe('P4 battery — enrichPortfolio behavioral photograph', () => {
+  const UNIVERSE = [
+    { symbol: 'AAA', name: 'Alpha', atrPercentile: 0.5, sectorName: 'Tech' },
+    { symbol: 'BBB', name: 'Beta', atrPercentile: 0.25, sectorName: 'Health' },
+    { symbol: 'CCC', name: 'Gamma', atrPercentile: 1.0, sectorName: 'Energy' },
+    { symbol: 'DDD', name: 'Delta', sectorName: 'Tech' }, // missing atrPercentile → 0.5 * 8
+    { symbol: 'EEE', name: 'Epsilon', atrPercentile: 0.75, sectorName: 'Fin' },
+    { symbol: 'FFF', name: 'Zeta', atrPercentile: 0.1, sectorName: 'Util' },
+    { symbol: 'GGG', name: 'Eta', atrPercentile: 0.2, sectorName: 'Tech' },
+    { symbol: 'HHH', name: 'Theta', atrPercentile: 0.3, sectorName: 'Fin' },
+    { symbol: 'III', name: 'Iota', atrPercentile: 0.4, sectorName: 'Util' },
+  ];
+
+  it('converts tickers to V3 asset objects exactly as today (incl. crypto + unknown fallbacks)', () => {
+    const out = enrichPortfolio({
+      star: ['AAA', 'BBB'],
+      core: ['CCC', 'DDD'],
+      support_stocks: ['EEE', 'FFF'],
+      support_crypto: 'BTC',
+      bench_stocks: ['GGG', 'HHH', 'UNKNOWN1'],
+      bench_crypto: 'ETH',
+    }, UNIVERSE);
+
+    expect(out).toEqual({
+      portfolio: {
+        star: [
+          { symbol: 'AAA', name: 'Alpha', baseATR: 4, isCrypto: false },
+          { symbol: 'BBB', name: 'Beta', baseATR: 2, isCrypto: false },
+        ],
+        core: [
+          { symbol: 'CCC', name: 'Gamma', baseATR: 8, isCrypto: false },
+          { symbol: 'DDD', name: 'Delta', baseATR: 4, isCrypto: false },
+        ],
+        support: [
+          { symbol: 'EEE', name: 'Epsilon', baseATR: 6, isCrypto: false },
+          { symbol: 'FFF', name: 'Zeta', baseATR: 0.8, isCrypto: false },
+          { symbol: 'BTC', name: 'Bitcoin', baseATR: 5, isCrypto: true },
+        ],
+      },
+      bench: {
+        stocks: [
+          { symbol: 'GGG', name: 'Eta', baseATR: 1.6, isCrypto: false },
+          { symbol: 'HHH', name: 'Theta', baseATR: 2.4, isCrypto: false },
+          { symbol: 'UNKNOWN1', name: 'UNKNOWN1', baseATR: 3.0, isCrypto: false },
+        ],
+        crypto: { symbol: 'ETH', name: 'Ethereum', baseATR: 5, isCrypto: true },
+      },
+    });
+  });
+});
+
+describe('P4 battery — buildFallbackPortfolio behavioral photograph', () => {
+  const SHORTLIST = [
+    { symbol: 'A', sectorName: 'Tech', baggerBombFit: 95, atrPercentile: 0.9 },
+    { symbol: 'B', sectorName: 'Tech', baggerBombFit: 90, atrPercentile: 0.8 },
+    { symbol: 'C', sectorName: 'Health', baggerBombFit: 85, atrPercentile: 0.7 },
+    { symbol: 'D', sectorName: 'Tech', baggerBombFit: 80, atrPercentile: 0.6 },
+    { symbol: 'E', sectorName: 'Energy', baggerBombFit: 75, atrPercentile: 0.5 },
+    { symbol: 'F', sectorName: 'Health', baggerBombFit: 70, atrPercentile: 0.2 },
+    { symbol: 'G', sectorName: 'Utilities', baggerBombFit: 65, atrPercentile: 0.1 },
+    { symbol: 'H', sectorName: 'Tech', baggerBombFit: 60, atrPercentile: 0.3 },
+    { symbol: 'I', sectorName: 'Financial', baggerBombFit: 55, atrPercentile: 0.4 },
+    { symbol: 'J', sectorName: 'Financial', baggerBombFit: 50, atrPercentile: 0.95 },
+  ];
+
+  it('selects today\'s deterministic algorithmic fallback exactly (BTC/ETH hardcoded)', () => {
+    const out = buildFallbackPortfolio(SHORTLIST);
+    expect(out.star).toEqual(['A', 'B']);
+    expect(out.core).toEqual(['C', 'E']);            // sector-diversified away from Tech
+    expect(out.support_stocks).toEqual(['G', 'F']);  // lowest atrPercentile of the remainder
+    expect(out.bench_stocks).toEqual(['D', 'H', 'I']);
+    expect(out.support_crypto).toBe('BTC');
+    expect(out.bench_crypto).toBe('ETH');
+    expect(out.innerMonologue).toEqual({
+      strategy: 'Algorithmic selection based on BaggerBomb fitness scores. High-conviction plays in Star, diversified sectors in Core.',
+      starRationale: 'Top 2 stocks by BaggerBomb fit score for maximum upside potential.',
+      coreRationale: 'Selected from different sectors than Star picks for diversification.',
+      supportRationale: 'Lowest volatility stocks from the shortlist for stability.',
+      benchRationale: 'Next best available stocks as swap reserves.',
+    });
+  });
+});
+
+// ==================== 6c. flat6 prescription matrix (contract #2) ====================
+
+describe('P4 — validatePrescribedPortfolio matrix (flat6: six stocks, no crypto, no dupes)', () => {
+  const flat6 = resolveModeConfig(FLAT6_GAME_MODE);
+  const VALID = new Set(['AAA', 'BBB', 'CCC', 'DDD', 'EEE', 'FFF', 'GGG']);
+  const six = ['AAA', 'BBB', 'CCC', 'DDD', 'EEE', 'FFF'];
+
+  it('accepts a clean prescribed six', () => {
+    expect(validatePrescribedPortfolio(six, VALID, flat6)).toEqual({ valid: true, errors: [] });
+  });
+
+  it('rejects non-arrays, wrong counts, unknowns, crypto, dupes and junk entries', () => {
+    expect(validatePrescribedPortfolio(undefined, VALID, flat6).errors)
+      .toContain('prescribedPortfolio must be an array of ticker symbols');
+    expect(validatePrescribedPortfolio(six.slice(0, 5), VALID, flat6).errors)
+      .toContain('Prescribed portfolio must have exactly 6 stocks');
+    expect(validatePrescribedPortfolio([...six.slice(0, 5), 'ZZZ'], VALID, flat6).errors)
+      .toContain('Unknown stock: ZZZ');
+    expect(validatePrescribedPortfolio([...six.slice(0, 5), 'BTC'], VALID, flat6).errors)
+      .toContain('Crypto not allowed in flat6: BTC');
+    expect(validatePrescribedPortfolio([...six.slice(0, 5), 'AAA'], VALID, flat6).errors)
+      .toContain('Duplicate symbols detected');
+    expect(validatePrescribedPortfolio([...six.slice(0, 5), 42], VALID, flat6).errors)
+      .toContain('Invalid symbol entry: 42');
+  });
+
+  it('tiered mode config is untouched by the sibling validator\'s existence (negative space)', () => {
+    expect(resolveModeConfig(TIERED_GAME_MODE).portfolioSize).toBe(7);
+  });
+});
+
+describe('P4 — enrichPrescribedPortfolio (prescription order → 2/2/2 slot labels, empty bench)', () => {
+  it('splits the six in prescription order and starts the bench empty (D5)', () => {
+    const universe = ['AAA', 'BBB', 'CCC', 'DDD', 'EEE', 'FFF'].map((symbol, i) => ({
+      symbol, name: `Name${symbol}`, atrPercentile: (i + 1) / 10, sectorName: 'Tech',
+    }));
+    const out = enrichPrescribedPortfolio(['AAA', 'BBB', 'CCC', 'DDD', 'EEE', 'FFF'], universe);
+    expect(out.portfolio.star.map(a => a.symbol)).toEqual(['AAA', 'BBB']);
+    expect(out.portfolio.core.map(a => a.symbol)).toEqual(['CCC', 'DDD']);
+    expect(out.portfolio.support.map(a => a.symbol)).toEqual(['EEE', 'FFF']);
+    expect(out.bench).toEqual({ stocks: [], crypto: null });
+    // toAsset math identical to the legacy enrichment (hoisted helper).
+    expect(out.portfolio.star[0]).toEqual({ symbol: 'AAA', name: 'NameAAA', baseATR: 0.1 * 8, isCrypto: false });
   });
 });
 

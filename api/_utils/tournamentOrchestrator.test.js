@@ -293,11 +293,14 @@ describe('deploy plumbing — credentials + ownership assertion from day one', (
     expect(deployBaseUrl()).toBe('https://override.example');
   });
 
-  it('every call carries Bearer CRON_SECRET, the ownership assertion, gameMode, the prescribed six, and the CPU marker', () => {
+  it('every call carries Bearer CRON_SECRET, the ownership assertion, gameMode, the prescribed six, the rider-#6 fields, and the CPU marker', () => {
     vi.stubEnv('CRON_SECRET', 's3cret');
     vi.stubEnv('VERCEL_PROJECT_PRODUCTION_URL', 'tradeseven.vercel.app');
     const request = buildDeployRequest({
       agentId: 'agent-1', odUserId: 'user-1', isCpu: true, groupId: 'g1', symbols: ['NVDA', 'AMD'],
+      userPicksStance: [{ symbol: 'NVDA', stance: 'agree' }],
+      doubleDownSymbols: ['NVDA'],
+      userPicks: ['NVDA', 'KO', 'XOM'],
     });
     expect(request.url).toBe('https://tradeseven.vercel.app/api/agent/decide');
     expect(request.headers.Authorization).toBe('Bearer s3cret');
@@ -307,9 +310,18 @@ describe('deploy plumbing — credentials + ownership assertion from day one', (
       groupId: 'g1',
       gameMode: TOURNAMENT_GAME_MODE,
       prescribedPortfolio: ['NVDA', 'AMD'],
+      userPicksStance: [{ symbol: 'NVDA', stance: 'agree' }],
+      doubleDownSymbols: ['NVDA'],
+      userPicks: ['NVDA', 'KO', 'XOM'],
       isCpu: true,
     });
-    expect(buildDeployRequest({ agentId: 'a', odUserId: 'u', groupId: 'g', symbols: [] }).body).not.toHaveProperty('isCpu');
+    const bare = buildDeployRequest({ agentId: 'a', odUserId: 'u', groupId: 'g', symbols: [] }).body;
+    expect(bare).not.toHaveProperty('isCpu');
+    // Rider-#6 fields degrade to empty, never absent — the fence entry's
+    // intake is shape-stable.
+    expect(bare.userPicksStance).toEqual([]);
+    expect(bare.doubleDownSymbols).toEqual([]);
+    expect(bare.userPicks).toEqual([]);
   });
 
   it('GATED: nothing is fetched, every seat logs a loud "P4 pending" line, no pacing burned', async () => {

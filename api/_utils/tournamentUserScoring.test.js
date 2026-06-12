@@ -36,17 +36,17 @@ import {
 describe('fence tripwire — decide.js port sources are byte-intact', () => {
   const decideSource = readFileSync(new URL('../agent/decide.js', import.meta.url), 'utf8');
 
-  it('the threshold-construction block (decide.js:584-592) is unchanged', () => {
+  it('the threshold-construction block is unchanged (P4 fence entry: verbatim move into decide.js buildThresholds — same bytes, helper indentation)', () => {
     const fencedBlock = [
-      '    const thresholds = {};',
-      '    for (const asset of allAssets) {',
-      '      const baseATR = asset.baseATR || (asset.isCrypto ? 5.0 : 2.5);',
-      '      thresholds[asset.symbol] = {',
-      '        threshold: baseATR,',
-      '        rallyThreshold: baseATR * 1.5,',
-      '        moonshotThreshold: baseATR * 2.0,',
-      '      };',
-      '    }',
+      '  const thresholds = {};',
+      '  for (const asset of allAssets) {',
+      '    const baseATR = asset.baseATR || (asset.isCrypto ? 5.0 : 2.5);',
+      '    thresholds[asset.symbol] = {',
+      '      threshold: baseATR,',
+      '      rallyThreshold: baseATR * 1.5,',
+      '      moonshotThreshold: baseATR * 2.0,',
+      '    };',
+      '  }',
     ].join('\n');
     expect(decideSource).toContain(fencedBlock);
   });
