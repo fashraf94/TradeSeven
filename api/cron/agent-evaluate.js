@@ -45,7 +45,7 @@ import { generateAnticipation } from '../_utils/voiceLayerAnticipation.js';
 import { buildTechnicalSnapshot } from '../_utils/buildTechnicalSnapshot.js';
 import { applyGuardrails } from '../_utils/agentGuardrails.js';
 import { classifyStockRegime, classifyMarketPosture, getPresetAdjustedStrategies } from '../_utils/agentRegimeClassifier.js';
-import { evaluateRisk, calculate5minSMA20, pickEmergencyReplacement, pickSwapReplacementCandidate, updateStagnationCounter, findPortfolioSlot, clearsHurdleFloor, getRecentSwapCount, EMERGENCY_BYPASS_REASONS, buildSwapReceiptSource } from '../_utils/agentRiskManager.js';
+import { evaluateRisk, calculate5minSMA20, pickSwapReplacementCandidate, updateStagnationCounter, findPortfolioSlot, clearsHurdleFloor, getRecentSwapCount, EMERGENCY_BYPASS_REASONS, buildSwapReceiptSource } from '../_utils/agentRiskManager.js';
 import { getPresetConfig } from '../_utils/agentPresetConfig.js';
 import { isVwapSessionUsable, isVwapStrike, pruneCounterMaps } from '../_utils/agentVwapFloor.js';
 import { getArchetypeConfig } from '../_utils/agentArchetypeConfig.js';
@@ -765,6 +765,7 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
 
       const hotBenchSet = new Set(hotBenchSymbols);
       const existingBenchSet = new Set(benchSymbols);
+      const activePortfolioSet = new Set(portfolioSymbols);
 
       for (const stock of stockRankingsArray) {
         if (portfolioSymbols.includes(stock.symbol) || benchSymbols.includes(stock.symbol) || hotBenchSet.has(stock.symbol)) {
@@ -779,6 +780,9 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
         // stale, so rival-held symbols are re-checked here before they can
         // become swap-in candidates via the bench merge below.
         if (hotBenchSet.has(stock.symbol) && !existingBenchSet.has(stock.symbol)
+            // [VWAP Floor B3] Never offer an actively-held symbol as a swap-in
+            // candidate via the synthetic bench (June 11: PANW triple-slot).
+            && !activePortfolioSet.has(stock.symbol)
             && (!tournamentCtx || !tournamentCtx.heldByOthers.has(stock.symbol))) {
           hotBenchAssetMap[stock.symbol] = {
             symbol: stock.symbol,
@@ -1004,14 +1008,18 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
       // clearsHurdleFloor; the wrapper returning null (no candidate clears) is the
       // rotation VETO (§4.2 / D3 detection-vs-execution split). Emergency reasons
       // bypass the floor (clearsHurdleFloor returns clears:true at step 1).
+      // [VWAP Floor B2] Both branches route through pickSwapReplacementCandidate
+      // so emergency exits inherit the held/self exclusion too (June 11:
+      // LRCX→LRCX self-swap, PANW triple-slot). Computed fresh per pick — it
+      // must see slots updated by earlier swaps this tick (refreshBattleFromDoc).
+      const heldSymbols = new Set(flattenPortfolioServer(battle.portfolio).map(a => a.symbol).filter(Boolean));
+      if (tournamentCtx) {
+        // P2: cross-agent held set rides the picker's existing exclusion
+        // parameter (Spec §1.2) — belt over the bench filter's suspenders.
+        for (const heldSymbol of tournamentCtx.heldByOthers) heldSymbols.add(heldSymbol);
+      }
       let replacement;
       if (riskResult.reason === 'stagnation') {
-        const heldSymbols = new Set(flattenPortfolioServer(battle.portfolio).map(a => a.symbol).filter(Boolean));
-        if (tournamentCtx) {
-          // P2: cross-agent held set rides the picker's existing exclusion
-          // parameter (Spec §1.2) — belt over the bench filter's suspenders.
-          for (const heldSymbol of tournamentCtx.heldByOthers) heldSymbols.add(heldSymbol);
-        }
         const activeDailyPct = (prices[score.symbol]?.changePercent || 0) / 100;
         replacement = pickSwapReplacementCandidate({
           benchAssets: allBench,
@@ -1027,7 +1035,16 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
           }).clears,
         });
       } else {
-        replacement = pickEmergencyReplacement(allBench, prices, asset?.isCrypto === true);
+        // Emergency reasons (bust/vwap/trail) bypass quality by design —
+        // clearsHurdleFloor returns clears:true at step 1 for them, so
+        // omitting clearsQuality (default pass-through) is equivalent and
+        // keeps null-on-empty-pool the only skip source.
+        replacement = pickSwapReplacementCandidate({
+          benchAssets: allBench,
+          prices,
+          outgoingIsCrypto: asset?.isCrypto === true,
+          heldSymbols,
+        });
       }
 
       if (!replacement) {
@@ -1043,6 +1060,23 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
             score: Math.round(currentScore * 100) / 100,
             reason: riskResult.reason,
           }));
+        } else {
+          // [VWAP Floor B7] Regular battles get the same visibility — a
+          // wanted-but-impossible exit is a feed beat, never just a log line.
+          statusFeedEntries.push({
+            timestamp: new Date().toISOString(),
+            message: `Wanted out of ${score.symbol} — no eligible replacement (bench on cooldown or empty).`,
+            pvpContext: null,
+            action: 'pool_empty',
+            regime: stockRegimes[score.symbol] || null,
+            score: Math.round(currentScore * 100) / 100,
+            citedRules: [riskResult.reason],
+            triggeredBy: `risk_${riskResult.reason}`,
+            source: 'risk_manager',
+            evalId: null,
+            symbolOut: score.symbol,
+            symbolIn: null,
+          });
         }
         continue;
       }
@@ -1176,6 +1210,23 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
         await refreshBattleFromDoc(battleRef, battle, tournamentCtx);
       } catch (err) {
         console.error(`${LOG_PREFIX} Risk swap failed for ${score.symbol}:`, err.message);
+        // [VWAP Floor B7] Feed-visible skip: a deterministically-throwing
+        // candidate (e.g. a rejected duplicate) must not serially block
+        // protective exits unobserved.
+        statusFeedEntries.push({
+          timestamp: new Date().toISOString(),
+          message: `Risk exit of ${score.symbol} failed: ${String(err.message || err).slice(0, 140)}`,
+          pvpContext: null,
+          action: 'risk_swap_failed',
+          regime: stockRegimes[score.symbol] || null,
+          score: Math.round(currentScore * 100) / 100,
+          citedRules: [riskResult.reason],
+          triggeredBy: `risk_${riskResult.reason}`,
+          source: 'risk_manager',
+          evalId: null,
+          symbolOut: score.symbol,
+          symbolIn: replacement?.symbol || null,
+        });
         // P2: compensating release (the reserve landed but the swap didn't).
         await releaseTournamentReservation(db, tournamentCtx, reservedSymbolIn);
       }

@@ -280,9 +280,18 @@ describe('agent-evaluate cron — Knob A forced rotation wiring (§4.2)', () => 
     expect(source).toMatch(/dailyPct: \(prices\[score\.symbol\]\?\.changePercent \|\| 0\) \/ 100/);
   });
 
-  it('branches the candidate source on REASON (Invariant 1): stagnation → wrapper, else → emergency', () => {
-    expect(source).toMatch(/if \(riskResult\.reason === 'stagnation'\) \{[\s\S]*?pickSwapReplacementCandidate\(/);
-    expect(source).toMatch(/\} else \{[\s\S]*?pickEmergencyReplacement\(allBench/);
+  it('branches the candidate source on REASON (Invariant 1): stagnation → quality-gated, else → quality-free', () => {
+    // [VWAP Floor B2] Both branches now route through the held/self-excluding
+    // wrapper; the REASON branch carries the quality split — stagnation
+    // injects clearsQuality (Knob B hurdle floor), emergency reasons omit it
+    // (protective exits are never quality-gated; bypass verified equivalent).
+    expect(source).toMatch(/if \(riskResult\.reason === 'stagnation'\) \{[\s\S]*?pickSwapReplacementCandidate\(\{[\s\S]*?clearsQuality:/);
+    const elseBranch = source.match(/Emergency reasons \(bust\/vwap\/trail\) bypass quality[\s\S]*?pickSwapReplacementCandidate\(\{([\s\S]*?)\}\);/);
+    expect(elseBranch).not.toBeNull();
+    expect(elseBranch[1]).toMatch(/heldSymbols/);
+    expect(elseBranch[1]).not.toMatch(/clearsQuality/);
+    // The quality-blind single-pick helper is fully retired from the cron.
+    expect(source).not.toMatch(/pickEmergencyReplacement/);
   });
 
   it('sets statusFeed source to "archetype" for stagnation swaps (reason-aware)', () => {

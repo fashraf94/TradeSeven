@@ -82,7 +82,7 @@ export function evaluateRisk(position, currentPrice, entryPrice, baseATR, intrad
  * @param {number} baseATR - ATR as percent of price
  * @param {Object|null} intradaySnapshot - { vwap, vwapDeviation, sma20_5m } or null
  * @param {Object} cronMemory - { ticksBelowVwap, stagnationTicks, withinAge }
- * @param {Object} [presetOverrides] - Optional preset risk overrides { bustBuffer, vwapFailureTicks, trailStopATR }
+ * @param {Object} [presetOverrides] - Optional preset risk overrides { bustBuffer, vwapFailureTicks, vwapDeadBandPct, trailStopATR }
  * @returns {{ action: string, reason: string|null, detail: string }}
  */
 function evaluateRiskAction(position, currentPrice, entryPrice, baseATR, intradaySnapshot, cronMemory, presetOverrides = {}, archetypeConfig = null) {
@@ -107,7 +107,11 @@ function evaluateRiskAction(position, currentPrice, entryPrice, baseATR, intrada
   }
 
   // 2. SWAP_OUT — VWAP failure (preset-configured consecutive ticks below VWAP)
-  if (intradaySnapshot && cronMemory?.ticksBelowVwap >= vwapTicks) {
+  // [VWAP Floor A3] The fire itself requires THIS tick's deviation below the
+  // preset dead-band, not just an aged counter — releasing pressure mid-streak
+  // cancels the exit. Missing/non-numeric deviation fails closed (no fire).
+  if (intradaySnapshot && cronMemory?.ticksBelowVwap >= vwapTicks
+      && intradaySnapshot.vwapDeviation < -(presetOverrides.vwapDeadBandPct ?? 0.5)) {
     return {
       action: 'SWAP_OUT',
       reason: 'vwap_failure',
