@@ -3,15 +3,17 @@
 // P3b — Friday round advancement + champion conclusion (Spec §1.3; the
 // founder-ruled Friday duty). Per battle group with the week banked:
 //
-//   verify day-5 banked → lock TOP TWO by getWeeklyScore (the FINAL
-//   snapshot, never a sum — founder ruling, P1a) → write the bracket-doc
-//   game lock → transition the group battle→complete → when every game of
-//   the round is locked: compose the next round from advancers + CPU
+//   verify day-5 banked → lock TOP TWO by getWeeklyComposite (ruling A-1,
+//   June 12, 2026: the COMPOSITE is the score of record; still the FINAL
+//   snapshot, never a sum — the P1a identity carries; finalUserScores keep
+//   the user-layer detail) → write the bracket-doc game lock → P6a
+//   finalization side-effects (rank apply + leaderboard final upsert,
+//   idempotent) → transition the group battle→complete → when every game
+//   of the round is locked: compose the next round from advancers + CPU
 //   padding (Ruling B1) via the P1a factory (forming, fresh full-universe
 //   pools, fresh boards expected), or — at the terminal round (the round
 //   with exactly ONE game) — write the champion + the spec-§3 one-screen
-//   recap (populate what exists; finalComposite lands at P6 and may be
-//   backfilled).
+//   recap (finalComposite closed at P6a: the championship week's composite).
 //
 // BASE-LAYER groups (baseLayerWeek): COMPLETE ONLY — recomposition awaits
 // registration (founder-docketed). Groups not yet banked through day 5 are
@@ -53,9 +55,12 @@ import {
   createBracketDoc,
   createTournamentGroupDoc,
   getWeeklyScore,
+  getWeeklyComposite,
   getLatestDayEntry,
   isCpuUserId,
   cpuNFromUserId,
+  WEEK_DAYS_REQUIRED,
+  isWeekBanked,
   AGENT_LEDGER_SUBCOLLECTION,
   AGENT_LEDGER_DOC_ID,
   STREAMS_SUBCOLLECTION,
@@ -67,32 +72,35 @@ import {
   fetchEligibleGroupsByStatus,
 } from './tournamentGroupService.js';
 import { ensureCpuAgents, commitCpuUserBoards, padGamesWithCpus } from './tournamentCpu.js';
+import { applyGroupWeekToRanks, applyLockedGameToRanks } from './tournamentRank.js';
+import { upsertLeaderboardForGroups } from './tournamentLeaderboard.js';
 
 const LOG_PREFIX = '[TournamentAdvancement]';
 
-/** The ruled week-complete check: day-5 banked (see the holiday note above). */
-export const WEEK_DAYS_REQUIRED = 5;
-
-export function isWeekBanked(group) {
-  return (getLatestDayEntry(group)?.dayN || 0) >= WEEK_DAYS_REQUIRED;
-}
+// P6a: the week-complete check is hoisted to the schema module (the
+// leaderboard writer shares it); these re-exports keep this module's
+// P3b export contract intact.
+export { WEEK_DAYS_REQUIRED, isWeekBanked };
 
 /**
- * Lock the group's result: every member's weekly score (the FINAL day's
- * cumulative snapshot — getWeeklyScore, never a sum) and the top two.
- * Deterministic tie-break: score desc, then draft order (groupMembers
- * index) — never insertion luck. Pure.
+ * Lock the group's result (ruling A-1, June 12, 2026): every member's weekly
+ * COMPOSITE (the FINAL day's cumulative snapshot — getWeeklyComposite, never
+ * a sum) is the score of record; the user-layer snapshots ride alongside as
+ * finalUserScores. Deterministic tie-break: composite desc, then draft order
+ * (groupMembers index) — never insertion luck. Pure.
  */
 export function lockTopTwo(group) {
   const members = group.groupMembers || [];
   const finalScores = {};
+  const finalUserScores = {};
   for (const odUserId of members) {
-    finalScores[odUserId] = getWeeklyScore(group, odUserId);
+    finalScores[odUserId] = getWeeklyComposite(group, odUserId);
+    finalUserScores[odUserId] = getWeeklyScore(group, odUserId);
   }
   const ranking = [...members].sort((a, b) =>
     (finalScores[b] - finalScores[a]) || (members.indexOf(a) - members.indexOf(b))
   );
-  return { advancers: ranking.slice(0, 2), finalScores, ranking };
+  return { advancers: ranking.slice(0, 2), finalScores, finalUserScores, ranking };
 }
 
 /**
@@ -134,7 +142,10 @@ function gameIndexesContiguous(games) {
 /**
  * The spec-§3 one-screen champion recap — populate what exists, never block
  * the champion write: any read failure degrades a field to null, loudly.
- * `finalComposite` stays null until P6 backfills (composite fields are P6's).
+ * P6a closes the recap contract: `finalComposite` = the championship week's
+ * composite (the terminal game's locked finalScores under ruling A-1).
+ * Entries locked BEFORE P6 (dev data only) carry user-only finalScores —
+ * the field then reports that stored value, degrade recorded here.
  */
 export async function buildChampionRecap(db, bracket, championId) {
   const bracketPath = [];
@@ -198,7 +209,14 @@ export async function buildChampionRecap(db, bracket, championId) {
     }
   }
 
-  return { bracketPath, bestWeek, signatureDoubleDown, finalComposite: null };
+  // The P3b recap contract, closed: the championship week's composite is
+  // the final (highest-round) bracketPath entry's weeklyScore (composite
+  // under ruling A-1; bracketPath is built round-ascending above).
+  const finalComposite = bracketPath.length > 0
+    ? bracketPath[bracketPath.length - 1].weeklyScore
+    : null;
+
+  return { bracketPath, bestWeek, signatureDoubleDown, finalComposite };
 }
 
 /**
@@ -223,6 +241,10 @@ export async function runFridayAdvancement(db, { now = new Date(), includeDevGro
     roundsLocked: [],
     composedGroups: [],
     champion: null,
+    // P6a finalization side-effects (rank + leaderboard final upsert).
+    rankApplied: 0,
+    rankSkipped: 0,
+    leaderboardDocs: 0,
     errors: 0,
   };
 
@@ -239,6 +261,11 @@ export async function runFridayAdvancement(db, { now = new Date(), includeDevGro
         summary.bankingPending++;
         continue;
       }
+      // P6a: rank + leaderboard finalization BEFORE the completion
+      // transition — a completed group leaves the battle query, so the
+      // side-effects must land first (idempotent; a crash here retries
+      // next tick with the group still visible).
+      await applyWeekSideEffects(db, { group, entry: null, dev: group.isDev === true, nowIso, summary });
       await transitionStatus(db, group.id, GROUP_STATUS.COMPLETE, nowIso);
       console.log(`${LOG_PREFIX} base-layer group ${group.id}: week banked — completed (no recomposition at V1, ruled)`);
       summary.baseCompleted++;
@@ -287,6 +314,18 @@ export async function runFridayAdvancement(db, { now = new Date(), includeDevGro
   for (const { id, bracket } of activeBrackets) {
     try {
       const bracketRef = db.collection(TOURNAMENT_BRACKETS_COLLECTION).doc(id);
+      // P6a: re-apply finalization side-effects for every locked game first
+      // (idempotent skips when the cohort path already ran them this tick) —
+      // a crash between a lock and its side-effects is healed here for as
+      // long as the bracket stays active. Cost: a handful of rank-doc reads
+      // per locked game per evening tick; correctness outranks it.
+      const dev = bracket.isDev === true;
+      for (const round of Object.values(bracket.rounds || {})) {
+        for (const entry of Object.values(round.games || {})) {
+          if (entry.advancers == null) continue;
+          await applyEntrySideEffects(db, { entry, dev, nowIso, summary });
+        }
+      }
       const roundNumbers = Object.values(bracket.rounds || {})
         .map(r => r.roundNumber)
         .sort((a, b) => a - b);
@@ -301,6 +340,74 @@ export async function runFridayAdvancement(db, { now = new Date(), includeDevGro
   }
 
   return summary;
+}
+
+/**
+ * P6a finalization side-effects for a group whose week is banked: the rank
+ * application (founder-signed B-1/B-2 math; idempotent per appliedGroups)
+ * and the leaderboard's final upsert (idempotent SET of weeks.{groupId}).
+ * Bracket games apply from the locked entry (the resumable-from-the-bracket
+ * posture); base-layer groups lock locally with the same pure rule. Each
+ * half is error-isolated — a failure counts on summary.errors, which
+ * withholds the duty marker so the next tick retries.
+ */
+async function applyWeekSideEffects(db, { group, entry, dev, nowIso, summary }) {
+  try {
+    let rank;
+    if (entry && entry.advancers != null) {
+      rank = await applyLockedGameToRanks(db, { entry, dev, now: nowIso });
+    } else {
+      const { finalScores, ranking } = lockTopTwo(group);
+      rank = await applyGroupWeekToRanks(db, {
+        groupId: group.id,
+        seats: (group.players || []).map(p => ({ odUserId: p.odUserId, isCpu: p.isCpu === true })),
+        compositeByPlayer: finalScores,
+        ranking,
+        dev,
+        now: nowIso,
+      });
+    }
+    summary.rankApplied += rank.applied;
+    summary.rankSkipped += rank.skipped;
+    summary.errors += rank.errors;
+  } catch (err) {
+    console.error(`${LOG_PREFIX} group ${group?.id ?? entry?.groupId}: rank side-effect FAILED:`, err.message);
+    summary.errors++;
+  }
+  try {
+    const lb = await upsertLeaderboardForGroups(db, [group], { now: new Date(nowIso) });
+    summary.leaderboardDocs += lb.docsWritten;
+    summary.errors += lb.errors;
+  } catch (err) {
+    console.error(`${LOG_PREFIX} group ${group?.id}: leaderboard side-effect FAILED:`, err.message);
+    summary.errors++;
+  }
+}
+
+/**
+ * Entry-only side-effect resume (the sweep + pre-champion paths): rank from
+ * the locked bracket entry alone; the leaderboard half only when the rank
+ * apply actually recovered something (the group doc — which persists after
+ * completion — is read by id just for that case).
+ */
+async function applyEntrySideEffects(db, { entry, dev, nowIso, summary }) {
+  try {
+    const rank = await applyLockedGameToRanks(db, { entry, dev, now: nowIso });
+    summary.rankApplied += rank.applied;
+    summary.rankSkipped += rank.skipped;
+    summary.errors += rank.errors;
+    if (rank.applied > 0) {
+      const groupSnap = await db.collection(TOURNAMENT_GROUPS_COLLECTION).doc(entry.groupId).get();
+      if (groupSnap.exists) {
+        const lb = await upsertLeaderboardForGroups(db, [{ id: groupSnap.id, ...groupSnap.data() }], { now: new Date(nowIso) });
+        summary.leaderboardDocs += lb.docsWritten;
+        summary.errors += lb.errors;
+      }
+    }
+  } catch (err) {
+    console.error(`${LOG_PREFIX} game ${entry?.bracketGameId}: side-effect resume FAILED:`, err.message);
+    summary.errors++;
+  }
 }
 
 /**
@@ -375,19 +482,33 @@ async function advanceCohort(db, { bracketId, roundNumber, cohortGroups, nowIso,
       }
       const entry = bracket.rounds[roundKey].games[group.bracketGameId];
       if (entry.advancers == null) {
-        const { advancers, finalScores } = lockTopTwo(group);
+        const { advancers, finalScores, finalUserScores } = lockTopTwo(group);
         await bracketRef.update({
           [`rounds.${roundKey}.games.${group.bracketGameId}.advancers`]: advancers,
           [`rounds.${roundKey}.games.${group.bracketGameId}.finalScores`]: finalScores,
+          [`rounds.${roundKey}.games.${group.bracketGameId}.finalUserScores`]: finalUserScores,
           [`rounds.${roundKey}.games.${group.bracketGameId}.completedAt`]: nowIso,
           updatedAt: nowIso,
         });
         entry.advancers = advancers;
         entry.finalScores = finalScores;
+        entry.finalUserScores = finalUserScores;
         entry.completedAt = nowIso;
-        console.log(`${LOG_PREFIX} bracket ${bracketId} game ${group.bracketGameId}: locked top two ${advancers.join(', ')} (scores ${JSON.stringify(finalScores)})`);
+        console.log(`${LOG_PREFIX} bracket ${bracketId} game ${group.bracketGameId}: locked top two ${advancers.join(', ')} (composite ${JSON.stringify(finalScores)}, user ${JSON.stringify(finalUserScores)})`);
         summary.gamesLocked++;
       }
+      // P6a finalization side-effects — rank apply + the leaderboard's final
+      // upsert. BEFORE the completion transition (crash order: a group that
+      // completes first would leave the battle query with its week's RP
+      // unapplied; this order plus the sweep makes the window self-healing)
+      // and idempotent at every grain (appliedGroups / weeks.{groupId} sets).
+      await applyWeekSideEffects(db, {
+        group,
+        entry,
+        dev: bracket.isDev === true || group.isDev === true,
+        nowIso,
+        summary,
+      });
       try {
         await transitionStatus(db, group.id, GROUP_STATUS.COMPLETE, nowIso);
       } catch (err) {
@@ -435,6 +556,10 @@ async function finalizeRound(db, { bracketRef, bracket, roundNumber, nowIso, sum
     // Terminal round — the final four decides the champion (top-1).
     if (bracket.champion == null) {
       const game = games[0];
+      // P6a: the completed bracket leaves the active sweep forever — make
+      // sure the terminal game's rank/leaderboard side-effects landed
+      // before the champion write (idempotent; error-isolated inside).
+      await applyEntrySideEffects(db, { entry: game, dev: bracket.isDev === true, nowIso, summary });
       const seatOrder = (game.seats || []).map(s => s.odUserId);
       const ranking = [...seatOrder].sort((a, b) =>
         (game.finalScores[b] - game.finalScores[a]) || (seatOrder.indexOf(a) - seatOrder.indexOf(b)));
