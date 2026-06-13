@@ -241,6 +241,9 @@ export default function TournamentDevScreen() {
   const [simNow, setSimNow] = useState(''); // datetime-local value; '' = real clock
   const [bracket, setBracket] = useState(null);
   const [lastDuty, setLastDuty] = useState(null);
+  // P9 — the five-days-clean reconciliation verdict (the launch criterion of
+  // record), the reconcile-ledger response rendered green/red.
+  const [lastReconcile, setLastReconcile] = useState(null);
 
   // P6b — the spectator-hierarchy drill-down opened from a leaderboard row.
   const [spectating, setSpectating] = useState(false);
@@ -427,6 +430,27 @@ export default function TournamentDevScreen() {
     if (data?.status) appendLog(`claims OK · ${data.status}${data.status === 'processed' ? ` (${data.approved} approved, ${data.denied} denied)` : ''}`);
   }
 
+  // P9 — the five-days-clean reconciliation check, surfaced as a button so the
+  // launch criterion of record ("ledger reconciliation clean for five days")
+  // is a green/red verdict the founder reads, not a manual curl. Rebuilds the
+  // agent held set from the battles' portfolios (derived truth) and reports
+  // every divergence; GREEN = zero divergences (every held symbol resolves to a
+  // verified holder). Same pass the nightly settlement rides — read-only-safe.
+  async function reconcile() {
+    const data = await adminPost(
+      '/api/tournament/reconcile-ledger',
+      { groupId: attachedGroupId },
+      'reconcile'
+    );
+    if (data) {
+      setLastReconcile(data);
+      const divergences = data.divergences?.length ?? 0;
+      appendLog(
+        `reconcile ${divergences === 0 ? 'GREEN' : 'RED'} · ${data.heldCount} held · ${divergences} divergence(s)${data.staleCleared ? ` · ${data.staleCleared} stale cleared` : ''}`
+      );
+    }
+  }
+
   // P3a — Monday pipeline steps (boards → agent draft → acquisition). The
   // deploy step is P4-gated and has no button here by design.
   async function produceBoards() {
@@ -509,6 +533,10 @@ export default function TournamentDevScreen() {
 
   const todayEt = etToday();
 
+  // P9 — derived verdict for the reconciliation card (null-safe before a run).
+  const reconcileDivergences = lastReconcile?.divergences || [];
+  const reconcileClean = !!lastReconcile && reconcileDivergences.length === 0;
+
   if (!uid) {
     return (
       <div style={{ minHeight: '100vh', background: tokens.bgApp, color: tokens.textPrimary, padding: 24 }}>
@@ -584,6 +612,14 @@ export default function TournamentDevScreen() {
               onClick={processClaims}
             >
               {busy === 'claims' ? 'Processing…' : 'Process claims'}
+            </button>
+            {/* P9 — the five-days-clean reconciliation verdict (launch criterion). */}
+            <button
+              style={btn(!!secret && group?.status === GROUP_STATUS.BATTLE && !busy)}
+              disabled={!secret || group?.status !== GROUP_STATUS.BATTLE || !!busy}
+              onClick={reconcile}
+            >
+              {busy === 'reconcile' ? 'Reconciling…' : 'Reconcile ledger'}
             </button>
             {/* P3a Monday-pipeline steps. Agent draft needs all four boards;
                 the server's boards_missing guard is authoritative — the
@@ -685,6 +721,47 @@ export default function TournamentDevScreen() {
                 <span style={{ color: '#f59e0b', fontWeight: 700 }}>CHAMPION {lastDuty.champion.odUserId} ({lastDuty.champion.weeklyScore} pts)</span>
               )}
             </div>
+          </div>
+        )}
+
+        {/* P9 — the five-days-clean reconciliation verdict card. GREEN when the
+            rebuilt held set matches the battle-portfolio derived truth with zero
+            divergence (every held symbol has a verified holder; no orphaned
+            brackets, no silent loss); RED lists each divergence {type, symbol,
+            details}. Run it after each banked simulated day to read the criterion
+            of record straight off the screen. */}
+        {lastReconcile && (
+          <div style={{ ...card, display: 'flex', flexDirection: 'column', gap: 8, border: `1px solid ${reconcileClean ? '#10b981' : '#ef4444'}` }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+              <div style={{ fontWeight: 700, fontSize: 14 }}>Reconciliation — {lastReconcile.groupId}</div>
+              <span style={{ fontSize: 12, fontWeight: 800, color: reconcileClean ? '#10b981' : '#ef4444' }}>
+                {reconcileClean ? 'GREEN — clean' : `RED — ${reconcileDivergences.length} divergence(s)`}
+              </span>
+            </div>
+            <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', fontSize: 12, color: tokens.textMuted }}>
+              {/* Every numeric counter the reconcile reports, no curated list —
+                  a new server-side counter renders here without a client change
+                  (mirrors the duty-result card's loop above). */}
+              {Object.entries(lastReconcile)
+                .filter(([, value]) => typeof value === 'number')
+                .map(([key, value]) => (
+                  <span key={key}><span style={{ fontWeight: 700 }}>{key}</span> {value}</span>
+                ))}
+            </div>
+            {reconcileClean ? (
+              <div style={{ fontSize: 12, color: '#10b981' }}>
+                Every held symbol resolves to a verified holder — no orphaned brackets, no silent loss.
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                {reconcileDivergences.map((d, i) => (
+                  <div key={i} style={{ fontSize: 11, color: tokens.textMuted, padding: '4px 8px', borderRadius: 6, background: tokens.bgApp, border: `1px solid ${tokens.borderInput}` }}>
+                    <span style={{ fontWeight: 700, color: '#ef4444' }}>{d.type}</span>
+                    {d.symbol ? ` · ${d.symbol}` : ''} — {d.details}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
