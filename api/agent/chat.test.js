@@ -347,4 +347,3 @@ describe('agent/chat — Catalog #9 round-boundary Film Room tagging', () => {
     expect('groupId' in exchange).toBe(false);
   });
 });
-

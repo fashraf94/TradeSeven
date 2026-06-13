@@ -7,8 +7,13 @@
 // glue, THEN historically passed `direction` into calculateAssetScoreV3 too —
 // which negates priceChange/thresholdPriceChange a SECOND time. Net for a
 // short: the sign cancels and the position scores like a long (a silent
-// sign-flip). It was dormant on the live screen (agents are long-only) but
+// sign-flip). It was dormant on AgentBattleScreen (agents are long-only) but
 // load-bearing for any short.
+//
+// SCOPE: P8 fixes AgentBattleScreen ONLY. BaggerBombTrainingBattleViewV4.jsx
+// still carries the SAME double-negation and IS reachable (users can short
+// crypto there) — it is tracked as a SEPARATE ticket (a shipped-game bug, out
+// of P8/tournament scope; see docs/LAUNCH_READINESS_WATCH_LEDGER.md X1).
 //
 // This battery locks the contract the corrected glue relies on:
 //   1. the canonical scorer negates direction EXACTLY ONCE (the source of
@@ -26,9 +31,10 @@ import { calculateAssetScoreV3 } from './baggerBombUtils';
 
 const ASSET = { symbol: 'TST', tierMultiplier: 1 }; // tierMultiplier:1 isolates the direction sign from tier scaling
 
-// ── The corrected enrichAsset glue (mirrors AgentBattleScreen.jsx:558-632 and
-//    BaggerBombTrainingBattleViewV4.jsx:393-420 AFTER the fix): the caller owns
-//    the direction sign ONCE; the scorer is called WITHOUT `direction`. ──
+// ── The corrected enrichAsset glue (matches AgentBattleScreen.jsx AFTER the P8
+//    fix): the caller owns the direction sign ONCE; the scorer is called
+//    WITHOUT `direction`. (BaggerBombTrainingBattleViewV4.jsx still uses the
+//    `scoreBuggy` shape below — its fix is the separate ticket noted above.) ──
 function scoreCorrected({ direction, openPrice, curPrice, baseATR = 5 }) {
   let priceChange = openPrice > 0 ? ((curPrice - openPrice) / openPrice) * 100 : 0;
   if (direction === 'short') priceChange = -priceChange;
