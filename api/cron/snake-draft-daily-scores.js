@@ -482,30 +482,37 @@ export default async function handler(req, res) {
       tournament = { groups: 0, processed: 0, skipped: 0, errors: 1, failed: true };
     }
 
-    // P6a: the seasonal-leaderboard aggregation rides the same window,
-    // AFTER banking so today's composite snapshots are in (zero new cron
-    // entries — the third tournament branch). Same independence contract:
-    // zero groups is a clean no-op, its own catch, never blocks the ledger
-    // branch or the legacy path. Dev groups route to dev- docs inside
-    // (ruling A-4) — the query stays dev-inclusive like banking's.
-    try {
-      tournamentLeaderboard = await aggregateTournamentLeaderboards(db, { now: new Date() });
-      logInfo('Tournament leaderboard branch complete', tournamentLeaderboard);
-    } catch (error) {
-      logError('Tournament leaderboard branch failed', { error: error.message });
-      tournamentLeaderboard = { groups: 0, skippedNoBanking: 0, docsWritten: 0, errors: 1, failed: true };
-    }
-
     // P2: nightly derived reconciliation of the agent held-set ledgers
-    // (Spec §1.2) rides the same window — zero new cron entries. Same
-    // independence contract as banking: zero groups is a clean no-op, its
-    // own catch, never blocks banking's result or the legacy path.
+    // (Spec §1.2) rides the same window — zero new cron entries. Its own
+    // catch: a reconcile failure never blocks banking's result, the
+    // leaderboard branch, or the legacy path. P6b (founder Option 1): it now
+    // runs BEFORE the leaderboard branch so its per-group held sets feed the
+    // consensus/contrarian derivation — read-only reuse of reads it already
+    // does, zero new reads. Banking stays first and independent.
+    let heldByGroup = {};
     try {
       tournamentLedger = await reconcileAllTournamentLedgers(db, { now: new Date() });
+      heldByGroup = tournamentLedger.heldByGroup || {};
       logInfo('Tournament ledger reconciliation complete', tournamentLedger);
     } catch (error) {
       logError('Tournament ledger reconciliation failed', { error: error.message });
       tournamentLedger = { groups: 0, reconciled: 0, divergences: 0, staleCleared: 0, errors: 1, failed: true };
+      // heldByGroup stays {} — every leaderboard feed degrades honestly
+      // (omitted, not crashed); the branches stay fire-walled, no cascade.
+    }
+
+    // P6a: the seasonal-leaderboard aggregation rides the same window, AFTER
+    // banking (today's composites are in) and AFTER reconcile (the C-1 feeds
+    // reuse its held sets) — zero new cron entries, zero new reads. Same
+    // independence contract: zero groups is a clean no-op, its own catch,
+    // never blocks any sibling branch or the legacy path. Dev groups route to
+    // dev- docs inside (ruling A-4) — the query stays dev-inclusive.
+    try {
+      tournamentLeaderboard = await aggregateTournamentLeaderboards(db, { now: new Date(), heldByGroup });
+      logInfo('Tournament leaderboard branch complete', tournamentLeaderboard);
+    } catch (error) {
+      logError('Tournament leaderboard branch failed', { error: error.message });
+      tournamentLeaderboard = { groups: 0, skippedNoBanking: 0, docsWritten: 0, errors: 1, failed: true };
     }
 
     // Query all active battles

@@ -128,6 +128,93 @@ export function buildGroupWeekRows(group, nowIso) {
   }));
 }
 
+/** Linear-interpolation quantile of an ASCENDING-sorted numeric array
+ * (the R-7 / Excel PERCENTILE.INC convention). Pure; [] → 0. */
+function quantile(sortedAsc, q) {
+  if (sortedAsc.length === 0) return 0;
+  const pos = (sortedAsc.length - 1) * q;
+  const base = Math.floor(pos);
+  const rest = pos - base;
+  const next = sortedAsc[base + 1];
+  return next !== undefined ? sortedAsc[base] + rest * (next - sortedAsc[base]) : sortedAsc[base];
+}
+
+/**
+ * The C-1 consensus + contrarian feeds (founder ruling, June 12, 2026) —
+ * PURE derived fields on the month leaderboard doc, no new reads: the cohort
+ * groups already carry the user picks + the day's composites, and
+ * `heldByGroup` is the agent-held symbol list threaded from the nightly
+ * reconcile pass (Option 1).
+ *
+ * CONSENSUS — the crowd's favorites: per symbol, the count of distinct user
+ * holders (a player whose live picks include it) and agent holders (one per
+ * group, by exclusivity), ranked by the total. The agent layer is omitted for
+ * any group MISSING from `heldByGroup` (reconcile skipped/failed it) — that
+ * group degrades to user-layer-only, never crashes (founder constraint).
+ *
+ * CONTRARIAN — the lonely winners: symbols held by ≤ 2 holders total whose
+ * best USER holder sits in the cohort's upper composite quartile (open cards
+ * — named). Cohorts with < 4 composites have no meaningful quartile, so
+ * contrarian is empty there (honest, never a degenerate Q3). Pure.
+ */
+export function buildLeaderboardFeeds(groups, { heldByGroup = {}, displayNames = {}, topN = 6 } = {}) {
+  const userHolders = new Map();     // symbol -> Set<odUserId>
+  const agentHolders = new Map();    // symbol -> count (one agent per group)
+  const compositeByUser = new Map(); // odUserId -> latest-day composite
+
+  for (const group of groups || []) {
+    for (const player of group.players || []) {
+      compositeByUser.set(player.odUserId, getWeeklyComposite(group, player.odUserId));
+      for (const pick of player.picks || []) {
+        if (!pick?.symbol) continue;
+        if (!userHolders.has(pick.symbol)) userHolders.set(pick.symbol, new Set());
+        userHolders.get(pick.symbol).add(player.odUserId);
+      }
+    }
+    for (const symbol of heldByGroup[group.id] || []) {
+      agentHolders.set(symbol, (agentHolders.get(symbol) || 0) + 1);
+    }
+  }
+
+  const symbols = new Set([...userHolders.keys(), ...agentHolders.keys()]);
+  const bySymbolAsc = (x, y) => (x.symbol < y.symbol ? -1 : x.symbol > y.symbol ? 1 : 0);
+
+  const consensus = [...symbols]
+    .map(symbol => {
+      const u = userHolders.get(symbol)?.size || 0;
+      const a = agentHolders.get(symbol) || 0;
+      return { symbol, userHolders: u, agentHolders: a, totalHolders: u + a };
+    })
+    .sort((x, y) => (y.totalHolders - x.totalHolders) || bySymbolAsc(x, y))
+    .slice(0, topN);
+
+  let contrarian = [];
+  const composites = [...compositeByUser.values()].sort((a, b) => a - b);
+  if (composites.length >= 4) {
+    const q3 = quantile(composites, 0.75);
+    contrarian = [...symbols]
+      .map(symbol => {
+        const holders = (userHolders.get(symbol)?.size || 0) + (agentHolders.get(symbol) || 0);
+        if (holders === 0 || holders > 2) return null;
+        const inQuartile = [...(userHolders.get(symbol) || [])]
+          .filter(uid => (compositeByUser.get(uid) ?? -Infinity) >= q3);
+        if (inQuartile.length === 0) return null;
+        const bestComposite = Math.max(...inQuartile.map(uid => compositeByUser.get(uid)));
+        return {
+          symbol,
+          holders,
+          names: inQuartile.map(uid => displayNames[uid] || uid),
+          bestComposite: round2(bestComposite),
+        };
+      })
+      .filter(Boolean)
+      .sort((x, y) => (y.bestComposite - x.bestComposite) || bySymbolAsc(x, y))
+      .slice(0, topN);
+  }
+
+  return { consensus, contrarian };
+}
+
 /**
  * Upsert the given groups' current week contributions into their month docs.
  * Cohorts by (dev-namespace, month key); one transaction per doc — the
@@ -136,7 +223,7 @@ export function buildGroupWeekRows(group, nowIso) {
  *
  * Returns {groups, skippedNoBanking, docsWritten, errors}.
  */
-export async function upsertLeaderboardForGroups(db, groups, { now = new Date(), dev } = {}) {
+export async function upsertLeaderboardForGroups(db, groups, { now = new Date(), dev, heldByGroup = {}, writeFeeds = false } = {}) {
   const nowIso = toIso(now);
   const summary = { groups: groups.length, skippedNoBanking: 0, docsWritten: 0, errors: 0 };
 
@@ -165,6 +252,15 @@ export async function upsertLeaderboardForGroups(db, groups, { now = new Date(),
   for (const [docId, { monthKey, groups: cohortGroups }] of cohorts.entries()) {
     try {
       const ref = db.collection(TOURNAMENT_LEADERBOARDS_COLLECTION).doc(docId);
+      // C-1 feeds: only the nightly aggregation writes them (writeFeeds + the
+      // threaded heldByGroup). Computed ONCE here — it depends on no tx-read
+      // data, so it must not live inside the transaction body (which re-runs
+      // on contention). The advancement's single-group final upsert omits
+      // feeds, so `...doc` preserves the richer nightly feeds — a degenerate
+      // one-group view never clobbers the season's board.
+      const feeds = writeFeeds
+        ? buildLeaderboardFeeds(cohortGroups, { heldByGroup, displayNames })
+        : undefined;
       await db.runTransaction(async (tx) => {
         const snap = await tx.get(ref);
         const doc = snap.exists
@@ -199,7 +295,7 @@ export async function upsertLeaderboardForGroups(db, groups, { now = new Date(),
           }
         }
 
-        tx.set(ref, { ...doc, monthKey, entries, updatedAt: nowIso });
+        tx.set(ref, { ...doc, monthKey, entries, ...(feeds ? { feeds } : {}), updatedAt: nowIso });
       });
       summary.docsWritten++;
     } catch (err) {
@@ -216,12 +312,15 @@ export async function upsertLeaderboardForGroups(db, groups, { now = new Date(),
  * groups dev-INCLUSIVELY and lets the A-4 routing namespace them; zero
  * groups is a clean no-op (the production state until brackets run).
  */
-export async function aggregateTournamentLeaderboards(db, { now = new Date() } = {}) {
+export async function aggregateTournamentLeaderboards(db, { now = new Date(), heldByGroup = {} } = {}) {
   // The ONE eligibility query home (code review: this was a third copy) —
   // dev-INCLUSIVE here by design; the A-4 routing namespaces inside.
   const groups = await fetchEligibleGroupsByStatus(db, GROUP_STATUS.BATTLE, { includeDev: true });
   if (groups.length === 0) {
     return { groups: 0, skippedNoBanking: 0, docsWritten: 0, errors: 0 };
   }
-  return upsertLeaderboardForGroups(db, groups, { now });
+  // P6b: writeFeeds + the heldByGroup threaded from the reconcile pass (the
+  // host runs banking → reconcile → leaderboard). heldByGroup defaults to {}
+  // if reconcile failed/was skipped — every feed then degrades honestly.
+  return upsertLeaderboardForGroups(db, groups, { now, heldByGroup, writeFeeds: true });
 }

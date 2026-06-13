@@ -147,6 +147,10 @@ import { useTheme } from '../contexts/ThemeContext';
 import { useUser } from '../contexts/UserContext';
 import BoardEditor from '../components/Tournament/BoardEditor';
 import DraftPlaybackTheater from '../components/Tournament/DraftPlaybackTheater';
+import LeaderboardCard from '../components/Tournament/LeaderboardCard';
+import RankCard from '../components/Tournament/RankCard';
+import GroupFeed from '../components/Tournament/GroupFeed';
+import SpectatorView from '../components/Tournament/SpectatorView';
 import {
   subscribeGroup,
   subscribeClaims,
@@ -154,8 +158,6 @@ import {
   subscribeAgentDraftStream,
   subscribeAgentLedger,
   subscribeBracket,
-  subscribeLeaderboard,
-  subscribeRank,
 } from '../services/tournamentGroupService';
 import {
   GROUP_STATUS,
@@ -163,9 +165,7 @@ import {
   getLatestDayEntry,
   parseBracketGameId,
   monthKeyFromEtDate,
-  leaderboardDocId,
   rankDocId,
-  RANK_TIERS,
 } from '../constants/leagueTournament';
 import { fetchWithAuth } from '../utils/fetchWithAuth';
 
@@ -233,9 +233,8 @@ export default function TournamentDevScreen() {
   const [bracket, setBracket] = useState(null);
   const [lastDuty, setLastDuty] = useState(null);
 
-  // P6a — dev-namespaced leaderboard + rank docs (smoke surfaces).
-  const [leaderboard, setLeaderboard] = useState(null);
-  const [rank, setRank] = useState(null);
+  // P6b — the spectator-hierarchy drill-down opened from a leaderboard row.
+  const [spectating, setSpectating] = useState(false);
 
   const derivedBracketId = parseBracketGameId(group?.bracketGameId)?.bracketId ?? null;
 
@@ -272,21 +271,12 @@ export default function TournamentDevScreen() {
     return subscribeBracket(derivedBracketId, setBracket);
   }, [derivedBracketId]);
 
-  // P6a — the dev-namespaced leaderboard month doc (ruling A-4: smoke rows
-  // land on dev- docs; the month is the attached group's day-1 banking
-  // month per ruling A-3, falling back to the current ET month pre-banking
-  // — the ET clock, never UTC, per BUILD_RULES §6; code-review fix) and the
-  // founder's dev rank doc.
+  // P6b — the dev leaderboard month (ruling A-4: smoke rows land on dev-
+  // docs; the month is the attached group's day-1 banking month per ruling
+  // A-3, falling back to the current ET month pre-banking — the ET clock,
+  // never UTC, per BUILD_RULES §6). LeaderboardCard/RankCard self-subscribe.
   const devMonthKey = monthKeyFromEtDate(group?.dailyScores?.day1?.recordedDate ?? etToday());
-
-  useEffect(() => {
-    return subscribeLeaderboard(leaderboardDocId(devMonthKey, { dev: true }), setLeaderboard);
-  }, [devMonthKey]);
-
-  useEffect(() => {
-    if (!uid) return undefined;
-    return subscribeRank(rankDocId(uid, { dev: true }), setRank);
-  }, [uid]);
+  const cpuSeat = (group?.players || []).find(p => p.isCpu === true) || null;
 
   /** The duty clock as an ISO instant, or null for the real clock. */
   function simulatedNowIso() {
@@ -740,70 +730,23 @@ export default function TournamentDevScreen() {
           </div>
         )}
 
-        {/* P6a — dev leaderboard card (the dev- month doc, ruling A-4):
-            composite rows, signed; CPU chips; teal you-highlight; negative
-            rows red — information, not shame. */}
-        {leaderboard && (
-          <div style={{ ...card, display: 'flex', flexDirection: 'column', gap: 8 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-              <div style={{ fontWeight: 700, fontSize: 14 }}>Leaderboard — {leaderboard.monthKey} (dev)</div>
-              <span style={{ fontSize: 11, color: tokens.textMuted }}>
-                {Object.keys(leaderboard.entries || {}).length} rows
-              </span>
-            </div>
-            {Object.values(leaderboard.entries || {})
-              .sort((a, b) => (b.points ?? 0) - (a.points ?? 0))
-              .map((entry, i) => (
-                <div key={entry.odUserId} style={{ display: 'flex', gap: 8, alignItems: 'baseline', fontSize: 12, padding: '4px 8px', borderRadius: 6, background: entry.odUserId === uid ? 'rgba(20,184,166,0.12)' : 'transparent' }}>
-                  <span style={{ color: tokens.textFaint, fontVariantNumeric: 'tabular-nums', width: 22 }}>#{i + 1}</span>
-                  <span style={{ flex: 1, fontWeight: entry.odUserId === uid ? 800 : 500, color: entry.odUserId === uid ? '#14b8a6' : tokens.textPrimary }}>
-                    {entry.odUserId === uid ? 'You' : entry.displayName}
-                    {entry.isCpu && <span style={{ fontSize: 9, fontWeight: 700, color: '#94a3b8' }}> CPU</span>}
-                  </span>
-                  <span style={{ fontSize: 10, color: tokens.textFaint }}>
-                    {Object.keys(entry.weeks || {}).length} wk
-                  </span>
-                  <span style={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: (entry.points ?? 0) < 0 ? '#ef4444' : tokens.textPrimary }}>
-                    {(entry.points ?? 0) >= 0 ? '+' : ''}{entry.points}
-                  </span>
-                </div>
-              ))}
-          </div>
+        {/* P6b — the real leaderboard surface (dev-namespaced) with the C-1
+            consensus/contrarian feed cards; a row opens the spectator drill. */}
+        <LeaderboardCard uid={uid} dev initialMonthKey={devMonthKey} onOpenGroup={() => setSpectating(true)} />
+
+        {/* P6b — the spectator hierarchy (tiers 2/3) the row opens: bracket +
+            standings + the draft theater + the honest P7 battle degrade. */}
+        {spectating && group && (
+          <SpectatorView group={group} uid={uid} onBack={() => setSpectating(false)} />
         )}
 
-        {/* P6a — dev career-rank card (dev-{uid} doc): tier + RP + the
-            ratchet floor + per-week audit lines (raw / guard / delta — the
-            CPU-farm guard made visible). */}
-        {rank && (
-          <div style={{ ...card, display: 'flex', flexDirection: 'column', gap: 8 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-              <div style={{ fontWeight: 700, fontSize: 14 }}>Career rank (dev)</div>
-              <span style={{ fontSize: 12, fontWeight: 800, color: '#f59e0b' }}>
-                {rank.tierName} · {rank.rp} RP
-              </span>
-            </div>
-            <div style={{ fontSize: 11, color: tokens.textMuted }}>
-              floor {rank.floorRp} (permanent) · peak {rank.peakRp}
-              {(() => {
-                const next = RANK_TIERS.find(t => t.floor > (rank.rp ?? 0));
-                return next ? ` · next: ${next.name} at ${next.floor}` : ' · top of the ladder';
-              })()}
-            </div>
-            {(rank.history || []).slice(-5).reverse().map((event) => (
-              <div key={`${event.groupId}-${event.appliedAt}`} style={{ fontSize: 11, color: tokens.textMuted, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                <span style={{ color: tokens.textFaint }}>{event.groupId}</span>
-                <span>#{event.placement}</span>
-                <span>composite {event.weeklyComposite}</span>
-                <span>raw {event.raw}</span>
-                <span title="CPU-farm guard">guard ×{event.guard}</span>
-                <span style={{ fontWeight: 700, color: event.delta < 0 ? '#ef4444' : event.delta > 0 ? '#10b981' : tokens.textMuted }}>
-                  Δ {event.delta >= 0 ? '+' : ''}{event.delta}
-                </span>
-                <span>→ {event.rpAfter} RP</span>
-              </div>
-            ))}
-          </div>
-        )}
+        {/* P6b — the career-rank surface (dev-{uid}); plus a CPU rank row to
+            confirm the §7.1 display-only / frozen treatment. */}
+        <RankCard docId={rankDocId(uid, { dev: true })} dev />
+        {cpuSeat && <RankCard docId={rankDocId(cpuSeat.odUserId, { dev: true })} dev label={`CPU rank — ${cpuSeat.odUserId}`} />}
+
+        {/* P6b — the group feed (flips, auto-commits, user-side double-downs). */}
+        {group && <GroupFeed feed={group.feed} uid={uid} />}
 
         {group && (
           <div style={{ ...card, display: 'flex', flexDirection: 'column', gap: 10 }}>

@@ -23,6 +23,7 @@ import { useTheme } from '../contexts/ThemeContext';
 import { useUser } from '../contexts/UserContext';
 import BoardCommitFlow from '../components/Tournament/BoardCommitFlow';
 import DraftPlaybackTheater from '../components/Tournament/DraftPlaybackTheater';
+import GroupFeed from '../components/Tournament/GroupFeed';
 import { subscribeMyGroup } from '../services/tournamentGroupService';
 import { GROUP_STATUS, parseBracketGameId } from '../constants/leagueTournament';
 
@@ -80,7 +81,6 @@ export default function LeagueScreen() {
     ? `Bracket round ${parseBracketGameId(group.bracketGameId)?.roundNumber ?? group.roundNumber}`
     : `Base week ${group.baseLayerWeek ?? ''}`;
   const isForming = group.status === GROUP_STATUS.FORMING;
-  const feed = [...(group.feed || [])].reverse().slice(0, 8);
 
   return (
     <div style={page}>
@@ -106,25 +106,7 @@ export default function LeagueScreen() {
 
       <BoardCommitFlow groupId={group.id} group={group} uid={uid} />
 
-      {!isForming && feed.length > 0 && (
-        <div style={{ background: tokens.bgCard, border: `1px solid ${tokens.borderDivider}`, borderRadius: 10, padding: 14, display: 'flex', flexDirection: 'column', gap: 6 }}>
-          <div style={{ fontWeight: 700, fontSize: 14 }}>Group feed</div>
-          {feed.map((event, i) => (
-            <div key={`${event.timestamp}-${i}`} style={{ fontSize: 12, color: tokens.textMuted, display: 'flex', gap: 8, alignItems: 'baseline' }}>
-              <span style={{ color: tokens.textFaint, fontVariantNumeric: 'tabular-nums' }}>
-                {String(event.timestamp ?? '').slice(5, 16).replace('T', ' ')}
-              </span>
-              <span style={{ flex: 1 }}>
-                {event.type === 'flip'
-                  ? `${event.odUserId === uid ? 'You' : event.odUserId} flipped ${event.symbol} ${event.from}→${event.to}`
-                  : event.type === 'board_auto_commit'
-                    ? `${event.odUserId === uid ? 'Your' : `${event.odUserId}'s`} board auto-committed at the deadline (${event.boardLength} names)`
-                    : event.type}
-              </span>
-            </div>
-          ))}
-        </div>
-      )}
+      {!isForming && <GroupFeed feed={group.feed} uid={uid} />}
     </div>
   );
 }

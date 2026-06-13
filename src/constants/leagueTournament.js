@@ -387,6 +387,17 @@ export function rankDocId(odUserId, { dev = false } = {}) {
   return dev ? `dev-${odUserId}` : odUserId;
 }
 
+/** Shift a 'YYYY-MM' month key by `delta` months — the P6b leaderboard
+ * surface's chevron nav. Pure; null for a malformed key. */
+export function shiftMonthKey(monthKey, delta) {
+  if (typeof monthKey !== 'string' || !/^\d{4}-(0[1-9]|1[0-2])$/.test(monthKey)) return null;
+  const [y, m] = monthKey.split('-').map(Number);
+  const idx = (y * 12 + (m - 1)) + (delta | 0);
+  const ny = Math.floor(idx / 12);
+  const nm = (idx % 12) + 1;
+  return `${String(ny).padStart(4, '0')}-${String(nm).padStart(2, '0')}`;
+}
+
 // ==================== CAREER RANK (founder-signed, June 12, 2026) ====================
 //
 // The tier ladder and RP math below are the FOUNDER-SIGNED table from the P6
@@ -478,6 +489,55 @@ export function applyRankWeek(state, delta) {
     tierName: tier.name,
     floorRp: Math.max(priorFloor, tier.floor),
     peakRp: round2(Math.max(state?.peakRp ?? 0, rp)),
+  };
+}
+
+/**
+ * The DISPLAY-ONLY rank apply for CPU seats (founder ruling §7.1, June 12,
+ * 2026): "CPUs never ratchet the career rank ladder. Rank means beating
+ * humans, not bots." RP still moves on the signed delta so a CPU row reads
+ * honestly (shown-but-frozen), but the floor NEVER climbs (`floorRp` pinned 0)
+ * — so a CPU can never permanently achieve a tier, and the displayed `tier`
+ * is purely a live reflection of its current RP, never a ratcheted floor.
+ * The human ladder (applyRankWeek above) is untouched. Pure.
+ */
+export function applyRankWeekFrozen(state, delta) {
+  const rp = round2(Math.max(0, (state?.rp ?? 0) + (delta || 0)));
+  const tier = tierForRp(rp);
+  return {
+    rp,
+    tier: tier.tier,
+    tierName: tier.name,
+    floorRp: 0, // never ratchets — a bot never locks in a tier
+    peakRp: round2(Math.max(state?.peakRp ?? 0, rp)),
+  };
+}
+
+/**
+ * The career-rank progress view-model — the ratchet made legible for the P6b
+ * rank surface: the current tier (by RP), the achieved permanent FLOOR tier,
+ * the next tier + its floor, and the fraction of the way from this tier's
+ * floor toward the next ("floor: Associate, climbing toward Strategist"). At
+ * the top of the ladder, `withinTierPct` is 1 and the next-tier fields are
+ * null. Pure; reads a rank doc's {rp, floorRp}.
+ */
+export function rankProgress(rank) {
+  const rp = Number.isFinite(rank?.rp) ? rank.rp : 0;
+  const floorRp = Number.isFinite(rank?.floorRp) ? rank.floorRp : 0;
+  const tier = tierForRp(rp);
+  const floorTier = tierForRp(floorRp);
+  const next = RANK_TIERS.find(t => t.floor > rp) || null;
+  const span = next ? next.floor - tier.floor : 0;
+  const withinTierPct = next && span > 0
+    ? Math.max(0, Math.min(1, (rp - tier.floor) / span))
+    : 1;
+  return {
+    tier: tier.tier,
+    tierName: tier.name,
+    floorTierName: floorTier.name,
+    nextTierName: next ? next.name : null,
+    nextFloor: next ? next.floor : null,
+    withinTierPct,
   };
 }
 
@@ -625,6 +685,19 @@ export const WEEK_DAYS_REQUIRED = 5;
 
 export function isWeekBanked(group) {
   return (getLatestDayEntry(group)?.dayN || 0) >= WEEK_DAYS_REQUIRED;
+}
+
+/**
+ * §7.2 (founder ruling, June 12, 2026): a week whose FINAL banked snapshot
+ * carries the banking degrade marker (`agentScoresCarried` — the agent layer
+ * was carried/zeroed, not freshly read) must NOT lock. The composite of
+ * record may be missing agent-layer points, and the bracket lock is permanent
+ * — so the irreversible decision waits for a clean (non-carried) agent-layer
+ * read, which the next banking pass self-heals. Pure; the advancement gates
+ * every `lockTopTwo`/finalization site on the negation of this.
+ */
+export function isFinalSnapshotDegraded(group) {
+  return getLatestDayEntry(group)?.entry?.agentScoresCarried === true;
 }
 
 /**

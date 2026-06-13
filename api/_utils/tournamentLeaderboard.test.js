@@ -19,6 +19,7 @@ import {
   cpuDisplayName,
   resolveDisplayNames,
   buildGroupWeekRows,
+  buildLeaderboardFeeds,
   upsertLeaderboardForGroups,
   aggregateTournamentLeaderboards,
 } from './tournamentLeaderboard.js';
@@ -295,5 +296,52 @@ describe('aggregateTournamentLeaderboards — the nightly branch', () => {
     expect(summary.docsWritten).toBe(2);
     expect(store.get('tournamentLeaderboards/2026-06').entries.founder.points).toBe(60);
     expect(store.get('tournamentLeaderboards/dev-2026-06').entries.founder.points).toBe(2.5);
+  });
+});
+
+// ==================== C-1 FEEDS (P6b) ====================
+
+describe('buildLeaderboardFeeds — consensus + contrarian (C-1, June 12, 2026)', () => {
+  // u1 composite 100, u2 10, u3 5, u4 0 — four composites, real quartile.
+  const feedGroup = (id, picksByUser, composites) => ({
+    id,
+    players: Object.entries(picksByUser).map(([uid, syms]) => ({
+      odUserId: uid, picks: syms.map(symbol => ({ symbol })),
+    })),
+    dailyScores: { day1: { recordedDate: '2026-06-15', closeScores: Object.fromEntries(
+      Object.entries(composites).map(([uid, c]) => [uid, { compositePoints: c, totalPoints: 0, agentPoints: 0 }]),
+    ) } },
+  });
+  const g = feedGroup('g1',
+    { u1: ['NVDA', 'AMD'], u2: ['NVDA'], u3: ['COIN'], u4: ['NVDA'] },
+    { u1: 100, u2: 10, u3: 5, u4: 0 });
+  const heldByGroup = { g1: ['NVDA', 'TSLA'] }; // agent layer
+
+  it('CONSENSUS: distinct user holders + agent holders, ranked by total', () => {
+    const { consensus } = buildLeaderboardFeeds([g], { heldByGroup });
+    expect(consensus[0]).toEqual({ symbol: 'NVDA', userHolders: 3, agentHolders: 1, totalHolders: 4 });
+    const tsla = consensus.find(c => c.symbol === 'TSLA');
+    expect(tsla).toEqual({ symbol: 'TSLA', userHolders: 0, agentHolders: 1, totalHolders: 1 });
+  });
+
+  it('CONTRARIAN: ≤2-holder names whose best USER holder beats the upper quartile, named', () => {
+    // Q3 of [0,5,10,100] = 32.5. AMD (u1 only, composite 100) qualifies;
+    // NVDA (4 holders) is too crowded; COIN (u3, composite 5) is below Q3.
+    const { contrarian } = buildLeaderboardFeeds([g], { heldByGroup, displayNames: { u1: 'Alice' } });
+    expect(contrarian).toEqual([{ symbol: 'AMD', holders: 1, names: ['Alice'], bestComposite: 100 }]);
+  });
+
+  it('DEGRADE HONESTY: a group missing from heldByGroup drops to user-layer-only, never crashes', () => {
+    const { consensus } = buildLeaderboardFeeds([g], { heldByGroup: {} }); // reconcile skipped g1
+    const nvda = consensus.find(c => c.symbol === 'NVDA');
+    expect(nvda).toEqual({ symbol: 'NVDA', userHolders: 3, agentHolders: 0, totalHolders: 3 });
+    expect(consensus.find(c => c.symbol === 'TSLA')).toBeUndefined(); // agent-only name gone
+  });
+
+  it('small cohorts (< 4 composites) yield NO contrarian — never a degenerate quartile', () => {
+    const tiny = feedGroup('g2', { u1: ['NVDA'], u2: ['NVDA'] }, { u1: 100, u2: 0 });
+    const { contrarian, consensus } = buildLeaderboardFeeds([tiny], { heldByGroup: {} });
+    expect(contrarian).toEqual([]);
+    expect(consensus[0]).toMatchObject({ symbol: 'NVDA', userHolders: 2 });
   });
 });

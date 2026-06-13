@@ -45,7 +45,14 @@ function makeDb({ groupDoc = null, claims = [] } = {}) {
   const pendingQuery = { __pendingClaims: true };
   const groupRef = {
     get: async () => ({ exists: groupDoc != null, data: () => groupDoc }),
-    collection: () => ({ where: () => pendingQuery, doc: (id) => ({ __claimId: id }) }),
+    // claims → claim-doc refs; streams/ledger (P6b double-down reads) →
+    // non-existent docs, so detection degrades to no events cleanly.
+    collection: (sub) => ({
+      where: () => pendingQuery,
+      doc: (id) => (sub === 'claims'
+        ? { __claimId: id }
+        : { get: async () => ({ exists: false, data: () => null }) }),
+    }),
   };
   const db = {
     collection: () => ({ doc: () => ({ ...groupRef, id: 'group-1' }) }),

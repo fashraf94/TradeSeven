@@ -75,7 +75,11 @@ import {
   computeRankDelta,
   computeRankBreakdown,
   applyRankWeek,
+  applyRankWeekFrozen,
+  isFinalSnapshotDegraded,
   rankByScores,
+  shiftMonthKey,
+  rankProgress,
   round2,
 } from './leagueTournament.js';
 // Real import, zero mocks (precedent: api/cron/process-draft-claims.test.js:10).
@@ -762,5 +766,86 @@ describe('applyRankWeek — the ratchet (B-2): floors permanent, within-tier sli
     let state = applyRankWeek(null, 400);
     state = applyRankWeek(state, -100);
     expect(state.peakRp).toBe(400);
+  });
+});
+
+describe('applyRankWeekFrozen — CPU display-only, no ratchet (§7.1, June 12, 2026)', () => {
+  it('RP moves for display but the floor NEVER climbs — even across a tier line', () => {
+    let state = applyRankWeekFrozen(null, 160);
+    expect(state).toMatchObject({ rp: 160, tier: 1, floorRp: 0, peakRp: 160 });
+    // Crossing into Analyst territory: tier reflects the live RP, but the
+    // floor stays 0 — a bot never permanently achieves a tier.
+    state = applyRankWeekFrozen(state, 160);
+    expect(state).toMatchObject({ rp: 320, tier: 2, tierName: 'Analyst', floorRp: 0 });
+  });
+
+  it('NO permanent floor: a CPU that climbs then loses slides all the way back (the human ladder would not)', () => {
+    let frozen = applyRankWeekFrozen(null, 800);   // would be Associate for a human
+    expect(frozen).toMatchObject({ tier: 3, floorRp: 0 });
+    frozen = applyRankWeekFrozen(frozen, -800);
+    expect(frozen).toMatchObject({ rp: 0, tier: 1, floorRp: 0 }); // no floor caught it
+    // Contrast: the human ratchet holds the achieved floor.
+    let human = applyRankWeek(null, 800);
+    human = applyRankWeek(human, -800);
+    expect(human).toMatchObject({ rp: 750, floorRp: 750 });
+  });
+
+  it('NO DEBT still holds: RP floors at 0', () => {
+    expect(applyRankWeekFrozen(null, -500)).toMatchObject({ rp: 0, tier: 1, floorRp: 0, peakRp: 0 });
+  });
+});
+
+describe('isFinalSnapshotDegraded — the §7.2 gate predicate (June 12, 2026)', () => {
+  const banked = (extra = {}) => ({ dailyScores: { day5: { recordedDate: 'x', closeScores: {}, ...extra } } });
+  it('true only when the LATEST day entry carries agentScoresCarried', () => {
+    expect(isFinalSnapshotDegraded(banked({ agentScoresCarried: true }))).toBe(true);
+    expect(isFinalSnapshotDegraded(banked())).toBe(false);
+    expect(isFinalSnapshotDegraded(banked({ agentScoresCarried: false }))).toBe(false);
+    expect(isFinalSnapshotDegraded({ dailyScores: {} })).toBe(false);
+    expect(isFinalSnapshotDegraded(null)).toBe(false);
+  });
+  it('reads the LATEST day only — a carried earlier day does not gate a clean final', () => {
+    const group = { dailyScores: {
+      day4: { recordedDate: 'w', closeScores: {}, agentScoresCarried: true },
+      day5: { recordedDate: 'x', closeScores: {} },
+    } };
+    expect(isFinalSnapshotDegraded(group)).toBe(false);
+  });
+});
+
+describe('shiftMonthKey — the leaderboard chevron nav (P6b)', () => {
+  it('shifts months with year rollover; malformed → null', () => {
+    expect(shiftMonthKey('2026-06', -1)).toBe('2026-05');
+    expect(shiftMonthKey('2026-06', 1)).toBe('2026-07');
+    expect(shiftMonthKey('2026-01', -1)).toBe('2025-12'); // year underflow
+    expect(shiftMonthKey('2026-12', 1)).toBe('2027-01');  // year overflow
+    expect(shiftMonthKey('2026-06', -18)).toBe('2024-12');
+    expect(shiftMonthKey('nope', 1)).toBeNull();
+    expect(shiftMonthKey('2026-13', 1)).toBeNull();
+  });
+});
+
+describe('rankProgress — the ratchet made legible (P6b)', () => {
+  it('within-tier fraction toward the next floor; floor tier named', () => {
+    // rp 500: Associate floor 750? no — 500 is Analyst (250..750). Floor 250,
+    // next Associate 750 → (500-250)/(750-250) = 0.5.
+    const p = rankProgress({ rp: 500, floorRp: 250 });
+    expect(p).toMatchObject({ tierName: 'Analyst', floorTierName: 'Analyst', nextTierName: 'Associate', nextFloor: 750 });
+    expect(p.withinTierPct).toBeCloseTo(0.5, 5);
+  });
+
+  it('floor tier can trail the live tier (RP climbed within), and the bar reflects RP', () => {
+    const p = rankProgress({ rp: 300, floorRp: 250 });
+    expect(p.floorTierName).toBe('Analyst');
+    expect(p.withinTierPct).toBeCloseTo((300 - 250) / (750 - 250), 5);
+  });
+
+  it('top of the ladder: no next tier, full bar', () => {
+    const p = rankProgress({ rp: 12000, floorRp: 11000 });
+    expect(p).toMatchObject({ tierName: 'Market Legend', nextTierName: null, nextFloor: null, withinTierPct: 1 });
+  });
+
+  it('a fresh/empty rank reads as Intern at 0', () => {
+    expect(rankProgress(null)).toMatchObject({ tierName: 'Intern', floorTierName: 'Intern', withinTierPct: 0 });
   });
 });
