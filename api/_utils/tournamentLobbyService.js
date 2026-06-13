@@ -174,6 +174,34 @@ export async function matchmakeJoin(db, { odUserId, displayName = null, now = ne
   return { id: created.id, lobby: created.doc, joined: true, alreadyMember: false, full: false, created: true };
 }
 
+/**
+ * Resolve a shareable 6-char join code to its OPEN lobby — the P10b
+ * typed/pasted private-invite path (founder ruling, June 13, 2026: the code,
+ * not the 20-char doc id, is the beta share token). READS ONLY. The doc id
+ * stays the authoritative key; this is a one-field lookup by the display code.
+ * Codes are minted from an uppercase alphabet, so the lookup normalizes case.
+ *
+ * Returns { id, lobby } for the matching OPEN lobby, or **null** when no OPEN
+ * lobby matches — an HONEST no-match: a typo'd / expired / already-formed code
+ * resolves to null (never a throw), so the endpoint returns a clean 404 rather
+ * than a 500. Only OPEN lobbies are joinable; a FORMING/FORMED/CANCELLED code
+ * yields null (you cannot join a game that has already started).
+ */
+export async function findLobbyByJoinCode(db, code) {
+  if (typeof code !== 'string' || code.trim().length === 0) return null;
+  const normalized = code.trim().toUpperCase();
+  const snap = await db.collection(TOURNAMENT_LOBBY_COLLECTION)
+    .where('joinCode', '==', normalized)
+    .get();
+  let match = null;
+  snap.forEach((d) => {
+    if (match) return; // codes are effectively unique; take the first OPEN one
+    const data = d.data();
+    if (data.status === LOBBY_STATUS.OPEN) match = { id: d.id, lobby: data };
+  });
+  return match;
+}
+
 // ==================== FORMATION (THE SEAM) ====================
 
 /**

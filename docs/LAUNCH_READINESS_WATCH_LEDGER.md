@@ -54,6 +54,16 @@ The self-serve lobby is the path toward the population that fires **W2** (the wh
 - **Trigger:** approaching **open** (uninvited) registration / a few-thousand monthly actives.
 - **Fix when triggered:** land W2's per-entry subcollection sharding **before** open registration. (W1's `subscribeMyGroup` index is the same scale class.)
 
+### W8 — `subscribeMyLobby` reads all open/forming lobbies (no membership index) (P10b)
+`src/services/tournamentGroupService.js` `subscribeMyLobby` queries `tournamentLobby` by `status in [open,forming]` and filters membership **client-side** via the pure `selectActiveLobby`. The lobby `members` is an array of **objects** (`{odUserId, displayName, joinedAt}`) — there is no scalar member-id field to `array-contains` on — so it reads **every** currently-open/forming lobby, not just the caller's.
+- **Launch-safe:** FIFO V1 keeps a handful of open lobbies at once; authenticated reads of all lobbies are already permitted by the deployed `tournamentLobby` rules block (join-by-id/by-code needs them).
+- **Trigger:** the count of simultaneously-open lobbies grows (busy beta / a backlog of half-full lobbies) → every front-door mount reads them all.
+- **Fix when triggered:** denormalize a scalar `memberIds` array onto the lobby doc (maintained in `createLobbyDoc`/`joinLobby`) and switch to `memberIds array-contains uid` (the `subscribeMyGroup` shape). **Touches the P10a engine + likely a composite index — flag the index in the PR, never improvise it.** (Same scale class as W1.)
+
+### W9 — Duplicate P10a phase-report file in `docs/audits/` (P10b housekeeping)
+`docs/audits/` carries the P10a phase report **twice** — `2026-06-13_P10A_PHASE_REPORT.md` and `20260613_P10A_PHASE_REPORT.md` (byte-identical, 11,215 bytes). A filename-convention slip, not a content issue.
+- **Disposition (founder ruling, P10b):** **keep the dated `2026-06-13_P10A_PHASE_REPORT.md` form** (matches every other audit file); remove the `20260613_` duplicate in a housekeeping pass. Left untouched in P10b to keep the surface PR free of unrelated file churn.
+
 ## Cross-cron timing & calendar awareness (operate-and-watch)
 
 ### O1 — Holiday-week advancement waits for founder intervention

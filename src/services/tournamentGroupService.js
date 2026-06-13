@@ -13,14 +13,17 @@ import {
   TOURNAMENT_BRACKETS_COLLECTION,
   TOURNAMENT_LEADERBOARDS_COLLECTION,
   TOURNAMENT_RANKS_COLLECTION,
+  TOURNAMENT_LOBBY_COLLECTION,
   TOURNAMENT_TUNING,
   GROUP_STATUS,
+  LOBBY_STATUS,
   AGENT_BOARDS_SUBCOLLECTION,
   STREAMS_SUBCOLLECTION,
   AGENT_DRAFT_STREAM_DOC_ID,
   USER_DRAFT_STREAM_DOC_ID,
   AGENT_LEDGER_SUBCOLLECTION,
   AGENT_LEDGER_DOC_ID,
+  selectActiveLobby,
 } from '../constants/leagueTournament';
 
 /** One-shot group read. Returns { id, ...data } or null. */
@@ -155,6 +158,35 @@ export function subscribeMyGroup(uid, callback) {
     callback(active[0] ?? null);
   }, (error) => {
     console.error('[TournamentGroupService] My-group subscription error:', error);
+    callback(null);
+  });
+}
+
+/**
+ * Live "my lobby" subscription (P10b — the front door before a group exists):
+ * the caller's OPEN/FORMING self-serve lobby, found by membership. The lobby's
+ * `members` is an array of OBJECTS (no scalar member-id field to
+ * `array-contains` on), so this reads the open/forming lobbies (a single-field
+ * `status in` — no composite index) and filters membership client-side via the
+ * pure `selectActiveLobby` (the subscribeMyGroup read-then-filter idiom). At
+ * FIFO V1 scale this is a handful of docs; the denormalized-`memberIds` array
+ * is the documented scale-time follow-up (watch ledger W8).
+ *
+ * Composes with subscribeMyGroup for the handoff: the lobby state shows only
+ * while `subscribeMyGroup` returns null; the instant a group forms, the lobby
+ * reaches FORMED (excluded here → null) and the group subscription takes over.
+ * Callback receives { id, ...lobby } or null. Returns the unsubscribe fn.
+ */
+export function subscribeMyLobby(uid, callback) {
+  const lobbyQuery = query(
+    collection(db, TOURNAMENT_LOBBY_COLLECTION),
+    where('status', 'in', [LOBBY_STATUS.OPEN, LOBBY_STATUS.FORMING])
+  );
+  return onSnapshot(lobbyQuery, (snapshot) => {
+    const docs = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+    callback(selectActiveLobby(docs, uid));
+  }, (error) => {
+    console.error('[TournamentGroupService] My-lobby subscription error:', error);
     callback(null);
   });
 }
