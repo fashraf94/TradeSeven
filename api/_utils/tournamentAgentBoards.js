@@ -48,6 +48,7 @@ import { computeArchetypeRankings, ARCHETYPE_TEMPERATURES, ARCHETYPE_CONSTRAINTS
 import { resolveEquippedWatchlist, extractTickerSymbols } from './watchlistEquip.js';
 import { getOwnUserPicks } from './tournamentAgentLedger.js';
 import { sanitizeRuleText } from './tournamentPromptSanitizer.js';
+import { toIso } from './tournamentTime.js';
 
 const LOG_PREFIX = '[TournamentBoards]';
 
@@ -65,10 +66,6 @@ function sentinel(code, detail) {
   const err = new Error(BOARDS_SENTINEL_PREFIX + code);
   err.detail = detail;
   return err;
-}
-
-function toIso(now) {
-  return now instanceof Date ? now.toISOString() : new Date(now).toISOString();
 }
 
 // ==================== TOOL SCHEMA ====================

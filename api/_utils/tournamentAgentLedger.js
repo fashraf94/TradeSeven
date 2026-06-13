@@ -55,6 +55,7 @@ import {
 } from '../../src/constants/leagueTournament.js';
 import { flattenPortfolioServer } from './agentScoring.js';
 import { getGroup, getPlayer } from './tournamentGroupService.js';
+import { toIso } from './tournamentTime.js';
 
 const LOG_PREFIX = '[TournamentLedger]';
 
@@ -67,10 +68,6 @@ export const RESERVATION_TTL_MS = 10 * 60 * 1000;
 
 // doubleDowns event-list cap on the ledger doc (house slice(-N) pattern).
 export const DOUBLE_DOWN_EVENTS_CAP = 50;
-
-function toIso(now) {
-  return now instanceof Date ? now.toISOString() : new Date(now).toISOString();
-}
 
 function toMs(now) {
   return now instanceof Date ? now.getTime() : new Date(now).getTime();

@@ -44,14 +44,11 @@ import {
   TOURNAMENT_TUNING,
   GROUP_FEED_CAP,
 } from '../../src/constants/leagueTournament.js';
+import { toIso } from './tournamentTime.js';
 
 const LOG_PREFIX = '[TournamentAutoCommit]';
 
 export const AUTO_COMMIT_FEED_TYPE = 'board_auto_commit';
-
-function toIso(now) {
-  return now instanceof Date ? now.toISOString() : new Date(now).toISOString();
-}
 
 /**
  * Admin-SDK twin of the client prefill reads (assembleBoardPrefill): agent by

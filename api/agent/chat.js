@@ -7,6 +7,7 @@ import { FieldValue } from 'firebase-admin/firestore';
 import { logConversation } from '../_utils/shadowLogger.js';
 import { getMarketState } from '../_utils/marketSchedule.js';
 import { randomUUID } from 'node:crypto';
+import { TOURNAMENT_GAME_MODE } from '../../src/constants/leagueTournament.js';
 
 export const config = { maxDuration: 30 };
 
@@ -438,6 +439,18 @@ export default async function handler(req, res) {
       elicitationTarget: elicitationTarget.dimension,
       timestamp: new Date().toISOString(),
       mode,
+      // Catalog #9 (Signal Capture Rider) — round-boundary Film Room tagging.
+      // Stamp the group onto each tournament review exchange so round-boundary
+      // analysis can recover bracketGameId/roundNumber downstream by joining
+      // groupId → the group doc. Those two are deliberately NOT stamped on the
+      // battle doc: that is createAgentBattle doc-shape = fence contact = STOP
+      // (founder ruling, P8 — tag-only with groupId). This rides the awaited
+      // durable chatExchanges write below, never the fire-and-forget shadow
+      // log. Pattern-A field-spread; tiered battles carry no groupId, so it is
+      // omitted for them (the joint-stamp contract pairs gameMode + groupId).
+      ...(battle.gameMode === TOURNAMENT_GAME_MODE && battle.groupId
+        ? { groupId: battle.groupId }
+        : {}),
     };
 
     const recentTargets = [...(battle.recentElicitationTargets || []), elicitationTarget.dimension].slice(-3);
