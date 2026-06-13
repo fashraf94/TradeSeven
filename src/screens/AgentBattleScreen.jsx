@@ -623,8 +623,20 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
       minMultiplier: Math.min(persistedHistory.minMultiplier || 0, multiplier < 0 ? multiplier : 0),
     };
 
+    // P8 hygiene item 1 — apply the direction sign EXACTLY ONCE. priceChange,
+    // thresholdPriceChange, multiplier and history above are already in
+    // position-P&L terms (the two `direction === 'short'` adjustments). The
+    // canonical scorer ALSO negates priceChange/thresholdPriceChange internally
+    // for a short, so it is called WITHOUT `direction`: forwarding it would
+    // double-negate and silently flip a short's score to a long's. Dormant for
+    // long-only agents (the only portfolios this screen renders today), but the
+    // contract is load-bearing the moment any short reaches here. Note we keep
+    // the caller-owns-direction convention (not flat6's scorer-owns) because the
+    // scorer negates the scalar args but NOT the caller-supplied `history`,
+    // which is already adjusted above. Locked by agentBattleScoring.test.js —
+    // do NOT add `direction` back to this call.
     const score = calculateAssetScoreV3(
-      { ...asset, baseATR, tier },
+      { ...asset, baseATR, tier, direction: undefined },
       priceChange,
       history,
       {},
