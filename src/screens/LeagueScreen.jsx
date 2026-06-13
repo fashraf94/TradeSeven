@@ -24,8 +24,16 @@ import { useUser } from '../contexts/UserContext';
 import BoardCommitFlow from '../components/Tournament/BoardCommitFlow';
 import DraftPlaybackTheater from '../components/Tournament/DraftPlaybackTheater';
 import GroupFeed from '../components/Tournament/GroupFeed';
+import Flat6BattleView from '../components/Tournament/Flat6BattleView';
+import useMyTournamentBattle from '../hooks/useMyTournamentBattle';
 import { subscribeMyGroup } from '../services/tournamentGroupService';
-import { GROUP_STATUS, parseBracketGameId } from '../constants/leagueTournament';
+import {
+  GROUP_STATUS,
+  parseBracketGameId,
+  getWeeklyComposite,
+  getWeeklyScore,
+  round2,
+} from '../constants/leagueTournament';
 
 export default function LeagueScreen() {
   const { tokens } = useTheme();
@@ -42,6 +50,10 @@ export default function LeagueScreen() {
       setLoaded(true);
     });
   }, [uid]);
+
+  // Participant mode reads the player's OWN battle live (owner-scoped rule
+  // allows it); null until a battle week is underway.
+  const { battle: myBattle } = useMyTournamentBattle(group?.id);
 
   const page = {
     minHeight: '100vh',
@@ -81,6 +93,10 @@ export default function LeagueScreen() {
     ? `Bracket round ${parseBracketGameId(group.bracketGameId)?.roundNumber ?? group.roundNumber}`
     : `Base week ${group.baseLayerWeek ?? ''}`;
   const isForming = group.status === GROUP_STATUS.FORMING;
+  const compositeContext = {
+    composite: round2(getWeeklyComposite(group, uid)),
+    userPoints: round2(getWeeklyScore(group, uid)),
+  };
 
   return (
     <div style={page}>
@@ -99,6 +115,14 @@ export default function LeagueScreen() {
           {(group.groupMembers || []).length} players
         </span>
       </div>
+
+      {!isForming && myBattle && (
+        <Flat6BattleView
+          battle={myBattle}
+          isOwner
+          compositeContext={compositeContext}
+        />
+      )}
 
       {!isForming && (
         <DraftPlaybackTheater groupId={group.id} group={group} uid={uid} />

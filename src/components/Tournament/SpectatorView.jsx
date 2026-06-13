@@ -13,6 +13,8 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { ChevronLeft, Swords, PlayCircle, Trophy } from 'lucide-react';
 import { useTheme } from '../../contexts/ThemeContext';
 import DraftPlaybackTheater from './DraftPlaybackTheater';
+import Flat6BattleView from './Flat6BattleView';
+import useSpectatedTournamentBattles from '../../hooks/useSpectatedTournamentBattles';
 import { subscribeBracket } from '../../services/tournamentGroupService';
 import { parseBracketGameId } from '../../constants/leagueTournament';
 import { spectatorBattleSummary } from '../../utils/tournamentSurfaces';
@@ -22,6 +24,7 @@ export default function SpectatorView({ group, uid, onBack }) {
   const [bracket, setBracket] = useState(null);
   const [showTheater, setShowTheater] = useState(false);
   const [showBattle, setShowBattle] = useState(false);
+  const [selectedOwner, setSelectedOwner] = useState(null);
 
   const parsed = group?.bracketGameId ? parseBracketGameId(group.bracketGameId) : null;
   const bracketId = parsed?.bracketId || null;
@@ -35,6 +38,22 @@ export default function SpectatorView({ group, uid, onBack }) {
     () => (group ? spectatorBattleSummary(group, { uid }) : null),
     [group, uid],
   );
+
+  // Spectator battle source: the group's battles, each PROJECTED server-side
+  // for this viewer (WHY concealed for non-owner active reads). Fetched only
+  // while the battle view is open.
+  const { battles, loading: spectateLoading } = useSpectatedTournamentBattles(group?.id, showBattle);
+
+  // Default the selection to your seat when present, else the leader.
+  useEffect(() => {
+    if (!showBattle || !summary?.players?.length) return;
+    setSelectedOwner((cur) => {
+      if (cur && summary.players.some(p => p.odUserId === cur)) return cur;
+      const you = summary.players.find(p => p.isYou);
+      return you ? you.odUserId : summary.players[0].odUserId;
+    });
+  }, [showBattle, summary]);
+
   if (!group) return null;
   const game = bracket?.rounds?.[`r${parsed?.roundNumber}`]?.games?.[group.bracketGameId] || null;
 
@@ -94,37 +113,50 @@ export default function SpectatorView({ group, uid, onBack }) {
       </button>
       {showTheater && <DraftPlaybackTheater groupId={group.id} group={group} uid={uid} />}
 
-      {/* Tier 3: battle view — honest P7 degrade */}
+      {/* Tier 3: the real flat6 battle view (replaces the P6b honest degrade).
+          Read-only spectator mode — WHAT live to all, WHY concealed server-side
+          for non-owner active battles, full WHY at completion (V2.1 §9). */}
       <button style={cta(showBattle)} onClick={() => setShowBattle(s => !s)}>
         <Swords size={16} /> {showBattle ? 'Hide battle view' : 'Open battle view'}
       </button>
       {showBattle && (
-        <div style={card}>
-          <div style={{ fontSize: 11, color: tokens.amber }}>
-            Full battle view arrives with the tournament battle screen. Here's the standing from the data in hand:
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {/* whose battle */}
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            {summary.players.map((p) => {
+              const active = p.odUserId === selectedOwner;
+              return (
+                <button key={p.odUserId} onClick={() => setSelectedOwner(p.odUserId)} style={{
+                  fontSize: 11, fontWeight: 700, padding: '5px 10px', borderRadius: 8, cursor: 'pointer',
+                  border: `1px solid ${active ? tokens.teal : tokens.borderInput}`,
+                  background: active ? tokens.bgApp : 'transparent',
+                  color: p.isYou ? '#14b8a6' : tokens.textPrimary,
+                }}>
+                  {name(p)}{p.isCpu && <span style={{ fontSize: 9, color: '#94a3b8' }}> CPU</span>}
+                </button>
+              );
+            })}
           </div>
-          {summary.players.map((p) => (
-            <div key={p.odUserId} style={{ display: 'flex', flexDirection: 'column', gap: 2, padding: '6px 0', borderTop: `1px solid ${tokens.borderDivider}` }}>
-              <div style={{ display: 'flex', gap: 8, alignItems: 'baseline' }}>
-                <span style={{ flex: 1, fontWeight: 700, color: p.isYou ? '#14b8a6' : tokens.textPrimary }}>
-                  {name(p)}{p.isCpu && <span style={{ fontSize: 9, fontWeight: 700, color: '#94a3b8' }}> CPU</span>}
-                </span>
-                <span style={{ fontSize: 11, color: tokens.textMuted }}>
-                  user {p.userPoints} · agent {p.agentPoints} · <b style={{ color: tokens.textPrimary }}>{p.composite >= 0 ? '+' : ''}{p.composite}</b>
-                </span>
-              </div>
-              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                {p.picks.length === 0
-                  ? <span style={{ fontSize: 11, color: tokens.textFaint }}>no picks</span>
-                  : p.picks.map(pick => (
-                    <span key={pick.symbol} style={{ fontSize: 11, fontWeight: 700 }}>
-                      {pick.symbol}
-                      <span style={{ color: pick.direction === 'short' ? '#ef4444' : '#10b981' }}> {pick.direction === 'short' ? '↓' : '↑'}</span>
-                    </span>
-                  ))}
-              </div>
-            </div>
-          ))}
+          {(() => {
+            const selPlayer = summary.players.find(p => p.odUserId === selectedOwner) || null;
+            const selBattle = selectedOwner ? battles[selectedOwner] : null;
+            if (!selBattle) {
+              return (
+                <div style={card}>
+                  <span style={{ fontSize: 11, color: tokens.textMuted }}>
+                    {spectateLoading ? 'Loading the battle…' : 'No battle for this player yet.'}
+                  </span>
+                </div>
+              );
+            }
+            return (
+              <Flat6BattleView
+                battle={selBattle}
+                isOwner={selectedOwner === uid}
+                compositeContext={selPlayer ? { composite: selPlayer.composite, userPoints: selPlayer.userPoints } : null}
+              />
+            );
+          })()}
         </div>
       )}
     </div>

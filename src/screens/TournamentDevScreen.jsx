@@ -151,6 +151,8 @@ import LeaderboardCard from '../components/Tournament/LeaderboardCard';
 import RankCard from '../components/Tournament/RankCard';
 import GroupFeed from '../components/Tournament/GroupFeed';
 import SpectatorView from '../components/Tournament/SpectatorView';
+import Flat6BattleView from '../components/Tournament/Flat6BattleView';
+import useMyTournamentBattle from '../hooks/useMyTournamentBattle';
 import {
   subscribeGroup,
   subscribeClaims,
@@ -166,6 +168,9 @@ import {
   parseBracketGameId,
   monthKeyFromEtDate,
   rankDocId,
+  getWeeklyComposite,
+  getWeeklyScore,
+  round2,
 } from '../constants/leagueTournament';
 import { fetchWithAuth } from '../utils/fetchWithAuth';
 
@@ -235,6 +240,9 @@ export default function TournamentDevScreen() {
 
   // P6b — the spectator-hierarchy drill-down opened from a leaderboard row.
   const [spectating, setSpectating] = useState(false);
+
+  // P7 — participant battle view: the dev user's OWN flat6 battle, live.
+  const { battle: devBattle } = useMyTournamentBattle(attachedGroupId);
 
   const derivedBracketId = parseBracketGameId(group?.bracketGameId)?.bracketId ?? null;
 
@@ -747,6 +755,20 @@ export default function TournamentDevScreen() {
 
         {/* P6b — the group feed (flips, auto-commits, user-side double-downs). */}
         {group && <GroupFeed feed={group.feed} uid={uid} />}
+
+        {/* P7 — the participant battle view (Proposal A): the dev user's OWN
+            flat6 battle, live, in the real component. Spectator mode (any
+            agent, read-only) rides the SpectatorView card above. */}
+        {devBattle && (
+          <Flat6BattleView
+            battle={devBattle}
+            isOwner
+            compositeContext={group ? {
+              composite: round2(getWeeklyComposite(group, uid)),
+              userPoints: round2(getWeeklyScore(group, uid)),
+            } : null}
+          />
+        )}
 
         {group && (
           <div style={{ ...card, display: 'flex', flexDirection: 'column', gap: 10 }}>

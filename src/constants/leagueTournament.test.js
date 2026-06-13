@@ -81,6 +81,9 @@ import {
   shiftMonthKey,
   rankProgress,
   round2,
+  // P7 — the shared "current battle for an owner" selection (one home for the
+  // participant hook + the spectator endpoint).
+  pickCurrentTournamentBattle,
 } from './leagueTournament.js';
 // Real import, zero mocks (precedent: api/cron/process-draft-claims.test.js:10).
 // This is the behavioral half of the claimSystem parity guard.
@@ -847,5 +850,29 @@ describe('rankProgress — the ratchet made legible (P6b)', () => {
 
   it('a fresh/empty rank reads as Intern at 0', () => {
     expect(rankProgress(null)).toMatchObject({ tierName: 'Intern', floorTierName: 'Intern', withinTierPct: 0 });
+  });
+});
+
+describe('pickCurrentTournamentBattle (P7 — shared current-battle selection)', () => {
+  it('prefers the active battle over a completed one', () => {
+    const out = pickCurrentTournamentBattle([
+      { id: 'done', status: 'completed', createdAt: '2026-06-13T00:00:00Z' },
+      { id: 'live', status: 'active', createdAt: '2026-06-12T00:00:00Z' },
+    ]);
+    expect(out.id).toBe('live');
+  });
+
+  it('among same-status battles, picks the most recent createdAt (ISO lexicographic = chronological)', () => {
+    const out = pickCurrentTournamentBattle([
+      { id: 'd1', status: 'completed', createdAt: '2026-06-10T00:00:00Z' },
+      { id: 'd2', status: 'completed', createdAt: '2026-06-12T00:00:00Z' },
+    ]);
+    expect(out.id).toBe('d2');
+  });
+
+  it('returns null for an empty/nullish set and skips null entries', () => {
+    expect(pickCurrentTournamentBattle([])).toBeNull();
+    expect(pickCurrentTournamentBattle(null)).toBeNull();
+    expect(pickCurrentTournamentBattle([null, { id: 'x', status: 'active' }]).id).toBe('x');
   });
 });
