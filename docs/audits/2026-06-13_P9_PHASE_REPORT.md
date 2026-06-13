@@ -13,7 +13,7 @@
 | Stage 0 launch-readiness audit | **DONE** — go/no-go, every line VERIFIED at HEAD; all five blocks green except the founder-only Console deploy. See `2026-06-13_P9_STAGE0_LAUNCH_READINESS_ASSESSMENT.md`. |
 | The five Firestore rules blocks | **Confirmed present + correct**; the founder confirmed the Console deploy (the blocking gate) is done. |
 | Five-days-clean reconciliation | **Made runnable** — a "Reconcile ledger" button + green/red verdict card on the dev screen (the launch criterion as a report, not a manual curl). |
-| Consolidated security pass | **All holds** — verified server-authoritative at HEAD; one doc-accuracy nuance on the claim cap (code is stronger than the ledger text). |
+| Consolidated security pass | **All holds** — verified server-authoritative at HEAD. The one doc-accuracy nuance (the claim cap is transaction-enforced in code, not "advisory" as the ledger read) was **corrected in the ledger** per founder direction so the canonical docs match the code. |
 | Flag-flip blast radius | **Re-confirmed** at HEAD; no env override; first-user path stated honestly. |
 | The flag flip | **NOT flipped.** Staged as its own one-line commit + documented in the runbook; the founder merges it LAST, after the deploy + a GREEN reconciliation. |
 | Fence / cron / rules | **Zero fence contact. Zero new cron (38/40 unchanged). No firestore.rules change.** |
@@ -51,6 +51,9 @@ The full go/no-go is the companion assessment. In brief, each block was walked a
 
 ### 2.3 The Stage 0 assessment + this phase report
 `docs/audits/2026-06-13_P9_STAGE0_LAUNCH_READINESS_ASSESSMENT.md` (byte-exact with the offered artifact) and this report.
+
+### 2.4 The watch-ledger claim-cap correction
+`docs/LAUNCH_READINESS_WATCH_LEDGER.md` — W3 and the security-pass agenda (items 2 and 5) reworded from "advisory" to **transaction-enforced** (`place-claim.js:125-142`): the cap-check, duplicate-check, and write share one `runTransaction`, so parallel submissions cannot both land over the cap (claims resolution is the backstop). A documentation-accuracy fix so the canonical launch docs match the code exactly — no code change. (The P8 sweep report keeps its original wording: audit reports are immutable point-in-time records.)
 
 ---
 
