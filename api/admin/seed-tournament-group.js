@@ -19,6 +19,7 @@ import {
   TOURNAMENT_TUNING,
   USER_HELD_NAMES_PER_GROUP,
   PICKS_PER_PLAYER,
+  isoWeekString,
 } from '../../src/constants/leagueTournament.js';
 
 export const config = { maxDuration: 10 };
@@ -34,15 +35,8 @@ const PLACEHOLDER_IDS = ['dev-user-1', 'dev-user-2', 'dev-user-3'];
 export const SEED_POOL_FLOOR =
   TOURNAMENT_TUNING.BOARD_DEPTH_MIN + (PLACEHOLDER_IDS.length - 1) * PICKS_PER_PLAYER;
 
-/** ISO-8601 week label (UTC), e.g. '2026-W24' — the baseLayerWeek key. */
-export function isoWeekString(date = new Date()) {
-  const d = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
-  const dayNum = d.getUTCDay() || 7; // Mon=1..Sun=7
-  d.setUTCDate(d.getUTCDate() + 4 - dayNum); // nearest Thursday decides the year
-  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
-  const week = Math.ceil(((d - yearStart) / 86_400_000 + 1) / 7);
-  return `${d.getUTCFullYear()}-W${String(week).padStart(2, '0')}`;
-}
+// isoWeekString relocated to the schema module at P10 (BUILD_RULES §4 one-home
+// rule) — the lobby formation service and this dev seeder now share it.
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -79,7 +73,7 @@ export default async function handler(req, res) {
       players,
       userPool,
       roundNumber: 1,
-      baseLayerWeek: isoWeekString(),
+      baseLayerWeek: isoWeekString(new Date()),
       now: nowIso,
     });
     // P4 companion (a): seeded groups are DEV groups — excluded from the

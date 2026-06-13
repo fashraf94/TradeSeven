@@ -341,6 +341,18 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // P10: self-serve lobby waiting-pool docs — the front door before a group
+    // exists (the tournamentGroups pattern verbatim: authenticated reads for
+    // the "who's waiting" / own-lobby surface; all mutation is Admin SDK via
+    // the authed lobby-* endpoints, never a client write). Includes the
+    // reserved __cpuSequence allocator doc (server-only writer; a harmless
+    // authenticated read). Same manual Console-deploy caveat as above; inert
+    // until deployed and until LEAGUE_LOBBY_ENABLED flips.
+    match /tournamentLobby/{lobbyId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+
     // Snake Draft battles
     match /snakeDraftBattles/{battleId} {
       allow read: if request.auth != null;
