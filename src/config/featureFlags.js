@@ -75,4 +75,4 @@ export const TRAIT_SLOT_ENABLED = false;
  * tab (Trophy icon) renders the placeholder LeagueScreen. Flip when the League
  * Tournament surface is real.
  */
-export const TOURNAMENT_TAB_ENABLED = false;
+export const TOURNAMENT_TAB_ENABLED = true;
