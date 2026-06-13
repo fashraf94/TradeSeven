@@ -53,6 +53,7 @@ import {
 } from '../../src/constants/leagueTournament.js';
 import { readLedger, reserveBulk, isReservationStale } from './tournamentAgentLedger.js';
 import { computeArchetypeRankings } from './archetypeScoring.js';
+import { toIso } from './tournamentTime.js';
 
 const LOG_PREFIX = '[TournamentAgentDraft]';
 
@@ -62,10 +63,6 @@ function sentinel(code, detail) {
   const err = new Error(DRAFT_SENTINEL_PREFIX + code);
   err.detail = detail;
   return err;
-}
-
-function toIso(now) {
-  return now instanceof Date ? now.toISOString() : new Date(now).toISOString();
 }
 
 /**
