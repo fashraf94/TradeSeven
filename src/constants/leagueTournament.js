@@ -345,6 +345,27 @@ export function round2(x) {
 }
 
 /**
+ * P7 — the CURRENT battle for one owner from a set of their daily-chained
+ * agentBattles docs: the active battle wins; otherwise the most recent by
+ * createdAt (ISO strings — lexicographic compare is chronological). ONE home so
+ * the participant hook (useMyTournamentBattle) and the spectator endpoint
+ * (pickCurrentBattlesByOwner) can never drift on the selection rule. Pure.
+ */
+export function pickCurrentTournamentBattle(battles) {
+  let chosen = null;
+  for (const b of battles || []) {
+    if (!b) continue;
+    if (!chosen) { chosen = b; continue; }
+    const bActive = b.status === 'active';
+    const curActive = chosen.status === 'active';
+    if (bActive && !curActive) { chosen = b; continue; }
+    if (curActive && !bActive) continue;
+    if (String(b.createdAt || '') > String(chosen.createdAt || '')) chosen = b;
+  }
+  return chosen;
+}
+
+/**
  * THE one home for k (Spec §0.10): composite = agentScore + k × userScore.
  * Every composite in the system — banking snapshots, advancement locks,
  * leaderboard rows, rank inputs — comes through here.
