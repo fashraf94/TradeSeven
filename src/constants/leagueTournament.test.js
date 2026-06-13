@@ -84,6 +84,18 @@ import {
   // P7 — the shared "current battle for an owner" selection (one home for the
   // participant hook + the spectator endpoint).
   pickCurrentTournamentBattle,
+  // P10 — self-serve lobby + the relocated isoWeekString.
+  TOURNAMENT_LOBBY_COLLECTION,
+  LOBBY_STATUS,
+  LOBBY_MODE,
+  LOBBY_MAX_HUMANS,
+  LOBBY_DISPLAY_NAME_MAX,
+  createLobbyMember,
+  createLobbyDoc,
+  lobbyHumanIds,
+  lobbyOpenSeatCount,
+  lobbyHasMember,
+  isoWeekString,
 } from './leagueTournament.js';
 // Real import, zero mocks (precedent: api/cron/process-draft-claims.test.js:10).
 // This is the behavioral half of the claimSystem parity guard.
@@ -874,5 +886,95 @@ describe('pickCurrentTournamentBattle (P7 — shared current-battle selection)',
     expect(pickCurrentTournamentBattle([])).toBeNull();
     expect(pickCurrentTournamentBattle(null)).toBeNull();
     expect(pickCurrentTournamentBattle([null, { id: 'x', status: 'active' }]).id).toBe('x');
+  });
+});
+
+// ==================== P10 — SELF-SERVE LOBBY ====================
+
+describe('lobby constants', () => {
+  it('the collection name, the human cap (== group size), and the vocabularies are stable', () => {
+    expect(TOURNAMENT_LOBBY_COLLECTION).toBe('tournamentLobby');
+    expect(LOBBY_MAX_HUMANS).toBe(GROUP_SIZE);
+    expect(LOBBY_DISPLAY_NAME_MAX).toBe(80);
+    expect(LOBBY_STATUS).toEqual({ OPEN: 'open', FORMING: 'forming', FORMED: 'formed', CANCELLED: 'cancelled' });
+    expect(LOBBY_MODE).toEqual({ MATCHMAKING: 'matchmaking', PRIVATE: 'private' });
+  });
+});
+
+describe('createLobbyMember', () => {
+  it('trims + caps the display name, keeps odUserId and joinedAt', () => {
+    const m = createLobbyMember({ odUserId: 'u1', displayName: '  Ada  ', joinedAt: NOW });
+    expect(m).toEqual({ odUserId: 'u1', displayName: 'Ada', joinedAt: NOW });
+    const long = createLobbyMember({ odUserId: 'u1', displayName: 'x'.repeat(200), joinedAt: NOW });
+    expect(long.displayName).toHaveLength(LOBBY_DISPLAY_NAME_MAX);
+  });
+
+  it('a blank/absent display name is null, not empty string', () => {
+    expect(createLobbyMember({ odUserId: 'u1', joinedAt: NOW }).displayName).toBeNull();
+    expect(createLobbyMember({ odUserId: 'u1', displayName: '   ', joinedAt: NOW }).displayName).toBeNull();
+  });
+
+  it('throws on a missing odUserId or joinedAt', () => {
+    expect(() => createLobbyMember({ joinedAt: NOW })).toThrow(/odUserId/);
+    expect(() => createLobbyMember({ odUserId: 'u1' })).toThrow(/joinedAt/);
+  });
+});
+
+describe('createLobbyDoc', () => {
+  it('an open matchmaking lobby seats the creator, no join code, group/cpu fields null', () => {
+    const doc = createLobbyDoc({ createdBy: 'u1', displayName: 'Ada', mode: LOBBY_MODE.MATCHMAKING, baseLayerWeek: '2026-W25', now: NOW });
+    expect(doc.status).toBe(LOBBY_STATUS.OPEN);
+    expect(doc.mode).toBe(LOBBY_MODE.MATCHMAKING);
+    expect(doc).not.toHaveProperty('joinCode');
+    expect(doc.members).toEqual([{ odUserId: 'u1', displayName: 'Ada', joinedAt: NOW }]);
+    expect(doc.createdBy).toBe('u1');
+    expect(doc.baseLayerWeek).toBe('2026-W25');
+    expect(doc.groupId).toBeNull();
+    expect(doc.cpuStartN).toBeNull();
+    expect(doc.createdAt).toBe(NOW);
+  });
+
+  it('a private lobby requires + carries a join code', () => {
+    const doc = createLobbyDoc({ createdBy: 'u1', mode: LOBBY_MODE.PRIVATE, joinCode: 'ABC234', baseLayerWeek: '2026-W25', now: NOW });
+    expect(doc.joinCode).toBe('ABC234');
+    expect(() => createLobbyDoc({ createdBy: 'u1', mode: LOBBY_MODE.PRIVATE, baseLayerWeek: '2026-W25', now: NOW })).toThrow(/joinCode/);
+  });
+
+  it('throws on bad inputs (createdBy, mode, baseLayerWeek, now)', () => {
+    expect(() => createLobbyDoc({ mode: LOBBY_MODE.MATCHMAKING, baseLayerWeek: '2026-W25', now: NOW })).toThrow(/createdBy/);
+    expect(() => createLobbyDoc({ createdBy: 'u1', mode: 'bogus', baseLayerWeek: '2026-W25', now: NOW })).toThrow(/mode/);
+    expect(() => createLobbyDoc({ createdBy: 'u1', now: NOW })).toThrow(/baseLayerWeek/);
+    expect(() => createLobbyDoc({ createdBy: 'u1', baseLayerWeek: '2026-W25' })).toThrow(/now/);
+  });
+});
+
+describe('lobby pure helpers', () => {
+  const lobby = { members: [{ odUserId: 'a' }, { odUserId: 'b' }] };
+  it('lobbyHumanIds preserves FIFO order', () => {
+    expect(lobbyHumanIds(lobby)).toEqual(['a', 'b']);
+    expect(lobbyHumanIds(null)).toEqual([]);
+  });
+  it('lobbyOpenSeatCount = GROUP_SIZE − humans, never negative', () => {
+    expect(lobbyOpenSeatCount(lobby)).toBe(GROUP_SIZE - 2);
+    expect(lobbyOpenSeatCount({ members: [1, 2, 3, 4, 5] })).toBe(0);
+    expect(lobbyOpenSeatCount(null)).toBe(GROUP_SIZE);
+  });
+  it('lobbyHasMember detects an existing seat (double-join guard)', () => {
+    expect(lobbyHasMember(lobby, 'a')).toBe(true);
+    expect(lobbyHasMember(lobby, 'z')).toBe(false);
+    expect(lobbyHasMember(null, 'a')).toBe(false);
+  });
+});
+
+describe('isoWeekString (relocated from the dev seeder — one home, BUILD_RULES §4)', () => {
+  it('labels the ISO-8601 (UTC) week, Thursday-anchored', () => {
+    expect(isoWeekString(new Date('2026-06-15T00:00:00Z'))).toBe('2026-W25'); // Monday
+    expect(isoWeekString(new Date('2026-01-01T00:00:00Z'))).toBe('2026-W01');
+    expect(isoWeekString(new Date('2025-12-29T00:00:00Z'))).toBe('2026-W01'); // belongs to 2026 W1
+  });
+  it('requires a valid Date (the schema module never reads a clock)', () => {
+    expect(() => isoWeekString()).toThrow(/valid Date/);
+    expect(() => isoWeekString('2026-06-15')).toThrow(/valid Date/);
+    expect(() => isoWeekString(new Date('nope'))).toThrow(/valid Date/);
   });
 });

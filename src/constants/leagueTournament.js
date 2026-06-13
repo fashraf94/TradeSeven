@@ -319,6 +319,117 @@ export function buildCpuUserBoard(rankedPool, n) {
   return board;
 }
 
+// ==================== SELF-SERVE LOBBY (P10 — founder-ruled June 13, 2026) ====================
+//
+// The waiting room BEFORE a group exists. A tournamentGroups doc is born at
+// EXACTLY GROUP_SIZE players (createTournamentGroupDoc throws otherwise), so a
+// "filling" group can NOT be modeled as a partial group doc — the lobby is its
+// own lightweight collection. Registration writes a lobby member; formation
+// (FIFO fill-to-4, CPU-padded — Ruling B1) drains the lobby into a real
+// base-layer group, and the existing forming→Monday→battle flow takes over
+// UNCHANGED. Base-layer recomposition of completed players stays out of V1
+// (re-register model — founder ruling, June 13, 2026).
+//
+// Server-write-only (api/_utils/tournamentLobbyService.js via the authed
+// lobby-* endpoints); the deployed firestore.rules lobby block grants
+// authenticated reads (the P10b "who's waiting" surface). Gated by
+// LEAGUE_LOBBY_ENABLED (dark until beta).
+
+export const TOURNAMENT_LOBBY_COLLECTION = 'tournamentLobby';
+
+// A lobby never holds more humans than a group seats; the rest are CPU-padded
+// at formation (Ruling B1) — so a single human always gets a playable four.
+export const LOBBY_MAX_HUMANS = GROUP_SIZE; // 4
+
+export const LOBBY_STATUS = Object.freeze({
+  OPEN: 'open',           // accepting humans (the matchmaker fills it)
+  FORMING: 'forming',     // formation claimed — the crash-safe resume window
+  FORMED: 'formed',       // a base-layer group was created (terminal)
+  CANCELLED: 'cancelled', // abandoned before forming (terminal)
+});
+
+export const LOBBY_MODE = Object.freeze({
+  MATCHMAKING: 'matchmaking', // public; the matchmaker fills it FIFO
+  PRIVATE: 'private',         // invite-only via the shareable joinCode
+});
+
+// Shareable private-lobby code length (display/share convenience; the lobby
+// doc id stays the authoritative key).
+export const LOBBY_JOIN_CODE_LEN = 6;
+
+// Display-name cap on a stored lobby member (defense-in-depth; the endpoint
+// also validates). User-authored text is sanitized at the render surface.
+export const LOBBY_DISPLAY_NAME_MAX = 80;
+
+/** One lobby member entry — FIFO join order, the creator first. Pure. */
+export function createLobbyMember({ odUserId, displayName = null, joinedAt } = {}) {
+  if (typeof odUserId !== 'string' || odUserId.length === 0) {
+    throw new Error('createLobbyMember: odUserId is required');
+  }
+  if (joinedAt == null) {
+    throw new Error('createLobbyMember: joinedAt is required (caller supplies the timestamp)');
+  }
+  const name = typeof displayName === 'string' && displayName.trim()
+    ? displayName.trim().slice(0, LOBBY_DISPLAY_NAME_MAX)
+    : null;
+  return { odUserId, displayName: name, joinedAt };
+}
+
+/**
+ * The tournamentLobby document (P10). `groupId` + `cpuStartN` are null until
+ * formation is claimed; both are set then (the deterministic group id and the
+ * RESERVED CPU base number) so an interrupted formation resumes with the same
+ * seat identities — a crash can never double-allocate a cpu-agent. `now` is
+ * required and opaque (this module never reads a clock). Pure.
+ */
+export function createLobbyDoc({
+  createdBy, displayName = null, mode = LOBBY_MODE.MATCHMAKING,
+  joinCode = null, baseLayerWeek, now,
+} = {}) {
+  if (typeof createdBy !== 'string' || createdBy.length === 0) {
+    throw new Error('createLobbyDoc: createdBy is required');
+  }
+  if (!Object.values(LOBBY_MODE).includes(mode)) {
+    throw new Error(`createLobbyDoc: invalid mode "${mode}"`);
+  }
+  if (typeof baseLayerWeek !== 'string' || baseLayerWeek.length === 0) {
+    throw new Error('createLobbyDoc: baseLayerWeek is required');
+  }
+  if (now == null) {
+    throw new Error('createLobbyDoc: now is required (caller supplies the timestamp)');
+  }
+  if (mode === LOBBY_MODE.PRIVATE && (typeof joinCode !== 'string' || joinCode.length === 0)) {
+    throw new Error('createLobbyDoc: a private lobby requires a joinCode');
+  }
+  return {
+    status: LOBBY_STATUS.OPEN,
+    mode,
+    ...(mode === LOBBY_MODE.PRIVATE ? { joinCode } : {}),
+    createdBy,
+    baseLayerWeek,
+    members: [createLobbyMember({ odUserId: createdBy, displayName, joinedAt: now })],
+    groupId: null,   // deterministic target group id — set at formation claim
+    cpuStartN: null, // reserved CPU base number — set at formation claim (resume-safe)
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
+/** The human odUserIds in join order (FIFO) — the formation seat source. Pure. */
+export function lobbyHumanIds(lobby) {
+  return (lobby?.members ?? []).map(m => m.odUserId);
+}
+
+/** Free human seats remaining (GROUP_SIZE − humans), never negative. Pure. */
+export function lobbyOpenSeatCount(lobby) {
+  return Math.max(0, GROUP_SIZE - (lobby?.members?.length ?? 0));
+}
+
+/** Is this human already seated in the lobby? (double-join idempotency). Pure. */
+export function lobbyHasMember(lobby, odUserId) {
+  return (lobby?.members ?? []).some(m => m.odUserId === odUserId);
+}
+
 // The group-doc `feed` array's retention cap, shared by every feed writer
 // (the P1b rider-#4 flip feed and the P5 auto-commit entry) — one home so
 // the writers can never drift (P5 code-review convergence).
@@ -417,6 +528,25 @@ export function shiftMonthKey(monthKey, delta) {
   const ny = Math.floor(idx / 12);
   const nm = (idx % 12) + 1;
   return `${String(ny).padStart(4, '0')}-${String(nm).padStart(2, '0')}`;
+}
+
+/**
+ * ISO-8601 week label (UTC), e.g. '2026-W24' — the `baseLayerWeek` key for
+ * non-bracket groups. Pure: the caller supplies the date (this module never
+ * reads a clock). Relocated here at P10 from the dev seeder under the
+ * BUILD_RULES §4 one-home rule, so the lobby formation service and the dev
+ * seeder share ONE definition.
+ */
+export function isoWeekString(date) {
+  if (!(date instanceof Date) || Number.isNaN(date.getTime())) {
+    throw new Error('isoWeekString: a valid Date is required');
+  }
+  const d = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+  const dayNum = d.getUTCDay() || 7; // Mon=1..Sun=7
+  d.setUTCDate(d.getUTCDate() + 4 - dayNum); // nearest Thursday decides the year
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  const week = Math.ceil(((d - yearStart) / 86_400_000 + 1) / 7);
+  return `${d.getUTCFullYear()}-W${String(week).padStart(2, '0')}`;
 }
 
 // ==================== CAREER RANK (founder-signed, June 12, 2026) ====================

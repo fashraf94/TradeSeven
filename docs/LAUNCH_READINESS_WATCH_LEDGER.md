@@ -43,6 +43,17 @@ The server `toIso` copies were converged at P8 (→ `tournamentTime.toIso`). The
 
 ---
 
+### W6 — Lobby CPU agents share the `cpu-agent-{n}` namespace with dev-bracket smokes (P10a)
+The self-serve lobby allocates CPU numbers from a **monotonic global counter** (`tournamentLobby/__cpuSequence`) so concurrent live formations never collide (`tournamentLobbyService.js` `claimLobbyForFormation`). Dev-bracket smokes (`seed-tournament-bracket.js`, `isDev`) still allocate `cpu-agent-{n}` starting at 1 — the **same agent-doc namespace**.
+- **Launch-safe:** the lobby counter is monotonic and dev brackets are founder-serialized smokes (not run during live beta formation); once the counter passes the dev low range, no overlap is possible.
+- **Trigger:** a founder runs a dev-bracket smoke **concurrently** with live beta lobby formation, in the brief window where the lobby counter is still in the dev low range.
+- **Fix when triggered:** start the lobby counter at a documented offset above the dev range (a one-line change to the `__cpuSequence` lazy-init). Not actioned at V1.
+
+### W7 — Open registration trips W2 (the leaderboard 1 MiB cap) — the lobby is the on-ramp (P10a)
+The self-serve lobby is the path toward the population that fires **W2** (the whole-doc monthly leaderboard caps around 3–5k actives/month). Beta is invited/tens-scale (safe).
+- **Trigger:** approaching **open** (uninvited) registration / a few-thousand monthly actives.
+- **Fix when triggered:** land W2's per-entry subcollection sharding **before** open registration. (W1's `subscribeMyGroup` index is the same scale class.)
+
 ## Cross-cron timing & calendar awareness (operate-and-watch)
 
 ### O1 — Holiday-week advancement waits for founder intervention

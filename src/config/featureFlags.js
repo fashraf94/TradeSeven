@@ -76,3 +76,22 @@ export const TRAIT_SLOT_ENABLED = false;
  * Tournament surface is real.
  */
 export const TOURNAMENT_TAB_ENABLED = true;
+
+/**
+ * League — the self-serve lobby (P10): registration · join/create · FIFO
+ * matchmaking · CPU-padded formation. The front door that replaces the dead
+ * "no active tournament group yet" empty state on the live League tab.
+ *
+ * When false (default), the League tab renders TODAY's behavior unchanged —
+ * `subscribeMyGroup` and the existing forming→battle flow are untouched, and
+ * the `!group` branch shows the coming-soon poster (dark-merge safe; the live
+ * tournament must not regress). When true, the empty state becomes the lobby
+ * front door and the lobby-* endpoints accept self-serve registration.
+ *
+ * Built/merged DARK behind this flag (P10a = the data layer + the proven
+ * CPU-padding-from-base-layer seam; P10b = the surface). Flip — a one-line
+ * follow-up PR, the TOURNAMENT_TAB_ENABLED precedent — only after a preview
+ * smoke + the new firestore.rules `tournamentLobby` block is deployed in the
+ * Firebase Console (else the client lobby read 403s).
+ */
+export const LEAGUE_LOBBY_ENABLED = false;
