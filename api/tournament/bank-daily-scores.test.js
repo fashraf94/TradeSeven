@@ -21,21 +21,29 @@ const SECRET = 'test-admin-secret';
 const TRADING_DAY = new Date('2026-06-10T21:15:00Z'); // Wed 17:15 ET
 const ET_DATE = '2026-06-10';
 
-function makeDb({ groupDoc = null } = {}) {
-  const captured = { txUpdates: [] };
+function makeDb({ groupDoc = null, agentBattles = [] } = {}) {
+  const captured = { txUpdates: [], txSets: [] };
+  // P6a: the endpoint additionally reads agentBattles (field-masked query)
+  // and upserts the leaderboard month doc (tx.set) — the fake supports both
+  // so the battery exercises the real success paths.
+  const runQuery = async () => ({
+    forEach: (cb) => agentBattles.forEach(d => cb({ id: d.id, data: () => d })),
+  });
   const db = {
     collection: (name) => ({
       doc: () => ({
         get: async () => ({
           id: 'group-1',
-          exists: name !== 'indexIntelligence' && groupDoc != null,
-          data: () => (name === 'indexIntelligence' ? null : groupDoc),
+          exists: name !== 'indexIntelligence' && name !== 'users' && groupDoc != null,
+          data: () => (name === 'indexIntelligence' || name === 'users' ? null : groupDoc),
         }),
       }),
+      where: () => ({ get: runQuery, select: () => ({ get: runQuery }) }),
     }),
     runTransaction: async (fn) => fn({
       get: async (ref) => ref.get(),
       update: (_ref, data) => { captured.txUpdates.push(data); },
+      set: (_ref, data) => { captured.txSets.push(data); },
     }),
   };
   return { db, captured };

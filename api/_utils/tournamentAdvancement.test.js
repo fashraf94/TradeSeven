@@ -128,14 +128,23 @@ const POOL = Array.from({ length: 40 }, (_, i) => `SYM${i}`);
 const STOCKS = POOL.map(symbol => ({ symbol }));
 
 /** dailyScores where the FINAL snapshot disagrees with the sum-over-days —
- * the lock must read the snapshot. */
+ * the lock must read the snapshot. A number is a user-only legacy snapshot
+ * (pre-P6 shape — getWeeklyComposite degrades to k × user); {user, agent}
+ * writes the full P6a snapshot (compositePoints = agent + 1.5 × user). */
 function bankedWeek(totalsByDay) {
   const dailyScores = {};
   totalsByDay.forEach((totals, i) => {
     dailyScores[`day${i + 1}`] = {
       recordedDate: `2026-06-${15 + i}`,
       closeScores: Object.fromEntries(
-        Object.entries(totals).map(([id, totalPoints]) => [id, { totalPoints, picks: [] }])
+        Object.entries(totals).map(([id, v]) => (typeof v === 'number'
+          ? [id, { totalPoints: v, picks: [] }]
+          : [id, {
+              totalPoints: v.user,
+              agentPoints: v.agent,
+              compositePoints: v.agent + 1.5 * v.user,
+              picks: [],
+            }]))
       ),
     };
   });
@@ -202,12 +211,29 @@ function seededBracketDb({ g1DailyScores = G1_WEEK, g2DailyScores = G2_WEEK } = 
 
 // ==================== PURE BLOCKS ====================
 
-describe('lockTopTwo — the FINAL snapshot, never a sum', () => {
-  it('locks by getWeeklyScore (day-5 snapshot) with every member scored', () => {
+describe('lockTopTwo — the FINAL snapshot, never a sum (composite of record, ruling A-1)', () => {
+  it('locks by getWeeklyComposite (day-5 snapshot) with every member scored; user-only legacy snapshots degrade to k × user', () => {
     const group = bracketGroup({ id: 'b-r1-g1', members: G1_MEMBERS, dailyScores: G1_WEEK });
-    const { advancers, finalScores } = lockTopTwo(group);
-    expect(advancers).toEqual(['cpu-2', 'founder']); // 70, 62 — snapshots, not sums
-    expect(finalScores).toEqual({ founder: 62, 'cpu-1': 40, 'cpu-2': 70, 'cpu-3': 25 });
+    const { advancers, finalScores, finalUserScores } = lockTopTwo(group);
+    expect(advancers).toEqual(['cpu-2', 'founder']); // 105, 93 — snapshots, not sums
+    expect(finalScores).toEqual({ founder: 93, 'cpu-1': 60, 'cpu-2': 105, 'cpu-3': 37.5 });
+    expect(finalUserScores).toEqual({ founder: 62, 'cpu-1': 40, 'cpu-2': 70, 'cpu-3': 25 });
+  });
+
+  it('ranks by the COMPOSITE — the agent layer can flip the user-only order (ruling A-1)', () => {
+    const group = bracketGroup({
+      id: 'x', members: G1_MEMBERS,
+      dailyScores: bankedWeek([{
+        founder: { user: 10, agent: 100 },   // composite 115
+        'cpu-1': { user: 40, agent: 10 },    // composite 70
+        'cpu-2': { user: 30, agent: 20 },    // composite 65
+        'cpu-3': { user: 5, agent: 5 },      // composite 12.5
+      }]),
+    });
+    const { advancers, finalScores, finalUserScores } = lockTopTwo(group);
+    expect(advancers).toEqual(['founder', 'cpu-1']); // user-only would advance cpu-1, cpu-2
+    expect(finalScores).toEqual({ founder: 115, 'cpu-1': 70, 'cpu-2': 65, 'cpu-3': 12.5 });
+    expect(finalUserScores).toEqual({ founder: 10, 'cpu-1': 40, 'cpu-2': 30, 'cpu-3': 5 });
   });
 
   it('tie-break is draft order (groupMembers index), deterministically', () => {
@@ -369,21 +395,23 @@ describe('terminal round — champion + the spec-§3 recap', () => {
       ],
     });
 
-    expect(summary.champion).toMatchObject({ bracketId: 'b', odUserId: 'founder', isCpu: false, weeklyScore: 90 });
+    expect(summary.champion).toMatchObject({ bracketId: 'b', odUserId: 'founder', isCpu: false, weeklyScore: 135 });
     const bracket = store.get('tournamentBrackets/b');
     expect(bracket.status).toBe(BRACKET_STATUS.COMPLETE);
     expect(bracket.champion.odUserId).toBe('founder');
     expect(bracket.rounds.r2.lockedAt).toBe(NOW_ISO);
 
     // Recap: the champion's road (r1 second place, r2 first), best week, the
-    // swap-formed double-down, composite deferred to P6.
+    // swap-formed double-down — all COMPOSITE values (ruling A-1; these
+    // user-only fixtures degrade via k × user), and the P3b finalComposite
+    // contract closed at P6a: the championship week's composite.
     expect(bracket.recap.bracketPath).toEqual([
-      { roundNumber: 1, groupId: 'b-r1-g1', weeklyScore: 62, placement: 2 },
-      { roundNumber: 2, groupId: 'b-r2-g1', weeklyScore: 90, placement: 1 },
+      { roundNumber: 1, groupId: 'b-r1-g1', weeklyScore: 93, placement: 2 },
+      { roundNumber: 2, groupId: 'b-r2-g1', weeklyScore: 135, placement: 1 },
     ]);
-    expect(bracket.recap.bestWeek).toEqual({ roundNumber: 2, weeklyScore: 90 });
+    expect(bracket.recap.bestWeek).toEqual({ roundNumber: 2, weeklyScore: 135 });
     expect(bracket.recap.signatureDoubleDown).toEqual({ symbol: 'SYM7', roundNumber: 2, kind: 'swap', at: 'T1' });
-    expect(bracket.recap.finalComposite).toBeNull();
+    expect(bracket.recap.finalComposite).toBe(135);
 
     // The terminal group completes; no round 3 is composed.
     expect(store.get('tournamentGroups/b-r2-g1').status).toBe(GROUP_STATUS.COMPLETE);
@@ -490,7 +518,7 @@ describe('active-bracket sweep — finalization resumable from the bracket doc a
 
     const summary = await runFridayAdvancement(db, { now: NOW });
     expect(summary.groups).toBe(0);
-    expect(summary.champion).toMatchObject({ odUserId: 'founder', weeklyScore: 90 });
+    expect(summary.champion).toMatchObject({ odUserId: 'founder', weeklyScore: 135 });
     expect(store.get('tournamentBrackets/b').status).toBe(BRACKET_STATUS.COMPLETE);
     expect(store.get('tournamentBrackets/b').recap.bracketPath.length).toBeGreaterThan(0);
   });
@@ -540,5 +568,206 @@ describe('buildChampionRecap — degrade posture', () => {
     expect(recap.bracketPath).toHaveLength(1);
     expect(recap.signatureDoubleDown).toBeNull();
     expect(recap.bestWeek).toEqual({ roundNumber: 1, weeklyScore: 50 });
+  });
+});
+
+// ==================== P6a — FINALIZATION SIDE-EFFECTS (rank + leaderboard) ====================
+
+describe('P6a side-effects — rank apply + leaderboard final upsert ride the Friday duty', () => {
+  it('locks both games and lands rank docs + the month leaderboard, idempotently', async () => {
+    const { db, store } = seededBracketDb();
+    const summary = await runFridayAdvancement(db, { now: NOW });
+    expect(summary.errors).toBe(0);
+    expect(summary.rankApplied).toBe(8); // 4 seats × 2 games
+    expect(summary.leaderboardDocs).toBeGreaterThan(0);
+
+    // founder: composite 93 (user-only fixture × k), placement 2 behind
+    // cpu-2's 105; 3 CPU opponents → guard 0 → zero positive RP (B-2,
+    // consciously noted for padded groups).
+    const founder = store.get('tournamentRanks/founder');
+    expect(founder.appliedGroups['b-r1-g1']).toMatchObject({
+      weeklyComposite: 93, placement: 2, cpuOpponents: 3, guard: 0, delta: 0,
+    });
+    expect(founder.rp).toBe(0);
+
+    // cpu-2: placement 1 with 2 CPU opponents → guard ⅓ of (105 + 100).
+    const cpu2 = store.get('tournamentRanks/cpu-2');
+    expect(cpu2.isCpu).toBe(true);
+    expect(cpu2.rp).toBeCloseTo(205 / 3, 1);
+
+    // The month doc carries final week entries (composite, signed).
+    const lb = store.get('tournamentLeaderboards/2026-06');
+    expect(lb.entries.founder.weeks['b-r1-g1']).toMatchObject({ points: 93, userPoints: 62, final: true });
+    expect(lb.entries.founder.isCpu).toBe(false);
+    expect(lb.entries['cpu-2'].isCpu).toBe(true);
+
+    // Idempotent re-run: the sideEffectsAt stamp short-circuits every
+    // entry — zero applications AND zero per-seat skip passes (the stamp
+    // is checked on the bracket doc already in hand; no rank-doc reads).
+    const again = await runFridayAdvancement(db, { now: NOW });
+    expect(again.rankApplied).toBe(0);
+    expect(again.rankSkipped).toBe(0);
+    expect(store.get('tournamentRanks/cpu-2').rp).toBeCloseTo(205 / 3, 1);
+    expect(store.get('tournamentLeaderboards/2026-06').entries.founder.points).toBe(93);
+
+    // The stamp is durable on the bracket entry.
+    expect(store.get('tournamentBrackets/b').rounds.r1.games['b-r1-g1'].sideEffectsAt).toBe(NOW_ISO);
+  });
+
+  it('CRASH RESUME: an UNSTAMPED locked entry (crash before sideEffectsAt landed) is healed by the sweep from the bracket alone', async () => {
+    const { db, store } = seededBracketDb();
+    await runFridayAdvancement(db, { now: NOW });
+
+    // Simulate the true crash window: the lock landed, one seat's rank
+    // write was lost, and the stamp never landed (the stamp is written only
+    // after a clean pass — so a crash mid-side-effects leaves it absent).
+    store.delete('tournamentRanks/founder');
+    store.get('tournamentBrackets/b').rounds.r1.games['b-r1-g1'].sideEffectsAt = null;
+
+    const summary = await runFridayAdvancement(db, { now: NOW });
+    expect(summary.rankApplied).toBe(1);  // exactly the orphaned seat
+    expect(summary.rankSkipped).toBe(3);  // the other three skip on appliedGroups
+    expect(store.get('tournamentRanks/founder').appliedGroups['b-r1-g1']).toBeDefined();
+    // The resume re-stamps, so the next tick is free again.
+    expect(store.get('tournamentBrackets/b').rounds.r1.games['b-r1-g1'].sideEffectsAt).toBe(NOW_ISO);
+  });
+
+  it('COMPLETION GATE: a failing leaderboard half defers completion; the group stays in the battle query and heals next tick', async () => {
+    const { db, store } = seededBracketDb();
+    // Break the leaderboard upsert for the whole first run (a poisoned
+    // users-collection read cannot do it — names degrade), then heal.
+    const realRunTransaction = db.runTransaction.bind(db);
+    let fail = true;
+    db.runTransaction = async (fn) => realRunTransaction(async (tx) => fn({
+      get: tx.get,
+      update: tx.update,
+      set: (ref, data) => {
+        if (ref.path.startsWith('tournamentLeaderboards/') && fail) {
+          throw new Error('transient month-doc failure');
+        }
+        tx.set(ref, data);
+      },
+    }));
+
+    const first = await runFridayAdvancement(db, { now: NOW });
+    expect(first.errors).toBeGreaterThan(0);
+    // Locks landed, rank applied — but no stamp, no completion.
+    expect(store.get('tournamentBrackets/b').rounds.r1.games['b-r1-g1'].advancers).not.toBeNull();
+    expect(store.get('tournamentBrackets/b').rounds.r1.games['b-r1-g1'].sideEffectsAt).toBeNull();
+    expect(store.get('tournamentGroups/b-r1-g1').status).toBe(GROUP_STATUS.BATTLE);
+
+    fail = false;
+    const second = await runFridayAdvancement(db, { now: NOW });
+    expect(second.errors).toBe(0);
+    expect(store.get('tournamentBrackets/b').rounds.r1.games['b-r1-g1'].sideEffectsAt).toBe(NOW_ISO);
+    expect(store.get('tournamentGroups/b-r1-g1').status).toBe(GROUP_STATUS.COMPLETE);
+    expect(store.get('tournamentLeaderboards/2026-06').entries.founder.weeks['b-r1-g1'].final).toBe(true);
+  });
+
+  it('BASE-LAYER GATE: a failing side-effect withholds completion — the week is never orphaned', async () => {
+    const base = bracketGroup({ id: 'ignored', members: G1_MEMBERS, dailyScores: G1_WEEK });
+    delete base.bracketGameId;
+    base.baseLayerWeek = '2026-W25';
+    const { db, store } = makeDb({
+      'tournamentGroups/base1': base,
+      'indexIntelligence/stockRankings': { stocks: STOCKS },
+    });
+    const realRunTransaction = db.runTransaction.bind(db);
+    let fail = true;
+    db.runTransaction = async (fn) => realRunTransaction(async (tx) => fn({
+      get: tx.get,
+      update: tx.update,
+      set: (ref, data) => {
+        if (ref.path.startsWith('tournamentRanks/') && fail) {
+          throw new Error('transient rank failure');
+        }
+        tx.set(ref, data);
+      },
+    }));
+
+    const first = await runFridayAdvancement(db, { now: NOW });
+    expect(first.errors).toBeGreaterThan(0);
+    expect(first.baseCompleted).toBe(0);
+    expect(store.get('tournamentGroups/base1').status).toBe(GROUP_STATUS.BATTLE); // still visible
+
+    fail = false;
+    const second = await runFridayAdvancement(db, { now: NOW });
+    expect(second.baseCompleted).toBe(1);
+    expect(store.get('tournamentGroups/base1').status).toBe(GROUP_STATUS.COMPLETE);
+    expect(store.get('tournamentRanks/founder').appliedGroups.base1).toBeDefined();
+  });
+
+  it('DEV SWEEP FILTER: production ticks never work dev brackets; the dev duty surface does', async () => {
+    const { db, store } = seededBracketDb();
+    store.get('tournamentBrackets/b').isDev = true;
+    store.get('tournamentGroups/b-r1-g1').isDev = true;
+    store.get('tournamentGroups/b-r1-g2').isDev = true;
+
+    // Production run: the dev groups are excluded by fetchEligibleGroupsByStatus
+    // AND the sweep skips the dev bracket — zero work, zero errors.
+    const prod = await runFridayAdvancement(db, { now: NOW });
+    expect(prod.groups).toBe(0);
+    expect(prod.rankApplied).toBe(0);
+    expect(prod.errors).toBe(0);
+    expect(store.get('tournamentRanks/dev-founder')).toBeUndefined();
+
+    // The dev duty surface opts in and lands the dev-namespaced docs.
+    const dev = await runFridayAdvancement(db, { now: NOW, includeDevGroups: true });
+    expect(dev.rankApplied).toBe(8);
+    expect(store.get('tournamentRanks/dev-founder')).toBeDefined();
+    expect(store.get('tournamentRanks/founder')).toBeUndefined();
+  });
+
+  it('MATERIALIZED dev brackets inherit isDev — smoke side-effects can never route to production docs', async () => {
+    const { db, store } = seededBracketDb();
+    store.get('tournamentGroups/b-r1-g1').isDev = true;
+    store.get('tournamentGroups/b-r1-g2').isDev = true;
+    store.delete('tournamentBrackets/b'); // the lost-bracket recovery window
+
+    await runFridayAdvancement(db, { now: NOW, includeDevGroups: true });
+    expect(store.get('tournamentBrackets/b').isDev).toBe(true); // inherited at materialization
+    expect(store.get('tournamentRanks/dev-founder')).toBeDefined();
+    expect(store.get('tournamentRanks/founder')).toBeUndefined();
+    expect(store.get('tournamentLeaderboards/dev-2026-06')).toBeDefined();
+    expect(store.get('tournamentLeaderboards/2026-06')).toBeUndefined();
+  });
+
+  it('DEGRADED LOCK HONESTY: a week finalized from an agentScoresCarried snapshot counts degradedLocks, loudly, and proceeds', async () => {
+    const { db, store } = seededBracketDb();
+    const g1 = store.get('tournamentGroups/b-r1-g1');
+    g1.dailyScores.day5.agentScoresCarried = true;
+
+    const summary = await runFridayAdvancement(db, { now: NOW });
+    expect(summary.degradedLocks).toBe(1);
+    expect(summary.errors).toBe(0); // proceeds — refusing is a flagged founder decision, not improvised
+    expect(store.get('tournamentGroups/b-r1-g1').status).toBe(GROUP_STATUS.COMPLETE);
+  });
+
+  it('base-layer completion applies rank + leaderboard BEFORE the transition', async () => {
+    const base = bracketGroup({ id: 'ignored', members: G1_MEMBERS, dailyScores: G1_WEEK });
+    delete base.bracketGameId;
+    base.baseLayerWeek = '2026-W25';
+    const { db, store } = makeDb({
+      'tournamentGroups/base1': base,
+      'indexIntelligence/stockRankings': { stocks: STOCKS },
+    });
+    const summary = await runFridayAdvancement(db, { now: NOW });
+    expect(summary.baseCompleted).toBe(1);
+    expect(summary.rankApplied).toBe(4);
+    expect(store.get('tournamentRanks/founder').appliedGroups.base1).toBeDefined();
+    expect(store.get('tournamentLeaderboards/2026-06').entries.founder.weeks.base1)
+      .toMatchObject({ points: 93, final: true, baseLayerWeek: '2026-W25' });
+  });
+
+  it('a DEV bracket namespaces every side-effect doc (ruling A-4)', async () => {
+    const { db, store } = seededBracketDb();
+    store.get('tournamentBrackets/b').isDev = true;
+    store.get('tournamentGroups/b-r1-g1').isDev = true;
+    store.get('tournamentGroups/b-r1-g2').isDev = true;
+    await runFridayAdvancement(db, { now: NOW, includeDevGroups: true });
+    expect(store.get('tournamentRanks/dev-founder')).toBeDefined();
+    expect(store.get('tournamentRanks/founder')).toBeUndefined();
+    expect(store.get('tournamentLeaderboards/dev-2026-06')).toBeDefined();
+    expect(store.get('tournamentLeaderboards/2026-06')).toBeUndefined();
   });
 });

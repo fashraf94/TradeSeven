@@ -57,6 +57,26 @@ import {
   isCpuUserId,
   cpuArchetypeForN,
   buildCpuUserBoard,
+  // P6a — composite + leaderboard/rank identity (founder rulings A-1..A-4,
+  // B-1/B-2 signed, June 12, 2026)
+  computeComposite,
+  getWeeklyComposite,
+  WEEK_DAYS_REQUIRED,
+  isWeekBanked,
+  monthKeyFromEtDate,
+  leaderboardDocId,
+  rankDocId,
+  TOURNAMENT_LEADERBOARDS_COLLECTION,
+  TOURNAMENT_RANKS_COLLECTION,
+  RANK_TIERS,
+  RANK_TUNING,
+  tierForRp,
+  cpuFarmGuard,
+  computeRankDelta,
+  computeRankBreakdown,
+  applyRankWeek,
+  rankByScores,
+  round2,
 } from './leagueTournament.js';
 // Real import, zero mocks (precedent: api/cron/process-draft-claims.test.js:10).
 // This is the behavioral half of the claimSystem parity guard.
@@ -560,5 +580,187 @@ describe('createTournamentGroupDoc — isCpu passthrough (Ruling B1)', () => {
     expect(doc.players[1]).not.toHaveProperty('isCpu');
     expect(doc.players[2].isCpu).toBe(true);
     expect(doc.players[3].isCpu).toBe(true);
+  });
+});
+
+// ==================== P6a — COMPOSITE + LEADERBOARD/RANK IDENTITY ====================
+
+describe('computeComposite — the ONE home for k (ruling A-1)', () => {
+  it('composite = agent + 1.5 × user, signed throughout', () => {
+    expect(computeComposite(10, 20)).toBe(40);
+    expect(computeComposite(0, 0)).toBe(0);
+    expect(computeComposite(-10, -20)).toBe(-40);   // negatives preserved, never floored
+    expect(computeComposite(null, undefined)).toBe(0);
+  });
+});
+
+describe('getWeeklyComposite — final snapshot, never a sum', () => {
+  const group = (entry) => ({ dailyScores: {
+    day1: { recordedDate: '2026-06-15', closeScores: { u1: { totalPoints: 1, agentPoints: 1, compositePoints: 999 } } },
+    day2: { recordedDate: '2026-06-16', closeScores: { u1: entry } },
+  } });
+
+  it('reads the FINAL day compositePoints', () => {
+    expect(getWeeklyComposite(group({ totalPoints: 10, agentPoints: 5, compositePoints: 20 }), 'u1')).toBe(20);
+  });
+
+  it('pre-P6 snapshots (no compositePoints) degrade by deriving from what exists', () => {
+    expect(getWeeklyComposite(group({ totalPoints: 10, agentPoints: 4 }), 'u1')).toBe(19); // 4 + 1.5×10
+    expect(getWeeklyComposite(group({ totalPoints: 10 }), 'u1')).toBe(15);                 // k × user only
+  });
+
+  it('missing player / no banking → 0', () => {
+    expect(getWeeklyComposite(group({ totalPoints: 1 }), 'nobody')).toBe(0);
+    expect(getWeeklyComposite({ dailyScores: {} }, 'u1')).toBe(0);
+  });
+});
+
+describe('isWeekBanked — hoisted at P6a (one definition, advancement re-exports)', () => {
+  it('false below day 5, true at day 5', () => {
+    expect(WEEK_DAYS_REQUIRED).toBe(5);
+    expect(isWeekBanked({ dailyScores: { day4: { recordedDate: 'x', closeScores: {} } } })).toBe(false);
+    expect(isWeekBanked({ dailyScores: { day5: { recordedDate: 'x', closeScores: {} } } })).toBe(true);
+  });
+});
+
+describe('month + doc-id helpers (rulings A-3 / A-4)', () => {
+  it('monthKeyFromEtDate: ET month of the date string; null on malformed input', () => {
+    expect(monthKeyFromEtDate('2026-06-29')).toBe('2026-06');
+    expect(monthKeyFromEtDate('2026-07-01')).toBe('2026-07');
+    expect(monthKeyFromEtDate('garbage')).toBeNull();
+    expect(monthKeyFromEtDate(undefined)).toBeNull();
+  });
+
+  it('leaderboardDocId / rankDocId: dev namespace prefixes (smoke can never touch production docs)', () => {
+    expect(leaderboardDocId('2026-06')).toBe('2026-06');
+    expect(leaderboardDocId('2026-06', { dev: true })).toBe('dev-2026-06');
+    expect(rankDocId('founder')).toBe('founder');
+    expect(rankDocId('founder', { dev: true })).toBe('dev-founder');
+  });
+
+  it('collection identities', () => {
+    expect(TOURNAMENT_LEADERBOARDS_COLLECTION).toBe('tournamentLeaderboards');
+    expect(TOURNAMENT_RANKS_COLLECTION).toBe('tournamentRanks');
+  });
+});
+
+describe('RANK_TIERS — the founder-signed ladder (B-1, June 12, 2026)', () => {
+  it('exact signed names and floors', () => {
+    expect(RANK_TIERS.map(t => [t.tier, t.name, t.floor])).toEqual([
+      [1, 'Intern', 0],
+      [2, 'Analyst', 250],
+      [3, 'Associate', 750],
+      [4, 'Strategist', 1750],
+      [5, 'Desk Head', 3500],
+      [6, 'Fund Manager', 6500],
+      [7, 'Market Legend', 11000],
+    ]);
+    expect(Object.isFrozen(RANK_TIERS)).toBe(true);
+    expect(Object.isFrozen(RANK_TUNING)).toBe(true);
+  });
+
+  it('signed tuning values (B-2): scale 1.0, placement 100/66/33/0', () => {
+    expect(RANK_TUNING.RP_PER_POINT).toBe(1.0);
+    expect(RANK_TUNING.PLACEMENT_BONUS).toEqual([100, 66, 33, 0]);
+  });
+
+  it('tierForRp: floors inclusive, boundaries exact', () => {
+    expect(tierForRp(0).name).toBe('Intern');
+    expect(tierForRp(249.99).name).toBe('Intern');
+    expect(tierForRp(250).name).toBe('Analyst');
+    expect(tierForRp(11000).name).toBe('Market Legend');
+    expect(tierForRp(999999).name).toBe('Market Legend');
+    expect(tierForRp(-50).name).toBe('Intern');
+    expect(tierForRp(NaN).name).toBe('Intern');
+  });
+});
+
+describe('cpuFarmGuard + computeRankDelta — the founder-signed math (B-2)', () => {
+  it('guard by CPU density among the other three: 1, ⅔, ⅓, 0', () => {
+    expect(cpuFarmGuard(0)).toBe(1);
+    expect(cpuFarmGuard(1)).toBeCloseTo(2 / 3, 10);
+    expect(cpuFarmGuard(2)).toBeCloseTo(1 / 3, 10);
+    expect(cpuFarmGuard(3)).toBe(0);   // fully padded → zero positive RP (consciously noted)
+    expect(cpuFarmGuard(99)).toBe(0);  // clamped
+    expect(cpuFarmGuard(-1)).toBe(1);  // clamped
+  });
+
+  it('delta = (composite × scale + placement bonus), guard on GAINS only', () => {
+    // Un-padded winner: 60 + 100 = 160.
+    expect(computeRankDelta({ weeklyComposite: 60, placement: 1, cpuOpponents: 0 })).toBe(160);
+    // One CPU opponent: ×⅔.
+    expect(computeRankDelta({ weeklyComposite: 60, placement: 1, cpuOpponents: 1 })).toBeCloseTo(160 * 2 / 3, 10);
+    // Fully padded: zero positive RP.
+    expect(computeRankDelta({ weeklyComposite: 60, placement: 1, cpuOpponents: 3 })).toBe(0);
+    // Negative weeks are NEVER discounted — padding can't shield losses.
+    expect(computeRankDelta({ weeklyComposite: -200, placement: 4, cpuOpponents: 3 })).toBe(-200);
+    // A negative composite can still net positive via the placement bonus —
+    // and then it IS a gain, so the guard applies.
+    expect(computeRankDelta({ weeklyComposite: -10, placement: 1, cpuOpponents: 3 })).toBe(0);
+    expect(computeRankDelta({ weeklyComposite: -10, placement: 1, cpuOpponents: 0 })).toBe(90);
+  });
+});
+
+describe('computeRankBreakdown — math and audit from ONE computation (code review)', () => {
+  it('returns {raw, guard, delta} consistent with computeRankDelta', () => {
+    const args = { weeklyComposite: 60, placement: 1, cpuOpponents: 1 };
+    const b = computeRankBreakdown(args);
+    expect(b.raw).toBe(160);
+    expect(b.guard).toBeCloseTo(2 / 3, 10);
+    expect(b.delta).toBe(computeRankDelta(args));
+  });
+});
+
+describe('rankByScores — the ONE comparator home (code review)', () => {
+  it('score desc, order-index tie-break; missing/non-finite scores rank as 0', () => {
+    expect(rankByScores({ a: 10, b: 30, c: 10 }, ['a', 'b', 'c'])).toEqual(['b', 'a', 'c']);
+    expect(rankByScores({ a: -5, b: NaN }, ['a', 'b', 'c'])).toEqual(['b', 'c', 'a']); // NaN/missing → 0 > −5
+    expect(rankByScores({}, [])).toEqual([]);
+  });
+});
+
+describe('round2 — the shared rounding home', () => {
+  it('two decimals; NaN/undefined guard to 0', () => {
+    expect(round2(1.005)).toBe(1.0); // toFixed semantics, documented
+    expect(round2(97.499)).toBe(97.5);
+    expect(round2(NaN)).toBe(0);
+    expect(round2(undefined)).toBe(0);
+  });
+});
+
+describe('applyRankWeek — the ratchet (B-2): floors permanent, within-tier slide, no debt', () => {
+  it('accrues, crosses a tier, and the floor ratchets to that tier', () => {
+    let state = applyRankWeek(null, 160);
+    expect(state).toMatchObject({ rp: 160, tier: 1, tierName: 'Intern', floorRp: 0 });
+    state = applyRankWeek(state, 160);
+    expect(state).toMatchObject({ rp: 320, tier: 2, tierName: 'Analyst', floorRp: 250, peakRp: 320 });
+  });
+
+  it('FLOOR PERMANENCE: huge negative weeks never drop RP below the achieved tier floor', () => {
+    let state = applyRankWeek(null, 800); // straight into Associate
+    expect(state).toMatchObject({ tier: 3, floorRp: 750 });
+    state = applyRankWeek(state, -10000);
+    expect(state).toMatchObject({ rp: 750, tier: 3, tierName: 'Associate', floorRp: 750 });
+    state = applyRankWeek(state, -10000);
+    expect(state.rp).toBe(750); // forever
+  });
+
+  it('within-tier slide is real: negatives subtract down to the floor, not past it', () => {
+    let state = applyRankWeek(null, 400); // Analyst, 150 above floor
+    state = applyRankWeek(state, -100);
+    expect(state).toMatchObject({ rp: 300, tier: 2 });
+    state = applyRankWeek(state, -100);
+    expect(state).toMatchObject({ rp: 250, tier: 2, floorRp: 250 }); // clamped at the floor
+  });
+
+  it('NO DEBT: an unranked player losing big sits at 0, never negative', () => {
+    const state = applyRankWeek(null, -500);
+    expect(state).toMatchObject({ rp: 0, tier: 1, floorRp: 0, peakRp: 0 });
+  });
+
+  it('peakRp tracks the high-water mark across slides', () => {
+    let state = applyRankWeek(null, 400);
+    state = applyRankWeek(state, -100);
+    expect(state.peakRp).toBe(400);
   });
 });

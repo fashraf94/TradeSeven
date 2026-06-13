@@ -24,7 +24,8 @@ import { isValidForgeId } from '../_utils/idValidation.js';
 import { isTradingDay } from '../_utils/marketSchedule.js';
 import { parseSimulatedNow } from '../_utils/tournamentTime.js';
 import { getGroup } from '../_utils/tournamentGroupService.js';
-import { bankGroup } from '../_utils/tournamentBanking.js';
+import { bankGroup, fetchGroupAgentScores } from '../_utils/tournamentBanking.js';
+import { upsertLeaderboardForGroups } from '../_utils/tournamentLeaderboard.js';
 import { loadAtrPercentiles } from '../_utils/tournamentUserScoring.js';
 import { fetchBatchQuotes } from '../_utils/tournamentPrices.js';
 import { GROUP_STATUS } from '../../src/constants/leagueTournament.js';
@@ -89,14 +90,42 @@ export default async function handler(req, res) {
       });
     }
 
+    // P6a: the agent-layer read mirrors the cron path; a failure degrades
+    // to the carry-forward arm, never blocks banking.
+    let agentScores = null;
+    try {
+      agentScores = await fetchGroupAgentScores(db, groupId);
+    } catch (err) {
+      console.error(`[Tournament] bank-daily-scores: agent-score read failed — carrying forward:`, err.message);
+    }
+
     const result = await bankGroup(db, groupId, quotes, {
       now,
       atrPercentiles,
       recordedBy: 'manual',
+      agentScores,
     });
 
+    // P6a smoke parity: production leaderboard rows ride the nightly cron;
+    // this preview path upserts the one group it just banked (dev groups
+    // route to dev- docs inside — ruling A-4). The upsert also runs on the
+    // already_recorded skip (code review: a failed upsert was otherwise
+    // unrepairable through this endpoint — re-clicking hit the banking
+    // idempotency skip and never retried the idempotent upsert). Failure-
+    // isolated: the banking result returns regardless.
+    let leaderboard = null;
+    if (!result.skipped || result.reason === 'already_recorded') {
+      try {
+        const fresh = await getGroup(db, groupId);
+        if (fresh) leaderboard = await upsertLeaderboardForGroups(db, [fresh], { now });
+      } catch (err) {
+        console.error('[Tournament] bank-daily-scores: leaderboard upsert failed:', err.message);
+        leaderboard = { errors: 1, failed: true };
+      }
+    }
+
     console.log(`[Tournament] bank-daily-scores: group ${groupId} →`, result.skipped ? `skipped (${result.reason})` : result.dayKey);
-    return res.status(200).json({ groupId, ...result });
+    return res.status(200).json({ groupId, ...result, leaderboard });
   } catch (err) {
     console.error('[Tournament] bank-daily-scores error:', err);
     return res.status(500).json({ error: 'server_error', message: 'Could not bank daily scores.' });

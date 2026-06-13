@@ -150,8 +150,10 @@ export function parseBracketGameId(bracketGameId) {
 /**
  * One game entry (a group of four) in a bracket round. `seats` carry
  * {odUserId, isCpu} so spectator surfaces mark CPUs without reading group
- * docs. `finalScores`/`advancers`/`completedAt` are null until the Friday
- * advancement locks the game (final-snapshot weekly scores — getWeeklyScore).
+ * docs. `finalScores`/`finalUserScores`/`advancers`/`completedAt` are null
+ * until the Friday advancement locks the game (final-snapshot weekly scores:
+ * composite via getWeeklyComposite, user-layer via getWeeklyScore — ruling
+ * A-1, June 12, 2026).
  */
 export function createBracketGame({ bracketGameId, gameIndex, groupId, seats } = {}) {
   if (typeof bracketGameId !== 'string' || !bracketGameId) {
@@ -171,9 +173,16 @@ export function createBracketGame({ bracketGameId, gameIndex, groupId, seats } =
     gameIndex,
     groupId,
     seats: seats.map(s => ({ odUserId: s.odUserId, isCpu: s.isCpu === true })),
+    // P6a ruling A-1: finalScores hold the COMPOSITE weekly snapshots (the
+    // score of record); finalUserScores keep the user-layer detail alongside.
+    // sideEffectsAt is the advancement's completion record for the game's
+    // rank/leaderboard finalization — written only after both landed clean;
+    // null/absent means the resume paths still owe work.
     finalScores: null,
+    finalUserScores: null,
     advancers: null,
     completedAt: null,
+    sideEffectsAt: null,
   };
 }
 
@@ -197,7 +206,9 @@ export function createBracketRound({ roundNumber, games, composedAt } = {}) {
  * totalRounds = log2(G) + 1 — the terminal round is the round with exactly
  * ONE game (the final four); its top-1 is the champion. No bye concept at
  * V1: under-filled rounds are CPU-padded (Ruling B1), recorded per-seat via
- * seats[].isCpu. `recap.finalComposite` stays null until P6 backfills.
+ * seats[].isCpu. `recap.finalComposite` is the championship week's composite
+ * — computed live by buildChampionRecap since P6a (the P3b backfill
+ * contract, closed); null only on recaps written before P6a (dev data).
  */
 export function createBracketDoc({ bracketId, round1Games, now } = {}) {
   if (typeof bracketId !== 'string' || !bracketId) {
@@ -312,6 +323,163 @@ export function buildCpuUserBoard(rankedPool, n) {
 // (the P1b rider-#4 flip feed and the P5 auto-commit entry) — one home so
 // the writers can never drift (P5 code-review convergence).
 export const GROUP_FEED_CAP = 50;
+
+// ==================== P6a — COMPOSITE + LEADERBOARD + RANK IDENTITY ====================
+//
+// Founder rulings of record (June 12, 2026 — P6 Stage 0 §10):
+// A-1 the composite IS the score of record (advancement, champion,
+//     bracket finalScores), with the user-layer map kept as the
+//     finalUserScores sibling; A-2 waiver priority STAYS user-layer (the
+//     claim wire is a user-market mechanism — composite would let a hot
+//     agent buy its human waiver position); A-3 a group-week belongs to the
+//     ET month of its day-1 banking date; A-4 dev-sourced rows land in
+//     dev-namespaced docs, production docs exclude isDev groups.
+
+export const TOURNAMENT_LEADERBOARDS_COLLECTION = 'tournamentLeaderboards';
+export const TOURNAMENT_RANKS_COLLECTION = 'tournamentRanks';
+
+/** Two-decimal money-style rounding — ONE home (P6a code review: three
+ * private copies converged; the pre-P6 copies elsewhere are P8-hygiene). */
+export function round2(x) {
+  return parseFloat((Number.isFinite(x) ? x : 0).toFixed(2));
+}
+
+/**
+ * THE one home for k (Spec §0.10): composite = agentScore + k × userScore.
+ * Every composite in the system — banking snapshots, advancement locks,
+ * leaderboard rows, rank inputs — comes through here.
+ */
+export function computeComposite(agentPoints, userPoints) {
+  return (agentPoints || 0) + TOURNAMENT_TUNING.USER_LAYER_K * (userPoints || 0);
+}
+
+/**
+ * THE ranking rule (ruling A-1 + the P1a tie-break): score desc, then the
+ * caller-supplied order (draft order / seat order — identical by
+ * construction, createTournamentGroupDoc builds both from one array).
+ * ONE home for the comparator (P6a code review: four parallel copies
+ * converged — lockTopTwo, the champion paths, the rank writer). Missing or
+ * non-finite scores rank as 0 — callers that need stricter handling guard
+ * before ranking (the rank writer refuses incomplete finalScores).
+ */
+export function rankByScores(scores, order) {
+  const value = (id) => (Number.isFinite(scores?.[id]) ? scores[id] : 0);
+  return [...(order || [])].sort((a, b) =>
+    (value(b) - value(a)) || (order.indexOf(a) - order.indexOf(b)));
+}
+
+/** Month key for the seasonal leaderboard (ruling A-3): the ET month of a
+ * 'YYYY-MM-DD' ET date string. Null for anything malformed. */
+export function monthKeyFromEtDate(etDate) {
+  if (typeof etDate !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(etDate)) return null;
+  return etDate.slice(0, 7);
+}
+
+/** Leaderboard doc id (ruling A-4): the month key, dev-prefixed for
+ * dev-group-sourced rows so smoke runs can never touch production docs. */
+export function leaderboardDocId(monthKey, { dev = false } = {}) {
+  return dev ? `dev-${monthKey}` : monthKey;
+}
+
+/** Rank doc id (ruling A-4 mirrored): the odUserId, dev-prefixed for
+ * dev-group-sourced applications. */
+export function rankDocId(odUserId, { dev = false } = {}) {
+  return dev ? `dev-${odUserId}` : odUserId;
+}
+
+// ==================== CAREER RANK (founder-signed, June 12, 2026) ====================
+//
+// The tier ladder and RP math below are the FOUNDER-SIGNED table from the P6
+// Stage 0 report §5 (the P4 calibration-table precedent): every value is a
+// config entry, never code — recalibration is an edit here, nowhere else.
+// V1 rank does NOT do: demotion below achieved floors, placement matches,
+// decay, MMR/matchmaking input (V2.1 §11 post-launch).
+
+export const RANK_TIERS = Object.freeze([
+  Object.freeze({ tier: 1, name: 'Intern', floor: 0 }),
+  Object.freeze({ tier: 2, name: 'Analyst', floor: 250 }),
+  Object.freeze({ tier: 3, name: 'Associate', floor: 750 }),
+  Object.freeze({ tier: 4, name: 'Strategist', floor: 1750 }),
+  Object.freeze({ tier: 5, name: 'Desk Head', floor: 3500 }),
+  Object.freeze({ tier: 6, name: 'Fund Manager', floor: 6500 }),
+  Object.freeze({ tier: 7, name: 'Market Legend', floor: 11000 }),
+]);
+
+// Separate from TOURNAMENT_TUNING (whose exact shape is test-locked); same
+// set-raw-and-watch posture (Spec §5).
+export const RANK_TUNING = Object.freeze({
+  RP_PER_POINT: 1.0,
+  // Group-week placements 1st..4th (Spec §1.5's 100/66/33).
+  PLACEMENT_BONUS: Object.freeze([100, 66, 33, 0]),
+  HISTORY_CAP: 20,
+});
+
+/** The tier a given RP sits in: the highest tier whose floor is reached. */
+export function tierForRp(rp) {
+  const value = Number.isFinite(rp) ? rp : 0;
+  let out = RANK_TIERS[0];
+  for (const t of RANK_TIERS) {
+    if (value >= t.floor) out = t;
+  }
+  return out;
+}
+
+/**
+ * The CPU-farm guard (founder-signed B-2): positive RP is discounted by CPU
+ * density among the OTHER three seats — 0 CPUs → 1.0, 1 → ⅔, 2 → ⅓,
+ * 3 (fully padded) → 0. Signed with the conscious note that fully-padded
+ * weeks earn zero positive RP at launch; revisit as a tuning entry only if
+ * live feedback demands.
+ */
+export function cpuFarmGuard(cpuOpponents) {
+  const n = Math.min(Math.max(Number.isFinite(cpuOpponents) ? cpuOpponents : 0, 0), GROUP_SIZE - 1);
+  return 1 - n / (GROUP_SIZE - 1);
+}
+
+/**
+ * One group-week's RP math (founder-signed B-2), returned WITH its audit
+ * breakdown so writers persist exactly what was computed — never a parallel
+ * re-derivation (the BUILD_RULES §4 local-copy bug class):
+ *   raw   = weeklyComposite × RP_PER_POINT + PLACEMENT_BONUS[placement]
+ *   guard = cpuFarmGuard(cpuOpponents)
+ *   delta = raw > 0 ? raw × guard : raw
+ * The guard discounts GAINS only — CPU padding can never shield a losing
+ * week. Placement is 1-based (1..GROUP_SIZE).
+ */
+export function computeRankBreakdown({ weeklyComposite = 0, placement, cpuOpponents = 0 } = {}) {
+  const bonus = RANK_TUNING.PLACEMENT_BONUS[(placement ?? GROUP_SIZE) - 1] ?? 0;
+  const raw = weeklyComposite * RANK_TUNING.RP_PER_POINT + bonus;
+  const guard = cpuFarmGuard(cpuOpponents);
+  return { raw, guard, delta: raw > 0 ? raw * guard : raw };
+}
+
+/** The delta alone (the original signed signature, kept for direct callers). */
+export function computeRankDelta(args) {
+  return computeRankBreakdown(args).delta;
+}
+
+/**
+ * The ratchet (founder-signed B-2), pure: within-tier RP slides freely on a
+ * signed delta, but never below the highest ACHIEVED tier's floor (floors
+ * are permanent) and never below 0 (no debt — V1.2 §7 carried). Crossing a
+ * tier threshold permanently raises floorRp to that tier's floor.
+ *
+ * @param {{rp?: number, floorRp?: number, peakRp?: number}|null} state
+ * @param {number} delta
+ * @returns {{rp, tier, tierName, floorRp, peakRp}}
+ */
+export function applyRankWeek(state, delta) {
+  const priorFloor = Math.max(state?.floorRp ?? 0, 0);
+  const rp = round2(Math.max(priorFloor, 0, (state?.rp ?? 0) + (delta || 0)));
+  const tier = tierForRp(rp);
+  return {
+    rp,
+    tier: tier.tier,
+    tierName: tier.name,
+    floorRp: Math.max(priorFloor, tier.floor),
+    peakRp: round2(Math.max(state?.peakRp ?? 0, rp)),
+  };
+}
 
 // ==================== TUNING LEDGER (Spec §5) ====================
 
@@ -433,6 +601,30 @@ export function getLatestDayEntry(group) {
  */
 export function getWeeklyScore(group, odUserId) {
   return getLatestDayEntry(group)?.entry?.closeScores?.[odUserId]?.totalPoints ?? 0;
+}
+
+/**
+ * Weekly COMPOSITE = the final day's compositePoints snapshot (ruling A-1 —
+ * the score of record; same final-snapshot-never-a-sum identity as
+ * getWeeklyScore). Snapshots banked before P6 (dev data only) carry no
+ * compositePoints — degrade by deriving from whatever the entry holds
+ * (absent agentPoints → k × user layer), never by guessing.
+ */
+export function getWeeklyComposite(group, odUserId) {
+  const entry = getLatestDayEntry(group)?.entry?.closeScores?.[odUserId];
+  if (!entry) return 0;
+  if (Number.isFinite(entry.compositePoints)) return entry.compositePoints;
+  return computeComposite(entry.agentPoints ?? 0, entry.totalPoints ?? 0);
+}
+
+/** The ruled week-complete check (P3b Friday duty; the holiday-week edge is
+ * documented in tournamentAdvancement.js). Hoisted here at P6a so the
+ * leaderboard writer and the advancement share ONE definition —
+ * tournamentAdvancement.js re-exports both names unchanged. */
+export const WEEK_DAYS_REQUIRED = 5;
+
+export function isWeekBanked(group) {
+  return (getLatestDayEntry(group)?.dayN || 0) >= WEEK_DAYS_REQUIRED;
 }
 
 /**

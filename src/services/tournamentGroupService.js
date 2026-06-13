@@ -11,6 +11,8 @@ import { cleanSymbols, composeBoardPrefill } from '../utils/boardPrefillCore';
 import {
   TOURNAMENT_GROUPS_COLLECTION,
   TOURNAMENT_BRACKETS_COLLECTION,
+  TOURNAMENT_LEADERBOARDS_COLLECTION,
+  TOURNAMENT_RANKS_COLLECTION,
   TOURNAMENT_TUNING,
   GROUP_STATUS,
   AGENT_BOARDS_SUBCOLLECTION,
@@ -183,6 +185,35 @@ export function subscribeBracket(bracketId, callback) {
     callback(snapshot.exists() ? { id: snapshot.id, ...snapshot.data() } : null);
   }, (error) => {
     console.error('[TournamentGroupService] Bracket subscription error:', error);
+    callback(null);
+  });
+}
+
+/**
+ * Live seasonal-leaderboard subscription (P6a — the dev card now, the P6b
+ * leaderboard surface later). One month-keyed doc holds the whole board
+ * (docId via leaderboardDocId: 'YYYY-MM', dev-prefixed for smoke data).
+ * Callback receives { id, ...doc } or null. Returns the unsubscribe fn.
+ */
+export function subscribeLeaderboard(docId, callback) {
+  return onSnapshot(doc(db, TOURNAMENT_LEADERBOARDS_COLLECTION, docId), (snapshot) => {
+    callback(snapshot.exists() ? { id: snapshot.id, ...snapshot.data() } : null);
+  }, (error) => {
+    console.error('[TournamentGroupService] Leaderboard subscription error:', error);
+    callback(null);
+  });
+}
+
+/**
+ * Live career-rank subscription (P6a — the dev card now, the P6b rank
+ * surface later). docId via rankDocId: the odUserId, dev-prefixed for
+ * smoke-sourced applications. Callback receives { id, ...doc } or null.
+ */
+export function subscribeRank(docId, callback) {
+  return onSnapshot(doc(db, TOURNAMENT_RANKS_COLLECTION, docId), (snapshot) => {
+    callback(snapshot.exists() ? { id: snapshot.id, ...snapshot.data() } : null);
+  }, (error) => {
+    console.error('[TournamentGroupService] Rank subscription error:', error);
     callback(null);
   });
 }
