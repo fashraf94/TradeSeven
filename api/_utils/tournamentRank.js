@@ -25,6 +25,7 @@ import {
   RANK_TUNING,
   computeRankBreakdown,
   applyRankWeek,
+  applyRankWeekFrozen,
   rankByScores,
   rankDocId,
   isCpuUserId,
@@ -77,7 +78,10 @@ export async function applyGroupWeekToRanks(db, { groupId, seats, compositeByPla
         // ONE computation for math AND audit (code review: a parallel raw
         // re-derivation here could drift from the signed function).
         const { raw, guard, delta } = computeRankBreakdown({ weeklyComposite, placement, cpuOpponents });
-        const next = applyRankWeek(prior, delta);
+        // §7.1 (founder ruling, June 12, 2026): CPUs are display-only — RP
+        // computes for an honest row, but the floor never ratchets (the
+        // writer skip, the cleanest form). Humans keep the permanent ladder.
+        const next = isCpu ? applyRankWeekFrozen(prior, delta) : applyRankWeek(prior, delta);
         const event = {
           groupId,
           weeklyComposite: round2(weeklyComposite),

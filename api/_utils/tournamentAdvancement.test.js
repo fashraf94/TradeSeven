@@ -732,15 +732,28 @@ describe('P6a side-effects — rank apply + leaderboard final upsert ride the Fr
     expect(store.get('tournamentLeaderboards/2026-06')).toBeUndefined();
   });
 
-  it('DEGRADED LOCK HONESTY: a week finalized from an agentScoresCarried snapshot counts degradedLocks, loudly, and proceeds', async () => {
+  it('DEGRADED LOCK REFUSAL (§7.2): a degraded final snapshot (agentScoresCarried) does NOT lock — defers, counts, self-heals next pass', async () => {
     const { db, store } = seededBracketDb();
-    const g1 = store.get('tournamentGroups/b-r1-g1');
-    g1.dailyScores.day5.agentScoresCarried = true;
+    store.get('tournamentGroups/b-r1-g1').dailyScores.day5.agentScoresCarried = true;
 
-    const summary = await runFridayAdvancement(db, { now: NOW });
-    expect(summary.degradedLocks).toBe(1);
-    expect(summary.errors).toBe(0); // proceeds — refusing is a flagged founder decision, not improvised
+    // First pass: g1 refuses to lock (the bracket lock is permanent); its
+    // sibling g2 locks normally. The refusal counts but is not an error.
+    const first = await runFridayAdvancement(db, { now: NOW });
+    expect(first.degradedLocks).toBe(1);
+    expect(first.errors).toBe(0);
+    // Unlocked AND uncompleted — g1 stays in the battle query for the retry.
+    expect(store.get('tournamentBrackets/b').rounds.r1.games['b-r1-g1'].advancers).toBeNull();
+    expect(store.get('tournamentGroups/b-r1-g1').status).toBe(GROUP_STATUS.BATTLE);
+    // No rank/leaderboard side-effects from a refused lock.
+    expect(store.get('tournamentRanks/founder')).toBeUndefined();
+
+    // Banking self-heals the snapshot overnight; the next pass locks clean.
+    delete store.get('tournamentGroups/b-r1-g1').dailyScores.day5.agentScoresCarried;
+    const second = await runFridayAdvancement(db, { now: NOW });
+    expect(second.degradedLocks).toBe(0);
+    expect(store.get('tournamentBrackets/b').rounds.r1.games['b-r1-g1'].advancers).not.toBeNull();
     expect(store.get('tournamentGroups/b-r1-g1').status).toBe(GROUP_STATUS.COMPLETE);
+    expect(store.get('tournamentRanks/founder').appliedGroups['b-r1-g1']).toBeDefined();
   });
 
   it('base-layer completion applies rank + leaderboard BEFORE the transition', async () => {

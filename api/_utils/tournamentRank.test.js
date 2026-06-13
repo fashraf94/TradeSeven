@@ -155,6 +155,32 @@ describe('applyGroupWeekToRanks', () => {
     expect(alice.peakRp).toBeCloseTo(333.33, 1);
   });
 
+  it('§7.1 CPU NON-RATCHET: a CPU crosses a tier line for display but NEVER ratchets the floor — and slides fully back', async () => {
+    const { db, store } = makeDb({});
+    const seats = MIXED_SEATS; // alice, bob (human) + cpu-1, cpu-2 (CPU)
+    // Week 1: cpu-1 wins big (1 CPU opponent → guard ⅔): raw 500 → 333.33,
+    // crossing Analyst (250). For a HUMAN this would lock floorRp 250.
+    await applyGroupWeekToRanks(db, {
+      groupId: 'g1', seats,
+      compositeByPlayer: { 'cpu-1': 400, alice: 10, bob: 5, 'cpu-2': 0 },
+      ranking: ['cpu-1', 'alice', 'bob', 'cpu-2'], now: NOW,
+    });
+    let cpu = store.get('tournamentRanks/cpu-1');
+    expect(cpu).toMatchObject({ isCpu: true, tier: 2, tierName: 'Analyst', floorRp: 0 }); // RP shown, floor frozen
+    expect(cpu.rp).toBeCloseTo(333.33, 1);
+
+    // Week 2: catastrophic loss — no permanent floor catches a bot; it slides
+    // all the way to 0 (the human ratchet would have held it at 250 — proven
+    // by the RATCHET ACROSS WEEKS test above).
+    await applyGroupWeekToRanks(db, {
+      groupId: 'g2', seats,
+      compositeByPlayer: { 'cpu-1': -10000, alice: 10, bob: 5, 'cpu-2': 0 },
+      ranking: ['alice', 'bob', 'cpu-2', 'cpu-1'], now: NOW,
+    });
+    cpu = store.get('tournamentRanks/cpu-1');
+    expect(cpu).toMatchObject({ rp: 0, tier: 1, floorRp: 0 });
+  });
+
   it('DEV NAMESPACE (ruling A-4): dev applications land at dev-{uid}, production docs untouched', async () => {
     const { db, store } = makeDb({});
     await applyGroupWeekToRanks(db, {

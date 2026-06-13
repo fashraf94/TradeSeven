@@ -45,6 +45,8 @@ import {
   TOURNAMENT_GAME_MODE,
   AGENT_LEDGER_SUBCOLLECTION,
   AGENT_LEDGER_DOC_ID,
+  STREAMS_SUBCOLLECTION,
+  AGENT_DRAFT_STREAM_DOC_ID,
   GROUP_STATUS,
   LEDGER_SOURCE,
   LEG_DIRECTION,
@@ -184,6 +186,101 @@ export function detectDoubleDownEvents({ symbolIn, symbolOut, ownUserPicks, agen
     events.push({ kind: 'broken', symbol: symbolOut, agentId, odUserId, userDirection: outPick.direction, at });
   }
   return events;
+}
+
+/**
+ * USER-SIDE double-down detection (D-1, founder ruling June 12, 2026) — the
+ * mirror of detectDoubleDownEvents for the user market. A user flip or claim
+ * that touches a symbol the user's OWN agent already holds is a double-down
+ * event: vocabulary `formed` (a claim lands an aligned name), `broken` (a
+ * claim drops one), `flipped` (a flip reverses the user leg's direction while
+ * the alignment persists). Events carry `side: 'user'` — the agent-side
+ * sibling omits `side`, so absent ⇒ agent at every reader.
+ *
+ * THE CROSS-MARKET GUARD is `heldBy === ownAgentId`: a symbol held by a RIVAL
+ * agent is two different players (the designed cross-layer duel), never a
+ * double-down. Pre-draft (no resolved ownAgentId, or an empty held set)
+ * yields zero events. Pure — the caller owns the atomic write.
+ *
+ * @param {Object} args
+ * @param {string|null} args.ownAgentId - the user's agent in this group (the
+ *   odUserId→agentId map from buildOwnerAgentMap)
+ * @param {Object} args.held - ledger.held (symbol → {heldBy, ...})
+ * @param {string} args.odUserId
+ * @param {Array<{symbol: string, kind: string, userDirection?: string, from?: string, to?: string}>} args.candidates
+ * @param {Date|string} [args.now]
+ * @returns {Array<Object>} the detected user-side events (possibly empty)
+ */
+export function detectUserDoubleDownEvents({ ownAgentId, held, odUserId, candidates, now }) {
+  if (!ownAgentId || !held || !Array.isArray(candidates)) return [];
+  const at = toIso(now ?? new Date());
+  const events = [];
+  for (const c of candidates) {
+    if (!c?.symbol || held[c.symbol]?.heldBy !== ownAgentId) continue;
+    events.push({
+      kind: c.kind,
+      side: 'user',
+      symbol: c.symbol,
+      agentId: ownAgentId,
+      odUserId,
+      userDirection: c.userDirection ?? null,
+      ...(c.from !== undefined ? { from: c.from } : {}),
+      ...(c.to !== undefined ? { to: c.to } : {}),
+      at,
+    });
+  }
+  return events;
+}
+
+/**
+ * The odUserId → agentId map for a group, from the IMMUTABLE agent-draft
+ * stream doc (streams/agentDraft.events carry both ids —
+ * tournamentAgentDraft.resolveAgentSnakeDraft). The user-side double-down
+ * detection reads it to know which ledger holdings belong to the user's OWN
+ * agent. The stream never rewrites post-draft, so a plain read just before a
+ * transaction is race-free. Pure; tolerant of a null/empty stream (→ {}).
+ */
+export function buildOwnerAgentMap(streamData) {
+  const map = {};
+  for (const ev of streamData?.events || []) {
+    if (ev?.odUserId && ev?.agentId && !map[ev.odUserId]) map[ev.odUserId] = ev.agentId;
+  }
+  return map;
+}
+
+/**
+ * Read the odUserId→agentId map for a group from the immutable agent-draft
+ * stream, defensively — the ONE home for the pre-transaction read both the
+ * flip and the claims double-down hooks share. Degrades to {} on any failure
+ * (the double-down must never block its host mutation). Plain read; the stream
+ * never rewrites post-draft, so this is race-free before a transaction.
+ */
+export async function readOwnerAgentMap(db, groupId) {
+  try {
+    const snap = await db
+      .collection(TOURNAMENT_GROUPS_COLLECTION).doc(groupId)
+      .collection(STREAMS_SUBCOLLECTION).doc(AGENT_DRAFT_STREAM_DOC_ID).get();
+    return buildOwnerAgentMap(snap.exists ? snap.data() : null);
+  } catch (err) {
+    console.warn(`${LOG_PREFIX} agent-draft stream read failed for ${groupId} — double-down detection skipped:`, err.message);
+    return {};
+  }
+}
+
+/**
+ * The atomic side-effects of a batch of user-side double-down events (D-1) —
+ * the ONE home for the recording shape so the flip and claims transactions can
+ * never drift: the capped ledger doubleDowns list AND the group-feed entries
+ * (`double_down` type, the renderer's contract). Pure; the caller writes them
+ * in its own transaction. The durable from/to live on the ledger event; the
+ * feed entry carries only what the renderer reads (kind/side/symbol/odUserId).
+ */
+export function buildUserDoubleDownWrites(ledger, events, nowIso) {
+  const doubleDowns = [...(ledger?.doubleDowns || []), ...events].slice(-DOUBLE_DOWN_EVENTS_CAP);
+  const feedEvents = events.map(ev => ({
+    type: 'double_down', kind: ev.kind, side: ev.side, symbol: ev.symbol, odUserId: ev.odUserId, timestamp: nowIso,
+  }));
+  return { doubleDowns, feedEvents };
 }
 
 /**
@@ -599,7 +696,7 @@ export async function reconcileGroupLedger(db, group, { now = new Date() } = {})
       updatedAt: nowIso,
     });
 
-    return { heldCount: Object.keys(newHeld).length, txDivergences, txStaleCleared };
+    return { heldSymbols: Object.keys(newHeld), txDivergences, txStaleCleared };
   });
 
   const divergences = [...derivationDivergences, ...result.txDivergences];
@@ -611,7 +708,12 @@ export async function reconcileGroupLedger(db, group, { now = new Date() } = {})
     groupId,
     battles: battles.length,
     holders: latestByAgent.size,
-    heldCount: result.heldCount,
+    heldCount: result.heldSymbols.length,
+    // P6b: the reconciled agent-held symbol list (one agent per symbol within
+    // a group, by exclusivity). The nightly leaderboard branch threads this
+    // into the consensus/contrarian feeds — read-only reuse of THIS pass's
+    // ledger read, so the feeds cost zero new reads (founder ruling, Option 1).
+    heldSymbols: result.heldSymbols,
     divergences,
     staleCleared: result.txStaleCleared,
   };
@@ -624,7 +726,12 @@ export async function reconcileGroupLedger(db, group, { now = new Date() } = {})
  * failure never blocks the rest.
  */
 export async function reconcileAllTournamentLedgers(db, { now = new Date() } = {}) {
-  const summary = { groups: 0, reconciled: 0, divergences: 0, staleCleared: 0, errors: 0 };
+  // P6b: `heldByGroup` carries each group's reconciled agent-held symbols out
+  // to the leaderboard branch (banking → reconcile → leaderboard) so the
+  // consensus/contrarian feeds reuse THIS pass's ledger reads. A group that
+  // errors below is simply absent from the map — its feed degrades honestly
+  // (omitted, not crashed), per the founder constraint on Option 1.
+  const summary = { groups: 0, reconciled: 0, divergences: 0, staleCleared: 0, errors: 0, heldByGroup: {} };
 
   const groupsSnap = await db
     .collection(TOURNAMENT_GROUPS_COLLECTION)
@@ -642,6 +749,7 @@ export async function reconcileAllTournamentLedgers(db, { now = new Date() } = {
       summary.reconciled++;
       summary.divergences += result.divergences.length;
       summary.staleCleared += result.staleCleared;
+      summary.heldByGroup[group.id] = result.heldSymbols;
     } catch (err) {
       console.error(`${LOG_PREFIX} reconcile failed for group ${group.id}:`, err.message);
       summary.errors++;

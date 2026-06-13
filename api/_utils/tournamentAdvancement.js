@@ -61,6 +61,7 @@ import {
   cpuNFromUserId,
   WEEK_DAYS_REQUIRED,
   isWeekBanked,
+  isFinalSnapshotDegraded,
   rankByScores,
   AGENT_LEDGER_SUBCOLLECTION,
   AGENT_LEDGER_DOC_ID,
@@ -260,6 +261,16 @@ export async function runFridayAdvancement(db, { now = new Date(), includeDevGro
         summary.bankingPending++;
         continue;
       }
+      // §7.2 (founder ruling, June 12, 2026): refuse to finalize a week whose
+      // final snapshot is degraded (agentScoresCarried) — the composite may be
+      // missing agent-layer points and completion is irreversible. Defer
+      // loudly; the next banking pass self-heals the snapshot and the
+      // idempotent finalization lands clean.
+      if (isFinalSnapshotDegraded(group)) {
+        console.error(`${LOG_PREFIX} base-layer group ${group.id}: DEGRADED FINAL SNAPSHOT (agentScoresCarried) — finalization REFUSED this tick; banking self-heals next pass (§7.2)`);
+        summary.degradedLocks++;
+        continue;
+      }
       // P6a: rank + leaderboard finalization BEFORE the completion
       // transition, and completion is GATED on a clean pass (code review,
       // June 12, 2026): base-layer groups have no bracket entry, so a
@@ -366,18 +377,18 @@ export async function runFridayAdvancement(db, { now = new Date(), includeDevGro
  * champion write) on it; failures count on summary.errors, which withholds
  * the duty marker so the next tick retries the idempotent halves.
  *
- * DEGRADE HONESTY: a week locked from a snapshot carrying the banking
- * degrade marker (agentScoresCarried — the agent layer was carried/zeroed,
- * not read) is counted on summary.degradedLocks and logged loudly, but
- * still proceeds — whether such weeks should REFUSE to lock is a founder
- * decision flagged in the P6a phase report, not improvised here.
+ * DEGRADE HONESTY (§7.2, founder-ruled June 12, 2026): FRESH locks now REFUSE
+ * a degraded final snapshot at the lock gate (advanceCohort / the base-layer
+ * loop), counting summary.degradedLocks there. This path therefore only sees
+ * agentScoresCarried on a legacy entry locked BEFORE the ruling and resumed
+ * via the sweep — where the lock is already permanent and cannot be undone —
+ * so it logs loudly for founder attention but does NOT re-count the refusal.
  */
 async function runWeekSideEffects(db, { group, entry, dev, nowIso, summary }) {
   let clean = true;
 
-  if (group && getLatestDayEntry(group)?.entry?.agentScoresCarried === true) {
-    console.error(`${LOG_PREFIX} group ${group.id}: WEEK FINALIZED FROM A DEGRADED SNAPSHOT (agentScoresCarried) — the composite may be missing agent-layer points (founder attention)`);
-    summary.degradedLocks++;
+  if (group && isFinalSnapshotDegraded(group)) {
+    console.error(`${LOG_PREFIX} group ${group.id}: side-effects on a degraded snapshot (agentScoresCarried) — a pre-§7.2 lock resumed; composite may miss agent-layer points (founder attention)`);
   }
 
   try {
@@ -546,6 +557,16 @@ async function advanceCohort(db, { bracketId, roundNumber, cohortGroups, nowIso,
       }
       const entry = bracket.rounds[roundKey].games[group.bracketGameId];
       if (entry.advancers == null) {
+        // §7.2 (founder ruling, June 12, 2026): the bracket lock is permanent,
+        // so refuse to lock a degraded final snapshot (agentScoresCarried) —
+        // the composite of record may be missing agent-layer points. Defer
+        // loudly and leave the game unlocked (the group stays in the battle
+        // query); the next banking pass self-heals and the lock lands clean.
+        if (isFinalSnapshotDegraded(group)) {
+          console.error(`${LOG_PREFIX} bracket ${bracketId} game ${group.bracketGameId}: DEGRADED FINAL SNAPSHOT (agentScoresCarried) — lock REFUSED this tick; banking self-heals next pass (§7.2)`);
+          summary.degradedLocks++;
+          continue;
+        }
         const { advancers, finalScores, finalUserScores } = lockTopTwo(group);
         await bracketRef.update({
           [`rounds.${roundKey}.games.${group.bracketGameId}.advancers`]: advancers,

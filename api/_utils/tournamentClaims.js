@@ -26,7 +26,9 @@ import {
   TOURNAMENT_GROUPS_COLLECTION,
   GROUP_STATUS,
   GROUP_SIZE,
+  GROUP_FEED_CAP,
   BASELINE_SOURCE,
+  LEG_DIRECTION,
   createPickState,
   getLatestDayEntry,
   deriveCurrentTradingDay,
@@ -36,6 +38,12 @@ import {
 // benign: both sides export hoisted function declarations only.
 import { isAlreadyProcessedForDay } from '../cron/process-draft-claims.js';
 import { formatEtDate } from './tournamentTime.js';
+import {
+  ledgerRef,
+  detectUserDoubleDownEvents,
+  buildUserDoubleDownWrites,
+  readOwnerAgentMap,
+} from './tournamentAgentLedger.js';
 
 /**
  * Waiver priority — sibling of the legacy calculateWaiverPriority
@@ -101,6 +109,11 @@ export async function processClaimsForTournamentGroup(db, group, { now = new Dat
   const claimsRef = groupRef.collection('claims');
   const pendingQuery = claimsRef.where('status', '==', 'pending');
 
+  // D-1 (user-side double-down): the odUserId→agentId map from the immutable
+  // agent-draft stream — the shared pre-transaction read (degrades to {} on
+  // failure; claims resolution never blocks on it).
+  const ownerAgentMap = await readOwnerAgentMap(db, groupId);
+
   return db.runTransaction(async (tx) => {
     const groupSnap = await tx.get(groupRef);
     if (!groupSnap.exists) return { status: 'skipped', reason: 'group_not_found', processed: 0 };
@@ -121,6 +134,13 @@ export async function processClaimsForTournamentGroup(db, group, { now = new Dat
 
     const pendingSnap = await tx.get(pendingQuery);
     if (pendingSnap.empty) return { status: 'no_claims', processed: 0 };
+
+    // D-1: read the ledger (held set) for double-down detection — BEFORE any
+    // write (Firestore reads-before-writes). The doubleDowns sibling + the
+    // group-feed double_down entries land atomically with the resolution.
+    const lRef = ledgerRef(db, groupId);
+    const ledgerSnap = await tx.get(lRef);
+    const ledger = ledgerSnap.exists ? ledgerSnap.data() : null;
 
     // Group by user, rank-ascending per user (legacy :312-325).
     const claimsByUser = {};
@@ -224,9 +244,43 @@ export async function processClaimsForTournamentGroup(db, group, { now = new Dat
       results.push({
         odUserId: userId, claimId: claim.id, dropSymbol: claim.dropSymbol,
         addSymbol: claim.addSymbol, status: 'approved', reason: null,
+        // D-1: the dropped live leg's direction, for the 'broken' event's
+        // userDirection (captured before `players` is further mutated).
+        dropDirection: droppedLive?.direction || null,
       });
       userClaimIndex[userId] = claimIdx + 1;
       if (claimIdx + 1 < userClaims.length) queue.push(userId); // back-rotation
+    }
+
+    // D-1: the user-side double-downs the approvals formed/broke against each
+    // user's OWN agent holdings — collected across all approvals, recorded
+    // once (the ledger doubleDowns sibling + group-feed entries). The detector
+    // owns the cross-market guard (own-agent-only); pre-draft / no-alignment
+    // writes NOTHING to the ledger (contention stays near zero).
+    const ddEvents = [];
+    if (ledger) {
+      for (const r of results) {
+        if (r.status !== 'approved') continue;
+        const ownAgentId = ownerAgentMap[r.odUserId];
+        if (!ownAgentId) continue;
+        ddEvents.push(...detectUserDoubleDownEvents({
+          ownAgentId,
+          held: ledger.held,
+          odUserId: r.odUserId,
+          candidates: [
+            { symbol: r.addSymbol, kind: 'formed', userDirection: LEG_DIRECTION.LONG },
+            { symbol: r.dropSymbol, kind: 'broken', userDirection: r.dropDirection },
+          ],
+          now: nowIso,
+        }));
+      }
+    }
+    // The shared recorder builds the capped ledger list + the feed entries.
+    const { doubleDowns, feedEvents: ddFeedEvents } = ddEvents.length > 0
+      ? buildUserDoubleDownWrites(ledger, ddEvents, nowIso)
+      : { doubleDowns: null, feedEvents: [] };
+    if (ddEvents.length > 0) {
+      tx.set(lRef, { ...ledger, doubleDowns, updatedAt: nowIso });
     }
 
     // RIDER #5 "resolved" — every write in the same awaited transaction:
@@ -253,6 +307,9 @@ export async function processClaimsForTournamentGroup(db, group, { now = new Dat
       userPool,
       'claimSystem.lastProcessedDay': currentDay,
       'claimSystem.processingLog': [...(fresh.claimSystem?.processingLog || []), logEntry],
+      ...(ddFeedEvents.length > 0
+        ? { feed: [...(fresh.feed || []), ...ddFeedEvents].slice(-GROUP_FEED_CAP) }
+        : {}),
       updatedAt: nowIso,
     });
 

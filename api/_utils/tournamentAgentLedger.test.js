@@ -32,6 +32,8 @@ import {
   excludeHeldSymbols,
   getOwnUserPicks,
   detectDoubleDownEvents,
+  detectUserDoubleDownEvents,
+  buildOwnerAgentMap,
   resolveTournamentContext,
   reserveSymbol,
   confirmSwap,
@@ -353,6 +355,50 @@ describe('detectDoubleDownEvents', () => {
     expect(detectDoubleDownEvents({ ...base, symbolIn: 'AMD', symbolOut: 'TSLA' })).toEqual([]);
     expect(detectDoubleDownEvents({ ...base, symbolIn: 'NVDA', symbolOut: 'NVDA' })).toHaveLength(1);
     expect(detectDoubleDownEvents({ symbolIn: 'NVDA', symbolOut: null, ownUserPicks: [], agentId: 'a', odUserId: 'u', now: NOW })).toEqual([]);
+  });
+});
+
+describe('detectUserDoubleDownEvents — the user-side mirror (D-1, June 12, 2026)', () => {
+  // NVDA held by the user's OWN agent; COIN held by a RIVAL agent.
+  const held = { NVDA: { heldBy: 'agent-mine' }, COIN: { heldBy: 'agent-rival' } };
+  const base = { ownAgentId: 'agent-mine', held, odUserId: 'user-a', now: NOW };
+
+  it('FLIPPED: a flip on a symbol my own agent holds carries side:user + from/to', () => {
+    const events = detectUserDoubleDownEvents({ ...base, candidates: [{ symbol: 'NVDA', kind: 'flipped', userDirection: 'short', from: 'long', to: 'short' }] });
+    expect(events).toEqual([{ kind: 'flipped', side: 'user', symbol: 'NVDA', agentId: 'agent-mine', odUserId: 'user-a', userDirection: 'short', from: 'long', to: 'short', at: NOW_ISO }]);
+  });
+
+  it('FORMED on a claimed name, BROKEN on a dropped name — both against my own agent', () => {
+    const events = detectUserDoubleDownEvents({ ...base, candidates: [
+      { symbol: 'NVDA', kind: 'formed', userDirection: 'long' },
+      { symbol: 'AMD', kind: 'broken', userDirection: 'long' }, // AMD not held → no event
+    ] });
+    expect(events).toEqual([{ kind: 'formed', side: 'user', symbol: 'NVDA', agentId: 'agent-mine', odUserId: 'user-a', userDirection: 'long', at: NOW_ISO }]);
+  });
+
+  it('CROSS-MARKET GUARD: a symbol held by a RIVAL agent is never a double-down', () => {
+    expect(detectUserDoubleDownEvents({ ...base, candidates: [{ symbol: 'COIN', kind: 'formed', userDirection: 'long' }] })).toEqual([]);
+  });
+
+  it('PRE-DRAFT ABSENCE: no resolved own agent, or an empty held set, yields zero events', () => {
+    const cand = [{ symbol: 'NVDA', kind: 'formed', userDirection: 'long' }];
+    expect(detectUserDoubleDownEvents({ ...base, ownAgentId: null, candidates: cand })).toEqual([]);
+    expect(detectUserDoubleDownEvents({ ...base, held: {}, candidates: cand })).toEqual([]);
+    expect(detectUserDoubleDownEvents({ ...base, candidates: null })).toEqual([]);
+  });
+});
+
+describe('buildOwnerAgentMap — odUserId → agentId from the immutable stream', () => {
+  it('first-seen wins per user; tolerant of partial/empty events', () => {
+    const stream = { events: [
+      { odUserId: 'user-a', agentId: 'agent-a', symbol: 'NVDA' },
+      { odUserId: 'user-b', agentId: 'agent-b', symbol: 'AMD' },
+      { odUserId: 'user-a', agentId: 'agent-a', symbol: 'COIN' }, // dup — ignored
+      { odUserId: 'user-c' }, // no agentId — skipped
+    ] };
+    expect(buildOwnerAgentMap(stream)).toEqual({ 'user-a': 'agent-a', 'user-b': 'agent-b' });
+    expect(buildOwnerAgentMap(null)).toEqual({});
+    expect(buildOwnerAgentMap({ events: [] })).toEqual({});
   });
 });
 
@@ -723,7 +769,7 @@ describe('reconcileAllTournamentLedgers — the nightly pass', () => {
   it('ZERO GROUPS IS A CLEAN NO-OP (production inertness until P3+)', async () => {
     const { db, reads } = makeDb({});
     const summary = await reconcileAllTournamentLedgers(db, { now: NOW });
-    expect(summary).toEqual({ groups: 0, reconciled: 0, divergences: 0, staleCleared: 0, errors: 0 });
+    expect(summary).toEqual({ groups: 0, reconciled: 0, divergences: 0, staleCleared: 0, errors: 0, heldByGroup: {} });
     expect(reads).toHaveLength(0); // the status query touches no docs
   });
 

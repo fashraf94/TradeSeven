@@ -59,9 +59,17 @@ function battleGroup(overrides = {}) {
   };
 }
 
-function makeDb({ groupDoc = null } = {}) {
-  const captured = { updates: [] };
-  const groupRef = { get: async () => ({ exists: groupDoc != null, data: () => groupDoc }) };
+function makeDb({ groupDoc = null, stream = null, ledger = null } = {}) {
+  const captured = { updates: [], sets: [] };
+  // P6b: the user-side double-down reads the agent-draft stream (before the
+  // tx) and the agent ledger (inside it). Both default to non-existent, so
+  // tests that don't opt in see detection degrade to no events.
+  const streamRef = { get: async () => ({ exists: stream != null, data: () => stream }) };
+  const ledgerRef = { __ledger: true, get: async () => ({ exists: ledger != null, data: () => ledger }) };
+  const groupRef = {
+    get: async () => ({ exists: groupDoc != null, data: () => groupDoc }),
+    collection: (sub) => ({ doc: () => (sub === 'streams' ? streamRef : ledgerRef) }),
+  };
   const db = {
     collection: (name) => ({
       doc: () => (name === 'indexIntelligence'
@@ -71,6 +79,7 @@ function makeDb({ groupDoc = null } = {}) {
     runTransaction: async (fn) => fn({
       get: async (ref) => ref.get(),
       update: (_ref, data) => { captured.updates.push(data); },
+      set: (ref, data) => { captured.sets.push({ ledger: ref.__ledger === true, data }); },
     }),
   };
   return { db, captured };
@@ -293,6 +302,51 @@ describe('rider #4 — one atomic update with writer fields', () => {
     const { req, res } = makeReqRes();
     await handler(req, res);
     expect(captured.updates[0].feed).toHaveLength(1);
+  });
+});
+
+describe('D-1 user-side double-down (atomic with the flip)', () => {
+  it('a flip on a symbol the OWN agent holds writes a flipped event to BOTH the ledger and the group feed', async () => {
+    vi.setSystemTime(MARKET_CLOSED_T);
+    const { db, captured } = makeDb({
+      groupDoc: battleGroup(),
+      stream: { events: [{ odUserId: 'u1', agentId: 'agent-mine', symbol: 'NVDA' }] },
+      ledger: { held: { NVDA: { heldBy: 'agent-mine' } }, doubleDowns: [] },
+    });
+    h.db = db;
+    const { req, res } = makeReqRes();
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body.doubledDown).toBe(true);
+    // The ledger doubleDowns sibling got the side:'user' flipped event.
+    const ledgerSet = captured.sets.find(s => s.ledger);
+    expect(ledgerSet.data.doubleDowns).toEqual([{
+      kind: 'flipped', side: 'user', symbol: 'NVDA', agentId: 'agent-mine',
+      odUserId: 'u1', userDirection: 'short', from: 'long', to: 'short',
+      at: MARKET_CLOSED_T.toISOString(),
+    }]);
+    // The group feed got BOTH the flip and the double_down entry — one update.
+    expect(captured.updates).toHaveLength(1);
+    const feed = captured.updates[0].feed;
+    expect(feed.map(e => e.type)).toEqual(['flip', 'double_down']);
+    expect(feed[1]).toMatchObject({ type: 'double_down', kind: 'flipped', side: 'user', symbol: 'NVDA', odUserId: 'u1' });
+  });
+
+  it('a flip on a symbol held by a RIVAL agent is no double-down — nothing written to the ledger', async () => {
+    vi.setSystemTime(MARKET_CLOSED_T);
+    const { db, captured } = makeDb({
+      groupDoc: battleGroup(),
+      stream: { events: [{ odUserId: 'u1', agentId: 'agent-mine', symbol: 'NVDA' }] },
+      ledger: { held: { NVDA: { heldBy: 'agent-rival' } }, doubleDowns: [] },
+    });
+    h.db = db;
+    const { req, res } = makeReqRes();
+    await handler(req, res);
+
+    expect(res.body.doubledDown).toBe(false);
+    expect(captured.sets.filter(s => s.ledger)).toHaveLength(0); // contention near zero
+    expect(captured.updates[0].feed.map(e => e.type)).toEqual(['flip']);
   });
 });
 
