@@ -152,7 +152,10 @@ import RankCard from '../components/Tournament/RankCard';
 import GroupFeed from '../components/Tournament/GroupFeed';
 import SpectatorView from '../components/Tournament/SpectatorView';
 import Flat6BattleView from '../components/Tournament/Flat6BattleView';
+import ClaimFlipWindow from '../components/Tournament/ClaimFlipWindow';
+import RoundBoundaryView from '../components/Tournament/RoundBoundaryView';
 import useMyTournamentBattle from '../hooks/useMyTournamentBattle';
+import { resolveRoundBoundary } from '../utils/roundBoundary';
 import {
   subscribeGroup,
   subscribeClaims,
@@ -160,6 +163,7 @@ import {
   subscribeAgentDraftStream,
   subscribeAgentLedger,
   subscribeBracket,
+  subscribeRank,
 } from '../services/tournamentGroupService';
 import {
   GROUP_STATUS,
@@ -243,6 +247,14 @@ export default function TournamentDevScreen() {
 
   // P7 — participant battle view: the dev user's OWN flat6 battle, live.
   const { battle: devBattle } = useMyTournamentBattle(attachedGroupId);
+
+  // P7 (C) — the dev rank doc, so the round-boundary eliminated branch's
+  // rank/RP line is exercised on the dev verification surface.
+  const [devRank, setDevRank] = useState(null);
+  useEffect(() => {
+    if (!uid) { setDevRank(null); return undefined; }
+    return subscribeRank(rankDocId(uid, { dev: true }), setDevRank);
+  }, [uid]);
 
   const derivedBracketId = parseBracketGameId(group?.bracketGameId)?.bracketId ?? null;
 
@@ -769,6 +781,29 @@ export default function TournamentDevScreen() {
             } : null}
           />
         )}
+
+        {/* P7 (B) — the nightly claim/flip window (battle week). */}
+        {group && group.status === GROUP_STATUS.BATTLE && (
+          <ClaimFlipWindow group={group} uid={uid} />
+        )}
+
+        {/* P7 (C) — the round-boundary interstitial. On the dev screen it
+            renders whenever a completed bracket game resolves for this seat
+            (the localStorage ack is bypassed here so the founder can re-walk
+            advancer/eliminated/champion after each advancement). */}
+        {(() => {
+          const boundary = resolveRoundBoundary(bracket, uid);
+          if (!boundary) return null;
+          return (
+            <RoundBoundaryView
+              bracket={bracket}
+              uid={uid}
+              boundary={boundary}
+              rankDoc={devRank}
+              onContinue={() => appendLog(`round-boundary: ${boundary.kind} (round ${boundary.roundNumber}) acknowledged`)}
+            />
+          );
+        })()}
 
         {group && (
           <div style={{ ...card, display: 'flex', flexDirection: 'column', gap: 10 }}>
