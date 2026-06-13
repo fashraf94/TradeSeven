@@ -95,6 +95,7 @@ import {
   lobbyHumanIds,
   lobbyOpenSeatCount,
   lobbyHasMember,
+  selectActiveLobby,
   isoWeekString,
 } from './leagueTournament.js';
 // Real import, zero mocks (precedent: api/cron/process-draft-claims.test.js:10).
@@ -963,6 +964,28 @@ describe('lobby pure helpers', () => {
     expect(lobbyHasMember(lobby, 'a')).toBe(true);
     expect(lobbyHasMember(lobby, 'z')).toBe(false);
     expect(lobbyHasMember(null, 'a')).toBe(false);
+  });
+});
+
+describe('selectActiveLobby — the subscribeMyLobby selection + the lobby→group handoff', () => {
+  const open = { id: 'l1', status: LOBBY_STATUS.OPEN, updatedAt: '2026-06-10T10:00:00Z', members: [{ odUserId: 'me' }] };
+  const formed = { id: 'l2', status: LOBBY_STATUS.FORMED, updatedAt: '2026-06-10T12:00:00Z', members: [{ odUserId: 'me' }] };
+
+  it('returns the caller\'s OPEN/FORMING lobby; null when they aren\'t a member', () => {
+    expect(selectActiveLobby([open], 'me')?.id).toBe('l1');
+    expect(selectActiveLobby([open], 'someone-else')).toBeNull();
+    expect(selectActiveLobby([], 'me')).toBeNull();
+    expect(selectActiveLobby(null, 'me')).toBeNull();
+  });
+
+  it('the HANDOFF: a FORMED lobby is excluded → null (the group subscription takes over)', () => {
+    expect(selectActiveLobby([formed], 'me')).toBeNull();
+  });
+
+  it('picks the most-recently-updated when more than one is active', () => {
+    const older = { id: 'a', status: LOBBY_STATUS.OPEN, updatedAt: '2026-06-10T09:00:00Z', members: [{ odUserId: 'me' }] };
+    const newer = { id: 'b', status: LOBBY_STATUS.FORMING, updatedAt: '2026-06-10T11:00:00Z', members: [{ odUserId: 'me' }] };
+    expect(selectActiveLobby([older, newer], 'me').id).toBe('b');
   });
 });
 

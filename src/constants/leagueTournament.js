@@ -430,6 +430,21 @@ export function lobbyHasMember(lobby, odUserId) {
   return (lobby?.members ?? []).some(m => m.odUserId === odUserId);
 }
 
+/**
+ * Pick the caller's ACTIVE (still-waiting) lobby from a set of lobby docs (the
+ * basis for the client `subscribeMyLobby`). A lobby counts only while OPEN or
+ * FORMING and the caller is a member; the most-recently-updated wins when more
+ * than one matches. Returns the lobby doc or null. Pure — so the
+ * lobby→group handoff is unit-tested without Firestore: the instant a lobby
+ * reaches FORMED (its group now exists and surfaces via subscribeMyGroup), this
+ * returns null and the group state takes over. `docs` are { id, ...lobby }.
+ */
+export function selectActiveLobby(docs, odUserId) {
+  return (docs ?? [])
+    .filter(l => (l?.status === LOBBY_STATUS.OPEN || l?.status === LOBBY_STATUS.FORMING) && lobbyHasMember(l, odUserId))
+    .sort((a, b) => String(b?.updatedAt ?? '').localeCompare(String(a?.updatedAt ?? '')))[0] ?? null;
+}
+
 // The group-doc `feed` array's retention cap, shared by every feed writer
 // (the P1b rider-#4 flip feed and the P5 auto-commit entry) — one home so
 // the writers can never drift (P5 code-review convergence).

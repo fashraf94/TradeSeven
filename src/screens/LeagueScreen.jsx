@@ -27,6 +27,8 @@ import GroupFeed from '../components/Tournament/GroupFeed';
 import Flat6BattleView from '../components/Tournament/Flat6BattleView';
 import ClaimFlipWindow from '../components/Tournament/ClaimFlipWindow';
 import RoundBoundaryView from '../components/Tournament/RoundBoundaryView';
+import LeagueLobby from '../components/Tournament/LeagueLobby';
+import { LEAGUE_LOBBY_ENABLED } from '../config/featureFlags';
 import useMyTournamentBattle from '../hooks/useMyTournamentBattle';
 import { subscribeMyGroup, subscribeBracket, subscribeRank } from '../services/tournamentGroupService';
 import { resolveRoundBoundary } from '../utils/roundBoundary';
@@ -128,6 +130,17 @@ export default function LeagueScreen() {
   }
 
   if (!uid || !loaded || !group) {
+    // P10b — the lobby front door replaces the dead "no active group" poster
+    // for a signed-in, loaded player with no group, ONLY when the flag is on.
+    // Flag-off renders the poster below byte-unchanged (regression-safe); the
+    // signed-out / still-loading states keep their copy either way.
+    if (LEAGUE_LOBBY_ENABLED && uid && loaded && !group) {
+      return (
+        <div style={page}>
+          <LeagueLobby uid={uid} displayName={user?.displayName} />
+        </div>
+      );
+    }
     return (
       <div style={{ ...page, alignItems: 'center', justifyContent: 'center', textAlign: 'center' }}>
         <div style={{

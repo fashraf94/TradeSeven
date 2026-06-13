@@ -24,6 +24,7 @@ import {
   matchmakeJoin,
   formGroupFromLobby,
   quickPlay,
+  findLobbyByJoinCode,
   CPU_SEQUENCE_DOC_ID,
 } from './tournamentLobbyService.js';
 import {
@@ -388,6 +389,34 @@ describe('formGroupFromLobby — CPU-padded base-layer formation', () => {
     const { id } = await createLobby(db, { createdBy: 'human-1', now: NOW });
     await db.collection('tournamentLobby').doc(id).update({ status: LOBBY_STATUS.FORMED, groupId: null });
     await expect(formGroupFromLobby(db, id, { now: NOW })).rejects.toThrow('lobby_formed_without_group');
+  });
+});
+
+// ==================== JOIN-CODE RESOLUTION (P10b surface dependency) ====================
+
+describe('findLobbyByJoinCode — the typed/pasted private-invite path', () => {
+  it('resolves a 6-char code to its OPEN private lobby (case-insensitive)', async () => {
+    const { db } = withRankings();
+    const { id, doc } = await createLobby(db, { createdBy: 'host', mode: LOBBY_MODE.PRIVATE, now: NOW });
+    const hit = await findLobbyByJoinCode(db, `  ${doc.joinCode.toLowerCase()}  `);
+    expect(hit).not.toBeNull();
+    expect(hit.id).toBe(id);
+    expect(hit.lobby.joinCode).toBe(doc.joinCode);
+  });
+
+  it('returns null (honest no-match) for a typo\'d / unknown code — never throws', async () => {
+    const { db } = withRankings();
+    await createLobby(db, { createdBy: 'host', mode: LOBBY_MODE.PRIVATE, now: NOW });
+    await expect(findLobbyByJoinCode(db, 'ZZZZZZ')).resolves.toBeNull();
+    await expect(findLobbyByJoinCode(db, '')).resolves.toBeNull();
+    await expect(findLobbyByJoinCode(db, null)).resolves.toBeNull();
+  });
+
+  it('does NOT resolve a code whose lobby has already formed (only OPEN is joinable)', async () => {
+    const { db } = withRankings();
+    const { id, doc } = await createLobby(db, { createdBy: 'host', mode: LOBBY_MODE.PRIVATE, now: NOW });
+    await formGroupFromLobby(db, id, { now: NOW }); // → FORMED
+    await expect(findLobbyByJoinCode(db, doc.joinCode)).resolves.toBeNull();
   });
 });
 
