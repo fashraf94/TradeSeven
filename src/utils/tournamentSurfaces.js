@@ -21,6 +21,66 @@ const DD_VERB = {
   broken: 'broke the double-down on',
 };
 
+// P7 (B) — the claim-placement window, DISPLAY-ONLY mirror of the server's
+// getTournamentClaimWindow (api/_utils/tournamentTime.js:114-125). This drives
+// the countdown ONLY; it NEVER gates a submit — the server's 403 window_closed
+// is the sole authority on every claim. The minute boundaries and the
+// weekend/Friday-evening logic are reproduced here (the server helper can't be
+// imported client-side without pulling marketSchedule.js into the browser
+// bundle), and a parity test asserts this mirror matches the server across a
+// time grid incl. a DST boundary, a Friday evening, and a weekend.
+const CLAIM_WINDOW_OPEN_MIN = 16 * 60;       // 4:00 PM ET
+const CLAIM_WINDOW_CLOSE_MIN = 9 * 60 + 24;  // 9:24 AM ET (inclusive)
+const WEEKEND_DAYS = new Set(['Sat', 'Sun']);
+const CLAIM_WINDOW_FORMATTER = new Intl.DateTimeFormat('en-US', {
+  timeZone: 'America/New_York',
+  hourCycle: 'h23',
+  weekday: 'short',
+  hour: '2-digit',
+  minute: '2-digit',
+});
+
+function claimWindowEtParts(now) {
+  const parts = CLAIM_WINDOW_FORMATTER.formatToParts(now);
+  const get = (type) => parts.find(p => p.type === type).value;
+  const hour = Number(get('hour'));
+  const minute = Number(get('minute'));
+  return {
+    weekday: get('weekday'),
+    minutes: hour * 60 + minute,
+    etTime: `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`,
+  };
+}
+
+/**
+ * Display state for the claim window. `{ isOpen, etTime, reason }` mirrors the
+ * server byte-for-byte (parity-locked); `countdownMinutes` + `countdownTo` are
+ * display sugar (wall-clock ET minutes to the next boundary — to the 09:24
+ * close when open, to the 16:00 open when in market hours). Pure.
+ */
+export function getClaimWindowDisplay(now = new Date()) {
+  const { weekday, minutes, etTime } = claimWindowEtParts(now);
+  if (WEEKEND_DAYS.has(weekday)) {
+    return { isOpen: false, etTime, reason: 'weekend', countdownMinutes: null, countdownTo: null };
+  }
+  if (weekday === 'Fri' && minutes >= CLAIM_WINDOW_OPEN_MIN) {
+    return { isOpen: false, etTime, reason: 'friday_evening', countdownMinutes: null, countdownTo: null };
+  }
+  const isOpen = minutes >= CLAIM_WINDOW_OPEN_MIN || minutes <= CLAIM_WINDOW_CLOSE_MIN;
+  let countdownTo = null;
+  let countdownMinutes = null;
+  if (isOpen) {
+    countdownTo = 'close';
+    countdownMinutes = minutes <= CLAIM_WINDOW_CLOSE_MIN
+      ? CLAIM_WINDOW_CLOSE_MIN - minutes              // morning: close is later today
+      : (24 * 60 - minutes) + CLAIM_WINDOW_CLOSE_MIN; // evening: close is tomorrow 09:24
+  } else {
+    countdownTo = 'open';                              // market_hours: open is today 16:00
+    countdownMinutes = CLAIM_WINDOW_OPEN_MIN - minutes;
+  }
+  return { isOpen, etTime, reason: isOpen ? null : 'market_hours', countdownMinutes, countdownTo };
+}
+
 /**
  * The one-line text for a group-feed event (the GroupFeed renderer's pure
  * core — kept node-clean so it is unit-tested without a DOM). Cases: flip,

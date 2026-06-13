@@ -17,7 +17,7 @@
 // query is subscribeMyGroup (groupMembers array-contains — if the console
 // prompts for an index during smoke, FLAG it, never improvise).
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Trophy, Swords } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { useUser } from '../contexts/UserContext';
@@ -25,11 +25,21 @@ import BoardCommitFlow from '../components/Tournament/BoardCommitFlow';
 import DraftPlaybackTheater from '../components/Tournament/DraftPlaybackTheater';
 import GroupFeed from '../components/Tournament/GroupFeed';
 import Flat6BattleView from '../components/Tournament/Flat6BattleView';
+import ClaimFlipWindow from '../components/Tournament/ClaimFlipWindow';
+import RoundBoundaryView from '../components/Tournament/RoundBoundaryView';
 import useMyTournamentBattle from '../hooks/useMyTournamentBattle';
-import { subscribeMyGroup } from '../services/tournamentGroupService';
+import { subscribeMyGroup, subscribeBracket, subscribeRank } from '../services/tournamentGroupService';
+import { resolveRoundBoundary } from '../utils/roundBoundary';
+import {
+  isRoundBoundaryAcknowledged,
+  acknowledgeRoundBoundary,
+  rememberBracketGameId,
+  getRememberedBracketGameId,
+} from '../utils/roundBoundaryAck';
 import {
   GROUP_STATUS,
   parseBracketGameId,
+  rankDocId,
   getWeeklyComposite,
   getWeeklyScore,
   round2,
@@ -55,6 +65,37 @@ export default function LeagueScreen() {
   // allows it); null until a battle week is underway.
   const { battle: myBattle } = useMyTournamentBattle(group?.id);
 
+  // C — the round-boundary read surface. The bracketId is recovered from the
+  // current group OR (for an eliminated player, whose subscribeMyGroup returns
+  // null) the last-seen bracket game in localStorage.
+  const [bracket, setBracket] = useState(null);
+  const [rankDoc, setRankDoc] = useState(null);
+  const [ackedGameId, setAckedGameId] = useState(null);
+
+  useEffect(() => { rememberBracketGameId(group?.bracketGameId); }, [group?.bracketGameId]);
+
+  const bracketGameId = group?.bracketGameId ?? getRememberedBracketGameId();
+  const bracketId = bracketGameId ? parseBracketGameId(bracketGameId)?.bracketId : null;
+
+  useEffect(() => {
+    if (!bracketId) { setBracket(null); return undefined; }
+    return subscribeBracket(bracketId, setBracket);
+  }, [bracketId]);
+
+  useEffect(() => {
+    if (!uid) { setRankDoc(null); return undefined; }
+    return subscribeRank(rankDocId(uid), setRankDoc);
+  }, [uid]);
+
+  const boundary = useMemo(() => resolveRoundBoundary(bracket, uid), [bracket, uid]);
+  const showBoundary = !!boundary
+    && ackedGameId !== boundary.gameId
+    && !isRoundBoundaryAcknowledged(boundary.gameId);
+
+  const dismissBoundary = () => {
+    if (boundary) { acknowledgeRoundBoundary(boundary.gameId); setAckedGameId(boundary.gameId); }
+  };
+
   const page = {
     minHeight: '100vh',
     background: tokens.bgApp,
@@ -67,6 +108,24 @@ export default function LeagueScreen() {
     maxWidth: 560,
     margin: '0 auto',
   };
+
+  // The round-boundary interstitial takes priority — it must show even for an
+  // ELIMINATED player (group === null), so it's checked BEFORE the no-group
+  // poster. An advancer dismisses it into the forming → BoardCommitFlow route
+  // below; the eliminated/champion dismiss back to the season.
+  if (showBoundary) {
+    return (
+      <div style={page}>
+        <RoundBoundaryView
+          bracket={bracket}
+          uid={uid}
+          boundary={boundary}
+          rankDoc={rankDoc}
+          onContinue={dismissBoundary}
+        />
+      </div>
+    );
+  }
 
   if (!uid || !loaded || !group) {
     return (
@@ -123,6 +182,8 @@ export default function LeagueScreen() {
           compositeContext={compositeContext}
         />
       )}
+
+      {!isForming && <ClaimFlipWindow group={group} uid={uid} />}
 
       {!isForming && (
         <DraftPlaybackTheater groupId={group.id} group={group} uid={uid} />
