@@ -94,4 +94,4 @@ export const TOURNAMENT_TAB_ENABLED = true;
  * smoke + the new firestore.rules `tournamentLobby` block is deployed in the
  * Firebase Console (else the client lobby read 403s).
  */
-export const LEAGUE_LOBBY_ENABLED = false;
+export const LEAGUE_LOBBY_ENABLED = true;
