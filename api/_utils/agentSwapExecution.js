@@ -47,6 +47,14 @@ export function validateTradeDecision(decision, battle) {
       errors.push(`symbolIn "${decision.symbolIn}" not found in bench or watchlist`);
     }
 
+    // 2b. [VWAP Floor B5] Identity/duplicate mirror of the executeSwapServer
+    // transaction invariants — pre-flags bad Haiku decisions before execution.
+    if (decision.symbolIn === decision.symbolOut) {
+      errors.push(`symbolIn "${decision.symbolIn}" cannot replace itself`);
+    } else if (findAssetInPortfolio(battle.portfolio, decision.symbolIn)) {
+      errors.push(`symbolIn "${decision.symbolIn}" already occupies an active portfolio slot`);
+    }
+
     // 3. Check 24h cooldown on bench asset (hotBench stocks have no cooldown)
     if (benchAsset?.cooldownUntil) {
       const cooldownEnd = new Date(benchAsset.cooldownUntil);
@@ -157,6 +165,17 @@ export async function executeSwapServer(db, battleId, battle, resolvedTier, reso
     const now = new Date().toISOString();
     const outSymbol = outAsset.symbol;
     const inSymbol = benchAsset.symbol;
+
+    // [VWAP Floor B5] Identity/duplicate invariants, enforced at the
+    // transaction so all call sites inherit them (June 11: LRCX→LRCX
+    // self-swap, PANW occupying three slots).
+    if (inSymbol === outSymbol) {
+      throw new Error(`Invalid swap: ${inSymbol} cannot replace itself`);
+    }
+    const duplicateSlot = findAssetInPortfolio(liveData.portfolio, inSymbol);
+    if (duplicateSlot) {
+      throw new Error(`Invalid swap: ${inSymbol} already occupies an active ${duplicateSlot.tier} slot`);
+    }
 
     // Prefer live beacon prices over REST-fetched (15-min delayed) prices
     const beacon = liveData.livePriceBeacon;
@@ -300,10 +319,22 @@ export async function executeSwapServer(db, battleId, battle, resolvedTier, reso
       updatedBenchStocks = (liveData.portfolio.bench?.stocks || []).filter(s => s.symbol !== inSymbol);
       updatedBenchCrypto = outgoingForBench;
     } else {
-      // Stock swap: outgoing stock added to bench.stocks, remove incoming
-      updatedBenchStocks = (liveData.portfolio.bench?.stocks || [])
-        .filter(s => s.symbol !== inSymbol)
-        .concat([outgoingForBench]);
+      // Stock swap: outgoing stock returns to bench.stocks, remove incoming.
+      // [VWAP Floor B4] Replace-or-append: if the outgoing symbol already has
+      // a bench entry (revolving-door round trip), replace it in place —
+      // refreshing cooldownUntil — instead of appending a duplicate (June 11:
+      // bench grew 3→11 with a duplicate LRCX). WATCH ITEM: the bench can
+      // still grow via synthetic-sourced swap-ins; accepted at launch, the
+      // cascade guard bounds the rate.
+      const benchWithoutIn = (liveData.portfolio.bench?.stocks || [])
+        .filter(s => s.symbol !== inSymbol);
+      const existingIdx = benchWithoutIn.findIndex(s => s.symbol === outSymbol);
+      if (existingIdx >= 0) {
+        benchWithoutIn[existingIdx] = outgoingForBench;
+        updatedBenchStocks = benchWithoutIn;
+      } else {
+        updatedBenchStocks = benchWithoutIn.concat([outgoingForBench]);
+      }
       // If bench crypto was the incoming asset, clear it
       updatedBenchCrypto = liveData.portfolio.bench?.crypto?.symbol === inSymbol
         ? null

@@ -8,7 +8,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
 import { isMarketOpen, getETDate, formatDateString } from '../_utils/marketSchedule.js';
-import { getStockAnalysisData, fetchIntradayBatch, filterToLatestSession } from '../_utils/marketDataCache.js';
+import { getStockAnalysisData, fetchIntradayBatch, fetchIntradayCandles, filterToLatestSession } from '../_utils/marketDataCache.js';
 import { resolveBadgeBaseline } from '../_utils/baselineValidation.js';
 import { findActiveAgentBattles } from '../_utils/agentBattleService.js';
 import { unionEquippedIntoHotBench } from '../_utils/watchlistEquip.js';
@@ -45,8 +45,9 @@ import { generateAnticipation } from '../_utils/voiceLayerAnticipation.js';
 import { buildTechnicalSnapshot } from '../_utils/buildTechnicalSnapshot.js';
 import { applyGuardrails } from '../_utils/agentGuardrails.js';
 import { classifyStockRegime, classifyMarketPosture, getPresetAdjustedStrategies } from '../_utils/agentRegimeClassifier.js';
-import { evaluateRisk, calculate5minSMA20, pickEmergencyReplacement, pickSwapReplacementCandidate, updateStagnationCounter, findPortfolioSlot, clearsHurdleFloor, getRecentSwapCount, EMERGENCY_BYPASS_REASONS, buildSwapReceiptSource } from '../_utils/agentRiskManager.js';
+import { evaluateRisk, calculate5minSMA20, pickSwapReplacementCandidate, updateStagnationCounter, findPortfolioSlot, clearsHurdleFloor, getRecentSwapCount, EMERGENCY_BYPASS_REASONS, buildSwapReceiptSource } from '../_utils/agentRiskManager.js';
 import { getPresetConfig } from '../_utils/agentPresetConfig.js';
+import { isVwapSessionUsable, isVwapStrike, pruneCounterMaps, seedVwapFireGuard, isReplacementQualified, VWAP_CASCADE_GUARD_N, CASCADE_QUALIFY_TIMEOUT_MS } from '../_utils/agentVwapFloor.js';
 import { getArchetypeConfig, resolveHftConfig } from '../_utils/agentArchetypeConfig.js';
 import { finalizeCronState } from '../_utils/agentCronState.js';
 // P4 — the tournament discriminator of record (code-review finding: never a
@@ -311,6 +312,47 @@ async function reserveTournamentSymbolIn(db, tournamentCtx, battle, symbol) {
 // P2: statusFeed entry for the two designed risk-loop exclusivity beats
 // (emptied pool / reserve lost) — one builder so the 'tournament_pool_empty'
 // event shape can't drift between its two sites.
+// [VWAP Floor B6] Cascade-guard qualification: once the daily fire counter
+// crosses VWAP_CASCADE_GUARD_N, every further vwap_failure replacement must
+// prove on FRESH intraday data that it isn't itself below the dead-band —
+// otherwise the floor is just rotating one weak name into another. Fail-closed:
+// fetch error, timeout, stale session, or thin session all disqualify
+// (skip-and-hold; bust/trail still protect the position). Memoized per tick so
+// re-picks of the same symbol don't re-fetch. Race-without-abort is accepted
+// here (unlike the Haiku hard-abort): an orphaned EODHD GET costs nothing and
+// bills nothing.
+async function qualifyCascadeReplacement(symbol, { todayET, deadBandPct, memo }) {
+  if (memo.has(symbol)) return memo.get(symbol);
+  let qualified = false;
+  let timeoutId = null;
+  try {
+    const candles = await Promise.race([
+      fetchIntradayCandles(symbol, { interval: '5m' }),
+      new Promise((_, reject) => {
+        timeoutId = setTimeout(() => reject(new Error('qualification fetch timeout')), CASCADE_QUALIFY_TIMEOUT_MS);
+      }),
+    ]);
+    if (Array.isArray(candles) && candles.length > 0) {
+      const { candles: sessionCandles, sessionDate } = filterToLatestSession(candles);
+      const vwapResult = calculateVWAP(sessionCandles);
+      qualified = !!vwapResult && isReplacementQualified({
+        sessionDate,
+        sessionCandleCount: sessionCandles.length,
+        vwapDeviation: vwapResult.vwapDeviation,
+        todayET,
+        deadBandPct,
+      });
+    }
+  } catch (err) {
+    console.warn(`${LOG_PREFIX} Cascade qualification failed for ${symbol} (${err.message}) — treating as UNQUALIFIED`);
+    qualified = false;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+  memo.set(symbol, qualified);
+  return qualified;
+}
+
 function buildPoolEmptyFeedEntry({ message, symbolOut, symbolIn = null, regime = null, score, reason }) {
   return {
     timestamp: new Date().toISOString(),
@@ -626,6 +668,11 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
         stagnationTicks: battle.cronState?.stagnationTicks || {},
         lastTickPrice: battle.cronState?.lastTickPrice || {},
         lastTickTimestamp: battle.cronState?.lastTickTimestamp || {},
+        // Merge seam (VWAP branch ⇄ P4): the VWAP floor added vwapFireGuard to
+        // finalizeCronState, which now writes it unconditionally. CPU passive
+        // battles must round-trip the existing guard so the helper never persists
+        // `undefined` (Firestore rejects it — ignoreUndefinedProperties is unset).
+        vwapFireGuard: battle.cronState?.vwapFireGuard || {},
       });
       await battleRef.update(scoreUpdate);
       summary.evaluated++;
@@ -670,7 +717,12 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
         if (candles && candles.length > 0) {
           const { candles: sessionCandles, sessionDate } = filterToLatestSession(candles);
           const vwapResult = calculateVWAP(sessionCandles);
-          if (vwapResult) {
+          // [VWAP Floor A1] Freshness/arming gate: a stale session (EODHD
+          // returning yesterday's candles) or an ultra-thin one (<3 candles
+          // at the open) publishes NO vwap entry at all, so the floor cannot
+          // strike and TRAIL_STOP disarms — identical to the existing
+          // missing-intraday path. Bust + guardrails + Haiku still cover.
+          if (vwapResult && isVwapSessionUsable({ sessionDate, todayET, sessionCandleCount: sessionCandles.length })) {
             const sma20_5m = calculate5minSMA20(candles);
             momentumData.vwap[symbol] = { ...vwapResult, sma20_5m, sessionDate };
           }
@@ -783,6 +835,7 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
 
       const hotBenchSet = new Set(hotBenchSymbols);
       const existingBenchSet = new Set(benchSymbols);
+      const activePortfolioSet = new Set(portfolioSymbols);
 
       for (const stock of stockRankingsArray) {
         if (portfolioSymbols.includes(stock.symbol) || benchSymbols.includes(stock.symbol) || hotBenchSet.has(stock.symbol)) {
@@ -797,6 +850,9 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
         // stale, so rival-held symbols are re-checked here before they can
         // become swap-in candidates via the bench merge below.
         if (hotBenchSet.has(stock.symbol) && !existingBenchSet.has(stock.symbol)
+            // [VWAP Floor B3] Never offer an actively-held symbol as a swap-in
+            // candidate via the synthetic bench (June 11: PANW triple-slot).
+            && !activePortfolioSet.has(stock.symbol)
             && (!tournamentCtx || !tournamentCtx.heldByOthers.has(stock.symbol))) {
           hotBenchAssetMap[stock.symbol] = {
             symbol: stock.symbol,
@@ -903,6 +959,16 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
     const stagnationTicks = { ...(battle.cronState?.stagnationTicks || {}) };
     const lastTickPrice = { ...(battle.cronState?.lastTickPrice || {}) };
     const lastTickTimestamp = { ...(battle.cronState?.lastTickTimestamp || {}) };
+    // [VWAP Floor B1] Counter hygiene: drop keys for symbols no longer held,
+    // so a symbol swapped out and later re-entered starts at zero instead of
+    // inheriting a stale streak (June 11: VLO/XRP counters survived 6 swaps).
+    // Also covers swaps landed outside this loop (proposal approval/expiry,
+    // gameplan) by the next tick.
+    pruneCounterMaps([vwapTicks, stagnationTicks, lastTickPrice, lastTickTimestamp], new Set(portfolioSymbols));
+    // [VWAP Floor B6] Daily vwap_failure fire counter (resets on ET date
+    // rollover) + this tick's qualification memo.
+    const vwapFireGuard = seedVwapFireGuard(battle.cronState?.vwapFireGuard, todayET);
+    const cascadeQualifyMemo = new Map();
     const nowMs = Date.now();
 
     // Forge Enforcement Keystone V1.4 §4.1 — resolve the archetype→physics knobs
@@ -933,8 +999,10 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
       const entryPrice = asset?.swapPrice || startingPrices[score.symbol] || 0;
       const vwapInfo = momentumData.vwap[score.symbol] || null;
 
-      // Update VWAP tick counter
-      if (vwapInfo && vwapInfo.vwapDeviation < 0) {
+      // Update VWAP tick counter.
+      // [VWAP Floor A2] A strike requires magnitude below the preset
+      // dead-band, not mere negativity — hovering at -0.05% is noise.
+      if (vwapInfo && isVwapStrike(vwapInfo.vwapDeviation, presetConfig.risk.vwapDeadBandPct ?? 0.5)) {
         vwapTicks[score.symbol] = (vwapTicks[score.symbol] || 0) + 1;
       } else {
         vwapTicks[score.symbol] = 0;
@@ -1023,14 +1091,18 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
       // clearsHurdleFloor; the wrapper returning null (no candidate clears) is the
       // rotation VETO (§4.2 / D3 detection-vs-execution split). Emergency reasons
       // bypass the floor (clearsHurdleFloor returns clears:true at step 1).
+      // [VWAP Floor B2] Both branches route through pickSwapReplacementCandidate
+      // so emergency exits inherit the held/self exclusion too (June 11:
+      // LRCX→LRCX self-swap, PANW triple-slot). Computed fresh per pick — it
+      // must see slots updated by earlier swaps this tick (refreshBattleFromDoc).
+      const heldSymbols = new Set(flattenPortfolioServer(battle.portfolio).map(a => a.symbol).filter(Boolean));
+      if (tournamentCtx) {
+        // P2: cross-agent held set rides the picker's existing exclusion
+        // parameter (Spec §1.2) — belt over the bench filter's suspenders.
+        for (const heldSymbol of tournamentCtx.heldByOthers) heldSymbols.add(heldSymbol);
+      }
       let replacement;
       if (riskResult.reason === 'stagnation') {
-        const heldSymbols = new Set(flattenPortfolioServer(battle.portfolio).map(a => a.symbol).filter(Boolean));
-        if (tournamentCtx) {
-          // P2: cross-agent held set rides the picker's existing exclusion
-          // parameter (Spec §1.2) — belt over the bench filter's suspenders.
-          for (const heldSymbol of tournamentCtx.heldByOthers) heldSymbols.add(heldSymbol);
-        }
         const activeDailyPct = (prices[score.symbol]?.changePercent || 0) / 100;
         replacement = pickSwapReplacementCandidate({
           benchAssets: allBench,
@@ -1046,7 +1118,16 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
           }).clears,
         });
       } else {
-        replacement = pickEmergencyReplacement(allBench, prices, asset?.isCrypto === true);
+        // Emergency reasons (bust/vwap/trail) bypass quality by design —
+        // clearsHurdleFloor returns clears:true at step 1 for them, so
+        // omitting clearsQuality (default pass-through) is equivalent and
+        // keeps null-on-empty-pool the only skip source.
+        replacement = pickSwapReplacementCandidate({
+          benchAssets: allBench,
+          prices,
+          outgoingIsCrypto: asset?.isCrypto === true,
+          heldSymbols,
+        });
       }
 
       if (!replacement) {
@@ -1062,6 +1143,23 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
             score: Math.round(currentScore * 100) / 100,
             reason: riskResult.reason,
           }));
+        } else {
+          // [VWAP Floor B7] Regular battles get the same visibility — a
+          // wanted-but-impossible exit is a feed beat, never just a log line.
+          statusFeedEntries.push({
+            timestamp: new Date().toISOString(),
+            message: `Wanted out of ${score.symbol} — no eligible replacement (bench on cooldown or empty).`,
+            pvpContext: null,
+            action: 'pool_empty',
+            regime: stockRegimes[score.symbol] || null,
+            score: Math.round(currentScore * 100) / 100,
+            citedRules: [riskResult.reason],
+            triggeredBy: `risk_${riskResult.reason}`,
+            source: 'risk_manager',
+            evalId: null,
+            symbolOut: score.symbol,
+            symbolIn: null,
+          });
         }
         continue;
       }
@@ -1070,6 +1168,35 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
       if (!slot) {
         console.warn(`${LOG_PREFIX} Could not find portfolio slot for ${score.symbol}`);
         continue;
+      }
+
+      // [VWAP Floor B6] Cascade guard: after N vwap_failure fires today, each
+      // further fire must qualify its replacement on fresh intraday data —
+      // otherwise hold. Guard-active only: zero extra fetches on a normal day.
+      if (riskResult.reason === 'vwap_failure' && vwapFireGuard.count >= VWAP_CASCADE_GUARD_N) {
+        const qualified = await qualifyCascadeReplacement(replacement.symbol, {
+          todayET,
+          deadBandPct: presetConfig.risk.vwapDeadBandPct ?? 0.5,
+          memo: cascadeQualifyMemo,
+        });
+        if (!qualified) {
+          console.error(`${LOG_PREFIX} CASCADE GUARD ACTIVE for ${battle.id}: holding ${score.symbol} — ${replacement.symbol} unqualified after ${vwapFireGuard.count} vwap fires today`);
+          statusFeedEntries.push({
+            timestamp: new Date().toISOString(),
+            message: `Cascade guard active — holding ${score.symbol} despite VWAP failure; no qualified replacement.`,
+            pvpContext: null,
+            action: 'cascade_guard_hold',
+            regime: stockRegimes[score.symbol] || null,
+            score: Math.round(currentScore * 100) / 100,
+            citedRules: ['vwap_cascade_guard'],
+            triggeredBy: 'risk_vwap_failure',
+            source: 'risk_manager',
+            evalId: null,
+            symbolOut: score.symbol,
+            symbolIn: replacement.symbol,
+          });
+          continue;
+        }
       }
 
       // P2: set after a successful reserve so the catch below can run the
@@ -1182,12 +1309,40 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
 
         summary.swapped++;
 
+        // [VWAP Floor B6] Count the fire live within the tick so the Nth fire
+        // of a cascade sees the prior N-1.
+        if (riskResult.reason === 'vwap_failure') vwapFireGuard.count++;
+
+        // [VWAP Floor B1b] Reset the incoming symbol's in-memory counters so
+        // the finalizeCronState flush later this tick doesn't persist a stale
+        // streak onto the fresh position (the transaction's own reset would
+        // otherwise be overwritten by these working copies).
+        vwapTicks[replacement.symbol] = 0;
+        stagnationTicks[replacement.symbol] = 0;
+
         // Re-read battle doc after swap for accurate state in subsequent
         // processing (re-applies the tournament candidate filter — the
         // persisted doc is unfiltered).
         await refreshBattleFromDoc(battleRef, battle, tournamentCtx);
       } catch (err) {
         console.error(`${LOG_PREFIX} Risk swap failed for ${score.symbol}:`, err.message);
+        // [VWAP Floor B7] Feed-visible skip: a deterministically-throwing
+        // candidate (e.g. a rejected duplicate) must not serially block
+        // protective exits unobserved.
+        statusFeedEntries.push({
+          timestamp: new Date().toISOString(),
+          message: `Risk exit of ${score.symbol} failed: ${String(err.message || err).slice(0, 140)}`,
+          pvpContext: null,
+          action: 'risk_swap_failed',
+          regime: stockRegimes[score.symbol] || null,
+          score: Math.round(currentScore * 100) / 100,
+          citedRules: [riskResult.reason],
+          triggeredBy: `risk_${riskResult.reason}`,
+          source: 'risk_manager',
+          evalId: null,
+          symbolOut: score.symbol,
+          symbolIn: replacement?.symbol || null,
+        });
         // P2: compensating release (the reserve landed but the swap didn't).
         await releaseTournamentReservation(db, tournamentCtx, reservedSymbolIn);
       }
@@ -1197,7 +1352,7 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
     const proposalHandled = await handlePendingProposal(db, battleRef, battle, prices, statusFeedEntries, summary, currentScore, tournamentCtx);
     if (proposalHandled === 'skip_haiku') {
       // Proposal is pending and not expired — write scores/risk but skip trigger gate + Haiku
-      finalizeCronState(scoreUpdate, { vwapTicks, intradayMomentum: momentumData.vwap, stagnationTicks, lastTickPrice, lastTickTimestamp });
+      finalizeCronState(scoreUpdate, { vwapTicks, intradayMomentum: momentumData.vwap, stagnationTicks, lastTickPrice, lastTickTimestamp, vwapFireGuard });
       const existingFeed = battle.statusFeed || [];
       scoreUpdate.statusFeed = [...existingFeed, ...statusFeedEntries].slice(-STATUS_FEED_CAP);
       await battleRef.update(scoreUpdate);
@@ -1209,7 +1364,7 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
     // ---- Gameplan meeting lifecycle check (after proposals, before triggers) ----
     const gameplanHandled = await handleGameplanMeeting(db, battleRef, battle, prices, statusFeedEntries, summary, pendingNarrations, tournamentCtx);
     if (gameplanHandled === 'skip_haiku') {
-      finalizeCronState(scoreUpdate, { vwapTicks, intradayMomentum: momentumData.vwap, stagnationTicks, lastTickPrice, lastTickTimestamp });
+      finalizeCronState(scoreUpdate, { vwapTicks, intradayMomentum: momentumData.vwap, stagnationTicks, lastTickPrice, lastTickTimestamp, vwapFireGuard });
       const existingFeed = battle.statusFeed || [];
       scoreUpdate.statusFeed = [...existingFeed, ...statusFeedEntries].slice(-STATUS_FEED_CAP);
       await battleRef.update(scoreUpdate);
@@ -1231,7 +1386,7 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
         scoreUpdate.gameplanMeeting = gameplanTrigger;
         scoreUpdate['cronState.lastGameplanDate'] = todayET;
         // Write and skip Haiku — gameplan IS the evaluation
-        finalizeCronState(scoreUpdate, { vwapTicks, intradayMomentum: momentumData.vwap, stagnationTicks, lastTickPrice, lastTickTimestamp });
+        finalizeCronState(scoreUpdate, { vwapTicks, intradayMomentum: momentumData.vwap, stagnationTicks, lastTickPrice, lastTickTimestamp, vwapFireGuard });
         const existingFeed = battle.statusFeed || [];
         scoreUpdate.statusFeed = [...existingFeed, ...statusFeedEntries].slice(-STATUS_FEED_CAP);
         await battleRef.update(scoreUpdate);
@@ -1308,7 +1463,7 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
       // triggerGateSkipCount is blocked: the field is part of the fenced
       // createAgentBattle doc shape (agentBattleService.js cronState init).
       scoreUpdate['cronState.triggerGatePassCount'] = (battle.cronState?.triggerGatePassCount || 0) + 1;
-      finalizeCronState(scoreUpdate, { vwapTicks, intradayMomentum: momentumData.vwap, stagnationTicks, lastTickPrice, lastTickTimestamp });
+      finalizeCronState(scoreUpdate, { vwapTicks, intradayMomentum: momentumData.vwap, stagnationTicks, lastTickPrice, lastTickTimestamp, vwapFireGuard });
       if (statusFeedEntries.length > 0) {
         const existingFeed = battle.statusFeed || [];
         scoreUpdate.statusFeed = [...existingFeed, ...statusFeedEntries].slice(-STATUS_FEED_CAP);
@@ -1651,6 +1806,13 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
             });
 
             summary.swapped++;
+
+            // [VWAP Floor B1b] Same in-memory counter reset as the risk-swap
+            // branch — keep the incoming symbol's streak from being persisted
+            // by this tick's finalizeCronState flush.
+            const haikuInSymbol = swapResult.closedTrade?.symbolIn || haikuResult.symbolIn;
+            vwapTicks[haikuInSymbol] = 0;
+            stagnationTicks[haikuInSymbol] = 0;
           } catch (swapErr) {
             console.error(`${LOG_PREFIX} Swap execution failed for battle ${battle.id}:`, swapErr.message);
             validationErrors.push(`Swap execution failed: ${swapErr.message}`);
@@ -1945,7 +2107,7 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
     // Shared cron state (lastEvaluatedAt / evaluatingAt / vwapTicks /
     // intradayMomentum). `now` is passed so lastEvaluatedAt === lastTriggeredAt,
     // preserving prior behavior exactly.
-    finalizeCronState(finalUpdate, { vwapTicks, intradayMomentum: momentumData.vwap, now, stagnationTicks, lastTickPrice, lastTickTimestamp });
+    finalizeCronState(finalUpdate, { vwapTicks, intradayMomentum: momentumData.vwap, now, stagnationTicks, lastTickPrice, lastTickTimestamp, vwapFireGuard });
 
     // Write pending proposal if mode branching created one
     if (pendingProposalUpdate) {
@@ -2145,6 +2307,9 @@ async function handlePendingProposal(db, battleRef, battle, prices, statusFeedEn
           // approved proposals get a Gemma narration in chat. Dormant under
           // today's autopilot launch guard — handlePendingProposal short-
           // circuits autopilot mode to auto_executed without execution.
+          // [VWAP Floor B1b] Also dormant: the in-memory counter reset done at
+          // the live swap sites is skipped here (maps live in processAgentBattle
+          // scope); the tick-start prune covers this path by the next tick.
           const approvedSwapResult = await executeSwapServer(
             db, battle.id, battle,
             proposal.tier, proposal.slotIndex,
@@ -2251,6 +2416,8 @@ async function handlePendingProposal(db, battleRef, battle, prices, statusFeedEn
         // TODO(post-launch authority modes): same as the 'approved' branch
         // above — capture closedTrade + push to pendingNarrations when
         // co-pilot mode returns. Dormant today under autopilot launch guard.
+        // [VWAP Floor B1b] In-memory counter reset also skipped here (see
+        // 'approved' branch note) — tick-start prune covers by next tick.
         const expiredSwapResult = await executeSwapServer(
           db, battle.id, battle,
           proposal.tier, proposal.slotIndex,
@@ -2354,6 +2521,8 @@ async function handleGameplanMeeting(db, battleRef, battle, prices, statusFeedEn
         // repeated gameplan swaps on the same symbol pair (mirrors the
         // risk-triggered evalId suffix pattern).
         const gameplanEvalId = `gameplan_${swap.symbolOut}_${swap.symbolIn}_${Date.now()}`;
+        // [VWAP Floor B1b] In-memory counter reset skipped here too (separate
+        // fn, launch-guarded path) — tick-start prune covers by next tick.
         const gameplanSwapResult = await executeSwapServer(
           db, battle.id, battle,
           slot.tier, slot.slotIndex,

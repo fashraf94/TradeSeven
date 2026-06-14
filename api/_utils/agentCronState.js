@@ -28,9 +28,11 @@
  * @param {Object} [state.stagnationTicks] - per-symbol Knob-A stagnation counters (§4.2)
  * @param {Object} [state.lastTickPrice] - per-symbol last-tick price (D2 comparison)
  * @param {Object} [state.lastTickTimestamp] - per-symbol last-tick epoch-ms (tick-age guard)
+ * @param {Object} [state.vwapFireGuard] - per-battle daily vwap_failure fire counter
+ *   ({ date, count }) for the cascade guard (VWAP Floor B6)
  * @returns {Object} the same `update` object, with shared cron-state fields set
  */
-export function finalizeCronState(update, { vwapTicks, intradayMomentum, now, stagnationTicks, lastTickPrice, lastTickTimestamp } = {}) {
+export function finalizeCronState(update, { vwapTicks, intradayMomentum, now, stagnationTicks, lastTickPrice, lastTickTimestamp, vwapFireGuard } = {}) {
   update['cronState.lastEvaluatedAt'] = now || new Date().toISOString();
   update['cronState.evaluatingAt'] = null; // always release the evaluating lock
   update['cronState.vwapTicks'] = vwapTicks;
@@ -40,5 +42,8 @@ export function finalizeCronState(update, { vwapTicks, intradayMomentum, now, st
   update['cronState.stagnationTicks'] = stagnationTicks;
   update['cronState.lastTickPrice'] = lastTickPrice;
   update['cronState.lastTickTimestamp'] = lastTickTimestamp;
+  // VWAP Floor B6 — cascade-guard daily fire counter, persisted in ONE place
+  // so all 5 flush sites carry it automatically.
+  update['cronState.vwapFireGuard'] = vwapFireGuard;
   return update;
 }

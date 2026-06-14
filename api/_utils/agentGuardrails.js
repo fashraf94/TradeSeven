@@ -17,7 +17,7 @@
 // The function is pure — no Firestore I/O, no mutation of inputs. All errors
 // are caught per-check so a single bad guardrail never crashes the pipeline.
 
-import { pickEmergencyReplacement } from './agentRiskManager.js';
+import { pickSwapReplacementCandidate } from './agentRiskManager.js';
 import { flattenBenchServer } from './agentScoring.js';
 
 /**
@@ -261,13 +261,16 @@ export function applyGuardrails({
       };
     }
 
-    // Pick a replacement from bench.
+    // Pick a replacement from bench. [VWAP Floor B2] Routed through the
+    // held/self-excluding picker (no quality predicate — forced exits are
+    // protective) so a guardrail exit can never pick an already-held symbol.
     const benchAssets = flattenBenchServer(battle.portfolio?.bench);
-    const replacement = pickEmergencyReplacement(
+    const replacement = pickSwapReplacementCandidate({
       benchAssets,
       prices,
-      forcedBreach.isCrypto === true,
-    );
+      outgoingIsCrypto: forcedBreach.isCrypto === true,
+      heldSymbols: new Set(held.map(p => p.symbol)),
+    });
 
     if (!replacement) {
       overrides.push({

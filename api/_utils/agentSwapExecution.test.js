@@ -16,7 +16,7 @@ vi.mock('./marketDataCache.js', () => ({
   })),
 }));
 
-import { executeSwapServer } from './agentSwapExecution.js';
+import { executeSwapServer, validateTradeDecision } from './agentSwapExecution.js';
 import { getStockAnalysisData } from './marketDataCache.js';
 
 function makeBattleData(overrides = {}) {
@@ -170,4 +170,117 @@ describe('executeSwapServer — lockedGainPct byte-identical to old formula (LON
       expect(trade.lockedGainPct).toBe(expected);
     });
   }
+});
+
+// [VWAP Floor B5] Identity/duplicate invariants at the transaction. June 11:
+// LRCX→LRCX executed as a real trade and PANW landed in three slots — both
+// shapes must now throw inside executeSwapServer (covering all call sites) and
+// be pre-flagged by validateTradeDecision on the Haiku path.
+describe('executeSwapServer — VWAP Floor B5 swap invariants', () => {
+  it('throws when symbolIn === symbolOut (self-swap)', async () => {
+    const liveData = makeBattleData();
+    const { db, getCapturedUpdates } = makeMockDb(liveData);
+    const selfBench = { symbol: 'MU', name: 'Micron', baseATR: 2.5, isCrypto: false };
+
+    await expect(executeSwapServer(
+      db, 'battle-1', liveData,
+      'star', 0,
+      selfBench, 1, { MU: { current: 110 } },
+      { id: 'trade_self', action: 'SWAP' },
+    )).rejects.toThrow(/cannot replace itself/);
+    expect(getCapturedUpdates()).toBeNull(); // nothing written
+  });
+
+  it('throws when symbolIn already occupies another active slot', async () => {
+    const liveData = makeBattleData({
+      portfolio: {
+        star: [{ symbol: 'MU', name: 'Micron', baseATR: 2.5, isCrypto: false, swapPrice: 100 }],
+        core: [{ symbol: 'AMD', name: 'AMD', baseATR: 2.5, isCrypto: false, swapPrice: 140 }],
+        support: [],
+        bench: { stocks: [{ symbol: 'AMD', name: 'AMD', baseATR: 2.5, isCrypto: false }], crypto: null },
+        startingPrices: { MU: 100, AMD: 140 },
+      },
+    });
+    const { db, getCapturedUpdates } = makeMockDb(liveData);
+
+    await expect(executeSwapServer(
+      db, 'battle-1', liveData,
+      'star', 0,
+      benchAsset, 1, currentPrices,
+      { id: 'trade_dup', action: 'SWAP' },
+    )).rejects.toThrow(/already occupies an active core slot/);
+    expect(getCapturedUpdates()).toBeNull();
+  });
+});
+
+// [VWAP Floor B4] Revolving-door bench: replace-or-append instead of blind
+// concat (June 11: bench grew 3→11 with a duplicate LRCX entry).
+describe('executeSwapServer — VWAP Floor B4 bench replace-or-append', () => {
+  it('replaces an existing bench entry for the outgoing symbol, refreshing its cooldown', async () => {
+    const liveData = makeBattleData();
+    liveData.portfolio.bench.stocks = [
+      { symbol: 'AMD', name: 'AMD', baseATR: 2.5, isCrypto: false },
+      { symbol: 'MU', name: 'Micron', baseATR: 2.5, isCrypto: false, cooldownUntil: '2020-01-01T00:00:00.000Z' },
+    ];
+    const { db, getCapturedUpdates } = makeMockDb(liveData);
+
+    await executeSwapServer(
+      db, 'battle-1', liveData,
+      'star', 0,
+      benchAsset, 1, currentPrices,
+      { id: 'trade_rr', action: 'SWAP' },
+    );
+
+    const benchStocks = getCapturedUpdates()['portfolio.bench.stocks'];
+    const muEntries = benchStocks.filter(s => s.symbol === 'MU');
+    expect(muEntries).toHaveLength(1); // replaced in place, no duplicate
+    expect(benchStocks).toHaveLength(1); // AMD (incoming) removed, MU replaced
+    expect(new Date(muEntries[0].cooldownUntil).getTime()).toBeGreaterThan(Date.now());
+  });
+
+  it('appends when the outgoing symbol has no bench entry (existing behavior preserved)', async () => {
+    const liveData = makeBattleData(); // bench: [AMD] only
+    const { db, getCapturedUpdates } = makeMockDb(liveData);
+
+    await executeSwapServer(
+      db, 'battle-1', liveData,
+      'star', 0,
+      benchAsset, 1, currentPrices,
+      { id: 'trade_app', action: 'SWAP' },
+    );
+
+    const benchStocks = getCapturedUpdates()['portfolio.bench.stocks'];
+    expect(benchStocks).toHaveLength(1);
+    expect(benchStocks[0].symbol).toBe('MU');
+  });
+});
+
+describe('validateTradeDecision — VWAP Floor B5 mirrors', () => {
+  const battle = {
+    portfolio: {
+      star: [{ symbol: 'MU', name: 'Micron', baseATR: 2.5, isCrypto: false }],
+      core: [{ symbol: 'NVDA', name: 'NVIDIA', baseATR: 2.5, isCrypto: false }],
+      support: [],
+      bench: { stocks: [{ symbol: 'AMD', name: 'AMD', baseATR: 2.5, isCrypto: false }], crypto: null },
+    },
+    watchlist: { hotBench: ['NVDA'] },
+  };
+  const base = { decision: 'SWAP', conviction: 80, hypothesis: 'a sufficiently long swap hypothesis' };
+
+  it('flags a self-swap', () => {
+    const r = validateTradeDecision({ ...base, symbolOut: 'MU', symbolIn: 'MU' }, battle);
+    expect(r.valid).toBe(false);
+    expect(r.errors.join(' ')).toMatch(/cannot replace itself/);
+  });
+
+  it('flags a symbolIn that already occupies another active slot', () => {
+    const r = validateTradeDecision({ ...base, symbolOut: 'MU', symbolIn: 'NVDA' }, battle);
+    expect(r.valid).toBe(false);
+    expect(r.errors.join(' ')).toMatch(/already occupies an active portfolio slot/);
+  });
+
+  it('passes a clean swap (no false positives)', () => {
+    const r = validateTradeDecision({ ...base, symbolOut: 'MU', symbolIn: 'AMD' }, battle);
+    expect(r.valid).toBe(true);
+  });
 });

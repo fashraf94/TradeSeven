@@ -532,3 +532,64 @@ describe('buildSwapReceiptSource — receipt origin metadata (§4.6)', () => {
     expect(Object.keys(buildSwapReceiptSource({ source: 'haiku' })).sort()).toEqual(['archetype', 'hftKnobsSource', 'source']);
   });
 });
+
+// ---- VWAP Floor A3 — fire dead-band (fenced change, gated diff) ----
+
+describe('evaluateRisk — VWAP Floor A3 fire dead-band', () => {
+  const POS_X = { symbol: 'X', baseATR: 2.5, dailyPct: 0 };
+  const MEM = { ticksBelowVwap: 2 }; // >= default vwapFailureTicks (2)
+  const at = (vwapDeviation, presetOverrides = {}) => evaluateRisk(
+    POS_X, 100, 100, 2.5,
+    { vwap: 100, vwapDeviation, sma20_5m: null },
+    MEM, presetOverrides,
+  );
+
+  it('fires below the default dead-band (-1 < -0.5)', () => {
+    const r = at(-1);
+    expect(r.action).toBe('SWAP_OUT');
+    expect(r.reason).toBe('vwap_failure');
+  });
+
+  it('holds when hovering inside the dead-band despite an aged counter (-0.4)', () => {
+    expect(at(-0.4).action).toBe('HOLD');
+  });
+
+  it('boundary: exactly -deadBand does not fire (strict <)', () => {
+    expect(at(-0.5).action).toBe('HOLD');
+  });
+
+  it('fails closed when deviation is missing (null/undefined snapshot field)', () => {
+    expect(at(null).action).toBe('HOLD');
+    expect(at(undefined).action).toBe('HOLD');
+  });
+
+  it('respects presetOverrides.vwapDeadBandPct (aggressive 0.7)', () => {
+    expect(at(-0.6, { vwapDeadBandPct: 0.7 }).action).toBe('HOLD');
+    expect(at(-0.8, { vwapDeadBandPct: 0.7 }).action).toBe('SWAP_OUT');
+  });
+});
+
+// ---- VWAP Floor B2 — emergency usage of the held/self-excluding wrapper ----
+
+describe('pickSwapReplacementCandidate — emergency usage (VWAP Floor B2: no quality predicate)', () => {
+  const prices = { AAA: { changePercent: 5 }, BBB: { changePercent: 3 } };
+  const bench = [
+    { symbol: 'AAA', isCrypto: false },
+    { symbol: 'BBB', isCrypto: false },
+  ];
+
+  it('excludes held symbols (incl. the outgoing symbol itself — no self-swap)', () => {
+    const r = pickSwapReplacementCandidate({ benchAssets: bench, prices, outgoingIsCrypto: false, heldSymbols: new Set(['AAA']) });
+    expect(r.symbol).toBe('BBB');
+  });
+
+  it('returns null when every candidate is held — empty-pool skip is the only veto', () => {
+    const r = pickSwapReplacementCandidate({ benchAssets: bench, prices, outgoingIsCrypto: false, heldSymbols: new Set(['AAA', 'BBB']) });
+    expect(r).toBeNull();
+  });
+
+  it('defaults clearsQuality to pass-through (top momentum wins, no hurdle gate)', () => {
+    const r = pickSwapReplacementCandidate({ benchAssets: bench, prices, outgoingIsCrypto: false, heldSymbols: new Set() });
+    expect(r.symbol).toBe('AAA');
+  });
+});
