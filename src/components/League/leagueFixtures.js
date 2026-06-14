@@ -44,7 +44,7 @@ const AGENT_BOOKS = {
   sentinel: [tk('XLU', 'long', 22), tk('TLT', 'long', 18), tk('GLD', 'long', 16), tk('XLP', 'long', 16), tk('XLV', 'long', 16), tk('KO', 'long', 12)],
 };
 const ARCH_NAME = { momentum: 'Momentum Hunter', reverter: 'Mean Reverter', macro: 'Macro Strategist', sentinel: 'Risk Sentinel' };
-const fixW = (b) => { const each = +(100 / b.length).toFixed(0); return b.map((h) => ({ ...h, w: h.w || each })); };
+const fixW = (b) => { const each = +(100 / b.length).toFixed(0); return b.map((h) => ({ ...h, w: h.w != null ? h.w : each })); };
 
 // ── the field — 16 players. `kind` here is the GOAL (open) state; the fill
 //    level thins humans down for the earlier levels. ─────────────────────────

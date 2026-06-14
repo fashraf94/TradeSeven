@@ -9,7 +9,7 @@
 import React from 'react';
 
 // base line icons
-export function Icon({ name, size = 18, color = 'currentColor', stroke = 1.7 }) {
+export function Icon({ name, size = 18, color = 'currentColor', stroke = 1.7, style }) {
   const p = { fill: 'none', stroke: color, strokeWidth: stroke, strokeLinecap: 'round', strokeLinejoin: 'round' };
   const paths = {
     arrowR: <path {...p} d="M5 12h14M13 6l6 6-6 6" />,
@@ -19,11 +19,11 @@ export function Icon({ name, size = 18, color = 'currentColor', stroke = 1.7 }) 
     trophy: <g {...p}><path d="M7 4h10v4a5 5 0 01-10 0V4z" /><path d="M7 6H4v1a3 3 0 003 3M17 6h3v1a3 3 0 01-3 3M9 18h6M12 14v4" /></g>,
     lock: <g {...p}><rect x="5" y="11" width="14" height="9" rx="2" /><path d="M8 11V8a4 4 0 018 0v3" /></g>,
   };
-  return <svg width={size} height={size} viewBox="0 0 24 24" style={{ display: 'block', flexShrink: 0 }}>{paths[name]}</svg>;
+  return <svg width={size} height={size} viewBox="0 0 24 24" style={{ display: 'block', flexShrink: 0, ...style }}>{paths[name]}</svg>;
 }
 
 // extra League glyphs the base set doesn't carry
-export function LIcon({ name, size = 16, color = 'currentColor', stroke = 1.7 }) {
+export function LIcon({ name, size = 16, color = 'currentColor', stroke = 1.7, style }) {
   const p = { fill: 'none', stroke: color, strokeWidth: stroke, strokeLinecap: 'round', strokeLinejoin: 'round' };
   const paths = {
     crown: <path {...p} d="M4 18h16M4 18l-1.5-9 5 4L12 6l4.5 7 5-4L20 18" />,
@@ -38,5 +38,5 @@ export function LIcon({ name, size = 16, color = 'currentColor', stroke = 1.7 })
     arrowL: <path {...p} d="M19 12H5M11 18l-6-6 6-6" />,
     flag: <g {...p}><path d="M5 21V4M5 4h11l-2 3.5L16 11H5" /></g>,
   };
-  return <svg width={size} height={size} viewBox="0 0 24 24" style={{ display: 'block', flexShrink: 0 }}>{paths[name]}</svg>;
+  return <svg width={size} height={size} viewBox="0 0 24 24" style={{ display: 'block', flexShrink: 0, ...style }}>{paths[name]}</svg>;
 }

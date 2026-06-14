@@ -132,10 +132,31 @@ function YourGroup({ st, accent, onPick }) {
   );
 }
 
+// the front door to the live participant flow (board commit / battle / claims /
+// draft). LeagueHome passes onOpenMyGame; LeagueScreen pushes it full-screen.
+function MyGameBar({ onOpenMyGame }) {
+  return (
+    <button
+      className="lg-tap"
+      onClick={onOpenMyGame}
+      style={{
+        all: 'unset', boxSizing: 'border-box', width: '100%', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 10,
+        padding: '11px 14px', borderRadius: 13, marginBottom: 12, background: LTOKENS.surface, border: `1px solid ${LTOKENS.hair}`,
+      }}
+    >
+      <span style={{ width: 7, height: 7, borderRadius: '50%', background: LX.energy, boxShadow: `0 0 6px ${LX.energy}`, flexShrink: 0 }} />
+      <span style={{ fontSize: 13, fontWeight: 600, color: LTOKENS.ink }}>Open my game</span>
+      <Mono style={{ fontSize: 10, color: LTOKENS.ink3 }}>your live battle · claims · draft</Mono>
+      <Icon name="arrowR" size={16} color={LX.energy} style={{ marginLeft: 'auto' }} />
+    </button>
+  );
+}
+
 // ── The lobby shell (content; LeagueHome owns the scroll wrapper) ───────────
-export default function Lobby({ st, accent, onEnter, onPickPod, onSpectate }) {
+export default function Lobby({ st, accent, onEnter, onPickPod, onSpectate, onOpenMyGame }) {
   return (
     <div style={{ padding: '16px 18px calc(env(safe-area-inset-bottom, 0px) + 120px)', maxWidth: 720, margin: '0 auto' }}>
+      {onOpenMyGame && <MyGameBar onOpenMyGame={onOpenMyGame} />}
       <EnterButton accent={accent} onEnter={onEnter} />
       <div style={{ height: 22 }} />
       <LobbyHero st={st} accent={accent} />

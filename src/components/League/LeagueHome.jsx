@@ -1,0 +1,83 @@
+// src/components/League/LeagueHome.jsx
+//
+// The redesigned League surface — state machine for the spectate-and-enter front
+// end (lobby ⇄ spectate, with the pod sheet / action layer / join confirm as
+// overlays). Ported from the Claude Design prototype's LeagueApp, minus the
+// design-harness chrome (the iOS device frame, the scale-to-fit, and the Tweaks
+// panel are gone). Renders as a centered mobile-width column; the document
+// scrolls. The accent is fixed to the league energy teal (the prototype's
+// tweakable accent was harness-only).
+//
+// FIXTURES-FIRST: data comes from the single useLeagueState() seam. The
+// "Open my game" affordance (in the lobby) calls onOpenMyGame — LeagueScreen
+// handles that as a full-screen push to the real participant flow.
+
+import React from 'react';
+import './league.css';
+import useLeagueState from '../../hooks/useLeagueState';
+import { logLeagueSignal } from '../../services/leagueSignals';
+import { LTOKENS, LX } from './leagueTokens';
+import Lobby from './LeagueLobbyRedesign';
+import Spectate from './LeagueSpectate';
+import { PodSheet } from './LeaguePod';
+import { ActionLayer, JoinConfirm } from './LeagueAction';
+
+const ACCENT = LX.energy; // teal — the league energy accent
+
+// dev hooks for smoke testing (inert in normal use):
+//   ?f=forming|filling|open                              → fill level
+//   ?s=action|pod|spectate-live|spectate-final           → land on a state
+const SP = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '');
+const DEV_FILL = ['forming', 'filling', 'open'].includes(SP.get('f')) ? SP.get('f') : 'open';
+const DEV_S = SP.get('s') || '';
+
+export default function LeagueHome({ onOpenMyGame }) {
+  const { state: st, isFixtures } = useLeagueState(DEV_FILL);
+
+  const aLivePod = React.useMemo(
+    () => [...st.rounds.r1, ...st.rounds.r2, st.rounds.r3].find((p) => p.status === 'live') || st.rounds.r1[0],
+    [st],
+  );
+
+  const [screen, setScreen] = React.useState(DEV_S.startsWith('spectate') ? 'spectate' : 'lobby');
+  const [spec, setSpec] = React.useState(null);          // { pod, focusId }
+  const [podSheet, setPodSheet] = React.useState(DEV_S === 'pod' ? st.rounds.r1[0] : null);
+  const [action, setAction] = React.useState(DEV_S === 'action');
+  const [joined, setJoined] = React.useState(null);
+
+  // seed a dev spectate target once (smoke testing only)
+  React.useEffect(() => {
+    if (DEV_S === 'spectate-live') {
+      const pod = st.rounds.r1.find((p) => p.status === 'live') || aLivePod;
+      setSpec({ pod, focusId: pod.seats.find((s) => s && s.you)?.id || pod.seats.find((s) => s)?.id });
+    } else if (DEV_S === 'spectate-final') {
+      const pod = { ...st.rounds.r1[0], status: 'final' };
+      setSpec({ pod, focusId: pod.seats.find((s) => s)?.id });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const signal = (event, payload) => logLeagueSignal(event, payload, { isFixtures });
+
+  const openSpectate = (pod, focusId) => { setPodSheet(null); setSpec({ pod, focusId }); setScreen('spectate'); signal('spectate-open', { podId: pod.id, focusId }); };
+  const openPod = (pod) => { setPodSheet(pod); signal('pod-tap', { podId: pod.id }); };
+  const enter = () => { setAction(true); signal('enter-tournament', {}); };
+  const pickMode = (m) => { setAction(false); setJoined(m); signal('enter-mode', { mode: m }); };
+  const watchWhileWaiting = () => { setJoined(null); openSpectate(aLivePod, aLivePod.seats.find((s) => s)?.id); };
+  const backToLobby = () => { setScreen('lobby'); setSpec(null); };
+
+  const body = screen === 'spectate' && spec
+    ? <Spectate pod={spec.pod} focusId={spec.focusId} accent={ACCENT} onBack={backToLobby} onEnter={enter} />
+    : <Lobby st={st} accent={ACCENT} onEnter={enter} onPickPod={openPod} onSpectate={openSpectate} onOpenMyGame={onOpenMyGame} />;
+
+  return (
+    <div style={{ position: 'relative', minHeight: '100vh', maxWidth: 448, margin: '0 auto', background: LTOKENS.bg, color: LTOKENS.ink }}>
+      {body}
+      {podSheet && screen === 'lobby' && (
+        <PodSheet pod={podSheet} accent={ACCENT} onClose={() => setPodSheet(null)} onSpectate={(seat) => openSpectate(podSheet, seat.id)} />
+      )}
+      {action && <ActionLayer accent={ACCENT} onClose={() => setAction(false)} onPick={pickMode} />}
+      {joined && <JoinConfirm mode={joined} onClose={() => setJoined(null)} onWatch={watchWhileWaiting} />}
+    </div>
+  );
+}
