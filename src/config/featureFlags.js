@@ -113,4 +113,4 @@ export const LEAGUE_LOBBY_ENABLED = true;
  * Flip — a one-line follow-up PR, the TOURNAMENT_TAB_ENABLED precedent —
  * only after a Vercel preview smoke test.
  */
-export const LEAGUE_REDESIGN_ENABLED = false;
+export const LEAGUE_REDESIGN_ENABLED = true;
