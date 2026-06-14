@@ -35,7 +35,7 @@ import AssetResearchModal from '../components/draft/AssetResearchModal';
 import TermResearchModal from '../components/shared/TermResearchModal';
 import ScoreBreakdownPopover from '../components/draft/ScoreBreakdownPopover';
 import FilmRoomBanner from '../components/FilmRoom/FilmRoomBanner';
-import { CONVICTION_MULTIPLIERS } from '../constants/baggerBombScoring';
+import { CONVICTION_MULTIPLIERS, THRESHOLD_POINTS } from '../constants/baggerBombScoring';
 import { doc, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import { isMarketOpen } from '../utils/marketSchedule';
@@ -49,6 +49,15 @@ const TIERS = [
   { key: 'star', label: 'Star Picks', emoji: '⭐', allocation: '2x', slots: 2 },
   { key: 'core', label: 'Core Holds', emoji: '💎', allocation: '1.5x', slots: 2 },
   { key: 'support', label: 'Support Plays', emoji: '📊', allocation: '1x', slots: 3, hasCrypto: true },
+];
+
+// P4 flat6 (companion c): tournament battles are six stocks, flat 1x, no
+// crypto slot — the tier rows render as honest lineup slots so the existing
+// screen neither crashes nor lies pre-P7 (the full tournament view).
+const FLAT6_TIERS = [
+  { key: 'star', label: 'Lineup 1–2', emoji: '📈', allocation: '1x', slots: 2 },
+  { key: 'core', label: 'Lineup 3–4', emoji: '📈', allocation: '1x', slots: 2 },
+  { key: 'support', label: 'Lineup 5–6', emoji: '📈', allocation: '1x', slots: 2 },
 ];
 
 const TIER_HEADER_COLORS = {
@@ -614,8 +623,20 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
       minMultiplier: Math.min(persistedHistory.minMultiplier || 0, multiplier < 0 ? multiplier : 0),
     };
 
+    // P8 hygiene item 1 — apply the direction sign EXACTLY ONCE. priceChange,
+    // thresholdPriceChange, multiplier and history above are already in
+    // position-P&L terms (the two `direction === 'short'` adjustments). The
+    // canonical scorer ALSO negates priceChange/thresholdPriceChange internally
+    // for a short, so it is called WITHOUT `direction`: forwarding it would
+    // double-negate and silently flip a short's score to a long's. Dormant for
+    // long-only agents (the only portfolios this screen renders today), but the
+    // contract is load-bearing the moment any short reaches here. Note we keep
+    // the caller-owns-direction convention (not flat6's scorer-owns) because the
+    // scorer negates the scalar args but NOT the caller-supplied `history`,
+    // which is already adjusted above. Locked by agentBattleScoring.test.js —
+    // do NOT add `direction` back to this call.
     const score = calculateAssetScoreV3(
-      { ...asset, baseATR, tier },
+      { ...asset, baseATR, tier, direction: undefined },
       priceChange,
       history,
       {},
@@ -933,7 +954,7 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
               exit={{ opacity: 0, x: -20 }}
               transition={{ duration: 0.15 }}
             >
-              {TIERS.map(tier => (
+              {(agentBattle?.gameMode === 'baggerbomb_tournament' ? FLAT6_TIERS : TIERS).map(tier => (
                 <div key={tier.key}>
                   <TierHeader tier={tier} />
                   {Array.from({ length: tier.slots }).map((_, i) => (
@@ -1069,24 +1090,25 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
             symbol: breakdownAsset.symbol,
             gain: breakdownAsset.priceChange || 0,
             threshold: thresholds[breakdownAsset.symbol]?.threshold || breakdownAsset.baseATR || 2.5,
-            tierMultiplier: CONVICTION_MULTIPLIERS[breakdownAsset.tier] || 1.0,
+            // P4 flat6: the per-asset override (tournament docs) wins; tiered
+            // assets never carry it — resolution unchanged for them.
+            tierMultiplier: breakdownAsset.tierMultiplier ?? (CONVICTION_MULTIPLIERS[breakdownAsset.tier] || 1.0),
             baggerBombs: breakdownAsset.badges?.filter(b =>
               b === 'bagger' || b === 'doubleBagger' || b === 'tenBagger'
             ).length || 0,
             busts: breakdownAsset.badges?.filter(b =>
               b === 'bust' || b === 'crash' || b === 'meltdown'
             ).length || 0,
-            basePoints: Math.round((breakdownAsset.priceChange || 0) * 10 * (CONVICTION_MULTIPLIERS[breakdownAsset.tier] || 1.0)),
+            basePoints: Math.round((breakdownAsset.priceChange || 0) * 10 * (breakdownAsset.tierMultiplier ?? (CONVICTION_MULTIPLIERS[breakdownAsset.tier] || 1.0))),
+            // P4 (companion c): badge values sourced from the canonical
+            // constants instead of inline literals — value-identical today,
+            // drift-proof tomorrow (the scoring-copy lesson, BUILD_RULES §4).
             baggerBombPoints: breakdownAsset.badges?.reduce((sum, b) => {
-              if (b === 'bagger') return sum + 15;
-              if (b === 'doubleBagger') return sum + 30;
-              if (b === 'tenBagger') return sum + 50;
+              if (b === 'bagger' || b === 'doubleBagger' || b === 'tenBagger') return sum + THRESHOLD_POINTS[b];
               return sum;
             }, 0) || 0,
             bustPoints: breakdownAsset.badges?.reduce((sum, b) => {
-              if (b === 'bust') return sum - 10;
-              if (b === 'crash') return sum - 20;
-              if (b === 'meltdown') return sum - 35;
+              if (b === 'bust' || b === 'crash' || b === 'meltdown') return sum + THRESHOLD_POINTS[b];
               return sum;
             }, 0) || 0,
             totalScore: breakdownAsset.points || 0,

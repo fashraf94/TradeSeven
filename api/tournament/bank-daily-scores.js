@@ -11,13 +11,21 @@
 // admin-gated, so no further secret check is needed): it suppresses only the
 // weekend/holiday guard. The idempotency skip is NEVER bypassable — the
 // smoke script depends on seeing it.
+//
+// `simulatedNow` (P3b, same idiom): an ISO instant injected as the banking
+// clock, so the founder smoke arc banks day1..day5 in one session by
+// stepping the simulated ET date (Mon..Fri). The per-ET-day idempotency
+// applies to the SIMULATED date — re-banking the same simulated day still
+// shows the skip. Quotes are always live; only the clock is simulated.
 
 import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
 import { requireAdminSecret } from '../_utils/adminSecretAuth.js';
 import { isValidForgeId } from '../_utils/idValidation.js';
 import { isTradingDay } from '../_utils/marketSchedule.js';
+import { parseSimulatedNow } from '../_utils/tournamentTime.js';
 import { getGroup } from '../_utils/tournamentGroupService.js';
-import { bankGroup } from '../_utils/tournamentBanking.js';
+import { bankGroup, fetchGroupAgentScores } from '../_utils/tournamentBanking.js';
+import { upsertLeaderboardForGroups } from '../_utils/tournamentLeaderboard.js';
 import { loadAtrPercentiles } from '../_utils/tournamentUserScoring.js';
 import { fetchBatchQuotes } from '../_utils/tournamentPrices.js';
 import { GROUP_STATUS } from '../../src/constants/leagueTournament.js';
@@ -31,15 +39,25 @@ export default async function handler(req, res) {
   if (!requireAdminSecret(req, res)) return;
 
   const body = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {});
-  const { groupId, bypassTradingDay = false } = body;
+  const { groupId, bypassTradingDay = false, simulatedNow = null } = body;
   if (!isValidForgeId(groupId)) {
     return res.status(400).json({ error: 'invalid_group_id', message: 'groupId is malformed.' });
   }
+  const parsed = parseSimulatedNow(simulatedNow);
+  if (parsed.error) {
+    return res.status(400).json({ error: 'invalid_simulated_now', message: parsed.error });
+  }
+  const now = parsed.now;
 
-  if (!isTradingDay() && !bypassTradingDay) {
+  // One clock for guard AND banking: the trading-day check evaluates the
+  // (possibly simulated) instant being banked, ET-shifted per the
+  // marketSchedule getETDate convention — never the real wall clock against
+  // a simulated recordedDate.
+  const etShiftedNow = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
+  if (!isTradingDay(etShiftedNow) && !bypassTradingDay) {
     return res.status(409).json({
       error: 'not_trading_day',
-      message: 'Market is closed today (weekend or holiday). Pass bypassTradingDay: true to bank anyway.',
+      message: 'Market is closed on the banked date (weekend or holiday). Pass bypassTradingDay: true to bank anyway.',
     });
   }
 
@@ -72,14 +90,42 @@ export default async function handler(req, res) {
       });
     }
 
+    // P6a: the agent-layer read mirrors the cron path; a failure degrades
+    // to the carry-forward arm, never blocks banking.
+    let agentScores = null;
+    try {
+      agentScores = await fetchGroupAgentScores(db, groupId);
+    } catch (err) {
+      console.error(`[Tournament] bank-daily-scores: agent-score read failed — carrying forward:`, err.message);
+    }
+
     const result = await bankGroup(db, groupId, quotes, {
-      now: new Date(),
+      now,
       atrPercentiles,
       recordedBy: 'manual',
+      agentScores,
     });
 
+    // P6a smoke parity: production leaderboard rows ride the nightly cron;
+    // this preview path upserts the one group it just banked (dev groups
+    // route to dev- docs inside — ruling A-4). The upsert also runs on the
+    // already_recorded skip (code review: a failed upsert was otherwise
+    // unrepairable through this endpoint — re-clicking hit the banking
+    // idempotency skip and never retried the idempotent upsert). Failure-
+    // isolated: the banking result returns regardless.
+    let leaderboard = null;
+    if (!result.skipped || result.reason === 'already_recorded') {
+      try {
+        const fresh = await getGroup(db, groupId);
+        if (fresh) leaderboard = await upsertLeaderboardForGroups(db, [fresh], { now });
+      } catch (err) {
+        console.error('[Tournament] bank-daily-scores: leaderboard upsert failed:', err.message);
+        leaderboard = { errors: 1, failed: true };
+      }
+    }
+
     console.log(`[Tournament] bank-daily-scores: group ${groupId} →`, result.skipped ? `skipped (${result.reason})` : result.dayKey);
-    return res.status(200).json({ groupId, ...result });
+    return res.status(200).json({ groupId, ...result, leaderboard });
   } catch (err) {
     console.error('[Tournament] bank-daily-scores error:', err);
     return res.status(500).json({ error: 'server_error', message: 'Could not bank daily scores.' });

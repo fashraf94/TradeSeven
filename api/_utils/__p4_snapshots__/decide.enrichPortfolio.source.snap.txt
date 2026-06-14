@@ -1,0 +1,20 @@
+function enrichPortfolio(result, stockUniverse) {
+  const lookup = {};
+  stockUniverse.forEach((s) => {
+    lookup[s.symbol] = s;
+  });
+
+  const toAsset = (symbol) => toAssetFromUniverse(symbol, lookup);
+
+  return {
+    portfolio: {
+      star: result.star.map(toAsset),
+      core: result.core.map(toAsset),
+      support: [...result.support_stocks.map(toAsset), toAsset(result.support_crypto)],
+    },
+    bench: {
+      stocks: result.bench_stocks.map(toAsset),
+      crypto: toAsset(result.bench_crypto),
+    },
+  };
+}

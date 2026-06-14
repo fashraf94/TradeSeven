@@ -1,0 +1,34 @@
+{
+ "name": "submit_strategy",
+ "description": "Submit your strategic analysis and recommended stock shortlist.",
+ "input_schema": {
+  "type": "object",
+  "required": [
+   "brief",
+   "shortlist"
+  ],
+  "properties": {
+   "brief": {
+    "type": "string",
+    "description": "Strategic brief: market assessment, sector outlook, risk factors, how directives inform approach (~200 words)"
+   },
+   "shortlist": {
+    "type": "array",
+    "items": {
+     "type": "string"
+    },
+    "minItems": 20,
+    "maxItems": 40,
+    "description": "25-35 recommended ticker symbols ordered by conviction. Pick from the provided stock universe; you may also include tickers from the user-equipped watchlist if one is provided."
+   },
+   "topConviction": {
+    "type": "string",
+    "description": "Why your top 5 picks stand out (2-3 sentences)"
+   },
+   "risks": {
+    "type": "string",
+    "description": "Key risks to watch and which picks are most exposed (1-2 sentences)"
+   }
+  }
+ }
+}

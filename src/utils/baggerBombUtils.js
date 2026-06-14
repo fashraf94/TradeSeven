@@ -561,7 +561,7 @@ export function calculateAssetScoreV3(asset, priceChange, history = {}, extremes
       priceChange: 0,
       multiplier: 0,
       baseATR,
-      tierMultiplier: CONVICTION_MULTIPLIERS[asset.tier] || CONVICTION_MULTIPLIERS.support,
+      tierMultiplier: asset.tierMultiplier ?? (CONVICTION_MULTIPLIERS[asset.tier] || CONVICTION_MULTIPLIERS.support),
       basePoints: 0,
       bonusPoints: 0,
       totalPoints: 0,
@@ -577,8 +577,11 @@ export function calculateAssetScoreV3(asset, priceChange, history = {}, extremes
     : priceChange;
   const multiplier = effectiveThresholdChange / baseATR;
 
-  // Conviction multiplier: Star 2x, Core 1.5x, Support 1x
-  const tierMultiplier = CONVICTION_MULTIPLIERS[asset.tier] || CONVICTION_MULTIPLIERS.support;
+  // Conviction multiplier: Star 2x, Core 1.5x, Support 1x.
+  // P4 flat6: a per-asset override (stamped on tournament docs at creation and
+  // swap-in) takes precedence; tiered assets never carry the field, so this
+  // resolves exactly as before for every existing battle.
+  const tierMultiplier = asset.tierMultiplier ?? (CONVICTION_MULTIPLIERS[asset.tier] || CONVICTION_MULTIPLIERS.support);
 
   // Base points: 10 per 1% change, scaled by conviction tier (uses entry price, not previousClose)
   const basePoints = priceChange * 10 * tierMultiplier;

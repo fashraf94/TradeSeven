@@ -60,6 +60,16 @@ export function formatEtDate(now = new Date()) {
 }
 
 /**
+ * Date|string → ISO string (the injectable-`now` normalization). ONE home —
+ * P6a code review found this inlined in six tournament modules; new code
+ * imports it from here (retrofitting the four pre-P6a private copies is
+ * docketed for the P8 hygiene pass, BUILD_RULES §3 report-don't-fix).
+ */
+export function toIso(now) {
+  return now instanceof Date ? now.toISOString() : new Date(now).toISOString();
+}
+
+/**
  * Is the stock market open at this instant? Regular session only:
  * Mon–Fri, not a NYSE holiday, 9:30 ≤ t < close (16:00, or 13:00 on
  * early-close days). Drives the flip endpoint's two branches.
@@ -70,6 +80,26 @@ export function isMarketOpenAt(now = new Date()) {
   if (isMarketHoliday(date)) return false;
   const closeMin = isEarlyCloseDay(date) ? EARLY_CLOSE_MIN : MARKET_CLOSE_MIN;
   return minutes >= MARKET_OPEN_MIN && minutes < closeMin;
+}
+
+/**
+ * Admin time-control parsing (P3b — the P1b injectable-now idiom given one
+ * consumer contract: run-duty and bank-daily-scores both accept a
+ * `simulatedNow` ISO instant, admin-gated by construction). Strings only —
+ * a bare JSON number would silently resolve to a 1970-adjacent instant and
+ * pollute per-ET-date keys. Returns { now: Date } (real clock when absent)
+ * or { error } for the endpoint's 400.
+ */
+export function parseSimulatedNow(value) {
+  if (value == null) return { now: new Date() };
+  if (typeof value !== 'string') {
+    return { error: 'simulatedNow must be an ISO-8601 instant string.' };
+  }
+  const now = new Date(value);
+  if (Number.isNaN(now.getTime())) {
+    return { error: 'simulatedNow must be an ISO-8601 instant string.' };
+  }
+  return { now };
 }
 
 /**

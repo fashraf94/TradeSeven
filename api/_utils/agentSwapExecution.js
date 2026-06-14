@@ -11,6 +11,10 @@ import {
 import { resolveThresholdBaseline } from './baselineValidation.js';
 import { getStockAnalysisData } from './marketDataCache.js';
 import { getETDate, formatDateString } from './marketSchedule.js';
+// P4 mode config (founder ruling D1) — Node-clean src import under the revised
+// June 2026 import rule (BUILD_RULES §4); the co-located test's import of this
+// module is the dependency-surface guard.
+import { resolveModeConfig } from '../../src/constants/agentGameModes.js';
 
 // ==================== VALIDATION ====================
 
@@ -276,6 +280,13 @@ export async function executeSwapServer(db, battleId, battle, resolvedTier, reso
     };
     if (benchAsset.isCrypto && benchAsset.direction) {
       incomingAsset.direction = benchAsset.direction;
+    }
+    // P4 flat6 (founder ruling D2): swap-ins on tournament battles carry the
+    // mode's flat multiplier, like every creation-time asset. Tiered battles
+    // resolve a null flatMultiplier and gain no field — byte-identical.
+    const swapModeConfig = resolveModeConfig(liveData.gameMode);
+    if (swapModeConfig.flatMultiplier != null) {
+      incomingAsset.tierMultiplier = swapModeConfig.flatMultiplier;
     }
 
     // ---- Update portfolio slot ----

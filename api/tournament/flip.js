@@ -41,8 +41,15 @@ import {
   LEG_DIRECTION,
   BASELINE_SOURCE,
   TOURNAMENT_TUNING,
+  GROUP_FEED_CAP,
   createLeg,
 } from '../../src/constants/leagueTournament.js';
+import {
+  ledgerRef,
+  detectUserDoubleDownEvents,
+  buildUserDoubleDownWrites,
+  readOwnerAgentMap,
+} from '../_utils/tournamentAgentLedger.js';
 
 export const config = { maxDuration: 15 };
 
@@ -118,6 +125,11 @@ export default async function handler(req, res) {
       baseATR = resolveBaseATR(symbol, atrPercentiles) ?? (isCryptoSymbol(symbol) ? 5.0 : 2.5);
     }
 
+    // D-1 (user-side double-down): the user's own agentId, from the immutable
+    // agent-draft stream — a plain read BEFORE the transaction (the shared
+    // helper degrades to {} on failure; the flip never blocks on it).
+    const ownAgentId = (await readOwnerAgentMap(db, groupId))[odUserId] || null;
+
     const groupRef = db.collection(TOURNAMENT_GROUPS_COLLECTION).doc(groupId);
 
     const summary = await db.runTransaction(async (tx) => {
@@ -191,9 +203,37 @@ export default async function handler(req, res) {
         legIndexClosed,
         legIndexOpened,
       };
+      const feed = [...(group.feed || []), feedEvent];
+
+      // D-1 (Signal Capture Rider): a flip on a symbol the user's OWN agent
+      // holds FLIPS the per-player double-down. Detected + recorded ATOMICALLY
+      // with the flip — the ledger doubleDowns sibling AND a group-feed
+      // double_down entry, all in THIS transaction. The ledger read sits
+      // before every write (Firestore reads-before-writes). No own agent / no
+      // alignment ⇒ nothing is written to the ledger (contention near zero).
+      let doubledDown = false;
+      if (ownAgentId) {
+        const lRef = ledgerRef(db, groupId);
+        const ledgerSnap = await tx.get(lRef);
+        const ledger = ledgerSnap.exists ? ledgerSnap.data() : null;
+        const events = ledger ? detectUserDoubleDownEvents({
+          ownAgentId,
+          held: ledger.held,
+          odUserId,
+          candidates: [{ symbol, kind: 'flipped', userDirection: to, from, to }],
+          now: nowIso,
+        }) : [];
+        if (events.length > 0) {
+          doubledDown = true;
+          const { doubleDowns, feedEvents } = buildUserDoubleDownWrites(ledger, events, nowIso);
+          tx.set(lRef, { ...ledger, doubleDowns, updatedAt: nowIso });
+          feed.push(...feedEvents);
+        }
+      }
+
       tx.update(groupRef, {
         players,
-        feed: [...(group.feed || []), feedEvent].slice(-50),
+        feed: feed.slice(-GROUP_FEED_CAP),
         updatedAt: nowIso,
       });
 
@@ -207,6 +247,7 @@ export default async function handler(req, res) {
         bankedLegScore,
         legIndexClosed,
         legIndexOpened,
+        doubledDown,
       };
     });
 

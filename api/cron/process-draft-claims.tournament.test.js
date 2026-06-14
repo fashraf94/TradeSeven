@@ -60,7 +60,15 @@ function makeDb({ drafts = [], groups = [], claims = [] } = {}) {
       const doc = groups[0];
       return { exists: doc != null, data: () => doc?.data };
     },
-    collection: () => ({ where: () => pendingQuery, doc: (id) => ({ __claimId: id }) }),
+    // claims → claim-doc refs (the existing tx.update branch keys on __claimId);
+    // streams/ledger (P6b double-down reads) → non-existent docs, so detection
+    // degrades to no events without touching the legacy assertions.
+    collection: (sub) => ({
+      where: () => pendingQuery,
+      doc: (id) => (sub === 'claims'
+        ? { __claimId: id }
+        : { get: async () => ({ exists: false, data: () => null }) }),
+    }),
   };
   const db = {
     collection: (name) => ({

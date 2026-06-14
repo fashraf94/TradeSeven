@@ -68,9 +68,13 @@ function makeDb({ groupDoc = null, claims = [] } = {}) {
   const pendingQuery = { __pendingClaims: true };
   const groupRef = {
     get: async () => ({ exists: groupDoc != null, data: () => groupDoc }),
-    collection: () => ({
+    // claims → claim-doc refs; streams/ledger (P6b double-down reads) →
+    // non-existent docs so detection degrades to no events cleanly.
+    collection: (sub) => ({
       where: () => pendingQuery,
-      doc: (id) => ({ __claimId: id }),
+      doc: (id) => (sub === 'claims'
+        ? { __claimId: id }
+        : { get: async () => ({ exists: false, data: () => null }) }),
     }),
   };
   const db = {
@@ -97,6 +101,7 @@ function makeDb({ groupDoc = null, claims = [] } = {}) {
         if (ref.__claimId) captured.claimUpdates.push({ id: ref.__claimId, ...data });
         else captured.groupUpdates.push(data);
       },
+      set: () => {}, // ledger doubleDowns write (only when a double-down fires)
     }),
   };
   return { db, captured };

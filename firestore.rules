@@ -314,6 +314,45 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // P3b: bracket-state docs (one per bracket; founder-ratified shape,
+    // June 12, 2026) — the tournamentGroups pattern verbatim: authenticated
+    // reads for the dev bracket card now and the P6/P7 spectator surfaces
+    // later; all mutation stays Admin SDK (the Friday advancement + the dev
+    // seeder). Same manual Console-deploy caveat; inert until deployed.
+    match /tournamentBrackets/{bracketId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+
+    // P6a: the seasonal leaderboard (month-keyed docs, incl. the dev-
+    // namespace — ruling A-4) and career-rank docs — the tournamentGroups
+    // pattern verbatim: authenticated reads for the leaderboard/rank
+    // surfaces; all mutation stays Admin SDK (the nightly aggregation
+    // branch + the Friday advancement). Career rank deliberately does NOT
+    // live on users/{uid} — that doc is owner-writable. Same manual
+    // Console-deploy caveat as above; inert until deployed.
+    match /tournamentLeaderboards/{monthId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+
+    match /tournamentRanks/{rankId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+
+    // P10: self-serve lobby waiting-pool docs — the front door before a group
+    // exists (the tournamentGroups pattern verbatim: authenticated reads for
+    // the "who's waiting" / own-lobby surface; all mutation is Admin SDK via
+    // the authed lobby-* endpoints, never a client write). Includes the
+    // reserved __cpuSequence allocator doc (server-only writer; a harmless
+    // authenticated read). Same manual Console-deploy caveat as above; inert
+    // until deployed and until LEAGUE_LOBBY_ENABLED flips.
+    match /tournamentLobby/{lobbyId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+
     // Snake Draft battles
     match /snakeDraftBattles/{battleId} {
       allow read: if request.auth != null;

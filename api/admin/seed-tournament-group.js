@@ -12,27 +12,31 @@
 import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
 import { requireAdminSecret } from '../_utils/adminSecretAuth.js';
 import { isValidForgeId } from '../_utils/idValidation.js';
-import { createGroup } from '../_utils/tournamentGroupService.js';
+import { createGroup, fetchRankedUserPool } from '../_utils/tournamentGroupService.js';
 import { buildBoardCommit } from '../_utils/tournamentBoards.js';
 import {
   TOURNAMENT_GROUPS_COLLECTION,
   TOURNAMENT_TUNING,
   USER_HELD_NAMES_PER_GROUP,
+  PICKS_PER_PLAYER,
+  isoWeekString,
 } from '../../src/constants/leagueTournament.js';
 
 export const config = { maxDuration: 10 };
 
 const PLACEHOLDER_IDS = ['dev-user-1', 'dev-user-2', 'dev-user-3'];
 
-/** ISO-8601 week label (UTC), e.g. '2026-W24' — the baseLayerWeek key. */
-export function isoWeekString(date = new Date()) {
-  const d = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
-  const dayNum = d.getUTCDay() || 7; // Mon=1..Sun=7
-  d.setUTCDate(d.getUTCDate() + 4 - dayNum); // nearest Thursday decides the year
-  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
-  const week = Math.ceil(((d - yearStart) / 86_400_000 + 1) / 7);
-  return `${d.getUTCFullYear()}-W${String(week).padStart(2, '0')}`;
-}
+// Pool floor when seeding placeholder boards (P3b-reported mismatch, fixed at
+// P5 where the auto-commit smoke made it load-bearing): the deepest staggered
+// slice starts at (placeholders−1)×PICKS_PER_PLAYER and must still yield
+// BOARD_DEPTH_MIN names for buildBoardCommit — 12 alone under-guards it, and
+// so would BOARD_DEPTH_MIN by itself (a 15-name pool leaves slice(3, 18) at
+// 12 names). Without boards, resolution's own floor (12) is the requirement.
+export const SEED_POOL_FLOOR =
+  TOURNAMENT_TUNING.BOARD_DEPTH_MIN + (PLACEHOLDER_IDS.length - 1) * PICKS_PER_PLAYER;
+
+// isoWeekString relocated to the schema module at P10 (BUILD_RULES §4 one-home
+// rule) — the lobby formation service and this dev seeder now share it.
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -52,21 +56,14 @@ export default async function handler(req, res) {
   try {
     const db = getFirebaseAdmin();
 
-    // Ranked universe -> user pool, ranked order preserved (Spec §0.11).
-    const rankingsSnap = await db.collection('indexIntelligence').doc('stockRankings').get();
-    const stocks = rankingsSnap.exists ? rankingsSnap.data().stocks : null;
-    const userPool = [];
-    const seen = new Set();
-    for (const stock of Array.isArray(stocks) ? stocks : []) {
-      const symbol = typeof stock?.symbol === 'string' ? stock.symbol.trim().toUpperCase() : '';
-      if (!symbol || seen.has(symbol)) continue;
-      seen.add(symbol);
-      userPool.push(symbol);
-    }
-    if (userPool.length < USER_HELD_NAMES_PER_GROUP) {
+    // Ranked universe -> user pool, ranked order preserved (Spec §0.11) —
+    // converged onto the shared sourcing helper at P3b.
+    const userPool = await fetchRankedUserPool(db);
+    const poolFloor = autoCommitBoards ? SEED_POOL_FLOOR : USER_HELD_NAMES_PER_GROUP;
+    if (userPool.length < poolFloor) {
       return res.status(503).json({
         error: 'universe_unavailable',
-        message: `stockRankings yielded ${userPool.length} names — rankings cron may not have run.`,
+        message: `stockRankings yielded ${userPool.length} names (need ${poolFloor}) — rankings cron may not have run.`,
       });
     }
 
@@ -76,9 +73,13 @@ export default async function handler(req, res) {
       players,
       userPool,
       roundNumber: 1,
-      baseLayerWeek: isoWeekString(),
+      baseLayerWeek: isoWeekString(new Date()),
       now: nowIso,
     });
+    // P4 companion (a): seeded groups are DEV groups — excluded from the
+    // production orchestrator's duties (the dev duty buttons include them).
+    await db.collection(TOURNAMENT_GROUPS_COLLECTION).doc(groupId).update({ isDev: true });
+    groupDoc.isDev = true;
 
     // Optional placeholder boards: staggered top-of-pool slices so the
     // founder's board collides with at least one placeholder (real snipes in

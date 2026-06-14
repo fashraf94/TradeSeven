@@ -8,6 +8,7 @@
 // review lessons, etc.). Those are exercised by manual / E2E tests.
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { TOURNAMENT_GAME_MODE } from '../../src/constants/leagueTournament.js';
 
 // ==================== HOISTED MOCK STATE ====================
 const {
@@ -304,3 +305,45 @@ describe('agent/chat — catch-block shadow logging (gap closure)', () => {
   });
 });
 
+describe('agent/chat — Catalog #9 round-boundary Film Room tagging', () => {
+  // The durable chatExchanges write (api/agent/chat.js) is the catalog-event
+  // surface; the fire-and-forget shadow log is NOT. A tournament battle's
+  // review exchanges carry groupId so round-boundary analysis can join
+  // groupId → the group doc (bracketGameId/roundNumber are intentionally NOT
+  // stamped on the battle doc — that's fenced createAgentBattle doc-shape).
+  function exchangeFromWrite(written) {
+    const call = written.updateCalls.find(c => c.updates?.chatExchanges?.__op === 'arrayUnion');
+    return call?.updates.chatExchanges.items[0];
+  }
+
+  it('tournament battle: the durable exchange is tagged with groupId', async () => {
+    const fixture = makeFakeFirestore({
+      agent: VALID_AGENT,
+      battle: { ...VALID_BATTLE, gameMode: TOURNAMENT_GAME_MODE, groupId: 'group-xyz' },
+    });
+    activeFirestore = fixture.db;
+
+    const { req, res } = makeReqRes({ agentId: 'agent-1', battleId: 'battle-1', message: 'hi' });
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    const exchange = exchangeFromWrite(fixture.written);
+    expect(exchange).toBeTruthy();
+    expect(exchange.groupId).toBe('group-xyz'); // rides the awaited write
+    // The tag is signal capture only — never the fire-and-forget shadow log.
+    expect(shadowLogCalls.current[0].groupId).toBeUndefined();
+  });
+
+  it('tiered battle: no groupId tag on the exchange (omitted for non-tournament)', async () => {
+    const fixture = makeFakeFirestore({ agent: VALID_AGENT, battle: VALID_BATTLE }); // gameMode 'standard'
+    activeFirestore = fixture.db;
+
+    const { req, res } = makeReqRes({ agentId: 'agent-1', battleId: 'battle-1', message: 'hi' });
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    const exchange = exchangeFromWrite(fixture.written);
+    expect(exchange).toBeTruthy();
+    expect('groupId' in exchange).toBe(false);
+  });
+});

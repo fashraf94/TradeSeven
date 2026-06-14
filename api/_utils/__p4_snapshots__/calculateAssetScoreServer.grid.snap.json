@@ -1,0 +1,4186 @@
+[
+ {
+  "label": "dir=long tier=star hist={} tpc=null ext={} pc=3.2",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": 3.2,
+   "multiplier": 1.28,
+   "baseATR": 2.5,
+   "tierMultiplier": 2,
+   "basePoints": 64,
+   "bonusPoints": 15,
+   "totalPoints": 79,
+   "badges": [
+    "bagger"
+   ],
+   "history": {
+    "maxMultiplier": 1.28,
+    "minMultiplier": 0
+   }
+  }
+ },
+ {
+  "label": "dir=long tier=star hist={} tpc=null ext={} pc=-4.5",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": -4.5,
+   "multiplier": -1.8,
+   "baseATR": 2.5,
+   "tierMultiplier": 2,
+   "basePoints": -90,
+   "bonusPoints": -30,
+   "totalPoints": -120,
+   "badges": [
+    "bust",
+    "crash"
+   ],
+   "history": {
+    "maxMultiplier": 0,
+    "minMultiplier": -1.8
+   }
+  }
+ },
+ {
+  "label": "dir=long tier=star hist={} tpc=null ext={\"highChange\":6,\"lowChange\":-2.6} pc=3.2",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": 3.2,
+   "multiplier": 1.28,
+   "baseATR": 2.5,
+   "tierMultiplier": 2,
+   "basePoints": 64,
+   "bonusPoints": 85,
+   "totalPoints": 149,
+   "badges": [
+    "bagger",
+    "doubleBagger",
+    "tenBagger",
+    "bust"
+   ],
+   "history": {
+    "maxMultiplier": 2.4,
+    "minMultiplier": -1.04
+   }
+  }
+ },
+ {
+  "label": "dir=long tier=star hist={} tpc=null ext={\"highChange\":6,\"lowChange\":-2.6} pc=-4.5",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": -4.5,
+   "multiplier": -1.8,
+   "baseATR": 2.5,
+   "tierMultiplier": 2,
+   "basePoints": -90,
+   "bonusPoints": 65,
+   "totalPoints": -25,
+   "badges": [
+    "bagger",
+    "doubleBagger",
+    "tenBagger",
+    "bust",
+    "crash"
+   ],
+   "history": {
+    "maxMultiplier": 2.4,
+    "minMultiplier": -1.8
+   }
+  }
+ },
+ {
+  "label": "dir=long tier=star hist={} tpc=4.1 ext={} pc=3.2",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": 3.2,
+   "multiplier": 1.64,
+   "baseATR": 2.5,
+   "tierMultiplier": 2,
+   "basePoints": 64,
+   "bonusPoints": 45,
+   "totalPoints": 109,
+   "badges": [
+    "bagger",
+    "doubleBagger"
+   ],
+   "history": {
+    "maxMultiplier": 1.64,
+    "minMultiplier": 0
+   }
+  }
+ },
+ {
+  "label": "dir=long tier=star hist={} tpc=4.1 ext={} pc=-4.5",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": -4.5,
+   "multiplier": 1.64,
+   "baseATR": 2.5,
+   "tierMultiplier": 2,
+   "basePoints": -90,
+   "bonusPoints": 45,
+   "totalPoints": -45,
+   "badges": [
+    "bagger",
+    "doubleBagger"
+   ],
+   "history": {
+    "maxMultiplier": 1.64,
+    "minMultiplier": 0
+   }
+  }
+ },
+ {
+  "label": "dir=long tier=star hist={} tpc=4.1 ext={\"highChange\":6,\"lowChange\":-2.6} pc=3.2",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": 3.2,
+   "multiplier": 1.64,
+   "baseATR": 2.5,
+   "tierMultiplier": 2,
+   "basePoints": 64,
+   "bonusPoints": 85,
+   "totalPoints": 149,
+   "badges": [
+    "bagger",
+    "doubleBagger",
+    "tenBagger",
+    "bust"
+   ],
+   "history": {
+    "maxMultiplier": 2.4,
+    "minMultiplier": -1.04
+   }
+  }
+ },
+ {
+  "label": "dir=long tier=star hist={} tpc=4.1 ext={\"highChange\":6,\"lowChange\":-2.6} pc=-4.5",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": -4.5,
+   "multiplier": 1.64,
+   "baseATR": 2.5,
+   "tierMultiplier": 2,
+   "basePoints": -90,
+   "bonusPoints": 85,
+   "totalPoints": -5,
+   "badges": [
+    "bagger",
+    "doubleBagger",
+    "tenBagger",
+    "bust"
+   ],
+   "history": {
+    "maxMultiplier": 2.4,
+    "minMultiplier": -1.04
+   }
+  }
+ },
+ {
+  "label": "dir=long tier=star hist={\"maxMultiplier\":1.6,\"minMultiplier\":0} tpc=null ext={} pc=3.2",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": 3.2,
+   "multiplier": 1.28,
+   "baseATR": 2.5,
+   "tierMultiplier": 2,
+   "basePoints": 64,
+   "bonusPoints": 45,
+   "totalPoints": 109,
+   "badges": [
+    "bagger",
+    "doubleBagger"
+   ],
+   "history": {
+    "maxMultiplier": 1.6,
+    "minMultiplier": 0
+   }
+  }
+ },
+ {
+  "label": "dir=long tier=star hist={\"maxMultiplier\":1.6,\"minMultiplier\":0} tpc=null ext={} pc=-4.5",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": -4.5,
+   "multiplier": -1.8,
+   "baseATR": 2.5,
+   "tierMultiplier": 2,
+   "basePoints": -90,
+   "bonusPoints": 15,
+   "totalPoints": -75,
+   "badges": [
+    "bagger",
+    "doubleBagger",
+    "bust",
+    "crash"
+   ],
+   "history": {
+    "maxMultiplier": 1.6,
+    "minMultiplier": -1.8
+   }
+  }
+ },
+ {
+  "label": "dir=long tier=star hist={\"maxMultiplier\":1.6,\"minMultiplier\":0} tpc=null ext={\"highChange\":6,\"lowChange\":-2.6} pc=3.2",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": 3.2,
+   "multiplier": 1.28,
+   "baseATR": 2.5,
+   "tierMultiplier": 2,
+   "basePoints": 64,
+   "bonusPoints": 85,
+   "totalPoints": 149,
+   "badges": [
+    "bagger",
+    "doubleBagger",
+    "tenBagger",
+    "bust"
+   ],
+   "history": {
+    "maxMultiplier": 2.4,
+    "minMultiplier": -1.04
+   }
+  }
+ },
+ {
+  "label": "dir=long tier=star hist={\"maxMultiplier\":1.6,\"minMultiplier\":0} tpc=null ext={\"highChange\":6,\"lowChange\":-2.6} pc=-4.5",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": -4.5,
+   "multiplier": -1.8,
+   "baseATR": 2.5,
+   "tierMultiplier": 2,
+   "basePoints": -90,
+   "bonusPoints": 65,
+   "totalPoints": -25,
+   "badges": [
+    "bagger",
+    "doubleBagger",
+    "tenBagger",
+    "bust",
+    "crash"
+   ],
+   "history": {
+    "maxMultiplier": 2.4,
+    "minMultiplier": -1.8
+   }
+  }
+ },
+ {
+  "label": "dir=long tier=star hist={\"maxMultiplier\":1.6,\"minMultiplier\":0} tpc=4.1 ext={} pc=3.2",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": 3.2,
+   "multiplier": 1.64,
+   "baseATR": 2.5,
+   "tierMultiplier": 2,
+   "basePoints": 64,
+   "bonusPoints": 45,
+   "totalPoints": 109,
+   "badges": [
+    "bagger",
+    "doubleBagger"
+   ],
+   "history": {
+    "maxMultiplier": 1.64,
+    "minMultiplier": 0
+   }
+  }
+ },
+ {
+  "label": "dir=long tier=star hist={\"maxMultiplier\":1.6,\"minMultiplier\":0} tpc=4.1 ext={} pc=-4.5",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": -4.5,
+   "multiplier": 1.64,
+   "baseATR": 2.5,
+   "tierMultiplier": 2,
+   "basePoints": -90,
+   "bonusPoints": 45,
+   "totalPoints": -45,
+   "badges": [
+    "bagger",
+    "doubleBagger"
+   ],
+   "history": {
+    "maxMultiplier": 1.64,
+    "minMultiplier": 0
+   }
+  }
+ },
+ {
+  "label": "dir=long tier=star hist={\"maxMultiplier\":1.6,\"minMultiplier\":0} tpc=4.1 ext={\"highChange\":6,\"lowChange\":-2.6} pc=3.2",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": 3.2,
+   "multiplier": 1.64,
+   "baseATR": 2.5,
+   "tierMultiplier": 2,
+   "basePoints": 64,
+   "bonusPoints": 85,
+   "totalPoints": 149,
+   "badges": [
+    "bagger",
+    "doubleBagger",
+    "tenBagger",
+    "bust"
+   ],
+   "history": {
+    "maxMultiplier": 2.4,
+    "minMultiplier": -1.04
+   }
+  }
+ },
+ {
+  "label": "dir=long tier=star hist={\"maxMultiplier\":1.6,\"minMultiplier\":0} tpc=4.1 ext={\"highChange\":6,\"lowChange\":-2.6} pc=-4.5",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": -4.5,
+   "multiplier": 1.64,
+   "baseATR": 2.5,
+   "tierMultiplier": 2,
+   "basePoints": -90,
+   "bonusPoints": 85,
+   "totalPoints": -5,
+   "badges": [
+    "bagger",
+    "doubleBagger",
+    "tenBagger",
+    "bust"
+   ],
+   "history": {
+    "maxMultiplier": 2.4,
+    "minMultiplier": -1.04
+   }
+  }
+ },
+ {
+  "label": "dir=long tier=star hist={\"maxMultiplier\":0,\"minMultiplier\":-1.2} tpc=null ext={} pc=3.2",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": 3.2,
+   "multiplier": 1.28,
+   "baseATR": 2.5,
+   "tierMultiplier": 2,
+   "basePoints": 64,
+   "bonusPoints": 5,
+   "totalPoints": 69,
+   "badges": [
+    "bagger",
+    "bust"
+   ],
+   "history": {
+    "maxMultiplier": 1.28,
+    "minMultiplier": -1.2
+   }
+  }
+ },
+ {
+  "label": "dir=long tier=star hist={\"maxMultiplier\":0,\"minMultiplier\":-1.2} tpc=null ext={} pc=-4.5",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": -4.5,
+   "multiplier": -1.8,
+   "baseATR": 2.5,
+   "tierMultiplier": 2,
+   "basePoints": -90,
+   "bonusPoints": -30,
+   "totalPoints": -120,
+   "badges": [
+    "bust",
+    "crash"
+   ],
+   "history": {
+    "maxMultiplier": 0,
+    "minMultiplier": -1.8
+   }
+  }
+ },
+ {
+  "label": "dir=long tier=star hist={\"maxMultiplier\":0,\"minMultiplier\":-1.2} tpc=null ext={\"highChange\":6,\"lowChange\":-2.6} pc=3.2",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": 3.2,
+   "multiplier": 1.28,
+   "baseATR": 2.5,
+   "tierMultiplier": 2,
+   "basePoints": 64,
+   "bonusPoints": 85,
+   "totalPoints": 149,
+   "badges": [
+    "bagger",
+    "doubleBagger",
+    "tenBagger",
+    "bust"
+   ],
+   "history": {
+    "maxMultiplier": 2.4,
+    "minMultiplier": -1.2
+   }
+  }
+ },
+ {
+  "label": "dir=long tier=star hist={\"maxMultiplier\":0,\"minMultiplier\":-1.2} tpc=null ext={\"highChange\":6,\"lowChange\":-2.6} pc=-4.5",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": -4.5,
+   "multiplier": -1.8,
+   "baseATR": 2.5,
+   "tierMultiplier": 2,
+   "basePoints": -90,
+   "bonusPoints": 65,
+   "totalPoints": -25,
+   "badges": [
+    "bagger",
+    "doubleBagger",
+    "tenBagger",
+    "bust",
+    "crash"
+   ],
+   "history": {
+    "maxMultiplier": 2.4,
+    "minMultiplier": -1.8
+   }
+  }
+ },
+ {
+  "label": "dir=long tier=star hist={\"maxMultiplier\":0,\"minMultiplier\":-1.2} tpc=4.1 ext={} pc=3.2",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": 3.2,
+   "multiplier": 1.64,
+   "baseATR": 2.5,
+   "tierMultiplier": 2,
+   "basePoints": 64,
+   "bonusPoints": 35,
+   "totalPoints": 99,
+   "badges": [
+    "bagger",
+    "doubleBagger",
+    "bust"
+   ],
+   "history": {
+    "maxMultiplier": 1.64,
+    "minMultiplier": -1.2
+   }
+  }
+ },
+ {
+  "label": "dir=long tier=star hist={\"maxMultiplier\":0,\"minMultiplier\":-1.2} tpc=4.1 ext={} pc=-4.5",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": -4.5,
+   "multiplier": 1.64,
+   "baseATR": 2.5,
+   "tierMultiplier": 2,
+   "basePoints": -90,
+   "bonusPoints": 35,
+   "totalPoints": -55,
+   "badges": [
+    "bagger",
+    "doubleBagger",
+    "bust"
+   ],
+   "history": {
+    "maxMultiplier": 1.64,
+    "minMultiplier": -1.2
+   }
+  }
+ },
+ {
+  "label": "dir=long tier=star hist={\"maxMultiplier\":0,\"minMultiplier\":-1.2} tpc=4.1 ext={\"highChange\":6,\"lowChange\":-2.6} pc=3.2",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": 3.2,
+   "multiplier": 1.64,
+   "baseATR": 2.5,
+   "tierMultiplier": 2,
+   "basePoints": 64,
+   "bonusPoints": 85,
+   "totalPoints": 149,
+   "badges": [
+    "bagger",
+    "doubleBagger",
+    "tenBagger",
+    "bust"
+   ],
+   "history": {
+    "maxMultiplier": 2.4,
+    "minMultiplier": -1.2
+   }
+  }
+ },
+ {
+  "label": "dir=long tier=star hist={\"maxMultiplier\":0,\"minMultiplier\":-1.2} tpc=4.1 ext={\"highChange\":6,\"lowChange\":-2.6} pc=-4.5",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": -4.5,
+   "multiplier": 1.64,
+   "baseATR": 2.5,
+   "tierMultiplier": 2,
+   "basePoints": -90,
+   "bonusPoints": 85,
+   "totalPoints": -5,
+   "badges": [
+    "bagger",
+    "doubleBagger",
+    "tenBagger",
+    "bust"
+   ],
+   "history": {
+    "maxMultiplier": 2.4,
+    "minMultiplier": -1.2
+   }
+  }
+ },
+ {
+  "label": "dir=long tier=core hist={} tpc=null ext={} pc=3.2",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": 3.2,
+   "multiplier": 1.28,
+   "baseATR": 2.5,
+   "tierMultiplier": 1.5,
+   "basePoints": 48,
+   "bonusPoints": 15,
+   "totalPoints": 63,
+   "badges": [
+    "bagger"
+   ],
+   "history": {
+    "maxMultiplier": 1.28,
+    "minMultiplier": 0
+   }
+  }
+ },
+ {
+  "label": "dir=long tier=core hist={} tpc=null ext={} pc=-4.5",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": -4.5,
+   "multiplier": -1.8,
+   "baseATR": 2.5,
+   "tierMultiplier": 1.5,
+   "basePoints": -67,
+   "bonusPoints": -30,
+   "totalPoints": -97,
+   "badges": [
+    "bust",
+    "crash"
+   ],
+   "history": {
+    "maxMultiplier": 0,
+    "minMultiplier": -1.8
+   }
+  }
+ },
+ {
+  "label": "dir=long tier=core hist={} tpc=null ext={\"highChange\":6,\"lowChange\":-2.6} pc=3.2",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": 3.2,
+   "multiplier": 1.28,
+   "baseATR": 2.5,
+   "tierMultiplier": 1.5,
+   "basePoints": 48,
+   "bonusPoints": 85,
+   "totalPoints": 133,
+   "badges": [
+    "bagger",
+    "doubleBagger",
+    "tenBagger",
+    "bust"
+   ],
+   "history": {
+    "maxMultiplier": 2.4,
+    "minMultiplier": -1.04
+   }
+  }
+ },
+ {
+  "label": "dir=long tier=core hist={} tpc=null ext={\"highChange\":6,\"lowChange\":-2.6} pc=-4.5",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": -4.5,
+   "multiplier": -1.8,
+   "baseATR": 2.5,
+   "tierMultiplier": 1.5,
+   "basePoints": -67,
+   "bonusPoints": 65,
+   "totalPoints": -2,
+   "badges": [
+    "bagger",
+    "doubleBagger",
+    "tenBagger",
+    "bust",
+    "crash"
+   ],
+   "history": {
+    "maxMultiplier": 2.4,
+    "minMultiplier": -1.8
+   }
+  }
+ },
+ {
+  "label": "dir=long tier=core hist={} tpc=4.1 ext={} pc=3.2",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": 3.2,
+   "multiplier": 1.64,
+   "baseATR": 2.5,
+   "tierMultiplier": 1.5,
+   "basePoints": 48,
+   "bonusPoints": 45,
+   "totalPoints": 93,
+   "badges": [
+    "bagger",
+    "doubleBagger"
+   ],
+   "history": {
+    "maxMultiplier": 1.64,
+    "minMultiplier": 0
+   }
+  }
+ },
+ {
+  "label": "dir=long tier=core hist={} tpc=4.1 ext={} pc=-4.5",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": -4.5,
+   "multiplier": 1.64,
+   "baseATR": 2.5,
+   "tierMultiplier": 1.5,
+   "basePoints": -67,
+   "bonusPoints": 45,
+   "totalPoints": -22,
+   "badges": [
+    "bagger",
+    "doubleBagger"
+   ],
+   "history": {
+    "maxMultiplier": 1.64,
+    "minMultiplier": 0
+   }
+  }
+ },
+ {
+  "label": "dir=long tier=core hist={} tpc=4.1 ext={\"highChange\":6,\"lowChange\":-2.6} pc=3.2",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": 3.2,
+   "multiplier": 1.64,
+   "baseATR": 2.5,
+   "tierMultiplier": 1.5,
+   "basePoints": 48,
+   "bonusPoints": 85,
+   "totalPoints": 133,
+   "badges": [
+    "bagger",
+    "doubleBagger",
+    "tenBagger",
+    "bust"
+   ],
+   "history": {
+    "maxMultiplier": 2.4,
+    "minMultiplier": -1.04
+   }
+  }
+ },
+ {
+  "label": "dir=long tier=core hist={} tpc=4.1 ext={\"highChange\":6,\"lowChange\":-2.6} pc=-4.5",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": -4.5,
+   "multiplier": 1.64,
+   "baseATR": 2.5,
+   "tierMultiplier": 1.5,
+   "basePoints": -67,
+   "bonusPoints": 85,
+   "totalPoints": 18,
+   "badges": [
+    "bagger",
+    "doubleBagger",
+    "tenBagger",
+    "bust"
+   ],
+   "history": {
+    "maxMultiplier": 2.4,
+    "minMultiplier": -1.04
+   }
+  }
+ },
+ {
+  "label": "dir=long tier=core hist={\"maxMultiplier\":1.6,\"minMultiplier\":0} tpc=null ext={} pc=3.2",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": 3.2,
+   "multiplier": 1.28,
+   "baseATR": 2.5,
+   "tierMultiplier": 1.5,
+   "basePoints": 48,
+   "bonusPoints": 45,
+   "totalPoints": 93,
+   "badges": [
+    "bagger",
+    "doubleBagger"
+   ],
+   "history": {
+    "maxMultiplier": 1.6,
+    "minMultiplier": 0
+   }
+  }
+ },
+ {
+  "label": "dir=long tier=core hist={\"maxMultiplier\":1.6,\"minMultiplier\":0} tpc=null ext={} pc=-4.5",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": -4.5,
+   "multiplier": -1.8,
+   "baseATR": 2.5,
+   "tierMultiplier": 1.5,
+   "basePoints": -67,
+   "bonusPoints": 15,
+   "totalPoints": -52,
+   "badges": [
+    "bagger",
+    "doubleBagger",
+    "bust",
+    "crash"
+   ],
+   "history": {
+    "maxMultiplier": 1.6,
+    "minMultiplier": -1.8
+   }
+  }
+ },
+ {
+  "label": "dir=long tier=core hist={\"maxMultiplier\":1.6,\"minMultiplier\":0} tpc=null ext={\"highChange\":6,\"lowChange\":-2.6} pc=3.2",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": 3.2,
+   "multiplier": 1.28,
+   "baseATR": 2.5,
+   "tierMultiplier": 1.5,
+   "basePoints": 48,
+   "bonusPoints": 85,
+   "totalPoints": 133,
+   "badges": [
+    "bagger",
+    "doubleBagger",
+    "tenBagger",
+    "bust"
+   ],
+   "history": {
+    "maxMultiplier": 2.4,
+    "minMultiplier": -1.04
+   }
+  }
+ },
+ {
+  "label": "dir=long tier=core hist={\"maxMultiplier\":1.6,\"minMultiplier\":0} tpc=null ext={\"highChange\":6,\"lowChange\":-2.6} pc=-4.5",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": -4.5,
+   "multiplier": -1.8,
+   "baseATR": 2.5,
+   "tierMultiplier": 1.5,
+   "basePoints": -67,
+   "bonusPoints": 65,
+   "totalPoints": -2,
+   "badges": [
+    "bagger",
+    "doubleBagger",
+    "tenBagger",
+    "bust",
+    "crash"
+   ],
+   "history": {
+    "maxMultiplier": 2.4,
+    "minMultiplier": -1.8
+   }
+  }
+ },
+ {
+  "label": "dir=long tier=core hist={\"maxMultiplier\":1.6,\"minMultiplier\":0} tpc=4.1 ext={} pc=3.2",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": 3.2,
+   "multiplier": 1.64,
+   "baseATR": 2.5,
+   "tierMultiplier": 1.5,
+   "basePoints": 48,
+   "bonusPoints": 45,
+   "totalPoints": 93,
+   "badges": [
+    "bagger",
+    "doubleBagger"
+   ],
+   "history": {
+    "maxMultiplier": 1.64,
+    "minMultiplier": 0
+   }
+  }
+ },
+ {
+  "label": "dir=long tier=core hist={\"maxMultiplier\":1.6,\"minMultiplier\":0} tpc=4.1 ext={} pc=-4.5",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": -4.5,
+   "multiplier": 1.64,
+   "baseATR": 2.5,
+   "tierMultiplier": 1.5,
+   "basePoints": -67,
+   "bonusPoints": 45,
+   "totalPoints": -22,
+   "badges": [
+    "bagger",
+    "doubleBagger"
+   ],
+   "history": {
+    "maxMultiplier": 1.64,
+    "minMultiplier": 0
+   }
+  }
+ },
+ {
+  "label": "dir=long tier=core hist={\"maxMultiplier\":1.6,\"minMultiplier\":0} tpc=4.1 ext={\"highChange\":6,\"lowChange\":-2.6} pc=3.2",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": 3.2,
+   "multiplier": 1.64,
+   "baseATR": 2.5,
+   "tierMultiplier": 1.5,
+   "basePoints": 48,
+   "bonusPoints": 85,
+   "totalPoints": 133,
+   "badges": [
+    "bagger",
+    "doubleBagger",
+    "tenBagger",
+    "bust"
+   ],
+   "history": {
+    "maxMultiplier": 2.4,
+    "minMultiplier": -1.04
+   }
+  }
+ },
+ {
+  "label": "dir=long tier=core hist={\"maxMultiplier\":1.6,\"minMultiplier\":0} tpc=4.1 ext={\"highChange\":6,\"lowChange\":-2.6} pc=-4.5",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": -4.5,
+   "multiplier": 1.64,
+   "baseATR": 2.5,
+   "tierMultiplier": 1.5,
+   "basePoints": -67,
+   "bonusPoints": 85,
+   "totalPoints": 18,
+   "badges": [
+    "bagger",
+    "doubleBagger",
+    "tenBagger",
+    "bust"
+   ],
+   "history": {
+    "maxMultiplier": 2.4,
+    "minMultiplier": -1.04
+   }
+  }
+ },
+ {
+  "label": "dir=long tier=core hist={\"maxMultiplier\":0,\"minMultiplier\":-1.2} tpc=null ext={} pc=3.2",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": 3.2,
+   "multiplier": 1.28,
+   "baseATR": 2.5,
+   "tierMultiplier": 1.5,
+   "basePoints": 48,
+   "bonusPoints": 5,
+   "totalPoints": 53,
+   "badges": [
+    "bagger",
+    "bust"
+   ],
+   "history": {
+    "maxMultiplier": 1.28,
+    "minMultiplier": -1.2
+   }
+  }
+ },
+ {
+  "label": "dir=long tier=core hist={\"maxMultiplier\":0,\"minMultiplier\":-1.2} tpc=null ext={} pc=-4.5",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": -4.5,
+   "multiplier": -1.8,
+   "baseATR": 2.5,
+   "tierMultiplier": 1.5,
+   "basePoints": -67,
+   "bonusPoints": -30,
+   "totalPoints": -97,
+   "badges": [
+    "bust",
+    "crash"
+   ],
+   "history": {
+    "maxMultiplier": 0,
+    "minMultiplier": -1.8
+   }
+  }
+ },
+ {
+  "label": "dir=long tier=core hist={\"maxMultiplier\":0,\"minMultiplier\":-1.2} tpc=null ext={\"highChange\":6,\"lowChange\":-2.6} pc=3.2",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": 3.2,
+   "multiplier": 1.28,
+   "baseATR": 2.5,
+   "tierMultiplier": 1.5,
+   "basePoints": 48,
+   "bonusPoints": 85,
+   "totalPoints": 133,
+   "badges": [
+    "bagger",
+    "doubleBagger",
+    "tenBagger",
+    "bust"
+   ],
+   "history": {
+    "maxMultiplier": 2.4,
+    "minMultiplier": -1.2
+   }
+  }
+ },
+ {
+  "label": "dir=long tier=core hist={\"maxMultiplier\":0,\"minMultiplier\":-1.2} tpc=null ext={\"highChange\":6,\"lowChange\":-2.6} pc=-4.5",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": -4.5,
+   "multiplier": -1.8,
+   "baseATR": 2.5,
+   "tierMultiplier": 1.5,
+   "basePoints": -67,
+   "bonusPoints": 65,
+   "totalPoints": -2,
+   "badges": [
+    "bagger",
+    "doubleBagger",
+    "tenBagger",
+    "bust",
+    "crash"
+   ],
+   "history": {
+    "maxMultiplier": 2.4,
+    "minMultiplier": -1.8
+   }
+  }
+ },
+ {
+  "label": "dir=long tier=core hist={\"maxMultiplier\":0,\"minMultiplier\":-1.2} tpc=4.1 ext={} pc=3.2",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": 3.2,
+   "multiplier": 1.64,
+   "baseATR": 2.5,
+   "tierMultiplier": 1.5,
+   "basePoints": 48,
+   "bonusPoints": 35,
+   "totalPoints": 83,
+   "badges": [
+    "bagger",
+    "doubleBagger",
+    "bust"
+   ],
+   "history": {
+    "maxMultiplier": 1.64,
+    "minMultiplier": -1.2
+   }
+  }
+ },
+ {
+  "label": "dir=long tier=core hist={\"maxMultiplier\":0,\"minMultiplier\":-1.2} tpc=4.1 ext={} pc=-4.5",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": -4.5,
+   "multiplier": 1.64,
+   "baseATR": 2.5,
+   "tierMultiplier": 1.5,
+   "basePoints": -67,
+   "bonusPoints": 35,
+   "totalPoints": -32,
+   "badges": [
+    "bagger",
+    "doubleBagger",
+    "bust"
+   ],
+   "history": {
+    "maxMultiplier": 1.64,
+    "minMultiplier": -1.2
+   }
+  }
+ },
+ {
+  "label": "dir=long tier=core hist={\"maxMultiplier\":0,\"minMultiplier\":-1.2} tpc=4.1 ext={\"highChange\":6,\"lowChange\":-2.6} pc=3.2",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": 3.2,
+   "multiplier": 1.64,
+   "baseATR": 2.5,
+   "tierMultiplier": 1.5,
+   "basePoints": 48,
+   "bonusPoints": 85,
+   "totalPoints": 133,
+   "badges": [
+    "bagger",
+    "doubleBagger",
+    "tenBagger",
+    "bust"
+   ],
+   "history": {
+    "maxMultiplier": 2.4,
+    "minMultiplier": -1.2
+   }
+  }
+ },
+ {
+  "label": "dir=long tier=core hist={\"maxMultiplier\":0,\"minMultiplier\":-1.2} tpc=4.1 ext={\"highChange\":6,\"lowChange\":-2.6} pc=-4.5",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": -4.5,
+   "multiplier": 1.64,
+   "baseATR": 2.5,
+   "tierMultiplier": 1.5,
+   "basePoints": -67,
+   "bonusPoints": 85,
+   "totalPoints": 18,
+   "badges": [
+    "bagger",
+    "doubleBagger",
+    "tenBagger",
+    "bust"
+   ],
+   "history": {
+    "maxMultiplier": 2.4,
+    "minMultiplier": -1.2
+   }
+  }
+ },
+ {
+  "label": "dir=long tier=support hist={} tpc=null ext={} pc=3.2",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": 3.2,
+   "multiplier": 1.28,
+   "baseATR": 2.5,
+   "tierMultiplier": 1,
+   "basePoints": 32,
+   "bonusPoints": 15,
+   "totalPoints": 47,
+   "badges": [
+    "bagger"
+   ],
+   "history": {
+    "maxMultiplier": 1.28,
+    "minMultiplier": 0
+   }
+  }
+ },
+ {
+  "label": "dir=long tier=support hist={} tpc=null ext={} pc=-4.5",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": -4.5,
+   "multiplier": -1.8,
+   "baseATR": 2.5,
+   "tierMultiplier": 1,
+   "basePoints": -45,
+   "bonusPoints": -30,
+   "totalPoints": -75,
+   "badges": [
+    "bust",
+    "crash"
+   ],
+   "history": {
+    "maxMultiplier": 0,
+    "minMultiplier": -1.8
+   }
+  }
+ },
+ {
+  "label": "dir=long tier=support hist={} tpc=null ext={\"highChange\":6,\"lowChange\":-2.6} pc=3.2",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": 3.2,
+   "multiplier": 1.28,
+   "baseATR": 2.5,
+   "tierMultiplier": 1,
+   "basePoints": 32,
+   "bonusPoints": 85,
+   "totalPoints": 117,
+   "badges": [
+    "bagger",
+    "doubleBagger",
+    "tenBagger",
+    "bust"
+   ],
+   "history": {
+    "maxMultiplier": 2.4,
+    "minMultiplier": -1.04
+   }
+  }
+ },
+ {
+  "label": "dir=long tier=support hist={} tpc=null ext={\"highChange\":6,\"lowChange\":-2.6} pc=-4.5",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": -4.5,
+   "multiplier": -1.8,
+   "baseATR": 2.5,
+   "tierMultiplier": 1,
+   "basePoints": -45,
+   "bonusPoints": 65,
+   "totalPoints": 20,
+   "badges": [
+    "bagger",
+    "doubleBagger",
+    "tenBagger",
+    "bust",
+    "crash"
+   ],
+   "history": {
+    "maxMultiplier": 2.4,
+    "minMultiplier": -1.8
+   }
+  }
+ },
+ {
+  "label": "dir=long tier=support hist={} tpc=4.1 ext={} pc=3.2",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": 3.2,
+   "multiplier": 1.64,
+   "baseATR": 2.5,
+   "tierMultiplier": 1,
+   "basePoints": 32,
+   "bonusPoints": 45,
+   "totalPoints": 77,
+   "badges": [
+    "bagger",
+    "doubleBagger"
+   ],
+   "history": {
+    "maxMultiplier": 1.64,
+    "minMultiplier": 0
+   }
+  }
+ },
+ {
+  "label": "dir=long tier=support hist={} tpc=4.1 ext={} pc=-4.5",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": -4.5,
+   "multiplier": 1.64,
+   "baseATR": 2.5,
+   "tierMultiplier": 1,
+   "basePoints": -45,
+   "bonusPoints": 45,
+   "totalPoints": 0,
+   "badges": [
+    "bagger",
+    "doubleBagger"
+   ],
+   "history": {
+    "maxMultiplier": 1.64,
+    "minMultiplier": 0
+   }
+  }
+ },
+ {
+  "label": "dir=long tier=support hist={} tpc=4.1 ext={\"highChange\":6,\"lowChange\":-2.6} pc=3.2",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": 3.2,
+   "multiplier": 1.64,
+   "baseATR": 2.5,
+   "tierMultiplier": 1,
+   "basePoints": 32,
+   "bonusPoints": 85,
+   "totalPoints": 117,
+   "badges": [
+    "bagger",
+    "doubleBagger",
+    "tenBagger",
+    "bust"
+   ],
+   "history": {
+    "maxMultiplier": 2.4,
+    "minMultiplier": -1.04
+   }
+  }
+ },
+ {
+  "label": "dir=long tier=support hist={} tpc=4.1 ext={\"highChange\":6,\"lowChange\":-2.6} pc=-4.5",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": -4.5,
+   "multiplier": 1.64,
+   "baseATR": 2.5,
+   "tierMultiplier": 1,
+   "basePoints": -45,
+   "bonusPoints": 85,
+   "totalPoints": 40,
+   "badges": [
+    "bagger",
+    "doubleBagger",
+    "tenBagger",
+    "bust"
+   ],
+   "history": {
+    "maxMultiplier": 2.4,
+    "minMultiplier": -1.04
+   }
+  }
+ },
+ {
+  "label": "dir=long tier=support hist={\"maxMultiplier\":1.6,\"minMultiplier\":0} tpc=null ext={} pc=3.2",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": 3.2,
+   "multiplier": 1.28,
+   "baseATR": 2.5,
+   "tierMultiplier": 1,
+   "basePoints": 32,
+   "bonusPoints": 45,
+   "totalPoints": 77,
+   "badges": [
+    "bagger",
+    "doubleBagger"
+   ],
+   "history": {
+    "maxMultiplier": 1.6,
+    "minMultiplier": 0
+   }
+  }
+ },
+ {
+  "label": "dir=long tier=support hist={\"maxMultiplier\":1.6,\"minMultiplier\":0} tpc=null ext={} pc=-4.5",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": -4.5,
+   "multiplier": -1.8,
+   "baseATR": 2.5,
+   "tierMultiplier": 1,
+   "basePoints": -45,
+   "bonusPoints": 15,
+   "totalPoints": -30,
+   "badges": [
+    "bagger",
+    "doubleBagger",
+    "bust",
+    "crash"
+   ],
+   "history": {
+    "maxMultiplier": 1.6,
+    "minMultiplier": -1.8
+   }
+  }
+ },
+ {
+  "label": "dir=long tier=support hist={\"maxMultiplier\":1.6,\"minMultiplier\":0} tpc=null ext={\"highChange\":6,\"lowChange\":-2.6} pc=3.2",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": 3.2,
+   "multiplier": 1.28,
+   "baseATR": 2.5,
+   "tierMultiplier": 1,
+   "basePoints": 32,
+   "bonusPoints": 85,
+   "totalPoints": 117,
+   "badges": [
+    "bagger",
+    "doubleBagger",
+    "tenBagger",
+    "bust"
+   ],
+   "history": {
+    "maxMultiplier": 2.4,
+    "minMultiplier": -1.04
+   }
+  }
+ },
+ {
+  "label": "dir=long tier=support hist={\"maxMultiplier\":1.6,\"minMultiplier\":0} tpc=null ext={\"highChange\":6,\"lowChange\":-2.6} pc=-4.5",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": -4.5,
+   "multiplier": -1.8,
+   "baseATR": 2.5,
+   "tierMultiplier": 1,
+   "basePoints": -45,
+   "bonusPoints": 65,
+   "totalPoints": 20,
+   "badges": [
+    "bagger",
+    "doubleBagger",
+    "tenBagger",
+    "bust",
+    "crash"
+   ],
+   "history": {
+    "maxMultiplier": 2.4,
+    "minMultiplier": -1.8
+   }
+  }
+ },
+ {
+  "label": "dir=long tier=support hist={\"maxMultiplier\":1.6,\"minMultiplier\":0} tpc=4.1 ext={} pc=3.2",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": 3.2,
+   "multiplier": 1.64,
+   "baseATR": 2.5,
+   "tierMultiplier": 1,
+   "basePoints": 32,
+   "bonusPoints": 45,
+   "totalPoints": 77,
+   "badges": [
+    "bagger",
+    "doubleBagger"
+   ],
+   "history": {
+    "maxMultiplier": 1.64,
+    "minMultiplier": 0
+   }
+  }
+ },
+ {
+  "label": "dir=long tier=support hist={\"maxMultiplier\":1.6,\"minMultiplier\":0} tpc=4.1 ext={} pc=-4.5",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": -4.5,
+   "multiplier": 1.64,
+   "baseATR": 2.5,
+   "tierMultiplier": 1,
+   "basePoints": -45,
+   "bonusPoints": 45,
+   "totalPoints": 0,
+   "badges": [
+    "bagger",
+    "doubleBagger"
+   ],
+   "history": {
+    "maxMultiplier": 1.64,
+    "minMultiplier": 0
+   }
+  }
+ },
+ {
+  "label": "dir=long tier=support hist={\"maxMultiplier\":1.6,\"minMultiplier\":0} tpc=4.1 ext={\"highChange\":6,\"lowChange\":-2.6} pc=3.2",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": 3.2,
+   "multiplier": 1.64,
+   "baseATR": 2.5,
+   "tierMultiplier": 1,
+   "basePoints": 32,
+   "bonusPoints": 85,
+   "totalPoints": 117,
+   "badges": [
+    "bagger",
+    "doubleBagger",
+    "tenBagger",
+    "bust"
+   ],
+   "history": {
+    "maxMultiplier": 2.4,
+    "minMultiplier": -1.04
+   }
+  }
+ },
+ {
+  "label": "dir=long tier=support hist={\"maxMultiplier\":1.6,\"minMultiplier\":0} tpc=4.1 ext={\"highChange\":6,\"lowChange\":-2.6} pc=-4.5",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": -4.5,
+   "multiplier": 1.64,
+   "baseATR": 2.5,
+   "tierMultiplier": 1,
+   "basePoints": -45,
+   "bonusPoints": 85,
+   "totalPoints": 40,
+   "badges": [
+    "bagger",
+    "doubleBagger",
+    "tenBagger",
+    "bust"
+   ],
+   "history": {
+    "maxMultiplier": 2.4,
+    "minMultiplier": -1.04
+   }
+  }
+ },
+ {
+  "label": "dir=long tier=support hist={\"maxMultiplier\":0,\"minMultiplier\":-1.2} tpc=null ext={} pc=3.2",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": 3.2,
+   "multiplier": 1.28,
+   "baseATR": 2.5,
+   "tierMultiplier": 1,
+   "basePoints": 32,
+   "bonusPoints": 5,
+   "totalPoints": 37,
+   "badges": [
+    "bagger",
+    "bust"
+   ],
+   "history": {
+    "maxMultiplier": 1.28,
+    "minMultiplier": -1.2
+   }
+  }
+ },
+ {
+  "label": "dir=long tier=support hist={\"maxMultiplier\":0,\"minMultiplier\":-1.2} tpc=null ext={} pc=-4.5",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": -4.5,
+   "multiplier": -1.8,
+   "baseATR": 2.5,
+   "tierMultiplier": 1,
+   "basePoints": -45,
+   "bonusPoints": -30,
+   "totalPoints": -75,
+   "badges": [
+    "bust",
+    "crash"
+   ],
+   "history": {
+    "maxMultiplier": 0,
+    "minMultiplier": -1.8
+   }
+  }
+ },
+ {
+  "label": "dir=long tier=support hist={\"maxMultiplier\":0,\"minMultiplier\":-1.2} tpc=null ext={\"highChange\":6,\"lowChange\":-2.6} pc=3.2",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": 3.2,
+   "multiplier": 1.28,
+   "baseATR": 2.5,
+   "tierMultiplier": 1,
+   "basePoints": 32,
+   "bonusPoints": 85,
+   "totalPoints": 117,
+   "badges": [
+    "bagger",
+    "doubleBagger",
+    "tenBagger",
+    "bust"
+   ],
+   "history": {
+    "maxMultiplier": 2.4,
+    "minMultiplier": -1.2
+   }
+  }
+ },
+ {
+  "label": "dir=long tier=support hist={\"maxMultiplier\":0,\"minMultiplier\":-1.2} tpc=null ext={\"highChange\":6,\"lowChange\":-2.6} pc=-4.5",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": -4.5,
+   "multiplier": -1.8,
+   "baseATR": 2.5,
+   "tierMultiplier": 1,
+   "basePoints": -45,
+   "bonusPoints": 65,
+   "totalPoints": 20,
+   "badges": [
+    "bagger",
+    "doubleBagger",
+    "tenBagger",
+    "bust",
+    "crash"
+   ],
+   "history": {
+    "maxMultiplier": 2.4,
+    "minMultiplier": -1.8
+   }
+  }
+ },
+ {
+  "label": "dir=long tier=support hist={\"maxMultiplier\":0,\"minMultiplier\":-1.2} tpc=4.1 ext={} pc=3.2",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": 3.2,
+   "multiplier": 1.64,
+   "baseATR": 2.5,
+   "tierMultiplier": 1,
+   "basePoints": 32,
+   "bonusPoints": 35,
+   "totalPoints": 67,
+   "badges": [
+    "bagger",
+    "doubleBagger",
+    "bust"
+   ],
+   "history": {
+    "maxMultiplier": 1.64,
+    "minMultiplier": -1.2
+   }
+  }
+ },
+ {
+  "label": "dir=long tier=support hist={\"maxMultiplier\":0,\"minMultiplier\":-1.2} tpc=4.1 ext={} pc=-4.5",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": -4.5,
+   "multiplier": 1.64,
+   "baseATR": 2.5,
+   "tierMultiplier": 1,
+   "basePoints": -45,
+   "bonusPoints": 35,
+   "totalPoints": -10,
+   "badges": [
+    "bagger",
+    "doubleBagger",
+    "bust"
+   ],
+   "history": {
+    "maxMultiplier": 1.64,
+    "minMultiplier": -1.2
+   }
+  }
+ },
+ {
+  "label": "dir=long tier=support hist={\"maxMultiplier\":0,\"minMultiplier\":-1.2} tpc=4.1 ext={\"highChange\":6,\"lowChange\":-2.6} pc=3.2",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": 3.2,
+   "multiplier": 1.64,
+   "baseATR": 2.5,
+   "tierMultiplier": 1,
+   "basePoints": 32,
+   "bonusPoints": 85,
+   "totalPoints": 117,
+   "badges": [
+    "bagger",
+    "doubleBagger",
+    "tenBagger",
+    "bust"
+   ],
+   "history": {
+    "maxMultiplier": 2.4,
+    "minMultiplier": -1.2
+   }
+  }
+ },
+ {
+  "label": "dir=long tier=support hist={\"maxMultiplier\":0,\"minMultiplier\":-1.2} tpc=4.1 ext={\"highChange\":6,\"lowChange\":-2.6} pc=-4.5",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": -4.5,
+   "multiplier": 1.64,
+   "baseATR": 2.5,
+   "tierMultiplier": 1,
+   "basePoints": -45,
+   "bonusPoints": 85,
+   "totalPoints": 40,
+   "badges": [
+    "bagger",
+    "doubleBagger",
+    "tenBagger",
+    "bust"
+   ],
+   "history": {
+    "maxMultiplier": 2.4,
+    "minMultiplier": -1.2
+   }
+  }
+ },
+ {
+  "label": "dir=long tier=none hist={} tpc=null ext={} pc=3.2",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": 3.2,
+   "multiplier": 1.28,
+   "baseATR": 2.5,
+   "tierMultiplier": 1,
+   "basePoints": 32,
+   "bonusPoints": 15,
+   "totalPoints": 47,
+   "badges": [
+    "bagger"
+   ],
+   "history": {
+    "maxMultiplier": 1.28,
+    "minMultiplier": 0
+   }
+  }
+ },
+ {
+  "label": "dir=long tier=none hist={} tpc=null ext={} pc=-4.5",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": -4.5,
+   "multiplier": -1.8,
+   "baseATR": 2.5,
+   "tierMultiplier": 1,
+   "basePoints": -45,
+   "bonusPoints": -30,
+   "totalPoints": -75,
+   "badges": [
+    "bust",
+    "crash"
+   ],
+   "history": {
+    "maxMultiplier": 0,
+    "minMultiplier": -1.8
+   }
+  }
+ },
+ {
+  "label": "dir=long tier=none hist={} tpc=null ext={\"highChange\":6,\"lowChange\":-2.6} pc=3.2",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": 3.2,
+   "multiplier": 1.28,
+   "baseATR": 2.5,
+   "tierMultiplier": 1,
+   "basePoints": 32,
+   "bonusPoints": 85,
+   "totalPoints": 117,
+   "badges": [
+    "bagger",
+    "doubleBagger",
+    "tenBagger",
+    "bust"
+   ],
+   "history": {
+    "maxMultiplier": 2.4,
+    "minMultiplier": -1.04
+   }
+  }
+ },
+ {
+  "label": "dir=long tier=none hist={} tpc=null ext={\"highChange\":6,\"lowChange\":-2.6} pc=-4.5",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": -4.5,
+   "multiplier": -1.8,
+   "baseATR": 2.5,
+   "tierMultiplier": 1,
+   "basePoints": -45,
+   "bonusPoints": 65,
+   "totalPoints": 20,
+   "badges": [
+    "bagger",
+    "doubleBagger",
+    "tenBagger",
+    "bust",
+    "crash"
+   ],
+   "history": {
+    "maxMultiplier": 2.4,
+    "minMultiplier": -1.8
+   }
+  }
+ },
+ {
+  "label": "dir=long tier=none hist={} tpc=4.1 ext={} pc=3.2",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": 3.2,
+   "multiplier": 1.64,
+   "baseATR": 2.5,
+   "tierMultiplier": 1,
+   "basePoints": 32,
+   "bonusPoints": 45,
+   "totalPoints": 77,
+   "badges": [
+    "bagger",
+    "doubleBagger"
+   ],
+   "history": {
+    "maxMultiplier": 1.64,
+    "minMultiplier": 0
+   }
+  }
+ },
+ {
+  "label": "dir=long tier=none hist={} tpc=4.1 ext={} pc=-4.5",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": -4.5,
+   "multiplier": 1.64,
+   "baseATR": 2.5,
+   "tierMultiplier": 1,
+   "basePoints": -45,
+   "bonusPoints": 45,
+   "totalPoints": 0,
+   "badges": [
+    "bagger",
+    "doubleBagger"
+   ],
+   "history": {
+    "maxMultiplier": 1.64,
+    "minMultiplier": 0
+   }
+  }
+ },
+ {
+  "label": "dir=long tier=none hist={} tpc=4.1 ext={\"highChange\":6,\"lowChange\":-2.6} pc=3.2",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": 3.2,
+   "multiplier": 1.64,
+   "baseATR": 2.5,
+   "tierMultiplier": 1,
+   "basePoints": 32,
+   "bonusPoints": 85,
+   "totalPoints": 117,
+   "badges": [
+    "bagger",
+    "doubleBagger",
+    "tenBagger",
+    "bust"
+   ],
+   "history": {
+    "maxMultiplier": 2.4,
+    "minMultiplier": -1.04
+   }
+  }
+ },
+ {
+  "label": "dir=long tier=none hist={} tpc=4.1 ext={\"highChange\":6,\"lowChange\":-2.6} pc=-4.5",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": -4.5,
+   "multiplier": 1.64,
+   "baseATR": 2.5,
+   "tierMultiplier": 1,
+   "basePoints": -45,
+   "bonusPoints": 85,
+   "totalPoints": 40,
+   "badges": [
+    "bagger",
+    "doubleBagger",
+    "tenBagger",
+    "bust"
+   ],
+   "history": {
+    "maxMultiplier": 2.4,
+    "minMultiplier": -1.04
+   }
+  }
+ },
+ {
+  "label": "dir=long tier=none hist={\"maxMultiplier\":1.6,\"minMultiplier\":0} tpc=null ext={} pc=3.2",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": 3.2,
+   "multiplier": 1.28,
+   "baseATR": 2.5,
+   "tierMultiplier": 1,
+   "basePoints": 32,
+   "bonusPoints": 45,
+   "totalPoints": 77,
+   "badges": [
+    "bagger",
+    "doubleBagger"
+   ],
+   "history": {
+    "maxMultiplier": 1.6,
+    "minMultiplier": 0
+   }
+  }
+ },
+ {
+  "label": "dir=long tier=none hist={\"maxMultiplier\":1.6,\"minMultiplier\":0} tpc=null ext={} pc=-4.5",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": -4.5,
+   "multiplier": -1.8,
+   "baseATR": 2.5,
+   "tierMultiplier": 1,
+   "basePoints": -45,
+   "bonusPoints": 15,
+   "totalPoints": -30,
+   "badges": [
+    "bagger",
+    "doubleBagger",
+    "bust",
+    "crash"
+   ],
+   "history": {
+    "maxMultiplier": 1.6,
+    "minMultiplier": -1.8
+   }
+  }
+ },
+ {
+  "label": "dir=long tier=none hist={\"maxMultiplier\":1.6,\"minMultiplier\":0} tpc=null ext={\"highChange\":6,\"lowChange\":-2.6} pc=3.2",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": 3.2,
+   "multiplier": 1.28,
+   "baseATR": 2.5,
+   "tierMultiplier": 1,
+   "basePoints": 32,
+   "bonusPoints": 85,
+   "totalPoints": 117,
+   "badges": [
+    "bagger",
+    "doubleBagger",
+    "tenBagger",
+    "bust"
+   ],
+   "history": {
+    "maxMultiplier": 2.4,
+    "minMultiplier": -1.04
+   }
+  }
+ },
+ {
+  "label": "dir=long tier=none hist={\"maxMultiplier\":1.6,\"minMultiplier\":0} tpc=null ext={\"highChange\":6,\"lowChange\":-2.6} pc=-4.5",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": -4.5,
+   "multiplier": -1.8,
+   "baseATR": 2.5,
+   "tierMultiplier": 1,
+   "basePoints": -45,
+   "bonusPoints": 65,
+   "totalPoints": 20,
+   "badges": [
+    "bagger",
+    "doubleBagger",
+    "tenBagger",
+    "bust",
+    "crash"
+   ],
+   "history": {
+    "maxMultiplier": 2.4,
+    "minMultiplier": -1.8
+   }
+  }
+ },
+ {
+  "label": "dir=long tier=none hist={\"maxMultiplier\":1.6,\"minMultiplier\":0} tpc=4.1 ext={} pc=3.2",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": 3.2,
+   "multiplier": 1.64,
+   "baseATR": 2.5,
+   "tierMultiplier": 1,
+   "basePoints": 32,
+   "bonusPoints": 45,
+   "totalPoints": 77,
+   "badges": [
+    "bagger",
+    "doubleBagger"
+   ],
+   "history": {
+    "maxMultiplier": 1.64,
+    "minMultiplier": 0
+   }
+  }
+ },
+ {
+  "label": "dir=long tier=none hist={\"maxMultiplier\":1.6,\"minMultiplier\":0} tpc=4.1 ext={} pc=-4.5",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": -4.5,
+   "multiplier": 1.64,
+   "baseATR": 2.5,
+   "tierMultiplier": 1,
+   "basePoints": -45,
+   "bonusPoints": 45,
+   "totalPoints": 0,
+   "badges": [
+    "bagger",
+    "doubleBagger"
+   ],
+   "history": {
+    "maxMultiplier": 1.64,
+    "minMultiplier": 0
+   }
+  }
+ },
+ {
+  "label": "dir=long tier=none hist={\"maxMultiplier\":1.6,\"minMultiplier\":0} tpc=4.1 ext={\"highChange\":6,\"lowChange\":-2.6} pc=3.2",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": 3.2,
+   "multiplier": 1.64,
+   "baseATR": 2.5,
+   "tierMultiplier": 1,
+   "basePoints": 32,
+   "bonusPoints": 85,
+   "totalPoints": 117,
+   "badges": [
+    "bagger",
+    "doubleBagger",
+    "tenBagger",
+    "bust"
+   ],
+   "history": {
+    "maxMultiplier": 2.4,
+    "minMultiplier": -1.04
+   }
+  }
+ },
+ {
+  "label": "dir=long tier=none hist={\"maxMultiplier\":1.6,\"minMultiplier\":0} tpc=4.1 ext={\"highChange\":6,\"lowChange\":-2.6} pc=-4.5",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": -4.5,
+   "multiplier": 1.64,
+   "baseATR": 2.5,
+   "tierMultiplier": 1,
+   "basePoints": -45,
+   "bonusPoints": 85,
+   "totalPoints": 40,
+   "badges": [
+    "bagger",
+    "doubleBagger",
+    "tenBagger",
+    "bust"
+   ],
+   "history": {
+    "maxMultiplier": 2.4,
+    "minMultiplier": -1.04
+   }
+  }
+ },
+ {
+  "label": "dir=long tier=none hist={\"maxMultiplier\":0,\"minMultiplier\":-1.2} tpc=null ext={} pc=3.2",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": 3.2,
+   "multiplier": 1.28,
+   "baseATR": 2.5,
+   "tierMultiplier": 1,
+   "basePoints": 32,
+   "bonusPoints": 5,
+   "totalPoints": 37,
+   "badges": [
+    "bagger",
+    "bust"
+   ],
+   "history": {
+    "maxMultiplier": 1.28,
+    "minMultiplier": -1.2
+   }
+  }
+ },
+ {
+  "label": "dir=long tier=none hist={\"maxMultiplier\":0,\"minMultiplier\":-1.2} tpc=null ext={} pc=-4.5",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": -4.5,
+   "multiplier": -1.8,
+   "baseATR": 2.5,
+   "tierMultiplier": 1,
+   "basePoints": -45,
+   "bonusPoints": -30,
+   "totalPoints": -75,
+   "badges": [
+    "bust",
+    "crash"
+   ],
+   "history": {
+    "maxMultiplier": 0,
+    "minMultiplier": -1.8
+   }
+  }
+ },
+ {
+  "label": "dir=long tier=none hist={\"maxMultiplier\":0,\"minMultiplier\":-1.2} tpc=null ext={\"highChange\":6,\"lowChange\":-2.6} pc=3.2",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": 3.2,
+   "multiplier": 1.28,
+   "baseATR": 2.5,
+   "tierMultiplier": 1,
+   "basePoints": 32,
+   "bonusPoints": 85,
+   "totalPoints": 117,
+   "badges": [
+    "bagger",
+    "doubleBagger",
+    "tenBagger",
+    "bust"
+   ],
+   "history": {
+    "maxMultiplier": 2.4,
+    "minMultiplier": -1.2
+   }
+  }
+ },
+ {
+  "label": "dir=long tier=none hist={\"maxMultiplier\":0,\"minMultiplier\":-1.2} tpc=null ext={\"highChange\":6,\"lowChange\":-2.6} pc=-4.5",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": -4.5,
+   "multiplier": -1.8,
+   "baseATR": 2.5,
+   "tierMultiplier": 1,
+   "basePoints": -45,
+   "bonusPoints": 65,
+   "totalPoints": 20,
+   "badges": [
+    "bagger",
+    "doubleBagger",
+    "tenBagger",
+    "bust",
+    "crash"
+   ],
+   "history": {
+    "maxMultiplier": 2.4,
+    "minMultiplier": -1.8
+   }
+  }
+ },
+ {
+  "label": "dir=long tier=none hist={\"maxMultiplier\":0,\"minMultiplier\":-1.2} tpc=4.1 ext={} pc=3.2",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": 3.2,
+   "multiplier": 1.64,
+   "baseATR": 2.5,
+   "tierMultiplier": 1,
+   "basePoints": 32,
+   "bonusPoints": 35,
+   "totalPoints": 67,
+   "badges": [
+    "bagger",
+    "doubleBagger",
+    "bust"
+   ],
+   "history": {
+    "maxMultiplier": 1.64,
+    "minMultiplier": -1.2
+   }
+  }
+ },
+ {
+  "label": "dir=long tier=none hist={\"maxMultiplier\":0,\"minMultiplier\":-1.2} tpc=4.1 ext={} pc=-4.5",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": -4.5,
+   "multiplier": 1.64,
+   "baseATR": 2.5,
+   "tierMultiplier": 1,
+   "basePoints": -45,
+   "bonusPoints": 35,
+   "totalPoints": -10,
+   "badges": [
+    "bagger",
+    "doubleBagger",
+    "bust"
+   ],
+   "history": {
+    "maxMultiplier": 1.64,
+    "minMultiplier": -1.2
+   }
+  }
+ },
+ {
+  "label": "dir=long tier=none hist={\"maxMultiplier\":0,\"minMultiplier\":-1.2} tpc=4.1 ext={\"highChange\":6,\"lowChange\":-2.6} pc=3.2",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": 3.2,
+   "multiplier": 1.64,
+   "baseATR": 2.5,
+   "tierMultiplier": 1,
+   "basePoints": 32,
+   "bonusPoints": 85,
+   "totalPoints": 117,
+   "badges": [
+    "bagger",
+    "doubleBagger",
+    "tenBagger",
+    "bust"
+   ],
+   "history": {
+    "maxMultiplier": 2.4,
+    "minMultiplier": -1.2
+   }
+  }
+ },
+ {
+  "label": "dir=long tier=none hist={\"maxMultiplier\":0,\"minMultiplier\":-1.2} tpc=4.1 ext={\"highChange\":6,\"lowChange\":-2.6} pc=-4.5",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": -4.5,
+   "multiplier": 1.64,
+   "baseATR": 2.5,
+   "tierMultiplier": 1,
+   "basePoints": -45,
+   "bonusPoints": 85,
+   "totalPoints": 40,
+   "badges": [
+    "bagger",
+    "doubleBagger",
+    "tenBagger",
+    "bust"
+   ],
+   "history": {
+    "maxMultiplier": 2.4,
+    "minMultiplier": -1.2
+   }
+  }
+ },
+ {
+  "label": "dir=short tier=star hist={} tpc=null ext={} pc=3.2",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": -3.2,
+   "multiplier": -1.28,
+   "baseATR": 2.5,
+   "tierMultiplier": 2,
+   "basePoints": -64,
+   "bonusPoints": -10,
+   "totalPoints": -74,
+   "badges": [
+    "bust"
+   ],
+   "history": {
+    "maxMultiplier": 0,
+    "minMultiplier": -1.28
+   }
+  }
+ },
+ {
+  "label": "dir=short tier=star hist={} tpc=null ext={} pc=-4.5",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": 4.5,
+   "multiplier": 1.8,
+   "baseATR": 2.5,
+   "tierMultiplier": 2,
+   "basePoints": 90,
+   "bonusPoints": 45,
+   "totalPoints": 135,
+   "badges": [
+    "bagger",
+    "doubleBagger"
+   ],
+   "history": {
+    "maxMultiplier": 1.8,
+    "minMultiplier": 0
+   }
+  }
+ },
+ {
+  "label": "dir=short tier=star hist={} tpc=null ext={\"highChange\":6,\"lowChange\":-2.6} pc=3.2",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": -3.2,
+   "multiplier": -1.28,
+   "baseATR": 2.5,
+   "tierMultiplier": 2,
+   "basePoints": -64,
+   "bonusPoints": -10,
+   "totalPoints": -74,
+   "badges": [
+    "bust"
+   ],
+   "history": {
+    "maxMultiplier": 0,
+    "minMultiplier": -1.28
+   }
+  }
+ },
+ {
+  "label": "dir=short tier=star hist={} tpc=null ext={\"highChange\":6,\"lowChange\":-2.6} pc=-4.5",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": 4.5,
+   "multiplier": 1.8,
+   "baseATR": 2.5,
+   "tierMultiplier": 2,
+   "basePoints": 90,
+   "bonusPoints": 45,
+   "totalPoints": 135,
+   "badges": [
+    "bagger",
+    "doubleBagger"
+   ],
+   "history": {
+    "maxMultiplier": 1.8,
+    "minMultiplier": 0
+   }
+  }
+ },
+ {
+  "label": "dir=short tier=star hist={} tpc=4.1 ext={} pc=3.2",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": -3.2,
+   "multiplier": -1.64,
+   "baseATR": 2.5,
+   "tierMultiplier": 2,
+   "basePoints": -64,
+   "bonusPoints": -30,
+   "totalPoints": -94,
+   "badges": [
+    "bust",
+    "crash"
+   ],
+   "history": {
+    "maxMultiplier": 0,
+    "minMultiplier": -1.64
+   }
+  }
+ },
+ {
+  "label": "dir=short tier=star hist={} tpc=4.1 ext={} pc=-4.5",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": 4.5,
+   "multiplier": -1.64,
+   "baseATR": 2.5,
+   "tierMultiplier": 2,
+   "basePoints": 90,
+   "bonusPoints": -30,
+   "totalPoints": 60,
+   "badges": [
+    "bust",
+    "crash"
+   ],
+   "history": {
+    "maxMultiplier": 0,
+    "minMultiplier": -1.64
+   }
+  }
+ },
+ {
+  "label": "dir=short tier=star hist={} tpc=4.1 ext={\"highChange\":6,\"lowChange\":-2.6} pc=3.2",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": -3.2,
+   "multiplier": -1.64,
+   "baseATR": 2.5,
+   "tierMultiplier": 2,
+   "basePoints": -64,
+   "bonusPoints": -30,
+   "totalPoints": -94,
+   "badges": [
+    "bust",
+    "crash"
+   ],
+   "history": {
+    "maxMultiplier": 0,
+    "minMultiplier": -1.64
+   }
+  }
+ },
+ {
+  "label": "dir=short tier=star hist={} tpc=4.1 ext={\"highChange\":6,\"lowChange\":-2.6} pc=-4.5",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": 4.5,
+   "multiplier": -1.64,
+   "baseATR": 2.5,
+   "tierMultiplier": 2,
+   "basePoints": 90,
+   "bonusPoints": -30,
+   "totalPoints": 60,
+   "badges": [
+    "bust",
+    "crash"
+   ],
+   "history": {
+    "maxMultiplier": 0,
+    "minMultiplier": -1.64
+   }
+  }
+ },
+ {
+  "label": "dir=short tier=star hist={\"maxMultiplier\":1.6,\"minMultiplier\":0} tpc=null ext={} pc=3.2",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": -3.2,
+   "multiplier": -1.28,
+   "baseATR": 2.5,
+   "tierMultiplier": 2,
+   "basePoints": -64,
+   "bonusPoints": 35,
+   "totalPoints": -29,
+   "badges": [
+    "bagger",
+    "doubleBagger",
+    "bust"
+   ],
+   "history": {
+    "maxMultiplier": 1.6,
+    "minMultiplier": -1.28
+   }
+  }
+ },
+ {
+  "label": "dir=short tier=star hist={\"maxMultiplier\":1.6,\"minMultiplier\":0} tpc=null ext={} pc=-4.5",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": 4.5,
+   "multiplier": 1.8,
+   "baseATR": 2.5,
+   "tierMultiplier": 2,
+   "basePoints": 90,
+   "bonusPoints": 45,
+   "totalPoints": 135,
+   "badges": [
+    "bagger",
+    "doubleBagger"
+   ],
+   "history": {
+    "maxMultiplier": 1.8,
+    "minMultiplier": 0
+   }
+  }
+ },
+ {
+  "label": "dir=short tier=star hist={\"maxMultiplier\":1.6,\"minMultiplier\":0} tpc=null ext={\"highChange\":6,\"lowChange\":-2.6} pc=3.2",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": -3.2,
+   "multiplier": -1.28,
+   "baseATR": 2.5,
+   "tierMultiplier": 2,
+   "basePoints": -64,
+   "bonusPoints": 35,
+   "totalPoints": -29,
+   "badges": [
+    "bagger",
+    "doubleBagger",
+    "bust"
+   ],
+   "history": {
+    "maxMultiplier": 1.6,
+    "minMultiplier": -1.28
+   }
+  }
+ },
+ {
+  "label": "dir=short tier=star hist={\"maxMultiplier\":1.6,\"minMultiplier\":0} tpc=null ext={\"highChange\":6,\"lowChange\":-2.6} pc=-4.5",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": 4.5,
+   "multiplier": 1.8,
+   "baseATR": 2.5,
+   "tierMultiplier": 2,
+   "basePoints": 90,
+   "bonusPoints": 45,
+   "totalPoints": 135,
+   "badges": [
+    "bagger",
+    "doubleBagger"
+   ],
+   "history": {
+    "maxMultiplier": 1.8,
+    "minMultiplier": 0
+   }
+  }
+ },
+ {
+  "label": "dir=short tier=star hist={\"maxMultiplier\":1.6,\"minMultiplier\":0} tpc=4.1 ext={} pc=3.2",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": -3.2,
+   "multiplier": -1.64,
+   "baseATR": 2.5,
+   "tierMultiplier": 2,
+   "basePoints": -64,
+   "bonusPoints": 15,
+   "totalPoints": -49,
+   "badges": [
+    "bagger",
+    "doubleBagger",
+    "bust",
+    "crash"
+   ],
+   "history": {
+    "maxMultiplier": 1.6,
+    "minMultiplier": -1.64
+   }
+  }
+ },
+ {
+  "label": "dir=short tier=star hist={\"maxMultiplier\":1.6,\"minMultiplier\":0} tpc=4.1 ext={} pc=-4.5",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": 4.5,
+   "multiplier": -1.64,
+   "baseATR": 2.5,
+   "tierMultiplier": 2,
+   "basePoints": 90,
+   "bonusPoints": 15,
+   "totalPoints": 105,
+   "badges": [
+    "bagger",
+    "doubleBagger",
+    "bust",
+    "crash"
+   ],
+   "history": {
+    "maxMultiplier": 1.6,
+    "minMultiplier": -1.64
+   }
+  }
+ },
+ {
+  "label": "dir=short tier=star hist={\"maxMultiplier\":1.6,\"minMultiplier\":0} tpc=4.1 ext={\"highChange\":6,\"lowChange\":-2.6} pc=3.2",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": -3.2,
+   "multiplier": -1.64,
+   "baseATR": 2.5,
+   "tierMultiplier": 2,
+   "basePoints": -64,
+   "bonusPoints": 15,
+   "totalPoints": -49,
+   "badges": [
+    "bagger",
+    "doubleBagger",
+    "bust",
+    "crash"
+   ],
+   "history": {
+    "maxMultiplier": 1.6,
+    "minMultiplier": -1.64
+   }
+  }
+ },
+ {
+  "label": "dir=short tier=star hist={\"maxMultiplier\":1.6,\"minMultiplier\":0} tpc=4.1 ext={\"highChange\":6,\"lowChange\":-2.6} pc=-4.5",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": 4.5,
+   "multiplier": -1.64,
+   "baseATR": 2.5,
+   "tierMultiplier": 2,
+   "basePoints": 90,
+   "bonusPoints": 15,
+   "totalPoints": 105,
+   "badges": [
+    "bagger",
+    "doubleBagger",
+    "bust",
+    "crash"
+   ],
+   "history": {
+    "maxMultiplier": 1.6,
+    "minMultiplier": -1.64
+   }
+  }
+ },
+ {
+  "label": "dir=short tier=star hist={\"maxMultiplier\":0,\"minMultiplier\":-1.2} tpc=null ext={} pc=3.2",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": -3.2,
+   "multiplier": -1.28,
+   "baseATR": 2.5,
+   "tierMultiplier": 2,
+   "basePoints": -64,
+   "bonusPoints": -10,
+   "totalPoints": -74,
+   "badges": [
+    "bust"
+   ],
+   "history": {
+    "maxMultiplier": 0,
+    "minMultiplier": -1.28
+   }
+  }
+ },
+ {
+  "label": "dir=short tier=star hist={\"maxMultiplier\":0,\"minMultiplier\":-1.2} tpc=null ext={} pc=-4.5",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": 4.5,
+   "multiplier": 1.8,
+   "baseATR": 2.5,
+   "tierMultiplier": 2,
+   "basePoints": 90,
+   "bonusPoints": 35,
+   "totalPoints": 125,
+   "badges": [
+    "bagger",
+    "doubleBagger",
+    "bust"
+   ],
+   "history": {
+    "maxMultiplier": 1.8,
+    "minMultiplier": -1.2
+   }
+  }
+ },
+ {
+  "label": "dir=short tier=star hist={\"maxMultiplier\":0,\"minMultiplier\":-1.2} tpc=null ext={\"highChange\":6,\"lowChange\":-2.6} pc=3.2",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": -3.2,
+   "multiplier": -1.28,
+   "baseATR": 2.5,
+   "tierMultiplier": 2,
+   "basePoints": -64,
+   "bonusPoints": -10,
+   "totalPoints": -74,
+   "badges": [
+    "bust"
+   ],
+   "history": {
+    "maxMultiplier": 0,
+    "minMultiplier": -1.28
+   }
+  }
+ },
+ {
+  "label": "dir=short tier=star hist={\"maxMultiplier\":0,\"minMultiplier\":-1.2} tpc=null ext={\"highChange\":6,\"lowChange\":-2.6} pc=-4.5",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": 4.5,
+   "multiplier": 1.8,
+   "baseATR": 2.5,
+   "tierMultiplier": 2,
+   "basePoints": 90,
+   "bonusPoints": 35,
+   "totalPoints": 125,
+   "badges": [
+    "bagger",
+    "doubleBagger",
+    "bust"
+   ],
+   "history": {
+    "maxMultiplier": 1.8,
+    "minMultiplier": -1.2
+   }
+  }
+ },
+ {
+  "label": "dir=short tier=star hist={\"maxMultiplier\":0,\"minMultiplier\":-1.2} tpc=4.1 ext={} pc=3.2",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": -3.2,
+   "multiplier": -1.64,
+   "baseATR": 2.5,
+   "tierMultiplier": 2,
+   "basePoints": -64,
+   "bonusPoints": -30,
+   "totalPoints": -94,
+   "badges": [
+    "bust",
+    "crash"
+   ],
+   "history": {
+    "maxMultiplier": 0,
+    "minMultiplier": -1.64
+   }
+  }
+ },
+ {
+  "label": "dir=short tier=star hist={\"maxMultiplier\":0,\"minMultiplier\":-1.2} tpc=4.1 ext={} pc=-4.5",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": 4.5,
+   "multiplier": -1.64,
+   "baseATR": 2.5,
+   "tierMultiplier": 2,
+   "basePoints": 90,
+   "bonusPoints": -30,
+   "totalPoints": 60,
+   "badges": [
+    "bust",
+    "crash"
+   ],
+   "history": {
+    "maxMultiplier": 0,
+    "minMultiplier": -1.64
+   }
+  }
+ },
+ {
+  "label": "dir=short tier=star hist={\"maxMultiplier\":0,\"minMultiplier\":-1.2} tpc=4.1 ext={\"highChange\":6,\"lowChange\":-2.6} pc=3.2",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": -3.2,
+   "multiplier": -1.64,
+   "baseATR": 2.5,
+   "tierMultiplier": 2,
+   "basePoints": -64,
+   "bonusPoints": -30,
+   "totalPoints": -94,
+   "badges": [
+    "bust",
+    "crash"
+   ],
+   "history": {
+    "maxMultiplier": 0,
+    "minMultiplier": -1.64
+   }
+  }
+ },
+ {
+  "label": "dir=short tier=star hist={\"maxMultiplier\":0,\"minMultiplier\":-1.2} tpc=4.1 ext={\"highChange\":6,\"lowChange\":-2.6} pc=-4.5",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": 4.5,
+   "multiplier": -1.64,
+   "baseATR": 2.5,
+   "tierMultiplier": 2,
+   "basePoints": 90,
+   "bonusPoints": -30,
+   "totalPoints": 60,
+   "badges": [
+    "bust",
+    "crash"
+   ],
+   "history": {
+    "maxMultiplier": 0,
+    "minMultiplier": -1.64
+   }
+  }
+ },
+ {
+  "label": "dir=short tier=core hist={} tpc=null ext={} pc=3.2",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": -3.2,
+   "multiplier": -1.28,
+   "baseATR": 2.5,
+   "tierMultiplier": 1.5,
+   "basePoints": -48,
+   "bonusPoints": -10,
+   "totalPoints": -58,
+   "badges": [
+    "bust"
+   ],
+   "history": {
+    "maxMultiplier": 0,
+    "minMultiplier": -1.28
+   }
+  }
+ },
+ {
+  "label": "dir=short tier=core hist={} tpc=null ext={} pc=-4.5",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": 4.5,
+   "multiplier": 1.8,
+   "baseATR": 2.5,
+   "tierMultiplier": 1.5,
+   "basePoints": 68,
+   "bonusPoints": 45,
+   "totalPoints": 113,
+   "badges": [
+    "bagger",
+    "doubleBagger"
+   ],
+   "history": {
+    "maxMultiplier": 1.8,
+    "minMultiplier": 0
+   }
+  }
+ },
+ {
+  "label": "dir=short tier=core hist={} tpc=null ext={\"highChange\":6,\"lowChange\":-2.6} pc=3.2",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": -3.2,
+   "multiplier": -1.28,
+   "baseATR": 2.5,
+   "tierMultiplier": 1.5,
+   "basePoints": -48,
+   "bonusPoints": -10,
+   "totalPoints": -58,
+   "badges": [
+    "bust"
+   ],
+   "history": {
+    "maxMultiplier": 0,
+    "minMultiplier": -1.28
+   }
+  }
+ },
+ {
+  "label": "dir=short tier=core hist={} tpc=null ext={\"highChange\":6,\"lowChange\":-2.6} pc=-4.5",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": 4.5,
+   "multiplier": 1.8,
+   "baseATR": 2.5,
+   "tierMultiplier": 1.5,
+   "basePoints": 68,
+   "bonusPoints": 45,
+   "totalPoints": 113,
+   "badges": [
+    "bagger",
+    "doubleBagger"
+   ],
+   "history": {
+    "maxMultiplier": 1.8,
+    "minMultiplier": 0
+   }
+  }
+ },
+ {
+  "label": "dir=short tier=core hist={} tpc=4.1 ext={} pc=3.2",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": -3.2,
+   "multiplier": -1.64,
+   "baseATR": 2.5,
+   "tierMultiplier": 1.5,
+   "basePoints": -48,
+   "bonusPoints": -30,
+   "totalPoints": -78,
+   "badges": [
+    "bust",
+    "crash"
+   ],
+   "history": {
+    "maxMultiplier": 0,
+    "minMultiplier": -1.64
+   }
+  }
+ },
+ {
+  "label": "dir=short tier=core hist={} tpc=4.1 ext={} pc=-4.5",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": 4.5,
+   "multiplier": -1.64,
+   "baseATR": 2.5,
+   "tierMultiplier": 1.5,
+   "basePoints": 68,
+   "bonusPoints": -30,
+   "totalPoints": 38,
+   "badges": [
+    "bust",
+    "crash"
+   ],
+   "history": {
+    "maxMultiplier": 0,
+    "minMultiplier": -1.64
+   }
+  }
+ },
+ {
+  "label": "dir=short tier=core hist={} tpc=4.1 ext={\"highChange\":6,\"lowChange\":-2.6} pc=3.2",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": -3.2,
+   "multiplier": -1.64,
+   "baseATR": 2.5,
+   "tierMultiplier": 1.5,
+   "basePoints": -48,
+   "bonusPoints": -30,
+   "totalPoints": -78,
+   "badges": [
+    "bust",
+    "crash"
+   ],
+   "history": {
+    "maxMultiplier": 0,
+    "minMultiplier": -1.64
+   }
+  }
+ },
+ {
+  "label": "dir=short tier=core hist={} tpc=4.1 ext={\"highChange\":6,\"lowChange\":-2.6} pc=-4.5",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": 4.5,
+   "multiplier": -1.64,
+   "baseATR": 2.5,
+   "tierMultiplier": 1.5,
+   "basePoints": 68,
+   "bonusPoints": -30,
+   "totalPoints": 38,
+   "badges": [
+    "bust",
+    "crash"
+   ],
+   "history": {
+    "maxMultiplier": 0,
+    "minMultiplier": -1.64
+   }
+  }
+ },
+ {
+  "label": "dir=short tier=core hist={\"maxMultiplier\":1.6,\"minMultiplier\":0} tpc=null ext={} pc=3.2",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": -3.2,
+   "multiplier": -1.28,
+   "baseATR": 2.5,
+   "tierMultiplier": 1.5,
+   "basePoints": -48,
+   "bonusPoints": 35,
+   "totalPoints": -13,
+   "badges": [
+    "bagger",
+    "doubleBagger",
+    "bust"
+   ],
+   "history": {
+    "maxMultiplier": 1.6,
+    "minMultiplier": -1.28
+   }
+  }
+ },
+ {
+  "label": "dir=short tier=core hist={\"maxMultiplier\":1.6,\"minMultiplier\":0} tpc=null ext={} pc=-4.5",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": 4.5,
+   "multiplier": 1.8,
+   "baseATR": 2.5,
+   "tierMultiplier": 1.5,
+   "basePoints": 68,
+   "bonusPoints": 45,
+   "totalPoints": 113,
+   "badges": [
+    "bagger",
+    "doubleBagger"
+   ],
+   "history": {
+    "maxMultiplier": 1.8,
+    "minMultiplier": 0
+   }
+  }
+ },
+ {
+  "label": "dir=short tier=core hist={\"maxMultiplier\":1.6,\"minMultiplier\":0} tpc=null ext={\"highChange\":6,\"lowChange\":-2.6} pc=3.2",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": -3.2,
+   "multiplier": -1.28,
+   "baseATR": 2.5,
+   "tierMultiplier": 1.5,
+   "basePoints": -48,
+   "bonusPoints": 35,
+   "totalPoints": -13,
+   "badges": [
+    "bagger",
+    "doubleBagger",
+    "bust"
+   ],
+   "history": {
+    "maxMultiplier": 1.6,
+    "minMultiplier": -1.28
+   }
+  }
+ },
+ {
+  "label": "dir=short tier=core hist={\"maxMultiplier\":1.6,\"minMultiplier\":0} tpc=null ext={\"highChange\":6,\"lowChange\":-2.6} pc=-4.5",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": 4.5,
+   "multiplier": 1.8,
+   "baseATR": 2.5,
+   "tierMultiplier": 1.5,
+   "basePoints": 68,
+   "bonusPoints": 45,
+   "totalPoints": 113,
+   "badges": [
+    "bagger",
+    "doubleBagger"
+   ],
+   "history": {
+    "maxMultiplier": 1.8,
+    "minMultiplier": 0
+   }
+  }
+ },
+ {
+  "label": "dir=short tier=core hist={\"maxMultiplier\":1.6,\"minMultiplier\":0} tpc=4.1 ext={} pc=3.2",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": -3.2,
+   "multiplier": -1.64,
+   "baseATR": 2.5,
+   "tierMultiplier": 1.5,
+   "basePoints": -48,
+   "bonusPoints": 15,
+   "totalPoints": -33,
+   "badges": [
+    "bagger",
+    "doubleBagger",
+    "bust",
+    "crash"
+   ],
+   "history": {
+    "maxMultiplier": 1.6,
+    "minMultiplier": -1.64
+   }
+  }
+ },
+ {
+  "label": "dir=short tier=core hist={\"maxMultiplier\":1.6,\"minMultiplier\":0} tpc=4.1 ext={} pc=-4.5",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": 4.5,
+   "multiplier": -1.64,
+   "baseATR": 2.5,
+   "tierMultiplier": 1.5,
+   "basePoints": 68,
+   "bonusPoints": 15,
+   "totalPoints": 83,
+   "badges": [
+    "bagger",
+    "doubleBagger",
+    "bust",
+    "crash"
+   ],
+   "history": {
+    "maxMultiplier": 1.6,
+    "minMultiplier": -1.64
+   }
+  }
+ },
+ {
+  "label": "dir=short tier=core hist={\"maxMultiplier\":1.6,\"minMultiplier\":0} tpc=4.1 ext={\"highChange\":6,\"lowChange\":-2.6} pc=3.2",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": -3.2,
+   "multiplier": -1.64,
+   "baseATR": 2.5,
+   "tierMultiplier": 1.5,
+   "basePoints": -48,
+   "bonusPoints": 15,
+   "totalPoints": -33,
+   "badges": [
+    "bagger",
+    "doubleBagger",
+    "bust",
+    "crash"
+   ],
+   "history": {
+    "maxMultiplier": 1.6,
+    "minMultiplier": -1.64
+   }
+  }
+ },
+ {
+  "label": "dir=short tier=core hist={\"maxMultiplier\":1.6,\"minMultiplier\":0} tpc=4.1 ext={\"highChange\":6,\"lowChange\":-2.6} pc=-4.5",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": 4.5,
+   "multiplier": -1.64,
+   "baseATR": 2.5,
+   "tierMultiplier": 1.5,
+   "basePoints": 68,
+   "bonusPoints": 15,
+   "totalPoints": 83,
+   "badges": [
+    "bagger",
+    "doubleBagger",
+    "bust",
+    "crash"
+   ],
+   "history": {
+    "maxMultiplier": 1.6,
+    "minMultiplier": -1.64
+   }
+  }
+ },
+ {
+  "label": "dir=short tier=core hist={\"maxMultiplier\":0,\"minMultiplier\":-1.2} tpc=null ext={} pc=3.2",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": -3.2,
+   "multiplier": -1.28,
+   "baseATR": 2.5,
+   "tierMultiplier": 1.5,
+   "basePoints": -48,
+   "bonusPoints": -10,
+   "totalPoints": -58,
+   "badges": [
+    "bust"
+   ],
+   "history": {
+    "maxMultiplier": 0,
+    "minMultiplier": -1.28
+   }
+  }
+ },
+ {
+  "label": "dir=short tier=core hist={\"maxMultiplier\":0,\"minMultiplier\":-1.2} tpc=null ext={} pc=-4.5",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": 4.5,
+   "multiplier": 1.8,
+   "baseATR": 2.5,
+   "tierMultiplier": 1.5,
+   "basePoints": 68,
+   "bonusPoints": 35,
+   "totalPoints": 103,
+   "badges": [
+    "bagger",
+    "doubleBagger",
+    "bust"
+   ],
+   "history": {
+    "maxMultiplier": 1.8,
+    "minMultiplier": -1.2
+   }
+  }
+ },
+ {
+  "label": "dir=short tier=core hist={\"maxMultiplier\":0,\"minMultiplier\":-1.2} tpc=null ext={\"highChange\":6,\"lowChange\":-2.6} pc=3.2",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": -3.2,
+   "multiplier": -1.28,
+   "baseATR": 2.5,
+   "tierMultiplier": 1.5,
+   "basePoints": -48,
+   "bonusPoints": -10,
+   "totalPoints": -58,
+   "badges": [
+    "bust"
+   ],
+   "history": {
+    "maxMultiplier": 0,
+    "minMultiplier": -1.28
+   }
+  }
+ },
+ {
+  "label": "dir=short tier=core hist={\"maxMultiplier\":0,\"minMultiplier\":-1.2} tpc=null ext={\"highChange\":6,\"lowChange\":-2.6} pc=-4.5",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": 4.5,
+   "multiplier": 1.8,
+   "baseATR": 2.5,
+   "tierMultiplier": 1.5,
+   "basePoints": 68,
+   "bonusPoints": 35,
+   "totalPoints": 103,
+   "badges": [
+    "bagger",
+    "doubleBagger",
+    "bust"
+   ],
+   "history": {
+    "maxMultiplier": 1.8,
+    "minMultiplier": -1.2
+   }
+  }
+ },
+ {
+  "label": "dir=short tier=core hist={\"maxMultiplier\":0,\"minMultiplier\":-1.2} tpc=4.1 ext={} pc=3.2",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": -3.2,
+   "multiplier": -1.64,
+   "baseATR": 2.5,
+   "tierMultiplier": 1.5,
+   "basePoints": -48,
+   "bonusPoints": -30,
+   "totalPoints": -78,
+   "badges": [
+    "bust",
+    "crash"
+   ],
+   "history": {
+    "maxMultiplier": 0,
+    "minMultiplier": -1.64
+   }
+  }
+ },
+ {
+  "label": "dir=short tier=core hist={\"maxMultiplier\":0,\"minMultiplier\":-1.2} tpc=4.1 ext={} pc=-4.5",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": 4.5,
+   "multiplier": -1.64,
+   "baseATR": 2.5,
+   "tierMultiplier": 1.5,
+   "basePoints": 68,
+   "bonusPoints": -30,
+   "totalPoints": 38,
+   "badges": [
+    "bust",
+    "crash"
+   ],
+   "history": {
+    "maxMultiplier": 0,
+    "minMultiplier": -1.64
+   }
+  }
+ },
+ {
+  "label": "dir=short tier=core hist={\"maxMultiplier\":0,\"minMultiplier\":-1.2} tpc=4.1 ext={\"highChange\":6,\"lowChange\":-2.6} pc=3.2",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": -3.2,
+   "multiplier": -1.64,
+   "baseATR": 2.5,
+   "tierMultiplier": 1.5,
+   "basePoints": -48,
+   "bonusPoints": -30,
+   "totalPoints": -78,
+   "badges": [
+    "bust",
+    "crash"
+   ],
+   "history": {
+    "maxMultiplier": 0,
+    "minMultiplier": -1.64
+   }
+  }
+ },
+ {
+  "label": "dir=short tier=core hist={\"maxMultiplier\":0,\"minMultiplier\":-1.2} tpc=4.1 ext={\"highChange\":6,\"lowChange\":-2.6} pc=-4.5",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": 4.5,
+   "multiplier": -1.64,
+   "baseATR": 2.5,
+   "tierMultiplier": 1.5,
+   "basePoints": 68,
+   "bonusPoints": -30,
+   "totalPoints": 38,
+   "badges": [
+    "bust",
+    "crash"
+   ],
+   "history": {
+    "maxMultiplier": 0,
+    "minMultiplier": -1.64
+   }
+  }
+ },
+ {
+  "label": "dir=short tier=support hist={} tpc=null ext={} pc=3.2",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": -3.2,
+   "multiplier": -1.28,
+   "baseATR": 2.5,
+   "tierMultiplier": 1,
+   "basePoints": -32,
+   "bonusPoints": -10,
+   "totalPoints": -42,
+   "badges": [
+    "bust"
+   ],
+   "history": {
+    "maxMultiplier": 0,
+    "minMultiplier": -1.28
+   }
+  }
+ },
+ {
+  "label": "dir=short tier=support hist={} tpc=null ext={} pc=-4.5",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": 4.5,
+   "multiplier": 1.8,
+   "baseATR": 2.5,
+   "tierMultiplier": 1,
+   "basePoints": 45,
+   "bonusPoints": 45,
+   "totalPoints": 90,
+   "badges": [
+    "bagger",
+    "doubleBagger"
+   ],
+   "history": {
+    "maxMultiplier": 1.8,
+    "minMultiplier": 0
+   }
+  }
+ },
+ {
+  "label": "dir=short tier=support hist={} tpc=null ext={\"highChange\":6,\"lowChange\":-2.6} pc=3.2",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": -3.2,
+   "multiplier": -1.28,
+   "baseATR": 2.5,
+   "tierMultiplier": 1,
+   "basePoints": -32,
+   "bonusPoints": -10,
+   "totalPoints": -42,
+   "badges": [
+    "bust"
+   ],
+   "history": {
+    "maxMultiplier": 0,
+    "minMultiplier": -1.28
+   }
+  }
+ },
+ {
+  "label": "dir=short tier=support hist={} tpc=null ext={\"highChange\":6,\"lowChange\":-2.6} pc=-4.5",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": 4.5,
+   "multiplier": 1.8,
+   "baseATR": 2.5,
+   "tierMultiplier": 1,
+   "basePoints": 45,
+   "bonusPoints": 45,
+   "totalPoints": 90,
+   "badges": [
+    "bagger",
+    "doubleBagger"
+   ],
+   "history": {
+    "maxMultiplier": 1.8,
+    "minMultiplier": 0
+   }
+  }
+ },
+ {
+  "label": "dir=short tier=support hist={} tpc=4.1 ext={} pc=3.2",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": -3.2,
+   "multiplier": -1.64,
+   "baseATR": 2.5,
+   "tierMultiplier": 1,
+   "basePoints": -32,
+   "bonusPoints": -30,
+   "totalPoints": -62,
+   "badges": [
+    "bust",
+    "crash"
+   ],
+   "history": {
+    "maxMultiplier": 0,
+    "minMultiplier": -1.64
+   }
+  }
+ },
+ {
+  "label": "dir=short tier=support hist={} tpc=4.1 ext={} pc=-4.5",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": 4.5,
+   "multiplier": -1.64,
+   "baseATR": 2.5,
+   "tierMultiplier": 1,
+   "basePoints": 45,
+   "bonusPoints": -30,
+   "totalPoints": 15,
+   "badges": [
+    "bust",
+    "crash"
+   ],
+   "history": {
+    "maxMultiplier": 0,
+    "minMultiplier": -1.64
+   }
+  }
+ },
+ {
+  "label": "dir=short tier=support hist={} tpc=4.1 ext={\"highChange\":6,\"lowChange\":-2.6} pc=3.2",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": -3.2,
+   "multiplier": -1.64,
+   "baseATR": 2.5,
+   "tierMultiplier": 1,
+   "basePoints": -32,
+   "bonusPoints": -30,
+   "totalPoints": -62,
+   "badges": [
+    "bust",
+    "crash"
+   ],
+   "history": {
+    "maxMultiplier": 0,
+    "minMultiplier": -1.64
+   }
+  }
+ },
+ {
+  "label": "dir=short tier=support hist={} tpc=4.1 ext={\"highChange\":6,\"lowChange\":-2.6} pc=-4.5",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": 4.5,
+   "multiplier": -1.64,
+   "baseATR": 2.5,
+   "tierMultiplier": 1,
+   "basePoints": 45,
+   "bonusPoints": -30,
+   "totalPoints": 15,
+   "badges": [
+    "bust",
+    "crash"
+   ],
+   "history": {
+    "maxMultiplier": 0,
+    "minMultiplier": -1.64
+   }
+  }
+ },
+ {
+  "label": "dir=short tier=support hist={\"maxMultiplier\":1.6,\"minMultiplier\":0} tpc=null ext={} pc=3.2",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": -3.2,
+   "multiplier": -1.28,
+   "baseATR": 2.5,
+   "tierMultiplier": 1,
+   "basePoints": -32,
+   "bonusPoints": 35,
+   "totalPoints": 3,
+   "badges": [
+    "bagger",
+    "doubleBagger",
+    "bust"
+   ],
+   "history": {
+    "maxMultiplier": 1.6,
+    "minMultiplier": -1.28
+   }
+  }
+ },
+ {
+  "label": "dir=short tier=support hist={\"maxMultiplier\":1.6,\"minMultiplier\":0} tpc=null ext={} pc=-4.5",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": 4.5,
+   "multiplier": 1.8,
+   "baseATR": 2.5,
+   "tierMultiplier": 1,
+   "basePoints": 45,
+   "bonusPoints": 45,
+   "totalPoints": 90,
+   "badges": [
+    "bagger",
+    "doubleBagger"
+   ],
+   "history": {
+    "maxMultiplier": 1.8,
+    "minMultiplier": 0
+   }
+  }
+ },
+ {
+  "label": "dir=short tier=support hist={\"maxMultiplier\":1.6,\"minMultiplier\":0} tpc=null ext={\"highChange\":6,\"lowChange\":-2.6} pc=3.2",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": -3.2,
+   "multiplier": -1.28,
+   "baseATR": 2.5,
+   "tierMultiplier": 1,
+   "basePoints": -32,
+   "bonusPoints": 35,
+   "totalPoints": 3,
+   "badges": [
+    "bagger",
+    "doubleBagger",
+    "bust"
+   ],
+   "history": {
+    "maxMultiplier": 1.6,
+    "minMultiplier": -1.28
+   }
+  }
+ },
+ {
+  "label": "dir=short tier=support hist={\"maxMultiplier\":1.6,\"minMultiplier\":0} tpc=null ext={\"highChange\":6,\"lowChange\":-2.6} pc=-4.5",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": 4.5,
+   "multiplier": 1.8,
+   "baseATR": 2.5,
+   "tierMultiplier": 1,
+   "basePoints": 45,
+   "bonusPoints": 45,
+   "totalPoints": 90,
+   "badges": [
+    "bagger",
+    "doubleBagger"
+   ],
+   "history": {
+    "maxMultiplier": 1.8,
+    "minMultiplier": 0
+   }
+  }
+ },
+ {
+  "label": "dir=short tier=support hist={\"maxMultiplier\":1.6,\"minMultiplier\":0} tpc=4.1 ext={} pc=3.2",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": -3.2,
+   "multiplier": -1.64,
+   "baseATR": 2.5,
+   "tierMultiplier": 1,
+   "basePoints": -32,
+   "bonusPoints": 15,
+   "totalPoints": -17,
+   "badges": [
+    "bagger",
+    "doubleBagger",
+    "bust",
+    "crash"
+   ],
+   "history": {
+    "maxMultiplier": 1.6,
+    "minMultiplier": -1.64
+   }
+  }
+ },
+ {
+  "label": "dir=short tier=support hist={\"maxMultiplier\":1.6,\"minMultiplier\":0} tpc=4.1 ext={} pc=-4.5",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": 4.5,
+   "multiplier": -1.64,
+   "baseATR": 2.5,
+   "tierMultiplier": 1,
+   "basePoints": 45,
+   "bonusPoints": 15,
+   "totalPoints": 60,
+   "badges": [
+    "bagger",
+    "doubleBagger",
+    "bust",
+    "crash"
+   ],
+   "history": {
+    "maxMultiplier": 1.6,
+    "minMultiplier": -1.64
+   }
+  }
+ },
+ {
+  "label": "dir=short tier=support hist={\"maxMultiplier\":1.6,\"minMultiplier\":0} tpc=4.1 ext={\"highChange\":6,\"lowChange\":-2.6} pc=3.2",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": -3.2,
+   "multiplier": -1.64,
+   "baseATR": 2.5,
+   "tierMultiplier": 1,
+   "basePoints": -32,
+   "bonusPoints": 15,
+   "totalPoints": -17,
+   "badges": [
+    "bagger",
+    "doubleBagger",
+    "bust",
+    "crash"
+   ],
+   "history": {
+    "maxMultiplier": 1.6,
+    "minMultiplier": -1.64
+   }
+  }
+ },
+ {
+  "label": "dir=short tier=support hist={\"maxMultiplier\":1.6,\"minMultiplier\":0} tpc=4.1 ext={\"highChange\":6,\"lowChange\":-2.6} pc=-4.5",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": 4.5,
+   "multiplier": -1.64,
+   "baseATR": 2.5,
+   "tierMultiplier": 1,
+   "basePoints": 45,
+   "bonusPoints": 15,
+   "totalPoints": 60,
+   "badges": [
+    "bagger",
+    "doubleBagger",
+    "bust",
+    "crash"
+   ],
+   "history": {
+    "maxMultiplier": 1.6,
+    "minMultiplier": -1.64
+   }
+  }
+ },
+ {
+  "label": "dir=short tier=support hist={\"maxMultiplier\":0,\"minMultiplier\":-1.2} tpc=null ext={} pc=3.2",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": -3.2,
+   "multiplier": -1.28,
+   "baseATR": 2.5,
+   "tierMultiplier": 1,
+   "basePoints": -32,
+   "bonusPoints": -10,
+   "totalPoints": -42,
+   "badges": [
+    "bust"
+   ],
+   "history": {
+    "maxMultiplier": 0,
+    "minMultiplier": -1.28
+   }
+  }
+ },
+ {
+  "label": "dir=short tier=support hist={\"maxMultiplier\":0,\"minMultiplier\":-1.2} tpc=null ext={} pc=-4.5",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": 4.5,
+   "multiplier": 1.8,
+   "baseATR": 2.5,
+   "tierMultiplier": 1,
+   "basePoints": 45,
+   "bonusPoints": 35,
+   "totalPoints": 80,
+   "badges": [
+    "bagger",
+    "doubleBagger",
+    "bust"
+   ],
+   "history": {
+    "maxMultiplier": 1.8,
+    "minMultiplier": -1.2
+   }
+  }
+ },
+ {
+  "label": "dir=short tier=support hist={\"maxMultiplier\":0,\"minMultiplier\":-1.2} tpc=null ext={\"highChange\":6,\"lowChange\":-2.6} pc=3.2",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": -3.2,
+   "multiplier": -1.28,
+   "baseATR": 2.5,
+   "tierMultiplier": 1,
+   "basePoints": -32,
+   "bonusPoints": -10,
+   "totalPoints": -42,
+   "badges": [
+    "bust"
+   ],
+   "history": {
+    "maxMultiplier": 0,
+    "minMultiplier": -1.28
+   }
+  }
+ },
+ {
+  "label": "dir=short tier=support hist={\"maxMultiplier\":0,\"minMultiplier\":-1.2} tpc=null ext={\"highChange\":6,\"lowChange\":-2.6} pc=-4.5",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": 4.5,
+   "multiplier": 1.8,
+   "baseATR": 2.5,
+   "tierMultiplier": 1,
+   "basePoints": 45,
+   "bonusPoints": 35,
+   "totalPoints": 80,
+   "badges": [
+    "bagger",
+    "doubleBagger",
+    "bust"
+   ],
+   "history": {
+    "maxMultiplier": 1.8,
+    "minMultiplier": -1.2
+   }
+  }
+ },
+ {
+  "label": "dir=short tier=support hist={\"maxMultiplier\":0,\"minMultiplier\":-1.2} tpc=4.1 ext={} pc=3.2",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": -3.2,
+   "multiplier": -1.64,
+   "baseATR": 2.5,
+   "tierMultiplier": 1,
+   "basePoints": -32,
+   "bonusPoints": -30,
+   "totalPoints": -62,
+   "badges": [
+    "bust",
+    "crash"
+   ],
+   "history": {
+    "maxMultiplier": 0,
+    "minMultiplier": -1.64
+   }
+  }
+ },
+ {
+  "label": "dir=short tier=support hist={\"maxMultiplier\":0,\"minMultiplier\":-1.2} tpc=4.1 ext={} pc=-4.5",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": 4.5,
+   "multiplier": -1.64,
+   "baseATR": 2.5,
+   "tierMultiplier": 1,
+   "basePoints": 45,
+   "bonusPoints": -30,
+   "totalPoints": 15,
+   "badges": [
+    "bust",
+    "crash"
+   ],
+   "history": {
+    "maxMultiplier": 0,
+    "minMultiplier": -1.64
+   }
+  }
+ },
+ {
+  "label": "dir=short tier=support hist={\"maxMultiplier\":0,\"minMultiplier\":-1.2} tpc=4.1 ext={\"highChange\":6,\"lowChange\":-2.6} pc=3.2",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": -3.2,
+   "multiplier": -1.64,
+   "baseATR": 2.5,
+   "tierMultiplier": 1,
+   "basePoints": -32,
+   "bonusPoints": -30,
+   "totalPoints": -62,
+   "badges": [
+    "bust",
+    "crash"
+   ],
+   "history": {
+    "maxMultiplier": 0,
+    "minMultiplier": -1.64
+   }
+  }
+ },
+ {
+  "label": "dir=short tier=support hist={\"maxMultiplier\":0,\"minMultiplier\":-1.2} tpc=4.1 ext={\"highChange\":6,\"lowChange\":-2.6} pc=-4.5",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": 4.5,
+   "multiplier": -1.64,
+   "baseATR": 2.5,
+   "tierMultiplier": 1,
+   "basePoints": 45,
+   "bonusPoints": -30,
+   "totalPoints": 15,
+   "badges": [
+    "bust",
+    "crash"
+   ],
+   "history": {
+    "maxMultiplier": 0,
+    "minMultiplier": -1.64
+   }
+  }
+ },
+ {
+  "label": "dir=short tier=none hist={} tpc=null ext={} pc=3.2",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": -3.2,
+   "multiplier": -1.28,
+   "baseATR": 2.5,
+   "tierMultiplier": 1,
+   "basePoints": -32,
+   "bonusPoints": -10,
+   "totalPoints": -42,
+   "badges": [
+    "bust"
+   ],
+   "history": {
+    "maxMultiplier": 0,
+    "minMultiplier": -1.28
+   }
+  }
+ },
+ {
+  "label": "dir=short tier=none hist={} tpc=null ext={} pc=-4.5",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": 4.5,
+   "multiplier": 1.8,
+   "baseATR": 2.5,
+   "tierMultiplier": 1,
+   "basePoints": 45,
+   "bonusPoints": 45,
+   "totalPoints": 90,
+   "badges": [
+    "bagger",
+    "doubleBagger"
+   ],
+   "history": {
+    "maxMultiplier": 1.8,
+    "minMultiplier": 0
+   }
+  }
+ },
+ {
+  "label": "dir=short tier=none hist={} tpc=null ext={\"highChange\":6,\"lowChange\":-2.6} pc=3.2",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": -3.2,
+   "multiplier": -1.28,
+   "baseATR": 2.5,
+   "tierMultiplier": 1,
+   "basePoints": -32,
+   "bonusPoints": -10,
+   "totalPoints": -42,
+   "badges": [
+    "bust"
+   ],
+   "history": {
+    "maxMultiplier": 0,
+    "minMultiplier": -1.28
+   }
+  }
+ },
+ {
+  "label": "dir=short tier=none hist={} tpc=null ext={\"highChange\":6,\"lowChange\":-2.6} pc=-4.5",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": 4.5,
+   "multiplier": 1.8,
+   "baseATR": 2.5,
+   "tierMultiplier": 1,
+   "basePoints": 45,
+   "bonusPoints": 45,
+   "totalPoints": 90,
+   "badges": [
+    "bagger",
+    "doubleBagger"
+   ],
+   "history": {
+    "maxMultiplier": 1.8,
+    "minMultiplier": 0
+   }
+  }
+ },
+ {
+  "label": "dir=short tier=none hist={} tpc=4.1 ext={} pc=3.2",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": -3.2,
+   "multiplier": -1.64,
+   "baseATR": 2.5,
+   "tierMultiplier": 1,
+   "basePoints": -32,
+   "bonusPoints": -30,
+   "totalPoints": -62,
+   "badges": [
+    "bust",
+    "crash"
+   ],
+   "history": {
+    "maxMultiplier": 0,
+    "minMultiplier": -1.64
+   }
+  }
+ },
+ {
+  "label": "dir=short tier=none hist={} tpc=4.1 ext={} pc=-4.5",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": 4.5,
+   "multiplier": -1.64,
+   "baseATR": 2.5,
+   "tierMultiplier": 1,
+   "basePoints": 45,
+   "bonusPoints": -30,
+   "totalPoints": 15,
+   "badges": [
+    "bust",
+    "crash"
+   ],
+   "history": {
+    "maxMultiplier": 0,
+    "minMultiplier": -1.64
+   }
+  }
+ },
+ {
+  "label": "dir=short tier=none hist={} tpc=4.1 ext={\"highChange\":6,\"lowChange\":-2.6} pc=3.2",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": -3.2,
+   "multiplier": -1.64,
+   "baseATR": 2.5,
+   "tierMultiplier": 1,
+   "basePoints": -32,
+   "bonusPoints": -30,
+   "totalPoints": -62,
+   "badges": [
+    "bust",
+    "crash"
+   ],
+   "history": {
+    "maxMultiplier": 0,
+    "minMultiplier": -1.64
+   }
+  }
+ },
+ {
+  "label": "dir=short tier=none hist={} tpc=4.1 ext={\"highChange\":6,\"lowChange\":-2.6} pc=-4.5",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": 4.5,
+   "multiplier": -1.64,
+   "baseATR": 2.5,
+   "tierMultiplier": 1,
+   "basePoints": 45,
+   "bonusPoints": -30,
+   "totalPoints": 15,
+   "badges": [
+    "bust",
+    "crash"
+   ],
+   "history": {
+    "maxMultiplier": 0,
+    "minMultiplier": -1.64
+   }
+  }
+ },
+ {
+  "label": "dir=short tier=none hist={\"maxMultiplier\":1.6,\"minMultiplier\":0} tpc=null ext={} pc=3.2",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": -3.2,
+   "multiplier": -1.28,
+   "baseATR": 2.5,
+   "tierMultiplier": 1,
+   "basePoints": -32,
+   "bonusPoints": 35,
+   "totalPoints": 3,
+   "badges": [
+    "bagger",
+    "doubleBagger",
+    "bust"
+   ],
+   "history": {
+    "maxMultiplier": 1.6,
+    "minMultiplier": -1.28
+   }
+  }
+ },
+ {
+  "label": "dir=short tier=none hist={\"maxMultiplier\":1.6,\"minMultiplier\":0} tpc=null ext={} pc=-4.5",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": 4.5,
+   "multiplier": 1.8,
+   "baseATR": 2.5,
+   "tierMultiplier": 1,
+   "basePoints": 45,
+   "bonusPoints": 45,
+   "totalPoints": 90,
+   "badges": [
+    "bagger",
+    "doubleBagger"
+   ],
+   "history": {
+    "maxMultiplier": 1.8,
+    "minMultiplier": 0
+   }
+  }
+ },
+ {
+  "label": "dir=short tier=none hist={\"maxMultiplier\":1.6,\"minMultiplier\":0} tpc=null ext={\"highChange\":6,\"lowChange\":-2.6} pc=3.2",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": -3.2,
+   "multiplier": -1.28,
+   "baseATR": 2.5,
+   "tierMultiplier": 1,
+   "basePoints": -32,
+   "bonusPoints": 35,
+   "totalPoints": 3,
+   "badges": [
+    "bagger",
+    "doubleBagger",
+    "bust"
+   ],
+   "history": {
+    "maxMultiplier": 1.6,
+    "minMultiplier": -1.28
+   }
+  }
+ },
+ {
+  "label": "dir=short tier=none hist={\"maxMultiplier\":1.6,\"minMultiplier\":0} tpc=null ext={\"highChange\":6,\"lowChange\":-2.6} pc=-4.5",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": 4.5,
+   "multiplier": 1.8,
+   "baseATR": 2.5,
+   "tierMultiplier": 1,
+   "basePoints": 45,
+   "bonusPoints": 45,
+   "totalPoints": 90,
+   "badges": [
+    "bagger",
+    "doubleBagger"
+   ],
+   "history": {
+    "maxMultiplier": 1.8,
+    "minMultiplier": 0
+   }
+  }
+ },
+ {
+  "label": "dir=short tier=none hist={\"maxMultiplier\":1.6,\"minMultiplier\":0} tpc=4.1 ext={} pc=3.2",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": -3.2,
+   "multiplier": -1.64,
+   "baseATR": 2.5,
+   "tierMultiplier": 1,
+   "basePoints": -32,
+   "bonusPoints": 15,
+   "totalPoints": -17,
+   "badges": [
+    "bagger",
+    "doubleBagger",
+    "bust",
+    "crash"
+   ],
+   "history": {
+    "maxMultiplier": 1.6,
+    "minMultiplier": -1.64
+   }
+  }
+ },
+ {
+  "label": "dir=short tier=none hist={\"maxMultiplier\":1.6,\"minMultiplier\":0} tpc=4.1 ext={} pc=-4.5",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": 4.5,
+   "multiplier": -1.64,
+   "baseATR": 2.5,
+   "tierMultiplier": 1,
+   "basePoints": 45,
+   "bonusPoints": 15,
+   "totalPoints": 60,
+   "badges": [
+    "bagger",
+    "doubleBagger",
+    "bust",
+    "crash"
+   ],
+   "history": {
+    "maxMultiplier": 1.6,
+    "minMultiplier": -1.64
+   }
+  }
+ },
+ {
+  "label": "dir=short tier=none hist={\"maxMultiplier\":1.6,\"minMultiplier\":0} tpc=4.1 ext={\"highChange\":6,\"lowChange\":-2.6} pc=3.2",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": -3.2,
+   "multiplier": -1.64,
+   "baseATR": 2.5,
+   "tierMultiplier": 1,
+   "basePoints": -32,
+   "bonusPoints": 15,
+   "totalPoints": -17,
+   "badges": [
+    "bagger",
+    "doubleBagger",
+    "bust",
+    "crash"
+   ],
+   "history": {
+    "maxMultiplier": 1.6,
+    "minMultiplier": -1.64
+   }
+  }
+ },
+ {
+  "label": "dir=short tier=none hist={\"maxMultiplier\":1.6,\"minMultiplier\":0} tpc=4.1 ext={\"highChange\":6,\"lowChange\":-2.6} pc=-4.5",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": 4.5,
+   "multiplier": -1.64,
+   "baseATR": 2.5,
+   "tierMultiplier": 1,
+   "basePoints": 45,
+   "bonusPoints": 15,
+   "totalPoints": 60,
+   "badges": [
+    "bagger",
+    "doubleBagger",
+    "bust",
+    "crash"
+   ],
+   "history": {
+    "maxMultiplier": 1.6,
+    "minMultiplier": -1.64
+   }
+  }
+ },
+ {
+  "label": "dir=short tier=none hist={\"maxMultiplier\":0,\"minMultiplier\":-1.2} tpc=null ext={} pc=3.2",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": -3.2,
+   "multiplier": -1.28,
+   "baseATR": 2.5,
+   "tierMultiplier": 1,
+   "basePoints": -32,
+   "bonusPoints": -10,
+   "totalPoints": -42,
+   "badges": [
+    "bust"
+   ],
+   "history": {
+    "maxMultiplier": 0,
+    "minMultiplier": -1.28
+   }
+  }
+ },
+ {
+  "label": "dir=short tier=none hist={\"maxMultiplier\":0,\"minMultiplier\":-1.2} tpc=null ext={} pc=-4.5",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": 4.5,
+   "multiplier": 1.8,
+   "baseATR": 2.5,
+   "tierMultiplier": 1,
+   "basePoints": 45,
+   "bonusPoints": 35,
+   "totalPoints": 80,
+   "badges": [
+    "bagger",
+    "doubleBagger",
+    "bust"
+   ],
+   "history": {
+    "maxMultiplier": 1.8,
+    "minMultiplier": -1.2
+   }
+  }
+ },
+ {
+  "label": "dir=short tier=none hist={\"maxMultiplier\":0,\"minMultiplier\":-1.2} tpc=null ext={\"highChange\":6,\"lowChange\":-2.6} pc=3.2",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": -3.2,
+   "multiplier": -1.28,
+   "baseATR": 2.5,
+   "tierMultiplier": 1,
+   "basePoints": -32,
+   "bonusPoints": -10,
+   "totalPoints": -42,
+   "badges": [
+    "bust"
+   ],
+   "history": {
+    "maxMultiplier": 0,
+    "minMultiplier": -1.28
+   }
+  }
+ },
+ {
+  "label": "dir=short tier=none hist={\"maxMultiplier\":0,\"minMultiplier\":-1.2} tpc=null ext={\"highChange\":6,\"lowChange\":-2.6} pc=-4.5",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": 4.5,
+   "multiplier": 1.8,
+   "baseATR": 2.5,
+   "tierMultiplier": 1,
+   "basePoints": 45,
+   "bonusPoints": 35,
+   "totalPoints": 80,
+   "badges": [
+    "bagger",
+    "doubleBagger",
+    "bust"
+   ],
+   "history": {
+    "maxMultiplier": 1.8,
+    "minMultiplier": -1.2
+   }
+  }
+ },
+ {
+  "label": "dir=short tier=none hist={\"maxMultiplier\":0,\"minMultiplier\":-1.2} tpc=4.1 ext={} pc=3.2",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": -3.2,
+   "multiplier": -1.64,
+   "baseATR": 2.5,
+   "tierMultiplier": 1,
+   "basePoints": -32,
+   "bonusPoints": -30,
+   "totalPoints": -62,
+   "badges": [
+    "bust",
+    "crash"
+   ],
+   "history": {
+    "maxMultiplier": 0,
+    "minMultiplier": -1.64
+   }
+  }
+ },
+ {
+  "label": "dir=short tier=none hist={\"maxMultiplier\":0,\"minMultiplier\":-1.2} tpc=4.1 ext={} pc=-4.5",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": 4.5,
+   "multiplier": -1.64,
+   "baseATR": 2.5,
+   "tierMultiplier": 1,
+   "basePoints": 45,
+   "bonusPoints": -30,
+   "totalPoints": 15,
+   "badges": [
+    "bust",
+    "crash"
+   ],
+   "history": {
+    "maxMultiplier": 0,
+    "minMultiplier": -1.64
+   }
+  }
+ },
+ {
+  "label": "dir=short tier=none hist={\"maxMultiplier\":0,\"minMultiplier\":-1.2} tpc=4.1 ext={\"highChange\":6,\"lowChange\":-2.6} pc=3.2",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": -3.2,
+   "multiplier": -1.64,
+   "baseATR": 2.5,
+   "tierMultiplier": 1,
+   "basePoints": -32,
+   "bonusPoints": -30,
+   "totalPoints": -62,
+   "badges": [
+    "bust",
+    "crash"
+   ],
+   "history": {
+    "maxMultiplier": 0,
+    "minMultiplier": -1.64
+   }
+  }
+ },
+ {
+  "label": "dir=short tier=none hist={\"maxMultiplier\":0,\"minMultiplier\":-1.2} tpc=4.1 ext={\"highChange\":6,\"lowChange\":-2.6} pc=-4.5",
+  "result": {
+   "symbol": "TEST",
+   "priceChange": 4.5,
+   "multiplier": -1.64,
+   "baseATR": 2.5,
+   "tierMultiplier": 1,
+   "basePoints": 45,
+   "bonusPoints": -30,
+   "totalPoints": 15,
+   "badges": [
+    "bust",
+    "crash"
+   ],
+   "history": {
+    "maxMultiplier": 0,
+    "minMultiplier": -1.64
+   }
+  }
+ }
+]

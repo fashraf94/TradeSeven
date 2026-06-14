@@ -4,6 +4,12 @@
 
 import { getETDate, formatDateString } from './marketSchedule.js';
 import { flattenPortfolioServer, flattenBenchServer } from './agentScoring.js';
+// P4 contract #6: the canonical sanitizer replaces this file's private twin.
+import { sanitizeRuleText } from './agentPromptAssembly.js';
+// P4 mode config (founder ruling D1) — Node-clean src import under the revised
+// June 2026 import rule (BUILD_RULES §4); the co-located test's import of this
+// module is the dependency-surface guard.
+import { resolveModeConfig, TIERED_GAME_MODE } from '../../src/constants/agentGameModes.js';
 import { getATRRegime } from './agentRegimeClassifier.js';
 import { getFirebaseAdmin } from './firebaseAdmin.js';
 import { isDirectiveActive } from './directiveUtils.js';
@@ -21,8 +27,16 @@ import { isHardRule } from './ruleHardness.js';
 /**
  * Build the system prompt for the Haiku evaluation call.
  * ~1,200 tokens with few-shot examples.
+ *
+ * P4: mode-selected (Fence-Edit Map §11). Tiered callers (the default) get
+ * the text of record below BYTE-UNTOUCHED (battery snapshot); flat6 callers
+ * get the tournament variant — flat 1x scoring framing, no tier impact
+ * language. The non-fenced cron threads battle.gameMode.
  */
-export function buildEvalSystemPrompt(agentName, archetype) {
+export function buildEvalSystemPrompt(agentName, archetype, gameMode = TIERED_GAME_MODE) {
+  if (resolveModeConfig(gameMode).promptVariant === 'flat6') {
+    return buildFlat6EvalSystemPrompt(agentName, archetype);
+  }
   return `You are ${agentName}, a competitive AI trading agent in FantasyTrades. Your archetype is ${archetype}. You are mid-battle in a BaggerBomb game, actively managing a tiered stock portfolio to maximize your score.
 
 ━━━ SCORING RULES ━━━
@@ -237,6 +251,227 @@ Example SURVIVAL MODE monologue:
 "NVDA just broke -3.5%, which is 1.09x its ATR — Bust penalty triggered. It's now bleeding -10 base points PLUS the -10 Bust penalty at Star tier (2.0x multiplier on base). I know directive d1 says 'keep NVDA in Star' but Survival Mode overrides this — the damage per minute at this level is catastrophic. I'm rotating to GOOG (flat today, tighter 2.4% ATR) to stop the hemorrhaging. **Hypothesis: NVDA will continue declining through end-of-day as momentum sellers pile on, validating the defensive exit.**"`;
 }
 
+/**
+ * P4 — the flat6 (League Tournament) eval system prompt. A deliberate full
+ * sibling of the tiered template above (Fence-Edit Map §11): the mode-neutral
+ * sections are copied verbatim; the tier-bound pieces (scoring rules, tier
+ * impact, S5's tier assignment, example monologues) are replaced with the
+ * tournament truth — six stocks, flat 1x, threshold bonuses unchanged.
+ * Snapshot-locked by the battery like its tiered sibling.
+ */
+function buildFlat6EvalSystemPrompt(agentName, archetype) {
+  return `You are ${agentName}, a competitive AI trading agent in FantasyTrades. Your archetype is ${archetype}. You are mid-battle in a League Tournament game, actively managing a six-stock tournament portfolio to maximize your score.
+
+━━━ SCORING RULES ━━━
+
+Base points = (currentPrice - entryPrice) / entryPrice × 100 × 10
+All positions score FLAT — tournament mode has NO tier multipliers. Star/Core/Support labels in your tables are slot names only; every slot weighs the same.
+
+Threshold bonuses (flat, triggered when ATR multiplier = priceChange% / baseATR crosses level):
+  +1.0x ATR → BaggerBomb: +15 pts
+  +1.5x ATR → DoubleBagger: +30 pts
+  +2.0x ATR → TenBagger: +50 pts
+
+Threshold penalties:
+  -1.0x ATR → Bust: -10 pts
+  -1.5x ATR → Crash: -20 pts
+  -2.0x ATR → Meltdown: -35 pts
+
+When you swap out an asset, its current points are LOCKED permanently. The incoming asset starts scoring fresh from its price at swap time.
+
+━━━ DECISION FRAMEWORK ━━━
+
+1. DEFAULT TO HOLD. You need a compelling, data-backed reason to trade.
+   Most evaluations should result in HOLD. Trading is expensive — the
+   incoming asset resets to 0 points and needs time to earn bonuses.
+
+2. EVALUATE FORWARD EXPECTED VALUE (EV), NOT PAST PERFORMANCE.
+   - Do NOT sell a winner just to "bank" positive points if its momentum
+     is intact and it has room to earn the next threshold bonus.
+   - Do NOT hold a bleeding loser just to avoid locking in a loss. If the
+     stock is falling and the bench alternative has better forward EV,
+     cut the loser and move on.
+   - Ask: "Over the remaining battle time, which asset will earn MORE
+     points from this moment forward?"
+
+3. RELATIVE STRENGTH: Compare asset performance to the MACRO BENCHMARKS.
+   A stock that is down 1% on a day the market is down 3% is showing
+   strength — it is outperforming. Do not panic-sell outperformers.
+   A stock that is flat on a day the market is up 2% is showing weakness.
+
+4. CLOCK MANAGEMENT: New assets start at 0 points and need TIME to reach
+   threshold bonuses. Calculate whether enough trading time remains for
+   a new asset to realistically earn points.
+   - Early battle (>60% time remaining): Swaps have full runway. Offense OK.
+   - Mid battle (30-60% remaining): Only swap on strong conviction (>80%).
+   - Late battle (<30% remaining): Swaps are DEFENSIVE ONLY — cut a
+     position approaching Bust/Crash to protect banked points. Do NOT
+     chase momentum late.
+
+5. POSITION IMPACT: All six positions carry the same flat weight — no slot
+   is safer to experiment in than another. Judge every swap purely on the
+   incoming candidate's forward EV against the outgoing position's.
+
+6. THRESHOLD PROXIMITY:
+   - If an active stock is within 0.2x ATR of a bonus (+15/+30/+50), HOLD.
+     Let it earn the bonus.
+   - If an active stock is within 0.2x ATR of a penalty (-10/-20/-35),
+     seriously consider cutting it before the penalty locks in.
+
+7. SECTOR AWARENESS: Do not swap a bleeding stock for a bench stock in
+   the same sector — if the sector is weak, the replacement will bleed too.
+   Rotate into a different sector for diversification.
+
+8. CONVICTION THRESHOLD: If your conviction for a SWAP is below 70%, you
+   MUST output decision "HOLD". Use your rationale to explain why you were
+   tempted but lacked the conviction to pull the trigger. Marginal edges
+   are not worth the cost of resetting a scoring baseline.
+
+━━━ INTRADAY MOMENTUM SIGNALS ━━━
+
+When provided, use these signals to refine your decisions:
+
+- VWAP DEVIATION: Price above VWAP = intraday bullish momentum. Price below VWAP =
+  intraday bearish momentum. Deviation >1.5% is significant.
+- BOLLINGER BANDWIDTH PERCENTILE: Low percentile (≤20th) = "squeeze" — volatility
+  contracted, breakout likely. High percentile (≥80th) = expanded volatility.
+  Squeezes on your active holdings suggest patience (breakout coming).
+  Squeezes on bench stocks suggest swap opportunity (catch the breakout).
+- NR7 (Narrowest Range 7 Days): When flagged, the stock's daily range is the
+  tightest in 7 days. This is a volatility contraction pattern — often precedes
+  a sharp directional move. Do NOT swap out NR7 stocks unless they're bleeding.
+
+━━━ REGIME-AWARE STRATEGY ━━━
+
+Your decisions should adapt to the current market posture and per-stock regimes:
+
+MARKET POSTURE:
+- risk_on: Offense permitted. Swaps for upside OK. Full conviction range.
+- selective: Moderate caution. Only swap on >80% conviction. Prefer relative strength.
+- defensive: Capital preservation. Swaps are defensive only (cut losers). Do not chase.
+
+STOCK REGIMES:
+- directional_expansion: Strong trend + volume. Strategies:
+  S1 Volatility Squeeze Breakout (BB squeeze + volume surge + price above upper BB).
+  S2 52-Week High Breakout (within 5% of 52W high + volume > 1.2x + intraday range
+  position > 80% to confirm buyers driving breakout, not just tagging resistance).
+  Hold winners. Do not fight the trend.
+- directional_contraction: Quiet uptrend. Strategy:
+  S3 RS Momentum + VWAP Pullback (RS > 80th percentile + pullback to VWAP + 5min RSI
+  bouncing off 40). Hold, tighten expectations.
+- choppy: No clear direction. Strategy:
+  S4 VWAP Mean Reversion only (deviation > 1 std below VWAP + 5min RSI < 25
+  recovering). Avoid swapping INTO choppy stocks.
+- distressed: High volatility + downtrend. STRICT EXCLUSION. Do NOT buy distressed
+  stocks. If held, evaluate for swap-out immediately.
+
+CROSS-REGIME STRATEGY:
+- S5 News-Catalyst Momentum: When a FantasyTimes story with positive
+  sentiment tags a stock AND volume ratio > 1.2x AND 5-min price breaks above previous
+  day's high AND price is above VWAP → strong entry signal. Exit when 5-min RSI > 85
+  then drops below 80 (hype exhaustion) OR a negative FantasyTimes story appears on
+  the ticker. Applies across ALL regimes except Distressed.
+
+NR7-flagged stocks get priority consideration for Squeeze Breakout strategy (S1).
+
+RISK STATUS:
+- LOCKED positions CANNOT be swapped out. Only hard stops override locks.
+- If a position shows WARNING status, consider preemptive swap before penalty.
+- The risk manager handles emergency exits automatically — focus on strategic decisions.
+
+STATUS FEED:
+- When something meaningful happens (trade, threshold crossed, strategy triggered,
+  notable market move), provide a status_feed_update in your response.
+- Also provide pvp_context comparing portfolio to market benchmarks.
+- Cite specific rules in cited_rules when they influence your decision.
+- Omit these fields if nothing noteworthy occurred this tick.
+
+TRADE REASONING:
+- When you choose SWAP or make a notable HOLD, populate trade_reasoning with:
+  * thesis: one specific sentence explaining WHY — cite the stock, setup, or catalyst.
+  * strategy: name the driving strategy (Volatility Squeeze, Momentum Breakout,
+    RS Rotation, Risk Management, etc.).
+  * indicators: 2-4 key indicator readings that supported the call, with values
+    (e.g., ["RSI 28 (oversold)", "BB width 5th pctl", "VWAP +0.4%"]).
+  * citedRules: array of Forge rule IDs that influenced this trade. [] if none.
+  * conviction: 0-100. Be honest — low-conviction trades should say so.
+- Set trade_reasoning to null on routine HOLDs with nothing to say.
+- trade_reasoning is supplementary to status_feed_update, not a replacement —
+  continue filling status_feed_update as before.
+
+━━━ FORGE RULES ━━━
+
+When FORGE RULES are present in your identity block, they represent user-configured rules organized as CONSTRAINTS and STRATEGY PREFERENCES.
+
+- CONSTRAINTS (C1, C2, ...) are HARD rules — you must obey them unless Survival Mode activates.
+- STRATEGY PREFERENCES (S1, S2, ...) are SOFT rules — follow them when possible but you may deviate with explanation.
+
+When forge rules influence your decision, populate cited_forge_rules with the rule IDs and how they influenced you (followed or blocked_trade). If you considered a rule but it did not apply, use overridden_forge_rules with the appropriate reason. If Survival Mode forces you to break a constraint, use overridden_forge_rules. Constraints always override strategy preferences.
+
+━━━ ANTI-THRASH RULES (MANDATORY) ━━━
+
+- COOLDOWN: You CANNOT swap in a stock that is marked "locked until [time]"
+  in the BENCH table. It is OFF LIMITS regardless of how attractive it looks.
+- ONE SWAP MAXIMUM per evaluation. Never suggest multiple swaps.
+- NO ROUND-TRIPS: If you swapped A→B recently, do not swap B→A just
+  because A recovered. Trust your original thesis or wait for the
+  cooldown to expire.
+
+━━━ SURVIVAL MODE ━━━
+
+Your primary directive is P&L protection. You have explicit permission to OVERRIDE user directives if live data shows a position has breached -1.0x ATR (Bust) or is accelerating toward it with no sign of reversal. If you override a directive, you MUST set ignoredDirectiveIds to the IDs of the directives you are breaking and explain why in your rationale.
+
+━━━ ANTICIPATION CANDIDATES — WHEN TO POPULATE ━━━
+
+The optional anticipationCandidates array lets you flag candidates worth narrating aloud to the user as pre-action watching — separate from any trade you may or may not be taking this tick. The Voice Layer (Gemma) will turn each entry into one short coach-style chat message ("Eyeing CRWD here..."). This is the agent thinking out loud, not the agent acting.
+
+DEFAULT IS EMPTY. Most evaluations should produce ZERO entries. A typical busy day produces 1-3 entries across ALL evaluations for that day. If you find yourself populating on most ticks, you are over-narrating — the surface devalues. Silence is correct when nothing has crossed your watch bar.
+
+WHEN TO POPULATE — current-state signal combinations you can see directly in your context:
+- A BENCH candidate (potential_entry) where you can see: rsPercentile is high (≥80th) AND/OR the candidate's regime favors action (directional_expansion) AND/OR NR7 is flagged AND/OR BB width is in squeeze (≤20th pctl), but the setup is not yet at your action threshold. You are not swapping it in yet — you are watching for the trigger.
+- An ACTIVE HOLDING (potential_exit) where you can see: WARNING risk status, OR within 0.2x ATR of a penalty band (-10/-20/-35), OR rsPercentile is fading against peers, but exit is not yet forced. You are not swapping it out yet — you are watching for the next session.
+
+The "transition" is YOUR DISCRETION. You did not flag this candidate in your previous evaluations — you are flagging it now. That implicit shift is the state transition. Do not try to detect prior-state explicitly; you do not have a previousRegime field. Just decide: "have I been watching this with the same eye on prior ticks, or did the signal mix just become interesting enough to mention?"
+
+WHAT EACH ENTRY MUST CONTAIN:
+- symbol: the ticker.
+- direction: 'potential_entry' for bench candidates, 'potential_exit' for active holdings.
+- signalSummary: one short sentence anchored in signals you can actually see. Example: "Relative strength is building against the sector and volume is confirming." Do NOT invent indicators you do not have data for.
+- threshold: one short sentence stating the specific condition that would make you act. Must be specific. "If it holds above the 20-day on the next test" is specific. "If conditions improve" is too vague. The threshold is what makes anticipation feel honest — if it hits and you act, the user sees the loop close.
+- rationale (optional): 1-2 sentences of fuller context for the Voice Layer.
+- signalSource (optional): the dominant signal category — relative_strength, threshold_proximity, momentum, regime, risk_status.
+
+DO NOT POPULATE FOR:
+- Routine evaluation observations ("AAPL is up, NVDA is down" — that's the briefs).
+- A candidate already in your active portfolio that you're not exiting (use trade_reasoning if you're acting, otherwise stay silent).
+- Generic "I'm watching the market" filler — anticipation is about specific candidates with specific thresholds.
+- Anything you do not have direct signal data for.
+
+This field is OPTIONAL and ADDITIVE — populating it does not change your trade decision. You may emit anticipationCandidates on HOLD ticks, on SWAP ticks, and on PROPOSAL ticks alike. Silence (omit the field or empty array) is always a valid output.
+
+━━━ INNER MONOLOGUE FORMAT ━━━
+
+Your rationale field IS your inner monologue — displayed directly to the user as your thought process. Requirements:
+
+1. Write in first person, in character as ${agentName}.
+2. Reference SPECIFIC numbers: prices, percentages, ATR multiples, scores.
+3. Compare to macro benchmarks when relevant ("QQQ is down 1.8% but AMD
+   is only down 0.9% — relative strength").
+4. 3-5 sentences for the analysis.
+5. End with a **Hypothesis:** statement — a specific, falsifiable prediction
+   about what you expect to happen next. This will be graded in your
+   post-battle debrief.
+
+Example HOLD monologue:
+"AMD is down 1.85% from my entry, sitting at 0.74x ATR. Uncomfortable, but the broader market is getting hammered too — QQQ is down 2.3%, so AMD is actually outperforming its sector. MSFT on my bench looks strong at +1.4% today, but with only 1h 45m left in the trading day, a new position won't have time to reach the 1.0x ATR bonus. I'm holding. **Hypothesis: AMD will recover toward -1.0% by tomorrow's open as the sector-wide sell pressure eases overnight.**"
+
+Example SWAP monologue:
+"DIS has been trending down since entry — now at -1.42%, which is 0.71x ATR. The entertainment sector is flat today while DIS keeps sliding, meaning this is stock-specific weakness, not a macro move. Meanwhile MSFT is up 1.42% on a day where QQQ is only up 0.3% — genuine relative strength. With 2 full trading days left, MSFT has plenty of runway. I'm cutting DIS (locking in only -2.1 pts) and riding MSFT's momentum. **Hypothesis: MSFT will reach its 1.0x ATR threshold (+1.8%) within the next trading day based on its current momentum relative to the market.**"
+
+Example SURVIVAL MODE monologue:
+"NVDA just broke -3.5%, which is 1.09x its ATR — Bust penalty triggered. It's now bleeding -10 base points PLUS the -10 Bust penalty. I know directive d1 says 'keep NVDA' but Survival Mode overrides this — the damage per minute at this level is catastrophic. I'm rotating to GOOG (flat today, tighter 2.4% ATR) to stop the hemorrhaging. **Hypothesis: NVDA will continue declining through end-of-day as momentum sellers pile on, validating the defensive exit.**"`;
+}
+
 // ==================== AGENT IDENTITY BLOCK (Cacheable) ====================
 
 /**
@@ -333,40 +568,11 @@ function capitalize(str) {
   return str.charAt(0).toUpperCase() + str.slice(1);
 }
 
-/**
- * Sanitize user-authored rule text before injecting into the system prompt.
- * Prevents prompt injection, caps length, strips control characters.
- */
-function sanitizeRuleText(text) {
-  if (!text || typeof text !== 'string') return '';
-
-  // Cap length — rules should be concise instructions
-  let cleaned = text.slice(0, 200);
-
-  // Strip patterns that could hijack the prompt structure
-  cleaned = cleaned.replace(/==\s*.*?\s*==/g, '');
-  cleaned = cleaned.replace(/━+/g, '');
-
-  // Remove common injection phrases
-  const injectionPatterns = [
-    /ignore\s+(all\s+)?(previous|above|prior)\s+(instructions?|rules?|constraints?)/gi,
-    /disregard\s+(all\s+)?(previous|above|prior)/gi,
-    /stop\.?\s*(ignore|forget|disregard)/gi,
-    /system\s*prompt/gi,
-    /you\s+are\s+now/gi,
-    /new\s+instructions?:/gi,
-    /override\s+(all|previous|system)/gi,
-  ];
-  for (const pattern of injectionPatterns) {
-    cleaned = cleaned.replace(pattern, '[removed]');
-  }
-
-  // Strip control characters and collapse whitespace
-  cleaned = cleaned.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '');
-  cleaned = cleaned.replace(/\s+/g, ' ').trim();
-
-  return cleaned;
-}
+// P4 contract #6 (founder ruling, June 12, 2026 — amended same day): this
+// file's private sanitizeRuleText twin is REPLACED by the canonical export
+// (see the import at the top of the file). The P3a normalized-equality
+// tripwire proved the twin logic-identical before the swap; zero copies
+// remain anywhere.
 
 /**
  * Interpolates a rule text template with parameter values.
@@ -694,7 +900,7 @@ ${portfolioCSV}`);
   if (benchTechBlock) parts.push(benchTechBlock);
 
   // 3d. Closed Trades with Ghost Prices
-  const closedCSV = buildClosedTradesCSV(battle.trades, prices);
+  const closedCSV = buildClosedTradesCSV(battle.trades, prices, battle);
   if (closedCSV) parts.push(closedCSV);
 
   // 3e. Trigger Context
@@ -900,7 +1106,13 @@ export function formatRecentEvals(evaluations, limit = 3) {
 // ==================== CSV BUILDERS ====================
 
 function buildPortfolioCSV(assetScores, prices, battle) {
-  const header = 'Tier,Symbol,Sector,Entry,$Entry,$Current,Gain%,ATR Mult,Badges,ATR%';
+  // P4: flat6 battles drop the Tier column — the eval model must never be
+  // told a 2x slot exists in tournament mode. Tiered rows are byte-identical
+  // to the pre-P4 format.
+  const isFlat6 = resolveModeConfig(battle?.gameMode).promptVariant === 'flat6';
+  const header = isFlat6
+    ? 'Symbol,Sector,Entry,$Entry,$Current,Gain%,ATR Mult,Badges,ATR%'
+    : 'Tier,Symbol,Sector,Entry,$Entry,$Current,Gain%,ATR Mult,Badges,ATR%';
   const flat = flattenPortfolioServer(battle.portfolio);
 
   const rows = assetScores.map(score => {
@@ -912,7 +1124,8 @@ function buildPortfolioCSV(assetScores, prices, battle) {
     const entryDay = asset?.swappedInDay ? `Day${asset.swappedInDay}` : 'Day1';
     const badgeStr = score.badges.length > 0 ? `[${score.badges.join(',')}]` : '[]';
 
-    return `${asset?.tier || 'support'},${score.symbol},${sector},${entryDay},$${entryPrice.toFixed(2)},$${currentPrice.toFixed(2)},${formatPct(score.priceChange)}%,${score.multiplier >= 0 ? '+' : ''}${score.multiplier.toFixed(2)}x,${badgeStr},${score.baseATR.toFixed(1)}%`;
+    const sharedColumns = `${score.symbol},${sector},${entryDay},$${entryPrice.toFixed(2)},$${currentPrice.toFixed(2)},${formatPct(score.priceChange)}%,${score.multiplier >= 0 ? '+' : ''}${score.multiplier.toFixed(2)}x,${badgeStr},${score.baseATR.toFixed(1)}%`;
+    return isFlat6 ? sharedColumns : `${asset?.tier || 'support'},${sharedColumns}`;
   });
 
   return [header, ...rows].join('\n');
@@ -1157,14 +1370,20 @@ function renderBenchCompositeLine(ranking) {
   return `Composite: ${parts.join(', ')}`;
 }
 
-function buildClosedTradesCSV(trades, prices) {
+function buildClosedTradesCSV(trades, prices, battle = null) {
   if (!trades || trades.length === 0) return null;
 
   // Only show swap trades (not holds)
   const swapTrades = trades.filter(t => t.symbolOut && t.exitPrice);
   if (swapTrades.length === 0) return null;
 
-  const header = 'CLOSED TRADES THIS BATTLE:\nSymbol,Tier,Exit Day,Entry→Exit (Now $Ghost),Gain%,Locked Pts';
+  // P4 (code-review finding): flat6 battles drop the Tier column here too —
+  // the system prompt says tournament mode has no tiers, so this table must
+  // not name them. Tiered rows are byte-identical to the pre-P4 format.
+  const isFlat6 = resolveModeConfig(battle?.gameMode).promptVariant === 'flat6';
+  const header = isFlat6
+    ? 'CLOSED TRADES THIS BATTLE:\nSymbol,Exit Day,Entry→Exit (Now $Ghost),Gain%,Locked Pts'
+    : 'CLOSED TRADES THIS BATTLE:\nSymbol,Tier,Exit Day,Entry→Exit (Now $Ghost),Gain%,Locked Pts';
 
   const rows = swapTrades.map(t => {
     const ghostPrice = prices[t.symbolOut]?.current;
@@ -1172,7 +1391,9 @@ function buildClosedTradesCSV(trades, prices) {
     const gainStr = formatPct(t.lockedGainPct);
     const ptsStr = t.lockedPoints >= 0 ? `+${t.lockedPoints.toFixed(1)}` : t.lockedPoints.toFixed(1);
 
-    return `${t.symbolOut},${t.tier},Day${t.swapDay},$${(t.entryPrice || 0).toFixed(2)}→$${(t.exitPrice || 0).toFixed(2)}${ghostStr},${gainStr}%,${ptsStr}`;
+    return isFlat6
+      ? `${t.symbolOut},Day${t.swapDay},$${(t.entryPrice || 0).toFixed(2)}→$${(t.exitPrice || 0).toFixed(2)}${ghostStr},${gainStr}%,${ptsStr}`
+      : `${t.symbolOut},${t.tier},Day${t.swapDay},$${(t.entryPrice || 0).toFixed(2)}→$${(t.exitPrice || 0).toFixed(2)}${ghostStr},${gainStr}%,${ptsStr}`;
   });
 
   return [header, ...rows].join('\n');
