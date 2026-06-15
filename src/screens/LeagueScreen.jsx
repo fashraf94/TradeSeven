@@ -19,13 +19,29 @@ import { LEAGUE_REDESIGN_ENABLED } from '../config/featureFlags';
 import { useTheme } from '../contexts/ThemeContext';
 import LeagueParticipantView from './LeagueParticipantView';
 import LeagueHome from '../components/League/LeagueHome';
+import LeagueClimb from '../components/League/LeagueClimb';
 
-const REDESIGN_ON = LEAGUE_REDESIGN_ENABLED
-  || (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('leagueRedesign') === '1');
+const SP = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : new URLSearchParams();
+
+const REDESIGN_ON = LEAGUE_REDESIGN_ENABLED || SP.get('leagueRedesign') === '1';
+
+// Next-arc dev/dark preview: the Altitude Climb standings render ONLY for the
+// explicit `?leagueClimb=1` param (with `&m=live|final&c=training|ranked`),
+// mirroring the `?leagueRedesign=1` idiom. Nothing reads LEAGUE_NEXT_ARC_ENABLED
+// yet — the flag is the future in-app entry's gate, inert until a later phase —
+// so flag-on + no-param stays byte-unchanged.
+const CLIMB_PREVIEW = SP.get('leagueClimb') === '1';
+const CLIMB_MODE = ['live', 'final'].includes(SP.get('m')) ? SP.get('m') : 'live';
+const CLIMB_CTX = ['training', 'ranked'].includes(SP.get('c')) ? SP.get('c') : 'training';
 
 export default function LeagueScreen() {
   const { tokens } = useTheme();
   const [view, setView] = React.useState('home');
+  const [climb, setClimb] = React.useState(CLIMB_PREVIEW);
+
+  // Next-arc dev/dark preview — the Altitude Climb standings, fixtures-backed.
+  // Reachable only via ?leagueClimb=1; "League" (onBack) returns to the normal surface.
+  if (climb) return <LeagueClimb mode={CLIMB_MODE} ctx={CLIMB_CTX} onBack={() => setClimb(false)} />;
 
   // Flag/param OFF → today's behavior, byte-identical.
   if (!REDESIGN_ON) return <LeagueParticipantView />;

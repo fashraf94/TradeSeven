@@ -18,6 +18,10 @@ export function Icon({ name, size = 18, color = 'currentColor', stroke = 1.7, st
     clock: <g {...p}><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3.5 2" /></g>,
     trophy: <g {...p}><path d="M7 4h10v4a5 5 0 01-10 0V4z" /><path d="M7 6H4v1a3 3 0 003 3M17 6h3v1a3 3 0 01-3 3M9 18h6M12 14v4" /></g>,
     lock: <g {...p}><rect x="5" y="11" width="14" height="9" rx="2" /><path d="M8 11V8a4 4 0 018 0v3" /></g>,
+    chevR: <path {...p} d="M9 6l6 6-6 6" />,
+    chevD: <path {...p} d="M6 9l6 6 6-6" />,
+    refresh: <g {...p}><path d="M20 11a8 8 0 10-2.3 6.3" /><path d="M20 20v-5h-5" /></g>,
+    layers: <g {...p}><path d="M12 3l9 5-9 5-9-5 9-5z" /><path d="M3.5 13L12 18l8.5-5" /></g>,
   };
   return <svg width={size} height={size} viewBox="0 0 24 24" style={{ display: 'block', flexShrink: 0, ...style }}>{paths[name]}</svg>;
 }

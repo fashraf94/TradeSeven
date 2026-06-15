@@ -196,4 +196,4 @@ export function isReasoningLocked(pod) {
   return !pod || pod.status !== 'final';
 }
 
-export { GROUPS, YOU, FOLLOWING, ARCH_NAME };
+export { FIELD, GROUPS, YOU, FOLLOWING, ARCH_NAME };
