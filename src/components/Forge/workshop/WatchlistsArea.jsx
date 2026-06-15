@@ -36,6 +36,12 @@ export default function WatchlistsArea({ agentName, primary, user, agent, showTo
   const signalDropOpener = React.useRef(null);
   const [creatingManual, setCreatingManual] = React.useState(false);
 
+  // Stable registration callback so DiscoverPanel's expose-opener effect runs
+  // once (an inline arrow here would change identity every render and churn it).
+  const registerSignalDropOpener = React.useCallback((fn) => {
+    signalDropOpener.current = fn;
+  }, []);
+
   // Phase 2: theme → build a draft watchlist. Create an empty draft, seed it
   // with the theme's name/thesis/tickers via PATCH, then route into the editor
   // (draft) where the user reviews and commits. On success the component
@@ -118,7 +124,7 @@ export default function WatchlistsArea({ agentName, primary, user, agent, showTo
           <div style={{ minWidth: 0 }}>
             <DiscoverPanel
               variant="desktopLeft"
-              onRegisterSignalDropOpener={(fn) => { signalDropOpener.current = fn; }}
+              onRegisterSignalDropOpener={registerSignalDropOpener}
               showToast={showToast}
               requestWorkshopOpen={stubbedSectorWorkshop}
               onBuildWatchlistFromTheme={handleBuildFromTheme}
