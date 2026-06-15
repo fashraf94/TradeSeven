@@ -35,8 +35,13 @@ export default function ForgeWorkshop({ onClose, initialArea = 'overview', user,
   const T = fkTokens(tokens);
   // Desktop layout is flag-gated; OFF → the existing fixed 480 column at every
   // width (mobile + desktop byte-identical). isDesktop is width > 768 (useIsMobile).
+  // `?forgeDesktop=1` force-previews the desktop path without flipping the
+  // committed flag (the ?leagueClimb=1 / ?tournamentDev=1 dev-preview idiom).
   const { isDesktop } = useIsMobile();
-  const desktopOn = FORGE_DESKTOP_ENABLED && isDesktop;
+  const devForceDesktop =
+    typeof window !== 'undefined' &&
+    new URLSearchParams(window.location.search).get('forgeDesktop') === '1';
+  const desktopOn = (FORGE_DESKTOP_ENABLED || devForceDesktop) && isDesktop;
   const agentId = agent?.id || null;
   const hasActiveBattle = !!agent?.activeBattleId;
   const primary = agent?.primaryColor || T.teal;
