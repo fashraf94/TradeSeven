@@ -95,3 +95,22 @@ export const TOURNAMENT_TAB_ENABLED = true;
  * Firebase Console (else the client lobby read 403s).
  */
 export const LEAGUE_LOBBY_ENABLED = true;
+
+/**
+ * League — the redesigned spectate-and-enter front end (the bracket-funnel
+ * lobby + four-player pod cards + pod sheet + two-layer Spectate). The
+ * "front door" landing that sits in front of the live participant flow
+ * (LeagueScreen's board-commit / battle / claims / draft views stay intact
+ * and are reached from it via a full-screen push).
+ *
+ * When false (default), the League tab renders TODAY's behavior unchanged —
+ * LeagueScreen mounts LeagueParticipantView (the extracted, byte-identical
+ * existing flow). The redesign is built/merged DARK behind this flag, and is
+ * fixtures-backed for now (a single `useLeagueState()` seam; real Firestore
+ * wiring is a scoped follow-on). When true — or with the `?leagueRedesign=1`
+ * dev preview (the `?tournamentDev=1` idiom) — the tab renders LeagueHome.
+ *
+ * Flip — a one-line follow-up PR, the TOURNAMENT_TAB_ENABLED precedent —
+ * only after a Vercel preview smoke test.
+ */
+export const LEAGUE_REDESIGN_ENABLED = true;
