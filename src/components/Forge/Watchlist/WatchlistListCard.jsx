@@ -13,6 +13,7 @@ import { timeAgo } from '../../../utils/timeAgo';
 import { isWatchlistEquipped } from '../../../utils/watchlistEquipUI';
 import TickerChip from './TickerChip';
 import WatchlistStatusBadge from './WatchlistStatusBadge';
+import { getWatchlistProvenance } from '../../../utils/watchlistProvenance';
 
 const CHIP_PREVIEW_LIMIT = 6;
 
@@ -26,6 +27,7 @@ export default function WatchlistListCard({
   onOpen,
   onAnalyze,
   onDelete,
+  showProvenance = false,
 }) {
   const [hover, setHover] = useState(false);
 
@@ -38,6 +40,7 @@ export default function WatchlistListCard({
   const thesis = watchlist?.thesis?.trim();
 
   const isEquipped = isWatchlistEquipped(agent, watchlist?.watchlistId);
+  const prov = showProvenance ? getWatchlistProvenance(watchlist) : null;
 
   const open = () => onOpen(watchlist.watchlistId);
 
@@ -107,9 +110,27 @@ export default function WatchlistListCard({
             )}
           </div>
           <div style={{ fontSize: 11, color: tokens.textFaint, marginTop: 4 }}>
-            {tickers.length} {tickers.length === 1 ? 'ticker' : 'tickers'}
-            {watchlist?.updatedAt ? ` · Updated ${timeAgo(watchlist.updatedAt)}` : ''}
+            {showProvenance
+              ? (watchlist?.updatedAt ? `Updated ${timeAgo(watchlist.updatedAt)}` : '')
+              : `${tickers.length} ${tickers.length === 1 ? 'ticker' : 'tickers'}${
+                  watchlist?.updatedAt ? ` · Updated ${timeAgo(watchlist.updatedAt)}` : ''
+                }`}
           </div>
+          {prov && (
+            <div
+              style={{
+                marginTop: 6,
+                fontSize: 10,
+                fontWeight: 700,
+                letterSpacing: '0.6px',
+                textTransform: 'uppercase',
+                color: tokens.textMuted,
+              }}
+            >
+              {prov.label ? `${prov.label} · ` : ''}
+              {prov.count} {prov.count === 1 ? 'name' : 'names'}
+            </div>
+          )}
         </div>
         {onAnalyze && (
           <button

@@ -28,7 +28,7 @@ import WatchlistListEmptyState from './WatchlistListEmptyState';
 import DeleteWatchlistModal from './DeleteWatchlistModal';
 import WatchlistAnalysisView from './WatchlistAnalysisView';
 
-export default function WatchlistListPanel({ user, onOpenWatchlist, onDropSignal }) {
+export default function WatchlistListPanel({ user, onOpenWatchlist, onDropSignal, showProvenance = false, hideCreate = false }) {
   const { tokens } = useTheme();
   const { agent } = useAgent(user?.odUserId);
 
@@ -154,31 +154,33 @@ export default function WatchlistListPanel({ user, onOpenWatchlist, onDropSignal
             Every watchlist you&apos;ve built.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={handleNewWatchlist}
-          disabled={creating}
-          aria-label="Create a new watchlist"
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 6,
-            flexShrink: 0,
-            padding: '8px 14px',
-            borderRadius: 8,
-            border: `1px solid ${tokens.teal}`,
-            background: 'transparent',
-            color: tokens.teal,
-            fontSize: 13,
-            fontWeight: 600,
-            fontFamily: 'inherit',
-            cursor: creating ? 'not-allowed' : 'pointer',
-            opacity: creating ? 0.5 : 1,
-          }}
-        >
-          <BookmarkPlus size={14} />
-          New Watchlist
-        </button>
+        {!hideCreate && (
+          <button
+            type="button"
+            onClick={handleNewWatchlist}
+            disabled={creating}
+            aria-label="Create a new watchlist"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              flexShrink: 0,
+              padding: '8px 14px',
+              borderRadius: 8,
+              border: `1px solid ${tokens.teal}`,
+              background: 'transparent',
+              color: tokens.teal,
+              fontSize: 13,
+              fontWeight: 600,
+              fontFamily: 'inherit',
+              cursor: creating ? 'not-allowed' : 'pointer',
+              opacity: creating ? 0.5 : 1,
+            }}
+          >
+            <BookmarkPlus size={14} />
+            New Watchlist
+          </button>
+        )}
       </div>
 
       {createError && (
@@ -247,6 +249,7 @@ export default function WatchlistListPanel({ user, onOpenWatchlist, onDropSignal
                   onOpen={onOpenWatchlist}
                   onAnalyze={setAnalyzeTarget}
                   onDelete={setDeleteTarget}
+                  showProvenance={showProvenance}
                 />
               ))}
             </div>
