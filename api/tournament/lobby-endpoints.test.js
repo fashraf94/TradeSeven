@@ -15,10 +15,11 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
-const h = vi.hoisted(() => ({ flag: true, db: null, user: { uid: 'u1', name: 'Ada' } }));
+const h = vi.hoisted(() => ({ flag: true, nextArc: false, db: null, user: { uid: 'u1', name: 'Ada' } }));
 
 vi.mock('../../src/config/featureFlags.js', () => ({
   get LEAGUE_LOBBY_ENABLED() { return h.flag; },
+  get LEAGUE_NEXT_ARC_ENABLED() { return h.nextArc; },
 }));
 vi.mock('../_utils/firebaseAdmin.js', () => ({ getFirebaseAdmin: () => h.db }));
 vi.mock('../_utils/authMiddleware.js', () => ({
@@ -34,6 +35,7 @@ import createHandler from './lobby-create.js';
 import joinHandler from './lobby-join.js';
 import matchmakeHandler from './lobby-matchmake.js';
 import formHandler from './lobby-form.js';
+import trainingHandler from './lobby-quickplay-training.js';
 import { createLobby, joinLobby } from '../_utils/tournamentLobbyService.js';
 import { LOBBY_STATUS, LOBBY_MODE, GROUP_STATUS, GROUP_SIZE } from '../../src/constants/leagueTournament.js';
 
@@ -114,8 +116,8 @@ const NOW = new Date('2026-06-10T15:00:00.000Z');
 function withRankings(initial = {}) {
   return makeDb({ 'indexIntelligence/stockRankings': { stocks: STOCKS }, ...initial });
 }
-function makeReqRes(body = {}, { method = 'POST' } = {}) {
-  const req = { method, headers: {}, body };
+function makeReqRes(body = {}, { method = 'POST', query = {} } = {}) {
+  const req = { method, headers: {}, body, query };
   const res = { statusCode: null, body: null };
   res.status = (c) => { res.statusCode = c; return res; };
   res.json = (p) => { res.body = p; return res; };
@@ -127,6 +129,7 @@ beforeEach(() => {
   vi.spyOn(console, 'warn').mockImplementation(() => {});
   vi.spyOn(console, 'error').mockImplementation(() => {});
   h.flag = true;
+  h.nextArc = false;
   h.user = { uid: 'u1', name: 'Ada' };
   h.db = null;
 });
@@ -137,7 +140,7 @@ describe('the wrapper gate', () => {
   it('refuses EVERY lobby endpoint with 404 lobby_disabled while the flag is off', async () => {
     h.flag = false;
     h.db = withRankings().db;
-    for (const handler of [quickplayHandler, createHandler, joinHandler, matchmakeHandler, formHandler]) {
+    for (const handler of [quickplayHandler, createHandler, joinHandler, matchmakeHandler, formHandler, trainingHandler]) {
       const { req, res } = makeReqRes({ lobbyId: 'x' });
       await handler(req, res);
       expect(res.statusCode).toBe(404);
@@ -185,6 +188,51 @@ describe('lobby-quickplay', () => {
     await quickplayHandler(req, res);
     expect(res.statusCode).toBe(503);
     expect(res.body.error).toBe('universe_unavailable');
+  });
+});
+
+// ==================== QUICK PLAY — TRAINING (Slice 3.1, gated dark) ====================
+describe('lobby-quickplay-training (Slice 3.1 — gated, no CTA)', () => {
+  it('is DARK by default: 404 training_disabled while the Next-Arc flag is off and no dev param', async () => {
+    h.db = withRankings().db; // LEAGUE_LOBBY_ENABLED on, nextArc off, no query
+    const { req, res } = makeReqRes({ displayName: 'Ada' });
+    await trainingHandler(req, res);
+    expect(res.statusCode).toBe(404);
+    expect(res.body.error).toBe('training_disabled');
+  });
+
+  it('forms a no-stakes TRAINING pod when LEAGUE_NEXT_ARC_ENABLED is on (writer stamps isTraining:true)', async () => {
+    const { db, store } = withRankings();
+    h.db = db;
+    h.nextArc = true;
+    const { req, res } = makeReqRes({ displayName: 'Ada' });
+    await trainingHandler(req, res);
+    expect(res.statusCode).toBe(200);
+    expect(res.body.groupId).toBe(res.body.lobbyId);
+    expect(res.body.cpuNs).toEqual([1, 2, 3]); // 1 human + 3 CPU — the reused padding
+    const group = store.get(`tournamentGroups/${res.body.groupId}`);
+    expect(group.isTraining).toBe(true);
+    expect(group.status).toBe(GROUP_STATUS.FORMING);
+    expect(group.baseLayerWeek).toBeTruthy();
+    expect(group).not.toHaveProperty('isDev'); // production scope, like ranked
+  });
+
+  it('the dev-invoke preview param ?nextArc=1 forms the pod while the flag stays OFF (the preview smoke handle)', async () => {
+    const { db, store } = withRankings();
+    h.db = db; // nextArc flag stays false
+    const { req, res } = makeReqRes({ displayName: 'Ada' }, { query: { nextArc: '1' } });
+    await trainingHandler(req, res);
+    expect(res.statusCode).toBe(200);
+    expect(store.get(`tournamentGroups/${res.body.groupId}`).isTraining).toBe(true);
+  });
+
+  it('the live ranked lobby-quickplay still never stamps isTraining (the omission idiom is preserved)', async () => {
+    const { db, store } = withRankings();
+    h.db = db;
+    const { req, res } = makeReqRes({ displayName: 'Ada' });
+    await quickplayHandler(req, res);
+    expect(res.statusCode).toBe(200);
+    expect(store.get(`tournamentGroups/${res.body.groupId}`)).not.toHaveProperty('isTraining');
   });
 });
 
