@@ -127,4 +127,4 @@ export const LEAGUE_REDESIGN_ENABLED = true;
  * exists so a later phase can wire the real in-app entry and flip it; do NOT
  * flip it in a build PR (the PR #510 lesson), only after a Vercel preview smoke.
  */
-export const LEAGUE_NEXT_ARC_ENABLED = false;
+export const LEAGUE_NEXT_ARC_ENABLED = true;
