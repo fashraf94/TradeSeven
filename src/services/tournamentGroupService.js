@@ -17,6 +17,7 @@ import {
   TOURNAMENT_TUNING,
   GROUP_STATUS,
   LOBBY_STATUS,
+  isCpuUserId,
   AGENT_BOARDS_SUBCOLLECTION,
   STREAMS_SUBCOLLECTION,
   AGENT_DRAFT_STREAM_DOC_ID,
@@ -160,6 +161,60 @@ export function subscribeMyGroup(uid, callback) {
     console.error('[TournamentGroupService] My-group subscription error:', error);
     callback(null);
   });
+}
+
+/**
+ * Live base-layer "field" subscription (League Next-Arc Phase 1): the always-on
+ * weekly groups of four for one ISO week, the redesign's "field" surface. BOUNDED
+ * by design (founder ruling B) — a single `baseLayerWeek ==` equality + recency
+ * order + a hard `limit`, NEVER an unbounded all-groups read. The equality+orderBy
+ * needs the composite index added in firestore.indexes.json (baseLayerWeek ASC,
+ * updatedAt DESC) AND created in the Firebase Console (the firestore.indexes.json
+ * drift is known — if the console prompts for it during smoke, that's expected).
+ * Callback receives an array of { id, ...group } (capped). Returns the unsubscribe fn.
+ */
+export function subscribeBaseLayerGroups(baseLayerWeek, callback, { max = 12 } = {}) {
+  if (!baseLayerWeek) {
+    callback([]);
+    return () => {};
+  }
+  const groupsQuery = query(
+    collection(db, TOURNAMENT_GROUPS_COLLECTION),
+    where('baseLayerWeek', '==', baseLayerWeek),
+    orderBy('updatedAt', 'desc'),
+    limit(max)
+  );
+  return onSnapshot(groupsQuery, (snapshot) => {
+    callback(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
+  }, (error) => {
+    console.error('[TournamentGroupService] Base-layer groups subscription error:', error);
+    callback([]);
+  });
+}
+
+/**
+ * Resolve human display names for the redesign surfaces (League Next-Arc Phase 1,
+ * founder ruling A): the CLIENT twin of the leaderboard writer's resolveDisplayNames
+ * — `users/{uid}.username || displayName`, degrading to the bare id on any read
+ * failure (never blocks a render). CPU seats are EXCLUDED here: their names are
+ * synthesized deterministically from the archetype in leagueAdapter.cpuSeatName
+ * (no doc read). One-shot batched read (not a subscription) — names are stable.
+ * Returns a { [uid]: name } map.
+ */
+export async function fetchDisplayNames(odUserIds) {
+  const names = {};
+  const humans = [...new Set(odUserIds || [])].filter(id => typeof id === 'string' && id && !isCpuUserId(id));
+  await Promise.all(humans.map(async (uid) => {
+    try {
+      const snap = await getDoc(doc(db, 'users', uid));
+      const profile = snap.exists() ? snap.data() : null;
+      names[uid] = (profile && (profile.username || profile.displayName)) || uid;
+    } catch (error) {
+      console.warn(`[TournamentGroupService] users/${uid} read failed — falling back to id:`, error?.message);
+      names[uid] = uid;
+    }
+  }));
+  return names;
 }
 
 /**
