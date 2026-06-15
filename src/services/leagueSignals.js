@@ -1,10 +1,14 @@
 // src/services/leagueSignals.js
 //
 // Front-end signal-capture seam for the redesigned League surface — the events
-// that ORIGINATE here: spectate-open, pod-tap, enter-tournament, enter-mode
-// (the follow-rail tap is itself a spectate-open). Per the Signal Capture Rider
-// (BUILD_RULES §5 / Implementation Spec §7), these surfaces must write events in
-// a writer-readable shape from day one.
+// that ORIGINATE here: spectate-open, pod-tap, enter-tournament, enter-mode,
+// tab-switch (the follow-rail tap is itself a spectate-open). These are front-end
+// NAVIGATION telemetry — reconciled against the catalog in
+// docs/VISION_PROGRAM_POST_LAUNCH_PLACEMENT_ADDENDUM_A_JUN10_2026.md §4 and found
+// to belong to NEITHER the §4 trading-signal catalog (board/flip/claim/…) nor any
+// row in it; they ride the same gated seam but are a distinct family. Per the
+// Signal Capture Rider (BUILD_RULES §5 / Implementation Spec §7), these surfaces
+// must write events in a writer-readable shape (structured fields) from day one.
 //
 // CORPUS SAFETY (founder directive): persistence is gated on real-data + real-
 // user context. While the surface is fixtures-backed (isFixtures===true) or no
