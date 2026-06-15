@@ -21,10 +21,11 @@
 // api/ → src/ transitive graph stays Node-clean. Never mock these imports.
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { createLobby, formGroupFromLobby } from './tournamentLobbyService.js';
+import { createLobby, formGroupFromLobby, quickPlay } from './tournamentLobbyService.js';
 import { runMondayPipeline } from './tournamentOrchestrator.js';
 import { runFridayAdvancement } from './tournamentAdvancement.js';
 import { bankGroup } from './tournamentBanking.js';
+import { aggregateTournamentLeaderboards } from './tournamentLeaderboard.js';
 import { buildBoardCommit } from './tournamentBoards.js';
 import {
   GROUP_STATUS,
@@ -182,32 +183,44 @@ const anthropicStub = {
   },
 };
 
-/** Form a solo base-layer group from a lobby, commit the human's user board
- * (the forming-week act), and run the live Monday pipeline. Returns the
- * battle-ready, formation-produced group. */
-async function formAndRunMonday() {
-  const { db, store, writeLog } = makeDb({
+/** The seam db: the full rankings universe + the one human's real agent. */
+function makeSeamDb() {
+  return makeDb({
     'indexIntelligence/stockRankings': { stocks: STOCKS },
     [`agents/${HUMAN_AGENT_ID}`]: humanAgentDoc(),
   });
+}
 
-  const { id } = await createLobby(db, { createdBy: HUMAN, displayName: 'Ada', now: MON_MORNING });
-  const formed = await formGroupFromLobby(db, id, { now: MON_MORNING });
-  const groupId = formed.groupId;
-
-  // The human commits their own 3-pick board during the forming window.
+/** The human commits their own 3-pick user board during the forming window. */
+function commitHumanBoard(db, store, groupId) {
   const groupDoc = store.get(`tournamentGroups/${groupId}`);
   const commit = buildBoardCommit({
     group: { id: groupId, ...groupDoc }, odUserId: HUMAN,
     board: SYMBOLS.slice(0, 15), prefillAsSuggested: [], now: MON_MORNING.toISOString(),
   });
-  await db.collection('tournamentGroups').doc(groupId).collection('boards').doc(HUMAN).set(commit);
+  return db.collection('tournamentGroups').doc(groupId).collection('boards').doc(HUMAN).set(commit);
+}
 
+/** Run the live Monday pipeline with the deploy fetch stubbed (the one model
+ * call is the human's agent board via anthropicStub; CPUs use the fallback). */
+async function runSeamMonday(db) {
   const fetchImpl = vi.fn(async () => ({ ok: true }));
   const mondaySummary = await runMondayPipeline(db, {
     now: MON_MORNING, anthropic: anthropicStub, fetchImpl, deployEnabled: true, pacingMs: 0,
   });
+  return { mondaySummary, fetchImpl };
+}
 
+/** Form a solo base-layer group from a lobby, commit the human's user board
+ * (the forming-week act), and run the live Monday pipeline. Returns the
+ * battle-ready, formation-produced group. */
+async function formAndRunMonday() {
+  const { db, store, writeLog } = makeSeamDb();
+  const { id } = await createLobby(db, { createdBy: HUMAN, displayName: 'Ada', now: MON_MORNING });
+  const formed = await formGroupFromLobby(db, id, { now: MON_MORNING });
+  const groupId = formed.groupId;
+  await commitHumanBoard(db, store, groupId);
+  const { mondaySummary, fetchImpl } = await runSeamMonday(db);
   return { db, store, writeLog, groupId, formed, mondaySummary, fetchImpl };
 }
 
@@ -338,5 +351,132 @@ describe('SEAM: formation → banking → Friday base-layer COMPLETE (rank + lea
     // namespace — not dev). Month = ET month of the day-1 banking date.
     const board = store.get(`${TOURNAMENT_LEADERBOARDS_COLLECTION}/${leaderboardDocId('2026-06')}`);
     expect(board.entries[HUMAN].weeks[groupId].final).toBe(true);
+  });
+});
+
+// ==================== STAGE 5 — THE WRITER-FED EXCLUSION INVARIANT (Slice 3.1) ====================
+//
+// Slice 3.0 proved the exclusion READS drop a HAND-BUILT { isTraining: true }
+// fixture (tournamentLeaderboard/advancement/banking/p4Flips tests). Slice 3.1
+// closes the loop the fixtures couldn't: it feeds the REAL WRITER's output — the
+// group doc quickPlay({ isTraining: true }) actually produces, padded + drafted +
+// deployed + banked by the LIVE duties — through those same reads, asserting it is
+// ABSENT from leaderboard / career rank / bracket, yet PRESENT in banking and
+// reaching COMPLETE. The writer is non-fenced: the training pod rides the existing
+// deploy -> createAgentBattle path UNCHANGED (battles keyed by groupId; isTraining
+// is a group-doc concept, NEVER stamped on the battle doc — zero fence contact).
+
+/** quickPlay a TRAINING pod (the real entry-point writer threads isTraining ->
+ * formGroupFromLobby -> createTournamentGroupDoc), commit the one human's board,
+ * and run the live Monday pipeline — exactly the ranked helper, flagged no-stakes. */
+async function quickPlayTrainingAndRunMonday() {
+  const { db, store, writeLog } = makeSeamDb();
+  // The REAL entry-point writer: quickPlay threads isTraining -> formGroupFromLobby
+  // -> createTournamentGroupDoc. Same solo cold-start, flagged no-stakes.
+  const { lobbyId, groupId } = await quickPlay(db, {
+    odUserId: HUMAN, displayName: 'Ada', now: MON_MORNING, isTraining: true,
+  });
+  await commitHumanBoard(db, store, groupId);
+  const { mondaySummary, fetchImpl } = await runSeamMonday(db);
+  return { db, store, writeLog, lobbyId, groupId, mondaySummary, fetchImpl };
+}
+
+describe('SEAM: the writer-fed exclusion invariant (Slice 3.1 — the REAL isTraining writer through the 3.0 reads)', () => {
+  it('quickPlay(isTraining:true) WRITES a correct training pod: isTraining, baseLayerWeek, FORMING, 1 human + 3 CPU, never isDev/bracket', async () => {
+    const { db, store } = makeSeamDb();
+    const { groupId, humanCount, cpuNs } = await quickPlay(db, {
+      odUserId: HUMAN, displayName: 'Ada', now: MON_MORNING, isTraining: true,
+    });
+    expect(humanCount).toBe(1);
+    expect(cpuNs).toEqual([1, 2, 3]);                 // solo seat padded 1 human + 3 CPU (reused)
+    const group = store.get(`tournamentGroups/${groupId}`);
+    expect(group.isTraining).toBe(true);              // the writer stamped the flag
+    expect(group.baseLayerWeek).toBeTruthy();         // a training pod still carries the week (XOR holds)
+    expect(group.status).toBe(GROUP_STATUS.FORMING);
+    expect(group).not.toHaveProperty('bracketGameId'); // base-layer, never a bracket cohort
+    expect(group).not.toHaveProperty('isDev');         // production scope (seam fact #2)
+    expect(group.players.filter(p => p.isCpu === true)).toHaveLength(3);
+    expect(group.players.filter(p => p.isCpu !== true)).toHaveLength(1);
+  });
+
+  it('the writer output RUNS the agent layer like any group: Monday -> BATTLE, 4 deploys keyed by groupId, isTraining NEVER on a battle body', async () => {
+    const { store, groupId, mondaySummary, fetchImpl } = await quickPlayTrainingAndRunMonday();
+    expect(mondaySummary).toMatchObject({ groups: 1, resolved: 1, drafted: 1, errors: 0 });
+    expect(mondaySummary.deploys.deployed).toBe(4);
+    expect(store.get(`tournamentGroups/${groupId}`).status).toBe(GROUP_STATUS.BATTLE);
+
+    // The training pod is just another group the deploy processes: every battle
+    // carries the tournament gameMode + the groupId (the joint-stamp contract) and
+    // NONE carries isTraining — proving zero fence contact (createAgentBattle's doc
+    // shape is reached via the existing deploy path, never edited, no new call site).
+    const bodies = fetchImpl.mock.calls.map(([, opts]) => JSON.parse(opts.body));
+    expect(bodies).toHaveLength(4);
+    expect(bodies.every(b => b.gameMode === TOURNAMENT_GAME_MODE && b.groupId === groupId)).toBe(true);
+    expect(bodies.some(b => 'isTraining' in b)).toBe(false);
+  });
+
+  it('PRESENT in banking: a real banking day records all four seats on the training pod (the flag is irrelevant to banking)', async () => {
+    const { db, store, groupId } = await quickPlayTrainingAndRunMonday();
+    const res = await bankGroup(db, groupId, QUOTES, {
+      now: MON_EVENING, agentScores: { [HUMAN]: 20, 'cpu-1': 10, 'cpu-2': 12, 'cpu-3': 8 }, recordedBy: 'seam',
+    });
+    expect(res.skipped).toBe(false);
+    const banked = store.get(`tournamentGroups/${groupId}`).dailyScores.day1;
+    expect(banked).toBeDefined();
+    expect(Object.keys(banked.closeScores).sort()).toEqual([HUMAN, 'cpu-1', 'cpu-2', 'cpu-3'].sort());
+  });
+
+  it('ABSENT from the leaderboard READ: the nightly aggregation excludes the BATTLE-status training pod the writer produced', async () => {
+    const { db } = await quickPlayTrainingAndRunMonday();
+    // The pod is in BATTLE (a non-training group of identical shape WOULD be
+    // eligible). The aggregation opts into excludeTraining, so the writer's
+    // output is filtered out at the query — nothing reaches the seasonal board.
+    const agg = await aggregateTournamentLeaderboards(db, { now: MON_EVENING });
+    expect(agg.groups).toBe(0);
+    expect(agg.docsWritten).toBe(0);
+  });
+
+  it('ABSENT from rank + bracket, then COMPLETE: Friday gives the writer output the PLAIN FINISH — no rank, no leaderboard, no cut', async () => {
+    const { db, store, groupId } = await quickPlayTrainingAndRunMonday();
+
+    // Day 1 real banking; days 2–5 injected cumulative snapshots to a clean
+    // day-5 week (mirrors the ranked seam + the advancement battery).
+    await bankGroup(db, groupId, QUOTES, {
+      now: MON_EVENING, agentScores: { [HUMAN]: 10, 'cpu-1': 5, 'cpu-2': 5, 'cpu-3': 5 }, recordedBy: 'seam',
+    });
+    const cumulative = (user, agent) => ({ totalPoints: user, agentPoints: agent, compositePoints: agent + 1.5 * user, picks: [] });
+    const injectDay = (n, date, scores) => ({
+      [`dailyScores.day${n}`]: {
+        recordedDate: date, recordedAt: `${date}T21:15:00.000Z`, recordedBy: 'seam',
+        closeScores: {
+          [HUMAN]: cumulative(scores.h.u, scores.h.a),
+          'cpu-1': cumulative(scores.c1.u, scores.c1.a),
+          'cpu-2': cumulative(scores.c2.u, scores.c2.a),
+          'cpu-3': cumulative(scores.c3.u, scores.c3.a),
+        },
+      },
+    });
+    await db.collection('tournamentGroups').doc(groupId).update(injectDay(2, '2026-06-16', { h: { u: 14, a: 12 }, c1: { u: 8, a: 6 }, c2: { u: 9, a: 7 }, c3: { u: 6, a: 4 } }));
+    await db.collection('tournamentGroups').doc(groupId).update(injectDay(3, '2026-06-17', { h: { u: 18, a: 16 }, c1: { u: 12, a: 9 }, c2: { u: 13, a: 10 }, c3: { u: 8, a: 6 } }));
+    await db.collection('tournamentGroups').doc(groupId).update(injectDay(4, '2026-06-18', { h: { u: 22, a: 20 }, c1: { u: 16, a: 12 }, c2: { u: 17, a: 13 }, c3: { u: 10, a: 8 } }));
+    await db.collection('tournamentGroups').doc(groupId).update(injectDay(5, '2026-06-19', { h: { u: 26, a: 24 }, c1: { u: 20, a: 14 }, c2: { u: 22, a: 16 }, c3: { u: 12, a: 9 } }));
+
+    const summary = await runFridayAdvancement(db, { now: FRI_EVENING });
+
+    // The training plain finish (Spec §2/§5): COMPLETE, counted as TRAINING, NOT
+    // as a base-layer ladder finish — and ZERO ladder side-effects.
+    expect(store.get(`tournamentGroups/${groupId}`).status).toBe(GROUP_STATUS.COMPLETE);
+    expect(summary.trainingCompleted).toBe(1);
+    expect(summary.baseCompleted).toBe(0);    // not the ranked finish
+    expect(summary.composedGroups).toEqual([]); // never composed into a bracket
+    expect(summary.rankApplied).toBe(0);      // no career rank applied
+    expect(summary.leaderboardDocs).toBe(0);  // no leaderboard finalized
+    expect(summary.errors).toBe(0);
+
+    // ABSENT from career rank: no rank doc for the human (the plain finish skips
+    // runWeekSideEffects entirely).
+    expect(store.get(`${TOURNAMENT_RANKS_COLLECTION}/${rankDocId(HUMAN)}`)).toBeUndefined();
+    // ABSENT from the seasonal leaderboard: no board doc for the week's month.
+    expect(store.get(`${TOURNAMENT_LEADERBOARDS_COLLECTION}/${leaderboardDocId('2026-06')}`)).toBeUndefined();
   });
 });

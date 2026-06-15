@@ -258,8 +258,14 @@ async function claimLobbyForFormation(db, lobbyId, nowIso) {
  * Idempotent / resumable. `cpuNs` are the CPU pad seats created by THIS
  * formation (empty on an idempotent re-entry). Returns
  * { groupId, humanCount, cpuNs, alreadyFormed }.
+ *
+ * `isTraining` (default false — the omission idiom, League Next-Arc Slice 3.1)
+ * threads straight into the createTournamentGroupDoc call below: a training pod
+ * is just another base-layer group the existing deploy/banking process, but the
+ * Slice 3.0 spine reads the flag to keep it off the leaderboard / career rank /
+ * bracket. Stamped only at creation; an idempotent re-entry reuses the frozen doc.
  */
-export async function formGroupFromLobby(db, lobbyId, { now = new Date() } = {}) {
+export async function formGroupFromLobby(db, lobbyId, { now = new Date(), isTraining = false } = {}) {
   const nowIso = now.toISOString();
   const { lobby, alreadyFormed } = await claimLobbyForFormation(db, lobbyId, nowIso);
   if (alreadyFormed) {
@@ -301,6 +307,7 @@ export async function formGroupFromLobby(db, lobbyId, { now = new Date() } = {})
       userPool,
       roundNumber: 1,
       baseLayerWeek: isoWeekString(now),
+      isTraining,
       status: GROUP_STATUS.FORMING,
       now: nowIso,
     });
@@ -326,10 +333,15 @@ export async function formGroupFromLobby(db, lobbyId, { now = new Date() } = {})
 /**
  * Quick Play (the solo cold-start): open a private lobby and immediately form
  * a CPU-padded group — one human + three CPUs, playable from the next Monday.
+ * `isTraining` (default false, the omission idiom) forms a no-stakes League
+ * Next-Arc training pod instead (Slice 3.1): the same solo-seat composition and
+ * the same Monday-start cadence, threaded through formGroupFromLobby into the
+ * group doc — the Slice 3.0 spine then keeps it off the leaderboard / career
+ * rank / bracket while it still banks its own daily closes.
  * Returns { lobbyId, groupId, humanCount, cpuNs }.
  */
-export async function quickPlay(db, { odUserId, displayName = null, now = new Date() } = {}) {
+export async function quickPlay(db, { odUserId, displayName = null, now = new Date(), isTraining = false } = {}) {
   const { id } = await createLobby(db, { createdBy: odUserId, displayName, mode: LOBBY_MODE.PRIVATE, now });
-  const formed = await formGroupFromLobby(db, id, { now });
+  const formed = await formGroupFromLobby(db, id, { now, isTraining });
   return { lobbyId: id, ...formed };
 }
