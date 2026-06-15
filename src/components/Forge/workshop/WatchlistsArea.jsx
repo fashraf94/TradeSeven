@@ -17,7 +17,7 @@
 // commit — the Forge marks "ready"; equipping lives on the Home.
 
 import React from 'react';
-import { useFK, AreaHeader } from './forgeKit';
+import { useFK, AreaHeader, alpha } from './forgeKit';
 import DiscoverPanel from '../../discover/DiscoverPanel';
 import WatchlistListPanel from '../Watchlist/WatchlistListPanel';
 import { createWatchlist, patchWatchlist } from '../../../services/forgeWatchlistService';
@@ -245,8 +245,8 @@ function StartWatchlistEntry({ T, accent, icon, title, subtitle, onClick, disabl
           justifyContent: 'center',
           borderRadius: 9,
           color: accent,
-          background: `${accent}1a`,
-          border: `1px solid ${accent}40`,
+          background: alpha(accent, 0.1),
+          border: `1px solid ${alpha(accent, 0.25)}`,
         }}
       >
         {icon}
