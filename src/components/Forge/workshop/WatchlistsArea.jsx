@@ -27,9 +27,12 @@ import { createWatchlist, patchWatchlist } from '../../../services/forgeWatchlis
 // editor opens with exactly what we sent. name ≤100, thesis ≤1000.
 const MAX_SEED_TICKERS = 40;
 
-export default function WatchlistsArea({ agentName, primary, user, agent, showToast, onViewWatchlist }) {
+export default function WatchlistsArea({ agentName, primary, user, agent, showToast, onViewWatchlist, twoCol = false }) {
   const T = useFK();
   const [buildingTheme, setBuildingTheme] = React.useState(false);
+  // Set by the desktop-left DiscoverPanel; the right column's "Build with Atlas"
+  // entry (Phase 4) calls it to open the Signal-Drop flow DiscoverPanel owns.
+  const signalDropOpener = React.useRef(null);
 
   // Phase 2: theme → build a draft watchlist. Create an empty draft, seed it
   // with the theme's name/thesis/tickers via PATCH, then route into the editor
@@ -73,6 +76,37 @@ export default function WatchlistsArea({ agentName, primary, user, agent, showTo
   const stubbedSectorWorkshop = React.useCallback(() => {
     showToast?.('Building a watchlist from a sector is coming soon', primary);
   }, [showToast, primary]);
+
+  if (twoCol) {
+    return (
+      <div className="fw-scroll" style={{ height: '100%', overflowY: 'auto', padding: '22px 24px calc(84px + env(safe-area-inset-bottom))' }}>
+        <AreaHeader n="01" name="Watchlists" slotLine={`The universe ${agentName || 'your agent'} watches`} accent={primary || T.teal} />
+        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 380px', gap: 24, alignItems: 'start' }}>
+          {/* LEFT — Discover (desktop variant): rails relocate here; the modals +
+              Signal-Drop machine stay owned by DiscoverPanel and are exposed up. */}
+          <div style={{ minWidth: 0 }}>
+            <DiscoverPanel
+              variant="desktopLeft"
+              onRegisterSignalDropOpener={(fn) => { signalDropOpener.current = fn; }}
+              showToast={showToast}
+              requestWorkshopOpen={stubbedSectorWorkshop}
+              onBuildWatchlistFromTheme={handleBuildFromTheme}
+              agent={agent}
+              onViewWatchlist={onViewWatchlist}
+            />
+          </div>
+          {/* RIGHT — Create & manage. Placeholder scaffold; the three creation
+              entries (Build with Atlas -> signalDropOpener.current) + My Watchlists
+              land in Phase 4. */}
+          <div style={{ minWidth: 0 }}>
+            <div style={{ border: `1px solid ${T.hair}`, borderRadius: 14, padding: 18, color: T.ink2, fontSize: 13, lineHeight: 1.5 }}>
+              Create and manage — wired in Phase 4.
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="fw-scroll" style={{ height: '100%', overflowY: 'auto', padding: '22px 18px calc(84px + env(safe-area-inset-bottom))' }}>

@@ -22,7 +22,7 @@
 //   - Sector → linked theme: handleOpenThemeById looks up by id and
 //     routes through the same ThemeDetailModal
 
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   addDoc,
   collection,
@@ -137,7 +137,7 @@ function makeThemeDropId() {
   });
 }
 
-export default function DiscoverPanel({ showToast, requestWorkshopOpen, onBuildWatchlistFromTheme, agent, onViewWatchlist }) {
+export default function DiscoverPanel({ showToast, requestWorkshopOpen, onBuildWatchlistFromTheme, agent, onViewWatchlist, variant = 'stack', onRegisterSignalDropOpener }) {
   const { tokens } = useTheme();
   const [themes, setThemes] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -267,14 +267,24 @@ export default function DiscoverPanel({ showToast, requestWorkshopOpen, onBuildW
   // through the same fire-and-forget interaction writer used by theme
   // and sector taps; we use a sentinel themeId of '__signal_drop__'
   // because the schema requires one and we don't have a theme here.
-  const handleOpenSignalDrop = () => {
+  const handleOpenSignalDrop = useCallback(() => {
     logInteraction({
       themeId: '__signal_drop__',
       action: 'tap_drop_signal',
       source: 'discoverSignalDrop',
     });
     setSignalDropState({ mode: 'entry', parseResult: null, dropId: null, agentId: null, seedTheme: null });
-  };
+  }, []);
+
+  // Expose the Signal-Drop opener so a desktop sibling (the right column's
+  // "Build with Atlas" entry) can trigger the flow this panel owns. The
+  // signalDropState machine + SignalDropEntry/WatchlistChat stay here because
+  // the theme modal's "Dive in" CTA also drives them.
+  useEffect(() => {
+    if (typeof onRegisterSignalDropOpener !== 'function') return undefined;
+    onRegisterSignalDropOpener(handleOpenSignalDrop);
+    return () => onRegisterSignalDropOpener(null);
+  }, [onRegisterSignalDropOpener, handleOpenSignalDrop]);
 
   const handleCloseSignalDropEntry = () => {
     setSignalDropState({ mode: null, parseResult: null, dropId: null, agentId: null, seedTheme: null });
@@ -361,6 +371,8 @@ export default function DiscoverPanel({ showToast, requestWorkshopOpen, onBuildW
     setSelectedTheme(theme);
   };
 
+  const isDesktopLeft = variant === 'desktopLeft';
+
   return (
     <div style={{ padding: '24px 4px' }}>
       <h2
@@ -388,7 +400,7 @@ export default function DiscoverPanel({ showToast, requestWorkshopOpen, onBuildW
       <div style={{ marginTop: 24 }}>
         {WATCH_LIST_RAIL_ENABLED && <WatchListRail onTickerTap={handleViewChartTap} />}
 
-        <DropSignalCard tokens={tokens} onTap={handleOpenSignalDrop} />
+        {!isDesktopLeft && <DropSignalCard tokens={tokens} onTap={handleOpenSignalDrop} />}
 
         <FeaturedThemesShowcase
           themes={themes}
