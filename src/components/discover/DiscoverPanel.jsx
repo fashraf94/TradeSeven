@@ -144,6 +144,10 @@ export default function DiscoverPanel({ showToast, requestWorkshopOpen, onBuildW
   const [error, setError] = useState(null);
   const [selectedTheme, setSelectedTheme] = useState(null);
   const [viewChartTicker, setViewChartTicker] = useState(null);
+  // Desktop-left only: which surface the All Themes / Sectors toggle shows, and
+  // the live sector count (reported up by SectorRail) for the header line.
+  const [discoverTab, setDiscoverTab] = useState('themes');
+  const [sectorCount, setSectorCount] = useState(null);
   // Sprint 6 Phase 3B: Signal Drop modal flow. State machine across
   // entry (parse-signal) → chat (watchlist-dialogue). Mode is null when
   // no Signal Drop modal is open. Entry stays ungated (parsing works
@@ -394,31 +398,71 @@ export default function DiscoverPanel({ showToast, requestWorkshopOpen, onBuildW
           lineHeight: 1.5,
         }}
       >
-        Explore investable themes.
+        {isDesktopLeft
+          ? `${themes.length} ${themes.length === 1 ? 'theme' : 'themes'}${
+              sectorCount != null
+                ? ` · ${sectorCount} ${sectorCount === 1 ? 'sector' : 'sectors'}`
+                : ''
+            }`
+          : 'Explore investable themes.'}
       </p>
 
       <div style={{ marginTop: 24 }}>
-        {WATCH_LIST_RAIL_ENABLED && <WatchListRail onTickerTap={handleViewChartTap} />}
+        {isDesktopLeft ? (
+          <>
+            <FeaturedThemesShowcase
+              themes={themes}
+              loading={loading}
+              error={error}
+              onCardTap={handleTap}
+            />
 
-        {!isDesktopLeft && <DropSignalCard tokens={tokens} onTap={handleOpenSignalDrop} />}
+            <ThemesSectorsToggle
+              active={discoverTab}
+              onChange={setDiscoverTab}
+              tokens={tokens}
+            />
 
-        <FeaturedThemesShowcase
-          themes={themes}
-          loading={loading}
-          error={error}
-          onCardTap={handleTap}
-        />
+            <div style={{ display: discoverTab === 'themes' ? 'block' : 'none' }}>
+              <AllThemesShowcase themes={themes} onCardTap={handleTap} />
+            </div>
+            <div style={{ display: discoverTab === 'sectors' ? 'block' : 'none' }}>
+              <SectorRail
+                showToast={showToast}
+                themes={themes}
+                onLinkedThemeTap={handleOpenThemeById}
+                onViewChartTap={handleViewChartTap}
+                onHoldingChipTap={handleViewChartTap}
+                onStartWorkshop={handleStartSectorWorkshop}
+                onSectorsLoaded={setSectorCount}
+              />
+            </div>
+          </>
+        ) : (
+          <>
+            {WATCH_LIST_RAIL_ENABLED && <WatchListRail onTickerTap={handleViewChartTap} />}
 
-        <AllThemesShowcase themes={themes} onCardTap={handleTap} />
+            <DropSignalCard tokens={tokens} onTap={handleOpenSignalDrop} />
 
-        <SectorRail
-          showToast={showToast}
-          themes={themes}
-          onLinkedThemeTap={handleOpenThemeById}
-          onViewChartTap={handleViewChartTap}
-          onHoldingChipTap={handleViewChartTap}
-          onStartWorkshop={handleStartSectorWorkshop}
-        />
+            <FeaturedThemesShowcase
+              themes={themes}
+              loading={loading}
+              error={error}
+              onCardTap={handleTap}
+            />
+
+            <AllThemesShowcase themes={themes} onCardTap={handleTap} />
+
+            <SectorRail
+              showToast={showToast}
+              themes={themes}
+              onLinkedThemeTap={handleOpenThemeById}
+              onViewChartTap={handleViewChartTap}
+              onHoldingChipTap={handleViewChartTap}
+              onStartWorkshop={handleStartSectorWorkshop}
+            />
+          </>
+        )}
       </div>
 
       <ThemeDetailModal
@@ -427,6 +471,7 @@ export default function DiscoverPanel({ showToast, requestWorkshopOpen, onBuildW
         onClose={handleCloseModal}
         onStartWorkshop={handleStartWorkshop}
         onDiveIn={handleDiveIntoTheme}
+        wide={isDesktopLeft}
       />
 
       {viewChartTicker && (
@@ -458,6 +503,60 @@ export default function DiscoverPanel({ showToast, requestWorkshopOpen, onBuildW
         onViewWatchlist={onViewWatchlist}
         seedTheme={signalDropState.seedTheme}
       />
+    </div>
+  );
+}
+
+// ALL THEMES / SECTORS segmented toggle for the desktop-left Discover column.
+// Styled with the Discover `tokens` (teal active) to match the cards/modal,
+// rather than the forge nav's vertical-mono SegmentSwitcher.
+function ThemesSectorsToggle({ active, onChange, tokens }) {
+  const options = [
+    { id: 'themes', label: 'All Themes' },
+    { id: 'sectors', label: 'Sectors' },
+  ];
+  return (
+    <div
+      role="tablist"
+      aria-label="Discover surface"
+      style={{
+        display: 'inline-flex',
+        gap: 4,
+        padding: 4,
+        marginBottom: 16,
+        background: tokens.bgCard,
+        border: `1px solid ${tokens.borderDefault}`,
+        borderRadius: 12,
+      }}
+    >
+      {options.map((opt) => {
+        const on = opt.id === active;
+        return (
+          <button
+            key={opt.id}
+            type="button"
+            role="tab"
+            aria-selected={on}
+            onClick={() => onChange(opt.id)}
+            style={{
+              appearance: 'none',
+              cursor: 'pointer',
+              border: 'none',
+              borderRadius: 9,
+              padding: '8px 16px',
+              fontSize: 13,
+              fontWeight: 700,
+              letterSpacing: '0.2px',
+              fontFamily: 'inherit',
+              color: on ? tokens.bgApp : tokens.textMuted,
+              background: on ? tokens.teal : 'transparent',
+              transition: 'background 0.15s ease, color 0.15s ease',
+            }}
+          >
+            {opt.label}
+          </button>
+        );
+      })}
     </div>
   );
 }

@@ -150,7 +150,7 @@ export function computeRenderOrder(sectors, sectorSnapshot, freshPrices) {
   return [...hot3, ...remaining];
 }
 
-export default function SectorRail({ showToast, themes, onLinkedThemeTap, onViewChartTap, onHoldingChipTap, onStartWorkshop }) {
+export default function SectorRail({ showToast, themes, onLinkedThemeTap, onViewChartTap, onHoldingChipTap, onStartWorkshop, onSectorsLoaded }) {
   const { tokens } = useTheme();
   const [sectors, setSectors] = useState([]);
   const [sectorsLoading, setSectorsLoading] = useState(true);
@@ -194,6 +194,13 @@ export default function SectorRail({ showToast, themes, onLinkedThemeTap, onView
       cancelled = true;
     };
   }, []);
+
+  // Report the displayed (filtered) sector count up to a parent — the desktop
+  // Discover header's "{n} themes · {m} sectors". Optional, fires once loaded.
+  useEffect(() => {
+    if (sectorsLoading) return;
+    if (typeof onSectorsLoaded === 'function') onSectorsLoaded(sectors.length);
+  }, [sectorsLoading, sectors, onSectorsLoaded]);
 
   useEffect(() => {
     let cancelled = false;

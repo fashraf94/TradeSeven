@@ -24,7 +24,7 @@ import { X, Sparkles, MessageSquare } from 'lucide-react';
 import { useTheme } from '../../contexts/ThemeContext';
 import { getThemeRichEntry } from './themesDkb';
 
-export default function ThemeDetailModal({ isOpen, theme, onClose, onStartWorkshop, onDiveIn }) {
+export default function ThemeDetailModal({ isOpen, theme, onClose, onStartWorkshop, onDiveIn, wide = false }) {
   const { tokens } = useTheme();
 
   // Body scroll lock + Esc handler. Both are gated on isOpen so the
@@ -85,7 +85,7 @@ export default function ThemeDetailModal({ isOpen, theme, onClose, onStartWorksh
             aria-labelledby="theme-modal-title"
             style={{
               width: '100%',
-              maxWidth: 760,
+              maxWidth: wide ? 880 : 760,
               maxHeight: '90vh',
               background: tokens.bgApp,
               borderRadius: 20,
