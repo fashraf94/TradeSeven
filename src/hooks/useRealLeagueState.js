@@ -27,6 +27,7 @@ import {
   subscribeBaseLayerGroups,
   fetchDisplayNames,
 } from '../services/tournamentGroupService';
+import { getMarketState } from '../utils/marketSchedule';
 import useSpectatedTournamentBattles from './useSpectatedTournamentBattles';
 import { buildLeagueState } from '../components/League/leagueAdapter';
 
@@ -88,22 +89,43 @@ export default function useRealLeagueState(enabled, fallback) {
   // WHY; non-owner active → WHAT-only + _whyConcealed). The ONLY reasoning source.
   const { battles } = useSpectatedTournamentBattles(myGroup?.id || null, enabled);
 
-  // human display names (one-shot; CPUs are synthesized in the adapter)
+  // human display names (CPUs are synthesized in the adapter). Keyed on the
+  // STABLE sorted id-set string, not the doc objects — the subscriptions hand
+  // back fresh object identities on every snapshot tick (banking/flip bumps
+  // updatedAt), but the membership rarely changes, so this re-reads users/{uid}
+  // only when the set of ids actually changes (not every tick).
+  const idsKey = useMemo(
+    () => collectUserIds(myGroup, bracket, fieldGroups).sort().join(','),
+    [myGroup, bracket, fieldGroups],
+  );
   useEffect(() => {
-    if (!enabled) { setNames({}); return undefined; }
+    if (!enabled || !idsKey) return undefined;
     let active = true;
-    const ids = collectUserIds(myGroup, bracket, fieldGroups);
-    if (!ids.length) { setNames({}); return undefined; }
-    fetchDisplayNames(ids).then((n) => { if (active) setNames(n); }).catch(() => {});
+    fetchDisplayNames(idsKey.split(','))
+      .then((n) => { if (active) setNames((prev) => ({ ...prev, ...n })); })
+      .catch(() => {});
     return () => { active = false; };
-  }, [enabled, myGroup, bracket, fieldGroups]);
+  }, [enabled, idsKey]);
+
+  // seconds to the ET close for live-pod countdowns — computed ONCE here (not
+  // per-pod) via the centralized, holiday/early-close-aware marketSchedule, and
+  // refreshed with the 60s battle poll. null → StatusBadge shows a bare "LIVE".
+  const liveClock = useMemo(() => {
+    try {
+      const s = Math.round((getMarketState().nextCloseTime.getTime() - Date.now()) / 1000);
+      return s > 0 ? s : null;
+    } catch {
+      return null;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [enabled, battles]);
 
   const { state, hasRealData } = useMemo(() => {
     if (!enabled) return { state: null, hasRealData: false };
     return buildLeagueState({
-      myGroup, bracket, fieldGroups, battlesByOwner: battles, names, uid, fallback,
+      myGroup, bracket, fieldGroups, battlesByOwner: battles, names, uid, liveClock, fallback,
     });
-  }, [enabled, myGroup, bracket, fieldGroups, battles, names, uid, fallback]);
+  }, [enabled, myGroup, bracket, fieldGroups, battles, names, uid, liveClock, fallback]);
 
   const loading = enabled && !(groupReady && fieldReady);
   return { state, loading, hasRealData };

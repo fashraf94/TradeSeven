@@ -83,10 +83,10 @@ const fallback = {
 
 // ── CPU names (ruling A) ─────────────────────────────────────────────────────
 describe('cpuSeatName', () => {
-  it('synthesizes "CPU · {Archetype}" from the deterministic id→archetype map', () => {
-    // cpu-1 → CPU_ARCHETYPE_ORDER[0] === 'momentum_chaser'
-    expect(cpuSeatName('cpu-1')).toBe('CPU · Momentum Chaser');
-    expect(cpuSeatName('cpu-2')).toBe('CPU · Contrarian');
+  it('synthesizes "CPU — {server label}" from the deterministic id→archetype map (cross-surface parity)', () => {
+    // cpu-1 → CPU_ARCHETYPE_ORDER[0] === 'momentum_chaser' → server label 'Trend Follower'
+    expect(cpuSeatName('cpu-1')).toBe('CPU — Trend Follower');
+    expect(cpuSeatName('cpu-2')).toBe('CPU — Contrarian');
   });
   it('falls back to bare CPU for a non-CPU / malformed id', () => {
     expect(cpuSeatName('u1')).toBe('CPU');
@@ -127,6 +127,10 @@ describe('book mappers', () => {
     ]);
     expect(book[0].p).toBeUndefined(); // no live tape → PortfolioMini suppresses the cells
   });
+  it('picksToUserBook: direction follows the CURRENT (last) leg after a flip', () => {
+    const flipped = [{ symbol: 'NVDA', legs: [{ direction: 'long' }, { direction: 'short' }] }];
+    expect(picksToUserBook(flipped)).toEqual([{ tk: 'NVDA', dir: 'short', c: 0 }]);
+  });
   it('battleToAgentBook: flattens star/core/support to long-only tk, c:0; empty without a battle', () => {
     expect(battleToAgentBook(battle)).toEqual([
       { tk: 'NVDA', dir: 'long', c: 0 },
@@ -141,7 +145,7 @@ describe('book mappers', () => {
 describe('buildSeat', () => {
   it('marks you, resolves human name, finite score, archName ONLY from a battle (ruling D)', () => {
     const seat = buildSeat({ odUserId: 'u1', isCpu: false, score: 10.5, picks: group.players[0].picks, battle, names: { u1: 'Alice' }, uid: 'u1' });
-    expect(seat).toMatchObject({ id: 'u1', kind: 'human', you: true, name: 'Alice', pscore: 10.5, score: 10.5, archName: 'Momentum Chaser', arch: 'momentum_chaser' });
+    expect(seat).toMatchObject({ id: 'u1', kind: 'human', you: true, name: 'Alice', pscore: 10.5, score: 10.5, archName: 'Trend Follower', arch: 'momentum_chaser' });
     expect(seat.userBook).toHaveLength(2);
     expect(seat.agentBook).toHaveLength(3);
   });
@@ -150,17 +154,18 @@ describe('buildSeat', () => {
     expect(seat.archName).toBeUndefined();
     expect(seat.arch).toBeUndefined();
     expect(seat.score).toBe(0); // never NaN — Score needs a finite value
-    expect(seat.name).toBe('CPU · Momentum Chaser');
+    expect(seat.name).toBe('CPU — Trend Follower');
     expect(seat.you).toBe(false);
   });
 });
 
 // ── group → pod, and the never-re-sum scoring invariant ──────────────────────
 describe('groupToPod + the scoring invariant', () => {
-  it('maps status and reads the FINAL banked day composite (never a re-sum)', () => {
-    const pod = groupToPod(group, { names: { u1: 'Alice', u2: 'Bob' }, uid: 'u1', base: true });
+  it('maps status, applies the passed liveClock, reads the FINAL banked day composite (never a re-sum)', () => {
+    const pod = groupToPod(group, { names: { u1: 'Alice', u2: 'Bob' }, uid: 'u1', base: true, liveClock: 3600 });
     expect(pod.base).toBe(true);
     expect(pod.status).toBe('live'); // 'battle' → 'live'
+    expect(pod.clock).toBe(3600); // hook-supplied close countdown, applied to live pods
     expect(pod.seats).toHaveLength(4);
     const u1 = pod.seats.find((s) => s && s.id === 'u1');
     // day2 composite is 10.5; the SUM of day1+day2 (4 + 10.5 = 14.5) must NOT appear.
@@ -201,6 +206,39 @@ describe('mapBracketToRounds', () => {
     expect(deriveFunnelPath(rounds, 'u1').groups).toEqual(['east', 'r2a', 'r3']);
     expect(deriveFunnelPath(rounds, 'nobody').groups).toEqual([]);
   });
+
+  it('8-player bracket (totalRounds=2): round 2 IS the final — fed to r3, NOT duplicated into r2', () => {
+    // the default dev-seed shape (games=2 → totalRounds=2)
+    const b2 = {
+      bracketId: 'b2', status: 'active', currentRound: 2, totalRounds: 2,
+      rounds: {
+        r1: { roundNumber: 1, games: {
+          'b2-r1-g1': { bracketGameId: 'b2-r1-g1', gameIndex: 1, groupId: 'gA', seats: [{ odUserId: 'a1' }, { odUserId: 'a2' }, { odUserId: 'a3' }, { odUserId: 'a4' }], finalScores: { a1: 9, a2: 6, a3: 3, a4: 1 }, completedAt: '2026-06-08T20:00:00Z' },
+        }, composedAt: 'x' },
+        r2: { roundNumber: 2, games: {
+          'b2-r2-g1': { bracketGameId: 'b2-r2-g1', gameIndex: 1, groupId: 'gB', seats: [{ odUserId: 'a1' }, { odUserId: 'a2' }, { odUserId: 'cpu-1', isCpu: true }, { odUserId: 'cpu-2', isCpu: true }], finalScores: null, completedAt: null },
+        }, composedAt: 'x' },
+      },
+    };
+    const rounds = mapBracketToRounds(b2, { uid: 'a1' });
+    // the final (round 2) is the r3 champion node, with real seats
+    expect(rounds.r3.seats.some((s) => s && s.id === 'a1')).toBe(true);
+    // r2 (semifinal tier) does NOT exist for a 2-round bracket → empty pods, no dup
+    expect(rounds.r2.every((p) => p.seats.every((s) => s === null))).toBe(true);
+    expect(rounds.r2[0].id).toBe('r2a');
+    // r1 shows the round-1 game (+ empty slots), not the final
+    expect(rounds.r1[0].seats.some((s) => s && s.id === 'a1')).toBe(true);
+  });
+
+  it('a game with finalScores but no completedAt (resume-owed) is FINAL, not live', () => {
+    const b = {
+      bracketId: 'b3', status: 'active', currentRound: 2, totalRounds: 3,
+      rounds: { r1: { roundNumber: 1, games: {
+        g1: { bracketGameId: 'g1', gameIndex: 1, groupId: 'gX', seats: [{ odUserId: 'x1' }, { odUserId: 'x2' }, { odUserId: 'x3' }, { odUserId: 'x4' }], finalScores: { x1: 5, x2: 4, x3: 2, x4: 1 }, completedAt: null },
+      }, composedAt: 'x' } },
+    };
+    expect(mapBracketToRounds(b, {}).r1[0].status).toBe('final');
+  });
 });
 
 // ── buildLeagueState: cold start vs real data ────────────────────────────────
@@ -231,10 +269,15 @@ describe('buildLeagueState', () => {
     expect(out.state.headline).toBe('fixture');
   });
 
-  it('falls back per-section: no bracket → the fixture funnel, real field still real', () => {
+  it('real session without a bracket → HONEST empty funnel (no fixture players), real field still real', () => {
     const out = buildLeagueState({ myGroup: group, bracket: null, fieldGroups: [group], names: {}, uid: 'u1', fallback });
     expect(out.hasRealData).toBe(true);
-    expect(out.state.rounds).toBe(fallback.rounds); // absent bracket → fixture fill
+    // NOT the fixture rounds — an empty funnel, so fixture players never masquerade as real
+    expect(out.state.rounds).not.toBe(fallback.rounds);
+    expect(out.state.rounds.r1).toHaveLength(4);
+    expect(out.state.rounds.r1.every((p) => p.seats.every((s) => s === null))).toBe(true);
+    // no "Your group" card (id matches no real pod, and never crashes on .id)
+    expect(out.state.yourGroup).toEqual({ id: null });
     expect(out.state.baseGames).toHaveLength(1); // real field
   });
 });

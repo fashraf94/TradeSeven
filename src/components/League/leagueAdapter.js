@@ -5,27 +5,27 @@
 // tournamentBrackets (the funnel), dailyScores (the composite standings), and
 // the WHY-projected battles (useSpectatedTournamentBattles) — onto the
 // Pod / Seat / BookItem shapes the redesign surfaces already consume
-// (leagueFixtures.js §contract). No React, no Firestore: the orchestration
-// (subscriptions, the users-name read) lives in useRealLeagueState; this module
-// is the testable transform, and its co-located test's import IS the
-// dependency-surface guard (BUILD_RULES §4 — must never be mocked).
+// (leagueFixtures.js §contract). No React, no Firestore, no clock read: the
+// orchestration (subscriptions, the users-name read, the ET close time) lives in
+// useRealLeagueState; this module is the testable transform, and its co-located
+// test's import IS the dependency-surface guard (BUILD_RULES §4 — never mocked).
 //
 // Founder rulings wired here (Phase-1 prompt A–F + the smaller gaps):
 //  • A — CPU seat names are synthesized from the deterministic CPU archetype
-//        (cpuArchetypeForN, id-derived — never the fenced cpuAgentName, never a
-//        doc read); human names are injected by the hook (users/{uid} read).
-//        Pod names use an evocative scheme (directional bracket pods, a cycled
-//        pool for base-layer pods) — never "Round 2 · Game 3".
+//        (cpuArchetypeForN, id-derived) using a client mirror of the server's
+//        archetype labels, so a CPU reads the SAME across the lobby and the
+//        leaderboard. Human names are injected by the hook (users/{uid} read).
+//        Pod names use an evocative scheme — never "Round 2 · Game 3".
 //  • C — live tape (price/change) is OUT of this adapter: book items carry tk +
-//        dir (+ weight where stored). `c:0` keeps the UNCHANGED LeagueSpectate
-//        bookChange finite (no NaN); `p` is omitted so PortfolioMini suppresses
-//        the price/change cells.
+//        dir. `c:0` keeps the UNCHANGED LeagueSpectate bookChange finite (no NaN);
+//        `p` is omitted so PortfolioMini suppresses the price/change cells.
 //  • D — arch/archName ONLY from a deployed battle's agentContext (never
 //        fabricated pre-battle).
 //  • Scores — pscore/score ← compositePoints (CUMULATIVE: getWeeklyComposite =
 //        the FINAL banked day's snapshot, never a re-sum), read from dailyScores.
-//  • Smaller gaps — clock derived from the ET close schedule (secondsToEtClose);
-//        watchers/presence omitted (no source); userBook weight omitted (none stored).
+//  • Smaller gaps — `liveClock` (seconds to the ET close) is passed in by the hook
+//        (computed ONCE via the centralized marketSchedule, holiday/early-close
+//        aware); watchers/presence omitted; userBook weight omitted (none stored).
 
 import {
   isCpuUserId,
@@ -37,12 +37,27 @@ import {
   bracketRoundKey,
 } from '../../constants/leagueTournament';
 
-// CPU ring color — mirrors leagueTokens LX.cpu, kept inline so this module pulls
-// NO UI imports and stays node-clean (the unit test imports it directly).
+// CPU ring color — mirrors leagueTokens LX.cpu; the human palette is the fixture
+// COLORS set. Kept inline so this module pulls NO UI imports and stays node-clean
+// (leagueTokens transitively imports the browser-side commandUI). If LX ever moves
+// to a node-clean home, import it instead of duplicating.
 const CPU_COLOR = '#9A8CE0';
-// Saturated human seat hues (the fixture COLORS values), assigned deterministically
-// by a hash of the odUserId so a player keeps one color across surfaces.
 const HUMAN_PALETTE = ['#33B4C4', '#5B8DEF', '#F0C75E', '#E8927C', '#7BD88F', '#B79CED', '#5EEAD4', '#EBA6C8'];
+
+// Client mirror of api/_utils/agentArchetypeConfig.getArchetypeLabel for the CPU
+// archetype set (that module is fenced + api-only, so it can't be imported into
+// the client bundle). Kept in sync so a CPU's name matches the leaderboard/rank
+// surfaces (which use the server cpuAgentName = "CPU — <label>"). If a label here
+// drifts from agentArchetypeConfig, the same CPU would read two ways across
+// surfaces — update both together.
+const ARCHETYPE_LABELS = {
+  momentum_chaser: 'Trend Follower',
+  contrarian: 'Contrarian',
+  diversifier: 'Diversifier',
+  degen: 'Speculator',
+  analyst: 'Fundamental Investor',
+  guardian: 'Capital Preserver',
+};
 
 // evocative pod-name schemes (ruling A) — never "Round N · Game M".
 const BRACKET_R1_NAMES = ['East', 'West', 'North', 'South', 'Northeast', 'Northwest', 'Southeast', 'Southwest'];
@@ -51,6 +66,8 @@ const BASE_NAME_POOL = [
   'Vanguard', 'Meridian', 'Summit', 'Apex', 'Zenith', 'Vertex',
   'Keystone', 'Pinnacle', 'Cardinal', 'Beacon', 'Horizon', 'Citadel',
 ];
+
+const R1_NODE_IDS = ['east', 'west', 'north', 'south'];
 
 // ── small pure helpers ──────────────────────────────────────────────────────
 function hashStr(s) {
@@ -68,6 +85,12 @@ function titleCaseSnake(snake) {
     .join(' ');
 }
 
+// archetype → display label (server-parity labels; title-case fallback for any
+// key not in the curated map).
+function archetypeLabel(key) {
+  return ARCHETYPE_LABELS[key] || titleCaseSnake(key);
+}
+
 function num(x) {
   return Number.isFinite(x) ? x : 0;
 }
@@ -79,15 +102,16 @@ export function seatColor(odUserId, isCpu) {
 }
 
 /**
- * CPU seat name (ruling A): "CPU · {Archetype Label}", derived from the
- * deterministic id→archetype map — coverage-complete pre- and post-battle, no
- * doc read, and never the fenced cpuAgentName.
+ * CPU seat name (ruling A): "CPU — {Archetype Label}", derived from the
+ * deterministic id→archetype map and the server-parity label set — matches the
+ * server cpuAgentName format so a CPU reads identically across surfaces. No doc
+ * read; coverage-complete pre- and post-battle.
  */
 export function cpuSeatName(odUserId) {
   const n = cpuNFromUserId(odUserId);
   if (n == null) return 'CPU';
   try {
-    return `CPU · ${titleCaseSnake(cpuArchetypeForN(n))}`;
+    return `CPU — ${archetypeLabel(cpuArchetypeForN(n))}`;
   } catch {
     return 'CPU';
   }
@@ -106,41 +130,19 @@ export function baseGroupName(groupId) {
   return BASE_NAME_POOL[hashStr(groupId) % BASE_NAME_POOL.length];
 }
 
-/**
- * Seconds until the next 4:00 PM ET close — the live-pod countdown, derived
- * client-side from the ET schedule (smaller-gaps ruling). Intl-based so it is
- * DST-correct without hand-rolled offsets. Returns null if it can't compute
- * (StatusBadge then shows a bare "LIVE").
- */
-export function secondsToEtClose(now = new Date()) {
-  try {
-    const fmt = new Intl.DateTimeFormat('en-US', {
-      timeZone: 'America/New_York', hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit',
-    });
-    const parts = fmt.formatToParts(now);
-    const get = (t) => Number(parts.find((p) => p.type === t)?.value);
-    let h = get('hour');
-    if (h === 24) h = 0; // some engines render midnight as 24
-    const secNow = h * 3600 + get('minute') * 60 + get('second');
-    if (!Number.isFinite(secNow)) return null;
-    const close = 16 * 3600;
-    let delta = close - secNow;
-    if (delta <= 0) delta += 24 * 3600;
-    return delta;
-  } catch {
-    return null;
-  }
-}
-
 // ── book mappers (ruling C: tk + dir only; c:0 for bookChange safety; no p) ──
-/** The user's 3-pick layer → BookItem[] (tk + dir). Live tape deferred. */
+/**
+ * The user's 3-pick layer → BookItem[] (tk + dir). Direction is the CURRENT
+ * position — the LAST leg (a flip appends a leg; legs[0] would be stale). Live
+ * tape deferred.
+ */
 export function picksToUserBook(picks) {
   return (picks || [])
-    .map((p) => ({
-      tk: p && p.symbol,
-      dir: (p && p.legs && p.legs[0] && p.legs[0].direction) || 'long',
-      c: 0, // no live change in Phase 1; finite so the unchanged bookChange never NaNs
-    }))
+    .map((p) => {
+      const legs = (p && p.legs) || [];
+      const leg = legs[legs.length - 1];
+      return { tk: p && p.symbol, dir: (leg && leg.direction) || 'long', c: 0 };
+    })
     .filter((b) => b.tk);
 }
 
@@ -165,9 +167,9 @@ export function battleToAgentBook(battle) {
 
 /**
  * One Seat from whatever data a path has: the player's id/isCpu (always), the
- * cumulative composite score, optional picks (group docs only) and the
- * projected battle (the subscribed group only). Books degrade to [] (→
- * PortfolioMini's "seat reserved" line). Score is always finite (Score needs it).
+ * cumulative composite score, optional picks (group docs only) and the projected
+ * battle (the subscribed group only). Books degrade to [] (→ PortfolioMini's
+ * "seat reserved" line). Score is always finite (Score needs it).
  */
 export function buildSeat({ odUserId, isCpu, score, picks = null, battle = null, names = {}, uid = null }) {
   const cpu = isCpu === true || isCpuUserId(odUserId);
@@ -184,7 +186,7 @@ export function buildSeat({ odUserId, isCpu, score, picks = null, battle = null,
     owner: cpu ? undefined : (you ? undefined : name),
     color: seatColor(odUserId, cpu),
     arch: archetype || undefined,
-    archName: archetype ? titleCaseSnake(archetype) : undefined,
+    archName: archetype ? archetypeLabel(archetype) : undefined,
     score: s,
     pscore: s,
     userBook: picksToUserBook(picks),
@@ -200,12 +202,12 @@ export function groupStatusToPodStatus(status) {
 }
 
 /**
- * A full group doc → Pod. Used for the base-layer field and (for the subscribed
- * group) anywhere we have the whole doc with players[].picks and the dailyScores.
- * `battlesByOwner` (ownerId→projected battle) is supplied only for the subscribed
- * group; otherwise agent books stay empty.
+ * A full group doc → Pod (the base-layer field, and the subscribed group). The
+ * `liveClock` (seconds to the ET close, computed once by the hook) is applied to
+ * live pods. `battlesByOwner` is supplied only for the subscribed group; else
+ * agent books stay empty.
  */
-export function groupToPod(group, { names = {}, uid = null, base = false, battlesByOwner = {}, name = null } = {}) {
+export function groupToPod(group, { names = {}, uid = null, base = false, battlesByOwner = {}, name = null, liveClock = null } = {}) {
   const status = groupStatusToPodStatus(group.status);
   const seats = (group.players || []).map((p) => buildSeat({
     odUserId: p.odUserId,
@@ -223,7 +225,7 @@ export function groupToPod(group, { names = {}, uid = null, base = false, battle
     round: group.roundNumber || 1,
     base,
     status,
-    clock: status === 'live' ? secondsToEtClose() : null,
+    clock: status === 'live' ? liveClock : null,
     // watchers omitted (no presence source) — Watchers renders nothing for undefined
     seats: seats.slice(0, GROUP_SIZE),
   };
@@ -243,10 +245,14 @@ function emptyPod(id, name, round) {
 /**
  * One bracket game → Pod. Per-seat score comes from the game's final composite
  * snapshot (finalScores, set at advancement); for the viewer's OWN live game we
- * overlay the group's cumulative composite + the projected agent book.
+ * overlay the group's cumulative composite + the projected agent book. A game
+ * with finalScores (or completedAt) is FINAL even if completedAt hasn't been
+ * stamped yet (advancement writes the two in steps; a resume path may still owe
+ * completedAt — but the game is decided).
  */
-function bracketGameToPod(game, { bracket, myGroup, battlesByOwner, names, uid, nodeId }) {
-  const status = game.completedAt
+function bracketGameToPod(game, { bracket, myGroup, battlesByOwner, names, uid, nodeId, liveClock }) {
+  const decided = game.completedAt != null || game.finalScores != null;
+  const status = decided
     ? 'final'
     : (game._roundNumber <= (bracket.currentRound || 1) ? 'live' : 'upcoming');
   const isMine = !!myGroup && game.groupId === myGroup.id;
@@ -267,36 +273,47 @@ function bracketGameToPod(game, { bracket, myGroup, battlesByOwner, names, uid, 
     name: bracketPodName(game._roundNumber, game.gameIndex, bracket.totalRounds),
     round: game._roundNumber,
     status,
-    clock: status === 'live' ? secondsToEtClose() : null,
+    clock: status === 'live' ? liveClock : null,
     seats: seats.slice(0, GROUP_SIZE),
   };
 }
 
-const R1_NODE_IDS = ['east', 'west', 'north', 'south'];
-
 /**
  * Map a real bracket onto the funnel's fixed 16→8→4 slots (the LeaguePod NODES
- * topology). Real games fill r1[0..3]/r2[0..1]/r3 by gameIndex; missing slots are
- * empty 'upcoming' pods (the fixtures' pre-resolution look). Larger brackets are
- * capped to the funnel's shape (Phase-1 funnel topology is fixed — discovery note).
+ * topology). The terminal round always feeds the r3 champion node; round 1 feeds
+ * r1; round 2 feeds the r2 semifinal tier ONLY when the bracket has ≥3 rounds
+ * (an 8-player / 2-round bracket has NO semifinal tier — round 2 IS the final, so
+ * it must not be duplicated into both r2 and r3). Unfilled slots are empty
+ * 'upcoming' pods. Brackets larger than 16 players are capped to the funnel's
+ * shape (Phase-1 funnel topology is fixed — discovery note).
  */
-export function mapBracketToRounds(bracket, { myGroup = null, battlesByOwner = {}, names = {}, uid = null } = {}) {
-  const ctx = { bracket, myGroup, battlesByOwner, names, uid };
-  const r1games = gamesOf(bracket, 1).map((g) => ({ ...g, _roundNumber: 1 }));
-  const r2games = gamesOf(bracket, 2).map((g) => ({ ...g, _roundNumber: 2 }));
+export function mapBracketToRounds(bracket, { myGroup = null, battlesByOwner = {}, names = {}, uid = null, liveClock = null } = {}) {
+  const ctx = { bracket, myGroup, battlesByOwner, names, uid, liveClock };
   const terminal = bracket.totalRounds || 3;
+  const r1games = (terminal >= 2 ? gamesOf(bracket, 1) : []).map((g) => ({ ...g, _roundNumber: 1 }));
+  const r2games = (terminal >= 3 ? gamesOf(bracket, 2) : []).map((g) => ({ ...g, _roundNumber: 2 }));
   const r3games = gamesOf(bracket, terminal).map((g) => ({ ...g, _roundNumber: terminal }));
 
   const r1 = R1_NODE_IDS.map((nodeId, i) => (
     r1games[i] ? bracketGameToPod(r1games[i], { ...ctx, nodeId }) : emptyPod(nodeId, bracketPodName(1, i + 1, terminal), 1)
   ));
   const r2 = ['r2a', 'r2b'].map((nodeId, i) => (
-    r2games[i] ? bracketGameToPod(r2games[i], { ...ctx, nodeId }) : emptyPod(nodeId, bracketPodName(2, i + 1, terminal), 2)
+    r2games[i] ? bracketGameToPod(r2games[i], { ...ctx, nodeId }) : emptyPod(nodeId, SEMI_NAMES[i], 2)
   ));
   const r3 = r3games[0]
     ? bracketGameToPod(r3games[0], { ...ctx, nodeId: 'r3' })
     : emptyPod('r3', 'Final Four', terminal);
   return { r1, r2, r3 };
+}
+
+/** The fully-empty funnel — the honest "bracket forming" fill for a real-data
+ *  session where the viewer is not in a bracket (no fixture players bleed in). */
+export function emptyRounds() {
+  return {
+    r1: R1_NODE_IDS.map((id, i) => emptyPod(id, bracketPodName(1, i + 1, 3), 1)),
+    r2: ['r2a', 'r2b'].map((id, i) => emptyPod(id, SEMI_NAMES[i], 2)),
+    r3: emptyPod('r3', 'Final Four', 3),
+  };
 }
 
 /**
@@ -308,23 +325,19 @@ export function deriveFunnelPath(rounds, uid) {
   if (!uid || !rounds) return { groups: [] };
   const idx = rounds.r1.findIndex((pod) => (pod.seats || []).some((s) => s && s.id === uid));
   if (idx < 0) return { groups: [] };
-  const r1Node = R1_NODE_IDS[idx];
   const r2Node = idx < 2 ? 'r2a' : 'r2b';
-  return { groups: [r1Node, r2Node, 'r3'] };
-}
-
-/** The R1 funnel node id the viewer sits in (for the "Your group" card), or null. */
-export function deriveYourGroupNode(rounds, uid) {
-  const path = deriveFunnelPath(rounds, uid);
-  return path.groups[0] ? { id: path.groups[0] } : null;
+  return { groups: [R1_NODE_IDS[idx], r2Node, 'r3'] };
 }
 
 /**
- * Assemble the full LeagueState. Real sections replace the fixture fallback
- * where data exists; absent reads fall back to the corresponding fixture fill
- * (cold-start ruling — reuse the fill levels, no bespoke empty UI). Returns
- * { state, hasRealData }; hasRealData=false means we're showing pure fixtures
- * (signal-capture stays gated off).
+ * Assemble the full LeagueState. Real sections replace the fixture fallback where
+ * data exists. Cold start (no real data at all) → the fixture fallback verbatim
+ * (the demo fill; signal-capture stays gated off). A real-data session that lacks
+ * a bracket (a base-layer-only player) gets the HONEST empty funnel — never the
+ * fixture players, which would masquerade as the viewer's group. Returns
+ * { state, hasRealData }.
+ *
+ * @param {number|null} liveClock seconds to the ET close (computed by the hook)
  */
 export function buildLeagueState({
   myGroup = null,
@@ -333,6 +346,7 @@ export function buildLeagueState({
   battlesByOwner = {},
   names = {},
   uid = null,
+  liveClock = null,
   fallback,
 } = {}) {
   const hasRealData = !!(bracket || myGroup || (fieldGroups && fieldGroups.length));
@@ -341,10 +355,12 @@ export function buildLeagueState({
   }
 
   const rounds = bracket
-    ? mapBracketToRounds(bracket, { myGroup, battlesByOwner, names, uid })
-    : fallback.rounds;
-  const path = bracket ? deriveFunnelPath(rounds, uid) : fallback.path;
-  const yourGroup = bracket ? (deriveYourGroupNode(rounds, uid) || fallback.yourGroup) : fallback.yourGroup;
+    ? mapBracketToRounds(bracket, { myGroup, battlesByOwner, names, uid, liveClock })
+    : emptyRounds();
+  const path = deriveFunnelPath(rounds, uid);
+  // yourGroup must be a non-null object (LeagueLobbyRedesign derefs .id); an id
+  // that matches no R1 pod hides the "Your group" card (base-layer-only players).
+  const yourGroup = path.groups[0] ? { id: path.groups[0] } : { id: null };
 
   const baseGames = (fieldGroups && fieldGroups.length)
     ? fieldGroups.map((g) => groupToPod(g, {
@@ -354,6 +370,7 @@ export function buildLeagueState({
       // the projection is fetched for the subscribed group only; field pods that
       // happen to be your group get its agent books, others get [].
       battlesByOwner: (myGroup && g.id === myGroup.id) ? battlesByOwner : {},
+      liveClock,
     }))
     : fallback.baseGames;
 
