@@ -603,6 +603,22 @@ describe('createTournamentGroupDoc — isCpu passthrough (Ruling B1)', () => {
   });
 });
 
+describe('createTournamentGroupDoc — isTraining passthrough (League Next-Arc Slice 3.0)', () => {
+  it('carries isTraining: true when flagged and OMITS it otherwise (the omission idiom)', () => {
+    const training = createTournamentGroupDoc(makeGroupArgs({ isTraining: true }));
+    expect(training.isTraining).toBe(true);
+    // The XOR still holds — a training pod is a base-layer-shaped group; the
+    // exclusion keys on the flag, not the round metadata.
+    expect(training.baseLayerWeek).toBe('2026-W25');
+    expect('bracketGameId' in training).toBe(false);
+
+    const normal = createTournamentGroupDoc(makeGroupArgs());
+    expect('isTraining' in normal).toBe(false);
+    const explicitFalse = createTournamentGroupDoc(makeGroupArgs({ isTraining: false }));
+    expect('isTraining' in explicitFalse).toBe(false);
+  });
+});
+
 // ==================== P6a — COMPOSITE + LEADERBOARD/RANK IDENTITY ====================
 
 describe('computeComposite — the ONE home for k (ruling A-1)', () => {

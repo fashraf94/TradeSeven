@@ -20,6 +20,13 @@
 // a loud "banking pending" no-op for the tick (banking lands ~17:15 ET via
 // the nightly snake-draft handler); the orchestrator re-ticks.
 //
+// TRAINING groups (isTraining — League Next-Arc Slice 3.0): a no-stakes pod
+// that banks its own daily closes but NEVER feeds the ladder. In the
+// base-layer loop it takes the PLAIN FINISH — transition straight to COMPLETE
+// with NO rank/leaderboard side-effects and no cut (Spec §2/§5). It is NOT
+// excluded from this duty's query (it must be seen here to be completed); the
+// no-ladder branch is what keeps it off the seasonal board and career rank.
+//
 // IDEMPOTENT AT EVERY GRAIN, RESUMABLE FROM THE BRACKET DOC ALONE: locking,
 // completion, composition, and the champion each carry a natural guard
 // (advancers set, status, rounds.r{N+1} exists, champion set), and the
@@ -235,6 +242,7 @@ export async function runFridayAdvancement(db, { now = new Date(), includeDevGro
     groups: groups.length,
     activeBrackets: 0,
     baseCompleted: 0,
+    trainingCompleted: 0,
     bankingPending: 0,
     gamesLocked: 0,
     roundsLocked: [],
@@ -259,6 +267,20 @@ export async function runFridayAdvancement(db, { now = new Date(), includeDevGro
       if (!isWeekBanked(group)) {
         console.log(`${LOG_PREFIX} base-layer group ${group.id}: banking pending (day ${getLatestDayEntry(group)?.dayN || 0}/${WEEK_DAYS_REQUIRED}) — no-op this tick`);
         summary.bankingPending++;
+        continue;
+      }
+      // League Next-Arc (Slice 3.0): a no-stakes TRAINING pod takes the PLAIN
+      // FINISH (Spec §2/§5) — it banks its own daily closes but NEVER feeds the
+      // ladder. Skip runWeekSideEffects entirely (it is purely ladder-facing:
+      // rank apply + the leaderboard final upsert — no group-doc bookkeeping),
+      // and skip the §7.2 degrade gate (nothing downstream is irreversible —
+      // there is no rank/leaderboard finalization to protect). Still transition
+      // to COMPLETE so the pod stops banking and reads as a finished pod (its
+      // standings render from dailyScores, banked separately by the cron).
+      if (group.isTraining === true) {
+        await transitionStatus(db, group.id, GROUP_STATUS.COMPLETE, nowIso);
+        console.log(`${LOG_PREFIX} training group ${group.id}: week banked — completed (no ladder side-effects, no cut — Spec §2/§5)`);
+        summary.trainingCompleted++;
         continue;
       }
       // §7.2 (founder ruling, June 12, 2026): refuse to finalize a week whose

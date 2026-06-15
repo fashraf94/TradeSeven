@@ -90,6 +90,7 @@ function group({
   scores = {},
   status = GROUP_STATUS.BATTLE,
   isDev = false,
+  isTraining = false,
   days = 1,
   bracketGameId = 'b-r1-g1',
 } = {}) {
@@ -118,6 +119,7 @@ function group({
     })),
     dailyScores,
     ...(isDev ? { isDev: true } : {}),
+    ...(isTraining ? { isTraining: true } : {}),
   };
 }
 
@@ -296,6 +298,23 @@ describe('aggregateTournamentLeaderboards — the nightly branch', () => {
     expect(summary.docsWritten).toBe(2);
     expect(store.get('tournamentLeaderboards/2026-06').entries.founder.points).toBe(60);
     expect(store.get('tournamentLeaderboards/dev-2026-06').entries.founder.points).toBe(2.5);
+  });
+
+  it('EXCLUDES isTraining pods from the seasonal board + cumulative score (Next-Arc Slice 3.0)', async () => {
+    const ranked = group({ scores: SCORES });
+    const training = group({
+      id: 'gtrain', bracketGameId: null, isTraining: true,
+      scores: { trainee: { user: 99, agent: 99 }, 'cpu-7': {}, 'cpu-8': {}, 'cpu-9': {} },
+    });
+    const { db, store } = makeDb({
+      'tournamentGroups/g1': ranked,
+      'tournamentGroups/gtrain': training,
+    });
+    const summary = await aggregateTournamentLeaderboards(db, { now: NOW });
+    expect(summary.groups).toBe(1); // training dropped at the eligibility query
+    const board = store.get('tournamentLeaderboards/2026-06');
+    expect(board.entries.founder).toBeDefined();          // the ranked pod is on the board
+    expect(board.entries.trainee).toBeUndefined();         // training never reaches the board / season total
   });
 });
 

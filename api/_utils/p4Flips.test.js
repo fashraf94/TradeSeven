@@ -82,6 +82,37 @@ describe('P4 — dev-group exclusion (founder ruling D9)', () => {
   });
 });
 
+// ============ 2b. Training-group exclusion (League Next-Arc Slice 3.0) ============
+//
+// The shared-query trap (Phase-3 discovery): fetchEligibleGroupsByStatus feeds
+// BOTH the seasonal leaderboard (must EXCLUDE training) and the deploy/fan-out
+// duties (must INCLUDE training — its agent layer is created and ticked by the
+// existing engine). So the exclusion is opt-in (excludeTraining), default off.
+
+describe('Next-Arc — training-group exclusion (fetchEligibleGroupsByStatus)', () => {
+  const players = Array.from({ length: 4 }, (_, i) => ({ odUserId: `u${i}`, picks: [] }));
+  const docs = [
+    ['g-ranked', { status: GROUP_STATUS.BATTLE, players }],
+    ['g-train', { status: GROUP_STATUS.BATTLE, players, isTraining: true }],
+  ];
+
+  it('the DEFAULT INCLUDES isTraining groups — deploy/fan-out duties must keep training', async () => {
+    const groups = await fetchEligibleGroupsByStatus(makeGroupsDb(docs), GROUP_STATUS.BATTLE);
+    expect(groups.map(g => g.id)).toEqual(['g-ranked', 'g-train']);
+  });
+
+  it('the seasonal leaderboard opts in with excludeTraining: true', async () => {
+    const groups = await fetchEligibleGroupsByStatus(makeGroupsDb(docs), GROUP_STATUS.BATTLE, { excludeTraining: true });
+    expect(groups.map(g => g.id)).toEqual(['g-ranked']);
+  });
+
+  it('ONLY the nightly leaderboard aggregation passes excludeTraining; orchestrator + advancement do NOT', () => {
+    expect(read('./tournamentLeaderboard.js')).toContain('excludeTraining: true');
+    expect(read('./tournamentOrchestrator.js')).not.toContain('excludeTraining');
+    expect(read('./tournamentAdvancement.js')).not.toContain('excludeTraining');
+  });
+});
+
 // ==================== 3. Completion disposition (companion b — the flat6 matrix completion test) ====================
 
 describe('P4 — resolveCompletionDisposition (null-opponent disposition, founder scope addition)', () => {

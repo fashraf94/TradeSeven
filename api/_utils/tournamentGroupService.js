@@ -98,8 +98,17 @@ export function getPlayer(group, odUserId) {
  * dev duty surface (run-duty) opts in with `includeDev: true`. The nightly
  * banking/claims mirrors keep their own queries and remain dev-inclusive by
  * design (the smoke's composite day needs them; cleanup retires the data).
+ *
+ * League Next-Arc (Slice 3.0) — training exclusion: `excludeTraining: true`
+ * additionally drops `isTraining: true` pods. Default is `false` (opt-in), so
+ * the deploy/fan-out duties keep INCLUDING training pods — their agent layer
+ * must be created and ticked by the existing engine. ONLY the seasonal
+ * leaderboard aggregation opts in (tournamentLeaderboard.js): a training pod
+ * banks its own closes but never feeds the board. The Friday advancement keeps
+ * training in its query and branches the base-layer loop to a no-ladder
+ * finish, so it is NOT excluded here.
  */
-export async function fetchEligibleGroupsByStatus(db, status, { includeDev = false } = {}) {
+export async function fetchEligibleGroupsByStatus(db, status, { includeDev = false, excludeTraining = false } = {}) {
   const snap = await db.collection(TOURNAMENT_GROUPS_COLLECTION)
     .where('status', '==', status)
     .get();
@@ -108,6 +117,7 @@ export async function fetchEligibleGroupsByStatus(db, status, { includeDev = fal
     const data = doc.data();
     if (data.players?.length !== GROUP_SIZE) return;
     if (!includeDev && data.isDev === true) return;
+    if (excludeTraining && data.isTraining === true) return;
     groups.push({ id: doc.id, ...data });
   });
   return groups;
