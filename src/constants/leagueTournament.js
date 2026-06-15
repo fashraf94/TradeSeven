@@ -943,6 +943,12 @@ export function createAgentLedgerEntry({ heldBy, since, source } = {}) {
  *   `cpu-` id prefix is a readable secondary signal only.
  * - Exactly one of `bracketGameId` | `baseLayerWeek` must be provided (round
  *   metadata, Spec §1.1); the unpopulated key is omitted from the output.
+ * - `isTraining: true` marks a no-stakes League Next-Arc training pod (Spec
+ *   §5): it banks its own daily closes like any group but is EXCLUDED from the
+ *   seasonal leaderboard, career rank, and the bracket/cut. Omitted when false
+ *   (the omission idiom, like `isCpu`). A training pod still carries a
+ *   `baseLayerWeek` (the XOR holds) — the exclusion keys on the flag, not the
+ *   round metadata.
  * - `dailyScores` inner keying — RATIFIED (founder, June 11, 2026):
  *   dailyScores.day{N} = { closeScores: { [odUserId]: { totalPoints, picks } },
  *   recordedAt, recordedBy } — the legacy day{N} inner shape verbatim
@@ -968,6 +974,7 @@ export function createTournamentGroupDoc({
   roundNumber,
   bracketGameId = null,
   baseLayerWeek = null,
+  isTraining = false,
   status = GROUP_STATUS.FORMING,
   now,
 } = {}) {
@@ -1007,6 +1014,7 @@ export function createTournamentGroupDoc({
     status,
     roundNumber,
     ...(hasBracket ? { bracketGameId } : { baseLayerWeek }),
+    ...(isTraining === true ? { isTraining: true } : {}),
     groupMembers: ids,
     players: players.map(p => ({
       odUserId: p.odUserId,

@@ -338,6 +338,15 @@ describe('bankGroup', () => {
     expect(await bankGroup(makeDb({ groupDoc: battleGroup({ status: 'forming' }) }).db, 'group-1', QUOTES, { now: NOW }))
       .toEqual({ skipped: true, reason: 'not_battle' });
   });
+
+  it('banks an isTraining group normally — the flag is irrelevant to banking (Next-Arc Slice 3.0)', async () => {
+    const { db, captured } = makeDb({ groupDoc: battleGroup({ isTraining: true }) });
+    const result = await bankGroup(db, 'gt', QUOTES, { now: NOW, recordedBy: 'cron' });
+    expect(result.skipped).toBe(false);
+    expect(result.dayKey).toBe('day1');
+    expect(captured.updates).toHaveLength(1);
+    expect(captured.updates[0]['dailyScores.day1']).toBeDefined();
+  });
 });
 
 // ==================== bankAllTournamentGroups (cron orchestrator) ====================
@@ -366,6 +375,14 @@ describe('bankAllTournamentGroups', () => {
     const summary = await bankAllTournamentGroups(db, { now: NOW });
     expect(summary).toMatchObject({ groups: 1, processed: 0, errors: 1 });
     expect(captured.updates).toHaveLength(0);
+  });
+
+  it('INCLUDES isTraining groups in the selection — training banks its own closes (Next-Arc Slice 3.0)', async () => {
+    vi.stubEnv('EODHD_API_KEY', ''); // fetchBatchQuotes degrades; the run aborts AFTER selection
+    const training = battleGroup({ isTraining: true });
+    const { db } = makeDb({ groupDoc: training, queryDocs: [{ id: 'gt', data: training }] });
+    const summary = await bankAllTournamentGroups(db, { now: NOW });
+    expect(summary.groups).toBe(1); // selected by the query — isTraining is NOT filtered out
   });
 });
 

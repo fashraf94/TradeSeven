@@ -467,6 +467,38 @@ describe('base-layer groups — COMPLETE ONLY (ruled; recomposition docketed)', 
     expect(summary.bankingPending).toBe(1);
     expect(store.get('tournamentGroups/base1').status).toBe(GROUP_STATUS.BATTLE);
   });
+
+  it('TRAINING base group completes with NO ladder side-effects and no cut (Next-Arc Slice 3.0)', async () => {
+    const training = {
+      ...bracketGroup({ id: 'ignored', members: G1_MEMBERS, dailyScores: G1_WEEK }),
+      bracketGameId: undefined,
+    };
+    delete training.bracketGameId;
+    training.baseLayerWeek = '2026-W25';
+    training.isTraining = true;
+    const { db, store, writeLog } = makeDb({
+      'tournamentGroups/train1': training,
+      'indexIntelligence/stockRankings': { stocks: STOCKS },
+    });
+
+    const summary = await runFridayAdvancement(db, { now: NOW });
+
+    // Plain finish: completed, counted as training (not base), nothing laddered.
+    expect(summary.trainingCompleted).toBe(1);
+    expect(summary.baseCompleted).toBe(0);
+    expect(summary.rankApplied).toBe(0);
+    expect(summary.gamesLocked).toBe(0);
+    expect(summary.composedGroups).toEqual([]);
+    expect(store.get('tournamentGroups/train1').status).toBe(GROUP_STATUS.COMPLETE);
+
+    // ABSENT from career rank + the seasonal leaderboard — no such docs written.
+    expect(store.get('tournamentRanks/founder')).toBeUndefined();
+    expect(store.get('tournamentLeaderboards/2026-06')).toBeUndefined();
+    expect(writeLog.some(([, path]) => path.startsWith('tournamentRanks/'))).toBe(false);
+    expect(writeLog.some(([, path]) => path.startsWith('tournamentLeaderboards/'))).toBe(false);
+    // ABSENT from the bracket / cut — no bracket doc touched.
+    expect(writeLog.every(([, path]) => !path.startsWith('tournamentBrackets/'))).toBe(true);
+  });
 });
 
 // ==================== ORPHAN RESUME (the active-bracket sweep) ====================

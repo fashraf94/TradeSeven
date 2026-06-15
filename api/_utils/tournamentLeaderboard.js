@@ -315,7 +315,10 @@ export async function upsertLeaderboardForGroups(db, groups, { now = new Date(),
 export async function aggregateTournamentLeaderboards(db, { now = new Date(), heldByGroup = {} } = {}) {
   // The ONE eligibility query home (code review: this was a third copy) —
   // dev-INCLUSIVE here by design; the A-4 routing namespaces inside.
-  const groups = await fetchEligibleGroupsByStatus(db, GROUP_STATUS.BATTLE, { includeDev: true });
+  // League Next-Arc (Slice 3.0): EXCLUDE isTraining pods — they bank their own
+  // daily closes but never feed the seasonal board / cumulative season score
+  // (Spec §5). Opt-in on the shared query so deploy/fan-out duties keep training.
+  const groups = await fetchEligibleGroupsByStatus(db, GROUP_STATUS.BATTLE, { includeDev: true, excludeTraining: true });
   if (groups.length === 0) {
     return { groups: 0, skippedNoBanking: 0, docsWritten: 0, errors: 0 };
   }

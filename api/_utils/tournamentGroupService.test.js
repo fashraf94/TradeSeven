@@ -121,6 +121,13 @@ describe('createGroup', () => {
       .rejects.toThrow(/exactly 4/);
     expect(captured.sets).toHaveLength(0);
   });
+
+  it('threads isTraining through to the written doc (Next-Arc Slice 3.0)', async () => {
+    const { db, captured } = makeDb();
+    const { doc } = await createGroup(db, makeGroupArgs({ isTraining: true }));
+    expect(doc.isTraining).toBe(true);
+    expect(captured.sets[0].isTraining).toBe(true);
+  });
 });
 
 describe('getGroup', () => {
