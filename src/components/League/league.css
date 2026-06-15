@@ -55,6 +55,11 @@
 }
 .lg-tap:active { transform: scale(0.985); }
 
+/* Training|Ranked tab body — a calm fade on switch (the wrapper is keyed by tab,
+ * so it remounts and replays). The global prefers-reduced-motion guard in
+ * index.css neutralizes the animation; no JS motion, so no local matchMedia. */
+.lg-tabpanel { animation: lgFadeIn 0.18s ease; }
+
 /* Spectate: stack the two layer panels (user picks / agent book) on the
  * narrowest phones, below the ~360px width where two columns crowd. */
 @media (max-width: 360px) {

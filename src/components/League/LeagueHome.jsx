@@ -16,8 +16,9 @@ import React from 'react';
 import './league.css';
 import useLeagueState from '../../hooks/useLeagueState';
 import { logLeagueSignal } from '../../services/leagueSignals';
+import { LEAGUE_NEXT_ARC_ENABLED } from '../../config/featureFlags';
 import { LTOKENS, LX } from './leagueTokens';
-import Lobby from './LeagueLobbyRedesign';
+import Lobby, { LobbyTabbed } from './LeagueLobbyRedesign';
 import Spectate from './LeagueSpectate';
 import { PodSheet } from './LeaguePod';
 import { ActionLayer, JoinConfirm } from './LeagueAction';
@@ -30,6 +31,13 @@ const ACCENT = LX.energy; // teal — the league energy accent
 const SP = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '');
 const DEV_FILL = ['forming', 'filling', 'open'].includes(SP.get('f')) ? SP.get('f') : 'open';
 const DEV_S = SP.get('s') || '';
+
+// League Next-Arc Phase 2 — the persistent Training | Ranked tabs. Gate evaluated
+// ONCE (module constant, stable across renders) = the sub-flag OR the dev-preview
+// param ?leagueTabs=1 (the Phase-1 ?leagueRealData=1 idiom; layer &leagueRealData=1
+// to preview the tabs over the real adapter). Flag OFF + no param → the byte-
+// identical single-column lobby. Do NOT flip the flag here (the PR #510 lesson).
+const TABS_ENABLED = LEAGUE_NEXT_ARC_ENABLED || SP.get('leagueTabs') === '1';
 
 export default function LeagueHome({ onOpenMyGame }) {
   const { state: st, isFixtures } = useLeagueState(DEV_FILL);
@@ -44,6 +52,10 @@ export default function LeagueHome({ onOpenMyGame }) {
   const [podSheet, setPodSheet] = React.useState(DEV_S === 'pod' ? st.rounds.r1[0] : null);
   const [action, setAction] = React.useState(DEV_S === 'action');
   const [joined, setJoined] = React.useState(null);
+  // Persistent lobby tab — orthogonal to `screen`; only rendered (via LobbyTabbed)
+  // when TABS_ENABLED and screen === 'lobby'. Preserved across the spectate
+  // round-trip (spectate is a `screen` change, not an unmount).
+  const [tab, setTab] = React.useState('ranked'); // 'ranked' | 'training'
 
   // seed a dev spectate target once (smoke testing only)
   React.useEffect(() => {
@@ -65,10 +77,19 @@ export default function LeagueHome({ onOpenMyGame }) {
   const pickMode = (m) => { setAction(false); setJoined(m); signal('enter-mode', { mode: m }); };
   const watchWhileWaiting = () => { setJoined(null); openSpectate(aLivePod, aLivePod.seats.find((s) => s)?.id); };
   const backToLobby = () => { setScreen('lobby'); setSpec(null); };
+  // tab-switch: front-end navigation telemetry (joins enter-mode/enter-tournament;
+  // NOT a §4 trading-signal). Emitted only on a real switch, never on mount.
+  const switchTab = (next) => { if (next === tab) return; signal('tab-switch', { from: tab, to: next }); setTab(next); };
+
+  // Flag-on → the persistent Training|Ranked tabs; flag-off → today's lobby,
+  // byte-identical (same <Lobby> invocation, untouched).
+  const lobby = TABS_ENABLED
+    ? <LobbyTabbed st={st} accent={ACCENT} tab={tab} onSwitchTab={switchTab} onEnter={enter} onPickPod={openPod} onSpectate={openSpectate} onOpenMyGame={onOpenMyGame} />
+    : <Lobby st={st} accent={ACCENT} onEnter={enter} onPickPod={openPod} onSpectate={openSpectate} onOpenMyGame={onOpenMyGame} />;
 
   const body = screen === 'spectate' && spec
     ? <Spectate pod={spec.pod} focusId={spec.focusId} accent={ACCENT} onBack={backToLobby} onEnter={enter} />
-    : <Lobby st={st} accent={ACCENT} onEnter={enter} onPickPod={openPod} onSpectate={openSpectate} onOpenMyGame={onOpenMyGame} />;
+    : lobby;
 
   return (
     <div style={{ position: 'relative', minHeight: '100vh', maxWidth: 448, margin: '0 auto', background: LTOKENS.bg, color: LTOKENS.ink }}>
