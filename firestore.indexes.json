@@ -350,6 +350,20 @@
           "order": "ASCENDING"
         }
       ]
+    },
+    {
+      "collectionGroup": "tournamentGroups",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "baseLayerWeek",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "updatedAt",
+          "order": "DESCENDING"
+        }
+      ]
     }
   ],
   "fieldOverrides": []

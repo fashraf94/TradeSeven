@@ -170,7 +170,13 @@ export function PortfolioMini({ book, accent }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
       {book.map((h, i) => {
-        const up = h.c >= 0;
+        // Live tape (price/change) is absent for real-data books in Phase 1
+        // (deferred — the client quote API is a separate source). Degrade
+        // cleanly: ticker + direction (+ weight), suppressing the price/change
+        // cells — no NaN, no broken "—%". With the fixture tape present this
+        // renders byte-identically to before.
+        const hasTape = h.p != null && Number.isFinite(h.c);
+        const up = hasTape && h.c >= 0;
         return (
           <div key={i} style={{
             display: 'flex', alignItems: 'center', gap: 8, padding: '7px 0',
@@ -179,8 +185,8 @@ export function PortfolioMini({ book, accent }) {
             <LIcon name={h.dir === 'short' ? 'short' : 'long'} size={13} color={h.dir === 'short' ? LX.alert : alpha(accent || LTOKENS.ink2, 0.9)} stroke={2.2} />
             <Mono style={{ fontSize: 12.5, color: LTOKENS.ink, fontWeight: 600, width: 46 }}>{h.tk}</Mono>
             {h.w != null && <Mono style={{ fontSize: 10, color: LTOKENS.ink3, width: 30 }}>{h.w}%</Mono>}
-            <Mono style={{ fontSize: 11.5, color: LTOKENS.ink2, marginLeft: 'auto' }}>{h.p}</Mono>
-            <Mono style={{ fontSize: 11.5, color: up ? LX.pos : LX.neg, width: 44, textAlign: 'right' }}>{up ? '+' : ''}{h.c.toFixed(1)}%</Mono>
+            {hasTape && <Mono style={{ fontSize: 11.5, color: LTOKENS.ink2, marginLeft: 'auto' }}>{h.p}</Mono>}
+            {hasTape && <Mono style={{ fontSize: 11.5, color: up ? LX.pos : LX.neg, width: 44, textAlign: 'right' }}>{up ? '+' : ''}{h.c.toFixed(1)}%</Mono>}
           </div>
         );
       })}

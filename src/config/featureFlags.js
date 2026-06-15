@@ -123,8 +123,17 @@ export const LEAGUE_REDESIGN_ENABLED = true;
  * When false (default), NOTHING in the League surface reads it — the tab is
  * byte-unchanged. This slice ships the Altitude Climb fixtures-backed and
  * reachable ONLY via the dev preview param `?leagueClimb=1` (with
- * `&m=live|final&c=training|ranked`) — the `?leagueRedesign=1` idiom. The flag
- * exists so a later phase can wire the real in-app entry and flip it; do NOT
- * flip it in a build PR (the PR #510 lesson), only after a Vercel preview smoke.
+ * `&m=live|final&c=training|ranked`) — the `?leagueRedesign=1` idiom.
+ *
+ * Phase 1 (the real-data adapter) also gates on this flag: when true (or with
+ * the dev preview param `?leagueRealData=1`, the same idiom), `useLeagueState`
+ * swaps fixtures for the real System-1 read-model (your group, the capped
+ * base-layer field, the bracket funnel, dailyScores composites, the WHY
+ * projection); when false + no param, `useLeagueState` returns byte-identical
+ * fixtures. Fixtures remain the cold-start fill.
+ *
+ * The flag exists so a later phase can wire the real in-app entry and flip it;
+ * do NOT flip it in a build PR (the PR #510 lesson), only after a Vercel
+ * preview smoke.
  */
 export const LEAGUE_NEXT_ARC_ENABLED = false;
