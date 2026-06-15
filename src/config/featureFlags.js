@@ -60,7 +60,7 @@ export const FORGE_HARDSOFT_AUTHORING_ENABLED = false;
  * dark; flip to ship after a Vercel preview smoke test — the
  * COMMAND_DASHBOARD_DESKTOP_ENABLED precedent.
  */
-export const FORGE_DESKTOP_ENABLED = false;
+export const FORGE_DESKTOP_ENABLED = true;
 
 /**
  * Equip bench — the Traits loadout slot (mobile EquipStation + desktop
