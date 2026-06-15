@@ -84,6 +84,31 @@ export function Score({ v, size = 20, weight = 700, showSign = true }) {
   return <span style={{ fontFamily: MONO, fontSize: size, fontWeight: weight, color: c, lineHeight: 1, letterSpacing: '-0.01em' }}>{str}</span>;
 }
 
+// ── Count-up score — the kept-negative Score, animated: rolls from the prior
+//    value to the new one on a cubic ease (the daily-close "magnitude registers"
+//    beat). Reduced motion snaps instantly — matchMedia is the JS guard the
+//    global CSS reduced-motion rule can't cover for a rAF counter. ────────────
+export function CountScore({ value, size = 14, weight = 700, dur = 950, showSign = true }) {
+  const [v, setV] = React.useState(value);
+  const prev = React.useRef(value);
+  React.useEffect(() => {
+    const reduce = typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (reduce) { setV(value); prev.current = value; return undefined; }
+    const from = prev.current, to = value, t0 = performance.now();
+    let raf;
+    const tick = (t) => {
+      const p = Math.min(1, (t - t0) / dur), e = 1 - Math.pow(1 - p, 3);
+      setV(from + (to - from) * e);
+      if (p < 1) raf = requestAnimationFrame(tick); else prev.current = to;
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [value, dur]);
+  const up = v >= 0;
+  const c = Math.abs(v) < 0.05 ? LTOKENS.ink2 : up ? LX.pos : LX.neg;
+  return <span style={{ fontFamily: MONO, fontSize: size, fontWeight: weight, color: c, lineHeight: 1, letterSpacing: '-0.01em' }}>{`${up && showSign ? '+' : ''}${v.toFixed(1)}%`}</span>;
+}
+
 // clock from seconds — mm:ss for short, "Xd Yh" / "Xh Ym" for round-scale
 export function clockStr(s) {
   if (s >= 86400) { const d = Math.floor(s / 86400), h = Math.floor((s % 86400) / 3600); return `${d}d ${h}h`; }

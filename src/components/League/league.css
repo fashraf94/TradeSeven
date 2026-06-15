@@ -26,6 +26,23 @@
   to   { opacity: 1; }
 }
 
+/* ── Altitude Climb (next-arc, dev/dark behind LEAGUE_NEXT_ARC_ENABLED) — the
+ * game view's gated energy: glow on rising tracks, head pop-in, a breathing
+ * aura on you/leader, the overtake flare, the live-edge dash flow, and the
+ * line-draw settle. The global prefers-reduced-motion guard in index.css
+ * neutralizes all of these; JS-driven motion (count-up, the SVG draw length)
+ * keeps its own matchMedia check. Names are clb*/ot* to stay climb-scoped. */
+@keyframes clbGlowIn  { from { opacity: 0; } to { opacity: var(--go, 0.55); } }
+@keyframes clbHeadIn  { from { opacity: 0; transform: scale(0.4); } to { opacity: 1; transform: scale(1); } }
+@keyframes clbBreathe { 0%, 100% { opacity: 0.85; transform: scale(1); } 50% { opacity: 0.35; transform: scale(1.5); } }
+@keyframes clbFlare   { 0% { opacity: 0; transform: scale(0.3); } 35% { opacity: 1; transform: scale(1); } 100% { opacity: 0; transform: scale(1.9); } }
+@keyframes otDashFlow { to { stroke-dashoffset: -14; } }
+@keyframes otDrawIn   { to { stroke-dashoffset: 0; } }
+
+.clb-glow { animation: clbGlowIn 0.8s ease forwards; }
+.clb-head { animation: clbHeadIn 0.5s cubic-bezier(0.34, 1.4, 0.5, 1) both; }
+.clb-draw { stroke-dasharray: var(--len); stroke-dashoffset: var(--len); animation: otDrawIn 0.9s cubic-bezier(0.4, 0, 0.2, 1) forwards; }
+
 /* hide scrollbars on internal scrollers (the page + the follow rail) */
 .lg-scroll { scrollbar-width: none; -ms-overflow-style: none; }
 .lg-scroll::-webkit-scrollbar { width: 0; height: 0; }

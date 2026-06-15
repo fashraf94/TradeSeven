@@ -114,3 +114,17 @@ export const LEAGUE_LOBBY_ENABLED = true;
  * only after a Vercel preview smoke test.
  */
 export const LEAGUE_REDESIGN_ENABLED = true;
+
+/**
+ * League — Next Arc (the second League slice). The "Altitude Climb" five-day
+ * pod-standings view now; in later phases the Training/Ranked lobby tabs, the
+ * real-data adapter, and the live-pulse. Built/merged DARK behind this flag.
+ *
+ * When false (default), NOTHING in the League surface reads it — the tab is
+ * byte-unchanged. This slice ships the Altitude Climb fixtures-backed and
+ * reachable ONLY via the dev preview param `?leagueClimb=1` (with
+ * `&m=live|final&c=training|ranked`) — the `?leagueRedesign=1` idiom. The flag
+ * exists so a later phase can wire the real in-app entry and flip it; do NOT
+ * flip it in a build PR (the PR #510 lesson), only after a Vercel preview smoke.
+ */
+export const LEAGUE_NEXT_ARC_ENABLED = false;
