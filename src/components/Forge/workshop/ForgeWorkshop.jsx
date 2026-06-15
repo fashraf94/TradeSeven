@@ -14,7 +14,9 @@ import React, { useEffect, useState } from 'react';
 import { useTheme } from '../../../contexts/ThemeContext';
 import { useForge } from '../../../hooks/useForge';
 import { useTraits } from '../../../hooks/useTraits';
+import useIsMobile from '../../../hooks/useIsMobile';
 import { listWatchlists } from '../../../services/forgeWatchlistService';
+import { FORGE_DESKTOP_ENABLED } from '../../../config/featureFlags';
 import {
   ForgeKitProvider, fkTokens, injectForgeWorkshopCSS,
   ForgeMark, SegmentSwitcher, ForgeFlash, ForgeToast, Icon,
@@ -31,6 +33,18 @@ const FONT_MONO = "'JetBrains Mono', ui-monospace, SFMono-Regular, monospace";
 export default function ForgeWorkshop({ onClose, initialArea = 'overview', user, agent, onViewWatchlist }) {
   const { tokens } = useTheme();
   const T = fkTokens(tokens);
+  // Desktop layout is flag-gated; OFF → the existing fixed 480 column at every
+  // width (mobile + desktop byte-identical). isDesktop is width > 768 (useIsMobile).
+  // `?forgeDesktop=1` force-previews the desktop path without flipping the
+  // committed flag (the ?leagueClimb=1 / ?tournamentDev=1 dev-preview idiom).
+  const { isDesktop, width } = useIsMobile();
+  const devForceDesktop =
+    typeof window !== 'undefined' &&
+    new URLSearchParams(window.location.search).get('forgeDesktop') === '1';
+  const desktopOn = (FORGE_DESKTOP_ENABLED || devForceDesktop) && isDesktop;
+  // The 01 Lists two-column layout engages only at a real desktop width
+  // (isDesktop's 768 floor is too narrow for two columns).
+  const twoCol = desktopOn && width >= 1024;
   const agentId = agent?.id || null;
   const hasActiveBattle = !!agent?.activeBattleId;
   const primary = agent?.primaryColor || T.teal;
@@ -101,6 +115,7 @@ export default function ForgeWorkshop({ onClose, initialArea = 'overview', user,
         agent={agent}
         showToast={showToast}
         onViewWatchlist={onViewWatchlist}
+        twoCol={twoCol}
       />
     );
   } else if (area === 'rules') {
@@ -128,7 +143,7 @@ export default function ForgeWorkshop({ onClose, initialArea = 'overview', user,
   return (
     <ForgeKitProvider tokens={tokens}>
       <div style={{ height: '100vh', width: '100%', background: T.bg, display: 'flex', justifyContent: 'center', overflow: 'hidden', '--fw-ui': FONT_UI, '--fw-mono': FONT_MONO, fontFamily: FONT_UI }}>
-        <div style={{ width: '100%', maxWidth: 480, height: '100%', position: 'relative', display: 'flex', flexDirection: 'column', background: T.bg, borderLeft: `1px solid ${T.hair}`, borderRight: `1px solid ${T.hair}` }}>
+        <div style={{ width: '100%', maxWidth: desktopOn ? (area === 'watchlists' && twoCol ? 1200 : 720) : 480, height: '100%', position: 'relative', display: 'flex', flexDirection: 'column', background: T.bg, borderLeft: `1px solid ${T.hair}`, borderRight: `1px solid ${T.hair}` }}>
           {/* top chrome — wordmark + close + segmented switcher */}
           <div style={{ flexShrink: 0, padding: '8px 18px 12px', borderBottom: `1px solid ${T.hair}` }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 13 }}>

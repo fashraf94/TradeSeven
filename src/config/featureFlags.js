@@ -51,6 +51,18 @@ export const COMMAND_DASHBOARD_DESKTOP_ENABLED = true;
 export const FORGE_HARDSOFT_AUTHORING_ENABLED = false;
 
 /**
+ * Forge — Desktop layout for the Forge workshop shell (ForgeWorkshop).
+ *
+ * When false (default), ForgeWorkshop renders the existing fixed 480px centered
+ * column at every viewport — instant rollback; mobile AND desktop unchanged.
+ * When true (and the viewport is desktop), the shell widens and the `01 Lists`
+ * area unfolds into the two-column Discover + create/manage layout. Built/merged
+ * dark; flip to ship after a Vercel preview smoke test — the
+ * COMMAND_DASHBOARD_DESKTOP_ENABLED precedent.
+ */
+export const FORGE_DESKTOP_ENABLED = true;
+
+/**
  * Equip bench — the Traits loadout slot (mobile EquipStation + desktop
  * EquipBench) and the TraitsSheet behind it.
  *
