@@ -141,6 +141,7 @@ export default function ForgeWorkshop({ onClose, initialArea = 'overview', user,
         agent={agent}
         onBuild={() => setBuilding('rules')}
         onForgeReady={handleForgeReady}
+        twoCol={twoCol}
       />
     );
   } else {
