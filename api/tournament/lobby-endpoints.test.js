@@ -201,7 +201,7 @@ describe('lobby-quickplay-training (Slice 3.1 — gated, no CTA)', () => {
     expect(res.body.error).toBe('training_disabled');
   });
 
-  it('forms a no-stakes TRAINING pod when LEAGUE_NEXT_ARC_ENABLED is on (writer stamps isTraining:true)', async () => {
+  it('on-demand forms-and-launches a no-stakes TRAINING pod to AWAITING_OPEN (Training Slice 1)', async () => {
     const { db, store } = withRankings();
     h.db = db;
     h.nextArc = true;
@@ -210,9 +210,16 @@ describe('lobby-quickplay-training (Slice 3.1 — gated, no CTA)', () => {
     expect(res.statusCode).toBe(200);
     expect(res.body.groupId).toBe(res.body.lobbyId);
     expect(res.body.cpuNs).toEqual([1, 2, 3]); // 1 human + 3 CPU — the reused padding
+    // Training Slice 1: the tap resolves the draft synchronously and lands the
+    // pod in AWAITING_OPEN (the five-day clock waits for the next market open),
+    // stamped with the start anchor — NOT the old forming-then-Monday cadence.
+    expect(res.body.status).toBe(GROUP_STATUS.AWAITING_OPEN);
+    expect(res.body.startAnchor?.anchorEtDate).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     const group = store.get(`tournamentGroups/${res.body.groupId}`);
     expect(group.isTraining).toBe(true);
-    expect(group.status).toBe(GROUP_STATUS.FORMING);
+    expect(group.status).toBe(GROUP_STATUS.AWAITING_OPEN);
+    expect(group.startAnchor.anchorEtDate).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(group.players.every(p => p.picks.length > 0)).toBe(true); // draft resolved at tap
     expect(group.baseLayerWeek).toBeTruthy();
     expect(group).not.toHaveProperty('isDev'); // production scope, like ranked
   });

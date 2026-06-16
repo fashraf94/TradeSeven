@@ -77,6 +77,12 @@ export const AGENT_MARKET_SIZE = GROUP_SIZE * AGENT_PICKS_PER_AGENT; // 24
 export const GROUP_STATUS = Object.freeze({
   FORMING: 'forming',
   DRAFTING: 'drafting',
+  // League Next-Arc Slice 1 (training, on-demand): a pod whose user draft is
+  // resolved but whose five-day clock has NOT started — it waits here until the
+  // next market open, then an orchestrator morning sweep flips it to 'battle'
+  // (flipAwaitingOpenPods). Reached ONLY by the training on-demand path; ranked
+  // groups never enter it, so every status-keyed consumer stays inert for them.
+  AWAITING_OPEN: 'awaiting_open',
   BATTLE: 'battle',
   COMPLETE: 'complete',
 });

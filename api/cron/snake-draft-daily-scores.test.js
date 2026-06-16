@@ -123,6 +123,8 @@ describe('tournament banking branch — production inertness', () => {
     expect(res.body).toMatchObject({ success: true, message: 'No active battles', processed: 0 });
     // Additive branches, no-op:
     expect(res.body.tournament).toEqual({ groups: 0, processed: 0, skipped: 0, errors: 0, agentScoreFailures: 0 });
+    // Training Slice 1 rolling-completion branch — additive, clean no-op with no groups.
+    expect(res.body.trainingCompletion).toEqual({ groups: 0, completed: 0, skipped: 0, errors: 0 });
     expect(res.body.tournamentLedger).toEqual({ groups: 0, reconciled: 0, divergences: 0, staleCleared: 0, errors: 0, heldByGroup: {} });
     expect(res.body.tournamentLeaderboard).toEqual({ groups: 0, skippedNoBanking: 0, docsWritten: 0, errors: 0 });
     expect(captured.updates).toHaveLength(0);

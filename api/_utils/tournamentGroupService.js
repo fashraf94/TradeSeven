@@ -23,9 +23,16 @@ import {
 // June 11, 2026). forming→battle is the P1 single-shot resolution path;
 // forming→drafting→battle is reserved for the P3 orchestrator's multi-step
 // Monday sequence. No transition ever moves backward.
+//
+// League Next-Arc Slice 1 (additive — existing edges unchanged): forming→
+// awaiting_open→battle is the training on-demand path (draft resolves at tap,
+// the pod waits in awaiting_open until the next market open, then the
+// orchestrator morning sweep flips it to battle). awaiting_open is a
+// training-only state, so the new edges never affect ranked groups.
 export const LEGAL_TRANSITIONS = Object.freeze({
-  [GROUP_STATUS.FORMING]: Object.freeze([GROUP_STATUS.DRAFTING, GROUP_STATUS.BATTLE]),
+  [GROUP_STATUS.FORMING]: Object.freeze([GROUP_STATUS.DRAFTING, GROUP_STATUS.BATTLE, GROUP_STATUS.AWAITING_OPEN]),
   [GROUP_STATUS.DRAFTING]: Object.freeze([GROUP_STATUS.BATTLE]),
+  [GROUP_STATUS.AWAITING_OPEN]: Object.freeze([GROUP_STATUS.BATTLE]),
   [GROUP_STATUS.BATTLE]: Object.freeze([GROUP_STATUS.COMPLETE]),
   [GROUP_STATUS.COMPLETE]: Object.freeze([]),
 });
