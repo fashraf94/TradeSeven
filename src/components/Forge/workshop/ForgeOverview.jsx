@@ -10,8 +10,9 @@ import React from 'react';
 import { useFK, alpha, Icon, Mono, Eyebrow } from './forgeKit';
 import {
   watchlistShelfStatus, bundleShelfStatus,
-  countWatchlists, countBundles, countTraits,
+  countWatchlists, countBundles, countForgeAggregate,
 } from './forgeStatus';
+import { TOTAL_TRAIT_SLOTS } from '../../../data/dnaGroups';
 
 function Tally({ ready, draft }) {
   const T = useFK();
@@ -29,23 +30,44 @@ function Tally({ ready, draft }) {
   );
 }
 
+// Traits have no ready/draft lifecycle — equipped library traits are the agent's
+// active identity layer, so the Traits bench reads its real equipped count, never
+// "ready / drafts" (which would conflate equipped-and-in-use with ready-to-equip).
+function EquippedSummary({ equipped, total }) {
+  const T = useFK();
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+      <span style={{ width: 7, height: 7, borderRadius: '50%', background: T.allocation, boxShadow: `0 0 6px ${alpha(T.allocation, 0.5)}` }} />
+      <Mono style={{ fontSize: 11, color: T.ink2 }}><b style={{ color: T.ink }}>{equipped}</b> of {total} equipped</Mono>
+    </div>
+  );
+}
+
+// Per-item shelf dot: ready (gold), equipped (allocation), or draft (hollow).
+function previewDotStyle(state, T) {
+  if (state === 'ready') return { background: T.gold, border: 'none' };
+  if (state === 'equipped') return { background: T.allocation, border: 'none' };
+  return { background: 'transparent', border: `1.2px solid ${T.ink3}` };
+}
+
 export default function ForgeOverview({ agentName, primary, watchlists = [], bundles = [], equippedTraits = [], onNav, onBuild }) {
   const T = useFK();
 
   const wlCounts = countWatchlists(watchlists);
   const bCounts = countBundles(bundles);
-  const trCounts = countTraits(equippedTraits);
-  const totalReady = wlCounts.ready + bCounts.ready + trCounts.ready;
-  const totalDraft = wlCounts.draft + bCounts.draft + trCounts.draft;
+  // "Ready to equip / in progress" = Watchlists + Rule bundles only (equipped
+  // traits are in-use, not ready-to-equip — surfaced as their own equipped count).
+  const { ready: totalReady, draft: totalDraft } = countForgeAggregate(watchlists, bundles);
+  const equippedCount = equippedTraits.length;
 
-  const wlPreview = watchlists.slice(0, 2).map((w) => ({ id: w.watchlistId, name: w.name?.trim() || 'Untitled', ready: watchlistShelfStatus(w) === 'ready' }));
-  const bPreview = bundles.slice(0, 2).map((b) => ({ id: b.id, name: b.name || 'Bundle', ready: bundleShelfStatus(b) === 'ready' }));
-  const trPreview = equippedTraits.slice(0, 2).map((t) => ({ id: t.traitId || t.id, name: t.name || 'Trait', ready: true }));
+  const wlPreview = watchlists.slice(0, 2).map((w) => ({ id: w.watchlistId, name: w.name?.trim() || 'Untitled', state: watchlistShelfStatus(w) === 'ready' ? 'ready' : 'draft' }));
+  const bPreview = bundles.slice(0, 2).map((b) => ({ id: b.id, name: b.name || 'Bundle', state: bundleShelfStatus(b) === 'ready' ? 'ready' : 'draft' }));
+  const trPreview = equippedTraits.slice(0, 2).map((t) => ({ id: t.traitId || t.id, name: t.name || 'Trait', state: 'equipped' }));
 
   const areas = [
     { id: 'watchlists', n: '01', label: 'Watchlists', icon: 'target', color: primary || T.teal, counts: wlCounts, total: watchlists.length, preview: wlPreview, desc: 'The universe your agent watches' },
     { id: 'rules', n: '02', label: 'Rule bundles', icon: 'rules', color: T.gold, counts: bCounts, total: bundles.length, preview: bPreview, desc: 'How it decides + the limits it respects' },
-    { id: 'traits', n: '03', label: 'Traits', icon: 'dna', color: T.allocation, counts: trCounts, total: equippedTraits.length, preview: trPreview, desc: 'The disposition that shapes its identity' },
+    { id: 'traits', n: '03', label: 'Traits', icon: 'dna', color: T.allocation, equipped: equippedCount, slots: TOTAL_TRAIT_SLOTS, total: equippedTraits.length, preview: trPreview, desc: 'The disposition that shapes its identity' },
   ];
 
   return (
@@ -96,7 +118,7 @@ export default function ForgeOverview({ agentName, primary, watchlists = [], bun
                 <div style={{ display: 'flex', gap: 7, marginTop: 13, flexWrap: 'wrap' }}>
                   {a.preview.map((it) => (
                     <div key={it.id} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 9px', borderRadius: 8, background: T.bg, border: `1px solid ${T.hair}` }}>
-                      <span style={{ width: 6, height: 6, borderRadius: '50%', flexShrink: 0, background: it.ready ? T.gold : 'transparent', border: it.ready ? 'none' : `1.2px solid ${T.ink3}` }} />
+                      <span style={{ width: 6, height: 6, borderRadius: '50%', flexShrink: 0, ...previewDotStyle(it.state, T) }} />
                       <span style={{ fontSize: 11, color: T.ink2, fontWeight: 600, whiteSpace: 'nowrap' }}>{it.name}</span>
                     </div>
                   ))}
@@ -105,7 +127,9 @@ export default function ForgeOverview({ agentName, primary, watchlists = [], bun
               )}
 
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 13, paddingTop: 12, borderTop: `1px solid ${T.hair}` }}>
-                <Tally ready={a.counts.ready} draft={a.counts.draft} />
+                {a.id === 'traits'
+                  ? <EquippedSummary equipped={a.equipped} total={a.slots} />
+                  : <Tally ready={a.counts.ready} draft={a.counts.draft} />}
                 <button className="fw-tap" onClick={(e) => { e.stopPropagation(); onBuild(a.id); }} style={{ all: 'unset', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, fontSize: 11.5, fontWeight: 700, color: T.gold, padding: '7px 12px', borderRadius: 9, background: alpha(T.copper, 0.1), border: `1px solid ${alpha(T.copper, 0.35)}`, whiteSpace: 'nowrap' }}>
                   <Icon name="hammer" size={12} color={T.gold} />Build
                 </button>
