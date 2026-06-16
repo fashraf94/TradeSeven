@@ -153,6 +153,7 @@ export default function ForgeWorkshop({ onClose, initialArea = 'overview', user,
         traits={traits}
         hasActiveBattle={hasActiveBattle}
         showToast={showToast}
+        twoCol={twoCol}
       />
     );
   }

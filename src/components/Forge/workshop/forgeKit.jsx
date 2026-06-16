@@ -400,3 +400,16 @@ export function ShelfHeader({ label, count }) {
     </div>
   );
 }
+
+// "The polished desktop workbench lands next" banner — shared by the Rules and
+// Traits desktop preview surfaces. The full interactive build/edit workbench is
+// a future task; building/editing route to the current (viewport-agnostic) bench.
+export function WorkbenchBanner({ text }) {
+  const T = useFK();
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 9, margin: '0 0 16px', padding: '11px 14px', borderRadius: 12, background: alpha(T.copper, 0.05), border: `1px solid ${alpha(T.copper, 0.18)}` }}>
+      <Icon name="hammer" size={14} color={T.copper} />
+      <Mono style={{ fontSize: 9.5, letterSpacing: '0.04em', color: T.ink2, lineHeight: 1.45 }}>{text}</Mono>
+    </div>
+  );
+}

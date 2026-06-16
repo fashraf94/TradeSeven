@@ -8,22 +8,10 @@
 
 import React, { useMemo } from 'react';
 import { useTheme } from '../../../contexts/ThemeContext';
-import { useFK, alpha, Icon, Mono, AreaHeader, BuildEntry, ShelfHeader, ShelfCard, StatusPill, InUseBadge, MixMeter } from './forgeKit';
+import { useFK, alpha, Icon, Mono, AreaHeader, BuildEntry, ShelfHeader, ShelfCard, StatusPill, InUseBadge, MixMeter, WorkbenchBanner } from './forgeKit';
 import { bundleShelfStatus, bundlePillStatus } from './forgeStatus';
 import { bundleHardSoftCounts } from './hardSoftHelper';
 import StarterKit from '../StarterKit';
-
-// Reworded "workbench lands next" banner — the polished desktop build/edit
-// workbench is a future task; for now building/editing open the current bench.
-function WorkbenchBanner({ text }) {
-  const T = useFK();
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 9, margin: '0 0 16px', padding: '11px 14px', borderRadius: 12, background: alpha(T.copper, 0.05), border: `1px solid ${alpha(T.copper, 0.18)}` }}>
-      <Icon name="hammer" size={14} color={T.copper} />
-      <Mono style={{ fontSize: 9.5, letterSpacing: '0.04em', color: T.ink2, lineHeight: 1.45 }}>{text}</Mono>
-    </div>
-  );
-}
 
 function BundleCard({ bundle, rulesById, onForgeReady }) {
   const T = useFK();
