@@ -52,3 +52,14 @@ export function countBundles(bundles = []) {
 export function countTraits(equippedTraits = []) {
   return { ready: equippedTraits.length, draft: 0, total: equippedTraits.length };
 }
+
+// The overview's "ready to equip / in progress" aggregate — Watchlists + Rule
+// bundles ONLY. Traits are deliberately EXCLUDED: an equipped trait is in-use,
+// not "ready to equip," and traits have no draft lifecycle, so folding them in
+// overstated "ready" and could never contribute a real "in progress". Traits are
+// surfaced as their own equipped summary instead (see ForgeOverview).
+export function countForgeAggregate(watchlists = [], bundles = []) {
+  const wl = countWatchlists(watchlists);
+  const b = countBundles(bundles);
+  return { ready: wl.ready + b.ready, draft: wl.draft + b.draft };
+}

@@ -8,7 +8,7 @@
 
 import React, { useMemo } from 'react';
 import { useTheme } from '../../../contexts/ThemeContext';
-import { useFK, alpha, Icon, Mono, BuildEntry, ShelfHeader, ShelfCard, StatusPill, InUseBadge, MixMeter } from './forgeKit';
+import { useFK, alpha, Icon, Mono, AreaHeader, BuildEntry, ShelfHeader, ShelfCard, StatusPill, InUseBadge, MixMeter, WorkbenchBanner } from './forgeKit';
 import { bundleShelfStatus, bundlePillStatus } from './forgeStatus';
 import { bundleHardSoftCounts } from './hardSoftHelper';
 import StarterKit from '../StarterKit';
@@ -44,7 +44,7 @@ function BundleCard({ bundle, rulesById, onForgeReady }) {
   );
 }
 
-export default function RulesArea({ forge, agent, onBuild, onForgeReady }) {
+export default function RulesArea({ forge, agent, onBuild, onForgeReady, twoCol = false }) {
   const T = useFK();
   const { tokens } = useTheme();
   const agentId = agent?.id || null;
@@ -64,6 +64,28 @@ export default function RulesArea({ forge, agent, onBuild, onForgeReady }) {
           onComplete={() => forge.reloadData()}
           onSkip={() => forge.reloadData()}
         />
+      </div>
+    );
+  }
+
+  // ── Desktop: a two-column preview grid of the real bundles. View + "Make ready"
+  // (drafts) only; building/editing route to the existing bench (no per-card edit,
+  // no top-level create CTA — the polished workbench is a future task). ───────────
+  if (twoCol) {
+    return (
+      <div className="fw-scroll" style={{ height: '100%', overflowY: 'auto', padding: '22px 24px calc(84px + env(safe-area-inset-bottom))' }}>
+        <AreaHeader n="02" name="Rules" slotLine={`How ${agent?.name || 'your agent'} decides + the limits it respects`} accent={T.gold} />
+        <WorkbenchBanner text="The polished desktop rules workbench lands next. For now, building and editing open the current bench." />
+        <ShelfHeader label="My bundles" count={`${forge.bundles.length} total`} />
+        {forge.bundles.length === 0 ? (
+          <div style={{ padding: '28px 20px', textAlign: 'center', fontSize: 12.5, color: T.ink3 }}>No bundles yet.</div>
+        ) : (
+          <div className="fw-stagger" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 14, alignItems: 'start' }}>
+            {forge.bundles.map((b) => (
+              <BundleCard key={b.id} bundle={b} rulesById={rulesById} onForgeReady={onForgeReady} />
+            ))}
+          </div>
+        )}
       </div>
     );
   }
