@@ -31,14 +31,14 @@ const FONT_UI = "'Space Grotesk', system-ui, -apple-system, sans-serif";
 const FONT_MONO = "'JetBrains Mono', ui-monospace, SFMono-Regular, monospace";
 
 // Per-area desktop shell width. Flag-off / mobile keeps the fixed 480 column.
-// The wide areas — the overview's 3-bench dashboard, Lists' 2-column, and Rules'
-// preview grid — open to ~1200 once there's room for columns (twoCol = >=1024);
-// Traits' archetype display and everything below 1024 keep the 720 center-cap.
+// The wide areas — the overview's 3-bench dashboard, Lists' 2-column, Rules'
+// preview grid, and Traits' archetype display — open to ~1200 once there's room
+// for columns (twoCol = >=1024); everything below 1024 keeps the 720 center-cap.
 // Rules/Traits target widths track the Claude Design handoff — tune here.
 function areaMaxWidth(area, desktopOn, twoCol) {
   if (!desktopOn) return 480;
   if (!twoCol) return 720;
-  if (area === 'overview' || area === 'watchlists' || area === 'rules') return 1200;
+  if (area === 'overview' || area === 'watchlists' || area === 'rules' || area === 'traits') return 1200;
   return 720;
 }
 
