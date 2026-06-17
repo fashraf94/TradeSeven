@@ -270,9 +270,13 @@ export default async function handler(req, res) {
     );
 
     const strategyResponse = await anthropic.messages.create({
-      model: 'claude-sonnet-4-20250514',
+      model: 'claude-sonnet-4-6',
       max_tokens: 1500,
       temperature: temps.sonnet,
+      // Sonnet 4.6 defaults to high effort; pin to low + thinking disabled to
+      // preserve the prior Sonnet-4 (no-thinking) latency profile.
+      thinking: { type: 'disabled' },
+      output_config: { effort: 'low' },
       system: strategySystem,
       messages: [{ role: 'user', content: strategyUser }],
       tools: [STRATEGY_TOOL],
