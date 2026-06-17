@@ -53,7 +53,7 @@ import { toIso } from './tournamentTime.js';
 const LOG_PREFIX = '[TournamentBoards]';
 
 // House default for the agent strategy pass (api/agent/decide.js:195).
-export const AGENT_BOARD_MODEL = 'claude-sonnet-4-20250514';
+export const AGENT_BOARD_MODEL = 'claude-sonnet-4-6';
 export const AGENT_BOARD_MAX_TOKENS = 2000;
 
 // Stance lines are model-authored playback copy — cap defensively.

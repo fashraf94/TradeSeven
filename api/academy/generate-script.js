@@ -20,7 +20,7 @@ export const config = { maxDuration: 300 };
 // Constants
 // ---------------------------------------------------------------------------
 
-const SONNET_MODEL = 'claude-sonnet-4-20250514';
+const SONNET_MODEL = 'claude-sonnet-4-6';
 
 // ---------------------------------------------------------------------------
 // Logging
@@ -390,6 +390,10 @@ export default async function handler(req, res) {
       model: SONNET_MODEL,
       max_tokens: 8192,
       temperature: 0.7,
+      // Sonnet 4.6 defaults to high effort; pin to low + thinking disabled to
+      // preserve the prior Sonnet-4 (no-thinking) latency profile.
+      thinking: { type: 'disabled' },
+      output_config: { effort: 'low' },
       system: SYSTEM_PROMPT,
       tools: [GENERATE_VIDEO_SCRIPT_TOOL],
       tool_choice: { type: 'tool', name: 'generate_video_script' },

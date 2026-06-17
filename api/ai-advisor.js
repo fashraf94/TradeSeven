@@ -1014,8 +1014,14 @@ export default async function handler(req, res) {
           'anthropic-version': '2023-06-01',
         },
         body: JSON.stringify({
-          model: mode === 'deep' ? 'claude-sonnet-4-20250514' : 'claude-haiku-4-5-20251001',
+          model: mode === 'deep' ? 'claude-sonnet-4-6' : 'claude-haiku-4-5-20251001',
           max_tokens: techMaxTokens || (mode === 'deep' ? 3000 : 800),
+          // Sonnet 4.6 defaults to high effort; pin deep mode to low + thinking
+          // disabled to preserve Sonnet-4-like latency. Haiku 4.5 rejects
+          // output_config.effort, so only the deep (Sonnet) branch carries these.
+          ...(mode === 'deep'
+            ? { thinking: { type: 'disabled' }, output_config: { effort: 'low' } }
+            : {}),
           system: systemPromptForRequest,
           messages: [
             { role: 'user', content: sanitizedPrompt }

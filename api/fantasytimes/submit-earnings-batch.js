@@ -210,8 +210,12 @@ export default async function handler(req, res) {
       requests.push({
         custom_id: `earnings_preview_${earning.symbol}_${earning.reportDate}`,
         params: {
-          model: 'claude-sonnet-4-20250514',
+          model: 'claude-sonnet-4-6',
           max_tokens: 800,
+          // Sonnet 4.6 defaults to high effort; pin to low + thinking disabled to
+          // preserve the prior Sonnet-4 (no-thinking) latency profile.
+          thinking: { type: 'disabled' },
+          output_config: { effort: 'low' },
           system: DOUG_PREVIEW_SYSTEM_PROMPT,
           messages: [{ role: 'user', content: contextMessage }],
           tools: [PUBLISH_EARNINGS_PREVIEW_TOOL],
