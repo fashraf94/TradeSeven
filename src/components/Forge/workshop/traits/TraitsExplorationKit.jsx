@@ -46,39 +46,58 @@ export function ArchSigil({ arch, size = 46 }) {
 // ── the bold color-pair gradient header band ──
 export function ArchBand({ arch, isOwn, compact, right }) {
   const [a, b] = arch.colors;
+  const setAtCreation = (
+    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 5, flexShrink: 0, padding: '5px 9px', borderRadius: 999,
+      background: alpha('#05060A', 0.38), border: `1px solid ${alpha('#fff', 0.2)}` }}>
+      <Icon name="lock" size={11} color="#fff" stroke={2.2} />
+      <span style={{ fontFamily: 'var(--fw-mono)', fontSize: 8.5, letterSpacing: '0.1em', textTransform: 'uppercase', fontWeight: 600, color: '#fff' }}>Set at creation</span>
+    </div>
+  );
+  const statusBadge = right || (isOwn ? setAtCreation : null);
+  const combo = arch.combo ? (
+    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 5, marginBottom: 5, padding: '2px 8px', borderRadius: 999,
+      background: alpha('#05060A', 0.32), border: `1px solid ${alpha('#fff', 0.18)}` }}>
+      <Icon name="spark" size={compact ? 9 : 10} color="#fff" />
+      <span style={{ fontFamily: 'var(--fw-mono)', fontSize: compact ? 8.5 : 9.5, letterSpacing: '0.12em', textTransform: 'uppercase', fontWeight: 600, color: '#fff' }}>{arch.combo}</span>
+    </div>
+  ) : null;
+  const name = (
+    <div style={{ fontSize: compact ? 21 : 27, fontWeight: 700, letterSpacing: '-0.02em', color: '#fff', lineHeight: 1.05,
+      textShadow: `0 1px 12px ${alpha('#05060A', 0.4)}` }}>{arch.name}</div>
+  );
+  const disposition = (
+    <div style={{ fontSize: compact ? 12 : 13.5, color: alpha('#fff', 0.92), marginTop: 5, lineHeight: 1.35, fontWeight: 500, textWrap: 'pretty',
+      textShadow: `0 1px 8px ${alpha('#05060A', 0.45)}`, maxWidth: compact ? 300 : 440 }}>{arch.disposition}</div>
+  );
   return (
     <div style={{ position: 'relative', overflow: 'hidden', borderRadius: compact ? 18 : 20,
       background: `linear-gradient(125deg, ${alpha(a, 0.9)} 0%, ${alpha(b, 0.78)} 100%)`,
       border: `1px solid ${alpha('#fff', 0.12)}` }}>
       <div style={{ position: 'absolute', inset: 0, background: `radial-gradient(circle at 84% 16%, ${alpha('#fff', 0.22)}, transparent 46%)` }} />
       <div style={{ position: 'absolute', inset: 0, background: `linear-gradient(180deg, ${alpha('#05060A', 0.05)} 0%, ${alpha('#05060A', 0.5)} 100%)` }} />
-      <div style={{ position: 'relative', padding: compact ? '15px 16px 16px' : '20px 22px 20px' }}>
-        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: compact ? 12 : 15, minWidth: 0 }}>
-            <ArchSigil arch={arch} size={compact ? 46 : 58} />
-            <div style={{ minWidth: 0 }}>
-              {arch.combo && (
-                <div style={{ display: 'inline-flex', alignItems: 'center', gap: 5, marginBottom: 5, padding: '2px 8px', borderRadius: 999,
-                  background: alpha('#05060A', 0.32), border: `1px solid ${alpha('#fff', 0.18)}` }}>
-                  <Icon name="spark" size={compact ? 9 : 10} color="#fff" />
-                  <span style={{ fontFamily: 'var(--fw-mono)', fontSize: compact ? 8.5 : 9.5, letterSpacing: '0.12em', textTransform: 'uppercase', fontWeight: 600, color: '#fff' }}>{arch.combo}</span>
-                </div>
-              )}
-              <div style={{ fontSize: compact ? 21 : 27, fontWeight: 700, letterSpacing: '-0.02em', color: '#fff', lineHeight: 1.05,
-                textShadow: `0 1px 12px ${alpha('#05060A', 0.4)}` }}>{arch.name}</div>
-              <div style={{ fontSize: compact ? 12 : 13.5, color: alpha('#fff', 0.92), marginTop: 5, lineHeight: 1.35, fontWeight: 500, textWrap: 'pretty',
-                textShadow: `0 1px 8px ${alpha('#05060A', 0.45)}`, maxWidth: compact ? 280 : 440 }}>{arch.disposition}</div>
-            </div>
+      <div style={{ position: 'relative', padding: compact ? '16px 16px 18px' : '20px 22px 20px' }}>
+        {compact ? (
+          // Mobile: centered hero column (founder directive — desktop keeps the row layout below).
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' }}>
+            <div style={{ marginBottom: 10 }}><ArchSigil arch={arch} size={48} /></div>
+            {combo}
+            {name}
+            {disposition}
+            {statusBadge && <div style={{ marginTop: 12 }}>{statusBadge}</div>}
           </div>
-          {right}
-          {isOwn && !right && (
-            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 5, flexShrink: 0, padding: '5px 9px', borderRadius: 999,
-              background: alpha('#05060A', 0.38), border: `1px solid ${alpha('#fff', 0.2)}` }}>
-              <Icon name="lock" size={11} color="#fff" stroke={2.2} />
-              <span style={{ fontFamily: 'var(--fw-mono)', fontSize: 8.5, letterSpacing: '0.1em', textTransform: 'uppercase', fontWeight: 600, color: '#fff' }}>Set at creation</span>
+        ) : (
+          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 15, minWidth: 0 }}>
+              <ArchSigil arch={arch} size={58} />
+              <div style={{ minWidth: 0 }}>
+                {combo}
+                {name}
+                {disposition}
+              </div>
             </div>
-          )}
-        </div>
+            {statusBadge}
+          </div>
+        )}
       </div>
     </div>
   );

@@ -230,7 +230,7 @@ export default function TraitsExploration({ agent, agentName, traits, hasActiveB
   const onStrength = (traitId, s) => traits?.setTraitStrength?.(traitId, s);
 
   return (
-    <div className="fw-scroll" style={{ height: '100%', overflowY: 'auto', padding: compact ? '22px 18px calc(84px + env(safe-area-inset-bottom))' : '22px 24px 32px' }}>
+    <div className="fw-scroll" style={{ height: '100%', overflowY: 'auto', padding: compact ? '22px 18px calc(84px + env(safe-area-inset-bottom))' : '22px 24px calc(84px + env(safe-area-inset-bottom))' }}>
       {/* header + sub-tabs */}
       <div style={compact
         ? { marginBottom: 16 }
