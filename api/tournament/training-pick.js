@@ -35,6 +35,7 @@ const SENTINEL_TO_HTTP = Object.freeze({
   invalid_pick:     [409, 'invalid_pick',     'That name is not available on the board.'],
   no_pick_available:[409, 'no_pick_available','No name is available to autopick.'],
   pool_exhausted:   [409, 'pool_exhausted',   'The draft pool is exhausted.'],
+  draft_incomplete: [409, 'draft_incomplete', 'The draft is not finished yet.'],
 });
 
 export default async function handler(req, res) {

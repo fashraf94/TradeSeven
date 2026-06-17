@@ -132,11 +132,19 @@ export function useTrainingDraft({ user, groupId, active = true } = {}) {
 
   // ---- submit a pick (explicit or autopick) through the server endpoint ----
   const submitPick = useCallback(async (symbol, autopick = false) => {
+    // The `submitting` guard also blocks a clock-fired autopick from racing an
+    // in-flight pick (the autopick path calls this too).
     if (!groupId || submitting) return false;
     setSubmitting(true);
     setError(null);
     try {
       await makeTrainingPickAction({ groupId, symbol: symbol ? norm(symbol) : undefined, autopick });
+      // Disarm the current turn's clock on success: it re-arms only when
+      // currentPickIndex advances (the effect's dep). Without this, a snapshot
+      // lag after an explicit pick would let the still-running interval fire an
+      // autopick the server applies to the NEXT human turn (snake indices 7 and
+      // 8 are both the lone human) — silently consuming the third pick.
+      autopickFiredRef.current = true;
       return true;
     } catch (err) {
       // A lost race (CPU/sweep advanced, or an autopick already landed) is not a

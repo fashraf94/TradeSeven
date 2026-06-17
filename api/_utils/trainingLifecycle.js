@@ -348,65 +348,57 @@ export async function formTrainingDraft(db, { odUserId, displayName = null, now 
 
   const humanArchetype = await resolveHumanArchetype(db, odUserId);
   const members = group.groupMembers || [];
-  const initialState = {
-    status: 'drafting',
-    snakeOrder: generateSnakeOrder(members.length, PICKS_PER_PLAYER),
-    currentPickIndex: 0,
-    pool: [...(group.userPool || [])],
-    taken: [],
-    picksByUser: Object.fromEntries(members.map(id => [id, []])),
-    events: [],
-    humanArchetype,
-    humanId: odUserId,
-    startedAt: nowIso,
-    lastActivityAt: nowIso,
-  };
-  await draftStateRef(db, groupId).set(initialState);
-  await transitionStatus(db, groupId, GROUP_STATUS.DRAFTING, nowIso);
-
-  // CPU run-up at draft start: advance any leading CPU seats to the human's
-  // first turn (no-op in the common case where the human is seat 0).
-  const draftState = await advanceLeadingCpus(db, groupId, { now });
-
-  console.log(`${LOG_PREFIX} formed training pod ${groupId} → drafting (human ${odUserId}, archetype ${humanArchetype})`);
-  return { ...formed, status: GROUP_STATUS.DRAFTING, humanArchetype, draftState };
-}
-
-/** Advance leading CPU seats from the current pointer to the human's turn,
- *  server-side, in one transaction. No human pick; cannot complete the draft
- *  (the lone human always holds three turns). Returns the (possibly unchanged)
- *  live state. */
-async function advanceLeadingCpus(db, groupId, { now = new Date() } = {}) {
   const groupRef = db.collection(TOURNAMENT_GROUPS_COLLECTION).doc(groupId);
   const stateRef = draftStateRef(db, groupId);
-  return db.runTransaction(async (tx) => {
-    const groupSnap = await tx.get(groupRef);
-    const stateSnap = await tx.get(stateRef);
-    if (!groupSnap.exists || !stateSnap.exists) return stateSnap.exists ? stateSnap.data() : null;
-    const group = { id: groupId, ...groupSnap.data() };
-    const state = stateSnap.data();
-    if (group.status !== GROUP_STATUS.DRAFTING || state.status !== 'drafting') return state;
 
-    const acc = {
-      taken: new Set(state.taken || []),
-      picksByUser: { ...(state.picksByUser || {}) },
-      events: [...(state.events || [])],
+  // Initialize the live state, advance any leading CPU seats to the human's
+  // first turn, and transition FORMING → DRAFTING — ALL in one transaction, so
+  // the pod is atomically DRAFTING with the pointer resting on the human (no
+  // partial-write window, no pointer-on-CPU stranding even if seating changed).
+  const draftState = await db.runTransaction(async (tx) => {
+    const gSnap = await tx.get(groupRef);
+    if (!gSnap.exists) throw pickError('draft_not_found');
+    const g = { id: groupId, ...gSnap.data() };
+    if (g.status !== GROUP_STATUS.FORMING) {
+      // Lost a race (a concurrent form already advanced it) — resume from the
+      // state the winner wrote rather than wiping it.
+      const sSnap = await tx.get(stateRef);
+      return sSnap.exists ? sSnap.data() : null;
+    }
+    const baseState = {
+      status: 'drafting',
+      snakeOrder: generateSnakeOrder(members.length, PICKS_PER_PLAYER),
+      currentPickIndex: 0,
+      pool: [...(g.userPool || [])],
+      taken: [],
+      picksByUser: Object.fromEntries(members.map(id => [id, []])),
+      events: [],
+      humanArchetype,
+      humanId: odUserId,
+      startedAt: nowIso,
+      lastActivityAt: nowIso,
     };
-    for (const id of group.groupMembers || []) if (!acc.picksByUser[id]) acc.picksByUser[id] = [];
-    const newIndex = advanceCpuSeats(acc, { group, state, fromIndex: state.currentPickIndex });
-    if (newIndex === state.currentPickIndex) return state;
-
-    const newState = {
-      ...state,
+    const acc = {
+      taken: new Set(),
+      picksByUser: Object.fromEntries(members.map(id => [id, []])),
+      events: [],
+    };
+    const newIndex = advanceCpuSeats(acc, { group: g, state: baseState, fromIndex: 0 });
+    const finalState = {
+      ...baseState,
       taken: [...acc.taken],
       picksByUser: acc.picksByUser,
       events: acc.events,
       currentPickIndex: newIndex,
-      lastActivityAt: toIso(now),
     };
-    tx.set(stateRef, newState);
-    return newState;
+    assertTransition(g.status, GROUP_STATUS.DRAFTING);
+    tx.set(stateRef, finalState);
+    tx.update(groupRef, { status: GROUP_STATUS.DRAFTING, updatedAt: nowIso });
+    return finalState;
   });
+
+  console.log(`${LOG_PREFIX} formed training pod ${groupId} → drafting (human ${odUserId}, archetype ${humanArchetype})`);
+  return { ...formed, status: GROUP_STATUS.DRAFTING, humanArchetype, draftState };
 }
 
 // ==================== (b) LIVE PICK ====================
@@ -588,7 +580,15 @@ export async function sweepIdleDraftingPods(db, { now = new Date(), includeDev =
         continue;
       }
       if (universe === undefined) universe = await readStockUniverse(db);
-      const humanId = state.humanId;
+      // The lone human seat — derived from the pod's players (the one non-CPU
+      // seat), with the state's humanId as a fallback. Deriving from players
+      // means a missing/corrupt state.humanId cannot strand the pod.
+      const humanId = (pod.players || []).find(p => p.isCpu !== true)?.odUserId || state.humanId;
+      if (!humanId) {
+        summary.errors++;
+        console.error(`${LOG_PREFIX} idle sweep: pod ${pod.id} has no human seat — cannot auto-complete`);
+        continue;
+      }
       // Drive the human's remaining turns via autopick; each call runs the CPU
       // run-up and the 12th pick triggers the inline handoff.
       let guard = 0;
@@ -596,6 +596,13 @@ export async function sweepIdleDraftingPods(db, { now = new Date(), includeDev =
       while (!done && guard++ < 16) {
         const res = await applyTrainingPick(db, pod.id, { odUserId: humanId, autopick: true, now, stocks: universe ?? null });
         done = res.complete;
+      }
+      if (!done) {
+        // The loop hit its ceiling without completing (a wedged pod) — report it
+        // honestly as an error, never a phantom completion.
+        summary.errors++;
+        console.error(`${LOG_PREFIX} idle sweep: pod ${pod.id} did not complete after ${guard} autopick rounds`);
+        continue;
       }
       summary.completed++;
       console.log(`${LOG_PREFIX} swept idle training draft ${pod.id} → completed (autopicked remaining)`);

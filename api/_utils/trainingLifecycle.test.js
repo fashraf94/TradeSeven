@@ -449,6 +449,15 @@ describe('sweepIdleDraftingPods — abandonment', () => {
     expect(store.get('tournamentGroups/active').status).toBe(GROUP_STATUS.DRAFTING);
   });
 
+  it('completes an idle pod even when the state doc has no humanId (derived from the pod players)', async () => {
+    const { db, store } = seedDrafting('nohuman', {
+      stateExtra: { humanId: undefined, lastActivityAt: '2026-06-17T05:00:00.000Z' },
+    });
+    const r = await sweepIdleDraftingPods(db, { now: BEFORE_OPEN });
+    expect(r).toMatchObject({ swept: 1, completed: 1, errors: 0 });
+    expect(store.get('tournamentGroups/nohuman').status).toBe(GROUP_STATUS.BATTLE);
+  });
+
   it('ranked inertness: a DRAFTING group without isTraining is never swept', async () => {
     const { db, store } = makeDb({
       'tournamentGroups/ranked': { status: GROUP_STATUS.DRAFTING, players: FOUR_PLAYERS },
