@@ -37,7 +37,7 @@ function getTraitIcon(name, props) {
 const STRENGTH_RANK = { subtle: 1, moderate: 2, dominant: 3 };
 
 // Desktop equipped-trait preview card: the trait's icon/name/identity, a
-// strength-dots indicator + "advisory · always soft", and the standalone
+// strength-dots indicator + a neutral "tunes emphasis" tag, and the standalone
 // strength editor wired to the existing useTraits.setTraitStrength flow
 // (battle-locked). EQUIPPED / IN-USE only — no ready/draft, no fabricated traits.
 function EquippedTraitCard({ trait, accent, locked, onStrength }) {
@@ -65,7 +65,7 @@ function EquippedTraitCard({ trait, accent, locked, onStrength }) {
           ))}
           <Mono style={{ fontSize: 9.5, letterSpacing: '0.06em', color: T.ink2, textTransform: 'uppercase', marginLeft: 4 }}>{trait.strength}</Mono>
         </div>
-        <Mono style={{ fontSize: 8.5, letterSpacing: '0.08em', color: T.ink3, textTransform: 'uppercase' }}>Advisory · always soft</Mono>
+        <Mono style={{ fontSize: 8.5, letterSpacing: '0.08em', color: T.ink3, textTransform: 'uppercase' }}>Tunes emphasis</Mono>
       </div>
 
       <div style={{ marginTop: 12 }}>
@@ -118,7 +118,7 @@ export default function TraitsArea({ agent, agentName, primary, traits, hasActiv
             </div>
             <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginTop: 16, paddingTop: 14, borderTop: `1px solid ${T.hair}` }}>
               <Icon name="sparkles" size={13} color={accent} />
-              <Mono style={{ fontSize: 9.5, letterSpacing: '0.03em', color: T.ink2, lineHeight: 1.5 }}>Traits tune emphasis on top of this identity — always advisory, never hard.</Mono>
+              <Mono style={{ fontSize: 9.5, letterSpacing: '0.03em', color: T.ink2, lineHeight: 1.5 }}>Traits tune emphasis on top of this identity.</Mono>
             </div>
           </div>
 
@@ -171,7 +171,7 @@ export default function TraitsArea({ agent, agentName, primary, traits, hasActiv
       {/* the relationship — traits sit ON TOP of the locked archetype */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '0 4px', marginBottom: 16 }}>
         <div style={{ width: 1, height: 14, background: T.hair2, marginLeft: 18 }} />
-        <Mono style={{ fontSize: 9, letterSpacing: '0.1em', color: T.ink3, textTransform: 'uppercase' }}>Traits tune emphasis on top — always advisory, never hard</Mono>
+        <Mono style={{ fontSize: 9, letterSpacing: '0.1em', color: T.ink3, textTransform: 'uppercase' }}>Traits tune emphasis on top</Mono>
       </div>
 
       <ShelfHeader label="Agent DNA · explore & equip" count={`${TRAIT_LIBRARY.length} traits`} />
