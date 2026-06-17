@@ -63,6 +63,25 @@ export const FORGE_HARDSOFT_AUTHORING_ENABLED = false;
 export const FORGE_DESKTOP_ENABLED = true;
 
 /**
+ * Forge — Traits → Archetype Exploration surface (the `03 Traits` redesign).
+ *
+ * When false (default), the Traits area renders TODAY's interim surface unchanged
+ * at every viewport (read-only archetype banner + DNAGroupCard/TraitCard equip on
+ * mobile, the EquippedTraitCard grid + workbench banner on desktop) — instant
+ * rollback. When true (or via the `?traitsExploration=1` dev-preview param, the
+ * `?forgeDesktop=1` idiom), the area renders the exploration redesign: archetypes
+ * as explorable characters (identity + four decision factors), the live equipped
+ * loadout with honest per-rule hardness, and a view-only six-archetype roster +
+ * trait library.
+ *
+ * This changes the LIVE mobile Traits surface (not gated by FORGE_DESKTOP_ENABLED),
+ * so it is built/merged DARK behind this flag on BOTH viewports. Flip to ship in a
+ * one-line follow-up PR after a Vercel preview smoke test — the
+ * COMMAND_DASHBOARD_DESKTOP_ENABLED / LEAGUE_REDESIGN_ENABLED precedent.
+ */
+export const TRAITS_EXPLORATION_ENABLED = false;
+
+/**
  * Equip bench — the Traits loadout slot (mobile EquipStation + desktop
  * EquipBench) and the TraitsSheet behind it.
  *
