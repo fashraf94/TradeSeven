@@ -82,7 +82,7 @@ import { safePortfolioArray, getUserPortfolioFlat, getOpponentPortfolioFlat, get
 import { flattenPortfolio, flattenBench, calculateAssetScoreV3 } from './utils/baggerBombUtils';
 import { createInitialFreeAgents } from './services/freeAgentRotationService';
 // Extracted Screens - Batch 1
-import { ProfileScreen, WinsScreen, LossesScreen, DraftHistoryScreen, JoinScreen, DraftSetupScreen, DraftJoinScreen, DraftTrainingScreen, DraftLobbyScreen, PreviousBattlesScreen, BattleHistoryScreen, FreeAgencyScreen, FreeAgencyScreenV2, DraftResultsScreen, BattleViewScreen, DraftBattleScreen, DraftBattleScreenV2, DraftRoomScreen, HomeScreen, EarningsGameScreen, BuilderScreen, FilmRoomScreen } from './screens';
+import { ProfileScreen, WinsScreen, LossesScreen, DraftHistoryScreen, JoinScreen, DraftSetupScreen, DraftJoinScreen, DraftTrainingScreen, TrainingDraftRoomScreen, DraftLobbyScreen, PreviousBattlesScreen, BattleHistoryScreen, FreeAgencyScreen, FreeAgencyScreenV2, DraftResultsScreen, BattleViewScreen, DraftBattleScreen, DraftBattleScreenV2, DraftRoomScreen, HomeScreen, EarningsGameScreen, BuilderScreen, FilmRoomScreen } from './screens';
 // Season Mode screens + components
 import SeasonHub from './screens/SeasonHub';
 import SeasonDashboard from './screens/SeasonDashboard';
@@ -1069,6 +1069,7 @@ const GAMEPLAY_SCREENS = [
   'joinPortfolioBuilderTD', 'trainingPortfolioBuilderTD', 'builder', 'join',
   'draftSetup', 'draftJoin', 'draftTraining', 'draftResults', 'draftBattleLegacy',
   'freeAgency', 'freeAgencyLegacy', 'earningsGame', 'stonkOptionsArena', 'tdBuilder',
+  'trainingDraftRoom',
 ];
 
 // Dark Gaming Theme Colors
@@ -2195,6 +2196,19 @@ export default function PortfolioDuel() {
   useEffect(() => {
     if (new URLSearchParams(window.location.search).get('tournamentDev') === '1') {
       setScreen('tournamentDev');
+    }
+  }, []);
+
+  // League Training Slice 2 — the interactive draft, DARK (no CTA; Slice 3.2
+  // owns the entry hero). Reachable ONLY via ?trainingDraft=<groupId> (the
+  // dev/preview gate, mirroring ?tournamentDev above) so it can be smoked on a
+  // Vercel preview while the flag posture is unchanged.
+  const [trainingDraftGroupId, setTrainingDraftGroupId] = useState(null);
+  useEffect(() => {
+    const gid = new URLSearchParams(window.location.search).get('trainingDraft');
+    if (gid) {
+      setTrainingDraftGroupId(gid);
+      setScreen('trainingDraftRoom');
     }
   }, []);
 
@@ -8943,6 +8957,20 @@ export default function PortfolioDuel() {
         getSectorColor={getSectorColor}
         setCurrentDraft={setCurrentDraft}
       />
+      </ErrorBoundary>
+    );
+  }
+
+  // LEAGUE TRAINING SLICE 2 — interactive snake draft on the tournamentGroups
+  // path (dark; reached via ?trainingDraft=<groupId>).
+  if (screen === 'trainingDraftRoom' && trainingDraftGroupId) {
+    return (
+      <ErrorBoundary name="Training Draft" onNavigateDashboard={() => setScreen('dashboard')}>
+        <TrainingDraftRoomScreen
+          user={user}
+          groupId={trainingDraftGroupId}
+          onExit={() => setScreen('dashboard')}
+        />
       </ErrorBoundary>
     );
   }

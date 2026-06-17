@@ -29,9 +29,17 @@ import {
 // the pod waits in awaiting_open until the next market open, then the
 // orchestrator morning sweep flips it to battle). awaiting_open is a
 // training-only state, so the new edges never affect ranked groups.
+//
+// League Training Slice 2 (additive — existing edges unchanged): drafting→
+// awaiting_open is the interactive-draft handoff. The pod sits in DRAFTING for
+// the live pick-by-pick draft (FORMING→DRAFTING is already legal above), then
+// the transition-only completion stamps the start anchor and lands awaiting_open
+// (or flips straight to battle inline when the anchor date is already today —
+// awaiting_open→battle below). DRAFTING is reached ONLY by the training path, so
+// the new edge never affects ranked groups.
 export const LEGAL_TRANSITIONS = Object.freeze({
   [GROUP_STATUS.FORMING]: Object.freeze([GROUP_STATUS.DRAFTING, GROUP_STATUS.BATTLE, GROUP_STATUS.AWAITING_OPEN]),
-  [GROUP_STATUS.DRAFTING]: Object.freeze([GROUP_STATUS.BATTLE]),
+  [GROUP_STATUS.DRAFTING]: Object.freeze([GROUP_STATUS.BATTLE, GROUP_STATUS.AWAITING_OPEN]),
   [GROUP_STATUS.AWAITING_OPEN]: Object.freeze([GROUP_STATUS.BATTLE]),
   [GROUP_STATUS.BATTLE]: Object.freeze([GROUP_STATUS.COMPLETE]),
   [GROUP_STATUS.COMPLETE]: Object.freeze([]),

@@ -14,8 +14,12 @@ import {
   nextMarketOpenAnchor,
   flipAwaitingOpenPods,
   completeBankedTrainingPods,
+  applyTrainingPick,
+  completeTrainingDraft,
+  sweepIdleDraftingPods,
 } from './trainingLifecycle.js';
-import { GROUP_STATUS } from '../../src/constants/leagueTournament.js';
+import { GROUP_STATUS, PICKS_PER_PLAYER } from '../../src/constants/leagueTournament.js';
+import { generateSnakeOrder } from '../../src/services/draftAssets.js';
 
 beforeEach(() => {
   vi.spyOn(console, 'log').mockImplementation(() => {});
@@ -270,5 +274,196 @@ describe('completeBankedTrainingPods', () => {
     const r = await completeBankedTrainingPods(db, { now: TUE_NIGHT });
     expect(r).toMatchObject({ groups: 0, completed: 0 });
     expect(store.get('tournamentGroups/ranked5').status).toBe(GROUP_STATUS.BATTLE); // Friday advancement owns ranked
+  });
+});
+
+// ==================== SLICE 2 — INTERACTIVE DRAFT ====================
+// Seats: u1 is the lone human at seat 0; cpu-1/2/3 are CPU seats. With
+// generateSnakeOrder(4,3) = [0,1,2,3, 3,2,1,0, 0,1,2,3], the human picks at
+// pick-indices 0, 7, 8 — so a single human pick at index 0 triggers a 6-deep
+// CPU run-up that comes to rest at index 7 (the human again).
+
+const POOL = Array.from({ length: 20 }, (_, i) => `S${i}`);
+const DRAFT_MEMBERS = ['u1', 'cpu-1', 'cpu-2', 'cpu-3'];
+const DRAFT_PLAYERS = [
+  { odUserId: 'u1', picks: [] },
+  { odUserId: 'cpu-1', picks: [], isCpu: true },
+  { odUserId: 'cpu-2', picks: [], isCpu: true },
+  { odUserId: 'cpu-3', picks: [], isCpu: true },
+];
+
+function draftingPod(extra = {}) {
+  return {
+    status: GROUP_STATUS.DRAFTING,
+    isTraining: true,
+    roundNumber: 1,
+    baseLayerWeek: 1,
+    groupMembers: DRAFT_MEMBERS,
+    players: DRAFT_PLAYERS.map(p => ({ ...p, picks: [] })),
+    userPool: [...POOL],
+    ...extra,
+  };
+}
+
+function draftState(extra = {}) {
+  return {
+    status: 'drafting',
+    snakeOrder: generateSnakeOrder(4, PICKS_PER_PLAYER),
+    currentPickIndex: 0,
+    pool: [...POOL],
+    taken: [],
+    picksByUser: Object.fromEntries(DRAFT_MEMBERS.map(id => [id, []])),
+    events: [],
+    humanArchetype: 'analyst',
+    humanId: 'u1',
+    startedAt: '2026-06-17T12:00:00.000Z',
+    lastActivityAt: '2026-06-17T12:00:00.000Z',
+    ...extra,
+  };
+}
+
+function seedDrafting(id = 'd1', { podExtra = {}, stateExtra = {} } = {}) {
+  return makeDb({
+    [`tournamentGroups/${id}`]: draftingPod(podExtra),
+    [`tournamentGroups/${id}/draft/state`]: draftState(stateExtra),
+  });
+}
+
+// 09:00 ET (before the 09:30 open) on Wed Jun 17 — a today-anchor instant.
+const BEFORE_OPEN = new Date('2026-06-17T13:00:00.000Z');
+// 10:00 ET (after the open) on Wed Jun 17 — anchors to the NEXT trading day.
+const AFTER_OPEN = new Date('2026-06-17T14:00:00.000Z');
+
+describe('applyTrainingPick — live snake', () => {
+  it('rejects a pick when it is not that human seat on the clock', async () => {
+    const { db } = seedDrafting();
+    await expect(applyTrainingPick(db, 'd1', { odUserId: 'cpu-1', symbol: 'S5', now: BEFORE_OPEN }))
+      .rejects.toThrow(/not_your_turn/);
+  });
+
+  it('rejects an off-board / already-taken symbol', async () => {
+    const { db } = seedDrafting();
+    await expect(applyTrainingPick(db, 'd1', { odUserId: 'u1', symbol: 'NOPE', now: BEFORE_OPEN }))
+      .rejects.toThrow(/invalid_pick/);
+  });
+
+  it('a human pick advances the clock and runs the CPUs up to the next human turn', async () => {
+    const { db, store } = seedDrafting();
+    const r = await applyTrainingPick(db, 'd1', { odUserId: 'u1', symbol: 'S0', now: BEFORE_OPEN });
+    expect(r).toMatchObject({ complete: false, status: GROUP_STATUS.DRAFTING, currentPickIndex: 7 });
+    const state = store.get('tournamentGroups/d1/draft/state');
+    expect(state.picksByUser.u1).toEqual(['S0']);        // the human's choice
+    expect(state.taken).toHaveLength(7);                  // human + 6 CPU run-up picks
+    expect(new Set(state.taken).size).toBe(7);            // pool exclusivity
+    expect(state.events).toHaveLength(7);
+    expect(state.events[0]).toMatchObject({ odUserId: 'u1', symbol: 'S0', liveSource: 'human' });
+    expect(state.events[1].liveSource).toBe('cpu');
+    // The group doc is untouched mid-draft (churn rides the sibling state doc).
+    expect(store.get('tournamentGroups/d1').status).toBe(GROUP_STATUS.DRAFTING);
+    expect(store.get('tournamentGroups/d1').players.every(p => p.picks.length === 0)).toBe(true);
+  });
+
+  it('the 12th pick hands off transition-only → BATTLE inline on a today-anchor (R1)', async () => {
+    const { db, store } = seedDrafting();
+    // Human picks at indices 0, 7, 8 (three calls); autopick (no universe seeded
+    // → best-available) drives picks 2 and 3.
+    let r = await applyTrainingPick(db, 'd1', { odUserId: 'u1', symbol: 'S0', now: BEFORE_OPEN });
+    expect(r.currentPickIndex).toBe(7);
+    r = await applyTrainingPick(db, 'd1', { odUserId: 'u1', autopick: true, now: BEFORE_OPEN });
+    expect(r).toMatchObject({ complete: false, currentPickIndex: 8 });
+    r = await applyTrainingPick(db, 'd1', { odUserId: 'u1', autopick: true, now: BEFORE_OPEN });
+    expect(r).toMatchObject({ complete: true, status: GROUP_STATUS.BATTLE }); // inline flip
+
+    const group = store.get('tournamentGroups/d1');
+    expect(group.status).toBe(GROUP_STATUS.BATTLE);
+    expect(group.startAnchor.anchorEtDate).toBe('2026-06-17'); // anchor stamped at handoff
+    // Byte-identical downstream: every seat holds 3 createPickState picks.
+    for (const p of group.players) {
+      expect(p.picks).toHaveLength(PICKS_PER_PLAYER);
+      for (const pick of p.picks) {
+        expect(pick).toHaveProperty('symbol');
+        expect(Array.isArray(pick.legs)).toBe(true);
+        expect(pick.legs[0].baselineSource).toBe('draft_resolution');
+        expect(pick.legs[0].baselinePrice).toBeNull();
+        expect(pick.flipCountToday).toBe(0);
+      }
+    }
+    // userPool is the post-draft remainder (12 names removed), order preserved.
+    expect(group.userPool).toHaveLength(POOL.length - 12);
+    // The playback stream lands in the same shape the resolver writes.
+    const stream = store.get('tournamentGroups/d1/streams/userDraft');
+    expect(stream.events).toHaveLength(12);
+    expect(stream).toHaveProperty('resolvedAt');
+    expect(stream.roundNumber).toBe(1);
+  });
+
+  it('a draft finished after the open waits in AWAITING_OPEN (anchor = next trading day)', async () => {
+    const { db, store } = seedDrafting();
+    await applyTrainingPick(db, 'd1', { odUserId: 'u1', symbol: 'S0', now: AFTER_OPEN });
+    await applyTrainingPick(db, 'd1', { odUserId: 'u1', autopick: true, now: AFTER_OPEN });
+    const r = await applyTrainingPick(db, 'd1', { odUserId: 'u1', autopick: true, now: AFTER_OPEN });
+    expect(r).toMatchObject({ complete: true, status: GROUP_STATUS.AWAITING_OPEN });
+    const group = store.get('tournamentGroups/d1');
+    expect(group.status).toBe(GROUP_STATUS.AWAITING_OPEN);
+    expect(group.startAnchor.anchorEtDate).toBe('2026-06-18'); // Thu Jun 18
+  });
+});
+
+describe('completeTrainingDraft — idempotent handoff', () => {
+  it('a re-fire after completion is an idempotent skip (illegal transition swallowed)', async () => {
+    const { db, store } = seedDrafting();
+    await applyTrainingPick(db, 'd1', { odUserId: 'u1', symbol: 'S0', now: BEFORE_OPEN });
+    await applyTrainingPick(db, 'd1', { odUserId: 'u1', autopick: true, now: BEFORE_OPEN });
+    await applyTrainingPick(db, 'd1', { odUserId: 'u1', autopick: true, now: BEFORE_OPEN });
+    expect(store.get('tournamentGroups/d1').status).toBe(GROUP_STATUS.BATTLE);
+    // The pod already left DRAFTING — completeTrainingDraft must skip, not throw.
+    const r = await completeTrainingDraft(db, 'd1', { now: BEFORE_OPEN });
+    expect(r.skipped).toBe(true);
+    expect(store.get('tournamentGroups/d1').status).toBe(GROUP_STATUS.BATTLE);
+  });
+
+  it('refuses to complete a draft that is not finished', async () => {
+    const { db } = seedDrafting();
+    await expect(completeTrainingDraft(db, 'd1', { now: BEFORE_OPEN })).rejects.toThrow(/draft_incomplete/);
+  });
+});
+
+describe('sweepIdleDraftingPods — abandonment', () => {
+  it('auto-completes an IDLE zero-pick draft and flips it (today-anchor) within the sweep', async () => {
+    const { db, store } = seedDrafting('idle', {
+      stateExtra: { lastActivityAt: '2026-06-17T05:00:00.000Z' }, // 8h before the tick
+    });
+    const r = await sweepIdleDraftingPods(db, { now: BEFORE_OPEN });
+    expect(r).toMatchObject({ swept: 1, completed: 1, active: 0 });
+    const group = store.get('tournamentGroups/idle');
+    expect(group.status).toBe(GROUP_STATUS.BATTLE); // R1 inline flip inside the sweep
+    expect(group.players.every(p => p.picks.length === PICKS_PER_PLAYER)).toBe(true);
+  });
+
+  it('NEVER interrupts an ACTIVE draft (lastActivityAt within the threshold)', async () => {
+    const { db, store } = seedDrafting('active', {
+      stateExtra: { lastActivityAt: '2026-06-17T12:59:00.000Z' }, // 1 min before the tick
+    });
+    const r = await sweepIdleDraftingPods(db, { now: BEFORE_OPEN });
+    expect(r).toMatchObject({ swept: 1, completed: 0, active: 1 });
+    expect(store.get('tournamentGroups/active').status).toBe(GROUP_STATUS.DRAFTING);
+  });
+
+  it('completes an idle pod even when the state doc has no humanId (derived from the pod players)', async () => {
+    const { db, store } = seedDrafting('nohuman', {
+      stateExtra: { humanId: undefined, lastActivityAt: '2026-06-17T05:00:00.000Z' },
+    });
+    const r = await sweepIdleDraftingPods(db, { now: BEFORE_OPEN });
+    expect(r).toMatchObject({ swept: 1, completed: 1, errors: 0 });
+    expect(store.get('tournamentGroups/nohuman').status).toBe(GROUP_STATUS.BATTLE);
+  });
+
+  it('ranked inertness: a DRAFTING group without isTraining is never swept', async () => {
+    const { db, store } = makeDb({
+      'tournamentGroups/ranked': { status: GROUP_STATUS.DRAFTING, players: FOUR_PLAYERS },
+    });
+    const r = await sweepIdleDraftingPods(db, { now: BEFORE_OPEN });
+    expect(r).toMatchObject({ swept: 0, completed: 0 });
+    expect(store.get('tournamentGroups/ranked').status).toBe(GROUP_STATUS.DRAFTING);
   });
 });

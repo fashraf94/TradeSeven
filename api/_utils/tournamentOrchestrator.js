@@ -79,7 +79,7 @@ import { resolveAgentDraftForGroup } from './tournamentAgentDraft.js';
 import { resolveUserDraftForGroup, USER_DRAFT_SENTINEL_PREFIX } from '../tournament/resolve-user-draft.js';
 import { autoCommitMissingBoards } from './tournamentBoardAutoCommit.js';
 import { runFridayAdvancement } from './tournamentAdvancement.js';
-import { flipAwaitingOpenPods } from './trainingLifecycle.js';
+import { flipAwaitingOpenPods, sweepIdleDraftingPods } from './trainingLifecycle.js';
 // Fenced module EXPORT, called read-only — never edited (BUILD_RULES §1).
 import { flattenPortfolioServer } from './agentScoring.js';
 
@@ -701,6 +701,20 @@ export async function runOrchestratorTick(db, {
   // gates it; its own catch so a flip failure never blocks the duty; AWAITING_
   // OPEN is training-only, so ranked/legacy are never seen. Zero new cron.
   if (routed.duty === DUTY.MONDAY_PIPELINE || routed.duty === DUTY.WEEKDAY_FANOUT) {
+    // League Training Slice 2 — idle-draft sweep. Runs BEFORE the awaiting-open
+    // flip so a pod auto-completed here (and whose anchor is today) is flipped to
+    // BATTLE in this same tick by its own inline completion-flip; the flip below
+    // then backstops any pod whose anchor lands on a later date. Own catch so a
+    // sweep failure never blocks the duty; DRAFTING is training-only, so ranked/
+    // legacy are never seen. Zero new cron.
+    try {
+      const sweep = await sweepIdleDraftingPods(db, { now, includeDev: includeDevGroups });
+      if (sweep.completed > 0) {
+        console.log(`${tag} idle-draft sweep: completed ${sweep.completed}, active ${sweep.active}`);
+      }
+    } catch (err) {
+      console.error(`${tag} idle-draft sweep failed: ${err.message}`);
+    }
     try {
       const flip = await flipAwaitingOpenPods(db, { now, includeDev: includeDevGroups });
       if (flip.flipped > 0 || flip.pending > 0) {

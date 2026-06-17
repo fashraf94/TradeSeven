@@ -57,6 +57,33 @@ export function flipPick({ groupId, symbol } = {}) {
   return postTournamentAction('flip', { groupId, symbol });
 }
 
+/**
+ * League Training Slice 2 — make the human's live pick in the interactive snake
+ * draft. `autopick: true` is the per-pick-clock timeout (the server picks the
+ * top archetype-fit available name). The server holds the turn guard, sequences
+ * the CPU run-up, and on the 12th pick performs the transition-only completion
+ * handoff. Response: { status, currentPickIndex, complete }. The training routes
+ * are dark-gated, so carry through a ?nextArc=1 preview param when present (the
+ * gate is open in prod where the flag is on; this keeps a flag-off preview
+ * smoke working).
+ */
+export function makeTrainingPick({ groupId, symbol, autopick } = {}) {
+  const payload = { groupId };
+  if (autopick === true) payload.autopick = true;
+  if (symbol) payload.symbol = symbol;
+  return postTournamentAction(`training-pick${nextArcSuffix()}`, payload);
+}
+
+/** ?nextArc=1 passthrough for the dark-gated training routes (the preview idiom). */
+function nextArcSuffix() {
+  try {
+    if (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('nextArc') === '1') {
+      return '?nextArc=1';
+    }
+  } catch { /* non-browser / no location — prod flag carries the gate */ }
+  return '';
+}
+
 // Known server error codes → friendly copy. ABSENT codes fall back to the
 // server's own message (never hide a rule the server enforces). The copy
 // mirrors the server's stated rules; it never invents one.
@@ -77,6 +104,14 @@ const ERROR_COPY = Object.freeze({
   invalid_symbol: 'That symbol is invalid.',
   invalid_group_id: 'Something’s off with this group — refresh and retry.',
   group_not_found: 'This group could not be found — refresh and retry.',
+  // League Training Slice 2 — interactive-draft pick errors.
+  draft_not_found: 'No draft is in progress for this pod — refresh and retry.',
+  draft_not_active: 'This draft has already finished.',
+  not_your_turn: 'Hold on — it’s not your pick yet.',
+  invalid_pick: 'That name isn’t available on the board — pick another.',
+  no_pick_available: 'No name is available to autopick right now.',
+  pool_exhausted: 'The draft pool is empty.',
+  training_disabled: 'Training mode isn’t available right now.',
 });
 
 /** Map a thrown action error to user copy; falls back to the server message. */

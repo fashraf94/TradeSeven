@@ -11,7 +11,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 const fetchMock = vi.fn();
 vi.mock('../utils/fetchWithAuth', () => ({ fetchWithAuth: (...args) => fetchMock(...args) }));
 
-import { placeClaim, flipPick, mapTournamentActionError } from './tournamentActions';
+import { placeClaim, flipPick, makeTrainingPick, mapTournamentActionError } from './tournamentActions';
 
 function res(ok, status, body) {
   return { ok, status, json: async () => body };
@@ -68,6 +68,28 @@ describe('flipPick', () => {
   it('falls back to an HTTP code when the error body is empty/non-JSON', async () => {
     fetchMock.mockResolvedValue({ ok: false, status: 500, json: async () => { throw new Error('no json'); } });
     await expect(flipPick({ groupId: 'g1', symbol: 'NVDA' })).rejects.toMatchObject({ status: 500, code: 'http_500' });
+  });
+});
+
+describe('makeTrainingPick (Slice 2 interactive draft)', () => {
+  it('POSTs an explicit pick {groupId, symbol} and returns the response', async () => {
+    fetchMock.mockResolvedValue(res(true, 200, { status: 'drafting', currentPickIndex: 7, complete: false }));
+    const out = await makeTrainingPick({ groupId: 'g1', symbol: 'NVDA' });
+    expect(out).toMatchObject({ currentPickIndex: 7, complete: false });
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/tournament/training-pick');
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ groupId: 'g1', symbol: 'NVDA' });
+  });
+
+  it('sends the autopick flag (no symbol) on a timeout', async () => {
+    fetchMock.mockResolvedValue(res(true, 200, { status: 'battle', complete: true }));
+    const out = await makeTrainingPick({ groupId: 'g1', autopick: true });
+    expect(out.complete).toBe(true);
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ groupId: 'g1', autopick: true });
+  });
+
+  it('THROWS a structured error on a 409 not_your_turn (never resolves success)', async () => {
+    fetchMock.mockResolvedValue(res(false, 409, { error: 'not_your_turn', message: 'not your turn' }));
+    await expect(makeTrainingPick({ groupId: 'g1', symbol: 'NVDA' })).rejects.toMatchObject({ status: 409, code: 'not_your_turn' });
   });
 });
 

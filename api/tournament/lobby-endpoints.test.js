@@ -201,7 +201,7 @@ describe('lobby-quickplay-training (Slice 3.1 — gated, no CTA)', () => {
     expect(res.body.error).toBe('training_disabled');
   });
 
-  it('on-demand forms-and-launches a no-stakes TRAINING pod to AWAITING_OPEN (Training Slice 1)', async () => {
+  it('on-demand forms a no-stakes TRAINING pod into the live DRAFTING state (Training Slice 2)', async () => {
     const { db, store } = withRankings();
     h.db = db;
     h.nextArc = true;
@@ -210,18 +210,25 @@ describe('lobby-quickplay-training (Slice 3.1 — gated, no CTA)', () => {
     expect(res.statusCode).toBe(200);
     expect(res.body.groupId).toBe(res.body.lobbyId);
     expect(res.body.cpuNs).toEqual([1, 2, 3]); // 1 human + 3 CPU — the reused padding
-    // Training Slice 1: the tap resolves the draft synchronously and lands the
-    // pod in AWAITING_OPEN (the five-day clock waits for the next market open),
-    // stamped with the start anchor — NOT the old forming-then-Monday cadence.
-    expect(res.body.status).toBe(GROUP_STATUS.AWAITING_OPEN);
-    expect(res.body.startAnchor?.anchorEtDate).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    // Training Slice 2 (sanctioned return-contract change): the tap forms the
+    // pod into the INTERACTIVE draft (DRAFTING) — the client navigates into the
+    // live snake draft — NOT a synchronously-resolved AWAITING_OPEN pod. The
+    // five-day clock anchors at the transition-only completion handoff, not here.
+    expect(res.body.status).toBe(GROUP_STATUS.DRAFTING);
+    expect(res.body.humanArchetype).toBe('analyst'); // no agent for u1 → default
     const group = store.get(`tournamentGroups/${res.body.groupId}`);
     expect(group.isTraining).toBe(true);
-    expect(group.status).toBe(GROUP_STATUS.AWAITING_OPEN);
-    expect(group.startAnchor.anchorEtDate).toMatch(/^\d{4}-\d{2}-\d{2}$/);
-    expect(group.players.every(p => p.picks.length > 0)).toBe(true); // draft resolved at tap
+    expect(group.status).toBe(GROUP_STATUS.DRAFTING);
+    expect(group).not.toHaveProperty('startAnchor'); // not stamped until completion
+    expect(group.players.every(p => p.picks.length === 0)).toBe(true); // not resolved at tap
     expect(group.baseLayerWeek).toBeTruthy();
     expect(group).not.toHaveProperty('isDev'); // production scope, like ranked
+    // The live-draft state rides the draft/state sibling doc (client-readable).
+    const draft = store.get(`tournamentGroups/${res.body.groupId}/draft/state`);
+    expect(draft.status).toBe('drafting');
+    expect(draft.snakeOrder).toHaveLength(12); // generateSnakeOrder(4, 3)
+    expect(draft.currentPickIndex).toBe(0); // u1 is seat 0 — human picks first, no CPU run-up
+    expect(draft.pool.length).toBeGreaterThan(0);
   });
 
   it('the dev-invoke preview param ?nextArc=1 forms the pod while the flag stays OFF (the preview smoke handle)', async () => {
