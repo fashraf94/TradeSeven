@@ -193,8 +193,12 @@ If you cannot find reliable information, respond with:
 
   try {
     const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-20250514',
+      model: 'claude-sonnet-4-6',
       max_tokens: 500,
+      // Sonnet 4.6 defaults to high effort; pin to low + thinking disabled to
+      // preserve the prior Sonnet-4 (no-thinking) latency profile.
+      thinking: { type: 'disabled' },
+      output_config: { effort: 'low' },
       tools: [{
         type: 'web_search_20250305',
         name: 'web_search'

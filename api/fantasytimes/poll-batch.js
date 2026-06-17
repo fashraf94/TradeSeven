@@ -145,7 +145,7 @@ export default async function handler(req, res) {
                   revenueEstimate: storyData.revenueEstimate || null,
                 },
                 newsContext: [],
-                generatedBy: 'claude-sonnet-4-20250514',
+                generatedBy: 'claude-sonnet-4-6',
                 batchId: batchId,
                 publishedAt: now,
                 expiresAt: expiresAt,

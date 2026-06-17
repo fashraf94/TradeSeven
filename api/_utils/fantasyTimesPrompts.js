@@ -50,7 +50,7 @@ export const REPORTER_PROFILES = {
     color: '#A78BFA',
     icon: 'Compass',
     bio: 'Connecting the dots across markets',
-    model: 'claude-sonnet-4-20250514',
+    model: 'claude-sonnet-4-6',
     expiryHours: 336, // 14 days
   },
   vera: {
@@ -59,7 +59,7 @@ export const REPORTER_PROFILES = {
     color: '#1e3a5f',
     icon: 'Telescope',
     bio: 'Vera writes deep, multi-thousand-word research deepdives on the themes shaping markets. Where other reporters cover the news of the day, Vera maps the structural forces underneath — the supply chains, the bottlenecks, the obscured exposures that move stocks over quarters and years.',
-    model: 'claude-sonnet-4-20250514', // used for summary generation only; full content is externally generated
+    model: 'claude-sonnet-4-6', // used for summary generation only; full content is externally generated
     expiryHours: 336, // 14 days
   },
 };

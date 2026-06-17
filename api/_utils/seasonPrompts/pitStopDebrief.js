@@ -285,9 +285,13 @@ export function buildDebriefRequest(entry, seasonDoc, weekDailyLogs, sharedMarke
   const nearMisses = findNearMissCandidates(ctx, activeRules).slice(0, 5);
 
   return {
-    model: 'claude-sonnet-4-20250514',
+    model: 'claude-sonnet-4-6',
     max_tokens: 2000,
     temperature: 0.7,
+    // Sonnet 4.6 defaults to high effort; pin to low + thinking disabled to
+    // preserve the prior Sonnet-4 (no-thinking) latency profile.
+    thinking: { type: 'disabled' },
+    output_config: { effort: 'low' },
     system: buildDebriefSystemPrompt({ durationWeeks, isSoloFinalWeek }),
     messages: [
       {

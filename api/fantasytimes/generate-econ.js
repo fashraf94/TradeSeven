@@ -443,9 +443,13 @@ async function handlePreview(req, res, db) {
 
   // Weekly preview uses Sonnet for deeper analysis
   const response = await anthropic.messages.create({
-    model: 'claude-sonnet-4-20250514',
+    model: 'claude-sonnet-4-6',
     max_tokens: 1000,
     temperature: 0.8,
+    // Sonnet 4.6 defaults to high effort; pin to low + thinking disabled to
+    // preserve the prior Sonnet-4 (no-thinking) latency profile.
+    thinking: { type: 'disabled' },
+    output_config: { effort: 'low' },
     system: NETA_PREVIEW_SYSTEM_PROMPT,
     tools: [PUBLISH_ECON_PREVIEW_TOOL],
     tool_choice: { type: 'tool', name: 'publish_econ_preview' },
@@ -483,7 +487,7 @@ async function handlePreview(req, res, db) {
       highImpactCount: allUpcoming.filter((e) => e.impact === 'high').length,
     },
     newsContext: [],
-    generatedBy: 'claude-sonnet-4-20250514',
+    generatedBy: 'claude-sonnet-4-6',
     batchId: null,
     publishedAt: now,
     expiresAt: expiresAt,

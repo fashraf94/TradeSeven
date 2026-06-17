@@ -289,6 +289,10 @@ export default async function handler(req, res) {
       model: REPORTER_PROFILES.kim.model,
       max_tokens: 1200,
       temperature: 0.85,
+      // Sonnet 4.6 defaults to high effort; pin to low + thinking disabled to
+      // preserve the prior Sonnet-4 (no-thinking) latency profile.
+      thinking: { type: 'disabled' },
+      output_config: { effort: 'low' },
       system: KIM_SYSTEM_PROMPT + (consensusContext || ''),
       tools: [PUBLISH_SECTOR_COLUMN_TOOL],
       tool_choice: { type: 'tool', name: 'publish_sector_column' },

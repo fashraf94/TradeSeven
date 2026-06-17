@@ -11,7 +11,7 @@
 // This endpoint:
 //   1. Authenticates the caller via VERA_INGEST_SECRET (Bearer).
 //   2. Validates the request (fullMarkdown, extractedRecords, topicSlug).
-//   3. Calls Claude Sonnet (claude-sonnet-4-20250514) with VERA_SUMMARY_SYSTEM_PROMPT
+//   3. Calls Claude Sonnet (claude-sonnet-4-6) with VERA_SUMMARY_SYSTEM_PROMPT
 //      and forces tool use against PUBLISH_DEEPDIVE_SUMMARY_TOOL to produce
 //      a 1,000-1,500 char Vera-voiced editorial summary.
 //   4. Writes the full markdown + records to fantasyTimesDeepdives.
@@ -171,6 +171,10 @@ export default async function handler(req, res) {
       model: REPORTER_PROFILES.vera.model,
       max_tokens: 2000,
       temperature: 0.7,
+      // Sonnet 4.6 defaults to high effort; pin to low + thinking disabled to
+      // preserve the prior Sonnet-4 (no-thinking) latency profile.
+      thinking: { type: 'disabled' },
+      output_config: { effort: 'low' },
       system: VERA_SUMMARY_SYSTEM_PROMPT,
       tools: [PUBLISH_DEEPDIVE_SUMMARY_TOOL],
       tool_choice: { type: 'tool', name: 'publish_deepdive_summary' },
