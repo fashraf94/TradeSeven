@@ -1,14 +1,15 @@
 // api/tournament/lobby-quickplay-training.js
 //
-// League Next-Arc Slice 3.1 — POST /api/tournament/lobby-quickplay-training.
-// The no-stakes TRAINING variant of the solo cold-start: open a private lobby
-// and IMMEDIATELY form a CPU-padded base-layer pod (one human + three CPUs)
-// flagged isTraining — the SAME solo-seat composition and the SAME Monday-start
-// cadence as ranked Quick Play, but the Slice 3.0 exclusion spine keeps it off
-// the leaderboard / career rank / bracket (it still banks its own daily closes
-// and its agent layer is deployed + ticked by the existing engine, keyed by
-// groupId). Thin over the service's quickPlay({ isTraining: true }); the live
-// lobby-quickplay.js is left byte-unchanged.
+// League Next-Arc Slice 3.1 / Training Slice 1 — POST
+// /api/tournament/lobby-quickplay-training. The no-stakes TRAINING variant of
+// the solo cold-start: open a private lobby and IMMEDIATELY form a CPU-padded
+// base-layer pod (one human + three CPUs) flagged isTraining — the same solo-
+// seat composition as ranked Quick Play, but ON-DEMAND (Training Slice 1): the
+// pod forms-and-launches synchronously to AWAITING_OPEN and its five-day clock
+// anchors to the NEXT MARKET OPEN (no wait for Monday). The Slice 3.0 exclusion
+// spine keeps it off the leaderboard / career rank / bracket (it still banks
+// its own daily closes). Thin over formAndLaunchTrainingPod (which reuses
+// quickPlay({ isTraining: true })); the live lobby-quickplay.js is byte-unchanged.
 //
 // GATED AS A WHOLE — built dark, NO CTA (that is Slice 3.2). The base lobby
 // surface gate (LEAGUE_LOBBY_ENABLED), Bearer-ID-token auth, and the service-
@@ -20,7 +21,7 @@
 // flag stays OFF. Off + no param -> 404, indistinguishable from a missing route.
 
 import { runLobbyEndpoint, resolveDisplayName } from '../_utils/lobbyEndpoint.js';
-import { quickPlay } from '../_utils/tournamentLobbyService.js';
+import { formAndLaunchTrainingPod } from '../_utils/trainingLifecycle.js';
 import { LEAGUE_NEXT_ARC_ENABLED } from '../../src/config/featureFlags.js';
 
 export const config = { maxDuration: 30 };
@@ -33,10 +34,9 @@ export default function handler(req, res) {
     if (!(LEAGUE_NEXT_ARC_ENABLED === true || req.query?.nextArc === '1')) {
       return res.status(404).json({ error: 'training_disabled', message: 'Training mode is not available.' });
     }
-    const result = await quickPlay(db, {
+    const result = await formAndLaunchTrainingPod(db, {
       odUserId: user.uid,
       displayName: resolveDisplayName(body, user),
-      isTraining: true,
     });
     res.status(200).json(result);
   });

@@ -79,6 +79,7 @@ import { resolveAgentDraftForGroup } from './tournamentAgentDraft.js';
 import { resolveUserDraftForGroup, USER_DRAFT_SENTINEL_PREFIX } from '../tournament/resolve-user-draft.js';
 import { autoCommitMissingBoards } from './tournamentBoardAutoCommit.js';
 import { runFridayAdvancement } from './tournamentAdvancement.js';
+import { flipAwaitingOpenPods } from './trainingLifecycle.js';
 // Fenced module EXPORT, called read-only — never edited (BUILD_RULES §1).
 import { flattenPortfolioServer } from './agentScoring.js';
 
@@ -691,6 +692,24 @@ export async function runOrchestratorTick(db, {
   const routed = getDutyForInstant(now);
   const duty = forceDuty || routed.duty;
   const tag = `${LOG_PREFIX} ${routed.etDate} ${routed.etTime}${simulated ? ' [SIMULATED]' : ''}`;
+
+  // League Training Slice 1 — awaiting-open flip. Training pods drafted on
+  // demand wait in AWAITING_OPEN; any WEEKDAY-MORNING tick flips those whose
+  // anchor DATE has arrived to BATTLE (date-based — the morning window is
+  // pre-open in EST, so a timestamp compare would miss every winter). Placed
+  // BEFORE the SKIP / already-complete short-circuits so duty idempotency never
+  // gates it; its own catch so a flip failure never blocks the duty; AWAITING_
+  // OPEN is training-only, so ranked/legacy are never seen. Zero new cron.
+  if (routed.duty === DUTY.MONDAY_PIPELINE || routed.duty === DUTY.WEEKDAY_FANOUT) {
+    try {
+      const flip = await flipAwaitingOpenPods(db, { now, includeDev: includeDevGroups });
+      if (flip.flipped > 0 || flip.pending > 0) {
+        console.log(`${tag} awaiting-open sweep: flipped ${flip.flipped}, pending ${flip.pending}`);
+      }
+    } catch (err) {
+      console.error(`${tag} awaiting-open flip sweep failed: ${err.message}`);
+    }
+  }
 
   if (duty === DUTY.SKIP) {
     console.log(`${tag} duty=skip — outside the duty table (quiet tick)`);

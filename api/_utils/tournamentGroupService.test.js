@@ -70,11 +70,13 @@ function makeDb({ storedDoc = null } = {}) {
 
 // ==================== TRANSITION TABLE ====================
 
-describe('status lifecycle (GROUP_STATUS ratified unchanged at P1)', () => {
+describe('status lifecycle (P1 table + League Training Slice 1 additive edges)', () => {
   const ALL = Object.values(GROUP_STATUS);
   const LEGAL = [
     ['forming', 'drafting'],
     ['forming', 'battle'], // P1 single-shot resolution path
+    ['forming', 'awaiting_open'], // Training Slice 1: on-demand resolve-to-awaiting
+    ['awaiting_open', 'battle'], // Training Slice 1: the next-market-open flip
     ['drafting', 'battle'],
     ['battle', 'complete'],
   ];

@@ -130,8 +130,14 @@ export function resolveSnakeDraft(group, boardsByUser) {
  * calls the SAME code path — one copy). Throws USER_DRAFT_SENTINEL_PREFIX
  * errors (group_not_found / not_forming / boards_missing / pool_too_small);
  * `boards_missing` is the finding-#5 defer signal upstream.
+ *
+ * League Next-Arc Slice 1 (additive, default-preserving): `targetStatus` is the
+ * status the resolution lands (default GROUP_STATUS.BATTLE — the Monday/ranked
+ * path is byte-identical). The training on-demand path passes AWAITING_OPEN plus
+ * `startAnchor` (the next-market-open anchor) so the resolved pod waits for the
+ * open instead of ticking immediately; `startAnchor` is written only when given.
  */
-export async function resolveUserDraftForGroup(db, groupId, { now = new Date() } = {}) {
+export async function resolveUserDraftForGroup(db, groupId, { now = new Date(), targetStatus = GROUP_STATUS.BATTLE, startAnchor = null } = {}) {
   const groupRef = db.collection(TOURNAMENT_GROUPS_COLLECTION).doc(groupId);
   const nowIso = now.toISOString();
 
@@ -161,22 +167,27 @@ export async function resolveUserDraftForGroup(db, groupId, { now = new Date() }
       })),
     }));
 
-    assertTransition(group.status, GROUP_STATUS.BATTLE);
+    assertTransition(group.status, targetStatus);
     // Rider #3 (user side): the stream write and the group mutation commit
     // atomically — awaited in-request via the transaction.
-    tx.update(groupRef, {
+    const groupUpdate = {
       players,
       userPool: remainingPool,
-      status: GROUP_STATUS.BATTLE,
+      status: targetStatus,
       updatedAt: nowIso,
-    });
+    };
+    // League Next-Arc Slice 1: the training on-demand path stamps the start
+    // anchor (the next market open) so the awaiting-open flip and the day
+    // clock read it; the default path passes none and leaves the doc unchanged.
+    if (startAnchor != null) groupUpdate.startAnchor = startAnchor;
+    tx.update(groupRef, groupUpdate);
     tx.set(groupRef.collection('streams').doc('userDraft'), {
       events,
       roundNumber: group.roundNumber,
       resolvedAt: nowIso,
     });
 
-    return { picksByUser, events, remainingPoolSize: remainingPool.length };
+    return { picksByUser, events, remainingPoolSize: remainingPool.length, status: targetStatus };
   });
 }
 

@@ -18,6 +18,7 @@ import { initializeApp, getApps, cert } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 import { calculateSnakeDraftAssetScore } from '../../src/services/scoring/baggerBombCalculator.js';
 import { bankAllTournamentGroups } from '../_utils/tournamentBanking.js';
+import { completeBankedTrainingPods } from '../_utils/trainingLifecycle.js';
 import { reconcileAllTournamentLedgers } from '../_utils/tournamentAgentLedger.js';
 import { aggregateTournamentLeaderboards } from '../_utils/tournamentLeaderboard.js';
 
@@ -462,6 +463,7 @@ export default async function handler(req, res) {
   // Declared above the try so the outer catch can report it too — the
   // tournament branch's result must never be masked, even by a legacy throw.
   let tournament = { groups: 0, processed: 0, skipped: 0, errors: 0 };
+  let trainingCompletion = { groups: 0, completed: 0, skipped: 0, errors: 0 };
   let tournamentLedger = { groups: 0, reconciled: 0, divergences: 0, staleCleared: 0, errors: 0 };
   let tournamentLeaderboard = { groups: 0, skippedNoBanking: 0, docsWritten: 0, errors: 0 };
 
@@ -480,6 +482,20 @@ export default async function handler(req, res) {
     } catch (error) {
       logError('Tournament banking branch failed', { error: error.message });
       tournament = { groups: 0, processed: 0, skipped: 0, errors: 1, failed: true };
+    }
+
+    // League Training Slice 1: rolling-completion dispatch (zero new cron —
+    // BUILD_RULES §6). Runs AFTER banking so a pod's 5th day banks first, then
+    // it completes the SAME night — any weekday, not just Friday (Friday
+    // advancement stays the idempotent backstop). Own catch + isTraining filter:
+    // a failure never blocks the ledger/leaderboard/legacy branches, and ranked
+    // base groups (no isTraining) are never touched.
+    try {
+      trainingCompletion = await completeBankedTrainingPods(db, { now: new Date() });
+      logInfo('Training rolling-completion branch complete', trainingCompletion);
+    } catch (error) {
+      logError('Training rolling-completion branch failed', { error: error.message });
+      trainingCompletion = { groups: 0, completed: 0, skipped: 0, errors: 1, failed: true };
     }
 
     // P2: nightly derived reconciliation of the agent held-set ledgers
@@ -537,6 +553,7 @@ export default async function handler(req, res) {
         message: 'No active battles',
         processed: 0,
         tournament,
+        trainingCompletion,
         tournamentLedger,
         tournamentLeaderboard,
       });
@@ -563,6 +580,7 @@ export default async function handler(req, res) {
         success: false,
         error: 'Failed to fetch prices',
         tournament, // the tournament branches already ran — never masked by a legacy price failure
+        trainingCompletion,
         tournamentLedger,
         tournamentLeaderboard,
       });
@@ -601,6 +619,7 @@ export default async function handler(req, res) {
       success: true,
       ...results,
       tournament,
+      trainingCompletion,
       tournamentLedger,
       tournamentLeaderboard,
       durationMs: duration,
@@ -612,6 +631,7 @@ export default async function handler(req, res) {
       success: false,
       error: error.message,
       tournament,
+      trainingCompletion,
       tournamentLedger,
       tournamentLeaderboard,
     });
