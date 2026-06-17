@@ -13,7 +13,7 @@ import { buildConsolidationPrompt } from './agentConsolidationPrompt.js';
 import { logConsolidation } from './shadowLogger.js';
 
 const LOG_PREFIX = '[CONSOLIDATION]';
-const SONNET_MODEL = 'claude-sonnet-4-20250514';
+const SONNET_MODEL = 'claude-sonnet-4-6';
 const SONNET_TIMEOUT_MS = 30_000;
 const MAX_OUTPUT_TOKENS = 2000;
 
@@ -303,6 +303,10 @@ export async function consolidateAgentEvolution(db, agentRef) {
         model: SONNET_MODEL,
         max_tokens: MAX_OUTPUT_TOKENS,
         temperature: 0.3,
+        // Sonnet 4.6 defaults to high effort; pin to low + thinking disabled to
+        // preserve the prior Sonnet-4 (no-thinking) latency profile.
+        thinking: { type: 'disabled' },
+        output_config: { effort: 'low' },
         system: systemPrompt,
         messages: [{ role: 'user', content: userMessage }],
         tools: [SUBMIT_CONSOLIDATION_TOOL],

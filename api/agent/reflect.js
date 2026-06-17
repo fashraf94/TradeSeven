@@ -160,9 +160,13 @@ async function callSonnetReflection(battleDoc, agentDoc) {
 
   const response = await Promise.race([
     anthropic.messages.create({
-      model: 'claude-sonnet-4-20250514',
+      model: 'claude-sonnet-4-6',
       max_tokens: 2048,
       temperature: 0.3,
+      // Sonnet 4.6 defaults to high effort; pin to low + thinking disabled to
+      // preserve the prior Sonnet-4 (no-thinking) latency profile.
+      thinking: { type: 'disabled' },
+      output_config: { effort: 'low' },
       system: systemPrompt,
       messages: [{ role: 'user', content: userMessage }],
       tools: [REFLECTION_TOOL],
