@@ -23,6 +23,8 @@ import { getArchetypeIdentity } from '../../../data/archetypeIdentity';
 import TraitStrengthToggle from '../TraitStrengthToggle';
 import DNAGroupCard from '../DNAGroupCard';
 import TraitCard from '../TraitCard';
+import { TRAITS_EXPLORATION_ENABLED } from '../../../config/featureFlags';
+import TraitsExploration from './traits/TraitsExploration';
 
 // Same lucide icon set the mobile TraitCard uses, keyed by trait.icon.
 const TRAIT_ICONS = {
@@ -89,6 +91,26 @@ export default function TraitsArea({ agent, agentName, primary, traits, hasActiv
     strategy: TRAIT_LIBRARY.filter((t) => t.dnaGroup === 'strategy'),
     discipline: TRAIT_LIBRARY.filter((t) => t.dnaGroup === 'discipline'),
   }), []);
+
+  // Flag (or the ?traitsExploration=1 dev preview — the ?forgeDesktop=1 idiom)
+  // swaps in the Archetype Exploration redesign on both viewports. Default off
+  // falls through to today's interim surface below, byte-unchanged.
+  const explorationOn =
+    TRAITS_EXPLORATION_ENABLED ||
+    (typeof window !== 'undefined' &&
+      new URLSearchParams(window.location.search).get('traitsExploration') === '1');
+  if (explorationOn) {
+    return (
+      <TraitsExploration
+        agent={agent}
+        agentName={agentName}
+        primary={primary}
+        traits={traits}
+        hasActiveBattle={hasActiveBattle}
+        twoCol={twoCol}
+      />
+    );
+  }
 
   // ── Desktop: archetype centerpiece (read-only identity) + the agent's REAL
   // equipped traits with in-place strength edit. No fabricated forged/draft

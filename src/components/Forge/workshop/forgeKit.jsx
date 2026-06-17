@@ -129,6 +129,10 @@ export function Icon({ name, size = 18, color = 'currentColor', stroke = 1.7, st
     book: <g {...p}><path d="M5 4h11a2 2 0 012 2v14H7a2 2 0 01-2-2V4z" /><path d="M5 16h13" /></g>,
     arrowR: <path {...p} d="M5 12h14M13 6l6 6-6 6" />,
     send: <path {...p} d="M4 12l16-7-6 16-3-7-7-2z" />,
+    eye: <g {...p}><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7-10-7-10-7z" /><circle cx="12" cy="12" r="3" /></g>,
+    layers: <g {...p}><path d="M12 3l9 5-9 5-9-5 9-5z" /><path d="M3 13l9 5 9-5M3 17l9 5 9-5" /></g>,
+    star: <path {...p} d="M12 3l2.6 5.6 6.1.8-4.5 4.2 1.2 6-5.4-3-5.4 3 1.2-6L3.3 9.4l6.1-.8L12 3z" />,
+    grid: <g {...p}><rect x="4" y="4" width="7" height="7" rx="1.5" /><rect x="13" y="4" width="7" height="7" rx="1.5" /><rect x="4" y="13" width="7" height="7" rx="1.5" /><rect x="13" y="13" width="7" height="7" rx="1.5" /></g>,
   };
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" style={{ display: 'block', flexShrink: 0, ...style }}>
