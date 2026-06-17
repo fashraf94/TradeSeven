@@ -11,6 +11,8 @@
 
 import { describe, it, expect } from 'vitest';
 import { resolveSnakeDraft } from './resolve-user-draft.js';
+import { generateSnakeOrder } from '../../src/services/draftAssets.js';
+import { GROUP_SIZE, PICKS_PER_PLAYER } from '../../src/constants/leagueTournament.js';
 
 const POOL = [
   'NVDA', 'AMD', 'TSLA', 'META', 'AAPL', 'MSFT', 'AMZN', 'GOOG', 'NFLX', 'AVGO',
@@ -60,6 +62,17 @@ describe('snake order', () => {
       'user-d': ['AVGO', 'CRM', 'ORCL'],
     });
     expect(events.every(e => e.passedOver.length === 0 && e.fallback === false)).toBe(true);
+  });
+
+  // League Training Slice 2 (Decision 1): the canonical generateSnakeOrder
+  // (draftAssets.js) is the ONE source for the live interactive draft. Rather
+  // than refactor this battle-tested ranked resolver's inline order, we LOCK the
+  // equivalence so the two can never drift: generateSnakeOrder's seat indices,
+  // mapped over groupMembers, MUST match the resolver's pick-by-pick order.
+  it('the canonical generateSnakeOrder matches the resolver order (unification lock)', () => {
+    const { events } = resolveSnakeDraft(makeGroup(), disjointBoards());
+    const fromEngine = generateSnakeOrder(GROUP_SIZE, PICKS_PER_PLAYER).map(seatIdx => MEMBERS[seatIdx]);
+    expect(events.map(e => e.odUserId)).toEqual(fromEngine);
   });
 });
 

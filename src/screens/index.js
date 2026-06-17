@@ -9,6 +9,7 @@ export { default as JoinScreen } from './JoinScreen';
 export { default as DraftSetupScreen } from './DraftSetupScreen';
 export { default as DraftJoinScreen } from './DraftJoinScreen';
 export { default as DraftTrainingScreen } from './DraftTrainingScreen';
+export { default as TrainingDraftRoomScreen } from './TrainingDraftRoomScreen';
 export { default as DraftLobbyScreen } from './DraftLobbyScreen';
 
 // Screen exports - Batch 3

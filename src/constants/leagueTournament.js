@@ -47,6 +47,13 @@ export const AGENT_DRAFT_STREAM_DOC_ID = 'agentDraft';
 // additive for the playback readers).
 export const USER_DRAFT_STREAM_DOC_ID = 'userDraft';
 
+// League Training Slice 2 — the interactive-draft live state. One sibling doc
+// per pod at tournamentGroups/{id}/draft/state, client-readable under the
+// deployed recursive subcollection rule; all writes stay Admin SDK (the
+// training-pick endpoint + the lifecycle sweeps).
+export const DRAFT_SUBCOLLECTION = 'draft';
+export const DRAFT_STATE_DOC_ID = 'state';
+
 /**
  * Battle-doc discriminator for tournament-mode agent battles (Spec §0.12 —
  * lets tournament eval ride the shared agent-evaluate cron). Sibling of the
@@ -595,6 +602,18 @@ export const RANK_TUNING = Object.freeze({
   // Group-week placements 1st..4th (Spec §1.5's 100/66/33).
   PLACEMENT_BONUS: Object.freeze([100, 66, 33, 0]),
   HISTORY_CAP: 20,
+});
+
+// League Training Slice 2 — interactive-draft dials. Separate from
+// TOURNAMENT_TUNING (whose exact shape is test-locked, above) — the RANK_TUNING
+// precedent: training-only, set-raw-and-watch (Spec §5 posture). PICK_CLOCK_MS
+// is the per-pick countdown pace (the urgent-vs-generous dial; client timer,
+// the server idle-sweep is the tab-close backstop). DRAFT_IDLE_STALE_MS is the
+// idle-sweep staleness threshold — set generously so a draft started in the
+// same pre-open morning window as the sweep tick is never grabbed mid-session.
+export const TRAINING_TUNING = Object.freeze({
+  PICK_CLOCK_MS: 20000,
+  DRAFT_IDLE_STALE_MS: 3 * 60 * 60 * 1000, // 3h
 });
 
 /** The tier a given RP sits in: the highest tier whose floor is reached. */

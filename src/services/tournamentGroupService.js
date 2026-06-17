@@ -24,6 +24,8 @@ import {
   USER_DRAFT_STREAM_DOC_ID,
   AGENT_LEDGER_SUBCOLLECTION,
   AGENT_LEDGER_DOC_ID,
+  DRAFT_SUBCOLLECTION,
+  DRAFT_STATE_DOC_ID,
   selectActiveLobby,
 } from '../constants/leagueTournament';
 
@@ -100,6 +102,24 @@ export function subscribeAgentDraftStream(groupId, callback) {
     callback(snapshot.exists() ? snapshot.data() : null);
   }, (error) => {
     console.error('[TournamentGroupService] Agent draft stream subscription error:', error);
+    callback(null);
+  });
+}
+
+/**
+ * Live interactive-draft state subscription (League Training Slice 2 — the live
+ * snake draft's source of truth at draft/state). Reads are client-legal under
+ * the deployed recursive subcollection rules block; writes stay Admin SDK (the
+ * training-pick endpoint + the lifecycle sweeps). Callback receives the state
+ * doc ({ status, snakeOrder, currentPickIndex, pool, taken, picksByUser, events,
+ * humanArchetype, ... }) or null. Returns the unsubscribe fn.
+ */
+export function subscribeDraftState(groupId, callback) {
+  const stateDoc = doc(db, TOURNAMENT_GROUPS_COLLECTION, groupId, DRAFT_SUBCOLLECTION, DRAFT_STATE_DOC_ID);
+  return onSnapshot(stateDoc, (snapshot) => {
+    callback(snapshot.exists() ? snapshot.data() : null);
+  }, (error) => {
+    console.error('[TournamentGroupService] Draft state subscription error:', error);
     callback(null);
   });
 }
