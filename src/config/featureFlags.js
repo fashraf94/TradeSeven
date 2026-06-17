@@ -79,7 +79,7 @@ export const FORGE_DESKTOP_ENABLED = true;
  * one-line follow-up PR after a Vercel preview smoke test — the
  * COMMAND_DASHBOARD_DESKTOP_ENABLED / LEAGUE_REDESIGN_ENABLED precedent.
  */
-export const TRAITS_EXPLORATION_ENABLED = false;
+export const TRAITS_EXPLORATION_ENABLED = true;
 
 /**
  * Equip bench — the Traits loadout slot (mobile EquipStation + desktop
