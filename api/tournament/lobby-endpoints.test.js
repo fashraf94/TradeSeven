@@ -296,6 +296,94 @@ describe('lobby-quickplay-training (Slice 3.1 — gated, no CTA)', () => {
   });
 });
 
+// ==================== QUICK PLAY — TRAINING — LOADOUT CHOOSER (Slice 5b-ii) ====================
+describe('lobby-quickplay-training — loadout chooser (Slice 5b-ii)', () => {
+  const COMMITTED_WL_U1 = {
+    'watchlists/wl-u1': { userId: 'u1', status: 'committed', name: 'Momentum Names', tickers: ['SYM1', 'SYM2'] },
+  };
+
+  it('persists a valid override (archetype + owned committed watchlist) as the group carrier, name SERVER-derived', async () => {
+    const { db, store } = withRankings({ ...RANKED_AGENT_U1, ...COMMITTED_WL_U1 });
+    h.db = db;
+    h.nextArc = true;
+    const { req, res } = makeReqRes({ loadoutSpec: { archetype: 'guardian', equippedWatchlistId: 'wl-u1' } });
+    await trainingHandler(req, res);
+    expect(res.statusCode).toBe(200);
+    const group = store.get(`tournamentGroups/${res.body.groupId}`);
+    expect(group.loadoutSpecByUser).toEqual({
+      u1: { archetype: 'guardian', equippedWatchlistId: 'wl-u1', equippedWatchlistName: 'Momentum Names' },
+    });
+  });
+
+  it('persists an archetype-only override with a NULL watchlist ("no watchlist" is valid)', async () => {
+    const { db, store } = withRankings(RANKED_AGENT_U1);
+    h.db = db;
+    h.nextArc = true;
+    const { req, res } = makeReqRes({ loadoutSpec: { archetype: 'degen' } });
+    await trainingHandler(req, res);
+    expect(res.statusCode).toBe(200);
+    const group = store.get(`tournamentGroups/${res.body.groupId}`);
+    expect(group.loadoutSpecByUser).toEqual({
+      u1: { archetype: 'degen', equippedWatchlistId: null, equippedWatchlistName: null },
+    });
+  });
+
+  it('the fast-start path (no spec) writes NO carrier — the doc stays clean, clone pure-inherits', async () => {
+    const { db, store } = withRankings(RANKED_AGENT_U1);
+    h.db = db;
+    h.nextArc = true;
+    const { req, res } = makeReqRes({ displayName: 'Ada' });
+    await trainingHandler(req, res);
+    expect(res.statusCode).toBe(200);
+    expect(store.get(`tournamentGroups/${res.body.groupId}`)).not.toHaveProperty('loadoutSpecByUser');
+  });
+
+  it('REJECTS a bad archetype (400) and forms nothing', async () => {
+    const { db, store } = withRankings(RANKED_AGENT_U1);
+    h.db = db;
+    h.nextArc = true;
+    const { req, res } = makeReqRes({ loadoutSpec: { archetype: 'wizard' } });
+    await trainingHandler(req, res);
+    expect(res.statusCode).toBe(400);
+    expect(res.body.error).toBe('invalid_loadout_spec');
+    expect([...store.keys()].some(k => k.startsWith('tournamentGroups/'))).toBe(false);
+    expect([...store.keys()].some(k => k.startsWith('tournamentLobby/'))).toBe(false);
+  });
+
+  it('REJECTS a deferred Tier-2 key (equippedTraits) — the subcollection-hazard guard (400)', async () => {
+    const { db } = withRankings(RANKED_AGENT_U1);
+    h.db = db;
+    h.nextArc = true;
+    const { req, res } = makeReqRes({ loadoutSpec: { archetype: 'analyst', equippedTraits: ['x'] } });
+    await trainingHandler(req, res);
+    expect(res.statusCode).toBe(400);
+    expect(res.body.error).toBe('invalid_loadout_spec');
+  });
+
+  it('REJECTS a watchlist NOT owned by the caller (400) and forms nothing', async () => {
+    const otherWl = { 'watchlists/wl-other': { userId: 'someone-else', status: 'committed', name: 'Theirs' } };
+    const { db, store } = withRankings({ ...RANKED_AGENT_U1, ...otherWl });
+    h.db = db;
+    h.nextArc = true;
+    const { req, res } = makeReqRes({ loadoutSpec: { archetype: 'analyst', equippedWatchlistId: 'wl-other' } });
+    await trainingHandler(req, res);
+    expect(res.statusCode).toBe(400);
+    expect(res.body.error).toBe('invalid_loadout_spec');
+    expect([...store.keys()].some(k => k.startsWith('tournamentGroups/'))).toBe(false);
+  });
+
+  it('REJECTS an uncommitted (draft) watchlist the caller owns (400)', async () => {
+    const draftWl = { 'watchlists/wl-draft': { userId: 'u1', status: 'draft', name: 'WIP' } };
+    const { db } = withRankings({ ...RANKED_AGENT_U1, ...draftWl });
+    h.db = db;
+    h.nextArc = true;
+    const { req, res } = makeReqRes({ loadoutSpec: { archetype: 'analyst', equippedWatchlistId: 'wl-draft' } });
+    await trainingHandler(req, res);
+    expect(res.statusCode).toBe(400);
+    expect(res.body.error).toBe('invalid_loadout_spec');
+  });
+});
+
 // ==================== CREATE ====================
 describe('lobby-create', () => {
   it('opens a PRIVATE lobby with a shareable join code (default), no forming', async () => {

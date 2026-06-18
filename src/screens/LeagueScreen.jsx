@@ -34,7 +34,7 @@ const CLIMB_PREVIEW = SP.get('leagueClimb') === '1';
 const CLIMB_MODE = ['live', 'final'].includes(SP.get('m')) ? SP.get('m') : 'live';
 const CLIMB_CTX = ['training', 'ranked'].includes(SP.get('c')) ? SP.get('c') : 'training';
 
-export default function LeagueScreen({ onOpenTrainingPod, hasAgent } = {}) {
+export default function LeagueScreen({ onOpenTrainingPod, hasAgent, agentLoadout } = {}) {
   const { tokens } = useTheme();
   const [view, setView] = React.useState('home');
   const [climb, setClimb] = React.useState(CLIMB_PREVIEW);
@@ -68,5 +68,5 @@ export default function LeagueScreen({ onOpenTrainingPod, hasAgent } = {}) {
     );
   }
 
-  return <LeagueHome onOpenMyGame={() => setView('mygame')} onOpenTrainingPod={onOpenTrainingPod} hasAgent={hasAgent} />;
+  return <LeagueHome onOpenMyGame={() => setView('mygame')} onOpenTrainingPod={onOpenTrainingPod} hasAgent={hasAgent} agentLoadout={agentLoadout} />;
 }

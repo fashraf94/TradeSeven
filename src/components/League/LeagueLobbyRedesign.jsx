@@ -12,6 +12,7 @@ import { Eyebrow, Mono, Icon, LIcon, AgentAvatar, Score, StatusBadge } from './L
 import { Funnel, PodCard } from './LeaguePod';
 import { quickPlayTraining, mapLobbyError } from '../../services/tournamentLobbyActions';
 import { GROUP_STATUS } from '../../constants/leagueTournament';
+import LoadoutChooserSheet from './LoadoutChooserSheet';
 
 function EnterButton({ accent, onEnter }) {
   return (
@@ -327,12 +328,17 @@ function TrainingReentryBar({ pod, accent, onResume }) {
 // its own one-in-flight async over quickPlayTraining; on success it routes into
 // the fresh DRAFTING pod via onOpenTrainingPod. The server still enforces
 // no_agent / already_active — the client gates are courtesy, not the authority.
-function TrainingShell({ accent, onOpenTrainingPod, activeTrainingPod = null, hasAgent }) {
+function TrainingShell({ accent, onOpenTrainingPod, activeTrainingPod = null, hasAgent, agentLoadout = null }) {
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [chooserOpen, setChooserOpen] = useState(false);
   const inFlight = useRef(false);
 
-  const start = async () => {
+  // Shared form+nav over quickPlayTraining — used by BOTH the fast-start CTA
+  // (no spec → pure inherit, unchanged from 5b-i) and the chooser submit (Slice
+  // 5b-ii: a spec → override). The server whitelists the spec and is the sole
+  // authority; the client gates are courtesy.
+  const runTrainingForm = async (loadoutSpec = null) => {
     if (inFlight.current) return;
     // Near-free client gate (C2): an agent-less player has nothing to clone —
     // surface the copy without a round-trip. `hasAgent === false` fires ONLY when
@@ -348,13 +354,15 @@ function TrainingShell({ accent, onOpenTrainingPod, activeTrainingPod = null, ha
     setBusy(true);
     setError(null);
     try {
-      const res = await quickPlayTraining();
+      const res = await quickPlayTraining(loadoutSpec ? { loadoutSpec } : undefined);
+      setChooserOpen(false);
       onOpenTrainingPod?.({ id: res.groupId, status: res.status ?? GROUP_STATUS.DRAFTING });
     } catch (err) {
       // The already_active guard returns the in-flight pod's { groupId, status } —
       // re-enter it directly (the transient race where subscribeMyTrainingPod
       // hasn't yet surfaced the re-entry bar). Any other error → mapped copy.
       if (err?.code === 'already_active' && err?.data?.groupId) {
+        setChooserOpen(false);
         onOpenTrainingPod?.({ id: err.data.groupId, status: err.data.status });
       } else {
         setError(mapLobbyError(err));
@@ -364,6 +372,9 @@ function TrainingShell({ accent, onOpenTrainingPod, activeTrainingPod = null, ha
       setBusy(false);
     }
   };
+
+  const start = () => runTrainingForm(null);
+  const openChooser = () => { setError(null); setChooserOpen(true); };
 
   // ── Re-entry state (R1): the bar REPLACES the CTA. ──────────────────────────
   if (activeTrainingPod) {
@@ -396,11 +407,37 @@ function TrainingShell({ accent, onOpenTrainingPod, activeTrainingPod = null, ha
         >
           <LIcon name="play" size={16} color={LTOKENS.bg} /> {busy ? 'Starting your pod…' : 'Click to start a training pod'}
         </button>
+        {/* Slice 5b-ii — the additive "Customize" path (Option 2). The fast-start
+            CTA above is unchanged; this opens the loadout chooser, which forms with
+            a spec. */}
+        <div style={{ marginTop: 12 }}>
+          <button
+            type="button"
+            className="lg-tap"
+            onClick={openChooser}
+            disabled={busy}
+            style={{ all: 'unset', boxSizing: 'border-box', cursor: busy ? 'default' : 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 6px', color: alpha(accent, 0.95), fontWeight: 600, fontSize: 12.5, opacity: busy ? 0.5 : 1 }}
+          >
+            <LIcon name="layers" size={13} color={alpha(accent, 0.95)} /> Customize loadout
+          </button>
+        </div>
         {error && (
           <div role="alert" style={{ marginTop: 12, fontSize: 12, color: LX.neg, lineHeight: 1.4 }}>{error}</div>
         )}
       </div>
       <TrainingCpuNote />
+
+      <LoadoutChooserSheet
+        open={chooserOpen}
+        onClose={() => setChooserOpen(false)}
+        accent={accent}
+        currentArchetype={agentLoadout?.archetype}
+        currentWatchlistId={agentLoadout?.equippedWatchlistId}
+        currentWatchlistName={agentLoadout?.equippedWatchlistName}
+        onStart={(spec) => runTrainingForm(spec)}
+        busy={busy}
+        error={chooserOpen ? error : null}
+      />
     </div>
   );
 }
@@ -411,7 +448,7 @@ function TrainingShell({ accent, onOpenTrainingPod, activeTrainingPod = null, ha
 // / group / field flow with the reserved pulse slot in FollowRail's place;
 // Training = the inert cold-start shell. The keyed wrapper replays a calm CSS
 // fade on switch (reduced-motion-neutralized globally).
-export function LobbyTabbed({ st, accent, tab, onSwitchTab, onEnter, onPickPod, onSpectate, onOpenMyGame, onOpenTrainingPod, activeTrainingPod, hasAgent }) {
+export function LobbyTabbed({ st, accent, tab, onSwitchTab, onEnter, onPickPod, onSpectate, onOpenMyGame, onOpenTrainingPod, activeTrainingPod, hasAgent, agentLoadout }) {
   return (
     <div style={{ padding: '16px 18px calc(env(safe-area-inset-bottom, 0px) + 120px)', maxWidth: 720, margin: '0 auto' }}>
       {onOpenMyGame && <MyGameBar onOpenMyGame={onOpenMyGame} />}
@@ -419,7 +456,7 @@ export function LobbyTabbed({ st, accent, tab, onSwitchTab, onEnter, onPickPod, 
       <TabBar tab={tab} onSwitchTab={onSwitchTab} accent={accent} />
       <div key={tab} className="lg-tabpanel">
         {tab === 'training' ? (
-          <TrainingShell accent={accent} onOpenTrainingPod={onOpenTrainingPod} activeTrainingPod={activeTrainingPod} hasAgent={hasAgent} />
+          <TrainingShell accent={accent} onOpenTrainingPod={onOpenTrainingPod} activeTrainingPod={activeTrainingPod} hasAgent={hasAgent} agentLoadout={agentLoadout} />
         ) : (
           <>
             <EnterButton accent={accent} onEnter={onEnter} />

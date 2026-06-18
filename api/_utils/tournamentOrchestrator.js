@@ -714,8 +714,10 @@ export async function activateTrainingPod(db, group, {
 
   try {
     // 1. Provision the per-pod human clone(s) — CPU system agents already exist
-    // from formation. Idempotent (deterministic doc id).
-    const clones = await ensureTrainingClones(db, group, { now });
+    // from formation. Idempotent (deterministic doc id). Slice 5b-ii: thread the
+    // group-level loadout override (odUserId → spec, written at formation); absent
+    // → ensureTrainingClones pure-inherits the ranked loadout (Slice 3).
+    const clones = await ensureTrainingClones(db, group, { loadoutSpecByUser: group.loadoutSpecByUser, now });
     summary.clones = { created: clones.created.length, existing: clones.existing.length, skipped: clones.skipped.length };
 
     // 2. Produce the agent draft ONCE — the stream is the durable draft record.

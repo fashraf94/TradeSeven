@@ -41,7 +41,7 @@ const DEV_S = SP.get('s') || '';
 // identical single-column lobby. Do NOT flip the flag here (the PR #510 lesson).
 const TABS_ENABLED = LEAGUE_NEXT_ARC_ENABLED || SP.get('leagueTabs') === '1';
 
-export default function LeagueHome({ onOpenMyGame, onOpenTrainingPod, hasAgent }) {
+export default function LeagueHome({ onOpenMyGame, onOpenTrainingPod, hasAgent, agentLoadout }) {
   const { state: st, isFixtures } = useLeagueState(DEV_FILL);
   const { user } = useUser();
   const uid = user?.uid;
@@ -99,7 +99,7 @@ export default function LeagueHome({ onOpenMyGame, onOpenTrainingPod, hasAgent }
   // Flag-on → the persistent Training|Ranked tabs; flag-off → today's lobby,
   // byte-identical (same <Lobby> invocation, untouched).
   const lobby = TABS_ENABLED
-    ? <LobbyTabbed st={st} accent={ACCENT} tab={tab} onSwitchTab={switchTab} onEnter={enter} onPickPod={openPod} onSpectate={openSpectate} onOpenMyGame={onOpenMyGame} onOpenTrainingPod={onOpenTrainingPod} activeTrainingPod={activeTrainingPod} hasAgent={hasAgent} />
+    ? <LobbyTabbed st={st} accent={ACCENT} tab={tab} onSwitchTab={switchTab} onEnter={enter} onPickPod={openPod} onSpectate={openSpectate} onOpenMyGame={onOpenMyGame} onOpenTrainingPod={onOpenTrainingPod} activeTrainingPod={activeTrainingPod} hasAgent={hasAgent} agentLoadout={agentLoadout} />
     : <Lobby st={st} accent={ACCENT} onEnter={enter} onPickPod={openPod} onSpectate={openSpectate} onOpenMyGame={onOpenMyGame} />;
 
   const body = screen === 'spectate' && spec

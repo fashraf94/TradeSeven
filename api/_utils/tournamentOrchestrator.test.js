@@ -827,6 +827,35 @@ describe('sweepTrainingActivation (Slice 3)', () => {
     expect(res.errors).toBe(0);
   });
 
+  it('LOADOUT OVERRIDE (Slice 5b-ii): the group carrier drives the provisioned clone, not the ranked loadout', async () => {
+    const cloneId = trainingCloneDocId('t-override', 'u1');
+    const { db } = makeDb({
+      // withStream → step 2 (draft) short-circuits, isolating step 1 (clone provisioning).
+      ...trainingPodDocs('t-override', { withStream: true }),
+      // u1's RANKED agent: archetype 'analyst' + an equipped watchlist. The clone
+      // must come out 'guardian' with NO watchlist (the override), proving the
+      // formation→activation carrier is threaded into ensureTrainingClones.
+      'agents/ranked-u1': {
+        ownerId: 'u1', isTrainingClone: false, archetype: 'analyst',
+        equippedWatchlistId: 'wl-ranked', equippedWatchlistName: 'Ranked WL',
+      },
+    });
+    const groupSnap = await db.collection('tournamentGroups').doc('t-override').get();
+    // The carrier the formation persist writes (trainingLifecycle.js FORMING→DRAFTING tx).
+    const group = {
+      id: 't-override', ...groupSnap.data(),
+      loadoutSpecByUser: { u1: { archetype: 'guardian', equippedWatchlistId: null, equippedWatchlistName: null } },
+    };
+    const res = await activateTrainingPod(db, group, { now: MON_MORNING_EDT, anthropic: null, deployEnabled: false });
+    expect(res.clones.created).toBe(1);
+    const clone = (await db.collection('agents').doc(cloneId).get()).data();
+    expect(clone.archetype).toBe('guardian');     // overridden (ranked was 'analyst')
+    expect(clone.equippedWatchlistId).toBeNull();  // overridden to "no watchlist"
+    expect(clone.equippedWatchlistName).toBeNull();
+    expect(clone.isTrainingClone).toBe(true);
+    expect(clone.rankedAgentId).toBe('ranked-u1');
+  });
+
   it('first-time activation: a stream-MISSING pod drafts (fails fast here without stockRankings)', async () => {
     const { db } = makeDb({ ...trainingPodDocs('t-fresh') });
     const summary = await sweepTrainingActivation(db, { now: MON_MORNING_EDT, anthropic: null, deployEnabled: false });
