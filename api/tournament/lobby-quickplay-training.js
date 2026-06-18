@@ -28,6 +28,7 @@ import { runLobbyEndpoint, resolveDisplayName } from '../_utils/lobbyEndpoint.js
 import { formTrainingDraft } from '../_utils/trainingLifecycle.js';
 import { resolveRankedAgent } from '../_utils/trainingClone.js';
 import { findActiveTrainingPodForUser } from '../_utils/tournamentGroupService.js';
+import { validateLoadoutSpecShape } from '../_utils/trainingLoadoutSpec.js';
 import { LEAGUE_NEXT_ARC_ENABLED } from '../../src/config/featureFlags.js';
 
 export const config = { maxDuration: 30 };
@@ -62,9 +63,36 @@ export default function handler(req, res) {
       return res.status(409).json({ error: 'already_active', message: 'You already have a training session in progress.', groupId: activePod.id, status: activePod.status });
     }
 
+    // Slice 5b-ii — the loadout-chooser spec. Two-stage validation: (1) the pure
+    // shape whitelist (Tier-1 keys only; archetype required + valid; watchlist id
+    // optional) — the security boundary; (2) the async OWNERSHIP read on the
+    // watchlist (the same gates as api/agent/equip-watchlist.js), with the name
+    // RE-DERIVED server-side. Absent spec → null → pure inherit (the fast-start
+    // path, unchanged from 5b-i).
+    const shape = validateLoadoutSpecShape(body?.loadoutSpec);
+    if (!shape.valid) {
+      return res.status(400).json({ error: 'invalid_loadout_spec', message: 'That loadout selection isn’t valid.' });
+    }
+    let loadoutSpec = shape.value; // null, or { archetype, equippedWatchlistId: <id|null> }
+    if (loadoutSpec) {
+      if (loadoutSpec.equippedWatchlistId) {
+        const wlSnap = await db.collection('watchlists').doc(loadoutSpec.equippedWatchlistId).get();
+        const wl = wlSnap.exists ? wlSnap.data() : null;
+        // Mirror equip-watchlist.js: exists, not soft-deleted, owned, committed.
+        if (!wl || wl.deletedAt || wl.userId !== user.uid || wl.status !== 'committed') {
+          return res.status(400).json({ error: 'invalid_loadout_spec', message: 'That watchlist isn’t available to equip.' });
+        }
+        loadoutSpec = { ...loadoutSpec, equippedWatchlistName: wl.name || null };
+      } else {
+        // "No watchlist" — explicit unequip on the practice clone (a valid state).
+        loadoutSpec = { ...loadoutSpec, equippedWatchlistId: null, equippedWatchlistName: null };
+      }
+    }
+
     const result = await formTrainingDraft(db, {
       odUserId: user.uid,
       displayName: resolveDisplayName(body, user),
+      loadoutSpec,
     });
     res.status(200).json(result);
   });

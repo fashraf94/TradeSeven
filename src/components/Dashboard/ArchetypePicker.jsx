@@ -30,9 +30,11 @@ import { reseedDefaultTraits } from '../../services/seedDefaultTraits';
 // §1): Trend Follower → Contrarian → Diversifier → Speculator → Fundamental
 // Investor → Capital Preserver. Pinned here so the picker is never arranged by
 // an incidental Object.keys() iteration.
-const ARCHETYPE_ORDER = ['momentum_chaser', 'contrarian', 'diversifier', 'degen', 'analyst', 'guardian'];
+// Exported as a reusable atom (Slice 5b-ii League loadout chooser composes it as
+// a CONTROLLED selector; the live dashboard picker below keeps its commit flow).
+export const ARCHETYPE_ORDER = ['momentum_chaser', 'contrarian', 'diversifier', 'degen', 'analyst', 'guardian'];
 
-function ArchetypeCard({ codeId, selected, busy, disabled, accent, onClick }) {
+export function ArchetypeCard({ codeId, selected, busy, disabled, accent, onClick }) {
   const name = getArchetypeDisplayName(codeId);
   const { disposition, reveal } = getArchetypeIdentity(codeId);
   const inert = selected || busy || disabled;

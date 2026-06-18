@@ -9654,7 +9654,11 @@ export default function PortfolioDuel() {
         {/* hasAgent is undefined while the agent doc loads (useAgent inits null →
             hasAgent false), so the Training CTA's client gate never false-blocks a
             real owner mid-load; it only fires on a KNOWN-absent agent. */}
-        <LeagueScreen onOpenTrainingPod={onOpenTrainingPod} hasAgent={agentLoading ? undefined : hasAgent} />
+        <LeagueScreen
+          onOpenTrainingPod={onOpenTrainingPod}
+          hasAgent={agentLoading ? undefined : hasAgent}
+          agentLoadout={primaryAgent ? { archetype: primaryAgent.archetype, equippedWatchlistId: primaryAgent.equippedWatchlistId, equippedWatchlistName: primaryAgent.equippedWatchlistName } : null}
+        />
       </ErrorBoundary>
       </div>
     );

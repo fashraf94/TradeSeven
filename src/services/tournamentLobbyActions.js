@@ -57,8 +57,16 @@ export function quickPlay({ displayName } = {}) {
  * agent to clone) and `already_active` (the one-active-pod rule) — both mapped
  * to friendly copy below.
  */
-export function quickPlayTraining({ displayName } = {}) {
-  return postLobbyAction('lobby-quickplay-training', displayName ? { displayName } : {});
+export function quickPlayTraining({ displayName, loadoutSpec } = {}) {
+  // Slice 5b-ii: an optional loadoutSpec ({ archetype, equippedWatchlistId })
+  // overrides the practice clone's inherited loadout. Omitted (the fast-start
+  // path) → body unchanged from 5b-i → the clone pure-inherits the ranked agent.
+  // The server is the authority — it whitelists the keys and re-derives the
+  // watchlist name; the client only carries the selection.
+  const payload = {};
+  if (displayName) payload.displayName = displayName;
+  if (loadoutSpec) payload.loadoutSpec = loadoutSpec;
+  return postLobbyAction('lobby-quickplay-training', payload);
 }
 
 /**

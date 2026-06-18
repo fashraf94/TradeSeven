@@ -337,7 +337,7 @@ function computeHandoffWrites(group, state, now) {
  * Idempotent re-entry: a pod that already left FORMING resumes (DRAFTING →
  * returns live state) or returns as-is (terminal).
  */
-export async function formTrainingDraft(db, { odUserId, displayName = null, now = new Date() } = {}) {
+export async function formTrainingDraft(db, { odUserId, displayName = null, loadoutSpec = null, now = new Date() } = {}) {
   const nowIso = toIso(now);
   const formed = await quickPlay(db, { odUserId, displayName, now, isTraining: true });
   const groupId = formed.groupId;
@@ -396,7 +396,13 @@ export async function formTrainingDraft(db, { odUserId, displayName = null, now 
     };
     assertTransition(g.status, GROUP_STATUS.DRAFTING);
     tx.set(stateRef, finalState);
-    tx.update(groupRef, { status: GROUP_STATUS.DRAFTING, updatedAt: nowIso });
+    // Slice 5b-ii: persist the loadout-chooser override as the group-level carrier
+    // (odUserId → spec) that ensureTrainingClones reads at activation. Written ONLY
+    // on a fresh form (this FORMING→DRAFTING tx); omitted when there's no override,
+    // so a fast-start pod's doc stays clean and the clone pure-inherits (Slice 3).
+    const groupUpdate = { status: GROUP_STATUS.DRAFTING, updatedAt: nowIso };
+    if (loadoutSpec) groupUpdate.loadoutSpecByUser = { [odUserId]: loadoutSpec };
+    tx.update(groupRef, groupUpdate);
     return finalState;
   });
 
