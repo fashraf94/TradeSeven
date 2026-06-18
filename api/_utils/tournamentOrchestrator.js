@@ -80,6 +80,7 @@ import { resolveUserDraftForGroup, USER_DRAFT_SENTINEL_PREFIX } from '../tournam
 import { autoCommitMissingBoards } from './tournamentBoardAutoCommit.js';
 import { runFridayAdvancement } from './tournamentAdvancement.js';
 import { flipAwaitingOpenPods, sweepIdleDraftingPods } from './trainingLifecycle.js';
+import { ensureTrainingClones } from './trainingClone.js';
 // Fenced module EXPORT, called read-only — never edited (BUILD_RULES §1).
 import { flattenPortfolioServer } from './agentScoring.js';
 
@@ -426,7 +427,7 @@ async function resolveUserDraftAndRefresh(db, groupId, now) {
 export async function runMondayPipeline(db, {
   now = new Date(), anthropic = null, fetchImpl = fetch, budget = null,
   state = null, deployEnabled = TOURNAMENT_DEPLOY_ENABLED, pacingMs = DEPLOY_PACING_MS,
-  includeDevGroups = false,
+  includeDevGroups = false, pacing = null,
 } = {}) {
   // Advancement catch-up (ruled): a Friday that crashed or stayed
   // banking-pending finishes here — idempotent, no-op when complete. Its
@@ -436,9 +437,13 @@ export async function runMondayPipeline(db, {
     console.log(`${LOG_PREFIX} Monday advancement catch-up: ${catchUp.gamesLocked} game(s) locked, ${catchUp.composedGroups.length} group(s) composed, ${catchUp.bankingPending} banking-pending, ${catchUp.errors} error(s)`);
   }
 
+  // Slice 3: training pods are excluded from the ranked duties — their agent
+  // layer is owned solely by activateTrainingPod (the flip paths + the morning
+  // backstop). Without this, resolveGroupAgents here would mis-resolve a training
+  // human seat to the RANKED agent and deploy it into the training groupId.
   const [forming, battle] = await Promise.all([
-    fetchEligibleGroupsByStatus(db, GROUP_STATUS.FORMING, { includeDev: includeDevGroups }),
-    fetchEligibleGroupsByStatus(db, GROUP_STATUS.BATTLE, { includeDev: includeDevGroups }),
+    fetchEligibleGroupsByStatus(db, GROUP_STATUS.FORMING, { includeDev: includeDevGroups, excludeTraining: true }),
+    fetchEligibleGroupsByStatus(db, GROUP_STATUS.BATTLE, { includeDev: includeDevGroups, excludeTraining: true }),
   ]);
   const groups = [...forming, ...battle];
 
@@ -456,7 +461,7 @@ export async function runMondayPipeline(db, {
   if (groups.length === 0) return summary;
 
   const dutyState = state ?? await readOrchestratorState(db);
-  const pacing = { lastSentAt: 0 }; // duty-scoped: the ≥20s floor holds across groups
+  const pacingState = pacing ?? { lastSentAt: 0 }; // shared with the tick's sweep when passed; else duty-scoped
 
   for (let i = 0; i < groups.length; i++) {
     if (budget && Date.now() - budget.startMs > budget.deadlineMs) {
@@ -542,7 +547,7 @@ export async function runMondayPipeline(db, {
       }
       await attachRiderSix(db, group, seats);
       const fanout = await fanOutDeploys(db, {
-        groupId: group.id, seats, now, state: dutyState, budget, fetchImpl, deployEnabled, pacing, pacingMs,
+        groupId: group.id, seats, now, state: dutyState, budget, fetchImpl, deployEnabled, pacing: pacingState, pacingMs,
       });
       for (const key of Object.keys(summary.deploys)) summary.deploys[key] += fanout[key];
       console.log(`${LOG_PREFIX} group ${group.id}: Monday pipeline done — drafted six per agent; deploys: ${JSON.stringify(fanout)}`);
@@ -559,9 +564,10 @@ export async function runMondayPipeline(db, {
 export async function runWeekdayFanout(db, {
   now = new Date(), fetchImpl = fetch, budget = null,
   state = null, deployEnabled = TOURNAMENT_DEPLOY_ENABLED, pacingMs = DEPLOY_PACING_MS,
-  includeDevGroups = false,
+  includeDevGroups = false, pacing = null,
 } = {}) {
-  const groups = await fetchEligibleGroupsByStatus(db, GROUP_STATUS.BATTLE, { includeDev: includeDevGroups });
+  // Slice 3: exclude training pods — activateTrainingPod owns their agent layer.
+  const groups = await fetchEligibleGroupsByStatus(db, GROUP_STATUS.BATTLE, { includeDev: includeDevGroups, excludeTraining: true });
   const summary = {
     groups: groups.length,
     noBattles: 0,
@@ -573,7 +579,9 @@ export async function runWeekdayFanout(db, {
   if (groups.length === 0) return summary;
 
   const dutyState = state ?? await readOrchestratorState(db);
-  const pacing = { lastSentAt: 0 };
+  // Shared with the same-tick training-activation sweep (when the tick passes
+  // one) so the ≥20s deploy floor holds ACROSS both, not just within each.
+  const pacingState = pacing ?? { lastSentAt: 0 };
 
   for (let i = 0; i < groups.length; i++) {
     if (budget && Date.now() - budget.startMs > budget.deadlineMs) {
@@ -591,46 +599,14 @@ export async function runWeekdayFanout(db, {
         continue;
       }
 
-      const cpuByUser = new Map((group.players || []).map(p => [p.odUserId, p.isCpu === true]));
-      const memberOrder = group.groupMembers || [];
-      const seats = [];
-      for (const battle of latest.values()) {
-        // The incumbent six — fenced flattenPortfolioServer, read-only.
-        const symbols = flattenPortfolioServer(battle.portfolio).map(a => a.symbol).filter(Boolean);
-        if (symbols.length === 0) {
-          // Never a silent drop: an empty/missing portfolio on the latest
-          // battle is schema drift — loud, counted, marker withheld.
-          console.error(`${LOG_PREFIX} group ${group.id} agent ${battle.agentId}: latest battle ${battle.id} has an empty portfolio — seat skipped LOUDLY (founder attention)`);
-          summary.errors++;
-          continue;
-        }
-        seats.push({
-          agentId: battle.agentId,
-          odUserId: battle.ownerId,
-          isCpu: cpuByUser.get(battle.ownerId) === true,
-          symbols,
-        });
-      }
-
-      // Monday-failure catch-up: an agent with NO battle yet deploys its
-      // drafted six from the stream record — a failed Monday deploy keeps
-      // retrying all week instead of vanishing from the incumbent query.
-      const memberAgentIds = new Set(latest.keys());
-      const draftSeats = await seatsFromDraftStream(db, group);
-      if (draftSeats) {
-        for (const seat of draftSeats) {
-          if (!memberAgentIds.has(seat.agentId)) {
-            console.log(`${LOG_PREFIX} group ${group.id} agent ${seat.agentId}: no battle yet — falling back to Monday's drafted six (catch-up)`);
-            seats.push(seat);
-            summary.mondayCatchupSeats++;
-          }
-        }
-      }
-      seats.sort((a, b) => memberOrder.indexOf(a.odUserId) - memberOrder.indexOf(b.odUserId));
+      const counters = { errors: 0, catchupSeats: 0 };
+      const seats = await buildIncumbentSeats(db, group, latest, counters);
+      summary.errors += counters.errors;
+      summary.mondayCatchupSeats += counters.catchupSeats;
       await attachRiderSix(db, group, seats);
 
       const fanout = await fanOutDeploys(db, {
-        groupId: group.id, seats, now, state: dutyState, budget, fetchImpl, deployEnabled, pacing, pacingMs,
+        groupId: group.id, seats, now, state: dutyState, budget, fetchImpl, deployEnabled, pacing: pacingState, pacingMs,
         latestBattles: latest,
       });
       for (const key of Object.keys(summary.deploys)) summary.deploys[key] += fanout[key];
@@ -638,6 +614,202 @@ export async function runWeekdayFanout(db, {
       console.error(`${LOG_PREFIX} group ${group.id}: incumbent fan-out FAILED:`, err.message);
       summary.errors++;
     }
+  }
+  return summary;
+}
+
+// ==================== INCUMBENT SEATS (shared) ====================
+
+/**
+ * Assemble a group's deploy seats from its incumbents (the latest flat6 battle
+ * per agent — the fenced read-only flattenPortfolioServer) PLUS a draft-stream
+ * catch-up for any agent with no battle yet (the first-day deploy, or a prior
+ * failed deploy that keeps retrying instead of vanishing from the incumbent
+ * query). Mutates `counters` ({errors, catchupSeats}); returns the member-ordered
+ * seats (rider-six NOT yet attached). ONE home for the incumbent contract, shared
+ * by runWeekdayFanout (ranked Tue–Fri) and activateTrainingPod (training daily).
+ */
+async function buildIncumbentSeats(db, group, latest, counters) {
+  const cpuByUser = new Map((group.players || []).map(p => [p.odUserId, p.isCpu === true]));
+  const memberOrder = group.groupMembers || [];
+  const seats = [];
+  for (const battle of latest.values()) {
+    const symbols = flattenPortfolioServer(battle.portfolio).map(a => a.symbol).filter(Boolean);
+    if (symbols.length === 0) {
+      // Never a silent drop: an empty/missing portfolio on the latest battle is
+      // schema drift — loud, counted, marker withheld.
+      console.error(`${LOG_PREFIX} group ${group.id} agent ${battle.agentId}: latest battle ${battle.id} has an empty portfolio — seat skipped LOUDLY (founder attention)`);
+      counters.errors++;
+      continue;
+    }
+    seats.push({ agentId: battle.agentId, odUserId: battle.ownerId, isCpu: cpuByUser.get(battle.ownerId) === true, symbols });
+  }
+  const memberAgentIds = new Set(latest.keys());
+  const draftSeats = await seatsFromDraftStream(db, group);
+  if (draftSeats) {
+    for (const seat of draftSeats) {
+      if (!memberAgentIds.has(seat.agentId)) {
+        console.log(`${LOG_PREFIX} group ${group.id} agent ${seat.agentId}: no battle yet — falling back to the drafted six (catch-up)`);
+        seats.push(seat);
+        counters.catchupSeats++;
+      }
+    }
+  }
+  seats.sort((a, b) => memberOrder.indexOf(a.odUserId) - memberOrder.indexOf(b.odUserId));
+  return seats;
+}
+
+// ==================== TRAINING ACTIVATION (Slice 3) ====================
+//
+// League Training Slice 3 — the agent layer for a training pod, end to end. The
+// user layer (Slices 1–2) flips a pod to BATTLE; THIS provisions the per-pod
+// clone(s), produces the agent draft ONCE, and deploys a FRESH daily battle for
+// each of the pod's five days — the same flat6 machinery ranked uses
+// (produceGroupBoards → resolveAgentDraftForGroup → fanOutDeploys → POST
+// /api/agent/decide → createAgentBattle). Lives here (not trainingLifecycle)
+// because the deploy machinery is module-private — and orchestrator already
+// imports trainingLifecycle, so the reverse import would be a cycle.
+//
+// DAILY REDEPLOY (the load-bearing bit): training pods are ROLLING (any start
+// day, spanning weekends/Mondays), so they CANNOT ride the ranked Monday-draft /
+// Tue–Fri-redeploy split — both ranked duties pass excludeTraining:true. Instead
+// the morning backstop (sweepTrainingActivation) runs THIS every weekday tick:
+// the draft is produced once (stream-exists short-circuit), and each day it
+// redeploys the incumbents (buildIncumbentSeats) so the agent's composite half
+// accrues across all five days, exactly like ranked. The fanOutDeploys
+// today's-battle-exists guard makes same-day re-runs (multiple ticks, or the
+// inline endpoint racing the sweep) a no-op — at most one fresh battle per agent
+// per day; decide.js's one-active-battle check is the final serialization against
+// a true double-battle, as for ranked.
+//
+// Called from BOTH paths: the live-pick inline endpoint
+// (api/tournament/activate-training-pod.js, the prompt fast-lane) and the morning
+// backstop. Idempotent throughout (provisioned clone, existing board/stream, the
+// today's-battle guard).
+
+/**
+ * Provision + draft (once) + deploy TODAY's battle for ONE training BATTLE pod.
+ * Idempotent and safe to call every weekday tick. Returns
+ * { groupId, clones, drafted, deploys, errors }.
+ */
+export async function activateTrainingPod(db, group, {
+  now = new Date(), anthropic = null, fetchImpl = fetch, budget = null,
+  state = null, deployEnabled = TOURNAMENT_DEPLOY_ENABLED, pacingMs = DEPLOY_PACING_MS,
+  pacing = null,
+} = {}) {
+  const summary = {
+    groupId: group.id,
+    clones: { created: 0, existing: 0, skipped: 0 },
+    drafted: false,
+    deploys: { deployed: 0, gated: 0, skippedExisting: 0, cooled: 0, failed: 0, deferred: 0 },
+    errors: 0,
+  };
+  if (group.isTraining !== true || group.status !== GROUP_STATUS.BATTLE) {
+    console.warn(`${LOG_PREFIX} activateTrainingPod: group ${group.id} is not a training BATTLE pod (isTraining=${group.isTraining}, status=${group.status}) — skipped`);
+    return summary;
+  }
+
+  const dutyState = state ?? await readOrchestratorState(db);
+  const pacingState = pacing ?? { lastSentAt: 0 };
+
+  try {
+    // 1. Provision the per-pod human clone(s) — CPU system agents already exist
+    // from formation. Idempotent (deterministic doc id).
+    const clones = await ensureTrainingClones(db, group, { now });
+    summary.clones = { created: clones.created.length, existing: clones.existing.length, skipped: clones.skipped.length };
+
+    // 2. Produce the agent draft ONCE — the stream is the durable draft record.
+    // Subsequent days short-circuit here and redeploy the incumbents (step 3).
+    const streamRef = db.collection(TOURNAMENT_GROUPS_COLLECTION).doc(group.id)
+      .collection(STREAMS_SUBCOLLECTION).doc(AGENT_DRAFT_STREAM_DOC_ID);
+    const streamSnap = await streamRef.get();
+    if (!streamSnap.exists) {
+      // Boards — the human clone runs the real Sonnet board (Flag 3); CPUs take
+      // the deterministic fallback. Existing boards are skipped (no re-spend).
+      const boards = await produceGroupBoards(db, group, { anthropic, now });
+      if (boards.errors > 0) {
+        console.error(`${LOG_PREFIX} training pod ${group.id}: ${boards.errors} board production error(s) — retrying next tick`);
+        summary.errors++;
+        return summary;
+      }
+      if (boards.synthetic > 0) {
+        // A human seat with no ranked agent (clone skipped). Loud, but a no-stakes
+        // pod still deploys what it can (CPUs + any real clones); that synthetic
+        // seat simply won't create a battle.
+        console.warn(`${LOG_PREFIX} training pod ${group.id}: ${boards.synthetic} synthetic board(s) — a human seat has no ranked agent and will not deploy.`);
+      }
+      const draft = await resolveAgentDraftForGroup(db, group, { now });
+      if (draft.status === 'acquisition_conflict') {
+        console.error(`${LOG_PREFIX} training pod ${group.id}: ACQUISITION CONFLICT — founder attention, never blind retry:`, JSON.stringify(draft.conflicts));
+        summary.errors++;
+        return summary;
+      }
+      if (draft.heldCount !== AGENT_MARKET_SIZE) {
+        console.error(`${LOG_PREFIX} training pod ${group.id}: held-count ${draft.heldCount} ≠ ${AGENT_MARKET_SIZE} — deploy fan-out withheld`);
+        summary.errors++;
+        return summary;
+      }
+      summary.drafted = true;
+    }
+
+    // 3. Deploy TODAY's battle: incumbents (the daily redeploy) + a drafted-six
+    // catch-up for any agent with no battle yet (the flip-day first deploy). The
+    // today's-battle guard inside fanOutDeploys makes same-day re-runs a no-op.
+    const latest = await latestTournamentBattlesByAgent(db, group.id);
+    const counters = { errors: 0, catchupSeats: 0 };
+    const seats = await buildIncumbentSeats(db, group, latest, counters);
+    summary.errors += counters.errors;
+    if (seats.length === 0) {
+      console.warn(`${LOG_PREFIX} training pod ${group.id}: no deployable seats (no incumbents, no draft stream) — nothing to deploy`);
+      return summary;
+    }
+    await attachRiderSix(db, group, seats);
+    const fanout = await fanOutDeploys(db, {
+      groupId: group.id, seats, now, state: dutyState, budget, fetchImpl, deployEnabled,
+      pacing: pacingState, pacingMs, latestBattles: latest,
+    });
+    for (const key of Object.keys(summary.deploys)) summary.deploys[key] += fanout[key];
+    console.log(`${LOG_PREFIX} training pod ${group.id}: activated — clones ${JSON.stringify(summary.clones)}; deploys ${JSON.stringify(fanout)}`);
+  } catch (err) {
+    console.error(`${LOG_PREFIX} training pod ${group.id}: activation FAILED:`, err.message);
+    summary.errors++;
+  }
+  return summary;
+}
+
+/**
+ * Morning backstop: run activateTrainingPod for EVERY training BATTLE pod, every
+ * weekday tick. The first run drafts + deploys day 1; each later day redeploys
+ * the incumbents so the pod's agent layer accrues all five days (training is
+ * rolling, so it can't ride the ranked Mon/Tue–Fri split). Idempotent — the
+ * stream short-circuit + the today's-battle guard make same-day re-runs cheap
+ * no-ops; also recovers a lost inline trigger. `pacing` is shared with the duty
+ * (when the tick passes one) so the ≥20s deploy floor holds across both. Returns
+ * { swept, activated, deferred, errors }.
+ */
+export async function sweepTrainingActivation(db, {
+  now = new Date(), anthropic = null, fetchImpl = fetch, budget = null,
+  state = null, deployEnabled = TOURNAMENT_DEPLOY_ENABLED, pacingMs = DEPLOY_PACING_MS,
+  includeDev = false, pacing = null,
+} = {}) {
+  const battle = await fetchEligibleGroupsByStatus(db, GROUP_STATUS.BATTLE, { includeDev });
+  const training = battle.filter(g => g.isTraining === true);
+  const summary = { swept: training.length, activated: 0, deferred: 0, errors: 0 };
+  if (training.length === 0) return summary;
+
+  const dutyState = state ?? await readOrchestratorState(db);
+  const pacingState = pacing ?? { lastSentAt: 0 };
+  for (let i = 0; i < training.length; i++) {
+    if (budget && Date.now() - budget.startMs > budget.deadlineMs) {
+      summary.deferred = training.length - i;
+      console.log(`${LOG_PREFIX} training activation: time budget reached — ${summary.deferred} pod(s) deferred to next tick`);
+      break;
+    }
+    const res = await activateTrainingPod(db, training[i], {
+      now, anthropic, fetchImpl, budget, state: dutyState, deployEnabled, pacingMs, pacing: pacingState,
+    });
+    if (res.errors > 0) summary.errors += res.errors;
+    else summary.activated++;
   }
   return summary;
 }
@@ -692,6 +864,14 @@ export async function runOrchestratorTick(db, {
   const routed = getDutyForInstant(now);
   const duty = forceDuty || routed.duty;
   const tag = `${LOG_PREFIX} ${routed.etDate} ${routed.etTime}${simulated ? ' [SIMULATED]' : ''}`;
+  // Shared tick budget — the training-activation sweep (below) and the duty
+  // dispatch draw from ONE deadline so the whole tick stays under the cron's
+  // 300s ceiling (the activation sweep can run model boards + paced deploys).
+  const budget = { startMs: Date.now(), deadlineMs: DUTY_DEADLINE_MS };
+  // One pacing object shared by the training sweep AND the duty dispatch, so the
+  // ≥20s deploy floor holds ACROSS them (both can deploy on the same WEEKDAY_FANOUT
+  // tick — the sweep for training, the duty for ranked).
+  const pacing = { lastSentAt: 0 };
 
   // League Training Slice 1 — awaiting-open flip. Training pods drafted on
   // demand wait in AWAITING_OPEN; any WEEKDAY-MORNING tick flips those whose
@@ -723,6 +903,21 @@ export async function runOrchestratorTick(db, {
     } catch (err) {
       console.error(`${tag} awaiting-open flip sweep failed: ${err.message}`);
     }
+    // League Training Slice 3 — agent-layer activation + DAILY REDEPLOY. Once the
+    // idle sweep + awaiting-open flip have landed training pods in BATTLE, this
+    // drafts their agent layer once and deploys a FRESH battle every weekday tick
+    // (training is rolling, so it can't ride the ranked Mon/Tue–Fri split). The
+    // live-pick endpoint is the prompt fast-lane; this is the backstop + the
+    // recurring redeploy. Own catch so it never blocks the duty; shares the tick
+    // budget + pacing. Zero new cron.
+    try {
+      const act = await sweepTrainingActivation(db, { now, anthropic, fetchImpl, budget, includeDev: includeDevGroups, deployEnabled, pacingMs, pacing });
+      if (act.activated > 0 || act.errors > 0) {
+        console.log(`${tag} training activation sweep: activated ${act.activated}, deferred ${act.deferred}, errors ${act.errors}`);
+      }
+    } catch (err) {
+      console.error(`${tag} training activation sweep failed: ${err.message}`);
+    }
   }
 
   if (duty === DUTY.SKIP) {
@@ -737,13 +932,12 @@ export async function runOrchestratorTick(db, {
   }
 
   console.log(`${tag} duty=${duty} — dispatching`);
-  const budget = { startMs: Date.now(), deadlineMs: DUTY_DEADLINE_MS };
 
   let summary;
   if (duty === DUTY.MONDAY_PIPELINE) {
-    summary = await runMondayPipeline(db, { now, anthropic, fetchImpl, budget, state, includeDevGroups, deployEnabled, pacingMs });
+    summary = await runMondayPipeline(db, { now, anthropic, fetchImpl, budget, state, includeDevGroups, deployEnabled, pacingMs, pacing });
   } else if (duty === DUTY.WEEKDAY_FANOUT) {
-    summary = await runWeekdayFanout(db, { now, fetchImpl, budget, state, includeDevGroups, deployEnabled, pacingMs });
+    summary = await runWeekdayFanout(db, { now, fetchImpl, budget, state, includeDevGroups, deployEnabled, pacingMs, pacing });
   } else if (duty === DUTY.FRIDAY_ADVANCEMENT) {
     summary = await runFridayAdvancement(db, { now, includeDevGroups });
   } else {

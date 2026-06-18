@@ -184,8 +184,11 @@ async function readDraftState(db, groupId) {
  *  default — the same source deriveServerBoardPrefill uses. */
 async function resolveHumanArchetype(db, odUserId) {
   try {
-    const snap = await db.collection('agents').where('ownerId', '==', odUserId).limit(1).get();
-    const arch = snap.docs?.[0]?.data()?.archetype;
+    // EXCLUDE training clones (Slice 3): the user-layer overlay keys on the
+    // player's RANKED archetype. (Runs at draft time, before any clone exists,
+    // but the filter keeps it deterministic for a returning player.)
+    const snap = await db.collection('agents').where('ownerId', '==', odUserId).get();
+    const arch = snap.docs.find(d => d.data().isTrainingClone !== true)?.data()?.archetype;
     return (typeof arch === 'string' && arch.length > 0) ? arch : 'analyst';
   } catch (err) {
     console.warn(`${LOG_PREFIX} archetype read failed for ${odUserId}, default analyst:`, err?.message);

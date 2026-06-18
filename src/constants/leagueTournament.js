@@ -292,6 +292,23 @@ export function cpuAgentDocId(n) {
   return `cpu-agent-${n}`;
 }
 
+// League Training Slice 3 — the per-pod training-agent CLONE id codec. A
+// player's training agent is a behavioral clone of their ranked agent with its
+// OWN agentId (fence-free coexistence: the one-active-battle check is
+// agentId-scoped). Per-pod (founder ruling): deterministic from groupId +
+// odUserId, so the seat→agent resolver computes it directly with no ambiguous
+// owner query (the cpuAgentDocId precedent). ownerId on the doc stays the
+// player's, so composite banking (groupId+ownerId) counts the clone with zero
+// changes; the doc carries isTrainingClone:true so every ranked owner-lookup
+// can exclude it.
+export const TRAINING_CLONE_ID_PREFIX = 'training-agent-';
+
+export function trainingCloneDocId(groupId, odUserId) {
+  if (typeof groupId !== 'string' || groupId.length === 0) throw new Error('trainingCloneDocId: groupId required');
+  if (typeof odUserId !== 'string' || odUserId.length === 0) throw new Error('trainingCloneDocId: odUserId required');
+  return `${TRAINING_CLONE_ID_PREFIX}${groupId}-${odUserId}`;
+}
+
 // Fixed assignment order (founder-ratified): any group of ≤4 consecutive
 // CPUs fields four distinct archetypes, reproducible from the id alone.
 // Values mirror api/_utils/archetypeScoring.js ARCHETYPE_WEIGHTS keys —

@@ -24,9 +24,44 @@ import {
   applyTrainingPick,
   TRAINING_PICK_SENTINEL_PREFIX,
 } from '../_utils/trainingLifecycle.js';
+import { deployBaseUrl } from '../_utils/tournamentOrchestrator.js';
+import { GROUP_STATUS } from '../../src/constants/leagueTournament.js';
 import { LEAGUE_NEXT_ARC_ENABLED } from '../../src/config/featureFlags.js';
 
 export const config = { maxDuration: 15 };
+
+// League Training Slice 3 — fire the inline activation fast-lane. A pre-open
+// draft inline-flips straight to BATTLE; deploy its agent layer promptly via the
+// internal endpoint rather than waiting for the next morning orchestrator tick
+// (the cron never ticks during market hours). FIRE-AND-FORGET: this endpoint's
+// 15s cap cannot await the ~100s activation, so the orchestrator morning backstop
+// (sweepTrainingActivation) is the reliability guarantee — a lost trigger is
+// always recovered. Condition 3: every failure is CLASSIFIED-logged, never a
+// swallowed `.catch(() => {})`.
+function triggerTrainingActivation(groupId) {
+  const base = deployBaseUrl();
+  if (!base) {
+    console.error(`[training-pick] inline activation trigger SKIPPED for ${groupId}: no deploy base URL — morning backstop will recover`);
+    return;
+  }
+  const query = LEAGUE_NEXT_ARC_ENABLED === true ? '' : '?nextArc=1';
+  fetch(`${base}/api/tournament/activate-training-pod${query}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${process.env.CRON_SECRET}` },
+    body: JSON.stringify({ groupId }),
+  })
+    .then(async (r) => {
+      if (!r.ok) {
+        const text = await r.text().catch(() => '');
+        console.error(`[training-pick] inline activation trigger FAILED for ${groupId}: HTTP ${r.status} ${text.slice(0, 200)} — morning backstop will recover`);
+      } else {
+        console.log(`[training-pick] inline activation triggered for ${groupId}`);
+      }
+    })
+    .catch((err) => {
+      console.error(`[training-pick] inline activation trigger FAILED for ${groupId}: ${err?.message} — morning backstop will recover`);
+    });
+}
 
 const SENTINEL_TO_HTTP = Object.freeze({
   draft_not_found:  [404, 'draft_not_found',  'No interactive draft for that group.'],
@@ -64,6 +99,12 @@ export default async function handler(req, res) {
     const db = getFirebaseAdmin();
     const result = await applyTrainingPick(db, groupId, { odUserId, symbol, autopick, now: new Date() });
     console.log(`[Tournament] training-pick: group ${groupId} ${odUserId} ${autopick ? '(autopick)' : symbol} → pick ${result.currentPickIndex}${result.complete ? ` (complete → ${result.status})` : ''}`);
+    // The 12th pick can inline-flip the pod straight to BATTLE (R1, pre-open
+    // anchor). Trigger the agent-layer activation fast-lane; the morning backstop
+    // covers the AWAITING_OPEN case (and any lost trigger).
+    if (result.complete && result.status === GROUP_STATUS.BATTLE) {
+      triggerTrainingActivation(groupId);
+    }
     return res.status(200).json({ groupId, ...result });
   } catch (err) {
     if (typeof err?.message === 'string' && err.message.startsWith(TRAINING_PICK_SENTINEL_PREFIX)) {
