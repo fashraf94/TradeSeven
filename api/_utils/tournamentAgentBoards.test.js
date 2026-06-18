@@ -26,7 +26,7 @@ import {
   produceBoardForAgent,
   produceGroupBoards,
 } from './tournamentAgentBoards.js';
-import { TOURNAMENT_TUNING } from '../../src/constants/leagueTournament.js';
+import { TOURNAMENT_TUNING, trainingCloneDocId } from '../../src/constants/leagueTournament.js';
 
 const NOW = new Date('2026-06-15T12:00:00.000Z');
 
@@ -419,6 +419,45 @@ describe('resolveGroupAgents', () => {
     expect(out[0]).toMatchObject({ odUserId: 'user-a', agentId: 'agent-a', synthetic: false });
     expect(out[0].agent.archetype).toBe('hunter');
     expect(out[1]).toMatchObject({ odUserId: 'user-b', agentId: 'dev-agent-user-b', agent: null, synthetic: true });
+  });
+
+  // League Training Slice 3 — the per-pod clone branch (the load-bearing
+  // identity resolver: training human seats → clone; ranked → exclude clones).
+  it('training pod: a human seat resolves to its per-pod CLONE; CPU seats by owner', async () => {
+    const cloneId = trainingCloneDocId('g1', 'user-a');
+    const { db } = makeDb({
+      [`agents/${cloneId}`]: { ownerId: 'user-a', isTrainingClone: true, archetype: 'degen' },
+      'agents/cpu-agent-1': { ownerId: 'cpu-1', isCpu: true, archetype: 'analyst' },
+      // a stray RANKED agent for the same owner must NOT be chosen for the training seat
+      'agents/ranked-a': { ownerId: 'user-a', archetype: 'guardian' },
+    });
+    const group = makeGroup({
+      isTraining: true,
+      groupMembers: ['user-a', 'cpu-1'],
+      players: [{ odUserId: 'user-a', isCpu: false }, { odUserId: 'cpu-1', isCpu: true }],
+    });
+    const out = await resolveGroupAgents(db, group);
+    expect(out[0]).toMatchObject({ odUserId: 'user-a', agentId: cloneId, synthetic: false });
+    expect(out[0].agent.archetype).toBe('degen'); // the clone, not the ranked 'guardian'
+    expect(out[1]).toMatchObject({ odUserId: 'cpu-1', agentId: 'cpu-agent-1', synthetic: false });
+  });
+
+  it('ranked pod: a training clone sharing the player ownerId is EXCLUDED', async () => {
+    const { db } = makeDb({
+      'agents/ranked-a': { ownerId: 'user-a', archetype: 'guardian' },
+      [`agents/${trainingCloneDocId('oldpod', 'user-a')}`]: { ownerId: 'user-a', isTrainingClone: true, archetype: 'degen' },
+    });
+    const group = makeGroup({ isTraining: false, groupMembers: ['user-a'], players: [{ odUserId: 'user-a' }] });
+    const out = await resolveGroupAgents(db, group);
+    expect(out[0]).toMatchObject({ odUserId: 'user-a', agentId: 'ranked-a', synthetic: false });
+    expect(out[0].agent.isTrainingClone).toBeUndefined();
+  });
+
+  it('training pod: a human seat with no provisioned clone → synthetic', async () => {
+    const { db } = makeDb({});
+    const group = makeGroup({ isTraining: true, groupMembers: ['user-a'], players: [{ odUserId: 'user-a', isCpu: false }] });
+    const out = await resolveGroupAgents(db, group);
+    expect(out[0]).toMatchObject({ odUserId: 'user-a', agentId: 'dev-agent-user-a', agent: null, synthetic: true });
   });
 });
 

@@ -36,12 +36,15 @@ import {
   runWeekdayFanout,
   isDutySatisfied,
   runOrchestratorTick,
+  sweepTrainingActivation,
+  activateTrainingPod,
 } from './tournamentOrchestrator.js';
 import {
   GROUP_STATUS,
   AGENT_MARKET_SIZE,
   TOURNAMENT_GAME_MODE,
   cpuAgentDocId,
+  trainingCloneDocId,
 } from '../../src/constants/leagueTournament.js';
 import { buildCpuAgentDoc } from './tournamentCpu.js';
 
@@ -756,5 +759,78 @@ describe('isDutySatisfied — what earns the marker', () => {
 describe('failure cooldown — ≥10 min, consumed even on failure', () => {
   it('the constant prices the ruling', () => {
     expect(DEPLOY_FAILURE_COOLDOWN_MS).toBe(10 * 60 * 1000);
+  });
+});
+
+// ==================== TRAINING ACTIVATION (Slice 3) ====================
+
+describe('sweepTrainingActivation (Slice 3)', () => {
+  function trainingPodDocs(id, { status = GROUP_STATUS.BATTLE, withStream = false } = {}) {
+    const docs = {
+      [`tournamentGroups/${id}`]: {
+        status, isTraining: true, roundNumber: 1, baseLayerWeek: '2026-W25',
+        groupMembers: ['u1', 'cpu-1', 'cpu-2', 'cpu-3'],
+        players: [
+          { odUserId: 'u1', isCpu: false, picks: [] },
+          { odUserId: 'cpu-1', isCpu: true, picks: [] },
+          { odUserId: 'cpu-2', isCpu: true, picks: [] },
+          { odUserId: 'cpu-3', isCpu: true, picks: [] },
+        ],
+        userPool: [...SYMBOLS],
+      },
+    };
+    if (withStream) docs[`tournamentGroups/${id}/streams/agentDraft`] = { picksByAgent: {}, events: [] };
+    return docs;
+  }
+
+  it('the sweep processes only training BATTLE pods (ranked + non-battle ignored)', async () => {
+    const { db } = makeDb({
+      ...trainingPodDocs('t-streamed', { withStream: true }),
+      [`agents/${trainingCloneDocId('t-streamed', 'u1')}`]: { ownerId: 'u1', isTrainingClone: true, archetype: 'analyst' },
+      // ranked BATTLE pod — must be ignored (not isTraining)
+      'tournamentGroups/ranked-1': {
+        status: GROUP_STATUS.BATTLE,
+        groupMembers: [...CPU_IDS],
+        players: CPU_IDS.map(o => ({ odUserId: o, isCpu: true })),
+      },
+      // training AWAITING_OPEN pod — not BATTLE, ignored
+      ...trainingPodDocs('t-awaiting', { status: GROUP_STATUS.AWAITING_OPEN }),
+    });
+    const summary = await sweepTrainingActivation(db, { now: MON_MORNING_EDT, deployEnabled: false });
+    expect(summary.swept).toBe(1);     // only t-streamed (BATTLE + isTraining)
+    expect(summary.activated).toBe(1); // processed (stream exists → no re-draft, no seats → no-op)
+    expect(summary.errors).toBe(0);
+    expect(summary.deferred).toBe(0);
+  });
+
+  it('DAILY REDEPLOY: an already-drafted pod does NOT re-draft and redeploys the incumbents every day', async () => {
+    const cloneId = trainingCloneDocId('t-day2', 'u1');
+    const { db } = makeDb({
+      ...trainingPodDocs('t-day2', { withStream: true }),
+      [`agents/${cloneId}`]: { ownerId: 'u1', isTrainingClone: true, archetype: 'analyst' },
+      // the clone's day-1 incumbent battle (created a PRIOR trading day, so the
+      // today's-battle guard does NOT skip — a fresh day-N deploy is due).
+      'agentBattles/b-clone-day1': {
+        agentId: cloneId, ownerId: 'u1', groupId: 't-day2', gameMode: TOURNAMENT_GAME_MODE,
+        status: 'completed', createdAt: '2026-06-12T14:00:00.000Z',
+        portfolio: {
+          star: [{ symbol: 'NVDA' }, { symbol: 'AMD' }],
+          core: [{ symbol: 'TSLA' }, { symbol: 'META' }],
+          support: [{ symbol: 'AAPL' }, { symbol: 'MSFT' }],
+        },
+      },
+    });
+    const group = { id: 't-day2', ...(await db.collection('tournamentGroups').doc('t-day2').get()).data() };
+    const res = await activateTrainingPod(db, group, { now: MON_MORNING_EDT, anthropic: null, deployEnabled: false });
+    expect(res.drafted).toBe(false);                       // stream existed → NO re-draft (the bug's fix)
+    expect(res.deploys.gated).toBeGreaterThanOrEqual(1);   // reached fan-out → would redeploy the incumbent six
+    expect(res.errors).toBe(0);
+  });
+
+  it('first-time activation: a stream-MISSING pod drafts (fails fast here without stockRankings)', async () => {
+    const { db } = makeDb({ ...trainingPodDocs('t-fresh') });
+    const summary = await sweepTrainingActivation(db, { now: MON_MORNING_EDT, anthropic: null, deployEnabled: false });
+    expect(summary.swept).toBe(1);
+    expect(summary.errors).toBeGreaterThanOrEqual(1); // produceGroupBoards has no stockRankings
   });
 });

@@ -1,0 +1,174 @@
+// api/_utils/trainingClone.js
+//
+// League Training Slice 3 — the training-agent CLONE identity (founder ruling:
+// separate training-agent identity, fresh clone per pod). A player's training
+// agent is a behavioral clone of their ranked agent — same archetype, loadout
+// and Trading Brain — with its OWN agentId. This yields off-ladder coexistence
+// with ZERO fenced edits: the one-active-battle check in decide.js is
+// agentId-scoped, so a distinct clone agentId passes it unchanged; activeBattleId
+// is per-agent-doc; every battle→agent write keys on battle.agentId (verified
+// exhaustively at build time), so the clone's training evolution NEVER touches
+// the ranked agent; and composite banking keys on groupId+ownerId, so a clone
+// owned by the player is counted with no banking change.
+//
+// Mirrors tournamentCpu.js's server-side get-or-create precedent:
+//   - agents/training-agent-{groupId}-{odUserId}: deterministic doc id → the
+//     get-or-create is race-free and the seat→agent resolver (resolveGroupAgents,
+//     training branch) computes the same id with no ambiguous owner query.
+//   - ownerId stays the PLAYER's odUserId (banking needs it); isTrainingClone
+//     true + rankedAgentId/groupId are the markers every ranked owner-lookup
+//     excludes on.
+//   - loadout is inherited from the ranked agent at provision time (decision #3:
+//     "defaults to the player's current ranked loadout"); a per-user loadoutSpec
+//     override is accepted but unused in Slice 3 (the Slice-5 chooser hook).
+//
+// Imports the zero-import schema module from src/ under the revised June 2026
+// import rule (BUILD_RULES §4); the co-located test's real import of THIS module
+// is the dependency-surface guard.
+
+import {
+  trainingCloneDocId,
+  isCpuUserId,
+} from '../../src/constants/leagueTournament.js';
+
+const LOG_PREFIX = '[TrainingClone]';
+
+const AGENTS_COLLECTION = 'agents';
+
+// Loadout fields a clone inherits from the ranked agent (the "Trading Brain"
+// that shapes decisions: archetype + config + equip + the consolidated insight).
+// History/identity/pointer fields are NOT in this list — they are reset fresh
+// (a per-pod clone carries no ranked history and its own pointers).
+const INHERITED_LOADOUT_FIELDS = Object.freeze([
+  'archetype',
+  'archetypeDrift',
+  'config',
+  'personality',
+  'avatarColors',
+  'primaryColor',
+  'equippedTraits',
+  'activeRules',
+  'equippedBundleIds',
+  'equippedWatchlistId',
+  'equippedWatchlistName',
+  'equippedAt',
+  'deployedStrategy',
+  'consolidatedInsight',
+  'disciplines',
+  'evolutionCycle',
+  'starterKitCompleted',
+  'name',
+]);
+
+const FRESH_STATS = Object.freeze({
+  wins: 0, losses: 0, gamesPlayed: 0, totalScore: 0, avgScore: 0, currentStreak: 0, bestStreak: 0,
+});
+
+/**
+ * Resolve the player's RANKED agent (exclude any training clones). Reads all
+ * the user's agent docs and returns the first non-clone — migration-free
+ * disambiguation (existing ranked docs lack isTrainingClone → falsy → selected).
+ * Returns { id, ...data } or null.
+ */
+export async function resolveRankedAgent(db, odUserId) {
+  const snap = await db.collection(AGENTS_COLLECTION).where('ownerId', '==', odUserId).get();
+  const doc = snap.docs.find(d => d.data().isTrainingClone !== true);
+  return doc ? { id: doc.id, ...doc.data() } : null;
+}
+
+/**
+ * The clone doc shape: the ranked agent's inherited loadout (optionally
+ * overridden by a per-user loadoutSpec — Slice 5), the player's ownerId, the
+ * clone markers, and fresh history/pointers. Pure.
+ */
+export function buildTrainingCloneDoc(rankedAgent, { groupId, odUserId, loadoutSpec = null, nowIso }) {
+  const loadout = {};
+  for (const field of INHERITED_LOADOUT_FIELDS) {
+    if (rankedAgent[field] !== undefined) loadout[field] = rankedAgent[field];
+  }
+  // Slice-5 override hook: a partial loadout spec replaces inherited fields.
+  if (loadoutSpec && typeof loadoutSpec === 'object') {
+    for (const [k, v] of Object.entries(loadoutSpec)) loadout[k] = v;
+  }
+  return {
+    ...loadout,
+    ownerId: odUserId,            // the PLAYER — banking keys on this
+    isTrainingClone: true,        // every ranked owner-lookup excludes on this
+    rankedAgentId: rankedAgent.id,
+    groupId,                      // the training pod this clone belongs to
+    // Fresh history + clean pointers — a per-pod clone starts clean and never
+    // carries ranked battle pointers.
+    memory: [],
+    stats: { ...FRESH_STATS },
+    pendingConsolidation: false,
+    activeBattleId: null,
+    deployingAt: null,
+    lastDeployedAt: null,
+    createdAt: nowIso,
+    updatedAt: nowIso,
+  };
+}
+
+/**
+ * Copy the ranked agent's rules + bundles subcollections onto the clone — the
+ * Trading Brain decide.js re-projects activeRules from at every deploy
+ * (agentRef.collection('rules')/('bundles')), so a clone that must behave
+ * identically needs them. Preserves doc ids. Idempotent set per doc.
+ */
+async function copyAgentSubcollections(db, rankedAgentId, cloneId) {
+  const cloneRef = db.collection(AGENTS_COLLECTION).doc(cloneId);
+  for (const sub of ['rules', 'bundles']) {
+    const srcSnap = await db.collection(AGENTS_COLLECTION).doc(rankedAgentId).collection(sub).get();
+    for (const doc of srcSnap.docs) {
+      await cloneRef.collection(sub).doc(doc.id).set(doc.data());
+    }
+  }
+}
+
+/**
+ * Lazy get-or-create the per-pod training clones for a pod's HUMAN seats. CPU
+ * seats are skipped (their system agents already exist from formation). A seat
+ * whose owner has no ranked agent is reported in `skipped` (loud) — board
+ * production then falls back to a synthetic identity for it, never a silent
+ * mis-clone. Idempotent by deterministic doc id: an existing clone is left
+ * alone. `loadoutSpecByUser` (Slice 5) maps odUserId → a partial loadout
+ * override; null/absent = pure inherit-forward (Slice 3). Returns
+ * { created, existing, skipped }.
+ */
+export async function ensureTrainingClones(db, group, { loadoutSpecByUser = null, now = new Date() } = {}) {
+  const nowIso = now.toISOString();
+  const created = [];
+  const existing = [];
+  const skipped = [];
+
+  for (const player of group.players || []) {
+    const odUserId = player.odUserId;
+    if (player.isCpu === true || isCpuUserId(odUserId)) continue; // CPU seats: system agents already exist
+
+    const cloneId = trainingCloneDocId(group.id, odUserId);
+    const cloneRef = db.collection(AGENTS_COLLECTION).doc(cloneId);
+    const cloneSnap = await cloneRef.get();
+    if (cloneSnap.exists) { existing.push(odUserId); continue; }
+
+    const ranked = await resolveRankedAgent(db, odUserId);
+    if (!ranked) {
+      console.error(`${LOG_PREFIX} group ${group.id}: human seat ${odUserId} has no ranked agent — training clone NOT provisioned (board production will use a synthetic identity)`);
+      skipped.push(odUserId);
+      continue;
+    }
+
+    const loadoutSpec = loadoutSpecByUser ? loadoutSpecByUser[odUserId] : null;
+    // Copy the rules/bundles subcollections FIRST, then write the clone doc LAST
+    // as the completion sentinel. If provisioning is interrupted (timeout/crash)
+    // between the two, the clone doc won't exist, so the next run re-provisions
+    // (idempotent set-by-id) — a partial clone (doc present, subcollections
+    // empty) can never be marked 'existing' and stranded with a blank Trading
+    // Brain that decide.js would deploy as an inert agent.
+    await copyAgentSubcollections(db, ranked.id, cloneId);
+    await cloneRef.set(buildTrainingCloneDoc(ranked, { groupId: group.id, odUserId, loadoutSpec, nowIso }));
+    created.push(odUserId);
+    console.log(`${LOG_PREFIX} group ${group.id}: provisioned training clone ${cloneId} from ranked agent ${ranked.id} (${ranked.archetype})`);
+  }
+
+  return { created, existing, skipped };
+}

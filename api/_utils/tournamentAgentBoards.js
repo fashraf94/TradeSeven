@@ -42,6 +42,8 @@ import {
   AGENT_BOARDS_SUBCOLLECTION,
   GROUP_STATUS,
   TOURNAMENT_TUNING,
+  isCpuUserId,
+  trainingCloneDocId,
 } from '../../src/constants/leagueTournament.js';
 import { formatMarketCSV } from './agentPromptAssembly.js';
 import { computeArchetypeRankings, ARCHETYPE_TEMPERATURES, ARCHETYPE_CONSTRAINTS } from './archetypeScoring.js';
@@ -299,13 +301,30 @@ export function buildAgentBoardDoc({
  */
 export async function resolveGroupAgents(db, group) {
   const members = group.groupMembers || [];
-  const snaps = await Promise.all(
-    members.map(odUserId => db.collection('agents').where('ownerId', '==', odUserId).limit(1).get())
-  );
+  const isTraining = group.isTraining === true;
+  // Training Slice 3: a training pod's HUMAN seat resolves to its per-pod
+  // CLONE (deterministic id — no ambiguous owner query). CPU seats and all
+  // ranked seats use the owner lookup, EXCLUDING any training clone (a clone
+  // shares its player's ownerId, so a plain limit(1) is non-deterministic).
+  const snaps = await Promise.all(members.map(async (odUserId) => {
+    if (isTraining && !isCpuUserId(odUserId)) {
+      const cloneSnap = await db.collection('agents').doc(trainingCloneDocId(group.id, odUserId)).get();
+      return { clone: true, cloneSnap };
+    }
+    const qs = await db.collection('agents').where('ownerId', '==', odUserId).get();
+    return { clone: false, qs };
+  }));
   return members.map((odUserId, i) => {
-    const snap = snaps[i];
-    if (!snap.empty) {
-      const doc = snap.docs[0];
+    const r = snaps[i];
+    if (r.clone) {
+      if (r.cloneSnap.exists) {
+        return { odUserId, agentId: r.cloneSnap.id, agent: { id: r.cloneSnap.id, ...r.cloneSnap.data() }, synthetic: false };
+      }
+      console.warn(`${LOG_PREFIX} training pod ${group.id}: human seat ${odUserId} has no provisioned clone — SYNTHETIC identity (activateTrainingPod provisions clones before board production)`);
+      return { odUserId, agentId: `dev-agent-${odUserId}`, agent: null, synthetic: true };
+    }
+    const doc = r.qs.docs.find(d => d.data().isTrainingClone !== true);
+    if (doc) {
       return { odUserId, agentId: doc.id, agent: { id: doc.id, ...doc.data() }, synthetic: false };
     }
     console.warn(`${LOG_PREFIX} member ${odUserId} has no agent doc — SYNTHETIC identity (dev/preview affordance; production groups must have real agents)`);

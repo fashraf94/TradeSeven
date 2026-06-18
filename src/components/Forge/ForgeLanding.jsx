@@ -1695,14 +1695,15 @@ export default function ForgeLanding({
     let cancelled = false;
     async function resolveDefaultTab() {
       try {
+        // EXCLUDE training clones (Slice 3): "has an agent" means a RANKED
+        // agent (a clone shares the player's ownerId).
         const agentsQ = query(
           collection(db, 'agents'),
-          where('ownerId', '==', user.uid),
-          limit(1)
+          where('ownerId', '==', user.uid)
         );
         const snap = await getDocs(agentsQ);
         if (cancelled) return;
-        if (!snap.empty) {
+        if (snap.docs.some(d => d.data().isTrainingClone !== true)) {
           setView((prev) => (prev === 'discover' ? 'laboratory' : prev));
         }
       } catch (err) {

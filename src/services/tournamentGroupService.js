@@ -346,13 +346,15 @@ export function subscribeRank(docId, callback) {
 export async function assembleBoardPrefill(uid, { userPool = null } = {}) {
   let agent = null;
   try {
+    // EXCLUDE training clones (Slice 3): ranked board prefill keys on the
+    // player's RANKED agent (a clone shares the player's ownerId).
     const agentSnap = await getDocs(query(
       collection(db, 'agents'),
-      where('ownerId', '==', uid),
-      limit(1)
+      where('ownerId', '==', uid)
     ));
-    if (!agentSnap.empty) {
-      agent = agentSnap.docs[0].data();
+    const agentDoc = agentSnap.docs.find(d => d.data().isTrainingClone !== true);
+    if (agentDoc) {
+      agent = agentDoc.data();
     }
   } catch (error) {
     console.warn('[TournamentGroupService] Prefill: agent read failed, degrading:', error?.message);

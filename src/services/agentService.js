@@ -13,18 +13,19 @@ const AGENTS_COLLECTION = 'agents';
 // ============================================
 
 export const subscribeToUserAgent = (ownerId, callback) => {
+  // No limit(1): a player may also own a training CLONE (Slice 3, same ownerId).
+  // The dashboard/Forge surfaces always show the RANKED agent, so exclude clones.
   const q = query(
     collection(db, AGENTS_COLLECTION),
-    where('ownerId', '==', ownerId),
-    limit(1)
+    where('ownerId', '==', ownerId)
   );
 
   return onSnapshot(q, (snapshot) => {
-    if (snapshot.empty) {
+    const docSnap = snapshot.docs.find(d => d.data().isTrainingClone !== true);
+    if (!docSnap) {
       callback(null);
       return;
     }
-    const docSnap = snapshot.docs[0];
     callback({ id: docSnap.id, ...docSnap.data() });
   }, (error) => {
     console.error('Agent subscription error:', error);

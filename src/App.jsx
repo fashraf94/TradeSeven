@@ -3806,6 +3806,7 @@ export default function PortfolioDuel() {
       try {
         const { collection, query, where, getDocs, limit } = await import('firebase/firestore');
         const { db, auth } = await import('./firebase/config');
+        const { TRAINING_CLONE_ID_PREFIX } = await import('./constants/leagueTournament');
         if (!auth.currentUser?.uid) return;
 
         const q = query(
@@ -3818,7 +3819,12 @@ export default function PortfolioDuel() {
         const snapshot = await getDocs(q);
         trackRead('agentBattlePoll', snapshot.size);
 
-        const battles = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+        // Slice 3: drop training-clone battles (off-ladder) — their agentId is
+        // the per-pod clone id (TRAINING_CLONE_ID_PREFIX); a training pod must
+        // never surface on the ranked dashboard.
+        const battles = snapshot.docs
+          .map(d => ({ id: d.id, ...d.data() }))
+          .filter(b => !(typeof b.agentId === 'string' && b.agentId.startsWith(TRAINING_CLONE_ID_PREFIX)));
         setActiveAgentBattles(battles);
       } catch (error) {
         console.error('Error fetching agent battles:', error);
@@ -4623,6 +4629,7 @@ export default function PortfolioDuel() {
       try {
         const { collection, query, where, orderBy, limit, getDocs } = await import('firebase/firestore');
         const { auth, db } = await import('./firebase/config');
+        const { TRAINING_CLONE_ID_PREFIX } = await import('./constants/leagueTournament');
         const uid = auth.currentUser?.uid;
         if (!uid) {
           if (!cancelled) setCompletedAgentBattles([]);
@@ -4636,7 +4643,10 @@ export default function PortfolioDuel() {
           limit(20)
         );
         const snap = await getDocs(q);
-        const list = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        // Slice 3: drop training-clone battles (off-ladder) — see the active poll.
+        const list = snap.docs
+          .map((d) => ({ id: d.id, ...d.data() }))
+          .filter(b => !(typeof b.agentId === 'string' && b.agentId.startsWith(TRAINING_CLONE_ID_PREFIX)));
         if (!cancelled) setCompletedAgentBattles(list);
       } catch (err) {
         console.error('[FilmRoom] completed agent battles fetch failed:', err?.message || err);

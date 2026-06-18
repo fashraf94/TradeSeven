@@ -114,14 +114,20 @@ export function getPlayer(group, odUserId) {
  * banking/claims mirrors keep their own queries and remain dev-inclusive by
  * design (the smoke's composite day needs them; cleanup retires the data).
  *
- * League Next-Arc (Slice 3.0) — training exclusion: `excludeTraining: true`
- * additionally drops `isTraining: true` pods. Default is `false` (opt-in), so
- * the deploy/fan-out duties keep INCLUDING training pods — their agent layer
- * must be created and ticked by the existing engine. ONLY the seasonal
- * leaderboard aggregation opts in (tournamentLeaderboard.js): a training pod
- * banks its own closes but never feeds the board. The Friday advancement keeps
- * training in its query and branches the base-layer loop to a no-ladder
- * finish, so it is NOT excluded here.
+ * League Next-Arc — training exclusion: `excludeTraining: true` additionally
+ * drops `isTraining: true` pods. Default is `false` (opt-in). Opted in by:
+ *   - the seasonal leaderboard aggregation (tournamentLeaderboard.js): a training
+ *     pod banks its own closes but never feeds the board; and
+ *   - (Slice 3) the orchestrator's deploy/fan-out duties (runMondayPipeline +
+ *     runWeekdayFanout): a training pod's AGENT layer is owned solely by
+ *     activateTrainingPod (the flip paths + the morning backstop), NOT the ranked
+ *     engine — otherwise resolveGroupAgents would mis-resolve a training human
+ *     seat to the ranked agent and deploy it into the training groupId. This
+ *     supersedes the Slice-3.0 "ticked by the existing engine" intent (founder
+ *     Flag 1, Jun 17 2026). Banking/completion (bankAllTournamentGroups,
+ *     completeBankedTrainingPods) and Friday advancement run their OWN queries and
+ *     keep training (a training pod still banks + completes), so they are
+ *     unaffected by this opt-in.
  */
 export async function fetchEligibleGroupsByStatus(db, status, { includeDev = false, excludeTraining = false } = {}) {
   const snap = await db.collection(TOURNAMENT_GROUPS_COLLECTION)
