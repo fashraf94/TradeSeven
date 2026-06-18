@@ -29,6 +29,10 @@ import {
 // Real banking module (never mocked — dependency-surface guard applies):
 // the standing-invariant test below runs claims and banking end-to-end.
 import { computeBankingUpdate } from './tournamentBanking.js';
+// Real CPU heuristic (Slice 4): the training full-path test below has the CPU
+// "place" via the actual drop-worst/desirable-add decision, not a hand-built
+// claim — so the inherited engine is exercised against a genuine CPU contest.
+import { chooseCpuClaim } from './tournamentCpuClaims.js';
 
 const NOW = new Date('2026-06-10T13:25:00Z'); // 9:25 AM ET Wed → etDate 2026-06-10
 const NOW_ISO = NOW.toISOString();
@@ -340,6 +344,73 @@ describe('processClaimsForTournamentGroup — queue/rotation (legacy algorithm, 
     const byId = Object.fromEntries(captured.claimUpdates.map(u => [u.id, u]));
     expect(byId.c1).toMatchObject({ status: 'denied', denialReason: 'drop_not_on_roster' });
     expect(byId.c2).toMatchObject({ status: 'approved' });
+  });
+});
+
+// ==================== LEAGUE TRAINING (SLICE 4, 5-A) ====================
+//
+// The inherited engine has never executed against a live pod; this proves it
+// end-to-end on an isTraining pod — place (human + a REAL CPU decision,
+// contested) → resolve (waiver priority decides) → drop-to-pool → bank
+// (claim_execution baseline settles at the open; the dropped pick is retained).
+describe('League Training (5-A): the inherited engine on an isTraining pod, end to end', () => {
+  it('human + CPU contest the same name → resolve → drop-to-pool → bank settles the won leg at the open', async () => {
+    const group = battleGroup({
+      isTraining: true,
+      groupMembers: ['u1', 'cpu-1', 'cpu-2', 'cpu-3'],
+      players: [
+        { odUserId: 'u1', picks: [pickState('NVDA'), pickState('AMD'), pickState('TSLA')] },
+        { odUserId: 'cpu-1', isCpu: true, picks: [pickState('META'), pickState('AAPL'), pickState('MSFT')] },
+        { odUserId: 'cpu-2', isCpu: true, picks: [pickState('AMZN'), pickState('GOOG'), pickState('NFLX')] },
+        { odUserId: 'cpu-3', isCpu: true, picks: [pickState('AVGO'), pickState('CRM'), pickState('ORCL')] },
+      ],
+      userPool: ['COIN', 'PLTR', 'SHOP', 'UBER'],
+      // u1 has the lower standing → first on the wire (ruling #3, ascending).
+      claimSystem: { enabled: true, currentWaiverPriority: ['u1', 'cpu-1', 'cpu-2', 'cpu-3'], processingLog: [] },
+    });
+
+    // The CPU "places" via the REAL heuristic: its worst pick is MSFT (-8); its
+    // ranked board over this pool heads on COIN — so it contests the human.
+    const cpuChoice = chooseCpuClaim({
+      player: group.players[1],
+      closeScoresEntry: { picks: [{ symbol: 'META', totalPoints: 9 }, { symbol: 'AAPL', totalPoints: 4 }, { symbol: 'MSFT', totalPoints: -8 }] },
+      userPool: ['COIN', 'PLTR', 'SHOP', 'UBER'],
+      cpuN: 1,
+    });
+    expect(cpuChoice).toEqual({ dropSymbol: 'MSFT', addSymbol: 'COIN' });
+
+    const claims = [
+      claim('h1', 'u1', 'NVDA', 'COIN', 1),                              // human
+      claim('c1', 'cpu-1', cpuChoice.dropSymbol, cpuChoice.addSymbol, 1), // CPU (contests COIN)
+    ];
+    const { db, captured } = makeDb({ groupDoc: group, claims });
+    const result = await processClaimsForTournamentGroup(db, group, { now: NOW });
+    expect(result).toMatchObject({ status: 'processed', approved: 1, denied: 1 });
+
+    const byId = Object.fromEntries(captured.claimUpdates.map(u => [u.id, u]));
+    expect(byId.h1.status).toBe('approved');                            // u1 wins COIN on priority
+    expect(byId.c1).toMatchObject({ status: 'denied', denialReason: 'claimed_by_higher_priority' });
+
+    const after = captured.groupUpdates[0];
+    const u1 = after.players.find(p => p.odUserId === 'u1');
+    expect(u1.picks[0]).toMatchObject({ symbol: 'COIN', legs: [{ baselinePrice: null, baselineSource: 'claim_execution' }] });
+    expect(u1.droppedPicks.map(p => p.symbol)).toEqual(['NVDA']);
+    expect(after.userPool).toEqual(['PLTR', 'SHOP', 'UBER', 'NVDA']);   // COIN out, NVDA back to pool
+
+    // Bank the resolved pod: the claim_execution null baseline settles to the
+    // open, and the dropped NVDA is retained for scoring (cumulative model).
+    const groupAfter = { ...group, ...after };
+    const quotes = {
+      COIN: { open: 50, close: 50, current: 50, previousClose: 50, timestamp: 1 },
+      NVDA: { open: 100, close: 100, current: 100, previousClose: 100, timestamp: 1 },
+      AMD: { open: 80, close: 80, current: 80, previousClose: 80, timestamp: 1 },
+      TSLA: { open: 200, close: 200, current: 200, previousClose: 200, timestamp: 1 },
+    };
+    const banked = computeBankingUpdate(groupAfter, quotes, { nowIso: NOW_ISO, etDate: '2026-06-10', atrPercentiles: null, recordedBy: 'cron' });
+    const u1Banked = banked.players.find(p => p.odUserId === 'u1');
+    const coin = u1Banked.picks.find(p => p.symbol === 'COIN');
+    expect(coin.legs[0].baselinePrice).toBe(50);                       // settled to the open
+    expect(u1Banked.droppedPicks.map(p => p.symbol)).toEqual(['NVDA']); // dropped pick retained
   });
 });
 

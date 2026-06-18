@@ -631,6 +631,10 @@ export const RANK_TUNING = Object.freeze({
 export const TRAINING_TUNING = Object.freeze({
   PICK_CLOCK_MS: 20000,
   DRAFT_IDLE_STALE_MS: 3 * 60 * 60 * 1000, // 3h
+  // Slice 4 (claims): per-CPU, per-cycle probability of contesting the overnight
+  // waiver wire (the legacy snake-draft heuristic's 0.40, ported to the flat
+  // tournament pool). Raw-and-watch — dial it by feel, never test-locked here.
+  CPU_CLAIM_PROBABILITY: 0.4,
 });
 
 /** The tier a given RP sits in: the highest tier whose floor is reached. */
