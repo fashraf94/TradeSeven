@@ -82,7 +82,7 @@ import { safePortfolioArray, getUserPortfolioFlat, getOpponentPortfolioFlat, get
 import { flattenPortfolio, flattenBench, calculateAssetScoreV3 } from './utils/baggerBombUtils';
 import { createInitialFreeAgents } from './services/freeAgentRotationService';
 // Extracted Screens - Batch 1
-import { ProfileScreen, WinsScreen, LossesScreen, DraftHistoryScreen, JoinScreen, DraftSetupScreen, DraftJoinScreen, DraftTrainingScreen, TrainingDraftRoomScreen, DraftLobbyScreen, PreviousBattlesScreen, BattleHistoryScreen, FreeAgencyScreen, FreeAgencyScreenV2, DraftResultsScreen, BattleViewScreen, DraftBattleScreen, DraftBattleScreenV2, DraftRoomScreen, HomeScreen, EarningsGameScreen, BuilderScreen, FilmRoomScreen } from './screens';
+import { ProfileScreen, WinsScreen, LossesScreen, DraftHistoryScreen, JoinScreen, DraftSetupScreen, DraftJoinScreen, DraftTrainingScreen, TrainingDraftRoomScreen, LeagueTrainingBattleView, DraftLobbyScreen, PreviousBattlesScreen, BattleHistoryScreen, FreeAgencyScreen, FreeAgencyScreenV2, DraftResultsScreen, BattleViewScreen, DraftBattleScreen, DraftBattleScreenV2, DraftRoomScreen, HomeScreen, EarningsGameScreen, BuilderScreen, FilmRoomScreen } from './screens';
 // Season Mode screens + components
 import SeasonHub from './screens/SeasonHub';
 import SeasonDashboard from './screens/SeasonDashboard';
@@ -2209,6 +2209,20 @@ export default function PortfolioDuel() {
     if (gid) {
       setTrainingDraftGroupId(gid);
       setScreen('trainingDraftRoom');
+    }
+  }, []);
+
+  // League Training Slice 5a — the training battle-view host (the destination a
+  // post-draft training pod lands on). DARK like the draft above: reachable in-app
+  // only by finishing a training draft, or directly via ?trainingBattle=<podId>
+  // (the dev/preview gate, for smoking an AWAITING_OPEN/BATTLE pod). The live
+  // entry CTA is Slice 5b.
+  const [trainingBattlePodId, setTrainingBattlePodId] = useState(null);
+  useEffect(() => {
+    const pid = new URLSearchParams(window.location.search).get('trainingBattle');
+    if (pid) {
+      setTrainingBattlePodId(pid);
+      setScreen('trainingBattle');
     }
   }, []);
 
@@ -8979,7 +8993,22 @@ export default function PortfolioDuel() {
         <TrainingDraftRoomScreen
           user={user}
           groupId={trainingDraftGroupId}
-          onExit={() => setScreen('dashboard')}
+          onExit={() => { setTrainingBattlePodId(trainingDraftGroupId); setScreen('trainingBattle'); }}
+        />
+      </ErrorBoundary>
+    );
+  }
+
+  // LEAGUE TRAINING SLICE 5a — the battle-view host. A finished training draft
+  // (or ?trainingBattle=<podId>) lands here; onBack returns to the dashboard so
+  // the user is never trapped (a training pod is on-demand, off-ladder).
+  if (screen === 'trainingBattle' && trainingBattlePodId) {
+    return (
+      <ErrorBoundary name="Training Battle" onNavigateDashboard={() => setScreen('dashboard')}>
+        <LeagueTrainingBattleView
+          podId={trainingBattlePodId}
+          user={user}
+          onBack={() => setScreen('dashboard')}
         />
       </ErrorBoundary>
     );
