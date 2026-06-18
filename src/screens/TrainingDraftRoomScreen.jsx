@@ -87,7 +87,7 @@ export default function TrainingDraftRoomScreen({ user, groupId, onComplete = nu
           </div>
           {onExit && (
             <button onClick={onExit} style={{ background: C.accent, color: '#04121f', border: 'none', borderRadius: 10, padding: '10px 22px', fontWeight: 700, cursor: 'pointer' }}>
-              Done
+              View your pod
             </button>
           )}
         </div>
