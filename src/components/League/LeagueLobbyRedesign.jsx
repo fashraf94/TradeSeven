@@ -5,11 +5,13 @@
 // levels (no separate empty state). No skill tiers — divisions are rounds ×
 // groups. Transcribed from the Claude Design prototype (league-lobby.jsx).
 
-import React from 'react';
+import React, { useState, useRef } from 'react';
 import { rankPod } from './leagueFixtures';
 import { LTOKENS, LX, alpha } from './leagueTokens';
 import { Eyebrow, Mono, Icon, LIcon, AgentAvatar, Score, StatusBadge } from './LeagueParts';
 import { Funnel, PodCard } from './LeaguePod';
+import { quickPlayTraining, mapLobbyError } from '../../services/tournamentLobbyActions';
+import { GROUP_STATUS } from '../../constants/leagueTournament';
 
 function EnterButton({ accent, onEnter }) {
   return (
@@ -276,9 +278,104 @@ function PulseSlot() {
   );
 }
 
-// Training tab — the cold-start presentation shell. The "click to start" button
-// is intentionally INERT; Phase 3 wires the no-stakes training-pod creation.
-function TrainingShell({ accent }) {
+// The CPU-only footnote — shared by both Training-tab states.
+function TrainingCpuNote() {
+  return (
+    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: '11px 13px', borderRadius: 13, background: LTOKENS.surface, border: `1px solid ${LTOKENS.hair}` }}>
+      <LIcon name="cpu" size={14} color={LX.cpu} stroke={2} style={{ marginTop: 1, flexShrink: 0 }} />
+      <div style={{ fontSize: 11.5, color: LTOKENS.ink3, lineHeight: 1.45 }}>
+        Every seat here is a CPU. No stakes, no cut — practice runs don&apos;t feed the leaderboard or the bracket.
+      </div>
+    </div>
+  );
+}
+
+// Re-entry bar (Slice 5b-i, D) — shown when the player already has an active
+// training pod, IN PLACE OF the start CTA (R1: exactly one of the two). DRAFTING
+// resumes the live snake draft; AWAITING_OPEN/BATTLE returns to the pod's battle
+// view. Tap routes through onOpenTrainingPod (App branches on status).
+function TrainingReentryBar({ pod, accent, onResume }) {
+  const drafting = pod?.status === GROUP_STATUS.DRAFTING;
+  const title = drafting ? 'Resume your draft' : 'Return to your pod';
+  const sub = drafting ? 'live snake draft · finish your picks' : 'your training battle · CPU opponents';
+  return (
+    <button
+      className="lg-tap"
+      onClick={onResume}
+      style={{
+        all: 'unset', boxSizing: 'border-box', width: '100%', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 11,
+        padding: '14px 16px', borderRadius: 16, marginBottom: 14,
+        background: `linear-gradient(120deg, ${alpha(accent, 0.22)}, ${alpha(accent, 0.08)})`,
+        border: `1px solid ${alpha(accent, 0.45)}`, boxShadow: `0 8px 28px ${alpha(accent, 0.18)}`,
+      }}
+    >
+      <div style={{ width: 38, height: 38, borderRadius: 11, flexShrink: 0, background: accent, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: `0 4px 14px ${alpha(accent, 0.4)}` }}>
+        <LIcon name="play" size={17} color={LTOKENS.bg} />
+      </div>
+      <div style={{ flex: 1 }}>
+        <div style={{ fontSize: 16, fontWeight: 700, color: LTOKENS.ink, letterSpacing: '-0.01em' }}>{title}</div>
+        <Mono style={{ fontSize: 11, color: alpha(accent, 0.95) }}>{sub}</Mono>
+      </div>
+      <Icon name="arrowR" size={20} color={accent} />
+    </button>
+  );
+}
+
+// Training tab — the no-stakes solo cold-start (Slice 5b-i). Renders EXACTLY ONE
+// of {re-entry bar, start CTA} (R1): an active training pod replaces the CTA, so
+// the client can't normally start a second pod. The CTA (un-inerted here) owns
+// its own one-in-flight async over quickPlayTraining; on success it routes into
+// the fresh DRAFTING pod via onOpenTrainingPod. The server still enforces
+// no_agent / already_active — the client gates are courtesy, not the authority.
+function TrainingShell({ accent, onOpenTrainingPod, activeTrainingPod = null, hasAgent }) {
+  const [error, setError] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const inFlight = useRef(false);
+
+  const start = async () => {
+    if (inFlight.current) return;
+    // Near-free client gate (C2): an agent-less player has nothing to clone —
+    // surface the copy without a round-trip. `hasAgent === false` fires ONLY when
+    // App knows there's no agent (it passes undefined while the agent doc is still
+    // loading, so a real owner is never false-blocked). The server's no_agent
+    // guard is the authority for any reachable second path (dev param / double-tap).
+    // Copy comes from the shared lobby-error table (one home — no drift).
+    if (hasAgent === false) {
+      setError(mapLobbyError({ code: 'no_agent' }));
+      return;
+    }
+    inFlight.current = true;
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await quickPlayTraining();
+      onOpenTrainingPod?.({ id: res.groupId, status: res.status ?? GROUP_STATUS.DRAFTING });
+    } catch (err) {
+      // The already_active guard returns the in-flight pod's { groupId, status } —
+      // re-enter it directly (the transient race where subscribeMyTrainingPod
+      // hasn't yet surfaced the re-entry bar). Any other error → mapped copy.
+      if (err?.code === 'already_active' && err?.data?.groupId) {
+        onOpenTrainingPod?.({ id: err.data.groupId, status: err.data.status });
+      } else {
+        setError(mapLobbyError(err));
+      }
+    } finally {
+      inFlight.current = false;
+      setBusy(false);
+    }
+  };
+
+  // ── Re-entry state (R1): the bar REPLACES the CTA. ──────────────────────────
+  if (activeTrainingPod) {
+    return (
+      <div>
+        <TrainingReentryBar pod={activeTrainingPod} accent={accent} onResume={() => onOpenTrainingPod?.(activeTrainingPod)} />
+        <TrainingCpuNote />
+      </div>
+    );
+  }
+
+  // ── Cold-start state: the un-inerted start CTA. ─────────────────────────────
   return (
     <div>
       <div style={{ borderRadius: 18, padding: '22px 16px', marginBottom: 14, background: `linear-gradient(160deg, ${alpha(accent, 0.1)}, ${LTOKENS.surface} 62%)`, border: `1px solid ${alpha(accent, 0.3)}`, textAlign: 'center' }}>
@@ -290,17 +387,20 @@ function TrainingShell({ accent }) {
         <div style={{ fontSize: 13, color: LTOKENS.ink2, lineHeight: 1.5, margin: '9px auto 0', maxWidth: 320 }}>
           Spin up a no-stakes group of four against CPU opponents. Start anytime — tune your picks and your agent before you enter the bracket.
         </div>
-        {/* INERT affordance — Phase 3 wires the training-pod creation here. */}
-        <div className="lg-tap" aria-disabled="true" style={{ cursor: 'default', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 9, marginTop: 18, padding: '13px 22px', borderRadius: 13, background: accent, color: LTOKENS.bg, fontWeight: 700, fontSize: 14.5, boxShadow: `0 8px 24px ${alpha(accent, 0.32)}` }}>
-          <LIcon name="play" size={16} color={LTOKENS.bg} /> Click to start a training pod
-        </div>
+        <button
+          type="button"
+          className="lg-tap"
+          onClick={start}
+          disabled={busy}
+          style={{ all: 'unset', boxSizing: 'border-box', cursor: busy ? 'wait' : 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 9, marginTop: 18, padding: '13px 22px', borderRadius: 13, background: accent, color: LTOKENS.bg, fontWeight: 700, fontSize: 14.5, opacity: busy ? 0.7 : 1, boxShadow: `0 8px 24px ${alpha(accent, 0.32)}` }}
+        >
+          <LIcon name="play" size={16} color={LTOKENS.bg} /> {busy ? 'Starting your pod…' : 'Click to start a training pod'}
+        </button>
+        {error && (
+          <div role="alert" style={{ marginTop: 12, fontSize: 12, color: LX.neg, lineHeight: 1.4 }}>{error}</div>
+        )}
       </div>
-      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: '11px 13px', borderRadius: 13, background: LTOKENS.surface, border: `1px solid ${LTOKENS.hair}` }}>
-        <LIcon name="cpu" size={14} color={LX.cpu} stroke={2} style={{ marginTop: 1, flexShrink: 0 }} />
-        <div style={{ fontSize: 11.5, color: LTOKENS.ink3, lineHeight: 1.45 }}>
-          Every seat here is a CPU. No stakes, no cut — practice runs don&apos;t feed the leaderboard or the bracket.
-        </div>
-      </div>
+      <TrainingCpuNote />
     </div>
   );
 }
@@ -311,7 +411,7 @@ function TrainingShell({ accent }) {
 // / group / field flow with the reserved pulse slot in FollowRail's place;
 // Training = the inert cold-start shell. The keyed wrapper replays a calm CSS
 // fade on switch (reduced-motion-neutralized globally).
-export function LobbyTabbed({ st, accent, tab, onSwitchTab, onEnter, onPickPod, onSpectate, onOpenMyGame }) {
+export function LobbyTabbed({ st, accent, tab, onSwitchTab, onEnter, onPickPod, onSpectate, onOpenMyGame, onOpenTrainingPod, activeTrainingPod, hasAgent }) {
   return (
     <div style={{ padding: '16px 18px calc(env(safe-area-inset-bottom, 0px) + 120px)', maxWidth: 720, margin: '0 auto' }}>
       {onOpenMyGame && <MyGameBar onOpenMyGame={onOpenMyGame} />}
@@ -319,7 +419,7 @@ export function LobbyTabbed({ st, accent, tab, onSwitchTab, onEnter, onPickPod, 
       <TabBar tab={tab} onSwitchTab={onSwitchTab} accent={accent} />
       <div key={tab} className="lg-tabpanel">
         {tab === 'training' ? (
-          <TrainingShell accent={accent} />
+          <TrainingShell accent={accent} onOpenTrainingPod={onOpenTrainingPod} activeTrainingPod={activeTrainingPod} hasAgent={hasAgent} />
         ) : (
           <>
             <EnterButton accent={accent} onEnter={onEnter} />

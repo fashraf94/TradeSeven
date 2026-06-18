@@ -16,6 +16,8 @@ import React from 'react';
 import './league.css';
 import useLeagueState from '../../hooks/useLeagueState';
 import { logLeagueSignal } from '../../services/leagueSignals';
+import { useUser } from '../../contexts/UserContext';
+import { subscribeMyTrainingPod } from '../../services/tournamentGroupService';
 import { LEAGUE_NEXT_ARC_ENABLED } from '../../config/featureFlags';
 import { LTOKENS, LX } from './leagueTokens';
 import Lobby, { LobbyTabbed } from './LeagueLobbyRedesign';
@@ -39,8 +41,10 @@ const DEV_S = SP.get('s') || '';
 // identical single-column lobby. Do NOT flip the flag here (the PR #510 lesson).
 const TABS_ENABLED = LEAGUE_NEXT_ARC_ENABLED || SP.get('leagueTabs') === '1';
 
-export default function LeagueHome({ onOpenMyGame }) {
+export default function LeagueHome({ onOpenMyGame, onOpenTrainingPod, hasAgent }) {
   const { state: st, isFixtures } = useLeagueState(DEV_FILL);
+  const { user } = useUser();
+  const uid = user?.uid;
 
   const aLivePod = React.useMemo(
     () => [...st.rounds.r1, ...st.rounds.r2, st.rounds.r3].find((p) => p.status === 'live') || st.rounds.r1[0],
@@ -56,6 +60,17 @@ export default function LeagueHome({ onOpenMyGame }) {
   // when TABS_ENABLED and screen === 'lobby'. Preserved across the spectate
   // round-trip (spectate is a `screen` change, not an unmount).
   const [tab, setTab] = React.useState('ranked'); // 'ranked' | 'training'
+
+  // Active training pod (Slice 5b-i, D) — the Training-tab re-entry data. A
+  // dedicated member-scoped subscription (NOT the fixtures-gated useLeagueState),
+  // selected by the shared selectMyTrainingPod predicate: null → the Training tab
+  // shows the start CTA, non-null → it shows the re-entry bar instead (R1). Gated
+  // on TABS_ENABLED so the flag-off lobby opens no extra listener.
+  const [activeTrainingPod, setActiveTrainingPod] = React.useState(null);
+  React.useEffect(() => {
+    if (!TABS_ENABLED || !uid) { setActiveTrainingPod(null); return undefined; }
+    return subscribeMyTrainingPod(uid, setActiveTrainingPod);
+  }, [uid]);
 
   // seed a dev spectate target once (smoke testing only)
   React.useEffect(() => {
@@ -84,7 +99,7 @@ export default function LeagueHome({ onOpenMyGame }) {
   // Flag-on → the persistent Training|Ranked tabs; flag-off → today's lobby,
   // byte-identical (same <Lobby> invocation, untouched).
   const lobby = TABS_ENABLED
-    ? <LobbyTabbed st={st} accent={ACCENT} tab={tab} onSwitchTab={switchTab} onEnter={enter} onPickPod={openPod} onSpectate={openSpectate} onOpenMyGame={onOpenMyGame} />
+    ? <LobbyTabbed st={st} accent={ACCENT} tab={tab} onSwitchTab={switchTab} onEnter={enter} onPickPod={openPod} onSpectate={openSpectate} onOpenMyGame={onOpenMyGame} onOpenTrainingPod={onOpenTrainingPod} activeTrainingPod={activeTrainingPod} hasAgent={hasAgent} />
     : <Lobby st={st} accent={ACCENT} onEnter={enter} onPickPod={openPod} onSpectate={openSpectate} onOpenMyGame={onOpenMyGame} />;
 
   const body = screen === 'spectate' && spec

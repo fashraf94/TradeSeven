@@ -113,6 +113,7 @@ import { COMMAND_DASHBOARD_ENABLED, COMMAND_DASHBOARD_DESKTOP_ENABLED, TOURNAMEN
 import DesktopSidebar from './components/Navigation/DesktopSidebar';
 import { OnboardingExperience } from './components/Agent';
 import LeagueScreen from './screens/LeagueScreen';
+import { GROUP_STATUS } from './constants/leagueTournament';
 import TournamentDevScreen from './screens/TournamentDevScreen';
 import AppLoadingScreen from './components/shared/AppLoadingScreen';
 import { ForgeScreen } from './components/Forge';
@@ -2225,6 +2226,23 @@ export default function PortfolioDuel() {
       setScreen('trainingBattle');
     }
   }, []);
+
+  // League Training Slice 5b-i — the LIVE in-app nav into a training pod from the
+  // Training tab's entry CTA / re-entry bar. App owns the trainingDraftRoom and
+  // trainingBattle screens, so it owns the status branch: DRAFTING → the live
+  // snake-draft room; any other active status (AWAITING_OPEN/BATTLE) → the
+  // battle-view host. Uses the screen setters directly (the ?trainingDraft/
+  // ?trainingBattle params are mount-only dev gates, not a runtime nav path).
+  const onOpenTrainingPod = (pod) => {
+    if (!pod?.id) return;
+    if (pod.status === GROUP_STATUS.DRAFTING) {
+      setTrainingDraftGroupId(pod.id);
+      setScreen('trainingDraftRoom');
+    } else {
+      setTrainingBattlePodId(pod.id);
+      setScreen('trainingBattle');
+    }
+  };
 
   // ── Season Mode state ────────────────────────────────────
   const { agent: primaryAgent, hasAgent, loading: agentLoading } = useAgent(user?.uid);
@@ -9000,15 +9018,17 @@ export default function PortfolioDuel() {
   }
 
   // LEAGUE TRAINING SLICE 5a — the battle-view host. A finished training draft
-  // (or ?trainingBattle=<podId>) lands here; onBack returns to the dashboard so
-  // the user is never trapped (a training pod is on-demand, off-ladder).
+  // (or ?trainingBattle=<podId>) lands here. onBack returns to the League tab
+  // (Slice 5b-i / R4 — training is now reachable from the League surface, so
+  // back lands where the user came from, not the dashboard; the user is never
+  // trapped). Landing precisely on the Training sub-tab is a deferred follow-up.
   if (screen === 'trainingBattle' && trainingBattlePodId) {
     return (
       <ErrorBoundary name="Training Battle" onNavigateDashboard={() => setScreen('dashboard')}>
         <LeagueTrainingBattleView
           podId={trainingBattlePodId}
           user={user}
-          onBack={() => setScreen('dashboard')}
+          onBack={() => setScreen('league')}
         />
       </ErrorBoundary>
     );
@@ -9631,7 +9651,10 @@ export default function PortfolioDuel() {
     return (
       <div style={{ marginLeft: isDesktop ? (sidebarCollapsed ? '64px' : '220px') : 0, transition: 'margin-left 0.2s ease' }}>
       <ErrorBoundary name="League" onNavigateDashboard={() => setScreen('dashboard')}>
-        <LeagueScreen />
+        {/* hasAgent is undefined while the agent doc loads (useAgent inits null →
+            hasAgent false), so the Training CTA's client gate never false-blocks a
+            real owner mid-load; it only fires on a KNOWN-absent agent. */}
+        <LeagueScreen onOpenTrainingPod={onOpenTrainingPod} hasAgent={agentLoading ? undefined : hasAgent} />
       </ErrorBoundary>
       </div>
     );

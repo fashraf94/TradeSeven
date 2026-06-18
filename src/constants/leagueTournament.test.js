@@ -96,6 +96,9 @@ import {
   lobbyOpenSeatCount,
   lobbyHasMember,
   selectActiveLobby,
+  // League Next-Arc Slice 5b-i — the ranked/training split predicates.
+  selectMyGroup,
+  selectMyTrainingPod,
   isoWeekString,
 } from './leagueTournament.js';
 // Real import, zero mocks (precedent: api/cron/process-draft-claims.test.js:10).
@@ -1002,6 +1005,58 @@ describe('selectActiveLobby — the subscribeMyLobby selection + the lobby→gro
     const older = { id: 'a', status: LOBBY_STATUS.OPEN, updatedAt: '2026-06-10T09:00:00Z', members: [{ odUserId: 'me' }] };
     const newer = { id: 'b', status: LOBBY_STATUS.FORMING, updatedAt: '2026-06-10T11:00:00Z', members: [{ odUserId: 'me' }] };
     expect(selectActiveLobby([older, newer], 'me').id).toBe('b');
+  });
+});
+
+describe('selectMyGroup — the subscribeMyGroup ranked read EXCLUDES training pods (5b-i safety gate)', () => {
+  const rankedBattle = { id: 'g1', status: GROUP_STATUS.BATTLE, updatedAt: '2026-06-15T10:00:00Z' };
+  const rankedForming = { id: 'g2', status: GROUP_STATUS.FORMING, updatedAt: '2026-06-15T09:00:00Z' };
+  // A live training pod in BATTLE — the exact doc that would mis-render through
+  // the status-keyed ranked UI if it leaked into the ranked tab.
+  const trainingBattle = { id: 't1', status: GROUP_STATUS.BATTLE, isTraining: true, updatedAt: '2026-06-15T23:00:00Z' };
+
+  it('THE GATE: a training BATTLE pod never surfaces; the ranked group does (even when the pod is newer)', () => {
+    expect(selectMyGroup([trainingBattle, rankedBattle])?.id).toBe('g1');
+    // training-only → null (nothing rankable, NOT the training pod)
+    expect(selectMyGroup([trainingBattle])).toBeNull();
+  });
+
+  it('returns the caller\'s active ranked group; null when none active', () => {
+    expect(selectMyGroup([rankedBattle])?.id).toBe('g1');
+    expect(selectMyGroup([rankedForming])?.id).toBe('g2');
+    expect(selectMyGroup([{ id: 'd', status: GROUP_STATUS.COMPLETE }])).toBeNull();
+    expect(selectMyGroup([])).toBeNull();
+    expect(selectMyGroup(null)).toBeNull();
+  });
+
+  it('picks the most-recently-updated ranked group when several match', () => {
+    const older = { id: 'a', status: GROUP_STATUS.BATTLE, updatedAt: '2026-06-15T08:00:00Z' };
+    const newer = { id: 'b', status: GROUP_STATUS.FORMING, updatedAt: '2026-06-15T12:00:00Z' };
+    expect(selectMyGroup([older, newer]).id).toBe('b');
+  });
+});
+
+describe('selectMyTrainingPod — the re-entry read + the server already_active guard (one predicate, both sides)', () => {
+  const drafting = { id: 't1', status: GROUP_STATUS.DRAFTING, isTraining: true, updatedAt: '2026-06-15T09:00:00Z' };
+  const awaiting = { id: 't2', status: GROUP_STATUS.AWAITING_OPEN, isTraining: true, updatedAt: '2026-06-15T10:00:00Z' };
+  const battle = { id: 't3', status: GROUP_STATUS.BATTLE, isTraining: true, updatedAt: '2026-06-15T11:00:00Z' };
+  const rankedBattle = { id: 'g1', status: GROUP_STATUS.BATTLE, updatedAt: '2026-06-15T23:00:00Z' };
+
+  it('matches a training pod in any in-flight status (DRAFTING/AWAITING_OPEN/BATTLE)', () => {
+    expect(selectMyTrainingPod([drafting])?.id).toBe('t1');
+    expect(selectMyTrainingPod([awaiting])?.id).toBe('t2');
+    expect(selectMyTrainingPod([battle])?.id).toBe('t3');
+  });
+
+  it('excludes a ranked group (isTraining not true) AND a COMPLETE training pod', () => {
+    expect(selectMyTrainingPod([rankedBattle])).toBeNull();
+    expect(selectMyTrainingPod([{ id: 'x', status: GROUP_STATUS.COMPLETE, isTraining: true }])).toBeNull();
+    expect(selectMyTrainingPod([])).toBeNull();
+    expect(selectMyTrainingPod(null)).toBeNull();
+  });
+
+  it('picks the most-recently-updated active pod (the re-entry target / guard subject)', () => {
+    expect(selectMyTrainingPod([drafting, awaiting, battle]).id).toBe('t3');
   });
 });
 

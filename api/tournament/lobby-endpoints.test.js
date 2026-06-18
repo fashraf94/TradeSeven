@@ -85,13 +85,18 @@ function makeDb(initial = {}) {
     return { docs, empty: docs.length === 0, size: docs.length, forEach: (cb) => docs.forEach(cb) };
   }
   function makeCollection(prefix) {
-    const filtered = (field, value) => topLevelDocs(prefix).filter(d => d.data()[field] === value);
+    // op-aware match — '==' equality and 'array-contains' (the member-scoped
+    // group query: findActiveTrainingPodForUser / subscribeMyGroup share it).
+    const matchOp = (cell, op, value) => (
+      op === 'array-contains' ? (Array.isArray(cell) && cell.includes(value)) : cell === value
+    );
+    const filtered = (field, op, value) => topLevelDocs(prefix).filter(d => matchOp(d.data()[field], op, value));
     return {
       doc: (id) => makeDocRef(`${prefix}/${id ?? `auto-${++autoSeq}`}`),
       where: (field, op, value) => ({
-        get: async () => snapshotOf(filtered(field, value)),
-        limit: (n) => ({ get: async () => snapshotOf(filtered(field, value).slice(0, n)) }),
-        select: () => ({ get: async () => snapshotOf(filtered(field, value)) }),
+        get: async () => snapshotOf(filtered(field, op, value)),
+        limit: (n) => ({ get: async () => snapshotOf(filtered(field, op, value).slice(0, n)) }),
+        select: () => ({ get: async () => snapshotOf(filtered(field, op, value)) }),
       }),
       get: async () => snapshotOf(topLevelDocs(prefix)),
     };
@@ -113,6 +118,12 @@ function makeDb(initial = {}) {
 }
 const STOCKS = Array.from({ length: 40 }, (_, i) => ({ symbol: `SYM${i}` }));
 const NOW = new Date('2026-06-10T15:00:00.000Z');
+// A ranked agent for u1 (Slice 5b-i): the training quick-play `no_agent` guard
+// now requires one — a training pod clones the player's RANKED agent — so the
+// happy-path formation tests seed it. Deliberately NO `archetype` field, so the
+// 'analyst' expectation below still exercises resolveHumanArchetype's DEFAULT
+// (agent present → past no_agent, but no archetype → falls back to 'analyst').
+const RANKED_AGENT_U1 = { 'agents/agent-u1': { ownerId: 'u1', isTrainingClone: false } };
 function withRankings(initial = {}) {
   return makeDb({ 'indexIntelligence/stockRankings': { stocks: STOCKS }, ...initial });
 }
@@ -202,7 +213,7 @@ describe('lobby-quickplay-training (Slice 3.1 — gated, no CTA)', () => {
   });
 
   it('on-demand forms a no-stakes TRAINING pod into the live DRAFTING state (Training Slice 2)', async () => {
-    const { db, store } = withRankings();
+    const { db, store } = withRankings(RANKED_AGENT_U1);
     h.db = db;
     h.nextArc = true;
     const { req, res } = makeReqRes({ displayName: 'Ada' });
@@ -215,7 +226,7 @@ describe('lobby-quickplay-training (Slice 3.1 — gated, no CTA)', () => {
     // live snake draft — NOT a synchronously-resolved AWAITING_OPEN pod. The
     // five-day clock anchors at the transition-only completion handoff, not here.
     expect(res.body.status).toBe(GROUP_STATUS.DRAFTING);
-    expect(res.body.humanArchetype).toBe('analyst'); // no agent for u1 → default
+    expect(res.body.humanArchetype).toBe('analyst'); // agent present but no archetype → resolveHumanArchetype default
     const group = store.get(`tournamentGroups/${res.body.groupId}`);
     expect(group.isTraining).toBe(true);
     expect(group.status).toBe(GROUP_STATUS.DRAFTING);
@@ -232,7 +243,7 @@ describe('lobby-quickplay-training (Slice 3.1 — gated, no CTA)', () => {
   });
 
   it('the dev-invoke preview param ?nextArc=1 forms the pod while the flag stays OFF (the preview smoke handle)', async () => {
-    const { db, store } = withRankings();
+    const { db, store } = withRankings(RANKED_AGENT_U1);
     h.db = db; // nextArc flag stays false
     const { req, res } = makeReqRes({ displayName: 'Ada' }, { query: { nextArc: '1' } });
     await trainingHandler(req, res);
@@ -247,6 +258,41 @@ describe('lobby-quickplay-training (Slice 3.1 — gated, no CTA)', () => {
     await quickplayHandler(req, res);
     expect(res.statusCode).toBe(200);
     expect(store.get(`tournamentGroups/${res.body.groupId}`)).not.toHaveProperty('isTraining');
+  });
+
+  // ── Slice 5b-i — the entry fail-safes (the C2 + R1 server guards; R3). Both
+  //    sit BEFORE formTrainingDraft, so a blocked call forms nothing. ──────────
+  it('no_agent (409): a player with no ranked agent is BLOCKED and no pod is formed', async () => {
+    const { db, store } = withRankings(); // NO agent seeded for u1
+    h.db = db;
+    h.nextArc = true;
+    const { req, res } = makeReqRes({ displayName: 'Ada' });
+    await trainingHandler(req, res);
+    expect(res.statusCode).toBe(409);
+    expect(res.body.error).toBe('no_agent');
+    // formTrainingDraft never ran → neither a lobby nor a group was created.
+    expect([...store.keys()].some(k => k.startsWith('tournamentLobby/'))).toBe(false);
+    expect([...store.keys()].some(k => k.startsWith('tournamentGroups/'))).toBe(false);
+  });
+
+  it('already_active (409): an in-flight training pod BLOCKS a second, points at it, and forms nothing (R1)', async () => {
+    const existingPod = {
+      'tournamentGroups/pod-1': {
+        isTraining: true, status: GROUP_STATUS.BATTLE, groupMembers: ['u1'],
+        players: [], updatedAt: '2026-06-10T12:00:00.000Z',
+      },
+    };
+    const { db, store } = withRankings({ ...RANKED_AGENT_U1, ...existingPod }); // agent present → past no_agent
+    h.db = db;
+    h.nextArc = true;
+    const { req, res } = makeReqRes({ displayName: 'Ada' });
+    await trainingHandler(req, res);
+    expect(res.statusCode).toBe(409);
+    expect(res.body.error).toBe('already_active');
+    expect(res.body.groupId).toBe('pod-1'); // the client re-enters this pod
+    // No NEW pod formed: the only group is the pre-existing one; no lobby opened.
+    expect([...store.keys()].filter(k => k.startsWith('tournamentGroups/'))).toEqual(['tournamentGroups/pod-1']);
+    expect([...store.keys()].some(k => k.startsWith('tournamentLobby/'))).toBe(false);
   });
 });
 

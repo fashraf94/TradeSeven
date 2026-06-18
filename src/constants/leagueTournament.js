@@ -475,6 +475,49 @@ export function selectActiveLobby(docs, odUserId) {
     .sort((a, b) => String(b?.updatedAt ?? '').localeCompare(String(a?.updatedAt ?? '')))[0] ?? null;
 }
 
+/**
+ * Pick the caller's ACTIVE RANKED group from a set of their group docs (the
+ * basis for the client `subscribeMyGroup`). A group counts only while FORMING
+ * or BATTLE, the caller's membership is already guaranteed by the query, and —
+ * the load-bearing addition for League Next-Arc training — it must NOT be a
+ * training pod (`isTraining !== true`). Training pods share the
+ * `tournamentGroups` collection and surface to the same member-scoped query, but
+ * the ranked tab renders a matched group through the status-keyed ranked UI
+ * (LeagueParticipantView), which would mis-render a training pod; excluding them
+ * here is the safety prerequisite that keeps a live training BATTLE pod out of
+ * the ranked read. Most-recently-updated wins when several match. Returns the
+ * group doc or null. Pure — the exclusion is unit-tested without Firestore.
+ * `docs` are { id, ...group }.
+ */
+export function selectMyGroup(docs) {
+  return (docs ?? [])
+    .filter(g => (g?.status === GROUP_STATUS.FORMING || g?.status === GROUP_STATUS.BATTLE) && g?.isTraining !== true)
+    .sort((a, b) => String(b?.updatedAt ?? '').localeCompare(String(a?.updatedAt ?? '')))[0] ?? null;
+}
+
+/**
+ * Pick the caller's ACTIVE TRAINING pod from a set of their group docs. ONE home
+ * for the selection rule, used by BOTH the client re-entry read
+ * (`subscribeMyTrainingPod`) AND the server `already_active` formation guard
+ * (`findActiveTrainingPodForUser`) — so the "one active training pod at a time"
+ * rule can never drift between the surface that offers re-entry and the guard
+ * that blocks a second pod. A pod counts only when it IS a training pod
+ * (`isTraining === true`) and is still in flight: DRAFTING, AWAITING_OPEN, or
+ * BATTLE. COMPLETE is excluded, so the start CTA returns naturally once a pod
+ * finishes (and an abandoned DRAFTING pod ages out via the server idle sweep).
+ * Most-recently-updated wins. Returns the pod doc or null. Pure. `docs` are
+ * { id, ...group }.
+ */
+export function selectMyTrainingPod(docs) {
+  return (docs ?? [])
+    .filter(g => g?.isTraining === true && (
+      g?.status === GROUP_STATUS.DRAFTING ||
+      g?.status === GROUP_STATUS.AWAITING_OPEN ||
+      g?.status === GROUP_STATUS.BATTLE
+    ))
+    .sort((a, b) => String(b?.updatedAt ?? '').localeCompare(String(a?.updatedAt ?? '')))[0] ?? null;
+}
+
 // The group-doc `feed` array's retention cap, shared by every feed writer
 // (the P1b rider-#4 flip feed and the P5 auto-commit entry) — one home so
 // the writers can never drift (P5 code-review convergence).

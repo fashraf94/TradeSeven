@@ -26,6 +26,8 @@
 
 import { runLobbyEndpoint, resolveDisplayName } from '../_utils/lobbyEndpoint.js';
 import { formTrainingDraft } from '../_utils/trainingLifecycle.js';
+import { resolveRankedAgent } from '../_utils/trainingClone.js';
+import { findActiveTrainingPodForUser } from '../_utils/tournamentGroupService.js';
 import { LEAGUE_NEXT_ARC_ENABLED } from '../../src/config/featureFlags.js';
 
 export const config = { maxDuration: 30 };
@@ -38,6 +40,28 @@ export default function handler(req, res) {
     if (!(LEAGUE_NEXT_ARC_ENABLED === true || req.query?.nextArc === '1')) {
       return res.status(404).json({ error: 'training_disabled', message: 'Training mode is not available.' });
     }
+
+    // Fail-safe 1 — no ranked agent to clone (Slice 5b-i, C2 backstop). The CTA
+    // is hidden for agent-less players client-side, but a training pod is built
+    // on a clone of the player's RANKED agent, so a reachable second path (dev
+    // param, double-tap) must not form a pod with no agent to clone. Block,
+    // don't flow (no gold-plating — resolveRankedAgent is the same lookup
+    // formTrainingDraft's clone step uses).
+    const rankedAgent = await resolveRankedAgent(db, user.uid);
+    if (!rankedAgent) {
+      return res.status(409).json({ error: 'no_agent', message: 'Build your agent first — training uses a copy of your ranked agent.' });
+    }
+
+    // Fail-safe 2 — one active training pod at a time (Slice 5b-i, R1). The UI
+    // replaces the start CTA with a re-entry bar whenever a pod is active, so the
+    // client can't normally start a second; this is the defense-in-depth backstop
+    // for the dev-param / double-tap race. An abandoned DRAFTING pod self-clears
+    // via the existing idle sweep, so this is a transient bar, never a lock-out.
+    const activePod = await findActiveTrainingPodForUser(db, user.uid);
+    if (activePod) {
+      return res.status(409).json({ error: 'already_active', message: 'You already have a training session in progress.', groupId: activePod.id, status: activePod.status });
+    }
+
     const result = await formTrainingDraft(db, {
       odUserId: user.uid,
       displayName: resolveDisplayName(body, user),

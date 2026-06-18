@@ -15,7 +15,6 @@ import {
   TOURNAMENT_RANKS_COLLECTION,
   TOURNAMENT_LOBBY_COLLECTION,
   TOURNAMENT_TUNING,
-  GROUP_STATUS,
   LOBBY_STATUS,
   isCpuUserId,
   AGENT_BOARDS_SUBCOLLECTION,
@@ -27,6 +26,8 @@ import {
   DRAFT_SUBCOLLECTION,
   DRAFT_STATE_DOC_ID,
   selectActiveLobby,
+  selectMyGroup,
+  selectMyTrainingPod,
 } from '../constants/leagueTournament';
 
 /** One-shot group read. Returns { id, ...data } or null. */
@@ -158,13 +159,18 @@ export function subscribeOwnBoard(groupId, odUserId, callback) {
 }
 
 /**
- * Live "my group" subscription (P5 — the League tab home): the caller's
- * active tournament group, found by membership. Status is filtered
- * client-side (a where-in on status would demand a composite index; if the
- * console still prompts for the array-contains index during smoke, FLAG it
- * — founder note, never improvise rules/index changes). Picks the most
- * recently updated active group when several match. Callback receives
- * { id, ...group } or null. Returns the unsubscribe fn.
+ * Live "my group" subscription (P5 — the League tab home): the caller's active
+ * RANKED tournament group, found by membership. The query is unchanged (a single
+ * `array-contains` on groupMembers — no composite index; if the console still
+ * prompts for the array-contains index during smoke, FLAG it — founder note,
+ * never improvise rules/index changes); the selection is the pure `selectMyGroup`
+ * predicate (FORMING/BATTLE, most-recent-wins, AND `isTraining !== true`). That
+ * training exclusion is load-bearing: training pods share this collection and
+ * match this same member query, but must never surface on the ranked tab (the
+ * status-keyed ranked UI would mis-render them) — selectMyGroup is the safety
+ * gate, unit-tested without Firestore. Protects both callers (LeagueParticipantView,
+ * useRealLeagueState). Callback receives { id, ...group } or null. Returns the
+ * unsubscribe fn.
  */
 export function subscribeMyGroup(uid, callback) {
   const groupsQuery = query(
@@ -172,13 +178,35 @@ export function subscribeMyGroup(uid, callback) {
     where('groupMembers', 'array-contains', uid)
   );
   return onSnapshot(groupsQuery, (snapshot) => {
-    const active = snapshot.docs
-      .map(d => ({ id: d.id, ...d.data() }))
-      .filter(g => g.status === GROUP_STATUS.FORMING || g.status === GROUP_STATUS.BATTLE)
-      .sort((a, b) => String(b.updatedAt ?? '').localeCompare(String(a.updatedAt ?? '')));
-    callback(active[0] ?? null);
+    const docs = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+    callback(selectMyGroup(docs));
   }, (error) => {
     console.error('[TournamentGroupService] My-group subscription error:', error);
+    callback(null);
+  });
+}
+
+/**
+ * Live "my active training pod" subscription (League Next-Arc Slice 5b-i — the
+ * Training-tab re-entry surface): the caller's in-flight training pod, found by
+ * the SAME member-scoped `array-contains` query (no new index) and selected by
+ * the pure `selectMyTrainingPod` predicate (isTraining + DRAFTING/AWAITING_OPEN/
+ * BATTLE, most-recent-wins; COMPLETE excluded so the re-entry bar disappears and
+ * the start CTA returns once a pod finishes). The twin of subscribeMyGroup — that
+ * one is the ranked read with training excluded, this one is the training read with
+ * ranked excluded; the two predicates are complementary by construction. Callback
+ * receives { id, ...pod } or null. Returns the unsubscribe fn.
+ */
+export function subscribeMyTrainingPod(uid, callback) {
+  const groupsQuery = query(
+    collection(db, TOURNAMENT_GROUPS_COLLECTION),
+    where('groupMembers', 'array-contains', uid)
+  );
+  return onSnapshot(groupsQuery, (snapshot) => {
+    const docs = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+    callback(selectMyTrainingPod(docs));
+  }, (error) => {
+    console.error('[TournamentGroupService] My-training-pod subscription error:', error);
     callback(null);
   });
 }
