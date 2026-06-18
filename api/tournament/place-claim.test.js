@@ -166,6 +166,7 @@ describe('validation matrix (legacy order, minus categories)', () => {
     const missing = makeReqRes();
     await handler(missing.req, missing.res);
     expect(missing.res.statusCode).toBe(404);
+    expect(missing.res.body.error).toBe('group_not_found');
 
     h.db = makeDb({ groupDoc: battleGroup({ status: 'forming' }) }).db;
     const forming = makeReqRes();
@@ -176,6 +177,7 @@ describe('validation matrix (legacy order, minus categories)', () => {
     const badId = makeReqRes({ groupId: 'a/b' });
     await handler(badId.req, badId.res);
     expect(badId.res.statusCode).toBe(400);
+    expect(badId.res.body.error).toBe('invalid_group_id');
 
     const sameSym = makeReqRes({ addSymbol: 'NVDA' });
     await handler(sameSym.req, sameSym.res);
@@ -224,6 +226,88 @@ describe('validation matrix (legacy order, minus categories)', () => {
     await handler(dup.req, dup.res);
     expect(dup.res.statusCode).toBe(409);
     expect(dup.res.body.error).toBe('duplicate_claim');
+  });
+});
+
+// Backfill locks added before the Phase-B1 extraction of the validation core
+// into tournamentClaimPlacement.js — make the existing suite a comprehensive
+// lock on every branch the extraction touches (BUILD_RULES §4 anti-copy: the
+// human path's behavior must be byte-identical after the refactor).
+describe('validation matrix — backfill locks (pre-B1 extraction)', () => {
+  it('rejects an empty/missing symbol with invalid_symbols (the !dropSymbol arm)', async () => {
+    h.db = makeDb({ groupDoc: battleGroup() }).db;
+    const empty = makeReqRes({ dropSymbol: '' });
+    await handler(empty.req, empty.res);
+    expect(empty.res.statusCode).toBe(400);
+    expect(empty.res.body.error).toBe('invalid_symbols');
+  });
+
+  it('rejects a non-POST method with 405', async () => {
+    h.db = makeDb({ groupDoc: battleGroup() }).db;
+    const { req, res } = makeReqRes();
+    req.method = 'GET';
+    await handler(req, res);
+    expect(res.statusCode).toBe(405);
+  });
+
+  it('maps an unexpected Firestore failure to 500 server_error (not a leak)', async () => {
+    h.db = {
+      collection: () => ({ doc: () => ({ get: async () => { throw new Error('boom'); } }) }),
+    };
+    const { req, res } = makeReqRes();
+    await handler(req, res);
+    expect(res.statusCode).toBe(500);
+    expect(res.body.error).toBe('server_error');
+  });
+
+  it('defaults rank to 1 for invalid input and falls back username → auth name → null', async () => {
+    // rank 0 → 1; no body.username, auth name present → the name
+    h.user = { uid: 'u1', name: 'Bob' };
+    const a = makeDb({ groupDoc: battleGroup() });
+    h.db = a.db;
+    const ra = makeReqRes({ rank: 0, username: undefined });
+    await handler(ra.req, ra.res);
+    expect(ra.res.statusCode).toBe(200);
+    expect(a.captured.added[0].rank).toBe(1);
+    expect(a.captured.added[0].username).toBe('Bob');
+
+    // whitespace username + no auth name → null
+    h.user = { uid: 'u1' };
+    const b = makeDb({ groupDoc: battleGroup() });
+    h.db = b.db;
+    const rb = makeReqRes({ username: '   ' });
+    await handler(rb.req, rb.res);
+    expect(rb.res.statusCode).toBe(200);
+    expect(b.captured.added[0].username).toBeNull();
+  });
+});
+
+describe('Phase A — training-scoped pre-day-1 gate (AWAITING_OPEN)', () => {
+  it('accepts a claim on a TRAINING pod in awaiting_open (the weeknight pre-day-1 window)', async () => {
+    const { db, captured } = makeDb({ groupDoc: battleGroup({ status: 'awaiting_open', isTraining: true }) });
+    h.db = db;
+    const { req, res } = makeReqRes();
+    await handler(req, res);
+    expect(res.statusCode).toBe(200);
+    expect(captured.added).toHaveLength(1);
+  });
+
+  it('still rejects a RANKED pod in awaiting_open with not_battle (gate stays training-scoped)', async () => {
+    h.db = makeDb({ groupDoc: battleGroup({ status: 'awaiting_open' }) }).db; // no isTraining
+    const { req, res } = makeReqRes();
+    await handler(req, res);
+    expect(res.statusCode).toBe(409);
+    expect(res.body.error).toBe('not_battle');
+  });
+
+  it('rejects a TRAINING pod still in forming or drafting with not_battle', async () => {
+    for (const status of ['forming', 'drafting']) {
+      h.db = makeDb({ groupDoc: battleGroup({ status, isTraining: true }) }).db;
+      const { req, res } = makeReqRes();
+      await handler(req, res);
+      expect(res.statusCode).toBe(409);
+      expect(res.body.error).toBe('not_battle');
+    }
   });
 });
 

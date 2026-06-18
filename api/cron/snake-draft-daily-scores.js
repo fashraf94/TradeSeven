@@ -18,6 +18,7 @@ import { initializeApp, getApps, cert } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 import { calculateSnakeDraftAssetScore } from '../../src/services/scoring/baggerBombCalculator.js';
 import { bankAllTournamentGroups } from '../_utils/tournamentBanking.js';
+import { placeCpuClaimsForTrainingPods } from '../_utils/tournamentCpuClaims.js';
 import { completeBankedTrainingPods } from '../_utils/trainingLifecycle.js';
 import { reconcileAllTournamentLedgers } from '../_utils/tournamentAgentLedger.js';
 import { aggregateTournamentLeaderboards } from '../_utils/tournamentLeaderboard.js';
@@ -463,6 +464,7 @@ export default async function handler(req, res) {
   // Declared above the try so the outer catch can report it too — the
   // tournament branch's result must never be masked, even by a legacy throw.
   let tournament = { groups: 0, processed: 0, skipped: 0, errors: 0 };
+  let trainingCpuClaims = { pods: 0, placed: 0, claimedPods: 0, skipped: 0, errors: 0 };
   let trainingCompletion = { groups: 0, completed: 0, skipped: 0, errors: 0 };
   let tournamentLedger = { groups: 0, reconciled: 0, divergences: 0, staleCleared: 0, errors: 0 };
   let tournamentLeaderboard = { groups: 0, skippedNoBanking: 0, docsWritten: 0, errors: 0 };
@@ -482,6 +484,21 @@ export default async function handler(req, res) {
     } catch (error) {
       logError('Tournament banking branch failed', { error: error.message });
       tournament = { groups: 0, processed: 0, skipped: 0, errors: 1, failed: true };
+    }
+
+    // League Training Slice 4: CPU user-layer claim placement (zero new cron —
+    // BUILD_RULES §6). Runs AFTER banking (needs the freshly-banked closeScores
+    // to drop the worst pick) and BEFORE rolling-completion (a day-5 pod is
+    // gated out by the day clock anyway). Own catch + isTraining filter: a
+    // failure never blocks completion/ledger/leaderboard/legacy, and ranked base
+    // groups (no isTraining) are never touched. Idempotent per cycle via
+    // claimSystem.lastCpuClaimDay, so a re-fire never stacks claims.
+    try {
+      trainingCpuClaims = await placeCpuClaimsForTrainingPods(db, { now: new Date() });
+      logInfo('Training CPU-claims branch complete', trainingCpuClaims);
+    } catch (error) {
+      logError('Training CPU-claims branch failed', { error: error.message });
+      trainingCpuClaims = { pods: 0, placed: 0, claimedPods: 0, skipped: 0, errors: 1, failed: true };
     }
 
     // League Training Slice 1: rolling-completion dispatch (zero new cron —
@@ -553,6 +570,7 @@ export default async function handler(req, res) {
         message: 'No active battles',
         processed: 0,
         tournament,
+        trainingCpuClaims,
         trainingCompletion,
         tournamentLedger,
         tournamentLeaderboard,
@@ -580,6 +598,7 @@ export default async function handler(req, res) {
         success: false,
         error: 'Failed to fetch prices',
         tournament, // the tournament branches already ran — never masked by a legacy price failure
+        trainingCpuClaims,
         trainingCompletion,
         tournamentLedger,
         tournamentLeaderboard,
@@ -619,6 +638,7 @@ export default async function handler(req, res) {
       success: true,
       ...results,
       tournament,
+      trainingCpuClaims,
       trainingCompletion,
       tournamentLedger,
       tournamentLeaderboard,
@@ -631,6 +651,7 @@ export default async function handler(req, res) {
       success: false,
       error: error.message,
       tournament,
+      trainingCpuClaims,
       trainingCompletion,
       tournamentLedger,
       tournamentLeaderboard,

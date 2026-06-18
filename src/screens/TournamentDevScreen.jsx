@@ -430,6 +430,20 @@ export default function TournamentDevScreen() {
     if (data?.status) appendLog(`claims OK · ${data.status}${data.status === 'processed' ? ` (${data.approved} approved, ${data.denied} denied)` : ''}`);
   }
 
+  // Slice 4 — drive CPU user-layer claim placement on a TRAINING pod (the
+  // production path rides the nightly banking cron, which doesn't run on
+  // preview). simulatedNow lets the dev exercise advance days. Idempotent per
+  // cycle: a re-click returns already_placed.
+  async function placeCpuClaims() {
+    const simulated = simulatedNowIso();
+    const data = await adminPost(
+      '/api/tournament/place-cpu-claims',
+      { groupId: attachedGroupId, ...(simulated ? { simulatedNow: simulated } : {}) },
+      'cpu-claims'
+    );
+    if (data?.status) appendLog(`cpu-claims OK · ${data.status}${typeof data.placed === 'number' ? ` (${data.placed} placed)` : ''}`);
+  }
+
   // P9 — the five-days-clean reconciliation check, surfaced as a button so the
   // launch criterion of record ("ledger reconciliation clean for five days")
   // is a green/red verdict the founder reads, not a manual curl. Rebuilds the
@@ -612,6 +626,14 @@ export default function TournamentDevScreen() {
               onClick={processClaims}
             >
               {busy === 'claims' ? 'Processing…' : 'Process claims'}
+            </button>
+            {/* Slice 4 — CPU claim placement (training pods only). */}
+            <button
+              style={btn(!!secret && group?.isTraining === true && group?.status === GROUP_STATUS.BATTLE && !busy)}
+              disabled={!secret || group?.isTraining !== true || group?.status !== GROUP_STATUS.BATTLE || !!busy}
+              onClick={placeCpuClaims}
+            >
+              {busy === 'cpu-claims' ? 'Placing…' : 'CPU claims'}
             </button>
             {/* P9 — the five-days-clean reconciliation verdict (launch criterion). */}
             <button

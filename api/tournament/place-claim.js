@@ -24,21 +24,23 @@ import { requireAuth } from '../_utils/authMiddleware.js';
 import { isAdminSecretValid } from '../_utils/adminSecretAuth.js';
 import { isValidForgeId } from '../_utils/idValidation.js';
 import { getPlayer } from '../_utils/tournamentGroupService.js';
-import { getTournamentClaimWindow, formatEtDate } from '../_utils/tournamentTime.js';
+import { getTournamentClaimWindow } from '../_utils/tournamentTime.js';
 import {
   TOURNAMENT_GROUPS_COLLECTION,
   GROUP_STATUS,
   TOURNAMENT_TUNING,
-  deriveCurrentTradingDay,
 } from '../../src/constants/leagueTournament.js';
+// Slice 4 (B1): the validation + transactional write live in the shared
+// placement core, so the CPU path (tournamentCpuClaims.js) reuses ONE copy of
+// the rules (BUILD_RULES §4). This endpoint keeps its HTTP-only concerns: auth,
+// the ET window, and the training-scoped status gate.
+import {
+  validateClaimPlacement,
+  commitClaimPlacement,
+  normalizeSymbol,
+} from '../_utils/tournamentClaimPlacement.js';
 
 export const config = { maxDuration: 10 };
-
-const LAST_CLAIM_DAY = 5;
-
-function normalizeSymbol(value) {
-  return typeof value === 'string' ? value.trim().toUpperCase() : '';
-}
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -79,67 +81,29 @@ export default async function handler(req, res) {
       return res.status(404).json({ error: 'group_not_found', message: 'Tournament group not found.' });
     }
     const group = groupSnap.data();
-    if (group.status !== GROUP_STATUS.BATTLE) {
+    // Slice 4 (Phase A): claims open on a BATTLE pod — and, for TRAINING pods
+    // only, on an AWAITING_OPEN pod (the weeknight pre-day-1 window; the pod is
+    // flipped to BATTLE by the orchestrator morning tick before the 9:25 AM ET
+    // processing pass). AWAITING_OPEN is a training-only status (LEGAL_TRANSITIONS),
+    // so ranked behavior is unchanged — ranked never enters it.
+    const claimsStatusOpen = group.status === GROUP_STATUS.BATTLE
+      || (group.isTraining === true && group.status === GROUP_STATUS.AWAITING_OPEN);
+    if (!claimsStatusOpen) {
       return res.status(409).json({ error: 'not_battle', message: 'Claims require a group in battle.' });
     }
 
     const player = getPlayer(group, odUserId);
-    if (!player) {
-      return res.status(403).json({ error: 'not_member', message: 'You are not a member of this group.' });
+
+    // Shared placement core (B1): distinct symbols → membership → drop-on-roster
+    // → add-in-userPool → day-5. Identical rules to the CPU path.
+    const validation = validateClaimPlacement({ group, player, dropSymbol, addSymbol, now });
+    if (!validation.ok) {
+      return res.status(validation.status).json({ error: validation.error, message: validation.message });
     }
 
-    if (!(player.picks || []).some(p => p.symbol === dropSymbol)) {
-      return res.status(409).json({ error: 'drop_not_on_roster', message: `${dropSymbol} is not on your roster.` });
-    }
-    if (!(group.userPool || []).includes(addSymbol)) {
-      return res.status(409).json({ error: 'not_in_pool', message: `${addSymbol} is not in this group's claimable pool.` });
-    }
-
-    // Day-5 rule (legacy :251-260 / :66-78): the last trading day takes no
-    // new claims. Derived from the banking record — deterministic on
-    // preview, deliberately NOT covered by devBypassWindow.
-    const currentDay = deriveCurrentTradingDay(group, formatEtDate(now));
-    if (currentDay >= LAST_CLAIM_DAY) {
-      return res.status(409).json({ error: 'battle_last_day', message: 'The battle is on its last day — no more claims.' });
-    }
-
-    const claimsRef = groupRef.collection('claims');
-    const nowIso = now.toISOString();
-    const claim = {
-      odUserId,
-      username: typeof body.username === 'string' && body.username.trim() ? body.username.trim() : (user.name ?? null),
-      dropSymbol,
-      addSymbol,
-      rank,
-      status: 'pending',
-      denialReason: null,
-      processedAt: null,
-      submittedAt: nowIso,
-      createdAt: nowIso,
-    };
-
-    // Cap + duplicate check and the write share one transaction — without
-    // it, parallel submissions both read size < cap and both land, making
-    // the 3-pending fairness cap advisory. Rider #5 "placed": the awaited
-    // transactional write IS the capture.
-    const placement = await db.runTransaction(async (tx) => {
-      const pendingSnap = await tx.get(
-        claimsRef.where('odUserId', '==', odUserId).where('status', '==', 'pending')
-      );
-      if (pendingSnap.size >= TOURNAMENT_TUNING.CLAIM_PENDING_CAP_PER_CYCLE) {
-        return { rejected: 'claim_cap_reached' };
-      }
-      let duplicate = false;
-      pendingSnap.forEach(doc => {
-        const data = doc.data();
-        if (data.dropSymbol === dropSymbol && data.addSymbol === addSymbol) duplicate = true;
-      });
-      if (duplicate) return { rejected: 'duplicate_claim' };
-
-      const claimRef = claimsRef.doc();
-      tx.set(claimRef, claim);
-      return { claimId: claimRef.id };
-    });
+    const username = typeof body.username === 'string' && body.username.trim() ? body.username.trim() : (user.name ?? null);
+    // Cap + duplicate + the rider #5 "placed" awaited write — one transaction.
+    const placement = await commitClaimPlacement(db, { groupId, odUserId, username, dropSymbol, addSymbol, rank, now });
 
     if (placement.rejected === 'claim_cap_reached') {
       return res.status(409).json({
@@ -152,7 +116,7 @@ export default async function handler(req, res) {
     }
 
     console.log(`[Tournament] place-claim: group ${groupId} ${odUserId} drop ${dropSymbol} add ${addSymbol} rank ${rank}${windowBypassed ? ' (window bypassed)' : ''}`);
-    return res.status(200).json({ claimId: placement.claimId, ...claim });
+    return res.status(200).json({ claimId: placement.claimId, ...placement.claim });
   } catch (err) {
     console.error('[Tournament] place-claim error:', err);
     return res.status(500).json({ error: 'server_error', message: 'Could not place the claim.' });
