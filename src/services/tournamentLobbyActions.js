@@ -33,6 +33,7 @@ async function postLobbyAction(path, body = {}) {
     const err = new Error(data?.message || data?.error || `HTTP ${res.status}`);
     err.status = res.status;
     err.code = data?.error || `http_${res.status}`;
+    err.data = data; // preserve the server body (e.g. already_active's { groupId, status })
     throw err;
   }
   return data;
@@ -45,6 +46,19 @@ async function postLobbyAction(path, body = {}) {
  */
 export function quickPlay({ displayName } = {}) {
   return postLobbyAction('lobby-quickplay', displayName ? { displayName } : {});
+}
+
+/**
+ * Quick Play (Training) — League Next-Arc Slice 5b-i: the on-demand solo
+ * training cold-start. The server forms a CPU-padded TRAINING pod on the
+ * caller's RANKED-agent clone and opens the interactive draft. Resolves to
+ * { groupId, ... }; the pod then surfaces via subscribeMyTrainingPod (re-entry)
+ * and the caller is routed into the draft room. Rejects `no_agent` (no ranked
+ * agent to clone) and `already_active` (the one-active-pod rule) — both mapped
+ * to friendly copy below.
+ */
+export function quickPlayTraining({ displayName } = {}) {
+  return postLobbyAction('lobby-quickplay-training', displayName ? { displayName } : {});
 }
 
 /**
@@ -101,6 +115,9 @@ const ERROR_COPY = Object.freeze({
   not_lobby_owner: 'Only the player who created this game can start it.',
   universe_unavailable: 'The market data isn’t ready yet — try again in a few minutes.',
   cpu_board_commit_failed: 'Couldn’t seat the CPU opponents — please try again.',
+  // League Next-Arc Slice 5b-i — training quick-play guards.
+  no_agent: 'Build your agent first — training drafts use a copy of your ranked agent.',
+  already_active: 'You already have a training session in progress — resume it to keep going.',
 });
 
 /** Map a thrown lobby-action error to user copy; falls back to the server message. */

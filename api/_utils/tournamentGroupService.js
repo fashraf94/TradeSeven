@@ -17,6 +17,7 @@ import {
   GROUP_STATUS,
   GROUP_SIZE,
   createTournamentGroupDoc,
+  selectMyTrainingPod,
 } from '../../src/constants/leagueTournament.js';
 
 // Forward-only lifecycle (GROUP_STATUS ratified unchanged at P1, founder
@@ -72,6 +73,23 @@ export async function getGroup(db, groupId) {
   const snap = await db.collection(TOURNAMENT_GROUPS_COLLECTION).doc(groupId).get();
   if (!snap.exists) return null;
   return { id: snap.id, ...snap.data() };
+}
+
+/**
+ * The caller's ACTIVE training pod, or null (League Next-Arc Slice 5b-i — the
+ * server `already_active` formation guard). Member-scoped single
+ * `array-contains` query (no composite index — the same query as the client
+ * subscribeMyTrainingPod), selected by the SHARED pure `selectMyTrainingPod`
+ * predicate so the guard and the client re-entry surface can never drift on
+ * what counts as "an active pod" (isTraining + DRAFTING/AWAITING_OPEN/BATTLE).
+ * Returns { id, ...pod } or null.
+ */
+export async function findActiveTrainingPodForUser(db, odUserId) {
+  const snap = await db.collection(TOURNAMENT_GROUPS_COLLECTION)
+    .where('groupMembers', 'array-contains', odUserId)
+    .get();
+  const docs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  return selectMyTrainingPod(docs);
 }
 
 /**
