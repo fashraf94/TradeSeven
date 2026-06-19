@@ -52,3 +52,15 @@
 - **`useTrainingDraft` widening is purely additive** — no existing return field changed or removed; `members`/`currentUserId`/`onClockSeatIdx` were already local computations. The legacy `boardBySector`/`highlightSet` path is intact, so flag-off renders byte-identically.
 - **Default export contract preserved** — `TrainingDraftRoomScreen({ user, groupId, onComplete, onExit })` unchanged; both call sites (`src/App.jsx:9011`, `src/screens/index.js`) work via prop spread.
 - **★ Prime directive** — the redesign writes only local draft state through `applyTrainingPick`; it never writes the ranked agent. To be re-verified on the Vercel preview smoke (customize → enter → draft a pod, confirm the ranked agent is unchanged).
+
+---
+
+## Phase 2 addendum — the opponent reveal
+
+**Scope:** `RevealRow.jsx` + `SnipeCallout`, `useDraftReveal.js` (the controller), `PickPanel.jsx` (revealing state), `DraftBoardRoom.jsx` (wiring). New tests in `useDraftReveal.test.js` (6). Build green, lint clean, tests 26/26.
+
+**What it does:** the server resolves the CPU run-up in one transaction, so the client gets all the new picks in a single snapshot. `useDraftReveal` detects the newly-arrived CPU picks since the last consumed point and replays them pick-by-pick (~0.52s first, ~1.18s each), marking a **snipe** when a CPU took a name that sat in the human's pre-pick top tier (#1–6). It never replays history on mount; honors `prefers-reduced-motion` (instant step, no flash); and offers a **skip/fast-forward**. The reveal phase wins over `your-turn`/`done` so the run-up plays before the board unlocks / the lineup locks.
+
+**Self-review finding fixed during the build (the load-bearing race):** snipe detection must compare CPU picks to the **pre-pick** board, but capturing those ranks in an effect keyed on `isMyTurn` was overwritten by the **post-run-up** board on the same snapshot commit (effects run before the reveal's `setRev`). Fixed by capturing synchronously in `doConfirm`, tagged with the pick index (`{ atIndex, ranks }`), and only trusting the capture for the run-up whose triggering human pick matches `atIndex`. As a bonus this makes clock-autopick-triggered run-ups show **no false snipes** (no capture → index mismatch → empty ranks) rather than wrong ones.
+
+**Known V1 behavior:** the real 20s pick clock keeps running during the reveal (max run-up ≈ 7.4s ≪ 20s, so it cannot expire mid-reveal); the skip button reclaims the time. A clock pause during reveal was considered and deferred as unnecessary for V1.

@@ -11,22 +11,39 @@ import { TOKENS, DX, alpha } from './draftTokens';
 import { Icon } from './draftIcons';
 import { Mono, Orb, ClockRing, FitBar, SectorTag } from './draftPrimitives';
 import { LineupSlots } from './SeatCard';
+import { RevealRow } from './RevealRow';
 
 export function PickPanel({
   phase, pickClock, pickNo, backToBack, selected, coach, orbState = 'ready',
   onConfirm, onClear, submitting = false, error = null, myPicks = [],
   onExit = null, onClockLabel = null, clockTotalSec = 20,
+  revealRows = [], onSkip = null,
 }) {
   const yourTurn = phase === 'your-turn';
   const waiting = phase === 'waiting';
+  const revealing = phase === 'revealing';
   const done = phase === 'done';
 
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', gap: 13, overflow: 'hidden' }}>
       {/* status header */}
       {!done && (
-        <div style={{ borderRadius: 14, padding: '14px 15px', background: waiting ? alpha(DX.cpu, 0.07) : alpha(DX.you, 0.06), border: `1px solid ${waiting ? alpha(DX.cpu, 0.28) : alpha(DX.you, 0.26)}` }}>
-          {waiting ? (
+        <div style={{ borderRadius: 14, padding: '14px 15px', background: (waiting || revealing) ? alpha(DX.cpu, 0.07) : alpha(DX.you, 0.06), border: `1px solid ${(waiting || revealing) ? alpha(DX.cpu, 0.28) : alpha(DX.you, 0.26)}` }}>
+          {revealing ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <div style={{ width: 8, height: 8, borderRadius: '50%', background: DX.cpu, animation: 'ldLiveDot 1.4s infinite', flexShrink: 0 }} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <Mono style={{ fontSize: 10, letterSpacing: '0.14em', color: DX.cpu, fontWeight: 700 }}>OPPONENTS DRAFTING</Mono>
+                <div style={{ fontSize: 14, fontWeight: 700, color: TOKENS.ink, marginTop: 2 }}>The table is on the clock</div>
+              </div>
+              {onSkip && (
+                <button className="ld-tap" onClick={onSkip} style={{ all: 'unset', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 5, padding: '5px 10px', borderRadius: 999, background: TOKENS.surface, border: `1px solid ${TOKENS.hair2}`, color: TOKENS.ink2 }}>
+                  <Mono style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.06em' }}>SKIP</Mono>
+                  <Icon name="arrowR" size={12} color={TOKENS.ink2} />
+                </button>
+              )}
+            </div>
+          ) : waiting ? (
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
               <div style={{ width: 8, height: 8, borderRadius: '50%', background: DX.cpu, animation: 'ldLiveDot 1.4s infinite', flexShrink: 0 }} />
               <div>
@@ -55,6 +72,13 @@ export function PickPanel({
       <div className="ld-scroll" style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 10 }}>
         {error && (
           <div style={{ borderRadius: 12, padding: '9px 12px', background: alpha(DX.neg, 0.1), border: `1px solid ${alpha(DX.neg, 0.4)}`, color: '#ffd7de', fontSize: 12.5 }}>{error}</div>
+        )}
+
+        {revealing && (
+          <>
+            {revealRows.slice().reverse().map((p, i) => <RevealRow key={p.overall} pick={p} fresh={i === 0} />)}
+            <div style={{ textAlign: 'center', padding: '6px' }}><Mono style={{ fontSize: 10.5, color: TOKENS.ink3 }}>re-ranking your best available…</Mono></div>
+          </>
         )}
 
         {yourTurn && (

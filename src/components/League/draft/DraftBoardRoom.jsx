@@ -11,7 +11,7 @@
 // Phase 1 scope: the board, real and interactive. Opponents' picks appear after
 // each pick (the animated pick-by-pick reveal is Phase 2).
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useTrainingDraft } from '../../../hooks/useTrainingDraft';
 import { PICKS_PER_PLAYER, TRAINING_TUNING, GROUP_STATUS } from '../../../constants/leagueTournament';
 import { TOKENS, DX, alpha, injectDraftCSS, FONT_VARS } from './draftTokens';
@@ -23,6 +23,8 @@ import { TierHeader } from './TierHeader';
 import { SnakeStrip } from './SnakeStrip';
 import { SeatCard, LineupSlots } from './SeatCard';
 import { PickPanel } from './PickPanel';
+import { RevealRow, SnipeCallout } from './RevealRow';
+import { useDraftReveal } from './useDraftReveal';
 
 const CLOCK_TOTAL = Math.max(1, Math.round((TRAINING_TUNING?.PICK_CLOCK_MS || 20000) / 1000));
 // Tiers rendered in full by default; the long tail collapses behind a toggle.
@@ -38,11 +40,17 @@ function useNarrow(bp = 1024) {
   return narrow;
 }
 
-function coachLineFor({ phase, archKey, selected, topPick, backToBack, pickNo, myPicks }) {
+function coachLineFor({ phase, archKey, selected, topPick, backToBack, pickNo, myPicks, lastReveal }) {
   const a = archMeta(archKey);
   if (phase === 'done') {
     const ids = (myPicks || []).join(' · ');
     return { title: 'Lineup locked', body: `${ids}. That's your three-stock book — ranked for a ${a.name}. The battle view takes it from here.` };
+  }
+  if (phase === 'revealing') {
+    if (lastReveal && lastReveal.sniped) {
+      return { title: 'Sniped from the top', body: `${lastReveal.seatLabel} just took ${lastReveal.symbol} — it was #${lastReveal.humanRank} on your board. Grab the safe name, or gamble it survives.` };
+    }
+    return { title: 'The table is drafting', body: 'Watch what gets taken — especially near the top of your board. Then I re-rank to your best available.' };
   }
   if (phase === 'waiting') {
     return { title: 'The table is drafting', body: 'Watch what gets taken — especially near the top of your board. Then I re-rank to your best available.' };
@@ -122,29 +130,46 @@ export default function DraftBoardRoom({ user, groupId, onComplete = null, onExi
     return arr;
   }, [events, totalPicks, currentUserId]);
 
+  const seatLabel = (s) => (s.isYou ? 'You' : `CPU ${s.seatIndex}`);
+  const cpuLabel = (odUserId) => `CPU ${members.indexOf(odUserId)}`;
+
+  // pre-pick board ranks for snipe detection, captured synchronously at pick
+  // time (doConfirm) and tagged with the pick index — the reveal only trusts it
+  // for the run-up that this exact pick triggered (see useDraftReveal).
+  const snipeRanksRef = useRef({ atIndex: -1, ranks: new Map() });
+
+  const { revealing, feed, flash, skip, reduceMotion } = useDraftReveal({
+    events, ready: !!draft, currentUserId, snipeRanksRef,
+  });
+  const revealRows = feed.map((p) => ({ seatLabel: cpuLabel(p.odUserId), isCpu: true, symbol: p.symbol, overall: p.pickNumber, sniped: p.sniped, humanRank: p.humanRank }));
+  const lastReveal = revealRows[revealRows.length - 1] || null;
+
   const selectedRow = selected ? board.find((b) => b.symbol === selected) || null : null;
   const pickNo = Math.min(totalPicks, currentPickIndex + 1);
   const prevHuman = currentPickIndex - 1 >= 0 && snakeOrder[currentPickIndex - 1] === humanSeatIdx;
   const nextHuman = currentPickIndex + 1 < totalPicks && snakeOrder[currentPickIndex + 1] === humanSeatIdx;
   const backToBack = isMyTurn && humanSeatIdx >= 0 && (prevHuman || nextHuman);
-  const phase = isComplete ? 'done' : isMyTurn ? 'your-turn' : 'waiting';
+  // the reveal wins over both done and your-turn so the run-up plays before the
+  // board unlocks / the lineup locks.
+  const phase = revealing ? 'revealing' : isComplete ? 'done' : isMyTurn ? 'your-turn' : 'waiting';
   const onClockSeat = seats.find((s) => s.seatIndex === onClockSeatIdx);
   const onClockLabel = onClockSeat ? (onClockSeat.isYou ? 'You' : `CPU ${onClockSeat.seatIndex}`) : null;
-  const coach = coachLineFor({ phase, archKey, selected: selectedRow, topPick: board[0], backToBack, pickNo, myPicks });
+  const coach = coachLineFor({ phase, archKey, selected: selectedRow, topPick: board[0], backToBack, pickNo, myPicks, lastReveal });
 
   const doConfirm = async () => {
     // Gate on the live board row, not the raw string — a name that left the
     // board (taken / re-rank) can't be confirmed.
     if (!selectedRow) return;
+    // Freeze the pre-pick board ranks for this pick → the run-up's snipe check.
+    snipeRanksRef.current = { atIndex: currentPickIndex, ranks: new Map(board.map((b) => [b.symbol, b.boardRank])) };
     const ok = await submitPick(selectedRow.symbol, false);
     if (ok) setSelected(null);
   };
-  const seatLabel = (s) => (s.isYou ? 'You' : `CPU ${s.seatIndex}`);
   const toggleTier = (id) => setExpandedTiers((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
 
   const scopeStyle = {
     height: '100%', minHeight: '100vh', background: TOKENS.bg, color: TOKENS.ink,
-    fontFamily: 'var(--ld-ui)', ...FONT_VARS, display: 'flex', flexDirection: 'column',
+    fontFamily: 'var(--ld-ui)', ...FONT_VARS, display: 'flex', flexDirection: 'column', position: 'relative',
     backgroundImage: `radial-gradient(circle at 50% -10%, ${alpha(DX.you, 0.05)}, transparent 55%)`,
   };
 
@@ -159,7 +184,7 @@ export default function DraftBoardRoom({ user, groupId, onComplete = null, onExi
       </div>
     );
   }
-  if (isComplete) {
+  if (isComplete && !revealing) {
     const flipped = finalStatus === GROUP_STATUS.BATTLE;
     const lockedPicks = (draft?.picksByUser?.[currentUserId] || myPicks || []);
     return (
@@ -232,7 +257,7 @@ export default function DraftBoardRoom({ user, groupId, onComplete = null, onExi
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {g.items.map((s) => (
                 <StockCard key={s.symbol} stock={s} size={size}
-                  selected={selected === s.symbol} disabled={!isMyTurn}
+                  selected={selected === s.symbol} disabled={phase !== 'your-turn'}
                   onSelect={(sym) => setSelected(sym === selected ? null : sym)}
                   expanded={expandedId === s.symbol} onExpand={setExpandedId} />
               ))}
@@ -265,7 +290,7 @@ export default function DraftBoardRoom({ user, groupId, onComplete = null, onExi
           <SnakeStrip snakeOrder={snakeOrder} picksByOverall={picksByOverall} onClockIndex={isDrafting ? currentPickIndex : -1} humanSeatIdx={humanSeatIdx} />
         </div>
 
-        {isMyTurn && (
+        {phase === 'your-turn' && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 13, padding: '11px 16px', flexShrink: 0, background: alpha(DX.you, 0.06), borderBottom: `1px solid ${alpha(DX.you, 0.2)}` }}>
             <ClockRing seconds={pickClock} total={CLOCK_TOTAL} size={58} />
             <div style={{ flex: 1 }}>
@@ -280,19 +305,37 @@ export default function DraftBoardRoom({ user, groupId, onComplete = null, onExi
             <Mono style={{ fontSize: 10, letterSpacing: '0.12em', color: DX.cpu, fontWeight: 700 }}>OPPONENTS DRAFTING</Mono>
           </div>
         )}
+        {revealing && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 16px', flexShrink: 0, background: alpha(DX.cpu, 0.07), borderBottom: `1px solid ${alpha(DX.cpu, 0.22)}` }}>
+            <span style={{ width: 8, height: 8, borderRadius: '50%', background: DX.cpu, animation: 'ldLiveDot 1.4s infinite' }} />
+            <Mono style={{ fontSize: 10, letterSpacing: '0.12em', color: DX.cpu, fontWeight: 700, flex: 1 }}>OPPONENTS DRAFTING</Mono>
+            <button className="ld-tap" onClick={skip} style={{ all: 'unset', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 5, padding: '5px 10px', borderRadius: 999, background: TOKENS.surface, border: `1px solid ${TOKENS.hair2}`, color: TOKENS.ink2 }}>
+              <Mono style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.06em' }}>SKIP</Mono><Icon name="arrowR" size={12} color={TOKENS.ink2} />
+            </button>
+          </div>
+        )}
 
         <div className="ld-scroll" style={{ flex: 1, overflowY: 'auto', padding: '12px 16px 14px', minHeight: 0 }}>
           {error && <div style={{ borderRadius: 10, padding: '8px 12px', background: alpha(DX.neg, 0.1), border: `1px solid ${alpha(DX.neg, 0.4)}`, color: '#ffd7de', fontSize: 12.5, marginBottom: 12 }}>{error}</div>}
-          <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 9 }}>
-            <Eyebrow color={DX.you}>Best available · {viewBoard.length}</Eyebrow>
-            <Mono style={{ fontSize: 9.5, color: TOKENS.ink3 }}>fit advises</Mono>
-          </div>
-          <div style={{ marginBottom: 8 }}>{searchBox()}</div>
-          <div style={{ marginBottom: 8 }}>{sectorChips()}</div>
-          {renderTiers('m')}
+          {revealing ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
+              {revealRows.slice().reverse().map((p, i) => <RevealRow key={p.overall} pick={p} fresh={i === 0} />)}
+              <div style={{ textAlign: 'center', padding: '8px' }}><Mono style={{ fontSize: 10.5, color: TOKENS.ink3 }}>re-ranking your best available…</Mono></div>
+            </div>
+          ) : (
+            <>
+              <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 9 }}>
+                <Eyebrow color={DX.you}>Best available · {viewBoard.length}</Eyebrow>
+                <Mono style={{ fontSize: 9.5, color: TOKENS.ink3 }}>fit advises</Mono>
+              </div>
+              <div style={{ marginBottom: 8 }}>{searchBox()}</div>
+              <div style={{ marginBottom: 8 }}>{sectorChips()}</div>
+              {renderTiers('m')}
+            </>
+          )}
         </div>
 
-        {isMyTurn && (
+        {phase === 'your-turn' && (
           <div style={{ flexShrink: 0, padding: '11px 16px calc(11px + env(safe-area-inset-bottom))', borderTop: `1px solid ${TOKENS.hair}`, background: TOKENS.bg }}>
             {selectedRow ? (
               <div style={{ display: 'flex', gap: 9 }}>
@@ -308,6 +351,7 @@ export default function DraftBoardRoom({ user, groupId, onComplete = null, onExi
             )}
           </div>
         )}
+        {flash && !reduceMotion && <SnipeCallout symbol={flash.symbol} seatLabel={cpuLabel(flash.odUserId)} />}
       </div>
     );
   }
@@ -363,12 +407,14 @@ export default function DraftBoardRoom({ user, groupId, onComplete = null, onExi
         <div style={{ width: 332, flexShrink: 0, borderLeft: `1px solid ${TOKENS.hair}`, padding: '15px 16px', minHeight: 0 }}>
           <PickPanel
             phase={phase} pickClock={pickClock} pickNo={pickNo} backToBack={backToBack}
-            selected={selectedRow} coach={coach} orbState={phase === 'waiting' ? 'reading' : 'ready'}
+            selected={selectedRow} coach={coach} orbState={(phase === 'waiting' || phase === 'revealing') ? 'reading' : 'ready'}
             onConfirm={doConfirm} onClear={() => setSelected(null)} submitting={submitting} error={error}
             myPicks={myPicks} onExit={onExit} onClockLabel={onClockLabel} clockTotalSec={CLOCK_TOTAL}
+            revealRows={revealRows} onSkip={skip}
           />
         </div>
       </div>
+      {flash && !reduceMotion && <SnipeCallout symbol={flash.symbol} seatLabel={cpuLabel(flash.odUserId)} />}
     </div>
   );
 }
