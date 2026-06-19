@@ -188,4 +188,4 @@ export const LEAGUE_NEXT_ARC_ENABLED = true;
  * precedent). The opponent-reveal animation (Phase 2) and the entry-fold merge
  * (Phase 3) layer on behind this same flag.
  */
-export const TRAINING_BOARD_REDESIGN_ENABLED = false;
+export const TRAINING_BOARD_REDESIGN_ENABLED = true;
