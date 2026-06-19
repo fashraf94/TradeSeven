@@ -55,12 +55,14 @@ export function FitBar({ fit, tier, w = 110 }) {
 
 // the color-shifting pick clock
 export function ClockRing({ seconds, total = 20, size = 84 }) {
-  const sec = seconds == null ? 0 : seconds;
+  // null = idle/loading (no live clock): render neutral, not a red "expired" zero.
+  const idle = seconds == null;
+  const sec = idle ? 0 : seconds;
   const r = size / 2 - 7;
   const circ = 2 * Math.PI * r;
-  const pct = Math.max(0, sec) / total;
-  const low = sec <= 5, mid = sec <= 10;
-  const c = low ? DX.neg : mid ? DX.gold : DX.you;
+  const pct = idle ? 1 : Math.max(0, sec) / total;
+  const low = !idle && sec <= 5, mid = !idle && sec <= 10;
+  const c = idle ? TOKENS.ink3 : low ? DX.neg : mid ? DX.gold : DX.you;
   return (
     <div style={{ width: size, height: size, position: 'relative', flexShrink: 0, animation: low ? 'ldOrbPulse 0.9s ease-in-out infinite' : 'none' }}>
       <svg width={size} height={size} style={{ transform: 'rotate(-90deg)' }}>
@@ -69,7 +71,7 @@ export function ClockRing({ seconds, total = 20, size = 84 }) {
           strokeDasharray={circ} strokeDashoffset={circ * (1 - pct)} style={{ transition: 'stroke-dashoffset 1s linear, stroke .3s' }} />
       </svg>
       <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-        <Mono style={{ fontSize: size * 0.34, fontWeight: 700, color: c, lineHeight: 1 }}>{Math.max(0, sec)}</Mono>
+        <Mono style={{ fontSize: size * 0.34, fontWeight: 700, color: c, lineHeight: 1 }}>{idle ? '—' : Math.max(0, sec)}</Mono>
         <Mono style={{ fontSize: 8.5, letterSpacing: '0.18em', color: TOKENS.ink3, marginTop: 2 }}>SEC</Mono>
       </div>
     </div>

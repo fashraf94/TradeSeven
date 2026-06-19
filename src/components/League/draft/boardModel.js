@@ -76,12 +76,13 @@ export function reasonFor(archKey, row, fit, ownedSectorCounts) {
   const ytd = row.returnYTD;
   const comp = row.compositeScore;
   const vol = volTextFromAtr(row.atrPercentile);
+  const volKnown = vol !== '—';
 
   switch (archKey) {
     case 'momentum_chaser':
-      if (fit >= 82) return momRank ? `Strongest trend on the board — #${momRank} in momentum` : 'Strongest trend on the board';
+      if (fit >= 82) return momRank != null ? `Strongest trend on the board — #${momRank} in momentum` : 'Strongest trend on the board';
       if (fit >= 68) return ret1W != null && ret1W >= 0 ? `Powerful uptrend, up ${ret1W}% this week` : 'Powerful uptrend, technically strong';
-      if (fit >= 50) return momRank ? `Trend intact — #${momRank} in momentum` : 'Trend intact and holding up';
+      if (fit >= 50) return momRank != null ? `Trend intact — #${momRank} in momentum` : 'Trend intact and holding up';
       return 'Momentum has cooled — a lukewarm fit';
     case 'contrarian':
       if (fit >= 82) return ytd != null && ytd < 0 ? `Deeply out of favor — down ${Math.abs(ytd)}% on the year` : 'Deeply out of favor, sentiment washed out';
@@ -89,7 +90,7 @@ export function reasonFor(archKey, row, fit, ownedSectorCounts) {
       if (fit >= 50) return 'Cheap and overlooked';
       return 'Too loved already — thin contrarian edge';
     case 'degen':
-      if (fit >= 82) return `Wildest swings on the board — ${vol.toLowerCase()} volatility`;
+      if (fit >= 82) return volKnown ? `Wildest swings on the board — ${vol.toLowerCase()} volatility` : 'Wildest swings on the board';
       if (fit >= 68) return 'High volatility — big moves both ways';
       if (fit >= 50) return 'Lively enough to move the needle';
       return 'Too quiet to chase';
@@ -100,7 +101,7 @@ export function reasonFor(archKey, row, fit, ownedSectorCounts) {
       return 'Shaky fundamentals — a weak fit';
     case 'guardian':
       if (fit >= 82) return 'Rock-steady — the lowest drawdown risk here';
-      if (fit >= 68) return `Defensive ballast — ${vol.toLowerCase()} volatility`;
+      if (fit >= 68) return volKnown ? `Defensive ballast — ${vol.toLowerCase()} volatility` : 'Defensive ballast — steady and low-risk';
       if (fit >= 50) return 'Reasonably defensive';
       return 'Too volatile to protect capital';
     case 'diversifier':

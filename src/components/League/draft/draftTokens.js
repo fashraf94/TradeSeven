@@ -37,6 +37,7 @@ export const DX = {
 export function alpha(hex, a) {
   const h = String(hex).replace('#', '');
   const n = parseInt(h.length === 3 ? h.split('').map((c) => c + c).join('') : h, 16);
+  if (Number.isNaN(n)) return `rgba(0, 0, 0, 0)`; // bad/undefined hex → transparent, never opaque black
   return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${a})`;
 }
 

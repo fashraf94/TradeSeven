@@ -63,7 +63,7 @@ export default function DraftBoardRoom({ user, groupId, onComplete = null, onExi
   const d = useTrainingDraft({ user, groupId, active: true });
   const {
     poolRows, humanArchetype, events, snakeOrder, members, currentUserId, myPicks,
-    seats, isDrafting, isMyTurn, isComplete, finalStatus,
+    seats, isDrafting, isMyTurn, isComplete, finalStatus, universe,
     currentPickIndex, totalPicks, round, pickClock, submitting, error, submitPick, draft,
     onClockSeatIdx,
   } = d;
@@ -133,8 +133,10 @@ export default function DraftBoardRoom({ user, groupId, onComplete = null, onExi
   const coach = coachLineFor({ phase, archKey, selected: selectedRow, topPick: board[0], backToBack, pickNo, myPicks });
 
   const doConfirm = async () => {
-    if (!selected) return;
-    const ok = await submitPick(selected, false);
+    // Gate on the live board row, not the raw string — a name that left the
+    // board (taken / re-rank) can't be confirmed.
+    if (!selectedRow) return;
+    const ok = await submitPick(selectedRow.symbol, false);
     if (ok) setSelected(null);
   };
   const seatLabel = (s) => (s.isYou ? 'You' : `CPU ${s.seatIndex}`);
@@ -147,7 +149,9 @@ export default function DraftBoardRoom({ user, groupId, onComplete = null, onExi
   };
 
   // ── loading / complete ──────────────────────────────────────────────────
-  if (!draft && !isComplete) {
+  // Wait for BOTH the live draft state and the universe doc — building the board
+  // before the universe loads would briefly render every name at fit 0 / "Reach".
+  if ((!draft || universe == null) && !isComplete) {
     return (
       <div className="ld-scope" style={{ ...scopeStyle, alignItems: 'center', justifyContent: 'center' }}>
         <ClockRing seconds={null} total={CLOCK_TOTAL} size={64} />
