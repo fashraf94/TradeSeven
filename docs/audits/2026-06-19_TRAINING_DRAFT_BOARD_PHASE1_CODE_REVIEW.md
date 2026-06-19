@@ -64,3 +64,24 @@
 **Self-review finding fixed during the build (the load-bearing race):** snipe detection must compare CPU picks to the **pre-pick** board, but capturing those ranks in an effect keyed on `isMyTurn` was overwritten by the **post-run-up** board on the same snapshot commit (effects run before the reveal's `setRev`). Fixed by capturing synchronously in `doConfirm`, tagged with the pick index (`{ atIndex, ranks }`), and only trusting the capture for the run-up whose triggering human pick matches `atIndex`. As a bonus this makes clock-autopick-triggered run-ups show **no false snipes** (no capture → index mismatch → empty ranks) rather than wrong ones.
 
 **Known V1 behavior:** the real 20s pick clock keeps running during the reveal (max run-up ≈ 7.4s ≪ 20s, so it cannot expire mid-reveal); the skip button reclaims the time. A clock pause during reveal was considered and deferred as unnecessary for V1.
+
+---
+
+## Phase 3 addendum — the entry-fold (forming)
+
+**Scope:** `DraftForming.jsx` (new atom) + the entry-flow wiring in `DraftBoardRoom.jsx`. Build green, lint clean, tests 26/26.
+
+**What it does:** the design's "seating the table" forming animation, collapsed onto the board (spec §3). It plays only on a **fresh pod** (first pick) and covers the entry load (the draft-state subscription + universe read; formation itself is sub-second in the lobby). The four seats assemble, then "You have the first pick" + **Enter the board** → the live board. A **resumed** mid-draft pod (cursor > 0) skips the intro and goes straight to the board (an effect sets `entered` on resume). Early-return order: complete (deferring to a playing reveal) → forming → residual loader → the board.
+
+**Resume + Customize-loadout (honored, not rebuilt):** both already live in the lobby (`LeagueLobbyRedesign · TrainingShell`): the re-entry bar (`subscribeMyTrainingPod` / `selectMyTrainingPod`) and the `LoadoutChooserSheet` → `quickPlayTraining({ loadoutSpec })`. Both route through `onOpenTrainingPod` → the `trainingDraftRoom` screen → `TrainingDraftRoomScreen`, which now switches to the redesigned board behind the flag. So the redesign inherits both paths unchanged — the loadout chooser's archetype becomes the board's fit spine; resume lands mid-draft and skips the forming intro. No lobby change was needed (and the lobby sits behind a different flag).
+
+**Phase 3 review (focused, post-build) — findings + fixes:**
+- **Clock autopick behind the intro (real, fixed).** The 20s pick clock starts on `isMyTurn` (true at cursor 0), so it ran *behind* the forming overlay — a user lingering >20s on the intro would have their first pick silently autopicked. Fixed by adding `clockPaused` to `useTrainingDraft` (gated by the host) and passing `clockPaused: !entered`: the clock is held until "Enter the board," then starts fresh at 20s. The server idle-sweep remains the true-abandonment backstop; legacy callers default `clockPaused: false` (unchanged).
+- **Non-drafting transient (fixed).** A loaded-but-not-`drafting`, not-complete window would have fallen through to the live board over an empty pool. Added a guard: `if (loading || (!isDrafting && !revealing)) → loader` (the final reveal still renders the board after completion).
+- **"Fresh pod" / "first pick" invariant (hardened).** The intro now gates on `isMyTurn && currentPickIndex === 0` (not just the index), so it stays honest if a CPU ever held overall #1 (today the human is the verified seat 0 / first-overall). Hooks order and DraftForming timer cleanup were checked and are correct.
+
+---
+
+## Phases — net surface
+
+Client UI + reads only across all three phases. New reusable atom library `src/components/League/draft/` (tokens, icons, primitives, boardModel, StockCard, TierHeader, SnakeStrip, SeatCard, PickPanel, RevealRow, useDraftReveal, DraftForming, DraftBoardRoom) + 2 test files; `useTrainingDraft` widened read-only; `TrainingDraftRoomScreen` a thin flag switch; one feature flag. **No calibration-fence file touched.** Recommend a final `/code-review` on the cumulative diff and the ★ prime-directive smoke (customize → enter → draft → ranked agent unchanged) before the flag flips.

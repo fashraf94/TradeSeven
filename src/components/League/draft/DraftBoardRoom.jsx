@@ -13,7 +13,7 @@
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useTrainingDraft } from '../../../hooks/useTrainingDraft';
-import { PICKS_PER_PLAYER, TRAINING_TUNING, GROUP_STATUS } from '../../../constants/leagueTournament';
+import { PICKS_PER_PLAYER, TRAINING_TUNING, GROUP_STATUS, GROUP_SIZE } from '../../../constants/leagueTournament';
 import { TOKENS, DX, alpha, injectDraftCSS, FONT_VARS } from './draftTokens';
 import { Icon } from './draftIcons';
 import { Mono, Eyebrow, ArchChip, ClockRing } from './draftPrimitives';
@@ -25,6 +25,7 @@ import { SeatCard, LineupSlots } from './SeatCard';
 import { PickPanel } from './PickPanel';
 import { RevealRow, SnipeCallout } from './RevealRow';
 import { useDraftReveal } from './useDraftReveal';
+import { DraftForming } from './DraftForming';
 
 const CLOCK_TOTAL = Math.max(1, Math.round((TRAINING_TUNING?.PICK_CLOCK_MS || 20000) / 1000));
 // Tiers rendered in full by default; the long tail collapses behind a toggle.
@@ -68,7 +69,11 @@ function coachLineFor({ phase, archKey, selected, topPick, backToBack, pickNo, m
 }
 
 export default function DraftBoardRoom({ user, groupId, onComplete = null, onExit = null }) {
-  const d = useTrainingDraft({ user, groupId, active: true });
+  // `entered` flips on "Enter the board". It's declared before the hook so the
+  // pick clock can be held while the forming intro covers pick #1 (else the 20s
+  // clock would autopick the first pick if the user lingers on the intro).
+  const [entered, setEntered] = useState(false);
+  const d = useTrainingDraft({ user, groupId, active: true, clockPaused: !entered });
   const {
     poolRows, humanArchetype, events, snakeOrder, members, currentUserId, myPicks,
     seats, isDrafting, isMyTurn, isComplete, finalStatus, universe,
@@ -83,9 +88,13 @@ export default function DraftBoardRoom({ user, groupId, onComplete = null, onExi
   const [query, setQuery] = useState('');
   const [expandedTiers, setExpandedTiers] = useState(() => new Set());
 
+  const loading = !draft || universe == null;
+
   // clear a stale selection when the turn moves on / the name gets sniped
   useEffect(() => { if (!isMyTurn) setSelected(null); }, [isMyTurn, currentPickIndex]);
   useEffect(() => { if (isComplete && onComplete) onComplete(finalStatus); }, [isComplete, finalStatus, onComplete]);
+  // a resumed mid-draft pod skips the forming intro (it's not the first pick)
+  useEffect(() => { if (!loading && isDrafting && currentPickIndex > 0) setEntered(true); }, [loading, isDrafting, currentPickIndex]);
 
   useEffect(() => { injectDraftCSS(); }, []);
 
@@ -173,17 +182,18 @@ export default function DraftBoardRoom({ user, groupId, onComplete = null, onExi
     backgroundImage: `radial-gradient(circle at 50% -10%, ${alpha(DX.you, 0.05)}, transparent 55%)`,
   };
 
-  // ── loading / complete ──────────────────────────────────────────────────
-  // Wait for BOTH the live draft state and the universe doc — building the board
-  // before the universe loads would briefly render every name at fit 0 / "Reach".
-  if ((!draft || universe == null) && !isComplete) {
-    return (
-      <div className="ld-scope" style={{ ...scopeStyle, alignItems: 'center', justifyContent: 'center' }}>
-        <ClockRing seconds={null} total={CLOCK_TOTAL} size={64} />
-        <div style={{ color: TOKENS.ink2, marginTop: 16 }}>Forming the board…</div>
-      </div>
-    );
-  }
+  // the forming intro plays on a fresh pod (pick #1) and covers the entry load;
+  // a resumed mid-draft pod (cursor > 0) skips it. Wait for the universe before
+  // the board renders — otherwise every name would briefly show fit 0 / "Reach".
+  // forming plays while loading, or on a fresh pod where it's actually the
+  // human's first turn (isMyTurn at pick #1 — the verified seat-0 / first-overall
+  // case; if a CPU ever held #1, this stays honest and skips the intro).
+  const showForming = !isComplete && !entered && (loading || (isMyTurn && currentPickIndex === 0));
+  const formingSeats = seats.length
+    ? seats.map((s) => ({ isCpu: s.isCpu, isYou: s.isYou, label: seatLabel(s) }))
+    : Array.from({ length: GROUP_SIZE }).map((_, i) => (i === 0 ? { isYou: true, label: 'You' } : { isCpu: true, label: `CPU ${i}` }));
+
+  // ── forming / loading / complete ────────────────────────────────────────
   if (isComplete && !revealing) {
     const flipped = finalStatus === GROUP_STATUS.BATTLE;
     const lockedPicks = (draft?.picksByUser?.[currentUserId] || myPicks || []);
@@ -206,6 +216,26 @@ export default function DraftBoardRoom({ user, groupId, onComplete = null, onExi
             </button>
           )}
         </div>
+      </div>
+    );
+  }
+
+  if (showForming) {
+    return (
+      <div className="ld-scope" style={scopeStyle}>
+        <DraftForming archKey={archKey} seats={formingSeats} ready={!loading} onEnter={() => setEntered(true)} narrow={narrow} />
+      </div>
+    );
+  }
+
+  // residual loader: still fetching, or a transient non-drafting/non-complete
+  // window (e.g. FORMING→DRAFTING) — neutral, never the live board over an empty
+  // pool. The reveal is allowed to render the board after the pod completes.
+  if (loading || (!isDrafting && !revealing)) {
+    return (
+      <div className="ld-scope" style={{ ...scopeStyle, alignItems: 'center', justifyContent: 'center' }}>
+        <ClockRing seconds={null} total={CLOCK_TOTAL} size={64} />
+        <div style={{ color: TOKENS.ink2, marginTop: 16 }}>Loading your draft…</div>
       </div>
     );
   }

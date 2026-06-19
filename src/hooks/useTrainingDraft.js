@@ -33,7 +33,7 @@ import { GROUP_STATUS, PICKS_PER_PLAYER, TRAINING_TUNING } from '../constants/le
 const OVERLAY_SIZE = 5;
 const norm = (s) => (typeof s === 'string' ? s.trim().toUpperCase() : '');
 
-export function useTrainingDraft({ user, groupId, active = true } = {}) {
+export function useTrainingDraft({ user, groupId, active = true, clockPaused = false } = {}) {
   const [group, setGroup] = useState(null);
   const [draft, setDraft] = useState(null);
   const [universe, setUniverse] = useState(null); // indexIntelligence/stockRankings.stocks
@@ -192,9 +192,12 @@ export function useTrainingDraft({ user, groupId, active = true } = {}) {
   submitRef.current = submitPick;
 
   // ---- per-pick countdown: starts on my turn, autopicks on expiry. The client
-  //      timer dies on tab close — the server idle-sweep is the backstop. ----
+  //      timer dies on tab close — the server idle-sweep is the backstop.
+  //      `clockPaused` holds the clock while a host UI covers the turn (e.g. the
+  //      redesigned board's forming intro on pick #1) so the intro can't silently
+  //      autopick; the server idle-sweep remains the true-abandonment backstop. ----
   useEffect(() => {
-    if (!isMyTurn) { setPickClock(null); autopickFiredRef.current = false; return undefined; }
+    if (!isMyTurn || clockPaused) { setPickClock(null); autopickFiredRef.current = false; return undefined; }
     const total = Math.max(1, Math.round((TRAINING_TUNING.PICK_CLOCK_MS || 20000) / 1000));
     setPickClock(total);
     autopickFiredRef.current = false;
@@ -209,7 +212,7 @@ export function useTrainingDraft({ user, groupId, active = true } = {}) {
       }
     }, 250);
     return () => clearInterval(iv);
-  }, [isMyTurn, currentPickIndex]);
+  }, [isMyTurn, currentPickIndex, clockPaused]);
 
   // ---- seats (snake HUD) ----
   const seats = useMemo(() => {
