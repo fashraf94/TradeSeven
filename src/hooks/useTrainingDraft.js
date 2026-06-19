@@ -33,7 +33,7 @@ import { GROUP_STATUS, PICKS_PER_PLAYER, TRAINING_TUNING } from '../constants/le
 const OVERLAY_SIZE = 5;
 const norm = (s) => (typeof s === 'string' ? s.trim().toUpperCase() : '');
 
-export function useTrainingDraft({ user, groupId, active = true } = {}) {
+export function useTrainingDraft({ user, groupId, active = true, clockPaused = false } = {}) {
   const [group, setGroup] = useState(null);
   const [draft, setDraft] = useState(null);
   const [universe, setUniverse] = useState(null); // indexIntelligence/stockRankings.stocks
@@ -113,6 +113,38 @@ export function useTrainingDraft({ user, groupId, active = true } = {}) {
       .sort((a, b) => a.sectorName.localeCompare(b.sectorName));
   }, [draft?.pool, universe, takenSet]);
 
+  // ---- enriched pool rows (Training Board redesign, read-only widening): every
+  //      pool name joined to the universe doc with the fields the fit-ranked
+  //      board needs — arch_scores (the direct-read fit spine), the pillar
+  //      signals (composite/momentum/fundamental/technical/ATR), and realized
+  //      returns. Surfaced for the new atoms; the legacy boardBySector path above
+  //      is untouched (flag-off renders byte-identically). ----
+  const poolRows = useMemo(() => {
+    if (!Array.isArray(draft?.pool)) return [];
+    const bySymbol = new Map((universe || []).map((s) => [norm(s.symbol), s]));
+    return draft.pool.map((sym) => {
+      const key = norm(sym);
+      const meta = bySymbol.get(key) || { symbol: key };
+      return {
+        symbol: key,
+        sectorName: meta.sectorName || 'Other',
+        archScores: meta.arch_scores || {},
+        compositeScore: meta.compositeScore ?? null,
+        momentumScore: meta.momentumScore ?? null,
+        momentumRank: meta.momentumRank ?? null,
+        fundamentalScore: meta.fundamentalScore ?? null,
+        technicalScore: meta.technicalScore ?? null,
+        baggerBombFit: meta.baggerBombFit ?? null,
+        atrPercentile: meta.atrPercentile ?? null,
+        return1W: meta.return1W ?? null,
+        return1M: meta.return1M ?? null,
+        return3M: meta.return3M ?? null,
+        returnYTD: meta.returnYTD ?? null,
+        available: !takenSet.has(key),
+      };
+    });
+  }, [draft?.pool, universe, takenSet]);
+
   // ---- archetype-fit overlay: top ~5 still-available names. R3: if the
   //      ranking is unusable, return an empty highlight (the board is already
   //      composite-sorted) rather than rendering a broken overlay. ----
@@ -160,9 +192,12 @@ export function useTrainingDraft({ user, groupId, active = true } = {}) {
   submitRef.current = submitPick;
 
   // ---- per-pick countdown: starts on my turn, autopicks on expiry. The client
-  //      timer dies on tab close — the server idle-sweep is the backstop. ----
+  //      timer dies on tab close — the server idle-sweep is the backstop.
+  //      `clockPaused` holds the clock while a host UI covers the turn (e.g. the
+  //      redesigned board's forming intro on pick #1) so the intro can't silently
+  //      autopick; the server idle-sweep remains the true-abandonment backstop. ----
   useEffect(() => {
-    if (!isMyTurn) { setPickClock(null); autopickFiredRef.current = false; return undefined; }
+    if (!isMyTurn || clockPaused) { setPickClock(null); autopickFiredRef.current = false; return undefined; }
     const total = Math.max(1, Math.round((TRAINING_TUNING.PICK_CLOCK_MS || 20000) / 1000));
     setPickClock(total);
     autopickFiredRef.current = false;
@@ -177,7 +212,7 @@ export function useTrainingDraft({ user, groupId, active = true } = {}) {
       }
     }, 250);
     return () => clearInterval(iv);
-  }, [isMyTurn, currentPickIndex]);
+  }, [isMyTurn, currentPickIndex, clockPaused]);
 
   // ---- seats (snake HUD) ----
   const seats = useMemo(() => {
@@ -203,6 +238,14 @@ export function useTrainingDraft({ user, groupId, active = true } = {}) {
     universe,
     boardBySector,
     highlightSet,
+    // Training Board redesign (read-only widening) — the fit-ranked board inputs.
+    poolRows,
+    humanArchetype: draft?.humanArchetype || 'analyst',
+    events: draft?.events || [],
+    snakeOrder: draft?.snakeOrder || [],
+    picksByUser: draft?.picksByUser || {},
+    members,
+    currentUserId,
     seats,
     myPicks,
     isDrafting,
@@ -210,6 +253,7 @@ export function useTrainingDraft({ user, groupId, active = true } = {}) {
     isComplete,
     finalStatus: group?.status ?? null,
     onClockId,
+    onClockSeatIdx,
     currentPickIndex,
     totalPicks,
     round,

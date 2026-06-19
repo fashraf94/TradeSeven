@@ -1,20 +1,37 @@
 // src/screens/TrainingDraftRoomScreen.jsx
 //
-// League Training Slice 2 — the interactive snake-draft pick lobby on the
-// tournamentGroups path. The tournamentGroups analog of DraftRoomScreen (which
-// is drafts-bound): it MIRRORS the live pick experience — a universal,
-// sector-grouped, composite-sorted board that visibly depletes; a per-player
-// archetype-fit highlight overlay; a snake turn HUD; a per-pick countdown — but
-// reads the server-authoritative live state and submits picks through the
-// training-pick endpoint (tournamentGroups is client-read-only). The overlay
-// INFORMS, it never constrains: every available name is pickable.
+// League Training — the interactive snake-draft pick lobby on the
+// tournamentGroups path. The default export is a thin switch: behind
+// TRAINING_BOARD_REDESIGN_ENABLED (or the ?trainingBoard=1 dev override) it
+// renders the redesigned, fit-ranked board (DraftBoardRoom); otherwise it
+// renders the original Slice 2 board (LegacyTrainingDraftRoom, below) unchanged.
 //
-// Dark by absence of a CTA (Slice 3.2 owns the entry hero); reached only via
-// dev/preview. No flag flip in this slice.
+// LegacyTrainingDraftRoom (Slice 2): the tournamentGroups analog of
+// DraftRoomScreen — a universal, sector-grouped, composite-sorted board that
+// visibly depletes; a per-player archetype-fit highlight overlay; a snake turn
+// HUD; a per-pick countdown — reading the server-authoritative live state and
+// submitting picks through the training-pick endpoint (client-read-only). The
+// overlay INFORMS, it never constrains: every available name is pickable.
 
 import React, { useState, useEffect } from 'react';
 import { useTrainingDraft } from '../hooks/useTrainingDraft';
 import { GROUP_STATUS } from '../constants/leagueTournament';
+import { TRAINING_BOARD_REDESIGN_ENABLED } from '../config/featureFlags';
+import DraftBoardRoom from '../components/League/draft/DraftBoardRoom';
+
+// The redesigned board ships DARK behind TRAINING_BOARD_REDESIGN_ENABLED, with
+// the `?trainingBoard=1` dev-preview override (the `?trainingDraft=` idiom) so it
+// can be smoked on a Vercel preview while the flag posture is unchanged. When the
+// flag is off and no override is set, the legacy sector-grouped board below
+// renders byte-identically (instant rollback).
+export default function TrainingDraftRoomScreen(props) {
+  const override = typeof window !== 'undefined'
+    && new URLSearchParams(window.location.search).get('trainingBoard') === '1';
+  if (TRAINING_BOARD_REDESIGN_ENABLED || override) {
+    return <DraftBoardRoom {...props} />;
+  }
+  return <LegacyTrainingDraftRoom {...props} />;
+}
 
 const C = {
   bg: '#0b1220',
@@ -43,7 +60,7 @@ function seatLabel(seat) {
   return seat.odUserId;
 }
 
-export default function TrainingDraftRoomScreen({ user, groupId, onComplete = null, onExit = null }) {
+function LegacyTrainingDraftRoom({ user, groupId, onComplete = null, onExit = null }) {
   const {
     boardBySector, highlightSet, seats, myPicks,
     isMyTurn, isComplete, finalStatus,
