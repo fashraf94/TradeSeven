@@ -77,17 +77,29 @@ describe('P4 — dev-group exclusion (founder ruling D9)', () => {
 
   it('every dispatcher duty threads includeDevGroups into the eligibility fetch', () => {
     const orch = read('./tournamentOrchestrator.js');
-    expect(orch.match(/fetchEligibleGroupsByStatus\(db, [^)]+\{ includeDev: includeDevGroups \}\)/g)?.length).toBe(3);
+    // Slice 3: the ranked duties now thread excludeTraining alongside includeDev,
+    // so the options object is no longer { includeDev: includeDevGroups } alone —
+    // match includeDev: includeDevGroups regardless of any trailing prop. Still 3.
+    expect(orch.match(/fetchEligibleGroupsByStatus\(db, [^)]*includeDev: includeDevGroups[^)]*\)/g)?.length).toBe(3);
     expect(read('./tournamentAdvancement.js')).toContain('{ includeDev: includeDevGroups }');
   });
 });
 
-// ============ 2b. Training-group exclusion (League Next-Arc Slice 3.0) ============
+// ============ 2b. Training-group exclusion (League Next-Arc, through Slice 3) ============
 //
 // The shared-query trap (Phase-3 discovery): fetchEligibleGroupsByStatus feeds
-// BOTH the seasonal leaderboard (must EXCLUDE training) and the deploy/fan-out
-// duties (must INCLUDE training — its agent layer is created and ticked by the
-// existing engine). So the exclusion is opt-in (excludeTraining), default off.
+// many duties — some must EXCLUDE training pods, some must still see them. So the
+// exclusion is opt-in (excludeTraining), default off:
+//   - the permissive DEFAULT (include) keeps training pods visible to the
+//     consumers that must still process them — Friday advancement (the
+//     plain-finish completer) and the training sweep (which filters to
+//     isTraining within the default-included BATTLE set).
+//   - the seasonal leaderboard AND the ranked orchestrator duties opt OUT
+//     (excludeTraining: true): training is kept off the seasonal board, and
+//     (Slice 3) its agent layer is owned solely by activateTrainingPod /
+//     sweepTrainingActivation, NOT the ranked Monday/weekday duties — without the
+//     opt-out the ranked pipeline would mis-resolve a training seat to the ranked
+//     agent.
 
 describe('Next-Arc — training-group exclusion (fetchEligibleGroupsByStatus)', () => {
   const players = Array.from({ length: 4 }, (_, i) => ({ odUserId: `u${i}`, picks: [] }));
@@ -96,7 +108,7 @@ describe('Next-Arc — training-group exclusion (fetchEligibleGroupsByStatus)', 
     ['g-train', { status: GROUP_STATUS.BATTLE, players, isTraining: true }],
   ];
 
-  it('the DEFAULT INCLUDES isTraining groups — deploy/fan-out duties must keep training', async () => {
+  it('the DEFAULT INCLUDES isTraining groups — the permissive default keeps them visible to advancement + the training sweep', async () => {
     const groups = await fetchEligibleGroupsByStatus(makeGroupsDb(docs), GROUP_STATUS.BATTLE);
     expect(groups.map(g => g.id)).toEqual(['g-ranked', 'g-train']);
   });
@@ -106,9 +118,9 @@ describe('Next-Arc — training-group exclusion (fetchEligibleGroupsByStatus)', 
     expect(groups.map(g => g.id)).toEqual(['g-ranked']);
   });
 
-  it('ONLY the nightly leaderboard aggregation passes excludeTraining; orchestrator + advancement do NOT', () => {
+  it('the seasonal leaderboard AND the ranked orchestrator duties pass excludeTraining; advancement does NOT (it completes training pods with the plain finish)', () => {
     expect(read('./tournamentLeaderboard.js')).toContain('excludeTraining: true');
-    expect(read('./tournamentOrchestrator.js')).not.toContain('excludeTraining');
+    expect(read('./tournamentOrchestrator.js')).toContain('excludeTraining: true');
     expect(read('./tournamentAdvancement.js')).not.toContain('excludeTraining');
   });
 });
