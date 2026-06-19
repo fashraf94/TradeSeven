@@ -46,7 +46,7 @@ function seatLabel(seat) {
 export default function TrainingDraftRoomScreen({ user, groupId, onComplete = null, onExit = null }) {
   const {
     boardBySector, highlightSet, seats, myPicks,
-    isMyTurn, isComplete, finalStatus, onClockId,
+    isMyTurn, isComplete, finalStatus,
     currentPickIndex, totalPicks, round, pickClock,
     submitting, error, submitPick, draft,
   } = useTrainingDraft({ user, groupId, active: true });

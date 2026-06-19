@@ -22,8 +22,9 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { createLobby, formGroupFromLobby, quickPlay } from './tournamentLobbyService.js';
-import { runMondayPipeline } from './tournamentOrchestrator.js';
+import { runMondayPipeline, sweepTrainingActivation } from './tournamentOrchestrator.js';
 import { runFridayAdvancement } from './tournamentAdvancement.js';
+import { formTrainingDraft, applyTrainingPick } from './trainingLifecycle.js';
 import { bankGroup } from './tournamentBanking.js';
 import { aggregateTournamentLeaderboards } from './tournamentLeaderboard.js';
 import { buildBoardCommit } from './tournamentBoards.js';
@@ -354,31 +355,54 @@ describe('SEAM: formation → banking → Friday base-layer COMPLETE (rank + lea
   });
 });
 
-// ==================== STAGE 5 — THE WRITER-FED EXCLUSION INVARIANT (Slice 3.1) ====================
+// ==================== STAGE 5 — THE WRITER-FED EXCLUSION INVARIANT (Slice 3.1, Design B) ====================
 //
 // Slice 3.0 proved the exclusion READS drop a HAND-BUILT { isTraining: true }
 // fixture (tournamentLeaderboard/advancement/banking/p4Flips tests). Slice 3.1
 // closes the loop the fixtures couldn't: it feeds the REAL WRITER's output — the
-// group doc quickPlay({ isTraining: true }) actually produces, padded + drafted +
-// deployed + banked by the LIVE duties — through those same reads, asserting it is
-// ABSENT from leaderboard / career rank / bracket, yet PRESENT in banking and
-// reaching COMPLETE. The writer is non-fenced: the training pod rides the existing
-// deploy -> createAgentBattle path UNCHANGED (battles keyed by groupId; isTraining
-// is a group-doc concept, NEVER stamped on the battle doc — zero fence contact).
+// training pod quickPlay({ isTraining: true }) -> formTrainingDraft actually
+// produces, drafted (the interactive snake draft) + activated + deployed + banked
+// by the LIVE duties — through those same reads, asserting it is ABSENT from
+// leaderboard / career rank / bracket, yet PRESENT in banking and reaching COMPLETE.
+//
+// Slice 3 (Design B) moved a training pod's agent layer OFF the ranked Monday
+// pipeline (runMondayPipeline excludes training — p4Flips locks the opt-out) and
+// onto the dedicated owner: activateTrainingPod / sweepTrainingActivation. So the
+// writer's output reaches BATTLE via the interactive draft's inline flip, and its
+// agent layer is run by the training SWEEP, not the Monday duty. The non-fenced
+// contract is unchanged: the pod rides the existing deploy -> createAgentBattle
+// path (battles keyed by groupId; isTraining is a group-doc concept, NEVER stamped
+// on the battle doc — zero fence contact).
 
-/** quickPlay a TRAINING pod (the real entry-point writer threads isTraining ->
- * formGroupFromLobby -> createTournamentGroupDoc), commit the one human's board,
- * and run the live Monday pipeline — exactly the ranked helper, flagged no-stakes. */
-async function quickPlayTrainingAndRunMonday() {
+/** Drive a TRAINING pod the Design B way: the real writer (formTrainingDraft wraps
+ * quickPlay({ isTraining }) -> formGroupFromLobby, then initializes the live snake
+ * draft FORMING -> DRAFTING). The lone human autopicks every turn; the final pick
+ * inline-flips DRAFTING -> BATTLE (MON_MORNING is 08:00 ET — a pre-open
+ * today-anchor). Then the training SWEEP — the dedicated owner of the agent layer,
+ * since runMondayPipeline excludes training — provisions the clone + CPUs and runs
+ * boards + the 24-name draft + the 4-seat deploy. */
+async function quickPlayTrainingAndActivate() {
   const { db, store, writeLog } = makeSeamDb();
-  // The REAL entry-point writer: quickPlay threads isTraining -> formGroupFromLobby
-  // -> createTournamentGroupDoc. Same solo cold-start, flagged no-stakes.
-  const { lobbyId, groupId } = await quickPlay(db, {
-    odUserId: HUMAN, displayName: 'Ada', now: MON_MORNING, isTraining: true,
+  const { lobbyId, groupId } = await formTrainingDraft(db, {
+    odUserId: HUMAN, displayName: 'Ada', now: MON_MORNING,
   });
-  await commitHumanBoard(db, store, groupId);
-  const { mondaySummary, fetchImpl } = await runSeamMonday(db);
-  return { db, store, writeLog, lobbyId, groupId, mondaySummary, fetchImpl };
+  // The lone human holds 3 of the 12 snake turns; autopick drives each, the CPU
+  // run-up rides each call. Loop until the draft completes (the 12th pick flips
+  // to BATTLE). The guard asserts the inline flip (a post-open anchor would land
+  // AWAITING_OPEN and fail loudly here rather than silently downstream).
+  let pick = { complete: false };
+  for (let i = 0; i < 16 && !pick.complete; i++) {
+    pick = await applyTrainingPick(db, groupId, { odUserId: HUMAN, autopick: true, now: MON_MORNING });
+  }
+  expect(pick.status).toBe(GROUP_STATUS.BATTLE);
+  // The Design B owner of the training agent layer (NOT runMondayPipeline): the
+  // morning backstop sweep. One model call (the human clone's board via the stub);
+  // CPUs use the deterministic fallback.
+  const fetchImpl = vi.fn(async () => ({ ok: true }));
+  const activation = await sweepTrainingActivation(db, {
+    now: MON_MORNING, anthropic: anthropicStub, fetchImpl, deployEnabled: true, pacingMs: 0,
+  });
+  return { db, store, writeLog, lobbyId, groupId, activation, fetchImpl };
 }
 
 describe('SEAM: the writer-fed exclusion invariant (Slice 3.1 — the REAL isTraining writer through the 3.0 reads)', () => {
@@ -399,10 +423,11 @@ describe('SEAM: the writer-fed exclusion invariant (Slice 3.1 — the REAL isTra
     expect(group.players.filter(p => p.isCpu !== true)).toHaveLength(1);
   });
 
-  it('the writer output RUNS the agent layer like any group: Monday -> BATTLE, 4 deploys keyed by groupId, isTraining NEVER on a battle body', async () => {
-    const { store, groupId, mondaySummary, fetchImpl } = await quickPlayTrainingAndRunMonday();
-    expect(mondaySummary).toMatchObject({ groups: 1, resolved: 1, drafted: 1, errors: 0 });
-    expect(mondaySummary.deploys.deployed).toBe(4);
+  it('Monday EXCLUDES the training pod; the training SWEEP runs its agent layer -> BATTLE, 4 deploys keyed by groupId, isTraining NEVER on a battle body', async () => {
+    const { db, store, groupId, activation, fetchImpl } = await quickPlayTrainingAndActivate();
+    // Design B: the ranked Monday pipeline owns NO part of a training pod's agent
+    // layer — the dedicated sweep does. The sweep activated exactly this one pod.
+    expect(activation).toMatchObject({ swept: 1, activated: 1, errors: 0 });
     expect(store.get(`tournamentGroups/${groupId}`).status).toBe(GROUP_STATUS.BATTLE);
 
     // The training pod is just another group the deploy processes: every battle
@@ -413,10 +438,15 @@ describe('SEAM: the writer-fed exclusion invariant (Slice 3.1 — the REAL isTra
     expect(bodies).toHaveLength(4);
     expect(bodies.every(b => b.gameMode === TOURNAMENT_GAME_MODE && b.groupId === groupId)).toBe(true);
     expect(bodies.some(b => 'isTraining' in b)).toBe(false);
+
+    // Prove the exclusion directly: the ranked Monday duty sees ZERO eligible
+    // groups here — the only group is the training pod, filtered by excludeTraining.
+    const { mondaySummary } = await runSeamMonday(db);
+    expect(mondaySummary.groups).toBe(0);
   });
 
   it('PRESENT in banking: a real banking day records all four seats on the training pod (the flag is irrelevant to banking)', async () => {
-    const { db, store, groupId } = await quickPlayTrainingAndRunMonday();
+    const { db, store, groupId } = await quickPlayTrainingAndActivate();
     const res = await bankGroup(db, groupId, QUOTES, {
       now: MON_EVENING, agentScores: { [HUMAN]: 20, 'cpu-1': 10, 'cpu-2': 12, 'cpu-3': 8 }, recordedBy: 'seam',
     });
@@ -427,7 +457,7 @@ describe('SEAM: the writer-fed exclusion invariant (Slice 3.1 — the REAL isTra
   });
 
   it('ABSENT from the leaderboard READ: the nightly aggregation excludes the BATTLE-status training pod the writer produced', async () => {
-    const { db } = await quickPlayTrainingAndRunMonday();
+    const { db } = await quickPlayTrainingAndActivate();
     // The pod is in BATTLE (a non-training group of identical shape WOULD be
     // eligible). The aggregation opts into excludeTraining, so the writer's
     // output is filtered out at the query — nothing reaches the seasonal board.
@@ -437,7 +467,7 @@ describe('SEAM: the writer-fed exclusion invariant (Slice 3.1 — the REAL isTra
   });
 
   it('ABSENT from rank + bracket, then COMPLETE: Friday gives the writer output the PLAIN FINISH — no rank, no leaderboard, no cut', async () => {
-    const { db, store, groupId } = await quickPlayTrainingAndRunMonday();
+    const { db, store, groupId } = await quickPlayTrainingAndActivate();
 
     // Day 1 real banking; days 2–5 injected cumulative snapshots to a clean
     // day-5 week (mirrors the ranked seam + the advancement battery).
