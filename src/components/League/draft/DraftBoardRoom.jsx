@@ -1,0 +1,370 @@
+// src/components/League/draft/DraftBoardRoom.jsx
+//
+// The redesigned Training Draft Board (Phase 1) — the agent-fit spine. One
+// fit-ranked, tiered "best available" board keyed to the practice agent's
+// archetype (arch_scores[humanArchetype], a direct read), with plain-language
+// reasons, a sector lens, search, and scale handling. Composed from the reusable
+// League draft atoms; wired to the existing useTrainingDraft hook (live state +
+// the two-step pick through applyTrainingPick). The visual source of truth is the
+// Claude Design project; this mirrors its DeskRoom, responsive to a phone.
+//
+// Phase 1 scope: the board, real and interactive. Opponents' picks appear after
+// each pick (the animated pick-by-pick reveal is Phase 2).
+
+import React, { useState, useEffect, useMemo } from 'react';
+import { useTrainingDraft } from '../../../hooks/useTrainingDraft';
+import { PICKS_PER_PLAYER, TRAINING_TUNING, GROUP_STATUS } from '../../../constants/leagueTournament';
+import { TOKENS, DX, alpha, injectDraftCSS, FONT_VARS } from './draftTokens';
+import { Icon } from './draftIcons';
+import { Mono, Eyebrow, ArchChip, ClockRing } from './draftPrimitives';
+import { archMeta, buildFitBoard, tierGroupsOf } from './boardModel';
+import { StockCard } from './StockCard';
+import { TierHeader } from './TierHeader';
+import { SnakeStrip } from './SnakeStrip';
+import { SeatCard, LineupSlots } from './SeatCard';
+import { PickPanel } from './PickPanel';
+
+const CLOCK_TOTAL = Math.max(1, Math.round((TRAINING_TUNING?.PICK_CLOCK_MS || 20000) / 1000));
+// Tiers rendered in full by default; the long tail collapses behind a toggle.
+const FULL_TIERS = new Set(['top', 'strong']);
+
+function useNarrow(bp = 1024) {
+  const [narrow, setNarrow] = useState(typeof window !== 'undefined' ? window.innerWidth < bp : false);
+  useEffect(() => {
+    const f = () => setNarrow(window.innerWidth < bp);
+    f(); window.addEventListener('resize', f);
+    return () => window.removeEventListener('resize', f);
+  }, [bp]);
+  return narrow;
+}
+
+function coachLineFor({ phase, archKey, selected, topPick, backToBack, pickNo, myPicks }) {
+  const a = archMeta(archKey);
+  if (phase === 'done') {
+    const ids = (myPicks || []).join(' · ');
+    return { title: 'Lineup locked', body: `${ids}. That's your three-stock book — ranked for a ${a.name}. The battle view takes it from here.` };
+  }
+  if (phase === 'waiting') {
+    return { title: 'The table is drafting', body: 'Watch what gets taken — especially near the top of your board. Then I re-rank to your best available.' };
+  }
+  if (backToBack) {
+    return { title: 'Back-to-back picks', body: 'You pick now and again immediately — two names before the table moves. Pair them, or double down on a tier.' };
+  }
+  if (selected) {
+    return { title: `${selected.symbol} selected`, body: `${selected.reason}. Confirm to draft, or pick another — nothing's locked until you confirm.` };
+  }
+  return {
+    title: `You're on the clock — pick #${pickNo}`,
+    body: topPick ? `${topPick.symbol} tops your board: "${String(topPick.reason).toLowerCase()}". Or reach for a name you bet survives.` : 'Make your pick — every name is pickable; the order just advises.',
+  };
+}
+
+export default function DraftBoardRoom({ user, groupId, onComplete = null, onExit = null }) {
+  const d = useTrainingDraft({ user, groupId, active: true });
+  const {
+    poolRows, humanArchetype, events, snakeOrder, members, currentUserId, myPicks,
+    seats, isDrafting, isMyTurn, isComplete, finalStatus,
+    currentPickIndex, totalPicks, round, pickClock, submitting, error, submitPick, draft,
+    onClockSeatIdx,
+  } = d;
+
+  const narrow = useNarrow();
+  const [selected, setSelected] = useState(null);
+  const [expandedId, setExpandedId] = useState(null);
+  const [sectorFilter, setSectorFilter] = useState('All');
+  const [query, setQuery] = useState('');
+  const [expandedTiers, setExpandedTiers] = useState(() => new Set());
+
+  // clear a stale selection when the turn moves on / the name gets sniped
+  useEffect(() => { if (!isMyTurn) setSelected(null); }, [isMyTurn, currentPickIndex]);
+  useEffect(() => { if (isComplete && onComplete) onComplete(finalStatus); }, [isComplete, finalStatus, onComplete]);
+
+  useEffect(() => { injectDraftCSS(); }, []);
+
+  const archKey = humanArchetype;
+
+  // owned sector counts → the Diversifier overlay
+  const ownedSectorCounts = useMemo(() => {
+    const sectorBySymbol = new Map(poolRows.map((r) => [r.symbol, r.sectorName]));
+    const counts = {};
+    (myPicks || []).forEach((sym) => {
+      const sec = sectorBySymbol.get(String(sym).toUpperCase());
+      if (sec) counts[sec] = (counts[sec] || 0) + 1;
+    });
+    return counts;
+  }, [poolRows, myPicks]);
+
+  const board = useMemo(() => {
+    const availableRows = poolRows.filter((r) => r.available);
+    return buildFitBoard({ availableRows, archKey, ownedSectorCounts });
+  }, [poolRows, archKey, ownedSectorCounts]);
+
+  const SECTORS = useMemo(() => [...new Set(poolRows.map((r) => r.sectorName))].sort(), [poolRows]);
+
+  // sector lens + search (in place — preserves fit-rank + tier)
+  const q = query.trim().toUpperCase();
+  const viewBoard = useMemo(() => {
+    let rows = sectorFilter === 'All' ? board : board.filter((s) => s.sectorName === sectorFilter);
+    if (q) rows = rows.filter((s) => s.symbol.includes(q));
+    return rows;
+  }, [board, sectorFilter, q]);
+  const tierGroups = useMemo(() => tierGroupsOf(viewBoard), [viewBoard]);
+
+  // snake: overall pick index → { symbol, human }
+  const humanSeatIdx = members.indexOf(currentUserId);
+  const picksByOverall = useMemo(() => {
+    const arr = new Array(totalPicks).fill(null);
+    (events || []).forEach((ev) => {
+      const idx = (ev.pickNumber || 0) - 1;
+      if (idx < 0 || idx >= arr.length) return;
+      arr[idx] = { symbol: String(ev.symbol || '').toUpperCase(), human: ev.odUserId === currentUserId };
+    });
+    return arr;
+  }, [events, totalPicks, currentUserId]);
+
+  const selectedRow = selected ? board.find((b) => b.symbol === selected) || null : null;
+  const pickNo = Math.min(totalPicks, currentPickIndex + 1);
+  const prevHuman = currentPickIndex - 1 >= 0 && snakeOrder[currentPickIndex - 1] === humanSeatIdx;
+  const nextHuman = currentPickIndex + 1 < totalPicks && snakeOrder[currentPickIndex + 1] === humanSeatIdx;
+  const backToBack = isMyTurn && humanSeatIdx >= 0 && (prevHuman || nextHuman);
+  const phase = isComplete ? 'done' : isMyTurn ? 'your-turn' : 'waiting';
+  const onClockSeat = seats.find((s) => s.seatIndex === onClockSeatIdx);
+  const onClockLabel = onClockSeat ? (onClockSeat.isYou ? 'You' : `CPU ${onClockSeat.seatIndex}`) : null;
+  const coach = coachLineFor({ phase, archKey, selected: selectedRow, topPick: board[0], backToBack, pickNo, myPicks });
+
+  const doConfirm = async () => {
+    if (!selected) return;
+    const ok = await submitPick(selected, false);
+    if (ok) setSelected(null);
+  };
+  const seatLabel = (s) => (s.isYou ? 'You' : `CPU ${s.seatIndex}`);
+  const toggleTier = (id) => setExpandedTiers((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+
+  const scopeStyle = {
+    height: '100%', minHeight: '100vh', background: TOKENS.bg, color: TOKENS.ink,
+    fontFamily: 'var(--ld-ui)', ...FONT_VARS, display: 'flex', flexDirection: 'column',
+    backgroundImage: `radial-gradient(circle at 50% -10%, ${alpha(DX.you, 0.05)}, transparent 55%)`,
+  };
+
+  // ── loading / complete ──────────────────────────────────────────────────
+  if (!draft && !isComplete) {
+    return (
+      <div className="ld-scope" style={{ ...scopeStyle, alignItems: 'center', justifyContent: 'center' }}>
+        <ClockRing seconds={null} total={CLOCK_TOTAL} size={64} />
+        <div style={{ color: TOKENS.ink2, marginTop: 16 }}>Forming the board…</div>
+      </div>
+    );
+  }
+  if (isComplete) {
+    const flipped = finalStatus === GROUP_STATUS.BATTLE;
+    const lockedPicks = (draft?.picksByUser?.[currentUserId] || myPicks || []);
+    return (
+      <div className="ld-scope" style={{ ...scopeStyle, alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+        <div style={{ maxWidth: 520, width: '100%', background: TOKENS.surface, border: `1px solid ${alpha(DX.you, 0.26)}`, borderRadius: 16, padding: 28, textAlign: 'center' }}>
+          <Icon name="check" size={26} color={DX.you} stroke={2.4} style={{ margin: '0 auto 10px' }} />
+          <div style={{ fontSize: 22, fontWeight: 700, marginBottom: 6 }}>Lineup locked</div>
+          <div style={{ color: TOKENS.ink2, marginBottom: 20, lineHeight: 1.5 }}>
+            {flipped ? 'Your pod is live — the five-day battle has begun.' : 'Your pod is locked in and waiting for the next market open.'}
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 22 }}>
+            {lockedPicks.map((s) => (
+              <span key={s} style={{ background: alpha(DX.you, 0.1), border: `1px solid ${alpha(DX.you, 0.3)}`, borderRadius: 8, padding: '6px 12px', fontWeight: 700 }}>{s}</span>
+            ))}
+          </div>
+          {onExit && (
+            <button className="ld-tap" onClick={onExit} style={{ all: 'unset', cursor: 'pointer', background: DX.you, color: TOKENS.bg, borderRadius: 10, padding: '12px 24px', fontWeight: 700 }}>
+              View your pod →
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // ── board center (shared by wide + narrow) ──────────────────────────────
+  // Defined as inline-invoked render functions (not <Components/>) so the search
+  // input keeps focus across keystrokes — a fresh component type each render
+  // would remount it.
+  const sectorChips = () => (
+    <div className="ld-scroll" style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: narrow ? 'nowrap' : 'wrap', overflowX: narrow ? 'auto' : 'visible' }}>
+      {!narrow && <Icon name="grid" size={13} color={TOKENS.ink3} />}
+      {['All', ...SECTORS].map((sec) => {
+        const on = sectorFilter === sec;
+        return (
+          <button key={sec} className="ld-tap" onClick={() => setSectorFilter(sec)} style={{ all: 'unset', cursor: 'pointer', flexShrink: 0,
+            padding: '4px 9px', borderRadius: 999, fontFamily: 'var(--ld-mono)', fontSize: 9.5, letterSpacing: '0.04em',
+            color: on ? TOKENS.bg : TOKENS.ink2, background: on ? DX.you : TOKENS.surface, border: `1px solid ${on ? DX.you : TOKENS.hair}`, fontWeight: 600 }}>{sec}</button>
+        );
+      })}
+    </div>
+  );
+
+  const searchBox = () => (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 11px', borderRadius: 10, background: TOKENS.surface, border: `1px solid ${query ? alpha(DX.you, 0.4) : TOKENS.hair}` }}>
+      <Icon name="search" size={14} color={query ? DX.you : TOKENS.ink3} />
+      <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search the board…" style={{ all: 'unset', flex: 1, minWidth: 0, fontSize: 13, color: TOKENS.ink, fontFamily: 'var(--ld-ui)' }} />
+      {query && (
+        <button className="ld-tap" onClick={() => setQuery('')} style={{ all: 'unset', cursor: 'pointer', display: 'flex' }}><Icon name="x" size={13} color={TOKENS.ink3} /></button>
+      )}
+    </div>
+  );
+
+  const renderTiers = (size) => {
+    if (!viewBoard.length) {
+      return <div style={{ padding: '28px 8px', textAlign: 'center', color: TOKENS.ink3, fontSize: 13 }}>No names match{q ? ` “${query}”` : ''}{sectorFilter !== 'All' ? ` in ${sectorFilter}` : ''}.</div>;
+    }
+    return tierGroups.map((g) => {
+      const collapsed = !FULL_TIERS.has(g.tier) && !expandedTiers.has(g.tier) && !q;
+      return (
+        <div key={g.tier}>
+          <TierHeader tier={g.tier} count={g.items.length} />
+          {collapsed ? (
+            <button className="ld-tap" onClick={() => toggleTier(g.tier)} style={{ all: 'unset', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, width: '100%', boxSizing: 'border-box',
+              padding: '11px', borderRadius: 12, background: TOKENS.surface, border: `1px dashed ${TOKENS.hair2}`, color: TOKENS.ink2 }}>
+              <Icon name="chevD" size={14} color={TOKENS.ink2} />
+              <Mono style={{ fontSize: 11.5, letterSpacing: '0.04em' }}>Show {g.items.length} more</Mono>
+            </button>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {g.items.map((s) => (
+                <StockCard key={s.symbol} stock={s} size={size}
+                  selected={selected === s.symbol} disabled={!isMyTurn}
+                  onSelect={(sym) => setSelected(sym === selected ? null : sym)}
+                  expanded={expandedId === s.symbol} onExpand={setExpandedId} />
+              ))}
+            </div>
+          )}
+        </div>
+      );
+    });
+  };
+
+  const practiceBadge = (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '4px 9px', borderRadius: 999, background: TOKENS.surface, border: `1px solid ${TOKENS.hair2}` }}>
+      <span style={{ width: 5, height: 5, borderRadius: '50%', background: DX.you }} />
+      <Mono style={{ fontSize: 9.5, color: TOKENS.ink2, letterSpacing: '0.1em', fontWeight: 600 }}>PRACTICE · NO STAKES</Mono>
+    </span>
+  );
+
+  // ── narrow (phone) ──────────────────────────────────────────────────────
+  if (narrow) {
+    return (
+      <div className="ld-scope" style={scopeStyle}>
+        <div style={{ padding: '12px 16px 10px', borderBottom: `1px solid ${TOKENS.hair}`, flexShrink: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 9 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontSize: 15, fontWeight: 700 }}>Training Draft</span>
+              <ArchChip archKey={archKey} size="m" />
+            </div>
+            <Mono style={{ fontSize: 9.5, color: TOKENS.ink3, letterSpacing: '0.04em' }}>PICK {pickNo}/{totalPicks}</Mono>
+          </div>
+          <SnakeStrip snakeOrder={snakeOrder} picksByOverall={picksByOverall} onClockIndex={isDrafting ? currentPickIndex : -1} humanSeatIdx={humanSeatIdx} />
+        </div>
+
+        {isMyTurn && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 13, padding: '11px 16px', flexShrink: 0, background: alpha(DX.you, 0.06), borderBottom: `1px solid ${alpha(DX.you, 0.2)}` }}>
+            <ClockRing seconds={pickClock} total={CLOCK_TOTAL} size={58} />
+            <div style={{ flex: 1 }}>
+              <Mono style={{ fontSize: 9.5, letterSpacing: '0.1em', color: DX.you, fontWeight: 700 }}>YOU'RE ON THE CLOCK</Mono>
+              <div style={{ fontSize: 17, fontWeight: 700, marginTop: 1 }}>Pick #{pickNo} overall</div>
+            </div>
+          </div>
+        )}
+        {phase === 'waiting' && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 16px', flexShrink: 0, background: alpha(DX.cpu, 0.07), borderBottom: `1px solid ${alpha(DX.cpu, 0.22)}` }}>
+            <span style={{ width: 8, height: 8, borderRadius: '50%', background: DX.cpu, animation: 'ldLiveDot 1.4s infinite' }} />
+            <Mono style={{ fontSize: 10, letterSpacing: '0.12em', color: DX.cpu, fontWeight: 700 }}>OPPONENTS DRAFTING</Mono>
+          </div>
+        )}
+
+        <div className="ld-scroll" style={{ flex: 1, overflowY: 'auto', padding: '12px 16px 14px', minHeight: 0 }}>
+          {error && <div style={{ borderRadius: 10, padding: '8px 12px', background: alpha(DX.neg, 0.1), border: `1px solid ${alpha(DX.neg, 0.4)}`, color: '#ffd7de', fontSize: 12.5, marginBottom: 12 }}>{error}</div>}
+          <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 9 }}>
+            <Eyebrow color={DX.you}>Best available · {viewBoard.length}</Eyebrow>
+            <Mono style={{ fontSize: 9.5, color: TOKENS.ink3 }}>fit advises</Mono>
+          </div>
+          <div style={{ marginBottom: 8 }}>{searchBox()}</div>
+          <div style={{ marginBottom: 8 }}>{sectorChips()}</div>
+          {renderTiers('m')}
+        </div>
+
+        {isMyTurn && (
+          <div style={{ flexShrink: 0, padding: '11px 16px calc(11px + env(safe-area-inset-bottom))', borderTop: `1px solid ${TOKENS.hair}`, background: TOKENS.bg }}>
+            {selectedRow ? (
+              <div style={{ display: 'flex', gap: 9 }}>
+                <button className="ld-tap" onClick={() => setSelected(null)} disabled={submitting} style={{ all: 'unset', cursor: 'pointer', padding: '14px 16px', borderRadius: 13, background: TOKENS.surface, border: `1px solid ${TOKENS.hair2}`, color: TOKENS.ink2, fontWeight: 600, fontSize: 13 }}>Clear</button>
+                <button className="ld-tap" onClick={doConfirm} disabled={submitting} style={{ all: 'unset', cursor: 'pointer', flex: 1, textAlign: 'center', padding: '14px', borderRadius: 13, background: DX.you, color: TOKENS.bg, fontWeight: 700, fontSize: 14.5, boxShadow: `0 8px 24px ${alpha(DX.you, 0.3)}`, opacity: submitting ? 0.7 : 1 }}>
+                  {submitting ? 'Drafting…' : `Confirm — draft ${selectedRow.symbol}`}
+                </button>
+              </div>
+            ) : (
+              <div style={{ textAlign: 'center', padding: '4px' }}>
+                <Mono style={{ fontSize: 11.5, color: TOKENS.ink2 }}>Tap a name to select · clock auto-picks your top fit</Mono>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // ── wide (desktop) — three columns ──────────────────────────────────────
+  return (
+    <div className="ld-scope" style={scopeStyle}>
+      {/* top bar */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '13px 20px', borderBottom: `1px solid ${TOKENS.hair}`, flexShrink: 0, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 13 }}>
+          <div style={{ fontSize: 17, fontWeight: 700, letterSpacing: '-0.01em' }}>Training Draft</div>
+          <ArchChip archKey={archKey} />
+          {practiceBadge}
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+          <Mono style={{ fontSize: 11, color: TOKENS.ink3, letterSpacing: '0.06em' }}>ROUND {round} · PICK {pickNo} OF {totalPicks}</Mono>
+          <SnakeStrip snakeOrder={snakeOrder} picksByOverall={picksByOverall} onClockIndex={isDrafting ? currentPickIndex : -1} humanSeatIdx={humanSeatIdx} />
+        </div>
+      </div>
+
+      <div style={{ flex: 1, display: 'flex', minHeight: 0 }}>
+        {/* left — the table */}
+        <div className="ld-scroll" style={{ width: 290, flexShrink: 0, borderRight: `1px solid ${TOKENS.hair}`, padding: '15px 16px', display: 'flex', flexDirection: 'column', gap: 9, overflowY: 'auto' }}>
+          <Eyebrow>The table</Eyebrow>
+          {seats.map((s) => (
+            <SeatCard key={s.odUserId} seat={{ ...s, label: seatLabel(s) }} archKey={archKey} active={s.seatIndex === onClockSeatIdx && isDrafting} picksPerPlayer={PICKS_PER_PLAYER} />
+          ))}
+          <div style={{ marginTop: 6 }}><Eyebrow>Your lineup · {myPicks.length}/{PICKS_PER_PLAYER}</Eyebrow></div>
+          <LineupSlots picks={myPicks} picksPerPlayer={PICKS_PER_PLAYER} />
+        </div>
+
+        {/* center — the board */}
+        <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+          <div style={{ padding: '14px 20px 10px', flexShrink: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12 }}>
+              <div>
+                <Eyebrow color={DX.you}>Best available</Eyebrow>
+                <div style={{ fontSize: 16, fontWeight: 700, marginTop: 3 }}>Ranked for your agent · {viewBoard.length} names</div>
+              </div>
+              <Mono style={{ fontSize: 10.5, color: TOKENS.ink3, maxWidth: 240, textAlign: 'right', lineHeight: 1.4 }}>Fit advises — any name is pickable</Mono>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 11, flexWrap: 'wrap' }}>
+              <div style={{ width: 230, maxWidth: '40%' }}>{searchBox()}</div>
+              {sectorChips()}
+            </div>
+          </div>
+          <div className="ld-scroll" style={{ flex: 1, overflowY: 'auto', padding: '0 20px 20px' }}>
+            {renderTiers('d')}
+          </div>
+        </div>
+
+        {/* right — the pick panel */}
+        <div style={{ width: 332, flexShrink: 0, borderLeft: `1px solid ${TOKENS.hair}`, padding: '15px 16px', minHeight: 0 }}>
+          <PickPanel
+            phase={phase} pickClock={pickClock} pickNo={pickNo} backToBack={backToBack}
+            selected={selectedRow} coach={coach} orbState={phase === 'waiting' ? 'reading' : 'ready'}
+            onConfirm={doConfirm} onClear={() => setSelected(null)} submitting={submitting} error={error}
+            myPicks={myPicks} onExit={onExit} onClockLabel={onClockLabel} clockTotalSec={CLOCK_TOTAL}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}

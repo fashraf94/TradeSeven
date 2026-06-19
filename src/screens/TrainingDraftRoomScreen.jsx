@@ -15,6 +15,22 @@
 import React, { useState, useEffect } from 'react';
 import { useTrainingDraft } from '../hooks/useTrainingDraft';
 import { GROUP_STATUS } from '../constants/leagueTournament';
+import { TRAINING_BOARD_REDESIGN_ENABLED } from '../config/featureFlags';
+import DraftBoardRoom from '../components/League/draft/DraftBoardRoom';
+
+// The redesigned board ships DARK behind TRAINING_BOARD_REDESIGN_ENABLED, with
+// the `?trainingBoard=1` dev-preview override (the `?trainingDraft=` idiom) so it
+// can be smoked on a Vercel preview while the flag posture is unchanged. When the
+// flag is off and no override is set, the legacy sector-grouped board below
+// renders byte-identically (instant rollback).
+export default function TrainingDraftRoomScreen(props) {
+  const override = typeof window !== 'undefined'
+    && new URLSearchParams(window.location.search).get('trainingBoard') === '1';
+  if (TRAINING_BOARD_REDESIGN_ENABLED || override) {
+    return <DraftBoardRoom {...props} />;
+  }
+  return <LegacyTrainingDraftRoom {...props} />;
+}
 
 const C = {
   bg: '#0b1220',
@@ -43,7 +59,7 @@ function seatLabel(seat) {
   return seat.odUserId;
 }
 
-export default function TrainingDraftRoomScreen({ user, groupId, onComplete = null, onExit = null }) {
+function LegacyTrainingDraftRoom({ user, groupId, onComplete = null, onExit = null }) {
   const {
     boardBySector, highlightSet, seats, myPicks,
     isMyTurn, isComplete, finalStatus,

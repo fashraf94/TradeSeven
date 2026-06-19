@@ -168,3 +168,24 @@ export const LEAGUE_REDESIGN_ENABLED = true;
  * preview smoke.
  */
 export const LEAGUE_NEXT_ARC_ENABLED = true;
+
+/**
+ * League Training — the redesigned Training Draft Board (the agent-fit spine).
+ *
+ * When false (default), `TrainingDraftRoomScreen` renders TODAY's behavior
+ * unchanged — the sector-grouped board + star-highlight overlay (the Slice 2
+ * monolith), byte-identical (instant rollback). When true — or with the
+ * `?trainingBoard=1` dev-preview param (the `?trainingDraft=` idiom) — it
+ * renders the redesigned board: one fit-ranked, tiered "best available" board
+ * keyed to the practice agent's archetype (`arch_scores[humanArchetype]`, a
+ * direct read), plain-language reason lines, sector lens chips, search, and
+ * scale handling, composed from the reusable League draft atoms in
+ * `src/components/League/draft/`.
+ *
+ * Client UI + reads only — no new writes, the same `applyTrainingPick` endpoint,
+ * the calibration fence untouched. Built/merged DARK behind this flag; flip in a
+ * one-line follow-up PR after a Vercel preview smoke (the LEAGUE_REDESIGN_ENABLED
+ * precedent). The opponent-reveal animation (Phase 2) and the entry-fold merge
+ * (Phase 3) layer on behind this same flag.
+ */
+export const TRAINING_BOARD_REDESIGN_ENABLED = false;
