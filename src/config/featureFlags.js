@@ -189,3 +189,39 @@ export const LEAGUE_NEXT_ARC_ENABLED = true;
  * (Phase 3) layer on behind this same flag.
  */
 export const TRAINING_BOARD_REDESIGN_ENABLED = true;
+
+/**
+ * Rule Conflict Reconciler — equip-time DETECTION (shadow-safe half).
+ *
+ * The agent (BaggerBomb) path has no conflict resolution: contradictory hard
+ * constraints (e.g. "Cap Tech 40%" + "≥50% Tech") are both classified
+ * "must obey" and the reserved `conflictCheckResult` field is hard-coded null.
+ * This flag turns on the canonical reconciler's DETECTION at equip time only:
+ * it computes and persists `conflictCheckResult` on the bundle and powers the
+ * equip-time warning toast. It does NOT change anything the agent sees at
+ * deploy — it is pure shadow/transparency (no prompt-path change).
+ *
+ * OFF by default. Built/merged DARK; flip after a preview smoke once the
+ * reconciler has been observed against real equipped loadouts. The runtime
+ * INJECT half (below) is a separate, fence-gated flag and implies this one.
+ * See the Rule Conflict Reconciler build spec + RULES_LAUNCHBLOCKER findings.
+ */
+export const CONFLICT_RECONCILER_DETECT_ENABLED = false;
+
+/**
+ * Rule Conflict Reconciler — runtime INJECTION into the cognition prompts.
+ *
+ * When true, the deploy-time resolve (in the fenced `api/agent/decide.js`
+ * call-site) replaces the raw projected `activeRules` with the reconciler's
+ * `resolvedRules` before they are frozen into the battle snapshot — so the
+ * losing side of a contradiction never reaches the strategy or intraday-eval
+ * prompt. This CHANGES what the agent sees; it is the fence-touching half and
+ * is gated behind the §7 founder-reviewed commit.
+ *
+ * INJECT implies DETECT — injection without detection is meaningless. On
+ * reconciler error or with this flag off, the path falls back to the raw
+ * projected rules (deploy never blocked). OFF by default; flip only after the
+ * fenced commit is reviewed for prompt parity and signed off, and after a
+ * preview calibration smoke. See the Rule Conflict Reconciler build spec.
+ */
+export const CONFLICT_RECONCILER_INJECT_ENABLED = false;

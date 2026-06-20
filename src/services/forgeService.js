@@ -9,6 +9,8 @@ import {
 import { db } from '../firebase/config';
 import { getAgentLevel } from '../constants/agentProgression';
 import { FORGE_LIMITS } from '../constants/agentProgression';
+import { reconcile, RECONCILER_VERSION } from '../utils/ruleConflictReconciler';
+import { CONFLICT_RECONCILER_DETECT_ENABLED } from '../config/featureFlags';
 
 // ============================================
 // VALIDATION
@@ -27,6 +29,10 @@ const VALID_SOURCES = [
 ];
 const VALID_VISIBILITIES = ['public', 'private'];
 const VALID_STATUSES = ['draft', 'testing', 'active', 'proven', 'queued'];
+// Source-tier provenance for the Rule Conflict Reconciler. Stamped at write-time
+// (user_equipped = tier-1 deliberate; archetype_default = tier-2 built-in/seeded).
+// Missing/null is allowed (legacy rows) and the reconciler defaults it to tier-2.
+const VALID_PROVENANCES = ['user_equipped', 'archetype_default'];
 const MAX_RULE_TEXT_LENGTH = 1000;
 const MAX_PARAMS_KEYS = 5;
 
@@ -105,6 +111,11 @@ function validateRuleInput(ruleData) {
     errors.push('traitId must be a string or null');
   }
 
+  // Validate provenance: one of the allowed source-tier values, or null/absent
+  if (ruleData.provenance != null && !VALID_PROVENANCES.includes(ruleData.provenance)) {
+    errors.push(`Provenance must be one of: ${VALID_PROVENANCES.join(', ')}`);
+  }
+
   return errors;
 }
 
@@ -137,6 +148,9 @@ export const createRule = async (agentId, ruleData) => {
     status: ruleData.status || 'active',
     priority: ruleData.priority || 0,
     traitId: ruleData.traitId || null,
+    // Source-tier provenance for the conflict reconciler (tier-1 vs tier-2).
+    // null when unstamped — the reconciler treats missing as tier-2 (assumed).
+    provenance: ruleData.provenance || null,
     isRefined: false,
     isDeleted: false,
     bundleIds: [],
@@ -403,6 +417,11 @@ export const forgeBundle = async (agentId, bundleId) => {
       paramValues: rule.paramValues || null,
       category: rule.category,     // MUST be present — prompt assembly depends on this (Amendment 2)
       visibility: rule.visibility,
+      // Carried for the conflict reconciler: sourceRef keys the descriptor table,
+      // provenance carries the source tier. Pre-reconciler bundles lack these and
+      // the reconciler degrades them to unchecked / tier-2-assumed (no false flags).
+      sourceRef: rule.sourceRef || null,
+      provenance: rule.provenance || null,
     });
   }
 
@@ -481,13 +500,41 @@ export const equipBundle = async (agentId, bundleId) => {
     paramValues: snap.paramValues || null,
     category: snap.category || null,
     bundleName: snap.bundleName,
+    // Carried for the conflict reconciler (see forgeBundle snapshot note).
+    sourceRef: snap.sourceRef || null,
+    provenance: snap.provenance || null,
   }));
+
+  // 5b. Equip-time conflict DETECTION (shadow-safe; gated). Runs the canonical
+  // reconciler over the merged set of ALL equipped bundles (cross-bundle
+  // conflicts a per-bundle check would miss) and records the advisory result on
+  // this bundle. SCOPE NOTE: this set is bundle snapshots ONLY — archetype/trait
+  // rules are bundle-independent (projected at deploy by traitId), so a
+  // bundle-vs-trait conflict is NOT caught here. That is fine: equip-time
+  // detection is advisory; the AUTHORITATIVE resolve runs fresh at deploy over
+  // the full projected set (decide.js, Phase 2). Detection only — it does NOT
+  // alter activeRules. Off by default.
+  let conflictCheckResult = null;
+  if (CONFLICT_RECONCILER_DETECT_ENABLED) {
+    const { conflictReport, coverage, reconcilerError } = reconcile(
+      activeRules, [], agentData?.equippedTraits || [], { legacyDefaultTier: 2 }
+    );
+    conflictCheckResult = {
+      conflicts: conflictReport,
+      coverage,
+      reconcilerVersion: RECONCILER_VERSION,
+      reconcilerError: reconcilerError || null,
+      checkedAt: new Date().toISOString(),
+    };
+  }
 
   // 6. Batch write: update bundle status + agent doc
   const batch = writeBatch(db);
   batch.update(bundleRef, {
     status: 'equipped',
     equippedAt: new Date().toISOString(),
+    // Only written when DETECT is on, so a flag-off equip stays byte-identical.
+    ...(CONFLICT_RECONCILER_DETECT_ENABLED && { conflictCheckResult }),
     updatedAt: serverTimestamp(),
   });
   batch.update(agentRef, {
@@ -533,6 +580,9 @@ export const unequipBundle = async (agentId, bundleId) => {
     paramValues: snap.paramValues || null,
     category: snap.category || null,
     bundleName: snap.bundleName,
+    // Carried for the conflict reconciler (see forgeBundle snapshot note).
+    sourceRef: snap.sourceRef || null,
+    provenance: snap.provenance || null,
   }));
 
   const batch = writeBatch(db);

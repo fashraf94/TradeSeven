@@ -420,6 +420,10 @@ export default function StarterKit({ agentId, agent, forge, tokens, isMobile, on
           sourceRef: template.id,
           category: ft.category || template.category,
           params: Object.keys(ft.params || {}).length > 0 ? ft.params : null,
+          // Onboarding starter-kit defaults are seeded at agent creation →
+          // tier-2 (built-in identity), so a later deliberate user rule out-ranks
+          // them. Reconciler treats this as archetype_default.
+          provenance: 'archetype_default',
         });
         ruleIds.push(ruleId);
       }

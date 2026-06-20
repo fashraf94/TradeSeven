@@ -351,6 +351,8 @@ export function useForge(agentId) {
         category: firstTemplate.category || template.category,
         params: firstTemplate.params || null,
         paramValues: paramValues || null,
+        // User added this rule by hand → tier-1 (deliberate) for the reconciler.
+        provenance: 'user_equipped',
         ...(options.status && { status: options.status }),
         ...(options.priority != null && { priority: options.priority }),
         ...(options.traitId && { traitId: options.traitId }),
@@ -399,6 +401,9 @@ export function useForge(agentId) {
       category: firstTemplate.category || template.category,
       params: firstTemplate.params || null,
       paramValues: paramValues || null,
+      // User hand-equipped this trait → tier-1 (deliberate) for the reconciler.
+      // (The archetype-default SEEDER stamps 'archetype_default' in traitEquip.js.)
+      provenance: 'user_equipped',
       ...(options.status && { status: options.status }),
       ...(options.priority != null && { priority: options.priority }),
       ...(options.traitId && { traitId: options.traitId }),
@@ -446,6 +451,8 @@ export function useForge(agentId) {
         category,
         source: 'manual',
         visibility: 'private',
+        // User authored this rule by hand → tier-1 (deliberate) for the reconciler.
+        provenance: 'user_equipped',
       });
       setRules(prev => [
         { id: ruleId, text, category, source: 'manual', visibility: 'private', bundleIds: [], isRefined: false },
