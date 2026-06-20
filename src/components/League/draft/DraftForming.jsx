@@ -29,7 +29,7 @@ export function DraftForming({ archKey, seats = [], ready = false, onEnter, narr
   const avatar = narrow ? 46 : 56;
 
   return (
-    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
       padding: narrow ? '0 26px' : '0 60px', textAlign: 'center',
       background: `radial-gradient(circle at 50% 28%, ${alpha(DX.you, 0.07)}, transparent 60%)` }}>
       <Eyebrow color={DX.you} style={{ marginBottom: narrow ? 20 : 22 }}>Training Draft · {canEnter ? 'Table ready' : 'Forming'}</Eyebrow>

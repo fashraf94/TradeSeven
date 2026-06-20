@@ -28,8 +28,9 @@ import { useDraftReveal } from './useDraftReveal';
 import { DraftForming } from './DraftForming';
 
 const CLOCK_TOTAL = Math.max(1, Math.round((TRAINING_TUNING?.PICK_CLOCK_MS || 20000) / 1000));
-// Tiers rendered in full by default; the long tail collapses behind a toggle.
-const FULL_TIERS = new Set(['top', 'strong']);
+// Every tier shows its top TIER_CAP by fit; the rest sits behind a per-tier
+// expander. Distribution-robust — holds no matter how the bands fall.
+const TIER_CAP = 10;
 
 function useNarrow(bp = 1024) {
   const [narrow, setNarrow] = useState(typeof window !== 'undefined' ? window.innerWidth < bp : false);
@@ -273,25 +274,28 @@ export default function DraftBoardRoom({ user, groupId, onComplete = null, onExi
       return <div style={{ padding: '28px 8px', textAlign: 'center', color: TOKENS.ink3, fontSize: 13 }}>No names match{q ? ` “${query}”` : ''}{sectorFilter !== 'All' ? ` in ${sectorFilter}` : ''}.</div>;
     }
     return tierGroups.map((g) => {
-      const collapsed = !FULL_TIERS.has(g.tier) && !expandedTiers.has(g.tier) && !q;
+      // Every tier shows its top TIER_CAP by fit; the rest sits behind a
+      // per-tier expander. Search (q) reveals all matches.
+      const expanded = expandedTiers.has(g.tier) || !!q;
+      const visible = expanded ? g.items : g.items.slice(0, TIER_CAP);
+      const hidden = g.items.length - visible.length;
       return (
         <div key={g.tier}>
           <TierHeader tier={g.tier} count={g.items.length} />
-          {collapsed ? (
-            <button className="ld-tap" onClick={() => toggleTier(g.tier)} style={{ all: 'unset', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, width: '100%', boxSizing: 'border-box',
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {visible.map((s) => (
+              <StockCard key={s.symbol} stock={s} size={size}
+                selected={selected === s.symbol} disabled={phase !== 'your-turn'}
+                onSelect={(sym) => setSelected(sym === selected ? null : sym)}
+                expanded={expandedId === s.symbol} onExpand={setExpandedId} />
+            ))}
+          </div>
+          {hidden > 0 && (
+            <button className="ld-tap" onClick={() => toggleTier(g.tier)} style={{ all: 'unset', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, width: '100%', boxSizing: 'border-box', marginTop: 8,
               padding: '11px', borderRadius: 12, background: TOKENS.surface, border: `1px dashed ${TOKENS.hair2}`, color: TOKENS.ink2 }}>
               <Icon name="chevD" size={14} color={TOKENS.ink2} />
-              <Mono style={{ fontSize: 11.5, letterSpacing: '0.04em' }}>Show {g.items.length} more</Mono>
+              <Mono style={{ fontSize: 11.5, letterSpacing: '0.04em' }}>Show {hidden} more</Mono>
             </button>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {g.items.map((s) => (
-                <StockCard key={s.symbol} stock={s} size={size}
-                  selected={selected === s.symbol} disabled={phase !== 'your-turn'}
-                  onSelect={(sym) => setSelected(sym === selected ? null : sym)}
-                  expanded={expandedId === s.symbol} onExpand={setExpandedId} />
-              ))}
-            </div>
           )}
         </div>
       );
