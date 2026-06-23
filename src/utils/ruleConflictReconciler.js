@@ -150,6 +150,12 @@ function resolveDescriptor(sourceRef, paramValues) {
   const rawValue = base.valueParam != null && pv[base.valueParam] != null
     ? pv[base.valueParam]
     : base.valueDefault;
+  // Guard the Number() coercion: '', whitespace, and booleans all coerce to a
+  // FINITE number (0 / 1) and would masquerade as a real limit — e.g. a blank
+  // pct becoming a 0% cap (the worst-case constraint the user never authored).
+  // Treat those as unparseable → the rule degrades to unchecked, not a phantom 0.
+  if (typeof rawValue === 'boolean') return null;
+  if (typeof rawValue === 'string' && rawValue.trim() === '') return null;
   const value = Number(rawValue);
   if (!Number.isFinite(value)) return null; // unparseable param → treat as unchecked
   const rawScope = base.scopeParam != null && pv[base.scopeParam] != null
@@ -175,23 +181,39 @@ function toInternalRule(item, ruleDocsById, legacyDefaultTier, index) {
   const docMatch = ruleDocsById.get(id) || {};
   const provenance = item.provenance ?? docMatch.provenance ?? null;
   const category = item.category ?? docMatch.category ?? null;
-  const sourceRef = item.sourceRef ?? docMatch.sourceRef ?? docMatch.source ?? null;
+  // NB: do NOT fall back to docMatch.source — `source` is an origin label
+  // ('manual'/'forge_discover'/…), never a descriptor-table key; conflating
+  // them would risk mis-keying a descriptor if a label ever collided with a key.
+  const sourceRef = item.sourceRef ?? docMatch.sourceRef ?? null;
   const paramValues = item.paramValues ?? docMatch.paramValues ?? null;
   const tier = provenanceToTier(provenance, legacyDefaultTier);
   const tierAssumed = PROVENANCE_TIER[provenance] == null; // missing/unknown → defaulted
 
-  // Recency signal for the total tiebreaker's final fallback. equippedAt may be
-  // a ms-epoch (trait entries) or absent; when absent we fall back to input
-  // order via `index` (later = more recent), keeping the reconciler total.
+  // Recency signal for the total tiebreaker's final fallback. NOTE: no current
+  // caller wires a numeric equippedAt — projectActiveRules items and bundle
+  // snapshots don't carry one — so today recency ALWAYS falls back to input
+  // order via `index` (later = more recent), which keeps the reconciler total.
+  // Wiring a real equip timestamp is future work and only matters once a same-
+  // operator (e.g. `eq`) contradiction makes tie_fallback reachable.
   let equippedAt = item.equippedAt ?? docMatch.equippedAt ?? null;
   if (typeof equippedAt !== 'number') equippedAt = null;
+
+  // Hardness: honor the per-rule override the upstream already resolved. On the
+  // deploy path projectActiveRules bakes `override ?? category` into item.hardness
+  // (its single resolution point) — read THAT so the reconciler's hard/soft
+  // tiebreak agrees with what the prompt actually applies; fall back to the
+  // category default only when no resolved value is carried (e.g. equip path).
+  const carriedHardness = item.hardness ?? docMatch.hardness;
+  const hardness = carriedHardness === 'hard' || carriedHardness === 'soft'
+    ? carriedHardness
+    : (HARD_CATEGORIES.has(category) ? 'hard' : 'soft');
 
   return {
     ruleId: id,
     sourceRef,
     text: item.text ?? docMatch.text ?? '',
     category,
-    hardness: HARD_CATEGORIES.has(category) ? 'hard' : 'soft',
+    hardness,
     tier,
     tierAssumed,
     equippedAt,
@@ -202,12 +224,14 @@ function toInternalRule(item, ruleDocsById, legacyDefaultTier, index) {
 
 // Do two same-dimension rules apply to overlapping scope?
 function scopesInteract(a, b) {
-  const sa = a.descriptor.scope;
-  const sb = b.descriptor.scope;
-  if (sa === sb) return true;
-  // A wildcard sector cap ('any single') applies to every sector, so it
-  // interacts with any specific-sector rule of the same dimension.
-  return sa === '*' || sb === '*';
+  // V1 only reconciles rules at the SAME scope. A wildcard cap ('any single',
+  // scope '*') and a specific-sector rule operate at different granularities:
+  // the wildcard still binds every OTHER sector, so dropping it to resolve a
+  // single-sector contradiction would silently strip an all-sector constraint.
+  // Treat '*' as its own scope — two '*' caps still consolidate, and a '*' cap
+  // vs a 'Technology' floor is left unflagged (cross-granularity conflicts are
+  // deferred / vacuous-until-handled) rather than mis-resolved.
+  return a.descriptor.scope === b.descriptor.scope;
 }
 
 // Which rule is the MORE-CONSTRAINING one (the binding rule a consolidation

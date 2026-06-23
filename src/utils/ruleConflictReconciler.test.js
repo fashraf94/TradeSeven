@@ -269,3 +269,42 @@ describe('resolveForDeploy — the decide.js seam helper', () => {
     expect(CONFLICT_RECONCILER_INJECT_ENABLED).toBe(false);
   });
 });
+
+describe('reconcile — code-review fixes', () => {
+  it('honors the per-rule hardness OVERRIDE carried on the item (not just category)', () => {
+    // Same tier (both user). The cap is authored SOFT via the override the
+    // prompt path honors; the floor is hard by category. hard_over_soft must
+    // fire and the HARD floor must win — not safer_direction picking the cap.
+    const softCap = cap(40, 'user_equipped', { hardness: 'soft' });
+    const hardFloor = floor(50, 'user_equipped');
+    const { conflictReport } = reconcile([softCap, hardFloor]);
+    expect(conflictReport[0].ruleApplied).toBe('hard_over_soft');
+    expect(conflictReport[0].winner.ruleId).toBe(hardFloor.ruleId);
+    expect(conflictReport[0].winner.hardness).toBe('hard');
+  });
+
+  it('a blank/empty pct degrades to UNCHECKED, not a phantom 0% cap', () => {
+    const blank = cap('', 'user_equipped'); // pct '' would coerce to 0 without the guard
+    const f = floor(50, 'user_equipped');
+    const { conflictReport, coverage } = reconcile([blank, f]);
+    expect(conflictReport).toHaveLength(0); // not a 0% cap contradicting the floor
+    expect(coverage.uncheckedRuleIds).toContain(blank.ruleId);
+  });
+
+  it('a wildcard ("any single") cap is NOT dropped against a specific-sector floor', () => {
+    const wildCap = cap(40, 'user_equipped', { paramValues: { sector: 'any single', pct: 40 } });
+    const techFloor = floor(50, 'archetype_default'); // sector: Technology
+    const { resolvedRules, conflictReport } = reconcile([wildCap, techFloor]);
+    // Different granularity → not flagged, and the all-sector cap is retained.
+    expect(conflictReport).toHaveLength(0);
+    expect(resolvedRules.map((r) => r.ruleId).sort()).toEqual([wildCap.ruleId, techFloor.ruleId].sort());
+  });
+
+  it('two wildcard caps still consolidate (tighter all-sector cap binds)', () => {
+    const lo = cap(40, 'user_equipped', { paramValues: { sector: 'any single', pct: 40 } });
+    const hi = cap(60, 'user_equipped', { paramValues: { sector: 'any single', pct: 60 } });
+    const { conflictReport } = reconcile([hi, lo]);
+    expect(conflictReport[0].outcomeClass).toBe('consolidation');
+    expect(conflictReport[0].winner.ruleId).toBe(lo.ruleId);
+  });
+});

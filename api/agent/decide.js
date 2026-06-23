@@ -201,11 +201,14 @@ export default async function handler(req, res) {
       agent.activeRules = activeRulesForDeploy; // used by the prompt + battle snapshot
       // Transient, in-memory: stashed for the terminal deploy write (server-side
       // capture for surfacing). createAgentBattle never spreads agentData
-      // wholesale, so this never leaks into the battle doc. Only set when INJECT
-      // is on (else conflictReport is null), keeping the flag-off path identical.
-      if (conflictReport) {
-        agent.lastConflictReport = { ...conflictReport, checkedAt: new Date().toISOString() };
-      }
+      // wholesale, so this never leaks into the battle doc. ALWAYS assign this
+      // deploy's result (null when not injecting) — overwriting any stale value
+      // loaded from the agent doc — so an old report can't be silently
+      // re-persisted on a later flag-off deploy. null is a no-op in the terminal
+      // undefined-spread, so a never-injected agent's write stays byte-identical.
+      agent.lastConflictReport = conflictReport
+        ? { ...conflictReport, checkedAt: new Date().toISOString() }
+        : null;
       // Persist for Forge-UI consistency, but skip when an active battle exists:
       // that deploy early-returns at the existing-battle check (~:390) without
       // creating a battle, and edits are locked mid-battle, so the write is a
