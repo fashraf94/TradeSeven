@@ -24,15 +24,22 @@ function pluralRules(n) {
   return `${n} custom rule${n === 1 ? '' : 's'}`;
 }
 
-// Rule 5 — assumed-tier disclosure. Returns the self-heal note when any
-// participant (winner or a loser) had no source tag, else null. An untagged
-// rule must never lose silently.
+// Rule 5 — assumed-tier disclosure. Returns the self-heal note naming EVERY
+// participant (winner or any loser) that had no source tag, else null. An
+// untagged rule must never lose silently — so if both sides are untagged, both
+// are named (not just the first).
 export function assumedTierNote(entry) {
   const participants = [entry && entry.winner, ...((entry && entry.losers) || [])].filter(Boolean);
-  const assumed = participants.find((r) => r && r.tierAssumed);
-  if (!assumed) return null;
-  return `Note: "${assumed.text}" had no source tag, so it was treated as a built-in default. `
-    + 'If you set it deliberately, re-equip it to give it priority.';
+  const assumed = participants.filter((r) => r && r.tierAssumed);
+  if (assumed.length === 0) return null;
+  const names = assumed.map((r) => `"${r.text}"`);
+  const list = names.length === 1
+    ? names[0]
+    : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+  const multi = names.length > 1;
+  return `Note: ${list} had no source tag, so ${multi ? 'they were' : 'it was'} treated as `
+    + `${multi ? 'built-in defaults' : 'a built-in default'}. If you set ${multi ? 'them' : 'it'} `
+    + `deliberately, re-equip ${multi ? 'them' : 'it'} to give ${multi ? 'them' : 'it'} priority.`;
 }
 
 // Rule 4 — coverage-honest line. Never an unqualified "no conflicts found".
@@ -112,8 +119,13 @@ export function buildConflictSurface(report) {
 export function buildEquipWarning(conflictCheckResult) {
   if (!conflictCheckResult || conflictCheckResult.reconcilerError) return null;
   const conflicts = Array.isArray(conflictCheckResult.conflicts) ? conflictCheckResult.conflicts : [];
-  const contradiction = conflicts.find((e) => e && e.outcomeClass === 'contradiction');
-  if (!contradiction) return null;
-  return `Equipped — heads up, two rules in this bundle conflict. ${contradiction.reason} `
-    + '(Checked this bundle only; archetype and cross-bundle conflicts are sorted out at deploy.)';
+  const n = conflicts.filter((e) => e && e.outcomeClass === 'contradiction').length;
+  if (n === 0) return null;
+  // Count-honest (one contradiction = two rules; more than one = "several"),
+  // and intentionally CONCISE — the full kept/set-aside reason lives in the
+  // runtime "Rule check" panel (Surface 2). A single short caution avoids
+  // overflowing the toast and does not claim agent-wide coverage (Rule 7).
+  const subject = n === 1 ? 'two rules' : 'several rules';
+  return `⚠️ Heads up — ${subject} in this bundle conflict. Your agent keeps the stricter `
+    + 'rule in battle and sets the other aside. (Checked this bundle only.)';
 }

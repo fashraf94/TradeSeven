@@ -171,4 +171,16 @@ describe('assumedTierNote', () => {
   it('returns null when no participant is tier-assumed', () => {
     expect(assumedTierNote(contradiction())).toBeNull();
   });
+
+  it('names EVERY untagged participant (both sides), so neither loses silently', () => {
+    const both = contradiction({
+      winner: { ruleId: 'w', text: 'Cap A', tier: 2, tierAssumed: true },
+      losers: [{ ruleId: 'l', text: 'Floor B', tier: 2, tierAssumed: true }],
+    });
+    const note = assumedTierNote(both);
+    expect(note).toContain('"Cap A"');
+    expect(note).toContain('"Floor B"');
+    expect(note).toMatch(/they were treated as built-in defaults/);
+    expect(note).toMatch(/re-equip them/);
+  });
 });

@@ -317,12 +317,25 @@ describe('reason strings — Phase-3 copy compliance (Rule 0 audit)', () => {
   const BANNED = ['dropped', 'deleted', 'removed'];
   const noBanned = (s) => BANNED.every((v) => !s.toLowerCase().includes(v));
 
-  it('contradiction reason: kept / set-aside framing, source-named, no banned verbs', () => {
+  it('contradiction reason (tier): kept / set-aside framing, source-named, states the why', () => {
     const { conflictReport } = reconcile([cap(40, 'user_equipped'), floor(50, 'archetype_default')]);
     const r = conflictReport[0].reason;
     expect(r).toMatch(/^Kept your /);
-    expect(r).toMatch(/Set aside the built-in default's /);
+    expect(r).toMatch(/set aside the built-in default's /);
     expect(r).toMatch(/for this battle/);
+    expect(r).toMatch(/takes priority/); // the "why" is present, not just kept/set-aside
+    expect(noBanned(r)).toBe(true);
+  });
+
+  it('contradiction reason (safer_direction, same tier): still explains WHY one was kept', () => {
+    // The dominant reachable V1 case: a user cap vs a user floor (both tier-1,
+    // both hard) → safer_direction. The reason must not read as an arbitrary
+    // set-aside; it must state the safer-limit rationale.
+    const { conflictReport } = reconcile([cap(40, 'user_equipped'), floor(50, 'user_equipped')]);
+    const r = conflictReport[0].reason;
+    expect(conflictReport[0].ruleApplied).toBe('safer_direction');
+    expect(r).toMatch(/the safer limit wins/);
+    expect(r).toMatch(/set aside your /); // same-tier → "your" on both sides
     expect(noBanned(r)).toBe(true);
   });
 

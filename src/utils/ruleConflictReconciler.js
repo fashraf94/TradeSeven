@@ -353,17 +353,30 @@ function sourcePossessive(rule) {
   return rule.tier === 1 ? 'your' : "the built-in default's";
 }
 
-function consolidationReason(winner) {
-  // A merge, not a loss — deliberately no "set aside"/"ignored".
-  return `Two limits cover the same thing, so the tighter one applies: "${winner.text}".`;
+function consolidationReason(winner, loser) {
+  // A merge, not a loss — deliberately no "set aside"/"ignored". Name BOTH so
+  // the user sees which limit was folded into the binding one.
+  return `Two limits cover the same scope, so the tighter one applies: kept "${winner.text}" and folded in "${loser.text}".`;
 }
 
 function contradictionReason(winner, loser, ruleApplied) {
   if (ruleApplied === 'tie_fallback') {
     // Honest that recency broke an otherwise-even tie.
-    return `Two conflicting rules had equal standing, so your most recent one ("${winner.text}") applies and the earlier "${loser.text}" is set aside for this battle.`;
+    return `Two conflicting rules had equal standing, so your most recent one ("${winner.text}") applies and ${sourcePossessive(loser)} "${loser.text}" is set aside for this battle.`;
   }
-  return `Kept ${sourcePossessive(winner)} "${winner.text}". Set aside ${sourcePossessive(loser)} "${loser.text}" for this battle — both can't hold at once.`;
+  const w = `${sourcePossessive(winner)} "${winner.text}"`;
+  const l = `${sourcePossessive(loser)} "${loser.text}"`;
+  // The "why" — keep it explicit per tiebreaker so a same-tier resolution (the
+  // dominant reachable case, e.g. a user cap vs a user floor) still explains
+  // WHY one was kept rather than reading as an arbitrary set-aside.
+  const why = {
+    tier: winner.tier === 1
+      ? 'your deliberate rule takes priority over the built-in default'
+      : 'the higher-priority rule wins',
+    hard_over_soft: 'a must-obey rule outranks a soft preference',
+    safer_direction: 'the safer limit wins',
+  }[ruleApplied] || 'the stronger rule wins';
+  return `Kept ${w}; set aside ${l} for this battle — both can't hold at once, so ${why}.`;
 }
 
 // ─── Main entry point ───────────────────────────────────────────────────────
@@ -529,7 +542,7 @@ function detectAndResolve(checked) {
         const winner = moreConstraining(a, b);
         const loser = winner === a ? b : a;
         report.push(buildEntry('consolidation', 'consolidation', winner, [loser], [a, b],
-          consolidationReason(winner)));
+          consolidationReason(winner, loser)));
       } else {
         // contradiction
         const { winner, loser, ruleApplied } = tiebreak(a, b);

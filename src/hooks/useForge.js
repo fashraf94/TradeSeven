@@ -550,9 +550,16 @@ export function useForge(agentId) {
       // equipBundleSvc returns the gated equip-time detection result (null when
       // DETECT is off). Warn, don't block — the equip already succeeded.
       const conflictCheckResult = await equipBundleSvc(agentId, bundleId);
-      await loadData();
+      // Report the (committed) equip result BEFORE reloading, and isolate the
+      // reload: a transient loadData() failure must not misreport a successful
+      // equip as a failure (or swallow the conflict warning).
       const warning = buildEquipWarning(conflictCheckResult);
       showToast(warning || 'Bundle equipped! Your agent will use these rules in the next battle.');
+      try {
+        await loadData();
+      } catch (reloadErr) {
+        console.error('[useForge] equip post-reload failed (equip itself succeeded):', reloadErr);
+      }
     } catch (err) {
       console.error('[useForge] equipBundle failed:', err);
       showToast(err.message || 'Failed to equip bundle');

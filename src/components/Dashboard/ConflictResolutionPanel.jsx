@@ -55,6 +55,13 @@ export default function ConflictResolutionPanel({ report, accent = CMD.gold }) {
         >
           <AlertTriangle size={15} color={accent} style={{ flexShrink: 0, marginTop: 2 }} />
           <div style={{ minWidth: 0 }}>
+            {/* Recency tie-break — flag the weaker, order-dependent basis so it
+                doesn't read as a deliberate tier/safety win. */}
+            {c.recency && (
+              <Mono style={{ fontSize: 9.5, letterSpacing: '0.1em', textTransform: 'uppercase', color: CMD.ink3, display: 'block', marginBottom: 4 }}>
+                Even standing · most recent kept
+              </Mono>
+            )}
             <p style={{ fontSize: 13, color: CMD.ink, lineHeight: 1.5, margin: 0 }}>{c.text}</p>
             {c.note && (
               <p style={{ fontSize: 11.5, color: CMD.ink2, lineHeight: 1.45, margin: '7px 0 0' }}>{c.note}</p>
