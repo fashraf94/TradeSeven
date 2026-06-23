@@ -68,7 +68,10 @@ const PROVENANCE_TIER = {
 //
 // Templates with no opposing operator today (single-stock max, ATR stop) can
 // only ever CONSOLIDATE (duplicate-binds) — contradiction is vacuous-until-added.
-const DESCRIPTOR_TABLE = {
+// Exported (read-only) so ruleConflictReconciler.test.js can value-pin the
+// value/scope defaults against forgeKnowledgeBase — these defaults are a hand-
+// copy of the live templates and would otherwise drift silently.
+export const DESCRIPTOR_TABLE = {
   'alloc-sector-cap': {
     dimension: 'sector_exposure',
     operator: 'cap',

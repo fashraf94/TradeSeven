@@ -11,6 +11,7 @@ import {
   reconcile,
   resolveForDeploy,
   HARD_CATEGORIES,
+  DESCRIPTOR_TABLE,
   RECONCILER_VERSION,
 } from './ruleConflictReconciler.js';
 // Importing the flag module too proves the equip-time caller's flag surface is
@@ -19,6 +20,9 @@ import {
   CONFLICT_RECONCILER_DETECT_ENABLED,
   CONFLICT_RECONCILER_INJECT_ENABLED,
 } from '../config/featureFlags.js';
+// The live template source the descriptor defaults are copied from — see the
+// drift-guard suite at the bottom of this file.
+import { FORGE_RULE_TEMPLATES } from '../data/forgeKnowledgeBase.js';
 
 let _seq = 0;
 const rule = (over) => ({
@@ -307,4 +311,35 @@ describe('reconcile — code-review fixes', () => {
     expect(conflictReport[0].outcomeClass).toBe('consolidation');
     expect(conflictReport[0].winner.ruleId).toBe(lo.ruleId);
   });
+});
+
+describe('DESCRIPTOR_TABLE — drift guard vs forgeKnowledgeBase', () => {
+  // The descriptor table hand-copies value/scope DEFAULTS from the live forge
+  // templates. If a designer retunes a template default (or renames a param /
+  // sourceRef) in forgeKnowledgeBase.js without updating the reconciler, the
+  // reconciler would silently compare against a stale number. This suite pins
+  // every descriptor's defaults to the live template so that drift breaks CI.
+  const tplById = new Map(FORGE_RULE_TEMPLATES.map((t) => [t.id, t]));
+
+  it('covers only sourceRefs that still exist in the knowledge base', () => {
+    for (const sourceRef of Object.keys(DESCRIPTOR_TABLE)) {
+      expect(tplById.has(sourceRef), `descriptor "${sourceRef}" not found in FORGE_RULE_TEMPLATES`).toBe(true);
+    }
+  });
+
+  for (const [sourceRef, d] of Object.entries(DESCRIPTOR_TABLE)) {
+    it(`${sourceRef}: value/scope defaults match the live template`, () => {
+      const params = tplById.get(sourceRef).forgeTemplates[0].params || {};
+      // valueParam must exist on the template, and valueDefault must equal the
+      // template's numeric default.
+      expect(d.valueParam in params).toBe(true);
+      expect(d.valueDefault).toBe(Number(params[d.valueParam].default));
+      // scopeDefault is only pinned when it maps to a real template param.
+      // (single_position / stop_loss use a synthetic scope with no param.)
+      if (d.scopeParam != null) {
+        expect(d.scopeParam in params).toBe(true);
+        expect(d.scopeDefault).toBe(params[d.scopeParam].default);
+      }
+    });
+  }
 });
