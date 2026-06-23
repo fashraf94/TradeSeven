@@ -262,7 +262,7 @@ export default function ForgeScreen({ isMobile: isMobileProp, onClose, user, onN
       if (conflictPair) {
         const otherRuleId = conflictPair.ruleA === templateId ? conflictPair.ruleB : conflictPair.ruleA;
         const otherTemplate = FORGE_RULE_TEMPLATES.find(t => t.id === otherRuleId);
-        forge.showToast(`\u26A0\uFE0F May conflict with "${otherTemplate?.headline || otherRuleId}". Both will be active.`);
+        forge.showToast(`\u26A0\uFE0F Heads up \u2014 this adds a new rule alongside your existing "${otherTemplate?.headline || otherRuleId}". It doesn't replace it.`);
       }
     }
 
