@@ -27,16 +27,18 @@ export const RECONCILER_VERSION = 1;
 
 // ─── Hardness source-of-truth (test-pinned; see breadcrumb) ─────────────────
 // A rule is "hard" (must-obey) iff its category is in this set; everything else
-// is a soft preference. This MUST stay in sync with the two FENCED prompt-
-// assembly files that hardcode the same set:
-//   • api/_utils/agentPromptAssembly.js:76
-//   • api/_utils/agentEvalPromptAssembly.js:285
+// is a soft preference. The same {risk, allocation} set is independently
+// maintained by the codebase's two PRE-EXISTING hardness sources (a documented,
+// lockstep-noted duplication — NEITHER is fenced):
+//   • api/_utils/ruleHardness.js:23  (server: the strategy/eval/projection path)
+//   • src/components/Forge/workshop/hardSoftHelper.js:28  (client: Forge display)
 // A divergence would let the reconciler tiebreak hard-over-soft on a hardness
 // the prompt does not actually apply — a SILENT wrong resolution (no error).
-// This constant is the single reconciler-side copy and is value-pinned by
-// ruleConflictReconciler.test.js. NOTE: the pin protects the reconciler side
-// only; collapsing all three copies into one shared non-fence constant is the
-// §7-gated backlog ticket (see RULE_CONFLICT_RECONCILER_POST_LAUNCH_BACKLOG.md).
+// This reconciler copy is value-pinned by ruleConflictReconciler.test.js.
+// Collapsing all three into one dependency-free constant that each imports is a
+// NON-fence cleanup (the fenced assembly files already delegate to
+// ruleHardness.js's isHardRule, so they need no edit) — see
+// RULE_CONFLICT_RECONCILER_POST_LAUNCH_BACKLOG.md.
 export const HARD_CATEGORIES = new Set(['risk', 'allocation']);
 
 // Provenance values we recognize. Anything else (or missing) → legacy default
@@ -409,6 +411,49 @@ export function reconcile(projectedRules, ruleDocs = [], equippedTraits = [], op
     // Fail-open: hand back the untouched input, but surface the error loudly.
     return { ...base, reconcilerError: err && err.message ? err.message : String(err) };
   }
+}
+
+/**
+ * Deploy-time seam helper (Phase 2). Wraps reconcile() with the INJECT gate and
+ * the fail-open fallback so the fenced caller (api/agent/decide.js) stays a
+ * single call. PURE & deterministic (no I/O, no timestamps) — fully unit-tested
+ * in the Node env, which keeps the actual fence edit to a thin call-site.
+ *
+ * - INJECT OFF → returns the raw projected rules untouched and report:null, so
+ *   the deploy path is byte-identical to pre-reconciler behavior (no reconcile
+ *   call at all).
+ * - INJECT ON  → returns resolvedRules, or — on a reconciler error — the raw
+ *   projected rules (fail-open, deploy never blocked), plus a `report` object
+ *   for server-side capture/surfacing (the caller stamps any timestamp).
+ *
+ * @param {Array<Object>} projected - the projected activeRules.
+ * @param {Array<Object>} [ruleDocs] - raw rule docs to recover provenance.
+ * @param {Array<Object>} [equippedTraits] - equipped trait loadout.
+ * @param {Object} [opts]
+ * @param {boolean} [opts.inject=false] - the CONFLICT_RECONCILER_INJECT_ENABLED gate.
+ * @param {number} [opts.legacyDefaultTier=2]
+ * @returns {{ activeRules: Array<Object>, report: Object|null, reconcilerError: string|null }}
+ */
+export function resolveForDeploy(projected, ruleDocs = [], equippedTraits = [], opts = {}) {
+  if (!opts.inject) {
+    return { activeRules: projected, report: null, reconcilerError: null };
+  }
+  const result = reconcile(projected, ruleDocs, equippedTraits, {
+    legacyDefaultTier: opts.legacyDefaultTier ?? 2,
+  });
+  const reconcilerError = result.reconcilerError || null;
+  return {
+    activeRules: reconcilerError ? projected : result.resolvedRules,
+    reconcilerError,
+    report: {
+      conflicts: result.conflictReport,
+      coverage: result.coverage,
+      reconcilerVersion: result.reconcilerVersion,
+      activeRuleSetHash: result.activeRuleSetHash,
+      reconcilerError,
+      injected: !reconcilerError,
+    },
+  };
 }
 
 function emptyCoverage() {

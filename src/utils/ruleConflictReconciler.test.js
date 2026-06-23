@@ -9,12 +9,16 @@
 import { describe, it, expect } from 'vitest';
 import {
   reconcile,
+  resolveForDeploy,
   HARD_CATEGORIES,
   RECONCILER_VERSION,
 } from './ruleConflictReconciler.js';
 // Importing the flag module too proves the equip-time caller's flag surface is
 // also Node-clean (the equip path imports both).
-import { CONFLICT_RECONCILER_DETECT_ENABLED } from '../config/featureFlags.js';
+import {
+  CONFLICT_RECONCILER_DETECT_ENABLED,
+  CONFLICT_RECONCILER_INJECT_ENABLED,
+} from '../config/featureFlags.js';
 
 let _seq = 0;
 const rule = (over) => ({
@@ -34,10 +38,11 @@ const floor = (pct, prov, extra = {}) => rule({
 });
 
 describe('HARD_CATEGORIES — value pin', () => {
-  // This constant duplicates the fenced prompt-assembly hardness set. If you
-  // change it, you MUST also change agentPromptAssembly.js:76 and
-  // agentEvalPromptAssembly.js:285 (the reconciler-side pin does not auto-catch
-  // a fence-side change — see the §7 consolidation backlog ticket).
+  // This constant duplicates the codebase's two pre-existing (non-fence)
+  // hardness sources. If you change it, you MUST also change
+  // api/_utils/ruleHardness.js:23 and
+  // src/components/Forge/workshop/hardSoftHelper.js:28 (this pin guards the
+  // reconciler side only — see the consolidation backlog ticket).
   it('is exactly { risk, allocation }', () => {
     expect(HARD_CATEGORIES instanceof Set).toBe(true);
     expect([...HARD_CATEGORIES].sort()).toEqual(['allocation', 'risk']);
@@ -218,5 +223,49 @@ describe('reconcile — totality, traceability, fail-open', () => {
 
   it('DETECT flag default is off (shadow-safe)', () => {
     expect(CONFLICT_RECONCILER_DETECT_ENABLED).toBe(false);
+  });
+});
+
+describe('resolveForDeploy — the decide.js seam helper', () => {
+  it('INJECT OFF → returns projected UNCHANGED (same ref) and report null', () => {
+    const input = [cap(40, 'user_equipped'), floor(50, 'archetype_default')];
+    const out = resolveForDeploy(input, [], [], { inject: false });
+    expect(out.activeRules).toBe(input); // byte-identical: no reconcile, no drop
+    expect(out.report).toBeNull();
+    expect(out.reconcilerError).toBeNull();
+  });
+
+  it('INJECT ON + contradiction → resolved rules (loser dropped) + injected report', () => {
+    const c = cap(40, 'user_equipped');
+    const f = floor(50, 'archetype_default');
+    const out = resolveForDeploy([c, f], [], [], { inject: true });
+    expect(out.activeRules.map((r) => r.ruleId)).toEqual([c.ruleId]); // floor dropped
+    expect(out.report.injected).toBe(true);
+    expect(out.report.conflicts).toHaveLength(1);
+    expect(out.report.conflicts[0].ruleApplied).toBe('tier');
+    expect(out.report.reconcilerVersion).toBe(RECONCILER_VERSION);
+  });
+
+  it('INJECT ON + no conflict → activeRules unchanged, empty conflicts', () => {
+    const input = [cap(60, 'user_equipped'), floor(40, 'user_equipped')];
+    const out = resolveForDeploy(input, [], [], { inject: true });
+    expect(out.activeRules).toBe(input);
+    expect(out.report.conflicts).toHaveLength(0);
+    expect(out.report.injected).toBe(true);
+  });
+
+  it('INJECT ON + reconciler error → FAIL-OPEN to projected, error surfaced, not injected', () => {
+    const poison = { ruleId: 'boom', text: 'x', sourceRef: 'alloc-sector-cap', category: 'allocation' };
+    Object.defineProperty(poison, 'paramValues', { get() { throw new Error('boom'); } });
+    const input = [poison, cap(40, 'user_equipped')];
+    const out = resolveForDeploy(input, [], [], { inject: true });
+    expect(out.activeRules).toBe(input); // pass-through — deploy never blocked
+    expect(out.reconcilerError).toBe('boom');
+    expect(out.report.injected).toBe(false);
+    expect(out.report.reconcilerError).toBe('boom');
+  });
+
+  it('INJECT flag default is off (deploy byte-identical until flipped)', () => {
+    expect(CONFLICT_RECONCILER_INJECT_ENABLED).toBe(false);
   });
 });

@@ -1,54 +1,68 @@
 # Rule Conflict Reconciler — Post-Launch Backlog
 
-**Created:** 2026-06-20
-**Status:** Active backlog. Items here were deliberately deferred out of the V1
-reconciler build (Phase 0 + Phase 1, non-fence). Each names its gate.
+**Created:** 2026-06-20 · **Corrected:** 2026-06-23 (Phase 2 discovery)
+**Status:** Active backlog. Items here were deliberately deferred out of the
+reconciler build. Each names its gate.
 
 ---
 
-## TICKET-1 — Collapse the three hardness-set copies (§7-gated, touches the fence)
+## TICKET-1 — Collapse the three hardness-set copies into one shared constant
 
-**Priority:** medium. **Gate:** calibration fence (BUILD_RULES §1) — requires
-the §7 founder-reviewed gated-edit process because it edits two fenced files.
+**Priority:** low/medium. **Gate:** NONE that requires the fence (see correction).
+
+### Correction to the original premise
+
+The original ticket claimed this consolidation was "§7-gated (touches the
+fence)" because the hardness set was thought to be hardcoded in the fenced
+`agentPromptAssembly.js` / `agentEvalPromptAssembly.js`. **Phase-2 discovery
+proved that wrong.** The set is NOT hardcoded in the fenced files — both of them
+import `isHardRule` from the **non-fenced** `api/_utils/ruleHardness.js`. So the
+consolidation touches only non-fence code.
 
 ### The duplication
 
-The "which categories are HARD (must-obey)" set — `{ risk, allocation }` — is
-hardcoded in **three** places that must agree but with nothing enforcing it:
+The `{ risk, allocation }` "hard categories" set is independently maintained in
+three places that must agree, with nothing enforcing it:
 
 | Copy | File | Fenced? |
 |---|---|---|
-| Strategy prompt assembly | `api/_utils/agentPromptAssembly.js:76` | **YES** |
-| Eval prompt assembly | `api/_utils/agentEvalPromptAssembly.js:285` | **YES** |
-| Reconciler hardness | `src/utils/ruleConflictReconciler.js` `HARD_CATEGORIES` | no |
+| Client (Forge display + authoring) | `src/components/Forge/workshop/hardSoftHelper.js:28` | no |
+| Server (strategy/eval/projection path) | `api/_utils/ruleHardness.js:23` | no |
+| Reconciler | `src/utils/ruleConflictReconciler.js` `HARD_CATEGORIES` | no |
 
-### Why it was left duplicated in V1
+The client/server pair predates this build and is documented in those files as a
+"lockstep" duplication that was *believed* unavoidable because the OLD import
+rule forbade `api/` importing `src/`. **That rule was revised (BUILD_RULES §4,
+June 2026): `api/` MAY import Node-clean `src/` modules.** So the duplication is
+now avoidable.
 
-True single-source means editing **both fenced assembly files** to import a
-shared constant — that expands the §7 fence surface well past the single
-`decide.js` call-site the V1 build deliberately minimized. Not worth opening
-during the launch-blocker build.
+### Interim guard (in place)
 
-### What V1 did instead (the interim guard)
+- The reconciler copy is value-pinned in `ruleConflictReconciler.test.js`
+  (`HARD_CATEGORIES — value pin`) with a breadcrumb to the other two.
 
-- Defined the set **once** on the reconciler side as the named constant
-  `HARD_CATEGORIES`, with a prominent breadcrumb comment naming both fence lines.
-- **Value-pinned it** in `src/utils/ruleConflictReconciler.test.js`
-  (`HARD_CATEGORIES — value pin`), so the reconciler side cannot drift silently.
-
-**Known limit (the reason this ticket exists):** the pin protects the
-reconciler side ONLY. The fenced values are not exported, so a change to
-`agentPromptAssembly.js:76` or `agentEvalPromptAssembly.js:285` is **not**
-auto-caught. A divergence would make the reconciler tiebreak `hard_over_soft`
-on a hardness the prompt does not actually apply — a silent wrong resolution
-(no error). (Low live risk today: see the V1 invariant below.)
+**Known limit:** the pin guards the reconciler side only; a change to
+`ruleHardness.js:23` or `hardSoftHelper.js:28` is not auto-caught.
 
 ### The fix
 
-Extract `{ risk, allocation }` into ONE shared, **non-fenced**, Node-clean
-constant (e.g. `src/constants/ruleHardness.js`) that all three sites import:
-the reconciler directly, and the two fenced assembly files via the §7 gated
-edit. Then the value-pin test guards a single source of truth.
+Create one dependency-free constant (e.g. `src/constants/ruleHardnessCategories.js`)
+exporting `HARD_CATEGORIES`, and have all three import it:
+- `hardSoftHelper.js` (client) — `src` → `src`.
+- `ruleHardness.js` (server) — `api` → `src`, now permitted by §4 (the constant
+  is dependency-free / Node-clean).
+- `ruleConflictReconciler.js`.
+
+The fenced assembly files need **no** change — they already delegate to
+`ruleHardness.js`'s `isHardRule`, whose value and exports stay byte-identical.
+Then the value-pin test guards a single source of truth.
+
+### Why it was not done in the reconciler build
+
+The client/server duplication is pre-existing code outside the reconciler task;
+per BUILD_RULES §3 it is reported here for separate tasking rather than
+refactored mid-task. The build only added (and value-pinned) the reconciler's
+own copy and corrected the breadcrumbs.
 
 ### Related V1 invariant worth re-checking when this lands
 

@@ -15,6 +15,12 @@ import {
 } from '../_utils/agentPromptAssembly.js';
 import { createAgentBattle } from '../_utils/agentBattleService.js';
 import { projectActiveRules } from '../_utils/projectActiveRules.js';
+// Rule Conflict Reconciler (Phase 2). api→src import is BUILD_RULES §4-blessed:
+// the reconciler is Node-clean (no browser deps) and featureFlags.js is
+// dependency-free. The dependency-surface guard is ruleConflictReconciler.test.js,
+// which imports the reconciler in the Node env — never mock it.
+import { resolveForDeploy } from '../../src/utils/ruleConflictReconciler.js';
+import { CONFLICT_RECONCILER_INJECT_ENABLED } from '../../src/config/featureFlags.js';
 import { getStockAnalysisData } from '../_utils/marketDataCache.js';
 import { validateActivationPrice } from '../_utils/baselineValidation.js';
 import { generateCPUOpponent } from '../_utils/cpuOpponentGenerator.js';
@@ -174,13 +180,38 @@ export default async function handler(req, res) {
       const ruleDocs = rulesSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
       const bundleDocs = bundlesSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
       const projected = projectActiveRules(agent.equippedTraits, ruleDocs, bundleDocs);
-      agent.activeRules = projected; // used by the prompt (:232) + battle snapshot (:119)
+
+      // Rule Conflict Reconciler (Phase 2). Resolve contradictory constraints
+      // ONCE here — before the battle snapshot freezes activeRules — so the
+      // losing side of a contradiction never reaches the strategy prompt OR the
+      // intraday eval (agent-evaluate.js does no re-projection; createAgentBattle
+      // freezes agentContext.activeRules from agentData.activeRules). All gating
+      // + fail-open logic lives in the non-fenced resolveForDeploy: INJECT off
+      // returns `projected` untouched (deploy byte-identical to before), and a
+      // reconciler error falls back to `projected` (deploy never blocked).
+      const { activeRules: activeRulesForDeploy, report: conflictReport, reconcilerError } =
+        resolveForDeploy(projected, ruleDocs, agent.equippedTraits, {
+          inject: CONFLICT_RECONCILER_INJECT_ENABLED,
+        });
+      if (reconcilerError) {
+        // Fail-open but LOUD: deploy proceeds with the raw projected rules.
+        console.error('[agent/decide] rule reconciler error for agent', agentId,
+          '— deploying with raw projected rules:', reconcilerError);
+      }
+      agent.activeRules = activeRulesForDeploy; // used by the prompt + battle snapshot
+      // Transient, in-memory: stashed for the terminal deploy write (server-side
+      // capture for surfacing). createAgentBattle never spreads agentData
+      // wholesale, so this never leaks into the battle doc. Only set when INJECT
+      // is on (else conflictReport is null), keeping the flag-off path identical.
+      if (conflictReport) {
+        agent.lastConflictReport = { ...conflictReport, checkedAt: new Date().toISOString() };
+      }
       // Persist for Forge-UI consistency, but skip when an active battle exists:
       // that deploy early-returns at the existing-battle check (~:390) without
       // creating a battle, and edits are locked mid-battle, so the write is a
       // redundant no-op. The in-memory value above still feeds the prompt.
       if (!agent.activeBattleId) {
-        await agentRef.update({ activeRules: projected });
+        await agentRef.update({ activeRules: activeRulesForDeploy });
       }
     } catch (projErr) {
       console.error('[agent/decide] activeRules projection FAILED for agent', agentId,
@@ -489,6 +520,10 @@ export default async function handler(req, res) {
       lastDeployedAt: new Date().toISOString(),
       deployingAt: null,
       updatedAt: new Date().toISOString(),
+      // Phase 2: server-side capture of the conflict reconciliation (awaited,
+      // in-request — Signal Capture Rider). Only present when INJECT is on;
+      // undefined-spread is a no-op, so the flag-off write is byte-identical.
+      ...(agent.lastConflictReport && { lastConflictReport: agent.lastConflictReport }),
     });
 
     // === PHASE 2: Create Agent Battle ===
@@ -1041,6 +1076,10 @@ async function runPrescribedTournamentDeploy({ db, req, res, agentRef, agent, ag
     lastDeployedAt: nowIso,
     deployingAt: null,
     updatedAt: nowIso,
+    // Phase 2: same server-side conflict-report capture as the legacy path.
+    // `agent` is the same object the seam stashed onto (passed by reference);
+    // only present when INJECT is on, so the flag-off write is byte-identical.
+    ...(agent.lastConflictReport && { lastConflictReport: agent.lastConflictReport }),
   });
 
   // One active battle per agent — the same check + expiry completion as the
