@@ -23,6 +23,7 @@ import {
   archiveBundle as archiveBundleSvc,
 } from '../services/forgeService';
 import { computeForgeStats } from '../services/forgeStatsService';
+import { buildEquipWarning } from '../utils/conflictSurfaceCopy';
 
 // Pre-compute total available rules per category for radar proportional fill
 const categoryTotals = {};
@@ -546,9 +547,12 @@ export function useForge(agentId) {
     if (!agentId || equippingBundleId) return;
     setEquippingBundleId(bundleId);
     try {
-      await equipBundleSvc(agentId, bundleId);
+      // equipBundleSvc returns the gated equip-time detection result (null when
+      // DETECT is off). Warn, don't block — the equip already succeeded.
+      const conflictCheckResult = await equipBundleSvc(agentId, bundleId);
       await loadData();
-      showToast('Bundle equipped! Your agent will use these rules in the next battle.');
+      const warning = buildEquipWarning(conflictCheckResult);
+      showToast(warning || 'Bundle equipped! Your agent will use these rules in the next battle.');
     } catch (err) {
       console.error('[useForge] equipBundle failed:', err);
       showToast(err.message || 'Failed to equip bundle');

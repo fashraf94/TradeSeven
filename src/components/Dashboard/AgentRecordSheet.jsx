@@ -20,6 +20,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronDown, ChevronUp } from 'lucide-react';
 import AgentOrb from '../shared/AgentOrb';
 import EquipSheet from './EquipSheet';
+import ConflictResolutionPanel from './ConflictResolutionPanel';
 import { CMD, alpha, Mono, Eyebrow } from './commandUI';
 import { getArchetypeDisplayName } from '../../data/archetypeDisplay';
 import { getArchetypeIdentity } from '../../data/archetypeIdentity';
@@ -273,6 +274,16 @@ export default function AgentRecordSheet({ open, onClose, agent, loading, accent
               </div>
             )}
           </div>
+
+          {/* rule conflict resolution (Phase 3, Surface 2). Section appears only
+              when a deploy populated agent.lastConflictReport (INJECT on); with
+              the flags off there is no report and nothing renders here. */}
+          {agent.lastConflictReport && (
+            <div>
+              <Eyebrow style={{ marginBottom: 10 }}>Rule check · last deploy</Eyebrow>
+              <ConflictResolutionPanel report={agent.lastConflictReport} accent={accent} />
+            </div>
+          )}
 
           {/* evolution timeline */}
           <div>

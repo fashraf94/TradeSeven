@@ -313,6 +313,29 @@ describe('reconcile — code-review fixes', () => {
   });
 });
 
+describe('reason strings — Phase-3 copy compliance (Rule 0 audit)', () => {
+  const BANNED = ['dropped', 'deleted', 'removed'];
+  const noBanned = (s) => BANNED.every((v) => !s.toLowerCase().includes(v));
+
+  it('contradiction reason: kept / set-aside framing, source-named, no banned verbs', () => {
+    const { conflictReport } = reconcile([cap(40, 'user_equipped'), floor(50, 'archetype_default')]);
+    const r = conflictReport[0].reason;
+    expect(r).toMatch(/^Kept your /);
+    expect(r).toMatch(/Set aside the built-in default's /);
+    expect(r).toMatch(/for this battle/);
+    expect(noBanned(r)).toBe(true);
+  });
+
+  it('consolidation reason: merge framing ("tighter applies"), never set-aside/ignored', () => {
+    const { conflictReport } = reconcile([cap(40, 'user_equipped'), cap(60, 'user_equipped')]);
+    const r = conflictReport[0].reason;
+    expect(r).toMatch(/tighter one applies/);
+    expect(r.toLowerCase()).not.toContain('set aside');
+    expect(r.toLowerCase()).not.toContain('ignored');
+    expect(noBanned(r)).toBe(true);
+  });
+});
+
 describe('DESCRIPTOR_TABLE — drift guard vs forgeKnowledgeBase', () => {
   // The descriptor table hand-copies value/scope DEFAULTS from the live forge
   // templates. If a designer retunes a template default (or renames a param /

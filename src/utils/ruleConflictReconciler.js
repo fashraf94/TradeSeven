@@ -343,22 +343,27 @@ function isMoreRecent(a, b) {
   return a.index > b.index;
 }
 
-// ─── Plain-English reasons (Phase-3 surfacing copy lives downstream, but the
-//     report carries a ready sentence). "ignored," never "dropped." ──────────
-function consolidationReason(winner, loser) {
-  return `The tighter limit applies — kept "${winner.text}" and folded in "${loser.text}".`;
+// ─── Plain-English reasons. Phase-3 copy rules: NEVER "dropped"/"deleted"/
+//     "removed"; a contradiction uses kept / "set aside … for this battle"; a
+//     consolidation is a MERGE ("the tighter limit applies"), not a loss. The
+//     surfacing UI owns prominence + the assumed-tier / coverage / degraded
+//     disclosures; these sentences carry the cause-and-effect "why". ─────────
+function sourcePossessive(rule) {
+  // tier 1 = user-deliberate; tier 2 = built-in/default (incl. assumed default).
+  return rule.tier === 1 ? 'your' : "the built-in default's";
+}
+
+function consolidationReason(winner) {
+  // A merge, not a loss — deliberately no "set aside"/"ignored".
+  return `Two limits cover the same thing, so the tighter one applies: "${winner.text}".`;
 }
 
 function contradictionReason(winner, loser, ruleApplied) {
-  const why = {
-    tier: winner.tier < loser.tier
-      ? 'it is your deliberate rule and the other is a built-in default'
-      : 'of source priority',
-    hard_over_soft: 'it is a must-obey rule and the other is a soft preference',
-    safer_direction: 'it is the safer constraint',
-    tie_fallback: 'it was equipped more recently',
-  }[ruleApplied] || 'of precedence';
-  return `Kept "${winner.text}"; ignored "${loser.text}" for this battle because both can't hold at once — ${why}.`;
+  if (ruleApplied === 'tie_fallback') {
+    // Honest that recency broke an otherwise-even tie.
+    return `Two conflicting rules had equal standing, so your most recent one ("${winner.text}") applies and the earlier "${loser.text}" is set aside for this battle.`;
+  }
+  return `Kept ${sourcePossessive(winner)} "${winner.text}". Set aside ${sourcePossessive(loser)} "${loser.text}" for this battle — both can't hold at once.`;
 }
 
 // ─── Main entry point ───────────────────────────────────────────────────────
@@ -524,7 +529,7 @@ function detectAndResolve(checked) {
         const winner = moreConstraining(a, b);
         const loser = winner === a ? b : a;
         report.push(buildEntry('consolidation', 'consolidation', winner, [loser], [a, b],
-          consolidationReason(winner, loser)));
+          consolidationReason(winner)));
       } else {
         // contradiction
         const { winner, loser, ruleApplied } = tiebreak(a, b);

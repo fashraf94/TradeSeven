@@ -543,6 +543,10 @@ export const equipBundle = async (agentId, bundleId) => {
     updatedAt: serverTimestamp(),
   });
   await batch.commit();
+
+  // Return the (gated) equip-time detection result so the hook can surface a
+  // non-blocking, bundle-scoped warning. null when DETECT is off → no toast.
+  return conflictCheckResult;
 };
 
 /**
