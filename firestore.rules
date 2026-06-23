@@ -174,7 +174,10 @@ service cloud.firestore {
                         || request.resource.data.priority is number)
                     && (!('traitId' in request.resource.data)
                         || request.resource.data.traitId == null
-                        || request.resource.data.traitId is string);
+                        || request.resource.data.traitId is string)
+                    && (!('provenance' in request.resource.data)
+                        || request.resource.data.provenance == null
+                        || request.resource.data.provenance in ['user_equipped', 'archetype_default']);
         allow delete: if false;
       }
 

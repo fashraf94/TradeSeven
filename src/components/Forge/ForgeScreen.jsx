@@ -262,7 +262,7 @@ export default function ForgeScreen({ isMobile: isMobileProp, onClose, user, onN
       if (conflictPair) {
         const otherRuleId = conflictPair.ruleA === templateId ? conflictPair.ruleB : conflictPair.ruleA;
         const otherTemplate = FORGE_RULE_TEMPLATES.find(t => t.id === otherRuleId);
-        forge.showToast(`\u26A0\uFE0F May conflict with "${otherTemplate?.headline || otherRuleId}". Both will be active.`);
+        forge.showToast(`\u26A0\uFE0F Heads up \u2014 this adds a new rule alongside your existing "${otherTemplate?.headline || otherRuleId}". It doesn't replace it.`);
       }
     }
 
@@ -669,7 +669,9 @@ export default function ForgeScreen({ isMobile: isMobileProp, onClose, user, onN
                 background: tokens.bgCard, border: `1px solid ${tokens.teal}33`,
                 borderRadius: 12, padding: '12px 20px', fontSize: 13, fontWeight: 500,
                 color: tokens.teal, boxShadow: `0 4px 20px rgba(0,0,0,0.4), 0 0 12px ${tokens.teal}15`,
-                zIndex: 100, whiteSpace: 'nowrap',
+                // Wrap + cap width so multi-line messages (e.g. the conflict
+                // warning) stay on-screen instead of overflowing the viewport.
+                zIndex: 100, maxWidth: 'min(440px, calc(100vw - 32px))', textAlign: 'center', lineHeight: 1.45,
               }}
             >
               {forge.toast}
@@ -1112,7 +1114,8 @@ export default function ForgeScreen({ isMobile: isMobileProp, onClose, user, onN
               background: tokens.bgCard, border: `1px solid ${tokens.teal}33`,
               borderRadius: 12, padding: '12px 20px', fontSize: 13, fontWeight: 500,
               color: tokens.teal, boxShadow: `0 4px 20px rgba(0,0,0,0.4), 0 0 12px ${tokens.teal}15`,
-              zIndex: 100, whiteSpace: 'nowrap',
+              // Wrap + cap width so multi-line messages stay on-screen (mobile).
+              zIndex: 100, maxWidth: 'min(440px, calc(100vw - 32px))', textAlign: 'center', lineHeight: 1.45,
             }}
           >
             {forge.toast}

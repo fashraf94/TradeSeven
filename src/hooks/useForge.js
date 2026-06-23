@@ -23,6 +23,7 @@ import {
   archiveBundle as archiveBundleSvc,
 } from '../services/forgeService';
 import { computeForgeStats } from '../services/forgeStatsService';
+import { buildEquipWarning } from '../utils/conflictSurfaceCopy';
 
 // Pre-compute total available rules per category for radar proportional fill
 const categoryTotals = {};
@@ -351,6 +352,8 @@ export function useForge(agentId) {
         category: firstTemplate.category || template.category,
         params: firstTemplate.params || null,
         paramValues: paramValues || null,
+        // User added this rule by hand → tier-1 (deliberate) for the reconciler.
+        provenance: 'user_equipped',
         ...(options.status && { status: options.status }),
         ...(options.priority != null && { priority: options.priority }),
         ...(options.traitId && { traitId: options.traitId }),
@@ -399,6 +402,9 @@ export function useForge(agentId) {
       category: firstTemplate.category || template.category,
       params: firstTemplate.params || null,
       paramValues: paramValues || null,
+      // User hand-equipped this trait → tier-1 (deliberate) for the reconciler.
+      // (The archetype-default SEEDER stamps 'archetype_default' in traitEquip.js.)
+      provenance: 'user_equipped',
       ...(options.status && { status: options.status }),
       ...(options.priority != null && { priority: options.priority }),
       ...(options.traitId && { traitId: options.traitId }),
@@ -446,6 +452,8 @@ export function useForge(agentId) {
         category,
         source: 'manual',
         visibility: 'private',
+        // User authored this rule by hand → tier-1 (deliberate) for the reconciler.
+        provenance: 'user_equipped',
       });
       setRules(prev => [
         { id: ruleId, text, category, source: 'manual', visibility: 'private', bundleIds: [], isRefined: false },
@@ -539,9 +547,19 @@ export function useForge(agentId) {
     if (!agentId || equippingBundleId) return;
     setEquippingBundleId(bundleId);
     try {
-      await equipBundleSvc(agentId, bundleId);
-      await loadData();
-      showToast('Bundle equipped! Your agent will use these rules in the next battle.');
+      // equipBundleSvc returns the gated equip-time detection result (null when
+      // DETECT is off). Warn, don't block — the equip already succeeded.
+      const conflictCheckResult = await equipBundleSvc(agentId, bundleId);
+      // Report the (committed) equip result BEFORE reloading, and isolate the
+      // reload: a transient loadData() failure must not misreport a successful
+      // equip as a failure (or swallow the conflict warning).
+      const warning = buildEquipWarning(conflictCheckResult);
+      showToast(warning || 'Bundle equipped! Your agent will use these rules in the next battle.');
+      try {
+        await loadData();
+      } catch (reloadErr) {
+        console.error('[useForge] equip post-reload failed (equip itself succeeded):', reloadErr);
+      }
     } catch (err) {
       console.error('[useForge] equipBundle failed:', err);
       showToast(err.message || 'Failed to equip bundle');

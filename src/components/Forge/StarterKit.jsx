@@ -420,6 +420,15 @@ export default function StarterKit({ agentId, agent, forge, tokens, isMobile, on
           sourceRef: template.id,
           category: ft.category || template.category,
           params: Object.keys(ft.params || {}).length > 0 ? ft.params : null,
+          // Persist the resolved param values (not just the schema): the conflict
+          // reconciler reads paramValues to compare limits, so without these it
+          // would fall back to template DEFAULTS and mis-compare a starter rule
+          // whose text uses a non-default value (e.g. "Cap Energy at 20%").
+          paramValues: Object.keys(mergedParams).length > 0 ? mergedParams : null,
+          // Onboarding starter-kit defaults are seeded at agent creation →
+          // tier-2 (built-in identity), so a later deliberate user rule out-ranks
+          // them. Reconciler treats this as archetype_default.
+          provenance: 'archetype_default',
         });
         ruleIds.push(ruleId);
       }

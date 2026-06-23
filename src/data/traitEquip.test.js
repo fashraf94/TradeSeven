@@ -18,9 +18,10 @@ import { FORGE_RULE_TEMPLATES } from './forgeKnowledgeBase';
 const TEMPLATE_MAP = new Map(FORGE_RULE_TEMPLATES.map((t) => [t.id, t]));
 
 // Reference reproduction of the createRule payload built in
-// useForge.addRuleToBundle (src/hooks/useForge.js:336-356), with the options
-// useTraits.equipTrait always passes: { status:'active', priority:1, traitId }.
-// This is the oracle — derived from the real construction.
+// useForge.addRuleToBundle, with the options useTraits.equipTrait always passes:
+// { status:'active', priority:1, traitId }. This is the oracle — derived from
+// the real construction — EXCEPT for provenance, which intentionally differs
+// between the seeder (archetype_default) and hand-equip (user_equipped); see note below.
 function referenceSpec(ruleId, paramOverrides, traitId) {
   const template = TEMPLATE_MAP.get(ruleId);
   const firstTemplate = template.forgeTemplates[0];
@@ -43,6 +44,11 @@ function referenceSpec(ruleId, paramOverrides, traitId) {
     status: 'active',
     priority: 1,
     traitId,
+    // DELIBERATE DIVERGENCE from hand-equip: the seeder stamps archetype_default
+    // (tier-2 built-in identity), whereas the user hand-equip path stamps
+    // user_equipped (tier-1). This is the source-tier split the conflict
+    // reconciler relies on — see traitEquip.js / useForge.js provenance stamps.
+    provenance: 'archetype_default',
   };
 }
 

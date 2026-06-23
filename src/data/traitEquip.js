@@ -66,6 +66,8 @@ export function expandTraitToRuleSpecs(traitDef, strength) {
       status: 'active',
       priority: 1,
       traitId: traitDef.id,
+      // Archetype-seeded default → tier-2 (built-in identity) for the reconciler.
+      provenance: 'archetype_default',
     });
   }
   return specs;
