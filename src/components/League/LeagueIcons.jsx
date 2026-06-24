@@ -22,6 +22,10 @@ export function Icon({ name, size = 18, color = 'currentColor', stroke = 1.7, st
     chevD: <path {...p} d="M6 9l6 6 6-6" />,
     refresh: <g {...p}><path d="M20 11a8 8 0 10-2.3 6.3" /><path d="M20 20v-5h-5" /></g>,
     layers: <g {...p}><path d="M12 3l9 5-9 5-9-5 9-5z" /><path d="M3.5 13L12 18l8.5-5" /></g>,
+    // Battle View V2 additions (the nine-star dock + climb hero use these).
+    plus: <path {...p} d="M12 6v12M6 12h12" />,
+    eye: <g {...p}><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7-10-7-10-7z" /><circle cx="12" cy="12" r="2.6" /></g>,
+    chat: <g {...p}><path d="M5 5h14a2 2 0 012 2v7a2 2 0 01-2 2h-7l-4 3v-3H5a2 2 0 01-2-2V7a2 2 0 012-2z" /><path d="M8 10h.01M12 10h.01M16 10h.01" /></g>,
   };
   return <svg width={size} height={size} viewBox="0 0 24 24" style={{ display: 'block', flexShrink: 0, ...style }}>{paths[name]}</svg>;
 }
@@ -41,6 +45,14 @@ export function LIcon({ name, size = 16, color = 'currentColor', stroke = 1.7, s
     eyeR: <g {...p}><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7-10-7-10-7z" /><circle cx="12" cy="12" r="2.6" /></g>,
     arrowL: <path {...p} d="M19 12H5M11 18l-6-6 6-6" />,
     flag: <g {...p}><path d="M5 21V4M5 4h11l-2 3.5L16 11H5" /></g>,
+    // Battle View V2 additions (the nine-star dock + climb hero + agent voice).
+    bolt: <path {...p} d="M13 2L4 13h6l-1 9 9-12h-6l1-8z" fill={color} stroke="none" />,
+    pulse: <path {...p} d="M2 12h4l3-8 6 16 3-8h4" />,
+    flip: <g {...p}><path d="M17 4l3 3-3 3" /><path d="M20 7H7a3 3 0 0 0-3 3" /><path d="M7 20l-3-3 3-3" /><path d="M4 17h13a3 3 0 0 0 3-3" /></g>,
+    spark: <path {...p} d="M12 3l1.8 5.4L19 10l-5.2 1.6L12 17l-1.8-5.4L5 10l5.2-1.6L12 3z" />,
+    arrowUp: <path {...p} d="M12 19V5M6 11l6-6 6 6" />,
+    arrowUpRight: <path {...p} d="M7 17L17 7M8 7h9v9" />,
+    scissors: <g {...p}><circle cx="6" cy="6" r="2.6" /><circle cx="6" cy="18" r="2.6" /><path d="M8.5 7.5L20 18M8.5 16.5L20 6" /></g>,
   };
   return <svg width={size} height={size} viewBox="0 0 24 24" style={{ display: 'block', flexShrink: 0, ...style }}>{paths[name]}</svg>;
 }

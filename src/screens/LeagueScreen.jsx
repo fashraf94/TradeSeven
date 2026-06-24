@@ -20,6 +20,7 @@ import { useTheme } from '../contexts/ThemeContext';
 import LeagueParticipantView from './LeagueParticipantView';
 import LeagueHome from '../components/League/LeagueHome';
 import LeagueClimb from '../components/League/LeagueClimb';
+import LeagueBattleArena from '../components/League/battleArena/LeagueBattleArena';
 
 const SP = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : new URLSearchParams();
 
@@ -34,10 +35,26 @@ const CLIMB_PREVIEW = SP.get('leagueClimb') === '1';
 const CLIMB_MODE = ['live', 'final'].includes(SP.get('m')) ? SP.get('m') : 'live';
 const CLIMB_CTX = ['training', 'ranked'].includes(SP.get('c')) ? SP.get('c') : 'training';
 
+// Battle View V2 dev/dark preview (Phase 2): the desktop arena (climb hero +
+// nine-star command dock) renders ONLY for the explicit `?battleViewV2=1` param
+// (with `&s=awaiting|live|complete&c=training|ranked`), mirroring the
+// `?leagueClimb=1` idiom. Like LEAGUE_NEXT_ARC_ENABLED, the flag
+// LEAGUE_BATTLE_VIEW_V2_ENABLED is NOT read here — it stays inert until the
+// future in-app entry's wiring phase, so flipping it can never silently shadow
+// the param-only climb preview, and flag-on + no-param stays byte-unchanged.
+const ARENA_PREVIEW = SP.get('battleViewV2') === '1';
+const ARENA_STATE = ['awaiting', 'live', 'complete'].includes(SP.get('s')) ? SP.get('s') : 'live';
+const ARENA_MODE = ['training', 'ranked'].includes(SP.get('c')) ? SP.get('c') : 'ranked';
+
 export default function LeagueScreen({ onOpenTrainingPod, hasAgent, agentLoadout } = {}) {
   const { tokens } = useTheme();
   const [view, setView] = React.useState('home');
   const [climb, setClimb] = React.useState(CLIMB_PREVIEW);
+  const [arena, setArena] = React.useState(ARENA_PREVIEW);
+
+  // Battle View V2 dev/dark preview — the desktop arena, fixtures-backed.
+  // Reachable only via ?battleViewV2=1; "League" (onBack) returns to the normal surface.
+  if (arena) return <LeagueBattleArena state={ARENA_STATE} mode={ARENA_MODE} onBack={() => setArena(false)} />;
 
   // Next-arc dev/dark preview — the Altitude Climb standings, fixtures-backed.
   // Reachable only via ?leagueClimb=1; "League" (onBack) returns to the normal surface.
