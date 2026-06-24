@@ -187,7 +187,7 @@ export const LEAGUE_NEXT_ARC_ENABLED = true;
  * flip it in a build PR (the PR #510 lesson — the LEAGUE_NEXT_ARC_ENABLED
  * precedent), only after a Vercel preview smoke.
  */
-export const LEAGUE_BATTLE_VIEW_V2_ENABLED = false;
+export const LEAGUE_BATTLE_VIEW_V2_ENABLED = true;
 
 /**
  * League Training — the redesigned Training Draft Board (the agent-fit spine).
