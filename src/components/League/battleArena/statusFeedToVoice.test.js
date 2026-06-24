@@ -18,7 +18,7 @@ describe('relTime', () => {
 });
 
 describe('statusFeedToVoice', () => {
-  it('maps statusFeed newest-first into voice lines with kind/ticker/time', () => {
+  it('maps statusFeed OLDEST-first (the seedVoiceLines contract) with kind/ticker/time', () => {
     const battle = {
       statusFeed: [
         { timestamp: NOW - 2 * 3600 * 1000, message: 'Holding the line', action: 'hold' },
@@ -27,8 +27,10 @@ describe('statusFeedToVoice', () => {
     };
     const v = statusFeedToVoice(battle, NOW, 'Speculator');
     expect(v.arch).toBe('Speculator');
-    expect(v.live[0]).toMatchObject({ kind: 'trade', text: 'Swapped SOFI for MSTR', ticker: 'MSTR', t: '1h' });
-    expect(v.live[1]).toMatchObject({ kind: 'read', text: 'Holding the line', t: '2h' });
+    // oldest-first: index 0 is the 2h-old line, index 1 the 1h-old line.
+    // seedVoiceLines reverses this so the newest renders as the prominent line.
+    expect(v.live[0]).toMatchObject({ kind: 'read', text: 'Holding the line', t: '2h' });
+    expect(v.live[1]).toMatchObject({ kind: 'trade', text: 'Swapped SOFI for MSTR', ticker: 'MSTR', t: '1h' });
     expect(v.live.every((l) => Number.isFinite(l._k))).toBe(true);
   });
   it('defaults the greet/wait copy and yields an empty live lane for no feed', () => {

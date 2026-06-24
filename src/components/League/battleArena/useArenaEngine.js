@@ -19,9 +19,10 @@ import React from 'react';
 import {
   makeEngineState, applyBeat, applyFlip, applyAsk, clearBeat, tickClock,
 } from './arenaEngineCore';
-import { beatKey, nextUnseenBeat } from './arenaBeatDiff';
+import { beatKey, firstUnseenBeat } from './arenaBeatDiff';
 
 const BEAT_DWELL_MS = 4400;
+const SEEN_CAP = 500; // bound the live seen-set across a long session
 
 export function useArenaEngine({
   active, voice, beats, ask, closeStart = 0, wireStart = 0, beatInterval = 7600,
@@ -32,8 +33,7 @@ export function useArenaEngine({
   const [wireClock, setWireClock] = React.useState(wireStart);
   const idxRef = React.useRef(0);
   const dwellRef = React.useRef(null);
-  const lastSeenRef = React.useRef(null);
-  const primedRef = React.useRef(false);
+  const seenRef = React.useRef(null); // Set<beatKey> already fired (live mode)
 
   const scheduleClear = React.useCallback(() => {
     if (dwellRef.current) clearTimeout(dwellRef.current);
@@ -69,19 +69,28 @@ export function useArenaEngine({
     return () => clearInterval(id);
   }, [live, active, beats, beatInterval, fireBeat]);
 
-  // LIVE: surface only the freshest UNSEEN real beat. On entry, adopt the current
-  // newest as "seen" so we don't replay history; thereafter fire genuine new beats.
+  // LIVE: surface the freshest UNSEEN real beat. On entry, adopt ALL current beats
+  // as "seen" so we don't replay history; thereafter fire genuine new beats. The
+  // seen-SET (not a single last-key) is what stops a sticky top-of-list beat (a
+  // lead change) from masking newer event beats behind it (arenaBeatDiff header).
   React.useEffect(() => {
     if (!live || !Array.isArray(liveBeats) || !liveBeats.length) return undefined;
-    if (!primedRef.current) {
-      lastSeenRef.current = beatKey(liveBeats[0]);
-      primedRef.current = true;
+    if (seenRef.current === null) {
+      seenRef.current = new Set(liveBeats.map(beatKey));
       return undefined;
     }
-    const r = nextUnseenBeat(liveBeats, lastSeenRef.current);
-    if (r) { lastSeenRef.current = r.key; fireBeat(r.beat); }
+    if (seenRef.current.size > SEEN_CAP) seenRef.current = new Set(liveBeats.map(beatKey)); // safety valve
+    const r = firstUnseenBeat(liveBeats, seenRef.current);
+    if (r) { seenRef.current.add(r.key); fireBeat(r.beat); }
     return undefined;
   }, [live, liveBeats, fireBeat]);
+
+  // re-sync the countdowns when the model supplies a new seed — useState seeds
+  // once, so a wire that opens later (or a corrected server remaining-time) would
+  // otherwise keep ticking from the original (often 0) value. In preview the seed
+  // is constant, so this is a one-time no-op.
+  React.useEffect(() => { setCloseClock(closeStart); }, [closeStart]);
+  React.useEffect(() => { setWireClock(wireStart); }, [wireStart]);
 
   // tick the close + wire countdowns (only when a positive start is supplied)
   React.useEffect(() => {

@@ -33,7 +33,7 @@ const CLAIM_LOST = new Set(['denied', 'lost', 'rejected']);
 // number, a Date, or a Firestore Timestamp ({toMillis} / {seconds}) — callers
 // hydrating docs straight from Firestore pass Timestamp objects, and a naive
 // Date.parse(Timestamp) → NaN would silently reorder the whole stream.
-function tsToMillis(raw) {
+export function tsToMillis(raw) {
   if (raw == null) return null;
   if (typeof raw === 'number') return Number.isFinite(raw) ? raw : null;
   if (typeof raw === 'string') {

@@ -74,7 +74,9 @@ export function OpponentSnapshot({ seat, composite, onClose }) {
           border: `1.5px solid ${alpha(seat.color, 0.7)}` }} />
         <div style={{ flex: 1 }}>
           <div style={{ fontSize: 17, fontWeight: 700, color: LTOKENS.ink }}>{seat.name}</div>
-          <Mono style={{ fontSize: 10.5, color: LTOKENS.ink3 }}>{seat.arch} · {seat.kind === 'cpu' ? 'CPU agent' : seat.owner}</Mono>
+          <Mono style={{ fontSize: 10.5, color: LTOKENS.ink3 }}>
+            {[seat.arch, seat.kind === 'cpu' ? 'CPU agent' : seat.owner].filter(Boolean).join(' · ')}
+          </Mono>
         </div>
         <div style={{ textAlign: 'right' }}>
           <ArenaCount value={composite} size={20} showSign={false} />

@@ -30,7 +30,7 @@ import ClaimFlipWindow from '../components/Tournament/ClaimFlipWindow';
 import DraftPlaybackTheater from '../components/Tournament/DraftPlaybackTheater';
 import GroupFeed from '../components/Tournament/GroupFeed';
 import useMyTournamentBattle from '../hooks/useMyTournamentBattle';
-import { useIsDesktop } from '../hooks/useIsDesktop';
+import { useIsMobile } from '../hooks/useIsMobile';
 import LeagueBattleArenaLive from '../components/League/battleArena/LeagueBattleArenaLive';
 import { ARENA_LIVE_ON } from '../components/League/battleArena/arenaLiveGate';
 import { subscribeGroup } from '../services/tournamentGroupService';
@@ -44,7 +44,7 @@ export default function LeagueTrainingBattleView({ podId, user, onBack = null })
   const [loaded, setLoaded] = useState(false);
   // Battle View V2 (desktop-only) — runs unconditionally, inert when the gate is
   // off so flag-off / mobile / pre-deploy render today's practice column unchanged.
-  const isDesktop = useIsDesktop();
+  const { isDesktop } = useIsMobile();
   const [classic, setClassic] = useState(false);
 
   // Pod-by-id read: surfaces the pod in AWAITING_OPEN and BATTLE (subscribeMyGroup

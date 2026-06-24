@@ -145,7 +145,7 @@ export function ClimbArena({ state, mode, seats, climb, youId, w, h, surge, onPl
                 <span style={{ fontSize: 12, fontWeight: 700, color: you ? s.color : LTOKENS.ink2 }}>{s.name}</span>
                 {you && <Mono style={{ fontSize: 8, fontWeight: 700, letterSpacing: '0.08em', color: s.color }}>YOU</Mono>}
               </span>
-              <Mono style={{ fontSize: 8.5, color: LTOKENS.ink3, marginTop: 1, display: 'block' }}>{s.arch}</Mono>
+              {s.arch && <Mono style={{ fontSize: 8.5, color: LTOKENS.ink3, marginTop: 1, display: 'block' }}>{s.arch}</Mono>}
             </div>
 
             {/* centering lives on the outer node; the bob + surge animate an inner

@@ -12,6 +12,8 @@
 //   { timestamp, message, action, symbolIn?, symbolOut?, symbol?, regime?, score? }
 // VoiceLane line shape: { kind, t, text, ticker?, _k }.
 
+import { tsToMillis } from '../../../utils/leagueBeats';
+
 // The greeting/awaiting copy is design-authored (not in the feed); keep the
 // Phase-2 fixture copy as the default so the awaiting/initial render is unchanged.
 const DEFAULT_GREET = { kind: 'greeting', text: "We're live. I've got the six, you've got your three and the claim wire. Let's climb." };
@@ -20,21 +22,9 @@ const DEFAULT_WAIT = { kind: 'anticipation', text: "Lineup's locked and I'm itch
 const MAX_LIVE_LINES = 6;
 const TRADE_ACTIONS = /swap|trade|buy|sell|double|enter|exit|cut/i;
 
-function toMillis(raw) {
-  if (raw == null) return null;
-  if (typeof raw === 'number') return Number.isFinite(raw) ? raw : null;
-  if (typeof raw === 'string') { const t = Date.parse(raw); return Number.isFinite(t) ? t : null; }
-  if (typeof raw === 'object') {
-    if (typeof raw.toMillis === 'function') { const m = raw.toMillis(); return Number.isFinite(m) ? m : null; }
-    if (Number.isFinite(raw.seconds)) return raw.seconds * 1000;
-    if (typeof raw.getTime === 'function') { const m = raw.getTime(); return Number.isFinite(m) ? m : null; }
-  }
-  return null;
-}
-
 /** A compact relative-time label ("now" / "32m" / "1h" / "2d") from a timestamp. */
 export function relTime(rawTs, now) {
-  const ts = toMillis(rawTs);
+  const ts = tsToMillis(rawTs); // REUSE the canonical normalizer (handles Firestore Timestamp/epoch/ISO)
   const ref = Number.isFinite(now) ? now : null;
   if (ts == null || ref == null) return '';
   const s = Math.max(0, Math.floor((ref - ts) / 1000));
@@ -50,8 +40,11 @@ function entryKind(action) {
 
 /**
  * Build the arena voice object from a battle. Returns the design's
- * { arch, greet, wait, live[] } shape; `live` is the mapped statusFeed,
- * newest-first, capped. Empty/absent feed → live: [] (the lane shows only greet).
+ * { arch, greet, wait, live[] } shape. `live` is the mapped statusFeed in the
+ * doc's natural OLDEST-first order — the same contract the fixtures use and that
+ * seedVoiceLines (arenaEngineCore) reverses to render newest-first (feeding
+ * statusFeedToVoice's output newest-first would double-reverse and invert the
+ * lane). Empty/absent feed → live: [] (the lane shows only greet).
  * @param {Object} battle a flat6 agentBattles doc (owner's own)
  * @param {number} now epoch ms (injected, for relTime)
  * @param {string} [archName] the agent's archetype label, for the lane header
@@ -59,8 +52,7 @@ function entryKind(action) {
 export function statusFeedToVoice(battle, now, archName) {
   const feed = Array.isArray(battle?.statusFeed) ? battle.statusFeed : [];
   const live = feed
-    .slice(-MAX_LIVE_LINES)
-    .reverse() // newest-first
+    .slice(-MAX_LIVE_LINES) // the recent window, oldest-first (seedVoiceLines reverses for display)
     .map((e, i) => ({
       kind: entryKind(e?.action),
       t: relTime(e?.timestamp, now),

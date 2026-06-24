@@ -1,6 +1,6 @@
 // src/components/League/battleArena/arenaBeatDiff.test.js
 import { describe, it, expect } from 'vitest';
-import { beatKey, nextUnseenBeat } from './arenaBeatDiff';
+import { beatKey, firstUnseenBeat } from './arenaBeatDiff';
 
 describe('beatKey', () => {
   it('is deterministic from kind + star + text', () => {
@@ -15,21 +15,33 @@ describe('beatKey', () => {
   });
 });
 
-describe('nextUnseenBeat', () => {
+describe('firstUnseenBeat', () => {
   const beats = [
     { kind: 'hit', star: 'PLTR', text: 'PLTR hit' },
     { kind: 'swap', star: 'MSTR', text: 'swap' },
   ];
-  it('returns the freshest beat when its key differs from the last seen', () => {
-    const r = nextUnseenBeat(beats, null);
+  it('returns the freshest beat not in the seen set', () => {
+    const r = firstUnseenBeat(beats, new Set());
     expect(r.beat).toBe(beats[0]);
     expect(r.key).toBe('hit:PLTR:PLTR hit');
   });
-  it('returns null when the freshest beat is the one already shown (no loop/replay)', () => {
-    expect(nextUnseenBeat(beats, 'hit:PLTR:PLTR hit')).toBeNull();
+  it('returns null when every beat has been seen', () => {
+    const seen = new Set(beats.map(beatKey));
+    expect(firstUnseenBeat(beats, seen)).toBeNull();
   });
-  it('returns null for an empty / non-array beat list', () => {
-    expect(nextUnseenBeat([], null)).toBeNull();
-    expect(nextUnseenBeat(null, null)).toBeNull();
+  it('does NOT get masked by a sticky top-of-list beat — surfaces the newer beat behind it', () => {
+    // deriveBeats floats a lead change to index 0 with a sentinel timestamp; it
+    // stays there while a NEW hit beat lands at index 1. A last-key-only check
+    // would mask the hit; firstUnseenBeat must surface it.
+    const lead = { kind: 'lead', star: null, text: 'Vela took the lead' };
+    const hit = { kind: 'hit', star: 'AAPL', text: 'AAPL hit BaggerBomb' };
+    const seen = new Set([beatKey(lead)]); // lead already fired
+    const r = firstUnseenBeat([lead, hit], seen);
+    expect(r.beat).toBe(hit); // the newer hit fires, not masked by the sticky lead
+  });
+  it('returns null for an empty / non-array list or a missing set', () => {
+    expect(firstUnseenBeat([], new Set())).toBeNull();
+    expect(firstUnseenBeat(null, new Set())).toBeNull();
+    expect(firstUnseenBeat([{ kind: 'hit', star: 'X', text: 'x' }], null)).toBeNull();
   });
 });

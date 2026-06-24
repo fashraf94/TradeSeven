@@ -63,10 +63,14 @@ export function ArenaDesktop({ state, mode, headline = 'mult', onBack, data = nu
   const lastIdx = data ? liveDayIdx(D.climb) : frameDayIdx(state);
   const youRank = D.youRank;
   const oppSeat = opp ? D.seats.find((s) => s.id === opp) : null;
+  // With real data the bell countdown is deferred (pod.nextClose null) — show the
+  // live badge as "LIVE", not a frozen 00:00 (StatusBadge prints the label when
+  // clock is null). The preview keeps its real fixture countdown.
+  const closeClock = data && D.pod.nextClose == null ? null : eng.closeClock;
 
   return (
     <div style={{ width: AD_W, height: AD_H, position: 'relative', display: 'flex', flexDirection: 'column', padding: '14px 22px 16px' }}>
-      <ArenaTopStrip mode={mode} state={state} pod={D.pod} closeClock={eng.closeClock} onBack={onBack} />
+      <ArenaTopStrip mode={mode} state={state} pod={D.pod} closeClock={closeClock} onBack={onBack} />
 
       {/* THE HERO — the competition climb */}
       <div style={{ position: 'relative', marginTop: 11 }}>

@@ -16,17 +16,26 @@ export function beatKey(beat) {
 }
 
 /**
- * The newest beat not yet seen, or null if the freshest beat is the one we last
- * showed. Only the single freshest beat is surfaced — the climb/stars (the scores
- * of record) update regardless of beats, so a missed older beat never loses data.
+ * The freshest beat (scanning most-recent-first) whose key is NOT in `seen`, or
+ * null if every beat has been seen.
+ *
+ * Why a seen-SET, not a last-key compare: deriveBeats floats lead changes and
+ * star transitions to the TOP of the list with a sentinel (MAX) timestamp, so a
+ * sticky beat (e.g. a lead change) can permanently occupy index 0. Comparing only
+ * beats[0] to the last-seen key would then mask every newer event beat behind it
+ * (they sit at index ≥1 and never surface). Scanning for the first UNSEEN beat
+ * fixes that — newer beats deeper in the list still fire. One per tick is fine:
+ * the surface shows a single beat at a time, and the climb/stars (the scores of
+ * record) update regardless of which beat caption fires.
  * @param {Object[]} beats most-recent-first (deriveBeats output)
- * @param {string|null} lastSeenKey the key of the beat we last fired
+ * @param {Set<string>} seen keys already fired
  * @returns {{ beat: Object, key: string } | null}
  */
-export function nextUnseenBeat(beats, lastSeenKey) {
-  const newest = Array.isArray(beats) && beats.length ? beats[0] : null;
-  if (!newest) return null;
-  const key = beatKey(newest);
-  if (key === lastSeenKey) return null;
-  return { beat: newest, key };
+export function firstUnseenBeat(beats, seen) {
+  if (!Array.isArray(beats) || !seen) return null;
+  for (const b of beats) {
+    const key = beatKey(b);
+    if (!seen.has(key)) return { beat: b, key };
+  }
+  return null;
 }

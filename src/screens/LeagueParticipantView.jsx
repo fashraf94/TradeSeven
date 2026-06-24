@@ -23,7 +23,7 @@ import RoundBoundaryView from '../components/Tournament/RoundBoundaryView';
 import LeagueLobby from '../components/Tournament/LeagueLobby';
 import { LEAGUE_LOBBY_ENABLED } from '../config/featureFlags';
 import useMyTournamentBattle from '../hooks/useMyTournamentBattle';
-import { useIsDesktop } from '../hooks/useIsDesktop';
+import { useIsMobile } from '../hooks/useIsMobile';
 import LeagueBattleArenaLive from '../components/League/battleArena/LeagueBattleArenaLive';
 import { ARENA_LIVE_ON } from '../components/League/battleArena/arenaLiveGate';
 import { subscribeMyGroup, subscribeBracket, subscribeRank } from '../services/tournamentGroupService';
@@ -55,8 +55,15 @@ export default function LeagueParticipantView() {
   // as the new arena; `classic` lets a desktop user drop back to today's view.
   // These hooks run unconditionally (rules of hooks) and are inert when the gate
   // is off — flag-off / mobile / pre-battle render today's column byte-identically.
-  const isDesktop = useIsDesktop();
+  const { isDesktop } = useIsMobile();
   const [classic, setClassic] = useState(false);
+  // Memoized so a fresh object each render doesn't churn the arena's model memo
+  // (or Flat6BattleView's). Value is identical to the prior inline form — pure of
+  // group/uid; getWeeklyComposite/Score return 0 for a null group.
+  const compositeContext = useMemo(
+    () => ({ composite: round2(getWeeklyComposite(group, uid)), userPoints: round2(getWeeklyScore(group, uid)) }),
+    [group, uid],
+  );
 
   useEffect(() => {
     if (!uid) return undefined;
@@ -168,10 +175,6 @@ export default function LeagueParticipantView() {
     ? `Bracket round ${parseBracketGameId(group.bracketGameId)?.roundNumber ?? group.roundNumber}`
     : `Base week ${group.baseLayerWeek ?? ''}`;
   const isForming = group.status === GROUP_STATUS.FORMING;
-  const compositeContext = {
-    composite: round2(getWeeklyComposite(group, uid)),
-    userPoints: round2(getWeeklyScore(group, uid)),
-  };
 
   // Battle View V2 — desktop battle takeover. Reached ONLY once the agent battle
   // has deployed (myBattle), on a desktop viewport, with the gate on and not

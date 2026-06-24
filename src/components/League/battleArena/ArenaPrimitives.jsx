@@ -131,10 +131,12 @@ export function ArenaTopStrip({ mode, state, pod, closeClock, onBack }) {
         {done ? 'Battle complete' : calm ? 'Awaiting open' : `Day ${pod.day} of ${pod.days}`}
       </Mono>
       <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 16 }}>
-        <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <Icon name="eye" size={14} color={LTOKENS.ink3} />
-          <Mono style={{ fontSize: 11, color: LTOKENS.ink2 }}>{pod.watchers}</Mono>
-        </span>
+        {pod.watchers != null && (
+          <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <Icon name="eye" size={14} color={LTOKENS.ink3} />
+            <Mono style={{ fontSize: 11, color: LTOKENS.ink2 }}>{pod.watchers}</Mono>
+          </span>
+        )}
         {live && <StatusBadge status="live" clock={closeClock} compact />}
         {calm && (
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '4px 10px', borderRadius: 999, background: LTOKENS.surface, border: `1px solid ${LTOKENS.hair2}` }}>
