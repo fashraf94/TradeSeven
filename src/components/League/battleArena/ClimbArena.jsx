@@ -46,7 +46,7 @@ function ClimbAtmosphere({ tone }) {
   );
 }
 
-export function ClimbArena({ state, mode, seats, climb, youId, w, h, surge, onPlayer, dayIdx: dayIdxProp = null }) {
+export function ClimbArena({ state, mode, seats, climb, youId, w, h, surge, onPlayer, dayIdx: dayIdxProp = null, compact = false }) {
   const live = state === 'live'; const calm = state === 'awaiting';
   const ranked = mode === 'ranked';
   // Real data supplies the true last-banked index; the fixture preview falls back
@@ -62,8 +62,9 @@ export function ClimbArena({ state, mode, seats, climb, youId, w, h, surge, onPl
   const rankOf = (id) => ranking.findIndex((s) => s.id === id) + 1;
   const youRow = rows.find((s) => s.id === youId);
 
-  // geometry
-  const axisW = 52; const padT = 40; const padB = 62;
+  // geometry — `compact` tightens the axis + vertical padding for the ~374-wide
+  // mobile hero. Default off → the desktop hero geometry is byte-identical.
+  const axisW = compact ? 40 : 52; const padT = compact ? 32 : 40; const padB = compact ? 54 : 62;
   const plotT = padT; const plotB = h - padB;
   const laneW = (w - axisW) / rows.length;
   const laneX = (i) => axisW + laneW * (i + 0.5);
@@ -134,7 +135,7 @@ export function ClimbArena({ state, mode, seats, climb, youId, w, h, surge, onPl
       {rows.map((s, i) => {
         const you = s.id === youId; const lead = s.id === leaderId;
         const x = laneX(i); const y = calm ? plotB - 16 : Y(at(s));
-        const sz = you ? 52 : lead ? 46 : 40;
+        const sz = compact ? (you ? 44 : lead ? 40 : 36) : (you ? 52 : lead ? 46 : 40);
         const rk = rankOf(s.id);
         const bob = !calm && !reduce ? (you ? 'bv2-bob-you' : 'bv2-bob') : '';
         return (
@@ -142,7 +143,7 @@ export function ClimbArena({ state, mode, seats, climb, youId, w, h, surge, onPl
             <div style={{ position: 'absolute', left: x, top: plotB + 14, transform: 'translateX(-50%)', textAlign: 'center', whiteSpace: 'nowrap' }}>
               <span style={{ display: 'flex', alignItems: 'center', gap: 4, justifyContent: 'center' }}>
                 <span style={{ width: 8, height: 8, borderRadius: 3, background: s.color, boxShadow: you ? `0 0 6px ${alpha(s.color, 0.8)}` : 'none' }} />
-                <span style={{ fontSize: 12, fontWeight: 700, color: you ? s.color : LTOKENS.ink2 }}>{s.name}</span>
+                <span style={{ fontSize: compact ? 11 : 12, fontWeight: 700, color: you ? s.color : LTOKENS.ink2 }}>{s.name}</span>
                 {you && <Mono style={{ fontSize: 8, fontWeight: 700, letterSpacing: '0.08em', color: s.color }}>YOU</Mono>}
               </span>
               {s.arch && <Mono style={{ fontSize: 8.5, color: LTOKENS.ink3, marginTop: 1, display: 'block' }}>{s.arch}</Mono>}
@@ -161,17 +162,17 @@ export function ClimbArena({ state, mode, seats, climb, youId, w, h, surge, onPl
                   <div style={{ width: sz, height: sz, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
                     background: `radial-gradient(circle at 35% 30%, ${alpha(s.color, 0.95)}, ${alpha(s.color, 0.55)})`,
                     border: `2px solid ${alpha(s.color, you ? 1 : 0.7)}`, boxShadow: `0 0 ${you ? 22 : 14}px ${alpha(s.color, you ? 0.7 : 0.45)}` }}>
-                    <Mono style={{ fontSize: you ? 17 : 14, fontWeight: 700, color: '#0A0B0E' }}>{calm ? '·' : rk}</Mono>
+                    <Mono style={{ fontSize: compact ? (you ? 15 : 13) : (you ? 17 : 14), fontWeight: 700, color: '#0A0B0E' }}>{calm ? '·' : rk}</Mono>
                   </div>
                   {lead && !calm && (
                     <div style={{ position: 'absolute', top: -17, left: '50%', transform: 'translateX(-50%)' }}>
-                      <LIcon name="crown" size={17} color={LTOKENS.gold} stroke={2} />
+                      <LIcon name="crown" size={compact ? 15 : 17} color={LTOKENS.gold} stroke={2} />
                     </div>
                   )}
                 </div>
                 {!calm && (
                   <div style={{ position: 'absolute', left: sz / 2 + 11, top: '50%', transform: 'translateY(-50%)', whiteSpace: 'nowrap' }}>
-                    <ArenaCount value={at(s)} size={you ? 18 : 14} weight={700} showSign={false} />
+                    <ArenaCount value={at(s)} size={compact ? (you ? 15 : 12) : (you ? 18 : 14)} weight={700} showSign={false} />
                   </div>
                 )}
               </div>

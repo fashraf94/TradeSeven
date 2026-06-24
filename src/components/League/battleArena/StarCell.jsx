@@ -109,15 +109,20 @@ function captionFor(star) {
 }
 
 // ── one STAR CELL ───────────────────────────────────────────────────────────
-export function StarCell({ star, dormant = false, complete = false, headline = 'mult', owner = OWN_AGENT, dir, bump = 0, footer, style }) {
+// `dense` (mobile stacked rows): tighter padding + headline type so the cells
+// aren't oversized at full phone width. Every dense delta is gated below; default
+// off → the desktop dock cell is byte-identical (and `dense` does NOT reuse the
+// `big` meter path — that stays false here).
+export function StarCell({ star, dormant = false, complete = false, headline = 'mult', owner = OWN_AGENT, dir, bump = 0, footer, dense = false, style }) {
   const tg = tierProminence(star.tier, false);
   const tm = tierMeta(star.tier);
   const shownDir = dir || star.dir;
-  const capH = 17;
+  const capH = dense ? 15 : 17;
+  const pad = dense ? '9px 11px' : '10px 12px';
 
   if (dormant) {
     return (
-      <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', borderRadius: 14, padding: '10px 12px', minWidth: 0,
+      <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', borderRadius: 14, padding: pad, minWidth: 0,
         background: LTOKENS.surface, border: `1px solid ${alpha(owner, 0.22)}`, opacity: 0.7, ...style }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
           <StarGlyph kind={tm.glyph} color={alpha(owner, 0.7)} size={12} />
@@ -125,7 +130,7 @@ export function StarCell({ star, dormant = false, complete = false, headline = '
           <span style={{ fontSize: 8, fontWeight: 700, letterSpacing: '0.08em', color: LTOKENS.ink3, textTransform: 'uppercase' }}>{shownDir}</span>
           <span style={{ marginLeft: 'auto', fontSize: 7.5, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: LTOKENS.ink3 }}>{tm.label}</span>
         </div>
-        <Mono style={{ fontSize: 21, fontWeight: 700, lineHeight: 1, color: LTOKENS.ink3, marginTop: 6 }}>—</Mono>
+        <Mono style={{ fontSize: dense ? 19 : 21, fontWeight: 700, lineHeight: 1, color: LTOKENS.ink3, marginTop: 6 }}>—</Mono>
         <div style={{ position: 'relative', width: '100%', height: 7, borderRadius: 9, background: LTOKENS.raised, marginTop: 8 }}>
           <span style={{ position: 'absolute', left: '50%', top: -3, bottom: -3, width: 1, transform: 'translateX(-50%)', background: LTOKENS.hair2 }} />
         </div>
@@ -147,7 +152,7 @@ export function StarCell({ star, dormant = false, complete = false, headline = '
 
   return (
     <div className={animClass} style={{ '--bv2-ring': m.ring, '--bv2-gl': m.glow, position: 'relative', display: 'flex', flexDirection: 'column', minWidth: 0,
-      borderRadius: 14, padding: '10px 12px', background: tinted, border: `1px solid ${alpha(owner, 0.42)}`, opacity: tg.dim,
+      borderRadius: 14, padding: pad, background: tinted, border: `1px solid ${alpha(owner, 0.42)}`, opacity: tg.dim,
       boxShadow: `0 0 0 1px ${alpha(owner, 0.18)}, 0 0 16px -6px ${m.glow}`, ...style }}>
       {/* luminous wash — the star's charge, clipped to the cell */}
       {lit && (
@@ -166,7 +171,7 @@ export function StarCell({ star, dormant = false, complete = false, headline = '
       {/* headline — multiplier (drama) or points (currency) */}
       {headline === 'pts' ? (
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginTop: 5, position: 'relative' }}>
-          <Mono style={{ fontSize: 18, fontWeight: 700, lineHeight: 1, color: star.banked > 0 ? ST_GOOD : star.banked < 0 ? ST_BAD : LTOKENS.ink2,
+          <Mono style={{ fontSize: dense ? 16 : 18, fontWeight: 700, lineHeight: 1, color: star.banked > 0 ? ST_GOOD : star.banked < 0 ? ST_BAD : LTOKENS.ink2,
             textShadow: star.banked !== 0 ? `0 0 16px ${alpha(star.banked > 0 ? ST_GOOD : ST_BAD, 0.45)}` : 'none' }}>{fmtPoints(star.banked)}</Mono>
           <Mono style={{ fontSize: 9, fontWeight: 700, color: LTOKENS.ink3, letterSpacing: '0.06em' }}>PTS</Mono>
           <span style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 3 }}>
@@ -177,7 +182,7 @@ export function StarCell({ star, dormant = false, complete = false, headline = '
         </div>
       ) : (
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginTop: 5, position: 'relative' }}>
-          <Mono style={{ fontSize: 22, fontWeight: 700, lineHeight: 1, color: climbing ? ST_GOOD : ST_BAD,
+          <Mono style={{ fontSize: dense ? 20 : 22, fontWeight: 700, lineHeight: 1, color: climbing ? ST_GOOD : ST_BAD,
             textShadow: `0 0 16px ${alpha(climbing ? ST_GOOD : ST_BAD, star.state === 'hit' || star.state === 'busted' || star.state === 'edge' ? 0.55 : 0.3)}` }}>
             {star.mult >= 0 ? '+' : ''}{star.mult.toFixed(1)}×
           </Mono>

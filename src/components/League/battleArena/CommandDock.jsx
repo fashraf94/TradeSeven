@@ -45,14 +45,15 @@ function AgentMoveChip({ move, color }) {
   );
 }
 
-// a per-pick FLIP control — long↔short, anytime
-export function FlipControl({ dir, onFlip, color = OWN_YOU }) {
+// a per-pick FLIP control — long↔short, anytime. `compact` (mobile dense row):
+// slightly tighter padding/type. Default off → desktop dock byte-identical.
+export function FlipControl({ dir, onFlip, color = OWN_YOU, compact = false }) {
   const next = dir === 'long' ? 'short' : 'long';
   return (
-    <button className="bv2-tap" onClick={() => onFlip(next)} style={{ all: 'unset', boxSizing: 'border-box', width: '100%', marginTop: 8, cursor: 'pointer',
-      display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '6px', borderRadius: 8, background: alpha(color, 0.1), border: `1px solid ${alpha(color, 0.34)}` }}>
-      <LIcon name="flip" size={12} color={color} stroke={2} />
-      <Mono style={{ fontSize: 10.5, fontWeight: 700, color, letterSpacing: '0.02em' }}>Flip to {next}</Mono>
+    <button className="bv2-tap" onClick={() => onFlip(next)} style={{ all: 'unset', boxSizing: 'border-box', width: '100%', marginTop: compact ? 7 : 8, cursor: 'pointer',
+      display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: compact ? '5px' : '6px', borderRadius: 8, background: alpha(color, 0.1), border: `1px solid ${alpha(color, 0.34)}` }}>
+      <LIcon name="flip" size={compact ? 11 : 12} color={color} stroke={2} />
+      <Mono style={{ fontSize: compact ? 10 : 10.5, fontWeight: 700, color, letterSpacing: '0.02em' }}>Flip to {next}</Mono>
     </button>
   );
 }

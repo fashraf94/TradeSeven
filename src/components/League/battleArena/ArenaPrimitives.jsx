@@ -95,26 +95,32 @@ export function Waveform({ color, size = 13 }) {
 }
 
 // ── the on-board beat caption — the surface names what just happened ────────
-export function BeatCaption({ beat }) {
+// `compact` (mobile hero overlay): smaller pill so it fits a ~374-wide hero.
+// Default off → desktop byte-identical.
+export function BeatCaption({ beat, compact = false }) {
   if (!beat) return null;
   const c = beatToneColor(beat.tone, beat.kind);
   return (
-    <div className="bv2-beatin" style={{ display: 'inline-flex', alignItems: 'center', gap: 9, padding: '8px 16px', borderRadius: 999,
+    <div className="bv2-beatin" style={{ display: 'inline-flex', alignItems: 'center', gap: compact ? 7 : 9, padding: compact ? '6px 12px' : '8px 16px', borderRadius: 999, maxWidth: compact ? '94%' : undefined,
       background: alpha(c, 0.14), border: `1px solid ${alpha(c, 0.42)}`, backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)',
       boxShadow: `0 8px 26px -10px ${alpha(c, 0.6)}` }}>
-      <span style={{ width: 22, height: 22, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: alpha(c, 0.2), flexShrink: 0 }}>
-        <LIcon name={BEAT_GLYPH[beat.kind] || 'pulse'} size={13} color={c} stroke={2.2} />
+      <span style={{ width: compact ? 19 : 22, height: compact ? 19 : 22, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: alpha(c, 0.2), flexShrink: 0 }}>
+        <LIcon name={BEAT_GLYPH[beat.kind] || 'pulse'} size={compact ? 12 : 13} color={c} stroke={2.2} />
       </span>
-      <Mono style={{ fontSize: 12, fontWeight: 600, color: LTOKENS.ink, letterSpacing: '0.01em' }}>{beat.text}</Mono>
+      <Mono style={{ fontSize: compact ? 11 : 12, fontWeight: 600, color: LTOKENS.ink, letterSpacing: '0.01em',
+        overflow: compact ? 'hidden' : undefined, textOverflow: compact ? 'ellipsis' : undefined, whiteSpace: compact ? 'nowrap' : undefined }}>{beat.text}</Mono>
     </div>
   );
 }
 
 // ── the top strip — context around the arena (back · mode · day · status) ───
-export function ArenaTopStrip({ mode, state, pod, closeClock, onBack }) {
+// `compact` (mobile pinned hero): tighter gaps/type for a ~374-wide strip. Still
+// reads `pod` and still gates the back button on `onBack`. Default off → desktop
+// byte-identical.
+export function ArenaTopStrip({ mode, state, pod, closeClock, onBack, compact = false }) {
   const live = state === 'live'; const calm = state === 'awaiting'; const done = state === 'complete';
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '0 4px' }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: compact ? 9 : 14, padding: '0 4px' }}>
       {/* the back affordance is only for the standalone takeover; when embedded
           in a host (onBack null) the host's own "League" header stands in. */}
       {onBack && (
@@ -127,10 +133,10 @@ export function ArenaTopStrip({ mode, state, pod, closeClock, onBack }) {
         </>
       )}
       <ModeChip mode={mode} />
-      <Mono style={{ fontSize: 11.5, color: LTOKENS.ink2, letterSpacing: '0.03em' }}>
+      <Mono style={{ fontSize: compact ? 10.5 : 11.5, color: LTOKENS.ink2, letterSpacing: '0.03em' }}>
         {done ? 'Battle complete' : calm ? 'Awaiting open' : `Day ${pod.day} of ${pod.days}`}
       </Mono>
-      <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 16 }}>
+      <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: compact ? 11 : 16 }}>
         {pod.watchers != null && (
           <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <Icon name="eye" size={14} color={LTOKENS.ink3} />

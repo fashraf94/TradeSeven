@@ -20,12 +20,14 @@ import { ArenaCount } from './ArenaPrimitives';
 import { OWN_AGENT } from './arenaTheme';
 import { prefersReducedMotion } from './arenaEngineCore';
 
-// a centred modal frame with a dimmed, click-to-close backdrop
-export function AFocus({ children, onClose, width = 440 }) {
+// a centred modal frame with a dimmed, click-to-close backdrop. `maxWidth`
+// (mobile) caps the fixed `width` to the viewport; default undefined → desktop
+// byte-identical (the literal `width` stands alone, as before).
+export function AFocus({ children, onClose, width = 440, maxWidth }) {
   return (
     <div style={{ position: 'absolute', inset: 0, zIndex: 80, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
       <div className="bv2-tap bv2-fadein" onClick={onClose} style={{ position: 'absolute', inset: 0, background: 'rgba(5,6,9,0.74)', backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)' }} />
-      <div className="bv2-scroll" style={{ position: 'relative', width, maxHeight: '86%', overflowY: 'auto', borderRadius: 22, padding: '20px 22px',
+      <div className="bv2-scroll" style={{ position: 'relative', width, maxWidth, maxHeight: '86%', overflowY: 'auto', borderRadius: 22, padding: '20px 22px',
         background: LTOKENS.bg, border: `1px solid ${LTOKENS.hair2}`, boxShadow: '0 30px 90px rgba(0,0,0,0.6)' }}>
         <button className="bv2-tap" onClick={onClose} style={{ all: 'unset', position: 'absolute', top: 16, right: 16, cursor: 'pointer', width: 28, height: 28, borderRadius: 8,
           display: 'flex', alignItems: 'center', justifyContent: 'center', background: LTOKENS.surface, border: `1px solid ${LTOKENS.hair}` }}>
@@ -44,13 +46,13 @@ export function AFocus({ children, onClose, width = 440 }) {
 // ClaimsTab DISCIPLINE (canonical pool-minus-held — already enforced in the bridge;
 // in-flight guard; never-optimistic; server-authoritative error) in the League
 // palette — ClaimFlipWindow.jsx is NOT imported/edited.
-export function FreeAgencyDoorway({ onClose, claim = null, onClaim = null }) {
+export function FreeAgencyDoorway({ onClose, claim = null, onClaim = null, maxWidth }) {
   const c = OWN_AGENT;
   const real = !!(claim && onClaim);
   return (
     <div style={{ position: 'absolute', inset: 0, zIndex: 82, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
       <div className="bv2-tap bv2-fadein" onClick={onClose} style={{ position: 'absolute', inset: 0, background: 'rgba(5,6,9,0.78)', backdropFilter: 'blur(5px)', WebkitBackdropFilter: 'blur(5px)' }} />
-      <div className={prefersReducedMotion() ? '' : 'bv2-rise'} style={{ position: 'relative', width: 460, borderRadius: 22, padding: '26px 26px 24px',
+      <div className={prefersReducedMotion() ? '' : 'bv2-rise'} style={{ position: 'relative', width: 460, maxWidth, borderRadius: 22, padding: '26px 26px 24px',
         background: `linear-gradient(160deg, ${alpha(c, 0.12)}, ${LTOKENS.bg} 62%)`, border: `1px solid ${alpha(c, 0.34)}`, boxShadow: '0 30px 90px rgba(0,0,0,0.6)' }}>
         {real ? (
           <ClaimSheet claim={claim} onClaim={onClaim} onClose={onClose} c={c} />
@@ -141,9 +143,9 @@ function ClaimSheet({ claim, onClaim, onClose, c }) {
   );
 }
 
-export function OpponentSnapshot({ seat, composite, onClose }) {
+export function OpponentSnapshot({ seat, composite, onClose, maxWidth }) {
   return (
-    <AFocus onClose={onClose}>
+    <AFocus onClose={onClose} maxWidth={maxWidth}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
         <div style={{ width: 42, height: 42, borderRadius: '50%', flexShrink: 0,
           background: `radial-gradient(circle at 38% 32%, ${alpha(seat.color, 0.95)}, ${alpha(seat.color, 0.28)} 68%, ${alpha(seat.color, 0.1)})`,
