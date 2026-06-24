@@ -176,23 +176,26 @@ export default function LeagueParticipantView() {
     : `Base week ${group.baseLayerWeek ?? ''}`;
   const isForming = group.status === GROUP_STATUS.FORMING;
 
-  // Battle View V2 — desktop battle takeover. Reached ONLY once the agent battle
-  // has deployed (myBattle), on a desktop viewport, with the gate on and not
-  // dropped to classic. Everything else (flag-off, mobile, forming/drafting, the
-  // round-boundary/no-group states above) falls through to today's column,
-  // byte-identical. The arena subsumes Flat6BattleView + ClaimFlipWindow +
-  // GroupFeed; draft replay / board-commit are lifecycle chrome and stay in the
-  // classic view.
-  if (ARENA_LIVE_ON && isDesktop && myBattle && !classic) {
+  // Battle View V2 — the battle takeover. Reached ONLY once the agent battle has
+  // deployed (myBattle), with the gate on and not dropped to classic. The viewport
+  // picks the arena: desktop → the scale-to-fit ArenaDesktop (with a back-to-classic
+  // affordance); mobile → the pinned-hero ArenaMobile (no classic toggle — the flag
+  // is the rollback). Everything else (flag-off, forming/drafting, the round-
+  // boundary/no-group states above) falls through to today's column, byte-identical
+  // on BOTH viewports — the gate short-circuits on ARENA_LIVE_ON before isDesktop.
+  // The arena subsumes Flat6BattleView + ClaimFlipWindow + GroupFeed; draft replay /
+  // board-commit are lifecycle chrome and stay in the classic view.
+  if (ARENA_LIVE_ON && myBattle && !classic) {
     return (
-      <div style={{ minHeight: '100vh', background: '#050609', padding: 16, boxSizing: 'border-box' }}>
+      <div style={{ minHeight: '100vh', background: '#050609', padding: isDesktop ? 16 : 0, boxSizing: 'border-box' }}>
         <LeagueBattleArenaLive
           group={group}
           battle={myBattle}
           mode="ranked"
           uid={uid}
           compositeContext={compositeContext}
-          onBack={() => setClassic(true)}
+          onBack={isDesktop ? () => setClassic(true) : null}
+          viewport={isDesktop ? 'desktop' : 'mobile'}
         />
       </div>
     );

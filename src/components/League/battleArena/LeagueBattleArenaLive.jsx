@@ -17,15 +17,21 @@ import React from 'react';
 import './battleArena.css';
 import { LTOKENS, alpha } from '../leagueTokens';
 import { ArenaDesktop } from './ArenaDesktop';
+import { ArenaMobile } from './ArenaMobile';
 import { AD_W, AD_H } from './arenaLayout';
 import { deriveArenaState, normalizeArenaMode } from './arenaStateMap';
 import { useArenaModel } from './useArenaModel';
 
-export default function LeagueBattleArenaLive({ group, battle, mode, uid, compositeContext, onBack = null }) {
+export default function LeagueBattleArenaLive({ group, battle, mode, uid, compositeContext, onBack = null, viewport = 'desktop' }) {
   const { model, handlers, ready } = useArenaModel({ group, battle, mode, uid, compositeContext });
   const state = deriveArenaState(group);
   const md = normalizeArenaMode(mode);
+  const mobile = viewport === 'mobile';
+  const primary = md === 'ranked' ? LTOKENS.gold : LTOKENS.teal;
 
+  // All hooks run UNCONDITIONALLY (rules of hooks) — `viewport` can flip on a
+  // resize across the 768px line, so the desktop scale-to-fit measuring stays
+  // mounted even in the mobile branch (its `fit` is simply unused there).
   const ref = React.useRef(null);
   const [fit, setFit] = React.useState({ scale: 1, offset: 0 });
   React.useEffect(() => {
@@ -44,7 +50,24 @@ export default function LeagueBattleArenaLive({ group, battle, mode, uid, compos
     return () => { cancelAnimationFrame(raf); if (ro) ro.disconnect(); window.removeEventListener('resize', compute); };
   }, []);
 
-  const primary = md === 'ranked' ? LTOKENS.gold : LTOKENS.teal;
+  // MOBILE — a full-bleed, page-scrolling container (NO scale-to-fit, NO
+  // overflow:hidden): ArenaMobile pins its own hero and scrolls its tabs in page
+  // flow. The desktop scale-to-fit block below is left untouched.
+  if (mobile) {
+    return (
+      <div style={{ width: '100%', minHeight: '100%', background: '#050609',
+        backgroundImage: `radial-gradient(circle at 50% 0%, ${alpha(primary, 0.06)}, transparent 55%)` }}>
+        {ready && model ? (
+          <ArenaMobile state={state} mode={md} data={model} handlers={handlers} onBack={onBack} />
+        ) : (
+          <div style={{ minHeight: 320, display: 'flex', alignItems: 'center', justifyContent: 'center', color: LTOKENS.ink3, fontFamily: 'monospace', fontSize: 12 }}>
+            Loading the arena…
+          </div>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div ref={ref} style={{ width: '100%', position: 'relative', background: '#050609', borderRadius: 16, overflow: 'hidden',
       backgroundImage: `radial-gradient(circle at 50% 0%, ${alpha(primary, 0.06)}, transparent 55%)` }}>

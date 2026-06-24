@@ -103,20 +103,23 @@ export default function LeagueTrainingBattleView({ podId, user, onBack = null })
     );
   }
 
-  // Battle View V2 — desktop battle takeover (once the agent battle has deployed).
-  // Pre-deploy (awaiting_open), mobile, flag-off, or classic → today's practice
-  // column, byte-identical. The arena subsumes Flat6 + ClaimFlipWindow + GroupFeed;
-  // draft replay stays in the classic view.
-  if (ARENA_LIVE_ON && isDesktop && myBattle && !classic) {
+  // Battle View V2 — the battle takeover (once the agent battle has deployed). The
+  // viewport picks the arena: desktop → scale-to-fit ArenaDesktop (back-to-classic);
+  // mobile → pinned-hero ArenaMobile (flag is the rollback). Pre-deploy
+  // (awaiting_open), flag-off, or classic → today's practice column, byte-identical
+  // on BOTH viewports (the gate short-circuits on ARENA_LIVE_ON before isDesktop).
+  // The arena subsumes Flat6 + ClaimFlipWindow + GroupFeed; draft replay stays classic.
+  if (ARENA_LIVE_ON && myBattle && !classic) {
     return (
-      <div style={{ minHeight: '100vh', background: '#050609', padding: 16, boxSizing: 'border-box' }}>
+      <div style={{ minHeight: '100vh', background: '#050609', padding: isDesktop ? 16 : 0, boxSizing: 'border-box' }}>
         <LeagueBattleArenaLive
           group={pod}
           battle={myBattle}
           mode="training"
           uid={uid}
           compositeContext={compositeContext}
-          onBack={() => setClassic(true)}
+          onBack={isDesktop ? () => setClassic(true) : null}
+          viewport={isDesktop ? 'desktop' : 'mobile'}
         />
       </div>
     );
