@@ -23,6 +23,9 @@ import RoundBoundaryView from '../components/Tournament/RoundBoundaryView';
 import LeagueLobby from '../components/Tournament/LeagueLobby';
 import { LEAGUE_LOBBY_ENABLED } from '../config/featureFlags';
 import useMyTournamentBattle from '../hooks/useMyTournamentBattle';
+import { useIsDesktop } from '../hooks/useIsDesktop';
+import LeagueBattleArenaLive from '../components/League/battleArena/LeagueBattleArenaLive';
+import { ARENA_LIVE_ON } from '../components/League/battleArena/arenaLiveGate';
 import { subscribeMyGroup, subscribeBracket, subscribeRank } from '../services/tournamentGroupService';
 import { resolveRoundBoundary } from '../utils/roundBoundary';
 import {
@@ -47,6 +50,13 @@ export default function LeagueParticipantView() {
 
   const [group, setGroup] = useState(null);
   const [loaded, setLoaded] = useState(false);
+
+  // Battle View V2 (desktop-only): when on, an active battle takes over full-width
+  // as the new arena; `classic` lets a desktop user drop back to today's view.
+  // These hooks run unconditionally (rules of hooks) and are inert when the gate
+  // is off — flag-off / mobile / pre-battle render today's column byte-identically.
+  const isDesktop = useIsDesktop();
+  const [classic, setClassic] = useState(false);
 
   useEffect(() => {
     if (!uid) return undefined;
@@ -162,6 +172,28 @@ export default function LeagueParticipantView() {
     composite: round2(getWeeklyComposite(group, uid)),
     userPoints: round2(getWeeklyScore(group, uid)),
   };
+
+  // Battle View V2 — desktop battle takeover. Reached ONLY once the agent battle
+  // has deployed (myBattle), on a desktop viewport, with the gate on and not
+  // dropped to classic. Everything else (flag-off, mobile, forming/drafting, the
+  // round-boundary/no-group states above) falls through to today's column,
+  // byte-identical. The arena subsumes Flat6BattleView + ClaimFlipWindow +
+  // GroupFeed; draft replay / board-commit are lifecycle chrome and stay in the
+  // classic view.
+  if (ARENA_LIVE_ON && isDesktop && myBattle && !classic) {
+    return (
+      <div style={{ minHeight: '100vh', background: '#050609', padding: 16, boxSizing: 'border-box' }}>
+        <LeagueBattleArenaLive
+          group={group}
+          battle={myBattle}
+          mode="ranked"
+          uid={uid}
+          compositeContext={compositeContext}
+          onBack={() => setClassic(true)}
+        />
+      </div>
+    );
+  }
 
   return (
     <div style={page}>
