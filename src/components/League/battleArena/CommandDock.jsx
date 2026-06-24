@@ -29,8 +29,10 @@ function ordinal(n) {
 
 const bumpFor = (beatStar, tk) => (beatStar && beatStar.tk === tk ? beatStar.key : 0);
 
-// the agent's recent landed move ("swapped SOFI → MSTR · 1h ago")
-function AgentMoveChip({ move, color }) {
+// the agent's recent landed move ("swapped SOFI → MSTR · 1h ago"). Reused by the
+// mobile Agent-Portfolio panel; returns null when there's no move (live data's
+// agentMove is null until the swap-chip fast-follow).
+export function AgentMoveChip({ move, color }) {
   if (!move) return null;
   return (
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '4px 9px', borderRadius: 999, marginLeft: 'auto',
