@@ -64,6 +64,12 @@ export function ArenaMobile({ state, mode, headline = 'mult', onBack = null, dat
     wireStart: D.wire.closes ?? 0,
   });
 
+  // The flip controller lives HERE (not inside MYourPanel) so an in-flight flip's
+  // optimistic override + rollback + error survive a tab switch — MYourPanel
+  // unmounts when you leave the You tab, which would otherwise drop a server
+  // rejection's "Flip failed" before it surfaced (desktop's dock never unmounts).
+  const flips = useArenaFlips(D.userStars, handlers?.onFlip, eng.flip);
+
   const [tab, setTab] = React.useState('you');   // you · agent · chat
   const [pulse, setPulse] = React.useState({});  // { tabId: beatStar.key } — unseen beats
   const [opp, setOpp] = React.useState(null);
@@ -144,9 +150,10 @@ export function ArenaMobile({ state, mode, headline = 'mult', onBack = null, dat
           <MComplete mode={mode} youRank={D.youRank} onFilm={() => setFilmOpen(true)} />
         ) : tab === 'you' ? (
           <MYourPanel stars={D.userStars} wire={D.wire} live={live} calm={calm} done={done}
-            headline={headline} cellBump={cellBump} onFlip={handlers?.onFlip} onFlipDrama={eng.flip} onClaim={() => setFaOpen(true)} />
+            headline={headline} cellBump={cellBump} flips={flips} onClaim={() => setFaOpen(true)} />
         ) : tab === 'agent' ? (
-          <MAgentPanel stars={D.agentStars} move={D.agentMove} calm={calm} done={done} headline={headline} cellBump={cellBump} />
+          <MAgentPanel stars={D.agentStars} move={D.agentMove} calm={calm} done={done} headline={headline}
+            cellBump={cellBump} flareKey={live ? eng.flareKey : 0} />
         ) : calm ? (
           <div style={{ marginTop: 6, borderRadius: 16, padding: '14px 15px', background: alpha(LTOKENS.bg, 0.72), border: `1px solid ${alpha(OWN_AGENT, 0.22)}` }}>
             <VoiceLane lines={[{ ...D.voice.wait, t: 'now', _k: 0 }]} archName={D.voice.arch} color={OWN_AGENT} live={false} max={1} />
@@ -157,11 +164,13 @@ export function ArenaMobile({ state, mode, headline = 'mult', onBack = null, dat
         )}
       </div>
 
-      {done && filmOpen && <FilmRoomOverlay onClose={() => setFilmOpen(false)} />}
+      {/* overlays pin to the VIEWPORT (fixed) — the mobile root is a tall scroller,
+          so an absolute modal would center off-screen on the full scroll height. */}
+      {done && filmOpen && <FilmRoomOverlay onClose={() => setFilmOpen(false)} fixed />}
       {faOpen && (
-        <FreeAgencyDoorway onClose={() => setFaOpen(false)} claim={data ? D.claim : null} onClaim={handlers?.onClaim} maxWidth={SHEET_FIT} />
+        <FreeAgencyDoorway onClose={() => setFaOpen(false)} claim={data ? D.claim : null} onClaim={handlers?.onClaim} maxWidth={SHEET_FIT} fixed />
       )}
-      {oppSeat && <OpponentSnapshot seat={oppSeat} composite={D.climb[opp]?.[lastIdx] ?? 0} onClose={() => setOpp(null)} maxWidth={SHEET_FIT} />}
+      {oppSeat && <OpponentSnapshot seat={oppSeat} composite={D.climb[opp]?.[lastIdx] ?? 0} onClose={() => setOpp(null)} maxWidth={SHEET_FIT} fixed />}
     </div>
   );
 }
@@ -181,12 +190,20 @@ function MTab({ id, label, color, active, pulse, onClick }) {
   );
 }
 
-// the AGENT PORTFOLIO tab — watch-only, teal, the agent's six in a 2-col grid
-function MAgentPanel({ stars, move, calm, done, headline, cellBump }) {
+// the AGENT PORTFOLIO tab — watch-only, teal, the agent's six in a 2-col grid.
+// Exported so the render-smoke can mount it directly (the tab is behind state that
+// renderToString can't reach). `flareKey` bumps the orb's swap-flare ring per agent
+// swap, matching the desktop DockAgentSix drama.
+export function MAgentPanel({ stars, move, calm, done, headline, cellBump, flareKey = 0 }) {
   return (
     <div style={{ marginTop: 6, borderRadius: 16, padding: '13px 13px', background: alpha('#0A1520', 0.5), border: `1px solid ${LTOKENS.hair}` }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 11 }}>
-        <ArenaOrb state={calm ? 'ready' : 'live'} size={22} color={OWN_AGENT} />
+        <span style={{ position: 'relative', display: 'inline-flex' }}>
+          <ArenaOrb state={calm ? 'ready' : 'live'} size={22} color={OWN_AGENT} />
+          {!calm && flareKey > 0 && !prefersReducedMotion() && (
+            <span key={flareKey} className="bv2-flare" style={{ position: 'absolute', inset: 0, borderRadius: '50%', border: `2px solid ${OWN_AGENT}`, pointerEvents: 'none' }} />
+          )}
+        </span>
         <div style={{ flex: 1, minWidth: 0 }}>
           <Eyebrow color={OWN_AGENT}>Your agent&rsquo;s six</Eyebrow>
           <span style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 1 }}>
@@ -205,12 +222,14 @@ function MAgentPanel({ stars, move, calm, done, headline, cellBump }) {
   );
 }
 
-// the YOUR PORTFOLIO tab — your stake + controls, blue. Reuses the SAME flip
-// controller as the desktop dock (optimistic + server-authoritative rollback).
-function MYourPanel({ stars, wire, live, calm, done, headline, cellBump, onFlip, onFlipDrama, onClaim }) {
+// the YOUR PORTFOLIO tab — your stake + controls, blue. The flip controller
+// (`flips`) is owned by ArenaMobile and passed in, so an in-flight flip's
+// optimistic override + rollback + error survive this panel unmounting on a tab
+// switch (the desktop dock never unmounts).
+function MYourPanel({ stars, wire, live, calm, done, headline, cellBump, flips, onClaim }) {
   const c = OWN_YOU;
   const open = live && wire?.open;
-  const { dirOf, doFlip, flipError } = useArenaFlips(stars, onFlip, onFlipDrama);
+  const { dirOf, doFlip, flipError } = flips;
   return (
     <div style={{ marginTop: 6, borderRadius: 16, padding: '13px 13px',
       background: `linear-gradient(160deg, ${alpha(c, 0.08)}, ${alpha(LTOKENS.bg, 0.5)} 60%)`,

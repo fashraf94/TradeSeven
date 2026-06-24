@@ -58,7 +58,7 @@ export default function LeagueBattleArenaLive({ group, battle, mode, uid, compos
       <div style={{ width: '100%', minHeight: '100%', background: '#050609',
         backgroundImage: `radial-gradient(circle at 50% 0%, ${alpha(primary, 0.06)}, transparent 55%)` }}>
         {ready && model ? (
-          <ArenaMobile state={state} mode={md} data={model} handlers={handlers} onBack={onBack} />
+          <ArenaMobile key={state + md} state={state} mode={md} data={model} handlers={handlers} onBack={onBack} />
         ) : (
           <div style={{ minHeight: 320, display: 'flex', alignItems: 'center', justifyContent: 'center', color: LTOKENS.ink3, fontFamily: 'monospace', fontSize: 12 }}>
             Loading the arena…

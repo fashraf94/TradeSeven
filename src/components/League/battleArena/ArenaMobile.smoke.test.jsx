@@ -3,14 +3,19 @@
 // Render smoke for the mobile arena. As with ArenaDesktop.smoke, the repo ships no
 // jsdom/RTL — react-dom/server renders the full tree WITHOUT a DOM (effects don't
 // run, so ResizeObserver / rAF / matchMedia are never touched), enough to catch a
-// runtime throw on mount across every state × mode that build + lint cannot. This
-// is the regression net for the mock's wrong prop wiring (ArenaTopStrip/ClimbArena
-// /AgentDock) — a missing data prop would throw here.
+// runtime throw on mount that build + lint cannot.
+//
+// The full-tree render only reaches the DEFAULT 'you' tab (renderToString fires no
+// clicks/effects), so the agent + chat surfaces — MAgentPanel and the chat AgentDock
+// — are covered by mounting them DIRECTLY below. Together these exercise the prop
+// wiring the design mock got wrong (ArenaTopStrip pod / ClimbArena seats+climb /
+// AgentDock live+archName+ask+onAsk) — a missing data prop throws here.
 
 import { describe, it, expect } from 'vitest';
 import React from 'react';
 import { renderToString } from 'react-dom/server';
-import { ArenaMobile } from './ArenaMobile';
+import { ArenaMobile, MAgentPanel } from './ArenaMobile';
+import { AgentDock } from './CommandDock';
 
 describe('ArenaMobile render smoke', () => {
   for (const state of ['awaiting', 'live', 'complete']) {
@@ -56,5 +61,25 @@ describe('ArenaMobile render smoke', () => {
     expect(html).toContain('Your Portfolio'); // the tab bar
     expect(html).toContain('GE');             // a real user star rendered (default you tab)
     expect(html.length).toBeGreaterThan(2000);
+  });
+
+  // The Agent-Portfolio tab is behind tab state renderToString can't switch to, so
+  // mount MAgentPanel directly — covers the agent-six + swap-flare wiring.
+  it('MAgentPanel composes (agent six + move chip + flare) without throwing', () => {
+    const html = renderToString(
+      <MAgentPanel stars={DATA.agentStars} move={DATA.agentMove} calm={false} done={false} headline="mult" cellBump={() => 0} flareKey={1} />,
+    );
+    expect(html).toContain('watch-only'); // the agent panel composed
+    expect(html).toContain('NVDA');        // the agent star rendered
+  });
+
+  // The chat tab renders AgentDock with the exact mobile wiring (the mock's call was
+  // wrong) — mount it directly with those props.
+  it('AgentDock (mobile chat wiring) composes without throwing', () => {
+    const html = renderToString(
+      <AgentDock compact live lines={[{ kind: 'read', text: 'holding the line', _k: 1 }]} archName="Speculator" ask={[{ q: 'why?', a: 'because' }]} onAsk={() => {}} />,
+    );
+    expect(html).toContain('Speculator'); // archName wired (not the mock's missing prop)
+    expect(html).toContain('Ask your agent');
   });
 });
