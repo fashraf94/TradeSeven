@@ -46,10 +46,12 @@ function ClimbAtmosphere({ tone }) {
   );
 }
 
-export function ClimbArena({ state, mode, seats, climb, youId, w, h, surge, onPlayer }) {
+export function ClimbArena({ state, mode, seats, climb, youId, w, h, surge, onPlayer, dayIdx: dayIdxProp = null }) {
   const live = state === 'live'; const calm = state === 'awaiting';
   const ranked = mode === 'ranked';
-  const dayIdx = frameDayIdx(state);
+  // Real data supplies the true last-banked index; the fixture preview falls back
+  // to frameDayIdx(state).
+  const dayIdx = dayIdxProp != null ? dayIdxProp : frameDayIdx(state);
   const tone = ranked ? LTOKENS.gold : LTOKENS.teal;
 
   const rows = seats.map((s) => ({ ...s, scores: climb[s.id] || [] }));

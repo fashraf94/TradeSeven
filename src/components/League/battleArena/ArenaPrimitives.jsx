@@ -115,11 +115,17 @@ export function ArenaTopStrip({ mode, state, pod, closeClock, onBack }) {
   const live = state === 'live'; const calm = state === 'awaiting'; const done = state === 'complete';
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '0 4px' }}>
-      <button className="bv2-tap" onClick={onBack} style={{ all: 'unset', display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', color: LTOKENS.ink2 }}>
-        <LIcon name="arrowL" size={17} color={LTOKENS.ink2} />
-        <Mono style={{ fontSize: 11, letterSpacing: '0.1em', textTransform: 'uppercase' }}>League</Mono>
-      </button>
-      <div style={{ width: 1, height: 20, background: LTOKENS.hair2 }} />
+      {/* the back affordance is only for the standalone takeover; when embedded
+          in a host (onBack null) the host's own "League" header stands in. */}
+      {onBack && (
+        <>
+          <button className="bv2-tap" onClick={onBack} style={{ all: 'unset', display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', color: LTOKENS.ink2 }}>
+            <LIcon name="arrowL" size={17} color={LTOKENS.ink2} />
+            <Mono style={{ fontSize: 11, letterSpacing: '0.1em', textTransform: 'uppercase' }}>League</Mono>
+          </button>
+          <div style={{ width: 1, height: 20, background: LTOKENS.hair2 }} />
+        </>
+      )}
       <ModeChip mode={mode} />
       <Mono style={{ fontSize: 11.5, color: LTOKENS.ink2, letterSpacing: '0.03em' }}>
         {done ? 'Battle complete' : calm ? 'Awaiting open' : `Day ${pod.day} of ${pod.days}`}
