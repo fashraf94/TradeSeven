@@ -97,8 +97,28 @@ export function DockYourThree({ stars, dormant, complete, state, wire, wireClock
   // optimistic flip OVERRIDES keyed by ticker; anything unset falls back to the
   // live star's direction, so a pick swapped in by a claim never reads undefined.
   const [dirs, setDirs] = React.useState({});
+  const [flipError, setFlipError] = React.useState(null);
+  const flipInFlight = React.useRef(false); // one flip at a time (FlipsTab discipline)
   const dirOf = (s) => dirs[s.tk] ?? s.dir;
-  const doFlip = (tk, nd) => { setDirs((d) => ({ ...d, [tk]: nd })); if (onFlip) onFlip(tk, nd); };
+  // Optimistic + server-authoritative: show the new direction immediately, then
+  // ROLL BACK if the server rejects (no phantom flip that never banked). The
+  // authoritative group subscription reconciles a confirmed flip's leg.
+  const doFlip = async (tk, nd) => {
+    if (flipInFlight.current) return;
+    setDirs((d) => ({ ...d, [tk]: nd })); // optimistic
+    setFlipError(null);
+    const p = onFlip && onFlip(tk, nd); // engine drama + the real write promise (preview: resolved)
+    if (!p || typeof p.then !== 'function') return;
+    flipInFlight.current = true;
+    try {
+      await p;
+    } catch (err) {
+      setDirs((d) => { const n = { ...d }; delete n[tk]; return n; }); // rollback to the live leg
+      setFlipError(err?.message || 'Flip failed — try again.'); // already-mapped by useArenaModel
+    } finally {
+      flipInFlight.current = false;
+    }
+  };
   return (
     <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, borderRadius: 16, padding: '13px 14px',
       background: `linear-gradient(160deg, ${alpha(c, 0.08)}, ${alpha(LTOKENS.bg, 0.5)} 60%)`, border: `1px solid ${alpha(c, 0.32)}`,
@@ -135,6 +155,9 @@ export function DockYourThree({ stars, dormant, complete, state, wire, wireClock
             footer={live ? <FlipControl dir={dirOf(s)} onFlip={(nd) => doFlip(s.tk, nd)} color={c} /> : null} />
         ))}
       </div>
+      {flipError && (
+        <Mono style={{ marginTop: 7, fontSize: 9.5, fontWeight: 600, color: '#F2766B', letterSpacing: '0.01em' }}>{flipError}</Mono>
+      )}
     </div>
   );
 }

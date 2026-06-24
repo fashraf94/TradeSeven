@@ -9,9 +9,9 @@
 // It owns no data fetching beyond useArenaModel — the host hands it the already-
 // subscribed `group` + your `battle` + `compositeContext`. Owner-only.
 //
-// Phase-3 staging: this commit renders the model READ-ONLY (handlers={null} →
-// flips are optimistic-only, the claim doorway is inert). The write-path commit
-// passes the real `handlers` so flips/claims hit the server with rollback.
+// Reads are live and writes are wired: the real `handlers` (flipPick/placeClaim)
+// flow into ArenaDesktop, so a flip optimistically reverses then rolls back on a
+// server reject, and the claim doorway is the real drop+add sheet.
 
 import React from 'react';
 import './battleArena.css';
@@ -22,7 +22,7 @@ import { deriveArenaState, normalizeArenaMode } from './arenaStateMap';
 import { useArenaModel } from './useArenaModel';
 
 export default function LeagueBattleArenaLive({ group, battle, mode, uid, compositeContext, onBack = null }) {
-  const { model, ready } = useArenaModel({ group, battle, mode, uid, compositeContext });
+  const { model, handlers, ready } = useArenaModel({ group, battle, mode, uid, compositeContext });
   const state = deriveArenaState(group);
   const md = normalizeArenaMode(mode);
 
@@ -51,7 +51,7 @@ export default function LeagueBattleArenaLive({ group, battle, mode, uid, compos
       {ready && model ? (
         <div style={{ height: Math.ceil(fit.scale * AD_H), overflow: 'hidden' }}>
           <div style={{ width: AD_W, height: AD_H, transform: `scale(${fit.scale})`, transformOrigin: 'top left', marginLeft: fit.offset }}>
-            <ArenaDesktop key={state + md} state={state} mode={md} data={model} handlers={null} onBack={onBack} />
+            <ArenaDesktop key={state + md} state={state} mode={md} data={model} handlers={handlers} onBack={onBack} />
           </div>
         </div>
       ) : (

@@ -15,7 +15,7 @@
 
 import React from 'react';
 import { Mono, Eyebrow, LIcon, Icon } from '../LeagueParts';
-import { LTOKENS, alpha } from '../leagueTokens';
+import { LTOKENS, alpha, MONO } from '../leagueTokens';
 import { ArenaCount } from './ArenaPrimitives';
 import { OWN_AGENT } from './arenaTheme';
 import { prefersReducedMotion } from './arenaEngineCore';
@@ -37,30 +37,103 @@ export function AFocus({ children, onClose, width = 440 }) {
   );
 }
 
-export function FreeAgencyDoorway({ onClose }) {
+// The "Claim a name" doorway. With real claim props it IS the claim SHEET (drop one
+// of your three + add a free agent → placeClaim), per the founder ruling (a
+// modal/sheet, not a separate page). Without them (the ?battleViewV2=1 preview) it
+// keeps the inert doorway copy. The claim controls re-implement ClaimFlipWindow's
+// ClaimsTab DISCIPLINE (canonical pool-minus-held — already enforced in the bridge;
+// in-flight guard; never-optimistic; server-authoritative error) in the League
+// palette — ClaimFlipWindow.jsx is NOT imported/edited.
+export function FreeAgencyDoorway({ onClose, claim = null, onClaim = null }) {
   const c = OWN_AGENT;
+  const real = !!(claim && onClaim);
   return (
     <div style={{ position: 'absolute', inset: 0, zIndex: 82, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
       <div className="bv2-tap bv2-fadein" onClick={onClose} style={{ position: 'absolute', inset: 0, background: 'rgba(5,6,9,0.78)', backdropFilter: 'blur(5px)', WebkitBackdropFilter: 'blur(5px)' }} />
-      <div className={prefersReducedMotion() ? '' : 'bv2-rise'} style={{ position: 'relative', width: 460, borderRadius: 22, padding: '26px 26px 24px', textAlign: 'center',
+      <div className={prefersReducedMotion() ? '' : 'bv2-rise'} style={{ position: 'relative', width: 460, borderRadius: 22, padding: '26px 26px 24px',
         background: `linear-gradient(160deg, ${alpha(c, 0.12)}, ${LTOKENS.bg} 62%)`, border: `1px solid ${alpha(c, 0.34)}`, boxShadow: '0 30px 90px rgba(0,0,0,0.6)' }}>
-        <div style={{ width: 56, height: 56, borderRadius: 16, margin: '0 auto 14px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: alpha(c, 0.14), border: `1px solid ${alpha(c, 0.4)}` }}>
-          <LIcon name="arrowUpRight" size={26} color={c} stroke={2} />
-        </div>
-        <Eyebrow color={c}>Leaving the battle · Free Agency</Eyebrow>
-        <div style={{ fontSize: 21, fontWeight: 700, color: LTOKENS.ink, letterSpacing: '-0.01em', marginTop: 8 }}>Open the Free Agency board</div>
-        <div style={{ fontSize: 13, color: LTOKENS.ink2, lineHeight: 1.6, marginTop: 10 }}>
-          Claiming happens on its own surface. There you pick up a free-agent name <b style={{ color: LTOKENS.ink }}>and</b> choose which of your three to drop — a claim is one move, finalized there. The battle view is only the doorway.
-        </div>
-        <div style={{ display: 'flex', gap: 10, marginTop: 20 }}>
-          <button className="bv2-tap" onClick={onClose} style={{ all: 'unset', flex: 1, textAlign: 'center', cursor: 'pointer', padding: '11px', borderRadius: 11,
-            background: LTOKENS.surface, border: `1px solid ${LTOKENS.hair2}`, color: LTOKENS.ink2, fontWeight: 600, fontSize: 12.5 }}>Stay in the battle</button>
-          <button className="bv2-tap" onClick={onClose} style={{ all: 'unset', flex: 1.4, textAlign: 'center', cursor: 'pointer', padding: '11px', borderRadius: 11,
-            background: c, color: LTOKENS.bg, fontWeight: 700, fontSize: 12.5, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7 }}>
-            Go to Free Agency <LIcon name="arrowUpRight" size={13} color={LTOKENS.bg} stroke={2.4} />
-          </button>
-        </div>
+        {real ? (
+          <ClaimSheet claim={claim} onClaim={onClaim} onClose={onClose} c={c} />
+        ) : (
+          <div style={{ textAlign: 'center' }}>
+            <div style={{ width: 56, height: 56, borderRadius: 16, margin: '0 auto 14px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: alpha(c, 0.14), border: `1px solid ${alpha(c, 0.4)}` }}>
+              <LIcon name="arrowUpRight" size={26} color={c} stroke={2} />
+            </div>
+            <Eyebrow color={c}>Leaving the battle · Free Agency</Eyebrow>
+            <div style={{ fontSize: 21, fontWeight: 700, color: LTOKENS.ink, letterSpacing: '-0.01em', marginTop: 8 }}>Open the Free Agency board</div>
+            <div style={{ fontSize: 13, color: LTOKENS.ink2, lineHeight: 1.6, marginTop: 10 }}>
+              Claiming happens on its own surface. There you pick up a free-agent name <b style={{ color: LTOKENS.ink }}>and</b> choose which of your three to drop — a claim is one move, finalized there. The battle view is only the doorway.
+            </div>
+            <div style={{ display: 'flex', gap: 10, marginTop: 20 }}>
+              <button className="bv2-tap" onClick={onClose} style={{ all: 'unset', flex: 1, textAlign: 'center', cursor: 'pointer', padding: '11px', borderRadius: 11,
+                background: LTOKENS.surface, border: `1px solid ${LTOKENS.hair2}`, color: LTOKENS.ink2, fontWeight: 600, fontSize: 12.5 }}>Stay in the battle</button>
+              <button className="bv2-tap" onClick={onClose} style={{ all: 'unset', flex: 1.4, textAlign: 'center', cursor: 'pointer', padding: '11px', borderRadius: 11,
+                background: c, color: LTOKENS.bg, fontWeight: 700, fontSize: 12.5, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7 }}>
+                Go to Free Agency <LIcon name="arrowUpRight" size={13} color={LTOKENS.bg} stroke={2.4} />
+              </button>
+            </div>
+          </div>
+        )}
       </div>
+    </div>
+  );
+}
+
+function ClaimSheet({ claim, onClaim, onClose, c }) {
+  const [dropSymbol, setDrop] = React.useState('');
+  const [addSymbol, setAdd] = React.useState('');
+  const [submitting, setSubmitting] = React.useState(false);
+  const [error, setError] = React.useState(null);
+  const [done, setDone] = React.useState(false);
+  const inFlight = React.useRef(false);
+  const picks = claim.picks || [];
+  const pool = claim.poolNames || [];
+  const capReached = (claim.claimsUsed ?? 0) >= (claim.claimsTotal ?? 3);
+  const canSubmit = dropSymbol && addSymbol && claim.open && !capReached && !submitting;
+
+  const submit = async () => {
+    if (inFlight.current || !canSubmit) return;
+    inFlight.current = true; setSubmitting(true); setError(null);
+    try {
+      await onClaim({ dropSymbol, addSymbol }); // → placeClaim; lands as 'pending' (never optimistic)
+      setDone(true); setDrop(''); setAdd('');
+    } catch (err) {
+      setError(err?.message || 'Claim failed — try again.'); // already-mapped by useArenaModel
+    } finally {
+      inFlight.current = false; setSubmitting(false);
+    }
+  };
+
+  const sel = { fontFamily: MONO, flex: 1, background: LTOKENS.surface, border: `1px solid ${LTOKENS.hair2}`, borderRadius: 9, color: LTOKENS.ink, padding: '9px 10px', fontSize: 13 };
+  return (
+    <div>
+      <Eyebrow color={c}>Claim a name · Free Agency</Eyebrow>
+      <div style={{ fontSize: 18, fontWeight: 700, color: LTOKENS.ink, letterSpacing: '-0.01em', marginTop: 7 }}>Drop one, claim one</div>
+      <div style={{ fontSize: 11.5, color: LTOKENS.ink2, lineHeight: 1.5, marginTop: 8 }}>
+        A claim is one move — drop a pick and claim a free-agent name. It resolves at the next processing pass; the dropped name keeps its banked points.
+      </div>
+      <div style={{ display: 'flex', gap: 9, marginTop: 14 }}>
+        <select style={sel} value={dropSymbol} onChange={(e) => setDrop(e.target.value)} disabled={!claim.open || submitting}>
+          <option value="">Drop a pick…</option>
+          {picks.map((p) => <option key={p.symbol} value={p.symbol}>{p.symbol}</option>)}
+        </select>
+        <select style={sel} value={addSymbol} onChange={(e) => setAdd(e.target.value)} disabled={!claim.open || submitting}>
+          <option value="">Claim a name…</option>
+          {pool.map((s) => <option key={s} value={s}>{s}</option>)}
+        </select>
+      </div>
+      <button className="bv2-tap" onClick={submit} disabled={!canSubmit}
+        style={{ all: 'unset', boxSizing: 'border-box', width: '100%', textAlign: 'center', marginTop: 12, padding: '11px', borderRadius: 11,
+          cursor: canSubmit ? 'pointer' : 'not-allowed', background: canSubmit ? c : LTOKENS.surface, border: canSubmit ? 'none' : `1px solid ${LTOKENS.hair}`,
+          color: canSubmit ? LTOKENS.bg : LTOKENS.ink3, fontWeight: 800, fontSize: 13 }}>
+        {submitting ? 'Placing…' : `Place claim · ${claim.claimsUsed ?? 0}/${claim.claimsTotal ?? 3} pending`}
+      </button>
+      {!claim.open && <Mono style={{ display: 'block', marginTop: 9, fontSize: 10.5, color: LTOKENS.ink3 }}>The claim wire is closed — it reopens at the next market open.</Mono>}
+      {capReached && <Mono style={{ display: 'block', marginTop: 9, fontSize: 10.5, color: LTOKENS.gold }}>You have {claim.claimsTotal ?? 3} pending claims — wait for tonight&rsquo;s processing.</Mono>}
+      {error && <Mono style={{ display: 'block', marginTop: 9, fontSize: 10.5, color: '#F2766B' }}>{error}</Mono>}
+      {done && <Mono style={{ display: 'block', marginTop: 9, fontSize: 10.5, color: LTOKENS.teal }}>Claim placed — it resolves at the next processing pass.</Mono>}
+      <button className="bv2-tap" onClick={onClose} style={{ all: 'unset', display: 'block', width: '100%', textAlign: 'center', marginTop: 14, cursor: 'pointer',
+        color: LTOKENS.ink3, fontFamily: MONO, fontSize: 11 }}>Back to the battle</button>
     </div>
   );
 }

@@ -13,7 +13,7 @@
 import React from 'react';
 import { flat6BattleSymbols } from '../../../utils/flat6BattleEnrichment';
 import { subscribeClaims, fetchDisplayNames } from '../../../services/tournamentGroupService';
-import { flipPick, placeClaim } from '../../../services/tournamentActions';
+import { flipPick, placeClaim, mapTournamentActionError } from '../../../services/tournamentActions';
 import { isCpuUserId } from '../../../constants/leagueTournament';
 import { buildArenaModel } from './buildArenaModel';
 import { useArenaPriceContext } from './useArenaPriceContext';
@@ -75,12 +75,18 @@ export function useArenaModel({ group, battle, mode, uid, compositeContext }) {
   // adopt the just-built star-states as the next tick's "prev" (after render)
   React.useEffect(() => { if (model?.starStates) prevRef.current = model.starStates; }, [model]);
 
-  // ── write handlers (server-authoritative; flipPick toggles by symbol) ──
-  const onFlip = React.useCallback((tk) => flipPick({ groupId: group?.id, symbol: tk }), [group?.id]);
-  const onClaim = React.useCallback(
-    ({ dropSymbol, addSymbol }) => placeClaim({ groupId: group?.id, dropSymbol, addSymbol }),
-    [group?.id],
-  );
+  // ── write handlers (server-authoritative; flipPick toggles by symbol). Errors
+  //    are mapped HERE (the connected layer already loads tournamentActions/
+  //    Firebase) and re-thrown as a friendly Error, so the presentational dock /
+  //    claim sheet just show err.message and never import the service graph. ──
+  const onFlip = React.useCallback(async (tk) => {
+    try { return await flipPick({ groupId: group?.id, symbol: tk }); }
+    catch (err) { throw new Error(mapTournamentActionError(err)); }
+  }, [group?.id]);
+  const onClaim = React.useCallback(async ({ dropSymbol, addSymbol }) => {
+    try { return await placeClaim({ groupId: group?.id, dropSymbol, addSymbol }); }
+    catch (err) { throw new Error(mapTournamentActionError(err)); }
+  }, [group?.id]);
   const onAsk = React.useCallback(() => Promise.resolve(), []); // read-only this phase
 
   const ready = !!group && (battle ? priceCtx.pricesLoaded : true);
