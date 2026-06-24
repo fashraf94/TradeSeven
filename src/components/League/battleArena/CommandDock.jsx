@@ -90,7 +90,7 @@ export function DockAgentSix({ stars, dormant, complete, beatStar, flareKey = 0,
 }
 
 // ── your three — where you act ──────────────────────────────────────────────
-export function DockYourThree({ stars, dormant, complete, state, wire, wireClock, beatStar, onFlip, onClaim, headline, style }) {
+export function DockYourThree({ stars, dormant, complete, state, wire, wireClock, beatStar, onFlip, onFlipDrama, onClaim, headline, style }) {
   const live = state === 'live';
   const open = live && wire?.open;
   const c = OWN_YOU;
@@ -100,18 +100,35 @@ export function DockYourThree({ stars, dormant, complete, state, wire, wireClock
   const [flipError, setFlipError] = React.useState(null);
   const flipInFlight = React.useRef(false); // one flip at a time (FlipsTab discipline)
   const dirOf = (s) => dirs[s.tk] ?? s.dir;
+
+  // Prune a reconciled override once the authoritative star.dir catches up to it
+  // (a confirmed immediate flip). Without this an override would shadow star.dir
+  // forever, hiding later leg changes from other paths (a claim swap, a queued
+  // flip executing at open) — the phantom-direction bug.
+  React.useEffect(() => {
+    setDirs((d) => {
+      let changed = false;
+      const n = { ...d };
+      for (const s of stars) { if (n[s.tk] != null && n[s.tk] === s.dir) { delete n[s.tk]; changed = true; } }
+      return changed ? n : d;
+    });
+  }, [stars]);
+
   // Optimistic + server-authoritative: show the new direction immediately, then
   // ROLL BACK if the server rejects (no phantom flip that never banked). The
-  // authoritative group subscription reconciles a confirmed flip's leg.
+  // celebratory drama (surge token + caption) fires ONLY after the server confirms
+  // — a rejected flip never plays the "it worked" animation. The authoritative
+  // group subscription reconciles a confirmed flip's leg (then the prune above
+  // drops the override).
   const doFlip = async (tk, nd) => {
     if (flipInFlight.current) return;
-    setDirs((d) => ({ ...d, [tk]: nd })); // optimistic
+    setDirs((d) => ({ ...d, [tk]: nd })); // optimistic direction (immediate)
     setFlipError(null);
-    const p = onFlip && onFlip(tk, nd); // engine drama + the real write promise (preview: resolved)
-    if (!p || typeof p.then !== 'function') return;
+    if (!onFlip) { if (onFlipDrama) onFlipDrama(tk, nd); return; } // preview: drama now, no server
     flipInFlight.current = true;
     try {
-      await p;
+      await onFlip(tk, nd); // the server write (rejects on a server error)
+      if (onFlipDrama) onFlipDrama(tk, nd); // confirmed → fire the drama
     } catch (err) {
       setDirs((d) => { const n = { ...d }; delete n[tk]; return n; }); // rollback to the live leg
       setFlipError(err?.message || 'Flip failed — try again.'); // already-mapped by useArenaModel

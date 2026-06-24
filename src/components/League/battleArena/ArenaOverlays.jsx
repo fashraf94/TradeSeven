@@ -113,15 +113,18 @@ function ClaimSheet({ claim, onClaim, onClose, c }) {
         A claim is one move — drop a pick and claim a free-agent name. It resolves at the next processing pass; the dropped name keeps its banked points.
       </div>
       <div style={{ display: 'flex', gap: 9, marginTop: 14 }}>
-        <select style={sel} value={dropSymbol} onChange={(e) => setDrop(e.target.value)} disabled={!claim.open || submitting}>
+        <select style={sel} value={dropSymbol} onChange={(e) => { setDrop(e.target.value); setDone(false); setError(null); }} disabled={!claim.open || submitting}>
           <option value="">Drop a pick…</option>
           {picks.map((p) => <option key={p.symbol} value={p.symbol}>{p.symbol}</option>)}
         </select>
-        <select style={sel} value={addSymbol} onChange={(e) => setAdd(e.target.value)} disabled={!claim.open || submitting}>
+        <select style={sel} value={addSymbol} onChange={(e) => { setAdd(e.target.value); setDone(false); setError(null); }} disabled={!claim.open || submitting || pool.length === 0}>
           <option value="">Claim a name…</option>
           {pool.map((s) => <option key={s} value={s}>{s}</option>)}
         </select>
       </div>
+      {claim.open && pool.length === 0 && (
+        <Mono style={{ display: 'block', marginTop: 9, fontSize: 10.5, color: LTOKENS.ink3 }}>No free agents available to claim right now.</Mono>
+      )}
       <button className="bv2-tap" onClick={submit} disabled={!canSubmit}
         style={{ all: 'unset', boxSizing: 'border-box', width: '100%', textAlign: 'center', marginTop: 12, padding: '11px', borderRadius: 11,
           cursor: canSubmit ? 'pointer' : 'not-allowed', background: canSubmit ? c : LTOKENS.surface, border: canSubmit ? 'none' : `1px solid ${LTOKENS.hair}`,

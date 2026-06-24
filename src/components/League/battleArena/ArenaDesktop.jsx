@@ -50,7 +50,6 @@ export function ArenaDesktop({ state, mode, headline = 'mult', onBack, data = nu
     active: live, voice: D.voice, ask: D.ask,
     beats: data ? null : D.beats, // preview loops fixture beats; live uses liveBeats
     live: !!data, liveBeats: data ? D.beats : null,
-    onFlip: handlers?.onFlip || null,
     closeStart: calm ? (D.pod.toOpen ?? 0) : (D.pod.nextClose ?? 0),
     wireStart: D.wire.closes ?? 0,
   });
@@ -88,7 +87,7 @@ export function ArenaDesktop({ state, mode, headline = 'mult', onBack, data = nu
         <DockAgentSix stars={D.agentStars} dormant={calm} complete={done} beatStar={live ? eng.beatStar : null}
           flareKey={live ? eng.flareKey : 0} headline={headline} move={D.agentMove} style={{ flex: 1.35 }} />
         <DockYourThree stars={D.userStars} dormant={calm} complete={done} state={state} wire={D.wire} wireClock={eng.wireClock}
-          beatStar={live ? eng.beatStar : null} onFlip={eng.flip} onClaim={() => setFaOpen(true)} headline={headline} style={{ flex: 1.3 }} />
+          beatStar={live ? eng.beatStar : null} onFlip={handlers?.onFlip} onFlipDrama={eng.flip} onClaim={() => setFaOpen(true)} headline={headline} style={{ flex: 1.3 }} />
         <DockStatePanel state={state} mode={mode} eng={eng} archName={D.voice.arch} voice={D.voice} pod={D.pod}
           ask={D.ask} youRank={youRank} onFilm={() => setFilmOpen(true)} style={{ flex: 1.02 }} />
       </div>

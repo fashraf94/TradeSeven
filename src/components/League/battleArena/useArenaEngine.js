@@ -26,7 +26,7 @@ const SEEN_CAP = 500; // bound the live seen-set across a long session
 
 export function useArenaEngine({
   active, voice, beats, ask, closeStart = 0, wireStart = 0, beatInterval = 7600,
-  live = false, liveBeats = null, onFlip = null,
+  live = false, liveBeats = null,
 }) {
   const [eng, setEng] = React.useState(() => makeEngineState(voice));
   const [closeClock, setCloseClock] = React.useState(closeStart);
@@ -45,13 +45,14 @@ export function useArenaEngine({
     scheduleClear();
   }, [scheduleClear]);
 
-  // flip: optimistic on-board drama + the real write (or a resolved no-op in
-  // preview). Returns the write promise so the caller can await + roll back.
+  // flip = the on-board DRAMA only (the surge token + "you flipped X" caption).
+  // The server write + optimistic direction + rollback live in DockYourThree; the
+  // dock fires this only AFTER the server confirms, so a rejected flip never shows
+  // the celebratory animation.
   const flip = React.useCallback((tk, newDir) => {
     setEng((s) => applyFlip(s, tk, newDir));
     scheduleClear();
-    return onFlip ? onFlip(tk, newDir) : Promise.resolve();
-  }, [scheduleClear, onFlip]);
+  }, [scheduleClear]);
 
   const askAgent = React.useCallback((i) => {
     const qa = Array.isArray(ask) ? ask[i] : null;
@@ -79,18 +80,24 @@ export function useArenaEngine({
       seenRef.current = new Set(liveBeats.map(beatKey));
       return undefined;
     }
-    if (seenRef.current.size > SEEN_CAP) seenRef.current = new Set(liveBeats.map(beatKey)); // safety valve
+    // Scan + fire FIRST, then bound the set — so the cap rebuild never folds a beat
+    // that just landed this tick into "seen" before it gets a chance to fire.
     const r = firstUnseenBeat(liveBeats, seenRef.current);
     if (r) { seenRef.current.add(r.key); fireBeat(r.beat); }
+    if (seenRef.current.size > SEEN_CAP) seenRef.current = new Set(liveBeats.map(beatKey)); // safety valve
     return undefined;
   }, [live, liveBeats, fireBeat]);
 
-  // re-sync the countdowns when the model supplies a new seed — useState seeds
-  // once, so a wire that opens later (or a corrected server remaining-time) would
-  // otherwise keep ticking from the original (often 0) value. In preview the seed
-  // is constant, so this is a one-time no-op.
-  React.useEffect(() => { setCloseClock(closeStart); }, [closeStart]);
-  React.useEffect(() => { setWireClock(wireStart); }, [wireStart]);
+  // Re-sync a countdown only on a meaningful seed change — the wire OPENING
+  // (cur ≤ 0 → a positive seed) or a large server correction (>90s drift). Between
+  // those, the per-second tick owns the value, so the displayed countdown stays
+  // smooth instead of snapping to the minute-granular seed every rebuild.
+  React.useEffect(() => {
+    setCloseClock((cur) => (closeStart > 0 && (cur <= 0 || Math.abs(closeStart - cur) > 90) ? closeStart : cur));
+  }, [closeStart]);
+  React.useEffect(() => {
+    setWireClock((cur) => (wireStart > 0 && (cur <= 0 || Math.abs(wireStart - cur) > 90) ? wireStart : cur));
+  }, [wireStart]);
 
   // tick the close + wire countdowns (only when a positive start is supplied)
   React.useEffect(() => {
