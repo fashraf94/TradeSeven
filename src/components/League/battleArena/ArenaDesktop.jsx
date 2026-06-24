@@ -18,11 +18,8 @@ import { FreeAgencyDoorway, OpponentSnapshot, FilmRoomOverlay } from './ArenaOve
 import { useArenaEngine } from './useArenaEngine';
 import { frameDayIdx } from './arenaStateMap';
 import { liveDayIdx } from './buildArenaModel';
+import { buildFixtureModel } from './buildFixtureModel';
 import { AD_W, AD_H, HERO_W, HERO_H, DOCK_H } from './arenaLayout';
-import {
-  ARENA_SEATS, ARENA_CLIMB, ARENA_YOU, ARENA_POD, ARENA_WIRE, ARENA_VOICE, ARENA_ASK,
-  ARENA_BEATS, ARENA_AGENT_MOVE, arenaAgentStars, arenaUserStars,
-} from './arenaFixtures';
 
 // The arena renders from a single MODEL `D`. With real data the host passes
 // `data` (buildArenaModel's output) + `handlers`; the dev preview passes neither,
@@ -33,17 +30,10 @@ export function ArenaDesktop({ state, mode, headline = 'mult', onBack, data = nu
   const done = state === 'complete';
   const calm = state === 'awaiting';
 
-  const fixtureModel = React.useMemo(() => {
-    const ranking = ARENA_SEATS.map((s) => ({ id: s.id, v: ARENA_CLIMB[s.id]?.[frameDayIdx(state)] ?? 0 })).sort((a, b) => b.v - a.v);
-    const yi = ranking.findIndex((s) => s.id === ARENA_YOU);
-    return {
-      seats: ARENA_SEATS, climb: ARENA_CLIMB, youId: ARENA_YOU,
-      agentStars: arenaAgentStars(state), userStars: arenaUserStars(state),
-      voice: ARENA_VOICE, ask: ARENA_ASK, pod: ARENA_POD, wire: ARENA_WIRE,
-      agentMove: ARENA_AGENT_MOVE, beats: ARENA_BEATS,
-      youRank: yi >= 0 ? yi + 1 : ranking.length,
-    };
-  }, [state]);
+  // Keep the fixtures fallback MEMOIZED on [state] — a bare buildFixtureModel(state)
+  // would mint a new object each render, churning D's identity and restarting the
+  // engine's preview beat-loop. (Shared with ArenaMobile; see buildFixtureModel.)
+  const fixtureModel = React.useMemo(() => buildFixtureModel(state), [state]);
   const D = data ?? fixtureModel;
 
   const eng = useArenaEngine({

@@ -19,6 +19,7 @@ import { VoiceLane } from './VoiceLane';
 import { ArenaOrb, MeterKey } from './ArenaPrimitives';
 import { OWN_AGENT, OWN_YOU } from './arenaTheme';
 import { prefersReducedMotion } from './arenaEngineCore';
+import { useArenaFlips } from './useArenaFlips';
 
 function ordinal(n) {
   const s = ['th', 'st', 'nd', 'rd'];
@@ -94,48 +95,10 @@ export function DockYourThree({ stars, dormant, complete, state, wire, wireClock
   const live = state === 'live';
   const open = live && wire?.open;
   const c = OWN_YOU;
-  // optimistic flip OVERRIDES keyed by ticker; anything unset falls back to the
-  // live star's direction, so a pick swapped in by a claim never reads undefined.
-  const [dirs, setDirs] = React.useState({});
-  const [flipError, setFlipError] = React.useState(null);
-  const flipInFlight = React.useRef(false); // one flip at a time (FlipsTab discipline)
-  const dirOf = (s) => dirs[s.tk] ?? s.dir;
-
-  // Prune a reconciled override once the authoritative star.dir catches up to it
-  // (a confirmed immediate flip). Without this an override would shadow star.dir
-  // forever, hiding later leg changes from other paths (a claim swap, a queued
-  // flip executing at open) — the phantom-direction bug.
-  React.useEffect(() => {
-    setDirs((d) => {
-      let changed = false;
-      const n = { ...d };
-      for (const s of stars) { if (n[s.tk] != null && n[s.tk] === s.dir) { delete n[s.tk]; changed = true; } }
-      return changed ? n : d;
-    });
-  }, [stars]);
-
-  // Optimistic + server-authoritative: show the new direction immediately, then
-  // ROLL BACK if the server rejects (no phantom flip that never banked). The
-  // celebratory drama (surge token + caption) fires ONLY after the server confirms
-  // — a rejected flip never plays the "it worked" animation. The authoritative
-  // group subscription reconciles a confirmed flip's leg (then the prune above
-  // drops the override).
-  const doFlip = async (tk, nd) => {
-    if (flipInFlight.current) return;
-    setDirs((d) => ({ ...d, [tk]: nd })); // optimistic direction (immediate)
-    setFlipError(null);
-    if (!onFlip) { if (onFlipDrama) onFlipDrama(tk, nd); return; } // preview: drama now, no server
-    flipInFlight.current = true;
-    try {
-      await onFlip(tk, nd); // the server write (rejects on a server error)
-      if (onFlipDrama) onFlipDrama(tk, nd); // confirmed → fire the drama
-    } catch (err) {
-      setDirs((d) => { const n = { ...d }; delete n[tk]; return n; }); // rollback to the live leg
-      setFlipError(err?.message || 'Flip failed — try again.'); // already-mapped by useArenaModel
-    } finally {
-      flipInFlight.current = false;
-    }
-  };
+  // The optimistic-write + server-authoritative ROLLBACK flip controller, shared
+  // VERBATIM with the mobile Your-Portfolio panel (useArenaFlips) so the two never
+  // drift on this money-adjacent path.
+  const { dirOf, doFlip, flipError } = useArenaFlips(stars, onFlip, onFlipDrama);
   return (
     <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, borderRadius: 16, padding: '13px 14px',
       background: `linear-gradient(160deg, ${alpha(c, 0.08)}, ${alpha(LTOKENS.bg, 0.5)} 60%)`, border: `1px solid ${alpha(c, 0.32)}`,
@@ -180,16 +143,20 @@ export function DockYourThree({ stars, dormant, complete, state, wire, wireClock
 }
 
 // ── the agent voice + ask (the live state panel body) ───────────────────────
-function AgentDock({ lines, archName, live, ask, onAsk, style }) {
+// `compact` (mobile chat tab): tighter padding and — crucially — the voice lane is
+// a plain block (not a flex:1 internal-scroll region), so it flows in the mobile
+// arena's page scroll instead of collapsing to 0 height in an auto-height parent.
+// Default off → DockStatePanel's desktop call is byte-identical.
+export function AgentDock({ lines, archName, live, ask, onAsk, compact = false, style }) {
   const c = OWN_AGENT;
   const [asked, setAsked] = React.useState([]);
   const handleAsk = (i) => { if (!asked.includes(i)) setAsked((a) => [...a, i]); onAsk(i); };
   return (
-    <div style={{ borderRadius: 16, padding: '15px 17px', position: 'relative', display: 'flex', flexDirection: 'column',
+    <div style={{ borderRadius: 16, padding: compact ? '13px 14px' : '15px 17px', position: 'relative', display: 'flex', flexDirection: 'column',
       background: alpha(LTOKENS.bg, 0.72), backdropFilter: 'blur(14px)', WebkitBackdropFilter: 'blur(14px)',
       border: `1px solid ${alpha(c, 0.22)}`, boxShadow: '0 18px 50px -18px rgba(0,0,0,0.7)', ...style }}>
-      <div className="bv2-scroll" style={{ flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden' }}>
-        <VoiceLane lines={lines} archName={archName} color={c} live={live} max={4} />
+      <div className="bv2-scroll" style={compact ? { minHeight: 0 } : { flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden' }}>
+        <VoiceLane lines={lines} archName={archName} color={c} live={live} max={compact ? 3 : 4} />
       </div>
       <div style={{ marginTop: 13, paddingTop: 12, borderTop: `1px solid ${LTOKENS.hair}` }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 9 }}>
