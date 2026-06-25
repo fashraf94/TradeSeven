@@ -70,12 +70,21 @@ export function ClimbArena({ state, mode, seats, climb, youId, w, h, surge, onPl
   const laneX = (i) => axisW + laneW * (i + 0.5);
   const vals = rows.map(at);
   const dMin = Math.min(...vals); const dMax = Math.max(...vals);
-  const DOM = calm ? [-3, 11] : [dMin - 1.5, dMax + 0.8];
+  // "At rest" = the climb hasn't separated yet: the awaiting state, OR a live day
+  // where every seat is still tied (Day 0 — all scores 0; a live BATTLE group
+  // pre-first-close renders as 'live', not 'awaiting'). At rest we seat the orbs
+  // in a base-camp row below the zero line and draw NO cut, so the orbs never pile
+  // onto the zero/cut altitude and nothing crosses the cut label. Once scores
+  // spread, the live layout takes over (orbs by altitude, cut drawn).
+  const atRest = calm || dMax === dMin;
+  const DOM = atRest ? [-3, 11] : [dMin - 1.5, dMax + 0.8];
   const Y = (a) => plotB - ((a - DOM[0]) / (DOM[1] - DOM[0])) * (plotB - plotT);
 
-  // the cut sits midway between 2nd and 3rd; only a pod of ≥3 has a meaningful
-  // cut, so a sparse/partial pod (live data) neither computes nor draws one.
-  const hasCut = ranked && !calm && ranking.length >= 3;
+  // the cut sits midway between 2nd and 3rd; only a pod of ≥3 has a meaningful cut,
+  // so a sparse/partial pod (live data) neither computes nor draws one. Suppressed
+  // at rest too: with no spread, a cut at everyone's altitude is meaningless and
+  // would land in the orb band.
+  const hasCut = ranked && !atRest && ranking.length >= 3;
   const cutAlt = ranking.length >= 3 ? (at(ranking[1]) + at(ranking[2])) / 2 : 0;
   const span = DOM[1] - DOM[0];
   const gstep = span > 9 ? 3 : span > 5 ? 2 : 1;
@@ -103,7 +112,10 @@ export function ClimbArena({ state, mode, seats, climb, youId, w, h, surge, onPl
             <line x1={axisW} y1={Y(cutAlt)} x2={w} y2={Y(cutAlt)} stroke={alpha(LX.cut, 0.55)} strokeWidth={1.3} strokeDasharray="8 5" />
           </g>
         )}
-        {!calm && rows.map((s, i) => {
+        {/* climb trails — gated on !atRest (not just !calm): at the all-tied start
+            there is no climb yet, and a trail from the zero line would float above
+            the base-camp orbs. They appear once scores spread. */}
+        {!atRest && rows.map((s, i) => {
           const x = laneX(i); const yTop = Y(at(s));
           return (
             <g key={s.id}>
@@ -125,24 +137,28 @@ export function ClimbArena({ state, mode, seats, climb, youId, w, h, surge, onPl
       {/* the presences */}
       {rows.map((s, i) => {
         const you = s.id === youId; const lead = s.id === leaderId;
-        const x = laneX(i); const y = calm ? plotB - 16 : Y(at(s));
+        const x = laneX(i); const y = atRest ? plotB - 16 : Y(at(s));
         const sz = compact ? (you ? 44 : lead ? 40 : 36) : (you ? 52 : lead ? 46 : 40);
         const rk = rankOf(s.id);
         const bob = !calm && !reduce ? (you ? 'bv2-bob-you' : 'bv2-bob') : '';
         return (
           <div key={s.id}>
-            <div style={{ position: 'absolute', left: x, top: plotB + 14, transform: 'translateX(-50%)', textAlign: 'center', whiteSpace: 'nowrap' }}>
-              <span style={{ display: 'flex', alignItems: 'center', gap: 4, justifyContent: 'center' }}>
-                <span style={{ width: 8, height: 8, borderRadius: 3, background: s.color, boxShadow: you ? `0 0 6px ${alpha(s.color, 0.8)}` : 'none' }} />
-                <span style={{ fontSize: compact ? 11 : 12, fontWeight: 700, color: you ? s.color : LTOKENS.ink2 }}>{s.name}</span>
-                {you && <Mono style={{ fontSize: 8, fontWeight: 700, letterSpacing: '0.08em', color: s.color }}>YOU</Mono>}
-              </span>
-              {/* Archetype stays OFF the cramped mobile (compact) climb face —
-                  the name is the primary identifier there. Desktop keeps the
-                  your-own archetype line (rivals never carry arch → never
-                  fabricated; a CPU's archetype already lives in its name). */}
-              {s.arch && !compact && <Mono style={{ fontSize: 8.5, color: LTOKENS.ink3, marginTop: 1, display: 'block' }}>{s.arch}</Mono>}
-            </div>
+            {/* Under-orb labels are DESKTOP-only. The mobile (compact) climb drops
+                the name row entirely — four names won't fit a ~374px row without
+                bunching, and identity is already carried by the distinct orb color +
+                rank + the leader's crown + the rival tap (OpponentSnapshot). */}
+            {!compact && (
+              <div style={{ position: 'absolute', left: x, top: plotB + 14, transform: 'translateX(-50%)', textAlign: 'center', whiteSpace: 'nowrap' }}>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 4, justifyContent: 'center' }}>
+                  <span style={{ width: 8, height: 8, borderRadius: 3, background: s.color, boxShadow: you ? `0 0 6px ${alpha(s.color, 0.8)}` : 'none' }} />
+                  <span style={{ fontSize: 12, fontWeight: 700, color: you ? s.color : LTOKENS.ink2 }}>{s.name}</span>
+                  {you && <Mono style={{ fontSize: 8, fontWeight: 700, letterSpacing: '0.08em', color: s.color }}>YOU</Mono>}
+                </span>
+                {/* Desktop keeps the your-own archetype line (rivals never carry
+                    arch → never fabricated; a CPU's archetype lives in its name). */}
+                {s.arch && <Mono style={{ fontSize: 8.5, color: LTOKENS.ink3, marginTop: 1, display: 'block' }}>{s.arch}</Mono>}
+              </div>
+            )}
 
             {/* centering lives on the outer node; the bob + surge animate an inner
                 wrapper each (they set translateY, which must not clobber the
@@ -178,9 +194,10 @@ export function ClimbArena({ state, mode, seats, climb, youId, w, h, surge, onPl
 
       {/* The cut label renders AFTER the orbs so it WINS the paint overlap — a
           live-day orb parked at the cut altitude can't cover it. It still sits
-          UNDER the personal "to the cut" gap pill and the fly-up token, which
-          paint after it. Absent in awaiting/Day-0 (everything stacked at zero). */}
-      {ranked && !calm && (
+          UNDER the personal "to the cut" gap pill and the fly-up token, which paint
+          after it. Gated on hasCut → absent at rest (awaiting / Day-0, all tied),
+          so it never draws through the base-camp orb band. */}
+      {hasCut && (
         <div style={{ position: 'absolute', left: axisW + 6, top: Y(cutAlt) - 18, display: 'flex', alignItems: 'center', gap: 6 }}>
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 9px', borderRadius: 999, background: alpha(LX.cut, 0.12), border: `1px solid ${alpha(LX.cut, 0.4)}` }}>
             <LIcon name="flag" size={10} color={LX.cut} stroke={2} />
