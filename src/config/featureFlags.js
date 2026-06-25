@@ -245,3 +245,24 @@ export const CONFLICT_RECONCILER_DETECT_ENABLED = false;
  * preview calibration smoke. See the Rule Conflict Reconciler build spec.
  */
 export const CONFLICT_RECONCILER_INJECT_ENABLED = false;
+
+/**
+ * League — Desktop Training Pod tab + Active Training Game card (the desktop
+ * League redesign's training addition; see LEAGUE_DESKTOP_TRAINING_POD_BUILD_SPEC).
+ *
+ * Gates the Training | Ranked tab and the purple Active-Training-Game re-entry
+ * card on the NEW desktop League lobby (LeagueLobbyDesktop). Pure surface: it
+ * reuses the existing, proven training stack (Option B) — `quickPlayTraining`,
+ * `subscribeMyTrainingPod`, and the already-threaded `onOpenTrainingPod` nav —
+ * and writes NO competitive state (training pods are excluded from the ranked
+ * leaderboard/bracket by `selectMyGroup`). No fenced file is touched.
+ *
+ * Default ON so the desktop training tab is visible immediately, matching the
+ * already-live mobile training tab (LobbyTabbed, gated on LEAGUE_NEXT_ARC_ENABLED).
+ * The build spec's default-OFF posture is honored as an override path: append
+ * `?leagueTrainingPod=0` to hide it, or `?leagueTrainingPod=1` to force it on.
+ * With the flag OFF the desktop lobby renders the tournament surface only —
+ * pixel-identical to the Claude Design HTML baseline. Flip to false here for an
+ * instant one-line rollback.
+ */
+export const LEAGUE_TRAINING_POD_ENABLED = true;

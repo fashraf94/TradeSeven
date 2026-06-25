@@ -19,6 +19,7 @@ import { LEAGUE_REDESIGN_ENABLED } from '../config/featureFlags';
 import { useTheme } from '../contexts/ThemeContext';
 import LeagueParticipantView from './LeagueParticipantView';
 import LeagueHome from '../components/League/LeagueHome';
+import LeagueLobbyDesktop from '../components/League/LeagueLobbyDesktop';
 import LeagueClimb from '../components/League/LeagueClimb';
 import LeagueBattleArena from '../components/League/battleArena/LeagueBattleArena';
 
@@ -46,7 +47,14 @@ const ARENA_PREVIEW = SP.get('battleViewV2') === '1';
 const ARENA_STATE = ['awaiting', 'live', 'complete'].includes(SP.get('s')) ? SP.get('s') : 'live';
 const ARENA_MODE = ['training', 'ranked'].includes(SP.get('c')) ? SP.get('c') : 'ranked';
 
-export default function LeagueScreen({ onOpenTrainingPod, hasAgent, agentLoadout } = {}) {
+// Desktop lobby: the redesigned 3-column League surface (bracket-funnel hero +
+// side rails + Training Pod tab). Rendered when the viewport is desktop (App's
+// isDesktop), or forced/suppressed for smoke via ?leagueLobbyDesktop=1|0. The
+// mobile lobby (LeagueHome) is the fallback on narrow viewports.
+const DESKTOP_FORCE = SP.get('leagueLobbyDesktop') === '1';
+const DESKTOP_OFF = SP.get('leagueLobbyDesktop') === '0';
+
+export default function LeagueScreen({ onOpenTrainingPod, hasAgent, agentLoadout, isDesktop } = {}) {
   const { tokens } = useTheme();
   const [view, setView] = React.useState('home');
   const [climb, setClimb] = React.useState(CLIMB_PREVIEW);
@@ -82,6 +90,19 @@ export default function LeagueScreen({ onOpenTrainingPod, hasAgent, agentLoadout
         </div>
         <LeagueParticipantView />
       </div>
+    );
+  }
+
+  // Desktop gets the redesigned 3-column lobby; mobile keeps the centered column.
+  const useDesktop = !DESKTOP_OFF && (DESKTOP_FORCE || isDesktop);
+  if (useDesktop) {
+    return (
+      <LeagueLobbyDesktop
+        onOpenMyGame={() => setView('mygame')}
+        onOpenTrainingPod={onOpenTrainingPod}
+        hasAgent={hasAgent}
+        agentLoadout={agentLoadout}
+      />
     );
   }
 

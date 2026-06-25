@@ -10,7 +10,7 @@ import AgentOrb from '../shared/AgentOrb';
 import { LTOKENS, LX, alpha, MONO } from './leagueTokens';
 import { Eyebrow, Mono, Icon, LIcon } from './LeagueParts';
 
-function ActionOption({ icon, color, title, kicker, body, honest, onPick }) {
+export function ActionOption({ icon, color, title, kicker, body, honest, onPick }) {
   return (
     <button
       className="lg-tap"

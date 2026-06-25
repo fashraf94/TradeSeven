@@ -9658,6 +9658,7 @@ export default function PortfolioDuel() {
           onOpenTrainingPod={onOpenTrainingPod}
           hasAgent={agentLoading ? undefined : hasAgent}
           agentLoadout={primaryAgent ? { archetype: primaryAgent.archetype, equippedWatchlistId: primaryAgent.equippedWatchlistId, equippedWatchlistName: primaryAgent.equippedWatchlistName } : null}
+          isDesktop={isDesktop}
         />
       </ErrorBoundary>
       </div>
