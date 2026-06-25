@@ -37,6 +37,12 @@ describe('ClimbArena — cut label vs the at-rest (Day-0) state', () => {
     expect(html).toContain('CUT · TOP 2 ADVANCE');
     expect(html).toContain('bv2cl');
   });
+  it('treats a non-zero tie as CLIMBED (not at-rest) — trails stay, only all-zero rests', () => {
+    // every seat tied at the same NON-zero altitude has separated from the start;
+    // it must plot at altitude (trails drawn), not collapse to base camp.
+    const tiedHigh = { you: [0, 5], vela: [0, 5], helios: [0, 5], ember: [0, 5] };
+    expect(render({ climb: tiedHigh })).toContain('bv2cl');
+  });
 });
 
 describe('ClimbArena — under-orb name row is desktop-only', () => {

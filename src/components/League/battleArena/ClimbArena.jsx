@@ -70,13 +70,16 @@ export function ClimbArena({ state, mode, seats, climb, youId, w, h, surge, onPl
   const laneX = (i) => axisW + laneW * (i + 0.5);
   const vals = rows.map(at);
   const dMin = Math.min(...vals); const dMax = Math.max(...vals);
-  // "At rest" = the climb hasn't separated yet: the awaiting state, OR a live day
-  // where every seat is still tied (Day 0 — all scores 0; a live BATTLE group
-  // pre-first-close renders as 'live', not 'awaiting'). At rest we seat the orbs
-  // in a base-camp row below the zero line and draw NO cut, so the orbs never pile
-  // onto the zero/cut altitude and nothing crosses the cut label. Once scores
-  // spread, the live layout takes over (orbs by altitude, cut drawn).
-  const atRest = calm || dMax === dMin;
+  // "At rest" = the climb is still at the start line: the awaiting state, OR every
+  // seat still sitting at zero (Day 0 — a live BATTLE group pre-first-close renders
+  // as 'live', not 'awaiting', so !calm alone doesn't catch it). The all-ZERO test
+  // is deliberate, NOT a bare dMax===dMin tie: four seats that have climbed to the
+  // same non-zero altitude HAVE separated from the start and must plot at altitude
+  // (collapsing them to base camp would contradict their non-zero value labels). At
+  // rest we seat the orbs in a base-camp row below the zero line and draw NO cut or
+  // trails, so the orbs never pile onto the zero/cut altitude and nothing crosses
+  // the cut label. Once any score moves, the live layout takes over.
+  const atRest = calm || (dMax === 0 && dMin === 0);
   const DOM = atRest ? [-3, 11] : [dMin - 1.5, dMax + 0.8];
   const Y = (a) => plotB - ((a - DOM[0]) / (DOM[1] - DOM[0])) * (plotB - plotT);
 
@@ -195,8 +198,8 @@ export function ClimbArena({ state, mode, seats, climb, youId, w, h, surge, onPl
       {/* The cut label renders AFTER the orbs so it WINS the paint overlap — a
           live-day orb parked at the cut altitude can't cover it. It still sits
           UNDER the personal "to the cut" gap pill and the fly-up token, which paint
-          after it. Gated on hasCut → absent at rest (awaiting / Day-0, all tied),
-          so it never draws through the base-camp orb band. */}
+          after it. Gated on hasCut → absent at rest (awaiting / Day-0, every seat
+          at zero), so it never draws through the base-camp orb band. */}
       {hasCut && (
         <div style={{ position: 'absolute', left: axisW + 6, top: Y(cutAlt) - 18, display: 'flex', alignItems: 'center', gap: 6 }}>
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 9px', borderRadius: 999, background: alpha(LX.cut, 0.12), border: `1px solid ${alpha(LX.cut, 0.4)}` }}>
