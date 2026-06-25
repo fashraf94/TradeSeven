@@ -225,3 +225,27 @@ export const CONFLICT_RECONCILER_DETECT_ENABLED = false;
  * preview calibration smoke. See the Rule Conflict Reconciler build spec.
  */
 export const CONFLICT_RECONCILER_INJECT_ENABLED = false;
+
+/**
+ * Archetype Integrity / "Third Path" — tri-state rollout mode.
+ *
+ * Gates the whole archetype-integrity feature together (the deterministic
+ * directive gate, the voice-layer four-zone + third-path injection, the
+ * Diversifier swap-time sector cap, and the legacy `directives[]` sanitize) so
+ * there is exactly one byte-identical-off regression surface. Three states:
+ *
+ *   'off'     — byte-identical to today. No archetype-aware gating; the directive
+ *               path runs the legacy `normalizeDirective` line verbatim.
+ *   'observe' — measurement mode. The model emits the proposal block and the gate
+ *               EVALUATES + awaited-logs the outcome, but writes NO directive
+ *               (no behavior change persists). Vehicle for the pre-flip reliability
+ *               eval; NOT a permanent behavioral tier.
+ *   'enforce' — full behavior: the gate mints only core-safe allowlist directives.
+ *
+ * Default 'off'. Built/merged DARK; advance 'off' → 'observe' → 'enforce' only
+ * after the pre-flip reliability eval clears the hard zeros (0 core-reversing
+ * directives, 0 "claimed-a-change-but-wrote-null"). One master flag — no per-cap
+ * sub-flag (the Diversifier cap is independently safe and rides this flag).
+ * See docs/audits/20260625_ARCHETYPE_INTEGRITY_BUILD_PLAN_V2.md.
+ */
+export const ARCHETYPE_INTEGRITY_MODE = 'off';
