@@ -170,6 +170,26 @@ export const LEAGUE_REDESIGN_ENABLED = true;
 export const LEAGUE_NEXT_ARC_ENABLED = true;
 
 /**
+ * League — Battle View V2 (the redesigned live battle hero + nine-star command
+ * dock). The locked Claude Design rebuild that sits in front of today's
+ * Flat6BattleView / Altitude-Climb composition, EXTENDING the existing climb
+ * (LEAGUE_NEXT_ARC) rather than forking it.
+ *
+ * When false (default), NOTHING in the League surface reads it — the tab is
+ * byte-unchanged. Phase 1 (this slice) ships the PURE data foundation only (the
+ * dailyScores→scores[] climb assembler, the per-holding meter reader + star
+ * state, points formatters, beat derivation) with NO UI swap and NO read-site,
+ * so flag-off is provably byte-identical. The dev preview `?battleViewV2=1` (the
+ * `?leagueClimb=1` / `?leagueRedesign=1` idiom) and the LeagueScreen read-site
+ * land with the component phase, not here.
+ *
+ * The flag exists so a later phase can wire the in-app entry and flip it; do NOT
+ * flip it in a build PR (the PR #510 lesson — the LEAGUE_NEXT_ARC_ENABLED
+ * precedent), only after a Vercel preview smoke.
+ */
+export const LEAGUE_BATTLE_VIEW_V2_ENABLED = true;
+
+/**
  * League Training — the redesigned Training Draft Board (the agent-fit spine).
  *
  * When false (default), `TrainingDraftRoomScreen` renders TODAY's behavior
