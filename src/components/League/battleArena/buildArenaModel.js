@@ -17,7 +17,7 @@
 // useArenaModel; this module is the testable transform, and its co-located test's
 // import IS the dependency-surface guard (loads clean in Node — never mocked).
 
-import { buildSeat } from '../leagueAdapter';
+import { buildSeat, seatColor } from '../leagueAdapter';
 import { buildClimbSeries } from '../leagueClimbAdapter';
 import { readAgentStars, readUserStars } from '../../../utils/leagueStarMeter';
 import { deriveBeats } from '../../../utils/leagueBeats';
@@ -83,14 +83,28 @@ export function buildArenaModel({
       names: displayNames,
       uid,
     });
+    const isCpuSeat = s.kind === 'cpu';
+    // Name fallback — NEVER the raw odUserId. A CPU keeps its id-derived seat
+    // label (cpuSeatName, which also carries the CPU's archetype); a human seat
+    // resolves via displayNames and falls back to a clean 'Player' placeholder
+    // when it can't resolve — the raw key would overflow the lane and mean
+    // nothing, and the name is now the mobile climb's primary identifier.
+    const name = isCpuSeat ? s.name : (displayNames[p.odUserId] || 'Player');
     return {
       id: s.id,
-      name: s.name,
+      name,
       kind: s.kind === 'human' && s.you ? 'you' : s.kind, // arena uses 'you'|'cpu'|'human'
       you: s.you,
-      owner: s.owner,
-      color: s.you ? YOU_COLOR : s.color,
-      arch: s.archName, // the label (rivals → undefined; never fabricated)
+      // owner is the snapshot's secondary identifier — resolved name for a human
+      // rival, omitted for you/CPU (as before); never the raw key.
+      owner: isCpuSeat || s.you ? undefined : (displayNames[p.odUserId] || undefined),
+      // Orb identity — a DISTINCT hue per seat so the four read apart on the
+      // climb. seatColor(id, false) hashes the seat id into the SHARED human
+      // palette (not a new color source); passing cpu=false is deliberate, so
+      // CPU rivals get individual hues instead of the one shared CPU violet.
+      // YOU stays teal (the locked invariant).
+      color: s.you ? YOU_COLOR : seatColor(s.id, false),
+      arch: s.archName, // the label (rivals → undefined; never fabricated — owner-only)
     };
   });
   const youSeat = seats.find((s) => s.you) || null;

@@ -122,8 +122,11 @@ export function ClimbArena({ state, mode, seats, climb, youId, w, h, surge, onPl
         })}
       </svg>
 
+      {/* The cut label sits ABOVE the cut line and must WIN the paint overlap
+          with the orbs (which render after it in DOM) — a live-day orb parked at
+          the cut altitude must not cover it. zIndex lifts it over the auto-z orbs. */}
       {ranked && !calm && (
-        <div style={{ position: 'absolute', left: axisW + 6, top: Y(cutAlt) - 18, display: 'flex', alignItems: 'center', gap: 6 }}>
+        <div style={{ position: 'absolute', left: axisW + 6, top: Y(cutAlt) - 18, display: 'flex', alignItems: 'center', gap: 6, zIndex: 3 }}>
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 9px', borderRadius: 999, background: alpha(LX.cut, 0.12), border: `1px solid ${alpha(LX.cut, 0.4)}` }}>
             <LIcon name="flag" size={10} color={LX.cut} stroke={2} />
             <Mono style={{ fontSize: 8.5, fontWeight: 700, letterSpacing: '0.1em', color: LX.cut }}>CUT · TOP 2 ADVANCE</Mono>
@@ -146,7 +149,11 @@ export function ClimbArena({ state, mode, seats, climb, youId, w, h, surge, onPl
                 <span style={{ fontSize: compact ? 11 : 12, fontWeight: 700, color: you ? s.color : LTOKENS.ink2 }}>{s.name}</span>
                 {you && <Mono style={{ fontSize: 8, fontWeight: 700, letterSpacing: '0.08em', color: s.color }}>YOU</Mono>}
               </span>
-              {s.arch && <Mono style={{ fontSize: 8.5, color: LTOKENS.ink3, marginTop: 1, display: 'block' }}>{s.arch}</Mono>}
+              {/* Archetype stays OFF the cramped mobile (compact) climb face —
+                  the name is the primary identifier there. Desktop keeps the
+                  your-own archetype line (rivals never carry arch → never
+                  fabricated; a CPU's archetype already lives in its name). */}
+              {s.arch && !compact && <Mono style={{ fontSize: 8.5, color: LTOKENS.ink3, marginTop: 1, display: 'block' }}>{s.arch}</Mono>}
             </div>
 
             {/* centering lives on the outer node; the bob + surge animate an inner

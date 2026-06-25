@@ -88,6 +88,25 @@ describe('buildArenaModel — seats', () => {
     expect(riv.name).toBe('Riva');
     expect(riv.arch).toBeUndefined(); // rival battle never read → arch sealed
   });
+  it('gives every seat a DISTINCT hue — no shared CPU violet, YOU teal', () => {
+    const you = seats.find((s) => s.you);
+    expect(you.color).toBe('#5EEAD4');
+    const rivals = seats.filter((s) => !s.you).map((s) => s.color);
+    // CPUs no longer collapse to the one shared identity violet…
+    expect(rivals).not.toContain('#9A8CE0');
+    // …and the rivals read apart from each other and from YOUR teal.
+    expect(new Set([...rivals, you.color]).size).toBe(4);
+  });
+  it('NEVER prints a raw odUserId — unresolved human name → "Player"', () => {
+    const { seats: s2 } = buildArenaModel({ ...BASE, displayNames: {} });
+    for (const seat of s2) {
+      expect(seat.name).not.toBe(seat.id); // no seat shows its raw key
+      if (seat.kind !== 'cpu') {
+        expect(seat.name).toBe('Player'); // clean placeholder, not the id
+        expect(seat.owner).toBeUndefined(); // owner never leaks the raw key either
+      }
+    }
+  });
 });
 
 describe('buildArenaModel — climb / stars / beats / voice', () => {
