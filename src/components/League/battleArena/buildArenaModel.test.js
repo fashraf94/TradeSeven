@@ -97,6 +97,20 @@ describe('buildArenaModel — seats', () => {
     // …and the rivals read apart from each other and from YOUR teal.
     expect(new Set([...rivals, you.color]).size).toBe(4);
   });
+  it('RESERVES your teal — a CPU that would hash to teal is re-rolled off it', () => {
+    // cpu-3 hashes straight to HUMAN_PALETTE[6] === YOU_COLOR (#5EEAD4); the
+    // de-collision must move it off YOUR identity color (and keep it distinct).
+    const group = {
+      id: 'g2', status: 'battle',
+      players: [{ odUserId: 'u-you' }, { odUserId: 'cpu-3', isCpu: true }],
+      dailyScores: { day1: { closeScores: { 'u-you': { compositePoints: 1 }, 'cpu-3': { compositePoints: 2 } } } },
+    };
+    const { seats } = buildArenaModel({ ...BASE, group, battle: null });
+    const you = seats.find((s) => s.you);
+    const cpu3 = seats.find((s) => s.id === 'cpu-3');
+    expect(you.color).toBe('#5EEAD4');
+    expect(cpu3.color).not.toBe('#5EEAD4'); // never YOUR teal
+  });
   it('NEVER prints a raw odUserId — unresolved human name → "Player"', () => {
     const { seats: s2 } = buildArenaModel({ ...BASE, displayNames: {} });
     for (const seat of s2) {

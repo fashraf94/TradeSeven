@@ -73,6 +73,20 @@ export function buildArenaModel({
   const now = Number.isFinite(priceCtx?.now) ? priceCtx.now : null;
 
   // ── seats (REUSE buildSeat; remap to the 7-field arena shape; YOU forced teal) ──
+  // Orb identity — each seat a DISTINCT hue so the four read apart on the climb.
+  // YOU's teal is RESERVED; rivals draw from the SAME seatColor source (not a new
+  // palette) with cpu=false so CPU rivals get individual hues instead of the one
+  // shared violet. seatColor's palette happens to include YOUR teal, and ids can
+  // collide — so a hash that lands on YOUR teal or an already-taken rival hue is
+  // re-rolled with a salt through the SAME util until it's free. Result: no rival
+  // ever wears your teal, and the rivals stay mutually distinct.
+  const takenColors = new Set([YOU_COLOR]);
+  const rivalHue = (id) => {
+    let c = seatColor(id, false);
+    for (let salt = 1; takenColors.has(c) && salt <= 16; salt += 1) c = seatColor(`${id}#${salt}`, false);
+    takenColors.add(c);
+    return c;
+  };
   const seats = players.map((p) => {
     const s = buildSeat({
       odUserId: p.odUserId,
@@ -98,12 +112,9 @@ export function buildArenaModel({
       // owner is the snapshot's secondary identifier — resolved name for a human
       // rival, omitted for you/CPU (as before); never the raw key.
       owner: isCpuSeat || s.you ? undefined : (displayNames[p.odUserId] || undefined),
-      // Orb identity — a DISTINCT hue per seat so the four read apart on the
-      // climb. seatColor(id, false) hashes the seat id into the SHARED human
-      // palette (not a new color source); passing cpu=false is deliberate, so
-      // CPU rivals get individual hues instead of the one shared CPU violet.
-      // YOU stays teal (the locked invariant).
-      color: s.you ? YOU_COLOR : seatColor(s.id, false),
+      // YOU stays teal (the locked invariant); rivals get a distinct, non-teal
+      // hue from rivalHue (above).
+      color: s.you ? YOU_COLOR : rivalHue(s.id),
       arch: s.archName, // the label (rivals → undefined; never fabricated — owner-only)
     };
   });
