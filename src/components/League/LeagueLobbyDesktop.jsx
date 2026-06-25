@@ -44,24 +44,37 @@ const DEV_FILL = ['forming', 'filling', 'open'].includes(SP.get('f')) ? SP.get('
 const TRAINING_ON = SP.get('leagueTrainingPod') === '1'
   || (LEAGUE_TRAINING_POD_ENABLED && SP.get('leagueTrainingPod') !== '0');
 
-// Scoped layout CSS — the 3-column grid + reflow. Mirrors the CommandDashboardDesktop
-// house pattern (media queries in a <style> block, hardcoded tokens). Injected once.
+// Scoped layout CSS — the app-shell scroll model + the 3-column grid + reflow.
+// Mirrors the CommandDashboardDesktop house pattern (media queries in a <style>
+// block, hardcoded tokens). Injected once.
+//
+// SCROLL MODEL: the root is locked to the viewport (height:100vh; overflow:hidden)
+// so the PAGE never scrolls — that removes the second, competing scrollbar that
+// dead-ended wheel events over the right rail. The top bar is fixed; the
+// three-column region fills the rest (flex:1 1 auto; min-height:0 — the flex
+// gotcha that lets children scroll) and clips (overflow:hidden); each column is
+// its own bounded scroller (overflow-y:auto; min-height:0; height:100%). One
+// scroll context per column, no page scroll, no trap. No overscroll-behavior is
+// used (none is needed once the page can't scroll).
 const LD_STYLE = `
-  .ld-root { min-height: 100vh; background: ${LTOKENS.bg}; color: ${LTOKENS.ink}; display: flex; flex-direction: column; font-family: var(--app-font, 'Space Grotesk', system-ui, sans-serif); }
-  .ld-topbar { flex-shrink: 0; padding: 18px 30px; border-bottom: 1px solid ${LTOKENS.hair}; display: flex; align-items: center; gap: 24px; flex-wrap: wrap; }
+  .ld-root { height: 100vh; overflow: hidden; background: ${LTOKENS.bg}; color: ${LTOKENS.ink}; display: flex; flex-direction: column; font-family: var(--app-font, 'Space Grotesk', system-ui, sans-serif); }
+  .ld-topbar { flex: 0 0 auto; padding: 18px 30px; border-bottom: 1px solid ${LTOKENS.hair}; display: flex; align-items: center; gap: 24px; flex-wrap: wrap; }
   .ld-stats { display: flex; align-items: center; gap: 20px; padding-left: 24px; border-left: 1px solid ${LTOKENS.hair}; }
-  .ld-grid { flex: 1; min-height: 0; display: grid; grid-template-columns: 320px minmax(0, 1fr) 384px; gap: 26px; padding: 22px 30px 26px; }
+  .ld-grid { flex: 1 1 auto; min-height: 0; overflow: hidden; display: grid; grid-template-columns: 320px minmax(0, 1fr) 384px; gap: 26px; padding: 22px 30px 26px; }
   .ld-grid-training { grid-template-columns: minmax(0, 1fr) 384px; }
-  .ld-rail-left { height: 100%; overflow-y: auto; display: flex; flex-direction: column; gap: 18px; }
-  .ld-center { height: 100%; overflow: auto; display: flex; flex-direction: column; }
+  .ld-rail-left { min-height: 0; height: 100%; overflow-y: auto; display: flex; flex-direction: column; gap: 18px; }
+  .ld-center { min-height: 0; height: 100%; overflow-y: auto; overflow-x: hidden; display: flex; flex-direction: column; }
   .ld-funnel-wrap { overflow: auto; flex: 1; min-height: 0; }
-  .ld-rail-right { height: 100%; min-height: 0; border-radius: 18px; padding: 16px; background: ${LTOKENS.surface}; transition: border-color .2s ease; }
-  /* mid-size desktop — drop the left rail under the center, keep funnel + right rail */
+  .ld-rail-right { min-height: 0; height: 100%; overflow: hidden; border-radius: 18px; padding: 16px; background: ${LTOKENS.surface}; transition: border-color .2s ease; }
+  .ld-train-main { min-height: 0; height: 100%; overflow-y: auto; display: flex; flex-direction: column; gap: 18px; }
+  /* mid-size desktop — once the left rail reflows under the center, the locked
+     3-column model relaxes to a single scrolling region so nothing is clipped. */
   @media (max-width: 1180px) {
-    .ld-grid { grid-template-columns: minmax(0, 1fr) 340px; }
-    .ld-rail-left { grid-row: 2; grid-column: 1 / -1; flex-direction: row; flex-wrap: wrap; height: auto; }
-    .ld-rail-left > * { flex: 1; min-width: 260px; }
+    .ld-grid { grid-template-columns: minmax(0, 1fr) 340px; overflow-y: auto; }
     .ld-grid-training { grid-template-columns: minmax(0, 1fr) 340px; }
+    .ld-rail-left { grid-row: 2; grid-column: 1 / -1; flex-direction: row; flex-wrap: wrap; height: auto; overflow: visible; }
+    .ld-rail-left > * { flex: 1; min-width: 260px; }
+    .ld-center, .ld-rail-right, .ld-train-main { height: auto; overflow: visible; }
   }
   @media (max-width: 900px) {
     .ld-grid, .ld-grid-training { grid-template-columns: minmax(0, 1fr); }
@@ -175,7 +188,7 @@ export default function LeagueLobbyDesktop({ onOpenMyGame, onOpenTrainingPod, ha
       {onTraining ? (
         <div className="ld-grid ld-grid-training">
           {/* MAIN — the training surface (active-game re-entry card or cold-start) */}
-          <div className="lg-scroll" style={{ height: '100%', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 18 }}>
+          <div className="lg-scroll ld-train-main">
             {onOpenMyGame && <MyGameBar onOpen={onOpenMyGame} />}
             <DeskTrainingPanel
               onOpenTrainingPod={onOpenTrainingPod}
