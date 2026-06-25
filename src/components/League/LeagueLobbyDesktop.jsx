@@ -60,11 +60,13 @@ const LD_STYLE = `
   .ld-root { height: 100vh; overflow: hidden; background: ${LTOKENS.bg}; color: ${LTOKENS.ink}; display: flex; flex-direction: column; font-family: var(--app-font, 'Space Grotesk', system-ui, sans-serif); }
   .ld-topbar { flex: 0 0 auto; padding: 18px 30px; border-bottom: 1px solid ${LTOKENS.hair}; display: flex; align-items: center; gap: 24px; flex-wrap: wrap; }
   .ld-stats { display: flex; align-items: center; gap: 20px; padding-left: 24px; border-left: 1px solid ${LTOKENS.hair}; }
-  .ld-grid { flex: 1 1 auto; min-height: 0; overflow: hidden; display: grid; grid-template-columns: 320px minmax(0, 1fr) 384px; gap: 26px; padding: 22px 30px 26px; }
+  .ld-grid { flex: 1 1 auto; min-height: 0; overflow: hidden; display: grid; grid-template-columns: 300px minmax(0, 1fr) 384px; gap: 26px; padding: 22px 30px 26px; }
   .ld-grid-training { grid-template-columns: minmax(0, 1fr) 384px; }
   .ld-rail-left { min-height: 0; height: 100%; overflow-y: auto; display: flex; flex-direction: column; gap: 18px; }
   .ld-center { min-height: 0; height: 100%; overflow-y: auto; overflow-x: hidden; display: flex; flex-direction: column; }
-  .ld-funnel-wrap { overflow: auto; flex: 1; min-height: 0; }
+  /* The bracket fit-to-width-scales (DeskFunnel) so it never overflows; clip x
+     so no horizontal scrollbar can appear, allow y for short viewports. */
+  .ld-funnel-wrap { overflow-x: hidden; overflow-y: auto; flex: 1; min-height: 0; }
   .ld-rail-right { min-height: 0; height: 100%; overflow: hidden; border-radius: 18px; padding: 16px; background: ${LTOKENS.surface}; transition: border-color .2s ease; }
   .ld-train-main { min-height: 0; height: 100%; overflow-y: auto; display: flex; flex-direction: column; gap: 18px; }
   /* mid-size desktop — once the left rail reflows under the center, the locked

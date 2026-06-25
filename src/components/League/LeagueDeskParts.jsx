@@ -20,7 +20,7 @@
 // (quickPlayTraining / subscribeMyTrainingPod / onOpenTrainingPod) — Option B —
 // and write no competitive state.
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { rankPod } from './leagueFixtures';
 import { LTOKENS, LX, alpha, MONO } from './leagueTokens';
 import { Eyebrow, Mono, Icon, LIcon, AgentAvatar, KindMark, Score, StatusBadge, Tag } from './LeagueParts';
@@ -240,13 +240,18 @@ export function DeskPodPanel({ pod, accent, onClose, onSpectate, onClimb }) {
 // 16 → 8 → 4 → 1, rendered large enough to be the centerpiece. Every node shows
 // its full four-player standing with the cut line; your path glows the whole way.
 
+// Inter-stage X positions are tightened (R2 392→348, Champion 648→584) so the
+// bracket's intrinsic width is 700, not 760 — node sizes (NW/NH) are unchanged,
+// only the horizontal space between rounds is reduced. DeskFunnel then fit-to-
+// width-scales this stage so the whole bracket fits the center column with no
+// horizontal scrollbar (scale stays 1.0 when the column is ≥700 wide).
 const DFUN = {
-  W: 760, H: 680,
+  W: 700, H: 680,
   nodes: {
     east: { x: 100, y: 88, col: 1 }, west: { x: 100, y: 236, col: 1 },
     north: { x: 100, y: 452, col: 1 }, south: { x: 100, y: 600, col: 1 },
-    r2a: { x: 392, y: 162, col: 2 }, r2b: { x: 392, y: 526, col: 2 },
-    r3: { x: 648, y: 344, col: 3 },
+    r2a: { x: 348, y: 162, col: 2 }, r2b: { x: 348, y: 526, col: 2 },
+    r3: { x: 584, y: 344, col: 3 },
   },
   NW: { 1: 178, 2: 196, 3: 200 },
   NH: { 1: 138, 2: 150, 3: 164 },
@@ -343,30 +348,53 @@ export function DeskFunnel({ st, accent, onPick, selectedId }) {
     r2a: st.rounds.r2[0], r2b: st.rounds.r2[1], r3: st.rounds.r3 };
   const pathSet = new Set(st.path.groups);
   const pathEdge = (a, b) => pathSet.has(a) && pathSet.has(b);
+
+  // Fit-to-width: measure the container and scale the fixed stage down ONLY when
+  // it's narrower than the bracket (scale === 1 otherwise, so wide screens keep
+  // full size). Guarantees the whole bracket fits with no horizontal scrollbar.
+  const fitRef = useRef(null);
+  const [scale, setScale] = useState(1);
+  useEffect(() => {
+    const el = fitRef.current;
+    if (!el) return undefined;
+    const fit = () => { const w = el.clientWidth; if (w > 0) setScale(Math.min(1, w / DFUN.W)); };
+    fit();
+    let ro;
+    if (typeof ResizeObserver !== 'undefined') { ro = new ResizeObserver(fit); ro.observe(el); }
+    else if (typeof window !== 'undefined') window.addEventListener('resize', fit);
+    return () => { if (ro) ro.disconnect(); else if (typeof window !== 'undefined') window.removeEventListener('resize', fit); };
+  }, []);
+
   return (
-    <div style={{ position: 'relative', width: DFUN.W, height: DFUN.H + 30, margin: '0 auto' }}>
-      {/* round headers */}
-      {[['Round 1 · 16 seats', 100], ['Round 2 · Semifinals', 392], ['Champion', 648]].map(([lbl, x]) => (
-        <div key={lbl} style={{ position: 'absolute', left: x, top: 0, transform: 'translateX(-50%)', textAlign: 'center' }}>
-          <Mono style={{ fontSize: 10, color: LTOKENS.ink3, letterSpacing: '0.14em', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>{lbl}</Mono>
+    <div ref={fitRef} style={{ width: '100%' }}>
+      {/* outer box collapses to the scaled footprint so there's no dead space;
+          the inner fixed-size stage is scaled from its top-left to fill it. */}
+      <div style={{ width: DFUN.W * scale, height: (DFUN.H + 30) * scale, margin: '0 auto' }}>
+        <div style={{ position: 'relative', width: DFUN.W, height: DFUN.H + 30, transform: `scale(${scale})`, transformOrigin: 'top left' }}>
+          {/* round headers (X centers match the tightened node columns) */}
+          {[['Round 1 · 16 seats', 100], ['Round 2 · Semifinals', 348], ['Champion', 584]].map(([lbl, x]) => (
+            <div key={lbl} style={{ position: 'absolute', left: x, top: 0, transform: 'translateX(-50%)', textAlign: 'center' }}>
+              <Mono style={{ fontSize: 10, color: LTOKENS.ink3, letterSpacing: '0.14em', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>{lbl}</Mono>
+            </div>
+          ))}
+          <div style={{ position: 'absolute', top: 30, left: 0, width: DFUN.W, height: DFUN.H }}>
+            {/* connector lines */}
+            <svg width={DFUN.W} height={DFUN.H} style={{ position: 'absolute', inset: 0, zIndex: 1, overflow: 'visible' }}>
+              {DFUN_EDGES.map(([a, b]) => {
+                const na = DFUN.nodes[a], nb = DFUN.nodes[b];
+                const x1 = na.x + DFUN.NW[na.col] / 2, y1 = na.y, x2 = nb.x - DFUN.NW[nb.col] / 2, y2 = nb.y;
+                const mx = (x1 + x2) / 2;
+                const on = pathEdge(a, b);
+                return <path key={a + b} d={`M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}`} fill="none"
+                  stroke={on ? LX.energy : LTOKENS.hair2} strokeWidth={on ? 2.5 : 1.5} opacity={on ? 0.9 : 0.55} />;
+              })}
+            </svg>
+            {Object.entries(DFUN.nodes).map(([id, node]) => (
+              <DeskFunnelNode key={id} pod={all[id]} node={node} accent={accent}
+                onPath={pathSet.has(id)} onPick={onPick} selected={selectedId === all[id].id} />
+            ))}
+          </div>
         </div>
-      ))}
-      <div style={{ position: 'absolute', top: 30, left: 0, width: DFUN.W, height: DFUN.H }}>
-        {/* connector lines */}
-        <svg width={DFUN.W} height={DFUN.H} style={{ position: 'absolute', inset: 0, zIndex: 1, overflow: 'visible' }}>
-          {DFUN_EDGES.map(([a, b]) => {
-            const na = DFUN.nodes[a], nb = DFUN.nodes[b];
-            const x1 = na.x + DFUN.NW[na.col] / 2, y1 = na.y, x2 = nb.x - DFUN.NW[nb.col] / 2, y2 = nb.y;
-            const mx = (x1 + x2) / 2;
-            const on = pathEdge(a, b);
-            return <path key={a + b} d={`M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}`} fill="none"
-              stroke={on ? LX.energy : LTOKENS.hair2} strokeWidth={on ? 2.5 : 1.5} opacity={on ? 0.9 : 0.55} />;
-          })}
-        </svg>
-        {Object.entries(DFUN.nodes).map(([id, node]) => (
-          <DeskFunnelNode key={id} pod={all[id]} node={node} accent={accent}
-            onPath={pathSet.has(id)} onPick={onPick} selected={selectedId === all[id].id} />
-        ))}
       </div>
     </div>
   );
