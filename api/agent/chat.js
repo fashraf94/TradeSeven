@@ -8,6 +8,11 @@ import { logConversation } from '../_utils/shadowLogger.js';
 import { getMarketState } from '../_utils/marketSchedule.js';
 import { randomUUID } from 'node:crypto';
 import { TOURNAMENT_GAME_MODE } from '../../src/constants/leagueTournament.js';
+// Archetype Integrity — Phase E1 (the deterministic gate). Flag-gated; OFF/review
+// run the literal legacy normalizeDirective path → byte-identical.
+import { gateDirective } from '../_utils/directiveGate.js';
+import { getEffectiveArchetype } from '../_utils/directiveIdentity.js';
+import { ARCHETYPE_INTEGRITY_MODE } from '../../src/config/featureFlags.js';
 
 export const config = { maxDuration: 30 };
 
@@ -128,6 +133,11 @@ const MODE_BUDGET = {
 // ==================== HANDLER ====================
 
 export default async function handler(req, res) {
+  // Turn deadline anchor (Phase E1). Stamped at invocation so the gate's repair
+  // budget is measured against true elapsed time vs maxDuration:30 — 24s leaves
+  // ~6s headroom for the awaited Firestore writes after the gate returns.
+  const turnStartMs = Date.now();
+
   // 1. Security middleware
   if (applySecurityMiddleware(req, res, { rateLimit: { limit: 10, windowMs: 60000 } })) {
     return;
@@ -349,8 +359,36 @@ export default async function handler(req, res) {
     //     Directives are a live-play concept only. In review mode, the
     //     phase rules forbid hasDirective=true; we defensively strip any
     //     directive the model produces so nothing leaks into agent.directives[].
-    const normalizedDirective = mode === 'review' ? null : normalizeDirective(parsed);
-    const effectiveHasDirective = mode === 'review' ? false : (parsed.hasDirective || false);
+    // Phase E1 — the deterministic gate. OFF and review mode run the literal
+    // legacy lines (byte-identical). Only observe/enforce in BATTLE mode call the
+    // gate; OBSERVE forces null/false so the directive write, the threadId mint,
+    // and the UI badge stay dark by construction — it only logs the outcome on the
+    // exchange. ENFORCE lets a valid directive through the unchanged machinery.
+    let normalizedDirective;
+    let effectiveHasDirective;
+    let gateOutcome = null;
+    let gateFallbackLine = null;
+    if (ARCHETYPE_INTEGRITY_MODE === 'off' || mode === 'review') {
+      normalizedDirective = mode === 'review' ? null : normalizeDirective(parsed);
+      effectiveHasDirective = mode === 'review' ? false : (parsed.hasDirective || false);
+    } else {
+      const gate = await gateDirective({
+        parsed,
+        effectiveArchetype: getEffectiveArchetype(battle, agent),
+        mode,
+        callGemmaVoice,
+        systemPrompt,
+        conversationHistory,
+        userMessage: sanitizedMessage,
+        signal: controller.signal,
+        deadlineMs: turnStartMs + 24000,
+      });
+      gateOutcome = gate.outcome;
+      gateFallbackLine = gate.fallbackLine;
+      const enforcing = ARCHETYPE_INTEGRITY_MODE === 'enforce';
+      normalizedDirective = enforcing ? gate.directive : null;
+      effectiveHasDirective = enforcing ? gate.hasDirective : false;
+    }
 
     // 17b. Lesson + Forge suggestion (review mode only)
     const lessonProposal = parsed._lesson;
@@ -394,6 +432,13 @@ export default async function handler(req, res) {
       lesson: lesson ? { id: lesson.id, text: lesson.text } : null,
       forgeSuggestion: forgeSuggestion ? { id: forgeSuggestion.id, text: forgeSuggestion.text } : null,
       mode,
+      // Phase E1 — code-owned status (never model-written), added ONLY when the
+      // gate ran so the flag-OFF clientResponse stays byte-identical. directiveStatus
+      // is the honest "did I act"; directiveFallback is the canned no-change line on
+      // a failed-repair turn (null otherwise). Frontend rendering is deferred (V1).
+      ...(gateOutcome
+        ? { directiveStatus: effectiveHasDirective ? 'committed' : 'none', directiveFallback: gateFallbackLine }
+        : {}),
     };
 
     // Shadow log (fire-and-forget)
@@ -451,6 +496,10 @@ export default async function handler(req, res) {
       ...(battle.gameMode === TOURNAMENT_GAME_MODE && battle.groupId
         ? { groupId: battle.groupId }
         : {}),
+      // Phase E1 — OBSERVE/ENFORCE durable gate record (CF-3: rides this awaited
+      // chatExchanges write, NOT a fire-and-forget log). Stamped on the EXCHANGE,
+      // never as a new battle-doc key (no createAgentBattle doc-shape contact).
+      ...(gateOutcome ? { archetypeGate: gateOutcome } : {}),
     };
 
     const recentTargets = [...(battle.recentElicitationTargets || []), elicitationTarget.dimension].slice(-3);

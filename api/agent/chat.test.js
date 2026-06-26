@@ -16,11 +16,13 @@ const {
   callGemmaVoiceImpl,
   parseVoiceLayerResponseImpl,
   shadowLogCalls,
+  archetypeFlag,
 } = vi.hoisted(() => ({
   authReturnValue: { current: { uid: 'test-user' } },
   callGemmaVoiceImpl: { current: async () => '{"response":"hi"}' },
   parseVoiceLayerResponseImpl: { current: (c) => JSON.parse(c) },
   shadowLogCalls: { current: [] },
+  archetypeFlag: { mode: 'off' },
 }));
 
 // ==================== MOCKS ====================
@@ -62,6 +64,14 @@ vi.mock('../_utils/marketSchedule.js', () => ({
 vi.mock('../_utils/gemmaClient.js', () => ({
   callGemmaVoice: (opts) => callGemmaVoiceImpl.current(opts),
   parseVoiceLayerResponse: (c) => parseVoiceLayerResponseImpl.current(c),
+}));
+
+// Phase E1 — flip ARCHETYPE_INTEGRITY_MODE per-test via a live getter (real flags
+// preserved). chat.js reads the flag inside the handler, so the getter takes
+// effect at call time. Default 'off' so every pre-existing test stays flag-OFF.
+vi.mock('../../src/config/featureFlags.js', async (importOriginal) => ({
+  ...(await importOriginal()),
+  get ARCHETYPE_INTEGRITY_MODE() { return archetypeFlag.mode; },
 }));
 
 vi.mock('firebase-admin/firestore', () => ({
@@ -143,6 +153,7 @@ beforeEach(() => {
   parseVoiceLayerResponseImpl.current = (c) => JSON.parse(c);
   shadowLogCalls.current = [];
   activeFirestore = null;
+  archetypeFlag.mode = 'off';
 });
 
 // ==================== TESTS ====================
@@ -345,5 +356,113 @@ describe('agent/chat — Catalog #9 round-boundary Film Room tagging', () => {
     const exchange = exchangeFromWrite(fixture.written);
     expect(exchange).toBeTruthy();
     expect('groupId' in exchange).toBe(false);
+  });
+});
+
+// ==================== Phase E1 — the deterministic gate ====================
+
+describe('agent/chat — archetype integrity gate (Phase E1)', () => {
+  const MOMENTUM_AGENT = { ...VALID_AGENT, archetype: 'momentum_chaser' };
+  const TF02 = 'Require stronger confirmation before entering';
+  const TF03 = 'Narrow to the single strongest sector(s)';
+
+  const gemma = (obj) => JSON.stringify(obj);
+  const seq = (...replies) => { let i = 0; return async () => replies[Math.min(i++, replies.length - 1)]; };
+  const mainUpdate = (written) => written.updateCalls.find(c => c.updates?.chatExchanges?.__op === 'arrayUnion');
+  const exchangeOf = (written) => mainUpdate(written)?.updates.chatExchanges.items[0];
+  const run = async (battleOver = {}, body = {}) => {
+    const fixture = makeFakeFirestore({ agent: body.agent ?? MOMENTUM_AGENT, battle: { ...VALID_BATTLE, ...battleOver } });
+    activeFirestore = fixture.db;
+    const { req, res } = makeReqRes({ agentId: 'agent-1', battleId: 'battle-1', message: 'hi', ...body.req });
+    await handler(req, res);
+    return { res, written: fixture.written };
+  };
+
+  it('flag-OFF is the legacy path: no gate fields, model directive flows through (keystone regression)', async () => {
+    archetypeFlag.mode = 'off';
+    callGemmaVoiceImpl.current = async () => gemma({ response: 'ok', hasDirective: true, directive: { text: 'lean tech', expiry: 'end_of_battle' } });
+    const { res, written } = await run();
+    expect(res.statusCode).toBe(200);
+    expect(res.body.hasDirective).toBe(true);
+    expect(res.body.directive.text).toBe('lean tech');
+    expect('directiveStatus' in res.body).toBe(false);   // gate-ran riders absent in OFF
+    expect('directiveFallback' in res.body).toBe(false);
+    expect(mainUpdate(written).updates.directive.text).toBe('lean tech'); // legacy write unchanged
+    expect('archetypeGate' in exchangeOf(written)).toBe(false);
+  });
+
+  it('ENFORCE core_conflict → null, 200 (never 502), status honest despite prose', async () => {
+    archetypeFlag.mode = 'enforce';
+    callGemmaVoiceImpl.current = async () => gemma({ response: 'Done, locked in!', hasDirective: true, _archetypeProposal: { classification: 'core_conflict', selectedAdjustmentId: null, rejectionReason: 'reverses core' } });
+    const { res, written } = await run();
+    expect(res.statusCode).toBe(200);
+    expect(res.body.hasDirective).toBe(false);
+    expect(res.body.directive).toBeNull();
+    expect(res.body.directiveStatus).toBe('none');
+    expect('directive' in mainUpdate(written).updates).toBe(false); // no battle.directive write
+    expect(exchangeOf(written).archetypeGate.status).toBe('no_change');
+  });
+
+  it('ENFORCE valid id → canonical verbatim + threadId + write', async () => {
+    archetypeFlag.mode = 'enforce';
+    callGemmaVoiceImpl.current = async () => gemma({ response: 'ok', _archetypeProposal: { classification: 'in_archetype', selectedAdjustmentId: 'TF-02' } });
+    const { res, written } = await run();
+    expect(res.body.directive.text).toBe(TF02);
+    expect(res.body.hasDirective).toBe(true);
+    expect(res.body.directiveStatus).toBe('committed');
+    expect(mainUpdate(written).updates.directive.text).toBe(TF02);
+    expect(mainUpdate(written).updates.directive.directiveThreadId).toBeTruthy();
+    expect(exchangeOf(written).archetypeGate.status).toBe('committed');
+    expect(exchangeOf(written).directiveThreadId).toBeTruthy();
+  });
+
+  it('OBSERVE evaluates + logs on the exchange but writes NO directive', async () => {
+    archetypeFlag.mode = 'observe';
+    callGemmaVoiceImpl.current = async () => gemma({ response: 'ok', _archetypeProposal: { classification: 'in_archetype', selectedAdjustmentId: 'TF-02' } });
+    const { res, written } = await run();
+    expect(res.body.hasDirective).toBe(false);
+    expect(res.body.directive).toBeNull();
+    expect(res.body.directiveStatus).toBe('none');
+    expect('directive' in mainUpdate(written).updates).toBe(false); // observe never writes a directive
+    expect(exchangeOf(written).archetypeGate.status).toBe('committed'); // but it logged what it WOULD have done
+    expect(exchangeOf(written).archetypeGate.repairUsed).toBe(false);
+  });
+
+  it('ENFORCE unknown archetype → null + integrity log', async () => {
+    archetypeFlag.mode = 'enforce';
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    callGemmaVoiceImpl.current = async () => gemma({ response: 'ok', _archetypeProposal: { classification: 'in_archetype', selectedAdjustmentId: 'TF-02' } });
+    const { res, written } = await run({}, { agent: VALID_AGENT }); // archetype 'strategist' (unknown)
+    expect(res.statusCode).toBe(200);
+    expect(res.body.directive).toBeNull();
+    expect(res.body.directiveStatus).toBe('none');
+    expect(exchangeOf(written).archetypeGate.status).toBe('no_archetype');
+    expect(errSpy).toHaveBeenCalled();
+    errSpy.mockRestore();
+  });
+
+  it('ENFORCE repair-retry: invalid id then valid → committed via 2nd Gemma call', async () => {
+    archetypeFlag.mode = 'enforce';
+    callGemmaVoiceImpl.current = seq(
+      gemma({ response: 'ok', _archetypeProposal: { classification: 'in_archetype', selectedAdjustmentId: 'TF-99' } }),  // call 1 (initial) — invalid
+      gemma({ response: 'ok', _archetypeProposal: { classification: 'in_archetype', selectedAdjustmentId: 'TF-03' } }),  // call 2 (repair) — valid
+    );
+    const spy = vi.spyOn({ f: callGemmaVoiceImpl.current }, 'f');
+    callGemmaVoiceImpl.current = spy;
+    const { res, written } = await run();
+    expect(res.body.directive.text).toBe(TF03);
+    expect(exchangeOf(written).archetypeGate.repairUsed).toBe(true);
+    expect(spy).toHaveBeenCalledTimes(2); // initial + one repair
+  });
+
+  it('review mode is unchanged — gate never runs even flag-ON', async () => {
+    archetypeFlag.mode = 'enforce';
+    const spy = vi.fn(async () => gemma({ response: 'ok', hasDirective: true, directive: { text: 'x', expiry: 'end_of_battle' }, _archetypeProposal: { classification: 'in_archetype', selectedAdjustmentId: 'TF-02' } }));
+    callGemmaVoiceImpl.current = spy;
+    const { res, written } = await run({}, { req: { mode: 'review' } });
+    expect(res.body.directive).toBeNull();           // review strips directives (legacy)
+    expect('directiveStatus' in res.body).toBe(false); // gate did not run
+    expect('archetypeGate' in (exchangeOf(written) || {})).toBe(false);
+    expect(spy).toHaveBeenCalledTimes(1);            // no repair path
   });
 });
