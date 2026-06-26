@@ -19,6 +19,66 @@
 
 import { pickSwapReplacementCandidate } from './agentRiskManager.js';
 import { flattenBenchServer } from './agentScoring.js';
+import { ARCHETYPE_INTEGRITY_MODE } from '../../src/config/featureFlags.js';
+import { getEffectiveArchetype } from './directiveIdentity.js';
+import { TOURNAMENT_GAME_MODE } from '../../src/constants/leagueTournament.js';
+
+// ============ ARCHETYPE INTEGRITY — Phase F (Diversifier sector-position cap) ============
+//
+// The ONE mechanical archetype-integrity piece: every other archetype is
+// identity-only (voice/gate), but Diversifier gets a real enforced swap-time
+// sector-POSITION cap, so "breadth is the strategy" is mechanically true, not just
+// narrated. It caps mid-battle SWAPS only (the initial draft lives in fenced
+// decide.js and is out of scope — R2).
+//
+// SCOPE (founder ruling — Option A): TOURNAMENT (flat6) battles only. There the
+// agent book is exactly 6 non-crypto slots, so 2/6 = 33.3% (allowed) .. 3/6 = 50%
+// (blocked): the 35% cap encodes "max 2 per sector." NOTE: collectHeldPositions
+// does NOT exclude crypto — flat6 simply has none, so the denominator (held.length)
+// is a clean 6. Standard/tiered Diversifier books (7 slots incl. a mandatory crypto)
+// are intentionally OUT of scope here.
+//
+// Correction C2 — inject at the CALL SITE, never inside applyGuardrails: the cron
+// skips applyGuardrails entirely when deployedGuardrails is empty, so a synthetic
+// guardrail added inside applyGuardrails would never reach a zero-guardrail
+// Diversifier (the common case — a fresh agent with no equipped rules). We augment
+// the array at the call site instead; the synthetic guardrail makes it non-empty,
+// so the existing `length > 0` skip self-resolves.
+export const DIVERSIFIER_SECTOR_CAP_PCT = 35; // max ~2 of 6 flat6 picks per sector
+
+/**
+ * Augment a battle's deployedGuardrails with the Diversifier sector cap.
+ * Flag-gated and tournament-only; the user can only make the cap TIGHTER
+ * (effectiveCap = min(userCap, core 35%)), never looser. Returns the original array
+ * unchanged when the feature is off, the battle is not a tournament, or the
+ * effective archetype is not Diversifier — so flag-OFF is byte-identical.
+ *
+ * @param {Array}  guardrails - battle.agentContext.deployedGuardrails (or []).
+ * @param {Object} battle     - full battle doc (reads gameMode + agentContext.archetype).
+ * @returns {Array} the (possibly augmented) guardrails array.
+ */
+export function injectDiversifierSectorCap(guardrails, battle) {
+  const base = Array.isArray(guardrails) ? guardrails : [];
+  if (ARCHETYPE_INTEGRITY_MODE === 'off') return base;          // dark: byte-identical
+  if (battle?.gameMode !== TOURNAMENT_GAME_MODE) return base;   // Option A: tournament only
+  // Resolve via the Phase-C resolver (frozen battle snapshot), not a raw agent read.
+  if (getEffectiveArchetype(battle, null) !== 'diversifier') return base;
+
+  // The user can only TIGHTEN: effectiveCap = min(user maxSectorWeight, core 35%).
+  const existing = base.find(g => g?.type === 'maxSectorWeight' && typeof g.value === 'number');
+  const userCap = existing ? existing.value : Infinity;
+  const effectiveCap = Math.min(userCap, DIVERSIFIER_SECTOR_CAP_PCT);
+  console.log(
+    `[Guardrails] Diversifier sector cap: user=${existing ? existing.value : 'none'} core=${DIVERSIFIER_SECTOR_CAP_PCT} -> effective=${effectiveCap}`,
+  );
+
+  const synthetic = { ...(existing || {}), type: 'maxSectorWeight', value: effectiveCap, enforcement: 'hard' };
+  // Replace the user's guardrail in place (dedup — byType keeps only the LAST entry
+  // per type, so a second maxSectorWeight would silently shadow the first); else append.
+  return existing
+    ? base.map(g => (g === existing ? synthetic : g))
+    : [...base, synthetic];
+}
 
 /**
  * @typedef {Object} GuardrailOverride

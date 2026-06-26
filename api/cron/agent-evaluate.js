@@ -43,7 +43,7 @@ import {
 import { generateTradeNarration } from '../_utils/voiceLayerTradeNarration.js';
 import { generateAnticipation } from '../_utils/voiceLayerAnticipation.js';
 import { buildTechnicalSnapshot } from '../_utils/buildTechnicalSnapshot.js';
-import { applyGuardrails } from '../_utils/agentGuardrails.js';
+import { applyGuardrails, injectDiversifierSectorCap } from '../_utils/agentGuardrails.js';
 import { classifyStockRegime, classifyMarketPosture, getPresetAdjustedStrategies } from '../_utils/agentRegimeClassifier.js';
 import { evaluateRisk, calculate5minSMA20, pickSwapReplacementCandidate, updateStagnationCounter, findPortfolioSlot, clearsHurdleFloor, getRecentSwapCount, EMERGENCY_BYPASS_REASONS, buildSwapReceiptSource } from '../_utils/agentRiskManager.js';
 import { getPresetConfig } from '../_utils/agentPresetConfig.js';
@@ -1601,7 +1601,15 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
     // strategy guardrails from agentContext and may rewrite Haiku's decision
     // when hard quantitative thresholds are breached. No-op if no strategy
     // is deployed (empty or undefined array).
-    const deployedGuardrails = battle.agentContext?.deployedGuardrails || [];
+    // Phase F (Archetype Integrity) — inject the Diversifier sector cap BEFORE the
+    // length>0 skip, so a tournament Diversifier with zero equipped guardrails still
+    // gets the synthetic cap (the C2 trap: applyGuardrails is skipped entirely on an
+    // empty array). Flag-OFF / non-tournament / non-Diversifier returns the array
+    // untouched → byte-identical.
+    const deployedGuardrails = injectDiversifierSectorCap(
+      battle.agentContext?.deployedGuardrails || [],
+      battle,
+    );
     if (deployedGuardrails.length > 0) {
       try {
         const result = applyGuardrails({

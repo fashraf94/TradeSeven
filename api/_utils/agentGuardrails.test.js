@@ -1,8 +1,20 @@
 // api/_utils/agentGuardrails.test.js
 // Phase 4B: guardrail enforcement unit tests.
 
-import { describe, it, expect } from 'vitest';
-import { applyGuardrails } from './agentGuardrails.js';
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import { TOURNAMENT_GAME_MODE } from '../../src/constants/leagueTournament.js';
+
+// Phase F — flip ARCHETYPE_INTEGRITY_MODE per-test via a live getter (every other
+// real flag preserved). injectDiversifierSectorCap reads the flag inside the
+// function, so the getter takes effect at call time. Default 'off' keeps the
+// pre-existing suite flag-OFF (byte-identical).
+const { archetypeFlag } = vi.hoisted(() => ({ archetypeFlag: { mode: 'off' } }));
+vi.mock('../../src/config/featureFlags.js', async (importOriginal) => ({
+  ...(await importOriginal()),
+  get ARCHETYPE_INTEGRITY_MODE() { return archetypeFlag.mode; },
+}));
+
+import { applyGuardrails, injectDiversifierSectorCap, DIVERSIFIER_SECTOR_CAP_PCT } from './agentGuardrails.js';
 
 // ==================== FIXTURES ====================
 
@@ -406,5 +418,156 @@ describe('applyGuardrails — VWAP Floor B2 forced-exit held/self exclusion', ()
     const deferred = result.overrides.find(o => o.action === 'forced_exit_no_bench');
     expect(deferred).toBeTruthy();
     expect(deferred.symbol).toBe('NVDA');
+  });
+});
+
+// ==================== Phase F — Diversifier sector-position cap (Option A) ====================
+// Tournament-only (flat6) injection of a synthetic maxSectorWeight=35 guardrail,
+// min-capped against any user cap (user can only tighten), injected at the call
+// site so a zero-guardrail Diversifier is still capped (the C2 trap).
+
+describe('injectDiversifierSectorCap — flag/scope gating', () => {
+  afterEach(() => { archetypeFlag.mode = 'off'; });
+
+  // A fully-populated flat6 tournament Diversifier (gameMode + frozen archetype snapshot).
+  const divTournament = (over = {}) => ({
+    ...makeBattle(over),
+    gameMode: TOURNAMENT_GAME_MODE,
+    agentContext: { archetype: 'diversifier' },
+  });
+
+  it('the locked cap constant is 35', () => {
+    expect(DIVERSIFIER_SECTOR_CAP_PCT).toBe(35);
+  });
+
+  it('flag-OFF → array returned untouched (same reference, byte-identical)', () => {
+    archetypeFlag.mode = 'off';
+    const input = [{ type: 'stopLoss', value: 8 }];
+    expect(injectDiversifierSectorCap(input, divTournament())).toBe(input);
+  });
+
+  it('non-tournament Diversifier (tiered / legacy) → no injection (Option A gate)', () => {
+    archetypeFlag.mode = 'enforce';
+    const tiered = { ...makeBattle(), gameMode: 'baggerbomb_agent', agentContext: { archetype: 'diversifier' } };
+    const legacy = { ...makeBattle(), agentContext: { archetype: 'diversifier' } }; // absent gameMode
+    expect(injectDiversifierSectorCap([], tiered)).toEqual([]);
+    expect(injectDiversifierSectorCap([], legacy)).toEqual([]);
+  });
+
+  it('non-Diversifier tournament agent → no injection', () => {
+    archetypeFlag.mode = 'enforce';
+    const input = [{ type: 'stopLoss', value: 8 }];
+    const battle = { ...makeBattle(), gameMode: TOURNAMENT_GAME_MODE, agentContext: { archetype: 'momentum_chaser' } };
+    expect(injectDiversifierSectorCap(input, battle)).toBe(input);
+  });
+
+  it('zero-guardrail tournament Diversifier → synthetic 35% cap injected (the C2 trap)', () => {
+    archetypeFlag.mode = 'enforce';
+    const out = injectDiversifierSectorCap([], divTournament());
+    expect(out).toHaveLength(1);
+    expect(out[0]).toMatchObject({ type: 'maxSectorWeight', value: 35, enforcement: 'hard' });
+  });
+
+  it('user LOOSER cap (60%) → min wins (35%), replaced in place not duplicated', () => {
+    archetypeFlag.mode = 'enforce';
+    const out = injectDiversifierSectorCap(
+      [{ type: 'maxSectorWeight', value: 60, unit: '%', enforcement: 'hard' }],
+      divTournament(),
+    );
+    const caps = out.filter(g => g.type === 'maxSectorWeight');
+    expect(caps).toHaveLength(1);     // dedup — never two maxSectorWeight entries
+    expect(caps[0].value).toBe(35);   // core wins when user is looser
+    expect(caps[0].unit).toBe('%');   // preserves the user guardrail's other fields
+  });
+
+  it('user STRICTER cap (25%) → user wins (25%)', () => {
+    archetypeFlag.mode = 'enforce';
+    const out = injectDiversifierSectorCap(
+      [{ type: 'maxSectorWeight', value: 25, enforcement: 'hard' }],
+      divTournament(),
+    );
+    const caps = out.filter(g => g.type === 'maxSectorWeight');
+    expect(caps).toHaveLength(1);
+    expect(caps[0].value).toBe(25);
+  });
+
+  it('preserves the agent\'s other guardrails when injecting', () => {
+    archetypeFlag.mode = 'enforce';
+    const out = injectDiversifierSectorCap([{ type: 'stopLoss', value: 8 }], divTournament());
+    expect(out.find(g => g.type === 'stopLoss')).toEqual({ type: 'stopLoss', value: 8 });
+    expect(out.find(g => g.type === 'maxSectorWeight')?.value).toBe(35);
+  });
+
+  it('observe mode also injects (gated on !== off, like the rest of the feature)', () => {
+    archetypeFlag.mode = 'observe';
+    const out = injectDiversifierSectorCap([], divTournament());
+    expect(out.find(g => g.type === 'maxSectorWeight')?.value).toBe(35);
+  });
+});
+
+describe('Diversifier sector cap — end-to-end (inject → applyGuardrails) on a flat6 6-pick book', () => {
+  afterEach(() => { archetypeFlag.mode = 'off'; });
+
+  // A 6-position flat6 book (no crypto — flat6 has none, so held.length is a clean 6).
+  const sectored = (symbol, sector) => ({ ...NVDA_POSITION, symbol, sector, swapPrice: 100 });
+
+  const runSwap = ({ star, core, support, bench, symbolOut, symbolIn }) => {
+    archetypeFlag.mode = 'enforce';
+    const battle = {
+      ...makeBattle({ star, core, support, bench }),
+      gameMode: TOURNAMENT_GAME_MODE,
+      agentContext: { archetype: 'diversifier' }, // NOTE: no deployedGuardrails — zero-guardrail agent
+    };
+    // The call-site wiring: inject first (makes the array non-empty), then enforce.
+    const guardrails = injectDiversifierSectorCap(battle.agentContext.deployedGuardrails || [], battle);
+    return applyGuardrails({
+      haikuResult: { decision: 'SWAP', symbolOut, symbolIn, conviction: 80 },
+      guardrails,
+      battle,
+      prices: {},
+    });
+  };
+
+  it('blocks the 3rd-in-sector swap (3/6 = 50% > 35) on a zero-guardrail Diversifier', () => {
+    const result = runSwap({
+      star: [sectored('NVDA', 'Technology'), sectored('MSFT', 'Technology')],
+      core: [sectored('JPM', 'Financials'), sectored('JNJ', 'Healthcare')],
+      support: [sectored('XOM', 'Energy'), sectored('PG', 'Staples')],
+      bench: { stocks: [{ ...AMD_BENCH, symbol: 'AMD', sector: 'Technology' }], crypto: null },
+      symbolOut: 'JPM', symbolIn: 'AMD', // Technology would go 2 → 3 of 6
+    });
+    expect(result.decision).toBe('HOLD');
+    const blocked = result.overrides.find(o => o.action === 'blocked_swap');
+    expect(blocked?.type).toBe('maxSectorWeight');
+    expect(blocked?.threshold).toBe(35);
+  });
+
+  it('allows the 2nd-in-sector swap (2/6 = 33% <= 35) on a zero-guardrail Diversifier', () => {
+    const result = runSwap({
+      star: [sectored('NVDA', 'Technology'), sectored('JPM', 'Financials')],
+      core: [sectored('JNJ', 'Healthcare'), sectored('XOM', 'Energy')],
+      support: [sectored('PG', 'Staples'), sectored('KO', 'Staples')],
+      bench: { stocks: [{ ...AMD_BENCH, symbol: 'AMD', sector: 'Technology' }], crypto: null },
+      symbolOut: 'JPM', symbolIn: 'AMD', // Technology would go 1 → 2 of 6
+    });
+    expect(result.decision).toBe('SWAP');
+  });
+
+  it('flag-OFF: the same 3rd-in-sector swap is NOT capped (zero-guardrail → applyGuardrails skipped)', () => {
+    // Proves the dark path: with the flag off the injector returns [], so the
+    // call-site length>0 skip holds and no cap is applied.
+    archetypeFlag.mode = 'off';
+    const battle = {
+      ...makeBattle({
+        star: [sectored('NVDA', 'Technology'), sectored('MSFT', 'Technology')],
+        core: [sectored('JPM', 'Financials'), sectored('JNJ', 'Healthcare')],
+        support: [sectored('XOM', 'Energy'), sectored('PG', 'Staples')],
+        bench: { stocks: [{ ...AMD_BENCH, symbol: 'AMD', sector: 'Technology' }], crypto: null },
+      }),
+      gameMode: TOURNAMENT_GAME_MODE,
+      agentContext: { archetype: 'diversifier' },
+    };
+    const guardrails = injectDiversifierSectorCap(battle.agentContext.deployedGuardrails || [], battle);
+    expect(guardrails).toEqual([]); // dark: nothing injected
   });
 });
