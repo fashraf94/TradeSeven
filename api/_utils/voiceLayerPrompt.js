@@ -2526,6 +2526,30 @@ YOUR MENU — the only adjustments you may select as a directive (emit the id in
 ${menu}`;
 }
 
+// Phase E2 — the "USER LEVERS RIGHT NOW" block. Translates the capabilities
+// manifest (Phase B builder) into honest hand-off prose so THIRD_PATH_RULE step 4
+// names ONLY a user action that actually exists this turn. Battle-only and
+// flag-gated (pushed under the same archetypeBlock guard). A null or all-false
+// manifest → the standard "no trade lever" hand-off. Flip is framed PER-PICK,
+// never a single global count (Phase B finding); the raw flipsRemaining number is
+// deliberately not surfaced.
+function buildUserLeversBlock(manifest) {
+  const m = manifest || {};
+  const levers = [];
+  if (m.user_can_short) {
+    levers.push('- FLIP a position long↔short: available now. Frame it PER-PICK — "you\'ve still got flips left on some positions today" — never a single global count or "N flips left."');
+  }
+  if (m.user_can_make_claims) {
+    levers.push('- PLACE A CLAIM (swap a held name for a free agent): available now — the claim window is open.');
+  }
+  const head = 'USER LEVERS RIGHT NOW — the user actions that actually exist this turn. Hand off ONLY to a lever named here; never invent one, and never promise to do it yourself.';
+  const always = 'Always available: "coach me a directive" (shape your strategy by talking it through) and "equip a watchlist" (curate names to watch). Hedging, options, and sector hedges do NOT exist in this game — never mention them.';
+  if (levers.length === 0) {
+    return `${head}\n- No trade lever is available to the user right now — do NOT tell them to flip, claim, or short.\n${always}`;
+  }
+  return `${head}\n${levers.join('\n')}\n${always}`;
+}
+
 export function buildVoiceLayerPrompt({
   agent,
   battle,
@@ -2557,6 +2581,11 @@ export function buildVoiceLayerPrompt({
   // Analysis Hand-off Phase 2 — only consumed in set_analysis mode. Carries the
   // deterministic cohort digest as { digest } so Gemma reasons over facts.
   analysisContext = null,
+  // Phase E2 — the user-capabilities manifest (Phase B builder output) that bounds
+  // the third-path hand-off to levers that actually exist this turn. Battle-only and
+  // flag-gated: consumed solely by the USER LEVERS block under the archetypeBlock
+  // guard, so the null default keeps flag-OFF byte-identical.
+  capabilitiesManifest = null,
 }) {
   const stats = agent?.stats || {};
   const gamesPlayed = stats.gamesPlayed || 0;
@@ -2926,7 +2955,10 @@ You've been working together for ${gamesPlayed} games (${wins}W-${losses}L). You
   // Phase D — archetype-integrity persona + third-path + two-leg signal framing
   // (flag-gated, battle-only; placed next to the rendered briefs the two-leg
   // language references). Same single guard as the proposal append above.
-  if (archetypeBlock) blocks.push(archetypeBlock, THIRD_PATH_RULE, TWO_LEG_SIGNAL_RULE);
+  // Phase E2 — the USER LEVERS block sits between THIRD_PATH_RULE and the two-leg
+  // rule so the model reads "hand off to a real lever" immediately beside the list
+  // of levers that actually exist this turn.
+  if (archetypeBlock) blocks.push(archetypeBlock, THIRD_PATH_RULE, buildUserLeversBlock(capabilitiesManifest), TWO_LEG_SIGNAL_RULE);
 
   blocks.push(
     battleState,     // Block 5   (BOTTOM)

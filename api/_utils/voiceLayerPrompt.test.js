@@ -3727,6 +3727,7 @@ describe('buildVoiceLayerPrompt — archetype integrity (Phase D)', () => {
         expect(out).not.toContain('_archetypeProposal');
         expect(out).not.toContain('IMMUTABLE CORE');
         expect(out).not.toContain('THIRD PATH');
+        expect(out).not.toContain('USER LEVERS RIGHT NOW'); // E2 levers block is battle-only too
       }
     });
   }
@@ -3759,5 +3760,40 @@ describe('buildVoiceLayerPrompt — archetype integrity (Phase D)', () => {
     expect(out).toContain('qualitatively');
     expect(out).toContain('the system records what actually changed'); // #7 status contract
     expect(out).toContain('Never say "done,"');
+  });
+
+  // ── Phase E2 — USER LEVERS block (capabilities manifest → hand-off prose) ──
+  it('flag-OFF stays byte-identical even when a capabilitiesManifest is passed (E2 null-default guard)', () => {
+    archetypeFlag.mode = 'off';
+    const manifest = { user_can_short: true, user_can_make_claims: true, flipsRemaining: 3, claimsRemaining: 2 };
+    // The block is under the archetypeBlock guard (null when OFF), so a non-null
+    // manifest must NOT leak into the flag-OFF prompt.
+    expect(buildVoiceLayerPrompt(pdBattleArgs({ capabilitiesManifest: manifest }))).toBe(PD_GOLDEN.battle);
+  });
+
+  it('flag-ON battle with a live tournament manifest names flip PER-PICK + claim (E2)', () => {
+    archetypeFlag.mode = 'enforce';
+    const out = buildVoiceLayerPrompt(pdBattleArgs({
+      capabilitiesManifest: { user_can_short: true, user_can_make_claims: true, flipsRemaining: 3, claimsRemaining: 2 },
+    }));
+    expect(out).toContain('USER LEVERS RIGHT NOW');
+    expect(out).toContain('FLIP a position');
+    expect(out).toContain('flips left on some positions'); // per-pick framing (Phase B finding)
+    expect(out).not.toContain('3 flips');                  // never the raw global count
+    expect(out).toContain('PLACE A CLAIM');
+  });
+
+  it('flag-ON battle with a null / all-false manifest → "no trade lever" hand-off (E2 standard)', () => {
+    archetypeFlag.mode = 'enforce';
+    const nullOut = buildVoiceLayerPrompt(pdBattleArgs({ capabilitiesManifest: null }));
+    const allFalseOut = buildVoiceLayerPrompt(pdBattleArgs({
+      capabilitiesManifest: { user_can_short: false, user_can_make_claims: false, flipsRemaining: null, claimsRemaining: null },
+    }));
+    for (const out of [nullOut, allFalseOut]) {
+      expect(out).toContain('USER LEVERS RIGHT NOW');
+      expect(out).toContain('No trade lever is available');
+      expect(out).not.toContain('FLIP a position');
+      expect(out).toContain('coach me a directive'); // always-available hand-off
+    }
   });
 });

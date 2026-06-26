@@ -7,12 +7,16 @@ import { FieldValue } from 'firebase-admin/firestore';
 import { logConversation } from '../_utils/shadowLogger.js';
 import { getMarketState } from '../_utils/marketSchedule.js';
 import { randomUUID } from 'node:crypto';
-import { TOURNAMENT_GAME_MODE } from '../../src/constants/leagueTournament.js';
+import { TOURNAMENT_GAME_MODE, TOURNAMENT_GROUPS_COLLECTION } from '../../src/constants/leagueTournament.js';
 // Archetype Integrity — Phase E1 (the deterministic gate). Flag-gated; OFF/review
 // run the literal legacy normalizeDirective path → byte-identical.
 import { gateDirective } from '../_utils/directiveGate.js';
 import { getEffectiveArchetype } from '../_utils/directiveIdentity.js';
 import { ARCHETYPE_INTEGRITY_MODE } from '../../src/config/featureFlags.js';
+// Archetype Integrity — Phase E2 (capabilities manifest → USER LEVERS hand-off).
+// Flag-gated, battle-only; the manifest is built only when the feature is ON.
+import { buildCapabilitiesManifest } from '../_utils/agentCapabilitiesManifest.js';
+import { getTournamentClaimWindow, formatEtDate } from '../_utils/tournamentTime.js';
 
 export const config = { maxDuration: 30 };
 
@@ -234,12 +238,31 @@ export default async function handler(req, res) {
     // 11. Fetch market context for anchor + voiceLayerCache in parallel
     let anchorContext = null;
     let marketSnapshot = null;
+    // Phase E2 — the user-capabilities manifest (consumed only by the flag-gated,
+    // battle-only USER LEVERS block). Built ONLY when the feature is ON and not in
+    // review, so flag-OFF is a true no-op — no manifest, and no extra reads. The two
+    // tournament reads fold into the Promise.all below and each .catch → null, so a
+    // group/claims read failure degrades to an all-false manifest and NEVER blocks
+    // the turn or the market-context reads beside it.
+    let capabilitiesManifest = null;
+    const wantManifest = ARCHETYPE_INTEGRITY_MODE !== 'off' && mode !== 'review';
+    const fetchGroup = wantManifest && battle.gameMode === TOURNAMENT_GAME_MODE && !!battle.groupId;
+    const groupRef = fetchGroup
+      ? db.collection(TOURNAMENT_GROUPS_COLLECTION).doc(battle.groupId)
+      : null;
     try {
       const today = new Date().toISOString().split('T')[0];
-      const [marketCtxDoc, drbDoc, cacheDoc] = await Promise.all([
+      const [marketCtxDoc, drbDoc, cacheDoc, groupDoc, claimsAgg] = await Promise.all([
         db.collection('indexIntelligence').doc('marketContext').get(),
         db.collection('indexIntelligence').doc('dailyRegimeBrief').get(),
         db.collection('voiceLayerCache').doc(battleId).get(),
+        fetchGroup ? groupRef.get().catch(() => null) : Promise.resolve(null),
+        fetchGroup
+          ? groupRef.collection('claims')
+              .where('odUserId', '==', user.uid)
+              .where('status', '==', 'pending')
+              .count().get().catch(() => null)
+          : Promise.resolve(null),
       ]);
       if (marketCtxDoc.exists) {
         const ctx = marketCtxDoc.data();
@@ -252,6 +275,29 @@ export default async function handler(req, res) {
       }
       if (cacheDoc.exists) {
         marketSnapshot = cacheDoc.data();
+      }
+      // Phase E2 — assemble the non-fenced group context for the manifest.
+      // CONSERVATIVE degrade: build `group` only when BOTH tournament reads
+      // succeeded (groupDoc exists AND the claims aggregate resolved). A standard
+      // battle (fetchGroup false) or ANY failed/empty read leaves group null →
+      // buildCapabilitiesManifest returns the all-false base ("no trade lever"
+      // hand-off). Defaulting a failed claims read to 0 would wrongly imply claims
+      // are available, so a failure nulls the whole group instead. Turn still 200.
+      if (wantManifest) {
+        let group = null;
+        if (groupDoc && groupDoc.exists && claimsAgg) {
+          const gdata = groupDoc.data();
+          const me = (gdata.players || []).find(p => p.odUserId === user.uid);
+          const now = new Date();
+          group = {
+            status: gdata.status,
+            userPicks: me?.picks ?? [],
+            pendingClaimCount: claimsAgg.data().count || 0,
+            claimWindowOpen: getTournamentClaimWindow(now).isOpen,
+            etDate: formatEtDate(now),
+          };
+        }
+        capabilitiesManifest = buildCapabilitiesManifest({ battle, group });
       }
     } catch (err) {
       console.error('[VoiceLayer] Failed to fetch market context:', err.message);
@@ -293,6 +339,7 @@ export default async function handler(req, res) {
       mode,
       dailyReviews: battle.dailyReviews || [],
       dailyGrades: battle.dailyGrades || [],
+      capabilitiesManifest,
     });
 
     // 15. Call OpenRouter (Gemma 4) — with 15s timeout

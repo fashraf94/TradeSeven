@@ -8,7 +8,7 @@
 // review lessons, etc.). Those are exercised by manual / E2E tests.
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { TOURNAMENT_GAME_MODE } from '../../src/constants/leagueTournament.js';
+import { TOURNAMENT_GAME_MODE, GROUP_STATUS } from '../../src/constants/leagueTournament.js';
 
 // ==================== HOISTED MOCK STATE ====================
 const {
@@ -17,12 +17,14 @@ const {
   parseVoiceLayerResponseImpl,
   shadowLogCalls,
   archetypeFlag,
+  voiceLayerArgs,
 } = vi.hoisted(() => ({
   authReturnValue: { current: { uid: 'test-user' } },
   callGemmaVoiceImpl: { current: async () => '{"response":"hi"}' },
   parseVoiceLayerResponseImpl: { current: (c) => JSON.parse(c) },
   shadowLogCalls: { current: [] },
   archetypeFlag: { mode: 'off' },
+  voiceLayerArgs: { current: [] }, // Phase E2 — capture buildVoiceLayerPrompt args
 }));
 
 // ==================== MOCKS ====================
@@ -54,7 +56,15 @@ vi.mock('../_utils/shadowLogger.js', () => ({
 }));
 
 vi.mock('../_utils/voiceLayerPrompt.js', () => ({
-  buildVoiceLayerPrompt: () => 'system-prompt-stub',
+  buildVoiceLayerPrompt: (args) => { voiceLayerArgs.current.push(args); return 'system-prompt-stub'; },
+}));
+
+// Phase E2 — deterministic ET-clock helpers so the manifest's claim-window /
+// flip-reset reads do not depend on the wall clock. chat.js is the only unit under
+// test that imports these, so the mock is inert for every other handler path.
+vi.mock('../_utils/tournamentTime.js', () => ({
+  getTournamentClaimWindow: () => ({ isOpen: true, etTime: '12:00', reason: null }),
+  formatEtDate: () => '2026-06-26',
 }));
 
 vi.mock('../_utils/marketSchedule.js', () => ({
@@ -85,8 +95,23 @@ const { default: handler } = await import('./chat.js');
 
 // ==================== Test fixture helpers ====================
 
-function makeFakeFirestore({ agent, battle, marketCtx = null, drb = null, voiceCache = null }) {
+function makeFakeFirestore({
+  agent, battle, marketCtx = null, drb = null, voiceCache = null,
+  // Phase E2 — tournament group + pending-claims aggregate, with injectable failures.
+  group = null, pendingClaimCount = 0, groupReadError = false, claimsReadError = false,
+}) {
   const written = { setCalls: [], updateCalls: [] };
+
+  // The claims aggregate query: .where().where().count().get() → { data: () => ({ count }) }.
+  const claimsQuery = {
+    where: () => claimsQuery,
+    count: () => ({
+      get: async () => {
+        if (claimsReadError) throw new Error('claims aggregate read failed');
+        return { data: () => ({ count: pendingClaimCount }) };
+      },
+    }),
+  };
 
   const collection = (name) => ({
     doc: (idArg) => {
@@ -105,11 +130,16 @@ function makeFakeFirestore({ agent, battle, marketCtx = null, drb = null, voiceC
           if (name === 'voiceLayerCache') {
             return { exists: !!voiceCache, data: () => voiceCache };
           }
+          if (name === 'tournamentGroups') {
+            if (groupReadError) throw new Error('group doc read failed');
+            return { exists: !!group, data: () => group };
+          }
           return { exists: false, data: () => null };
         },
         update: async (updates) => {
           written.updateCalls.push({ id: docId, updates });
         },
+        collection: (subName) => (subName === 'claims' ? claimsQuery : { where: () => ({}) }),
       };
     },
   });
@@ -154,6 +184,7 @@ beforeEach(() => {
   shadowLogCalls.current = [];
   activeFirestore = null;
   archetypeFlag.mode = 'off';
+  voiceLayerArgs.current = [];
 });
 
 // ==================== TESTS ====================
@@ -464,5 +495,80 @@ describe('agent/chat — archetype integrity gate (Phase E1)', () => {
     expect('directiveStatus' in res.body).toBe(false); // gate did not run
     expect('archetypeGate' in (exchangeOf(written) || {})).toBe(false);
     expect(spy).toHaveBeenCalledTimes(1);            // no repair path
+  });
+});
+
+// ==================== Phase E2 — capabilities manifest wiring ====================
+
+describe('agent/chat — capabilities manifest → USER LEVERS wiring (Phase E2)', () => {
+  const MOMENTUM_AGENT = { ...VALID_AGENT, archetype: 'momentum_chaser' };
+  // A tournament group where the user has one pick with no flips used today (stale
+  // flipCountDate → full flip capacity) and the claim window is mocked open.
+  const TOURNEY_GROUP = {
+    status: GROUP_STATUS.BATTLE,
+    players: [
+      { odUserId: 'test-user', picks: [{ symbol: 'NVDA', flipCountToday: 0, flipCountDate: '2020-01-01' }] },
+    ],
+  };
+  const validGemma = () => JSON.stringify({ response: 'ok', _archetypeProposal: { classification: 'in_archetype', selectedAdjustmentId: 'TF-02' } });
+
+  const run = async (fixtureOpts, { mode } = {}) => {
+    callGemmaVoiceImpl.current = async () => validGemma();
+    const fixture = makeFakeFirestore({ agent: MOMENTUM_AGENT, ...fixtureOpts });
+    activeFirestore = fixture.db;
+    const reqBody = { agentId: 'agent-1', battleId: 'battle-1', message: 'hi', ...(mode ? { mode } : {}) };
+    const { req, res } = makeReqRes(reqBody);
+    await handler(req, res);
+    return { res, written: fixture.written, manifest: voiceLayerArgs.current[0]?.capabilitiesManifest };
+  };
+
+  const tournamentBattle = (over = {}) => ({ ...VALID_BATTLE, gameMode: TOURNAMENT_GAME_MODE, groupId: 'group-xyz', ...over });
+
+  it('flag-ON tournament battle → manifest reflects live levers (short + claim true)', async () => {
+    archetypeFlag.mode = 'enforce';
+    const { res, manifest } = await run({ battle: tournamentBattle(), group: TOURNEY_GROUP, pendingClaimCount: 0 });
+    expect(res.statusCode).toBe(200);
+    expect(manifest).toBeTruthy();
+    expect(manifest.user_can_short).toBe(true);        // a pick has full flip capacity today
+    expect(manifest.user_can_make_claims).toBe(true);  // window open + 0 pending
+    expect(manifest.flipsRemaining).toBe(5);
+    expect(manifest.claimsRemaining).toBe(3);
+  });
+
+  it('flag-ON standard battle → all-false manifest, no tournament reads needed', async () => {
+    archetypeFlag.mode = 'enforce';
+    const { res, manifest } = await run({ battle: { ...VALID_BATTLE } }); // gameMode 'standard'
+    expect(res.statusCode).toBe(200);
+    expect(manifest).toBeTruthy();
+    expect(manifest.user_can_short).toBe(false);
+    expect(manifest.user_can_make_claims).toBe(false);
+    expect(manifest.flipsRemaining).toBeNull();
+    expect(manifest.claimsRemaining).toBeNull();
+  });
+
+  it('flag-ON tournament, claims aggregate read FAILS → all-false manifest, turn still 200 (degraded-read guard)', async () => {
+    archetypeFlag.mode = 'enforce';
+    const { res, manifest } = await run({ battle: tournamentBattle(), group: TOURNEY_GROUP, claimsReadError: true });
+    expect(res.statusCode).toBe(200);                  // never blocks the turn
+    expect(manifest).toBeTruthy();
+    expect(manifest.user_can_short).toBe(false);       // whole group nulled on any read failure
+    expect(manifest.user_can_make_claims).toBe(false);
+    expect(manifest.flipsRemaining).toBeNull();
+  });
+
+  it('flag-ON tournament, group doc read FAILS → all-false manifest, turn still 200', async () => {
+    archetypeFlag.mode = 'enforce';
+    const { res, manifest } = await run({ battle: tournamentBattle(), groupReadError: true });
+    expect(res.statusCode).toBe(200);
+    expect(manifest).toBeTruthy();
+    expect(manifest.user_can_short).toBe(false);
+    expect(manifest.user_can_make_claims).toBe(false);
+  });
+
+  it('flag-OFF tournament battle → NO manifest built (dark is a true no-op, no extra reads)', async () => {
+    archetypeFlag.mode = 'off';
+    const { res, manifest } = await run({ battle: tournamentBattle(), group: TOURNEY_GROUP });
+    expect(res.statusCode).toBe(200);
+    expect(manifest ?? null).toBeNull();               // capabilitiesManifest stays the null default
   });
 });
