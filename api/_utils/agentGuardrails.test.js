@@ -498,10 +498,10 @@ describe('injectDiversifierSectorCap — flag/scope gating', () => {
     expect(out.find(g => g.type === 'maxSectorWeight')?.value).toBe(35);
   });
 
-  it('observe mode also injects (gated on !== off, like the rest of the feature)', () => {
+  it('OBSERVE mode does NOT inject — the cap is ENFORCE-only (OBSERVE stays passive)', () => {
     archetypeFlag.mode = 'observe';
-    const out = injectDiversifierSectorCap([], divTournament());
-    expect(out.find(g => g.type === 'maxSectorWeight')?.value).toBe(35);
+    const input = [{ type: 'stopLoss', value: 8 }];
+    expect(injectDiversifierSectorCap(input, divTournament())).toBe(input); // untouched
   });
 });
 

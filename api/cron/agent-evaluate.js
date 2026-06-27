@@ -1604,8 +1604,8 @@ async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(
     // Phase F (Archetype Integrity) — inject the Diversifier sector cap BEFORE the
     // length>0 skip, so a tournament Diversifier with zero equipped guardrails still
     // gets the synthetic cap (the C2 trap: applyGuardrails is skipped entirely on an
-    // empty array). Flag-OFF / non-tournament / non-Diversifier returns the array
-    // untouched → byte-identical.
+    // empty array). ENFORCE-only — OFF/OBSERVE / non-tournament / non-Diversifier
+    // returns the array untouched → byte-identical.
     const deployedGuardrails = injectDiversifierSectorCap(
       battle.agentContext?.deployedGuardrails || [],
       battle,

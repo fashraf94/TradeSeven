@@ -48,10 +48,14 @@ export const DIVERSIFIER_SECTOR_CAP_PCT = 35; // max ~2 of 6 flat6 picks per sec
 
 /**
  * Augment a battle's deployedGuardrails with the Diversifier sector cap.
- * Flag-gated and tournament-only; the user can only make the cap TIGHTER
+ * ENFORCE-only and tournament-only; the user can only make the cap TIGHTER
  * (effectiveCap = min(userCap, core 35%)), never looser. Returns the original array
- * unchanged when the feature is off, the battle is not a tournament, or the
- * effective archetype is not Diversifier — so flag-OFF is byte-identical.
+ * unchanged when NOT in ENFORCE mode, the battle is not a tournament, or the
+ * effective archetype is not Diversifier — so OFF/OBSERVE are byte-identical.
+ *
+ * The cap is a mechanical behavior change (it blocks swaps), so unlike the directive
+ * gate — which evaluates + logs under OBSERVE — there is no passive half-measure
+ * here: OBSERVE leaves swaps untouched and only ENFORCE applies the cap.
  *
  * @param {Array}  guardrails - battle.agentContext.deployedGuardrails (or []).
  * @param {Object} battle     - full battle doc (reads gameMode + agentContext.archetype).
@@ -59,7 +63,7 @@ export const DIVERSIFIER_SECTOR_CAP_PCT = 35; // max ~2 of 6 flat6 picks per sec
  */
 export function injectDiversifierSectorCap(guardrails, battle) {
   const base = Array.isArray(guardrails) ? guardrails : [];
-  if (ARCHETYPE_INTEGRITY_MODE === 'off') return base;          // dark: byte-identical
+  if (ARCHETYPE_INTEGRITY_MODE !== 'enforce') return base;      // off/observe: byte-identical
   if (battle?.gameMode !== TOURNAMENT_GAME_MODE) return base;   // Option A: tournament only
   // Resolve via the Phase-C resolver (frozen battle snapshot), not a raw agent read.
   if (getEffectiveArchetype(battle, null) !== 'diversifier') return base;
