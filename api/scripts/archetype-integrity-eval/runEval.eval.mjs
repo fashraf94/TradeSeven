@@ -36,7 +36,34 @@ const { aggregate, proseAssertsChange } = await import('./aggregate.js');
 
 const RUNS_PER_ITEM = Number(process.env.EVAL_RUNS_PER_ITEM || 1);
 const CALL_TIMEOUT_MS = 30000;
+// Bounded concurrency: run a small pool of items in parallel (fast) WITHOUT
+// firing all 140 at once (which would trip OpenRouter rate limits → 429s).
+// Each item is independent and aggregate() is order-independent, so the pool is a
+// pure speed optimization — the metrics are identical to a sequential run.
+const CONCURRENCY = Math.max(1, Number(process.env.EVAL_CONCURRENCY || 6));
 const HERE = dirname(fileURLToPath(import.meta.url));
+
+// Bounded-concurrency map. Assigns results[i] exactly once (the `next++` index
+// claim is synchronous, so no two workers ever take the same index — no dropped or
+// duplicated results). Returns results in INPUT order regardless of finish order.
+async function mapPool(items, limit, fn) {
+  const results = new Array(items.length);
+  let next = 0;
+  let done = 0;
+  async function worker() {
+    while (true) {
+      const i = next++;
+      if (i >= items.length) return;
+      results[i] = await fn(items[i], i);
+      done += 1;
+      if (done % 10 === 0 || done === items.length) {
+        console.log(`[eval] ${done}/${items.length} items done`);
+      }
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return results;
+}
 
 const ELICIT = { dimension: 'risk_appetite', instruction: 'probe risk appetite' };
 
@@ -110,7 +137,7 @@ const fmtPct = (r) => (r === null ? ' n/a ' : `${(r * 100).toFixed(1)}%`);
 function formatReport(agg, meta) {
   const lines = [];
   lines.push('================ ARCHETYPE-INTEGRITY OBSERVE EVAL ================');
-  lines.push(`corpus items: ${meta.itemCount} · runs/item: ${meta.runsPerItem} · records: ${meta.records} · gemma calls (approx): ${meta.approxCalls}`);
+  lines.push(`corpus items: ${meta.itemCount} · runs/item: ${meta.runsPerItem} · concurrency: ${meta.concurrency} · records: ${meta.records} · gemma calls (approx): ${meta.approxCalls}`);
   lines.push(`call failures: ${agg.overall.counts.callFailed}`);
   lines.push('');
   lines.push('### HARD ZEROS (must both be 0 to recommend ENFORCE)');
@@ -155,14 +182,17 @@ describe('Archetype-Integrity OBSERVE reliability eval', () => {
 
     const records = [];
     for (let run = 0; run < RUNS_PER_ITEM; run++) {
-      for (const item of corpus) {
-        records.push(await evalItem(item));
-      }
+      if (RUNS_PER_ITEM > 1) console.log(`[eval] pass ${run + 1}/${RUNS_PER_ITEM}`);
+      // evalItem never throws (it catches per-item → callFailed record), so one
+      // rate-limited 429 is excluded, never fatal to the pool.
+      const runRecords = await mapPool(corpus, CONCURRENCY, (item) => evalItem(item));
+      records.push(...runRecords);
     }
 
     const agg = aggregate(records);
     const meta = {
-      itemCount: corpus.length, runsPerItem: RUNS_PER_ITEM, records: records.length,
+      itemCount: corpus.length, runsPerItem: RUNS_PER_ITEM, concurrency: CONCURRENCY,
+      records: records.length,
       approxCalls: records.length + agg.overall.counts.repairUsed, // base + repairs
     };
     const report = formatReport(agg, meta);
@@ -170,5 +200,5 @@ describe('Archetype-Integrity OBSERVE reliability eval', () => {
     writeFileSync(join(HERE, 'last-run-report.json'), JSON.stringify({ meta, agg, ts: new Date().toISOString() }, null, 2));
     // Measurement, not a gate: the run passes; the FOUNDER reads the numbers and
     // decides. (The hard zeros are reported, not asserted.)
-  }, 30 * 60 * 1000);
+  }, 2 * 60 * 60 * 1000); // 2h ceiling — generous headroom for slow-network / rate-limit backoff
 });

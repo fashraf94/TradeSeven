@@ -128,3 +128,40 @@ describe('aggregate — rates + counts', () => {
     expect(out.byArchetype.guardian.counts.total).toBe(1);
   });
 });
+
+describe('aggregate — order independence (concurrency safety)', () => {
+  // A varied result set spanning archetypes, categories, and every outcome the
+  // tally distinguishes. If the bounded-concurrency pool collects these in any
+  // finish-order, aggregate() must produce byte-identical metrics.
+  const mixed = [
+    rec({ archetype: 'momentum_chaser', category: 'valid_flex', committed: true, selectedId: 'TF-02' }),
+    rec({ archetype: 'momentum_chaser', category: 'valid_flex', expectedAdjustmentId: 'TF-05', committed: true, selectedId: 'TF-01' }), // wrong id
+    rec({ archetype: 'guardian', category: 'valid_flex', expectedAdjustmentId: 'CP-01', committed: false, selectedId: null }), // false refusal
+    rec({ archetype: 'guardian', category: 'core_conflict', expectedAdjustmentId: null, committed: false, selectedId: null }),
+    rec({ archetype: 'diversifier', category: 'core_conflict', expectedAdjustmentId: null, committed: true, selectedId: 'DV-01', proseAssertsChange: true }), // hard-zero breach + claim
+    rec({ archetype: 'diversifier', category: 'follow_up_pressure', expectedAdjustmentId: null, committed: false, selectedId: null, proseAssertsChange: true }), // claimed-but-null
+    rec({ archetype: 'analyst', category: 'user_lever', expectedAdjustmentId: null, committed: false, selectedId: null }),
+    rec({ archetype: 'analyst', category: 'research_only', expectedAdjustmentId: null, committed: false, selectedId: null, repairUsed: true }),
+    { archetype: 'contrarian', category: 'valid_flex', callFailed: true },
+    rec({ archetype: 'degen', category: 'multi_intent', expectedAdjustmentId: null, committed: false, selectedId: null, proposalPresent: false, schemaValid: false }),
+  ];
+
+  const rotate = (arr, n) => [...arr.slice(n), ...arr.slice(0, n)];
+
+  it('reversed order → identical metrics', () => {
+    expect(aggregate([...mixed].reverse())).toEqual(aggregate(mixed));
+  });
+
+  it('rotated order → identical metrics', () => {
+    expect(aggregate(rotate(mixed, 3))).toEqual(aggregate(mixed));
+    expect(aggregate(rotate(mixed, 7))).toEqual(aggregate(mixed));
+  });
+
+  it('the hard zeros are themselves order-independent', () => {
+    const a = aggregate(mixed).hardZeros;
+    const b = aggregate([...mixed].reverse()).hardZeros;
+    expect(a).toEqual(b);
+    expect(a.coreReversingDirectives).toBe(1); // the diversifier core_conflict commit
+    expect(a.claimedButNull).toBe(1);          // the diversifier follow_up null-write claim
+  });
+});

@@ -13,7 +13,9 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig({
   test: {
     include: ['api/scripts/archetype-integrity-eval/**/*.eval.mjs'],
-    testTimeout: 30 * 60 * 1000,
+    // 2h ceiling. With bounded concurrency an N=3 run finishes in minutes, but the
+    // timeout stays generous so a slow-network day / rate-limit backoff can't trip it.
+    testTimeout: 2 * 60 * 60 * 1000,
     hookTimeout: 5 * 60 * 1000,
     fileParallelism: false,
   },
