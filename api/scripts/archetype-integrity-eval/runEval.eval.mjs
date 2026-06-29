@@ -32,7 +32,7 @@ const { callGemmaVoice, parseVoiceLayerResponse } = await import('../../_utils/g
 const { gateDirective } = await import('../../_utils/directiveGate.js');
 const { getEffectiveArchetype } = await import('../../_utils/directiveIdentity.js');
 const { buildCorpus } = await import('./corpus.js');
-const { aggregate, proseAssertsChange } = await import('./aggregate.js');
+const { aggregate, proseAssertsChange, collectHardZeroBreaches } = await import('./aggregate.js');
 
 const RUNS_PER_ITEM = Number(process.env.EVAL_RUNS_PER_ITEM || 1);
 const CALL_TIMEOUT_MS = 30000;
@@ -81,14 +81,34 @@ function fixtureFor(archetype) {
 
 const VALID_CLASSIFICATIONS = new Set(['in_archetype', 'flex', 'core_conflict', 'user_lever', 'research_only']);
 
+// What classification the corpus says Gemma SHOULD emit per category (diagnostic
+// label only — drives no scoring; multi_intent/follow_up are core-reversing asks).
+const EXPECTED_CLASSIFICATION = {
+  valid_flex: 'in_archetype|flex',
+  core_conflict: 'core_conflict',
+  user_lever: 'user_lever',
+  research_only: 'research_only',
+  multi_intent: 'core_conflict',
+  follow_up_pressure: 'core_conflict',
+};
+
 async function withTimeout(fn) {
   const controller = new AbortController();
   const t = setTimeout(() => controller.abort(), CALL_TIMEOUT_MS);
   try { return await fn(controller.signal); } finally { clearTimeout(t); }
 }
 
-// Run ONE corpus item through the real voice layer + gate. Returns a record for aggregate().
-async function evalItem(item) {
+// Run ONE corpus item through the real voice layer + gate. Returns a record for
+// aggregate() + the diagnostic fields collectHardZeroBreaches() surfaces.
+async function evalItem(item, index, runIndex) {
+  // Diagnostic fields carried on EVERY record (ignored by aggregate, used by the
+  // breach collector). corpusItemId/subtype/userMessage make a breach traceable.
+  const diag = {
+    corpusItemId: item.itemId, index, runIndex,
+    subtype: item.subtype ?? null, userMessage: item.message,
+    expectedCommit: item.expectedCommit,
+    expectedClassification: EXPECTED_CLASSIFICATION[item.category] ?? null,
+  };
   const { agent, battle } = fixtureFor(item.archetype);
   const systemPrompt = buildVoiceLayerPrompt({
     agent, battle, elicitationTarget: ELICIT,
@@ -115,6 +135,7 @@ async function evalItem(item) {
     const prop = gate.parsed?._archetypeProposal;
     const proposalPresent = !!prop && typeof prop === 'object';
     return {
+      ...diag,
       itemId: item.itemId, archetype: item.archetype, category: item.category,
       expectedAdjustmentId: item.expectedAdjustmentId, callFailed: false,
       proposalPresent,
@@ -123,9 +144,12 @@ async function evalItem(item) {
       selectedId: gate.g.outcome?.selectedAdjustmentId ?? null,
       repairUsed: !!gate.g.outcome?.repairUsed,
       proseAssertsChange: proseAssertsChange(gate.parsed?.response || ''),
+      proposal: proposalPresent ? prop : null,                 // full _archetypeProposal Gemma emitted
+      committedDirectiveText: gate.g.directive?.text ?? null,  // canonical text that got minted (if any)
     };
   } catch (err) {
     return {
+      ...diag,
       itemId: item.itemId, archetype: item.archetype, category: item.category,
       callFailed: true, error: String(err?.message || err),
     };
@@ -185,11 +209,12 @@ describe('Archetype-Integrity OBSERVE reliability eval', () => {
       if (RUNS_PER_ITEM > 1) console.log(`[eval] pass ${run + 1}/${RUNS_PER_ITEM}`);
       // evalItem never throws (it catches per-item → callFailed record), so one
       // rate-limited 429 is excluded, never fatal to the pool.
-      const runRecords = await mapPool(corpus, CONCURRENCY, (item) => evalItem(item));
+      const runRecords = await mapPool(corpus, CONCURRENCY, (item, i) => evalItem(item, i, run + 1));
       records.push(...runRecords);
     }
 
     const agg = aggregate(records);
+    const hardZeroBreaches = collectHardZeroBreaches(records);
     const meta = {
       itemCount: corpus.length, runsPerItem: RUNS_PER_ITEM, concurrency: CONCURRENCY,
       records: records.length,
@@ -197,7 +222,23 @@ describe('Archetype-Integrity OBSERVE reliability eval', () => {
     };
     const report = formatReport(agg, meta);
     console.log('\n' + report + '\n');
-    writeFileSync(join(HERE, 'last-run-report.json'), JSON.stringify({ meta, agg, ts: new Date().toISOString() }, null, 2));
+
+    // Surface each breach inline so a nonzero hard zero is diagnosable at a glance.
+    const summarize = (label, arr) => {
+      if (!arr.length) return;
+      console.log(`### ${label} breaches (${arr.length}):`);
+      for (const b of arr) {
+        console.log(`  - ${b.archetype}/${b.subtype ?? b.category} [run ${b.runIndex}] classified="${b.proposal?.classification ?? 'none'}" minted="${b.committedDirectiveText ?? ''}"`);
+        console.log(`      user: "${b.userMessage}"`);
+      }
+    };
+    summarize('core-reversing', hardZeroBreaches.coreReversingCommitted);
+    summarize('claimed-but-null', hardZeroBreaches.claimedButNull);
+
+    writeFileSync(
+      join(HERE, 'last-run-report.json'),
+      JSON.stringify({ meta, agg, hardZeroBreaches, ts: new Date().toISOString() }, null, 2),
+    );
     // Measurement, not a gate: the run passes; the FOUNDER reads the numbers and
     // decides. (The hard zeros are reported, not asserted.)
   }, 2 * 60 * 60 * 1000); // 2h ceiling — generous headroom for slow-network / rate-limit backoff
