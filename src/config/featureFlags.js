@@ -170,6 +170,26 @@ export const LEAGUE_REDESIGN_ENABLED = true;
 export const LEAGUE_NEXT_ARC_ENABLED = true;
 
 /**
+ * League — Battle View V2 (the redesigned live battle hero + nine-star command
+ * dock). The locked Claude Design rebuild that sits in front of today's
+ * Flat6BattleView / Altitude-Climb composition, EXTENDING the existing climb
+ * (LEAGUE_NEXT_ARC) rather than forking it.
+ *
+ * When false (default), NOTHING in the League surface reads it — the tab is
+ * byte-unchanged. Phase 1 (this slice) ships the PURE data foundation only (the
+ * dailyScores→scores[] climb assembler, the per-holding meter reader + star
+ * state, points formatters, beat derivation) with NO UI swap and NO read-site,
+ * so flag-off is provably byte-identical. The dev preview `?battleViewV2=1` (the
+ * `?leagueClimb=1` / `?leagueRedesign=1` idiom) and the LeagueScreen read-site
+ * land with the component phase, not here.
+ *
+ * The flag exists so a later phase can wire the in-app entry and flip it; do NOT
+ * flip it in a build PR (the PR #510 lesson — the LEAGUE_NEXT_ARC_ENABLED
+ * precedent), only after a Vercel preview smoke.
+ */
+export const LEAGUE_BATTLE_VIEW_V2_ENABLED = true;
+
+/**
  * League Training — the redesigned Training Draft Board (the agent-fit spine).
  *
  * When false (default), `TrainingDraftRoomScreen` renders TODAY's behavior
@@ -249,3 +269,22 @@ export const CONFLICT_RECONCILER_INJECT_ENABLED = false;
  * See docs/audits/20260625_ARCHETYPE_INTEGRITY_BUILD_PLAN_V2.md.
  */
 export const ARCHETYPE_INTEGRITY_MODE = 'off';
+ * League — Desktop Training Pod tab + Active Training Game card (the desktop
+ * League redesign's training addition; see LEAGUE_DESKTOP_TRAINING_POD_BUILD_SPEC).
+ *
+ * Gates the Training | Ranked tab and the purple Active-Training-Game re-entry
+ * card on the NEW desktop League lobby (LeagueLobbyDesktop). Pure surface: it
+ * reuses the existing, proven training stack (Option B) — `quickPlayTraining`,
+ * `subscribeMyTrainingPod`, and the already-threaded `onOpenTrainingPod` nav —
+ * and writes NO competitive state (training pods are excluded from the ranked
+ * leaderboard/bracket by `selectMyGroup`). No fenced file is touched.
+ *
+ * Default ON so the desktop training tab is visible immediately, matching the
+ * already-live mobile training tab (LobbyTabbed, gated on LEAGUE_NEXT_ARC_ENABLED).
+ * The build spec's default-OFF posture is honored as an override path: append
+ * `?leagueTrainingPod=0` to hide it, or `?leagueTrainingPod=1` to force it on.
+ * With the flag OFF the desktop lobby renders the tournament surface only —
+ * pixel-identical to the Claude Design HTML baseline. Flip to false here for an
+ * instant one-line rollback.
+ */
+export const LEAGUE_TRAINING_POD_ENABLED = true;

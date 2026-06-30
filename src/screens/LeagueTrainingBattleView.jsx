@@ -30,6 +30,9 @@ import ClaimFlipWindow from '../components/Tournament/ClaimFlipWindow';
 import DraftPlaybackTheater from '../components/Tournament/DraftPlaybackTheater';
 import GroupFeed from '../components/Tournament/GroupFeed';
 import useMyTournamentBattle from '../hooks/useMyTournamentBattle';
+import { useIsMobile } from '../hooks/useIsMobile';
+import LeagueBattleArenaLive from '../components/League/battleArena/LeagueBattleArenaLive';
+import { ARENA_LIVE_ON } from '../components/League/battleArena/arenaLiveGate';
 import { subscribeGroup } from '../services/tournamentGroupService';
 import { trainingStatusFraming, deriveCompositeContext } from './leagueTrainingBattleFraming';
 
@@ -39,6 +42,10 @@ export default function LeagueTrainingBattleView({ podId, user, onBack = null })
 
   const [pod, setPod] = useState(null);
   const [loaded, setLoaded] = useState(false);
+  // Battle View V2 (desktop-only) — runs unconditionally, inert when the gate is
+  // off so flag-off / mobile / pre-deploy render today's practice column unchanged.
+  const { isDesktop } = useIsMobile();
+  const [classic, setClassic] = useState(false);
 
   // Pod-by-id read: surfaces the pod in AWAITING_OPEN and BATTLE (subscribeMyGroup
   // would filter both out for AWAITING_OPEN, and isn't pod-scoped).
@@ -92,6 +99,28 @@ export default function LeagueTrainingBattleView({ podId, user, onBack = null })
           This practice pod is no longer available.
         </p>
         {backBtn}
+      </div>
+    );
+  }
+
+  // Battle View V2 — the battle takeover (once the agent battle has deployed). The
+  // viewport picks the arena: desktop → scale-to-fit ArenaDesktop (back-to-classic);
+  // mobile → pinned-hero ArenaMobile (flag is the rollback). Pre-deploy
+  // (awaiting_open), flag-off, or classic → today's practice column, byte-identical
+  // on BOTH viewports (the gate short-circuits on ARENA_LIVE_ON before isDesktop).
+  // The arena subsumes Flat6 + ClaimFlipWindow + GroupFeed; draft replay stays classic.
+  if (ARENA_LIVE_ON && myBattle && !classic) {
+    return (
+      <div style={{ minHeight: '100vh', background: '#050609', padding: isDesktop ? 16 : 0, boxSizing: 'border-box' }}>
+        <LeagueBattleArenaLive
+          group={pod}
+          battle={myBattle}
+          mode="training"
+          uid={uid}
+          compositeContext={compositeContext}
+          onBack={isDesktop ? () => setClassic(true) : null}
+          viewport={isDesktop ? 'desktop' : 'mobile'}
+        />
       </div>
     );
   }
