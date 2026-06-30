@@ -3760,9 +3760,14 @@ describe('buildVoiceLayerPrompt — archetype integrity (Phase D)', () => {
     expect(out).toContain('qualitatively');
     expect(out).toContain('the system records what actually changed'); // #7 status contract
     expect(out).toContain('Never say "done,"');
-    // Fix 2 — null-write hand-off prose discipline (user_lever / research_only).
+    // Fix 2 — null-write hand-off prose discipline. Must name ALL THREE of the
+    // gate's DELIBERATE_NULL classes (core_conflict / user_lever / research_only)
+    // so the prose rule matches exactly where the gate writes nothing.
     expect(out).toContain('NULL-WRITE HAND-OFFS');
     expect(out).toContain('frame any in-archetype move you raise as an OFFER');
+    expect(out).toContain('held the line on a core conflict'); // core_conflict (the added class)
+    expect(out).toContain("a user lever you don't pull yourself"); // user_lever
+    expect(out).toContain('pure research/opinion question'); // research_only
   });
 
   // ── Phase E2 — USER LEVERS block (capabilities manifest → hand-off prose) ──
