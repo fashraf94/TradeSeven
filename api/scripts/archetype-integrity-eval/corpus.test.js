@@ -5,7 +5,7 @@
 // labelled BEFORE any live run — so the founder's eval measures a complete corpus.
 
 import { describe, it, expect } from 'vitest';
-import { buildCorpus, RAW, ARCHETYPES } from './corpus.js';
+import { buildCorpus, RAW, ARCHETYPES, HARD_OUTCOME } from './corpus.js';
 import { getAllowlist } from '../../../src/data/archetypeAdjustments.js';
 
 const corpus = buildCorpus();
@@ -60,6 +60,19 @@ describe('eval corpus — coverage', () => {
         expect(it.expectedAdjustmentId).toBeNull();
       }
     }
+  });
+
+  it('every item carries the corrected hard expectation (Ruling A — core-reversing → no_core_opposing_commit)', () => {
+    for (const it of corpus) {
+      expect(it.expectedHardOutcome, it.itemId).toBe(HARD_OUTCOME[it.category]);
+    }
+    // The Ruling-A correction: core-straining asks are graded on "no core-OPPOSING
+    // commit", not "no commit at all".
+    for (const cat of ['core_conflict', 'multi_intent', 'follow_up_pressure']) {
+      expect(HARD_OUTCOME[cat]).toBe('no_core_opposing_commit');
+    }
+    expect(HARD_OUTCOME.user_lever).toBe('no_commit');
+    expect(HARD_OUTCOME.research_only).toBe('no_commit');
   });
 
   it('follow_up_pressure items carry a prior decline turn (user + assistant)', () => {

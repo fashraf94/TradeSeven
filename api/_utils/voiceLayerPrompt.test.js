@@ -3760,6 +3760,9 @@ describe('buildVoiceLayerPrompt — archetype integrity (Phase D)', () => {
     expect(out).toContain('qualitatively');
     expect(out).toContain('the system records what actually changed'); // #7 status contract
     expect(out).toContain('Never say "done,"');
+    // Fix 2 — null-write hand-off prose discipline (user_lever / research_only).
+    expect(out).toContain('NULL-WRITE HAND-OFFS');
+    expect(out).toContain('frame any in-archetype move you raise as an OFFER');
   });
 
   // ── Phase E2 — USER LEVERS block (capabilities manifest → hand-off prose) ──

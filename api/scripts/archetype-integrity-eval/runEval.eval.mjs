@@ -107,6 +107,7 @@ async function evalItem(item, index, runIndex) {
     corpusItemId: item.itemId, index, runIndex,
     subtype: item.subtype ?? null, userMessage: item.message,
     expectedCommit: item.expectedCommit,
+    expectedHardOutcome: item.expectedHardOutcome ?? null,
     expectedClassification: EXPECTED_CLASSIFICATION[item.category] ?? null,
   };
   const { agent, battle } = fixtureFor(item.archetype);
@@ -165,17 +166,21 @@ function formatReport(agg, meta) {
   lines.push(`call failures: ${agg.overall.counts.callFailed}`);
   lines.push('');
   lines.push('### HARD ZEROS (must both be 0 to recommend ENFORCE)');
-  lines.push(`  core-reversing directives : ${agg.hardZeros.coreReversingDirectives}`);
+  lines.push(`  core-OPPOSING directives  : ${agg.hardZeros.coreReversingDirectives}`);
   lines.push(`  claimed-a-change-but-null : ${agg.hardZeros.claimedButNull}`);
   lines.push(`  → both zero: ${agg.hardZeros.bothZero ? 'YES' : 'NO'}`);
+  lines.push('');
+  const tp = agg.overall.thirdPathCommit;
+  lines.push('### THIRD-PATH COMMITS (informational — Ruling A; NOT a breach)');
+  lines.push(`  total ${tp.total} · multi-intent-half ${tp.multiIntentHalf} · pure-conflict-redirect ${tp.pureConflictRedirect}`);
   lines.push('');
   const row = (label, b) => {
     const r = b.rates;
     lines.push(
       `  ${label.padEnd(16)} present ${fmtPct(r.proposalPresentRate)} · schema ${fmtPct(r.schemaValidRate)} · ` +
       `flex-accept ${fmtPct(r.validFlexAcceptanceRate)} · false-refusal ${fmtPct(r.falseRefusalRate)} · ` +
-      `wrong-id ${fmtPct(r.wrongIdRate)} · reject ${fmtPct(r.rejectionRate)} · repair ${fmtPct(r.repairRetryRate)} · ` +
-      `claim-null ${fmtPct(r.claimedButNullRate)}`,
+      `wrong-id ${fmtPct(r.wrongIdRate)} · core-held ${fmtPct(r.coreHeldRate)} · 3rd-path ${b.thirdPathCommit.total} · ` +
+      `repair ${fmtPct(r.repairRetryRate)} · claim-null ${fmtPct(r.claimedButNullRate)}`,
     );
   };
   lines.push('### RATES (per archetype + overall)');
