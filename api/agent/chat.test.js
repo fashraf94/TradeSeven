@@ -417,6 +417,7 @@ describe('agent/chat — archetype integrity gate (Phase E1)', () => {
     expect(res.body.hasDirective).toBe(true);
     expect(res.body.directive.text).toBe('lean tech');
     expect('directiveStatus' in res.body).toBe(false);   // gate-ran riders absent in OFF
+    expect('directiveStatusLine' in res.body).toBe(false);
     expect('directiveFallback' in res.body).toBe(false);
     expect(mainUpdate(written).updates.directive.text).toBe('lean tech'); // legacy write unchanged
     expect('archetypeGate' in exchangeOf(written)).toBe(false);
@@ -429,7 +430,10 @@ describe('agent/chat — archetype integrity gate (Phase E1)', () => {
     expect(res.statusCode).toBe(200);
     expect(res.body.hasDirective).toBe(false);
     expect(res.body.directive).toBeNull();
-    expect(res.body.directiveStatus).toBe('none');
+    // BACKSTOP: prose says "Done, locked in!" but the gate wrote null → the
+    // AUTHORITATIVE status is deterministically 'no_change', regardless of the prose.
+    expect(res.body.directiveStatus).toBe('no_change');
+    expect(res.body.directiveStatusLine).toBe('No change made to your strategy this turn.');
     expect('directive' in mainUpdate(written).updates).toBe(false); // no battle.directive write
     expect(exchangeOf(written).archetypeGate.status).toBe('no_change');
   });
@@ -441,6 +445,7 @@ describe('agent/chat — archetype integrity gate (Phase E1)', () => {
     expect(res.body.directive.text).toBe(TF02);
     expect(res.body.hasDirective).toBe(true);
     expect(res.body.directiveStatus).toBe('committed');
+    expect(res.body.directiveStatusLine).toBeNull(); // committed → the `directive` text carries the change
     expect(mainUpdate(written).updates.directive.text).toBe(TF02);
     expect(mainUpdate(written).updates.directive.directiveThreadId).toBeTruthy();
     expect(exchangeOf(written).archetypeGate.status).toBe('committed');
@@ -453,7 +458,7 @@ describe('agent/chat — archetype integrity gate (Phase E1)', () => {
     const { res, written } = await run();
     expect(res.body.hasDirective).toBe(false);
     expect(res.body.directive).toBeNull();
-    expect(res.body.directiveStatus).toBe('none');
+    expect(res.body.directiveStatus).toBe('no_change'); // OBSERVE forces null → authoritative no_change
     expect('directive' in mainUpdate(written).updates).toBe(false); // observe never writes a directive
     expect(exchangeOf(written).archetypeGate.status).toBe('committed'); // but it logged what it WOULD have done
     expect(exchangeOf(written).archetypeGate.repairUsed).toBe(false);
@@ -466,7 +471,7 @@ describe('agent/chat — archetype integrity gate (Phase E1)', () => {
     const { res, written } = await run({}, { agent: VALID_AGENT }); // archetype 'strategist' (unknown)
     expect(res.statusCode).toBe(200);
     expect(res.body.directive).toBeNull();
-    expect(res.body.directiveStatus).toBe('none');
+    expect(res.body.directiveStatus).toBe('no_change'); // unknown archetype → null → authoritative no_change
     expect(exchangeOf(written).archetypeGate.status).toBe('no_archetype');
     expect(errSpy).toHaveBeenCalled();
     errSpy.mockRestore();
@@ -493,6 +498,7 @@ describe('agent/chat — archetype integrity gate (Phase E1)', () => {
     const { res, written } = await run({}, { req: { mode: 'review' } });
     expect(res.body.directive).toBeNull();           // review strips directives (legacy)
     expect('directiveStatus' in res.body).toBe(false); // gate did not run
+    expect('directiveStatusLine' in res.body).toBe(false);
     expect('archetypeGate' in (exchangeOf(written) || {})).toBe(false);
     expect(spy).toHaveBeenCalledTimes(1);            // no repair path
   });

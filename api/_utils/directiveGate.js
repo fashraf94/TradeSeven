@@ -37,6 +37,21 @@ const MIN_REPAIR_MS = 1500;     // with less budget than this remaining, don't b
 // never intent-mapping (which would re-open the R1-rejected surface).
 export const NO_CHANGE_FALLBACK_LINE = "Talked it through — I didn't change my strategy on this one.";
 
+// Phase H backstop — the AUTHORITATIVE, code-rendered truth-of-record for a turn.
+// Honesty is a GUARANTEE, so it lives in code, not in prompt-following: this status
+// is rendered from the gate outcome (hasDirective) ALONE — never from the model's
+// prose. A null-write turn ALWAYS reports "no change," even if the prose over-claims.
+// This is what makes "claimed-a-change-but-wrote-null" a STRUCTURAL zero. We do NOT
+// touch or strip the prose (the R1-rejected path) — the status sits ALONGSIDE it as
+// the truth the client surfaces; the prose stays the natural conversation.
+export const NO_CHANGE_STATUS_LINE = 'No change made to your strategy this turn.';
+
+export function renderDirectiveStatus(hasDirective) {
+  return hasDirective
+    ? { directiveStatus: 'committed', directiveStatusLine: null }    // the committed `directive` text carries the change
+    : { directiveStatus: 'no_change', directiveStatusLine: NO_CHANGE_STATUS_LINE };
+}
+
 const VALID_CLASSIFICATIONS = new Set(['in_archetype', 'flex', 'core_conflict', 'user_lever', 'research_only']);
 const DELIBERATE_NULL = new Set(['core_conflict', 'user_lever', 'research_only']);
 

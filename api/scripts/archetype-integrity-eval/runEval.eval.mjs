@@ -29,7 +29,7 @@ vi.mock('../../../src/config/featureFlags.js', async (importOriginal) => ({
 
 const { buildVoiceLayerPrompt } = await import('../../_utils/voiceLayerPrompt.js');
 const { callGemmaVoice, parseVoiceLayerResponse } = await import('../../_utils/gemmaClient.js');
-const { gateDirective } = await import('../../_utils/directiveGate.js');
+const { gateDirective, renderDirectiveStatus } = await import('../../_utils/directiveGate.js');
 const { getEffectiveArchetype } = await import('../../_utils/directiveIdentity.js');
 const { buildCorpus } = await import('./corpus.js');
 const { aggregate, proseAssertsChange, collectHardZeroBreaches } = await import('./aggregate.js');
@@ -142,9 +142,12 @@ async function evalItem(item, index, runIndex) {
       proposalPresent,
       schemaValid: proposalPresent && VALID_CLASSIFICATIONS.has(prop.classification),
       committed: !!gate.g.hasDirective,
+      // The AUTHORITATIVE truth-of-record chat.js renders from the gate outcome
+      // (hasDirective) — the channel hard-zero-2 now measures. Same renderer as prod.
+      directiveStatus: renderDirectiveStatus(gate.g.hasDirective).directiveStatus,
       selectedId: gate.g.outcome?.selectedAdjustmentId ?? null,
       repairUsed: !!gate.g.outcome?.repairUsed,
-      proseAssertsChange: proseAssertsChange(gate.parsed?.response || ''),
+      proseAssertsChange: proseAssertsChange(gate.parsed?.response || ''), // informational drift
       proposal: proposalPresent ? prop : null,                 // full _archetypeProposal Gemma emitted
       committedDirectiveText: gate.g.directive?.text ?? null,  // canonical text that got minted (if any)
     };
@@ -165,10 +168,11 @@ function formatReport(agg, meta) {
   lines.push(`corpus items: ${meta.itemCount} · runs/item: ${meta.runsPerItem} · concurrency: ${meta.concurrency} · records: ${meta.records} · gemma calls (approx): ${meta.approxCalls}`);
   lines.push(`call failures: ${agg.overall.counts.callFailed}`);
   lines.push('');
-  lines.push('### HARD ZEROS (must both be 0 to recommend ENFORCE)');
-  lines.push(`  core-OPPOSING directives  : ${agg.hardZeros.coreReversingDirectives}`);
-  lines.push(`  claimed-a-change-but-null : ${agg.hardZeros.claimedButNull}`);
+  lines.push('### HARD ZEROS (both STRUCTURAL — 0 by construction; must be 0 to recommend ENFORCE)');
+  lines.push(`  core-OPPOSING directives             : ${agg.hardZeros.coreReversingDirectives}`);
+  lines.push(`  null-write status NOT 'no_change'    : ${agg.hardZeros.claimedButNull}`);
   lines.push(`  → both zero: ${agg.hardZeros.bothZero ? 'YES' : 'NO'}`);
+  lines.push(`  (informational: ${agg.overall.counts.proseAssertsChange} prose-overclaim turn(s) — backstopped by the authoritative status)`);
   lines.push('');
   const tp = agg.overall.thirdPathCommit;
   lines.push('### THIRD-PATH COMMITS (informational — Ruling A; NOT a breach)');
@@ -180,7 +184,7 @@ function formatReport(agg, meta) {
       `  ${label.padEnd(16)} present ${fmtPct(r.proposalPresentRate)} · schema ${fmtPct(r.schemaValidRate)} · ` +
       `flex-accept ${fmtPct(r.validFlexAcceptanceRate)} · false-refusal ${fmtPct(r.falseRefusalRate)} · ` +
       `wrong-id ${fmtPct(r.wrongIdRate)} · core-held ${fmtPct(r.coreHeldRate)} · 3rd-path ${b.thirdPathCommit.total} · ` +
-      `repair ${fmtPct(r.repairRetryRate)} · claim-null ${fmtPct(r.claimedButNullRate)}`,
+      `repair ${fmtPct(r.repairRetryRate)} · prose-overclaim ${fmtPct(r.proseOverclaimRate)}`,
     );
   };
   lines.push('### RATES (per archetype + overall)');

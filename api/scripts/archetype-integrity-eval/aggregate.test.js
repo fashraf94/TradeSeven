@@ -8,12 +8,18 @@ import { describe, it, expect } from 'vitest';
 import { aggregate, proseAssertsChange, collectHardZeroBreaches } from './aggregate.js';
 
 // A record builder with sensible defaults (a clean evaluated turn).
-const rec = (over = {}) => ({
-  archetype: 'momentum_chaser', category: 'valid_flex', expectedAdjustmentId: 'TF-02',
-  callFailed: false, proposalPresent: true, schemaValid: true,
-  committed: true, selectedId: 'TF-02', repairUsed: false, proseAssertsChange: false,
-  ...over,
-});
+const rec = (over = {}) => {
+  const r = {
+    archetype: 'momentum_chaser', category: 'valid_flex', expectedAdjustmentId: 'TF-02',
+    callFailed: false, proposalPresent: true, schemaValid: true,
+    committed: true, selectedId: 'TF-02', repairUsed: false, proseAssertsChange: false,
+    ...over,
+  };
+  // Default the authoritative status to MATCH committed (what the prod renderer does
+  // — renderDirectiveStatus). Tests that exercise a backstop FAILURE override it.
+  if (!('directiveStatus' in over)) r.directiveStatus = r.committed ? 'committed' : 'no_change';
+  return r;
+};
 
 describe('proseAssertsChange — forbidden-claim heuristic', () => {
   it('flags the deterministic-status forbidden phrases', () => {
@@ -64,11 +70,23 @@ describe('aggregate — hard zeros (policy-aware)', () => {
     expect(out.overall.thirdPathCommit.pureConflictRedirect).toBe(1);
   });
 
-  it('counts a null-write turn whose prose claims a change as claimed-but-null', () => {
+  it('BACKSTOP: prose over-claims but the authoritative status says no_change → NOT a breach', () => {
+    // The Phase-H backstop: hard-zero-2 measures the code-rendered status, not the
+    // prose. A drifting prose with a correct 'no_change' status is honest-by-code.
     const out = aggregate([
-      rec({ category: 'core_conflict', expectedAdjustmentId: null, committed: false, selectedId: null, proseAssertsChange: true }),
+      rec({ category: 'core_conflict', expectedAdjustmentId: null, committed: false, selectedId: null, proseAssertsChange: true }), // status defaults to 'no_change'
     ]);
-    expect(out.hardZeros.claimedButNull).toBe(1);
+    expect(out.hardZeros.claimedButNull).toBe(0);          // backstop holds
+    expect(out.overall.counts.proseAssertsChange).toBe(1); // but the drift IS tracked
+    expect(out.overall.rates.proseOverclaimRate).toBeCloseTo(1); // informational, not a gate
+  });
+
+  it('TEETH: a null-write turn whose authoritative status is WRONG/MISSING still breaches', () => {
+    const out = aggregate([
+      rec({ category: 'core_conflict', expectedAdjustmentId: null, committed: false, selectedId: null, directiveStatus: 'committed' }), // backstop failed
+      rec({ category: 'user_lever', expectedAdjustmentId: null, committed: false, selectedId: null, directiveStatus: undefined }),      // status missing
+    ]);
+    expect(out.hardZeros.claimedButNull).toBe(2);
     expect(out.hardZeros.bothZero).toBe(false);
   });
 
@@ -167,7 +185,7 @@ describe('aggregate — order independence (concurrency safety)', () => {
     rec({ archetype: 'guardian', category: 'core_conflict', expectedAdjustmentId: null, committed: false, selectedId: null }),
     rec({ archetype: 'diversifier', category: 'core_conflict', expectedAdjustmentId: null, committed: true, selectedId: 'X-OPP', committedCoreAlignment: 'opposes' }), // core-OPPOSING → hard-zero breach
     rec({ archetype: 'diversifier', category: 'core_conflict', expectedAdjustmentId: null, committed: true, selectedId: 'DV-01' }), // core-ALIGNED → third-path commit (not a breach)
-    rec({ archetype: 'diversifier', category: 'follow_up_pressure', expectedAdjustmentId: null, committed: false, selectedId: null, proseAssertsChange: true }), // claimed-but-null
+    rec({ archetype: 'diversifier', category: 'follow_up_pressure', expectedAdjustmentId: null, committed: false, selectedId: null, directiveStatus: 'committed' }), // backstop FAILED (wrong status) → claimed-but-null
     rec({ archetype: 'analyst', category: 'user_lever', expectedAdjustmentId: null, committed: false, selectedId: null }),
     rec({ archetype: 'analyst', category: 'research_only', expectedAdjustmentId: null, committed: false, selectedId: null, repairUsed: true }),
     { archetype: 'contrarian', category: 'valid_flex', callFailed: true },
@@ -236,17 +254,20 @@ describe('collectHardZeroBreaches — diagnosable detail dump', () => {
     expect(out.coreReversingCommitted).toHaveLength(0); // reinforces → not a breach
   });
 
-  it('captures a claimed-but-null record (shape proven even though live count is 0)', () => {
+  it('captures a claimed-but-null record — a backstop FAILURE (authoritative status not no_change)', () => {
     const claimNull = {
       archetype: 'diversifier', category: 'follow_up_pressure', subtype: null,
       corpusItemId: 'diversifier/follow_up_pressure', runIndex: 1,
       userMessage: 'no, I said do it', committed: false, proseAssertsChange: true, callFailed: false,
+      directiveStatus: 'committed', // backstop failed: status should have been 'no_change'
       proposal: { classification: 'core_conflict', selectedAdjustmentId: null },
       committedDirectiveText: null,
     };
     const out = collectHardZeroBreaches([claimNull]);
     expect(out.claimedButNull).toHaveLength(1);
     expect(out.claimedButNull[0].userMessage).toBe('no, I said do it');
+    expect(out.claimedButNull[0].directiveStatus).toBe('committed'); // the wrong status is captured for diagnosis
+    expect(out.claimedButNull[0].proseAssertsChange).toBe(true);
     expect(out.coreReversingCommitted).toHaveLength(0);
   });
 
@@ -263,7 +284,7 @@ describe('collectHardZeroBreaches — diagnosable detail dump', () => {
       rec({ archetype: 'guardian', category: 'core_conflict', committed: true, selectedId: 'CP-01' }), // third-path, NOT a breach
       {
         archetype: 'degen', category: 'multi_intent', committed: false, selectedId: null,
-        proseAssertsChange: true, callFailed: false, // claimed-but-null
+        proseAssertsChange: true, callFailed: false, directiveStatus: 'committed', // backstop failed → claimed-but-null
       }];
     const agg = aggregate(records);
     const breaches = collectHardZeroBreaches(records);

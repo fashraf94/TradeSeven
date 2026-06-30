@@ -10,7 +10,7 @@ import { randomUUID } from 'node:crypto';
 import { TOURNAMENT_GAME_MODE, TOURNAMENT_GROUPS_COLLECTION } from '../../src/constants/leagueTournament.js';
 // Archetype Integrity — Phase E1 (the deterministic gate). Flag-gated; OFF/review
 // run the literal legacy normalizeDirective path → byte-identical.
-import { gateDirective } from '../_utils/directiveGate.js';
+import { gateDirective, renderDirectiveStatus } from '../_utils/directiveGate.js';
 import { getEffectiveArchetype } from '../_utils/directiveIdentity.js';
 import { ARCHETYPE_INTEGRITY_MODE } from '../../src/config/featureFlags.js';
 // Archetype Integrity — Phase E2 (capabilities manifest → USER LEVERS hand-off).
@@ -479,12 +479,15 @@ export default async function handler(req, res) {
       lesson: lesson ? { id: lesson.id, text: lesson.text } : null,
       forgeSuggestion: forgeSuggestion ? { id: forgeSuggestion.id, text: forgeSuggestion.text } : null,
       mode,
-      // Phase E1 — code-owned status (never model-written), added ONLY when the
-      // gate ran so the flag-OFF clientResponse stays byte-identical. directiveStatus
-      // is the honest "did I act"; directiveFallback is the canned no-change line on
-      // a failed-repair turn (null otherwise). Frontend rendering is deferred (V1).
+      // Phase E1/H — code-owned, AUTHORITATIVE status (never model-written), added
+      // ONLY when the gate ran so the flag-OFF clientResponse stays byte-identical.
+      // renderDirectiveStatus derives the truth-of-record from hasDirective alone:
+      // a null-write turn ALWAYS reports directiveStatus 'no_change' + the no-change
+      // status line, regardless of what the prose said (the Phase-H backstop that
+      // makes prose-honesty structural). directiveFallback is the E1 conversational
+      // no-change line on a failed-repair turn (null otherwise). Frontend deferred.
       ...(gateOutcome
-        ? { directiveStatus: effectiveHasDirective ? 'committed' : 'none', directiveFallback: gateFallbackLine }
+        ? { ...renderDirectiveStatus(effectiveHasDirective), directiveFallback: gateFallbackLine }
         : {}),
     };
 
