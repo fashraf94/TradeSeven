@@ -498,6 +498,39 @@ describe('injectDiversifierSectorCap — flag/scope gating', () => {
     expect(out.find(g => g.type === 'maxSectorWeight')?.value).toBe(35);
   });
 
+  it('UN-SHADOWABLE: two existing maxSectorWeight entries → exactly one survives, LAST, = min(all, core)', () => {
+    archetypeFlag.mode = 'enforce';
+    // applyGuardrails dedups keep-LAST; a malformed two-entry snapshot must not let a
+    // looser cap shadow ours. Drop both, append the synthetic last.
+    const out = injectDiversifierSectorCap(
+      [
+        { type: 'stopLoss', value: 8 },
+        { type: 'maxSectorWeight', value: 60, enforcement: 'hard' },
+        { type: 'maxSectorWeight', value: 80, enforcement: 'hard' }, // would shadow under keep-last
+      ],
+      divTournament(),
+    );
+    const caps = out.filter(g => g.type === 'maxSectorWeight');
+    expect(caps).toHaveLength(1);                         // both user entries collapsed
+    expect(caps[0].value).toBe(35);                       // min(60, 80, core 35) = 35
+    expect(out[out.length - 1].type).toBe('maxSectorWeight'); // ours is LAST → keep-last lands on it
+    expect(out.find(g => g.type === 'stopLoss')).toBeTruthy(); // unrelated guardrail preserved
+  });
+
+  it('UN-SHADOWABLE: a user STRICTER cap among two entries still wins (min over all)', () => {
+    archetypeFlag.mode = 'enforce';
+    const out = injectDiversifierSectorCap(
+      [
+        { type: 'maxSectorWeight', value: 25, enforcement: 'hard' }, // stricter than core
+        { type: 'maxSectorWeight', value: 70, enforcement: 'hard' },
+      ],
+      divTournament(),
+    );
+    const caps = out.filter(g => g.type === 'maxSectorWeight');
+    expect(caps).toHaveLength(1);
+    expect(caps[0].value).toBe(25); // min(25, 70, 35) = 25 — user's tighter cap wins
+  });
+
   it('OBSERVE mode does NOT inject — the cap is ENFORCE-only (OBSERVE stays passive)', () => {
     archetypeFlag.mode = 'observe';
     const input = [{ type: 'stopLoss', value: 8 }];

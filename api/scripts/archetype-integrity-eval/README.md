@@ -42,21 +42,35 @@ It prints the metrics table + hard zeros to the console and writes
 ## What it reports (per archetype + overall)
 - proposal-present / schema-valid rates
 - valid-flex acceptance + false-refusal + wrong-id rates
-- rejection rate (over the should-not-commit set)
-- repair-retry rate, claimed-but-null rate
-- **HARD ZEROS** (must both be 0 to recommend ENFORCE):
-  1. core-reversing directives — any core-conflict / multi-intent / follow-up ask
-     that became a committed directive.
-  2. claimed-a-change-but-wrote-null — any null-write turn whose prose asserts a
-     behavior change.
+- core-held rate (null OR a core-aligned third-path commit) + clean-null rate
+- third-path commits — total + multi-intent-half + pure-conflict-redirect
+  (Ruling A: a core-aligned commit on a conflict is the third path working, NOT a
+  miss — informational, never a breach)
+- repair-retry rate
+- prose-overclaim rate (informational — how often the prose drifts into an action
+  verb on a null-write turn, even though the authoritative status backstops it)
+- **HARD ZEROS** — both are now STRUCTURAL (0 by construction); must both be 0 to
+  recommend ENFORCE:
+  1. core-OPPOSING directives — a committed directive whose
+     `policy.coreAlignment === 'opposes'`, i.e. one that actually reverses the core.
+     No allowlist id is `'opposes'` (the enum is `{reinforces, neutral}`) and the
+     gate mints only allowlist ids, so this is 0 by construction. A core-*aligned*
+     commit on a conflict ask is a reported `thirdPathCommit`, **not** a breach.
+  2. null-write status ≠ `'no_change'` — a null-write turn whose code-rendered
+     authoritative `directiveStatus` fails to say `'no_change'`. The status is
+     derived from `hasDirective` alone (`renderDirectiveStatus`), never the prose,
+     so this is 0 by construction. A prose over-claim with a correct `'no_change'`
+     status is **not** a breach — it's the informational `proseOverclaimRate`.
 
 The hard zeros are **reported, not asserted** — the founder reads the numbers and
 sets the remaining (soft) thresholds, then decides whether to flip OFF→OBSERVE→
 ENFORCE or send the schema/prompt back for a fix + re-run.
 
-## Note on the claimed-but-null detector
-`proseAssertsChange` is a **regex heuristic** over the exact phrases the
-deterministic-status contract forbids ("done", "locked in", "I changed my
-strategy", …). It's a proxy: a fully rigorous false-claim check would need a judge
-model. Treat a nonzero claimed-but-null count as a signal to inspect those turns by
-hand, not as a precise rate.
+## Note on the prose-overclaim metric
+`proseAssertsChange` (surfaced as `proseOverclaimRate`) is a **regex heuristic** over
+the exact phrases the deterministic-status contract forbids ("done", "locked in", "I
+changed my strategy", …). It is **informational only** — it does NOT gate ENFORCE.
+Prose honesty is guaranteed structurally by the authoritative `directiveStatus`
+(hard-zero-2 above), which backstops the prose: a null-write turn always reports
+`'no_change'` regardless of what the prose said. Treat a nonzero `proseOverclaimRate`
+as color (how often the natural voice drifts), not a gate.

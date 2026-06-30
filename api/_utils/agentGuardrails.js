@@ -68,20 +68,21 @@ export function injectDiversifierSectorCap(guardrails, battle) {
   // Resolve via the Phase-C resolver (frozen battle snapshot), not a raw agent read.
   if (getEffectiveArchetype(battle, null) !== 'diversifier') return base;
 
-  // The user can only TIGHTEN: effectiveCap = min(user maxSectorWeight, core 35%).
-  const existing = base.find(g => g?.type === 'maxSectorWeight' && typeof g.value === 'number');
-  const userCap = existing ? existing.value : Infinity;
+  // The user can only TIGHTEN: effectiveCap = min(ALL user maxSectorWeight caps, core
+  // 35%). Take the min over every existing numeric cap so a user's stricter value
+  // still wins even if the snapshot somehow carried more than one.
+  const existingCaps = base.filter(g => g?.type === 'maxSectorWeight' && typeof g.value === 'number');
+  const userCap = existingCaps.length ? Math.min(...existingCaps.map(g => g.value)) : Infinity;
   const effectiveCap = Math.min(userCap, DIVERSIFIER_SECTOR_CAP_PCT);
   console.log(
-    `[Guardrails] Diversifier sector cap: user=${existing ? existing.value : 'none'} core=${DIVERSIFIER_SECTOR_CAP_PCT} -> effective=${effectiveCap}`,
+    `[Guardrails] Diversifier sector cap: user=${existingCaps.length ? userCap : 'none'} core=${DIVERSIFIER_SECTOR_CAP_PCT} -> effective=${effectiveCap}`,
   );
 
-  const synthetic = { ...(existing || {}), type: 'maxSectorWeight', value: effectiveCap, enforcement: 'hard' };
-  // Replace the user's guardrail in place (dedup — byType keeps only the LAST entry
-  // per type, so a second maxSectorWeight would silently shadow the first); else append.
-  return existing
-    ? base.map(g => (g === existing ? synthetic : g))
-    : [...base, synthetic];
+  // UN-SHADOWABLE: drop EVERY existing maxSectorWeight entry and append the synthetic
+  // LAST, so applyGuardrails' keep-last dedup (byType) always lands on our cap — no
+  // second maxSectorWeight can shadow it, whatever shape the snapshot had.
+  const synthetic = { ...(existingCaps[0] || {}), type: 'maxSectorWeight', value: effectiveCap, enforcement: 'hard' };
+  return [...base.filter(g => g?.type !== 'maxSectorWeight'), synthetic];
 }
 
 /**

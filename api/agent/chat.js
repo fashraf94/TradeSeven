@@ -256,12 +256,20 @@ export default async function handler(req, res) {
         db.collection('indexIntelligence').doc('marketContext').get(),
         db.collection('indexIntelligence').doc('dailyRegimeBrief').get(),
         db.collection('voiceLayerCache').doc(battleId).get(),
-        fetchGroup ? groupRef.get().catch(() => null) : Promise.resolve(null),
+        fetchGroup
+          ? groupRef.get().catch((e) => {
+              console.warn('[VoiceLayer] tournament group read failed (manifest → all-false):', e?.message);
+              return null;
+            })
+          : Promise.resolve(null),
         fetchGroup
           ? groupRef.collection('claims')
               .where('odUserId', '==', user.uid)
               .where('status', '==', 'pending')
-              .count().get().catch(() => null)
+              .count().get().catch((e) => {
+                console.warn('[VoiceLayer] tournament claims read failed (manifest → all-false):', e?.message);
+                return null;
+              })
           : Promise.resolve(null),
       ]);
       if (marketCtxDoc.exists) {
