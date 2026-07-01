@@ -319,4 +319,4 @@ export const LEAGUE_AGENT_CHAT_ENABLED = true;
  * Built/merged DARK; flip in a one-line follow-up PR after a Vercel preview smoke
  * (the COMMAND_DASHBOARD_DESKTOP_ENABLED precedent) — never in the build PR.
  */
-export const SCOUTING_BOARD_ENABLED = false;
+export const SCOUTING_BOARD_ENABLED = true;
