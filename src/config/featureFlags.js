@@ -226,7 +226,7 @@ export const TRAINING_BOARD_REDESIGN_ENABLED = true;
  * INJECT half (below) is a separate, fence-gated flag and implies this one.
  * See the Rule Conflict Reconciler build spec + RULES_LAUNCHBLOCKER findings.
  */
-export const CONFLICT_RECONCILER_DETECT_ENABLED = false;
+export const CONFLICT_RECONCILER_DETECT_ENABLED = true;
 
 /**
  * Rule Conflict Reconciler — runtime INJECTION into the cognition prompts.
@@ -244,7 +244,7 @@ export const CONFLICT_RECONCILER_DETECT_ENABLED = false;
  * fenced commit is reviewed for prompt parity and signed off, and after a
  * preview calibration smoke. See the Rule Conflict Reconciler build spec.
  */
-export const CONFLICT_RECONCILER_INJECT_ENABLED = false;
+export const CONFLICT_RECONCILER_INJECT_ENABLED = true;
 
 /**
  * Archetype Integrity / "Third Path" — tri-state rollout mode.
@@ -268,7 +268,7 @@ export const CONFLICT_RECONCILER_INJECT_ENABLED = false;
  * sub-flag (the Diversifier cap is independently safe and rides this flag).
  * See docs/audits/20260625_ARCHETYPE_INTEGRITY_BUILD_PLAN_V2.md.
  */
-export const ARCHETYPE_INTEGRITY_MODE = 'off';
+export const ARCHETYPE_INTEGRITY_MODE = 'observe';
 
 /**
  * League — Desktop Training Pod tab + Active Training Game card (the desktop
@@ -297,4 +297,4 @@ export const LEAGUE_TRAINING_POD_ENABLED = true;
  * merged DARK; flip only after a Vercel preview smoke (the TOURNAMENT_TAB_ENABLED
  * precedent).
  */
-export const LEAGUE_AGENT_CHAT_ENABLED = false;
+export const LEAGUE_AGENT_CHAT_ENABLED = true;
