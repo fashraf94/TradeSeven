@@ -29,6 +29,8 @@ import IdentityPanel from './desktop/IdentityPanel';
 import ReadColumn from './desktop/ReadColumn';
 import EquipBench from './desktop/EquipBench';
 import DeployCard from './desktop/DeployCard';
+import ScoutingBoardSheet from './ScoutingBoardSheet';
+import { SCOUTING_BOARD_ENABLED } from '../../config/featureFlags';
 
 function getGreeting() {
   const hour = new Date().getHours();
@@ -82,16 +84,19 @@ export default function CommandDashboardDesktop({
 
   const [deploying, setDeploying] = useState(false);
   const [recordOpen, setRecordOpen] = useState(false);
+  const [boardOpen, setBoardOpen] = useState(false);
   const deployDisabled = deploying || isLive || !agent;
   const handleDeploy = async () => {
-    if (deployDisabled) return;
+    if (deployDisabled) return { success: false };
     setDeploying(true);
+    let result = { success: false };
     try {
-      await deployAgent(agent.id, onCreateAgentBattle);
+      result = await deployAgent(agent.id, onCreateAgentBattle);
     } catch (err) {
       console.error('[Deploy] Error:', err);
     }
     setDeploying(false);
+    return result;
   };
   const openFilmRoom = (battle) => { setCurrentBattle?.(battle); setScreen?.('filmRoom'); };
   const openAgentRecord = () => setRecordOpen(true);
@@ -181,6 +186,8 @@ export default function CommandDashboardDesktop({
             deployDisabled={deployDisabled}
             deploying={deploying}
             isLive={isLive}
+            boardEnabled={SCOUTING_BOARD_ENABLED}
+            onSeeEyeing={() => setBoardOpen(true)}
           />
           <div id="cmd-desk-equip">
             <EquipBench agent={agent} accent={accent} setShowForge={setShowForge} isLive={isLive} />
@@ -236,6 +243,20 @@ export default function CommandDashboardDesktop({
         nextLevelInfo={nextLevelInfo}
         dock="center"
       />
+
+      {SCOUTING_BOARD_ENABLED && (
+        <ScoutingBoardSheet
+          open={boardOpen}
+          onClose={() => setBoardOpen(false)}
+          dock="center"
+          agent={agent}
+          accent={accent}
+          deploying={deploying}
+          deployDisabled={deployDisabled}
+          isLive={isLive}
+          onDeploy={handleDeploy}
+        />
+      )}
     </div>
   );
 }

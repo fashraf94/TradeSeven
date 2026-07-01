@@ -298,3 +298,25 @@ export const LEAGUE_TRAINING_POD_ENABLED = true;
  * precedent).
  */
 export const LEAGUE_AGENT_CHAT_ENABLED = true;
+
+/**
+ * Command Center — Scouting Board (the READ-section "See what it's eyeing"
+ * pre-deploy preview).
+ *
+ * When FALSE (default), the READ section is byte-identical to today: the primary
+ * CTA is "Deploy on this read" (mobile CommandDashboard, desktop ReadColumn) and
+ * the deferred "Talk it over · Soon" stub renders unchanged. Nothing calls the
+ * read-only GET /api/agent/scouting-board endpoint (which itself 404s while this
+ * is false).
+ *
+ * When TRUE, the primary CTA becomes "See what it's eyeing" → opens the
+ * ScoutingBoardSheet (the top-10 archetype-ranked board + the equipped watchlist
+ * as a marked group, rendered read-only from the deterministic
+ * computeArchetypeRankings). Deploy becomes an action taken FROM the board via
+ * the UNCHANGED deployAgent path, with a subtle direct-deploy escape hatch kept
+ * in the READ section so deploy is always reachable without opening the board.
+ *
+ * Built/merged DARK; flip in a one-line follow-up PR after a Vercel preview smoke
+ * (the COMMAND_DASHBOARD_DESKTOP_ENABLED precedent) — never in the build PR.
+ */
+export const SCOUTING_BOARD_ENABLED = false;
