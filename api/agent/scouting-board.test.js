@@ -44,6 +44,11 @@ vi.mock('../../src/config/featureFlags.js', async (importOriginal) => ({
   get SCOUTING_BOARD_ENABLED() { return boardFlag.on; },
 }));
 
+// BUILD_RULES §4 dependency-surface guard: scouting-board.js imports
+// src/config/featureFlags.js (an api→src import). This real handler import — and the
+// featureFlags vi.mock's importOriginal() above — load that module for real in the
+// Node/vitest env, so a browser-only dep entering the graph explodes here. NEVER
+// replace this with a mocked handler.
 const { default: handler } = await import('./scouting-board.js');
 
 // ==================== Fixtures ====================

@@ -89,7 +89,9 @@ export default function ScoutingBoardSheet({
   const [state, setState] = useState({ status: 'idle', data: null, error: null });
 
   const load = useCallback((signal) => {
-    if (!archetype) return;
+    // No agent/archetype yet (e.g. the sheet is opened during agent load): show a
+    // benign empty state, never a perpetual skeleton.
+    if (!archetype) { setState({ status: 'empty', data: null, error: null }); return; }
     setState({ status: 'loading', data: null, error: null });
     const params = new URLSearchParams({ archetype });
     if (watchlistId) params.set('watchlistId', watchlistId);
@@ -160,7 +162,7 @@ export default function ScoutingBoardSheet({
     );
   } else {
     // ready | empty
-    const wl = data.watchlist || { inUniverse: [], offUniverse: [] };
+    const wl = data?.watchlist || { inUniverse: [], offUniverse: [] };
     const isEmpty = state.status === 'empty';
     const hasWatchlist = (wl.inUniverse?.length || 0) + (wl.offUniverse?.length || 0) > 0;
     body = (
@@ -174,7 +176,7 @@ export default function ScoutingBoardSheet({
         ) : (
           <>
             {label && <Eyebrow style={{ marginBottom: 8 }}>{`In ${label}'s wheelhouse today`}</Eyebrow>}
-            {data.ranked.map((row) => (
+            {(data?.ranked || []).map((row) => (
               <BoardRow key={row.symbol} row={row} accent={accent} showStar />
             ))}
           </>
@@ -183,10 +185,10 @@ export default function ScoutingBoardSheet({
         {hasWatchlist && (
           <div style={{ marginTop: isEmpty ? 4 : 14 }}>
             <Eyebrow style={{ marginBottom: 8 }}>From your watchlist</Eyebrow>
-            {wl.inUniverse.map((row) => (
+            {(wl.inUniverse || []).map((row) => (
               <BoardRow key={row.symbol} row={row} accent={accent} showStar={false} />
             ))}
-            {wl.offUniverse.length > 0 && (
+            {(wl.offUniverse || []).length > 0 && (
               <>
                 <div style={{ fontSize: 11, color: CMD.ink3, margin: '6px 2px 8px' }}>
                   {isEmpty

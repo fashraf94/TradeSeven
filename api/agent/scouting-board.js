@@ -36,14 +36,20 @@ function chipForArchetype(archetype) {
   return null;
 }
 
-// Normalize the stockRankings doc-level `computedAt` (a Firestore serverTimestamp)
-// to an ISO string; tolerate an already-serialized value or absence.
-function toIso(ts) {
+// Normalize the stockRankings doc-level `computedAt` to an ISO string. In the live
+// path it is a Firestore Timestamp (serverTimestamp, read via Admin SDK) with
+// .toDate(); the {seconds}/{_seconds} branches match the canonical toIso copies for
+// a serialized-Timestamp shape. Named distinctly from api/_utils/tournamentTime.js's
+// toIso, which only accepts Date|string and would throw on a Timestamp — do NOT swap
+// this for that helper.
+function firestoreTsToIso(ts) {
   if (!ts) return null;
   if (typeof ts.toDate === 'function') {
     try { return ts.toDate().toISOString(); } catch { return null; }
   }
   if (typeof ts === 'string') return ts;
+  if (typeof ts._seconds === 'number') return new Date(ts._seconds * 1000).toISOString();
+  if (typeof ts.seconds === 'number') return new Date(ts.seconds * 1000).toISOString();
   return null;
 }
 
@@ -80,7 +86,7 @@ export default async function handler(req, res) {
     const rankingsSnap = await db.collection('indexIntelligence').doc('stockRankings').get();
     const rankingsData = rankingsSnap.exists ? rankingsSnap.data() : null;
     const stocks = Array.isArray(rankingsData?.stocks) ? rankingsData.stocks : [];
-    const asOf = toIso(rankingsData?.computedAt);
+    const asOf = firestoreTsToIso(rankingsData?.computedAt);
 
     // 2. Resolve + AUTHORIZE the equipped watchlist. watchlistId comes from the
     //    client (not an owned agent doc, as in decide.js), and this endpoint uses
