@@ -82,4 +82,20 @@ describe('ArenaMobile render smoke', () => {
     expect(html).toContain('Speculator'); // archName wired (not the mock's missing prop)
     expect(html).toContain('Ask your agent');
   });
+
+  // The two-way ask (chatReady) render: the real input + "N left today" counter + the
+  // strategy chips. Proves the flag-on path composes (the flag itself is read upstream
+  // in useArenaEngine → chatReady; here we drive AgentDock directly).
+  it('AgentDock (two-way ask, chatReady) renders the input + counter without throwing', () => {
+    const html = renderToString(
+      <AgentDock
+        compact live lines={[{ kind: 'read', text: 'live', _k: 1 }]} archName="Speculator"
+        ask={[{ q: 'What is the plan from here?' }, { q: 'How do we protect the lead?' }]}
+        onAsk={() => {}} askLive={() => {}} remaining={7} asking={false} chatReady
+      />,
+    );
+    expect(html).toContain('left today');              // the persistent counter rendered
+    expect(html).toContain('How do we protect the lead?'); // a strategy chip rendered
+    expect(html).toContain('Ask anything…');           // the real free-text input placeholder
+  });
 });

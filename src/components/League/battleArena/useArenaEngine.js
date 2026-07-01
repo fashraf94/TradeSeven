@@ -17,16 +17,27 @@
 
 import React from 'react';
 import {
-  makeEngineState, applyBeat, applyFlip, applyAsk, clearBeat, tickClock,
+  makeEngineState, applyBeat, applyFlip, applyAsk, applyAsking, applyAnswer, setRemaining,
+  clearBeat, tickClock,
 } from './arenaEngineCore';
 import { beatKey, firstUnseenBeat } from './arenaBeatDiff';
+import { LEAGUE_AGENT_CHAT_ENABLED } from '../../../config/featureFlags';
 
 const BEAT_DWELL_MS = 4400;
 const SEEN_CAP = 500; // bound the live seen-set across a long session
 
+// The in-voice failure line (a hiccup reaching the agent). NOT an error banner — it
+// renders as a normal agent message and the input stays open for a retry, and the
+// server never charged (the count is unchanged).
+const ASK_FAILED_LINE = "Couldn't get through to me just then — give it another shot.";
+
+// Lazy-load the authed-fetch helper so this hook's static import graph stays node-clean
+// (the SSR smoke test never loads firebase). Module-cached, so both callers share it.
+const loadAuthedFetch = () => import('../../../utils/fetchWithAuth').then((m) => m.fetchWithAuth);
+
 export function useArenaEngine({
   active, voice, beats, ask, closeStart = 0, wireStart = 0, beatInterval = 7600,
-  live = false, liveBeats = null,
+  live = false, liveBeats = null, battleId = null, agentId = null,
 }) {
   const [eng, setEng] = React.useState(() => makeEngineState(voice));
   const [closeClock, setCloseClock] = React.useState(closeStart);
@@ -58,6 +69,59 @@ export function useArenaEngine({
     const qa = Array.isArray(ask) ? ask[i] : null;
     if (qa) setEng((s) => applyAsk(s, qa));
   }, [ask]);
+
+  // ── the LIVE two-way ask (flag-gated). Ready only with a real battle identity, so
+  //    the fixtures/preview path never fires a network call. Both fetches lazy-import
+  //    the authed-fetch helper so this hook's static graph stays node-clean (the SSR
+  //    smoke test never loads firebase). ──
+  const chatReady = LEAGUE_AGENT_CHAT_ENABLED && !!battleId && !!agentId;
+  const inFlightRef = React.useRef(false);
+
+  const askLive = React.useCallback(async (message) => {
+    const text = String(message ?? '').trim();
+    if (!chatReady || !text || inFlightRef.current) return;
+    inFlightRef.current = true;
+    setEng((s) => applyAsking(s));
+    try {
+      const fetchWithAuth = await loadAuthedFetch();
+      const res = await fetchWithAuth('/api/agent/chat', {
+        method: 'POST',
+        body: JSON.stringify({ agentId, battleId, message: text, leagueAsk: true }),
+      });
+      const data = await res.json().catch(() => ({}));
+      // A non-ok status OR a 200 with no answer text (malformed body) both surface the
+      // in-voice retry line — never a blank agent bubble. The server did NOT charge on
+      // either, so the counter is left untouched.
+      if (!res.ok || !data.agentMessage) {
+        setEng((s) => applyAnswer(s, { q: text, text: ASK_FAILED_LINE, error: true }));
+        return;
+      }
+      // Success OR the in-voice exhausted 200 — both carry agentMessage + remaining.
+      setEng((s) => setRemaining(applyAnswer(s, { q: text, text: data.agentMessage }), data.remaining));
+    } catch {
+      setEng((s) => applyAnswer(s, { q: text, text: ASK_FAILED_LINE, error: true }));
+    } finally {
+      inFlightRef.current = false;
+    }
+  }, [chatReady, agentId, battleId]);
+
+  const fetchRemaining = React.useCallback(async () => {
+    if (!chatReady) return;
+    try {
+      const fetchWithAuth = await loadAuthedFetch();
+      const res = await fetchWithAuth(`/api/agent/chat-budget?battleId=${encodeURIComponent(battleId)}`);
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) setEng((s) => setRemaining(s, data.remaining));
+    } catch { /* leave the counter as-is — never block the arena on a counter read */ }
+  }, [chatReady, battleId]);
+
+  // Clear a stale counter the instant the battle identity changes (a new game-day's
+  // battle doc, or switching groups) so the dock never shows the prior battle's count.
+  React.useEffect(() => { setEng((s) => (s.remaining == null ? s : { ...s, remaining: null })); }, [battleId]);
+
+  // On open (live only), fetch the true "N left today" so the counter is never a
+  // client guess — it reflects any questions already spent earlier today.
+  React.useEffect(() => { if (chatReady && live) fetchRemaining(); }, [chatReady, live, fetchRemaining]);
 
   // PREVIEW: auto-fire the fixture beat loop (OFF in live mode)
   React.useEffect(() => {
@@ -121,5 +185,11 @@ export function useArenaEngine({
     wireClock,
     flip,
     askAgent,
+    // two-way ask (flag-gated; inert in preview / when off)
+    askLive,
+    fetchRemaining,
+    chatReady,
+    remaining: eng.remaining,
+    asking: eng.asking,
   };
 }

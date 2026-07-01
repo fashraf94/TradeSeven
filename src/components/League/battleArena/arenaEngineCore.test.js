@@ -7,6 +7,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   seedVoiceLines, makeEngineState, applyBeat, applyFlip, applyAsk, clearBeat, tickClock,
+  applyAsking, applyAnswer, setRemaining,
 } from './arenaEngineCore';
 
 const VOICE = {
@@ -84,6 +85,42 @@ describe('applyAsk', () => {
   it('a missing qa is a no-op', () => {
     const s0 = makeEngineState(VOICE);
     expect(applyAsk(s0, null)).toBe(s0);
+  });
+});
+
+describe('two-way ask reducers (applyAsking / applyAnswer / setRemaining)', () => {
+  it('initial state carries the counter (null) and the in-flight flag (false)', () => {
+    const s = makeEngineState(VOICE);
+    expect(s.remaining).toBeNull();
+    expect(s.asking).toBe(false);
+  });
+
+  it('applyAsking marks a request in flight (idempotent)', () => {
+    const s1 = applyAsking(makeEngineState(VOICE));
+    expect(s1.asking).toBe(true);
+    expect(applyAsking(s1)).toBe(s1); // already asking → same reference
+  });
+
+  it('applyAnswer prepends the real answer, clears asking, deactivates older lines', () => {
+    const asking = applyAsking(makeEngineState(VOICE));
+    const s = applyAnswer(asking, { q: 'the plan?', text: "We're leaning into semis." });
+    expect(s.asking).toBe(false);
+    expect(s.lines[0]).toMatchObject({ kind: 'answer', q: 'the plan?', text: "We're leaning into semis.", active: true, error: false });
+    expect(s.lines.slice(1).every((l) => !l.active)).toBe(true);
+  });
+
+  it('applyAnswer with error:true flags a failure line (for the retry affordance)', () => {
+    const s = applyAnswer(makeEngineState(VOICE), { q: 'plan?', text: 'try again', error: true });
+    expect(s.lines[0]).toMatchObject({ kind: 'answer', error: true });
+  });
+
+  it('setRemaining sets a finite count and ignores non-finite (keeps last known)', () => {
+    const s0 = makeEngineState(VOICE);
+    expect(setRemaining(s0, 7).remaining).toBe(7);
+    expect(setRemaining(s0, 0).remaining).toBe(0);
+    const s7 = setRemaining(s0, 7);
+    expect(setRemaining(s7, undefined)).toBe(s7); // no server value → unchanged reference
+    expect(setRemaining(s7, NaN)).toBe(s7);
   });
 });
 
