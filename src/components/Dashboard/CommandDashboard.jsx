@@ -16,10 +16,11 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Menu, Trophy, Zap, MessageCircle, ChevronRight } from 'lucide-react';
+import { Menu, Trophy, Zap, Eye, MessageCircle, ChevronRight } from 'lucide-react';
 import AgentOrb from '../shared/AgentOrb';
 import EquipStation from './EquipStation';
 import AgentRecordSheet from './AgentRecordSheet';
+import ScoutingBoardSheet from './ScoutingBoardSheet';
 import EvolutionPreviewCard from './EvolutionPreviewCard';
 import DeployStation from './DeployStation';
 import ManageStation from './ManageStation';
@@ -30,6 +31,7 @@ import useDailyRegimeBrief from '../../hooks/useDailyRegimeBrief';
 import useRecentCompletedAgentBattles from '../../hooks/useRecentCompletedAgentBattles';
 import { deployAgent } from '../../services/agentDeploy';
 import { getEquipSlotCounts } from '../../utils/equipSlots';
+import { SCOUTING_BOARD_ENABLED } from '../../config/featureFlags';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -127,16 +129,19 @@ export default function CommandDashboard({
 
   const [deploying, setDeploying] = useState(false);
   const [recordOpen, setRecordOpen] = useState(false);
+  const [boardOpen, setBoardOpen] = useState(false);
   const deployDisabled = deploying || isLive || !agent;
   const handleDeploy = async () => {
-    if (deployDisabled) return;
+    if (deployDisabled) return { success: false };
     setDeploying(true);
+    let result = { success: false };
     try {
-      await deployAgent(agent.id, onCreateAgentBattle);
+      result = await deployAgent(agent.id, onCreateAgentBattle);
     } catch (err) {
       console.error('[Deploy] Error:', err);
     }
     setDeploying(false);
+    return result;
   };
   const openFilmRoom = (battle) => { setCurrentBattle?.(battle); setScreen?.('filmRoom'); };
 
@@ -284,20 +289,37 @@ export default function CommandDashboard({
 
             {/* the read flows into the decision */}
             <div style={{ display: 'flex', gap: 9, marginTop: 15 }}>
-              <motion.button
-                type="button"
-                onClick={handleDeploy}
-                disabled={deployDisabled}
-                whileTap={deployDisabled ? undefined : { scale: 0.985 }}
-                style={{
-                  flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-                  padding: 12, borderRadius: 12, border: 'none', cursor: deployDisabled ? 'default' : 'pointer', fontFamily: 'inherit',
-                  background: accent, color: readableOn(accent), fontWeight: 700, fontSize: 13.5, opacity: deployDisabled ? 0.55 : 1,
-                }}
-              >
-                <Zap size={16} color={readableOn(accent)} fill={readableOn(accent)} />
-                <span>{deploying ? 'Deploying…' : isLive ? 'Battle in progress' : 'Deploy on this read'}</span>
-              </motion.button>
+              {SCOUTING_BOARD_ENABLED ? (
+                <motion.button
+                  type="button"
+                  onClick={() => setBoardOpen(true)}
+                  disabled={isLive || !agent}
+                  whileTap={(isLive || !agent) ? undefined : { scale: 0.985 }}
+                  style={{
+                    flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                    padding: 12, borderRadius: 12, border: 'none', cursor: (isLive || !agent) ? 'default' : 'pointer', fontFamily: 'inherit',
+                    background: accent, color: readableOn(accent), fontWeight: 700, fontSize: 13.5, opacity: (isLive || !agent) ? 0.55 : 1,
+                  }}
+                >
+                  <Eye size={16} color={readableOn(accent)} />
+                  <span>{isLive ? 'Battle in progress' : 'See what it’s eyeing'}</span>
+                </motion.button>
+              ) : (
+                <motion.button
+                  type="button"
+                  onClick={handleDeploy}
+                  disabled={deployDisabled}
+                  whileTap={deployDisabled ? undefined : { scale: 0.985 }}
+                  style={{
+                    flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                    padding: 12, borderRadius: 12, border: 'none', cursor: deployDisabled ? 'default' : 'pointer', fontFamily: 'inherit',
+                    background: accent, color: readableOn(accent), fontWeight: 700, fontSize: 13.5, opacity: deployDisabled ? 0.55 : 1,
+                  }}
+                >
+                  <Zap size={16} color={readableOn(accent)} fill={readableOn(accent)} />
+                  <span>{deploying ? 'Deploying…' : isLive ? 'Battle in progress' : 'Deploy on this read'}</span>
+                </motion.button>
+              )}
               {/* Voice Layer deferred — visible "coming soon" entry point, no-op tap */}
               <button
                 type="button"
@@ -316,6 +338,20 @@ export default function CommandDashboard({
                 }}>Soon</Mono>
               </button>
             </div>
+            {SCOUTING_BOARD_ENABLED && (
+              <button
+                type="button"
+                onClick={handleDeploy}
+                disabled={deployDisabled}
+                style={{
+                  display: 'block', margin: '9px auto 0', padding: '4px 8px', background: 'transparent', border: 'none',
+                  cursor: deployDisabled ? 'default' : 'pointer', fontFamily: 'inherit', color: CMD.ink3,
+                  fontSize: 12, fontWeight: 600, textDecoration: 'underline', textUnderlineOffset: 3, opacity: deployDisabled ? 0.5 : 1,
+                }}
+              >
+                {deploying ? 'Deploying…' : 'Deploy without previewing'}
+              </button>
+            )}
           </div>
         </motion.div>
 
@@ -371,6 +407,20 @@ export default function CommandDashboard({
         levelConfig={levelConfig}
         nextLevelInfo={nextLevelInfo}
       />
+
+      {SCOUTING_BOARD_ENABLED && (
+        <ScoutingBoardSheet
+          open={boardOpen}
+          onClose={() => setBoardOpen(false)}
+          dock="bottom"
+          agent={agent}
+          accent={accent}
+          deploying={deploying}
+          deployDisabled={deployDisabled}
+          isLive={isLive}
+          onDeploy={handleDeploy}
+        />
+      )}
     </div>
   );
 }

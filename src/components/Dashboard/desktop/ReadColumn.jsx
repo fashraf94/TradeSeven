@@ -9,7 +9,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Zap, MessageCircle, ChevronRight } from 'lucide-react';
+import { Zap, Eye, MessageCircle, ChevronRight } from 'lucide-react';
 import AgentOrb from '../../shared/AgentOrb';
 import { CMD, alpha, readableOn, Mono, SectionLabel } from '../commandUI';
 import useDailyRegimeBrief from '../../../hooks/useDailyRegimeBrief';
@@ -26,7 +26,7 @@ function prettyDate(forDate) {
   }
 }
 
-export default function ReadColumn({ accent, agentName, onOpenAgentRecord, onDeploy, deployDisabled, deploying, isLive }) {
+export default function ReadColumn({ accent, agentName, onOpenAgentRecord, onDeploy, deployDisabled, deploying, isLive, boardEnabled, onSeeEyeing }) {
   const drb = useDailyRegimeBrief();
 
   const [expanded, setExpanded] = useState(false);
@@ -114,20 +114,37 @@ export default function ReadColumn({ accent, agentName, onOpenAgentRecord, onDep
 
         {/* the read flows into the decision */}
         <div style={{ display: 'flex', gap: 9, marginTop: 15 }}>
-          <motion.button
-            type="button"
-            onClick={onDeploy}
-            disabled={deployDisabled}
-            whileTap={deployDisabled ? undefined : { scale: 0.985 }}
-            style={{
-              flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-              padding: 12, borderRadius: 12, border: 'none', cursor: deployDisabled ? 'default' : 'pointer', fontFamily: 'inherit',
-              background: accent, color: ink, fontWeight: 700, fontSize: 13.5, opacity: deployDisabled ? 0.55 : 1,
-            }}
-          >
-            <Zap size={16} color={ink} fill={ink} />
-            <span>{deploying ? 'Deploying…' : isLive ? 'Battle in progress' : 'Deploy on this read'}</span>
-          </motion.button>
+          {boardEnabled ? (
+            <motion.button
+              type="button"
+              onClick={onSeeEyeing}
+              disabled={isLive}
+              whileTap={isLive ? undefined : { scale: 0.985 }}
+              style={{
+                flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                padding: 12, borderRadius: 12, border: 'none', cursor: isLive ? 'default' : 'pointer', fontFamily: 'inherit',
+                background: accent, color: ink, fontWeight: 700, fontSize: 13.5, opacity: isLive ? 0.55 : 1,
+              }}
+            >
+              <Eye size={16} color={ink} />
+              <span>{isLive ? 'Battle in progress' : 'See what it’s eyeing'}</span>
+            </motion.button>
+          ) : (
+            <motion.button
+              type="button"
+              onClick={onDeploy}
+              disabled={deployDisabled}
+              whileTap={deployDisabled ? undefined : { scale: 0.985 }}
+              style={{
+                flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                padding: 12, borderRadius: 12, border: 'none', cursor: deployDisabled ? 'default' : 'pointer', fontFamily: 'inherit',
+                background: accent, color: ink, fontWeight: 700, fontSize: 13.5, opacity: deployDisabled ? 0.55 : 1,
+              }}
+            >
+              <Zap size={16} color={ink} fill={ink} />
+              <span>{deploying ? 'Deploying…' : isLive ? 'Battle in progress' : 'Deploy on this read'}</span>
+            </motion.button>
+          )}
           {/* Voice Layer deferred — coming-soon entry point, no-op tap */}
           <button
             type="button"
@@ -146,6 +163,20 @@ export default function ReadColumn({ accent, agentName, onOpenAgentRecord, onDep
             }}>Soon</Mono>
           </button>
         </div>
+        {boardEnabled && (
+          <button
+            type="button"
+            onClick={onDeploy}
+            disabled={deployDisabled}
+            style={{
+              display: 'block', margin: '9px auto 0', padding: '4px 8px', background: 'transparent', border: 'none',
+              cursor: deployDisabled ? 'default' : 'pointer', fontFamily: 'inherit', color: CMD.ink3,
+              fontSize: 12, fontWeight: 600, textDecoration: 'underline', textUnderlineOffset: 3, opacity: deployDisabled ? 0.5 : 1,
+            }}
+          >
+            {deploying ? 'Deploying…' : 'Deploy without previewing'}
+          </button>
+        )}
       </div>
     </div>
   );
