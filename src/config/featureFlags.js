@@ -278,3 +278,23 @@ export const ARCHETYPE_INTEGRITY_MODE = 'off';
  * instant one-line rollback.
  */
 export const LEAGUE_TRAINING_POD_ENABLED = true;
+
+/**
+ * League — Battle Arena "Ask your agent" two-way chat (see the League Agent
+ * Chat build spec). When FALSE (default), the arena ask box stays today's
+ * local-echo stub — decorative "Ask anything…" placeholder + canned chip
+ * echoes, no network — byte-identical to before this build.
+ *
+ * When TRUE, the ask box becomes a real free-text input + strategy chips that
+ * POST to /api/agent/chat (leagueAsk:true) for a grounded in-voice answer,
+ * under a per-day question budget (agentChatBudget/{groupId}_{uid}_{dayN}) with
+ * a persistent "N left today" counter, an in-voice zero state, and an in-voice
+ * failure/retry state.
+ *
+ * THIS FLAG IS THE COST KILL-SWITCH — every paid ask is behind it. It is
+ * independent of the arena flag (LEAGUE_BATTLE_VIEW_V2_ENABLED); flipping it
+ * off instantly stops all paid asks and reverts the box to the stub. Built and
+ * merged DARK; flip only after a Vercel preview smoke (the TOURNAMENT_TAB_ENABLED
+ * precedent).
+ */
+export const LEAGUE_AGENT_CHAT_ENABLED = false;

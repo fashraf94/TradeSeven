@@ -18,6 +18,8 @@ const {
   shadowLogCalls,
   archetypeFlag,
   voiceLayerArgs,
+  leagueChatFlag,
+  budget,
 } = vi.hoisted(() => ({
   authReturnValue: { current: { uid: 'test-user' } },
   callGemmaVoiceImpl: { current: async () => '{"response":"hi"}' },
@@ -25,6 +27,16 @@ const {
   shadowLogCalls: { current: [] },
   archetypeFlag: { mode: 'off' },
   voiceLayerArgs: { current: [] }, // Phase E2 — capture buildVoiceLayerPrompt args
+  // League arena two-way ask — the kill-switch flag + a controllable budget module.
+  leagueChatFlag: { on: false },
+  budget: {
+    resolveImpl: () => ({ groupId: 'group-xyz', dayN: 1 }),
+    readImpl: async () => ({ count: 0, remaining: 10 }),
+    chargeImpl: async () => ({ charged: true, remaining: 9, count: 1 }),
+    resolveCalls: [],
+    readCalls: [],
+    chargeCalls: [],
+  },
 }));
 
 // ==================== MOCKS ====================
@@ -82,6 +94,17 @@ vi.mock('../_utils/gemmaClient.js', () => ({
 vi.mock('../../src/config/featureFlags.js', async (importOriginal) => ({
   ...(await importOriginal()),
   get ARCHETYPE_INTEGRITY_MODE() { return archetypeFlag.mode; },
+  get LEAGUE_AGENT_CHAT_ENABLED() { return leagueChatFlag.on; },
+}));
+
+// The per-day budget module is exercised in agentChatBudget.test.js; here it is
+// mocked so these tests assert chat.js's BRANCHING (bypass / gate / charge / fail-open)
+// without a second Firestore fake. Calls are captured for no-charge assertions.
+vi.mock('../_utils/agentChatBudget.js', () => ({
+  AGENT_CHAT_DAILY_LIMIT: 10,
+  resolveBudgetDay: async (_db, battle) => { budget.resolveCalls.push(battle); return budget.resolveImpl(battle); },
+  readAgentChatBudget: async (_db, args) => { budget.readCalls.push(args); return budget.readImpl(args); },
+  chargeAgentChatBudget: async (_db, args) => { budget.chargeCalls.push(args); return budget.chargeImpl(args); },
 }));
 
 vi.mock('firebase-admin/firestore', () => ({
@@ -185,6 +208,13 @@ beforeEach(() => {
   activeFirestore = null;
   archetypeFlag.mode = 'off';
   voiceLayerArgs.current = [];
+  leagueChatFlag.on = false;
+  budget.resolveImpl = () => ({ groupId: 'group-xyz', dayN: 1 });
+  budget.readImpl = async () => ({ count: 0, remaining: 10 });
+  budget.chargeImpl = async () => ({ charged: true, remaining: 9, count: 1 });
+  budget.resolveCalls = [];
+  budget.readCalls = [];
+  budget.chargeCalls = [];
 });
 
 // ==================== TESTS ====================
@@ -387,6 +417,129 @@ describe('agent/chat — Catalog #9 round-boundary Film Room tagging', () => {
     const exchange = exchangeFromWrite(fixture.written);
     expect(exchange).toBeTruthy();
     expect('groupId' in exchange).toBe(false);
+  });
+});
+
+// ==================== League arena two-way ask — per-day budget ====================
+
+describe('agent/chat — League arena per-day ask (leagueAsk + LEAGUE_AGENT_CHAT_ENABLED)', () => {
+  const TOURNEY_BATTLE = { ...VALID_BATTLE, gameMode: TOURNAMENT_GAME_MODE, groupId: 'group-xyz' };
+  // resolveBudgetDay (the group-read + dayN derivation) is mocked here; its own group-
+  // read-failure path is unit-tested in agentChatBudget.test.js. These tests drive its
+  // resolved key (or null) to exercise chat.js's branching.
+  const KEY = { groupId: 'group-xyz', dayN: 1 };
+
+  const mainUpdate = (written) => written.updateCalls.find(c => c.updates?.chatExchanges?.__op === 'arrayUnion');
+
+  it('flag OFF: a leagueAsk is IGNORED — falls to the legacy per-battle path (kill-switch)', async () => {
+    leagueChatFlag.on = false;
+    const fixture = makeFakeFirestore({ agent: VALID_AGENT, battle: TOURNEY_BATTLE });
+    activeFirestore = fixture.db;
+
+    const { req, res } = makeReqRes({ agentId: 'agent-1', battleId: 'battle-1', message: 'hi', leagueAsk: true });
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    // Not even the day resolver runs; the legacy per-battle increment runs; no `remaining`.
+    expect(budget.resolveCalls).toHaveLength(0);
+    expect(budget.chargeCalls).toHaveLength(0);
+    expect(mainUpdate(fixture.written).updates.chatBudgetUsed).toEqual({ __op: 'increment', n: 1 });
+    expect('remaining' in res.body).toBe(false);
+  });
+
+  it('flag ON: a League ask bypasses the per-battle budget and charges the per-day store', async () => {
+    leagueChatFlag.on = true;
+    budget.resolveImpl = () => KEY;
+    budget.readImpl = async () => ({ count: 4, remaining: 6 });
+    budget.chargeImpl = async () => ({ charged: true, remaining: 5, count: 5 });
+    const fixture = makeFakeFirestore({ agent: VALID_AGENT, battle: TOURNEY_BATTLE });
+    activeFirestore = fixture.db;
+
+    const { req, res } = makeReqRes({ agentId: 'agent-1', battleId: 'battle-1', message: 'whats the plan', leagueAsk: true });
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body.agentMessage).toBe('hi');
+    // Server-authoritative remaining flows back to the counter.
+    expect(res.body.remaining).toBe(5);
+    // The per-day store was charged ONCE, keyed on the resolved game-day + group + uid.
+    expect(budget.chargeCalls).toHaveLength(1);
+    expect(budget.chargeCalls[0]).toMatchObject({ groupId: 'group-xyz', uid: 'test-user', dayN: 1 });
+    // The exchange is still written durably, but the per-battle counter is NOT touched.
+    const upd = mainUpdate(fixture.written).updates;
+    expect(upd.chatExchanges.__op).toBe('arrayUnion');
+    expect('chatBudgetUsed' in upd).toBe(false);
+  });
+
+  it('at zero: a 200 in-voice exhausted line, NO agent call, NO charge', async () => {
+    leagueChatFlag.on = true;
+    budget.resolveImpl = () => KEY;
+    budget.readImpl = async () => ({ count: 10, remaining: 0 });
+    let gemmaCalled = false;
+    callGemmaVoiceImpl.current = async () => { gemmaCalled = true; return '{"response":"should not run"}'; };
+    const fixture = makeFakeFirestore({ agent: VALID_AGENT, battle: TOURNEY_BATTLE });
+    activeFirestore = fixture.db;
+
+    const { req, res } = makeReqRes({ agentId: 'agent-1', battleId: 'battle-1', message: 'one more?', leagueAsk: true });
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(200);            // NOT a 403/429 error shape
+    expect(res.body.exhausted).toBe(true);
+    expect(res.body.remaining).toBe(0);
+    expect(res.body.agentMessage).toMatch(/all the questions i can take today/i);
+    expect(gemmaCalled).toBe(false);             // no agent call
+    expect(budget.chargeCalls).toHaveLength(0);  // no charge
+    expect(fixture.written.updateCalls).toHaveLength(0); // no battle-doc write
+  });
+
+  it('no-charge-on-failure: a timed-out ask returns 504 and NEVER charges', async () => {
+    leagueChatFlag.on = true;
+    budget.resolveImpl = () => KEY;
+    budget.readImpl = async () => ({ count: 2, remaining: 8 });
+    callGemmaVoiceImpl.current = async () => { const e = new Error('aborted'); e.name = 'AbortError'; throw e; };
+    const fixture = makeFakeFirestore({ agent: VALID_AGENT, battle: TOURNEY_BATTLE });
+    activeFirestore = fixture.db;
+
+    const { req, res } = makeReqRes({ agentId: 'agent-1', battleId: 'battle-1', message: 'plan?', leagueAsk: true });
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(504);
+    expect(budget.chargeCalls).toHaveLength(0);           // failed call did NOT charge
+    expect(fixture.written.updateCalls).toHaveLength(0);  // no write at all
+  });
+
+  it('FAIL-OPEN: an unkeyable budget (resolveBudgetDay → null) still ANSWERS and does NOT charge', async () => {
+    leagueChatFlag.on = true;
+    budget.resolveImpl = () => null; // a group-read failure / non-keyable battle
+    const fixture = makeFakeFirestore({ agent: VALID_AGENT, battle: TOURNEY_BATTLE });
+    activeFirestore = fixture.db;
+
+    const { req, res } = makeReqRes({ agentId: 'agent-1', battleId: 'battle-1', message: 'plan?', leagueAsk: true });
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body.agentMessage).toBe('hi');   // the ask still answered
+    expect(budget.readCalls).toHaveLength(0);    // no key → no budget read
+    expect(budget.chargeCalls).toHaveLength(0);  // count did NOT move
+    // The answer is recorded, but neither budget was charged (fail-open = free).
+    const upd = mainUpdate(fixture.written).updates;
+    expect('chatBudgetUsed' in upd).toBe(false);
+    expect('remaining' in res.body).toBe(false); // no authoritative update → client keeps its count
+  });
+
+  it('existing-chat untouched: a standard (non-League) ask is byte-identical (no remaining field)', async () => {
+    leagueChatFlag.on = true; // flag on, but NO leagueAsk in the body
+    const fixture = makeFakeFirestore({ agent: VALID_AGENT, battle: VALID_BATTLE }); // gameMode 'standard'
+    activeFirestore = fixture.db;
+
+    const { req, res } = makeReqRes({ agentId: 'agent-1', battleId: 'battle-1', message: 'hi' });
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(budget.resolveCalls).toHaveLength(0);
+    expect(budget.chargeCalls).toHaveLength(0);
+    expect(mainUpdate(fixture.written).updates.chatBudgetUsed).toEqual({ __op: 'increment', n: 1 });
+    expect('remaining' in res.body).toBe(false);
   });
 });
 

@@ -26,6 +26,28 @@ import {
   getLatestDayEntry, getWeeklyComposite, rankByScores, WEEK_DAYS_REQUIRED, TOURNAMENT_TUNING,
 } from '../../../constants/leagueTournament';
 import { statusFeedToVoice } from './statusFeedToVoice';
+import { LEAGUE_AGENT_CHAT_ENABLED } from '../../../config/featureFlags';
+
+// The strategy chips (founder starter set) for the two-way ask. Each chip's text
+// IS the message sent to the agent (cost 1, same budget + honesty path as free-text)
+// — so the shape is { q } (no canned answer; the stub's { q, a } echo is gone under
+// the flag). The last slot is standing-aware: chosen from youRank client-side (a swap,
+// not a new fetch). Empty when the flag is off → today's stub (no chips).
+const STRATEGY_CHIPS = [
+  "What's your plan from here?",
+  'Where are we winning and losing right now?',
+  'How do my three picks compare to your six?',
+  'What would you change about our lineup?',
+  'What are you watching for the rest of the battle?',
+];
+
+/** The ask chips incl. the standing-aware slot. youRank 1-4 (1-2 = advancing). */
+export function buildAskChips(youRank) {
+  const standing = youRank <= 2
+    ? 'How do we protect the lead?'
+    : "We're down — how do we catch up?";
+  return [...STRATEGY_CHIPS, standing].map((q) => ({ q }));
+}
 
 // YOUR presence is teal — the locked design/fixture invariant. Inlined as the
 // literal (== leagueTokens LX.energy / CMD.teal) so this module imports NO
@@ -198,7 +220,12 @@ export function buildArenaModel({
     mode,
     claim: { picks: myPicks, poolNames, claimsUsed: myPending, claimsTotal: TOURNAMENT_TUNING.CLAIM_PENDING_CAP_PER_CYCLE, open: !!win.isOpen },
     agentMove: null, // the "swapped X → Y" chip is derived from trades in a fast-follow
-    ask: [], // suggested-prompt chips wired in the ask fast-follow
+    // Two-way ask (flag-gated). Off → [] (today's stub: no chips, decorative box).
+    // On → the strategy chips + the standing-aware slot. battleId/agentId carry the
+    // live-battle identity the ask POST needs (null in the fixtures/preview path).
+    ask: LEAGUE_AGENT_CHAT_ENABLED ? buildAskChips(youRank) : [],
+    battleId: battle?.id ?? null,
+    agentId: battle?.agentId ?? null,
     starStates, // returned so the hook can feed it as prevStarStates next tick
   };
 }

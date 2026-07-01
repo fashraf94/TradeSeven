@@ -8,11 +8,14 @@ import { logConversation } from '../_utils/shadowLogger.js';
 import { getMarketState } from '../_utils/marketSchedule.js';
 import { randomUUID } from 'node:crypto';
 import { TOURNAMENT_GAME_MODE, TOURNAMENT_GROUPS_COLLECTION } from '../../src/constants/leagueTournament.js';
+// League arena two-way ask — the per-day question budget (server-authoritative,
+// its OWN collection; NEVER a battle-doc field). Scoped to the League ask only.
+import { resolveBudgetDay, readAgentChatBudget, chargeAgentChatBudget } from '../_utils/agentChatBudget.js';
 // Archetype Integrity — Phase E1 (the deterministic gate). Flag-gated; OFF/review
 // run the literal legacy normalizeDirective path → byte-identical.
 import { gateDirective, renderDirectiveStatus } from '../_utils/directiveGate.js';
 import { getEffectiveArchetype } from '../_utils/directiveIdentity.js';
-import { ARCHETYPE_INTEGRITY_MODE } from '../../src/config/featureFlags.js';
+import { ARCHETYPE_INTEGRITY_MODE, LEAGUE_AGENT_CHAT_ENABLED } from '../../src/config/featureFlags.js';
 // Archetype Integrity — Phase E2 (capabilities manifest → USER LEVERS hand-off).
 // Flag-gated, battle-only; the manifest is built only when the feature is ON.
 import { buildCapabilitiesManifest } from '../_utils/agentCapabilitiesManifest.js';
@@ -134,6 +137,11 @@ const MODE_BUDGET = {
   review: { field: 'reviewBudgetUsed', limit: 5 },
 };
 
+// League arena ask — the in-voice line the agent "says" when the per-day question
+// budget is spent. Returned as a 200 (a normal agent message, NOT an error shape),
+// with no agent call and no charge — the designed zero state.
+const LEAGUE_EXHAUSTED_LINE = "That's all the questions I can take today — we'll talk again tomorrow.";
+
 // ==================== HANDLER ====================
 
 export default async function handler(req, res) {
@@ -159,6 +167,10 @@ export default async function handler(req, res) {
   // 4. Validate body
   const { agentId, battleId, message } = req.body;
   const requestedMode = req.body.mode;
+  // League arena two-way ask. The budget branch is reachable ONLY when the client
+  // sends leagueAsk AND the kill-switch flag is on — so every existing caller (which
+  // never sends leagueAsk) is byte-identical, and flag-off reverts to today's stub.
+  const isLeagueAsk = req.body.leagueAsk === true && LEAGUE_AGENT_CHAT_ENABLED === true;
 
   if (!agentId || !battleId || !message) {
     return res.status(400).json({ error: 'agentId, battleId, and message are required' });
@@ -219,7 +231,10 @@ export default async function handler(req, res) {
     const { field: budgetField, limit: budgetLimit } = MODE_BUDGET[mode];
     const currentBudget = battle[budgetField] || 0;
 
-    if (currentBudget >= budgetLimit) {
+    // 11a. Existing per-battle budget — for every NON-League caller, unchanged.
+    //      The League arena ask BYPASSES this entirely (its own per-day budget,
+    //      below) so the two counters never double-count.
+    if (!isLeagueAsk && currentBudget >= budgetLimit) {
       if (mode === 'review') {
         // New error shape for new mode — frontend (Phase 6) will consume this.
         return res.status(429).json({
@@ -233,6 +248,30 @@ export default async function handler(req, res) {
         error: 'chat_budget_exceeded',
         message: "We've had a solid session. Let's let things play out and regroup later.",
       });
+    }
+
+    // 11b. League arena per-day budget — the EARLY exhausted gate (before any agent
+    //      call). resolveBudgetDay reads the group doc and derives the game-day dayN
+    //      (the SAME index the daily close writes). leagueBudgetKey null => the budget
+    //      is unkeyable (non-tournament, or a group/read failure) => FAIL-OPEN: answer
+    //      for free, no charge (never a placeholder dayN that would cross-day-collide).
+    let leagueBudgetKey = null; // { groupId, dayN } | null
+    if (isLeagueAsk) {
+      leagueBudgetKey = await resolveBudgetDay(db, battle);
+      if (leagueBudgetKey) {
+        const { remaining } = await readAgentChatBudget(db, { groupId: leagueBudgetKey.groupId, uid: user.uid, dayN: leagueBudgetKey.dayN });
+        if (remaining <= 0) {
+          // At zero: NO agent call, NO charge. A 200 in-voice line so the client renders
+          // it as a normal agent message (the designed zero state) — never an error shape.
+          return res.status(200).json({
+            agentMessage: LEAGUE_EXHAUSTED_LINE,
+            mode,
+            leagueAsk: true,
+            exhausted: true,
+            remaining: 0,
+          });
+        }
+      }
     }
 
     // 11. Fetch market context for anchor + voiceLayerCache in parallel
@@ -564,7 +603,11 @@ export default async function handler(req, res) {
 
     await battleRef.update({
       chatExchanges: FieldValue.arrayUnion(exchange),
-      [budgetField]: FieldValue.increment(1),
+      // The League arena ask does NOT touch the per-battle counter — it charges its
+      // own per-day store (below). Omitting the increment here is what keeps the two
+      // budgets from double-counting. (chatExchanges stays: it is the sanctioned
+      // createAgentBattle field + the Catalog #9 durable record — unchanged.)
+      ...(!isLeagueAsk ? { [budgetField]: FieldValue.increment(1) } : {}),
       recentElicitationTargets: recentTargets,
       ...(directiveThreadId ? {
         directive: {
@@ -589,6 +632,28 @@ export default async function handler(req, res) {
       if (lesson) agentUpdate.lessons = FieldValue.arrayUnion(lesson);
       if (forgeSuggestion) agentUpdate.forgeSuggestions = FieldValue.arrayUnion(forgeSuggestion);
       await db.collection('agents').doc(agentId).update(agentUpdate);
+    }
+
+    // 20c. League arena per-day CHARGE — transactional, own collection, and only
+    //      HERE: this line is past every 502/504/500 return, so a failed/timed-out
+    //      ask can never reach it ("failed calls don't charge"). Increment only on a
+    //      successful answer. The authoritative post-charge `remaining` is added to
+    //      the response ONLY for a League ask (omission idiom → existing callers'
+    //      response stays byte-identical). leagueBudgetKey null => fail-open path
+    //      (group/dayN was unavailable): answered for free, counter left untouched.
+    if (isLeagueAsk && leagueBudgetKey) {
+      try {
+        const { remaining } = await chargeAgentChatBudget(db, {
+          groupId: leagueBudgetKey.groupId,
+          uid: user.uid,
+          dayN: leagueBudgetKey.dayN,
+        });
+        clientResponse.remaining = remaining;
+      } catch (err) {
+        // The answer already succeeded — a charge failure must not 500 the turn.
+        // Leave `remaining` unset so the client keeps its last-known counter.
+        console.warn('[LeagueChat] budget charge failed after a successful answer:', err?.message);
+      }
     }
 
     // 21. Return response

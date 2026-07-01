@@ -448,6 +448,16 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // League Agent Chat Budget — the per-(groupId, uid, dayN) question counter.
+    // SERVER-ONLY on BOTH read and write (Admin SDK, api/agent/chat*.js): the
+    // remaining count is server-authoritative and reaches the client ONLY through
+    // the /api/agent/chat and /api/agent/chat-budget responses, never a direct read
+    // (so it can never be computed or spoofed client-side).
+    match /agentChatBudget/{docId} {
+      allow read: if false;
+      allow write: if false;
+    }
+
     // ═══════════════════════════════════════════
     // Discover — Thematic content for Discover tab
     // Authenticated read, server-only writes (Admin SDK via seed scripts)
