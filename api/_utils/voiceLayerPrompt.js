@@ -12,6 +12,12 @@ import { PATTERN_DISPLAY_NAMES } from './analyticalPrimitives.js';
 import { toEtParts } from './marketDataCache.js';
 import { isDirectiveActive } from './directiveUtils.js';
 import { getArchetypeLabel } from './agentArchetypeConfig.js';
+// Phase D (archetype integrity) — read-only deps. The api→src import edge is
+// Node-clean (precedent: api/agent/decide.js:23); the test's import of this file
+// is the BUILD_RULES §4 dependency-surface guard.
+import { getArchetypeZones, getAllowlist } from '../../src/data/archetypeAdjustments.js';
+import { getEffectiveArchetype } from './directiveIdentity.js';
+import { ARCHETYPE_INTEGRITY_MODE } from '../../src/config/featureFlags.js';
 
 // ==================== STATIC CONSTANTS ====================
 
@@ -51,6 +57,54 @@ RULES:
 - NEVER quote raw data numbers in your response. Synthesize into narrative: say "NVDA is pushing toward its scoring threshold" not "NVDA is at 0.98 ATR." Say "momentum has been strong this week" not "Technical Score is 87."
 - KEEP IT TIGHT. Your response should be 2-4 sentences maximum. Only go to 5-6 sentences if the user asked a detailed strategic question. Your first message of a battle should be a short, punchy headline take — not a full analysis. Save the depth for when they ask for it.
 - You MUST return valid JSON in every response, no exceptions. NEVER output plain text outside the JSON structure. If you encounter confusion, the user's message is unclear, or you don't have enough context to take a confident position, still return the full JSON structure with your clarifying question or honest uncertainty in the \`response\` field.`;
+
+// ==================== ARCHETYPE INTEGRITY (Phase D — flag-gated) ====================
+
+// The "third path" reply shape. Archetype-agnostic (the per-archetype content is
+// injected separately via buildArchetypeIntegrityBlock). The final clause is the
+// deterministic-status contract (#7): the model describes its lean, never the
+// commit status — Phase E renders what actually changed.
+const THIRD_PATH_RULE = `THIRD PATH — HOW YOU HANDLE A REQUEST THAT STRAINS YOUR ARCHETYPE:
+Your archetype is your constitution, not a tactic you drop under pressure. Default to working WITH the user — most asks are in-character or tunable at the margin. Only when an ask would REVERSE your immutable core do you hold the line, and even then you stay useful. Shape your reply:
+1. ACKNOWLEDGE the real ask plainly — no strawman, no lecture.
+2. NAME THE BOUNDARY only if the ask reverses your core: say briefly what you will not become, without moralizing (your immutable core is in YOUR ARCHETYPE above).
+3. OFFER ONE IN-ARCHETYPE ADJUSTMENT from YOUR MENU that moves toward what they want without crossing the core — this is your main move; reach for it before any refusal.
+4. HAND OFF the part you don't own to a real lever the user actually has right now. Only reference a lever the system tells you is available; never invent one, and never promise to do it yourself.
+5. ONE RESEARCH CUE — point them at a real screen to go explore ("go look at ..."), never a round-trip you'll bring back.
+6. ONE TEACHING LINE — why your approach is built this way, in one friendly sentence (not preachy).
+Bias: default to compliance and adjustment; refusal is the rare last resort, never the opener. You do NOT assert that you committed or blocked anything — you describe your lean; the system records what actually changed.
+NULL-WRITE HAND-OFFS: on ANY turn where the system records no directive — you held the line on a core conflict, the ask is a user lever you don't pull yourself (short / flip / claim), or it's a pure research/opinion question — NOTHING is recorded this turn. So frame any in-archetype move you raise as an OFFER — "I'd lean toward tightening the stop if you want me to," "one option is to tighten the stop" — NEVER as a self-adjustment you're making ("I'll tighten the stop," "tightening the stop to protect capital"). Describe a defensive adjustment as actually underway ONLY when the user invited that adjustment and you selected an id from YOUR MENU.`;
+
+// The Contract-D proposal schema. Battle-only append (kept OUT of the shared
+// OUTPUT_FORMAT const so it never leaks into review/workshop — correction C3).
+// No scopedEmphasis (ADOPT #1). Treated as UNTRUSTED — the gate validates it.
+const ARCHETYPE_PROPOSAL_BLOCK = `ARCHETYPE PROPOSAL (internal — include in your JSON, never shown to the user):
+Add an "_archetypeProposal" object so the system can record how you handled the ask. THIS IS A PROPOSAL, NOT A DECISION — the system validates it and decides what actually persists. Assume nothing here takes effect on its own.
+
+  "_archetypeProposal": {
+    "classification": "in_archetype" | "flex" | "core_conflict" | "user_lever" | "research_only",
+    "selectedAdjustmentId": "<one id from YOUR MENU above, or null>",
+    "originalUserAsk": "<one-line paraphrase of what they asked — for the log only, never persisted as a directive>",
+    "counterOfferText": "<the in-archetype adjustment you're offering, in plain words, or null>",
+    "rejectionReason": "<if classification is core_conflict: the one-line reason this can't become your strategy, else null>"
+  }
+
+RULES:
+- selectedAdjustmentId MUST be one of the ids in YOUR MENU above, or null. Never invent an id.
+- classification core_conflict / user_lever / research_only -> selectedAdjustmentId is null.
+- You do NOT decide whether a directive is committed. Never say "done," "locked in," or "I changed my strategy." Describe your lean; the system renders what actually happened.`;
+
+// How to phrase a flagged adjustment's technical leg using ONLY the signals the
+// briefs above already render — by name/direction/proximity, never a raw value.
+// Inherits the existing honesty gate (raw-number ban, DATA_CONFIDENCE, CACHE-COLD).
+const TWO_LEG_SIGNAL_RULE = `TWO-LEG SIGNAL LANGUAGE — when an adjustment turns on a technical read, speak each leg by NAME, DIRECTION, and PROXIMITY, never by raw value:
+- Confirmation / cleaner setup -> "stronger confirmation," "a cleaner setup," "wait for the chart to line up." Lean on the trend and momentum read and any fresh cross / divergence already shown above.
+- Washout / oversold depth / turn -> "a deeper washout," "a clearer turn or stabilization." Lean on the momentum read and how close it is to support.
+- Stop / patience -> "tighten the stop," "give it more room." Frame against support proximity and recent damage — never a percentage.
+- Volatility ceiling / floor -> "lower-beta," "still high-energy." Frame volatility qualitatively ("volatility is elevated / muted") — never the number.
+- Concentration / spread -> "tighter per sector," "wider across sectors." Frame against the breadth and sector-leadership read already shown.
+- Catalyst / fundamental reason (quality names) -> "a stronger near-term reason to own it," plus a research cue to go find it. There is no catalyst feed in your data — never fabricate one.
+If the market data block is COLD or absent, do NOT name a stock-specific signal — fall back to the soft regime/sector read ("while the tape's like this") and keep the adjustment qualitative. Never quote a raw number; paraphrase percentiles and ranks as bands.`;
 
 // ==================== PHASE RULES ====================
 
@@ -2446,6 +2500,57 @@ function buildCohortDigestBlock(digest) {
 
 // ==================== EXPORTED FUNCTION ====================
 
+// Phase D — the flag-gated archetype-integrity persona block (battle mode only).
+// Renders the four-zone identity + the archetype's adjustment menu so the model
+// can hold its core and emit a valid selectedAdjustmentId. Returns null when the
+// feature is OFF or the archetype is unknown/missing — the caller pushes only on
+// a non-null block, so OFF stays byte-identical and unknown archetypes inject
+// nothing (keeping voice and the gate consistent — ADOPT #4).
+//   - The OFF guard is first, so no resolver read happens on the flag-OFF path.
+//   - getAllowlist is checked BEFORE getArchetypeZones: getAllowlist does NOT
+//     analyst-fall-back (directive-write path), so an unknown archetype yields no
+//     menu and therefore no block — even though getArchetypeZones would fall back.
+function buildArchetypeIntegrityBlock(battle, agent) {
+  if (ARCHETYPE_INTEGRITY_MODE === 'off') return null;
+  const codeId = getEffectiveArchetype(battle, agent);
+  const allowlist = getAllowlist(codeId);
+  if (!allowlist.length) return null;
+  const zones = getArchetypeZones(codeId);
+  const menu = allowlist.map((a) => `  ${a.id}: ${a.canonical}`).join('\n');
+  return `YOUR ARCHETYPE — THE FOUR ZONES (this is who you are; they rank by how fixed they are):
+IMMUTABLE CORE (never reverse — this is the boundary): ${zones.immutableCore}
+TUNABLE EXECUTION (your two-leg holding logic; the menu below tunes this): ${zones.tunableExecution}
+PROTECTED BIAS (your default leans; adjustable at the margin, never abandoned): ${zones.protectedBias}
+OUT-OF-SCOPE / USER LEVERS (what you do NOT own — hand these off, never do them yourself): ${zones.outOfScopeUserLever}
+
+YOUR MENU — the only adjustments you may select as a directive (emit the id in _archetypeProposal):
+${menu}`;
+}
+
+// Phase E2 — the "USER LEVERS RIGHT NOW" block. Translates the capabilities
+// manifest (Phase B builder) into honest hand-off prose so THIRD_PATH_RULE step 4
+// names ONLY a user action that actually exists this turn. Battle-only and
+// flag-gated (pushed under the same archetypeBlock guard). A null or all-false
+// manifest → the standard "no trade lever" hand-off. Flip is framed PER-PICK,
+// never a single global count (Phase B finding); the raw flipsRemaining number is
+// deliberately not surfaced.
+function buildUserLeversBlock(manifest) {
+  const m = manifest || {};
+  const levers = [];
+  if (m.user_can_short) {
+    levers.push('- FLIP a position long↔short: available now. Frame it PER-PICK — "you\'ve still got flips left on some positions today" — never a single global count or "N flips left."');
+  }
+  if (m.user_can_make_claims) {
+    levers.push('- PLACE A CLAIM (swap a held name for a free agent): available now — the claim window is open.');
+  }
+  const head = 'USER LEVERS RIGHT NOW — the user actions that actually exist this turn. Hand off ONLY to a lever named here; never invent one, and never promise to do it yourself.';
+  const always = 'Always available: "coach me a directive" (shape your strategy by talking it through) and "equip a watchlist" (curate names to watch). Hedging, options, and sector hedges do NOT exist in this game — never mention them.';
+  if (levers.length === 0) {
+    return `${head}\n- No trade lever is available to the user right now — do NOT tell them to flip, claim, or short.\n${always}`;
+  }
+  return `${head}\n${levers.join('\n')}\n${always}`;
+}
+
 export function buildVoiceLayerPrompt({
   agent,
   battle,
@@ -2477,6 +2582,11 @@ export function buildVoiceLayerPrompt({
   // Analysis Hand-off Phase 2 — only consumed in set_analysis mode. Carries the
   // deterministic cohort digest as { digest } so Gemma reasons over facts.
   analysisContext = null,
+  // Phase E2 — the user-capabilities manifest (Phase B builder output) that bounds
+  // the third-path hand-off to levers that actually exist this turn. Battle-only and
+  // flag-gated: consumed solely by the USER LEVERS block under the archetypeBlock
+  // guard, so the null default keeps flag-OFF byte-identical.
+  capabilitiesManifest = null,
 }) {
   const stats = agent?.stats || {};
   const gamesPlayed = stats.gamesPlayed || 0;
@@ -2815,15 +2925,26 @@ You've been working together for ${gamesPlayed} games (${wins}W-${losses}L). You
   // Block 6: Phase Rules (BOTTOM — LAST block, highest attention)
   const phaseRules = PHASE_RULES[phase];
 
+  // Phase D — resolve the archetype-integrity persona block ONCE; its truthiness
+  // is the single guard for BOTH the proposal append and the persona push, so the
+  // menu and the proposal schema always appear together or not at all. Null when
+  // OFF or unknown archetype → the assembled sequence below is byte-identical.
+  const archetypeBlock = buildArchetypeIntegrityBlock(battle, agent);
+
   // Assemble in U-shaped attention order
   const blocks = [
     identity,        // Block 1   (TOP)
     GAME_MECHANICS,  // Block 1.5 (TOP)
     OUTPUT_FORMAT,   // Block 7   (TOP)
+  ];
+  // Phase D — battle-only proposal-schema append, adjacent to OUTPUT_FORMAT. NOT
+  // an edit to the shared OUTPUT_FORMAT const (that would leak into review — C3).
+  if (archetypeBlock) blocks.push(ARCHETYPE_PROPOSAL_BLOCK);
+  blocks.push(
     partnerModel,    // Block 2   (MIDDLE)
     convictions,     // Block 3   (MIDDLE)
     anchor,          // Block 3.5 (MIDDLE)
-  ];
+  );
 
   // Blocks 4A-4C: Market snapshot data (MIDDLE — only if cache exists)
   if (portfolioBriefs) blocks.push(portfolioBriefs);
@@ -2831,6 +2952,14 @@ You've been working together for ${gamesPlayed} games (${wins}W-${losses}L). You
   if (scoutAlerts) blocks.push(scoutAlerts);
   if (marketContext) blocks.push(marketContext);
   if (marketSnapshot) blocks.push(DATA_CONFIDENCE_RULE);
+
+  // Phase D — archetype-integrity persona + third-path + two-leg signal framing
+  // (flag-gated, battle-only; placed next to the rendered briefs the two-leg
+  // language references). Same single guard as the proposal append above.
+  // Phase E2 — the USER LEVERS block sits between THIRD_PATH_RULE and the two-leg
+  // rule so the model reads "hand off to a real lever" immediately beside the list
+  // of levers that actually exist this turn.
+  if (archetypeBlock) blocks.push(archetypeBlock, THIRD_PATH_RULE, buildUserLeversBlock(capabilitiesManifest), TWO_LEG_SIGNAL_RULE);
 
   blocks.push(
     battleState,     // Block 5   (BOTTOM)

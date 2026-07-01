@@ -3,6 +3,7 @@ import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
 import { applySecurityMiddleware } from '../_utils/security.js';
 import { requireAuth } from '../_utils/authMiddleware.js';
 import { flattenPortfolioServer } from '../_utils/agentScoring.js';
+import { renderLegacyDirectives } from '../_utils/legacyDirectiveSanitize.js';
 import { getStockAnalysisData } from '../_utils/marketDataCache.js';
 import { calculateAllIndicators } from '../_utils/technicalCalculations.js';
 
@@ -114,9 +115,9 @@ export default async function handler(req, res) {
     // 11. Build prompt
     const agentName = agent.name || 'Agent';
     const archetype = agent.archetype || 'balanced';
-    const directives = agent.directives?.length
-      ? agent.directives.map((d, i) => `${i + 1}. ${d}`).join('\n')
-      : 'No active directives';
+    // Phase G — neutralize the write-dead legacy agent.directives[] side-door when
+    // archetype integrity is on (byte-identical when off).
+    const directives = renderLegacyDirectives(agent.directives, (d, i) => `${i + 1}. ${d}`);
 
     const rsi = technicals?.rsi || { value: 'N/A', zone: 'unknown' };
     const macd = technicals?.macd || { histogram: 0 };

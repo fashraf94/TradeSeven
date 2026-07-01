@@ -226,7 +226,7 @@ export const TRAINING_BOARD_REDESIGN_ENABLED = true;
  * INJECT half (below) is a separate, fence-gated flag and implies this one.
  * See the Rule Conflict Reconciler build spec + RULES_LAUNCHBLOCKER findings.
  */
-export const CONFLICT_RECONCILER_DETECT_ENABLED = false;
+export const CONFLICT_RECONCILER_DETECT_ENABLED = true;
 
 /**
  * Rule Conflict Reconciler — runtime INJECTION into the cognition prompts.
@@ -244,25 +244,57 @@ export const CONFLICT_RECONCILER_DETECT_ENABLED = false;
  * fenced commit is reviewed for prompt parity and signed off, and after a
  * preview calibration smoke. See the Rule Conflict Reconciler build spec.
  */
-export const CONFLICT_RECONCILER_INJECT_ENABLED = false;
+export const CONFLICT_RECONCILER_INJECT_ENABLED = true;
+
+/**
+ * Archetype Integrity / "Third Path" — tri-state rollout mode.
+ *
+ * Gates the whole archetype-integrity feature together (the deterministic
+ * directive gate, the voice-layer four-zone + third-path injection, the
+ * Diversifier swap-time sector cap, and the legacy `directives[]` sanitize) so
+ * there is exactly one byte-identical-off regression surface. Three states:
+ *
+ *   'off'     — byte-identical to today. No archetype-aware gating; the directive
+ *               path runs the legacy `normalizeDirective` line verbatim.
+ *   'observe' — measurement mode. The model emits the proposal block and the gate
+ *               EVALUATES + awaited-logs the outcome, but writes NO directive
+ *               (no behavior change persists). Vehicle for the pre-flip reliability
+ *               eval; NOT a permanent behavioral tier.
+ *   'enforce' — full behavior: the gate mints only core-safe allowlist directives.
+ *
+ * Default 'off'. Built/merged DARK; advance 'off' → 'observe' → 'enforce' only
+ * after the pre-flip reliability eval clears the hard zeros (0 core-reversing
+ * directives, 0 "claimed-a-change-but-wrote-null"). One master flag — no per-cap
+ * sub-flag (the Diversifier cap is independently safe and rides this flag).
+ * See docs/audits/20260625_ARCHETYPE_INTEGRITY_BUILD_PLAN_V2.md.
+ */
+export const ARCHETYPE_INTEGRITY_MODE = 'observe';
 
 /**
  * League — Desktop Training Pod tab + Active Training Game card (the desktop
  * League redesign's training addition; see LEAGUE_DESKTOP_TRAINING_POD_BUILD_SPEC).
  *
- * Gates the Training | Ranked tab and the purple Active-Training-Game re-entry
- * card on the NEW desktop League lobby (LeagueLobbyDesktop). Pure surface: it
- * reuses the existing, proven training stack (Option B) — `quickPlayTraining`,
- * `subscribeMyTrainingPod`, and the already-threaded `onOpenTrainingPod` nav —
- * and writes NO competitive state (training pods are excluded from the ranked
- * leaderboard/bracket by `selectMyGroup`). No fenced file is touched.
- *
- * Default ON so the desktop training tab is visible immediately, matching the
- * already-live mobile training tab (LobbyTabbed, gated on LEAGUE_NEXT_ARC_ENABLED).
- * The build spec's default-OFF posture is honored as an override path: append
- * `?leagueTrainingPod=0` to hide it, or `?leagueTrainingPod=1` to force it on.
- * With the flag OFF the desktop lobby renders the tournament surface only —
- * pixel-identical to the Claude Design HTML baseline. Flip to false here for an
+ ... (rest of the League comment) ...
  * instant one-line rollback.
  */
 export const LEAGUE_TRAINING_POD_ENABLED = true;
+
+/**
+ * League — Battle Arena "Ask your agent" two-way chat (see the League Agent
+ * Chat build spec). When FALSE (default), the arena ask box stays today's
+ * local-echo stub — decorative "Ask anything…" placeholder + canned chip
+ * echoes, no network — byte-identical to before this build.
+ *
+ * When TRUE, the ask box becomes a real free-text input + strategy chips that
+ * POST to /api/agent/chat (leagueAsk:true) for a grounded in-voice answer,
+ * under a per-day question budget (agentChatBudget/{groupId}_{uid}_{dayN}) with
+ * a persistent "N left today" counter, an in-voice zero state, and an in-voice
+ * failure/retry state.
+ *
+ * THIS FLAG IS THE COST KILL-SWITCH — every paid ask is behind it. It is
+ * independent of the arena flag (LEAGUE_BATTLE_VIEW_V2_ENABLED); flipping it
+ * off instantly stops all paid asks and reverts the box to the stub. Built and
+ * merged DARK; flip only after a Vercel preview smoke (the TOURNAMENT_TAB_ENABLED
+ * precedent).
+ */
+export const LEAGUE_AGENT_CHAT_ENABLED = true;

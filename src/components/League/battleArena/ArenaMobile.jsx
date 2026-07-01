@@ -60,6 +60,7 @@ export function ArenaMobile({ state, mode, headline = 'mult', onBack = null, dat
     active: live, voice: D.voice, ask: D.ask,
     beats: data ? null : D.beats,
     live: !!data, liveBeats: data ? D.beats : null,
+    battleId: D.battleId ?? null, agentId: D.agentId ?? null, // two-way ask identity (live only)
     closeStart: calm ? (D.pod.toOpen ?? 0) : (D.pod.nextClose ?? 0),
     wireStart: D.wire.closes ?? 0,
   });
@@ -160,7 +161,8 @@ export function ArenaMobile({ state, mode, headline = 'mult', onBack = null, dat
             <div style={{ marginTop: 12, paddingTop: 11, borderTop: `1px solid ${LTOKENS.hair}` }}><MeterKey /></div>
           </div>
         ) : (
-          <AgentDock compact live lines={eng.lines} archName={D.voice.arch} ask={D.ask} onAsk={eng.askAgent} style={{ marginTop: 6 }} />
+          <AgentDock compact live lines={eng.lines} archName={D.voice.arch} ask={D.ask} onAsk={eng.askAgent}
+            askLive={eng.askLive} remaining={eng.remaining} asking={eng.asking} chatReady={eng.chatReady} style={{ marginTop: 6 }} />
         )}
       </div>
 

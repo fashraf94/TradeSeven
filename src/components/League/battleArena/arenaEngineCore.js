@@ -30,6 +30,10 @@ export function makeEngineState(voice) {
     surge: null,    // { key, pts } — a points/flip token flying up the climb
     flareKey: 0,    // bumps to replay the agent-orb flare on a swap
     claimKey: 0,    // bumps when a claim banks
+    // Two-way ask (flag-gated): the persistent "N left today" counter (null until the
+    // server reports it — NEVER computed client-side) and the in-flight guard.
+    remaining: null,
+    asking: false,
     _key: 100,      // monotonic key source (deterministic)
   };
 }
@@ -80,7 +84,9 @@ export function applyFlip(state, tk, newDir) {
   return { ...state, surge, beatStar, beat, _key: key };
 }
 
-/** Ask the agent a question — prepend its answer to the lane, in its voice. */
+/** Ask the agent a question — prepend its answer to the lane, in its voice. This is
+ * the flag-OFF stub path (a canned { q, a } echo); the live two-way path uses the
+ * applyAsking → applyAnswer pair below. */
 export function applyAsk(state, qa) {
   if (!qa) return state;
   const key = state._key + 1;
@@ -90,6 +96,35 @@ export function applyAsk(state, qa) {
     lines: [line, ...state.lines.map((l) => ({ ...l, active: false }))],
     _key: key,
   };
+}
+
+/** Live two-way ask, step 1: mark a request in flight (the dock shows a thinking
+ * state and disables send until the answer / exhausted / failure lands). */
+export function applyAsking(state) {
+  return state.asking ? state : { ...state, asking: true };
+}
+
+/**
+ * Live two-way ask, step 2: prepend the agent's REAL answer (or the in-voice
+ * exhausted / failure line) to the lane and clear the in-flight flag. `error` marks
+ * a failure line so the dock can offer a retry affordance. The answer text comes
+ * straight from the server (data.agentMessage) — the lane never fabricates it.
+ */
+export function applyAnswer(state, { q, text, error = false } = {}) {
+  const key = state._key + 1;
+  const line = { kind: 'answer', q: q || '', text: text || '', t: 'now', active: true, error: !!error, _k: key };
+  return {
+    ...state,
+    lines: [line, ...state.lines.map((l) => ({ ...l, active: false }))],
+    asking: false,
+    _key: key,
+  };
+}
+
+/** Set the server-authoritative "N left today" counter. Ignores non-finite values
+ * (a failure/omitted-remaining leaves the last known count untouched). */
+export function setRemaining(state, n) {
+  return Number.isFinite(n) ? { ...state, remaining: n } : state;
 }
 
 /** Clear the transient on-board beat caption (after its dwell). */

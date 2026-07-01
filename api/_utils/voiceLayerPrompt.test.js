@@ -24,6 +24,17 @@ vi.mock('./marketSchedule.js', async (importOriginal) => {
   };
 });
 
+// Phase D — flip ARCHETYPE_INTEGRITY_MODE per-test via a live getter over a
+// hoisted mutable, keeping every other real flag (importOriginal spread). The
+// production code reads the flag INSIDE functions, so the getter takes effect at
+// call time. Default 'off' so every pre-existing test in this file sees flag-off.
+const { archetypeFlag } = vi.hoisted(() => ({ archetypeFlag: { mode: 'off' } }));
+vi.mock('../../src/config/featureFlags.js', async (importOriginal) => ({
+  ...(await importOriginal()),
+  get ARCHETYPE_INTEGRITY_MODE() { return archetypeFlag.mode; },
+}));
+
+import { readFileSync } from 'node:fs';
 import { buildBenchBriefsBlock, buildBattleState, buildMarketSnapshotContext, buildPortfolioBriefsBlock, buildVoiceLayerPrompt, buildReviewContext, buildHeaderLine, buildLevelsLine, buildSignalsLine, buildIntradayLine, detectSnapshotRegime, buildSnapshotHeader, buildSnapshotTrend, buildSnapshotSignals, buildSnapshotLevels, buildSnapshotIntraday, buildSwapEntryBlock, detectTradeProvenance } from './voiceLayerPrompt.js';
 import { getETDate, formatDateString } from './marketSchedule.js';
 
@@ -3662,5 +3673,135 @@ describe('buildVoiceLayerPrompt — Tier-3 forward consensus (additive)', () => 
     const research = buildVoiceLayerPrompt({ mode: 'research', researchContext: { previousSpec: null } });
     expect(research).not.toContain('FORWARD CONSENSUS IS THE STREET');
     expect(research).not.toContain('NEVER present analyst consensus as your own forecast');
+  });
+});
+
+// =============================================================================
+// Phase D — Archetype Integrity voice injection (flag-gated; battle-only).
+// Goldens captured from PRE-edit code at HEAD ec610b26 (deterministic fixture:
+// no battle.timing, marketSnapshot:null, getMarketState mocked). Regenerate only
+// if flag-OFF battle/review/workshop output intentionally changes (it must not).
+// =============================================================================
+
+const PD_GOLDEN = JSON.parse(
+  readFileSync(new URL('./__fixtures__/voiceLayerPrompt.phaseD.golden.json', import.meta.url), 'utf8'),
+);
+const PD_AGENT = { name: 'Gemma', archetype: 'momentum_chaser', stats: { gamesPlayed: 1, wins: 0, losses: 0 } };
+const PD_BATTLE = { gameMode: 'standard', portfolio: { star: [], core: [], support: [] }, scoreState: { currentScore: 0, opponentScore: 0 }, dailyReviews: [] };
+const PD_ELICIT = { dimension: 'risk_appetite', instruction: 'probe risk appetite' };
+const PD_WORKSHOP_CTX = { previousThesis: null, sessionTurnCount: 0, messagesRemaining: 24, messageBudget: 25, seedContext: null };
+const pdBattleArgs = (over = {}) => ({ agent: PD_AGENT, battle: PD_BATTLE, elicitationTarget: PD_ELICIT, conversationHistory: [], anchorContext: null, marketSnapshot: null, mode: 'battle', ...over });
+const pdReviewArgs = () => ({ agent: PD_AGENT, battle: PD_BATTLE, elicitationTarget: null, conversationHistory: [], anchorContext: null, marketSnapshot: null, mode: 'review', dailyReviews: [], dailyGrades: [] });
+const pdWorkshopArgs = () => ({ agent: PD_AGENT, mode: 'workshop', workshopContext: PD_WORKSHOP_CTX, anchorContext: null });
+
+describe('buildVoiceLayerPrompt — archetype integrity (Phase D)', () => {
+  afterEach(() => { archetypeFlag.mode = 'off'; });
+
+  it('flag-OFF is byte-identical across battle / review / workshop (golden)', () => {
+    archetypeFlag.mode = 'off';
+    expect(buildVoiceLayerPrompt(pdBattleArgs())).toBe(PD_GOLDEN.battle);
+    expect(buildVoiceLayerPrompt(pdReviewArgs())).toBe(PD_GOLDEN.review);
+    expect(buildVoiceLayerPrompt(pdWorkshopArgs())).toBe(PD_GOLDEN.workshop);
+  });
+
+  for (const mode of ['observe', 'enforce']) {
+    it(`flag-ON (${mode}) battle injects zones + menu + third-path + proposal schema, no scopedEmphasis`, () => {
+      archetypeFlag.mode = mode;
+      const out = buildVoiceLayerPrompt(pdBattleArgs());
+      expect(out).toContain('IMMUTABLE CORE');
+      expect(out).toContain('TUNABLE EXECUTION');
+      expect(out).toContain('PROTECTED BIAS');
+      expect(out).toContain('OUT-OF-SCOPE / USER LEVERS');
+      expect(out).toContain('TF-01');
+      expect(out).toContain('TF-08');
+      expect(out).toContain('THIRD PATH');
+      expect(out).toContain('_archetypeProposal');
+      expect(out).toContain('"in_archetype"');
+      expect(out).toContain('"core_conflict"');
+      expect(out).not.toContain('scopedEmphasis'); // ADOPT #1 — cut from V1
+    });
+
+    it(`flag-ON (${mode}) review and workshop stay clear of the proposal apparatus (C3 leak guard)`, () => {
+      archetypeFlag.mode = mode;
+      for (const out of [buildVoiceLayerPrompt(pdReviewArgs()), buildVoiceLayerPrompt(pdWorkshopArgs())]) {
+        expect(out).not.toContain('_archetypeProposal');
+        expect(out).not.toContain('IMMUTABLE CORE');
+        expect(out).not.toContain('THIRD PATH');
+        expect(out).not.toContain('USER LEVERS RIGHT NOW'); // E2 levers block is battle-only too
+      }
+    });
+  }
+
+  it('unknown archetype + flag-ON → no apparatus at all (ADOPT #4 voice/gate consistency)', () => {
+    archetypeFlag.mode = 'enforce';
+    const out = buildVoiceLayerPrompt(pdBattleArgs({
+      agent: { name: 'Gemma', archetype: 'strategist', stats: { gamesPlayed: 1, wins: 0, losses: 0 } },
+    }));
+    expect(out).not.toContain('IMMUTABLE CORE');
+    expect(out).not.toContain('THIRD PATH');
+    expect(out).not.toContain('_archetypeProposal');
+  });
+
+  it('resolver prefers the frozen battle snapshot over agent.archetype (CF-1)', () => {
+    archetypeFlag.mode = 'enforce';
+    const out = buildVoiceLayerPrompt(pdBattleArgs({
+      agent: { name: 'Gemma', archetype: 'momentum_chaser', stats: { gamesPlayed: 1, wins: 0, losses: 0 } },
+      battle: { ...PD_BATTLE, agentContext: { archetype: 'contrarian' } },
+    }));
+    expect(out).toContain('CN-01');      // contrarian menu (the frozen snapshot wins)
+    expect(out).not.toContain('TF-01');  // not the live agent's momentum menu
+  });
+
+  it('two-leg signal rule + deterministic-status contract are present', () => {
+    archetypeFlag.mode = 'enforce';
+    const out = buildVoiceLayerPrompt(pdBattleArgs());
+    expect(out).toContain('TWO-LEG SIGNAL LANGUAGE');
+    expect(out).toContain('never by raw value');
+    expect(out).toContain('qualitatively');
+    expect(out).toContain('the system records what actually changed'); // #7 status contract
+    expect(out).toContain('Never say "done,"');
+    // Fix 2 — null-write hand-off prose discipline. Must name ALL THREE of the
+    // gate's DELIBERATE_NULL classes (core_conflict / user_lever / research_only)
+    // so the prose rule matches exactly where the gate writes nothing.
+    expect(out).toContain('NULL-WRITE HAND-OFFS');
+    expect(out).toContain('frame any in-archetype move you raise as an OFFER');
+    expect(out).toContain('held the line on a core conflict'); // core_conflict (the added class)
+    expect(out).toContain("a user lever you don't pull yourself"); // user_lever
+    expect(out).toContain('pure research/opinion question'); // research_only
+  });
+
+  // ── Phase E2 — USER LEVERS block (capabilities manifest → hand-off prose) ──
+  it('flag-OFF stays byte-identical even when a capabilitiesManifest is passed (E2 null-default guard)', () => {
+    archetypeFlag.mode = 'off';
+    const manifest = { user_can_short: true, user_can_make_claims: true, flipsRemaining: 3, claimsRemaining: 2 };
+    // The block is under the archetypeBlock guard (null when OFF), so a non-null
+    // manifest must NOT leak into the flag-OFF prompt.
+    expect(buildVoiceLayerPrompt(pdBattleArgs({ capabilitiesManifest: manifest }))).toBe(PD_GOLDEN.battle);
+  });
+
+  it('flag-ON battle with a live tournament manifest names flip PER-PICK + claim (E2)', () => {
+    archetypeFlag.mode = 'enforce';
+    const out = buildVoiceLayerPrompt(pdBattleArgs({
+      capabilitiesManifest: { user_can_short: true, user_can_make_claims: true, flipsRemaining: 3, claimsRemaining: 2 },
+    }));
+    expect(out).toContain('USER LEVERS RIGHT NOW');
+    expect(out).toContain('FLIP a position');
+    expect(out).toContain('flips left on some positions'); // per-pick framing (Phase B finding)
+    expect(out).not.toContain('3 flips');                  // never the raw global count
+    expect(out).toContain('PLACE A CLAIM');
+  });
+
+  it('flag-ON battle with a null / all-false manifest → "no trade lever" hand-off (E2 standard)', () => {
+    archetypeFlag.mode = 'enforce';
+    const nullOut = buildVoiceLayerPrompt(pdBattleArgs({ capabilitiesManifest: null }));
+    const allFalseOut = buildVoiceLayerPrompt(pdBattleArgs({
+      capabilitiesManifest: { user_can_short: false, user_can_make_claims: false, flipsRemaining: null, claimsRemaining: null },
+    }));
+    for (const out of [nullOut, allFalseOut]) {
+      expect(out).toContain('USER LEVERS RIGHT NOW');
+      expect(out).toContain('No trade lever is available');
+      expect(out).not.toContain('FLIP a position');
+      expect(out).toContain('coach me a directive'); // always-available hand-off
+    }
   });
 });

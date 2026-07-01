@@ -40,6 +40,7 @@ export function ArenaDesktop({ state, mode, headline = 'mult', onBack, data = nu
     active: live, voice: D.voice, ask: D.ask,
     beats: data ? null : D.beats, // preview loops fixture beats; live uses liveBeats
     live: !!data, liveBeats: data ? D.beats : null,
+    battleId: D.battleId ?? null, agentId: D.agentId ?? null, // two-way ask identity (live only)
     closeStart: calm ? (D.pod.toOpen ?? 0) : (D.pod.nextClose ?? 0),
     wireStart: D.wire.closes ?? 0,
   });

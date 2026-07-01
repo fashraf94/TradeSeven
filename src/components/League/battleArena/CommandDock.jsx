@@ -150,10 +150,28 @@ export function DockYourThree({ stars, dormant, complete, state, wire, wireClock
 // a plain block (not a flex:1 internal-scroll region), so it flows in the mobile
 // arena's page scroll instead of collapsing to 0 height in an auto-height parent.
 // Default off → DockStatePanel's desktop call is byte-identical.
-export function AgentDock({ lines, archName, live, ask, onAsk, compact = false, style }) {
+export function AgentDock({ lines, archName, live, ask, onAsk, compact = false, style,
+  askLive = null, remaining = null, asking = false, chatReady = false }) {
   const c = OWN_AGENT;
   const [asked, setAsked] = React.useState([]);
   const handleAsk = (i) => { if (!asked.includes(i)) setAsked((a) => [...a, i]); onAsk(i); };
+
+  // Two-way ask is LIVE only when the flag + a real battle identity are present
+  // (chatReady from the engine). Otherwise this is today's stub — decorative box,
+  // canned chip echoes — byte-identical.
+  const chatOn = chatReady && typeof askLive === 'function';
+  const [draft, setDraft] = React.useState('');
+  const submitDraft = () => {
+    const t = draft.trim();
+    if (!t || asking) return;
+    setDraft('');
+    askLive(t);
+  };
+  const tapChip = (i, qa) => {
+    if (chatOn) { if (!asking) askLive(qa.q); return; }
+    handleAsk(i);
+  };
+
   return (
     <div style={{ borderRadius: 16, padding: compact ? '13px 14px' : '15px 17px', position: 'relative', display: 'flex', flexDirection: 'column',
       background: alpha(LTOKENS.bg, 0.72), backdropFilter: 'blur(14px)', WebkitBackdropFilter: 'blur(14px)',
@@ -165,22 +183,54 @@ export function AgentDock({ lines, archName, live, ask, onAsk, compact = false, 
         <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 9 }}>
           <LIcon name="spark" size={12} color={c} stroke={2} />
           <Eyebrow color={c}>Ask your agent</Eyebrow>
+          {/* the quiet, persistent counter — "N left today" (says "today" so the daily
+              reset is never a surprise). Server-fed; absent until the first read. */}
+          {chatOn && Number.isFinite(remaining) && (
+            <Mono style={{ fontSize: 10.5, fontWeight: 600, color: remaining > 0 ? LTOKENS.ink3 : c, marginLeft: 'auto' }}>
+              {remaining} left today
+            </Mono>
+          )}
         </div>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7, marginBottom: 9 }}>
-          {(ask || []).map((qa, i) => (
-            <button key={qa.q} className="bv2-tap" onClick={() => handleAsk(i)} style={{ all: 'unset', cursor: 'pointer',
-              display: 'inline-flex', alignItems: 'center', gap: 5, padding: '7px 11px', borderRadius: 999,
-              background: asked.includes(i) ? alpha(c, 0.1) : LTOKENS.surface, border: `1px solid ${asked.includes(i) ? alpha(c, 0.4) : LTOKENS.hair2}` }}>
-              <Mono style={{ fontSize: 11, fontWeight: 600, color: asked.includes(i) ? c : LTOKENS.ink2 }}>{qa.q}</Mono>
+          {(ask || []).map((qa, i) => {
+            const on = !chatOn && asked.includes(i); // stub-only "asked" highlight
+            return (
+              <button key={qa.q} className="bv2-tap" onClick={() => tapChip(i, qa)} disabled={chatOn && asking}
+                style={{ all: 'unset', cursor: chatOn && asking ? 'default' : 'pointer',
+                  display: 'inline-flex', alignItems: 'center', gap: 5, padding: '7px 11px', borderRadius: 999,
+                  // opacity only under the live path — keeps the flag-off stub chip byte-identical
+                  opacity: chatOn ? (asking ? 0.5 : 1) : undefined,
+                  background: on ? alpha(c, 0.1) : LTOKENS.surface, border: `1px solid ${on ? alpha(c, 0.4) : LTOKENS.hair2}` }}>
+                <Mono style={{ fontSize: 11, fontWeight: 600, color: on ? c : LTOKENS.ink2 }}>{qa.q}</Mono>
+              </button>
+            );
+          })}
+        </div>
+        {chatOn ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '10px 13px', borderRadius: 11, background: LTOKENS.surface, border: `1px solid ${LTOKENS.hair}`, opacity: asking ? 0.6 : 1 }}>
+            <input
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); submitDraft(); } }}
+              disabled={asking}
+              placeholder={asking ? 'Thinking…' : 'Ask anything…'}
+              maxLength={2000}
+              style={{ all: 'unset', flex: 1, minWidth: 0, fontFamily: 'inherit', fontSize: 11.5, color: LTOKENS.ink }}
+            />
+            <button className="bv2-tap" onClick={submitDraft} disabled={asking || !draft.trim()} aria-label="Send"
+              style={{ all: 'unset', cursor: asking || !draft.trim() ? 'default' : 'pointer', width: 26, height: 26, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                background: alpha(c, draft.trim() && !asking ? 0.14 : 0.06), border: `1px solid ${alpha(c, draft.trim() && !asking ? 0.36 : 0.18)}` }}>
+              <LIcon name="arrowUp" size={13} color={c} stroke={2.2} />
             </button>
-          ))}
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '10px 13px', borderRadius: 11, background: LTOKENS.surface, border: `1px solid ${LTOKENS.hair}` }}>
-          <Mono style={{ fontSize: 11.5, color: LTOKENS.ink3, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Ask anything…</Mono>
-          <span style={{ width: 26, height: 26, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', background: alpha(c, 0.14), border: `1px solid ${alpha(c, 0.36)}` }}>
-            <LIcon name="arrowUp" size={13} color={c} stroke={2.2} />
-          </span>
-        </div>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '10px 13px', borderRadius: 11, background: LTOKENS.surface, border: `1px solid ${LTOKENS.hair}` }}>
+            <Mono style={{ fontSize: 11.5, color: LTOKENS.ink3, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Ask anything…</Mono>
+            <span style={{ width: 26, height: 26, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', background: alpha(c, 0.14), border: `1px solid ${alpha(c, 0.36)}` }}>
+              <LIcon name="arrowUp" size={13} color={c} stroke={2.2} />
+            </span>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -189,7 +239,8 @@ export function AgentDock({ lines, archName, live, ask, onAsk, compact = false, 
 // ── the dock's right panel — voice (live) / countdown (awaiting) / verdict ──
 export function DockStatePanel({ state, mode, eng, archName, voice, pod, ask, youRank, onFilm, style }) {
   if (state === 'live') {
-    return <AgentDock lines={eng.lines} archName={archName} live ask={ask} onAsk={eng.askAgent} style={style} />;
+    return <AgentDock lines={eng.lines} archName={archName} live ask={ask} onAsk={eng.askAgent}
+      askLive={eng.askLive} remaining={eng.remaining} asking={eng.asking} chatReady={eng.chatReady} style={style} />;
   }
   if (state === 'awaiting') {
     return (

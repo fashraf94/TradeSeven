@@ -7,7 +7,7 @@
 // bridge graph stays node-clean and the scorer is reached, not copied.
 
 import { describe, it, expect } from 'vitest';
-import { buildArenaModel, liveDayIdx } from './buildArenaModel';
+import { buildArenaModel, liveDayIdx, buildAskChips } from './buildArenaModel';
 
 const NOW = Date.parse('2026-06-16T20:30:00.000Z'); // Tue 16:30 ET — claim wire OPEN
 
@@ -176,5 +176,32 @@ describe('buildArenaModel — pre-deploy (no battle)', () => {
     expect(m.voice.live).toEqual([]);
     expect(m.seats).toHaveLength(4);
     expect(m.seats.find((s) => s.you).arch).toBeUndefined(); // no battle → your arch unknown too
+  });
+});
+
+describe('buildAskChips — the two-way ask chips (standing-aware)', () => {
+  it('the strategy starter set + one standing-aware slot; every chip is a { q } prompt', () => {
+    const chips = buildAskChips(1);
+    expect(chips).toHaveLength(6);
+    expect(chips.every((c) => typeof c.q === 'string' && c.q.length > 0)).toBe(true);
+    expect('a' in chips[0]).toBe(false); // no canned echo — the chip text IS the message
+  });
+  it('advancing (rank 1-2) offers "protect the lead"', () => {
+    expect(buildAskChips(1).at(-1).q).toMatch(/protect the lead/i);
+    expect(buildAskChips(2).at(-1).q).toMatch(/protect the lead/i);
+  });
+  it('behind (rank 3-4) offers "catch up"', () => {
+    expect(buildAskChips(3).at(-1).q).toMatch(/catch up/i);
+    expect(buildAskChips(4).at(-1).q).toMatch(/catch up/i);
+  });
+});
+
+describe('buildArenaModel — two-way ask identity + flag-off default', () => {
+  it('exposes battleId/agentId for the ask POST, and ask stays [] with the flag off (stub)', () => {
+    const m = buildArenaModel({ ...BASE, battle: { ...flat6Battle(), agentId: 'agent-9' } });
+    expect(m.battleId).toBe('b1');
+    expect(m.agentId).toBe('agent-9');
+    // Flag defaults OFF in tests → no chips → today's stub is byte-identical.
+    expect(m.ask).toEqual([]);
   });
 });

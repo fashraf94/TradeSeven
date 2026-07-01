@@ -7,7 +7,19 @@ import { FieldValue } from 'firebase-admin/firestore';
 import { logConversation } from '../_utils/shadowLogger.js';
 import { getMarketState } from '../_utils/marketSchedule.js';
 import { randomUUID } from 'node:crypto';
-import { TOURNAMENT_GAME_MODE } from '../../src/constants/leagueTournament.js';
+import { TOURNAMENT_GAME_MODE, TOURNAMENT_GROUPS_COLLECTION } from '../../src/constants/leagueTournament.js';
+// League arena two-way ask — the per-day question budget (server-authoritative,
+// its OWN collection; NEVER a battle-doc field). Scoped to the League ask only.
+import { resolveBudgetDay, readAgentChatBudget, chargeAgentChatBudget } from '../_utils/agentChatBudget.js';
+// Archetype Integrity — Phase E1 (the deterministic gate). Flag-gated; OFF/review
+// run the literal legacy normalizeDirective path → byte-identical.
+import { gateDirective, renderDirectiveStatus } from '../_utils/directiveGate.js';
+import { getEffectiveArchetype } from '../_utils/directiveIdentity.js';
+import { ARCHETYPE_INTEGRITY_MODE, LEAGUE_AGENT_CHAT_ENABLED } from '../../src/config/featureFlags.js';
+// Archetype Integrity — Phase E2 (capabilities manifest → USER LEVERS hand-off).
+// Flag-gated, battle-only; the manifest is built only when the feature is ON.
+import { buildCapabilitiesManifest } from '../_utils/agentCapabilitiesManifest.js';
+import { getTournamentClaimWindow, formatEtDate } from '../_utils/tournamentTime.js';
 
 export const config = { maxDuration: 30 };
 
@@ -125,9 +137,19 @@ const MODE_BUDGET = {
   review: { field: 'reviewBudgetUsed', limit: 5 },
 };
 
+// League arena ask — the in-voice line the agent "says" when the per-day question
+// budget is spent. Returned as a 200 (a normal agent message, NOT an error shape),
+// with no agent call and no charge — the designed zero state.
+const LEAGUE_EXHAUSTED_LINE = "That's all the questions I can take today — we'll talk again tomorrow.";
+
 // ==================== HANDLER ====================
 
 export default async function handler(req, res) {
+  // Turn deadline anchor (Phase E1). Stamped at invocation so the gate's repair
+  // budget is measured against true elapsed time vs maxDuration:30 — 24s leaves
+  // ~6s headroom for the awaited Firestore writes after the gate returns.
+  const turnStartMs = Date.now();
+
   // 1. Security middleware
   if (applySecurityMiddleware(req, res, { rateLimit: { limit: 10, windowMs: 60000 } })) {
     return;
@@ -145,6 +167,10 @@ export default async function handler(req, res) {
   // 4. Validate body
   const { agentId, battleId, message } = req.body;
   const requestedMode = req.body.mode;
+  // League arena two-way ask. The budget branch is reachable ONLY when the client
+  // sends leagueAsk AND the kill-switch flag is on — so every existing caller (which
+  // never sends leagueAsk) is byte-identical, and flag-off reverts to today's stub.
+  const isLeagueAsk = req.body.leagueAsk === true && LEAGUE_AGENT_CHAT_ENABLED === true;
 
   if (!agentId || !battleId || !message) {
     return res.status(400).json({ error: 'agentId, battleId, and message are required' });
@@ -205,7 +231,10 @@ export default async function handler(req, res) {
     const { field: budgetField, limit: budgetLimit } = MODE_BUDGET[mode];
     const currentBudget = battle[budgetField] || 0;
 
-    if (currentBudget >= budgetLimit) {
+    // 11a. Existing per-battle budget — for every NON-League caller, unchanged.
+    //      The League arena ask BYPASSES this entirely (its own per-day budget,
+    //      below) so the two counters never double-count.
+    if (!isLeagueAsk && currentBudget >= budgetLimit) {
       if (mode === 'review') {
         // New error shape for new mode — frontend (Phase 6) will consume this.
         return res.status(429).json({
@@ -221,15 +250,66 @@ export default async function handler(req, res) {
       });
     }
 
+    // 11b. League arena per-day budget — the EARLY exhausted gate (before any agent
+    //      call). resolveBudgetDay reads the group doc and derives the game-day dayN
+    //      (the SAME index the daily close writes). leagueBudgetKey null => the budget
+    //      is unkeyable (non-tournament, or a group/read failure) => FAIL-OPEN: answer
+    //      for free, no charge (never a placeholder dayN that would cross-day-collide).
+    let leagueBudgetKey = null; // { groupId, dayN } | null
+    if (isLeagueAsk) {
+      leagueBudgetKey = await resolveBudgetDay(db, battle);
+      if (leagueBudgetKey) {
+        const { remaining } = await readAgentChatBudget(db, { groupId: leagueBudgetKey.groupId, uid: user.uid, dayN: leagueBudgetKey.dayN });
+        if (remaining <= 0) {
+          // At zero: NO agent call, NO charge. A 200 in-voice line so the client renders
+          // it as a normal agent message (the designed zero state) — never an error shape.
+          return res.status(200).json({
+            agentMessage: LEAGUE_EXHAUSTED_LINE,
+            mode,
+            leagueAsk: true,
+            exhausted: true,
+            remaining: 0,
+          });
+        }
+      }
+    }
+
     // 11. Fetch market context for anchor + voiceLayerCache in parallel
     let anchorContext = null;
     let marketSnapshot = null;
+    // Phase E2 — the user-capabilities manifest (consumed only by the flag-gated,
+    // battle-only USER LEVERS block). Built ONLY when the feature is ON and not in
+    // review, so flag-OFF is a true no-op — no manifest, and no extra reads. The two
+    // tournament reads fold into the Promise.all below and each .catch → null, so a
+    // group/claims read failure degrades to an all-false manifest and NEVER blocks
+    // the turn or the market-context reads beside it.
+    let capabilitiesManifest = null;
+    const wantManifest = ARCHETYPE_INTEGRITY_MODE !== 'off' && mode !== 'review';
+    const fetchGroup = wantManifest && battle.gameMode === TOURNAMENT_GAME_MODE && !!battle.groupId;
+    const groupRef = fetchGroup
+      ? db.collection(TOURNAMENT_GROUPS_COLLECTION).doc(battle.groupId)
+      : null;
     try {
       const today = new Date().toISOString().split('T')[0];
-      const [marketCtxDoc, drbDoc, cacheDoc] = await Promise.all([
+      const [marketCtxDoc, drbDoc, cacheDoc, groupDoc, claimsAgg] = await Promise.all([
         db.collection('indexIntelligence').doc('marketContext').get(),
         db.collection('indexIntelligence').doc('dailyRegimeBrief').get(),
         db.collection('voiceLayerCache').doc(battleId).get(),
+        fetchGroup
+          ? groupRef.get().catch((e) => {
+              console.warn('[VoiceLayer] tournament group read failed (manifest → all-false):', e?.message);
+              return null;
+            })
+          : Promise.resolve(null),
+        fetchGroup
+          ? groupRef.collection('claims')
+              .where('odUserId', '==', user.uid)
+              .where('status', '==', 'pending')
+              .count().get().catch((e) => {
+                console.warn('[VoiceLayer] tournament claims read failed (manifest → all-false):', e?.message);
+                return null;
+              })
+          : Promise.resolve(null),
       ]);
       if (marketCtxDoc.exists) {
         const ctx = marketCtxDoc.data();
@@ -242,6 +322,29 @@ export default async function handler(req, res) {
       }
       if (cacheDoc.exists) {
         marketSnapshot = cacheDoc.data();
+      }
+      // Phase E2 — assemble the non-fenced group context for the manifest.
+      // CONSERVATIVE degrade: build `group` only when BOTH tournament reads
+      // succeeded (groupDoc exists AND the claims aggregate resolved). A standard
+      // battle (fetchGroup false) or ANY failed/empty read leaves group null →
+      // buildCapabilitiesManifest returns the all-false base ("no trade lever"
+      // hand-off). Defaulting a failed claims read to 0 would wrongly imply claims
+      // are available, so a failure nulls the whole group instead. Turn still 200.
+      if (wantManifest) {
+        let group = null;
+        if (groupDoc && groupDoc.exists && claimsAgg) {
+          const gdata = groupDoc.data();
+          const me = (gdata.players || []).find(p => p.odUserId === user.uid);
+          const now = new Date();
+          group = {
+            status: gdata.status,
+            userPicks: me?.picks ?? [],
+            pendingClaimCount: claimsAgg.data().count || 0,
+            claimWindowOpen: getTournamentClaimWindow(now).isOpen,
+            etDate: formatEtDate(now),
+          };
+        }
+        capabilitiesManifest = buildCapabilitiesManifest({ battle, group });
       }
     } catch (err) {
       console.error('[VoiceLayer] Failed to fetch market context:', err.message);
@@ -283,6 +386,7 @@ export default async function handler(req, res) {
       mode,
       dailyReviews: battle.dailyReviews || [],
       dailyGrades: battle.dailyGrades || [],
+      capabilitiesManifest,
     });
 
     // 15. Call OpenRouter (Gemma 4) — with 15s timeout
@@ -349,8 +453,36 @@ export default async function handler(req, res) {
     //     Directives are a live-play concept only. In review mode, the
     //     phase rules forbid hasDirective=true; we defensively strip any
     //     directive the model produces so nothing leaks into agent.directives[].
-    const normalizedDirective = mode === 'review' ? null : normalizeDirective(parsed);
-    const effectiveHasDirective = mode === 'review' ? false : (parsed.hasDirective || false);
+    // Phase E1 — the deterministic gate. OFF and review mode run the literal
+    // legacy lines (byte-identical). Only observe/enforce in BATTLE mode call the
+    // gate; OBSERVE forces null/false so the directive write, the threadId mint,
+    // and the UI badge stay dark by construction — it only logs the outcome on the
+    // exchange. ENFORCE lets a valid directive through the unchanged machinery.
+    let normalizedDirective;
+    let effectiveHasDirective;
+    let gateOutcome = null;
+    let gateFallbackLine = null;
+    if (ARCHETYPE_INTEGRITY_MODE === 'off' || mode === 'review') {
+      normalizedDirective = mode === 'review' ? null : normalizeDirective(parsed);
+      effectiveHasDirective = mode === 'review' ? false : (parsed.hasDirective || false);
+    } else {
+      const gate = await gateDirective({
+        parsed,
+        effectiveArchetype: getEffectiveArchetype(battle, agent),
+        mode,
+        callGemmaVoice,
+        systemPrompt,
+        conversationHistory,
+        userMessage: sanitizedMessage,
+        signal: controller.signal,
+        deadlineMs: turnStartMs + 24000,
+      });
+      gateOutcome = gate.outcome;
+      gateFallbackLine = gate.fallbackLine;
+      const enforcing = ARCHETYPE_INTEGRITY_MODE === 'enforce';
+      normalizedDirective = enforcing ? gate.directive : null;
+      effectiveHasDirective = enforcing ? gate.hasDirective : false;
+    }
 
     // 17b. Lesson + Forge suggestion (review mode only)
     const lessonProposal = parsed._lesson;
@@ -394,6 +526,16 @@ export default async function handler(req, res) {
       lesson: lesson ? { id: lesson.id, text: lesson.text } : null,
       forgeSuggestion: forgeSuggestion ? { id: forgeSuggestion.id, text: forgeSuggestion.text } : null,
       mode,
+      // Phase E1/H — code-owned, AUTHORITATIVE status (never model-written), added
+      // ONLY when the gate ran so the flag-OFF clientResponse stays byte-identical.
+      // renderDirectiveStatus derives the truth-of-record from hasDirective alone:
+      // a null-write turn ALWAYS reports directiveStatus 'no_change' + the no-change
+      // status line, regardless of what the prose said (the Phase-H backstop that
+      // makes prose-honesty structural). directiveFallback is the E1 conversational
+      // no-change line on a failed-repair turn (null otherwise). Frontend deferred.
+      ...(gateOutcome
+        ? { ...renderDirectiveStatus(effectiveHasDirective), directiveFallback: gateFallbackLine }
+        : {}),
     };
 
     // Shadow log (fire-and-forget)
@@ -451,13 +593,21 @@ export default async function handler(req, res) {
       ...(battle.gameMode === TOURNAMENT_GAME_MODE && battle.groupId
         ? { groupId: battle.groupId }
         : {}),
+      // Phase E1 — OBSERVE/ENFORCE durable gate record (CF-3: rides this awaited
+      // chatExchanges write, NOT a fire-and-forget log). Stamped on the EXCHANGE,
+      // never as a new battle-doc key (no createAgentBattle doc-shape contact).
+      ...(gateOutcome ? { archetypeGate: gateOutcome } : {}),
     };
 
     const recentTargets = [...(battle.recentElicitationTargets || []), elicitationTarget.dimension].slice(-3);
 
     await battleRef.update({
       chatExchanges: FieldValue.arrayUnion(exchange),
-      [budgetField]: FieldValue.increment(1),
+      // The League arena ask does NOT touch the per-battle counter — it charges its
+      // own per-day store (below). Omitting the increment here is what keeps the two
+      // budgets from double-counting. (chatExchanges stays: it is the sanctioned
+      // createAgentBattle field + the Catalog #9 durable record — unchanged.)
+      ...(!isLeagueAsk ? { [budgetField]: FieldValue.increment(1) } : {}),
       recentElicitationTargets: recentTargets,
       ...(directiveThreadId ? {
         directive: {
@@ -482,6 +632,28 @@ export default async function handler(req, res) {
       if (lesson) agentUpdate.lessons = FieldValue.arrayUnion(lesson);
       if (forgeSuggestion) agentUpdate.forgeSuggestions = FieldValue.arrayUnion(forgeSuggestion);
       await db.collection('agents').doc(agentId).update(agentUpdate);
+    }
+
+    // 20c. League arena per-day CHARGE — transactional, own collection, and only
+    //      HERE: this line is past every 502/504/500 return, so a failed/timed-out
+    //      ask can never reach it ("failed calls don't charge"). Increment only on a
+    //      successful answer. The authoritative post-charge `remaining` is added to
+    //      the response ONLY for a League ask (omission idiom → existing callers'
+    //      response stays byte-identical). leagueBudgetKey null => fail-open path
+    //      (group/dayN was unavailable): answered for free, counter left untouched.
+    if (isLeagueAsk && leagueBudgetKey) {
+      try {
+        const { remaining } = await chargeAgentChatBudget(db, {
+          groupId: leagueBudgetKey.groupId,
+          uid: user.uid,
+          dayN: leagueBudgetKey.dayN,
+        });
+        clientResponse.remaining = remaining;
+      } catch (err) {
+        // The answer already succeeded — a charge failure must not 500 the turn.
+        // Leave `remaining` unset so the client keeps its last-known counter.
+        console.warn('[LeagueChat] budget charge failed after a successful answer:', err?.message);
+      }
     }
 
     // 21. Return response
