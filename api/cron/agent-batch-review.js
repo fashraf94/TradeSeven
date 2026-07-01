@@ -16,6 +16,7 @@ import { getCurrentTradingDayServer } from '../_utils/agentEvalPromptAssembly.js
 import { getStockAnalysisData } from '../_utils/marketDataCache.js';
 import { callGemmaVoice, parseVoiceLayerResponse } from '../_utils/gemmaClient.js';
 import { buildVoiceLayerPrompt } from '../_utils/voiceLayerPrompt.js';
+import { renderLegacyDirectives } from '../_utils/legacyDirectiveSanitize.js';
 
 export const config = { maxDuration: 60 };
 
@@ -144,10 +145,10 @@ async function processBattleReview(db, battle) {
       }).join('\n')
     : 'No grades submitted';
 
-  const directives = battle.agentContext?.directives;
-  const directiveLines = directives && directives.length > 0
-    ? directives.map(d => `- ${d}`).join('\n')
-    : 'No active directives';
+  // Phase G — neutralize the write-dead legacy directives side-door when archetype
+  // integrity is on (byte-identical when off; this source is in practice always
+  // absent, but the sanitize guards against any future repopulation).
+  const directiveLines = renderLegacyDirectives(battle.agentContext?.directives, (d) => `- ${d}`);
 
   const bankedBadgePoints = scoreState.bankedBadgePoints?.total ?? 0;
   const userMessage = `TODAY'S PERFORMANCE (Day ${currentDay}):

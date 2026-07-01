@@ -7,7 +7,16 @@ import { FieldValue } from 'firebase-admin/firestore';
 import { logConversation } from '../_utils/shadowLogger.js';
 import { getMarketState } from '../_utils/marketSchedule.js';
 import { randomUUID } from 'node:crypto';
-import { TOURNAMENT_GAME_MODE } from '../../src/constants/leagueTournament.js';
+import { TOURNAMENT_GAME_MODE, TOURNAMENT_GROUPS_COLLECTION } from '../../src/constants/leagueTournament.js';
+// Archetype Integrity — Phase E1 (the deterministic gate). Flag-gated; OFF/review
+// run the literal legacy normalizeDirective path → byte-identical.
+import { gateDirective, renderDirectiveStatus } from '../_utils/directiveGate.js';
+import { getEffectiveArchetype } from '../_utils/directiveIdentity.js';
+import { ARCHETYPE_INTEGRITY_MODE } from '../../src/config/featureFlags.js';
+// Archetype Integrity — Phase E2 (capabilities manifest → USER LEVERS hand-off).
+// Flag-gated, battle-only; the manifest is built only when the feature is ON.
+import { buildCapabilitiesManifest } from '../_utils/agentCapabilitiesManifest.js';
+import { getTournamentClaimWindow, formatEtDate } from '../_utils/tournamentTime.js';
 
 export const config = { maxDuration: 30 };
 
@@ -128,6 +137,11 @@ const MODE_BUDGET = {
 // ==================== HANDLER ====================
 
 export default async function handler(req, res) {
+  // Turn deadline anchor (Phase E1). Stamped at invocation so the gate's repair
+  // budget is measured against true elapsed time vs maxDuration:30 — 24s leaves
+  // ~6s headroom for the awaited Firestore writes after the gate returns.
+  const turnStartMs = Date.now();
+
   // 1. Security middleware
   if (applySecurityMiddleware(req, res, { rateLimit: { limit: 10, windowMs: 60000 } })) {
     return;
@@ -224,12 +238,39 @@ export default async function handler(req, res) {
     // 11. Fetch market context for anchor + voiceLayerCache in parallel
     let anchorContext = null;
     let marketSnapshot = null;
+    // Phase E2 — the user-capabilities manifest (consumed only by the flag-gated,
+    // battle-only USER LEVERS block). Built ONLY when the feature is ON and not in
+    // review, so flag-OFF is a true no-op — no manifest, and no extra reads. The two
+    // tournament reads fold into the Promise.all below and each .catch → null, so a
+    // group/claims read failure degrades to an all-false manifest and NEVER blocks
+    // the turn or the market-context reads beside it.
+    let capabilitiesManifest = null;
+    const wantManifest = ARCHETYPE_INTEGRITY_MODE !== 'off' && mode !== 'review';
+    const fetchGroup = wantManifest && battle.gameMode === TOURNAMENT_GAME_MODE && !!battle.groupId;
+    const groupRef = fetchGroup
+      ? db.collection(TOURNAMENT_GROUPS_COLLECTION).doc(battle.groupId)
+      : null;
     try {
       const today = new Date().toISOString().split('T')[0];
-      const [marketCtxDoc, drbDoc, cacheDoc] = await Promise.all([
+      const [marketCtxDoc, drbDoc, cacheDoc, groupDoc, claimsAgg] = await Promise.all([
         db.collection('indexIntelligence').doc('marketContext').get(),
         db.collection('indexIntelligence').doc('dailyRegimeBrief').get(),
         db.collection('voiceLayerCache').doc(battleId).get(),
+        fetchGroup
+          ? groupRef.get().catch((e) => {
+              console.warn('[VoiceLayer] tournament group read failed (manifest → all-false):', e?.message);
+              return null;
+            })
+          : Promise.resolve(null),
+        fetchGroup
+          ? groupRef.collection('claims')
+              .where('odUserId', '==', user.uid)
+              .where('status', '==', 'pending')
+              .count().get().catch((e) => {
+                console.warn('[VoiceLayer] tournament claims read failed (manifest → all-false):', e?.message);
+                return null;
+              })
+          : Promise.resolve(null),
       ]);
       if (marketCtxDoc.exists) {
         const ctx = marketCtxDoc.data();
@@ -242,6 +283,29 @@ export default async function handler(req, res) {
       }
       if (cacheDoc.exists) {
         marketSnapshot = cacheDoc.data();
+      }
+      // Phase E2 — assemble the non-fenced group context for the manifest.
+      // CONSERVATIVE degrade: build `group` only when BOTH tournament reads
+      // succeeded (groupDoc exists AND the claims aggregate resolved). A standard
+      // battle (fetchGroup false) or ANY failed/empty read leaves group null →
+      // buildCapabilitiesManifest returns the all-false base ("no trade lever"
+      // hand-off). Defaulting a failed claims read to 0 would wrongly imply claims
+      // are available, so a failure nulls the whole group instead. Turn still 200.
+      if (wantManifest) {
+        let group = null;
+        if (groupDoc && groupDoc.exists && claimsAgg) {
+          const gdata = groupDoc.data();
+          const me = (gdata.players || []).find(p => p.odUserId === user.uid);
+          const now = new Date();
+          group = {
+            status: gdata.status,
+            userPicks: me?.picks ?? [],
+            pendingClaimCount: claimsAgg.data().count || 0,
+            claimWindowOpen: getTournamentClaimWindow(now).isOpen,
+            etDate: formatEtDate(now),
+          };
+        }
+        capabilitiesManifest = buildCapabilitiesManifest({ battle, group });
       }
     } catch (err) {
       console.error('[VoiceLayer] Failed to fetch market context:', err.message);
@@ -283,6 +347,7 @@ export default async function handler(req, res) {
       mode,
       dailyReviews: battle.dailyReviews || [],
       dailyGrades: battle.dailyGrades || [],
+      capabilitiesManifest,
     });
 
     // 15. Call OpenRouter (Gemma 4) — with 15s timeout
@@ -349,8 +414,36 @@ export default async function handler(req, res) {
     //     Directives are a live-play concept only. In review mode, the
     //     phase rules forbid hasDirective=true; we defensively strip any
     //     directive the model produces so nothing leaks into agent.directives[].
-    const normalizedDirective = mode === 'review' ? null : normalizeDirective(parsed);
-    const effectiveHasDirective = mode === 'review' ? false : (parsed.hasDirective || false);
+    // Phase E1 — the deterministic gate. OFF and review mode run the literal
+    // legacy lines (byte-identical). Only observe/enforce in BATTLE mode call the
+    // gate; OBSERVE forces null/false so the directive write, the threadId mint,
+    // and the UI badge stay dark by construction — it only logs the outcome on the
+    // exchange. ENFORCE lets a valid directive through the unchanged machinery.
+    let normalizedDirective;
+    let effectiveHasDirective;
+    let gateOutcome = null;
+    let gateFallbackLine = null;
+    if (ARCHETYPE_INTEGRITY_MODE === 'off' || mode === 'review') {
+      normalizedDirective = mode === 'review' ? null : normalizeDirective(parsed);
+      effectiveHasDirective = mode === 'review' ? false : (parsed.hasDirective || false);
+    } else {
+      const gate = await gateDirective({
+        parsed,
+        effectiveArchetype: getEffectiveArchetype(battle, agent),
+        mode,
+        callGemmaVoice,
+        systemPrompt,
+        conversationHistory,
+        userMessage: sanitizedMessage,
+        signal: controller.signal,
+        deadlineMs: turnStartMs + 24000,
+      });
+      gateOutcome = gate.outcome;
+      gateFallbackLine = gate.fallbackLine;
+      const enforcing = ARCHETYPE_INTEGRITY_MODE === 'enforce';
+      normalizedDirective = enforcing ? gate.directive : null;
+      effectiveHasDirective = enforcing ? gate.hasDirective : false;
+    }
 
     // 17b. Lesson + Forge suggestion (review mode only)
     const lessonProposal = parsed._lesson;
@@ -394,6 +487,16 @@ export default async function handler(req, res) {
       lesson: lesson ? { id: lesson.id, text: lesson.text } : null,
       forgeSuggestion: forgeSuggestion ? { id: forgeSuggestion.id, text: forgeSuggestion.text } : null,
       mode,
+      // Phase E1/H — code-owned, AUTHORITATIVE status (never model-written), added
+      // ONLY when the gate ran so the flag-OFF clientResponse stays byte-identical.
+      // renderDirectiveStatus derives the truth-of-record from hasDirective alone:
+      // a null-write turn ALWAYS reports directiveStatus 'no_change' + the no-change
+      // status line, regardless of what the prose said (the Phase-H backstop that
+      // makes prose-honesty structural). directiveFallback is the E1 conversational
+      // no-change line on a failed-repair turn (null otherwise). Frontend deferred.
+      ...(gateOutcome
+        ? { ...renderDirectiveStatus(effectiveHasDirective), directiveFallback: gateFallbackLine }
+        : {}),
     };
 
     // Shadow log (fire-and-forget)
@@ -451,6 +554,10 @@ export default async function handler(req, res) {
       ...(battle.gameMode === TOURNAMENT_GAME_MODE && battle.groupId
         ? { groupId: battle.groupId }
         : {}),
+      // Phase E1 — OBSERVE/ENFORCE durable gate record (CF-3: rides this awaited
+      // chatExchanges write, NOT a fire-and-forget log). Stamped on the EXCHANGE,
+      // never as a new battle-doc key (no createAgentBattle doc-shape contact).
+      ...(gateOutcome ? { archetypeGate: gateOutcome } : {}),
     };
 
     const recentTargets = [...(battle.recentElicitationTargets || []), elicitationTarget.dimension].slice(-3);

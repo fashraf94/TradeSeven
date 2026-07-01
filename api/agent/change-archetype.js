@@ -74,6 +74,13 @@ export default async function handler(req, res) {
       if (!agentSnap.exists) throw new Error(SENTINEL_PREFIX + 'agent_not_found');
       const agent = agentSnap.data();
       if (agent.ownerId !== user.uid) throw new Error(SENTINEL_PREFIX + 'forbidden');
+      // ⚠️ LOAD-BEARING FOR ARCHETYPE INTEGRITY: this battle-lock is what
+      // guarantees an agent's archetype cannot change mid-battle, which is why
+      // the integrity gate does NOT clear/revalidate `battle.directive` on
+      // archetype change. If you EVER allow mid-battle archetype change, you MUST
+      // clear or revalidate the live `battle.directive` (it may have been minted
+      // under the prior archetype) — see
+      // docs/audits/20260625_ARCHETYPE_INTEGRITY_BUILD_PLAN_V2.md (CF-1).
       if (agent.activeBattleId) throw new Error(SENTINEL_PREFIX + 'battle_active');
 
       // Idempotent: archetype already set → 200 no-op, no write.
