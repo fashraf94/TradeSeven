@@ -109,11 +109,29 @@ export const LEG_DIRECTION = Object.freeze({
 //                      baselinePrice = the flip price, set immediately.
 // - FLIP_MARKET_CLOSED: leg opened by a flip while the market was closed;
 //                      baselinePrice null, settled at the next open.
+// - CANONICAL_OPEN_CAPTURE: baseline settled to the round's canonical session
+//                      open by the post-open capture sweep (Spec §1.1,
+//                      canonical-open policy) — the SAME /real-time/ open the
+//                      nightly banking pass settles from, captured live and
+//                      frozen. Distinct from the nightly null-settle.
 export const BASELINE_SOURCE = Object.freeze({
   DRAFT_RESOLUTION: 'draft_resolution',
   CLAIM_EXECUTION: 'claim_execution',
   FLIP_MARKET_OPEN: 'flip_market_open',
   FLIP_MARKET_CLOSED: 'flip_market_closed',
+  CANONICAL_OPEN_CAPTURE: 'canonical_open_capture',
+});
+
+// Spec §1.1 — the baseline POLICY stamped on a tournamentGroups round doc at
+// creation, resolved ONCE from LEAGUE_CANONICAL_OPEN_CAPTURE and never re-read
+// as a mutable runtime flag — so a mid-round flag flip can't split policy
+// across a cohort. LEGACY_OPEN_DEFER = today's behavior (null baseline settled
+// at the nightly open). CANONICAL_OPEN = the post-open capture sweep settles the
+// baseline to the round's canonical session open. Readers default an ABSENT
+// stamp to LEGACY_OPEN_DEFER (older docs + flag-off paths).
+export const BASELINE_POLICY = Object.freeze({
+  LEGACY_OPEN_DEFER: 'legacy_open_defer',
+  CANONICAL_OPEN: 'canonical_open',
 });
 
 // Spec §1.2 — agentLedger entry provenance.
@@ -845,7 +863,19 @@ export function createClaimSystemState() {
  * (baseline = next open, Spec §1.1 flip rules); `baselineSource` must be a
  * BASELINE_SOURCE value (ratified June 11, 2026 — see that enum's comment).
  */
-export function createLeg({ direction = LEG_DIRECTION.LONG, baselinePrice = null, baselineSource, openedAt } = {}) {
+export function createLeg({
+  direction = LEG_DIRECTION.LONG,
+  baselinePrice = null,
+  baselineSource,
+  openedAt,
+  // Canonical-open capture provenance (Spec §1.1 canonical-open policy). Inert
+  // defaults — populated only by the post-open capture sweep (a later phase).
+  baselineCapturedAt = null,
+  baselinePriceTimestamp = null,
+  captureJobId = null,
+  baselineSession = null,
+  instrumentId = null,
+} = {}) {
   if (!Object.values(LEG_DIRECTION).includes(direction)) {
     throw new Error(`createLeg: invalid direction "${direction}"`);
   }
@@ -864,6 +894,13 @@ export function createLeg({ direction = LEG_DIRECTION.LONG, baselinePrice = null
     baselineSource,
     openedAt,
     thresholdHistory: [],
+    // Present-null (like baselinePrice), NOT omitted — these are baseline
+    // provenance, not closed-state lifecycle keys (closedAt/bankedScore).
+    baselineCapturedAt,
+    baselinePriceTimestamp,
+    captureJobId,
+    baselineSession,
+    instrumentId,
   };
 }
 
@@ -880,6 +917,44 @@ export function createPickState({ symbol, direction, baselinePrice, baselineSour
     symbol: symbol.trim().toUpperCase(),
     legs: [createLeg({ direction, baselinePrice, baselineSource, openedAt })],
     flipCountToday: 0,
+  };
+}
+
+/**
+ * One per-symbol canonical-open snapshot entry, stored under a round doc's
+ * `canonicalOpens` map (Spec §1.1 canonical-open policy). The captured value is
+ * the round's official session open, sourced from the SAME
+ * `fetchBatchQuotes(...).open` (EODHD /real-time/ item.open) the banking pass
+ * settles from — captured once post-open and frozen, so the score of record is
+ * immutable for the round. Pure; the server capture util (api/_utils/
+ * canonicalOpen.js) builds + writes it.
+ *
+ * `open` MUST be a finite positive number (a real session open); a null/absent
+ * open means "no eligible open yet" and is NOT stored (the leg stays
+ * PENDING_OPEN and is retried on the next sweep). `capturedAt` is the caller's
+ * ISO timestamp; `priceTimestamp` is the vendor open's as-of time.
+ */
+export function createCanonicalOpenEntry({
+  open,
+  capturedAt,
+  priceTimestamp = null,
+  captureJobId = null,
+  session = null,
+  instrumentId = null,
+} = {}) {
+  if (!Number.isFinite(open) || open <= 0) {
+    throw new Error('createCanonicalOpenEntry: open must be a finite positive number');
+  }
+  if (typeof capturedAt !== 'string' || capturedAt.length === 0) {
+    throw new Error('createCanonicalOpenEntry: capturedAt (ISO string) is required');
+  }
+  return {
+    open,
+    capturedAt,
+    priceTimestamp,
+    captureJobId,
+    session,
+    instrumentId,
   };
 }
 
@@ -1065,6 +1140,10 @@ export function createTournamentGroupDoc({
   baseLayerWeek = null,
   isTraining = false,
   status = GROUP_STATUS.FORMING,
+  // Spec §1.1 canonical-open policy — resolved ONCE from the flag at the
+  // round-creation call site. Omission idiom: absent when null (flag-off /
+  // callers that don't pass it), so today's doc shape is byte-identical.
+  baselinePolicy = null,
   now,
 } = {}) {
   if (!Array.isArray(players) || players.length !== GROUP_SIZE) {
@@ -1096,6 +1175,9 @@ export function createTournamentGroupDoc({
   if (!Object.values(GROUP_STATUS).includes(status)) {
     throw new Error(`createTournamentGroupDoc: invalid status "${status}"`);
   }
+  if (baselinePolicy != null && !Object.values(BASELINE_POLICY).includes(baselinePolicy)) {
+    throw new Error(`createTournamentGroupDoc: invalid baselinePolicy "${baselinePolicy}"`);
+  }
   if (now == null) {
     throw new Error('createTournamentGroupDoc: now is required (caller supplies the timestamp)');
   }
@@ -1104,6 +1186,7 @@ export function createTournamentGroupDoc({
     roundNumber,
     ...(hasBracket ? { bracketGameId } : { baseLayerWeek }),
     ...(isTraining === true ? { isTraining: true } : {}),
+    ...(baselinePolicy != null ? { baselinePolicy } : {}),
     groupMembers: ids,
     players: players.map(p => ({
       odUserId: p.odUserId,

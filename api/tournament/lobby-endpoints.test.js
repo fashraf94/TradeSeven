@@ -20,6 +20,9 @@ const h = vi.hoisted(() => ({ flag: true, nextArc: false, db: null, user: { uid:
 vi.mock('../../src/config/featureFlags.js', () => ({
   get LEAGUE_LOBBY_ENABLED() { return h.flag; },
   get LEAGUE_NEXT_ARC_ENABLED() { return h.nextArc; },
+  // tournamentLobbyService now reads this flag at round creation (Spec §1.1
+  // canonical-open policy); default false = today's behavior (stamp omitted).
+  LEAGUE_CANONICAL_OPEN_CAPTURE: false,
 }));
 vi.mock('../_utils/firebaseAdmin.js', () => ({ getFirebaseAdmin: () => h.db }));
 vi.mock('../_utils/authMiddleware.js', () => ({

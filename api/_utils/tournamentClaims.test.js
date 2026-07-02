@@ -227,6 +227,12 @@ describe('processClaimsForTournamentGroup — queue/rotation (legacy algorithm, 
         baselineSource: 'claim_execution',
         openedAt: NOW_ISO,
         thresholdHistory: [],
+        // canonical-open capture provenance — present-null on a fresh leg
+        baselineCapturedAt: null,
+        baselinePriceTimestamp: null,
+        captureJobId: null,
+        baselineSession: null,
+        instrumentId: null,
       }],
       flipCountToday: 0,
     });

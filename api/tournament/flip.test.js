@@ -142,6 +142,12 @@ describe('market-open branch', () => {
       baselineSource: 'flip_market_open',
       openedAt: MARKET_OPEN_T.toISOString(),
       thresholdHistory: [], // fresh per-leg thresholds
+      // canonical-open capture provenance — present-null on a fresh leg
+      baselineCapturedAt: null,
+      baselinePriceTimestamp: null,
+      captureJobId: null,
+      baselineSession: null,
+      instrumentId: null,
     });
     expect(pick.flipCountDate).toBe(ET_DATE);
   });

@@ -64,7 +64,9 @@ import {
   lobbyHumanIds,
   lobbyHasMember,
   isoWeekString,
+  BASELINE_POLICY,
 } from '../../src/constants/leagueTournament.js';
+import { LEAGUE_CANONICAL_OPEN_CAPTURE } from '../../src/config/featureFlags.js';
 import { padGamesWithCpus, ensureCpuAgents, commitCpuUserBoards } from './tournamentCpu.js';
 import { fetchRankedUserPool } from './tournamentGroupService.js';
 
@@ -309,6 +311,9 @@ export async function formGroupFromLobby(db, lobbyId, { now = new Date(), isTrai
       baseLayerWeek: isoWeekString(now),
       isTraining,
       status: GROUP_STATUS.FORMING,
+      // Spec §1.1 — resolve the baseline policy ONCE from the flag at round
+      // creation; omitted when off (readers default an absent stamp to legacy).
+      ...(LEAGUE_CANONICAL_OPEN_CAPTURE ? { baselinePolicy: BASELINE_POLICY.CANONICAL_OPEN } : {}),
       now: nowIso,
     });
     await groupRef.set(groupDoc);
