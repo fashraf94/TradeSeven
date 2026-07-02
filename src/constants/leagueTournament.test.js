@@ -246,6 +246,7 @@ describe('createLeg', () => {
       captureJobId: null,
       baselineSession: null,
       instrumentId: null,
+      captureState: null,
     });
     expect('closedAt' in leg).toBe(false);
     expect('bankedScore' in leg).toBe(false);

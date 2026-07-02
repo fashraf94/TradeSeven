@@ -148,6 +148,7 @@ describe('market-open branch', () => {
       captureJobId: null,
       baselineSession: null,
       instrumentId: null,
+      captureState: null,
     });
     expect(pick.flipCountDate).toBe(ET_DATE);
   });

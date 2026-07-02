@@ -23,7 +23,7 @@ vi.mock('./marketDataCache.js', () => ({
   isCryptoSymbol: (s) => /-USD$|^(BTC|ETH|SOL)$/.test(String(s || '')),
 }));
 
-import { fetchCanonicalOpens } from './canonicalOpen.js';
+import { fetchCanonicalOpens, writeCanonicalOpenSnapshot } from './canonicalOpen.js';
 
 describe('fetchCanonicalOpens — pinned source, fail-closed', () => {
   beforeEach(() => { fetchBatchQuotes.mockReset(); getStockAnalysisData.mockClear(); });
@@ -64,5 +64,67 @@ describe('fetchCanonicalOpens — pinned source, fail-closed', () => {
     const out = await fetchCanonicalOpens(['', '  ', null, undefined]);
     expect(out).toEqual({});
     expect(fetchBatchQuotes).not.toHaveBeenCalled();
+  });
+});
+
+// ── stateful db stand-in for the write helper (dot-path aware) ──
+function applyUpdate(doc, data) {
+  for (const [k, v] of Object.entries(data)) {
+    if (k.includes('.')) {
+      const parts = k.split('.'); let o = doc;
+      for (let i = 0; i < parts.length - 1; i++) { o[parts[i]] = o[parts[i]] || {}; o = o[parts[i]]; }
+      o[parts[parts.length - 1]] = v;
+    } else { doc[k] = v; }
+  }
+}
+function makeDb(groups = {}) {
+  const store = JSON.parse(JSON.stringify(groups));
+  const refFor = (id) => ({ __id: id, get: async () => ({ exists: store[id] != null, id, data: () => store[id] }) });
+  const db = {
+    collection: () => ({ doc: (id) => refFor(id) }),
+    runTransaction: async (fn) => fn({
+      get: async (ref) => ref.get(),
+      update: (ref, data) => { applyUpdate(store[ref.__id], data); },
+    }),
+  };
+  return { db, store };
+}
+
+describe('writeCanonicalOpenSnapshot — the idempotent heart', () => {
+  const meta = { capturedAt: '2026-07-02T14:00:00.000Z', captureJobId: 'j1', session: '2026-07-02' };
+
+  it('writes an absent per-symbol snapshot via the canonical factory', async () => {
+    const { db, store } = makeDb({ g1: { canonicalOpens: {} } });
+    const r = await writeCanonicalOpenSnapshot(db, 'g1', { LLY: { open: 812.5, priceTimestamp: 5, instrumentId: null } }, meta);
+    expect(r).toEqual({ written: ['LLY'], skipped: [] });
+    expect(store.g1.canonicalOpens.LLY).toEqual({
+      open: 812.5, capturedAt: meta.capturedAt, priceTimestamp: 5, captureJobId: 'j1', session: '2026-07-02', instrumentId: null,
+    });
+  });
+
+  it('IMMUTABLE: never overwrites an existing snapshot (skips it)', async () => {
+    const { db, store } = makeDb({ g1: { canonicalOpens: { LLY: { open: 800, capturedAt: 'earlier' } } } });
+    const r = await writeCanonicalOpenSnapshot(db, 'g1', { LLY: { open: 900, priceTimestamp: 5 } }, meta);
+    expect(r).toEqual({ written: [], skipped: ['LLY'] });
+    expect(store.g1.canonicalOpens.LLY.open).toBe(800);
+  });
+
+  it('IDEMPOTENT: a re-fired write is a no-op the second time', async () => {
+    const { db, store } = makeDb({ g1: { canonicalOpens: {} } });
+    await writeCanonicalOpenSnapshot(db, 'g1', { NVDA: { open: 130 } }, meta);
+    const r2 = await writeCanonicalOpenSnapshot(db, 'g1', { NVDA: { open: 130 } }, meta);
+    expect(r2).toEqual({ written: [], skipped: ['NVDA'] });
+    expect(store.g1.canonicalOpens.NVDA.open).toBe(130);
+  });
+
+  it('ignores null entries and no-ops on an empty map', async () => {
+    const { db } = makeDb({ g1: { canonicalOpens: {} } });
+    expect(await writeCanonicalOpenSnapshot(db, 'g1', { A: null }, meta)).toEqual({ written: [], skipped: [] });
+  });
+
+  it('missing group → nothing written', async () => {
+    const { db } = makeDb({});
+    const r = await writeCanonicalOpenSnapshot(db, 'nope', { LLY: { open: 1 } }, meta);
+    expect(r.written).toEqual([]);
   });
 });

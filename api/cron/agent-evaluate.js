@@ -55,6 +55,7 @@ import { finalizeCronState } from '../_utils/agentCronState.js';
 import { TOURNAMENT_GAME_MODE } from '../../src/constants/leagueTournament.js';
 import { classifyHaikuFailure, shouldStartHaikuCall, nextConsecutiveEvalFailures, HAIKU_CALL_CEILING_MS } from '../_utils/agentEvalTransport.js';
 import { logBattlePattern } from '../_utils/battlePatternLogger.js';
+import { runCanonicalOpenSweep } from '../_utils/canonicalOpenSweep.js';
 import { logEvaluation, logVisionTransition, logAnticipation } from '../_utils/shadowLogger.js';
 import { filterActiveConstraints } from '../_utils/visionRuntime.js';
 import { confidenceToFloat } from '../../src/constants/visionEnums.js';
@@ -142,8 +143,21 @@ export default async function handler(req, res) {
       return res.status(200).json({ skipped: true, reason: 'market_closed', expired: summary.expired, duration });
     }
 
+    // ---- 3b. Canonical-open capture sweep (Spec §1.1, Phase 2) — ISOLATED
+    // first-class subtask: its own timeout; any failure is caught + reported
+    // here and NEVER propagated to agent-evaluate (nor vice versa). Inert in
+    // prod: with LEAGUE_CANONICAL_OPEN_CAPTURE off no round carries the
+    // canonical_open stamp, so the sweep early-returns a no-op. Runs on every
+    // open arm regardless of agent-battle count (the user layer is independent).
+    try {
+      summary.canonicalOpenSweep = await runCanonicalOpenSweep(db, { now: new Date(), timeoutMs: 15000 });
+    } catch (sweepErr) {
+      console.error(`${LOG_PREFIX} [canonicalOpenSweep] FAILED (isolated — agent-evaluate unaffected):`, sweepErr.message);
+      summary.canonicalOpenSweep = { error: sweepErr.message };
+    }
+
     if (activeBattles.length === 0) {
-      return res.status(200).json({ evaluated: 0, expired: summary.expired, message: 'No active agent battles' });
+      return res.status(200).json({ evaluated: 0, expired: summary.expired, canonicalOpenSweep: summary.canonicalOpenSweep, message: 'No active agent battles' });
     }
 
     console.log(`${LOG_PREFIX} Found ${activeBattles.length} active agent battle(s) (${summary.expired} expired and completed)`);

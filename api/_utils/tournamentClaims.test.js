@@ -233,6 +233,7 @@ describe('processClaimsForTournamentGroup — queue/rotation (legacy algorithm, 
         captureJobId: null,
         baselineSession: null,
         instrumentId: null,
+        captureState: null,
       }],
       flipCountToday: 0,
     });

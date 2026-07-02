@@ -134,6 +134,19 @@ export const BASELINE_POLICY = Object.freeze({
   CANONICAL_OPEN: 'canonical_open',
 });
 
+// Spec §1.1 — a user leg's canonical-open CAPTURE state, written by the Phase-2
+// post-open sweep (and, at Phase 3, terminal-voided by banking). null =
+// legacy/unswept (today's behavior). PENDING_OPEN = swept but no eligible open
+// yet (retried next arm). CAPTURED = baseline settled from the round's canonical
+// open. NO_ELIGIBLE_OPEN = terminal void set at banking when a leg never got an
+// eligible open all session (Phase 3). A PENDING_OPEN leg must always carry a
+// matching audit entry (canonicalCaptureLog) — fail-closed is never fail-invisible.
+export const CAPTURE_STATE = Object.freeze({
+  PENDING_OPEN: 'PENDING_OPEN',
+  CAPTURED: 'CAPTURED',
+  NO_ELIGIBLE_OPEN: 'NO_ELIGIBLE_OPEN',
+});
+
 // Spec §1.2 — agentLedger entry provenance.
 export const LEDGER_SOURCE = Object.freeze({
   DRAFT: 'draft',
@@ -875,6 +888,9 @@ export function createLeg({
   captureJobId = null,
   baselineSession = null,
   instrumentId = null,
+  // Phase 2 — the canonical-open capture lifecycle state (CAPTURE_STATE or null).
+  // Default null = legacy/unswept; the sweep writes CAPTURED / PENDING_OPEN.
+  captureState = null,
 } = {}) {
   if (!Object.values(LEG_DIRECTION).includes(direction)) {
     throw new Error(`createLeg: invalid direction "${direction}"`);
@@ -901,6 +917,7 @@ export function createLeg({
     captureJobId,
     baselineSession,
     instrumentId,
+    captureState,
   };
 }
 
