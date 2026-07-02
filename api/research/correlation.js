@@ -47,12 +47,16 @@ import {
 } from '../_utils/correlationMath.js';
 import { CORRELATION_DRIVERS } from './driverRegistry.js';
 import { fetchAllSeries } from './fetchDriverSeries.js';
+// api→src cross-boundary flag import (scouting-board.js precedent). Node-clean
+// per BUILD_RULES §4; the unmocked handler import in
+// correlation.boundary.test.js is the dependency-surface guard.
+import { CORRELATION_LAB_ENABLED } from '../../src/config/featureFlags.js';
 
 // Up to 11 EODHD fetches in 3 throttled chunks (~600ms of deliberate sleep)
 // plus Firestore round-trips — heavier than scouting-board's read-only 10s.
 export const config = { maxDuration: 30 };
 
-const SYMBOL_RE = /^[A-Z][A-Z0-9.\-]{0,9}$/; // pinned: accepts BRK.B, BF.B, hyphens
+const SYMBOL_RE = /^[A-Z][A-Z0-9.-]{0,9}$/; // pinned: accepts BRK.B, BF.B, hyphens
 const LOOKBACK = { DEFAULT: 504, MIN: 150, MAX: 1260 };
 const MIN_CLOSES_FOR_INFLECTIONS = 300; // pinned join gate
 const CORR_WINDOWS = [20, 60];
@@ -97,6 +101,11 @@ export default async function handler(req, res) {
   if (applySecurityMiddleware(req, res, { rateLimit: { limit: 10, windowMs: 60000 } })) return;
 
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+
+  // Defense-in-depth for merge-dark: while the flag is off the endpoint reveals
+  // nothing, performs no reads, and spends no EODHD quota. The client only
+  // calls it from behind the same flag (scouting-board.js:66 pattern).
+  if (!CORRELATION_LAB_ENABLED) return res.status(404).json({ error: 'not_found' });
 
   const user = await requireAuth(req, res);
   if (!user) return;

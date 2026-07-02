@@ -26,8 +26,9 @@
 import { describe, it, expect, vi, beforeAll } from 'vitest';
 
 // ==================== HOISTED MOCK STATE ====================
-const { authReturnValue } = vi.hoisted(() => ({
+const { authReturnValue, labFlag } = vi.hoisted(() => ({
   authReturnValue: { current: { uid: 'test-user' } },
+  labFlag: { on: true }, // default ON so the flag guard doesn't 404 the behavior tests
 }));
 
 let activeFirestore = null;
@@ -50,11 +51,19 @@ vi.mock('../_utils/authMiddleware.js', () => ({
   },
 }));
 
-// Real-handler import — the boundary test only means something if the actual
-// handler, fetchDriverSeries, correlationMath, and serverCache run for real.
-// NEVER replace this with a mocked handler. (BUILD_RULES §4 note: when the
-// Phase 3 flag gate adds the api→src featureFlags import to correlation.js,
-// this same unmocked import becomes the dependency-surface guard for it.)
+// Live getter so a test can flip CORRELATION_LAB_ENABLED; real flags preserved.
+vi.mock('../../src/config/featureFlags.js', async (importOriginal) => ({
+  ...(await importOriginal()),
+  get CORRELATION_LAB_ENABLED() { return labFlag.on; },
+}));
+
+// BUILD_RULES §4 dependency-surface guard: correlation.js imports
+// src/config/featureFlags.js (an api→src import). This real handler import —
+// and the featureFlags vi.mock's importOriginal() above — load that module for
+// real in the Node/vitest env, so a browser-only dep entering the graph
+// explodes here. NEVER replace this with a mocked handler; the boundary test
+// also only means something if the actual handler, fetchDriverSeries,
+// correlationMath, and serverCache run for real.
 const { default: handler } = await import('./correlation.js');
 
 // ==================== Deterministic fixture ====================
@@ -416,6 +425,20 @@ describe('validation + config guards', () => {
     expect(res.statusCode).toBe(200);
     expect(res.body.meta.lookbackDays).toBe(1260);
     expect(res.body.meta.joinedCloses).toBe(360); // fixture depth, unclamped by the deeper ask
+  });
+
+  it('404s while CORRELATION_LAB_ENABLED is false (merge-dark defense-in-depth), before auth or any fetch', async () => {
+    labFlag.on = false;
+    try {
+      const fetchesBefore = fetchCalls.count;
+      const { req, res } = makeReqRes(BASE_REQUEST);
+      await handler(req, res);
+      expect(res.statusCode).toBe(404);
+      expect(res.body).toEqual({ error: 'not_found' });
+      expect(fetchCalls.count).toBe(fetchesBefore); // nothing fetched, nothing revealed
+    } finally {
+      labFlag.on = true;
+    }
   });
 
   it('non-POST → 405; missing EODHD_API_KEY → 500 API not configured', async () => {

@@ -109,12 +109,13 @@ import DashboardLoop from './components/Dashboard/DashboardLoop';
 import DashboardDesktop from './components/Dashboard/DashboardDesktop';
 import CommandDashboard from './components/Dashboard/CommandDashboard';
 import CommandDashboardDesktop from './components/Dashboard/CommandDashboardDesktop';
-import { COMMAND_DASHBOARD_ENABLED, COMMAND_DASHBOARD_DESKTOP_ENABLED, TOURNAMENT_TAB_ENABLED } from './config/featureFlags';
+import { COMMAND_DASHBOARD_ENABLED, COMMAND_DASHBOARD_DESKTOP_ENABLED, TOURNAMENT_TAB_ENABLED, CORRELATION_LAB_ENABLED } from './config/featureFlags';
 import DesktopSidebar from './components/Navigation/DesktopSidebar';
 import { OnboardingExperience } from './components/Agent';
 import LeagueScreen from './screens/LeagueScreen';
 import { GROUP_STATUS } from './constants/leagueTournament';
 import TournamentDevScreen from './screens/TournamentDevScreen';
+import CorrelationLab from './components/Research/CorrelationLab';
 import AppLoadingScreen from './components/shared/AppLoadingScreen';
 import { ForgeScreen } from './components/Forge';
 import ForgeWorkshop from './components/Forge/workshop/ForgeWorkshop';
@@ -2197,6 +2198,16 @@ export default function PortfolioDuel() {
   useEffect(() => {
     if (new URLSearchParams(window.location.search).get('tournamentDev') === '1') {
       setScreen('tournamentDev');
+    }
+  }, []);
+
+  // Correlation Lab dev surface — reachable ONLY via ?correlationDev=1
+  // (tournamentDev precedent: the param effect checks no flag; the flag gates
+  // the screen block, so while CORRELATION_LAB_ENABLED is false this sets a
+  // screen id that getScreenContent never renders).
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get('correlationDev') === '1') {
+      setScreen('correlationLab');
     }
   }, []);
 
@@ -9660,6 +9671,19 @@ export default function PortfolioDuel() {
           agentLoadout={primaryAgent ? { archetype: primaryAgent.archetype, equippedWatchlistId: primaryAgent.equippedWatchlistId, equippedWatchlistName: primaryAgent.equippedWatchlistName } : null}
           isDesktop={isDesktop}
         />
+      </ErrorBoundary>
+      </div>
+    );
+  }
+
+  // CORRELATION LAB (Correlation Intelligence V0) — flag-gated, no nav setter;
+  // the ?correlationDev=1 mount effect is its only entry. Merged DARK: with
+  // the flag false this block is dead and the screen id falls through to null.
+  if (CORRELATION_LAB_ENABLED && screen === 'correlationLab') {
+    return (
+      <div style={{ marginLeft: isDesktop ? (sidebarCollapsed ? '64px' : '220px') : 0, transition: 'margin-left 0.2s ease' }}>
+      <ErrorBoundary name="CorrelationLab" onNavigateDashboard={() => setScreen('dashboard')}>
+        <CorrelationLab isDesktop={isDesktop} />
       </ErrorBoundary>
       </div>
     );
