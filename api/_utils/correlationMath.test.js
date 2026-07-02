@@ -1,0 +1,502 @@
+/**
+ * correlationMath.js unit suite — Build Spec V1.2 Phase 1.
+ *
+ * Synthetic fixtures only, no network, no mocks (the module is a zero-import
+ * pure leaf — returnCalculations.test.js convention). Deterministic noise
+ * comes from a Lehmer LCG (16807 · x mod 2147483647): products stay < 2^53 so
+ * the stream is bit-exact in doubles on every platform — no Math.random.
+ *
+ * Locks, per spec: the OLDEST-FIRST + closeIndex/eventDate mapping contract
+ * (including the literal [100, 110, 99] counterexample), classical-OLS
+ * intercept recovery, the rolling-beta variance guard (null, never a spike),
+ * the pinned lead-lag sign/selection/no-signal rules, the exclusive robust
+ * SDS baseline + persistence + floor + hysteresis episode semantics, and
+ * non-overlapping forward-return aggregation with end-of-series exclusion.
+ */
+import { describe, it, expect } from 'vitest';
+import {
+  computeReturnsSeries,
+  rollingCorrelation,
+  pearson,
+  olsBeta,
+  rollingBeta,
+  leadLag,
+  detectInflections,
+  forwardReturns,
+  ABS_DIVERGENCE_FLOOR,
+  SDS_BASELINE_WINDOW,
+} from './correlationMath.js';
+
+// ── Deterministic fixture helpers ───────────────────────────────────────────
+
+/** Lehmer LCG → uniform (0, 1), bit-exact in doubles. */
+function lehmer(seed) {
+  let s = seed % 2147483647;
+  if (s <= 0) s += 2147483646;
+  return () => {
+    s = (s * 16807) % 2147483647;
+    return s / 2147483647;
+  };
+}
+
+/** n chronological ISO date strings (calendar days — opaque labels here). */
+function makeDates(n, startUtcMs = Date.UTC(2024, 0, 1)) {
+  return Array.from({ length: n }, (_, i) =>
+    new Date(startUtcMs + i * 86400000).toISOString().slice(0, 10)
+  );
+}
+
+/** Compound OLDEST-FIRST closes from a start level and pct returns. */
+function compound(start, returns) {
+  const closes = [start];
+  for (const r of returns) closes.push(closes[closes.length - 1] * (1 + r));
+  return closes;
+}
+
+/**
+ * Divergence-series builder for detectInflections tests: entry i carries
+ * d = ds[i] with corr20/corr60 consistent (corr20 − corr60 === d) and a
+ * closeIndex offset mimicking the endpoint's window warmup.
+ */
+function mkDivergence(ds, closeIndexStart = 60) {
+  return ds.map((d, i) => ({
+    closeIndex: closeIndexStart + i,
+    eventDate: `D${closeIndexStart + i}`,
+    d,
+    corr20: 0.4 + d / 2,
+    corr60: 0.4 - d / 2,
+  }));
+}
+
+/** Alternating ±amp baseline of `len` observations (median 0, MAD amp). */
+function altBaseline(len, amp) {
+  return Array.from({ length: len }, (_, i) => (i % 2 === 0 ? amp : -amp));
+}
+
+// ── computeReturnsSeries ────────────────────────────────────────────────────
+
+describe('computeReturnsSeries', () => {
+  it('pct mode: r_i = closes[i+1]/closes[i] − 1, length n−1', () => {
+    const r = computeReturnsSeries([100, 110, 99]);
+    expect(r).toHaveLength(2);
+    expect(r[0]).toBeCloseTo(0.1, 12);
+    expect(r[1]).toBeCloseTo(-0.1, 12);
+  });
+
+  it('diff mode: first differences, not percents', () => {
+    const r = computeReturnsSeries([4.0, 4.4, 4.1], 'diff');
+    expect(r).toHaveLength(2);
+    expect(r[0]).toBeCloseTo(0.4, 12);
+    expect(r[1]).toBeCloseTo(-0.3, 12);
+    // and explicitly NOT the pct values
+    expect(Math.abs(r[0] - 0.1)).toBeGreaterThan(0.05);
+  });
+
+  it('returns null on <2 closes, non-finite values, zero pct denominator, unknown mode', () => {
+    expect(computeReturnsSeries([100])).toBeNull();
+    expect(computeReturnsSeries([100, NaN, 105])).toBeNull();
+    expect(computeReturnsSeries([0, 100])).toBeNull();
+    expect(computeReturnsSeries([100, 105], 'log')).toBeNull();
+    expect(computeReturnsSeries('not-an-array')).toBeNull();
+  });
+});
+
+// ── pearson / olsBeta ───────────────────────────────────────────────────────
+
+describe('pearson / olsBeta — known-correlation pair (b = 0.8a + 0.5 + noise)', () => {
+  const gen = lehmer(42);
+  const n = 500;
+  const a = Array.from({ length: n }, () => (gen() - 0.5) * 0.02);
+  const noise = Array.from({ length: n }, () => (gen() - 0.5) * 0.004);
+  const b = a.map((v, i) => 0.8 * v + 0.5 + noise[i]);
+
+  it('recovers correlation on the known pair within tolerance', () => {
+    const r = pearson(b, a);
+    expect(r).not.toBeNull();
+    // analytic r = 0.8·σa / sqrt(0.64·σa² + σe²) ≈ 0.974 for these amplitudes
+    expect(r).toBeGreaterThan(0.95);
+    expect(r).toBeLessThan(0.995);
+  });
+
+  it('olsBeta recovers beta ≈ 0.8 AND the intercept 0.5 (kills any interceptless copy)', () => {
+    const fit = olsBeta(b, a);
+    expect(fit).not.toBeNull();
+    expect(Math.abs(fit.beta - 0.8)).toBeLessThan(0.05);
+    expect(Math.abs(fit.alpha - 0.5)).toBeLessThan(0.001);
+    expect(fit.n).toBe(n);
+    expect(fit.r).toBeGreaterThan(0.95);
+  });
+
+  it('degenerate inputs → null, never 0', () => {
+    expect(pearson([0.01, 0.01, 0.01], [0.01, -0.01, 0.02])).toBeNull(); // zero variance A
+    expect(pearson([0.01, -0.01], [0.01])).toBeNull(); // length mismatch
+    expect(pearson([0.01], [0.02])).toBeNull(); // too short
+    expect(olsBeta([0.01, -0.01, 0.02], [0.005, 0.005, 0.005])).toBeNull(); // zero driver variance
+    expect(olsBeta([0.01, -0.01], [0.01, -0.01, 0.02])).toBeNull(); // mismatch
+  });
+});
+
+// ── rollingBeta ─────────────────────────────────────────────────────────────
+
+describe('rollingBeta', () => {
+  const gen = lehmer(7);
+  const n = 200;
+  const driver = Array.from({ length: n }, () => (gen() - 0.5) * 0.02);
+  const noise = Array.from({ length: n }, () => (gen() - 0.5) * 0.002);
+  const group = driver.map((v, i) => 0.8 * v + noise[i]);
+  const dates = makeDates(n + 1);
+
+  it('recovers ≈0.8 across all full windows; partial windows skipped; oldest-first; eventDate = dates[j+1]', () => {
+    const series = rollingBeta(group, driver, 40, dates);
+    expect(series).toHaveLength(n - 40 + 1);
+    expect(series[0].closeIndex).toBe(40);
+    expect(series[0].eventDate).toBe(dates[40]);
+    expect(series[series.length - 1].closeIndex).toBe(n);
+    for (let i = 1; i < series.length; i++) {
+      expect(series[i].closeIndex).toBe(series[i - 1].closeIndex + 1);
+    }
+    for (const e of series) {
+      expect(e.beta).not.toBeNull();
+      expect(Math.abs(e.beta - 0.8)).toBeLessThan(0.1);
+    }
+  });
+
+  it('a ~zero-driver-variance window yields beta null (entry preserved), not a spike', () => {
+    const flatDriver = [...driver];
+    for (let i = 80; i <= 124; i++) flatDriver[i] = 0.005; // 45 identical driver returns
+    const series = rollingBeta(group, flatDriver, 40, dates);
+    // windows fully inside the flat stretch: j ∈ [119, 124] → closeIndex 120..125
+    for (const e of series) {
+      if (e.closeIndex >= 120 && e.closeIndex <= 125) {
+        expect(e.beta).toBeNull();
+        expect(e.alpha).toBeNull();
+        expect(e.r).toBeNull();
+        expect(typeof e.eventDate).toBe('string'); // entry preserved for chart gapping
+      }
+    }
+    expect(series.find((e) => e.closeIndex === 119).beta).not.toBeNull();
+    expect(series.find((e) => e.closeIndex === 126).beta).not.toBeNull();
+  });
+
+  it('each entry carries its own window r', () => {
+    const series = rollingBeta(group, driver, 40, dates);
+    for (const e of series) {
+      expect(e.r).toBeGreaterThan(0.9); // tight relationship in every window
+    }
+  });
+
+  it('series shorter than the window → []; invalid dates → null', () => {
+    expect(rollingBeta(group.slice(0, 39), driver.slice(0, 39), 40, makeDates(40))).toEqual([]);
+    expect(rollingBeta(group, driver, 40, makeDates(n))).toBeNull(); // dates.length must be n+1
+  });
+});
+
+// ── leadLag ─────────────────────────────────────────────────────────────────
+
+describe('leadLag', () => {
+  const gen = lehmer(1234);
+  const L = 800;
+  const base = Array.from({ length: L + 6 }, () => (gen() - 0.5) * 0.02);
+  const u = Array.from({ length: L }, () => (gen() - 0.5) * 0.02);
+
+  it('lag-sign fixture: B = A shifted forward 2 days → leadLag(B, A) reports bestLag +2 (A leads B)', () => {
+    const A = base.slice(2, 2 + L); // driver
+    const B = base.slice(0, L); // group: B[t] = A[t−2]
+    const res = leadLag(B, A, 5);
+    expect(res.bestLag).toBe(2);
+    expect(res.corrAtBestLag).toBeCloseTo(1, 6);
+    expect(res.verdict).toBe('driver_leads');
+  });
+
+  it('selection (a): picks the larger |corr| regardless of sign (−1 positive vs +2 strong negative → +2)', () => {
+    // g[t] = 0.30·d[t+1] − 0.80·d[t−2] + 0.05·u[t]  (d = driver)
+    const d = base.slice(2, 2 + L);
+    const g = Array.from({ length: L }, (_, t) => 0.3 * base[t + 3] - 0.8 * base[t] + 0.05 * u[t]);
+    const res = leadLag(g, d, 5);
+    const rowMinus1 = res.table.find((r) => r.lag === -1);
+    expect(rowMinus1.corr).toBeGreaterThan(0.25); // fixture guard: the competing positive peak exists
+    expect(res.bestLag).toBe(2);
+    expect(res.corrAtBestLag).toBeLessThan(-0.8);
+    expect(res.verdict).toBe('driver_leads');
+  });
+
+  it('selection (b): a nonzero lag beating lag 0 by <0.05 loses — lag 0 wins', () => {
+    // g[t] = 0.70·d[t] + 0.73·d[t−1] + 0.02·u[t] → |corr(+1)| − |corr(0)| ≈ 0.03
+    const d = base.slice(2, 2 + L);
+    const g = Array.from({ length: L }, (_, t) => 0.7 * base[t + 2] + 0.73 * base[t + 1] + 0.02 * u[t]);
+    const res = leadLag(g, d, 5);
+    const c0 = Math.abs(res.table.find((r) => r.lag === 0).corr);
+    const c1 = Math.abs(res.table.find((r) => r.lag === 1).corr);
+    // precondition asserted from the table itself so fixture drift can't silently invalidate the case
+    expect(c1).toBeGreaterThan(c0);
+    expect(c1 - c0).toBeLessThan(0.05);
+    expect(res.bestLag).toBe(0);
+    expect(res.verdict).toBe('coincident');
+  });
+
+  it("selection (c): max |corr| below 0.15 → verdict 'none' (bestLag still reported)", () => {
+    const d = base.slice(2, 2 + L);
+    const g = Array.from({ length: L }, (_, t) => 0.08 * base[t + 2] + 0.9968 * u[t]);
+    const res = leadLag(g, d, 5);
+    for (const row of res.table) expect(Math.abs(row.corr)).toBeLessThan(0.15); // fixture guard
+    expect(res.verdict).toBe('none');
+    expect(res.bestLag).not.toBeUndefined();
+  });
+
+  it('table rows carry n = pair count (length − |lag|)', () => {
+    const d = base.slice(2, 2 + L);
+    const g = base.slice(0, L);
+    const res = leadLag(g, d, 5);
+    expect(res.table).toHaveLength(11);
+    for (const row of res.table) expect(row.n).toBe(L - Math.abs(row.lag));
+  });
+
+  it('degenerate lag-0 → whole call null; mismatched lengths → null', () => {
+    expect(leadLag([0.01, 0.01, 0.01, 0.01], [0.02, 0.02, 0.02, 0.02], 1)).toBeNull();
+    expect(leadLag([0.01, -0.01], [0.01, -0.01, 0.02], 5)).toBeNull();
+  });
+});
+
+// ── detectInflections ───────────────────────────────────────────────────────
+
+describe('detectInflections', () => {
+  const DENOM = 1.4826 * 0.1; // alternating ±0.1 baseline: median 0, MAD 0.1
+
+  it('SDS baseline excludes the current day: a spike does not dilute its own score (flags via 2-of-3)', () => {
+    // 120 alternating ±0.1, then two consecutive d = 0.31.
+    // Exclusive baseline: SDS = 0.31/0.14826 ≈ 2.091 on both event days → raw
+    // twice → flag at the 2nd. An inclusive-baseline implementation shifts
+    // median/MAD and scores < 2 → no episode (discriminating).
+    const ds = [...altBaseline(SDS_BASELINE_WINDOW, 0.1), 0.31, 0.31];
+    const series = mkDivergence(ds);
+    const episodes = detectInflections(series);
+    expect(episodes).toHaveLength(1);
+    expect(episodes[0].startCloseIndex).toBe(series[121].closeIndex);
+    expect(episodes[0].startDate).toBe(series[121].eventDate);
+    expect(episodes[0].direction).toBe('strengthening');
+    expect(episodes[0].score).toBeCloseTo(0.31 / DENOM, 3);
+    expect(episodes[0].corr20AtFlag).toBeCloseTo(series[121].corr20, 12);
+    expect(episodes[0].corr60AtFlag).toBeCloseTo(series[121].corr60, 12);
+  });
+
+  it('MAD baseline is robust to one outlier in the trailing window', () => {
+    // A d = 5.0 shock planted in the (unscoreable) first 120 obs barely moves
+    // median/MAD; a later emergency-scale event still flags. A stdev-based
+    // baseline would be blown out by the outlier and stay silent.
+    const ds = [...altBaseline(SDS_BASELINE_WINDOW, 0.1), 0.55];
+    ds[30] = 5.0;
+    const episodes = detectInflections(mkDivergence(ds));
+    expect(episodes).toHaveLength(1);
+    expect(episodes[0].score).toBeGreaterThan(3.5);
+  });
+
+  it('persistence: a single |SDS| ≈ 2.1 observation does NOT flag', () => {
+    const ds = [...altBaseline(SDS_BASELINE_WINDOW, 0.1), 0.312, 0.1, -0.1];
+    expect(detectInflections(mkDivergence(ds))).toHaveLength(0);
+  });
+
+  it('persistence: 2 of the last 3 raw (with a quiet day between) flags at the second raw observation', () => {
+    const ds = [...altBaseline(SDS_BASELINE_WINDOW, 0.1), 0.31, -0.1, 0.31];
+    const series = mkDivergence(ds);
+    const episodes = detectInflections(series);
+    expect(episodes).toHaveLength(1);
+    expect(episodes[0].startCloseIndex).toBe(series[122].closeIndex); // flags at the 2nd raw, not the quiet day
+  });
+
+  it('emergency: a single |SDS| ≥ 3.5 with |d| ≥ 0.25 flags immediately (persistence exempt)', () => {
+    const ds = [...altBaseline(SDS_BASELINE_WINDOW, 0.1), 0.535];
+    const series = mkDivergence(ds);
+    const episodes = detectInflections(series);
+    expect(episodes).toHaveLength(1);
+    expect(episodes[0].startCloseIndex).toBe(series[120].closeIndex);
+    expect(episodes[0].score).toBeCloseTo(0.535 / DENOM, 2); // ≈ 3.61
+  });
+
+  it('divergence floor: |d| = 0.27 with qualifying SDS flags; |d| = 0.22 does not (floor blocks, not the SDS)', () => {
+    // ±0.05 baseline → MAD 0.05, denom ≈ 0.0741: SDS(0.27) ≈ 3.64, SDS(0.22) ≈ 2.97.
+    // Both clear the SDS thresholds; only the 0.27 case clears the 0.25 floor.
+    const flags = detectInflections(mkDivergence([...altBaseline(SDS_BASELINE_WINDOW, 0.05), 0.27]));
+    expect(flags).toHaveLength(1);
+    const blocked = detectInflections(
+      mkDivergence([...altBaseline(SDS_BASELINE_WINDOW, 0.05), 0.22, 0.22])
+    );
+    expect(blocked).toHaveLength(0);
+    expect(0.22 / (1.4826 * 0.05)).toBeGreaterThan(2); // fixture guard: SDS alone would have qualified
+  });
+
+  it('opts.absFloor overrides the exported default (the calibration knob)', () => {
+    const ds = [...altBaseline(SDS_BASELINE_WINDOW, 0.05), 0.22, 0.22];
+    expect(detectInflections(mkDivergence(ds), { absFloor: 0.2 })).toHaveLength(1);
+    expect(ABS_DIVERGENCE_FLOOR).toBe(0.25);
+  });
+
+  it('hysteresis: consecutive flags collapse into one episode; released when |SDS| < 1.0; open at series end closes at the final obs', () => {
+    // Pattern baseline [0.01, −0.01, 0.02, −0.02]: median 0, MAD 0.015 — both
+    // stable under window slides, so the engineered event values are
+    // drift-proof: 0.5 → SDS ≫ 3.5 (flags), 0.08 → SDS ≥ 1 but under the 0.25
+    // floor (keeps the episode open, can't re-flag), 0.0 → SDS < 1 (release).
+    const pattern = Array.from({ length: SDS_BASELINE_WINDOW }, (_, i) =>
+      [0.01, -0.01, 0.02, -0.02][i % 4]
+    );
+    const ds = [...pattern, 0.5, 0.5, 0.08, 0.0, 0.0, 0.5];
+    const series = mkDivergence(ds);
+    const episodes = detectInflections(series);
+    expect(episodes).toHaveLength(2);
+    expect(episodes[0].startCloseIndex).toBe(series[120].closeIndex); // both 0.5s absorbed into one episode
+    expect(episodes[0].endCloseIndex).toBe(series[122].closeIndex); // 0.08 keeps it open; first 0.0 releases
+    expect(episodes[0].direction).toBe('strengthening');
+    expect(episodes[1].startCloseIndex).toBe(series[125].closeIndex);
+    expect(episodes[1].endCloseIndex).toBe(series[125].closeIndex); // still open at series end → closes at final obs
+  });
+
+  it("direction: 'weakening' when d < 0 at flag", () => {
+    const ds = [...altBaseline(SDS_BASELINE_WINDOW, 0.1), -0.535];
+    const episodes = detectInflections(mkDivergence(ds));
+    expect(episodes).toHaveLength(1);
+    expect(episodes[0].direction).toBe('weakening');
+    expect(episodes[0].score).toBeLessThan(-3.5);
+  });
+
+  it('MAD == 0 baseline → observation unscoreable, never flags', () => {
+    const ds = [...Array.from({ length: SDS_BASELINE_WINDOW }, () => 0), 0.5, 0.5, 0.5];
+    expect(detectInflections(mkDivergence(ds))).toHaveLength(0);
+  });
+
+  it('invalid input → null; valid-but-short input → []', () => {
+    expect(detectInflections('nope')).toBeNull();
+    expect(detectInflections([])).toEqual([]);
+    expect(detectInflections(mkDivergence(altBaseline(50, 0.1)))).toEqual([]); // < full baseline: nothing scoreable
+  });
+});
+
+// ── forwardReturns ──────────────────────────────────────────────────────────
+
+describe('forwardReturns', () => {
+  it('index-mapping counterexample (literal): closes [100, 110, 99] — the return-index-0 event anchors at closeIndex 1; 1-day fwd = 99/110 − 1 = −10%, NOT +10%', () => {
+    const closes = [100, 110, 99];
+    const dates = ['2024-01-01', '2024-01-02', '2024-01-03'];
+    const episodes = [
+      { startCloseIndex: 1, startDate: '2024-01-02', direction: 'weakening' },
+    ];
+    const out = forwardReturns(closes, dates, episodes, [1]);
+    expect(out[1].eligibleCount).toBe(1);
+    expect(out[1].details[0].fwdReturn).toBeCloseTo(99 / 110 - 1, 12); // −0.1
+    expect(out[1].details[0].fwdReturn).toBeLessThan(0);
+    expect(out[1].details[0].exitDate).toBe('2024-01-03');
+    expect(out[1].hitRate).toBe(0);
+  });
+
+  it('non-overlap aggregation: episodes at closeIndex 100 and 105, horizon 20 → independentCount 1, eligibleCount 2, 2 detail rows', () => {
+    const n = 130;
+    const closes = Array.from({ length: n }, (_, i) => 100 * Math.pow(1.001, i));
+    const dates = makeDates(n);
+    const episodes = [
+      { startCloseIndex: 100, startDate: dates[100], direction: 'weakening' },
+      { startCloseIndex: 105, startDate: dates[105], direction: 'weakening' },
+    ];
+    const out = forwardReturns(closes, dates, episodes, [20]);
+    expect(out[20].eligibleCount).toBe(2);
+    expect(out[20].independentCount).toBe(1);
+    expect(out[20].details).toHaveLength(2);
+    expect(out[20].details[0].independent).toBe(true);
+    expect(out[20].details[1].independent).toBe(false); // clustered — excluded from the aggregate
+    expect(out[20].mean).toBeCloseTo(Math.pow(1.001, 20) - 1, 12); // aggregate over the independent set only
+  });
+
+  it('clustered episodes never advance the non-overlap boundary (no chaining off rejected rows)', () => {
+    const n = 200;
+    const closes = Array.from({ length: n }, (_, i) => 100 + i);
+    const dates = makeDates(n);
+    // 100 accepted (window ends 120); 105 clustered; 121 must be INDEPENDENT
+    // (disjoint from 100's window) even though it overlaps 105's window.
+    const episodes = [100, 105, 121].map((c) => ({
+      startCloseIndex: c,
+      startDate: dates[c],
+      direction: 'weakening',
+    }));
+    const out = forwardReturns(closes, dates, episodes, [20]);
+    expect(out[20].independentCount).toBe(2);
+    expect(out[20].details.map((r) => r.independent)).toEqual([true, false, true]);
+  });
+
+  it('end-of-series: an episode near the end is excluded from 20d but present in 5d; c+h landing exactly on the last close is still eligible', () => {
+    const n = 130; // last index 129
+    const closes = Array.from({ length: n }, (_, i) => 100 + i);
+    const dates = makeDates(n);
+    const episodes = [{ startCloseIndex: 112, startDate: dates[112], direction: 'strengthening' }];
+    const out = forwardReturns(closes, dates, episodes, [5, 10, 20]);
+    expect(out[5].eligibleCount).toBe(1);
+    expect(out[10].eligibleCount).toBe(1);
+    expect(out[20].eligibleCount).toBe(0); // 112 + 20 = 132 > 129 — excluded, never zero-filled
+    expect(out[20].mean).toBeNull();
+    expect(out[20].median).toBeNull();
+    expect(out[20].hitRate).toBeNull();
+    const edge = forwardReturns(closes, dates, [{ startCloseIndex: 109, startDate: dates[109] }], [20]);
+    expect(edge[20].eligibleCount).toBe(1); // 109 + 20 = 129 = last index: eligible
+  });
+
+  it('aggregates (mean/median/hitRate) computed over the independent set; hitRate counts strictly positive', () => {
+    // Flat stretch → 0% fwd (a miss), rising stretch → positive fwd (a hit).
+    const closes = [
+      ...Array.from({ length: 30 }, () => 100), // flat: fwd = 0
+      ...Array.from({ length: 40 }, (_, i) => 100 + i + 1), // rising
+    ];
+    const dates = makeDates(closes.length);
+    const episodes = [
+      { startCloseIndex: 10, startDate: dates[10] }, // fwd 0 → miss
+      { startCloseIndex: 40, startDate: dates[40] }, // fwd > 0 → hit
+    ];
+    const out = forwardReturns(closes, dates, episodes, [5]);
+    expect(out[5].independentCount).toBe(2);
+    expect(out[5].hitRate).toBeCloseTo(0.5, 12);
+  });
+
+  it('invalid input → null; empty episodes → zero-count aggregates', () => {
+    const closes = [100, 101, 102];
+    const dates = makeDates(3);
+    expect(forwardReturns(closes, dates.slice(0, 2), [], [5])).toBeNull(); // dates length mismatch
+    expect(forwardReturns(closes, dates, 'nope', [5])).toBeNull();
+    expect(forwardReturns(closes, dates, [], [0])).toBeNull(); // horizon must be ≥ 1
+    const out = forwardReturns(closes, dates, [], [1]);
+    expect(out[1].eligibleCount).toBe(0);
+    expect(out[1].mean).toBeNull();
+  });
+});
+
+// ── rollingCorrelation ──────────────────────────────────────────────────────
+
+describe('rollingCorrelation', () => {
+  const gen = lehmer(99);
+  const n = 80;
+  const a = Array.from({ length: n }, () => (gen() - 0.5) * 0.02);
+  const b = a.map((v) => 0.9 * v); // perfectly correlated
+  const dates = makeDates(n + 1);
+
+  it('full windows only, closeIndex = j+1, eventDate = dates[j+1]', () => {
+    const series = rollingCorrelation(a, b, 20, dates);
+    expect(series).toHaveLength(n - 20 + 1);
+    expect(series[0].closeIndex).toBe(20);
+    expect(series[0].eventDate).toBe(dates[20]);
+    expect(series[series.length - 1].closeIndex).toBe(n);
+    for (const e of series) expect(e.value).toBeCloseTo(1, 9);
+  });
+
+  it('degenerate window preserved as an entry with value null (chart gaps, x-position kept)', () => {
+    const flat = [...a];
+    for (let i = 30; i <= 54; i++) flat[i] = 0.003; // 25 constant returns > window 20
+    const series = rollingCorrelation(a, flat, 20, dates);
+    const nullEntries = series.filter((e) => e.value === null);
+    expect(nullEntries.length).toBeGreaterThan(0);
+    for (const e of nullEntries) {
+      expect(e.closeIndex).toBeGreaterThanOrEqual(20);
+      expect(typeof e.eventDate).toBe('string');
+    }
+    expect(series).toHaveLength(n - 20 + 1); // no dropped x-positions
+  });
+
+  it('shorter than window → []; invalid input → null', () => {
+    expect(rollingCorrelation(a.slice(0, 10), b.slice(0, 10), 20, makeDates(11))).toEqual([]);
+    expect(rollingCorrelation(a, b, 20, makeDates(n))).toBeNull(); // dates must be returns + 1
+    expect(rollingCorrelation(a, b.slice(0, 50), 20, dates)).toBeNull(); // length mismatch
+  });
+});
