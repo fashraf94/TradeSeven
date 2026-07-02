@@ -24,11 +24,12 @@ import { requireAuth } from '../_utils/authMiddleware.js';
 import { isAdminSecretValid } from '../_utils/adminSecretAuth.js';
 import { isValidForgeId } from '../_utils/idValidation.js';
 import { getPlayer } from '../_utils/tournamentGroupService.js';
-import { getTournamentClaimWindow } from '../_utils/tournamentTime.js';
+import { getTournamentClaimWindow, isMarketOpenAt } from '../_utils/tournamentTime.js';
 import {
   TOURNAMENT_GROUPS_COLLECTION,
   GROUP_STATUS,
   TOURNAMENT_TUNING,
+  BASELINE_POLICY,
 } from '../../src/constants/leagueTournament.js';
 // Slice 4 (B1): the validation + transactional write live in the shared
 // placement core, so the CPU path (tournamentCpuClaims.js) reuses ONE copy of
@@ -90,6 +91,22 @@ export default async function handler(req, res) {
       || (group.isTraining === true && group.status === GROUP_STATUS.AWAITING_OPEN);
     if (!claimsStatusOpen) {
       return res.status(409).json({ error: 'not_battle', message: 'Claims require a group in battle.' });
+    }
+
+    // Phase 4 — exposure-contract enforcement (Spec §1.1 canonical-open policy).
+    // A canonical-open round is CLOSE-ONLY: a claim placed mid-session would
+    // create a null-baseline leg that the sweep captures at the NEXT open —
+    // retroactive exposure, unfair to the field. Read the STAMP (not the flag),
+    // and gate ONLY canonical rounds, so legacy/absent-stamp rounds stay
+    // byte-identical (the ET window already keeps their placement off-hours;
+    // this guard is the authoritative check that also survives the admin
+    // devBypassWindow path). UI-consumable (code + message) for the Phase-5
+    // claim-disable affordance.
+    if (group.baselinePolicy === BASELINE_POLICY.CANONICAL_OPEN && isMarketOpenAt(now)) {
+      return res.status(403).json({
+        error: 'claims_closed_during_market_hours',
+        message: 'Claims open after the 4:00 PM ET close — the market is open right now.',
+      });
     }
 
     const player = getPlayer(group, odUserId);

@@ -164,6 +164,25 @@ describe('runCanonicalOpenSweep — capture / pending / fairness / idempotency',
     expect(fetchBatchQuotes).not.toHaveBeenCalled(); // no null legs → nothing to fetch
   });
 
+  it('an OFF-HOURS FLIP leg (FLIP_MARKET_CLOSED, null baseline) is captured by the SAME path as a draft leg', async () => {
+    // The sweep gates on `baselinePrice == null && baselineCapturedAt == null`,
+    // NOT on baselineSource — so an off-hours flip's fresh null leg flows
+    // through the canonical-open path exactly like a draft pick, no special
+    // case. Once captured its terminal source is CANONICAL_OPEN_CAPTURE,
+    // byte-identical to a captured draft leg.
+    stubOpens({ LLY: 812.5 });
+    const g = group();
+    g.players[0].picks[0].legs[0] = leg({ baselineSource: BASELINE_SOURCE.FLIP_MARKET_CLOSED });
+    const { db, store } = makeDb({ g1: g });
+    const r = await runCanonicalOpenSweep(db, { now: OPEN_NOW });
+    expect(r).toMatchObject({ captured: 1, pending: 0 });
+    const settled = store.g1.players[0].picks[0].legs[0];
+    expect(settled.baselinePrice).toBe(812.5);
+    expect(settled.baselineSource).toBe(BASELINE_SOURCE.CANONICAL_OPEN_CAPTURE); // same terminal source
+    expect(settled.captureState).toBe(CAPTURE_STATE.CAPTURED);
+    expect(settled.baselineCapturedAt).toBe(OPEN_NOW.toISOString());
+  });
+
   it('IDEMPOTENT: a second sweep captures nothing new and does not overwrite the snapshot', async () => {
     stubOpens({ LLY: 812.5 });
     const { db, store } = makeDb({ g1: group() });

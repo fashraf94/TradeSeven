@@ -24,6 +24,7 @@ vi.mock('../_utils/authMiddleware.js', () => ({
 }));
 
 import handler from './place-claim.js';
+import { BASELINE_POLICY } from '../../src/constants/leagueTournament.js';
 
 const SECRET = 'test-admin-secret';
 const WINDOW_OPEN = new Date('2026-06-10T21:00:00Z');   // Wed 17:00 ET — window open
@@ -135,6 +136,55 @@ describe('window rules (overnight, legacy semantics)', () => {
     const withSecret = makeReqRes({ devBypassWindow: true }, { 'x-admin-secret': SECRET });
     await handler(withSecret.req, withSecret.res);
     expect(withSecret.res.statusCode).toBe(200);
+    expect(captured.added).toHaveLength(1);
+  });
+});
+
+describe('Phase 4 — canonical-open close-only exposure guard (stamp-gated)', () => {
+  // The ET window (4pm→9:24am) and market hours (9:30am→4pm) are disjoint, so
+  // the meaningful path to this guard is the admin window-bypass at a
+  // market-open instant: the exposure contract holds even when the window is
+  // waived. Legacy rounds keep in-hours placement (byte-identical merge-dark).
+
+  it('CANONICAL round is CLOSE-ONLY: an admin-bypassed in-hours claim is rejected, no claim written', async () => {
+    vi.setSystemTime(WINDOW_CLOSED); // 14:00 ET — market OPEN
+    const { db, captured } = makeDb({ groupDoc: battleGroup({ baselinePolicy: BASELINE_POLICY.CANONICAL_OPEN }) });
+    h.db = db;
+    const { req, res } = makeReqRes({ devBypassWindow: true }, { 'x-admin-secret': SECRET });
+    await handler(req, res);
+    expect(res.statusCode).toBe(403);
+    expect(res.body.error).toBe('claims_closed_during_market_hours');
+    expect(res.body.message).toMatch(/after the 4:00 PM ET close/);
+    expect(captured.added).toHaveLength(0); // authoritative — no leg/claim created
+  });
+
+  it('LEGACY (absent stamp) round is UNCHANGED: the same in-hours admin claim still succeeds', async () => {
+    vi.setSystemTime(WINDOW_CLOSED); // market OPEN
+    const { db, captured } = makeDb({ groupDoc: battleGroup() }); // no baselinePolicy
+    h.db = db;
+    const { req, res } = makeReqRes({ devBypassWindow: true }, { 'x-admin-secret': SECRET });
+    await handler(req, res);
+    expect(res.statusCode).toBe(200);
+    expect(captured.added).toHaveLength(1);
+  });
+
+  it('an explicit LEGACY_OPEN_DEFER stamp is also unchanged (in-hours admin claim succeeds)', async () => {
+    vi.setSystemTime(WINDOW_CLOSED);
+    const { db, captured } = makeDb({ groupDoc: battleGroup({ baselinePolicy: BASELINE_POLICY.LEGACY_OPEN_DEFER }) });
+    h.db = db;
+    const { req, res } = makeReqRes({ devBypassWindow: true }, { 'x-admin-secret': SECRET });
+    await handler(req, res);
+    expect(res.statusCode).toBe(200);
+    expect(captured.added).toHaveLength(1);
+  });
+
+  it('CANONICAL round: an OFF-HOURS claim (window open, market closed) flows normally — close-only permits it', async () => {
+    vi.setSystemTime(WINDOW_OPEN); // 17:00 ET — market CLOSED, window OPEN
+    const { db, captured } = makeDb({ groupDoc: battleGroup({ baselinePolicy: BASELINE_POLICY.CANONICAL_OPEN }) });
+    h.db = db;
+    const { req, res } = makeReqRes();
+    await handler(req, res);
+    expect(res.statusCode).toBe(200);
     expect(captured.added).toHaveLength(1);
   });
 });

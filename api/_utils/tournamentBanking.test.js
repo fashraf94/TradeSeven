@@ -447,6 +447,75 @@ describe('computeBankingUpdate — canonical-open policy (Phase 3)', () => {
   });
 });
 
+// ============ end-to-end exposure exclusion (Phases 2–4 integration) ============
+
+describe('computeBankingUpdate — exposure-state exclusion in the composite', () => {
+  const co = (open) => ({ open, capturedAt: '2026-06-10T13:31:00.000Z', priceTimestamp: 1, captureJobId: 'sweep', session: ET_DATE, instrumentId: null });
+
+  it('user_points = sum of SETTLED legs only; a voided slot contributes nothing and the composite is NOT re-weighted', () => {
+    // u1 spans the exposure states: NVDA captured (settles + scores live), AMD
+    // still-null with NO snapshot (→ NO_ELIGIBLE_OPEN void, 0), TSLA flipped (a
+    // preserved realized loss on the closed leg + a new live leg captured from
+    // the snapshot). u2 holds three all-settled names — the full sum — so the
+    // void costs exactly its own upside and nothing more (no re-normalization).
+    const group = battleGroup({
+      baselinePolicy: BASELINE_POLICY.CANONICAL_OPEN,
+      canonicalOpens: { NVDA: co(100), TSLA: co(200), MSFT: co(50), GOOG: co(80) }, // AMD absent → void
+      players: [
+        { odUserId: 'u1', picks: [
+          pick('NVDA', [leg()]),                                       // captured → live +3%
+          pick('AMD', [leg()]),                                        // no snapshot → void, 0
+          pick('TSLA', [                                               // flipped: realized loss + new live
+            { ...leg({ baselinePrice: 200 }), closedAt: 'T1', bankedScore: -20 },
+            leg(),                                                     // new leg, null → captured from snapshot
+          ]),
+        ] },
+        { odUserId: 'u2', picks: [
+          pick('NVDA', [leg()]), pick('MSFT', [leg()]), pick('GOOG', [leg()]), // all settle +3%
+        ] },
+        { odUserId: 'u3', picks: [] },
+        { odUserId: 'u4', picks: [] },
+      ],
+    });
+    const quotes = {
+      NVDA: { open: 100, current: 103, previousClose: 99, timestamp: 1 },
+      TSLA: { open: 200, current: 206, previousClose: 199, timestamp: 1 },
+      MSFT: { open: 50, current: 51.5, previousClose: 49, timestamp: 1 },
+      GOOG: { open: 80, current: 82.4, previousClose: 79, timestamp: 1 },
+      AMD: { open: 40, current: 999, previousClose: 40, timestamp: 1 }, // present but MUST be ignored (no snapshot)
+    };
+    const update = computeBankingUpdate(group, quotes, { ...OPTS, agentScores: { u1: 100, u2: 200 } });
+
+    const gain = calculateAssetScoreV3({ symbol: 'X', baseATR: 2.5, direction: 'long' }, 3, {}, {}, null).totalPoints; // +3% → 45
+
+    // AMD voided: null baseline, terminal state, zero contribution — the fresh
+    // 999 quote is never consulted (no re-fetch).
+    const amdLeg = update.players[0].picks[1].legs[0];
+    expect(amdLeg.baselinePrice).toBeNull();
+    expect(amdLeg.captureState).toBe(CAPTURE_STATE.NO_ELIGIBLE_OPEN);
+
+    // TSLA: the pre-flip realized loss is preserved and summed with the new
+    // captured leg's live gain (a flip cannot erase the loss).
+    const u1 = update.dayEntry.closeScores.u1;
+    const tsla = u1.picks.find(p => p.symbol === 'TSLA');
+    expect(tsla.bankedPoints).toBe(-20);    // realized loss preserved
+    expect(tsla.livePoints).toBe(gain);     // new leg captured from snapshot 200 → 206
+    expect(tsla.totalPoints).toBe(gain - 20);
+
+    // user_points = NVDA(45) + AMD(0) + TSLA(25) = 70 — sum of settled only.
+    expect(u1.totalPoints).toBe(gain + 0 + (gain - 20)); // 70
+    // Composite is agent + 1.5 × user_points, NOT re-normalized by settled count.
+    expect(u1.agentPoints).toBe(100);
+    expect(u1.compositePoints).toBe(100 + 1.5 * (gain + (gain - 20))); // 205
+
+    // Comparison: u2 all-settled banks the FULL sum — the void cost u1 only
+    // AMD's own upside (one +3%), nothing else re-weighted.
+    const u2 = update.dayEntry.closeScores.u2;
+    expect(u2.totalPoints).toBe(gain * 3); // 135
+    expect(u2.compositePoints).toBe(200 + 1.5 * (gain * 3)); // 402.5
+  });
+});
+
 // ==================== bankGroup (transactional wrapper) ====================
 
 describe('bankGroup', () => {

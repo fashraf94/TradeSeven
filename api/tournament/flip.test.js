@@ -13,6 +13,7 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { calculateAssetScoreV3 } from '../../src/utils/baggerBombUtils.js';
+import { scorePick } from '../_utils/tournamentUserScoring.js';
 
 const h = vi.hoisted(() => ({ db: null, user: { uid: 'u1' } }));
 vi.mock('../_utils/firebaseAdmin.js', () => ({ getFirebaseAdmin: () => h.db }));
@@ -192,6 +193,42 @@ describe('market-open branch', () => {
     await handler(req, res);
     expect(res.statusCode).toBe(502);
     expect(res.body.error).toBe('price_unavailable');
+  });
+});
+
+describe('Phase 4 — realized P&L preservation across a flip (a flip cannot erase a loss)', () => {
+  it('an in-hours flip AFTER A LOSS banks the negative realized P&L and sums it into the pick score', async () => {
+    // Long from 100, flipped in-hours at 95 → a realized −5% loss. flip.js
+    // (:168-171) banks it on the closed leg; scorePick (:149-153) sums banked
+    // closed legs into the cumulative standing — the loss is NOT zeroed by the
+    // flip, and the new short leg's live P&L is ADDED to it, never replaces it.
+    vi.setSystemTime(MARKET_OPEN_T);
+    stubQuote({ open: 100, close: 95 }); // flipPrice = current = 95, a loss on the long
+    const { db, captured } = makeDb({ groupDoc: battleGroup() });
+    h.db = db;
+    const { req, res } = makeReqRes();
+    await handler(req, res);
+    expect(res.statusCode).toBe(200);
+
+    const pick = captured.updates[0].players[0].picks[0];
+    const closedLeg = pick.legs[0];
+
+    // The realized loss is banked (negative), not discarded.
+    const expectedLoss = calculateAssetScoreV3(
+      { symbol: 'NVDA', baseATR: 2.5, direction: 'long' }, ((95 - 100) / 100) * 100, {}, {}, null
+    ).totalPoints;
+    expect(expectedLoss).toBeLessThan(0);
+    expect(closedLeg.bankedScore).toBe(expectedLoss);
+    expect(res.body.bankedLegScore).toBe(expectedLoss);
+
+    // scorePick sums the banked loss + the new short leg's live P&L; the total
+    // is realized-loss + new-live, and the banked component still carries the
+    // full loss (a flip cannot launder it away).
+    const scored = scorePick({ pick, baseATR: 2.5, quote: { current: 90 } }); // short 95→90 gains
+    expect(scored.bankedPoints).toBe(expectedLoss);           // loss preserved in the standing
+    expect(scored.livePoints).toBeGreaterThan(0);             // new short leg accrues its own P&L
+    expect(scored.totalPoints).toBe(scored.bankedPoints + scored.livePoints); // realized + live, summed
+    expect(scored.totalPoints).toBeLessThan(scored.livePoints); // the loss drags the total down — not erased
   });
 });
 
