@@ -33,6 +33,9 @@ import {
   TOURNAMENT_GAME_MODE,
   GROUP_STATUS,
   GROUP_SIZE,
+  BASELINE_POLICY,
+  BASELINE_SOURCE,
+  CAPTURE_STATE,
   getLatestDayEntry,
   computeComposite,
   round2,
@@ -123,6 +126,15 @@ export function computeBankingUpdate(group, quotes, { nowIso, etDate, atrPercent
   const dayKey = `day${dayN}`;
   const warnings = [];
 
+  // Spec §1.1 canonical-open policy — read the STAMP, not the live flag, so a
+  // mid-round flag flip can't split a cohort. A canonical round settles a
+  // null baseline ONLY from its frozen `canonicalOpens` snapshot (the score of
+  // record captured post-open), never from a fresh re-fetch; a leg with no
+  // snapshot after the session voids terminally (NO_ELIGIBLE_OPEN). An absent
+  // stamp is legacy (LEGACY_OPEN_DEFER) — settle from the day's fresh open,
+  // byte-identical to prior behavior.
+  const canonicalPolicy = group?.baselinePolicy === BASELINE_POLICY.CANONICAL_OPEN;
+
   // P6a carry-forward arms (code review, June 12, 2026 — two grains):
   // - agentScores === null (the battle read THREW): every player carries the
   //   prior snapshot's agentPoints (day 1: nothing to carry — banked 0, said
@@ -175,10 +187,40 @@ export function computeBankingUpdate(group, quotes, { nowIso, etDate, atrPercent
       const baseATR = resolveBaseATR(pick.symbol, atrPercentiles)
         ?? (isCryptoSymbol(pick.symbol) ? 5.0 : 2.5); // port-contract fallback arms
 
+      // Canonical round: the leg settles/closes against the round's FROZEN
+      // snapshot open, not the day's fresh open — banking reads it, never
+      // writes it (the sweep owns `canonicalOpens`). `snapOpen` is null when
+      // no eligible open was ever captured for this symbol. Legacy round:
+      // `settleOpen` is the day's fresh open (unchanged).
+      const snapEntry = canonicalPolicy ? (group.canonicalOpens?.[pick.symbol] ?? null) : null;
+      const snapOpen = snapEntry && Number.isFinite(snapEntry.open) && snapEntry.open > 0
+        ? snapEntry.open : null;
+      const settleOpen = canonicalPolicy ? snapOpen : open;
+
       // --- Settlement pass ---
       for (const leg of pick.legs) {
         if (leg.baselinePrice == null) {
-          if (open != null) {
+          if (canonicalPolicy) {
+            // Case 2: the frozen snapshot exists → settle from it and stamp
+            // the same capture provenance the Phase-2 sweep writes, so a
+            // banking-settled leg is indistinguishable from a sweep-settled
+            // one. Case 3: no snapshot after the session → terminal void
+            // (NO_ELIGIBLE_OPEN). A voided leg keeps its null baseline, scores
+            // 0, and contributes nothing — no re-weight, never a re-fetch.
+            if (snapOpen != null) {
+              leg.baselinePrice = snapOpen;
+              leg.baselineSource = BASELINE_SOURCE.CANONICAL_OPEN_CAPTURE;
+              leg.baselineCapturedAt = snapEntry.capturedAt ?? leg.baselineCapturedAt ?? null;
+              leg.baselinePriceTimestamp = snapEntry.priceTimestamp ?? null;
+              leg.captureJobId = snapEntry.captureJobId ?? null;
+              leg.baselineSession = snapEntry.session ?? null;
+              leg.instrumentId = snapEntry.instrumentId ?? null;
+              leg.captureState = CAPTURE_STATE.CAPTURED;
+            } else if (leg.captureState !== CAPTURE_STATE.NO_ELIGIBLE_OPEN) {
+              leg.captureState = CAPTURE_STATE.NO_ELIGIBLE_OPEN;
+              warnings.push(`${pick.symbol}: no canonical-open snapshot — leg voided (NO_ELIGIBLE_OPEN)`);
+            }
+          } else if (open != null) {
             leg.baselinePrice = open;
           } else {
             warnings.push(`${pick.symbol}: no open price — baseline unsettled`);
@@ -187,9 +229,12 @@ export function computeBankingUpdate(group, quotes, { nowIso, etDate, atrPercent
         if (leg.closedAt !== undefined && leg.bankedScore === undefined) {
           // Market-closed flip: the close-out price is the next session's
           // open. An overnight open-and-closed leg banks 0 by construction
-          // (baseline just settled to the same open — zero exposure).
-          if (leg.baselinePrice != null && open != null) {
-            const result = scoreLeg({ symbol: pick.symbol, baseATR, leg, price: open });
+          // (baseline just settled to the same open — zero exposure). For a
+          // canonical round that open is the frozen snapshot (`settleOpen`),
+          // so the leg banks against the captured open, never a drifted
+          // re-fetch, and the 0-by-construction property still holds.
+          if (leg.baselinePrice != null && settleOpen != null) {
+            const result = scoreLeg({ symbol: pick.symbol, baseATR, leg, price: settleOpen });
             if (result) leg.bankedScore = result.totalPoints;
           } else {
             warnings.push(`${pick.symbol}: no open price — closed leg still bank-pending`);
