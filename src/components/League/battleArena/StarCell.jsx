@@ -96,6 +96,76 @@ function stateMotion(state) {
   }
 }
 
+// ── canonical-open SETTLEMENT states (Spec §1.1, Phase 5 Deliverable 2) ──
+// A display axis orthogonal to the disposition `state`. `pending`/`void` are
+// "no number" muted cells (the ABSENCE of a multiplier is the signal — it
+// replaces the old +0.0× that read as broken); `estimated`/`official` annotate
+// the live cell (dashed "est" vs solid "banked"). Neutral/grey, never P&L-tinted
+// — pending has taken no direction, and a void is ABSENCE, not a loss (a real
+// loss is coral with a number; void is grey with an em-dash). Legacy rounds
+// carry settleState null and skip all of this → byte-identical to today.
+const SETTLE_ANNO = Object.freeze({
+  estimated: { tag: 'est', caption: 'estimate until banked' },
+  official: { tag: 'banked', caption: 'official · counts in standings' },
+});
+
+// The small provisional/confirmed tag beside the headline multiplier.
+function SettleTag({ kind, color }) {
+  if (kind === 'official') {
+    return (
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '2px 6px', borderRadius: 5,
+        background: alpha(ST_GOOD, 0.14), border: `1px solid ${alpha(ST_GOOD, 0.5)}`, fontFamily: MONO }}>
+        <Icon name="check" size={9} color={ST_GOOD} stroke={2.8} />
+        <span style={{ fontSize: 8, fontWeight: 700, letterSpacing: '0.06em', color: ST_GOOD, textTransform: 'uppercase' }}>banked</span>
+      </span>
+    );
+  }
+  // estimated — dashed (provisional), tinted to the live P&L color. The dashed
+  // border IS the est/official contrast, and doubles as the ATR-drift disclosure
+  // (the live preview-ATR number shifts to the banked percentile-ATR overnight).
+  return (
+    <span style={{ padding: '2px 6px', borderRadius: 5, background: 'transparent', border: `1px dashed ${alpha(color, 0.65)}`, fontFamily: MONO }}>
+      <span style={{ fontSize: 8, fontWeight: 700, letterSpacing: '0.06em', color: alpha(color, 0.95), textTransform: 'uppercase' }}>est</span>
+    </span>
+  );
+}
+
+// The muted "no number" cell shared by `pending` (waiting for the open) and
+// `void` (terminal, didn't count). Structurally the dormant cell: identity head,
+// an em-dash where the multiplier would be, an INACTIVE meter (no positioned dot
+// — a dot implies a value), and a status line. pending keeps a subtle owner-tint
+// + gentle pulse (it's live-awaiting); void is fully grey and dimmed (absence).
+function SettleMutedCell({ star, owner, tg, tm, shownDir, pad, capH, dense, footer, style }) {
+  const isPending = star.settleState === 'pending';
+  const tickCol = isPending ? alpha(owner, 0.9) : LTOKENS.ink3;
+  const cls = isPending && !prefersReducedMotion() ? 'bv2-heat' : '';
+  return (
+    <div className={cls} style={{ '--bv2-ring': isPending ? alpha(owner, 0.28) : LTOKENS.hair2, '--bv2-gl': isPending ? alpha(owner, 0.18) : 'transparent',
+      position: 'relative', display: 'flex', flexDirection: 'column', borderRadius: 14, padding: pad, minWidth: 0,
+      background: LTOKENS.surface, border: `1px solid ${alpha(owner, isPending ? 0.30 : 0.16)}`, opacity: isPending ? 0.92 : 0.6, ...style }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+        <StarGlyph kind={tm.glyph} color={isPending ? alpha(owner, 0.7) : LTOKENS.ink3} size={12} />
+        <Mono style={{ fontSize: tg.tick, fontWeight: tg.weight, color: tickCol, letterSpacing: '-0.01em' }}>{star.tk}</Mono>
+        <span style={{ fontSize: 8, fontWeight: 700, letterSpacing: '0.08em', color: LTOKENS.ink3, textTransform: 'uppercase' }}>{shownDir}</span>
+        <span style={{ marginLeft: 'auto', fontSize: 7.5, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: LTOKENS.ink3 }}>{tm.label}</span>
+      </div>
+      {/* NO multiplier — the em-dash is the signal (neutral, never P&L-tinted) */}
+      <Mono style={{ fontSize: dense ? 19 : 21, fontWeight: 700, lineHeight: 1, color: LTOKENS.ink3, marginTop: 6 }}>—</Mono>
+      {/* inactive meter — centre hair only, no bead */}
+      <div style={{ position: 'relative', width: '100%', height: 7, borderRadius: 9, background: LTOKENS.raised, marginTop: 8, opacity: isPending ? 1 : 0.5 }}>
+        <span style={{ position: 'absolute', left: '50%', top: -3, bottom: -3, width: 1, transform: 'translateX(-50%)', background: LTOKENS.hair2 }} />
+      </div>
+      <div style={{ marginTop: 7, minHeight: capH, display: 'flex', alignItems: 'center', gap: 5 }}>
+        <Icon name={isPending ? 'clock' : 'x'} size={10} color={LTOKENS.ink3} stroke={2} />
+        <Mono style={{ fontSize: 9.5, fontWeight: 600, color: LTOKENS.ink3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          {isPending ? 'settles at the open' : 'no open · didn’t count · no penalty'}
+        </Mono>
+      </div>
+      {footer}
+    </div>
+  );
+}
+
 // caption for a non-dormant star
 function captionFor(star) {
   const { state, mult, badge, banked } = star;
@@ -143,10 +213,24 @@ export function StarCell({ star, dormant = false, complete = false, headline = '
     );
   }
 
+  // Canonical-open settlement states (null for legacy rounds → unchanged below).
+  // pending/void are the muted "no number" cells; estimated/official annotate
+  // the live cell rendered further down.
+  const settle = star.settleState;
+  if (settle === 'pending' || settle === 'void') {
+    return <SettleMutedCell star={star} owner={owner} tg={tg} tm={tm} shownDir={shownDir} pad={pad} capH={capH} dense={dense} footer={footer} style={style} />;
+  }
+  const settleAnno = settle === 'estimated' || settle === 'official' ? SETTLE_ANNO[settle] : null;
+
   const climbing = star.mult >= 0;
   const m = stateMotion(star.state);
   const animClass = prefersReducedMotion() ? '' : m.cls;
-  const cap = captionFor(star);
+  // estimated/official replace the disposition caption with the settlement
+  // status ("estimate until banked" / "official · counts in standings").
+  const cap = settleAnno
+    ? { txt: settleAnno.caption, col: settle === 'official' ? LTOKENS.ink2 : LTOKENS.ink3 }
+    : captionFor(star);
+  const pnlCol = climbing ? ST_GOOD : ST_BAD;
   const lit = ['hit', 'busted', 'edge', 'heating', 'danger'].includes(star.state);
   const tinted = star.state === 'busted' ? alpha(ST_BAD, 0.04) : star.state === 'hit' ? alpha(ST_GOOD, 0.05) : LTOKENS.surface;
 
@@ -183,10 +267,13 @@ export function StarCell({ star, dormant = false, complete = false, headline = '
       ) : (
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginTop: 5, position: 'relative' }}>
           <Mono style={{ fontSize: dense ? 20 : 22, fontWeight: 700, lineHeight: 1, color: climbing ? ST_GOOD : ST_BAD,
-            textShadow: `0 0 16px ${alpha(climbing ? ST_GOOD : ST_BAD, star.state === 'hit' || star.state === 'busted' || star.state === 'edge' ? 0.55 : 0.3)}` }}>
+            textShadow: `0 0 16px ${alpha(climbing ? ST_GOOD : ST_BAD, star.state === 'hit' || star.state === 'busted' || star.state === 'edge' ? 0.55 : 0.3)}`,
+            // estimated → dashed underline (provisional); official → solid.
+            ...(settle === 'estimated' ? { textDecoration: 'underline dashed', textDecorationColor: alpha(pnlCol, 0.6), textUnderlineOffset: 4 } : {}) }}>
             {star.mult >= 0 ? '+' : ''}{star.mult.toFixed(1)}×
           </Mono>
           <LIcon name={climbing ? 'long' : 'short'} size={11} color={climbing ? ST_GOOD : ST_BAD} stroke={2.6} />
+          {settleAnno && <SettleTag kind={settle} color={pnlCol} />}
           {star.justIn && <JustIn owner={owner} />}
         </div>
       )}

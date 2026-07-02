@@ -8,6 +8,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { buildArenaModel, liveDayIdx, buildAskChips } from './buildArenaModel';
+import { BASELINE_POLICY, CAPTURE_STATE } from '../../../constants/leagueTournament';
 
 const NOW = Date.parse('2026-06-16T20:30:00.000Z'); // Tue 16:30 ET — claim wire OPEN
 
@@ -203,5 +204,53 @@ describe('buildArenaModel — two-way ask identity + flag-off default', () => {
     expect(m.agentId).toBe('agent-9');
     // Flag defaults OFF in tests → no chips → today's stub is byte-identical.
     expect(m.ask).toEqual([]);
+  });
+});
+
+// ── Phase 5 — canonical-open settlement axis threaded into the arena model ──
+describe('buildArenaModel — user-layer settlement states (Deliverables 1,3,4)', () => {
+  it('LEGACY round (absent stamp): every user star is settleState null, no pending, wire.canonical false', () => {
+    const m = buildArenaModel(BASE);
+    expect(m.userStars.every((s) => s.settleState === null)).toBe(true);
+    expect(m.userPending).toBe(0);
+    expect(m.wire.canonical).toBe(false); // claim UI unchanged for legacy
+  });
+
+  const canonicalGroup = () => {
+    const g = makeGroup();
+    g.baselinePolicy = BASELINE_POLICY.CANONICAL_OPEN;
+    g.players[0].picks = [
+      { symbol: 'GE', legs: [{ direction: 'long', baselinePrice: null, captureState: CAPTURE_STATE.PENDING_OPEN, thresholdHistory: [] }] },     // pending
+      { symbol: 'AMZN', legs: [{ direction: 'long', baselinePrice: 100, captureState: CAPTURE_STATE.CAPTURED, thresholdHistory: [] }] },        // estimated
+      { symbol: 'VLO', legs: [{ direction: 'short', baselinePrice: null, captureState: CAPTURE_STATE.NO_ELIGIBLE_OPEN, thresholdHistory: [] }] }, // void
+    ];
+    return g;
+  };
+
+  it('CANONICAL round: stars carry pending/estimated/void; userPending counts the awaiting picks', () => {
+    const m = buildArenaModel({ ...BASE, group: canonicalGroup() });
+    const byTk = Object.fromEntries(m.userStars.map((s) => [s.tk, s.settleState]));
+    expect(byTk).toEqual({ GE: 'pending', AMZN: 'estimated', VLO: 'void' });
+    expect(m.userPending).toBe(1);          // one pick awaiting the open → "1 pick pending"
+    expect(m.wire.canonical).toBe(true);
+  });
+
+  it('dayBanked flips a captured leg estimated → official (today ET already banked)', () => {
+    const g = canonicalGroup();
+    // NOW = 2026-06-16T20:30Z → ET date 2026-06-16. Bank that day.
+    g.dailyScores.day3 = { closeScores: { 'u-you': { compositePoints: 1 } }, recordedDate: '2026-06-16' };
+    const m = buildArenaModel({ ...BASE, group: g });
+    expect(m.userStars.find((s) => s.tk === 'AMZN').settleState).toBe('official');
+    expect(m.userStars.find((s) => s.tk === 'GE').settleState).toBe('pending');  // still no baseline
+    expect(m.userStars.find((s) => s.tk === 'VLO').settleState).toBe('void');     // terminal
+  });
+
+  it('close-only claim messaging: a canonical round mid-market-hours flags wire.reason market_hours', () => {
+    // 2026-06-16T17:00:00Z = Tue 13:00 ET — market OPEN, claim window CLOSED.
+    const marketHoursNow = Date.parse('2026-06-16T17:00:00.000Z');
+    const m = buildArenaModel({ ...BASE, group: canonicalGroup(), priceCtx: { ...PRICE_CTX, now: marketHoursNow } });
+    expect(m.wire.open).toBe(false);
+    expect(m.wire.canonical).toBe(true);
+    expect(m.wire.reason).toBe('market_hours'); // → "CLAIMS OPEN AFTER CLOSE" on the disabled control
   });
 });

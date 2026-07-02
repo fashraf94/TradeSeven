@@ -7,6 +7,7 @@
 import { describe, it, expect } from 'vitest';
 import { readAgentStars, readUserStar, readUserStars } from './leagueStarMeter';
 import { buildFlat6BattleModel } from './flat6BattleEnrichment';
+import { CAPTURE_STATE } from '../constants/leagueTournament';
 
 describe('dependency-surface guard', () => {
   it('the cross-tree import (src → api/_utils/tournamentUserScoring) loads clean in Node', () => {
@@ -117,5 +118,24 @@ describe('readUserStars — three picks, default vs supplied ATR', () => {
     // GE: +5% / atr 5 = 1.0 → hit boundary; BTC: +5% / crypto default 5.0 = 1.0 → hit
     expect(rows[0].mult).toBeCloseTo(1, 5);
     expect(rows[1].mult).toBeCloseTo(1, 5);
+  });
+});
+
+describe('readUserStar / readUserStars — settleState (canonical-open axis)', () => {
+  const pendingPick = { symbol: 'NVDA', legs: [{ direction: 'long', baselinePrice: null, captureState: CAPTURE_STATE.PENDING_OPEN, thresholdHistory: [] }] };
+  const capturedPick = { symbol: 'AMD', legs: [{ direction: 'long', baselinePrice: 100, captureState: CAPTURE_STATE.CAPTURED, thresholdHistory: [] }] };
+
+  it('legacy (default) → settleState null; canonical → a first-class state', () => {
+    expect(readUserStar(pendingPick, { quote: { current: 100 }, baseATR: 2.5 }).settleState).toBeNull();
+    expect(readUserStar(pendingPick, { quote: { current: 100 }, baseATR: 2.5, canonicalPolicy: true }).settleState).toBe('pending');
+    expect(readUserStar(capturedPick, { quote: { current: 103 }, baseATR: 2.5, canonicalPolicy: true }).settleState).toBe('estimated');
+    expect(readUserStar(capturedPick, { quote: { current: 103 }, baseATR: 2.5, canonicalPolicy: true, dayBanked: true }).settleState).toBe('official');
+  });
+
+  it('readUserStars threads canonicalPolicy/dayBanked to every pick; legacy stays null', () => {
+    const player = { picks: [pendingPick, capturedPick] };
+    const quotes = { NVDA: { current: 100 }, AMD: { current: 103 } };
+    expect(readUserStars(player, quotes, { canonicalPolicy: true }).map((r) => r.settleState)).toEqual(['pending', 'estimated']);
+    expect(readUserStars(player, quotes).map((r) => r.settleState)).toEqual([null, null]);
   });
 });

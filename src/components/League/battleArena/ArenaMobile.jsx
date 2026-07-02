@@ -232,6 +232,9 @@ function MYourPanel({ stars, wire, live, calm, done, headline, cellBump, flips, 
   const c = OWN_YOU;
   const open = live && wire?.open;
   const { dirOf, doFlip, flipError } = flips;
+  // Canonical-round pending marker + close-only claim messaging (Deliverables 3-4).
+  const pending = stars.filter((s) => s?.settleState === 'pending').length;
+  const closedForMarket = wire?.canonical && wire?.reason === 'market_hours';
   return (
     <div style={{ marginTop: 6, borderRadius: 16, padding: '13px 13px',
       background: `linear-gradient(160deg, ${alpha(c, 0.08)}, ${alpha(LTOKENS.bg, 0.5)} 60%)`,
@@ -241,7 +244,16 @@ function MYourPanel({ stars, wire, live, calm, done, headline, cellBump, flips, 
           <LIcon name="long" size={12} color={c} stroke={2.4} />
         </span>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <Eyebrow color={c}>Your three</Eyebrow>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <Eyebrow color={c}>Your three</Eyebrow>
+            {pending > 0 && (
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '1px 6px', borderRadius: 5,
+                background: alpha(LTOKENS.ink3, 0.12), border: `1px solid ${LTOKENS.hair2}` }}>
+                <Icon name="clock" size={9} color={LTOKENS.ink3} stroke={2.2} />
+                <Mono style={{ fontSize: 8.5, fontWeight: 700, color: LTOKENS.ink3, letterSpacing: '0.04em' }}>{pending} pick{pending === 1 ? '' : 's'} pending</Mono>
+              </span>
+            )}
+          </span>
           <span style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 1 }}>
             <LIcon name="flip" size={10} color={c} stroke={2} />
             <Mono style={{ fontSize: 9, color: alpha(c, 0.85) }}>yours to act · flip or claim</Mono>
@@ -265,7 +277,8 @@ function MYourPanel({ stars, wire, live, calm, done, headline, cellBump, flips, 
         <Mono style={{ fontSize: 12, fontWeight: 700, color: open ? LTOKENS.bg : LTOKENS.ink3 }}>Claim a name</Mono>
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, opacity: 0.82 }}>
           <Mono style={{ fontSize: 9, fontWeight: 700, color: open ? LTOKENS.bg : LTOKENS.ink3 }}>
-            {open ? `FREE AGENCY · ${wire.claimsUsed}/${wire.claimsTotal}` : 'WIRE CLOSED'}
+            {open ? `FREE AGENCY · ${wire.claimsUsed}/${wire.claimsTotal}`
+              : closedForMarket ? 'CLAIMS OPEN AFTER CLOSE' : 'WIRE CLOSED'}
           </Mono>
           {open && <LIcon name="arrowUpRight" size={11} color={LTOKENS.bg} stroke={2.4} />}
         </span>

@@ -23,7 +23,7 @@ import { readAgentStars, readUserStars } from '../../../utils/leagueStarMeter';
 import { deriveBeats } from '../../../utils/leagueBeats';
 import { getClaimWindowDisplay } from '../../../utils/tournamentSurfaces';
 import {
-  getLatestDayEntry, getWeeklyComposite, rankByScores, WEEK_DAYS_REQUIRED, TOURNAMENT_TUNING,
+  getLatestDayEntry, getWeeklyComposite, rankByScores, WEEK_DAYS_REQUIRED, TOURNAMENT_TUNING, BASELINE_POLICY,
 } from '../../../constants/leagueTournament';
 import { statusFeedToVoice } from './statusFeedToVoice';
 import { LEAGUE_AGENT_CHAT_ENABLED } from '../../../config/featureFlags';
@@ -94,6 +94,18 @@ export function buildArenaModel({
   const myPlayer = players.find((p) => p?.odUserId === uid) || null;
   const now = Number.isFinite(priceCtx?.now) ? priceCtx.now : null;
 
+  // ── canonical-open policy (Spec §1.1) — read the STAMP, not a flag. Drives the
+  // user-layer settlement states (pending/estimated/official/void). Legacy /
+  // absent-stamp rounds → false → settleState null → render exactly as today. ──
+  const canonicalPolicy = group?.baselinePolicy === BASELINE_POLICY.CANONICAL_OPEN;
+  const latestDay = getLatestDayEntry(group);
+  // `dayBanked`: today's ET date already has a banked snapshot → an open captured
+  // leg reads `official` (not `estimated`). Pure w.r.t. the injected `now`.
+  const todayEt = now != null
+    ? new Date(now).toLocaleDateString('en-CA', { timeZone: 'America/New_York' })
+    : null;
+  const dayBanked = !!(todayEt && latestDay?.entry?.recordedDate === todayEt);
+
   // ── seats (REUSE buildSeat; remap to the 7-field arena shape; YOU forced teal) ──
   // Orb identity — each seat a DISTINCT hue so the four read apart on the climb.
   // YOU's teal is RESERVED; rivals draw from the SAME seatColor source (not a new
@@ -149,8 +161,11 @@ export function buildArenaModel({
   // ── stars (REUSE the Phase-1 meter readers) ──
   const agentStars = battle ? readAgentStars(battle, priceCtx) : [];
   const userStars = myPlayer
-    ? readUserStars(myPlayer, quotesFromPrices(priceCtx?.effectivePrices, myPlayer), {})
+    ? readUserStars(myPlayer, quotesFromPrices(priceCtx?.effectivePrices, myPlayer), { canonicalPolicy, dayBanked })
     : [];
+  // Layer-level pending marker (Spec Deliverable 3) — canonical rounds only;
+  // legacy stars carry settleState null so this is 0 (no marker) as today.
+  const userPending = userStars.filter((s) => s?.settleState === 'pending').length;
 
   // ── beats (REUSE deriveBeats; only YOUR stars are knowable — rivals sealed) ──
   const starStates = { you: userStars, agent: agentStars };
@@ -188,6 +203,13 @@ export function buildArenaModel({
     closes: win.isOpen && Number.isFinite(win.countdownMinutes) ? win.countdownMinutes * 60 : null,
     claimsUsed: myPending,
     claimsTotal: TOURNAMENT_TUNING.CLAIM_PENDING_CAP_PER_CYCLE,
+    // Phase-5 close-only claim disable (Deliverable 4): a canonical round is
+    // close-only, so when the wire is shut BECAUSE the market is open
+    // (reason 'market_hours') the control shows a specific "claims open after
+    // close" state (consuming the Phase-4 server contract), not a bare disable.
+    // Legacy rounds carry canonical:false → the claim UI is unchanged.
+    canonical: canonicalPolicy,
+    reason: win.reason ?? null,
   };
 
   // ── youRank at the last banked index (REUSE rankByScores; never 0) ──
@@ -210,6 +232,7 @@ export function buildArenaModel({
     youId,
     agentStars,
     userStars,
+    userPending, // canonical-round count of picks awaiting the open (Deliverable 3)
     beats,
     voice,
     pod,
