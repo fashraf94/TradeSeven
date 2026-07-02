@@ -1,0 +1,89 @@
+/**
+ * Correlation Intelligence — local EODHD daily-close fetch helper.
+ *
+ * Deliberately self-contained (Build Spec V1.2): does NOT import fetchOHLCV
+ * from the compute-index-intelligence cron file (handler files are not import
+ * targets) and does NOT touch marketDataCache.js (a fence-adjacent shared
+ * dependency — reads/calls only, and this helper needs neither its cache nor
+ * its analysis pipeline). It pattern-matches the existing EODHD idiom instead:
+ * /eod/{symbol} with from= + period=d + order=d, adjusted_close mapping, and a
+ * calendar over-fetch of Math.ceil(days * 1.5) to absorb weekends/holidays.
+ *
+ * Unlike the existing batch fetchers, failed symbols are dropped AND reported
+ * — never silently (a silently missing group member would skew the composite).
+ *
+ * Supports the full 1260-trading-day lookback ceiling (1.5× → 1890 calendar
+ * days ≈ 1302 trading days). The 1095-day cap in api/stocks/historical.js is
+ * that endpoint's own TIMEFRAME_CONFIG, not an API limit.
+ */
+
+const API_BASE = 'https://eodhd.com/api';
+const CHUNK_SIZE = 5;
+const CHUNK_DELAY_MS = 300;
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+function formatDate(date) {
+  return date.toISOString().slice(0, 10);
+}
+
+/**
+ * Fetch daily adjusted closes for one EODHD symbol, NEWEST-FIRST (order=d —
+ * the wire order; the endpoint adapter reverses exactly once).
+ * → [{ date: 'YYYY-MM-DD', close: number }], non-finite rows filtered out.
+ * Throws on missing API key, non-OK response, or a non-array body.
+ */
+export async function fetchEodCloses(eodhSymbol, lookbackDays) {
+  const apiKey = process.env.EODHD_API_KEY;
+  if (!apiKey) throw new Error('EODHD_API_KEY not configured');
+  const fromDate = new Date();
+  fromDate.setDate(fromDate.getDate() - Math.ceil(lookbackDays * 1.5));
+  const url = `${API_BASE}/eod/${encodeURIComponent(eodhSymbol)}?api_token=${apiKey}&fmt=json&period=d&order=d&from=${formatDate(fromDate)}`;
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`EODHD ${eodhSymbol}: HTTP ${response.status}`);
+  const rows = await response.json();
+  if (!Array.isArray(rows)) throw new Error(`EODHD ${eodhSymbol}: non-array response`);
+  return rows
+    .map((d) => ({ date: d.date, close: Number(d.adjusted_close) }))
+    .filter((r) => typeof r.date === 'string' && Number.isFinite(r.close));
+}
+
+/**
+ * Fetch the driver plus every group member (US equities get the `.US` suffix —
+ * the SPY.US idiom), chunked 5 concurrent with ~300ms between chunks via
+ * Promise.allSettled, mirroring the repo's hand-rolled batch convention.
+ *
+ * → { driverRows: rows|null, memberRows: { SYMBOL: rows }, failedSymbols }
+ * failedSymbols lists group members (ORIGINAL ticker form, not .US) whose
+ * fetch failed or returned no usable rows. A failed driver → driverRows null.
+ */
+export async function fetchAllSeries({ driverSymbol, groupSymbols, lookbackDays }) {
+  const jobs = [
+    { key: '__driver__', eodhd: driverSymbol },
+    ...groupSymbols.map((s) => ({ key: s, eodhd: `${s}.US` })),
+  ];
+  const results = new Map();
+  for (let i = 0; i < jobs.length; i += CHUNK_SIZE) {
+    const chunk = jobs.slice(i, i + CHUNK_SIZE);
+    const settled = await Promise.allSettled(
+      chunk.map((job) => fetchEodCloses(job.eodhd, lookbackDays))
+    );
+    settled.forEach((outcome, k) => {
+      results.set(chunk[k].key, outcome.status === 'fulfilled' ? outcome.value : null);
+    });
+    if (i + CHUNK_SIZE < jobs.length) await sleep(CHUNK_DELAY_MS);
+  }
+  const driverRows = results.get('__driver__');
+  const memberRows = {};
+  const failedSymbols = [];
+  for (const s of groupSymbols) {
+    const rows = results.get(s);
+    if (rows && rows.length > 0) memberRows[s] = rows;
+    else failedSymbols.push(s);
+  }
+  return {
+    driverRows: driverRows && driverRows.length > 0 ? driverRows : null,
+    memberRows,
+    failedSymbols,
+  };
+}
