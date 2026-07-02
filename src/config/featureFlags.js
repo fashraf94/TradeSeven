@@ -342,4 +342,4 @@ export const SCOUTING_BOARD_ENABLED = true;
  * preview smoke itself uses a clearly-labeled temporary flip commit on the
  * build branch, reverted before merge (founder-approved procedure).
  */
-export const CORRELATION_LAB_ENABLED = false;
+export const CORRELATION_LAB_ENABLED = true; // TEMP PREVIEW SMOKE — REVERT BEFORE MERGE
