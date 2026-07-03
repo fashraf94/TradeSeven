@@ -35,10 +35,7 @@ import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
 import { applySecurityMiddleware } from '../_utils/security.js';
 import { requireAuth } from '../_utils/authMiddleware.js';
 import { getFromCache, setInCache } from '../_utils/serverCache.js';
-import { getETDate, getMarketState, getNextMarketClose } from '../_utils/marketSchedule.js';
 import {
-  computeReturnsSeries,
-  rollingCorrelation,
   rollingBeta,
   leadLag,
   detectInflections,
@@ -47,6 +44,15 @@ import {
   trailingReturnInto,
   SDS_BASELINE_WINDOW,
 } from '../_utils/correlationMath.js';
+// V2 Build 2 extraction: the join-and-compute core and the two-sided cache TTL
+// moved VERBATIM to correlationAssembly.js so the multi-driver scan runs the
+// IDENTICAL per-driver pipeline. This suite passing with zero expectation
+// changes is the extraction's acceptance test.
+import {
+  assembleDriverCore,
+  computeCorrelationCacheTtlMs,
+  MIN_CLOSES_FOR_INFLECTIONS,
+} from './correlationAssembly.js';
 import { CORRELATION_DRIVERS } from './driverRegistry.js';
 import { fetchAllSeries } from './fetchDriverSeries.js';
 import { normalizeSymbolForEODHD } from '../_utils/symbolNormalize.js';
@@ -61,40 +67,7 @@ export const config = { maxDuration: 30 };
 
 const SYMBOL_RE = /^[A-Z][A-Z0-9.-]{0,9}$/; // pinned: accepts BRK.B, BF.B, hyphens
 const LOOKBACK = { DEFAULT: 504, MIN: 150, MAX: 1260 };
-const MIN_CLOSES_FOR_INFLECTIONS = 300; // pinned join gate
-const CORR_WINDOWS = [20, 60];
 const BETA_WINDOW = 40;
-const THIRTY_MIN_MS = 30 * 60 * 1000;
-
-/**
- * Milliseconds until the pinned cache expiry (next close + 30min, two-sided).
- * getETDate() returns an ET-SHIFTED Date whose getTime() is not real epoch —
- * so the duration is computed entirely inside that frame (frame-invariant)
- * and callers convert to a real-epoch expiresAt via Date.now() + ttlMs.
- */
-function computeCacheTtlMs() {
-  const nowEt = getETDate();
-  const { state, isEarlyClose } = getMarketState();
-  let expiryEtMs;
-  if (state === 'CLOSED_AFTERHOURS') {
-    // Weekday non-holiday outside open hours: early-AM pre-open OR post-close.
-    // Reconstruct TODAY's close in the same ET frame — in [close, close+30)
-    // getNextMarketClose() has already rolled to the next session, but the
-    // pinned rule says today's close + 30min still governs.
-    const todayClose = new Date(nowEt);
-    todayClose.setHours(isEarlyClose ? 13 : 16, 0, 0, 0);
-    const todayClosePlus30 = todayClose.getTime() + THIRTY_MIN_MS;
-    expiryEtMs =
-      nowEt.getTime() < todayClosePlus30
-        ? todayClosePlus30
-        : getNextMarketClose().getTime() + THIRTY_MIN_MS;
-  } else {
-    // OPEN / PRE_MARKET → today's close; CLOSED_WEEKEND / CLOSED_HOLIDAY →
-    // next trading day's close. getNextMarketClose is early-close-aware.
-    expiryEtMs = getNextMarketClose().getTime() + THIRTY_MIN_MS;
-  }
-  return Math.max(60 * 1000, expiryEtMs - nowEt.getTime());
-}
 
 const markCached = (payload) => ({ ...payload, meta: { ...payload.meta, cached: true } });
 
@@ -235,65 +208,34 @@ export default async function handler(req, res) {
     // ── THE single reversal boundary: NEWEST-FIRST wire → OLDEST-FIRST ──
     const driverAsc = [...driverRows].reverse();
     const membersAsc = new Map(survivors.map((s) => [s, [...memberRows[s]].reverse()]));
-
-    // TNX scale applies to LEVELS, before differencing (registry contract).
-    const scale = registry.scale ?? 1;
-    const driverScaled =
-      scale === 1 ? driverAsc : driverAsc.map((r) => ({ date: r.date, close: r.close * scale }));
-
-    // ── Inner-join ALL series on date string BEFORE returns (commodities
-    //    trade on different calendars), then cap at lookbackDays closes ──
     const memberMaps = survivors.map((s) => new Map(membersAsc.get(s).map((r) => [r.date, r.close])));
-    let joined = driverScaled.filter((r) => memberMaps.every((m) => m.has(r.date)));
-    if (joined.length > lookbackDays) joined = joined.slice(-lookbackDays);
-    const joinedCloses = joined.length;
-    if (joinedCloses < 2) {
-      return res.status(422).json({ error: 'no_overlapping_history', joinedCloses });
-    }
-    const joinedDates = joined.map((r) => r.date);
-    const driverCloses = joined.map((r) => r.close);
-    const memberCloses = survivors.map((s, k) => joinedDates.map((d) => memberMaps[k].get(d)));
 
-    // ── Returns (chronological from here down) ──
-    const driverReturns = computeReturnsSeries(driverCloses, registry.returnMode);
-    const memberReturns = memberCloses.map((closes) => computeReturnsSeries(closes, 'pct'));
-    if (!driverReturns || memberReturns.some((r) => r === null)) {
+    // ── The shared join-and-compute core (correlationAssembly.js): level
+    //    scaling → inner-join → lookback cap → returns → composite →
+    //    gated corr 20/60 → closeIndex-aligned divergence series ──
+    const core = assembleDriverCore({ driverAsc, memberMaps, registry, lookbackDays });
+    if (core.error === 'no_overlapping_history') {
+      return res.status(422).json({ error: 'no_overlapping_history', joinedCloses: core.joinedCloses });
+    }
+    if (core.error === 'degenerate_series') {
       return res.status(422).json({ error: 'degenerate_series' });
     }
-    // Group composite = equal-weight mean of member daily returns (post-join).
-    const groupReturns = driverReturns.map(
-      (_, t) => memberReturns.reduce((acc, r) => acc + r[t], 0) / memberReturns.length
-    );
-    // Synthetic composite levels: length n, aligned 1:1 with joinedDates, so
-    // episode closeIndexes anchor identically for group forward returns.
-    const groupLevels = [100];
-    for (const r of groupReturns) groupLevels.push(groupLevels[groupLevels.length - 1] * (1 + r));
+    const {
+      joinedCloses,
+      joinedDates,
+      driverCloses,
+      driverReturns,
+      groupReturns,
+      groupLevels,
+      corr20,
+      corr60,
+      divergenceSeries,
+    } = core;
 
-    // ── Stats (per-window gate: window + 1 joined closes, else null) ──
-    const [W20, W60] = CORR_WINDOWS;
-    const corr20 = joinedCloses >= W20 + 1 ? rollingCorrelation(groupReturns, driverReturns, W20, joinedDates) : null;
-    const corr60 = joinedCloses >= W60 + 1 ? rollingCorrelation(groupReturns, driverReturns, W60, joinedDates) : null;
+    // ── Deep-dive-only stats (the scan endpoint never computes these) ──
     const beta40 = joinedCloses >= BETA_WINDOW + 1 ? rollingBeta(groupReturns, driverReturns, BETA_WINDOW, joinedDates) : null;
     const lag = leadLag(groupReturns, driverReturns, 5);
 
-    // Divergence series d = corr20 − corr60, aligned by closeIndex where BOTH
-    // windows have non-null values (never by raw array position).
-    const divergenceSeries = [];
-    if (corr20 && corr60) {
-      const byCloseIndex = new Map(corr20.map((e) => [e.closeIndex, e.value]));
-      for (const e of corr60) {
-        const v20 = byCloseIndex.get(e.closeIndex);
-        if (v20 != null && e.value != null) {
-          divergenceSeries.push({
-            closeIndex: e.closeIndex,
-            eventDate: e.eventDate,
-            d: v20 - e.value,
-            corr20: v20,
-            corr60: e.value,
-          });
-        }
-      }
-    }
     // First observation with a FULL trailing SDS baseline — the UI base-rate
     // sentence anchors here, never at the raw lookback start.
     const firstEligibleInflectionDate = divergenceSeries[SDS_BASELINE_WINDOW]?.eventDate ?? null;
@@ -387,7 +329,7 @@ export default async function handler(req, res) {
     // ── Cache write: NON-PARTIAL ONLY; a cache failure never fails the response ──
     if (!partial) {
       try {
-        const ttlMs = computeCacheTtlMs();
+        const ttlMs = computeCorrelationCacheTtlMs();
         await db.collection('correlationIntelligence').doc(docId).set({
           payload,
           computedAt: payload.meta.computedAt,
