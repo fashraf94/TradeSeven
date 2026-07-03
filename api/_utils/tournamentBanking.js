@@ -235,14 +235,27 @@ export function computeBankingUpdate(group, quotes, { nowIso, etDate, atrPercent
           }
         }
         if (leg.closedAt !== undefined && leg.bankedScore === undefined) {
-          // Market-closed flip: the close-out price is the next session's
-          // open. An overnight open-and-closed leg banks 0 by construction
-          // (baseline just settled to the same open — zero exposure). For a
-          // canonical round that open is the frozen snapshot (`settleOpen`),
-          // so the leg banks against the captured open, never a drifted
-          // re-fetch, and the 0-by-construction property still holds.
-          if (leg.baselinePrice != null && settleOpen != null) {
-            const result = scoreLeg({ symbol: pick.symbol, baseATR, leg, price: settleOpen });
+          // Market-closed flip: the close-out price is the next session's open.
+          // An overnight open-and-closed leg banks 0 by construction (baseline
+          // just settled to the same open — zero exposure). For a canonical
+          // round that open is the frozen snapshot (`settleOpen`), so the leg
+          // banks against the captured open, never a drifted re-fetch, and the
+          // 0-by-construction property holds.
+          //
+          // BOUNDED FALLBACK (W7): a leg with a REAL, non-canonical baseline (a
+          // flip price — NEVER a canonical capture) whose symbol has no snapshot
+          // (`settleOpen` null) has no canonical open to honor and no
+          // banked==captured invariant to protect. It closes at the day's fresh
+          // `open` exactly as a legacy round would — recovering its realized P&L
+          // instead of banking nothing forever. A canonical-CAPTURED leg always
+          // has a snapshot (settleOpen != null), so this never lets a captured
+          // baseline bank against a re-fetch; a null-baseline void leg is skipped
+          // (`leg.baselinePrice != null` is false).
+          const closePrice = settleOpen != null
+            ? settleOpen
+            : (canonicalPolicy && leg.baselineSource !== BASELINE_SOURCE.CANONICAL_OPEN_CAPTURE ? open : null);
+          if (leg.baselinePrice != null && closePrice != null) {
+            const result = scoreLeg({ symbol: pick.symbol, baseATR, leg, price: closePrice });
             if (result) leg.bankedScore = result.totalPoints;
           } else {
             warnings.push(`${pick.symbol}: no open price — closed leg still bank-pending`);

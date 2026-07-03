@@ -467,6 +467,47 @@ describe('computeBankingUpdate — canonical-open policy (Phase 3)', () => {
     expect(l.captureState).toBe(CAPTURE_STATE.NO_ELIGIBLE_OPEN); // stays void
     expect(update.dayEntry.closeScores.u1.totalPoints).toBe(0);
   });
+
+  // A flipped-then-dropped pick: a REAL flip baseline, closed market-closed, on
+  // a symbol that was never captured (no snapshot). The bounded fallback (W7).
+  const droppedRealLeg = () => ([
+    { odUserId: 'u1', picks: [], droppedPicks: [{
+      symbol: 'NVDA', flipCountToday: 0,
+      legs: [{ ...leg({ baselinePrice: 100, baselineSource: BASELINE_SOURCE.FLIP_MARKET_OPEN }), closedAt: 'T1' }],
+    }] },
+    { odUserId: 'u2', picks: [] }, { odUserId: 'u3', picks: [] }, { odUserId: 'u4', picks: [] },
+  ]);
+
+  it('BOUNDED FALLBACK (W7): a real-baseline closed leg with NO snapshot banks at the fresh open, not lost', () => {
+    // No canonical open to honor + no banked==captured invariant (its baseline
+    // is a flip price, not a capture) → it closes at the day's fresh open (106)
+    // and banks its realized P&L, instead of vanishing bank-pending forever.
+    const group = battleGroup({ baselinePolicy: BASELINE_POLICY.CANONICAL_OPEN, canonicalOpens: {}, players: droppedRealLeg() });
+    const update = computeBankingUpdate(group, { NVDA: { open: 106, current: 106, previousClose: 99, timestamp: 1 } }, OPTS);
+    const bankedLeg = update.players[0].droppedPicks[0].legs[0];
+    const expected = calculateAssetScoreV3({ symbol: 'NVDA', baseATR: 2.5, direction: 'long' }, 6, {}, {}, null).totalPoints; // 100 → 106
+    expect(bankedLeg.bankedScore).toBe(expected);                     // recovered, not lost
+    expect(update.dayEntry.closeScores.u1.totalPoints).toBe(expected); // enters the standing
+  });
+
+  it('the fallback is byte-for-byte the legacy behavior for this close-out (W7)', () => {
+    const q = { NVDA: { open: 106, current: 106, previousClose: 99, timestamp: 1 } };
+    const canon = computeBankingUpdate(battleGroup({ baselinePolicy: BASELINE_POLICY.CANONICAL_OPEN, canonicalOpens: {}, players: droppedRealLeg() }), q, OPTS);
+    const legacy = computeBankingUpdate(battleGroup({ players: droppedRealLeg() }), q, OPTS); // no stamp
+    expect(canon.players[0].droppedPicks[0].legs[0].bankedScore)
+      .toBe(legacy.players[0].droppedPicks[0].legs[0].bankedScore);
+    expect(canon.dayEntry.closeScores.u1.totalPoints).toBe(legacy.dayEntry.closeScores.u1.totalPoints);
+  });
+
+  it('a CAPTURED leg still closes at its frozen snapshot, never the fresh open (fallback does not leak)', () => {
+    // With a snapshot present the fallback must NOT fire — the leg closes at the
+    // snapshot (100), preserving banked==captured even though the vendor is 106.
+    const players = droppedRealLeg();
+    players[0].droppedPicks[0].legs[0] = { ...leg({ baselinePrice: 100, baselineSource: BASELINE_SOURCE.CANONICAL_OPEN_CAPTURE }), closedAt: 'T1' };
+    const group = battleGroup({ baselinePolicy: BASELINE_POLICY.CANONICAL_OPEN, canonicalOpens: { NVDA: snap(100) }, players });
+    const update = computeBankingUpdate(group, { NVDA: { open: 106, current: 106, previousClose: 99, timestamp: 1 } }, OPTS);
+    expect(update.players[0].droppedPicks[0].legs[0].bankedScore).toBe(0); // 100 → snapshot 100, not 106
+  });
 });
 
 // ============ end-to-end exposure exclusion (Phases 2–4 integration) ============

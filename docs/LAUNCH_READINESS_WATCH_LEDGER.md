@@ -91,10 +91,9 @@ merge-dark (`LEAGUE_CANONICAL_OPEN_CAPTURE` still `false`); these are the
 low-severity findings + carried fast-follows acknowledged as launch-safe, plus
 one item the founder must decide before the prod flag walk.
 
-### W7 — #1 close-out lost-points corner (real, narrow) — DECISION PENDING before the flip
-A canonical-round leg with a **real** baseline (e.g. an in-hours flip settled before the first sweep captured its symbol) that later closes while the market is **closed** banks nothing and stays bank-pending — `api/_utils/tournamentBanking.js:236` (close-out requires `settleOpen != null`, and `settleOpen === snapOpen` is null when the symbol never got a snapshot). On legacy this banked against the fresh open, so points are lost + waiver priority shifts. Characterized in the reconciliation report (trigger, reachability, mechanism).
-- **Launch-safe at V1?** Narrow trigger; the lost points are the *conservative* outcome of the deliberate Phase-3 fail-closed choice (never bank against a divergent re-fetch).
-- **Decision (founder):** accept as-is (fail-closed is correct here) vs a **bounded fresh-open fallback** for this one close-out (reopens a small divergence for that leg). Not built this pass.
+### W7 — #1 close-out lost-points corner — ✅ RESOLVED (bounded fresh-open fallback)
+~~A canonical-round leg with a **real** baseline (e.g. an in-hours flip settled before the first sweep captured its symbol) that later closes while the market is **closed** banks nothing and stays bank-pending.~~
+- **Founder decision (2026-07-01):** implement the **bounded fresh-open fallback**. In the close-out (`api/_utils/tournamentBanking.js`), a leg with a real, **non-canonical** baseline (`baselineSource !== canonical_open_capture`) whose symbol has **no snapshot** now closes at the day's fresh `open`, exactly as legacy did — recovering its realized P&L. A canonical-CAPTURED leg always has a snapshot, so a captured baseline can never bank against a re-fetch; a null-baseline void leg is skipped. Tested: recovers the P&L, byte-for-byte equal to legacy for this close-out, and a captured leg still closes at its frozen snapshot (fallback does not leak). Closed.
 
 ### W8 — #8 settlement tag dropped in the points headline view
 `src/components/League/battleArena/StarCell.jsx` emits the est/banked tag + dashed underline only in the `mult` headline branch; toggling the arena to `pts` view keeps the settlement caption but drops the tag/underline.
