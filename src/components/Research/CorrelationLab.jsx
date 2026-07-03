@@ -21,6 +21,17 @@
  * The dual-series SVG chart is a local clone of SeasonPerformanceChart.jsx's
  * mechanics (fixed [−1,1] domain for correlations) — the Season component is
  * untouched.
+ *
+ * V2 Build 2 — multi-driver scan: SCAN ALL runs the group against EVERY
+ * registry driver (POST /api/research/correlation-scan) and renders a ranked
+ * table that REPLACES the single-driver results while displayed; every row
+ * deep-dives into the single-driver analysis. Scans and single runs share the
+ * runSeq stale-race guard: a late scan can never overwrite a newer single run,
+ * and vice versa. Scan honesty copy is pinned (Change 2; Build 2.1 truthful
+ * rewrite): the 20-observation caveat caption, "worth investigating, not a
+ * discovery", established (both windows) vs emerging (20d-only) tiers,
+ * identity rows annotated "group member", weak rows greyed as "weak/none",
+ * unavailable drivers listed — never silently omitted.
  */
 import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { fetchWithAuth } from '../../utils/fetchWithAuth';
@@ -176,6 +187,245 @@ function driverTag(ep) {
 }
 
 const pctColor = (v) => (v == null ? HOLO_COLORS.textMuted : v > 0 ? GREEN : v < 0 ? RED : HOLO_COLORS.textSecondary);
+
+// Shared group parsing/validation for both run kinds (one rule, no drift).
+// Module-scope on purpose: pure over its argument, so it can never go stale
+// inside the run/runScan useCallback closures.
+function parseGroup(source) {
+  const group = [...new Set(source.split(/[\s,]+/).map((s) => s.trim().toUpperCase()).filter(Boolean))];
+  if (group.length < 1 || group.length > 10) {
+    return { error: 'Enter 1–10 ticker symbols (comma-separated). A single ETF proxy works too.' };
+  }
+  const bad = group.filter((s) => !SYMBOL_RE.test(s));
+  if (bad.length) return { error: `Not a valid ticker: ${bad.join(', ')}` };
+  return { group };
+}
+
+// ── V2 Build 2 — multi-driver scan helpers ──────────────────────────────────
+
+// Tension chip colors keyed by the server's tensionState — the same states
+// (and SDS boundaries, via tensionStateFromScore server-side) as the
+// Divergence Watch gauge above.
+const TENSION_CHIP = {
+  calm: { word: 'calm', color: HOLO_COLORS.textSecondary },
+  elevated: { word: 'elevated', color: AMBER },
+  break: { word: 'break', color: RED },
+};
+
+/**
+ * Deterministic scan summary sentence from the endpoint's `summary` input
+ * object — past/present DESCRIPTIVE only; "discovered", "predicts", and
+ * "signal found" are banned from scan copy (pinned honesty rule).
+ */
+function scanSummarySentence(summary) {
+  if (!summary) return null;
+  const dir = summary.direction === 'negative' ? 'inverse' : 'positive';
+  const change = summary.change
+    ? `, and ${summary.change === 'tightened' ? 'tightening' : 'weakening'} this month`
+    : '';
+  return `Tracking most tightly: ${summary.label} — ${summary.band} ${dir} link${change}.`;
+}
+
+/**
+ * Ranked scan table (Build 2.1 tiers): established rows normal (gold),
+ * emerging rows amber with an "emerging" tag (20d-only evidence), weak rows
+ * greyed with "weak/none" (or "no data" when nothing was computable),
+ * identity rows annotated "group member", unavailable (dropped) drivers at
+ * the bottom in muted text. Mobile (≤390px) compacts to rank / label /
+ * corr20 / tension — the rest lives in the deep dive. Every computed row
+ * deep-dives on click or Enter/Space (the desktop-only last column is the
+ * visible affordance; the whole row is the target).
+ */
+function ScanResults({ scan, isDesktop, onDeepDive, onRefresh }) {
+  const summaryText = scanSummarySentence(scan.summary);
+  const cellPad = { padding: '7px 8px' };
+  const catChip = {
+    marginLeft: 6,
+    padding: '1px 6px',
+    borderRadius: 8,
+    border: `1px solid ${HOLO_COLORS.borderSubtle}`,
+    fontSize: 9,
+    textTransform: 'uppercase',
+    letterSpacing: '0.5px',
+    color: HOLO_COLORS.textMuted,
+    whiteSpace: 'nowrap',
+  };
+  return (
+    <>
+      {/* Header + the honesty captions (Change 2; Build 2.1 truthful rewrite —
+          the caption states what a 20-observation statistic can and cannot
+          support, and what "established" requires) */}
+      <div style={card}>
+        <div style={captionStyle}>Multi-driver scan — ranked by current 20d strength</div>
+        <div style={{ fontSize: 13, color: HOLO_COLORS.textPrimary, marginTop: 6, lineHeight: 1.5 }}>
+          What this group is tracking most tightly right now — worth investigating, not a discovery.
+        </div>
+        <div style={subCaptionStyle}>
+          A 20d reading is only 20 sessions of evidence — chance alone pushes it past |0.20| for
+          roughly two drivers in five, so it is never treated as established by itself. Established
+          rows clear |0.20| on both the 20d and 60d windows; emerging rows clear only the 20d — a
+          lead to watch, not a relationship. Sub-floor rows render greyed. A broad-market link on
+          top (SPY or a sector twin) is normal for most groups.
+        </div>
+      </div>
+
+      {/* Summary sentence, the pinned no-signal copy, or the all-unavailable case */}
+      {summaryText ? (
+        <div style={{ ...card, borderColor: `${GOLD}44` }}>
+          <div style={{ fontSize: 15, color: HOLO_COLORS.textPrimary, lineHeight: 1.55 }}>{summaryText}</div>
+        </div>
+      ) : scan.rows.length === 0 ? (
+        <div style={{ ...card, borderColor: `${AMBER}55` }}>
+          <div style={{ fontSize: 13, color: HOLO_COLORS.textSecondary }}>
+            None of the drivers could be fetched just now — nothing was computed. Re-run to retry.
+          </div>
+        </div>
+      ) : !scan.rows.some((r) => r.corr20 != null) ? (
+        // Honesty guard: the noise-floor sentence claims a MEASUREMENT was
+        // made — when every row is null-stat (nothing computable), say that.
+        <div style={{ ...card, borderColor: `${AMBER}55` }}>
+          <div style={{ fontSize: 13, color: HOLO_COLORS.textSecondary }}>
+            Couldn't compute correlations for this group — not enough overlapping history to measure anything.
+          </div>
+        </div>
+      ) : scan.rows.some((r) => r.tier === 'emerging' || (r.tier === 'established' && r.identity)) ? (
+        // Summary is null yet something clears the floor: only group members
+        // (identity rows) or 20d-only leads — say exactly that.
+        <div style={card}>
+          <div style={{ fontSize: 13, color: HOLO_COLORS.textSecondary }}>
+            Nothing established right now — anything clearing |0.20| below is a group member or a
+            20-day-only lead.
+          </div>
+        </div>
+      ) : (
+        <div style={card}>
+          <div style={{ fontSize: 13, color: HOLO_COLORS.textSecondary }}>
+            Nothing above the noise floor right now — no driver clears |0.20|.
+          </div>
+        </div>
+      )}
+
+      {/* Ranked table */}
+      {scan.rows.length > 0 || scan.droppedDrivers.length > 0 ? (
+        <div style={card}>
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+              <thead>
+                <tr style={{ color: HOLO_COLORS.textMuted, textAlign: 'left' }}>
+                  <th style={{ ...cellPad, fontWeight: 600 }}>#</th>
+                  <th style={{ ...cellPad, fontWeight: 600 }}>Driver</th>
+                  <th style={{ ...cellPad, fontWeight: 600 }}>20d</th>
+                  {isDesktop ? <th style={{ ...cellPad, fontWeight: 600 }}>60d</th> : null}
+                  <th style={{ ...cellPad, fontWeight: 600 }}>Tension</th>
+                  {isDesktop ? <th style={{ ...cellPad, fontWeight: 600 }}>Deep dive</th> : null}
+                </tr>
+              </thead>
+              <tbody>
+                {scan.rows.map((row, i) => {
+                  const weak = row.tier === 'weak';
+                  const emerging = row.tier === 'emerging';
+                  const tension = row.tensionState ? TENSION_CHIP[row.tensionState] : null;
+                  return (
+                    <tr
+                      key={row.driver}
+                      onClick={() => onDeepDive(row)}
+                      // Keyboard path: on mobile the row IS the only deep-dive
+                      // affordance, so it must be focusable and Enter/Space
+                      // activatable, not click-only.
+                      tabIndex={0}
+                      role="button"
+                      aria-label={`Deep dive: ${row.label}`}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          onDeepDive(row);
+                        }
+                      }}
+                      title={`Deep dive: ${row.label}`}
+                      style={{
+                        borderTop: `1px solid ${HOLO_COLORS.borderSubtle}`,
+                        cursor: 'pointer',
+                        opacity: weak ? 0.55 : 1,
+                      }}
+                    >
+                      <td style={{ ...cellPad, fontFamily: MONO, color: HOLO_COLORS.textMuted }}>{i + 1}</td>
+                      <td style={cellPad}>
+                        <span style={{ color: HOLO_COLORS.textPrimary }}>{row.label}</span>
+                        <span style={catChip}>{row.category}</span>
+                        {row.identity ? (
+                          // Decision #2: truthful but vacuous — this driver IS
+                          // one of the scanned members; annotated, never hidden.
+                          <span style={{ ...catChip, color: AMBER, borderColor: `${AMBER}55` }}>group member</span>
+                        ) : null}
+                        {emerging ? (
+                          <span style={{ marginLeft: 6, fontSize: 10, color: AMBER }}>emerging</span>
+                        ) : null}
+                        {weak ? (
+                          // "weak/none" is a MEASURED verdict — a null corr20
+                          // means nothing was computable, which is different
+                          // honesty (presentation-honesty, code-review fix).
+                          <span style={{ marginLeft: 6, fontSize: 10, color: HOLO_COLORS.textMuted }}>
+                            {row.corr20 == null ? 'no data' : 'weak/none'}
+                          </span>
+                        ) : null}
+                      </td>
+                      <td style={{ ...cellPad, fontFamily: MONO, fontWeight: 700, color: weak ? HOLO_COLORS.textMuted : emerging ? AMBER : GOLD }}>
+                        {fmtCorr(row.corr20)}
+                      </td>
+                      {isDesktop ? (
+                        <td style={{ ...cellPad, fontFamily: MONO, color: GRAY }}>{fmtCorr(row.corr60)}</td>
+                      ) : null}
+                      <td style={cellPad}>
+                        {tension ? (
+                          <span style={{ color: tension.color, fontSize: 11, fontWeight: 600 }}>{tension.word}</span>
+                        ) : (
+                          <span style={{ color: HOLO_COLORS.textMuted }}>—</span>
+                        )}
+                      </td>
+                      {isDesktop ? (
+                        <td style={{ ...cellPad, color: GOLD, fontSize: 11, whiteSpace: 'nowrap' }}>Deep dive →</td>
+                      ) : null}
+                    </tr>
+                  );
+                })}
+                {scan.droppedDrivers.map((dd) => (
+                  <tr key={dd.driver} style={{ borderTop: `1px solid ${HOLO_COLORS.borderSubtle}`, opacity: 0.45 }}>
+                    <td style={{ ...cellPad, fontFamily: MONO, color: HOLO_COLORS.textMuted }}>—</td>
+                    <td style={{ ...cellPad, color: HOLO_COLORS.textSecondary }}>{dd.label}</td>
+                    <td style={{ ...cellPad, color: HOLO_COLORS.textMuted, fontStyle: 'italic' }} colSpan={isDesktop ? 4 : 2}>
+                      unavailable
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {scan.droppedDrivers.length > 0 ? (
+            <div style={{ ...subCaptionStyle, color: AMBER }}>
+              Some drivers were unavailable, so this scan was <strong>not cached</strong> — re-run to retry them.
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+
+      {/* Freshness footer (the V0 idiom) */}
+      <div style={{ fontSize: 11, color: HOLO_COLORS.textMuted, display: 'flex', gap: 10, alignItems: 'center' }}>
+        <span>
+          as of {scan.meta.computedAt}
+          {scan.meta.cached ? ' · cached' : ''}
+        </span>
+        {scan.meta.cached ? (
+          <button
+            onClick={onRefresh}
+            style={{ background: 'transparent', border: 'none', color: HOLO_COLORS.textSecondary, fontSize: 11, cursor: 'pointer', textDecoration: 'underline', padding: 0 }}
+          >
+            refresh
+          </button>
+        ) : null}
+      </div>
+    </>
+  );
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Local SVG chart (SeasonPerformanceChart mechanics; fixed domain for corr)
@@ -471,11 +721,16 @@ export default function CorrelationLab({ isDesktop, embedded = false }) {
   const [driverKey, setDriverKey] = useState('BRENT');
   const [customSymbol, setCustomSymbol] = useState('');
   const [inputError, setInputError] = useState(null);
-  const [state, setState] = useState({ status: 'idle', data: null, error: null });
+  // state.kind: 'single' | 'scan' — which surface the loading/ready/error
+  // state belongs to. The scan table REPLACES the single-driver results while
+  // a scan is displayed; the last-shown result of the other kind is dropped.
+  const [state, setState] = useState({ status: 'idle', data: null, error: null, kind: 'single' });
   const [chartTab, setChartTab] = useState('corr');
   // Stale-response guard (the ScoutingBoardSheet cancellation idiom, sequence
   // form): overlapping runs resolve in arbitrary order, and without this a
   // slow response for an OLD query would overwrite a newer result on screen.
+  // SHARED by single runs and scans (pinned): a late scan must not overwrite
+  // a newer single run, and vice versa.
   const runSeq = useRef(0);
 
   const isCustom = driverKey === 'CUSTOM';
@@ -493,16 +748,12 @@ export default function CorrelationLab({ isDesktop, embedded = false }) {
       const groupSource = override?.groupInput ?? groupInput;
       const driverSource = override?.driverKey ?? driverKey;
       const customSource = override?.customSymbol ?? customSymbol;
-      const group = [...new Set(groupSource.split(/[\s,]+/).map((s) => s.trim().toUpperCase()).filter(Boolean))];
-      if (group.length < 1 || group.length > 10) {
-        setInputError('Enter 1–10 ticker symbols (comma-separated). A single ETF proxy works too.');
+      const parsed = parseGroup(groupSource);
+      if (parsed.error) {
+        setInputError(parsed.error);
         return;
       }
-      const bad = group.filter((s) => !SYMBOL_RE.test(s));
-      if (bad.length) {
-        setInputError(`Not a valid ticker: ${bad.join(', ')}`);
-        return;
-      }
+      const { group } = parsed;
       // Pair mode: validate the custom ticker with the SAME regex the endpoint
       // uses before sending. (Self-correlation is left to the server 400 so the
       // real guard is what users hit.)
@@ -517,7 +768,7 @@ export default function CorrelationLab({ isDesktop, embedded = false }) {
       }
       setInputError(null);
       const seq = ++runSeq.current;
-      setState({ status: 'loading', data: null, error: null });
+      setState({ status: 'loading', data: null, error: null, kind: 'single' });
       fetchWithAuth('/api/research/correlation', {
         method: 'POST',
         body: JSON.stringify({
@@ -537,17 +788,85 @@ export default function CorrelationLab({ isDesktop, embedded = false }) {
         })
         .then((data) => {
           if (seq !== runSeq.current) return; // a newer run superseded this one
-          setState({ status: 'ready', data, error: null });
+          setState({ status: 'ready', data, error: null, kind: 'single' });
         })
         .catch((e) => {
           if (seq !== runSeq.current) return;
-          setState({ status: 'error', data: null, error: e.message });
+          setState({ status: 'error', data: null, error: e.message, kind: 'single' });
         });
     },
     [groupInput, driverKey, customSymbol]
   );
 
-  const data = state.data;
+  // V2 Build 2 — SCAN ALL: the group against every registry driver. Shares
+  // the group input + validation with single runs; the driver select (and any
+  // custom ticker) is ignored — scans are registry-only, CUSTOM never scans.
+  // `groupOverride` (canonical string[], e.g. scan.meta.group) pins a refresh
+  // to the DISPLAYED scan's group even if the input box was edited since —
+  // it fills the input too (the chip idiom), so box and table agree.
+  const runScan = useCallback(
+    (forceRefresh = false, groupOverride = null) => {
+      const source = groupOverride ? groupOverride.join(', ') : groupInput;
+      if (groupOverride) setGroupInput(source);
+      const parsed = parseGroup(source);
+      if (parsed.error) {
+        setInputError(parsed.error);
+        return;
+      }
+      setInputError(null);
+      const seq = ++runSeq.current; // shared counter — see the runSeq note above
+      setState({ status: 'loading', data: null, error: null, kind: 'scan' });
+      fetchWithAuth('/api/research/correlation-scan', {
+        method: 'POST',
+        body: JSON.stringify({
+          group: parsed.group,
+          ...(forceRefresh ? { forceRefresh: true } : {}),
+        }),
+      })
+        .then(async (r) => {
+          if (!r.ok) {
+            let detail = null;
+            try { detail = await r.json(); } catch { /* opaque error body */ }
+            throw new Error(detail?.error ? `${r.status}:${detail.error}` : `scan_${r.status}`);
+          }
+          return r.json();
+        })
+        .then((data) => {
+          if (seq !== runSeq.current) return; // a newer run superseded this one
+          setState({ status: 'ready', data, error: null, kind: 'scan' });
+        })
+        .catch((e) => {
+          if (seq !== runSeq.current) return;
+          setState({ status: 'error', data: null, error: e.message, kind: 'scan' });
+        });
+    },
+    [groupInput]
+  );
+
+  // Deep dive from a scan row: select that driver and run the single-driver
+  // analysis (the scan is the breadth surface; this is the depth surface).
+  // `group` arrives as an ARGUMENT from the render-scoped scan payload
+  // (scan.meta.group) — the depth surface must analyze the group the clicked
+  // row describes, not whatever the input box says now; passing it (rather
+  // than reading `scan` here) also avoids a stale capture, since this
+  // callback memoizes on [run] alone. The input box is filled to match (the
+  // chip idiom), so the round-tripped canonical group re-parses identically.
+  const deepDive = useCallback(
+    (row, group) => {
+      const groupInputValue = group.join(', ');
+      setGroupInput(groupInputValue);
+      setDriverKey(row.driver);
+      run(false, { groupInput: groupInputValue, driverKey: row.driver });
+    },
+    [run]
+  );
+
+  // Payload split by kind: `data` keeps its V0 meaning (the single-driver
+  // payload) so everything below this line is untouched; `scan` is the
+  // scan payload. Exactly one is non-null once ready.
+  const data = state.kind === 'single' ? state.data : null;
+  const scan = state.kind === 'scan' ? state.data : null;
+  const activeMeta = (data ?? scan)?.meta ?? null;
   // X-axis derives from corr20 — the LONGER series (its windows start 40
   // sessions earlier). corr60 maps onto it by eventDate; dates before corr60's
   // first window resolve to null and segmentsOf gaps that line, so a short
@@ -603,7 +922,9 @@ export default function CorrelationLab({ isDesktop, embedded = false }) {
           <input
             value={groupInput}
             onChange={(e) => setGroupInput(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') run(); }}
+            // Loading gate matches the disabled buttons — Enter mid-scan must
+            // not discard an in-flight ~27-fetch scan whose quota is spent.
+            onKeyDown={(e) => { if (e.key === 'Enter' && state.status !== 'loading') run(); }}
             placeholder="XOM, CVX, COP"
             style={{
               background: HOLO_COLORS.bgElevated, border: `1px solid ${HOLO_COLORS.borderSubtle}`, borderRadius: 8,
@@ -636,7 +957,7 @@ export default function CorrelationLab({ isDesktop, embedded = false }) {
             <input
               value={customSymbol}
               onChange={(e) => setCustomSymbol(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') run(); }}
+              onKeyDown={(e) => { if (e.key === 'Enter' && state.status !== 'loading') run(); }}
               placeholder="AAPL"
               aria-label="Custom driver ticker"
               style={{
@@ -657,15 +978,29 @@ export default function CorrelationLab({ isDesktop, embedded = false }) {
             opacity: state.status === 'loading' ? 0.6 : 1,
           }}
         >
-          {state.status === 'loading' ? 'Running…' : 'Run'}
+          {state.status === 'loading' && state.kind === 'single' ? 'Running…' : 'Run'}
+        </button>
+        {/* V2 Build 2 — secondary action: every registry driver, ranked.
+            Group + lookback inputs shared; the driver select is ignored. */}
+        <button
+          onClick={() => runScan()}
+          disabled={state.status === 'loading'}
+          style={{
+            padding: '10px 16px', borderRadius: 8, cursor: state.status === 'loading' ? 'default' : 'pointer',
+            background: 'transparent', color: HOLO_COLORS.textSecondary, fontSize: 13, fontWeight: 600,
+            textTransform: 'uppercase', letterSpacing: '1px', border: `1px solid ${HOLO_COLORS.borderSubtle}`,
+            opacity: state.status === 'loading' ? 0.6 : 1,
+          }}
+        >
+          {state.status === 'loading' && state.kind === 'scan' ? 'Scanning…' : 'Scan all'}
         </button>
         {inputError ? <div style={{ flexBasis: '100%', fontSize: 12, color: '#EF4444' }}>{inputError}</div> : null}
-        {data?.meta?.droppedSymbols?.length ? (
+        {activeMeta?.droppedSymbols?.length ? (
           <div style={{ flexBasis: '100%', fontSize: 12, color: AMBER }}>
-            Could not fetch: {data.meta.droppedSymbols.join(', ')}
+            Could not fetch: {activeMeta.droppedSymbols.join(', ')}
           </div>
         ) : null}
-        {data?.meta?.partial ? (
+        {activeMeta?.partial ? (
           <div style={{
             flexBasis: '100%', fontSize: 12, color: AMBER, border: `1px solid ${AMBER}55`,
             background: `${AMBER}14`, borderRadius: 8, padding: '8px 10px',
@@ -718,13 +1053,26 @@ export default function CorrelationLab({ isDesktop, embedded = false }) {
                     {String(state.error)}
                   </div>
                 ) : null}
-                <button onClick={() => run()} style={{ background: 'transparent', border: `1px solid ${HOLO_COLORS.borderSubtle}`, borderRadius: 8, color: HOLO_COLORS.textSecondary, padding: '6px 14px', fontSize: 12, cursor: 'pointer' }}>
+                <button onClick={() => (state.kind === 'scan' ? runScan() : run())} style={{ background: 'transparent', border: `1px solid ${HOLO_COLORS.borderSubtle}`, borderRadius: 8, color: HOLO_COLORS.textSecondary, padding: '6px 14px', fontSize: 12, cursor: 'pointer' }}>
                   Try again
                 </button>
               </div>
             );
           })()
         : null}
+
+      {/* V2 Build 2 — scan results replace the single-driver results while displayed.
+          Deep dive and refresh are bound to the DISPLAYED scan's group
+          (scan.meta.group), captured render-fresh by these inline closures —
+          never to the live input text, which may have been edited since. */}
+      {state.status === 'ready' && scan ? (
+        <ScanResults
+          scan={scan}
+          isDesktop={isDesktop}
+          onDeepDive={(row) => deepDive(row, scan.meta.group)}
+          onRefresh={() => runScan(true, scan.meta.group)}
+        />
+      ) : null}
 
       {state.status === 'ready' && data ? (
         <>
