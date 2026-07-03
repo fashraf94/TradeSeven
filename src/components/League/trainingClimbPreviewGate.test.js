@@ -6,6 +6,7 @@
 import { describe, it, expect } from 'vitest';
 import { shouldPreviewClimb, climbPreviewEnabled } from './trainingClimbPreviewGate';
 import { GROUP_STATUS } from '../../constants/leagueTournament';
+import { LEAGUE_TRAINING_CLIMB_PREVIEW_ENABLED } from '../../config/featureFlags';
 
 const battlePod = (extra = {}) => ({ status: GROUP_STATUS.BATTLE, players: [{ odUserId: 'u1' }], ...extra });
 
@@ -40,9 +41,10 @@ describe('shouldPreviewClimb', () => {
 });
 
 describe('climbPreviewEnabled', () => {
-  it('returns false with the flag off and no window (SSR / node) — the param cannot participate', () => {
-    // The flag ships OFF; in the node test env there is no window, so the dev
-    // param can't flip it → the preview is dark by default (byte-unchanged).
-    expect(climbPreviewEnabled()).toBe(false);
+  it('resolves to the flag value with no window (SSR / node) — the dev param cannot participate', () => {
+    // In the node test env there is no window, so the ?trainingClimbPreview param
+    // can't flip it: climbPreviewEnabled() === the compile-time flag. Robust to
+    // the flag being flipped on/off (no brittle literal to update each flip).
+    expect(climbPreviewEnabled()).toBe(LEAGUE_TRAINING_CLIMB_PREVIEW_ENABLED);
   });
 });
