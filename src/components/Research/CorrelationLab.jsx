@@ -31,13 +31,13 @@ import { ChartSkeleton } from './ResearchSkeletons';
 // server code — do not import it into the bundle; units/interpretations come
 // back in the response, so the server stays the source of truth).
 const DRIVER_OPTIONS = [
-  { key: 'BRENT', label: 'Brent Crude' },
-  { key: 'WTI', label: 'WTI Crude' },
-  { key: 'GOLD', label: 'Gold' },
+  { key: 'BRENT', label: 'Brent Crude (BNO proxy)' },
+  { key: 'WTI', label: 'WTI Crude (USO proxy)' },
+  { key: 'GOLD', label: 'Gold (GLD proxy)' },
   { key: 'VIX', label: 'VIX' },
   { key: 'TNX', label: '10Y Yield' },
-  { key: 'DXY', label: 'US Dollar Index' },
-  { key: 'SPX', label: 'S&P 500' },
+  { key: 'DXY', label: 'US Dollar (UUP proxy)' },
+  { key: 'SPX', label: 'S&P 500 (SPY)' },
 ];
 
 const SYMBOL_RE = /^[A-Z][A-Z0-9.-]{0,9}$/; // mirrors the endpoint's pinned regex
@@ -486,8 +486,21 @@ export default function CorrelationLab({ isDesktop }) {
       {state.status === 'error' ? (
         <div style={{ ...card, borderColor: '#EF444455' }}>
           <div style={{ fontSize: 13, color: HOLO_COLORS.textPrimary, marginBottom: 8 }}>
-            {String(state.error).includes('422') ? "Couldn't get enough overlapping history for that pair." : "Couldn't run that query just now."}
+            {/* state.error carries "<status>:<code>" — distinct copy per failure
+                mode so a driver outage never reads as a history problem. */}
+            {String(state.error).includes('driver_unavailable')
+              ? `Couldn't fetch ${driverLabel} data right now.`
+              : String(state.error).includes('group_unavailable')
+                ? 'None of those tickers returned data — check the symbols.'
+                : String(state.error).includes('no_overlapping_history')
+                  ? "Couldn't get enough overlapping history for that pair."
+                  : "Couldn't run that query just now."}
           </div>
+          {!['driver_unavailable', 'group_unavailable', 'no_overlapping_history'].some((code) => String(state.error).includes(code)) ? (
+            <div style={{ fontSize: 10, color: HOLO_COLORS.textMuted, marginBottom: 8, fontFamily: MONO }}>
+              {String(state.error)}
+            </div>
+          ) : null}
           <button onClick={() => run()} style={{ background: 'transparent', border: `1px solid ${HOLO_COLORS.borderSubtle}`, borderRadius: 8, color: HOLO_COLORS.textSecondary, padding: '6px 14px', fontSize: 12, cursor: 'pointer' }}>
             Try again
           </button>

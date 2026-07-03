@@ -1,9 +1,22 @@
 /**
- * Correlation Intelligence — driver-asset registry (Build Spec V1.2, pinned).
+ * Correlation Intelligence — driver-asset registry (Build Spec V1.2 + Fix 1).
  *
  * This registry is the tool's OWN driver universe: none of these symbols
  * except TNX.INDX is fetched anywhere else on main (Phase 0 discovery), and
  * nothing here piggybacks on Index Intelligence or season evaluation.
+ *
+ * FIX 1 (founder-verified on the Vercel preview, Jul 2 2026): the original
+ * V1.2 commodity symbols (BZ.COMM / CL.COMM / GC.COMM / DX.COMM) do not exist
+ * on EODHD's /api/eod endpoint (confirmed 404s in preview function logs).
+ * Commodities/DXY are therefore served via ETF PROXIES on the proven `.US`
+ * path — same endpoint, same response shape, same trading calendar as the
+ * equity groups (which also removes most holiday join-mismatch), zero new
+ * fetch code. Known cost: futures-roll drag in the oil ETFs — acceptable at
+ * 20/60d daily-return horizons and labeled honestly in `label`/`unit`/
+ * `betaInterpretation`. True-spot commodity series via EODHD's FRED-sourced
+ * /api/commodities endpoint (1–2 business-day publication lag, monthly-only
+ * gold, no DXY) is the documented post-V0 upgrade path — unsuitable for
+ * same-day joins today.
  *
  * returnMode:
  *   'pct'  — simple daily percent returns on adjusted close.
@@ -14,33 +27,36 @@
  * TNX.INDX level is the yield × 10 (e.g. 43.5 = 4.35%). `scale: 0.1` is
  * applied to LEVELS, BEFORE differencing, so every TNX number downstream —
  * diffs, inflections, forward numbers — reads in actual yield points.
+ * TNX.INDX stays: proven daily in production via compute-index-intelligence.
  *
- * VIX stays 'pct' (decision on record): percent change is the conventional
- * VIX series and preserves the strongly-negative SPX/QQQ relationship used as
- * a smoke tripwire. Mixed-unit concerns are handled by surfacing `unit` and
- * `betaInterpretation` in the response and UI — never by changing the series.
+ * VIX stays VIX.INDX pending live verification — there is NO acceptable ETF
+ * proxy for VIX at these horizons (VXX/VIXY roll structure distorts even
+ * daily behavior). If VIX.INDX 404s on re-smoke, that is an open item for a
+ * founder decision, never a silent substitution. VIX stays 'pct' (decision
+ * on record): percent change is the conventional VIX series and preserves
+ * the strongly-negative SPX/QQQ relationship used as a smoke tripwire.
  */
 export const CORRELATION_DRIVERS = {
   BRENT: {
-    symbol: 'BZ.COMM',
-    label: 'Brent Crude',
+    symbol: 'BNO.US',
+    label: 'Brent Crude (BNO proxy)',
     returnMode: 'pct',
-    unit: '% change',
-    betaInterpretation: 'group % move per 1% Brent move',
+    unit: '% change of BNO ETF',
+    betaInterpretation: 'group % move per 1% move in BNO (Brent oil ETF proxy)',
   },
   WTI: {
-    symbol: 'CL.COMM',
-    label: 'WTI Crude',
+    symbol: 'USO.US',
+    label: 'WTI Crude (USO proxy)',
     returnMode: 'pct',
-    unit: '% change',
-    betaInterpretation: 'group % move per 1% WTI move',
+    unit: '% change of USO ETF',
+    betaInterpretation: 'group % move per 1% move in USO (WTI oil ETF proxy)',
   },
   GOLD: {
-    symbol: 'GC.COMM',
-    label: 'Gold',
+    symbol: 'GLD.US',
+    label: 'Gold (GLD proxy)',
     returnMode: 'pct',
-    unit: '% change',
-    betaInterpretation: 'group % move per 1% gold move',
+    unit: '% change of GLD ETF',
+    betaInterpretation: 'group % move per 1% move in GLD (gold ETF proxy)',
   },
   VIX: {
     symbol: 'VIX.INDX',
@@ -58,17 +74,17 @@ export const CORRELATION_DRIVERS = {
     betaInterpretation: 'group % move per 1.0 percentage-point yield change',
   },
   DXY: {
-    symbol: 'DX.COMM',
-    label: 'US Dollar Index',
+    symbol: 'UUP.US',
+    label: 'US Dollar (UUP proxy)',
     returnMode: 'pct',
-    unit: '% change',
-    betaInterpretation: 'group % move per 1% DXY move',
+    unit: '% change of UUP ETF',
+    betaInterpretation: 'group % move per 1% move in UUP (dollar index ETF proxy)',
   },
   SPX: {
-    symbol: 'GSPC.INDX',
-    label: 'S&P 500',
+    symbol: 'SPY.US',
+    label: 'S&P 500 (SPY)',
     returnMode: 'pct',
     unit: '% change',
-    betaInterpretation: 'group % move per 1% S&P move',
+    betaInterpretation: 'group % move per 1% S&P move (SPY)',
   },
 };

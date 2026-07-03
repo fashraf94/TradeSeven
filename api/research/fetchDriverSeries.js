@@ -43,8 +43,15 @@ export async function fetchEodCloses(eodhSymbol, lookbackDays) {
   if (!response.ok) throw new Error(`EODHD ${eodhSymbol}: HTTP ${response.status}`);
   const rows = await response.json();
   if (!Array.isArray(rows)) throw new Error(`EODHD ${eodhSymbol}: non-array response`);
+  // adjusted_close with a raw-close fallback (the marketDataCache.js
+  // `adjusted_close || close` production idiom; ?? here so a legitimate
+  // numeric 0 adjusted_close is preserved). INDX payloads are proven to carry
+  // adjusted_close on the TNX path (compute-index-intelligence.js), but
+  // VIX.INDX has never been fetched in this codebase — the fallback keeps an
+  // adjusted_close-less row usable instead of silently filtering the series
+  // to empty (which would misreport as driver_unavailable).
   return rows
-    .map((d) => ({ date: d.date, close: Number(d.adjusted_close) }))
+    .map((d) => ({ date: d.date, close: Number(d.adjusted_close ?? d.close) }))
     .filter((r) => typeof r.date === 'string' && Number.isFinite(r.close));
 }
 

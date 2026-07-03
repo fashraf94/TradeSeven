@@ -148,7 +148,7 @@ const MEMBER_B_WIRE = toWire(memberBCloses, eqDates);
 const fetchCalls = { count: 0, symbols: [] };
 
 function wireFor(symbol) {
-  if (symbol === 'BZ.COMM') return DRIVER_WIRE;
+  if (symbol === 'BNO.US') return DRIVER_WIRE; // BRENT's registry symbol (Fix 1: BNO ETF proxy)
   if (symbol === 'AAA.US') return MEMBER_A_WIRE;
   if (symbol === 'BBB.US') return MEMBER_B_WIRE;
   return null;
@@ -327,8 +327,8 @@ describe('response contract details', () => {
     expect(out.beta.latest.beta).toBe(lastBeta.beta);
     expect(out.beta.latest.r).toBe(lastBeta.r);
     expect(out.beta.latest.eventDate).toBe(eqDates[359]);
-    expect(out.beta.interpretation).toBe('group % move per 1% Brent move');
-    expect(out.beta.unit).toBe('% change');
+    expect(out.beta.interpretation).toBe('group % move per 1% move in BNO (Brent oil ETF proxy)');
+    expect(out.beta.unit).toBe('% change of BNO ETF');
   });
 
   it('byWindow carries the latest rolling values (and only the 20/60 pair — no corr120 anywhere)', () => {
@@ -382,7 +382,7 @@ describe('cache + partial-failure contracts', () => {
   });
 
   it('driver fetch failure → 422 driver_unavailable', async () => {
-    const { req, res } = makeReqRes({ group: ['AAA'], driver: 'WTI' }); // CL.COMM not on the wire
+    const { req, res } = makeReqRes({ group: ['AAA'], driver: 'WTI' }); // USO.US not on the wire
     await handler(req, res);
     expect(res.statusCode).toBe(422);
     expect(res.body.error).toBe('driver_unavailable');
