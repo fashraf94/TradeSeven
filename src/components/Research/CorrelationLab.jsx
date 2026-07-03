@@ -26,6 +26,7 @@ import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { fetchWithAuth } from '../../utils/fetchWithAuth';
 import { HOLO_COLORS } from '../../constants/holoTheme';
 import { ChartSkeleton } from './ResearchSkeletons';
+import { buildVerdictSentence } from './correlationVerdict';
 
 // Client-side mirror of the driver registry LABELS only (the api registry is
 // server code — do not import it into the bundle; units/interpretations come
@@ -54,7 +55,26 @@ const MONO = "'SF Mono', 'Monaco', 'Consolas', monospace";
 const GOLD = '#F0C75E'; // SeasonPerformanceChart line colors
 const GRAY = '#8B949E';
 const AMBER = '#f59e0b';
+const GREEN = '#34D399';
+const RED = '#EF4444';
 const LOW_R_THRESHOLD = 0.3;
+
+// Change D — always-visible muted caption lines under each headline stat (no
+// hover-only tooltips; they die on mobile). Reuses the in-file :558 idiom.
+const CAPTIONS = {
+  correlation: 'How often they move in the same direction. 1 = always, 0 = unrelated, −1 = opposite.',
+  beta: 'How big the move is when they move together.',
+  leadLag: 'Whether one tends to move first at daily resolution.',
+  regimeBreaks: 'Dates when the recent relationship stopped matching the longer pattern.',
+  tension: 'How stretched the recent link is versus its own history — not a prediction.',
+};
+
+// Change E — three example chips matching the Discover "TRY ONE" idiom.
+const EXAMPLE_CHIPS = [
+  { label: 'Oil stocks vs Brent', group: 'XOM, CVX, COP', driver: 'BRENT' },
+  { label: 'Banks vs 10Y yield', group: 'KBE', driver: 'TNX' },
+  { label: 'Tech vs fear (VIX)', group: 'QQQ', driver: 'VIX' },
+];
 
 // ── formatting (math layer returns decimal fractions; multiply by 100 ONCE here) ──
 const fmtCorr = (v) => (v == null ? '—' : (v >= 0 ? '+' : '') + v.toFixed(2));
@@ -73,6 +93,31 @@ function leadLagSentence(leadLag, driverLabel) {
 }
 
 const directionLabel = (d) => (d === 'weakening' ? 'correlation breakdown' : 'correlation strengthening');
+
+// Change F — plain-language state for the divergence tension gauge (the number
+// stays secondary; "significance" is never used). Null score → not scoreable.
+function divergenceState(score) {
+  if (score == null) return { word: 'not scoreable yet', color: HOLO_COLORS.textMuted };
+  const a = Math.abs(score);
+  if (a < 1) return { word: 'calm', color: HOLO_COLORS.textSecondary };
+  if (a < 2) return { word: 'elevated', color: AMBER };
+  return { word: 'in break territory', color: RED };
+}
+
+// Change G — one-word driver tag from the signs of the two into-break returns
+// at a WEAKENING break. Strengthening rows (and rows missing either value) omit.
+function driverTag(ep) {
+  if (ep.direction !== 'weakening') return null;
+  const g = ep.groupInto5d;
+  const dr = ep.driverInto5d;
+  if (g == null || dr == null) return null;
+  if (g >= 0 && dr < 0) return 'group held up';
+  if (g < 0 && dr >= 0) return 'driver held up';
+  if (g < 0 && dr < 0) return 'joint selloff';
+  return 'both rising'; // g >= 0 && dr >= 0
+}
+
+const pctColor = (v) => (v == null ? HOLO_COLORS.textMuted : v > 0 ? GREEN : v < 0 ? RED : HOLO_COLORS.textSecondary);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Local SVG chart (SeasonPerformanceChart mechanics; fixed domain for corr)
@@ -346,7 +391,24 @@ const captionStyle = {
   color: HOLO_COLORS.textMuted,
 };
 
-export default function CorrelationLab({ isDesktop }) {
+// The sentence-case muted caption idiom (the :558 betaInterpretation form) —
+// the reuse target for Change D stat captions.
+const subCaptionStyle = { fontSize: 11, color: HOLO_COLORS.textMuted, marginTop: 6 };
+
+// Change E — example chip (fill-and-run), HOLO-styled to match the Lab's accent.
+const chipStyle = {
+  padding: '7px 14px',
+  borderRadius: 20,
+  border: `1px solid ${GOLD}55`,
+  background: `${GOLD}14`,
+  color: GOLD,
+  fontSize: 12,
+  fontWeight: 600,
+  cursor: 'pointer',
+  fontFamily: 'inherit',
+};
+
+export default function CorrelationLab({ isDesktop, embedded = false }) {
   const [groupInput, setGroupInput] = useState('XOM, CVX, COP');
   const [driverKey, setDriverKey] = useState('BRENT');
   const [inputError, setInputError] = useState(null);
@@ -360,8 +422,12 @@ export default function CorrelationLab({ isDesktop }) {
   const driverLabel = DRIVER_OPTIONS.find((d) => d.key === driverKey)?.label ?? driverKey;
 
   const run = useCallback(
-    (forceRefresh = false) => {
-      const group = [...new Set(groupInput.split(/[\s,]+/).map((s) => s.trim().toUpperCase()).filter(Boolean))];
+    (forceRefresh = false, override) => {
+      // Chips fill the inputs AND run immediately; setState is async, so the
+      // chip's values arrive via `override` rather than the (stale) closure.
+      const groupSource = override?.groupInput ?? groupInput;
+      const driverSource = override?.driverKey ?? driverKey;
+      const group = [...new Set(groupSource.split(/[\s,]+/).map((s) => s.trim().toUpperCase()).filter(Boolean))];
       if (group.length < 1 || group.length > 10) {
         setInputError('Enter 1–10 ticker symbols (comma-separated). A single ETF proxy works too.');
         return;
@@ -376,7 +442,7 @@ export default function CorrelationLab({ isDesktop }) {
       setState({ status: 'loading', data: null, error: null });
       fetchWithAuth('/api/research/correlation', {
         method: 'POST',
-        body: JSON.stringify({ group, driver: driverKey, ...(forceRefresh ? { forceRefresh: true } : {}) }),
+        body: JSON.stringify({ group, driver: driverSource, ...(forceRefresh ? { forceRefresh: true } : {}) }),
       })
         .then(async (r) => {
           if (!r.ok) {
@@ -430,15 +496,22 @@ export default function CorrelationLab({ isDesktop }) {
   const lowFit = data?.beta?.latest?.r != null && Math.abs(data.beta.latest.r) < LOW_R_THRESHOLD;
 
   return (
-    <div style={{ maxWidth: 960, margin: '0 auto', padding: isDesktop ? '24px 24px 96px' : '16px 12px 96px', display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <div>
-        <h1 style={{ fontSize: 20, fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '2px', color: HOLO_COLORS.textPrimary, margin: 0 }}>
-          Correlation Lab
-        </h1>
-        <div style={{ fontSize: 12, color: HOLO_COLORS.textMuted, marginTop: 4 }}>
-          Rolling return correlation, beta, lead-lag, and regime breaks — a group of stocks (or one ETF proxy) against a macro driver.
+    <div style={{
+      // Embedded (Discover tab): the parent panel owns width/margins/scroll
+      // runway — drop the page-level container so only the internal stack shows.
+      ...(embedded ? {} : { maxWidth: 960, margin: '0 auto', padding: isDesktop ? '24px 24px 96px' : '16px 12px 96px' }),
+      display: 'flex', flexDirection: 'column', gap: 16,
+    }}>
+      {!embedded ? (
+        <div>
+          <h1 style={{ fontSize: 20, fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '2px', color: HOLO_COLORS.textPrimary, margin: 0 }}>
+            Correlation Lab
+          </h1>
+          <div style={{ fontSize: 12, color: HOLO_COLORS.textMuted, marginTop: 4 }}>
+            Rolling return correlation, beta, lead-lag, and regime breaks — a group of stocks (or one ETF proxy) against a macro driver.
+          </div>
         </div>
-      </div>
+      ) : null}
 
       {/* 1 — Query bar */}
       <div style={{ ...card, display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'flex-end' }}>
@@ -499,8 +572,28 @@ export default function CorrelationLab({ isDesktop }) {
       </div>
 
       {state.status === 'idle' ? (
-        <div style={{ ...card, fontSize: 12, color: HOLO_COLORS.textMuted }}>
-          Pick a group and a driver, then Run. Nothing loads until you ask.
+        <div style={{ ...card, display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div style={{ fontSize: 12, color: HOLO_COLORS.textMuted }}>
+            Pick a group and a driver, then Run. Nothing loads until you ask.
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <span style={captionStyle}>Try one</span>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+              {EXAMPLE_CHIPS.map((chip) => (
+                <button
+                  key={chip.label}
+                  onClick={() => {
+                    setGroupInput(chip.group);
+                    setDriverKey(chip.driver);
+                    run(false, { groupInput: chip.group, driverKey: chip.driver });
+                  }}
+                  style={chipStyle}
+                >
+                  {chip.label}
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
       ) : null}
 
@@ -531,8 +624,18 @@ export default function CorrelationLab({ isDesktop }) {
 
       {state.status === 'ready' && data ? (
         <>
+          {/* C — plain-language verdict sentence (deterministic; assembled from the payload) */}
+          {(() => {
+            const verdict = buildVerdictSentence(data, driverLabel);
+            return verdict ? (
+              <div style={{ ...card, borderColor: `${GOLD}44` }}>
+                <div style={{ fontSize: 15, color: HOLO_COLORS.textPrimary, lineHeight: 1.55 }}>{verdict}</div>
+              </div>
+            ) : null;
+          })()}
+
           {/* 2 — Headline strip */}
-          <div style={{ display: 'grid', gridTemplateColumns: isDesktop ? 'repeat(3, 1fr)' : '1fr', gap: 12 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: isDesktop ? 'repeat(auto-fit, minmax(200px, 1fr))' : '1fr', gap: 12 }}>
             <div style={card}>
               <div style={captionStyle}>Correlation — 20d / 60d</div>
               <div style={{ display: 'flex', gap: 18, marginTop: 8, alignItems: 'baseline' }}>
@@ -542,6 +645,7 @@ export default function CorrelationLab({ isDesktop }) {
               <div style={{ fontSize: 11, color: HOLO_COLORS.textMuted, marginTop: 6 }}>
                 daily returns vs {driverLabel}, {data.meta.joinedCloses} joined sessions
               </div>
+              <div style={subCaptionStyle}>{CAPTIONS.correlation}</div>
             </div>
             <div style={card}>
               <div style={captionStyle}>Beta — rolling 40d (latest)</div>
@@ -556,6 +660,7 @@ export default function CorrelationLab({ isDesktop }) {
                     </span>
                   </div>
                   <div style={{ fontSize: 11, color: HOLO_COLORS.textMuted, marginTop: 6 }}>{data.beta.interpretation}</div>
+                  <div style={subCaptionStyle}>{CAPTIONS.beta}</div>
                 </>
               ) : (
                 <div style={{ fontSize: 12, color: HOLO_COLORS.textMuted, marginTop: 8 }}>
@@ -568,6 +673,29 @@ export default function CorrelationLab({ isDesktop }) {
               <div style={{ fontSize: 14, color: HOLO_COLORS.textPrimary, marginTop: 8, lineHeight: 1.5 }}>
                 {leadLagSentence(data.leadLag, driverLabel)}
               </div>
+              <div style={subCaptionStyle}>{CAPTIONS.leadLag}</div>
+            </div>
+            {/* F — divergence tension gauge */}
+            <div style={card}>
+              <div style={captionStyle}>Divergence watch</div>
+              {(() => {
+                const div = data.divergence?.latest ?? null;
+                if (!div) {
+                  return <div style={{ fontSize: 12, color: HOLO_COLORS.textMuted, marginTop: 8 }}>Not enough history yet.</div>;
+                }
+                const st = divergenceState(div.score);
+                return (
+                  <>
+                    <div style={{ display: 'flex', gap: 10, marginTop: 8, alignItems: 'baseline', flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: 18, fontWeight: 700, color: st.color }}>{st.word}</span>
+                      <span style={{ fontFamily: MONO, fontSize: 12, color: HOLO_COLORS.textMuted }}>
+                        d {fmtCorr(div.d)}{div.score != null ? ` · SDS ${fmtCorr(div.score)}` : ''}
+                      </span>
+                    </div>
+                    <div style={subCaptionStyle}>{CAPTIONS.tension}</div>
+                  </>
+                );
+              })()}
             </div>
           </div>
 
@@ -634,9 +762,13 @@ export default function CorrelationLab({ isDesktop }) {
           ) : data.inflections ? (
             <>
               <div style={card}>
-                <div style={{ ...captionStyle, marginBottom: 10 }}>
+                <div style={{ ...captionStyle, marginBottom: 6 }}>
                   Regime breaks — {data.inflections.length} episode{data.inflections.length === 1 ? '' : 's'} since {data.meta.firstEligibleInflectionDate}
                   <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}> · ● independent · ○ clustered (counted once in the aggregate)</span>
+                </div>
+                <div style={{ ...subCaptionStyle, marginTop: 0, marginBottom: 10 }}>
+                  {CAPTIONS.regimeBreaks}
+                  {data.meta.driver === 'TNX' ? ' Driver into-break values are % change in the yield level.' : ''}
                 </div>
                 <div style={{ overflowX: 'auto' }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
@@ -645,6 +777,8 @@ export default function CorrelationLab({ isDesktop }) {
                         <th style={{ padding: '4px 8px', fontWeight: 600 }}>Date</th>
                         <th style={{ padding: '4px 8px', fontWeight: 600 }}>Type</th>
                         <th style={{ padding: '4px 8px', fontWeight: 600 }}>20d / 60d at flag</th>
+                        <th style={{ padding: '4px 8px', fontWeight: 600 }}>Group 5d into break</th>
+                        <th style={{ padding: '4px 8px', fontWeight: 600 }}>Driver 5d into break</th>
                         <th style={{ padding: '4px 8px', fontWeight: 600 }}>Group +5d</th>
                         <th style={{ padding: '4px 8px', fontWeight: 600 }}>+10d</th>
                         <th style={{ padding: '4px 8px', fontWeight: 600 }}>+20d</th>
@@ -657,20 +791,24 @@ export default function CorrelationLab({ isDesktop }) {
                           const row = detailByHorizon[h][side].get(ep.startCloseIndex);
                           if (!row) return <span style={{ color: HOLO_COLORS.textMuted }}>—</span>;
                           return (
-                            <span style={{ fontFamily: MONO, color: row.fwdReturn > 0 ? '#34D399' : row.fwdReturn < 0 ? '#EF4444' : HOLO_COLORS.textSecondary }}>
+                            <span style={{ fontFamily: MONO, color: pctColor(row.fwdReturn) }}>
                               {row.independent ? '●' : '○'} {fmtPct(row.fwdReturn)}
                             </span>
                           );
                         };
+                        const tag = driverTag(ep);
                         return (
                           <tr key={ep.startCloseIndex} style={{ borderTop: `1px solid ${HOLO_COLORS.borderSubtle}` }}>
                             <td style={{ padding: '6px 8px', fontFamily: MONO, color: HOLO_COLORS.textPrimary }}>{ep.startDate}</td>
                             <td style={{ padding: '6px 8px', color: ep.direction === 'weakening' ? AMBER : HOLO_COLORS.textSecondary }}>
                               {directionLabel(ep.direction)}
+                              {tag ? <div style={{ fontSize: 10, color: HOLO_COLORS.textMuted, marginTop: 2 }}>{tag}</div> : null}
                             </td>
                             <td style={{ padding: '6px 8px', fontFamily: MONO, color: HOLO_COLORS.textSecondary }}>
                               {fmtCorr(ep.corr20AtFlag)} / {fmtCorr(ep.corr60AtFlag)}
                             </td>
+                            <td style={{ padding: '6px 8px', fontFamily: MONO, color: pctColor(ep.groupInto5d) }}>{fmtPct(ep.groupInto5d)}</td>
+                            <td style={{ padding: '6px 8px', fontFamily: MONO, color: pctColor(ep.driverInto5d) }}>{fmtPct(ep.driverInto5d)}</td>
                             <td style={{ padding: '6px 8px' }}>{cell(5, 'group')}</td>
                             <td style={{ padding: '6px 8px' }}>{cell(10, 'group')}</td>
                             <td style={{ padding: '6px 8px' }}>{cell(20, 'group')}</td>

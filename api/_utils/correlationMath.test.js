@@ -23,6 +23,8 @@ import {
   leadLag,
   detectInflections,
   forwardReturns,
+  standardizedDivergenceScore,
+  trailingReturnInto,
   ABS_DIVERGENCE_FLOOR,
   SDS_BASELINE_WINDOW,
 } from './correlationMath.js';
@@ -366,6 +368,71 @@ describe('detectInflections', () => {
     expect(detectInflections('nope')).toBeNull();
     expect(detectInflections([])).toEqual([]);
     expect(detectInflections(mkDivergence(altBaseline(50, 0.1)))).toEqual([]); // < full baseline: nothing scoreable
+  });
+});
+
+// ── standardizedDivergenceScore ─────────────────────────────────────────────
+
+describe('standardizedDivergenceScore (the SDS detectInflections flags on, exposed for divergence.latest)', () => {
+  const DENOM = 1.4826 * 0.1; // alternating ±0.1 baseline: median 0, MAD 0.1
+
+  it('numeric SDS on a clean trailing baseline = (d − median)/(1.4826·MAD)', () => {
+    const series = mkDivergence([...altBaseline(SDS_BASELINE_WINDOW, 0.1), 0.31]);
+    // obs SDS_BASELINE_WINDOW (index 120) has a full ±0.1 trailing baseline.
+    expect(standardizedDivergenceScore(series, SDS_BASELINE_WINDOW)).toBeCloseTo(0.31 / DENOM, 10);
+  });
+
+  it('is the SAME value detectInflections stores as an episode score (single-source refactor)', () => {
+    // Emergency-scale event → one episode whose score = SDS at the flag obs.
+    const series = mkDivergence([...altBaseline(SDS_BASELINE_WINDOW, 0.1), 0.535]);
+    const episodes = detectInflections(series);
+    expect(episodes).toHaveLength(1);
+    expect(standardizedDivergenceScore(series, SDS_BASELINE_WINDOW)).toBe(episodes[0].score);
+  });
+
+  it('null (unscoreable) when the observation lacks a full trailing baseline', () => {
+    const series = mkDivergence([...altBaseline(SDS_BASELINE_WINDOW, 0.1), 0.31]);
+    expect(standardizedDivergenceScore(series, SDS_BASELINE_WINDOW - 1)).toBeNull();
+    expect(standardizedDivergenceScore(series, 0)).toBeNull();
+  });
+
+  it('null when MAD == 0 (degenerate baseline) or d is non-finite', () => {
+    const flat = mkDivergence([...Array.from({ length: SDS_BASELINE_WINDOW }, () => 0), 0.5]);
+    expect(standardizedDivergenceScore(flat, SDS_BASELINE_WINDOW)).toBeNull(); // MAD == 0
+    const nan = mkDivergence([...altBaseline(SDS_BASELINE_WINDOW, 0.1), 0.31]);
+    nan[SDS_BASELINE_WINDOW].d = NaN;
+    expect(standardizedDivergenceScore(nan, SDS_BASELINE_WINDOW)).toBeNull();
+  });
+
+  it('null on invalid index / non-array input', () => {
+    const series = mkDivergence([...altBaseline(SDS_BASELINE_WINDOW, 0.1), 0.31]);
+    expect(standardizedDivergenceScore(series, series.length)).toBeNull(); // out of range
+    expect(standardizedDivergenceScore(series, 120.5)).toBeNull(); // non-integer
+    expect(standardizedDivergenceScore('nope', 0)).toBeNull();
+  });
+});
+
+// ── trailingReturnInto ──────────────────────────────────────────────────────
+
+describe('trailingReturnInto (forwardReturns pointed backward — the N-session move INTO a flag)', () => {
+  const levels = compound(100, Array.from({ length: 30 }, (_, i) => (i % 2 === 0 ? 0.01 : -0.005)));
+
+  it('levels[c] / levels[c − look] − 1 over the trailing window', () => {
+    expect(trailingReturnInto(levels, 10, 5)).toBeCloseTo(levels[10] / levels[5] - 1, 12);
+    expect(trailingReturnInto([100, 110, 99], 2, 2)).toBeCloseTo(99 / 100 - 1, 12);
+  });
+
+  it('c === look is valid (base index 0); c < look → null (no trailing window)', () => {
+    expect(trailingReturnInto(levels, 5, 5)).toBeCloseTo(levels[5] / levels[0] - 1, 12);
+    expect(trailingReturnInto(levels, 4, 5)).toBeNull();
+    expect(trailingReturnInto(levels, 0, 5)).toBeNull();
+  });
+
+  it('null on a zero / non-finite base or non-integer / non-array input', () => {
+    expect(trailingReturnInto([0, 1, 2, 3, 4, 5], 5, 5)).toBeNull(); // base level 0
+    expect(trailingReturnInto([NaN, 1, 2, 3, 4, 5], 5, 5)).toBeNull();
+    expect(trailingReturnInto(levels, 10.5, 5)).toBeNull();
+    expect(trailingReturnInto('nope', 10, 5)).toBeNull();
   });
 });
 

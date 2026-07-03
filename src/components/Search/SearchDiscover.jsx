@@ -10,12 +10,14 @@ import AssetResearchModal from '../draft/AssetResearchModal';
 const RankingsView = lazy(() => import('./RankingsView'));
 const InstitutionalView = lazy(() => import('./InstitutionalView'));
 const ScreenerView = lazy(() => import('./ScreenerView'));
+const CorrelationLab = lazy(() => import('../Research/CorrelationLab'));
 
 const TABS = [
   { id: 'explore', label: 'Explore' },
   { id: 'rankings', label: 'Rankings' },
   { id: 'institutional', label: 'Institutional' },
   { id: 'screen', label: 'Screen' },
+  { id: 'correlations', label: 'Correlations' },
 ];
 
 const SearchDiscover = ({ user, isMobile, isDesktop, setScreen, stocksData }) => {
@@ -188,6 +190,11 @@ const SearchDiscover = ({ user, isMobile, isDesktop, setScreen, stocksData }) =>
                 onOpenResearch={onOpenResearch}
                 isMobile={isMobile}
               />
+            </Suspense>
+          )}
+          {activeTab === 'correlations' && (
+            <Suspense fallback={<div style={{ color: tokens.textMuted, padding: '20px', textAlign: 'center', fontSize: '13px' }}>Loading correlations...</div>}>
+              <CorrelationLab isDesktop={isDesktop} embedded />
             </Suspense>
           )}
         </motion.div>

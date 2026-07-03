@@ -345,24 +345,21 @@ export const LEAGUE_AGENT_CHAT_ENABLED = true;
 export const SCOUTING_BOARD_ENABLED = true;
 
 /**
- * Correlation Lab — the Correlation Intelligence V0 research surface
+ * Correlation Lab — the Correlation Intelligence research surface
  * (rolling group-vs-driver correlations, rolling-40 beta, lead-lag, and
  * correlation-regime inflections with episode-first forward-return base rates).
  *
- * When FALSE (default), the app is byte-identical to today: no nav item exists
- * for the surface (by design — dev-param entry only), the `?correlationDev=1`
- * mount effect sets a screen id that getScreenContent never renders, and
- * POST /api/research/correlation itself 404s (the scouting-board
- * defense-in-depth pattern), so nothing is reachable or callable.
+ * LIVE (TRUE) as of the V1.1 exposure PR. When TRUE, the surface is reachable
+ * two ways — the `?correlationDev=1` dev screen (src/components/Research/
+ * CorrelationLab.jsx) AND the Discover "Correlations" tab (embedded) — and
+ * POST /api/research/correlation serves authenticated requests. This exposure
+ * PR ships the flag ON by design (V1.1 spec), after a founder Vercel-preview
+ * smoke; it is not the merge-dark build PR.
  *
- * When TRUE, `?correlationDev=1` opens the CorrelationLab screen
- * (src/components/Research/CorrelationLab.jsx) and the endpoint serves
- * authenticated requests. Exposure beyond the dev param (a nav item, Discover
- * wiring, voice-layer consumption) is explicitly a SEPARATE follow-up PR.
- *
- * Built/merged DARK; flip in a one-line follow-up PR after a Vercel preview
- * smoke (the SCOUTING_BOARD_ENABLED precedent) — never in the build PR. The
- * preview smoke itself uses a clearly-labeled temporary flip commit on the
- * build branch, reverted before merge (founder-approved procedure).
+ * When FALSE (rollback), the app is byte-identical to the pre-V0 state: the
+ * Discover tab renders nothing, the `?correlationDev=1` mount effect sets a
+ * screen id that never renders, and the endpoint 404s (the scouting-board
+ * defense-in-depth pattern) — nothing reachable or callable. Kept as the
+ * instant-rollback lever.
  */
-export const CORRELATION_LAB_ENABLED = false;
+export const CORRELATION_LAB_ENABLED = true;

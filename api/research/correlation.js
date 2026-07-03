@@ -43,6 +43,8 @@ import {
   leadLag,
   detectInflections,
   forwardReturns,
+  standardizedDivergenceScore,
+  trailingReturnInto,
   SDS_BASELINE_WINDOW,
 } from '../_utils/correlationMath.js';
 import { CORRELATION_DRIVERS } from './driverRegistry.js';
@@ -246,13 +248,36 @@ export default async function handler(req, res) {
     // sentence anchors here, never at the raw lookback start.
     const firstEligibleInflectionDate = divergenceSeries[SDS_BASELINE_WINDOW]?.eventDate ?? null;
 
+    // Change F — divergence tension gauge: surface the LATEST divergence
+    // observation's state (its d and its SDS, via the shared scorer so the
+    // gauge and the flagging engine agree). latest is null when the divergence
+    // series is empty/suppressed; score is null when that obs is unscoreable.
+    const lastDiv = divergenceSeries.length ? divergenceSeries[divergenceSeries.length - 1] : null;
+    const divergence = {
+      latest: lastDiv
+        ? {
+            d: lastDiv.d,
+            score: standardizedDivergenceScore(divergenceSeries, divergenceSeries.length - 1),
+            eventDate: lastDiv.eventDate,
+          }
+        : null,
+    };
+
     let inflections = null;
     let baseRates = null;
     const suppressed = {};
     if (joinedCloses < MIN_CLOSES_FOR_INFLECTIONS) {
       suppressed.inflections = `insufficient joined history (${joinedCloses} closes, ${MIN_CLOSES_FOR_INFLECTIONS} required)`;
     } else {
-      inflections = detectInflections(divergenceSeries);
+      // Change G — enrich each episode with the trailing 5-session return INTO
+      // the flag (forwardReturns pointed backward): group composite levels and
+      // (scaled) driver closes. Additive to the episode; forwardReturns below
+      // reads only startCloseIndex/startDate/direction, so ordering is free.
+      inflections = detectInflections(divergenceSeries).map((ep) => ({
+        ...ep,
+        groupInto5d: trailingReturnInto(groupLevels, ep.startCloseIndex),
+        driverInto5d: trailingReturnInto(driverCloses, ep.startCloseIndex),
+      }));
       baseRates = {
         group: forwardReturns(groupLevels, joinedDates, inflections),
         driver: forwardReturns(driverCloses, joinedDates, inflections),
@@ -290,6 +315,7 @@ export default async function handler(req, res) {
         unit: registry.unit,
       },
       leadLag: lag,
+      divergence,
       inflections,
       baseRates,
       suppressed,

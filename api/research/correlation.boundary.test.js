@@ -24,6 +24,10 @@
  *     in-place reversal throws.
  */
 import { describe, it, expect, vi, beforeAll } from 'vitest';
+// Pure helpers imported directly to cross-check divergence.latest.score against
+// the SAME scorer the endpoint uses (single-source SDS; BUILD_RULES §4) and to
+// assert the into-break floor the endpoint applies per episode.
+import { standardizedDivergenceScore, trailingReturnInto } from '../_utils/correlationMath.js';
 
 // ==================== HOISTED MOCK STATE ====================
 const { authReturnValue, labFlag } = vi.hoisted(() => ({
@@ -322,6 +326,50 @@ describe('required assert 5 — forward returns to the cent', () => {
     expect(g.details[0].exitDate).toBe(eqDates[325 + h]);
     expect(d.eligibleCount).toBe(1);
     expect(d.details[0].fwdReturn).toBeCloseTo(driverCloses[325 + h] / driverCloses[325] - 1, 12);
+  });
+});
+
+describe('V1.1 Change F — divergence.latest tension gauge', () => {
+  it('matches the final divergence observation (d, eventDate, and SDS to precision)', () => {
+    expect(out.divergence).toBeDefined();
+    expect(out.divergence.latest).not.toBeNull();
+    // Last divergence obs = closeIndex 359 = the last joined close.
+    expect(out.divergence.latest.eventDate).toBe(eqDates[359]);
+    // d = corr20 − corr60 at the last obs = the two headline byWindow values.
+    expect(out.divergence.latest.d).toBeCloseTo(
+      out.byWindow.corr20.value - out.byWindow.corr60.value,
+      12
+    );
+    // Score: rebuild the endpoint's divergence series from the payload and run
+    // the SAME scorer over its last observation.
+    const byDate60 = new Map(out.series.corr60.map((e) => [e.eventDate, e.value]));
+    const divSeries = out.series.corr20
+      .filter((e) => byDate60.has(e.eventDate) && e.value != null && byDate60.get(e.eventDate) != null)
+      .map((e) => ({ d: e.value - byDate60.get(e.eventDate) }));
+    const expectedScore = standardizedDivergenceScore(divSeries, divSeries.length - 1);
+    expect(expectedScore).not.toBeNull(); // the last obs has a full 120-obs baseline
+    expect(out.divergence.latest.score).toBeCloseTo(expectedScore, 10);
+  });
+});
+
+describe('V1.1 Change G — per-episode into-break returns', () => {
+  // Independent rebuild of the composite levels (== the endpoint's groupLevels).
+  const testLevels = compound(100, groupReturns);
+
+  it('the engineered episode (closeIndex 325) carries the hand-computed 5-session move into the break', () => {
+    expect(out.inflections).toHaveLength(1);
+    const ep = out.inflections[0];
+    expect(ep.startCloseIndex).toBe(325);
+    // Trailing 5d INTO the flag: levels[325] / levels[320] − 1.
+    expect(ep.groupInto5d).toBeCloseTo(testLevels[325] / testLevels[320] - 1, 12);
+    expect(ep.driverInto5d).toBeCloseTo(driverCloses[325] / driverCloses[320] - 1, 12);
+  });
+
+  it('a c < 5 anchor yields null into-break returns (no trailing window)', () => {
+    // The fixture has no c<5 episode, so assert the pure trailing helper's floor
+    // directly — the endpoint uses exactly this function for both columns.
+    expect(trailingReturnInto(testLevels, 3, 5)).toBeNull();
+    expect(trailingReturnInto(testLevels, 5, 5)).toBeCloseTo(testLevels[5] / testLevels[0] - 1, 12);
   });
 });
 
